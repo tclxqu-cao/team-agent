@@ -1,0 +1,15 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": ".",
+    "jsx": "react-jsx",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "paths": {
+      "@agent/core": ["../core/src"],
+      "@agent/core/*": ["../core/src/*"]
+    }
+  },
+  "include": ["main", "renderer"]
+}

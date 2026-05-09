@@ -1,0 +1,19 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "Next.js API Server",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev:server"],
+      "port": 3000,
+      "autoPort": true
+    },
+    {
+      "name": "Electron Desktop App",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev:desktop"],
+      "port": 5173,
+      "autoPort": true
+    }
+  ]
+}

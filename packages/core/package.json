@@ -1,0 +1,17 @@
+{
+  "name": "@agent/core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "dev": "bun build ./src/index.ts --outdir ./dist --target node --format esm --sourcemap=external --external better-sqlite3 --external bindings --watch",
+    "build": "bun build ./src/index.ts --outdir ./dist --target node --format esm --sourcemap=external --external better-sqlite3 --external bindings && bunx tsc --emitDeclarationOnly",
+    "test": "bunx vitest run"
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.9.0",
+    "zod": "^3.23.0"
+  }
+}

@@ -1,0 +1,44 @@
+// ── MCP Domain ──
+
+export interface MCPServerConfig {
+  id: string;
+  name: string;
+  command: string;
+  args: string[];
+  env?: Record<string, string>;
+  transport: "stdio" | "sse";
+  sseUrl?: string;
+}
+
+export interface MCPTool {
+  name: string;
+  description: string;
+  parameters: Record<string, unknown>;
+}
+
+export interface MCPResource {
+  uri: string;
+  name: string;
+  description?: string;
+  mimeType?: string;
+}
+
+export interface IMCPClient {
+  readonly serverId: string;
+  readonly connected: boolean;
+
+  connect(config: MCPServerConfig): Promise<void>;
+  disconnect(): void;
+  listTools(): Promise<MCPTool[]>;
+  listResources(): Promise<MCPResource[]>;
+  callTool(name: string, args: unknown): Promise<unknown>;
+  readResource(uri: string): Promise<unknown>;
+}
+
+export interface IMCPManager {
+  connectServer(config: MCPServerConfig): Promise<IMCPClient>;
+  disconnectServer(serverId: string): Promise<void>;
+  getClient(serverId: string): IMCPClient | undefined;
+  listServers(): MCPServerConfig[];
+  discoverAllTools(): Promise<Map<string, MCPTool[]>>;
+}

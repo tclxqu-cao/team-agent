@@ -1,0 +1,34 @@
+// ── Settings Domain ──
+
+export interface ModelProfile {
+  id: string;
+  /** Human-readable nickname, e.g. "GPT-4o" */
+  name: string;
+  provider: string;      // "anthropic" | "openai" | "deepseek"
+  modelId: string;
+  apiKey: string;
+  baseUrl: string;
+}
+
+export interface SettingsData {
+  /** Flat active-model fields kept for backward compatibility */
+  modelProvider: string;
+  modelId: string;
+  apiKey: string;
+  baseUrl: string;
+  maxIterations: number;
+  workingDirectory: string;
+  isConfigured: boolean;
+  /** Multi-provider profiles list */
+  profiles: ModelProfile[];
+  /** ID of the currently active profile (empty string = use flat fields) */
+  activeProfileId: string;
+}
+
+export interface ISettingsStore {
+  get(key: string): string | null;
+  set(key: string, value: string): void;
+  getAll(): SettingsData;
+  saveAll(settings: SettingsData): void;
+  delete(key: string): void;
+}

@@ -1,0 +1,135 @@
+import { create } from "zustand";
+
+export interface StreamEvent {
+  type: string;
+  text?: string;
+  message?: string;
+  toolCall?: { id: string; name: string; arguments: Record<string, unknown> };
+  result?: { toolCallId: string; content: string; isError?: boolean };
+  finalText?: string;
+  todos?: TodoItem[];
+  agentName?: string;
+  task?: string;
+}
+
+export interface TodoItem {
+  id: string;
+  title: string;
+  agentName?: string;
+  status: "pending" | "in-progress" | "completed";
+}
+
+export interface ChatMessage {
+  id: string;
+  role: "user" | "assistant" | "tool";
+  content: string;
+  /** Name of the agent that was @-mentioned for this message */
+  agentName?: string;
+  toolCalls?: Array<{
+    id: string;
+    name: string;
+    arguments: Record<string, unknown>;
+    result?: string;
+    isError?: boolean;
+  }>;
+  toolCallId?: string;
+  name?: string;
+  timestamp: number;
+}
+
+interface AgentState {
+  messages: ChatMessage[];
+  /** The sessionId currently being streamed; null when idle */
+  runningSessionId: string | null;
+  currentText: string;
+  sessionId: string | null;
+  /** Shared todo list updated by agent tools during runs */
+  todos: TodoItem[];
+
+  addMessage: (msg: ChatMessage) => void;
+  appendText: (text: string) => void;
+  setRunningSession: (id: string | null) => void;
+  setSessionId: (id: string) => void;
+  updateToolResult: (toolCallId: string, result: string, isError?: boolean) => void;
+  setMessages: (messages: ChatMessage[]) => void;
+  clearMessages: () => void;
+  setTodos: (todos: TodoItem[]) => void;
+}
+
+export const useAgentStore = create<AgentState>((set) => ({
+  messages: [],
+  runningSessionId: null,
+  currentText: "",
+  sessionId: null,
+  todos: [],
+
+  addMessage: (msg) =>
+    set((state) => {
+      // If adding a tool_call assistant message, merge into last assistant msg if it's empty/text-only
+      if (msg.role === "assistant" && msg.toolCalls?.length) {
+        const last = state.messages[state.messages.length - 1];
+        if (last && last.role === "assistant" && !last.toolCalls?.length) {
+          const merged = {
+            ...last,
+            content: last.content,
+            toolCalls: msg.toolCalls,
+          };
+          return {
+            messages: [...state.messages.slice(0, -1), merged],
+            currentText: "",
+          };
+        }
+      }
+      return {
+        messages: [...state.messages, msg],
+        currentText: "",
+      };
+    }),
+
+  appendText: (text) =>
+    set((state) => {
+      if (!text) return state; // ignore empty chunks
+      const lastMsg = state.messages[state.messages.length - 1];
+      if (lastMsg && lastMsg.role === "assistant" && !lastMsg.toolCalls?.length) {
+        const updated = [...state.messages];
+        updated[updated.length - 1] = { ...lastMsg, content: lastMsg.content + text };
+        return { messages: updated, currentText: state.currentText + text };
+      }
+      return {
+        messages: [
+          ...state.messages,
+          {
+            id: crypto.randomUUID(),
+            role: "assistant",
+            content: text,
+            timestamp: Date.now(),
+          },
+        ],
+        currentText: state.currentText + text,
+      };
+    }),
+
+  setRunningSession: (id) => set({ runningSessionId: id }),
+
+  setSessionId: (id) => set({ sessionId: id }),
+
+  updateToolResult: (toolCallId, result, isError) =>
+    set((state) => {
+      const updated = state.messages.map((m) => {
+        if (m.toolCalls) {
+          const updatedCalls = m.toolCalls.map((tc) =>
+            tc.id === toolCallId ? { ...tc, result, isError } : tc,
+          );
+          return { ...m, toolCalls: updatedCalls };
+        }
+        return m;
+      });
+      return { messages: updated };
+    }),
+
+  setMessages: (messages) => set({ messages, currentText: "" }),
+
+  clearMessages: () => set({ messages: [], currentText: "" }),
+
+  setTodos: (todos) => set({ todos }),
+}));

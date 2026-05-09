@@ -1,0 +1,220 @@
+import type { AgentConfig, IAgentLoop } from './entities.js';
+import type { IModelProvider } from '../model/entities.js';
+import type { IMemoryStore } from '../memory/entities.js';
+import type { ISessionStore } from '../session/entities.js';
+import { AgentFactory } from './AgentFactory.js';
+import { ToolRegistry } from '../tool/ToolRegistry.js';
+import { registerBuiltinTools } from '../tool/builtin/index.js';
+import { SkillLoader } from '../skill/SkillLoader.js';
+import { SkillRegistry } from '../skill/SkillRegistry.js';
+import { ContextLoader } from '../context/ContextLoader.js';
+import { ContextAssembler } from '../context/ContextAssembler.js';
+import { FileSystemMemoryStore } from '../memory/FileSystemMemoryStore.js';
+import { ModelRegistry } from '../model/ModelRegistry.js';
+
+export class AgentBuilder {
+  private workingDirectory = process.cwd();
+  private modelProvider: IModelProvider | null = null;
+  private modelRegistry = new ModelRegistry();
+  private toolRegistry = new ToolRegistry();
+  private skillLoader = new SkillLoader();
+  private skillRegistry = new SkillRegistry(this.skillLoader);
+  private contextLoader = new ContextLoader();
+  private memoryStore: IMemoryStore | null = null;
+  private maxIterations = 10;
+  private maxTokens = 100_000;
+  private systemPrompt: string | undefined;
+  private skillsDir: string | undefined;
+  private skillFiles: string[] = [];
+  private pluginsDir: string | undefined;
+  private sessionStore: ISessionStore | undefined;
+  private compactThreshold: number | undefined;
+  /** If set, only these tool names are registered (others are skipped). Empty = all tools. */
+  private enabledTools: string[] | null = null;
+
+  withWorkingDirectory(path: string): this {
+    this.workingDirectory = path;
+    return this;
+  }
+
+  withModelProvider(provider: IModelProvider): this {
+    this.modelProvider = provider;
+    this.modelRegistry.register(provider);
+    return this;
+  }
+
+  withModel(providerId: string, config: {
+    apiKey: string;
+    baseUrl?: string;
+    modelId: string;
+  }): this {
+    this.modelProvider = this.modelRegistry.createAndRegister(
+      providerId as "anthropic" | "openai" | "deepseek",
+      config,
+    );
+    return this;
+  }
+
+  withMaxIterations(n: number): this {
+    this.maxIterations = n;
+    return this;
+  }
+
+  withMaxTokens(n: number): this {
+    this.maxTokens = n;
+    return this;
+  }
+
+  withSystemPrompt(prompt: string | undefined): this {
+    this.systemPrompt = prompt;
+    return this;
+  }
+
+  withSkillsDirectory(dir: string): this {
+    this.skillsDir = dir;
+    return this;
+  }
+
+  /**
+   * Import a skill from a specific SKILL.md file or skill directory.
+   * The skill is loaded at build() time and registered with source='custom'.
+   * Can be called multiple times to import multiple skills.
+   */
+  withSkillFile(filePath: string): this {
+    this.skillFiles.push(filePath);
+    return this;
+  }
+
+  withPluginsDirectory(dir: string): this {
+    this.pluginsDir = dir;
+    return this;
+  }
+
+  withMemoryStore(store: IMemoryStore): this {
+    this.memoryStore = store;
+    return this;
+  }
+
+  withSessionStore(store: ISessionStore): this {
+    this.sessionStore = store;
+    return this;
+  }
+
+  /**
+   * Set the AutoCompact threshold as a fraction of maxTokens (default 0.8).
+   * When estimated token usage exceeds this fraction, history is summarized.
+   */
+  withCompactThreshold(fraction: number): this {
+    this.compactThreshold = fraction;
+    return this;
+  }
+
+  /**
+   * Restrict which built-in tools are available. Pass an empty array to re-enable all tools.
+   * Takes effect on the next buildSync() call.
+   */
+  withEnabledTools(toolNames: string[]): this {
+    this.enabledTools = toolNames.length > 0 ? toolNames : null;
+    return this;
+  }
+
+  async build(): Promise<IAgentLoop> {
+    if (!this.modelProvider) {
+      throw new Error("Model provider is required. Call withModelProvider() or withModel()");
+    }
+
+    // Initialize memory store (use injected or fall back to filesystem)
+    const memoryStore = this.memoryStore ?? new FileSystemMemoryStore(this.workingDirectory);
+
+    // Register built-in tools
+    registerBuiltinTools(this.toolRegistry);
+
+    // Load skills from all discovered sources, then optionally add from explicit dir
+    const discoveredSkills = await this.skillLoader.loadAll(this.workingDirectory);
+    for (const skill of discoveredSkills) {
+      this.skillRegistry.register(skill);
+    }
+    if (this.skillsDir) {
+      const extraSkills = await this.skillLoader.loadFromDirectory(this.skillsDir, "custom");
+      for (const skill of extraSkills) {
+        if (!this.skillRegistry.get(skill.name)) {
+          this.skillRegistry.register(skill);
+        }
+      }
+    }
+
+    // Import individual skill files specified via withSkillFile()
+    for (const filePath of this.skillFiles) {
+      const skill = await this.skillLoader.loadFromFile(filePath);
+      if (!this.skillRegistry.get(skill.name)) {
+        this.skillRegistry.register({ ...skill, source: "custom" });
+      }
+    }
+
+    const contextAssembler = new ContextAssembler(this.contextLoader);
+
+    const config: AgentConfig = {
+      modelProvider: this.modelProvider,
+      toolRegistry: this.toolRegistry,
+      toolExecutor: this.toolRegistry,
+      contextAssembler,
+      memoryStore,
+      sessionStore: this.sessionStore,
+      workingDirectory: this.workingDirectory,
+      maxIterations: this.maxIterations,
+      maxTokens: this.maxTokens,
+      systemPrompt: this.systemPrompt,
+      compactThreshold: this.compactThreshold,
+    };
+
+    return new AgentFactory().create(config);
+  }
+
+  /** Synchronous build - skips async skill loading for Electron */
+  buildSync(): IAgentLoop {
+    if (!this.modelProvider) {
+      throw new Error("Model provider is required. Call withModelProvider() or withModel()");
+    }
+
+    const memoryStore = this.memoryStore ?? new FileSystemMemoryStore(this.workingDirectory);
+    registerBuiltinTools(this.toolRegistry);
+
+    // Filter tools if an allowlist is configured
+    if (this.enabledTools) {
+      const allowed = new Set(this.enabledTools);
+      for (const tool of this.toolRegistry.getAll()) {
+        if (!allowed.has(tool.name)) this.toolRegistry.unregister(tool.name);
+      }
+    }
+
+    const contextAssembler = new ContextAssembler(this.contextLoader);
+
+    const config: AgentConfig = {
+      modelProvider: this.modelProvider,
+      toolRegistry: this.toolRegistry,
+      toolExecutor: this.toolRegistry,
+      contextAssembler,
+      memoryStore,
+      sessionStore: this.sessionStore,
+      workingDirectory: this.workingDirectory,
+      maxIterations: this.maxIterations,
+      maxTokens: this.maxTokens,
+      systemPrompt: this.systemPrompt,
+      compactThreshold: this.compactThreshold,
+    };
+
+    return new AgentFactory().create(config);
+  }
+
+  getToolRegistry(): ToolRegistry {
+    return this.toolRegistry;
+  }
+
+  getSkillRegistry(): SkillRegistry {
+    return this.skillRegistry;
+  }
+
+  getModelRegistry(): ModelRegistry {
+    return this.modelRegistry;
+  }
+}

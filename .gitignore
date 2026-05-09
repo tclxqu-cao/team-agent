@@ -1,0 +1,11 @@
+node_modules/
+dist/
+.agent-data/
+.agent-todos/
+*.db
+*.db-shm
+*.db-wal
+.DS_Store
+*.log
+packages/desktop/dist/
+packages/desktop/renderer-dist/
