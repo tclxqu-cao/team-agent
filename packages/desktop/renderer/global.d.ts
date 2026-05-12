@@ -1,3 +1,16 @@
+export interface MCPServer {
+  id: string;
+  name: string;
+  transport: "stdio" | "sse";
+  // stdio
+  command?: string;
+  args?: string[];
+  env?: Record<string, string>;
+  // sse/remote
+  url?: string;
+  enabled?: boolean;
+}
+
 export interface CronTask {
   id: string;
   cron: string;
@@ -88,6 +101,10 @@ export interface AgentApi {
   setMemory(entry: Record<string, unknown>): Promise<void>;
   deleteMemory(name: string): Promise<void>;
   searchMemories(query: string): Promise<unknown[]>;
+  mcpList(): Promise<MCPServer[]>;
+  mcpSave(server: Omit<MCPServer, 'transport'> & { transport?: string }): Promise<void>;
+  mcpDelete(id: string): Promise<void>;
+  mcpSetEnabled(id: string, enabled: boolean): Promise<void>;
   listSkills(): Promise<unknown[]>;
   saveSkill(skill: Record<string, unknown>): Promise<void>;
   deleteSkill(name: string): Promise<void>;

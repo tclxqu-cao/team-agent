@@ -3,11 +3,14 @@
 export interface MCPServerConfig {
   id: string;
   name: string;
-  command: string;
-  args: string[];
-  env?: Record<string, string>;
   transport: "stdio" | "sse";
-  sseUrl?: string;
+  // stdio fields
+  command?: string;
+  args?: string[];
+  env?: Record<string, string>;
+  // sse/remote fields
+  url?: string;
+  sseUrl?: string; // alias for url, kept for backward compat
 }
 
 export interface MCPTool {

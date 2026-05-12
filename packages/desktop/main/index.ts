@@ -185,6 +185,24 @@ ipcMain.handle("memory:search", async (_event, query: string) => {
   return agentHost.getMemoryStore().search(query);
 });
 
+// ── IPC: MCP Servers ──
+
+ipcMain.handle("mcp:list", async () => {
+  return agentHost.getMCPStore().listAll();
+});
+
+ipcMain.handle("mcp:save", async (_event, server: Record<string, unknown>) => {
+  await agentHost.getMCPStore().save(server as any);
+});
+
+ipcMain.handle("mcp:delete", async (_event, id: string) => {
+  await agentHost.getMCPStore().delete(id);
+});
+
+ipcMain.handle("mcp:setEnabled", async (_event, id: string, enabled: boolean) => {
+  await agentHost.getMCPStore().setEnabled(id, enabled);
+});
+
 // ── IPC: Skills ──
 
 ipcMain.handle("skills:list", async () => {

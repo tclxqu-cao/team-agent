@@ -130,6 +130,7 @@ export class SQLiteDatabase {
     // Migration: make sessions.project_id nullable (remove NOT NULL + FK constraint)
     // SQLite requires recreating the table to change constraints.
     this.migrateSessionsProjectIdNullable();
+    this.migrateMCPServerTransport();
   }
 
   /**
@@ -166,6 +167,18 @@ export class SQLiteDatabase {
       `);
       this.db.pragma("foreign_keys = ON");
     })();
+  }
+
+  /** Add transport and url columns to mcp_servers if they don't exist yet. */
+  private migrateMCPServerTransport(): void {
+    const cols = this.db.prepare("PRAGMA table_info(mcp_servers)").all() as Array<{ name: string }>;
+    const names = cols.map((c) => c.name);
+    if (!names.includes("transport")) {
+      this.db.exec("ALTER TABLE mcp_servers ADD COLUMN transport TEXT NOT NULL DEFAULT 'stdio'");
+    }
+    if (!names.includes("url")) {
+      this.db.exec("ALTER TABLE mcp_servers ADD COLUMN url TEXT");
+    }
   }
 
   close(): void {

@@ -42,6 +42,12 @@ contextBridge.exposeInMainWorld("agentApi", {
   deleteMemory: (name: string) => ipcRenderer.invoke("memory:delete", name),
   searchMemories: (query: string) => ipcRenderer.invoke("memory:search", query),
 
+  // MCP Servers
+  mcpList: () => ipcRenderer.invoke("mcp:list"),
+  mcpSave: (server: Record<string, unknown>) => ipcRenderer.invoke("mcp:save", server),
+  mcpDelete: (id: string) => ipcRenderer.invoke("mcp:delete", id),
+  mcpSetEnabled: (id: string, enabled: boolean) => ipcRenderer.invoke("mcp:setEnabled", id, enabled),
+
   // Skills
   listSkills: () => ipcRenderer.invoke("skills:list"),
   saveSkill: (skill: Record<string, unknown>) => ipcRenderer.invoke("skills:save", skill),
