@@ -2,6 +2,8 @@
 
 import type { Message, ToolCall, ToolResult } from '../model/entities.js';
 
+import type { CronTask } from '../cron/entities.js';
+
 export type AgentEventType =
   | "thinking"
   | "tool_call"
@@ -12,7 +14,8 @@ export type AgentEventType =
   | "error"
   | "done"
   | "todo_update"
-  | "agent_dispatch";
+  | "agent_dispatch"
+  | "cron_update";
 
 export interface TodoItem {
   id: string;
@@ -31,7 +34,8 @@ export type AgentEvent =
   | { type: "error"; message: string; code?: string }
   | { type: "done"; finalText: string; usage?: TokenUsage }
   | { type: "todo_update"; todos: TodoItem[] }
-  | { type: "agent_dispatch"; agentName: string; task: string };
+  | { type: "agent_dispatch"; agentName: string; task: string }
+  | { type: "cron_update"; tasks: CronTask[] };
 
 export interface TokenUsage {
   inputTokens: number;

@@ -6,6 +6,7 @@ export { WebSearchTool } from './WebSearchTool.js';
 export { GrepTool } from './GrepTool.js';
 export { TodoAddTool, TodoUpdateTool, TodoListTool } from './TodoTool.js';
 export { DispatchAgentTool } from './DispatchAgentTool.js';
+export { CronCreateTool, CronDeleteTool, CronListTool } from './CronTools.js';
 
 import { ReadFileTool } from './ReadFileTool.js';
 import { WriteFileTool } from './WriteFileTool.js';

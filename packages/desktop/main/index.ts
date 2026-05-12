@@ -4,9 +4,24 @@ import { fileURLToPath } from "node:url";
 import { readFile, writeFile } from "node:fs/promises";
 import { AgentHost } from "./agent-host.js";
 
+// ── Single-instance lock ──────────────────────────────────────────────────
+// Electron uses an OS-level lock tied to the app's userData directory.
+// If a second instance starts, it focuses the existing window and quits.
+const gotLock = app.requestSingleInstanceLock();
+if (!gotLock) {
+  app.quit();
+  process.exit(0);
+}
+
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 let mainWindow: BrowserWindow | null = null;
 const agentHost = new AgentHost(process.cwd());
+
+// Forward ALL agent events (including cron-fired runs) to the renderer.
+// This covers both user-initiated runs and background cron queue drains.
+agentHost.subscribe((event) => {
+  mainWindow?.webContents.send("agent:event", event);
+});
 
 function createWindow(): void {
   mainWindow = new BrowserWindow({
@@ -37,20 +52,50 @@ function createWindow(): void {
 // ── IPC: Agent control ──
 
 ipcMain.handle("agent:run", async (_event, input: string, sessionId: string, agentIds?: string[], agentName?: string) => {
+  agentHost.setRunning(true);
   try {
-    for await (const event of agentHost.run(input, sessionId, agentIds, agentName)) {
-      mainWindow?.webContents.send("agent:event", event);
+    for await (const _event of agentHost.run(input, sessionId, agentIds, agentName)) {
+      // events are forwarded to renderer via the global subscriber above
     }
   } catch (err) {
     mainWindow?.webContents.send("agent:event", {
       type: "error",
       message: err instanceof Error ? err.message : "Unknown error",
     });
+  } finally {
+    agentHost.setRunning(false);
   }
 });
 
 ipcMain.handle("agent:abort", () => {
   agentHost.abort();
+});
+
+// ── IPC: Cron (scheduled tasks) ───────────────────────────────────────────
+
+ipcMain.handle("cron:create", (_event, cron: string, prompt: string, options?: Record<string, unknown>) => {
+  return agentHost.createCronTask(cron, prompt, options as any);
+});
+
+ipcMain.handle("cron:pause", (_event, id: string) => {
+  return agentHost.pauseCronTask(id);
+});
+
+ipcMain.handle("cron:resume", (_event, id: string) => {
+  return agentHost.resumeCronTask(id);
+});
+
+ipcMain.handle("cron:delete", (_event, id: string) => {
+  return agentHost.deleteCronTask(id);
+});
+
+ipcMain.handle("cron:delete-all", () => {
+  agentHost.deleteAllCronTasks();
+  return { ok: true };
+});
+
+ipcMain.handle("cron:list", () => {
+  return agentHost.listCronTasks();
 });
 
 // ── IPC: Settings ──
@@ -113,6 +158,8 @@ ipcMain.handle("sessions:create", async (_event, title: string, projectId?: stri
 });
 
 ipcMain.handle("sessions:delete", async (_event, id: string) => {
+  // Release cron locks held by this session and re-assign to sibling sessions
+  await agentHost.onSessionDeleted(id);
   await agentHost.getSessionStore().delete(id);
 });
 
@@ -258,6 +305,14 @@ ipcMain.handle("agentdef:setActive", (_event, id: string) => {
 
 
 // ── App lifecycle ──
+
+// When a second instance tries to launch, bring the existing window to front.
+app.on("second-instance", () => {
+  if (mainWindow) {
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.focus();
+  }
+});
 
 app.whenReady().then(createWindow);
 

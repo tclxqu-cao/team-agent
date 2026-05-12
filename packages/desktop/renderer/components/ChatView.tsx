@@ -1,5 +1,25 @@
 import { useRef, useState, useEffect } from "react";
-import { useAgentStore, type StreamEvent } from "../stores/agentStore";
+import { useAgentStore, type StreamEvent, type CronTask } from "../stores/agentStore";
+
+/** Human-readable description of a cron/interval expression (browser-safe, no Node.js). */
+function describeCron(cron: string): string {
+  const cleaned = cron.trim().replace(/^每(?:隔)?/, '');
+  const m = cleaned.match(/^(\d+(?:\.\d+)?)\s*(s|sec|秒|m|min|分钟?|h|hr|小时)$/i);
+  if (m) {
+    const n = parseFloat(m[1]);
+    const u = m[2].toLowerCase();
+    const ms = (u === 's' || u === 'sec' || u === '秒') ? n * 1000
+      : (u === 'm' || u === 'min' || u === '分' || u === '分钟') ? n * 60_000
+      : n * 3_600_000;
+    if (ms >= 3_600_000 && ms % 3_600_000 === 0) return `每 ${ms / 3_600_000} 小时`;
+    if (ms >= 60_000 && ms % 60_000 === 0) return `每 ${ms / 60_000} 分钟`;
+    return `每 ${ms / 1000} 秒`;
+  }
+  const [min, hour] = cron.trim().split(/\s+/);
+  if (min === '0' && hour && hour !== '*' && !hour.includes('/') && !hour.includes(','))
+    return `每天 ${hour.padStart(2, '0')}:00`;
+  return `cron: ${cron}`;
+}
 import { useSettingsStore } from "../stores/settingsStore";
 import ToolCallCard from "./ToolCallCard";
 
@@ -36,6 +56,8 @@ export default function ChatView({
     sessionId,
     todos,
     setTodos,
+    cronTasks,
+    setCronTasks,
   } = useAgentStore();
   const { isConfigured, profiles, activeProfileId, switchActiveProfile, loadFromSystem } = useSettingsStore();
 
@@ -45,6 +67,12 @@ export default function ChatView({
 
   // Ensure profiles are loaded even if SettingsPanel was never opened
   useEffect(() => { loadFromSystem(); }, []);
+
+  // Load cron tasks on mount
+  useEffect(() => {
+    if (!window.agentApi) return;
+    void window.agentApi.cronList().then((list) => setCronTasks(list));
+  }, []);
 
   const [input, setInput] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -63,6 +91,25 @@ export default function ChatView({
   // Track which session the current agent run belongs to
   const runningSessionRef = useRef<string | null>(null);
 
+  /** Parse an interval string like "5m", "30s", "2h", "1min" into milliseconds. Returns null if unrecognized. */
+  const parseInterval = (raw: string): number | null => {
+    const m = raw.match(/^(\d+(?:\.\d+)?)(s|sec|秒|m|min|分钟|h|hr|hour|小时)$/i);
+    if (!m) return null;
+    const n = parseFloat(m[1]);
+    const unit = m[2].toLowerCase();
+    if (unit === "s" || unit === "sec" || unit === "秒") return Math.round(n * 1000);
+    if (unit === "m" || unit === "min" || unit === "分钟") return Math.round(n * 60_000);
+    if (unit === "h" || unit === "hr" || unit === "hour" || unit === "小时") return Math.round(n * 3_600_000);
+    return null;
+  };
+
+  /** Format milliseconds into a human-readable string */
+  const formatInterval = (ms: number): string => {
+    if (ms >= 3_600_000 && ms % 3_600_000 === 0) return `${ms / 3_600_000}h`;
+    if (ms >= 60_000 && ms % 60_000 === 0) return `${ms / 60_000}min`;
+    return `${ms / 1000}s`;
+  };
+
   useEffect(() => {
     if (!window.agentApi) return;
     void window.agentApi.listAgentDefs().then((list) => setAgents(list as Array<{id: string; name: string; description: string; isActive?: boolean}>));
@@ -72,9 +119,16 @@ export default function ChatView({
   const filteredAgents = atQuery === null ? [] : agents.filter(a =>
     atQuery === "" || a.name.toLowerCase().includes(atQuery.toLowerCase())
   );
-  const filteredSkills = slashQuery === null ? [] : skills.filter(s =>
-    slashQuery === "" || s.name.toLowerCase().includes(slashQuery.toLowerCase())
-  );
+
+  /** Built-in slash commands that always appear in the picker */
+  const BUILTIN_COMMANDS = [
+    { name: "loop", description: "定时任务：/loop 5m 任务 | list | pause/resume/delete <id> | stop" },
+  ];
+
+  const filteredSkills = slashQuery === null ? [] : [
+    ...BUILTIN_COMMANDS.filter(c => slashQuery === "" || c.name.toLowerCase().includes(slashQuery.toLowerCase())),
+    ...skills.filter(s => slashQuery === "" || s.name.toLowerCase().includes(slashQuery.toLowerCase())),
+  ];
 
   const selectAgent = (agent: {id: string; name: string}) => {
     // Add agent to pending list (avoid duplicates)
@@ -111,6 +165,15 @@ export default function ChatView({
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  // Global event listener — receives both user-initiated and cron-fired events.
+  // handleEvent filters by _sid so only events for the current session are shown.
+  useEffect(() => {
+    if (!window.agentApi) return;
+    const unsub = window.agentApi.onEvent((event) => handleEvent(event as StreamEvent));
+    return unsub;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId]);
 
   useEffect(() => {
     const loadSelectedSession = async () => {
@@ -179,9 +242,12 @@ export default function ChatView({
     void loadSelectedSession();
   }, [clearMessages, selectedSessionId, setMessages, setSessionId]);
 
-  const handleEvent = (event: StreamEvent, forSessionId: string) => {
-    // Ignore events that don't belong to the currently tracked run
-    if (runningSessionRef.current !== forSessionId) return;
+  const handleEvent = (event: StreamEvent) => {
+    // Route by _sid: accept events that belong to the currently active session.
+    // - runningSessionRef.current is set for user-initiated runs
+    // - sessionId is the currently viewed session (for cron-fired events)
+    const relevantSid = runningSessionRef.current || sessionId;
+    if (event._sid && event._sid !== relevantSid) return;
     switch (event.type) {
       case "text_chunk":
         if (event.text) appendText(event.text);
@@ -208,6 +274,9 @@ export default function ChatView({
         break;
       case "todo_update":
         if (event.todos) setTodos(event.todos);
+        break;
+      case "cron_update":
+        if (event.tasks) setCronTasks(event.tasks as CronTask[]);
         break;
       case "agent_dispatch":
         // Show a system hint that a sub-agent is being dispatched
@@ -249,6 +318,161 @@ export default function ChatView({
     setError(null);
 
     const userMsg = input.trim();
+
+    // ── /loop command handling ─────────────────────────────────────────────
+    if (/^\/loop\b/i.test(userMsg)) {
+      const rest = userMsg.slice(5).trim();
+      setInput("");
+      addMessage({ id: crypto.randomUUID(), role: "user", content: userMsg, timestamp: Date.now() });
+
+      // /loop stop — stop all
+      if (/^stop$/i.test(rest)) {
+        if (window.agentApi) {
+          await window.agentApi.cronDeleteAll();
+          setCronTasks([]);
+          addMessage({ id: crypto.randomUUID(), role: "assistant", content: "✅ 所有定时任务已删除。", timestamp: Date.now() });
+        }
+        return;
+      }
+
+      // /loop list / status — show list
+      if (/^(?:list|status|查看|列表)$/i.test(rest) || rest === "") {
+        if (window.agentApi) {
+          const list = await window.agentApi.cronList();
+          setCronTasks(list);
+          const msg = list.length === 0
+            ? "当前没有定时任务。"
+            : list.map((t, i) =>
+                `**${i + 1}.** \`${t.id.slice(0, 6)}\` · ${describeCron(t.cron)} · ${t.enabled ? "▶ 启用" : "⏸ 已暂停"}\n${t.prompt}`
+              ).join("\n\n");
+          addMessage({ id: crypto.randomUUID(), role: "assistant", content: msg, timestamp: Date.now() });
+        }
+        return;
+      }
+
+      // /loop pause <id>
+      const pauseMatch = rest.match(/^(?:pause|暂停)\s+(\S+)$/i);
+      if (pauseMatch) {
+        if (window.agentApi) {
+          const full = cronTasks.find(t => t.id.startsWith(pauseMatch[1]));
+          const result = await window.agentApi.cronPause(full?.id ?? pauseMatch[1]);
+          if (result) {
+            const updated = await window.agentApi.cronList();
+            setCronTasks(updated);
+            addMessage({ id: crypto.randomUUID(), role: "assistant", content: `⏸ 定时任务 \`${result.id.slice(0, 6)}\` 已暂停。`, timestamp: Date.now() });
+          } else {
+            addMessage({ id: crypto.randomUUID(), role: "assistant", content: `未找到 ID 以 \`${pauseMatch[1]}\` 开头的定时任务。`, timestamp: Date.now() });
+          }
+        }
+        return;
+      }
+
+      // /loop resume <id>
+      const resumeMatch = rest.match(/^(?:resume|恢复)\s+(\S+)$/i);
+      if (resumeMatch) {
+        if (window.agentApi) {
+          const full = cronTasks.find(t => t.id.startsWith(resumeMatch[1]));
+          const result = await window.agentApi.cronResume(full?.id ?? resumeMatch[1]);
+          if (result) {
+            const updated = await window.agentApi.cronList();
+            setCronTasks(updated);
+            addMessage({ id: crypto.randomUUID(), role: "assistant", content: `▶ 定时任务 \`${result.id.slice(0, 6)}\` 已恢复。`, timestamp: Date.now() });
+          } else {
+            addMessage({ id: crypto.randomUUID(), role: "assistant", content: `未找到 ID 以 \`${resumeMatch[1]}\` 开头的定时任务。`, timestamp: Date.now() });
+          }
+        }
+        return;
+      }
+
+      // /loop delete <id>
+      const deleteMatch = rest.match(/^(?:delete|del|删除|stop)\s+(\S+)$/i);
+      if (deleteMatch) {
+        if (window.agentApi) {
+          const full = cronTasks.find(t => t.id.startsWith(deleteMatch[1]));
+          const ok = await window.agentApi.cronDelete(full?.id ?? deleteMatch[1]);
+          if (ok) {
+            const updated = await window.agentApi.cronList();
+            setCronTasks(updated);
+            addMessage({ id: crypto.randomUUID(), role: "assistant", content: `🗑 定时任务 \`${deleteMatch[1]}\` 已删除。`, timestamp: Date.now() });
+          } else {
+            addMessage({ id: crypto.randomUUID(), role: "assistant", content: `未找到 ID 以 \`${deleteMatch[1]}\` 开头的定时任务。`, timestamp: Date.now() });
+          }
+        }
+        return;
+      }
+
+      // /loop <interval|cron> <task> — create a new cron task
+      const loopMatch = rest.match(/^(\S+)\s+(.+)$/s);
+      if (loopMatch) {
+        const cronExpr = loopMatch[1];
+        const prompt = loopMatch[2].trim();
+        if (window.agentApi) {
+          let targetSessionId = selectedSessionId || sessionId;
+          if (!targetSessionId) {
+            const created = await window.agentApi.createSession(prompt.slice(0, 60) || "定时任务", selectedProjectId || undefined) as { id: string };
+            targetSessionId = created.id;
+            setSessionId(created.id);
+            if (onSessionCreated) await onSessionCreated(created.id);
+          }
+          try {
+            const result = await window.agentApi.cronCreate(cronExpr, prompt, { sessionId: targetSessionId });
+            const updated = await window.agentApi.cronList();
+            setCronTasks(updated);
+            addMessage({
+              id: crypto.randomUUID(), role: "assistant",
+              content: `⏰ 定时任务已创建（ID: \`${result.id.slice(0, 6)}\`），${describeCron(cronExpr)}执行：${prompt}`,
+              timestamp: Date.now(),
+            });
+          } catch (err) {
+            addMessage({ id: crypto.randomUUID(), role: "assistant", content: `❌ 创建失败：${err instanceof Error ? err.message : String(err)}`, timestamp: Date.now() });
+          }
+        }
+        return;
+      }
+
+      // Unknown subcommand — show help
+      addMessage({
+        id: crypto.randomUUID(), role: "assistant",
+        content: "**定时任务用法：**\n- `/loop <间隔/cron> <任务>` — 创建，如 `/loop 5m 检查系统状态` 或 `/loop 0 9 * * * 早报`\n- `/loop list` — 查看所有定时任务\n- `/loop pause <id>` — 暂停\n- `/loop resume <id>` — 恢复\n- `/loop delete <id>` — 删除\n- `/loop stop` — 删除全部\n\n间隔支持：`30s`、`5m`、`2h`；也支持 5 字段 cron 表达式。",
+        timestamp: Date.now(),
+      });
+      return;
+    }
+
+    // ── Natural language loop detection ────────────────────────────────────
+    const nlLoopMatch = userMsg.match(
+      /(?:每(?:隔)?|定时每)\s*(\d+(?:\.\d+)?)\s*(分钟|秒|小时|min|sec|h)\s*(.+)/is,
+    );
+    if (nlLoopMatch) {
+      const intervalExpr = nlLoopMatch[1] + nlLoopMatch[2];
+      const prompt = nlLoopMatch[3].trim();
+      if (prompt && window.agentApi) {
+        let targetSessionId = selectedSessionId || sessionId;
+        if (!targetSessionId) {
+          const created = await window.agentApi.createSession(prompt.slice(0, 60) || "定时任务", selectedProjectId || undefined) as { id: string };
+          targetSessionId = created.id;
+          setSessionId(created.id);
+          if (onSessionCreated) await onSessionCreated(created.id);
+        }
+        try {
+          const result = await window.agentApi.cronCreate(intervalExpr, prompt, { sessionId: targetSessionId });
+          const updated = await window.agentApi.cronList();
+          setCronTasks(updated);
+          setInput("");
+          addMessage({ id: crypto.randomUUID(), role: "user", content: userMsg, timestamp: Date.now() });
+          addMessage({
+            id: crypto.randomUUID(), role: "assistant",
+            content: `⏰ 定时任务已创建（ID: \`${result.id.slice(0, 6)}\`），${describeCron(intervalExpr)}执行：${prompt}`,
+            timestamp: Date.now(),
+          });
+        } catch (err) {
+          addMessage({ id: crypto.randomUUID(), role: "assistant", content: `❌ 创建失败：${err instanceof Error ? err.message : String(err)}`, timestamp: Date.now() });
+        }
+        return;
+      }
+    }
+    // ──────────────────────────────────────────────────────────────────────
+
     const agentNamesLabel = pendingAgents.length > 0
       ? pendingAgents.map(a => a.name).join(", ")
       : undefined;
@@ -296,7 +520,7 @@ export default function ChatView({
       if (window.agentApi) {
         runningSessionRef.current = targetSessionId;
         setRunningSession(targetSessionId);
-        window.agentApi.onEvent((event) => handleEvent(event as StreamEvent, targetSessionId));
+        // onEvent is registered globally on mount; just kick off the run
         await window.agentApi.run(
           userMsg,
           targetSessionId,
@@ -772,6 +996,130 @@ export default function ChatView({
                 );
               })}
             </div>
+          </div>
+        )}
+        {/* Cron task management panel */}
+        {cronTasks.length > 0 && (
+          <div style={{
+            marginBottom: 10,
+            borderRadius: 10,
+            background: "var(--bg-surface)",
+            border: "1px solid rgba(251,191,36,0.25)",
+            overflow: "hidden",
+          }}>
+            {/* Header */}
+            <div style={{
+              display: "flex", alignItems: "center", gap: 6,
+              padding: "6px 12px",
+              borderBottom: "1px solid rgba(251,191,36,0.15)",
+              background: "rgba(251,191,36,0.06)",
+            }}>
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#d97706" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+              </svg>
+              <span style={{ fontSize: 10, fontWeight: 700, color: "#d97706", textTransform: "uppercase" as const, letterSpacing: "0.07em", flex: 1 }}>定时任务</span>
+              <button
+                onClick={async () => {
+                  if (window.agentApi) {
+                    await window.agentApi.cronDeleteAll();
+                    setCronTasks([]);
+                    addMessage({ id: crypto.randomUUID(), role: "assistant", content: "✅ 所有定时任务已删除。", timestamp: Date.now() });
+                  }
+                }}
+                title="删除全部"
+                style={{ background: "none", border: "1px solid rgba(251,191,36,0.35)", borderRadius: 6, color: "#d97706", cursor: "pointer", padding: "1px 7px", fontSize: 10 }}
+              >
+                全部删除
+              </button>
+            </div>
+            {/* Cron task rows */}
+            {cronTasks.map((task) => (
+              <div key={task.id} style={{
+                display: "flex", alignItems: "center", gap: 8,
+                padding: "7px 12px",
+                borderBottom: "1px solid var(--border-subtle)",
+                opacity: task.enabled ? 1 : 0.7,
+              }}>
+                {/* Status dot */}
+                <div style={{
+                  width: 7, height: 7, borderRadius: "50%", flexShrink: 0,
+                  background: task.enabled ? "#22c55e" : "#9ca3af",
+                  boxShadow: task.enabled ? "0 0 5px rgba(34,197,94,0.55)" : "none",
+                  animation: task.enabled ? "pulse 2s ease-in-out infinite" : "none",
+                }} />
+                {/* Cron badge */}
+                <span style={{
+                  fontSize: 10, fontWeight: 700, color: "#d97706",
+                  background: "rgba(251,191,36,0.12)",
+                  border: "1px solid rgba(251,191,36,0.25)",
+                  borderRadius: 6, padding: "1px 6px", flexShrink: 0,
+                  fontFamily: "var(--font-mono)",
+                }}>
+                  {task.cron}
+                </span>
+                {/* Prompt text */}
+                <span style={{ fontSize: 12, color: "var(--text-primary)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {task.label || task.prompt}
+                </span>
+                {/* ID */}
+                <span style={{ fontSize: 10, color: "var(--text-muted)", fontFamily: "var(--font-mono)", flexShrink: 0 }}>
+                  {task.id.slice(0, 6)}
+                </span>
+                {/* Actions */}
+                <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
+                  {/* Pause / Resume */}
+                  {task.enabled ? (
+                    <button
+                      title="暂停"
+                      onClick={async () => {
+                        if (window.agentApi) {
+                          await window.agentApi.cronPause(task.id);
+                          const updated = await window.agentApi.cronList();
+                          setCronTasks(updated);
+                        }
+                      }}
+                      style={{ background: "none", border: "1px solid var(--border-default)", borderRadius: 6, color: "var(--text-muted)", cursor: "pointer", padding: "2px 7px", fontSize: 11 }}
+                      onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = "#d97706"; (e.currentTarget as HTMLButtonElement).style.color = "#d97706"; }}
+                      onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = "var(--border-default)"; (e.currentTarget as HTMLButtonElement).style.color = "var(--text-muted)"; }}
+                    >
+                      ⏸
+                    </button>
+                  ) : (
+                    <button
+                      title="恢复"
+                      onClick={async () => {
+                        if (window.agentApi) {
+                          await window.agentApi.cronResume(task.id);
+                          const updated = await window.agentApi.cronList();
+                          setCronTasks(updated);
+                        }
+                      }}
+                      style={{ background: "none", border: "1px solid var(--border-default)", borderRadius: 6, color: "var(--text-muted)", cursor: "pointer", padding: "2px 7px", fontSize: 11 }}
+                      onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = "#22c55e"; (e.currentTarget as HTMLButtonElement).style.color = "#22c55e"; }}
+                      onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = "var(--border-default)"; (e.currentTarget as HTMLButtonElement).style.color = "var(--text-muted)"; }}
+                    >
+                      ▶
+                    </button>
+                  )}
+                  {/* Delete */}
+                  <button
+                    title="删除"
+                    onClick={async () => {
+                      if (window.agentApi) {
+                        await window.agentApi.cronDelete(task.id);
+                        const updated = await window.agentApi.cronList();
+                        setCronTasks(updated);
+                      }
+                    }}
+                    style={{ background: "none", border: "1px solid var(--border-default)", borderRadius: 6, color: "var(--text-muted)", cursor: "pointer", padding: "2px 7px", fontSize: 11 }}
+                    onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = "var(--danger)"; (e.currentTarget as HTMLButtonElement).style.color = "var(--danger)"; }}
+                    onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = "var(--border-default)"; (e.currentTarget as HTMLButtonElement).style.color = "var(--text-muted)"; }}
+                  >
+                    🗑
+                  </button>
+                </div>
+              </div>
+            ))}
           </div>
         )}
         {/* Attached files preview */}

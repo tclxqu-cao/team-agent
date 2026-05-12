@@ -1,13 +1,20 @@
 import { contextBridge, ipcRenderer } from "electron";
 
+// Persistent pub/sub for agent events — registered once at module load so
+// listeners survive across user sends and receive cron-fired events too.
+const agentEventBus = new Set<(event: unknown) => void>();
+ipcRenderer.on("agent:event", (_ipcEvent, data) => {
+  for (const fn of agentEventBus) fn(data);
+});
+
 contextBridge.exposeInMainWorld("agentApi", {
   // Agent control
   run: (input: string, sessionId: string, agentIds?: string[], agentName?: string) =>
     ipcRenderer.invoke("agent:run", input, sessionId, agentIds, agentName),
   abort: () => ipcRenderer.invoke("agent:abort"),
-  onEvent: (callback: (event: unknown) => void) => {
-    ipcRenderer.removeAllListeners("agent:event");
-    ipcRenderer.on("agent:event", (_event, data) => callback(data));
+  onEvent: (callback: (event: unknown) => void): (() => void) => {
+    agentEventBus.add(callback);
+    return () => agentEventBus.delete(callback);
   },
 
   // Settings
@@ -61,4 +68,13 @@ contextBridge.exposeInMainWorld("agentApi", {
   updateAgentDef: (id: string, update: Record<string, unknown>) => ipcRenderer.invoke("agentdef:update", id, update),
   deleteAgentDef: (id: string) => ipcRenderer.invoke("agentdef:delete", id),
   setActiveAgentDef: (id: string) => ipcRenderer.invoke("agentdef:setActive", id),
+
+  // Cron (scheduled tasks)
+  cronCreate: (cron: string, prompt: string, options?: Record<string, unknown>) =>
+    ipcRenderer.invoke("cron:create", cron, prompt, options),
+  cronPause: (id: string) => ipcRenderer.invoke("cron:pause", id),
+  cronResume: (id: string) => ipcRenderer.invoke("cron:resume", id),
+  cronDelete: (id: string) => ipcRenderer.invoke("cron:delete", id),
+  cronDeleteAll: () => ipcRenderer.invoke("cron:delete-all"),
+  cronList: () => ipcRenderer.invoke("cron:list"),
 });

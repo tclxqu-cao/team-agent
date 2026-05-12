@@ -1,3 +1,16 @@
+export interface CronTask {
+  id: string;
+  cron: string;
+  prompt: string;
+  createdAt: number;
+  recurring: boolean;
+  enabled: boolean;
+  label?: string;
+  sessionId?: string;
+  nextFireAt?: number;
+  lastFiredAt?: number;
+}
+
 export interface ModelProfile {
   id: string;
   name: string;
@@ -44,7 +57,7 @@ export interface AgentApi {
   run(input: string, sessionId: string, agentIds?: string[], agentName?: string): Promise<unknown[]>;
   abort(): Promise<void>;
   subscribe(): Promise<void>;
-  onEvent(callback: (event: unknown) => void): void;
+  onEvent(callback: (event: unknown) => void): () => void;
   getSettings(): Promise<{
     modelProvider: string;
     modelId: string;
@@ -92,6 +105,13 @@ export interface AgentApi {
   updateAgentDef(id: string, update: Partial<AgentDefinition>): Promise<AgentDefinition>;
   deleteAgentDef(id: string): Promise<void>;
   setActiveAgentDef(id: string): Promise<{ activeAgentId?: string }>;
+  // Cron (scheduled tasks)
+  cronCreate(cron: string, prompt: string, options?: Record<string, unknown>): Promise<CronTask>;
+  cronPause(id: string): Promise<CronTask | null>;
+  cronResume(id: string): Promise<CronTask | null>;
+  cronDelete(id: string): Promise<boolean>;
+  cronDeleteAll(): Promise<{ ok: boolean }>;
+  cronList(): Promise<CronTask[]>;
 }
 
 declare global {

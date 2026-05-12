@@ -1,13 +1,19 @@
 import { create } from "zustand";
+import type { CronTask } from "../global";
+
+export type { CronTask };
 
 export interface StreamEvent {
   type: string;
+  /** Session ID attached by agent-host; used for routing in the renderer */
+  _sid?: string;
   text?: string;
   message?: string;
   toolCall?: { id: string; name: string; arguments: Record<string, unknown> };
   result?: { toolCallId: string; content: string; isError?: boolean };
   finalText?: string;
   todos?: TodoItem[];
+  tasks?: CronTask[];
   agentName?: string;
   task?: string;
 }
@@ -45,6 +51,8 @@ interface AgentState {
   sessionId: string | null;
   /** Shared todo list updated by agent tools during runs */
   todos: TodoItem[];
+  /** All scheduled cron tasks (app-wide) */
+  cronTasks: CronTask[];
 
   addMessage: (msg: ChatMessage) => void;
   appendText: (text: string) => void;
@@ -54,6 +62,7 @@ interface AgentState {
   setMessages: (messages: ChatMessage[]) => void;
   clearMessages: () => void;
   setTodos: (todos: TodoItem[]) => void;
+  setCronTasks: (tasks: CronTask[]) => void;
 }
 
 export const useAgentStore = create<AgentState>((set) => ({
@@ -62,6 +71,7 @@ export const useAgentStore = create<AgentState>((set) => ({
   currentText: "",
   sessionId: null,
   todos: [],
+  cronTasks: [],
 
   addMessage: (msg) =>
     set((state) => {
@@ -132,4 +142,6 @@ export const useAgentStore = create<AgentState>((set) => ({
   clearMessages: () => set({ messages: [], currentText: "" }),
 
   setTodos: (todos) => set({ todos }),
+
+  setCronTasks: (tasks) => set({ cronTasks: tasks }),
 }));

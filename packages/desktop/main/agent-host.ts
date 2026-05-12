@@ -14,8 +14,14 @@ import {
   TodoUpdateTool,
   TodoListTool,
   DispatchAgentTool,
+  CronCreateTool,
+  CronDeleteTool,
+  CronListTool,
+  CronTasks,
+  CronTaskLock,
   type IAgentLoop,
   type AgentEvent,
+  type CronTask,
   type Session,
   type SettingsData,
   type ModelProfile,
@@ -25,6 +31,7 @@ import {
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { mkdir, writeFile } from "node:fs/promises";
+import { CronScheduler } from "./cron/cronScheduler.js";
 
 export class AgentHost {
   private agent: IAgentLoop | null = null;
@@ -38,13 +45,24 @@ export class AgentHost {
   private readonly uploadStore: SQLiteUploadStore;
   private readonly projectStore: SQLiteProjectStore;
   private readonly agentStore: SQLiteAgentStore;
-  private readonly subscribers = new Set<(event: AgentEvent) => void>();
+  private readonly subscribers = new Set<(event: AgentEvent & { _sid: string }) => void>();
   /** Current todo list for the active run (cleared at each top-level run) */
   private currentTodos: TodoItem[] = [];
   /** Working directory tracked for sub-agent dispatch */
   private workingDirectory: string;
   /** Run-level ID used for the todos folder name (sessionId_runId) */
   private currentRunId: string = "";
+  /** Cron task store (disk-backed) */
+  private readonly cronTasks: CronTasks;
+  /** Per-task session lock (file-backed) */
+  private readonly cronLock: CronTaskLock;
+  /** Cron scheduler */
+  private readonly cronScheduler: CronScheduler;
+  /** Whether the agent loop is currently running */
+  private _isRunning = false;
+  /** Queue of pending prompts enqueued by the cron scheduler */
+  private pendingQueue: Array<{ prompt: string; sessionId: string }> = [];
+  private queueDraining = false;
 
   constructor(baseDir: string) {
     this.workingDirectory = baseDir;
@@ -61,6 +79,14 @@ export class AgentHost {
       .withWorkingDirectory(baseDir)
       .withMemoryStore(this.memoryStore)
       .withSessionStore(this.sessionStore);
+    this.cronTasks = new CronTasks(baseDir);
+    this.cronLock = new CronTaskLock(baseDir);
+    this.cronScheduler = new CronScheduler(
+      this.cronTasks,
+      (task) => this.onCronFire(task),
+      (tasks) => this.onCronTasksChanged(tasks),
+    );
+    this.cronScheduler.start();
     this.tryConfigureFromStore();
   }
 
@@ -247,7 +273,9 @@ export class AgentHost {
         this.dispatchSubAgent(name, task, sid),
       ),
     );
-    void sessionId; // used by tools via ToolContext.sessionId at execute-time
+    registry.register(new CronCreateTool((cron, prompt, options) => this.createCronTask(cron, prompt, options)));
+    registry.register(new CronDeleteTool(this.cronTasks));
+    registry.register(new CronListTool(this.cronTasks));
   }
 
   // ── Sub-agent dispatch ────────────────────────────────────────────────────
@@ -270,7 +298,7 @@ export class AgentHost {
       throw new Error(`Agent "${agentName}" not found. Available: ${names}`);
     }
 
-    this.emit({ type: "agent_dispatch", agentName, task });
+    this.emit({ type: "agent_dispatch", agentName, task }, sessionId);
 
     const latestSettings = this.settingsStore.getAll();
 
@@ -327,7 +355,7 @@ export class AgentHost {
 
     let finalText = "";
     for await (const event of subAgent.run(task, sessionId)) {
-      this.emit(event); // forward to UI
+      this.emit(event, sessionId); // forward to UI
       if (event.type === "text_chunk" && event.text) finalText += event.text;
     }
     return finalText.trim() || "(no output)";
@@ -367,14 +395,15 @@ export class AgentHost {
     });
   }
 
-  subscribe(fn: (event: AgentEvent) => void): () => void {
+  subscribe(fn: (event: AgentEvent & { _sid: string }) => void): () => void {
     this.subscribers.add(fn);
     return () => this.subscribers.delete(fn);
   }
 
-  private emit(event: AgentEvent): void {
+  private emit(event: AgentEvent, sid = ""): void {
+    const envelope = { ...event, _sid: sid };
     for (const fn of this.subscribers) {
-      try { fn(event); } catch { /* ignore */ }
+      try { fn(envelope); } catch { /* ignore */ }
     }
   }
 
@@ -568,7 +597,7 @@ export class AgentHost {
       }> = [];
 
       for await (const event of this.agent.run(agentInput, sessionId)) {
-        this.emit(event);
+        this.emit(event, sessionId);
         yield event;
 
         await this.sessionStore.addEvent(sessionId, event);
@@ -634,4 +663,121 @@ export class AgentHost {
   abort(): void {
     this.agent?.abort();
   }
+
+  // ── Cron task public API ─────────────────────────────────────────────────
+
+  createCronTask(
+    cron: string,
+    prompt: string,
+    options?: Partial<Pick<CronTask, "recurring" | "label" | "sessionId">> & { agentId?: string },
+  ): CronTask {
+    const task = this.cronTasks.create({ cron, prompt, enabled: true, recurring: true, ...options });
+    // Acquire session lock immediately if a sessionId was supplied
+    if (task.sessionId) {
+      this.cronLock.acquire(task.id, task.sessionId, options?.agentId);
+    }
+    this.emit({ type: "cron_update", tasks: this.cronTasks.load() });
+    return task;
+  }
+
+  pauseCronTask(id: string): CronTask | null {
+    const task = this.cronTasks.pause(id);
+    this.emit({ type: "cron_update", tasks: this.cronTasks.load() });
+    return task;
+  }
+
+  resumeCronTask(id: string): CronTask | null {
+    const task = this.cronTasks.resume(id);
+    this.emit({ type: "cron_update", tasks: this.cronTasks.load() });
+    return task;
+  }
+
+  deleteCronTask(id: string): boolean {
+    const result = this.cronTasks.delete(id);
+    // Remove the lock as well
+    this.cronLock.release(id);
+    this.emit({ type: "cron_update", tasks: this.cronTasks.load() });
+    return result;
+  }
+
+  deleteAllCronTasks(): void {
+    // Release all locks
+    for (const task of this.cronTasks.load()) {
+      this.cronLock.release(task.id);
+    }
+    this.cronTasks.deleteAll();
+    this.emit({ type: "cron_update", tasks: [] });
+  }
+
+  listCronTasks(): CronTask[] {
+    return this.cronTasks.load();
+  }
+
+  // ── Running state + pending prompt queue ─────────────────────────────────
+
+  /** Called when the agent loop starts/stops to gate queue draining. */
+  setRunning(v: boolean): void {
+    this._isRunning = v;
+    if (!v) void this.drainPendingQueue();
+  }
+
+  /** Called by CronScheduler when a task fires. */
+  private onCronFire(task: CronTask): void {
+    // Prefer the lock's sessionId (authoritative), fall back to task field
+    const lock = this.cronLock.get(task.id);
+    const sessionId = lock?.sessionId ?? task.sessionId ?? "";
+    void this.enqueuePendingNotification(task.prompt, sessionId);
+  }
+
+  /**
+   * Handle session deletion: release locks held by the session and
+   * re-assign them to the most-recently-updated remaining session.
+   */
+  async onSessionDeleted(deletedSessionId: string): Promise<void> {
+    const releasedTaskIds = this.cronLock.releaseBySession(deletedSessionId);
+    if (releasedTaskIds.length === 0) return;
+
+    for (const taskId of releasedTaskIds) {
+      const tasks = this.cronTasks.load();
+      const task = tasks.find((t) => t.id === taskId);
+      if (!task) continue; // task was also deleted
+
+      const allSessions = await this.sessionStore.list();
+      const candidates = allSessions.filter((s) => s.id !== deletedSessionId);
+      if (candidates.length === 0) continue; // no sessions left, will be handled on next fire
+
+      const replacement = candidates.sort(
+        (a, b) => new Date(b.updated).getTime() - new Date(a.updated).getTime(),
+      )[0];
+      this.cronLock.acquire(taskId, replacement.id);
+    }
+
+    this.emit({ type: "cron_update", tasks: this.cronTasks.load() });
+  }
+
+  /** Called by CronScheduler when the task list changes (fire/edit/watch). */
+  private onCronTasksChanged(tasks: CronTask[]): void {
+    this.emit({ type: "cron_update", tasks });
+  }
+
+  private async enqueuePendingNotification(prompt: string, sessionId: string): Promise<void> {
+    this.pendingQueue.push({ prompt, sessionId });
+    if (!this._isRunning) await this.drainPendingQueue();
+  }
+
+  private async drainPendingQueue(): Promise<void> {
+    if (this.queueDraining || this._isRunning) return;
+    this.queueDraining = true;
+    try {
+      while (this.pendingQueue.length > 0 && !this._isRunning) {
+        const item = this.pendingQueue.shift()!;
+        for await (const _ of this.run(item.prompt, item.sessionId || "")) {
+          // events are emitted inside run()
+        }
+      }
+    } finally {
+      this.queueDraining = false;
+    }
+  }
 }
+
