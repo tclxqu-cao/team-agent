@@ -16,9 +16,10 @@ export class SQLiteSessionStore implements ISessionStore {
     const db = getDatabase(this.baseDir);
     // Use null for empty projectId to satisfy FK constraint
     const projectId = session.projectId || null;
+    const parentId = session.parentSessionId || null;
     db.db.prepare(
-      "INSERT INTO sessions (id, project_id, title, status, created, updated, metadata) VALUES (?, ?, ?, ?, ?, ?, ?)"
-    ).run(session.id, projectId, session.title, session.status, session.created, session.updated, JSON.stringify(session.metadata));
+      "INSERT INTO sessions (id, project_id, parent_id, title, status, created, updated, metadata) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+    ).run(session.id, projectId, parentId, session.title, session.status, session.created, session.updated, JSON.stringify(session.metadata));
     return session;
   }
 
@@ -57,6 +58,12 @@ export class SQLiteSessionStore implements ISessionStore {
     return rows.map((r) => this.rowToSession(r));
   }
 
+  async listChildren(parentId: string): Promise<Session[]> {
+    const db = getDatabase(this.baseDir);
+    const rows = db.db.prepare("SELECT * FROM sessions WHERE parent_id = ? ORDER BY updated DESC").all(parentId) as Array<Record<string, unknown>>;
+    return rows.map((r) => this.rowToSession(r));
+  }
+
   async addMessage(sessionId: string, message: Message): Promise<void> {
     const db = getDatabase(this.baseDir);
     db.db.prepare(
@@ -76,6 +83,26 @@ export class SQLiteSessionStore implements ISessionStore {
     ).run(sessionId, event.type, JSON.stringify(event), Date.now());
   }
 
+  async replaceMessages(sessionId: string, messages: Message[]): Promise<void> {
+    const db = getDatabase(this.baseDir);
+    const insert = db.db.prepare(
+      "INSERT INTO messages (session_id, role, content, tool_calls, tool_call_id, name, timestamp) VALUES (?,?,?,?,?,?,?)"
+    );
+    const tx = db.db.transaction(() => {
+      db.db.prepare("DELETE FROM messages WHERE session_id = ?").run(sessionId);
+      for (let i = 0; i < messages.length; i++) {
+        const m = messages[i];
+        insert.run(
+          sessionId, m.role, m.content ?? "",
+          JSON.stringify(m.toolCalls ?? []),
+          m.toolCallId ?? null, m.name ?? null,
+          Date.now() + i, // preserve ordering
+        );
+      }
+    });
+    tx();
+  }
+
   private rowToSession(row: Record<string, unknown>): Session {
     const db = getDatabase(this.baseDir);
     const msgRows = db.db.prepare("SELECT * FROM messages WHERE session_id = ? ORDER BY id ASC").all(row.id as string) as Array<Record<string, unknown>>;
@@ -84,6 +111,7 @@ export class SQLiteSessionStore implements ISessionStore {
     return {
       id: row.id as string,
       projectId: (row.project_id as string | null) ?? "",
+      parentSessionId: (row.parent_id as string | null) ?? undefined,
       title: row.title as string,
       status: row.status as Session["status"],
       messages: msgRows.map((m) => ({

@@ -3,7 +3,7 @@
 export interface MCPServerConfig {
   id: string;
   name: string;
-  transport: "stdio" | "sse";
+  transport: "stdio" | "sse" | "streamableHttp";
   // stdio fields
   command?: string;
   args?: string[];
@@ -11,6 +11,8 @@ export interface MCPServerConfig {
   // sse/remote fields
   url?: string;
   sseUrl?: string; // alias for url, kept for backward compat
+  // custom HTTP headers (streamableHttp / authenticated SSE)
+  headers?: Record<string, string>;
 }
 
 export interface MCPTool {

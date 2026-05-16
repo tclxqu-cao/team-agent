@@ -14,7 +14,7 @@ export class AnthropicProvider implements IModelProvider {
     this.apiKey = config.apiKey;
     this.baseUrl = config.baseUrl ?? DEFAULT_BASE_URL;
     this.modelId = config.modelId;
-    this.defaultMaxTokens = config.maxTokens ?? 4096;
+    this.defaultMaxTokens = config.maxTokens ?? 16384;
     this.defaultTemperature = config.temperature ?? 0.7;
   }
 

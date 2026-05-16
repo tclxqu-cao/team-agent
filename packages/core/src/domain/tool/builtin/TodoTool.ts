@@ -2,17 +2,47 @@ import { z } from "zod";
 import type { ITool, ToolContext, ToolResult } from '../entities.js';
 import type { TodoItem } from '../../agent/entities.js';
 
+/**
+ * Topological sort of todos by dependency order.
+ * Tasks with no dependencies or whose dependencies are already placed come first.
+ * Cycles are broken gracefully (remaining tasks appended at the end).
+ */
+function topoSort(todos: TodoItem[]): TodoItem[] {
+  const byTitle = new Map(todos.map((t) => [t.title.toLowerCase(), t]));
+  const visited = new Set<string>();
+  const result: TodoItem[] = [];
+
+  function visit(t: TodoItem) {
+    if (visited.has(t.id)) return;
+    visited.add(t.id);
+    for (const dep of t.dependsOn ?? []) {
+      const depTodo = byTitle.get(dep.toLowerCase());
+      if (depTodo) visit(depTodo);
+    }
+    result.push(t);
+  }
+
+  for (const t of todos) visit(t);
+  return result;
+}
+
 export class TodoAddTool implements ITool {
   readonly name = "todo_add";
   readonly description =
     "Add one or more tasks to the shared todo list. Use this to plan and coordinate work, " +
     "especially when multiple agents will handle different parts of the task. " +
-    "Each todo can be assigned to a specific agent by name.";
+    "Each todo can be assigned to a specific agent by name. " +
+    "Use 'dependsOn' to list titles of tasks that must complete before this task starts — " +
+    "the list will be automatically sorted so dependent tasks always come after their prerequisites. " +
+    "IMPORTANT: always process tasks in list order and never start a task whose dependencies are not yet completed.";
   readonly schema = z.object({
     todos: z.array(
       z.object({
         title: z.string().describe("Task description"),
         agentName: z.string().optional().describe("Name of the agent responsible for this task"),
+        dependsOn: z.array(z.string()).optional().describe(
+          "Titles of other tasks in this batch that must be completed before this one",
+        ),
       }),
     ).min(1).describe("List of tasks to add"),
   });
@@ -26,6 +56,11 @@ export class TodoAddTool implements ITool {
           properties: {
             title: { type: "string", description: "Task description" },
             agentName: { type: "string", description: "Name of agent responsible for this task" },
+            dependsOn: {
+              type: "array",
+              items: { type: "string" },
+              description: "Titles of other tasks that must complete before this task can start",
+            },
           },
           required: ["title"],
         },
@@ -51,11 +86,14 @@ export class TodoAddTool implements ITool {
       title: t.title,
       agentName: t.agentName,
       status: "pending" as const,
+      dependsOn: t.dependsOn?.length ? t.dependsOn : undefined,
     }));
-    this.setTodos([...current, ...newItems]);
+    // Topologically sort the combined list so dependent tasks always follow prerequisites.
+    const sorted = topoSort([...current, ...newItems]);
+    this.setTodos(sorted);
     return {
       toolCallId: "",
-      content: `Added ${newItems.length} todo(s): ${newItems.map((t) => `"${t.title}"`).join(", ")}`,
+      content: `Added ${newItems.length} todo(s). Full list sorted by dependency order: ${sorted.map((t) => `"${t.title}"`).join(" → ")}`,
     };
   }
 }
@@ -121,7 +159,8 @@ export class TodoListTool implements ITool {
   readonly name = "todo_list";
   readonly description =
     "List all current todo items with their statuses. Use this to check what tasks " +
-    "are planned, in progress, or completed.";
+    "are planned, in progress, or completed. Tasks marked [BLOCKED] have unfinished " +
+    "dependencies — do not start them until all prerequisites are completed.";
   readonly schema = z.object({});
   readonly parameters = {
     type: "object",
@@ -136,12 +175,23 @@ export class TodoListTool implements ITool {
     if (todos.length === 0) {
       return { toolCallId: "", content: "No todos yet." };
     }
+    const completedTitles = new Set(
+      todos.filter((t) => t.status === "completed").map((t) => t.title.toLowerCase()),
+    );
     const statusIcon = (s: string) =>
       s === "completed" ? "✓" : s === "in-progress" ? "→" : "○";
-    const lines = todos.map(
-      (t, i) =>
-        `${i + 1}. [${statusIcon(t.status)}] ${t.title}${t.agentName ? ` (@${t.agentName})` : ""}`,
-    );
+    const lines = todos.map((t, i) => {
+      const blocked =
+        t.status === "pending" &&
+        (t.dependsOn ?? []).some((dep) => !completedTitles.has(dep.toLowerCase()));
+      const blockedLabel = blocked ? " [BLOCKED]" : "";
+      const agentLabel = t.agentName ? ` (@${t.agentName})` : "";
+      const depsLabel =
+        t.dependsOn?.length
+          ? ` (depends on: ${t.dependsOn.join(", ")})`
+          : "";
+      return `${i + 1}. [${statusIcon(t.status)}]${blockedLabel} ${t.title}${agentLabel}${depsLabel}`;
+    });
     return { toolCallId: "", content: lines.join("\n") };
   }
 }

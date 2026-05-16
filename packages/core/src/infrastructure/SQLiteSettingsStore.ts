@@ -73,6 +73,7 @@ export class SQLiteSettingsStore implements ISettingsStore {
       apiKey,
       baseUrl,
       maxIterations: parseInt(data["maxIterations"] ?? "10", 10),
+      contextWindow: parseInt(data["contextWindow"] ?? "100", 10),
       workingDirectory: data["workingDirectory"] ?? this.baseDir,
       isConfigured: Boolean(apiKey),
       profiles,
@@ -89,6 +90,7 @@ export class SQLiteSettingsStore implements ISettingsStore {
       upsert.run("apiKey", settings.apiKey);
       upsert.run("baseUrl", settings.baseUrl);
       upsert.run("maxIterations", String(settings.maxIterations));
+      upsert.run("contextWindow", String(settings.contextWindow ?? 100));
       upsert.run("workingDirectory", settings.workingDirectory);
       upsert.run("profiles", JSON.stringify(settings.profiles ?? []));
       upsert.run("activeProfileId", settings.activeProfileId ?? "");

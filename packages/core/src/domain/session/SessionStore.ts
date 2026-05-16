@@ -33,6 +33,10 @@ export class InMemorySessionStore implements ISessionStore {
     return all;
   }
 
+  async listChildren(parentId: string): Promise<Session[]> {
+    return Array.from(this.sessions.values()).filter((s) => s.parentSessionId === parentId);
+  }
+
   async addMessage(sessionId: string, message: Message): Promise<void> {
     const session = this.sessions.get(sessionId);
     if (session) {
@@ -45,6 +49,14 @@ export class InMemorySessionStore implements ISessionStore {
     const session = this.sessions.get(sessionId);
     if (session) {
       session.events.push(event);
+    }
+  }
+
+  async replaceMessages(sessionId: string, messages: Message[]): Promise<void> {
+    const session = this.sessions.get(sessionId);
+    if (session) {
+      session.messages = [...messages];
+      session.updated = new Date().toISOString();
     }
   }
 }
@@ -102,12 +114,22 @@ export class FileSystemSessionStore implements ISessionStore {
     return this.memory.list();
   }
 
+  async listChildren(parentId: string): Promise<Session[]> {
+    return this.memory.listChildren(parentId);
+  }
+
   async addMessage(sessionId: string, message: Message): Promise<void> {
     await this.memory.addMessage(sessionId, message);
   }
 
   async addEvent(sessionId: string, event: AgentEvent): Promise<void> {
     await this.memory.addEvent(sessionId, event);
+  }
+
+  async replaceMessages(sessionId: string, messages: Message[]): Promise<void> {
+    await this.memory.replaceMessages(sessionId, messages);
+    const session = await this.memory.get(sessionId);
+    if (session) await this.persistSession(session);
   }
 
   private async persistSession(session: Session): Promise<void> {

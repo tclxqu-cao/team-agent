@@ -131,6 +131,9 @@ export class SQLiteDatabase {
     // SQLite requires recreating the table to change constraints.
     this.migrateSessionsProjectIdNullable();
     this.migrateMCPServerTransport();
+    this.migrateMCPServerCommandNullable();
+    this.migrateMCPServerHeaders();
+    this.migrateSessionsParentId();
   }
 
   /**
@@ -178,6 +181,58 @@ export class SQLiteDatabase {
     }
     if (!names.includes("url")) {
       this.db.exec("ALTER TABLE mcp_servers ADD COLUMN url TEXT");
+    }
+  }
+
+  /** Recreate mcp_servers so command/args/env allow NULL (needed for SSE remote servers). */
+  private migrateMCPServerCommandNullable(): void {
+    const cols = this.db.prepare("PRAGMA table_info(mcp_servers)").all() as Array<{ name: string; notnull: number }>;
+    const commandCol = cols.find((c) => c.name === "command");
+    if (!commandCol || commandCol.notnull === 0) return; // already nullable
+
+    this.db.transaction(() => {
+      this.db.pragma("foreign_keys = OFF");
+      this.db.exec(`
+        CREATE TABLE IF NOT EXISTS mcp_servers_v2 (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          transport TEXT NOT NULL DEFAULT 'stdio',
+          command TEXT,
+          args TEXT NOT NULL DEFAULT '[]',
+          env TEXT NOT NULL DEFAULT '{}',
+          url TEXT,
+          enabled INTEGER NOT NULL DEFAULT 1
+        );
+        INSERT INTO mcp_servers_v2 (id, name, transport, command, args, env, url, enabled)
+          SELECT id, name,
+            COALESCE(transport, 'stdio'),
+            NULLIF(command, ''),
+            COALESCE(args, '[]'),
+            COALESCE(env, '{}'),
+            url,
+            enabled
+          FROM mcp_servers;
+        DROP TABLE mcp_servers;
+        ALTER TABLE mcp_servers_v2 RENAME TO mcp_servers;
+      `);
+      this.db.pragma("foreign_keys = ON");
+    })();
+  }
+
+  /** Add headers column to mcp_servers if missing. */
+  private migrateMCPServerHeaders(): void {
+    const cols = this.db.prepare("PRAGMA table_info(mcp_servers)").all() as Array<{ name: string }>;
+    if (!cols.find((c) => c.name === "headers")) {
+      this.db.exec("ALTER TABLE mcp_servers ADD COLUMN headers TEXT NOT NULL DEFAULT '{}'");
+    }
+  }
+
+  /** Add parent_id column to sessions for sub-session support. */
+  private migrateSessionsParentId(): void {
+    const cols = this.db.prepare("PRAGMA table_info(sessions)").all() as Array<{ name: string }>;
+    if (!cols.find((c) => c.name === "parent_id")) {
+      this.db.exec("ALTER TABLE sessions ADD COLUMN parent_id TEXT REFERENCES sessions(id) ON DELETE CASCADE");
+      this.db.exec("CREATE INDEX IF NOT EXISTS idx_sessions_parent ON sessions(parent_id)");
     }
   }
 

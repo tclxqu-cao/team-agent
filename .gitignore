@@ -9,3 +9,5 @@ dist/
 *.log
 packages/desktop/dist/
 packages/desktop/renderer-dist/
+packages/desktop/.agents/
+packages/server/.next/

@@ -24,10 +24,32 @@ export class AgentLoop implements IAgentLoop {
     let history: Message[] = [];
     if (this.config.sessionStore) {
       const session = await this.config.sessionStore.get(sessionId);
-      // Only include user/assistant/tool messages (not system)
-      history = (session?.messages ?? []).filter(
-        (m) => m.role !== "system",
-      );
+      const rawHistory = (session?.messages ?? []).filter((m) => m.role !== "system");
+
+      // If a compaction checkpoint exists, restore context from it so we don't
+      // re-compress on every new run. The checkpoint contains the summary text
+      // and the "recent" tail messages that were kept during the last compaction.
+      const lastCheckpointIdx = rawHistory.map((m) => m.name).lastIndexOf("__compaction_checkpoint__");
+      if (lastCheckpointIdx >= 0) {
+        try {
+          const cp = JSON.parse(rawHistory[lastCheckpointIdx].content) as {
+            summary: string;
+            recentMessages: Message[];
+          };
+          history = [
+            { role: "user", content: `[Context summary of earlier conversation]\n${cp.summary}` },
+            { role: "assistant", content: "Understood. I have reviewed the summary and will continue from where we left off." },
+            ...cp.recentMessages,
+            // All messages saved AFTER the checkpoint (from subsequent runs)
+            ...rawHistory.slice(lastCheckpointIdx + 1).filter((m) => m.name !== "__compaction_checkpoint__"),
+          ];
+        } catch {
+          // Corrupt checkpoint — fall back to full history
+          history = rawHistory.filter((m) => m.name !== "__compaction_checkpoint__");
+        }
+      } else {
+        history = rawHistory.filter((m) => m.name !== "__compaction_checkpoint__");
+      }
     }
 
     // 2. Assemble context
@@ -49,7 +71,7 @@ export class AgentLoop implements IAgentLoop {
       { role: "user", content: input },
     ];
 
-    const compactThreshold = this.config.compactThreshold ?? 0.8;
+    const compactThreshold = this.config.compactThreshold ?? 0.6;
     const tokenLimit = this.config.maxTokens;
 
     let currentText = "";
@@ -81,6 +103,21 @@ export class AgentLoop implements IAgentLoop {
             summary: result.summary,
             removedMessages: result.removedMessages,
           };
+          // Persist a self-contained checkpoint so the NEXT run can restore the
+          // compacted context without re-compressing. Original messages are kept
+          // for display; the checkpoint is hidden from the chat UI.
+          if (this.config.sessionStore) {
+            // recentMessages = in-memory compacted list minus system + summary pair
+            const recentMessages = result.messages
+              .filter((m) => m.role !== "system")
+              .slice(2); // skip the summary user+assistant pair
+            // Silently ignore FK errors — the session may have been deleted while running
+            await this.config.sessionStore.addMessage(sessionId, {
+              role: "user",
+              content: JSON.stringify({ summary: result.summary, recentMessages }),
+              name: "__compaction_checkpoint__",
+            }).catch(() => {});
+          }
         }
       }
       // ───────────────────────────────────────────────────────────────
@@ -92,7 +129,9 @@ export class AgentLoop implements IAgentLoop {
       try {
         for await (const event of this.config.modelProvider.streamChat(messages, {
           tools: toolDefs.length > 0 ? toolDefs : undefined,
-          maxTokens: this.config.maxTokens,
+          // Note: this.config.maxTokens is the context-window size used for compaction
+          // thresholding, NOT the max completion tokens. Let each provider use its own
+          // configured output limit (defaultMaxTokens) to avoid sending a huge value here.
         })) {
           if (this.abortController?.signal.aborted) break;
 

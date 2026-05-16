@@ -20,7 +20,7 @@ export class SQLiteMCPServerStore {
   async save(config: MCPServerConfig): Promise<void> {
     const db = getDatabase(this.baseDir);
     db.db.prepare(
-      "INSERT OR REPLACE INTO mcp_servers (id, name, transport, command, args, env, url, enabled) VALUES (?,?,?,?,?,?,?,1)"
+      "INSERT OR REPLACE INTO mcp_servers (id, name, transport, command, args, env, url, headers, enabled) VALUES (?,?,?,?,?,?,?,?,1)"
     ).run(
       config.id,
       config.name,
@@ -29,6 +29,7 @@ export class SQLiteMCPServerStore {
       JSON.stringify(config.args ?? []),
       JSON.stringify(config.env ?? {}),
       config.url ?? config.sseUrl ?? null,
+      JSON.stringify(config.headers ?? {}),
     );
   }
 
@@ -55,7 +56,7 @@ export class SQLiteMCPServerStore {
   }
 
   private rowToConfig(row: Record<string, unknown>): MCPServerConfig {
-    const transport = (row.transport as string ?? "stdio") as "stdio" | "sse";
+    const transport = (row.transport as string ?? "stdio") as "stdio" | "sse" | "streamableHttp";
     return {
       id: row.id as string,
       name: row.name as string,
@@ -64,6 +65,7 @@ export class SQLiteMCPServerStore {
       args: JSON.parse(row.args as string ?? "[]"),
       env: JSON.parse(row.env as string ?? "{}"),
       url: (row.url as string) || undefined,
+      headers: JSON.parse(row.headers as string ?? "{}"),
     };
   }
 }

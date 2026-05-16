@@ -15,6 +15,7 @@ export type AgentEventType =
   | "done"
   | "todo_update"
   | "agent_dispatch"
+  | "agent_done"
   | "cron_update";
 
 export interface TodoItem {
@@ -22,6 +23,8 @@ export interface TodoItem {
   title: string;
   agentName?: string;
   status: "pending" | "in-progress" | "completed";
+  /** Titles of tasks that must be completed before this task can start */
+  dependsOn?: string[];
 }
 
 export type AgentEvent =
@@ -34,7 +37,8 @@ export type AgentEvent =
   | { type: "error"; message: string; code?: string }
   | { type: "done"; finalText: string; usage?: TokenUsage }
   | { type: "todo_update"; todos: TodoItem[] }
-  | { type: "agent_dispatch"; agentName: string; task: string }
+  | { type: "agent_dispatch"; agentName: string; task: string; subSessionId?: string }
+  | { type: "agent_done"; agentName: string; subSessionId: string; status: "completed" | "failed"; summary?: string; error?: string }
   | { type: "cron_update"; tasks: CronTask[] };
 
 export interface TokenUsage {

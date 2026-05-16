@@ -57,9 +57,18 @@ export class ContextCompactor {
     // Separate system prompt from conversation
     const [systemMsg, ...conversation] = messages;
 
-    // Keep the tail intact, summarize the head
-    const toSummarize = conversation.slice(0, Math.max(0, conversation.length - keepRecent));
-    const recentMessages = conversation.slice(-keepRecent);
+    // Keep the tail intact, summarize the head.
+    // IMPORTANT: Never split between an [assistant: tool_calls] and its [tool: result]
+    // messages — doing so produces orphaned tool-result messages that confuse the LLM
+    // into re-calling the same tool repeatedly. Walk the boundary backward until it
+    // lands on a user or bare assistant message (i.e., not a tool-result message and
+    // not the result-half of an existing pair).
+    let splitIdx = Math.max(0, conversation.length - keepRecent);
+    while (splitIdx > 0 && conversation[splitIdx]?.role === "tool") {
+      splitIdx--;
+    }
+    const toSummarize = conversation.slice(0, splitIdx);
+    const recentMessages = conversation.slice(splitIdx);
 
     if (toSummarize.length === 0) {
       return { messages, summary: "", removedMessages: 0 };

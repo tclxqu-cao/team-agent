@@ -14,7 +14,7 @@ export class OpenAIProvider implements IModelProvider {
     this.apiKey = config.apiKey;
     this.baseUrl = config.baseUrl ?? DEFAULT_BASE_URL;
     this.modelId = config.modelId;
-    this.defaultMaxTokens = config.maxTokens ?? 4096;
+    this.defaultMaxTokens = config.maxTokens ?? 16384;
     this.defaultTemperature = config.temperature ?? 0.7;
   }
 
@@ -107,7 +107,12 @@ export class OpenAIProvider implements IModelProvider {
               }
             }
 
-            if (parsed.choices?.[0]?.finish_reason === "tool_calls") {
+            const finishReason = parsed.choices?.[0]?.finish_reason;
+            if (finishReason === "length" && toolCalls.size > 0) {
+              const names = [...toolCalls.values()].map((tc) => tc.name).join(", ");
+              yield { type: "error", message: `输出被截断（max_tokens 限制），工具 ${names} 的参数 JSON 不完整。请拆分成更小的步骤，或在设置中提高模型输出 token 上限。` };
+              toolCalls.clear();
+            } else if (finishReason === "tool_calls" || (finishReason && toolCalls.size > 0)) {
               for (const [, tc] of toolCalls) {
                 try {
                   yield {
@@ -115,7 +120,7 @@ export class OpenAIProvider implements IModelProvider {
                     toolCall: {
                       id: tc.id,
                       name: tc.name,
-                      arguments: JSON.parse(tc.arguments),
+                      arguments: JSON.parse(tc.arguments.trim()),
                     },
                   };
                 } catch {
@@ -127,6 +132,17 @@ export class OpenAIProvider implements IModelProvider {
           } catch {
             // skip
           }
+        }
+      }
+      // Flush any tool calls that weren't emitted (stream ended without finish_reason)
+      for (const [, tc] of toolCalls) {
+        try {
+          yield {
+            type: "tool_call",
+            toolCall: { id: tc.id, name: tc.name, arguments: JSON.parse(tc.arguments.trim()) },
+          };
+        } catch {
+          yield { type: "error", message: `Failed to parse tool arguments for ${tc.name}` };
         }
       }
       yield { type: "text_done" };
@@ -150,7 +166,10 @@ export class OpenAIProvider implements IModelProvider {
   private adaptMessage(m: Message): Record<string, unknown> {
     const adapted: Record<string, unknown> = {
       role: m.role,
-      content: m.content,
+      // OpenAI-compatible APIs require content to be null (not "") when tool_calls is
+      // present on an assistant message — sending "" causes some providers to reject
+      // the message or fail to link tool results, causing the agent to loop.
+      content: (m.toolCalls && m.toolCalls.length > 0) ? null : (m.content || null),
     };
     if (m.toolCalls && m.toolCalls.length > 0) {
       adapted.tool_calls = m.toolCalls.map((tc) => ({

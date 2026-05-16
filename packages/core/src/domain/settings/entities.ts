@@ -17,6 +17,8 @@ export interface SettingsData {
   apiKey: string;
   baseUrl: string;
   maxIterations: number;
+  /** Context window size in K tokens (e.g. 100 = 100 000 tokens). Default 100. */
+  contextWindow: number;
   workingDirectory: string;
   isConfigured: boolean;
   /** Multi-provider profiles list */
