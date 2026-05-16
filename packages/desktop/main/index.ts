@@ -149,6 +149,10 @@ ipcMain.handle("sessions:list", async (_event, projectId?: string) => {
   return agentHost.getSessionStore().list(projectId);
 });
 
+ipcMain.handle("sessions:listChildren", async (_event, parentId: string) => {
+  return agentHost.getSessionStore().listChildren(parentId);
+});
+
 ipcMain.handle("sessions:get", async (_event, id: string) => {
   return agentHost.getSessionStore().get(id);
 });
@@ -201,6 +205,10 @@ ipcMain.handle("mcp:delete", async (_event, id: string) => {
 
 ipcMain.handle("mcp:setEnabled", async (_event, id: string, enabled: boolean) => {
   await agentHost.getMCPStore().setEnabled(id, enabled);
+});
+
+ipcMain.handle("mcp:probe", async (_event, server: Record<string, unknown>) => {
+  return agentHost.probeServerTools(server as any);
 });
 
 // ── IPC: Skills ──

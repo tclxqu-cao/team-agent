@@ -1,13 +1,15 @@
 export interface MCPServer {
   id: string;
   name: string;
-  transport: "stdio" | "sse";
+  transport: "stdio" | "sse" | "streamableHttp";
   // stdio
   command?: string;
   args?: string[];
   env?: Record<string, string>;
   // sse/remote
   url?: string;
+  // custom HTTP headers (streamableHttp / authenticated sse)
+  headers?: Record<string, string>;
   enabled?: boolean;
 }
 
@@ -93,6 +95,7 @@ export interface AgentApi {
   updateProject(id: string, update: Record<string, unknown>): Promise<unknown>;
   deleteProject(id: string): Promise<void>;
   listSessions(projectId?: string): Promise<unknown[]>;
+  listChildSessions(parentId: string): Promise<unknown[]>;
   getSession(id: string): Promise<unknown>;
   createSession(title: string, projectId?: string): Promise<unknown>;
   deleteSession(id: string): Promise<void>;
@@ -105,6 +108,8 @@ export interface AgentApi {
   mcpSave(server: Omit<MCPServer, 'transport'> & { transport?: string }): Promise<void>;
   mcpDelete(id: string): Promise<void>;
   mcpSetEnabled(id: string, enabled: boolean): Promise<void>;
+  mcpProbe(server: MCPServer): Promise<Array<{ name: string; description: string }>>;
+
   listSkills(): Promise<unknown[]>;
   saveSkill(skill: Record<string, unknown>): Promise<void>;
   deleteSkill(name: string): Promise<void>;

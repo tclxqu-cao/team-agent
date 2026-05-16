@@ -31,6 +31,7 @@ contextBridge.exposeInMainWorld("agentApi", {
 
   // Sessions
   listSessions: (projectId?: string) => ipcRenderer.invoke("sessions:list", projectId),
+  listChildSessions: (parentId: string) => ipcRenderer.invoke("sessions:listChildren", parentId),
   getSession: (id: string) => ipcRenderer.invoke("sessions:get", id),
   createSession: (title: string, projectId?: string) => ipcRenderer.invoke("sessions:create", title, projectId),
   deleteSession: (id: string) => ipcRenderer.invoke("sessions:delete", id),
@@ -47,6 +48,7 @@ contextBridge.exposeInMainWorld("agentApi", {
   mcpSave: (server: Record<string, unknown>) => ipcRenderer.invoke("mcp:save", server),
   mcpDelete: (id: string) => ipcRenderer.invoke("mcp:delete", id),
   mcpSetEnabled: (id: string, enabled: boolean) => ipcRenderer.invoke("mcp:setEnabled", id, enabled),
+  mcpProbe: (server: Record<string, unknown>) => ipcRenderer.invoke("mcp:probe", server),
 
   // Skills
   listSkills: () => ipcRenderer.invoke("skills:list"),

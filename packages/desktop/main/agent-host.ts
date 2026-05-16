@@ -19,6 +19,7 @@ import {
   CronListTool,
   CronTasks,
   CronTaskLock,
+  MCPManager,
   type IAgentLoop,
   type AgentEvent,
   type CronTask,
@@ -48,6 +49,8 @@ export class AgentHost {
   private readonly subscribers = new Set<(event: AgentEvent & { _sid: string }) => void>();
   /** Current todo list for the active run (cleared at each top-level run) */
   private currentTodos: TodoItem[] = [];
+  /** Session ID of the currently active top-level run (used to tag todo_update events) */
+  private currentSessionId: string = "";
   /** Working directory tracked for sub-agent dispatch */
   private workingDirectory: string;
   /** Run-level ID used for the todos folder name (sessionId_runId) */
@@ -60,6 +63,8 @@ export class AgentHost {
   private readonly cronScheduler: CronScheduler;
   /** Whether the agent loop is currently running */
   private _isRunning = false;
+  /** MCP manager — reconnected on each run with the current enabled server list */
+  private mcpManager: MCPManager | null = null;
   /** Queue of pending prompts enqueued by the cron scheduler */
   private pendingQueue: Array<{ prompt: string; sessionId: string }> = [];
   private queueDraining = false;
@@ -101,6 +106,7 @@ export class AgentHost {
           modelId: settings.modelId,
         });
         this.builder.withMaxIterations(settings.maxIterations);
+        this.builder.withMaxTokens((settings.contextWindow ?? 100) * 1000);
       } catch (err) {
         console.error("Failed to configure model from stored settings:", err);
       }
@@ -144,6 +150,7 @@ export class AgentHost {
       });
     }
     this.builder.withMaxIterations(settings.maxIterations);
+    this.builder.withMaxTokens((settings.contextWindow ?? 100) * 1000);
   }
 
   getSettings(): SettingsData & { activeAgentIds?: string[] } {
@@ -219,7 +226,7 @@ export class AgentHost {
 
   private setTodos(todos: TodoItem[]): void {
     this.currentTodos = todos;
-    this.emit({ type: "todo_update", todos: [...todos] });
+    this.emit({ type: "todo_update", todos: [...todos] }, this.currentSessionId);
     // Persist to project working directory (fire-and-forget)
     if (this.currentRunId) {
       void this.persistTodos(todos);
@@ -244,6 +251,54 @@ export class AgentHost {
     return this.currentTodos;
   }
 
+  // ── MCP probe ────────────────────────────────────────────────────────────
+
+  /**
+   * Temporarily connect to an MCP server, list its tools, then disconnect.
+   * Returns tool name + description pairs without touching the main toolRegistry.
+   */
+  async probeServerTools(config: Parameters<typeof MCPManager.prototype.connectServer>[0]): Promise<Array<{ name: string; description: string }>> {
+    const mgr = new MCPManager(); // no registry — pure probe
+    try {
+      const client = await mgr.connectServer(config);
+      const tools = await client.listTools();
+      return tools.map((t) => ({ name: t.name, description: t.description }));
+    } finally {
+      await mgr.disconnectServer(config.id).catch(() => {});
+    }
+  }
+
+  // ── MCP server connection ────────────────────────────────────────────────
+
+  /**
+   * Connect all enabled MCP servers and register their tools into the builder's registry.
+   * Disconnects any previously connected servers first to avoid duplicates.
+   */
+  private async connectMCPServers(builder: AgentBuilder): Promise<void> {
+    // Disconnect previous manager cleanly
+    if (this.mcpManager) {
+      for (const cfg of this.mcpManager.listServers()) {
+        await this.mcpManager.disconnectServer(cfg.id).catch(() => {});
+      }
+      this.mcpManager = null;
+    }
+
+    const enabledServers = await this.mcpStore.list(); // only enabled ones
+    if (enabledServers.length === 0) return;
+
+    const registry = builder.getToolRegistry();
+    this.mcpManager = new MCPManager(registry);
+
+    for (const cfg of enabledServers) {
+      try {
+        await this.mcpManager.connectServer(cfg);
+        console.log(`[MCP] Connected: ${cfg.id} (${cfg.transport})`);
+      } catch (err) {
+        console.error(`[MCP] Failed to connect ${cfg.id}:`, err);
+      }
+    }
+  }
+
   // ── Session-level tool registration ──────────────────────────────────────
 
   /**
@@ -253,6 +308,7 @@ export class AgentHost {
   private registerSessionTools(
     builder: AgentBuilder,
     sessionId: string,
+    allowDispatch = true,
   ): void {
     const registry = builder.getToolRegistry();
     registry.register(
@@ -268,11 +324,13 @@ export class AgentHost {
       ),
     );
     registry.register(new TodoListTool(() => this.currentTodos));
-    registry.register(
-      new DispatchAgentTool((name, task, sid) =>
-        this.dispatchSubAgent(name, task, sid),
-      ),
-    );
+    if (allowDispatch) {
+      registry.register(
+        new DispatchAgentTool((name, task, sid) =>
+          this.dispatchSubAgent(name, task, sid),
+        ),
+      );
+    }
     registry.register(new CronCreateTool((cron, prompt, options) => this.createCronTask(cron, prompt, options)));
     registry.register(new CronDeleteTool(this.cronTasks));
     registry.register(new CronListTool(this.cronTasks));
@@ -281,13 +339,15 @@ export class AgentHost {
   // ── Sub-agent dispatch ────────────────────────────────────────────────────
 
   /**
-   * Run a sub-agent by name and return its final text output.
-   * Emits events to the same subscriber set so the UI sees the sub-agent's work.
+   * Run a sub-agent by name in its own child session and return its final text output.
+   * Creates a child session linked to the parent via parentSessionId so the UI
+   * can show sub-sessions nested under the parent in the sidebar.
+   * Emits events under the child session ID so the renderer can route them.
    */
   private async dispatchSubAgent(
     agentName: string,
     task: string,
-    sessionId: string,
+    parentSessionId: string,
   ): Promise<string> {
     const allAgents = await this.agentStore.list();
     const agentDef = allAgents.find(
@@ -298,7 +358,24 @@ export class AgentHost {
       throw new Error(`Agent "${agentName}" not found. Available: ${names}`);
     }
 
-    this.emit({ type: "agent_dispatch", agentName, task }, sessionId);
+    // Create a dedicated child session so the sub-agent has its own history
+    const parentSession = await this.sessionStore.get(parentSessionId);
+    const subSession = await this.sessionStore.create({
+      id: crypto.randomUUID(),
+      projectId: parentSession?.projectId ?? "",
+      parentSessionId,
+      title: `[${agentName}] ${task.slice(0, 50)}`,
+      status: "active",
+      messages: [],
+      events: [],
+      created: new Date().toISOString(),
+      updated: new Date().toISOString(),
+      metadata: { agentName },
+    });
+    const subSessionId = subSession.id;
+
+    // Notify UI about the dispatch (includes subSessionId for sidebar linking)
+    this.emit({ type: "agent_dispatch", agentName, task, subSessionId }, parentSessionId);
 
     const latestSettings = this.settingsStore.getAll();
 
@@ -335,14 +412,13 @@ export class AgentHost {
       modelId,
     });
 
-    // Apply system prompt
-    if (agentDef.systemPrompt) {
-      let prompt = agentDef.systemPrompt;
-      for (const ph of agentDef.contextPlaceholders) {
-        prompt = prompt.replaceAll(`{{${ph.key}}}`, ph.defaultValue);
-      }
-      subBuilder.withSystemPrompt(prompt);
+    // Apply system prompt (with identity header)
+    let systemPrompt = agentDef.systemPrompt || "";
+    for (const ph of agentDef.contextPlaceholders) {
+      systemPrompt = systemPrompt.replaceAll(`{{${ph.key}}}`, ph.defaultValue);
     }
+    const identityHeader = `# 角色：${agentDef.name}${agentDef.description ? `\n${agentDef.description}` : ""}\n你的名字是「${agentDef.name}」。`;
+    subBuilder.withSystemPrompt(systemPrompt ? `${identityHeader}\n\n${systemPrompt}` : identityHeader);
 
     // Apply tool allowlist
     if (agentDef.capabilities.enabledTools.length > 0) {
@@ -350,15 +426,82 @@ export class AgentHost {
     }
 
     const subAgent = subBuilder.buildSync();
-    // Register session tools on sub-builder's registry too
-    this.registerSessionTools(subBuilder, sessionId);
+    // Register session tools so sub-agent can also dispatch further agents
+    // Sub-agents do not get dispatch rights (max 1 level, prevent infinite recursion)
+    this.registerSessionTools(subBuilder, subSessionId, false);
+
+    // Persist the task as the user message in the child session
+    await this.sessionStore.addMessage(subSessionId, {
+      role: "user",
+      content: task,
+    } as Message);
 
     let finalText = "";
-    for await (const event of subAgent.run(task, sessionId)) {
-      this.emit(event, sessionId); // forward to UI
-      if (event.type === "text_chunk" && event.text) finalText += event.text;
+    let assistantText = "";
+    const pendingToolCalls: Array<{ id: string; name: string; arguments: Record<string, unknown> }> = [];
+
+    try {
+      for await (const event of subAgent.run(task, subSessionId)) {
+        // Forward events tagged with the child session ID so UI can route them
+        this.emit(event, subSessionId);
+
+        // Persist messages to the child session (same pattern as main run())
+        if (event.type === "text_chunk" && event.text) {
+          assistantText += event.text;
+          finalText += event.text;
+        }
+        if (event.type === "tool_call" && event.toolCall) {
+          pendingToolCalls.push(event.toolCall);
+        }
+        if (event.type === "tool_result" && event.result) {
+          // Find matched tool BEFORE clearing the array
+          const matchedTool = pendingToolCalls.find((tc) => tc.id === event.result!.toolCallId);
+          if (pendingToolCalls.length > 0) {
+            // Use .catch() — the sub-session may have been deleted while the agent was running
+            await this.sessionStore.addMessage(subSessionId, {
+              role: "assistant",
+              content: assistantText,
+              toolCalls: [...pendingToolCalls],
+            } as Message).catch(() => {});
+            assistantText = "";
+            pendingToolCalls.length = 0;
+          }
+          await this.sessionStore.addMessage(subSessionId, {
+            role: "tool",
+            content: event.result.content,
+            toolCallId: event.result.toolCallId,
+            name: matchedTool?.name,
+          } as Message).catch(() => {});
+        }
+        if (event.type === "done") {
+          const doneText = (event.finalText ?? assistantText).trim();
+          if (doneText) {
+            await this.sessionStore.addMessage(subSessionId, {
+              role: "assistant",
+              content: doneText,
+            } as Message).catch(() => {});
+          }
+        }
+      }
+
+      // Mark child session complete and notify parent
+      await this.sessionStore.update(subSessionId, { status: "completed" }).catch(() => {});
+      const summary = finalText.trim() || "(no output)";
+      this.emit(
+        { type: "agent_done", agentName, subSessionId, status: "completed", summary },
+        parentSessionId,
+      );
+      return summary;
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      // Mark child session failed and notify parent
+      await this.sessionStore.update(subSessionId, { status: "failed" }).catch(() => {});
+      this.emit(
+        { type: "agent_done", agentName, subSessionId, status: "failed", error: errorMsg },
+        parentSessionId,
+      );
+      throw err;
     }
-    return finalText.trim() || "(no output)";
   }
 
   /**
@@ -413,10 +556,16 @@ export class AgentHost {
     agentIds?: string[],
     agentName?: string,
   ): AsyncIterable<AgentEvent> {
-    // ── 1. Clear todos for new top-level run ──────────────────────────────
-    // runId = sessionId_timestamp for unique folder per run
+    // ── 1. Track session and clear todos only when switching to a new session ───
+    // Clearing todos every run caused "No matching todo found" when the LLM tried
+    // to update todos added in a previous turn of the SAME session.
+    const isNewSession = this.currentSessionId !== sessionId;
+    this.currentSessionId = sessionId;
     this.currentRunId = `${sessionId}_${Date.now()}`;
-    this.setTodos([]);
+    if (isNewSession) {
+      // Fresh session: reset todos without emitting an event (renderer manages its own state)
+      this.currentTodos = [];
+    }
 
     // ── 2. Re-read latest model settings ─────────────────────────────────
     const latestSettings = this.settingsStore.getAll();
@@ -427,6 +576,7 @@ export class AgentHost {
         modelId: latestSettings.modelId,
       });
       this.builder.withMaxIterations(latestSettings.maxIterations);
+      this.builder.withMaxTokens((latestSettings.contextWindow ?? 100) * 1000);
     }
 
     // ── 3. Determine agents to run ────────────────────────────────────────
@@ -583,6 +733,8 @@ export class AgentHost {
       this.agent = this.builder.buildSync();
       // Register session tools AFTER buildSync so they survive enabledTools filter
       this.registerSessionTools(this.builder, sessionId);
+      // Connect enabled MCP servers and register their tools
+      await this.connectMCPServers(this.builder);
 
       // For subsequent agents in a multi-agent run: they'll see session history
       // from previous agents when AgentLoop loads the session at run() start.

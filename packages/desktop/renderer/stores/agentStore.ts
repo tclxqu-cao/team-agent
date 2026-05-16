@@ -16,6 +16,12 @@ export interface StreamEvent {
   tasks?: CronTask[];
   agentName?: string;
   task?: string;
+  subSessionId?: string;
+  /** For agent_done: "completed" | "failed" */
+  status?: string;
+  summary?: string;
+  error?: string;
+  removedMessages?: number;
 }
 
 export interface TodoItem {
@@ -23,6 +29,7 @@ export interface TodoItem {
   title: string;
   agentName?: string;
   status: "pending" | "in-progress" | "completed";
+  dependsOn?: string[];
 }
 
 export interface ChatMessage {
@@ -40,6 +47,8 @@ export interface ChatMessage {
   }>;
   toolCallId?: string;
   name?: string;
+  /** True when this message is a context-compaction banner, not a real chat bubble */
+  isCompactionSummary?: boolean;
   timestamp: number;
 }
 
@@ -59,6 +68,8 @@ interface AgentState {
   setRunningSession: (id: string | null) => void;
   setSessionId: (id: string) => void;
   updateToolResult: (toolCallId: string, result: string, isError?: boolean) => void;
+  /** Mark a dispatch_agent toolCall as completed or failed by subSessionId */
+  updateSubAgentStatus: (subSessionId: string, status: "completed" | "failed", detail?: string) => void;
   setMessages: (messages: ChatMessage[]) => void;
   clearMessages: () => void;
   setTodos: (todos: TodoItem[]) => void;
@@ -138,6 +149,19 @@ export const useAgentStore = create<AgentState>((set) => ({
     }),
 
   setMessages: (messages) => set({ messages, currentText: "" }),
+
+  updateSubAgentStatus: (subSessionId, status, detail) =>
+    set((state) => ({
+      messages: state.messages.map((m) => {
+        if (!m.toolCalls) return m;
+        const updatedCalls = m.toolCalls.map((tc) =>
+          tc.name === "dispatch_agent" && tc.arguments.subSessionId === subSessionId
+            ? { ...tc, arguments: { ...tc.arguments, subAgentStatus: status, subAgentDetail: detail } }
+            : tc
+        );
+        return { ...m, toolCalls: updatedCalls };
+      }),
+    })),
 
   clearMessages: () => set({ messages: [], currentText: "" }),
 

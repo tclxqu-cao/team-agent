@@ -8,6 +8,8 @@ interface SettingsState {
   apiKey: string;
   baseUrl: string;
   maxIterations: number;
+  /** Context window in K tokens */
+  contextWindow: number;
   workingDirectory: string;
   isConfigured: boolean;
 
@@ -38,6 +40,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   apiKey: "",
   baseUrl: "",
   maxIterations: 10,
+  contextWindow: 100,
   workingDirectory: "/",
   isConfigured: false,
   profiles: [],
@@ -63,6 +66,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
         apiKey: active?.apiKey ?? s.apiKey ?? "",
         baseUrl: active?.baseUrl ?? s.baseUrl ?? "",
         maxIterations: s.maxIterations ?? 10,
+        contextWindow: s.contextWindow ?? 100,
         workingDirectory: s.workingDirectory ?? "/",
         isConfigured: Boolean((active?.apiKey ?? s.apiKey) && (active?.modelId ?? s.modelId)),
         profiles,
@@ -82,6 +86,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       apiKey: state.apiKey,
       baseUrl: state.baseUrl,
       maxIterations: state.maxIterations,
+      contextWindow: state.contextWindow,
       workingDirectory: state.workingDirectory,
       isConfigured: state.isConfigured,
       profiles: state.profiles,
