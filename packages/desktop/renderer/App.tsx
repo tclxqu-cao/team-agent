@@ -7,6 +7,7 @@ import MemoryViewer from "./components/MemoryViewer";
 import SkillManager from "./components/SkillManager";
 import AgentManager from "./components/AgentManager";
 import { useSettingsStore } from "./stores/settingsStore";
+import { useAgentStore } from "./stores/agentStore";
 
 type SettingsTab = "settings" | "mcp" | "memory" | "skill" | "agent";
 
@@ -21,6 +22,7 @@ interface Project {
 interface Session {
   id: string;
   projectId: string;
+  parentSessionId?: string;
   title: string;
   status: string;
   created: string;
@@ -30,11 +32,15 @@ interface Session {
 export default function App() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [sessionsByProject, setSessionsByProject] = useState<Record<string, Session[]>>({});
+  /** Child sessions keyed by parentSessionId */
+  const [childSessionsByParent, setChildSessionsByParent] = useState<Record<string, Session[]>>({});
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
 
   const [showSettings, setShowSettings] = useState(false);
   const [settingsTab, setSettingsTab] = useState<SettingsTab>("settings");
+
+  const setTodos = useAgentStore((s) => s.setTodos);
 
   const selectedSessionTitle = selectedSessionId
     ? Object.values(sessionsByProject).flat().find(s => s.id === selectedSessionId)?.title
@@ -68,6 +74,24 @@ export default function App() {
   const [notice, setNotice] = useState<string | null>(null);
   const [noticeType, setNoticeType] = useState<"success" | "error">("success");
 
+  // ── Toast notifications for sub-session events ──────────────────────────
+  interface Toast {
+    id: string;
+    type: 'info' | 'success' | 'error';
+    title: string;
+    body: string;
+    sessionId?: string;
+  }
+  const [toasts, setToasts] = useState<Toast[]>([]);
+  const dismissToast = useCallback((id: string) => {
+    setToasts((prev) => prev.filter((t) => t.id !== id));
+  }, []);
+  const addToast = useCallback((t: Omit<Toast, 'id'>) => {
+    const id = crypto.randomUUID();
+    setToasts((prev) => [...prev, { ...t, id }]);
+    setTimeout(() => dismissToast(id), 12000);
+  }, [dismissToast]);
+
 const loadProjects = async () => {
     if (!window.agentApi) return;
     const list = await window.agentApi.listProjects() as Project[];
@@ -78,8 +102,41 @@ const loadProjects = async () => {
   const loadSessions = async (projectId?: string) => {
     if (!window.agentApi) return;
     if (!projectId) return;
-    const list = await window.agentApi.listSessions(projectId);
-    setSessionsByProject((prev) => ({ ...prev, [projectId]: list as Session[] }));
+    const list = await window.agentApi.listSessions(projectId) as Session[];
+    // Separate root sessions (no parent) from child sessions
+    const roots = list.filter((s) => !s.parentSessionId);
+    setSessionsByProject((prev) => ({ ...prev, [projectId]: roots }));
+
+    // Build fresh child groups — replacing, not appending, so deleted children are removed
+    const freshChildGroups: Record<string, Session[]> = {};
+    for (const child of list.filter((s) => s.parentSessionId)) {
+      const pid = child.parentSessionId!;
+      (freshChildGroups[pid] ??= []).push(child);
+    }
+    for (const kids of Object.values(freshChildGroups)) {
+      kids.sort((a, b) => (a.created < b.created ? -1 : 1));
+    }
+    setChildSessionsByParent((prev) => {
+      const next = { ...prev };
+      for (const root of roots) {
+        if (freshChildGroups[root.id]) {
+          next[root.id] = freshChildGroups[root.id];
+        } else {
+          delete next[root.id]; // root has no children (or they were deleted)
+        }
+      }
+      return next;
+    });
+  };
+
+  /** Load child sessions for a specific parent (called after agent_dispatch) */
+  const loadChildSessions = async (parentSessionId: string) => {
+    if (!window.agentApi) return;
+    const list = await window.agentApi.listChildSessions(parentSessionId) as Session[];
+    setChildSessionsByParent((prev) => ({
+      ...prev,
+      [parentSessionId]: list.sort((a, b) => (a.created < b.created ? -1 : 1)),
+    }));
   };
 
   const handleNewSession = async (projectId: string) => {
@@ -97,19 +154,30 @@ const loadProjects = async () => {
       await useSettingsStore.getState().loadFromSystem();
       const list = await window.agentApi.listProjects() as Project[];
       setProjects(list);
-      // Load sessions for all projects
-      const sessionMap: Record<string, Session[]> = {};
+
+      // Load sessions for all projects — filter roots/children just like loadSessions() does
+      const rootMap: Record<string, Session[]> = {};
+      const childMap: Record<string, Session[]> = {};
       await Promise.all(list.map(async (p) => {
         const sessions = await window.agentApi.listSessions(p.id) as Session[];
-        sessionMap[p.id] = sessions;
+        const roots = sessions.filter((s) => !s.parentSessionId);
+        rootMap[p.id] = roots;
+        for (const child of sessions.filter((s) => s.parentSessionId)) {
+          const pid = child.parentSessionId!;
+          (childMap[pid] ??= []).push(child);
+        }
       }));
-      setSessionsByProject(sessionMap);
+      for (const kids of Object.values(childMap)) {
+        kids.sort((a, b) => (a.created < b.created ? -1 : 1));
+      }
+      setSessionsByProject(rootMap);
+      setChildSessionsByParent(childMap);
 
-      // Auto-select: project + most recently updated session (across all projects)
-      const allSessions = Object.entries(sessionMap).flatMap(([pid, ss]) =>
+      // Auto-select: project + most recently updated ROOT session (never a child session)
+      const allRoots = Object.entries(rootMap).flatMap(([pid, ss]) =>
         ss.map((s) => ({ ...s, _pid: pid }))
       );
-      const latest = allSessions.sort((a, b) => (b.updated > a.updated ? 1 : -1))[0];
+      const latest = allRoots.sort((a, b) => (b.updated > a.updated ? 1 : -1))[0];
       if (latest) {
         setSelectedProjectId(latest._pid);
         setSelectedSessionId(latest.id);
@@ -120,16 +188,20 @@ const loadProjects = async () => {
     void bootstrap();
   }, []);
 
+  // Sync working directory whenever the selected project changes (covers startup,
+  // session click, new session, and explicit project click).
+  useEffect(() => {
+    if (!selectedProjectId || !window.agentApi) return;
+    const proj = projects.find((p) => p.id === selectedProjectId);
+    const path = proj?.description;
+    if (path) void window.agentApi.setProjectWorkingDir(path);
+  }, [selectedProjectId, projects]);
+
   const handleSelectProject = async (projectId: string | null) => {
     setSelectedProjectId(projectId);
     setSelectedSessionId(null);
     if (projectId) {
       await loadSessions(projectId);
-      const proj = projects.find((p) => p.id === projectId);
-      const path = proj?.description;
-      if (path && window.agentApi) {
-        await window.agentApi.setProjectWorkingDir(path);
-      }
     }
   };
 
@@ -151,7 +223,7 @@ const loadProjects = async () => {
       setSelectedProjectId(created.id);
       setSelectedSessionId(null);
       await loadSessions(created.id);
-      await window.agentApi.setProjectWorkingDir(normalizedPath);
+      // setProjectWorkingDir is handled by the selectedProjectId effect
       setNotice(`已导入：${name}`);
       setNoticeType("success");
       setTimeout(() => setNotice(null), 3000);
@@ -169,6 +241,7 @@ const loadProjects = async () => {
       await window.agentApi.deleteSession(sessionId);
       if (selectedSessionId === sessionId) {
         setSelectedSessionId(null);
+        setTodos([]);
       }
       setNotice("会话删除成功");
       setNoticeType("success");
@@ -365,8 +438,10 @@ const loadProjects = async () => {
                     <div style={{ display: "flex", flexDirection: "column", gap: 1, marginTop: 2, paddingLeft: 10, paddingBottom: 4 }}>
                       {projSessions.map((session) => {
                         const isActiveSession = selectedSessionId === session.id;
+                        const children = childSessionsByParent[session.id] ?? [];
                         return (
-                          <div key={session.id} style={{
+                          <div key={session.id}>
+                          <div style={{
                             display: "flex", alignItems: "center",
                             borderRadius: 7,
                             background: isActiveSession ? "rgba(79,110,247,0.08)" : "transparent",
@@ -415,6 +490,61 @@ const loadProjects = async () => {
                               onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.opacity = "1"; (e.currentTarget as HTMLButtonElement).style.color = "var(--danger)"; }}
                               onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.opacity = isActiveSession ? "0.7" : "0.5"; (e.currentTarget as HTMLButtonElement).style.color = isActiveSession ? "var(--accent)" : "var(--text-muted)"; }}
                             >×</button>
+                          </div>
+                          {/* Child sessions (sub-agents) — indented under parent */}
+                          {children.map((child) => {
+                            const isChildActive = selectedSessionId === child.id;
+                            return (
+                              <div key={child.id} style={{
+                                display: "flex", alignItems: "center",
+                                borderRadius: 6,
+                                background: isChildActive ? "rgba(79,110,247,0.06)" : "transparent",
+                                transition: "background 0.15s",
+                                paddingRight: 4,
+                                marginLeft: 14,
+                                borderLeft: "1px solid var(--border-subtle)",
+                              }}>
+                                <button
+                                  onClick={() => { setSelectedProjectId(project.id); setSelectedSessionId(child.id); }}
+                                  style={{
+                                    flex: 1,
+                                    minWidth: 0,
+                                    display: "flex",
+                                    alignItems: "center",
+                                    gap: 6,
+                                    padding: "5px 8px",
+                                    border: "none",
+                                    background: "transparent",
+                                    color: isChildActive ? "var(--accent)" : "var(--text-muted)",
+                                    fontSize: 11,
+                                    cursor: "pointer",
+                                    textAlign: "left" as const,
+                                    transition: "color 0.15s",
+                                  }}
+                                >
+                                  {/* sub-agent icon */}
+                                  <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, opacity: 0.6 }}>
+                                    <path d="M12 2a5 5 0 1 0 0 10A5 5 0 0 0 12 2z"/><path d="M12 12c-5.33 0-8 2.67-8 4v2h16v-2c0-1.33-2.67-4-8-4z"/>
+                                  </svg>
+                                  <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                                    {child.title}
+                                  </span>
+                                </button>
+                                <button
+                                  onClick={() => void handleDeleteSession(child.id)}
+                                  title="删除子会话"
+                                  style={{
+                                    border: "none", background: "transparent",
+                                    color: "var(--text-muted)", fontSize: 12, cursor: "pointer",
+                                    padding: "2px 4px", flexShrink: 0, borderRadius: 4,
+                                    lineHeight: 1, opacity: 0.4, transition: "opacity 0.15s, color 0.15s",
+                                  }}
+                                  onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.opacity = "1"; (e.currentTarget as HTMLButtonElement).style.color = "var(--danger)"; }}
+                                  onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.opacity = "0.4"; (e.currentTarget as HTMLButtonElement).style.color = "var(--text-muted)"; }}
+                                >×</button>
+                              </div>
+                            );
+                          })}
                           </div>
                         );
                       })}
@@ -506,6 +636,21 @@ const loadProjects = async () => {
             onSessionCreated={async (sessionId) => {
               setSelectedSessionId(sessionId);
               await loadSessions(selectedProjectId || undefined);
+            }}
+            onSubSessionCreated={async (parentSessionId) => {
+              await loadChildSessions(parentSessionId);
+            }}
+            onSelectSession={(sessionId) => {
+              setSelectedSessionId(sessionId);
+            }}
+            onSubAgentEvent={(ev) => {
+              if (ev.type === 'started') {
+                addToast({ type: 'info', title: `子会话已启动`, body: `${ev.agentName}：${ev.task.slice(0, 60)}`, sessionId: ev.subSessionId });
+              } else if (ev.type === 'completed') {
+                addToast({ type: 'success', title: `子会话已完成`, body: `${ev.agentName}：${ev.task.slice(0, 60)}`, sessionId: ev.subSessionId });
+              } else {
+                addToast({ type: 'error', title: `子会话出错`, body: `${ev.agentName}：${ev.task.slice(0, 60)}`, sessionId: ev.subSessionId });
+              }
             }}
             onMessageSent={(sessionId, latestMessage) => {
               // Optimistically update title immediately — no DB sync here
@@ -635,6 +780,99 @@ const loadProjects = async () => {
         , document.body)}
 
       <div className="noise-overlay" />
+
+      {/* ── Toast notifications (bottom-right) ── */}
+      {toasts.length > 0 && createPortal(
+        <div style={{
+          position: "fixed",
+          bottom: 24,
+          right: 24,
+          zIndex: 20000,
+          display: "flex",
+          flexDirection: "column",
+          gap: 10,
+          alignItems: "flex-end",
+          pointerEvents: "none",
+        }}>
+          {toasts.map((toast) => (
+            <div
+              key={toast.id}
+              style={{
+                pointerEvents: "auto",
+                width: 320,
+                background: "var(--bg-surface)",
+                border: `1px solid ${toast.type === 'error' ? 'rgba(220,38,38,0.25)' : toast.type === 'success' ? 'rgba(5,150,105,0.25)' : 'var(--border-default)'}`,
+                borderLeft: `3px solid ${toast.type === 'error' ? 'var(--danger)' : toast.type === 'success' ? 'var(--success)' : 'var(--accent)'}`,
+                borderRadius: "var(--radius-md)",
+                boxShadow: "var(--shadow-md)",
+                padding: "12px 14px",
+                animation: "fadeInUp 0.22s var(--ease-out)",
+                backdropFilter: "blur(12px)",
+                WebkitBackdropFilter: "blur(12px)",
+              }}
+            >
+              {/* Header row */}
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+                <span style={{
+                  fontSize: 12,
+                  fontWeight: 600,
+                  color: toast.type === 'error' ? 'var(--danger)' : toast.type === 'success' ? 'var(--success)' : 'var(--accent)',
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 5,
+                }}>
+                  {toast.type === 'error' ? '✕' : toast.type === 'success' ? '✓' : '◎'} {toast.title}
+                </span>
+                <button
+                  onClick={() => dismissToast(toast.id)}
+                  title="关闭"
+                  style={{
+                    background: "none",
+                    border: "none",
+                    cursor: "pointer",
+                    color: "var(--text-muted)",
+                    fontSize: 14,
+                    lineHeight: 1,
+                    padding: "2px 4px",
+                    borderRadius: 4,
+                    transition: "color 0.15s",
+                  }}
+                  onMouseEnter={e => (e.currentTarget.style.color = "var(--text-primary)")}
+                  onMouseLeave={e => (e.currentTarget.style.color = "var(--text-muted)")}
+                >×</button>
+              </div>
+              {/* Body */}
+              <p style={{ margin: 0, fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.5, wordBreak: "break-all" }}>
+                {toast.body}
+              </p>
+              {/* Jump-to-session button */}
+              {toast.sessionId && (
+                <button
+                  onClick={() => { setSelectedSessionId(toast.sessionId!); dismissToast(toast.id); }}
+                  style={{
+                    marginTop: 8,
+                    padding: "4px 10px",
+                    fontSize: 11,
+                    fontWeight: 500,
+                    background: "var(--accent-dim)",
+                    color: "var(--accent)",
+                    border: "1px solid var(--border-glow)",
+                    borderRadius: 6,
+                    cursor: "pointer",
+                    transition: "background 0.15s",
+                    WebkitAppRegion: "no-drag",
+                  } as React.CSSProperties}
+                  onMouseEnter={e => (e.currentTarget.style.background = "var(--accent-glow)")}
+                  onMouseLeave={e => (e.currentTarget.style.background = "var(--accent-dim)")}
+                >
+                  进入会话 →
+                </button>
+              )}
+            </div>
+          ))}
+        </div>,
+        document.body,
+      )}
     </div>
   );
 }

@@ -28,6 +28,12 @@ interface ChatViewProps {
   selectedSessionId?: string | null;
   onSessionCreated?: (sessionId: string) => void | Promise<void>;
   onMessageSent?: (sessionId: string, firstMessage: string) => void | Promise<void>;
+  /** Called when a sub-session is created by agent_dispatch, with the parent session ID */
+  onSubSessionCreated?: (parentSessionId: string) => void | Promise<void>;
+  /** Navigate to a specific session (e.g., click a sub-session link) */
+  onSelectSession?: (sessionId: string) => void;
+  /** Fired when a sub-agent session starts, completes, or errors — used for toast notifications */
+  onSubAgentEvent?: (ev: { type: 'started' | 'completed' | 'failed'; agentName: string; task: string; subSessionId?: string }) => void;
   sessionTitle?: string;
   onOpenSettings?: () => void;
   settingsOpen?: boolean;
@@ -38,6 +44,9 @@ export default function ChatView({
   selectedSessionId = null,
   onSessionCreated,
   onMessageSent,
+  onSubSessionCreated,
+  onSelectSession,
+  onSubAgentEvent,
   onRunComplete,
   sessionTitle,
   onOpenSettings,
@@ -51,6 +60,7 @@ export default function ChatView({
     setRunningSession,
     setSessionId,
     updateToolResult,
+    updateSubAgentStatus,
     setMessages,
     clearMessages,
     sessionId,
@@ -90,6 +100,12 @@ export default function ChatView({
   const [expandedMessages, setExpandedMessages] = useState<Set<string>>(new Set());
   // Track which session the current agent run belongs to
   const runningSessionRef = useRef<string | null>(null);
+  // Always-current refs for selectedSessionId and sessionId — used inside event
+  // handlers that are captured in closures and may outlive React renders.
+  const selectedSessionIdRef = useRef<string | null>(selectedSessionId ?? null);
+  const sessionIdRef = useRef<string | null>(null);
+  useEffect(() => { selectedSessionIdRef.current = selectedSessionId ?? null; }, [selectedSessionId]);
+  useEffect(() => { sessionIdRef.current = sessionId; }, [sessionId]);
 
   /** Parse an interval string like "5m", "30s", "2h", "1min" into milliseconds. Returns null if unrecognized. */
   const parseInterval = (raw: string): number | null => {
@@ -178,16 +194,22 @@ export default function ChatView({
   useEffect(() => {
     const loadSelectedSession = async () => {
       if (!window.agentApi) return;
-      if (!selectedSessionId) {
+      // Capture at call time — used to detect stale responses from fast session switching.
+      const targetSid = selectedSessionId;
+      if (!targetSid) {
         clearMessages();
+        setError(null);
         setSessionId("");
         return;
       }
-      // Don't reload from DB while agent is streaming — messages are in-memory
-      if (runningSessionRef.current === selectedSessionId) return;
+      // Don't reload from DB while agent is streaming FOR THIS SESSION — messages are in-memory.
+      // But only skip if the store already has this session loaded; if the user navigated away
+      // and back, sessionId won't match and we must reload.
+      if (runningSessionRef.current === targetSid && sessionId === targetSid) return;
 
+      setError(null);
       try {
-        const detail = await window.agentApi.getSession(selectedSessionId) as {
+        const detail = await window.agentApi.getSession(targetSid) as {
           messages?: Array<{
             role?: string;
             content?: string;
@@ -201,20 +223,37 @@ export default function ChatView({
         // Build messages, merging tool results back into assistant toolCalls
         const rawMessages = persisted
           .filter((m) => m.role === "user" || m.role === "assistant" || m.role === "tool")
-          .map((m) => ({
-            id: crypto.randomUUID(),
-            role: m.role as "user" | "assistant" | "tool",
-            content: m.content ?? "",
-            toolCalls: m.toolCalls && m.toolCalls.length > 0 ? m.toolCalls : undefined,
-            toolCallId: m.toolCallId,
-            name: m.name,
-            timestamp: Date.now(),
-          }));
+          .map((m) => {
+            // Convert compaction checkpoint to a display banner
+            if (m.name === "__compaction_checkpoint__") {
+              let summary = "";
+              try { summary = (JSON.parse(m.content ?? "{}") as { summary?: string }).summary ?? ""; } catch { /* ignore */ }
+              return {
+                id: crypto.randomUUID(),
+                role: "user" as const,
+                content: summary,
+                name: m.name,
+                isCompactionSummary: true,
+                timestamp: Date.now(),
+              };
+            }
+            return {
+              id: crypto.randomUUID(),
+              role: m.role as "user" | "assistant" | "tool",
+              content: m.content ?? "",
+              toolCalls: m.toolCalls && m.toolCalls.length > 0 ? m.toolCalls : undefined,
+              toolCallId: m.toolCallId,
+              name: m.name,
+              timestamp: Date.now(),
+            };
+          });
 
         // Merge tool results into assistant toolCalls.result
         const restored = rawMessages
           .filter((m) => m.role !== "tool")
           .map((m) => {
+            // Compaction banner — keep as-is
+            if ((m as { isCompactionSummary?: boolean }).isCompactionSummary) return m;
             if (m.role === "assistant" && m.toolCalls?.length) {
               const enriched = m.toolCalls.map((tc) => {
                 const resultMsg = rawMessages.find(
@@ -226,16 +265,18 @@ export default function ChatView({
               });
               return { ...m, toolCalls: enriched };
             }
-            // For user messages, name field stores @agent label
-            if (m.role === "user" && m.name) {
+            // For user messages, name field stores @agent label (skip checkpoint marker)
+            if (m.role === "user" && m.name && m.name !== "__compaction_checkpoint__") {
               return { ...m, agentName: m.name };
             }
             return m;
           });
+        // Stale check: user may have switched sessions while we were awaiting getSession()
+        if (selectedSessionId !== targetSid) return;
         setMessages(restored);
-        setSessionId(selectedSessionId);
+        setSessionId(targetSid);
       } catch {
-        clearMessages();
+        if (selectedSessionId === targetSid) clearMessages();
       }
     };
 
@@ -243,17 +284,17 @@ export default function ChatView({
   }, [clearMessages, selectedSessionId, setMessages, setSessionId]);
 
   const handleEvent = (event: StreamEvent) => {
-    // Route by _sid: accept events that belong to the currently active session.
-    // - runningSessionRef.current is set for user-initiated runs
-    // - sessionId is the currently viewed session (for cron-fired events)
-    const relevantSid = runningSessionRef.current || sessionId;
-    if (event._sid && event._sid !== relevantSid) return;
+    // Route by _sid using always-current refs, not stale closure values.
+    const viewedSid = selectedSessionIdRef.current || sessionIdRef.current;
+    if (event._sid && event._sid !== viewedSid) return;
     switch (event.type) {
       case "text_chunk":
         if (event.text) appendText(event.text);
         break;
       case "tool_call":
-        if (event.toolCall) {
+        // dispatch_agent is handled by the subsequent "agent_dispatch" event which
+        // carries the subSessionId; skip it here to avoid showing two cards.
+        if (event.toolCall && event.toolCall.name !== "dispatch_agent") {
           addMessage({
             id: crypto.randomUUID(),
             role: "assistant",
@@ -287,8 +328,40 @@ export default function ChatView({
           toolCalls: [{
             id: crypto.randomUUID(),
             name: "dispatch_agent",
-            arguments: { agentName: event.agentName, task: event.task ?? "" },
+            arguments: { agentName: event.agentName, task: event.task ?? "", subSessionId: event.subSessionId },
           }],
+          timestamp: Date.now(),
+        });
+        // Notify sidebar to load child sessions for this parent
+        if (event.subSessionId) {
+          const parentSid = runningSessionRef.current || sessionId;
+          if (parentSid && onSubSessionCreated) void onSubSessionCreated(parentSid);
+        }
+        // Toast notification — sub-session started
+        onSubAgentEvent?.({ type: 'started', agentName: event.agentName ?? '', task: event.task ?? '', subSessionId: event.subSessionId });
+        break;
+      case "agent_done":
+        if (event.subSessionId) {
+          updateSubAgentStatus(
+            event.subSessionId,
+            (event.status as "completed" | "failed") ?? "completed",
+            event.status === "failed" ? event.error : event.summary,
+          );
+        }
+        // Toast notification — sub-session finished or errored
+        onSubAgentEvent?.({
+          type: (event.status === 'failed' ? 'failed' : 'completed'),
+          agentName: event.agentName ?? '',
+          task: event.task ?? '',
+          subSessionId: event.subSessionId,
+        });
+        break;
+      case "compacted":
+        addMessage({
+          id: crypto.randomUUID(),
+          role: "assistant",
+          content: event.summary ?? "",
+          isCompactionSummary: true,
           timestamp: Date.now(),
         });
         break;
@@ -316,6 +389,7 @@ export default function ChatView({
     if (!input.trim() || !isConfigured || isRunning) return;
 
     setError(null);
+    setTodos([]);  // clear previous run's todos on new message
 
     const userMsg = input.trim();
 
@@ -502,6 +576,10 @@ export default function ChatView({
         ) as { id: string };
         targetSessionId = created.id;
         setSessionId(created.id);
+        // Mark running BEFORE onSessionCreated so loadSelectedSession guard fires
+        // and doesn't clear locally-added user message
+        runningSessionRef.current = targetSessionId;
+        setRunningSession(targetSessionId);
         if (onSessionCreated) {
           await onSessionCreated(created.id);
         }
@@ -660,23 +738,97 @@ export default function ChatView({
         {messages.map((msg, i) => {
           const chatMsg = msg as import("../stores/agentStore").ChatMessage;
           const isUser = msg.role === "user";
+
+          // ── Compaction banner ──────────────────────────────────────────
+          if (chatMsg.isCompactionSummary) {
+            return (
+              <div key={msg.id} style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                margin: "20px 0",
+                color: "var(--text-muted)",
+                fontSize: 12,
+              }}>
+                <div style={{ flex: 1, height: 1, background: "var(--border-subtle)" }} />
+                <div style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                  padding: "4px 12px",
+                  borderRadius: 20,
+                  border: "1px solid var(--border-subtle)",
+                  background: "var(--bg-deep)",
+                  color: "var(--text-muted)",
+                  fontSize: 11,
+                  cursor: "default",
+                  userSelect: "none",
+                }}>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="17 1 21 5 17 9"/>
+                    <path d="M3 11V9a4 4 0 0 1 4-4h14"/>
+                    <polyline points="7 23 3 19 7 15"/>
+                    <path d="M21 13v2a4 4 0 0 1-4 4H3"/>
+                  </svg>
+                  上下文已压缩
+                </div>
+                <div style={{ flex: 1, height: 1, background: "var(--border-subtle)" }} />
+              </div>
+            );
+          }
           // User avatar label: first char of @mentioned agent, else "你"
           const userAvatarLabel = chatMsg.agentName
             ? chatMsg.agentName.charAt(0).toUpperCase()
             : "你";
 
+          // Show "思考中" label above the last streaming assistant bubble
+          const isLastAssistant = !isUser && i === messages.length - 1;
+          const showThinking = isRunning && isLastAssistant;
+
+          // Use larger bottom margin when the NEXT message switches role (turn boundary).
+          const nextMsg = messages[i + 1] as import("../stores/agentStore").ChatMessage | undefined;
+          const isTurnBoundary = nextMsg && nextMsg.role !== msg.role && !nextMsg.isCompactionSummary;
+
           return (
           <div
             key={msg.id}
             style={{
-              marginBottom: 28,
+              marginBottom: isTurnBoundary ? 20 : 6,
               display: "flex",
               flexDirection: isUser ? "row-reverse" : "row",
               alignItems: "flex-start",
               gap: 10,
               animation: `fadeInUp 0.3s var(--ease-out) both`,
+              position: "relative",
             }}
           >
+            {showThinking && (
+              <div style={{
+                position: "absolute",
+                top: -20,
+                left: 40,
+                display: "flex",
+                alignItems: "center",
+                gap: 5,
+                fontSize: 11,
+                color: "var(--text-muted)",
+                fontStyle: "italic",
+                letterSpacing: "0.02em",
+                pointerEvents: "none",
+              }}>
+                思考中
+                {[0, 1, 2].map((i) => (
+                  <span key={i} style={{
+                    width: 3, height: 3, borderRadius: "50%",
+                    background: "var(--accent)",
+                    display: "inline-block",
+                    animation: "pulse-glow 1.2s ease-in-out infinite",
+                    animationDelay: `${i * 0.2}s`,
+                    opacity: 0.8,
+                  }} />
+                ))}
+              </div>
+            )}
             {/* Avatar */}
             {isUser ? (
               <div style={{
@@ -832,57 +984,121 @@ export default function ChatView({
                     </div>
                   )
                 )}
-                {msg.toolCalls?.map((tc) => (
-                  <ToolCallCard key={tc.id} toolCall={tc} />
-                ))}
+                {msg.toolCalls?.map((tc, tcIdx) => {
+                  // For write_file: find the most recent read_file result for the same path
+                  // so we can compute and show a diff between before/after.
+                  let beforeContent: string | undefined;
+                  if (tc.name === "write_file" && tc.arguments.file_path) {
+                    const writePath = tc.arguments.file_path as string;
+                    outer: for (let mi = i; mi >= 0; mi--) {
+                      const scanMsg = messages[mi];
+                      const tcs = scanMsg.toolCalls;
+                      if (!tcs) continue;
+                      const start = mi === i ? tcIdx - 1 : tcs.length - 1;
+                      for (let ti = start; ti >= 0; ti--) {
+                        const prev = tcs[ti];
+                        if (prev.name === "read_file" && prev.arguments.file_path === writePath && prev.result && !prev.isError) {
+                          beforeContent = prev.result;
+                          break outer;
+                        }
+                      }
+                    }
+                  }
+                  return <ToolCallCard key={tc.id} toolCall={tc} beforeContent={beforeContent} onSelectSession={onSelectSession} />;
+                })}
+                {/* File change summary — one compact bar after all tool calls */}
+                {(() => {
+                  const writes = (msg.toolCalls ?? []).filter(tc => tc.name === "write_file" && tc.result && !tc.isError);
+                  if (writes.length === 0) return null;
+                  // Aggregate by path, keeping last write
+                  const byPath = new Map<string, { path: string; lines: number; added: number; removed: number }>();
+                  for (const tc of writes) {
+                    const path = tc.arguments.file_path as string ?? "";
+                    const content = tc.arguments.content as string ?? "";
+                    const newLines = content ? content.split("\n").length : 0;
+                    // Find read_file result for this path (search backwards through all messages up to current)
+                    let beforeLines = 0;
+                    outer2: for (let mi = i; mi >= 0; mi--) {
+                      const tcs = messages[mi].toolCalls ?? [];
+                      for (let ti = tcs.length - 1; ti >= 0; ti--) {
+                        const p = tcs[ti];
+                        if (p.name === "read_file" && p.arguments.file_path === path && p.result && !p.isError) {
+                          beforeLines = p.result.split("\n").length;
+                          break outer2;
+                        }
+                      }
+                    }
+                    byPath.set(path, { path, lines: newLines, added: Math.max(0, newLines - beforeLines), removed: Math.max(0, beforeLines - newLines) });
+                  }
+                  const entries = [...byPath.values()];
+                  return (
+                    <div style={{ marginTop: 10, padding: "8px 12px", borderRadius: 8, background: "var(--bg-deep)", border: "1px solid var(--border-subtle)", display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
+                      <span style={{ fontSize: 10, color: "var(--text-muted)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.07em", flexShrink: 0 }}>变更汇总</span>
+                      {entries.map(e => (
+                        <span key={e.path} style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, fontFamily: "var(--font-mono)", background: "var(--bg-surface)", border: "1px solid var(--border-subtle)", borderRadius: 5, padding: "2px 8px" }}>
+                          <span style={{ color: "var(--text-secondary)", maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={e.path}>
+                            {e.path.replace(/\\/g, "/").split("/").pop()}
+                          </span>
+                          {e.added > 0 && <span style={{ color: "var(--success)", fontWeight: 600 }}>+{e.added}</span>}
+                          {e.removed > 0 && <span style={{ color: "var(--danger)", fontWeight: 600 }}>−{e.removed}</span>}
+                          {e.added === 0 && e.removed === 0 && <span style={{ color: "var(--text-muted)" }}>{e.lines}行</span>}
+                        </span>
+                      ))}
+                    </div>
+                  );
+                })()}
               </div>
             </div>
           </div>
           );
         })}
 
-        {/* Thinking indicator */}
-        {isRunning && (
+        {/* Thinking indicator (no assistant reply yet) */}
+        {isRunning && messages.length > 0 && messages[messages.length - 1].role === "user" && (
           <div style={{
             display: "flex",
             alignItems: "flex-start",
             gap: 10,
-            padding: "4px 0 12px",
-            animation: "fadeIn 0.3s var(--ease-out)",
+            padding: "4px 0 4px",
+            animation: "fadeInUp 0.3s var(--ease-out)",
           }}>
+            {/* Robot avatar */}
             <div style={{
               width: 30, height: 30, borderRadius: "50%", flexShrink: 0,
               display: "flex", alignItems: "center", justifyContent: "center",
               background: "var(--bg-deep)",
-              border: "1px solid var(--border-subtle)",
               color: "var(--text-muted)",
-              marginTop: 2,
+              border: "1px solid var(--border-subtle)",
             }}>
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                <path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="11" width="18" height="10" rx="2"/>
+                <path d="M12 11V7"/>
+                <circle cx="12" cy="5" r="2"/>
+                <circle cx="8" cy="16" r="1" fill="currentColor" stroke="none"/>
+                <circle cx="16" cy="16" r="1" fill="currentColor" stroke="none"/>
+                <path d="M8 20h8"/>
               </svg>
             </div>
             <div style={{
-              padding: "10px 14px",
+              padding: "9px 14px",
               borderRadius: "4px 14px 14px 14px",
               background: "var(--bg-surface)",
               border: "1px solid var(--border-subtle)",
               boxShadow: "var(--shadow-sm)",
-              display: "flex", alignItems: "center", gap: 10,
+              display: "flex", alignItems: "center", gap: 7,
+              fontSize: 13, color: "var(--text-muted)", fontStyle: "italic",
             }}>
-              <span style={{ fontSize: 13, color: "var(--text-muted)" }}>思考中</span>
-              <div style={{ display: "flex", gap: 4 }}>
-                {[0, 1, 2].map((i) => (
-                  <span key={i} style={{
-                    width: 5, height: 5, borderRadius: "50%",
-                    background: "var(--accent)",
-                    display: "inline-block",
-                    animation: "pulse-glow 1.2s ease-in-out infinite",
-                    animationDelay: `${i * 0.18}s`,
-                    opacity: 0.7,
-                  }} />
-                ))}
-              </div>
+              思考中
+              {[0, 1, 2].map((i) => (
+                <span key={i} style={{
+                  width: 4, height: 4, borderRadius: "50%",
+                  background: "var(--accent)",
+                  display: "inline-block",
+                  animation: "pulse-glow 1.2s ease-in-out infinite",
+                  animationDelay: `${i * 0.2}s`,
+                  opacity: 0.8,
+                }} />
+              ))}
             </div>
           </div>
         )}
@@ -934,67 +1150,94 @@ export default function ChatView({
               任务列表
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-              {todos.map(todo => {
-                const isPending = todo.status === "pending";
-                const isProgress = todo.status === "in-progress";
-                const isDone = todo.status === "completed";
-                return (
-                  <div key={todo.id} style={{
-                    display: "flex", alignItems: "center", gap: 8,
-                    opacity: isDone ? 0.65 : 1,
-                    transition: "opacity 0.3s",
-                  }}>
-                    {/* Status icon */}
-                    <div style={{
-                      width: 16, height: 16, borderRadius: "50%", flexShrink: 0,
-                      display: "flex", alignItems: "center", justifyContent: "center",
-                      background: isDone
-                        ? "rgba(52,211,153,0.15)"
-                        : isProgress
-                        ? "var(--accent-dim)"
-                        : "rgba(0,0,0,0.04)",
-                      border: isDone
-                        ? "1.5px solid rgba(52,211,153,0.6)"
-                        : isProgress
-                        ? "1.5px solid var(--accent)"
-                        : "1.5px solid var(--border-default)",
+              {(() => {
+                const completedTitles = new Set(
+                  todos.filter((t) => t.status === "completed").map((t) => t.title.toLowerCase()),
+                );
+                return todos.map(todo => {
+                  const isPending = todo.status === "pending";
+                  const isProgress = todo.status === "in-progress";
+                  const isDone = todo.status === "completed";
+                  const isBlocked =
+                    isPending &&
+                    (todo.dependsOn ?? []).some((dep) => !completedTitles.has(dep.toLowerCase()));
+                  return (
+                    <div key={todo.id} style={{
+                      display: "flex", alignItems: "center", gap: 8,
+                      opacity: isDone ? 0.65 : 1,
+                      transition: "opacity 0.3s",
                     }}>
-                      {isDone && (
-                        <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="rgba(52,211,153,0.9)" strokeWidth="3" strokeLinecap="round">
-                          <path d="M20 6L9 17l-5-5"/>
-                        </svg>
+                      {/* Status icon */}
+                      <div style={{
+                        width: 16, height: 16, borderRadius: "50%", flexShrink: 0,
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        background: isDone
+                          ? "rgba(52,211,153,0.15)"
+                          : isProgress
+                          ? "var(--accent-dim)"
+                          : isBlocked
+                          ? "rgba(239,68,68,0.08)"
+                          : "rgba(0,0,0,0.04)",
+                        border: isDone
+                          ? "1.5px solid rgba(52,211,153,0.6)"
+                          : isProgress
+                          ? "1.5px solid var(--accent)"
+                          : isBlocked
+                          ? "1.5px solid rgba(239,68,68,0.5)"
+                          : "1.5px solid var(--border-default)",
+                      }}>
+                        {isDone && (
+                          <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="rgba(52,211,153,0.9)" strokeWidth="3" strokeLinecap="round">
+                            <path d="M20 6L9 17l-5-5"/>
+                          </svg>
+                        )}
+                        {isProgress && (
+                          <div style={{
+                            width: 6, height: 6, borderRadius: "50%",
+                            background: "var(--accent)",
+                            animation: "pulse 1.2s ease-in-out infinite",
+                          }}/>
+                        )}
+                        {isBlocked && (
+                          <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="rgba(239,68,68,0.8)" strokeWidth="3" strokeLinecap="round">
+                            <path d="M18 6L6 18M6 6l12 12"/>
+                          </svg>
+                        )}
+                        {isPending && !isBlocked && (
+                          <div style={{ width: 5, height: 5, borderRadius: "50%", background: "var(--border-default)" }}/>
+                        )}
+                      </div>
+                      {/* Title */}
+                      <span style={{
+                        fontSize: 12,
+                        color: isDone ? "var(--text-muted)" : isBlocked ? "rgba(239,68,68,0.8)" : "var(--text-primary)",
+                        textDecoration: isDone ? "line-through" : "none",
+                        flex: 1,
+                      }}>{todo.title}</span>
+                      {/* Blocked chip */}
+                      {isBlocked && (
+                        <span title={`等待: ${(todo.dependsOn ?? []).join(", ")}`} style={{
+                          fontSize: 10, color: "rgba(239,68,68,0.9)",
+                          background: "rgba(239,68,68,0.08)",
+                          border: "1px solid rgba(239,68,68,0.25)",
+                          borderRadius: 8, padding: "1px 6px",
+                          flexShrink: 0,
+                        }}>等待前置</span>
                       )}
-                      {isProgress && (
-                        <div style={{
-                          width: 6, height: 6, borderRadius: "50%",
-                          background: "var(--accent)",
-                          animation: "pulse 1.2s ease-in-out infinite",
-                        }}/>
-                      )}
-                      {isPending && (
-                        <div style={{ width: 5, height: 5, borderRadius: "50%", background: "var(--border-default)" }}/>
+                      {/* Agent chip */}
+                      {todo.agentName && (
+                        <span style={{
+                          fontSize: 10, color: "var(--accent)",
+                          background: "var(--accent-dim)",
+                          border: "1px solid rgba(79,110,247,0.2)",
+                          borderRadius: 8, padding: "1px 6px",
+                          flexShrink: 0,
+                        }}>@{todo.agentName}</span>
                       )}
                     </div>
-                    {/* Title */}
-                    <span style={{
-                      fontSize: 12,
-                      color: isDone ? "var(--text-muted)" : "var(--text-primary)",
-                      textDecoration: isDone ? "line-through" : "none",
-                      flex: 1,
-                    }}>{todo.title}</span>
-                    {/* Agent chip */}
-                    {todo.agentName && (
-                      <span style={{
-                        fontSize: 10, color: "var(--accent)",
-                        background: "var(--accent-dim)",
-                        border: "1px solid rgba(79,110,247,0.2)",
-                        borderRadius: 8, padding: "1px 6px",
-                        flexShrink: 0,
-                      }}>@{todo.agentName}</span>
-                    )}
-                  </div>
-                );
-              })}
+                  );
+                });
+              })()}
             </div>
           </div>
         )}

@@ -20,7 +20,7 @@ function emptyProfile(): Omit<ModelProfile, "id"> {
 
 export default function SettingsPanel() {
   const {
-    maxIterations, isConfigured,
+    maxIterations, contextWindow, isConfigured,
     profiles, activeProfileId,
     setField, loadFromSystem, saveToSystem,
     addProfile, updateProfile, deleteProfile, switchActiveProfile,
@@ -229,6 +229,15 @@ export default function SettingsPanel() {
               value={maxIterations}
               onChange={(e) => setField("maxIterations", parseInt(e.target.value) || 10)}
               min={1} max={50}
+              style={inputStyle}
+            />
+          </Field>
+          <Field label="上下文窗口（K tokens）">
+            <input
+              type="number"
+              value={contextWindow ?? 100}
+              onChange={(e) => setField("contextWindow", parseInt(e.target.value) || 100)}
+              min={8} max={2000}
               style={inputStyle}
             />
           </Field>
