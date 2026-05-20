@@ -1,4 +1,5 @@
 import { useRef, useState, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { useAgentStore, type StreamEvent, type CronTask } from "../stores/agentStore";
 
 /** Human-readable description of a cron/interval expression (browser-safe, no Node.js). */
@@ -61,6 +62,7 @@ export default function ChatView({
     setSessionId,
     updateToolResult,
     updateSubAgentStatus,
+    updateSubAgentProgress,
     setMessages,
     clearMessages,
     sessionId,
@@ -87,9 +89,13 @@ export default function ChatView({
   const [input, setInput] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [attachedFiles, setAttachedFiles] = useState<File[]>([]);
+  /** Base64 data URLs of images to send with the next message */
+  const [pendingImages, setPendingImages] = useState<string[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const pickerAnchorRef = useRef<HTMLDivElement>(null);
+  const [pickerRect, setPickerRect] = useState<DOMRect | null>(null);
   const [agents, setAgents] = useState<Array<{id: string; name: string; description: string; isActive?: boolean}>>([]);
   const [skills, setSkills] = useState<Array<{name: string; description: string}>>([]);
   /** List of agents selected via @mention — sent in order */
@@ -129,7 +135,7 @@ export default function ChatView({
   useEffect(() => {
     if (!window.agentApi) return;
     void window.agentApi.listAgentDefs().then((list) => setAgents(list as Array<{id: string; name: string; description: string; isActive?: boolean}>));
-    void window.agentApi.listSkills().then((list) => setSkills((list as Array<{name: string; description: string}>).filter(s => s.name)));
+    void window.agentApi.listSkills().then((list) => setSkills((list as Array<{name: string; description: string}>).filter(s => s.name))).catch((e: unknown) => console.error('[listSkills] mount error:', e));
   }, []);
 
   const filteredAgents = atQuery === null ? [] : agents.filter(a =>
@@ -145,6 +151,9 @@ export default function ChatView({
     ...BUILTIN_COMMANDS.filter(c => slashQuery === "" || c.name.toLowerCase().includes(slashQuery.toLowerCase())),
     ...skills.filter(s => slashQuery === "" || s.name.toLowerCase().includes(slashQuery.toLowerCase())),
   ];
+  if (slashQuery !== null) {
+    // debug: console.log('[skill-picker] slashQuery=', slashQuery, 'filtered=', filteredSkills.length);
+  }
 
   const selectAgent = (agent: {id: string; name: string}) => {
     // Add agent to pending list (avoid duplicates)
@@ -177,6 +186,68 @@ export default function ChatView({
   const removeAttachedFile = (index: number) => {
     setAttachedFiles((prev) => prev.filter((_, i) => i !== index));
   };
+
+  // ── Vision / image helpers ─────────────────────────────────────────────
+  const VISION_MODEL_RE = /claude-3|gpt-4-vision|gpt-4o|gpt-4-turbo|gemini|deepseek-vl/i;
+  const isVisionModel = (modelId: string) => VISION_MODEL_RE.test(modelId);
+
+  /** Auto-switch to a vision-capable profile when images are added */
+  const autoSwitchVisionProfile = () => {
+    const currentProfile = profiles.find((p) => p.id === activeProfileId);
+    if (currentProfile && isVisionModel(currentProfile.modelId)) return;
+    const visionProfile = profiles.find((p) => isVisionModel(p.modelId));
+    if (visionProfile) switchActiveProfile(visionProfile.id);
+  };
+
+  /** Add a base64 data URL to the pending image list */
+  const addPendingImage = (dataUrl: string) => {
+    setPendingImages((prev) => [...prev, dataUrl]);
+  };
+
+  const removePendingImage = (index: number) => {
+    setPendingImages((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  /** Read an image Blob and add it as a base64 data URL */
+  const blobToDataUrl = (blob: Blob): Promise<string> =>
+    new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+
+  /** Screenshot button: read image from clipboard */
+  const handleScreenshot = async () => {
+    try {
+      const items = await navigator.clipboard.read();
+      for (const item of items) {
+        const imgType = item.types.find((t) => t.startsWith("image/"));
+        if (imgType) {
+          const blob = await item.getType(imgType);
+          addPendingImage(await blobToDataUrl(blob));
+          break;
+        }
+      }
+    } catch {
+      // Permission denied or no image in clipboard — silently ignore
+    }
+  };
+
+  // Global paste handler: intercept image pastes into the chat input
+  useEffect(() => {
+    const handlePaste = async (e: ClipboardEvent) => {
+      if (!e.clipboardData) return;
+      const imageItem = Array.from(e.clipboardData.items).find((it) => it.type.startsWith("image/"));
+      if (!imageItem) return;
+      e.preventDefault();
+      const file = imageItem.getAsFile();
+      if (file) addPendingImage(await blobToDataUrl(file));
+    };
+    window.addEventListener("paste", handlePaste);
+    return () => window.removeEventListener("paste", handlePaste);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profiles, activeProfileId]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -355,6 +426,11 @@ export default function ChatView({
           task: event.task ?? '',
           subSessionId: event.subSessionId,
         });
+        break;
+      case "agent_progress":
+        if (event.subSessionId && event.text) {
+          updateSubAgentProgress(event.subSessionId, event.text);
+        }
         break;
       case "compacted":
         addMessage({
@@ -550,15 +626,18 @@ export default function ChatView({
     const agentNamesLabel = pendingAgents.length > 0
       ? pendingAgents.map(a => a.name).join(", ")
       : undefined;
+    const imagesToSend = pendingImages.length > 0 ? [...pendingImages] : undefined;
     addMessage({
       id: crypto.randomUUID(),
       role: "user",
       content: userMsg,
       timestamp: Date.now(),
       agentName: agentNamesLabel,
+      images: imagesToSend,
     });
     setInput("");
     setAttachedFiles([]);
+    setPendingImages([]);
 
     const agentIdsToSend = pendingAgents.map(a => a.id);
     const agentNameLabel = pendingAgents.length > 0
@@ -604,6 +683,7 @@ export default function ChatView({
           targetSessionId,
           agentIdsToSend.length > 0 ? agentIdsToSend : undefined,
           agentNameLabel,
+          imagesToSend,
         );
       } else {
         throw new Error("agentApi 未就绪，请重启应用");
@@ -793,6 +873,7 @@ export default function ChatView({
           <div
             key={msg.id}
             style={{
+              marginTop: showThinking ? 28 : 0,
               marginBottom: isTurnBoundary ? 20 : 6,
               display: "flex",
               flexDirection: isUser ? "row-reverse" : "row",
@@ -805,7 +886,7 @@ export default function ChatView({
             {showThinking && (
               <div style={{
                 position: "absolute",
-                top: -20,
+                top: -24,
                 left: 40,
                 display: "flex",
                 alignItems: "center",
@@ -983,6 +1064,24 @@ export default function ChatView({
                       {msg.content}
                     </div>
                   )
+                )}
+                {/* Images attached to user messages */}
+                {isUser && chatMsg.images && chatMsg.images.length > 0 && (
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: msg.content ? 8 : 0 }}>
+                    {chatMsg.images.map((src, idx) => (
+                      <img
+                        key={idx}
+                        src={src}
+                        alt={`attachment-${idx}`}
+                        style={{
+                          maxWidth: 220, maxHeight: 180, objectFit: "cover",
+                          borderRadius: 6, border: "1px solid var(--border-subtle)",
+                          display: "block", cursor: "zoom-in",
+                        }}
+                        onClick={() => window.open(src, "_blank")}
+                      />
+                    ))}
+                  </div>
                 )}
                 {msg.toolCalls?.map((tc, tcIdx) => {
                   // For write_file: find the most recent read_file result for the same path
@@ -1411,62 +1510,59 @@ export default function ChatView({
           </div>
         )}
 
+        {/* Pending image previews */}
+        {pendingImages.length > 0 && (() => {
+          const currentProfile = profiles.find((p) => p.id === activeProfileId);
+          const noVision = !currentProfile || !isVisionModel(currentProfile.modelId);
+          return (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 10 }}>
+              {noVision && (
+                <div style={{
+                  display: "flex", alignItems: "center", gap: 6,
+                  padding: "6px 10px", borderRadius: 8,
+                  background: "rgba(234,179,8,0.1)", border: "1px solid rgba(234,179,8,0.4)",
+                  color: "rgba(202,138,4,1)", fontSize: 12,
+                }}>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                    <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                    <line x1="12" y1="9" x2="12" y2="13"/>
+                    <line x1="12" y1="17" x2="12.01" y2="17"/>
+                  </svg>
+                  当前模型（{currentProfile?.modelId ?? "未配置"}）不支持图片，发送前请切换到支持视觉的模型（如 claude-3、gpt-4o）
+                </div>
+              )}
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                {pendingImages.map((src, i) => (
+                  <div key={i} style={{ position: "relative", display: "inline-block" }}>
+                    <img
+                      src={src}
+                      alt={`image-${i}`}
+                      style={{
+                        width: 72, height: 72, objectFit: "cover",
+                        borderRadius: 8, border: "1.5px solid var(--border-default)",
+                        display: "block",
+                      }}
+                    />
+                    <button
+                      onClick={() => removePendingImage(i)}
+                      style={{
+                        position: "absolute", top: -6, right: -6,
+                        width: 18, height: 18, borderRadius: "50%",
+                        background: "var(--danger, #e53e3e)", border: "none",
+                        color: "#fff", fontSize: 11, cursor: "pointer",
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        lineHeight: 1, padding: 0,
+                      }}
+                    >✕</button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })()}
+
         {/* Input box */}
-        <div style={{ position: "relative" }}>
-
-          {/* @ agent picker */}
-          {atQuery !== null && filteredAgents.length > 0 && (
-            <div style={{
-              position: "absolute",
-              bottom: "calc(100% + 6px)",
-              left: 0, right: 0,
-              background: "var(--bg-surface)",
-              border: "1px solid var(--border-default)",
-              borderRadius: 10,
-              boxShadow: "var(--shadow-md)",
-              overflow: "hidden",
-              zIndex: 100,
-            }}>
-              <div style={{ padding: "6px 10px 4px", fontSize: 10, fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase" as const, letterSpacing: "0.06em" }}>智能体</div>
-              {filteredAgents.map(agent => (
-                <button key={agent.id}
-                  onMouseDown={(e) => { e.preventDefault(); selectAgent(agent); }}
-                  style={{ display: "block", width: "100%", textAlign: "left" as const, padding: "8px 12px", border: "none", background: "transparent", cursor: "pointer" }}
-                  onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = "var(--accent-dim)"; }}
-                  onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = "transparent"; }}>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>@{agent.name}</div>
-                  {agent.description && <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 1 }}>{agent.description}</div>}
-                </button>
-              ))}
-            </div>
-          )}
-
-          {/* / skill picker */}
-          {slashQuery !== null && filteredSkills.length > 0 && (
-            <div style={{
-              position: "absolute",
-              bottom: "calc(100% + 6px)",
-              left: 0, right: 0,
-              background: "var(--bg-surface)",
-              border: "1px solid var(--border-default)",
-              borderRadius: 10,
-              boxShadow: "var(--shadow-md)",
-              overflow: "hidden",
-              zIndex: 100,
-            }}>
-              <div style={{ padding: "6px 10px 4px", fontSize: 10, fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase" as const, letterSpacing: "0.06em" }}>技能</div>
-              {filteredSkills.slice(0, 8).map(skill => (
-                <button key={skill.name}
-                  onMouseDown={(e) => { e.preventDefault(); selectSkill(skill); }}
-                  style={{ display: "block", width: "100%", textAlign: "left" as const, padding: "8px 12px", border: "none", background: "transparent", cursor: "pointer" }}
-                  onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = "var(--accent-dim)"; }}
-                  onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = "transparent"; }}>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>/{skill.name}</div>
-                  {skill.description && <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{skill.description}</div>}
-                </button>
-              ))}
-            </div>
-          )}
+        <div ref={pickerAnchorRef} style={{ position: "relative" }}>
 
         <div style={{
           display: "flex",
@@ -1607,6 +1703,51 @@ export default function ChatView({
             </svg>
           </button>
 
+          {/* Screenshot / paste image button */}
+          <button
+            onClick={() => void handleScreenshot()}
+            disabled={!isConfigured || isRunning}
+            title="粘贴截图（需先 Cmd+Shift+4 截图至剪贴板）"
+            onMouseEnter={e => {
+              if (isConfigured && !isRunning) {
+                (e.currentTarget as HTMLButtonElement).style.background = "var(--accent-dim)";
+                (e.currentTarget as HTMLButtonElement).style.color = "var(--accent)";
+              }
+            }}
+            onMouseLeave={e => {
+              (e.currentTarget as HTMLButtonElement).style.background = pendingImages.length > 0 ? "var(--accent-dim)" : "transparent";
+              (e.currentTarget as HTMLButtonElement).style.color = pendingImages.length > 0 ? "var(--accent)" : "var(--text-muted)";
+            }}
+            style={{
+              width: 32, height: 32,
+              borderRadius: 8,
+              border: pendingImages.length > 0 ? "1px solid rgba(79,110,247,0.35)" : "none",
+              background: pendingImages.length > 0 ? "var(--accent-dim)" : "transparent",
+              color: pendingImages.length > 0 ? "var(--accent)" : "var(--text-muted)",
+              cursor: isConfigured && !isRunning ? "pointer" : "not-allowed",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              flexShrink: 0,
+              transition: "background 0.15s, color 0.15s",
+              position: "relative",
+            }}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <rect width="18" height="18" x="3" y="3" rx="2" ry="2"/>
+              <circle cx="9" cy="9" r="2"/>
+              <path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/>
+            </svg>
+            {pendingImages.length > 0 && (
+              <span style={{
+                position: "absolute", top: 1, right: 1,
+                width: 14, height: 14, borderRadius: "50%",
+                background: "var(--accent)", color: "#fff",
+                fontSize: 9, fontWeight: 700,
+                display: "flex", alignItems: "center", justifyContent: "center",
+                lineHeight: 1,
+              }}>{pendingImages.length}</span>
+            )}
+          </button>
+
           {/* Pending agent chips (multiple) */}
           {pendingAgents.length > 0 && (
             <div style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0, flexWrap: "nowrap", overflow: "hidden", maxWidth: 300 }}>
@@ -1648,6 +1789,7 @@ export default function ChatView({
                     setAgents(list as Array<{id: string; name: string; description: string; isActive?: boolean}>)
                   );
                 }
+                setPickerRect(pickerAnchorRef.current?.getBoundingClientRect() ?? null);
                 setAtQuery(atMatch[1]); setSlashQuery(null); return;
               }
               const slashMatch = val.match(/\/([-\w\u4e00-\u9fff]*)$/);
@@ -1656,8 +1798,9 @@ export default function ChatView({
                 if (window.agentApi) {
                   void window.agentApi.listSkills().then((list) =>
                     setSkills((list as Array<{name: string; description: string}>).filter(s => s.name))
-                  );
+                  ).catch((e: unknown) => console.error('[listSkills] slash error:', e));
                 }
+                setPickerRect(pickerAnchorRef.current?.getBoundingClientRect() ?? null);
                 setSlashQuery(slashMatch[1]); setAtQuery(null); return;
               }
               setAtQuery(null);
@@ -1771,6 +1914,69 @@ export default function ChatView({
           Enter 发送 · @智能体（可多选）· /技能 · Shift+Enter 换行
         </div>
       </div>
+
+      {/* ── Picker overlays rendered via portal to escape overflow:hidden ancestors ── */}
+      {pickerRect && atQuery !== null && filteredAgents.length > 0 && createPortal(
+        <div style={{
+          position: "fixed",
+          bottom: window.innerHeight - pickerRect.top + 8,
+          left: pickerRect.left,
+          width: pickerRect.width,
+          background: "var(--bg-surface)",
+          border: "1px solid var(--border-default)",
+          borderRadius: 10,
+          boxShadow: "var(--shadow-md)",
+          overflow: "hidden",
+          zIndex: 99999,
+        }}>
+          <div style={{ padding: "6px 10px 4px", fontSize: 10, fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase" as const, letterSpacing: "0.06em" }}>智能体</div>
+          {filteredAgents.map(agent => (
+            <button key={agent.id}
+              onMouseDown={(e) => { e.preventDefault(); selectAgent(agent); }}
+              style={{ display: "block", width: "100%", textAlign: "left" as const, padding: "8px 12px", border: "none", background: "transparent", cursor: "pointer" }}
+              onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = "var(--accent-dim)"; }}
+              onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = "transparent"; }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>@{agent.name}</div>
+              {agent.description && <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 1 }}>{agent.description}</div>}
+            </button>
+          ))}
+        </div>,
+        document.body
+      )}
+
+      {pickerRect && slashQuery !== null && filteredSkills.length > 0 && createPortal(
+        <div style={{
+          position: "fixed",
+          bottom: window.innerHeight - pickerRect.top + 8,
+          left: pickerRect.left,
+          width: pickerRect.width,
+          background: "var(--bg-surface)",
+          border: "1px solid var(--border-default)",
+          borderRadius: 10,
+          boxShadow: "var(--shadow-md)",
+          zIndex: 99999,
+          display: "flex",
+          flexDirection: "column",
+          maxHeight: 320,
+        }}>
+          <div style={{ padding: "6px 10px 4px", fontSize: 10, fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase" as const, letterSpacing: "0.06em", flexShrink: 0 }}>
+            技能 ({filteredSkills.length})
+          </div>
+          <div style={{ overflowY: "auto", flex: 1 }}>
+            {filteredSkills.map(skill => (
+              <button key={skill.name}
+                onMouseDown={(e) => { e.preventDefault(); selectSkill(skill); }}
+                style={{ display: "block", width: "100%", textAlign: "left" as const, padding: "8px 12px", border: "none", background: "transparent", cursor: "pointer" }}
+                onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = "var(--accent-dim)"; }}
+                onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = "transparent"; }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>/{skill.name}</div>
+                {skill.description && <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{skill.description}</div>}
+              </button>
+            ))}
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   );
 }

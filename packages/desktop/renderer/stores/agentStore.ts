@@ -49,6 +49,8 @@ export interface ChatMessage {
   name?: string;
   /** True when this message is a context-compaction banner, not a real chat bubble */
   isCompactionSummary?: boolean;
+  /** Base64 data URLs of images attached to this user message */
+  images?: string[];
   timestamp: number;
 }
 
@@ -70,6 +72,8 @@ interface AgentState {
   updateToolResult: (toolCallId: string, result: string, isError?: boolean) => void;
   /** Mark a dispatch_agent toolCall as completed or failed by subSessionId */
   updateSubAgentStatus: (subSessionId: string, status: "completed" | "failed", detail?: string) => void;
+  /** Append streaming text to a running dispatch_agent toolCall's live progress */
+  updateSubAgentProgress: (subSessionId: string, text: string) => void;
   setMessages: (messages: ChatMessage[]) => void;
   clearMessages: () => void;
   setTodos: (todos: TodoItem[]) => void;
@@ -157,6 +161,19 @@ export const useAgentStore = create<AgentState>((set) => ({
         const updatedCalls = m.toolCalls.map((tc) =>
           tc.name === "dispatch_agent" && tc.arguments.subSessionId === subSessionId
             ? { ...tc, arguments: { ...tc.arguments, subAgentStatus: status, subAgentDetail: detail } }
+            : tc
+        );
+        return { ...m, toolCalls: updatedCalls };
+      }),
+    })),
+
+  updateSubAgentProgress: (subSessionId, text) =>
+    set((state) => ({
+      messages: state.messages.map((m) => {
+        if (!m.toolCalls) return m;
+        const updatedCalls = m.toolCalls.map((tc) =>
+          tc.name === "dispatch_agent" && tc.arguments.subSessionId === subSessionId
+            ? { ...tc, arguments: { ...tc.arguments, subAgentProgress: ((tc.arguments.subAgentProgress as string | undefined) ?? "") + text } }
             : tc
         );
         return { ...m, toolCalls: updatedCalls };

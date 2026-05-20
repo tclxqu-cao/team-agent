@@ -6,10 +6,11 @@ import MCPServerList from "./components/MCPServerList";
 import MemoryViewer from "./components/MemoryViewer";
 import SkillManager from "./components/SkillManager";
 import AgentManager from "./components/AgentManager";
+import LSPServerList from "./components/LSPServerList";
 import { useSettingsStore } from "./stores/settingsStore";
 import { useAgentStore } from "./stores/agentStore";
 
-type SettingsTab = "settings" | "mcp" | "memory" | "skill" | "agent";
+type SettingsTab = "settings" | "mcp" | "memory" | "skill" | "agent" | "lsp";
 
 interface Project {
   id: string;
@@ -36,6 +37,10 @@ export default function App() {
   const [childSessionsByParent, setChildSessionsByParent] = useState<Record<string, Session[]>>({});
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
+  /** Set of parent session IDs whose children are collapsed */
+  const [collapsedParents, setCollapsedParents] = useState<Set<string>>(new Set());
+  /** Set of project IDs whose session list is expanded */
+  const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set());
 
   const [showSettings, setShowSettings] = useState(false);
   const [settingsTab, setSettingsTab] = useState<SettingsTab>("settings");
@@ -181,8 +186,10 @@ const loadProjects = async () => {
       if (latest) {
         setSelectedProjectId(latest._pid);
         setSelectedSessionId(latest.id);
+        setExpandedProjects(new Set([latest._pid]));
       } else if (list.length > 0) {
         setSelectedProjectId(list[0].id);
+        setExpandedProjects(new Set([list[0].id]));
       }
     };
     void bootstrap();
@@ -205,6 +212,20 @@ const loadProjects = async () => {
     }
   };
 
+  /** Toggle expand/collapse for a project; also selects it if switching from another project */
+  const handleToggleProject = async (projectId: string) => {
+    setExpandedProjects((prev) => {
+      const next = new Set(prev);
+      if (next.has(projectId)) next.delete(projectId); else next.add(projectId);
+      return next;
+    });
+    if (selectedProjectId !== projectId) {
+      setSelectedProjectId(projectId);
+      setSelectedSessionId(null);
+      await loadSessions(projectId);
+    }
+  };
+
   const handleImportProject = async () => {
     try {
       if (!window.agentApi) {
@@ -223,6 +244,7 @@ const loadProjects = async () => {
       setSelectedProjectId(created.id);
       setSelectedSessionId(null);
       await loadSessions(created.id);
+      setExpandedProjects((prev) => { const n = new Set(prev); n.add(created.id); return n; });
       // setProjectWorkingDir is handled by the selectedProjectId effect
       setNotice(`已导入：${name}`);
       setNoticeType("success");
@@ -260,6 +282,7 @@ const loadProjects = async () => {
     { id: "memory", label: "记忆" },
     { id: "skill", label: "技能" },
     { id: "agent", label: "智能体" },
+    { id: "lsp", label: "LSP" },
   ];
 
   return (
@@ -367,7 +390,9 @@ const loadProjects = async () => {
           <div style={{ display: "flex", flexDirection: "column", gap: 2, marginBottom: 12 }}>
             {projects.map((project) => {
               const isSelected = selectedProjectId === project.id;
+              const isExpanded = expandedProjects.has(project.id);
               const projSessions = sessionsByProject[project.id] ?? [];
+              const manySession = projSessions.length > 10;
               return (
                 <div key={project.id}>
                   {/* Project row */}
@@ -379,7 +404,7 @@ const loadProjects = async () => {
                     paddingRight: 4,
                   }}>
                     <button
-                      onClick={() => void handleSelectProject(project.id)}
+                      onClick={() => void handleToggleProject(project.id)}
                       style={{
                         flex: 1,
                         display: "flex",
@@ -397,13 +422,22 @@ const loadProjects = async () => {
                         transition: "color 0.15s",
                       }}
                     >
-                      {/* folder icon */}
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, opacity: isSelected ? 1 : 0.5 }}>
-                        <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+                      {/* chevron + folder icon */}
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+                        style={{ flexShrink: 0, opacity: isSelected ? 0.8 : 0.4, transform: isExpanded ? "rotate(0deg)" : "rotate(-90deg)", transition: "transform 0.2s ease" }}>
+                        <path d="M6 9l6 6 6-6"/>
+                      </svg>
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, opacity: isSelected ? 1 : 0.5 }}>
+                        {isExpanded
+                          ? <><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/><line x1="9" y1="14" x2="15" y2="14"/></>
+                          : <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>}
                       </svg>
                       <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                         {project.name}
                       </span>
+                      {projSessions.length > 0 && (
+                        <span style={{ flexShrink: 0, fontSize: 9, fontWeight: 600, color: isSelected ? "var(--accent)" : "var(--text-muted)", background: isSelected ? "var(--accent-dim)" : "var(--bg-deep)", border: "1px solid var(--border-subtle)", borderRadius: 8, padding: "0 5px", lineHeight: "15px", opacity: 0.8 }}>{projSessions.length}</span>
+                      )}
                     </button>
                     {/* New session button */}
                     <button
@@ -428,14 +462,14 @@ const loadProjects = async () => {
                     >+</button>
                   </div>
 
-                  {/* Sessions under this project — always rendered, height animated */}
+                  {/* Sessions under this project — collapsible, scrollable when > 10 */}
                   <div style={{
                     overflow: "hidden",
-                    maxHeight: isSelected ? 600 : 0,
-                    opacity: isSelected ? 1 : 0,
-                    transition: "max-height 0.55s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.4s ease",
+                    maxHeight: isExpanded ? (manySession ? 300 : 800) : 0,
+                    opacity: isExpanded ? 1 : 0,
+                    transition: "max-height 0.45s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease",
                   }}>
-                    <div style={{ display: "flex", flexDirection: "column", gap: 1, marginTop: 2, paddingLeft: 10, paddingBottom: 4 }}>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 1, marginTop: 2, paddingLeft: 10, paddingBottom: 4, ...(manySession ? { maxHeight: 280, overflowY: "auto" as const } : {}) }}>
                       {projSessions.map((session) => {
                         const isActiveSession = selectedSessionId === session.id;
                         const children = childSessionsByParent[session.id] ?? [];
@@ -449,7 +483,17 @@ const loadProjects = async () => {
                             paddingRight: 4,
                           }}>
                             <button
-                              onClick={() => { setSelectedProjectId(project.id); setSelectedSessionId(session.id); }}
+                              onClick={() => {
+                                setSelectedProjectId(project.id);
+                                setSelectedSessionId(session.id);
+                                if (children.length > 0) {
+                                  setCollapsedParents((prev) => {
+                                    const next = new Set(prev);
+                                    if (next.has(session.id)) next.delete(session.id); else next.add(session.id);
+                                    return next;
+                                  });
+                                }
+                              }}
                               style={{
                                 flex: 1,
                                 minWidth: 0,
@@ -466,6 +510,7 @@ const loadProjects = async () => {
                                 transition: "color 0.15s",
                               }}
                             >
+                              {/* dot indicator — same style as sessions without children */}
                               <span style={{
                                 width: 5, height: 5, borderRadius: "50%", flexShrink: 0,
                                 background: isActiveSession ? "var(--accent)" : (session.status === "completed" ? "var(--success)" : "var(--border-default)"),
@@ -474,6 +519,16 @@ const loadProjects = async () => {
                               <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                                 {session.title}
                               </span>
+                              {children.length > 0 && (
+                                <span style={{
+                                  flexShrink: 0, fontSize: 9, fontWeight: 600,
+                                  color: isActiveSession ? "var(--accent)" : "var(--text-muted)",
+                                  background: isActiveSession ? "var(--accent-dim)" : "var(--bg-deep)",
+                                  border: "1px solid var(--border-subtle)",
+                                  borderRadius: 8, padding: "0 5px", lineHeight: "16px",
+                                  opacity: 0.8,
+                                }}>{children.length}</span>
+                              )}
                             </button>
                             <button
                               onClick={() => void handleDeleteSession(session.id)}
@@ -491,7 +546,13 @@ const loadProjects = async () => {
                               onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.opacity = isActiveSession ? "0.7" : "0.5"; (e.currentTarget as HTMLButtonElement).style.color = isActiveSession ? "var(--accent)" : "var(--text-muted)"; }}
                             >×</button>
                           </div>
-                          {/* Child sessions (sub-agents) — indented under parent */}
+                          {/* Child sessions (sub-agents) — indented under parent, collapsible */}
+                          <div style={{
+                            overflow: "hidden",
+                            maxHeight: collapsedParents.has(session.id) ? 0 : children.length * 40,
+                            opacity: collapsedParents.has(session.id) ? 0 : 1,
+                            transition: "max-height 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.25s ease",
+                          }}>
                           {children.map((child) => {
                             const isChildActive = selectedSessionId === child.id;
                             return (
@@ -545,6 +606,7 @@ const loadProjects = async () => {
                               </div>
                             );
                           })}
+                          </div>
                           </div>
                         );
                       })}
@@ -774,6 +836,7 @@ const loadProjects = async () => {
                 {settingsTab === "memory" && <MemoryViewer />}
                 {settingsTab === "skill" && <SkillManager />}
                 {settingsTab === "agent" && <AgentManager />}
+                {settingsTab === "lsp" && <LSPServerList />}
               </div>
             </div>
           </div>

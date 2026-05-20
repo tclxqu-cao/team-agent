@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 
 export interface ToolCallData {
   id: string;
@@ -198,6 +198,14 @@ function GenericToolCard({ toolCall, onSelectSession }: { toolCall: ToolCallData
   const isDispatch = toolCall.name==="dispatch_agent";
   const subAgentStatus = toolCall.arguments.subAgentStatus as "completed"|"failed"|undefined;
   const subAgentDetail = toolCall.arguments.subAgentDetail as string|undefined;
+  const subAgentProgress = toolCall.arguments.subAgentProgress as string|undefined;
+
+  // Auto-expand dispatch card when streaming progress arrives
+  useEffect(() => {
+    if (isDispatch && !subAgentStatus && subAgentProgress) {
+      setExpanded(true);
+    }
+  }, [isDispatch, subAgentStatus, subAgentProgress]);
   const statusColor = isDispatch ? (subAgentStatus==="failed"?"var(--danger)":subAgentStatus==="completed"?"var(--success)":"var(--accent)") : (toolCall.result?(toolCall.isError?"var(--danger)":"var(--success)"):"var(--accent)");
   const statusBg = isDispatch ? (subAgentStatus==="failed"?"rgba(220,38,38,0.07)":subAgentStatus==="completed"?"rgba(5,150,105,0.07)":"var(--accent-dim)") : (toolCall.result?(toolCall.isError?"rgba(220,38,38,0.07)":"rgba(5,150,105,0.07)"):"var(--accent-dim)");
   const borderColor = isDispatch ? (subAgentStatus==="failed"?"rgba(220,38,38,0.18)":subAgentStatus==="completed"?"rgba(5,150,105,0.18)":"var(--border-default)") : (toolCall.result?(toolCall.isError?"rgba(220,38,38,0.18)":"rgba(5,150,105,0.18)"):"var(--border-default)");
@@ -226,6 +234,10 @@ function GenericToolCard({ toolCall, onSelectSession }: { toolCall: ToolCallData
           {isDispatch&&subAgentStatus&&subAgentDetail&&(<div>
             <div style={{ fontSize:10, color:"var(--text-muted)", fontWeight:600, textTransform:"uppercase", letterSpacing:"0.07em", marginBottom:6 }}>{subAgentStatus==="failed"?"错误信息":"执行摘要"}</div>
             <pre style={{ fontSize:11, color:subAgentStatus==="failed"?"var(--danger)":"var(--text-secondary)", whiteSpace:"pre-wrap", wordBreak:"break-all", fontFamily:"var(--font-mono)", padding:"10px 12px", borderRadius:8, background:subAgentStatus==="failed"?"rgba(220,38,38,0.04)":"var(--bg-surface)", border:`1px solid ${subAgentStatus==="failed"?"rgba(220,38,38,0.15)":"var(--border-subtle)"}`, borderLeft:`3px solid ${subAgentStatus==="failed"?"var(--danger)":"var(--success)"}`, maxHeight:180, overflow:"auto", margin:0, lineHeight:1.6 }}>{subAgentDetail}</pre>
+          </div>)}
+          {isDispatch&&!subAgentStatus&&subAgentProgress&&(<div>
+            <div style={{ fontSize:10, color:"var(--text-muted)", fontWeight:600, textTransform:"uppercase", letterSpacing:"0.07em", marginBottom:6 }}>实时输出</div>
+            <pre style={{ fontSize:11, color:"var(--text-secondary)", whiteSpace:"pre-wrap", wordBreak:"break-all", fontFamily:"var(--font-mono)", padding:"10px 12px", borderRadius:8, background:"var(--bg-surface)", border:"1px solid var(--border-subtle)", borderLeft:"3px solid var(--accent)", maxHeight:240, overflow:"auto", margin:0, lineHeight:1.6 }}>{subAgentProgress}<span style={{ display:"inline-block", width:"0.55em", height:"1em", background:"var(--accent)", verticalAlign:"text-bottom", animation:"blink 1s step-end infinite" }}>&#8203;</span></pre>
           </div>)}
           {isDispatch&&toolCall.arguments.subSessionId&&onSelectSession&&(
             <button onClick={()=>onSelectSession(toolCall.arguments.subSessionId as string)} style={{ alignSelf:"flex-start", padding:"5px 10px", borderRadius:6, border:"1px solid var(--border-default)", background:"var(--accent-dim)", color:"var(--accent)", fontSize:11, fontWeight:500, cursor:"pointer", display:"flex", alignItems:"center", gap:5, transition:"background 0.15s" }} onMouseEnter={e=>{(e.currentTarget as HTMLButtonElement).style.background="var(--accent)";(e.currentTarget as HTMLButtonElement).style.color="white"}} onMouseLeave={e=>{(e.currentTarget as HTMLButtonElement).style.background="var(--accent-dim)";(e.currentTarget as HTMLButtonElement).style.color="var(--accent)"}}>

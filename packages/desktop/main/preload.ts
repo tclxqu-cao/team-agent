@@ -9,8 +9,8 @@ ipcRenderer.on("agent:event", (_ipcEvent, data) => {
 
 contextBridge.exposeInMainWorld("agentApi", {
   // Agent control
-  run: (input: string, sessionId: string, agentIds?: string[], agentName?: string) =>
-    ipcRenderer.invoke("agent:run", input, sessionId, agentIds, agentName),
+  run: (input: string, sessionId: string, agentIds?: string[], agentName?: string, images?: string[]) =>
+    ipcRenderer.invoke("agent:run", input, sessionId, agentIds, agentName, images),
   abort: () => ipcRenderer.invoke("agent:abort"),
   onEvent: (callback: (event: unknown) => void): (() => void) => {
     agentEventBus.add(callback);
@@ -49,6 +49,12 @@ contextBridge.exposeInMainWorld("agentApi", {
   mcpDelete: (id: string) => ipcRenderer.invoke("mcp:delete", id),
   mcpSetEnabled: (id: string, enabled: boolean) => ipcRenderer.invoke("mcp:setEnabled", id, enabled),
   mcpProbe: (server: Record<string, unknown>) => ipcRenderer.invoke("mcp:probe", server),
+
+  // LSP Servers
+  lspList: () => ipcRenderer.invoke("lsp:list"),
+  lspSave: (config: Record<string, unknown>) => ipcRenderer.invoke("lsp:save", config),
+  lspDelete: (id: string) => ipcRenderer.invoke("lsp:delete", id),
+  lspSetEnabled: (id: string, enabled: boolean) => ipcRenderer.invoke("lsp:setEnabled", id, enabled),
 
   // Skills
   listSkills: () => ipcRenderer.invoke("skills:list"),

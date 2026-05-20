@@ -1,3 +1,14 @@
+export interface LSPServerConfig {
+  id: string;
+  name: string;
+  language: string;
+  fileTypes: string[];
+  command: string;
+  args: string[];
+  env?: Record<string, string>;
+  enabled: boolean;
+}
+
 export interface MCPServer {
   id: string;
   name: string;
@@ -69,7 +80,7 @@ export interface TodoItem {
 }
 
 export interface AgentApi {
-  run(input: string, sessionId: string, agentIds?: string[], agentName?: string): Promise<unknown[]>;
+  run(input: string, sessionId: string, agentIds?: string[], agentName?: string, images?: string[]): Promise<unknown[]>;
   abort(): Promise<void>;
   subscribe(): Promise<void>;
   onEvent(callback: (event: unknown) => void): () => void;
@@ -134,6 +145,11 @@ export interface AgentApi {
   cronDelete(id: string): Promise<boolean>;
   cronDeleteAll(): Promise<{ ok: boolean }>;
   cronList(): Promise<CronTask[]>;
+  // LSP Servers
+  lspList(): Promise<LSPServerConfig[]>;
+  lspSave(config: Omit<LSPServerConfig, 'id'> & { id?: string }): Promise<void>;
+  lspDelete(id: string): Promise<void>;
+  lspSetEnabled(id: string, enabled: boolean): Promise<void>;
 }
 
 declare global {

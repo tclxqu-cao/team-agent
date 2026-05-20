@@ -51,10 +51,10 @@ function createWindow(): void {
 
 // ── IPC: Agent control ──
 
-ipcMain.handle("agent:run", async (_event, input: string, sessionId: string, agentIds?: string[], agentName?: string) => {
+ipcMain.handle("agent:run", async (_event, input: string, sessionId: string, agentIds?: string[], agentName?: string, images?: string[]) => {
   agentHost.setRunning(true);
   try {
-    for await (const _event of agentHost.run(input, sessionId, agentIds, agentName)) {
+    for await (const _event of agentHost.run(input, sessionId, agentIds, agentName, images)) {
       // events are forwarded to renderer via the global subscriber above
     }
   } catch (err) {
@@ -211,10 +211,35 @@ ipcMain.handle("mcp:probe", async (_event, server: Record<string, unknown>) => {
   return agentHost.probeServerTools(server as any);
 });
 
+// ── IPC: LSP ──
+
+ipcMain.handle("lsp:list", async () => {
+  return agentHost.getLSPStore().listAll();
+});
+
+ipcMain.handle("lsp:save", async (_event, config: Record<string, unknown>) => {
+  await agentHost.getLSPStore().save(config as any);
+});
+
+ipcMain.handle("lsp:delete", async (_event, id: string) => {
+  await agentHost.getLSPStore().delete(id);
+});
+
+ipcMain.handle("lsp:setEnabled", async (_event, id: string, enabled: boolean) => {
+  await agentHost.getLSPStore().setEnabled(id, enabled);
+});
+
 // ── IPC: Skills ──
 
 ipcMain.handle("skills:list", async () => {
-  return agentHost.getSkillStore().listAll();
+  try {
+    const result = await agentHost.listSkills();
+    console.log("[skills:list] workingDir:", (agentHost as any).workingDirectory, "found:", result.length);
+    return result;
+  } catch (err) {
+    console.error("[skills:list] ERROR:", err);
+    return [];
+  }
 });
 
 ipcMain.handle("skills:save", async (_event, skill: Record<string, unknown>) => {

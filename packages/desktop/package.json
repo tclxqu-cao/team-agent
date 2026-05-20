@@ -5,7 +5,7 @@
   "type": "module",
   "main": "./dist/main/index.js",
   "scripts": {
-    "dev": "lsof -ti:5173 | xargs kill -9 2>/dev/null; VITE_PORT=5173 bunx --bun vite --port 5173 & sleep 2 && bun run compile && VITE_PORT=5173 electron .",
+    "dev": "lsof -ti:5173 | xargs kill -9 2>/dev/null; bun run compile && bunx concurrently --kill-others -n vite,electron 'VITE_PORT=5173 bunx --bun vite --port 5173' 'sleep 2 && VITE_PORT=5173 electron .'",
     "build": "bunx --bun vite build && bun run compile",
     "compile": "bunx tsc && bunx tsc -p tsconfig.preload.json && mv dist/main/preload.js dist/main/preload.cjs",
     "electron": "bun run compile && electron .",

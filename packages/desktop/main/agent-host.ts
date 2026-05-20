@@ -9,6 +9,7 @@ import {
   SQLiteUploadStore,
   SQLiteProjectStore,
   SQLiteAgentStore,
+  SQLiteLSPServerStore,
   SkillLoader,
   TodoAddTool,
   TodoUpdateTool,
@@ -17,9 +18,14 @@ import {
   CronCreateTool,
   CronDeleteTool,
   CronListTool,
+  LspDiagnosticsTool,
+  LspHoverTool,
+  LspDefinitionTool,
+  LspReferencesTool,
   CronTasks,
   CronTaskLock,
   MCPManager,
+  LSPManager,
   type IAgentLoop,
   type AgentEvent,
   type CronTask,
@@ -46,6 +52,8 @@ export class AgentHost {
   private readonly uploadStore: SQLiteUploadStore;
   private readonly projectStore: SQLiteProjectStore;
   private readonly agentStore: SQLiteAgentStore;
+  private readonly lspStore: SQLiteLSPServerStore;
+  private readonly lspManager: LSPManager;
   private readonly subscribers = new Set<(event: AgentEvent & { _sid: string }) => void>();
   /** Current todo list for the active run (cleared at each top-level run) */
   private currentTodos: TodoItem[] = [];
@@ -80,6 +88,8 @@ export class AgentHost {
     this.uploadStore = new SQLiteUploadStore(baseDir);
     this.projectStore = new SQLiteProjectStore(baseDir);
     this.agentStore = new SQLiteAgentStore(baseDir);
+    this.lspStore = new SQLiteLSPServerStore(baseDir);
+    this.lspManager = new LSPManager();
     this.builder = new AgentBuilder()
       .withWorkingDirectory(baseDir)
       .withMemoryStore(this.memoryStore)
@@ -98,6 +108,11 @@ export class AgentHost {
   /** Try to build the model provider from stored settings */
   private tryConfigureFromStore(): void {
     const settings = this.settingsStore.getAll();
+    // Restore working directory from persisted settings (overrides process.cwd())
+    if (settings.workingDirectory) {
+      this.workingDirectory = settings.workingDirectory;
+      this.builder.withWorkingDirectory(settings.workingDirectory);
+    }
     if (settings.isConfigured) {
       try {
         this.builder.withModel(settings.modelProvider, {
@@ -138,6 +153,7 @@ export class AgentHost {
   /** Save settings and reconfigure the builder */
   configure(settings: SettingsData): void {
     this.settingsStore.saveAll(settings);
+    this.workingDirectory = settings.workingDirectory || this.workingDirectory;
     this.builder = new AgentBuilder()
       .withWorkingDirectory(settings.workingDirectory)
       .withMemoryStore(this.memoryStore)
@@ -211,6 +227,10 @@ export class AgentHost {
 
   getProjectStore(): SQLiteProjectStore {
     return this.projectStore;
+  }
+
+  getLSPStore(): SQLiteLSPServerStore {
+    return this.lspStore;
   }
 
   /** Update the agent builder's working directory (takes effect on next run) */
@@ -304,6 +324,9 @@ export class AgentHost {
   /**
    * Register session-aware tools (todo + dispatch) on the given registry.
    * Must be called AFTER buildSync() so enabledTools filter doesn't remove them.
+   *
+   * Main agent: uses persistent shared this.currentTodos so todos survive across turns.
+   * Sub-agents: use isolated per-dispatch todo state so they don't pollute the parent session.
    */
   private registerSessionTools(
     builder: AgentBuilder,
@@ -311,19 +334,28 @@ export class AgentHost {
     allowDispatch = true,
   ): void {
     const registry = builder.getToolRegistry();
-    registry.register(
-      new TodoAddTool(
-        () => this.currentTodos,
-        (todos) => this.setTodos(todos),
-      ),
-    );
-    registry.register(
-      new TodoUpdateTool(
-        () => this.currentTodos,
-        (todos) => this.setTodos(todos),
-      ),
-    );
-    registry.register(new TodoListTool(() => this.currentTodos));
+
+    // Main agent keeps shared state that survives multiple turns in the same session.
+    // Sub-agents get an isolated todo list scoped to their dispatch and emit events
+    // tagged with their own sessionId so the renderer routes them correctly.
+    const isMainAgent = builder === this.builder;
+    let getTodos: () => TodoItem[];
+    let setTodosCallback: (todos: TodoItem[]) => void;
+    if (isMainAgent) {
+      getTodos = () => this.currentTodos;
+      setTodosCallback = (todos) => this.setTodos(todos);
+    } else {
+      let subTodos: TodoItem[] = [];
+      getTodos = () => subTodos;
+      setTodosCallback = (todos) => {
+        subTodos = todos;
+        this.emit({ type: "todo_update", todos: [...todos] }, sessionId);
+      };
+    }
+
+    registry.register(new TodoAddTool(getTodos, setTodosCallback));
+    registry.register(new TodoUpdateTool(getTodos, setTodosCallback));
+    registry.register(new TodoListTool(getTodos));
     if (allowDispatch) {
       registry.register(
         new DispatchAgentTool((name, task, sid) =>
@@ -334,6 +366,13 @@ export class AgentHost {
     registry.register(new CronCreateTool((cron, prompt, options) => this.createCronTask(cron, prompt, options)));
     registry.register(new CronDeleteTool(this.cronTasks));
     registry.register(new CronListTool(this.cronTasks));
+
+    // LSP tools
+    const getConfigs = () => this.lspStore.list();
+    registry.register(new LspDiagnosticsTool(this.lspManager, getConfigs));
+    registry.register(new LspHoverTool(this.lspManager, getConfigs));
+    registry.register(new LspDefinitionTool(this.lspManager, getConfigs));
+    registry.register(new LspReferencesTool(this.lspManager, getConfigs));
   }
 
   // ── Sub-agent dispatch ────────────────────────────────────────────────────
@@ -449,6 +488,8 @@ export class AgentHost {
         if (event.type === "text_chunk" && event.text) {
           assistantText += event.text;
           finalText += event.text;
+          // Stream progress to the parent session so the dispatch card shows live output
+          this.emit({ type: "agent_progress", agentName, subSessionId, text: event.text }, parentSessionId);
         }
         if (event.type === "tool_call" && event.toolCall) {
           pendingToolCalls.push(event.toolCall);
@@ -505,6 +546,34 @@ export class AgentHost {
   }
 
   /**
+   * List all skills by scanning the filesystem (all priority dirs) and merging
+   * with SQLite. Filesystem discovery wins over SQLite-only records.
+   * This is what the UI "/" autocomplete and SkillManager use.
+   */
+  async listSkills(): Promise<Array<{ name: string; description: string; filePath: string; source: string; enabled?: boolean }>> {
+    const loader = new SkillLoader();
+    const fsMetas = await loader.loadAll(this.workingDirectory);
+    const dbSkills = await this.skillStore.listAll();
+    const dbMap = new Map(dbSkills.map((s) => [s.name, s]));
+
+    // Build merged list: filesystem-discovered skills first
+    const seen = new Set<string>();
+    const result: Array<{ name: string; description: string; filePath: string; source: string; enabled?: boolean }> = [];
+    for (const meta of fsMetas) {
+      seen.add(meta.name);
+      const db = dbMap.get(meta.name);
+      result.push({ name: meta.name, description: meta.description, filePath: meta.filePath, source: meta.source, enabled: db ? (db as any).enabled !== false : true });
+    }
+    // Append SQLite-only entries (imported via UI but no longer on disk in scanned dirs)
+    for (const db of dbSkills) {
+      if (!seen.has(db.name)) {
+        result.push({ name: db.name, description: db.description, filePath: (db as any).filePath ?? "", source: (db as any).source ?? "custom", enabled: (db as any).enabled !== false });
+      }
+    }
+    return result;
+  }
+
+  /**
    * Import a skill from a local path (directory or SKILL.md file).
    * Installs to ~/.agent/skills/<name>/ (global scope) and registers
    * immediately in the current builder so it is active this session.
@@ -555,6 +624,7 @@ export class AgentHost {
     sessionId: string,
     agentIds?: string[],
     agentName?: string,
+    images?: string[],
   ): AsyncIterable<AgentEvent> {
     // ── 1. Track session and clear todos only when switching to a new session ───
     // Clearing todos every run caused "No matching todo found" when the LLM tried
@@ -739,7 +809,9 @@ export class AgentHost {
       // For subsequent agents in a multi-agent run: they'll see session history
       // from previous agents when AgentLoop loads the session at run() start.
       // We pass the original input — subsequent agents see context in history.
+      // Images only go to the FIRST agent (they belong to the first user message).
       const agentInput = input;
+      const agentImages = idx === 0 ? images : undefined;
 
       let assistantText = "";
       const pendingToolCalls: Array<{
@@ -748,7 +820,7 @@ export class AgentHost {
         arguments: Record<string, unknown>;
       }> = [];
 
-      for await (const event of this.agent.run(agentInput, sessionId)) {
+      for await (const event of this.agent.run(agentInput, sessionId, agentImages)) {
         this.emit(event, sessionId);
         yield event;
 
