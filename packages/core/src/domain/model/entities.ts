@@ -3,6 +3,8 @@
 export interface Message {
   role: "system" | "user" | "assistant" | "tool";
   content: string;
+  /** Base64 data URLs for images (e.g. data:image/png;base64,...) — used for vision requests */
+  images?: string[];
   name?: string;
   toolCallId?: string;
   toolCalls?: ToolCall[];

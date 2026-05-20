@@ -16,6 +16,7 @@ export type AgentEventType =
   | "todo_update"
   | "agent_dispatch"
   | "agent_done"
+  | "agent_progress"
   | "cron_update";
 
 export interface TodoItem {
@@ -39,6 +40,7 @@ export type AgentEvent =
   | { type: "todo_update"; todos: TodoItem[] }
   | { type: "agent_dispatch"; agentName: string; task: string; subSessionId?: string }
   | { type: "agent_done"; agentName: string; subSessionId: string; status: "completed" | "failed"; summary?: string; error?: string }
+  | { type: "agent_progress"; agentName: string; subSessionId: string; text: string }
   | { type: "cron_update"; tasks: CronTask[] };
 
 export interface TokenUsage {
@@ -64,7 +66,7 @@ export interface AgentConfig {
 
 export interface IAgentLoop {
   /** Run the agent loop, yielding events as they occur */
-  run(input: string, sessionId: string): AsyncIterable<AgentEvent>;
+  run(input: string, sessionId: string, images?: string[]): AsyncIterable<AgentEvent>;
   /** Abort the current run */
   abort(): void;
 }

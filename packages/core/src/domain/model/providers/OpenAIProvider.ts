@@ -171,6 +171,13 @@ export class OpenAIProvider implements IModelProvider {
       // the message or fail to link tool results, causing the agent to loop.
       content: (m.toolCalls && m.toolCalls.length > 0) ? null : (m.content || null),
     };
+    // Vision: build multimodal content blocks when images are present
+    if (m.images && m.images.length > 0 && !m.toolCalls && !m.toolCallId) {
+      adapted.content = [
+        { type: "text", text: m.content || "" },
+        ...m.images.map((url) => ({ type: "image_url", image_url: { url } })),
+      ];
+    }
     if (m.toolCalls && m.toolCalls.length > 0) {
       adapted.tool_calls = m.toolCalls.map((tc) => ({
         id: tc.id,

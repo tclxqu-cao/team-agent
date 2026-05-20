@@ -179,6 +179,16 @@ export class AnthropicProvider implements IModelProvider {
       role: m.role === "tool" ? "user" : m.role,
       content: m.content,
     };
+    // Vision: build multimodal content blocks when images are present
+    if (m.images && m.images.length > 0 && !m.toolCalls && !m.toolCallId) {
+      const imageBlocks = m.images.flatMap((dataUrl) => {
+        const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
+        if (!match) return [];
+        return [{ type: "image", source: { type: "base64", media_type: match[1], data: match[2] } }];
+      });
+      adapted.content = [...imageBlocks, { type: "text", text: m.content || "" }];
+      return adapted;
+    }
     if (m.toolCalls && m.toolCalls.length > 0) {
       adapted.content = m.toolCalls.map((tc) => ({
         type: "tool_use",

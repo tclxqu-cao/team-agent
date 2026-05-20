@@ -14,6 +14,7 @@ export * from './domain/session/index.js';
 export * from './domain/upload/index.js';
 export * from './domain/project/index.js';
 export * from './domain/settings/index.js';
+export * from './domain/lsp/index.js';
 
 // Implementations
 export { AgentLoop } from './domain/agent/AgentLoop.js';
@@ -26,7 +27,7 @@ export { OpenAIProvider } from './domain/model/providers/OpenAIProvider.js';
 export { DeepSeekProvider } from './domain/model/providers/DeepSeekProvider.js';
 export { ModelRegistry } from './domain/model/ModelRegistry.js';
 export { ToolRegistry } from './domain/tool/ToolRegistry.js';
-export { ReadFileTool, WriteFileTool, BashTool, WebFetchTool, WebSearchTool, GrepTool, TodoAddTool, TodoUpdateTool, TodoListTool, DispatchAgentTool, CronCreateTool, CronDeleteTool, CronListTool, registerBuiltinTools } from './domain/tool/builtin/index.js';
+export { ReadFileTool, WriteFileTool, BashTool, WebFetchTool, WebSearchTool, GrepTool, GlobTool, TodoAddTool, TodoUpdateTool, TodoListTool, DispatchAgentTool, CronCreateTool, CronDeleteTool, CronListTool, LspDiagnosticsTool, LspHoverTool, LspDefinitionTool, LspReferencesTool, registerBuiltinTools } from './domain/tool/builtin/index.js';
 export { MCPClient } from './domain/mcp/MCPClient.js';
 export { MCPManager } from './domain/mcp/MCPManager.js';
 export { SkillLoader } from './domain/skill/SkillLoader.js';

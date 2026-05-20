@@ -8,7 +8,7 @@
     "packages/desktop"
   ],
   "scripts": {
-    "dev": "bun run dev:core & bun run dev:server & bun run dev:desktop",
+    "dev": "bunx concurrently --kill-others -n core,server,desktop -c blue,green,yellow 'bun run dev:core' 'bun run dev:server' 'bun run dev:desktop'",
     "dev:core": "bun run --cwd packages/core dev",
     "dev:server": "bun run --cwd packages/server dev",
     "dev:desktop": "bun run --cwd packages/desktop dev",

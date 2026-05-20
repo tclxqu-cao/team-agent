@@ -21,7 +21,12 @@ export class SkillLoader implements ISkillLoader {
     try {
       const entries = await readdir(dirPath, { withFileTypes: true });
       for (const entry of entries) {
-        if (!entry.isDirectory()) continue;
+        // Use stat() so symlinks to directories are treated as directories
+        const entryPath = join(dirPath, entry.name);
+        try {
+          const s = await stat(entryPath);
+          if (!s.isDirectory()) continue;
+        } catch { continue; }
         const skillMdPath = join(dirPath, entry.name, SKILL_MD);
         try {
           await stat(skillMdPath);
@@ -51,6 +56,7 @@ export class SkillLoader implements ISkillLoader {
     const candidateDirs: Array<{ dir: string; source: SkillSource }> = [
       { dir: join(projectDir, ".agent", "skills"), source: "project" },
       { dir: join(home, ".agent", "skills"),        source: "global"  },
+      { dir: join(home, ".agents", "skills"),       source: "global"  },
       ...THIRD_PARTY_TOOLS.map(({ dir, source }) => ({ dir: join(projectDir, dir, "skills"), source })),
       ...THIRD_PARTY_TOOLS.map(({ dir, source }) => ({ dir: join(home, dir, "skills"), source })),
     ];
@@ -116,7 +122,10 @@ export class SkillLoader implements ISkillLoader {
   /** Parse only the YAML frontmatter block — skips the prompt body */
   private parseFrontmatterOnly(content: string, filePath: string, source: SkillSource): SkillMeta {
     const lines = content.split("\n");
-    let name = basename(filePath, extname(filePath));
+    // Prefer the parent directory name over the file basename (SKILL.md convention)
+    const fileBaseName = basename(filePath, extname(filePath));
+    const dirName = basename(dirname(filePath));
+    let name = fileBaseName === "SKILL" ? dirName : fileBaseName;
     let description = "";
     const triggers: string[] = [];
     const tools: string[] = [];
@@ -129,8 +138,24 @@ export class SkillLoader implements ISkillLoader {
       if (lines[i].trim() === "---") break;
       const colonIdx = lines[i].indexOf(":");
       if (colonIdx === -1) continue;
-      const key = lines[i].slice(0, colonIdx).trim().toLowerCase();
-      const value = lines[i].slice(colonIdx + 1).trim();
+      // Strip leading '#' chars to handle "## name: value" (Markdown-prefixed) frontmatter
+      const key = lines[i].slice(0, colonIdx).trim().replace(/^#+\s*/, "").toLowerCase();
+      const rawValue = lines[i].slice(colonIdx + 1).trim();
+
+      // Handle YAML block scalars: "key: >" or "key: |" — collect indented continuation lines
+      let value = rawValue;
+      if (rawValue === ">" || rawValue === "|") {
+        const blockLines: string[] = [];
+        while (i + 1 < lines.length && lines[i + 1].trim() !== "---") {
+          const next = lines[i + 1];
+          // Block content must be indented (starts with whitespace)
+          if (next.length > 0 && !/^\s/.test(next) && next.includes(":")) break;
+          i++;
+          blockLines.push(lines[i].trim());
+        }
+        value = blockLines.filter(Boolean).join(" ");
+      }
+
       switch (key) {
         case "name": name = value; break;
         case "description": description = value; break;

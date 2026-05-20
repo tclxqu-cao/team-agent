@@ -125,6 +125,17 @@ export class SQLiteDatabase {
         created TEXT NOT NULL,
         updated TEXT NOT NULL
       );
+
+      CREATE TABLE IF NOT EXISTS lsp_servers (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        language TEXT NOT NULL DEFAULT '',
+        file_types TEXT NOT NULL DEFAULT '[]',
+        command TEXT NOT NULL DEFAULT '',
+        args TEXT NOT NULL DEFAULT '[]',
+        env TEXT NOT NULL DEFAULT '{}',
+        enabled INTEGER NOT NULL DEFAULT 1
+      );
     `);
 
     // Migration: make sessions.project_id nullable (remove NOT NULL + FK constraint)
@@ -134,6 +145,23 @@ export class SQLiteDatabase {
     this.migrateMCPServerCommandNullable();
     this.migrateMCPServerHeaders();
     this.migrateSessionsParentId();
+    this.migrateLSPServers();
+  }
+
+  /** Create lsp_servers table if it doesn't exist (for DBs created before this feature). */
+  private migrateLSPServers(): void {
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS lsp_servers (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        language TEXT NOT NULL DEFAULT '',
+        file_types TEXT NOT NULL DEFAULT '[]',
+        command TEXT NOT NULL DEFAULT '',
+        args TEXT NOT NULL DEFAULT '[]',
+        env TEXT NOT NULL DEFAULT '{}',
+        enabled INTEGER NOT NULL DEFAULT 1
+      );
+    `);
   }
 
   /**

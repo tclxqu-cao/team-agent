@@ -17,7 +17,7 @@ export class AgentLoop implements IAgentLoop {
     this.compactor = new ContextCompactor(config.modelProvider);
   }
 
-  async *run(input: string, sessionId: string): AsyncIterable<AgentEvent> {
+  async *run(input: string, sessionId: string, images?: string[]): AsyncIterable<AgentEvent> {
     this.abortController = new AbortController();
 
     // 1. Load session history
@@ -65,11 +65,35 @@ export class AgentLoop implements IAgentLoop {
       systemPrompt: this.config.systemPrompt,
     });
 
-    let messages: Message[] = [
-      { role: "system", content: assembled.systemPrompt },
-      ...assembled.messages,
-      { role: "user", content: input },
-    ];
+    // AgentHost saves the user message to the session store BEFORE calling run(),
+    // so it is already present as the last entry in assembled.messages.
+    // Only append it if it is not already there to avoid sending two consecutive
+    // identical user messages to the LLM (which anchors the model to old context).
+    const lastHistMsg = assembled.messages.at(-1);
+    const userMsgAlreadyInHistory =
+      lastHistMsg?.role === "user" && lastHistMsg?.content === input;
+
+    // Attach images to the user message (current run only; not persisted to DB)
+    const userMsgWithImages: Message = {
+      role: "user",
+      content: input,
+      ...(images && images.length > 0 ? { images } : {}),
+    };
+
+    let messages: Message[];
+    if (userMsgAlreadyInHistory) {
+      // Replace the last (user) message with one that includes images if provided
+      const base = images && images.length > 0
+        ? [...assembled.messages.slice(0, -1), { ...assembled.messages.at(-1)!, images }]
+        : assembled.messages;
+      messages = [{ role: "system", content: assembled.systemPrompt }, ...base];
+    } else {
+      messages = [
+        { role: "system", content: assembled.systemPrompt },
+        ...assembled.messages,
+        userMsgWithImages,
+      ];
+    }
 
     const compactThreshold = this.config.compactThreshold ?? 0.6;
     const tokenLimit = this.config.maxTokens;
@@ -175,29 +199,33 @@ export class AgentLoop implements IAgentLoop {
       };
       messages.push(assistantMsg);
 
-      // 5. Execute each tool call and observe
-      for (const tc of toolCalls) {
-        const ctx: ToolContext = {
-          workingDirectory: this.config.workingDirectory,
-          sessionId,
-          signal: this.abortController.signal,
-        };
+      // 5. Execute all tool calls in parallel, then observe results
+      const results = await Promise.all(
+        toolCalls.map(async (tc) => {
+          const ctx: ToolContext = {
+            workingDirectory: this.config.workingDirectory,
+            sessionId,
+            signal: this.abortController!.signal,
+          };
+          const result = await this.config.toolExecutor.execute(
+            tc.name,
+            tc.arguments,
+            ctx,
+          );
+          result.toolCallId = tc.id;
+          return result;
+        }),
+      );
 
-        const result = await this.config.toolExecutor.execute(
-          tc.name,
-          tc.arguments,
-          ctx,
-        );
-
-        result.toolCallId = tc.id;
+      for (const result of results) {
         yield { type: "tool_result", result };
 
         // 6. Add tool result to messages
         messages.push({
           role: "tool",
           content: result.content,
-          toolCallId: tc.id,
-          name: tc.name,
+          toolCallId: result.toolCallId,
+          name: toolCalls.find((tc) => tc.id === result.toolCallId)?.name,
         });
       }
 

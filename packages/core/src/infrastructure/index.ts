@@ -11,3 +11,4 @@ export { SQLitePluginStore } from './SQLitePluginStore.js';
 export { SQLiteUploadStore } from './SQLiteUploadStore.js';
 export { SQLiteProjectStore } from './SQLiteProjectStore.js';
 export { SQLiteAgentStore } from './SQLiteAgentStore.js';
+export { SQLiteLSPServerStore } from './SQLiteLSPServerStore.js';
