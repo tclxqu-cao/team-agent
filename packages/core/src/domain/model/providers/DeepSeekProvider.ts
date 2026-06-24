@@ -69,9 +69,21 @@ export class DeepSeekProvider implements IModelProvider {
     let buffer = "";
     const toolCalls = new Map<number, { id: string; name: string; arguments: string }>();
 
+    // Chunk-level timeout: if no data arrives for 60s, abort the stream
+    const CHUNK_TIMEOUT_MS = 60_000;
+    const readWithTimeout = () => {
+      let timer: ReturnType<typeof setTimeout>;
+      return Promise.race([
+        reader.read().finally(() => clearTimeout(timer)),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(new Error("Stream chunk timeout: no data received for 60s")), CHUNK_TIMEOUT_MS);
+        }),
+      ]);
+    };
+
     try {
       while (true) {
-        const { done, value } = await reader.read();
+        const { done, value } = await readWithTimeout();
         if (done) break;
 
         buffer += decoder.decode(value, { stream: true });

@@ -58,6 +58,9 @@ export interface ISkillRegistry {
   getAll(): SkillMeta[];
   /** Find skills triggered by user input */
   findMatching(input: string): SkillMeta[];
-  /** Get assembled prompt text for matched skills (lazy-loads prompt bodies) */
-  getSkillPrompts(input: string): Promise<string>;
+  /** Get assembled prompt text for matched skills (lazy-loads prompt bodies).
+   *  If enabledSkills is provided, only skills in that list can be activated. */
+  getSkillPrompts(input: string, enabledSkills?: string[] | null): Promise<string>;
+  /** Inject a model provider to enable LLM-based semantic matching */
+  setModelProvider(provider: import('../model/entities.js').IModelProvider | null): void;
 }

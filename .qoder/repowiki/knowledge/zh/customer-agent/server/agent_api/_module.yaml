@@ -1,0 +1,8 @@
+schema_version: 1
+module_path: server/agent_api
+title: agent_api
+scope:
+    - packages/server/app/api/agent/
+source_files: []
+depends_on: []
+related_to: []

@@ -1,0 +1,9 @@
+schema_version: 1
+module_path: core/core_runtime
+title: 核心运行时与持久化
+scope:
+    - packages/core/src/application/
+    - packages/core/src/infrastructure/
+source_files: []
+depends_on: []
+related_to: []

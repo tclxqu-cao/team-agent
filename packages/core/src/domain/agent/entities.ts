@@ -11,13 +11,15 @@ export type AgentEventType =
   | "text_chunk"
   | "text_done"
   | "compacted"
+  | "turn_aborted"
   | "error"
   | "done"
   | "todo_update"
   | "agent_dispatch"
   | "agent_done"
   | "agent_progress"
-  | "cron_update";
+  | "cron_update"
+  | "show_widget";
 
 export interface TodoItem {
   id: string;
@@ -35,13 +37,15 @@ export type AgentEvent =
   | { type: "text_chunk"; text: string }
   | { type: "text_done" }
   | { type: "compacted"; summary: string; removedMessages: number }
+  | { type: "turn_aborted" }
   | { type: "error"; message: string; code?: string }
   | { type: "done"; finalText: string; usage?: TokenUsage }
   | { type: "todo_update"; todos: TodoItem[] }
   | { type: "agent_dispatch"; agentName: string; task: string; subSessionId?: string }
   | { type: "agent_done"; agentName: string; subSessionId: string; status: "completed" | "failed"; summary?: string; error?: string }
   | { type: "agent_progress"; agentName: string; subSessionId: string; text: string }
-  | { type: "cron_update"; tasks: CronTask[] };
+  | { type: "cron_update"; tasks: CronTask[] }
+  | { type: "show_widget"; widgetType: string; data: Record<string, unknown>; widgetId: string };
 
 export interface TokenUsage {
   inputTokens: number;
@@ -54,6 +58,7 @@ export interface AgentConfig {
   toolRegistry: import("../tool/entities.js").IToolRegistry;
   toolExecutor: import("../tool/entities.js").IToolExecutor;
   contextAssembler: import("../context/entities.js").IContextAssembler;
+  skillRegistry: import("../skill/entities.js").ISkillRegistry;
   memoryStore: import("../memory/entities.js").IMemoryStore;
   sessionStore?: import("../session/entities.js").ISessionStore;
   workingDirectory: string;
@@ -62,6 +67,15 @@ export interface AgentConfig {
   systemPrompt?: string;
   /** Token count threshold (0–1 fraction of maxTokens) that triggers AutoCompact. Default 0.8 */
   compactThreshold?: number;
+  /** Max retries for retryable stream errors (timeout, rate limit, network). Default 0 */
+  streamMaxRetries?: number;
+  /** Tool name allowlist. Only these tools' definitions are sent to the LLM.
+   *  null = all tools visible. Tools registered AFTER construction (session tools,
+   *  MCP tools) are always visible regardless of this filter. */
+  enabledTools?: string[] | null;
+  /** Skill name allowlist. Only these skills can be activated.
+   *  null = all skills available. */
+  enabledSkills?: string[] | null;
 }
 
 export interface IAgentLoop {

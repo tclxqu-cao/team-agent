@@ -81,7 +81,9 @@ export interface TodoItem {
 
 export interface AgentApi {
   run(input: string, sessionId: string, agentIds?: string[], agentName?: string, images?: string[]): Promise<unknown[]>;
+  steer(input: string, sessionId: string, agentName?: string): Promise<boolean>;
   abort(): Promise<void>;
+  answerQuestion(questionId: string, answer: string, selectedIndices?: number[]): Promise<boolean>;
   subscribe(): Promise<void>;
   onEvent(callback: (event: unknown) => void): () => void;
   getSettings(): Promise<{

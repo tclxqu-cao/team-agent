@@ -15,6 +15,9 @@ import {
   TodoUpdateTool,
   TodoListTool,
   DispatchAgentTool,
+  WaitAgentTool,
+  AskUserTool,
+  type AskUserRequest,
   CronCreateTool,
   CronDeleteTool,
   CronListTool,
@@ -39,6 +42,9 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { mkdir, writeFile } from "node:fs/promises";
 import { CronScheduler } from "./cron/cronScheduler.js";
+import { MCPConnectionManager } from "./mcp-connection-manager.js";
+import { SubAgentDispatcher } from "./sub-agent-dispatcher.js";
+import { QuestionManager } from "./question-manager.js";
 
 export class AgentHost {
   private agent: IAgentLoop | null = null;
@@ -69,13 +75,17 @@ export class AgentHost {
   private readonly cronLock: CronTaskLock;
   /** Cron scheduler */
   private readonly cronScheduler: CronScheduler;
-  /** Whether the agent loop is currently running */
-  private _isRunning = false;
-  /** MCP manager — reconnected on each run with the current enabled server list */
-  private mcpManager: MCPManager | null = null;
+  /** Count of concurrent runs (supports interruption nesting) */
+  private _runCount = 0;
+  /** MCP connection manager — handles server lifecycle */
+  private readonly mcpConnectionManager: MCPConnectionManager;
   /** Queue of pending prompts enqueued by the cron scheduler */
   private pendingQueue: Array<{ prompt: string; sessionId: string }> = [];
   private queueDraining = false;
+  /** Background sub-agents launched by dispatch_agent (non-blocking) */
+  private readonly subAgentDispatcher: SubAgentDispatcher;
+  /** Manages ask_user question lifecycle */
+  private readonly questionManager: QuestionManager;
 
   constructor(baseDir: string) {
     this.workingDirectory = baseDir;
@@ -90,6 +100,16 @@ export class AgentHost {
     this.agentStore = new SQLiteAgentStore(baseDir);
     this.lspStore = new SQLiteLSPServerStore(baseDir);
     this.lspManager = new LSPManager();
+    this.mcpConnectionManager = new MCPConnectionManager(this.mcpStore);
+    this.subAgentDispatcher = new SubAgentDispatcher(
+      this.agentStore,
+      this.sessionStore,
+      this.settingsStore,
+      this.memoryStore,
+      (builder, sid, allowDispatch) => this.registerSessionTools(builder, sid, allowDispatch),
+      (event, sid) => this.emit(event, sid),
+    );
+    this.questionManager = new QuestionManager((event, sid) => this.emit(event, sid));
     this.builder = new AgentBuilder()
       .withWorkingDirectory(baseDir)
       .withMemoryStore(this.memoryStore)
@@ -275,48 +295,20 @@ export class AgentHost {
 
   /**
    * Temporarily connect to an MCP server, list its tools, then disconnect.
-   * Returns tool name + description pairs without touching the main toolRegistry.
+   * Delegates to MCPConnectionManager.
    */
   async probeServerTools(config: Parameters<typeof MCPManager.prototype.connectServer>[0]): Promise<Array<{ name: string; description: string }>> {
-    const mgr = new MCPManager(); // no registry — pure probe
-    try {
-      const client = await mgr.connectServer(config);
-      const tools = await client.listTools();
-      return tools.map((t) => ({ name: t.name, description: t.description }));
-    } finally {
-      await mgr.disconnectServer(config.id).catch(() => {});
-    }
+    return this.mcpConnectionManager.probeServerTools(config);
   }
 
   // ── MCP server connection ────────────────────────────────────────────────
 
   /**
    * Connect all enabled MCP servers and register their tools into the builder's registry.
-   * Disconnects any previously connected servers first to avoid duplicates.
+   * Delegates to MCPConnectionManager.
    */
   private async connectMCPServers(builder: AgentBuilder): Promise<void> {
-    // Disconnect previous manager cleanly
-    if (this.mcpManager) {
-      for (const cfg of this.mcpManager.listServers()) {
-        await this.mcpManager.disconnectServer(cfg.id).catch(() => {});
-      }
-      this.mcpManager = null;
-    }
-
-    const enabledServers = await this.mcpStore.list(); // only enabled ones
-    if (enabledServers.length === 0) return;
-
-    const registry = builder.getToolRegistry();
-    this.mcpManager = new MCPManager(registry);
-
-    for (const cfg of enabledServers) {
-      try {
-        await this.mcpManager.connectServer(cfg);
-        console.log(`[MCP] Connected: ${cfg.id} (${cfg.transport})`);
-      } catch (err) {
-        console.error(`[MCP] Failed to connect ${cfg.id}:`, err);
-      }
-    }
+    await this.mcpConnectionManager.connectServers(builder.getToolRegistry());
   }
 
   // ── Session-level tool registration ──────────────────────────────────────
@@ -359,7 +351,12 @@ export class AgentHost {
     if (allowDispatch) {
       registry.register(
         new DispatchAgentTool((name, task, sid) =>
-          this.dispatchSubAgent(name, task, sid),
+          this.subAgentDispatcher.dispatch(name, task, sid),
+        ),
+      );
+      registry.register(
+        new WaitAgentTool((subSessionId, timeoutMs) =>
+          this.subAgentDispatcher.wait(subSessionId, timeoutMs),
         ),
       );
     }
@@ -367,182 +364,17 @@ export class AgentHost {
     registry.register(new CronDeleteTool(this.cronTasks));
     registry.register(new CronListTool(this.cronTasks));
 
+    // ask_user tool — delegates to QuestionManager
+    registry.register(new AskUserTool(async (request: AskUserRequest) => {
+      return this.questionManager.create(request, sessionId);
+    }));
+
     // LSP tools
     const getConfigs = () => this.lspStore.list();
     registry.register(new LspDiagnosticsTool(this.lspManager, getConfigs));
     registry.register(new LspHoverTool(this.lspManager, getConfigs));
     registry.register(new LspDefinitionTool(this.lspManager, getConfigs));
     registry.register(new LspReferencesTool(this.lspManager, getConfigs));
-  }
-
-  // ── Sub-agent dispatch ────────────────────────────────────────────────────
-
-  /**
-   * Run a sub-agent by name in its own child session and return its final text output.
-   * Creates a child session linked to the parent via parentSessionId so the UI
-   * can show sub-sessions nested under the parent in the sidebar.
-   * Emits events under the child session ID so the renderer can route them.
-   */
-  private async dispatchSubAgent(
-    agentName: string,
-    task: string,
-    parentSessionId: string,
-  ): Promise<string> {
-    const allAgents = await this.agentStore.list();
-    const agentDef = allAgents.find(
-      (a) => a.name.toLowerCase() === agentName.toLowerCase(),
-    );
-    if (!agentDef) {
-      const names = allAgents.map((a) => a.name).join(", ") || "(none)";
-      throw new Error(`Agent "${agentName}" not found. Available: ${names}`);
-    }
-
-    // Create a dedicated child session so the sub-agent has its own history
-    const parentSession = await this.sessionStore.get(parentSessionId);
-    const subSession = await this.sessionStore.create({
-      id: crypto.randomUUID(),
-      projectId: parentSession?.projectId ?? "",
-      parentSessionId,
-      title: `[${agentName}] ${task.slice(0, 50)}`,
-      status: "active",
-      messages: [],
-      events: [],
-      created: new Date().toISOString(),
-      updated: new Date().toISOString(),
-      metadata: { agentName },
-    });
-    const subSessionId = subSession.id;
-
-    // Notify UI about the dispatch (includes subSessionId for sidebar linking)
-    this.emit({ type: "agent_dispatch", agentName, task, subSessionId }, parentSessionId);
-
-    const latestSettings = this.settingsStore.getAll();
-
-    // Build a fresh builder for the sub-agent (separate registry)
-    const subBuilder = new AgentBuilder()
-      .withWorkingDirectory(this.workingDirectory)
-      .withMemoryStore(this.memoryStore)
-      .withSessionStore(this.sessionStore)
-      .withMaxIterations(
-        agentDef.maxIterations > 0
-          ? agentDef.maxIterations
-          : latestSettings.maxIterations,
-      );
-
-    // Configure model
-    let provider = latestSettings.modelProvider;
-    let apiKey = latestSettings.apiKey;
-    let baseUrl = latestSettings.baseUrl;
-    let modelId = latestSettings.modelId;
-    if (agentDef.capabilities.profileId) {
-      const profile = latestSettings.profiles.find(
-        (p) => p.id === agentDef.capabilities.profileId,
-      );
-      if (profile) {
-        provider = profile.provider;
-        apiKey = profile.apiKey;
-        baseUrl = profile.baseUrl;
-        modelId = profile.modelId;
-      }
-    }
-    subBuilder.withModel(provider, {
-      apiKey,
-      baseUrl: baseUrl || undefined,
-      modelId,
-    });
-
-    // Apply system prompt (with identity header)
-    let systemPrompt = agentDef.systemPrompt || "";
-    for (const ph of agentDef.contextPlaceholders) {
-      systemPrompt = systemPrompt.replaceAll(`{{${ph.key}}}`, ph.defaultValue);
-    }
-    const identityHeader = `# 角色：${agentDef.name}${agentDef.description ? `\n${agentDef.description}` : ""}\n你的名字是「${agentDef.name}」。`;
-    subBuilder.withSystemPrompt(systemPrompt ? `${identityHeader}\n\n${systemPrompt}` : identityHeader);
-
-    // Apply tool allowlist
-    if (agentDef.capabilities.enabledTools.length > 0) {
-      subBuilder.withEnabledTools(agentDef.capabilities.enabledTools);
-    }
-
-    const subAgent = subBuilder.buildSync();
-    // Register session tools so sub-agent can also dispatch further agents
-    // Sub-agents do not get dispatch rights (max 1 level, prevent infinite recursion)
-    this.registerSessionTools(subBuilder, subSessionId, false);
-
-    // Persist the task as the user message in the child session
-    await this.sessionStore.addMessage(subSessionId, {
-      role: "user",
-      content: task,
-    } as Message);
-
-    let finalText = "";
-    let assistantText = "";
-    const pendingToolCalls: Array<{ id: string; name: string; arguments: Record<string, unknown> }> = [];
-
-    try {
-      for await (const event of subAgent.run(task, subSessionId)) {
-        // Forward events tagged with the child session ID so UI can route them
-        this.emit(event, subSessionId);
-
-        // Persist messages to the child session (same pattern as main run())
-        if (event.type === "text_chunk" && event.text) {
-          assistantText += event.text;
-          finalText += event.text;
-          // Stream progress to the parent session so the dispatch card shows live output
-          this.emit({ type: "agent_progress", agentName, subSessionId, text: event.text }, parentSessionId);
-        }
-        if (event.type === "tool_call" && event.toolCall) {
-          pendingToolCalls.push(event.toolCall);
-        }
-        if (event.type === "tool_result" && event.result) {
-          // Find matched tool BEFORE clearing the array
-          const matchedTool = pendingToolCalls.find((tc) => tc.id === event.result!.toolCallId);
-          if (pendingToolCalls.length > 0) {
-            // Use .catch() — the sub-session may have been deleted while the agent was running
-            await this.sessionStore.addMessage(subSessionId, {
-              role: "assistant",
-              content: assistantText,
-              toolCalls: [...pendingToolCalls],
-            } as Message).catch(() => {});
-            assistantText = "";
-            pendingToolCalls.length = 0;
-          }
-          await this.sessionStore.addMessage(subSessionId, {
-            role: "tool",
-            content: event.result.content,
-            toolCallId: event.result.toolCallId,
-            name: matchedTool?.name,
-          } as Message).catch(() => {});
-        }
-        if (event.type === "done") {
-          const doneText = (event.finalText ?? assistantText).trim();
-          if (doneText) {
-            await this.sessionStore.addMessage(subSessionId, {
-              role: "assistant",
-              content: doneText,
-            } as Message).catch(() => {});
-          }
-        }
-      }
-
-      // Mark child session complete and notify parent
-      await this.sessionStore.update(subSessionId, { status: "completed" }).catch(() => {});
-      const summary = finalText.trim() || "(no output)";
-      this.emit(
-        { type: "agent_done", agentName, subSessionId, status: "completed", summary },
-        parentSessionId,
-      );
-      return summary;
-    } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : String(err);
-      // Mark child session failed and notify parent
-      await this.sessionStore.update(subSessionId, { status: "failed" }).catch(() => {});
-      this.emit(
-        { type: "agent_done", agentName, subSessionId, status: "failed", error: errorMsg },
-        parentSessionId,
-      );
-      throw err;
-    }
   }
 
   /**
@@ -626,6 +458,21 @@ export class AgentHost {
     agentName?: string,
     images?: string[],
   ): AsyncIterable<AgentEvent> {
+    // ── 0. If a run is already active, interrupt it and inject turn_aborted marker ──
+    if (this._runCount > 0) {
+      yield { type: "thinking", message: "Interrupting previous turn..." };
+      this.abort();
+      this.subAgentDispatcher.abortAll();
+      // Small yield so the aborted generator can wind down
+      await new Promise((r) => setTimeout(r, 100));
+      // Inject <turn_aborted> marker into session history so the model sees it
+      await this.sessionStore.addMessage(sessionId, {
+        role: "user",
+        content: "<turn_aborted>\nThe user interrupted the previous turn on purpose. Any running tools/commands may have been aborted and partially executed.\n</turn_aborted>",
+        name: "__interrupt__",
+      } as Message).catch(() => {});
+    }
+
     // ── 1. Track session and clear todos only when switching to a new session ───
     // Clearing todos every run caused "No matching todo found" when the LLM tried
     // to update todos added in a previous turn of the SAME session.
@@ -705,7 +552,7 @@ export class AgentHost {
       const agentId = resolvedIds[idx];
 
       // Reset per-run overrides before applying agent def
-      this.builder.withSystemPrompt(undefined).withEnabledTools([]);
+      this.builder.withSystemPrompt(undefined).withEnabledTools([]).withEnabledSkills([]);
 
       if (agentId !== null) {
         // Apply a specific agent def
@@ -741,6 +588,7 @@ export class AgentHost {
             this.builder.withSystemPrompt(finalPrompt);
           }
           this.builder.withEnabledTools(agentDef.capabilities.enabledTools);
+          this.builder.withEnabledSkills(agentDef.capabilities.enabledSkills);
           if (agentDef.maxIterations > 0) {
             this.builder.withMaxIterations(agentDef.maxIterations);
           }
@@ -792,6 +640,7 @@ export class AgentHost {
               );
             }
             this.builder.withEnabledTools(agentDef.capabilities.enabledTools);
+            this.builder.withEnabledSkills(agentDef.capabilities.enabledSkills);
             if (agentDef.maxIterations > 0) {
               this.builder.withMaxIterations(agentDef.maxIterations);
             }
@@ -801,7 +650,7 @@ export class AgentHost {
 
       // Build the agent loop
       this.agent = this.builder.buildSync();
-      // Register session tools AFTER buildSync so they survive enabledTools filter
+      // Register session tools (todo, dispatch, cron, ask_user, lsp) after build
       this.registerSessionTools(this.builder, sessionId);
       // Connect enabled MCP servers and register their tools
       await this.connectMCPServers(this.builder);
@@ -819,6 +668,8 @@ export class AgentHost {
         name: string;
         arguments: Record<string, unknown>;
       }> = [];
+      // Persistent lookup for tool call names (survives pendingToolCalls clearing)
+      const toolCallNameMap = new Map<string, string>();
 
       for await (const event of this.agent.run(agentInput, sessionId, agentImages)) {
         this.emit(event, sessionId);
@@ -832,12 +683,10 @@ export class AgentHost {
 
         if (event.type === "tool_call" && event.toolCall) {
           pendingToolCalls.push(event.toolCall);
+          toolCallNameMap.set(event.toolCall.id, event.toolCall.name);
         }
 
         if (event.type === "tool_result" && event.result) {
-          const matchedTool = pendingToolCalls.find(
-            (tc) => tc.id === event.result!.toolCallId,
-          );
           if (pendingToolCalls.length > 0) {
             await this.sessionStore.addMessage(sessionId, {
               role: "assistant",
@@ -851,7 +700,7 @@ export class AgentHost {
             role: "tool",
             content: event.result.content,
             toolCallId: event.result.toolCallId,
-            name: matchedTool?.name,
+            name: toolCallNameMap.get(event.result.toolCallId),
           } as Message);
         }
 
@@ -884,8 +733,43 @@ export class AgentHost {
     await this.sessionStore.update(sessionId, { status: "completed" });
   }
 
+  /**
+   * Steer a new user input into an already-running session without interrupting.
+   * If the agent loop is active, the message is saved with name "__steer__" so
+   * AgentLoop picks it up on its next iteration via the session checkpoint.
+   * If no agent is running, it saves normally and returns false (caller should
+   * start a new run via the run() method).
+   */
+  async steerInput(input: string, sessionId: string, agentName?: string): Promise<boolean> {
+    await this.sessionStore.addMessage(sessionId, {
+      role: "user",
+      content: input,
+      name: "__steer__",
+    } as Message);
+    const isRunning = this._runCount > 0;
+    if (!isRunning) {
+      // Update session title even when not running
+      const existing = await this.sessionStore.get(sessionId);
+      if (existing) {
+        await this.sessionStore.update(sessionId, { title: input.slice(0, 60) || existing.title });
+      }
+    }
+    // Emit the steer event so the renderer updates the UI
+    this.emit({ type: "thinking", message: `User added: ${input.slice(0, 60)}` }, sessionId);
+    return isRunning;
+  }
+
+  /**
+   * Resolve a pending ask_user question with the user's answer.
+   * Called from the renderer via IPC when the user selects an option or types a response.
+   */
+  answerQuestion(questionId: string, answer: string, selectedIndices?: number[]): boolean {
+    return this.questionManager.answer(questionId, answer, selectedIndices);
+  }
+
   abort(): void {
     this.agent?.abort();
+    this.questionManager.rejectAll("Agent aborted");
   }
 
   // ── Cron task public API ─────────────────────────────────────────────────
@@ -939,10 +823,12 @@ export class AgentHost {
 
   // ── Running state + pending prompt queue ─────────────────────────────────
 
-  /** Called when the agent loop starts/stops to gate queue draining. */
+  /** Called when the agent loop starts/stops to gate queue draining (counter-based). */
   setRunning(v: boolean): void {
-    this._isRunning = v;
-    if (!v) void this.drainPendingQueue();
+    const prev = this._runCount;
+    this._runCount += v ? 1 : -1;
+    if (this._runCount < 0) this._runCount = 0;
+    if (prev > 0 && this._runCount === 0) void this.drainPendingQueue();
   }
 
   /** Called by CronScheduler when a task fires. */
@@ -986,14 +872,14 @@ export class AgentHost {
 
   private async enqueuePendingNotification(prompt: string, sessionId: string): Promise<void> {
     this.pendingQueue.push({ prompt, sessionId });
-    if (!this._isRunning) await this.drainPendingQueue();
+    if (this._runCount === 0) await this.drainPendingQueue();
   }
 
   private async drainPendingQueue(): Promise<void> {
-    if (this.queueDraining || this._isRunning) return;
+    if (this.queueDraining || this._runCount > 0) return;
     this.queueDraining = true;
     try {
-      while (this.pendingQueue.length > 0 && !this._isRunning) {
+      while (this.pendingQueue.length > 0 && this._runCount === 0) {
         const item = this.pendingQueue.shift()!;
         for await (const _ of this.run(item.prompt, item.sessionId || "")) {
           // events are emitted inside run()

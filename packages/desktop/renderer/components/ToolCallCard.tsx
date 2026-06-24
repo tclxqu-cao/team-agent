@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from "react";
+import { useAgentStore } from "../stores/agentStore";
 
 export interface ToolCallData {
   id: string;
@@ -13,6 +14,81 @@ interface ToolCallProps {
   onSelectSession?: (sessionId: string) => void;
   /** For write_file: content BEFORE the write (from a preceding read_file) — enables diff view */
   beforeContent?: string;
+}
+
+// ── Status icon: spinner / checkmark / x-circle ──────────────────────────
+function StatusIcon({ isDone, isError, color, size = 11 }: { isDone: boolean; isError?: boolean; color: string; size?: number }) {
+  if (!isDone) {
+    return (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round" style={{ animation: "spin 1s linear infinite", flexShrink: 0 }}>
+        <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
+      </svg>
+    );
+  }
+  if (isError) {
+    return (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round">
+        <circle cx="12" cy="12" r="9"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/>
+      </svg>
+    );
+  }
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round">
+      <polyline points="20 6 9 17 4 12"/>
+    </svg>
+  );
+}
+
+// ── Shared card shell: left gutter bar + header button + expandable body ──
+interface CardShellProps {
+  statusColor: string;
+  isDone: boolean;
+  expanded: boolean;
+  onToggle: () => void;
+  header: React.ReactNode;
+  children: React.ReactNode;
+  maxBodyHeight?: number;
+}
+function CardShell({ statusColor, isDone, expanded, onToggle, header, children, maxBodyHeight = 600 }: CardShellProps) {
+  return (
+    <div style={{ marginTop: 4, borderRadius: 9, border: "1px solid var(--border-subtle)", overflow: "hidden", background: "var(--bg-deepest)", fontSize: 12, minWidth: 0 }}>
+      <div style={{ display: "flex", alignItems: "stretch" }}>
+        {/* Left status gutter */}
+        <div style={{
+          width: 3, flexShrink: 0,
+          background: statusColor,
+          animation: !isDone ? "statusBarPulse 1.8s ease-in-out infinite" : "none",
+          borderRadius: "9px 0 0 0",
+        }} />
+        {/* Header */}
+        <button
+          onClick={onToggle}
+          style={{ flex: 1, border: "none", background: "var(--bg-deep)", cursor: "pointer", padding: "7px 10px 7px 9px", display: "flex", alignItems: "center", gap: 7, fontFamily: "var(--font-body)", transition: "background 0.12s", textAlign: "left", minWidth: 0 }}
+          onMouseEnter={e => (e.currentTarget.style.background = "var(--bg-elevated)")}
+          onMouseLeave={e => (e.currentTarget.style.background = "var(--bg-deep)")}
+        >
+          {header}
+          {/* Chevron */}
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2.5" strokeLinecap="round" style={{ transition: "transform 0.25s var(--ease-out)", transform: expanded ? "rotate(180deg)" : "rotate(0deg)", flexShrink: 0 }}><path d="m6 9 6 6 6-6"/></svg>
+        </button>
+      </div>
+      {/* Body */}
+      <div style={{ overflow: "hidden", maxHeight: expanded ? maxBodyHeight : 0, opacity: expanded ? 1 : 0, transition: "max-height 0.35s cubic-bezier(0.4,0,0.2,1), opacity 0.25s ease" }}>
+        <div style={{ borderTop: "1px solid var(--border-subtle)", padding: "10px 12px", display: "flex", flexDirection: "column", gap: 8, boxSizing: "border-box", maxWidth: "100%" }}>
+          {children}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Tag pills ─────────────────────────────────────────────────────────────
+function Tag({ label, color = "var(--text-muted)", bg = "var(--bg-surface)" }: { label: string; color?: string; bg?: string }) {
+  return (
+    <span style={{ fontSize: 10, padding: "1px 7px", borderRadius: 20, background: bg, color, fontWeight: 500, flexShrink: 0, whiteSpace: "nowrap" }}>
+      {label}
+    </span>
+  );
 }
 
 function basename(p: string): string {
@@ -124,135 +200,366 @@ function WriteFileCard({ toolCall, beforeContent }: { toolCall: ToolCallData; be
   const lines = lineCount(content);
   const isError = toolCall.isError;
   const isDone = !!toolCall.result;
-  const statusColor = isDone?(isError?"var(--danger)":"var(--success)"):"var(--accent)";
-  const statusBg = isDone?(isError?"rgba(220,38,38,0.07)":"rgba(5,150,105,0.07)"):"var(--accent-dim)";
-  const borderColor = isDone?(isError?"rgba(220,38,38,0.18)":"rgba(5,150,105,0.18)"):"var(--border-default)";
-  const diff = useMemo(() => beforeContent&&content ? computeDiff(beforeContent,content) : null, [beforeContent,content]);
+  const statusColor = isDone ? (isError ? "var(--danger)" : "var(--success)") : "var(--accent)";
+  const diff = useMemo(() => beforeContent && content ? computeDiff(beforeContent, content) : null, [beforeContent, content]);
   const diffStats = useMemo(() => {
     if (!diff) return null;
-    return { added: diff.filter(d=>d.type==="added").length, removed: diff.filter(d=>d.type==="removed").length };
+    return { added: diff.filter(d => d.type === "added").length, removed: diff.filter(d => d.type === "removed").length };
   }, [diff]);
-  return (
-    <div style={{ marginTop:10, borderRadius:10, border:`1px solid ${borderColor}`, overflow:"hidden", fontSize:12, background:"var(--bg-deepest)", transition:"border-color 0.25s" }}>
-      <button onClick={()=>setExpanded(!expanded)} style={{ width:"100%", padding:"9px 12px", background:statusBg, border:"none", cursor:"pointer", textAlign:"left", display:"flex", justifyContent:"space-between", alignItems:"center", fontFamily:"var(--font-body)", transition:"filter 0.15s" }} onMouseEnter={e=>{e.currentTarget.style.filter="brightness(0.96)"}} onMouseLeave={e=>{e.currentTarget.style.filter="brightness(1)"}}>
-        <span style={{ display:"flex", alignItems:"center", gap:8, minWidth:0 }}>
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={statusColor} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
-          <span style={{ fontFamily:"var(--font-mono)", fontSize:11.5, color:statusColor, fontWeight:600, letterSpacing:"0.01em", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", maxWidth:220 }} title={filePath}>{basename(filePath)}</span>
-          <span style={{ fontSize:10, padding:"1px 7px", borderRadius:20, background:"rgba(79,110,247,0.1)", color:"var(--accent)", fontWeight:500, flexShrink:0 }}>{lines} 行</span>
-          {diffStats&&(<span style={{ fontSize:10, color:"var(--text-muted)", flexShrink:0, display:"flex", gap:4 }}>{diffStats.added>0&&<span style={{ color:"var(--success)" }}>+{diffStats.added}</span>}{diffStats.removed>0&&<span style={{ color:"var(--danger)" }}>−{diffStats.removed}</span>}</span>)}
-          <span style={{ fontSize:10, padding:"1px 7px", borderRadius:20, background:statusBg, color:statusColor, fontWeight:500, flexShrink:0 }}>{isDone?(isError?"错误":"已写入"):"写入中"}</span>
-        </span>
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2.5" strokeLinecap="round" style={{ transition:"transform 0.3s var(--ease-out)", transform:expanded?"rotate(180deg)":"rotate(0deg)", flexShrink:0 }}><path d="m6 9 6 6 6-6"/></svg>
-      </button>
-      <div style={{ overflow:"hidden", maxHeight:expanded?600:0, opacity:expanded?1:0, transition:"max-height 0.4s cubic-bezier(0.4,0,0.2,1), opacity 0.3s ease" }}>
-        <div style={{ padding:"10px 12px", borderTop:`1px solid ${borderColor}`, display:"flex", flexDirection:"column", gap:8 }}>
-          <div style={{ fontSize:10, color:"var(--text-muted)", fontFamily:"var(--font-mono)", wordBreak:"break-all" }}>{filePath}</div>
-          {diff&&(<div style={{ display:"flex", gap:4, borderBottom:"1px solid var(--border-subtle)", paddingBottom:6 }}>{(["content","diff"] as const).map(t=>(
-            <button key={t} onClick={()=>setTab(t)} style={{ padding:"3px 10px", borderRadius:5, border:"none", cursor:"pointer", fontSize:11, fontWeight:500, background:tab===t?"var(--accent-dim)":"transparent", color:tab===t?"var(--accent)":"var(--text-muted)", transition:"background 0.15s" }}>{t==="content"?"文件内容":"变更行"}</button>
-          ))}</div>)}
-          {tab==="diff"&&diff ? <DiffBlock diff={diff}/> : <CodeBlock content={content}/>}
-          {isError&&toolCall.result&&(<div style={{ fontSize:11, color:"var(--danger)", fontFamily:"var(--font-mono)", padding:"8px 12px", background:"rgba(220,38,38,0.04)", border:"1px solid rgba(220,38,38,0.15)", borderRadius:7 }}>{toolCall.result}</div>)}
-        </div>
+  const statusLabel = isDone ? (isError ? "错误" : "已写入") : "写入中";
+
+  const header = (
+    <>
+      {/* Icon */}
+      <div style={{ width: 20, height: 20, borderRadius: 5, background: isDone ? (isError ? "rgba(220,38,38,0.1)" : "rgba(5,150,105,0.1)") : "var(--accent-dim)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={statusColor} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
       </div>
-    </div>
+      {/* Filename */}
+      <span style={{ fontFamily: "var(--font-mono)", fontSize: 11.5, color: "var(--text-primary)", fontWeight: 600, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={filePath}>
+        {basename(filePath)}
+      </span>
+      {/* Meta */}
+      <Tag label={`${lines} 行`} color="var(--accent)" bg="var(--accent-dim)" />
+      {diffStats && (
+        <span style={{ display: "flex", gap: 3, fontSize: 10, flexShrink: 0 }}>
+          {diffStats.added > 0 && <span style={{ color: "var(--success)" }}>+{diffStats.added}</span>}
+          {diffStats.removed > 0 && <span style={{ color: "var(--danger)" }}>−{diffStats.removed}</span>}
+        </span>
+      )}
+      {/* Status */}
+      <span style={{ display: "flex", alignItems: "center", gap: 4, color: statusColor, flexShrink: 0 }}>
+        <StatusIcon isDone={isDone} isError={isError} color={statusColor} />
+        <span style={{ fontSize: 10, fontWeight: 500 }}>{statusLabel}</span>
+      </span>
+    </>
+  );
+
+  return (
+    <CardShell statusColor={statusColor} isDone={isDone} expanded={expanded} onToggle={() => setExpanded(!expanded)} header={header}>
+      <div style={{ fontSize: 10, color: "var(--text-muted)", fontFamily: "var(--font-mono)", wordBreak: "break-all" }}>{filePath}</div>
+      {diff && (
+        <div style={{ display: "flex", gap: 3 }}>
+          {(["content", "diff"] as const).map(t => (
+            <button key={t} onClick={() => setTab(t)} style={{ padding: "2px 9px", borderRadius: 5, border: "none", cursor: "pointer", fontSize: 11, fontWeight: 500, background: tab === t ? "var(--accent-dim)" : "transparent", color: tab === t ? "var(--accent)" : "var(--text-muted)", transition: "background 0.12s" }}>
+              {t === "content" ? "文件内容" : "变更行"}
+            </button>
+          ))}
+        </div>
+      )}
+      {tab === "diff" && diff ? <DiffBlock diff={diff} /> : <CodeBlock content={content} />}
+      {isError && toolCall.result && (
+        <div style={{ fontSize: 11, color: "var(--danger)", fontFamily: "var(--font-mono)", padding: "8px 12px", background: "rgba(220,38,38,0.04)", border: "1px solid rgba(220,38,38,0.15)", borderLeft: "3px solid var(--danger)", borderRadius: 7 }}>{toolCall.result}</div>
+      )}
+    </CardShell>
   );
 }
 
 function ReadFileCard({ toolCall }: { toolCall: ToolCallData }) {
   const [expanded, setExpanded] = useState(false);
   const filePath = (toolCall.arguments.file_path as string)??"";
+  const startLine = toolCall.arguments.startLine as number|undefined;
+  const endLine = toolCall.arguments.endLine as number|undefined;
   const offset = toolCall.arguments.offset as number|undefined;
   const limit = toolCall.arguments.limit as number|undefined;
   const resultContent = toolCall.result??"";
   const lines = lineCount(resultContent);
   const isError = toolCall.isError;
   const isDone = !!toolCall.result;
-  const statusColor = isDone?(isError?"var(--danger)":"var(--success)"):"var(--accent)";
-  const statusBg = isDone?(isError?"rgba(220,38,38,0.07)":"rgba(5,150,105,0.07)"):"var(--accent-dim)";
-  const borderColor = isDone?(isError?"rgba(220,38,38,0.18)":"rgba(5,150,105,0.18)"):"var(--border-default)";
-  const rangeLabel = offset!==undefined?`第${offset}行起`+(limit?` ×${limit}`:""):null;
-  return (
-    <div style={{ marginTop:10, borderRadius:10, border:`1px solid ${borderColor}`, overflow:"hidden", fontSize:12, background:"var(--bg-deepest)", transition:"border-color 0.25s" }}>
-      <button onClick={()=>setExpanded(!expanded)} style={{ width:"100%", padding:"9px 12px", background:statusBg, border:"none", cursor:"pointer", textAlign:"left", display:"flex", justifyContent:"space-between", alignItems:"center", fontFamily:"var(--font-body)", transition:"filter 0.15s" }} onMouseEnter={e=>{e.currentTarget.style.filter="brightness(0.96)"}} onMouseLeave={e=>{e.currentTarget.style.filter="brightness(1)"}}>
-        <span style={{ display:"flex", alignItems:"center", gap:8, minWidth:0 }}>
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={statusColor} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-          <span style={{ fontFamily:"var(--font-mono)", fontSize:11.5, color:statusColor, fontWeight:600, letterSpacing:"0.01em", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", maxWidth:230 }} title={filePath}>{basename(filePath)}</span>
-          {rangeLabel&&<span style={{ fontSize:10, padding:"1px 7px", borderRadius:20, background:"rgba(79,110,247,0.1)", color:"var(--accent)", fontWeight:500, flexShrink:0 }}>{rangeLabel}</span>}
-          {isDone&&!isError&&<span style={{ fontSize:10, padding:"1px 7px", borderRadius:20, background:"rgba(79,110,247,0.1)", color:"var(--accent)", fontWeight:500, flexShrink:0 }}>{lines} 行</span>}
-          <span style={{ fontSize:10, padding:"1px 7px", borderRadius:20, background:statusBg, color:statusColor, fontWeight:500, flexShrink:0 }}>{isDone?(isError?"错误":"已读取"):"读取中"}</span>
-        </span>
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2.5" strokeLinecap="round" style={{ transition:"transform 0.3s var(--ease-out)", transform:expanded?"rotate(180deg)":"rotate(0deg)", flexShrink:0 }}><path d="m6 9 6 6 6-6"/></svg>
-      </button>
-      <div style={{ overflow:"hidden", maxHeight:expanded?500:0, opacity:expanded?1:0, transition:"max-height 0.4s cubic-bezier(0.4,0,0.2,1), opacity 0.3s ease" }}>
-        <div style={{ padding:"10px 12px", borderTop:`1px solid ${borderColor}`, display:"flex", flexDirection:"column", gap:8 }}>
-          <div style={{ fontSize:10, color:"var(--text-muted)", fontFamily:"var(--font-mono)", wordBreak:"break-all" }}>{filePath}</div>
-          {isDone&&!isError?<CodeBlock content={resultContent}/>:isDone&&isError&&<div style={{ fontSize:11, color:"var(--danger)", fontFamily:"var(--font-mono)", padding:"8px 12px", background:"rgba(220,38,38,0.04)", border:"1px solid rgba(220,38,38,0.15)", borderRadius:7 }}>{resultContent}</div>}
-        </div>
+  const statusColor = isDone ? (isError ? "var(--danger)" : "var(--success)") : "var(--accent)";
+  const rangeLabel = startLine !== undefined
+    ? `L${startLine}–${endLine ?? "?"}`
+    : offset !== undefined
+      ? `第${offset}行起${limit ? ` ×${limit}` : ""}`
+      : null;
+  const statusLabel = isDone ? (isError ? "错误" : "已读取") : "读取中";
+
+  const header = (
+    <>
+      <div style={{ width: 20, height: 20, borderRadius: 5, background: isDone ? (isError ? "rgba(220,38,38,0.1)" : "rgba(5,150,105,0.1)") : "var(--accent-dim)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={statusColor} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
       </div>
+      <span style={{ fontFamily: "var(--font-mono)", fontSize: 11.5, color: "var(--text-primary)", fontWeight: 600, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={filePath}>
+        {basename(filePath)}
+      </span>
+      {rangeLabel && <Tag label={rangeLabel} color="var(--accent)" bg="var(--accent-dim)" />}
+      {isDone && !isError && <Tag label={`${lines} 行`} color="var(--text-muted)" bg="var(--bg-surface)" />}
+      <span style={{ display: "flex", alignItems: "center", gap: 4, color: statusColor, flexShrink: 0 }}>
+        <StatusIcon isDone={isDone} isError={isError} color={statusColor} />
+        <span style={{ fontSize: 10, fontWeight: 500 }}>{statusLabel}</span>
+      </span>
+    </>
+  );
+
+  return (
+    <CardShell statusColor={statusColor} isDone={isDone} expanded={expanded} onToggle={() => setExpanded(!expanded)} header={header} maxBodyHeight={480}>
+      <div style={{ fontSize: 10, color: "var(--text-muted)", fontFamily: "var(--font-mono)", wordBreak: "break-all" }}>{filePath}</div>
+      {isDone && !isError
+        ? <CodeBlock content={resultContent} />
+        : isDone && isError && <div style={{ fontSize: 11, color: "var(--danger)", fontFamily: "var(--font-mono)", padding: "8px 12px", background: "rgba(220,38,38,0.04)", border: "1px solid rgba(220,38,38,0.15)", borderLeft: "3px solid var(--danger)", borderRadius: 7 }}>{resultContent}</div>
+      }
+    </CardShell>
+  );
+}
+
+function StrReplaceCard({ toolCall }: { toolCall: ToolCallData }) {
+  const [expanded, setExpanded] = useState(false);
+  const filePath = (toolCall.arguments.file_path as string)??"";
+  const oldString = (toolCall.arguments.old_string as string)??"";
+  const newString = (toolCall.arguments.new_string as string)??"";
+  const isError = toolCall.isError;
+  const isDone = !!toolCall.result;
+  const statusColor = isDone ? (isError ? "var(--danger)" : "var(--success)") : "var(--accent)";
+  const statusLabel = isDone ? (isError ? "错误" : "已替换") : "替换中";
+  const diff = useMemo(() => oldString && newString ? computeDiff(oldString, newString) : null, [oldString, newString]);
+  const diffStats = useMemo(() => diff ? { added: diff.filter(d => d.type === "added").length, removed: diff.filter(d => d.type === "removed").length } : null, [diff]);
+
+  const header = (
+    <>
+      <div style={{ width: 20, height: 20, borderRadius: 5, background: isDone ? (isError ? "rgba(220,38,38,0.1)" : "rgba(5,150,105,0.1)") : "var(--accent-dim)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={statusColor} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+      </div>
+      <span style={{ fontFamily: "var(--font-mono)", fontSize: 11.5, color: "var(--text-primary)", fontWeight: 600, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={filePath}>
+        {basename(filePath)}
+      </span>
+      {diffStats && (
+        <span style={{ display: "flex", gap: 3, fontSize: 10, flexShrink: 0 }}>
+          {diffStats.added > 0 && <span style={{ color: "var(--success)" }}>+{diffStats.added}</span>}
+          {diffStats.removed > 0 && <span style={{ color: "var(--danger)" }}>−{diffStats.removed}</span>}
+        </span>
+      )}
+      <span style={{ display: "flex", alignItems: "center", gap: 4, color: statusColor, flexShrink: 0 }}>
+        <StatusIcon isDone={isDone} isError={isError} color={statusColor} />
+        <span style={{ fontSize: 10, fontWeight: 500 }}>{statusLabel}</span>
+      </span>
+    </>
+  );
+
+  return (
+    <CardShell statusColor={statusColor} isDone={isDone} expanded={expanded} onToggle={() => setExpanded(!expanded)} header={header} maxBodyHeight={480}>
+      <div style={{ fontSize: 10, color: "var(--text-muted)", fontFamily: "var(--font-mono)", wordBreak: "break-all" }}>{filePath}</div>
+      {diff ? <DiffBlock diff={diff} /> : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          <pre style={{ fontSize: 11, color: "var(--danger)", fontFamily: "var(--font-mono)", padding: "8px 10px", borderRadius: 6, background: "rgba(220,38,38,0.04)", border: "1px solid rgba(220,38,38,0.12)", borderLeft: "3px solid var(--danger)", margin: 0, whiteSpace: "pre-wrap", wordBreak: "break-all" }}>{oldString}</pre>
+          <pre style={{ fontSize: 11, color: "var(--success)", fontFamily: "var(--font-mono)", padding: "8px 10px", borderRadius: 6, background: "rgba(5,150,105,0.04)", border: "1px solid rgba(5,150,105,0.12)", borderLeft: "3px solid var(--success)", margin: 0, whiteSpace: "pre-wrap", wordBreak: "break-all" }}>{newString}</pre>
+        </div>
+      )}
+      {isError && toolCall.result && (
+        <div style={{ fontSize: 11, color: "var(--danger)", fontFamily: "var(--font-mono)", padding: "8px 10px", background: "rgba(220,38,38,0.04)", border: "1px solid rgba(220,38,38,0.15)", borderLeft: "3px solid var(--danger)", borderRadius: 7 }}>{toolCall.result}</div>
+      )}
+    </CardShell>
+  );
+}
+
+function CollapsiblePre({ label, content, error, maxPreviewLines = 8, maxPreviewHeight = 200, maxExpandedHeight = 2000 }: { label: string; content: string; error?: boolean; maxPreviewLines?: number; maxPreviewHeight?: number; maxExpandedHeight?: number }) {
+  const [expanded, setExpanded] = useState(false);
+  const lines = content.split("\n");
+  const isLong = lines.length > maxPreviewLines;
+  const displayed = isLong && !expanded
+    ? lines.slice(0, maxPreviewLines).join("\n") + "\n..."
+    : content;
+  return (
+    <div>
+      <div style={{ fontSize: 10, color: "var(--text-muted)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 5 }}>{label}</div>
+      <pre style={{
+        fontSize: 11, color: error ? "var(--danger)" : "var(--text-secondary)",
+        whiteSpace: "pre-wrap", wordBreak: "break-all", fontFamily: "var(--font-mono)",
+        padding: "9px 11px", borderRadius: 7, boxSizing: "border-box", maxWidth: "100%",
+        background: error ? "rgba(220,38,38,0.04)" : "var(--bg-surface)",
+        border: error
+          ? "1px solid rgba(220,38,38,0.15)"
+          : "1px solid var(--border-subtle)",
+        borderLeft: error ? "3px solid var(--danger)" : "3px solid var(--success)",
+        maxHeight: expanded ? maxExpandedHeight : maxPreviewHeight,
+        overflow: "auto", margin: 0, lineHeight: 1.6,
+      }}>
+        {displayed}
+      </pre>
+      {isLong && (
+        <button onClick={() => setExpanded(!expanded)} style={{ marginTop: 4, padding: "2px 10px", borderRadius: 5, border: "1px solid var(--border-subtle)", background: "var(--bg-deep)", color: "var(--text-muted)", fontSize: 10, cursor: "pointer", fontWeight: 500 }}>
+          {expanded ? "收起" : `展开全部 (${lines.length} 行)`}
+        </button>
+      )}
+    </div>
+  );
+}
+
+function DispatchArgs({ arguments: args }: { arguments: Record<string, unknown> }) {
+  const taskStr = (args.task as string) ?? "";
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 4, padding: "6px 0" }}>
+      <div style={{ display: "flex", gap: 8, fontSize: 11, fontFamily: "var(--font-mono)", color: "var(--text-secondary)", flexWrap: "wrap" }}>
+        <Tag label={`agent: ${args.agentName as string}`} color="var(--accent)" bg="var(--accent-dim)" />
+        <Tag label={`sid: ${(args.subSessionId as string)?.slice(0, 8)}…`} color="var(--text-muted)" bg="var(--bg-surface)" />
+      </div>
+      {taskStr && (
+        <CollapsiblePre label="任务" content={taskStr} error={false} maxPreviewLines={3} maxPreviewHeight={80} maxExpandedHeight={2000} />
+      )}
+    </div>
+  );
+}
+
+function ArgumentsBlock({ raw }: { raw: string }) {
+  const [expanded, setExpanded] = useState(false);
+  // Strip runtime-only ephemeral fields that are displayed separately
+  let clean: string;
+  try {
+    const obj = JSON.parse(raw);
+    delete obj.subAgentProgress;
+    delete obj.subAgentStatus;
+    delete obj.subAgentDetail;
+    clean = JSON.stringify(obj, null, 2);
+  } catch {
+    clean = raw;
+  }
+  const LINES_THRESHOLD = 8;
+  const lines = clean.split("\n");
+  const isLong = lines.length > LINES_THRESHOLD;
+  const displayed = isLong && !expanded
+    ? lines.slice(0, LINES_THRESHOLD).join("\n") + "\n..."
+    : clean;
+  return (
+    <div>
+      <div style={{ fontSize: 10, color: "var(--text-muted)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 5 }}>参数</div>
+      <pre style={{ fontSize: 11, color: "var(--text-secondary)", whiteSpace: "pre-wrap", wordBreak: "break-all", fontFamily: "var(--font-mono)", padding: "9px 11px", borderRadius: 7, background: "var(--bg-surface)", border: "1px solid var(--border-subtle)", maxHeight: expanded ? 2000 : 200, overflow: "auto", margin: 0, lineHeight: 1.6, boxSizing: "border-box", maxWidth: "100%" }}>
+        {displayed}
+      </pre>
+      {isLong && (
+        <button onClick={() => setExpanded(!expanded)} style={{ marginTop: 4, padding: "2px 10px", borderRadius: 5, border: "1px solid var(--border-subtle)", background: "var(--bg-deep)", color: "var(--text-muted)", fontSize: 10, cursor: "pointer", fontWeight: 500 }}>
+          {expanded ? "收起" : `展开全部 (${lines.length} 行)`}
+        </button>
+      )}
     </div>
   );
 }
 
 function GenericToolCard({ toolCall, onSelectSession }: { toolCall: ToolCallData; onSelectSession?: (id: string) => void }) {
+  const runningSessionId = useAgentStore(s => s.runningSessionId);
   const [expanded, setExpanded] = useState(false);
-  const isDispatch = toolCall.name==="dispatch_agent";
+  const isDispatch = toolCall.name === "dispatch_agent";
   const subAgentStatus = toolCall.arguments.subAgentStatus as "completed"|"failed"|undefined;
   const subAgentDetail = toolCall.arguments.subAgentDetail as string|undefined;
   const subAgentProgress = toolCall.arguments.subAgentProgress as string|undefined;
 
-  // Auto-expand dispatch card when streaming progress arrives
   useEffect(() => {
-    if (isDispatch && !subAgentStatus && subAgentProgress) {
-      setExpanded(true);
-    }
+    if (isDispatch && !subAgentStatus && subAgentProgress) setExpanded(true);
   }, [isDispatch, subAgentStatus, subAgentProgress]);
-  const statusColor = isDispatch ? (subAgentStatus==="failed"?"var(--danger)":subAgentStatus==="completed"?"var(--success)":"var(--accent)") : (toolCall.result?(toolCall.isError?"var(--danger)":"var(--success)"):"var(--accent)");
-  const statusBg = isDispatch ? (subAgentStatus==="failed"?"rgba(220,38,38,0.07)":subAgentStatus==="completed"?"rgba(5,150,105,0.07)":"var(--accent-dim)") : (toolCall.result?(toolCall.isError?"rgba(220,38,38,0.07)":"rgba(5,150,105,0.07)"):"var(--accent-dim)");
-  const borderColor = isDispatch ? (subAgentStatus==="failed"?"rgba(220,38,38,0.18)":subAgentStatus==="completed"?"rgba(5,150,105,0.18)":"var(--border-default)") : (toolCall.result?(toolCall.isError?"rgba(220,38,38,0.18)":"rgba(5,150,105,0.18)"):"var(--border-default)");
-  const badgeLabel = isDispatch ? (subAgentStatus==="failed"?"失败":subAgentStatus==="completed"?"已完成":"运行中") : (toolCall.result?(toolCall.isError?"错误":"完成"):"执行中");
-  return (
-    <div style={{ marginTop:10, borderRadius:10, border:`1px solid ${borderColor}`, overflow:"hidden", fontSize:12, background:"var(--bg-deepest)", transition:"border-color 0.25s" }}>
-      <button onClick={()=>setExpanded(!expanded)} style={{ width:"100%", padding:"9px 12px", background:statusBg, border:"none", cursor:"pointer", textAlign:"left", display:"flex", justifyContent:"space-between", alignItems:"center", fontFamily:"var(--font-body)", transition:"filter 0.15s" }} onMouseEnter={e=>{e.currentTarget.style.filter="brightness(0.96)"}} onMouseLeave={e=>{e.currentTarget.style.filter="brightness(1)"}}>
-        <span style={{ display:"flex", alignItems:"center", gap:8 }}>
-          {isDispatch?(<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={statusColor} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a5 5 0 1 0 0 10A5 5 0 0 0 12 2z"/><path d="M12 12c-5.33 0-8 2.67-8 4v2h16v-2c0-1.33-2.67-4-8-4z"/></svg>):(<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={statusColor} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>)}
-          <span style={{ fontFamily:"var(--font-mono)", fontSize:11.5, color:statusColor, fontWeight:600, letterSpacing:"0.01em" }}>{isDispatch?`@${toolCall.arguments.agentName as string??toolCall.name}`:toolCall.name}</span>
-          <span style={{ fontSize:10, padding:"1px 7px", borderRadius:20, background:statusBg, color:statusColor, fontWeight:500 }}>{badgeLabel}</span>
-          {isDispatch&&toolCall.arguments.task&&<span style={{ fontSize:11, color:"var(--text-muted)", maxWidth:200, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{toolCall.arguments.task as string}</span>}
-        </span>
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2.5" strokeLinecap="round" style={{ transition:"transform 0.3s var(--ease-out)", transform:expanded?"rotate(180deg)":"rotate(0deg)", flexShrink:0 }}><path d="m6 9 6 6 6-6"/></svg>
-      </button>
-      <div style={{ overflow:"hidden", maxHeight:expanded?800:0, opacity:expanded?1:0, transition:"max-height 0.4s cubic-bezier(0.4,0,0.2,1), opacity 0.3s ease" }}>
-        <div style={{ padding:"12px 14px", borderTop:`1px solid ${borderColor}`, display:"flex", flexDirection:"column", gap:10 }}>
-          <div>
-            <div style={{ fontSize:10, color:"var(--text-muted)", fontWeight:600, textTransform:"uppercase", letterSpacing:"0.07em", marginBottom:6 }}>参数</div>
-            <pre style={{ fontSize:11, color:"var(--text-secondary)", whiteSpace:"pre-wrap", wordBreak:"break-all", fontFamily:"var(--font-mono)", padding:"10px 12px", borderRadius:8, background:"var(--bg-surface)", border:"1px solid var(--border-subtle)", margin:0, lineHeight:1.6 }}>{JSON.stringify(toolCall.arguments, null, 2)}</pre>
-          </div>
-          {toolCall.result&&(<div>
-            <div style={{ fontSize:10, color:"var(--text-muted)", fontWeight:600, textTransform:"uppercase", letterSpacing:"0.07em", marginBottom:6 }}>{toolCall.isError?"错误信息":"返回结果"}</div>
-            <pre style={{ fontSize:11, color:toolCall.isError?"var(--danger)":"var(--text-secondary)", whiteSpace:"pre-wrap", wordBreak:"break-all", fontFamily:"var(--font-mono)", padding:"10px 12px", borderRadius:8, background:toolCall.isError?"rgba(220,38,38,0.04)":"var(--bg-surface)", border:`1px solid ${toolCall.isError?"rgba(220,38,38,0.15)":"var(--border-subtle)"}`, borderLeft:`3px solid ${toolCall.isError?"var(--danger)":"var(--success)"}`, maxHeight:240, overflow:"auto", margin:0, lineHeight:1.6 }}>{toolCall.result}</pre>
-          </div>)}
-          {isDispatch&&subAgentStatus&&subAgentDetail&&(<div>
-            <div style={{ fontSize:10, color:"var(--text-muted)", fontWeight:600, textTransform:"uppercase", letterSpacing:"0.07em", marginBottom:6 }}>{subAgentStatus==="failed"?"错误信息":"执行摘要"}</div>
-            <pre style={{ fontSize:11, color:subAgentStatus==="failed"?"var(--danger)":"var(--text-secondary)", whiteSpace:"pre-wrap", wordBreak:"break-all", fontFamily:"var(--font-mono)", padding:"10px 12px", borderRadius:8, background:subAgentStatus==="failed"?"rgba(220,38,38,0.04)":"var(--bg-surface)", border:`1px solid ${subAgentStatus==="failed"?"rgba(220,38,38,0.15)":"var(--border-subtle)"}`, borderLeft:`3px solid ${subAgentStatus==="failed"?"var(--danger)":"var(--success)"}`, maxHeight:180, overflow:"auto", margin:0, lineHeight:1.6 }}>{subAgentDetail}</pre>
-          </div>)}
-          {isDispatch&&!subAgentStatus&&subAgentProgress&&(<div>
-            <div style={{ fontSize:10, color:"var(--text-muted)", fontWeight:600, textTransform:"uppercase", letterSpacing:"0.07em", marginBottom:6 }}>实时输出</div>
-            <pre style={{ fontSize:11, color:"var(--text-secondary)", whiteSpace:"pre-wrap", wordBreak:"break-all", fontFamily:"var(--font-mono)", padding:"10px 12px", borderRadius:8, background:"var(--bg-surface)", border:"1px solid var(--border-subtle)", borderLeft:"3px solid var(--accent)", maxHeight:240, overflow:"auto", margin:0, lineHeight:1.6 }}>{subAgentProgress}<span style={{ display:"inline-block", width:"0.55em", height:"1em", background:"var(--accent)", verticalAlign:"text-bottom", animation:"blink 1s step-end infinite" }}>&#8203;</span></pre>
-          </div>)}
-          {isDispatch&&toolCall.arguments.subSessionId&&onSelectSession&&(
-            <button onClick={()=>onSelectSession(toolCall.arguments.subSessionId as string)} style={{ alignSelf:"flex-start", padding:"5px 10px", borderRadius:6, border:"1px solid var(--border-default)", background:"var(--accent-dim)", color:"var(--accent)", fontSize:11, fontWeight:500, cursor:"pointer", display:"flex", alignItems:"center", gap:5, transition:"background 0.15s" }} onMouseEnter={e=>{(e.currentTarget as HTMLButtonElement).style.background="var(--accent)";(e.currentTarget as HTMLButtonElement).style.color="white"}} onMouseLeave={e=>{(e.currentTarget as HTMLButtonElement).style.background="var(--accent-dim)";(e.currentTarget as HTMLButtonElement).style.color="var(--accent)"}}>
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a5 5 0 1 0 0 10A5 5 0 0 0 12 2z"/><path d="M12 12c-5.33 0-8 2.67-8 4v2h16v-2c0-1.33-2.67-4-8-4z"/></svg>
-              查看子会话
-            </button>
-          )}
-        </div>
+
+  const isError = isDispatch ? subAgentStatus === "failed" : toolCall.isError;
+  const isDone = isDispatch ? (!!subAgentStatus || (!!toolCall.result && !runningSessionId)) : !!toolCall.result;
+  const statusColor = isDone ? (isError ? "var(--danger)" : "var(--success)") : "var(--accent)";
+  const statusLabel = isDispatch
+    ? (subAgentStatus === "failed" ? "失败" : isDone ? "已完成" : "运行中")
+    : (toolCall.result ? (toolCall.isError ? "错误" : "完成") : "执行中");
+
+  // Preview label: for bash show command snippet, for grep show query
+  const previewLabel = (() => {
+    if (toolCall.name === "bash") {
+      const cmd = (toolCall.arguments.command as string) ?? "";
+      const first = cmd.split("\n")[0].trim();
+      return first.length > 50 ? first.slice(0, 50) + "…" : first;
+    }
+    if (toolCall.name === "grep_search") {
+      const q = (toolCall.arguments.query as string) ?? "";
+      return q.length > 45 ? q.slice(0, 45) + "…" : q;
+    }
+    if (toolCall.name === "glob_search") {
+      return (toolCall.arguments.pattern as string) ?? "";
+    }
+    if (isDispatch) {
+      const t = (toolCall.arguments.task as string) ?? "";
+      const first = t.split("\n")[0];
+      return first.length > 80 ? first.slice(0, 80) + "…" : first;
+    }
+    return null;
+  })();
+
+  const toolLabel = isDispatch ? `@${(toolCall.arguments.agentName as string) ?? "agent"}` : toolCall.name;
+
+  // Tool icon
+  const Icon = isDispatch ? (
+    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={statusColor} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a5 5 0 1 0 0 10A5 5 0 0 0 12 2z"/><path d="M12 12c-5.33 0-8 2.67-8 4v2h16v-2c0-1.33-2.67-4-8-4z"/></svg>
+  ) : toolCall.name === "bash" ? (
+    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={statusColor} strokeWidth="2" strokeLinecap="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+  ) : toolCall.name === "grep_search" ? (
+    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={statusColor} strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+  ) : toolCall.name === "glob_search" ? (
+    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={statusColor} strokeWidth="2" strokeLinecap="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+  ) : (
+    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={statusColor} strokeWidth="2" strokeLinecap="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+  );
+
+  const header = (
+    <>
+      <div style={{ width: 20, height: 20, borderRadius: 5, background: isDone ? (isError ? "rgba(220,38,38,0.1)" : "rgba(5,150,105,0.1)") : "var(--accent-dim)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+        {Icon}
       </div>
-    </div>
+      <span style={{ fontFamily: "var(--font-mono)", fontSize: 11.5, color: "var(--text-primary)", fontWeight: 600, flexShrink: 0 }}>
+        {toolLabel}
+      </span>
+      {previewLabel && (
+        <span style={{ fontSize: 11, color: "var(--text-muted)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {previewLabel}
+        </span>
+      )}
+      {!previewLabel && <span style={{ flex: 1 }} />}
+      <span style={{ display: "flex", alignItems: "center", gap: 4, color: statusColor, flexShrink: 0 }}>
+        <StatusIcon isDone={isDone} isError={!!isError} color={statusColor} />
+        <span style={{ fontSize: 10, fontWeight: 500 }}>{statusLabel}</span>
+      </span>
+    </>
+  );
+
+  return (
+    <CardShell statusColor={statusColor} isDone={isDone} expanded={expanded} onToggle={() => setExpanded(!expanded)} header={header} maxBodyHeight={800}>
+      {/* Arguments */}
+      {isDispatch ? (
+        <DispatchArgs arguments={toolCall.arguments} />
+      ) : (
+        <ArgumentsBlock raw={JSON.stringify(toolCall.arguments, null, 2)} />
+      )}
+      {/* Generic result */}
+      {toolCall.result && !isDispatch && (
+        <CollapsiblePre label={toolCall.isError ? "错误信息" : "返回结果"} content={toolCall.result} error={toolCall.isError} maxPreviewHeight={240} />
+      )}
+      {/* Dispatch: summary / progress */}
+      {isDispatch && subAgentStatus && subAgentDetail && (
+        <CollapsiblePre label={subAgentStatus === "failed" ? "错误信息" : "执行摘要"} content={subAgentDetail} error={subAgentStatus === "failed"} maxPreviewHeight={180} />
+      )}
+      {isDispatch && !subAgentStatus && subAgentProgress && (!!runningSessionId || !toolCall.result) && (
+        <div>
+          <div style={{ fontSize: 10, color: "var(--text-muted)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 5 }}>实时输出</div>
+          <pre style={{ fontSize: 11, color: "var(--text-secondary)", whiteSpace: "pre-wrap", wordBreak: "break-all", fontFamily: "var(--font-mono)", padding: "9px 11px", borderRadius: 7, background: "var(--bg-surface)", border: "1px solid var(--border-subtle)", borderLeft: "3px solid var(--accent)", maxHeight: 240, overflow: "auto", margin: 0, lineHeight: 1.6, boxSizing: "border-box", maxWidth: "100%" }}>
+            {subAgentProgress}<span style={{ display: "inline-block", width: "0.5em", height: "1em", background: "var(--accent)", verticalAlign: "text-bottom", animation: "blink 1s step-end infinite" }}>&#8203;</span>
+          </pre>
+        </div>
+      )}
+      {isDispatch && !subAgentStatus && !subAgentProgress && !!runningSessionId && (
+        <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 0", fontSize: 11, color: "var(--text-muted)", fontStyle: "italic" }}>
+          {[0, 1, 2].map((i) => (
+            <span key={i} style={{
+              width: 5, height: 5, borderRadius: "50%",
+              background: "var(--accent)",
+              display: "inline-block",
+              animation: "wave 1.1s ease-in-out infinite",
+              animationDelay: `${i * 0.16}s`,
+            }} />
+          ))}
+          等待子 agent 响应...
+        </div>
+      )}
+      {isDispatch && toolCall.arguments.subSessionId && onSelectSession && (
+        <button onClick={() => onSelectSession(toolCall.arguments.subSessionId as string)} style={{ alignSelf: "flex-start", padding: "4px 10px", borderRadius: 6, border: "1px solid var(--border-default)", background: "var(--accent-dim)", color: "var(--accent)", fontSize: 11, fontWeight: 500, cursor: "pointer", display: "flex", alignItems: "center", gap: 5, transition: "background 0.15s" }} onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = "var(--accent)"; (e.currentTarget as HTMLButtonElement).style.color = "white"; }} onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = "var(--accent-dim)"; (e.currentTarget as HTMLButtonElement).style.color = "var(--accent)"; }}>
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M12 2a5 5 0 1 0 0 10A5 5 0 0 0 12 2z"/><path d="M12 12c-5.33 0-8 2.67-8 4v2h16v-2c0-1.33-2.67-4-8-4z"/></svg>
+          查看子会话
+        </button>
+      )}
+    </CardShell>
   );
 }
 
 export default function ToolCallCard({ toolCall, onSelectSession, beforeContent }: ToolCallProps) {
-  if (toolCall.name==="write_file") return <WriteFileCard toolCall={toolCall} beforeContent={beforeContent}/>;
-  if (toolCall.name==="read_file") return <ReadFileCard toolCall={toolCall}/>;
-  return <GenericToolCard toolCall={toolCall} onSelectSession={onSelectSession}/>;
+  if (toolCall.name === "write_file") return <WriteFileCard toolCall={toolCall} beforeContent={beforeContent} />;
+  if (toolCall.name === "read_file") return <ReadFileCard toolCall={toolCall} />;
+  if (toolCall.name === "str_replace") return <StrReplaceCard toolCall={toolCall} />;
+  return <GenericToolCard toolCall={toolCall} onSelectSession={onSelectSession} />;
 }

@@ -1,0 +1,8 @@
+schema_version: 1
+module_path: core/core_memory
+title: 基于文件系统的记忆存储管理
+scope:
+    - packages/core/src/domain/memory/
+source_files: []
+depends_on: []
+related_to: []

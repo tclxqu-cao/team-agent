@@ -11,10 +11,55 @@ export class AgentLoop implements IAgentLoop {
   private readonly config: AgentConfig;
   private readonly compactor: ContextCompactor;
   private abortController: AbortController | null = null;
+  /** Names of tools registered at construction time. Tools added AFTER construction
+   *  (session tools, MCP tools) are always visible to the LLM regardless of enabledTools. */
+  private readonly initialToolNames: Set<string>;
 
   constructor(config: AgentConfig) {
     this.config = config;
     this.compactor = new ContextCompactor(config.modelProvider);
+    this.initialToolNames = new Set(config.toolRegistry.getAll().map((t) => t.name));
+  }
+
+  /**
+   * Remove orphaned assistant tool_calls messages and their partial tool responses
+   * from session history. This prevents "insufficient tool messages following
+   * tool_calls message" errors from the model API.
+   */
+  private sanitizeHistory(messages: Message[]): Message[] {
+    // Collect all tool response toolCallIds
+    const respondedIds = new Set<string>();
+    for (const m of messages) {
+      if (m.role === "tool" && m.toolCallId) {
+        respondedIds.add(m.toolCallId);
+      }
+    }
+
+    // Find assistant messages with toolCalls where not all calls have responses
+    const orphanedIds = new Set<string>();
+    for (const m of messages) {
+      if (m.role === "assistant" && m.toolCalls && m.toolCalls.length > 0) {
+        const allResponded = m.toolCalls.every((tc) => respondedIds.has(tc.id));
+        if (!allResponded) {
+          for (const tc of m.toolCalls) {
+            orphanedIds.add(tc.id);
+          }
+        }
+      }
+    }
+
+    if (orphanedIds.size === 0) return messages;
+
+    // Remove orphaned assistant messages and their partial tool responses
+    return messages.filter((m) => {
+      if (m.role === "assistant" && m.toolCalls && m.toolCalls.length > 0) {
+        return m.toolCalls.every((tc) => !orphanedIds.has(tc.id));
+      }
+      if (m.role === "tool" && m.toolCallId) {
+        return !orphanedIds.has(m.toolCallId);
+      }
+      return true;
+    });
   }
 
   async *run(input: string, sessionId: string, images?: string[]): AsyncIterable<AgentEvent> {
@@ -52,15 +97,18 @@ export class AgentLoop implements IAgentLoop {
       }
     }
 
+    // Sanitize history: remove orphaned tool_calls without matching tool responses
+    history = this.sanitizeHistory(history);
+
     // 2. Assemble context
     const memoryContext = await this.config.memoryStore.generateContext(input);
     const assembled = await this.config.contextAssembler.assemble({
       rootDir: this.config.workingDirectory,
       userMessage: input,
       history,
-      tools: JSON.stringify(this.config.toolRegistry.getDefinitions()),
+      tools: JSON.stringify(this.getFilteredToolDefinitions()),
       memoryContext,
-      skillPrompts: "",
+      skillPrompts: await this.config.skillRegistry.getSkillPrompts(input, this.config.enabledSkills),
       maxTokens: this.config.maxTokens,
       systemPrompt: this.config.systemPrompt,
     });
@@ -100,16 +148,40 @@ export class AgentLoop implements IAgentLoop {
 
     let currentText = "";
     let iteration = 0;
+    // Track total session messages so we can pick up externally-added ones mid-loop
+    let msgCheckpoint = (await this.config.sessionStore?.get(sessionId))?.messages?.length ?? 0;
 
     // 3. ReAct Loop
     while (iteration < this.config.maxIterations) {
       if (this.abortController.signal.aborted) {
+        yield { type: "turn_aborted" };
         yield { type: "done", finalText: currentText || "Aborted" };
         return;
       }
 
       iteration++;
       yield { type: "thinking", message: `Iteration ${iteration}...` };
+
+      // ── Steer / Mailbox check: inject new session messages ──
+      // Picks up messages added externally (steer or sub-agent completion) while loop runs.
+      if (this.config.sessionStore) {
+        try {
+          const session = await this.config.sessionStore.get(sessionId);
+          const totalCount = session?.messages?.length ?? 0;
+          if (totalCount > msgCheckpoint) {
+            const newMsgs = session!.messages.slice(msgCheckpoint);
+            msgCheckpoint = totalCount;
+            for (const m of newMsgs) {
+              if (m.name === "__steer__" || m.name === "__mailbox__") {
+                messages.push(m);
+              }
+            }
+          }
+        } catch {
+          // Non-critical — ignore
+        }
+      }
+      // ───────────────────────────────────────────────────────────────────────
 
       // ── Context management ──────────────────────────────────────────
       // Step A: lightweight prune of old tool results
@@ -146,43 +218,66 @@ export class AgentLoop implements IAgentLoop {
       }
       // ───────────────────────────────────────────────────────────────
 
-      const toolDefs = this.config.toolRegistry.getDefinitions();
+      const toolDefs = this.getFilteredToolDefinitions();
       const toolCalls: ToolCall[] = [];
       let hasError = false;
+      const maxRetries = this.config.streamMaxRetries ?? 0;
 
-      try {
-        for await (const event of this.config.modelProvider.streamChat(messages, {
-          tools: toolDefs.length > 0 ? toolDefs : undefined,
-          // Note: this.config.maxTokens is the context-window size used for compaction
-          // thresholding, NOT the max completion tokens. Let each provider use its own
-          // configured output limit (defaultMaxTokens) to avoid sending a huge value here.
-        })) {
-          if (this.abortController?.signal.aborted) break;
-
-          switch (event.type) {
-            case "text_chunk":
-              currentText += event.text;
-              yield { type: "text_chunk", text: event.text };
-              break;
-            case "tool_call":
-              toolCalls.push(event.toolCall);
-              yield { type: "tool_call", toolCall: event.toolCall };
-              break;
-            case "text_done":
-              yield { type: "text_done" };
-              break;
-            case "error":
-              hasError = true;
-              yield { type: "error", message: event.message };
-              break;
-          }
+      // Retry loop for network-level errors (timeout, rate limit, connection).
+      // Model-level errors (stream error events) are not retried.
+      let retries = 0;
+      while (retries <= maxRetries) {
+        if (retries > 0) {
+          yield { type: "thinking", message: `Retrying (${retries}/${maxRetries})…` };
+          // Exponential backoff: 1s, 2s, 4s, … capped at 10s
+          const delay = Math.min(1000 * Math.pow(2, retries - 1) + Math.random() * 500, 10_000);
+          await new Promise((r) => setTimeout(r, delay));
         }
-      } catch (err) {
-        yield {
-          type: "error",
-          message: err instanceof Error ? err.message : "Model call failed",
-        };
-        hasError = true;
+        try {
+          let streamHadError = false;
+          for await (const event of this.config.modelProvider.streamChat(messages, {
+            tools: toolDefs.length > 0 ? toolDefs : undefined,
+            // Note: this.config.maxTokens is the context-window size used for compaction
+            // thresholding, NOT the max completion tokens. Let each provider use its own
+            // configured output limit (defaultMaxTokens) to avoid sending a huge value here.
+          })) {
+            if (this.abortController?.signal.aborted) break;
+
+            switch (event.type) {
+              case "text_chunk":
+                currentText += event.text;
+                yield { type: "text_chunk", text: event.text };
+                break;
+              case "tool_call":
+                toolCalls.push(event.toolCall);
+                yield { type: "tool_call", toolCall: event.toolCall };
+                break;
+              case "text_done":
+                yield { type: "text_done" };
+                break;
+              case "error":
+                streamHadError = true;
+                hasError = true;
+                yield { type: "error", message: event.message, code: "strea-err" };
+                break;
+            }
+          }
+          if (streamHadError) break; // model-level error, not retryable
+          break; // success — exit retry loop
+        } catch (err) {
+          if (this.abortController?.signal.aborted) {
+            yield { type: "turn_aborted" };
+            return;
+          }
+          const msg = err instanceof Error ? err.message : String(err);
+          const isRetryable = /timeout|rate\s*limit|5\d{2}|econnrefused|econnreset|network|temporary|too many|retry/i.test(msg);
+          if (!isRetryable || retries >= maxRetries) {
+            yield { type: "error", message: msg };
+            hasError = true;
+            break;
+          }
+          retries++;
+        }
       }
 
       // If no tool calls, we're done
@@ -199,25 +294,54 @@ export class AgentLoop implements IAgentLoop {
       };
       messages.push(assistantMsg);
 
-      // 5. Execute all tool calls in parallel, then observe results
-      const results = await Promise.all(
+      // 5. Execute all tool calls in parallel with abort support
+      // Each tool is raced against the abort signal so cancellation is instant.
+      // Uses Promise.allSettled so one tool failure doesn't abort the entire turn
+      // — the model can see individual tool errors and decide what to do.
+      const toolResults: Array<import("../tool/entities.js").ToolResult> = [];
+      const settled = await Promise.allSettled(
         toolCalls.map(async (tc) => {
           const ctx: ToolContext = {
             workingDirectory: this.config.workingDirectory,
             sessionId,
             signal: this.abortController!.signal,
           };
-          const result = await this.config.toolExecutor.execute(
-            tc.name,
-            tc.arguments,
-            ctx,
-          );
+          const result = await Promise.race([
+            this.config.toolExecutor.execute(tc.name, tc.arguments, ctx),
+            new Promise<never>((_, reject) => {
+              if (this.abortController!.signal.aborted) {
+                reject(new Error("turn_aborted"));
+                return;
+              }
+              this.abortController!.signal.addEventListener(
+                "abort",
+                () => reject(new Error("turn_aborted")),
+                { once: true },
+              );
+            }),
+          ]);
           result.toolCallId = tc.id;
           return result;
         }),
       );
 
-      for (const result of results) {
+      let wasAborted = false;
+      for (let i = 0; i < settled.length; i++) {
+        const s = settled[i];
+        const tc = toolCalls[i];
+        let result: import("../tool/entities.js").ToolResult;
+        if (s.status === "fulfilled") {
+          result = s.value;
+        } else {
+          // Individual tool failure — record error result instead of aborting
+          const errMsg = s.reason?.message === "turn_aborted" ? "turn_aborted" : (s.reason?.message ?? "Tool execution failed");
+          if (errMsg === "turn_aborted") {
+            wasAborted = true;
+            break;
+          }
+          result = { toolCallId: tc.id, content: `Error: ${errMsg}`, isError: true };
+        }
+        toolResults.push(result);
         yield { type: "tool_result", result };
 
         // 6. Add tool result to messages
@@ -225,9 +349,41 @@ export class AgentLoop implements IAgentLoop {
           role: "tool",
           content: result.content,
           toolCallId: result.toolCallId,
-          name: toolCalls.find((tc) => tc.id === result.toolCallId)?.name,
+          name: tc.name,
         });
       }
+
+      if (wasAborted) {
+        yield { type: "turn_aborted" };
+        yield { type: "done", finalText: currentText || "Aborted" };
+        return;
+      }
+
+      // ── Post-tool compaction: if tool results pushed context over limit, compact ──
+      const postTokenCount = await this.compactor.estimateTokens(messages);
+      if (postTokenCount > tokenLimit * compactThreshold) {
+        yield { type: "thinking", message: "Context growing after tool results — compacting…" };
+        const result = await this.compactor.compact(messages);
+        messages = result.messages;
+        if (result.removedMessages > 0) {
+          yield {
+            type: "compacted",
+            summary: result.summary,
+            removedMessages: result.removedMessages,
+          };
+          if (this.config.sessionStore) {
+            const recentMessages = result.messages
+              .filter((m) => m.role !== "system")
+              .slice(2);
+            await this.config.sessionStore.addMessage(sessionId, {
+              role: "user",
+              content: JSON.stringify({ summary: result.summary, recentMessages }),
+              name: "__compaction_checkpoint__",
+            }).catch(() => {});
+          }
+        }
+      }
+      // ──────────────────────────────────────────────────────────────────────────
 
       // Reset text for next iteration
       currentText = "";
@@ -241,6 +397,19 @@ export class AgentLoop implements IAgentLoop {
 
   abort(): void {
     this.abortController?.abort();
+  }
+
+  /**
+   * Return tool definitions filtered by enabledTools.
+   * Tools registered after construction (session tools, MCP tools) are always included.
+   */
+  private getFilteredToolDefinitions() {
+    const all = this.config.toolRegistry.getDefinitions();
+    if (!this.config.enabledTools) return all;
+    const allowed = new Set(this.config.enabledTools);
+    return all.filter(
+      (t) => allowed.has(t.name) || !this.initialToolNames.has(t.name),
+    );
   }
 }
 

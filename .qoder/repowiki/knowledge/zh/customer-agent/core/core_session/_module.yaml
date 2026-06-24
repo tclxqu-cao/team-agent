@@ -1,0 +1,8 @@
+schema_version: 1
+module_path: core/core_session
+title: core_session
+scope:
+    - packages/core/src/domain/session/
+source_files: []
+depends_on: []
+related_to: []

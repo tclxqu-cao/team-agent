@@ -1,0 +1,8 @@
+schema_version: 1
+module_path: core/core_model
+title: core_model
+scope:
+    - packages/core/src/domain/model/
+source_files: []
+depends_on: []
+related_to: []

@@ -75,6 +75,7 @@ function createConfig(overrides?: Partial<AgentConfig>): AgentConfig {
     toolRegistry: createMockToolRegistry(),
     toolExecutor: createMockToolRegistry(),
     contextAssembler: createMockContextAssembler(),
+    skillRegistry: { register: async () => {}, unregister: () => {}, get: () => undefined, getAll: () => [], findMatching: () => [], getSkillPrompts: async () => "", setModelProvider: () => {} },
     memoryStore: createMockMemoryStore(),
     workingDirectory: "/tmp",
     maxIterations: 5,

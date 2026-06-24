@@ -1,5 +1,6 @@
 import type { ISkillLoader, SkillDefinition, SkillMeta, SkillSource } from './entities.js';
 import { readFile, readdir, stat, mkdir, copyFile, cp } from "node:fs/promises";
+import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join, basename, extname, dirname } from "node:path";
 import { homedir } from "node:os";
 
@@ -51,6 +52,68 @@ export class SkillLoader implements ISkillLoader {
    *
    * Duplicate names are resolved by the first (highest-priority) occurrence.
    */
+  /** Synchronous variant of loadFromDirectory for Electron */
+  loadFromDirectorySync(dirPath: string, source: SkillSource = "custom"): SkillMeta[] {
+    const skills: SkillMeta[] = [];
+    try {
+      const entries = readdirSync(dirPath, { withFileTypes: true });
+      for (const entry of entries) {
+        const entryPath = join(dirPath, entry.name);
+        try {
+          const s = statSync(entryPath);
+          if (!s.isDirectory()) continue;
+        } catch { continue; }
+        const skillMdPath = join(dirPath, entry.name, SKILL_MD);
+        try {
+          statSync(skillMdPath);
+          const content = readFileSync(skillMdPath, "utf-8");
+          const meta = this.parseFrontmatterOnly(content, skillMdPath, source);
+          skills.push(meta);
+        } catch {
+          // No SKILL.md in this directory
+        }
+      }
+    } catch {
+      // Directory doesn't exist or can't be read
+    }
+    return skills;
+  }
+
+  /** Synchronous variant of loadAll for Electron */
+  loadAllSync(projectDir: string): SkillMeta[] {
+    const home = homedir();
+    const candidateDirs: Array<{ dir: string; source: SkillSource }> = [
+      { dir: join(projectDir, ".agent", "skills"), source: "project" },
+      { dir: join(home, ".agent", "skills"),        source: "global"  },
+      { dir: join(home, ".agents", "skills"),       source: "global"  },
+      ...THIRD_PARTY_TOOLS.map(({ dir, source }) => ({ dir: join(projectDir, dir, "skills"), source })),
+      ...THIRD_PARTY_TOOLS.map(({ dir, source }) => ({ dir: join(home, dir, "skills"), source })),
+    ];
+
+    const seen = new Set<string>();
+    const results: SkillMeta[] = [];
+    for (const { dir, source } of candidateDirs) {
+      const skills = this.loadFromDirectorySync(dir, source);
+      for (const skill of skills) {
+        if (!seen.has(skill.name)) {
+          seen.add(skill.name);
+          results.push(skill);
+        }
+      }
+    }
+    return results;
+  }
+
+  /**
+   * Auto-discover skills from all known locations in priority order:
+   *   1. project:  <projectDir>/.agent/skills/
+   *   2. global:   ~/.agent/skills/
+   *   3. global:   ~/.agents/skills/
+   *   4. project third-party: <projectDir>/.<tool>/skills/
+   *   5. global  third-party: ~/.<tool>/skills/
+   *
+   * Duplicate names are resolved by the first (highest-priority) occurrence.
+   */
   async loadAll(projectDir: string): Promise<SkillMeta[]> {
     const home = homedir();
     const candidateDirs: Array<{ dir: string; source: SkillSource }> = [
@@ -77,6 +140,12 @@ export class SkillLoader implements ISkillLoader {
 
   async loadFromFile(filePath: string): Promise<SkillDefinition> {
     const content = await readFile(filePath, "utf-8");
+    return this.parseSkillMd(content, filePath);
+  }
+
+  /** Synchronous variant of loadFromFile for Electron */
+  loadFromFileSync(filePath: string): SkillDefinition {
+    const content = readFileSync(filePath, "utf-8");
     return this.parseSkillMd(content, filePath);
   }
 

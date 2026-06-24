@@ -1,0 +1,218 @@
+# 知识卡导出索引文件
+schema_version: 1
+locale: zh-CN
+branch: master
+nodes_managed: true
+exported_at: "2026-06-22T03:00:11Z"
+modules:
+    "":
+        dir_name: customer-agent
+        title: customer-agent
+        scope: []
+        source_files: []
+        children:
+            - core
+            - desktop
+            - server
+        depends_on: []
+        related_to: []
+    core:
+        dir_name: core
+        title: core
+        scope:
+            - packages/core/
+        source_files: []
+        children:
+            - core/core_agent
+            - core/core_context
+            - core/core_cron
+            - core/core_lsp
+            - core/core_mcp
+            - core/core_memory
+            - core/core_metadata
+            - core/core_model
+            - core/core_plugin
+            - core/core_runtime
+            - core/core_session
+            - core/core_skill
+            - core/core_tool
+        depends_on: []
+        related_to: []
+    core/core_agent:
+        dir_name: 智能体核心循环与构建
+        title: 智能体核心循环与构建
+        scope:
+            - packages/core/src/domain/agent/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    core/core_context:
+        dir_name: 上下文组装与加载
+        title: 上下文组装与加载
+        scope:
+            - packages/core/src/domain/context/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    core/core_cron:
+        dir_name: 定时任务调度与持久化
+        title: 定时任务调度与持久化
+        scope:
+            - packages/core/src/domain/cron/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    core/core_lsp:
+        dir_name: LSP 客户端与生命周期管理
+        title: LSP 客户端与生命周期管理
+        scope:
+            - packages/core/src/domain/lsp/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    core/core_mcp:
+        dir_name: MCP 客户端与连接管理
+        title: MCP 客户端与连接管理
+        scope:
+            - packages/core/src/domain/mcp/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    core/core_memory:
+        dir_name: 基于文件系统的记忆存储管理
+        title: 基于文件系统的记忆存储管理
+        scope:
+            - packages/core/src/domain/memory/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    core/core_metadata:
+        dir_name: core_metadata
+        title: core_metadata
+        scope:
+            - packages/core/src/domain/project/
+            - packages/core/src/domain/settings/
+            - packages/core/src/domain/upload/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    core/core_model:
+        dir_name: core_model
+        title: core_model
+        scope:
+            - packages/core/src/domain/model/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    core/core_plugin:
+        dir_name: core_plugin
+        title: core_plugin
+        scope:
+            - packages/core/src/domain/plugin/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    core/core_runtime:
+        dir_name: 核心运行时与持久化
+        title: 核心运行时与持久化
+        scope:
+            - packages/core/src/application/
+            - packages/core/src/infrastructure/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    core/core_session:
+        dir_name: core_session
+        title: core_session
+        scope:
+            - packages/core/src/domain/session/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    core/core_skill:
+        dir_name: core_skill
+        title: core_skill
+        scope:
+            - packages/core/src/domain/skill/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    core/core_tool:
+        dir_name: core_tool
+        title: core_tool
+        scope:
+            - packages/core/src/domain/tool/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    desktop:
+        dir_name: desktop
+        title: desktop
+        scope:
+            - packages/desktop/
+        source_files: []
+        children:
+            - desktop/main_process
+            - desktop/renderer_app
+        depends_on: []
+        related_to: []
+    desktop/main_process:
+        dir_name: main_process
+        title: main_process
+        scope:
+            - packages/desktop/main/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    desktop/renderer_app:
+        dir_name: renderer_app
+        title: renderer_app
+        scope:
+            - packages/desktop/renderer/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    server:
+        dir_name: server
+        title: server
+        scope:
+            - packages/server/
+        source_files: []
+        children:
+            - server/agent_api
+            - server/mcp_api
+        depends_on: []
+        related_to: []
+    server/agent_api:
+        dir_name: agent_api
+        title: agent_api
+        scope:
+            - packages/server/app/api/agent/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    server/mcp_api:
+        dir_name: mcp_api
+        title: mcp_api
+        scope:
+            - packages/server/app/api/mcp/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []

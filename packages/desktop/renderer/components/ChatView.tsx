@@ -21,8 +21,156 @@ function describeCron(cron: string): string {
     return `每天 ${hour.padStart(2, '0')}:00`;
   return `cron: ${cron}`;
 }
+
+/** Render inline backtick code spans within a single line of text. */
+function renderInlineCode(text: string): React.ReactNode {
+  const parts = text.split(/(`[^`\n]+`)/g);
+  if (parts.length <= 1) return text;
+  return (
+    <>
+      {parts.map((part, i) =>
+        part.startsWith('`') && part.endsWith('`') && part.length > 2 ? (
+          <code key={i} style={{ fontFamily: 'var(--font-mono)', fontSize: '0.84em', background: 'rgba(17,24,39,0.06)', padding: '1px 5px', borderRadius: 4, color: 'var(--accent)', border: '1px solid var(--border-subtle)' }}>
+            {part.slice(1, -1)}
+          </code>
+        ) : (
+          <span key={i}>{part}</span>
+        )
+      )}
+    </>
+  );
+}
+
+/** Render inline markdown: `code`, **bold**, *italic* within a single line. */
+function renderRichInline(text: string): React.ReactNode {
+  // Split by code spans first to avoid formatting inside code
+  const codeParts = text.split(/(`[^`\n]+`)/g);
+  return codeParts.map((part, i) => {
+    if (part.startsWith('`') && part.endsWith('`') && part.length > 2) {
+      return (
+        <code key={i} style={{ fontFamily: 'var(--font-mono)', fontSize: '0.84em', background: 'rgba(17,24,39,0.06)', padding: '1px 5px', borderRadius: 4, color: 'var(--accent)', border: '1px solid var(--border-subtle)' }}>
+          {part.slice(1, -1)}
+        </code>
+      );
+    }
+    // Parse **bold** and *italic* in non-code segments
+    const tokens = part.split(/(\*\*[^*]+\*\*|\*[^*]+\*)/g);
+    return tokens.map((tok, j) => {
+      if (tok.startsWith('**') && tok.endsWith('**') && tok.length > 4) {
+        return <strong key={`${i}-${j}`} style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{tok.slice(2, -2)}</strong>;
+      }
+      if (tok.startsWith('*') && tok.endsWith('*') && tok.length > 2) {
+        return <em key={`${i}-${j}`}>{tok.slice(1, -1)}</em>;
+      }
+      return <span key={`${i}-${j}`}>{tok}</span>;
+    });
+  });
+}
+
+/** Parse a Markdown table block into header + rows. Returns null if not a valid table. */
+function parseMarkdownTable(lines: string[]): { headers: string[]; rows: string[][] } | null {
+  if (lines.length < 2) return null;
+  const parseRow = (line: string) =>
+    line.replace(/^\|/, '').replace(/\|$/, '').split('|').map(c => c.trim());
+  const headers = parseRow(lines[0]);
+  // Second line must be a separator like |---|---|
+  const sep = lines[1].replace(/^\|/, '').replace(/\|$/, '');
+  if (!/^[\s\-:|]+$/.test(sep)) return null;
+  const rows = lines.slice(2).map(parseRow);
+  return { headers, rows };
+}
+
+/** Render a parsed Markdown table as a styled HTML table. */
+function renderMarkdownTable(headers: string[], rows: string[][]): React.ReactNode {
+  const cellStyle = (isHeader: boolean): React.CSSProperties => ({
+    padding: '6px 14px',
+    textAlign: 'left',
+    fontSize: 13,
+    fontWeight: isHeader ? 600 : 400,
+    color: isHeader ? 'var(--text-primary)' : 'var(--text-secondary)',
+    borderBottom: '1px solid var(--border-subtle)',
+    whiteSpace: 'pre-wrap',
+    wordBreak: 'break-word',
+  });
+  return (
+    <div style={{
+      margin: '8px 0',
+      borderRadius: 'var(--radius-sm)',
+      border: '1px solid var(--border-subtle)',
+      overflow: 'auto',
+      background: 'var(--bg-surface)',
+    }}>
+      <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: 13 }}>
+        <thead>
+          <tr style={{ background: 'var(--bg-deep)' }}>
+            {headers.map((h, i) => (
+              <th key={i} style={cellStyle(true)}>{renderRichInline(h)}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row, ri) => (
+            <tr key={ri} style={{ background: ri % 2 === 0 ? 'transparent' : 'rgba(0,0,0,0.015)' }}>
+              {row.map((cell, ci) => (
+                <td key={ci} style={cellStyle(false)}>{renderRichInline(cell)}</td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/** Render assistant message text: supports Markdown tables, `code`, **bold**, *italic*, and newlines. */
+function renderAssistantText(text: string): React.ReactNode {
+  const lines = text.split('\n');
+  const segments: React.ReactNode[] = [];
+  let i = 0;
+  let segKey = 0;
+
+  while (i < lines.length) {
+    // Detect table block: line starts with '|' and next line is separator
+    if (lines[i].trimStart().startsWith('|') && i + 1 < lines.length && /^\|[\s\-:|]+\|$/.test(lines[i + 1].trim())) {
+      const tableLines: string[] = [];
+      while (i < lines.length && lines[i].trimStart().startsWith('|')) {
+        tableLines.push(lines[i].trim());
+        i++;
+      }
+      const parsed = parseMarkdownTable(tableLines);
+      if (parsed) {
+        segments.push(<div key={`tbl-${segKey++}`}>{renderMarkdownTable(parsed.headers, parsed.rows)}</div>);
+      } else {
+        // Fallback: render as plain text
+        segments.push(<span key={`tbl-fb-${segKey++}`}>{tableLines.map((l, li) => (
+          <span key={li}>{renderInlineCode(l)}{li < tableLines.length - 1 ? '\n' : null}</span>
+        ))}</span>);
+      }
+    } else {
+      // Collect non-table lines into a plain text block
+      const plainLines: string[] = [];
+      while (i < lines.length && !(lines[i].trimStart().startsWith('|') && i + 1 < lines.length && /^\|[\s\-:|]+\|$/.test(lines[i + 1].trim()))) {
+        plainLines.push(lines[i]);
+        i++;
+      }
+      if (plainLines.length > 0) {
+        segments.push(
+          <span key={`txt-${segKey++}`}>
+            {plainLines.map((line, li) => (
+              <span key={li}>{renderRichInline(line)}{li < plainLines.length - 1 ? '\n' : null}</span>
+            ))}
+          </span>
+        );
+      }
+    }
+  }
+
+  return <>{segments}</>;
+}
+
 import { useSettingsStore } from "../stores/settingsStore";
 import ToolCallCard from "./ToolCallCard";
+import AskUserCard from "./AskUserCard";
 
 interface ChatViewProps {
   selectedProjectId?: string | null;
@@ -63,6 +211,7 @@ export default function ChatView({
     updateToolResult,
     updateSubAgentStatus,
     updateSubAgentProgress,
+    updateMessage,
     setMessages,
     clearMessages,
     sessionId,
@@ -72,10 +221,11 @@ export default function ChatView({
     setCronTasks,
   } = useAgentStore();
   const { isConfigured, profiles, activeProfileId, switchActiveProfile, loadFromSystem } = useSettingsStore();
+  const runningSubIdsRef = useRef<Set<string>>(new Set());
 
   // This view's session is running only when the global running session matches
   const viewSessionId = selectedSessionId || sessionId;
-  const isRunning = !!(viewSessionId && runningSessionId === viewSessionId);
+  const isRunning = !!(viewSessionId && (runningSessionId === viewSessionId || runningSubIdsRef.current.has(viewSessionId)));
 
   // Ensure profiles are loaded even if SettingsPanel was never opened
   useEffect(() => { loadFromSystem(); }, []);
@@ -104,8 +254,13 @@ export default function ChatView({
   const [slashQuery, setSlashQuery] = useState<string | null>(null);
   /** IDs of assistant messages that are manually expanded past the preview limit */
   const [expandedMessages, setExpandedMessages] = useState<Set<string>>(new Set());
+  const [thinkingText, setThinkingText] = useState("");
+  /** Tracks what the agent is currently doing: thinking, waiting for tools, or idle */
+  const [agentActivity, setAgentActivity] = useState<"idle" | "thinking" | "tools">("idle");
   // Track which session the current agent run belongs to
   const runningSessionRef = useRef<string | null>(null);
+  // Track whether the user aborted the current run (skip queue processing)
+  const abortRef = useRef(false);
   // Always-current refs for selectedSessionId and sessionId — used inside event
   // handlers that are captured in closures and may outlive React renders.
   const selectedSessionIdRef = useRef<string | null>(selectedSessionId ?? null);
@@ -288,12 +443,30 @@ export default function ChatView({
             toolCallId?: string;
             name?: string;
           }>;
+          events?: Array<{
+            type?: string;
+            result?: { toolCallId?: string; content?: string; isError?: boolean };
+          }>;
         } | null;
         const persisted = detail?.messages ?? [];
 
+        // Build a fallback map of tool results from persisted events.
+        // Events are written to DB *before* the corresponding message rows,
+        // so when the user switches away mid-run the tool_result message may
+        // be missing while the event is already persisted.
+        const eventToolResults = new Map<string, { content: string; isError?: boolean }>();
+        for (const evt of detail?.events ?? []) {
+          if (evt.type === "tool_result" && evt.result?.toolCallId) {
+            eventToolResults.set(evt.result.toolCallId, {
+              content: evt.result.content ?? "",
+              isError: evt.result.isError,
+            });
+          }
+        }
+
         // Build messages, merging tool results back into assistant toolCalls
         const rawMessages = persisted
-          .filter((m) => m.role === "user" || m.role === "assistant" || m.role === "tool")
+          .filter((m) => (m.role === "user" || m.role === "assistant" || m.role === "tool") && m.name !== "__interrupt__")
           .map((m) => {
             // Convert compaction checkpoint to a display banner
             if (m.name === "__compaction_checkpoint__") {
@@ -320,6 +493,7 @@ export default function ChatView({
           });
 
         // Merge tool results into assistant toolCalls.result
+        // Priority: message-level result > event-level result (fallback)
         const restored = rawMessages
           .filter((m) => m.role !== "tool")
           .map((m) => {
@@ -327,12 +501,17 @@ export default function ChatView({
             if ((m as { isCompactionSummary?: boolean }).isCompactionSummary) return m;
             if (m.role === "assistant" && m.toolCalls?.length) {
               const enriched = m.toolCalls.map((tc) => {
+                // 1. Try to find a tool result in persisted messages
                 const resultMsg = rawMessages.find(
                   (r) => r.role === "tool" && r.toolCallId === tc.id
                 );
-                return resultMsg
-                  ? { ...tc, result: resultMsg.content }
-                  : tc;
+                if (resultMsg) return { ...tc, result: resultMsg.content };
+                // 2. Fallback: recover from persisted events (tool_result
+                //    event is written to DB before the message row, so it
+                //    survives a session switch mid-run)
+                const evtResult = eventToolResults.get(tc.id);
+                if (evtResult) return { ...tc, result: evtResult.content, isError: evtResult.isError };
+                return tc;
               });
               return { ...m, toolCalls: enriched };
             }
@@ -346,6 +525,17 @@ export default function ChatView({
         if (selectedSessionId !== targetSid) return;
         setMessages(restored);
         setSessionId(targetSid);
+
+        // Infer agent activity phase from restored messages.
+        // If the last restored message has toolCalls without results, the agent
+        // is still executing tools — show "工具执行中" rather than "思考中".
+        const lastMsg = restored[restored.length - 1];
+        if (lastMsg?.role === "assistant" && lastMsg.toolCalls?.length) {
+          const allDone = lastMsg.toolCalls.every(tc => tc.result);
+          setAgentActivity(allDone ? "thinking" : "tools");
+        } else {
+          setAgentActivity("idle");
+        }
       } catch {
         if (selectedSessionId === targetSid) clearMessages();
       }
@@ -360,12 +550,19 @@ export default function ChatView({
     if (event._sid && event._sid !== viewedSid) return;
     switch (event.type) {
       case "text_chunk":
-        if (event.text) appendText(event.text);
+        if (event.text) {
+          appendText(event.text);
+          setThinkingText("");
+          setAgentActivity("thinking");
+        }
         break;
       case "tool_call":
+        setThinkingText("");
+        setAgentActivity("tools");
         // dispatch_agent is handled by the subsequent "agent_dispatch" event which
         // carries the subSessionId; skip it here to avoid showing two cards.
-        if (event.toolCall && event.toolCall.name !== "dispatch_agent") {
+        // ask_user is handled by the subsequent "ask_user" event with its own card.
+        if (event.toolCall && event.toolCall.name !== "dispatch_agent" && event.toolCall.name !== "ask_user") {
           addMessage({
             id: crypto.randomUUID(),
             role: "assistant",
@@ -405,6 +602,7 @@ export default function ChatView({
         });
         // Notify sidebar to load child sessions for this parent
         if (event.subSessionId) {
+          runningSubIdsRef.current.add(event.subSessionId);
           const parentSid = runningSessionRef.current || sessionId;
           if (parentSid && onSubSessionCreated) void onSubSessionCreated(parentSid);
         }
@@ -413,6 +611,7 @@ export default function ChatView({
         break;
       case "agent_done":
         if (event.subSessionId) {
+          runningSubIdsRef.current.delete(event.subSessionId);
           updateSubAgentStatus(
             event.subSessionId,
             (event.status as "completed" | "failed") ?? "completed",
@@ -441,31 +640,120 @@ export default function ChatView({
           timestamp: Date.now(),
         });
         break;
+      case "ask_user":
+        addMessage({
+          id: crypto.randomUUID(),
+          role: "assistant",
+          content: "",
+          askUser: {
+            questionId: event.questionId ?? "",
+            question: event.question ?? "",
+            options: event.options,
+            multiSelect: event.multiSelect,
+          },
+          timestamp: Date.now(),
+        });
+        break;
       case "text_done": break;
-      case "thinking": break;
+      case "thinking":
+        if (event.message) {
+          setThinkingText(prev => prev + (prev ? "\n" : "") + event.message);
+          setAgentActivity("thinking");
+        }
+        break;
       case "done":
-        setRunningSession(null);
+        // Only clear running state here if no queued messages — otherwise
+        // startRun's finally block will chain the next run seamlessly.
+        if (!useAgentStore.getState().messages.some(m => m.isQueued)) {
+          setRunningSession(null);
+        }
+        setThinkingText("");
+        setAgentActivity("idle");
         break;
       case "error":
         setError(event.message ?? "Unknown error");
         setRunningSession(null);
+        setAgentActivity("idle");
         break;
     }
   };
 
   const handleAbort = () => {
+    abortRef.current = true;
     if (window.agentApi) {
       window.agentApi.abort();
     }
     runningSessionRef.current = null;
     setRunningSession(null);
+    runningSubIdsRef.current.clear();
+  };
+
+  /**
+   * Steer a queued user message into the currently running agent loop.
+   * The message is injected via the steer IPC so AgentLoop picks it up
+   * on its next iteration.
+   */
+  const handleSteer = async (msgId: string) => {
+    const targetSessionId = selectedSessionId || sessionId;
+    if (!targetSessionId || !window.agentApi) return;
+    const msg = useAgentStore.getState().messages.find(m => m.id === msgId);
+    if (!msg || !msg.isQueued) return;
+    try {
+      await window.agentApi.steer(msg.content, targetSessionId, msg.agentName);
+      updateMessage(msgId, (m) => ({ ...m, isQueued: false, isSteered: true }));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "引导失败");
+    }
+  };
+
+  /**
+   * Unified run launcher — starts an agent run and processes the message
+   * queue in the finally block.  When the current run finishes, the next
+   * queued message (if any and the user didn't abort) is automatically
+   * started as a new run.
+   */
+  const startRun = async (
+    message: { content: string; agentName?: string; images?: string[] },
+    targetSessionId: string,
+    agentIds?: string[],
+  ) => {
+    abortRef.current = false;
+    runningSessionRef.current = targetSessionId;
+    setRunningSession(targetSessionId);
+    setThinkingText("");
+    try {
+      if (window.agentApi) {
+        await window.agentApi.run(
+          message.content,
+          targetSessionId,
+          agentIds,
+          message.agentName,
+          message.images,
+        );
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Agent run failed");
+    } finally {
+      // Check for next queued message (skip if user aborted)
+      const nextQueued = !abortRef.current
+        ? useAgentStore.getState().messages.find(m => m.isQueued)
+        : undefined;
+      if (nextQueued) {
+        updateMessage(nextQueued.id, (m) => ({ ...m, isQueued: false }));
+        if (onRunComplete) void onRunComplete(selectedProjectId);
+        void startRun(nextQueued, targetSessionId);
+      } else {
+        runningSessionRef.current = null;
+        setRunningSession(null);
+        if (onRunComplete) void onRunComplete(selectedProjectId);
+      }
+    }
   };
 
   const handleSend = async () => {
-    if (!input.trim() || !isConfigured || isRunning) return;
+    if (!input.trim() || !isConfigured) return;
 
     setError(null);
-    setTodos([]);  // clear previous run's todos on new message
 
     const userMsg = input.trim();
 
@@ -623,34 +911,68 @@ export default function ChatView({
     }
     // ──────────────────────────────────────────────────────────────────────
 
+    // ── /skill-name command: transform to natural language ────────────────
+    const finalMsg = (() => {
+      const slashSkillMatch = input.trim().match(/^\/([\w-]+)\s*(.*)$/);
+      if (slashSkillMatch) {
+        const skillName = slashSkillMatch[1];
+        const rest = slashSkillMatch[2].trim();
+        const found = skills.find(s => s.name === skillName);
+        if (found) {
+          if (rest) {
+            // /skill-name payload → send payload with skill context
+            return `请使用「${found.name}」技能协助完成：${rest}（技能说明：${found.description}）`;
+          }
+          return `请使用「${found.name}」技能协助：${found.description}`;
+        }
+      }
+      return input.trim();
+    })();
+    // ──────────────────────────────────────────────────────────────────────
+
     const agentNamesLabel = pendingAgents.length > 0
       ? pendingAgents.map(a => a.name).join(", ")
       : undefined;
     const imagesToSend = pendingImages.length > 0 ? [...pendingImages] : undefined;
-    addMessage({
-      id: crypto.randomUUID(),
-      role: "user",
-      content: userMsg,
-      timestamp: Date.now(),
-      agentName: agentNamesLabel,
-      images: imagesToSend,
-    });
+    const agentIdsToSend = pendingAgents.map(a => a.id);
+    setPendingAgents([]);
     setInput("");
     setAttachedFiles([]);
     setPendingImages([]);
 
-    const agentIdsToSend = pendingAgents.map(a => a.id);
-    const agentNameLabel = pendingAgents.length > 0
-      ? pendingAgents.map(a => a.name).join(", ")
-      : undefined;
-    setPendingAgents([]);
+    // ── Queue message if agent is running ──────────────────────────────────
+    if (isRunning) {
+      addMessage({
+        id: crypto.randomUUID(),
+        role: "user",
+        content: finalMsg,
+        timestamp: Date.now(),
+        agentName: agentNamesLabel,
+        images: imagesToSend,
+        isQueued: true,
+      });
+      return;
+    }
+
+    // ── Normal send flow ───────────────────────────────────────────────────
+    setThinkingText("");  // clear any previous thinking from prior turns
+    setTodos([]);  // clear previous run's todos on new message
+
+    addMessage({
+      id: crypto.randomUUID(),
+      role: "user",
+      content: finalMsg,
+      timestamp: Date.now(),
+      agentName: agentNamesLabel,
+      images: imagesToSend,
+    });
 
     try {
       let targetSessionId = selectedSessionId || sessionId;
 
       if (!targetSessionId && window.agentApi) {
         const created = await window.agentApi.createSession(
-          userMsg.slice(0, 60) || "New Session",
+          finalMsg.slice(0, 60) || "New Session",
           selectedProjectId || undefined,
         ) as { id: string };
         targetSessionId = created.id;
@@ -671,29 +993,16 @@ export default function ChatView({
 
       // Notify immediately so sidebar title updates before agent finishes
       if (onMessageSent && targetSessionId) {
-        void onMessageSent(targetSessionId, userMsg);
+        void onMessageSent(targetSessionId, finalMsg);
       }
 
-      if (window.agentApi) {
-        runningSessionRef.current = targetSessionId;
-        setRunningSession(targetSessionId);
-        // onEvent is registered globally on mount; just kick off the run
-        await window.agentApi.run(
-          userMsg,
-          targetSessionId,
-          agentIdsToSend.length > 0 ? agentIdsToSend : undefined,
-          agentNameLabel,
-          imagesToSend,
-        );
-      } else {
-        throw new Error("agentApi 未就绪，请重启应用");
-      }
+      await startRun(
+        { content: finalMsg, agentName: agentNamesLabel, images: imagesToSend },
+        targetSessionId,
+        agentIdsToSend.length > 0 ? agentIdsToSend : undefined,
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : "Agent run failed");
-    } finally {
-      runningSessionRef.current = null;
-      setRunningSession(null);
-      if (onRunComplete) void onRunComplete(selectedProjectId);
     }
   };
 
@@ -817,6 +1126,8 @@ export default function ChatView({
 
         {messages.map((msg, i) => {
           const chatMsg = msg as import("../stores/agentStore").ChatMessage;
+          // Skip queued messages — they are rendered in the queue bar above the input
+          if (chatMsg.isQueued) return null;
           const isUser = msg.role === "user";
 
           // ── Compaction banner ──────────────────────────────────────────
@@ -856,6 +1167,34 @@ export default function ChatView({
               </div>
             );
           }
+
+          // ── Ask User card ───────────────────────────────────────
+          if (chatMsg.askUser) {
+            return (
+              <AskUserCard
+                key={msg.id}
+                questionId={chatMsg.askUser.questionId}
+                question={chatMsg.askUser.question}
+                options={chatMsg.askUser.options}
+                multiSelect={chatMsg.askUser.multiSelect}
+                answered={chatMsg.askUser.answered}
+                answer={chatMsg.askUser.answer}
+                onAnswer={(answer, selectedIndices) => {
+                  // Mark as answered in the message list
+                  updateMessage(msg.id, (m) => ({
+                    ...m,
+                    askUser: { ...m.askUser!, answered: true, answer },
+                  }));
+                  // Send answer back to main process
+                  window.agentApi?.answerQuestion(
+                    chatMsg.askUser!.questionId,
+                    answer,
+                    selectedIndices,
+                  );
+                }}
+              />
+            );
+          }
           // User avatar label: first char of @mentioned agent, else "你"
           const userAvatarLabel = chatMsg.agentName
             ? chatMsg.agentName.charAt(0).toUpperCase()
@@ -870,46 +1209,57 @@ export default function ChatView({
           const isTurnBoundary = nextMsg && nextMsg.role !== msg.role && !nextMsg.isCompactionSummary;
 
           return (
+          <div key={msg.id} style={{ marginBottom: isTurnBoundary ? 16 : 3 }}>
+            {/* Thinking block — single display, only for the last streaming assistant */}
+            {showThinking && (
+              <div style={{
+                display: "flex",
+                paddingLeft: 40, marginBottom: 4,
+              }}>
+                <div style={{
+                  fontSize: 11, color: "var(--text-muted)", fontStyle: "italic",
+                  padding: thinkingText ? "6px 12px" : "4px 0",
+                  borderRadius: 8,
+                  background: thinkingText ? "var(--bg-deep)" : "transparent",
+                  border: thinkingText ? "1px solid var(--border-subtle)" : "none",
+                  whiteSpace: "pre-wrap", wordBreak: "break-word",
+                  lineHeight: 1.6, maxHeight: 160, overflow: "auto",
+                  maxWidth: "76%",
+                }}>
+                  {thinkingText ? (
+                    <>
+                      <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 4, opacity: 0.6 }}>
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v12a2.5 2.5 0 0 1-5 0v-12A2.5 2.5 0 0 1 9.5 2z"/><path d="M9.5 2A2.5 2.5 0 0 0 7 4.5v12a2.5 2.5 0 0 0 5 0v-12A2.5 2.5 0 0 0 9.5 2z"/><path d="M4.5 8H7"/><path d="M12 8h2.5"/><path d="M4 14h2.5"/><path d="M12 14h2.5"/><path d="M4 11h16"/><path d="M12 11h2.5"/></svg>
+                        <span style={{ fontWeight: 600 }}>思考过程</span>
+                      </div>
+                      {thinkingText}
+                    </>
+                  ) : (
+                    <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                      {agentActivity === "tools" ? "工具执行中" : "思考中"}
+                      {[0, 1, 2].map((i) => (
+                        <span key={i} style={{
+                          width: 4, height: 4, borderRadius: "50%",
+                          background: "var(--accent)", display: "inline-block",
+                          animation: "wave 1.1s ease-in-out infinite",
+                          animationDelay: `${i * 0.16}s`,
+                        }} />
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+            {/* Main message row */}
           <div
-            key={msg.id}
             style={{
-              marginTop: showThinking ? 28 : 0,
-              marginBottom: isTurnBoundary ? 20 : 6,
               display: "flex",
               flexDirection: isUser ? "row-reverse" : "row",
               alignItems: "flex-start",
               gap: 10,
               animation: `fadeInUp 0.3s var(--ease-out) both`,
-              position: "relative",
             }}
           >
-            {showThinking && (
-              <div style={{
-                position: "absolute",
-                top: -24,
-                left: 40,
-                display: "flex",
-                alignItems: "center",
-                gap: 5,
-                fontSize: 11,
-                color: "var(--text-muted)",
-                fontStyle: "italic",
-                letterSpacing: "0.02em",
-                pointerEvents: "none",
-              }}>
-                思考中
-                {[0, 1, 2].map((i) => (
-                  <span key={i} style={{
-                    width: 3, height: 3, borderRadius: "50%",
-                    background: "var(--accent)",
-                    display: "inline-block",
-                    animation: "pulse-glow 1.2s ease-in-out infinite",
-                    animationDelay: `${i * 0.2}s`,
-                    opacity: 0.8,
-                  }} />
-                ))}
-              </div>
-            )}
             {/* Avatar */}
             {isUser ? (
               <div style={{
@@ -955,15 +1305,16 @@ export default function ChatView({
             )}
 
             {/* Bubble */}
-            <div style={{ maxWidth: "76%", display: "flex", flexDirection: "column", gap: 4, alignItems: isUser ? "flex-end" : "flex-start" }}>
+            <div style={{ maxWidth: "76%", display: "flex", flexDirection: "column", gap: 4, alignItems: isUser ? "flex-end" : "flex-start", minWidth: 0 }}>
               <div style={{
-                padding: msg.content ? "11px 15px" : "8px 12px",
+                // Tool-call-only messages: no bubble wrapper — cards render inline
+                padding: (msg.content || (isUser && chatMsg.images?.length)) ? (isUser ? "10px 14px" : "11px 15px") : 0,
                 borderRadius: isUser
                   ? "14px 4px 14px 14px"
                   : "4px 14px 14px 14px",
-                background: "var(--bg-surface)",
-                border: "1px solid var(--border-subtle)",
-                boxShadow: "var(--shadow-sm)",
+                background: (msg.content || (isUser && chatMsg.images?.length)) ? (isUser ? "rgba(79, 110, 247, 0.08)" : "var(--bg-surface)") : "transparent",
+                border: (msg.content || (isUser && chatMsg.images?.length)) ? (isUser ? "1px solid rgba(79, 110, 247, 0.18)" : "1px solid var(--border-subtle)") : "none",
+                boxShadow: (msg.content || (isUser && chatMsg.images?.length)) ? (isUser ? "none" : "var(--shadow-sm)") : "none",
                 fontSize: 14,
                 lineHeight: 1.75,
                 color: "var(--text-primary)",
@@ -1006,14 +1357,16 @@ export default function ChatView({
                   return (
                     <div>
                       <div style={{ whiteSpace: "pre-wrap", wordBreak: "break-word", position: "relative" }}>
-                        {displayed}
+                        {isUser ? displayed : renderAssistantText(displayed)}
                         {isLong && !isExpanded && (
                           // Fade-out gradient at bottom
                           <div style={{
                             position: "absolute",
                             bottom: 0, left: 0, right: 0,
                             height: 40,
-                            background: "linear-gradient(transparent, var(--bg-surface))",
+                            background: isUser
+                              ? "linear-gradient(transparent, rgba(232, 236, 254, 0.95))"
+                              : "linear-gradient(transparent, var(--bg-surface))",
                             pointerEvents: "none",
                           }}/>
                         )}
@@ -1061,7 +1414,7 @@ export default function ChatView({
                 })() : (
                   msg.content && (
                     <div style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
-                      {msg.content}
+                      {isUser ? msg.content : renderAssistantText(msg.content)}
                     </div>
                   )
                 )}
@@ -1147,13 +1500,76 @@ export default function ChatView({
                   );
                 })()}
               </div>
+              {/* Queue / Steer badge for queued user messages */}
+              {isUser && (chatMsg.isQueued || chatMsg.isSteered) && (
+                <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4 }}>
+                  {chatMsg.isQueued && (
+                    <>
+                      <span style={{
+                        display: "inline-flex", alignItems: "center", gap: 4,
+                        fontSize: 11, color: "var(--text-muted)",
+                        padding: "2px 8px", borderRadius: 20,
+                        background: "var(--bg-deep)", border: "1px solid var(--border-subtle)",
+                      }}>
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+                        </svg>
+                        排队中
+                      </span>
+                      <button
+                        onClick={() => void handleSteer(msg.id)}
+                        title="将此消息引导到当前对话"
+                        style={{
+                          display: "inline-flex", alignItems: "center", gap: 4,
+                          fontSize: 11, fontWeight: 600,
+                          color: "var(--accent)",
+                          padding: "2px 10px", borderRadius: 20,
+                          border: "1px solid rgba(79,110,247,0.3)",
+                          background: "var(--accent-dim)",
+                          cursor: "pointer",
+                          transition: "all 0.15s",
+                          fontFamily: "var(--font-body)",
+                        }}
+                        onMouseEnter={e => {
+                          (e.currentTarget as HTMLButtonElement).style.background = "rgba(79,110,247,0.18)";
+                          (e.currentTarget as HTMLButtonElement).style.borderColor = "var(--accent)";
+                        }}
+                        onMouseLeave={e => {
+                          (e.currentTarget as HTMLButtonElement).style.background = "var(--accent-dim)";
+                          (e.currentTarget as HTMLButtonElement).style.borderColor = "rgba(79,110,247,0.3)";
+                        }}
+                      >
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M3 12h18M3 6h18M3 18h18"/>
+                          <path d="M12 3v18" opacity="0.3"/>
+                        </svg>
+                        引导
+                      </button>
+                    </>
+                  )}
+                  {chatMsg.isSteered && (
+                    <span style={{
+                      display: "inline-flex", alignItems: "center", gap: 4,
+                      fontSize: 11, color: "var(--success)",
+                      padding: "2px 8px", borderRadius: 20,
+                      background: "rgba(34,197,94,0.08)", border: "1px solid rgba(34,197,94,0.2)",
+                    }}>
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <polyline points="20 6 9 17 4 12"/>
+                      </svg>
+                      已引导
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
             </div>
           </div>
           );
         })}
 
         {/* Thinking indicator (no assistant reply yet) */}
-        {isRunning && messages.length > 0 && messages[messages.length - 1].role === "user" && (
+        {isRunning && messages.length > 0 && messages[messages.length - 1].role === "user" && !messages[messages.length - 1].isQueued && (
           <div style={{
             display: "flex",
             alignItems: "flex-start",
@@ -1187,7 +1603,7 @@ export default function ChatView({
               display: "flex", alignItems: "center", gap: 7,
               fontSize: 13, color: "var(--text-muted)", fontStyle: "italic",
             }}>
-              思考中
+              {agentActivity === "tools" ? "工具执行中" : "思考中"}
               {[0, 1, 2].map((i) => (
                 <span key={i} style={{
                   width: 4, height: 4, borderRadius: "50%",
@@ -1561,6 +1977,106 @@ export default function ChatView({
           );
         })()}
 
+        {/* Queued messages bar — shown above input when agent is running */}
+        {(() => {
+          const queuedMsgs = messages.filter(m => m.isQueued);
+          if (queuedMsgs.length === 0) return null;
+          return (
+            <div style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: 6,
+              marginBottom: 8,
+              padding: "8px 12px",
+              borderRadius: 12,
+              background: "var(--bg-deep)",
+              border: "1px solid var(--border-subtle)",
+            }}>
+              <div style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+                fontSize: 11,
+                fontWeight: 600,
+                color: "var(--text-muted)",
+                letterSpacing: "0.03em",
+              }}>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/>
+                </svg>
+                排队消息（{queuedMsgs.length}）
+              </div>
+              {queuedMsgs.map((msg) => {
+                const chatMsg = msg as import("../stores/agentStore").ChatMessage;
+                const preview = chatMsg.content.length > 80
+                  ? chatMsg.content.slice(0, 80) + "…"
+                  : chatMsg.content;
+                return (
+                  <div key={msg.id} style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    padding: "5px 8px",
+                    borderRadius: 8,
+                    background: "var(--bg-surface)",
+                    border: "1px solid var(--border-subtle)",
+                  }}>
+                    <span style={{
+                      flex: 1,
+                      fontSize: 13,
+                      color: "var(--text-primary)",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                      minWidth: 0,
+                    }}>
+                      {chatMsg.agentName && (
+                        <span style={{
+                          fontSize: 10, fontWeight: 700, color: "var(--accent)",
+                          background: "var(--accent-dim)", borderRadius: 10,
+                          padding: "1px 5px", marginRight: 5, verticalAlign: "middle",
+                        }}>@{chatMsg.agentName}</span>
+                      )}
+                      {preview}
+                    </span>
+                    <button
+                      onClick={() => void handleSteer(msg.id)}
+                      title="将此消息引导到当前对话"
+                      style={{
+                        display: "inline-flex", alignItems: "center", gap: 3,
+                        fontSize: 11, fontWeight: 600,
+                        color: "var(--accent)",
+                        padding: "3px 10px", borderRadius: 20,
+                        border: "1px solid rgba(79,110,247,0.3)",
+                        background: "var(--accent-dim)",
+                        cursor: "pointer",
+                        transition: "all 0.15s",
+                        fontFamily: "var(--font-body)",
+                        whiteSpace: "nowrap",
+                        flexShrink: 0,
+                      }}
+                      onMouseEnter={e => {
+                        (e.currentTarget as HTMLButtonElement).style.background = "rgba(79,110,247,0.18)";
+                        (e.currentTarget as HTMLButtonElement).style.borderColor = "var(--accent)";
+                      }}
+                      onMouseLeave={e => {
+                        (e.currentTarget as HTMLButtonElement).style.background = "var(--accent-dim)";
+                        (e.currentTarget as HTMLButtonElement).style.borderColor = "rgba(79,110,247,0.3)";
+                      }}
+                    >
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M3 12h18M3 6h18M3 18h18"/>
+                        <path d="M12 3v18" opacity="0.3"/>
+                      </svg>
+                      引导
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })()}
+
         {/* Input box */}
         <div ref={pickerAnchorRef} style={{ position: "relative" }}>
 
@@ -1820,8 +2336,8 @@ export default function ChatView({
                 handleSend();
               }
             }}
-            placeholder={isConfigured ? "发送消息… (@智能体  /技能)" : "请先在设置中配置 API Key"}
-            disabled={!isConfigured || isRunning}
+            placeholder={isConfigured ? (isRunning ? "排队发送消息…" : "发送消息… (@智能体  /技能)") : "请先在设置中配置 API Key"}
+            disabled={!isConfigured}
             style={{
               flex: 1,
               padding: "7px 4px",
@@ -1836,34 +2352,68 @@ export default function ChatView({
             }}
           />
 
-          {/* Send / Stop button */}
+          {/* Send / Queue / Stop button */}
           {isRunning ? (
-            <button
-              onClick={handleAbort}
-              title="停止生成 (Esc)"
-              style={{
-                height: 34,
-                width: 34,
-                borderRadius: 10,
-                border: "none",
-                background: "rgba(244,63,94,0.12)",
-                color: "var(--danger)",
-                cursor: "pointer",
-                transition: "all 0.2s var(--ease-out)",
-                display: "flex", alignItems: "center", justifyContent: "center",
-                flexShrink: 0,
-              }}
-              onMouseEnter={e => {
-                (e.currentTarget as HTMLButtonElement).style.background = "rgba(244,63,94,0.22)";
-              }}
-              onMouseLeave={e => {
-                (e.currentTarget as HTMLButtonElement).style.background = "rgba(244,63,94,0.12)";
-              }}
-            >
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor">
-                <rect x="4" y="4" width="16" height="16" rx="2"/>
-              </svg>
-            </button>
+            <>
+              {/* Queue send button */}
+              <button
+                onClick={handleSend}
+                disabled={!isConfigured || !input.trim()}
+                title="排队发送（等当前对话结束后自动执行）"
+                style={{
+                  height: 34,
+                  padding: "0 14px",
+                  borderRadius: 10,
+                  border: "none",
+                  background: isConfigured && input.trim()
+                    ? "var(--accent)"
+                    : "var(--bg-deep)",
+                  color: isConfigured && input.trim()
+                    ? "var(--text-inverse)"
+                    : "var(--text-muted)",
+                  fontSize: 13,
+                  fontWeight: 600,
+                  cursor: isConfigured && input.trim() ? "pointer" : "not-allowed",
+                  transition: "all 0.2s var(--ease-out)",
+                  display: "flex", alignItems: "center", gap: 5,
+                  whiteSpace: "nowrap",
+                  flexShrink: 0,
+                  letterSpacing: "0.02em",
+                }}
+              >
+                排队
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M5 12h14M12 5l7 7-7 7"/>
+                </svg>
+              </button>
+              {/* Stop button */}
+              <button
+                onClick={handleAbort}
+                title="停止生成 (Esc)"
+                style={{
+                  height: 34,
+                  width: 34,
+                  borderRadius: 10,
+                  border: "none",
+                  background: "rgba(244,63,94,0.12)",
+                  color: "var(--danger)",
+                  cursor: "pointer",
+                  transition: "all 0.2s var(--ease-out)",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  flexShrink: 0,
+                }}
+                onMouseEnter={e => {
+                  (e.currentTarget as HTMLButtonElement).style.background = "rgba(244,63,94,0.22)";
+                }}
+                onMouseLeave={e => {
+                  (e.currentTarget as HTMLButtonElement).style.background = "rgba(244,63,94,0.12)";
+                }}
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor">
+                  <rect x="4" y="4" width="16" height="16" rx="2"/>
+                </svg>
+              </button>
+            </>
           ) : (
             <button
               onClick={handleSend}
@@ -1911,7 +2461,7 @@ export default function ChatView({
           letterSpacing: "0.03em",
           opacity: 0.6,
         }}>
-          Enter 发送 · @智能体（可多选）· /技能 · Shift+Enter 换行
+          Enter 发送{isRunning ? "（排队）" : ""} · @智能体（可多选）· /技能 · Shift+Enter 换行
         </div>
       </div>
 

@@ -1,0 +1,8 @@
+schema_version: 1
+module_path: core/core_mcp
+title: MCP 客户端与连接管理
+scope:
+    - packages/core/src/domain/mcp/
+source_files: []
+depends_on: []
+related_to: []

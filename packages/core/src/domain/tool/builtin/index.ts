@@ -7,10 +7,14 @@ export { WebSearchTool } from './WebSearchTool.js';
 export { GrepTool } from './GrepTool.js';
 export { GlobTool } from './GlobTool.js';
 export { TodoAddTool, TodoUpdateTool, TodoListTool } from './TodoTool.js';
-export { DispatchAgentTool } from './DispatchAgentTool.js';
+export { DispatchAgentTool, type DispatchResult } from './DispatchAgentTool.js';
+export { WaitAgentTool } from './WaitAgentTool.js';
+export { AskUserTool, type AskUserRequest, type AskUserResponse, type AskUserCallback } from './AskUserTool.js';
 export { CronCreateTool, CronDeleteTool, CronListTool } from './CronTools.js';
+export { ApplyPatchTool } from './ApplyPatchTool.js';
 export { LspDiagnosticsTool, LspHoverTool, LspDefinitionTool, LspReferencesTool } from './LspTools.js';
 
+import { ApplyPatchTool } from './ApplyPatchTool.js';
 import { ReadFileTool } from './ReadFileTool.js';
 import { WriteFileTool } from './WriteFileTool.js';
 import { StrReplaceTool } from './StrReplaceTool.js';
@@ -30,4 +34,5 @@ export function registerBuiltinTools(registry: IToolRegistry): void {
   registry.register(new WebSearchTool());
   registry.register(new GrepTool());
   registry.register(new GlobTool());
+  registry.register(new ApplyPatchTool());
 }

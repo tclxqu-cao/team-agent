@@ -1,11 +1,23 @@
 import type { ISkillLoader, ISkillRegistry, SkillDefinition, SkillMeta } from './entities.js';
+import type { IModelProvider, Message } from '../model/entities.js';
 
 export class SkillRegistry implements ISkillRegistry {
   private readonly skills = new Map<string, SkillMeta>();
   /** Cache of loaded prompt bodies keyed by skill name */
   private readonly promptCache = new Map<string, string>();
+  /** Cache of semantic match results keyed by input hash */
+  private readonly semanticCache = new Map<string, SkillMeta[]>();
+  /** Optional model provider for semantic matching */
+  private modelProvider: IModelProvider | null = null;
 
   constructor(private readonly loader?: ISkillLoader) {}
+
+  /** Inject a model provider to enable LLM-based semantic matching */
+  setModelProvider(provider: IModelProvider | null): void {
+    this.modelProvider = provider;
+    // Clear cache when provider changes
+    this.semanticCache.clear();
+  }
 
   register(skill: SkillMeta): void {
     this.skills.set(skill.name, skill);
@@ -44,22 +56,123 @@ export class SkillRegistry implements ISkillRegistry {
     return matched;
   }
 
-  async getSkillPrompts(input: string): Promise<string> {
-    const matched = this.findMatching(input);
-    if (matched.length === 0) return "";
+  /**
+   * Semantic matching using the configured LLM.
+   * Sends all skill names + descriptions to the model and asks which are
+   * semantically relevant to the user's input.
+   * Returns matched skills or empty array on failure.
+   */
+  private async findMatchingSemantic(input: string): Promise<SkillMeta[]> {
+    if (!this.modelProvider || this.skills.size === 0) return [];
 
-    const parts = await Promise.all(
-      matched.map(async (s) => {
-        let prompt = this.promptCache.get(s.name);
-        if (prompt === undefined && this.loader) {
-          const full = await this.loader.loadFromFile(s.filePath);
-          prompt = full.prompt;
-          this.promptCache.set(s.name, prompt);
+    // Check cache
+    const cacheKey = input.trim().slice(0, 200);
+    const cached = this.semanticCache.get(cacheKey);
+    if (cached) return cached;
+
+    // Build skill list for the prompt
+    const skillList = Array.from(this.skills.values())
+      .map((s, i) => `${i + 1}. ${s.name}: ${s.description || '(no description)'}`)
+      .join('\n');
+
+    const matchPrompt = `You are a skill matching assistant. Given the user's input and a list of available skills with their descriptions, determine which skills are semantically relevant to the user's request.
+
+Available skills:
+${skillList}
+
+User input: "${input}"
+
+Return ONLY the names of relevant skills, one per line. If none are relevant, return "NONE". Do not include any other text, explanation, or numbering.`;
+
+    const messages: Message[] = [
+      { role: 'user', content: matchPrompt },
+    ];
+
+    try {
+      // Consume the stream to collect full response text
+      let responseText = '';
+      for await (const event of this.modelProvider.streamChat(messages, {
+        temperature: 0,
+        maxTokens: 200,
+      })) {
+        if (event.type === 'text_chunk') {
+          responseText += event.text;
         }
-        return prompt ? `## Skill: ${s.name}\n${prompt}` : null;
-      }),
-    );
+        if (event.type === 'error') {
+          return [];
+        }
+      }
 
-    return parts.filter(Boolean).join("\n\n");
+      const trimmed = responseText.trim();
+      if (!trimmed || trimmed.toUpperCase() === 'NONE') {
+        this.semanticCache.set(cacheKey, []);
+        return [];
+      }
+
+      // Parse skill names from response (one per line, strip numbering/punctuation)
+      const names = trimmed
+        .split('\n')
+        .map((line) => line.replace(/^\d+\.\s*/, '').replace(/^[\s\-•*]+/, '').trim())
+        .filter(Boolean);
+
+      const matched: SkillMeta[] = [];
+      for (const name of names) {
+        const skill = this.skills.get(name);
+        if (skill && !matched.find((m) => m.name === skill.name)) {
+          matched.push(skill);
+        }
+      }
+
+      this.semanticCache.set(cacheKey, matched);
+      return matched;
+    } catch {
+      // On any error, fall back gracefully
+      return [];
+    }
+  }
+
+  async getSkillPrompts(input: string, enabledSkills?: string[] | null): Promise<string> {
+    // 1. Try trigger-based keyword matching (fast path)
+    let matched = this.findMatching(input);
+  
+    // 2. If input is /skill-name, also try direct name lookup
+    const slashMatch = input.match(/^\/([\w-]+)/);
+    if (slashMatch) {
+      const byName = this.skills.get(slashMatch[1]);
+      if (byName && !matched.find((m) => m.name === byName.name)) {
+        matched.unshift(byName);
+      }
+    }
+  
+    // 3. If keyword matching found nothing, try LLM-based semantic matching
+    if (matched.length === 0) {
+      const semanticMatches = await this.findMatchingSemantic(input);
+      if (semanticMatches.length > 0) {
+        matched = semanticMatches;
+      }
+    }
+
+    // 4. Apply allowlist filter if configured
+    if (enabledSkills && enabledSkills.length > 0) {
+      const allowed = new Set(enabledSkills);
+      matched = matched.filter((s) => allowed.has(s.name));
+    }
+  
+    if (matched.length === 0) return "";
+  
+    const parts: string[] = [];
+    for (const s of matched) {
+      let prompt = this.promptCache.get(s.name);
+      if (prompt === undefined && this.loader) {
+        const full = await this.loader.loadFromFile(s.filePath);
+        prompt = full.prompt;
+        this.promptCache.set(s.name, prompt);
+      }
+      if (prompt) {
+        parts.push(`## Skill: ${s.name}\n${prompt}`);
+      }
+    }
+  
+    return parts.join("\n\n");
   }
 }

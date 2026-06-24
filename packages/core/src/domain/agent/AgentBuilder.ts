@@ -31,6 +31,8 @@ export class AgentBuilder {
   private compactThreshold: number | undefined;
   /** If set, only these tool names are registered (others are skipped). Empty = all tools. */
   private enabledTools: string[] | null = null;
+  /** If set, only these skill names are registered (others are skipped). Empty = all skills. */
+  private enabledSkills: string[] | null = null;
 
   withWorkingDirectory(path: string): this {
     this.workingDirectory = path;
@@ -118,10 +120,22 @@ export class AgentBuilder {
     return this;
   }
 
+  /**
+   * Restrict which skills are available. Pass an empty array to re-enable all skills.
+   * Takes effect on the next build()/buildSync() call.
+   */
+  withEnabledSkills(skillNames: string[]): this {
+    this.enabledSkills = skillNames.length > 0 ? skillNames : null;
+    return this;
+  }
+
   async build(): Promise<IAgentLoop> {
     if (!this.modelProvider) {
       throw new Error("Model provider is required. Call withModelProvider() or withModel()");
     }
+
+    // Wire model provider into skill registry for semantic matching
+    this.skillRegistry.setModelProvider(this.modelProvider);
 
     // Initialize memory store (use injected or fall back to filesystem)
     const memoryStore = this.memoryStore ?? new FileSystemMemoryStore(this.workingDirectory);
@@ -158,6 +172,7 @@ export class AgentBuilder {
       toolRegistry: this.toolRegistry,
       toolExecutor: this.toolRegistry,
       contextAssembler,
+      skillRegistry: this.skillRegistry,
       memoryStore,
       sessionStore: this.sessionStore,
       workingDirectory: this.workingDirectory,
@@ -165,25 +180,42 @@ export class AgentBuilder {
       maxTokens: this.maxTokens,
       systemPrompt: this.systemPrompt,
       compactThreshold: this.compactThreshold,
+      enabledTools: this.enabledTools,
+      enabledSkills: this.enabledSkills,
     };
 
     return new AgentFactory().create(config);
   }
 
-  /** Synchronous build - skips async skill loading for Electron */
+  /** Synchronous build — loads skills from disk */
   buildSync(): IAgentLoop {
     if (!this.modelProvider) {
       throw new Error("Model provider is required. Call withModelProvider() or withModel()");
     }
 
+    // Wire model provider into skill registry for semantic matching
+    this.skillRegistry.setModelProvider(this.modelProvider);
+
     const memoryStore = this.memoryStore ?? new FileSystemMemoryStore(this.workingDirectory);
     registerBuiltinTools(this.toolRegistry);
 
-    // Filter tools if an allowlist is configured
-    if (this.enabledTools) {
-      const allowed = new Set(this.enabledTools);
-      for (const tool of this.toolRegistry.getAll()) {
-        if (!allowed.has(tool.name)) this.toolRegistry.unregister(tool.name);
+    // Load skills from disk
+    const discoveredSkills = this.skillLoader.loadAllSync(this.workingDirectory);
+    for (const skill of discoveredSkills) {
+      this.skillRegistry.register(skill);
+    }
+    if (this.skillsDir) {
+      const extraSkills = this.skillLoader.loadFromDirectorySync(this.skillsDir, "custom");
+      for (const skill of extraSkills) {
+        if (!this.skillRegistry.get(skill.name)) {
+          this.skillRegistry.register(skill);
+        }
+      }
+    }
+    for (const filePath of this.skillFiles) {
+      const skill = this.skillLoader.loadFromFileSync(filePath);
+      if (!this.skillRegistry.get(skill.name)) {
+        this.skillRegistry.register({ ...skill, source: "custom" });
       }
     }
 
@@ -194,6 +226,7 @@ export class AgentBuilder {
       toolRegistry: this.toolRegistry,
       toolExecutor: this.toolRegistry,
       contextAssembler,
+      skillRegistry: this.skillRegistry,
       memoryStore,
       sessionStore: this.sessionStore,
       workingDirectory: this.workingDirectory,
@@ -201,6 +234,8 @@ export class AgentBuilder {
       maxTokens: this.maxTokens,
       systemPrompt: this.systemPrompt,
       compactThreshold: this.compactThreshold,
+      enabledTools: this.enabledTools,
+      enabledSkills: this.enabledSkills,
     };
 
     return new AgentFactory().create(config);

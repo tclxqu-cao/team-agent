@@ -22,6 +22,11 @@ export interface StreamEvent {
   summary?: string;
   error?: string;
   removedMessages?: number;
+  /** For ask_user events */
+  questionId?: string;
+  question?: string;
+  options?: Array<{ label: string; description: string }>;
+  multiSelect?: boolean;
 }
 
 export interface TodoItem {
@@ -51,6 +56,19 @@ export interface ChatMessage {
   isCompactionSummary?: boolean;
   /** Base64 data URLs of images attached to this user message */
   images?: string[];
+  /** True when this user message is queued and waiting for the current run to finish */
+  isQueued?: boolean;
+  /** True when this user message has been steered into the running loop */
+  isSteered?: boolean;
+  /** ask_user question data */
+  askUser?: {
+    questionId: string;
+    question: string;
+    options?: Array<{ label: string; description: string }>;
+    multiSelect?: boolean;
+    answered?: boolean;
+    answer?: string;
+  };
   timestamp: number;
 }
 
@@ -75,6 +93,8 @@ interface AgentState {
   /** Append streaming text to a running dispatch_agent toolCall's live progress */
   updateSubAgentProgress: (subSessionId: string, text: string) => void;
   setMessages: (messages: ChatMessage[]) => void;
+  /** Update a specific message by ID using a transform function */
+  updateMessage: (id: string, updater: (msg: ChatMessage) => ChatMessage) => void;
   clearMessages: () => void;
   setTodos: (todos: TodoItem[]) => void;
   setCronTasks: (tasks: CronTask[]) => void;
@@ -115,7 +135,9 @@ export const useAgentStore = create<AgentState>((set) => ({
     set((state) => {
       if (!text) return state; // ignore empty chunks
       const lastMsg = state.messages[state.messages.length - 1];
-      if (lastMsg && lastMsg.role === "assistant" && !lastMsg.toolCalls?.length) {
+      // Append to the last assistant message ONLY if it's a plain text bubble
+      // (not a tool call card, not an ask_user card, not a compaction banner).
+      if (lastMsg && lastMsg.role === "assistant" && !lastMsg.toolCalls?.length && !lastMsg.askUser && !lastMsg.isCompactionSummary) {
         const updated = [...state.messages];
         updated[updated.length - 1] = { ...lastMsg, content: lastMsg.content + text };
         return { messages: updated, currentText: state.currentText + text };
@@ -154,6 +176,11 @@ export const useAgentStore = create<AgentState>((set) => ({
 
   setMessages: (messages) => set({ messages, currentText: "" }),
 
+  updateMessage: (id, updater) =>
+    set((state) => ({
+      messages: state.messages.map((m) => (m.id === id ? updater(m) : m)),
+    })),
+
   updateSubAgentStatus: (subSessionId, status, detail) =>
     set((state) => ({
       messages: state.messages.map((m) => {
@@ -173,7 +200,7 @@ export const useAgentStore = create<AgentState>((set) => ({
         if (!m.toolCalls) return m;
         const updatedCalls = m.toolCalls.map((tc) =>
           tc.name === "dispatch_agent" && tc.arguments.subSessionId === subSessionId
-            ? { ...tc, arguments: { ...tc.arguments, subAgentProgress: ((tc.arguments.subAgentProgress as string | undefined) ?? "") + text } }
+            ? { ...tc, arguments: { ...tc.arguments, subAgentProgress: ((tc.arguments.subAgentProgress as string | undefined) ? ((tc.arguments.subAgentProgress as string) + "\n" + text) : text).split("\n").slice(-30).join("\n") } }
             : tc
         );
         return { ...m, toolCalls: updatedCalls };

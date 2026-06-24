@@ -4,6 +4,11 @@ import { fileURLToPath } from "node:url";
 import { readFile, writeFile } from "node:fs/promises";
 import { AgentHost } from "./agent-host.js";
 
+// Suppress EPIPE errors on stdout/stderr (e.g., when output is piped to `head`)
+// Without this, broken pipes cause an uncaught exception that crashes the main process.
+process.stdout.on("error", (err: NodeJS.ErrnoException) => { if (err.code !== "EPIPE") throw err; });
+process.stderr.on("error", (err: NodeJS.ErrnoException) => { if (err.code !== "EPIPE") throw err; });
+
 // ── Single-instance lock ──────────────────────────────────────────────────
 // Electron uses an OS-level lock tied to the app's userData directory.
 // If a second instance starts, it focuses the existing window and quits.
@@ -40,12 +45,12 @@ function createWindow(): void {
   });
 
   const port = process.env.VITE_PORT ?? "5173";
-  const isDev = process.env.NODE_ENV !== "production" || !app.isPackaged;
+  const isDev = process.env.NODE_ENV !== "production" && !app.isPackaged;
   if (isDev) {
     mainWindow.loadURL(`http://localhost:${port}`);
     mainWindow.webContents.openDevTools();
   } else {
-    mainWindow.loadFile(join(__dirname, "../renderer-dist/index.html"));
+    mainWindow.loadFile(join(__dirname, "../../renderer-dist/index.html"));
   }
 }
 
@@ -69,6 +74,36 @@ ipcMain.handle("agent:run", async (_event, input: string, sessionId: string, age
 
 ipcMain.handle("agent:abort", () => {
   agentHost.abort();
+});
+
+// Resolve a pending ask_user question with the user's answer
+ipcMain.handle("agent:answer-question", (_event, questionId: string, answer: string, selectedIndices?: number[]) => {
+  return agentHost.answerQuestion(questionId, answer, selectedIndices);
+});
+
+/**
+ * Steer additional user input into an already-running session without
+ * interrupting the current agent loop. If the agent is not running,
+ * the message is still saved but the handler starts a new run.
+ */
+ipcMain.handle("agent:steer", async (_event, input: string, sessionId: string, agentName?: string) => {
+  const isRunning = await agentHost.steerInput(input, sessionId, agentName);
+  if (!isRunning) {
+    // No active agent loop — start a new run
+    agentHost.setRunning(true);
+    try {
+      for await (const _event of agentHost.run(input, sessionId, [], agentName)) {
+        // events forwarded via subscriber
+      }
+    } catch (err) {
+      mainWindow?.webContents.send("agent:event", {
+        type: "error",
+        message: err instanceof Error ? err.message : "Unknown error",
+      });
+    } finally {
+      agentHost.setRunning(false);
+    }
+  }
 });
 
 // ── IPC: Cron (scheduled tasks) ───────────────────────────────────────────

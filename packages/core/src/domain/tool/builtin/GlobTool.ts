@@ -105,9 +105,15 @@ export class GlobTool implements ITool {
     }
 
     const matches: string[] = [];
+    /** Hard ceiling: abort the walk after 30 s even if max_results not reached */
+    const deadline = Date.now() + 30_000;
+    let timedOut = false;
 
     const walk = async (dir: string) => {
       if (matches.length >= max_results) return;
+      if (timedOut) return;
+      // Check abort signal before entering each directory
+      if (ctx.signal?.aborted) { timedOut = true; return; }
       let entries: string[];
       try {
         entries = await readdir(dir);
@@ -117,8 +123,12 @@ export class GlobTool implements ITool {
 
       for (const entry of entries) {
         if (matches.length >= max_results) break;
+        if (timedOut) break;
         if (!include_hidden && entry.startsWith(".")) continue;
         if (DEFAULT_IGNORE.has(entry)) continue;
+
+        // Periodic deadline check (every entry avoids stat latency)
+        if (Date.now() > deadline) { timedOut = true; break; }
 
         const fullPath = join(dir, entry);
         let s;
@@ -143,14 +153,18 @@ export class GlobTool implements ITool {
     await walk(root);
 
     if (matches.length === 0) {
-      return { toolCallId: "", content: `No files found matching pattern '${pattern}' in ${searchPath}` };
+      const hint = timedOut
+        ? ` (timed out after 30s — try narrowing the 'path' to a smaller directory)`
+        : "";
+      return { toolCallId: "", content: `No files found matching pattern '${pattern}' in ${searchPath}${hint}` };
     }
 
     const lines = matches.sort();
     const truncated = lines.length >= max_results ? `\n(results truncated at ${max_results})` : "";
+    const timeoutNote = timedOut ? `\n(walk timed out after 30s — results may be incomplete; try narrowing 'path')` : "";
     return {
       toolCallId: "",
-      content: lines.join("\n") + truncated,
+      content: lines.join("\n") + truncated + timeoutNote,
     };
   }
 }

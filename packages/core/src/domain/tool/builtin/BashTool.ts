@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { ITool, ToolContext, ToolResult } from '../entities.js';
-import { execSync } from "node:child_process";
+import { exec } from "node:child_process";
 
 export class BashTool implements ITool {
   readonly name = "bash";
@@ -31,28 +31,27 @@ export class BashTool implements ITool {
       };
     }
 
-    try {
-      const output = execSync(parsed.data.command, {
-        cwd: ctx.workingDirectory,
-        timeout: parsed.data.timeout,
-        encoding: "utf-8",
-        maxBuffer: 10 * 1024 * 1024, // 10MB
-      });
-      return { toolCallId: "", content: output || "(no output)" };
-    } catch (err) {
-      if (err instanceof Error && "stdout" in err) {
-        const execErr = err as unknown as { stdout: string; stderr: string; message: string };
-        return {
-          toolCallId: "",
-          content: execErr.stderr || execErr.message,
-          isError: true,
-        };
-      }
-      return {
-        toolCallId: "",
-        content: err instanceof Error ? err.message : "Command execution failed",
-        isError: true,
-      };
-    }
+    return new Promise<ToolResult>((resolve) => {
+      exec(
+        parsed.data.command,
+        {
+          cwd: ctx.workingDirectory,
+          timeout: parsed.data.timeout,
+          encoding: "utf-8" as BufferEncoding,
+          maxBuffer: 10 * 1024 * 1024, // 10MB
+        },
+        (error, stdout, stderr) => {
+          if (error) {
+            resolve({
+              toolCallId: "",
+              content: stderr || error.message,
+              isError: true,
+            });
+          } else {
+            resolve({ toolCallId: "", content: stdout || "(no output)" });
+          }
+        },
+      );
+    });
   }
 }

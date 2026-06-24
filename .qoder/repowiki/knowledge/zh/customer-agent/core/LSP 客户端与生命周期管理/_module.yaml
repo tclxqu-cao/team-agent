@@ -1,0 +1,8 @@
+schema_version: 1
+module_path: core/core_lsp
+title: LSP 客户端与生命周期管理
+scope:
+    - packages/core/src/domain/lsp/
+source_files: []
+depends_on: []
+related_to: []

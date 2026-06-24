@@ -11,7 +11,11 @@ contextBridge.exposeInMainWorld("agentApi", {
   // Agent control
   run: (input: string, sessionId: string, agentIds?: string[], agentName?: string, images?: string[]) =>
     ipcRenderer.invoke("agent:run", input, sessionId, agentIds, agentName, images),
+  steer: (input: string, sessionId: string, agentName?: string) =>
+    ipcRenderer.invoke("agent:steer", input, sessionId, agentName),
   abort: () => ipcRenderer.invoke("agent:abort"),
+  answerQuestion: (questionId: string, answer: string, selectedIndices?: number[]) =>
+    ipcRenderer.invoke("agent:answer-question", questionId, answer, selectedIndices),
   onEvent: (callback: (event: unknown) => void): (() => void) => {
     agentEventBus.add(callback);
     return () => agentEventBus.delete(callback);

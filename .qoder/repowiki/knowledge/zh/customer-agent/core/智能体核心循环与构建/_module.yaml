@@ -1,0 +1,8 @@
+schema_version: 1
+module_path: core/core_agent
+title: 智能体核心循环与构建
+scope:
+    - packages/core/src/domain/agent/
+source_files: []
+depends_on: []
+related_to: []

@@ -389,7 +389,7 @@ const loadProjects = async () => {
         <div style={{ flex: 1, overflow: "auto", padding: "0 10px" }}>
           <div style={{ display: "flex", flexDirection: "column", gap: 2, marginBottom: 12 }}>
             {projects.map((project) => {
-              const isSelected = selectedProjectId === project.id;
+              const isSelected = selectedProjectId === project.id && !selectedSessionId;
               const isExpanded = expandedProjects.has(project.id);
               const projSessions = sessionsByProject[project.id] ?? [];
               const manySession = projSessions.length > 10;

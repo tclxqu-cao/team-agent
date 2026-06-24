@@ -1,0 +1,8 @@
+schema_version: 1
+module_path: server/mcp_api
+title: mcp_api
+scope:
+    - packages/server/app/api/mcp/
+source_files: []
+depends_on: []
+related_to: []

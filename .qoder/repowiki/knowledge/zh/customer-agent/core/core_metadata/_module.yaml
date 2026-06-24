@@ -1,0 +1,10 @@
+schema_version: 1
+module_path: core/core_metadata
+title: core_metadata
+scope:
+    - packages/core/src/domain/project/
+    - packages/core/src/domain/settings/
+    - packages/core/src/domain/upload/
+source_files: []
+depends_on: []
+related_to: []
