@@ -563,7 +563,8 @@ export default function ChatView({
         // dispatch_agent is handled by the subsequent "agent_dispatch" event which
         // carries the subSessionId; skip it here to avoid showing two cards.
         // ask_user is handled by the subsequent "ask_user" event with its own card.
-        if (event.toolCall && event.toolCall.name !== "dispatch_agent" && event.toolCall.name !== "ask_user") {
+        // show_widget is handled by the subsequent "show_widget" event with its own card.
+        if (event.toolCall && event.toolCall.name !== "dispatch_agent" && event.toolCall.name !== "ask_user" && event.toolCall.name !== "show_widget") {
           addMessage({
             id: crypto.randomUUID(),
             role: "assistant",
