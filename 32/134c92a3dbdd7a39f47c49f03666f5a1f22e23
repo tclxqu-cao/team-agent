@@ -1,0 +1,129 @@
+packages/desktop/main/index.ts
+  s_6231a47ff405df::t_8c3d108c90eb89 48
+  s_6231a47ff405df::t_a3eeb66a3fe250 53
+  s_e9c101e8dc5d00::t_0504439df7f18c 7-11
+  s_6231a47ff405df::t_be2221a02fd775 84-108
+packages/desktop/renderer/styles/global.css
+  s_e9c101e8dc5d00::t_ea6ecf15b493ae 172-183
+packages/core/src/domain/skill/SkillLoader.ts
+  s_6231a47ff405df::t_3ef22f7134c56f 3
+  s_6231a47ff405df::t_f381d44c2a3b13 55-96
+  s_6231a47ff405df::t_976c497a96b706 146-151
+packages/desktop/main/agent-host.ts
+  s_6231a47ff405df::t_d4335587f365c0 875
+  s_6231a47ff405df::t_b3290207a347d0 882
+  s_6231a47ff405df::t_1fc7d8d0a47c66 85
+  s_6231a47ff405df::t_54985f3095ee58 357-358
+  s_6231a47ff405df::t_5e533f339bd40e 736-761
+  s_6231a47ff405df::t_8f97d338221132 78-79
+  s_6231a47ff405df::t_7133cb3775f4f8 461-464,466-475
+  s_6231a47ff405df::t_ba39ee59316f3f 18
+  s_6231a47ff405df::t_483790081ac542 879
+packages/core/src/domain/tool/builtin/index.ts
+  s_6231a47ff405df::t_d58445390add9c 10
+  s_6231a47ff405df::t_f184e1595e38a3 14
+  s_6231a47ff405df::t_299b6a731dd5df 37
+  s_6231a47ff405df::t_0a478cf98a9733 11
+packages/core/src/domain/agent/entities.ts
+  s_6231a47ff405df::t_8a7a1adec689e0 70-71
+  s_6231a47ff405df::t_e30be7a2dc02bb 14
+  s_6231a47ff405df::t_f430a1cc9a874f 61
+  s_6231a47ff405df::t_a84c54d33deb45 40
+packages/desktop/package.json
+  s_6231a47ff405df::t_4468a6fef6f023 11-12
+packages/desktop/renderer/components/ToolCallCard.tsx
+  s_6231a47ff405df::t_8a83419a3cbcb8 423
+  s_6231a47ff405df::t_50cea8f11c2dc2 77
+  s_6231a47ff405df::t_d6ab54b9298a49 531
+  s_6231a47ff405df::t_39afe63984e252 366
+  s_6231a47ff405df::t_de03201bc20cd5 401-402,414,416-418,420-422,424-430
+  s_6231a47ff405df::t_7bd9750853b4ae 54
+  s_6231a47ff405df::t_9f24a2ccc79211 436
+  s_6231a47ff405df::t_5bbe4b556f454e 394-395
+  s_6231a47ff405df::t_b8f19a18f9b231 386-392,396-400
+  s_6231a47ff405df::t_7513f43008d100 353-365,367-385
+  s_6231a47ff405df::t_4f1ef8e27f1b6b 448,451
+  s_6231a47ff405df::t_a3c0837c32f203 468-472
+  s_e9c101e8dc5d00::t_fb8b71c305d5d8 19-53,55-76,78-93
+  s_6231a47ff405df::t_c31c7deea1c2dc 515-519
+  s_6231a47ff405df::t_89ebac60aae0d7 522,526
+  s_6231a47ff405df::t_d50813e2a0213a 403-413,415,419
+  s_6231a47ff405df::t_5f218e9205bc3a 528
+  s_6231a47ff405df::t_ff0c366efc7fbb 529-530,532-533
+  s_6231a47ff405df::t_d249bbd0ade215 536
+  s_6231a47ff405df::t_7c8ff1a3369c23 537-549
+  s_6231a47ff405df::t_96fbe66375e0bb 2
+  s_e9c101e8dc5d00::t_8a1a77b092606e 203-204,207,209-226,228-246,248-253,260-261,268-292,294-327,329-343,345-352,438,444,446-447,449-450,452-467,473-501,503-514,520-521,523-525,527,535,550-556,561-564
+packages/core/src/domain/agent/AgentBuilder.ts
+  s_6231a47ff405df::t_e28bed4c42f820 229
+  s_6231a47ff405df::t_1af6cb5bbcbd27 175
+  s_6231a47ff405df::t_d6c2e11b545063 190,196-198,202-218
+packages/desktop/renderer/components/ChatView.tsx
+  s_6231a47ff405df::t_ff611be7235b70 553-557
+  s_6231a47ff405df::t_303181a31d64c1 224
+  s_6231a47ff405df::t_f798a0e559611a 257
+  s_e9c101e8dc5d00::t_ec24190df0bcef 1417
+  s_6231a47ff405df::t_1e5c26a5dc86ee 614
+  s_6231a47ff405df::t_1baac565f7bfbe 916,918-927
+  s_6231a47ff405df::t_d44239af251d6b 1213-1214,1217,1220-1221,1223-1226,1229-1249
+  s_6231a47ff405df::t_80078e17425523 228
+  s_6231a47ff405df::t_a12ad2a09931ed 964,975,996
+  s_6231a47ff405df::t_6b280f8dc4b69c 1308
+  s_6231a47ff405df::t_c02c6d5316d2fd 658-663,665-670
+  s_6231a47ff405df::t_7492624703aebe 560
+  s_6231a47ff405df::t_6e94fc7d677b54 1212,1216,1219,1222,1227-1228,1250-1253
+  s_6231a47ff405df::t_9a93b3743fc959 1215,1218
+  s_6231a47ff405df::t_70f9c8b650c1da 928
+  s_6231a47ff405df::t_820206d2ea050f 688
+  s_e9c101e8dc5d00::t_ba6630d19ebd0d 24-43,126,169-170
+  s_6231a47ff405df::t_7e987ddbda4743 605
+  s_e9c101e8dc5d00::t_7ee6c0e853355c 1310-1311,1315-1317
+  s_e9c101e8dc5d00::t_8a7e09ded1b387 1360,1367-1369
+  s_6231a47ff405df::t_3335ea4a35ca5f 469
+  s_6231a47ff405df::t_94368dd86545b8 914-915,917,929-930
+packages/core/src/domain/skill/SkillRegistry.ts
+  s_6231a47ff405df::t_6ca456d04b2df6 133,139-153,155-176
+packages/core/src/domain/tool/builtin/ApplyPatchTool.ts
+  s_6231a47ff405df::t_6214d94e6be576 1-306
+packages/core/src/domain/tool/builtin/DispatchAgentTool.ts
+  s_6231a47ff405df::t_6ebbe267c71d9e 5
+  s_6231a47ff405df::t_8cbf0d99c9e862 4,6-11,18-20,39,45-50,52-57
+packages/core/src/domain/agent/AgentLoop.ts
+  s_6231a47ff405df::t_e70538bd6c0d03 167-169,179-184
+  s_6231a47ff405df::t_0f35ec59b28b23 224,226-263,265-279
+  s_6231a47ff405df::t_9a875a44daaec4 297-298
+  s_6231a47ff405df::t_efa8020641017e 157
+  s_6231a47ff405df::t_0352e55da455d8 151-152,165-166,170-178
+  s_6231a47ff405df::t_400de0fc398afd 299-302,309-322,328-344,352,356-386
+packages/core/src/domain/context/ContextAssembler.ts
+  s_6231a47ff405df::t_c489ebdd6d0639 16-17,19
+  s_6231a47ff405df::t_59321d410442d8 42-43
+packages/core/src/domain/tool/builtin/WaitAgentTool.ts
+  s_6231a47ff405df::t_3e603245e68c02 1-47
+packages/desktop/renderer/stores/agentStore.ts
+  s_6231a47ff405df::t_4155c3d06ba4dd 203
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.7",
+  "base_commit_sha": "32134c92a3dbdd7a39f47c49f03666f5a1f22e23",
+  "prompts": {},
+  "sessions": {
+    "s_6231a47ff405df": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_15b082d4dffecIWOeJ6a8XfeuK",
+        "model": "deepseek-v4-flash-free"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_e9c101e8dc5d00": {
+      "agent_id": {
+        "tool": "github-copilot",
+        "id": "11d213b3-ae32-42cd-9cc4-62389d817223",
+        "model": "gpt-4.1"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
