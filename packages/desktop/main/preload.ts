@@ -32,6 +32,7 @@ contextBridge.exposeInMainWorld("agentApi", {
   createProject: (name: string, description?: string) => ipcRenderer.invoke("projects:create", { name, description }),
   updateProject: (id: string, update: Record<string, unknown>) => ipcRenderer.invoke("projects:update", id, update),
   deleteProject: (id: string) => ipcRenderer.invoke("projects:delete", id),
+  checkProjectPath: (path: string) => ipcRenderer.invoke("projects:checkPath", path),
 
   // Sessions
   listSessions: (projectId?: string) => ipcRenderer.invoke("sessions:list", projectId),

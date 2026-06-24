@@ -41,6 +41,8 @@ export default function App() {
   const [collapsedParents, setCollapsedParents] = useState<Set<string>>(new Set());
   /** Set of project IDs whose session list is expanded */
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set());
+  /** Project IDs whose working directory path no longer exists on disk */
+  const [invalidProjectIds, setInvalidProjectIds] = useState<Set<string>>(new Set());
 
   const [showSettings, setShowSettings] = useState(false);
   const [settingsTab, setSettingsTab] = useState<SettingsTab>("settings");
@@ -101,6 +103,14 @@ const loadProjects = async () => {
     if (!window.agentApi) return;
     const list = await window.agentApi.listProjects() as Project[];
     setProjects(list);
+    // Check which project paths still exist on disk
+    const invalid = new Set<string>();
+    await Promise.all(list.map(async (p) => {
+      if (p.description && !(await window.agentApi!.checkProjectPath(p.description))) {
+        invalid.add(p.id);
+      }
+    }));
+    setInvalidProjectIds(invalid);
     await Promise.all(list.map((p) => loadSessions(p.id)));
   };
 
@@ -257,6 +267,26 @@ const loadProjects = async () => {
     }
   };
 
+  const handleDeleteProject = async (projectId: string) => {
+    if (!window.agentApi) return;
+    try {
+      await window.agentApi.deleteProject(projectId);
+      if (selectedProjectId === projectId) {
+        setSelectedProjectId(null);
+        setSelectedSessionId(null);
+        setTodos([]);
+      }
+      setNotice("项目删除成功");
+      setNoticeType("success");
+      setTimeout(() => setNotice(null), 2500);
+      await loadProjects();
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : "项目删除失败");
+      setNoticeType("error");
+      setTimeout(() => setNotice(null), 4000);
+    }
+  };
+
   const handleDeleteSession = async (sessionId: string) => {
     if (!window.agentApi) return;
     try {
@@ -393,18 +423,22 @@ const loadProjects = async () => {
               const isExpanded = expandedProjects.has(project.id);
               const projSessions = sessionsByProject[project.id] ?? [];
               const manySession = projSessions.length > 10;
+              const isInvalid = invalidProjectIds.has(project.id);
               return (
                 <div key={project.id}>
                   {/* Project row */}
                   <div style={{
                     display: "flex", alignItems: "center",
                     borderRadius: 8,
-                    background: isSelected ? "var(--accent-dim)" : "transparent",
+                    background: isSelected && !isInvalid ? "var(--accent-dim)" : "transparent",
                     transition: "background 0.15s",
                     paddingRight: 4,
+                    opacity: isInvalid ? 0.45 : 1,
                   }}>
                     <button
-                      onClick={() => void handleToggleProject(project.id)}
+                      onClick={() => { if (!isInvalid) void handleToggleProject(project.id); }}
+                      disabled={isInvalid}
+                      title={isInvalid ? `路径不存在：${project.description}` : project.name}
                       style={{
                         flex: 1,
                         display: "flex",
@@ -414,31 +448,58 @@ const loadProjects = async () => {
                         padding: "8px 10px",
                         border: "none",
                         background: "transparent",
-                        color: isSelected ? "var(--accent)" : "var(--text-secondary)",
+                        color: isInvalid ? "var(--text-muted)" : (isSelected ? "var(--accent)" : "var(--text-secondary)"),
                         fontSize: 13,
-                        fontWeight: isSelected ? 600 : 400,
-                        cursor: "pointer",
+                        fontWeight: isSelected && !isInvalid ? 600 : 400,
+                        cursor: isInvalid ? "not-allowed" : "pointer",
                         textAlign: "left" as const,
                         transition: "color 0.15s",
                       }}
                     >
                       {/* chevron + folder icon */}
                       <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
-                        style={{ flexShrink: 0, opacity: isSelected ? 0.8 : 0.4, transform: isExpanded ? "rotate(0deg)" : "rotate(-90deg)", transition: "transform 0.2s ease" }}>
+                        style={{ flexShrink: 0, opacity: isSelected && !isInvalid ? 0.8 : 0.4, transform: isExpanded ? "rotate(0deg)" : "rotate(-90deg)", transition: "transform 0.2s ease" }}>
                         <path d="M6 9l6 6 6-6"/>
                       </svg>
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, opacity: isSelected ? 1 : 0.5 }}>
-                        {isExpanded
-                          ? <><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/><line x1="9" y1="14" x2="15" y2="14"/></>
-                          : <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>}
-                      </svg>
+                      {isInvalid ? (
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, opacity: 0.6 }}>
+                          <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+                        </svg>
+                      ) : (
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, opacity: isSelected ? 1 : 0.5 }}>
+                          {isExpanded
+                            ? <><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/><line x1="9" y1="14" x2="15" y2="14"/></>
+                            : <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>}
+                        </svg>
+                      )}
                       <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                         {project.name}
                       </span>
                       {projSessions.length > 0 && (
-                        <span style={{ flexShrink: 0, fontSize: 9, fontWeight: 600, color: isSelected ? "var(--accent)" : "var(--text-muted)", background: isSelected ? "var(--accent-dim)" : "var(--bg-deep)", border: "1px solid var(--border-subtle)", borderRadius: 8, padding: "0 5px", lineHeight: "15px", opacity: 0.8 }}>{projSessions.length}</span>
+                        <span style={{ flexShrink: 0, fontSize: 9, fontWeight: 600, color: isSelected && !isInvalid ? "var(--accent)" : "var(--text-muted)", background: isSelected && !isInvalid ? "var(--accent-dim)" : "var(--bg-deep)", border: "1px solid var(--border-subtle)", borderRadius: 8, padding: "0 5px", lineHeight: "15px", opacity: 0.8 }}>{projSessions.length}</span>
                       )}
                     </button>
+                    {/* Delete project button */}
+                    <button
+                      onClick={(e) => { e.stopPropagation(); void handleDeleteProject(project.id); }}
+                      title="删除项目"
+                      style={{
+                        flexShrink: 0,
+                        width: 24, height: 24,
+                        border: "none",
+                        borderRadius: 6,
+                        background: "transparent",
+                        color: "var(--text-muted)",
+                        fontSize: 14,
+                        lineHeight: 1,
+                        cursor: "pointer",
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        opacity: 0.3,
+                        transition: "opacity 0.15s, color 0.15s",
+                      }}
+                      onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.opacity = "1"; (e.currentTarget as HTMLButtonElement).style.color = "var(--danger)"; }}
+                      onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.opacity = "0.3"; (e.currentTarget as HTMLButtonElement).style.color = "var(--text-muted)"; }}
+                    >×</button>
                     {/* New session button */}
                     <button
                       onClick={(e) => { e.stopPropagation(); void handleNewSession(project.id); }}
@@ -449,16 +510,16 @@ const loadProjects = async () => {
                         border: "none",
                         borderRadius: 6,
                         background: "transparent",
-                        color: isSelected ? "var(--accent)" : "var(--text-muted)",
+                        color: isSelected && !isInvalid ? "var(--accent)" : "var(--text-muted)",
                         fontSize: 16,
                         lineHeight: 1,
                         cursor: "pointer",
                         display: "flex", alignItems: "center", justifyContent: "center",
                         transition: "color 0.15s",
-                        opacity: isSelected ? 0.8 : 0.5,
+                        opacity: isSelected && !isInvalid ? 0.8 : 0.5,
                       }}
                       onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.opacity = "1"; }}
-                      onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.opacity = isSelected ? "0.8" : "0.5"; }}
+                      onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.opacity = isSelected && !isInvalid ? "0.8" : "0.5"; }}
                     >+</button>
                   </div>
 

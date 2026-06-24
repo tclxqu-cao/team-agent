@@ -107,6 +107,7 @@ export interface AgentApi {
   createProject(name: string, description?: string): Promise<unknown>;
   updateProject(id: string, update: Record<string, unknown>): Promise<unknown>;
   deleteProject(id: string): Promise<void>;
+  checkProjectPath(path: string): Promise<boolean>;
   listSessions(projectId?: string): Promise<unknown[]>;
   listChildSessions(parentId: string): Promise<unknown[]>;
   getSession(id: string): Promise<unknown>;

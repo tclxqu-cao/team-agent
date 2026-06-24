@@ -2,6 +2,7 @@ import { app, BrowserWindow, ipcMain, dialog } from "electron";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { readFile, writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import { AgentHost } from "./agent-host.js";
 
 // Suppress EPIPE errors on stdout/stderr (e.g., when output is piped to `head`)
@@ -176,6 +177,10 @@ ipcMain.handle("projects:update", async (_event, id: string, update: Record<stri
 
 ipcMain.handle("projects:delete", async (_event, id: string) => {
   await agentHost.getProjectStore().delete(id);
+});
+
+ipcMain.handle("projects:checkPath", async (_event, path: string) => {
+  return existsSync(path);
 });
 
 // ── IPC: Sessions ──
