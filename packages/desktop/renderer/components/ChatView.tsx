@@ -642,10 +642,13 @@ export default function ChatView({
         });
         break;
       case "show_widget": {
+        // AgentEvent uses "data" but StreamEvent interface uses "widgetData";
+        // IPC forwards the raw AgentEvent, so read from both for safety.
+        const widgetData = (event as any).data ?? event.widgetData;
         const widgetMsg = {
           widgetId: event.widgetId!,
           widgetType: event.widgetType!,
-          data: event.widgetData!,
+          data: widgetData ?? {},
         };
         // If update_id matches an existing message's widget, update it
         const existingIdx = useAgentStore.getState().messages.findIndex(
