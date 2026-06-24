@@ -13,6 +13,7 @@ export { AskUserTool, type AskUserRequest, type AskUserResponse, type AskUserCal
 export { CronCreateTool, CronDeleteTool, CronListTool } from './CronTools.js';
 export { ApplyPatchTool } from './ApplyPatchTool.js';
 export { LspDiagnosticsTool, LspHoverTool, LspDefinitionTool, LspReferencesTool } from './LspTools.js';
+export { ShowWidgetTool } from './ShowWidgetTool.js';
 
 import { ApplyPatchTool } from './ApplyPatchTool.js';
 import { ReadFileTool } from './ReadFileTool.js';

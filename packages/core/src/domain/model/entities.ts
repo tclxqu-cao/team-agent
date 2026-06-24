@@ -20,6 +20,7 @@ export interface ToolResult {
   toolCallId: string;
   content: string;
   isError?: boolean;
+  metadata?: Record<string, unknown>;
 }
 
 export interface StreamOptions {
