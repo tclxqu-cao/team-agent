@@ -24,6 +24,7 @@ import { WebFetchTool } from './WebFetchTool.js';
 import { WebSearchTool } from './WebSearchTool.js';
 import { GrepTool } from './GrepTool.js';
 import { GlobTool } from './GlobTool.js';
+import { ShowWidgetTool } from './ShowWidgetTool.js';
 import type { IToolRegistry } from '../entities.js';
 
 export function registerBuiltinTools(registry: IToolRegistry): void {
@@ -36,4 +37,5 @@ export function registerBuiltinTools(registry: IToolRegistry): void {
   registry.register(new GrepTool());
   registry.register(new GlobTool());
   registry.register(new ApplyPatchTool());
+  registry.register(new ShowWidgetTool());
 }
