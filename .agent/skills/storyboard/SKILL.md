@@ -6,11 +6,7 @@ description: >
   Seedance 1 Lite, and composes final video with transitions.
   Use when user says "storyboard", "分镜", "生成视频", "视频制作",
   or invokes /storyboard.
-triggers:
-  - storyboard
-  - 分镜
-  - 生成视频
-  - 视频制作
+triggers: storyboard, 分镜, 生成视频, 视频制作
 ---
 
 # Storyboard Video Generation Skill
