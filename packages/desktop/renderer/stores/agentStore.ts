@@ -27,6 +27,10 @@ export interface StreamEvent {
   question?: string;
   options?: Array<{ label: string; description: string }>;
   multiSelect?: boolean;
+  /** For show_widget events */
+  widgetId?: string;
+  widgetType?: string;
+  widgetData?: Record<string, unknown>;
 }
 
 export interface TodoItem {
@@ -69,6 +73,8 @@ export interface ChatMessage {
     answered?: boolean;
     answer?: string;
   };
+  /** Widget card data (from show_widget events) */
+  widget?: { widgetId: string; widgetType: string; data: Record<string, unknown> };
   timestamp: number;
 }
 

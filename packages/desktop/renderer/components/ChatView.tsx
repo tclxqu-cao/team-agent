@@ -171,6 +171,7 @@ function renderAssistantText(text: string): React.ReactNode {
 import { useSettingsStore } from "../stores/settingsStore";
 import ToolCallCard from "./ToolCallCard";
 import AskUserCard from "./AskUserCard";
+import { widgetRegistry } from "./widgets/index.js";
 
 interface ChatViewProps {
   selectedProjectId?: string | null;
@@ -640,6 +641,33 @@ export default function ChatView({
           timestamp: Date.now(),
         });
         break;
+      case "show_widget": {
+        const widgetMsg = {
+          widgetId: event.widgetId!,
+          widgetType: event.widgetType!,
+          data: event.widgetData!,
+        };
+        // If update_id matches an existing message's widget, update it
+        const existingIdx = useAgentStore.getState().messages.findIndex(
+          (m) => m.widget?.widgetId === widgetMsg.widgetId,
+        );
+        if (existingIdx >= 0) {
+          const existingMsg = useAgentStore.getState().messages[existingIdx];
+          updateMessage(existingMsg.id, (m) => ({
+            ...m,
+            widget: widgetMsg,
+          }));
+        } else {
+          addMessage({
+            id: crypto.randomUUID(),
+            role: "assistant",
+            content: "",
+            widget: widgetMsg,
+            timestamp: Date.now(),
+          });
+        }
+        break;
+      }
       case "ask_user":
         addMessage({
           id: crypto.randomUUID(),
@@ -1164,6 +1192,35 @@ export default function ChatView({
                   上下文已压缩
                 </div>
                 <div style={{ flex: 1, height: 1, background: "var(--border-subtle)" }} />
+              </div>
+            );
+          }
+
+          // ── Widget card ────────────────────────────────────────
+          if (chatMsg.widget) {
+            const WidgetComponent = widgetRegistry[chatMsg.widget.widgetType];
+            if (WidgetComponent) {
+              return (
+                <div key={msg.id} style={{ marginBottom: 16, display: "flex", justifyContent: "flex-start" }}>
+                  <WidgetComponent {...chatMsg.widget.data} widgetId={chatMsg.widget.widgetId} />
+                </div>
+              );
+            }
+            // Fallback: show raw JSON
+            return (
+              <div key={msg.id} style={{
+                marginBottom: 16,
+                padding: 12,
+                borderRadius: 8,
+                background: "var(--bg-surface)",
+                border: "1px solid var(--border-subtle)",
+                fontFamily: "var(--font-mono, monospace)",
+                fontSize: 12,
+                whiteSpace: "pre-wrap",
+                maxHeight: 300,
+                overflow: "auto",
+              }}>
+                {JSON.stringify(chatMsg.widget.data, null, 2)}
               </div>
             );
           }
