@@ -342,6 +342,19 @@ export class AgentLoop implements IAgentLoop {
           result = { toolCallId: tc.id, content: `Error: ${errMsg}`, isError: true };
         }
         toolResults.push(result);
+
+        // If the tool result carries showWidget metadata, emit a show_widget event
+        // so the frontend can render the custom UI card. The tool_result is still
+        // added to messages for the LLM to see the textual result.
+        const widgetMeta = (result as any).metadata?.showWidget;
+        if (widgetMeta) {
+          yield {
+            type: "show_widget",
+            widgetId: widgetMeta.widgetId,
+            widgetType: widgetMeta.widgetType,
+            data: widgetMeta.data,
+          } as AgentEvent;
+        }
         yield { type: "tool_result", result };
 
         // 6. Add tool result to messages
