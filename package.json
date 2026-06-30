@@ -5,14 +5,17 @@
   "workspaces": [
     "packages/core",
     "packages/server",
-    "packages/desktop"
+    "packages/desktop",
+    "packages/sdk"
   ],
   "scripts": {
     "dev": "bunx concurrently --kill-others -n core,server,desktop -c blue,green,yellow 'bun run dev:core' 'bun run dev:server' 'bun run dev:desktop'",
     "dev:core": "bun run --cwd packages/core dev",
     "dev:server": "bun run --cwd packages/server dev",
     "dev:desktop": "bun run --cwd packages/desktop dev",
+    "dev:sdk": "bun run --cwd packages/sdk dev",
     "build": "bun run --cwd packages/core build && bun run --cwd packages/server build && bun run --cwd packages/desktop build",
+    "build:sdk": "bun run --cwd packages/sdk build",
     "test": "bunx vitest run",
     "test:watch": "bunx vitest",
     "lint": "bunx tsc --noEmit"

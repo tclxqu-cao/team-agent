@@ -3,22 +3,17 @@
     "target": "ES2022",
     "module": "ESNext",
     "moduleResolution": "bundler",
-    "lib": ["ES2022"],
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
-    "resolveJsonModule": true,
     "declaration": true,
     "declarationMap": true,
     "sourceMap": true,
     "outDir": "./dist",
-    "baseUrl": ".",
-    "paths": {
-      "@agent/core": ["./packages/core/src"],
-      "@agent/core/*": ["./packages/core/src/*"],
-      "@agent/sdk": ["./packages/sdk/src"]
-    }
+    "experimentalDecorators": true,
+    "useDefineForClassFields": false
   },
-  "exclude": ["node_modules", "dist", "packages/desktop/renderer", "packages/sdk/dist"]
+  "include": ["src"]
 }

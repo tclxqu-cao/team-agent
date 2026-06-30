@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Agent SDK Dev Preview</title>
+  <style>
+    body { margin: 0; padding: 40px; font-family: -apple-system, sans-serif; background: #f0f0f0; }
+    h1 { color: #333; font-size: 18px; margin-bottom: 8px; }
+    p { color: #666; font-size: 13px; margin-bottom: 24px; }
+  </style>
+</head>
+<body>
+  <h1>Agent SDK Preview</h1>
+  <p>悬浮按钮在右下角，点击打开聊天面板。</p>
+  <agent-chat
+    token="dev-token"
+    server="http://localhost:3001"
+    theme="auto"
+  ></agent-chat>
+  <script type="module" src="/src/index.ts"></script>
+</body>
+</html>
