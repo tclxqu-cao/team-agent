@@ -168,25 +168,40 @@ export class OpenAIProvider implements IModelProvider {
   }
 
   async countTokens(messages: Message[]): Promise<number> {
-    return messages.reduce((sum, m) => sum + Math.ceil(m.content.length / 4), 0);
+    return messages.reduce((sum, m) => sum + Math.ceil(this.stringContent(m.content).length / 4), 0);
   }
 
   supportsModel(modelId: string): boolean {
     return modelId.startsWith("gpt-") || modelId.startsWith("o1") || modelId.startsWith("o3") || modelId.startsWith("o4");
   }
 
+  private stringContent(content: unknown): string {
+    if (typeof content === "string") return content;
+    if (content === null || content === undefined) return "";
+    try {
+      return JSON.stringify(content);
+    } catch {
+      return String(content);
+    }
+  }
+
   private adaptMessage(m: Message): Record<string, unknown> {
+    const content = this.stringContent(m.content);
+    const hasToolCalls = !!(m.toolCalls && m.toolCalls.length > 0);
+    // OpenAI-compatible APIs:
+    //  - assistant + tool_calls: content must be null (not "")
+    //  - tool role: content must be a non-null string
+    //  - user/system: content must be string or list, never null
+    // So only assistant+tool_calls gets null; everyone else gets a string (empty -> " ").
+    const contentForRequest = hasToolCalls ? null : (content.length > 0 ? content : " ");
     const adapted: Record<string, unknown> = {
       role: m.role,
-      // OpenAI-compatible APIs require content to be null (not "") when tool_calls is
-      // present on an assistant message — sending "" causes some providers to reject
-      // the message or fail to link tool results, causing the agent to loop.
-      content: (m.toolCalls && m.toolCalls.length > 0) ? null : (m.content || null),
+      content: contentForRequest,
     };
     // Vision: build multimodal content blocks when images are present
     if (m.images && m.images.length > 0 && !m.toolCalls && !m.toolCallId) {
       adapted.content = [
-        { type: "text", text: m.content || "" },
+        { type: "text", text: content },
         ...m.images.map((url) => ({ type: "image_url", image_url: { url } })),
       ];
     }

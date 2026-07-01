@@ -170,20 +170,31 @@ export class DeepSeekProvider implements IModelProvider {
   }
 
   async countTokens(messages: Message[]): Promise<number> {
-    return messages.reduce((sum, m) => sum + Math.ceil(m.content.length / 4), 0);
+    return messages.reduce((sum, m) => sum + Math.ceil(this.stringContent(m.content).length / 4), 0);
   }
 
   supportsModel(_modelId: string): boolean {
     return true; // OpenAI-compatible; accept any model ID
   }
 
+  private stringContent(content: unknown): string {
+    if (typeof content === "string") return content;
+    if (content === null || content === undefined) return "";
+    try {
+      return JSON.stringify(content);
+    } catch {
+      return String(content);
+    }
+  }
+
   private adaptMessage(m: Message): Record<string, unknown> {
+    const content = this.stringContent(m.content);
     const adapted: Record<string, unknown> = {
       role: m.role,
       // OpenAI-compatible APIs require content to be null (not "") when tool_calls is
       // present on an assistant message — sending "" causes some providers to reject
       // the message or fail to link tool results, causing the agent to loop.
-      content: (m.toolCalls && m.toolCalls.length > 0) ? null : (m.content || null),
+      content: (m.toolCalls && m.toolCalls.length > 0) ? null : (content || null),
     };
     if (m.toolCalls) {
       adapted.tool_calls = m.toolCalls.map((tc) => ({

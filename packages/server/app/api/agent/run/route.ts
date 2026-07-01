@@ -14,8 +14,22 @@ export async function POST(request: Request) {
     }
 
     const sessionId = body.sessionId ?? crypto.randomUUID();
-    const session = await agentHost.createSession(`Chat ${new Date().toISOString()}`);
-    session.id = sessionId;
+    const sessionStore = agentHost.getSessionStore();
+    let session = await sessionStore.get(sessionId);
+    if (!session) {
+      const now = new Date().toISOString();
+      session = await sessionStore.create({
+        id: sessionId,
+        projectId: "",
+        title: `Chat ${now}`,
+        status: "idle",
+        messages: [],
+        events: [],
+        created: now,
+        updated: now,
+        metadata: {},
+      });
+    }
 
     // Configure model if provided
     if (body.model) {

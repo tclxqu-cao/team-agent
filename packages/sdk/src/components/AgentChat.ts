@@ -379,6 +379,7 @@ export class AgentChat extends LitElement {
             event.options,
             event.multiSelect,
           );
+          this._store.setRunning(false);
         }
         break;
       case 'done':
@@ -409,6 +410,16 @@ export class AgentChat extends LitElement {
     const input = textarea?.value.trim();
     if (!input || !this.client || !this.currentSessionId || this._store.isRunning) return;
 
+    const pendingAsk = this._store.getPendingAskUser();
+    if (pendingAsk) {
+      if (textarea) {
+        textarea.value = '';
+        textarea.style.height = 'auto';
+      }
+      await this._answerQuestion(pendingAsk.questionId, input);
+      return;
+    }
+
     this._store.clearError();
     this._store.addMessage({
       id: crypto.randomUUID(),
@@ -433,7 +444,13 @@ export class AgentChat extends LitElement {
 
   private async _answerQuestion(questionId: string, answer: string, selectedIndices?: number[]): Promise<void> {
     this._store.resolveAskUser(questionId, answer);
-    await this.client?.answerQuestion(questionId, answer, selectedIndices);
+    this._store.setRunning(true);
+    try {
+      await this.client?.answerQuestion(questionId, answer, selectedIndices);
+    } catch (err) {
+      this._store.setError(`回答失败: ${err}`);
+      this._store.setRunning(false);
+    }
   }
 
   private _scrollToBottom(): void {

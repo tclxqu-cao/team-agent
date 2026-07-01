@@ -137,6 +137,10 @@ export class ChatStore {
     this.notify();
   }
 
+  getPendingAskUser(): ChatMessage['askUser'] | null {
+    return this.messages.find((m) => m.askUser && !m.askUser.answered)?.askUser ?? null;
+  }
+
   setRunning(running: boolean): void {
     this.isRunning = running;
     this.notify();
