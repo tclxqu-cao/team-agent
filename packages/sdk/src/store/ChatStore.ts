@@ -1,4 +1,4 @@
-import type { ChatMessage, ToolCall } from '../client/types';
+import type { ChatMessage, Session, ToolCall } from '../client/types';
 
 type Listener = () => void;
 
@@ -10,10 +10,15 @@ export class ChatStore {
   private listeners = new Set<Listener>();
 
   messages: ChatMessage[] = [];
+  sessions: Session[] = [];
   isRunning = false;
   isPanelOpen = false;
+  isSessionMenuOpen = false;
+  isLoadingSessions = false;
+  activeSessionId = '';
   currentStreamText = '';
   error: string | null = null;
+  private messagesBySession = new Map<string, ChatMessage[]>();
 
   subscribe(listener: Listener): () => void {
     this.listeners.add(listener);
@@ -24,8 +29,63 @@ export class ChatStore {
     this.listeners.forEach((fn) => fn());
   }
 
+  setSessions(sessions: Session[]): void {
+    this.sessions = sessions;
+    this.notify();
+  }
+
+  addOrUpdateSession(session: Session): void {
+    const exists = this.sessions.some((item) => item.id === session.id);
+    this.sessions = exists
+      ? this.sessions.map((item) => (item.id === session.id ? session : item))
+      : [session, ...this.sessions];
+    this.notify();
+  }
+
+  setLoadingSessions(isLoading: boolean): void {
+    this.isLoadingSessions = isLoading;
+    this.notify();
+  }
+
+  setSessionMenuOpen(open: boolean): void {
+    this.isSessionMenuOpen = open;
+    this.notify();
+  }
+
+  toggleSessionMenu(): void {
+    this.isSessionMenuOpen = !this.isSessionMenuOpen;
+    this.notify();
+  }
+
+  switchSession(sessionId: string): void {
+    if (this.activeSessionId) {
+      this.messagesBySession.set(this.activeSessionId, this.messages);
+    }
+    this.activeSessionId = sessionId;
+    this.messages = this.messagesBySession.get(sessionId) ?? [];
+    this.currentStreamText = '';
+    this.error = null;
+    this.isSessionMenuOpen = false;
+    this.notify();
+  }
+
+  startNewSession(session: Session): void {
+    if (this.activeSessionId) {
+      this.messagesBySession.set(this.activeSessionId, this.messages);
+    }
+    this.activeSessionId = session.id;
+    this.addOrUpdateSession(session);
+    this.messages = [];
+    this.currentStreamText = '';
+    this.error = null;
+    this.isSessionMenuOpen = false;
+    this.messagesBySession.set(session.id, []);
+    this.notify();
+  }
+
   addMessage(msg: ChatMessage): void {
     this.messages = [...this.messages, msg];
+    this.persistActiveMessages();
     this.currentStreamText = '';
     this.notify();
   }
@@ -50,6 +110,7 @@ export class ChatStore {
         timestamp: Date.now(),
       }];
     }
+    this.persistActiveMessages();
     this.notify();
   }
 
@@ -75,6 +136,7 @@ export class ChatStore {
       }
     }
     this.currentStreamText = '';
+    this.persistActiveMessages();
     this.notify();
   }
 
@@ -96,6 +158,7 @@ export class ChatStore {
         timestamp: Date.now(),
       }];
     }
+    this.persistActiveMessages();
     this.notify();
   }
 
@@ -109,6 +172,7 @@ export class ChatStore {
         ),
       };
     });
+    this.persistActiveMessages();
     this.notify();
   }
 
@@ -125,6 +189,7 @@ export class ChatStore {
       askUser: { questionId, question, options, multiSelect },
       timestamp: Date.now(),
     }];
+    this.persistActiveMessages();
     this.notify();
   }
 
@@ -134,6 +199,7 @@ export class ChatStore {
         ? { ...m, askUser: { ...m.askUser, answered: true, answer } }
         : m,
     );
+    this.persistActiveMessages();
     this.notify();
   }
 
@@ -169,6 +235,13 @@ export class ChatStore {
   clearMessages(): void {
     this.messages = [];
     this.currentStreamText = '';
+    this.persistActiveMessages();
     this.notify();
+  }
+
+  private persistActiveMessages(): void {
+    if (this.activeSessionId) {
+      this.messagesBySession.set(this.activeSessionId, this.messages);
+    }
   }
 }

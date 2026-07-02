@@ -71,16 +71,29 @@ export class AgentChat extends LitElement {
         display: flex;
         align-items: center;
         justify-content: space-between;
-        padding: 14px 16px;
+        gap: 8px;
+        padding: 12px 14px;
         border-bottom: 1px solid var(--border-subtle);
         background: var(--bg-deepest);
         flex-shrink: 0;
+        position: relative;
       }
       .header-title {
+        flex: 1;
+        min-width: 0;
         font-size: 14px;
         font-weight: 600;
         color: var(--text-primary);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
       }
+      .header-actions {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+      }
+      .header-btn,
       .header-close {
         width: 28px; height: 28px;
         border: none; border-radius: 6px;
@@ -90,9 +103,104 @@ export class AgentChat extends LitElement {
         display: flex; align-items: center; justify-content: center;
         transition: background 0.15s, color 0.15s;
       }
+      .header-btn:disabled {
+        opacity: 0.35;
+        cursor: not-allowed;
+      }
+      .header-btn:hover:not(:disabled),
       .header-close:hover {
         background: var(--bg-deep);
         color: var(--text-primary);
+      }
+      .session-menu {
+        position: absolute;
+        top: 44px;
+        left: 10px;
+        right: 10px;
+        max-height: 280px;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+        background: var(--bg-deepest);
+        border: 1px solid var(--border-default);
+        border-radius: var(--radius-md);
+        box-shadow: var(--shadow-md);
+        z-index: 1;
+      }
+      .session-menu-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        padding: 8px;
+        border-bottom: 1px solid var(--border-subtle);
+      }
+      .session-menu-title {
+        color: var(--text-secondary);
+        font-size: 12px;
+        font-weight: 600;
+      }
+      .session-new-btn {
+        height: 28px;
+        padding: 0 10px;
+        border: none;
+        border-radius: 6px;
+        background: var(--accent);
+        color: white;
+        font-size: 12px;
+        cursor: pointer;
+      }
+      .session-new-btn:disabled {
+        opacity: 0.45;
+        cursor: not-allowed;
+      }
+      .session-list {
+        overflow-y: auto;
+        padding: 6px;
+      }
+      .session-item {
+        width: 100%;
+        min-height: 40px;
+        padding: 7px 8px;
+        border: 1px solid transparent;
+        border-radius: 8px;
+        background: transparent;
+        color: var(--text-primary);
+        cursor: pointer;
+        display: flex;
+        flex-direction: column;
+        align-items: stretch;
+        text-align: left;
+      }
+      .session-item:hover {
+        background: var(--bg-deep);
+      }
+      .session-item.active {
+        border-color: var(--border-glow);
+        background: var(--accent-dim);
+      }
+      .session-item:disabled {
+        opacity: 0.45;
+        cursor: not-allowed;
+      }
+      .session-item-title {
+        font-size: 12px;
+        line-height: 1.3;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .session-item-meta {
+        margin-top: 2px;
+        color: var(--text-muted);
+        font-size: 10px;
+        line-height: 1.2;
+      }
+      .session-empty {
+        padding: 16px 8px;
+        color: var(--text-muted);
+        font-size: 12px;
+        text-align: center;
       }
 
       /* ── Messages ── */
@@ -327,6 +435,7 @@ export class AgentChat extends LitElement {
     // Restore session ID if provided via attribute
     if (this.sessionIdAttr) {
       this.currentSessionId = this.sessionIdAttr;
+      this._store.switchSession(this.sessionIdAttr);
     }
   }
 
@@ -394,15 +503,65 @@ export class AgentChat extends LitElement {
   }
 
   private async _togglePanel(): Promise<void> {
-    if (!this._store.isPanelOpen && !this.currentSessionId && this.client) {
-      try {
-        const session = await this.client.createSession(this.title);
-        this.currentSessionId = session.id;
-      } catch (err) {
-        this._store.setError(`创建会话失败: ${err}`);
-      }
+    if (!this._store.isPanelOpen && this.client) {
+      await this._loadSessions();
+      await this._ensureSession();
     }
     this._store.togglePanel();
+  }
+
+  private async _loadSessions(): Promise<void> {
+    if (!this.client) return;
+    this._store.setLoadingSessions(true);
+    try {
+      const sessions = await this.client.listSessions();
+      this._store.setSessions(sessions);
+    } catch (err) {
+      this._store.setError(`加载会话失败: ${err}`);
+    } finally {
+      this._store.setLoadingSessions(false);
+    }
+  }
+
+  private async _ensureSession(): Promise<void> {
+    if (this.currentSessionId || !this.client) return;
+    try {
+      const session = await this.client.createSession(this.title);
+      this.currentSessionId = session.id;
+      this._store.startNewSession(session);
+    } catch (err) {
+      this._store.setError(`创建会话失败: ${err}`);
+    }
+  }
+
+  private async _createNewSession(): Promise<void> {
+    if (!this.client || this._store.isRunning) return;
+    try {
+      const session = await this.client.createSession(this.title);
+      this.currentSessionId = session.id;
+      this._store.startNewSession(session);
+      this._clearComposer();
+    } catch (err) {
+      this._store.setError(`创建会话失败: ${err}`);
+    }
+  }
+
+  private _switchSession(sessionId: string): void {
+    if (this._store.isRunning || sessionId === this.currentSessionId) {
+      this._store.setSessionMenuOpen(false);
+      return;
+    }
+    this.currentSessionId = sessionId;
+    this._store.switchSession(sessionId);
+    this._clearComposer();
+  }
+
+  private _clearComposer(): void {
+    const textarea = this.renderRoot.querySelector('.input-area textarea') as HTMLTextAreaElement | null;
+    if (textarea) {
+      textarea.value = '';
+      textarea.style.height = 'auto';
+    }
   }
 
   private async _sendMessage(): Promise<void> {
@@ -465,6 +624,7 @@ export class AgentChat extends LitElement {
   }
 
   render(): unknown {
+    const activeTitle = this._getActiveSessionTitle();
     return html`
       <agent-fab
         .isOpen=${this._store.isPanelOpen}
@@ -473,10 +633,29 @@ export class AgentChat extends LitElement {
       ></agent-fab>
       <div class="panel ${this._store.isPanelOpen ? 'open' : ''}">
         <div class="header">
-          <span class="header-title">${this.title}</span>
-          <button class="header-close" @click=${() => this._store.setPanelOpen(false)}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
-          </button>
+          <span class="header-title" title=${activeTitle}>${activeTitle}</span>
+          <div class="header-actions">
+            <button
+              class="header-btn"
+              title="切换聊天"
+              ?disabled=${this._store.isRunning}
+              @click=${() => this._store.toggleSessionMenu()}
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M3 6h.01"/><path d="M3 12h.01"/><path d="M3 18h.01"/></svg>
+            </button>
+            <button
+              class="header-btn"
+              title="新建聊天"
+              ?disabled=${this._store.isRunning}
+              @click=${() => this._createNewSession()}
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+            </button>
+            <button class="header-close" title="关闭" @click=${() => this._store.setPanelOpen(false)}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+            </button>
+          </div>
+          ${this._store.isSessionMenuOpen ? this._renderSessionMenu() : ''}
         </div>
         <div class="messages">
           ${this._store.messages.length === 0
@@ -514,6 +693,53 @@ export class AgentChat extends LitElement {
         </div>
       </div>
     `;
+  }
+
+  private _getActiveSessionTitle(): string {
+    const session = this._store.sessions.find((item) => item.id === this.currentSessionId);
+    return session?.title || this.title;
+  }
+
+  private _renderSessionMenu(): unknown {
+    return html`
+      <div class="session-menu">
+        <div class="session-menu-header">
+          <span class="session-menu-title">聊天</span>
+          <button
+            class="session-new-btn"
+            ?disabled=${this._store.isRunning}
+            @click=${() => this._createNewSession()}
+          >新建</button>
+        </div>
+        <div class="session-list">
+          ${this._store.isLoadingSessions
+            ? html`<div class="session-empty">加载中...</div>`
+            : this._store.sessions.length === 0
+              ? html`<div class="session-empty">暂无聊天</div>`
+              : this._store.sessions.map((session) => html`
+                  <button
+                    class="session-item ${session.id === this.currentSessionId ? 'active' : ''}"
+                    ?disabled=${this._store.isRunning}
+                    @click=${() => this._switchSession(session.id)}
+                  >
+                    <span class="session-item-title">${session.title || '未命名聊天'}</span>
+                    <span class="session-item-meta">${this._formatSessionTime(session.updated || session.created)}</span>
+                  </button>
+                `)}
+        </div>
+      </div>
+    `;
+  }
+
+  private _formatSessionTime(value: string): string {
+    const timestamp = Date.parse(value);
+    if (Number.isNaN(timestamp)) return '';
+    return new Intl.DateTimeFormat(undefined, {
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    }).format(new Date(timestamp));
   }
 
   private _renderMessage(msg: ChatMessage): unknown {
