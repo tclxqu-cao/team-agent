@@ -161,4 +161,7 @@ class AgentHost {
   }
 }
 
-export const agentHost = new AgentHost();
+const globalWithAgentHost = globalThis as typeof globalThis & { __agentHost?: AgentHost };
+
+export const agentHost = globalWithAgentHost.__agentHost ?? new AgentHost();
+globalWithAgentHost.__agentHost = agentHost;
