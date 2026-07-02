@@ -1,0 +1,21 @@
+packages/server/app/api/agent-host.test.ts
+  s_4bd46243283bd7::t_423b7d907600d8 1-8
+packages/server/app/api/agent-host.ts
+  s_4bd46243283bd7::t_26f1d1faca4fd5 164-167
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.7",
+  "base_commit_sha": "6d4900260f7babfe767dccaa68208b5caafc5424",
+  "prompts": {},
+  "sessions": {
+    "s_4bd46243283bd7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5450b19f-0c20-4ea0-87f1-35373c728131",
+        "model": "gpt-5.5"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
