@@ -55,3 +55,15 @@ export interface AgentClientConfig {
   server: string;
   token: string;
 }
+
+export interface RemoteToolRegistration {
+  scheme: string;
+  purpose: string;
+  url: string;
+  method?: 'POST';
+  headers?: Record<string, string>;
+  inputSchema?: Record<string, unknown>;
+  outputSchema?: Record<string, unknown>;
+  examples?: Array<Record<string, unknown>>;
+  auth?: Record<string, unknown>;
+}

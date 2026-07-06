@@ -1,4 +1,4 @@
-import type { AgentClientConfig, AgentEvent, Session } from './types';
+import type { AgentClientConfig, AgentEvent, Session, RemoteToolRegistration } from './types';
 
 /**
  * HTTP + SSE client for communicating with the hosted Agent service.
@@ -53,6 +53,16 @@ export class AgentClient {
     });
     if (!res.ok) throw new Error(`Failed to list sessions: ${res.statusText}`);
     return res.json();
+  }
+
+  async registerRemoteTools(projectId: string, tools: RemoteToolRegistration[]): Promise<void> {
+    if (!projectId || tools.length === 0) return;
+    const res = await fetch(`${this.server}/api/remote-tools/register`, {
+      method: 'POST',
+      headers: this.headers,
+      body: JSON.stringify({ projectId, tools }),
+    });
+    if (!res.ok) throw new Error(`Failed to register remote tools: ${res.statusText}`);
   }
 
   /**

@@ -3,7 +3,7 @@ import { customElement, property, state } from 'lit/decorators.js';
 import { AgentClient } from '../client/AgentClient';
 import { ChatStore } from '../store/ChatStore';
 import { themeStyles } from '../styles/theme';
-import type { AgentEvent, ChatMessage, ToolCall } from '../client/types';
+import type { AgentEvent, ChatMessage, ToolCall, RemoteToolRegistration } from '../client/types';
 import './AgentFab';
 
 /**
@@ -19,6 +19,8 @@ export class AgentChat extends LitElement {
   @property({ type: String }) title = 'AI 助手';
   @property({ type: String }) placeholder = '输入消息...';
   @property({ type: String, attribute: 'session-id' }) sessionIdAttr = '';
+  @property({ type: String, attribute: 'project-id' }) projectId = '';
+  @property({ attribute: 'remote-tools' }) remoteTools: RemoteToolRegistration[] | string = [];
 
   @state() private _store = new ChatStore();
   private client: AgentClient | null = null;
@@ -447,11 +449,25 @@ export class AgentChat extends LitElement {
   private _initClient(): void {
     if (!this.token || !this.server) return;
     this.client = new AgentClient({ server: this.server, token: this.token });
+    void this.client.registerRemoteTools(this.projectId, this.parseRemoteTools()).catch((error) => {
+      console.warn('[AgentChat] Failed to register remote tools:', error);
+    });
 
     this.unsubClient = this.client.onEvent((event) => this._handleEvent(event));
     this.unsubStore = this._store.subscribe(() => {
       this.requestUpdate();
     });
+  }
+
+  private parseRemoteTools(): RemoteToolRegistration[] {
+    if (Array.isArray(this.remoteTools)) return this.remoteTools;
+    if (!this.remoteTools) return [];
+    try {
+      const parsed = JSON.parse(this.remoteTools);
+      return Array.isArray(parsed) ? parsed as RemoteToolRegistration[] : [];
+    } catch {
+      return [];
+    }
   }
 
   private _cleanup(): void {
