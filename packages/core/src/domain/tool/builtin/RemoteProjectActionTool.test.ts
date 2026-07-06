@@ -75,7 +75,9 @@ describe("RemoteProjectActionTool", () => {
     await tool.execute({ action: "create_kid_earth_course", payload: { title: "揭秘太阳" } }, { workingDirectory: "/tmp", sessionId: "s1" });
 
     await vi.waitFor(() => expect(store.getJob("job-1")?.status).toBe("succeeded"));
-    const sentHeaders = fetchImpl.mock.calls[0][1]?.headers as Record<string, string>;
+    const fetchCalls = fetchImpl.mock.calls as unknown as Array<[string, RequestInit]>;
+    const requestInit = fetchCalls[0][1];
+    const sentHeaders = requestInit.headers as Record<string, string>;
     expect(sentHeaders).toEqual({ "x-project-key": "kid-earth", "content-type": "application/json", authorization: "Bearer secret" });
     expect(Object.keys(sentHeaders).filter((key) => key.toLowerCase() === "authorization")).toEqual(["authorization"]);
     expect(Object.values(sentHeaders)).not.toContain("Bearer attacker");

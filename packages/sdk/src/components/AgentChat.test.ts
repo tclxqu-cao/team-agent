@@ -12,29 +12,43 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
-type TestableAgentChat = AgentChat & {
+type TestChatStore = {
+  isRunning: boolean;
+  subscribe: (listener: () => void) => () => void;
+  setRunning: (running: boolean) => void;
+  clearError: () => void;
+  setError: (error: string | null) => void;
+  addMessage: (message: unknown) => void;
+  getPendingAskUser: () => null;
+};
+
+type TestableAgentChat = {
   client: AgentClient | null;
   currentSessionId: string;
   _initClient(): void;
   _sendMessage(): Promise<void>;
+  _ensureSession(): Promise<void>;
+  _loadSessions(): Promise<void>;
   renderRoot: Pick<ParentNode, "querySelector">;
-  _store: {
-    isRunning: boolean;
-    subscribe: (listener: () => void) => () => void;
-    setRunning: (running: boolean) => void;
-    clearError: () => void;
-    setError: (error: string | null) => void;
-    addMessage: (message: unknown) => void;
-    getPendingAskUser: () => null;
-  };
+  _store: TestChatStore;
+  server: string;
+  token: string;
+  registrationToken?: string;
+  projectId: string;
+  remoteTools: unknown;
+  title: string;
 };
+
+function createTestChat(): TestableAgentChat {
+  return new AgentChat() as unknown as TestableAgentChat;
+}
 
 describe("AgentChat remote tool initialization", () => {
   it("parses project id and remote tools during init registration", () => {
     const registerRemoteTools = vi.spyOn(AgentClient.prototype, "registerRemoteTools").mockResolvedValue();
     vi.spyOn(AgentClient.prototype, "onEvent").mockReturnValue(() => undefined);
 
-    const chat = new AgentChat() as TestableAgentChat;
+    const chat = createTestChat();
     chat.server = "http://agent";
     chat.token = "sdk-token";
     chat.projectId = "kid-earth-learning";
@@ -61,7 +75,7 @@ describe("AgentChat remote tool initialization", () => {
     const registerRemoteTools = vi.spyOn(AgentClient.prototype, "registerRemoteTools").mockResolvedValue();
     vi.spyOn(AgentClient.prototype, "onEvent").mockReturnValue(() => undefined);
 
-    const chat = new AgentChat() as TestableAgentChat & { registrationToken?: string };
+    const chat = createTestChat();
     chat.server = "http://agent";
     chat.token = "sdk-token";
     chat.registrationToken = "registration-token";
@@ -81,7 +95,7 @@ describe("AgentChat remote tool initialization", () => {
     vi.spyOn(AgentClient.prototype, "onEvent").mockReturnValue(() => undefined);
     const run = vi.spyOn(AgentClient.prototype, "run").mockResolvedValue();
 
-    const chat = new AgentChat() as TestableAgentChat;
+    const chat = createTestChat();
     chat.server = "http://agent";
     chat.token = "sdk-token";
     chat.projectId = "kid-earth-learning";
@@ -118,7 +132,7 @@ describe("AgentChat remote tool initialization", () => {
     vi.spyOn(AgentClient.prototype, "onEvent").mockReturnValue(() => undefined);
     const run = vi.spyOn(AgentClient.prototype, "run").mockResolvedValue();
 
-    const chat = new AgentChat() as TestableAgentChat;
+    const chat = createTestChat();
     chat.server = "http://agent";
     chat.token = "sdk-token";
     chat.projectId = "kid-earth-learning";
@@ -156,7 +170,7 @@ describe("AgentChat remote tool initialization", () => {
       updated: "now",
     });
 
-    const chat = new AgentChat() as TestableAgentChat;
+    const chat = createTestChat();
     chat.server = "http://agent";
     chat.token = "sdk-token";
     chat.title = "AI 助手";
@@ -173,7 +187,7 @@ describe("AgentChat remote tool initialization", () => {
     vi.spyOn(AgentClient.prototype, "onEvent").mockReturnValue(() => undefined);
     const listSessions = vi.spyOn(AgentClient.prototype, "listSessions").mockResolvedValue([]);
 
-    const chat = new AgentChat() as TestableAgentChat;
+    const chat = createTestChat();
     chat.server = "http://agent";
     chat.token = "sdk-token";
     chat.projectId = "kid-earth-learning";
@@ -194,7 +208,7 @@ describe("AgentChat remote tool initialization", () => {
     process.on("unhandledRejection", unhandled);
 
     try {
-      const chat = new AgentChat() as TestableAgentChat;
+      const chat = createTestChat();
       chat.server = "http://agent";
       chat.token = "sdk-token";
       chat.projectId = "remote-tools-test-project";

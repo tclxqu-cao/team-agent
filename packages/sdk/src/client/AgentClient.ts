@@ -31,7 +31,7 @@ export class AgentClient {
         headers: this.headers,
       });
       if (!res.ok) return { valid: false };
-      return await res.json();
+      return await res.json() as { valid: boolean; project?: string };
     } catch {
       return { valid: false };
     }
@@ -44,7 +44,7 @@ export class AgentClient {
       body: JSON.stringify({ title, ...(projectId ? { projectId } : {}) }),
     });
     if (!res.ok) throw new Error(`Failed to create session: ${res.statusText}`);
-    return res.json();
+    return res.json() as Promise<Session>;
   }
 
   async listSessions(projectId?: string): Promise<Session[]> {
@@ -53,7 +53,7 @@ export class AgentClient {
       headers: this.headers,
     });
     if (!res.ok) throw new Error(`Failed to list sessions: ${res.statusText}`);
-    return res.json();
+    return res.json() as Promise<Session[]>;
   }
 
   async registerRemoteTools(projectId: string, tools: RemoteToolRegistration[]): Promise<void> {

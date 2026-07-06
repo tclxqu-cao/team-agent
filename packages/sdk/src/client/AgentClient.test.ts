@@ -40,7 +40,9 @@ describe("AgentClient remote tools", () => {
         headers: expect.objectContaining({ Authorization: "Bearer sdk-token" }),
       }),
     );
-    expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toEqual({
+    const fetchCalls = fetchMock.mock.calls as unknown as Array<[string, RequestInit]>;
+    const requestInit = fetchCalls[0][1];
+    expect(JSON.parse(String(requestInit.body))).toEqual({
       projectId: "remote-tools-test-project",
       tools: [
         {
