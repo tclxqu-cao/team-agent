@@ -10,6 +10,7 @@ interface Options { store?: RemoteToolStore; projectId?: string; fetchImpl?: Fet
 
 function safeJson(text: string): Record<string, unknown> { try { const v = JSON.parse(text); return v && typeof v === "object" && !Array.isArray(v) ? v as Record<string, unknown> : { value: v }; } catch { return { text }; } }
 function errorMessage(error: unknown): string { return error instanceof Error ? error.message : String(error || "Remote action failed"); }
+function withoutAuthorization(headers: Record<string, string>): Record<string, string> { return Object.fromEntries(Object.entries(headers).filter(([key]) => key.toLowerCase() !== "authorization")); }
 
 export class RemoteProjectActionTool implements ITool {
   readonly name = "remote_project_action";
@@ -60,7 +61,7 @@ export class RemoteProjectActionTool implements ITool {
   private async runJob(jobId: string, url: string, action: string, headers: Record<string, string>, payload: Record<string, unknown>): Promise<void> {
     try {
       this.store?.markJobRunning(jobId);
-      const response = await this.fetchImpl(url, { method: "POST", headers: { ...headers, "content-type": "application/json", ...(this.actionToken ? { authorization: `Bearer ${this.actionToken}` } : {}) }, body: JSON.stringify({ action, payload }) });
+      const response = await this.fetchImpl(url, { method: "POST", headers: { ...withoutAuthorization(headers), "content-type": "application/json", ...(this.actionToken ? { authorization: `Bearer ${this.actionToken}` } : {}) }, body: JSON.stringify({ action, payload }) });
       const text = await response.text();
       if (!response.ok) { this.markJobFailedSafely(jobId, `Remote action failed: ${response.status} ${text}`); return; }
       this.store?.markJobSucceeded(jobId, safeJson(text));

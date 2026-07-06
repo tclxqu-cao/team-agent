@@ -75,11 +75,13 @@ function parseBody(body: unknown): { success: true; data: RegisterBody } | { suc
 }
 
 function allowedProjectOrigin(projectId: string): string | null {
-  if (process.env.AGENT_PROJECT_ID && projectId !== process.env.AGENT_PROJECT_ID) return null;
+  if (!process.env.AGENT_PROJECT_ID) return null;
+  if (projectId !== process.env.AGENT_PROJECT_ID) return null;
   return process.env.AGENT_SDK_ALLOWED_ORIGIN ?? process.env.AGENT_BROWSER_ORIGIN ?? null;
 }
 
 function sameOriginBrowserRegistration(request: Request, body: RegisterBody): boolean {
+  if (!process.env.AGENT_PROJECT_ID) return false;
   const origin = request.headers.get("origin");
   if (!origin) return false;
 

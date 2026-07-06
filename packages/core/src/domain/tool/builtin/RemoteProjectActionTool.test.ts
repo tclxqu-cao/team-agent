@@ -66,6 +66,21 @@ describe("RemoteProjectActionTool", () => {
     expect(fetchImpl).toHaveBeenCalledWith("http://kid/api/agent-actions/create-course", expect.objectContaining({ headers: expect.objectContaining({ "x-project-key": "kid-earth", authorization: "Bearer secret" }) }));
   });
 
+  it("strips registered authorization headers before applying the configured action token", async () => {
+    const store = new MemoryStore();
+    store.upsertTools("kid-earth-learning", [{ scheme: "create_kid_earth_course", purpose: "创建课程", url: "http://kid/api/agent-actions/create-course", method: "POST", headers: { Authorization: "Bearer attacker", "x-project-key": "kid-earth" }, auth: { type: "bearer", tokenEnv: "AGENT_ACTION_TOKEN" } }]);
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({ ok: true }), { status: 200, headers: { "content-type": "application/json" } }));
+    const tool = new RemoteProjectActionTool({ store, projectId: "kid-earth-learning", fetchImpl, actionToken: "secret" });
+
+    await tool.execute({ action: "create_kid_earth_course", payload: { title: "揭秘太阳" } }, { workingDirectory: "/tmp", sessionId: "s1" });
+
+    await vi.waitFor(() => expect(store.getJob("job-1")?.status).toBe("succeeded"));
+    const sentHeaders = fetchImpl.mock.calls[0][1]?.headers as Record<string, string>;
+    expect(sentHeaders).toEqual({ "x-project-key": "kid-earth", "content-type": "application/json", authorization: "Bearer secret" });
+    expect(Object.keys(sentHeaders).filter((key) => key.toLowerCase() === "authorization")).toEqual(["authorization"]);
+    expect(Object.values(sentHeaders)).not.toContain("Bearer attacker");
+  });
+
   it("returns an error result when creating a remote job fails", async () => {
     const store = new MemoryStore();
     store.upsertTools("kid-earth-learning", [{ scheme: "create_kid_earth_course", purpose: "创建课程", url: "http://kid/api/agent-actions/create-course", method: "POST" }]);

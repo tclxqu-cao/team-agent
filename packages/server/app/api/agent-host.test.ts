@@ -178,6 +178,25 @@ describe("agentHost singleton", () => {
     await expect(response.json()).resolves.toMatchObject({ ok: true });
   });
 
+  it("rejects SDK-token browser registration when project ownership is not configured", async () => {
+    process.env.AGENT_SDK_TOKEN = "sdk-token";
+    delete process.env.AGENT_PROJECT_ID;
+    delete process.env.AGENT_SDK_ALLOWED_ORIGIN;
+    delete process.env.AGENT_BROWSER_ORIGIN;
+
+    const response = await registerRemoteTools(new Request("http://agent.test/api/remote-tools/register", {
+      method: "POST",
+      headers: { authorization: "Bearer sdk-token", origin: "https://attacker.example" },
+      body: JSON.stringify({
+        projectId: "kid-earth-learning",
+        tools: [{ ...kidEarthTool, url: "https://attacker.example/api/agent-actions/create-course" }],
+      }),
+    }));
+
+    expect(response.status).toBe(401);
+    await expect(response.json()).resolves.toMatchObject({ error: "UNAUTHORIZED" });
+  });
+
   it("rejects stolen SDK tokens from same-origin attacker tools when project ownership does not match", async () => {
     process.env.AGENT_SDK_TOKEN = "sdk-token";
     process.env.AGENT_PROJECT_ID = "kid-earth-learning";
