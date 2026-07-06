@@ -120,18 +120,18 @@ export class AgentBuilder {
     return this;
   }
 
-  private createToolRegistry(): ToolRegistry {
+  private createToolRegistry(remoteToolStore: RemoteToolStore | undefined, projectId: string): ToolRegistry {
     const registry = new ToolRegistry();
     registerBuiltinTools(registry);
     for (const tool of this.customTools) registry.register(tool);
-    if (this.remoteToolStore) {
-      registry.register(new RemoteProjectActionTool({ store: this.remoteToolStore, projectId: this.projectId }));
+    if (remoteToolStore) {
+      registry.register(new RemoteProjectActionTool({ store: remoteToolStore, projectId }));
     }
     return registry;
   }
 
-  private systemPromptWithRemoteTools(): string | undefined {
-    const tools = this.remoteToolStore?.listEnabledTools(this.projectId) ?? [];
+  private systemPromptWithRemoteTools(remoteToolStore: RemoteToolStore | undefined, projectId: string): string | undefined {
+    const tools = remoteToolStore?.listEnabledTools(projectId) ?? [];
     if (tools.length === 0) return this.systemPrompt;
     const summary = ["可用远程项目工具：", ...tools.map((tool) => `- ${tool.scheme}: ${tool.purpose}`)].join("\n");
     return [this.systemPrompt, summary].filter(Boolean).join("\n\n");
@@ -169,13 +169,16 @@ export class AgentBuilder {
       throw new Error("Model provider is required. Call withModelProvider() or withModel()");
     }
 
+    const remoteToolStore = this.remoteToolStore;
+    const projectId = this.projectId;
+
     // Wire model provider into skill registry for semantic matching
     this.skillRegistry.setModelProvider(this.modelProvider);
 
     // Initialize memory store (use injected or fall back to filesystem)
     const memoryStore = this.memoryStore ?? new FileSystemMemoryStore(this.workingDirectory);
 
-    const toolRegistry = this.createToolRegistry();
+    const toolRegistry = this.createToolRegistry(remoteToolStore, projectId);
 
     // Load skills from all discovered sources, then optionally add from explicit dir
     const discoveredSkills = await this.skillLoader.loadAll(this.workingDirectory);
@@ -212,7 +215,7 @@ export class AgentBuilder {
       workingDirectory: this.workingDirectory,
       maxIterations: this.maxIterations,
       maxTokens: this.maxTokens,
-      systemPrompt: this.systemPromptWithRemoteTools(),
+      systemPrompt: this.systemPromptWithRemoteTools(remoteToolStore, projectId),
       compactThreshold: this.compactThreshold,
       enabledTools: this.enabledTools,
       enabledSkills: this.enabledSkills,
@@ -227,11 +230,14 @@ export class AgentBuilder {
       throw new Error("Model provider is required. Call withModelProvider() or withModel()");
     }
 
+    const remoteToolStore = this.remoteToolStore;
+    const projectId = this.projectId;
+
     // Wire model provider into skill registry for semantic matching
     this.skillRegistry.setModelProvider(this.modelProvider);
 
     const memoryStore = this.memoryStore ?? new FileSystemMemoryStore(this.workingDirectory);
-    const toolRegistry = this.createToolRegistry();
+    const toolRegistry = this.createToolRegistry(remoteToolStore, projectId);
 
     // Load skills from disk
     const discoveredSkills = this.skillLoader.loadAllSync(this.workingDirectory);
@@ -266,7 +272,7 @@ export class AgentBuilder {
       workingDirectory: this.workingDirectory,
       maxIterations: this.maxIterations,
       maxTokens: this.maxTokens,
-      systemPrompt: this.systemPromptWithRemoteTools(),
+      systemPrompt: this.systemPromptWithRemoteTools(remoteToolStore, projectId),
       compactThreshold: this.compactThreshold,
       enabledTools: this.enabledTools,
       enabledSkills: this.enabledSkills,

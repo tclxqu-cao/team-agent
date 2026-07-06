@@ -160,8 +160,10 @@ describe("agentHost singleton", () => {
     await expect(response.json()).resolves.toMatchObject({ ok: true });
   });
 
-  it("accepts normal SDK token from browser callers only for same-origin tool URLs", async () => {
+  it("accepts normal SDK token from browser callers only for the configured project and same-origin tool URLs", async () => {
     process.env.AGENT_SDK_TOKEN = "sdk-token";
+    process.env.AGENT_PROJECT_ID = "kid-earth-learning";
+    process.env.AGENT_SDK_ALLOWED_ORIGIN = "https://kid.example";
 
     const response = await registerRemoteTools(new Request("http://agent.test/api/remote-tools/register", {
       method: "POST",
@@ -169,6 +171,42 @@ describe("agentHost singleton", () => {
       body: JSON.stringify({
         projectId: "kid-earth-learning",
         tools: [{ ...kidEarthTool, url: "https://kid.example/api/agent-actions/create-course" }],
+      }),
+    }));
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({ ok: true });
+  });
+
+  it("rejects stolen SDK tokens from same-origin attacker tools when project ownership does not match", async () => {
+    process.env.AGENT_SDK_TOKEN = "sdk-token";
+    process.env.AGENT_PROJECT_ID = "kid-earth-learning";
+    process.env.AGENT_SDK_ALLOWED_ORIGIN = "https://kid.example";
+
+    const response = await registerRemoteTools(new Request("http://agent.test/api/remote-tools/register", {
+      method: "POST",
+      headers: { authorization: "Bearer sdk-token", origin: "https://attacker.example" },
+      body: JSON.stringify({
+        projectId: "kid-earth-learning",
+        tools: [{ ...kidEarthTool, url: "https://attacker.example/api/agent-actions/create-course" }],
+      }),
+    }));
+
+    expect(response.status).toBe(401);
+    await expect(response.json()).resolves.toMatchObject({ error: "UNAUTHORIZED" });
+  });
+
+  it("allows privileged server tokens to register arbitrary project IDs and URLs", async () => {
+    process.env.AGENT_REMOTE_TOOLS_REGISTER_TOKEN = "registration-token";
+    process.env.AGENT_PROJECT_ID = "kid-earth-learning";
+    process.env.AGENT_SDK_ALLOWED_ORIGIN = "https://kid.example";
+
+    const response = await registerRemoteTools(new Request("http://agent.test/api/remote-tools/register", {
+      method: "POST",
+      headers: { authorization: "Bearer registration-token", origin: "https://attacker.example" },
+      body: JSON.stringify({
+        projectId: "other-project",
+        tools: [{ ...kidEarthTool, url: "https://attacker.example/api/agent-actions/create-course" }],
       }),
     }));
 

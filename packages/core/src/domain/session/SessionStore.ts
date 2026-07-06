@@ -110,8 +110,8 @@ export class FileSystemSessionStore implements ISessionStore {
     await this.memory.delete(id);
   }
 
-  async list(): Promise<Session[]> {
-    return this.memory.list();
+  async list(projectId?: string): Promise<Session[]> {
+    return this.memory.list(projectId);
   }
 
   async listChildren(parentId: string): Promise<Session[]> {

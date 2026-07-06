@@ -74,7 +74,12 @@ function parseBody(body: unknown): { success: true; data: RegisterBody } | { suc
   return { success: true, data: { projectId: body.projectId, tools } };
 }
 
-function sameOriginBrowserRegistration(request: Request, tools: RegisterTool[]): boolean {
+function allowedProjectOrigin(projectId: string): string | null {
+  if (process.env.AGENT_PROJECT_ID && projectId !== process.env.AGENT_PROJECT_ID) return null;
+  return process.env.AGENT_SDK_ALLOWED_ORIGIN ?? process.env.AGENT_BROWSER_ORIGIN ?? null;
+}
+
+function sameOriginBrowserRegistration(request: Request, body: RegisterBody): boolean {
   const origin = request.headers.get("origin");
   if (!origin) return false;
 
@@ -85,7 +90,18 @@ function sameOriginBrowserRegistration(request: Request, tools: RegisterTool[]):
     return false;
   }
 
-  return tools.every((tool) => {
+  const configuredOrigin = allowedProjectOrigin(body.projectId);
+  if (configuredOrigin) {
+    try {
+      if (new URL(configuredOrigin).origin !== requestOrigin) return false;
+    } catch {
+      return false;
+    }
+  } else if (process.env.AGENT_PROJECT_ID) {
+    return false;
+  }
+
+  return body.tools.every((tool) => {
     try {
       return new URL(tool.url).origin === requestOrigin;
     } catch {
@@ -106,7 +122,7 @@ function authorized(request: Request, body: RegisterBody): boolean {
 
   const sdkToken = process.env.AGENT_SDK_TOKEN;
   if (!sdkToken || authHeader !== `Bearer ${sdkToken}`) return false;
-  return sameOriginBrowserRegistration(request, body.tools);
+  return sameOriginBrowserRegistration(request, body);
 }
 
 export async function POST(request: Request) {
