@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { AgentLoop } from '../AgentLoop.js';
-import type { AgentConfig } from '../entities.js';
+import type { AgentConfig, AgentEvent } from '../entities.js';
 import type { IModelProvider, StreamEvent } from '../../model/entities.js';
 import type { IToolRegistry, IToolExecutor, ToolContext, ToolResult } from '../../tool/entities.js';
 import type { IContextAssembler, AssembledContext } from '../../context/entities.js';
@@ -87,10 +87,10 @@ function createConfig(overrides?: Partial<AgentConfig>): AgentConfig {
 describe("AgentLoop", () => {
   it("should complete a simple run without tools", async () => {
     const loop = new AgentLoop(createConfig());
-    const events: StreamEvent[] = [];
+    const events: AgentEvent[] = [];
 
     for await (const event of loop.run("Hi", "test-session")) {
-      events.push(event as unknown as StreamEvent);
+      events.push(event);
     }
 
     const textChunks = events.filter((e) => e.type === "text_chunk");
@@ -123,10 +123,10 @@ describe("AgentLoop", () => {
     };
 
     const loop = new AgentLoop(createConfig({ modelProvider: modelWithTool }));
-    const events: StreamEvent[] = [];
+    const events: AgentEvent[] = [];
 
     for await (const event of loop.run("Use echo", "test-session")) {
-      events.push(event as unknown as StreamEvent);
+      events.push(event);
     }
 
     const toolCallEvents = events.filter((e) => e.type === "tool_call");
@@ -153,10 +153,10 @@ describe("AgentLoop", () => {
     };
 
     const loop = new AgentLoop(createConfig({ modelProvider: loopingModel, maxIterations: 3 }));
-    const events: StreamEvent[] = [];
+    const events: AgentEvent[] = [];
 
     for await (const event of loop.run("Loop", "test-session")) {
-      events.push(event as unknown as StreamEvent);
+      events.push(event);
     }
 
     const toolCalls = events.filter((e) => e.type === "tool_call");
@@ -172,10 +172,10 @@ describe("AgentLoop", () => {
     };
 
     const loop = new AgentLoop(createConfig({ modelProvider: errorModel }));
-    const events: StreamEvent[] = [];
+    const events: AgentEvent[] = [];
 
     for await (const event of loop.run("test", "test-session")) {
-      events.push(event as unknown as StreamEvent);
+      events.push(event);
     }
 
     const errorEvents = events.filter((e) => e.type === "error");
@@ -198,10 +198,10 @@ describe("AgentLoop", () => {
     };
 
     const loop = new AgentLoop(createConfig({ modelProvider: loopingModel, maxIterations: 10 }));
-    const events: StreamEvent[] = [];
+    const events: AgentEvent[] = [];
 
     for await (const event of loop.run("test", "test-session")) {
-      events.push(event as unknown as StreamEvent);
+      events.push(event);
       // Abort after the tool result comes back (after first full iteration)
       if (event.type === "tool_result") {
         loop.abort();
