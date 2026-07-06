@@ -85,4 +85,20 @@ describe("AgentClient remote tools", () => {
       }),
     );
   });
+
+  it("passes projectId when creating sessions", async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ id: "session-1" }), { status: 201 }));
+    globalThis.fetch = fetchMock as typeof fetch;
+    const client = new AgentClient({ server: "http://agent", token: "sdk-token" });
+
+    await client.createSession("课程创建", "kid-earth-learning");
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://agent/api/sessions",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ title: "课程创建", projectId: "kid-earth-learning" }),
+      }),
+    );
+  });
 });

@@ -145,6 +145,29 @@ describe("AgentChat remote tool initialization", () => {
     expect(chat._store.setRunning).toHaveBeenLastCalledWith(false);
   });
 
+  it("creates sessions with the component project id", async () => {
+    vi.spyOn(AgentClient.prototype, "registerRemoteTools").mockResolvedValue();
+    vi.spyOn(AgentClient.prototype, "onEvent").mockReturnValue(() => undefined);
+    const createSession = vi.spyOn(AgentClient.prototype, "createSession").mockResolvedValue({
+      id: "session-1",
+      title: "AI 助手",
+      status: "idle",
+      created: "now",
+      updated: "now",
+    });
+
+    const chat = new AgentChat() as TestableAgentChat;
+    chat.server = "http://agent";
+    chat.token = "sdk-token";
+    chat.title = "AI 助手";
+    chat.projectId = "kid-earth-learning";
+
+    chat._initClient();
+    await (chat as unknown as { _ensureSession(): Promise<void> })._ensureSession();
+
+    expect(createSession).toHaveBeenCalledWith("AI 助手", "kid-earth-learning");
+  });
+
   it("does not emit an unhandled rejection when startup registration fails before user sends", async () => {
     vi.spyOn(AgentClient.prototype, "registerRemoteTools").mockRejectedValue(new Error("register failed"));
     vi.spyOn(AgentClient.prototype, "onEvent").mockReturnValue(() => undefined);

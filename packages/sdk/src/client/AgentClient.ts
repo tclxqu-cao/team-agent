@@ -39,11 +39,11 @@ export class AgentClient {
     }
   }
 
-  async createSession(title = 'New Chat'): Promise<Session> {
+  async createSession(title = 'New Chat', projectId?: string): Promise<Session> {
     const res = await fetch(`${this.server}/api/sessions`, {
       method: 'POST',
       headers: this.headers,
-      body: JSON.stringify({ title }),
+      body: JSON.stringify({ title, ...(projectId ? { projectId } : {}) }),
     });
     if (!res.ok) throw new Error(`Failed to create session: ${res.statusText}`);
     return res.json();

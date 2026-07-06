@@ -2,6 +2,7 @@ import { AgentBuilder, type IModelProvider, type Message, type StreamEvent, type
 import { afterEach, describe, expect, it } from "vitest";
 import { agentHost } from "./agent-host";
 import { POST as registerRemoteTools } from "./remote-tools/register/route";
+import { POST as createSession } from "./sessions/route";
 
 class CapturingModelProvider implements IModelProvider {
   readonly providerId = "test";
@@ -23,6 +24,13 @@ const kidEarthTool = {
   scheme: "create_kid_earth_course",
   purpose: "创建课程",
   url: "http://kid/api/agent-actions/create-course",
+  method: "POST" as const,
+};
+
+const projectBTool = {
+  scheme: "create_project_b_course",
+  purpose: "项目 B 创建课程",
+  url: "http://project-b/api/agent-actions/create-course",
   method: "POST" as const,
 };
 
@@ -59,6 +67,36 @@ describe("agentHost singleton", () => {
     const remoteToolDefinition = provider.options?.tools?.find((tool) => tool.name === "remote_project_action");
     expect(remoteToolDefinition?.description).toContain("create_kid_earth_course");
     expect(provider.messages.find((message) => message.role === "system")?.content).toContain("create_kid_earth_course");
+  });
+
+  it("stores projectId from the sessions API", async () => {
+    const response = await createSession(new Request("http://test/api/sessions", {
+      method: "POST",
+      body: JSON.stringify({ title: "课程创建", projectId: "kid-earth-learning" }),
+    }));
+
+    expect(response.status).toBe(201);
+    const session = await response.json();
+    expect(session).toMatchObject({ title: "课程创建", projectId: "kid-earth-learning" });
+    await expect(agentHost.getSessionStore().get(session.id)).resolves.toMatchObject({ projectId: "kid-earth-learning" });
+  });
+
+  it("uses the session project remote tools after another project registers later", async () => {
+    const provider = new CapturingModelProvider();
+    agentHost.setBuilder(new AgentBuilder().withModelProvider(provider));
+
+    agentHost.registerRemoteTools("project-a", [kidEarthTool]);
+    const session = await agentHost.createSession("project A run", "project-a");
+    agentHost.registerRemoteTools("project-b", [projectBTool]);
+
+    await agentHost.run("生成课程", session.id);
+
+    const remoteToolDefinition = provider.options?.tools?.find((tool) => tool.name === "remote_project_action");
+    const systemPrompt = provider.messages.find((message) => message.role === "system")?.content;
+    expect(remoteToolDefinition?.description).toContain("create_kid_earth_course");
+    expect(remoteToolDefinition?.description).not.toContain("create_project_b_course");
+    expect(systemPrompt).toContain("create_kid_earth_course");
+    expect(systemPrompt).not.toContain("create_project_b_course");
   });
 
   it("accepts a dedicated remote-tool registration token", async () => {

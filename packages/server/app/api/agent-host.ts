@@ -98,9 +98,13 @@ class AgentHost {
   }
 
   async run(input: string, sessionId: string): Promise<void> {
+    const session = await this.sessionStore.get(sessionId);
+    const runProjectId = session?.projectId || this.remoteToolsProjectId;
     let agent: IAgentLoop;
     try {
-      agent = await this.getBuilder().build();
+      agent = await this.getBuilder()
+        .withRemoteToolStore(this.remoteToolStore, runProjectId)
+        .build();
     } catch (err) {
       // Emit error to SSE subscribers so the SDK can display it
       this.emit({
@@ -108,6 +112,8 @@ class AgentHost {
         message: err instanceof Error ? err.message : "Failed to build agent",
       } as AgentEvent);
       throw err;
+    } finally {
+      this.builder?.withRemoteToolStore(this.remoteToolStore, this.remoteToolsProjectId);
     }
 
     // Register AskUserTool with a callback that emits the question

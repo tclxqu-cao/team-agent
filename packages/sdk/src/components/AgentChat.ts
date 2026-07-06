@@ -553,7 +553,7 @@ export class AgentChat extends LitElement {
   private async _ensureSession(): Promise<void> {
     if (this.currentSessionId || !this.client) return;
     try {
-      const session = await this.client.createSession(this.title);
+      const session = await this.client.createSession(this.title, this.projectId || undefined);
       this.currentSessionId = session.id;
       this._store.startNewSession(session);
     } catch (err) {
@@ -564,7 +564,7 @@ export class AgentChat extends LitElement {
   private async _createNewSession(): Promise<void> {
     if (!this.client || this._store.isRunning) return;
     try {
-      const session = await this.client.createSession(this.title);
+      const session = await this.client.createSession(this.title, this.projectId || undefined);
       this.currentSessionId = session.id;
       this._store.startNewSession(session);
       this._clearComposer();
