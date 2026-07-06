@@ -18,7 +18,7 @@ class AgentHost {
   private builder: AgentBuilder | null = null;
   private readonly sessionStore = new InMemorySessionStore();
   private readonly remoteToolStore = new SQLiteRemoteToolStore(getDatabase(process.cwd()).db);
-  private remoteToolsProjectId = process.env.AGENT_PROJECT_ID ?? "default";
+  private readonly defaultRemoteToolsProjectId = process.env.AGENT_PROJECT_ID ?? "default";
   private activeRun: AsyncIterable<AgentEvent> | null = null;
   private subscribers = new Set<(event: AgentEvent) => void>();
   private pendingQuestions = new Map<
@@ -39,7 +39,7 @@ class AgentHost {
     const baseUrl = process.env.AGENT_BASE_URL || undefined;
 
     const builder = new AgentBuilder().withSessionStore(this.sessionStore);
-    builder.withRemoteToolStore(this.remoteToolStore, this.remoteToolsProjectId);
+    builder.withRemoteToolStore(this.remoteToolStore, this.defaultRemoteToolsProjectId);
     if (apiKey) {
       builder.withModel(provider, { apiKey, modelId, baseUrl });
     }
@@ -54,7 +54,7 @@ class AgentHost {
   }
 
   setBuilder(builder: AgentBuilder): void {
-    builder.withRemoteToolStore(this.remoteToolStore, this.remoteToolsProjectId);
+    builder.withRemoteToolStore(this.remoteToolStore, this.defaultRemoteToolsProjectId);
     this.builder = builder;
   }
 
@@ -63,7 +63,6 @@ class AgentHost {
   }
 
   registerRemoteTools(projectId: string, tools: RemoteToolRegistration[]) {
-    this.remoteToolsProjectId = projectId;
     return this.remoteToolStore.upsertTools(projectId, tools);
   }
 
@@ -98,7 +97,7 @@ class AgentHost {
 
   async run(input: string, sessionId: string): Promise<void> {
     const session = await this.sessionStore.get(sessionId);
-    const runProjectId = session?.projectId || this.remoteToolsProjectId;
+    const runProjectId = session?.projectId || this.defaultRemoteToolsProjectId;
     let agent: IAgentLoop;
     try {
       agent = await this.getBuilder()
@@ -115,7 +114,7 @@ class AgentHost {
       } as AgentEvent);
       throw err;
     } finally {
-      this.builder?.withRemoteToolStore(this.remoteToolStore, this.remoteToolsProjectId);
+      this.builder?.withRemoteToolStore(this.remoteToolStore, this.defaultRemoteToolsProjectId);
     }
 
     this.activeRun = agent.run(input, sessionId);

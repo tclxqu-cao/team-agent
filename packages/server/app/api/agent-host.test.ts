@@ -118,6 +118,22 @@ describe("agentHost singleton", () => {
     expect(systemPrompt).not.toContain("create_project_b_course");
   });
 
+  it("does not expose last-registered remote tools to sessions without a projectId", async () => {
+    const provider = new CapturingModelProvider();
+    agentHost.setBuilder(new AgentBuilder().withModelProvider(provider));
+
+    agentHost.registerRemoteTools("project-a", [kidEarthTool]);
+    agentHost.registerRemoteTools("project-b", [projectBTool]);
+    const session = await agentHost.createSession("unscoped run");
+
+    await agentHost.run("生成课程", session.id);
+
+    const remoteToolDefinition = provider.options?.tools?.find((tool) => tool.name === "remote_project_action");
+    const systemPrompt = provider.messages.find((message) => message.role === "system")?.content;
+    expect(remoteToolDefinition?.description).not.toContain("create_project_b_course");
+    expect(systemPrompt).not.toContain("create_project_b_course");
+  });
+
   it("does not mutate an already built project A tool registry after project B is registered", async () => {
     const providerA = new CapturingModelProvider();
     agentHost.setBuilder(new AgentBuilder().withModelProvider(providerA));
@@ -144,6 +160,21 @@ describe("agentHost singleton", () => {
     expect(projectAToolBefore?.description).not.toContain("create_project_b_course");
     expect(projectAToolAfter?.description).toContain("create_kid_earth_course");
     expect(projectAToolAfter?.description).not.toContain("create_project_b_course");
+  });
+
+  it("rejects AGENT_ACTION_TOKEN for arbitrary remote-tool registration", async () => {
+    process.env.AGENT_ACTION_TOKEN = "server-action-token";
+    delete process.env.AGENT_REMOTE_TOOLS_REGISTER_TOKEN;
+    delete process.env.AGENT_SDK_REGISTRATION_TOKEN;
+
+    const response = await registerRemoteTools(new Request("http://test/api/remote-tools/register", {
+      method: "POST",
+      headers: { authorization: "Bearer server-action-token" },
+      body: JSON.stringify({ projectId: "remote-tools-test-project", tools: [kidEarthTool] }),
+    }));
+
+    expect(response.status).toBe(401);
+    await expect(response.json()).resolves.toMatchObject({ error: "UNAUTHORIZED" });
   });
 
   it("accepts a dedicated remote-tool registration token from server callers for arbitrary URLs", async () => {
@@ -308,16 +339,13 @@ describe("agentHost singleton", () => {
     await expect(response.json()).resolves.toMatchObject({ error: "Invalid JSON" });
   });
 
-  it("reapplies the remote tool store and current project id when replacing the builder", async () => {
+  it("applies the session project id when replacing the builder", async () => {
     agentHost.registerRemoteTools("kid-earth-learning", [kidEarthTool]);
     const provider = new CapturingModelProvider();
     agentHost.setBuilder(new AgentBuilder().withModelProvider(provider));
 
     const session = await agentHost.createSession("set builder remote tools test", "kid-earth-learning");
-    const agent = await agentHost.getBuilder().build();
-    for await (const event of agent.run("生成课程", session.id)) {
-      if (event.type === "done") break;
-    }
+    await agentHost.run("生成课程", session.id);
 
     const remoteToolDefinition = provider.options?.tools?.find((tool) => tool.name === "remote_project_action");
     expect(remoteToolDefinition?.description).toContain("create_kid_earth_course");

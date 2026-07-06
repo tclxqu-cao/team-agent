@@ -115,7 +115,6 @@ function sameOriginBrowserRegistration(request: Request, body: RegisterBody): bo
 function authorized(request: Request, body: RegisterBody): boolean {
   const authHeader = request.headers.get("authorization");
   const privilegedTokens = [
-    process.env.AGENT_ACTION_TOKEN,
     process.env.AGENT_REMOTE_TOOLS_REGISTER_TOKEN,
     process.env.AGENT_SDK_REGISTRATION_TOKEN,
   ].filter((token): token is string => Boolean(token));
