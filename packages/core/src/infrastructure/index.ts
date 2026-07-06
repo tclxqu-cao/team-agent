@@ -12,3 +12,4 @@ export { SQLiteUploadStore } from './SQLiteUploadStore.js';
 export { SQLiteProjectStore } from './SQLiteProjectStore.js';
 export { SQLiteAgentStore } from './SQLiteAgentStore.js';
 export { SQLiteLSPServerStore } from './SQLiteLSPServerStore.js';
+export { SQLiteRemoteToolStore } from './SQLiteRemoteToolStore.js';

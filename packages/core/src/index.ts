@@ -37,6 +37,9 @@ export { ContextLoader } from './domain/context/ContextLoader.js';
 export { ContextAssembler } from './domain/context/ContextAssembler.js';
 export { FileSystemMemoryStore } from './domain/memory/FileSystemMemoryStore.js';
 export { InMemorySessionStore, FileSystemSessionStore } from './domain/session/SessionStore.js';
+export type { RemoteToolDefinition, RemoteToolJob, RemoteToolRegistration } from './domain/remote-tools/entities.js';
+export type { RemoteToolStore } from './domain/remote-tools/RemoteToolStore.js';
+export { SQLiteRemoteToolStore } from './infrastructure/SQLiteRemoteToolStore.js';
 
 // Cron
 export * from './domain/cron/index.js';
