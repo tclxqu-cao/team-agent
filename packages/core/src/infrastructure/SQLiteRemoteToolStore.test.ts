@@ -10,7 +10,22 @@ const dirs: string[] = [];
 function createStore() {
   const dir = mkdtempSync(join(tmpdir(), "remote-tools-"));
   dirs.push(dir);
-  return new SQLiteRemoteToolStore(getDatabase(dir).db);
+  const db = getDatabase(dir).db;
+  return { db, store: new SQLiteRemoteToolStore(db) };
+}
+
+function registerCourseTool(store: SQLiteRemoteToolStore) {
+  store.upsertTools("kid-earth-learning", [{
+    scheme: "create_kid_earth_course",
+    purpose: "创建课程",
+    url: "http://127.0.0.1:3000/api/agent-actions/create-course",
+    method: "POST",
+    headers: {},
+    inputSchema: { type: "object" },
+    outputSchema: { type: "object" },
+    examples: [],
+    auth: { type: "bearer", tokenEnv: "AGENT_ACTION_TOKEN" },
+  }]);
 }
 
 afterEach(() => {
@@ -19,7 +34,7 @@ afterEach(() => {
 
 describe("SQLiteRemoteToolStore", () => {
   it("upserts remote tools by projectId and scheme", () => {
-    const store = createStore();
+    const { store } = createStore();
     store.upsertTools("kid-earth-learning", [{
       scheme: "create_kid_earth_course",
       purpose: "创建课程",
@@ -50,7 +65,8 @@ describe("SQLiteRemoteToolStore", () => {
   });
 
   it("creates jobs and records success or failure", () => {
-    const store = createStore();
+    const { store } = createStore();
+    registerCourseTool(store);
     const job = store.createJob("kid-earth-learning", "create_kid_earth_course", { title: "揭秘太阳" });
     expect(job.status).toBe("queued");
 
@@ -63,5 +79,28 @@ describe("SQLiteRemoteToolStore", () => {
     const failed = store.createJob("kid-earth-learning", "create_kid_earth_course", { title: "失败课程" });
     store.markJobFailed(failed.id, "remote 500");
     expect(store.getJob(failed.id)).toMatchObject({ status: "failed", error: "remote 500" });
+  });
+
+  it("rejects jobs for unregistered tools without inserting a job", () => {
+    const { db, store } = createStore();
+
+    expect(() => store.createJob("kid-earth-learning", "missing", {})).toThrow(/not registered or disabled/);
+    const jobCount = db.prepare("SELECT COUNT(*) AS count FROM remote_tool_jobs WHERE project_id = ?").get("kid-earth-learning") as { count: number };
+    expect(jobCount.count).toBe(0);
+  });
+
+  it("clears stale success payload and records error when a job fails", () => {
+    const { store } = createStore();
+    registerCourseTool(store);
+    const job = store.createJob("kid-earth-learning", "create_kid_earth_course", { title: "先成功后失败" });
+
+    store.markJobSucceeded(job.id, { ok: true, courseId: 12 });
+    store.markJobFailed(job.id, "remote 500");
+
+    expect(store.getJob(job.id)).toMatchObject({
+      status: "failed",
+      responsePayload: null,
+      error: "remote 500",
+    });
   });
 });

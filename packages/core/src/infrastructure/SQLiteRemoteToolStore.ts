@@ -69,6 +69,11 @@ export class SQLiteRemoteToolStore implements RemoteToolStore {
   }
 
   createJob(projectId: string, scheme: string, requestPayload: Record<string, unknown>): RemoteToolJob {
+    const tool = this.getTool(projectId, scheme);
+    if (!tool) {
+      throw new Error(`Remote tool ${projectId}/${scheme} is not registered or disabled`);
+    }
+
     const stamp = now();
     const id = crypto.randomUUID();
     this.db.prepare(`INSERT INTO remote_tool_jobs (id, project_id, scheme, request_payload, status, created, updated) VALUES (?, ?, ?, ?, 'queued', ?, ?)`).run(id, projectId, scheme, JSON.stringify(requestPayload), stamp, stamp);
@@ -85,7 +90,7 @@ export class SQLiteRemoteToolStore implements RemoteToolStore {
   }
 
   private updateStatus(id: string, status: RemoteToolJob["status"], responsePayload: string | null, error: string | null): void {
-    this.db.prepare("UPDATE remote_tool_jobs SET status = ?, response_payload = COALESCE(?, response_payload), error = ?, updated = ? WHERE id = ?").run(status, responsePayload, error, now(), id);
+    this.db.prepare("UPDATE remote_tool_jobs SET status = ?, response_payload = ?, error = ?, updated = ? WHERE id = ?").run(status, responsePayload, error, now(), id);
   }
 
   private mapTool(row: ToolRow): RemoteToolDefinition {
