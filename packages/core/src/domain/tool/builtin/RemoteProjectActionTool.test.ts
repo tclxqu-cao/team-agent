@@ -42,6 +42,42 @@ describe("RemoteProjectActionTool", () => {
     expect(JSON.parse(result.content)).toEqual({ status: "succeeded", result: { ok: true, courseId: 12 } });
   });
 
+  it("does not return another project's job status", async () => {
+    const store = new MemoryStore();
+    const otherJob = store.createJob("other-project", "create_kid_earth_course", { title: "其它项目" });
+    store.markJobSucceeded(otherJob.id, { ok: true, courseId: 99 });
+    const tool = new RemoteProjectActionTool({ store, projectId: "kid-earth-learning", fetchImpl: fetch, actionToken: "secret" });
+
+    const result = await tool.execute({ action: "remote_job_status", payload: { jobId: otherJob.id } }, { workingDirectory: "/tmp", sessionId: "s1" });
+
+    expect(result.isError).toBe(true);
+    expect(result.content).toContain(`Unknown remote job: ${otherJob.id}`);
+  });
+
+  it("includes registered static headers with authorization for remote execution", async () => {
+    const store = new MemoryStore();
+    store.upsertTools("kid-earth-learning", [{ scheme: "create_kid_earth_course", purpose: "创建课程", url: "http://kid/api/agent-actions/create-course", method: "POST", headers: { "x-project-key": "kid-earth" }, auth: { type: "bearer", tokenEnv: "AGENT_ACTION_TOKEN" } }]);
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({ ok: true }), { status: 200, headers: { "content-type": "application/json" } }));
+    const tool = new RemoteProjectActionTool({ store, projectId: "kid-earth-learning", fetchImpl, actionToken: "secret" });
+
+    await tool.execute({ action: "create_kid_earth_course", payload: { title: "揭秘太阳" } }, { workingDirectory: "/tmp", sessionId: "s1" });
+
+    await vi.waitFor(() => expect(store.getJob("job-1")?.status).toBe("succeeded"));
+    expect(fetchImpl).toHaveBeenCalledWith("http://kid/api/agent-actions/create-course", expect.objectContaining({ headers: expect.objectContaining({ "x-project-key": "kid-earth", authorization: "Bearer secret" }) }));
+  });
+
+  it("returns an error result when creating a remote job fails", async () => {
+    const store = new MemoryStore();
+    store.upsertTools("kid-earth-learning", [{ scheme: "create_kid_earth_course", purpose: "创建课程", url: "http://kid/api/agent-actions/create-course", method: "POST" }]);
+    store.createJob = () => { throw new Error("store unavailable"); };
+    const tool = new RemoteProjectActionTool({ store, projectId: "kid-earth-learning", fetchImpl: fetch, actionToken: "secret" });
+
+    const result = await tool.execute({ action: "create_kid_earth_course", payload: { title: "揭秘太阳" } }, { workingDirectory: "/tmp", sessionId: "s1" });
+
+    expect(result.isError).toBe(true);
+    expect(result.content).toContain("store unavailable");
+  });
+
   it("rejects unknown schemes", async () => {
     const tool = new RemoteProjectActionTool({ store: new MemoryStore(), projectId: "kid-earth-learning", fetchImpl: fetch, actionToken: "secret" });
     const result = await tool.execute({ action: "missing", payload: {} }, { workingDirectory: "/tmp", sessionId: "s1" });
