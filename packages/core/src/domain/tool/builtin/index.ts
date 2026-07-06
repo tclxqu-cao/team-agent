@@ -14,7 +14,6 @@ export { CronCreateTool, CronDeleteTool, CronListTool } from './CronTools.js';
 export { ApplyPatchTool } from './ApplyPatchTool.js';
 export { LspDiagnosticsTool, LspHoverTool, LspDefinitionTool, LspReferencesTool } from './LspTools.js';
 export { ShowWidgetTool } from './ShowWidgetTool.js';
-export { KidEarthCourseTool } from './KidEarthCourseTool.js';
 export { RemoteProjectActionTool } from './RemoteProjectActionTool.js';
 
 import { ApplyPatchTool } from './ApplyPatchTool.js';

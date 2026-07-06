@@ -1,4 +1,4 @@
-import type { Database as BetterSqliteDatabase } from "better-sqlite3";
+import type Database from "better-sqlite3";
 import type { RemoteToolDefinition, RemoteToolJob, RemoteToolRegistration } from "../domain/remote-tools/entities.js";
 import type { RemoteToolStore } from "../domain/remote-tools/RemoteToolStore.js";
 
@@ -26,7 +26,7 @@ type JobRow = {
 };
 
 export class SQLiteRemoteToolStore implements RemoteToolStore {
-  constructor(private readonly db: BetterSqliteDatabase) {}
+  constructor(private readonly db: Database) {}
 
   upsertTools(projectId: string, tools: RemoteToolRegistration[]): RemoteToolDefinition[] {
     const stamp = now();

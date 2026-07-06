@@ -7,6 +7,9 @@ import {
   type Session,
   type AskUserRequest,
   type AskUserResponse,
+  getDatabase,
+  SQLiteRemoteToolStore,
+  type RemoteToolRegistration,
 } from "@agent/core";
 
 /** Singleton agent host shared across API routes */
@@ -14,6 +17,7 @@ class AgentHost {
   private agent: IAgentLoop | null = null;
   private builder: AgentBuilder | null = null;
   private readonly sessionStore = new InMemorySessionStore();
+  private readonly remoteToolStore = new SQLiteRemoteToolStore(getDatabase(process.cwd()).db);
   private activeRun: AsyncIterable<AgentEvent> | null = null;
   private subscribers = new Set<(event: AgentEvent) => void>();
   private pendingQuestions = new Map<
@@ -34,6 +38,7 @@ class AgentHost {
     const baseUrl = process.env.AGENT_BASE_URL || undefined;
 
     const builder = new AgentBuilder().withSessionStore(this.sessionStore);
+    builder.withRemoteToolStore(this.remoteToolStore, process.env.AGENT_PROJECT_ID ?? "default");
     if (apiKey) {
       builder.withModel(provider, { apiKey, modelId, baseUrl });
     }
@@ -53,6 +58,14 @@ class AgentHost {
 
   getSessionStore(): InMemorySessionStore {
     return this.sessionStore;
+  }
+
+  registerRemoteTools(projectId: string, tools: RemoteToolRegistration[]) {
+    return this.remoteToolStore.upsertTools(projectId, tools);
+  }
+
+  getRemoteToolStore() {
+    return this.remoteToolStore;
   }
 
   async createSession(title: string, projectId = ""): Promise<Session> {

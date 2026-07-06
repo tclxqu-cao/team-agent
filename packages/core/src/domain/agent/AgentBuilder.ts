@@ -11,6 +11,8 @@ import { ContextLoader } from '../context/ContextLoader.js';
 import { ContextAssembler } from '../context/ContextAssembler.js';
 import { FileSystemMemoryStore } from '../memory/FileSystemMemoryStore.js';
 import { ModelRegistry } from '../model/ModelRegistry.js';
+import type { RemoteToolStore } from '../remote-tools/RemoteToolStore.js';
+import { RemoteProjectActionTool } from '../tool/builtin/RemoteProjectActionTool.js';
 
 export class AgentBuilder {
   private workingDirectory = process.cwd();
@@ -28,6 +30,8 @@ export class AgentBuilder {
   private skillFiles: string[] = [];
   private pluginsDir: string | undefined;
   private sessionStore: ISessionStore | undefined;
+  private remoteToolStore: RemoteToolStore | undefined;
+  private projectId = process.env.AGENT_PROJECT_ID ?? "default";
   private compactThreshold: number | undefined;
   /** If set, only these tool names are registered (others are skipped). Empty = all tools. */
   private enabledTools: string[] | null = null;
@@ -102,6 +106,19 @@ export class AgentBuilder {
     return this;
   }
 
+  withRemoteToolStore(store: RemoteToolStore, projectId = process.env.AGENT_PROJECT_ID ?? "default"): this {
+    this.remoteToolStore = store;
+    this.projectId = projectId;
+    return this;
+  }
+
+  private systemPromptWithRemoteTools(): string | undefined {
+    const tools = this.remoteToolStore?.listEnabledTools(this.projectId) ?? [];
+    if (tools.length === 0) return this.systemPrompt;
+    const summary = ["可用远程项目工具：", ...tools.map((tool) => `- ${tool.scheme}: ${tool.purpose}`)].join("\n");
+    return [this.systemPrompt, summary].filter(Boolean).join("\n\n");
+  }
+
   /**
    * Set the AutoCompact threshold as a fraction of maxTokens (default 0.8).
    * When estimated token usage exceeds this fraction, history is summarized.
@@ -142,6 +159,9 @@ export class AgentBuilder {
 
     // Register built-in tools
     registerBuiltinTools(this.toolRegistry);
+    if (this.remoteToolStore) {
+      this.toolRegistry.register(new RemoteProjectActionTool({ store: this.remoteToolStore, projectId: this.projectId }));
+    }
 
     // Load skills from all discovered sources, then optionally add from explicit dir
     const discoveredSkills = await this.skillLoader.loadAll(this.workingDirectory);
@@ -178,7 +198,7 @@ export class AgentBuilder {
       workingDirectory: this.workingDirectory,
       maxIterations: this.maxIterations,
       maxTokens: this.maxTokens,
-      systemPrompt: this.systemPrompt,
+      systemPrompt: this.systemPromptWithRemoteTools(),
       compactThreshold: this.compactThreshold,
       enabledTools: this.enabledTools,
       enabledSkills: this.enabledSkills,
@@ -198,6 +218,9 @@ export class AgentBuilder {
 
     const memoryStore = this.memoryStore ?? new FileSystemMemoryStore(this.workingDirectory);
     registerBuiltinTools(this.toolRegistry);
+    if (this.remoteToolStore) {
+      this.toolRegistry.register(new RemoteProjectActionTool({ store: this.remoteToolStore, projectId: this.projectId }));
+    }
 
     // Load skills from disk
     const discoveredSkills = this.skillLoader.loadAllSync(this.workingDirectory);
@@ -232,7 +255,7 @@ export class AgentBuilder {
       workingDirectory: this.workingDirectory,
       maxIterations: this.maxIterations,
       maxTokens: this.maxTokens,
-      systemPrompt: this.systemPrompt,
+      systemPrompt: this.systemPromptWithRemoteTools(),
       compactThreshold: this.compactThreshold,
       enabledTools: this.enabledTools,
       enabledSkills: this.enabledSkills,
