@@ -82,7 +82,15 @@ function authorized(request: Request): boolean {
 
 export async function POST(request: Request) {
   if (!authorized(request)) return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
-  const parsed = parseBody(await request.json());
+
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+  }
+
+  const parsed = parseBody(body);
   if (!parsed.success) return NextResponse.json({ error: parsed.error }, { status: 400 });
   const tools = agentHost.registerRemoteTools(parsed.data.projectId, parsed.data.tools);
   return NextResponse.json({ ok: true, tools: tools.map((tool) => ({ scheme: tool.scheme, purpose: tool.purpose })) });

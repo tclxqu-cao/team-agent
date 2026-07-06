@@ -18,6 +18,7 @@ class AgentHost {
   private builder: AgentBuilder | null = null;
   private readonly sessionStore = new InMemorySessionStore();
   private readonly remoteToolStore = new SQLiteRemoteToolStore(getDatabase(process.cwd()).db);
+  private remoteToolsProjectId = process.env.AGENT_PROJECT_ID ?? "default";
   private activeRun: AsyncIterable<AgentEvent> | null = null;
   private subscribers = new Set<(event: AgentEvent) => void>();
   private pendingQuestions = new Map<
@@ -38,7 +39,7 @@ class AgentHost {
     const baseUrl = process.env.AGENT_BASE_URL || undefined;
 
     const builder = new AgentBuilder().withSessionStore(this.sessionStore);
-    builder.withRemoteToolStore(this.remoteToolStore, process.env.AGENT_PROJECT_ID ?? "default");
+    builder.withRemoteToolStore(this.remoteToolStore, this.remoteToolsProjectId);
     if (apiKey) {
       builder.withModel(provider, { apiKey, modelId, baseUrl });
     }
@@ -53,6 +54,7 @@ class AgentHost {
   }
 
   setBuilder(builder: AgentBuilder): void {
+    builder.withRemoteToolStore(this.remoteToolStore, this.remoteToolsProjectId);
     this.builder = builder;
   }
 
@@ -61,6 +63,8 @@ class AgentHost {
   }
 
   registerRemoteTools(projectId: string, tools: RemoteToolRegistration[]) {
+    this.remoteToolsProjectId = projectId;
+    this.builder?.withRemoteToolStore(this.remoteToolStore, this.remoteToolsProjectId);
     return this.remoteToolStore.upsertTools(projectId, tools);
   }
 
