@@ -1,0 +1,40 @@
+packages/core/src/index.ts
+  s_609f2cc8abd48c::t_2ccc8e1de049d8 30
+packages/server/app/api/agent-host.test.ts
+  s_609f2cc8abd48c::t_c8205798b920eb 3
+  s_609f2cc8abd48c::t_ad67c54f19802d 9-18
+packages/core/src/infrastructure/SQLiteRemoteToolStore.ts
+  s_609f2cc8abd48c::t_354ec8da76f770 1
+  s_609f2cc8abd48c::t_f5342714be1774 29
+packages/core/src/domain/agent/AgentBuilder.ts
+  s_609f2cc8abd48c::t_987713c1e90d6e 14-15
+  s_609f2cc8abd48c::t_15bdbe362698f5 109-121
+  s_609f2cc8abd48c::t_7ed09b7ff99e89 162-164
+  s_609f2cc8abd48c::t_f3d1a37f358218 221-223
+  s_609f2cc8abd48c::t_64673b6ca47db1 201,258
+  s_609f2cc8abd48c::t_8542fc9d98d324 33-34
+packages/server/app/api/agent-host.ts
+  s_609f2cc8abd48c::t_416d420ef03958 20
+  s_609f2cc8abd48c::t_d4816c5b8d935d 10-12
+  s_609f2cc8abd48c::t_9be49db8cea891 41
+  s_609f2cc8abd48c::t_f8594339e63f44 63-70
+packages/server/app/api/remote-tools/register/route.ts
+  s_609f2cc8abd48c::t_1eae4301899d4d 4-14,16-76,85-86
+  s_609f2cc8abd48c::t_966963db237d60 1-3,15,77-84,87-89
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.7",
+  "base_commit_sha": "27738bb47226848effb84dddad8f170e8b8f67a8",
+  "prompts": {},
+  "sessions": {
+    "s_609f2cc8abd48c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b8f7e59f-d8d8-49d1-9d54-104081465d97",
+        "model": "gpt-5.5"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
