@@ -6,6 +6,7 @@ import type { AgentClientConfig, AgentEvent, Session, RemoteToolRegistration } f
 export class AgentClient {
   private server: string;
   private token: string;
+  private registrationToken?: string;
   private eventSource: EventSource | null = null;
   private listeners = new Set<(event: AgentEvent) => void>();
   private reconnectAttempts = 0;
@@ -16,6 +17,7 @@ export class AgentClient {
   constructor(config: AgentClientConfig) {
     this.server = config.server.replace(/\/$/, '');
     this.token = config.token;
+    this.registrationToken = config.registrationToken;
   }
 
   private get headers(): Record<string, string> {
@@ -70,7 +72,10 @@ export class AgentClient {
     }));
     const res = await fetch(`${this.server}/api/remote-tools/register`, {
       method: 'POST',
-      headers: this.headers,
+      headers: {
+        ...this.headers,
+        Authorization: `Bearer ${this.registrationToken ?? this.token}`,
+      },
       body: JSON.stringify({ projectId, tools: normalizedTools }),
     });
     if (!res.ok) throw new Error(`Failed to register remote tools: ${res.statusText}`);

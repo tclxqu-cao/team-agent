@@ -12,9 +12,9 @@ describe("AgentClient remote tools", () => {
   it("registers remote tools with the agent server", async () => {
     const fetchMock = vi.fn(async () => new Response(JSON.stringify({ ok: true }), { status: 200 }));
     globalThis.fetch = fetchMock as typeof fetch;
-    const client = new AgentClient({ server: "http://agent", token: "sdk-token" });
+    const client = new AgentClient({ server: "http://agent", token: "sdk-token", registrationToken: "registration-token" });
 
-    await client.registerRemoteTools("kid-earth-learning", [
+    await client.registerRemoteTools("remote-tools-test-project", [
       {
         scheme: "create_kid_earth_course",
         purpose: "创建课程",
@@ -37,11 +37,11 @@ describe("AgentClient remote tools", () => {
       "http://agent/api/remote-tools/register",
       expect.objectContaining({
         method: "POST",
-        headers: expect.objectContaining({ Authorization: "Bearer sdk-token" }),
+        headers: expect.objectContaining({ Authorization: "Bearer registration-token" }),
       }),
     );
     expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toEqual({
-      projectId: "kid-earth-learning",
+      projectId: "remote-tools-test-project",
       tools: [
         {
           scheme: "create_kid_earth_course",
@@ -67,5 +67,22 @@ describe("AgentClient remote tools", () => {
         },
       ],
     });
+  });
+
+  it("falls back to the chat token for legacy servers when no registration token is configured", async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ ok: true }), { status: 200 }));
+    globalThis.fetch = fetchMock as typeof fetch;
+    const client = new AgentClient({ server: "http://agent", token: "sdk-token" });
+
+    await client.registerRemoteTools("remote-tools-test-project", [
+      { scheme: "create_defaulted_tool", purpose: "默认字段测试", url: "http://tools.example/api/defaulted" },
+    ]);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://agent/api/remote-tools/register",
+      expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: "Bearer sdk-token" }),
+      }),
+    );
   });
 });

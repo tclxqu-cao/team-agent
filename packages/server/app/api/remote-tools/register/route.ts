@@ -78,9 +78,8 @@ function authorized(request: Request): boolean {
   const authHeader = request.headers.get("authorization");
   const allowedTokens = [
     process.env.AGENT_ACTION_TOKEN,
-    process.env.AGENT_SDK_TOKEN,
-    process.env.AGENT_TOKEN,
-    process.env.NEXT_PUBLIC_AGENT_TOKEN,
+    process.env.AGENT_REMOTE_TOOLS_REGISTER_TOKEN,
+    process.env.AGENT_SDK_REGISTRATION_TOKEN,
   ].filter((token): token is string => Boolean(token));
 
   if (allowedTokens.length === 0) return true;

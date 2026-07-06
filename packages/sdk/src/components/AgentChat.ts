@@ -20,6 +20,7 @@ export class AgentChat extends LitElement {
   @property({ type: String }) placeholder = '输入消息...';
   @property({ type: String, attribute: 'session-id' }) sessionIdAttr = '';
   @property({ type: String, attribute: 'project-id' }) projectId = '';
+  @property({ type: String, attribute: 'registration-token' }) registrationToken = '';
   @property({ attribute: 'remote-tools' }) remoteTools: RemoteToolRegistration[] | string = [];
 
   @state() private _store = new ChatStore();
@@ -450,15 +451,16 @@ export class AgentChat extends LitElement {
 
   private _initClient(): void {
     if (!this.token || !this.server) return;
-    this.client = new AgentClient({ server: this.server, token: this.token });
+    this.client = new AgentClient({
+      server: this.server,
+      token: this.token,
+      registrationToken: this.registrationToken || undefined,
+    });
     const tools = this.parseRemoteTools();
     this.registrationError = null;
     this.registrationPromise = this.projectId && tools.length > 0
       ? this.client.registerRemoteTools(this.projectId, tools).catch((error) => {
           this.registrationError = error;
-          const message = `远端工具注册失败: ${error instanceof Error ? error.message : String(error)}`;
-          this._store.setError(message);
-          throw error;
         })
       : Promise.resolve();
 
@@ -604,9 +606,8 @@ export class AgentChat extends LitElement {
       return;
     }
 
-    try {
-      await this.registrationPromise;
-    } catch {
+    await this.registrationPromise;
+    if (this.registrationError) {
       const error = this.registrationError;
       this._store.setError(`远端工具注册失败: ${error instanceof Error ? error.message : String(error)}`);
       this._store.setRunning(false);

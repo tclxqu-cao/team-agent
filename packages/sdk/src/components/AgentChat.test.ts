@@ -57,6 +57,24 @@ describe("AgentChat remote tool initialization", () => {
     ]);
   });
 
+  it("passes the privileged registration token to AgentClient", () => {
+    const registerRemoteTools = vi.spyOn(AgentClient.prototype, "registerRemoteTools").mockResolvedValue();
+    vi.spyOn(AgentClient.prototype, "onEvent").mockReturnValue(() => undefined);
+
+    const chat = new AgentChat() as TestableAgentChat;
+    chat.server = "http://agent";
+    chat.token = "sdk-token";
+    chat.registrationToken = "registration-token";
+    chat.projectId = "remote-tools-test-project";
+    chat.remoteTools = [{ scheme: "create_remote_tool", purpose: "创建", url: "http://tools.example/api" }];
+
+    chat._initClient();
+    const client = chat.client as unknown as { registrationToken?: string };
+
+    expect(registerRemoteTools).toHaveBeenCalledOnce();
+    expect(client.registrationToken).toBe("registration-token");
+  });
+
   it("waits for startup registration before running the first user message", async () => {
     const registration = deferred<void>();
     const registerRemoteTools = vi.spyOn(AgentClient.prototype, "registerRemoteTools").mockReturnValue(registration.promise);
@@ -125,5 +143,50 @@ describe("AgentChat remote tool initialization", () => {
     expect(run).not.toHaveBeenCalled();
     expect(chat._store.setError).toHaveBeenCalledWith(expect.stringContaining("远端工具注册失败"));
     expect(chat._store.setRunning).toHaveBeenLastCalledWith(false);
+  });
+
+  it("does not emit an unhandled rejection when startup registration fails before user sends", async () => {
+    vi.spyOn(AgentClient.prototype, "registerRemoteTools").mockRejectedValue(new Error("register failed"));
+    vi.spyOn(AgentClient.prototype, "onEvent").mockReturnValue(() => undefined);
+
+    const unhandled = vi.fn();
+    const previousHandler = process.listeners("unhandledRejection");
+    process.removeAllListeners("unhandledRejection");
+    process.on("unhandledRejection", unhandled);
+
+    try {
+      const chat = new AgentChat() as TestableAgentChat;
+      chat.server = "http://agent";
+      chat.token = "sdk-token";
+      chat.projectId = "remote-tools-test-project";
+      chat.remoteTools = [{ scheme: "create_remote_tool", purpose: "创建", url: "http://tools.example/api" }];
+      chat.currentSessionId = "session-1";
+      chat.renderRoot = {
+        querySelector: () => ({ value: "生成课程", style: { height: "auto" } }) as HTMLTextAreaElement,
+      };
+      chat._store = {
+        isRunning: false,
+        subscribe: vi.fn(() => () => undefined),
+        setRunning: vi.fn((running: boolean) => { chat._store.isRunning = running; }),
+        clearError: vi.fn(),
+        setError: vi.fn(),
+        addMessage: vi.fn(),
+        getPendingAskUser: () => null,
+      };
+
+      chat._initClient();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(unhandled).not.toHaveBeenCalled();
+      expect(chat._store.setError).not.toHaveBeenCalled();
+
+      await chat._sendMessage();
+
+      expect(chat._store.setError).toHaveBeenCalledOnce();
+      expect(chat._store.setError).toHaveBeenCalledWith(expect.stringContaining("远端工具注册失败"));
+    } finally {
+      process.removeListener("unhandledRejection", unhandled);
+      for (const handler of previousHandler) process.on("unhandledRejection", handler);
+    }
   });
 });

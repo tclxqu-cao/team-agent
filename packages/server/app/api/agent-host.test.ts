@@ -61,18 +61,36 @@ describe("agentHost singleton", () => {
     expect(provider.messages.find((message) => message.role === "system")?.content).toContain("create_kid_earth_course");
   });
 
-  it("accepts the same SDK token used by auth verify without exposing the action token", async () => {
+  it("accepts a dedicated remote-tool registration token", async () => {
     process.env.AGENT_ACTION_TOKEN = "server-action-token";
-    process.env.AGENT_SDK_TOKEN = "sdk-token";
+    process.env.AGENT_REMOTE_TOOLS_REGISTER_TOKEN = "registration-token";
 
     const response = await registerRemoteTools(new Request("http://test/api/remote-tools/register", {
       method: "POST",
-      headers: { authorization: "Bearer sdk-token" },
-      body: JSON.stringify({ projectId: "kid-earth-learning", tools: [kidEarthTool] }),
+      headers: { authorization: "Bearer registration-token" },
+      body: JSON.stringify({ projectId: "remote-tools-test-project", tools: [kidEarthTool] }),
     }));
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({ ok: true });
+  });
+
+  it("rejects public and broad chat tokens for remote tool registration", async () => {
+    process.env.AGENT_ACTION_TOKEN = "server-action-token";
+    process.env.AGENT_REMOTE_TOOLS_REGISTER_TOKEN = "registration-token";
+    process.env.AGENT_TOKEN = "chat-token";
+    process.env.NEXT_PUBLIC_AGENT_TOKEN = "public-token";
+
+    for (const token of ["chat-token", "public-token"]) {
+      const response = await registerRemoteTools(new Request("http://test/api/remote-tools/register", {
+        method: "POST",
+        headers: { authorization: `Bearer ${token}` },
+        body: JSON.stringify({ projectId: "remote-tools-test-project", tools: [kidEarthTool] }),
+      }));
+
+      expect(response.status).toBe(401);
+      await expect(response.json()).resolves.toMatchObject({ error: "UNAUTHORIZED" });
+    }
   });
 
   it("returns 400 when remote tool registration receives invalid JSON", async () => {
