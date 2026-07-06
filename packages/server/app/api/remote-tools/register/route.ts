@@ -75,9 +75,16 @@ function parseBody(body: unknown): { success: true; data: RegisterBody } | { suc
 }
 
 function authorized(request: Request): boolean {
-  const expected = process.env.AGENT_ACTION_TOKEN;
-  if (!expected) return true;
-  return request.headers.get("authorization") === `Bearer ${expected}`;
+  const authHeader = request.headers.get("authorization");
+  const allowedTokens = [
+    process.env.AGENT_ACTION_TOKEN,
+    process.env.AGENT_SDK_TOKEN,
+    process.env.AGENT_TOKEN,
+    process.env.NEXT_PUBLIC_AGENT_TOKEN,
+  ].filter((token): token is string => Boolean(token));
+
+  if (allowedTokens.length === 0) return true;
+  return allowedTokens.some((token) => authHeader === `Bearer ${token}`);
 }
 
 export async function POST(request: Request) {

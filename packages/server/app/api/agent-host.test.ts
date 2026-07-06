@@ -1,5 +1,5 @@
 import { AgentBuilder, type IModelProvider, type Message, type StreamEvent, type StreamOptions } from "@agent/core";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { agentHost } from "./agent-host";
 import { POST as registerRemoteTools } from "./remote-tools/register/route";
 
@@ -27,6 +27,12 @@ const kidEarthTool = {
 };
 
 describe("agentHost singleton", () => {
+  const originalEnv = { ...process.env };
+
+  afterEach(() => {
+    process.env = { ...originalEnv };
+  });
+
   it("stores the shared AgentHost on globalThis so answer routes can see pending questions from run routes", () => {
     expect((globalThis as unknown as { __agentHost?: unknown }).__agentHost).toBe(agentHost);
   });
@@ -53,6 +59,20 @@ describe("agentHost singleton", () => {
     const remoteToolDefinition = provider.options?.tools?.find((tool) => tool.name === "remote_project_action");
     expect(remoteToolDefinition?.description).toContain("create_kid_earth_course");
     expect(provider.messages.find((message) => message.role === "system")?.content).toContain("create_kid_earth_course");
+  });
+
+  it("accepts the same SDK token used by auth verify without exposing the action token", async () => {
+    process.env.AGENT_ACTION_TOKEN = "server-action-token";
+    process.env.AGENT_SDK_TOKEN = "sdk-token";
+
+    const response = await registerRemoteTools(new Request("http://test/api/remote-tools/register", {
+      method: "POST",
+      headers: { authorization: "Bearer sdk-token" },
+      body: JSON.stringify({ projectId: "kid-earth-learning", tools: [kidEarthTool] }),
+    }));
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({ ok: true });
   });
 
   it("returns 400 when remote tool registration receives invalid JSON", async () => {

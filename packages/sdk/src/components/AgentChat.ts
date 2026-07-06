@@ -25,6 +25,8 @@ export class AgentChat extends LitElement {
   @state() private _store = new ChatStore();
   private client: AgentClient | null = null;
   private currentSessionId = '';
+  private registrationPromise: Promise<void> = Promise.resolve();
+  private registrationError: unknown = null;
   private unsubClient: (() => void) | null = null;
   private unsubStore: (() => void) | null = null;
 
@@ -449,9 +451,16 @@ export class AgentChat extends LitElement {
   private _initClient(): void {
     if (!this.token || !this.server) return;
     this.client = new AgentClient({ server: this.server, token: this.token });
-    void this.client.registerRemoteTools(this.projectId, this.parseRemoteTools()).catch((error) => {
-      console.warn('[AgentChat] Failed to register remote tools:', error);
-    });
+    const tools = this.parseRemoteTools();
+    this.registrationError = null;
+    this.registrationPromise = this.projectId && tools.length > 0
+      ? this.client.registerRemoteTools(this.projectId, tools).catch((error) => {
+          this.registrationError = error;
+          const message = `远端工具注册失败: ${error instanceof Error ? error.message : String(error)}`;
+          this._store.setError(message);
+          throw error;
+        })
+      : Promise.resolve();
 
     this.unsubClient = this.client.onEvent((event) => this._handleEvent(event));
     this.unsubStore = this._store.subscribe(() => {
@@ -592,6 +601,15 @@ export class AgentChat extends LitElement {
         textarea.style.height = 'auto';
       }
       await this._answerQuestion(pendingAsk.questionId, input);
+      return;
+    }
+
+    try {
+      await this.registrationPromise;
+    } catch {
+      const error = this.registrationError;
+      this._store.setError(`远端工具注册失败: ${error instanceof Error ? error.message : String(error)}`);
+      this._store.setRunning(false);
       return;
     }
 

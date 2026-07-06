@@ -20,6 +20,16 @@ describe("AgentClient remote tools", () => {
         purpose: "创建课程",
         url: "http://kid/api/agent-actions/create-course",
         method: "POST",
+        headers: { "X-Project": "kid-earth" },
+        inputSchema: { type: "object", properties: { title: { type: "string" } } },
+        outputSchema: { type: "object" },
+        examples: [{ title: "Earth" }],
+        auth: { type: "bearer" },
+      },
+      {
+        scheme: "create_defaulted_tool",
+        purpose: "默认字段测试",
+        url: "http://kid/api/defaulted",
       },
     ]);
 
@@ -30,9 +40,32 @@ describe("AgentClient remote tools", () => {
         headers: expect.objectContaining({ Authorization: "Bearer sdk-token" }),
       }),
     );
-    expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toMatchObject({
+    expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toEqual({
       projectId: "kid-earth-learning",
-      tools: [{ scheme: "create_kid_earth_course" }],
+      tools: [
+        {
+          scheme: "create_kid_earth_course",
+          purpose: "创建课程",
+          url: "http://kid/api/agent-actions/create-course",
+          method: "POST",
+          headers: { "X-Project": "kid-earth" },
+          inputSchema: { type: "object", properties: { title: { type: "string" } } },
+          outputSchema: { type: "object" },
+          examples: [{ title: "Earth" }],
+          auth: { type: "bearer" },
+        },
+        {
+          scheme: "create_defaulted_tool",
+          purpose: "默认字段测试",
+          url: "http://kid/api/defaulted",
+          method: "POST",
+          headers: {},
+          inputSchema: {},
+          outputSchema: {},
+          examples: [],
+          auth: {},
+        },
+      ],
     });
   });
 });

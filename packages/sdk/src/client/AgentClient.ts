@@ -57,10 +57,21 @@ export class AgentClient {
 
   async registerRemoteTools(projectId: string, tools: RemoteToolRegistration[]): Promise<void> {
     if (!projectId || tools.length === 0) return;
+    const normalizedTools = tools.map((tool) => ({
+      scheme: tool.scheme,
+      purpose: tool.purpose,
+      url: tool.url,
+      method: tool.method ?? 'POST',
+      headers: tool.headers ?? {},
+      inputSchema: tool.inputSchema ?? {},
+      outputSchema: tool.outputSchema ?? {},
+      examples: tool.examples ?? [],
+      auth: tool.auth ?? {},
+    }));
     const res = await fetch(`${this.server}/api/remote-tools/register`, {
       method: 'POST',
       headers: this.headers,
-      body: JSON.stringify({ projectId, tools }),
+      body: JSON.stringify({ projectId, tools: normalizedTools }),
     });
     if (!res.ok) throw new Error(`Failed to register remote tools: ${res.statusText}`);
   }
