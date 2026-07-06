@@ -58,14 +58,18 @@ export class RemoteProjectActionTool implements ITool {
   }
 
   private async runJob(jobId: string, url: string, action: string, headers: Record<string, string>, payload: Record<string, unknown>): Promise<void> {
-    this.store?.markJobRunning(jobId);
     try {
+      this.store?.markJobRunning(jobId);
       const response = await this.fetchImpl(url, { method: "POST", headers: { ...headers, "content-type": "application/json", ...(this.actionToken ? { authorization: `Bearer ${this.actionToken}` } : {}) }, body: JSON.stringify({ action, payload }) });
       const text = await response.text();
-      if (!response.ok) { this.store?.markJobFailed(jobId, `Remote action failed: ${response.status} ${text}`); return; }
+      if (!response.ok) { this.markJobFailedSafely(jobId, `Remote action failed: ${response.status} ${text}`); return; }
       this.store?.markJobSucceeded(jobId, safeJson(text));
     } catch (error) {
-      this.store?.markJobFailed(jobId, errorMessage(error));
+      this.markJobFailedSafely(jobId, errorMessage(error));
     }
+  }
+
+  private markJobFailedSafely(jobId: string, error: string): void {
+    try { this.store?.markJobFailed(jobId, error); } catch { /* avoid unhandled async failures from best-effort job status updates */ }
   }
 }

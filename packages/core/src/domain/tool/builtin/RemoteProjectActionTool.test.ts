@@ -78,6 +78,32 @@ describe("RemoteProjectActionTool", () => {
     expect(result.content).toContain("store unavailable");
   });
 
+  it("catches running-state failures without rejecting or calling the remote action", async () => {
+    const store = new MemoryStore();
+    store.upsertTools("kid-earth-learning", [{ scheme: "create_kid_earth_course", purpose: "创建课程", url: "http://kid/api/agent-actions/create-course", method: "POST" }]);
+    store.markJobRunning = () => { throw new Error("running state unavailable"); };
+    const markFailed = vi.spyOn(store, "markJobFailed");
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({ ok: true }), { status: 200, headers: { "content-type": "application/json" } }));
+    const unhandledReasons: unknown[] = [];
+    const onUnhandled = (reason: unknown) => { unhandledReasons.push(reason); };
+    process.on("unhandledRejection", onUnhandled);
+
+    try {
+      const tool = new RemoteProjectActionTool({ store, projectId: "kid-earth-learning", fetchImpl, actionToken: "secret" });
+
+      const result = await tool.execute({ action: "create_kid_earth_course", payload: { title: "揭秘太阳" } }, { workingDirectory: "/tmp", sessionId: "s1" });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(result.isError).toBeFalsy();
+      expect(fetchImpl).not.toHaveBeenCalled();
+      expect(markFailed).toHaveBeenCalledWith("job-1", "running state unavailable");
+      expect(store.getJob("job-1")?.status).toBe("failed");
+      expect(unhandledReasons).toEqual([]);
+    } finally {
+      process.off("unhandledRejection", onUnhandled);
+    }
+  });
+
   it("rejects unknown schemes", async () => {
     const tool = new RemoteProjectActionTool({ store: new MemoryStore(), projectId: "kid-earth-learning", fetchImpl: fetch, actionToken: "secret" });
     const result = await tool.execute({ action: "missing", payload: {} }, { workingDirectory: "/tmp", sessionId: "s1" });
