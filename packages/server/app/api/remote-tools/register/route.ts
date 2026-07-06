@@ -74,21 +74,42 @@ function parseBody(body: unknown): { success: true; data: RegisterBody } | { suc
   return { success: true, data: { projectId: body.projectId, tools } };
 }
 
-function authorized(request: Request): boolean {
+function sameOriginBrowserRegistration(request: Request, tools: RegisterTool[]): boolean {
+  const origin = request.headers.get("origin");
+  if (!origin) return false;
+
+  let requestOrigin: string;
+  try {
+    requestOrigin = new URL(origin).origin;
+  } catch {
+    return false;
+  }
+
+  return tools.every((tool) => {
+    try {
+      return new URL(tool.url).origin === requestOrigin;
+    } catch {
+      return false;
+    }
+  });
+}
+
+function authorized(request: Request, body: RegisterBody): boolean {
   const authHeader = request.headers.get("authorization");
-  const allowedTokens = [
+  const privilegedTokens = [
     process.env.AGENT_ACTION_TOKEN,
     process.env.AGENT_REMOTE_TOOLS_REGISTER_TOKEN,
     process.env.AGENT_SDK_REGISTRATION_TOKEN,
   ].filter((token): token is string => Boolean(token));
 
-  if (allowedTokens.length === 0) return true;
-  return allowedTokens.some((token) => authHeader === `Bearer ${token}`);
+  if (privilegedTokens.some((token) => authHeader === `Bearer ${token}`)) return true;
+
+  const sdkToken = process.env.AGENT_SDK_TOKEN;
+  if (!sdkToken || authHeader !== `Bearer ${sdkToken}`) return false;
+  return sameOriginBrowserRegistration(request, body.tools);
 }
 
 export async function POST(request: Request) {
-  if (!authorized(request)) return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
-
   let body: unknown;
   try {
     body = await request.json();
@@ -98,6 +119,8 @@ export async function POST(request: Request) {
 
   const parsed = parseBody(body);
   if (!parsed.success) return NextResponse.json({ error: parsed.error }, { status: 400 });
+  if (!authorized(request, parsed.data)) return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
+
   const tools = agentHost.registerRemoteTools(parsed.data.projectId, parsed.data.tools);
   return NextResponse.json({ ok: true, tools: tools.map((tool) => ({ scheme: tool.scheme, purpose: tool.purpose })) });
 }

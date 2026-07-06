@@ -9,10 +9,10 @@ describe("AgentClient remote tools", () => {
     vi.restoreAllMocks();
   });
 
-  it("registers remote tools with the agent server", async () => {
+  it("registers remote tools with the normal SDK token", async () => {
     const fetchMock = vi.fn(async () => new Response(JSON.stringify({ ok: true }), { status: 200 }));
     globalThis.fetch = fetchMock as typeof fetch;
-    const client = new AgentClient({ server: "http://agent", token: "sdk-token", registrationToken: "registration-token" });
+    const client = new AgentClient({ server: "http://agent", token: "sdk-token" });
 
     await client.registerRemoteTools("remote-tools-test-project", [
       {
@@ -37,7 +37,7 @@ describe("AgentClient remote tools", () => {
       "http://agent/api/remote-tools/register",
       expect.objectContaining({
         method: "POST",
-        headers: expect.objectContaining({ Authorization: "Bearer registration-token" }),
+        headers: expect.objectContaining({ Authorization: "Bearer sdk-token" }),
       }),
     );
     expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toEqual({
@@ -69,23 +69,6 @@ describe("AgentClient remote tools", () => {
     });
   });
 
-  it("falls back to the chat token for legacy servers when no registration token is configured", async () => {
-    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ ok: true }), { status: 200 }));
-    globalThis.fetch = fetchMock as typeof fetch;
-    const client = new AgentClient({ server: "http://agent", token: "sdk-token" });
-
-    await client.registerRemoteTools("remote-tools-test-project", [
-      { scheme: "create_defaulted_tool", purpose: "默认字段测试", url: "http://tools.example/api/defaulted" },
-    ]);
-
-    expect(fetchMock).toHaveBeenCalledWith(
-      "http://agent/api/remote-tools/register",
-      expect.objectContaining({
-        headers: expect.objectContaining({ Authorization: "Bearer sdk-token" }),
-      }),
-    );
-  });
-
   it("passes projectId when creating sessions", async () => {
     const fetchMock = vi.fn(async () => new Response(JSON.stringify({ id: "session-1" }), { status: 201 }));
     globalThis.fetch = fetchMock as typeof fetch;
@@ -99,6 +82,19 @@ describe("AgentClient remote tools", () => {
         method: "POST",
         body: JSON.stringify({ title: "课程创建", projectId: "kid-earth-learning" }),
       }),
+    );
+  });
+
+  it("passes projectId when listing sessions", async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify([]), { status: 200 }));
+    globalThis.fetch = fetchMock as typeof fetch;
+    const client = new AgentClient({ server: "http://agent", token: "sdk-token" });
+
+    await client.listSessions("kid-earth-learning");
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://agent/api/sessions?projectId=kid-earth-learning",
+      expect.objectContaining({ headers: expect.objectContaining({ Authorization: "Bearer sdk-token" }) }),
     );
   });
 });

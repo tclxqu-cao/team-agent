@@ -57,11 +57,11 @@ describe("AgentChat remote tool initialization", () => {
     ]);
   });
 
-  it("passes the privileged registration token to AgentClient", () => {
+  it("does not pass a privileged registration token through the browser component", () => {
     const registerRemoteTools = vi.spyOn(AgentClient.prototype, "registerRemoteTools").mockResolvedValue();
     vi.spyOn(AgentClient.prototype, "onEvent").mockReturnValue(() => undefined);
 
-    const chat = new AgentChat() as TestableAgentChat;
+    const chat = new AgentChat() as TestableAgentChat & { registrationToken?: string };
     chat.server = "http://agent";
     chat.token = "sdk-token";
     chat.registrationToken = "registration-token";
@@ -72,7 +72,7 @@ describe("AgentChat remote tool initialization", () => {
     const client = chat.client as unknown as { registrationToken?: string };
 
     expect(registerRemoteTools).toHaveBeenCalledOnce();
-    expect(client.registrationToken).toBe("registration-token");
+    expect(client.registrationToken).toBeUndefined();
   });
 
   it("waits for startup registration before running the first user message", async () => {
@@ -166,6 +166,22 @@ describe("AgentChat remote tool initialization", () => {
     await (chat as unknown as { _ensureSession(): Promise<void> })._ensureSession();
 
     expect(createSession).toHaveBeenCalledWith("AI 助手", "kid-earth-learning");
+  });
+
+  it("lists sessions with the component project id", async () => {
+    vi.spyOn(AgentClient.prototype, "registerRemoteTools").mockResolvedValue();
+    vi.spyOn(AgentClient.prototype, "onEvent").mockReturnValue(() => undefined);
+    const listSessions = vi.spyOn(AgentClient.prototype, "listSessions").mockResolvedValue([]);
+
+    const chat = new AgentChat() as TestableAgentChat;
+    chat.server = "http://agent";
+    chat.token = "sdk-token";
+    chat.projectId = "kid-earth-learning";
+
+    chat._initClient();
+    await (chat as unknown as { _loadSessions(): Promise<void> })._loadSessions();
+
+    expect(listSessions).toHaveBeenCalledWith("kid-earth-learning");
   });
 
   it("does not emit an unhandled rejection when startup registration fails before user sends", async () => {

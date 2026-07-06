@@ -55,13 +55,6 @@ export interface AgentClientConfig {
   server: string;
   /** Chat/runtime bearer token used for normal SDK operations. */
   token: string;
-  /**
-   * Privileged bearer token used only for /api/remote-tools/register.
-   * Configure this separately from client-facing chat tokens when the server
-   * requires AGENT_REMOTE_TOOLS_REGISTER_TOKEN or AGENT_SDK_REGISTRATION_TOKEN.
-   * If omitted, AgentClient falls back to token for legacy deployments.
-   */
-  registrationToken?: string;
 }
 
 export interface RemoteToolRegistration {

@@ -64,7 +64,6 @@ class AgentHost {
 
   registerRemoteTools(projectId: string, tools: RemoteToolRegistration[]) {
     this.remoteToolsProjectId = projectId;
-    this.builder?.withRemoteToolStore(this.remoteToolStore, this.remoteToolsProjectId);
     return this.remoteToolStore.upsertTools(projectId, tools);
   }
 
@@ -104,6 +103,9 @@ class AgentHost {
     try {
       agent = await this.getBuilder()
         .withRemoteToolStore(this.remoteToolStore, runProjectId)
+        .withTool(new AskUserTool(async (request: AskUserRequest) => {
+          return this.createQuestion(request, sessionId);
+        }))
         .build();
     } catch (err) {
       // Emit error to SSE subscribers so the SDK can display it
@@ -115,14 +117,6 @@ class AgentHost {
     } finally {
       this.builder?.withRemoteToolStore(this.remoteToolStore, this.remoteToolsProjectId);
     }
-
-    // Register AskUserTool with a callback that emits the question
-    // to SSE subscribers and waits for the answer via /api/agent/answer
-    this.getBuilder().getToolRegistry().register(
-      new AskUserTool(async (request: AskUserRequest) => {
-        return this.createQuestion(request, sessionId);
-      }),
-    );
 
     this.activeRun = agent.run(input, sessionId);
 

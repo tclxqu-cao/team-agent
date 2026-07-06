@@ -20,7 +20,6 @@ export class AgentChat extends LitElement {
   @property({ type: String }) placeholder = '输入消息...';
   @property({ type: String, attribute: 'session-id' }) sessionIdAttr = '';
   @property({ type: String, attribute: 'project-id' }) projectId = '';
-  @property({ type: String, attribute: 'registration-token' }) registrationToken = '';
   @property({ attribute: 'remote-tools' }) remoteTools: RemoteToolRegistration[] | string = [];
 
   @state() private _store = new ChatStore();
@@ -454,7 +453,6 @@ export class AgentChat extends LitElement {
     this.client = new AgentClient({
       server: this.server,
       token: this.token,
-      registrationToken: this.registrationToken || undefined,
     });
     const tools = this.parseRemoteTools();
     this.registrationError = null;
@@ -541,7 +539,7 @@ export class AgentChat extends LitElement {
     if (!this.client) return;
     this._store.setLoadingSessions(true);
     try {
-      const sessions = await this.client.listSessions();
+      const sessions = await this.client.listSessions(this.projectId || undefined);
       this._store.setSessions(sessions);
     } catch (err) {
       this._store.setError(`加载会话失败: ${err}`);

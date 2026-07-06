@@ -6,7 +6,6 @@ import type { AgentClientConfig, AgentEvent, Session, RemoteToolRegistration } f
 export class AgentClient {
   private server: string;
   private token: string;
-  private registrationToken?: string;
   private eventSource: EventSource | null = null;
   private listeners = new Set<(event: AgentEvent) => void>();
   private reconnectAttempts = 0;
@@ -17,7 +16,6 @@ export class AgentClient {
   constructor(config: AgentClientConfig) {
     this.server = config.server.replace(/\/$/, '');
     this.token = config.token;
-    this.registrationToken = config.registrationToken;
   }
 
   private get headers(): Record<string, string> {
@@ -49,8 +47,9 @@ export class AgentClient {
     return res.json();
   }
 
-  async listSessions(): Promise<Session[]> {
-    const res = await fetch(`${this.server}/api/sessions`, {
+  async listSessions(projectId?: string): Promise<Session[]> {
+    const query = projectId ? `?projectId=${encodeURIComponent(projectId)}` : '';
+    const res = await fetch(`${this.server}/api/sessions${query}`, {
       headers: this.headers,
     });
     if (!res.ok) throw new Error(`Failed to list sessions: ${res.statusText}`);
@@ -74,7 +73,6 @@ export class AgentClient {
       method: 'POST',
       headers: {
         ...this.headers,
-        Authorization: `Bearer ${this.registrationToken ?? this.token}`,
       },
       body: JSON.stringify({ projectId, tools: normalizedTools }),
     });

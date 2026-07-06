@@ -1,6 +1,7 @@
 import type { AgentConfig, IAgentLoop } from './entities.js';
 import type { IModelProvider } from '../model/entities.js';
 import type { IMemoryStore } from '../memory/entities.js';
+import type { ITool } from '../tool/entities.js';
 import type { ISessionStore } from '../session/entities.js';
 import { AgentFactory } from './AgentFactory.js';
 import { ToolRegistry } from '../tool/ToolRegistry.js';
@@ -19,6 +20,7 @@ export class AgentBuilder {
   private modelProvider: IModelProvider | null = null;
   private modelRegistry = new ModelRegistry();
   private toolRegistry = new ToolRegistry();
+  private customTools: ITool[] = [];
   private skillLoader = new SkillLoader();
   private skillRegistry = new SkillRegistry(this.skillLoader);
   private contextLoader = new ContextLoader();
@@ -112,6 +114,22 @@ export class AgentBuilder {
     return this;
   }
 
+  withTool(tool: ITool): this {
+    this.customTools = [...this.customTools.filter((existing) => existing.name !== tool.name), tool];
+    this.toolRegistry.register(tool);
+    return this;
+  }
+
+  private createToolRegistry(): ToolRegistry {
+    const registry = new ToolRegistry();
+    registerBuiltinTools(registry);
+    for (const tool of this.customTools) registry.register(tool);
+    if (this.remoteToolStore) {
+      registry.register(new RemoteProjectActionTool({ store: this.remoteToolStore, projectId: this.projectId }));
+    }
+    return registry;
+  }
+
   private systemPromptWithRemoteTools(): string | undefined {
     const tools = this.remoteToolStore?.listEnabledTools(this.projectId) ?? [];
     if (tools.length === 0) return this.systemPrompt;
@@ -157,11 +175,7 @@ export class AgentBuilder {
     // Initialize memory store (use injected or fall back to filesystem)
     const memoryStore = this.memoryStore ?? new FileSystemMemoryStore(this.workingDirectory);
 
-    // Register built-in tools
-    registerBuiltinTools(this.toolRegistry);
-    if (this.remoteToolStore) {
-      this.toolRegistry.register(new RemoteProjectActionTool({ store: this.remoteToolStore, projectId: this.projectId }));
-    }
+    const toolRegistry = this.createToolRegistry();
 
     // Load skills from all discovered sources, then optionally add from explicit dir
     const discoveredSkills = await this.skillLoader.loadAll(this.workingDirectory);
@@ -189,8 +203,8 @@ export class AgentBuilder {
 
     const config: AgentConfig = {
       modelProvider: this.modelProvider,
-      toolRegistry: this.toolRegistry,
-      toolExecutor: this.toolRegistry,
+      toolRegistry,
+      toolExecutor: toolRegistry,
       contextAssembler,
       skillRegistry: this.skillRegistry,
       memoryStore,
@@ -217,10 +231,7 @@ export class AgentBuilder {
     this.skillRegistry.setModelProvider(this.modelProvider);
 
     const memoryStore = this.memoryStore ?? new FileSystemMemoryStore(this.workingDirectory);
-    registerBuiltinTools(this.toolRegistry);
-    if (this.remoteToolStore) {
-      this.toolRegistry.register(new RemoteProjectActionTool({ store: this.remoteToolStore, projectId: this.projectId }));
-    }
+    const toolRegistry = this.createToolRegistry();
 
     // Load skills from disk
     const discoveredSkills = this.skillLoader.loadAllSync(this.workingDirectory);
@@ -246,8 +257,8 @@ export class AgentBuilder {
 
     const config: AgentConfig = {
       modelProvider: this.modelProvider,
-      toolRegistry: this.toolRegistry,
-      toolExecutor: this.toolRegistry,
+      toolRegistry,
+      toolExecutor: toolRegistry,
       contextAssembler,
       skillRegistry: this.skillRegistry,
       memoryStore,
