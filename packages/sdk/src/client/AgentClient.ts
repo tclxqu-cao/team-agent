@@ -1,4 +1,4 @@
-import type { AgentClientConfig, AgentEvent, Session } from './types';
+import type { AgentClientConfig, AgentEvent, Session, RemoteToolRegistration } from './types';
 
 /**
  * HTTP + SSE client for communicating with the hosted Agent service.
@@ -31,28 +31,52 @@ export class AgentClient {
         headers: this.headers,
       });
       if (!res.ok) return { valid: false };
-      return await res.json();
+      return await res.json() as { valid: boolean; project?: string };
     } catch {
       return { valid: false };
     }
   }
 
-  async createSession(title = 'New Chat'): Promise<Session> {
+  async createSession(title = 'New Chat', projectId?: string): Promise<Session> {
     const res = await fetch(`${this.server}/api/sessions`, {
       method: 'POST',
       headers: this.headers,
-      body: JSON.stringify({ title }),
+      body: JSON.stringify({ title, ...(projectId ? { projectId } : {}) }),
     });
     if (!res.ok) throw new Error(`Failed to create session: ${res.statusText}`);
-    return res.json();
+    return res.json() as Promise<Session>;
   }
 
-  async listSessions(): Promise<Session[]> {
-    const res = await fetch(`${this.server}/api/sessions`, {
+  async listSessions(projectId?: string): Promise<Session[]> {
+    const query = projectId ? `?projectId=${encodeURIComponent(projectId)}` : '';
+    const res = await fetch(`${this.server}/api/sessions${query}`, {
       headers: this.headers,
     });
     if (!res.ok) throw new Error(`Failed to list sessions: ${res.statusText}`);
-    return res.json();
+    return res.json() as Promise<Session[]>;
+  }
+
+  async registerRemoteTools(projectId: string, tools: RemoteToolRegistration[]): Promise<void> {
+    if (!projectId || tools.length === 0) return;
+    const normalizedTools = tools.map((tool) => ({
+      scheme: tool.scheme,
+      purpose: tool.purpose,
+      url: tool.url,
+      method: tool.method ?? 'POST',
+      headers: tool.headers ?? {},
+      inputSchema: tool.inputSchema ?? {},
+      outputSchema: tool.outputSchema ?? {},
+      examples: tool.examples ?? [],
+      auth: tool.auth ?? {},
+    }));
+    const res = await fetch(`${this.server}/api/remote-tools/register`, {
+      method: 'POST',
+      headers: {
+        ...this.headers,
+      },
+      body: JSON.stringify({ projectId, tools: normalizedTools }),
+    });
+    if (!res.ok) throw new Error(`Failed to register remote tools: ${res.statusText}`);
   }
 
   /**

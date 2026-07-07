@@ -14,7 +14,6 @@ export { CronCreateTool, CronDeleteTool, CronListTool } from './CronTools.js';
 export { ApplyPatchTool } from './ApplyPatchTool.js';
 export { LspDiagnosticsTool, LspHoverTool, LspDefinitionTool, LspReferencesTool } from './LspTools.js';
 export { ShowWidgetTool } from './ShowWidgetTool.js';
-export { KidEarthCourseTool } from './KidEarthCourseTool.js';
 export { RemoteProjectActionTool } from './RemoteProjectActionTool.js';
 
 import { ApplyPatchTool } from './ApplyPatchTool.js';
@@ -27,7 +26,6 @@ import { WebSearchTool } from './WebSearchTool.js';
 import { GrepTool } from './GrepTool.js';
 import { GlobTool } from './GlobTool.js';
 import { ShowWidgetTool } from './ShowWidgetTool.js';
-import { RemoteProjectActionTool } from './RemoteProjectActionTool.js';
 import type { IToolRegistry } from '../entities.js';
 
 export function registerBuiltinTools(registry: IToolRegistry): void {
@@ -41,5 +39,4 @@ export function registerBuiltinTools(registry: IToolRegistry): void {
   registry.register(new GlobTool());
   registry.register(new ApplyPatchTool());
   registry.register(new ShowWidgetTool());
-  registry.register(new RemoteProjectActionTool());
 }

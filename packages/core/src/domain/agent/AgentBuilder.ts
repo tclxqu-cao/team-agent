@@ -1,6 +1,7 @@
 import type { AgentConfig, IAgentLoop } from './entities.js';
 import type { IModelProvider } from '../model/entities.js';
 import type { IMemoryStore } from '../memory/entities.js';
+import type { ITool } from '../tool/entities.js';
 import type { ISessionStore } from '../session/entities.js';
 import { AgentFactory } from './AgentFactory.js';
 import { ToolRegistry } from '../tool/ToolRegistry.js';
@@ -11,12 +12,15 @@ import { ContextLoader } from '../context/ContextLoader.js';
 import { ContextAssembler } from '../context/ContextAssembler.js';
 import { FileSystemMemoryStore } from '../memory/FileSystemMemoryStore.js';
 import { ModelRegistry } from '../model/ModelRegistry.js';
+import type { RemoteToolStore } from '../remote-tools/RemoteToolStore.js';
+import { RemoteProjectActionTool } from '../tool/builtin/RemoteProjectActionTool.js';
 
 export class AgentBuilder {
   private workingDirectory = process.cwd();
   private modelProvider: IModelProvider | null = null;
   private modelRegistry = new ModelRegistry();
   private toolRegistry = new ToolRegistry();
+  private customTools: ITool[] = [];
   private skillLoader = new SkillLoader();
   private skillRegistry = new SkillRegistry(this.skillLoader);
   private contextLoader = new ContextLoader();
@@ -28,6 +32,8 @@ export class AgentBuilder {
   private skillFiles: string[] = [];
   private pluginsDir: string | undefined;
   private sessionStore: ISessionStore | undefined;
+  private remoteToolStore: RemoteToolStore | undefined;
+  private projectId = process.env.AGENT_PROJECT_ID ?? "default";
   private compactThreshold: number | undefined;
   /** If set, only these tool names are registered (others are skipped). Empty = all tools. */
   private enabledTools: string[] | null = null;
@@ -102,6 +108,35 @@ export class AgentBuilder {
     return this;
   }
 
+  withRemoteToolStore(store: RemoteToolStore, projectId = process.env.AGENT_PROJECT_ID ?? "default"): this {
+    this.remoteToolStore = store;
+    this.projectId = projectId;
+    return this;
+  }
+
+  withTool(tool: ITool): this {
+    this.customTools = [...this.customTools.filter((existing) => existing.name !== tool.name), tool];
+    this.toolRegistry.register(tool);
+    return this;
+  }
+
+  private createToolRegistry(remoteToolStore: RemoteToolStore | undefined, projectId: string): ToolRegistry {
+    const registry = new ToolRegistry();
+    registerBuiltinTools(registry);
+    for (const tool of this.customTools) registry.register(tool);
+    if (remoteToolStore) {
+      registry.register(new RemoteProjectActionTool({ store: remoteToolStore, projectId }));
+    }
+    return registry;
+  }
+
+  private systemPromptWithRemoteTools(remoteToolStore: RemoteToolStore | undefined, projectId: string): string | undefined {
+    const tools = remoteToolStore?.listEnabledTools(projectId) ?? [];
+    if (tools.length === 0) return this.systemPrompt;
+    const summary = ["可用远程项目工具：", ...tools.map((tool) => `- ${tool.scheme}: ${tool.purpose}`)].join("\n");
+    return [this.systemPrompt, summary].filter(Boolean).join("\n\n");
+  }
+
   /**
    * Set the AutoCompact threshold as a fraction of maxTokens (default 0.8).
    * When estimated token usage exceeds this fraction, history is summarized.
@@ -134,14 +169,16 @@ export class AgentBuilder {
       throw new Error("Model provider is required. Call withModelProvider() or withModel()");
     }
 
+    const remoteToolStore = this.remoteToolStore;
+    const projectId = this.projectId;
+
     // Wire model provider into skill registry for semantic matching
     this.skillRegistry.setModelProvider(this.modelProvider);
 
     // Initialize memory store (use injected or fall back to filesystem)
     const memoryStore = this.memoryStore ?? new FileSystemMemoryStore(this.workingDirectory);
 
-    // Register built-in tools
-    registerBuiltinTools(this.toolRegistry);
+    const toolRegistry = this.createToolRegistry(remoteToolStore, projectId);
 
     // Load skills from all discovered sources, then optionally add from explicit dir
     const discoveredSkills = await this.skillLoader.loadAll(this.workingDirectory);
@@ -169,8 +206,8 @@ export class AgentBuilder {
 
     const config: AgentConfig = {
       modelProvider: this.modelProvider,
-      toolRegistry: this.toolRegistry,
-      toolExecutor: this.toolRegistry,
+      toolRegistry,
+      toolExecutor: toolRegistry,
       contextAssembler,
       skillRegistry: this.skillRegistry,
       memoryStore,
@@ -178,7 +215,7 @@ export class AgentBuilder {
       workingDirectory: this.workingDirectory,
       maxIterations: this.maxIterations,
       maxTokens: this.maxTokens,
-      systemPrompt: this.systemPrompt,
+      systemPrompt: this.systemPromptWithRemoteTools(remoteToolStore, projectId),
       compactThreshold: this.compactThreshold,
       enabledTools: this.enabledTools,
       enabledSkills: this.enabledSkills,
@@ -193,11 +230,14 @@ export class AgentBuilder {
       throw new Error("Model provider is required. Call withModelProvider() or withModel()");
     }
 
+    const remoteToolStore = this.remoteToolStore;
+    const projectId = this.projectId;
+
     // Wire model provider into skill registry for semantic matching
     this.skillRegistry.setModelProvider(this.modelProvider);
 
     const memoryStore = this.memoryStore ?? new FileSystemMemoryStore(this.workingDirectory);
-    registerBuiltinTools(this.toolRegistry);
+    const toolRegistry = this.createToolRegistry(remoteToolStore, projectId);
 
     // Load skills from disk
     const discoveredSkills = this.skillLoader.loadAllSync(this.workingDirectory);
@@ -223,8 +263,8 @@ export class AgentBuilder {
 
     const config: AgentConfig = {
       modelProvider: this.modelProvider,
-      toolRegistry: this.toolRegistry,
-      toolExecutor: this.toolRegistry,
+      toolRegistry,
+      toolExecutor: toolRegistry,
       contextAssembler,
       skillRegistry: this.skillRegistry,
       memoryStore,
@@ -232,7 +272,7 @@ export class AgentBuilder {
       workingDirectory: this.workingDirectory,
       maxIterations: this.maxIterations,
       maxTokens: this.maxTokens,
-      systemPrompt: this.systemPrompt,
+      systemPrompt: this.systemPromptWithRemoteTools(remoteToolStore, projectId),
       compactThreshold: this.compactThreshold,
       enabledTools: this.enabledTools,
       enabledSkills: this.enabledSkills,

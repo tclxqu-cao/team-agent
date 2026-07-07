@@ -27,7 +27,7 @@ export { OpenAIProvider } from './domain/model/providers/OpenAIProvider.js';
 export { DeepSeekProvider } from './domain/model/providers/DeepSeekProvider.js';
 export { ModelRegistry } from './domain/model/ModelRegistry.js';
 export { ToolRegistry } from './domain/tool/ToolRegistry.js';
-export { ReadFileTool, WriteFileTool, BashTool, WebFetchTool, WebSearchTool, GrepTool, GlobTool, TodoAddTool, TodoUpdateTool, TodoListTool, DispatchAgentTool, type DispatchResult, WaitAgentTool, AskUserTool, type AskUserRequest, type AskUserResponse, type AskUserCallback, CronCreateTool, CronDeleteTool, CronListTool, LspDiagnosticsTool, LspHoverTool, LspDefinitionTool, LspReferencesTool, KidEarthCourseTool, RemoteProjectActionTool, registerBuiltinTools } from './domain/tool/builtin/index.js';
+export { ReadFileTool, WriteFileTool, BashTool, WebFetchTool, WebSearchTool, GrepTool, GlobTool, TodoAddTool, TodoUpdateTool, TodoListTool, DispatchAgentTool, type DispatchResult, WaitAgentTool, AskUserTool, type AskUserRequest, type AskUserResponse, type AskUserCallback, CronCreateTool, CronDeleteTool, CronListTool, LspDiagnosticsTool, LspHoverTool, LspDefinitionTool, LspReferencesTool, RemoteProjectActionTool, registerBuiltinTools } from './domain/tool/builtin/index.js';
 export { MCPClient } from './domain/mcp/MCPClient.js';
 export { MCPManager } from './domain/mcp/MCPManager.js';
 export { SkillLoader } from './domain/skill/SkillLoader.js';
@@ -37,6 +37,9 @@ export { ContextLoader } from './domain/context/ContextLoader.js';
 export { ContextAssembler } from './domain/context/ContextAssembler.js';
 export { FileSystemMemoryStore } from './domain/memory/FileSystemMemoryStore.js';
 export { InMemorySessionStore, FileSystemSessionStore } from './domain/session/SessionStore.js';
+export type { RemoteToolDefinition, RemoteToolJob, RemoteToolRegistration } from './domain/remote-tools/entities.js';
+export type { RemoteToolStore } from './domain/remote-tools/RemoteToolStore.js';
+export { SQLiteRemoteToolStore } from './infrastructure/SQLiteRemoteToolStore.js';
 
 // Cron
 export * from './domain/cron/index.js';

@@ -7,6 +7,9 @@ import {
   type Session,
   type AskUserRequest,
   type AskUserResponse,
+  getDatabase,
+  SQLiteRemoteToolStore,
+  type RemoteToolRegistration,
 } from "@agent/core";
 
 /** Singleton agent host shared across API routes */
@@ -14,6 +17,8 @@ class AgentHost {
   private agent: IAgentLoop | null = null;
   private builder: AgentBuilder | null = null;
   private readonly sessionStore = new InMemorySessionStore();
+  private readonly remoteToolStore = new SQLiteRemoteToolStore(getDatabase(process.cwd()).db);
+  private readonly defaultRemoteToolsProjectId = process.env.AGENT_PROJECT_ID ?? "default";
   private activeRun: AsyncIterable<AgentEvent> | null = null;
   private subscribers = new Set<(event: AgentEvent) => void>();
   private pendingQuestions = new Map<
@@ -34,6 +39,7 @@ class AgentHost {
     const baseUrl = process.env.AGENT_BASE_URL || undefined;
 
     const builder = new AgentBuilder().withSessionStore(this.sessionStore);
+    builder.withRemoteToolStore(this.remoteToolStore, this.defaultRemoteToolsProjectId);
     if (apiKey) {
       builder.withModel(provider, { apiKey, modelId, baseUrl });
     }
@@ -48,11 +54,20 @@ class AgentHost {
   }
 
   setBuilder(builder: AgentBuilder): void {
+    builder.withRemoteToolStore(this.remoteToolStore, this.defaultRemoteToolsProjectId);
     this.builder = builder;
   }
 
   getSessionStore(): InMemorySessionStore {
     return this.sessionStore;
+  }
+
+  registerRemoteTools(projectId: string, tools: RemoteToolRegistration[]) {
+    return this.remoteToolStore.upsertTools(projectId, tools);
+  }
+
+  getRemoteToolStore() {
+    return this.remoteToolStore;
   }
 
   async createSession(title: string, projectId = ""): Promise<Session> {
@@ -81,9 +96,16 @@ class AgentHost {
   }
 
   async run(input: string, sessionId: string): Promise<void> {
+    const session = await this.sessionStore.get(sessionId);
+    const runProjectId = session?.projectId || this.defaultRemoteToolsProjectId;
     let agent: IAgentLoop;
     try {
-      agent = await this.getBuilder().build();
+      agent = await this.getBuilder()
+        .withRemoteToolStore(this.remoteToolStore, runProjectId)
+        .withTool(new AskUserTool(async (request: AskUserRequest) => {
+          return this.createQuestion(request, sessionId);
+        }))
+        .build();
     } catch (err) {
       // Emit error to SSE subscribers so the SDK can display it
       this.emit({
@@ -91,15 +113,9 @@ class AgentHost {
         message: err instanceof Error ? err.message : "Failed to build agent",
       } as AgentEvent);
       throw err;
+    } finally {
+      this.builder?.withRemoteToolStore(this.remoteToolStore, this.defaultRemoteToolsProjectId);
     }
-
-    // Register AskUserTool with a callback that emits the question
-    // to SSE subscribers and waits for the answer via /api/agent/answer
-    this.getBuilder().getToolRegistry().register(
-      new AskUserTool(async (request: AskUserRequest) => {
-        return this.createQuestion(request, sessionId);
-      }),
-    );
 
     this.activeRun = agent.run(input, sessionId);
 

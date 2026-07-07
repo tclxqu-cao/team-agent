@@ -136,6 +136,39 @@ export class SQLiteDatabase {
         env TEXT NOT NULL DEFAULT '{}',
         enabled INTEGER NOT NULL DEFAULT 1
       );
+
+      CREATE TABLE IF NOT EXISTS remote_tools (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL,
+        scheme TEXT NOT NULL,
+        purpose TEXT NOT NULL,
+        url TEXT NOT NULL,
+        method TEXT NOT NULL DEFAULT 'POST',
+        headers TEXT NOT NULL DEFAULT '{}',
+        input_schema TEXT NOT NULL DEFAULT '{}',
+        output_schema TEXT NOT NULL DEFAULT '{}',
+        examples TEXT NOT NULL DEFAULT '[]',
+        auth TEXT NOT NULL DEFAULT '{}',
+        enabled INTEGER NOT NULL DEFAULT 1,
+        created TEXT NOT NULL,
+        updated TEXT NOT NULL,
+        UNIQUE(project_id, scheme)
+      );
+
+      CREATE TABLE IF NOT EXISTS remote_tool_jobs (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL,
+        scheme TEXT NOT NULL,
+        request_payload TEXT NOT NULL DEFAULT '{}',
+        status TEXT NOT NULL,
+        response_payload TEXT,
+        error TEXT,
+        created TEXT NOT NULL,
+        updated TEXT NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_remote_tools_project ON remote_tools(project_id);
+      CREATE INDEX IF NOT EXISTS idx_remote_jobs_project ON remote_tool_jobs(project_id);
     `);
 
     // Migration: make sessions.project_id nullable (remove NOT NULL + FK constraint)

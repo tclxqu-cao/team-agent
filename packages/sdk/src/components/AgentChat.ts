@@ -3,7 +3,7 @@ import { customElement, property, state } from 'lit/decorators.js';
 import { AgentClient } from '../client/AgentClient';
 import { ChatStore } from '../store/ChatStore';
 import { themeStyles } from '../styles/theme';
-import type { AgentEvent, ChatMessage, ToolCall } from '../client/types';
+import type { AgentEvent, ChatMessage, ToolCall, RemoteToolRegistration } from '../client/types';
 import './AgentFab';
 
 /**
@@ -19,10 +19,14 @@ export class AgentChat extends LitElement {
   @property({ type: String }) title = 'AI 助手';
   @property({ type: String }) placeholder = '输入消息...';
   @property({ type: String, attribute: 'session-id' }) sessionIdAttr = '';
+  @property({ type: String, attribute: 'project-id' }) projectId = '';
+  @property({ attribute: 'remote-tools' }) remoteTools: RemoteToolRegistration[] | string = [];
 
   @state() private _store = new ChatStore();
   private client: AgentClient | null = null;
   private currentSessionId = '';
+  private registrationPromise: Promise<void> = Promise.resolve();
+  private registrationError: unknown = null;
   private unsubClient: (() => void) | null = null;
   private unsubStore: (() => void) | null = null;
 
@@ -446,12 +450,33 @@ export class AgentChat extends LitElement {
 
   private _initClient(): void {
     if (!this.token || !this.server) return;
-    this.client = new AgentClient({ server: this.server, token: this.token });
+    this.client = new AgentClient({
+      server: this.server,
+      token: this.token,
+    });
+    const tools = this.parseRemoteTools();
+    this.registrationError = null;
+    this.registrationPromise = this.projectId && tools.length > 0
+      ? this.client.registerRemoteTools(this.projectId, tools).catch((error) => {
+          this.registrationError = error;
+        })
+      : Promise.resolve();
 
     this.unsubClient = this.client.onEvent((event) => this._handleEvent(event));
     this.unsubStore = this._store.subscribe(() => {
       this.requestUpdate();
     });
+  }
+
+  private parseRemoteTools(): RemoteToolRegistration[] {
+    if (Array.isArray(this.remoteTools)) return this.remoteTools;
+    if (!this.remoteTools) return [];
+    try {
+      const parsed = JSON.parse(this.remoteTools);
+      return Array.isArray(parsed) ? parsed as RemoteToolRegistration[] : [];
+    } catch {
+      return [];
+    }
   }
 
   private _cleanup(): void {
@@ -514,7 +539,7 @@ export class AgentChat extends LitElement {
     if (!this.client) return;
     this._store.setLoadingSessions(true);
     try {
-      const sessions = await this.client.listSessions();
+      const sessions = await this.client.listSessions(this.projectId || undefined);
       this._store.setSessions(sessions);
     } catch (err) {
       this._store.setError(`加载会话失败: ${err}`);
@@ -526,7 +551,7 @@ export class AgentChat extends LitElement {
   private async _ensureSession(): Promise<void> {
     if (this.currentSessionId || !this.client) return;
     try {
-      const session = await this.client.createSession(this.title);
+      const session = await this.client.createSession(this.title, this.projectId || undefined);
       this.currentSessionId = session.id;
       this._store.startNewSession(session);
     } catch (err) {
@@ -537,7 +562,7 @@ export class AgentChat extends LitElement {
   private async _createNewSession(): Promise<void> {
     if (!this.client || this._store.isRunning) return;
     try {
-      const session = await this.client.createSession(this.title);
+      const session = await this.client.createSession(this.title, this.projectId || undefined);
       this.currentSessionId = session.id;
       this._store.startNewSession(session);
       this._clearComposer();
@@ -576,6 +601,14 @@ export class AgentChat extends LitElement {
         textarea.style.height = 'auto';
       }
       await this._answerQuestion(pendingAsk.questionId, input);
+      return;
+    }
+
+    await this.registrationPromise;
+    if (this.registrationError) {
+      const error = this.registrationError;
+      this._store.setError(`远端工具注册失败: ${error instanceof Error ? error.message : String(error)}`);
+      this._store.setRunning(false);
       return;
     }
 

@@ -17,7 +17,7 @@ export { AgentChat } from './components/AgentChat';
 export { AgentFab } from './components/AgentFab';
 export { AgentClient } from './client/AgentClient';
 export { ChatStore } from './store/ChatStore';
-export type { AgentEvent, ChatMessage, Session, ToolCall, AskUserQuestion } from './client/types';
+export type { AgentEvent, ChatMessage, Session, ToolCall, AskUserQuestion, RemoteToolRegistration } from './client/types';
 
 /**
  * Explicitly register custom elements.
