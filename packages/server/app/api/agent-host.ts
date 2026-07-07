@@ -1,6 +1,6 @@
 import {
   AgentBuilder,
-  InMemorySessionStore,
+  FileSystemSessionStore,
   AskUserTool,
   type IAgentLoop,
   type AgentEvent,
@@ -16,7 +16,7 @@ import {
 class AgentHost {
   private agent: IAgentLoop | null = null;
   private builder: AgentBuilder | null = null;
-  private readonly sessionStore = new InMemorySessionStore();
+  private readonly sessionStore = new FileSystemSessionStore(process.cwd());
   private readonly remoteToolStore = new SQLiteRemoteToolStore(getDatabase(process.cwd()).db);
   private readonly defaultRemoteToolsProjectId = process.env.AGENT_PROJECT_ID ?? "default";
   private activeRun: AsyncIterable<AgentEvent> | null = null;
