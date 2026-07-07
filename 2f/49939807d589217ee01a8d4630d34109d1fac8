@@ -1,0 +1,20 @@
+packages/server/app/api/agent-host.ts
+  s_609f2cc8abd48c::t_0999c692560cc8 3
+  s_609f2cc8abd48c::t_519902a68da564 19
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.7",
+  "base_commit_sha": "2f49939807d589217ee01a8d4630d34109d1fac8",
+  "prompts": {},
+  "sessions": {
+    "s_609f2cc8abd48c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b8f7e59f-d8d8-49d1-9d54-104081465d97",
+        "model": "LongCat-2.0"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
