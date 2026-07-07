@@ -548,6 +548,16 @@ export class AgentChat extends LitElement {
     }
   }
 
+  private async _loadSessionMessages(sessionId: string): Promise<void> {
+    if (!this.client) return;
+    try {
+      const session = await this.client.getSession(sessionId);
+      if (session?.messages?.length) this._store.restoreSessionMessages(sessionId, session.messages);
+    } catch {
+      // ignore load errors
+    }
+  }
+
   private async _ensureSession(): Promise<void> {
     if (this.currentSessionId || !this.client) return;
     try {
@@ -578,6 +588,7 @@ export class AgentChat extends LitElement {
     }
     this.currentSessionId = sessionId;
     this._store.switchSession(sessionId);
+    void this._loadSessionMessages(sessionId);
     this._clearComposer();
   }
 

@@ -69,6 +69,25 @@ export class ChatStore {
     this.notify();
   }
 
+  restoreSessionMessages(sessionId: string, messages: ChatMessage[]): void {
+    const normalized = messages
+      .filter((message) => (message.role as string) !== 'system')
+      .map((message, index) => ({
+        id: message.id ?? `restored-${sessionId}-${index}`,
+        role: message.role,
+        content: message.content ?? '',
+        toolCalls: message.toolCalls,
+        toolCallId: message.toolCallId,
+        askUser: message.askUser,
+        timestamp: message.timestamp ?? Date.now() + index,
+      }));
+    this.messagesBySession.set(sessionId, normalized);
+    if (this.activeSessionId === sessionId) {
+      this.messages = normalized;
+      this.notify();
+    }
+  }
+
   startNewSession(session: Session): void {
     if (this.activeSessionId) {
       this.messagesBySession.set(this.activeSessionId, this.messages);

@@ -56,6 +56,15 @@ export class AgentClient {
     return res.json() as Promise<Session[]>;
   }
 
+  async getSession(sessionId: string): Promise<Session | null> {
+    const res = await fetch(`${this.server}/api/sessions/${encodeURIComponent(sessionId)}`, {
+      headers: this.headers,
+    });
+    if (res.status === 404) return null;
+    if (!res.ok) throw new Error(`Failed to get session: ${res.statusText}`);
+    return res.json() as Promise<Session>;
+  }
+
   async registerRemoteTools(projectId: string, tools: RemoteToolRegistration[]): Promise<void> {
     if (!projectId || tools.length === 0) return;
     const normalizedTools = tools.map((tool) => ({
