@@ -42,11 +42,7 @@ export class AnthropicProvider implements IModelProvider {
       body.tools = options.tools.map((t) => ({
         name: t.name,
         description: t.description,
-        input_schema: {
-          type: "object",
-          properties: t.parameters,
-          required: Object.keys(t.parameters),
-        },
+        input_schema: t.parameters,
       }));
     }
 
