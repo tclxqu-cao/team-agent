@@ -179,6 +179,7 @@ export class AgentBuilder {
     const memoryStore = this.memoryStore ?? new FileSystemMemoryStore(this.workingDirectory);
 
     const toolRegistry = this.createToolRegistry(remoteToolStore, projectId);
+    this.toolRegistry = toolRegistry;
 
     // Load skills from all discovered sources, then optionally add from explicit dir
     const discoveredSkills = await this.skillLoader.loadAll(this.workingDirectory);
@@ -238,6 +239,7 @@ export class AgentBuilder {
 
     const memoryStore = this.memoryStore ?? new FileSystemMemoryStore(this.workingDirectory);
     const toolRegistry = this.createToolRegistry(remoteToolStore, projectId);
+    this.toolRegistry = toolRegistry;
 
     // Load skills from disk
     const discoveredSkills = this.skillLoader.loadAllSync(this.workingDirectory);

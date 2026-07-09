@@ -58,7 +58,7 @@ class AgentHost {
     this.builder = builder;
   }
 
-  getSessionStore(): InMemorySessionStore {
+  getSessionStore() {
     return this.sessionStore;
   }
 
@@ -97,6 +97,7 @@ class AgentHost {
 
   async run(input: string, sessionId: string): Promise<void> {
     const session = await this.sessionStore.get(sessionId);
+    await this.sessionStore.addMessage(sessionId, { role: "user", content: input });
     const runProjectId = session?.projectId || this.defaultRemoteToolsProjectId;
     let agent: IAgentLoop;
     try {

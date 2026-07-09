@@ -2,8 +2,10 @@
 
 export interface Session {
   id: string;
+  projectId?: string;
   title: string;
   status: string;
+  messages?: ChatMessage[];
   created: string;
   updated: string;
 }
