@@ -1,0 +1,27 @@
+packages/server/app/api/agent-host.ts
+  s_609f2cc8abd48c::t_a41703ee326c00 21
+  s_609f2cc8abd48c::t_0e082e3f38f7ee 57
+  s_609f2cc8abd48c::t_1a3f7f030e6a82 100
+  s_609f2cc8abd48c::t_b177b377cd41aa 117
+  s_609f2cc8abd48c::t_5b273a9ccb0d90 42
+packages/server/app/api/agent-host.test.ts
+  s_609f2cc8abd48c::t_549b50ed1a714c 342,348
+  s_609f2cc8abd48c::t_14a0236081d9e2 121-136
+  s_609f2cc8abd48c::t_d2445b9f34431d 165-179
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.7",
+  "base_commit_sha": "b8f58e1fabd750e4e82c1808504bd32a328c1e5b",
+  "prompts": {},
+  "sessions": {
+    "s_609f2cc8abd48c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b8f7e59f-d8d8-49d1-9d54-104081465d97",
+        "model": "gpt-5.5"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

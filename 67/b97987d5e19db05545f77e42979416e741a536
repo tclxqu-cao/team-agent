@@ -1,0 +1,33 @@
+packages/server/app/api/remote-tools/register/route.ts
+  s_609f2cc8abd48c::t_544bb37d76ecef 125
+  s_609f2cc8abd48c::t_2ed5df3724ab4d 77-82,93-104
+packages/core/src/domain/agent/AgentBuilder.ts
+  s_609f2cc8abd48c::t_05b60c4b0156c7 123,127-128,133-134
+  s_609f2cc8abd48c::t_d286d4a68af68d 172-174,181
+  s_609f2cc8abd48c::t_3c9f6338660624 233-235,240
+  s_609f2cc8abd48c::t_70cae55dc486e0 218,275
+packages/core/src/domain/session/SessionStore.test.ts
+  s_609f2cc8abd48c::t_f34bfeafb94ee7 1-40
+packages/core/src/domain/session/SessionStore.ts
+  s_609f2cc8abd48c::t_74b8c7971f9687 113-114
+packages/core/src/domain/agent/__tests__/AgentBuilder.test.ts
+  s_609f2cc8abd48c::t_6b71e5f9dec3ed 1-84
+packages/server/app/api/agent-host.test.ts
+  s_609f2cc8abd48c::t_4e5f3bff6885f0 163,165-166,177-209
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.7",
+  "base_commit_sha": "67b97987d5e19db05545f77e42979416e741a536",
+  "prompts": {},
+  "sessions": {
+    "s_609f2cc8abd48c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b8f7e59f-d8d8-49d1-9d54-104081465d97",
+        "model": "gpt-5.5"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

@@ -1,0 +1,21 @@
+packages/core/src/domain/model/providers/AnthropicProvider.test.ts
+  s_784e8fbaa7f611::t_9b6a38b7708ab9 1-44
+packages/core/src/domain/model/providers/AnthropicProvider.ts
+  s_784e8fbaa7f611::t_c43bdbadc11146 45
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.7",
+  "base_commit_sha": "0b0f5fb7b534c9350c353b1a276ad592824abefa",
+  "prompts": {},
+  "sessions": {
+    "s_784e8fbaa7f611": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "129f9c70-8db2-48de-a411-2ff025d7eacb",
+        "model": "gpt-5.5"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

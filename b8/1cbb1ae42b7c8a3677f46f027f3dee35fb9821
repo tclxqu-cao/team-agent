@@ -1,0 +1,21 @@
+packages/core/src/domain/tool/builtin/RemoteProjectActionTool.test.ts
+  s_609f2cc8abd48c::t_1fa1885685a1e0 1-51
+packages/core/src/domain/tool/builtin/RemoteProjectActionTool.ts
+  s_609f2cc8abd48c::t_020aa0ca2b04ce 3,5,7,9,11-12,17-23,26-28,31,34-35,37-54,56-57,59,61-62,64
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.7",
+  "base_commit_sha": "b81cbb1ae42b7c8a3677f46f027f3dee35fb9821",
+  "prompts": {},
+  "sessions": {
+    "s_609f2cc8abd48c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b8f7e59f-d8d8-49d1-9d54-104081465d97",
+        "model": "gpt-5.5"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
