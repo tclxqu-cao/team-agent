@@ -735,17 +735,24 @@ export class AgentHost {
 
   /**
    * Steer a new user input into an already-running session without interrupting.
+   * If an ask_user prompt is pending, the input answers it immediately so the
+   * loop can continue while blocked in tool execution.
    * If the agent loop is active, the message is saved with name "__steer__" so
    * AgentLoop picks it up on its next iteration via the session checkpoint.
    * If no agent is running, it saves normally and returns false (caller should
    * start a new run via the run() method).
    */
   async steerInput(input: string, sessionId: string, agentName?: string): Promise<boolean> {
+    const answeredQuestion = this.questionManager.answerLatest(sessionId, input);
     await this.sessionStore.addMessage(sessionId, {
       role: "user",
       content: input,
-      name: "__steer__",
+      name: answeredQuestion ? undefined : "__steer__",
     } as Message);
+    if (answeredQuestion) {
+      this.emit({ type: "thinking", message: `User answered: ${input.slice(0, 60)}` }, sessionId);
+      return true;
+    }
     const isRunning = this._runCount > 0;
     if (!isRunning) {
       // Update session title even when not running

@@ -235,6 +235,7 @@ export class AgentLoop implements IAgentLoop {
         }
         try {
           let streamHadError = false;
+          let streamProducedOutput = false;
           for await (const event of this.config.modelProvider.streamChat(messages, {
             tools: toolDefs.length > 0 ? toolDefs : undefined,
             // Note: this.config.maxTokens is the context-window size used for compaction
@@ -245,10 +246,12 @@ export class AgentLoop implements IAgentLoop {
 
             switch (event.type) {
               case "text_chunk":
+                streamProducedOutput = streamProducedOutput || event.text.length > 0;
                 currentText += event.text;
                 yield { type: "text_chunk", text: event.text };
                 break;
               case "tool_call":
+                streamProducedOutput = true;
                 toolCalls.push(event.toolCall);
                 yield { type: "tool_call", toolCall: event.toolCall };
                 break;
@@ -256,13 +259,18 @@ export class AgentLoop implements IAgentLoop {
                 yield { type: "text_done" };
                 break;
               case "error":
+                streamProducedOutput = true;
                 streamHadError = true;
                 hasError = true;
                 yield { type: "error", message: event.message, code: "strea-err" };
                 break;
             }
           }
-          if (streamHadError) break; // model-level error, not retryable
+          if (!streamProducedOutput && !this.abortController?.signal.aborted) {
+            hasError = true;
+            yield { type: "error", message: "Model stream ended without producing a response" };
+          }
+          if (streamHadError || hasError) break; // model-level error, not retryable
           break; // success — exit retry loop
         } catch (err) {
           if (this.abortController?.signal.aborted) {
