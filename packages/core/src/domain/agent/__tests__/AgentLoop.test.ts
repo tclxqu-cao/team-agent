@@ -182,6 +182,23 @@ describe("AgentLoop", () => {
     expect(errorEvents.length).toBeGreaterThan(0);
   });
 
+  it("should surface empty model streams as errors", async () => {
+    const emptyModel = {
+      ...createMockModel(),
+      streamChat: async function* (): AsyncIterable<StreamEvent> {},
+    };
+
+    const loop = new AgentLoop(createConfig({ modelProvider: emptyModel }));
+    const events: AgentEvent[] = [];
+
+    for await (const event of loop.run("test", "test-session")) {
+      events.push(event);
+    }
+
+    expect(events.some((e) => e.type === "error" && e.message === "Model stream ended without producing a response")).toBe(true);
+    expect(events.at(-1)?.type).toBe("done");
+  });
+
   it("should stop loop when aborted mid-run", async () => {
     let calls = 0;
     const loopingModel = {

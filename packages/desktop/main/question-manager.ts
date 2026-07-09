@@ -12,6 +12,7 @@ export class QuestionManager {
   private pendingQuestions = new Map<
     string,
     {
+      sessionId: string;
       resolve: (response: AskUserResponse) => void;
       reject: (err: Error) => void;
       timer: ReturnType<typeof setTimeout>;
@@ -43,7 +44,7 @@ export class QuestionManager {
           reject(new Error("Question timed out after 5 minutes"));
         }
       }, 5 * 60 * 1000);
-      this.pendingQuestions.set(questionId, { resolve, reject, timer });
+      this.pendingQuestions.set(questionId, { sessionId, resolve, reject, timer });
     });
   }
 
@@ -59,6 +60,17 @@ export class QuestionManager {
     this.pendingQuestions.delete(questionId);
     pending.resolve({ answer, selectedIndices });
     return true;
+  }
+
+  answerLatest(sessionId: string, answer: string): boolean {
+    const entries = Array.from(this.pendingQuestions.entries());
+    for (let i = entries.length - 1; i >= 0; i--) {
+      const [questionId, pending] = entries[i];
+      if (pending.sessionId === sessionId) {
+        return this.answer(questionId, answer);
+      }
+    }
+    return false;
   }
 
   /** Reject all pending questions (e.g. on abort) */
