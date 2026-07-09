@@ -1,5 +1,6 @@
 import {
   AgentBuilder,
+  ContextCompactor,
   SQLiteSettingsStore,
   SQLiteSessionStore,
   SQLiteMemoryStore,
@@ -626,6 +627,35 @@ export class AgentHost {
     agentName?: string,
     images?: string[],
   ): AsyncIterable<AgentEvent> {
+    if (this.isCompactCommand(input)) {
+      yield { type: "thinking", message: "Compacting session context…" };
+      this.emit({ type: "thinking", message: "Compacting session context…" }, sessionId);
+      try {
+        const result = await this.compactSession(sessionId);
+        const compactedEvent: AgentEvent = {
+          type: "compacted",
+          summary: result.summary,
+          removedMessages: result.removedMessages,
+        };
+        this.emit(compactedEvent, sessionId);
+        yield compactedEvent;
+        const doneEvent: AgentEvent = {
+          type: "done",
+          finalText: `Context compacted. Removed ${result.removedMessages} older messages; current environment will be re-injected on the next run.`,
+        };
+        this.emit(doneEvent, sessionId);
+        yield doneEvent;
+      } catch (err) {
+        const errorEvent: AgentEvent = {
+          type: "error",
+          message: err instanceof Error ? err.message : String(err),
+        };
+        this.emit(errorEvent, sessionId);
+        yield errorEvent;
+      }
+      return;
+    }
+
     // ── 1. Track session and clear todos only when switching to a new session ───
     // Clearing todos every run caused "No matching todo found" when the LLM tried
     // to update todos added in a previous turn of the SAME session.
@@ -987,6 +1017,38 @@ export class AgentHost {
   private async enqueuePendingNotification(prompt: string, sessionId: string): Promise<void> {
     this.pendingQueue.push({ prompt, sessionId });
     if (!this._isRunning) await this.drainPendingQueue();
+  }
+
+  private isCompactCommand(input: string): boolean {
+    const trimmed = input.trim().toLowerCase();
+    return trimmed === "/compact" || trimmed === "/compress" || trimmed === "/压缩" || trimmed === "压缩";
+  }
+
+  private async compactSession(sessionId: string): Promise<{ summary: string; removedMessages: number }> {
+    const latestSettings = this.settingsStore.getAll();
+    if (!latestSettings.isConfigured) {
+      throw new Error("Model is not configured");
+    }
+
+    const provider = this.builder.getModelRegistry().createAndRegister(
+      latestSettings.modelProvider as "anthropic" | "openai" | "deepseek",
+      {
+        apiKey: latestSettings.apiKey,
+        baseUrl: latestSettings.baseUrl || undefined,
+        modelId: latestSettings.modelId,
+      },
+    );
+    const session = await this.sessionStore.get(sessionId);
+    const messages = (session?.messages ?? []).filter((m) => m.role !== "system");
+    const compactor = new ContextCompactor(provider);
+    const result = await compactor.compactForHandoff(messages);
+    await this.sessionStore.replaceMessages(sessionId, result.replacementMessages);
+    await this.sessionStore.addEvent(sessionId, {
+      type: "compacted",
+      summary: result.summary,
+      removedMessages: result.removedMessages,
+    });
+    return { summary: result.summary, removedMessages: result.removedMessages };
   }
 
   private async drainPendingQueue(): Promise<void> {
