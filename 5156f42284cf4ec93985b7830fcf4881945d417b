@@ -1,0 +1,17 @@
+packages/core/src/domain/mcp/MCPClient.ts
+  ai_agent 157-159,197-317
+packages/core/src/domain/mcp/entities.ts
+  ai_agent 7-13
+packages/core/src/infrastructure/SQLiteMCPServerStore.ts
+  ai_agent 23,27-29,31,58,62-66
+packages/desktop/renderer/global.d.ts
+  ai_agent 4-10
+packages/core/src/infrastructure/SQLiteDatabase.ts
+  ai_agent 172-183
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.1",
+  "base_commit_sha": "5156f42284cf4ec93985b7830fcf4881945d417b",
+  "prompts": {}
+}

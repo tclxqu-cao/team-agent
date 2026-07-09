@@ -1,0 +1,38 @@
+packages/server/app/api/remote-tools/register/route.ts
+  s_609f2cc8abd48c::t_747d3dcde9c8d4 78-87
+packages/server/app/api/agent-host.test.ts
+  s_609f2cc8abd48c::t_d992ed335eba6b 2
+  s_609f2cc8abd48c::t_d30d9617a16aba 30-35
+  s_609f2cc8abd48c::t_2c982bafbd9f32 64-77
+packages/sdk/src/client/types.ts
+  s_609f2cc8abd48c::t_78e763903d09a6 64-68,73
+packages/sdk/src/components/AgentChat.ts
+  s_609f2cc8abd48c::t_d84c8e94d39cbb 607-615
+  s_609f2cc8abd48c::t_2c70dcecaa6d7b 28-29
+  s_609f2cc8abd48c::t_641edf3dea9e81 454-463
+packages/sdk/src/client/AgentClient.test.ts
+  s_609f2cc8abd48c::t_87229ffa4e96ea 23-32
+  s_609f2cc8abd48c::t_2eaa89ed1f3ca0 43,45-68
+packages/sdk/src/client/AgentClient.ts
+  s_609f2cc8abd48c::t_861f7e86ffca0d 60-70,74
+packages/sdk/src/components/AgentChat.test.ts
+  s_609f2cc8abd48c::t_8c8d20e8bb8456 1-22,24-76,78-113,115-129
+  s_609f2cc8abd48c::t_2a1670c6b5edb3 77,114
+  s_609f2cc8abd48c::t_b86248d1be45d5 23
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.7",
+  "base_commit_sha": "b1ccb06a48d1f87157e8b288b1ebdeff1c0916b9",
+  "prompts": {},
+  "sessions": {
+    "s_609f2cc8abd48c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b8f7e59f-d8d8-49d1-9d54-104081465d97",
+        "model": "gpt-5.5"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

@@ -1,0 +1,33 @@
+packages/core/src/infrastructure/SQLiteDatabase.ts
+  s_609f2cc8abd48c::t_fd3e288a2d6e1f 139-171
+packages/core/src/index.ts
+  s_609f2cc8abd48c::t_a6774137a7bf1f 40-42
+packages/core/src/domain/remote-tools/RemoteToolStore.ts
+  s_609f2cc8abd48c::t_43001fe3f08c81 1-12
+packages/core/src/domain/remote-tools/entities.ts
+  s_609f2cc8abd48c::t_440a07aef5f75d 1-40
+packages/core/src/infrastructure/index.ts
+  s_609f2cc8abd48c::t_80d4ec8b248aa1 15
+packages/core/src/infrastructure/SQLiteRemoteToolStore.ts
+  s_609f2cc8abd48c::t_e407157536712f 1
+  s_609f2cc8abd48c::t_0c419180fd3eca 2-28,30-98
+  s_609f2cc8abd48c::t_d056f9bc906213 29
+packages/core/src/infrastructure/SQLiteRemoteToolStore.test.ts
+  s_609f2cc8abd48c::t_da0cdc56d3631d 1-67
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.7",
+  "base_commit_sha": "0acb994e1879f7878a5551c7f640c1c9ab368bb6",
+  "prompts": {},
+  "sessions": {
+    "s_609f2cc8abd48c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b8f7e59f-d8d8-49d1-9d54-104081465d97",
+        "model": "gpt-5.5"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

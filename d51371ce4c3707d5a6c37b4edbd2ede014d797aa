@@ -1,0 +1,57 @@
+packages/core/src/domain/tool/builtin/CronTools.ts
+  ai_agent 3-8
+packages/desktop/main/agent-host.ts
+  s_fac3ccfdc4462a::t_e36e7b74578767 666,668,688,693-694,714,722-723,756
+  s_fac3ccfdc4462a::t_8cdc5c3da64a6f 774
+packages/desktop/renderer/components/ChatView.tsx
+  s_fac3ccfdc4462a::t_799abd02bb00d7 325-328,338-339,343,347-356,359,362-373,376,379-390,393,396-399,433
+  s_fac3ccfdc4462a::t_fa81fe726935c0 3-5,8-10,13-22
+  s_fac3ccfdc4462a::t_aa331ee07c8c54 72-73,75-76
+  s_fac3ccfdc4462a::t_3a3e385e045867 94-111
+  s_fac3ccfdc4462a::t_79ee9972c6fdde 125
+  s_fac3ccfdc4462a::t_f0dc9a4699c03f 280
+  s_fac3ccfdc4462a::t_4682052a246596 1006-1023,1027-1028,1030-1034,1038-1040,1042-1045,1049,1051-1057,1059,1061,1063-1065,1067-1070,1072-1075,1079-1091,1095-1108,1112-1122
+packages/core/src/domain/agent/entities.ts
+  s_fac3ccfdc4462a::t_79a5941b7efa0e 5-6,18,38
+  s_fac3ccfdc4462a::t_144a01020fed7a 17,37
+packages/core/src/domain/cron/index.ts
+  ai_agent 4-5
+packages/desktop/main/index.ts
+  s_fac3ccfdc4462a::t_7bf0d4608bbb4e 75,78-79,99-100
+  s_fac3ccfdc4462a::t_5f9c81552257e1 55,57-58,65-66
+packages/core/src/domain/cron/CronTaskLock.ts
+  ai_agent 1-129
+packages/desktop/renderer/styles/global.css
+  s_fac3ccfdc4462a::t_f8fec14a173d3a 163-167
+packages/desktop/renderer/global.d.ts
+  s_fac3ccfdc4462a::t_1e879be3c87be4 2,12-13
+packages/core/src/domain/cron/cronParser.ts
+  ai_agent 8-16
+packages/desktop/renderer/stores/agentStore.ts
+  s_fac3ccfdc4462a::t_648a97075fbc82 145
+packages/core/src/index.ts
+  s_fac3ccfdc4462a::t_79a5941b7efa0e 40-42
+  s_fac3ccfdc4462a::t_a9bc6216c29d6d 29
+packages/core/src/domain/cron/CronTasks.ts
+  s_fac3ccfdc4462a::t_af8a4121435a51 1-108
+packages/core/src/domain/tool/builtin/index.ts
+  s_fac3ccfdc4462a::t_79a5941b7efa0e 9
+packages/desktop/main/preload.ts
+  s_fac3ccfdc4462a::t_8c7856347532c6 71
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.1",
+  "base_commit_sha": "d51371ce4c3707d5a6c37b4edbd2ede014d797aa",
+  "prompts": {},
+  "sessions": {
+    "s_fac3ccfdc4462a": {
+      "agent_id": {
+        "tool": "github-copilot",
+        "id": "84a12ed6-feea-48b8-8b6b-66bf43896d4b",
+        "model": "unknown"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

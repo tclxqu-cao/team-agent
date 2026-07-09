@@ -1,0 +1,30 @@
+packages/sdk/src/client/AgentClient.test.ts
+  s_609f2cc8abd48c::t_1285b11e077404 1-38
+packages/sdk/src/client/types.ts
+  s_609f2cc8abd48c::t_dfe4fb252d03c9 58-69
+packages/sdk/src/index.ts
+  s_609f2cc8abd48c::t_bf8e0c38553ad5 20
+packages/sdk/src/components/AgentChat.ts
+  s_609f2cc8abd48c::t_affb719d9c64ec 6
+  s_609f2cc8abd48c::t_cbffa1b02a149c 452-454,462-470
+  s_609f2cc8abd48c::t_0d54fa95807dc5 22-23
+packages/sdk/src/client/AgentClient.ts
+  s_609f2cc8abd48c::t_b46f4cfb08a186 58-67
+  s_609f2cc8abd48c::t_4629d74048e8cc 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.7",
+  "base_commit_sha": "df7ccd1427a9bd3afee4119d6b060c482771cafa",
+  "prompts": {},
+  "sessions": {
+    "s_609f2cc8abd48c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b8f7e59f-d8d8-49d1-9d54-104081465d97",
+        "model": "gpt-5.5"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

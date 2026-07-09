@@ -1,0 +1,50 @@
+packages/sdk/src/client/AgentClient.test.ts
+  s_609f2cc8abd48c::t_4422e1210cd031 88-89,93,96-97
+  s_609f2cc8abd48c::t_f277ae0c36c6a0 40
+  s_609f2cc8abd48c::t_2c5bd2d2d185d0 12,15
+packages/server/app/api/sessions/route.ts
+  s_609f2cc8abd48c::t_0920006e9b95b4 4-7
+packages/sdk/src/components/AgentChat.test.ts
+  s_609f2cc8abd48c::t_dd38b432f50524 171-186
+  s_609f2cc8abd48c::t_f216567a913516 60,64,75
+packages/server/app/api/agent-host.test.ts
+  s_609f2cc8abd48c::t_ad1448183b7539 149,163-207,226-240
+  s_609f2cc8abd48c::t_4a88d3e11a084f 63
+  s_609f2cc8abd48c::t_897a91f69bd391 121-126,130-137,139-148
+  s_609f2cc8abd48c::t_d3dcad99f39717 85-102
+  s_609f2cc8abd48c::t_4f636f78b9ff22 5
+  s_609f2cc8abd48c::t_bdf1f5d16c6fa7 138
+  s_609f2cc8abd48c::t_e462cb64b00e47 49
+  s_609f2cc8abd48c::t_3e9246ddbd098c 127-129
+packages/server/app/api/remote-tools/register/route.ts
+  s_609f2cc8abd48c::t_963e392d7827f1 77-97,99,105-109,122-123
+packages/sdk/src/components/AgentChat.ts
+  s_609f2cc8abd48c::t_7870759b4f6bd2 542
+packages/server/app/api/agent-host.ts
+  s_609f2cc8abd48c::t_5185af9ee69cd0 106-108
+packages/core/src/domain/agent/AgentBuilder.ts
+  s_609f2cc8abd48c::t_272f38d68f8a6a 4
+  s_609f2cc8abd48c::t_776dc636676c9c 234
+  s_609f2cc8abd48c::t_2059af990b5d3f 117-132
+  s_609f2cc8abd48c::t_f93390660b5058 206-207,260-261
+  s_609f2cc8abd48c::t_38eed753f823e5 23
+  s_609f2cc8abd48c::t_8d5926df0c8fb3 178
+packages/sdk/src/client/AgentClient.ts
+  s_609f2cc8abd48c::t_f56e26a6402dbe 50-52
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.7",
+  "base_commit_sha": "7300988b880083072ec24dd5e220eac0ad572e42",
+  "prompts": {},
+  "sessions": {
+    "s_609f2cc8abd48c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b8f7e59f-d8d8-49d1-9d54-104081465d97",
+        "model": "gpt-5.5"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

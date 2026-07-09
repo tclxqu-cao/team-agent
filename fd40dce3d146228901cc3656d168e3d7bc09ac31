@@ -1,0 +1,26 @@
+packages/core/src/infrastructure/SQLiteRemoteToolStore.ts
+  s_609f2cc8abd48c::t_15669d038dc847 93
+  s_609f2cc8abd48c::t_e0ec719348487a 72-76
+packages/core/src/infrastructure/SQLiteRemoteToolStore.test.ts
+  s_609f2cc8abd48c::t_feff231ed1ee9e 17-28
+  s_609f2cc8abd48c::t_39976f97f41d9d 37,68,93
+  s_609f2cc8abd48c::t_562d2849017a9a 13-14
+  s_609f2cc8abd48c::t_c85c4c8fc48bb1 69,83-84,86-87,90-92,94-104
+  s_609f2cc8abd48c::t_b6d353259a074a 85,88-89
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.7",
+  "base_commit_sha": "fd40dce3d146228901cc3656d168e3d7bc09ac31",
+  "prompts": {},
+  "sessions": {
+    "s_609f2cc8abd48c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b8f7e59f-d8d8-49d1-9d54-104081465d97",
+        "model": "gpt-5.5"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

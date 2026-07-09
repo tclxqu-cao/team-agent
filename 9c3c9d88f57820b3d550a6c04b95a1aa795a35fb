@@ -1,0 +1,19 @@
+packages/server/next.config.js
+  s_609f2cc8abd48c::t_2dc180b61f76e9 10-14
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.7",
+  "base_commit_sha": "9c3c9d88f57820b3d550a6c04b95a1aa795a35fb",
+  "prompts": {},
+  "sessions": {
+    "s_609f2cc8abd48c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b8f7e59f-d8d8-49d1-9d54-104081465d97",
+        "model": "LongCat-2.0"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

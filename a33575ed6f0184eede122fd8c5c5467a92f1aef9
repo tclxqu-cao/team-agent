@@ -1,0 +1,21 @@
+packages/sdk/src/components/AgentChat.ts
+  s_2bf2443dc5cf02::t_964e423669d5a4 74-75,79,82-83,87-94,96,106-110,115-204,438,506-508,513-566,627,636-658,698-742
+packages/sdk/src/store/ChatStore.ts
+  s_2bf2443dc5cf02::t_504765beb1d9fe 1,13,16-18,21,32-85,88,113,139,161,175,192,202,238,241-245
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.7",
+  "base_commit_sha": "a33575ed6f0184eede122fd8c5c5467a92f1aef9",
+  "prompts": {},
+  "sessions": {
+    "s_2bf2443dc5cf02": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f190e-68fe-7e50-968b-86e9a489cdea",
+        "model": "gpt-5.5"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
