@@ -171,6 +171,7 @@ function renderAssistantText(text: string): React.ReactNode {
 import { useSettingsStore } from "../stores/settingsStore";
 import ToolCallCard from "./ToolCallCard";
 import AskUserCard from "./AskUserCard";
+import ContextUsageBar from "./ContextUsageBar";
 import { widgetRegistry } from "./widgets/index.js";
 
 interface ChatViewProps {
@@ -214,6 +215,7 @@ export default function ChatView({
     updateSubAgentProgress,
     updateMessage,
     setMessages,
+    getMessagesForSession,
     clearMessages,
     sessionId,
     todos,
@@ -221,7 +223,7 @@ export default function ChatView({
     cronTasks,
     setCronTasks,
   } = useAgentStore();
-  const { isConfigured, profiles, activeProfileId, switchActiveProfile, loadFromSystem } = useSettingsStore();
+  const { isConfigured, profiles, activeProfileId, switchActiveProfile, loadFromSystem, contextWindow } = useSettingsStore();
   const runningSubIdsRef = useRef<Set<string>>(new Set());
 
   // This view's session is running only when the global running session matches
@@ -525,13 +527,16 @@ export default function ChatView({
           });
         // Stale check: user may have switched sessions while we were awaiting getSession()
         if (selectedSessionId !== targetSid) return;
-        setMessages(restored);
+        const liveMessages = getMessagesForSession(targetSid);
+        const preferLive = liveMessages.length > 0 && runningSessionId === targetSid;
+        const nextMessages = preferLive ? liveMessages : restored;
+        setMessages(nextMessages, targetSid);
         setSessionId(targetSid);
 
         // Infer agent activity phase from restored messages.
         // If the last restored message has toolCalls without results, the agent
         // is still executing tools — show "工具执行中" rather than "思考中".
-        const lastMsg = restored[restored.length - 1];
+        const lastMsg = nextMessages[nextMessages.length - 1];
         if (lastMsg?.role === "assistant" && lastMsg.toolCalls?.length) {
           const allDone = lastMsg.toolCalls.every(tc => tc.result);
           setAgentActivity(allDone ? "thinking" : "tools");
@@ -544,23 +549,28 @@ export default function ChatView({
     };
 
     void loadSelectedSession();
-  }, [clearMessages, selectedSessionId, setMessages, setSessionId]);
+  }, [clearMessages, getMessagesForSession, runningSessionId, selectedSessionId, setMessages, setSessionId]);
 
   const handleEvent = (event: StreamEvent) => {
     // Route by _sid using always-current refs, not stale closure values.
     const viewedSid = selectedSessionIdRef.current || sessionIdRef.current;
-    if (event._sid && event._sid !== viewedSid) return;
+    const eventSid = event._sid || viewedSid || undefined;
+    const isViewed = !eventSid || eventSid === viewedSid;
     switch (event.type) {
       case "text_chunk":
         if (event.text) {
-          appendText(event.text);
-          setThinkingText("");
-          setAgentActivity("thinking");
+          appendText(event.text, eventSid);
+          if (isViewed) {
+            setThinkingText("");
+            setAgentActivity("thinking");
+          }
         }
         break;
       case "tool_call":
-        setThinkingText("");
-        setAgentActivity("tools");
+        if (isViewed) {
+          setThinkingText("");
+          setAgentActivity("tools");
+        }
         // dispatch_agent is handled by the subsequent "agent_dispatch" event which
         // carries the subSessionId; skip it here to avoid showing two cards.
         // ask_user is handled by the subsequent "ask_user" event with its own card.
@@ -576,12 +586,12 @@ export default function ChatView({
               arguments: event.toolCall.arguments,
             }],
             timestamp: Date.now(),
-          });
+          }, eventSid);
         }
         break;
       case "tool_result":
         if (event.result) {
-          updateToolResult(event.result.toolCallId, event.result.content, event.result.isError);
+          updateToolResult(event.result.toolCallId, event.result.content, event.result.isError, eventSid);
         }
         break;
       case "todo_update":
@@ -602,7 +612,7 @@ export default function ChatView({
             arguments: { agentName: event.agentName, task: event.task ?? "", subSessionId: event.subSessionId },
           }],
           timestamp: Date.now(),
-        });
+        }, eventSid);
         // Notify sidebar to load child sessions for this parent
         if (event.subSessionId) {
           runningSubIdsRef.current.add(event.subSessionId);
@@ -619,6 +629,7 @@ export default function ChatView({
             event.subSessionId,
             (event.status as "completed" | "failed") ?? "completed",
             event.status === "failed" ? event.error : event.summary,
+            eventSid,
           );
         }
         // Toast notification — sub-session finished or errored
@@ -631,7 +642,7 @@ export default function ChatView({
         break;
       case "agent_progress":
         if (event.subSessionId && event.text) {
-          updateSubAgentProgress(event.subSessionId, event.text);
+          updateSubAgentProgress(event.subSessionId, event.text, eventSid);
         }
         break;
       case "compacted":
@@ -641,7 +652,7 @@ export default function ChatView({
           content: event.summary ?? "",
           isCompactionSummary: true,
           timestamp: Date.now(),
-        });
+        }, eventSid);
         break;
       case "show_widget": {
         // AgentEvent uses "data" but StreamEvent interface uses "widgetData";
@@ -653,15 +664,13 @@ export default function ChatView({
           data: widgetData ?? {},
         };
         // If update_id matches an existing message's widget, update it
-        const existingIdx = useAgentStore.getState().messages.findIndex(
-          (m) => m.widget?.widgetId === widgetMsg.widgetId,
-        );
-        if (existingIdx >= 0) {
-          const existingMsg = useAgentStore.getState().messages[existingIdx];
+        const sessionMessages = eventSid ? useAgentStore.getState().getMessagesForSession(eventSid) : useAgentStore.getState().messages;
+        const existingMsg = sessionMessages.find((m) => m.widget?.widgetId === widgetMsg.widgetId);
+        if (existingMsg) {
           updateMessage(existingMsg.id, (m) => ({
             ...m,
             widget: widgetMsg,
-          }));
+          }), eventSid);
         } else {
           addMessage({
             id: crypto.randomUUID(),
@@ -669,7 +678,7 @@ export default function ChatView({
             content: "",
             widget: widgetMsg,
             timestamp: Date.now(),
-          });
+          }, eventSid);
         }
         break;
       }
@@ -685,11 +694,11 @@ export default function ChatView({
             multiSelect: event.multiSelect,
           },
           timestamp: Date.now(),
-        });
+        }, eventSid);
         break;
       case "text_done": break;
       case "thinking":
-        if (event.message) {
+        if (event.message && isViewed) {
           setThinkingText(prev => prev + (prev ? "\n" : "") + event.message);
           setAgentActivity("thinking");
         }
@@ -697,16 +706,20 @@ export default function ChatView({
       case "done":
         // Only clear running state here if no queued messages — otherwise
         // startRun's finally block will chain the next run seamlessly.
-        if (!useAgentStore.getState().messages.some(m => m.isQueued)) {
+        if (isViewed && !useAgentStore.getState().messages.some(m => m.isQueued)) {
           setRunningSession(null);
         }
-        setThinkingText("");
-        setAgentActivity("idle");
+        if (isViewed) {
+          setThinkingText("");
+          setAgentActivity("idle");
+        }
         break;
       case "error":
-        setError(event.message ?? "Unknown error");
-        setRunningSession(null);
-        setAgentActivity("idle");
+        if (isViewed) {
+          setError(event.message ?? "Unknown error");
+          setRunningSession(null);
+          setAgentActivity("idle");
+        }
         break;
     }
   };
@@ -2152,6 +2165,8 @@ export default function ChatView({
           boxShadow: "var(--shadow-sm)",
           overflow: "hidden",
         }}>
+          <ContextUsageBar messages={messages} contextWindowK={contextWindow} />
+
           {/* Model selector bar (shown only when profiles exist), grouped by provider */}
           {profiles.length > 0 && (() => {
             // Build ordered groups: preserve first-appearance order of providers

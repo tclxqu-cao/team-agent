@@ -80,6 +80,7 @@ export interface ChatMessage {
 
 interface AgentState {
   messages: ChatMessage[];
+  messagesBySession: Record<string, ChatMessage[]>;
   /** The sessionId currently being streamed; null when idle */
   runningSessionId: string | null;
   currentText: string;
@@ -89,76 +90,139 @@ interface AgentState {
   /** All scheduled cron tasks (app-wide) */
   cronTasks: CronTask[];
 
-  addMessage: (msg: ChatMessage) => void;
-  appendText: (text: string) => void;
+  addMessage: (msg: ChatMessage, sessionId?: string) => void;
+  appendText: (text: string, sessionId?: string) => void;
   setRunningSession: (id: string | null) => void;
   setSessionId: (id: string) => void;
-  updateToolResult: (toolCallId: string, result: string, isError?: boolean) => void;
+  updateToolResult: (toolCallId: string, result: string, isError?: boolean, sessionId?: string) => void;
   /** Mark a dispatch_agent toolCall as completed or failed by subSessionId */
-  updateSubAgentStatus: (subSessionId: string, status: "completed" | "failed", detail?: string) => void;
+  updateSubAgentStatus: (subSessionId: string, status: "completed" | "failed", detail?: string, sessionId?: string) => void;
   /** Append streaming text to a running dispatch_agent toolCall's live progress */
-  updateSubAgentProgress: (subSessionId: string, text: string) => void;
-  setMessages: (messages: ChatMessage[]) => void;
+  updateSubAgentProgress: (subSessionId: string, text: string, sessionId?: string) => void;
+  setMessages: (messages: ChatMessage[], sessionId?: string) => void;
+  getMessagesForSession: (sessionId: string) => ChatMessage[];
   /** Update a specific message by ID using a transform function */
-  updateMessage: (id: string, updater: (msg: ChatMessage) => ChatMessage) => void;
-  clearMessages: () => void;
+  updateMessage: (id: string, updater: (msg: ChatMessage) => ChatMessage, sessionId?: string) => void;
+  clearMessages: (sessionId?: string) => void;
   setTodos: (todos: TodoItem[]) => void;
   setCronTasks: (tasks: CronTask[]) => void;
 }
 
-export const useAgentStore = create<AgentState>((set) => ({
+function addMessageToList(messages: ChatMessage[], msg: ChatMessage): ChatMessage[] {
+  if (msg.role === "assistant" && msg.toolCalls?.length) {
+    const last = messages[messages.length - 1];
+    if (last && last.role === "assistant" && !last.toolCalls?.length) {
+      return [
+        ...messages.slice(0, -1),
+        { ...last, content: last.content, toolCalls: msg.toolCalls },
+      ];
+    }
+  }
+  return [...messages, msg];
+}
+
+function appendTextToList(messages: ChatMessage[], text: string): ChatMessage[] {
+  if (!text) return messages;
+  const lastMsg = messages[messages.length - 1];
+  if (lastMsg && lastMsg.role === "assistant" && !lastMsg.toolCalls?.length && !lastMsg.askUser && !lastMsg.isCompactionSummary) {
+    const updated = [...messages];
+    updated[updated.length - 1] = { ...lastMsg, content: lastMsg.content + text };
+    return updated;
+  }
+  return [
+    ...messages,
+    {
+      id: crypto.randomUUID(),
+      role: "assistant",
+      content: text,
+      timestamp: Date.now(),
+    },
+  ];
+}
+
+function updateToolResultInList(messages: ChatMessage[], toolCallId: string, result: string, isError?: boolean): ChatMessage[] {
+  return messages.map((m) => {
+    if (!m.toolCalls) return m;
+    const updatedCalls = m.toolCalls.map((tc) =>
+      tc.id === toolCallId ? { ...tc, result, isError } : tc,
+    );
+    return { ...m, toolCalls: updatedCalls };
+  });
+}
+
+function updateSubAgentStatusInList(messages: ChatMessage[], subSessionId: string, status: "completed" | "failed", detail?: string): ChatMessage[] {
+  return messages.map((m) => {
+    if (!m.toolCalls) return m;
+    const updatedCalls = m.toolCalls.map((tc) =>
+      tc.name === "dispatch_agent" && tc.arguments.subSessionId === subSessionId
+        ? { ...tc, arguments: { ...tc.arguments, subAgentStatus: status, subAgentDetail: detail } }
+        : tc
+    );
+    return { ...m, toolCalls: updatedCalls };
+  });
+}
+
+function updateSubAgentProgressInList(messages: ChatMessage[], subSessionId: string, text: string): ChatMessage[] {
+  return messages.map((m) => {
+    if (!m.toolCalls) return m;
+    const updatedCalls = m.toolCalls.map((tc) =>
+      tc.name === "dispatch_agent" && tc.arguments.subSessionId === subSessionId
+        ? { ...tc, arguments: { ...tc.arguments, subAgentProgress: ((tc.arguments.subAgentProgress as string | undefined) ? ((tc.arguments.subAgentProgress as string) + "\n" + text) : text).split("\n").slice(-30).join("\n") } }
+        : tc
+    );
+    return { ...m, toolCalls: updatedCalls };
+  });
+}
+
+function updateMessageInList(messages: ChatMessage[], id: string, updater: (msg: ChatMessage) => ChatMessage): ChatMessage[] {
+  return messages.map((m) => (m.id === id ? updater(m) : m));
+}
+
+export const useAgentStore = create<AgentState>((set, get) => ({
   messages: [],
+  messagesBySession: {},
   runningSessionId: null,
   currentText: "",
   sessionId: null,
   todos: [],
   cronTasks: [],
 
-  addMessage: (msg) =>
+  addMessage: (msg, sid) =>
     set((state) => {
-      // If adding a tool_call assistant message, merge into last assistant msg if it's empty/text-only
-      if (msg.role === "assistant" && msg.toolCalls?.length) {
-        const last = state.messages[state.messages.length - 1];
-        if (last && last.role === "assistant" && !last.toolCalls?.length) {
-          const merged = {
-            ...last,
-            content: last.content,
-            toolCalls: msg.toolCalls,
-          };
-          return {
-            messages: [...state.messages.slice(0, -1), merged],
-            currentText: "",
-          };
-        }
-      }
+      const targetSid = sid ?? state.sessionId ?? undefined;
+      const visibleMessages = targetSid && targetSid !== state.sessionId
+        ? state.messages
+        : addMessageToList(state.messages, msg);
+      const messagesBySession = targetSid
+        ? {
+            ...state.messagesBySession,
+            [targetSid]: addMessageToList(state.messagesBySession[targetSid] ?? (targetSid === state.sessionId ? state.messages : []), msg),
+          }
+        : state.messagesBySession;
       return {
-        messages: [...state.messages, msg],
-        currentText: "",
+        messages: visibleMessages,
+        messagesBySession,
+        currentText: targetSid && targetSid !== state.sessionId ? state.currentText : "",
       };
     }),
 
-  appendText: (text) =>
+  appendText: (text, sid) =>
     set((state) => {
-      if (!text) return state; // ignore empty chunks
-      const lastMsg = state.messages[state.messages.length - 1];
-      // Append to the last assistant message ONLY if it's a plain text bubble
-      // (not a tool call card, not an ask_user card, not a compaction banner).
-      if (lastMsg && lastMsg.role === "assistant" && !lastMsg.toolCalls?.length && !lastMsg.askUser && !lastMsg.isCompactionSummary) {
-        const updated = [...state.messages];
-        updated[updated.length - 1] = { ...lastMsg, content: lastMsg.content + text };
-        return { messages: updated, currentText: state.currentText + text };
-      }
+      if (!text) return state;
+      const targetSid = sid ?? state.sessionId ?? undefined;
+      const visibleMessages = targetSid && targetSid !== state.sessionId
+        ? state.messages
+        : appendTextToList(state.messages, text);
+      const messagesBySession = targetSid
+        ? {
+            ...state.messagesBySession,
+            [targetSid]: appendTextToList(state.messagesBySession[targetSid] ?? (targetSid === state.sessionId ? state.messages : []), text),
+          }
+        : state.messagesBySession;
       return {
-        messages: [
-          ...state.messages,
-          {
-            id: crypto.randomUUID(),
-            role: "assistant",
-            content: text,
-            timestamp: Date.now(),
-          },
-        ],
-        currentText: state.currentText + text,
+        messages: visibleMessages,
+        messagesBySession,
+        currentText: targetSid && targetSid !== state.sessionId ? state.currentText : state.currentText + text,
       };
     }),
 
@@ -166,54 +230,87 @@ export const useAgentStore = create<AgentState>((set) => ({
 
   setSessionId: (id) => set({ sessionId: id }),
 
-  updateToolResult: (toolCallId, result, isError) =>
+  updateToolResult: (toolCallId, result, isError, sid) =>
     set((state) => {
-      const updated = state.messages.map((m) => {
-        if (m.toolCalls) {
-          const updatedCalls = m.toolCalls.map((tc) =>
-            tc.id === toolCallId ? { ...tc, result, isError } : tc,
-          );
-          return { ...m, toolCalls: updatedCalls };
-        }
-        return m;
-      });
-      return { messages: updated };
+      const targetSid = sid ?? state.sessionId ?? undefined;
+      const visibleMessages = targetSid && targetSid !== state.sessionId
+        ? state.messages
+        : updateToolResultInList(state.messages, toolCallId, result, isError);
+      const messagesBySession = targetSid
+        ? {
+            ...state.messagesBySession,
+            [targetSid]: updateToolResultInList(state.messagesBySession[targetSid] ?? (targetSid === state.sessionId ? state.messages : []), toolCallId, result, isError),
+          }
+        : state.messagesBySession;
+      return { messages: visibleMessages, messagesBySession };
     }),
 
-  setMessages: (messages) => set({ messages, currentText: "" }),
+  setMessages: (messages, sid) => set((state) => {
+    const targetSid = sid ?? state.sessionId ?? undefined;
+    return {
+      messages,
+      messagesBySession: targetSid ? { ...state.messagesBySession, [targetSid]: messages } : state.messagesBySession,
+      currentText: "",
+    };
+  }),
 
-  updateMessage: (id, updater) =>
-    set((state) => ({
-      messages: state.messages.map((m) => (m.id === id ? updater(m) : m)),
-    })),
+  getMessagesForSession: (sid) => get().messagesBySession[sid] ?? [],
 
-  updateSubAgentStatus: (subSessionId, status, detail) =>
-    set((state) => ({
-      messages: state.messages.map((m) => {
-        if (!m.toolCalls) return m;
-        const updatedCalls = m.toolCalls.map((tc) =>
-          tc.name === "dispatch_agent" && tc.arguments.subSessionId === subSessionId
-            ? { ...tc, arguments: { ...tc.arguments, subAgentStatus: status, subAgentDetail: detail } }
-            : tc
-        );
-        return { ...m, toolCalls: updatedCalls };
-      }),
-    })),
+  updateMessage: (id, updater, sid) =>
+    set((state) => {
+      const targetSid = sid ?? state.sessionId ?? undefined;
+      const visibleMessages = targetSid && targetSid !== state.sessionId
+        ? state.messages
+        : updateMessageInList(state.messages, id, updater);
+      const messagesBySession = targetSid
+        ? {
+            ...state.messagesBySession,
+            [targetSid]: updateMessageInList(state.messagesBySession[targetSid] ?? (targetSid === state.sessionId ? state.messages : []), id, updater),
+          }
+        : state.messagesBySession;
+      return { messages: visibleMessages, messagesBySession };
+    }),
 
-  updateSubAgentProgress: (subSessionId, text) =>
-    set((state) => ({
-      messages: state.messages.map((m) => {
-        if (!m.toolCalls) return m;
-        const updatedCalls = m.toolCalls.map((tc) =>
-          tc.name === "dispatch_agent" && tc.arguments.subSessionId === subSessionId
-            ? { ...tc, arguments: { ...tc.arguments, subAgentProgress: ((tc.arguments.subAgentProgress as string | undefined) ? ((tc.arguments.subAgentProgress as string) + "\n" + text) : text).split("\n").slice(-30).join("\n") } }
-            : tc
-        );
-        return { ...m, toolCalls: updatedCalls };
-      }),
-    })),
+  updateSubAgentStatus: (subSessionId, status, detail, sid) =>
+    set((state) => {
+      const targetSid = sid ?? state.sessionId ?? undefined;
+      const visibleMessages = targetSid && targetSid !== state.sessionId
+        ? state.messages
+        : updateSubAgentStatusInList(state.messages, subSessionId, status, detail);
+      const messagesBySession = targetSid
+        ? {
+            ...state.messagesBySession,
+            [targetSid]: updateSubAgentStatusInList(state.messagesBySession[targetSid] ?? (targetSid === state.sessionId ? state.messages : []), subSessionId, status, detail),
+          }
+        : state.messagesBySession;
+      return { messages: visibleMessages, messagesBySession };
+    }),
 
-  clearMessages: () => set({ messages: [], currentText: "" }),
+  updateSubAgentProgress: (subSessionId, text, sid) =>
+    set((state) => {
+      const targetSid = sid ?? state.sessionId ?? undefined;
+      const visibleMessages = targetSid && targetSid !== state.sessionId
+        ? state.messages
+        : updateSubAgentProgressInList(state.messages, subSessionId, text);
+      const messagesBySession = targetSid
+        ? {
+            ...state.messagesBySession,
+            [targetSid]: updateSubAgentProgressInList(state.messagesBySession[targetSid] ?? (targetSid === state.sessionId ? state.messages : []), subSessionId, text),
+          }
+        : state.messagesBySession;
+      return { messages: visibleMessages, messagesBySession };
+    }),
+
+  clearMessages: (sid) => set((state) => {
+    const targetSid = sid ?? state.sessionId ?? undefined;
+    if (!targetSid) return { messages: [], currentText: "" };
+    const { [targetSid]: _removed, ...rest } = state.messagesBySession;
+    return {
+      messages: targetSid === state.sessionId ? [] : state.messages,
+      messagesBySession: rest,
+      currentText: targetSid === state.sessionId ? "" : state.currentText,
+    };
+  }),
 
   setTodos: (todos) => set({ todos }),
 
