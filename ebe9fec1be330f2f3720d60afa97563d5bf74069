@@ -1,0 +1,19 @@
+docs/superpowers/specs/2026-07-01-agent-runtime-refactor-design.md
+  s_baba6d05bdaa29::t_2db4b0bc87d818 1-231
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.3",
+  "base_commit_sha": "ebe9fec1be330f2f3720d60afa97563d5bf74069",
+  "prompts": {},
+  "sessions": {
+    "s_baba6d05bdaa29": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "7f254496-33f6-4419-b844-6eea92995026",
+        "model": "gpt-5.5"
+      },
+      "human_author": "caoqu <qu.cao@ly.com>"
+    }
+  }
+}
