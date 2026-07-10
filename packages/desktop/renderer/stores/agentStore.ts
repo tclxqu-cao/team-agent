@@ -1,7 +1,8 @@
 import { create } from "zustand";
+import type { ContextUsageSnapshot } from "@agent/core";
 import type { CronTask } from "../global";
 
-export type { CronTask };
+export type { ContextUsageSnapshot, CronTask };
 
 export interface StreamEvent {
   type: string;
@@ -12,6 +13,7 @@ export interface StreamEvent {
   toolCall?: { id: string; name: string; arguments: Record<string, unknown> };
   result?: { toolCallId: string; content: string; isError?: boolean };
   finalText?: string;
+  usage?: ContextUsageSnapshot;
   todos?: TodoItem[];
   tasks?: CronTask[];
   agentName?: string;
@@ -31,6 +33,15 @@ export interface StreamEvent {
   widgetId?: string;
   widgetType?: string;
   widgetData?: Record<string, unknown>;
+}
+
+export function findLatestContextUsage(
+  events: Array<{ type?: string; usage?: ContextUsageSnapshot }>,
+): ContextUsageSnapshot | undefined {
+  for (let i = events.length - 1; i >= 0; i--) {
+    if (events[i].type === "context_usage" && events[i].usage) return events[i].usage;
+  }
+  return undefined;
 }
 
 export interface TodoItem {
@@ -81,6 +92,7 @@ export interface ChatMessage {
 interface AgentState {
   messages: ChatMessage[];
   messagesBySession: Record<string, ChatMessage[]>;
+  contextUsageBySession: Record<string, ContextUsageSnapshot>;
   /** The sessionId currently being streamed; null when idle */
   runningSessionId: string | null;
   currentText: string;
@@ -101,6 +113,8 @@ interface AgentState {
   updateSubAgentProgress: (subSessionId: string, text: string, sessionId?: string) => void;
   setMessages: (messages: ChatMessage[], sessionId?: string) => void;
   getMessagesForSession: (sessionId: string) => ChatMessage[];
+  setContextUsage: (usage: ContextUsageSnapshot, sessionId?: string) => void;
+  getContextUsageForSession: (sessionId: string) => ContextUsageSnapshot | undefined;
   /** Update a specific message by ID using a transform function */
   updateMessage: (id: string, updater: (msg: ChatMessage) => ChatMessage, sessionId?: string) => void;
   clearMessages: (sessionId?: string) => void;
@@ -181,6 +195,7 @@ function updateMessageInList(messages: ChatMessage[], id: string, updater: (msg:
 export const useAgentStore = create<AgentState>((set, get) => ({
   messages: [],
   messagesBySession: {},
+  contextUsageBySession: {},
   runningSessionId: null,
   currentText: "",
   sessionId: null,
@@ -256,6 +271,19 @@ export const useAgentStore = create<AgentState>((set, get) => ({
 
   getMessagesForSession: (sid) => get().messagesBySession[sid] ?? [],
 
+  setContextUsage: (usage, sid) => set((state) => {
+    const targetSid = sid ?? state.sessionId ?? undefined;
+    if (!targetSid) return state;
+    return {
+      contextUsageBySession: {
+        ...state.contextUsageBySession,
+        [targetSid]: usage,
+      },
+    };
+  }),
+
+  getContextUsageForSession: (sid) => get().contextUsageBySession[sid],
+
   updateMessage: (id, updater, sid) =>
     set((state) => {
       const targetSid = sid ?? state.sessionId ?? undefined;
@@ -304,10 +332,12 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   clearMessages: (sid) => set((state) => {
     const targetSid = sid ?? state.sessionId ?? undefined;
     if (!targetSid) return { messages: [], currentText: "" };
-    const { [targetSid]: _removed, ...rest } = state.messagesBySession;
+    const { [targetSid]: _removedMessages, ...messagesBySession } = state.messagesBySession;
+    const { [targetSid]: _removedUsage, ...contextUsageBySession } = state.contextUsageBySession;
     return {
       messages: targetSid === state.sessionId ? [] : state.messages,
-      messagesBySession: rest,
+      messagesBySession,
+      contextUsageBySession,
       currentText: targetSid === state.sessionId ? "" : state.currentText,
     };
   }),

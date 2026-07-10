@@ -10,6 +10,7 @@ export type AgentEventType =
   | "tool_result"
   | "text_chunk"
   | "text_done"
+  | "context_usage"
   | "compacted"
   | "turn_aborted"
   | "error"
@@ -36,6 +37,7 @@ export type AgentEvent =
   | { type: "tool_result"; result: ToolResult }
   | { type: "text_chunk"; text: string }
   | { type: "text_done" }
+  | { type: "context_usage"; usage: ContextUsageSnapshot }
   | { type: "compacted"; summary: string; removedMessages: number }
   | { type: "turn_aborted" }
   | { type: "error"; message: string; code?: string }
@@ -46,6 +48,39 @@ export type AgentEvent =
   | { type: "agent_progress"; agentName: string; subSessionId: string; text: string }
   | { type: "cron_update"; tasks: CronTask[] }
   | { type: "show_widget"; widgetType: string; data: Record<string, unknown>; widgetId: string };
+
+export type ContextUsageCategory =
+  | "systemBase"
+  | "environment"
+  | "projectContext"
+  | "skills"
+  | "memory"
+  | "embeddedTools"
+  | "conversationHistory"
+  | "currentUserMessage"
+  | "assistantMessages"
+  | "toolCalls"
+  | "toolResults"
+  | "images"
+  | "compactionSummary"
+  | "nativeToolDefinitions"
+  | "messageOverhead";
+
+export interface ContextUsageSegment {
+  category: ContextUsageCategory;
+  tokens: number;
+}
+
+export interface ContextUsageSnapshot {
+  requestIndex: number;
+  providerId: string;
+  modelId: string;
+  maxTokens: number;
+  totalTokens: number;
+  ratio: number;
+  estimationMode: "heuristic";
+  segments: ContextUsageSegment[];
+}
 
 export interface TokenUsage {
   inputTokens: number;

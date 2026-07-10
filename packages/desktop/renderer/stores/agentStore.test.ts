@@ -1,11 +1,29 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { useAgentStore } from "./agentStore";
+import {
+  findLatestContextUsage,
+  useAgentStore,
+  type ContextUsageSnapshot,
+} from "./agentStore";
+
+function createUsage(requestIndex: number): ContextUsageSnapshot {
+  return {
+    requestIndex,
+    providerId: "mock",
+    modelId: "mock-model",
+    maxTokens: 100_000,
+    totalTokens: requestIndex * 100,
+    ratio: requestIndex / 1000,
+    estimationMode: "heuristic",
+    segments: [{ category: "systemBase", tokens: requestIndex * 100 }],
+  };
+}
 
 describe("agentStore session message cache", () => {
   beforeEach(() => {
     useAgentStore.setState({
       messages: [],
       messagesBySession: {},
+      contextUsageBySession: {},
       currentText: "",
       runningSessionId: null,
       sessionId: null,
@@ -54,5 +72,34 @@ describe("agentStore session message cache", () => {
     expect(background[0]).toMatchObject({ role: "assistant", content: "I will read a file" });
     expect(background[0].toolCalls?.[0]).toMatchObject({ id: "tc1", result: "file content", isError: false });
     expect(useAgentStore.getState().messages).toEqual([]);
+  });
+
+  it("keeps the latest context usage isolated by session", () => {
+    const store = useAgentStore.getState();
+    store.setContextUsage(createUsage(1), "session-a");
+    store.setContextUsage(createUsage(2), "session-b");
+    store.setContextUsage(createUsage(3), "session-a");
+
+    expect(useAgentStore.getState().getContextUsageForSession("session-a")?.requestIndex).toBe(3);
+    expect(useAgentStore.getState().getContextUsageForSession("session-b")?.requestIndex).toBe(2);
+  });
+
+  it("clears context usage only for the target session", () => {
+    const store = useAgentStore.getState();
+    store.setContextUsage(createUsage(1), "session-a");
+    store.setContextUsage(createUsage(2), "session-b");
+    store.clearMessages("session-a");
+
+    expect(useAgentStore.getState().getContextUsageForSession("session-a")).toBeUndefined();
+    expect(useAgentStore.getState().getContextUsageForSession("session-b")?.requestIndex).toBe(2);
+  });
+
+  it("restores the latest persisted context usage event", () => {
+    expect(findLatestContextUsage([
+      { type: "context_usage", usage: createUsage(1) },
+      { type: "text_chunk" },
+      { type: "context_usage", usage: createUsage(2) },
+    ])?.requestIndex).toBe(2);
+    expect(findLatestContextUsage([{ type: "text_chunk" }])).toBeUndefined();
   });
 });

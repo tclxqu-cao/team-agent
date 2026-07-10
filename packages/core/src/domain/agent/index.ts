@@ -1,6 +1,9 @@
 export {
   type AgentEventType,
   type AgentEvent,
+  type ContextUsageCategory,
+  type ContextUsageSegment,
+  type ContextUsageSnapshot,
   type TokenUsage,
   type AgentConfig,
   type IAgentLoop,

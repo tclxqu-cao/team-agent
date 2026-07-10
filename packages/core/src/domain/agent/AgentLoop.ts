@@ -5,7 +5,12 @@ import type {
 } from './entities.js';
 import type { Message, ToolCall } from '../model/entities.js';
 import type { ToolContext } from '../tool/entities.js';
-import { ContextCompactor } from './ContextCompactor.js';
+import {
+  COMPACTION_ACKNOWLEDGEMENT,
+  COMPACTION_SUMMARY_PREFIX,
+  ContextCompactor,
+} from './ContextCompactor.js';
+import { estimateContextUsage } from './ContextUsageEstimator.js';
 
 export class AgentLoop implements IAgentLoop {
   private readonly config: AgentConfig;
@@ -82,8 +87,8 @@ export class AgentLoop implements IAgentLoop {
             recentMessages: Message[];
           };
           history = [
-            { role: "user", content: `This is a summary of the conversation so far, written to preserve continuity after context compaction.\n${cp.summary}` },
-            { role: "assistant", content: "Understood. I have reviewed the summary and will continue from where we left off." },
+            { role: "user", content: `${COMPACTION_SUMMARY_PREFIX}\n${cp.summary}` },
+            { role: "assistant", content: COMPACTION_ACKNOWLEDGEMENT },
             ...cp.recentMessages,
             // All messages saved AFTER the checkpoint (from subsequent runs)
             ...rawHistory.slice(lastCheckpointIdx + 1).filter((m) => m.name !== "__compaction_checkpoint__"),
@@ -129,17 +134,23 @@ export class AgentLoop implements IAgentLoop {
     };
 
     let messages: Message[];
+    let currentUserMessage: Message;
     if (userMsgAlreadyInHistory) {
-      // Replace the last (user) message with one that includes images if provided
-      const base = images && images.length > 0
-        ? [...assembled.messages.slice(0, -1), { ...assembled.messages.at(-1)!, images }]
-        : assembled.messages;
-      messages = [{ role: "system", content: assembled.systemPrompt }, ...base];
+      // Replace the last (user) message with one that includes images if provided.
+      currentUserMessage = images && images.length > 0
+        ? { ...assembled.messages.at(-1)!, images }
+        : assembled.messages.at(-1)!;
+      messages = [
+        { role: "system", content: assembled.systemPrompt },
+        ...assembled.messages.slice(0, -1),
+        currentUserMessage,
+      ];
     } else {
+      currentUserMessage = userMsgWithImages;
       messages = [
         { role: "system", content: assembled.systemPrompt },
         ...assembled.messages,
-        userMsgWithImages,
+        currentUserMessage,
       ];
     }
 
@@ -219,6 +230,19 @@ export class AgentLoop implements IAgentLoop {
       // ───────────────────────────────────────────────────────────────
 
       const toolDefs = this.getFilteredToolDefinitions();
+      yield {
+        type: "context_usage",
+        usage: estimateContextUsage({
+          requestIndex: iteration,
+          providerId: this.config.modelProvider.providerId,
+          modelId: this.config.modelProvider.modelId,
+          maxTokens: tokenLimit,
+          messages,
+          currentUserMessage,
+          nativeToolDefinitions: toolDefs,
+          systemSections: assembled.systemSections,
+        }),
+      };
       const toolCalls: ToolCall[] = [];
       let hasError = false;
       const maxRetries = this.config.streamMaxRetries ?? 0;

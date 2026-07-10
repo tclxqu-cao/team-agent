@@ -50,6 +50,14 @@ function createMockContextAssembler(): IContextAssembler {
   return {
     assemble: async (): Promise<AssembledContext> => ({
       systemPrompt: "You are a helpful assistant.",
+      systemSections: {
+        systemBase: "You are a helpful assistant.",
+        environment: "",
+        projectContext: "",
+        skills: "",
+        embeddedTools: "",
+        memory: "",
+      },
       messages: [],
       tokenBudget: 100_000,
       tokenUsed: 50,
@@ -101,6 +109,28 @@ describe("AgentLoop", () => {
     expect(doneEvent.type).toBe("done");
   });
 
+  it("emits complete context usage before model output", async () => {
+    const loop = new AgentLoop(createConfig());
+    const events: AgentEvent[] = [];
+
+    for await (const event of loop.run("Hi", "test-session", ["data:image/png;base64,abc"])) {
+      events.push(event);
+    }
+
+    const usageIndex = events.findIndex((event) => event.type === "context_usage");
+    const textIndex = events.findIndex((event) => event.type === "text_chunk");
+    expect(usageIndex).toBeGreaterThanOrEqual(0);
+    expect(usageIndex).toBeLessThan(textIndex);
+    const usageEvent = events[usageIndex];
+    expect(usageEvent.type).toBe("context_usage");
+    if (usageEvent.type === "context_usage") {
+      expect(usageEvent.usage.providerId).toBe("mock");
+      expect(usageEvent.usage.modelId).toBe("mock-model");
+      expect(usageEvent.usage.segments.find((s) => s.category === "images")?.tokens).toBe(1000);
+      expect(usageEvent.usage.segments.find((s) => s.category === "nativeToolDefinitions")?.tokens).toBeGreaterThan(0);
+    }
+  });
+
   it("should handle tool calls from model", async () => {
     let callCount = 0;
     const modelWithTool = {
@@ -135,6 +165,36 @@ describe("AgentLoop", () => {
     const toolResultEvents = events.filter((e) => e.type === "tool_result");
     expect(toolResultEvents.length).toBe(1);
     expect((toolResultEvents[0] as unknown as { result: ToolResult }).result.content).toBe("echo: test");
+
+    const usageEvents = events.filter((e) => e.type === "context_usage");
+    expect(usageEvents).toHaveLength(2);
+    const secondUsage = usageEvents[1];
+    expect(secondUsage.type).toBe("context_usage");
+    if (secondUsage.type === "context_usage") {
+      expect(secondUsage.usage.requestIndex).toBe(2);
+      expect(secondUsage.usage.segments.find((s) => s.category === "toolCalls")?.tokens).toBeGreaterThan(0);
+      expect(secondUsage.usage.segments.find((s) => s.category === "toolResults")?.tokens).toBeGreaterThan(0);
+    }
+  });
+
+  it("emits one context snapshot when a request is retried", async () => {
+    let calls = 0;
+    const retryModel = {
+      ...createMockModel(),
+      streamChat: async function* (): AsyncIterable<StreamEvent> {
+        calls++;
+        if (calls === 1) throw new Error("network temporary");
+        yield { type: "text_chunk", text: "Recovered" };
+        yield { type: "text_done" };
+      },
+    };
+
+    const loop = new AgentLoop(createConfig({ modelProvider: retryModel, streamMaxRetries: 1 }));
+    const events: AgentEvent[] = [];
+    for await (const event of loop.run("Retry", "test-session")) events.push(event);
+
+    expect(calls).toBe(2);
+    expect(events.filter((event) => event.type === "context_usage")).toHaveLength(1);
   });
 
   it("should respect max iterations", async () => {

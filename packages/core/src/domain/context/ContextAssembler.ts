@@ -4,6 +4,7 @@ import type {
   IContextLoader,
   AssembleInput,
   AssembledContext,
+  SystemPromptSections,
 } from './entities.js';
 
 const DEFAULT_SYSTEM_PROMPT = `You are an expert AI assistant with access to tools. You operate in a ReAct loop: reason → act (tool calls) → observe results → reason again.
@@ -127,23 +128,23 @@ export class ContextAssembler implements IContextAssembler {
     const truncatedProject = this.truncateProjectSection(projectSection, projectBudget);
 
     // ── Assemble final system prompt (priority order: base → env → project → skills → tools → memory) ──
-    let systemPrompt = `${basePrompt}\n\n${envSection}`;
-    if (truncatedProject) systemPrompt += `\n\n${truncatedProject}`;
-    if (truncatedSkills) systemPrompt += `\n\n${truncatedSkills}`;
-    if (truncatedTools) systemPrompt += `\n\n${truncatedTools}`;
-    if (truncatedMemory) systemPrompt += `\n\n${truncatedMemory}`;
-
-    // Final safety: truncate entire prompt if still over budget
-    // (e.g. when base prompt alone exceeds the budget)
-    let tokenUsed = this.estimateTokens(systemPrompt) + userMsgTokens + historyTokens;
-    if (tokenUsed > maxTokens) {
-      const promptBudget = Math.max(0, maxTokens - userMsgTokens - historyTokens);
-      systemPrompt = this.truncateToBudget(systemPrompt, promptBudget);
-      tokenUsed = this.estimateTokens(systemPrompt) + userMsgTokens + historyTokens;
-    }
+    // Preserve the exact post-truncation sections so request usage can attribute
+    // every character that is actually sent to the model.
+    const promptBudget = Math.max(0, maxTokens - userMsgTokens - historyTokens);
+    const systemSections = this.fitSectionsToBudget({
+      systemBase: basePrompt,
+      environment: envSection,
+      projectContext: truncatedProject,
+      skills: truncatedSkills,
+      embeddedTools: truncatedTools,
+      memory: truncatedMemory,
+    }, promptBudget);
+    const systemPrompt = this.joinSections(systemSections);
+    const tokenUsed = this.estimateTokens(systemPrompt) + userMsgTokens + historyTokens;
 
     return {
       systemPrompt,
+      systemSections,
       messages: input.history,
       tokenBudget: maxTokens,
       tokenUsed: Math.min(tokenUsed, maxTokens),
@@ -183,9 +184,7 @@ export class ContextAssembler implements IContextAssembler {
   /** Truncate a section to fit within a token budget. */
   private truncateSection(section: string, tokenBudget: number): string {
     if (!section || tokenBudget <= 0) return "";
-    const charBudget = tokenBudget * 4;
-    if (section.length <= charBudget) return section;
-    return section.slice(0, charBudget) + "\n... (truncated)";
+    return this.truncateText(section, tokenBudget * 4);
   }
 
   /**
@@ -239,26 +238,61 @@ export class ContextAssembler implements IContextAssembler {
     return result;
   }
 
-  /** Fallback: truncate the entire system prompt by cutting sections from the end. */
-  private truncateToBudget(text: string, tokenBudget: number): string {
-    const charBudget = tokenBudget * 4;
-    if (text.length <= charBudget) return text;
+  /** Fit attributed sections into the final prompt budget without losing ownership. */
+  private fitSectionsToBudget(
+    sections: SystemPromptSections,
+    tokenBudget: number,
+  ): SystemPromptSections {
+    const result: SystemPromptSections = {
+      systemBase: "",
+      environment: "",
+      projectContext: "",
+      skills: "",
+      embeddedTools: "",
+      memory: "",
+    };
+    let remainingChars = tokenBudget * 4;
+    let hasContent = false;
+    const keys: Array<keyof SystemPromptSections> = [
+      "systemBase",
+      "environment",
+      "projectContext",
+      "skills",
+      "embeddedTools",
+      "memory",
+    ];
 
-    const sections = text.split("\n## ");
-    let result = sections[0];
-    let remaining = charBudget - result.length;
-
-    for (let i = 1; i < sections.length && remaining > 0; i++) {
-      const section = "## " + sections[i];
-      if (section.length <= remaining) {
-        result += "\n" + section;
-        remaining -= section.length;
-      } else {
-        result += "\n" + section.slice(0, remaining) + "\n... (truncated)";
-        break;
-      }
+    for (const key of keys) {
+      const section = sections[key];
+      if (!section || remainingChars <= 0) continue;
+      const separatorChars = hasContent ? 2 : 0;
+      if (remainingChars <= separatorChars) break;
+      remainingChars -= separatorChars;
+      result[key] = this.truncateText(section, remainingChars);
+      remainingChars -= result[key].length;
+      hasContent = result[key].length > 0 || hasContent;
+      if (result[key].length < section.length) break;
     }
 
     return result;
+  }
+
+  private joinSections(sections: SystemPromptSections): string {
+    return [
+      sections.systemBase,
+      sections.environment,
+      sections.projectContext,
+      sections.skills,
+      sections.embeddedTools,
+      sections.memory,
+    ].filter(Boolean).join("\n\n");
+  }
+
+  private truncateText(text: string, charBudget: number): string {
+    if (charBudget <= 0) return "";
+    if (text.length <= charBudget) return text;
+    const suffix = "\n... (truncated)";
+    if (charBudget <= suffix.length) return text.slice(0, charBudget);
+    return text.slice(0, charBudget - suffix.length) + suffix;
   }
 }
