@@ -8,16 +8,24 @@ const { values } = parseArgs({
     "previews-dir": { type: "string" },
     "output-dir": { type: "string" },
     "api-key": { type: "string" },
+    "base-url": { type: "string" },
+    model: { type: "string" },
   },
 });
 
 if (!values.storyboard || !values["output-dir"]) {
-  console.error("Usage: generate-video.ts --storyboard <path> --previews-dir <dir> --output-dir <dir> --api-key <key>");
+  console.error("Usage: generate-video.ts --storyboard <path> --previews-dir <dir> --output-dir <dir> [--api-key <key>] [--base-url <url>] [--model <id>]");
   process.exit(1);
 }
 
 const apiKey = values["api-key"] ?? process.env.VOLCENGINE_API_KEY ?? "";
-const baseUrl = process.env.SEEDANCE_BASE_URL ?? "https://visual.volcengineapi.com";
+const baseUrl = values["base-url"] ?? process.env.SEEDANCE_BASE_URL ?? "https://visual.volcengineapi.com";
+const model = values.model ?? process.env.SEEDANCE_MODEL ?? "seedance-1-lite";
+
+if (!apiKey) {
+  console.error("Missing VOLCENGINE_API_KEY. Set it in Settings or pass --api-key/--base-url/--model.");
+  process.exit(1);
+}
 
 const sbContent = await Bun.file(values.storyboard).text();
 const storyboard = JSON.parse(sbContent);
@@ -25,7 +33,6 @@ const storyboard = JSON.parse(sbContent);
 async function generateVideoFromImage(imagePath: string, prompt: string, outputPath: string): Promise<void> {
   const imageBase64 = Buffer.from(await Bun.file(imagePath).arrayBuffer()).toString("base64");
 
-  // Seedance 1 Lite API call
   const response = await fetch(`${baseUrl}/v1/video/generation`, {
     method: "POST",
     headers: {
@@ -33,7 +40,7 @@ async function generateVideoFromImage(imagePath: string, prompt: string, outputP
       Authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model: "seedance-1-lite",
+      model,
       input: {
         image: `data:image/png;base64,${imageBase64}`,
         prompt: prompt,
@@ -46,15 +53,14 @@ async function generateVideoFromImage(imagePath: string, prompt: string, outputP
   });
 
   if (!response.ok) {
-    throw new Error(`Seedance API error: ${response.status} ${await response.text()}`);
+    throw new Error(`Video API error: ${response.status} ${await response.text()}`);
   }
 
   const result = await response.json();
   const taskId = result.task_id ?? result.data?.task_id;
-  if (!taskId) throw new Error("No task_id in Seedance response");
+  if (!taskId) throw new Error("No task_id in video generation response");
 
-  // Poll for completion (Seedance is async)
-  const MAX_POLLS = 60; // 5 min max
+  const MAX_POLLS = 60;
   for (let i = 0; i < MAX_POLLS; i++) {
     await new Promise(r => setTimeout(r, 5000));
     const statusResp = await fetch(`${baseUrl}/v1/video/query?task_id=${taskId}`, {
@@ -85,7 +91,6 @@ for (const shot of storyboard.shots) {
   const previewPath = `${values["previews-dir"]}/shot-${shot.index}.png`;
   const outputPath = `${values["output-dir"]}/shot-${shot.index}.mp4`;
   console.error(`Generating video for shot ${shot.index}...`);
-
   try {
     await generateVideoFromImage(previewPath, shot.prompt, outputPath);
     results.push({ index: shot.index, videoUrl: outputPath });
@@ -96,7 +101,6 @@ for (const shot of storyboard.shots) {
   }
 }
 
-// Update storyboard
 for (const r of results) {
   const shot = storyboard.shots.find((s: any) => s.index === r.index);
   if (shot) {
