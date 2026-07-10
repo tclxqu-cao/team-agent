@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import type { ChatMessage } from "../stores/agentStore";
 
 export interface ContextUsageSegment {
@@ -89,15 +89,23 @@ export default function ContextUsageBar({
   contextWindowK: number;
 }) {
   const [open, setOpen] = useState(false);
+  const [anchorRect, setAnchorRect] = useState<DOMRect | null>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
   const estimate = useMemo(() => estimateContextUsage(messages, contextWindowK), [messages, contextWindowK]);
   const percent = Math.round(estimate.ratio * 100);
   const barColor = estimate.ratio >= 0.85 ? "var(--danger)" : estimate.ratio >= 0.6 ? "#f59e0b" : "var(--accent)";
+  const viewportWidth = typeof window === "undefined" ? 1024 : window.innerWidth;
 
   return (
     <div style={{ position: "relative", borderBottom: "1px solid var(--border-subtle)" }}>
       <button
+        ref={buttonRef}
         type="button"
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => {
+          const rect = buttonRef.current?.getBoundingClientRect() ?? null;
+          setAnchorRect(rect);
+          setOpen((v) => !v);
+        }}
         title="查看上下文占用估算"
         style={{
           width: "100%",
@@ -139,41 +147,48 @@ export default function ContextUsageBar({
         </span>
       </button>
 
-      {open && (
-        <div style={{
-          position: "absolute",
-          left: 10,
-          right: 10,
-          top: "calc(100% + 8px)",
-          zIndex: 30,
-          padding: 12,
-          borderRadius: 12,
-          background: "var(--bg-surface)",
-          border: "1px solid var(--border-subtle)",
-          boxShadow: "var(--shadow-lg)",
-        }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-            <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text-primary)" }}>上下文占用估算</div>
-            <div style={{ fontSize: 11, color: barColor, fontVariantNumeric: "tabular-nums" }}>{percent}%</div>
+      {open && anchorRect && (
+        <>
+          <div
+            onClick={() => setOpen(false)}
+            style={{ position: "fixed", inset: 0, zIndex: 9998, background: "transparent" }}
+          />
+          <div style={{
+            position: "fixed",
+            left: Math.max(8, anchorRect.left),
+            top: anchorRect.top - 8,
+            transform: "translateY(-100%)",
+            width: Math.min(anchorRect.width, viewportWidth - 16),
+            zIndex: 9999,
+            padding: 12,
+            borderRadius: 12,
+            background: "var(--bg-surface)",
+            border: "1px solid var(--border-subtle)",
+            boxShadow: "var(--shadow-lg)",
+          }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text-primary)" }}>上下文占用估算</div>
+              <div style={{ fontSize: 11, color: barColor, fontVariantNumeric: "tabular-nums" }}>{percent}%</div>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+              {estimate.segments.map((segment) => {
+                const segmentPercent = estimate.totalTokens > 0 ? Math.round((segment.tokens / estimate.totalTokens) * 100) : 0;
+                return (
+                  <div key={segment.key} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ width: 8, height: 8, borderRadius: "50%", background: segment.color, opacity: segment.key === "overhead" ? 0.65 : 1 }} />
+                    <span style={{ flex: 1, fontSize: 12, color: "var(--text-secondary)" }}>{segment.label}</span>
+                    <span style={{ fontSize: 12, color: "var(--text-muted)", fontVariantNumeric: "tabular-nums" }}>
+                      {formatTokens(segment.tokens)} · {segmentPercent}%
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+            <div style={{ marginTop: 10, fontSize: 11, lineHeight: 1.5, color: "var(--text-muted)" }}>
+              这是基于当前可见消息的粗略估算；实际请求还会包含系统提示、工具定义、技能、项目上下文和 memory。
+            </div>
           </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
-            {estimate.segments.map((segment) => {
-              const segmentPercent = estimate.totalTokens > 0 ? Math.round((segment.tokens / estimate.totalTokens) * 100) : 0;
-              return (
-                <div key={segment.key} style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <span style={{ width: 8, height: 8, borderRadius: "50%", background: segment.color, opacity: segment.key === "overhead" ? 0.65 : 1 }} />
-                  <span style={{ flex: 1, fontSize: 12, color: "var(--text-secondary)" }}>{segment.label}</span>
-                  <span style={{ fontSize: 12, color: "var(--text-muted)", fontVariantNumeric: "tabular-nums" }}>
-                    {formatTokens(segment.tokens)} · {segmentPercent}%
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-          <div style={{ marginTop: 10, fontSize: 11, lineHeight: 1.5, color: "var(--text-muted)" }}>
-            这是基于当前可见消息的粗略估算；实际请求还会包含系统提示、工具定义、技能、项目上下文和 memory。
-          </div>
-        </div>
+        </>
       )}
     </div>
   );
