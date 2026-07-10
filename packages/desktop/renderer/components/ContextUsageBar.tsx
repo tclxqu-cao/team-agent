@@ -27,8 +27,8 @@ function estimateTextTokens(text: string): number {
 }
 
 function formatTokens(tokens: number): string {
-  if (tokens >= 1000) return `${(tokens / 1000).toFixed(tokens >= 10_000 ? 0 : 1)}k`;
-  return String(tokens);
+  if (tokens >= 1000) return `${(tokens / 1000).toFixed(tokens >= 10_000 ? 0 : 1)}K`;
+  return `${tokens}`;
 }
 
 export function estimateContextUsage(messages: ChatMessage[], contextWindowK: number): ContextUsageEstimate {
@@ -36,7 +36,7 @@ export function estimateContextUsage(messages: ChatMessage[], contextWindowK: nu
     user: 0,
     assistant: 0,
     tools: 0,
-    overhead: 2000,
+    overhead: 0,
   };
 
   for (const message of messages) {
@@ -61,6 +61,9 @@ export function estimateContextUsage(messages: ChatMessage[], contextWindowK: nu
       }
     }
   }
+
+  const hasConversationContent = totals.user + totals.assistant + totals.tools > 0;
+  totals.overhead = hasConversationContent ? 2000 : 0;
 
   const maxTokens = Math.max(1, contextWindowK * 1000);
   const segments = (Object.keys(totals) as ContextUsageSegment["key"][]).map((key) => ({
@@ -141,7 +144,7 @@ export default function ContextUsageBar({
           position: "absolute",
           left: 10,
           right: 10,
-          bottom: "calc(100% + 8px)",
+          top: "calc(100% + 8px)",
           zIndex: 30,
           padding: 12,
           borderRadius: 12,

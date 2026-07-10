@@ -449,6 +449,9 @@ export default function ChatView({
           }>;
           events?: Array<{
             type?: string;
+            text?: string;
+            finalText?: string;
+            toolCall?: { id: string; name: string; arguments: Record<string, unknown> };
             result?: { toolCallId?: string; content?: string; isError?: boolean };
           }>;
         } | null;
@@ -496,9 +499,39 @@ export default function ChatView({
             };
           });
 
+        const eventRecoveredMessages = (() => {
+          let content = "";
+          const toolCalls: NonNullable<import("../stores/agentStore").ChatMessage["toolCalls"]> = [];
+          for (const evt of detail?.events ?? []) {
+            if (evt.type === "text_chunk" && evt.text) content += evt.text;
+            if (evt.type === "tool_call" && evt.toolCall) {
+              toolCalls.push({
+                id: evt.toolCall.id,
+                name: evt.toolCall.name,
+                arguments: evt.toolCall.arguments,
+              });
+            }
+            if (evt.type === "tool_result" && evt.result?.toolCallId) {
+              const toolCall = toolCalls.find((tc) => tc.id === evt.result?.toolCallId);
+              if (toolCall) {
+                toolCall.result = evt.result.content ?? "";
+                toolCall.isError = evt.result.isError;
+              }
+            }
+          }
+          if (!content.trim() && toolCalls.length === 0) return [];
+          return [{
+            id: crypto.randomUUID(),
+            role: "assistant" as const,
+            content: content.trim(),
+            toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+            timestamp: Date.now(),
+          }];
+        })();
+
         // Merge tool results into assistant toolCalls.result
         // Priority: message-level result > event-level result (fallback)
-        const restored = rawMessages
+        let restored = rawMessages
           .filter((m) => m.role !== "tool")
           .map((m) => {
             // Compaction banner — keep as-is
@@ -525,6 +558,12 @@ export default function ChatView({
             }
             return m;
           });
+        if (!restored.some((m) => m.role === "assistant" && !m.isCompactionSummary) && eventRecoveredMessages.length > 0) {
+          const insertAfter = restored.findLastIndex((m) => m.role === "user" && !m.isCompactionSummary);
+          restored = insertAfter >= 0
+            ? [...restored.slice(0, insertAfter + 1), ...eventRecoveredMessages, ...restored.slice(insertAfter + 1)]
+            : [...restored, ...eventRecoveredMessages];
+        }
         // Stale check: user may have switched sessions while we were awaiting getSession()
         if (selectedSessionId !== targetSid) return;
         const liveMessages = getMessagesForSession(targetSid);
@@ -2163,7 +2202,7 @@ export default function ChatView({
           borderRadius: 14,
           border: "1.5px solid var(--border-default)",
           boxShadow: "var(--shadow-sm)",
-          overflow: "hidden",
+          overflow: "visible",
         }}>
           <ContextUsageBar messages={messages} contextWindowK={contextWindow} />
 

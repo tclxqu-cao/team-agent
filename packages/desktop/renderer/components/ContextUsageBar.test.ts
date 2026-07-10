@@ -3,12 +3,13 @@ import { estimateContextUsage } from "./ContextUsageBar";
 import type { ChatMessage } from "../stores/agentStore";
 
 describe("estimateContextUsage", () => {
-  it("includes overhead for an empty conversation", () => {
+  it("shows zero usage for an empty conversation", () => {
     const estimate = estimateContextUsage([], 100);
 
     expect(estimate.maxTokens).toBe(100_000);
-    expect(estimate.totalTokens).toBeGreaterThan(0);
-    expect(estimate.segments.find((s) => s.key === "overhead")?.tokens).toBeGreaterThan(0);
+    expect(estimate.totalTokens).toBe(0);
+    expect(estimate.ratio).toBe(0);
+    expect(estimate.segments.find((s) => s.key === "overhead")?.tokens).toBe(0);
   });
 
   it("counts user, assistant, and tool segments separately", () => {
