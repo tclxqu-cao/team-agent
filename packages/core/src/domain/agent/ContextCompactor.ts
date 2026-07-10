@@ -13,7 +13,8 @@ Include:
 
 Output ONLY the handoff summary text, no preamble or meta-commentary.`;
 
-const SUMMARY_PREFIX = `This is a summary of the conversation so far, written to preserve continuity after context compaction.`;
+export const COMPACTION_SUMMARY_PREFIX = `This is a summary of the conversation so far, written to preserve continuity after context compaction.`;
+export const COMPACTION_ACKNOWLEDGEMENT = "Understood. I have reviewed the summary and will continue from where we left off.";
 const COMPACT_USER_MESSAGE_MAX_TOKENS = 20_000;
 const TOOL_RESULT_TRUNCATE = 500;
 
@@ -114,11 +115,11 @@ export class ContextCompactor {
       ...(systemMsg ? [systemMsg] : []),
       {
         role: "user",
-        content: `${SUMMARY_PREFIX}\n${summary}`,
+        content: `${COMPACTION_SUMMARY_PREFIX}\n${summary}`,
       },
       {
         role: "assistant",
-        content: "Understood. I have reviewed the summary and will continue from where we left off.",
+        content: COMPACTION_ACKNOWLEDGEMENT,
       },
       ...recentMessages,
     ];
@@ -162,7 +163,7 @@ export class ContextCompactor {
     const recentMessages = this.collectRecentUserMessages(conversation);
     const replacementMessages: Message[] = [
       ...recentMessages,
-      { role: "user", content: `${SUMMARY_PREFIX}\n${summary}` },
+      { role: "user", content: `${COMPACTION_SUMMARY_PREFIX}\n${summary}` },
     ];
 
     return {
@@ -215,6 +216,6 @@ export class ContextCompactor {
   }
 
   private isSummaryMessage(message: Message): boolean {
-    return message.role === "user" && message.content.startsWith(SUMMARY_PREFIX);
+    return message.role === "user" && message.content.startsWith(COMPACTION_SUMMARY_PREFIX);
   }
 }

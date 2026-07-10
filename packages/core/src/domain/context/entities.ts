@@ -8,8 +8,18 @@ export interface ProjectFile {
   type: "claude_md" | "readme" | "code" | "config" | "other";
 }
 
+export interface SystemPromptSections {
+  systemBase: string;
+  environment: string;
+  projectContext: string;
+  skills: string;
+  embeddedTools: string;
+  memory: string;
+}
+
 export interface AssembledContext {
   systemPrompt: string;
+  systemSections: SystemPromptSections;
   messages: Message[];
   tokenBudget: number;
   tokenUsed: number;

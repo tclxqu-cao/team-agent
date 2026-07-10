@@ -1,42 +1,60 @@
 import { describe, expect, it } from "vitest";
-import { estimateContextUsage } from "./ContextUsageBar";
-import type { ChatMessage } from "../stores/agentStore";
+import { buildContextUsageView } from "./ContextUsageBar";
+import type { ContextUsageSnapshot } from "../stores/agentStore";
 
-describe("estimateContextUsage", () => {
-  it("shows zero usage for an empty conversation", () => {
-    const estimate = estimateContextUsage([], 100);
+function createUsage(): ContextUsageSnapshot {
+  return {
+    requestIndex: 2,
+    providerId: "anthropic",
+    modelId: "claude-test",
+    maxTokens: 100_000,
+    totalTokens: 10_000,
+    ratio: 0.1,
+    estimationMode: "heuristic",
+    segments: [
+      { category: "systemBase", tokens: 1000 },
+      { category: "projectContext", tokens: 2000 },
+      { category: "currentUserMessage", tokens: 500 },
+      { category: "assistantMessages", tokens: 1000 },
+      { category: "nativeToolDefinitions", tokens: 3000 },
+      { category: "toolResults", tokens: 1500 },
+      { category: "images", tokens: 500 },
+      { category: "messageOverhead", tokens: 500 },
+    ],
+  };
+}
 
-    expect(estimate.maxTokens).toBe(100_000);
-    expect(estimate.totalTokens).toBe(0);
-    expect(estimate.ratio).toBe(0);
-    expect(estimate.segments.find((s) => s.key === "overhead")?.tokens).toBe(0);
+describe("buildContextUsageView", () => {
+  it("shows a neutral placeholder before the first model request", () => {
+    const view = buildContextUsageView(undefined, 100);
+
+    expect(view.hasUsage).toBe(false);
+    expect(view.maxTokens).toBe(100_000);
+    expect(view.totalTokens).toBe(0);
+    expect(view.percent).toBe(0);
+    expect(view.details).toEqual([]);
   });
 
-  it("counts user, assistant, and tool segments separately", () => {
-    const messages: ChatMessage[] = [
-      { id: "u1", role: "user", content: "u".repeat(40), timestamp: 1 },
-      {
-        id: "a1",
-        role: "assistant",
-        content: "a".repeat(80),
-        toolCalls: [{ id: "tc1", name: "read_file", arguments: { path: "file.ts" }, result: "r".repeat(120) }],
-        timestamp: 2,
-      },
-    ];
+  it("groups every detailed category into readable bar segments", () => {
+    const view = buildContextUsageView(createUsage(), 1);
 
-    const estimate = estimateContextUsage(messages, 1);
-
-    expect(estimate.segments.find((s) => s.key === "user")?.tokens).toBe(10);
-    expect(estimate.segments.find((s) => s.key === "assistant")?.tokens).toBe(20);
-    expect(estimate.segments.find((s) => s.key === "tools")?.tokens).toBeGreaterThan(30);
-    expect(estimate.ratio).toBeLessThanOrEqual(1);
+    expect(view.maxTokens).toBe(100_000);
+    expect(view.totalTokens).toBe(10_000);
+    expect(view.percent).toBe(10);
+    expect(view.groups.find((group) => group.key === "system")?.tokens).toBe(3000);
+    expect(view.groups.find((group) => group.key === "messages")?.tokens).toBe(1500);
+    expect(view.groups.find((group) => group.key === "tools")?.tokens).toBe(4500);
+    expect(view.groups.find((group) => group.key === "images")?.tokens).toBe(500);
+    expect(view.groups.find((group) => group.key === "overhead")?.tokens).toBe(500);
+    expect(view.details).toHaveLength(8);
+    expect(view.requestLabel).toContain("anthropic · claude-test · 第 2 次请求");
   });
 
-  it("caps ratio at one", () => {
-    const messages: ChatMessage[] = [
-      { id: "u1", role: "user", content: "x".repeat(100_000), timestamp: 1 },
-    ];
+  it("caps the displayed ratio at one", () => {
+    const usage = { ...createUsage(), maxTokens: 1000, totalTokens: 2000, ratio: 1 };
+    const view = buildContextUsageView(usage, 100);
 
-    expect(estimateContextUsage(messages, 1).ratio).toBe(1);
+    expect(view.ratio).toBe(1);
+    expect(view.percent).toBe(100);
   });
 });

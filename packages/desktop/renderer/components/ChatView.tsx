@@ -1,6 +1,12 @@
 import { useRef, useState, useEffect } from "react";
 import { createPortal } from "react-dom";
-import { useAgentStore, type StreamEvent, type CronTask } from "../stores/agentStore";
+import {
+  findLatestContextUsage,
+  useAgentStore,
+  type ContextUsageSnapshot,
+  type StreamEvent,
+  type CronTask,
+} from "../stores/agentStore";
 
 /** Human-readable description of a cron/interval expression (browser-safe, no Node.js). */
 function describeCron(cron: string): string {
@@ -216,6 +222,8 @@ export default function ChatView({
     updateMessage,
     setMessages,
     getMessagesForSession,
+    contextUsageBySession,
+    setContextUsage,
     clearMessages,
     sessionId,
     todos,
@@ -453,9 +461,11 @@ export default function ChatView({
             finalText?: string;
             toolCall?: { id: string; name: string; arguments: Record<string, unknown> };
             result?: { toolCallId?: string; content?: string; isError?: boolean };
+            usage?: ContextUsageSnapshot;
           }>;
         } | null;
         const persisted = detail?.messages ?? [];
+        const restoredContextUsage = findLatestContextUsage(detail?.events ?? []);
 
         // Build a fallback map of tool results from persisted events.
         // Events are written to DB *before* the corresponding message rows,
@@ -570,6 +580,7 @@ export default function ChatView({
         const preferLive = liveMessages.length > 0 && runningSessionId === targetSid;
         const nextMessages = preferLive ? liveMessages : restored;
         setMessages(nextMessages, targetSid);
+        if (restoredContextUsage) setContextUsage(restoredContextUsage, targetSid);
         setSessionId(targetSid);
 
         // Infer agent activity phase from restored messages.
@@ -588,7 +599,7 @@ export default function ChatView({
     };
 
     void loadSelectedSession();
-  }, [clearMessages, getMessagesForSession, runningSessionId, selectedSessionId, setMessages, setSessionId]);
+  }, [clearMessages, getMessagesForSession, runningSessionId, selectedSessionId, setContextUsage, setMessages, setSessionId]);
 
   const handleEvent = (event: StreamEvent) => {
     // Route by _sid using always-current refs, not stale closure values.
@@ -596,6 +607,9 @@ export default function ChatView({
     const eventSid = event._sid || viewedSid || undefined;
     const isViewed = !eventSid || eventSid === viewedSid;
     switch (event.type) {
+      case "context_usage":
+        if (event.usage) setContextUsage(event.usage, eventSid);
+        break;
       case "text_chunk":
         if (event.text) {
           appendText(event.text, eventSid);
@@ -2204,7 +2218,7 @@ export default function ChatView({
           boxShadow: "var(--shadow-sm)",
           overflow: "visible",
         }}>
-          <ContextUsageBar messages={messages} contextWindowK={contextWindow} />
+          <ContextUsageBar usage={viewSessionId ? contextUsageBySession[viewSessionId] : undefined} contextWindowK={contextWindow} />
 
           {/* Model selector bar (shown only when profiles exist), grouped by provider */}
           {profiles.length > 0 && (() => {
