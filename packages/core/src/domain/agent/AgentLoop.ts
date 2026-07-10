@@ -82,7 +82,7 @@ export class AgentLoop implements IAgentLoop {
             recentMessages: Message[];
           };
           history = [
-            { role: "user", content: `[Context summary of earlier conversation]\n${cp.summary}` },
+            { role: "user", content: `This is a summary of the conversation so far, written to preserve continuity after context compaction.\n${cp.summary}` },
             { role: "assistant", content: "Understood. I have reviewed the summary and will continue from where we left off." },
             ...cp.recentMessages,
             // All messages saved AFTER the checkpoint (from subsequent runs)
