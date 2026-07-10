@@ -6,11 +6,22 @@ const { values } = parseArgs({
   options: {
     storyboard: { type: "string" },
     "output-dir": { type: "string" },
+    "base-url": { type: "string" },
+    model: { type: "string" },
   },
 });
 
 if (!values.storyboard || !values["output-dir"]) {
-  console.error("Usage: render-preview.ts --storyboard <path> --output-dir <dir>");
+  console.error("Usage: render-preview.ts --storyboard <path> --output-dir <dir> [--base-url <url>] [--model <id>]");
+  process.exit(1);
+}
+
+const apiKey = process.env.IMAGE_API_KEY ?? process.env.LLM_API_KEY ?? "";
+const baseUrl = values["base-url"] ?? process.env.IMAGE_BASE_URL ?? process.env.LLM_BASE_URL ?? "https://api.openai.com";
+const model = values.model ?? process.env.IMAGE_MODEL ?? "dall-e-3";
+
+if (!apiKey) {
+  console.error("Missing IMAGE_API_KEY (or LLM_API_KEY). Set it in Settings or pass --base-url/--model.");
   process.exit(1);
 }
 
@@ -20,11 +31,7 @@ await Bun.write(`${outputDir}/.gitkeep`, "");
 const sbContent = await Bun.file(values.storyboard).text();
 const storyboard = JSON.parse(sbContent);
 
-const apiKey = process.env.IMAGE_API_KEY ?? process.env.LLM_API_KEY ?? "";
-const baseUrl = process.env.IMAGE_BASE_URL ?? process.env.LLM_BASE_URL ?? "https://api.openai.com";
-
 async function generateImage(prompt: string, outputPath: string): Promise<void> {
-  // Use DALL-E / compatible image API
   const response = await fetch(`${baseUrl}/v1/images/generations`, {
     method: "POST",
     headers: {
@@ -32,7 +39,7 @@ async function generateImage(prompt: string, outputPath: string): Promise<void> 
       Authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model: process.env.IMAGE_MODEL ?? "dall-e-3",
+      model,
       prompt: `Cinematic storyboard frame: ${prompt}. High quality, 16:9 aspect ratio, film lighting.`,
       n: 1,
       size: "1792x1024",
@@ -47,7 +54,6 @@ async function generateImage(prompt: string, outputPath: string): Promise<void> 
   const imageUrl = result.data?.[0]?.url;
   if (!imageUrl) throw new Error("No image URL in response");
 
-  // Download image
   const imgResponse = await fetch(imageUrl);
   const buffer = await imgResponse.arrayBuffer();
   await Bun.write(outputPath, buffer);
@@ -68,7 +74,6 @@ for (const shot of storyboard.shots) {
   }
 }
 
-// Update storyboard with preview URLs
 for (const r of results) {
   const shot = storyboard.shots.find((s: any) => s.index === r.index);
   if (shot) {
