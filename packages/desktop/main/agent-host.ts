@@ -913,8 +913,7 @@ export class AgentHost {
   }
 
   private isCompactCommand(input: string): boolean {
-    const trimmed = input.trim().toLowerCase();
-    return trimmed === "/compact" || trimmed === "/compress" || trimmed === "/压缩" || trimmed === "压缩";
+    return input.trim().toLowerCase() === "/compact";
   }
 
   private async compactSession(sessionId: string): Promise<{ summary: string; removedMessages: number }> {

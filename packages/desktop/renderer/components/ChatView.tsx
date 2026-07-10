@@ -301,8 +301,6 @@ export default function ChatView({
   /** Built-in slash commands that always appear in the picker */
   const BUILTIN_COMMANDS = [
     { name: "compact", description: "主动压缩当前会话上下文，并在下轮重新注入环境" },
-    { name: "compress", description: "同 /compact，主动压缩当前会话上下文" },
-    { name: "压缩", description: "同 /compact，主动压缩当前会话上下文" },
     { name: "loop", description: "定时任务：/loop 5m 任务 | list | pause/resume/delete <id> | stop" },
   ];
 
