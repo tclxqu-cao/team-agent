@@ -21,9 +21,26 @@ const apiKey = process.env.LLM_API_KEY ?? process.env.OPENAI_API_KEY ?? "";
 const baseUrl = values["base-url"] ?? process.env.LLM_BASE_URL ?? process.env.OPENAI_BASE_URL ?? "https://api.openai.com";
 const model = values.model ?? process.env.LLM_MODEL ?? "gpt-4o";
 
+const DEFAULT_STORYBOARD_MODELS = [
+  { label: "gpt-4o", description: "GPT-4o — 综合能力强，适合大多数故事板生成" },
+  { label: "claude-sonnet-4-20250514", description: "Claude Sonnet 4 — 创意叙述优秀，中文理解好" },
+  { label: "gemini-2.5-pro", description: "Gemini 2.5 Pro — 多模态能力强，长上下文佳" },
+];
+
 if (!apiKey) {
-  console.error("Missing LLM_API_KEY (or OPENAI_API_KEY). Set it in Settings or pass --base-url/--model.");
-  process.exit(1);
+  const askPayload = {
+    __ask_user: {
+      for: "storyboard_config",
+      question: "缺少故事板 LLM API 配置。请提供 API Key，或选择你想使用的模型（需要模型对应的 API Key）。",
+      fields: [
+        { name: "apiKey", label: "API Key", description: "LLM_API_KEY（或 OPENAI_API_KEY）", type: "secret" },
+        { name: "baseUrl", label: "API Base URL（可选）", description: "留空使用默认：https://api.openai.com", type: "text" },
+      ],
+      options: DEFAULT_STORYBOARD_MODELS.map(m => ({ label: m.label, description: m.description })),
+    },
+  };
+  console.log(JSON.stringify(askPayload));
+  process.exit(2);
 }
 
 const prompt = `You are a professional video storyboard director.

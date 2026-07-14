@@ -96,6 +96,63 @@ Optional secondary env vars let you share credentials across stages. If a
 variable is missing, the script prints which key it needs instead of silently
 failing.
 
+## Collecting Model & API Key via ask_user
+
+Each script (`generate-storyboard.ts`, `render-preview.ts`, `generate-video.ts`) supports **three configuration methods**, checked in this order:
+
+1. **CLI arguments**: `--api-key`, `--base-url`, `--model`
+2. **Environment variables** (see table above)
+3. **User interaction** (fallback when no key is configured)
+
+### How the interactive flow works
+
+When a script is run without an API key, it **does not crash**. Instead it outputs a structured JSON signal to stdout and exits with code 2:
+
+```json
+{
+  "__ask_user": {
+    "for": "video_config",
+    "question": "缺少视频生成 API 配置...",
+    "fields": [
+      { "name": "apiKey", "label": "API Key", "description": "...", "type": "secret" },
+      { "name": "baseUrl", "label": "API Base URL（可选）", "description": "...", "type": "text" }
+    ],
+    "options": [
+      { "label": "seedance-1-lite", "description": "Seedance 1 Lite — 快速、低成本..." },
+      { "label": "seedance-1-pro", "description": "Seedance 1 Pro — 更高质量..." }
+    ]
+  }
+}
+```
+
+### Agent responsibilities
+
+When you receive output containing `__ask_user`:
+
+1. **Parse the signal** — extract `for`, `question`, `fields`, and `options`
+2. **Call `ask_user`** tool with the question:
+   - Include the available models as selectable options
+   - The user should also provide their API Key (free-text or via option description)
+3. **Collect the user's response** — note the chosen model label and any API Key / Base URL they provide
+4. **Re-run the script** with the collected values:
+   ```bash
+   bun run .agent/skills/storyboard/scripts/generate-video.ts \
+     --storyboard /tmp/storyboard.json \
+     --previews-dir /tmp/storyboard/previews \
+     --output-dir /tmp/storyboard/videos \
+     --api-key "<user-provided-key>" \
+     --model "<user-selected-model>" \
+     --base-url "<user-provided-url-or-default>"
+   ```
+
+### Model recommendations by stage
+
+| Stage | Default | Recommended alternatives |
+| --- | --- | --- |
+| Storyboard LLM | `gpt-4o` | `claude-sonnet-4-20250514`, `gemini-2.5-pro` |
+| Preview image | `dall-e-3` | `flux-1-pro` |
+| Video clip | `seedance-1-lite` | `seedance-1-pro` |
+
 ## Important Notes
 
 - Each script outputs JSON to stdout with progress updates
@@ -103,3 +160,4 @@ failing.
 - The user can request regenerating individual shots — re-run the relevant script for that shot only
 - Always use show_widget with update_id to update the existing workbench card, never create duplicates
 - Endpoint/model are read at every invocation — restart the app after changing them
+- When a script exits with code 2, check stdout for `__ask_user` signal — this is intentional, not an error

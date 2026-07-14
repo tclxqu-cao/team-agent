@@ -22,9 +22,25 @@ const apiKey = values["api-key"] ?? process.env.VOLCENGINE_API_KEY ?? "";
 const baseUrl = values["base-url"] ?? process.env.SEEDANCE_BASE_URL ?? "https://visual.volcengineapi.com";
 const model = values.model ?? process.env.SEEDANCE_MODEL ?? "seedance-1-lite";
 
+const DEFAULT_VIDEO_MODELS = [
+  { label: "seedance-1-lite", description: "Seedance 1 Lite — 快速、低成本，适合 5s 片段" },
+  { label: "seedance-1-pro", description: "Seedance 1 Pro — 更高质量，支持更长时长" },
+];
+
 if (!apiKey) {
-  console.error("Missing VOLCENGINE_API_KEY. Set it in Settings or pass --api-key/--base-url/--model.");
-  process.exit(1);
+  const askPayload = {
+    __ask_user: {
+      for: "video_config",
+      question: "缺少视频生成 API 配置。请提供火山引擎 API Key，或选择模型后继续（需要模型对应的 API Key）。",
+      fields: [
+        { name: "apiKey", label: "API Key", description: "火山引擎 VOLCENGINE_API_KEY（或兼容服务商的 Key）", type: "secret" },
+        { name: "baseUrl", label: "API Base URL（可选）", description: "留空使用默认：https://visual.volcengineapi.com", type: "text" },
+      ],
+      options: DEFAULT_VIDEO_MODELS.map(m => ({ label: m.label, description: m.description })),
+    },
+  };
+  console.log(JSON.stringify(askPayload));
+  process.exit(2);
 }
 
 const sbContent = await Bun.file(values.storyboard).text();

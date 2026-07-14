@@ -20,9 +20,25 @@ const apiKey = process.env.IMAGE_API_KEY ?? process.env.LLM_API_KEY ?? "";
 const baseUrl = values["base-url"] ?? process.env.IMAGE_BASE_URL ?? process.env.LLM_BASE_URL ?? "https://api.openai.com";
 const model = values.model ?? process.env.IMAGE_MODEL ?? "dall-e-3";
 
+const DEFAULT_IMAGE_MODELS = [
+  { label: "dall-e-3", description: "DALL-E 3 — OpenAI 出品，构图与理解力强" },
+  { label: "flux-1-pro", description: "Flux 1 Pro — 开源模型，画质细腻" },
+];
+
 if (!apiKey) {
-  console.error("Missing IMAGE_API_KEY (or LLM_API_KEY). Set it in Settings or pass --base-url/--model.");
-  process.exit(1);
+  const askPayload = {
+    __ask_user: {
+      for: "image_config",
+      question: "缺少预览图生成 API 配置。请提供 API Key，或选择你想使用的图片模型（需要模型对应的 API Key）。",
+      fields: [
+        { name: "apiKey", label: "API Key", description: "IMAGE_API_KEY（或 LLM_API_KEY）", type: "secret" },
+        { name: "baseUrl", label: "API Base URL（可选）", description: "留空使用默认：https://api.openai.com", type: "text" },
+      ],
+      options: DEFAULT_IMAGE_MODELS.map(m => ({ label: m.label, description: m.description })),
+    },
+  };
+  console.log(JSON.stringify(askPayload));
+  process.exit(2);
 }
 
 const outputDir = values["output-dir"];
