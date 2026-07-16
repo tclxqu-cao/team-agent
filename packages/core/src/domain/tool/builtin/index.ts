@@ -9,7 +9,7 @@ export { GlobTool } from './GlobTool.js';
 export { TodoAddTool, TodoUpdateTool, TodoListTool } from './TodoTool.js';
 export { DispatchAgentTool, type DispatchResult } from './DispatchAgentTool.js';
 export { WaitAgentTool } from './WaitAgentTool.js';
-export { AskUserTool, type AskUserRequest, type AskUserResponse, type AskUserCallback } from './AskUserTool.js';
+export { AskUserTool, type AskUserField, type AskUserRequest, type AskUserResponse, type AskUserCallback } from './AskUserTool.js';
 export { CronCreateTool, CronDeleteTool, CronListTool } from './CronTools.js';
 export { ApplyPatchTool } from './ApplyPatchTool.js';
 export { LspDiagnosticsTool, LspHoverTool, LspDefinitionTool, LspReferencesTool } from './LspTools.js';

@@ -136,7 +136,8 @@ When you receive output containing `__ask_user`:
    - Include editable fields for API Key, model ID, and optional Base URL
    - If the user types a model ID, use that value; otherwise use the selected recommendation or default
 3. **Collect the user's response** — note the typed model ID, selected model label, API Key, and any Base URL they provide
-4. **Re-run the script** with the collected values:
+4. **For every provider replacement or retry question**, including failures after a provider was already configured, call `ask_user` with editable `apiKey`, `model`, and `baseUrl` fields. Never offer only “换地址和 Key” without a model field.
+5. **Re-run the script** with the collected values:
    ```bash
    bun run .agent/skills/storyboard/scripts/generate-video.ts \
      --storyboard /tmp/storyboard.json \

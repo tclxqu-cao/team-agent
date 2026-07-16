@@ -1,9 +1,11 @@
 import { useState } from "react";
+import type { AskUserField } from "@agent/core";
 
 interface AskUserCardProps {
   questionId: string;
   question: string;
   options?: Array<{ label: string; description: string }>;
+  fields?: AskUserField[];
   multiSelect?: boolean;
   answered?: boolean;
   answer?: string;
@@ -13,6 +15,7 @@ interface AskUserCardProps {
 export default function AskUserCard({
   question,
   options,
+  fields,
   multiSelect,
   answered,
   answer,
@@ -20,8 +23,10 @@ export default function AskUserCard({
 }: AskUserCardProps) {
   const [selectedIndices, setSelectedIndices] = useState<Set<number>>(new Set());
   const [freeText, setFreeText] = useState("");
+  const [fieldValues, setFieldValues] = useState<Record<string, string>>({});
 
-  const hasOptions = options && options.length > 0;
+  const hasOptions = Boolean(options?.length);
+  const hasFields = Boolean(fields?.length);
 
   const toggleOption = (idx: number) => {
     if (answered) return;
@@ -42,6 +47,16 @@ export default function AskUserCard({
     if (selectedIndices.size === 0) return;
     const labels = Array.from(selectedIndices).map((i) => options![i].label);
     onAnswer(labels.join(", "), Array.from(selectedIndices));
+  };
+
+  const handleSubmitFields = () => {
+    const selected = Array.from(selectedIndices).map((i) => options![i].label);
+    const values = Object.fromEntries(
+      (fields ?? []).map((field) => [field.name, fieldValues[field.name]?.trim() ?? ""]),
+    );
+    if (!values.model && selected.length > 0) values.model = selected[0];
+    if (!Object.values(values).some(Boolean) && selected.length === 0) return;
+    onAnswer(JSON.stringify({ fields: values, selectedOptions: selected }), Array.from(selectedIndices));
   };
 
   const handleSubmitText = () => {
@@ -146,7 +161,7 @@ export default function AskUserCard({
             }}
           >
             <span style={{ fontWeight: 500 }}>回答：</span>
-            {answer}
+            {hasFields ? "配置已提交（敏感字段已隐藏）" : answer}
           </div>
         )}
 
@@ -224,32 +239,84 @@ export default function AskUserCard({
               );
             })}
 
-            {/* Submit button for options */}
+            {!hasFields && (
+              <button
+                onClick={handleSubmitOptions}
+                disabled={selectedIndices.size === 0}
+                style={{
+                  marginTop: 2,
+                  padding: "7px 16px",
+                  borderRadius: 8,
+                  border: "none",
+                  background: selectedIndices.size > 0 ? "var(--accent)" : "var(--bg-surface)",
+                  color: selectedIndices.size > 0 ? "white" : "var(--text-muted)",
+                  cursor: selectedIndices.size > 0 ? "pointer" : "default",
+                  fontSize: 12,
+                  fontWeight: 600,
+                  fontFamily: "var(--font-body)",
+                  alignSelf: "flex-end",
+                  transition: "all 0.15s ease",
+                }}
+              >
+                确认选择
+              </button>
+            )}
+          </div>
+        )}
+
+        {hasFields && !answered && (
+          <div style={{ padding: "6px 14px 12px", display: "flex", flexDirection: "column", gap: 10 }}>
+            {fields!.map((field) => (
+              <label key={field.name} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                <span style={{ fontSize: 11.5, fontWeight: 600, color: "var(--text-secondary)" }}>
+                  {field.label}
+                </span>
+                <input
+                  type={field.type === "secret" ? "password" : "text"}
+                  value={fieldValues[field.name] ?? ""}
+                  onChange={(e) => setFieldValues((prev) => ({ ...prev, [field.name]: e.target.value }))}
+                  placeholder={field.description}
+                  autoComplete={field.type === "secret" ? "off" : undefined}
+                  style={{
+                    padding: "8px 12px",
+                    borderRadius: 8,
+                    border: "1px solid var(--border-subtle)",
+                    background: "var(--bg-surface)",
+                    color: "var(--text-primary)",
+                    fontSize: 13,
+                    fontFamily: "var(--font-body)",
+                    outline: "none",
+                  }}
+                />
+                {field.description && (
+                  <span style={{ fontSize: 10.5, color: "var(--text-muted)", lineHeight: 1.4 }}>
+                    {field.description}
+                  </span>
+                )}
+              </label>
+            ))}
             <button
-              onClick={handleSubmitOptions}
-              disabled={selectedIndices.size === 0}
+              onClick={handleSubmitFields}
               style={{
-                marginTop: 2,
-                padding: "7px 16px",
+                padding: "8px 16px",
                 borderRadius: 8,
                 border: "none",
-                background: selectedIndices.size > 0 ? "var(--accent)" : "var(--bg-surface)",
-                color: selectedIndices.size > 0 ? "white" : "var(--text-muted)",
-                cursor: selectedIndices.size > 0 ? "pointer" : "default",
+                background: "var(--accent)",
+                color: "white",
+                cursor: "pointer",
                 fontSize: 12,
                 fontWeight: 600,
                 fontFamily: "var(--font-body)",
                 alignSelf: "flex-end",
-                transition: "all 0.15s ease",
               }}
             >
-              确认选择
+              确认配置
             </button>
           </div>
         )}
 
         {/* Free text input — always shown when not answered */}
-        {!answered && (
+        {!answered && !hasFields && (
           <div style={{
             padding: hasOptions ? "4px 14px 12px" : "4px 14px 12px",
             display: "flex",

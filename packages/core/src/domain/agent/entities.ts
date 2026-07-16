@@ -20,6 +20,7 @@ export type AgentEventType =
   | "agent_done"
   | "agent_progress"
   | "cron_update"
+  | "ask_user"
   | "show_widget";
 
 export interface TodoItem {
@@ -47,6 +48,14 @@ export type AgentEvent =
   | { type: "agent_done"; agentName: string; subSessionId: string; status: "completed" | "failed"; summary?: string; error?: string }
   | { type: "agent_progress"; agentName: string; subSessionId: string; text: string }
   | { type: "cron_update"; tasks: CronTask[] }
+  | {
+      type: "ask_user";
+      questionId: string;
+      question: string;
+      options?: Array<{ label: string; description: string }>;
+      fields?: Array<{ name: string; label: string; description?: string; type?: "text" | "secret" }>;
+      multiSelect?: boolean;
+    }
   | { type: "show_widget"; widgetType: string; data: Record<string, unknown>; widgetId: string };
 
 export type ContextUsageCategory =

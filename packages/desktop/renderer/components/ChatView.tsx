@@ -744,6 +744,7 @@ export default function ChatView({
             questionId: event.questionId ?? "",
             question: event.question ?? "",
             options: event.options,
+            fields: event.fields,
             multiSelect: event.multiSelect,
           },
           timestamp: Date.now(),
@@ -1304,6 +1305,7 @@ export default function ChatView({
                 questionId={chatMsg.askUser.questionId}
                 question={chatMsg.askUser.question}
                 options={chatMsg.askUser.options}
+                fields={chatMsg.askUser.fields}
                 multiSelect={chatMsg.askUser.multiSelect}
                 answered={chatMsg.askUser.answered}
                 answer={chatMsg.askUser.answer}

@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { ContextUsageSnapshot } from "@agent/core";
+import type { AskUserField, ContextUsageSnapshot } from "@agent/core";
 import type { CronTask } from "../global";
 
 export type { ContextUsageSnapshot, CronTask };
@@ -28,6 +28,7 @@ export interface StreamEvent {
   questionId?: string;
   question?: string;
   options?: Array<{ label: string; description: string }>;
+  fields?: AskUserField[];
   multiSelect?: boolean;
   /** For show_widget events */
   widgetId?: string;
@@ -80,6 +81,7 @@ export interface ChatMessage {
     questionId: string;
     question: string;
     options?: Array<{ label: string; description: string }>;
+    fields?: AskUserField[];
     multiSelect?: boolean;
     answered?: boolean;
     answer?: string;

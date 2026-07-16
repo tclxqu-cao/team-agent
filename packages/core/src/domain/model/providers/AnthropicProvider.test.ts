@@ -40,5 +40,6 @@ describe("AnthropicProvider", () => {
     expect(askUserSchema).toEqual(askUser.parameters);
     expect(askUserSchema?.required).toEqual(["question"]);
     expect((askUserSchema?.properties as Record<string, unknown>)).toHaveProperty("question");
+    expect((askUserSchema?.properties as Record<string, unknown>)).toHaveProperty("fields");
   });
 });

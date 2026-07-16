@@ -29,12 +29,13 @@ export class QuestionManager {
     const questionId = crypto.randomUUID();
     this.emit(
       {
-        type: "ask_user" as any,
+        type: "ask_user",
         questionId,
         question: request.question,
         options: request.options,
+        fields: request.fields,
         multiSelect: request.multiSelect,
-      } as AgentEvent,
+      },
       sessionId,
     );
     return new Promise<AskUserResponse>((resolve, reject) => {
