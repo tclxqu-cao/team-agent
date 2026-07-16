@@ -115,11 +115,12 @@ When a script is run without an API key, it **does not crash**. Instead it outpu
     "question": "缺少视频生成 API 配置...",
     "fields": [
       { "name": "apiKey", "label": "API Key", "description": "...", "type": "secret" },
+      { "name": "model", "label": "模型 ID", "description": "可手动输入；留空使用所选推荐或默认模型", "type": "text" },
       { "name": "baseUrl", "label": "API Base URL（可选）", "description": "...", "type": "text" }
     ],
     "options": [
-      { "label": "seedance-1-lite", "description": "Seedance 1 Lite — 快速、低成本..." },
-      { "label": "seedance-1-pro", "description": "Seedance 1 Pro — 更高质量..." }
+      { "label": "seedance-1-lite", "description": "Seedance 1 Lite — 快速、低成本；可被模型 ID 手动覆盖" },
+      { "label": "seedance-1-pro", "description": "Seedance 1 Pro — 更高质量；可被模型 ID 手动覆盖" }
     ]
   }
 }
@@ -131,9 +132,10 @@ When you receive output containing `__ask_user`:
 
 1. **Parse the signal** — extract `for`, `question`, `fields`, and `options`
 2. **Call `ask_user`** tool with the question:
-   - Include the available models as selectable options
-   - The user should also provide their API Key (free-text or via option description)
-3. **Collect the user's response** — note the chosen model label and any API Key / Base URL they provide
+   - Include the available models as selectable recommendations
+   - Include editable fields for API Key, model ID, and optional Base URL
+   - If the user types a model ID, use that value; otherwise use the selected recommendation or default
+3. **Collect the user's response** — note the typed model ID, selected model label, API Key, and any Base URL they provide
 4. **Re-run the script** with the collected values:
    ```bash
    bun run .agent/skills/storyboard/scripts/generate-video.ts \
@@ -141,7 +143,7 @@ When you receive output containing `__ask_user`:
      --previews-dir /tmp/storyboard/previews \
      --output-dir /tmp/storyboard/videos \
      --api-key "<user-provided-key>" \
-     --model "<user-selected-model>" \
+     --model "<typed-model-or-selected-recommendation>" \
      --base-url "<user-provided-url-or-default>"
    ```
 

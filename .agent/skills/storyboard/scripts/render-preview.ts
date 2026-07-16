@@ -6,17 +6,18 @@ const { values } = parseArgs({
   options: {
     storyboard: { type: "string" },
     "output-dir": { type: "string" },
+    "api-key": { type: "string" },
     "base-url": { type: "string" },
     model: { type: "string" },
   },
 });
 
 if (!values.storyboard || !values["output-dir"]) {
-  console.error("Usage: render-preview.ts --storyboard <path> --output-dir <dir> [--base-url <url>] [--model <id>]");
+  console.error("Usage: render-preview.ts --storyboard <path> --output-dir <dir> [--api-key <key>] [--base-url <url>] [--model <id>]");
   process.exit(1);
 }
 
-const apiKey = process.env.IMAGE_API_KEY ?? process.env.LLM_API_KEY ?? "";
+const apiKey = values["api-key"] ?? process.env.IMAGE_API_KEY ?? process.env.LLM_API_KEY ?? "";
 const baseUrl = values["base-url"] ?? process.env.IMAGE_BASE_URL ?? process.env.LLM_BASE_URL ?? "https://api.openai.com";
 const model = values.model ?? process.env.IMAGE_MODEL ?? "dall-e-3";
 
@@ -29,12 +30,13 @@ if (!apiKey) {
   const askPayload = {
     __ask_user: {
       for: "image_config",
-      question: "缺少预览图生成 API 配置。请提供 API Key，或选择你想使用的图片模型（需要模型对应的 API Key）。",
+      question: "缺少预览图生成 API 配置。请提供 API Key，并可选择或直接输入图片模型 ID。",
       fields: [
         { name: "apiKey", label: "API Key", description: "IMAGE_API_KEY（或 LLM_API_KEY）", type: "secret" },
+        { name: "model", label: "模型 ID", description: "可手动输入图片模型，例如 dall-e-3、flux-1-pro；留空使用所选推荐或默认 dall-e-3", type: "text" },
         { name: "baseUrl", label: "API Base URL（可选）", description: "留空使用默认：https://api.openai.com", type: "text" },
       ],
-      options: DEFAULT_IMAGE_MODELS.map(m => ({ label: m.label, description: m.description })),
+      options: DEFAULT_IMAGE_MODELS.map(m => ({ label: m.label, description: `${m.description}。选择后会作为模型默认值，也可以在模型 ID 中手动覆盖。` })),
     },
   };
   console.log(JSON.stringify(askPayload));

@@ -7,17 +7,18 @@ const { values } = parseArgs({
     materials: { type: "string" },
     direction: { type: "string" },
     output: { type: "string" },
+    "api-key": { type: "string" },
     "base-url": { type: "string" },
     model: { type: "string" },
   },
 });
 
 if (!values.materials || !values.output) {
-  console.error("Usage: generate-storyboard.ts --materials <text> --direction <text> --output <path> [--base-url <url>] [--model <id>]");
+  console.error("Usage: generate-storyboard.ts --materials <text> --direction <text> --output <path> [--api-key <key>] [--base-url <url>] [--model <id>]");
   process.exit(1);
 }
 
-const apiKey = process.env.LLM_API_KEY ?? process.env.OPENAI_API_KEY ?? "";
+const apiKey = values["api-key"] ?? process.env.LLM_API_KEY ?? process.env.OPENAI_API_KEY ?? "";
 const baseUrl = values["base-url"] ?? process.env.LLM_BASE_URL ?? process.env.OPENAI_BASE_URL ?? "https://api.openai.com";
 const model = values.model ?? process.env.LLM_MODEL ?? "gpt-4o";
 
@@ -31,12 +32,13 @@ if (!apiKey) {
   const askPayload = {
     __ask_user: {
       for: "storyboard_config",
-      question: "缺少故事板 LLM API 配置。请提供 API Key，或选择你想使用的模型（需要模型对应的 API Key）。",
+      question: "缺少故事板 LLM API 配置。请提供 API Key，并可选择或直接输入模型 ID。",
       fields: [
         { name: "apiKey", label: "API Key", description: "LLM_API_KEY（或 OPENAI_API_KEY）", type: "secret" },
+        { name: "model", label: "模型 ID", description: "可手动输入模型，例如 gpt-4o、claude-sonnet-4-20250514、gemini-2.5-pro；留空使用所选推荐或默认 gpt-4o", type: "text" },
         { name: "baseUrl", label: "API Base URL（可选）", description: "留空使用默认：https://api.openai.com", type: "text" },
       ],
-      options: DEFAULT_STORYBOARD_MODELS.map(m => ({ label: m.label, description: m.description })),
+      options: DEFAULT_STORYBOARD_MODELS.map(m => ({ label: m.label, description: `${m.description}。选择后会作为模型默认值，也可以在模型 ID 中手动覆盖。` })),
     },
   };
   console.log(JSON.stringify(askPayload));

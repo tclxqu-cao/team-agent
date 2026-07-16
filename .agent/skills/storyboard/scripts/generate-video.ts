@@ -31,12 +31,13 @@ if (!apiKey) {
   const askPayload = {
     __ask_user: {
       for: "video_config",
-      question: "缺少视频生成 API 配置。请提供火山引擎 API Key，或选择模型后继续（需要模型对应的 API Key）。",
+      question: "缺少视频生成 API 配置。请提供火山引擎 API Key，并可选择或直接输入视频模型 ID。",
       fields: [
         { name: "apiKey", label: "API Key", description: "火山引擎 VOLCENGINE_API_KEY（或兼容服务商的 Key）", type: "secret" },
+        { name: "model", label: "模型 ID", description: "可手动输入视频模型，例如 seedance-1-lite、seedance-1-pro；留空使用所选推荐或默认 seedance-1-lite", type: "text" },
         { name: "baseUrl", label: "API Base URL（可选）", description: "留空使用默认：https://visual.volcengineapi.com", type: "text" },
       ],
-      options: DEFAULT_VIDEO_MODELS.map(m => ({ label: m.label, description: m.description })),
+      options: DEFAULT_VIDEO_MODELS.map(m => ({ label: m.label, description: `${m.description}。选择后会作为模型默认值，也可以在模型 ID 中手动覆盖。` })),
     },
   };
   console.log(JSON.stringify(askPayload));
