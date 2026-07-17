@@ -247,19 +247,43 @@ export class AgentLoop implements IAgentLoop {
       let hasError = false;
       const maxRetries = this.config.streamMaxRetries ?? 0;
 
-      // Retry loop for network-level errors (timeout, rate limit, connection).
-      // Model-level errors (stream error events) are not retried.
-      let retries = 0;
-      while (retries <= maxRetries) {
-        if (retries > 0) {
-          yield { type: "thinking", message: `Retrying (${retries}/${maxRetries})…` };
-          // Exponential backoff: 1s, 2s, 4s, … capped at 10s
-          const delay = Math.min(1000 * Math.pow(2, retries - 1) + Math.random() * 500, 10_000);
-          await new Promise((r) => setTimeout(r, delay));
+      // Retry transient transport failures and one stream that ends without any output.
+      // Model-level errors and partial responses are not retried because doing so
+      // could duplicate text or tool calls that have already reached the caller.
+      let networkRetries = 0;
+      let emptyStreamRetries = 0;
+      let totalRetries = 0;
+      const waitForRetry = (delay: number): Promise<boolean> => new Promise((resolve) => {
+        if (this.abortController?.signal.aborted) {
+          resolve(false);
+          return;
         }
+        const timer = setTimeout(() => {
+          this.abortController?.signal.removeEventListener("abort", onAbort);
+          resolve(true);
+        }, delay);
+        const onAbort = () => {
+          clearTimeout(timer);
+          resolve(false);
+        };
+        this.abortController?.signal.addEventListener("abort", onAbort, { once: true });
+      });
+
+      while (true) {
+        if (totalRetries > 0) {
+          yield { type: "thinking", message: `Retrying (${totalRetries})…` };
+          // Exponential backoff: 1s, 2s, 4s, … capped at 10s
+          const delay = Math.min(1000 * Math.pow(2, totalRetries - 1) + Math.random() * 500, 10_000);
+          if (!(await waitForRetry(delay))) {
+            yield { type: "turn_aborted" };
+            return;
+          }
+        }
+
+        let streamHadError = false;
+        let streamProducedOutput = false;
+        let streamEnded = false;
         try {
-          let streamHadError = false;
-          let streamProducedOutput = false;
           for await (const event of this.config.modelProvider.streamChat(messages, {
             tools: toolDefs.length > 0 ? toolDefs : undefined,
             // Note: this.config.maxTokens is the context-window size used for compaction
@@ -280,7 +304,7 @@ export class AgentLoop implements IAgentLoop {
                 yield { type: "tool_call", toolCall: event.toolCall };
                 break;
               case "text_done":
-                yield { type: "text_done" };
+                streamEnded = true;
                 break;
               case "error":
                 streamProducedOutput = true;
@@ -291,10 +315,16 @@ export class AgentLoop implements IAgentLoop {
             }
           }
           if (!streamProducedOutput && !this.abortController?.signal.aborted) {
+            if (emptyStreamRetries === 0) {
+              emptyStreamRetries++;
+              totalRetries++;
+              continue;
+            }
             hasError = true;
-            yield { type: "error", message: "Model stream ended without producing a response" };
+            yield { type: "error", message: "Model stream ended without producing a response after retry" };
           }
           if (streamHadError || hasError) break; // model-level error, not retryable
+          if (streamEnded) yield { type: "text_done" };
           break; // success — exit retry loop
         } catch (err) {
           if (this.abortController?.signal.aborted) {
@@ -303,12 +333,13 @@ export class AgentLoop implements IAgentLoop {
           }
           const msg = err instanceof Error ? err.message : String(err);
           const isRetryable = /timeout|rate\s*limit|5\d{2}|econnrefused|econnreset|network|temporary|too many|retry/i.test(msg);
-          if (!isRetryable || retries >= maxRetries) {
+          if (streamProducedOutput || !isRetryable || networkRetries >= maxRetries) {
             yield { type: "error", message: msg };
             hasError = true;
             break;
           }
-          retries++;
+          networkRetries++;
+          totalRetries++;
         }
       }
 

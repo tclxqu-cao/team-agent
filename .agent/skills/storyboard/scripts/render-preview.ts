@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 import { parseArgs } from "node:util";
+import { buildOpenAICompatibleUrl } from "./openai-compatible.js";
 
 const { values } = parseArgs({
   args: Bun.argv.slice(2),
@@ -50,7 +51,7 @@ const sbContent = await Bun.file(values.storyboard).text();
 const storyboard = JSON.parse(sbContent);
 
 async function generateImage(prompt: string, outputPath: string): Promise<void> {
-  const response = await fetch(`${baseUrl}/v1/images/generations`, {
+  const response = await fetch(buildOpenAICompatibleUrl(baseUrl, "/images/generations"), {
     method: "POST",
     headers: {
       "Content-Type": "application/json",

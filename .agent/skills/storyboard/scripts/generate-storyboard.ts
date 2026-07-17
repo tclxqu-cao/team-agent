@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 import { parseArgs } from "node:util";
+import { requestChatCompletionContent } from "./openai-compatible.js";
 
 const { values } = parseArgs({
   args: Bun.argv.slice(2),
@@ -75,28 +76,14 @@ Rules:
 - Descriptions should be in Chinese for the user
 - Output ONLY valid JSON, no markdown fences`;
 
-const response = await fetch(`${baseUrl}/v1/chat/completions`, {
-  method: "POST",
-  headers: {
-    "Content-Type": "application/json",
-    Authorization: `Bearer ${apiKey}`,
-  },
-  body: JSON.stringify({
-    model,
-    messages: [{ role: "user", content: prompt }],
-    temperature: 0.7,
-    max_tokens: 4096,
-  }),
+const content = await requestChatCompletionContent({
+  baseUrl,
+  apiKey,
+  model,
+  messages: [{ role: "user", content: prompt }],
+  temperature: 0.7,
+  maxTokens: 4096,
 });
-
-if (!response.ok) {
-  const err = await response.text();
-  console.error(`LLM API error: ${response.status} ${err}`);
-  process.exit(1);
-}
-
-const result = await response.json();
-const content = result.choices?.[0]?.message?.content ?? "";
 
 const jsonStr = content.replace(/^```json?\n?/, "").replace(/\n?```$/, "").trim();
 const storyboard = JSON.parse(jsonStr);

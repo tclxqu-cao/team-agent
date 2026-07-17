@@ -197,6 +197,26 @@ describe("AgentLoop", () => {
     expect(events.filter((event) => event.type === "context_usage")).toHaveLength(1);
   });
 
+  it("does not retry after partial output reaches the caller", async () => {
+    let calls = 0;
+    const partialModel = {
+      ...createMockModel(),
+      streamChat: async function* (): AsyncIterable<StreamEvent> {
+        calls++;
+        yield { type: "text_chunk", text: "partial" };
+        throw new Error("network temporary");
+      },
+    };
+
+    const loop = new AgentLoop(createConfig({ modelProvider: partialModel, streamMaxRetries: 1 }));
+    const events: AgentEvent[] = [];
+    for await (const event of loop.run("Retry", "test-session")) events.push(event);
+
+    expect(calls).toBe(1);
+    expect(events.filter((event) => event.type === "text_chunk")).toHaveLength(1);
+    expect(events.some((event) => event.type === "error" && event.message === "network temporary")).toBe(true);
+  });
+
   it("should respect max iterations", async () => {
     const loopingModel = {
       ...createMockModel(),
@@ -242,10 +262,67 @@ describe("AgentLoop", () => {
     expect(errorEvents.length).toBeGreaterThan(0);
   });
 
-  it("should surface empty model streams as errors", async () => {
+  it("should retry an empty model stream once and recover", async () => {
+    let calls = 0;
+    const recoveringModel = {
+      ...createMockModel(),
+      streamChat: async function* (): AsyncIterable<StreamEvent> {
+        calls++;
+        if (calls === 1) {
+          yield { type: "text_done" };
+          return;
+        }
+        yield { type: "text_chunk", text: "Recovered" };
+        yield { type: "text_done" };
+      },
+    };
+
+    const loop = new AgentLoop(createConfig({ modelProvider: recoveringModel, streamMaxRetries: 0 }));
+    const events: AgentEvent[] = [];
+
+    for await (const event of loop.run("test", "test-session")) {
+      events.push(event);
+    }
+
+    expect(calls).toBe(2);
+    expect(events.some((e) => e.type === "text_chunk" && e.text === "Recovered")).toBe(true);
+    expect(events.filter((e) => e.type === "text_done")).toHaveLength(1);
+    expect(events.some((e) => e.type === "error")).toBe(false);
+    expect(events.at(-1)?.type).toBe("done");
+  });
+
+  it("should abort before retrying an empty model stream when cancelled during backoff", async () => {
+    let calls = 0;
     const emptyModel = {
       ...createMockModel(),
-      streamChat: async function* (): AsyncIterable<StreamEvent> {},
+      streamChat: async function* (): AsyncIterable<StreamEvent> {
+        calls++;
+        yield { type: "text_done" };
+      },
+    };
+
+    const loop = new AgentLoop(createConfig({ modelProvider: emptyModel }));
+    const events: AgentEvent[] = [];
+
+    for await (const event of loop.run("test", "test-session")) {
+      events.push(event);
+      if (event.type === "thinking" && event.message.startsWith("Retrying")) {
+        loop.abort();
+      }
+    }
+
+    expect(calls).toBe(1);
+    expect(events.some((e) => e.type === "turn_aborted")).toBe(true);
+  });
+
+  it("should surface an error when the empty model stream persists after retry", async () => {
+    let calls = 0;
+    const emptyModel = {
+      ...createMockModel(),
+      streamChat: async function* (): AsyncIterable<StreamEvent> {
+        calls++;
+        yield { type: "text_done" };
+      },
     };
 
     const loop = new AgentLoop(createConfig({ modelProvider: emptyModel }));
@@ -255,7 +332,8 @@ describe("AgentLoop", () => {
       events.push(event);
     }
 
-    expect(events.some((e) => e.type === "error" && e.message === "Model stream ended without producing a response")).toBe(true);
+    expect(calls).toBe(2);
+    expect(events.some((e) => e.type === "error" && e.message === "Model stream ended without producing a response after retry")).toBe(true);
     expect(events.at(-1)?.type).toBe("done");
   });
 
