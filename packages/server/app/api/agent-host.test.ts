@@ -9,11 +9,12 @@ class CapturingModelProvider implements IModelProvider {
   readonly modelId = "test-model";
   messages: Message[] = [];
   options: StreamOptions | undefined;
+  eventBatches: StreamEvent[][] = [[{ type: "text_done" }]];
 
   async *streamChat(messages: Message[], options?: StreamOptions): AsyncIterable<StreamEvent> {
     this.messages = messages;
     this.options = options;
-    yield { type: "text_done" };
+    yield* (this.eventBatches.shift() ?? []);
   }
 
   async countTokens(): Promise<number> { return 1; }
@@ -98,6 +99,115 @@ describe("agentHost singleton", () => {
     const sessions = await response.json();
     expect(sessions).toEqual(expect.arrayContaining([expect.objectContaining({ title: "项目 A", projectId: "project-a" })]));
     expect(sessions).not.toEqual(expect.arrayContaining([expect.objectContaining({ title: "项目 B", projectId: "project-b" })]));
+  });
+
+  it("scopes emitted events to the subscribed session", async () => {
+    const provider = new CapturingModelProvider();
+    provider.eventBatches = [
+      [
+        { type: "tool_call", toolCall: { id: "scope-call", name: "lookup", arguments: {} } },
+        { type: "text_done" },
+      ],
+      [
+        { type: "text_chunk", text: "Only A" },
+        { type: "text_done" },
+      ],
+    ];
+    agentHost.setBuilder(new AgentBuilder().withModelProvider(provider));
+    const sessionA = await agentHost.createSession("session A");
+    const sessionB = await agentHost.createSession("session B");
+    const eventsA: unknown[] = [];
+    const eventsB: unknown[] = [];
+    const subscribe = agentHost.subscribe as unknown as (
+      sessionId: string,
+      listener: (event: unknown) => void,
+    ) => () => void;
+    const unsubscribeA = subscribe.call(agentHost, sessionA.id, (event) => eventsA.push(event));
+    const unsubscribeB = subscribe.call(agentHost, sessionB.id, (event) => eventsB.push(event));
+
+    await agentHost.run("hello A", sessionA.id);
+    unsubscribeA();
+    unsubscribeB();
+
+    expect(eventsA).toEqual(expect.arrayContaining([expect.objectContaining({ type: "done", finalText: "Only A" })]));
+    expect(eventsB).toEqual([]);
+  });
+
+  it("persists the assistant reply before emitting done", async () => {
+    const provider = new CapturingModelProvider();
+    provider.eventBatches = [
+      [
+        { type: "tool_call", toolCall: { id: "ordering-call", name: "lookup", arguments: {} } },
+        { type: "text_done" },
+      ],
+      [
+        { type: "text_chunk", text: "Persisted first" },
+        { type: "text_done" },
+      ],
+    ];
+    agentHost.setBuilder(new AgentBuilder().withModelProvider(provider));
+    const session = await agentHost.createSession("done ordering test");
+    let sessionAtDone: Promise<{ messages?: Message[] } | null> | undefined;
+    const subscribe = agentHost.subscribe as unknown as (
+      sessionId: string,
+      listener: (event: { type?: string }) => void,
+    ) => () => void;
+    const unsubscribe = subscribe.call(agentHost, session.id, (event) => {
+      if (event.type === "done") {
+        sessionAtDone = agentHost.getSessionStore().get(session.id);
+      }
+    });
+
+    await agentHost.run("persist before done", session.id);
+    unsubscribe();
+
+    await expect(sessionAtDone).resolves.toMatchObject({
+      messages: [
+        { role: "user", content: "persist before done" },
+        { role: "assistant", content: "Persisted first" },
+      ],
+    });
+  });
+
+  it("marks failed runs without persisting a synthetic assistant reply", async () => {
+    const provider = new CapturingModelProvider();
+    provider.eventBatches = [[
+      { type: "error", message: "provider unavailable" },
+    ]];
+    agentHost.setBuilder(new AgentBuilder().withModelProvider(provider));
+    const session = await agentHost.createSession("failed history test");
+
+    await agentHost.run("This will fail", session.id);
+
+    await expect(agentHost.getSessionStore().get(session.id)).resolves.toMatchObject({
+      status: "failed",
+      messages: [{ role: "user", content: "This will fail" }],
+    });
+  });
+
+  it("appends the final assistant text exactly once after a tool-call run", async () => {
+    const provider = new CapturingModelProvider();
+    provider.eventBatches = [
+      [
+        { type: "tool_call", toolCall: { id: "call-1", name: "lookup", arguments: {} } },
+        { type: "text_done" },
+      ],
+      [
+        { type: "text_chunk", text: "Final " },
+        { type: "text_chunk", text: "answer" },
+        { type: "text_done" },
+      ],
+    ];
+    agentHost.setBuilder(new AgentBuilder().withModelProvider(provider));
+    const session = await agentHost.createSession("assistant history test");
+
+    await agentHost.run("Please look it up", session.id);
+
+    const stored = await agentHost.getSessionStore().get(session.id);
+    expect(stored?.messages).toEqual([
+      { role: "user", content: "Please look it up" },
+      { role: "assistant", content: "Final answer" },
+    ]);
   });
 
   it("uses the session project remote tools after another project registers later", async () => {
