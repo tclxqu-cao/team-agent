@@ -12,7 +12,7 @@ export async function GET(request: Request) {
 
   const stream = new ReadableStream({
     start(controller) {
-      const unsubscribe = agentHost.subscribe((event) => {
+      const unsubscribe = agentHost.subscribe(sessionId, (event) => {
         if (streamDone) return;
         const data = `data: ${JSON.stringify(event)}\n\n`;
         controller.enqueue(new TextEncoder().encode(data));
@@ -23,6 +23,7 @@ export async function GET(request: Request) {
           unsubscribe();
         }
       });
+      controller.enqueue(new TextEncoder().encode(": connected\n\n"));
     },
   });
 

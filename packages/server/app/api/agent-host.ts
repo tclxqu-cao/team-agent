@@ -20,7 +20,7 @@ class AgentHost {
   private readonly remoteToolStore = new SQLiteRemoteToolStore(getDatabase(process.cwd()).db);
   private readonly defaultRemoteToolsProjectId = process.env.AGENT_PROJECT_ID ?? "default";
   private activeRun: AsyncIterable<AgentEvent> | null = null;
-  private subscribers = new Set<(event: AgentEvent) => void>();
+  private subscribers = new Map<string, Set<(event: AgentEvent) => void>>();
   private pendingQuestions = new Map<
     string,
     {
@@ -84,13 +84,18 @@ class AgentHost {
     });
   }
 
-  subscribe(fn: (event: AgentEvent) => void): () => void {
-    this.subscribers.add(fn);
-    return () => this.subscribers.delete(fn);
+  subscribe(sessionId: string, fn: (event: AgentEvent) => void): () => void {
+    const subscribers = this.subscribers.get(sessionId) ?? new Set<(event: AgentEvent) => void>();
+    subscribers.add(fn);
+    this.subscribers.set(sessionId, subscribers);
+    return () => {
+      subscribers.delete(fn);
+      if (subscribers.size === 0) this.subscribers.delete(sessionId);
+    };
   }
 
-  private emit(event: AgentEvent): void {
-    for (const fn of this.subscribers) {
+  private emit(sessionId: string, event: AgentEvent): void {
+    for (const fn of this.subscribers.get(sessionId) ?? []) {
       try { fn(event); } catch { /* ignore */ }
     }
   }
@@ -109,7 +114,7 @@ class AgentHost {
         .build();
     } catch (err) {
       // Emit error to SSE subscribers so the SDK can display it
-      this.emit({
+      this.emit(sessionId, {
         type: "error",
         message: err instanceof Error ? err.message : "Failed to build agent",
       } as AgentEvent);
@@ -119,14 +124,22 @@ class AgentHost {
     }
 
     this.activeRun = agent.run(input, sessionId);
+    let runFailed = false;
 
     for await (const event of this.activeRun) {
-      this.emit(event);
       await this.sessionStore.addEvent(sessionId, event);
 
-      if (event.type === "done") {
+      if (event.type === "error") {
+        runFailed = true;
+        await this.sessionStore.update(sessionId, { status: "failed" });
+      } else if (event.type === "done" && !runFailed) {
+        if (event.finalText.trim()) {
+          await this.sessionStore.addMessage(sessionId, { role: "assistant", content: event.finalText });
+        }
         await this.sessionStore.update(sessionId, { status: "completed" });
       }
+
+      this.emit(sessionId, event);
     }
   }
 
@@ -137,6 +150,7 @@ class AgentHost {
   ): Promise<AskUserResponse> {
     const questionId = crypto.randomUUID();
     this.emit(
+      sessionId,
       {
         type: "ask_user" as any,
         ...({
