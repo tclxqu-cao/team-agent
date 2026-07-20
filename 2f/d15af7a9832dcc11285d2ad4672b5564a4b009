@@ -1,0 +1,81 @@
+packages/desktop/renderer/stores/agentStore.ts
+  s_8e02c75ff612dc::t_2cae284fa6bf9e 116-117
+  s_8e02c75ff612dc::t_11d7b80b560c58 335-336,339-340
+  s_8e02c75ff612dc::t_dec693d349b414 16
+  s_8e02c75ff612dc::t_285cc631d75463 95
+  s_8e02c75ff612dc::t_1eea29063b1ef0 5
+  s_8e02c75ff612dc::t_165e2aa4079643 2
+  s_8e02c75ff612dc::t_665e6a9b90c9f5 38-46
+  s_8e02c75ff612dc::t_bf92f5cbf08bba 274-286
+  s_8e02c75ff612dc::t_6e747f20247c19 198
+packages/desktop/renderer/stores/agentStore.test.ts
+  s_8e02c75ff612dc::t_d32bab78f90cd9 26
+  s_8e02c75ff612dc::t_e8b1f25842f600 76-104
+  s_8e02c75ff612dc::t_37c8ac323c68cc 2-19
+packages/desktop/renderer/components/ContextUsageBar.test.ts
+  s_8e02c75ff612dc::t_7e1381949d5791 2-3,5-25,27-29,31-36,38-39,41-50,53-55,57-58
+packages/desktop/renderer/components/ChatView.tsx
+  s_8e02c75ff612dc::t_861942508e612a 464
+  s_8e02c75ff612dc::t_4b64f84cfd0169 2221
+  s_8e02c75ff612dc::t_de2b8acd799e68 3-9
+  s_8e02c75ff612dc::t_defb246829f3a0 602
+  s_8e02c75ff612dc::t_2bde0f5ae3ac8a 610-612
+  s_8e02c75ff612dc::t_24b931c56cb1b0 583
+  s_8e02c75ff612dc::t_d2f9d1ce016e35 468
+  s_8e02c75ff612dc::t_7f54c232bbcd32 225-226
+packages/core/src/domain/context/entities.ts
+  s_8e02c75ff612dc::t_e4d5d082b70131 11-19,22
+packages/core/src/domain/agent/entities.ts
+  s_8e02c75ff612dc::t_60e3ea31b58954 52-84
+  s_8e02c75ff612dc::t_4740d660c1a7d8 40
+  s_8e02c75ff612dc::t_0827612a4d794f 13
+packages/core/src/domain/agent/__tests__/AgentLoop.test.ts
+  s_8e02c75ff612dc::t_1d14e0abeb7606 112-133
+  s_8e02c75ff612dc::t_fe9d33f078167e 53-60
+  s_8e02c75ff612dc::t_0fe1b8461d3cda 168-197
+packages/core/src/domain/agent/__tests__/ContextUsageEstimator.test.ts
+  s_8e02c75ff612dc::t_8dbc0be4729dc3 1-132
+packages/core/src/domain/context/__tests__/ContextAssembler.test.ts
+  s_8e02c75ff612dc::t_a214a5f6403867 64-80,91-106
+  s_8e02c75ff612dc::t_53fa2947a818f8 22
+packages/core/src/domain/agent/AgentLoop.ts
+  s_8e02c75ff612dc::t_4e93eb200e2941 90-91
+  s_8e02c75ff612dc::t_d6ec0d90f1f3c1 8-13
+  s_8e02c75ff612dc::t_14840be6e339bf 233-245
+  s_8e02c75ff612dc::t_a783b4bc928a51 137,139-147,149,153
+packages/core/src/domain/context/index.ts
+  s_8e02c75ff612dc::t_817c646d9a29aa 3
+packages/core/src/domain/agent/ContextCompactor.ts
+  s_8e02c75ff612dc::t_7b4f3c8b472f16 118,166,219
+  s_8e02c75ff612dc::t_779ab660747af1 17
+  s_8e02c75ff612dc::t_f0527c2d8e4e8e 16
+  s_8e02c75ff612dc::t_bec5e2f42cc676 122
+packages/core/src/domain/agent/index.ts
+  s_8e02c75ff612dc::t_79ee037567540c 4-6
+packages/desktop/renderer/components/ContextUsageBar.tsx
+  s_8e02c75ff612dc::t_80e80a3edcd7a8 2-5,7-9,11,14-16,19-34,37-43,45-55,58-64,66-68,71,73,76-94,98-102,104,107,113-114,127,149-159,161-164,180-181,189-193,195-219,221
+packages/core/src/domain/agent/ContextUsageEstimator.ts
+  s_8e02c75ff612dc::t_b6ca90c3dfecea 1-86,89-146
+  s_8e02c75ff612dc::t_5e038be8edf94d 87-88
+packages/core/src/domain/context/ContextAssembler.ts
+  s_8e02c75ff612dc::t_d184c2555f820d 7
+  s_8e02c75ff612dc::t_dca17e4ae31cc3 131-143,147
+  s_8e02c75ff612dc::t_64642a274202bc 187
+  s_8e02c75ff612dc::t_d7eaa43d4225a7 241-274,279-296
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.7",
+  "base_commit_sha": "2fd15af7a9832dcc11285d2ad4672b5564a4b009",
+  "prompts": {},
+  "sessions": {
+    "s_8e02c75ff612dc": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "eba6d427-57d5-4269-b60f-2e61e0a678a6",
+        "model": "LongCat-2.0"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

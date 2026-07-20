@@ -1,0 +1,30 @@
+packages/desktop/renderer/components/ContextUsageBar.tsx
+  s_8e02c75ff612dc::t_fb7478f231c2f6 147
+  s_8e02c75ff612dc::t_cc126357dd758b 39
+  s_8e02c75ff612dc::t_b8f61b5744e11d 65-67
+  s_8e02c75ff612dc::t_4f5bd305cb80c9 30-31
+packages/desktop/renderer/components/ChatView.tsx
+  s_8e02c75ff612dc::t_0b8bf7b6dffac5 561,566
+  s_8e02c75ff612dc::t_4717bca7c7c548 2205
+  s_8e02c75ff612dc::t_c8bd0a6f5e84c1 502-531,534
+  s_8e02c75ff612dc::t_1e05ec0ac5b4bf 452-454
+  s_8e02c75ff612dc::t_64a731a93415dd 562-565
+packages/desktop/renderer/components/ContextUsageBar.test.ts
+  s_8e02c75ff612dc::t_7de8a41fbf18d9 6,10-12
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.7",
+  "base_commit_sha": "e5c7f086cf3647f0b2169689ee9b36381d07ba67",
+  "prompts": {},
+  "sessions": {
+    "s_8e02c75ff612dc": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "eba6d427-57d5-4269-b60f-2e61e0a678a6",
+        "model": "gpt-5.5"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

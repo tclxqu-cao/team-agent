@@ -1,0 +1,50 @@
+packages/desktop/renderer/stores/agentStore.ts
+  s_8e02c75ff612dc::t_0c78636bf0133d 83,93-94,97,99,101-103,105-106
+  s_8e02c75ff612dc::t_71f307743b18ea 190,192-201,209,211-221,233-289,291-301,304-313
+  s_8e02c75ff612dc::t_9a6a3c5e0b8e6f 111-181,183
+  s_8e02c75ff612dc::t_99c0fe9094c0b0 203-205
+  s_8e02c75ff612dc::t_999bc6fcfaf1cc 223-225
+packages/desktop/renderer/components/ContextUsageBar.test.ts
+  s_8e02c75ff612dc::t_5ad473acdebc11 1-41
+packages/desktop/renderer/components/ChatView.tsx
+  s_8e02c75ff612dc::t_0fa814f50a3ed0 174
+  s_8e02c75ff612dc::t_9c1a087fc86b54 539
+  s_8e02c75ff612dc::t_26b77cb5d43f42 218
+  s_8e02c75ff612dc::t_d956f7376d0428 632
+  s_8e02c75ff612dc::t_f64b4597327e45 615
+  s_8e02c75ff612dc::t_c52010b6d85325 226
+  s_8e02c75ff612dc::t_a78134e8569c46 667-669,673,681
+  s_8e02c75ff612dc::t_4c69333b01a9c5 570-573
+  s_8e02c75ff612dc::t_2935958eb85c63 552
+  s_8e02c75ff612dc::t_ba4db26373d24a 697
+  s_8e02c75ff612dc::t_e36bdc9ebace1e 701
+  s_8e02c75ff612dc::t_74d3aeb6edecf2 655
+  s_8e02c75ff612dc::t_c8bf8fbea5b457 562-566
+  s_8e02c75ff612dc::t_e0508b5f1309f4 594
+  s_8e02c75ff612dc::t_2a2fb719ca1dc8 645
+  s_8e02c75ff612dc::t_9742d173d3c98d 589
+  s_8e02c75ff612dc::t_c49b7e31833237 2168-2169
+  s_8e02c75ff612dc::t_cb862d5a7ca0e5 709,712-715,718-722
+  s_8e02c75ff612dc::t_e609cf032492a5 557-558
+  s_8e02c75ff612dc::t_051519a9b341d0 530-533
+packages/desktop/renderer/components/ContextUsageBar.tsx
+  s_8e02c75ff612dc::t_321eadb2e3bb03 1-177
+packages/desktop/renderer/stores/agentStore.test.ts
+  s_8e02c75ff612dc::t_263d63fcdbb49d 1-58
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.7",
+  "base_commit_sha": "6bafa4805aac3bd41494d04fc49bdff41942aa54",
+  "prompts": {},
+  "sessions": {
+    "s_8e02c75ff612dc": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "eba6d427-57d5-4269-b60f-2e61e0a678a6",
+        "model": "gpt-5.5"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

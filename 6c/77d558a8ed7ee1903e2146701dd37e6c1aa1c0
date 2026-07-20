@@ -1,0 +1,43 @@
+packages/core/src/domain/agent/__tests__/AgentLoop.test.ts
+  s_dfc2106e823810::t_fa6ff2ef63682b 200-219
+  s_dfc2106e823810::t_586565354e9059 265-279,281-288,290-291,316-319,322-325,335-336
+  s_dfc2106e823810::t_cc75fcdaa184d8 289,292-315
+  s_dfc2106e823810::t_e86c62a19808aa 280
+vitest.config.ts
+  s_dfc2106e823810::t_b420c44a0dd386 7
+.agent/skills/storyboard/scripts/openai-compatible.test.ts
+  s_dfc2106e823810::t_6f44ce0e37184b 18-22
+  s_dfc2106e823810::t_3f55820414b43f 1-17,23-66
+.agent/skills/storyboard/scripts/generate-storyboard.ts
+  s_dfc2106e823810::t_fc1306f7b49656 3
+  s_dfc2106e823810::t_f3712945106059 79-85
+packages/core/src/domain/agent/AgentLoop.ts
+  s_dfc2106e823810::t_72350785ed0999 318-320
+  s_dfc2106e823810::t_4028923657b545 321-322,324
+  s_dfc2106e823810::t_f24a3bcb48ee51 341-342
+  s_dfc2106e823810::t_d6c3472bde7d2e 256-271,277-280,282-285,307,327,336
+  s_dfc2106e823810::t_19a7014fa0bf5c 251-252
+  s_dfc2106e823810::t_05d1b1bf77db24 250,253-255,272-274,276
+.agent/skills/storyboard/scripts/render-preview.ts
+  s_dfc2106e823810::t_f893194478d099 54
+  s_dfc2106e823810::t_c72defff8f664f 3
+.agent/skills/storyboard/scripts/openai-compatible.ts
+  s_dfc2106e823810::t_0774a816bb8f47 11,13
+  s_dfc2106e823810::t_e3b2ad5a542731 1-10,12,14-71
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.14",
+  "base_commit_sha": "6c77d558a8ed7ee1903e2146701dd37e6c1aa1c0",
+  "prompts": {},
+  "sessions": {
+    "s_dfc2106e823810": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dffcb57a-f7d9-41f5-95e4-80268c737a94",
+        "model": "gpt-5.5"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

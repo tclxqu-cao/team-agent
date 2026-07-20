@@ -1,0 +1,25 @@
+.agent/skills/storyboard/scripts/render-preview.ts
+  s_8a7be152886cde::t_c1187da5dc7c79 23-27,29-41
+.agent/skills/storyboard/scripts/generate-storyboard.ts
+  s_8a7be152886cde::t_79e035b58ff291 24-29,31-43
+.agent/skills/storyboard/SKILL.md
+  s_8a7be152886cde::t_e5b583d0d22433 99-155,163
+.agent/skills/storyboard/scripts/generate-video.ts
+  s_8a7be152886cde::t_de473c587e5c04 25-29,31-43
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.12",
+  "base_commit_sha": "d164577485bed1879ff84d12feac7b848cb9d109",
+  "prompts": {},
+  "sessions": {
+    "s_8a7be152886cde": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e7f8aff1-afe6-4652-b51e-36c42c4fae8f",
+        "model": "LongCat-2.0"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

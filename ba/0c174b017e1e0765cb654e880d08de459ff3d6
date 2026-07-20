@@ -1,0 +1,43 @@
+packages/server/app/api/agent/stream/route.test.ts
+  s_999f3037df62ea::t_cabeaca60d77ac 1-20
+packages/server/app/api/agent-host.ts
+  s_c04a4d3cd4e28e::t_89eafd8b6c1e2a 136-138
+  s_c04a4d3cd4e28e::t_a44141fa153bc6 127,132-135
+  s_999f3037df62ea::t_368b151781645a 23,87-94,97-98,117,141-142,153
+packages/server/app/api/agent-host.test.ts
+  s_999f3037df62ea::t_7e6d5d17844cc8 12,17
+  s_f1504e1e23f2b1::t_8d5b4f0b6ad000 104-126,128-144,146-160,162-187
+  s_c04a4d3cd4e28e::t_c61a79010a3a43 127,145,161,188-212
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.14",
+  "base_commit_sha": "ba0c174b017e1e0765cb654e880d08de459ff3d6",
+  "prompts": {},
+  "sessions": {
+    "s_999f3037df62ea": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "07f2172f-644a-445d-b347-afe9c3a83f89",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_c04a4d3cd4e28e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a4d2fc13efc6ca270",
+        "model": "unknown"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_f1504e1e23f2b1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f7508-03cf-7172-8086-1c714b59192d",
+        "model": "cx/gpt-5.6-sol-xhigh"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

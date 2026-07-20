@@ -1,0 +1,24 @@
+packages/desktop/renderer/components/ContextUsageBar.tsx
+  s_8e02c75ff612dc::t_b9b5d25e019690 92-93
+  s_8e02c75ff612dc::t_45aed64ce12e1e 150-160,162-189,191
+  s_8e02c75ff612dc::t_bf7ae3a8bbf62e 102,104-108
+  s_8e02c75ff612dc::t_4ca2b4aed905e4 1
+  s_8e02c75ff612dc::t_e7a4e8987e46ab 97
+  s_8e02c75ff612dc::t_1b51ea7e71e093 161
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.7",
+  "base_commit_sha": "9d690dd1111a2879640e7c24b4a7415e6be00f4a",
+  "prompts": {},
+  "sessions": {
+    "s_8e02c75ff612dc": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "eba6d427-57d5-4269-b60f-2e61e0a678a6",
+        "model": "gpt-5.5-xhigh"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
