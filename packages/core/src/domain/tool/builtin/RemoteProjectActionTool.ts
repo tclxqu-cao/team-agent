@@ -12,6 +12,12 @@ function safeJson(text: string): Record<string, unknown> { try { const v = JSON.
 function errorMessage(error: unknown): string { return error instanceof Error ? error.message : String(error || "Remote action failed"); }
 function withoutAuthorization(headers: Record<string, string>): Record<string, string> { return Object.fromEntries(Object.entries(headers).filter(([key]) => key.toLowerCase() !== "authorization")); }
 
+export function describeRemoteTool(tool: { scheme: string; purpose: string; inputSchema: Record<string, unknown>; examples: Array<Record<string, unknown>> }): string {
+  const schema = Object.keys(tool.inputSchema).length > 0 ? `\n  payload schema: ${JSON.stringify(tool.inputSchema)}` : "";
+  const examples = tool.examples.length > 0 ? `\n  examples: ${JSON.stringify(tool.examples)}` : "";
+  return `- ${tool.scheme}: ${tool.purpose}${schema}${examples}`;
+}
+
 export class RemoteProjectActionTool implements ITool {
   readonly name = "remote_project_action";
   readonly schema = schema;
@@ -25,7 +31,7 @@ export class RemoteProjectActionTool implements ITool {
 
   get description(): string {
     const tools = this.store?.listEnabledTools(this.projectId) ?? [];
-    const lines = tools.map((tool) => `- ${tool.scheme}: ${tool.purpose}`);
+    const lines = tools.map(describeRemoteTool);
     return `Execute registered remote project actions by scheme. Never pass URLs; this tool resolves URLs from the registry. Use remote_job_status with {jobId} to poll results. Registered actions:\n${lines.length ? lines.join("\n") : "No remote actions are registered."}`;
   }
 

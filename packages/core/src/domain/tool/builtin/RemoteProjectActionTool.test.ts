@@ -17,6 +17,23 @@ class MemoryStore implements RemoteToolStore {
 }
 
 describe("RemoteProjectActionTool", () => {
+  it("describes registered payload schemas and examples to the model", () => {
+    const store = new MemoryStore();
+    store.upsertTools("kid-earth-learning", [{
+      scheme: "create_kid_earth_games",
+      purpose: "创建互动游戏",
+      url: "http://kid/api/agent-actions/create-games",
+      method: "POST",
+      inputSchema: { type: "object", properties: { overwrite: { type: "boolean" }, publish: { type: "boolean" } } },
+      examples: [{ input: { overwrite: true, publish: false } }],
+    }]);
+
+    const tool = new RemoteProjectActionTool({ store, projectId: "kid-earth-learning" });
+
+    expect(tool.description).toContain('"overwrite":{"type":"boolean"}');
+    expect(tool.description).toContain('"publish":false');
+  });
+
   it("creates a job and calls the registered URL without accepting a caller URL", async () => {
     const store = new MemoryStore();
     store.upsertTools("kid-earth-learning", [{ scheme: "create_kid_earth_course", purpose: "创建课程", url: "http://kid/api/agent-actions/create-course", method: "POST", auth: { type: "bearer", tokenEnv: "AGENT_ACTION_TOKEN" } }]);

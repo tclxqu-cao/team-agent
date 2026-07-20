@@ -13,7 +13,7 @@ import { ContextAssembler } from '../context/ContextAssembler.js';
 import { FileSystemMemoryStore } from '../memory/FileSystemMemoryStore.js';
 import { ModelRegistry } from '../model/ModelRegistry.js';
 import type { RemoteToolStore } from '../remote-tools/RemoteToolStore.js';
-import { RemoteProjectActionTool } from '../tool/builtin/RemoteProjectActionTool.js';
+import { describeRemoteTool, RemoteProjectActionTool } from '../tool/builtin/RemoteProjectActionTool.js';
 
 export class AgentBuilder {
   private workingDirectory = process.cwd();
@@ -133,7 +133,7 @@ export class AgentBuilder {
   private systemPromptWithRemoteTools(remoteToolStore: RemoteToolStore | undefined, projectId: string): string | undefined {
     const tools = remoteToolStore?.listEnabledTools(projectId) ?? [];
     if (tools.length === 0) return this.systemPrompt;
-    const summary = ["可用远程项目工具：", ...tools.map((tool) => `- ${tool.scheme}: ${tool.purpose}`)].join("\n");
+    const summary = ["可用远程项目工具：", ...tools.map(describeRemoteTool)].join("\n");
     return [this.systemPrompt, summary].filter(Boolean).join("\n\n");
   }
 
