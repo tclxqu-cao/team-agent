@@ -1,9 +1,11 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
+import { unsafeHTML } from 'lit/directives/unsafe-html.js';
 import { AgentClient } from '../client/AgentClient';
 import { ChatStore } from '../store/ChatStore';
 import { themeStyles } from '../styles/theme';
 import type { AgentEvent, ChatMessage, ToolCall, RemoteToolRegistration } from '../client/types';
+import { renderMarkdown } from './markdown';
 import './AgentFab';
 
 /**
@@ -29,6 +31,7 @@ export class AgentChat extends LitElement {
   private registrationError: unknown = null;
   private unsubClient: (() => void) | null = null;
   private unsubStore: (() => void) | null = null;
+  private shouldAutoScroll = true;
 
   static styles = [
     themeStyles,
@@ -210,6 +213,7 @@ export class AgentChat extends LitElement {
       /* ── Messages ── */
       .messages {
         flex: 1;
+        min-height: 0;
         overflow-y: auto;
         padding: 16px;
         display: flex;
@@ -253,6 +257,31 @@ export class AgentChat extends LitElement {
         font-size: 13px;
         line-height: 1.5;
         word-break: break-word;
+      }
+      .msg-assistant p { margin: 0 0 6px; }
+      .msg-assistant p:last-child { margin-bottom: 0; }
+      .msg-assistant ul { margin: 4px 0; padding-left: 18px; }
+      .msg-assistant li { margin: 2px 0; }
+      .msg-assistant code {
+        padding: 1px 5px;
+        border: 1px solid var(--border-subtle);
+        border-radius: 4px;
+        background: var(--bg-surface);
+        font-family: 'SF Mono', 'Monaco', monospace;
+        font-size: 11.5px;
+      }
+      .msg-assistant pre {
+        margin: 6px 0;
+        padding: 8px 10px;
+        overflow-x: auto;
+        border: 1px solid var(--border-subtle);
+        border-radius: 8px;
+        background: var(--bg-deepest);
+      }
+      .msg-assistant pre code {
+        padding: 0;
+        border: none;
+        background: none;
         white-space: pre-wrap;
       }
       .msg-assistant.streaming::after {
@@ -656,9 +685,15 @@ export class AgentChat extends LitElement {
     }
   }
 
+  private _handleMessagesScroll(event: Event): void {
+    const container = event.currentTarget as HTMLElement;
+    const distanceFromBottom = container.scrollHeight - container.clientHeight - container.scrollTop;
+    this.shouldAutoScroll = distanceFromBottom <= 32;
+  }
+
   private _scrollToBottom(): void {
     const container = this.renderRoot.querySelector('.messages');
-    if (container) {
+    if (container && this.shouldAutoScroll) {
       container.scrollTop = container.scrollHeight;
     }
   }
@@ -701,7 +736,7 @@ export class AgentChat extends LitElement {
           </div>
           ${this._store.isSessionMenuOpen ? this._renderSessionMenu() : ''}
         </div>
-        <div class="messages">
+        <div class="messages" @scroll=${this._handleMessagesScroll}>
           ${this._store.messages.length === 0
             ? html`<div class="empty">开始与 AI 助手对话...</div>`
             : this._store.messages.map((msg) => this._renderMessage(msg))}
@@ -795,7 +830,7 @@ export class AgentChat extends LitElement {
     }
     // Assistant message (may have tool calls)
     return html`
-      ${msg.content ? html`<div class="msg-assistant ${msg.isStreaming ? 'streaming' : ''}">${msg.content}</div>` : ''}
+      ${msg.content ? html`<div class="msg-assistant ${msg.isStreaming ? 'streaming' : ''}">${unsafeHTML(renderMarkdown(msg.content))}</div>` : ''}
       ${msg.toolCalls?.map((tc) => this._renderToolCall(tc))}
     `;
   }

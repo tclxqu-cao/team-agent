@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { AgentChat } from "./AgentChat";
+import { renderMarkdown } from "./markdown";
 import { AgentClient } from "../client/AgentClient";
 
 function deferred<T>() {
@@ -241,5 +242,42 @@ describe("AgentChat remote tool initialization", () => {
       process.removeListener("unhandledRejection", unhandled);
       for (const handler of previousHandler) process.on("unhandledRejection", handler);
     }
+  });
+});
+
+describe("AgentChat message presentation", () => {
+  it("lets the messages flex item shrink so overflow scrolls inside the panel", () => {
+    const styles = String(AgentChat.styles);
+
+    expect(styles).toMatch(/\.messages\s*\{[^}]*min-height:\s*0/s);
+  });
+
+  it("does not force the view back to the bottom after the user scrolls up", () => {
+    const chat = createTestChat() as TestableAgentChat & {
+      _handleMessagesScroll(event: Event): void;
+      updated(): void;
+    };
+    const container = {
+      scrollTop: 200,
+      scrollHeight: 1000,
+      clientHeight: 400,
+    } as HTMLElement;
+    chat.renderRoot = {
+      querySelector: () => container,
+    };
+
+    chat._handleMessagesScroll({ currentTarget: container } as unknown as Event);
+    chat.updated();
+
+    expect(container.scrollTop).toBe(200);
+  });
+
+  it("renders assistant Markdown while escaping raw HTML", () => {
+    const rendered = renderMarkdown("**完成** `<tag>`\n\n<script>alert(1)</script>");
+
+    expect(rendered).toContain("<strong>完成</strong>");
+    expect(rendered).toContain("<code>&lt;tag&gt;</code>");
+    expect(rendered).not.toContain("<script>");
+    expect(rendered).toContain("&lt;script&gt;alert(1)&lt;/script&gt;");
   });
 });
