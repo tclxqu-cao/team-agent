@@ -1,0 +1,25 @@
+packages/sdk/src/components/AgentChat.ts
+  s_999f3037df62ea::t_fe3e55a4e5296a 348-377,379-385,387-396,696
+  s_999f3037df62ea::t_27ea30981c0ea7 3
+  s_999f3037df62ea::t_3cbf83ef2aa481 11-99
+  s_999f3037df62ea::t_22bde311113fba 937,939
+  s_999f3037df62ea::t_92602e4a341732 304
+  s_999f3037df62ea::t_6b1a5957472d81 10
+  s_999f3037df62ea::t_d4c67c11fdcbdc 694-695
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.14",
+  "base_commit_sha": "f78c3a449b99b09ce2e26881c2b96b463f9be8cd",
+  "prompts": {},
+  "sessions": {
+    "s_999f3037df62ea": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "07f2172f-644a-445d-b347-afe9c3a83f89",
+        "model": "qwen3.8-max-preview"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
