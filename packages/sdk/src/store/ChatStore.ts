@@ -70,16 +70,16 @@ export class ChatStore {
   }
 
   restoreSessionMessages(sessionId: string, messages: ChatMessage[]): void {
-    const normalized = messages
-      .filter((message) => (message.role as string) !== 'system')
-      .map((message, index) => ({
-        id: message.id ?? `restored-${sessionId}-${index}`,
-        role: message.role,
-        content: message.content ?? '',
-        toolCalls: message.toolCalls,
-        toolCallId: message.toolCallId,
-        askUser: message.askUser,
-        timestamp: message.timestamp ?? Date.now() + index,
+    const normalized: ChatMessage[] = messages
+      .filter((m) => (m.role as string) !== 'system')
+      .map((m, idx) => ({
+        id: (m as { id?: string }).id ?? `restored-${sessionId}-${idx}`,
+        role: m.role,
+        content: m.content ?? '',
+        toolCalls: m.toolCalls,
+        toolCallId: m.toolCallId,
+        askUser: m.askUser,
+        timestamp: (m as { timestamp?: number }).timestamp ?? Date.now() + idx,
       }));
     this.messagesBySession.set(sessionId, normalized);
     if (this.activeSessionId === sessionId) {

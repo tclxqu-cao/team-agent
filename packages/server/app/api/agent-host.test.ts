@@ -460,4 +460,18 @@ describe("agentHost singleton", () => {
     const remoteToolDefinition = provider.options?.tools?.find((tool) => tool.name === "remote_project_action");
     expect(remoteToolDefinition?.description).toContain("create_kid_earth_course");
   });
+
+  it("persists user messages with projected assistant messages after a run", async () => {
+    const provider = new CapturingModelProvider();
+    agentHost.setBuilder(new AgentBuilder().withModelProvider(provider));
+    const session = await agentHost.createSession("history persistence test", "kid-earth-learning");
+
+    await agentHost.run("第一轮：创建日本课程", session.id);
+
+    await expect(agentHost.getSessionStore().get(session.id)).resolves.toMatchObject({
+      messages: expect.arrayContaining([
+        expect.objectContaining({ role: "user", content: "第一轮：创建日本课程" }),
+      ]),
+    });
+  });
 });

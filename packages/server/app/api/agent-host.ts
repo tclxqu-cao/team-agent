@@ -1,6 +1,6 @@
 import {
   AgentBuilder,
-  FileSystemSessionStore,
+  SQLiteSessionStore,
   AskUserTool,
   type IAgentLoop,
   type AgentEvent,
@@ -8,15 +8,18 @@ import {
   type AskUserRequest,
   type AskUserResponse,
   getDatabase,
+  SQLiteProjectStore,
   SQLiteRemoteToolStore,
   type RemoteToolRegistration,
+  type Message,
 } from "@agent/core";
 
 /** Singleton agent host shared across API routes */
 class AgentHost {
   private agent: IAgentLoop | null = null;
   private builder: AgentBuilder | null = null;
-  private readonly sessionStore = new FileSystemSessionStore(process.cwd());
+  private readonly sessionStore = new SQLiteSessionStore(process.cwd());
+  private readonly projectStore = new SQLiteProjectStore(process.cwd());
   private readonly remoteToolStore = new SQLiteRemoteToolStore(getDatabase(process.cwd()).db);
   private readonly defaultRemoteToolsProjectId = process.env.AGENT_PROJECT_ID ?? "default";
   private activeRun: AsyncIterable<AgentEvent> | null = null;
@@ -71,6 +74,21 @@ class AgentHost {
   }
 
   async createSession(title: string, projectId = ""): Promise<Session> {
+    const now = new Date().toISOString();
+
+    if (projectId) {
+      const project = await this.projectStore.get(projectId);
+      if (!project) {
+        await this.projectStore.create({
+          id: projectId,
+          name: projectId,
+          description: "",
+          created: now,
+          updated: now,
+        });
+      }
+    }
+
     return this.sessionStore.create({
       id: crypto.randomUUID(),
       projectId,
@@ -78,8 +96,8 @@ class AgentHost {
       status: "idle",
       messages: [],
       events: [],
-      created: new Date().toISOString(),
-      updated: new Date().toISOString(),
+      created: now,
+      updated: now,
       metadata: {},
     });
   }
@@ -98,6 +116,61 @@ class AgentHost {
     for (const fn of this.subscribers.get(sessionId) ?? []) {
       try { fn(event); } catch { /* ignore */ }
     }
+  }
+
+  private projectMessagesFromEvents(events: AgentEvent[]): Message[] {
+    const messages: Message[] = [];
+    let streamingAssistant: Message | null = null;
+
+    for (const event of events) {
+      if (event.type === "text_chunk") {
+        if (!streamingAssistant) {
+          streamingAssistant = { role: "assistant", content: "" };
+          messages.push(streamingAssistant);
+        }
+        streamingAssistant.content += event.text;
+        continue;
+      }
+
+      if (event.type === "tool_call") {
+        if (streamingAssistant && !streamingAssistant.toolCalls) {
+          streamingAssistant.toolCalls = [event.toolCall];
+        } else {
+          messages.push({ role: "assistant", content: "", toolCalls: [event.toolCall] });
+        }
+        streamingAssistant = null;
+        continue;
+      }
+
+      if (event.type === "tool_result") {
+        messages.push({
+          role: "tool",
+          content: event.result.content,
+          toolCallId: event.result.toolCallId,
+        });
+        continue;
+      }
+
+      if ((event as { type?: string }).type === "ask_user") {
+        messages.push({
+          role: "assistant",
+          content: "",
+        } as Message);
+        streamingAssistant = null;
+        continue;
+      }
+
+      if (event.type === "done") {
+        if (streamingAssistant) {
+          streamingAssistant.content = event.finalText || streamingAssistant.content;
+        } else if (event.finalText?.trim()) {
+          messages.push({ role: "assistant", content: event.finalText });
+        }
+        streamingAssistant = null;
+      }
+    }
+
+    return messages;
   }
 
   async run(input: string, sessionId: string): Promise<void> {
@@ -140,6 +213,16 @@ class AgentHost {
       }
 
       this.emit(sessionId, event);
+    }
+
+    // Persist a stable SDK-facing message projection from the recorded events
+    try {
+      const stored = await this.sessionStore.get(sessionId);
+      const userMessages = (stored?.messages ?? []).filter((message) => message.role === "user");
+      const projected = this.projectMessagesFromEvents(stored?.events ?? []);
+      await this.sessionStore.replaceMessages(sessionId, [...userMessages, ...projected]);
+    } catch {
+      // ignore persistence errors
     }
   }
 

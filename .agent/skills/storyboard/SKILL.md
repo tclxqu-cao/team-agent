@@ -27,6 +27,95 @@ switch any of the three without editing this SKILL.md.
 You are a video storyboard director. When the user provides materials (images,
 text descriptions, or mixed assets) and a creative direction, you will:
 
+## ⚠️ Pre-flight Check (MANDATORY — do this FIRST)
+
+Before starting any workflow step, you MUST check that the required API keys are available.
+**If any required key is missing, use ask_user to collect it from the user. Do NOT use bash/env commands to print messages — ALWAYS use ask_user.**
+
+### Check Procedure
+
+Run this bash command to inspect current environment:
+
+```bash
+echo "OPENAI_API_KEY=${OPENAI_API_KEY:-(missing)}" && echo "VOLCENGINE_API_KEY=${VOLCENGINE_API_KEY:-(missing)}" && echo "FFmpeg: $(which ffmpeg || echo '(missing)')"
+```
+
+### After checking the environment, use ask_user according to this decision tree:
+
+#### 🔴 Case A: Both OPENAI_API_KEY and VOLCENGINE_API_KEY are MISSING
+
+Use ask_user with question "需要配置 API Key 才能开始制作视频。你有以下哪些 Key？" and options:
+```json
+[
+  {"label": "我只有 OpenAI Key", "description": "可以跑分镜和预览图（Step 1-2），但无法生成视频片段"},
+  {"label": "我只有火山引擎 Key", "description": "需要先跑分镜，单有视频 Key 无法直接开始"},
+  {"label": "两个都有", "description": "可以跑完整流程，从分镜到成片"},
+  {"label": "都没有，告诉我去哪获取", "description": "我会引导你去申请两个 Key"}
+]
+```
+
+- If user chooses "两个都有" → Use ask_user to collect the keys (see "Collecting Keys" below)
+- If user chooses "我只有 OpenAI Key" → Use ask_user to collect OPENAI_API_KEY only (see "Collecting Keys" below), then proceed to 🟡 Preview tier
+- If user chooses "我只有火山引擎 Key" → Explain that they also need OpenAI Key for storyboard generation. Use ask_user to suggest they also get it.
+- If user chooses "都没有" → Show guidance (see "Where to Get Keys" below), then STOP.
+
+#### 🟡 Case B: Only OPENAI_API_KEY is set, VOLCENGINE_API_KEY is MISSING
+
+Use ask_user with question "你有火山引擎（Seedance）API Key 吗？有它才能生成视频片段。" and options:
+```json
+[
+  {"label": "有，我来填入", "description": "提供火山引擎 Key，解锁完整流程"},
+  {"label": "没有，先跑预览图", "description": "先跑 Step 1-2 生成分镜和预览图，视频片段以后再说"}
+]
+```
+
+- If user chooses "有，我来填入" → Use ask_user to collect VOLCENGINE_API_KEY (see "Collecting Keys" below)
+- If user chooses "没有" → Proceed with 🟡 Preview tier (only Steps 1-2)
+
+#### 🟢 Case C: Both keys ARE SET
+
+No ask_user needed. Directly proceed to Step 1 with tier 🟢 Full.
+
+---
+
+### Collecting Keys via ask_user
+
+When the user indicates they have a key, use ask_user to collect it. The ask_user tool returns the user's typed input, which you can then export as an environment variable before running scripts.
+
+Example for collecting OPENAI_API_KEY:
+```
+Use ask_user with:
+- question: "请输入你的 OpenAI API Key（以 sk- 开头）："
+- options: [] (no options, free-form text input)
+```
+
+After collecting, export it:
+```bash
+export OPENAI_API_KEY="<the key the user provided>"
+```
+
+Same pattern for VOLCENGINE_API_KEY.
+
+---
+
+### Where to Get Keys (shown when user asks)
+
+- **OpenAI API Key**: https://platform.openai.com/api-keys — 注册账号后在 API Keys 页面创建
+- **火山引擎 Seedance Key**: https://console.volcengine.com — 注册后开通「即梦视频生成」服务，在 API 密钥管理创建
+- **FFmpeg** (本地，免费): `brew install ffmpeg`
+
+---
+
+### Tiered Workflow
+
+| Tier | Keys Configured | What You Can Do |
+|------|----------------|-----------------|
+| 🟢 Full | OPENAI + VOLCENGINE + FFmpeg | Full pipeline: steps 1→2→3→4→5 |
+| 🟡 Preview | OPENAI only | Steps 1→2 (storyboard JSON + preview images only) |
+| 🔴 Blocked | None | Collect keys via ask_user, then proceed |
+
+---
+
 ## Workflow
 
 ### Step 1: Analyze materials and generate storyboard

@@ -9,6 +9,96 @@ import { renderMarkdown } from './markdown';
 import './AgentFab';
 
 /**
+ * Lightweight Markdown → HTML renderer for assistant messages.
+ * Escapes HTML first, then converts a safe subset:
+ * fenced code blocks, inline code, bold, italic, tables, lists, headings.
+ */
+function renderMarkdown(text: string): string {
+  const escapeHtml = (s: string) =>
+    s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+  // Split out fenced code blocks so their content is never markdown-processed
+  const parts: Array<{ code: boolean; text: string }> = [];
+  const fenceRe = /```(?:\w*)\n?([\s\S]*?)```/g;
+  let last = 0;
+  let m: RegExpExecArray | null;
+  while ((m = fenceRe.exec(text)) !== null) {
+    if (m.index > last) parts.push({ code: false, text: text.slice(last, m.index) });
+    parts.push({ code: true, text: m[1] });
+    last = m.index + m[0].length;
+  }
+  if (last < text.length) parts.push({ code: false, text: text.slice(last) });
+
+  const inline = (s: string) =>
+    escapeHtml(s)
+      .replace(/`([^`]+)`/g, '<code>$1</code>')
+      .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+      .replace(/\*([^*]+)\*/g, '<em>$1</em>');
+
+  const renderTable = (lines: string[]): string => {
+    const rows = lines
+      .map((l) => l.trim())
+      .filter((l) => l.startsWith('|'))
+      .filter((l) => !/^\|[\s:|-]+\|$/.test(l)); // drop separator row
+    if (rows.length === 0) return '';
+    const cells = (row: string) =>
+      row.split('|').slice(1, -1).map((c) => inline(c.trim()));
+    const head = cells(rows[0]);
+    const body = rows.slice(1).map((r) => `<tr>${cells(r).map((c) => `<td>${c}</td>`).join('')}</tr>`).join('');
+    return `<table><thead><tr>${head.map((c) => `<th>${c}</th>`).join('')}</tr></thead><tbody>${body}</tbody></table>`;
+  };
+
+  const renderBlock = (block: string): string => {
+    const lines = block.split('\n');
+    const out: string[] = [];
+    let i = 0;
+    while (i < lines.length) {
+      const line = lines[i];
+      if (line.trim().startsWith('|')) {
+        const tableLines: string[] = [];
+        while (i < lines.length && lines[i].trim().startsWith('|')) {
+          tableLines.push(lines[i]);
+          i++;
+        }
+        out.push(renderTable(tableLines));
+        continue;
+      }
+      const heading = line.match(/^(#{1,4})\s+(.*)$/);
+      if (heading) {
+        const level = heading[1].length + 2; // h3–h6 range inside chat
+        out.push(`<h${level}>${inline(heading[2])}</h${level}>`);
+        i++;
+        continue;
+      }
+      if (/^[-*]\s+/.test(line.trim())) {
+        const items: string[] = [];
+        while (i < lines.length && /^[-*]\s+/.test(lines[i].trim())) {
+          items.push(`<li>${inline(lines[i].trim().replace(/^[-*]\s+/, ''))}</li>`);
+          i++;
+        }
+        out.push(`<ul>${items.join('')}</ul>`);
+        continue;
+      }
+      if (line.trim() === '') {
+        i++;
+        continue;
+      }
+      out.push(`<p>${inline(line)}</p>`);
+      i++;
+    }
+    return out.join('');
+  };
+
+  return parts
+    .map((p) =>
+      p.code
+        ? `<pre><code>${escapeHtml(p.text.replace(/\n$/, ''))}</code></pre>`
+        : renderBlock(p.text),
+    )
+    .join('');
+}
+
+/**
  * Main SDK component — embed as <agent-chat token="..." server="..."></agent-chat>
  * Provides a floating button + chat panel with full agent interaction.
  */
@@ -284,6 +374,54 @@ export class AgentChat extends LitElement {
         background: none;
         white-space: pre-wrap;
       }
+      .msg-assistant p { margin: 0 0 6px; }
+      .msg-assistant p:last-child { margin-bottom: 0; }
+      .msg-assistant h3, .msg-assistant h4, .msg-assistant h5, .msg-assistant h6 {
+        margin: 8px 0 4px;
+        font-size: 13px;
+        font-weight: 700;
+      }
+      .msg-assistant ul { margin: 4px 0; padding-left: 18px; }
+      .msg-assistant li { margin: 2px 0; }
+      .msg-assistant code {
+        background: var(--bg-surface);
+        border: 1px solid var(--border-subtle);
+        border-radius: 4px;
+        padding: 1px 5px;
+        font-family: 'SF Mono', 'Monaco', monospace;
+        font-size: 11.5px;
+      }
+      .msg-assistant pre {
+        background: var(--bg-deepest);
+        border: 1px solid var(--border-subtle);
+        border-radius: 8px;
+        padding: 8px 10px;
+        margin: 6px 0;
+        overflow-x: auto;
+      }
+      .msg-assistant pre code {
+        background: none;
+        border: none;
+        padding: 0;
+        white-space: pre-wrap;
+        word-break: break-all;
+      }
+      .msg-assistant table {
+        border-collapse: collapse;
+        margin: 6px 0;
+        font-size: 12px;
+        width: 100%;
+      }
+      .msg-assistant th, .msg-assistant td {
+        border: 1px solid var(--border-default);
+        padding: 4px 8px;
+        text-align: left;
+      }
+      .msg-assistant th {
+        background: var(--bg-surface);
+        font-weight: 600;
+      }
+      .msg-assistant strong { font-weight: 700; }
       .msg-assistant.streaming::after {
         content: '▋';
         animation: blink 1s infinite;
@@ -581,7 +719,9 @@ export class AgentChat extends LitElement {
     if (!this.client) return;
     try {
       const session = await this.client.getSession(sessionId);
-      if (session?.messages?.length) this._store.restoreSessionMessages(sessionId, session.messages);
+      if (session?.messages?.length) {
+        this._store.restoreSessionMessages(sessionId, session.messages);
+      }
     } catch {
       // ignore load errors
     }
@@ -828,7 +968,7 @@ export class AgentChat extends LitElement {
     if (msg.role === 'user') {
       return html`<div class="msg-user">${msg.content}</div>`;
     }
-    // Assistant message (may have tool calls)
+    // Assistant message (may have tool calls) — render Markdown safely
     return html`
       ${msg.content ? html`<div class="msg-assistant ${msg.isStreaming ? 'streaming' : ''}">${unsafeHTML(renderMarkdown(msg.content))}</div>` : ''}
       ${msg.toolCalls?.map((tc) => this._renderToolCall(tc))}

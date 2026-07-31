@@ -120,10 +120,14 @@ export class FileSystemSessionStore implements ISessionStore {
 
   async addMessage(sessionId: string, message: Message): Promise<void> {
     await this.memory.addMessage(sessionId, message);
+    const session = await this.memory.get(sessionId);
+    if (session) await this.persistSession(session);
   }
 
   async addEvent(sessionId: string, event: AgentEvent): Promise<void> {
     await this.memory.addEvent(sessionId, event);
+    const session = await this.memory.get(sessionId);
+    if (session) await this.persistSession(session);
   }
 
   async replaceMessages(sessionId: string, messages: Message[]): Promise<void> {
