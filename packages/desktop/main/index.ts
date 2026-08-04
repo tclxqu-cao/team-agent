@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog } from "electron";
+import { app, BrowserWindow, ipcMain, dialog, session } from "electron";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { readFile, writeFile } from "node:fs/promises";
@@ -426,7 +426,13 @@ app.on("second-instance", () => {
   }
 });
 
-app.whenReady().then(createWindow);
+app.whenReady().then(() => {
+  // Allow microphone access for voice input & wake-word listening
+  session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
+    callback(permission === "media");
+  });
+  createWindow();
+});
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
