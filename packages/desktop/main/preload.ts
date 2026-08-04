@@ -8,6 +8,11 @@ ipcRenderer.on("agent:event", (_ipcEvent, data) => {
 });
 
 contextBridge.exposeInMainWorld("agentApi", {
+  // Window control (hide → background voice-wake mode, show → restore)
+  hideWindow: () => ipcRenderer.invoke("window:hide"),
+  showWindow: () => ipcRenderer.invoke("window:show"),
+  isWindowVisible: () => ipcRenderer.invoke("window:isVisible"),
+
   // Agent control
   run: (input: string, sessionId: string, agentIds?: string[], agentName?: string, images?: string[]) =>
     ipcRenderer.invoke("agent:run", input, sessionId, agentIds, agentName, images),

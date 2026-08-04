@@ -1,7 +1,7 @@
-/* ── Pearl Light Design System ── */
+/* ── Pearl Light Design System (default skin) ── */
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300..700&family=IBM+Plex+Mono:wght@400;500&display=swap');
 
-:root {
+:root, [data-skin="pearl"] {
   /* Depth layers */
   --bg-deepest: #f5f6fa;
   --bg-deep: #eef0f6;
@@ -53,6 +53,84 @@
   --duration-fast: 150ms;
   --duration-normal: 300ms;
   --duration-slow: 600ms;
+}
+
+/* ── Sci-fi Neon skin ── */
+[data-skin="scifi"] {
+  --bg-deepest: #050a14;
+  --bg-deep: #0a1220;
+  --bg-surface: #0d1626;
+  --bg-elevated: #122036;
+  --bg-glass: rgba(13, 22, 38, 0.82);
+
+  --accent: #22d3ee;
+  --accent-glow: rgba(34, 211, 238, 0.22);
+  --accent-dim: rgba(34, 211, 238, 0.1);
+
+  --success: #34d399;
+  --danger: #fb7185;
+  --warning: #fbbf24;
+  --info: #38bdf8;
+
+  --text-primary: #e2f3ff;
+  --text-secondary: #9fb8d0;
+  --text-muted: #5c7893;
+  --text-inverse: #04121a;
+
+  --border-subtle: rgba(34, 211, 238, 0.1);
+  --border-default: rgba(34, 211, 238, 0.22);
+  --border-glow: rgba(34, 211, 238, 0.5);
+
+  --shadow-sm: 0 1px 6px rgba(0, 0, 0, 0.5), 0 0 6px rgba(34, 211, 238, 0.08);
+  --shadow-md: 0 10px 30px rgba(0, 0, 0, 0.55), 0 0 18px rgba(34, 211, 238, 0.12);
+  --shadow-glow: 0 0 24px rgba(34, 211, 238, 0.35);
+
+  --font-display: 'IBM Plex Mono', monospace;
+  --font-body: 'Inter', system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', monospace;
+}
+
+[data-skin="scifi"] html,
+[data-skin="scifi"] body,
+html[data-skin="scifi"] body {
+  background:
+    linear-gradient(rgba(34, 211, 238, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(34, 211, 238, 0.035) 1px, transparent 1px),
+    radial-gradient(ellipse at 50% -20%, rgba(34, 211, 238, 0.14), transparent 55%),
+    radial-gradient(ellipse at 90% 110%, rgba(168, 85, 247, 0.1), transparent 50%),
+    var(--bg-deepest);
+  background-size: 44px 44px, 44px 44px, 100% 100%, 100% 100%, 100% 100%;
+}
+
+/* ── Noir dark skin ── */
+[data-skin="noir"] {
+  --bg-deepest: #0f1115;
+  --bg-deep: #14171d;
+  --bg-surface: #191d24;
+  --bg-elevated: #1f242d;
+  --bg-glass: rgba(25, 29, 36, 0.85);
+
+  --accent: #a78bfa;
+  --accent-glow: rgba(167, 139, 250, 0.18);
+  --accent-dim: rgba(167, 139, 250, 0.09);
+
+  --success: #4ade80;
+  --danger: #f87171;
+  --warning: #fbbf24;
+  --info: #60a5fa;
+
+  --text-primary: #eceff4;
+  --text-secondary: #aab2bf;
+  --text-muted: #6b7280;
+  --text-inverse: #0f1115;
+
+  --border-subtle: rgba(255, 255, 255, 0.06);
+  --border-default: rgba(255, 255, 255, 0.12);
+  --border-glow: rgba(167, 139, 250, 0.4);
+
+  --shadow-sm: 0 1px 4px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 10px 28px rgba(0, 0, 0, 0.5);
+  --shadow-glow: 0 0 20px rgba(167, 139, 250, 0.25);
 }
 
 * {
@@ -182,3 +260,49 @@ input:focus, select:focus, textarea:focus {
   0%, 100% { opacity: 0.4; }
   50% { opacity: 1; }
 }
+
+/* ── Wake-up overlay animation ── */
+@keyframes wakeRing {
+  0% { transform: scale(0.4); opacity: 0.9; }
+  100% { transform: scale(1.9); opacity: 0; }
+}
+@keyframes wakeCore {
+  0%, 100% { transform: scale(1); box-shadow: 0 0 24px var(--accent-glow); }
+  50% { transform: scale(1.12); box-shadow: 0 0 60px var(--accent-glow); }
+}
+@keyframes wakeText {
+  0% { opacity: 0; transform: translateY(10px); letter-spacing: 0.4em; }
+  60% { opacity: 1; }
+  100% { opacity: 1; transform: translateY(0); letter-spacing: 0.12em; }
+}
+
+/* ── Mic pulse while recording ── */
+@keyframes micPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(244, 63, 94, 0.35); }
+  50% { box-shadow: 0 0 0 8px rgba(244, 63, 94, 0); }
+}
+.mic-recording { animation: micPulse 1.2s ease-out infinite; }
+
+/* ── Message output card (single-message box) ── */
+.message-card {
+  position: relative;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-surface);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+  transition: border-color var(--duration-fast) var(--ease-out),
+              box-shadow var(--duration-fast) var(--ease-out);
+}
+.message-card:hover {
+  border-color: var(--border-default);
+  box-shadow: var(--shadow-md);
+}
+.message-card .msg-actions {
+  opacity: 0;
+  transition: opacity var(--duration-fast) var(--ease-out);
+}
+.message-card:hover .msg-actions { opacity: 1; }
+
+/* ── Compact layout density ── */
+.layout-compact { font-size: 12.5px; }
+.layout-compact .message-card { border-radius: var(--radius-sm); }

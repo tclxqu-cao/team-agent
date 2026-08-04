@@ -7,8 +7,11 @@ import MemoryViewer from "./components/MemoryViewer";
 import SkillManager from "./components/SkillManager";
 import AgentManager from "./components/AgentManager";
 import LSPServerList from "./components/LSPServerList";
+import WakeOverlay from "./components/WakeOverlay";
 import { useSettingsStore } from "./stores/settingsStore";
 import { useAgentStore } from "./stores/agentStore";
+import { useUIStore, SKINS, LAYOUTS } from "./stores/uiStore";
+import { startWakeListener, isASRSupported, type WakeListenerHandle } from "./lib/speech";
 
 type SettingsTab = "settings" | "mcp" | "memory" | "skill" | "agent" | "lsp";
 
@@ -48,6 +51,62 @@ export default function App() {
   const [settingsTab, setSettingsTab] = useState<SettingsTab>("settings");
 
   const setTodos = useAgentStore((s) => s.setTodos);
+
+  // ── Appearance & voice preferences ─────────────────────────────────────
+  const skin = useUIStore((s) => s.skin);
+  const layout = useUIStore((s) => s.layout);
+  const wakeEnabled = useUIStore((s) => s.wakeEnabled);
+  const wakeWord = useUIStore((s) => s.wakeWord);
+  const setSkin = useUIStore((s) => s.setSkin);
+  const setLayout = useUIStore((s) => s.setLayout);
+  const setWakeEnabled = useUIStore((s) => s.setWakeEnabled);
+  const setWakeWord = useUIStore((s) => s.setWakeWord);
+  const autoSpeak = useUIStore((s) => s.autoSpeak);
+  const setAutoSpeak = useUIStore((s) => s.setAutoSpeak);
+
+  const [showAppearance, setShowAppearance] = useState(false);
+  const [wakeTrigger, setWakeTrigger] = useState(0);
+  const [wakeHeard, setWakeHeard] = useState<string | undefined>(undefined);
+  const wakeHandleRef = useRef<WakeListenerHandle | null>(null);
+
+  // Apply skin / layout to the DOM
+  useEffect(() => {
+    document.documentElement.setAttribute("data-skin", skin);
+  }, [skin]);
+  useEffect(() => {
+    document.body.classList.toggle("layout-compact", layout === "compact");
+  }, [layout]);
+
+  const hideToBackground = useCallback(async () => {
+    if (!window.agentApi) return;
+    // Start the wake loop before hiding so it never misses the wake word
+    if (wakeEnabled && isASRSupported() && !wakeHandleRef.current) {
+      wakeHandleRef.current = startWakeListener({
+        wakeWord,
+        onWake: (heard) => {
+          setWakeHeard(heard);
+          setWakeTrigger((t) => t + 1);
+          void window.agentApi?.showWindow();
+        },
+        onError: (msg) => console.warn("[wake]", msg),
+      });
+    }
+    await window.agentApi.hideWindow();
+  }, [wakeEnabled, wakeWord]);
+
+  // Stop the wake loop whenever the window becomes visible again
+  useEffect(() => {
+    const onFocus = () => {
+      wakeHandleRef.current?.stop();
+      wakeHandleRef.current = null;
+    };
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, []);
+
+  useEffect(() => () => {
+    wakeHandleRef.current?.stop();
+  }, []);
 
   const selectedSessionTitle = selectedSessionId
     ? Object.values(sessionsByProject).flat().find(s => s.id === selectedSessionId)?.title
@@ -347,6 +406,8 @@ const loadProjects = async () => {
         zIndex: 0,
       }} />
 
+      {layout !== "focus" && (
+      <>
       <aside
         style={{
           width: sidebarWidth,
@@ -692,6 +753,69 @@ const loadProjects = async () => {
           </div>
         </div>
 
+        {/* Bottom action row: hide to background + appearance */}
+        <div style={{ padding: "0 10px", display: "flex", gap: 6 }}>
+          <button
+            onClick={() => void hideToBackground()}
+            title={wakeEnabled ? `隐藏到后台（说“${wakeWord}”唤醒）` : "隐藏到后台"}
+            style={{
+              flex: 1,
+              padding: "9px 12px",
+              borderRadius: 8,
+              border: "1px solid var(--border-default)",
+              background: "transparent",
+              color: "var(--text-muted)",
+              fontSize: 12,
+              fontWeight: 500,
+              cursor: "pointer",
+              display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+              transition: "border-color 0.15s, color 0.15s, background 0.15s",
+            }}
+            onMouseEnter={e => {
+              (e.currentTarget as HTMLButtonElement).style.borderColor = "var(--accent)";
+              (e.currentTarget as HTMLButtonElement).style.color = "var(--accent)";
+            }}
+            onMouseLeave={e => {
+              (e.currentTarget as HTMLButtonElement).style.borderColor = "var(--border-default)";
+              (e.currentTarget as HTMLButtonElement).style.color = "var(--text-muted)";
+            }}
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/>
+              <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+            </svg>
+            隐藏后台
+          </button>
+          <button
+            onClick={() => setShowAppearance((v) => !v)}
+            title="皮肤与布局"
+            style={{
+              width: 36,
+              padding: "9px 0",
+              borderRadius: 8,
+              border: "1px solid var(--border-default)",
+              background: "transparent",
+              color: "var(--text-muted)",
+              cursor: "pointer",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              transition: "border-color 0.15s, color 0.15s",
+            }}
+            onMouseEnter={e => {
+              (e.currentTarget as HTMLButtonElement).style.borderColor = "var(--accent)";
+              (e.currentTarget as HTMLButtonElement).style.color = "var(--accent)";
+            }}
+            onMouseLeave={e => {
+              (e.currentTarget as HTMLButtonElement).style.borderColor = "var(--border-default)";
+              (e.currentTarget as HTMLButtonElement).style.color = "var(--text-muted)";
+            }}
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/>
+              <path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"/>
+            </svg>
+          </button>
+        </div>
+
         {/* Import project button */}
         <div style={{ padding: "0 10px" }}>
           <button
@@ -741,6 +865,8 @@ const loadProjects = async () => {
         onMouseEnter={(e) => (e.currentTarget.style.background = "var(--accent)")}
         onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
       />
+      </>
+      )}
 
       <main style={{
         flex: 1,
@@ -749,6 +875,22 @@ const loadProjects = async () => {
         position: "relative",
         zIndex: 5,
       }}>
+        {/* Focus layout: floating restore-sidebar chip */}
+        {layout === "focus" && (
+          <button
+            onClick={() => setLayout("standard")}
+            title="返回标准布局"
+            style={{
+              position: "absolute", top: 12, left: 12, zIndex: 100,
+              padding: "5px 10px", borderRadius: 8,
+              border: "1px solid var(--border-default)",
+              background: "var(--bg-glass)",
+              color: "var(--text-muted)", fontSize: 11,
+              cursor: "pointer", backdropFilter: "blur(8px)",
+              WebkitAppRegion: "no-drag",
+            } as React.CSSProperties}
+          >← 侧边栏</button>
+        )}
         <div style={{ height: "100%", paddingTop: 0 }}>
           <ChatView
             selectedProjectId={selectedProjectId}
@@ -904,6 +1046,124 @@ const loadProjects = async () => {
         , document.body)}
 
       <div className="noise-overlay" />
+
+      {/* ── Appearance panel (skins / layout / voice) ── */}
+      {showAppearance && createPortal(
+        <div
+          onClick={() => setShowAppearance(false)}
+          style={{ position: "fixed", inset: 0, zIndex: 10000, WebkitAppRegion: "no-drag" } as React.CSSProperties}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              position: "absolute",
+              left: 16,
+              bottom: 120,
+              width: 320,
+              background: "var(--bg-surface)",
+              border: "1px solid var(--border-default)",
+              borderRadius: "var(--radius-md)",
+              boxShadow: "var(--shadow-md)",
+              padding: "16px",
+              display: "flex",
+              flexDirection: "column",
+              gap: 16,
+              animation: "fadeInUp 0.2s var(--ease-out)",
+              backdropFilter: "blur(14px)",
+              WebkitBackdropFilter: "blur(14px)",
+            }}
+          >
+            {/* Skins */}
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase" as const, letterSpacing: "0.08em", marginBottom: 8 }}>皮肤</div>
+              <div style={{ display: "flex", gap: 8 }}>
+                {SKINS.map((s) => (
+                  <button
+                    key={s.id}
+                    onClick={() => setSkin(s.id)}
+                    style={{
+                      flex: 1,
+                      padding: "8px 6px",
+                      borderRadius: 8,
+                      border: skin === s.id ? "2px solid var(--accent)" : "1px solid var(--border-default)",
+                      background: "transparent",
+                      cursor: "pointer",
+                      display: "flex", flexDirection: "column", alignItems: "center", gap: 6,
+                      transition: "border-color 0.15s",
+                    }}
+                  >
+                    <span style={{
+                      width: 34, height: 22, borderRadius: 5,
+                      background: `linear-gradient(135deg, ${s.preview[0]} 55%, ${s.preview[1]} 55%)`,
+                      border: "1px solid var(--border-subtle)",
+                    }} />
+                    <span style={{ fontSize: 11, color: skin === s.id ? "var(--accent)" : "var(--text-secondary)", fontWeight: skin === s.id ? 600 : 400 }}>{s.label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Layouts */}
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase" as const, letterSpacing: "0.08em", marginBottom: 8 }}>布局</div>
+              <div style={{ display: "flex", gap: 6 }}>
+                {LAYOUTS.map((l) => (
+                  <button
+                    key={l.id}
+                    onClick={() => setLayout(l.id)}
+                    title={l.description}
+                    style={{
+                      flex: 1,
+                      padding: "7px 4px",
+                      borderRadius: 8,
+                      border: layout === l.id ? "1.5px solid var(--accent)" : "1px solid var(--border-default)",
+                      background: layout === l.id ? "var(--accent-dim)" : "transparent",
+                      color: layout === l.id ? "var(--accent)" : "var(--text-secondary)",
+                      fontSize: 12,
+                      fontWeight: layout === l.id ? 600 : 400,
+                      cursor: "pointer",
+                      transition: "all 0.15s",
+                    }}
+                  >{l.label}</button>
+                ))}
+              </div>
+            </div>
+
+            {/* Voice settings */}
+            <div style={{ display: "flex", flexDirection: "column", gap: 10, borderTop: "1px solid var(--border-subtle)", paddingTop: 12 }}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase" as const, letterSpacing: "0.08em" }}>语音</div>
+              <label style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 12, color: "var(--text-secondary)", cursor: "pointer" }}>
+                助手回复自动播报
+                <input type="checkbox" checked={autoSpeak} onChange={(e) => setAutoSpeak(e.target.checked)} style={{ accentColor: "var(--accent)" }} />
+              </label>
+              <label style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 12, color: "var(--text-secondary)", cursor: "pointer" }}>
+                隐藏后语音唤醒
+                <input type="checkbox" checked={wakeEnabled} onChange={(e) => setWakeEnabled(e.target.checked)} style={{ accentColor: "var(--accent)" }} />
+              </label>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "var(--text-secondary)" }}>
+                <span style={{ flexShrink: 0 }}>唤醒词</span>
+                <input
+                  value={wakeWord}
+                  onChange={(e) => setWakeWord(e.target.value || "小智")}
+                  style={{
+                    flex: 1,
+                    padding: "4px 8px",
+                    borderRadius: 6,
+                    border: "1px solid var(--border-default)",
+                    background: "var(--bg-deep)",
+                    color: "var(--text-primary)",
+                    fontSize: 12,
+                  }}
+                />
+              </div>
+            </div>
+          </div>
+        </div>,
+        document.body,
+      )}
+
+      {/* ── Wake-up animation overlay ── */}
+      <WakeOverlay trigger={wakeTrigger} heardText={wakeHeard} />
 
       {/* ── Toast notifications (bottom-right) ── */}
       {toasts.length > 0 && createPortal(

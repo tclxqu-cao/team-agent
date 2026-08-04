@@ -7,6 +7,15 @@ import {
   type StreamEvent,
   type CronTask,
 } from "../stores/agentStore";
+import { useUIStore } from "../stores/uiStore";
+import {
+  startDictation,
+  speak,
+  stopSpeaking,
+  isASRSupported,
+  isTTSSupported,
+  type DictationHandle,
+} from "../lib/speech";
 
 /** Human-readable description of a cron/interval expression (browser-safe, no Node.js). */
 function describeCron(cron: string): string {
@@ -268,6 +277,49 @@ export default function ChatView({
   const [thinkingText, setThinkingText] = useState("");
   /** Tracks what the agent is currently doing: thinking, waiting for tools, or idle */
   const [agentActivity, setAgentActivity] = useState<"idle" | "thinking" | "tools">("idle");
+
+  // ── Voice: dictation (input) + per-message TTS (output) ────────────────
+  const [isRecording, setIsRecording] = useState(false);
+  /** ID of the assistant message currently being spoken aloud */
+  const [speakingMsgId, setSpeakingMsgId] = useState<string | null>(null);
+  const dictationRef = useRef<DictationHandle | null>(null);
+
+  const handleMicToggle = () => {
+    if (isRecording) {
+      dictationRef.current?.stop();
+      dictationRef.current = null;
+      setIsRecording(false);
+      return;
+    }
+    const prefix = input ? `${input.trimEnd()} ` : "";
+    const handle = startDictation({
+      onInterim: (text) => setInput(prefix + text),
+      onFinal: (text) => {
+        setInput(prefix + text);
+        inputRef.current?.focus();
+      },
+      onError: (message) => setError(message),
+      onEnd: () => {
+        setIsRecording(false);
+        dictationRef.current = null;
+      },
+    });
+    if (handle) {
+      dictationRef.current = handle;
+      setIsRecording(true);
+    }
+  };
+
+  const handleSpeakMessage = (msgId: string, content: string) => {
+    if (speakingMsgId === msgId) {
+      stopSpeaking();
+      setSpeakingMsgId(null);
+      return;
+    }
+    if (speak(content, { onEnd: () => setSpeakingMsgId((cur) => (cur === msgId ? null : cur)) })) {
+      setSpeakingMsgId(msgId);
+    }
+  };
   // Track which session the current agent run belongs to
   const runningSessionRef = useRef<string | null>(null);
   // Track whether the user aborted the current run (skip queue processing)
@@ -766,6 +818,16 @@ export default function ChatView({
         if (isViewed) {
           setThinkingText("");
           setAgentActivity("idle");
+          // Auto voice output: read the final assistant reply aloud
+          if (useUIStore.getState().autoSpeak && isTTSSupported()) {
+            const msgs = useAgentStore.getState().messages;
+            const lastAssistant = [...msgs].reverse().find(
+              (m) => m.role === "assistant" && m.content && !m.isCompactionSummary,
+            );
+            if (lastAssistant?.content) {
+              speak(lastAssistant.content.slice(0, 800));
+            }
+          }
         }
         break;
       case "error":
@@ -1436,7 +1498,7 @@ export default function ChatView({
 
             {/* Bubble */}
             <div style={{ maxWidth: "76%", display: "flex", flexDirection: "column", gap: 4, alignItems: isUser ? "flex-end" : "flex-start", minWidth: 0 }}>
-              <div style={{
+              <div className={msg.role === "assistant" && msg.content ? "message-card" : undefined} style={{
                 // Tool-call-only messages: no bubble wrapper — cards render inline
                 padding: (msg.content || (isUser && chatMsg.images?.length)) ? (isUser ? "10px 14px" : "11px 15px") : 0,
                 borderRadius: isUser
@@ -1629,6 +1691,49 @@ export default function ChatView({
                     </div>
                   );
                 })()}
+                {/* Per-message action bar (single-message output box controls) */}
+                {msg.role === "assistant" && msg.content && (
+                  <div className="msg-actions" style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 8 }}>
+                    {isTTSSupported() && (
+                      <button
+                        onClick={() => handleSpeakMessage(msg.id, msg.content)}
+                        title={speakingMsgId === msg.id ? "停止播报" : "语音播报"}
+                        style={{
+                          display: "inline-flex", alignItems: "center", gap: 4,
+                          padding: "2px 9px", borderRadius: 14,
+                          border: speakingMsgId === msg.id ? "1px solid var(--accent)" : "1px solid var(--border-default)",
+                          background: speakingMsgId === msg.id ? "var(--accent-dim)" : "var(--bg-deep)",
+                          color: speakingMsgId === msg.id ? "var(--accent)" : "var(--text-muted)",
+                          fontSize: 11, cursor: "pointer", fontFamily: "var(--font-body)",
+                          transition: "all 0.15s",
+                        }}
+                      >
+                        {speakingMsgId === msg.id ? (
+                          <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14" rx="2"/></svg>
+                        ) : (
+                          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
+                        )}
+                        {speakingMsgId === msg.id ? "停止" : "播报"}
+                      </button>
+                    )}
+                    <button
+                      onClick={() => { void navigator.clipboard?.writeText(msg.content); }}
+                      title="复制内容"
+                      style={{
+                        display: "inline-flex", alignItems: "center", gap: 4,
+                        padding: "2px 9px", borderRadius: 14,
+                        border: "1px solid var(--border-default)",
+                        background: "var(--bg-deep)",
+                        color: "var(--text-muted)",
+                        fontSize: 11, cursor: "pointer", fontFamily: "var(--font-body)",
+                        transition: "all 0.15s",
+                      }}
+                    >
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+                      复制
+                    </button>
+                  </div>
+                )}
               </div>
               {/* Queue / Steer badge for queued user messages */}
               {isUser && (chatMsg.isQueued || chatMsg.isSteered) && (
@@ -2351,6 +2456,41 @@ export default function ChatView({
             </svg>
           </button>
 
+          {/* Voice input (dictation) button */}
+          <button
+            onClick={handleMicToggle}
+            disabled={!isConfigured}
+            className={isRecording ? "mic-recording" : undefined}
+            title={!isASRSupported() ? "当前环境不支持语音输入" : (isRecording ? "停止录音" : "语音输入")}
+            onMouseEnter={e => {
+              if (isConfigured && !isRecording) {
+                (e.currentTarget as HTMLButtonElement).style.background = "var(--accent-dim)";
+                (e.currentTarget as HTMLButtonElement).style.color = "var(--accent)";
+              }
+            }}
+            onMouseLeave={e => {
+              (e.currentTarget as HTMLButtonElement).style.background = isRecording ? "rgba(244,63,94,0.12)" : "transparent";
+              (e.currentTarget as HTMLButtonElement).style.color = isRecording ? "var(--danger)" : "var(--text-muted)";
+            }}
+            style={{
+              width: 32, height: 32,
+              borderRadius: 8,
+              border: "none",
+              background: isRecording ? "rgba(244,63,94,0.12)" : "transparent",
+              color: isRecording ? "var(--danger)" : "var(--text-muted)",
+              cursor: isConfigured ? "pointer" : "not-allowed",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              flexShrink: 0,
+              transition: "background 0.15s, color 0.15s",
+            }}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/>
+              <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+              <line x1="12" y1="19" x2="12" y2="22"/>
+            </svg>
+          </button>
+
           {/* Screenshot / paste image button */}
           <button
             onClick={() => void handleScreenshot()}
@@ -2593,7 +2733,7 @@ export default function ChatView({
           letterSpacing: "0.03em",
           opacity: 0.6,
         }}>
-          Enter 发送{isRunning ? "（排队）" : ""} · @智能体（可多选）· /技能 · Shift+Enter 换行
+          Enter 发送{isRunning ? "（排队）" : ""} · @智能体（可多选）· /技能 · Shift+Enter 换行{isRecording ? " · 🎤 正在聆听…" : ""}
         </div>
       </div>
 

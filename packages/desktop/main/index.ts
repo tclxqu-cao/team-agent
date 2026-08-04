@@ -55,6 +55,27 @@ function createWindow(): void {
   }
 }
 
+// ── IPC: Window control (hide/restore for voice-wake background mode) ──
+
+ipcMain.handle("window:hide", () => {
+  // Hide instead of close so the renderer keeps running (voice wake loop).
+  mainWindow?.hide();
+  return { ok: true };
+});
+
+ipcMain.handle("window:show", () => {
+  if (mainWindow) {
+    mainWindow.show();
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.focus();
+  }
+  return { ok: true };
+});
+
+ipcMain.handle("window:isVisible", () => {
+  return mainWindow?.isVisible() ?? false;
+});
+
 // ── IPC: Agent control ──
 
 ipcMain.handle("agent:run", async (_event, input: string, sessionId: string, agentIds?: string[], agentName?: string, images?: string[]) => {
@@ -412,5 +433,11 @@ app.on("window-all-closed", () => {
 });
 
 app.on("activate", () => {
-  if (BrowserWindow.getAllWindows().length === 0) createWindow();
+  if (BrowserWindow.getAllWindows().length === 0) {
+    createWindow();
+  } else if (mainWindow && !mainWindow.isVisible()) {
+    // Dock click while hidden in voice-wake background mode → restore
+    mainWindow.show();
+    mainWindow.focus();
+  }
 });
