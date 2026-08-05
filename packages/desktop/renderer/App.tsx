@@ -68,6 +68,7 @@ export default function App() {
   const [wakeTrigger, setWakeTrigger] = useState(0);
   const [wakeHeard, setWakeHeard] = useState<string | undefined>(undefined);
   const wakeHandleRef = useRef<WakeListenerHandle | null>(null);
+  const wakeNativeActive = useRef(false);
 
   // Apply skin / layout to the DOM
   useEffect(() => {
@@ -77,28 +78,79 @@ export default function App() {
     document.body.classList.toggle("layout-compact", layout === "compact");
   }, [layout]);
 
+  const beginWakeListening = useCallback(() => {
+    if (!window.agentApi || !wakeEnabled) return;
+    if (wakeNativeActive.current || wakeHandleRef.current) return;
+    const startWebFallback = () => {
+      if (isASRSupported() && !wakeHandleRef.current) {
+        wakeHandleRef.current = startWakeListener({
+          wakeWord,
+          onWake: (heard) => {
+            setWakeHeard(heard);
+            setWakeTrigger((t) => t + 1);
+            void window.agentApi?.showWindow();
+          },
+          onError: (msg) => console.warn("[wake]", msg),
+        });
+      }
+    };
+    // Prefer the native macOS Speech listener — it does not depend on
+    // Google's speech services, which are unreachable from CN networks.
+    if (typeof window.agentApi.wakeStart === "function") {
+      wakeNativeActive.current = true;
+      void window.agentApi
+        .wakeStart(wakeWord)
+        .then((res) => {
+          if (!res.ok) {
+            wakeNativeActive.current = false;
+            startWebFallback();
+          }
+        })
+        .catch(() => {
+          wakeNativeActive.current = false;
+          startWebFallback();
+        });
+    } else {
+      startWebFallback();
+    }
+  }, [wakeEnabled, wakeWord]);
+
+  // Native wake fires from the main process (main shows the window itself);
+  // here we only play the wake animation.
+  useEffect(() => {
+    if (!window.agentApi?.onWake) return;
+    return window.agentApi.onWake((heard) => {
+      wakeNativeActive.current = false;
+      setWakeHeard(heard);
+      setWakeTrigger((t) => t + 1);
+    });
+  }, []);
+
   const hideToBackground = useCallback(async () => {
     if (!window.agentApi) return;
     // Start the wake loop before hiding so it never misses the wake word
-    if (wakeEnabled && isASRSupported() && !wakeHandleRef.current) {
-      wakeHandleRef.current = startWakeListener({
-        wakeWord,
-        onWake: (heard) => {
-          setWakeHeard(heard);
-          setWakeTrigger((t) => t + 1);
-          void window.agentApi?.showWindow();
-        },
-        onError: (msg) => console.warn("[wake]", msg),
-      });
-    }
+    beginWakeListening();
     await window.agentApi.hideWindow();
-  }, [wakeEnabled, wakeWord]);
+  }, [beginWakeListening]);
+
+  // Resume wake listening if the page (re)loads while the window is hidden,
+  // or when the wake toggle is re-enabled during hidden mode
+  useEffect(() => {
+    if (!window.agentApi) return;
+    void window.agentApi.isWindowVisible().then((visible) => {
+      if (!visible) beginWakeListening();
+    });
+  }, [beginWakeListening]);
 
   // Stop the wake loop whenever the window becomes visible again
   useEffect(() => {
     const onFocus = () => {
       wakeHandleRef.current?.stop();
       wakeHandleRef.current = null;
+      if (wakeNativeActive.current) {
+        wakeNativeActive.current = false;
+        void window.agentApi?.wakeStop();
+      }
     };
     window.addEventListener("focus", onFocus);
     return () => window.removeEventListener("focus", onFocus);
@@ -106,6 +158,7 @@ export default function App() {
 
   useEffect(() => () => {
     wakeHandleRef.current?.stop();
+    void window.agentApi?.wakeStop();
   }, []);
 
   const selectedSessionTitle = selectedSessionId

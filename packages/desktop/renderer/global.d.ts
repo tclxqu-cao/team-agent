@@ -80,6 +80,14 @@ export interface TodoItem {
 }
 
 export interface AgentApi {
+  // Window control (hide → background voice-wake mode, show → restore)
+  hideWindow(): Promise<void>;
+  showWindow(): Promise<void>;
+  isWindowVisible(): Promise<boolean>;
+  // Native wake-word listener (macOS Speech framework)
+  wakeStart(wakeWord: string): Promise<{ ok: boolean; reason?: string }>;
+  wakeStop(): Promise<{ ok: boolean }>;
+  onWake(callback: (heard: string) => void): () => void;
   run(input: string, sessionId: string, agentIds?: string[], agentName?: string, images?: string[]): Promise<unknown[]>;
   steer(input: string, sessionId: string, agentName?: string): Promise<boolean>;
   abort(): Promise<void>;

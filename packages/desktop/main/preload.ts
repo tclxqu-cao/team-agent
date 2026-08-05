@@ -13,6 +13,15 @@ contextBridge.exposeInMainWorld("agentApi", {
   showWindow: () => ipcRenderer.invoke("window:show"),
   isWindowVisible: () => ipcRenderer.invoke("window:isVisible"),
 
+  // Native wake-word listener (macOS Speech framework; works without Google services)
+  wakeStart: (wakeWord: string) => ipcRenderer.invoke("wake:start", wakeWord),
+  wakeStop: () => ipcRenderer.invoke("wake:stop"),
+  onWake: (callback: (heard: string) => void): (() => void) => {
+    const handler = (_e: unknown, heard: string) => callback(heard);
+    ipcRenderer.on("wake:trigger", handler);
+    return () => ipcRenderer.removeListener("wake:trigger", handler);
+  },
+
   // Agent control
   run: (input: string, sessionId: string, agentIds?: string[], agentName?: string, images?: string[]) =>
     ipcRenderer.invoke("agent:run", input, sessionId, agentIds, agentName, images),

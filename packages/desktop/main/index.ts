@@ -1,4 +1,5 @@
 import { app, BrowserWindow, ipcMain, dialog, session } from "electron";
+import { spawn, type ChildProcess } from "node:child_process";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { readFile, writeFile } from "node:fs/promises";
@@ -69,6 +70,129 @@ ipcMain.handle("window:show", () => {
     if (mainWindow.isMinimized()) mainWindow.restore();
     mainWindow.focus();
   }
+  return { ok: true };
+});
+
+// ── IPC: Native voice wake (macOS Speech framework helper) ──────────────
+// The helper streams transcripts over stdout; on wake-word match we restore
+// the window and notify the renderer to play the wake animation.
+let wakeProc: ChildProcess | null = null;
+let wakeWordCurrent = "小智";
+let wakeVariants: string[] = ["小智"];
+// true while the renderer asked for wake listening; used to auto-restart
+// the helper if it crashes while the window stays hidden.
+let wakeDesired = false;
+
+// Homophone groups for common wake-word characters, so ASR mishearings like
+// "小志"/"小知" still count as the wake word.
+const HOMOPHONE_GROUPS: Record<string, string> = {
+  智: "智志知芝之值纸至治制置致秩稚镇",
+  小: "小晓",
+};
+
+function buildWakeVariants(word: string): string[] {
+  const variants = new Set<string>([word]);
+  for (let i = 0; i < word.length; i++) {
+    const group = HOMOPHONE_GROUPS[word[i]];
+    if (group) {
+      for (const ch of group) variants.add(word.slice(0, i) + ch + word.slice(i + 1));
+    }
+  }
+  return [...variants];
+}
+
+function stopWakeProc(): void {
+  if (wakeProc) {
+    wakeProc.kill();
+    wakeProc = null;
+  }
+}
+
+function launchWakeListener(): { ok: boolean; reason?: string } {
+  if (wakeProc) return { ok: true };
+  // Preferred: the compiled Swift helper (Speech framework directly). TCC
+  // attribution belongs to Electron, whose Info.plist carries the privacy
+  // descriptions. Fallback: the JXA script under osascript.
+  const search = (name: string) =>
+    [
+      join(__dirname, "..", "..", "native", name),
+      join(process.resourcesPath ?? "", "native", name),
+      join(app.getAppPath(), "native", name),
+    ].find((p) => existsSync(p));
+  const binary = search("wakelistener");
+  const script = search("wakelistener.js");
+  if (!binary && !script) return { ok: false, reason: "no-helper" };
+  const proc = binary
+    ? spawn(binary, ["zh-CN"])
+    : spawn("osascript", ["-l", "JavaScript", script as string]);
+  wakeProc = proc;
+  // The Swift binary prints the protocol to stdout; JXA's console.log goes
+  // to stderr. Parse both streams the same way.
+  let buf = "";
+  const onChunk = (chunk: Buffer) => {
+    buf += chunk.toString("utf8");
+    let idx: number;
+    while ((idx = buf.indexOf("\n")) >= 0) {
+      const line = buf.slice(0, idx).trim();
+      buf = buf.slice(idx + 1);
+      onLine(line);
+    }
+  };
+  proc.stdout?.on("data", onChunk);
+  proc.stderr?.on("data", onChunk);
+  const onLine = (line: string) => {
+    if (line.startsWith("TEXT ")) {
+      const heard = line.slice(5);
+      console.warn("[wake] heard:", heard);
+      if (wakeVariants.some((v) => heard.includes(v))) {
+        console.warn("[wake] *** MATCHED wake word, showing window ***");
+        wakeDesired = false;
+        stopWakeProc();
+        if (mainWindow) {
+          mainWindow.show();
+          if (mainWindow.isMinimized()) mainWindow.restore();
+          mainWindow.focus();
+        }
+        mainWindow?.webContents.send("wake:trigger", heard);
+      }
+    } else if (line === "EXIT") {
+      stopWakeProc();
+    } else if (line === "READY") {
+      console.warn("[wake] helper ready");
+    } else if (line) {
+      console.warn("[wake]", line);
+    }
+  };
+  proc.on("error", (err) => {
+    console.warn("[wake] spawn error:", err.message);
+  });
+  proc.on("exit", (code) => {
+    console.warn("[wake] helper exited, code:", code);
+    if (wakeProc === proc) wakeProc = null;
+    // Auto-recover: while hidden-mode listening is desired, relaunch the
+    // helper after an unexpected exit/crash.
+    if (wakeDesired && !mainWindow?.isVisible()) {
+      setTimeout(() => {
+        if (wakeDesired && !wakeProc && !mainWindow?.isVisible()) {
+          console.warn("[wake] auto-restarting helper");
+          launchWakeListener();
+        }
+      }, 1500);
+    }
+  });
+  return { ok: true };
+}
+
+ipcMain.handle("wake:start", (_event, wakeWord: string) => {
+  wakeWordCurrent = wakeWord || "小智";
+  wakeVariants = buildWakeVariants(wakeWordCurrent);
+  wakeDesired = true;
+  return launchWakeListener();
+});
+
+ipcMain.handle("wake:stop", () => {
+  wakeDesired = false;
+  stopWakeProc();
   return { ok: true };
 });
 
