@@ -69,6 +69,18 @@ export default function App() {
   const [wakeHeard, setWakeHeard] = useState<string | undefined>(undefined);
   const wakeHandleRef = useRef<WakeListenerHandle | null>(null);
   const wakeNativeActive = useRef(false);
+  /** Voice command captured after the wake word (text + routed project) */
+  const [voiceCommand, setVoiceCommand] = useState<{ text: string; projectId: string | null; sessionId?: string | null; nonce: number } | null>(null);
+  /** Active two-way voice conversation: follow-up voice commands route to
+   *  this session instead of creating a new one. */
+  const convoRef = useRef<{ sessionId: string; until: number } | null>(null);
+  /** Set while a voice command awaits session creation (arms conversation) */
+  const pendingVoiceConvo = useRef(false);
+  // Refs so the wake-command subscription (registered once) sees fresh state
+  const projectsRef = useRef(projects);
+  projectsRef.current = projects;
+  const invalidProjectsRef = useRef(invalidProjectIds);
+  invalidProjectsRef.current = invalidProjectIds;
 
   // Apply skin / layout to the DOM
   useEffect(() => {
@@ -126,6 +138,45 @@ export default function App() {
     });
   }, []);
 
+  // Voice command captured right after the wake word: route to a project
+  // when its name is mentioned in the command, then hand the command to
+  // ChatView which creates a session and runs the agent. No project mention
+  // → plain session (projects are not a hard dependency).
+  useEffect(() => {
+    if (!window.agentApi?.onWakeCommand) return;
+    return window.agentApi.onWakeCommand((payload) => {
+      const text = (payload?.text || "").trim();
+      if (!text) return;
+      // Two-way conversation: route follow-ups to the existing voice session
+      const convo = convoRef.current && Date.now() < convoRef.current.until ? convoRef.current : null;
+      if (convo) {
+        convo.until = Date.now() + 90000;
+        setSelectedSessionId(convo.sessionId);
+        void window.agentApi?.wakeConversation(true);
+        setVoiceCommand({ text, projectId: null, sessionId: convo.sessionId, nonce: Date.now() });
+        setNotice(`语音追问：${text.length > 40 ? text.slice(0, 40) + "…" : text}`);
+        setNoticeType("success");
+        setTimeout(() => setNotice(null), 4000);
+        return;
+      }
+      const proj = projectsRef.current.find(
+        (p) => p.name && text.includes(p.name) && !invalidProjectsRef.current.has(p.id),
+      );
+      if (proj) {
+        setSelectedProjectId(proj.id);
+        setExpandedProjects((prev) => { const n = new Set(prev); n.add(proj.id); return n; });
+      }
+      setSelectedSessionId(null);
+      pendingVoiceConvo.current = true;
+      // Voice-originated sessions speak their replies back (two-way voice)
+      setAutoSpeak(true);
+      setVoiceCommand({ text, projectId: proj?.id ?? null, nonce: Date.now() });
+      setNotice(`语音指令：${text.length > 40 ? text.slice(0, 40) + "…" : text}${proj ? `（项目：${proj.name}）` : ""}`);
+      setNoticeType("success");
+      setTimeout(() => setNotice(null), 4000);
+    });
+  }, []);
+
   const hideToBackground = useCallback(async () => {
     if (!window.agentApi) return;
     // Start the wake loop before hiding so it never misses the wake word
@@ -133,28 +184,42 @@ export default function App() {
     await window.agentApi.hideWindow();
   }, [beginWakeListening]);
 
-  // Resume wake listening if the page (re)loads while the window is hidden,
-  // or when the wake toggle is re-enabled during hidden mode
+  // Start wake listening as soon as the app loads (not only when hidden):
+  // SFSpeechRecognizer needs a long warm-up before it reports anything, so
+  // keeping it running while the window is visible makes the later wake
+  // reliable. Matches are ignored by the main process while visible.
   useEffect(() => {
     if (!window.agentApi) return;
-    void window.agentApi.isWindowVisible().then((visible) => {
-      if (!visible) beginWakeListening();
-    });
+    beginWakeListening();
   }, [beginWakeListening]);
 
-  // Stop the wake loop whenever the window becomes visible again
+  // Stop only the web fallback when the window regains focus; the native
+  // helper must stay alive to keep the recognizer warm.
   useEffect(() => {
     const onFocus = () => {
       wakeHandleRef.current?.stop();
       wakeHandleRef.current = null;
-      if (wakeNativeActive.current) {
-        wakeNativeActive.current = false;
-        void window.agentApi?.wakeStop();
-      }
     };
     window.addEventListener("focus", onFocus);
     return () => window.removeEventListener("focus", onFocus);
   }, []);
+
+  // Toggle off → stop listening entirely (both native and web fallback)
+  useEffect(() => {
+    if (wakeEnabled) return;
+    wakeHandleRef.current?.stop();
+    wakeHandleRef.current = null;
+    wakeNativeActive.current = false;
+    void window.agentApi?.wakeStop();
+  }, [wakeEnabled]);
+
+  // Wake-word edit → push the new word to the already-running native
+  // listener (wake:start refreshes the match variants in the main process)
+  useEffect(() => {
+    if (!wakeEnabled || !window.agentApi) return;
+    if (wakeNativeActive.current) void window.agentApi.wakeStart(wakeWord);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wakeWord]);
 
   useEffect(() => () => {
     wakeHandleRef.current?.stop();
@@ -949,10 +1014,17 @@ const loadProjects = async () => {
             selectedProjectId={selectedProjectId}
             selectedSessionId={selectedSessionId}
             sessionTitle={selectedSessionTitle}
+            voiceCommand={voiceCommand}
             onOpenSettings={() => setShowSettings((prev) => !prev)}
             settingsOpen={showSettings}
             onSessionCreated={async (sessionId) => {
               setSelectedSessionId(sessionId);
+              // Arm two-way voice conversation for voice-originated sessions
+              if (pendingVoiceConvo.current) {
+                pendingVoiceConvo.current = false;
+                convoRef.current = { sessionId, until: Date.now() + 90000 };
+                void window.agentApi?.wakeConversation(true);
+              }
               await loadSessions(selectedProjectId || undefined);
             }}
             onSubSessionCreated={async (parentSessionId) => {

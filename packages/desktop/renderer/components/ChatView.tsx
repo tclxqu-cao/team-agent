@@ -203,6 +203,11 @@ interface ChatViewProps {
   sessionTitle?: string;
   onOpenSettings?: () => void;
   settingsOpen?: boolean;
+  /** Voice command captured after the wake word — auto-creates a session
+   *  (under the mentioned project when present) and runs the agent. When
+   *  sessionId is set, the command continues that voice-conversation
+   *  session instead of creating a new one. */
+  voiceCommand?: { text: string; projectId: string | null; sessionId?: string | null; nonce: number } | null;
 }
 
 export default function ChatView({
@@ -217,6 +222,7 @@ export default function ChatView({
   sessionTitle,
   onOpenSettings,
   settingsOpen = false,
+  voiceCommand = null,
 }: ChatViewProps) {
   const {
     messages,
@@ -818,14 +824,20 @@ export default function ChatView({
         if (isViewed) {
           setThinkingText("");
           setAgentActivity("idle");
-          // Auto voice output: read the final assistant reply aloud
-          if (useUIStore.getState().autoSpeak && isTTSSupported()) {
+          // Auto voice output: read the final assistant reply aloud.
+          // Prefer the native macOS TTS (offline, Chinese voice); fall back
+          // to Web Speech synthesis.
+          if (useUIStore.getState().autoSpeak) {
             const msgs = useAgentStore.getState().messages;
             const lastAssistant = [...msgs].reverse().find(
               (m) => m.role === "assistant" && m.content && !m.isCompactionSummary,
             );
             if (lastAssistant?.content) {
-              speak(lastAssistant.content.slice(0, 800));
+              if (window.agentApi?.ttsSpeak) {
+                void window.agentApi.ttsSpeak(lastAssistant.content.slice(0, 600));
+              } else if (isTTSSupported()) {
+                speak(lastAssistant.content.slice(0, 800));
+              }
             }
           }
         }
@@ -1167,6 +1179,49 @@ export default function ChatView({
       setError(err instanceof Error ? err.message : "Agent run failed");
     }
   };
+
+  // ── Voice command from wake word ───────────────────────────────────────
+  // Create a fresh session — under the project mentioned in the command when
+  // one was matched, otherwise a plain session — and run the agent, all
+  // without any user interaction.
+  useEffect(() => {
+    if (!voiceCommand || !window.agentApi) return;
+    const { text, projectId, sessionId } = voiceCommand;
+    let cancelled = false;
+    (async () => {
+      try {
+        setThinkingText("");
+        setTodos([]);
+        addMessage({
+          id: crypto.randomUUID(),
+          role: "user",
+          content: text,
+          timestamp: Date.now(),
+        });
+        let targetSessionId = sessionId;
+        if (!targetSessionId) {
+          const created = await window.agentApi.createSession(
+            text.slice(0, 60) || "语音任务",
+            projectId || undefined,
+          ) as { id: string };
+          if (cancelled) return;
+          targetSessionId = created.id;
+          if (onSessionCreated) await onSessionCreated(created.id);
+        }
+        setSessionId(targetSessionId);
+        // Mark running BEFORE callbacks so loadSelectedSession guard
+        // fires and doesn't clear the locally-added user message
+        runningSessionRef.current = targetSessionId;
+        setRunningSession(targetSessionId);
+        if (onMessageSent) void onMessageSent(targetSessionId, text);
+        await startRun({ content: text }, targetSessionId);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "语音指令执行失败");
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [voiceCommand?.nonce]);
 
   return (
     <div style={{

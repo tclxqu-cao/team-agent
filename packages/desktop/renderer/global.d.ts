@@ -88,6 +88,13 @@ export interface AgentApi {
   wakeStart(wakeWord: string): Promise<{ ok: boolean; reason?: string }>;
   wakeStop(): Promise<{ ok: boolean }>;
   onWake(callback: (heard: string) => void): () => void;
+  // Voice command captured right after the wake word fired
+  onWakeCommand(callback: (payload: { text: string }) => void): () => void;
+  // Two-way voice conversation mode (follow-ups without wake word)
+  wakeConversation(on: boolean): Promise<{ ok: boolean; conversation: boolean }>;
+  // Native TTS (macOS `say`)
+  ttsSpeak(text: string): Promise<{ ok: boolean }>;
+  ttsStop(): Promise<{ ok: boolean }>;
   run(input: string, sessionId: string, agentIds?: string[], agentName?: string, images?: string[]): Promise<unknown[]>;
   steer(input: string, sessionId: string, agentName?: string): Promise<boolean>;
   abort(): Promise<void>;

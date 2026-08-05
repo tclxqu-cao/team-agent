@@ -21,6 +21,19 @@ contextBridge.exposeInMainWorld("agentApi", {
     ipcRenderer.on("wake:trigger", handler);
     return () => ipcRenderer.removeListener("wake:trigger", handler);
   },
+  // Voice command captured right after the wake word fired
+  onWakeCommand: (callback: (payload: { text: string }) => void): (() => void) => {
+    const handler = (_e: unknown, payload: { text: string }) => callback(payload);
+    ipcRenderer.on("wake:command", handler);
+    return () => ipcRenderer.removeListener("wake:command", handler);
+  },
+  // Two-way voice conversation: follow-up utterances become commands
+  // without the wake word while conversation mode is on.
+  wakeConversation: (on: boolean) => ipcRenderer.invoke("wake:conversation", on),
+
+  // Native TTS (macOS `say`, offline, Chinese voice)
+  ttsSpeak: (text: string) => ipcRenderer.invoke("tts:speak", text),
+  ttsStop: () => ipcRenderer.invoke("tts:stop"),
 
   // Agent control
   run: (input: string, sessionId: string, agentIds?: string[], agentName?: string, images?: string[]) =>

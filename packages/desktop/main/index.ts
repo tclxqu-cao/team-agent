@@ -108,6 +108,73 @@ function stopWakeProc(): void {
   }
 }
 
+// ── Post-wake voice-command capture ──────────────────────────────────────
+// After the wake word fires we keep the helper alive briefly and collect
+// what the user says next as a command for the agent. Silence (3s without a
+// new transcript) or a hard cap ends the capture; the command is delivered
+// to the renderer via the "wake:command" event.
+let capturing = false;
+let captureParts: string[] = [];
+let captureCur = "";
+let captureSilenceTimer: NodeJS.Timeout | null = null;
+let captureHardTimer: NodeJS.Timeout | null = null;
+
+function clearCaptureTimers(): void {
+  if (captureSilenceTimer) { clearTimeout(captureSilenceTimer); captureSilenceTimer = null; }
+  if (captureHardTimer) { clearTimeout(captureHardTimer); captureHardTimer = null; }
+}
+
+function cleanCommand(raw: string): string {
+  let text = raw.trim();
+  // The transcript often starts with a repeated wake word (or mishearing)
+  for (const v of wakeVariants) {
+    if (text.startsWith(v)) { text = text.slice(v.length); break; }
+  }
+  // Drop leftover fillers / punctuation from the wake utterance
+  return text.replace(/^[\s，。,.!?！？、喂嗯啊哦]+/, "").trim();
+}
+
+function finalizeCapture(): void {
+  if (!capturing) return;
+  capturing = false;
+  clearCaptureTimers();
+  // Keep the helper alive: SFSpeechRecognizer has a long warm-up period
+  // before it reports anything, so restarting it on every hide/show cycle
+  // makes the next wake unreliable. Matches are ignored while visible.
+  const full = [...captureParts, captureCur].join("");
+  captureParts = [];
+  captureCur = "";
+  const command = cleanCommand(full);
+  if (command) {
+    console.warn("[wake] captured command:", command);
+    mainWindow?.webContents.send("wake:command", { text: command });
+  } else {
+    console.warn("[wake] capture ended with no command");
+  }
+}
+
+function startCapture(seed: string): void {
+  capturing = true;
+  captureParts = [];
+  captureCur = seed;
+  clearCaptureTimers();
+  captureHardTimer = setTimeout(finalizeCapture, 12000);
+  captureSilenceTimer = setTimeout(finalizeCapture, 3000);
+}
+
+function onCaptureText(heard: string): void {
+  // Partial results grow within one recognition cycle; a transcript that
+  // neither extends nor shrinks the current one means a fresh cycle.
+  if (captureCur && (heard.startsWith(captureCur) || captureCur.startsWith(heard))) {
+    if (heard.length >= captureCur.length) captureCur = heard;
+  } else {
+    if (captureCur) captureParts.push(captureCur);
+    captureCur = heard;
+  }
+  if (captureSilenceTimer) clearTimeout(captureSilenceTimer);
+  captureSilenceTimer = setTimeout(finalizeCapture, 3000);
+}
+
 function launchWakeListener(): { ok: boolean; reason?: string } {
   if (wakeProc) return { ok: true };
   // Preferred: the compiled Swift helper (Speech framework directly). TCC
@@ -142,18 +209,39 @@ function launchWakeListener(): { ok: boolean; reason?: string } {
   proc.stderr?.on("data", onChunk);
   const onLine = (line: string) => {
     if (line.startsWith("TEXT ")) {
+      // Echo protection: while the app is speaking, the mic hears the
+      // speaker — those transcripts must never trigger anything.
+      if (ttsSpeaking) return;
       const heard = line.slice(5);
       console.warn("[wake] heard:", heard);
       if (wakeVariants.some((v) => heard.includes(v))) {
+        // Only wake from hidden mode; while visible the match is ignored so
+        // casual conversation can't trigger sessions. The helper keeps
+        // running (warm) either way.
+        if (capturing) return;
+        if (mainWindow?.isVisible()) {
+          // Visible + conversation mode: the wake word is just a filler
+          // here — treat the utterance as a follow-up command.
+          if (conversation) startCapture(heard);
+          return;
+        }
         console.warn("[wake] *** MATCHED wake word, showing window ***");
-        wakeDesired = false;
-        stopWakeProc();
         if (mainWindow) {
           mainWindow.show();
           if (mainWindow.isMinimized()) mainWindow.restore();
           mainWindow.focus();
         }
         mainWindow?.webContents.send("wake:trigger", heard);
+        // Keep the helper alive and capture the spoken command that
+        // follows the wake word.
+        const v = wakeVariants.find((w) => heard.includes(w)) ?? wakeWordCurrent;
+        startCapture(heard.slice(heard.indexOf(v) + v.length));
+      } else if (capturing) {
+        onCaptureText(heard);
+      } else if (conversation) {
+        // Two-way voice conversation: after the wake flow started a voice
+        // session, follow-up utterances are commands without the wake word.
+        onCaptureText(heard);
       }
     } else if (line === "EXIT") {
       stopWakeProc();
@@ -169,11 +257,13 @@ function launchWakeListener(): { ok: boolean; reason?: string } {
   proc.on("exit", (code) => {
     console.warn("[wake] helper exited, code:", code);
     if (wakeProc === proc) wakeProc = null;
-    // Auto-recover: while hidden-mode listening is desired, relaunch the
-    // helper after an unexpected exit/crash.
-    if (wakeDesired && !mainWindow?.isVisible()) {
+    // Helper died mid-capture — deliver whatever was collected so far.
+    if (capturing) finalizeCapture();
+    // Auto-recover: relaunch the helper after an unexpected exit/crash
+    // while wake listening is desired (warm recognizer = reliable wake).
+    if (wakeDesired) {
       setTimeout(() => {
-        if (wakeDesired && !wakeProc && !mainWindow?.isVisible()) {
+        if (wakeDesired && !wakeProc) {
           console.warn("[wake] auto-restarting helper");
           launchWakeListener();
         }
@@ -192,12 +282,72 @@ ipcMain.handle("wake:start", (_event, wakeWord: string) => {
 
 ipcMain.handle("wake:stop", () => {
   wakeDesired = false;
-  stopWakeProc();
+  // The renderer stops wake listening on window focus; keep the helper
+  // alive while it is still capturing a voice command.
+  if (!capturing) stopWakeProc();
   return { ok: true };
 });
 
 ipcMain.handle("window:isVisible", () => {
   return mainWindow?.isVisible() ?? false;
+});
+
+// ── Native TTS (macOS `say`) + two-way voice conversation ──────────────
+// Web Speech synthesis is unreliable in this environment; the system `say`
+// binary is offline and speaks Chinese (Tingting). While TTS plays, wake
+// matching is suppressed so the mic doesn't hear the speaker.
+let ttsProc: ChildProcess | null = null;
+let ttsSpeaking = false;
+let ttsGraceTimer: NodeJS.Timeout | null = null;
+let conversation = false;
+let conversationTimer: NodeJS.Timeout | null = null;
+
+function endConversation(): void {
+  conversation = false;
+  if (conversationTimer) { clearTimeout(conversationTimer); conversationTimer = null; }
+}
+
+ipcMain.handle("tts:speak", (_event, text: string) => {
+  const clean = (text || "")
+    .replace(/[*_#`>~\[\](){}|]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 600);
+  if (!clean) return { ok: false };
+  if (ttsProc) { try { ttsProc.kill(); } catch { /* ignore */ } ttsProc = null; }
+  if (ttsGraceTimer) { clearTimeout(ttsGraceTimer); ttsGraceTimer = null; }
+  ttsSpeaking = true;
+  const p = spawn("say", ["-v", "Tingting", clean]);
+  ttsProc = p;
+  mainWindow?.webContents.send("tts:start");
+  p.on("exit", () => {
+    if (ttsProc === p) ttsProc = null;
+    mainWindow?.webContents.send("tts:end");
+    // Grace period — the mic still picks up the speaker's tail
+    ttsGraceTimer = setTimeout(() => { ttsSpeaking = false; }, 1500);
+  });
+  p.on("error", () => { ttsSpeaking = false; });
+  return { ok: true };
+});
+
+ipcMain.handle("tts:stop", () => {
+  if (ttsProc) { try { ttsProc.kill(); } catch { /* ignore */ } ttsProc = null; }
+  ttsSpeaking = false;
+  return { ok: true };
+});
+
+// Conversation mode: while on, any utterance is captured as a follow-up
+// command (no wake word needed). Auto-expires after 90s; the renderer
+// re-arms it on every voice command it processes.
+ipcMain.handle("wake:conversation", (_event, on: boolean) => {
+  if (on) {
+    conversation = true;
+    if (conversationTimer) clearTimeout(conversationTimer);
+    conversationTimer = setTimeout(endConversation, 90000);
+  } else {
+    endConversation();
+  }
+  return { ok: true, conversation };
 });
 
 // ── IPC: Agent control ──
