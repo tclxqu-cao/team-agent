@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
 import { getVoiceCaptureAction } from "./voice-capture-state";
 import * as voiceState from "./voice-capture-state";
 
@@ -169,5 +170,24 @@ describe("parseWakeControlLine", () => {
     expect(typeof parseWakeControlLine).toBe("function");
     expect(parseWakeControlLine?.("BARGE_IN")).toBe("barge-in");
     expect(parseWakeControlLine?.("FINAL 下一轮问题")).toBeNull();
+  });
+});
+
+describe("native barge-in recording", () => {
+  const source = readFileSync(
+    new URL("../native/wakelistener.swift", import.meta.url),
+    "utf8",
+  );
+
+  it("uses the strict VAD threshold only until barge-in has been confirmed", () => {
+    expect(source).toContain(
+      'let requiresBargeInOnset = recognitionMode == "barge-in" && !bargeInEmitted',
+    );
+    expect(source).toContain(
+      "let threshold = requiresBargeInOnset ? bargeInSpeechPeakThreshold : speechPeakThreshold",
+    );
+    expect(source).toContain(
+      "&& (!requiresBargeInOnset || bufferRms >= bargeInSpeechRmsThreshold)",
+    );
   });
 });

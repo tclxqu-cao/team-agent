@@ -220,11 +220,10 @@ func startCycle() {
             : 0
         if bufferRms > rmsLevel { rmsLevel = bufferRms }
         let now = ProcessInfo.processInfo.systemUptime
-        let threshold = recognitionMode == "barge-in"
-            ? bargeInSpeechPeakThreshold
-            : speechPeakThreshold
+        let requiresBargeInOnset = recognitionMode == "barge-in" && !bargeInEmitted
+        let threshold = requiresBargeInOnset ? bargeInSpeechPeakThreshold : speechPeakThreshold
         let isSpeechLevel = bufferPeak >= threshold
-            && (recognitionMode != "barge-in" || bufferRms >= bargeInSpeechRmsThreshold)
+            && (!requiresBargeInOnset || bufferRms >= bargeInSpeechRmsThreshold)
         if isSpeechLevel {
             if recognitionMode == "barge-in" && !speechDetected {
                 if speechCandidateStartedAt == 0 { speechCandidateStartedAt = now }
