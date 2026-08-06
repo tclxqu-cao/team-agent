@@ -47,6 +47,10 @@ import { MCPConnectionManager } from "./mcp-connection-manager.js";
 import { SubAgentDispatcher } from "./sub-agent-dispatcher.js";
 import { QuestionManager } from "./question-manager.js";
 
+export function shouldInterruptPreviousRun(runCountIncludingCurrent: number): boolean {
+  return runCountIncludingCurrent > 1;
+}
+
 export class AgentHost {
   private agent: IAgentLoop | null = null;
   private builder: AgentBuilder;
@@ -489,7 +493,7 @@ export class AgentHost {
     }
 
     // ── 0. If a run is already active, interrupt it and inject turn_aborted marker ──
-    if (this._runCount > 0) {
+    if (shouldInterruptPreviousRun(this._runCount)) {
       yield { type: "thinking", message: "Interrupting previous turn..." };
       this.abort();
       this.subAgentDispatcher.abortAll();
@@ -958,4 +962,3 @@ export class AgentHost {
     }
   }
 }
-

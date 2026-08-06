@@ -14,13 +14,36 @@ export class SQLiteSessionStore implements ISessionStore {
 
   async create(session: Session): Promise<Session> {
     const db = getDatabase(this.baseDir);
-    // Use null for empty projectId to satisfy FK constraint
-    const projectId = session.projectId || null;
-    const parentId = session.parentSessionId || null;
+    // A stale/unknown projectId or parentSessionId must NOT crash session
+    // creation with "FOREIGN KEY constraint failed". Resolve to null when the
+    // referenced row does not exist so the session degrades to "no project" /
+    // "root session" instead of throwing and losing the whole voice turn.
+    const projectId = this.resolveProjectId(session.projectId);
+    const parentId = this.resolveParentId(session.parentSessionId);
     db.db.prepare(
       "INSERT INTO sessions (id, project_id, parent_id, title, status, created, updated, metadata) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
     ).run(session.id, projectId, parentId, session.title, session.status, session.created, session.updated, JSON.stringify(session.metadata));
     return session;
+  }
+
+  /** Returns projectId if the referenced project exists, otherwise null (FK-safe). */
+  private resolveProjectId(projectId?: string): string | null {
+    if (!projectId) return null;
+    const db = getDatabase(this.baseDir);
+    const exists = db.db.prepare("SELECT 1 FROM projects WHERE id = ?").get(projectId);
+    if (exists) return projectId;
+    console.warn(`[SQLiteSessionStore] project_id "${projectId}" not found — storing session without project (FK-safe).`);
+    return null;
+  }
+
+  /** Returns parentSessionId if the referenced session exists, otherwise null (FK-safe). */
+  private resolveParentId(parentId?: string): string | null {
+    if (!parentId) return null;
+    const db = getDatabase(this.baseDir);
+    const exists = db.db.prepare("SELECT 1 FROM sessions WHERE id = ?").get(parentId);
+    if (exists) return parentId;
+    console.warn(`[SQLiteSessionStore] parent_id "${parentId}" not found — storing session as root (FK-safe).`);
+    return null;
   }
 
   async get(id: string): Promise<Session | null> {
@@ -36,7 +59,7 @@ export class SQLiteSessionStore implements ISessionStore {
     if (!existing) throw new Error(`Session not found: ${id}`);
     const merged = { ...existing, ...update, updated: new Date().toISOString() };
     db.db.prepare("UPDATE sessions SET project_id=?, title=?, status=?, updated=?, metadata=? WHERE id=?")
-      .run(merged.projectId, merged.title, merged.status, merged.updated, JSON.stringify(merged.metadata), id);
+      .run(this.resolveProjectId(merged.projectId), merged.title, merged.status, merged.updated, JSON.stringify(merged.metadata), id);
     return merged;
   }
 

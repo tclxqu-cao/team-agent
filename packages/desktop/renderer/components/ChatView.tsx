@@ -188,6 +188,7 @@ import ToolCallCard from "./ToolCallCard";
 import AskUserCard from "./AskUserCard";
 import ContextUsageBar from "./ContextUsageBar";
 import { widgetRegistry } from "./widgets/index.js";
+import { prepareVoiceCommand, shouldSkipVoiceSessionReload } from "../lib/voice-command";
 
 interface ChatViewProps {
   selectedProjectId?: string | null;
@@ -200,6 +201,7 @@ interface ChatViewProps {
   onSelectSession?: (sessionId: string) => void;
   /** Fired when a sub-agent session starts, completes, or errors — used for toast notifications */
   onSubAgentEvent?: (ev: { type: 'started' | 'completed' | 'failed'; agentName: string; task: string; subSessionId?: string }) => void;
+  onRunComplete?: (projectId: string | null, sessionId: string) => void | Promise<void>;
   sessionTitle?: string;
   onOpenSettings?: () => void;
   settingsOpen?: boolean;
@@ -492,6 +494,7 @@ export default function ChatView({
       if (!window.agentApi) return;
       // Capture at call time — used to detect stale responses from fast session switching.
       const targetSid = selectedSessionId;
+      if (shouldSkipVoiceSessionReload(runningSessionRef.current, sessionIdRef.current, targetSid)) return;
       if (!targetSid) {
         clearMessages();
         setError(null);
@@ -501,7 +504,6 @@ export default function ChatView({
       // Don't reload from DB while agent is streaming FOR THIS SESSION — messages are in-memory.
       // But only skip if the store already has this session loaded; if the user navigated away
       // and back, sessionId won't match and we must reload.
-      if (runningSessionRef.current === targetSid && sessionId === targetSid) return;
 
       setError(null);
       try {
@@ -914,12 +916,12 @@ export default function ChatView({
         : undefined;
       if (nextQueued) {
         updateMessage(nextQueued.id, (m) => ({ ...m, isQueued: false }));
-        if (onRunComplete) void onRunComplete(selectedProjectId);
+        if (onRunComplete) void onRunComplete(selectedProjectId, targetSessionId);
         void startRun(nextQueued, targetSessionId);
       } else {
         runningSessionRef.current = null;
         setRunningSession(null);
-        if (onRunComplete) void onRunComplete(selectedProjectId);
+        if (onRunComplete) void onRunComplete(selectedProjectId, targetSessionId);
       }
     }
   };
@@ -1192,27 +1194,29 @@ export default function ChatView({
       try {
         setThinkingText("");
         setTodos([]);
-        addMessage({
-          id: crypto.randomUUID(),
-          role: "user",
-          content: text,
-          timestamp: Date.now(),
+        const targetSessionId = await prepareVoiceCommand({
+          text,
+          projectId,
+          sessionId,
+          createSession: async (title, targetProjectId) => (
+            await window.agentApi.createSession(title, targetProjectId)
+          ) as { id: string },
+          activateSession: (targetId) => {
+            sessionIdRef.current = targetId;
+            setSessionId(targetId);
+            runningSessionRef.current = targetId;
+            setRunningSession(targetId);
+          },
+          showUserMessage: (message, targetId) => addMessage({
+            id: crypto.randomUUID(),
+            role: "user",
+            content: message,
+            timestamp: Date.now(),
+          }, targetId),
+          onSessionCreated,
+          isCancelled: () => cancelled,
         });
-        let targetSessionId = sessionId;
-        if (!targetSessionId) {
-          const created = await window.agentApi.createSession(
-            text.slice(0, 60) || "语音任务",
-            projectId || undefined,
-          ) as { id: string };
-          if (cancelled) return;
-          targetSessionId = created.id;
-          if (onSessionCreated) await onSessionCreated(created.id);
-        }
-        setSessionId(targetSessionId);
-        // Mark running BEFORE callbacks so loadSelectedSession guard
-        // fires and doesn't clear the locally-added user message
-        runningSessionRef.current = targetSessionId;
-        setRunningSession(targetSessionId);
+        if (!targetSessionId) return;
         if (onMessageSent) void onMessageSent(targetSessionId, text);
         await startRun({ content: text }, targetSessionId);
       } catch (err) {

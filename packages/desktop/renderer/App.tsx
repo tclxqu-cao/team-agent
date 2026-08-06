@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import ChatView from "./components/ChatView";
+import { renewVoiceConversation } from "./lib/voice-command";
 import SettingsPanel from "./components/SettingsPanel";
 import MCPServerList from "./components/MCPServerList";
 import MemoryViewer from "./components/MemoryViewer";
@@ -223,7 +224,6 @@ export default function App() {
 
   useEffect(() => () => {
     wakeHandleRef.current?.stop();
-    void window.agentApi?.wakeStop();
   }, []);
 
   const selectedSessionTitle = selectedSessionId
@@ -1056,7 +1056,13 @@ const loadProjects = async () => {
                 return updated;
               });
             }}
-            onRunComplete={async (projId) => {
+            onRunComplete={async (projId, completedSessionId) => {
+              const currentConversation = convoRef.current;
+              const renewedConversation = renewVoiceConversation(currentConversation, completedSessionId);
+              convoRef.current = renewedConversation;
+              if (renewedConversation !== currentConversation) {
+                void window.agentApi?.wakeConversation(true);
+              }
               if (projId || selectedProjectId) await loadSessions(projId || selectedProjectId || "");
             }}
           />
