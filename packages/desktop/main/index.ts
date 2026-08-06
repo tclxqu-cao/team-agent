@@ -11,13 +11,16 @@ import { existsSync } from "node:fs";
 import { AgentHost } from "./agent-host.js";
 import { resolveDesktopBaseDir } from "./desktop-base-dir.js";
 import {
+  getTtsListeningMode,
   getVoiceCaptureSilenceTimeout,
   getWakeCommandSuffix,
   getVoiceCaptureAction,
   isWakeMatch,
+  parseWakeControlLine,
   parseWakeTranscriptLine,
   replaceWakeCommandSuffix,
   shouldFinalizeVoiceCapture,
+  shouldAcceptBargeIn,
   shouldRearmWakeOnlyCapture,
   shouldRestartWakeListener,
 } from "./voice-capture-state.js";
@@ -94,12 +97,15 @@ ipcMain.handle("window:show", () => {
 // The helper streams transcripts over stdout; on wake-word match we restore
 // the window and notify the renderer to play the wake animation.
 let wakeProc: ChildProcess | null = null;
+type WakeHelperMode = "wake" | "dictation" | "barge-in";
+let wakeProcMode: WakeHelperMode | null = null;
 let wakeWordCurrent = "小智";
 let wakeVariants: string[] = ["小智"];
 // true while the renderer asked for wake listening; used to auto-restart
 // the helper if it crashes while the window stays hidden.
 let wakeDesired = false;
 let wakeSuspendedForTts = false;
+let dictationActive = false;
 
 // Homophone groups for common wake-word characters, so ASR mishearings like
 // "小志"/"小知" still count as the wake word.
@@ -123,6 +129,7 @@ function stopWakeProc(): void {
   if (wakeProc) {
     wakeProc.kill();
     wakeProc = null;
+    wakeProcMode = null;
   }
 }
 
@@ -175,14 +182,21 @@ function finalizeCapture(): void {
   } else {
     console.warn("[wake] capture ended with no command");
   }
+  if (!ttsSpeaking && wakeProcMode === "barge-in") {
+    setTimeout(() => {
+      if (ttsSpeaking || wakeProcMode !== "barge-in") return;
+      stopWakeProc();
+      if (wakeDesired) launchWakeListener("wake");
+    }, 0);
+  }
 }
 
-function startCapture(seed: string): void {
+function startCapture(seed: string, waitForFirstTranscript = false): void {
   capturing = true;
   captureCur = seed;
   clearCaptureTimers();
-  captureHardTimer = setTimeout(finalizeCapture, 12000);
-  resetCaptureSilenceTimer();
+  captureHardTimer = setTimeout(finalizeCapture, waitForFirstTranscript ? 22000 : 12000);
+  if (!waitForFirstTranscript) resetCaptureSilenceTimer();
 }
 
 function onCaptureText(heard: string): void {
@@ -197,7 +211,14 @@ function replaceCaptureText(heard: string): void {
   resetCaptureSilenceTimer();
 }
 
-function launchWakeListener(): { ok: boolean; reason?: string } {
+function desiredWakeHelperMode(): WakeHelperMode {
+  if (dictationActive) return "dictation";
+  return ttsSpeaking && getTtsListeningMode(conversation) === "barge-in"
+    ? "barge-in"
+    : "wake";
+}
+
+function launchWakeListener(mode: WakeHelperMode = desiredWakeHelperMode()): { ok: boolean; reason?: string } {
   if (wakeProc) return { ok: true };
   // Preferred: the compiled Swift helper (Speech framework directly). TCC
   // attribution belongs to Electron, whose Info.plist carries the privacy
@@ -212,9 +233,10 @@ function launchWakeListener(): { ok: boolean; reason?: string } {
   const script = search("wakelistener.js");
   if (!binary && !script) return { ok: false, reason: "no-helper" };
   const proc = binary
-    ? spawn(binary, ["zh-CN"])
+    ? spawn(binary, ["zh-CN", mode])
     : spawn("osascript", ["-l", "JavaScript", script as string]);
   wakeProc = proc;
+  wakeProcMode = mode;
   // The Swift binary prints the protocol to stdout; JXA's console.log goes
   // to stderr. Parse both streams the same way.
   let buf = "";
@@ -230,6 +252,11 @@ function launchWakeListener(): { ok: boolean; reason?: string } {
   proc.stdout?.on("data", onChunk);
   proc.stderr?.on("data", onChunk);
   const onLine = (line: string) => {
+    const control = parseWakeControlLine(line);
+    if (control === "barge-in") {
+      interruptTtsForBargeIn();
+      return;
+    }
     const transcript = parseWakeTranscriptLine(line);
     if (transcript) {
       // Echo protection: while the app is speaking, the mic hears the
@@ -237,6 +264,15 @@ function launchWakeListener(): { ok: boolean; reason?: string } {
       if (ttsSpeaking) return;
       const { heard, isFinal } = transcript;
       console.warn("[wake] heard:", heard);
+      if (dictationActive) {
+        mainWindow?.webContents.send("dictation:result", { text: heard, isFinal });
+        if (isFinal) {
+          dictationActive = false;
+          stopWakeProc();
+          if (wakeDesired) launchWakeListener();
+        }
+        return;
+      }
       if (isWakeMatch(heard, wakeVariants, isFinal)) {
         const commandSuffix = getWakeCommandSuffix(heard, wakeVariants);
         // Only wake from hidden mode; while visible the match is ignored so
@@ -282,6 +318,13 @@ function launchWakeListener(): { ok: boolean; reason?: string } {
         }
         if (shouldFinalizeVoiceCapture(capturing, isFinal, captureCur)) finalizeCapture();
       }
+    } else if (line.startsWith("ERROR ") && dictationActive) {
+      const detail = line.slice(6);
+      const message = detail.includes("1110") ? "未识别到语音" : `语音识别失败：${detail}`;
+      dictationActive = false;
+      mainWindow?.webContents.send("dictation:error", message);
+      stopWakeProc();
+      if (wakeDesired) launchWakeListener();
     } else if (line === "EXIT") {
       stopWakeProc();
     } else if (line === "READY") {
@@ -295,7 +338,10 @@ function launchWakeListener(): { ok: boolean; reason?: string } {
   });
   proc.on("exit", (code, signal) => {
     console.warn("[wake] helper exited, code:", code, "signal:", signal);
-    if (wakeProc === proc) wakeProc = null;
+    if (wakeProc === proc) {
+      wakeProc = null;
+      wakeProcMode = null;
+    }
     // Helper died mid-capture — deliver whatever was collected so far.
     if (capturing) finalizeCapture();
     // Auto-recover: relaunch the helper after an unexpected exit/crash
@@ -323,7 +369,22 @@ ipcMain.handle("wake:stop", () => {
   wakeDesired = false;
   // The renderer stops wake listening on window focus; keep the helper
   // alive while it is still capturing a voice command.
-  if (!capturing) stopWakeProc();
+  if (!capturing && !dictationActive) stopWakeProc();
+  return { ok: true };
+});
+
+ipcMain.handle("dictation:start", () => {
+  if (dictationActive) return { ok: true };
+  dictationActive = true;
+  capturing = false;
+  captureCur = "";
+  clearCaptureTimers();
+  stopWakeProc();
+  return launchWakeListener();
+});
+
+ipcMain.handle("dictation:stop", () => {
+  if (dictationActive && wakeProc) wakeProc.kill("SIGUSR1");
   return { ok: true };
 });
 
@@ -344,9 +405,25 @@ let conversationTimer: NodeJS.Timeout | null = null;
 function resumeWakeAfterTts(): void {
   wakeSuspendedForTts = false;
   ttsSpeaking = false;
+  if (wakeProcMode === "barge-in") stopWakeProc();
   if (shouldRestartWakeListener(wakeDesired, wakeSuspendedForTts) && !wakeProc) {
-    launchWakeListener();
+    launchWakeListener("wake");
   }
+}
+
+function interruptTtsForBargeIn(): void {
+  if (!shouldAcceptBargeIn(ttsSpeaking, conversation)) return;
+  console.warn("[tts] barge-in detected, stopping current speech");
+  const interrupted = ttsProc;
+  ttsProc = null;
+  if (interrupted) {
+    try { interrupted.kill(); } catch { /* already exited */ }
+  }
+  if (ttsGraceTimer) { clearTimeout(ttsGraceTimer); ttsGraceTimer = null; }
+  ttsSpeaking = false;
+  wakeSuspendedForTts = false;
+  if (!capturing) startCapture("", true);
+  mainWindow?.webContents.send("tts:end");
 }
 
 function endConversation(): void {
@@ -364,14 +441,23 @@ ipcMain.handle("tts:speak", (_event, text: string) => {
   if (ttsProc) { try { ttsProc.kill(); } catch { /* ignore */ } ttsProc = null; }
   if (ttsGraceTimer) { clearTimeout(ttsGraceTimer); ttsGraceTimer = null; }
   ttsSpeaking = true;
-  wakeSuspendedForTts = true;
-  stopWakeProc();
+  const listeningMode = getTtsListeningMode(conversation);
+  wakeSuspendedForTts = listeningMode === "suspended";
+  if (listeningMode === "barge-in") {
+    if (wakeProcMode !== "barge-in") {
+      stopWakeProc();
+      launchWakeListener("barge-in");
+    }
+  } else {
+    stopWakeProc();
+  }
   const p = spawn("say", ["-v", "Tingting", clean]);
   ttsProc = p;
   mainWindow?.webContents.send("tts:start");
   p.on("exit", () => {
     if (ttsProc !== p) return;
     ttsProc = null;
+    ttsSpeaking = false;
     mainWindow?.webContents.send("tts:end");
     // Restarting the helper discards the file segment recorded during TTS,
     // including recognition callbacks that can arrive after playback ends.
@@ -765,6 +851,7 @@ app.whenReady().then(() => {
 
 app.on("before-quit", () => {
   wakeDesired = false;
+  dictationActive = false;
   stopWakeProc();
 });
 

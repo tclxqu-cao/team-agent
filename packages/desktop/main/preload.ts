@@ -31,6 +31,20 @@ contextBridge.exposeInMainWorld("agentApi", {
   // without the wake word while conversation mode is on.
   wakeConversation: (on: boolean) => ipcRenderer.invoke("wake:conversation", on),
 
+  // Native one-shot dictation for the chat input.
+  dictationStart: () => ipcRenderer.invoke("dictation:start"),
+  dictationStop: () => ipcRenderer.invoke("dictation:stop"),
+  onDictation: (callback: (payload: { text: string; isFinal: boolean }) => void): (() => void) => {
+    const handler = (_e: unknown, payload: { text: string; isFinal: boolean }) => callback(payload);
+    ipcRenderer.on("dictation:result", handler);
+    return () => ipcRenderer.removeListener("dictation:result", handler);
+  },
+  onDictationError: (callback: (message: string) => void): (() => void) => {
+    const handler = (_e: unknown, message: string) => callback(message);
+    ipcRenderer.on("dictation:error", handler);
+    return () => ipcRenderer.removeListener("dictation:error", handler);
+  },
+
   // Native TTS (macOS `say`, offline, Chinese voice)
   ttsSpeak: (text: string) => ipcRenderer.invoke("tts:speak", text),
   ttsStop: () => ipcRenderer.invoke("tts:stop"),

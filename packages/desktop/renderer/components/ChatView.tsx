@@ -16,6 +16,7 @@ import {
   isTTSSupported,
   type DictationHandle,
 } from "../lib/speech";
+import { interruptSpeech } from "../lib/voice-interruption";
 
 /** Human-readable description of a cron/interval expression (browser-safe, no Node.js). */
 function describeCron(cron: string): string {
@@ -299,6 +300,7 @@ export default function ChatView({
       setIsRecording(false);
       return;
     }
+    interruptSpeech(window.agentApi, stopSpeaking);
     const prefix = input ? `${input.trimEnd()} ` : "";
     const handle = startDictation({
       onInterim: (text) => setInput(prefix + text),
@@ -928,6 +930,8 @@ export default function ChatView({
 
   const handleSend = async () => {
     if (!input.trim() || !isConfigured) return;
+
+    interruptSpeech(window.agentApi, stopSpeaking);
 
     setError(null);
 

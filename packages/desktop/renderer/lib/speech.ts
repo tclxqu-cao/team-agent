@@ -1,12 +1,9 @@
 /**
  * Speech utilities — voice input (ASR) and voice output (TTS).
  *
- * Both capabilities use the Web Speech API shipped with Chromium
- * (available in Electron's renderer). The gateway currently registers
- * all providers as chat-only (no /v1/audio/* passthrough), so local
- * browser speech is the pragmatic engine. If an STT/TTS-capable
- * gateway endpoint becomes available, swap the implementations here
- * without touching the UI layer.
+ * Desktop dictation prefers the native macOS Speech helper because Chromium's
+ * recognition service is unavailable on the target network. Web Speech remains
+ * a browser fallback; speech synthesis is used when native TTS is unavailable.
  */
 
 // ── Types for the (untyped) webkitSpeechRecognition API ──────────────────
@@ -33,14 +30,33 @@ interface SpeechRecognitionLike {
 
 type SpeechRecognitionCtor = new () => SpeechRecognitionLike;
 
+interface NativeDictationApi {
+  dictationStart: () => Promise<{ ok: boolean; reason?: string }>;
+  dictationStop: () => Promise<{ ok: boolean }>;
+  onDictation: (callback: (payload: { text: string; isFinal: boolean }) => void) => () => void;
+  onDictationError: (callback: (message: string) => void) => () => void;
+}
+
 function getRecognitionCtor(): SpeechRecognitionCtor | null {
   const w = window as unknown as Record<string, unknown>;
   return (w.SpeechRecognition as SpeechRecognitionCtor) ??
     (w.webkitSpeechRecognition as SpeechRecognitionCtor) ?? null;
 }
 
+function getNativeDictationApi(): NativeDictationApi | null {
+  if (typeof window === "undefined") return null;
+  const api = (window as unknown as { agentApi?: Partial<NativeDictationApi> }).agentApi;
+  if (
+    typeof api?.dictationStart !== "function" ||
+    typeof api.dictationStop !== "function" ||
+    typeof api.onDictation !== "function" ||
+    typeof api.onDictationError !== "function"
+  ) return null;
+  return api as NativeDictationApi;
+}
+
 export function isASRSupported(): boolean {
-  return getRecognitionCtor() !== null;
+  return getNativeDictationApi() !== null || getRecognitionCtor() !== null;
 }
 
 export function isTTSSupported(): boolean {
@@ -64,6 +80,44 @@ export function startDictation(opts: {
   onError?: (message: string) => void;
   onEnd?: () => void;
 }): DictationHandle | null {
+  const nativeApi = getNativeDictationApi();
+  if (nativeApi) {
+    let ended = false;
+    let removeResult = () => undefined;
+    let removeError = () => undefined;
+    const finish = () => {
+      if (ended) return;
+      ended = true;
+      removeResult();
+      removeError();
+      opts.onEnd?.();
+    };
+    removeResult = nativeApi.onDictation(({ text, isFinal }) => {
+      const clean = text.trim();
+      if (!clean) return;
+      if (isFinal) {
+        opts.onFinal(clean);
+        finish();
+      } else {
+        opts.onInterim(clean);
+      }
+    });
+    removeError = nativeApi.onDictationError((message) => {
+      opts.onError?.(message);
+      finish();
+    });
+    void nativeApi.dictationStart().then((result) => {
+      if (!result.ok) {
+        opts.onError?.(result.reason || "无法启动语音识别");
+        finish();
+      }
+    }).catch(() => {
+      opts.onError?.("无法启动语音识别");
+      finish();
+    });
+    return { stop: () => { void nativeApi.dictationStop(); } };
+  }
+
   const Ctor = getRecognitionCtor();
   if (!Ctor) {
     opts.onError?.("当前环境不支持语音识别");

@@ -136,3 +136,38 @@ describe("shouldFinalizeVoiceCapture", () => {
     expect(shouldFinalizeVoiceCapture?.(true, true, "")).toBe(false);
   });
 });
+
+describe("TTS barge-in state", () => {
+  const getTtsListeningMode = (voiceState as unknown as {
+    getTtsListeningMode?: (conversation: boolean) => "barge-in" | "suspended";
+  }).getTtsListeningMode;
+  const shouldAcceptBargeIn = (voiceState as unknown as {
+    shouldAcceptBargeIn?: (ttsSpeaking: boolean, conversation: boolean) => boolean;
+  }).shouldAcceptBargeIn;
+
+  it("keeps listening for barge-in only during voice-conversation TTS", () => {
+    expect(typeof getTtsListeningMode).toBe("function");
+    expect(getTtsListeningMode?.(true)).toBe("barge-in");
+    expect(getTtsListeningMode?.(false)).toBe("suspended");
+  });
+
+  it("accepts barge-in only while a voice-conversation reply is speaking", () => {
+    expect(typeof shouldAcceptBargeIn).toBe("function");
+    expect(shouldAcceptBargeIn?.(true, true)).toBe(true);
+    expect(shouldAcceptBargeIn?.(true, false)).toBe(false);
+    expect(shouldAcceptBargeIn?.(false, true)).toBe(false);
+    expect(shouldAcceptBargeIn?.(false, false)).toBe(false);
+  });
+});
+
+describe("parseWakeControlLine", () => {
+  const parseWakeControlLine = (voiceState as unknown as {
+    parseWakeControlLine?: (line: string) => "barge-in" | null;
+  }).parseWakeControlLine;
+
+  it("recognizes the barge-in control line without consuming transcripts", () => {
+    expect(typeof parseWakeControlLine).toBe("function");
+    expect(parseWakeControlLine?.("BARGE_IN")).toBe("barge-in");
+    expect(parseWakeControlLine?.("FINAL 下一轮问题")).toBeNull();
+  });
+});

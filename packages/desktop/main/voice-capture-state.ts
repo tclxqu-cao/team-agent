@@ -1,4 +1,5 @@
 export type VoiceCaptureAction = "start" | "append" | "ignore";
+export type TtsListeningMode = "barge-in" | "suspended";
 
 export function getVoiceCaptureAction(
   capturing: boolean,
@@ -43,6 +44,14 @@ export function shouldRestartWakeListener(desired: boolean, suspended: boolean):
   return desired && !suspended;
 }
 
+export function getTtsListeningMode(conversation: boolean): TtsListeningMode {
+  return conversation ? "barge-in" : "suspended";
+}
+
+export function shouldAcceptBargeIn(ttsSpeaking: boolean, conversation: boolean): boolean {
+  return ttsSpeaking && conversation;
+}
+
 export function getVoiceCaptureSilenceTimeout(commandText: string): number {
   return commandText.trim().length > 0 ? 3000 : 8000;
 }
@@ -73,4 +82,8 @@ export function parseWakeTranscriptLine(
     return { heard: line.slice(6), isFinal: true };
   }
   return null;
+}
+
+export function parseWakeControlLine(line: string): "barge-in" | null {
+  return line === "BARGE_IN" ? "barge-in" : null;
 }

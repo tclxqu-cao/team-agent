@@ -7,14 +7,17 @@
 //   READY           listener up and authorized
 //   TEXT <t>        partial transcript (main matches the full wake word)
 //   FINAL <t>       final transcript (also allows safe truncated matching)
+//   BARGE_IN        sustained speech detected while TTS is playing
 //   ERROR <desc>    non-fatal issue; the loop keeps retrying
 // Exit codes: 2 speech-auth denied, 3 mic denied
 
 import Foundation
 import Speech
 import AVFoundation
+import Darwin
 
 let localeArg = CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : "zh-CN"
+let recognitionMode = CommandLine.arguments.count > 2 ? CommandLine.arguments[2] : "wake"
 
 func emit(_ s: String) {
     print(s)
@@ -26,6 +29,8 @@ let wakeBias = [
     "你好小智", "小智你好", "小智在吗", "小智请回答"
 ]
 let speechPeakThreshold: Float = 0.009
+let bargeInSpeechPeakThreshold: Float = 0.10
+let bargeInSustainDuration: TimeInterval = 0.25
 let silenceAfterSpeech: TimeInterval = 0.8
 let silentSegmentDuration: TimeInterval = 5.0
 let maximumSpeechSegmentDuration: TimeInterval = 12.0
@@ -41,6 +46,9 @@ var peakLevel: Float = 0
 var segmentStartedAt: TimeInterval = 0
 var speechDetected = false
 var lastSpeechAt: TimeInterval = 0
+var speechCandidateStartedAt: TimeInterval = 0
+var bargeInEmitted = false
+var finishSignalSource: DispatchSourceSignal?
 
 // Diagnostic heartbeat: proves the process is alive and shows whether audio
 // buffers reach the tap and whether the recognizer ever calls back.
@@ -80,6 +88,9 @@ func preferredText(from result: SFSpeechRecognitionResult) -> String {
     let candidates = result.transcriptions.map {
         $0.formattedString.trimmingCharacters(in: .whitespacesAndNewlines)
     }
+    if recognitionMode == "dictation" || recognitionMode == "barge-in" {
+        return candidates.first ?? ""
+    }
     return candidates.first(where: { text in
         wakeBias.contains(where: { text.contains($0) })
     }) ?? candidates.first ?? ""
@@ -88,8 +99,8 @@ func preferredText(from result: SFSpeechRecognitionResult) -> String {
 func recognizeRecording(_ url: URL, cycle expectedCycle: Int) {
     guard expectedCycle == cycle, let recognizer = recognizer else { return }
     let req = SFSpeechURLRecognitionRequest(url: url)
-    req.taskHint = .search
-    req.contextualStrings = wakeBias
+    req.taskHint = recognitionMode == "wake" ? .search : .dictation
+    if recognitionMode == "wake" { req.contextualStrings = wakeBias }
 
     task = recognizer.recognitionTask(with: req) { result, error in
         guard expectedCycle == cycle else { return }
@@ -154,7 +165,16 @@ func startCycle() {
     segmentStartedAt = ProcessInfo.processInfo.systemUptime
     speechDetected = false
     lastSpeechAt = 0
+    speechCandidateStartedAt = 0
+    bargeInEmitted = false
     let input = engine.inputNode
+    if recognitionMode == "barge-in" {
+        do {
+            try input.setVoiceProcessingEnabled(true)
+        } catch {
+            emit("ERROR voice-processing \(error)")
+        }
+    }
     let format = input.outputFormat(forBus: 0)
     guard format.sampleRate > 0, format.channelCount > 0 else {
         emit("ERROR bad-format")
@@ -186,9 +206,27 @@ func startCycle() {
                 i += 8
             }
         }
-        if bufferPeak >= speechPeakThreshold {
-            speechDetected = true
-            lastSpeechAt = ProcessInfo.processInfo.systemUptime
+        let now = ProcessInfo.processInfo.systemUptime
+        let threshold = recognitionMode == "barge-in"
+            ? bargeInSpeechPeakThreshold
+            : speechPeakThreshold
+        if bufferPeak >= threshold {
+            if recognitionMode == "barge-in" && !speechDetected {
+                if speechCandidateStartedAt == 0 { speechCandidateStartedAt = now }
+                if now - speechCandidateStartedAt >= bargeInSustainDuration {
+                    speechDetected = true
+                    lastSpeechAt = now
+                    if !bargeInEmitted {
+                        bargeInEmitted = true
+                        emit("BARGE_IN")
+                    }
+                }
+            } else {
+                speechDetected = true
+                lastSpeechAt = now
+            }
+        } else if recognitionMode == "barge-in" && !speechDetected {
+            speechCandidateStartedAt = 0
         }
         try? recordingFile?.write(from: buffer)
     }
@@ -209,6 +247,11 @@ func startCycle() {
 
 func begin() {
     recognizer = SFSpeechRecognizer(locale: Locale(identifier: localeArg))
+    signal(SIGUSR1, SIG_IGN)
+    let source = DispatchSource.makeSignalSource(signal: SIGUSR1, queue: .main)
+    source.setEventHandler { finishRecording(cycle) }
+    source.resume()
+    finishSignalSource = source
     emit("READY")
     heartbeat()
     startCycle()

@@ -92,6 +92,11 @@ export interface AgentApi {
   onWakeCommand(callback: (payload: { text: string }) => void): () => void;
   // Two-way voice conversation mode (follow-ups without wake word)
   wakeConversation(on: boolean): Promise<{ ok: boolean; conversation: boolean }>;
+  // Native one-shot dictation for the chat input
+  dictationStart(): Promise<{ ok: boolean; reason?: string }>;
+  dictationStop(): Promise<{ ok: boolean }>;
+  onDictation(callback: (payload: { text: string; isFinal: boolean }) => void): () => void;
+  onDictationError(callback: (message: string) => void): () => void;
   // Native TTS (macOS `say`)
   ttsSpeak(text: string): Promise<{ ok: boolean }>;
   ttsStop(): Promise<{ ok: boolean }>;
