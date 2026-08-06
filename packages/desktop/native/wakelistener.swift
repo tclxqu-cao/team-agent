@@ -30,6 +30,7 @@ let wakeBias = [
 ]
 let speechPeakThreshold: Float = 0.009
 let bargeInSpeechPeakThreshold: Float = 0.10
+let bargeInSpeechRmsThreshold: Float = 0.02
 let bargeInSustainDuration: TimeInterval = 0.25
 let silenceAfterSpeech: TimeInterval = 0.8
 let silentSegmentDuration: TimeInterval = 5.0
@@ -43,8 +44,10 @@ var cycle = 0
 var tapCount = 0
 var resultCount = 0
 var peakLevel: Float = 0
+var rmsLevel: Float = 0
 var segmentStartedAt: TimeInterval = 0
 var speechDetected = false
+var speechStartedAt: TimeInterval = 0
 var lastSpeechAt: TimeInterval = 0
 var speechCandidateStartedAt: TimeInterval = 0
 var bargeInEmitted = false
@@ -54,8 +57,9 @@ var finishSignalSource: DispatchSourceSignal?
 // buffers reach the tap and whether the recognizer ever calls back.
 func heartbeat() {
     let engineRunning = audioEngine?.isRunning ?? false
-    emit("HB cycle=\(cycle) taps=\(tapCount) results=\(resultCount) engine=\(engineRunning) speech=\(speechDetected) peak=\(String(format: "%.4f", peakLevel))")
+    emit("HB cycle=\(cycle) taps=\(tapCount) results=\(resultCount) engine=\(engineRunning) speech=\(speechDetected) peak=\(String(format: "%.4f", peakLevel)) rms=\(String(format: "%.4f", rmsLevel))")
     peakLevel = 0
+    rmsLevel = 0
     if audioEngine != nil, !engineRunning {
         emit("ERROR engine-stopped")
         restart(after: 1)
@@ -141,7 +145,7 @@ func monitorRecording(_ expectedCycle: Int) {
     guard expectedCycle == cycle, audioEngine != nil else { return }
     let now = ProcessInfo.processInfo.systemUptime
     let shouldFinish = speechDetected
-        ? now - lastSpeechAt >= silenceAfterSpeech || now - segmentStartedAt >= maximumSpeechSegmentDuration
+        ? now - lastSpeechAt >= silenceAfterSpeech || now - speechStartedAt >= maximumSpeechSegmentDuration
         : now - segmentStartedAt >= silentSegmentDuration
     if shouldFinish {
         finishRecording(expectedCycle)
@@ -164,6 +168,7 @@ func startCycle() {
     audioEngine = engine
     segmentStartedAt = ProcessInfo.processInfo.systemUptime
     speechDetected = false
+    speechStartedAt = 0
     lastSpeechAt = 0
     speechCandidateStartedAt = 0
     bargeInEmitted = false
@@ -196,6 +201,8 @@ func startCycle() {
     input.installTap(onBus: 0, bufferSize: 1024, format: format) { buffer, _ in
         tapCount += 1
         var bufferPeak: Float = 0
+        var sumOfSquares: Float = 0
+        var sampledFrames = 0
         if let ch = buffer.floatChannelData?[0] {
             let n = Int(buffer.frameLength)
             var i = 0
@@ -203,18 +210,27 @@ func startCycle() {
                 let v = abs(ch[i])
                 if v > peakLevel { peakLevel = v }
                 if v > bufferPeak { bufferPeak = v }
+                sumOfSquares += v * v
+                sampledFrames += 1
                 i += 8
             }
         }
+        let bufferRms = sampledFrames > 0
+            ? sqrt(sumOfSquares / Float(sampledFrames))
+            : 0
+        if bufferRms > rmsLevel { rmsLevel = bufferRms }
         let now = ProcessInfo.processInfo.systemUptime
         let threshold = recognitionMode == "barge-in"
             ? bargeInSpeechPeakThreshold
             : speechPeakThreshold
-        if bufferPeak >= threshold {
+        let isSpeechLevel = bufferPeak >= threshold
+            && (recognitionMode != "barge-in" || bufferRms >= bargeInSpeechRmsThreshold)
+        if isSpeechLevel {
             if recognitionMode == "barge-in" && !speechDetected {
                 if speechCandidateStartedAt == 0 { speechCandidateStartedAt = now }
                 if now - speechCandidateStartedAt >= bargeInSustainDuration {
                     speechDetected = true
+                    speechStartedAt = speechCandidateStartedAt
                     lastSpeechAt = now
                     if !bargeInEmitted {
                         bargeInEmitted = true
@@ -222,6 +238,7 @@ func startCycle() {
                     }
                 }
             } else {
+                if !speechDetected { speechStartedAt = now }
                 speechDetected = true
                 lastSpeechAt = now
             }
