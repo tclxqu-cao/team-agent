@@ -1,0 +1,48 @@
+packages/desktop/main/voice-service-client.ts
+  s_6edcb9d9cd7ad6::t_5171b3f41ac6d2 5-6,70-71
+packages/desktop/main/voice-service-manager.test.ts
+  s_6edcb9d9cd7ad6::t_bf0c053bceb8e9 8-9,20,74-77,81,83,85,87-89,91-101
+  s_6edcb9d9cd7ad6::t_2b646d20d164d3 1,78-80,82,84,86,90
+  s_6edcb9d9cd7ad6::t_e4903d3888efe1 102
+packages/voice-service/README.md
+  s_6edcb9d9cd7ad6::t_e92b840f73b067 29,55
+packages/desktop/main/voice-capture-state.ts
+  s_6edcb9d9cd7ad6::t_7d37d013c9667a 55-70
+packages/desktop/main/voice-capture-state.test.ts
+  s_6edcb9d9cd7ad6::t_0b5058e01a2947 164-196
+packages/voice-service/src/server.test.ts
+  s_6edcb9d9cd7ad6::t_4467e8382090b0 34-44,95-125
+  s_6edcb9d9cd7ad6::t_e69d074f34a131 126-128
+  s_6edcb9d9cd7ad6::t_0a90e457ab5aa4 129-131
+packages/desktop/main/index.ts
+  s_6edcb9d9cd7ad6::t_7d37d013c9667a 21,629,645-653
+  s_6edcb9d9cd7ad6::t_13c893e22ee586 31-36,66-70
+  s_6edcb9d9cd7ad6::t_5171b3f41ac6d2 317-326
+  s_6edcb9d9cd7ad6::t_f9b429ace876c5 348
+packages/voice-service/src/server.ts
+  s_6edcb9d9cd7ad6::t_5171b3f41ac6d2 179-180,184
+  s_6edcb9d9cd7ad6::t_4c1d36f6322e49 181-183
+packages/desktop/main/voice-service-manager.ts
+  s_6edcb9d9cd7ad6::t_d7d92c261d017a 2,26-34,45
+  s_6edcb9d9cd7ad6::t_f03ab53e4fa184 148-153
+  s_6edcb9d9cd7ad6::t_4b7fd9feafff74 147,154-155,169,178
+  s_6edcb9d9cd7ad6::t_13c893e22ee586 3,21-25,35-44,46-48,54,59-81,114-117,142
+packages/desktop/main/voice-service-client.test.ts
+  s_6edcb9d9cd7ad6::t_4467e8382090b0 69,106
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "afa9129b6ffe367dec167ed29d4a33a9d904321c",
+  "prompts": {},
+  "sessions": {
+    "s_6edcb9d9cd7ad6": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fd1c1-3a3e-7f32-9ee5-c7add0c1d7e1",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
