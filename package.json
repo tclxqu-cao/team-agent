@@ -6,7 +6,8 @@
     "packages/core",
     "packages/server",
     "packages/desktop",
-    "packages/sdk"
+    "packages/sdk",
+    "packages/voice-service"
   ],
   "scripts": {
     "dev": "bunx concurrently --kill-others -n core,server,desktop -c blue,green,yellow 'bun run dev:core' 'bun run dev:server' 'bun run dev:desktop'",
@@ -19,6 +20,9 @@
     "test": "bunx vitest run",
     "test:watch": "bunx vitest",
     "lint": "bunx tsc --noEmit"
+  },
+  "resolutions": {
+    "sherpa-onnx-darwin-arm64": "1.13.4"
   },
   "devDependencies": {
     "@electron/rebuild": "^4.0.4",

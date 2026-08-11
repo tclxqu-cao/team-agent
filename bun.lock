@@ -60,6 +60,20 @@
         "@types/react-dom": "^18.3.0",
       },
     },
+    "packages/voice-service": {
+      "name": "@agent/voice-service",
+      "version": "0.1.0",
+      "dependencies": {
+        "sherpa-onnx-node": "1.13.4",
+        "ws": "^8.18.0",
+      },
+      "devDependencies": {
+        "@types/ws": "^8.5.13",
+      },
+    },
+  },
+  "overrides": {
+    "sherpa-onnx-darwin-arm64": "1.13.4",
   },
   "packages": {
     "@agent/core": ["@agent/core@workspace:packages/core"],
@@ -69,6 +83,8 @@
     "@agent/sdk": ["@agent/sdk@workspace:packages/sdk"],
 
     "@agent/server": ["@agent/server@workspace:packages/server"],
+
+    "@agent/voice-service": ["@agent/voice-service@workspace:packages/voice-service"],
 
     "@babel/code-frame": ["@babel/code-frame@7.29.0", "http://nexus.17usoft.com/repository/npm-all/@babel/code-frame/-/code-frame-7.29.0.tgz", { "dependencies": { "@babel/helper-validator-identifier": "^7.28.5", "js-tokens": "^4.0.0", "picocolors": "^1.1.1" } }, "sha512-9NhCeYjq9+3uxgdtp20LSiJXJvN0FeCtNGpJxuMFZ1Kv3cWUNb6DOhJwUvcVCzKGR66cw4njwM6hrJLqgOwbcw=="],
 
@@ -283,6 +299,8 @@
     "@types/responselike": ["@types/responselike@1.0.3", "http://nexus.17usoft.com/repository/npm-all/@types/responselike/-/responselike-1.0.3.tgz", { "dependencies": { "@types/node": "*" } }, "sha512-H/+L+UkTV33uf49PH5pCAUBVPNj2nDBXTN+qS1dOwyyg24l3CcicicCA7ca+HMvJBZcFgl5r8e+RR6elsb4Lyw=="],
 
     "@types/trusted-types": ["@types/trusted-types@2.0.7", "http://nexus.17usoft.com/repository/npm-all/@types/trusted-types/-/trusted-types-2.0.7.tgz", {}, "sha512-ScaPdn1dQczgbl0QFTeTOmVHFULt394XJgOQNoyVhZ6r2vLnMLJfBPd53SB52T/3G36VI1/g2MZaX0cwDuXsfw=="],
+
+    "@types/ws": ["@types/ws@8.18.1", "http://nexus.17usoft.com/repository/npm-all/@types/ws/-/ws-8.18.1.tgz", { "dependencies": { "@types/node": "*" } }, "sha512-ThVF6DCVhA8kUGy+aazFQ4kXQ7E1Ty7A3ypFOe0IcJV8O/M511G99AW24irKrW56Wt44yG9+ij8FaqoBGkuBXg=="],
 
     "@types/yauzl": ["@types/yauzl@2.10.3", "http://nexus.17usoft.com/repository/npm-all/@types/yauzl/-/yauzl-2.10.3.tgz", { "dependencies": { "@types/node": "*" } }, "sha512-oJoftv0LSuaDZE3Le4DbKX+KS9G36NzOeSap90UIK0yMA/NhKJhqlSGtNDORNRaIbQfzjXDrQa0ytJ6mNRGz/Q=="],
 
@@ -568,6 +586,20 @@
 
     "shebang-regex": ["shebang-regex@3.0.0", "http://nexus.17usoft.com/repository/npm-all/shebang-regex/-/shebang-regex-3.0.0.tgz", {}, "sha512-7++dFhtcx3353uBaq8DDR4NuxBetBzC7ZQOhmTQInHEd6bSrXdiEyzCvG07Z44UYdLShWUyXt5M/yhz8ekcb1A=="],
 
+    "sherpa-onnx-darwin-arm64": ["sherpa-onnx-darwin-arm64@1.13.4", "http://nexus.17usoft.com/repository/npm-all/sherpa-onnx-darwin-arm64/-/sherpa-onnx-darwin-arm64-1.13.4.tgz", { "os": "darwin", "cpu": "arm64" }, "sha512-QcYKzyrTzGSx6aKCD6hUODgRS1LetqfG57Z/+i5LCyfMlrgCvDc1lRcl9cdB+TozBsLha9QwLTlI0vmDcf5JKg=="],
+
+    "sherpa-onnx-darwin-x64": ["sherpa-onnx-darwin-x64@1.13.5", "http://nexus.17usoft.com/repository/npm-all/sherpa-onnx-darwin-x64/-/sherpa-onnx-darwin-x64-1.13.5.tgz", { "os": "darwin", "cpu": "x64" }, "sha512-Ay//Bq4T3RHYhzdYk9O0ahg0UoEgbRMDGZvtpQi2D0oHOcXv0M5tP3OKlx4AvWNXYl0SL+rUObUFe5IIqROrfQ=="],
+
+    "sherpa-onnx-linux-arm64": ["sherpa-onnx-linux-arm64@1.13.5", "http://nexus.17usoft.com/repository/npm-all/sherpa-onnx-linux-arm64/-/sherpa-onnx-linux-arm64-1.13.5.tgz", { "os": "linux", "cpu": "arm64" }, "sha512-1Jpkyv+Sg7wl+jCOlttcudVpVdlCNPXMf/RYT4+FU4/VmoMIx9MZbcSu2Nf8gtKq3mnYdkk7HtCK5AA3Dtuvwg=="],
+
+    "sherpa-onnx-linux-x64": ["sherpa-onnx-linux-x64@1.13.5", "http://nexus.17usoft.com/repository/npm-all/sherpa-onnx-linux-x64/-/sherpa-onnx-linux-x64-1.13.5.tgz", { "os": "linux", "cpu": "x64" }, "sha512-eedC/AMCL2cvwhtPnmRlLHKXuwBmD7o2r+Kb+I0krg4PlQejR9y6O1oKqdLko5vFaWe2A8/rQORKGXE+We3y4Q=="],
+
+    "sherpa-onnx-node": ["sherpa-onnx-node@1.13.4", "http://nexus.17usoft.com/repository/npm-all/sherpa-onnx-node/-/sherpa-onnx-node-1.13.4.tgz", { "optionalDependencies": { "sherpa-onnx-darwin-arm64": "^1.13.4", "sherpa-onnx-darwin-x64": "^1.13.4", "sherpa-onnx-linux-arm64": "^1.13.4", "sherpa-onnx-linux-x64": "^1.13.4", "sherpa-onnx-win-ia32": "^1.13.4", "sherpa-onnx-win-x64": "^1.13.4" } }, "sha512-jHWWdY9f0dbvJpdsfR/C4WNhM57+jT9Os2RyC4/qUz8HKCtj2VYFmJ9s7tue9OCFRAmdoGBkgkqD6aBZ3I8BKw=="],
+
+    "sherpa-onnx-win-ia32": ["sherpa-onnx-win-ia32@1.13.5", "http://nexus.17usoft.com/repository/npm-all/sherpa-onnx-win-ia32/-/sherpa-onnx-win-ia32-1.13.5.tgz", { "os": "win32", "cpu": "ia32" }, "sha512-aQKTmzsvNyCMOoAs+Clx8Zsp05JSX37hVpts/yiO3+mUTXnbBIMAL3YgG49apz6JN/l/HCJBaEczXj3odOgS8A=="],
+
+    "sherpa-onnx-win-x64": ["sherpa-onnx-win-x64@1.13.5", "http://nexus.17usoft.com/repository/npm-all/sherpa-onnx-win-x64/-/sherpa-onnx-win-x64-1.13.5.tgz", { "os": "win32", "cpu": "x64" }, "sha512-r1lKWEbFDquVjiij72nhNpmPBeqG7V06ZGx1uL2zWXFCYXmkpqawN5iHdkugVhb8QfYZ8x2tx88eYGHGMn88aA=="],
+
     "siginfo": ["siginfo@2.0.0", "http://nexus.17usoft.com/repository/npm-all/siginfo/-/siginfo-2.0.0.tgz", {}, "sha512-ybx0WO1/8bSBLEWXZvEd7gMW3Sn3JFlW3TvX1nREbDLRNQNaeNN8WK0meBwPdAaOI7TtRRRJn/Es1zhrrCHu7g=="],
 
     "simple-concat": ["simple-concat@1.0.1", "http://nexus.17usoft.com/repository/npm-all/simple-concat/-/simple-concat-1.0.1.tgz", {}, "sha512-cSFtAPtRhljv69IK0hTVZQ+OfE9nePi/rtJmw5UjHeVyVroEqJXP1sFztKUy1qU+xvz3u/sfYJLa947b7nAN2Q=="],
@@ -641,6 +673,8 @@
     "why-is-node-running": ["why-is-node-running@2.3.0", "http://nexus.17usoft.com/repository/npm-all/why-is-node-running/-/why-is-node-running-2.3.0.tgz", { "dependencies": { "siginfo": "^2.0.0", "stackback": "0.0.2" }, "bin": { "why-is-node-running": "cli.js" } }, "sha512-hUrmaWBdVDcxvYqnyh09zunKzROWjbZTiNy8dBEjkS7ehEDQibXJ7XvlmtbwuTclUiIyN+CyXQD4Vmko8fNm8w=="],
 
     "wrappy": ["wrappy@1.0.2", "http://nexus.17usoft.com/repository/npm-all/wrappy/-/wrappy-1.0.2.tgz", {}, "sha512-l4Sp/DRseor9wL6EvV2+TuQn63dMkPjZ/sp9XkghTEbV9KlPS1xUsZ3u7/IQO4wxtcFB4bgpQPRcR3QCvezPcQ=="],
+
+    "ws": ["ws@8.21.3", "http://nexus.17usoft.com/repository/npm-all/ws/-/ws-8.21.3.tgz", { "peerDependencies": { "bufferutil": "^4.0.1", "utf-8-validate": ">=5.0.2" }, "optionalPeers": ["bufferutil", "utf-8-validate"] }, "sha512-201TZ/kPWxoPr/OKWjquZR1SWKXcvxdH+e1xrx89b3YbmzLMFCLfnaG1HFIgWzJOEWZ7MvpK++odZufgYR50Rw=="],
 
     "yallist": ["yallist@5.0.0", "http://nexus.17usoft.com/repository/npm-all/yallist/-/yallist-5.0.0.tgz", {}, "sha512-YgvUTfwqyc7UXVMrB+SImsVYSmTS8X/tSrtdNZMImM+n7+QTriRXyXim0mBrTXNeqzVF0KWGgHPeiyViFFrNDw=="],
 
