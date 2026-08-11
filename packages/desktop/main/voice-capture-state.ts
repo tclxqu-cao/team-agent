@@ -87,3 +87,33 @@ export function parseWakeTranscriptLine(
 export function parseWakeControlLine(line: string): "barge-in" | null {
   return line === "BARGE_IN" ? "barge-in" : null;
 }
+
+export function routeVoiceServiceResult(
+  current: { sessionId: string; generation: number; lastFinalUtteranceId: number },
+  event: {
+    type: "partial" | "final";
+    sessionId: string;
+    generation: number;
+    utteranceId?: number;
+  },
+): { action: "ignore" | "partial" | "final"; lastFinalUtteranceId: number } {
+  if (event.sessionId !== current.sessionId || event.generation !== current.generation) {
+    return { action: "ignore", lastFinalUtteranceId: current.lastFinalUtteranceId };
+  }
+  if (event.type === "partial") {
+    return { action: "partial", lastFinalUtteranceId: current.lastFinalUtteranceId };
+  }
+  if (!Number.isSafeInteger(event.utteranceId)
+    || (event.utteranceId as number) <= current.lastFinalUtteranceId) {
+    return { action: "ignore", lastFinalUtteranceId: current.lastFinalUtteranceId };
+  }
+  return { action: "final", lastFinalUtteranceId: event.utteranceId as number };
+}
+
+export function shouldAcceptTtsPlayback(
+  resultGeneration: number,
+  currentGeneration: number,
+  speaking: boolean,
+): boolean {
+  return speaking && resultGeneration === currentGeneration;
+}

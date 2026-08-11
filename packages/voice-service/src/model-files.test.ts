@@ -37,7 +37,7 @@ describe("findTtsModelFiles", () => {
       model: join(dir, "model.onnx"),
       tokens: join(dir, "tokens.txt"),
       lexicon: join(dir, "lexicon.txt"),
-      dataDir: join(dir, "dict"),
+      dictDir: join(dir, "dict"),
     });
   });
 });

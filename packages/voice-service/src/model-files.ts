@@ -12,7 +12,7 @@ export interface TtsModelFiles {
   model: string;
   tokens: string;
   lexicon: string;
-  dataDir: string;
+  dictDir: string;
 }
 
 export function findAsrModelFiles(modelDir: string): AsrModelFiles {
@@ -47,7 +47,7 @@ export function findTtsModelFiles(modelDir: string): TtsModelFiles {
     model: resolve(dir, "model.onnx"),
     tokens: resolve(dir, "tokens.txt"),
     lexicon: resolve(dir, "lexicon.txt"),
-    dataDir: resolve(dir, "dict"),
+    dictDir: resolve(dir, "dict"),
   };
   const missing = Object.entries(required)
     .filter(([, path]) => !existsSync(path))

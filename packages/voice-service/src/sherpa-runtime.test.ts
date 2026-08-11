@@ -57,14 +57,15 @@ describe("sherpa runtime configuration", () => {
       model: "/tts/model.onnx",
       tokens: "/tts/tokens.txt",
       lexicon: "/tts/lexicon.txt",
-      dataDir: "/tts/dict",
+      dictDir: "/tts/dict",
     })).toEqual({
       model: {
         vits: {
           model: "/tts/model.onnx",
           tokens: "/tts/tokens.txt",
           lexicon: "/tts/lexicon.txt",
-          dataDir: "/tts/dict",
+          dataDir: "",
+          dictDir: "/tts/dict",
         },
       },
       maxNumSentences: 1,

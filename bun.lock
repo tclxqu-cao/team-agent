@@ -24,9 +24,11 @@
       "version": "0.1.0",
       "dependencies": {
         "@agent/core": "*",
+        "ws": "^8.18.0",
         "zustand": "^4.5.0",
       },
       "devDependencies": {
+        "@types/ws": "^8.5.13",
         "@vitejs/plugin-react": "^4.3.0",
         "electron": "32.3.3",
         "react": "^18.3.0",

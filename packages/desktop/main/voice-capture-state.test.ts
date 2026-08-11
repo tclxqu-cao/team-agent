@@ -191,3 +191,55 @@ describe("native barge-in recording", () => {
     );
   });
 });
+
+describe("routeVoiceServiceResult", () => {
+  const routeVoiceServiceResult = (voiceState as unknown as {
+    routeVoiceServiceResult?: (
+      current: { sessionId: string; generation: number; lastFinalUtteranceId: number },
+      event: { type: "partial" | "final"; sessionId: string; generation: number; utteranceId?: number },
+    ) => { action: "ignore" | "partial" | "final"; lastFinalUtteranceId: number };
+  }).routeVoiceServiceResult;
+
+  it("rejects stale session and generation results", () => {
+    const current = { sessionId: "voice-2", generation: 9, lastFinalUtteranceId: 1 };
+    expect(typeof routeVoiceServiceResult).toBe("function");
+    expect(routeVoiceServiceResult?.(current, {
+      type: "partial", sessionId: "voice-1", generation: 9,
+    })).toEqual({ action: "ignore", lastFinalUtteranceId: 1 });
+    expect(routeVoiceServiceResult?.(current, {
+      type: "final", sessionId: "voice-2", generation: 8, utteranceId: 2,
+    })).toEqual({ action: "ignore", lastFinalUtteranceId: 1 });
+  });
+
+  it("submits each later utterance once for multi-turn conversation", () => {
+    let current = { sessionId: "voice-2", generation: 9, lastFinalUtteranceId: 0 };
+    const first = routeVoiceServiceResult?.(current, {
+      type: "final", sessionId: "voice-2", generation: 9, utteranceId: 1,
+    });
+    expect(first).toEqual({ action: "final", lastFinalUtteranceId: 1 });
+    current = { ...current, lastFinalUtteranceId: first?.lastFinalUtteranceId ?? 0 };
+    expect(routeVoiceServiceResult?.(current, {
+      type: "final", sessionId: "voice-2", generation: 9, utteranceId: 1,
+    })).toEqual({ action: "ignore", lastFinalUtteranceId: 1 });
+    expect(routeVoiceServiceResult?.(current, {
+      type: "final", sessionId: "voice-2", generation: 9, utteranceId: 2,
+    })).toEqual({ action: "final", lastFinalUtteranceId: 2 });
+  });
+});
+
+describe("shouldAcceptTtsPlayback", () => {
+  const shouldAcceptTtsPlayback = (voiceState as unknown as {
+    shouldAcceptTtsPlayback?: (
+      resultGeneration: number,
+      currentGeneration: number,
+      speaking: boolean,
+    ) => boolean;
+  }).shouldAcceptTtsPlayback;
+
+  it("rejects synthesized audio after barge-in or a newer reply", () => {
+    expect(typeof shouldAcceptTtsPlayback).toBe("function");
+    expect(shouldAcceptTtsPlayback?.(4, 4, true)).toBe(true);
+    expect(shouldAcceptTtsPlayback?.(3, 4, true)).toBe(false);
+    expect(shouldAcceptTtsPlayback?.(4, 4, false)).toBe(false);
+  });
+});

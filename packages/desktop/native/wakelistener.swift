@@ -17,11 +17,87 @@ import AVFoundation
 import Darwin
 
 let localeArg = CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : "zh-CN"
-let recognitionMode = CommandLine.arguments.count > 2 ? CommandLine.arguments[2] : "wake"
+let recognitionModeArg = CommandLine.arguments.count > 2 ? CommandLine.arguments[2] : "wake"
+let pcmSelfTest = recognitionModeArg == "--pcm-self-test"
+let externalAsr = recognitionModeArg.hasPrefix("external-")
+let recognitionMode = externalAsr
+    ? String(recognitionModeArg.dropFirst("external-".count))
+    : recognitionModeArg
+let binaryPcmOutput = externalAsr || pcmSelfTest
+let pcmOutputQueue = DispatchQueue(label: "customer-agent.voice.pcm-output")
 
 func emit(_ s: String) {
-    print(s)
-    fflush(stdout)
+    if binaryPcmOutput {
+        FileHandle.standardError.write(Data((s + "\n").utf8))
+    } else {
+        print(s)
+        fflush(stdout)
+    }
+}
+
+func writePcm(_ data: Data) {
+    FileHandle.standardOutput.write(data)
+}
+
+func convertTo16kMono(
+    _ buffer: AVAudioPCMBuffer,
+    converter: AVAudioConverter,
+    outputFormat: AVAudioFormat
+) -> Data? {
+    let ratio = outputFormat.sampleRate / buffer.format.sampleRate
+    let capacity = AVAudioFrameCount(ceil(Double(buffer.frameLength) * ratio) + 32)
+    guard let output = AVAudioPCMBuffer(pcmFormat: outputFormat, frameCapacity: capacity) else {
+        return nil
+    }
+    var supplied = false
+    var conversionError: NSError?
+    let status = converter.convert(to: output, error: &conversionError) { _, inputStatus in
+        if supplied {
+            inputStatus.pointee = .noDataNow
+            return nil
+        }
+        supplied = true
+        inputStatus.pointee = .haveData
+        return buffer
+    }
+    guard status != .error,
+          conversionError == nil,
+          output.frameLength > 0,
+          let channel = output.floatChannelData?[0] else {
+        return nil
+    }
+    return Data(bytes: channel, count: Int(output.frameLength) * MemoryLayout<Float>.size)
+}
+
+func runPcmSelfTest() {
+    guard let inputFormat = AVAudioFormat(
+        commonFormat: .pcmFormatFloat32,
+        sampleRate: 48_000,
+        channels: 2,
+        interleaved: false
+    ), let outputFormat = AVAudioFormat(
+        commonFormat: .pcmFormatFloat32,
+        sampleRate: 16_000,
+        channels: 1,
+        interleaved: false
+    ), let converter = AVAudioConverter(from: inputFormat, to: outputFormat),
+       let input = AVAudioPCMBuffer(pcmFormat: inputFormat, frameCapacity: 4_800) else {
+        emit("ERROR pcm-self-test-format")
+        exit(1)
+    }
+    input.frameLength = 4_800
+    for channelIndex in 0..<Int(inputFormat.channelCount) {
+        guard let channel = input.floatChannelData?[channelIndex] else { continue }
+        for frame in 0..<Int(input.frameLength) {
+            channel[frame] = sin(Float(frame) * 2 * Float.pi * 440 / 48_000)
+        }
+    }
+    guard let data = convertTo16kMono(input, converter: converter, outputFormat: outputFormat) else {
+        emit("ERROR pcm-self-test-convert")
+        exit(1)
+    }
+    emit("READY pcm-self-test")
+    writePcm(data)
 }
 
 let wakeBias = [
@@ -157,10 +233,12 @@ func monitorRecording(_ expectedCycle: Int) {
 }
 
 func startCycle() {
-    guard let recognizer = recognizer, recognizer.isAvailable else {
-        emit("ERROR recognizer-unavailable")
-        DispatchQueue.global().asyncAfter(deadline: .now() + 2) { startCycle() }
-        return
+    if !externalAsr {
+        guard let recognizer = recognizer, recognizer.isAvailable else {
+            emit("ERROR recognizer-unavailable")
+            DispatchQueue.global().asyncAfter(deadline: .now() + 2) { startCycle() }
+            return
+        }
     }
     let my = cycle
 
@@ -187,15 +265,34 @@ func startCycle() {
         return
     }
 
-    let url = FileManager.default.temporaryDirectory
-        .appendingPathComponent("customer-agent-wake-\(ProcessInfo.processInfo.processIdentifier)-\(my).caf")
-    do {
-        recordingFile = try AVAudioFile(forWriting: url, settings: format.settings)
-        recordingURL = url
-    } catch {
-        emit("ERROR recording-file \(error)")
-        restart(after: 2)
-        return
+    var pcmConverter: AVAudioConverter?
+    var pcmFormat: AVAudioFormat?
+    if externalAsr {
+        pcmFormat = AVAudioFormat(
+            commonFormat: .pcmFormatFloat32,
+            sampleRate: 16_000,
+            channels: 1,
+            interleaved: false
+        )
+        if let target = pcmFormat {
+            pcmConverter = AVAudioConverter(from: format, to: target)
+        }
+        guard pcmFormat != nil, pcmConverter != nil else {
+            emit("ERROR pcm-converter")
+            restart(after: 2)
+            return
+        }
+    } else {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("customer-agent-wake-\(ProcessInfo.processInfo.processIdentifier)-\(my).caf")
+        do {
+            recordingFile = try AVAudioFile(forWriting: url, settings: format.settings)
+            recordingURL = url
+        } catch {
+            emit("ERROR recording-file \(error)")
+            restart(after: 2)
+            return
+        }
     }
 
     input.installTap(onBus: 0, bufferSize: 1024, format: format) { buffer, _ in
@@ -244,7 +341,12 @@ func startCycle() {
         } else if recognitionMode == "barge-in" && !speechDetected {
             speechCandidateStartedAt = 0
         }
-        try? recordingFile?.write(from: buffer)
+        if externalAsr, let converter = pcmConverter, let target = pcmFormat,
+           let data = convertTo16kMono(buffer, converter: converter, outputFormat: target) {
+            pcmOutputQueue.async { writePcm(data) }
+        } else {
+            try? recordingFile?.write(from: buffer)
+        }
     }
 
     engine.prepare()
@@ -256,40 +358,66 @@ func startCycle() {
         return
     }
 
-    // Live buffer recognition is unreliable on the target macOS build. Record
-    // until post-speech silence so an utterance is not cut at a fixed boundary.
-    monitorRecording(my)
+    if !externalAsr {
+        // Native live-buffer recognition is unreliable on the target macOS build.
+        monitorRecording(my)
+    }
 }
 
 func begin() {
-    recognizer = SFSpeechRecognizer(locale: Locale(identifier: localeArg))
-    signal(SIGUSR1, SIG_IGN)
-    let source = DispatchSource.makeSignalSource(signal: SIGUSR1, queue: .main)
-    source.setEventHandler { finishRecording(cycle) }
-    source.resume()
-    finishSignalSource = source
+    if !externalAsr {
+        recognizer = SFSpeechRecognizer(locale: Locale(identifier: localeArg))
+        signal(SIGUSR1, SIG_IGN)
+        let source = DispatchSource.makeSignalSource(signal: SIGUSR1, queue: .main)
+        source.setEventHandler { finishRecording(cycle) }
+        source.resume()
+        finishSignalSource = source
+    }
     emit("READY")
     heartbeat()
     startCycle()
 }
 
-switch SFSpeechRecognizer.authorizationStatus() {
-case .authorized:
-    begin()
-case .notDetermined:
-    // Triggers the system prompt (attributed to the host Electron app).
-    SFSpeechRecognizer.requestAuthorization { status in
-        DispatchQueue.main.async {
-            guard status == .authorized else {
-                emit("ERROR speech-auth \(status.rawValue)")
-                exit(2)
+if pcmSelfTest {
+    runPcmSelfTest()
+    exit(0)
+} else if externalAsr {
+    switch AVCaptureDevice.authorizationStatus(for: .audio) {
+    case .authorized:
+        begin()
+    case .notDetermined:
+        AVCaptureDevice.requestAccess(for: .audio) { granted in
+            DispatchQueue.main.async {
+                guard granted else {
+                    emit("ERROR mic-auth-denied")
+                    exit(3)
+                }
+                begin()
             }
-            begin()
         }
+    default:
+        emit("ERROR mic-auth-denied")
+        exit(3)
     }
-default:
-    emit("ERROR speech-auth-denied")
-    exit(2)
+} else {
+    switch SFSpeechRecognizer.authorizationStatus() {
+    case .authorized:
+        begin()
+    case .notDetermined:
+        // Triggers the system prompt (attributed to the host Electron app).
+        SFSpeechRecognizer.requestAuthorization { status in
+            DispatchQueue.main.async {
+                guard status == .authorized else {
+                    emit("ERROR speech-auth \(status.rawValue)")
+                    exit(2)
+                }
+                begin()
+            }
+        }
+    default:
+        emit("ERROR speech-auth-denied")
+        exit(2)
+    }
 }
 
 dispatchMain()
