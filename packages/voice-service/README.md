@@ -26,6 +26,7 @@ node packages/voice-service/dist/main.js
 ```
 
 The default endpoint is `http://127.0.0.1:17863`. Electron launches this same process automatically when no remote URL is configured.
+The managed service must run with Node rather than Electron's `ELECTRON_RUN_AS_NODE` mode because sherpa TTS returns N-API external buffers. Set `VOICE_SERVICE_NODE_BINARY` when Node is not available on `PATH` or in a standard Homebrew location. Packaged builds can bundle it at `resources/voice-service/node`.
 
 ## Deploy Remotely
 
@@ -51,6 +52,6 @@ If the remote service is unavailable, the desktop tries its managed localhost se
 
 ## Protocol
 
-Connect to `WS /v1/asr`, send a JSON `start` control, then binary mono 16 kHz float32 little-endian PCM frames. The server emits `ready`, `partial`, and `final` JSON events. `reset`, `finish`, and `stop` controls carry the same `sessionId` and `generation`.
+Connect to `WS /v1/asr`, send a JSON `start` control, then binary mono 16 kHz float32 little-endian PCM frames. The server emits `ready`, `partial`, `final`, and `finished` JSON events. `finished` acknowledges every explicit `finish`, including recordings with no recognized text. `reset`, `finish`, and `stop` controls carry the same `sessionId` and `generation`.
 
 Send `POST /v1/tts` with `sessionId`, `generation`, `text`, optional `voice`, and optional `speed`. The response is an IEEE-float WAV and includes `X-Voice-Generation`.

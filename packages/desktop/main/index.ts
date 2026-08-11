@@ -18,6 +18,7 @@ import {
   isWakeMatch,
   parseWakeControlLine,
   parseWakeTranscriptLine,
+  prepareTtsListening,
   replaceWakeCommandSuffix,
   routeVoiceServiceResult,
   shouldFinalizeVoiceCapture,
@@ -27,7 +28,12 @@ import {
   shouldRestartWakeListener,
 } from "./voice-capture-state.js";
 import { VoiceServiceClient, type VoiceServiceEvent } from "./voice-service-client.js";
-import { findVoiceServiceEntry, VoiceServiceManager, type VoiceProvider } from "./voice-service-manager.js";
+import {
+  findVoiceServiceEntry,
+  findVoiceServiceRuntime,
+  VoiceServiceManager,
+  type VoiceProvider,
+} from "./voice-service-manager.js";
 
 // Suppress EPIPE errors on stdout/stderr (e.g., when output is piped to `head`)
 // Without this, broken pipes cause an uncaught exception that crashes the main process.
@@ -57,6 +63,11 @@ const voiceServiceManager = new VoiceServiceManager({
   localUrl: `http://127.0.0.1:${voiceServicePort}`,
   localToken: null,
   serviceEntry: findVoiceServiceEntry(app.getAppPath(), process.resourcesPath),
+  runtimeExecutable: findVoiceServiceRuntime({
+    explicit: process.env.VOICE_SERVICE_NODE_BINARY?.trim() || null,
+    pathEnv: process.env.PATH,
+    resourcesPath: process.resourcesPath,
+  }),
   cwd: voiceServiceCwd,
   env: {
     VOICE_ASR_MODEL_DIR: process.env.VOICE_ASR_MODEL_DIR
@@ -303,6 +314,16 @@ async function launchWakeListener(
         generation: asrSessionState.generation,
         mode,
       }, (event: VoiceServiceEvent) => {
+        if (event.type === "finished") {
+          if (event.sessionId !== asrSessionState.sessionId
+            || event.generation !== asrSessionState.generation) return;
+          if (dictationActive) {
+            dictationActive = false;
+            stopWakeProc();
+            if (wakeDesired) void launchWakeListener();
+          }
+          return;
+        }
         const routed = routeVoiceServiceResult(asrSessionState, event);
         if (routed.action === "ignore") return;
         asrSessionState.lastFinalUtteranceId = routed.lastFinalUtteranceId;
@@ -324,6 +345,7 @@ async function launchWakeListener(
   wakeProc = proc;
   wakeProcMode = mode;
   wakeVoiceClient = useExternalAsr ? serviceClient : null;
+  console.warn("[wake] helper spawned", { pid: proc.pid, mode, externalAsr: useExternalAsr });
   // The Swift binary prints the protocol to stdout; JXA's console.log goes
   // to stderr. Parse both streams the same way.
   let buf = "";
@@ -604,7 +626,7 @@ function endConversation(): void {
   if (conversationTimer) { clearTimeout(conversationTimer); conversationTimer = null; }
 }
 
-ipcMain.handle("tts:speak", (_event, text: string) => {
+ipcMain.handle("tts:speak", async (_event, text: string) => {
   const clean = (text || "")
     .replace(/[*_#`>~\[\](){}|]/g, " ")
     .replace(/\s+/g, " ")
@@ -619,15 +641,16 @@ ipcMain.handle("tts:speak", (_event, text: string) => {
   ttsSpeaking = true;
   const listeningMode = getTtsListeningMode(conversation);
   wakeSuspendedForTts = listeningMode === "suspended";
-  if (listeningMode === "barge-in") {
-    if (wakeProcMode !== "barge-in") {
-      stopWakeProc();
-      void launchWakeListener("barge-in");
-    }
-  } else {
-    stopWakeProc();
-  }
   mainWindow?.webContents.send("tts:start");
+  await prepareTtsListening(
+    listeningMode,
+    wakeProcMode,
+    stopWakeProc,
+    () => launchWakeListener("barge-in"),
+  );
+  if (!shouldAcceptTtsPlayback(generation, ttsGeneration, ttsSpeaking)) {
+    return { ok: false };
+  }
   void synthesizeAndPlay(clean, generation, controller);
   return { ok: true };
 });

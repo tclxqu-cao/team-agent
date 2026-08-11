@@ -31,6 +31,17 @@ class RecordingAsrEngine implements AsrEngineLike {
   }
 }
 
+class EmptyAsrEngine implements AsrEngineLike {
+  createSession(): AsrSession {
+    return {
+      acceptPcm: () => {},
+      finish: () => {},
+      reset: () => {},
+      close: () => {},
+    };
+  }
+}
+
 function nextJson(socket: WebSocket): Promise<Record<string, unknown>> {
   return new Promise((resolve, reject) => {
     socket.once("message", (data) => {
@@ -75,6 +86,43 @@ describe("voice service", () => {
       const finalPromise = nextJson(socket);
       socket.send(JSON.stringify({ type: "finish", sessionId: "voice-1", generation: 7 }));
       expect(await finalPromise).toEqual({ type: "final", sessionId: "voice-1", generation: 7, utteranceId: 1, text: "你好小智" });
+    } finally {
+      socket.close();
+      await service.close();
+    }
+  });
+
+  it("acknowledges finish even when ASR has no final text", async () => {
+    const service = await createVoiceServer({
+      host: "127.0.0.1",
+      port: 0,
+      token: null,
+      asrEngine: new EmptyAsrEngine(),
+    });
+    const socket = await openSocket(`${service.wsUrl}/v1/asr`);
+    try {
+      const readyPromise = nextJson(socket);
+      socket.send(JSON.stringify({
+        type: "start",
+        sessionId: "voice-empty",
+        generation: 8,
+        sampleRate: 16_000,
+        mode: "dictation",
+      }));
+      await readyPromise;
+
+      const finishedPromise = nextJson(socket);
+      socket.send(JSON.stringify({
+        type: "finish",
+        sessionId: "voice-empty",
+        generation: 8,
+      }));
+
+      await expect(finishedPromise).resolves.toEqual({
+        type: "finished",
+        sessionId: "voice-empty",
+        generation: 8,
+      });
     } finally {
       socket.close();
       await service.close();

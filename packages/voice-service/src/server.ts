@@ -176,7 +176,12 @@ export async function createVoiceServer(options: VoiceServerOptions): Promise<Vo
           throw new Error("control does not match the active ASR generation");
         }
         if (control.type === "reset") session.reset();
-        if (control.type === "finish") session.finish();
+        if (control.type === "finish") {
+          session.finish();
+          if (socket.readyState === WebSocket.OPEN) {
+            socket.send(JSON.stringify({ type: "finished", sessionId, generation }));
+          }
+        }
         if (control.type === "stop") {
           session.close();
           session = null;

@@ -2,7 +2,8 @@ import WebSocket from "ws";
 
 export type VoiceServiceEvent =
   | { type: "partial"; sessionId: string; generation: number; text: string }
-  | { type: "final"; sessionId: string; generation: number; utteranceId: number; text: string };
+  | { type: "final"; sessionId: string; generation: number; utteranceId: number; text: string }
+  | { type: "finished"; sessionId: string; generation: number };
 
 export function isCurrentVoiceEvent(
   event: VoiceServiceEvent,
@@ -66,7 +67,8 @@ export class VoiceServiceClient {
           resolve();
           return;
         }
-        if ((message.type === "partial" || message.type === "final") && this.current) {
+        if ((message.type === "partial" || message.type === "final" || message.type === "finished")
+          && this.current) {
           const event = message as unknown as VoiceServiceEvent;
           if (isCurrentVoiceEvent(event, this.current)) onEvent(event);
         }

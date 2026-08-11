@@ -161,6 +161,39 @@ describe("TTS barge-in state", () => {
   });
 });
 
+describe("prepareTtsListening", () => {
+  const prepareTtsListening = (voiceState as unknown as {
+    prepareTtsListening?: (
+      mode: "barge-in" | "suspended",
+      currentMode: "wake" | "dictation" | "barge-in" | null,
+      stop: () => void,
+      launch: () => Promise<unknown>,
+    ) => Promise<void>;
+  }).prepareTtsListening;
+
+  it("does not resolve until barge-in listening is ready", async () => {
+    let markReady = () => {};
+    const ready = new Promise<void>((resolve) => { markReady = resolve; });
+    const calls: string[] = [];
+
+    const preparing = prepareTtsListening?.(
+      "barge-in",
+      "wake",
+      () => calls.push("stop"),
+      async () => {
+        calls.push("launch");
+        await ready;
+      },
+    ).then(() => calls.push("ready"));
+
+    await Promise.resolve();
+    expect(calls).toEqual(["stop", "launch"]);
+    markReady();
+    await preparing;
+    expect(calls).toEqual(["stop", "launch", "ready"]);
+  });
+});
+
 describe("parseWakeControlLine", () => {
   const parseWakeControlLine = (voiceState as unknown as {
     parseWakeControlLine?: (line: string) => "barge-in" | null;

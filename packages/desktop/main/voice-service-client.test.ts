@@ -66,6 +66,7 @@ async function fixture(tts?: (signal: AbortSignal) => Promise<Buffer>) {
         socket.send(JSON.stringify({ type: "ready", sessionId, generation }));
       } else if (control.type === "finish") {
         socket.send(JSON.stringify({ type: "final", sessionId, generation, utteranceId: 1, text: "你好小智" }));
+        socket.send(JSON.stringify({ type: "finished", sessionId, generation }));
       }
     });
   });
@@ -102,6 +103,7 @@ describe("VoiceServiceClient", () => {
     expect(events).toEqual([
       { type: "partial", sessionId: "voice-1", generation: 7, text: "你好" },
       { type: "final", sessionId: "voice-1", generation: 7, utteranceId: 1, text: "你好小智" },
+      { type: "finished", sessionId: "voice-1", generation: 7 },
     ]);
     client.close();
   });

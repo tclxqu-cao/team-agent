@@ -52,6 +52,22 @@ export function shouldAcceptBargeIn(ttsSpeaking: boolean, conversation: boolean)
   return ttsSpeaking && conversation;
 }
 
+export async function prepareTtsListening(
+  mode: TtsListeningMode,
+  currentMode: "wake" | "dictation" | "barge-in" | null,
+  stop: () => void,
+  launchBargeIn: () => Promise<unknown>,
+): Promise<void> {
+  if (mode === "barge-in") {
+    if (currentMode !== "barge-in") {
+      stop();
+      await launchBargeIn();
+    }
+    return;
+  }
+  stop();
+}
+
 export function getVoiceCaptureSilenceTimeout(commandText: string): number {
   return commandText.trim().length > 0 ? 3000 : 8000;
 }

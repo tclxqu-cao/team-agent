@@ -1,10 +1,12 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import {
   VoiceServiceManager,
   findVoiceServiceEntry,
+  findVoiceServiceRuntime,
+  getLocalVoiceServiceLaunch,
   type ManagedVoiceProcess,
 } from "./voice-service-manager";
 
@@ -15,6 +17,7 @@ function options(overrides: Partial<ConstructorParameters<typeof VoiceServiceMan
     localUrl: "http://127.0.0.1:17863",
     localToken: null,
     serviceEntry: "/repo/packages/voice-service/dist/main.js",
+    runtimeExecutable: "/opt/homebrew/bin/node",
     cwd: "/repo",
     env: {},
     ...overrides,
@@ -66,5 +69,34 @@ describe("findVoiceServiceEntry", () => {
     mkdirSync(desktop, { recursive: true });
     writeFileSync(entry, "");
     expect(findVoiceServiceEntry(desktop, "/Applications/App/Contents/Resources")).toBe(entry);
+  });
+});
+
+describe("local voice service runtime", () => {
+  it("finds a Node executable from PATH", () => {
+    const root = mkdtempSync(join(tmpdir(), "voice-runtime-"));
+    const blockedBin = join(root, "blocked-bin");
+    const bin = join(root, "executable-bin");
+    const blockedNode = join(blockedBin, "node");
+    const node = join(bin, "node");
+    mkdirSync(blockedBin, { recursive: true });
+    mkdirSync(bin, { recursive: true });
+    writeFileSync(blockedNode, "");
+    writeFileSync(node, "");
+    chmodSync(node, 0o755);
+
+    expect(findVoiceServiceRuntime({
+      explicit: null,
+      pathEnv: `${blockedBin}:${bin}`,
+      resourcesPath: join(root, "resources"),
+    })).toBe(node);
+  });
+
+  it("launches the service with Node rather than Electron run-as-node", () => {
+    const launch = getLocalVoiceServiceLaunch(options());
+
+    expect(launch.command).toBe("/opt/homebrew/bin/node");
+    expect(launch.args).toEqual(["/repo/packages/voice-service/dist/main.js"]);
+    expect(launch.env.ELECTRON_RUN_AS_NODE).toBeUndefined();
   });
 });

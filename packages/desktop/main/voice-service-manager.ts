@@ -1,6 +1,6 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import { existsSync } from "node:fs";
-import { join } from "node:path";
+import { accessSync, constants, existsSync } from "node:fs";
+import { delimiter, join } from "node:path";
 import { VoiceServiceClient } from "./voice-service-client.js";
 
 export type ManagedVoiceProcess = Pick<ChildProcess, "kill" | "once">;
@@ -18,14 +18,65 @@ export function findVoiceServiceEntry(appPath: string, resourcesPath: string): s
   ].find((candidate) => existsSync(candidate)) ?? null;
 }
 
-interface ManagerOptions {
+export function findVoiceServiceRuntime(options: {
+  explicit: string | null;
+  pathEnv: string | undefined;
+  resourcesPath: string;
+}): string | null {
+  const isExecutable = (candidate: string | null): candidate is string => {
+    if (!candidate) return false;
+    try {
+      accessSync(candidate, constants.X_OK);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  const fromPath = (options.pathEnv ?? "")
+    .split(delimiter)
+    .filter(Boolean)
+    .map((directory) => join(directory, "node"));
+  return [
+    options.explicit,
+    join(options.resourcesPath, "voice-service", "node"),
+    ...fromPath,
+    "/opt/homebrew/bin/node",
+    "/usr/local/bin/node",
+  ].find(isExecutable) ?? null;
+}
+
+export interface ManagerOptions {
   remoteUrl: string | null;
   remoteToken: string | null;
   localUrl: string;
   localToken: string | null;
   serviceEntry: string | null;
+  runtimeExecutable: string | null;
   cwd: string;
   env: Record<string, string | undefined>;
+}
+
+export function getLocalVoiceServiceLaunch(options: ManagerOptions): {
+  command: string;
+  args: string[];
+  cwd: string;
+  env: NodeJS.ProcessEnv;
+} {
+  if (!options.serviceEntry) throw new Error("voice service entry is unavailable");
+  if (!options.runtimeExecutable) throw new Error("voice service Node runtime is unavailable");
+  const endpoint = new URL(options.localUrl);
+  return {
+    command: options.runtimeExecutable,
+    args: [options.serviceEntry],
+    cwd: options.cwd,
+    env: {
+      ...process.env,
+      ...options.env,
+      VOICE_SERVICE_HOST: endpoint.hostname,
+      VOICE_SERVICE_PORT: endpoint.port || "17863",
+      ...(options.localToken ? { VOICE_SERVICE_TOKEN: options.localToken } : {}),
+    },
+  };
 }
 
 interface ManagerDependencies {
@@ -60,18 +111,10 @@ export class VoiceServiceManager {
     this.dependencies = dependencies ?? {
       probe: defaultProbe,
       startLocal: () => {
-        if (!options.serviceEntry) throw new Error("voice service entry is unavailable");
-        const endpoint = new URL(options.localUrl);
-        return spawn(process.execPath, [options.serviceEntry], {
-          cwd: options.cwd,
-          env: {
-            ...process.env,
-            ...options.env,
-            ELECTRON_RUN_AS_NODE: "1",
-            VOICE_SERVICE_HOST: endpoint.hostname,
-            VOICE_SERVICE_PORT: endpoint.port || "17863",
-            ...(options.localToken ? { VOICE_SERVICE_TOKEN: options.localToken } : {}),
-          },
+        const launch = getLocalVoiceServiceLaunch(options);
+        return spawn(launch.command, launch.args, {
+          cwd: launch.cwd,
+          env: launch.env,
           stdio: ["ignore", "pipe", "pipe"],
         });
       },
@@ -96,12 +139,20 @@ export class VoiceServiceManager {
       });
       return { kind: "service", source: "local", client: this.client };
     }
-    if (!this.options.serviceEntry) return { kind: "native" };
+    if (!this.options.serviceEntry || !this.options.runtimeExecutable) return { kind: "native" };
 
     if (!this.managedProcess) {
       this.managedProcess = this.dependencies.startLocal();
       const launched = this.managedProcess;
-      launched.once("exit", () => {
+      console.warn("[voice] managed local service started", { pid: "pid" in launched ? launched.pid : undefined });
+      const output = launched as ManagedVoiceProcess & {
+        stdout?: NodeJS.ReadableStream | null;
+        stderr?: NodeJS.ReadableStream | null;
+      };
+      output.stdout?.on("data", (chunk) => console.warn("[voice-service]", chunk.toString().trim()));
+      output.stderr?.on("data", (chunk) => console.warn("[voice-service:error]", chunk.toString().trim()));
+      launched.once("exit", (code, signal) => {
+        console.warn("[voice] managed local service exited", { code, signal });
         if (this.managedProcess === launched) this.managedProcess = null;
       });
     }
@@ -115,6 +166,7 @@ export class VoiceServiceManager {
       }
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
+    console.warn("[voice] managed local service readiness timed out; terminating it");
     this.managedProcess?.kill();
     this.managedProcess = null;
     return { kind: "native" };
@@ -123,6 +175,7 @@ export class VoiceServiceManager {
   close(): void {
     this.client?.close();
     this.client = null;
+    if (this.managedProcess) console.warn("[voice] application closing managed local service");
     this.managedProcess?.kill();
     this.managedProcess = null;
   }
