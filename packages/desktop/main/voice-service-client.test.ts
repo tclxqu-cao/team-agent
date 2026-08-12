@@ -87,11 +87,15 @@ async function fixture(tts?: (signal: AbortSignal) => Promise<Buffer>) {
   if (!address || typeof address === "string") throw new Error("missing fixture address");
   const service = {
     httpUrl: `http://127.0.0.1:${address.port}`,
+    disconnect() {
+      for (const client of websocketServer.clients) client.terminate();
+    },
     async close() {
       for (const client of websocketServer.clients) client.terminate();
       websocketServer.close();
+      const closed = once(server, "close");
       server.close();
-      await once(server, "close");
+      await closed;
     },
   };
   services.push(service);
@@ -135,6 +139,23 @@ describe("VoiceServiceClient", () => {
     expect(isCurrentVoiceEvent({ type: "partial", sessionId: "voice-1", generation: 9, text: "旧" }, current)).toBe(false);
     expect(isCurrentVoiceEvent({ type: "keyword", sessionId: "voice-2", generation: 9, keyword: "小智" }, current)).toBe(true);
     expect(isCurrentVoiceEvent({ type: "keyword", sessionId: "voice-2", generation: 8, keyword: "小智" }, current)).toBe(false);
+  });
+
+  it("reports an unexpected ASR disconnect after readiness", async () => {
+    const { service } = await fixture();
+    const client = new VoiceServiceClient({ baseUrl: service.httpUrl, token: "secret" });
+    const disconnects: Error[] = [];
+
+    await client.startAsr(
+      { sessionId: "voice-disconnect", generation: 10, mode: "wake", wakeWord: "小智" },
+      () => {},
+      (error) => disconnects.push(error),
+    );
+    service.disconnect();
+    await waitFor(() => disconnects.length === 1);
+
+    expect(disconnects[0].message).toBe("voice service ASR disconnected");
+    client.close();
   });
 
   it("requests generated WAV with auth and generation", async () => {

@@ -44,6 +44,20 @@ export function shouldRestartWakeListener(desired: boolean, suspended: boolean):
   return desired && !suspended;
 }
 
+export function shouldRearmIgnoredWakeKeyword(
+  windowVisible: boolean,
+  wakeDesired: boolean,
+): boolean {
+  return windowVisible && wakeDesired;
+}
+
+export function shouldInvalidateVoiceProvider<T extends object>(
+  active: T | null,
+  failed: T,
+): boolean {
+  return active === failed;
+}
+
 export function getTtsListeningMode(conversation: boolean): TtsListeningMode {
   return conversation ? "barge-in" : "suspended";
 }

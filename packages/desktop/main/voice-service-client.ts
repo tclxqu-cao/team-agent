@@ -31,6 +31,7 @@ export class VoiceServiceClient {
   startAsr(
     start: AsrStart,
     onEvent: (event: VoiceServiceEvent) => void,
+    onDisconnect?: (error: Error) => void,
   ): Promise<void> {
     this.closeAsr();
     this.current = start;
@@ -51,7 +52,13 @@ export class VoiceServiceClient {
       };
       socket.once("error", fail);
       socket.once("close", () => {
-        if (!this.ready) fail(new Error("voice service ASR closed before ready"));
+        if (!this.ready) {
+          fail(new Error("voice service ASR closed before ready"));
+          return;
+        }
+        if (this.socket === socket) {
+          onDisconnect?.(new Error("voice service ASR disconnected"));
+        }
       });
       socket.on("message", (data) => {
         let message: Record<string, unknown>;

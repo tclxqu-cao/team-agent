@@ -93,6 +93,33 @@ describe("shouldRestartWakeListener", () => {
   });
 });
 
+describe("shouldRearmIgnoredWakeKeyword", () => {
+  const shouldRearmIgnoredWakeKeyword = (voiceState as unknown as {
+    shouldRearmIgnoredWakeKeyword?: (windowVisible: boolean, wakeDesired: boolean) => boolean;
+  }).shouldRearmIgnoredWakeKeyword;
+
+  it("rearms KWS after a keyword is consumed while the window is visible", () => {
+    expect(typeof shouldRearmIgnoredWakeKeyword).toBe("function");
+    expect(shouldRearmIgnoredWakeKeyword?.(true, true)).toBe(true);
+    expect(shouldRearmIgnoredWakeKeyword?.(false, true)).toBe(false);
+    expect(shouldRearmIgnoredWakeKeyword?.(true, false)).toBe(false);
+  });
+});
+
+describe("shouldInvalidateVoiceProvider", () => {
+  const shouldInvalidateVoiceProvider = (voiceState as unknown as {
+    shouldInvalidateVoiceProvider?: (active: object | null, failed: object) => boolean;
+  }).shouldInvalidateVoiceProvider;
+
+  it("invalidates only the failed provider that is still cached", () => {
+    const active = {};
+    expect(typeof shouldInvalidateVoiceProvider).toBe("function");
+    expect(shouldInvalidateVoiceProvider?.(active, active)).toBe(true);
+    expect(shouldInvalidateVoiceProvider?.(active, {})).toBe(false);
+    expect(shouldInvalidateVoiceProvider?.(null, active)).toBe(false);
+  });
+});
+
 describe("getVoiceCaptureSilenceTimeout", () => {
   const getVoiceCaptureSilenceTimeout = (voiceState as unknown as {
     getVoiceCaptureSilenceTimeout?: (commandText: string) => number;

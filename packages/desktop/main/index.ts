@@ -24,6 +24,8 @@ import {
   shouldFinalizeVoiceCapture,
   shouldAcceptBargeIn,
   shouldAcceptTtsPlayback,
+  shouldInvalidateVoiceProvider,
+  shouldRearmIgnoredWakeKeyword,
   shouldRearmWakeOnlyCapture,
   shouldRestartWakeListener,
 } from "./voice-capture-state.js";
@@ -90,6 +92,12 @@ async function connectVoiceProvider(): Promise<VoiceProvider> {
       .finally(() => { voiceProviderPromise = null; });
   }
   return voiceProviderPromise;
+}
+
+function invalidateVoiceProvider(provider: VoiceProvider): void {
+  if (!shouldInvalidateVoiceProvider(activeVoiceProvider, provider)) return;
+  if (provider.kind === "service") provider.client.close();
+  activeVoiceProvider = null;
 }
 
 // Forward ALL agent events (including cron-fired runs) to the renderer.
@@ -335,7 +343,14 @@ async function launchWakeListener(
         if (routed.action === "ignore") return;
         asrSessionState.lastFinalUtteranceId = routed.lastFinalUtteranceId;
         if (routed.action === "keyword" && event.type === "keyword") {
-          if (mainWindow?.isVisible()) return;
+          if (shouldRearmIgnoredWakeKeyword(mainWindow?.isVisible() ?? false, wakeDesired)) {
+            console.warn("[wake] KWS keyword ignored while visible; rearming wake generation");
+            stopWakeProc();
+            setTimeout(() => {
+              if (wakeDesired && !wakeProc) void launchWakeListener("wake");
+            }, 100);
+            return;
+          }
           console.warn("[wake] *** MATCHED KWS keyword, showing window ***");
           if (mainWindow) {
             mainWindow.show();
@@ -348,9 +363,18 @@ async function launchWakeListener(
         }
         if (event.type !== "partial" && event.type !== "final") return;
         onLine(`${event.type === "final" ? "FINAL" : "TEXT"} ${event.text}`);
+      }, (error) => {
+        if (wakeVoiceClient !== serviceClient) return;
+        console.warn("[voice] service ASR disconnected; restarting provider:", error.message);
+        invalidateVoiceProvider(voiceProvider);
+        stopWakeProc();
+        setTimeout(() => {
+          if (wakeDesired && !wakeProc) void launchWakeListener(desiredWakeHelperMode());
+        }, 100);
       });
     } catch (error) {
       console.warn("[voice] service ASR unavailable, using native fallback:", error);
+      invalidateVoiceProvider(voiceProvider);
       serviceClient = null;
     }
   }
@@ -608,12 +632,13 @@ async function synthesizeAndPlay(
   generation: number,
   controller: AbortController,
 ): Promise<void> {
+  let provider: VoiceProvider | null = null;
   const useNativeFallback = () => {
     if (!shouldAcceptTtsPlayback(generation, ttsGeneration, ttsSpeaking)) return;
     attachTtsProcess(spawn("say", ["-v", "Tingting", text]), generation, null);
   };
   try {
-    const provider = await connectVoiceProvider();
+    provider = await connectVoiceProvider();
     if (provider.kind !== "service") {
       useNativeFallback();
       return;
@@ -636,6 +661,7 @@ async function synthesizeAndPlay(
     attachTtsProcess(spawn("afplay", [path]), generation, path);
   } catch (error) {
     if (controller.signal.aborted) return;
+    if (provider) invalidateVoiceProvider(provider);
     console.warn("[tts] voice service unavailable, using say fallback:", error);
     useNativeFallback();
   }
