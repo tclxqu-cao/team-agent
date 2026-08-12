@@ -229,8 +229,8 @@ describe("routeVoiceServiceResult", () => {
   const routeVoiceServiceResult = (voiceState as unknown as {
     routeVoiceServiceResult?: (
       current: { sessionId: string; generation: number; lastFinalUtteranceId: number },
-      event: { type: "partial" | "final"; sessionId: string; generation: number; utteranceId?: number },
-    ) => { action: "ignore" | "partial" | "final"; lastFinalUtteranceId: number };
+      event: { type: "keyword" | "partial" | "final"; sessionId: string; generation: number; utteranceId?: number },
+    ) => { action: "ignore" | "keyword" | "partial" | "final"; lastFinalUtteranceId: number };
   }).routeVoiceServiceResult;
 
   it("rejects stale session and generation results", () => {
@@ -257,6 +257,16 @@ describe("routeVoiceServiceResult", () => {
     expect(routeVoiceServiceResult?.(current, {
       type: "final", sessionId: "voice-2", generation: 9, utteranceId: 2,
     })).toEqual({ action: "final", lastFinalUtteranceId: 2 });
+  });
+
+  it("accepts only current keywords without changing final utterance deduplication", () => {
+    const current = { sessionId: "voice-2", generation: 9, lastFinalUtteranceId: 4 };
+    expect(routeVoiceServiceResult?.(current, {
+      type: "keyword", sessionId: "voice-2", generation: 9,
+    })).toEqual({ action: "keyword", lastFinalUtteranceId: 4 });
+    expect(routeVoiceServiceResult?.(current, {
+      type: "keyword", sessionId: "voice-2", generation: 8,
+    })).toEqual({ action: "ignore", lastFinalUtteranceId: 4 });
   });
 });
 

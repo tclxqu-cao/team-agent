@@ -107,17 +107,20 @@ export function parseWakeControlLine(line: string): "barge-in" | null {
 export function routeVoiceServiceResult(
   current: { sessionId: string; generation: number; lastFinalUtteranceId: number },
   event: {
-    type: "partial" | "final";
+    type: "keyword" | "partial" | "final";
     sessionId: string;
     generation: number;
     utteranceId?: number;
   },
-): { action: "ignore" | "partial" | "final"; lastFinalUtteranceId: number } {
+): { action: "ignore" | "keyword" | "partial" | "final"; lastFinalUtteranceId: number } {
   if (event.sessionId !== current.sessionId || event.generation !== current.generation) {
     return { action: "ignore", lastFinalUtteranceId: current.lastFinalUtteranceId };
   }
   if (event.type === "partial") {
     return { action: "partial", lastFinalUtteranceId: current.lastFinalUtteranceId };
+  }
+  if (event.type === "keyword") {
+    return { action: "keyword", lastFinalUtteranceId: current.lastFinalUtteranceId };
   }
   if (!Number.isSafeInteger(event.utteranceId)
     || (event.utteranceId as number) <= current.lastFinalUtteranceId) {

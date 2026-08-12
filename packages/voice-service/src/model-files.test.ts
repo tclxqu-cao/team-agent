@@ -2,7 +2,7 @@ import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { findAsrModelFiles, findTtsModelFiles } from "./model-files";
+import { findAsrModelFiles, findKwsModelFiles, findTtsModelFiles } from "./model-files";
 
 describe("findAsrModelFiles", () => {
   it("returns the four Zipformer files from a real directory", () => {
@@ -23,6 +23,71 @@ describe("findAsrModelFiles", () => {
     mkdirSync(join(dir, "nested"));
     writeFileSync(join(dir, "encoder.int8.onnx"), "encoder");
     expect(() => findAsrModelFiles(dir)).toThrow("decoder, joiner, tokens");
+  });
+});
+
+describe("findKwsModelFiles", () => {
+  it("prefers int8 KWS files and returns the keyword tokens", () => {
+    const dir = mkdtempSync(join(tmpdir(), "voice-kws-"));
+    for (const name of [
+      "encoder-epoch-12.onnx",
+      "encoder-epoch-12.int8.onnx",
+      "decoder-epoch-12.onnx",
+      "joiner-epoch-12.onnx",
+      "joiner-epoch-12.int8.onnx",
+      "tokens.txt",
+      "keywords.txt",
+    ]) {
+      writeFileSync(join(dir, name), name);
+    }
+    expect(findKwsModelFiles(dir)).toEqual({
+      encoder: join(dir, "encoder-epoch-12.int8.onnx"),
+      decoder: join(dir, "decoder-epoch-12.onnx"),
+      joiner: join(dir, "joiner-epoch-12.int8.onnx"),
+      tokens: join(dir, "tokens.txt"),
+      keywords: join(dir, "keywords.txt"),
+    });
+  });
+
+  it("does not mix components when the archive contains multiple epochs", () => {
+    const dir = mkdtempSync(join(tmpdir(), "voice-kws-"));
+    for (const name of [
+      "encoder-epoch-99-avg-1-chunk-16-left-64.int8.onnx",
+      "decoder-epoch-99-avg-1-chunk-16-left-64.onnx",
+      "joiner-epoch-99-avg-1-chunk-16-left-64.int8.onnx",
+      "encoder-epoch-12-avg-2-chunk-16-left-64.int8.onnx",
+      "decoder-epoch-12-avg-2-chunk-16-left-64.onnx",
+      "joiner-epoch-12-avg-2-chunk-16-left-64.int8.onnx",
+      "tokens.txt",
+      "keywords.txt",
+    ]) {
+      writeFileSync(join(dir, name), name);
+    }
+    expect(findKwsModelFiles(dir)).toMatchObject({
+      encoder: join(dir, "encoder-epoch-12-avg-2-chunk-16-left-64.int8.onnx"),
+      decoder: join(dir, "decoder-epoch-12-avg-2-chunk-16-left-64.onnx"),
+      joiner: join(dir, "joiner-epoch-12-avg-2-chunk-16-left-64.int8.onnx"),
+    });
+  });
+
+  it("rejects a directory without one complete matching model set", () => {
+    const dir = mkdtempSync(join(tmpdir(), "voice-kws-"));
+    for (const name of [
+      "encoder-epoch-99-avg-1.int8.onnx",
+      "decoder-epoch-12-avg-2.onnx",
+      "joiner-epoch-12-avg-2.int8.onnx",
+      "tokens.txt",
+      "keywords.txt",
+    ]) {
+      writeFileSync(join(dir, name), name);
+    }
+    expect(() => findKwsModelFiles(dir)).toThrow("matching encoder, decoder, joiner");
+  });
+
+  it("reports every missing KWS component", () => {
+    const dir = mkdtempSync(join(tmpdir(), "voice-kws-"));
+    writeFileSync(join(dir, "encoder.int8.onnx"), "encoder");
+    expect(() => findKwsModelFiles(dir)).toThrow("decoder, joiner, tokens, keywords");
   });
 });
 

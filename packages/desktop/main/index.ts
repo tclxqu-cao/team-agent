@@ -246,6 +246,12 @@ function finalizeCapture(): void {
       stopWakeProc();
       if (wakeDesired) launchWakeListener("wake");
     }, 0);
+  } else if (!ttsSpeaking && wakeProcMode === "wake" && wakeVoiceClient) {
+    setTimeout(() => {
+      if (ttsSpeaking || wakeProcMode !== "wake" || !wakeVoiceClient) return;
+      stopWakeProc();
+      if (wakeDesired) void launchWakeListener("wake");
+    }, 0);
   }
 }
 
@@ -313,6 +319,7 @@ async function launchWakeListener(
         sessionId: asrSessionState.sessionId,
         generation: asrSessionState.generation,
         mode,
+        ...(mode === "wake" ? { wakeWord: wakeWordCurrent } : {}),
       }, (event: VoiceServiceEvent) => {
         if (event.type === "finished") {
           if (event.sessionId !== asrSessionState.sessionId
@@ -327,6 +334,19 @@ async function launchWakeListener(
         const routed = routeVoiceServiceResult(asrSessionState, event);
         if (routed.action === "ignore") return;
         asrSessionState.lastFinalUtteranceId = routed.lastFinalUtteranceId;
+        if (routed.action === "keyword" && event.type === "keyword") {
+          if (mainWindow?.isVisible()) return;
+          console.warn("[wake] *** MATCHED KWS keyword, showing window ***");
+          if (mainWindow) {
+            mainWindow.show();
+            if (mainWindow.isMinimized()) mainWindow.restore();
+            mainWindow.focus();
+          }
+          mainWindow?.webContents.send("wake:trigger", event.keyword);
+          startCapture("", true);
+          return;
+        }
+        if (event.type !== "partial" && event.type !== "final") return;
         onLine(`${event.type === "final" ? "FINAL" : "TEXT"} ${event.text}`);
       });
     } catch (error) {

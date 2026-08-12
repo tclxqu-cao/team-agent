@@ -6,6 +6,7 @@ export interface AsrStartControl {
   generation: number;
   sampleRate: 16_000;
   mode: VoiceMode;
+  wakeWord?: string;
 }
 
 export interface AsrSimpleControl {
@@ -64,12 +65,16 @@ export function parseAsrControl(raw: string): AsrControl {
   if (input.mode !== "wake" && input.mode !== "dictation" && input.mode !== "barge-in") {
     throw new Error("mode is not supported");
   }
+  if (input.wakeWord !== undefined && (typeof input.wakeWord !== "string" || !input.wakeWord.trim())) {
+    throw new Error("wakeWord must be a non-empty string");
+  }
   return {
     type,
     sessionId: id,
     generation: gen,
     sampleRate: 16_000,
     mode: input.mode,
+    ...(typeof input.wakeWord === "string" ? { wakeWord: input.wakeWord.trim() } : {}),
   };
 }
 

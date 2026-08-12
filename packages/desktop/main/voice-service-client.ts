@@ -1,6 +1,7 @@
 import WebSocket from "ws";
 
 export type VoiceServiceEvent =
+  | { type: "keyword"; sessionId: string; generation: number; keyword: string }
   | { type: "partial"; sessionId: string; generation: number; text: string }
   | { type: "final"; sessionId: string; generation: number; utteranceId: number; text: string }
   | { type: "finished"; sessionId: string; generation: number };
@@ -13,7 +14,7 @@ export function isCurrentVoiceEvent(
 }
 
 type VoiceMode = "wake" | "dictation" | "barge-in";
-type AsrStart = { sessionId: string; generation: number; mode: VoiceMode };
+type AsrStart = { sessionId: string; generation: number; mode: VoiceMode; wakeWord?: string };
 
 export class VoiceServiceClient {
   private readonly baseUrl: string;
@@ -67,7 +68,7 @@ export class VoiceServiceClient {
           resolve();
           return;
         }
-        if ((message.type === "partial" || message.type === "final" || message.type === "finished")
+        if ((message.type === "keyword" || message.type === "partial" || message.type === "final" || message.type === "finished")
           && this.current) {
           const event = message as unknown as VoiceServiceEvent;
           if (isCurrentVoiceEvent(event, this.current)) onEvent(event);

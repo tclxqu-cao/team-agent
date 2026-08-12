@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
 import WebSocket from "ws";
 import type { AsrResultEvent, AsrSession } from "./asr-engine";
-import { createVoiceServer, type AsrEngineLike, type TtsEngineLike } from "./server";
+import type { KwsResultEvent, KwsSession } from "./kws-engine";
+import {
+  createVoiceServer,
+  type AsrEngineLike,
+  type KwsEngineLike,
+  type TtsEngineLike,
+} from "./server";
 
 class RecordingAsrEngine implements AsrEngineLike {
   sessions: Array<{ sessionId: string; generation: number; pcm: number[]; resets: number }> = [];
@@ -42,6 +48,27 @@ class EmptyAsrEngine implements AsrEngineLike {
   }
 }
 
+class RecordingKwsEngine implements KwsEngineLike {
+  sessions: Array<{ sessionId: string; generation: number; pcm: number[]; resets: number; closed: boolean }> = [];
+
+  createSession(
+    sessionId: string,
+    generation: number,
+    emit: (event: KwsResultEvent) => void,
+  ): KwsSession {
+    const state = { sessionId, generation, pcm: [] as number[], resets: 0, closed: false };
+    this.sessions.push(state);
+    return {
+      acceptPcm: (samples) => {
+        state.pcm.push(...samples);
+        emit({ type: "keyword", sessionId, generation, keyword: "小智" });
+      },
+      reset: () => { state.resets += 1; },
+      close: () => { state.closed = true; },
+    };
+  }
+}
+
 function nextJson(socket: WebSocket): Promise<Record<string, unknown>> {
   return new Promise((resolve, reject) => {
     socket.once("message", (data) => {
@@ -63,7 +90,7 @@ describe("voice service", () => {
     const service = await createVoiceServer({ host: "127.0.0.1", port: 0, token: null, asrEngine: new RecordingAsrEngine() });
     try {
       const response = await fetch(`${service.httpUrl}/health`);
-      expect(await response.json()).toEqual({ ready: true, asr: true, tts: false });
+      expect(await response.json()).toEqual({ ready: true, asr: true, kws: false, tts: false });
     } finally {
       await service.close();
     }
@@ -76,7 +103,12 @@ describe("voice service", () => {
     try {
       const readyPromise = nextJson(socket);
       socket.send(JSON.stringify({ type: "start", sessionId: "voice-1", generation: 7, sampleRate: 16_000, mode: "wake" }));
-      expect(await readyPromise).toEqual({ type: "ready", sessionId: "voice-1", generation: 7 });
+      expect(await readyPromise).toEqual({
+        type: "ready",
+        sessionId: "voice-1",
+        generation: 7,
+        strategy: "asr",
+      });
 
       const partialPromise = nextJson(socket);
       socket.send(Buffer.from(new Float32Array([0.25, -0.5]).buffer));
@@ -86,6 +118,133 @@ describe("voice service", () => {
       const finalPromise = nextJson(socket);
       socket.send(JSON.stringify({ type: "finish", sessionId: "voice-1", generation: 7 }));
       expect(await finalPromise).toEqual({ type: "final", sessionId: "voice-1", generation: 7, utteranceId: 1, text: "你好小智" });
+    } finally {
+      socket.close();
+      await service.close();
+    }
+  });
+
+  it("uses KWS for the default wake word then switches later PCM to ASR", async () => {
+    const asr = new RecordingAsrEngine();
+    const kws = new RecordingKwsEngine();
+    const service = await createVoiceServer({
+      host: "127.0.0.1",
+      port: 0,
+      token: null,
+      asrEngine: asr,
+      kwsEngine: kws,
+    });
+    const socket = await openSocket(`${service.wsUrl}/v1/asr`);
+    try {
+      const readyPromise = nextJson(socket);
+      socket.send(JSON.stringify({
+        type: "start",
+        sessionId: "voice-kws",
+        generation: 11,
+        sampleRate: 16_000,
+        mode: "wake",
+        wakeWord: "小智",
+      }));
+      expect(await readyPromise).toEqual({
+        type: "ready",
+        sessionId: "voice-kws",
+        generation: 11,
+        strategy: "kws",
+      });
+
+      const keywordPromise = nextJson(socket);
+      socket.send(Buffer.from(new Float32Array([0.1]).buffer));
+      expect(await keywordPromise).toEqual({
+        type: "keyword",
+        sessionId: "voice-kws",
+        generation: 11,
+        keyword: "小智",
+      });
+      expect(kws.sessions[0].pcm).toEqual(expect.arrayContaining([expect.closeTo(0.1)]));
+      expect(kws.sessions[0].closed).toBe(true);
+      expect(asr.sessions).toHaveLength(1);
+      expect(asr.sessions[0].pcm).toEqual([]);
+
+      const partialPromise = nextJson(socket);
+      socket.send(Buffer.from(new Float32Array([0.25]).buffer));
+      expect(await partialPromise).toEqual({
+        type: "partial",
+        sessionId: "voice-kws",
+        generation: 11,
+        text: "你好",
+      });
+      expect(asr.sessions[0].pcm).toEqual([0.25]);
+    } finally {
+      socket.close();
+      await service.close();
+    }
+  });
+
+  it.each([
+    ["custom wake word", new RecordingKwsEngine(), "小助手"],
+    ["missing KWS", undefined, "小智"],
+  ])("uses ASR strategy for %s", async (_name, kwsEngine, wakeWord) => {
+    const service = await createVoiceServer({
+      host: "127.0.0.1",
+      port: 0,
+      token: null,
+      asrEngine: new EmptyAsrEngine(),
+      kwsEngine,
+    });
+    const socket = await openSocket(`${service.wsUrl}/v1/asr`);
+    try {
+      const readyPromise = nextJson(socket);
+      socket.send(JSON.stringify({
+        type: "start",
+        sessionId: "voice-fallback",
+        generation: 3,
+        sampleRate: 16_000,
+        mode: "wake",
+        wakeWord,
+      }));
+      expect(await readyPromise).toEqual({
+        type: "ready",
+        sessionId: "voice-fallback",
+        generation: 3,
+        strategy: "asr",
+      });
+    } finally {
+      socket.close();
+      await service.close();
+    }
+  });
+
+  it("acknowledges finish while still waiting for KWS", async () => {
+    const service = await createVoiceServer({
+      host: "127.0.0.1",
+      port: 0,
+      token: null,
+      asrEngine: new EmptyAsrEngine(),
+      kwsEngine: new RecordingKwsEngine(),
+    });
+    const socket = await openSocket(`${service.wsUrl}/v1/asr`);
+    try {
+      const readyPromise = nextJson(socket);
+      socket.send(JSON.stringify({
+        type: "start",
+        sessionId: "voice-kws-finish",
+        generation: 4,
+        sampleRate: 16_000,
+        mode: "wake",
+        wakeWord: "小智",
+      }));
+      await readyPromise;
+      const finishedPromise = nextJson(socket);
+      socket.send(JSON.stringify({
+        type: "finish",
+        sessionId: "voice-kws-finish",
+        generation: 4,
+      }));
+      expect(await finishedPromise).toEqual({
+        type: "finished",
+        sessionId: "voice-kws-finish",
+        generation: 4,
+      });
     } finally {
       socket.close();
       await service.close();

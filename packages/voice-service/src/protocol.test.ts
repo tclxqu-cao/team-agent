@@ -9,12 +9,14 @@ describe("parseAsrControl", () => {
       generation: 7,
       sampleRate: 16_000,
       mode: "wake",
+      wakeWord: "小智",
     }))).toEqual({
       type: "start",
       sessionId: "voice-1",
       generation: 7,
       sampleRate: 16_000,
       mode: "wake",
+      wakeWord: "小智",
     });
   });
 
@@ -31,6 +33,7 @@ describe("parseAsrControl", () => {
     [{ type: "start", sessionId: "v", generation: -1, sampleRate: 16_000, mode: "wake" }, "generation"],
     [{ type: "start", sessionId: "v", generation: 1, sampleRate: 48_000, mode: "wake" }, "sampleRate"],
     [{ type: "start", sessionId: "v", generation: 1, sampleRate: 16_000, mode: "unknown" }, "mode"],
+    [{ type: "start", sessionId: "v", generation: 1, sampleRate: 16_000, mode: "wake", wakeWord: 1 }, "wakeWord"],
   ])("rejects invalid ASR control %#", (value, field) => {
     expect(() => parseAsrControl(JSON.stringify(value))).toThrow(String(field));
   });

@@ -1,6 +1,7 @@
 import { join, resolve } from "node:path";
 
 const ASR_MODEL = "sherpa-onnx-streaming-zipformer-zh-int8-2025-06-30";
+const KWS_MODEL = "sherpa-onnx-kws-zipformer-wenetspeech-3.3M-2024-01-01";
 const TTS_MODEL = "vits-melo-tts-zh_en";
 
 export interface VoiceServiceConfig {
@@ -8,6 +9,7 @@ export interface VoiceServiceConfig {
   port: number;
   token: string | null;
   asrModelDir: string;
+  kwsModelDir: string;
   ttsModelDir: string;
 }
 
@@ -32,6 +34,9 @@ export function resolveVoiceServiceConfig(
     asrModelDir: env.VOICE_ASR_MODEL_DIR
       ? resolve(env.VOICE_ASR_MODEL_DIR)
       : join(cwd, "packages/desktop/.agent-data/asr-models", ASR_MODEL),
+    kwsModelDir: env.VOICE_KWS_MODEL_DIR
+      ? resolve(env.VOICE_KWS_MODEL_DIR)
+      : join(cwd, "packages/desktop/.agent-data/kws-models", KWS_MODEL),
     ttsModelDir: env.VOICE_TTS_MODEL_DIR
       ? resolve(env.VOICE_TTS_MODEL_DIR)
       : join(cwd, "packages/desktop/.agent-data/tts-models", TTS_MODEL),

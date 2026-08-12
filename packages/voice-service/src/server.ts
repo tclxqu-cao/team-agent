@@ -1,7 +1,9 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { once } from "node:events";
+import type { Socket } from "node:net";
 import { WebSocket, WebSocketServer, type RawData } from "ws";
 import type { AsrResultEvent, AsrSession } from "./asr-engine.js";
+import type { KwsResultEvent, KwsSession } from "./kws-engine.js";
 import { parseAsrControl, parseTtsRequest, type TtsRequest } from "./protocol.js";
 
 export interface AsrEngineLike {
@@ -10,6 +12,14 @@ export interface AsrEngineLike {
     generation: number,
     emit: (event: AsrResultEvent) => void,
   ): AsrSession;
+}
+
+export interface KwsEngineLike {
+  createSession(
+    sessionId: string,
+    generation: number,
+    emit: (event: KwsResultEvent) => void,
+  ): KwsSession;
 }
 
 export interface TtsEngineLike {
@@ -30,6 +40,7 @@ interface VoiceServerOptions {
   port: number;
   token: string | null;
   asrEngine: AsrEngineLike;
+  kwsEngine?: KwsEngineLike;
   ttsEngine?: TtsEngineLike;
 }
 
@@ -116,7 +127,12 @@ export async function createVoiceServer(options: VoiceServerOptions): Promise<Vo
       return;
     }
     if (request.method === "GET" && request.url === "/health") {
-      sendJson(response, 200, { ready: true, asr: true, tts: Boolean(options.ttsEngine) });
+      sendJson(response, 200, {
+        ready: true,
+        asr: true,
+        kws: Boolean(options.kwsEngine),
+        tts: Boolean(options.ttsEngine),
+      });
       return;
     }
     if (request.method === "POST" && request.url === "/v1/tts") {
@@ -126,6 +142,12 @@ export async function createVoiceServer(options: VoiceServerOptions): Promise<Vo
     sendJson(response, 404, { error: "not-found" });
   });
   const websocketServer = new WebSocketServer({ noServer: true, maxPayload: MAX_PCM_FRAME_BYTES });
+  const sockets = new Set<Socket>();
+
+  httpServer.on("connection", (socket) => {
+    sockets.add(socket);
+    socket.once("close", () => sockets.delete(socket));
+  });
 
   httpServer.on("upgrade", (request, socket, head) => {
     if (request.url !== "/v1/asr") {
@@ -142,11 +164,19 @@ export async function createVoiceServer(options: VoiceServerOptions): Promise<Vo
   });
 
   websocketServer.on("connection", (socket) => {
-    let session: AsrSession | null = null;
+    let asrSession: AsrSession | null = null;
+    let kwsSession: KwsSession | null = null;
     let sessionId: string | null = null;
     let generation: number | null = null;
-    const emit = (event: AsrResultEvent) => {
+    const emit = (event: AsrResultEvent | KwsResultEvent) => {
       if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(event));
+    };
+    const hasSession = () => asrSession !== null || kwsSession !== null;
+    const closeSessions = () => {
+      kwsSession?.close();
+      kwsSession = null;
+      asrSession?.close();
+      asrSession = null;
     };
     const sendError = (code: string, message: string) => {
       if (socket.readyState === WebSocket.OPEN) {
@@ -156,6 +186,7 @@ export async function createVoiceServer(options: VoiceServerOptions): Promise<Vo
     socket.on("message", (data, isBinary) => {
       try {
         if (isBinary) {
+          const session = kwsSession ?? asrSession;
           if (!session) {
             sendError("not-started", "ASR start is required before audio");
             return;
@@ -165,33 +196,49 @@ export async function createVoiceServer(options: VoiceServerOptions): Promise<Vo
         }
         const control = parseAsrControl(data.toString());
         if (control.type === "start") {
-          if (session) throw new Error("ASR session is already started");
+          if (hasSession()) throw new Error("ASR session is already started");
           sessionId = control.sessionId;
           generation = control.generation;
-          session = options.asrEngine.createSession(sessionId, generation, emit);
-          socket.send(JSON.stringify({ type: "ready", sessionId, generation }));
+          const useKws = control.mode === "wake"
+            && control.wakeWord === "小智"
+            && options.kwsEngine !== undefined;
+          if (useKws) {
+            kwsSession = options.kwsEngine!.createSession(sessionId, generation, (event) => {
+              kwsSession?.close();
+              kwsSession = null;
+              asrSession = options.asrEngine.createSession(sessionId as string, generation as number, emit);
+              emit(event);
+            });
+          } else {
+            asrSession = options.asrEngine.createSession(sessionId, generation, emit);
+          }
+          socket.send(JSON.stringify({
+            type: "ready",
+            sessionId,
+            generation,
+            strategy: useKws ? "kws" : "asr",
+          }));
           return;
         }
-        if (!session || control.sessionId !== sessionId || control.generation !== generation) {
+        if (!hasSession() || control.sessionId !== sessionId || control.generation !== generation) {
           throw new Error("control does not match the active ASR generation");
         }
-        if (control.type === "reset") session.reset();
+        if (control.type === "reset") (kwsSession ?? asrSession)?.reset();
         if (control.type === "finish") {
-          session.finish();
+          asrSession?.finish();
           if (socket.readyState === WebSocket.OPEN) {
             socket.send(JSON.stringify({ type: "finished", sessionId, generation }));
           }
         }
         if (control.type === "stop") {
-          session.close();
-          session = null;
+          closeSessions();
           socket.close(1000, "stopped");
         }
       } catch (error) {
         sendError("invalid-message", error instanceof Error ? error.message : "invalid message");
       }
     });
-    socket.on("close", () => session?.close());
+    socket.on("close", closeSessions);
   });
 
   httpServer.listen(options.port, options.host);
@@ -205,9 +252,13 @@ export async function createVoiceServer(options: VoiceServerOptions): Promise<Vo
     wsUrl: httpUrl.replace(/^http/, "ws"),
     async close() {
       for (const client of websocketServer.clients) client.terminate();
-      websocketServer.close();
-      httpServer.close();
-      await once(httpServer, "close");
+      await new Promise<void>((resolve) => websocketServer.close(() => resolve()));
+      await new Promise<void>((resolve, reject) => {
+        httpServer.close((error) => {
+          error ? reject(error) : resolve();
+        });
+        for (const socket of sockets) socket.destroy();
+      });
     },
   };
 }

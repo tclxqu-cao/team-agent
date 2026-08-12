@@ -7,20 +7,28 @@ async function main(): Promise<void> {
   const config = resolveVoiceServiceConfig(process.env, process.cwd());
   const require = createRequire(import.meta.url);
   const addon = require("sherpa-onnx-node") as SherpaAddonLike;
-  const engines = await createSherpaEngines(addon, config.asrModelDir, config.ttsModelDir);
+  const engines = await createSherpaEngines(
+    addon,
+    config.asrModelDir,
+    config.kwsModelDir,
+    config.ttsModelDir,
+  );
   const service = await createVoiceServer({
     host: config.host,
     port: config.port,
     token: config.token,
     asrEngine: engines.asr,
+    kwsEngine: engines.kws ?? undefined,
     ttsEngine: engines.tts ?? undefined,
   });
   process.stdout.write(`${JSON.stringify({
     type: "ready",
     url: service.httpUrl,
     asr: true,
+    kws: engines.kws !== null,
     tts: engines.tts !== null,
     addonVersion: addon.version ?? "unknown",
+    kwsError: engines.kwsError?.message ?? null,
     ttsError: engines.ttsError?.message ?? null,
   })}\n`);
 

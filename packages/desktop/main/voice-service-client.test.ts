@@ -13,8 +13,17 @@ afterEach(async () => {
   await Promise.all(services.splice(0).map((service) => service.close()));
 });
 
+async function waitFor(predicate: () => boolean): Promise<void> {
+  const deadline = Date.now() + 1_000;
+  while (!predicate()) {
+    if (Date.now() >= deadline) throw new Error("timed out waiting for voice fixture events");
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+}
+
 async function fixture(tts?: (signal: AbortSignal) => Promise<Buffer>) {
   const received: number[] = [];
+  const starts: Array<Record<string, unknown>> = [];
   const server = createServer(async (request, response) => {
     if (request.headers.authorization !== "Bearer secret") {
       response.writeHead(401).end();
@@ -61,9 +70,11 @@ async function fixture(tts?: (signal: AbortSignal) => Promise<Buffer>) {
       }
       const control = JSON.parse(data.toString());
       if (control.type === "start") {
+        starts.push(control);
         sessionId = control.sessionId;
         generation = control.generation;
-        socket.send(JSON.stringify({ type: "ready", sessionId, generation }));
+        socket.send(JSON.stringify({ type: "ready", sessionId, generation, strategy: "kws" }));
+        socket.send(JSON.stringify({ type: "keyword", sessionId, generation, keyword: "小智" }));
       } else if (control.type === "finish") {
         socket.send(JSON.stringify({ type: "final", sessionId, generation, utteranceId: 1, text: "你好小智" }));
         socket.send(JSON.stringify({ type: "finished", sessionId, generation }));
@@ -84,23 +95,32 @@ async function fixture(tts?: (signal: AbortSignal) => Promise<Buffer>) {
     },
   };
   services.push(service);
-  return { service, received };
+  return { service, received, starts };
 }
 
 describe("VoiceServiceClient", () => {
   it("waits for ready, forwards PCM, and receives partial and final events", async () => {
-    const { service, received } = await fixture();
+    const { service, received, starts } = await fixture();
     const events: VoiceServiceEvent[] = [];
     const client = new VoiceServiceClient({ baseUrl: service.httpUrl, token: "secret" });
 
-    await client.startAsr({ sessionId: "voice-1", generation: 7, mode: "wake" }, (event) => events.push(event));
+    await client.startAsr({ sessionId: "voice-1", generation: 7, mode: "wake", wakeWord: "小智" }, (event) => events.push(event));
     client.sendPcm(Buffer.from(new Float32Array([0.25, -0.5]).buffer));
     await new Promise((resolve) => setTimeout(resolve, 10));
     client.finishAsr();
-    await new Promise((resolve) => setTimeout(resolve, 10));
+    await waitFor(() => events.length === 4);
 
     expect(received).toEqual([0.25, -0.5]);
+    expect(starts).toEqual([{
+      type: "start",
+      sessionId: "voice-1",
+      generation: 7,
+      mode: "wake",
+      wakeWord: "小智",
+      sampleRate: 16_000,
+    }]);
     expect(events).toEqual([
+      { type: "keyword", sessionId: "voice-1", generation: 7, keyword: "小智" },
       { type: "partial", sessionId: "voice-1", generation: 7, text: "你好" },
       { type: "final", sessionId: "voice-1", generation: 7, utteranceId: 1, text: "你好小智" },
       { type: "finished", sessionId: "voice-1", generation: 7 },
@@ -113,6 +133,8 @@ describe("VoiceServiceClient", () => {
     expect(isCurrentVoiceEvent({ type: "partial", sessionId: "voice-2", generation: 9, text: "当前" }, current)).toBe(true);
     expect(isCurrentVoiceEvent({ type: "partial", sessionId: "voice-2", generation: 8, text: "旧" }, current)).toBe(false);
     expect(isCurrentVoiceEvent({ type: "partial", sessionId: "voice-1", generation: 9, text: "旧" }, current)).toBe(false);
+    expect(isCurrentVoiceEvent({ type: "keyword", sessionId: "voice-2", generation: 9, keyword: "小智" }, current)).toBe(true);
+    expect(isCurrentVoiceEvent({ type: "keyword", sessionId: "voice-2", generation: 8, keyword: "小智" }, current)).toBe(false);
   });
 
   it("requests generated WAV with auth and generation", async () => {
