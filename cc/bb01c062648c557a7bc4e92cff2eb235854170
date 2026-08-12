@@ -1,0 +1,32 @@
+packages/desktop/main/voice-capture-state.test.ts
+  s_6edcb9d9cd7ad6::t_cfaa808e9bc339 109-122
+  s_6edcb9d9cd7ad6::t_0888624c8bdab5 96-108
+packages/desktop/main/index.ts
+  s_6edcb9d9cd7ad6::t_cfaa808e9bc339 27,97-102,377,635,641,664
+  s_6edcb9d9cd7ad6::t_4c90f68e7df97d 28,346-353
+  s_6edcb9d9cd7ad6::t_c1e8e482a44a0c 366-373
+packages/desktop/main/voice-service-client.test.ts
+  s_6edcb9d9cd7ad6::t_c1e8e482a44a0c 90-92,96,98,144-158
+  s_6edcb9d9cd7ad6::t_85e7b9d3e76ba8 159-160
+packages/desktop/main/voice-capture-state.ts
+  s_6edcb9d9cd7ad6::t_4c90f68e7df97d 47-53
+  s_6edcb9d9cd7ad6::t_cfaa808e9bc339 54-60
+packages/desktop/main/voice-service-client.ts
+  s_6edcb9d9cd7ad6::t_c1e8e482a44a0c 34,55-61
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "ccbb01c062648c557a7bc4e92cff2eb235854170",
+  "prompts": {},
+  "sessions": {
+    "s_6edcb9d9cd7ad6": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fd1c1-3a3e-7f32-9ee5-c7add0c1d7e1",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
