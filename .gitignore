@@ -7,6 +7,8 @@ dist/
 *.db-wal
 .DS_Store
 *.log
+__pycache__/
+*.py[cod]
 packages/desktop/dist/
 packages/desktop/renderer-dist/
 packages/desktop/.agents/
