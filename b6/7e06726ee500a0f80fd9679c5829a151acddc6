@@ -1,0 +1,35 @@
+.gitignore
+  s_6edcb9d9cd7ad6::t_6c4efea70c7d49 10-11
+packages/voice-service/src/framed-process.test.ts
+  s_6edcb9d9cd7ad6::t_7799ee1785b263 1-48
+packages/voice-service/src/framed-process.ts
+  s_6edcb9d9cd7ad6::t_7799ee1785b263 1-122
+packages/voice-service/scripts/setup-mlx-tts.sh
+  s_6edcb9d9cd7ad6::t_7799ee1785b263 1-31
+packages/voice-service/src/mlx-tts-engine.test.ts
+  s_6edcb9d9cd7ad6::t_7799ee1785b263 1-71
+packages/voice-service/python/test_mlx_tts_worker.py
+  s_6edcb9d9cd7ad6::t_7799ee1785b263 1-7,9-35,45-74
+  s_6edcb9d9cd7ad6::t_a981407e4d7320 8
+  s_6edcb9d9cd7ad6::t_930d0bf1b411c8 36-44
+packages/voice-service/python/mlx_tts_worker.py
+  s_6edcb9d9cd7ad6::t_7799ee1785b263 1-205
+packages/voice-service/src/mlx-tts-engine.ts
+  s_6edcb9d9cd7ad6::t_7799ee1785b263 1-244
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "b67e06726ee500a0f80fd9679c5829a151acddc6",
+  "prompts": {},
+  "sessions": {
+    "s_6edcb9d9cd7ad6": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fd1c1-3a3e-7f32-9ee5-c7add0c1d7e1",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": null
+    }
+  }
+}
