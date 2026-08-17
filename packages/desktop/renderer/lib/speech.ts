@@ -59,10 +59,6 @@ export function isASRSupported(): boolean {
   return getNativeDictationApi() !== null || getRecognitionCtor() !== null;
 }
 
-export function isTTSSupported(): boolean {
-  return typeof window !== "undefined" && "speechSynthesis" in window;
-}
-
 // ── ASR: voice input ──────────────────────────────────────────────────────
 
 export interface DictationHandle {
@@ -232,60 +228,8 @@ export function startWakeListener(opts: {
 
 // ── TTS: voice output ─────────────────────────────────────────────────────
 
-/** Strip markdown syntax so TTS reads natural prose. */
-export function toSpeakableText(markdown: string): string {
-  return markdown
-    .replace(/```[\s\S]*?```/g, "。代码已省略。")
-    .replace(/`([^`]*)`/g, "$1")
-    .replace(/!\[[^\]]*\]\([^)]*\)/g, "")
-    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
-    .replace(/^#{1,6}\s*/gm, "")
-    .replace(/[*_>#|-]{2,}/g, "")
-    .replace(/\n{2,}/g, "。")
-    .replace(/\n/g, "，")
-    .trim();
-}
-
-let preferredVoice: SpeechSynthesisVoice | null = null;
-
-function pickVoice(): SpeechSynthesisVoice | null {
-  if (!isTTSSupported()) return null;
-  if (preferredVoice) return preferredVoice;
-  const voices = window.speechSynthesis.getVoices();
-  preferredVoice =
-    voices.find((v) => v.lang.startsWith("zh") && v.localService) ??
-    voices.find((v) => v.lang.startsWith("zh")) ??
-    voices[0] ?? null;
-  return preferredVoice;
-}
-
-if (typeof window !== "undefined" && "speechSynthesis" in window) {
-  // Voices load asynchronously in Chromium
-  window.speechSynthesis.onvoiceschanged = () => { preferredVoice = null; pickVoice(); };
-}
-
-/** Speak text. Cancels anything currently playing first. */
-export function speak(text: string, opts?: { rate?: number; onEnd?: () => void }): boolean {
-  if (!isTTSSupported() || !text.trim()) return false;
-  const synth = window.speechSynthesis;
-  synth.cancel();
-  const utter = new SpeechSynthesisUtterance(toSpeakableText(text));
-  utter.lang = "zh-CN";
-  utter.rate = opts?.rate ?? 1.05;
-  const voice = pickVoice();
-  if (voice) utter.voice = voice;
-  if (opts?.onEnd) {
-    utter.onend = opts.onEnd;
-    utter.onerror = opts.onEnd;
-  }
-  synth.speak(utter);
-  return true;
-}
-
 export function stopSpeaking(): void {
-  if (isTTSSupported()) window.speechSynthesis.cancel();
-}
-
-export function isSpeaking(): boolean {
-  return isTTSSupported() && window.speechSynthesis.speaking;
+  if (typeof window !== "undefined" && "speechSynthesis" in window) {
+    window.speechSynthesis.cancel();
+  }
 }

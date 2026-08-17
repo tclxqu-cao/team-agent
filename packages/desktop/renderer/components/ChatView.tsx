@@ -10,13 +10,12 @@ import {
 import { useUIStore } from "../stores/uiStore";
 import {
   startDictation,
-  speak,
   stopSpeaking,
   isASRSupported,
-  isTTSSupported,
   type DictationHandle,
 } from "../lib/speech";
 import { interruptSpeech } from "../lib/voice-interruption";
+import { PcmStreamPlayer } from "../lib/pcm-stream-player";
 
 /** Human-readable description of a cron/interval expression (browser-safe, no Node.js). */
 function describeCron(cron: string): string {
@@ -293,6 +292,23 @@ export default function ChatView({
   const [speakingMsgId, setSpeakingMsgId] = useState<string | null>(null);
   const dictationRef = useRef<DictationHandle | null>(null);
 
+  useEffect(() => {
+    const api = window.agentApi;
+    if (!api?.onTtsStart || !api.onTtsPcm || !api.onTtsStreamEnd || !api.onTtsFlush) return;
+    const player = new PcmStreamPlayer(api);
+    const dispose = [
+      api.onTtsStart((metadata) => player.start(metadata)),
+      api.onTtsPcm(({ generation, pcm }) => player.enqueue(generation, pcm)),
+      api.onTtsStreamEnd(({ generation }) => player.finish(generation)),
+      api.onTtsFlush(({ generation }) => player.flush(generation)),
+      api.onTtsEnd(() => setSpeakingMsgId(null)),
+    ];
+    return () => {
+      for (const removeListener of dispose) removeListener();
+      player.dispose();
+    };
+  }, []);
+
   const handleMicToggle = () => {
     if (isRecording) {
       dictationRef.current?.stop();
@@ -300,7 +316,7 @@ export default function ChatView({
       setIsRecording(false);
       return;
     }
-    interruptSpeech(window.agentApi, stopSpeaking);
+    void interruptSpeech(window.agentApi, stopSpeaking);
     const prefix = input ? `${input.trimEnd()} ` : "";
     const handle = startDictation({
       onInterim: (text) => setInput(prefix + text),
@@ -320,14 +336,27 @@ export default function ChatView({
     }
   };
 
-  const handleSpeakMessage = (msgId: string, content: string) => {
+  const handleSpeakMessage = async (msgId: string, content: string) => {
     if (speakingMsgId === msgId) {
-      stopSpeaking();
+      await interruptSpeech(window.agentApi, stopSpeaking);
       setSpeakingMsgId(null);
       return;
     }
-    if (speak(content, { onEnd: () => setSpeakingMsgId((cur) => (cur === msgId ? null : cur)) })) {
-      setSpeakingMsgId(msgId);
+    await interruptSpeech(window.agentApi, stopSpeaking);
+    if (!window.agentApi?.ttsSpeak) {
+      setError("TTS 模型服务不可用");
+      return;
+    }
+    setSpeakingMsgId(msgId);
+    try {
+      const result = await window.agentApi.ttsSpeak(content);
+      if (!result.ok) {
+        setSpeakingMsgId(null);
+        setError("TTS 模型播报失败");
+      }
+    } catch (error) {
+      setSpeakingMsgId(null);
+      setError(error instanceof Error ? error.message : "TTS 模型播报失败");
     }
   };
   // Track which session the current agent run belongs to
@@ -828,9 +857,7 @@ export default function ChatView({
         if (isViewed) {
           setThinkingText("");
           setAgentActivity("idle");
-          // Auto voice output: read the final assistant reply aloud.
-          // Prefer the native macOS TTS (offline, Chinese voice); fall back
-          // to Web Speech synthesis.
+          // Auto voice output uses the configured local/remote TTS model only.
           if (useUIStore.getState().autoSpeak) {
             const msgs = useAgentStore.getState().messages;
             const lastAssistant = [...msgs].reverse().find(
@@ -838,9 +865,12 @@ export default function ChatView({
             );
             if (lastAssistant?.content) {
               if (window.agentApi?.ttsSpeak) {
-                void window.agentApi.ttsSpeak(lastAssistant.content.slice(0, 600));
-              } else if (isTTSSupported()) {
-                speak(lastAssistant.content.slice(0, 800));
+                stopSpeaking();
+                void window.agentApi.ttsSpeak(lastAssistant.content.slice(0, 600)).then((result) => {
+                  if (!result.ok) setError("TTS 模型播报失败");
+                }).catch((error) => {
+                  setError(error instanceof Error ? error.message : "TTS 模型播报失败");
+                });
               }
             }
           }
@@ -931,7 +961,7 @@ export default function ChatView({
   const handleSend = async () => {
     if (!input.trim() || !isConfigured) return;
 
-    interruptSpeech(window.agentApi, stopSpeaking);
+    void interruptSpeech(window.agentApi, stopSpeaking);
 
     setError(null);
 
@@ -1757,7 +1787,7 @@ export default function ChatView({
                 {/* Per-message action bar (single-message output box controls) */}
                 {msg.role === "assistant" && msg.content && (
                   <div className="msg-actions" style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 8 }}>
-                    {isTTSSupported() && (
+                    {typeof window.agentApi?.ttsSpeak === "function" && (
                       <button
                         onClick={() => handleSpeakMessage(msg.id, msg.content)}
                         title={speakingMsgId === msg.id ? "停止播报" : "语音播报"}
