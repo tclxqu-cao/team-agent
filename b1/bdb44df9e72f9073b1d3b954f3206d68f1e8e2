@@ -1,0 +1,69 @@
+packages/voice-service/scripts/setup-mlx-tts.sh
+  s_6edcb9d9cd7ad6::t_b6e8c2e8bffac6 8
+packages/voice-service/src/server.ts
+  s_6edcb9d9cd7ad6::t_e4abcd595450c3 4,70,375-376,379-386,392
+  s_6edcb9d9cd7ad6::t_ead5aff6c7817c 42-48,62,71-109,231-233,238,360-361,435-437
+  s_6edcb9d9cd7ad6::t_50fe06a7ed8f2e 362-365,394-395
+packages/voice-service/src/mlx-tts-engine.ts
+  s_6edcb9d9cd7ad6::t_df251f35052de1 127-130,187,194-204
+  s_6edcb9d9cd7ad6::t_f0d63ce67ea1fa 193
+  s_6edcb9d9cd7ad6::t_9d1098b19818c5 24,74,210,256-259,262
+  s_6edcb9d9cd7ad6::t_df4ad8c338a47e 205-207
+packages/voice-service/src/server.test.ts
+  s_6edcb9d9cd7ad6::t_058b1b2a643387 553-559
+  s_6edcb9d9cd7ad6::t_91fd5443eba0dc 498-534
+  s_6edcb9d9cd7ad6::t_8091607ea8ccda 630-678
+packages/voice-service/python/mlx_tts_worker.py
+  s_6edcb9d9cd7ad6::t_5b9d50991e03e3 86,94-96,98-101
+  s_6edcb9d9cd7ad6::t_c8bfe735a77791 74-82,93,178
+  s_6edcb9d9cd7ad6::t_e51d4f5ad24d3e 83-85,87-92,97,102-103,214
+  s_6edcb9d9cd7ad6::t_342ec6a705056e 7,22,27-29,170-177,179-186,212-213
+packages/desktop/main/voice-service-client.ts
+  s_6edcb9d9cd7ad6::t_2be9d9deffdd22 134-137
+packages/voice-service/scripts/measure-mlx-tts.mjs
+  s_6edcb9d9cd7ad6::t_d2e8ea63bee416 68,113-140,142-172,174-190
+  s_6edcb9d9cd7ad6::t_8789ae2e590abe 19
+  s_6edcb9d9cd7ad6::t_3b5a00eb21509a 99-101,141,173
+  s_6edcb9d9cd7ad6::t_74a8159ac98dde 1-18,20-67,69-98,102-112,191-198
+packages/voice-service/src/framed-process.ts
+  s_6edcb9d9cd7ad6::t_df251f35052de1 22-27,29,69-70
+  s_6edcb9d9cd7ad6::t_2b6244b364df04 71-72
+packages/desktop/main/voice-service-client.test.ts
+  s_6edcb9d9cd7ad6::t_55d8ee62e91dad 234-237
+  s_6edcb9d9cd7ad6::t_6708fc58dd8e76 206-233,238-245
+packages/desktop/renderer/lib/pcm-audio-worklet.test.ts
+  s_6edcb9d9cd7ad6::t_de11fe5dc6f735 3,24
+  s_6edcb9d9cd7ad6::t_d86af2e750b168 1-2,4-23,25-69
+packages/desktop/main/index.ts
+  s_6edcb9d9cd7ad6::t_2be9d9deffdd22 201,390
+packages/voice-service/src/main.ts
+  s_6edcb9d9cd7ad6::t_b9d89a079870f3 4,17-29,39-51,58,65-66,69,77
+  s_6edcb9d9cd7ad6::t_8091607ea8ccda 30-34
+  s_6edcb9d9cd7ad6::t_9d1098b19818c5 35-38
+packages/voice-service/src/framed-process.test.ts
+  s_6edcb9d9cd7ad6::t_ddc13aff50d453 16-27,45,49
+packages/voice-service/src/mlx-tts-engine.test.ts
+  s_6edcb9d9cd7ad6::t_baa871b3c3cfbd 3,71-88
+  s_6edcb9d9cd7ad6::t_a6380ae02e3e09 89
+packages/voice-service/python/test_mlx_tts_worker.py
+  s_6edcb9d9cd7ad6::t_85f37daf8f11b6 28-31,34-36,43-46,49-50
+  s_6edcb9d9cd7ad6::t_0a7ce9cfda8cd8 9,51-60
+  s_6edcb9d9cd7ad6::t_0cd655b471ecbf 32-33,37-42,47-48
+  s_6edcb9d9cd7ad6::t_7a14837ba28e82 61
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "b1bdb44df9e72f9073b1d3b954f3206d68f1e8e2",
+  "prompts": {},
+  "sessions": {
+    "s_6edcb9d9cd7ad6": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fd1c1-3a3e-7f32-9ee5-c7add0c1d7e1",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
