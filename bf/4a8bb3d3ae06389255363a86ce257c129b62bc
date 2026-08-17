@@ -1,0 +1,56 @@
+packages/desktop/main/voice-service-client.ts
+  s_6edcb9d9cd7ad6::t_abd7cd4772c072 29-46,53-54,56,59,143,146-205,207-216,218-264,266-271,285-291
+  s_fd26662b780e2e::t_4f3bfe071ff0ae 19-28
+  s_fd26662b780e2e::t_67e1ab070a49db 206,217
+packages/desktop/main/voice-service-manager.ts
+  s_6edcb9d9cd7ad6::t_4a9b906788fcd7 48-69,79,182-183
+packages/desktop/main/voice-service-manager.test.ts
+  s_6edcb9d9cd7ad6::t_4a9b906788fcd7 9,96-125
+  s_6edcb9d9cd7ad6::t_9703f84cd3e918 126
+packages/desktop/main/voice-service-client.test.ts
+  s_6edcb9d9cd7ad6::t_bcccf4477eb9ac 26,28-29,33-34,49-60,102
+  s_fd26662b780e2e::t_65f9cc0e885ee1 25,30
+  s_fd26662b780e2e::t_c68e299ebbc902 7
+  s_6edcb9d9cd7ad6::t_5a6a86d2cb50b7 161-176,179-180,182-183,185,187-203,206-217,219-220,222-223,226-233,235-236,238,240-261,265-302
+  s_fd26662b780e2e::t_3ebd881fd941f8 177,181,184,186,218,221,224-225,234,237,239
+  s_6edcb9d9cd7ad6::t_ee6a5968ba7c93 4,27
+packages/desktop/main/index.ts
+  s_fd26662b780e2e::t_46e85dc09ed9f0 1095
+  s_fd26662b780e2e::t_a7a8c41e9f5925 33-35
+  s_6edcb9d9cd7ad6::t_ef71b24034e5bf 9,39,81-86
+  s_6edcb9d9cd7ad6::t_352738fead7703 572-573,577-578,593,598,601-607,610,615-617,619-622,624-652,654-665,667-668,700,704,707,712-713
+  s_6edcb9d9cd7ad6::t_3caf9508c6710d 564,614,653
+  s_fd26662b780e2e::t_5e04490afd7e8a 32
+  s_6edcb9d9cd7ad6::t_747527bf0a583f 714-716
+packages/desktop/renderer/global.d.ts
+  s_6edcb9d9cd7ad6::t_49fc43b8de4b6d 103-108,184-189
+  s_6edcb9d9cd7ad6::t_3caf9508c6710d 100
+  s_6edcb9d9cd7ad6::t_371fced795bad1 190-191
+packages/desktop/main/preload.ts
+  s_6edcb9d9cd7ad6::t_3caf9508c6710d 48,74-76
+  s_6edcb9d9cd7ad6::t_49fc43b8de4b6d 51-73
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "bf4a8bb3d3ae06389255363a86ce257c129b62bc",
+  "prompts": {},
+  "sessions": {
+    "s_6edcb9d9cd7ad6": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fd1c1-3a3e-7f32-9ee5-c7add0c1d7e1",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_fd26662b780e2e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "99d289ef-e3cb-4aca-8767-78d827fda45d",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
