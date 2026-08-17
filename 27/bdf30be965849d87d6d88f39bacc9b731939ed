@@ -1,0 +1,68 @@
+packages/voice-service/src/tts-engine.ts
+  s_fd26662b780e2e::t_f4639bfd5a458f 54,56-65
+  s_fd26662b780e2e::t_8e147bfb05367a 10,14-24,27,32-37,44,55,66
+packages/voice-service/src/sherpa-runtime.ts
+  s_6edcb9d9cd7ad6::t_4ff2f383044c65 1-2,80
+packages/voice-service/src/server.test.ts
+  s_fd26662b780e2e::t_4cb199c79728ad 5
+  s_6edcb9d9cd7ad6::t_f344e0248f7ec2 81-86,120-127,344,382,413-416,440-463,465-473,475-483,485,487-529,531-532,535-536,538-543,545-586
+  s_fd26662b780e2e::t_e1b6968dd30cf9 392-412
+  s_6edcb9d9cd7ad6::t_eee5d4cfd3ec47 87-106,464,474,484,486,530,533-534,537,544
+  s_6edcb9d9cd7ad6::t_e0d7382dc3fe6d 417
+packages/voice-service/src/config.ts
+  s_6edcb9d9cd7ad6::t_09f9955e3dd2ba 5,13-17,34-37,48-56
+packages/voice-service/src/protocol.ts
+  s_6edcb9d9cd7ad6::t_09f9955e3dd2ba 28-39,102,112-130
+packages/voice-service/src/protocol.test.ts
+  s_6edcb9d9cd7ad6::t_09f9955e3dd2ba 2,52,66-92
+  s_6edcb9d9cd7ad6::t_af6187c483001e 93
+packages/voice-service/src/wav.test.ts
+  s_6edcb9d9cd7ad6::t_09f9955e3dd2ba 2,22-30
+  s_6edcb9d9cd7ad6::t_7475401cf575ef 31-32
+packages/voice-service/src/config.test.ts
+  s_6edcb9d9cd7ad6::t_09f9955e3dd2ba 19,21,23-26,37-41,48-52,67-71
+  s_6edcb9d9cd7ad6::t_d1e97b1cff99c3 72
+packages/voice-service/src/main.ts
+  s_6edcb9d9cd7ad6::t_4ff2f383044c65 3,16-28,35-36,43,46,54
+packages/voice-service/README.md
+  s_6edcb9d9cd7ad6::t_91a861e8c63b9b 3,7,9,13,16,18,26,31,42-46,48,58,64,66-68
+packages/voice-service/src/wav.ts
+  s_6edcb9d9cd7ad6::t_09f9955e3dd2ba 25-47
+packages/voice-service/src/sherpa-runtime.test.ts
+  s_6edcb9d9cd7ad6::t_4ff2f383044c65 12,28,88,110
+packages/voice-service/src/server.ts
+  s_fd26662b780e2e::t_4397760f379136 14
+  s_fd26662b780e2e::t_209a79f7fdb54c 137-140
+  s_6edcb9d9cd7ad6::t_c5547c9556a84c 7-13,15,34,38,54-55,59-60,109-126,145-157
+  s_6edcb9d9cd7ad6::t_8f6020263f3b21 182-184,194-195,204-205,213-215,219,297-391,402-407
+  s_6edcb9d9cd7ad6::t_49176fadd73f05 158
+packages/voice-service/src/tts-engine.test.ts
+  s_fd26662b780e2e::t_9363f96ae2a0c8 3-8,18-27,29-30,39-45,50-67,69-84,130-131,134,140-145,151,153,157-158,161
+  s_fd26662b780e2e::t_df19bc6e8218c1 68,85-128
+  s_fd26662b780e2e::t_2e8f81f5891462 152,156,165-169
+  s_fd26662b780e2e::t_9a85065a4ea578 129
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "27bdf30be965849d87d6d88f39bacc9b731939ed",
+  "prompts": {},
+  "sessions": {
+    "s_6edcb9d9cd7ad6": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fd1c1-3a3e-7f32-9ee5-c7add0c1d7e1",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_fd26662b780e2e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "99d289ef-e3cb-4aca-8767-78d827fda45d",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
