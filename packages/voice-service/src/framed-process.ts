@@ -19,13 +19,14 @@ export function encodeFrame(kind: 1 | 2, payload: Buffer): Buffer {
 export class FrameDecoder {
   private buffered = Buffer.alloc(0);
 
-  push(chunk: Buffer): DecodedFrame[] {
-    if (chunk.length === 0) return [];
-    this.buffered = this.buffered.length === 0
-      ? Buffer.from(chunk)
-      : Buffer.concat([this.buffered, chunk]);
+  push(chunk: Buffer, maxFrames = Number.POSITIVE_INFINITY): DecodedFrame[] {
+    if (chunk.length > 0) {
+      this.buffered = this.buffered.length === 0
+        ? Buffer.from(chunk)
+        : Buffer.concat([this.buffered, chunk]);
+    }
     const frames: DecodedFrame[] = [];
-    while (this.buffered.length >= HEADER_BYTES) {
+    while (frames.length < maxFrames && this.buffered.length >= HEADER_BYTES) {
       const kind = this.buffered[0];
       if (kind !== JSON_FRAME && kind !== PCM_FRAME) {
         throw new Error(`unknown frame kind ${kind}`);
@@ -39,9 +40,6 @@ export class FrameDecoder {
         payload: Buffer.from(this.buffered.subarray(HEADER_BYTES, frameBytes)),
       });
       this.buffered = this.buffered.subarray(frameBytes);
-    }
-    if (this.buffered.length > MAX_FRAME_BYTES + HEADER_BYTES) {
-      throw new Error("framed process buffer exceeds limit");
     }
     return frames;
   }
@@ -66,6 +64,10 @@ export class BoundedAsyncQueue<T> implements AsyncIterable<T> {
     if (!Number.isSafeInteger(capacity) || capacity < 1) {
       throw new Error("queue capacity must be a positive integer");
     }
+  }
+
+  get isFull(): boolean {
+    return this.values.length >= this.capacity;
   }
 
   push(value: T): boolean {

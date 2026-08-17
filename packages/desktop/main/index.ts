@@ -198,7 +198,7 @@ function buildWakeVariants(word: string): string[] {
 
 function stopWakeProc(): void {
   wakeLaunchGeneration += 1;
-  wakeVoiceClient?.close();
+  wakeVoiceClient?.stopAsr();
   wakeVoiceClient = null;
   if (wakeProc) {
     wakeProc.kill();
@@ -387,7 +387,7 @@ async function launchWakeListener(
     }
   }
   if (launchGeneration !== wakeLaunchGeneration) {
-    serviceClient?.close();
+    serviceClient?.stopAsr();
     return { ok: false, reason: "cancelled" };
   }
   const useExternalAsr = Boolean(serviceClient && binary);

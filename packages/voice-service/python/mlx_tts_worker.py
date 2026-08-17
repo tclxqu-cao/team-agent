@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import queue
 import struct
@@ -18,13 +19,14 @@ PCM_FRAME = 0x02
 SAMPLE_RATE = 24_000
 
 _output_lock = threading.Lock()
+_protocol_output = sys.stdout.buffer
 
 
 def write_frame(kind: int, payload: bytes) -> None:
     with _output_lock:
-        sys.stdout.buffer.write(struct.pack(">BI", kind, len(payload)))
-        sys.stdout.buffer.write(payload)
-        sys.stdout.buffer.flush()
+        _protocol_output.write(struct.pack(">BI", kind, len(payload)))
+        _protocol_output.write(payload)
+        _protocol_output.flush()
 
 
 def write_json(value: dict[str, Any]) -> None:
@@ -67,6 +69,36 @@ def audio_samples(audio: Any) -> Iterable[float]:
     while isinstance(audio, list) and len(audio) == 1 and isinstance(audio[0], list):
         audio = audio[0]
     return audio
+
+
+def generation_max_tokens(model: Any, text: str) -> int:
+    tokenizer = getattr(model, "tokenizer", None)
+    try:
+        text_tokens = len(tokenizer.encode(text)) if tokenizer is not None else len(text)
+    except (AttributeError, TypeError, ValueError):
+        text_tokens = len(text)
+    return min(1_200, max(75, text_tokens * 4))
+
+
+def warmup_model(model: Any) -> None:
+    """Force MLX graph compilation before the worker advertises readiness."""
+    with contextlib.redirect_stdout(sys.stderr):
+        results = iter(model.generate(
+            text="你好。",
+            voice="Serena",
+            lang_code="chinese",
+            speed=1.0,
+            stream=True,
+            streaming_interval=0.32,
+            max_tokens=generation_max_tokens(model, "你好。"),
+        ))
+        try:
+            result = next(results)
+            audio_samples(result.audio)
+        finally:
+            close = getattr(results, "close", None)
+            if callable(close):
+                close()
 
 
 class Worker:
@@ -135,21 +167,23 @@ class Worker:
                 "channels": 1,
                 "sampleFormat": "s16le",
             })
-            results = self.model.generate(
-                text=command["text"],
-                voice=command.get("voice", "Serena"),
-                language="Chinese",
-                speed=command.get("speed", 1.0),
-                stream=True,
-                streaming_interval=command.get("streamingInterval", 0.32),
-            )
-            for result in results:
-                if cancel.is_set():
-                    write_json({"type": "cancelled", "requestId": request_id})
-                    return
-                pcm = float_to_s16le(audio_samples(result.audio))
-                if pcm:
-                    write_frame(PCM_FRAME, pcm)
+            with contextlib.redirect_stdout(sys.stderr):
+                results = self.model.generate(
+                    text=command["text"],
+                    voice=command.get("voice", "Serena"),
+                    lang_code="chinese",
+                    speed=command.get("speed", 1.0),
+                    stream=True,
+                    streaming_interval=command.get("streamingInterval", 0.32),
+                    max_tokens=generation_max_tokens(self.model, command["text"]),
+                )
+                for result in results:
+                    if cancel.is_set():
+                        write_json({"type": "cancelled", "requestId": request_id})
+                        return
+                    pcm = float_to_s16le(audio_samples(result.audio))
+                    if pcm:
+                        write_frame(PCM_FRAME, pcm)
             terminal = "cancelled" if cancel.is_set() else "finished"
             write_json({"type": terminal, "requestId": request_id})
         except Exception as error:  # worker errors must cross the process boundary
@@ -175,7 +209,9 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
     try:
-        model = FakeModel() if args.fake else load_mlx_model(args.model)
+        with contextlib.redirect_stdout(sys.stderr):
+            model = FakeModel() if args.fake else load_mlx_model(args.model)
+        warmup_model(model)
     except Exception as error:
         write_json({"type": "startup-error", "message": str(error)})
         return 1

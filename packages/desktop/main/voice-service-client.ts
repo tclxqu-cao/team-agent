@@ -131,6 +131,10 @@ export class VoiceServiceClient {
     this.sendControl("reset");
   }
 
+  stopAsr(): void {
+    this.closeAsr();
+  }
+
   private sendControl(type: "finish" | "reset" | "stop"): void {
     if (!this.socket || !this.current || this.socket.readyState !== WebSocket.OPEN) return;
     this.socket.send(JSON.stringify({

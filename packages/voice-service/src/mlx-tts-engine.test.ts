@@ -1,6 +1,6 @@
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { MlxTtsEngine } from "./mlx-tts-engine";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -67,5 +67,24 @@ describe("MlxTtsEngine", () => {
       startupTimeoutMs: 2_000,
       fake: true,
     })).rejects.toThrow("exited");
+  });
+
+  it("closes the engine and reports a fatal worker failure after readiness", async () => {
+    const onFatal = vi.fn();
+    const engine = await MlxTtsEngine.start({
+      python: "python3",
+      workerScript,
+      model: "fake",
+      voice: "Serena",
+      streamingInterval: 0.32,
+      fake: true,
+      onFatal,
+    });
+    const failure = new Error("worker crashed");
+    (engine as unknown as { failWorker(error: Error): void }).failWorker(failure);
+
+    expect(onFatal).toHaveBeenCalledWith(failure);
+    await expect(engine.stream(request(), new AbortController().signal)).rejects.toThrow("closed");
+    await engine.close();
   });
 });

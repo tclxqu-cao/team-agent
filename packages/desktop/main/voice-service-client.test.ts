@@ -203,6 +203,46 @@ describe("VoiceServiceClient", () => {
     }]);
   });
 
+  it("stops ASR without closing an active TTS stream", async () => {
+    let ttsSocket: WebSocket | null = null;
+    const { service } = await fixture((socket, start) => {
+      ttsSocket = socket;
+      socket.send(JSON.stringify({
+        type: "started",
+        sessionId: start.sessionId,
+        generation: start.generation,
+        sampleRate: 24_000,
+        channels: 1,
+        sampleFormat: "s16le",
+      }));
+    });
+    const client = new VoiceServiceClient({ baseUrl: service.httpUrl, token: "secret" });
+    await client.startAsr(
+      { sessionId: "wake-shared-client", generation: 14, mode: "wake", wakeWord: "小智" },
+      () => {},
+    );
+    let ttsStarted = false;
+    const synthesis = client.streamSynthesize(
+      { sessionId: "tts-shared-client", generation: 15, text: "下一轮" },
+      new AbortController().signal,
+      { onStarted: () => { ttsStarted = true; }, onPcm: () => {} },
+    );
+    await waitFor(() => ttsStarted);
+
+    client.stopAsr();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(ttsSocket).not.toBeNull();
+    const activeTtsSocket = ttsSocket as unknown as WebSocket;
+    expect(activeTtsSocket.readyState).toBe(WebSocket.OPEN);
+    activeTtsSocket.send(JSON.stringify({
+      type: "finished",
+      sessionId: "tts-shared-client",
+      generation: 15,
+    }));
+    await expect(synthesis).resolves.toBeUndefined();
+    client.close();
+  });
+
   it.each([
     ["PCM before started", (socket: WebSocket) => socket.send(Buffer.from([0, 0])), "before started"],
     ["invalid metadata", (socket: WebSocket, start: Record<string, unknown>) => socket.send(JSON.stringify({

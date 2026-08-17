@@ -495,6 +495,43 @@ describe("voice service", () => {
     }
   });
 
+  it("paces PCM so a faster-than-realtime model cannot overflow playback", async () => {
+    const chunk = Buffer.alloc(15_360); // 320 ms of 24 kHz mono s16le PCM
+    const ttsEngine: TtsEngineLike = {
+      async stream() {
+        return {
+          sampleRate: 24_000,
+          channels: 1,
+          sampleFormat: "s16le",
+          chunks: (async function* () {
+            for (let index = 0; index < 4; index += 1) yield chunk;
+          })(),
+          completed: Promise.resolve(),
+        };
+      },
+    };
+    const service = await createVoiceServer({
+      host: "127.0.0.1",
+      port: 0,
+      token: null,
+      asrEngine: new RecordingAsrEngine(),
+      ttsEngine,
+    });
+    const socket = await openSocket(`${service.wsUrl}/v1/tts/stream`);
+    const inbox = new SocketInbox(socket);
+    try {
+      socket.send(JSON.stringify({ type: "start", sessionId: "voice-paced", generation: 13, text: "快速模型" }));
+      await inbox.next();
+      await inbox.next();
+      const firstPcmAt = performance.now();
+      await inbox.next();
+      expect(performance.now() - firstPcmAt).toBeGreaterThanOrEqual(100);
+    } finally {
+      socket.close();
+      await service.close();
+    }
+  });
+
   it("cancels only the matching active TTS generation", async () => {
     let aborted = false;
     const ttsEngine: TtsEngineLike = {
@@ -513,7 +550,13 @@ describe("voice service", () => {
           sampleFormat: "s16le",
           chunks: (async function* () {
             yield Buffer.from([1, 0]);
-            await completed;
+            await new Promise<void>((_resolve, reject) => {
+              signal.addEventListener("abort", () => {
+                const error = new Error("chunk stream aborted");
+                error.name = "AbortError";
+                reject(error);
+              }, { once: true });
+            });
           })(),
           completed,
         };
@@ -579,6 +622,55 @@ describe("voice service", () => {
         ttsLoading: false,
         ttsError: "model missing",
       });
+    } finally {
+      socket.close();
+      await service.close();
+    }
+  });
+
+  it("keeps ASR ready while TTS loads and lets a stream wait for warmup", async () => {
+    let resolveReady!: () => void;
+    const ready = new Promise<void>((resolve) => { resolveReady = resolve; });
+    const ttsState = { loading: true, error: null, ready } as import("./server").TtsRuntimeState;
+    const service = await createVoiceServer({
+      host: "127.0.0.1",
+      port: 0,
+      token: null,
+      asrEngine: new RecordingAsrEngine(),
+      ttsState,
+    });
+    const socket = await openSocket(`${service.wsUrl}/v1/tts/stream`);
+    const inbox = new SocketInbox(socket);
+    try {
+      expect(await (await fetch(`${service.httpUrl}/health`)).json()).toMatchObject({
+        ready: true,
+        asr: true,
+        tts: false,
+        ttsLoading: true,
+      });
+      socket.send(JSON.stringify({
+        type: "start",
+        sessionId: "voice-warmup",
+        generation: 21,
+        text: "等待模型",
+      }));
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      ttsState.engine = {
+        async stream() {
+          return {
+            sampleRate: 24_000,
+            channels: 1,
+            sampleFormat: "s16le",
+            chunks: (async function* () { yield Buffer.from([0, 0]); })(),
+            completed: Promise.resolve(),
+          };
+        },
+      };
+      ttsState.loading = false;
+      resolveReady();
+      expect(JSON.parse((await inbox.next()).data.toString()).type).toBe("started");
+      expect((await inbox.next()).binary).toBe(true);
+      expect(JSON.parse((await inbox.next()).data.toString()).type).toBe("finished");
     } finally {
       socket.close();
       await service.close();

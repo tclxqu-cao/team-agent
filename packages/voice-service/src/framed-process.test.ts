@@ -13,6 +13,18 @@ describe("framed process protocol", () => {
     ]);
   });
 
+  it("keeps coalesced frames buffered when a caller limits each drain", () => {
+    const first = encodeFrame(2, Buffer.from([1, 0]));
+    const second = encodeFrame(2, Buffer.from([2, 0]));
+    const decoder = new FrameDecoder();
+    expect(decoder.push(Buffer.concat([first, second]), 1)).toEqual([
+      { kind: "pcm", payload: Buffer.from([1, 0]) },
+    ]);
+    expect(decoder.push(Buffer.alloc(0), 1)).toEqual([
+      { kind: "pcm", payload: Buffer.from([2, 0]) },
+    ]);
+  });
+
   it("rejects unknown frame kinds and oversized payload declarations", () => {
     const unknown = Buffer.alloc(5);
     unknown[0] = 3;
@@ -30,9 +42,11 @@ describe("BoundedAsyncQueue", () => {
     const queue = new BoundedAsyncQueue<number>(2, onFull, onSpace);
     expect(queue.push(1)).toBe(true);
     expect(queue.push(2)).toBe(true);
+    expect(queue.isFull).toBe(true);
     expect(queue.push(3)).toBe(false);
     expect(onFull).toHaveBeenCalledOnce();
     await expect(queue[Symbol.asyncIterator]().next()).resolves.toEqual({ value: 1, done: false });
+    expect(queue.isFull).toBe(false);
     expect(onSpace).toHaveBeenCalledOnce();
     queue.close();
     await expect(queue[Symbol.asyncIterator]().next()).resolves.toEqual({ value: 2, done: false });

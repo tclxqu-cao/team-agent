@@ -21,6 +21,7 @@ export interface MlxTtsEngineOptions {
   streamingInterval: number;
   startupTimeoutMs?: number;
   fake?: boolean;
+  onFatal?(error: Error): void;
 }
 
 interface WorkerMessage {
@@ -70,6 +71,7 @@ export class MlxTtsEngine {
   private active: ActiveStream | null = null;
   private requestSequence = 0;
   private closed = false;
+  private workerReady = false;
 
   private constructor(
     private readonly options: MlxTtsEngineOptions,
@@ -122,7 +124,10 @@ export class MlxTtsEngine {
     const queue = new BoundedAsyncQueue<Buffer>(
       8,
       () => this.child.stdout.pause(),
-      () => this.child.stdout.resume(),
+      () => {
+        this.drainStdout();
+        if (!queue.isFull) this.child.stdout.resume();
+      },
     );
     const onAbort = () => this.send({ type: "cancel", requestId });
     signal.addEventListener("abort", onAbort, { once: true });
@@ -179,20 +184,30 @@ export class MlxTtsEngine {
 
   private onStdout(chunk: Buffer): void {
     try {
-      for (const frame of this.decoder.push(chunk)) {
-        if (frame.kind === "json") this.onMessage(JSON.parse(frame.payload.toString("utf8")) as WorkerMessage);
-        else if (this.active && !this.active.queue.push(frame.payload)) {
-          this.send({ type: "cancel", requestId: this.active.requestId });
-          this.finishActive(new Error("TTS PCM queue overflow"));
-        }
-      }
+      this.drainStdout(chunk);
     } catch (error) {
       this.failWorker(error instanceof Error ? error : new Error(String(error)));
     }
   }
 
+  private drainStdout(chunk: Buffer = Buffer.alloc(0)): void {
+    let input = chunk;
+    while (true) {
+      const [frame] = this.decoder.push(input, 1);
+      input = Buffer.alloc(0);
+      if (!frame) return;
+      if (frame.kind === "json") {
+        this.onMessage(JSON.parse(frame.payload.toString("utf8")) as WorkerMessage);
+      } else if (this.active && !this.active.queue.push(frame.payload)) {
+        throw new Error("TTS PCM queue overflow");
+      }
+      if (this.active?.queue.isFull) return;
+    }
+  }
+
   private onMessage(message: WorkerMessage): void {
     if (message.type === "ready") {
+      this.workerReady = true;
       this.readyDeferred.resolve(undefined);
       return;
     }
@@ -238,7 +253,12 @@ export class MlxTtsEngine {
   }
 
   private failWorker(error: Error): void {
+    if (this.closed) return;
+    const fatal = this.workerReady;
+    this.closed = true;
+    if (this.child.exitCode === null && !this.child.killed) this.child.kill("SIGKILL");
     this.readyDeferred.reject(error);
     this.finishActive(error);
+    if (fatal) this.options.onFatal?.(error);
   }
 }

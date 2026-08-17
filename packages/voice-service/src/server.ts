@@ -1,6 +1,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { once } from "node:events";
 import type { Socket } from "node:net";
+import { setTimeout as delay } from "node:timers/promises";
 import { WebSocket, WebSocketServer, type RawData } from "ws";
 import type { AsrResultEvent, AsrSession } from "./asr-engine.js";
 import type { KwsResultEvent, KwsSession } from "./kws-engine.js";
@@ -38,6 +39,13 @@ export interface TtsEngineLike {
   stream?(request: TtsRequest, signal: AbortSignal): Promise<TtsPcmStream>;
 }
 
+export interface TtsRuntimeState {
+  engine?: TtsEngineLike;
+  loading: boolean;
+  error: string | null;
+  ready?: Promise<void>;
+}
+
 export interface VoiceServer {
   httpUrl: string;
   wsUrl: string;
@@ -51,6 +59,7 @@ interface VoiceServerOptions {
   asrEngine: AsrEngineLike;
   kwsEngine?: KwsEngineLike;
   ttsEngine?: TtsEngineLike;
+  ttsState?: TtsRuntimeState;
   ttsError?: string | null;
   ttsLoading?: boolean;
 }
@@ -58,6 +67,46 @@ interface VoiceServerOptions {
 const MAX_PCM_FRAME_BYTES = 256 * 1024;
 const MAX_TTS_SOCKET_BUFFER_BYTES = 1024 * 1024;
 const MAX_TTS_WAV_BYTES = 64 * 1024 * 1024;
+const MAX_TTS_PLAYBACK_LEAD_MS = 500;
+
+function currentTtsEngine(options: VoiceServerOptions): TtsEngineLike | undefined {
+  return options.ttsState?.engine ?? options.ttsEngine;
+}
+
+function ttsStatus(options: VoiceServerOptions): {
+  loading: boolean;
+  error: string | null;
+} {
+  return {
+    loading: options.ttsState?.loading ?? options.ttsLoading ?? false,
+    error: options.ttsState?.error ?? options.ttsError ?? null,
+  };
+}
+
+async function waitForTtsEngine(
+  options: VoiceServerOptions,
+  signal: AbortSignal,
+): Promise<TtsEngineLike> {
+  let engine = currentTtsEngine(options);
+  if (engine?.stream) return engine;
+  const state = options.ttsState;
+  if (state?.loading && state.ready) {
+    await new Promise<void>((resolve, reject) => {
+      const onAbort = () => {
+        const error = new Error("TTS generation aborted");
+        error.name = "AbortError";
+        reject(error);
+      };
+      signal.addEventListener("abort", onAbort, { once: true });
+      state.ready!.then(resolve, reject).finally(() => {
+        signal.removeEventListener("abort", onAbort);
+      });
+    });
+    engine = currentTtsEngine(options);
+  }
+  if (!engine?.stream) throw new Error(ttsStatus(options).error || "tts-unavailable");
+  return engine;
+}
 
 function authorized(request: IncomingMessage, token: string | null): boolean {
   return token === null || request.headers.authorization === `Bearer ${token}`;
@@ -179,14 +228,14 @@ export async function createVoiceServer(options: VoiceServerOptions): Promise<Vo
         ready: true,
         asr: true,
         kws: Boolean(options.kwsEngine),
-        tts: Boolean(options.ttsEngine?.stream),
-        ttsLoading: options.ttsLoading ?? false,
-        ttsError: options.ttsError ?? null,
+        tts: Boolean(currentTtsEngine(options)?.stream),
+        ttsLoading: ttsStatus(options).loading,
+        ttsError: ttsStatus(options).error,
       });
       return;
     }
     if (request.method === "POST" && request.url === "/v1/tts") {
-      void handleTts(request, response, options.ttsEngine);
+      void handleTts(request, response, currentTtsEngine(options));
       return;
     }
     sendJson(response, 404, { error: "not-found" });
@@ -308,8 +357,12 @@ export async function createVoiceServer(options: VoiceServerOptions): Promise<Vo
 
     const run = async (start: TtsRequest, controller: AbortController) => {
       try {
-        if (!options.ttsEngine?.stream) throw new Error("tts-unavailable");
-        const stream = await options.ttsEngine.stream(start, controller.signal);
+        const engine = await waitForTtsEngine(options, controller.signal);
+        const stream = await engine.stream!(start, controller.signal);
+        let completionError: unknown;
+        const completion = stream.completed.catch((error) => {
+          completionError = error;
+        });
         if (controller.signal.aborted) throw new DOMException("aborted", "AbortError");
         sendSocketJson(socket, {
           type: "started",
@@ -319,15 +372,27 @@ export async function createVoiceServer(options: VoiceServerOptions): Promise<Vo
           channels: stream.channels,
           sampleFormat: stream.sampleFormat,
         });
+        const playbackClockStartedAt = performance.now();
+        let sentAudioMs = 0;
         for await (const chunk of stream.chunks) {
           if (controller.signal.aborted) throw new DOMException("aborted", "AbortError");
+          const chunkAudioMs = (chunk.byteLength / (2 * stream.channels * stream.sampleRate)) * 1_000;
+          const projectedLeadMs = sentAudioMs + chunkAudioMs
+            - (performance.now() - playbackClockStartedAt);
+          if (projectedLeadMs > MAX_TTS_PLAYBACK_LEAD_MS) {
+            await delay(projectedLeadMs - MAX_TTS_PLAYBACK_LEAD_MS, undefined, {
+              signal: controller.signal,
+            });
+          }
           if (socket.bufferedAmount > MAX_TTS_SOCKET_BUFFER_BYTES) {
             controller.abort();
             throw new Error("tts-buffer-overflow");
           }
           await sendSocketBinary(socket, chunk);
+          sentAudioMs += chunkAudioMs;
         }
-        await stream.completed;
+        await completion;
+        if (completionError) throw completionError;
         if (controller.signal.aborted) throw new DOMException("aborted", "AbortError");
         sendSocketJson(socket, {
           type: "finished",
@@ -367,8 +432,9 @@ export async function createVoiceServer(options: VoiceServerOptions): Promise<Vo
         const control = parseTtsStreamControl(data.toString());
         if (control.type === "start") {
           if (active) throw new Error("TTS generation is already active");
-          if (!options.ttsEngine?.stream) {
-            sendError("tts-unavailable", options.ttsError || "TTS is unavailable", control.sessionId, control.generation);
+          const status = ttsStatus(options);
+          if (!currentTtsEngine(options)?.stream && !status.loading) {
+            sendError("tts-unavailable", status.error || "TTS is unavailable", control.sessionId, control.generation);
             return;
           }
           const controller = new AbortController();

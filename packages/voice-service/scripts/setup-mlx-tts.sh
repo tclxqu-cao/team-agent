@@ -5,6 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 RUNTIME_DIR="${VOICE_TTS_RUNTIME_DIR:-$REPO_ROOT/packages/desktop/.agent-data/tts-runtime}"
 MODEL="${VOICE_TTS_MODEL:-mlx-community/Qwen3-TTS-12Hz-0.6B-CustomVoice-6bit}"
+export HF_HUB_DISABLE_XET="${HF_HUB_DISABLE_XET:-1}"
 
 if ! command -v uv >/dev/null 2>&1; then
   echo "uv is required to install the MLX TTS runtime" >&2
