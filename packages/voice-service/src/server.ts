@@ -4,7 +4,15 @@ import type { Socket } from "node:net";
 import { WebSocket, WebSocketServer, type RawData } from "ws";
 import type { AsrResultEvent, AsrSession } from "./asr-engine.js";
 import type { KwsResultEvent, KwsSession } from "./kws-engine.js";
-import { parseAsrControl, parseTtsRequest, type TtsRequest } from "./protocol.js";
+import type { TtsPcmStream } from "./mlx-tts-engine.js";
+import {
+  parseAsrControl,
+  parseTtsRequest,
+  parseTtsStreamControl,
+  type TtsRequest,
+} from "./protocol.js";
+import { TtsOverloadedError } from "./tts-engine.js";
+import { encodePcm16Wav } from "./wav.js";
 
 export interface AsrEngineLike {
   createSession(
@@ -23,10 +31,11 @@ export interface KwsEngineLike {
 }
 
 export interface TtsEngineLike {
-  generate(
+  generate?(
     request: TtsRequest,
     signal: AbortSignal,
   ): Promise<{ wav: Buffer; sampleRate: number }>;
+  stream?(request: TtsRequest, signal: AbortSignal): Promise<TtsPcmStream>;
 }
 
 export interface VoiceServer {
@@ -42,9 +51,13 @@ interface VoiceServerOptions {
   asrEngine: AsrEngineLike;
   kwsEngine?: KwsEngineLike;
   ttsEngine?: TtsEngineLike;
+  ttsError?: string | null;
+  ttsLoading?: boolean;
 }
 
 const MAX_PCM_FRAME_BYTES = 256 * 1024;
+const MAX_TTS_SOCKET_BUFFER_BYTES = 1024 * 1024;
+const MAX_TTS_WAV_BYTES = 64 * 1024 * 1024;
 
 function authorized(request: IncomingMessage, token: string | null): boolean {
   return token === null || request.headers.authorization === `Bearer ${token}`;
@@ -93,7 +106,24 @@ async function handleTts(
     if (!response.writableEnded) controller.abort();
   });
   try {
-    const generated = await engine.generate(ttsRequest, controller.signal);
+    let generated: { wav: Buffer; sampleRate: number };
+    if (engine.generate) {
+      generated = await engine.generate(ttsRequest, controller.signal);
+    } else if (engine.stream) {
+      const stream = await engine.stream(ttsRequest, controller.signal);
+      const chunks: Buffer[] = [];
+      let bytes = 0;
+      for await (const chunk of stream.chunks) {
+        bytes += chunk.length;
+        if (bytes > MAX_TTS_WAV_BYTES) throw new Error("TTS WAV compatibility response exceeds limit");
+        chunks.push(chunk);
+      }
+      await stream.completed;
+      generated = { wav: encodePcm16Wav(Buffer.concat(chunks), stream.sampleRate), sampleRate: stream.sampleRate };
+    } else {
+      sendJson(response, 503, { error: "tts-unavailable" });
+      return;
+    }
     if (controller.signal.aborted || response.destroyed) return;
     response.writeHead(200, {
       "Content-Type": "audio/wav",
@@ -104,8 +134,26 @@ async function handleTts(
     response.end(generated.wav);
   } catch (error) {
     if (controller.signal.aborted || response.destroyed) return;
+    if (error instanceof TtsOverloadedError) {
+      sendJson(response, 429, { error: error.code });
+      return;
+    }
     sendJson(response, 500, { error: error instanceof Error ? error.message : "tts-failed" });
   }
+}
+
+function sendSocketJson(socket: WebSocket, value: unknown): void {
+  if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(value));
+}
+
+function sendSocketBinary(socket: WebSocket, chunk: Buffer): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (socket.readyState !== WebSocket.OPEN) {
+      reject(new Error("TTS socket is closed"));
+      return;
+    }
+    socket.send(chunk, { binary: true }, (error) => error ? reject(error) : resolve());
+  });
 }
 
 function pcmSamples(data: RawData): Float32Array {
@@ -131,7 +179,9 @@ export async function createVoiceServer(options: VoiceServerOptions): Promise<Vo
         ready: true,
         asr: true,
         kws: Boolean(options.kwsEngine),
-        tts: Boolean(options.ttsEngine),
+        tts: Boolean(options.ttsEngine?.stream),
+        ttsLoading: options.ttsLoading ?? false,
+        ttsError: options.ttsError ?? null,
       });
       return;
     }
@@ -141,7 +191,8 @@ export async function createVoiceServer(options: VoiceServerOptions): Promise<Vo
     }
     sendJson(response, 404, { error: "not-found" });
   });
-  const websocketServer = new WebSocketServer({ noServer: true, maxPayload: MAX_PCM_FRAME_BYTES });
+  const asrWebSocketServer = new WebSocketServer({ noServer: true, maxPayload: MAX_PCM_FRAME_BYTES });
+  const ttsWebSocketServer = new WebSocketServer({ noServer: true, maxPayload: 16 * 1024 });
   const sockets = new Set<Socket>();
 
   httpServer.on("connection", (socket) => {
@@ -150,7 +201,8 @@ export async function createVoiceServer(options: VoiceServerOptions): Promise<Vo
   });
 
   httpServer.on("upgrade", (request, socket, head) => {
-    if (request.url !== "/v1/asr") {
+    const pathname = new URL(request.url ?? "/", "http://localhost").pathname;
+    if (pathname !== "/v1/asr" && pathname !== "/v1/tts/stream") {
       socket.end("HTTP/1.1 404 Not Found\r\nConnection: close\r\n\r\n");
       return;
     }
@@ -158,12 +210,13 @@ export async function createVoiceServer(options: VoiceServerOptions): Promise<Vo
       socket.end("HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n");
       return;
     }
-    websocketServer.handleUpgrade(request, socket, head, (client) => {
-      websocketServer.emit("connection", client, request);
+    const server = pathname === "/v1/asr" ? asrWebSocketServer : ttsWebSocketServer;
+    server.handleUpgrade(request, socket, head, (client) => {
+      server.emit("connection", client, request);
     });
   });
 
-  websocketServer.on("connection", (socket) => {
+  asrWebSocketServer.on("connection", (socket) => {
     let asrSession: AsrSession | null = null;
     let kwsSession: KwsSession | null = null;
     let sessionId: string | null = null;
@@ -241,6 +294,101 @@ export async function createVoiceServer(options: VoiceServerOptions): Promise<Vo
     socket.on("close", closeSessions);
   });
 
+  ttsWebSocketServer.on("connection", (socket) => {
+    let active: { sessionId: string; generation: number; controller: AbortController } | null = null;
+    const sendError = (code: string, message: string, sessionId?: string, generation?: number) => {
+      sendSocketJson(socket, {
+        type: "error",
+        code,
+        message,
+        ...(sessionId === undefined ? {} : { sessionId }),
+        ...(generation === undefined ? {} : { generation }),
+      });
+    };
+
+    const run = async (start: TtsRequest, controller: AbortController) => {
+      try {
+        if (!options.ttsEngine?.stream) throw new Error("tts-unavailable");
+        const stream = await options.ttsEngine.stream(start, controller.signal);
+        if (controller.signal.aborted) throw new DOMException("aborted", "AbortError");
+        sendSocketJson(socket, {
+          type: "started",
+          sessionId: start.sessionId,
+          generation: start.generation,
+          sampleRate: stream.sampleRate,
+          channels: stream.channels,
+          sampleFormat: stream.sampleFormat,
+        });
+        for await (const chunk of stream.chunks) {
+          if (controller.signal.aborted) throw new DOMException("aborted", "AbortError");
+          if (socket.bufferedAmount > MAX_TTS_SOCKET_BUFFER_BYTES) {
+            controller.abort();
+            throw new Error("tts-buffer-overflow");
+          }
+          await sendSocketBinary(socket, chunk);
+        }
+        await stream.completed;
+        if (controller.signal.aborted) throw new DOMException("aborted", "AbortError");
+        sendSocketJson(socket, {
+          type: "finished",
+          sessionId: start.sessionId,
+          generation: start.generation,
+        });
+      } catch (error) {
+        const cancelled = controller.signal.aborted
+          || (error instanceof Error && error.name === "AbortError");
+        if (cancelled) {
+          sendSocketJson(socket, {
+            type: "cancelled",
+            sessionId: start.sessionId,
+            generation: start.generation,
+          });
+        } else {
+          sendError(
+            error instanceof Error && error.message === "tts-buffer-overflow"
+              ? "tts-buffer-overflow"
+              : "tts-failed",
+            error instanceof Error ? error.message : "TTS synthesis failed",
+            start.sessionId,
+            start.generation,
+          );
+        }
+      } finally {
+        if (active?.controller === controller) active = null;
+      }
+    };
+
+    socket.on("message", (data, isBinary) => {
+      if (isBinary) {
+        sendError("invalid-message", "TTS controls must be JSON text");
+        return;
+      }
+      try {
+        const control = parseTtsStreamControl(data.toString());
+        if (control.type === "start") {
+          if (active) throw new Error("TTS generation is already active");
+          if (!options.ttsEngine?.stream) {
+            sendError("tts-unavailable", options.ttsError || "TTS is unavailable", control.sessionId, control.generation);
+            return;
+          }
+          const controller = new AbortController();
+          active = { sessionId: control.sessionId, generation: control.generation, controller };
+          void run(control, controller);
+          return;
+        }
+        if (!active
+          || control.sessionId !== active.sessionId
+          || control.generation !== active.generation) {
+          throw new Error("control does not match the active TTS generation");
+        }
+        active.controller.abort();
+      } catch (error) {
+        sendError("invalid-message", error instanceof Error ? error.message : "invalid message");
+      }
+    });
+    socket.on("close", () => active?.controller.abort());
+  });
+
   httpServer.listen(options.port, options.host);
   await once(httpServer, "listening");
   const address = httpServer.address();
@@ -251,8 +399,12 @@ export async function createVoiceServer(options: VoiceServerOptions): Promise<Vo
     httpUrl,
     wsUrl: httpUrl.replace(/^http/, "ws"),
     async close() {
-      for (const client of websocketServer.clients) client.terminate();
-      await new Promise<void>((resolve) => websocketServer.close(() => resolve()));
+      for (const client of asrWebSocketServer.clients) client.terminate();
+      for (const client of ttsWebSocketServer.clients) client.terminate();
+      await Promise.all([
+        new Promise<void>((resolve) => asrWebSocketServer.close(() => resolve())),
+        new Promise<void>((resolve) => ttsWebSocketServer.close(() => resolve())),
+      ]);
       await new Promise<void>((resolve, reject) => {
         httpServer.close((error) => {
           error ? reject(error) : resolve();

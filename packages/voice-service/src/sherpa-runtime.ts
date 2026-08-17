@@ -1,15 +1,11 @@
-import type { AsrModelFiles, KwsModelFiles, TtsModelFiles } from "./model-files.js";
-import { findAsrModelFiles, findKwsModelFiles, findTtsModelFiles } from "./model-files.js";
+import type { AsrModelFiles, KwsModelFiles } from "./model-files.js";
+import { findAsrModelFiles, findKwsModelFiles } from "./model-files.js";
 import { AsrEngine, type RecognizerLike } from "./asr-engine.js";
 import { KwsEngine, type KeywordSpotterLike } from "./kws-engine.js";
-import { TtsEngine, type OfflineTtsLike } from "./tts-engine.js";
 
 export interface SherpaAddonLike {
   OnlineRecognizer: new (config: ReturnType<typeof buildAsrRecognizerConfig>) => RecognizerLike;
   KeywordSpotter: new (config: ReturnType<typeof buildKwsConfig>) => KeywordSpotterLike;
-  OfflineTts: {
-    createAsync(config: ReturnType<typeof buildTtsConfig>): Promise<OfflineTtsLike>;
-  };
   version?: string;
 }
 
@@ -58,35 +54,14 @@ export function buildAsrRecognizerConfig(files: AsrModelFiles) {
   };
 }
 
-export function buildTtsConfig(files: TtsModelFiles) {
-  return {
-    model: {
-      vits: {
-        model: files.model,
-        tokens: files.tokens,
-        lexicon: files.lexicon,
-        dataDir: "",
-        dictDir: files.dictDir,
-      },
-    },
-    maxNumSentences: 1,
-    silenceScale: 0.2,
-    numThreads: 2,
-    provider: "cpu",
-  };
-}
-
 export async function createSherpaEngines(
   addon: SherpaAddonLike,
   asrModelDir: string,
   kwsModelDir: string,
-  ttsModelDir: string,
 ): Promise<{
   asr: AsrEngine;
   kws: KwsEngine | null;
   kwsError: Error | null;
-  tts: TtsEngine | null;
-  ttsError: Error | null;
 }> {
   const recognizer = new addon.OnlineRecognizer(
     buildAsrRecognizerConfig(findAsrModelFiles(asrModelDir)),
@@ -102,18 +77,5 @@ export async function createSherpaEngines(
   } catch (error) {
     kwsError = error instanceof Error ? error : new Error(String(error));
   }
-  try {
-    const offline = await addon.OfflineTts.createAsync(
-      buildTtsConfig(findTtsModelFiles(ttsModelDir)),
-    );
-    return { asr, kws, kwsError, tts: new TtsEngine(offline), ttsError: null };
-  } catch (error) {
-    return {
-      asr,
-      kws,
-      kwsError,
-      tts: null,
-      ttsError: error instanceof Error ? error : new Error(String(error)),
-    };
-  }
+  return { asr, kws, kwsError };
 }

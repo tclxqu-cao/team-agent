@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import WebSocket from "ws";
 import type { AsrResultEvent, AsrSession } from "./asr-engine";
 import type { KwsResultEvent, KwsSession } from "./kws-engine";
+import { TtsOverloadedError } from "./tts-engine";
 import {
   createVoiceServer,
   type AsrEngineLike,
@@ -77,6 +78,32 @@ function nextJson(socket: WebSocket): Promise<Record<string, unknown>> {
   });
 }
 
+function nextMessage(socket: WebSocket): Promise<{ data: Buffer; binary: boolean }> {
+  return new Promise((resolve) => {
+    socket.once("message", (data, isBinary) => resolve({ data: Buffer.from(data as any), binary: isBinary }));
+  });
+}
+
+class SocketInbox {
+  private readonly messages: Array<{ data: Buffer; binary: boolean }> = [];
+  private readonly waiters: Array<(message: { data: Buffer; binary: boolean }) => void> = [];
+
+  constructor(socket: WebSocket) {
+    socket.on("message", (data, isBinary) => {
+      const message = { data: Buffer.from(data as any), binary: isBinary };
+      const waiter = this.waiters.shift();
+      if (waiter) waiter(message);
+      else this.messages.push(message);
+    });
+  }
+
+  next(): Promise<{ data: Buffer; binary: boolean }> {
+    const message = this.messages.shift();
+    if (message) return Promise.resolve(message);
+    return new Promise((resolve) => this.waiters.push(resolve));
+  }
+}
+
 function openSocket(url: string, token?: string): Promise<WebSocket> {
   return new Promise((resolve, reject) => {
     const socket = new WebSocket(url, token ? { headers: { Authorization: `Bearer ${token}` } } : undefined);
@@ -90,7 +117,14 @@ describe("voice service", () => {
     const service = await createVoiceServer({ host: "127.0.0.1", port: 0, token: null, asrEngine: new RecordingAsrEngine() });
     try {
       const response = await fetch(`${service.httpUrl}/health`);
-      expect(await response.json()).toEqual({ ready: true, asr: true, kws: false, tts: false });
+      expect(await response.json()).toEqual({
+        ready: true,
+        asr: true,
+        kws: false,
+        tts: false,
+        ttsLoading: false,
+        ttsError: null,
+      });
     } finally {
       await service.close();
     }
@@ -307,6 +341,7 @@ describe("voice service", () => {
       expect((await fetch(`${service.httpUrl}/health`)).status).toBe(401);
       expect((await fetch(`${service.httpUrl}/health`, { headers: { Authorization: "Bearer secret" } })).status).toBe(200);
       await expect(openSocket(`${service.wsUrl}/v1/asr`)).rejects.toThrow(/401/);
+      await expect(openSocket(`${service.wsUrl}/v1/tts/stream`)).rejects.toThrow(/401/);
       const socket = await openSocket(`${service.wsUrl}/v1/asr`, "secret");
       socket.close();
     } finally {
@@ -344,11 +379,37 @@ describe("voice service", () => {
           sessionId: "voice-1",
           generation: 12,
           text: "这是回答。",
-          voice: "default-zh-female",
+          voice: "Serena",
           speed: 1,
         },
         aborted: false,
       }]);
+    } finally {
+      await service.close();
+    }
+  });
+
+  it("returns 429 when TTS capacity is exhausted", async () => {
+    const ttsEngine: TtsEngineLike = {
+      async generate() {
+        throw new TtsOverloadedError();
+      },
+    };
+    const service = await createVoiceServer({
+      host: "127.0.0.1",
+      port: 0,
+      token: null,
+      asrEngine: new RecordingAsrEngine(),
+      ttsEngine,
+    });
+    try {
+      const response = await fetch(`${service.httpUrl}/v1/tts`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId: "voice-1", generation: 13, text: "你好" }),
+      });
+      expect(response.status).toBe(429);
+      expect(await response.json()).toEqual({ error: "tts-overloaded" });
     } finally {
       await service.close();
     }
@@ -373,6 +434,153 @@ describe("voice service", () => {
       expect(unavailable.status).toBe(503);
       expect(await unavailable.json()).toEqual({ error: "tts-unavailable" });
     } finally {
+      await service.close();
+    }
+  });
+
+  it("streams generation-scoped PCM after started metadata", async () => {
+    const ttsEngine: TtsEngineLike = {
+      async stream() {
+        return {
+          sampleRate: 24_000,
+          channels: 1,
+          sampleFormat: "s16le",
+          chunks: (async function* () {
+            await new Promise((resolve) => setTimeout(resolve, 5));
+            yield Buffer.from([0, 0, 1, 0]);
+          })(),
+          completed: Promise.resolve(),
+        };
+      },
+    };
+    const service = await createVoiceServer({
+      host: "127.0.0.1",
+      port: 0,
+      token: null,
+      asrEngine: new RecordingAsrEngine(),
+      ttsEngine,
+    });
+    const socket = await openSocket(`${service.wsUrl}/v1/tts/stream`);
+    const inbox = new SocketInbox(socket);
+    try {
+      socket.send(JSON.stringify({
+        type: "start",
+        sessionId: "voice-stream",
+        generation: 12,
+        text: "这是回答。",
+        voice: "Serena",
+        speed: 1,
+      }));
+      const started = await inbox.next();
+      expect(started.binary).toBe(false);
+      expect(JSON.parse(started.data.toString())).toEqual({
+        type: "started",
+        sessionId: "voice-stream",
+        generation: 12,
+        sampleRate: 24_000,
+        channels: 1,
+        sampleFormat: "s16le",
+      });
+      const pcm = await inbox.next();
+      expect(pcm).toEqual({ data: Buffer.from([0, 0, 1, 0]), binary: true });
+      const finished = await inbox.next();
+      expect(JSON.parse(finished.data.toString())).toEqual({
+        type: "finished",
+        sessionId: "voice-stream",
+        generation: 12,
+      });
+    } finally {
+      socket.close();
+      await service.close();
+    }
+  });
+
+  it("cancels only the matching active TTS generation", async () => {
+    let aborted = false;
+    const ttsEngine: TtsEngineLike = {
+      async stream(_request, signal) {
+        const completed = new Promise<void>((_resolve, reject) => {
+          signal.addEventListener("abort", () => {
+            aborted = true;
+            const error = new Error("aborted");
+            error.name = "AbortError";
+            reject(error);
+          }, { once: true });
+        });
+        return {
+          sampleRate: 24_000,
+          channels: 1,
+          sampleFormat: "s16le",
+          chunks: (async function* () {
+            yield Buffer.from([1, 0]);
+            await completed;
+          })(),
+          completed,
+        };
+      },
+    };
+    const service = await createVoiceServer({
+      host: "127.0.0.1",
+      port: 0,
+      token: null,
+      asrEngine: new RecordingAsrEngine(),
+      ttsEngine,
+    });
+    const socket = await openSocket(`${service.wsUrl}/v1/tts/stream`);
+    const inbox = new SocketInbox(socket);
+    try {
+      socket.send(JSON.stringify({ type: "start", sessionId: "voice-cancel", generation: 5, text: "长回答" }));
+      expect(JSON.parse((await inbox.next()).data.toString()).type).toBe("started");
+      await inbox.next();
+
+      socket.send(JSON.stringify({ type: "cancel", sessionId: "voice-cancel", generation: 4 }));
+      expect(JSON.parse((await inbox.next()).data.toString())).toMatchObject({
+        type: "error",
+        code: "invalid-message",
+      });
+      expect(aborted).toBe(false);
+
+      socket.send(JSON.stringify({ type: "cancel", sessionId: "voice-cancel", generation: 5 }));
+      expect(JSON.parse((await inbox.next()).data.toString())).toEqual({
+        type: "cancelled",
+        sessionId: "voice-cancel",
+        generation: 5,
+      });
+      expect(aborted).toBe(true);
+    } finally {
+      socket.close();
+      await service.close();
+    }
+  });
+
+  it("rejects malformed TTS controls and reports startup availability", async () => {
+    const service = await createVoiceServer({
+      host: "127.0.0.1",
+      port: 0,
+      token: null,
+      asrEngine: new RecordingAsrEngine(),
+      ttsError: "model missing",
+    });
+    const socket = await openSocket(`${service.wsUrl}/v1/tts/stream`);
+    try {
+      let pending = nextMessage(socket);
+      socket.send(Buffer.from([1, 2]));
+      expect(JSON.parse((await pending).data.toString())).toMatchObject({ code: "invalid-message" });
+      pending = nextMessage(socket);
+      socket.send(JSON.stringify({ type: "start", sessionId: "voice-err", generation: 1, text: "你好" }));
+      expect(JSON.parse((await pending).data.toString())).toMatchObject({
+        type: "error",
+        code: "tts-unavailable",
+        message: "model missing",
+        generation: 1,
+      });
+      expect(await (await fetch(`${service.httpUrl}/health`)).json()).toMatchObject({
+        tts: false,
+        ttsLoading: false,
+        ttsError: "model missing",
+      });
+    } finally {
+      socket.close();
       await service.close();
     }
   });

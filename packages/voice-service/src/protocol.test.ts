@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseAsrControl, parseTtsRequest } from "./protocol";
+import { parseAsrControl, parseTtsRequest, parseTtsStreamControl } from "./protocol";
 
 describe("parseAsrControl", () => {
   it("accepts a 16 kHz ASR start message", () => {
@@ -49,7 +49,7 @@ describe("parseTtsRequest", () => {
       sessionId: "voice-1",
       generation: 12,
       text: "这是本轮回答。",
-      voice: "default-zh-female",
+      voice: "Serena",
       speed: 1,
     });
   });
@@ -61,5 +61,33 @@ describe("parseTtsRequest", () => {
     [{ sessionId: "v", generation: 1, text: "你好", speed: 2.01 }, "speed"],
   ])("rejects invalid TTS request %#", (value, message) => {
     expect(() => parseTtsRequest(value)).toThrow(String(message));
+  });
+});
+
+describe("parseTtsStreamControl", () => {
+  it("parses start and cancel controls with shared generation validation", () => {
+    expect(parseTtsStreamControl(JSON.stringify({
+      type: "start",
+      sessionId: "voice-2",
+      generation: 4,
+      text: "开始流式播报",
+    }))).toEqual({
+      type: "start",
+      sessionId: "voice-2",
+      generation: 4,
+      text: "开始流式播报",
+      voice: "Serena",
+      speed: 1,
+    });
+    expect(parseTtsStreamControl(JSON.stringify({
+      type: "cancel",
+      sessionId: "voice-2",
+      generation: 4,
+    }))).toEqual({ type: "cancel", sessionId: "voice-2", generation: 4 });
+  });
+
+  it("rejects unsupported and malformed controls", () => {
+    expect(() => parseTtsStreamControl("not-json")).toThrow("valid JSON");
+    expect(() => parseTtsStreamControl(JSON.stringify({ type: "stop" }))).toThrow("not supported");
   });
 });

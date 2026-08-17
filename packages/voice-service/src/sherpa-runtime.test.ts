@@ -5,23 +5,19 @@ import { join } from "node:path";
 import {
   buildAsrRecognizerConfig,
   buildKwsConfig,
-  buildTtsConfig,
   createSherpaEngines,
   type SherpaAddonLike,
 } from "./sherpa-runtime";
 
-function modelDirectories(): { asr: string; kws: string; tts: string } {
+function modelDirectories(): { asr: string; kws: string } {
   const root = mkdtempSync(join(tmpdir(), "voice-models-"));
   const asr = join(root, "asr");
   const kws = join(root, "kws");
-  const tts = join(root, "tts");
   mkdirSync(asr);
   mkdirSync(kws);
-  mkdirSync(tts);
   for (const name of ["encoder.int8.onnx", "decoder.onnx", "joiner.int8.onnx", "tokens.txt"]) {
     writeFileSync(join(asr, name), name);
   }
-  for (const name of ["model.onnx", "tokens.txt", "lexicon.txt"]) writeFileSync(join(tts, name), name);
   for (const name of [
     "encoder.int8.onnx",
     "decoder.onnx",
@@ -29,8 +25,7 @@ function modelDirectories(): { asr: string; kws: string; tts: string } {
     "tokens.txt",
     "keywords.txt",
   ]) writeFileSync(join(kws, name), name);
-  mkdirSync(join(tts, "dict"));
-  return { asr, kws, tts };
+  return { asr, kws };
 }
 
 describe("sherpa runtime configuration", () => {
@@ -90,30 +85,7 @@ describe("sherpa runtime configuration", () => {
     });
   });
 
-  it("builds the Melo VITS configuration", () => {
-    expect(buildTtsConfig({
-      model: "/tts/model.onnx",
-      tokens: "/tts/tokens.txt",
-      lexicon: "/tts/lexicon.txt",
-      dictDir: "/tts/dict",
-    })).toEqual({
-      model: {
-        vits: {
-          model: "/tts/model.onnx",
-          tokens: "/tts/tokens.txt",
-          lexicon: "/tts/lexicon.txt",
-          dataDir: "",
-          dictDir: "/tts/dict",
-        },
-      },
-      maxNumSentences: 1,
-      silenceScale: 0.2,
-      numThreads: 2,
-      provider: "cpu",
-    });
-  });
-
-  it("loads ASR once and degrades KWS and TTS independently", async () => {
+  it("loads ASR once and degrades KWS independently", async () => {
     const dirs = modelDirectories();
     const recognizer = {
       createStream: () => ({ acceptWaveform() {}, inputFinished() {} }),
@@ -134,16 +106,11 @@ describe("sherpa runtime configuration", () => {
       KeywordSpotter: class {
         constructor() { throw new Error("kws unavailable"); }
       } as any,
-      OfflineTts: {
-        async createAsync() { throw new Error("tts unavailable"); },
-      },
     };
-    const engines = await createSherpaEngines(addon, dirs.asr, dirs.kws, dirs.tts);
+    const engines = await createSherpaEngines(addon, dirs.asr, dirs.kws);
     expect(asrLoads).toBe(1);
     expect(engines.asr).toBeDefined();
     expect(engines.kws).toBeNull();
     expect(engines.kwsError?.message).toBe("kws unavailable");
-    expect(engines.tts).toBeNull();
-    expect(engines.ttsError?.message).toBe("tts unavailable");
   });
 });

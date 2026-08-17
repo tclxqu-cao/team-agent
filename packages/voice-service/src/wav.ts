@@ -22,3 +22,26 @@ export function encodeFloat32Wav(samples: Float32Array, sampleRate: number): Buf
   }
   return output;
 }
+
+export function encodePcm16Wav(pcm: Buffer, sampleRate: number): Buffer {
+  if (!Number.isSafeInteger(sampleRate) || sampleRate <= 0) {
+    throw new Error("sampleRate must be a positive integer");
+  }
+  if (pcm.length % 2 !== 0) throw new Error("PCM must contain complete int16 samples");
+  const output = Buffer.allocUnsafe(44 + pcm.length);
+  output.write("RIFF", 0, "ascii");
+  output.writeUInt32LE(36 + pcm.length, 4);
+  output.write("WAVE", 8, "ascii");
+  output.write("fmt ", 12, "ascii");
+  output.writeUInt32LE(16, 16);
+  output.writeUInt16LE(1, 20);
+  output.writeUInt16LE(1, 22);
+  output.writeUInt32LE(sampleRate, 24);
+  output.writeUInt32LE(sampleRate * 2, 28);
+  output.writeUInt16LE(2, 32);
+  output.writeUInt16LE(16, 34);
+  output.write("data", 36, "ascii");
+  output.writeUInt32LE(pcm.length, 40);
+  pcm.copy(output, 44);
+  return output;
+}

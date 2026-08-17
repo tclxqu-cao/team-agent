@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { encodeFloat32Wav } from "./wav";
+import { encodeFloat32Wav, encodePcm16Wav } from "./wav";
 
 describe("encodeFloat32Wav", () => {
   it("writes a mono IEEE-float WAV with literal lengths and rates", () => {
@@ -17,5 +17,16 @@ describe("encodeFloat32Wav", () => {
     expect(wav.readUInt32LE(40)).toBe(8);
     expect(wav.readFloatLE(44)).toBe(0.25);
     expect(wav.readFloatLE(48)).toBe(-0.5);
+  });
+});
+
+describe("encodePcm16Wav", () => {
+  it("wraps mono signed PCM without converting samples", () => {
+    const pcm = Buffer.from([0x00, 0x80, 0xff, 0x7f]);
+    const wav = encodePcm16Wav(pcm, 24_000);
+    expect(wav.readUInt16LE(20)).toBe(1);
+    expect(wav.readUInt16LE(34)).toBe(16);
+    expect(wav.readUInt32LE(28)).toBe(48_000);
+    expect(wav.subarray(44)).toEqual(pcm);
   });
 });
