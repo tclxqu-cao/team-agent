@@ -6,7 +6,7 @@ const { app, BrowserWindow, ipcMain, dialog, session } = require("electron") as 
 import { spawn, type ChildProcess } from "node:child_process";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { readFile, unlink, writeFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { AgentHost } from "./agent-host.js";
 import { resolveDesktopBaseDir } from "./desktop-base-dir.js";
@@ -29,10 +29,14 @@ import {
   shouldRearmWakeOnlyCapture,
   shouldRestartWakeListener,
 } from "./voice-capture-state.js";
-import { VoiceServiceClient, type VoiceServiceEvent } from "./voice-service-client.js";
+import {
+  VoiceServiceClient,
+  type VoiceServiceEvent,
+} from "./voice-service-client.js";
 import {
   findVoiceServiceEntry,
   findVoiceServiceRuntime,
+  getVoiceServiceTtsEnvironment,
   VoiceServiceManager,
   type VoiceProvider,
 } from "./voice-service-manager.js";
@@ -74,8 +78,12 @@ const voiceServiceManager = new VoiceServiceManager({
   env: {
     VOICE_ASR_MODEL_DIR: process.env.VOICE_ASR_MODEL_DIR
       ?? join(app.getAppPath(), ".agent-data", "asr-models", "sherpa-onnx-streaming-zipformer-zh-int8-2025-06-30"),
-    VOICE_TTS_MODEL_DIR: process.env.VOICE_TTS_MODEL_DIR
-      ?? join(app.getAppPath(), ".agent-data", "tts-models", "vits-melo-tts-zh_en"),
+    ...getVoiceServiceTtsEnvironment({
+      appPath: app.getAppPath(),
+      resourcesPath: process.resourcesPath,
+      isPackaged: app.isPackaged,
+      env: process.env,
+    }),
   },
 });
 let activeVoiceProvider: VoiceProvider | null = null;
@@ -553,32 +561,21 @@ ipcMain.handle("window:isVisible", () => {
   return mainWindow?.isVisible() ?? false;
 });
 
-// ── Service TTS + native fallback + two-way voice conversation ─────────
-let ttsProc: ChildProcess | null = null;
+// ── Service TTS + two-way voice conversation ────────────────────────────
 let ttsSpeaking = false;
 let ttsGraceTimer: NodeJS.Timeout | null = null;
 let ttsAbortController: AbortController | null = null;
 let ttsGeneration = 0;
-let ttsAudioPath: string | null = null;
 let conversation = false;
 let conversationTimer: NodeJS.Timeout | null = null;
 
-function removeTtsAudio(path = ttsAudioPath): void {
-  if (!path) return;
-  if (ttsAudioPath === path) ttsAudioPath = null;
-  void unlink(path).catch(() => {});
-}
-
-function cancelActiveTts(): void {
+function cancelActiveTts(): number {
+  const cancelledGeneration = ttsGeneration;
   ttsGeneration += 1;
   ttsAbortController?.abort();
   ttsAbortController = null;
-  const interrupted = ttsProc;
-  ttsProc = null;
-  if (interrupted) {
-    try { interrupted.kill(); } catch { /* already exited */ }
-  }
-  removeTtsAudio();
+  mainWindow?.webContents.send("tts:flush", { generation: cancelledGeneration });
+  return cancelledGeneration;
 }
 
 function resumeWakeAfterTts(): void {
@@ -593,78 +590,82 @@ function resumeWakeAfterTts(): void {
 function interruptTtsForBargeIn(): void {
   if (!shouldAcceptBargeIn(ttsSpeaking, conversation)) return;
   console.warn("[tts] barge-in detected, stopping current speech");
-  cancelActiveTts();
+  const generation = cancelActiveTts();
   if (ttsGraceTimer) { clearTimeout(ttsGraceTimer); ttsGraceTimer = null; }
   ttsSpeaking = false;
   wakeSuspendedForTts = false;
   if (!capturing) startCapture("", true);
-  mainWindow?.webContents.send("tts:end");
+  mainWindow?.webContents.send("tts:end", { generation });
 }
 
-function attachTtsProcess(processToPlay: ChildProcess, generation: number, audioPath: string | null): void {
-  if (!shouldAcceptTtsPlayback(generation, ttsGeneration, ttsSpeaking)) {
-    try { processToPlay.kill(); } catch { /* already exited */ }
-    if (audioPath) removeTtsAudio(audioPath);
-    return;
-  }
-  ttsProc = processToPlay;
-  processToPlay.on("exit", () => {
-    if (ttsProc !== processToPlay || generation !== ttsGeneration) return;
-    ttsProc = null;
-    ttsAbortController = null;
-    if (audioPath) removeTtsAudio(audioPath);
-    ttsSpeaking = false;
-    mainWindow?.webContents.send("tts:end");
-    const graceMs = activeVoiceProvider?.kind === "service" ? 100 : 1500;
-    ttsGraceTimer = setTimeout(resumeWakeAfterTts, graceMs);
-  });
-  processToPlay.on("error", () => {
-    if (ttsProc !== processToPlay || generation !== ttsGeneration) return;
-    ttsProc = null;
-    ttsAbortController = null;
-    if (audioPath) removeTtsAudio(audioPath);
-    resumeWakeAfterTts();
-  });
+function finishTtsPlayback(generation: number): void {
+  if (!shouldAcceptTtsPlayback(generation, ttsGeneration, ttsSpeaking)) return;
+  ttsAbortController = null;
+  ttsSpeaking = false;
+  mainWindow?.webContents.send("tts:end", { generation });
+  if (ttsGraceTimer) clearTimeout(ttsGraceTimer);
+  ttsGraceTimer = setTimeout(resumeWakeAfterTts, 100);
 }
 
-async function synthesizeAndPlay(
+function synthesizeAndStream(
   text: string,
   generation: number,
   controller: AbortController,
-): Promise<void> {
+): Promise<boolean> {
+  let resolveStarted!: (started: boolean) => void;
+  const started = new Promise<boolean>((resolve) => { resolveStarted = resolve; });
+  let startSettled = false;
   let provider: VoiceProvider | null = null;
-  const useNativeFallback = () => {
-    if (!shouldAcceptTtsPlayback(generation, ttsGeneration, ttsSpeaking)) return;
-    attachTtsProcess(spawn("say", ["-v", "Tingting", text]), generation, null);
+  const settleStart = (value: boolean) => {
+    if (startSettled) return;
+    startSettled = true;
+    resolveStarted(value);
   };
-  try {
-    provider = await connectVoiceProvider();
-    if (provider.kind !== "service") {
-      useNativeFallback();
-      return;
+
+  void (async () => {
+    try {
+      provider = await connectVoiceProvider();
+      if (provider.kind !== "service") throw new Error("TTS model service is unavailable");
+      await provider.client.streamSynthesize({
+        sessionId: `tts-${process.pid}`,
+        generation,
+        text,
+        voice: "Serena",
+        speed: 1,
+      }, controller.signal, {
+        onStarted: (metadata) => {
+          if (!shouldAcceptTtsPlayback(generation, ttsGeneration, ttsSpeaking)) {
+            controller.abort();
+            settleStart(false);
+            return;
+          }
+          console.warn("[tts] stream started", { generation, sampleRate: metadata.sampleRate });
+          mainWindow?.webContents.send("tts:start", metadata);
+          settleStart(true);
+        },
+        onPcm: (pcm) => {
+          if (!shouldAcceptTtsPlayback(generation, ttsGeneration, ttsSpeaking)) return;
+          const bytes = pcm.buffer.slice(pcm.byteOffset, pcm.byteOffset + pcm.byteLength);
+          mainWindow?.webContents.send("tts:pcm", { generation, pcm: bytes });
+        },
+      });
+      if (!shouldAcceptTtsPlayback(generation, ttsGeneration, ttsSpeaking)) return;
+      ttsAbortController = null;
+      mainWindow?.webContents.send("tts:stream-end", { generation });
+    } catch (error) {
+      settleStart(false);
+      if (controller.signal.aborted) return;
+      if (provider) invalidateVoiceProvider(provider);
+      console.warn("[tts] model stream failed; playback cancelled:", error);
+      if (shouldAcceptTtsPlayback(generation, ttsGeneration, ttsSpeaking)) {
+        ttsAbortController = null;
+        mainWindow?.webContents.send("tts:flush", { generation });
+        mainWindow?.webContents.send("tts:end", { generation });
+        resumeWakeAfterTts();
+      }
     }
-    const wav = await provider.client.synthesize({
-      sessionId: `tts-${process.pid}`,
-      generation,
-      text,
-      voice: "default-zh-female",
-      speed: 1,
-    }, controller.signal);
-    if (!shouldAcceptTtsPlayback(generation, ttsGeneration, ttsSpeaking)) return;
-    const path = join(app.getPath("temp"), `customer-agent-tts-${process.pid}-${generation}.wav`);
-    await writeFile(path, wav);
-    if (!shouldAcceptTtsPlayback(generation, ttsGeneration, ttsSpeaking)) {
-      removeTtsAudio(path);
-      return;
-    }
-    ttsAudioPath = path;
-    attachTtsProcess(spawn("afplay", [path]), generation, path);
-  } catch (error) {
-    if (controller.signal.aborted) return;
-    if (provider) invalidateVoiceProvider(provider);
-    console.warn("[tts] voice service unavailable, using say fallback:", error);
-    useNativeFallback();
-  }
+  })();
+  return started;
 }
 
 function endConversation(): void {
@@ -687,7 +688,6 @@ ipcMain.handle("tts:speak", async (_event, text: string) => {
   ttsSpeaking = true;
   const listeningMode = getTtsListeningMode(conversation);
   wakeSuspendedForTts = listeningMode === "suspended";
-  mainWindow?.webContents.send("tts:start");
   await prepareTtsListening(
     listeningMode,
     wakeProcMode,
@@ -697,16 +697,20 @@ ipcMain.handle("tts:speak", async (_event, text: string) => {
   if (!shouldAcceptTtsPlayback(generation, ttsGeneration, ttsSpeaking)) {
     return { ok: false };
   }
-  void synthesizeAndPlay(clean, generation, controller);
-  return { ok: true };
+  return { ok: await synthesizeAndStream(clean, generation, controller) };
 });
 
 ipcMain.handle("tts:stop", () => {
-  cancelActiveTts();
+  const generation = cancelActiveTts();
   if (ttsGraceTimer) { clearTimeout(ttsGraceTimer); ttsGraceTimer = null; }
   ttsSpeaking = false;
-  mainWindow?.webContents.send("tts:end");
+  mainWindow?.webContents.send("tts:end", { generation });
   resumeWakeAfterTts();
+  return { ok: true };
+});
+
+ipcMain.handle("tts:playback-ended", (_event, generation: number) => {
+  finishTtsPlayback(generation);
   return { ok: true };
 });
 
@@ -1088,6 +1092,7 @@ app.whenReady().then(() => {
 app.on("before-quit", () => {
   wakeDesired = false;
   dictationActive = false;
+  cancelActiveTts();
   stopWakeProc();
   voiceServiceManager.close();
 });

@@ -97,9 +97,15 @@ export interface AgentApi {
   dictationStop(): Promise<{ ok: boolean }>;
   onDictation(callback: (payload: { text: string; isFinal: boolean }) => void): () => void;
   onDictationError(callback: (message: string) => void): () => void;
-  // Native TTS (macOS `say`)
+  // Model-backed TTS via the voice service
   ttsSpeak(text: string): Promise<{ ok: boolean }>;
   ttsStop(): Promise<{ ok: boolean }>;
+  ttsPlaybackEnded(generation: number): Promise<{ ok: boolean }>;
+  onTtsStart(callback: (payload: TtsStreamMetadata) => void): () => void;
+  onTtsPcm(callback: (payload: { generation: number; pcm: ArrayBuffer }) => void): () => void;
+  onTtsStreamEnd(callback: (payload: { generation: number }) => void): () => void;
+  onTtsFlush(callback: (payload: { generation: number }) => void): () => void;
+  onTtsEnd(callback: (payload: { generation: number }) => void): () => void;
   run(input: string, sessionId: string, agentIds?: string[], agentName?: string, images?: string[]): Promise<unknown[]>;
   steer(input: string, sessionId: string, agentName?: string): Promise<boolean>;
   abort(): Promise<void>;
@@ -173,6 +179,14 @@ export interface AgentApi {
   lspSave(config: Omit<LSPServerConfig, 'id'> & { id?: string }): Promise<void>;
   lspDelete(id: string): Promise<void>;
   lspSetEnabled(id: string, enabled: boolean): Promise<void>;
+}
+
+export interface TtsStreamMetadata {
+  sessionId: string;
+  generation: number;
+  sampleRate: 24_000;
+  channels: 1;
+  sampleFormat: "s16le";
 }
 
 declare global {

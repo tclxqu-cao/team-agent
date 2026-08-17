@@ -45,6 +45,28 @@ export function findVoiceServiceRuntime(options: {
   ].find(isExecutable) ?? null;
 }
 
+export function getVoiceServiceTtsEnvironment(options: {
+  appPath: string;
+  resourcesPath: string;
+  isPackaged: boolean;
+  env: Record<string, string | undefined>;
+}): Record<string, string> {
+  const developmentWorker = join(options.appPath, "..", "voice-service", "python", "mlx_tts_worker.py");
+  const packagedRoot = join(options.resourcesPath, "voice-service");
+  return {
+    VOICE_TTS_PYTHON: options.env.VOICE_TTS_PYTHON?.trim() || (options.isPackaged
+      ? join(packagedRoot, "tts-runtime", "bin", "python")
+      : join(options.appPath, ".agent-data", "tts-runtime", "bin", "python")),
+    VOICE_TTS_WORKER_SCRIPT: options.env.VOICE_TTS_WORKER_SCRIPT?.trim() || (options.isPackaged
+      ? join(packagedRoot, "python", "mlx_tts_worker.py")
+      : developmentWorker),
+    VOICE_TTS_MODEL: options.env.VOICE_TTS_MODEL?.trim()
+      || "mlx-community/Qwen3-TTS-12Hz-0.6B-CustomVoice-6bit",
+    VOICE_TTS_VOICE: options.env.VOICE_TTS_VOICE?.trim() || "Serena",
+    VOICE_TTS_STREAMING_INTERVAL: options.env.VOICE_TTS_STREAMING_INTERVAL?.trim() || "0.32",
+  };
+}
+
 export interface ManagerOptions {
   remoteUrl: string | null;
   remoteToken: string | null;
@@ -54,6 +76,7 @@ export interface ManagerOptions {
   runtimeExecutable: string | null;
   cwd: string;
   env: Record<string, string | undefined>;
+  startupTimeoutMs?: number;
 }
 
 export function getLocalVoiceServiceLaunch(options: ManagerOptions): {
@@ -156,7 +179,8 @@ export class VoiceServiceManager {
         if (this.managedProcess === launched) this.managedProcess = null;
       });
     }
-    for (let attempt = 0; attempt < 50; attempt += 1) {
+    const deadline = Date.now() + (this.options.startupTimeoutMs ?? 120_000);
+    while (Date.now() < deadline) {
       if (await this.dependencies.probe(this.options.localUrl, this.options.localToken)) {
         this.client = new VoiceServiceClient({
           baseUrl: this.options.localUrl,

@@ -6,6 +6,7 @@ import {
   VoiceServiceManager,
   findVoiceServiceEntry,
   findVoiceServiceRuntime,
+  getVoiceServiceTtsEnvironment,
   getLocalVoiceServiceLaunch,
   type ManagedVoiceProcess,
 } from "./voice-service-manager";
@@ -90,6 +91,37 @@ describe("local voice service runtime", () => {
       pathEnv: `${blockedBin}:${bin}`,
       resourcesPath: join(root, "resources"),
     })).toBe(node);
+  });
+
+  it("resolves development MLX worker and runtime paths", () => {
+    expect(getVoiceServiceTtsEnvironment({
+      appPath: "/repo/packages/desktop",
+      resourcesPath: "/Applications/Customer Agent.app/Contents/Resources",
+      isPackaged: false,
+      env: {},
+    })).toEqual({
+      VOICE_TTS_PYTHON: "/repo/packages/desktop/.agent-data/tts-runtime/bin/python",
+      VOICE_TTS_WORKER_SCRIPT: "/repo/packages/voice-service/python/mlx_tts_worker.py",
+      VOICE_TTS_MODEL: "mlx-community/Qwen3-TTS-12Hz-0.6B-CustomVoice-6bit",
+      VOICE_TTS_VOICE: "Serena",
+      VOICE_TTS_STREAMING_INTERVAL: "0.32",
+    });
+  });
+
+  it("resolves packaged MLX paths and honors explicit overrides", () => {
+    expect(getVoiceServiceTtsEnvironment({
+      appPath: "/Applications/Customer Agent.app/Contents/Resources/app.asar",
+      resourcesPath: "/Applications/Customer Agent.app/Contents/Resources",
+      isPackaged: true,
+      env: {
+        VOICE_TTS_PYTHON: "/custom/python",
+        VOICE_TTS_MODEL: "org/custom-model",
+      },
+    })).toMatchObject({
+      VOICE_TTS_PYTHON: "/custom/python",
+      VOICE_TTS_WORKER_SCRIPT: "/Applications/Customer Agent.app/Contents/Resources/voice-service/python/mlx_tts_worker.py",
+      VOICE_TTS_MODEL: "org/custom-model",
+    });
   });
 
   it("launches the service with Node rather than Electron run-as-node", () => {

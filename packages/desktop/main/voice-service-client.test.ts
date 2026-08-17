@@ -1,9 +1,10 @@
 import { createServer } from "node:http";
 import { once } from "node:events";
 import { afterEach, describe, expect, it } from "vitest";
-import { WebSocketServer } from "ws";
+import { WebSocket, WebSocketServer } from "ws";
 import {
   VoiceServiceClient,
+  VoiceServiceTtsError,
   isCurrentVoiceEvent,
   type VoiceServiceEvent,
 } from "./voice-service-client";
@@ -21,30 +22,18 @@ async function waitFor(predicate: () => boolean): Promise<void> {
   }
 }
 
-async function fixture(tts?: (signal: AbortSignal) => Promise<Buffer>) {
+async function fixture(
+  onTtsStart?: (
+    socket: WebSocket,
+    start: Record<string, unknown>,
+  ) => void,
+) {
   const received: number[] = [];
   const starts: Array<Record<string, unknown>> = [];
-  const server = createServer(async (request, response) => {
+  const ttsStarts: Array<Record<string, unknown>> = [];
+  const server = createServer((request, response) => {
     if (request.headers.authorization !== "Bearer secret") {
       response.writeHead(401).end();
-      return;
-    }
-    if (request.method === "POST" && request.url === "/v1/tts" && tts) {
-      const chunks: Buffer[] = [];
-      for await (const chunk of request) chunks.push(Buffer.from(chunk));
-      const body = JSON.parse(Buffer.concat(chunks).toString()) as { generation: number };
-      const controller = new AbortController();
-      request.once("aborted", () => controller.abort());
-      try {
-        const wav = await tts(controller.signal);
-        response.writeHead(200, {
-          "Content-Type": "audio/wav",
-          "X-Voice-Generation": String(body.generation),
-        });
-        response.end(wav);
-      } catch {
-        if (!response.destroyed) response.writeHead(500).end();
-      }
       return;
     }
     response.writeHead(404).end();
@@ -57,7 +46,18 @@ async function fixture(tts?: (signal: AbortSignal) => Promise<Buffer>) {
     }
     websocketServer.handleUpgrade(request, socket, head, (client) => websocketServer.emit("connection", client, request));
   });
-  websocketServer.on("connection", (socket) => {
+  websocketServer.on("connection", (socket, request) => {
+    if (request.url === "/v1/tts/stream") {
+      socket.on("message", (data, isBinary) => {
+        if (isBinary) return;
+        const control = JSON.parse(data.toString()) as Record<string, unknown>;
+        if (control.type === "start") {
+          ttsStarts.push(control);
+          onTtsStart?.(socket, control);
+        }
+      });
+      return;
+    }
     let sessionId = "";
     let generation = 0;
     socket.on("message", (data, isBinary) => {
@@ -99,7 +99,7 @@ async function fixture(tts?: (signal: AbortSignal) => Promise<Buffer>) {
     },
   };
   services.push(service);
-  return { service, received, starts };
+  return { service, received, starts, ttsStarts };
 }
 
 describe("VoiceServiceClient", () => {
@@ -158,28 +158,147 @@ describe("VoiceServiceClient", () => {
     client.close();
   });
 
-  it("requests generated WAV with auth and generation", async () => {
-    const { service } = await fixture(async () => Buffer.from("RIFF-audio"));
+  it("streams authenticated PCM after validated metadata", async () => {
+    const { service, ttsStarts } = await fixture((socket, start) => {
+      socket.send(JSON.stringify({
+        type: "started",
+        sessionId: start.sessionId,
+        generation: start.generation,
+        sampleRate: 24_000,
+        channels: 1,
+        sampleFormat: "s16le",
+      }));
+      socket.send(Buffer.from([0, 0, 1, 0]));
+      socket.send(JSON.stringify({
+        type: "finished",
+        sessionId: start.sessionId,
+        generation: start.generation,
+      }));
+    });
     const client = new VoiceServiceClient({ baseUrl: service.httpUrl, token: "secret" });
-    const wav = await client.synthesize({ sessionId: "voice-1", generation: 12, text: "这是回答。" }, new AbortController().signal);
-    expect(wav.toString()).toBe("RIFF-audio");
+    const metadata: unknown[] = [];
+    const pcm: Buffer[] = [];
+
+    await client.streamSynthesize(
+      { sessionId: "voice-1", generation: 12, text: "这是回答。", voice: "Serena", speed: 1 },
+      new AbortController().signal,
+      { onStarted: (value) => metadata.push(value), onPcm: (chunk) => pcm.push(chunk) },
+    );
+
+    expect(metadata).toEqual([{
+      sessionId: "voice-1",
+      generation: 12,
+      sampleRate: 24_000,
+      channels: 1,
+      sampleFormat: "s16le",
+    }]);
+    expect(pcm).toEqual([Buffer.from([0, 0, 1, 0])]);
+    expect(ttsStarts).toEqual([{
+      type: "start",
+      sessionId: "voice-1",
+      generation: 12,
+      text: "这是回答。",
+      voice: "Serena",
+      speed: 1,
+    }]);
   });
 
-  it("propagates synthesis cancellation", async () => {
-    const { service } = await fixture(async (signal) => {
-        await new Promise<void>((resolve, reject) => {
-          const timer = setTimeout(resolve, 1_000);
-          signal.addEventListener("abort", () => {
-            clearTimeout(timer);
-            reject(new Error("aborted"));
-          }, { once: true });
-        });
-        return Buffer.from("late");
+  it.each([
+    ["PCM before started", (socket: WebSocket) => socket.send(Buffer.from([0, 0])), "before started"],
+    ["invalid metadata", (socket: WebSocket, start: Record<string, unknown>) => socket.send(JSON.stringify({
+      type: "started", sessionId: start.sessionId, generation: start.generation,
+      sampleRate: 44_100, channels: 1, sampleFormat: "s16le",
+    })), "invalid audio metadata"],
+    ["stale generation", (socket: WebSocket, start: Record<string, unknown>) => socket.send(JSON.stringify({
+      type: "started", sessionId: start.sessionId, generation: Number(start.generation) - 1,
+      sampleRate: 24_000, channels: 1, sampleFormat: "s16le",
+    })), "stale generation"],
+  ])("rejects %s", async (_name, respond, message) => {
+    const { service } = await fixture(respond);
+    const client = new VoiceServiceClient({ baseUrl: service.httpUrl, token: "secret" });
+    await expect(client.streamSynthesize(
+      { sessionId: "voice-invalid", generation: 8, text: "失败" },
+      new AbortController().signal,
+      { onStarted: () => {}, onPcm: () => {} },
+    )).rejects.toThrow(message);
+  });
+
+  it("preserves structured streaming errors", async () => {
+    const { service } = await fixture((socket, start) => socket.send(JSON.stringify({
+      type: "error",
+      sessionId: start.sessionId,
+      generation: start.generation,
+      code: "tts-unavailable",
+      message: "model missing",
+    })));
+    const client = new VoiceServiceClient({ baseUrl: service.httpUrl, token: "secret" });
+    const pending = client.streamSynthesize(
+      { sessionId: "voice-error", generation: 9, text: "失败" },
+      new AbortController().signal,
+      { onStarted: () => {}, onPcm: () => {} },
+    );
+    await expect(pending).rejects.toMatchObject({ status: 0, code: "tts-unavailable" });
+    await expect(pending).rejects.toBeInstanceOf(VoiceServiceTtsError);
+  });
+
+  it("sends a matching cancel and rejects with AbortError", async () => {
+    let cancel: Record<string, unknown> | null = null;
+    const { service } = await fixture((socket, start) => {
+      socket.send(JSON.stringify({
+        type: "started", sessionId: start.sessionId, generation: start.generation,
+        sampleRate: 24_000, channels: 1, sampleFormat: "s16le",
+      }));
+      socket.on("message", (data, isBinary) => {
+        if (isBinary) return;
+        const control = JSON.parse(data.toString()) as Record<string, unknown>;
+        if (control.type !== "cancel") return;
+        cancel = control;
+        socket.send(JSON.stringify({
+          type: "cancelled",
+          sessionId: start.sessionId,
+          generation: start.generation,
+        }));
+      });
     });
     const client = new VoiceServiceClient({ baseUrl: service.httpUrl, token: "secret" });
     const controller = new AbortController();
-    const pending = client.synthesize({ sessionId: "voice-1", generation: 13, text: "停止" }, controller.signal);
-    controller.abort();
-    await expect(pending).rejects.toThrow(/abort/i);
+    const pending = client.streamSynthesize(
+      { sessionId: "voice-cancel", generation: 13, text: "停止" },
+      controller.signal,
+      { onStarted: () => controller.abort(), onPcm: () => {} },
+    );
+    await expect(pending).rejects.toMatchObject({ name: "AbortError" });
+    expect(cancel).toEqual({ type: "cancel", sessionId: "voice-cancel", generation: 13 });
+  });
+
+  it("times out before started and aborts active synthesis when closed", async () => {
+    const { service } = await fixture();
+    const timedClient = new VoiceServiceClient({
+      baseUrl: service.httpUrl,
+      token: "secret",
+      ttsStartTimeoutMs: 20,
+    });
+    await expect(timedClient.streamSynthesize(
+      { sessionId: "voice-timeout", generation: 1, text: "等待" },
+      new AbortController().signal,
+      { onStarted: () => {}, onPcm: () => {} },
+    )).rejects.toThrow("timed out");
+
+    const { service: activeService } = await fixture((socket, start) => {
+      socket.send(JSON.stringify({
+        type: "started", sessionId: start.sessionId, generation: start.generation,
+        sampleRate: 24_000, channels: 1, sampleFormat: "s16le",
+      }));
+    });
+    const activeClient = new VoiceServiceClient({ baseUrl: activeService.httpUrl, token: "secret" });
+    let started = false;
+    const active = activeClient.streamSynthesize(
+      { sessionId: "voice-close", generation: 2, text: "关闭" },
+      new AbortController().signal,
+      { onStarted: () => { started = true; }, onPcm: () => {} },
+    );
+    await waitFor(() => started);
+    activeClient.close();
+    await expect(active).rejects.toThrow("closed before completion");
   });
 });

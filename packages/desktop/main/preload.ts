@@ -45,9 +45,35 @@ contextBridge.exposeInMainWorld("agentApi", {
     return () => ipcRenderer.removeListener("dictation:error", handler);
   },
 
-  // Native TTS (macOS `say`, offline, Chinese voice)
+  // Model-backed TTS via the voice service
   ttsSpeak: (text: string) => ipcRenderer.invoke("tts:speak", text),
   ttsStop: () => ipcRenderer.invoke("tts:stop"),
+  ttsPlaybackEnded: (generation: number) => ipcRenderer.invoke("tts:playback-ended", generation),
+  onTtsStart: (callback: (payload: unknown) => void): (() => void) => {
+    const handler = (_event: unknown, payload: unknown) => callback(payload);
+    ipcRenderer.on("tts:start", handler);
+    return () => ipcRenderer.removeListener("tts:start", handler);
+  },
+  onTtsPcm: (callback: (payload: unknown) => void): (() => void) => {
+    const handler = (_event: unknown, payload: unknown) => callback(payload);
+    ipcRenderer.on("tts:pcm", handler);
+    return () => ipcRenderer.removeListener("tts:pcm", handler);
+  },
+  onTtsStreamEnd: (callback: (payload: unknown) => void): (() => void) => {
+    const handler = (_event: unknown, payload: unknown) => callback(payload);
+    ipcRenderer.on("tts:stream-end", handler);
+    return () => ipcRenderer.removeListener("tts:stream-end", handler);
+  },
+  onTtsFlush: (callback: (payload: unknown) => void): (() => void) => {
+    const handler = (_event: unknown, payload: unknown) => callback(payload);
+    ipcRenderer.on("tts:flush", handler);
+    return () => ipcRenderer.removeListener("tts:flush", handler);
+  },
+  onTtsEnd: (callback: (payload: unknown) => void): (() => void) => {
+    const handler = (_event: unknown, payload: unknown) => callback(payload);
+    ipcRenderer.on("tts:end", handler);
+    return () => ipcRenderer.removeListener("tts:end", handler);
+  },
 
   // Agent control
   run: (input: string, sessionId: string, agentIds?: string[], agentName?: string, images?: string[]) =>

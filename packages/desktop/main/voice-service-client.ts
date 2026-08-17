@@ -16,16 +16,47 @@ export function isCurrentVoiceEvent(
 type VoiceMode = "wake" | "dictation" | "barge-in";
 type AsrStart = { sessionId: string; generation: number; mode: VoiceMode; wakeWord?: string };
 
+export class VoiceServiceTtsError extends Error {
+  constructor(
+    readonly status: number,
+    readonly code: string,
+  ) {
+    super(`voice service TTS failed: ${code}`);
+    this.name = "VoiceServiceTtsError";
+  }
+}
+
+export interface TtsStreamMetadata {
+  sessionId: string;
+  generation: number;
+  sampleRate: 24_000;
+  channels: 1;
+  sampleFormat: "s16le";
+}
+
+export interface TtsStreamHandlers {
+  onStarted(metadata: TtsStreamMetadata): void;
+  onPcm(chunk: Buffer): void;
+}
+
+interface ActiveSynthesis {
+  socket: WebSocket;
+  request: { sessionId: string; generation: number };
+}
+
 export class VoiceServiceClient {
   private readonly baseUrl: string;
   private readonly token: string | null;
   private socket: WebSocket | null = null;
   private current: AsrStart | null = null;
   private ready = false;
+  private readonly syntheses = new Set<ActiveSynthesis>();
+  private readonly ttsStartTimeoutMs: number;
 
-  constructor(options: { baseUrl: string; token: string | null }) {
+  constructor(options: { baseUrl: string; token: string | null; ttsStartTimeoutMs?: number }) {
     this.baseUrl = options.baseUrl.replace(/\/$/, "");
     this.token = options.token;
+    this.ttsStartTimeoutMs = options.ttsStartTimeoutMs ?? 10_000;
   }
 
   startAsr(
@@ -109,30 +140,135 @@ export class VoiceServiceClient {
     }));
   }
 
-  async synthesize(
+  streamSynthesize(
     request: { sessionId: string; generation: number; text: string; voice?: string; speed?: number },
     signal: AbortSignal,
-  ): Promise<Buffer> {
-    const headers: Record<string, string> = { "Content-Type": "application/json" };
-    if (this.token) headers.Authorization = `Bearer ${this.token}`;
-    const response = await fetch(new URL("/v1/tts", this.baseUrl), {
-      method: "POST",
-      headers,
-      body: JSON.stringify(request),
-      signal,
+    handlers: TtsStreamHandlers,
+  ): Promise<void> {
+    if (signal.aborted) return Promise.reject(this.abortError());
+    const endpoint = new URL("/v1/tts/stream", this.baseUrl);
+    endpoint.protocol = endpoint.protocol === "https:" ? "wss:" : "ws:";
+    const headers = this.token ? { Authorization: `Bearer ${this.token}` } : undefined;
+    const socket = new WebSocket(endpoint, { headers });
+    const active = { socket, request };
+    this.syntheses.add(active);
+
+    return new Promise<void>((resolve, reject) => {
+      let started = false;
+      let settled = false;
+      let opened = false;
+      const timer = setTimeout(() => {
+        fail(new Error("voice service TTS start timed out"));
+      }, this.ttsStartTimeoutMs);
+      const cleanup = () => {
+        clearTimeout(timer);
+        signal.removeEventListener("abort", abort);
+        this.syntheses.delete(active);
+        socket.removeAllListeners();
+      };
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        socket.close();
+        resolve();
+      };
+      const fail = (error: Error) => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        socket.terminate();
+        reject(error);
+      };
+      const matching = (message: Record<string, unknown>): boolean => (
+        message.sessionId === request.sessionId && message.generation === request.generation
+      );
+      const abort = () => {
+        if (settled) return;
+        if (opened && socket.readyState === WebSocket.OPEN) {
+          socket.send(JSON.stringify({
+            type: "cancel",
+            sessionId: request.sessionId,
+            generation: request.generation,
+          }));
+        } else {
+          fail(this.abortError());
+        }
+      };
+      signal.addEventListener("abort", abort, { once: true });
+      socket.once("open", () => {
+        opened = true;
+        if (signal.aborted) {
+          abort();
+          return;
+        }
+        socket.send(JSON.stringify({ ...request, type: "start" }));
+      });
+      socket.on("message", (data, isBinary) => {
+        if (isBinary) {
+          if (!started) {
+            fail(new Error("voice service TTS sent PCM before started metadata"));
+            return;
+          }
+          handlers.onPcm(Buffer.from(data as Buffer));
+          return;
+        }
+        let message: Record<string, unknown>;
+        try {
+          message = JSON.parse(data.toString()) as Record<string, unknown>;
+        } catch {
+          fail(new Error("voice service TTS returned malformed JSON"));
+          return;
+        }
+        if (!matching(message)) {
+          fail(new Error("voice service TTS returned a stale generation"));
+          return;
+        }
+        if (message.type === "started") {
+          if (started
+            || message.sampleRate !== 24_000
+            || message.channels !== 1
+            || message.sampleFormat !== "s16le") {
+            fail(new Error("voice service TTS returned invalid audio metadata"));
+            return;
+          }
+          started = true;
+          clearTimeout(timer);
+          handlers.onStarted({
+            sessionId: request.sessionId,
+            generation: request.generation,
+            sampleRate: 24_000,
+            channels: 1,
+            sampleFormat: "s16le",
+          });
+          return;
+        }
+        if (message.type === "finished") {
+          if (!started) fail(new Error("voice service TTS finished before start"));
+          else finish();
+          return;
+        }
+        if (message.type === "cancelled") {
+          fail(this.abortError());
+          return;
+        }
+        if (message.type === "error") {
+          fail(new VoiceServiceTtsError(0, typeof message.code === "string" ? message.code : "tts-failed"));
+          return;
+        }
+        fail(new Error("voice service TTS returned an unsupported message"));
+      });
+      socket.once("error", (error) => fail(error));
+      socket.once("close", () => {
+        if (!settled) fail(new Error("voice service TTS closed before completion"));
+      });
     });
-    if (!response.ok) {
-      let detail = `HTTP ${response.status}`;
-      try {
-        const body = await response.json() as { error?: string };
-        if (body.error) detail = body.error;
-      } catch { /* non-JSON response */ }
-      throw new Error(`voice service TTS failed: ${detail}`);
-    }
-    if (response.headers.get("x-voice-generation") !== String(request.generation)) {
-      throw new Error("voice service TTS returned a stale generation");
-    }
-    return Buffer.from(await response.arrayBuffer());
+  }
+
+  private abortError(): Error {
+    const error = new Error("voice service TTS aborted");
+    error.name = "AbortError";
+    return error;
   }
 
   private closeAsr(): void {
@@ -146,5 +282,12 @@ export class VoiceServiceClient {
 
   close(): void {
     this.closeAsr();
+    for (const { socket, request } of this.syntheses) {
+      if (socket.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify({ type: "cancel", ...request }));
+      }
+      socket.terminate();
+    }
+    this.syntheses.clear();
   }
 }
