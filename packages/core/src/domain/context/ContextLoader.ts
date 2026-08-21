@@ -2,41 +2,48 @@ import type { IContextLoader, ProjectFile } from './entities.js';
 import { readFile, readdir, stat } from "node:fs/promises";
 import { join, basename } from "node:path";
 
-const PROJECT_FILES = [
+const ROOT_PROJECT_FILES = [
+  "AGENTS.md",
   "CLAUDE.md",
   "README.md",
   "CONTRIBUTING.md",
   ".cursorrules",
   ".github/copilot-instructions.md",
 ];
+const CUSTOMER_AGENT_FILES = ROOT_PROJECT_FILES.map((file) => join(".customer-agent", file));
+const INSTRUCTION_FILES = new Set(["AGENTS.md", "CLAUDE.md"]);
+const EXCLUDED_DIRECTORIES = new Set(["node_modules", ".git", "dist"]);
 
 export class ContextLoader implements IContextLoader {
   async loadProjectContext(rootDir: string): Promise<ProjectFile[]> {
     const files: ProjectFile[] = [];
+    const loadedPaths = new Set<string>();
 
-    // Load known project files
-    for (const relPath of PROJECT_FILES) {
+    // Load known project files in contract order.
+    for (const relPath of [...ROOT_PROJECT_FILES, ...CUSTOMER_AGENT_FILES]) {
       const fullPath = join(rootDir, relPath);
+      if (loadedPaths.has(fullPath)) continue;
       try {
         await stat(fullPath);
         const file = await this.loadFile(fullPath);
         files.push(file);
+        loadedPaths.add(fullPath);
       } catch {
-        // file doesn't exist
+        // Missing or unreadable files are optional context.
       }
     }
 
-    // Find additional CLAUDE.md files in subdirectories
+    // Find additional instruction files in subdirectories.
     try {
-      const claudeFiles = await this.findClaudeMdFiles(rootDir);
-      for (const filePath of claudeFiles) {
-        // Skip the root one we already loaded
-        if (filePath === join(rootDir, "CLAUDE.md")) continue;
+      const instructionFiles = await this.findClaudeMdFiles(rootDir);
+      for (const filePath of instructionFiles) {
+        if (loadedPaths.has(filePath)) continue;
         try {
           const file = await this.loadFile(filePath);
           files.push(file);
+          loadedPaths.add(filePath);
         } catch {
-          // skip
+          // Skip files that disappear or become unreadable during discovery.
         }
       }
     } catch {
@@ -51,7 +58,7 @@ export class ContextLoader implements IContextLoader {
     const fileName = basename(filePath);
 
     let type: ProjectFile["type"] = "other";
-    if (fileName === "CLAUDE.md") type = "claude_md";
+    if (INSTRUCTION_FILES.has(fileName)) type = "claude_md";
     else if (fileName === "README.md" || fileName === "CONTRIBUTING.md") type = "readme";
     else if (fileName.endsWith(".md")) type = "config";
     else if (fileName.endsWith(".ts") || fileName.endsWith(".js") || fileName.endsWith(".py")) type = "code";
@@ -65,14 +72,14 @@ export class ContextLoader implements IContextLoader {
     const scan = async (dir: string) => {
       try {
         const entries = await readdir(dir, { withFileTypes: true });
+        entries.sort((left, right) => left.name.localeCompare(right.name));
         for (const entry of entries) {
-          // Skip node_modules, .git, etc.
-          if (entry.name === "node_modules" || entry.name === ".git" || entry.name === "dist") continue;
+          if (EXCLUDED_DIRECTORIES.has(entry.name)) continue;
 
           const fullPath = join(dir, entry.name);
           if (entry.isDirectory()) {
             await scan(fullPath);
-          } else if (entry.name === "CLAUDE.md") {
+          } else if (INSTRUCTION_FILES.has(entry.name)) {
             results.push(fullPath);
           }
         }
@@ -82,6 +89,6 @@ export class ContextLoader implements IContextLoader {
     };
 
     await scan(rootDir);
-    return results;
+    return results.sort((left, right) => left.localeCompare(right));
   }
 }
