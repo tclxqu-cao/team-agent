@@ -187,6 +187,7 @@ import { useSettingsStore } from "../stores/settingsStore";
 import ToolCallCard from "./ToolCallCard";
 import AskUserCard from "./AskUserCard";
 import ContextUsageBar from "./ContextUsageBar";
+import AgentActivityIndicator from "./AgentActivityIndicator";
 import { widgetRegistry } from "./widgets/index.js";
 import { prepareVoiceCommand, shouldSkipVoiceSessionReload } from "../lib/voice-command";
 
@@ -282,7 +283,6 @@ export default function ChatView({
   const [slashQuery, setSlashQuery] = useState<string | null>(null);
   /** IDs of assistant messages that are manually expanded past the preview limit */
   const [expandedMessages, setExpandedMessages] = useState<Set<string>>(new Set());
-  const [thinkingText, setThinkingText] = useState("");
   /** Tracks what the agent is currently doing: thinking, waiting for tools, or idle */
   const [agentActivity, setAgentActivity] = useState<"idle" | "thinking" | "tools">("idle");
 
@@ -705,14 +705,12 @@ export default function ChatView({
         if (event.text) {
           appendText(event.text, eventSid);
           if (isViewed) {
-            setThinkingText("");
             setAgentActivity("thinking");
           }
         }
         break;
       case "tool_call":
         if (isViewed) {
-          setThinkingText("");
           setAgentActivity("tools");
         }
         // dispatch_agent is handled by the subsequent "agent_dispatch" event which
@@ -843,8 +841,7 @@ export default function ChatView({
         break;
       case "text_done": break;
       case "thinking":
-        if (event.message && isViewed) {
-          setThinkingText(prev => prev + (prev ? "\n" : "") + event.message);
+        if (isViewed) {
           setAgentActivity("thinking");
         }
         break;
@@ -855,7 +852,6 @@ export default function ChatView({
           setRunningSession(null);
         }
         if (isViewed) {
-          setThinkingText("");
           setAgentActivity("idle");
           // Auto voice output uses the configured local/remote TTS model only.
           if (useUIStore.getState().autoSpeak) {
@@ -928,7 +924,6 @@ export default function ChatView({
     abortRef.current = false;
     runningSessionRef.current = targetSessionId;
     setRunningSession(targetSessionId);
-    setThinkingText("");
     try {
       if (window.agentApi) {
         await window.agentApi.run(
@@ -1165,7 +1160,6 @@ export default function ChatView({
     }
 
     // ── Normal send flow ───────────────────────────────────────────────────
-    setThinkingText("");  // clear any previous thinking from prior turns
     setTodos([]);  // clear previous run's todos on new message
 
     addMessage({
@@ -1226,7 +1220,6 @@ export default function ChatView({
     let cancelled = false;
     (async () => {
       try {
-        setThinkingText("");
         setTodos([]);
         const targetSessionId = await prepareVoiceCommand({
           text,
@@ -1474,44 +1467,13 @@ export default function ChatView({
 
           return (
           <div key={msg.id} style={{ marginBottom: isTurnBoundary ? 16 : 3 }}>
-            {/* Thinking block — single display, only for the last streaming assistant */}
+            {/* Activity status — single display, only for the last streaming assistant */}
             {showThinking && (
               <div style={{
                 display: "flex",
                 paddingLeft: 40, marginBottom: 4,
               }}>
-                <div style={{
-                  fontSize: 11, color: "var(--text-muted)", fontStyle: "italic",
-                  padding: thinkingText ? "6px 12px" : "4px 0",
-                  borderRadius: 8,
-                  background: thinkingText ? "var(--bg-deep)" : "transparent",
-                  border: thinkingText ? "1px solid var(--border-subtle)" : "none",
-                  whiteSpace: "pre-wrap", wordBreak: "break-word",
-                  lineHeight: 1.6, maxHeight: 160, overflow: "auto",
-                  maxWidth: "76%",
-                }}>
-                  {thinkingText ? (
-                    <>
-                      <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 4, opacity: 0.6 }}>
-                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v12a2.5 2.5 0 0 1-5 0v-12A2.5 2.5 0 0 1 9.5 2z"/><path d="M9.5 2A2.5 2.5 0 0 0 7 4.5v12a2.5 2.5 0 0 0 5 0v-12A2.5 2.5 0 0 0 9.5 2z"/><path d="M4.5 8H7"/><path d="M12 8h2.5"/><path d="M4 14h2.5"/><path d="M12 14h2.5"/><path d="M4 11h16"/><path d="M12 11h2.5"/></svg>
-                        <span style={{ fontWeight: 600 }}>思考过程</span>
-                      </div>
-                      {thinkingText}
-                    </>
-                  ) : (
-                    <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                      {agentActivity === "tools" ? "工具执行中" : "思考中"}
-                      {[0, 1, 2].map((i) => (
-                        <span key={i} style={{
-                          width: 4, height: 4, borderRadius: "50%",
-                          background: "var(--accent)", display: "inline-block",
-                          animation: "wave 1.1s ease-in-out infinite",
-                          animationDelay: `${i * 0.16}s`,
-                        }} />
-                      ))}
-                    </div>
-                  )}
-                </div>
+                <AgentActivityIndicator activity={agentActivity === "tools" ? "tools" : "thinking"} />
               </div>
             )}
             {/* Main message row */}
@@ -1900,27 +1862,7 @@ export default function ChatView({
                 <path d="M8 20h8"/>
               </svg>
             </div>
-            <div style={{
-              padding: "9px 14px",
-              borderRadius: "4px 14px 14px 14px",
-              background: "var(--bg-surface)",
-              border: "1px solid var(--border-subtle)",
-              boxShadow: "var(--shadow-sm)",
-              display: "flex", alignItems: "center", gap: 7,
-              fontSize: 13, color: "var(--text-muted)", fontStyle: "italic",
-            }}>
-              {agentActivity === "tools" ? "工具执行中" : "思考中"}
-              {[0, 1, 2].map((i) => (
-                <span key={i} style={{
-                  width: 4, height: 4, borderRadius: "50%",
-                  background: "var(--accent)",
-                  display: "inline-block",
-                  animation: "pulse-glow 1.2s ease-in-out infinite",
-                  animationDelay: `${i * 0.2}s`,
-                  opacity: 0.8,
-                }} />
-              ))}
-            </div>
+            <AgentActivityIndicator activity={agentActivity === "tools" ? "tools" : "thinking"} />
           </div>
         )}
 

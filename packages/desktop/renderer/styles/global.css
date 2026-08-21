@@ -487,6 +487,30 @@ select:focus {
   box-shadow: var(--focus-ring);
 }
 
+.agent-activity-indicator {
+  min-height: 24px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.agent-activity-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.agent-activity-dots > span {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: wave 1.1s ease-in-out infinite;
+}
+
 /* One structural boundary; consumers can opt in without changing layout. */
 .composer-shell {
   border: 1px solid var(--hairline);
