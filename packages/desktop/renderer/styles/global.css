@@ -494,7 +494,7 @@ select:focus {
 
 .composer-shell:focus-within {
   border-color: var(--accent);
-  box-shadow: var(--focus-ring);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 28%, transparent);
 }
 
 /* The composer shell owns keyboard focus; its children stay operable without nested rings. */
