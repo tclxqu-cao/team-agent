@@ -10,9 +10,9 @@
 
 ## Global Constraints
 
-- The configured working directory remains the only context root.
+- The configured working directory remains the only discovery root; exact fixed-whitelist paths may follow symbolic links as explicit project authorization.
 - Root and `.customer-agent/` files use fixed six-path whitelists.
-- Recursive discovery recognizes only `AGENTS.md` and `CLAUDE.md`.
+- Recursive discovery recognizes only regular files named `AGENTS.md` and `CLAUDE.md` and ignores symbolic links.
 - Do not load parent/home rules or arbitrary Markdown files.
 - Do not change context budgets or prompt assembly.
 
@@ -31,7 +31,7 @@
 
 - [ ] **Step 1: Write failing whitelist and ordering tests**
 
-Create a temporary root with all root files, all `.customer-agent/` files, nested `AGENTS.md`/`CLAUDE.md`, arbitrary Markdown, and excluded-directory instructions. Assert exact relative path order and contents; clean the directory in `afterEach`.
+Create a temporary root with all root files, all `.customer-agent/` files, nested `AGENTS.md`/`CLAUDE.md`, arbitrary Markdown, excluded-directory instructions, an exact-whitelist symlink, and a recursively discovered instruction symlink. Assert exact relative path order and contents; assert the whitelist symlink is loaded under its link path while the recursive symlink is ignored; clean the directory in `afterEach`.
 
 ```ts
 expect(files.map((file) => relative(rootDir, file.path))).toEqual([
@@ -68,7 +68,7 @@ Add `ROOT_PROJECT_FILES` and derive `CUSTOMER_AGENT_FILES` with `.customer-agent
 
 - [ ] **Step 5: Generalize recursive instruction discovery**
 
-Replace `findClaudeMdFiles` internals with instruction discovery that accepts both filenames, skips `node_modules`, `.git`, and `dist`, sorts directory entries and final paths, and remains tolerant of inaccessible directories.
+Replace `findClaudeMdFiles` internals with instruction discovery that accepts both filenames only for regular files, ignores symbolic links, skips `node_modules`, `.git`, and `dist`, sorts directory entries and final paths, and remains tolerant of inaccessible directories. Fixed whitelist loading continues to follow symbolic links.
 
 - [ ] **Step 6: De-duplicate ordered results**
 

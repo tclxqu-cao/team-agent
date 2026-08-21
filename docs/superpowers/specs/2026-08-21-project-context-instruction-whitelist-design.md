@@ -16,7 +16,7 @@
 
 - No user-configurable glob patterns.
 - No scan of every Markdown file under `.customer-agent/`.
-- No parent-directory or home-directory instruction discovery.
+- No parent-directory or home-directory discovery. An exact fixed-whitelist path may be a symbolic link and is treated as explicit project authorization for its target.
 - No change to context token allocation or prompt assembly.
 
 ## Discovery Rules
@@ -47,9 +47,11 @@ Load the same fixed paths relative to `<root>/.customer-agent/`:
 
 Files outside this list are ignored even when they use the `.md` extension.
 
+An exact whitelist entry may be a symbolic link. This is required for repositories that intentionally link root `AGENTS.md` to a shared rules file; the whitelisted link path remains the context identity shown to the model.
+
 ### Recursive instruction discovery
 
-After the two ordered whitelist passes, recursively discover files named `AGENTS.md` or `CLAUDE.md` below the project root. Skip files already loaded by either whitelist. Continue excluding `node_modules`, `.git`, and `dist` directories. Return discovered files in stable lexical path order so prompt composition is deterministic across filesystems.
+After the two ordered whitelist passes, recursively discover regular files named `AGENTS.md` or `CLAUDE.md` below the project root. Ignore symbolic links during recursive discovery, skip files already loaded by either whitelist, and continue excluding `node_modules`, `.git`, and `dist` directories. Return discovered files in stable lexical path order so prompt composition is deterministic across filesystems.
 
 ## File Classification
 
@@ -71,6 +73,8 @@ Add focused `ContextLoader` tests using a temporary directory:
 - loads all `.customer-agent/` whitelist files after root files;
 - recursively discovers nested `AGENTS.md` and `CLAUDE.md` in stable order;
 - does not duplicate root or `.customer-agent/` instruction files;
+- follows an exact whitelisted instruction symlink while preserving its whitelisted path;
+- ignores recursively discovered instruction symlinks;
 - ignores arbitrary Markdown files and excluded directories;
 - tolerates absent optional files.
 
