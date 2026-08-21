@@ -35,6 +35,14 @@ The screenshot does not by itself indicate a deadlock. The tool card completed, 
 - Keep the controls available in both standard and focus layouts, since they no longer depend on sidebar visibility.
 - Open the existing appearance panel beneath the top-right appearance button and align it to the right edge of the conversation area. Preserve all current skin, layout, and voice controls inside the panel.
 
+### Compact Layout Density
+
+- Keep the standard layout at its current spacing and `880px` maximum conversation width.
+- Make compact layout a visibly denser mode rather than a font-size-only variation.
+- Compact layout uses a wider `1040px` conversation canvas, a shorter `44px` title bar, smaller message/input padding, tighter turn spacing, `26px` avatars, denser message line height, and `28px` composer icon buttons.
+- Keep the same information architecture and controls; compact mode changes density, not feature availability.
+- Express standard and compact dimensions through chat-scoped CSS variables so inline renderer styles cannot silently override the selected mode.
+
 ### Implementation Boundary
 
 The renderer will treat `thinking` events as state transitions instead of display content. `AgentLoop` may continue emitting its current diagnostic messages because they can remain useful to non-visual consumers and logs. This keeps the behavior change scoped to presentation and avoids changing the agent execution protocol.
@@ -67,6 +75,7 @@ Existing error and cancellation behavior remains authoritative. This change does
 - Confirm completed and failed tool cards remain visible with their details.
 - Confirm the top-right background, appearance, and settings controls remain usable in standard and focus layouts.
 - Confirm the appearance panel opens below the top-right button without clipping or covering the title.
+- Compare standard and compact computed dimensions and confirm compact mode is materially denser without overflow at a `900x700` viewport.
 - Build the desktop renderer.
 - Inspect the running desktop UI in the supported themes and narrow layout, confirming the indicator is aligned and no `Iteration N...` text appears.
 

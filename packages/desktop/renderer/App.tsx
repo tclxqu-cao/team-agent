@@ -197,6 +197,28 @@ export default function App() {
     setShowSettings((visible) => !visible);
   }, []);
 
+  useEffect(() => {
+    if (!showAppearance) return;
+
+    const syncAppearanceAnchor = () => {
+      const button = document.querySelector<HTMLButtonElement>(".chat-header-action--appearance");
+      if (!button) return;
+      const rect = button.getBoundingClientRect();
+      setAppearanceAnchor((current) => (
+        current?.right === rect.right && current.bottom === rect.bottom
+          ? current
+          : { right: rect.right, bottom: rect.bottom }
+      ));
+    };
+
+    const frame = window.requestAnimationFrame(syncAppearanceAnchor);
+    window.addEventListener("resize", syncAppearanceAnchor);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.removeEventListener("resize", syncAppearanceAnchor);
+    };
+  }, [layout, showAppearance]);
+
   // Start wake listening as soon as the app loads (not only when hidden):
   // SFSpeechRecognizer needs a long warm-up before it reports anything, so
   // keeping it running while the window is visible makes the later wake

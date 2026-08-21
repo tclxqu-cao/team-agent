@@ -641,8 +641,52 @@ input:focus, select:focus, textarea:focus {
 .message-card:focus-within .msg-actions { opacity: 1; }
 
 /* ── Compact layout density ── */
-.layout-compact { font-size: 12.5px; }
-.layout-compact .message-card { border-radius: var(--radius-sm); }
+.chat-view {
+  --chat-max-width: 880px;
+  --chat-header-height: 52px;
+  --chat-header-padding: 0 20px;
+  --chat-messages-padding: 24px 40px 16px;
+  --chat-input-padding: 12px 24px 18px;
+  --chat-message-gap: 3px;
+  --chat-turn-gap: 16px;
+  --chat-row-gap: 10px;
+  --chat-avatar-size: 30px;
+  --chat-content-max-width: 76%;
+  --chat-user-bubble-padding: 10px 14px;
+  --chat-assistant-bubble-padding: 11px 15px;
+  --chat-bubble-font-size: 14px;
+  --chat-bubble-line-height: 1.75;
+  --composer-row-padding: 6px 6px 6px 12px;
+}
+
+.layout-compact .chat-view {
+  --chat-max-width: 1040px;
+  --chat-header-height: 44px;
+  --chat-header-padding: 0 16px;
+  --chat-messages-padding: 12px 22px 8px;
+  --chat-input-padding: 8px 18px 10px;
+  --chat-message-gap: 1px;
+  --chat-turn-gap: 10px;
+  --chat-row-gap: 8px;
+  --chat-avatar-size: 26px;
+  --chat-content-max-width: 84%;
+  --chat-user-bubble-padding: 7px 11px;
+  --chat-assistant-bubble-padding: 8px 12px;
+  --chat-bubble-font-size: 13px;
+  --chat-bubble-line-height: 1.55;
+  --composer-row-padding: 4px 4px 4px 8px;
+  font-size: 13px;
+}
+
+.layout-compact .message-card,
+.layout-compact .composer-shell {
+  border-radius: var(--radius-sm) !important;
+}
+
+.layout-compact .composer-shell .ui-icon-button {
+  width: 28px;
+  height: 28px;
+}
 
 @media (prefers-reduced-motion: reduce) {
   *,

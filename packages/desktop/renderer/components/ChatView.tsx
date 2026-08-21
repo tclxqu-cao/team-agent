@@ -1264,19 +1264,19 @@ export default function ChatView({
   }, [voiceCommand?.nonce]);
 
   return (
-    <div style={{
+    <div className="chat-view" style={{
       display: "flex",
       flexDirection: "column",
       height: "100%",
-      maxWidth: 880,
+      maxWidth: "var(--chat-max-width)",
       margin: "0 auto",
     }}>
       {/* ── Top bar: title + settings ── */}
-      <div style={{
+      <div className="chat-top-bar" style={{
         display: "flex",
         alignItems: "center",
-        padding: "0 20px",
-        height: 52,
+        padding: "var(--chat-header-padding)",
+        height: "var(--chat-header-height)",
         flexShrink: 0,
         borderBottom: "1px solid var(--border-subtle)",
         WebkitAppRegion: "no-drag",
@@ -1307,10 +1307,10 @@ export default function ChatView({
       </div>
 
       {/* Messages area */}
-      <div style={{
+      <div className="chat-messages" style={{
         flex: 1,
         overflow: "auto",
-        padding: "24px 40px 16px",
+        padding: "var(--chat-messages-padding)",
       }}>
 
         {messages.length === 0 && (
@@ -1473,31 +1473,36 @@ export default function ChatView({
           const isTurnBoundary = nextMsg && nextMsg.role !== msg.role && !nextMsg.isCompactionSummary;
 
           return (
-          <div key={msg.id} style={{ marginBottom: isTurnBoundary ? 16 : 3 }}>
+          <div
+            key={msg.id}
+            className="chat-message-group"
+            style={{ marginBottom: isTurnBoundary ? "var(--chat-turn-gap)" : "var(--chat-message-gap)" }}
+          >
             {/* Activity status — single display, only for the last streaming assistant */}
             {showThinking && (
               <div style={{
                 display: "flex",
-                paddingLeft: 40, marginBottom: 4,
+                paddingLeft: "calc(var(--chat-avatar-size) + var(--chat-row-gap))", marginBottom: 4,
               }}>
                 <AgentActivityIndicator activity={agentActivity === "tools" ? "tools" : "thinking"} />
               </div>
             )}
             {/* Main message row */}
           <div
+            className="chat-message-row"
             style={{
               display: "flex",
               flexDirection: isUser ? "row-reverse" : "row",
               alignItems: "flex-start",
-              gap: 10,
+              gap: "var(--chat-row-gap)",
               animation: `fadeInUp 0.3s var(--ease-out) both`,
             }}
           >
             {/* Avatar */}
             {isUser ? (
-              <div style={{
-                width: 30,
-                height: 30,
+              <div className="chat-message-avatar" style={{
+                width: "var(--chat-avatar-size)",
+                height: "var(--chat-avatar-size)",
                 borderRadius: "50%",
                 flexShrink: 0,
                 display: "flex",
@@ -1513,9 +1518,9 @@ export default function ChatView({
                 {userAvatarLabel}
               </div>
             ) : (
-              <div style={{
-                width: 30,
-                height: 30,
+              <div className="chat-message-avatar" style={{
+                width: "var(--chat-avatar-size)",
+                height: "var(--chat-avatar-size)",
                 borderRadius: "50%",
                 flexShrink: 0,
                 display: "flex",
@@ -1538,17 +1543,19 @@ export default function ChatView({
             )}
 
             {/* Bubble */}
-            <div style={{ maxWidth: "76%", display: "flex", flexDirection: "column", gap: 4, alignItems: isUser ? "flex-end" : "flex-start", minWidth: 0 }}>
-              <div className={msg.role === "assistant" && msg.content ? "message-card" : undefined} style={{
+            <div className="chat-message-content" style={{ maxWidth: "var(--chat-content-max-width)", display: "flex", flexDirection: "column", gap: 4, alignItems: isUser ? "flex-end" : "flex-start", minWidth: 0 }}>
+              <div className={`chat-message-bubble ${msg.role === "assistant" && msg.content ? "message-card" : ""}`} style={{
                 // Tool-call-only messages: no bubble wrapper — cards render inline
-                padding: (msg.content || (isUser && chatMsg.images?.length)) ? (isUser ? "10px 14px" : "11px 15px") : 0,
+                padding: (msg.content || (isUser && chatMsg.images?.length))
+                  ? (isUser ? "var(--chat-user-bubble-padding)" : "var(--chat-assistant-bubble-padding)")
+                  : 0,
                 borderRadius: isUser
                   ? "14px 4px 14px 14px"
                   : "4px 14px 14px 14px",
                 background: (msg.content || (isUser && chatMsg.images?.length)) ? (isUser ? "rgba(79, 110, 247, 0.08)" : undefined) : "transparent",
                 border: (msg.content || (isUser && chatMsg.images?.length)) ? (isUser ? "1px solid rgba(79, 110, 247, 0.18)" : undefined) : "none",
-                fontSize: 14,
-                lineHeight: 1.75,
+                fontSize: "var(--chat-bubble-font-size)",
+                lineHeight: "var(--chat-bubble-line-height)",
                 color: "var(--text-primary)",
                 letterSpacing: "0.01em",
               }}>
@@ -1893,8 +1900,8 @@ export default function ChatView({
       </div>
 
       {/* Input area */}
-      <div style={{
-        padding: "12px 24px 18px",
+      <div className="chat-input-area" style={{
+        padding: "var(--chat-input-padding)",
         background: "var(--bg-deepest)",
         borderTop: "1px solid var(--border-subtle)",
       }}>
@@ -2427,11 +2434,11 @@ export default function ChatView({
           })()}
 
           {/* Inner input row */}
-          <div style={{
+          <div className="composer-input-row" style={{
             display: "flex",
             alignItems: "center",
             gap: 8,
-            padding: "6px 6px 6px 12px",
+            padding: "var(--composer-row-padding)",
           }}>
           {/* Hidden file input */}
           <input

@@ -226,3 +226,29 @@ Check the local voice health endpoint and runtime logs. Expected readiness: serv
 Run: `git diff --check` and `git status --short`.
 
 If a correction was required, stage only the files from Tasks 1-2 and commit it with a scoped `fix(desktop): ...` message. Preserve all unrelated worktree changes.
+
+### Task 4: Compact Layout Density Correction
+
+**Files:**
+- Modify: `packages/desktop/renderer/components/ChatView.tsx`
+- Modify: `packages/desktop/renderer/styles/global.css`
+
+**Interfaces:**
+- Consumes: the existing `body.layout-compact` state applied by `App`.
+- Produces: chat-scoped CSS density variables used by the existing inline layout styles.
+
+- [x] **Step 1: Reproduce the standard/compact parity in the running renderer**
+
+Confirmed the old compact mode changed only the root font size and message-card radius; inline component sizes remained effectively identical.
+
+- [x] **Step 2: Replace hard-coded chat dimensions with scoped CSS variables**
+
+Applied variables for conversation width, title height, message/input padding, turn and row gaps, avatar size, bubble padding/font/line height, and composer row padding.
+
+- [x] **Step 3: Define materially different compact values while preserving standard values**
+
+Standard remains `880px` wide with a `52px` header. Compact becomes `1040px` wide with a `44px` header, tighter padding and gaps, `26px` avatars, and `28px` composer icon buttons.
+
+- [x] **Step 4: Verify computed dimensions and narrow viewport fit**
+
+Ego-browser verification confirmed distinct standard/compact dimensions, zero appearance-panel anchor delta after layout changes, and no header/composer/panel overflow at `900x700`.
