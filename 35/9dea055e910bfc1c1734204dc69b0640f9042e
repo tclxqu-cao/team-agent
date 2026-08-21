@@ -1,0 +1,27 @@
+docs/superpowers/specs/2026-08-21-thinking-status-display-design.md
+  s_6edcb9d9cd7ad6::t_b14827a602a4ad 38-45,78
+packages/desktop/renderer/styles/global.css
+  s_6edcb9d9cd7ad6::t_414653b2914676 644-689
+docs/superpowers/plans/2026-08-21-thinking-status-and-header-controls.md
+  s_6edcb9d9cd7ad6::t_b14827a602a4ad 229-254
+packages/desktop/renderer/components/ChatView.tsx
+  s_6edcb9d9cd7ad6::t_414653b2914676 1267,1271,1275,1278-1279,1310,1313,1476-1480,1485,1492,1497,1503-1505,1521-1523,1546-1547,1549-1551,1557-1558,1903-1904,2437,2441
+packages/desktop/renderer/App.tsx
+  s_6edcb9d9cd7ad6::t_977428c559acbd 200-221
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "359dea055e910bfc1c1734204dc69b0640f9042e",
+  "prompts": {},
+  "sessions": {
+    "s_6edcb9d9cd7ad6": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fd1c1-3a3e-7f32-9ee5-c7add0c1d7e1",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
