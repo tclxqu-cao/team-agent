@@ -606,14 +606,10 @@ const loadProjects = async () => {
               return (
                 <div key={project.id}>
                   {/* Project row */}
-                  <div style={{
-                    display: "flex", alignItems: "center",
-                    borderRadius: 8,
-                    background: isSelected && !isInvalid ? "var(--accent-dim)" : "transparent",
-                    transition: "background 0.15s",
-                    paddingRight: 4,
-                    opacity: isInvalid ? 0.45 : 1,
-                  }}>
+                  <div
+                    className={`sidebar-row ${isSelected && !isInvalid ? "sidebar-row-active" : ""}`}
+                    style={{ paddingRight: 4, opacity: isInvalid ? 0.45 : 1 }}
+                  >
                     <button
                       onClick={() => { if (!isInvalid) void handleToggleProject(project.id); }}
                       disabled={isInvalid}
@@ -655,50 +651,30 @@ const loadProjects = async () => {
                         {project.name}
                       </span>
                       {projSessions.length > 0 && (
-                        <span style={{ flexShrink: 0, fontSize: 9, fontWeight: 600, color: isSelected && !isInvalid ? "var(--accent)" : "var(--text-muted)", background: isSelected && !isInvalid ? "var(--accent-dim)" : "var(--bg-deep)", border: "1px solid var(--border-subtle)", borderRadius: 8, padding: "0 5px", lineHeight: "15px", opacity: 0.8 }}>{projSessions.length}</span>
+                        <span className="sidebar-count" style={{ flexShrink: 0, fontSize: 9, fontWeight: 600, color: isSelected && !isInvalid ? "var(--accent)" : "var(--text-muted)", background: isSelected && !isInvalid ? "var(--accent-dim)" : "var(--bg-deep)", borderRadius: 8, padding: "0 5px", lineHeight: "15px", opacity: 0.8 }}>{projSessions.length}</span>
                       )}
                     </button>
                     {/* Delete project button */}
                     <button
                       onClick={(e) => { e.stopPropagation(); void handleDeleteProject(project.id); }}
                       title="删除项目"
+                      className="sidebar-row-action ui-icon-button ui-icon-button--small ui-icon-button--danger"
                       style={{
                         flexShrink: 0,
-                        width: 24, height: 24,
-                        border: "none",
-                        borderRadius: 6,
-                        background: "transparent",
-                        color: "var(--text-muted)",
                         fontSize: 14,
                         lineHeight: 1,
-                        cursor: "pointer",
-                        display: "flex", alignItems: "center", justifyContent: "center",
-                        opacity: 0.3,
-                        transition: "opacity 0.15s, color 0.15s",
                       }}
-                      onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.opacity = "1"; (e.currentTarget as HTMLButtonElement).style.color = "var(--danger)"; }}
-                      onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.opacity = "0.3"; (e.currentTarget as HTMLButtonElement).style.color = "var(--text-muted)"; }}
                     >×</button>
                     {/* New session button */}
                     <button
                       onClick={(e) => { e.stopPropagation(); void handleNewSession(project.id); }}
                       title="新建会话"
+                      className={`sidebar-row-action sidebar-row-action--accent ui-icon-button ui-icon-button--small ${isSelected && !isInvalid ? "is-active" : ""}`}
                       style={{
                         flexShrink: 0,
-                        width: 24, height: 24,
-                        border: "none",
-                        borderRadius: 6,
-                        background: "transparent",
-                        color: isSelected && !isInvalid ? "var(--accent)" : "var(--text-muted)",
                         fontSize: 16,
                         lineHeight: 1,
-                        cursor: "pointer",
-                        display: "flex", alignItems: "center", justifyContent: "center",
-                        transition: "color 0.15s",
-                        opacity: isSelected && !isInvalid ? 0.8 : 0.5,
                       }}
-                      onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.opacity = "1"; }}
-                      onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.opacity = isSelected && !isInvalid ? "0.8" : "0.5"; }}
                     >+</button>
                   </div>
 
@@ -715,13 +691,7 @@ const loadProjects = async () => {
                         const children = childSessionsByParent[session.id] ?? [];
                         return (
                           <div key={session.id}>
-                          <div style={{
-                            display: "flex", alignItems: "center",
-                            borderRadius: 7,
-                            background: isActiveSession ? "rgba(79,110,247,0.08)" : "transparent",
-                            transition: "background 0.15s",
-                            paddingRight: 4,
-                          }}>
+                          <div className={`sidebar-row ${isActiveSession ? "sidebar-row-active" : ""}`} style={{ paddingRight: 4 }}>
                             <button
                               onClick={() => {
                                 setSelectedProjectId(project.id);
@@ -760,11 +730,10 @@ const loadProjects = async () => {
                                 {session.title}
                               </span>
                               {children.length > 0 && (
-                                <span style={{
+                                <span className="sidebar-count" style={{
                                   flexShrink: 0, fontSize: 9, fontWeight: 600,
                                   color: isActiveSession ? "var(--accent)" : "var(--text-muted)",
                                   background: isActiveSession ? "var(--accent-dim)" : "var(--bg-deep)",
-                                  border: "1px solid var(--border-subtle)",
                                   borderRadius: 8, padding: "0 5px", lineHeight: "16px",
                                   opacity: 0.8,
                                 }}>{children.length}</span>
@@ -773,17 +742,11 @@ const loadProjects = async () => {
                             <button
                               onClick={() => void handleDeleteSession(session.id)}
                               title="删除会话"
+                              className="sidebar-row-action ui-icon-button ui-icon-button--small ui-icon-button--danger"
                               style={{
-                                border: "none", background: "transparent",
-                                color: isActiveSession ? "var(--accent)" : "var(--text-muted)",
-                                fontSize: 14, cursor: "pointer",
-                                padding: "2px 4px", flexShrink: 0, borderRadius: 4,
+                                fontSize: 14, flexShrink: 0,
                                 lineHeight: 1,
-                                opacity: isActiveSession ? 0.7 : 0.5,
-                                transition: "opacity 0.15s, color 0.15s",
                               }}
-                              onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.opacity = "1"; (e.currentTarget as HTMLButtonElement).style.color = "var(--danger)"; }}
-                              onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.opacity = isActiveSession ? "0.7" : "0.5"; (e.currentTarget as HTMLButtonElement).style.color = isActiveSession ? "var(--accent)" : "var(--text-muted)"; }}
                             >×</button>
                           </div>
                           {/* Child sessions (sub-agents) — indented under parent, collapsible */}
@@ -796,11 +759,7 @@ const loadProjects = async () => {
                           {children.map((child) => {
                             const isChildActive = selectedSessionId === child.id;
                             return (
-                              <div key={child.id} style={{
-                                display: "flex", alignItems: "center",
-                                borderRadius: 6,
-                                background: isChildActive ? "rgba(79,110,247,0.06)" : "transparent",
-                                transition: "background 0.15s",
+                              <div key={child.id} className={`sidebar-row ${isChildActive ? "sidebar-row-active" : ""}`} style={{
                                 paddingRight: 4,
                                 marginLeft: 14,
                                 borderLeft: "1px solid var(--border-subtle)",
@@ -834,14 +793,10 @@ const loadProjects = async () => {
                                 <button
                                   onClick={() => void handleDeleteSession(child.id)}
                                   title="删除子会话"
+                                  className="sidebar-row-action ui-icon-button ui-icon-button--small ui-icon-button--danger"
                                   style={{
-                                    border: "none", background: "transparent",
-                                    color: "var(--text-muted)", fontSize: 12, cursor: "pointer",
-                                    padding: "2px 4px", flexShrink: 0, borderRadius: 4,
-                                    lineHeight: 1, opacity: 0.4, transition: "opacity 0.15s, color 0.15s",
+                                    fontSize: 12, flexShrink: 0, lineHeight: 1,
                                   }}
-                                  onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.opacity = "1"; (e.currentTarget as HTMLButtonElement).style.color = "var(--danger)"; }}
-                                  onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.opacity = "0.4"; (e.currentTarget as HTMLButtonElement).style.color = "var(--text-muted)"; }}
                                 >×</button>
                               </div>
                             );
@@ -876,26 +831,9 @@ const loadProjects = async () => {
           <button
             onClick={() => void hideToBackground()}
             title={wakeEnabled ? `隐藏到后台（说“${wakeWord}”唤醒）` : "隐藏到后台"}
+            className="ui-quiet-button"
             style={{
               flex: 1,
-              padding: "9px 12px",
-              borderRadius: 8,
-              border: "1px solid var(--border-default)",
-              background: "transparent",
-              color: "var(--text-muted)",
-              fontSize: 12,
-              fontWeight: 500,
-              cursor: "pointer",
-              display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
-              transition: "border-color 0.15s, color 0.15s, background 0.15s",
-            }}
-            onMouseEnter={e => {
-              (e.currentTarget as HTMLButtonElement).style.borderColor = "var(--accent)";
-              (e.currentTarget as HTMLButtonElement).style.color = "var(--accent)";
-            }}
-            onMouseLeave={e => {
-              (e.currentTarget as HTMLButtonElement).style.borderColor = "var(--border-default)";
-              (e.currentTarget as HTMLButtonElement).style.color = "var(--text-muted)";
             }}
           >
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -907,25 +845,7 @@ const loadProjects = async () => {
           <button
             onClick={() => setShowAppearance((v) => !v)}
             title="皮肤与布局"
-            style={{
-              width: 36,
-              padding: "9px 0",
-              borderRadius: 8,
-              border: "1px solid var(--border-default)",
-              background: "transparent",
-              color: "var(--text-muted)",
-              cursor: "pointer",
-              display: "flex", alignItems: "center", justifyContent: "center",
-              transition: "border-color 0.15s, color 0.15s",
-            }}
-            onMouseEnter={e => {
-              (e.currentTarget as HTMLButtonElement).style.borderColor = "var(--accent)";
-              (e.currentTarget as HTMLButtonElement).style.color = "var(--accent)";
-            }}
-            onMouseLeave={e => {
-              (e.currentTarget as HTMLButtonElement).style.borderColor = "var(--border-default)";
-              (e.currentTarget as HTMLButtonElement).style.color = "var(--text-muted)";
-            }}
+            className={`ui-icon-button ui-icon-button--medium ${showAppearance ? "is-active" : ""}`}
           >
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/>
@@ -938,29 +858,8 @@ const loadProjects = async () => {
         <div style={{ padding: "0 10px" }}>
           <button
             onClick={() => void handleImportProject()}
-            style={{
-              width: "100%",
-              padding: "9px 12px",
-              borderRadius: 8,
-              border: "1px dashed var(--border-default)",
-              background: "transparent",
-              color: "var(--text-muted)",
-              fontSize: 12,
-              fontWeight: 500,
-              cursor: "pointer",
-              display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
-              transition: "border-color 0.15s, color 0.15s, background 0.15s",
-            }}
-            onMouseEnter={e => {
-              (e.currentTarget as HTMLButtonElement).style.borderColor = "var(--accent)";
-              (e.currentTarget as HTMLButtonElement).style.color = "var(--accent)";
-              (e.currentTarget as HTMLButtonElement).style.background = "var(--accent-dim)";
-            }}
-            onMouseLeave={e => {
-              (e.currentTarget as HTMLButtonElement).style.borderColor = "var(--border-default)";
-              (e.currentTarget as HTMLButtonElement).style.color = "var(--text-muted)";
-              (e.currentTarget as HTMLButtonElement).style.background = "transparent";
-            }}
+            className="ui-quiet-button"
+            style={{ width: "100%" }}
           >
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="M12 5v14M5 12h14"/>
@@ -1116,16 +1015,7 @@ const loadProjects = async () => {
                     <button
                       key={tab.id}
                       onClick={() => setSettingsTab(tab.id)}
-                      style={{
-                        padding: "6px 10px",
-                        borderRadius: 7,
-                        border: "none",
-                        background: settingsTab === tab.id ? "var(--accent-dim)" : "transparent",
-                        color: settingsTab === tab.id ? "var(--accent)" : "var(--text-secondary)",
-                        fontSize: 12,
-                        fontWeight: 500,
-                        cursor: "pointer",
-                      }}
+                      className={`settings-tab ${settingsTab === tab.id ? "settings-tab-active" : ""}`}
                     >
                       {tab.label}
                     </button>
@@ -1134,29 +1024,7 @@ const loadProjects = async () => {
                 <button
                   onClick={() => setShowSettings(false)}
                   title="关闭"
-                  onMouseEnter={e => {
-                    (e.currentTarget as HTMLButtonElement).style.background = "rgba(220,38,38,0.08)";
-                    (e.currentTarget as HTMLButtonElement).style.color = "var(--danger)";
-                  }}
-                  onMouseLeave={e => {
-                    (e.currentTarget as HTMLButtonElement).style.background = "transparent";
-                    (e.currentTarget as HTMLButtonElement).style.color = "var(--text-muted)";
-                  }}
-                  style={{
-                    width: 28, height: 28,
-                    border: "none",
-                    borderRadius: 7,
-                    background: "transparent",
-                    color: "var(--text-muted)",
-                    fontSize: 18,
-                    lineHeight: 1,
-                    cursor: "pointer",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    transition: "background 0.15s, color 0.15s",
-                    flexShrink: 0,
-                  }}
+                  className="ui-icon-button ui-icon-button--close ui-icon-button--danger"
                 >
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
                     <path d="M18 6 6 18M6 6l12 12"/>
@@ -1186,6 +1054,7 @@ const loadProjects = async () => {
         >
           <div
             onClick={(e) => e.stopPropagation()}
+            className="appearance-panel"
             style={{
               position: "absolute",
               left: 16,
@@ -1207,28 +1076,22 @@ const loadProjects = async () => {
             {/* Skins */}
             <div>
               <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase" as const, letterSpacing: "0.08em", marginBottom: 8 }}>皮肤</div>
-              <div style={{ display: "flex", gap: 8 }}>
+              <div className="appearance-choices">
                 {SKINS.map((s) => (
                   <button
                     key={s.id}
                     onClick={() => setSkin(s.id)}
-                    style={{
-                      flex: 1,
-                      padding: "8px 6px",
-                      borderRadius: 8,
-                      border: skin === s.id ? "2px solid var(--accent)" : "1px solid var(--border-default)",
-                      background: "transparent",
-                      cursor: "pointer",
-                      display: "flex", flexDirection: "column", alignItems: "center", gap: 6,
-                      transition: "border-color 0.15s",
-                    }}
+                    className={`appearance-choice ${skin === s.id ? "appearance-choice-active" : ""}`}
                   >
-                    <span style={{
-                      width: 34, height: 22, borderRadius: 5,
+                    <span className="appearance-swatch" style={{
                       background: `linear-gradient(135deg, ${s.preview[0]} 55%, ${s.preview[1]} 55%)`,
-                      border: "1px solid var(--border-subtle)",
                     }} />
-                    <span style={{ fontSize: 11, color: skin === s.id ? "var(--accent)" : "var(--text-secondary)", fontWeight: skin === s.id ? 600 : 400 }}>{s.label}</span>
+                    <span className="appearance-choice-label" style={{ fontWeight: skin === s.id ? 600 : 400 }}>{s.label}</span>
+                    {skin === s.id && (
+                      <svg className="appearance-choice-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <path d="m5 12 4 4L19 6" />
+                      </svg>
+                    )}
                   </button>
                 ))}
               </div>
@@ -1237,24 +1100,13 @@ const loadProjects = async () => {
             {/* Layouts */}
             <div>
               <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase" as const, letterSpacing: "0.08em", marginBottom: 8 }}>布局</div>
-              <div style={{ display: "flex", gap: 6 }}>
+              <div className="appearance-segmented">
                 {LAYOUTS.map((l) => (
                   <button
                     key={l.id}
                     onClick={() => setLayout(l.id)}
                     title={l.description}
-                    style={{
-                      flex: 1,
-                      padding: "7px 4px",
-                      borderRadius: 8,
-                      border: layout === l.id ? "1.5px solid var(--accent)" : "1px solid var(--border-default)",
-                      background: layout === l.id ? "var(--accent-dim)" : "transparent",
-                      color: layout === l.id ? "var(--accent)" : "var(--text-secondary)",
-                      fontSize: 12,
-                      fontWeight: layout === l.id ? 600 : 400,
-                      cursor: "pointer",
-                      transition: "all 0.15s",
-                    }}
+                    className={`appearance-segment ${layout === l.id ? "appearance-segment-active" : ""}`}
                   >{l.label}</button>
                 ))}
               </div>
@@ -1265,11 +1117,11 @@ const loadProjects = async () => {
               <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase" as const, letterSpacing: "0.08em" }}>语音</div>
               <label style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 12, color: "var(--text-secondary)", cursor: "pointer" }}>
                 助手回复自动播报
-                <input type="checkbox" checked={autoSpeak} onChange={(e) => setAutoSpeak(e.target.checked)} style={{ accentColor: "var(--accent)" }} />
+                <input className="appearance-switch" type="checkbox" checked={autoSpeak} onChange={(e) => setAutoSpeak(e.target.checked)} />
               </label>
               <label style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 12, color: "var(--text-secondary)", cursor: "pointer" }}>
                 隐藏后语音唤醒
-                <input type="checkbox" checked={wakeEnabled} onChange={(e) => setWakeEnabled(e.target.checked)} style={{ accentColor: "var(--accent)" }} />
+                <input className="appearance-switch" type="checkbox" checked={wakeEnabled} onChange={(e) => setWakeEnabled(e.target.checked)} />
               </label>
               <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "var(--text-secondary)" }}>
                 <span style={{ flexShrink: 0 }}>唤醒词</span>
