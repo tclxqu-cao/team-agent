@@ -1,0 +1,21 @@
+packages/core/src/domain/context/__tests__/ContextLoader.test.ts
+  s_6edcb9d9cd7ad6::t_6b7888b4ea2966 93-114
+packages/core/src/domain/context/ContextLoader.ts
+  s_6edcb9d9cd7ad6::t_bf0100feb69fa5 3-4,39,44,71-82,85-86,89-98
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "7d8d2306e3a8d7abfc5ff3c917397c8f1085499b",
+  "prompts": {},
+  "sessions": {
+    "s_6edcb9d9cd7ad6": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fd1c1-3a3e-7f32-9ee5-c7add0c1d7e1",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
