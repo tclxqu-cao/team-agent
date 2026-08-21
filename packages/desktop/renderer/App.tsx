@@ -592,6 +592,16 @@ const loadProjects = async () => {
             letterSpacing: "0.1em",
             fontWeight: 600,
           }}>项目</span>
+          <button
+            onClick={() => void handleImportProject()}
+            title="导入项目"
+            aria-label="导入项目"
+            className="ui-icon-button ui-icon-button--small"
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M12 5v14M5 12h14" />
+            </svg>
+          </button>
         </div>
 
         {/* Project + session list */}
@@ -834,12 +844,6 @@ const loadProjects = async () => {
             className="ui-quiet-button sidebar-utility-text"
           >
             隐藏后台
-          </button>
-          <button
-            onClick={() => void handleImportProject()}
-            className="ui-quiet-button sidebar-utility-text"
-          >
-            导入项目
           </button>
           <button
             onClick={() => setShowAppearance((v) => !v)}
