@@ -826,21 +826,20 @@ const loadProjects = async () => {
           </div>
         </div>
 
-        {/* Bottom action row: hide to background + appearance */}
-        <div style={{ padding: "0 10px", display: "flex", gap: 6 }}>
+        {/* Sidebar utility toolbar */}
+        <div className="sidebar-utility-toolbar">
           <button
             onClick={() => void hideToBackground()}
             title={wakeEnabled ? `隐藏到后台（说“${wakeWord}”唤醒）` : "隐藏到后台"}
-            className="ui-quiet-button"
-            style={{
-              flex: 1,
-            }}
+            className="ui-quiet-button sidebar-utility-text"
           >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/>
-              <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
-            </svg>
             隐藏后台
+          </button>
+          <button
+            onClick={() => void handleImportProject()}
+            className="ui-quiet-button sidebar-utility-text"
+          >
+            导入项目
           </button>
           <button
             onClick={() => setShowAppearance((v) => !v)}
@@ -851,20 +850,6 @@ const loadProjects = async () => {
               <circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/>
               <path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"/>
             </svg>
-          </button>
-        </div>
-
-        {/* Import project button */}
-        <div style={{ padding: "0 10px" }}>
-          <button
-            onClick={() => void handleImportProject()}
-            className="ui-quiet-button"
-            style={{ width: "100%" }}
-          >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M12 5v14M5 12h14"/>
-            </svg>
-            导入项目
           </button>
         </div>
       </aside>

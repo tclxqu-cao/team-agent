@@ -249,6 +249,20 @@ select:focus {
   font-weight: 500;
 }
 
+.sidebar-utility-toolbar {
+  display: flex;
+  gap: 4px;
+  padding: 0 10px;
+}
+
+.sidebar-utility-text {
+  min-width: 0;
+  flex: 1;
+  padding-right: 0;
+  padding-left: 0;
+  white-space: nowrap;
+}
+
 .ui-icon-button:hover:not(:disabled),
 .ui-quiet-button:hover:not(:disabled),
 .settings-tab:hover:not(:disabled),
