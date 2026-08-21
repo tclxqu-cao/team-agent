@@ -582,22 +582,22 @@ input:focus, select:focus, textarea:focus {
 /* ── Message output card (single-message box) ── */
 .message-card {
   position: relative;
-  border: 1px solid var(--border-subtle);
+  border: 1px solid var(--hairline);
   background: var(--bg-surface);
   border-radius: var(--radius-md);
-  box-shadow: var(--shadow-sm);
-  transition: border-color var(--duration-fast) var(--ease-out),
-              box-shadow var(--duration-fast) var(--ease-out);
+  box-shadow: none;
+  transition: border-color var(--duration-fast) var(--ease-out);
 }
-.message-card:hover {
+.message-card:hover,
+.message-card:focus-within {
   border-color: var(--border-default);
-  box-shadow: var(--shadow-md);
 }
 .message-card .msg-actions {
   opacity: 0;
   transition: opacity var(--duration-fast) var(--ease-out);
 }
-.message-card:hover .msg-actions { opacity: 1; }
+.message-card:hover .msg-actions,
+.message-card:focus-within .msg-actions { opacity: 1; }
 
 /* ── Compact layout density ── */
 .layout-compact { font-size: 12.5px; }

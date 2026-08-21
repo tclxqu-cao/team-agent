@@ -1296,28 +1296,7 @@ export default function ChatView({
           <button
             onClick={onOpenSettings}
             title="设置"
-            onMouseEnter={e => {
-              (e.currentTarget as HTMLButtonElement).style.background = "var(--bg-deep)";
-              (e.currentTarget as HTMLButtonElement).style.color = "var(--text-primary)";
-            }}
-            onMouseLeave={e => {
-              (e.currentTarget as HTMLButtonElement).style.background = "transparent";
-              (e.currentTarget as HTMLButtonElement).style.color = settingsOpen ? "var(--accent)" : "var(--text-muted)";
-            }}
-            style={{
-              flexShrink: 0,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              width: 32,
-              height: 32,
-              borderRadius: 8,
-              border: "none",
-              background: "transparent",
-              color: settingsOpen ? "var(--accent)" : "var(--text-muted)",
-              cursor: "pointer",
-              transition: "background 0.15s, color 0.15s",
-            }}
+            className={`ui-icon-button ${settingsOpen ? "is-active" : ""}`}
           >
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
               <circle cx="12" cy="12" r="3"/>
@@ -1597,9 +1576,8 @@ export default function ChatView({
                 borderRadius: isUser
                   ? "14px 4px 14px 14px"
                   : "4px 14px 14px 14px",
-                background: (msg.content || (isUser && chatMsg.images?.length)) ? (isUser ? "rgba(79, 110, 247, 0.08)" : "var(--bg-surface)") : "transparent",
-                border: (msg.content || (isUser && chatMsg.images?.length)) ? (isUser ? "1px solid rgba(79, 110, 247, 0.18)" : "1px solid var(--border-subtle)") : "none",
-                boxShadow: (msg.content || (isUser && chatMsg.images?.length)) ? (isUser ? "none" : "var(--shadow-sm)") : "none",
+                background: (msg.content || (isUser && chatMsg.images?.length)) ? (isUser ? "rgba(79, 110, 247, 0.08)" : undefined) : "transparent",
+                border: (msg.content || (isUser && chatMsg.images?.length)) ? (isUser ? "1px solid rgba(79, 110, 247, 0.18)" : undefined) : "none",
                 fontSize: 14,
                 lineHeight: 1.75,
                 color: "var(--text-primary)",
@@ -2408,14 +2386,12 @@ export default function ChatView({
         {/* Input box */}
         <div ref={pickerAnchorRef} style={{ position: "relative" }}>
 
-        <div style={{
+        <div className="composer-shell" style={{
           display: "flex",
           flexDirection: "column",
           gap: 0,
           background: "var(--bg-surface)",
           borderRadius: 14,
-          border: "1.5px solid var(--border-default)",
-          boxShadow: "var(--shadow-sm)",
           overflow: "visible",
         }}>
           <ContextUsageBar usage={viewSessionId ? contextUsageBySession[viewSessionId] : undefined} contextWindowK={contextWindow} />
@@ -2522,27 +2498,7 @@ export default function ChatView({
             onClick={() => fileInputRef.current?.click()}
             disabled={!isConfigured || isRunning}
             title="添加附件"
-            onMouseEnter={e => {
-              if (isConfigured && !isRunning) {
-                (e.currentTarget as HTMLButtonElement).style.background = "var(--accent-dim)";
-                (e.currentTarget as HTMLButtonElement).style.color = "var(--accent)";
-              }
-            }}
-            onMouseLeave={e => {
-              (e.currentTarget as HTMLButtonElement).style.background = "transparent";
-              (e.currentTarget as HTMLButtonElement).style.color = "var(--text-muted)";
-            }}
-            style={{
-              width: 32, height: 32,
-              borderRadius: 8,
-              border: "none",
-              background: "transparent",
-              color: "var(--text-muted)",
-              cursor: isConfigured && !isRunning ? "pointer" : "not-allowed",
-              display: "flex", alignItems: "center", justifyContent: "center",
-              flexShrink: 0,
-              transition: "background 0.15s, color 0.15s",
-            }}
+            className="ui-icon-button"
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
@@ -2553,29 +2509,12 @@ export default function ChatView({
           <button
             onClick={handleMicToggle}
             disabled={!isConfigured}
-            className={isRecording ? "mic-recording" : undefined}
+            className={`ui-icon-button ${isRecording ? "mic-recording" : ""}`}
             title={!isASRSupported() ? "当前环境不支持语音输入" : (isRecording ? "停止录音" : "语音输入")}
-            onMouseEnter={e => {
-              if (isConfigured && !isRecording) {
-                (e.currentTarget as HTMLButtonElement).style.background = "var(--accent-dim)";
-                (e.currentTarget as HTMLButtonElement).style.color = "var(--accent)";
-              }
-            }}
-            onMouseLeave={e => {
-              (e.currentTarget as HTMLButtonElement).style.background = isRecording ? "rgba(244,63,94,0.12)" : "transparent";
-              (e.currentTarget as HTMLButtonElement).style.color = isRecording ? "var(--danger)" : "var(--text-muted)";
-            }}
-            style={{
-              width: 32, height: 32,
-              borderRadius: 8,
-              border: "none",
-              background: isRecording ? "rgba(244,63,94,0.12)" : "transparent",
-              color: isRecording ? "var(--danger)" : "var(--text-muted)",
-              cursor: isConfigured ? "pointer" : "not-allowed",
-              display: "flex", alignItems: "center", justifyContent: "center",
-              flexShrink: 0,
-              transition: "background 0.15s, color 0.15s",
-            }}
+            style={isRecording ? {
+              background: "rgba(244,63,94,0.12)",
+              color: "var(--danger)",
+            } : undefined}
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/>
@@ -2589,26 +2528,8 @@ export default function ChatView({
             onClick={() => void handleScreenshot()}
             disabled={!isConfigured || isRunning}
             title="粘贴截图（需先 Cmd+Shift+4 截图至剪贴板）"
-            onMouseEnter={e => {
-              if (isConfigured && !isRunning) {
-                (e.currentTarget as HTMLButtonElement).style.background = "var(--accent-dim)";
-                (e.currentTarget as HTMLButtonElement).style.color = "var(--accent)";
-              }
-            }}
-            onMouseLeave={e => {
-              (e.currentTarget as HTMLButtonElement).style.background = pendingImages.length > 0 ? "var(--accent-dim)" : "transparent";
-              (e.currentTarget as HTMLButtonElement).style.color = pendingImages.length > 0 ? "var(--accent)" : "var(--text-muted)";
-            }}
+            className={`ui-icon-button ${pendingImages.length > 0 ? "is-active" : ""}`}
             style={{
-              width: 32, height: 32,
-              borderRadius: 8,
-              border: pendingImages.length > 0 ? "1px solid rgba(79,110,247,0.35)" : "none",
-              background: pendingImages.length > 0 ? "var(--accent-dim)" : "transparent",
-              color: pendingImages.length > 0 ? "var(--accent)" : "var(--text-muted)",
-              cursor: isConfigured && !isRunning ? "pointer" : "not-allowed",
-              display: "flex", alignItems: "center", justifyContent: "center",
-              flexShrink: 0,
-              transition: "background 0.15s, color 0.15s",
               position: "relative",
             }}
           >
