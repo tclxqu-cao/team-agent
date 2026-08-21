@@ -1,7 +1,7 @@
 import type { IContextLoader, ProjectFile } from './entities.js';
 import { constants } from "node:fs";
-import { open, readFile, readdir, stat } from "node:fs/promises";
-import { join, basename } from "node:path";
+import { open, readFile, readdir, realpath, stat } from "node:fs/promises";
+import { join, basename, isAbsolute, relative, resolve, sep } from "node:path";
 
 const ROOT_PROJECT_FILES = [
   "AGENTS.md",
@@ -36,11 +36,12 @@ export class ContextLoader implements IContextLoader {
 
     // Find additional instruction files in subdirectories.
     try {
+      const resolvedRoot = await realpath(rootDir);
       const instructionFiles = await this.findClaudeMdFiles(rootDir);
       for (const filePath of instructionFiles) {
         if (loadedPaths.has(filePath)) continue;
         try {
-          const file = await this.loadRecursiveFile(filePath);
+          const file = await this.loadRecursiveFile(rootDir, resolvedRoot, filePath);
           files.push(file);
           loadedPaths.add(filePath);
         } catch {
@@ -67,11 +68,33 @@ export class ContextLoader implements IContextLoader {
     return { path: filePath, content, type };
   }
 
-  private async loadRecursiveFile(filePath: string): Promise<ProjectFile> {
+  private async loadRecursiveFile(rootDir: string, resolvedRoot: string, filePath: string): Promise<ProjectFile> {
+    const relativePath = relative(rootDir, filePath);
+    if (
+      !relativePath ||
+      isAbsolute(relativePath) ||
+      relativePath === ".." ||
+      relativePath.startsWith(`..${sep}`)
+    ) {
+      throw new Error("Recursive context candidate is outside the configured root");
+    }
+
+    const expectedPath = resolve(resolvedRoot, relativePath);
     const fileHandle = await open(filePath, constants.O_RDONLY | constants.O_NOFOLLOW);
     try {
-      if (!(await fileHandle.stat()).isFile()) {
+      const openedStat = await fileHandle.stat();
+      if (!openedStat.isFile()) {
         throw new Error("Recursive context candidate is not a regular file");
+      }
+
+      const resolvedPath = await realpath(filePath);
+      if (resolvedPath !== expectedPath) {
+        throw new Error("Recursive context candidate traverses a symbolic link");
+      }
+
+      const resolvedStat = await stat(resolvedPath);
+      if (resolvedStat.dev !== openedStat.dev || resolvedStat.ino !== openedStat.ino) {
+        throw new Error("Recursive context candidate changed while opening");
       }
 
       const content = await fileHandle.readFile({ encoding: "utf-8" });

@@ -90,4 +90,26 @@ describe("ContextLoader", () => {
 
     await expect(new SwappingContextLoader().loadProjectContext(rootDir)).resolves.toEqual([]);
   });
+
+  it("rejects a recursive instruction parent swapped for an external symlink before reading", async () => {
+    const rootDir = await mkdtemp(join(tmpdir(), "context-loader-"));
+    roots.push(rootDir);
+    const externalDir = await mkdtemp(join(tmpdir(), "context-loader-target-"));
+    roots.push(externalDir);
+    const nestedDir = join(rootDir, "nested");
+    await mkdir(nestedDir, { recursive: true });
+    await writeFile(join(nestedDir, "AGENTS.md"), "in-root");
+    await writeFile(join(externalDir, "AGENTS.md"), "outside");
+
+    class SwappingParentContextLoader extends ContextLoader {
+      override async findClaudeMdFiles(directory: string): Promise<string[]> {
+        const discovered = await super.findClaudeMdFiles(directory);
+        await rm(nestedDir, { recursive: true });
+        await symlink(externalDir, nestedDir);
+        return discovered;
+      }
+    }
+
+    await expect(new SwappingParentContextLoader().loadProjectContext(rootDir)).resolves.toEqual([]);
+  });
 });
