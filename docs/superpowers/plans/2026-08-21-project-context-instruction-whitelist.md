@@ -18,15 +18,16 @@
 
 ---
 
-### Task 1: Lock the discovery contract with tests
+### Task 1: Implement and test deterministic fixed-whitelist discovery
 
 **Files:**
 - Create: `packages/core/src/domain/context/__tests__/ContextLoader.test.ts`
+- Modify: `packages/core/src/domain/context/ContextLoader.ts`
 - Test: `packages/core/src/domain/context/__tests__/ContextLoader.test.ts`
 
 **Interfaces:**
 - Consumes: `new ContextLoader().loadProjectContext(rootDir): Promise<ProjectFile[]>`
-- Produces: executable contract for ordered root, `.customer-agent/`, and recursive discovery.
+- Produces: ordered, de-duplicated `ProjectFile[]` and its executable discovery contract.
 
 - [ ] **Step 1: Write failing whitelist and ordering tests**
 
@@ -61,41 +62,29 @@ Run: `bunx vitest run packages/core/src/domain/context/__tests__/ContextLoader.t
 
 Expected: FAIL because `AGENTS.md` and `.customer-agent/` are not discovered.
 
----
-
-### Task 2: Implement deterministic fixed-whitelist discovery
-
-**Files:**
-- Modify: `packages/core/src/domain/context/ContextLoader.ts`
-- Test: `packages/core/src/domain/context/__tests__/ContextLoader.test.ts`
-
-**Interfaces:**
-- Consumes: `rootDir: string`
-- Produces: ordered, de-duplicated `ProjectFile[]` from `loadProjectContext`.
-
-- [ ] **Step 1: Define ordered path lists**
+- [ ] **Step 4: Define ordered path lists**
 
 Add `ROOT_PROJECT_FILES` and derive `CUSTOMER_AGENT_FILES` with `.customer-agent/` prefixes. Put `AGENTS.md` before `CLAUDE.md` in each list.
 
-- [ ] **Step 2: Generalize recursive instruction discovery**
+- [ ] **Step 5: Generalize recursive instruction discovery**
 
 Replace `findClaudeMdFiles` internals with instruction discovery that accepts both filenames, skips `node_modules`, `.git`, and `dist`, sorts directory entries and final paths, and remains tolerant of inaccessible directories.
 
-- [ ] **Step 3: De-duplicate ordered results**
+- [ ] **Step 6: De-duplicate ordered results**
 
 Track loaded absolute paths in a `Set<string>`. Load both whitelist passes first, then append recursive results not already present.
 
-- [ ] **Step 4: Classify AGENTS.md as instruction context**
+- [ ] **Step 7: Classify AGENTS.md as instruction context**
 
 Return `type: "claude_md"` for both `AGENTS.md` and `CLAUDE.md`, preserving the public union type.
 
-- [ ] **Step 5: Run focused tests**
+- [ ] **Step 8: Run focused tests**
 
 Run: `bunx vitest run packages/core/src/domain/context/__tests__/ContextLoader.test.ts`
 
 Expected: PASS.
 
-- [ ] **Step 6: Run context and core regression tests**
+- [ ] **Step 9: Run context and core regression tests**
 
 Run: `bunx vitest run packages/core/src/domain/context packages/core/src/domain/agent`
 
@@ -103,7 +92,7 @@ Expected: PASS with no `ContextAssembler` regression.
 
 ---
 
-### Task 3: Verify build and diff scope
+### Task 2: Verify build, scope, and commit
 
 **Files:**
 - Verify: `packages/core/src/domain/context/ContextLoader.ts`

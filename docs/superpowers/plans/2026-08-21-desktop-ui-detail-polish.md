@@ -18,13 +18,15 @@
 
 ---
 
-### Task 1: Add the shared quiet-control state system
+### Task 1: Polish sidebar, settings, and appearance controls
 
 **Files:**
 - Modify: `packages/desktop/renderer/styles/global.css`
+- Modify: `packages/desktop/renderer/App.tsx`
 
 **Interfaces:**
-- Produces CSS classes: `.ui-icon-button`, `.ui-quiet-button`, `.sidebar-row`, `.sidebar-row-active`, `.composer-shell`, `.appearance-choice`, `.settings-tab`, and state modifiers.
+- Produces and consumes CSS classes: `.ui-icon-button`, `.ui-quiet-button`, `.sidebar-row`, `.sidebar-row-active`, `.appearance-choice`, `.settings-tab`, and state modifiers.
+- Preserves existing project, session, hide, appearance, import, settings, skin, layout, and voice handlers.
 
 - [ ] **Step 1: Add component-level tokens**
 
@@ -42,35 +44,23 @@ Use a pseudo-element for the 2 px active edge so selected rows do not resize. Gi
 
 Add `@media (prefers-reduced-motion: reduce)` overrides for nonessential transitions and entrance animation.
 
----
-
-### Task 2: Polish sidebar, settings, and appearance controls
-
-**Files:**
-- Modify: `packages/desktop/renderer/App.tsx`
-- Modify: `packages/desktop/renderer/styles/global.css`
-
-**Interfaces:**
-- Consumes shared classes from Task 1.
-- Preserves existing project, session, hide, appearance, import, settings, skin, layout, and voice handlers.
-
-- [ ] **Step 1: Apply semantic row classes**
+- [ ] **Step 5: Apply semantic row classes**
 
 Move project/session selection visuals and action visibility to `.sidebar-row` classes. Preserve row heights and ellipsis.
 
-- [ ] **Step 2: Unify sidebar utility controls**
+- [ ] **Step 6: Unify sidebar utility controls**
 
 Apply `.ui-quiet-button` to `隐藏后台` and `导入项目`, `.ui-icon-button` to appearance, and remove inline mouse-enter mutations.
 
-- [ ] **Step 3: Polish settings modal controls**
+- [ ] **Step 7: Polish settings modal controls**
 
 Apply shared icon close styling and underline/edge-based `.settings-tab` states. Keep modal dimensions and tab content unchanged.
 
-- [ ] **Step 4: Polish appearance choices**
+- [ ] **Step 8: Polish appearance choices**
 
 Convert skin choices to borderless swatch rows with a selected check. Group layout choices in one segmented boundary and leave voice switches as functional toggles.
 
-- [ ] **Step 5: Run TypeScript build checkpoint**
+- [ ] **Step 9: Run TypeScript build checkpoint**
 
 Run: `bun run --cwd packages/desktop build`
 
@@ -78,7 +68,7 @@ Expected: exit 0.
 
 ---
 
-### Task 3: Polish assistant output and composer boundaries
+### Task 2: Polish assistant output and composer boundaries
 
 **Files:**
 - Modify: `packages/desktop/renderer/components/ChatView.tsx`
@@ -108,7 +98,7 @@ Expected: all renderer tests pass.
 
 ---
 
-### Task 4: Build and visually verify the real desktop renderer
+### Task 3: Build and visually verify the real desktop renderer
 
 **Files:**
 - Verify: `packages/desktop/renderer/App.tsx`
