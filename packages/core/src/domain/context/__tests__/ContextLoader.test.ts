@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { join, relative } from "node:path";
 import { tmpdir } from "node:os";
 import { ContextLoader } from "../ContextLoader.js";
@@ -15,6 +15,8 @@ describe("ContextLoader", () => {
   it("loads the fixed whitelist first, then ordered recursive instruction files", async () => {
     const rootDir = await mkdtemp(join(tmpdir(), "context-loader-"));
     roots.push(rootDir);
+    const externalDir = await mkdtemp(join(tmpdir(), "context-loader-target-"));
+    roots.push(externalDir);
     const files = [
       "AGENTS.md",
       "CLAUDE.md",
@@ -32,10 +34,14 @@ describe("ContextLoader", () => {
       "packages/ui/CLAUDE.md",
     ];
     for (const file of files) {
+      if (file === "AGENTS.md") continue;
       const path = join(rootDir, file);
       await mkdir(join(path, ".."), { recursive: true });
       await writeFile(path, `content:${file}`);
     }
+    await writeFile(join(externalDir, "AGENTS.md"), "content:AGENTS.md");
+    await symlink(join(externalDir, "AGENTS.md"), join(rootDir, "AGENTS.md"));
+    await symlink(join(externalDir, "AGENTS.md"), join(rootDir, "packages/ui/AGENTS.md"));
     await mkdir(join(rootDir, "node_modules/package"), { recursive: true });
     await writeFile(join(rootDir, "node_modules/package/AGENTS.md"), "excluded");
     await mkdir(join(rootDir, ".git/hooks"), { recursive: true });

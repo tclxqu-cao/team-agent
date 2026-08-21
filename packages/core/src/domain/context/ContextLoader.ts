@@ -79,7 +79,7 @@ export class ContextLoader implements IContextLoader {
           const fullPath = join(dir, entry.name);
           if (entry.isDirectory()) {
             await scan(fullPath);
-          } else if (INSTRUCTION_FILES.has(entry.name)) {
+          } else if (entry.isFile() && INSTRUCTION_FILES.has(entry.name)) {
             results.push(fullPath);
           }
         }
