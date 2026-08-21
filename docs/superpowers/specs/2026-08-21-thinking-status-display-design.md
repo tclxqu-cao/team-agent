@@ -26,6 +26,15 @@ The screenshot does not by itself indicate a deadlock. The tool card completed, 
 - Do not add a separate tool dashboard or summary panel.
 - A completed tool card remains in conversation history while the lightweight status changes back to `思考中` for the next model iteration.
 
+### Top-Right Global Controls
+
+- Remove `隐藏后台` and `皮肤与布局` from the bottom of the sidebar.
+- Place both actions in the conversation title bar's right-side control group, before the existing settings button.
+- Render both actions as compact icon buttons with accessible labels and hover tooltips; do not add another bordered toolbar or text button.
+- Keep the order stable: `隐藏后台`, `皮肤与布局`, `设置`.
+- Keep the controls available in both standard and focus layouts, since they no longer depend on sidebar visibility.
+- Open the existing appearance panel beneath the top-right appearance button and align it to the right edge of the conversation area. Preserve all current skin, layout, and voice controls inside the panel.
+
 ### Implementation Boundary
 
 The renderer will treat `thinking` events as state transitions instead of display content. `AgentLoop` may continue emitting its current diagnostic messages because they can remain useful to non-visual consumers and logs. This keeps the behavior change scoped to presentation and avoids changing the agent execution protocol.
@@ -36,6 +45,8 @@ The two existing thinking placements in `ChatView` will share the same status-on
 - above the latest streaming assistant response after a tool call.
 
 The bordered `思考过程` mini-card, italic diagnostic text, and `thinkingText` accumulation will be removed.
+
+`App` remains responsible for hiding the window and owning appearance state. It will pass those actions and active state into `ChatView`, which owns the conversation title bar presentation. The sidebar utility toolbar will be removed after both actions are available in the title bar.
 
 ## State Flow
 
@@ -54,6 +65,8 @@ Existing error and cancellation behavior remains authoritative. This change does
 - Add focused renderer coverage for `thinking` events so raw messages such as `Iteration 3...` cannot become visible UI text.
 - Verify transitions `思考中` -> `工具执行中` -> `思考中` -> cleared.
 - Confirm completed and failed tool cards remain visible with their details.
+- Confirm the top-right background, appearance, and settings controls remain usable in standard and focus layouts.
+- Confirm the appearance panel opens below the top-right button without clipping or covering the title.
 - Build the desktop renderer.
 - Inspect the running desktop UI in the supported themes and narrow layout, confirming the indicator is aligned and no `Iteration N...` text appears.
 
@@ -62,4 +75,5 @@ Existing error and cancellation behavior remains authoritative. This change does
 - Changing model, tool, retry, or compaction execution behavior.
 - Adding a reasoning transcript or expandable chain-of-thought view.
 - Adding a separate tool activity dashboard.
+- Changing the contents or behavior of the existing appearance settings.
 - Diagnosing or changing the independent TTS timeout observed in runtime logs.
