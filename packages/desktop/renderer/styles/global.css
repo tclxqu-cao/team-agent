@@ -249,20 +249,6 @@ select:focus {
   font-weight: 500;
 }
 
-.sidebar-utility-toolbar {
-  display: flex;
-  gap: 4px;
-  padding: 0 8px;
-}
-
-.sidebar-utility-text {
-  min-width: 0;
-  flex: 1;
-  padding-right: 0;
-  padding-left: 0;
-  white-space: nowrap;
-}
-
 .ui-icon-button:hover:not(:disabled),
 .ui-quiet-button:hover:not(:disabled),
 .settings-tab:hover:not(:disabled),
@@ -485,6 +471,17 @@ select:focus {
 .appearance-switch:focus-visible {
   outline: none;
   box-shadow: var(--focus-ring);
+}
+
+.chat-header-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.chat-header-action {
+  color: var(--text-muted);
 }
 
 .agent-activity-indicator {

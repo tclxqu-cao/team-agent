@@ -66,6 +66,7 @@ export default function App() {
   const setAutoSpeak = useUIStore((s) => s.setAutoSpeak);
 
   const [showAppearance, setShowAppearance] = useState(false);
+  const [appearanceAnchor, setAppearanceAnchor] = useState<{ right: number; bottom: number } | null>(null);
   const [wakeTrigger, setWakeTrigger] = useState(0);
   const [wakeHeard, setWakeHeard] = useState<string | undefined>(undefined);
   const wakeHandleRef = useRef<WakeListenerHandle | null>(null);
@@ -184,6 +185,17 @@ export default function App() {
     beginWakeListening();
     await window.agentApi.hideWindow();
   }, [beginWakeListening]);
+
+  const toggleAppearance = useCallback((anchor: DOMRect) => {
+    setShowSettings(false);
+    setAppearanceAnchor({ right: anchor.right, bottom: anchor.bottom });
+    setShowAppearance((visible) => !visible);
+  }, []);
+
+  const toggleSettings = useCallback(() => {
+    setShowAppearance(false);
+    setShowSettings((visible) => !visible);
+  }, []);
 
   // Start wake listening as soon as the app loads (not only when hidden):
   // SFSpeechRecognizer needs a long warm-up before it reports anything, so
@@ -836,26 +848,6 @@ const loadProjects = async () => {
           </div>
         </div>
 
-        {/* Sidebar utility toolbar */}
-        <div className="sidebar-utility-toolbar">
-          <button
-            onClick={() => void hideToBackground()}
-            title={wakeEnabled ? `隐藏到后台（说“${wakeWord}”唤醒）` : "隐藏到后台"}
-            className="ui-quiet-button sidebar-utility-text"
-          >
-            隐藏后台
-          </button>
-          <button
-            onClick={() => setShowAppearance((v) => !v)}
-            title="皮肤与布局"
-            className={`ui-icon-button ui-icon-button--medium ${showAppearance ? "is-active" : ""}`}
-          >
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/>
-              <path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"/>
-            </svg>
-          </button>
-        </div>
       </aside>
 
       <div
@@ -903,8 +895,12 @@ const loadProjects = async () => {
             selectedSessionId={selectedSessionId}
             sessionTitle={selectedSessionTitle}
             voiceCommand={voiceCommand}
-            onOpenSettings={() => setShowSettings((prev) => !prev)}
+            onOpenSettings={toggleSettings}
             settingsOpen={showSettings}
+            onHideToBackground={() => void hideToBackground()}
+            onToggleAppearance={toggleAppearance}
+            appearanceOpen={showAppearance}
+            hideToBackgroundTitle={wakeEnabled ? `隐藏到后台（说“${wakeWord}”唤醒）` : "隐藏到后台"}
             onSessionCreated={async (sessionId) => {
               setSelectedSessionId(sessionId);
               // Arm two-way voice conversation for voice-originated sessions
@@ -1036,7 +1032,7 @@ const loadProjects = async () => {
       <div className="noise-overlay" />
 
       {/* ── Appearance panel (skins / layout / voice) ── */}
-      {showAppearance && createPortal(
+      {showAppearance && appearanceAnchor && createPortal(
         <div
           onClick={() => setShowAppearance(false)}
           style={{ position: "fixed", inset: 0, zIndex: 10000, WebkitAppRegion: "no-drag" } as React.CSSProperties}
@@ -1046,9 +1042,11 @@ const loadProjects = async () => {
             className="appearance-panel"
             style={{
               position: "absolute",
-              left: 16,
-              bottom: 120,
+              left: Math.max(12, Math.min(appearanceAnchor.right - 320, window.innerWidth - 332)),
+              top: appearanceAnchor.bottom + 8,
               width: 320,
+              maxHeight: `calc(100vh - ${appearanceAnchor.bottom + 20}px)`,
+              overflowY: "auto",
               background: "var(--bg-surface)",
               border: "1px solid var(--border-default)",
               borderRadius: "var(--radius-md)",
