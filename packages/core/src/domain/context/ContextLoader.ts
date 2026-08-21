@@ -1,5 +1,6 @@
 import type { IContextLoader, ProjectFile } from './entities.js';
-import { readFile, readdir, stat } from "node:fs/promises";
+import { constants } from "node:fs";
+import { open, readFile, readdir, stat } from "node:fs/promises";
 import { join, basename } from "node:path";
 
 const ROOT_PROJECT_FILES = [
@@ -39,7 +40,7 @@ export class ContextLoader implements IContextLoader {
       for (const filePath of instructionFiles) {
         if (loadedPaths.has(filePath)) continue;
         try {
-          const file = await this.loadFile(filePath);
+          const file = await this.loadRecursiveFile(filePath);
           files.push(file);
           loadedPaths.add(filePath);
         } catch {
@@ -64,6 +65,20 @@ export class ContextLoader implements IContextLoader {
     else if (fileName.endsWith(".ts") || fileName.endsWith(".js") || fileName.endsWith(".py")) type = "code";
 
     return { path: filePath, content, type };
+  }
+
+  private async loadRecursiveFile(filePath: string): Promise<ProjectFile> {
+    const fileHandle = await open(filePath, constants.O_RDONLY | constants.O_NOFOLLOW);
+    try {
+      if (!(await fileHandle.stat()).isFile()) {
+        throw new Error("Recursive context candidate is not a regular file");
+      }
+
+      const content = await fileHandle.readFile({ encoding: "utf-8" });
+      return { path: filePath, content, type: "claude_md" };
+    } finally {
+      await fileHandle.close();
+    }
   }
 
   async findClaudeMdFiles(rootDir: string): Promise<string[]> {

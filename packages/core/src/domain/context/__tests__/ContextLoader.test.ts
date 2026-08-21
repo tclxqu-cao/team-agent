@@ -67,4 +67,27 @@ describe("ContextLoader", () => {
       { path: join(rootDir, ".customer-agent/AGENTS.md"), content: "agent instructions" },
     ]);
   });
+
+  it("rejects a recursive instruction file swapped for an external symlink before reading", async () => {
+    const rootDir = await mkdtemp(join(tmpdir(), "context-loader-"));
+    roots.push(rootDir);
+    const externalDir = await mkdtemp(join(tmpdir(), "context-loader-target-"));
+    roots.push(externalDir);
+    const recursivePath = join(rootDir, "nested/AGENTS.md");
+    const externalPath = join(externalDir, "AGENTS.md");
+    await mkdir(join(recursivePath, ".."), { recursive: true });
+    await writeFile(recursivePath, "in-root");
+    await writeFile(externalPath, "outside");
+
+    class SwappingContextLoader extends ContextLoader {
+      override async findClaudeMdFiles(directory: string): Promise<string[]> {
+        const discovered = await super.findClaudeMdFiles(directory);
+        await rm(recursivePath);
+        await symlink(externalPath, recursivePath);
+        return discovered;
+      }
+    }
+
+    await expect(new SwappingContextLoader().loadProjectContext(rootDir)).resolves.toEqual([]);
+  });
 });
