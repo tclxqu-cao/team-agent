@@ -131,6 +131,9 @@ The first setup transaction succeeds only when the table is empty. Registration 
 id              TEXT PRIMARY KEY
 user_id         TEXT NOT NULL
 token_hash      BLOB UNIQUE NOT NULL
+csrf_hash       BLOB NOT NULL
+ws_nonce_hash   BLOB
+ws_nonce_expires_at TEXT
 device_id       TEXT NOT NULL
 device_name     TEXT
 user_agent      TEXT
