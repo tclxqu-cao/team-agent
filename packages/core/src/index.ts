@@ -15,6 +15,7 @@ export * from './domain/upload/index.js';
 export * from './domain/project/index.js';
 export * from './domain/settings/index.js';
 export * from './domain/lsp/index.js';
+export * from './domain/terminal/TerminalSession.js';
 
 // Implementations
 export { AgentLoop } from './domain/agent/AgentLoop.js';
