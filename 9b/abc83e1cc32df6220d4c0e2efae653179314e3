@@ -1,0 +1,25 @@
+packages/core/src/domain/terminal/TerminalSession.test.ts
+  s_30f0086b29e6d2::t_ba4642adbbd762 1-36,38-66
+  s_30f0086b29e6d2::t_e3bac68c1976f2 37
+packages/core/src/domain/terminal/TerminalSession.ts
+  s_30f0086b29e6d2::t_a61c2777e38ab6 81-82
+  s_30f0086b29e6d2::t_d66dcc9884f419 1-80,83-96
+packages/core/src/index.ts
+  s_30f0086b29e6d2::t_43829765e3a390 18
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "9babc83e1cc32df6220d4c0e2efae653179314e3",
+  "prompts": {},
+  "sessions": {
+    "s_30f0086b29e6d2": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_fbf4cc4b8ffeN7CnUjmxQ9RFm9",
+        "model": "glm-5.3-flash"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
