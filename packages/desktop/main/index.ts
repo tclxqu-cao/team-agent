@@ -2,7 +2,7 @@
 // on electron 32 / Node 20.18 (cjsPreparseModuleExports: "exports" undefined).
 import { createRequire } from "module";
 const require = createRequire(import.meta.url);
-const { app, BrowserWindow, ipcMain, dialog, session } = require("electron") as typeof import("electron");
+const { app, BrowserWindow, ipcMain, dialog, nativeImage, session } = require("electron") as typeof import("electron");
 import { spawn, type ChildProcess } from "node:child_process";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -57,6 +57,11 @@ if (!gotLock) {
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 let mainWindow: import("electron").BrowserWindow | null = null;
+const appIconPath = [
+  join(app.getAppPath(), "assets", "app-icon.png"),
+  join(process.resourcesPath, "assets", "app-icon.png"),
+  join(process.resourcesPath, "app.asar.unpacked", "assets", "app-icon.png"),
+].find((candidate) => existsSync(candidate));
 const desktopBaseDir = resolveDesktopBaseDir(app.getAppPath(), app.isPackaged, app.getPath("userData"));
 const agentHost = new AgentHost(desktopBaseDir);
 const voiceServiceCwd = app.isPackaged
@@ -120,6 +125,7 @@ function createWindow(): void {
     height: 800,
     minWidth: 800,
     minHeight: 600,
+    ...(appIconPath ? { icon: appIconPath } : {}),
     webPreferences: {
       preload: join(__dirname, "preload.cjs"),
       contextIsolation: true,
@@ -1079,6 +1085,10 @@ app.on("second-instance", () => {
 });
 
 app.whenReady().then(() => {
+  if (process.platform === "darwin" && appIconPath) {
+    const icon = nativeImage.createFromPath(appIconPath);
+    if (!icon.isEmpty()) app.dock.setIcon(icon);
+  }
   // Allow microphone access for voice input & wake-word listening
   session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
     callback(permission === "media");
