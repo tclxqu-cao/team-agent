@@ -1,0 +1,20 @@
+docs/superpowers/plans/2026-08-27-npm-zero-install-tunnel-cli.md
+  s_30f0086b29e6d2::t_9399d01f79adff 40-53,74-83,128-137,161-168,204-212,267
+  s_30f0086b29e6d2::t_eb58b9d18af52f 1-39,54-73,84-127,138-160,169-203,213-266,268-274
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "fb022a9eae72d11b240c9e1c21c6f5db3d602b6a",
+  "prompts": {},
+  "sessions": {
+    "s_30f0086b29e6d2": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_fbf4cc4b8ffeN7CnUjmxQ9RFm9",
+        "model": "glm-5.3-flash"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
