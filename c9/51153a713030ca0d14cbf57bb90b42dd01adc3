@@ -1,0 +1,28 @@
+packages/server/app/web/useGateway.ts
+  s_30f0086b29e6d2::t_fa1d50619040c6 141-146,148-149
+  s_30f0086b29e6d2::t_dbfe2cf0fbac6f 45
+  s_30f0086b29e6d2::t_86fe9e4b7ee979 54-56
+  s_30f0086b29e6d2::t_1e0cea9d823fd2 125-126
+  s_30f0086b29e6d2::t_b1c250368dba5d 97
+  s_30f0086b29e6d2::t_9bd876476e4029 5-10,28,47,49,70,73-74,76,79,89,92,98-105,112,123,127-129,133,169,188,195-201,206-207,211-217
+  s_30f0086b29e6d2::t_c1de87777c76b5 168,171-179,184
+  s_30f0086b29e6d2::t_aaebf9ba7d58b3 111,114
+  s_30f0086b29e6d2::t_d81b54aa743324 208-210
+  s_30f0086b29e6d2::t_01c22e4c12c57e 1-4,11-27,29-44,46,48,50-53,57-69,71-72,75,77-78,80-88,90-91,93-96,106-110,113,115-122,124,130-132,134-140,147,150-167,170,180-183,185-187,189-194,202-205,218
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "c951153a713030ca0d14cbf57bb90b42dd01adc3",
+  "prompts": {},
+  "sessions": {
+    "s_30f0086b29e6d2": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_fbf4cc4b8ffeN7CnUjmxQ9RFm9",
+        "model": "glm-5.3-flash"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
