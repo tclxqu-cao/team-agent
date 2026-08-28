@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { SkillRegistry } from '../SkillRegistry.js';
 import type { SkillDefinition } from '../entities.js';
+import type { IModelProvider, StreamEvent } from '../../model/entities.js';
 
 describe("SkillRegistry", () => {
   const makeSkill = (overrides?: Partial<SkillDefinition>): SkillDefinition => ({
@@ -11,6 +12,18 @@ describe("SkillRegistry", () => {
     filePath: "/skills/test/SKILL.md",
     source: "custom",
     ...overrides,
+  });
+
+  const makeSemanticModel = (skillName: string, onCall: () => void): IModelProvider => ({
+    providerId: "mock",
+    modelId: "mock-model",
+    streamChat: async function* (): AsyncIterable<StreamEvent> {
+      onCall();
+      yield { type: "text_chunk", text: skillName };
+      yield { type: "text_done" };
+    },
+    countTokens: async () => 10,
+    supportsModel: () => true,
   });
 
 
@@ -59,6 +72,31 @@ describe("SkillRegistry", () => {
 
     const prompts = await registry.getSkillPrompts("python help");
     expect(prompts).toBe("");
+  });
+
+  it("uses semantic matching by default and can disable the fallback", async () => {
+    let streamChatCalls = 0;
+    const registry = new SkillRegistry();
+    registry.register(makeSkill());
+    registry.setModelProvider(makeSemanticModel("test-skill", () => streamChatCalls++));
+
+    expect(await registry.getSkillPrompts("an unmatched request")).toContain("test-skill");
+    expect(streamChatCalls).toBe(1);
+
+    registry.setSemanticMatchingEnabled(false);
+
+    expect(await registry.getSkillPrompts("another unmatched request")).toBe("");
+    expect(streamChatCalls).toBe(1);
+  });
+
+  it("does not call semantic matching when the allowlist excludes every skill", async () => {
+    let streamChatCalls = 0;
+    const registry = new SkillRegistry();
+    registry.register(makeSkill());
+    registry.setModelProvider(makeSemanticModel("test-skill", () => streamChatCalls++));
+
+    expect(await registry.getSkillPrompts("an unmatched request", ["other-skill"])).toBe("");
+    expect(streamChatCalls).toBe(0);
   });
 
   it("should unregister a skill", () => {

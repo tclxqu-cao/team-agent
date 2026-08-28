@@ -6,7 +6,17 @@
   "bin": {
     "agent-tui": "./agent-tui.mjs"
   },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
   "dependencies": {
-    "@agent/core": "*"
+    "@agent/core": "*",
+    "ink": "5.2.1",
+    "react": "18.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "18.3.24",
+    "ink-testing-library": "4.0.0"
   }
 }

@@ -16,6 +16,12 @@ function createModel(): IModelProvider {
 }
 
 describe("AgentBuilder", () => {
+  it("allows semantic skill matching to be disabled fluently", () => {
+    const builder = new AgentBuilder();
+
+    expect(builder.withSemanticSkillMatching(false)).toBe(builder);
+  });
+
   it("keeps getToolRegistry pointed at the registry created for buildSync", () => {
     const builder = new AgentBuilder()
       .withWorkingDirectory(process.cwd())

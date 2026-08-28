@@ -39,6 +39,8 @@ export class AgentBuilder {
   private enabledTools: string[] | null = null;
   /** If set, only these skill names are registered (others are skipped). Empty = all skills. */
   private enabledSkills: string[] | null = null;
+  /** Use the model to find a skill when local triggers do not match. */
+  private semanticSkillMatching = true;
 
   withWorkingDirectory(path: string): this {
     this.workingDirectory = path;
@@ -164,6 +166,11 @@ export class AgentBuilder {
     return this;
   }
 
+  withSemanticSkillMatching(enabled: boolean): this {
+    this.semanticSkillMatching = enabled;
+    return this;
+  }
+
   async build(): Promise<IAgentLoop> {
     if (!this.modelProvider) {
       throw new Error("Model provider is required. Call withModelProvider() or withModel()");
@@ -174,6 +181,7 @@ export class AgentBuilder {
 
     // Wire model provider into skill registry for semantic matching
     this.skillRegistry.setModelProvider(this.modelProvider);
+    this.skillRegistry.setSemanticMatchingEnabled(this.semanticSkillMatching);
 
     // Initialize memory store (use injected or fall back to filesystem)
     const memoryStore = this.memoryStore ?? new FileSystemMemoryStore(this.workingDirectory);
@@ -236,6 +244,7 @@ export class AgentBuilder {
 
     // Wire model provider into skill registry for semantic matching
     this.skillRegistry.setModelProvider(this.modelProvider);
+    this.skillRegistry.setSemanticMatchingEnabled(this.semanticSkillMatching);
 
     const memoryStore = this.memoryStore ?? new FileSystemMemoryStore(this.workingDirectory);
     const toolRegistry = this.createToolRegistry(remoteToolStore, projectId);

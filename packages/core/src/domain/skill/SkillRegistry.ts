@@ -9,6 +9,8 @@ export class SkillRegistry implements ISkillRegistry {
   private readonly semanticCache = new Map<string, SkillMeta[]>();
   /** Optional model provider for semantic matching */
   private modelProvider: IModelProvider | null = null;
+  /** LLM fallback is enabled by default for backward compatibility. */
+  private semanticMatchingEnabled = true;
 
   constructor(private readonly loader?: ISkillLoader) {}
 
@@ -16,6 +18,11 @@ export class SkillRegistry implements ISkillRegistry {
   setModelProvider(provider: IModelProvider | null): void {
     this.modelProvider = provider;
     // Clear cache when provider changes
+    this.semanticCache.clear();
+  }
+
+  setSemanticMatchingEnabled(enabled: boolean): void {
+    this.semanticMatchingEnabled = enabled;
     this.semanticCache.clear();
   }
 
@@ -41,10 +48,14 @@ export class SkillRegistry implements ISkillRegistry {
   }
 
   findMatching(input: string): SkillMeta[] {
+    return this.findMatchingFrom(input, this.skills.values());
+  }
+
+  private findMatchingFrom(input: string, skills: Iterable<SkillMeta>): SkillMeta[] {
     const lowerInput = input.toLowerCase();
     const matched: SkillMeta[] = [];
 
-    for (const skill of this.skills.values()) {
+    for (const skill of skills) {
       for (const trigger of skill.triggers) {
         if (lowerInput.includes(trigger.toLowerCase())) {
           matched.push(skill);
@@ -62,16 +73,17 @@ export class SkillRegistry implements ISkillRegistry {
    * semantically relevant to the user's input.
    * Returns matched skills or empty array on failure.
    */
-  private async findMatchingSemantic(input: string): Promise<SkillMeta[]> {
-    if (!this.modelProvider || this.skills.size === 0) return [];
+  private async findMatchingSemantic(input: string, candidates: SkillMeta[]): Promise<SkillMeta[]> {
+    if (!this.modelProvider || candidates.length === 0) return [];
 
     // Check cache
-    const cacheKey = input.trim().slice(0, 200);
+    const candidateKey = candidates.map((skill) => skill.name).sort().join("\u0000");
+    const cacheKey = `${input.trim().slice(0, 200)}\u0001${candidateKey}`;
     const cached = this.semanticCache.get(cacheKey);
     if (cached) return cached;
 
     // Build skill list for the prompt
-    const skillList = Array.from(this.skills.values())
+    const skillList = candidates
       .map((s, i) => `${i + 1}. ${s.name}: ${s.description || '(no description)'}`)
       .join('\n');
 
@@ -116,8 +128,9 @@ Return ONLY the names of relevant skills, one per line. If none are relevant, re
         .filter(Boolean);
 
       const matched: SkillMeta[] = [];
+      const candidatesByName = new Map(candidates.map((skill) => [skill.name, skill]));
       for (const name of names) {
-        const skill = this.skills.get(name);
+        const skill = candidatesByName.get(name);
         if (skill && !matched.find((m) => m.name === skill.name)) {
           matched.push(skill);
         }
@@ -132,30 +145,31 @@ Return ONLY the names of relevant skills, one per line. If none are relevant, re
   }
 
   async getSkillPrompts(input: string, enabledSkills?: string[] | null): Promise<string> {
+    const allowed = enabledSkills && enabledSkills.length > 0
+      ? new Set(enabledSkills)
+      : null;
+    const eligibleSkills = Array.from(this.skills.values()).filter(
+      (skill) => !allowed || allowed.has(skill.name),
+    );
+
     // 1. Try trigger-based keyword matching (fast path)
-    let matched = this.findMatching(input);
+    let matched = this.findMatchingFrom(input, eligibleSkills);
   
     // 2. If input is /skill-name, also try direct name lookup
     const slashMatch = input.match(/^\/([\w-]+)/);
     if (slashMatch) {
-      const byName = this.skills.get(slashMatch[1]);
+      const byName = eligibleSkills.find((skill) => skill.name === slashMatch[1]);
       if (byName && !matched.find((m) => m.name === byName.name)) {
         matched.unshift(byName);
       }
     }
   
     // 3. If keyword matching found nothing, try LLM-based semantic matching
-    if (matched.length === 0) {
-      const semanticMatches = await this.findMatchingSemantic(input);
+    if (matched.length === 0 && this.semanticMatchingEnabled && eligibleSkills.length > 0) {
+      const semanticMatches = await this.findMatchingSemantic(input, eligibleSkills);
       if (semanticMatches.length > 0) {
         matched = semanticMatches;
       }
-    }
-
-    // 4. Apply allowlist filter if configured
-    if (enabledSkills && enabledSkills.length > 0) {
-      const allowed = new Set(enabledSkills);
-      matched = matched.filter((s) => allowed.has(s.name));
     }
   
     if (matched.length === 0) return "";
