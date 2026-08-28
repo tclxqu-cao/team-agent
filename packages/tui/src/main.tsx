@@ -8,6 +8,7 @@ import { TuiApp } from "./App.js";
 import { discoverDatabasePaths, readDesktopData } from "./desktop-data.js";
 import { loadTuiModelSelection, resolveStartupModel } from "./model-config.js";
 import { TuiRuntime } from "./runtime.js";
+import { createCursorAwareOutput } from "./cursor-output.js";
 
 function Fatal({ message }: { message: string }) {
   return <Text color="red">x {message}</Text>;
@@ -49,6 +50,7 @@ export async function startTui(argv: string[], env: NodeJS.ProcessEnv): Promise<
   }
 
   const runtime = new TuiRuntime(workingDirectory, model, storeDir);
+  const cursorOutput = createCursorAwareOutput(process.stdout);
   try {
     const snapshot = await runtime.initialize();
     const app = render(
@@ -60,11 +62,17 @@ export async function startTui(argv: string[], env: NodeJS.ProcessEnv): Promise<
         configPath={configPath}
         env={env}
         warnings={desktopData.warnings}
+        nativeCursor
       />,
-      { exitOnCtrlC: false },
+      { exitOnCtrlC: false, stdout: cursorOutput.stdout },
     );
-    await app.waitUntilExit();
+    try {
+      await app.waitUntilExit();
+    } finally {
+      cursorOutput.restore();
+    }
   } catch (error) {
+    cursorOutput.restore();
     const instance = render(<Fatal message={error instanceof Error ? error.message : String(error)} />);
     await instance.waitUntilExit();
     process.exitCode = 1;

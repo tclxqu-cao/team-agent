@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useReducer, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { Box, useApp } from "ink";
 import type { AskUserRequest, AskUserResponse, SkillMeta } from "@agent/core";
 import { BUILTIN_COMMANDS, createSlashItems, helpText, parseSlashCommand } from "./commands.js";
@@ -10,10 +10,11 @@ import { TuiRuntime, type RuntimeSnapshot, type SessionSummary } from "./runtime
 import { CommandPalette } from "./components/CommandPalette.js";
 import { Composer } from "./components/Composer.js";
 import { InlineQuestion } from "./components/InlineQuestion.js";
+import { MessageQueue } from "./components/MessageQueue.js";
 import { ProgressLine } from "./components/ProgressLine.js";
 import { Transcript } from "./components/Transcript.js";
 import { Header } from "./components/Header.js";
-import { PALETTE_TITLES, TUI_THEME } from "./theme.js";
+import { PALETTE_TITLES } from "./theme.js";
 
 type SecondaryPalette = "models" | "sessions" | "projects" | "skills";
 interface PendingQuestion {
@@ -29,6 +30,7 @@ export interface TuiAppProps {
   configPath: string;
   env: NodeJS.ProcessEnv;
   warnings?: string[];
+  nativeCursor?: boolean;
 }
 
 function entry(type: "user" | "notice" | "error", text: string): TranscriptEntry {
@@ -90,6 +92,9 @@ export function TuiApp(props: TuiAppProps) {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [question, setQuestion] = useState<PendingQuestion | null>(null);
   const [paletteDismissed, setPaletteDismissed] = useState(false);
+  const [queuedInputs, setQueuedInputs] = useState<string[]>([]);
+  const queuedInputsRef = useRef<string[]>([]);
+  const abortingRef = useRef(false);
 
   const append = useCallback((type: "notice" | "error", text: string) => {
     dispatch({ type: "append", entry: entry(type, text) });
@@ -232,6 +237,26 @@ export function TuiApp(props: TuiAppProps) {
     }
   }, [append, exit, openSecondary, props.env, props.runtime, snapshot.sessionId, snapshot.workingDirectory, switchModel]);
 
+  const runInputQueue = useCallback(async (firstInput: string) => {
+    abortingRef.current = false;
+    let currentInput: string | undefined = firstInput;
+    while (currentInput) {
+      const parsed = parseSlashCommand(currentInput);
+      dispatch({ type: "append", entry: entry("user", currentInput) });
+      dispatch({ type: "turn_start", now: Date.now() });
+      try {
+        await props.runtime.run(parsed.type === "agent" ? parsed.input : currentInput, (event) => {
+          dispatch({ type: "agent_event", event, now: Date.now() });
+        });
+      } catch (error) {
+        dispatch({ type: "agent_event", event: { type: "error", message: error instanceof Error ? error.message : String(error) }, now: Date.now() });
+      }
+      if (abortingRef.current) break;
+      currentInput = queuedInputsRef.current.shift();
+      setQueuedInputs([...queuedInputsRef.current]);
+    }
+  }, [props.runtime]);
+
   const submit = useCallback(async () => {
     const input = state.input.trim();
     if (!input) return;
@@ -245,11 +270,14 @@ export function TuiApp(props: TuiAppProps) {
       setInput("");
       return;
     }
-    if (state.running) return;
     dispatch({ type: "submit_input", input });
     setSecondary(null);
     const parsed = parseSlashCommand(input);
     if (parsed.type === "builtin") {
+      if (state.running) {
+        append("notice", `运行中未执行 ${parsed.name}；普通消息可以继续排队`);
+        return;
+      }
       try {
         await executeBuiltin(parsed.name, parsed.args);
       } catch (error) {
@@ -257,14 +285,13 @@ export function TuiApp(props: TuiAppProps) {
       }
       return;
     }
-    dispatch({ type: "append", entry: entry("user", input) });
-    dispatch({ type: "turn_start", now: Date.now() });
-    try {
-      await props.runtime.run(parsed.input, (event) => dispatch({ type: "agent_event", event, now: Date.now() }));
-    } catch (error) {
-      dispatch({ type: "agent_event", event: { type: "error", message: error instanceof Error ? error.message : String(error) }, now: Date.now() });
+    if (state.running) {
+      queuedInputsRef.current.push(input);
+      setQueuedInputs([...queuedInputsRef.current]);
+      return;
     }
-  }, [append, executeBuiltin, props.runtime, question, setInput, state.input, state.running]);
+    void runInputQueue(input);
+  }, [append, executeBuiltin, question, runInputQueue, setInput, state.input, state.running]);
 
   const choosePaletteItem = useCallback(async () => {
     const item = visibleItems[selectedIndex];
@@ -318,6 +345,9 @@ export function TuiApp(props: TuiAppProps) {
   }, [append, openSecondary, props.profiles, props.runtime, secondary, selectedIndex, setInput, state.cursor, state.input, switchModel, switchProject, trigger, visibleItems]);
 
   const abortTurn = useCallback(() => {
+    abortingRef.current = true;
+    queuedInputsRef.current = [];
+    setQueuedInputs([]);
     if (question) {
       question.resolve({ answer: "" });
       setQuestion(null);
@@ -337,17 +367,17 @@ export function TuiApp(props: TuiAppProps) {
     }
   }, [secondary, state.cursor, state.input, trigger]);
 
+  const conversationStarted = state.transcript.some((item) => item.type === "user" || item.type === "assistant" || item.type === "tool");
+
   return (
     <Box flexDirection="column">
-      <Header snapshot={snapshot} running={state.running} />
+      <Header snapshot={snapshot} running={state.running} expanded={!paletteOpen && !conversationStarted} />
       <Transcript entries={state.transcript} />
       <ProgressLine progress={state.progress} />
       {question ? <InlineQuestion request={question.request} /> : null}
+      <MessageQueue items={queuedInputs} />
       <Box
         flexDirection="column"
-        borderStyle="round"
-        borderColor={question ? TUI_THEME.progress : state.running ? TUI_THEME.progress : paletteOpen ? TUI_THEME.active : TUI_THEME.ready}
-        paddingX={1}
         marginTop={1}
       >
         {paletteOpen ? <CommandPalette items={visibleItems} selectedIndex={selectedIndex} title={paletteTitle} /> : null}
@@ -357,6 +387,7 @@ export function TuiApp(props: TuiAppProps) {
           running={state.running}
           questionActive={Boolean(question)}
           paletteOpen={paletteOpen}
+          nativeCursor={props.nativeCursor}
           onChange={setInput}
           onSubmit={() => void submit()}
           onHistory={(direction) => dispatch({ type: "history", direction })}

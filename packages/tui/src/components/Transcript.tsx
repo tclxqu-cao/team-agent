@@ -2,8 +2,9 @@ import React from "react";
 import { Box, Text } from "ink";
 import type { TranscriptEntry } from "../state.js";
 import { ROLE_LABELS, TUI_THEME } from "../theme.js";
+import { MarkdownText } from "./MarkdownText.js";
 
-function Entry({ entry }: { entry: TranscriptEntry }) {
+function Entry({ entry, separated }: { entry: TranscriptEntry; separated: boolean }) {
   let label: string;
   let color: string;
   let text = entry.text;
@@ -31,14 +32,27 @@ function Entry({ entry }: { entry: TranscriptEntry }) {
   }
 
   return (
-    <Box>
-      <Box width={8} flexShrink={0}>
+    <Box marginTop={separated ? 1 : 0} alignItems="flex-start">
+      <Box width={7} flexShrink={0}>
         <Text color={color} bold={!dimmed}>{label}</Text>
       </Box>
-      <Box flexGrow={1}>
-        <Text color={entry.type === "error" || (entry.type === "tool" && entry.error) ? TUI_THEME.error : undefined} dimColor={dimmed} wrap="wrap">
-          {text}
-        </Text>
+      <Box
+        flexGrow={1}
+        flexDirection="column"
+        paddingLeft={1}
+        borderStyle="single"
+        borderTop={false}
+        borderRight={false}
+        borderBottom={false}
+        borderLeftColor={color}
+      >
+        {entry.type === "assistant" ? (
+          <MarkdownText>{text}</MarkdownText>
+        ) : (
+          <Text color={entry.type === "error" || (entry.type === "tool" && entry.error) ? TUI_THEME.error : TUI_THEME.text} dimColor={dimmed} wrap="wrap">
+            {text}
+          </Text>
+        )}
       </Box>
     </Box>
   );
@@ -47,13 +61,8 @@ function Entry({ entry }: { entry: TranscriptEntry }) {
 export function Transcript({ entries, maxRows = 80 }: { entries: TranscriptEntry[]; maxRows?: number }) {
   const visible = entries.slice(-maxRows);
   return (
-    <Box flexDirection="column" marginTop={1}>
-      {visible.length === 0 ? (
-        <Box flexDirection="column" paddingLeft={1}>
-          <Text color={TUI_THEME.text} bold>开始一个任务</Text>
-          <Text color={TUI_THEME.muted}>输入消息，或用 <Text color={TUI_THEME.active}>/</Text> 打开命令与技能，用 <Text color={TUI_THEME.user}>@</Text> 引用项目文件。</Text>
-        </Box>
-      ) : visible.map((entry) => <Entry key={entry.id} entry={entry} />)}
+    <Box flexDirection="column" marginTop={visible.length ? 1 : 0}>
+      {visible.map((entry, index) => <Entry key={entry.id} entry={entry} separated={index > 0 && entry.type === "user"} />)}
     </Box>
   );
 }

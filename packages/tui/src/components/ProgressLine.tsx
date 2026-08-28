@@ -7,7 +7,7 @@ export function ProgressLine({ progress }: { progress: ProgressState | null }) {
   const [, setTick] = useState(0);
   useEffect(() => {
     if (!progress || progress.completedAt) return;
-    const timer = setInterval(() => setTick((value) => value + 1), 100);
+    const timer = setInterval(() => setTick((value) => value + 1), 250);
     return () => clearInterval(timer);
   }, [progress?.startedAt, progress?.completedAt]);
   if (!progress) return null;
@@ -17,9 +17,11 @@ export function ProgressLine({ progress }: { progress: ProgressState | null }) {
     : "";
   return (
     <Box marginTop={1}>
-      <Text color={progress.completedAt ? TUI_THEME.ready : TUI_THEME.progress} bold>
-        {progress.completedAt ? "✓ 完成" : "● " + progress.label}
-      </Text>
+      <Box width={7} flexShrink={0}>
+        <Text color={progress.completedAt ? TUI_THEME.ready : TUI_THEME.progress} bold>STATE</Text>
+      </Box>
+      <Text color={TUI_THEME.faint}>│ </Text>
+      <Text color={progress.completedAt ? TUI_THEME.ready : TUI_THEME.progress} bold>{progress.completedAt ? "✓ 完成" : "● " + progress.label}</Text>
       <Text color={TUI_THEME.muted}>  {formatElapsed(endedAt - progress.startedAt)}{usage}</Text>
     </Box>
   );

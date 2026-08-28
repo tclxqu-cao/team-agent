@@ -132,7 +132,18 @@ export class TuiRuntime {
   async run(input: string, onEvent: (event: AgentEvent) => void): Promise<void> {
     if (!this.agent) throw new Error("Agent 尚未初始化");
     onEvent({ type: "thinking", message: "Preparing context..." });
-    for await (const event of this.agent.run(input, this.currentSessionId)) onEvent(event);
+    await this.sessionStore.addMessage(this.currentSessionId, { role: "user", content: input });
+    let assistantText = "";
+    for await (const event of this.agent.run(input, this.currentSessionId)) {
+      if (event.type === "text_chunk") assistantText += event.text;
+      onEvent(event);
+      if (event.type === "done") {
+        const finalText = (event.finalText || assistantText).trim();
+        if (finalText) {
+          await this.sessionStore.addMessage(this.currentSessionId, { role: "assistant", content: finalText });
+        }
+      }
+    }
   }
 
   abort(): void {

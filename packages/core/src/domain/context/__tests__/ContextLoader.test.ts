@@ -48,6 +48,10 @@ describe("ContextLoader", () => {
     await writeFile(join(rootDir, ".git/hooks/CLAUDE.md"), "excluded");
     await mkdir(join(rootDir, "dist/output"), { recursive: true });
     await writeFile(join(rootDir, "dist/output/AGENTS.md"), "excluded");
+    await mkdir(join(rootDir, ".next/cache"), { recursive: true });
+    await writeFile(join(rootDir, ".next/cache/AGENTS.md"), "excluded");
+    await mkdir(join(rootDir, ".claude/worktrees/old-branch"), { recursive: true });
+    await writeFile(join(rootDir, ".claude/worktrees/old-branch/CLAUDE.md"), "excluded");
     await writeFile(join(rootDir, "notes.md"), "arbitrary markdown");
 
     const loaded = await loader.loadProjectContext(rootDir);
@@ -66,6 +70,18 @@ describe("ContextLoader", () => {
     await expect(loader.loadProjectContext(rootDir)).resolves.toMatchObject([
       { path: join(rootDir, ".customer-agent/AGENTS.md"), content: "agent instructions" },
     ]);
+  });
+
+  it("loads root whitelist files without recursively scanning a home directory", async () => {
+    const rootDir = await mkdtemp(join(tmpdir(), "context-loader-home-"));
+    roots.push(rootDir);
+    await writeFile(join(rootDir, "CLAUDE.md"), "root instructions");
+    await mkdir(join(rootDir, "nested"), { recursive: true });
+    await writeFile(join(rootDir, "nested/AGENTS.md"), "nested instructions");
+
+    const loaded = await new ContextLoader(rootDir).loadProjectContext(rootDir);
+
+    expect(loaded.map((file) => relative(rootDir, file.path))).toEqual(["CLAUDE.md"]);
   });
 
   it("rejects a recursive instruction file swapped for an external symlink before reading", async () => {

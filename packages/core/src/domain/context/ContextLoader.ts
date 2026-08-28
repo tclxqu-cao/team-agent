@@ -1,5 +1,6 @@
 import type { IContextLoader, ProjectFile } from './entities.js';
 import { constants } from "node:fs";
+import { homedir } from "node:os";
 import { open, readFile, readdir, realpath, stat } from "node:fs/promises";
 import { join, basename, isAbsolute, relative, resolve, sep } from "node:path";
 
@@ -13,9 +14,23 @@ const ROOT_PROJECT_FILES = [
 ];
 const CUSTOMER_AGENT_FILES = ROOT_PROJECT_FILES.map((file) => join(".customer-agent", file));
 const INSTRUCTION_FILES = new Set(["AGENTS.md", "CLAUDE.md"]);
-const EXCLUDED_DIRECTORIES = new Set(["node_modules", ".git", "dist"]);
+const EXCLUDED_DIRECTORIES = new Set([
+  "node_modules",
+  ".git",
+  "dist",
+  "build",
+  "out",
+  "coverage",
+  ".cache",
+  ".next",
+  ".next-dev",
+  ".output",
+  ".turbo",
+]);
 
 export class ContextLoader implements IContextLoader {
+  constructor(private readonly homeDirectory = homedir()) {}
+
   async loadProjectContext(rootDir: string): Promise<ProjectFile[]> {
     const files: ProjectFile[] = [];
     const loadedPaths = new Set<string>();
@@ -107,12 +122,25 @@ export class ContextLoader implements IContextLoader {
   async findClaudeMdFiles(rootDir: string): Promise<string[]> {
     const results: string[] = [];
 
+    try {
+      const [resolvedRoot, resolvedHome] = await Promise.all([
+        realpath(rootDir),
+        realpath(this.homeDirectory),
+      ]);
+      if (resolvedRoot === resolvedHome) return results;
+    } catch {
+      // Continue with the normal guarded scan when either path cannot be resolved.
+    }
+
     const scan = async (dir: string) => {
       try {
         const entries = await readdir(dir, { withFileTypes: true });
         entries.sort((left, right) => left.name.localeCompare(right.name));
         for (const entry of entries) {
-          if (EXCLUDED_DIRECTORIES.has(entry.name)) continue;
+          if (
+            EXCLUDED_DIRECTORIES.has(entry.name) ||
+            (basename(dir) === ".claude" && entry.name === "worktrees")
+          ) continue;
 
           const fullPath = join(dir, entry.name);
           if (entry.isDirectory()) {

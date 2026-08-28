@@ -45,6 +45,41 @@ async function fixture(options: {
 }
 
 describe("TuiApp palettes", () => {
+  it("accepts messages while running and drains them in FIFO order", async () => {
+    let releaseFirst!: () => void;
+    const firstPending = new Promise<void>((resolve) => { releaseFirst = resolve; });
+    const inputs: string[] = [];
+    const { snapshot, runtime } = await fixture({
+      run: async (input, onEvent) => {
+        inputs.push(input);
+        onEvent({ type: "thinking", message: "Iteration 1..." });
+        if (input === "first") await firstPending;
+        onEvent({ type: "done", finalText: `done:${input}` });
+      },
+    });
+    const view = render(<TuiApp runtime={runtime} initialSnapshot={snapshot} profiles={[]} registeredProjects={[]} configPath="/tmp/tui-config" env={{}} />);
+    await tick();
+
+    view.stdin.write("first");
+    await tick();
+    view.stdin.write("\r");
+    await tick();
+    expect(view.lastFrame()).toContain("排队发送消息");
+
+    view.stdin.write("second");
+    await tick();
+    view.stdin.write("\r");
+    await tick();
+    expect(inputs).toEqual(["first"]);
+    expect(view.lastFrame()).toContain("QUEUE");
+    expect(view.lastFrame()).toContain("second");
+
+    releaseFirst();
+    await tick(120);
+    expect(inputs).toEqual(["first", "second"]);
+    expect(view.lastFrame()).not.toContain("QUEUE");
+  });
+
   it("opens commands and discovered skills when slash is typed", async () => {
     const { snapshot, runtime } = await fixture();
     const view = render(<TuiApp runtime={runtime} initialSnapshot={snapshot} profiles={[]} registeredProjects={[]} configPath="/tmp/tui-config" env={{}} />);
@@ -115,8 +150,8 @@ describe("TuiApp palettes", () => {
         onEvent({ type: "thinking", message: "Iteration 1..." });
         onEvent({ type: "tool_call", toolCall: { id: "call", name: "bash", arguments: { command: "pwd" } } });
         onEvent({ type: "tool_result", result: { toolCallId: "call", content: "/tmp/project" } });
-        onEvent({ type: "text_chunk", text: "done" });
-        onEvent({ type: "done", finalText: "done", usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 } });
+        onEvent({ type: "text_chunk", text: "**done** with `code`" });
+        onEvent({ type: "done", finalText: "done with code", usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 } });
       },
     });
     const view = render(<TuiApp runtime={runtime} initialSnapshot={snapshot} profiles={[]} registeredProjects={[]} configPath="/tmp/tui-config" env={{}} />);
@@ -126,10 +161,12 @@ describe("TuiApp palettes", () => {
     view.stdin.write("\r");
     await tick();
     const frame = view.lastFrame() ?? "";
-    expect(frame).toContain("TOOL    bash");
+    expect(frame).toMatch(/TOOL\s+│ bash/);
     expect(frame).toContain("/tmp/project");
-    expect(frame).toContain("AGENT   done");
+    expect(frame).toMatch(/AGENT\s+│ done with code/);
     expect(frame).toContain("✓ 完成");
+    expect(frame).not.toContain("**");
+    expect(frame).not.toContain("`code`");
   });
 
   it("routes inline question answers back to the runtime", async () => {

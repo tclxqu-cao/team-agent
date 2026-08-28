@@ -1,13 +1,18 @@
 export const TUI_THEME = {
-  agent: "cyan",
-  user: "green",
-  ready: "green",
-  active: "cyan",
-  progress: "yellow",
-  tool: "magenta",
-  error: "red",
-  muted: "gray",
-  text: "white",
+  brand: "#8AB4F8",
+  spark: "#C4B5FD",
+  agent: "#7DD3FC",
+  user: "#86D39A",
+  ready: "#78C98D",
+  active: "#8AB4F8",
+  progress: "#E9BD5D",
+  tool: "#C6A0E8",
+  error: "#F07178",
+  muted: "#8995A5",
+  faint: "#4D5968",
+  text: "#DCE3EC",
+  strong: "#F6F8FB",
+  code: "#A8C7FA",
 } as const;
 
 export const ROLE_LABELS = {
@@ -17,6 +22,7 @@ export const ROLE_LABELS = {
   result: "RESULT",
   notice: "INFO",
   error: "ERROR",
+  progress: "STATE",
 } as const;
 
 export const PALETTE_TITLES = {

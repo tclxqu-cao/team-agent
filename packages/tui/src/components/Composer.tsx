@@ -1,8 +1,9 @@
 import React, { useEffect, useRef } from "react";
-import { Box, Text, useStdin } from "ink";
+import { Box, Text, useStdin, useStdout } from "ink";
 import { TUI_THEME } from "../theme.js";
 import { getActiveTrigger } from "../palette.js";
 import { parseTerminalInput, type TerminalInputToken } from "../terminal-input.js";
+import { CURSOR_ANCHOR } from "../cursor-output.js";
 
 const ESCAPE_SEQUENCE_WINDOW_MS = 100;
 
@@ -24,6 +25,7 @@ export interface ComposerProps {
   running: boolean;
   questionActive: boolean;
   paletteOpen: boolean;
+  nativeCursor?: boolean;
   onChange(input: string, cursor: number): void;
   onSubmit(): void;
   onHistory(direction: -1 | 1): void;
@@ -36,6 +38,7 @@ export interface ComposerProps {
 
 export function Composer(props: ComposerProps) {
   const { internal_eventEmitter: inputEvents, setRawMode } = useStdin();
+  const { stdout } = useStdout();
   const propsRef = useRef(props);
   const draftRef = useRef({ input: props.input, cursor: props.cursor });
   const paletteIntentRef = useRef(props.paletteOpen);
@@ -84,8 +87,6 @@ export function Composer(props: ComposerProps) {
       else current.onExit();
       return;
     }
-    if (current.running && !current.questionActive) return;
-
     if (token.type === "up" || token.type === "down") {
       const direction = token.type === "up" ? -1 : 1;
       if (current.paletteOpen) current.onPaletteMove(direction);
@@ -161,24 +162,56 @@ export function Composer(props: ComposerProps) {
   const next = props.input.slice(props.cursor, nextIndex(props.input, props.cursor)) || " ";
   const after = props.input.slice(props.cursor + (next === " " && props.cursor === props.input.length ? 0 : next.length));
   const color = props.questionActive ? TUI_THEME.progress : props.running ? TUI_THEME.progress : props.paletteOpen ? TUI_THEME.active : TUI_THEME.ready;
-  const label = props.questionActive ? "回答" : props.running ? "运行中" : props.paletteOpen ? "筛选" : "消息";
   const hint = props.questionActive
-    ? "输入序号或答案  Enter 提交  Ctrl+C 取消"
+    ? "输入序号或答案"
     : props.paletteOpen
-      ? "输入筛选  ↑↓ 移动  Enter 选择  Backspace 退出  Esc 关闭"
-      : "/ 命令  @ 引用  Enter 发送  Ctrl+C 退出";
+      ? "输入筛选"
+      : props.running
+        ? "排队发送消息"
+        : "输入消息";
+  const columns = stdout.columns || 80;
+  const compact = columns < 64;
+  const leftHint = props.paletteOpen ? "筛选  ·  ↑↓ 选择  Enter 确认" : props.questionActive ? "Enter 提交" : "/ 命令  @ 引用";
+  const rightHint = props.paletteOpen ? "Esc 关闭" : props.questionActive ? "Ctrl+C 取消" : props.running ? "Enter 排队   Ctrl+C 中止" : "Enter 发送   Ctrl+C 退出";
+  const nativeCursor = props.nativeCursor;
   return (
     <Box flexDirection="column">
-      <Text color={color} bold>{label}</Text>
-      {props.paletteOpen ? (
-        <Text><Text color={TUI_THEME.active}>⌕ </Text><Text color={TUI_THEME.muted}>{props.input || "输入关键词"}</Text></Text>
+      <Box
+        width="100%"
+        borderStyle="round"
+        borderColor={color}
+        paddingX={1}
+      >
+        <Box flexGrow={1}>
+          <Text color={color}>{props.paletteOpen ? "⌕ " : props.questionActive ? "? " : props.running ? "+ " : "› "}</Text>
+          {props.paletteOpen ? (
+            nativeCursor ? (
+              <Text color={TUI_THEME.text}>{before}{CURSOR_ANCHOR}{props.input.slice(props.cursor)}{!props.input ? <Text color={TUI_THEME.muted}>{hint}</Text> : null}</Text>
+            ) : (
+              <Text color={props.input ? TUI_THEME.text : TUI_THEME.muted}>{props.input || hint}</Text>
+            )
+          ) : (
+            <>
+              {nativeCursor ? (
+                <Text color={TUI_THEME.text}>{before}{CURSOR_ANCHOR}{props.input.slice(props.cursor)}{!props.input ? <Text color={TUI_THEME.muted}>{hint}</Text> : null}</Text>
+              ) : (
+                <Text color={TUI_THEME.text}>{before}</Text>
+              )}
+              {!nativeCursor ? <Text inverse={!props.nativeCursor}>{next}</Text> : null}
+              {!nativeCursor ? <Text color={TUI_THEME.text}>{after}</Text> : null}
+              {!nativeCursor && !props.input ? <Text color={TUI_THEME.muted}>{hint}</Text> : null}
+            </>
+          )}
+        </Box>
+      </Box>
+      {compact ? (
+        <Text color={TUI_THEME.muted}>  {leftHint}  ·  {rightHint}</Text>
       ) : (
-        <Box>
-          <Text color={color}>{props.running && !props.questionActive ? "… " : "› "}</Text>
-          <Text>{before}</Text><Text inverse>{next}</Text><Text>{after}</Text>
+        <Box paddingX={1} justifyContent="space-between">
+          <Text color={TUI_THEME.muted}>{leftHint}</Text>
+          <Text color={TUI_THEME.muted}>{rightHint}</Text>
         </Box>
       )}
-      <Text color={TUI_THEME.muted}>{hint}</Text>
     </Box>
   );
 }

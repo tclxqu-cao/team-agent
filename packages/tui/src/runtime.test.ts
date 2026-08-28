@@ -14,7 +14,10 @@ class MemorySessions implements ISessionStore {
   async delete(id: string) { this.sessions = this.sessions.filter((session) => session.id !== id); }
   async list() { return this.sessions; }
   async listChildren() { return []; }
-  async addMessage() {}
+  async addMessage(id: string, message: Session["messages"][number]) {
+    const session = await this.get(id);
+    if (session) session.messages.push(message);
+  }
   async addEvent() {}
   async replaceMessages() {}
 }
@@ -43,6 +46,30 @@ describe("TuiRuntime", () => {
     await runtime.run("hello", (event) => events.push(event));
     expect(snapshot.skills[0]?.name).toBe("test-skill");
     expect(events.map((event) => event.type)).toEqual(["thinking", "text_chunk", "done"]);
+  });
+
+  it("persists user and assistant messages for the next queued run context", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "tui-runtime-"));
+    const sessions = new MemorySessions();
+    const agent: IAgentLoop = {
+      async *run(input): AsyncIterable<AgentEvent> {
+        yield { type: "text_chunk", text: `answer:${input}` };
+        yield { type: "done", finalText: `answer:${input}` };
+      },
+      abort() {},
+    };
+    const runtime = new TuiRuntime(root, baseModel, path.join(root, "store"), sessions, async () => ({ agent, skills: [] }));
+    await runtime.initialize();
+
+    await runtime.run("first", () => {});
+    await runtime.run("second", () => {});
+
+    expect(sessions.sessions[0]?.messages.map((message) => `${message.role}:${message.content}`)).toEqual([
+      "user:first",
+      "assistant:answer:first",
+      "user:second",
+      "assistant:answer:second",
+    ]);
   });
 
   it("keeps the previous model when replacement construction fails", async () => {

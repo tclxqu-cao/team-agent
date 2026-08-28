@@ -30,9 +30,16 @@ export function CommandPalette({
   const visible = items.slice(start, start + maxRows);
   let previousKind: PaletteItem["kind"] | null = null;
   return (
-    <Box flexDirection="column" marginBottom={1}>
+    <Box
+      width="100%"
+      flexDirection="column"
+      marginBottom={1}
+      paddingX={1}
+      borderStyle="round"
+      borderColor={TUI_THEME.faint}
+    >
       <Box justifyContent="space-between">
-        <Text color={TUI_THEME.active} bold>{title ?? "候选"}</Text>
+        <Text><Text color={TUI_THEME.spark}>◆</Text><Text color={TUI_THEME.strong} bold> {title ?? "候选"}</Text></Text>
         <Text color={TUI_THEME.muted}>{items.length === 0 ? "0/0" : `${selected + 1}/${items.length}`}</Text>
       </Box>
       {items.length === 0 ? <Text color={TUI_THEME.muted}>没有匹配项</Text> : visible.map((item, offset) => {
@@ -44,7 +51,7 @@ export function CommandPalette({
         const row = `${selectedRow ? "›" : " "} ${item.label}${item.description ? `  ${item.description}` : ""}`;
         return (
           <React.Fragment key={item.id}>
-            {showGroup ? <Text color={TUI_THEME.muted}> {GROUP_LABEL[item.kind]}</Text> : null}
+            {showGroup ? <Text color={TUI_THEME.muted}>  {GROUP_LABEL[item.kind]}</Text> : null}
             <Text
               color={item.disabled ? TUI_THEME.muted : active ? "black" : undefined}
               backgroundColor={active ? TUI_THEME.active : undefined}
@@ -57,7 +64,6 @@ export function CommandPalette({
           </React.Fragment>
         );
       })}
-      <Text color={TUI_THEME.muted}>↑↓ 移动  Enter 选择  Esc 关闭</Text>
     </Box>
   );
 }
