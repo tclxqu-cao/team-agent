@@ -46,6 +46,20 @@ describe("resource candidates", () => {
     expect(merged.find((item) => item.label === "missing")?.disabled).toBe(true);
   });
 
+  it("discovers first-level repositories and bounded metadata from the home root", async () => {
+    const home = await mkdtemp(path.join(os.tmpdir(), "tui-project-home-"));
+    const refund = path.join(home, "refund");
+    await mkdir(path.join(refund, ".git"), { recursive: true });
+    await mkdir(path.join(refund, "docs"));
+    await writeFile(path.join(refund, "docs", "project-context.md"), "# 项目上下文\n客服赔付域");
+    await mkdir(path.join(home, "not-a-project", "nested", ".git"), { recursive: true });
+
+    const projects = await scanSiblingProjects(home, { homeDirectory: home });
+
+    expect(projects.map((project) => project.label)).toEqual(["refund"]);
+    expect(projects[0]?.metadata?.searchText).toContain("客服赔付域");
+  });
+
   it("quotes whitespace and replaces only the active mention token", () => {
     const buffer = "inspect @src/old later";
     const cursor = "inspect @src/old".length;

@@ -72,6 +72,22 @@ describe("TuiRuntime", () => {
     ]);
   });
 
+  it("persists steer input for the active AgentLoop iteration", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "tui-runtime-"));
+    const sessions = new MemorySessions();
+    const agent: IAgentLoop = { async *run() {}, abort() {} };
+    const runtime = new TuiRuntime(root, baseModel, path.join(root, "store"), sessions, async () => ({ agent, skills: [] }));
+    await runtime.initialize();
+
+    await runtime.steer("use this now");
+
+    expect(sessions.sessions[0]?.messages).toEqual([{
+      role: "user",
+      content: "use this now",
+      name: "__steer__",
+    }]);
+  });
+
   it("keeps the previous model when replacement construction fails", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "tui-runtime-"));
     const agent: IAgentLoop = { async *run() {}, abort() {} };

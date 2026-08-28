@@ -16,6 +16,8 @@ const DEFAULT_IGNORES = new Set([
 ]);
 const PROJECT_MARKERS = [".git", "package.json", "pom.xml", "build.gradle", "settings.gradle", "go.mod", "Cargo.toml", "pyproject.toml"];
 const HOME_ROOT_IGNORES = new Set(["Applications", "Library", "Movies", "Music", "Pictures", "Public"]);
+const PROJECT_METADATA_FILES = ["README.md", "docs/project-context.md", "AGENTS.md", "CLAUDE.md"];
+const DEFAULT_METADATA_BYTES = 8 * 1024;
 
 export interface RegisteredProject {
   id: string;
@@ -35,14 +37,43 @@ export interface ResourceIndexResult {
   truncated: boolean;
 }
 
-export async function scanSiblingProjects(cwd: string): Promise<ProjectCandidate[]> {
-  const parent = path.dirname(cwd);
-  const dir = await fsp.opendir(parent);
-  const projects: ProjectCandidate[] = [];
+async function readFilePrefix(filePath: string, maxBytes: number): Promise<string> {
+  const handle = await fsp.open(filePath, "r");
+  try {
+    const buffer = Buffer.alloc(maxBytes);
+    const { bytesRead } = await handle.read(buffer, 0, maxBytes, 0);
+    return buffer.subarray(0, bytesRead).toString("utf8");
+  } finally {
+    await handle.close();
+  }
+}
+
+async function projectSearchText(projectPath: string, label: string, maxBytes: number): Promise<string> {
+  const prefixes = await Promise.all(PROJECT_METADATA_FILES.map(async (relativePath) => {
+    try {
+      return await readFilePrefix(path.join(projectPath, relativePath), maxBytes);
+    } catch {
+      return "";
+    }
+  }));
+  return [label, projectPath, ...prefixes].filter(Boolean).join("\n");
+}
+
+export async function scanSiblingProjects(
+  cwd: string,
+  options: { homeDirectory?: string; metadataBytes?: number } = {},
+): Promise<ProjectCandidate[]> {
   const currentRealPath = await fsp.realpath(cwd);
+  let homeRealPath = path.resolve(options.homeDirectory ?? os.homedir());
+  try {
+    homeRealPath = await fsp.realpath(homeRealPath);
+  } catch {}
+  const searchRoot = currentRealPath === homeRealPath ? currentRealPath : path.dirname(currentRealPath);
+  const dir = await fsp.opendir(searchRoot);
+  const projects: ProjectCandidate[] = [];
   for await (const entry of dir) {
     if (!entry.isDirectory() || entry.name.startsWith(".") || DEFAULT_IGNORES.has(entry.name)) continue;
-    const candidatePath = await fsp.realpath(path.join(parent, entry.name));
+    const candidatePath = await fsp.realpath(path.join(searchRoot, entry.name));
     const markerChecks = await Promise.all(PROJECT_MARKERS.map(async (marker) => {
       try {
         await fsp.access(path.join(candidatePath, marker));
@@ -59,6 +90,9 @@ export async function scanSiblingProjects(cwd: string): Promise<ProjectCandidate
       description: candidatePath === currentRealPath ? "当前项目" : candidatePath,
       value: candidatePath,
       path: candidatePath,
+      metadata: {
+        searchText: await projectSearchText(candidatePath, entry.name, options.metadataBytes ?? DEFAULT_METADATA_BYTES),
+      },
     });
   }
   return projects.sort((a, b) => a.label.localeCompare(b.label));
@@ -87,7 +121,12 @@ export async function mergeProjects(
     if (explicitPath) {
       const existing = byPath.get(explicitPath);
       if (existing) {
-        existing.metadata = { ...existing.metadata, registeredId: record.id, source: record.source ?? "database" };
+        existing.metadata = {
+          ...existing.metadata,
+          registeredId: record.id,
+          source: record.source ?? "database",
+          searchText: [existing.metadata?.searchText, record.name, record.description].filter(Boolean).join("\n"),
+        };
         continue;
       }
     }
@@ -100,7 +139,11 @@ export async function mergeProjects(
       value: explicitPath ?? record.name,
       path: explicitPath,
       disabled: !explicitPath,
-      metadata: { registeredId: record.id, source: record.source ?? "database" },
+      metadata: {
+        registeredId: record.id,
+        source: record.source ?? "database",
+        searchText: [record.name, record.description, explicitPath].filter(Boolean).join("\n"),
+      },
     };
     if (explicitPath) byPath.set(explicitPath, project);
     byName.set(record.name.trim().toLowerCase(), project);

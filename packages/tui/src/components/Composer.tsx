@@ -4,6 +4,7 @@ import { TUI_THEME } from "../theme.js";
 import { getActiveTrigger } from "../palette.js";
 import { parseTerminalInput, type TerminalInputToken } from "../terminal-input.js";
 import { CURSOR_ANCHOR } from "../cursor-output.js";
+import { maskSecret } from "../model-wizard.js";
 
 const ESCAPE_SEQUENCE_WINDOW_MS = 100;
 
@@ -26,6 +27,7 @@ export interface ComposerProps {
   questionActive: boolean;
   paletteOpen: boolean;
   nativeCursor?: boolean;
+  inputMode?: "message" | "model-url" | "model-key" | "model-fetching" | "model-select";
   onChange(input: string, cursor: number): void;
   onSubmit(): void;
   onHistory(direction: -1 | 1): void;
@@ -34,6 +36,7 @@ export interface ComposerProps {
   onPaletteClose(): void;
   onAbort(): void;
   onExit(): void;
+  onCancel?(): void;
 }
 
 export function Composer(props: ComposerProps) {
@@ -75,7 +78,8 @@ export function Composer(props: ComposerProps) {
 
   const updateDraft = (input: string, cursor: number) => {
     draftRef.current = { input, cursor };
-    paletteIntentRef.current = Boolean(getActiveTrigger(input, cursor));
+    paletteIntentRef.current = (!propsRef.current.inputMode || propsRef.current.inputMode === "message")
+      && Boolean(getActiveTrigger(input, cursor));
     if (!paletteIntentRef.current && !propsRef.current.paletteOpen) pendingPaletteActions.current = [];
     propsRef.current.onChange(input, cursor);
   };
@@ -83,20 +87,29 @@ export function Composer(props: ComposerProps) {
   const handleToken = (token: TerminalInputToken) => {
     const current = propsRef.current;
     if (token.type === "ctrl_c") {
+      if (current.inputMode && current.inputMode !== "message") {
+        current.onCancel?.();
+        return;
+      }
       if (current.running) current.onAbort();
       else current.onExit();
+      return;
+    }
+    if (current.inputMode === "model-fetching") {
+      if (token.type === "escape") current.onCancel?.();
       return;
     }
     if (token.type === "up" || token.type === "down") {
       const direction = token.type === "up" ? -1 : 1;
       if (current.paletteOpen) current.onPaletteMove(direction);
       else if (paletteIntentRef.current) deferPaletteAction((latest) => latest.onPaletteMove(direction));
-      else current.onHistory(direction);
+      else if (!current.inputMode || current.inputMode === "message") current.onHistory(direction);
       return;
     }
     if (token.type === "escape") {
       if (current.paletteOpen) current.onPaletteClose();
       else if (paletteIntentRef.current) deferPaletteAction((latest) => latest.onPaletteClose());
+      else if (current.inputMode && current.inputMode !== "message") current.onCancel?.();
       return;
     }
     if (token.type === "enter") {
@@ -158,11 +171,19 @@ export function Composer(props: ComposerProps) {
     };
   }, [inputEvents, setRawMode]);
 
-  const before = props.input.slice(0, props.cursor);
-  const next = props.input.slice(props.cursor, nextIndex(props.input, props.cursor)) || " ";
-  const after = props.input.slice(props.cursor + (next === " " && props.cursor === props.input.length ? 0 : next.length));
+  const secret = props.inputMode === "model-key" || props.inputMode === "model-fetching";
+  const displayInput = secret ? maskSecret(props.input) : props.input;
+  const before = displayInput.slice(0, props.cursor);
+  const next = displayInput.slice(props.cursor, nextIndex(displayInput, props.cursor)) || " ";
+  const after = displayInput.slice(props.cursor + (next === " " && props.cursor === displayInput.length ? 0 : next.length));
   const color = props.questionActive ? TUI_THEME.progress : props.running ? TUI_THEME.progress : props.paletteOpen ? TUI_THEME.active : TUI_THEME.ready;
-  const hint = props.questionActive
+  const hint = props.inputMode === "model-url"
+    ? "https://api.example.com/v1"
+    : props.inputMode === "model-key"
+      ? "输入 API Key"
+      : props.inputMode === "model-fetching"
+        ? "正在获取模型列表"
+        : props.questionActive
     ? "输入序号或答案"
     : props.paletteOpen
       ? "输入筛选"
@@ -171,8 +192,9 @@ export function Composer(props: ComposerProps) {
         : "输入消息";
   const columns = stdout.columns || 80;
   const compact = columns < 64;
-  const leftHint = props.paletteOpen ? "筛选  ·  ↑↓ 选择  Enter 确认" : props.questionActive ? "Enter 提交" : "/ 命令  @ 引用";
-  const rightHint = props.paletteOpen ? "Esc 关闭" : props.questionActive ? "Ctrl+C 取消" : props.running ? "Enter 排队   Ctrl+C 中止" : "Enter 发送   Ctrl+C 退出";
+  const wizardInput = props.inputMode && props.inputMode !== "message";
+  const leftHint = props.paletteOpen ? "筛选  ·  ↑↓ 选择  Enter 确认" : wizardInput ? "模型服务配置" : props.questionActive ? "Enter 提交" : "/ 命令  @ 引用";
+  const rightHint = props.paletteOpen ? "Esc 关闭" : wizardInput ? (props.inputMode === "model-fetching" ? "Esc 取消" : "Enter 下一步   Esc 取消") : props.questionActive ? "Ctrl+C 取消" : props.running ? "Enter 排队   Ctrl+C 中止" : "Enter 发送   Ctrl+C 退出";
   const nativeCursor = props.nativeCursor;
   return (
     <Box flexDirection="column">
@@ -183,7 +205,7 @@ export function Composer(props: ComposerProps) {
         paddingX={1}
       >
         <Box flexGrow={1}>
-          <Text color={color}>{props.paletteOpen ? "⌕ " : props.questionActive ? "? " : props.running ? "+ " : "› "}</Text>
+          <Text color={color}>{props.paletteOpen ? "⌕ " : wizardInput ? "◆ " : props.questionActive ? "? " : props.running ? "+ " : "› "}</Text>
           {props.paletteOpen ? (
             nativeCursor ? (
               <Text color={TUI_THEME.text}>{before}{CURSOR_ANCHOR}{props.input.slice(props.cursor)}{!props.input ? <Text color={TUI_THEME.muted}>{hint}</Text> : null}</Text>
@@ -193,7 +215,7 @@ export function Composer(props: ComposerProps) {
           ) : (
             <>
               {nativeCursor ? (
-                <Text color={TUI_THEME.text}>{before}{CURSOR_ANCHOR}{props.input.slice(props.cursor)}{!props.input ? <Text color={TUI_THEME.muted}>{hint}</Text> : null}</Text>
+                <Text color={TUI_THEME.text}>{before}{CURSOR_ANCHOR}{displayInput.slice(props.cursor)}{!displayInput ? <Text color={TUI_THEME.muted}>{hint}</Text> : null}</Text>
               ) : (
                 <Text color={TUI_THEME.text}>{before}</Text>
               )}

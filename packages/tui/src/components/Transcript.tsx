@@ -1,7 +1,7 @@
 import React from "react";
 import { Box, Text } from "ink";
 import type { TranscriptEntry } from "../state.js";
-import { ROLE_LABELS, TUI_THEME } from "../theme.js";
+import { ROLE_GLYPHS, TUI_THEME } from "../theme.js";
 import { MarkdownText } from "./MarkdownText.js";
 
 function Entry({ entry, separated }: { entry: TranscriptEntry; separated: boolean }) {
@@ -11,21 +11,21 @@ function Entry({ entry, separated }: { entry: TranscriptEntry; separated: boolea
   let dimmed = false;
 
   if (entry.type === "user") {
-    label = ROLE_LABELS.user;
+    label = ROLE_GLYPHS.user;
     color = TUI_THEME.user;
   } else if (entry.type === "assistant") {
-    label = ROLE_LABELS.assistant;
+    label = ROLE_GLYPHS.assistant;
     color = TUI_THEME.agent;
   } else if (entry.type === "error") {
-    label = ROLE_LABELS.error;
+    label = ROLE_GLYPHS.error;
     color = TUI_THEME.error;
   } else if (entry.type === "notice") {
-    label = ROLE_LABELS.notice;
+    label = ROLE_GLYPHS.notice;
     color = TUI_THEME.muted;
     dimmed = true;
   } else {
     const result = entry.name === "结果" || entry.name === "失败";
-    label = result ? ROLE_LABELS.result : ROLE_LABELS.tool;
+    label = result ? ROLE_GLYPHS.result : ROLE_GLYPHS.tool;
     color = entry.error ? TUI_THEME.error : result ? TUI_THEME.muted : TUI_THEME.tool;
     text = result ? entry.text : `${entry.name}${entry.text ? `  ${entry.text}` : ""}`;
     dimmed = result && !entry.error;
@@ -33,7 +33,7 @@ function Entry({ entry, separated }: { entry: TranscriptEntry; separated: boolea
 
   return (
     <Box marginTop={separated ? 1 : 0} alignItems="flex-start">
-      <Box width={7} flexShrink={0}>
+      <Box width={3} flexShrink={0}>
         <Text color={color} bold={!dimmed}>{label}</Text>
       </Box>
       <Box

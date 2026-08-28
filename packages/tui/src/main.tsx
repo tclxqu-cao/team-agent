@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { render, Text } from "ink";
 import { TuiApp } from "./App.js";
 import { discoverDatabasePaths, readDesktopData } from "./desktop-data.js";
-import { loadTuiModelSelection, resolveStartupModel } from "./model-config.js";
+import { loadTuiConfig, resolveStartupModel } from "./model-config.js";
 import { TuiRuntime } from "./runtime.js";
 import { createCursorAwareOutput } from "./cursor-output.js";
 
@@ -35,9 +35,10 @@ export async function startTui(argv: string[], env: NodeJS.ProcessEnv): Promise<
   const configPath = path.join(storeDir, "config.json");
   const repoRoot = fileURLToPath(new URL("../../..", import.meta.url));
   const desktopData = await readDesktopData(await discoverDatabasePaths(repoRoot));
-  const persisted = await loadTuiModelSelection(configPath);
+  const config = await loadTuiConfig(configPath);
   const model = resolveStartupModel({
-    persisted,
+    persisted: config.active,
+    endpoints: config.endpoints,
     profiles: desktopData.profiles,
     activeProfileId: desktopData.activeProfileId,
     env,
@@ -62,6 +63,7 @@ export async function startTui(argv: string[], env: NodeJS.ProcessEnv): Promise<
         configPath={configPath}
         env={env}
         warnings={desktopData.warnings}
+        initialConfig={config}
         nativeCursor
       />,
       { exitOnCtrlC: false, stdout: cursorOutput.stdout },

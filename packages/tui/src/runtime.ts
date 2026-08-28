@@ -150,6 +150,15 @@ export class TuiRuntime {
     this.agent?.abort();
   }
 
+  async steer(input: string): Promise<void> {
+    if (!this.agent || !this.currentSessionId) throw new Error("Agent 尚未初始化");
+    await this.sessionStore.addMessage(this.currentSessionId, {
+      role: "user",
+      content: input,
+      name: "__steer__",
+    });
+  }
+
   async switchProject(nextDirectory: string): Promise<RuntimeSnapshot> {
     const resolved = await fsp.realpath(nextDirectory);
     const built = await this.agentFactory(resolved, this.model, (request) => this.questionHandler(request));

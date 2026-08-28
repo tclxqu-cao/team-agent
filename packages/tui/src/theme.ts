@@ -15,14 +15,16 @@ export const TUI_THEME = {
   code: "#A8C7FA",
 } as const;
 
-export const ROLE_LABELS = {
-  user: "YOU",
-  assistant: "AGENT",
-  tool: "TOOL",
-  result: "RESULT",
-  notice: "INFO",
-  error: "ERROR",
-  progress: "STATE",
+export const ROLE_GLYPHS = {
+  user: "›",
+  assistant: "◆",
+  tool: "⚙",
+  result: "↳",
+  notice: "i",
+  error: "!",
+  progress: "●",
+  queue: "≡",
+  setup: "◇",
 } as const;
 
 export const PALETTE_TITLES = {

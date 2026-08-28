@@ -46,10 +46,12 @@ function score(item: PaletteItem, query: string): number {
   const label = item.label.toLowerCase();
   const value = item.value.toLowerCase();
   const description = item.description.toLowerCase();
+  const searchText = item.metadata?.searchText?.toLowerCase() ?? "";
   if (label === needle || value === needle) return 0;
   if (label.startsWith(needle) || value.startsWith(needle)) return 1;
   if (label.includes(needle) || value.includes(needle)) return 2;
   if (description.includes(needle)) return 3;
+  if (searchText.includes(needle)) return 4;
   return Number.POSITIVE_INFINITY;
 }
 

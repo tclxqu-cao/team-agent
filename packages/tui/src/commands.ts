@@ -16,6 +16,7 @@ export const BUILTIN_COMMANDS: readonly BuiltinCommand[] = [
   { name: "/model", description: "查看或切换模型", secondary: "models" },
   { name: "/projects", description: "切换项目", secondary: "projects" },
   { name: "/skills", description: "查看已发现技能", secondary: "skills" },
+  { name: "/steer", description: "将排队消息插入当前轮" },
   { name: "/clear", description: "清空当前屏幕消息" },
   { name: "/exit", description: "退出 TUI" },
 ];
