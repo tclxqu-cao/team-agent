@@ -1,0 +1,218 @@
+packages/cli/src/pairing.ts
+  s_30f0086b29e6d2::t_22a1671d7037e4 1-3
+packages/cloudflared-darwin-arm64/manifest.json
+  s_ac188cea2946f6::t_c97fc4fa1a8a5a 1-10
+packages/cli/tsconfig.json
+  s_30f0086b29e6d2::t_2506636c6c3419 1-14
+packages/cli/src/cloudflared/manifest.ts
+  s_ac188cea2946f6::t_595393a58fbc9d 4
+  s_ac188cea2946f6::t_7236e17be8925b 1-3,5-7
+  s_30f0086b29e6d2::t_22a1671d7037e4 8
+packages/cli/src/cloudflared/installer.test.ts
+  s_ac188cea2946f6::t_20d1a87b8cce6b 1-85
+packages/cli/package.json
+  s_30f0086b29e6d2::t_2506636c6c3419 1,4-5,7,10-12,14-16,22-29,31
+  s_ce18d43f8a9a03::t_358d6f0326192f 17-18
+  s_ac188cea2946f6::t_d02758888b1202 2,6
+  s_ac188cea2946f6::t_ac1010e1cf009a 8-9,30
+  s_ac188cea2946f6::t_582ffec3247ac9 13
+  s_ac188cea2946f6::t_7236e17be8925b 3,19-21
+packages/cli/src/native-runtime.ts
+  s_ac188cea2946f6::t_299e1a88cefdbe 1-17
+docs/superpowers/plans/2026-08-28-agentroam-bundled-relay-fallback.md
+  s_ac188cea2946f6::t_25d862c1ce7480 1-232
+packages/cli/src/cloudflared/checksum.ts
+  s_30f0086b29e6d2::t_22a1671d7037e4 1-2
+packages/cli/src/tunnel/public-readiness.ts
+  s_ac188cea2946f6::t_ebe4fbfaa567e5 58,62,77-78
+  s_ac188cea2946f6::t_1c30755f92d290 12-14,16,19-27,67,70-71,76,90-103
+  s_ce18d43f8a9a03::t_c713e3db0db7f0 1-11,15,17-18,28-57,59-61,63-66,68-69,72-75,79-89
+docs/superpowers/specs/2026-08-28-agentroam-bundled-relay-fallback-design.md
+  s_ac188cea2946f6::t_582facd7d0ea8b 1-162,165-240
+  s_ac188cea2946f6::t_36e47cc88c35fc 163-164
+packages/cloudflared-darwin-arm64/package.json
+  s_ac188cea2946f6::t_c97fc4fa1a8a5a 1-18
+packages/cli/src/cloudflared/installer.ts
+  s_ac188cea2946f6::t_db21c85e524b20 1-108
+packages/cli/src/tunnel/cloudflare-provider.test.ts
+  s_ce18d43f8a9a03::t_941449e3e5b247 9,16,26,29-30,36-40
+  s_ce18d43f8a9a03::t_1e118535fd58f3 20-21
+  s_ce18d43f8a9a03::t_d5bc687d144623 1-8,10-15,17-19,22-25,27-28,31-35,41
+scripts/verify-cli-tunnel.mjs
+  s_ac188cea2946f6::t_f3a2bdf8fdbca9 7,9,28,36,44-46,53-57,60-88,90-97,100,103-106,108-113,130-166
+  s_ac188cea2946f6::t_d02758888b1202 26,33,89
+  s_d1f360e33d0bf5::t_823ed4953ec0b8 37
+  s_ac188cea2946f6::t_f08ca026985f9e 59,114-129
+  s_ac188cea2946f6::t_a5cdd30de0bfb7 3-4,11,18-24,31-32,38-39,51-52,101
+  s_d1f360e33d0bf5::t_2e2d59b457fab7 1-2,5-6,8,10,12-16,25,27,29-30,34-35,40-43,47-50,58,98-99,102,107,167-193
+  s_ac188cea2946f6::t_3f823426736be6 17
+packages/cli/RELEASE.md
+  s_ac188cea2946f6::t_b192ec440c27db 65
+  s_ac188cea2946f6::t_0e682471fa922b 33-34,46-47
+  s_d1f360e33d0bf5::t_dccdb450c45eb0 2,4-8,12-17,27-31,37-40,42-45,48,66-67,69
+  s_ac188cea2946f6::t_58c0870ba49797 51,54
+  s_ac188cea2946f6::t_c43f694294a62c 1,9-11,32,35,50,52-53,68,70-72
+  s_ac188cea2946f6::t_174eabe1ff68c4 24,36,41
+  s_ac188cea2946f6::t_121cb54c709526 26,55
+  s_ac188cea2946f6::t_791968aff0982f 18,49
+  s_ac188cea2946f6::t_3f1679a21ae363 3,19-23,25,56-64
+packages/cli/src/cloudflared/bundled-asset.ts
+  s_ac188cea2946f6::t_7236e17be8925b 1-3,5-14,16-41,43-61
+  s_ac188cea2946f6::t_595393a58fbc9d 4,15,42
+packages/cli/src/tunnel/tunnel-provider.ts
+  s_30f0086b29e6d2::t_22a1671d7037e4 1-2
+packages/cli/src/tunnel/relay-orchestrator.test.ts
+  s_ac188cea2946f6::t_9bcda609ff7f56 1-86
+packages/cli/src/tunnel/pinggy-provider.ts
+  s_ac188cea2946f6::t_1c30755f92d290 1-34,38-84
+  s_ac188cea2946f6::t_595393a58fbc9d 35-37
+packages/cli/src/runtime-manager.ts
+  s_30f0086b29e6d2::t_9b4a1a779c7daf 2,7
+  s_30f0086b29e6d2::t_abbf6213deef75 3-4,6
+  s_ac188cea2946f6::t_299e1a88cefdbe 1,5
+packages/cli/src/tunnel/pinggy-provider.test.ts
+  s_ac188cea2946f6::t_ebe4fbfaa567e5 20
+  s_ac188cea2946f6::t_1c30755f92d290 1-19,21-47
+.github/workflows/cli-release.yml
+  s_ac188cea2946f6::t_0e682471fa922b 10
+  s_ac188cea2946f6::t_48aa8bca282d1f 18
+  s_30f0086b29e6d2::t_6cea92f0e14600 1-3,5-9,11-17,19-20
+  s_ac188cea2946f6::t_c43f694294a62c 4,21-23
+packages/cli/src/native-runtime.test.ts
+  s_ac188cea2946f6::t_299e1a88cefdbe 1-23
+packages/cli/src/tunnel/relay-orchestrator.ts
+  s_ac188cea2946f6::t_88034e45c0608d 54
+  s_ac188cea2946f6::t_9bcda609ff7f56 1-53,55-70
+packages/cli/src/platform.ts
+  s_30f0086b29e6d2::t_2506636c6c3419 1-8
+packages/cli/src/port.ts
+  s_30f0086b29e6d2::t_abbf6213deef75 1-6
+packages/cli/src/cloudflared/bundled-asset.test.ts
+  s_ac188cea2946f6::t_595393a58fbc9d 1-55
+docs/superpowers/plans/2026-08-28-agentroam-macos-arm64-preview-release.md
+  s_ac188cea2946f6::t_174eabe1ff68c4 1-118
+packages/cli/src/args.ts
+  s_ac188cea2946f6::t_4e747138b10ca2 1-65
+scripts/audit-cloudflared-tarball.mjs
+  s_ac188cea2946f6::t_a5cdd30de0bfb7 4,21,23-30
+  s_ac188cea2946f6::t_c97fc4fa1a8a5a 1-3,5-20,22,31-67
+packages/cli/src/tunnel/public-readiness.test.ts
+  s_ac188cea2946f6::t_1c30755f92d290 1-33,138
+  s_ce18d43f8a9a03::t_c713e3db0db7f0 34-137
+packages/cli/src/tunnel/proxy-settings.test.ts
+  s_ce18d43f8a9a03::t_e9de1a3bdb7ba0 1-57,67-124,129-145
+  s_ce18d43f8a9a03::t_da633925a00fa9 58-66,125-128
+packages/cli/src/network.ts
+  s_ac188cea2946f6::t_299e1a88cefdbe 1-20
+packages/cli/bin/agentroam.mjs
+  s_ac188cea2946f6::t_d02758888b1202 1-5
+packages/cli/src/qr.ts
+  s_30f0086b29e6d2::t_22a1671d7037e4 1-2
+packages/cli/src/tunnel/child-process.ts
+  s_ac188cea2946f6::t_1c30755f92d290 1-20
+docs/superpowers/plans/2026-08-28-agentroam-public-readiness-system-proxy.md
+  s_ce18d43f8a9a03::t_2aefa6dcd4d71a 36-55,60-82,86-96,112-129,133-151,157-175,220-228
+  s_ce18d43f8a9a03::t_1e118535fd58f3 192
+  s_ce18d43f8a9a03::t_a77ef82e687208 32,56,83,108,130,153,217,230,236
+  s_ce18d43f8a9a03::t_d5bc687d144623 176-191,193-206
+  s_ce18d43f8a9a03::t_482124ddd202c8 1-31,33-35,57-59,84-85,97-107,109-111,131-132,152,154-156,207-216,218-219,229,231-235,237-250
+packages/cloudflared-darwin-arm64/README.md
+  s_ac188cea2946f6::t_c97fc4fa1a8a5a 1-6
+packages/cli/src/process-supervisor.ts
+  s_30f0086b29e6d2::t_abbf6213deef75 1-7
+scripts/audit-cli-tarball.mjs
+  s_ac188cea2946f6::t_48aa8bca282d1f 3-4,18-25,27-28,98-103,105-114
+  s_ac188cea2946f6::t_720eb8c648048a 66-75
+  s_ac188cea2946f6::t_1e82f610c22121 1,5-13,15-16,35-65,76,78,87-89,91-93,115-117
+  s_ac188cea2946f6::t_1d2df1476fbb0a 79-80,90
+  s_ac188cea2946f6::t_d02758888b1202 14,26,77,104
+  s_ac188cea2946f6::t_a5cdd30de0bfb7 2,17,29-34,81-86,94-97
+packages/cli/src/tunnel/cloudflare-provider.ts
+  s_ce18d43f8a9a03::t_d5bc687d144623 18,30-34,37-38,47,54,56
+  s_ac188cea2946f6::t_d082e11b9dd213 1-13,17,19-29,35,39-46,49,52-53,57,61-63
+  s_ac188cea2946f6::t_595393a58fbc9d 14-16
+  s_ce18d43f8a9a03::t_c9661c8b1e2d77 36,48,50-51,58-60
+  s_ce18d43f8a9a03::t_1e118535fd58f3 55
+scripts/verify-cli-install.mjs
+  s_ac188cea2946f6::t_d02758888b1202 29,42
+  s_ac188cea2946f6::t_a5cdd30de0bfb7 4,9,18-22,35-40,44-49,53,69-70
+  s_ac188cea2946f6::t_f3a2bdf8fdbca9 31,50,84,87-90
+  s_ac188cea2946f6::t_58c0870ba49797 7,76-81,92-113
+  s_d1f360e33d0bf5::t_3245818ef848ff 51-52
+  s_ac188cea2946f6::t_3f823426736be6 17
+  s_d1f360e33d0bf5::t_6baee68384e5de 1-3,5-6,8,10-16,23-28,30,32-34,41,43,54-68,71-75,82-83,85-86,91,114-140
+scripts/fetch-cloudflared-package.mjs
+  s_ac188cea2946f6::t_c97fc4fa1a8a5a 1-51
+packages/cli/README.md
+  s_ac188cea2946f6::t_791968aff0982f 12
+  s_d1f360e33d0bf5::t_48df056b2fd083 2-7,9,13-15,17-21,24-27,29-35,39-46,50-52,54,56-60,62-68,73-74
+  s_ac188cea2946f6::t_c43f694294a62c 10,22,28,47-49,55,61,69-72
+  s_ac188cea2946f6::t_0e682471fa922b 8,11,75
+  s_ac188cea2946f6::t_174eabe1ff68c4 1,16,23,36-38,53
+packages/cli/src/platform.test.ts
+  s_30f0086b29e6d2::t_2506636c6c3419 1-2
+scripts/stage-cli-runtime.mjs
+  s_d1f360e33d0bf5::t_cf3e03d076ad2f 1,3-24,31-34,36-38,40-42,50-68,70-82
+  s_d1f360e33d0bf5::t_0e51092e18ed36 35
+  s_30f0086b29e6d2::t_1f54491409255e 69
+  s_ac188cea2946f6::t_720eb8c648048a 2,25-30,39,43-49
+.github/workflows/cli-release-verify.yml
+  s_ac188cea2946f6::t_48aa8bca282d1f 24
+  s_ac188cea2946f6::t_1e82f610c22121 21-23,25
+  s_ac188cea2946f6::t_c43f694294a62c 8,26-29
+  s_d1f360e33d0bf5::t_c47636ad5156a9 1-7,9-20,30
+packages/cli/src/args.test.ts
+  s_ac188cea2946f6::t_9bcda609ff7f56 1-31
+packages/cli/src/tunnel/custom-command-provider.ts
+  s_ac188cea2946f6::t_595393a58fbc9d 16-18
+  s_ac188cea2946f6::t_20c2e54112d4cc 1-15,19-56
+packages/cli/src/tunnel/proxy-settings.ts
+  s_ce18d43f8a9a03::t_e9de1a3bdb7ba0 1-21,24-92,94-154
+  s_ce18d43f8a9a03::t_da633925a00fa9 22-23,93
+packages/cli/src/cli.ts
+  s_ac188cea2946f6::t_21b014ef156114 1-130
+packages/cli/src/network.test.ts
+  s_ac188cea2946f6::t_299e1a88cefdbe 1-23
+packages/cli/src/port.test.ts
+  s_30f0086b29e6d2::t_abbf6213deef75 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "93ecb890d0f4740a796e880a4e1dfd3c92ea55b5",
+  "prompts": {},
+  "sessions": {
+    "s_30f0086b29e6d2": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_fbf4cc4b8ffeN7CnUjmxQ9RFm9",
+        "model": "glm-5.3-flash"
+      },
+      "human_author": null
+    },
+    "s_ac188cea2946f6": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a04637-d2a1-7d61-93d4-acea29111f70",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_ce18d43f8a9a03": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a04732-2417-7fe3-b582-f86fb900e538",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_d1f360e33d0bf5": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "87274c0d-7dd4-43f5-b0a6-af0ce66e3907",
+        "model": "composer-2.5"
+      },
+      "human_author": null
+    }
+  }
+}
