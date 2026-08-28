@@ -47,7 +47,6 @@ export class TuiRuntime {
           modelId: model.modelId,
           baseUrl: model.baseUrl,
         })
-        .withSemanticSkillMatching(false)
         .withTool(new Core.AskUserTool(question));
       const agent = await builder.build();
       return { agent, skills: builder.getSkillRegistry().getAll() };

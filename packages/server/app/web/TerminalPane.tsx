@@ -243,16 +243,13 @@ export default function TerminalPane({ terminalId, title, visible, state, rpc, o
     });
 
     // Mobile swipe on the focused xterm textarea often becomes ArrowUp/Down keydown,
-    // which readline treats as command history. In normal buffer, scroll viewport instead.
+    // which readline treats as command history. Only during an active finger
+    // scroll do we take over nav keys (viewport scroll); otherwise arrows must
+    // reach the app — normal-buffer TUIs (qoder, claude) rely on them, and
+    // leaked escapes are still filtered data-side by shouldSuppressTouchScrollInput.
     term.attachCustomKeyEventHandler((event) => {
       if (term.buffer.active.type === "alternate" || event.type !== "keydown") return true;
-      const atLivePrompt = term.buffer.active.viewportY >= term.buffer.active.baseY;
-      const scrollInstead =
-        event.key === "ArrowUp" || event.key === "ArrowDown" || event.key === "PageUp" || event.key === "PageDown";
-      if (!scrollInstead) return true;
-      // At live prompt only swallow arrows during an active finger scroll; when
-      // scrolled up, arrows always move the xterm viewport (not readline history).
-      if (atLivePrompt && !touchScrollActiveRef.current) return true;
+      if (!touchScrollActiveRef.current) return true;
       if (event.key === "ArrowUp") {
         scrollViewportLinesRef.current(-1);
         event.preventDefault();
@@ -305,7 +302,6 @@ export default function TerminalPane({ terminalId, title, visible, state, rpc, o
       touchAcc = 0;
       touchAxis = "pending";
       touchTracking = true;
-      touchScrollActiveRef.current = true;
       if (term.buffer.active.type !== "alternate") followOutputRef.current = false;
       try { scrollSurface?.setPointerCapture(event.pointerId); } catch {}
     };
@@ -331,6 +327,7 @@ export default function TerminalPane({ terminalId, title, visible, state, rpc, o
             const boundedSteps = Math.sign(steps) * Math.min(2, Math.abs(steps));
             touchAcc -= boundedSteps * 18;
             lastAlternateScrollAt = now;
+            touchScrollActiveRef.current = true;
             const wheelCode = steps < 0 ? 64 : 65;
             sendInput(`\x1b[<${wheelCode};${col};${row}M`.repeat(Math.abs(boundedSteps)));
           }
@@ -341,6 +338,7 @@ export default function TerminalPane({ terminalId, title, visible, state, rpc, o
             const boundedPages = Math.sign(pages);
             touchAcc -= boundedPages * 64;
             lastAlternateScrollAt = now;
+            touchScrollActiveRef.current = true;
             // Finger down (negative) reads older content → PageUp. Never use ArrowUp/Down.
             sendInput(boundedPages < 0 ? "\x1b[5~" : "\x1b[6~");
           }
@@ -354,6 +352,7 @@ export default function TerminalPane({ terminalId, title, visible, state, rpc, o
       const steps = Math.trunc(touchAcc / cellH);
       if (steps !== 0) {
         touchAcc -= steps * cellH;
+        touchScrollActiveRef.current = true;
         scrollViewportLinesRef.current(steps);
         event.preventDefault();
         suppressTerminalClickScroll.current = true;
@@ -521,6 +520,7 @@ export default function TerminalPane({ terminalId, title, visible, state, rpc, o
   useEffect(() => {
     const vv = window.visualViewport;
     let fitTimer: ReturnType<typeof setTimeout> | null = null;
+    let settleTimer: ReturnType<typeof setTimeout> | null = null;
     const alignAlternateBottom = () => {
       const term = termRef.current;
       const host = hostRef.current;
@@ -555,10 +555,21 @@ export default function TerminalPane({ terminalId, title, visible, state, rpc, o
         }
       });
     };
+    // Once the keyboard (or window) stops moving, refit alternate-screen TUIs
+    // too so their rows actually grow/shrink with the visible area.
+    const applySettledFit = () => {
+      settleTimer = null;
+      requestAnimationFrame(() => {
+        doFit();
+        alignAlternateBottom();
+      });
+    };
     const syncViewport = () => {
       requestAnimationFrame(alignAlternateBottom);
       if (fitTimer) clearTimeout(fitTimer);
       fitTimer = setTimeout(applyStableFit, 180);
+      if (settleTimer) clearTimeout(settleTimer);
+      settleTimer = setTimeout(applySettledFit, 550);
     };
     syncViewport();
     vv?.addEventListener("resize", syncViewport);
@@ -573,6 +584,7 @@ export default function TerminalPane({ terminalId, title, visible, state, rpc, o
       window.removeEventListener("orientationchange", syncViewport);
       window.removeEventListener("resize", syncViewport);
       if (fitTimer) clearTimeout(fitTimer);
+      if (settleTimer) clearTimeout(settleTimer);
       ro.disconnect();
     };
   }, [doFit]);
@@ -608,7 +620,6 @@ export default function TerminalPane({ terminalId, title, visible, state, rpc, o
     let lastX = 0;
     let tracking = false;
     let pointerId: number | null = null;
-    let nativeTap:{key:string;startedAt:number;x:number;y:number;moved:boolean}|null=null;
 
     const keyButton = (target: EventTarget | null) =>
       target instanceof Element ? target.closest<HTMLButtonElement>("button[data-key]") : null;
@@ -650,32 +661,17 @@ export default function TerminalPane({ terminalId, title, visible, state, rpc, o
       event.preventDefault();
       runShortcut(()=>runKey(key));
     };
-    const onTouchEnd = (event: TouchEvent) => {
-      const tap=nativeTap;nativeTap=null;if(!tap)return;
-      const elapsed=performance.now()-tap.startedAt;
-      if(tap.moved||elapsed>=280)return;
-      event.preventDefault();suppressKeyClick.current=true;runShortcut(()=>runKey(tap.key));setTimeout(()=>{suppressKeyClick.current=false;},0);
-    };
-    const onTouchStart=(event:TouchEvent)=>{const button=keyButton(event.target);const touch=event.touches[0];if(!button||!touch)return;nativeTap={key:button.dataset.key!,startedAt:performance.now(),x:touch.clientX,y:touch.clientY,moved:false};};
-    const onTouchMove=(event:TouchEvent)=>{const touch=event.touches[0];if(!nativeTap||!touch)return;if(Math.abs(touch.clientX-nativeTap.x)>8||Math.abs(touch.clientY-nativeTap.y)>8)nativeTap.moved=true;};
-
     bar.addEventListener("pointerdown", onDown, { passive: false });
     bar.addEventListener("pointermove", onMove, { passive: false });
     bar.addEventListener("pointerup", onEnd, { passive: true });
     bar.addEventListener("pointercancel", onCancel, { passive: true });
     bar.addEventListener("click", onClick);
-    bar.addEventListener("touchstart", onTouchStart, {passive:true});
-    bar.addEventListener("touchmove", onTouchMove, {passive:true});
-    bar.addEventListener("touchend", onTouchEnd, { passive:false });
     return () => {
       bar.removeEventListener("pointerdown", onDown);
       bar.removeEventListener("pointermove", onMove);
       bar.removeEventListener("pointerup", onEnd);
       bar.removeEventListener("pointercancel", onCancel);
       bar.removeEventListener("click", onClick);
-      bar.removeEventListener("touchstart", onTouchStart);
-      bar.removeEventListener("touchmove", onTouchMove);
-      bar.removeEventListener("touchend", onTouchEnd);
     };
   }, [keybarHidden, keyOrder.join("|")]);
 
@@ -688,8 +684,8 @@ export default function TerminalPane({ terminalId, title, visible, state, rpc, o
     const data: Record<string,string>={esc:"\x1b",tab:"\t",enter:"\r",pipe:"|",tilde:"~",dash:"-",slash:"/",ctrlc:"\x03",ctrld:"\x04",ctrll:"\x0c"};
     const t=termRef.current;
     const cursor=(suffix:string)=>t?.modes.applicationCursorKeysMode?`\x1bO${suffix}`:`\x1b[${suffix}`;
-    if(key==="up"){if(!t)return;if(t.buffer.active.type==="alternate")sendInput(cursor("A"));else scrollViewportLinesRef.current(-1);return;}
-    if(key==="down"){if(!t)return;if(t.buffer.active.type==="alternate")sendInput(cursor("B"));else scrollViewportLinesRef.current(1);return;}
+    if(key==="up"){sendInput(cursor("A"));return;}
+    if(key==="down"){sendInput(cursor("B"));return;}
     if(key==="right"){if(t)sendInput(cursor("C"));return;}
     if(key==="left"){if(t)sendInput(cursor("D"));return;}
     if(data[key]) return sendInput(data[key]);
@@ -701,11 +697,8 @@ export default function TerminalPane({ terminalId, title, visible, state, rpc, o
     if(key==="end"){followOutputRef.current=true;t.scrollToBottom();reportScrollLine();}
   };
 
-  const beginKeyDrag=(key:string,event:React.PointerEvent<HTMLButtonElement>)=>{if(!event.isPrimary)return;event.preventDefault();if(event.pointerType==="touch")touchKeyTap.current={key,dragged:false};event.currentTarget.setPointerCapture(event.pointerId);const drag={key,timer:null as ReturnType<typeof setTimeout>|null,active:false,startX:event.clientX,startY:event.clientY,lastX:event.clientX,scrolling:false};drag.timer=setTimeout(()=>{if(drag.scrolling)return;drag.active=true;if(touchKeyTap.current)touchKeyTap.current.dragged=true;setDraggingKey(key);navigator.vibrate?.(20);},280);keyDrag.current=drag;};
-  const moveKeyDrag=(event:React.PointerEvent<HTMLButtonElement>)=>{const drag=keyDrag.current;const bar=keybarRef.current;if(!drag||!bar)return;if(!drag.active){const dx=event.clientX-drag.startX,dy=event.clientY-drag.startY;if(!drag.scrolling&&Math.abs(dx)>10&&Math.abs(dx)>Math.abs(dy)*1.2){if(drag.timer)clearTimeout(drag.timer);drag.timer=null;drag.scrolling=true;if(touchKeyTap.current)touchKeyTap.current.dragged=true;}else if(!drag.scrolling)return;}if(drag.scrolling){event.preventDefault();const step=drag.lastX-event.clientX;drag.lastX=event.clientX;bar.scrollLeft+=step;return;}if(!drag.active)return;event.preventDefault();const barRect=bar.getBoundingClientRect();if(event.clientX<barRect.left+36)bar.scrollLeft-=18;else if(event.clientX>barRect.right-36)bar.scrollLeft+=18;const buttons=Array.from(bar.querySelectorAll<HTMLButtonElement>("button[data-key]"));const target=buttons.find((button)=>{const rect=button.getBoundingClientRect();return event.clientX>=rect.left&&event.clientX<=rect.right;});const targetKey=target?.dataset.key;if(!targetKey||targetKey===drag.key)return;const next=[...orderedKeys];const from=next.indexOf(drag.key),to=next.indexOf(targetKey);if(from<0||to<0)return;next.splice(from,1);next.splice(to,0,drag.key);onKeyOrderChange(next);};
   const endKeyDrag=(event:React.PointerEvent<HTMLButtonElement>)=>{const drag=keyDrag.current;if(!drag)return;if(drag.timer)clearTimeout(drag.timer);suppressKeyClick.current=true;if(event.pointerType==="touch"&&!drag.active&&!drag.scrolling)runShortcut(()=>runKey(drag.key));setTimeout(()=>{suppressKeyClick.current=false;},0);keyDrag.current=null;touchKeyTap.current=null;setDraggingKey(null);};
   const cancelKeyDrag=()=>{const drag=keyDrag.current;if(drag?.timer)clearTimeout(drag.timer);keyDrag.current=null;setDraggingKey(null);};
-  const finishTouchKey=(event:React.TouchEvent<HTMLButtonElement>)=>{const tap=touchKeyTap.current;touchKeyTap.current=null;if(!tap||tap.dragged)return;event.preventDefault();suppressKeyClick.current=true;runShortcut(()=>runKey(tap.key));setTimeout(()=>{suppressKeyClick.current=false;},0);};
 
   const acquireWrite = async (force = false) => {
     try {
