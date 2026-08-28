@@ -1,0 +1,123 @@
+docs/superpowers/specs/2026-08-28-tui-steer-project-routing-and-rendering-design.md
+  s_0c9810ca6cf0aa::t_79944848e08c36 114
+packages/tui/src/model-config.ts
+  s_0c9810ca6cf0aa::t_98f93e3e853510 15,18,27,30,37-96,98-105,107,111-115,117-130,133,139-163,172,177-181
+packages/tui/src/App.tsx
+  s_0c9810ca6cf0aa::t_cdf2aedeb13db8 256-274,276-289,291-348
+  s_0c9810ca6cf0aa::t_25533a52f9886f 275,290
+  s_0c9810ca6cf0aa::t_69c419bf1c621f 2,6-8,10-20,31,37,52-53,72-84,92-96,105-118
+  s_0c9810ca6cf0aa::t_1f844a44a313d6 449-452
+  s_0c9810ca6cf0aa::t_0011ae03d8983e 199,205-206
+  s_0c9810ca6cf0aa::t_793a03852cd173 349-372,411-413,421,469
+  s_0c9810ca6cf0aa::t_8c640f5e40d08e 147-148,151
+  s_0c9810ca6cf0aa::t_cee4995def98c4 503-527,529-538,544-551,592,607-610,619,625,630,643-651,665
+  s_0c9810ca6cf0aa::t_935c004cbd1974 21,430-432,435,438-440
+  s_0c9810ca6cf0aa::t_a9624b7005e90f 9,235
+  s_0c9810ca6cf0aa::t_b5387c4908280c 184,195,209,222,229
+  s_0c9810ca6cf0aa::t_b0072bdfa9c16a 200-204
+  s_0c9810ca6cf0aa::t_c958de0685bd2c 23,485-496,498
+  s_0c9810ca6cf0aa::t_7df4bca66cd2ca 119-120
+packages/tui/src/runtime.test.ts
+  s_0c9810ca6cf0aa::t_8feec36e341bbb 75-90
+packages/tui/src/palette.ts
+  s_0c9810ca6cf0aa::t_4aad0a68f7c5e2 49,54
+packages/tui/src/theme.ts
+  s_0c9810ca6cf0aa::t_d4dcddbe431d2a 18-27
+packages/tui/src/stream-buffer.ts
+  s_0c9810ca6cf0aa::t_935c004cbd1974 1-39
+packages/tui/src/components/MessageQueue.tsx
+  s_0c9810ca6cf0aa::t_d4dcddbe431d2a 3,10-11
+  s_0c9810ca6cf0aa::t_8feec36e341bbb 31
+packages/tui/src/components/ProgressLine.tsx
+  s_0c9810ca6cf0aa::t_935c004cbd1974 1
+  s_0c9810ca6cf0aa::t_d4dcddbe431d2a 4,14-15,18
+packages/tui/src/resources.test.ts
+  s_0c9810ca6cf0aa::t_c958de0685bd2c 49-62
+packages/tui/src/model-discovery.ts
+  s_0c9810ca6cf0aa::t_ada6f60e246c51 33-34
+  s_0c9810ca6cf0aa::t_0ed1c89ac7c8f6 1-32,35-84
+packages/tui/src/main.tsx
+  s_0c9810ca6cf0aa::t_1ee6ce5d8c8cc5 9,38,40-41,66
+packages/tui/src/runtime.ts
+  s_0c9810ca6cf0aa::t_8feec36e341bbb 153-161
+packages/tui/src/components/ModelWizard.tsx
+  s_0c9810ca6cf0aa::t_51cb7b847dbb8b 1-4,6-13,16-20,22-33,35-40
+  s_0c9810ca6cf0aa::t_d4dcddbe431d2a 5,14-15,21,34
+packages/tui/src/project-routing.test.ts
+  s_0c9810ca6cf0aa::t_cdd6ab33246ee2 28-36
+  s_0c9810ca6cf0aa::t_c958de0685bd2c 1-27,37-51
+packages/tui/src/model-config.test.ts
+  s_0c9810ca6cf0aa::t_2471669cf80c2b 66-73
+  s_0c9810ca6cf0aa::t_ca48f359cb138f 5-14,51-65,74-85
+  s_a5850225327266::t_045564aa8421c1 86-87
+packages/tui/src/components/Composer.tsx
+  s_0c9810ca6cf0aa::t_d87df55d43923f 7,175
+  s_0c9810ca6cf0aa::t_0011ae03d8983e 81-82
+  s_0c9810ca6cf0aa::t_25533a52f9886f 174
+  s_0c9810ca6cf0aa::t_cee4995def98c4 30
+  s_0c9810ca6cf0aa::t_f274a30aff794a 39,90-93,98-101,106,112,176-178,180-186,195-197,208,218
+packages/tui/src/model-discovery.test.ts
+  s_0c9810ca6cf0aa::t_be4795ffe94797 40-51
+  s_0c9810ca6cf0aa::t_ca48f359cb138f 1-39,52-53
+packages/tui/src/resources.ts
+  s_0c9810ca6cf0aa::t_4aad0a68f7c5e2 19-20,40-65,67-73,76,93-95,124-129,142-146
+packages/tui/src/components/Transcript.tsx
+  s_0c9810ca6cf0aa::t_d4dcddbe431d2a 4,14,17,20,23,28,36
+packages/tui/src/stream-buffer.test.ts
+  s_0c9810ca6cf0aa::t_935c004cbd1974 1-42
+packages/tui/src/model-wizard.ts
+  s_0c9810ca6cf0aa::t_51cb7b847dbb8b 1-21
+docs/superpowers/plans/2026-08-28-tui-steer-project-routing-and-rendering.md
+  s_0c9810ca6cf0aa::t_79944848e08c36 36,51,55,59,77,90,94,98,102,121,125,129,133,146,150,168,177,181,195,199,203,209
+  s_0c9810ca6cf0aa::t_3020feb0d54795 1-35,37-50,52-54,56-58,60-76,78-89,91-93,95-97,99-101,103-120,122-124,126-128,130-132,134-145,147-149,151-167,169-176,178-180,182-194,196-198,200-202,204-208,210-226
+packages/tui/src/project-routing.ts
+  s_0c9810ca6cf0aa::t_cdd6ab33246ee2 29-41,52-53
+  s_0c9810ca6cf0aa::t_4aad0a68f7c5e2 1-28,42-51,54-81
+packages/tui/src/model-wizard.test.ts
+  s_0c9810ca6cf0aa::t_ca48f359cb138f 1-10
+packages/tui/src/commands.ts
+  s_0c9810ca6cf0aa::t_8feec36e341bbb 19
+packages/tui/src/App.test.tsx
+  s_0c9810ca6cf0aa::t_87f94fc7133184 39,50-53,55,209-227,229
+  s_0c9810ca6cf0aa::t_f9ce16061e5049 355
+  s_0c9810ca6cf0aa::t_7481bcf70210fc 17-21
+  s_0c9810ca6cf0aa::t_ca48f359cb138f 268-270,273-280,292-316,321-332
+  s_0c9810ca6cf0aa::t_35fbfe3ec5a401 38,48,92-124
+  s_0c9810ca6cf0aa::t_3a72e3ada61557 271-272,281-291,317-320
+  s_0c9810ca6cf0aa::t_fef7f62509583a 2,85,91,125,127-178,228,230,333,352,354,394,399,404,409,414,430
+  s_0c9810ca6cf0aa::t_f42902c140fb7f 204
+  s_0c9810ca6cf0aa::t_3e5c81f440a52b 126
+  s_0c9810ca6cf0aa::t_923aeeea87e27f 231
+  s_0c9810ca6cf0aa::t_899a3a36972e0f 334
+docs/superpowers/plans/2026-08-28-tui-live-progress-and-latency.md
+  s_0c9810ca6cf0aa::t_a940cd65512bc3 1-34,36-40,42-55,57-74,76-95,97-102,104-118,120-122,124-144,146-160,162-164,166-176,178-186,188-196,198-202,204-207,209-213
+  s_0c9810ca6cf0aa::t_48dc479b3b458a 96,208
+  s_0c9810ca6cf0aa::t_89bd186ffd6426 35,41,56,75,103,119,123,145,161,165,177,187,197,203,214-215
+docs/superpowers/plans/2026-08-28-tui-model-configuration-wizard.md
+  s_0c9810ca6cf0aa::t_d5c87ce575ad29 1-30,32-34,36-38,40-42,44-55,57-59,61-63,65-67,69-86,88-90,92-94,96-98,100-102,104-117,119-121,123-125,127-131,133-136
+  s_0c9810ca6cf0aa::t_79944848e08c36 31,35,39,43,56,60,64,68,87,91,95,99,103,118,122,126,132
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "1e2f8b05b5f83ea83ddce14767335601e5918c27",
+  "prompts": {},
+  "sessions": {
+    "s_0c9810ca6cf0aa": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0467f-4946-7e63-a50b-da3a8638b430",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_a5850225327266": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a04368-2bec-7bf3-bbb0-400f99b25f41",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
