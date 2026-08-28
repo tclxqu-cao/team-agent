@@ -167,8 +167,100 @@ export class SQLiteDatabase {
         updated TEXT NOT NULL
       );
 
+      CREATE TABLE IF NOT EXISTS users (
+        id TEXT PRIMARY KEY,
+        username_normalized TEXT UNIQUE NOT NULL,
+        username_display TEXT NOT NULL,
+        password_hash BLOB NOT NULL,
+        password_salt BLOB NOT NULL,
+        password_version INTEGER NOT NULL,
+        created_at TEXT NOT NULL,
+        password_changed_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS auth_sessions (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        token_hash BLOB UNIQUE NOT NULL,
+        csrf_hash BLOB NOT NULL,
+        ws_nonce_hash BLOB,
+        ws_nonce_expires_at TEXT,
+        device_id TEXT NOT NULL,
+        device_name TEXT,
+        user_agent TEXT,
+        created_at TEXT NOT NULL,
+        last_seen_at TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        revoked_at TEXT
+      );
+
+      CREATE TABLE IF NOT EXISTS login_attempts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        username_normalized TEXT NOT NULL,
+        ip TEXT NOT NULL,
+        attempted_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS terminal_tabs (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        title TEXT NOT NULL,
+        shell TEXT NOT NULL,
+        start_cwd TEXT NOT NULL,
+        current_cwd TEXT NOT NULL,
+        status TEXT NOT NULL,
+        sort_order INTEGER NOT NULL,
+        created_at TEXT NOT NULL,
+        last_active_at TEXT NOT NULL,
+        exited_at TEXT,
+        closed_at TEXT
+      );
+
+      CREATE TABLE IF NOT EXISTS user_preferences (
+        user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+        revision INTEGER NOT NULL DEFAULT 1,
+        theme TEXT NOT NULL DEFAULT 'dark',
+        terminal_font_size INTEGER NOT NULL DEFAULT 11,
+        file_button_position_json TEXT NOT NULL DEFAULT '{"xRatio":0.94,"yRatio":0.65,"anchor":"right"}',
+        keybar_position_json TEXT NOT NULL DEFAULT '{"xRatio":0.5,"yRatio":0.95,"anchor":"bottom"}',
+        keybar_hidden INTEGER NOT NULL DEFAULT 0,
+        key_order_json TEXT NOT NULL DEFAULT '[]',
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS device_states (
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        device_id TEXT NOT NULL,
+        active_terminal_id TEXT,
+        drawer_open INTEGER NOT NULL DEFAULT 0,
+        drawer_tab TEXT NOT NULL DEFAULT 'files',
+        file_tree_root TEXT,
+        file_tree_follow_mode INTEGER NOT NULL DEFAULT 1,
+        expanded_paths_json TEXT NOT NULL DEFAULT '[]',
+        selected_file TEXT,
+        terminal_scroll_json TEXT NOT NULL DEFAULT '{}',
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (user_id, device_id)
+      );
+
+      CREATE TABLE IF NOT EXISTS command_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        terminal_id TEXT NOT NULL,
+        command TEXT NOT NULL,
+        command_normalized TEXT NOT NULL,
+        cwd TEXT NOT NULL,
+        executed_at TEXT NOT NULL
+      );
+
       CREATE INDEX IF NOT EXISTS idx_remote_tools_project ON remote_tools(project_id);
       CREATE INDEX IF NOT EXISTS idx_remote_jobs_project ON remote_tool_jobs(project_id);
+      CREATE INDEX IF NOT EXISTS idx_auth_sessions_user ON auth_sessions(user_id);
+      CREATE INDEX IF NOT EXISTS idx_login_attempts_lookup
+        ON login_attempts(username_normalized, ip, attempted_at);
+      CREATE INDEX IF NOT EXISTS idx_terminal_tabs_user_order ON terminal_tabs(user_id, sort_order);
+      CREATE INDEX IF NOT EXISTS idx_command_history_user_time ON command_history(user_id, executed_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_command_history_terminal_time ON command_history(user_id, terminal_id, executed_at DESC);
     `);
 
     // Migration: make sessions.project_id nullable (remove NOT NULL + FK constraint)

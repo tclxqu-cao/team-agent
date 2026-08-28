@@ -1,0 +1,4 @@
+import { NextResponse } from "next/server";
+import { authErrorResponse, requireAuthenticated, requireCsrf, webConsoleStore } from "../../../../lib/web-auth/http";
+export async function GET(request:Request){try{const auth=requireAuthenticated(request);const url=new URL(request.url);return NextResponse.json({history:webConsoleStore.listHistory(auth.principal.userId,url.searchParams.get("q")||"",Math.min(200,Number(url.searchParams.get("limit")||100)),url.searchParams.get("terminalId")||undefined)});}catch(error){return authErrorResponse(error);}}
+export async function DELETE(request:Request){try{const auth=requireCsrf(request);const body=await request.json();if(body.id)webConsoleStore.deleteHistory(auth.principal.userId,Number(body.id));else webConsoleStore.clearHistory(auth.principal.userId,body.terminalId||undefined);return new NextResponse(null,{status:204});}catch(error){return authErrorResponse(error);}}

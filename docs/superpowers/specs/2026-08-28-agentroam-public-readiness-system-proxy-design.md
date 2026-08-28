@@ -55,6 +55,7 @@ Keep the existing injectable `fetchImpl` test seam. When a custom fetch is provi
 
 For the default path:
 
+- let the Cloudflare provider wait for both the allocated Quick Tunnel URL and the `Registered tunnel connection` event before starting public readiness, avoiding an early proxy/DNS request before the route exists;
 - resolve the proxy once per `waitForPublicReadiness` invocation;
 - use the existing global fetch when no proxy applies;
 - otherwise create one `undici.ProxyAgent`, call `undici.fetch` with that dispatcher for all retries, and close the dispatcher in `finally`;
@@ -89,6 +90,8 @@ Extend readiness tests to prove:
 - the default proxy-aware fetch uses one dispatcher across retries;
 - the dispatcher closes after success, timeout, fatal payload, and abort;
 - no dispatcher is created when proxy resolution returns no proxy.
+
+Add Cloudflare provider ordering tests proving that URL allocation alone does not start readiness and that URL-first or registration-first output both resolve after the two states are present.
 
 Run the focused CLI tunnel tests, CLI TypeScript build, full CLI test suite, and package audit. Perform a real startup with Clash system proxy enabled and TUN disabled; Cloudflare should remain selected after readiness instead of being terminated in favor of Pinggy.
 

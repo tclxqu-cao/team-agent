@@ -7,12 +7,12 @@
 //   binary frames        → raw PTY bytes for the focused terminal
 //   text frames (JSON)   → control protocol ({type, ...} / {type:"...:result", id})
 //
-// Auth: token required on /ws upgrade (?token=...). Set AGENT_WEB_TOKEN to
-// pin it; otherwise a random token is generated and printed at boot.
+// Auth: HttpOnly account session cookie + one-time WebSocket nonce.
 //
 // Env:
 //   PORT              HTTP/WS port           (default 3000)
-//   AGENT_WEB_TOKEN   fixed access token     (default: random per boot)
+//   AGENT_DATA_DIR    stable base directory for .agent-data/agent.db
+//   AGENT_WEB_ALLOWED_ORIGINS comma-separated extra browser origins
 //   AGENT_WEB_ROOTS   ":"-separated dirs the file APIs may touch (default: $HOME)
 
 import { createServer } from "node:http";
@@ -25,14 +25,18 @@ import next from "next";
 import { WebSocketServer } from "ws";
 import pty from "node-pty";
 import chokidar from "chokidar";
+import { SQLiteAuthStore, SQLiteWebConsoleStore, WebAuthService } from "@agent/core";
 
 const dev = process.env.NODE_ENV !== "production";
 const port = Number(process.env.PORT || 3000);
 const dir = path.dirname(new URL(import.meta.url).pathname);
 
-const token = process.env.AGENT_WEB_TOKEN || randomBytes(16).toString("hex");
+const serverBaseDir = path.resolve(process.env.AGENT_DATA_DIR?.trim() || dir);
+const webAuth = new WebAuthService(new SQLiteAuthStore(serverBaseDir));
+const consoleStore = new SQLiteWebConsoleStore(serverBaseDir);
+consoleStore.markStaleTerminalsExited(new Date().toISOString());
 const roots = (process.env.AGENT_WEB_ROOTS || os.homedir())
-  .split(":")
+  .split(path.delimiter)
   .map((p) => path.resolve(p.trim()))
   .filter(Boolean);
 
@@ -159,18 +163,19 @@ const execFileAsync = (cmd, args, opts) =>
   });
 
 /**
- * @typedef {{id:string, pid:number, cwd:string|null, pty:import('node-pty').IPty, scrollback:Scrollback,
+ * @typedef {{id:string, userId:string, pid:number, cwd:string|null, pty:import('node-pty').IPty, scrollback:Scrollback,
  *            size:{cols:number,rows:number}, watchers:Set<(b:Uint8Array)=>void>,
- *            exited:boolean, cwdWatchers:Set<(cwd:string)=>void>}} TerminalSession
+ *            exited:boolean, closed:boolean, cwdWatchers:Set<(cwd:string)=>void>, inputOwner:string|null, oscTail:string}} TerminalSession
  */
 
 /** @returns {TerminalSession} */
-function startTerminal(id, { cols = 80, rows = 24, cwd, command } = {}) {
+function startTerminal(id, { userId, cols = 80, rows = 24, cwd, command } = {}) {
   const existing = terminals.get(id);
   if (existing && !existing.exited) return existing;
 
-  const shell = process.env.SHELL || "/bin/zsh";
-  const args = command ? ["-l", "-c", command] : ["-l"];
+  const shell = process.env.SHELL || (process.platform==="win32"?(process.env.COMSPEC||"powershell.exe"):"/bin/zsh");
+  const powershell=/powershell|pwsh/i.test(shell);
+  const args = command ? (powershell?["-NoLogo","-Command",command]:["-l","-c",command]) : (powershell?["-NoLogo"]:["-l"]);
   const p = pty.spawn(shell, args, {
     name: "xterm-256color",
     cols: clampInt(cols, 2, 500, 80),
@@ -182,6 +187,7 @@ function startTerminal(id, { cols = 80, rows = 24, cwd, command } = {}) {
   /** @type {TerminalSession} */
   const session = {
     id,
+    userId,
     pid: p.pid,
     cwd: null,
     pty: p,
@@ -189,16 +195,21 @@ function startTerminal(id, { cols = 80, rows = 24, cwd, command } = {}) {
     size: { cols, rows },
     watchers: new Set(),
     cwdWatchers: new Set(),
+    inputOwner: null,
+    closed: false,
+    oscTail: "",
     exited: false,
   };
   watchTerminalCwd(session, (cwd2) => {
     session.cwd = cwd2;
+    consoleStore.updateTab(session.id, session.userId, { currentCwd: cwd2, lastActiveAt: new Date().toISOString() });
     for (const cb of [...session.cwdWatchers]) {
       try { cb(cwd2); } catch {}
     }
   });
 
   p.onData((data) => {
+    captureShellHistory(session, data);
     const copy = session.scrollback.append(data);
     for (const send of [...session.watchers]) {
       try { send(new Uint8Array(copy)); } catch {}
@@ -206,6 +217,7 @@ function startTerminal(id, { cols = 80, rows = 24, cwd, command } = {}) {
   });
   p.onExit(({ exitCode }) => {
     session.exited = true;
+    if (!session.closed) consoleStore.updateTab(session.id, session.userId, { status: "exited", exitedAt: new Date().toISOString(), lastActiveAt: new Date().toISOString() });
     for (const cb of [...session.cwdWatchers]) {
       try { cb(null); } catch {}
     }
@@ -226,25 +238,50 @@ function startTerminal(id, { cols = 80, rows = 24, cwd, command } = {}) {
   }, TERMINAL_IDLE_MS).unref?.();
 
   terminals.set(id, session);
+  if (shell.endsWith("zsh")) {
+    const hook = `autoload -Uz add-zsh-hook; function __ca_hist_preexec(){ local c=$(printf '%s' "$1"|base64|tr -d '\\n'); local d=$(printf '%s' "$PWD"|base64|tr -d '\\n'); printf '\\033]633;C;%s;%s\\007' "$c" "$d"; }; add-zsh-hook preexec __ca_hist_preexec; clear`;
+    setTimeout(() => { if (!session.exited) p.write(` ${hook}\r`); }, 350).unref?.();
+  }
+  if (powershell) {
+    const integration=`function global:prompt { $e=[char]27; $b=[char]7; Write-Host -NoNewline ($e + ']7;file:///' + ($PWD.Path -replace '\\\\','/') + $b); 'PS ' + $PWD.Path + '> ' }`;
+    setTimeout(()=>{if(!session.exited)p.write(`${integration}\r`);},350).unref?.();
+  }
   return session;
 }
 
+function captureShellHistory(session, data) {
+  const combined = session.oscTail + data;
+  const regex = /\x1b]633;C;([^;\x07]+);([^\x07]+)\x07/g;
+  let match;
+  let lastEnd = 0;
+  while ((match = regex.exec(combined))) {
+    lastEnd = regex.lastIndex;
+    try {
+      const command = Buffer.from(match[1], "base64").toString("utf8");
+      const cwd = Buffer.from(match[2], "base64").toString("utf8");
+      if (command.trim()) consoleStore.addHistory(session.userId, session.id, command, cwd, new Date().toISOString());
+    } catch {}
+  }
+  const lastEscape = combined.lastIndexOf("\x1b]");
+  session.oscTail = lastEscape >= lastEnd ? combined.slice(lastEscape).slice(-4096) : "";
+}
+
 // ── filesystem service (read-only V1) ───────────────────────────────────────
-function assertAllowed(absPath) {
+function assertAllowed(absPath, userId) {
   const resolved = path.resolve(absPath);
   // Static configured roots + current directories of active PTY sessions.
   // The user can already access these paths through the terminal; this keeps
   // the file manager aligned with terminal navigation without opening `/`
   // globally when the terminal still lives under $HOME.
-  const activeCwds = [...terminals.values()].map((s) => s.cwd).filter(Boolean);
+  const activeCwds = [...terminals.values()].filter((s) => s.userId === userId).map((s) => s.cwd).filter(Boolean);
   const allowedRoots = [...roots, ...activeCwds];
   const allowed = allowedRoots.some((root) => resolved === root || resolved.startsWith(root + path.sep));
   if (!allowed) throw Object.assign(new Error(`path outside allowed roots`), { code: "EPATH" });
   return resolved;
 }
 
-async function fsList(dirPath) {
-  const abs = assertAllowed(dirPath);
+async function fsList(dirPath, userId) {
+  const abs = assertAllowed(dirPath, userId);
   const dirents = await fsp.readdir(abs, { withFileTypes: true });
   const entries = [];
   for (const dent of dirents) {
@@ -276,8 +313,8 @@ function mimeFor(p) {
   return MIME_BY_EXT[ext] ?? "application/octet-stream";
 }
 
-async function fsRead(filePath, offset = 0, length = MAX_READ_CHUNK) {
-  const abs = assertAllowed(filePath);
+async function fsRead(filePath, offset = 0, length = MAX_READ_CHUNK, userId) {
+  const abs = assertAllowed(filePath, userId);
   const st = await fsp.stat(abs);
   if (!st.isFile()) throw Object.assign(new Error("not a regular file"), { code: "EISDIR" });
   const off = clampInt(offset, 0, st.size, 0);
@@ -344,7 +381,7 @@ function getSharedWatcher(abs) {
 }
 
 function watchPath(conn, target) {
-  const abs = assertAllowed(target);
+  const abs = assertAllowed(target, conn.principal.userId);
   if (!conn.watchers.has(abs)) {
     if (conn.watchers.size >= MAX_WATCHERS_PER_CONN) {
       throw Object.assign(new Error("watcher limit reached"), { code: "ELIMIT" });
@@ -383,7 +420,9 @@ const connections = new Set();
 
 function makeConn(ws) {
   return {
+    id: randomBytes(8).toString("hex"),
     ws,
+    principal: null,
     watchers: new Map(),
     /** terminal ids this connection forwards output for */
     attachedTo: new Set(),
@@ -393,9 +432,36 @@ function makeConn(ws) {
     forwards: new Map(),
     /** id → cwd forwarding fn registered into session.cwdWatchers */
     cwdForwards: new Map(),
+    nextChannelId: 1,
+    terminalToChannel: new Map(),
+    channelToTerminal: new Map(),
     sendJson(obj) { if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(obj)); },
-    sendBinary(bytes) { if (ws.readyState === ws.OPEN) ws.send(bytes); },
+    sendTerminal(terminalId, bytes) {
+      if (ws.readyState !== ws.OPEN) return;
+      const channelId = assignChannel(this, terminalId);
+      const payload = Buffer.from(bytes);
+      const frame = Buffer.allocUnsafe(6 + payload.byteLength);
+      frame[0] = 1; frame[1] = 2; frame.writeUInt32BE(channelId, 2); payload.copy(frame, 6);
+      ws.send(frame);
+    },
   };
+}
+
+function assignChannel(conn, terminalId) {
+  const existing = conn.terminalToChannel.get(terminalId);
+  if (existing) return existing;
+  const channelId = conn.nextChannelId++;
+  conn.terminalToChannel.set(terminalId, channelId);
+  conn.channelToTerminal.set(channelId, terminalId);
+  return channelId;
+}
+
+function requireOwnedTerminal(conn, id) {
+  const session = terminals.get(id);
+  if (!session || session.userId !== conn.principal?.userId) {
+    throw Object.assign(new Error("no such terminal"), { code: "ENOSESSION" });
+  }
+  return session;
 }
 
 function detachTerminal(conn, id) {
@@ -407,6 +473,9 @@ function detachTerminal(conn, id) {
   conn.forwards.delete(id);
   conn.cwdForwards.delete(id);
   conn.attachedTo.delete(id);
+  const channelId = conn.terminalToChannel.get(id);
+  if (channelId) conn.channelToTerminal.delete(channelId);
+  conn.terminalToChannel.delete(id);
   if (conn.focusId === id) conn.focusId = null;
 }
 
@@ -419,10 +488,20 @@ const requestHandlers = {
 
   "term:start": async (msg, conn) => {
     const id = msg.id || `t-${Date.now().toString(36)}${randomBytes(3).toString("hex")}`;
-    const session = startTerminal(id, msg);
+    if (terminals.has(id)) requireOwnedTerminal(conn, id);
+    const existingTabs = consoleStore.listTabs(conn.principal.userId);
+    const existingTab = existingTabs.find((tab) => tab.id === id);
+    const liveCount = existingTabs.filter((tab) => tab.status === "active" || tab.status === "detached").length;
+    if (!existingTab && liveCount >= 8) throw Object.assign(new Error("terminal limit reached"), { code: "ELIMIT" });
+    const session = startTerminal(id, { ...msg, userId: conn.principal.userId });
     detachTerminal(conn, id); // idempotent re-attach
 
-    const forward = (bytes) => conn.sendBinary(bytes);
+    const channelId = assignChannel(conn, id);
+    const now = new Date().toISOString();
+    if (!existingTab) consoleStore.createTab({ id, userId: conn.principal.userId, title: msg.title || `Terminal ${existingTabs.length + 1}`, shell: process.env.SHELL || "/bin/zsh", startCwd: msg.cwd || os.homedir(), currentCwd: msg.cwd || os.homedir(), status: "active", sortOrder: existingTabs.length, createdAt: now, lastActiveAt: now, exitedAt: null, closedAt: null });
+    else consoleStore.updateTab(id, conn.principal.userId, { status: "active", lastActiveAt: now, exitedAt: null, closedAt: null });
+
+    const forward = (bytes) => conn.sendTerminal(id, bytes);
     session.watchers.add(forward);
     conn.forwards.set(id, forward);
     conn.attachedTo.add(id);
@@ -437,7 +516,7 @@ const requestHandlers = {
 
     // replay scrollback to restore the screen after reconnect
     const snap = session.scrollback.snapshot();
-    if (snap.byteLength > 0) setImmediate(() => conn.sendBinary(new Uint8Array(snap)));
+    if (snap.byteLength > 0) setImmediate(() => conn.sendTerminal(id, new Uint8Array(snap)));
 
     // best-effort immediate cwd (shell may not have cd'd yet → home)
     let currentCwd = null;
@@ -445,34 +524,54 @@ const requestHandlers = {
       currentCwd = await readProcessCwd(session.pid);
       session.cwd = currentCwd;
     } catch {}
-    return { sessionId: id, cols: session.size.cols, rows: session.size.rows, cwd: currentCwd };
+    return { sessionId: id, channelId, cols: session.size.cols, rows: session.size.rows, cwd: currentCwd };
   },
 
-  "term:cwd": async (msg) => {
-    const session = terminals.get(msg.id || "") ;
-    if (!session) throw Object.assign(new Error("no such terminal"), { code: "ENOSESSION" });
+  "term:list": async (_msg, conn) => ({ tabs: consoleStore.listTabs(conn.principal.userId) }),
+
+  "term:rename": async (msg, conn) => {
+    requireOwnedTerminal(conn, msg.id);
+    consoleStore.updateTab(msg.id, conn.principal.userId, { title: String(msg.title || "Terminal").slice(0, 80), lastActiveAt: new Date().toISOString() });
+    return { id: msg.id, title: String(msg.title || "Terminal").slice(0, 80) };
+  },
+
+  "term:reorder": async (msg, conn) => {
+    const ids = Array.isArray(msg.ids) ? msg.ids : [];
+    ids.forEach((id, index) => { requireOwnedTerminal(conn, id); consoleStore.updateTab(id, conn.principal.userId, { sortOrder: index }); });
+    return { ids };
+  },
+
+  "term:cwd": async (msg, conn) => {
+    const session = requireOwnedTerminal(conn, msg.id || "");
     const cwd = await readProcessCwd(session.pid);
     return { cwd };
   },
 
+  "term:set-cwd": async (msg, conn) => { const session=requireOwnedTerminal(conn,msg.id||conn.focusId||"");const cwd=String(msg.cwd||"");if(!cwd)throw Object.assign(new Error("invalid cwd"),{code:"EINVAL"});session.cwd=cwd;consoleStore.updateTab(session.id,session.userId,{currentCwd:cwd,lastActiveAt:new Date().toISOString()});return{cwd}; },
+
   "term:focus": async (msg, conn) => {
-    if (!terminals.has(msg.id)) throw Object.assign(new Error("no such terminal"), { code: "ENOSESSION" });
+    const session = requireOwnedTerminal(conn, msg.id);
+    if (session.inputOwner && session.inputOwner !== conn.id && !msg.force) throw Object.assign(new Error("terminal input owned by another device"), { code: "EWRITELOCK" });
+    session.inputOwner = conn.id;
     conn.focusId = msg.id;
-    return { focusId: msg.id };
+    return { focusId: msg.id, writeOwner: conn.id };
   },
+
+  "term:request-write": async (msg, conn) => { const session = requireOwnedTerminal(conn, msg.id); session.inputOwner = conn.id; conn.focusId = msg.id; return { focusId: msg.id, writeOwner: conn.id }; },
 
   "term:input": async (msg, conn) => {
     const id = msg.id || conn.focusId;
-    const session = id && terminals.get(id);
-    if (!session) throw Object.assign(new Error("no such terminal"), { code: "ENOSESSION" });
+    const session = requireOwnedTerminal(conn, id || "");
+    if (session.inputOwner && session.inputOwner !== conn.id) throw Object.assign(new Error("terminal is read-only"), { code: "EWRITELOCK" });
+    session.inputOwner = conn.id;
     session.pty.write(String(msg.data ?? ""));
     return null;
   },
 
   "term:resize": async (msg, conn) => {
     const id = msg.id || conn.focusId;
-    const session = id && terminals.get(id);
-    if (!session) return null;
+    if (!id) return null;
+    const session = requireOwnedTerminal(conn, id);
     const cols = clampInt(msg.cols, 2, 500, session.size.cols);
     const rows = clampInt(msg.rows, 2, 300, session.size.rows);
     session.size = { cols, rows };
@@ -481,23 +580,26 @@ const requestHandlers = {
   },
 
   "term:detach": async (msg, conn) => {
-    detachTerminal(conn, msg.id || conn.focusId);
+    const id = msg.id || conn.focusId;
+    if (id) { requireOwnedTerminal(conn, id); detachTerminal(conn, id); }
     return null;
   },
 
   "term:kill": async (msg, conn) => {
     const id = msg.id || conn.focusId;
-    const session = id && terminals.get(id);
-    if (!session) return null;
+    if (!id) return null;
+    const session = requireOwnedTerminal(conn, id);
+    session.closed = true;
     try { session.pty.kill(); } catch {}
+    consoleStore.updateTab(id, conn.principal.userId, { status: "closed", closedAt: new Date().toISOString(), lastActiveAt: new Date().toISOString() });
     detachTerminal(conn, id);
     return null;
   },
 
-  "fs:list": async (msg) => ({ entries: await fsList(msg.path) }),
-  "fs:read": async (msg) => await fsRead(msg.path, msg.offset ?? 0, msg.length),
-  "fs:stat": async (msg) => {
-    const st = await fsp.stat(assertAllowed(msg.path));
+  "fs:list": async (msg, conn) => ({ entries: await fsList(msg.path, conn.principal.userId) }),
+  "fs:read": async (msg, conn) => await fsRead(msg.path, msg.offset ?? 0, msg.length, conn.principal.userId),
+  "fs:stat": async (msg, conn) => {
+    const st = await fsp.stat(assertAllowed(msg.path, conn.principal.userId));
     return { size: st.size, mtime: st.mtimeMs, dir: st.isDirectory() };
   },
   "fs:watch": async (msg, conn) => watchPath(conn, msg.path),
@@ -505,15 +607,15 @@ const requestHandlers = {
 
   "fs:download": async (msg, conn) => {
     // small-file download convenience (≤1 MiB) as base64 data URL payload
-    const result = await fsRead(msg.path, 0, 1024 * 1024);
+    const result = await fsRead(msg.path, 0, 1024 * 1024, conn.principal.userId);
     return result;
   },
 
-  "fs:dataurl": async (msg) => {
+  "fs:dataurl": async (msg, conn) => {
     // rich media (image/video/audio/pdf): whole file as a data URL for
     // native browser rendering. Cap at 16 MiB — bigger videos won't fit
     // a WS frame comfortably.
-    const abs = assertAllowed(msg.path);
+    const abs = assertAllowed(msg.path, conn.principal.userId);
     const st = await fsp.stat(abs);
     if (!st.isFile()) throw Object.assign(new Error("not a regular file"), { code: "EISDIR" });
     if (st.size > 16 * 1024 * 1024) {
@@ -554,6 +656,7 @@ async function handleMessage(conn, raw) {
   } catch (err) {
     conn.sendJson({
       type: "error",
+      id: msg._req,
       error: err.message,
       code: err.code,
       inReplyTo: `${msg.type}:result`,
@@ -567,59 +670,59 @@ const handle = app.getRequestHandler();
 
 await app.prepare();
 
-const AUTH_TIMEOUT_MS = 10_000;
-
 const server = createServer((req, res) => handle(req, res));
 const wss = new WebSocketServer({ noServer: true, maxPayload: 1024 * 1024 });
+
+function cookieValue(header, name) {
+  for (const part of String(header || "").split(";")) {
+    const index = part.indexOf("=");
+    if (index > 0 && part.slice(0, index).trim() === name) return decodeURIComponent(part.slice(index + 1).trim());
+  }
+  return null;
+}
+
+function originAllowed(req) {
+  const origin = req.headers.origin;
+  if (!origin) return false;
+  const trustedProxy=process.env.AGENT_TRUST_TUNNEL_PROXY==="1";
+  const proto=trustedProxy&&req.headers["x-forwarded-proto"]?String(req.headers["x-forwarded-proto"]).split(",")[0].trim():(req.socket.encrypted?"https":"http");
+  const host=trustedProxy&&(req.headers["x-forwarded-host"]||req.headers.host)?String(req.headers["x-forwarded-host"]||req.headers.host).split(",")[0].trim():req.headers.host;
+  const expected = `${proto}://${host}`;
+  const extra = (process.env.AGENT_WEB_ALLOWED_ORIGINS || "").split(",").map((value) => value.trim()).filter(Boolean);
+  return origin === expected || extra.includes(origin);
+}
 
 server.on("upgrade", (req, socket, head) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
   if (url.pathname !== "/ws") return; // leave HMR etc. to Next's own listeners
-  wss.handleUpgrade(req, socket, head, (ws) =>
-    wss.emit("connection", ws, req, url.searchParams.get("token")),
-  );
+  if (!originAllowed(req)) { socket.write("HTTP/1.1 403 Forbidden\r\n\r\n"); socket.destroy(); return; }
+  const rawToken = cookieValue(req.headers.cookie, "customer_agent_session");
+  const nonce = url.searchParams.get("nonce") || "";
+  let principal;
+  try { principal = webAuth.consumeWsNonce(rawToken || "", nonce); }
+  catch (error) {
+    wss.handleUpgrade(req, socket, head, (ws) => ws.close(error?.code === "UNAUTHENTICATED" ? 4001 : 4003, "authentication failed"));
+    return;
+  }
+  wss.handleUpgrade(req, socket, head, (ws) => wss.emit("connection", ws, req, principal));
 });
 
-wss.on("connection", (ws, _req, queryToken) => {
+wss.on("connection", (ws, _req, principal) => {
   const conn = makeConn(ws);
-  // Auth model: handshake accepts ANY connection; identity is established by
-  // the first {type:"auth"} message (or a matching ?token= for legacy clients).
-  // Wrong credentials → structured error + close code 4001, which browser JS
-  // CAN observe (unlike HTTP 401 during handshake, which looks like a generic
-  // network failure and made the token gate unreachable).
-  let authenticated = queryToken === token;
+  conn.principal = principal;
   connections.add(conn);
-
-  const killUnauthenticated = () => {
-    try { ws.close(4001, "invalid token"); } catch {}
-  };
-
-  if (!authenticated) {
-    conn.sendJson({ type: "auth:required", hint: "send {type:'auth', token}" });
-    setTimeout(() => {
-      if (!authenticated && ws.readyState === ws.OPEN) killUnauthenticated();
-    }, AUTH_TIMEOUT_MS).unref?.();
-  } else {
-    conn.sendJson({ type: "auth:result", ok: true });
-  }
+  conn.sendJson({ type: "connection:hello", userId: principal.userId, deviceId: principal.deviceId });
 
   ws.on("message", (data, isBinary) => {
-    if (!authenticated) {
-      if (isBinary) return killUnauthenticated();
-      let probe;
-      try { probe = JSON.parse(data.toString("utf8")); } catch { return killUnauthenticated(); }
-      if (probe?.type !== "auth" || probe.token !== token) {
-        conn.sendJson({ type: "error", error: "invalid token", code: "EAUTH" });
-        return killUnauthenticated();
-      }
-      authenticated = true;
-      conn.sendJson({ type: "auth:result", ok: true });
-      return;
-    }
-
     if (isBinary) {
-      const session = conn.focusId && terminals.get(conn.focusId);
-      if (session) session.pty.write(Buffer.from(data).toString("utf8"));
+      const frame = Buffer.from(data);
+      if (frame.byteLength < 6 || frame[0] !== 1 || frame[1] !== 1) return;
+      const terminalId = conn.channelToTerminal.get(frame.readUInt32BE(2));
+      if (!terminalId) return;
+      const session = requireOwnedTerminal(conn, terminalId);
+      if (session.inputOwner && session.inputOwner !== conn.id) return;
+      session.inputOwner = conn.id;
+      session.pty.write(frame.subarray(6).toString("utf8"));
       return;
     }
     handleMessage(conn, data).catch((err) => conn.sendJson({ type: "error", error: err.message }));
@@ -627,7 +730,12 @@ wss.on("connection", (ws, _req, queryToken) => {
 
   ws.on("close", () => {
     connections.delete(conn);
-    for (const id of [...conn.attachedTo]) detachTerminal(conn, id);
+    for (const id of [...conn.attachedTo]) {
+      const session = terminals.get(id);
+      detachTerminal(conn, id);
+      if (session?.inputOwner === conn.id) session.inputOwner = null;
+      if (session && session.watchers.size === 0 && !session.exited) consoleStore.updateTab(id, session.userId, { status: "detached", lastActiveAt: new Date().toISOString() });
+    }
     for (const [, rec] of conn.watchers) {
       try { rec.watcher.removeListener("all", rec.onAll); } catch {}
     }
@@ -642,9 +750,9 @@ server.listen(port, () => {
       if (net.family === "IPv4" && !net.internal) urls.push(`http://${net.address}:${port}/web`);
     }
   }
-  console.log(`▲ customer-agent web gateway`);
+  console.log(`▲ AgentRoam web gateway`);
   console.log(`   local    http://localhost:${port}/web`);
   for (const u of urls) console.log(`   network  ${u}`);
-  console.log(`   token    ${token}${process.env.AGENT_WEB_TOKEN ? " (AGENT_WEB_TOKEN)" : " (ephemeral — pin via AGENT_WEB_TOKEN)"}`);
+  console.log(`   auth     account login (first visit creates admin)`);
   console.log(`   roots    ${roots.join(" : ")}`);
 });

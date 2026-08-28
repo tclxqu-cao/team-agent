@@ -1,5 +1,5 @@
 export const metadata = {
-  title: "Customer Agent - API",
+  title: "AgentRoam",
   description: "General-purpose AI agent API server",
 };
 

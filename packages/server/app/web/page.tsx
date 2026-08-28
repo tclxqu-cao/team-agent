@@ -4,73 +4,211 @@
 // - ≥900px: [terminal | tree | preview(only when open)] with resizable tree
 
 import dynamic from "next/dynamic";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useGateway } from "./useGateway";
+import AuthGate, { type WebAuthController } from "./AuthGate";
+import HistoryPanel from "./HistoryPanel";
+import ThemePicker from "./ThemePicker";
+import { resetHorizontalScroll, resolveVisualViewport } from "./mobileViewport";
+import { DEFAULT_THEME_ID, resolveWebTheme, type WebThemeId } from "./themes";
 
 const TerminalPane = dynamic(() => import("./TerminalPane"), { ssr: false });
 const FileTree = dynamic(() => import("./FileTree"), { ssr: false });
 const FilePreview = dynamic(() => import("./FilePreview"), { ssr: false });
 
 export default function WebConsolePage() {
-  const binSinkRef = useRef<((data: Uint8Array) => void) | null>(null);
-  const { state, epoch, rpc, onEvent, setTokenAndReconnect } = useGateway(
-    useCallback((data) => binSinkRef.current?.(data), []),
-  );
+  return <AuthGate>{(auth) => <AuthenticatedConsole auth={auth} />}</AuthGate>;
+}
+
+function AuthenticatedConsole({ auth }: { auth: WebAuthController }) {
+  const { state, epoch, rpc, onEvent, onTerminalData, sendTerminalInput } = useGateway(() => {}, auth.getWsNonce, auth.refresh);
+  const [tabs, setTabs] = useState<Array<{ id: string; title: string }>>([]);
+  const [activeTerminalId, setActiveTerminalId] = useState<string | null>(null);
+  const [cwdByTerminal, setCwdByTerminal] = useState<Record<string, string>>({});
+  const tabsHydrated = useRef(false);
+  const restoredActiveId = useRef<string|null>(null);
+  const fillByTerminal = useRef(new Map<string, (command: string) => void>());
+  const registerTerminalFill = useCallback((id: string, fill: (command: string) => void) => {
+    fillByTerminal.current.set(id, fill);
+    return () => fillByTerminal.current.delete(id);
+  }, []);
+  const fillActiveCommand = useCallback((command: string) => {
+    if (!activeTerminalId) return;
+    const fill = fillByTerminal.current.get(activeTerminalId);
+    if (fill) fill(command);
+    else rpc("term:input", { id: activeTerminalId, data: `\x15${command}` }).catch(() => {});
+    setDrawerOpen(false);
+  }, [activeTerminalId, rpc]);
+  const [deviceStateLoaded, setDeviceStateLoaded] = useState(false);
+  const [terminalScroll, setTerminalScroll] = useState<Record<string, number>>({});
   const [previewPath, setPreviewPath] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [tokenInput, setTokenInput] = useState("");
-  const [cwdHint, setCwdHint] = useState<string | null>(null);
+  const [drawerTab, setDrawerTab] = useState<"files"|"history">("files");
+  const [fileTreeRoot,setFileTreeRoot]=useState<string|null>(null);
+  const [fileTreeFollow,setFileTreeFollow]=useState(true);
+  const [fileButtonPosition,setFileButtonPosition]=useState({xRatio:.94,yRatio:.65,anchor:"right"});
+  const [keybarHidden,setKeybarHidden]=useState(false);
+  const [keyOrder,setKeyOrder]=useState<string[]>([]);
+  const [themeId,setThemeId]=useState<WebThemeId>(DEFAULT_THEME_ID);
+  const [preferencesLoaded,setPreferencesLoaded]=useState(false);
+  const activeTheme = resolveWebTheme(themeId);
+  const fileDrag=useRef<{moved:boolean}|null>(null);
+  const swipeStart = useRef<{ x: number; y: number; axis: "pending"|"horizontal"|"vertical" } | null>(null);
+  const [swipeDelta,setSwipeDelta]=useState(0);
+  const [swiping,setSwiping]=useState(false);
+  const draggedTab = useRef<string | null>(null);
+  const tabBarRef = useRef<HTMLDivElement>(null);
+  const prevTabCount = useRef(0);
+  const cwdHint = activeTerminalId ? cwdByTerminal[activeTerminalId] ?? null : null;
+
+  useEffect(() => {
+    const vv = window.visualViewport;
+    const syncViewport = () => {
+      const viewport = resolveVisualViewport(vv, {
+        height: window.innerHeight,
+        width: window.innerWidth,
+      });
+      document.documentElement.style.setProperty("--vv-height", `${viewport.height}px`);
+      document.documentElement.style.setProperty("--vv-width", `${viewport.width}px`);
+      document.documentElement.style.setProperty("--vv-top", `${viewport.top}px`);
+      document.documentElement.style.setProperty("--vv-left", `${viewport.left}px`);
+    };
+    syncViewport();
+    vv?.addEventListener("resize", syncViewport);
+    vv?.addEventListener("scroll", syncViewport);
+    window.addEventListener("orientationchange", syncViewport);
+    window.addEventListener("resize", syncViewport);
+    return () => {
+      vv?.removeEventListener("resize", syncViewport);
+      vv?.removeEventListener("scroll", syncViewport);
+      window.removeEventListener("orientationchange", syncViewport);
+      window.removeEventListener("resize", syncViewport);
+      document.documentElement.style.removeProperty("--vv-height");
+      document.documentElement.style.removeProperty("--vv-width");
+      document.documentElement.style.removeProperty("--vv-top");
+      document.documentElement.style.removeProperty("--vv-left");
+    };
+  }, []);
+
+  useEffect(()=>{fetch("/api/web-console/preferences",{credentials:"same-origin"}).then(r=>r.json()).then(body=>{if(body.preferences?.fileButtonPosition)setFileButtonPosition(body.preferences.fileButtonPosition);if(typeof body.preferences?.keybarHidden==="boolean")setKeybarHidden(body.preferences.keybarHidden);if(Array.isArray(body.preferences?.keyOrder))setKeyOrder(body.preferences.keyOrder);if(body.preferences?.theme)setThemeId(resolveWebTheme(body.preferences.theme).id);}).catch(()=>{}).finally(()=>setPreferencesLoaded(true));fetch("/api/web-console/device-state",{credentials:"same-origin"}).then(r=>r.json()).then(body=>{const state=body.deviceState;if(state?.drawerTab)setDrawerTab(state.drawerTab);if(state?.activeTerminalId)restoredActiveId.current=state.activeTerminalId;if(typeof state?.drawerOpen==="boolean")setDrawerOpen(state.drawerOpen);if(state?.fileTreeRoot)setFileTreeRoot(state.fileTreeRoot);if(typeof state?.fileTreeFollowMode==="boolean")setFileTreeFollow(state.fileTreeFollowMode);if(state?.selectedFile)setPreviewPath(state.selectedFile);if(state?.terminalScroll&&typeof state.terminalScroll==="object")setTerminalScroll(state.terminalScroll);}).catch(()=>{}).finally(()=>setDeviceStateLoaded(true));},[]);
+  const savePreferences=useCallback((update:Record<string,unknown>)=>{fetch("/api/web-console/preferences",{method:"PATCH",credentials:"same-origin",headers:{"content-type":"application/json","x-csrf-token":auth.csrfToken},body:JSON.stringify(update)}).catch(()=>{});},[auth.csrfToken]);
+  useEffect(()=>{if(!preferencesLoaded)return;const timer=setTimeout(()=>savePreferences({fileButtonPosition,keybarHidden,keyOrder,theme:themeId}),500);return()=>clearTimeout(timer);},[fileButtonPosition,keybarHidden,keyOrder,themeId,preferencesLoaded,savePreferences]);
+  const persistDeviceState=useCallback((payload:Record<string,unknown>)=>{if(!auth.csrfToken)return;fetch("/api/web-console/device-state",{method:"PUT",credentials:"same-origin",headers:{"content-type":"application/json","x-csrf-token":auth.csrfToken},body:JSON.stringify(payload)}).catch(()=>{});},[auth.csrfToken]);
+  useEffect(()=>{if(!auth.csrfToken)return;const timer=setTimeout(()=>persistDeviceState({activeTerminalId,drawerOpen,drawerTab,fileTreeRoot,fileTreeFollowMode:fileTreeFollow,selectedFile:previewPath,terminalScroll}),500);return()=>clearTimeout(timer);},[activeTerminalId,drawerOpen,drawerTab,fileTreeRoot,fileTreeFollow,previewPath,terminalScroll,auth.csrfToken,persistDeviceState]);
+  useEffect(()=>{if(!auth.csrfToken)return;const flush=()=>persistDeviceState({activeTerminalId,drawerOpen,drawerTab,fileTreeRoot,fileTreeFollowMode:fileTreeFollow,selectedFile:previewPath,terminalScroll});window.addEventListener("pagehide",flush);return()=>window.removeEventListener("pagehide",flush);},[activeTerminalId,drawerOpen,drawerTab,fileTreeRoot,fileTreeFollow,previewPath,terminalScroll,auth.csrfToken,persistDeviceState]);
 
   const openFile = useCallback((p: string) => {
     setPreviewPath(p);
     setDrawerOpen(false); // picking a file dismisses the drawer on phones
   }, []);
-  const registerSink = useCallback((fn: ((d: Uint8Array) => void) | null) => {
-    binSinkRef.current = fn;
+  const addTerminal = useCallback(() => {
+    let addedId: string | null = null;
+    setTabs((current) => {
+      if (current.length >= 8) return current;
+      addedId = `t-web-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+      return [...current, { id: addedId, title: `Terminal ${current.length + 1}` }];
+    });
+    if (addedId) setActiveTerminalId(addedId);
   }, []);
 
+  useEffect(() => {
+    if (!state.connected || !deviceStateLoaded || tabsHydrated.current) return;
+    tabsHydrated.current = true;
+    rpc<{ tabs: Array<{ id: string; title: string; status: string }> }>("term:list").then((result) => {
+      const restorable = result.tabs.filter((tab) => tab.status === "active" || tab.status === "detached").map(({ id, title }) => ({ id, title }));
+      if (restorable.length) {
+        setTabs(restorable);
+        setActiveTerminalId((value) => {
+          const preferred = restoredActiveId.current || value;
+          return preferred && restorable.some((tab) => tab.id === preferred) ? preferred : restorable[0].id;
+        });
+      } else addTerminal();
+    }).catch(addTerminal);
+  }, [state.connected, deviceStateLoaded, rpc, addTerminal]);
+
+  const closeTerminal = async (id: string) => {
+    if (!window.confirm("关闭页签会终止该终端进程，确认关闭？")) return;
+    await rpc("term:kill", { id }).catch(() => {});
+    setTabs((current) => {
+      const next = current.filter((tab) => tab.id !== id);
+      if (activeTerminalId === id) setActiveTerminalId(next[0]?.id ?? null);
+      return next;
+    });
+  };
+
+  const switchBy = useCallback((direction: number) => {
+    if (!activeTerminalId || tabs.length < 2) return;
+    const index = tabs.findIndex((tab) => tab.id === activeTerminalId);
+    const nextIndex = (index + direction + tabs.length) % tabs.length;
+    setActiveTerminalId(tabs[nextIndex].id);
+  }, [activeTerminalId, tabs]);
+  const activeIndex=Math.max(0,tabs.findIndex(tab=>tab.id===activeTerminalId));
+  const resetSwipe=useCallback(()=>{swipeStart.current=null;setSwipeDelta(0);setSwiping(false);},[]);
+  const handleTabSwipeEnd=useCallback((dx:number)=>{if(Math.abs(dx)>=64&&tabs.length>1)switchBy(dx<0?1:-1);resetSwipe();},[tabs.length,switchBy,resetSwipe]);
+  const isTerminalScreen=(target:EventTarget|null)=>target instanceof Element&&!!target.closest(".terminal-screen");
+  const scrollActiveTabIntoView = useCallback((behavior: ScrollBehavior = "smooth") => {
+    const bar = tabBarRef.current;
+    if (!bar || !activeTerminalId) return;
+    const tab = bar.querySelector<HTMLElement>(`[data-terminal-id="${activeTerminalId}"]`);
+    if (!tab) return;
+    if (tab === bar.querySelector<HTMLElement>("[data-terminal-id]")) {
+      resetHorizontalScroll(bar);
+      return;
+    }
+    const connection = bar.querySelector<HTMLElement>(".terminal-connection");
+    const rightInset = connection?.offsetWidth ?? 0;
+    const margin = 8;
+    const tabStart = tab.offsetLeft;
+    const tabEnd = tabStart + tab.offsetWidth;
+    const viewStart = bar.scrollLeft;
+    const viewEnd = viewStart + bar.clientWidth - rightInset;
+    if (tabStart < viewStart + margin) {
+      bar.scrollTo({ left: Math.max(0, tabStart - margin), behavior });
+    } else if (tabEnd > viewEnd - margin) {
+      bar.scrollTo({ left: tabEnd - bar.clientWidth + rightInset + margin, behavior });
+    }
+  }, [activeTerminalId]);
+
+  useLayoutEffect(() => {
+    if (!activeTerminalId) return;
+    const instant = tabs.length > prevTabCount.current;
+    prevTabCount.current = tabs.length;
+    scrollActiveTabIntoView(instant ? "auto" : "smooth");
+  }, [activeTerminalId, tabs.length, scrollActiveTabIntoView]);
+
+  useEffect(() => {
+    const resetRestoredScroll = () => requestAnimationFrame(() => scrollActiveTabIntoView("auto"));
+    window.addEventListener("pageshow", resetRestoredScroll);
+    return () => window.removeEventListener("pageshow", resetRestoredScroll);
+  }, [scrollActiveTabIntoView]);
+
   return (
-    <div className="web-root" style={S.root}>
+    <div className="web-root" style={{ ...S.root, ...activeTheme.cssVars, background: "var(--ui-root-bg)", color: "var(--ui-text)" }}>
       <style dangerouslySetInnerHTML={{ __html: GLOBAL_CSS }} />
 
-      {state.needsToken && (
-        <div style={S.tokenGate}>
-          <div style={S.tokenCard}>
-            <div style={{ fontSize: 15, marginBottom: 8 }}>🔒 访问令牌</div>
-            <div style={{ fontSize: 12.5, color: "#889", lineHeight: 1.6, marginBottom: 14 }}>
-              启动 gateway 时控制台会打印 token（或设置 AGENT_WEB_TOKEN 固定值）。
-            </div>
-            <input
-              value={tokenInput}
-              onChange={(e) => setTokenInput(e.target.value)}
-              placeholder="paste token"
-              style={S.tokenInput}
-            />
-            <button onClick={() => setTokenAndReconnect(tokenInput)} style={S.tokenBtn}>
-              连接
-            </button>
+      <div className="terminal-tabs" ref={tabBarRef}>
+        {tabs.map((tab) => (
+          <div key={tab.id} data-terminal-id={tab.id} draggable className={`terminal-tab ${tab.id === activeTerminalId ? "active" : ""}`} onDragStart={()=>{draggedTab.current=tab.id;}} onDragOver={(event)=>event.preventDefault()} onDrop={(event)=>{event.preventDefault();const source=draggedTab.current;draggedTab.current=null;if(!source||source===tab.id)return;setTabs((current)=>{const from=current.findIndex(item=>item.id===source),to=current.findIndex(item=>item.id===tab.id);if(from<0||to<0)return current;const next=[...current];const [moved]=next.splice(from,1);next.splice(to,0,moved);rpc("term:reorder",{ids:next.map(item=>item.id)}).catch(()=>{});return next;});}} onClick={() => setActiveTerminalId(tab.id)} onDoubleClick={() => {
+            const title = window.prompt("页签名称", tab.title)?.trim();
+            if (!title) return;
+            rpc("term:rename", { id: tab.id, title }).then(() => setTabs((items) => items.map((item) => item.id === tab.id ? { ...item, title } : item))).catch(() => {});
+          }}>
+            <span>{tab.title}</span><button tabIndex={-1} onClick={(event) => { event.stopPropagation(); closeTerminal(tab.id); }}>×</button>
           </div>
+        ))}
+        <button className="terminal-add" disabled={tabs.length >= 8} onClick={addTerminal}>＋</button>
+        <div className="terminal-connection">
+          <span style={{width:8,height:8,borderRadius:99,background:state.connected?"var(--ui-success)":"var(--ui-error)"}} />
+          <ThemePicker
+            username={auth.user?.username ?? "?"}
+            themeId={themeId}
+            onThemeChange={setThemeId}
+            accent={activeTheme.keybar.accent}
+            accentText={activeTheme.keybar.accentText}
+          />
+          <button style={S.logoutBtn} onClick={auth.logout} title="退出登录" aria-label="退出登录">退出</button>
         </div>
-      )}
-
-      {/* slim top bar */}
-      <header style={S.topbar}>
-        <span style={{ fontWeight: 600, letterSpacing: 0.2, fontSize: 13 }}>remote console</span>
-        {cwdHint && (
-          <span className="cwd-hint" style={S.cwdHint} title={cwdHint}>
-            {cwdHint}
-          </span>
-        )}
-        <span
-          style={{
-            marginLeft: "auto",
-            width: 8,
-            height: 8,
-            borderRadius: 99,
-            background: state.connected ? "#9ece6a" : "#f7768e",
-          }}
-        />
-      </header>
+      </div>
 
       {/* workspace: terminal first in DOM = fullscreen by default */}
       <main
@@ -78,15 +216,21 @@ export default function WebConsolePage() {
         style={S.workspace}
       >
         {/* terminal — always mounted, always the base layer */}
-        <section className="term-col" style={S.termCol}>
-          <TerminalPane
-            key={epoch}
-            state={state}
-            rpc={rpc}
-            onEvent={onEvent}
-            registerSink={registerSink}
-            onCwdChange={setCwdHint}
-          />
+        <section
+          className="term-col"
+          style={S.termCol}
+          onPointerDownCapture={(event)=>{if(event.pointerType!=="touch"||!isTerminalScreen(event.target))return;swipeStart.current={x:event.clientX,y:event.clientY,axis:"pending"};}}
+          onPointerMoveCapture={(event)=>{const start=swipeStart.current;if(!start||event.pointerType!=="touch")return;const dx=event.clientX-start.x,dy=event.clientY-start.y;if(start.axis==="pending"){if(Math.max(Math.abs(dx),Math.abs(dy))<=8)return;if(Math.abs(dy)>=Math.abs(dx)*1.2){swipeStart.current=null;return;}start.axis="horizontal";setSwiping(true);}if(start.axis!=="horizontal")return;event.preventDefault();setSwipeDelta(dx);}}
+          onPointerUpCapture={(event)=>{const start=swipeStart.current;if(!start||event.pointerType!=="touch")return;const dx=event.clientX-start.x;if(start.axis==="horizontal"&&Math.abs(dx)>=64)handleTabSwipeEnd(dx);else resetSwipe();}}
+          onPointerCancelCapture={resetSwipe}
+        >
+          <div className="terminal-track" style={{transform:`translate3d(calc(${-activeIndex*100}% + ${swipeDelta}px),0,0)`,transition:swiping?"none":"transform 260ms cubic-bezier(.22,.8,.32,1)"}}>
+          {tabs.map((tab) => (
+            <div className="terminal-slide" key={tab.id}>
+              <TerminalPane terminalId={tab.id} title={tab.title} visible={tab.id === activeTerminalId} state={state} rpc={rpc} onEvent={onEvent} onTerminalData={onTerminalData} sendTerminalInput={sendTerminalInput} keyOrder={keyOrder} keybarHidden={keybarHidden} onKeyOrderChange={setKeyOrder} onKeybarHiddenChange={setKeybarHidden} terminalTheme={activeTheme} initialScrollLine={terminalScroll[tab.id] ?? null} onScrollLineChange={(line) => setTerminalScroll((current) => (current[tab.id] === line ? current : { ...current, [tab.id]: line }))} onRegisterFill={(fill) => registerTerminalFill(tab.id, fill)} onCwdChange={(cwd) => cwd && setCwdByTerminal((current) => ({ ...current, [tab.id]: cwd }))} />
+            </div>
+          ))}
+          </div>
         </section>
 
         {/* file tree — right sidebar on desktop / right drawer on phone.
@@ -94,7 +238,8 @@ export default function WebConsolePage() {
         {drawerOpen && <div className="drawer-mask" onClick={() => setDrawerOpen(false)} />}
         <aside className={`tree-col ${drawerOpen ? "tree-col-open" : ""}`} style={S.treeCol}>
           <div className="tree-head" style={S.treeHead}>
-            <span>文件</span>
+            <button className={drawerTab==="files"?"drawer-tab-active":""} onClick={()=>setDrawerTab("files")}>文件</button>
+            <button className={drawerTab==="history"?"drawer-tab-active":""} onClick={()=>setDrawerTab("history")}>历史</button>
             <span className="tree-cwd" style={S.treeCwd}>{cwdHint ?? ""}</span>
             <button
               style={{ ...S.iconBtn, marginLeft: "auto", flexShrink: 0 }}
@@ -104,7 +249,7 @@ export default function WebConsolePage() {
               ✕
             </button>
           </div>
-          <FileTree
+          {drawerTab==="files" ? <FileTree
             ready={epoch > 0}
             followCwd={true}
             cwd={cwdHint}
@@ -112,7 +257,14 @@ export default function WebConsolePage() {
             onEvent={onEvent}
             onOpenFile={openFile}
             selectedPath={previewPath}
-          />
+            initialRoot={fileTreeRoot}
+            initialFollow={fileTreeFollow}
+            onTreeStateChange={(root,following)=>{setFileTreeRoot(root);setFileTreeFollow(following);}}
+          /> : <HistoryPanel
+            csrfToken={auth.csrfToken}
+            terminalId={activeTerminalId}
+            onFill={fillActiveCommand}
+          />}
           <div style={S.treeFoot}>
             <span style={S.treeFootDot} />
             <span>实时同步</span>
@@ -128,7 +280,7 @@ export default function WebConsolePage() {
       </main>
 
       {/* floating action: toggle file drawer (both mobile & desktop) */}
-      <button className="fab-files" style={S.fabFiles} onClick={() => setDrawerOpen((v) => !v)} aria-label="files">
+      <button className="fab-files" style={{...S.fabFiles,left:`${fileButtonPosition.xRatio*100}%`,top:`${fileButtonPosition.yRatio*100}%`,right:"auto",bottom:"auto",transform:"translate(-50%,-50%)"}} onPointerDown={(event)=>{fileDrag.current={moved:false};event.currentTarget.setPointerCapture(event.pointerId);}} onPointerMove={(event)=>{if(!fileDrag.current)return;fileDrag.current.moved=true;const vv=window.visualViewport;setFileButtonPosition({xRatio:Math.max(.05,Math.min(.95,event.clientX/(vv?.width||innerWidth))),yRatio:Math.max(.08,Math.min(.92,(event.clientY-(vv?.offsetTop||0))/(vv?.height||innerHeight))),anchor:event.clientX<(vv?.width||innerWidth)/2?"left":"right"});}} onPointerUp={(event)=>{event.currentTarget.releasePointerCapture(event.pointerId);if(!fileDrag.current?.moved)setDrawerOpen(v=>!v);fileDrag.current=null;}} aria-label="files">
         📂
       </button>
     </div>
@@ -136,13 +288,28 @@ export default function WebConsolePage() {
 }
 
 const GLOBAL_CSS = `
-  html, body { margin: 0; background: #0b0b10; overscroll-behavior: none; }
+  html, body { width:100%; height:100%; margin:0; overflow:hidden; background:var(--ui-root-bg, #0b0b10); overscroll-behavior:none; color:var(--ui-text, #e8e8ee); }
   * { -webkit-tap-highlight-color: transparent; }
+  .terminal-tabs { display:flex; align-items:end; gap:4px; min-height:38px; padding:0 8px; overflow-x:auto; overflow-y:hidden; touch-action:pan-x; overscroll-behavior-x:contain; -webkit-overflow-scrolling:touch; scroll-behavior:smooth; background:var(--ui-tabbar-bg, #12141b); border-bottom:1px solid var(--ui-tabbar-border, #282b36); scrollbar-width:none; flex-shrink:0; }
+  .terminal-tab { display:flex; align-items:center; gap:7px; min-width:74px; max-width:130px; height:32px; padding:0 7px 0 10px; border-radius:7px 7px 0 0; background:var(--ui-tab-bg, #1b1e28); color:var(--ui-tab-text, #8f93a4); font-size:11px; cursor:pointer; box-sizing:border-box; transition:background .2s ease,color .2s ease,box-shadow .2s ease; }
+  .terminal-tab.active { color:var(--ui-tab-active-text, #edf0f7); background:var(--ui-tab-active-bg, #262b38); box-shadow:inset 0 2px var(--ui-tab-accent, #7aa2f7); }
+  .terminal-tab span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1; }
+  .terminal-tab button { width:18px; height:18px; border:0; border-radius:4px; background:transparent; color:var(--ui-tab-text, #707586); padding:0; }
+  .terminal-add { min-width:30px; height:28px; margin-bottom:2px; border:1px solid var(--ui-tabbar-border, #303442); border-radius:6px; background:var(--ui-tab-bg, #1b1e28); color:var(--ui-tab-text, #9da2b2); }
+  .terminal-connection { position:sticky; right:-8px; margin-left:auto; align-self:stretch; display:flex; align-items:center; gap:7px; padding:0 9px; background:var(--ui-connection-bg, #12141b); color:var(--ui-connection-text, #777b8c); font-size:10.5px; flex-shrink:0; z-index:5; box-shadow:-8px 0 12px color-mix(in srgb, var(--ui-connection-bg, #12141b) 90%, transparent); }
+  .theme-picker { position:relative; flex-shrink:0; z-index:6; }
+  .theme-avatar { -webkit-tap-highlight-color:transparent; }
+  .terminal-track { display:flex; width:100%; height:100%; will-change:transform; }
+  .terminal-slide { flex:0 0 100%; width:100%; height:100%; min-width:0; }
+  .terminal-screen { display:flex; flex-direction:column; min-height:0; overflow:hidden; }
+  .terminal-screen .xterm { flex:1; height:100%; }
+  .terminal-screen .xterm-scrollable-element { touch-action:pan-y; -webkit-overflow-scrolling:touch; }
+  @media (prefers-reduced-motion: reduce) { .terminal-track,.terminal-tab { transition:none !important; } }
   .web-root {
     position: fixed;
     top: var(--vv-top, 0px);
-    left: 0;
-    right: 0;
+    left: var(--vv-left, 0px);
+    width: var(--vv-width, 100vw);
     height: var(--vv-height, 100dvh) !important;
   }
   .tree-scroll {
@@ -164,37 +331,55 @@ const GLOBAL_CSS = `
     gap: 5px;
     margin: -1px -1px 0;
     padding: 7px 7px 5px;
-    background: rgba(18,18,24,.98);
+    background: color-mix(in srgb, var(--ui-tree-bg, #121218) 98%, transparent);
   }
   .tree-location input {
     flex: 1;
     min-width: 0;
     height: 28px;
-    border: 1px solid #30303b;
+    border: 1px solid var(--ui-panel-input-border, #30303b);
     border-radius: 6px;
     outline: none;
     padding: 0 8px;
-    background: #0f0f15;
-    color: #d8d8df;
+    background: var(--ui-panel-input-bg, #0f0f15);
+    color: var(--ui-panel-input-text, #d8d8df);
     font-family: "SF Mono", Menlo, monospace;
     font-size: 10.5px;
   }
-  .tree-location input:focus { border-color: #536b9e; }
+  .tree-location input:focus { border-color: var(--ui-tab-accent, #536b9e); }
   .tree-location button {
     width: 28px;
     height: 28px;
     flex-shrink: 0;
-    border: 1px solid #30303a;
+    border: 1px solid var(--ui-panel-input-border, #30303a);
     border-radius: 6px;
-    background: #202029;
-    color: #aaaab8;
+    background: var(--ui-tab-bg, #202029);
+    color: var(--ui-tab-text, #aaaab8);
     font-size: 12px;
   }
   .tree-location button[data-active="1"] {
-    border-color: #4f6f58;
-    color: #9ece6a;
-    background: #18221b;
+    border-color: var(--ui-success, #4f6f58);
+    color: var(--ui-success, #9ece6a);
+    background: color-mix(in srgb, var(--ui-success, #9ece6a) 12%, var(--ui-tree-bg, #18221b));
   }
+  .tree-head button { height:26px; padding:0 10px; border:0; border-radius:6px 6px 0 0; background:transparent; color:var(--ui-drawer-tab-text, #74798a); font-size:11px; }
+  .tree-head button.drawer-tab-active { color:var(--ui-drawer-tab-active, #e4e7ef); box-shadow:inset 0 -2px var(--ui-tab-accent, #7aa2f7); }
+  .history-panel { flex:1; min-height:0; overflow:auto; padding:7px; }
+  .history-search { position:sticky; top:0; display:flex; gap:5px; padding:5px; background:var(--ui-tree-bg, #121218); z-index:2; }
+  .history-search input { flex:1; min-width:0; height:28px; border:1px solid var(--ui-panel-input-border, #30303a); border-radius:6px; padding:0 8px; background:var(--ui-panel-input-bg, #0f0f15); color:var(--ui-panel-input-text, #ddd); font-size:11px; }
+  .history-search button,.history-item button { border:1px solid var(--ui-panel-input-border, #30303a); border-radius:5px; background:var(--ui-tab-bg, #202029); color:var(--ui-connection-text, #999dab); font-size:10px; }
+  .history-item { padding:9px 7px; border-bottom:1px solid var(--ui-tabbar-border, #242731); cursor:pointer; border-radius:6px; }
+  .history-item:hover { background:color-mix(in srgb, var(--ui-tab-active-bg, #181b24) 80%, transparent); }
+  .history-item:active { background:var(--ui-tab-active-bg, #1f2430); }
+  .history-item-disabled { cursor:not-allowed; opacity:.55; }
+  .history-item-disabled:hover { background:transparent; }
+  .history-item:focus-visible { outline:1px solid var(--ui-tab-accent, #536b9e); outline-offset:-1px; }
+  .history-item code { display:block; color:var(--ui-history-item-text, #d3d6df); font-size:11px; overflow-wrap:anywhere; }
+  .history-item small { display:block; margin:4px 0 7px; color:var(--ui-history-meta, #656a79); font-size:9.5px; }
+  .history-item-actions { display:flex; gap:5px; }
+  .history-empty { padding:18px; color:#5d6270; font-size:11px; text-align:center; }
+  .keybar-scroll { scrollbar-width:none; }
+  .keybar-scroll::-webkit-scrollbar { display:none; }
   .tree-filter {
     position: sticky;
     top: 34px;
@@ -204,32 +389,32 @@ const GLOBAL_CSS = `
     gap: 6px;
     margin: -1px -1px 7px;
     padding: 7px 8px;
-    border-bottom: 1px solid #25252e;
-    background: rgba(18,18,24,.97);
-    color: #666678;
+    border-bottom: 1px solid var(--ui-tabbar-border, #25252e);
+    background: color-mix(in srgb, var(--ui-tree-bg, #121218) 97%, transparent);
+    color: var(--ui-history-meta, #666678);
     backdrop-filter: blur(8px);
   }
   .tree-filter input {
     flex: 1;
     min-width: 0;
     height: 27px;
-    border: 1px solid #30303a;
+    border: 1px solid var(--ui-panel-input-border, #30303a);
     border-radius: 6px;
     outline: none;
     padding: 0 8px;
-    background: #0f0f15;
-    color: #d8d8df;
+    background: var(--ui-panel-input-bg, #0f0f15);
+    color: var(--ui-panel-input-text, #d8d8df);
     font-size: 11px;
   }
-  .tree-filter input:focus { border-color: #536b9e; }
+  .tree-filter input:focus { border-color: var(--ui-tab-accent, #536b9e); }
   .tree-filter button {
     width: 25px;
     height: 25px;
     padding: 0;
     border: 0;
     border-radius: 5px;
-    background: #24242d;
-    color: #9999a6;
+    background: var(--ui-tab-bg, #24242d);
+    color: var(--ui-connection-text, #9999a6);
     font-size: 10px;
   }
   .tree-row {
@@ -243,8 +428,8 @@ const GLOBAL_CSS = `
     white-space: nowrap;
     cursor: pointer;
   }
-  .tree-row[data-selected="1"] { background: #26304a; }
-  .tree-size { margin-left: auto; color: #555; font-size: 10px; flex-shrink: 0; }
+  .tree-row[data-selected="1"] { background: color-mix(in srgb, var(--ui-tab-accent, #26304a) 24%, transparent); }
+  .tree-size { margin-left: auto; color: var(--ui-history-meta, #555); font-size: 10px; flex-shrink: 0; }
 
   /* phone-first: terminal is THE screen */
   .workspace { display: grid !important; grid-template-columns: 1fr; }
@@ -252,21 +437,21 @@ const GLOBAL_CSS = `
     position: fixed;
     top: var(--vv-top, 0px);
     height: var(--vv-height, 100dvh);
-    right: 0;
+    right: calc(100vw - var(--vv-left, 0px) - var(--vv-width, 100vw));
     width: min(82vw, 320px); z-index: 40;
     transform: translateX(102%); transition: transform .22s ease;
     box-shadow: -12px 0 32px rgba(0,0,0,.5);
   }
   .tree-col-open { transform: translateX(0); }
-  .drawer-mask { position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 39; }
+  .drawer-mask { position:fixed; top:var(--vv-top, 0px); left:var(--vv-left, 0px); width:var(--vv-width, 100vw); height:var(--vv-height, 100dvh); background:rgba(0,0,0,.45); z-index:39; }
   .preview-col {
     position: fixed;
     top: var(--vv-top, 0px);
-    left: 0;
-    right: 0;
+    left: var(--vv-left, 0px);
+    width: var(--vv-width, 100vw);
     height: var(--vv-height, 100dvh);
     z-index: 50;
-    background: #101014;
+    background: var(--ui-term-col-bg, #101014);
   }
   .fab-files { display: grid; place-items: center; }
   .cwd-hint { max-width: 40vw; }
@@ -277,10 +462,10 @@ const GLOBAL_CSS = `
     /* desktop: tree is a persistent right column; hidden only via transform off */
     .tree-col {
       position: static; top: auto; height: auto; width: auto; transform: none;
-      box-shadow: none; border-left: 1px solid #1e1e26;
+      box-shadow: none; border-left: 1px solid var(--ui-tree-border, #1e1e26);
     }
     .workspace:not(.show-tree) .tree-col { display: none; }
-    .preview-col { position: relative; inset: auto; height: auto; border-left: 1px solid #1e1e26; }
+    .preview-col { position: relative; inset: auto; width: auto; height: auto; border-left: 1px solid var(--ui-tree-border, #1e1e26); }
     .fab-files { display: none; }
     .drawer-mask { display: none; }
   }
@@ -291,8 +476,6 @@ const S: Record<string, React.CSSProperties> = {
     height: "100dvh",
     display: "flex",
     flexDirection: "column",
-    background: "#0b0b10",
-    color: "#e8e8ee",
     fontFamily:
       '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", sans-serif',
     overflow: "hidden",
@@ -332,7 +515,7 @@ const S: Record<string, React.CSSProperties> = {
     position: "relative",
   },
   treeCol: {
-    background: "#121218",
+    background: "var(--ui-tree-bg, #121218)",
     minHeight: 0,
     display: "flex",
     flexDirection: "column",
@@ -364,10 +547,10 @@ const S: Record<string, React.CSSProperties> = {
     gap: 7,
     minHeight: 31,
     padding: "6px 11px calc(env(safe-area-inset-bottom) + 6px)",
-    borderTop: "1px solid #282832",
+    borderTop: "1px solid var(--ui-tabbar-border, #282832)",
     boxShadow: "0 -5px 16px rgba(0,0,0,.22)",
-    background: "#15151c",
-    color: "#777789",
+    background: "var(--ui-tab-bg, #15151c)",
+    color: "var(--ui-connection-text, #777789)",
     fontSize: 10.5,
     flexShrink: 0,
   },
@@ -375,8 +558,8 @@ const S: Record<string, React.CSSProperties> = {
     width: 6,
     height: 6,
     borderRadius: 99,
-    background: "#9ece6a",
-    boxShadow: "0 0 0 2px rgba(158,206,106,.12)",
+    background: "var(--ui-success, #9ece6a)",
+    boxShadow: "0 0 0 2px color-mix(in srgb, var(--ui-success, #9ece6a) 12%, transparent)",
     flexShrink: 0,
   },
   termCol: {
@@ -384,59 +567,24 @@ const S: Record<string, React.CSSProperties> = {
     minHeight: 0,
     display: "flex",
     flexDirection: "column",
-    background: "#101014",
+    background: "var(--ui-term-col-bg, #101014)",
     gridColumn: 1,
+    overflow: "hidden",
   },
   previewCol: { minWidth: 0, minHeight: 0 },
   fabFiles: {
-    position: "fixed",
+    position: "absolute",
     right: 14,
     bottom: "calc(env(safe-area-inset-bottom) + 64px)",
     width: 44,
     height: 44,
     borderRadius: 99,
-    border: "1px solid #2c2c38",
-    background: "#1b1b26",
-    color: "#dde",
+    border: "1px solid var(--ui-fab-border, #2c2c38)",
+    background: "var(--ui-fab-bg, #1b1b26)",
+    color: "var(--ui-text, #dde)",
     fontSize: 18,
     zIndex: 45,
     boxShadow: "0 4px 16px rgba(0,0,0,.45)",
   },
-  tokenGate: {
-    position: "fixed",
-    inset: 0,
-    zIndex: 90,
-    background: "rgba(5,5,8,.92)",
-    display: "grid",
-    placeItems: "center",
-    padding: 20,
-  },
-  tokenCard: {
-    width: "min(420px, 100%)",
-    background: "#15151c",
-    border: "1px solid #2a2a33",
-    borderRadius: 16,
-    padding: "26px 24px",
-  },
-  tokenInput: {
-    width: "100%",
-    boxSizing: "border-box",
-    padding: "11px 13px",
-    borderRadius: 10,
-    border: "1px solid #333",
-    background: "#0e0e13",
-    color: "#eee",
-    fontSize: 14,
-    marginBottom: 12,
-  },
-  tokenBtn: {
-    width: "100%",
-    padding: "11px 0",
-    borderRadius: 10,
-    border: "none",
-    background: "#7aa2f7",
-    color: "#0b0b10",
-    fontSize: 14,
-    fontWeight: 700,
-  },
+  logoutBtn: { height: 24, padding: "0 8px", border: "1px solid var(--ui-muted-border, #2d303a)", borderRadius: 6, background: "var(--ui-muted-surface, #171920)", color: "var(--ui-muted-text, #8c909f)", fontSize: 10.5 },
 };

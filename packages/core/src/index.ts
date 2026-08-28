@@ -16,6 +16,8 @@ export * from './domain/project/index.js';
 export * from './domain/settings/index.js';
 export * from './domain/lsp/index.js';
 export * from './domain/terminal/TerminalSession.js';
+export * from './domain/auth/index.js';
+export * from './domain/web-console/index.js';
 
 // Implementations
 export { AgentLoop } from './domain/agent/AgentLoop.js';
@@ -47,4 +49,3 @@ export * from './domain/cron/index.js';
 
 // Infrastructure
 export * from './infrastructure/index.js';
-

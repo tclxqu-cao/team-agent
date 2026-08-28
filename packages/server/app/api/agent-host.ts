@@ -13,14 +13,16 @@ import {
   type RemoteToolRegistration,
   type Message,
 } from "@agent/core";
+import { getServerBaseDir } from "../../lib/server-data-dir";
 
 /** Singleton agent host shared across API routes */
 class AgentHost {
+  private readonly baseDir = getServerBaseDir();
   private agent: IAgentLoop | null = null;
   private builder: AgentBuilder | null = null;
-  private readonly sessionStore = new SQLiteSessionStore(process.cwd());
-  private readonly projectStore = new SQLiteProjectStore(process.cwd());
-  private readonly remoteToolStore = new SQLiteRemoteToolStore(getDatabase(process.cwd()).db);
+  private readonly sessionStore = new SQLiteSessionStore(this.baseDir);
+  private readonly projectStore = new SQLiteProjectStore(this.baseDir);
+  private readonly remoteToolStore = new SQLiteRemoteToolStore(getDatabase(this.baseDir).db);
   private readonly defaultRemoteToolsProjectId = process.env.AGENT_PROJECT_ID ?? "default";
   private activeRun: AsyncIterable<AgentEvent> | null = null;
   private subscribers = new Map<string, Set<(event: AgentEvent) => void>>();

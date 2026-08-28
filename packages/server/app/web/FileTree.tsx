@@ -15,6 +15,9 @@ interface Props {
   /** terminal cwd; tree roots here and re-roots when it changes */
   cwd?: string | null;
   followCwd?: boolean;
+  initialRoot?: string | null;
+  initialFollow?: boolean;
+  onTreeStateChange?: (root: string, following: boolean) => void;
 }
 
 const name2color: Record<string, string> = {
@@ -45,11 +48,11 @@ interface DirState {
   error?: string;
 }
 
-export default function FileTree({ rpc, onEvent, onOpenFile, selectedPath, ready, cwd, followCwd }: Props) {
+export default function FileTree({ rpc, onEvent, onOpenFile, selectedPath, ready, cwd, followCwd, initialRoot, initialFollow = true, onTreeStateChange }: Props) {
   const [root, setRoot] = useState<DirState | null>(null);
   const [filter, setFilter] = useState("");
   const [pathInput, setPathInput] = useState("");
-  const [manualRoot, setManualRoot] = useState(false);
+  const [manualRoot, setManualRoot] = useState(!initialFollow);
   const [home, setHome] = useState("");
   /** dirPath → children state map for all EXPANDED dirs */
   const dirsRef = useRef<Map<string, DirState>>(new Map());
@@ -94,7 +97,14 @@ export default function FileTree({ rpc, onEvent, onOpenFile, selectedPath, ready
     if (!ready || !cwd || !followingTerminal) return;
     if (lastRootRef.current === cwd) return;
     applyRoot(cwd);
+    onTreeStateChange?.(cwd, true);
   }, [ready, cwd, followingTerminal, applyRoot]);
+
+  useEffect(() => {
+    if (!ready || !initialRoot || initialFollow || lastRootRef.current) return;
+    setManualRoot(true);
+    applyRoot(initialRoot);
+  }, [ready, initialRoot, initialFollow, applyRoot]);
 
   // fallback root: home (~) — sent by hello()
   useEffect(() => {
@@ -114,11 +124,12 @@ export default function FileTree({ rpc, onEvent, onOpenFile, selectedPath, ready
     target = target.replace(/\/+/g, "/");
     setManualRoot(true);
     applyRoot(target);
+    onTreeStateChange?.(target, false);
   };
 
   const resumeFollowing = () => {
     setManualRoot(false);
-    if (cwd) applyRoot(cwd);
+    if (cwd) { applyRoot(cwd); onTreeStateChange?.(cwd, true); }
   };
 
   const toggleDir = useCallback(

@@ -8,7 +8,9 @@
     "packages/desktop",
     "packages/sdk",
     "packages/tui",
-    "packages/voice-service"
+    "packages/voice-service",
+    "packages/cli",
+    "packages/cloudflared-darwin-arm64"
   ],
   "scripts": {
     "dev": "bunx concurrently --kill-others -n core,server,desktop -c blue,green,yellow 'bun run dev:core' 'bun run dev:server' 'bun run dev:desktop'",
@@ -19,6 +21,12 @@
     "tui": "bun packages/tui/agent-tui.mjs",
     "build": "bun run --cwd packages/core build && bun run --cwd packages/server build && bun run --cwd packages/desktop build",
     "build:sdk": "bun run --cwd packages/sdk build",
+    "build:cli": "bun run --cwd packages/core build && NEXT_STANDALONE=1 bun run --cwd packages/server build && node scripts/stage-cli-runtime.mjs && bun run --cwd packages/cli build",
+    "fetch:cloudflared": "node scripts/fetch-cloudflared-package.mjs",
+    "pack:cloudflared": "npm pack ./packages/cloudflared-darwin-arm64 --pack-destination packages/cloudflared-darwin-arm64 --ignore-scripts --workspaces=false && node scripts/audit-cloudflared-tarball.mjs packages/cloudflared-darwin-arm64/agentroam-cloudflared-darwin-arm64-0.2.0-preview.3.tgz",
+    "pack:cli": "npm run build:cli && npm run pack:cloudflared && npm pack ./packages/cli --pack-destination packages/cli --ignore-scripts --workspaces=false && node scripts/audit-cli-tarball.mjs packages/cli/agentroam-0.2.0-preview.3.tgz",
+    "verify:cli": "node scripts/verify-cli-install.mjs",
+    "verify:cli:tunnel": "node scripts/verify-cli-tunnel.mjs --provider auto",
     "test": "bunx vitest run",
     "test:watch": "bunx vitest",
     "lint": "bunx tsc --noEmit"
