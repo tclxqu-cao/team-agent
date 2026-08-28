@@ -1,0 +1,19 @@
+docs/superpowers/specs/2026-08-28-web-terminal-input-deduplication-removal-design.md
+  s_ce18d43f8a9a03::t_712ab63d0e7305 1-75
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "f4884db677c6b20e475bcf0059d8c524ac058624",
+  "prompts": {},
+  "sessions": {
+    "s_ce18d43f8a9a03": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a04732-2417-7fe3-b582-f86fb900e538",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
