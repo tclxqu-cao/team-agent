@@ -326,6 +326,17 @@ export function TuiApp(props: TuiAppProps) {
     props.runtime.abort();
   }, [props.runtime, question, setInput]);
 
+  const closePalette = useCallback(() => {
+    setSecondary(null);
+    setPaletteDismissed(true);
+    if (trigger) {
+      const input = state.input.slice(0, trigger.start) + state.input.slice(state.cursor);
+      dispatch({ type: "set_input", input, cursor: trigger.start });
+    } else if (secondary) {
+      dispatch({ type: "set_input", input: "", cursor: 0 });
+    }
+  }, [secondary, state.cursor, state.input, trigger]);
+
   return (
     <Box flexDirection="column">
       <Header snapshot={snapshot} running={state.running} />
@@ -349,15 +360,14 @@ export function TuiApp(props: TuiAppProps) {
           onChange={setInput}
           onSubmit={() => void submit()}
           onHistory={(direction) => dispatch({ type: "history", direction })}
-          onPaletteMove={(direction) => setSelectedIndex((value) => {
-            if (visibleItems.length === 0) return 0;
-            return (value + direction + visibleItems.length) % visibleItems.length;
-          })}
-          onPaletteSelect={() => void choosePaletteItem()}
-          onPaletteClose={() => {
-            setSecondary(null);
-            setPaletteDismissed(true);
+          onPaletteMove={(direction) => {
+            setTimeout(() => setSelectedIndex((value) => {
+              if (visibleItems.length === 0) return 0;
+              return (value + direction + visibleItems.length) % visibleItems.length;
+            }), 0);
           }}
+          onPaletteSelect={() => void choosePaletteItem()}
+          onPaletteClose={closePalette}
           onAbort={abortTurn}
           onExit={exit}
         />

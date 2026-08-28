@@ -55,9 +55,12 @@ describe("TuiApp palettes", () => {
     expect(view.lastFrame()).toContain("命令");
     expect(view.lastFrame()).toContain("技能");
     expect(view.lastFrame()).toContain("/wiki-query");
+    expect(view.lastFrame()).toContain("筛选");
+    expect(view.lastFrame()).toContain("⌕ /");
     view.stdin.write("\u001b");
     await tick(120);
     expect(view.lastFrame()).not.toContain("↑↓ 移动");
+    expect(view.lastFrame()).not.toContain("⌕ /");
   });
 
   it("filters at-mentions to project files", async () => {
@@ -190,5 +193,23 @@ describe("TuiApp palettes", () => {
     await tick();
     expect(view.lastFrame()).not.toContain("↑↓ 移动");
     expect(view.lastFrame()).toContain("› /sessions");
+  });
+
+  it("handles batched terminal input and exits palette mode with backspace", async () => {
+    const { snapshot, runtime } = await fixture();
+    const view = render(<TuiApp runtime={runtime} initialSnapshot={snapshot} profiles={[]} registeredProjects={[]} configPath="/tmp/tui-config" env={{}} />);
+    await tick();
+
+    view.stdin.write("/\u001b[B");
+    await tick();
+    expect(view.lastFrame()).toContain("2/11");
+    expect(view.lastFrame()).toContain("› /new");
+    expect(view.lastFrame()).toContain("⌕ /");
+
+    view.stdin.write("\u007f");
+    await tick();
+    expect(view.lastFrame()).not.toContain("↑↓ 移动");
+    expect(view.lastFrame()).not.toContain("⌕ /");
+    expect(view.lastFrame()).toContain("/ 命令  @ 引用");
   });
 });
