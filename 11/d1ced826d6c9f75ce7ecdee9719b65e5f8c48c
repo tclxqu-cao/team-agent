@@ -1,0 +1,14 @@
+packages/server/app/web/TerminalPane.tsx
+  h_b0bf4228a0b7ec 246-249,252,330,341,355,523,558-566,571-572,587,687-688
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "11d1ced826d6c9f75ce7ecdee9719b65e5f8c48c",
+  "prompts": {},
+  "humans": {
+    "h_b0bf4228a0b7ec": {
+      "author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
