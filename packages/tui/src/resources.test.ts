@@ -19,6 +19,18 @@ describe("resource candidates", () => {
     expect(result.warnings).toEqual([]);
   });
 
+  it("skips macOS system directories when indexing from the home directory", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "tui-home-resources-"));
+    await mkdir(path.join(root, "Library", "Daemon Containers"), { recursive: true });
+    await mkdir(path.join(root, "workspace"));
+    await writeFile(path.join(root, "Library", "Daemon Containers", "private.db"), "");
+    await writeFile(path.join(root, "workspace", "main.ts"), "export {};");
+
+    const result = await indexProjectResources(root, { homeDirectory: root });
+    expect(result.items.map((item) => item.value)).toEqual(["workspace", "workspace/main.ts"]);
+    expect(result.warnings).toEqual([]);
+  });
+
   it("merges registered projects and disables records without a real directory", async () => {
     const parent = await mkdtemp(path.join(os.tmpdir(), "tui-projects-"));
     const current = path.join(parent, "customer-agent");

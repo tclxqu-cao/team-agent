@@ -1,4 +1,5 @@
 import { promises as fsp } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import type { ActiveTrigger, PaletteItem } from "./palette.js";
 import { replaceTrigger } from "./palette.js";
@@ -14,6 +15,7 @@ const DEFAULT_IGNORES = new Set([
   "coverage",
 ]);
 const PROJECT_MARKERS = [".git", "package.json", "pom.xml", "build.gradle", "settings.gradle", "go.mod", "Cargo.toml", "pyproject.toml"];
+const HOME_ROOT_IGNORES = new Set(["Applications", "Library", "Movies", "Music", "Pictures", "Public"]);
 
 export interface RegisteredProject {
   id: string;
@@ -110,10 +112,12 @@ export async function mergeProjects(
 
 export async function indexProjectResources(
   root: string,
-  options: { maxEntries?: number; ignoredNames?: ReadonlySet<string> } = {},
+  options: { maxEntries?: number; ignoredNames?: ReadonlySet<string>; homeDirectory?: string } = {},
 ): Promise<ResourceIndexResult> {
   const maxEntries = options.maxEntries ?? 10_000;
   const ignored = options.ignoredNames ?? DEFAULT_IGNORES;
+  const rootPath = path.resolve(root);
+  const isHomeRoot = rootPath === path.resolve(options.homeDirectory ?? os.homedir());
   const items: PaletteItem[] = [];
   const warnings: string[] = [];
   const queue = [root];
@@ -121,15 +125,16 @@ export async function indexProjectResources(
 
   while (queue.length > 0 && items.length < maxEntries) {
     const current = queue.shift()!;
-    let dir;
+    let entries;
     try {
-      dir = await fsp.opendir(current);
+      entries = await fsp.readdir(current, { withFileTypes: true });
     } catch (error) {
       warnings.push(`${current}: ${error instanceof Error ? error.message : String(error)}`);
       continue;
     }
-    for await (const entry of dir) {
+    for (const entry of entries) {
       if (ignored.has(entry.name) || (entry.name.startsWith(".") && entry.name !== ".env.example")) continue;
+      if (isHomeRoot && current === rootPath && HOME_ROOT_IGNORES.has(entry.name)) continue;
       const absolute = path.join(current, entry.name);
       const relative = path.relative(root, absolute).split(path.sep).join("/");
       if (entry.isDirectory()) {
