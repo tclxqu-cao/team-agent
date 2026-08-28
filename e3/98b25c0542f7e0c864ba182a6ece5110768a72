@@ -1,0 +1,84 @@
+packages/tui/src/components/MessageQueue.tsx
+  s_0c9810ca6cf0aa::t_14a8d7ab122877 1-34
+packages/tui/src/runtime.ts
+  s_0c9810ca6cf0aa::t_a6d630c32f37c3 135-146
+packages/tui/src/components/Header.tsx
+  s_0c9810ca6cf0aa::t_f9aed0fc51cb55 7-23,25,29-30,32-40,42-47,50-61,63-70,73-81
+  s_0c9810ca6cf0aa::t_d807147afc127a 41,71
+  s_0c9810ca6cf0aa::t_3c9e64ffbbf790 3,24,26-28,31
+packages/tui/src/components/MarkdownText.tsx
+  s_0c9810ca6cf0aa::t_3c9e64ffbbf790 1-12,14,16,18-20,22-26,40-86,90,95,97-99,101-105,107-137
+  s_0c9810ca6cf0aa::t_e0677907552c4b 13,15,17,21,27-39,87-89,91-94,96,100,106
+packages/tui/src/App.test.tsx
+  s_0c9810ca6cf0aa::t_a6d630c32f37c3 48-82
+  s_0c9810ca6cf0aa::t_56013d1f6c85b3 153-154,164,166,169
+  s_0c9810ca6cf0aa::t_3c9e64ffbbf790 168
+packages/tui/package.json
+  s_0c9810ca6cf0aa::t_a3e7cd12b3d795 16
+  s_0c9810ca6cf0aa::t_058166b9017aa6 17-18
+packages/tui/src/runtime.test.ts
+  s_0c9810ca6cf0aa::t_a6d630c32f37c3 17-20,51-72
+  s_0c9810ca6cf0aa::t_d66f3542e99b02 73-74
+packages/tui/src/App.tsx
+  s_0c9810ca6cf0aa::t_e0677907552c4b 17
+  s_0c9810ca6cf0aa::t_058166b9017aa6 33,390
+  s_0c9810ca6cf0aa::t_14a8d7ab122877 1,13,95-97,240-259,277,279-280,288-291,293-294,348-350,378
+  s_0c9810ca6cf0aa::t_f9aed0fc51cb55 370-371,374
+  s_0c9810ca6cf0aa::t_a6d630c32f37c3 278
+packages/tui/src/main.tsx
+  s_0c9810ca6cf0aa::t_058166b9017aa6 11,53,65,67,69-73,75
+packages/tui/src/components/Transcript.tsx
+  s_0c9810ca6cf0aa::t_3c9e64ffbbf790 5,7,35-36,39-55,64-65
+packages/tui/src/components/Composer.tsx
+  s_0c9810ca6cf0aa::t_058166b9017aa6 6,28,193,204
+  s_0c9810ca6cf0aa::t_14a8d7ab122877 170,175-176,186
+  s_0c9810ca6cf0aa::t_6b2e3b4f5c24b4 174
+  s_0c9810ca6cf0aa::t_d807147afc127a 166,168-169,171-173,179-185,187-192,194-203,205-208,210-212
+  s_0c9810ca6cf0aa::t_3c9e64ffbbf790 2,41
+packages/core/src/domain/context/__tests__/ContextLoader.test.ts
+  s_0c9810ca6cf0aa::t_14a8d7ab122877 51-54,75-84
+  s_0c9810ca6cf0aa::t_cafe8caa0d1e0a 85-86
+packages/tui/src/cursor-output.ts
+  s_0c9810ca6cf0aa::t_058166b9017aa6 1-67
+packages/tui/src/cursor-output.test.ts
+  s_0c9810ca6cf0aa::t_9d54ede0f9d4c1 24,30-31
+  s_0c9810ca6cf0aa::t_058166b9017aa6 1-23,25-29,32-41
+packages/tui/src/theme.ts
+  s_0c9810ca6cf0aa::t_d807147afc127a 2-4,7,11-14
+  s_0c9810ca6cf0aa::t_3c9e64ffbbf790 5-6,8-10,15,25
+packages/tui/src/components/CommandPalette.tsx
+  s_0c9810ca6cf0aa::t_d807147afc127a 33-40,42,54
+packages/tui/src/components/ProgressLine.tsx
+  s_0c9810ca6cf0aa::t_3c9e64ffbbf790 20-24
+  s_0c9810ca6cf0aa::t_aff6ff22f99dc4 10
+packages/core/src/domain/context/ContextLoader.ts
+  s_0c9810ca6cf0aa::t_14a8d7ab122877 3,17-29,32-33,125-134,140-143
+packages/tui/src/components/MarkdownText.test.tsx
+  s_0c9810ca6cf0aa::t_79009dd782b58b 1-29
+bun.lock
+  s_ce18d43f8a9a03::t_754f65735493e3 80,82,567-568
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "e398b25c0542f7e0c864ba182a6ece5110768a72",
+  "prompts": {},
+  "sessions": {
+    "s_0c9810ca6cf0aa": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0467f-4946-7e63-a50b-da3a8638b430",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_ce18d43f8a9a03": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a04732-2417-7fe3-b582-f86fb900e538",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
