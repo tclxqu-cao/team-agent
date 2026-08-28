@@ -8,6 +8,73 @@ ipcRenderer.on("agent:event", (_ipcEvent, data) => {
 });
 
 contextBridge.exposeInMainWorld("agentApi", {
+  // Window control (hide → background voice-wake mode, show → restore)
+  hideWindow: () => ipcRenderer.invoke("window:hide"),
+  showWindow: () => ipcRenderer.invoke("window:show"),
+  isWindowVisible: () => ipcRenderer.invoke("window:isVisible"),
+
+  // Native wake-word listener (macOS Speech framework; works without Google services)
+  wakeStart: (wakeWord: string) => ipcRenderer.invoke("wake:start", wakeWord),
+  wakeStop: () => ipcRenderer.invoke("wake:stop"),
+  onWake: (callback: (heard: string) => void): (() => void) => {
+    const handler = (_e: unknown, heard: string) => callback(heard);
+    ipcRenderer.on("wake:trigger", handler);
+    return () => ipcRenderer.removeListener("wake:trigger", handler);
+  },
+  // Voice command captured right after the wake word fired
+  onWakeCommand: (callback: (payload: { text: string }) => void): (() => void) => {
+    const handler = (_e: unknown, payload: { text: string }) => callback(payload);
+    ipcRenderer.on("wake:command", handler);
+    return () => ipcRenderer.removeListener("wake:command", handler);
+  },
+  // Two-way voice conversation: follow-up utterances become commands
+  // without the wake word while conversation mode is on.
+  wakeConversation: (on: boolean) => ipcRenderer.invoke("wake:conversation", on),
+
+  // Native one-shot dictation for the chat input.
+  dictationStart: () => ipcRenderer.invoke("dictation:start"),
+  dictationStop: () => ipcRenderer.invoke("dictation:stop"),
+  onDictation: (callback: (payload: { text: string; isFinal: boolean }) => void): (() => void) => {
+    const handler = (_e: unknown, payload: { text: string; isFinal: boolean }) => callback(payload);
+    ipcRenderer.on("dictation:result", handler);
+    return () => ipcRenderer.removeListener("dictation:result", handler);
+  },
+  onDictationError: (callback: (message: string) => void): (() => void) => {
+    const handler = (_e: unknown, message: string) => callback(message);
+    ipcRenderer.on("dictation:error", handler);
+    return () => ipcRenderer.removeListener("dictation:error", handler);
+  },
+
+  // Model-backed TTS via the voice service
+  ttsSpeak: (text: string) => ipcRenderer.invoke("tts:speak", text),
+  ttsStop: () => ipcRenderer.invoke("tts:stop"),
+  ttsPlaybackEnded: (generation: number) => ipcRenderer.invoke("tts:playback-ended", generation),
+  onTtsStart: (callback: (payload: unknown) => void): (() => void) => {
+    const handler = (_event: unknown, payload: unknown) => callback(payload);
+    ipcRenderer.on("tts:start", handler);
+    return () => ipcRenderer.removeListener("tts:start", handler);
+  },
+  onTtsPcm: (callback: (payload: unknown) => void): (() => void) => {
+    const handler = (_event: unknown, payload: unknown) => callback(payload);
+    ipcRenderer.on("tts:pcm", handler);
+    return () => ipcRenderer.removeListener("tts:pcm", handler);
+  },
+  onTtsStreamEnd: (callback: (payload: unknown) => void): (() => void) => {
+    const handler = (_event: unknown, payload: unknown) => callback(payload);
+    ipcRenderer.on("tts:stream-end", handler);
+    return () => ipcRenderer.removeListener("tts:stream-end", handler);
+  },
+  onTtsFlush: (callback: (payload: unknown) => void): (() => void) => {
+    const handler = (_event: unknown, payload: unknown) => callback(payload);
+    ipcRenderer.on("tts:flush", handler);
+    return () => ipcRenderer.removeListener("tts:flush", handler);
+  },
+  onTtsEnd: (callback: (payload: unknown) => void): (() => void) => {
+    const handler = (_event: unknown, payload: unknown) => callback(payload);
+    ipcRenderer.on("tts:end", handler);
+    return () => ipcRenderer.removeListener("tts:end", handler);
+  },
+
   // Agent control
   run: (input: string, sessionId: string, agentIds?: string[], agentName?: string, images?: string[]) =>
     ipcRenderer.invoke("agent:run", input, sessionId, agentIds, agentName, images),

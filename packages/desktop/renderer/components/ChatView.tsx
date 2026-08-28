@@ -7,6 +7,15 @@ import {
   type StreamEvent,
   type CronTask,
 } from "../stores/agentStore";
+import { useUIStore } from "../stores/uiStore";
+import {
+  startDictation,
+  stopSpeaking,
+  isASRSupported,
+  type DictationHandle,
+} from "../lib/speech";
+import { interruptSpeech } from "../lib/voice-interruption";
+import { PcmStreamPlayer } from "../lib/pcm-stream-player";
 
 /** Human-readable description of a cron/interval expression (browser-safe, no Node.js). */
 function describeCron(cron: string): string {
@@ -178,7 +187,10 @@ import { useSettingsStore } from "../stores/settingsStore";
 import ToolCallCard from "./ToolCallCard";
 import AskUserCard from "./AskUserCard";
 import ContextUsageBar from "./ContextUsageBar";
+import AgentActivityIndicator from "./AgentActivityIndicator";
+import ChatHeaderActions from "./ChatHeaderActions";
 import { widgetRegistry } from "./widgets/index.js";
+import { prepareVoiceCommand, shouldSkipVoiceSessionReload } from "../lib/voice-command";
 
 interface ChatViewProps {
   selectedProjectId?: string | null;
@@ -191,9 +203,19 @@ interface ChatViewProps {
   onSelectSession?: (sessionId: string) => void;
   /** Fired when a sub-agent session starts, completes, or errors — used for toast notifications */
   onSubAgentEvent?: (ev: { type: 'started' | 'completed' | 'failed'; agentName: string; task: string; subSessionId?: string }) => void;
+  onRunComplete?: (projectId: string | null, sessionId: string) => void | Promise<void>;
   sessionTitle?: string;
   onOpenSettings?: () => void;
   settingsOpen?: boolean;
+  onHideToBackground?: () => void;
+  onToggleAppearance?: (anchor: DOMRect) => void;
+  appearanceOpen?: boolean;
+  hideToBackgroundTitle?: string;
+  /** Voice command captured after the wake word — auto-creates a session
+   *  (under the mentioned project when present) and runs the agent. When
+   *  sessionId is set, the command continues that voice-conversation
+   *  session instead of creating a new one. */
+  voiceCommand?: { text: string; projectId: string | null; sessionId?: string | null; nonce: number } | null;
 }
 
 export default function ChatView({
@@ -208,6 +230,11 @@ export default function ChatView({
   sessionTitle,
   onOpenSettings,
   settingsOpen = false,
+  onHideToBackground,
+  onToggleAppearance,
+  appearanceOpen = false,
+  hideToBackgroundTitle,
+  voiceCommand = null,
 }: ChatViewProps) {
   const {
     messages,
@@ -265,9 +292,82 @@ export default function ChatView({
   const [slashQuery, setSlashQuery] = useState<string | null>(null);
   /** IDs of assistant messages that are manually expanded past the preview limit */
   const [expandedMessages, setExpandedMessages] = useState<Set<string>>(new Set());
-  const [thinkingText, setThinkingText] = useState("");
   /** Tracks what the agent is currently doing: thinking, waiting for tools, or idle */
   const [agentActivity, setAgentActivity] = useState<"idle" | "thinking" | "tools">("idle");
+
+  // ── Voice: dictation (input) + per-message TTS (output) ────────────────
+  const [isRecording, setIsRecording] = useState(false);
+  /** ID of the assistant message currently being spoken aloud */
+  const [speakingMsgId, setSpeakingMsgId] = useState<string | null>(null);
+  const dictationRef = useRef<DictationHandle | null>(null);
+
+  useEffect(() => {
+    const api = window.agentApi;
+    if (!api?.onTtsStart || !api.onTtsPcm || !api.onTtsStreamEnd || !api.onTtsFlush) return;
+    const player = new PcmStreamPlayer(api);
+    const dispose = [
+      api.onTtsStart((metadata) => player.start(metadata)),
+      api.onTtsPcm(({ generation, pcm }) => player.enqueue(generation, pcm)),
+      api.onTtsStreamEnd(({ generation }) => player.finish(generation)),
+      api.onTtsFlush(({ generation }) => player.flush(generation)),
+      api.onTtsEnd(() => setSpeakingMsgId(null)),
+    ];
+    return () => {
+      for (const removeListener of dispose) removeListener();
+      player.dispose();
+    };
+  }, []);
+
+  const handleMicToggle = () => {
+    if (isRecording) {
+      dictationRef.current?.stop();
+      dictationRef.current = null;
+      setIsRecording(false);
+      return;
+    }
+    void interruptSpeech(window.agentApi, stopSpeaking);
+    const prefix = input ? `${input.trimEnd()} ` : "";
+    const handle = startDictation({
+      onInterim: (text) => setInput(prefix + text),
+      onFinal: (text) => {
+        setInput(prefix + text);
+        inputRef.current?.focus();
+      },
+      onError: (message) => setError(message),
+      onEnd: () => {
+        setIsRecording(false);
+        dictationRef.current = null;
+      },
+    });
+    if (handle) {
+      dictationRef.current = handle;
+      setIsRecording(true);
+    }
+  };
+
+  const handleSpeakMessage = async (msgId: string, content: string) => {
+    if (speakingMsgId === msgId) {
+      await interruptSpeech(window.agentApi, stopSpeaking);
+      setSpeakingMsgId(null);
+      return;
+    }
+    await interruptSpeech(window.agentApi, stopSpeaking);
+    if (!window.agentApi?.ttsSpeak) {
+      setError("TTS 模型服务不可用");
+      return;
+    }
+    setSpeakingMsgId(msgId);
+    try {
+      const result = await window.agentApi.ttsSpeak(content);
+      if (!result.ok) {
+        setSpeakingMsgId(null);
+        setError("TTS 模型播报失败");
+      }
+    } catch (error) {
+      setSpeakingMsgId(null);
+      setError(error instanceof Error ? error.message : "TTS 模型播报失败");
+    }
+  };
   // Track which session the current agent run belongs to
   const runningSessionRef = useRef<string | null>(null);
   // Track whether the user aborted the current run (skip queue processing)
@@ -434,6 +534,7 @@ export default function ChatView({
       if (!window.agentApi) return;
       // Capture at call time — used to detect stale responses from fast session switching.
       const targetSid = selectedSessionId;
+      if (shouldSkipVoiceSessionReload(runningSessionRef.current, sessionIdRef.current, targetSid)) return;
       if (!targetSid) {
         clearMessages();
         setError(null);
@@ -443,7 +544,6 @@ export default function ChatView({
       // Don't reload from DB while agent is streaming FOR THIS SESSION — messages are in-memory.
       // But only skip if the store already has this session loaded; if the user navigated away
       // and back, sessionId won't match and we must reload.
-      if (runningSessionRef.current === targetSid && sessionId === targetSid) return;
 
       setError(null);
       try {
@@ -614,14 +714,12 @@ export default function ChatView({
         if (event.text) {
           appendText(event.text, eventSid);
           if (isViewed) {
-            setThinkingText("");
             setAgentActivity("thinking");
           }
         }
         break;
       case "tool_call":
         if (isViewed) {
-          setThinkingText("");
           setAgentActivity("tools");
         }
         // dispatch_agent is handled by the subsequent "agent_dispatch" event which
@@ -752,8 +850,7 @@ export default function ChatView({
         break;
       case "text_done": break;
       case "thinking":
-        if (event.message && isViewed) {
-          setThinkingText(prev => prev + (prev ? "\n" : "") + event.message);
+        if (isViewed) {
           setAgentActivity("thinking");
         }
         break;
@@ -764,8 +861,24 @@ export default function ChatView({
           setRunningSession(null);
         }
         if (isViewed) {
-          setThinkingText("");
           setAgentActivity("idle");
+          // Auto voice output uses the configured local/remote TTS model only.
+          if (useUIStore.getState().autoSpeak) {
+            const msgs = useAgentStore.getState().messages;
+            const lastAssistant = [...msgs].reverse().find(
+              (m) => m.role === "assistant" && m.content && !m.isCompactionSummary,
+            );
+            if (lastAssistant?.content) {
+              if (window.agentApi?.ttsSpeak) {
+                stopSpeaking();
+                void window.agentApi.ttsSpeak(lastAssistant.content.slice(0, 600)).then((result) => {
+                  if (!result.ok) setError("TTS 模型播报失败");
+                }).catch((error) => {
+                  setError(error instanceof Error ? error.message : "TTS 模型播报失败");
+                });
+              }
+            }
+          }
         }
         break;
       case "error":
@@ -820,7 +933,6 @@ export default function ChatView({
     abortRef.current = false;
     runningSessionRef.current = targetSessionId;
     setRunningSession(targetSessionId);
-    setThinkingText("");
     try {
       if (window.agentApi) {
         await window.agentApi.run(
@@ -840,18 +952,20 @@ export default function ChatView({
         : undefined;
       if (nextQueued) {
         updateMessage(nextQueued.id, (m) => ({ ...m, isQueued: false }));
-        if (onRunComplete) void onRunComplete(selectedProjectId);
+        if (onRunComplete) void onRunComplete(selectedProjectId, targetSessionId);
         void startRun(nextQueued, targetSessionId);
       } else {
         runningSessionRef.current = null;
         setRunningSession(null);
-        if (onRunComplete) void onRunComplete(selectedProjectId);
+        if (onRunComplete) void onRunComplete(selectedProjectId, targetSessionId);
       }
     }
   };
 
   const handleSend = async () => {
     if (!input.trim() || !isConfigured) return;
+
+    void interruptSpeech(window.agentApi, stopSpeaking);
 
     setError(null);
 
@@ -1055,7 +1169,6 @@ export default function ChatView({
     }
 
     // ── Normal send flow ───────────────────────────────────────────────────
-    setThinkingText("");  // clear any previous thinking from prior turns
     setTodos([]);  // clear previous run's todos on new message
 
     addMessage({
@@ -1106,20 +1219,64 @@ export default function ChatView({
     }
   };
 
+  // ── Voice command from wake word ───────────────────────────────────────
+  // Create a fresh session — under the project mentioned in the command when
+  // one was matched, otherwise a plain session — and run the agent, all
+  // without any user interaction.
+  useEffect(() => {
+    if (!voiceCommand || !window.agentApi) return;
+    const { text, projectId, sessionId } = voiceCommand;
+    let cancelled = false;
+    (async () => {
+      try {
+        setTodos([]);
+        const targetSessionId = await prepareVoiceCommand({
+          text,
+          projectId,
+          sessionId,
+          createSession: async (title, targetProjectId) => (
+            await window.agentApi.createSession(title, targetProjectId)
+          ) as { id: string },
+          activateSession: (targetId) => {
+            sessionIdRef.current = targetId;
+            setSessionId(targetId);
+            runningSessionRef.current = targetId;
+            setRunningSession(targetId);
+          },
+          showUserMessage: (message, targetId) => addMessage({
+            id: crypto.randomUUID(),
+            role: "user",
+            content: message,
+            timestamp: Date.now(),
+          }, targetId),
+          onSessionCreated,
+          isCancelled: () => cancelled,
+        });
+        if (!targetSessionId) return;
+        if (onMessageSent) void onMessageSent(targetSessionId, text);
+        await startRun({ content: text }, targetSessionId);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "语音指令执行失败");
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [voiceCommand?.nonce]);
+
   return (
-    <div style={{
+    <div className="chat-view" style={{
       display: "flex",
       flexDirection: "column",
       height: "100%",
-      maxWidth: 880,
+      maxWidth: "var(--chat-max-width)",
       margin: "0 auto",
     }}>
       {/* ── Top bar: title + settings ── */}
-      <div style={{
+      <div className="chat-top-bar" style={{
         display: "flex",
         alignItems: "center",
-        padding: "0 20px",
-        height: 52,
+        padding: "var(--chat-header-padding)",
+        height: "var(--chat-header-height)",
         flexShrink: 0,
         borderBottom: "1px solid var(--border-subtle)",
         WebkitAppRegion: "no-drag",
@@ -1137,46 +1294,23 @@ export default function ChatView({
         }}>
           {sessionTitle || "会话"}
         </span>
-        {onOpenSettings && (
-          <button
-            onClick={onOpenSettings}
-            title="设置"
-            onMouseEnter={e => {
-              (e.currentTarget as HTMLButtonElement).style.background = "var(--bg-deep)";
-              (e.currentTarget as HTMLButtonElement).style.color = "var(--text-primary)";
-            }}
-            onMouseLeave={e => {
-              (e.currentTarget as HTMLButtonElement).style.background = "transparent";
-              (e.currentTarget as HTMLButtonElement).style.color = settingsOpen ? "var(--accent)" : "var(--text-muted)";
-            }}
-            style={{
-              flexShrink: 0,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              width: 32,
-              height: 32,
-              borderRadius: 8,
-              border: "none",
-              background: "transparent",
-              color: settingsOpen ? "var(--accent)" : "var(--text-muted)",
-              cursor: "pointer",
-              transition: "background 0.15s, color 0.15s",
-            }}
-          >
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="12" cy="12" r="3"/>
-              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
-            </svg>
-          </button>
+        {onOpenSettings && onHideToBackground && onToggleAppearance && (
+          <ChatHeaderActions
+            appearanceOpen={appearanceOpen}
+            settingsOpen={settingsOpen}
+            hideToBackgroundTitle={hideToBackgroundTitle}
+            onHideToBackground={onHideToBackground}
+            onToggleAppearance={onToggleAppearance}
+            onOpenSettings={onOpenSettings}
+          />
         )}
       </div>
 
       {/* Messages area */}
-      <div style={{
+      <div className="chat-messages" style={{
         flex: 1,
         overflow: "auto",
-        padding: "24px 40px 16px",
+        padding: "var(--chat-messages-padding)",
       }}>
 
         {messages.length === 0 && (
@@ -1339,62 +1473,36 @@ export default function ChatView({
           const isTurnBoundary = nextMsg && nextMsg.role !== msg.role && !nextMsg.isCompactionSummary;
 
           return (
-          <div key={msg.id} style={{ marginBottom: isTurnBoundary ? 16 : 3 }}>
-            {/* Thinking block — single display, only for the last streaming assistant */}
+          <div
+            key={msg.id}
+            className="chat-message-group"
+            style={{ marginBottom: isTurnBoundary ? "var(--chat-turn-gap)" : "var(--chat-message-gap)" }}
+          >
+            {/* Activity status — single display, only for the last streaming assistant */}
             {showThinking && (
               <div style={{
                 display: "flex",
-                paddingLeft: 40, marginBottom: 4,
+                paddingLeft: "calc(var(--chat-avatar-size) + var(--chat-row-gap))", marginBottom: 4,
               }}>
-                <div style={{
-                  fontSize: 11, color: "var(--text-muted)", fontStyle: "italic",
-                  padding: thinkingText ? "6px 12px" : "4px 0",
-                  borderRadius: 8,
-                  background: thinkingText ? "var(--bg-deep)" : "transparent",
-                  border: thinkingText ? "1px solid var(--border-subtle)" : "none",
-                  whiteSpace: "pre-wrap", wordBreak: "break-word",
-                  lineHeight: 1.6, maxHeight: 160, overflow: "auto",
-                  maxWidth: "76%",
-                }}>
-                  {thinkingText ? (
-                    <>
-                      <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 4, opacity: 0.6 }}>
-                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v12a2.5 2.5 0 0 1-5 0v-12A2.5 2.5 0 0 1 9.5 2z"/><path d="M9.5 2A2.5 2.5 0 0 0 7 4.5v12a2.5 2.5 0 0 0 5 0v-12A2.5 2.5 0 0 0 9.5 2z"/><path d="M4.5 8H7"/><path d="M12 8h2.5"/><path d="M4 14h2.5"/><path d="M12 14h2.5"/><path d="M4 11h16"/><path d="M12 11h2.5"/></svg>
-                        <span style={{ fontWeight: 600 }}>思考过程</span>
-                      </div>
-                      {thinkingText}
-                    </>
-                  ) : (
-                    <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                      {agentActivity === "tools" ? "工具执行中" : "思考中"}
-                      {[0, 1, 2].map((i) => (
-                        <span key={i} style={{
-                          width: 4, height: 4, borderRadius: "50%",
-                          background: "var(--accent)", display: "inline-block",
-                          animation: "wave 1.1s ease-in-out infinite",
-                          animationDelay: `${i * 0.16}s`,
-                        }} />
-                      ))}
-                    </div>
-                  )}
-                </div>
+                <AgentActivityIndicator activity={agentActivity === "tools" ? "tools" : "thinking"} />
               </div>
             )}
             {/* Main message row */}
           <div
+            className="chat-message-row"
             style={{
               display: "flex",
               flexDirection: isUser ? "row-reverse" : "row",
               alignItems: "flex-start",
-              gap: 10,
+              gap: "var(--chat-row-gap)",
               animation: `fadeInUp 0.3s var(--ease-out) both`,
             }}
           >
             {/* Avatar */}
             {isUser ? (
-              <div style={{
-                width: 30,
-                height: 30,
+              <div className="chat-message-avatar" style={{
+                width: "var(--chat-avatar-size)",
+                height: "var(--chat-avatar-size)",
                 borderRadius: "50%",
                 flexShrink: 0,
                 display: "flex",
@@ -1410,9 +1518,9 @@ export default function ChatView({
                 {userAvatarLabel}
               </div>
             ) : (
-              <div style={{
-                width: 30,
-                height: 30,
+              <div className="chat-message-avatar" style={{
+                width: "var(--chat-avatar-size)",
+                height: "var(--chat-avatar-size)",
                 borderRadius: "50%",
                 flexShrink: 0,
                 display: "flex",
@@ -1435,18 +1543,19 @@ export default function ChatView({
             )}
 
             {/* Bubble */}
-            <div style={{ maxWidth: "76%", display: "flex", flexDirection: "column", gap: 4, alignItems: isUser ? "flex-end" : "flex-start", minWidth: 0 }}>
-              <div style={{
+            <div className="chat-message-content" style={{ maxWidth: "var(--chat-content-max-width)", display: "flex", flexDirection: "column", gap: 4, alignItems: isUser ? "flex-end" : "flex-start", minWidth: 0 }}>
+              <div className={`chat-message-bubble ${msg.role === "assistant" && msg.content ? "message-card" : ""}`} style={{
                 // Tool-call-only messages: no bubble wrapper — cards render inline
-                padding: (msg.content || (isUser && chatMsg.images?.length)) ? (isUser ? "10px 14px" : "11px 15px") : 0,
+                padding: (msg.content || (isUser && chatMsg.images?.length))
+                  ? (isUser ? "var(--chat-user-bubble-padding)" : "var(--chat-assistant-bubble-padding)")
+                  : 0,
                 borderRadius: isUser
                   ? "14px 4px 14px 14px"
                   : "4px 14px 14px 14px",
-                background: (msg.content || (isUser && chatMsg.images?.length)) ? (isUser ? "rgba(79, 110, 247, 0.08)" : "var(--bg-surface)") : "transparent",
-                border: (msg.content || (isUser && chatMsg.images?.length)) ? (isUser ? "1px solid rgba(79, 110, 247, 0.18)" : "1px solid var(--border-subtle)") : "none",
-                boxShadow: (msg.content || (isUser && chatMsg.images?.length)) ? (isUser ? "none" : "var(--shadow-sm)") : "none",
-                fontSize: 14,
-                lineHeight: 1.75,
+                background: (msg.content || (isUser && chatMsg.images?.length)) ? (isUser ? "rgba(79, 110, 247, 0.08)" : undefined) : "transparent",
+                border: (msg.content || (isUser && chatMsg.images?.length)) ? (isUser ? "1px solid rgba(79, 110, 247, 0.18)" : undefined) : "none",
+                fontSize: "var(--chat-bubble-font-size)",
+                lineHeight: "var(--chat-bubble-line-height)",
                 color: "var(--text-primary)",
                 letterSpacing: "0.01em",
               }}>
@@ -1629,6 +1738,49 @@ export default function ChatView({
                     </div>
                   );
                 })()}
+                {/* Per-message action bar (single-message output box controls) */}
+                {msg.role === "assistant" && msg.content && (
+                  <div className="msg-actions" style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 8 }}>
+                    {typeof window.agentApi?.ttsSpeak === "function" && (
+                      <button
+                        onClick={() => handleSpeakMessage(msg.id, msg.content)}
+                        title={speakingMsgId === msg.id ? "停止播报" : "语音播报"}
+                        style={{
+                          display: "inline-flex", alignItems: "center", gap: 4,
+                          padding: "2px 9px", borderRadius: 14,
+                          border: speakingMsgId === msg.id ? "1px solid var(--accent)" : "1px solid var(--border-default)",
+                          background: speakingMsgId === msg.id ? "var(--accent-dim)" : "var(--bg-deep)",
+                          color: speakingMsgId === msg.id ? "var(--accent)" : "var(--text-muted)",
+                          fontSize: 11, cursor: "pointer", fontFamily: "var(--font-body)",
+                          transition: "all 0.15s",
+                        }}
+                      >
+                        {speakingMsgId === msg.id ? (
+                          <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14" rx="2"/></svg>
+                        ) : (
+                          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
+                        )}
+                        {speakingMsgId === msg.id ? "停止" : "播报"}
+                      </button>
+                    )}
+                    <button
+                      onClick={() => { void navigator.clipboard?.writeText(msg.content); }}
+                      title="复制内容"
+                      style={{
+                        display: "inline-flex", alignItems: "center", gap: 4,
+                        padding: "2px 9px", borderRadius: 14,
+                        border: "1px solid var(--border-default)",
+                        background: "var(--bg-deep)",
+                        color: "var(--text-muted)",
+                        fontSize: 11, cursor: "pointer", fontFamily: "var(--font-body)",
+                        transition: "all 0.15s",
+                      }}
+                    >
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+                      复制
+                    </button>
+                  </div>
+                )}
               </div>
               {/* Queue / Steer badge for queued user messages */}
               {isUser && (chatMsg.isQueued || chatMsg.isSteered) && (
@@ -1724,27 +1876,7 @@ export default function ChatView({
                 <path d="M8 20h8"/>
               </svg>
             </div>
-            <div style={{
-              padding: "9px 14px",
-              borderRadius: "4px 14px 14px 14px",
-              background: "var(--bg-surface)",
-              border: "1px solid var(--border-subtle)",
-              boxShadow: "var(--shadow-sm)",
-              display: "flex", alignItems: "center", gap: 7,
-              fontSize: 13, color: "var(--text-muted)", fontStyle: "italic",
-            }}>
-              {agentActivity === "tools" ? "工具执行中" : "思考中"}
-              {[0, 1, 2].map((i) => (
-                <span key={i} style={{
-                  width: 4, height: 4, borderRadius: "50%",
-                  background: "var(--accent)",
-                  display: "inline-block",
-                  animation: "pulse-glow 1.2s ease-in-out infinite",
-                  animationDelay: `${i * 0.2}s`,
-                  opacity: 0.8,
-                }} />
-              ))}
-            </div>
+            <AgentActivityIndicator activity={agentActivity === "tools" ? "tools" : "thinking"} />
           </div>
         )}
 
@@ -1768,8 +1900,8 @@ export default function ChatView({
       </div>
 
       {/* Input area */}
-      <div style={{
-        padding: "12px 24px 18px",
+      <div className="chat-input-area" style={{
+        padding: "var(--chat-input-padding)",
         background: "var(--bg-deepest)",
         borderTop: "1px solid var(--border-subtle)",
       }}>
@@ -2210,14 +2342,12 @@ export default function ChatView({
         {/* Input box */}
         <div ref={pickerAnchorRef} style={{ position: "relative" }}>
 
-        <div style={{
+        <div className="composer-shell" style={{
           display: "flex",
           flexDirection: "column",
           gap: 0,
           background: "var(--bg-surface)",
           borderRadius: 14,
-          border: "1.5px solid var(--border-default)",
-          boxShadow: "var(--shadow-sm)",
           overflow: "visible",
         }}>
           <ContextUsageBar usage={viewSessionId ? contextUsageBySession[viewSessionId] : undefined} contextWindowK={contextWindow} />
@@ -2304,11 +2434,11 @@ export default function ChatView({
           })()}
 
           {/* Inner input row */}
-          <div style={{
+          <div className="composer-input-row" style={{
             display: "flex",
             alignItems: "center",
             gap: 8,
-            padding: "6px 6px 6px 12px",
+            padding: "var(--composer-row-padding)",
           }}>
           {/* Hidden file input */}
           <input
@@ -2324,30 +2454,28 @@ export default function ChatView({
             onClick={() => fileInputRef.current?.click()}
             disabled={!isConfigured || isRunning}
             title="添加附件"
-            onMouseEnter={e => {
-              if (isConfigured && !isRunning) {
-                (e.currentTarget as HTMLButtonElement).style.background = "var(--accent-dim)";
-                (e.currentTarget as HTMLButtonElement).style.color = "var(--accent)";
-              }
-            }}
-            onMouseLeave={e => {
-              (e.currentTarget as HTMLButtonElement).style.background = "transparent";
-              (e.currentTarget as HTMLButtonElement).style.color = "var(--text-muted)";
-            }}
-            style={{
-              width: 32, height: 32,
-              borderRadius: 8,
-              border: "none",
-              background: "transparent",
-              color: "var(--text-muted)",
-              cursor: isConfigured && !isRunning ? "pointer" : "not-allowed",
-              display: "flex", alignItems: "center", justifyContent: "center",
-              flexShrink: 0,
-              transition: "background 0.15s, color 0.15s",
-            }}
+            className="ui-icon-button"
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
+            </svg>
+          </button>
+
+          {/* Voice input (dictation) button */}
+          <button
+            onClick={handleMicToggle}
+            disabled={!isConfigured}
+            className={`ui-icon-button ${isRecording ? "mic-recording" : ""}`}
+            title={!isASRSupported() ? "当前环境不支持语音输入" : (isRecording ? "停止录音" : "语音输入")}
+            style={isRecording ? {
+              background: "rgba(244,63,94,0.12)",
+              color: "var(--danger)",
+            } : undefined}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/>
+              <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+              <line x1="12" y1="19" x2="12" y2="22"/>
             </svg>
           </button>
 
@@ -2356,26 +2484,8 @@ export default function ChatView({
             onClick={() => void handleScreenshot()}
             disabled={!isConfigured || isRunning}
             title="粘贴截图（需先 Cmd+Shift+4 截图至剪贴板）"
-            onMouseEnter={e => {
-              if (isConfigured && !isRunning) {
-                (e.currentTarget as HTMLButtonElement).style.background = "var(--accent-dim)";
-                (e.currentTarget as HTMLButtonElement).style.color = "var(--accent)";
-              }
-            }}
-            onMouseLeave={e => {
-              (e.currentTarget as HTMLButtonElement).style.background = pendingImages.length > 0 ? "var(--accent-dim)" : "transparent";
-              (e.currentTarget as HTMLButtonElement).style.color = pendingImages.length > 0 ? "var(--accent)" : "var(--text-muted)";
-            }}
+            className={`ui-icon-button ${pendingImages.length > 0 ? "is-active" : ""}`}
             style={{
-              width: 32, height: 32,
-              borderRadius: 8,
-              border: pendingImages.length > 0 ? "1px solid rgba(79,110,247,0.35)" : "none",
-              background: pendingImages.length > 0 ? "var(--accent-dim)" : "transparent",
-              color: pendingImages.length > 0 ? "var(--accent)" : "var(--text-muted)",
-              cursor: isConfigured && !isRunning ? "pointer" : "not-allowed",
-              display: "flex", alignItems: "center", justifyContent: "center",
-              flexShrink: 0,
-              transition: "background 0.15s, color 0.15s",
               position: "relative",
             }}
           >
@@ -2593,7 +2703,7 @@ export default function ChatView({
           letterSpacing: "0.03em",
           opacity: 0.6,
         }}>
-          Enter 发送{isRunning ? "（排队）" : ""} · @智能体（可多选）· /技能 · Shift+Enter 换行
+          Enter 发送{isRunning ? "（排队）" : ""} · @智能体（可多选）· /技能 · Shift+Enter 换行{isRecording ? " · 🎤 正在聆听…" : ""}
         </div>
       </div>
 

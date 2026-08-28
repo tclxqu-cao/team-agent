@@ -80,6 +80,32 @@ export interface TodoItem {
 }
 
 export interface AgentApi {
+  // Window control (hide → background voice-wake mode, show → restore)
+  hideWindow(): Promise<void>;
+  showWindow(): Promise<void>;
+  isWindowVisible(): Promise<boolean>;
+  // Native wake-word listener (macOS Speech framework)
+  wakeStart(wakeWord: string): Promise<{ ok: boolean; reason?: string }>;
+  wakeStop(): Promise<{ ok: boolean }>;
+  onWake(callback: (heard: string) => void): () => void;
+  // Voice command captured right after the wake word fired
+  onWakeCommand(callback: (payload: { text: string }) => void): () => void;
+  // Two-way voice conversation mode (follow-ups without wake word)
+  wakeConversation(on: boolean): Promise<{ ok: boolean; conversation: boolean }>;
+  // Native one-shot dictation for the chat input
+  dictationStart(): Promise<{ ok: boolean; reason?: string }>;
+  dictationStop(): Promise<{ ok: boolean }>;
+  onDictation(callback: (payload: { text: string; isFinal: boolean }) => void): () => void;
+  onDictationError(callback: (message: string) => void): () => void;
+  // Model-backed TTS via the voice service
+  ttsSpeak(text: string): Promise<{ ok: boolean }>;
+  ttsStop(): Promise<{ ok: boolean }>;
+  ttsPlaybackEnded(generation: number): Promise<{ ok: boolean }>;
+  onTtsStart(callback: (payload: TtsStreamMetadata) => void): () => void;
+  onTtsPcm(callback: (payload: { generation: number; pcm: ArrayBuffer }) => void): () => void;
+  onTtsStreamEnd(callback: (payload: { generation: number }) => void): () => void;
+  onTtsFlush(callback: (payload: { generation: number }) => void): () => void;
+  onTtsEnd(callback: (payload: { generation: number }) => void): () => void;
   run(input: string, sessionId: string, agentIds?: string[], agentName?: string, images?: string[]): Promise<unknown[]>;
   steer(input: string, sessionId: string, agentName?: string): Promise<boolean>;
   abort(): Promise<void>;
@@ -153,6 +179,14 @@ export interface AgentApi {
   lspSave(config: Omit<LSPServerConfig, 'id'> & { id?: string }): Promise<void>;
   lspDelete(id: string): Promise<void>;
   lspSetEnabled(id: string, enabled: boolean): Promise<void>;
+}
+
+export interface TtsStreamMetadata {
+  sessionId: string;
+  generation: number;
+  sampleRate: 24_000;
+  channels: 1;
+  sampleFormat: "s16le";
 }
 
 declare global {

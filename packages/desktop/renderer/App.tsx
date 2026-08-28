@@ -1,14 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import ChatView from "./components/ChatView";
+import { renewVoiceConversation } from "./lib/voice-command";
 import SettingsPanel from "./components/SettingsPanel";
 import MCPServerList from "./components/MCPServerList";
 import MemoryViewer from "./components/MemoryViewer";
 import SkillManager from "./components/SkillManager";
 import AgentManager from "./components/AgentManager";
 import LSPServerList from "./components/LSPServerList";
+import WakeOverlay from "./components/WakeOverlay";
 import { useSettingsStore } from "./stores/settingsStore";
 import { useAgentStore } from "./stores/agentStore";
+import { useUIStore, SKINS, LAYOUTS } from "./stores/uiStore";
+import { startWakeListener, isASRSupported, type WakeListenerHandle } from "./lib/speech";
 
 type SettingsTab = "settings" | "mcp" | "memory" | "skill" | "agent" | "lsp";
 
@@ -48,6 +52,213 @@ export default function App() {
   const [settingsTab, setSettingsTab] = useState<SettingsTab>("settings");
 
   const setTodos = useAgentStore((s) => s.setTodos);
+
+  // ── Appearance & voice preferences ─────────────────────────────────────
+  const skin = useUIStore((s) => s.skin);
+  const layout = useUIStore((s) => s.layout);
+  const wakeEnabled = useUIStore((s) => s.wakeEnabled);
+  const wakeWord = useUIStore((s) => s.wakeWord);
+  const setSkin = useUIStore((s) => s.setSkin);
+  const setLayout = useUIStore((s) => s.setLayout);
+  const setWakeEnabled = useUIStore((s) => s.setWakeEnabled);
+  const setWakeWord = useUIStore((s) => s.setWakeWord);
+  const autoSpeak = useUIStore((s) => s.autoSpeak);
+  const setAutoSpeak = useUIStore((s) => s.setAutoSpeak);
+
+  const [showAppearance, setShowAppearance] = useState(false);
+  const [appearanceAnchor, setAppearanceAnchor] = useState<{ right: number; bottom: number } | null>(null);
+  const [wakeTrigger, setWakeTrigger] = useState(0);
+  const [wakeHeard, setWakeHeard] = useState<string | undefined>(undefined);
+  const wakeHandleRef = useRef<WakeListenerHandle | null>(null);
+  const wakeNativeActive = useRef(false);
+  /** Voice command captured after the wake word (text + routed project) */
+  const [voiceCommand, setVoiceCommand] = useState<{ text: string; projectId: string | null; sessionId?: string | null; nonce: number } | null>(null);
+  /** Active two-way voice conversation: follow-up voice commands route to
+   *  this session instead of creating a new one. */
+  const convoRef = useRef<{ sessionId: string; until: number } | null>(null);
+  /** Set while a voice command awaits session creation (arms conversation) */
+  const pendingVoiceConvo = useRef(false);
+  // Refs so the wake-command subscription (registered once) sees fresh state
+  const projectsRef = useRef(projects);
+  projectsRef.current = projects;
+  const invalidProjectsRef = useRef(invalidProjectIds);
+  invalidProjectsRef.current = invalidProjectIds;
+
+  // Apply skin / layout to the DOM
+  useEffect(() => {
+    document.documentElement.setAttribute("data-skin", skin);
+  }, [skin]);
+  useEffect(() => {
+    document.body.classList.toggle("layout-compact", layout === "compact");
+  }, [layout]);
+
+  const beginWakeListening = useCallback(() => {
+    if (!window.agentApi || !wakeEnabled) return;
+    if (wakeNativeActive.current || wakeHandleRef.current) return;
+    const startWebFallback = () => {
+      if (isASRSupported() && !wakeHandleRef.current) {
+        wakeHandleRef.current = startWakeListener({
+          wakeWord,
+          onWake: (heard) => {
+            setWakeHeard(heard);
+            setWakeTrigger((t) => t + 1);
+            void window.agentApi?.showWindow();
+          },
+          onError: (msg) => console.warn("[wake]", msg),
+        });
+      }
+    };
+    // Prefer the native macOS Speech listener — it does not depend on
+    // Google's speech services, which are unreachable from CN networks.
+    if (typeof window.agentApi.wakeStart === "function") {
+      wakeNativeActive.current = true;
+      void window.agentApi
+        .wakeStart(wakeWord)
+        .then((res) => {
+          if (!res.ok) {
+            wakeNativeActive.current = false;
+            startWebFallback();
+          }
+        })
+        .catch(() => {
+          wakeNativeActive.current = false;
+          startWebFallback();
+        });
+    } else {
+      startWebFallback();
+    }
+  }, [wakeEnabled, wakeWord]);
+
+  // Native wake fires from the main process (main shows the window itself);
+  // here we only play the wake animation.
+  useEffect(() => {
+    if (!window.agentApi?.onWake) return;
+    return window.agentApi.onWake((heard) => {
+      wakeNativeActive.current = false;
+      setWakeHeard(heard);
+      setWakeTrigger((t) => t + 1);
+    });
+  }, []);
+
+  // Voice command captured right after the wake word: route to a project
+  // when its name is mentioned in the command, then hand the command to
+  // ChatView which creates a session and runs the agent. No project mention
+  // → plain session (projects are not a hard dependency).
+  useEffect(() => {
+    if (!window.agentApi?.onWakeCommand) return;
+    return window.agentApi.onWakeCommand((payload) => {
+      const text = (payload?.text || "").trim();
+      if (!text) return;
+      // Two-way conversation: route follow-ups to the existing voice session
+      const convo = convoRef.current && Date.now() < convoRef.current.until ? convoRef.current : null;
+      if (convo) {
+        convo.until = Date.now() + 90000;
+        setSelectedSessionId(convo.sessionId);
+        void window.agentApi?.wakeConversation(true);
+        setVoiceCommand({ text, projectId: null, sessionId: convo.sessionId, nonce: Date.now() });
+        setNotice(`语音追问：${text.length > 40 ? text.slice(0, 40) + "…" : text}`);
+        setNoticeType("success");
+        setTimeout(() => setNotice(null), 4000);
+        return;
+      }
+      const proj = projectsRef.current.find(
+        (p) => p.name && text.includes(p.name) && !invalidProjectsRef.current.has(p.id),
+      );
+      if (proj) {
+        setSelectedProjectId(proj.id);
+        setExpandedProjects((prev) => { const n = new Set(prev); n.add(proj.id); return n; });
+      }
+      setSelectedSessionId(null);
+      pendingVoiceConvo.current = true;
+      // Voice-originated sessions speak their replies back (two-way voice)
+      setAutoSpeak(true);
+      setVoiceCommand({ text, projectId: proj?.id ?? null, nonce: Date.now() });
+      setNotice(`语音指令：${text.length > 40 ? text.slice(0, 40) + "…" : text}${proj ? `（项目：${proj.name}）` : ""}`);
+      setNoticeType("success");
+      setTimeout(() => setNotice(null), 4000);
+    });
+  }, []);
+
+  const hideToBackground = useCallback(async () => {
+    if (!window.agentApi) return;
+    // Start the wake loop before hiding so it never misses the wake word
+    beginWakeListening();
+    await window.agentApi.hideWindow();
+  }, [beginWakeListening]);
+
+  const toggleAppearance = useCallback((anchor: DOMRect) => {
+    setShowSettings(false);
+    setAppearanceAnchor({ right: anchor.right, bottom: anchor.bottom });
+    setShowAppearance((visible) => !visible);
+  }, []);
+
+  const toggleSettings = useCallback(() => {
+    setShowAppearance(false);
+    setShowSettings((visible) => !visible);
+  }, []);
+
+  useEffect(() => {
+    if (!showAppearance) return;
+
+    const syncAppearanceAnchor = () => {
+      const button = document.querySelector<HTMLButtonElement>(".chat-header-action--appearance");
+      if (!button) return;
+      const rect = button.getBoundingClientRect();
+      setAppearanceAnchor((current) => (
+        current?.right === rect.right && current.bottom === rect.bottom
+          ? current
+          : { right: rect.right, bottom: rect.bottom }
+      ));
+    };
+
+    const frame = window.requestAnimationFrame(syncAppearanceAnchor);
+    window.addEventListener("resize", syncAppearanceAnchor);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.removeEventListener("resize", syncAppearanceAnchor);
+    };
+  }, [layout, showAppearance]);
+
+  // Start wake listening as soon as the app loads (not only when hidden):
+  // SFSpeechRecognizer needs a long warm-up before it reports anything, so
+  // keeping it running while the window is visible makes the later wake
+  // reliable. Matches are ignored by the main process while visible.
+  useEffect(() => {
+    if (!window.agentApi) return;
+    beginWakeListening();
+  }, [beginWakeListening]);
+
+  // Stop only the web fallback when the window regains focus; the native
+  // helper must stay alive to keep the recognizer warm.
+  useEffect(() => {
+    const onFocus = () => {
+      wakeHandleRef.current?.stop();
+      wakeHandleRef.current = null;
+    };
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, []);
+
+  // Toggle off → stop listening entirely (both native and web fallback)
+  useEffect(() => {
+    if (wakeEnabled) return;
+    wakeHandleRef.current?.stop();
+    wakeHandleRef.current = null;
+    wakeNativeActive.current = false;
+    void window.agentApi?.wakeStop();
+  }, [wakeEnabled]);
+
+  // Wake-word edit → push the new word to the already-running native
+  // listener (wake:start refreshes the match variants in the main process)
+  useEffect(() => {
+    if (!wakeEnabled || !window.agentApi) return;
+    if (wakeNativeActive.current) void window.agentApi.wakeStart(wakeWord);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wakeWord]);
+
+  useEffect(() => () => {
+    wakeHandleRef.current?.stop();
+  }, []);
 
   const selectedSessionTitle = selectedSessionId
     ? Object.values(sessionsByProject).flat().find(s => s.id === selectedSessionId)?.title
@@ -347,6 +558,8 @@ const loadProjects = async () => {
         zIndex: 0,
       }} />
 
+      {layout !== "focus" && (
+      <>
       <aside
         style={{
           width: sidebarWidth,
@@ -413,6 +626,16 @@ const loadProjects = async () => {
             letterSpacing: "0.1em",
             fontWeight: 600,
           }}>项目</span>
+          <button
+            onClick={() => void handleImportProject()}
+            title="导入项目"
+            aria-label="导入项目"
+            className="ui-icon-button ui-icon-button--small"
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M12 5v14M5 12h14" />
+            </svg>
+          </button>
         </div>
 
         {/* Project + session list */}
@@ -427,14 +650,10 @@ const loadProjects = async () => {
               return (
                 <div key={project.id}>
                   {/* Project row */}
-                  <div style={{
-                    display: "flex", alignItems: "center",
-                    borderRadius: 8,
-                    background: isSelected && !isInvalid ? "var(--accent-dim)" : "transparent",
-                    transition: "background 0.15s",
-                    paddingRight: 4,
-                    opacity: isInvalid ? 0.45 : 1,
-                  }}>
+                  <div
+                    className={`sidebar-row ${isSelected && !isInvalid ? "sidebar-row-active" : ""}`}
+                    style={{ paddingRight: 4, opacity: isInvalid ? 0.45 : 1 }}
+                  >
                     <button
                       onClick={() => { if (!isInvalid) void handleToggleProject(project.id); }}
                       disabled={isInvalid}
@@ -476,50 +695,30 @@ const loadProjects = async () => {
                         {project.name}
                       </span>
                       {projSessions.length > 0 && (
-                        <span style={{ flexShrink: 0, fontSize: 9, fontWeight: 600, color: isSelected && !isInvalid ? "var(--accent)" : "var(--text-muted)", background: isSelected && !isInvalid ? "var(--accent-dim)" : "var(--bg-deep)", border: "1px solid var(--border-subtle)", borderRadius: 8, padding: "0 5px", lineHeight: "15px", opacity: 0.8 }}>{projSessions.length}</span>
+                        <span className="sidebar-count" style={{ flexShrink: 0, fontSize: 9, fontWeight: 600, color: isSelected && !isInvalid ? "var(--accent)" : "var(--text-muted)", background: isSelected && !isInvalid ? "var(--accent-dim)" : "var(--bg-deep)", borderRadius: 8, padding: "0 5px", lineHeight: "15px", opacity: 0.8 }}>{projSessions.length}</span>
                       )}
                     </button>
                     {/* Delete project button */}
                     <button
                       onClick={(e) => { e.stopPropagation(); void handleDeleteProject(project.id); }}
                       title="删除项目"
+                      className="sidebar-row-action ui-icon-button ui-icon-button--small ui-icon-button--danger"
                       style={{
                         flexShrink: 0,
-                        width: 24, height: 24,
-                        border: "none",
-                        borderRadius: 6,
-                        background: "transparent",
-                        color: "var(--text-muted)",
                         fontSize: 14,
                         lineHeight: 1,
-                        cursor: "pointer",
-                        display: "flex", alignItems: "center", justifyContent: "center",
-                        opacity: 0.3,
-                        transition: "opacity 0.15s, color 0.15s",
                       }}
-                      onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.opacity = "1"; (e.currentTarget as HTMLButtonElement).style.color = "var(--danger)"; }}
-                      onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.opacity = "0.3"; (e.currentTarget as HTMLButtonElement).style.color = "var(--text-muted)"; }}
                     >×</button>
                     {/* New session button */}
                     <button
                       onClick={(e) => { e.stopPropagation(); void handleNewSession(project.id); }}
                       title="新建会话"
+                      className={`sidebar-row-action sidebar-row-action--accent ui-icon-button ui-icon-button--small ${isSelected && !isInvalid ? "is-active" : ""}`}
                       style={{
                         flexShrink: 0,
-                        width: 24, height: 24,
-                        border: "none",
-                        borderRadius: 6,
-                        background: "transparent",
-                        color: isSelected && !isInvalid ? "var(--accent)" : "var(--text-muted)",
                         fontSize: 16,
                         lineHeight: 1,
-                        cursor: "pointer",
-                        display: "flex", alignItems: "center", justifyContent: "center",
-                        transition: "color 0.15s",
-                        opacity: isSelected && !isInvalid ? 0.8 : 0.5,
                       }}
-                      onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.opacity = "1"; }}
-                      onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.opacity = isSelected && !isInvalid ? "0.8" : "0.5"; }}
                     >+</button>
                   </div>
 
@@ -536,13 +735,7 @@ const loadProjects = async () => {
                         const children = childSessionsByParent[session.id] ?? [];
                         return (
                           <div key={session.id}>
-                          <div style={{
-                            display: "flex", alignItems: "center",
-                            borderRadius: 7,
-                            background: isActiveSession ? "rgba(79,110,247,0.08)" : "transparent",
-                            transition: "background 0.15s",
-                            paddingRight: 4,
-                          }}>
+                          <div className={`sidebar-row ${isActiveSession ? "sidebar-row-active" : ""}`} style={{ paddingRight: 4 }}>
                             <button
                               onClick={() => {
                                 setSelectedProjectId(project.id);
@@ -581,11 +774,10 @@ const loadProjects = async () => {
                                 {session.title}
                               </span>
                               {children.length > 0 && (
-                                <span style={{
+                                <span className="sidebar-count" style={{
                                   flexShrink: 0, fontSize: 9, fontWeight: 600,
                                   color: isActiveSession ? "var(--accent)" : "var(--text-muted)",
                                   background: isActiveSession ? "var(--accent-dim)" : "var(--bg-deep)",
-                                  border: "1px solid var(--border-subtle)",
                                   borderRadius: 8, padding: "0 5px", lineHeight: "16px",
                                   opacity: 0.8,
                                 }}>{children.length}</span>
@@ -594,17 +786,11 @@ const loadProjects = async () => {
                             <button
                               onClick={() => void handleDeleteSession(session.id)}
                               title="删除会话"
+                              className="sidebar-row-action ui-icon-button ui-icon-button--small ui-icon-button--danger"
                               style={{
-                                border: "none", background: "transparent",
-                                color: isActiveSession ? "var(--accent)" : "var(--text-muted)",
-                                fontSize: 14, cursor: "pointer",
-                                padding: "2px 4px", flexShrink: 0, borderRadius: 4,
+                                fontSize: 14, flexShrink: 0,
                                 lineHeight: 1,
-                                opacity: isActiveSession ? 0.7 : 0.5,
-                                transition: "opacity 0.15s, color 0.15s",
                               }}
-                              onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.opacity = "1"; (e.currentTarget as HTMLButtonElement).style.color = "var(--danger)"; }}
-                              onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.opacity = isActiveSession ? "0.7" : "0.5"; (e.currentTarget as HTMLButtonElement).style.color = isActiveSession ? "var(--accent)" : "var(--text-muted)"; }}
                             >×</button>
                           </div>
                           {/* Child sessions (sub-agents) — indented under parent, collapsible */}
@@ -617,11 +803,7 @@ const loadProjects = async () => {
                           {children.map((child) => {
                             const isChildActive = selectedSessionId === child.id;
                             return (
-                              <div key={child.id} style={{
-                                display: "flex", alignItems: "center",
-                                borderRadius: 6,
-                                background: isChildActive ? "rgba(79,110,247,0.06)" : "transparent",
-                                transition: "background 0.15s",
+                              <div key={child.id} className={`sidebar-row ${isChildActive ? "sidebar-row-active" : ""}`} style={{
                                 paddingRight: 4,
                                 marginLeft: 14,
                                 borderLeft: "1px solid var(--border-subtle)",
@@ -655,14 +837,10 @@ const loadProjects = async () => {
                                 <button
                                   onClick={() => void handleDeleteSession(child.id)}
                                   title="删除子会话"
+                                  className="sidebar-row-action ui-icon-button ui-icon-button--small ui-icon-button--danger"
                                   style={{
-                                    border: "none", background: "transparent",
-                                    color: "var(--text-muted)", fontSize: 12, cursor: "pointer",
-                                    padding: "2px 4px", flexShrink: 0, borderRadius: 4,
-                                    lineHeight: 1, opacity: 0.4, transition: "opacity 0.15s, color 0.15s",
+                                    fontSize: 12, flexShrink: 0, lineHeight: 1,
                                   }}
-                                  onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.opacity = "1"; (e.currentTarget as HTMLButtonElement).style.color = "var(--danger)"; }}
-                                  onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.opacity = "0.4"; (e.currentTarget as HTMLButtonElement).style.color = "var(--text-muted)"; }}
                                 >×</button>
                               </div>
                             );
@@ -692,40 +870,6 @@ const loadProjects = async () => {
           </div>
         </div>
 
-        {/* Import project button */}
-        <div style={{ padding: "0 10px" }}>
-          <button
-            onClick={() => void handleImportProject()}
-            style={{
-              width: "100%",
-              padding: "9px 12px",
-              borderRadius: 8,
-              border: "1px dashed var(--border-default)",
-              background: "transparent",
-              color: "var(--text-muted)",
-              fontSize: 12,
-              fontWeight: 500,
-              cursor: "pointer",
-              display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
-              transition: "border-color 0.15s, color 0.15s, background 0.15s",
-            }}
-            onMouseEnter={e => {
-              (e.currentTarget as HTMLButtonElement).style.borderColor = "var(--accent)";
-              (e.currentTarget as HTMLButtonElement).style.color = "var(--accent)";
-              (e.currentTarget as HTMLButtonElement).style.background = "var(--accent-dim)";
-            }}
-            onMouseLeave={e => {
-              (e.currentTarget as HTMLButtonElement).style.borderColor = "var(--border-default)";
-              (e.currentTarget as HTMLButtonElement).style.color = "var(--text-muted)";
-              (e.currentTarget as HTMLButtonElement).style.background = "transparent";
-            }}
-          >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M12 5v14M5 12h14"/>
-            </svg>
-            导入项目
-          </button>
-        </div>
       </aside>
 
       <div
@@ -741,6 +885,8 @@ const loadProjects = async () => {
         onMouseEnter={(e) => (e.currentTarget.style.background = "var(--accent)")}
         onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
       />
+      </>
+      )}
 
       <main style={{
         flex: 1,
@@ -749,15 +895,42 @@ const loadProjects = async () => {
         position: "relative",
         zIndex: 5,
       }}>
+        {/* Focus layout: floating restore-sidebar chip */}
+        {layout === "focus" && (
+          <button
+            onClick={() => setLayout("standard")}
+            title="返回标准布局"
+            style={{
+              position: "absolute", top: 12, left: 12, zIndex: 100,
+              padding: "5px 10px", borderRadius: 8,
+              border: "1px solid var(--border-default)",
+              background: "var(--bg-glass)",
+              color: "var(--text-muted)", fontSize: 11,
+              cursor: "pointer", backdropFilter: "blur(8px)",
+              WebkitAppRegion: "no-drag",
+            } as React.CSSProperties}
+          >← 侧边栏</button>
+        )}
         <div style={{ height: "100%", paddingTop: 0 }}>
           <ChatView
             selectedProjectId={selectedProjectId}
             selectedSessionId={selectedSessionId}
             sessionTitle={selectedSessionTitle}
-            onOpenSettings={() => setShowSettings((prev) => !prev)}
+            voiceCommand={voiceCommand}
+            onOpenSettings={toggleSettings}
             settingsOpen={showSettings}
+            onHideToBackground={() => void hideToBackground()}
+            onToggleAppearance={toggleAppearance}
+            appearanceOpen={showAppearance}
+            hideToBackgroundTitle={wakeEnabled ? `隐藏到后台（说“${wakeWord}”唤醒）` : "隐藏到后台"}
             onSessionCreated={async (sessionId) => {
               setSelectedSessionId(sessionId);
+              // Arm two-way voice conversation for voice-originated sessions
+              if (pendingVoiceConvo.current) {
+                pendingVoiceConvo.current = false;
+                convoRef.current = { sessionId, until: Date.now() + 90000 };
+                void window.agentApi?.wakeConversation(true);
+              }
               await loadSessions(selectedProjectId || undefined);
             }}
             onSubSessionCreated={async (parentSessionId) => {
@@ -789,7 +962,13 @@ const loadProjects = async () => {
                 return updated;
               });
             }}
-            onRunComplete={async (projId) => {
+            onRunComplete={async (projId, completedSessionId) => {
+              const currentConversation = convoRef.current;
+              const renewedConversation = renewVoiceConversation(currentConversation, completedSessionId);
+              convoRef.current = renewedConversation;
+              if (renewedConversation !== currentConversation) {
+                void window.agentApi?.wakeConversation(true);
+              }
               if (projId || selectedProjectId) await loadSessions(projId || selectedProjectId || "");
             }}
           />
@@ -843,16 +1022,7 @@ const loadProjects = async () => {
                     <button
                       key={tab.id}
                       onClick={() => setSettingsTab(tab.id)}
-                      style={{
-                        padding: "6px 10px",
-                        borderRadius: 7,
-                        border: "none",
-                        background: settingsTab === tab.id ? "var(--accent-dim)" : "transparent",
-                        color: settingsTab === tab.id ? "var(--accent)" : "var(--text-secondary)",
-                        fontSize: 12,
-                        fontWeight: 500,
-                        cursor: "pointer",
-                      }}
+                      className={`settings-tab ${settingsTab === tab.id ? "settings-tab-active" : ""}`}
                     >
                       {tab.label}
                     </button>
@@ -861,29 +1031,7 @@ const loadProjects = async () => {
                 <button
                   onClick={() => setShowSettings(false)}
                   title="关闭"
-                  onMouseEnter={e => {
-                    (e.currentTarget as HTMLButtonElement).style.background = "rgba(220,38,38,0.08)";
-                    (e.currentTarget as HTMLButtonElement).style.color = "var(--danger)";
-                  }}
-                  onMouseLeave={e => {
-                    (e.currentTarget as HTMLButtonElement).style.background = "transparent";
-                    (e.currentTarget as HTMLButtonElement).style.color = "var(--text-muted)";
-                  }}
-                  style={{
-                    width: 28, height: 28,
-                    border: "none",
-                    borderRadius: 7,
-                    background: "transparent",
-                    color: "var(--text-muted)",
-                    fontSize: 18,
-                    lineHeight: 1,
-                    cursor: "pointer",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    transition: "background 0.15s, color 0.15s",
-                    flexShrink: 0,
-                  }}
+                  className="ui-icon-button ui-icon-button--close ui-icon-button--danger"
                 >
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
                     <path d="M18 6 6 18M6 6l12 12"/>
@@ -904,6 +1052,110 @@ const loadProjects = async () => {
         , document.body)}
 
       <div className="noise-overlay" />
+
+      {/* ── Appearance panel (skins / layout / voice) ── */}
+      {showAppearance && appearanceAnchor && createPortal(
+        <div
+          onClick={() => setShowAppearance(false)}
+          style={{ position: "fixed", inset: 0, zIndex: 10000, WebkitAppRegion: "no-drag" } as React.CSSProperties}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="appearance-panel"
+            style={{
+              position: "absolute",
+              left: Math.max(12, Math.min(appearanceAnchor.right - 320, window.innerWidth - 332)),
+              top: appearanceAnchor.bottom + 8,
+              width: 320,
+              maxHeight: `calc(100vh - ${appearanceAnchor.bottom + 20}px)`,
+              overflowY: "auto",
+              background: "var(--bg-surface)",
+              border: "1px solid var(--border-default)",
+              borderRadius: "var(--radius-md)",
+              boxShadow: "var(--shadow-md)",
+              padding: "16px",
+              display: "flex",
+              flexDirection: "column",
+              gap: 16,
+              animation: "fadeInUp 0.2s var(--ease-out)",
+              backdropFilter: "blur(14px)",
+              WebkitBackdropFilter: "blur(14px)",
+            }}
+          >
+            {/* Skins */}
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase" as const, letterSpacing: "0.08em", marginBottom: 8 }}>皮肤</div>
+              <div className="appearance-choices">
+                {SKINS.map((s) => (
+                  <button
+                    key={s.id}
+                    onClick={() => setSkin(s.id)}
+                    className={`appearance-choice ${skin === s.id ? "appearance-choice-active" : ""}`}
+                  >
+                    <span className="appearance-swatch" style={{
+                      background: `linear-gradient(135deg, ${s.preview[0]} 55%, ${s.preview[1]} 55%)`,
+                    }} />
+                    <span className="appearance-choice-label" style={{ fontWeight: skin === s.id ? 600 : 400 }}>{s.label}</span>
+                    {skin === s.id && (
+                      <svg className="appearance-choice-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <path d="m5 12 4 4L19 6" />
+                      </svg>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Layouts */}
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase" as const, letterSpacing: "0.08em", marginBottom: 8 }}>布局</div>
+              <div className="appearance-segmented">
+                {LAYOUTS.map((l) => (
+                  <button
+                    key={l.id}
+                    onClick={() => setLayout(l.id)}
+                    title={l.description}
+                    className={`appearance-segment ${layout === l.id ? "appearance-segment-active" : ""}`}
+                  >{l.label}</button>
+                ))}
+              </div>
+            </div>
+
+            {/* Voice settings */}
+            <div style={{ display: "flex", flexDirection: "column", gap: 10, borderTop: "1px solid var(--border-subtle)", paddingTop: 12 }}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase" as const, letterSpacing: "0.08em" }}>语音</div>
+              <label style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 12, color: "var(--text-secondary)", cursor: "pointer" }}>
+                助手回复自动播报
+                <input className="appearance-switch" type="checkbox" checked={autoSpeak} onChange={(e) => setAutoSpeak(e.target.checked)} />
+              </label>
+              <label style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 12, color: "var(--text-secondary)", cursor: "pointer" }}>
+                隐藏后语音唤醒
+                <input className="appearance-switch" type="checkbox" checked={wakeEnabled} onChange={(e) => setWakeEnabled(e.target.checked)} />
+              </label>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "var(--text-secondary)" }}>
+                <span style={{ flexShrink: 0 }}>唤醒词</span>
+                <input
+                  value={wakeWord}
+                  onChange={(e) => setWakeWord(e.target.value || "小智")}
+                  style={{
+                    flex: 1,
+                    padding: "4px 8px",
+                    borderRadius: 6,
+                    border: "1px solid var(--border-default)",
+                    background: "var(--bg-deep)",
+                    color: "var(--text-primary)",
+                    fontSize: 12,
+                  }}
+                />
+              </div>
+            </div>
+          </div>
+        </div>,
+        document.body,
+      )}
+
+      {/* ── Wake-up animation overlay ── */}
+      <WakeOverlay trigger={wakeTrigger} heardText={wakeHeard} />
 
       {/* ── Toast notifications (bottom-right) ── */}
       {toasts.length > 0 && createPortal(

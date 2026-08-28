@@ -37,8 +37,8 @@ export class SQLiteProjectStore implements IProjectStore {
 
   async delete(id: string): Promise<void> {
     const db = getDatabase(this.baseDir);
-    // cascade: sessions get their project_id set to '' (disowned, not deleted)
-    db.db.prepare("UPDATE sessions SET project_id = '' WHERE project_id = ?").run(id);
+    // cascade: sessions get disowned (project_id NULL satisfies the FK)
+    db.db.prepare("UPDATE sessions SET project_id = NULL WHERE project_id = ?").run(id);
     db.db.prepare("DELETE FROM projects WHERE id = ?").run(id);
   }
 

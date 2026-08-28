@@ -1,9 +1,45 @@
-import { app, BrowserWindow, ipcMain, dialog } from "electron";
+// Load electron via createRequire (CJS) instead of ESM `import`, which crashes
+// on electron 32 / Node 20.18 (cjsPreparseModuleExports: "exports" undefined).
+import { createRequire } from "module";
+const require = createRequire(import.meta.url);
+const { app, BrowserWindow, ipcMain, dialog, nativeImage, session } = require("electron") as typeof import("electron");
+import { spawn, type ChildProcess } from "node:child_process";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { readFile, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { AgentHost } from "./agent-host.js";
+import { resolveDesktopBaseDir } from "./desktop-base-dir.js";
+import {
+  getTtsListeningMode,
+  getVoiceCaptureSilenceTimeout,
+  getWakeCommandSuffix,
+  getVoiceCaptureAction,
+  isWakeMatch,
+  parseWakeControlLine,
+  parseWakeTranscriptLine,
+  prepareTtsListening,
+  replaceWakeCommandSuffix,
+  routeVoiceServiceResult,
+  shouldFinalizeVoiceCapture,
+  shouldAcceptBargeIn,
+  shouldAcceptTtsPlayback,
+  shouldInvalidateVoiceProvider,
+  shouldRearmIgnoredWakeKeyword,
+  shouldRearmWakeOnlyCapture,
+  shouldRestartWakeListener,
+} from "./voice-capture-state.js";
+import {
+  VoiceServiceClient,
+  type VoiceServiceEvent,
+} from "./voice-service-client.js";
+import {
+  findVoiceServiceEntry,
+  findVoiceServiceRuntime,
+  getVoiceServiceTtsEnvironment,
+  VoiceServiceManager,
+  type VoiceProvider,
+} from "./voice-service-manager.js";
 
 // Suppress EPIPE errors on stdout/stderr (e.g., when output is piped to `head`)
 // Without this, broken pipes cause an uncaught exception that crashes the main process.
@@ -20,8 +56,62 @@ if (!gotLock) {
 }
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
-let mainWindow: BrowserWindow | null = null;
-const agentHost = new AgentHost(process.cwd());
+let mainWindow: import("electron").BrowserWindow | null = null;
+const appIconPath = [
+  join(app.getAppPath(), "assets", "app-icon.png"),
+  join(process.resourcesPath, "assets", "app-icon.png"),
+  join(process.resourcesPath, "app.asar.unpacked", "assets", "app-icon.png"),
+].find((candidate) => existsSync(candidate));
+const desktopBaseDir = resolveDesktopBaseDir(app.getAppPath(), app.isPackaged, app.getPath("userData"));
+const agentHost = new AgentHost(desktopBaseDir);
+const voiceServiceCwd = app.isPackaged
+  ? process.resourcesPath
+  : join(app.getAppPath(), "..", "..");
+const voiceServicePort = process.env.VOICE_SERVICE_PORT ?? "17863";
+const voiceServiceManager = new VoiceServiceManager({
+  remoteUrl: process.env.VOICE_SERVICE_URL?.trim() || null,
+  remoteToken: process.env.VOICE_SERVICE_TOKEN?.trim() || null,
+  localUrl: `http://127.0.0.1:${voiceServicePort}`,
+  localToken: null,
+  serviceEntry: findVoiceServiceEntry(app.getAppPath(), process.resourcesPath),
+  runtimeExecutable: findVoiceServiceRuntime({
+    explicit: process.env.VOICE_SERVICE_NODE_BINARY?.trim() || null,
+    pathEnv: process.env.PATH,
+    resourcesPath: process.resourcesPath,
+  }),
+  cwd: voiceServiceCwd,
+  env: {
+    VOICE_ASR_MODEL_DIR: process.env.VOICE_ASR_MODEL_DIR
+      ?? join(app.getAppPath(), ".agent-data", "asr-models", "sherpa-onnx-streaming-zipformer-zh-int8-2025-06-30"),
+    ...getVoiceServiceTtsEnvironment({
+      appPath: app.getAppPath(),
+      resourcesPath: process.resourcesPath,
+      isPackaged: app.isPackaged,
+      env: process.env,
+    }),
+  },
+});
+let activeVoiceProvider: VoiceProvider | null = null;
+let voiceProviderPromise: Promise<VoiceProvider> | null = null;
+
+async function connectVoiceProvider(): Promise<VoiceProvider> {
+  if (activeVoiceProvider) return activeVoiceProvider;
+  if (!voiceProviderPromise) {
+    voiceProviderPromise = voiceServiceManager.connect()
+      .then((provider) => {
+        activeVoiceProvider = provider;
+        return provider;
+      })
+      .finally(() => { voiceProviderPromise = null; });
+  }
+  return voiceProviderPromise;
+}
+
+function invalidateVoiceProvider(provider: VoiceProvider): void {
+  if (!shouldInvalidateVoiceProvider(activeVoiceProvider, provider)) return;
+  if (provider.kind === "service") provider.client.close();
+  activeVoiceProvider = null;
+}
 
 // Forward ALL agent events (including cron-fired runs) to the renderer.
 // This covers both user-initiated runs and background cron queue drains.
@@ -35,6 +125,7 @@ function createWindow(): void {
     height: 800,
     minWidth: 800,
     minHeight: 600,
+    ...(appIconPath ? { icon: appIconPath } : {}),
     webPreferences: {
       preload: join(__dirname, "preload.cjs"),
       contextIsolation: true,
@@ -54,6 +145,594 @@ function createWindow(): void {
     mainWindow.loadFile(join(__dirname, "../../renderer-dist/index.html"));
   }
 }
+
+// ── IPC: Window control (hide/restore for voice-wake background mode) ──
+
+ipcMain.handle("window:hide", () => {
+  // Hide instead of close so the renderer keeps running (voice wake loop).
+  mainWindow?.hide();
+  return { ok: true };
+});
+
+ipcMain.handle("window:show", () => {
+  if (mainWindow) {
+    mainWindow.show();
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.focus();
+  }
+  return { ok: true };
+});
+
+// ── IPC: Native voice wake (macOS Speech framework helper) ──────────────
+// The helper streams transcripts over stdout; on wake-word match we restore
+// the window and notify the renderer to play the wake animation.
+let wakeProc: ChildProcess | null = null;
+type WakeHelperMode = "wake" | "dictation" | "barge-in";
+let wakeProcMode: WakeHelperMode | null = null;
+let wakeVoiceClient: VoiceServiceClient | null = null;
+let wakeLaunchGeneration = 0;
+let asrSessionState = {
+  sessionId: "",
+  generation: 0,
+  lastFinalUtteranceId: 0,
+};
+let wakeWordCurrent = "小智";
+let wakeVariants: string[] = ["小智"];
+// true while the renderer asked for wake listening; used to auto-restart
+// the helper if it crashes while the window stays hidden.
+let wakeDesired = false;
+let wakeSuspendedForTts = false;
+let dictationActive = false;
+
+// Homophone groups for common wake-word characters, so ASR mishearings like
+// "小志"/"小知" still count as the wake word.
+const HOMOPHONE_GROUPS: Record<string, string> = {
+  智: "智志知芝之值纸至治制置致秩稚镇",
+  小: "小晓",
+};
+
+function buildWakeVariants(word: string): string[] {
+  const variants = new Set<string>([word]);
+  for (let i = 0; i < word.length; i++) {
+    const group = HOMOPHONE_GROUPS[word[i]];
+    if (group) {
+      for (const ch of group) variants.add(word.slice(0, i) + ch + word.slice(i + 1));
+    }
+  }
+  return [...variants];
+}
+
+function stopWakeProc(): void {
+  wakeLaunchGeneration += 1;
+  wakeVoiceClient?.stopAsr();
+  wakeVoiceClient = null;
+  if (wakeProc) {
+    wakeProc.kill();
+    wakeProc = null;
+    wakeProcMode = null;
+  }
+}
+
+// ── Post-wake voice-command capture ──────────────────────────────────────
+// After the wake word fires we keep the helper alive briefly and collect
+// what the user says next as a command for the agent. Silence (3s without a
+// new transcript) or a hard cap ends the capture; the command is delivered
+// to the renderer via the "wake:command" event.
+let capturing = false;
+let captureCur = "";
+let captureSilenceTimer: NodeJS.Timeout | null = null;
+let captureHardTimer: NodeJS.Timeout | null = null;
+
+function clearCaptureTimers(): void {
+  if (captureSilenceTimer) { clearTimeout(captureSilenceTimer); captureSilenceTimer = null; }
+  if (captureHardTimer) { clearTimeout(captureHardTimer); captureHardTimer = null; }
+}
+
+function resetCaptureSilenceTimer(): void {
+  if (captureSilenceTimer) clearTimeout(captureSilenceTimer);
+  captureSilenceTimer = setTimeout(
+    finalizeCapture,
+    getVoiceCaptureSilenceTimeout(captureCur),
+  );
+}
+
+function cleanCommand(raw: string): string {
+  let text = raw.trim();
+  // The transcript often starts with a repeated wake word (or mishearing)
+  for (const v of wakeVariants) {
+    if (text.startsWith(v)) { text = text.slice(v.length); break; }
+  }
+  // Drop leftover fillers / punctuation from the wake utterance
+  return text.replace(/^[\s，。,.!?！？、喂嗯啊哦]+/, "").trim();
+}
+
+function finalizeCapture(): void {
+  if (!capturing) return;
+  capturing = false;
+  clearCaptureTimers();
+  // Keep the helper alive: SFSpeechRecognizer has a long warm-up period
+  // before it reports anything, so restarting it on every hide/show cycle
+  // makes the next wake unreliable. Matches are ignored while visible.
+  const full = captureCur;
+  captureCur = "";
+  const command = cleanCommand(full);
+  if (command) {
+    console.warn("[wake] captured command:", command);
+    mainWindow?.webContents.send("wake:command", { text: command });
+  } else {
+    console.warn("[wake] capture ended with no command");
+  }
+  if (!ttsSpeaking && wakeProcMode === "barge-in") {
+    setTimeout(() => {
+      if (ttsSpeaking || wakeProcMode !== "barge-in") return;
+      stopWakeProc();
+      if (wakeDesired) launchWakeListener("wake");
+    }, 0);
+  } else if (!ttsSpeaking && wakeProcMode === "wake" && wakeVoiceClient) {
+    setTimeout(() => {
+      if (ttsSpeaking || wakeProcMode !== "wake" || !wakeVoiceClient) return;
+      stopWakeProc();
+      if (wakeDesired) void launchWakeListener("wake");
+    }, 0);
+  }
+}
+
+function startCapture(seed: string, waitForFirstTranscript = false): void {
+  capturing = true;
+  captureCur = seed;
+  clearCaptureTimers();
+  captureHardTimer = setTimeout(finalizeCapture, waitForFirstTranscript ? 22000 : 12000);
+  if (!waitForFirstTranscript) resetCaptureSilenceTimer();
+}
+
+function onCaptureText(heard: string): void {
+  // URL recognition emits corrected partials for the same recorded utterance.
+  // The newest candidate supersedes earlier hypotheses rather than appending.
+  captureCur = replaceWakeCommandSuffix(captureCur, heard);
+  resetCaptureSilenceTimer();
+}
+
+function replaceCaptureText(heard: string): void {
+  captureCur = replaceWakeCommandSuffix(captureCur, heard);
+  resetCaptureSilenceTimer();
+}
+
+function desiredWakeHelperMode(): WakeHelperMode {
+  if (dictationActive) return "dictation";
+  return ttsSpeaking && getTtsListeningMode(conversation) === "barge-in"
+    ? "barge-in"
+    : "wake";
+}
+
+async function launchWakeListener(
+  mode: WakeHelperMode = desiredWakeHelperMode(),
+): Promise<{ ok: boolean; reason?: string }> {
+  if (wakeProc) return { ok: true };
+  const launchGeneration = ++wakeLaunchGeneration;
+  // Preferred: the compiled Swift helper (Speech framework directly). TCC
+  // attribution belongs to Electron, whose Info.plist carries the privacy
+  // descriptions. Fallback: the JXA script under osascript.
+  const search = (name: string) =>
+    [
+      join(__dirname, "..", "..", "native", name),
+      join(process.resourcesPath ?? "", "native", name),
+      join(app.getAppPath(), "native", name),
+    ].find((p) => existsSync(p));
+  const binary = search("wakelistener");
+  const script = search("wakelistener.js");
+  if (!binary && !script) return { ok: false, reason: "no-helper" };
+  const voiceProvider = await connectVoiceProvider();
+  if (launchGeneration !== wakeLaunchGeneration) return { ok: false, reason: "cancelled" };
+  let serviceClient = voiceProvider.kind === "service"
+    ? voiceProvider.client
+    : null;
+  if (serviceClient && !binary) {
+    serviceClient = null;
+  }
+  let onLine: (line: string) => void = () => {};
+  if (serviceClient) {
+    asrSessionState = {
+      sessionId: `desktop-${process.pid}-${crypto.randomUUID()}`,
+      generation: launchGeneration,
+      lastFinalUtteranceId: 0,
+    };
+    try {
+      await serviceClient.startAsr({
+        sessionId: asrSessionState.sessionId,
+        generation: asrSessionState.generation,
+        mode,
+        ...(mode === "wake" ? { wakeWord: wakeWordCurrent } : {}),
+      }, (event: VoiceServiceEvent) => {
+        if (event.type === "finished") {
+          if (event.sessionId !== asrSessionState.sessionId
+            || event.generation !== asrSessionState.generation) return;
+          if (dictationActive) {
+            dictationActive = false;
+            stopWakeProc();
+            if (wakeDesired) void launchWakeListener();
+          }
+          return;
+        }
+        const routed = routeVoiceServiceResult(asrSessionState, event);
+        if (routed.action === "ignore") return;
+        asrSessionState.lastFinalUtteranceId = routed.lastFinalUtteranceId;
+        if (routed.action === "keyword" && event.type === "keyword") {
+          if (shouldRearmIgnoredWakeKeyword(mainWindow?.isVisible() ?? false, wakeDesired)) {
+            console.warn("[wake] KWS keyword ignored while visible; rearming wake generation");
+            stopWakeProc();
+            setTimeout(() => {
+              if (wakeDesired && !wakeProc) void launchWakeListener("wake");
+            }, 100);
+            return;
+          }
+          console.warn("[wake] *** MATCHED KWS keyword, showing window ***");
+          if (mainWindow) {
+            mainWindow.show();
+            if (mainWindow.isMinimized()) mainWindow.restore();
+            mainWindow.focus();
+          }
+          mainWindow?.webContents.send("wake:trigger", event.keyword);
+          startCapture("", true);
+          return;
+        }
+        if (event.type !== "partial" && event.type !== "final") return;
+        onLine(`${event.type === "final" ? "FINAL" : "TEXT"} ${event.text}`);
+      }, (error) => {
+        if (wakeVoiceClient !== serviceClient) return;
+        console.warn("[voice] service ASR disconnected; restarting provider:", error.message);
+        invalidateVoiceProvider(voiceProvider);
+        stopWakeProc();
+        setTimeout(() => {
+          if (wakeDesired && !wakeProc) void launchWakeListener(desiredWakeHelperMode());
+        }, 100);
+      });
+    } catch (error) {
+      console.warn("[voice] service ASR unavailable, using native fallback:", error);
+      invalidateVoiceProvider(voiceProvider);
+      serviceClient = null;
+    }
+  }
+  if (launchGeneration !== wakeLaunchGeneration) {
+    serviceClient?.stopAsr();
+    return { ok: false, reason: "cancelled" };
+  }
+  const useExternalAsr = Boolean(serviceClient && binary);
+  const proc = binary
+    ? spawn(binary, ["zh-CN", useExternalAsr ? `external-${mode}` : mode])
+    : spawn("osascript", ["-l", "JavaScript", script as string]);
+  wakeProc = proc;
+  wakeProcMode = mode;
+  wakeVoiceClient = useExternalAsr ? serviceClient : null;
+  console.warn("[wake] helper spawned", { pid: proc.pid, mode, externalAsr: useExternalAsr });
+  // The Swift binary prints the protocol to stdout; JXA's console.log goes
+  // to stderr. Parse both streams the same way.
+  let buf = "";
+  const onChunk = (chunk: Buffer) => {
+    buf += chunk.toString("utf8");
+    let idx: number;
+    while ((idx = buf.indexOf("\n")) >= 0) {
+      const line = buf.slice(0, idx).trim();
+      buf = buf.slice(idx + 1);
+      onLine(line);
+    }
+  };
+  if (useExternalAsr) {
+    proc.stdout?.on("data", (chunk: Buffer) => wakeVoiceClient?.sendPcm(chunk));
+    proc.stderr?.on("data", onChunk);
+  } else {
+    proc.stdout?.on("data", onChunk);
+    proc.stderr?.on("data", onChunk);
+  }
+  onLine = (line: string) => {
+    const control = parseWakeControlLine(line);
+    if (control === "barge-in") {
+      interruptTtsForBargeIn();
+      return;
+    }
+    const transcript = parseWakeTranscriptLine(line);
+    if (transcript) {
+      // Echo protection: while the app is speaking, the mic hears the
+      // speaker — those transcripts must never trigger anything.
+      if (ttsSpeaking) return;
+      const { heard, isFinal } = transcript;
+      console.warn("[wake] heard:", heard);
+      if (dictationActive) {
+        mainWindow?.webContents.send("dictation:result", { text: heard, isFinal });
+        if (isFinal) {
+          dictationActive = false;
+          stopWakeProc();
+          if (wakeDesired) launchWakeListener();
+        }
+        return;
+      }
+      if (isWakeMatch(heard, wakeVariants, isFinal)) {
+        const commandSuffix = getWakeCommandSuffix(heard, wakeVariants);
+        // Only wake from hidden mode; while visible the match is ignored so
+        // casual conversation can't trigger sessions. The helper keeps
+        // running (warm) either way.
+        if (capturing) {
+          if (commandSuffix !== null) replaceCaptureText(commandSuffix);
+          if (shouldRearmWakeOnlyCapture(capturing, isFinal, captureCur)) {
+            startCapture("");
+            return;
+          }
+          if (shouldFinalizeVoiceCapture(capturing, isFinal, captureCur)) finalizeCapture();
+          return;
+        }
+        if (mainWindow?.isVisible()) {
+          // Visible + conversation mode: the wake word is just a filler
+          // here — treat the utterance as a follow-up command.
+          if (conversation) {
+            startCapture(commandSuffix ?? "");
+            if (shouldFinalizeVoiceCapture(capturing, isFinal, captureCur)) finalizeCapture();
+          }
+          return;
+        }
+        console.warn("[wake] *** MATCHED wake word, showing window ***");
+        if (mainWindow) {
+          mainWindow.show();
+          if (mainWindow.isMinimized()) mainWindow.restore();
+          mainWindow.focus();
+        }
+        mainWindow?.webContents.send("wake:trigger", heard);
+        // Keep the helper alive and capture the spoken command that
+        // follows the wake word.
+        startCapture(commandSuffix ?? "");
+        if (shouldFinalizeVoiceCapture(capturing, isFinal, captureCur)) finalizeCapture();
+      } else {
+        const action = getVoiceCaptureAction(capturing, conversation);
+        if (action === "append") {
+          onCaptureText(heard);
+        } else if (action === "start") {
+          // Two-way voice conversation: the first transcript after a reply
+          // starts a fresh command capture without requiring the wake word.
+          startCapture(heard);
+        }
+        if (shouldFinalizeVoiceCapture(capturing, isFinal, captureCur)) finalizeCapture();
+      }
+    } else if (line.startsWith("ERROR ") && dictationActive) {
+      const detail = line.slice(6);
+      const message = detail.includes("1110") ? "未识别到语音" : `语音识别失败：${detail}`;
+      dictationActive = false;
+      mainWindow?.webContents.send("dictation:error", message);
+      stopWakeProc();
+      if (wakeDesired) launchWakeListener();
+    } else if (line === "EXIT") {
+      stopWakeProc();
+    } else if (line === "READY") {
+      console.warn("[wake] helper ready");
+    } else if (line) {
+      console.warn("[wake]", line);
+    }
+  };
+  proc.on("error", (err) => {
+    console.warn("[wake] spawn error:", err.message);
+  });
+  proc.on("exit", (code, signal) => {
+    console.warn("[wake] helper exited, code:", code, "signal:", signal);
+    if (wakeProc === proc) {
+      wakeProc = null;
+      wakeProcMode = null;
+      wakeVoiceClient?.close();
+      wakeVoiceClient = null;
+    }
+    // Helper died mid-capture — deliver whatever was collected so far.
+    if (capturing) finalizeCapture();
+    // Auto-recover: relaunch the helper after an unexpected exit/crash
+    // while wake listening is desired (warm recognizer = reliable wake).
+    if (shouldRestartWakeListener(wakeDesired, wakeSuspendedForTts)) {
+      setTimeout(() => {
+        if (shouldRestartWakeListener(wakeDesired, wakeSuspendedForTts) && !wakeProc) {
+          console.warn("[wake] auto-restarting helper");
+          void launchWakeListener();
+        }
+      }, 1500);
+    }
+  });
+  return { ok: true };
+}
+
+ipcMain.handle("wake:start", (_event, wakeWord: string) => {
+  wakeWordCurrent = wakeWord || "小智";
+  wakeVariants = buildWakeVariants(wakeWordCurrent);
+  wakeDesired = true;
+  return launchWakeListener();
+});
+
+ipcMain.handle("wake:stop", () => {
+  wakeDesired = false;
+  // The renderer stops wake listening on window focus; keep the helper
+  // alive while it is still capturing a voice command.
+  if (!capturing && !dictationActive) stopWakeProc();
+  return { ok: true };
+});
+
+ipcMain.handle("dictation:start", () => {
+  if (dictationActive) return { ok: true };
+  dictationActive = true;
+  capturing = false;
+  captureCur = "";
+  clearCaptureTimers();
+  stopWakeProc();
+  return launchWakeListener();
+});
+
+ipcMain.handle("dictation:stop", () => {
+  if (dictationActive && wakeVoiceClient) wakeVoiceClient.finishAsr();
+  else if (dictationActive && wakeProc) wakeProc.kill("SIGUSR1");
+  return { ok: true };
+});
+
+ipcMain.handle("window:isVisible", () => {
+  return mainWindow?.isVisible() ?? false;
+});
+
+// ── Service TTS + two-way voice conversation ────────────────────────────
+let ttsSpeaking = false;
+let ttsGraceTimer: NodeJS.Timeout | null = null;
+let ttsAbortController: AbortController | null = null;
+let ttsGeneration = 0;
+let conversation = false;
+let conversationTimer: NodeJS.Timeout | null = null;
+
+function cancelActiveTts(): number {
+  const cancelledGeneration = ttsGeneration;
+  ttsGeneration += 1;
+  ttsAbortController?.abort();
+  ttsAbortController = null;
+  mainWindow?.webContents.send("tts:flush", { generation: cancelledGeneration });
+  return cancelledGeneration;
+}
+
+function resumeWakeAfterTts(): void {
+  wakeSuspendedForTts = false;
+  ttsSpeaking = false;
+  if (wakeProcMode === "barge-in") stopWakeProc();
+  if (shouldRestartWakeListener(wakeDesired, wakeSuspendedForTts) && !wakeProc) {
+    void launchWakeListener("wake");
+  }
+}
+
+function interruptTtsForBargeIn(): void {
+  if (!shouldAcceptBargeIn(ttsSpeaking, conversation)) return;
+  console.warn("[tts] barge-in detected, stopping current speech");
+  const generation = cancelActiveTts();
+  if (ttsGraceTimer) { clearTimeout(ttsGraceTimer); ttsGraceTimer = null; }
+  ttsSpeaking = false;
+  wakeSuspendedForTts = false;
+  if (!capturing) startCapture("", true);
+  mainWindow?.webContents.send("tts:end", { generation });
+}
+
+function finishTtsPlayback(generation: number): void {
+  if (!shouldAcceptTtsPlayback(generation, ttsGeneration, ttsSpeaking)) return;
+  ttsAbortController = null;
+  ttsSpeaking = false;
+  mainWindow?.webContents.send("tts:end", { generation });
+  if (ttsGraceTimer) clearTimeout(ttsGraceTimer);
+  ttsGraceTimer = setTimeout(resumeWakeAfterTts, 100);
+}
+
+function synthesizeAndStream(
+  text: string,
+  generation: number,
+  controller: AbortController,
+): Promise<boolean> {
+  let resolveStarted!: (started: boolean) => void;
+  const started = new Promise<boolean>((resolve) => { resolveStarted = resolve; });
+  let startSettled = false;
+  let provider: VoiceProvider | null = null;
+  const settleStart = (value: boolean) => {
+    if (startSettled) return;
+    startSettled = true;
+    resolveStarted(value);
+  };
+
+  void (async () => {
+    try {
+      provider = await connectVoiceProvider();
+      if (provider.kind !== "service") throw new Error("TTS model service is unavailable");
+      await provider.client.streamSynthesize({
+        sessionId: `tts-${process.pid}`,
+        generation,
+        text,
+        voice: "Serena",
+        speed: 1,
+      }, controller.signal, {
+        onStarted: (metadata) => {
+          if (!shouldAcceptTtsPlayback(generation, ttsGeneration, ttsSpeaking)) {
+            controller.abort();
+            settleStart(false);
+            return;
+          }
+          console.warn("[tts] stream started", { generation, sampleRate: metadata.sampleRate });
+          mainWindow?.webContents.send("tts:start", metadata);
+          settleStart(true);
+        },
+        onPcm: (pcm) => {
+          if (!shouldAcceptTtsPlayback(generation, ttsGeneration, ttsSpeaking)) return;
+          const bytes = pcm.buffer.slice(pcm.byteOffset, pcm.byteOffset + pcm.byteLength);
+          mainWindow?.webContents.send("tts:pcm", { generation, pcm: bytes });
+        },
+      });
+      if (!shouldAcceptTtsPlayback(generation, ttsGeneration, ttsSpeaking)) return;
+      ttsAbortController = null;
+      mainWindow?.webContents.send("tts:stream-end", { generation });
+    } catch (error) {
+      settleStart(false);
+      if (controller.signal.aborted) return;
+      if (provider) invalidateVoiceProvider(provider);
+      console.warn("[tts] model stream failed; playback cancelled:", error);
+      if (shouldAcceptTtsPlayback(generation, ttsGeneration, ttsSpeaking)) {
+        ttsAbortController = null;
+        mainWindow?.webContents.send("tts:flush", { generation });
+        mainWindow?.webContents.send("tts:end", { generation });
+        resumeWakeAfterTts();
+      }
+    }
+  })();
+  return started;
+}
+
+function endConversation(): void {
+  conversation = false;
+  if (conversationTimer) { clearTimeout(conversationTimer); conversationTimer = null; }
+}
+
+ipcMain.handle("tts:speak", async (_event, text: string) => {
+  const clean = (text || "")
+    .replace(/[*_#`>~\[\](){}|]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 600);
+  if (!clean) return { ok: false };
+  cancelActiveTts();
+  const generation = ttsGeneration;
+  const controller = new AbortController();
+  ttsAbortController = controller;
+  if (ttsGraceTimer) { clearTimeout(ttsGraceTimer); ttsGraceTimer = null; }
+  ttsSpeaking = true;
+  const listeningMode = getTtsListeningMode(conversation);
+  wakeSuspendedForTts = listeningMode === "suspended";
+  await prepareTtsListening(
+    listeningMode,
+    wakeProcMode,
+    stopWakeProc,
+    () => launchWakeListener("barge-in"),
+  );
+  if (!shouldAcceptTtsPlayback(generation, ttsGeneration, ttsSpeaking)) {
+    return { ok: false };
+  }
+  return { ok: await synthesizeAndStream(clean, generation, controller) };
+});
+
+ipcMain.handle("tts:stop", () => {
+  const generation = cancelActiveTts();
+  if (ttsGraceTimer) { clearTimeout(ttsGraceTimer); ttsGraceTimer = null; }
+  ttsSpeaking = false;
+  mainWindow?.webContents.send("tts:end", { generation });
+  resumeWakeAfterTts();
+  return { ok: true };
+});
+
+ipcMain.handle("tts:playback-ended", (_event, generation: number) => {
+  finishTtsPlayback(generation);
+  return { ok: true };
+});
+
+// Conversation mode: while on, any utterance is captured as a follow-up
+// command (no wake word needed). Auto-expires after 90s; the renderer
+// re-arms it on every voice command it processes.
+ipcMain.handle("wake:conversation", (_event, on: boolean) => {
+  if (on) {
+    conversation = true;
+    if (conversationTimer) clearTimeout(conversationTimer);
+    conversationTimer = setTimeout(endConversation, 90000);
+  } else {
+    endConversation();
+  }
+  return { ok: true, conversation };
+});
 
 // ── IPC: Agent control ──
 
@@ -405,12 +1084,39 @@ app.on("second-instance", () => {
   }
 });
 
-app.whenReady().then(createWindow);
+app.whenReady().then(() => {
+  if (process.platform === "darwin" && appIconPath) {
+    const icon = nativeImage.createFromPath(appIconPath);
+    if (!icon.isEmpty()) app.dock.setIcon(icon);
+  }
+  // Allow microphone access for voice input & wake-word listening
+  session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
+    callback(permission === "media");
+  });
+  createWindow();
+  void connectVoiceProvider().then((provider) => {
+    console.warn("[voice] provider ready:", provider.kind === "service" ? provider.source : "native");
+  });
+});
+
+app.on("before-quit", () => {
+  wakeDesired = false;
+  dictationActive = false;
+  cancelActiveTts();
+  stopWakeProc();
+  voiceServiceManager.close();
+});
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
 });
 
 app.on("activate", () => {
-  if (BrowserWindow.getAllWindows().length === 0) createWindow();
+  if (BrowserWindow.getAllWindows().length === 0) {
+    createWindow();
+  } else if (mainWindow && !mainWindow.isVisible()) {
+    // Dock click while hidden in voice-wake background mode → restore
+    mainWindow.show();
+    mainWindow.focus();
+  }
 });
