@@ -1,0 +1,1 @@
+import{describe,expect,it}from"vitest";import{findAvailablePort}from"./port.js";describe("ports",()=>{it("asks the OS for a free port",async()=>expect(await findAvailablePort(null)).toBeGreaterThan(0));});

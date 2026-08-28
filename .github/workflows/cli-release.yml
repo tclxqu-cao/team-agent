@@ -1,0 +1,23 @@
+name: cli-release
+on:
+  pull_request:
+    paths: ["packages/cli/**","packages/cloudflared-darwin-arm64/**","packages/server/**","packages/core/**","scripts/*.mjs"]
+  workflow_dispatch:
+jobs:
+  test:
+    strategy:
+      matrix:
+        os: [macos-14]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with: { bun-version: "1.3.10" }
+      - uses: actions/setup-node@v4
+        with: { node-version: "22", registry-url: "https://registry.npmjs.org" }
+      - run: node -e "if (process.platform !== 'darwin' || process.arch !== 'arm64') process.exit(1)"
+      - run: bun install
+      - run: bunx vitest run packages/cli/src
+      - run: npm run fetch:cloudflared
+      - run: npm run pack:cli
+      - run: node scripts/verify-cli-install.mjs packages/cli/agentroam-0.2.0-preview.3.tgz packages/cloudflared-darwin-arm64/agentroam-cloudflared-darwin-arm64-0.2.0-preview.3.tgz

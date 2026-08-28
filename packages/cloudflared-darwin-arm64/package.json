@@ -1,0 +1,18 @@
+{
+  "name": "agentroam-cloudflared-darwin-arm64",
+  "version": "0.2.0-preview.3",
+  "description": "Verified cloudflared binary archive for AgentRoam on macOS arm64",
+  "license": "MIT",
+  "os": ["darwin"],
+  "cpu": ["arm64"],
+  "files": ["README.md", "manifest.json", "vendor/cloudflared-darwin-arm64.tgz"],
+  "exports": {
+    "./manifest.json": "./manifest.json",
+    "./archive": "./vendor/cloudflared-darwin-arm64.tgz"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true,
+    "tag": "preview"
+  }
+}

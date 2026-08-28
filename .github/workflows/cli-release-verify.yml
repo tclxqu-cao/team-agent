@@ -1,0 +1,30 @@
+name: cli-release-verify
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "packages/cli/**"
+      - "packages/cloudflared-darwin-arm64/**"
+      - "scripts/stage-cli-runtime.mjs"
+      - "scripts/audit-cli-tarball.mjs"
+      - "scripts/verify-cli-*.mjs"
+
+jobs:
+  mac-smoke:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.10"
+      - run: node -e "if (process.platform !== 'darwin' || process.arch !== 'arm64') process.exit(1)"
+      - run: bun install
+      - run: npm run fetch:cloudflared
+      - run: npm run pack:cli
+      - run: node scripts/verify-cli-install.mjs packages/cli/agentroam-0.2.0-preview.3.tgz packages/cloudflared-darwin-arm64/agentroam-cloudflared-darwin-arm64-0.2.0-preview.3.tgz
+      - run: node scripts/verify-cli-tunnel.mjs packages/cli/agentroam-0.2.0-preview.3.tgz packages/cloudflared-darwin-arm64/agentroam-cloudflared-darwin-arm64-0.2.0-preview.3.tgz --provider auto
+        timeout-minutes: 5
