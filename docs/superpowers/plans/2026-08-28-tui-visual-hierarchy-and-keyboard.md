@@ -30,15 +30,15 @@
 - Consumes: `RuntimeSnapshot`, `running: boolean`
 - Produces: `TUI_THEME`, `Header({ snapshot, running })`
 
-- [ ] **Step 1: Define terminal presentation tokens**
+- [x] **Step 1: Define terminal presentation tokens**
 
 Create a typed token object for semantic colors and terminal-safe role/status labels.
 
-- [ ] **Step 2: Implement the compact header**
+- [x] **Step 2: Implement the compact header**
 
 Render brand, ready/running status, model, project basename, and session prefix in a single bordered region with truncation.
 
-- [ ] **Step 3: Compose the header and empty state**
+- [x] **Step 3: Compose the header and empty state**
 
 Replace the plain two-line header and add a concise startup invitation when the transcript is empty.
 
@@ -54,15 +54,15 @@ Replace the plain two-line header and add a concise startup invitation when the 
 - Consumes: existing `TranscriptEntry`, `ProgressState`, and `AskUserRequest`
 - Produces: stable role rails and semantic status/question bands
 
-- [ ] **Step 1: Render stable transcript roles**
+- [x] **Step 1: Render stable transcript roles**
 
 Give user, Agent, tool, result, notice, and error entries consistent labels, indentation, colors, and wrapping.
 
-- [ ] **Step 2: Render progress as a status band**
+- [x] **Step 2: Render progress as a status band**
 
 Keep the 100 ms elapsed-time update while separating running, completed, and token data visually.
 
-- [ ] **Step 3: Align inline questions with the interaction language**
+- [x] **Step 3: Align inline questions with the interaction language**
 
 Use the same amber state and numbered option hierarchy as the rest of the TUI.
 
@@ -78,25 +78,25 @@ Use the same amber state and numbered option hierarchy as the rest of the TUI.
 - Consumes: `paletteOpen`, `onPaletteMove(-1 | 1)`, `onPaletteSelect`, `onPaletteClose`
 - Produces: `navigationDirection(input, key): -1 | 1 | null` and a unified framed keyboard surface
 
-- [ ] **Step 1: Normalize cursor-key encodings**
+- [x] **Step 1: Normalize cursor-key encodings**
 
 Recognize Ink flags plus CSI `\u001b[A/B` and SS3 `\u001bOA/OB`, routing them to palette movement before history.
 
-- [ ] **Step 2: Strengthen selected-row feedback**
+- [x] **Step 2: Strengthen selected-row feedback**
 
 Show selected position, a persistent `›` marker, selected background color, disabled copy, scroll position, and keyboard hints.
 
-- [ ] **Step 3: Frame the composer**
+- [x] **Step 3: Frame the composer**
 
 Give the prompt a stable label, ready/running/question color, input cursor, and bottom help line without changing edit behavior.
 
-- [ ] **Step 4: Add keyboard regression tests**
+- [x] **Step 4: Add keyboard regression tests**
 
 Open `/`, send CSI Down and SS3 Down/Up, assert the selected marker moves, press Enter, and assert the selected command is inserted or executed rather than input history changing.
 
 ## Final Unit Test Verification
 
-- [ ] **Main agent: run affected unit tests after development is complete**
+- [x] **Main agent: run affected unit tests after development is complete**
 
 Run: `bunx vitest run packages/tui/src/*.test.ts packages/tui/src/*.test.tsx packages/core/src/domain/agent/AgentBuilder.test.ts packages/core/src/domain/skill/__tests__/SkillRegistry.test.ts && bunx tsc --noEmit -p packages/tui/tsconfig.json`
 

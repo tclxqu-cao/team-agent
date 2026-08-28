@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
-import { Text } from "ink";
+import { Box, Text } from "ink";
 import { formatElapsed, type ProgressState } from "../state.js";
+import { TUI_THEME } from "../theme.js";
 
 export function ProgressLine({ progress }: { progress: ProgressState | null }) {
   const [, setTick] = useState(0);
@@ -12,11 +13,14 @@ export function ProgressLine({ progress }: { progress: ProgressState | null }) {
   if (!progress) return null;
   const endedAt = progress.completedAt ?? Date.now();
   const usage = progress.usage
-    ? ` · tokens ${progress.usage.inputTokens}/${progress.usage.outputTokens}`
+    ? `  tokens ↑${progress.usage.inputTokens} ↓${progress.usage.outputTokens}`
     : "";
   return (
-    <Text dimColor>
-      {progress.completedAt ? "done 完成" : `... ${progress.label}`} · {formatElapsed(endedAt - progress.startedAt)}{usage}
-    </Text>
+    <Box marginTop={1}>
+      <Text color={progress.completedAt ? TUI_THEME.ready : TUI_THEME.progress} bold>
+        {progress.completedAt ? "✓ 完成" : "● " + progress.label}
+      </Text>
+      <Text color={TUI_THEME.muted}>  {formatElapsed(endedAt - progress.startedAt)}{usage}</Text>
+    </Box>
   );
 }

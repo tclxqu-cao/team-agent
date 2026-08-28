@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useReducer, useState } from "react";
-import path from "node:path";
-import { Box, Text, useApp } from "ink";
+import { Box, useApp } from "ink";
 import type { AskUserRequest, AskUserResponse, SkillMeta } from "@agent/core";
 import { BUILTIN_COMMANDS, createSlashItems, helpText, parseSlashCommand } from "./commands.js";
 import { parseManualModel, saveTuiModelSelection, type DesktopModelProfile, type ModelSelection } from "./model-config.js";
@@ -13,6 +12,8 @@ import { Composer } from "./components/Composer.js";
 import { InlineQuestion } from "./components/InlineQuestion.js";
 import { ProgressLine } from "./components/ProgressLine.js";
 import { Transcript } from "./components/Transcript.js";
+import { Header } from "./components/Header.js";
+import { PALETTE_TITLES, TUI_THEME } from "./theme.js";
 
 type SecondaryPalette = "models" | "sessions" | "projects" | "skills";
 interface PendingQuestion {
@@ -137,6 +138,11 @@ export function TuiApp(props: TuiAppProps) {
   }, [secondary, state.input, trigger]);
   const visibleItems = useMemo(() => filterPaletteItems(baseItems, query), [baseItems, query]);
   const paletteOpen = !paletteDismissed && Boolean(secondary || trigger);
+  const paletteTitle = secondary
+    ? PALETTE_TITLES[secondary]
+    : trigger?.type === "mention"
+      ? PALETTE_TITLES.mention
+      : PALETTE_TITLES.slash;
 
   useEffect(() => setSelectedIndex(0), [query, secondary, trigger?.type]);
 
@@ -322,35 +328,40 @@ export function TuiApp(props: TuiAppProps) {
 
   return (
     <Box flexDirection="column">
-      <Box flexDirection="column" marginBottom={1}>
-        <Text color="cyan" bold>customer-agent TUI</Text>
-        <Text dimColor>model {snapshot.model.provider}/{snapshot.model.modelId} · cwd {path.basename(snapshot.workingDirectory)} · session {snapshot.sessionId.slice(0, 8)}</Text>
-      </Box>
+      <Header snapshot={snapshot} running={state.running} />
       <Transcript entries={state.transcript} />
       <ProgressLine progress={state.progress} />
       {question ? <InlineQuestion request={question.request} /> : null}
-      {paletteOpen ? <CommandPalette items={visibleItems} selectedIndex={selectedIndex} title={secondary ? secondary.toUpperCase() : undefined} /> : null}
-      <Composer
-        input={state.input}
-        cursor={state.cursor}
-        running={state.running}
-        questionActive={Boolean(question)}
-        paletteOpen={paletteOpen}
-        onChange={setInput}
-        onSubmit={() => void submit()}
-        onHistory={(direction) => dispatch({ type: "history", direction })}
-        onPaletteMove={(direction) => setSelectedIndex((value) => {
-          if (visibleItems.length === 0) return 0;
-          return (value + direction + visibleItems.length) % visibleItems.length;
-        })}
-        onPaletteSelect={() => void choosePaletteItem()}
-        onPaletteClose={() => {
-          setSecondary(null);
-          setPaletteDismissed(true);
-        }}
-        onAbort={abortTurn}
-        onExit={exit}
-      />
+      <Box
+        flexDirection="column"
+        borderStyle="round"
+        borderColor={question ? TUI_THEME.progress : state.running ? TUI_THEME.progress : paletteOpen ? TUI_THEME.active : TUI_THEME.ready}
+        paddingX={1}
+        marginTop={1}
+      >
+        {paletteOpen ? <CommandPalette items={visibleItems} selectedIndex={selectedIndex} title={paletteTitle} /> : null}
+        <Composer
+          input={state.input}
+          cursor={state.cursor}
+          running={state.running}
+          questionActive={Boolean(question)}
+          paletteOpen={paletteOpen}
+          onChange={setInput}
+          onSubmit={() => void submit()}
+          onHistory={(direction) => dispatch({ type: "history", direction })}
+          onPaletteMove={(direction) => setSelectedIndex((value) => {
+            if (visibleItems.length === 0) return 0;
+            return (value + direction + visibleItems.length) % visibleItems.length;
+          })}
+          onPaletteSelect={() => void choosePaletteItem()}
+          onPaletteClose={() => {
+            setSecondary(null);
+            setPaletteDismissed(true);
+          }}
+          onAbort={abortTurn}
+          onExit={exit}
+        />
+      </Box>
     </Box>
   );
 }

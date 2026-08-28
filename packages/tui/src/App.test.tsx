@@ -10,8 +10,8 @@ import type { TuiRuntime } from "./runtime.js";
 
 afterEach(() => cleanup());
 
-async function tick() {
-  await new Promise((resolve) => setTimeout(resolve, 30));
+async function tick(milliseconds = 50) {
+  await new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
 async function fixture(options: {
@@ -51,12 +51,13 @@ describe("TuiApp palettes", () => {
     await tick();
     view.stdin.write("/");
     await tick();
-    expect(view.lastFrame()).toContain("Commands");
-    expect(view.lastFrame()).toContain("Skills");
+    expect(view.lastFrame()).toContain("命令与技能");
+    expect(view.lastFrame()).toContain("命令");
+    expect(view.lastFrame()).toContain("技能");
     expect(view.lastFrame()).toContain("/wiki-query");
     view.stdin.write("\u001b");
-    await tick();
-    expect(view.lastFrame()).not.toContain("Commands");
+    await tick(120);
+    expect(view.lastFrame()).not.toContain("↑↓ 移动");
   });
 
   it("filters at-mentions to project files", async () => {
@@ -65,7 +66,7 @@ describe("TuiApp palettes", () => {
     await tick();
     view.stdin.write("@main.ts");
     await tick();
-    expect(view.lastFrame()).toContain("Files");
+    expect(view.lastFrame()).toContain("文件");
     expect(view.lastFrame()).toContain("src/main.ts");
   });
 
@@ -86,7 +87,7 @@ describe("TuiApp palettes", () => {
     await tick();
     view.stdin.write("\r");
     await tick();
-    expect(view.lastFrame()).toContain("MODELS");
+    expect(view.lastFrame()).toContain("模型");
     expect(view.lastFrame()).toContain("Second");
     view.stdin.write("\u001b[B");
     await tick();
@@ -98,7 +99,7 @@ describe("TuiApp palettes", () => {
     await tick();
     view.stdin.write("\r");
     await tick();
-    expect(view.lastFrame()).toContain("SESSIONS");
+    expect(view.lastFrame()).toContain("会话");
     expect(view.lastFrame()).toContain("History");
     view.stdin.write("\r");
     await tick();
@@ -122,10 +123,10 @@ describe("TuiApp palettes", () => {
     view.stdin.write("\r");
     await tick();
     const frame = view.lastFrame() ?? "";
-    expect(frame).toContain("tool bash");
+    expect(frame).toContain("TOOL    bash");
     expect(frame).toContain("/tmp/project");
-    expect(frame).toContain("agent  done");
-    expect(frame).toContain("done 完成");
+    expect(frame).toContain("AGENT   done");
+    expect(frame).toContain("✓ 完成");
   });
 
   it("routes inline question answers back to the runtime", async () => {
@@ -154,5 +155,40 @@ describe("TuiApp palettes", () => {
     view.stdin.write("\r");
     await tick();
     expect(answer).toBe("Beta");
+  });
+
+  it("moves slash selection with CSI, SS3, and fragmented cursor sequences", async () => {
+    const { snapshot, runtime } = await fixture();
+    const view = render(<TuiApp runtime={runtime} initialSnapshot={snapshot} profiles={[]} registeredProjects={[]} configPath="/tmp/tui-config" env={{}} />);
+    await tick();
+    view.stdin.write("/");
+    await tick();
+    expect(view.lastFrame()).toContain("1/11");
+    expect(view.lastFrame()).toContain("› /help");
+
+    view.stdin.write("\u001b[B");
+    await tick();
+    expect(view.lastFrame()).toContain("2/11");
+    expect(view.lastFrame()).toContain("› /new");
+
+    view.stdin.write("\u001bOB");
+    await tick();
+    expect(view.lastFrame()).toContain("3/11");
+    expect(view.lastFrame()).toContain("› /sessions");
+
+    view.stdin.write("\u001bOA");
+    await tick();
+    expect(view.lastFrame()).toContain("2/11");
+
+    view.stdin.write("\u001b");
+    view.stdin.write("[B");
+    await tick();
+    expect(view.lastFrame()).toContain("3/11");
+    expect(view.lastFrame()).toContain("› /sessions");
+
+    view.stdin.write("\r");
+    await tick();
+    expect(view.lastFrame()).not.toContain("↑↓ 移动");
+    expect(view.lastFrame()).toContain("› /sessions");
   });
 });

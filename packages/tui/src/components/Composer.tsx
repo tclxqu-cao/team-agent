@@ -1,5 +1,14 @@
-import React from "react";
-import { Box, Text, useInput } from "ink";
+import React, { useEffect, useRef } from "react";
+import { Box, Text, useInput, type Key } from "ink";
+import { TUI_THEME } from "../theme.js";
+
+const ESCAPE_SEQUENCE_WINDOW_MS = 100;
+
+export function navigationDirection(typed: string, key: Pick<Key, "upArrow" | "downArrow">): -1 | 1 | null {
+  if (key.upArrow || typed === "[A" || typed === "OA") return -1;
+  if (key.downArrow || typed === "[B" || typed === "OB") return 1;
+  return null;
+}
 
 function previousIndex(value: string, cursor: number): number {
   if (cursor <= 0) return 0;
@@ -30,6 +39,24 @@ export interface ComposerProps {
 }
 
 export function Composer(props: ComposerProps) {
+  const escapeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const escapeFragment = useRef("");
+
+  const clearEscapeTimer = () => {
+    if (escapeTimer.current) clearTimeout(escapeTimer.current);
+    escapeTimer.current = null;
+  };
+
+  const schedulePaletteClose = () => {
+    clearEscapeTimer();
+    escapeTimer.current = setTimeout(() => {
+      escapeFragment.current = "";
+      props.onPaletteClose();
+    }, ESCAPE_SEQUENCE_WINDOW_MS);
+  };
+
+  useEffect(() => () => clearEscapeTimer(), []);
+
   useInput((typed, key) => {
     if (key.ctrl && typed === "c") {
       if (props.running) props.onAbort();
@@ -37,18 +64,36 @@ export function Composer(props: ComposerProps) {
       return;
     }
     if (props.running && !props.questionActive) return;
-    if (key.escape && props.paletteOpen) {
+    const direction = navigationDirection(typed, key);
+    if (direction !== null) {
+      clearEscapeTimer();
+      escapeFragment.current = "";
+      if (props.paletteOpen) props.onPaletteMove(direction);
+      else props.onHistory(direction);
+      return;
+    }
+
+    if (props.paletteOpen && escapeTimer.current && typed) {
+      escapeFragment.current += typed;
+      const fragmentedDirection = navigationDirection(escapeFragment.current, key);
+      if (fragmentedDirection !== null) {
+        clearEscapeTimer();
+        escapeFragment.current = "";
+        props.onPaletteMove(fragmentedDirection);
+        return;
+      }
+      if (escapeFragment.current === "[" || escapeFragment.current === "O") {
+        schedulePaletteClose();
+        return;
+      }
+      clearEscapeTimer();
+      escapeFragment.current = "";
       props.onPaletteClose();
       return;
     }
-    if (key.upArrow) {
-      if (props.paletteOpen) props.onPaletteMove(-1);
-      else props.onHistory(-1);
-      return;
-    }
-    if (key.downArrow) {
-      if (props.paletteOpen) props.onPaletteMove(1);
-      else props.onHistory(1);
+
+    if (key.escape && props.paletteOpen) {
+      schedulePaletteClose();
       return;
     }
     if (key.return) {
@@ -81,10 +126,21 @@ export function Composer(props: ComposerProps) {
   const before = props.input.slice(0, props.cursor);
   const next = props.input.slice(props.cursor, nextIndex(props.input, props.cursor)) || " ";
   const after = props.input.slice(props.cursor + (next === " " && props.cursor === props.input.length ? 0 : next.length));
+  const color = props.questionActive ? TUI_THEME.progress : props.running ? TUI_THEME.progress : TUI_THEME.ready;
+  const label = props.questionActive ? "回答" : props.running ? "运行中" : "消息";
+  const hint = props.questionActive
+    ? "输入序号或答案  Enter 提交  Ctrl+C 取消"
+    : props.paletteOpen
+      ? "候选已打开"
+      : "/ 命令  @ 引用  Enter 发送  Ctrl+C 退出";
   return (
-    <Box>
-      <Text color={props.running ? "yellow" : "green"}>{props.running ? "... " : "> "}</Text>
-      <Text>{before}</Text><Text inverse>{next}</Text><Text>{after}</Text>
+    <Box flexDirection="column">
+      <Text color={color} bold>{label}</Text>
+      <Box>
+        <Text color={color}>{props.running && !props.questionActive ? "… " : "› "}</Text>
+        <Text>{before}</Text><Text inverse>{next}</Text><Text>{after}</Text>
+      </Box>
+      <Text color={TUI_THEME.muted}>{hint}</Text>
     </Box>
   );
 }
