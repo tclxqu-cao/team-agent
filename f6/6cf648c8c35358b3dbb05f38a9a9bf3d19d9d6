@@ -1,0 +1,16 @@
+packages/webapp/src/presentation/mobile-composer.ts
+  h_86bb4e0e04237b 77-114,122-129,142-143,145-146,148-149,170-172,183-185
+packages/webapp/src/presentation/web.css
+  h_86bb4e0e04237b 97
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "f66cf648c8c35358b3dbb05f38a9a9bf3d19d9d6",
+  "prompts": {},
+  "humans": {
+    "h_86bb4e0e04237b": {
+      "author": "caoqu <qu.cao@ly.com>"
+    }
+  }
+}
