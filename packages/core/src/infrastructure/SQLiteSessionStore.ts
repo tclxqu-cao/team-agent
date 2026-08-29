@@ -137,13 +137,18 @@ export class SQLiteSessionStore implements ISessionStore {
       parentSessionId: (row.parent_id as string | null) ?? undefined,
       title: row.title as string,
       status: row.status as Session["status"],
-      messages: msgRows.map((m) => ({
-        role: m.role as Message["role"],
-        content: m.content as string,
-        toolCalls: JSON.parse(m.tool_calls as string),
-        toolCallId: m.tool_call_id as string | undefined,
-        name: m.name as string | undefined,
-      })),
+      messages: msgRows.map((m) => {
+        const toolCalls = JSON.parse(m.tool_calls as string) as Message["toolCalls"];
+        const toolCallId = (m.tool_call_id as string | null) ?? undefined;
+        const name = (m.name as string | null) ?? undefined;
+        return {
+          role: m.role as Message["role"],
+          content: m.content as string,
+          ...(toolCalls?.length ? { toolCalls } : {}),
+          ...(toolCallId !== undefined ? { toolCallId } : {}),
+          ...(name !== undefined ? { name } : {}),
+        };
+      }),
       events: evtRows.map((e) => JSON.parse(e.data as string)),
       created: row.created as string,
       updated: row.updated as string,

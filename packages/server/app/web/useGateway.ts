@@ -19,8 +19,10 @@ export function useGateway(onBinary: (data: Uint8Array) => void, getWsNonce: () 
   const requestId = useRef(0);
   const listeners = useRef(new Map<string, Set<(message: any) => void>>());
   const terminalListeners = useRef(new Map<number, Set<(data: Uint8Array) => void>>());
+  const terminalResetListeners = useRef(new Map<number, Set<() => void>>());
   const reconnectDelay = useRef(1000);
   const stopped = useRef(false);
+  const heartbeat = useRef<ReturnType<typeof setInterval> | null>(null);
   const binaryHandler = useRef(onBinary);
   const nonceProvider = useRef(getWsNonce);
   const authLostHandler = useRef(onAuthLost);
@@ -38,6 +40,13 @@ export function useGateway(onBinary: (data: Uint8Array) => void, getWsNonce: () 
   const onTerminalData = useCallback((channelId: number, handler: (data: Uint8Array) => void) => {
     let set = terminalListeners.current.get(channelId);
     if (!set) terminalListeners.current.set(channelId, (set = new Set()));
+    set.add(handler);
+    return () => set!.delete(handler);
+  }, []);
+
+  const onTerminalReset = useCallback((channelId: number, handler: () => void) => {
+    let set = terminalResetListeners.current.get(channelId);
+    if (!set) terminalResetListeners.current.set(channelId, (set = new Set()));
     set.add(handler);
     return () => set!.delete(handler);
   }, []);
@@ -68,6 +77,7 @@ export function useGateway(onBinary: (data: Uint8Array) => void, getWsNonce: () 
   const connect = useCallback(async () => {
     stopped.current = false;
     const currentGeneration = ++generation.current;
+    if (heartbeat.current) { clearInterval(heartbeat.current); heartbeat.current = null; }
     const previous = wsRef.current;
     if (previous) { previous.onopen = previous.onmessage = previous.onerror = previous.onclose = null; try { previous.close(); } catch {} }
 
@@ -89,6 +99,19 @@ export function useGateway(onBinary: (data: Uint8Array) => void, getWsNonce: () 
       setEpoch((value) => value + 1);
       const waiting = queue.current.splice(0);
       for (const json of waiting) ws.send(json);
+      // Mobile browsers (iOS Safari) silently suspend pages and leave the TCP
+      // socket half-dead: readyState stays OPEN while data never arrives, so
+      // typed characters vanish and onclose never fires. Ping on an interval
+      // and force-close on missing liveness so the reconnect flow takes over.
+      let lastAlive = Date.now();
+      heartbeat.current = setInterval(() => {
+        if (wsRef.current !== ws || ws.readyState !== WebSocket.OPEN) { clearInterval(heartbeat.current!); heartbeat.current = null; return; }
+        if (Date.now() - lastAlive > 25000) { try { ws.close(); } catch {} return; }
+        try { ws.send(JSON.stringify({ type: "ping" })); } catch {}
+      }, 10000);
+      const markAlive = () => { lastAlive = Date.now(); };
+      ws.addEventListener("message", markAlive);
+      ws.addEventListener("close", () => ws.removeEventListener("message", markAlive), { once: true });
     };
     ws.onmessage = (event) => {
       if (currentGeneration !== generation.current || wsRef.current !== ws) return;
@@ -97,6 +120,11 @@ export function useGateway(onBinary: (data: Uint8Array) => void, getWsNonce: () 
         if (frame.byteLength >= 6 && frame[0] === 1 && frame[1] === 2) {
           const channelId = new DataView(frame.buffer, frame.byteOffset, frame.byteLength).getUint32(2);
           terminalListeners.current.get(channelId)?.forEach((handler) => handler(frame.subarray(6)));
+        } else if (frame.byteLength >= 6 && frame[0] === 1 && frame[1] === 3) {
+          // server reset marker: a scrollback replay follows, so the pane must
+          // clear its (possibly still populated) buffer first
+          const channelId = new DataView(frame.buffer, frame.byteOffset, frame.byteLength).getUint32(2);
+          terminalResetListeners.current.get(channelId)?.forEach((handler) => handler());
         } else binaryHandler.current(frame);
         return;
       }
@@ -116,6 +144,7 @@ export function useGateway(onBinary: (data: Uint8Array) => void, getWsNonce: () 
     };
     ws.onclose = (event) => {
       if (currentGeneration !== generation.current || wsRef.current !== ws) return;
+      if (heartbeat.current) { clearInterval(heartbeat.current); heartbeat.current = null; }
       wsRef.current = null;
       setState({ connected: false, error: null });
       if (event.code === 4001 || event.code === 4003) { authLostHandler.current(); return; }
@@ -129,8 +158,8 @@ export function useGateway(onBinary: (data: Uint8Array) => void, getWsNonce: () 
 
   useEffect(() => {
     connect();
-    return () => { stopped.current = true; generation.current++; const ws = wsRef.current; wsRef.current = null; if (ws) { ws.onopen = ws.onmessage = ws.onerror = ws.onclose = null; try { ws.close(); } catch {} } };
+    return () => { stopped.current = true; generation.current++; if (heartbeat.current) { clearInterval(heartbeat.current); heartbeat.current = null; } const ws = wsRef.current; wsRef.current = null; if (ws) { ws.onopen = ws.onmessage = ws.onerror = ws.onclose = null; try { ws.close(); } catch {} } };
   }, [connect]);
 
-  return { state, epoch, rpc, onEvent, onTerminalData, sendTerminalInput, reconnect: connect };
+  return { state, epoch, rpc, onEvent, onTerminalData, onTerminalReset, sendTerminalInput, reconnect: connect };
 }

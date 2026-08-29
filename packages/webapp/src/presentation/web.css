@@ -1,0 +1,297 @@
+/* Web shell chrome — desktop app behaviour is untouched (no data-web-shell).
+   Palette comes from the renderer's global.css (pearl = light) via the
+   global.css import in main.tsx; everything here only restyles the shell. */
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  background: var(--bg-deepest, #f5f6fa);
+  color: var(--text-primary, #111827);
+  color-scheme: light;
+}
+
+body[data-web-shell="1"] {
+  /* Fixed app shell: keeps hit-testing stable when Safari collapses/expands
+     the bottom bar (the classic cause of "taps land in the wrong place"). */
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  overscroll-behavior: none;
+  -webkit-tap-highlight-color: transparent;
+  /* App-like page: the viewport meta already disables focus-zoom on iOS. */
+  touch-action: manipulation;
+
+  /* Mobile-tuned layout tokens (desktop keeps its own values). */
+  --chat-content-max-width: 92%;
+  --chat-header-height: 48px;
+}
+
+/* iOS Safari auto-zooms pages when an input's font-size is under 16px,
+   leaving the whole page scaled and every tap offset afterwards. */
+body[data-web-shell="1"] input,
+body[data-web-shell="1"] textarea {
+  font-size: 16px !important;
+}
+
+/* ── Top bar: white app bar with hairline (mobile reference layout) ────── */
+body[data-web-shell="1"] .chat-top-bar {
+  background: var(--bg-surface);
+  padding-left: max(14px, env(safe-area-inset-left));
+  padding-right: 8px;
+}
+/* the drawer hamburger lives top-left — keep the session title clear of it */
+@media (max-width: 899px) {
+  body[data-web-shell="1"] .chat-top-bar {
+    padding-left: 54px !important;
+  }
+}
+body[data-web-shell="1"] .chat-top-bar > span:first-child {
+  font-size: 15px !important;
+  font-weight: 600 !important;
+  letter-spacing: "-0.01em";
+}
+/* "Hide to background" is an Electron window control — meaningless on web. */
+body[data-web-shell="1"] .chat-header-action--background {
+  display: none !important;
+}
+
+/* Model/provider pills row: the server owns model config and the settings
+   sheet manages profiles — the inline selector bar is noise on mobile. */
+body[data-web-shell="1"] .composer-shell > div:has(button[title*="·"]) {
+  display: none !important;
+}
+
+/* ── Chat area ─────────────────────────────────────────────────────────── */
+body[data-web-shell="1"] .chat-messages {
+  background: var(--bg-deepest);
+  padding-left: max(12px, env(safe-area-inset-left));
+  padding-right: max(12px, env(safe-area-inset-right));
+}
+
+/* ── Composer: floating rounded bar with a round send button ──────────── */
+body[data-web-shell="1"] .chat-input-area {
+  padding-bottom: calc(env(safe-area-inset-bottom) + 10px) !important;
+}
+body[data-web-shell="1"] .composer-shell {
+  border: 1px solid var(--border-subtle);
+  border-radius: 16px !important;
+  box-shadow: 0 2px 12px rgba(17, 24, 39, 0.06);
+}
+body[data-web-shell="1"] .composer-input-row > button.webapp-native-send {
+  border-radius: 999px !important;
+  min-width: 38px !important;
+  width: 38px !important;
+  height: 38px !important;
+  padding: 0 !important;
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border: none;
+  transition: none !important;
+  background: var(--bg-deep) !important;
+  color: var(--text-muted) !important;
+}
+body[data-web-shell="1"] .composer-input-row > button.webapp-native-send:not(:disabled) {
+  background: var(--text-primary) !important;
+  color: #fff !important;
+  cursor: pointer;
+}
+body[data-web-shell="1"] .composer-input-row > button.webapp-native-stop {
+  width: 34px !important;
+  min-width: 34px !important;
+  height: 34px !important;
+  padding: 0 !important;
+  border: none;
+  border-radius: 999px !important;
+  flex-shrink: 0;
+  background: rgba(244,63,94,0.12);
+  color: var(--danger);
+}
+
+/* "+" entry: a native <details> disclosure (the browser toggles it — zero JS
+   event handling, identical behaviour on every browser) + hidden legacy
+   buttons. The menu is position:fixed near the summary. */
+body[data-web-shell="1"] .webapp-composer-hide {
+  display: none !important;
+}
+.webapp-plus-control {
+  position: relative;
+  flex-shrink: 0;
+}
+.webapp-plus-control > summary {
+  width: 38px;
+  height: 38px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  list-style: none;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  border: 1px solid var(--border-default);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-secondary);
+}
+.webapp-plus-control > summary::-webkit-details-marker {
+  display: none;
+}
+.webapp-plus-control[open] > summary {
+  background: var(--control-active, rgba(79, 110, 247, 0.09));
+}
+.webapp-plus-control .webapp-plus-menu {
+  position: fixed;
+  left: 10px;
+  bottom: calc(env(safe-area-inset-bottom) + 64px);
+  z-index: 1300;
+  display: flex;
+  flex-direction: column;
+  min-width: 150px;
+  padding: 6px;
+  border: 1px solid rgba(17, 24, 39, 0.1);
+  border-radius: 12px;
+  background: #ffffff;
+  box-shadow: 0 10px 30px rgba(17, 24, 39, 0.14);
+}
+.webapp-plus-control .webapp-plus-menu button {
+  border: none;
+  background: transparent;
+  text-align: left;
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 14px;
+  color: #111827;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.webapp-plus-control .webapp-plus-menu button:active {
+  background: #f0f2f8;
+}
+
+/* ── Settings modal: full-bleed sheet with phone-proportioned content ────
+   Dual scoping on every rule: the shell tags the portal with
+   data-webapp-settings-* when it can, and a pure-CSS :has() fallback covers
+   cases where the tag never lands (e.g. the portal mounted before boot).
+   Card fallback = the overlay's child that holds the tab strip. */
+body[data-web-shell="1"] [data-webapp-settings-overlay],
+body[data-web-shell="1"] > div:has(.settings-tab) {
+  padding: 0 !important;
+  align-items: stretch !important;
+}
+body[data-web-shell="1"] [data-webapp-settings-card],
+body[data-web-shell="1"] > div:has(.settings-tab) > div {
+  width: 100vw !important;
+  height: 100dvh !important;
+  max-width: none !important;
+  max-height: none !important;
+  border: none !important;
+  border-radius: 0 !important;
+}
+
+/* Content retune — prefix applies to the card under either scope. */
+/* Panel roots: desktop paddings (40/48px) and 660px width are phone-hostile. */
+body[data-web-shell="1"] [data-webapp-settings-card] div[style*="padding: 40px"],
+body[data-web-shell="1"] > div:has(.settings-tab) > div div[style*="padding: 40px"] {
+  padding: 16px 14px !important;
+  max-width: 100% !important;
+}
+body[data-web-shell="1"] [data-webapp-settings-card] h2,
+body[data-web-shell="1"] > div:has(.settings-tab) > div h2 {
+  font-size: 18px !important;
+  margin-bottom: 4px !important;
+}
+body[data-web-shell="1"] [data-webapp-settings-card] h2 + p,
+body[data-web-shell="1"] > div:has(.settings-tab) > div h2 + p {
+  font-size: 12px !important;
+  margin-bottom: 14px !important;
+}
+body[data-web-shell="1"] [data-webapp-settings-card] div[style*="border-radius: var(--radius-md)"],
+body[data-web-shell="1"] [data-webapp-settings-card] div[style*="border-radius:var(--radius-md)"],
+body[data-web-shell="1"] > div:has(.settings-tab) > div div[style*="border-radius: var(--radius-md)"],
+body[data-web-shell="1"] > div:has(.settings-tab) > div div[style*="border-radius:var(--radius-md)"] {
+  padding: 14px !important;
+}
+/* Section headers ("添加服务器" + transport toggle) stack so the label never
+   wraps mid-word and the toggle keeps its full width. */
+body[data-web-shell="1"] [data-webapp-settings-card] div:has(> h3),
+body[data-web-shell="1"] > div:has(.settings-tab) > div div:has(> h3) {
+  flex-direction: column !important;
+  align-items: stretch !important;
+  gap: 10px !important;
+}
+body[data-web-shell="1"] [data-webapp-settings-card] div:has(> h3) h3,
+body[data-web-shell="1"] > div:has(.settings-tab) > div div:has(> h3) h3 {
+  white-space: nowrap;
+}
+/* Buttons: natural width, never squeezed into vertical character columns. */
+body[data-web-shell="1"] [data-webapp-settings-card] button,
+body[data-web-shell="1"] > div:has(.settings-tab) > div button {
+  white-space: nowrap !important;
+  min-width: max-content !important;
+  flex-shrink: 0 !important;
+  height: auto !important;
+}
+body[data-web-shell="1"] [data-webapp-settings-card] div[style*="overflow: hidden"] > button,
+body[data-web-shell="1"] > div:has(.settings-tab) > div div[style*="overflow: hidden"] > button {
+  padding: 6px 10px !important;
+  font-size: 11px !important;
+}
+/* Side-by-side field pairs stack; flex children may shrink so inputs never
+   force horizontal clipping. */
+body[data-web-shell="1"] [data-webapp-settings-card] div[style*="gap: 10px"],
+body[data-web-shell="1"] > div:has(.settings-tab) > div div[style*="gap: 10px"] {
+  flex-direction: column !important;
+}
+body[data-web-shell="1"] [data-webapp-settings-card] [style*="flex: 1"],
+body[data-web-shell="1"] > div:has(.settings-tab) > div [style*="flex: 1"] {
+  min-width: 0 !important;
+}
+body[data-web-shell="1"] [data-webapp-settings-card] div,
+body[data-web-shell="1"] > div:has(.settings-tab) > div div {
+  max-width: 100%;
+}
+body[data-web-shell="1"] [data-webapp-settings-card] input,
+body[data-web-shell="1"] [data-webapp-settings-card] textarea,
+body[data-web-shell="1"] > div:has(.settings-tab) > div input,
+body[data-web-shell="1"] > div:has(.settings-tab) > div textarea {
+  padding: 9px 10px !important;
+}
+/* Hover-revealed row actions (编辑/删除…) are always visible on touch —
+   flow them under the row content instead of covering it. */
+body[data-web-shell="1"] [data-webapp-settings-card] div[style*="position: absolute"],
+body[data-web-shell="1"] > div:has(.settings-tab) > div div[style*="position: absolute"] {
+  position: static !important;
+  display: flex !important;
+  gap: 6px;
+  margin-top: 8px;
+}
+/* Two-column form grids collapse into one readable column. */
+body[data-web-shell="1"] [data-webapp-settings-card] [style*="grid-template-columns"],
+body[data-web-shell="1"] > div:has(.settings-tab) > div [style*="grid-template-columns"] {
+  grid-template-columns: 1fr !important;
+}
+/* Tab strip: one horizontally scrollable row, close button pinned right. */
+body[data-web-shell="1"] div:has(> .settings-tab) {
+  flex-wrap: nowrap !important;
+  overflow-x: auto;
+  scrollbar-width: none;
+  flex: 1;
+  min-width: 0;
+}
+body[data-web-shell="1"] div:has(> .settings-tab)::-webkit-scrollbar {
+  display: none;
+}
+
+/* ── Chat density: tighten desktop's generous spacing for phones ───────── */
+body[data-web-shell="1"] {
+  --chat-messages-padding: 10px 12px 8px;
+  --chat-message-gap: 2px;
+  --chat-turn-gap: 12px;
+  --chat-row-gap: 8px;
+  --chat-avatar-size: 26px;
+  --chat-assistant-bubble-padding: 9px 12px;
+  --chat-user-bubble-padding: 8px 12px;
+}

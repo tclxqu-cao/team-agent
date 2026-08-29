@@ -1,7 +1,27 @@
 // ── SQLite Database ──
 import Database from "better-sqlite3";
 import { join } from "node:path";
-import { mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync } from "node:fs";
+import { homedir } from "node:os";
+
+// Local dev machines keep better-sqlite3 builds for each runtime ABI under the
+// team-agent native cache (node-gyp for the web server vs @electron/rebuild
+// for the desktop shell). Pick the build matching the running ABI so both can
+// share one node_modules; fall back to default resolution when it's absent.
+function resolveNativeBinding(): string | undefined {
+  const kind = process.versions.electron ? `electron-${process.versions.electron}` : `node-${process.versions.modules}`;
+  try {
+    const root = process.platform === "darwin"
+      ? join(homedir(), "Library", "Caches", "team-agent", "native")
+      : join(homedir(), ".cache", "team-agent", "native");
+    for (const entry of readdirSync(join(root, kind))) {
+      if (!entry.startsWith("better-sqlite3-")) continue;
+      const candidate = join(root, kind, entry, "better_sqlite3.node");
+      if (existsSync(candidate)) return candidate;
+    }
+  } catch { /* no per-ABI cache for this runtime */ }
+  return undefined;
+}
 
 export class SQLiteDatabase {
   readonly db: Database;
@@ -10,7 +30,8 @@ export class SQLiteDatabase {
     const dataDir = join(baseDir, ".agent-data");
     try { mkdirSync(dataDir, { recursive: true }); } catch { /* exists */ }
     const dbPath = join(dataDir, "agent.db");
-    this.db = new Database(dbPath);
+    const binding = resolveNativeBinding();
+    this.db = new Database(dbPath, binding ? { nativeBinding: binding } : undefined);
     this.db.pragma("journal_mode = WAL");
     this.db.pragma("foreign_keys = ON");
     this.migrate();

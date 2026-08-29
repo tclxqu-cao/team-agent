@@ -14,7 +14,7 @@ const packageJson = JSON.parse(
 if (packageJson.name !== "agentroam") {
   throw new Error(`unexpected package name: ${packageJson.name}`);
 }
-if (packageJson.version !== "0.2.0-preview.3") {
+if (packageJson.version !== "0.2.0-preview.4") {
   throw new Error(`unexpected package version: ${packageJson.version}`);
 }
 if (JSON.stringify(packageJson.os) !== JSON.stringify(["darwin"])) {
@@ -26,7 +26,7 @@ if (JSON.stringify(packageJson.cpu) !== JSON.stringify(["arm64"])) {
 if (packageJson.bin?.agentroam !== "./bin/agentroam.mjs") {
   throw new Error(`unexpected package bin: ${JSON.stringify(packageJson.bin)}`);
 }
-if (packageJson.optionalDependencies?.["agentroam-cloudflared-darwin-arm64"] !== "0.2.0-preview.3") {
+if (packageJson.optionalDependencies?.["agentroam-cloudflared-darwin-arm64"] !== "0.2.0-preview.4") {
   throw new Error(`unexpected cloudflared optional dependency: ${JSON.stringify(packageJson.optionalDependencies)}`);
 }
 if (statSync(tarball).size >= 30_000_000) {

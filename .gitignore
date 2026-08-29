@@ -17,3 +17,7 @@ packages/server/.next-dev/
 packages/cli/dist/
 packages/cli/runtime/
 packages/cli/*.tgz
+
+# 本地密钥配置
+packages/server/.env.local
+packages/server/.env

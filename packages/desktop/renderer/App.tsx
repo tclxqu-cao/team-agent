@@ -13,6 +13,7 @@ import { useSettingsStore } from "./stores/settingsStore";
 import { useAgentStore } from "./stores/agentStore";
 import { useUIStore, SKINS, LAYOUTS } from "./stores/uiStore";
 import { startWakeListener, isASRSupported, type WakeListenerHandle } from "./lib/speech";
+import { isWebShell, useNarrowViewport } from "./web/webLayout";
 
 type SettingsTab = "settings" | "mcp" | "memory" | "skill" | "agent" | "lsp";
 
@@ -64,6 +65,13 @@ export default function App() {
   const setWakeWord = useUIStore((s) => s.setWakeWord);
   const autoSpeak = useUIStore((s) => s.autoSpeak);
   const setAutoSpeak = useUIStore((s) => s.setAutoSpeak);
+
+  // ── Web shell (packages/webapp): drawer sidebar on phone-width screens ──
+  // Gated on the web-shell flag so the Electron app keeps its exact layout.
+  const webShell = isWebShell();
+  const narrowViewport = useNarrowViewport();
+  const mobileDrawer = webShell && narrowViewport;
+  const [sidebarDrawerOpen, setSidebarDrawerOpen] = useState(false);
 
   const [showAppearance, setShowAppearance] = useState(false);
   const [appearanceAnchor, setAppearanceAnchor] = useState<{ right: number; bottom: number } | null>(null);
@@ -371,6 +379,7 @@ const loadProjects = async () => {
     await loadSessions(projectId);
     setSelectedProjectId(projectId);
     setSelectedSessionId(created.id);
+    if (mobileDrawer) setSidebarDrawerOpen(false);
   };
 
   useEffect(() => {
@@ -529,12 +538,46 @@ const loadProjects = async () => {
   return (
     <div style={{
       display: "flex",
-      height: "100vh",
+      height: webShell ? "100dvh" : "100vh",
       width: "100vw",
       background: "var(--bg-deepest)",
       position: "relative",
       overflow: "hidden",
     }}>
+      {/* Web mobile: drawer mask + hamburger */}
+      {mobileDrawer && sidebarDrawerOpen && (
+        <div
+          onClick={() => setSidebarDrawerOpen(false)}
+          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.45)", zIndex: 1150 }}
+        />
+      )}
+      {mobileDrawer && (
+        <button
+          onClick={() => setSidebarDrawerOpen((open) => !open)}
+          aria-label="会话列表"
+          style={{
+            position: "fixed",
+            top: "calc(env(safe-area-inset-top) + 8px)",
+            left: 10,
+            zIndex: 1250,
+            width: 34,
+            height: 34,
+            borderRadius: 9,
+            border: "1px solid var(--border-default)",
+            background: "var(--bg-glass, rgba(18,20,28,.82))",
+            color: "var(--text-secondary)",
+            display: "grid",
+            placeItems: "center",
+            backdropFilter: "blur(8px)",
+            WebkitAppRegion: "no-drag",
+            cursor: "pointer",
+          } as React.CSSProperties}
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+            <path d="M3 6h18M3 12h18M3 18h18"/>
+          </svg>
+        </button>
+      )}
       {/* Invisible drag region across the full top — covers titlebar height */}
       <div style={{
         position: "fixed",
@@ -571,6 +614,18 @@ const loadProjects = async () => {
           position: "relative",
           zIndex: 10,
           overflow: "hidden",
+          ...(mobileDrawer ? {
+            position: "fixed" as const,
+            top: 0,
+            bottom: 0,
+            left: 0,
+            width: "min(82vw, 320px)",
+            zIndex: 1200,
+            transform: sidebarDrawerOpen ? "translateX(0)" : "translateX(-103%)",
+            transition: "transform .24s ease",
+            boxShadow: "12px 0 32px rgba(0,0,0,.5)",
+            padding: "calc(env(safe-area-inset-top) + 56px) 0 20px",
+          } : {}),
         }}
       >
         {/* Logo / brand */}
@@ -738,6 +793,7 @@ const loadProjects = async () => {
                           <div className={`sidebar-row ${isActiveSession ? "sidebar-row-active" : ""}`} style={{ paddingRight: 4 }}>
                             <button
                               onClick={() => {
+                                if (mobileDrawer) setSidebarDrawerOpen(false);
                                 setSelectedProjectId(project.id);
                                 setSelectedSessionId(session.id);
                                 if (children.length > 0) {
@@ -872,6 +928,7 @@ const loadProjects = async () => {
 
       </aside>
 
+      {!mobileDrawer && (
       <div
         onMouseDown={startDrag}
         style={{
@@ -885,6 +942,7 @@ const loadProjects = async () => {
         onMouseEnter={(e) => (e.currentTarget.style.background = "var(--accent)")}
         onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
       />
+      )}
       </>
       )}
 

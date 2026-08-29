@@ -56,6 +56,11 @@ await writeFile(
   `${JSON.stringify({ name: "@agent/core", version: "0.2.0", type: "module", main: "./dist/index.js", exports: "./dist/index.js" }, null, 2)}\n`,
 );
 
+// the web console's default 智能助手 tab serves @agent/webapp from /app
+const webappDist = resolve(root, "packages/webapp/dist");
+await mustExist(resolve(webappDist, "index.html"));
+await cp(webappDist, resolve(target, "webapp", "dist"), { recursive: true });
+
 const forbidden = [".env.local", ".sessions", "agent.db", "packages/desktop", "packages/sdk"];
 for (const item of forbidden) {
   try {

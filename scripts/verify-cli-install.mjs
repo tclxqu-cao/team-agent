@@ -15,10 +15,10 @@ const nodeBin = args.includes("--node")
   ? args[args.indexOf("--node") + 1]
   : process.execPath;
 const tarballs = args.filter((arg) => arg.endsWith(".tgz")).map((path) => resolve(path));
-const tarball = tarballs.find((path) => /agentroam-0\.2\.0-preview\.3\.tgz$/.test(path))
-  ?? resolve(root, "packages/cli/agentroam-0.2.0-preview.3.tgz");
-const platformTarball = tarballs.find((path) => /agentroam-cloudflared-darwin-arm64-0\.2\.0-preview\.3\.tgz$/.test(path))
-  ?? resolve(root, "packages/cloudflared-darwin-arm64/agentroam-cloudflared-darwin-arm64-0.2.0-preview.3.tgz");
+const tarball = tarballs.find((path) => /agentroam-0\.2\.0-preview\.4\.tgz$/.test(path))
+  ?? resolve(root, "packages/cli/agentroam-0.2.0-preview.4.tgz");
+const platformTarball = tarballs.find((path) => /agentroam-cloudflared-darwin-arm64-0\.2\.0-preview\.4\.tgz$/.test(path))
+  ?? resolve(root, "packages/cloudflared-darwin-arm64/agentroam-cloudflared-darwin-arm64-0.2.0-preview.4.tgz");
 const commandEnv = { ...process.env, PATH: `${dirname(nodeBin)}${delimiter}${process.env.PATH ?? ""}` };
 
 const major = Number(String(execFileSync(nodeBin, ["-p", "process.versions.node"], { encoding: "utf8" }).trim()).split(".")[0]);
@@ -72,6 +72,11 @@ try {
   if (!status.ok) throw new Error(`health check failed: ${status.status}`);
   const body = await status.json();
   console.log(`✓ health: needsSetup=${body.needsSetup}`);
+
+  const webapp = await fetch(`${localUrl}/app/`);
+  const webappHtml = webapp.ok ? await webapp.text() : "";
+  if (!webapp.ok || !webappHtml.includes("<script")) throw new Error(`/app/ smoke failed: HTTP ${webapp.status}`);
+  console.log(`✓ webapp served at /app/ (${webappHtml.length} bytes)`);
 
   const runtimeRoot = resolve(workdir, "node_modules/agentroam/runtime");
   const spawnHelper = resolve(runtimeRoot, "node_modules/node-pty/prebuilds/darwin-arm64/spawn-helper");

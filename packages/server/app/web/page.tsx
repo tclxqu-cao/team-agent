@@ -20,10 +20,14 @@ export default function WebConsolePage() {
   return <AuthGate>{(auth) => <AuthenticatedConsole auth={auth} />}</AuthGate>;
 }
 
+// Built-in webapp agent tab (@agent/webapp at /app) — always present, never
+// deletable; "+" adds regular terminal tabs.
+const WEBAPP_TAB = { id: "webapp-agent", title: "智能助手", kind: "webapp" } as const;
+
 function AuthenticatedConsole({ auth }: { auth: WebAuthController }) {
-  const { state, epoch, rpc, onEvent, onTerminalData, sendTerminalInput } = useGateway(() => {}, auth.getWsNonce, auth.refresh);
-  const [tabs, setTabs] = useState<Array<{ id: string; title: string }>>([]);
-  const [activeTerminalId, setActiveTerminalId] = useState<string | null>(null);
+  const { state, epoch, rpc, onEvent, onTerminalData, onTerminalReset, sendTerminalInput } = useGateway(() => {}, auth.getWsNonce, auth.refresh);
+  const [tabs, setTabs] = useState<Array<{ id: string; title: string; kind?: "webapp" }>>([{ ...WEBAPP_TAB }]);
+  const [activeTerminalId, setActiveTerminalId] = useState<string | null>(WEBAPP_TAB.id);
   const [cwdByTerminal, setCwdByTerminal] = useState<Record<string, string>>({});
   const tabsHydrated = useRef(false);
   const restoredActiveId = useRef<string|null>(null);
@@ -63,26 +67,42 @@ function AuthenticatedConsole({ auth }: { auth: WebAuthController }) {
 
   useEffect(() => {
     const vv = window.visualViewport;
+    let settleTimer: number | null = null;
+    let lastSignature = "";
     const syncViewport = () => {
       const viewport = resolveVisualViewport(vv, {
         height: window.innerHeight,
         width: window.innerWidth,
       });
+      const signature = `${viewport.width}x${viewport.height}+${viewport.top}+${viewport.left}`;
+      if (signature === lastSignature) return;
+      lastSignature = signature;
       document.documentElement.style.setProperty("--vv-height", `${viewport.height}px`);
       document.documentElement.style.setProperty("--vv-width", `${viewport.width}px`);
       document.documentElement.style.setProperty("--vv-top", `${viewport.top}px`);
       document.documentElement.style.setProperty("--vv-left", `${viewport.left}px`);
+      // Mobile keyboards and browser toolbars animate over several frames and
+      // the last visualViewport event can land mid-transition; re-verify after
+      // the motion settles so --vv-* never stays at a stale (shorter) value
+      // — that stale height is what leaves blank space below the key bar.
+      if (settleTimer) window.clearTimeout(settleTimer);
+      settleTimer = window.setTimeout(syncViewport, 250);
     };
     syncViewport();
     vv?.addEventListener("resize", syncViewport);
     vv?.addEventListener("scroll", syncViewport);
     window.addEventListener("orientationchange", syncViewport);
     window.addEventListener("resize", syncViewport);
+    document.addEventListener("visibilitychange", syncViewport);
+    window.addEventListener("pageshow", syncViewport);
     return () => {
       vv?.removeEventListener("resize", syncViewport);
       vv?.removeEventListener("scroll", syncViewport);
       window.removeEventListener("orientationchange", syncViewport);
       window.removeEventListener("resize", syncViewport);
+      document.removeEventListener("visibilitychange", syncViewport);
+      window.removeEventListener("pageshow", syncViewport);
+      if (settleTimer) window.clearTimeout(settleTimer);
       document.documentElement.style.removeProperty("--vv-height");
       document.documentElement.style.removeProperty("--vv-width");
       document.documentElement.style.removeProperty("--vv-top");
@@ -116,25 +136,49 @@ function AuthenticatedConsole({ auth }: { auth: WebAuthController }) {
     tabsHydrated.current = true;
     rpc<{ tabs: Array<{ id: string; title: string; status: string }> }>("term:list").then((result) => {
       const restorable = result.tabs.filter((tab) => tab.status === "active" || tab.status === "detached").map(({ id, title }) => ({ id, title }));
-      if (restorable.length) {
-        setTabs(restorable);
-        setActiveTerminalId((value) => {
-          const preferred = restoredActiveId.current || value;
-          return preferred && restorable.some((tab) => tab.id === preferred) ? preferred : restorable[0].id;
-        });
-      } else addTerminal();
-    }).catch(addTerminal);
-  }, [state.connected, deviceStateLoaded, rpc, addTerminal]);
+      setTabs([WEBAPP_TAB, ...restorable]);
+      setActiveTerminalId((value) => {
+        const preferred = restoredActiveId.current || value || WEBAPP_TAB.id;
+        if (preferred === WEBAPP_TAB.id) return WEBAPP_TAB.id;
+        return restorable.some((tab) => tab.id === preferred) ? preferred : WEBAPP_TAB.id;
+      });
+    }).catch(() => {});
+  }, [state.connected, deviceStateLoaded, rpc]);
 
-  const closeTerminal = async (id: string) => {
+  const closeTerminal = (id: string) => {
+    if (id === WEBAPP_TAB.id) return;
     if (!window.confirm("关闭页签会终止该终端进程，确认关闭？")) return;
-    await rpc("term:kill", { id }).catch(() => {});
+    // Drop the tab immediately — the kill RPC rides in the background because
+    // its reply queues behind any terminal output on the same socket, and
+    // waiting on it made close feel stuck (or hung until timeout).
     setTabs((current) => {
       const next = current.filter((tab) => tab.id !== id);
       if (activeTerminalId === id) setActiveTerminalId(next[0]?.id ?? null);
       return next;
     });
+    void rpc("term:kill", { id }).catch(() => {});
   };
+
+  useEffect(() => {
+    const off = onEvent("term:exited", (msg: any) => {
+      const id = msg?.id;
+      if (!id) return;
+      // A dead process leaves its tab a silent zombie (no input, no output);
+      // drop the tab as soon as the server reports the exit.
+      setTabs((current) => {
+        const next = current.filter((tab) => tab.id !== id);
+        setActiveTerminalId((active) => (active === id ? next[0]?.id ?? null : active));
+        return next;
+      });
+      setTerminalScroll((current) => {
+        if (!(id in current)) return current;
+        const next = { ...current };
+        delete next[id];
+        return next;
+      });
+    });
+    return () => { off(); };
+  }, [onEvent]);
 
   const switchBy = useCallback((direction: number) => {
     if (!activeTerminalId || tabs.length < 2) return;
@@ -188,12 +232,13 @@ function AuthenticatedConsole({ auth }: { auth: WebAuthController }) {
 
       <div className="terminal-tabs" ref={tabBarRef}>
         {tabs.map((tab) => (
-          <div key={tab.id} data-terminal-id={tab.id} draggable className={`terminal-tab ${tab.id === activeTerminalId ? "active" : ""}`} onDragStart={()=>{draggedTab.current=tab.id;}} onDragOver={(event)=>event.preventDefault()} onDrop={(event)=>{event.preventDefault();const source=draggedTab.current;draggedTab.current=null;if(!source||source===tab.id)return;setTabs((current)=>{const from=current.findIndex(item=>item.id===source),to=current.findIndex(item=>item.id===tab.id);if(from<0||to<0)return current;const next=[...current];const [moved]=next.splice(from,1);next.splice(to,0,moved);rpc("term:reorder",{ids:next.map(item=>item.id)}).catch(()=>{});return next;});}} onClick={() => setActiveTerminalId(tab.id)} onDoubleClick={() => {
+          <div key={tab.id} data-terminal-id={tab.id} draggable className={`terminal-tab ${tab.id === activeTerminalId ? "active" : ""}`} onDragStart={()=>{draggedTab.current=tab.id;}} onDragOver={(event)=>event.preventDefault()} onDrop={(event)=>{event.preventDefault();const source=draggedTab.current;draggedTab.current=null;if(!source||source===tab.id)return;setTabs((current)=>{const from=current.findIndex(item=>item.id===source),to=current.findIndex(item=>item.id===tab.id);if(from<0||to<0)return current;const next=[...current];const [moved]=next.splice(from,1);next.splice(to,0,moved);rpc("term:reorder",{ids:next.map(item=>item.id).filter(itemId=>itemId!==WEBAPP_TAB.id)}).catch(()=>{});return next;});}} onClick={() => setActiveTerminalId(tab.id)} onDoubleClick={() => {
+            if (tab.kind === "webapp") return;
             const title = window.prompt("页签名称", tab.title)?.trim();
             if (!title) return;
             rpc("term:rename", { id: tab.id, title }).then(() => setTabs((items) => items.map((item) => item.id === tab.id ? { ...item, title } : item))).catch(() => {});
           }}>
-            <span>{tab.title}</span><button tabIndex={-1} onClick={(event) => { event.stopPropagation(); closeTerminal(tab.id); }}>×</button>
+            <span>{tab.title}</span>{tab.kind !== "webapp" && <button tabIndex={-1} onClick={(event) => { event.stopPropagation(); closeTerminal(tab.id); }}>×</button>}
           </div>
         ))}
         <button className="terminal-add" disabled={tabs.length >= 8} onClick={addTerminal}>＋</button>
@@ -227,7 +272,11 @@ function AuthenticatedConsole({ auth }: { auth: WebAuthController }) {
           <div className="terminal-track" style={{transform:`translate3d(calc(${-activeIndex*100}% + ${swipeDelta}px),0,0)`,transition:swiping?"none":"transform 260ms cubic-bezier(.22,.8,.32,1)"}}>
           {tabs.map((tab) => (
             <div className="terminal-slide" key={tab.id}>
-              <TerminalPane terminalId={tab.id} title={tab.title} visible={tab.id === activeTerminalId} state={state} rpc={rpc} onEvent={onEvent} onTerminalData={onTerminalData} sendTerminalInput={sendTerminalInput} keyOrder={keyOrder} keybarHidden={keybarHidden} onKeyOrderChange={setKeyOrder} onKeybarHiddenChange={setKeybarHidden} terminalTheme={activeTheme} initialScrollLine={terminalScroll[tab.id] ?? null} onScrollLineChange={(line) => setTerminalScroll((current) => (current[tab.id] === line ? current : { ...current, [tab.id]: line }))} onRegisterFill={(fill) => registerTerminalFill(tab.id, fill)} onCwdChange={(cwd) => cwd && setCwdByTerminal((current) => ({ ...current, [tab.id]: cwd }))} />
+              {tab.kind === "webapp" ? (
+                <iframe src="/app/" title={tab.title} style={{ width: "100%", height: "100%", border: "0", background: "#000" }} />
+              ) : (
+                <TerminalPane terminalId={tab.id} title={tab.title} visible={tab.id === activeTerminalId} state={state} rpc={rpc} onEvent={onEvent} onTerminalData={onTerminalData} onTerminalReset={onTerminalReset} sendTerminalInput={sendTerminalInput} keyOrder={keyOrder} keybarHidden={keybarHidden} onKeyOrderChange={setKeyOrder} onKeybarHiddenChange={setKeybarHidden} terminalTheme={activeTheme} initialScrollLine={terminalScroll[tab.id] ?? null} onScrollLineChange={(line) => setTerminalScroll((current) => (current[tab.id] === line ? current : { ...current, [tab.id]: line }))} onRegisterFill={(fill) => registerTerminalFill(tab.id, fill)} onCwdChange={(cwd) => cwd && setCwdByTerminal((current) => ({ ...current, [tab.id]: cwd }))} />
+              )}
             </div>
           ))}
           </div>

@@ -6,6 +6,7 @@ export async function POST(request: Request) {
     const body = await request.json() as {
       input: string;
       sessionId?: string;
+      images?: string[];
       model?: { provider: string; apiKey: string; modelId: string; baseUrl?: string };
     };
 
@@ -41,7 +42,7 @@ export async function POST(request: Request) {
     }
 
     // Run agent in background
-    agentHost.run(body.input, sessionId).catch((err) => {
+    agentHost.run(body.input, sessionId, body.images).catch((err) => {
       console.error("Agent run error:", err);
     });
 

@@ -21,6 +21,7 @@ import os from "node:os";
 import path from "node:path";
 import fsSync from "node:fs";
 import fsp from "node:fs/promises";
+import zlib from "node:zlib";
 import next from "next";
 import { WebSocketServer } from "ws";
 import pty from "node-pty";
@@ -39,6 +40,18 @@ const roots = (process.env.AGENT_WEB_ROOTS || os.homedir())
   .split(path.delimiter)
   .map((p) => path.resolve(p.trim()))
   .filter(Boolean);
+
+// bun install drops the executable bit on node-pty's prebuilt spawn-helper,
+// which makes every pty.spawn fail with "posix_spawnp failed". Repair on boot
+// (same fix as packages/cli repairNativeRuntimePermissions, for the dev path).
+try {
+  if (process.platform !== "win32") {
+    const { createRequire } = await import("node:module");
+    const nodePtyRoot = path.dirname(createRequire(import.meta.url).resolve("node-pty/package.json"));
+    const helper = path.join(nodePtyRoot, "prebuilds", `${process.platform}-${process.arch}`, "spawn-helper");
+    if (fsSync.existsSync(helper) && !(fsSync.statSync(helper).mode & 0o111)) fsSync.chmodSync(helper, 0o755);
+  }
+} catch { /* best effort — pty.spawn reports its own error */ }
 
 function clampInt(v, min, max, dflt) {
   const n = Math.floor(Number(v));
@@ -218,6 +231,11 @@ function startTerminal(id, { userId, cols = 80, rows = 24, cwd, command } = {}) 
   p.onExit(({ exitCode }) => {
     session.exited = true;
     if (!session.closed) consoleStore.updateTab(session.id, session.userId, { status: "exited", exitedAt: new Date().toISOString(), lastActiveAt: new Date().toISOString() });
+    // Tell attached clients the process is gone — otherwise the tab lives on
+    // as an unresponsive zombie (no input, no output) until a page refresh.
+    for (const conn of connections) {
+      if (conn.attachedTo.has(id)) conn.sendJson({ type: "term:exited", id, code: exitCode });
+    }
     for (const cb of [...session.cwdWatchers]) {
       try { cb(null); } catch {}
     }
@@ -444,6 +462,13 @@ function makeConn(ws) {
       frame[0] = 1; frame[1] = 2; frame.writeUInt32BE(channelId, 2); payload.copy(frame, 6);
       ws.send(frame);
     },
+    sendTerminalReset(terminalId) {
+      if (ws.readyState !== ws.OPEN) return;
+      const channelId = assignChannel(this, terminalId);
+      const frame = Buffer.allocUnsafe(6);
+      frame[0] = 1; frame[1] = 3; frame.writeUInt32BE(channelId, 2);
+      ws.send(frame);
+    },
   };
 }
 
@@ -514,7 +539,10 @@ const requestHandlers = {
     session.cwdWatchers.add(cwdForward);
     conn.cwdForwards.set(id, cwdForward);
 
-    // replay scrollback to restore the screen after reconnect
+    // Replay scrollback to restore the screen after reconnect. Reset the client
+    // pane first: a reconnecting client still holds the old buffer, and
+    // appending the replay onto it duplicates all the content.
+    conn.sendTerminalReset(id);
     const snap = session.scrollback.snapshot();
     if (snap.byteLength > 0) setImmediate(() => conn.sendTerminal(id, new Uint8Array(snap)));
 
@@ -585,6 +613,8 @@ const requestHandlers = {
     return null;
   },
 
+  "ping": async () => ({ pong: true, t: Date.now() }),
+
   "term:kill": async (msg, conn) => {
     const id = msg.id || conn.focusId;
     if (!id) return null;
@@ -593,7 +623,9 @@ const requestHandlers = {
     try { session.pty.kill(); } catch {}
     consoleStore.updateTab(id, conn.principal.userId, { status: "closed", closedAt: new Date().toISOString(), lastActiveAt: new Date().toISOString() });
     detachTerminal(conn, id);
-    return null;
+    // Acknowledge (not fire-and-forget) so a client awaiting this rpc resolves
+    // immediately instead of hanging until its 15s timeout.
+    return { closed: true };
   },
 
   "fs:list": async (msg, conn) => ({ entries: await fsList(msg.path, conn.principal.userId) }),
@@ -670,7 +702,111 @@ const handle = app.getRequestHandler();
 
 await app.prepare();
 
-const server = createServer((req, res) => handle(req, res));
+// ── static hosting for the web shell (@agent/webapp build) at /app ─────────
+// Built by `bun run --cwd packages/webapp build`; override the artifact dir
+// with AGENT_WEB_APP_DIST when staging for the CLI/tunnel runtime.
+// Resolution order: env override → staged CLI runtime layout → repo workspace.
+const webAppDistCandidates = [
+  process.env.AGENT_WEB_APP_DIST?.trim(),
+  path.join(dir, "webapp", "dist"),
+  path.join(dir, "..", "webapp", "dist"),
+].filter(Boolean).map((candidate) => path.resolve(candidate));
+const webAppDist = webAppDistCandidates.find((candidate) => fsSync.existsSync(candidate))
+  ?? webAppDistCandidates[webAppDistCandidates.length - 1];
+
+// Build id = entry chunk filename; clients compare against their own script
+// URL and force-reload themselves when a newer build has been deployed.
+let webAppBuildId = "";
+function refreshWebAppBuildId() {
+  try {
+    const html = fsSync.readFileSync(path.join(webAppDist, "index.html"), "utf8");
+    const match = html.match(/assets\/(index-[^"']+\.js)/);
+    if (match) {
+      webAppBuildId = match[1];
+      globalThis.__webAppBuildId = webAppBuildId;
+    }
+  } catch { /* keep previous */ }
+}
+refreshWebAppBuildId();
+setInterval(refreshWebAppBuildId, 30000);
+
+const WEB_APP_MIME = {
+  ".html": "text/html; charset=utf-8",
+  ".js": "text/javascript",
+  ".mjs": "text/javascript",
+  ".css": "text/css",
+  ".json": "application/json",
+  ".svg": "image/svg+xml",
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".gif": "image/gif",
+  ".webp": "image/webp",
+  ".ico": "image/x-icon",
+  ".woff": "font/woff",
+  ".woff2": "font/woff2",
+  ".map": "application/json",
+};
+
+async function serveWebApp(req, res) {
+  const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
+  if (url.pathname !== "/app" && !url.pathname.startsWith("/app/")) return false;
+  const remoteAddr = req.socket.remoteAddress;
+  // The build uses relative asset URLs — redirect to the trailing-slash form
+  // so ./assets/... resolves under /app/ instead of the site root.
+  if (url.pathname === "/app") {
+    console.log(`[web-app] ${remoteAddr} → /app (redirect)`);
+    res.writeHead(301, { location: "/app/" + url.search }).end();
+    return true;
+  }
+  const relative = url.pathname.replace(/^\/app\/?/, "") || "index.html";
+  if (relative === "index.html") console.log(`[web-app] ${remoteAddr} → /app/ shell`);
+  let filePath = path.resolve(webAppDist, relative);
+  if (filePath !== webAppDist && !filePath.startsWith(webAppDist + path.sep)) {
+    res.writeHead(403).end();
+    return true;
+  }
+  try {
+    const stats = await fsp.stat(filePath);
+    if (stats.isDirectory()) filePath = path.join(filePath, "index.html");
+  } catch {
+    // Unknown extension-less path → shell (deep links); missing assets → 404.
+    if (!path.extname(relative)) filePath = path.join(webAppDist, "index.html");
+    else {
+      res.writeHead(404).end("Not found");
+      return true;
+    }
+  }
+  try {
+    let data = await fsp.readFile(filePath);
+    const ext = path.extname(filePath).toLowerCase();
+    const headers = {
+      "content-type": WEB_APP_MIME[ext] || "application/octet-stream",
+      // Hashed filenames change per build — never let devices pin old bundles.
+      "cache-control": "no-cache",
+    };
+    // Compress the big text assets — remote links (tailscale relay, tunnels)
+    // are the slow path for phones.
+    const compressible = [".js", ".mjs", ".css", ".html", ".json", ".svg", ".map"].includes(ext)
+      && String(req.headers["accept-encoding"] || "").includes("gzip")
+      && data.length > 1024;
+    if (compressible) {
+      data = zlib.gzipSync(data);
+      headers["content-encoding"] = "gzip";
+    }
+    res.writeHead(200, headers);
+    res.end(data);
+  } catch {
+    res.writeHead(404).end("Not found");
+  }
+  return true;
+}
+
+const server = createServer((req, res) => {
+  void serveWebApp(req, res).then((handled) => {
+    if (!handled) handle(req, res);
+  });
+});
 const wss = new WebSocketServer({ noServer: true, maxPayload: 1024 * 1024 });
 
 function cookieValue(header, name) {
@@ -719,7 +855,10 @@ wss.on("connection", (ws, _req, principal) => {
       if (frame.byteLength < 6 || frame[0] !== 1 || frame[1] !== 1) return;
       const terminalId = conn.channelToTerminal.get(frame.readUInt32BE(2));
       if (!terminalId) return;
-      const session = requireOwnedTerminal(conn, terminalId);
+      // Input frames race the terminal's own close (in-flight keystrokes while
+      // the tab tears down) — drop them silently instead of throwing.
+      const session = terminals.get(terminalId);
+      if (!session || session.exited || session.userId !== conn.principal?.userId) return;
       if (session.inputOwner && session.inputOwner !== conn.id) return;
       session.inputOwner = conn.id;
       session.pty.write(frame.subarray(6).toString("utf8"));

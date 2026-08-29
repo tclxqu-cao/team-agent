@@ -74,6 +74,7 @@ describe("agentHost singleton", () => {
   it("stores projectId from the sessions API", async () => {
     const response = await createSession(new Request("http://test/api/sessions", {
       method: "POST",
+      headers: { authorization: "Bearer test-token" },
       body: JSON.stringify({ title: "课程创建", projectId: "kid-earth-learning" }),
     }));
 
@@ -86,14 +87,18 @@ describe("agentHost singleton", () => {
   it("filters session listing by projectId", async () => {
     await createSession(new Request("http://test/api/sessions", {
       method: "POST",
+      headers: { authorization: "Bearer test-token" },
       body: JSON.stringify({ title: "项目 A", projectId: "project-a" }),
     }));
     await createSession(new Request("http://test/api/sessions", {
       method: "POST",
+      headers: { authorization: "Bearer test-token" },
       body: JSON.stringify({ title: "项目 B", projectId: "project-b" }),
     }));
 
-    const response = await listSessions(new Request("http://test/api/sessions?projectId=project-a"));
+    const response = await listSessions(new Request("http://test/api/sessions?projectId=project-a", {
+      headers: { authorization: "Bearer test-token" },
+    }));
 
     expect(response.status).toBe(200);
     const sessions = await response.json();

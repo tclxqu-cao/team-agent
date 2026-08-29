@@ -16,6 +16,7 @@ declare module "better-sqlite3" {
     fileMustExist?: boolean;
     timeout?: number;
     verbose?: (message?: unknown, ...args: unknown[]) => void;
+    nativeBinding?: string;
   }
 
   class BetterSqlite3 {

@@ -34,6 +34,7 @@ interface Props {
   rpc: <T = any,>(type: string, params?: Record<string, unknown>, timeoutMs?: number) => Promise<T>;
   onEvent: (type: string, fn: (msg: any) => void) => () => void;
   onTerminalData: (channelId: number, fn: (data: Uint8Array) => void) => () => void;
+  onTerminalReset: (channelId: number, fn: () => void) => () => void;
   sendTerminalInput: (channelId: number, data: string) => boolean;
   keyOrder: string[];
   keybarHidden: boolean;
@@ -49,7 +50,7 @@ interface Props {
   terminalTheme: WebTheme;
 }
 
-export default function TerminalPane({ terminalId, title, visible, state, rpc, onEvent, onTerminalData, sendTerminalInput, keyOrder, keybarHidden, onKeyOrderChange, onKeybarHiddenChange, onCwdChange, initialScrollLine, onScrollLineChange, onRegisterFill, terminalTheme }: Props) {
+export default function TerminalPane({ terminalId, title, visible, state, rpc, onEvent, onTerminalData, onTerminalReset, sendTerminalInput, keyOrder, keybarHidden, onKeyOrderChange, onKeybarHiddenChange, onCwdChange, initialScrollLine, onScrollLineChange, onRegisterFill, terminalTheme }: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
@@ -61,6 +62,7 @@ export default function TerminalPane({ terminalId, title, visible, state, rpc, o
   const sessionId = useRef<string>(terminalId);
   const channelId = useRef<number | null>(null);
   const dataSubscription = useRef<(() => void) | null>(null);
+  const resetSubscription = useRef<(() => void) | null>(null);
   const writer = useRef<(bytes: Uint8Array) => void>(() => {});
   const startRequestRef = useRef<Promise<{ sessionId: string; channelId: number; cwd?: string | null }> | null>(null);
   const followOutputRef = useRef(true);
@@ -385,6 +387,7 @@ export default function TerminalPane({ terminalId, title, visible, state, rpc, o
       scrollSurface?.removeEventListener("pointercancel", onTouchEnd, { capture: true });
       osc7.dispose();
       dataSubscription.current?.();
+      resetSubscription.current?.();
       onCwdChange?.(null);
       term.dispose();
       termRef.current = null;
@@ -443,6 +446,8 @@ export default function TerminalPane({ terminalId, title, visible, state, rpc, o
       channelId.current = null;
       dataSubscription.current?.();
       dataSubscription.current = null;
+      resetSubscription.current?.();
+      resetSubscription.current = null;
       setSessionReady(false);
       setSessionError(null);
       tabFocusCount.current = 0;
@@ -469,6 +474,12 @@ export default function TerminalPane({ terminalId, title, visible, state, rpc, o
         sessionId.current = res.sessionId;
         channelId.current = res.channelId;
         dataSubscription.current?.();
+        resetSubscription.current?.();
+        resetSubscription.current = onTerminalReset(res.channelId, () => {
+          // server sends this marker before replaying scrollback after a
+          // reconnect — clear the old buffer or the replay duplicates content
+          termRef.current?.reset();
+        });
         dataSubscription.current = onTerminalData(res.channelId, (bytes) => writer.current(bytes));
         setSessionReady(true);
         onCwdChange?.(res.cwd ?? null);
@@ -625,6 +636,9 @@ export default function TerminalPane({ terminalId, title, visible, state, rpc, o
       target instanceof Element ? target.closest<HTMLButtonElement>("button[data-key]") : null;
 
     const onDown = (event: PointerEvent) => {
+      // start of a new interaction: clear any suppression left over from a tap
+      // whose synthetic click never fired (e.g. iOS cancels it)
+      suppressKeyClick.current = false;
       if (event.pointerType !== "touch" || !event.isPrimary) return;
       const button=keyButton(event.target);
       if(button){event.preventDefault();try{button.setPointerCapture(event.pointerId);}catch{}const key=button.dataset.key!;touchKeyTap.current={key,dragged:false};const drag={key,timer:null as ReturnType<typeof setTimeout>|null,active:false,startX:event.clientX,startY:event.clientY,lastX:event.clientX,scrolling:false};drag.timer=setTimeout(()=>{if(drag.scrolling)return;drag.active=true;if(touchKeyTap.current)touchKeyTap.current.dragged=true;setDraggingKey(key);navigator.vibrate?.(20);},280);keyDrag.current=drag;return;}
@@ -645,7 +659,7 @@ export default function TerminalPane({ terminalId, title, visible, state, rpc, o
     };
     const onEnd = (event: PointerEvent) => {
       const drag=keyDrag.current;
-      if(event.pointerType==="touch"&&drag){if(drag.timer)clearTimeout(drag.timer);if(drag.active||drag.scrolling){suppressKeyClick.current=true;setTimeout(()=>{suppressKeyClick.current=false;},0);}keyDrag.current=null;touchKeyTap.current=null;setDraggingKey(null);return;}
+      if(event.pointerType==="touch"&&drag){if(drag.timer)clearTimeout(drag.timer);if(drag.active||drag.scrolling)suppressKeyClick.current=true;keyDrag.current=null;touchKeyTap.current=null;setDraggingKey(null);return;}
       if (event.pointerId !== pointerId) return;
       tracking = false;
       pointerId = null;
@@ -657,7 +671,9 @@ export default function TerminalPane({ terminalId, title, visible, state, rpc, o
     const onClick = (event: MouseEvent) => {
       const button=keyButton(event.target);
       const key=button?.dataset.key;
-      if(!key||suppressKeyClick.current)return;
+      if(!key)return;
+      // one-shot: endKeyDrag already ran this tap; swallow exactly the click that follows it
+      if(suppressKeyClick.current){suppressKeyClick.current=false;return;}
       event.preventDefault();
       runShortcut(()=>runKey(key));
     };
@@ -697,7 +713,10 @@ export default function TerminalPane({ terminalId, title, visible, state, rpc, o
     if(key==="end"){followOutputRef.current=true;t.scrollToBottom();reportScrollLine();}
   };
 
-  const endKeyDrag=(event:React.PointerEvent<HTMLButtonElement>)=>{const drag=keyDrag.current;if(!drag)return;if(drag.timer)clearTimeout(drag.timer);suppressKeyClick.current=true;if(event.pointerType==="touch"&&!drag.active&&!drag.scrolling)runShortcut(()=>runKey(drag.key));setTimeout(()=>{suppressKeyClick.current=false;},0);keyDrag.current=null;touchKeyTap.current=null;setDraggingKey(null);};
+  // pointerup capture on a key: run the tap now and leave suppression armed for
+  // the synthetic click (which still fires after the canceled pointerdown on
+  // Android/Chrome). No timed reset — that raced the click and double-fired.
+  const endKeyDrag=(event:React.PointerEvent<HTMLButtonElement>)=>{const drag=keyDrag.current;if(!drag)return;if(drag.timer)clearTimeout(drag.timer);suppressKeyClick.current=true;if(event.pointerType==="touch"&&!drag.active&&!drag.scrolling)runShortcut(()=>runKey(drag.key));keyDrag.current=null;touchKeyTap.current=null;setDraggingKey(null);};
   const cancelKeyDrag=()=>{const drag=keyDrag.current;if(drag?.timer)clearTimeout(drag.timer);keyDrag.current=null;setDraggingKey(null);};
 
   const acquireWrite = async (force = false) => {

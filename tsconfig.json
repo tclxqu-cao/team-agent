@@ -23,5 +23,5 @@
       "@agent/sdk": ["./packages/sdk/src"]
     }
   },
-  "exclude": ["node_modules", "dist", "packages/desktop/renderer", "packages/sdk/dist"]
+  "exclude": ["node_modules", "dist", "packages/desktop/renderer", "packages/webapp", "packages/sdk/dist"]
 }

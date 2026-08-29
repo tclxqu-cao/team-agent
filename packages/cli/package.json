@@ -1,13 +1,26 @@
 {
   "name": "agentroam",
-  "version": "0.2.0-preview.3",
+  "version": "0.2.0-preview.4",
   "description": "Zero-install mobile remote terminal and file console",
   "type": "module",
-  "bin": { "agentroam": "./bin/agentroam.mjs" },
-  "engines": { "node": ">=22 <23" },
-  "os": ["darwin"],
-  "cpu": ["arm64"],
-  "files": ["bin", "dist", "runtime", "README.md"],
+  "bin": {
+    "agentroam": "./bin/agentroam.mjs"
+  },
+  "engines": {
+    "node": ">=22 <23"
+  },
+  "os": [
+    "darwin"
+  ],
+  "cpu": [
+    "arm64"
+  ],
+  "files": [
+    "bin",
+    "dist",
+    "runtime",
+    "README.md"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "vitest run --root ../.. packages/cli/src",
@@ -18,7 +31,7 @@
     "undici": "^6.25.0"
   },
   "optionalDependencies": {
-    "agentroam-cloudflared-darwin-arm64": "0.2.0-preview.3"
+    "agentroam-cloudflared-darwin-arm64": "0.2.0-preview.4"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
@@ -27,5 +40,9 @@
     "vitest": "^2.1.0"
   },
   "license": "MIT",
-  "publishConfig": { "access": "public", "provenance": true, "tag": "preview" }
+  "publishConfig": {
+    "access": "public",
+    "provenance": true,
+    "tag": "preview"
+  }
 }

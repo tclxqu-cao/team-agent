@@ -577,6 +577,17 @@ export function TuiApp(props: TuiAppProps) {
       return;
     }
     if (trigger?.type === "slash") {
+      if (item.kind === "command") {
+        const command = BUILTIN_COMMANDS.find((candidate) => candidate.name === item.value);
+        // No-argument commands (/exit, /clear, /help, /new, /cwd) run on
+        // select — filling the input made them look broken until a second
+        // Enter. Argument-taking (/steer) and panel commands keep the old path.
+        if (command && !command.secondary && command.name !== "/steer") {
+          setInput("");
+          await executeBuiltin(item.value, "");
+          return;
+        }
+      }
       const next = replaceTrigger(state.input, state.cursor, trigger, `${item.value} `);
       setInput(next.buffer, next.cursor);
       if (item.kind === "command") {
@@ -589,7 +600,7 @@ export function TuiApp(props: TuiAppProps) {
       const next = replaceMentionToken(state.input, state.cursor, trigger, item.value);
       setInput(next.buffer, next.cursor);
     }
-  }, [append, beginModelWizard, modelWizard, openSecondary, props.configPath, props.profiles, props.runtime, refreshCustomEndpoint, secondary, selectedIndex, setInput, state.cursor, state.input, switchModel, switchProject, trigger, tuiConfig, visibleItems]);
+  }, [append, beginModelWizard, executeBuiltin, modelWizard, openSecondary, props.configPath, props.profiles, props.runtime, refreshCustomEndpoint, secondary, selectedIndex, setInput, state.cursor, state.input, switchModel, switchProject, trigger, tuiConfig, visibleItems]);
 
   const abortTurn = useCallback(() => {
     abortingRef.current = true;

@@ -59,21 +59,40 @@ async function projectSearchText(projectPath: string, label: string, maxBytes: n
   return [label, projectPath, ...prefixes].filter(Boolean).join("\n");
 }
 
+// macOS delivers pty resize signals (SIGWINCH — the phone keyboard opening is
+// a resize) that interrupt slow syscalls mid-flight; libuv surfaces those as
+// EINTR. Retry briefly instead of failing the whole resource index.
+async function withEintrRetry<T>(operation: () => Promise<T>): Promise<T> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await operation();
+    } catch (error: any) {
+      if (error?.code !== "EINTR" || attempt >= 2) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 25 * (attempt + 1)));
+    }
+  }
+}
+
 export async function scanSiblingProjects(
   cwd: string,
   options: { homeDirectory?: string; metadataBytes?: number } = {},
 ): Promise<ProjectCandidate[]> {
-  const currentRealPath = await fsp.realpath(cwd);
+  const currentRealPath = await withEintrRetry(() => fsp.realpath(cwd));
   let homeRealPath = path.resolve(options.homeDirectory ?? os.homedir());
   try {
-    homeRealPath = await fsp.realpath(homeRealPath);
+    homeRealPath = await withEintrRetry(() => fsp.realpath(homeRealPath));
   } catch {}
   const searchRoot = currentRealPath === homeRealPath ? currentRealPath : path.dirname(currentRealPath);
-  const dir = await fsp.opendir(searchRoot);
+  const dir = await withEintrRetry(() => fsp.opendir(searchRoot));
   const projects: ProjectCandidate[] = [];
   for await (const entry of dir) {
     if (!entry.isDirectory() || entry.name.startsWith(".") || DEFAULT_IGNORES.has(entry.name)) continue;
-    const candidatePath = await fsp.realpath(path.join(searchRoot, entry.name));
+    let candidatePath: string;
+    try {
+      candidatePath = await withEintrRetry(() => fsp.realpath(path.join(searchRoot, entry.name)));
+    } catch {
+      continue;
+    }
     const markerChecks = await Promise.all(PROJECT_MARKERS.map(async (marker) => {
       try {
         await fsp.access(path.join(candidatePath, marker));
@@ -170,7 +189,7 @@ export async function indexProjectResources(
     const current = queue.shift()!;
     let entries;
     try {
-      entries = await fsp.readdir(current, { withFileTypes: true });
+      entries = await withEintrRetry(() => fsp.readdir(current, { withFileTypes: true }));
     } catch (error) {
       warnings.push(`${current}: ${error instanceof Error ? error.message : String(error)}`);
       continue;
