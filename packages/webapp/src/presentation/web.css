@@ -94,7 +94,7 @@ body[data-web-shell="1"] .composer-input-row > button.webapp-native-send {
   background: var(--bg-deep) !important;
   color: var(--text-muted) !important;
 }
-body[data-web-shell="1"] .composer-input-row > button.webapp-native-send:not(:disabled) {
+body[data-web-shell="1"] .composer-input-row > button.webapp-native-send[data-inactive="0"] {
   background: var(--text-primary) !important;
   color: #fff !important;
   cursor: pointer;

@@ -67,7 +67,6 @@ function ensureNativeAction(
   className: string,
   label: string,
   icon: string,
-  target: HTMLButtonElement,
 ): HTMLButtonElement {
   let proxy = row.querySelector<HTMLButtonElement>(`:scope > .${className}`);
   if (!proxy) {
@@ -75,12 +74,44 @@ function ensureNativeAction(
     proxy.type = "button";
     proxy.className = className;
     proxy.addEventListener("click", () => {
-      const current = row.querySelector<HTMLButtonElement>(
-        proxy!.dataset.target === "stop"
-          ? ":scope > button[data-webapp-original-stop='1']"
-          : ":scope > button[data-webapp-original-primary='1']",
-      );
-      if (current && !current.disabled) current.click();
+      const targetSelector = proxy!.dataset.target === "stop"
+        ? ":scope > button[data-webapp-original-stop='1']"
+        : ":scope > button[data-webapp-original-primary='1']";
+      const input = row.querySelector<HTMLInputElement>("input:not([type='file'])");
+      if (proxy!.dataset.target !== "primary") {
+        row.querySelector<HTMLButtonElement>(targetSelector)?.click();
+        return;
+      }
+      if (!input?.value.trim()) return;
+
+      const current = row.querySelector<HTMLButtonElement>(targetSelector);
+      // Normal path: React already mirrored the visible input value. Invoke it
+      // immediately so mobile taps cannot be lost to focus/IME transitions.
+      if (current && !current.disabled) {
+        current.click();
+        return;
+      }
+
+      // Fallback for the narrow window where mobile IME has painted the text
+      // but React has not committed it yet.
+      input.dispatchEvent(new CompositionEvent("compositionend", {
+        bubbles: true,
+        data: input.value,
+      }));
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        const committed = row.querySelector<HTMLButtonElement>(targetSelector);
+        if (committed && !committed.disabled) committed.click();
+        else {
+          input.dispatchEvent(new KeyboardEvent("keydown", {
+            key: "Enter",
+            code: "Enter",
+            bubbles: true,
+            cancelable: true,
+          }));
+        }
+      }));
     });
     row.appendChild(proxy);
   }
@@ -88,7 +119,14 @@ function ensureNativeAction(
   proxy.innerHTML = icon;
   proxy.setAttribute("aria-label", label);
   proxy.setAttribute("title", label);
-  proxy.disabled = target.disabled;
+  const input = row.querySelector<HTMLInputElement>("input:not([type='file'])");
+  // Never set the native disabled attribute on the proxy: mobile users may
+  // tap immediately after an IME commit, before the 500ms reconciliation
+  // tick. Keep it clickable and express inactive state through data/CSS.
+  const inactive = className !== STOP_CLASS && !input?.value.trim();
+  proxy.dataset.inactive = inactive ? "1" : "0";
+  proxy.setAttribute("aria-disabled", inactive ? "true" : "false");
+  proxy.disabled = false;
   return proxy;
 }
 
@@ -101,8 +139,14 @@ function applyComposer(): void {
   const [attach, mic, screenshot] = buttons;
 
   attach.classList.add(HIDE_CLASS);
+  attach.setAttribute("aria-hidden", "true");
+  attach.tabIndex = -1;
   mic.classList.add(HIDE_CLASS);
+  mic.setAttribute("aria-hidden", "true");
+  mic.tabIndex = -1;
   screenshot.classList.add(HIDE_CLASS);
+  screenshot.setAttribute("aria-hidden", "true");
+  screenshot.tabIndex = -1;
 
   if (!row.querySelector(`:scope > .${CONTROL_CLASS}`)) {
     row.insertBefore(createNativePlusControl(), row.firstElementChild);
@@ -123,21 +167,22 @@ function applyComposer(): void {
     const isQueue = (queueOrSend.title || "").includes("排队") || (queueOrSend.textContent || "").includes("排队");
     queueOrSend.dataset.webappOriginalPrimary = "1";
     queueOrSend.classList.add(HIDE_CLASS);
-    const proxy = ensureNativeAction(
+    queueOrSend.setAttribute("aria-hidden", "true");
+    queueOrSend.tabIndex = -1;
+    ensureNativeAction(
       row,
       SEND_CLASS,
       isQueue ? "排队发送" : "发送",
       ARROW_SVG,
-      queueOrSend,
     );
-    // Keep the primary action before the optional stop proxy at row end.
-    if (proxy !== row.lastElementChild && !row.querySelector(`:scope > .${STOP_CLASS}`)) row.appendChild(proxy);
   }
 
   if (stop) {
     stop.dataset.webappOriginalStop = "1";
     stop.classList.add(HIDE_CLASS);
-    ensureNativeAction(row, STOP_CLASS, "停止生成", STOP_SVG, stop);
+    stop.setAttribute("aria-hidden", "true");
+    stop.tabIndex = -1;
+    ensureNativeAction(row, STOP_CLASS, "停止生成", STOP_SVG);
   } else {
     row.querySelector(`:scope > .${STOP_CLASS}`)?.remove();
   }
