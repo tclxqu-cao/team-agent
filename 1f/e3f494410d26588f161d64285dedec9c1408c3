@@ -1,0 +1,25 @@
+packages/desktop/renderer/App.tsx
+  s_6edcb9d9cd7ad6::t_6ec3f4fb843261 1018,1057,1079,1084,1086,1089-1094,1103,1109,1120,1124
+  s_6edcb9d9cd7ad6::t_fa92403b54ef49 834,848,861-862
+  s_6edcb9d9cd7ad6::t_f954b8fd2abfd2 1027
+  s_6edcb9d9cd7ad6::t_8ef26cb0fcdd51 609-612,654,661,672,694,733,745,747,762,796,798
+packages/desktop/renderer/styles/global.css
+  s_6edcb9d9cd7ad6::t_f954b8fd2abfd2 234-238,605-615
+  s_6edcb9d9cd7ad6::t_9109a803c477d7 56-62,197-233,239-485,604
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "1fe3f494410d26588f161d64285dedec9c1408c3",
+  "prompts": {},
+  "sessions": {
+    "s_6edcb9d9cd7ad6": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fd1c1-3a3e-7f32-9ee5-c7add0c1d7e1",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

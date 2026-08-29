@@ -1,0 +1,19 @@
+docs/superpowers/specs/2026-08-12-sherpa-kws-wake-word-design.md
+  s_6edcb9d9cd7ad6::t_d2dab4cee18807 1-111
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "ac0827c063f3a7ea4870492576e7dc54e7a1cc4d",
+  "prompts": {},
+  "sessions": {
+    "s_6edcb9d9cd7ad6": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fd1c1-3a3e-7f32-9ee5-c7add0c1d7e1",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

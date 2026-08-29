@@ -1,0 +1,25 @@
+packages/core/src/domain/tool/builtin/RemoteProjectActionTool.ts
+  s_999f3037df62ea::t_14409793024f50 34
+  s_999f3037df62ea::t_8347fcffac00ea 15-20
+packages/core/src/domain/agent/AgentBuilder.ts
+  s_999f3037df62ea::t_2cc0feb997c235 16
+  s_999f3037df62ea::t_8b3ef44a5f7a72 136
+packages/core/src/domain/tool/builtin/RemoteProjectActionTool.test.ts
+  s_999f3037df62ea::t_3d30e728590ec1 20-36
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.14",
+  "base_commit_sha": "c7f869f1d58e0ead2cefa6db97c1e79a4742dfca",
+  "prompts": {},
+  "sessions": {
+    "s_999f3037df62ea": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "07f2172f-644a-445d-b347-afe9c3a83f89",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

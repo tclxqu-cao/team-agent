@@ -1,0 +1,39 @@
+docs/superpowers/plans/2026-08-06-voice-barge-in.md
+  s_6edcb9d9cd7ad6::t_16779d3592ce3a 1-86
+docs/superpowers/specs/2026-08-06-voice-barge-in-design.md
+  s_6edcb9d9cd7ad6::t_b8eb155ddbad2b 1-34
+packages/desktop/main/preload.ts
+  s_6edcb9d9cd7ad6::t_e047428ed2f951 34-47
+packages/desktop/main/voice-capture-state.test.ts
+  s_6edcb9d9cd7ad6::t_33ea4d99482ac6 139-173
+packages/desktop/main/voice-capture-state.ts
+  s_6edcb9d9cd7ad6::t_cc8711c83045d5 2,47-54,86-89
+packages/desktop/renderer/components/ChatView.tsx
+  s_6edcb9d9cd7ad6::t_d7f85e5d614e40 19,303,934-935
+packages/desktop/renderer/global.d.ts
+  s_6edcb9d9cd7ad6::t_61e858da856394 95-99
+packages/desktop/renderer/lib/speech.test.ts
+  s_6edcb9d9cd7ad6::t_da0de8cede322c 1-42
+packages/desktop/renderer/lib/speech.ts
+  s_6edcb9d9cd7ad6::t_bd5739a09b6b9c 4-6,33-39,46-57,59,83-120
+packages/desktop/renderer/lib/voice-interruption.test.ts
+  s_6edcb9d9cd7ad6::t_ca43870e24997c 1-20
+packages/desktop/renderer/lib/voice-interruption.ts
+  s_6edcb9d9cd7ad6::t_a6e6b7041b32cd 1-11
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "dc962480a12f9ff0e3b710c1a84deb59cc1ec44e",
+  "prompts": {},
+  "sessions": {
+    "s_6edcb9d9cd7ad6": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fd1c1-3a3e-7f32-9ee5-c7add0c1d7e1",
+        "model": "unknown"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

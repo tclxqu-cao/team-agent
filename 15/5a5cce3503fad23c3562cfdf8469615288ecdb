@@ -1,0 +1,109 @@
+packages/core/src/domain/agent/AgentBuilder.ts
+  s_0c9810ca6cf0aa::t_b74c8aed7275a1 42-43,169-173,184,247
+packages/tui/src/state.ts
+  s_0c9810ca6cf0aa::t_d9e0964b6cf764 1-3,8-166
+  s_0c9810ca6cf0aa::t_55d31bb2f1e4e8 4-7
+packages/tui/src/commands.ts
+  s_0c9810ca6cf0aa::t_4191887aa02edc 1-63
+packages/tui/src/App.test.tsx
+  s_0c9810ca6cf0aa::t_0aa5ed3055d06c 8,17-20,30-32,35-36,38-39,41,44,70-90,93-139,141-156
+  s_0c9810ca6cf0aa::t_b5e13977fe3e6a 51
+  s_0c9810ca6cf0aa::t_b34398f0654507 1-7,9-16,21-29,33-34,37,40,42-43,45-50,52-69,157-158
+  s_0c9810ca6cf0aa::t_d92f10a455d726 91-92,140
+vitest.config.ts
+  s_0c9810ca6cf0aa::t_0ff5a6e1372ef0 7
+packages/tui/src/resources.ts
+  s_0c9810ca6cf0aa::t_4191887aa02edc 1-15,17-39,41,43,53-56,58-147,152-164
+  s_0c9810ca6cf0aa::t_e11d9073ab5ec8 16,40,42,44-52,57
+  s_0c9810ca6cf0aa::t_e7c2edf283b339 148-151
+packages/tui/tsconfig.json
+  s_0c9810ca6cf0aa::t_4191887aa02edc 1-9
+packages/tui/src/desktop-data.test.ts
+  s_0c9810ca6cf0aa::t_28b853ff3d65e0 2-4,7-8,11-16,35-40
+  s_0c9810ca6cf0aa::t_5d24f61b1b303b 1,5-6,9-10,17-34
+packages/tui/src/desktop-data.ts
+  s_0c9810ca6cf0aa::t_4191887aa02edc 1-28,33-39,41,51-56,62,64-80,82-106
+  s_0c9810ca6cf0aa::t_39120b62e153d7 29-32
+  s_0c9810ca6cf0aa::t_0c729a5023cdb3 40,42-50,57-61,63,81
+packages/tui/src/components/InlineQuestion.tsx
+  s_0c9810ca6cf0aa::t_7bcc6e8c329c9a 1-17
+packages/tui/src/bun-sqlite.d.ts
+  s_0c9810ca6cf0aa::t_0c729a5023cdb3 1-4,6-13
+  s_0c9810ca6cf0aa::t_28b853ff3d65e0 5
+packages/tui/src/components/Composer.tsx
+  s_0c9810ca6cf0aa::t_7bcc6e8c329c9a 1-19,21-38,40-90
+  s_0c9810ca6cf0aa::t_d92f10a455d726 20,39
+packages/tui/src/better-sqlite3.d.ts
+  s_0c9810ca6cf0aa::t_d9e0964b6cf764 1,31
+  s_0c9810ca6cf0aa::t_55d31bb2f1e4e8 2-30
+packages/tui/src/state.test.ts
+  s_0c9810ca6cf0aa::t_55d31bb2f1e4e8 8
+  s_0c9810ca6cf0aa::t_d9e0964b6cf764 1-7,9-24
+packages/tui/src/components/CommandPalette.tsx
+  s_0c9810ca6cf0aa::t_7bcc6e8c329c9a 1-19,21-53
+  s_0c9810ca6cf0aa::t_e11d9073ab5ec8 20
+packages/core/src/domain/skill/__tests__/SkillRegistry.test.ts
+  s_0c9810ca6cf0aa::t_b74c8aed7275a1 4,17-28,77-100
+  s_0c9810ca6cf0aa::t_f910367e9268cd 101
+packages/tui/src/main.tsx
+  s_0c9810ca6cf0aa::t_93798fdb6fb243 1-72
+packages/tui/src/palette.ts
+  s_0c9810ca6cf0aa::t_4191887aa02edc 1-77
+packages/tui/src/App.tsx
+  s_0c9810ca6cf0aa::t_93798fdb6fb243 1-32,37-90,92-138,140-143,145-152,154-155,157-230,232-241,243-313,323-336,338-346,352-356
+  s_0c9810ca6cf0aa::t_55d31bb2f1e4e8 33-36,156
+  s_0c9810ca6cf0aa::t_b34398f0654507 91,139,144,153,347-350
+  s_0c9810ca6cf0aa::t_d92f10a455d726 231,242,337
+  s_0c9810ca6cf0aa::t_230d2aad30867f 314-322,351
+packages/core/src/domain/agent/AgentBuilder.test.ts
+  s_0c9810ca6cf0aa::t_b74c8aed7275a1 19-24
+packages/tui/src/model-config.ts
+  s_0c9810ca6cf0aa::t_4191887aa02edc 1-123
+packages/tui/src/model-config.test.ts
+  s_0c9810ca6cf0aa::t_d0921c929915c6 1-47
+packages/tui/src/runtime.ts
+  s_0c9810ca6cf0aa::t_d9e0964b6cf764 1-35,37-101,103-113,115-117,122-124,126-162
+  s_0c9810ca6cf0aa::t_0117cfb6bda106 102,114,118-121,125
+  s_0c9810ca6cf0aa::t_0ff5a6e1372ef0 36
+packages/tui/src/components/ProgressLine.tsx
+  s_0c9810ca6cf0aa::t_e11d9073ab5ec8 19
+  s_0c9810ca6cf0aa::t_7bcc6e8c329c9a 1-18,20-22
+docs/superpowers/plans/2026-08-28-tui-command-context-palette.md
+  s_0c9810ca6cf0aa::t_fd3249e2c86676 1-188,195-412
+  s_0c9810ca6cf0aa::t_0c729a5023cdb3 189-194
+packages/tui/package.json
+  s_0c9810ca6cf0aa::t_3816843093f1d8 20
+  s_0c9810ca6cf0aa::t_d0921c929915c6 9-12
+  s_0c9810ca6cf0aa::t_3d662921eb60e6 14-19
+packages/tui/src/runtime.test.ts
+  s_0c9810ca6cf0aa::t_b34398f0654507 1-59
+packages/tui/src/commands.test.ts
+  s_0c9810ca6cf0aa::t_d0921c929915c6 1-29
+packages/core/src/domain/skill/SkillRegistry.ts
+  s_0c9810ca6cf0aa::t_b74c8aed7275a1 12-13,24-28,51-54,58,76-77,80-81,86,131,133,148-154,156,161,168-169
+packages/tui/src/resources.test.ts
+  s_0c9810ca6cf0aa::t_d0921c929915c6 1-26,28-46
+  s_0c9810ca6cf0aa::t_e11d9073ab5ec8 27
+packages/tui/src/components/Transcript.tsx
+  s_0c9810ca6cf0aa::t_7bcc6e8c329c9a 1-25
+packages/tui/agent-tui.mjs
+  s_0c9810ca6cf0aa::t_93798fdb6fb243 2,4
+bun.lock
+  s_0c9810ca6cf0aa::t_614234de2115d1 79-84,115-116,357-362,365-366,397-398,405-410,415-416,419-420,447-448,453-454,461-462,469,495-496,519-520,525-532,567-568,607-608,611-612,643-644,657-658,693-694,699-700,705-706,713-714,717-718,747,773-776,785-786,791-792,799-800,811-812,817-820
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "155a5cce3503fad23c3562cfdf8469615288ecdb",
+  "prompts": {},
+  "sessions": {
+    "s_0c9810ca6cf0aa": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0467f-4946-7e63-a50b-da3a8638b430",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

@@ -1,0 +1,62 @@
+packages/desktop/main/voice-capture-state.test.ts
+  s_6edcb9d9cd7ad6::t_460a4bac06a79b 194-228
+  s_6edcb9d9cd7ad6::t_d3dd60dfba7a48 229-245
+packages/desktop/main/voice-service-manager.test.ts
+  s_6edcb9d9cd7ad6::t_80d439c48cec98 1,65-66
+  s_6edcb9d9cd7ad6::t_5b0398c36864b5 2-64,67-70
+packages/desktop/native/wakelistener.swift
+  s_6edcb9d9cd7ad6::t_3372a3b0a5f1d7 20-27,30-100,236-241,268-295,344-349,361-364,368-375,381-414,417-419
+packages/voice-service/src/model-files.test.ts
+  s_6edcb9d9cd7ad6::t_3dd95c2e0fa8ba 40
+packages/desktop/native/wakelistener-contract.test.ts
+  s_6edcb9d9cd7ad6::t_65a0740fc2f79c 1-34
+packages/voice-service/src/model-files.ts
+  s_6edcb9d9cd7ad6::t_171953b62d5c71 15,50
+packages/desktop/main/voice-service-manager.ts
+  s_6edcb9d9cd7ad6::t_adc8e3e05bd918 1-4,10,13-18,21-50,52-55,57-127
+  s_6edcb9d9cd7ad6::t_c0c0c7fde86476 5-9,11-12,19-20,51,56,128-129
+packages/voice-service/src/sherpa-runtime.test.ts
+  s_6edcb9d9cd7ad6::t_3dd95c2e0fa8ba 60,67-68
+packages/desktop/main/voice-service-client.ts
+  s_6edcb9d9cd7ad6::t_4f41e846751945 1-2,8-9,11,13-15,18-28,30-31,33-104,106-138
+  s_6edcb9d9cd7ad6::t_c2272d876c374f 3-7,10,12,16-17,29,32,105,139-140
+packages/voice-service/README.md
+  s_6edcb9d9cd7ad6::t_45c19dca18e5bf 1-56
+packages/desktop/package.json
+  s_6edcb9d9cd7ad6::t_abdefb7ac00b95 20
+  s_6edcb9d9cd7ad6::t_e9f0da1d7bf01e 10
+  s_6edcb9d9cd7ad6::t_4f41e846751945 16
+packages/voice-service/scripts/download-tts-model.sh
+  s_6edcb9d9cd7ad6::t_45c19dca18e5bf 1-60
+packages/desktop/main/voice-service-client.test.ts
+  s_6edcb9d9cd7ad6::t_a95d4973818c04 3,5-10,12-15,85,87-90,92-100,102-116,118-123,125-131,134-140
+  s_6edcb9d9cd7ad6::t_abdefb7ac00b95 1-2,4,11,16-84,86,91,101,117,124,132-133
+packages/desktop/main/index.ts
+  s_6edcb9d9cd7ad6::t_b4367e9eed0d37 9,25,490,494-496,500-517,523,530,538-601,614-617,625,631,636,638-639
+  s_6edcb9d9cd7ad6::t_e9f0da1d7bf01e 22,29-30,50-68,139-145,173-175
+  s_6edcb9d9cd7ad6::t_9eb020ced46bef 69-82,285,287-288,320,481-482,1014-1016,1023
+  s_6edcb9d9cd7ad6::t_7784a02fcaf641 268-270,272,286,289-319,322,326,339-346,436-437,447
+packages/voice-service/src/sherpa-runtime.ts
+  s_6edcb9d9cd7ad6::t_171953b62d5c71 44-45
+packages/desktop/main/voice-capture-state.ts
+  s_6edcb9d9cd7ad6::t_8c3e170e040a94 90-111
+  s_6edcb9d9cd7ad6::t_465f3057fb3ede 112-119
+bun.lock
+  s_6edcb9d9cd7ad6::t_151986fab8500d 27,31
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "7ddcc8413dd4eca9c814aef3519391a6dbad78f0",
+  "prompts": {},
+  "sessions": {
+    "s_6edcb9d9cd7ad6": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fd1c1-3a3e-7f32-9ee5-c7add0c1d7e1",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

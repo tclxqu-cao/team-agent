@@ -1,0 +1,19 @@
+docs/superpowers/specs/2026-08-28-tui-command-context-palette-design.md
+  s_0c9810ca6cf0aa::t_74878d6aee1cc3 1-222
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "8220c83b9128d61ebc933340effe1d6fb3fdeab2",
+  "prompts": {},
+  "sessions": {
+    "s_0c9810ca6cf0aa": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0467f-4946-7e63-a50b-da3a8638b430",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

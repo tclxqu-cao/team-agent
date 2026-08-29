@@ -1,0 +1,33 @@
+packages/sdk/src/components/AgentChat.ts
+  s_995df9c9161340::t_c1ee9474599549 688-693,696
+  s_995df9c9161340::t_fa781add6c5ae7 739
+  s_995df9c9161340::t_32912eb940c5cd 34
+  s_995df9c9161340::t_a869c3f1b3ef1f 3
+  s_995df9c9161340::t_aab840191d910b 260-284
+  s_995df9c9161340::t_430e51996bbf2d 833
+  s_995df9c9161340::t_f4ad5e5d923c20 8
+  s_995df9c9161340::t_9c3ce1ada5df33 216
+packages/sdk/src/components/markdown.ts
+  s_995df9c9161340::t_73f0976d57aba0 1-42
+packages/sdk/src/components/AgentChat.test.ts
+  s_995df9c9161340::t_0adab187dc5caa 275-281
+  s_995df9c9161340::t_d30b24d4ad37d3 3
+  s_995df9c9161340::t_0ea74f8633a525 256-259
+  s_995df9c9161340::t_bba7bd4dc47932 247-255,260-274,282-283
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.14",
+  "base_commit_sha": "f05a2e9984cc053bfd7ef777796cd1643b5712f3",
+  "prompts": {},
+  "sessions": {
+    "s_995df9c9161340": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f5096fa9-a513-4333-b9a9-93f785309332",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

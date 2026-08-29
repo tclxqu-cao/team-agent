@@ -1,0 +1,21 @@
+docs/superpowers/plans/2026-08-06-voice-barge-in.md
+  s_6edcb9d9cd7ad6::t_2e6b0e57fb727b 30-33,45-48,59-62,74-76,83-88
+packages/desktop/native/wakelistener.swift
+  s_6edcb9d9cd7ad6::t_95eae0c7144560 33,47,50,60,62,148,171,204-205,213-214,218-221,226-228,233,241
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "4a4abe6b2f42a52382850d4589f240b0b8c846bd",
+  "prompts": {},
+  "sessions": {
+    "s_6edcb9d9cd7ad6": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fd1c1-3a3e-7f32-9ee5-c7add0c1d7e1",
+        "model": "unknown"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
