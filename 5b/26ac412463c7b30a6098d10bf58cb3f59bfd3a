@@ -1,0 +1,59 @@
+packages/webapp/src/infrastructure/browser-crypto.test.ts
+  s_cf97dbac81b189::t_b37da0b257e5ec 1-45
+packages/webapp/src/presentation/web.css
+  s_cf97dbac81b189::t_033083d55790d0 234-237,433
+  s_cf97dbac81b189::t_1054df8357d3fe 210-215,217,227,244-246,313-314,384-386,390,393,402
+  s_cf97dbac81b189::t_f3acd143e68992 206-209,216,218-226,228-233,238-243,247-312,315-364,370-371,373,375-376,383,387-389,394-395,401,405-407,420-421,423,425-427,429,431-432,434-442
+  s_cf97dbac81b189::t_3ba1238aaa5a8a 365-369
+  s_cf97dbac81b189::t_abccff81237603 372
+  s_cf97dbac81b189::t_15d03c38ed4d4a 377,380-382
+  s_cf97dbac81b189::t_4abd84bb886431 391-392,396-400,403-404,408-419,422,424,428,430
+  s_cf97dbac81b189::t_cc869b94af760e 374,378-379
+packages/desktop/renderer/components/ChatView.tsx
+  s_cf97dbac81b189::t_57a421bef88212 383,538-544,550,553,690,692-693,697,710-714,719-723
+  s_cf97dbac81b189::t_1fc31f4d701dec 194,1197-1222,1225
+  s_cf97dbac81b189::t_aa85e377cd4d90 1509,1563-1564,2752
+  s_cf97dbac81b189::t_033083d55790d0 2568
+  s_cf97dbac81b189::t_15d03c38ed4d4a 1764
+  s_cf97dbac81b189::t_abccff81237603 1758-1762,1765-1768,1770-1774,1776-1787
+packages/desktop/renderer/styles/global.css
+  s_cf97dbac81b189::t_abccff81237603 636,640-641
+  s_cf97dbac81b189::t_15d03c38ed4d4a 643-645
+  s_cf97dbac81b189::t_65fdf04b911ab2 642
+packages/desktop/renderer/lib/chat-command.test.ts
+  s_cf97dbac81b189::t_76876b555ba76e 1
+  s_cf97dbac81b189::t_1fc31f4d701dec 2-51,94
+  s_cf97dbac81b189::t_f30c67c9cbfa11 52-93
+packages/webapp/src/presentation/browser-composer.css
+  s_cf97dbac81b189::t_f3acd143e68992 73-97
+packages/desktop/renderer/App.tsx
+  s_cf97dbac81b189::t_aa85e377cd4d90 539,550,557,560,580-582,612,638,682,703,955
+  s_cf97dbac81b189::t_257324a6db1fdf 587,597
+packages/webapp/src/infrastructure/browser-crypto.ts
+  s_cf97dbac81b189::t_f20a1e098c9a6c 15-18,40
+  s_cf97dbac81b189::t_b37da0b257e5ec 1-14,19-39,41-42
+packages/desktop/renderer/components/ContextUsageBar.tsx
+  s_cf97dbac81b189::t_4abd84bb886431 141-142,162
+  s_cf97dbac81b189::t_fb47494fcdf02c 118,120
+packages/webapp/src/main.tsx
+  s_cf97dbac81b189::t_b37da0b257e5ec 6,20
+packages/desktop/renderer/lib/chat-command.ts
+  s_cf97dbac81b189::t_f30c67c9cbfa11 12-14,18-22
+  s_cf97dbac81b189::t_1fc31f4d701dec 1-11,15-17,23-28
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "5b26ac412463c7b30a6098d10bf58cb3f59bfd3a",
+  "prompts": {},
+  "sessions": {
+    "s_cf97dbac81b189": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a05174-8fb6-7180-aa32-43cb9a73fb9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "caoqu <qu.cao@ly.com>"
+    }
+  }
+}
