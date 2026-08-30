@@ -1,0 +1,19 @@
+docs/superpowers/specs/2026-08-30-mobile-web-chat-session-state-design.md
+  s_cf97dbac81b189::t_abd9ebb74e4650 1-99
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "2e7bdd35c84b7bb3f14b6764dee4657571f9a9a7",
+  "prompts": {},
+  "sessions": {
+    "s_cf97dbac81b189": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a05174-8fb6-7180-aa32-43cb9a73fb9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "caoqu <qu.cao@ly.com>"
+    }
+  }
+}
