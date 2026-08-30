@@ -115,8 +115,9 @@ export default function ContextUsageBar({
   const viewportWidth = typeof window === "undefined" ? 1024 : window.innerWidth;
 
   return (
-    <div style={{ position: "relative", borderBottom: "1px solid var(--border-subtle)" }}>
+    <div className="context-usage-ribbon" style={{ position: "relative", borderBottom: "1px solid var(--border-subtle)" }}>
       <button
+        className="context-usage-ribbon__button"
         ref={buttonRef}
         type="button"
         onClick={() => {
@@ -137,8 +138,8 @@ export default function ContextUsageBar({
           fontFamily: "var(--font-body)",
         }}
       >
-        <span style={{ fontSize: 11, color: "var(--text-muted)", whiteSpace: "nowrap" }}>上下文</span>
-        <div style={{
+        <span className="context-usage-ribbon__label" style={{ fontSize: 11, color: "var(--text-muted)", whiteSpace: "nowrap" }}>上下文</span>
+        <div className="context-usage-ribbon__meter" style={{
           flex: 1,
           height: 6,
           borderRadius: 999,
@@ -158,7 +159,7 @@ export default function ContextUsageBar({
             />
           ))}
         </div>
-        <span style={{ fontSize: 11, color: view.hasUsage ? barColor : "var(--text-muted)", fontVariantNumeric: "tabular-nums", minWidth: 110, textAlign: "right" }}>
+        <span className="context-usage-ribbon__summary" style={{ fontSize: 11, color: view.hasUsage ? barColor : "var(--text-muted)", fontVariantNumeric: "tabular-nums", minWidth: 110, textAlign: "right" }}>
           {view.hasUsage
             ? `${formatTokens(view.totalTokens)} / ${formatTokens(view.maxTokens)} · ${view.percent}%`
             : "尚无模型请求"}

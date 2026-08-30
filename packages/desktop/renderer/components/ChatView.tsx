@@ -191,6 +191,7 @@ import AgentActivityIndicator from "./AgentActivityIndicator";
 import ChatHeaderActions from "./ChatHeaderActions";
 import { widgetRegistry } from "./widgets/index.js";
 import { prepareVoiceCommand, shouldSkipVoiceSessionReload } from "../lib/voice-command";
+import { prepareChatCommand } from "../lib/chat-command";
 import { isBrowserRuntime } from "../web/webLayout";
 
 interface ChatViewProps {
@@ -379,6 +380,7 @@ export default function ChatView({
   // handlers that are captured in closures and may outlive React renders.
   const selectedSessionIdRef = useRef<string | null>(selectedSessionId ?? null);
   const sessionIdRef = useRef<string | null>(null);
+  const sessionLoadGenerationRef = useRef(0);
   useEffect(() => { selectedSessionIdRef.current = selectedSessionId ?? null; }, [selectedSessionId]);
   useEffect(() => { sessionIdRef.current = sessionId; }, [sessionId]);
 
@@ -533,14 +535,22 @@ export default function ChatView({
   }, [sessionId]);
 
   useEffect(() => {
+    const loadGeneration = ++sessionLoadGenerationRef.current;
+    const targetSid = selectedSessionId;
+    const isCurrentLoad = () => (
+      sessionLoadGenerationRef.current === loadGeneration
+      && selectedSessionIdRef.current === targetSid
+    );
+
     const loadSelectedSession = async () => {
       if (!window.agentApi) return;
       // Capture at call time — used to detect stale responses from fast session switching.
-      const targetSid = selectedSessionId;
       if (shouldSkipVoiceSessionReload(runningSessionRef.current, sessionIdRef.current, targetSid)) return;
       if (!targetSid) {
+        if (!isCurrentLoad()) return;
         clearMessages();
         setError(null);
+        sessionIdRef.current = null;
         setSessionId("");
         return;
       }
@@ -677,13 +687,14 @@ export default function ChatView({
             ? [...restored.slice(0, insertAfter + 1), ...eventRecoveredMessages, ...restored.slice(insertAfter + 1)]
             : [...restored, ...eventRecoveredMessages];
         }
-        // Stale check: user may have switched sessions while we were awaiting getSession()
-        if (selectedSessionId !== targetSid) return;
+        if (!isCurrentLoad()) return;
         const liveMessages = getMessagesForSession(targetSid);
-        const preferLive = liveMessages.length > 0 && runningSessionId === targetSid;
+        const preferLive = liveMessages.length > 0
+          && useAgentStore.getState().runningSessionId === targetSid;
         const nextMessages = preferLive ? liveMessages : restored;
         setMessages(nextMessages, targetSid);
         if (restoredContextUsage) setContextUsage(restoredContextUsage, targetSid);
+        sessionIdRef.current = targetSid;
         setSessionId(targetSid);
 
         // Infer agent activity phase from restored messages.
@@ -696,12 +707,20 @@ export default function ChatView({
         } else {
           setAgentActivity("idle");
         }
-      } catch {
-        if (selectedSessionId === targetSid) clearMessages();
+      } catch (error) {
+        if (!isCurrentLoad()) return;
+        console.error("[chat] failed to restore session", { sessionId: targetSid, error });
+        clearMessages(targetSid);
+        setError(error instanceof Error ? error.message : "会话加载失败");
       }
     };
 
     void loadSelectedSession();
+    return () => {
+      if (sessionLoadGenerationRef.current === loadGeneration) {
+        sessionLoadGenerationRef.current += 1;
+      }
+    };
   }, [clearMessages, getMessagesForSession, runningSessionId, selectedSessionId, setContextUsage, setMessages, setSessionId]);
 
   const handleEvent = (event: StreamEvent) => {
@@ -1174,41 +1193,36 @@ export default function ChatView({
     // ── Normal send flow ───────────────────────────────────────────────────
     setTodos([]);  // clear previous run's todos on new message
 
-    addMessage({
-      id: crypto.randomUUID(),
-      role: "user",
-      content: finalMsg,
-      timestamp: Date.now(),
-      agentName: agentNamesLabel,
-      images: imagesToSend,
-    });
-
     try {
-      let targetSessionId = selectedSessionId || sessionId;
-
-      if (!targetSessionId && window.agentApi) {
-        const created = await window.agentApi.createSession(
-          finalMsg.slice(0, 60) || "New Session",
-          selectedProjectId || undefined,
-        ) as { id: string };
-        targetSessionId = created.id;
-        setSessionId(created.id);
-        // Mark running BEFORE onSessionCreated so loadSelectedSession guard fires
-        // and doesn't clear locally-added user message
-        runningSessionRef.current = targetSessionId;
-        setRunningSession(targetSessionId);
-        if (onSessionCreated) {
-          await onSessionCreated(created.id);
-        }
-      }
-
-      if (!targetSessionId) {
-        targetSessionId = crypto.randomUUID();
-        setSessionId(targetSessionId);
-      }
+      const targetSessionId = await prepareChatCommand({
+        text: finalMsg,
+        projectId: selectedProjectId ?? null,
+        sessionId: selectedSessionId || sessionId,
+        createSession: async (title, projectId) => {
+          if (!window.agentApi) throw new Error("agentApi 未就绪");
+          return await window.agentApi.createSession(title, projectId) as { id: string };
+        },
+        activateSession: (id) => {
+          sessionIdRef.current = id;
+          setSessionId(id);
+          // Mark running before selection changes so history loading preserves
+          // the optimistic message for this session.
+          runningSessionRef.current = id;
+          setRunningSession(id);
+        },
+        showUserMessage: (text, id) => addMessage({
+          id: crypto.randomUUID(),
+          role: "user",
+          content: text,
+          timestamp: Date.now(),
+          agentName: agentNamesLabel,
+          images: imagesToSend,
+        }, id),
+        onSessionCreated,
+      });
 
       // Notify immediately so sidebar title updates before agent finishes
-      if (onMessageSent && targetSessionId) {
+      if (onMessageSent) {
         void onMessageSent(targetSessionId, finalMsg);
       }
 
@@ -1492,7 +1506,7 @@ export default function ChatView({
             )}
             {/* Main message row */}
           <div
-            className="chat-message-row"
+            className={`chat-message-row chat-message-row--${isUser ? "user" : "assistant"}`}
             style={{
               display: "flex",
               flexDirection: isUser ? "row-reverse" : "row",
@@ -1546,8 +1560,8 @@ export default function ChatView({
             )}
 
             {/* Bubble */}
-            <div className="chat-message-content" style={{ maxWidth: "var(--chat-content-max-width)", display: "flex", flexDirection: "column", gap: 4, alignItems: isUser ? "flex-end" : "flex-start", minWidth: 0 }}>
-              <div className={`chat-message-bubble ${msg.role === "assistant" && msg.content ? "message-card" : ""}`} style={{
+            <div className={`chat-message-content chat-message-content--${isUser ? "user" : "assistant"}`} style={{ maxWidth: "var(--chat-content-max-width)", display: "flex", flexDirection: "column", gap: 4, alignItems: isUser ? "flex-end" : "flex-start", minWidth: 0 }}>
+              <div className={`chat-message-bubble chat-message-bubble--${isUser ? "user" : "assistant"} ${msg.role === "assistant" && msg.content ? "message-card" : ""}`} style={{
                 // Tool-call-only messages: no bubble wrapper — cards render inline
                 padding: (msg.content || (isUser && chatMsg.images?.length))
                   ? (isUser ? "var(--chat-user-bubble-padding)" : "var(--chat-assistant-bubble-padding)")
@@ -1741,50 +1755,36 @@ export default function ChatView({
                     </div>
                   );
                 })()}
-                {/* Per-message action bar (single-message output box controls) */}
-                {msg.role === "assistant" && msg.content && (
-                  <div className="msg-actions" style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 8 }}>
-                    {typeof window.agentApi?.ttsSpeak === "function" && (
-                      <button
-                        onClick={() => handleSpeakMessage(msg.id, msg.content)}
-                        title={speakingMsgId === msg.id ? "停止播报" : "语音播报"}
-                        style={{
-                          display: "inline-flex", alignItems: "center", gap: 4,
-                          padding: "2px 9px", borderRadius: 14,
-                          border: speakingMsgId === msg.id ? "1px solid var(--accent)" : "1px solid var(--border-default)",
-                          background: speakingMsgId === msg.id ? "var(--accent-dim)" : "var(--bg-deep)",
-                          color: speakingMsgId === msg.id ? "var(--accent)" : "var(--text-muted)",
-                          fontSize: 11, cursor: "pointer", fontFamily: "var(--font-body)",
-                          transition: "all 0.15s",
-                        }}
-                      >
-                        {speakingMsgId === msg.id ? (
-                          <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14" rx="2"/></svg>
-                        ) : (
-                          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
-                        )}
-                        {speakingMsgId === msg.id ? "停止" : "播报"}
-                      </button>
-                    )}
-                    <button
-                      onClick={() => { void navigator.clipboard?.writeText(msg.content); }}
-                      title="复制内容"
-                      style={{
-                        display: "inline-flex", alignItems: "center", gap: 4,
-                        padding: "2px 9px", borderRadius: 14,
-                        border: "1px solid var(--border-default)",
-                        background: "var(--bg-deep)",
-                        color: "var(--text-muted)",
-                        fontSize: 11, cursor: "pointer", fontFamily: "var(--font-body)",
-                        transition: "all 0.15s",
-                      }}
-                    >
-                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
-                      复制
-                    </button>
-                  </div>
-                )}
               </div>
+              {/* Per-message controls sit below the message card boundary. */}
+              {msg.role === "assistant" && msg.content && (
+                <div className="msg-actions" style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                  {typeof window.agentApi?.ttsSpeak === "function" && (
+                    <button
+                      type="button"
+                      onClick={() => handleSpeakMessage(msg.id, msg.content)}
+                      title={speakingMsgId === msg.id ? "停止播报" : "语音播报"}
+                      aria-label={speakingMsgId === msg.id ? "停止播报" : "语音播报"}
+                      className={`ui-icon-button ui-icon-button--small msg-action-button ${speakingMsgId === msg.id ? "is-active" : ""}`}
+                    >
+                      {speakingMsgId === msg.id ? (
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="2"/></svg>
+                      ) : (
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>
+                      )}
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => { void navigator.clipboard?.writeText(msg.content); }}
+                    title="复制内容"
+                    aria-label="复制内容"
+                    className="ui-icon-button ui-icon-button--small msg-action-button"
+                  >
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+                  </button>
+                </div>
+              )}
               {/* Queue / Steer badge for queued user messages */}
               {isUser && (chatMsg.isQueued || chatMsg.isSteered) && (
                 <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4 }}>
@@ -2565,6 +2565,7 @@ export default function ChatView({
 
           {/* Text input */}
           <input
+            className="composer-text-input"
             ref={inputRef}
             value={input}
             onChange={(e) => {
@@ -2748,7 +2749,7 @@ export default function ChatView({
         </div>{/* end relative wrapper */}
 
         {/* Hint */}
-        <div style={{
+        <div className="chat-composer-hint" style={{
           textAlign: "center",
           marginTop: 7,
           fontSize: 11,

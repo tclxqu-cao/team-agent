@@ -536,7 +536,7 @@ const loadProjects = async () => {
   ];
 
   return (
-    <div style={{
+    <div className="app-shell" style={{
       display: "flex",
       height: webShell ? "100dvh" : "100vh",
       width: "100vw",
@@ -547,14 +547,17 @@ const loadProjects = async () => {
       {/* Web mobile: drawer mask + hamburger */}
       {mobileDrawer && sidebarDrawerOpen && (
         <div
+          className="mobile-drawer-scrim"
           onClick={() => setSidebarDrawerOpen(false)}
           style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.45)", zIndex: 1150 }}
         />
       )}
       {mobileDrawer && (
         <button
+          className="mobile-drawer-toggle"
           onClick={() => setSidebarDrawerOpen((open) => !open)}
           aria-label="会话列表"
+          aria-expanded={sidebarDrawerOpen}
           style={{
             position: "fixed",
             top: "calc(env(safe-area-inset-top) + 8px)",
@@ -574,12 +577,14 @@ const loadProjects = async () => {
           } as React.CSSProperties}
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-            <path d="M3 6h18M3 12h18M3 18h18"/>
+            {sidebarDrawerOpen
+              ? <path d="M6 6l12 12M18 6 6 18" />
+              : <path d="M3 6h18M3 12h18M3 18h18" />}
           </svg>
         </button>
       )}
       {/* Invisible drag region across the full top — covers titlebar height */}
-      <div style={{
+      <div className="app-drag-region" style={{
         position: "fixed",
         top: 0,
         left: 0,
@@ -589,7 +594,7 @@ const loadProjects = async () => {
         WebkitAppRegion: "drag",
         pointerEvents: "none",
       } as React.CSSProperties} />
-      <div style={{
+      <div className="app-accent-glow" style={{
         position: "absolute",
         top: "-120px",
         left: "-80px",
@@ -604,6 +609,7 @@ const loadProjects = async () => {
       {layout !== "focus" && (
       <>
       <aside
+        className="app-sidebar"
         style={{
           width: sidebarWidth,
           display: "flex",
@@ -629,7 +635,7 @@ const loadProjects = async () => {
         }}
       >
         {/* Logo / brand */}
-        <div style={{
+        <div className="app-sidebar-brand" style={{
           padding: "0 20px 20px",
           borderBottom: "1px solid var(--border-subtle)",
           marginBottom: 16,
@@ -673,7 +679,7 @@ const loadProjects = async () => {
         )}
 
         {/* Section label */}
-        <div style={{ padding: "0 20px 8px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <div className="app-sidebar-section" style={{ padding: "0 20px 8px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <span style={{
             fontSize: 10,
             color: "var(--text-muted)",
@@ -694,7 +700,7 @@ const loadProjects = async () => {
         </div>
 
         {/* Project + session list */}
-        <div style={{ flex: 1, overflow: "auto", padding: "0 10px" }}>
+        <div className="app-sidebar-scroll" style={{ flex: 1, overflow: "auto", padding: "0 10px" }}>
           <div style={{ display: "flex", flexDirection: "column", gap: 2, marginBottom: 12 }}>
             {projects.map((project) => {
               const isSelected = selectedProjectId === project.id && !selectedSessionId;
@@ -946,7 +952,7 @@ const loadProjects = async () => {
       </>
       )}
 
-      <main style={{
+      <main className="app-main" style={{
         flex: 1,
         overflow: "hidden",
         background: "var(--bg-deepest)",

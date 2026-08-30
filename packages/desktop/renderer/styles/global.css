@@ -633,12 +633,16 @@ input:focus, select:focus, textarea:focus {
 .message-card:focus-within {
   border-color: var(--border-default);
 }
-.message-card .msg-actions {
+.chat-message-content--assistant .msg-actions {
   opacity: 0;
   transition: opacity var(--duration-fast) var(--ease-out);
 }
-.message-card:hover .msg-actions,
-.message-card:focus-within .msg-actions { opacity: 1; }
+.chat-message-content--assistant:hover .msg-actions,
+.chat-message-content--assistant:focus-within .msg-actions { opacity: 1; }
+
+.msg-action-button {
+  color: var(--text-muted);
+}
 
 /* ── Compact layout density ── */
 .chat-view {

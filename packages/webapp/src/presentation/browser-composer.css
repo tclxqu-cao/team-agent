@@ -70,3 +70,28 @@
   background: rgba(244,63,94,.12);
   color: var(--danger);
 }
+
+@media (max-width: 899px) {
+  .web-native-add-button,
+  .web-native-send-button,
+  .web-native-stop-button {
+    width: 44px;
+    height: 44px;
+  }
+
+  .web-native-add-button,
+  .web-native-send-button {
+    border-radius: 50%;
+  }
+
+  .web-native-add-menu {
+    left: max(10px, env(safe-area-inset-left));
+    bottom: calc(env(safe-area-inset-bottom) + 76px);
+    min-width: 176px;
+    border-radius: 8px;
+  }
+
+  .web-native-add-menu button {
+    min-height: 44px;
+  }
+}
