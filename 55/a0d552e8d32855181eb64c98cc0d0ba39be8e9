@@ -1,0 +1,39 @@
+packages/webapp/src/main.tsx
+  s_cf97dbac81b189::t_c8dd1da194f25d 7,22
+packages/server/app/web/webappTabSwipe.test.ts
+  s_cf97dbac81b189::t_c8dd1da194f25d 1,7-33
+  s_cf97dbac81b189::t_8b6afecc196e73 2-6,34-58
+docs/superpowers/plans/2026-08-30-webapp-tab-swipe-bridge.md
+  s_cf97dbac81b189::t_8bf2c37902112b 33,37,41,45,60,64,68,74
+  s_cf97dbac81b189::t_f0b0b79097e526 1-32,34-36,38-40,42-44,46-59,61-63,65-67,69-73,75-85
+docs/superpowers/specs/2026-08-30-webapp-tab-swipe-bridge-design.md
+  s_cf97dbac81b189::t_f0b0b79097e526 1-28
+packages/webapp/src/presentation/parent-tab-swipe.test.ts
+  s_cf97dbac81b189::t_c8dd1da194f25d 1-85
+packages/server/app/web/page.tsx
+  s_cf97dbac81b189::t_8b6afecc196e73 14,198-202
+  s_cf97dbac81b189::t_c8dd1da194f25d 66,195-197,203-215,299
+packages/webapp/src/presentation/web.css
+  s_cf97dbac81b189::t_c8dd1da194f25d 236
+packages/webapp/src/presentation/parent-tab-swipe.ts
+  s_cf97dbac81b189::t_c8dd1da194f25d 1-153
+packages/server/app/web/webappTabSwipe.ts
+  s_cf97dbac81b189::t_8b6afecc196e73 18-25
+  s_cf97dbac81b189::t_c8dd1da194f25d 1-17
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "55a0d552e8d32855181eb64c98cc0d0ba39be8e9",
+  "prompts": {},
+  "sessions": {
+    "s_cf97dbac81b189": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a05174-8fb6-7180-aa32-43cb9a73fb9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "caoqu <qu.cao@ly.com>"
+    }
+  }
+}
