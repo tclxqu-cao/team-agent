@@ -100,12 +100,20 @@ function formatTokens(tokens: number): string {
   return `${tokens}`;
 }
 
+export function formatContextUsageSummary(view: ContextUsageView, compact: boolean): string {
+  if (compact) return `${view.percent}%`;
+  if (!view.hasUsage) return "尚无模型请求";
+  return `${formatTokens(view.totalTokens)} / ${formatTokens(view.maxTokens)} · ${view.percent}%`;
+}
+
 export default function ContextUsageBar({
   usage,
   contextWindowK,
+  compact = false,
 }: {
   usage?: ContextUsageSnapshot;
   contextWindowK: number;
+  compact?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [anchorRect, setAnchorRect] = useState<DOMRect | null>(null);
@@ -160,9 +168,7 @@ export default function ContextUsageBar({
           ))}
         </div>
         <span className="context-usage-ribbon__summary" style={{ fontSize: 11, color: view.hasUsage ? barColor : "var(--text-muted)", fontVariantNumeric: "tabular-nums", minWidth: 110, textAlign: "right" }}>
-          {view.hasUsage
-            ? `${formatTokens(view.totalTokens)} / ${formatTokens(view.maxTokens)} · ${view.percent}%`
-            : "尚无模型请求"}
+          {formatContextUsageSummary(view, compact)}
         </span>
       </button>
 

@@ -75,13 +75,19 @@
   .web-native-add-button,
   .web-native-send-button,
   .web-native-stop-button {
-    width: 44px;
-    height: 44px;
+    width: 38px;
+    height: 38px;
   }
 
   .web-native-add-button,
   .web-native-send-button {
     border-radius: 50%;
+  }
+
+  .web-native-add-button svg,
+  .web-native-send-button svg {
+    width: 18px;
+    height: 18px;
   }
 
   .web-native-add-menu {

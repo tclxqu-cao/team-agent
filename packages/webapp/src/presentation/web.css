@@ -421,7 +421,7 @@ body[data-web-shell="1"] {
   }
 
   body[data-web-shell="1"] .context-usage-ribbon__summary {
-    min-width: 96px !important;
+    min-width: 28px !important;
     opacity: 0.82;
   }
 

@@ -2353,7 +2353,11 @@ export default function ChatView({
           borderRadius: 14,
           overflow: "visible",
         }}>
-          <ContextUsageBar usage={viewSessionId ? contextUsageBySession[viewSessionId] : undefined} contextWindowK={contextWindow} />
+          <ContextUsageBar
+            usage={viewSessionId ? contextUsageBySession[viewSessionId] : undefined}
+            contextWindowK={contextWindow}
+            compact={webShell}
+          />
 
           {/* Model selector bar (shown only when profiles exist), grouped by provider */}
           {profiles.length > 0 && (() => {

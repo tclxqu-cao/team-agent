@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildContextUsageView } from "./ContextUsageBar";
+import { buildContextUsageView, formatContextUsageSummary } from "./ContextUsageBar";
 import type { ContextUsageSnapshot } from "../stores/agentStore";
 
 function createUsage(): ContextUsageSnapshot {
@@ -56,5 +56,20 @@ describe("buildContextUsageView", () => {
 
     expect(view.ratio).toBe(1);
     expect(view.percent).toBe(100);
+  });
+});
+
+describe("formatContextUsageSummary", () => {
+  it("keeps the full token ratio outside compact mode", () => {
+    const view = buildContextUsageView(createUsage(), 100);
+
+    expect(formatContextUsageSummary(view, false)).toBe("10K / 100K · 10%");
+  });
+
+  it("shows only percentage in compact mode", () => {
+    const view = buildContextUsageView(createUsage(), 100);
+
+    expect(formatContextUsageSummary(view, true)).toBe("10%");
+    expect(formatContextUsageSummary(buildContextUsageView(undefined, 100), true)).toBe("0%");
   });
 });
