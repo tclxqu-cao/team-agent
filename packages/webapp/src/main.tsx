@@ -3,11 +3,11 @@ import { createRoot } from "react-dom/client";
 import { HttpClient } from "./infrastructure/http/http-client";
 import { AgentHttpGateway } from "./infrastructure/http/agent-http-gateway";
 import { LocalSettingsRepository } from "./infrastructure/local/local-settings-repository";
-import { installMobileComposer } from "./presentation/mobile-composer";
 // The desktop renderer's design-token sheet — the Electron entry imports it
 // via its own main.tsx; without it every var(--…) in the shared UI is void.
 import "@desktop/renderer/styles/global.css";
 import "./presentation/web.css";
+import "./presentation/browser-composer.css";
 import type { AgentApi } from "../../desktop/renderer/global";
 
 /**
@@ -34,7 +34,6 @@ void (async () => {
       <App />
     </StrictMode>,
   );
-  installMobileComposer();
   startBuildWatchdog();
 })();
 

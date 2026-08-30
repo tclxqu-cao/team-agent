@@ -1,0 +1,72 @@
+
+/* React-native browser composer controls. These classes are rendered directly
+   by ChatView in every non-Electron browser, so no DOM proxy is involved. */
+.web-native-add-wrap {
+  position: relative;
+  flex-shrink: 0;
+}
+.web-native-add-button,
+.web-native-send-button,
+.web-native-stop-button {
+  padding: 0;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+.web-native-add-button {
+  width: 38px;
+  height: 38px;
+  border: 1px solid var(--border-default);
+  background: transparent;
+  color: var(--text-secondary);
+}
+.web-native-add-button[aria-expanded="true"] {
+  background: var(--control-active, rgba(79,110,247,.09));
+}
+.web-native-add-menu {
+  position: fixed;
+  left: 10px;
+  bottom: calc(env(safe-area-inset-bottom) + 64px);
+  z-index: 1300;
+  display: flex;
+  flex-direction: column;
+  min-width: 150px;
+  padding: 6px;
+  border: 1px solid rgba(17,24,39,.1);
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 10px 30px rgba(17,24,39,.14);
+}
+.web-native-add-menu button {
+  border: 0;
+  background: transparent;
+  text-align: left;
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 14px;
+  color: #111827;
+  white-space: nowrap;
+}
+.web-native-send-button {
+  width: 38px;
+  height: 38px;
+  border: 0;
+  background: var(--bg-deep);
+  color: var(--text-muted);
+}
+.web-native-send-button:not(:disabled) {
+  background: var(--text-primary);
+  color: #fff;
+  cursor: pointer;
+}
+.web-native-stop-button {
+  width: 34px;
+  height: 34px;
+  border: 0;
+  background: rgba(244,63,94,.12);
+  color: var(--danger);
+}

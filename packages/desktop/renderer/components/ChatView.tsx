@@ -191,6 +191,7 @@ import AgentActivityIndicator from "./AgentActivityIndicator";
 import ChatHeaderActions from "./ChatHeaderActions";
 import { widgetRegistry } from "./widgets/index.js";
 import { prepareVoiceCommand, shouldSkipVoiceSessionReload } from "../lib/voice-command";
+import { isBrowserRuntime } from "../web/webLayout";
 
 interface ChatViewProps {
   selectedProjectId?: string | null;
@@ -275,6 +276,8 @@ export default function ChatView({
   }, []);
 
   const [input, setInput] = useState("");
+  const webShell = isBrowserRuntime();
+  const [webAddMenuOpen, setWebAddMenuOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [attachedFiles, setAttachedFiles] = useState<File[]>([]);
   /** Base64 data URLs of images to send with the next message */
@@ -2449,6 +2452,32 @@ export default function ChatView({
             onChange={handleFileAttach}
           />
 
+          {webShell ? (
+            <div className="web-native-add-wrap">
+              <button
+                type="button"
+                className="web-native-add-button"
+                aria-label="添加附件、图片或语音"
+                aria-expanded={webAddMenuOpen}
+                onClick={() => setWebAddMenuOpen((open) => !open)}
+              >
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+                  <path d="M12 5v14M5 12h14" />
+                </svg>
+              </button>
+              {webAddMenuOpen && (
+                <div className="web-native-add-menu">
+                  <button type="button" onClick={() => { setWebAddMenuOpen(false); fileInputRef.current?.click(); }}>
+                    附件 / 图片
+                  </button>
+                  <button type="button" onClick={() => { setWebAddMenuOpen(false); handleMicToggle(); }}>
+                    语音输入
+                  </button>
+                </div>
+              )}
+            </div>
+          ) : (
+            <>
           {/* Attach button */}
           <button
             onClick={() => fileInputRef.current?.click()}
@@ -2505,6 +2534,8 @@ export default function ChatView({
               }}>{pendingImages.length}</span>
             )}
           </button>
+            </>
+          )}
 
           {/* Pending agent chips (multiple) */}
           {pendingAgents.length > 0 && (
@@ -2595,7 +2626,29 @@ export default function ChatView({
           />
 
           {/* Send / Queue / Stop button */}
-          {isRunning ? (
+          {webShell ? (
+            <>
+              <button
+                type="button"
+                onClick={handleSend}
+                disabled={!isConfigured || !input.trim()}
+                className="web-native-send-button"
+                aria-label={isRunning ? "排队发送" : "发送"}
+                title={isRunning ? "排队发送" : "发送"}
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12 19V5M5 12l7-7 7 7" />
+                </svg>
+              </button>
+              {isRunning && (
+                <button type="button" onClick={handleAbort} className="web-native-stop-button" aria-label="停止生成" title="停止生成">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                    <rect x="6" y="6" width="12" height="12" rx="2" />
+                  </svg>
+                </button>
+              )}
+            </>
+          ) : isRunning ? (
             <>
               {/* Queue send button */}
               <button
