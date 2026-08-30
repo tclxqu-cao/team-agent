@@ -233,6 +233,7 @@ body[data-web-shell="1"] {
 
   body[data-web-shell="1"] .app-main {
     min-width: 0;
+    touch-action: pan-y;
   }
 
   body[data-web-shell="1"] .mobile-drawer-toggle {

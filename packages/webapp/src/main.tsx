@@ -4,6 +4,7 @@ import { HttpClient } from "./infrastructure/http/http-client";
 import { AgentHttpGateway } from "./infrastructure/http/agent-http-gateway";
 import { LocalSettingsRepository } from "./infrastructure/local/local-settings-repository";
 import { installBrowserCryptoCompatibility } from "./infrastructure/browser-crypto";
+import { installParentTabSwipeBridge } from "./presentation/parent-tab-swipe";
 // The desktop renderer's design-token sheet — the Electron entry imports it
 // via its own main.tsx; without it every var(--…) in the shared UI is void.
 import "@desktop/renderer/styles/global.css";
@@ -18,6 +19,7 @@ import type { AgentApi } from "../../desktop/renderer/global";
  * Order matters — window.agentApi must exist before App evaluates.
  */
 installBrowserCryptoCompatibility();
+installParentTabSwipeBridge();
 document.body.dataset.webShell = "1";
 
 const http = new HttpClient();

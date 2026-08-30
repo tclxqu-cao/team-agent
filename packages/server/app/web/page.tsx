@@ -11,6 +11,7 @@ import HistoryPanel from "./HistoryPanel";
 import ThemePicker from "./ThemePicker";
 import { resetHorizontalScroll, resolveVisualViewport } from "./mobileViewport";
 import { DEFAULT_THEME_ID, resolveWebTheme, type WebThemeId } from "./themes";
+import { readWebappTabSwipeMessage } from "./webappTabSwipe";
 
 const TerminalPane = dynamic(() => import("./TerminalPane"), { ssr: false });
 const FileTree = dynamic(() => import("./FileTree"), { ssr: false });
@@ -62,6 +63,7 @@ function AuthenticatedConsole({ auth }: { auth: WebAuthController }) {
   const [swiping,setSwiping]=useState(false);
   const draggedTab = useRef<string | null>(null);
   const tabBarRef = useRef<HTMLDivElement>(null);
+  const webappFrameRef = useRef<HTMLIFrameElement>(null);
   const prevTabCount = useRef(0);
   const cwdHint = activeTerminalId ? cwdByTerminal[activeTerminalId] ?? null : null;
 
@@ -190,6 +192,27 @@ function AuthenticatedConsole({ auth }: { auth: WebAuthController }) {
   const resetSwipe=useCallback(()=>{swipeStart.current=null;setSwipeDelta(0);setSwiping(false);},[]);
   const handleTabSwipeEnd=useCallback((dx:number)=>{if(Math.abs(dx)>=64&&tabs.length>1)switchBy(dx<0?1:-1);resetSwipe();},[tabs.length,switchBy,resetSwipe]);
   const isTerminalScreen=(target:EventTarget|null)=>target instanceof Element&&!!target.closest(".terminal-screen");
+  useEffect(() => {
+    const onMessage = (event: MessageEvent) => {
+      if (activeTerminalId !== WEBAPP_TAB.id) return;
+      const message = readWebappTabSwipeMessage(
+        event,
+        window.location.origin,
+        webappFrameRef.current?.contentWindow ?? null,
+      );
+      if (!message) return;
+      if (message.phase === "move") {
+        setSwiping(true);
+        setSwipeDelta(message.deltaX);
+      } else if (message.phase === "end") {
+        handleTabSwipeEnd(message.deltaX);
+      } else {
+        resetSwipe();
+      }
+    };
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, [activeTerminalId, handleTabSwipeEnd, resetSwipe]);
   const scrollActiveTabIntoView = useCallback((behavior: ScrollBehavior = "smooth") => {
     const bar = tabBarRef.current;
     if (!bar || !activeTerminalId) return;
@@ -273,7 +296,7 @@ function AuthenticatedConsole({ auth }: { auth: WebAuthController }) {
           {tabs.map((tab) => (
             <div className="terminal-slide" key={tab.id}>
               {tab.kind === "webapp" ? (
-                <iframe src="/app/" title={tab.title} style={{ width: "100%", height: "100%", border: "0", background: "#000" }} />
+                <iframe ref={webappFrameRef} src="/app/" title={tab.title} style={{ width: "100%", height: "100%", border: "0", background: "#000" }} />
               ) : (
                 <TerminalPane terminalId={tab.id} title={tab.title} visible={tab.id === activeTerminalId} state={state} rpc={rpc} onEvent={onEvent} onTerminalData={onTerminalData} onTerminalReset={onTerminalReset} sendTerminalInput={sendTerminalInput} keyOrder={keyOrder} keybarHidden={keybarHidden} onKeyOrderChange={setKeyOrder} onKeybarHiddenChange={setKeybarHidden} terminalTheme={activeTheme} initialScrollLine={terminalScroll[tab.id] ?? null} onScrollLineChange={(line) => setTerminalScroll((current) => (current[tab.id] === line ? current : { ...current, [tab.id]: line }))} onRegisterFill={(fill) => registerTerminalFill(tab.id, fill)} onCwdChange={(cwd) => cwd && setCwdByTerminal((current) => ({ ...current, [tab.id]: cwd }))} />
               )}
