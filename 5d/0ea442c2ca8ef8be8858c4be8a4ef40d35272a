@@ -1,0 +1,19 @@
+docs/superpowers/specs/2026-08-31-unified-local-agent-sessions-design.md
+  s_678c6e89cf1adf::t_36b92d3c54db4b 1-186
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "5d0ea442c2ca8ef8be8858c4be8a4ef40d35272a",
+  "prompts": {},
+  "sessions": {
+    "s_678c6e89cf1adf": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a055c5-5400-7a01-a396-94e397916032",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
