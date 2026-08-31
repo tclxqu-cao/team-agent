@@ -832,14 +832,15 @@ server.on("upgrade", (req, socket, head) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
   if (url.pathname !== "/ws") return; // leave HMR etc. to Next's own listeners
   if (!originAllowed(req)) { socket.write("HTTP/1.1 403 Forbidden\r\n\r\n"); socket.destroy(); return; }
-  const rawToken = cookieValue(req.headers.cookie, "customer_agent_session");
   const nonce = url.searchParams.get("nonce") || "";
-  let principal;
-  try { principal = webAuth.consumeWsNonce(rawToken || "", nonce); }
-  catch (error) {
-    wss.handleUpgrade(req, socket, head, (ws) => ws.close(error?.code === "UNAUTHENTICATED" ? 4001 : 4003, "authentication failed"));
+  const anonymousNonces = globalThis.__webAnonNonces;
+  const expiresAt = anonymousNonces?.get(nonce);
+  anonymousNonces?.delete(nonce);
+  if (!expiresAt || expiresAt <= Date.now()) {
+    wss.handleUpgrade(req, socket, head, (ws) => ws.close(4003, "invalid nonce"));
     return;
   }
+  const principal = { userId: "local-web", username: "local", deviceId: "browser" };
   wss.handleUpgrade(req, socket, head, (ws) => wss.emit("connection", ws, req, principal));
 });
 

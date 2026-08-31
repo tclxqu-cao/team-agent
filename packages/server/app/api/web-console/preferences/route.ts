@@ -1,6 +1,40 @@
 import { NextResponse } from "next/server";
-import { authErrorResponse, requireAuthenticated, requireCsrf, webConsoleStore } from "../../../../lib/web-auth/http";
+import { WEB_ANON_USER_ID, webConsoleStore } from "../../../../lib/web-auth/anonymous";
 
-const defaults=(userId:string)=>({userId,revision:1,theme:"black",terminalFontSize:11,fileButtonPosition:{xRatio:.94,yRatio:.65,anchor:"right"},keybarPosition:{xRatio:.5,yRatio:.95,anchor:"bottom"},keybarHidden:false,keyOrder:[],updatedAt:new Date().toISOString()});
-export async function GET(request:Request){try{const auth=requireAuthenticated(request);return NextResponse.json({preferences:webConsoleStore.getPreferences(auth.principal.userId)??defaults(auth.principal.userId)});}catch(error){return authErrorResponse(error);}}
-export async function PATCH(request:Request){try{const auth=requireCsrf(request);const current=webConsoleStore.getPreferences(auth.principal.userId)??defaults(auth.principal.userId);const body=await request.json();const next={...current,...body,userId:auth.principal.userId,revision:current.revision+1,updatedAt:new Date().toISOString()};if(!webConsoleStore.savePreferences(next,current===next?null:(webConsoleStore.getPreferences(auth.principal.userId)?current.revision:null)))return NextResponse.json({error:{code:"REVISION_CONFLICT",message:"偏好已在其他设备更新"}},{status:409});return NextResponse.json({preferences:next});}catch(error){return authErrorResponse(error);}}
+const defaults = () => ({
+  userId: WEB_ANON_USER_ID,
+  revision: 1,
+  theme: "black",
+  terminalFontSize: 11,
+  fileButtonPosition: { xRatio: .94, yRatio: .65, anchor: "right" },
+  keybarPosition: { xRatio: .5, yRatio: .95, anchor: "bottom" },
+  keybarHidden: false,
+  keyOrder: [],
+  updatedAt: new Date().toISOString(),
+});
+
+export async function GET() {
+  return NextResponse.json({
+    preferences: webConsoleStore.getPreferences(WEB_ANON_USER_ID) ?? defaults(),
+  });
+}
+
+export async function PATCH(request: Request) {
+  const current = webConsoleStore.getPreferences(WEB_ANON_USER_ID) ?? defaults();
+  const body = await request.json();
+  const next = {
+    ...current,
+    ...body,
+    userId: WEB_ANON_USER_ID,
+    revision: current.revision + 1,
+    updatedAt: new Date().toISOString(),
+  };
+  const stored = webConsoleStore.getPreferences(WEB_ANON_USER_ID);
+  if (!webConsoleStore.savePreferences(next, stored ? current.revision : null)) {
+    return NextResponse.json(
+      { error: { code: "REVISION_CONFLICT", message: "偏好已在其他设备更新" } },
+      { status: 409 },
+    );
+  }
+  return NextResponse.json({ preferences: next });
+}

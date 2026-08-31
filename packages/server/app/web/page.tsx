@@ -274,7 +274,6 @@ function AuthenticatedConsole({ auth }: { auth: WebAuthController }) {
             accent={activeTheme.keybar.accent}
             accentText={activeTheme.keybar.accentText}
           />
-          <button style={S.logoutBtn} onClick={auth.logout} title="退出登录" aria-label="退出登录">退出</button>
         </div>
       </div>
 

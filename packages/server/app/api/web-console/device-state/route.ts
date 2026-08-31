@@ -1,5 +1,36 @@
 import { NextResponse } from "next/server";
-import { authErrorResponse, requireAuthenticated, requireCsrf, webConsoleStore } from "../../../../lib/web-auth/http";
-const defaults=(userId:string,deviceId:string)=>({userId,deviceId,activeTerminalId:null,drawerOpen:false,drawerTab:"files",fileTreeRoot:null,fileTreeFollowMode:true,expandedPaths:[],selectedFile:null,terminalScroll:{},updatedAt:new Date().toISOString()});
-export async function GET(request:Request){try{const auth=requireAuthenticated(request);return NextResponse.json({deviceState:webConsoleStore.getDeviceState(auth.principal.userId,auth.principal.deviceId)??defaults(auth.principal.userId,auth.principal.deviceId)});}catch(error){return authErrorResponse(error);}}
-export async function PUT(request:Request){try{const auth=requireCsrf(request);const current=webConsoleStore.getDeviceState(auth.principal.userId,auth.principal.deviceId)??defaults(auth.principal.userId,auth.principal.deviceId);const body=await request.json();const next={...current,...body,userId:auth.principal.userId,deviceId:auth.principal.deviceId,updatedAt:new Date().toISOString()};webConsoleStore.saveDeviceState(next);return NextResponse.json({deviceState:next});}catch(error){return authErrorResponse(error);}}
+import { WEB_ANON_DEVICE_ID, WEB_ANON_USER_ID, webConsoleStore } from "../../../../lib/web-auth/anonymous";
+
+const defaults = () => ({
+  userId: WEB_ANON_USER_ID,
+  deviceId: WEB_ANON_DEVICE_ID,
+  activeTerminalId: null,
+  drawerOpen: false,
+  drawerTab: "files",
+  fileTreeRoot: null,
+  fileTreeFollowMode: true,
+  expandedPaths: [],
+  selectedFile: null,
+  terminalScroll: {},
+  updatedAt: new Date().toISOString(),
+});
+
+export async function GET() {
+  return NextResponse.json({
+    deviceState: webConsoleStore.getDeviceState(WEB_ANON_USER_ID, WEB_ANON_DEVICE_ID) ?? defaults(),
+  });
+}
+
+export async function PUT(request: Request) {
+  const current = webConsoleStore.getDeviceState(WEB_ANON_USER_ID, WEB_ANON_DEVICE_ID) ?? defaults();
+  const body = await request.json();
+  const next = {
+    ...current,
+    ...body,
+    userId: WEB_ANON_USER_ID,
+    deviceId: WEB_ANON_DEVICE_ID,
+    updatedAt: new Date().toISOString(),
+  };
+  webConsoleStore.saveDeviceState(next);
+  return NextResponse.json({ deviceState: next });
+}
