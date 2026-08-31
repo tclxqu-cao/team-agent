@@ -1,0 +1,43 @@
+packages/server/lib/web-auth/anonymous-contract.test.ts
+  s_13a812380a2a14::t_c4735aaf97e034 1-19
+packages/core/src/infrastructure/SQLiteDatabase.ts
+  s_13a812380a2a14::t_c8480aba993fc4 218-223,286
+CLAUDE.md
+  s_13a812380a2a14::t_7b0b6b1f5af532 43-46
+packages/server/app/api/web-console/bootstrap/route.ts
+  s_13a812380a2a14::t_5bc4812b689781 4-5
+packages/server/lib/web-auth/anonymous.ts
+  s_13a812380a2a14::t_c8480aba993fc4 2-3,15,19,21,32-34,38-40
+packages/core/src/infrastructure/index.ts
+  s_13a812380a2a14::t_c8480aba993fc4 17
+packages/core/src/infrastructure/SQLiteAnonymousWebStore.ts
+  s_13a812380a2a14::t_c8480aba993fc4 1-73
+packages/server/app/api/web-console/preferences/route.ts
+  s_13a812380a2a14::t_c8480aba993fc4 2,4-5,17,19,24-25,30,34
+packages/core/src/infrastructure/SQLiteAnonymousWebStore.test.ts
+  s_13a812380a2a14::t_c8480aba993fc4 1-58
+packages/server/app/api/web-console/history/route.ts
+  s_13a812380a2a14::t_c8480aba993fc4 1,4,8,17,19-20
+packages/server/app/api/web-console/device-state/route.ts
+  s_13a812380a2a14::t_c8480aba993fc4 2,6-8,21,23,28-29,34-35
+  s_13a812380a2a14::t_5bc4812b689781 4-5
+packages/server/ws-server.mjs
+  s_13a812380a2a14::t_c8480aba993fc4 29,36,828-829,833
+  s_13a812380a2a14::t_fac2703262c274 886
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "eb474195253bae1e16b7621119913f5e6477af74",
+  "prompts": {},
+  "sessions": {
+    "s_13a812380a2a14": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a05569-51ea-7363-bada-aaeaa1444f2d",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "caoqu <qu.cao@ly.com>"
+    }
+  }
+}
