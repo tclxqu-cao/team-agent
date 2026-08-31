@@ -1,0 +1,28 @@
+packages/server/app/api/web-console/bootstrap/route.ts
+  h_86bb4e0e04237b 2,4-16
+packages/server/app/api/web-console/device-state/route.ts
+  h_86bb4e0e04237b 2-36
+packages/server/app/api/web-console/history/route.ts
+  h_86bb4e0e04237b 1-20
+packages/server/app/api/web-console/preferences/route.ts
+  h_86bb4e0e04237b 2,4-40
+packages/server/app/web/AuthGate.tsx
+  h_86bb4e0e04237b 2,7,13,19-27
+packages/server/app/web/useWebAuth.ts
+  h_86bb4e0e04237b 2,7,11,15-16,18-25,27,32,35-38,40-43,46-57
+packages/server/lib/web-auth/anonymous.ts
+  h_86bb4e0e04237b 1-46
+packages/server/ws-server.mjs
+  h_86bb4e0e04237b 836-840,843
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "3385eccf0b0322e289dec09e02d74c91fecd69dc",
+  "prompts": {},
+  "humans": {
+    "h_86bb4e0e04237b": {
+      "author": "caoqu <qu.cao@ly.com>"
+    }
+  }
+}
