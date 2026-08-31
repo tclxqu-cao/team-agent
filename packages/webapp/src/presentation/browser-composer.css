@@ -36,10 +36,10 @@
   flex-direction: column;
   min-width: 150px;
   padding: 6px;
-  border: 1px solid rgba(17,24,39,.1);
+  border: 1px solid var(--border-default);
   border-radius: 12px;
-  background: #fff;
-  box-shadow: 0 10px 30px rgba(17,24,39,.14);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-md);
 }
 .web-native-add-menu button {
   border: 0;
@@ -48,8 +48,19 @@
   padding: 10px 12px;
   border-radius: 8px;
   font-size: 14px;
-  color: #111827;
+  color: var(--text-primary);
   white-space: nowrap;
+}
+@media (hover: hover) {
+  .web-native-add-menu button:hover {
+    background: var(--control-hover);
+  }
+}
+.web-native-add-menu button:focus-visible {
+  background: var(--control-hover);
+}
+.web-native-add-menu button:active {
+  background: var(--control-active);
 }
 .web-native-send-button {
   width: 38px;
