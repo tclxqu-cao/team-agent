@@ -40,3 +40,7 @@ bun run dev:server   # Next.js API on port 3000
 bun run dev:desktop  # Electron + React
 bun test             # Run tests
 ```
+
+## Git Push Policy
+
+- This project uses standard Git for commits and pushes. Do not run `git-ai`, create AI attribution checkpoints, or sync `refs/notes/ai`.

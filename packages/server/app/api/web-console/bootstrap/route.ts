@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { issueAnonymousWsNonce, webConsoleStore } from "../../../../lib/web-auth/anonymous";
 
+export const dynamic = "force-dynamic";
+
 /** Passwordless bootstrap for the private/LAN web console. */
 export async function GET() {
   const result = issueAnonymousWsNonce();

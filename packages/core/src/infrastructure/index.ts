@@ -14,4 +14,5 @@ export { SQLiteAgentStore } from './SQLiteAgentStore.js';
 export { SQLiteLSPServerStore } from './SQLiteLSPServerStore.js';
 export { SQLiteRemoteToolStore } from './SQLiteRemoteToolStore.js';
 export { SQLiteAuthStore } from './SQLiteAuthStore.js';
+export { SQLiteAnonymousWebStore, type AnonymousWebPrincipal } from './SQLiteAnonymousWebStore.js';
 export { SQLiteWebConsoleStore } from './SQLiteWebConsoleStore.js';

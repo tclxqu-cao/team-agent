@@ -26,14 +26,14 @@ import next from "next";
 import { WebSocketServer } from "ws";
 import pty from "node-pty";
 import chokidar from "chokidar";
-import { SQLiteAuthStore, SQLiteWebConsoleStore, WebAuthService } from "@agent/core";
+import { SQLiteAnonymousWebStore, SQLiteWebConsoleStore } from "@agent/core";
 
 const dev = process.env.NODE_ENV !== "production";
 const port = Number(process.env.PORT || 3000);
 const dir = path.dirname(new URL(import.meta.url).pathname);
 
 const serverBaseDir = path.resolve(process.env.AGENT_DATA_DIR?.trim() || dir);
-const webAuth = new WebAuthService(new SQLiteAuthStore(serverBaseDir));
+const anonymousWebStore = new SQLiteAnonymousWebStore(serverBaseDir);
 const consoleStore = new SQLiteWebConsoleStore(serverBaseDir);
 consoleStore.markStaleTerminalsExited(new Date().toISOString());
 const roots = (process.env.AGENT_WEB_ROOTS || os.homedir())
@@ -809,14 +809,6 @@ const server = createServer((req, res) => {
 });
 const wss = new WebSocketServer({ noServer: true, maxPayload: 1024 * 1024 });
 
-function cookieValue(header, name) {
-  for (const part of String(header || "").split(";")) {
-    const index = part.indexOf("=");
-    if (index > 0 && part.slice(0, index).trim() === name) return decodeURIComponent(part.slice(index + 1).trim());
-  }
-  return null;
-}
-
 function originAllowed(req) {
   const origin = req.headers.origin;
   if (!origin) return false;
@@ -833,14 +825,12 @@ server.on("upgrade", (req, socket, head) => {
   if (url.pathname !== "/ws") return; // leave HMR etc. to Next's own listeners
   if (!originAllowed(req)) { socket.write("HTTP/1.1 403 Forbidden\r\n\r\n"); socket.destroy(); return; }
   const nonce = url.searchParams.get("nonce") || "";
-  const anonymousNonces = globalThis.__webAnonNonces;
-  const expiresAt = anonymousNonces?.get(nonce);
-  anonymousNonces?.delete(nonce);
-  if (!expiresAt || expiresAt <= Date.now()) {
+  const userId = anonymousWebStore.consumeWsNonce(nonce);
+  if (!userId) {
     wss.handleUpgrade(req, socket, head, (ws) => ws.close(4003, "invalid nonce"));
     return;
   }
-  const principal = { userId: "local-web", username: "local", deviceId: "browser" };
+  const principal = { userId, username: "local", deviceId: "browser" };
   wss.handleUpgrade(req, socket, head, (ws) => wss.emit("connection", ws, req, principal));
 });
 
@@ -893,6 +883,6 @@ server.listen(port, () => {
   console.log(`▲ AgentRoam web gateway`);
   console.log(`   local    http://localhost:${port}/web`);
   for (const u of urls) console.log(`   network  ${u}`);
-  console.log(`   auth     account login (first visit creates admin)`);
+  console.log(`   auth     passwordless local console`);
   console.log(`   roots    ${roots.join(" : ")}`);
 });

@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
-import { WEB_ANON_USER_ID, webConsoleStore } from "../../../../lib/web-auth/anonymous";
+import { anonymousPrincipal, webConsoleStore } from "../../../../lib/web-auth/anonymous";
 
-const defaults = () => ({
-  userId: WEB_ANON_USER_ID,
+const defaults = (userId: string) => ({
+  userId,
   revision: 1,
   theme: "black",
   terminalFontSize: 11,
@@ -14,22 +14,24 @@ const defaults = () => ({
 });
 
 export async function GET() {
+  const { userId } = anonymousPrincipal();
   return NextResponse.json({
-    preferences: webConsoleStore.getPreferences(WEB_ANON_USER_ID) ?? defaults(),
+    preferences: webConsoleStore.getPreferences(userId) ?? defaults(userId),
   });
 }
 
 export async function PATCH(request: Request) {
-  const current = webConsoleStore.getPreferences(WEB_ANON_USER_ID) ?? defaults();
+  const { userId } = anonymousPrincipal();
+  const current = webConsoleStore.getPreferences(userId) ?? defaults(userId);
   const body = await request.json();
   const next = {
     ...current,
     ...body,
-    userId: WEB_ANON_USER_ID,
+    userId,
     revision: current.revision + 1,
     updatedAt: new Date().toISOString(),
   };
-  const stored = webConsoleStore.getPreferences(WEB_ANON_USER_ID);
+  const stored = webConsoleStore.getPreferences(userId);
   if (!webConsoleStore.savePreferences(next, stored ? current.revision : null)) {
     return NextResponse.json(
       { error: { code: "REVISION_CONFLICT", message: "偏好已在其他设备更新" } },

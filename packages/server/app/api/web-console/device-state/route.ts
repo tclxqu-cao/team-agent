@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server";
-import { WEB_ANON_DEVICE_ID, WEB_ANON_USER_ID, webConsoleStore } from "../../../../lib/web-auth/anonymous";
+import { anonymousPrincipal, webConsoleStore } from "../../../../lib/web-auth/anonymous";
 
-const defaults = () => ({
-  userId: WEB_ANON_USER_ID,
-  deviceId: WEB_ANON_DEVICE_ID,
+export const dynamic = "force-dynamic";
+
+const defaults = (userId: string, deviceId: string) => ({
+  userId,
+  deviceId,
   activeTerminalId: null,
   drawerOpen: false,
   drawerTab: "files",
@@ -16,19 +18,21 @@ const defaults = () => ({
 });
 
 export async function GET() {
+  const { userId, deviceId } = anonymousPrincipal();
   return NextResponse.json({
-    deviceState: webConsoleStore.getDeviceState(WEB_ANON_USER_ID, WEB_ANON_DEVICE_ID) ?? defaults(),
+    deviceState: webConsoleStore.getDeviceState(userId, deviceId) ?? defaults(userId, deviceId),
   });
 }
 
 export async function PUT(request: Request) {
-  const current = webConsoleStore.getDeviceState(WEB_ANON_USER_ID, WEB_ANON_DEVICE_ID) ?? defaults();
+  const { userId, deviceId } = anonymousPrincipal();
+  const current = webConsoleStore.getDeviceState(userId, deviceId) ?? defaults(userId, deviceId);
   const body = await request.json();
   const next = {
     ...current,
     ...body,
-    userId: WEB_ANON_USER_ID,
-    deviceId: WEB_ANON_DEVICE_ID,
+    userId,
+    deviceId,
     updatedAt: new Date().toISOString(),
   };
   webConsoleStore.saveDeviceState(next);

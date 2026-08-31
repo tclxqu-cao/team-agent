@@ -215,6 +215,12 @@ export class SQLiteDatabase {
         revoked_at TEXT
       );
 
+      CREATE TABLE IF NOT EXISTS anonymous_ws_nonces (
+        nonce_hash BLOB PRIMARY KEY,
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        expires_at INTEGER NOT NULL
+      );
+
       CREATE TABLE IF NOT EXISTS login_attempts (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         username_normalized TEXT NOT NULL,
@@ -277,6 +283,7 @@ export class SQLiteDatabase {
       CREATE INDEX IF NOT EXISTS idx_remote_tools_project ON remote_tools(project_id);
       CREATE INDEX IF NOT EXISTS idx_remote_jobs_project ON remote_tool_jobs(project_id);
       CREATE INDEX IF NOT EXISTS idx_auth_sessions_user ON auth_sessions(user_id);
+      CREATE INDEX IF NOT EXISTS idx_anonymous_ws_nonces_expiry ON anonymous_ws_nonces(expires_at);
       CREATE INDEX IF NOT EXISTS idx_login_attempts_lookup
         ON login_attempts(username_normalized, ip, attempted_at);
       CREATE INDEX IF NOT EXISTS idx_terminal_tabs_user_order ON terminal_tabs(user_id, sort_order);
