@@ -146,30 +146,54 @@ export default function ContextUsageBar({
           fontFamily: "var(--font-body)",
         }}
       >
-        <span className="context-usage-ribbon__label" style={{ fontSize: 11, color: "var(--text-muted)", whiteSpace: "nowrap" }}>上下文</span>
-        <div className="context-usage-ribbon__meter" style={{
-          flex: 1,
-          height: 6,
-          borderRadius: 999,
-          overflow: "hidden",
-          background: "rgba(0,0,0,0.06)",
-          display: "flex",
-        }}>
-          {view.groups.map((group) => (
-            <div
-              key={group.key}
-              style={{
-                width: `${Math.max(0, Math.min((group.tokens / view.maxTokens) * 100, 100))}%`,
-                background: group.color,
-                opacity: group.key === "overhead" ? 0.65 : 1,
-                minWidth: group.tokens > 0 ? 1 : 0,
-              }}
-            />
-          ))}
-        </div>
-        <span className="context-usage-ribbon__summary" style={{ fontSize: 11, color: view.hasUsage ? barColor : "var(--text-muted)", fontVariantNumeric: "tabular-nums", minWidth: 110, textAlign: "right" }}>
-          {formatContextUsageSummary(view, compact)}
-        </span>
+        {compact ? (
+          <>
+            <svg className="context-usage-ribbon__ring" width="28" height="28" viewBox="0 0 28 28" aria-hidden="true">
+              <circle cx="14" cy="14" r="10" fill="none" stroke="currentColor" strokeWidth="4" opacity="0.14" />
+              <circle
+                cx="14"
+                cy="14"
+                r="10"
+                fill="none"
+                stroke={view.hasUsage ? barColor : "currentColor"}
+                strokeWidth="4"
+                strokeLinecap="round"
+                strokeDasharray={`${view.ratio * 62.832} 62.832`}
+                transform="rotate(-90 14 14)"
+              />
+            </svg>
+            <span className="context-usage-ribbon__summary context-usage-ribbon__summary--compact">
+              {formatContextUsageSummary(view, true)}
+            </span>
+          </>
+        ) : (
+          <>
+            <span className="context-usage-ribbon__label" style={{ fontSize: 11, color: "var(--text-muted)", whiteSpace: "nowrap" }}>上下文</span>
+            <div className="context-usage-ribbon__meter" style={{
+              flex: 1,
+              height: 6,
+              borderRadius: 999,
+              overflow: "hidden",
+              background: "rgba(0,0,0,0.06)",
+              display: "flex",
+            }}>
+              {view.groups.map((group) => (
+                <div
+                  key={group.key}
+                  style={{
+                    width: `${Math.max(0, Math.min((group.tokens / view.maxTokens) * 100, 100))}%`,
+                    background: group.color,
+                    opacity: group.key === "overhead" ? 0.65 : 1,
+                    minWidth: group.tokens > 0 ? 1 : 0,
+                  }}
+                />
+              ))}
+            </div>
+            <span className="context-usage-ribbon__summary" style={{ fontSize: 11, color: view.hasUsage ? barColor : "var(--text-muted)", fontVariantNumeric: "tabular-nums", minWidth: 110, textAlign: "right" }}>
+              {formatContextUsageSummary(view, false)}
+            </span>
+          </>
+        )}
       </button>
 
       {open && anchorRect && (
@@ -180,10 +204,12 @@ export default function ContextUsageBar({
           />
           <div style={{
             position: "fixed",
-            left: Math.max(8, anchorRect.left),
+            left: compact
+              ? Math.min(Math.max(8, anchorRect.left), Math.max(8, viewportWidth - Math.min(340, viewportWidth - 16) - 8))
+              : Math.max(8, anchorRect.left),
             top: anchorRect.top - 8,
             transform: "translateY(-100%)",
-            width: Math.min(anchorRect.width, viewportWidth - 16),
+            width: compact ? Math.min(340, viewportWidth - 16) : Math.min(anchorRect.width, viewportWidth - 16),
             maxHeight: "min(520px, calc(100vh - 32px))",
             overflowY: "auto",
             zIndex: 9999,

@@ -285,7 +285,7 @@ export default function ChatView({
   const [pendingImages, setPendingImages] = useState<string[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLInputElement | HTMLTextAreaElement>(null);
   const pickerAnchorRef = useRef<HTMLDivElement>(null);
   const [pickerRect, setPickerRect] = useState<DOMRect | null>(null);
   const [agents, setAgents] = useState<Array<{id: string; name: string; description: string; isActive?: boolean}>>([]);
@@ -445,6 +445,50 @@ export default function ChatView({
     setInput(prev => prev.replace(/\/[\w\u4e00-\u9fff\-_]*$/, `/${skill.name} `));
     setSlashQuery(null);
     setTimeout(() => inputRef.current?.focus(), 0);
+  };
+
+  const handleComposerChange = (value: string) => {
+    setInput(value);
+    const atMatch = value.match(/@([\w\u4e00-\u9fff]*)$/);
+    if (atMatch) {
+      if (window.agentApi) {
+        void window.agentApi.listAgentDefs().then((list) =>
+          setAgents(list as Array<{id: string; name: string; description: string; isActive?: boolean}>),
+        );
+      }
+      setPickerRect(pickerAnchorRef.current?.getBoundingClientRect() ?? null);
+      setAtQuery(atMatch[1]);
+      setSlashQuery(null);
+      return;
+    }
+    const slashMatch = value.match(/\/([-\w\u4e00-\u9fff]*)$/);
+    if (slashMatch) {
+      if (window.agentApi) {
+        void window.agentApi.listSkills().then((list) =>
+          setSkills((list as Array<{name: string; description: string}>).filter((skill) => skill.name)),
+        ).catch((error: unknown) => console.error("[listSkills] slash error:", error));
+      }
+      setPickerRect(pickerAnchorRef.current?.getBoundingClientRect() ?? null);
+      setSlashQuery(slashMatch[1]);
+      setAtQuery(null);
+      return;
+    }
+    setAtQuery(null);
+    setSlashQuery(null);
+  };
+
+  const handleComposerKeyDown = (event: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    if (event.key === "Escape" && (atQuery !== null || slashQuery !== null)) {
+      event.preventDefault();
+      setAtQuery(null);
+      setSlashQuery(null);
+    } else if (event.key === "Escape" && isRunning) {
+      event.preventDefault();
+      handleAbort();
+    } else if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      void handleSend();
+    }
   };
 
   const handleFileAttach = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1499,7 +1543,7 @@ export default function ChatView({
             {showThinking && (
               <div style={{
                 display: "flex",
-                paddingLeft: "calc(var(--chat-avatar-size) + var(--chat-row-gap))", marginBottom: 4,
+                paddingLeft: webShell ? 0 : "calc(var(--chat-avatar-size) + var(--chat-row-gap))", marginBottom: 4,
               }}>
                 <AgentActivityIndicator activity={agentActivity === "tools" ? "tools" : "thinking"} />
               </div>
@@ -2353,14 +2397,15 @@ export default function ChatView({
           borderRadius: 14,
           overflow: "visible",
         }}>
-          <ContextUsageBar
-            usage={viewSessionId ? contextUsageBySession[viewSessionId] : undefined}
-            contextWindowK={contextWindow}
-            compact={webShell}
-          />
+          {!webShell && (
+            <ContextUsageBar
+              usage={viewSessionId ? contextUsageBySession[viewSessionId] : undefined}
+              contextWindowK={contextWindow}
+            />
+          )}
 
           {/* Model selector bar (shown only when profiles exist), grouped by provider */}
-          {profiles.length > 0 && (() => {
+          {!webShell && profiles.length > 0 && (() => {
             // Build ordered groups: preserve first-appearance order of providers
             const providerOrder: string[] = [];
             const groups: Record<string, typeof profiles> = {};
@@ -2456,31 +2501,7 @@ export default function ChatView({
             onChange={handleFileAttach}
           />
 
-          {webShell ? (
-            <div className="web-native-add-wrap">
-              <button
-                type="button"
-                className="web-native-add-button"
-                aria-label="添加附件、图片或语音"
-                aria-expanded={webAddMenuOpen}
-                onClick={() => setWebAddMenuOpen((open) => !open)}
-              >
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
-                  <path d="M12 5v14M5 12h14" />
-                </svg>
-              </button>
-              {webAddMenuOpen && (
-                <div className="web-native-add-menu">
-                  <button type="button" onClick={() => { setWebAddMenuOpen(false); fileInputRef.current?.click(); }}>
-                    附件 / 图片
-                  </button>
-                  <button type="button" onClick={() => { setWebAddMenuOpen(false); handleMicToggle(); }}>
-                    语音输入
-                  </button>
-                </div>
-              )}
-            </div>
-          ) : (
+          {!webShell && (
             <>
           {/* Attach button */}
           <button
@@ -2568,71 +2589,124 @@ export default function ChatView({
           )}
 
           {/* Text input */}
-          <input
-            className="composer-text-input"
-            ref={inputRef}
-            value={input}
-            onChange={(e) => {
-              const val = e.target.value;
-              setInput(val);
-              const atMatch = val.match(/@([\w\u4e00-\u9fff]*)$/);
-              if (atMatch) {
-                // Always refresh agent list when @ is detected
-                if (window.agentApi) {
-                  void window.agentApi.listAgentDefs().then((list) =>
-                    setAgents(list as Array<{id: string; name: string; description: string; isActive?: boolean}>)
-                  );
-                }
-                setPickerRect(pickerAnchorRef.current?.getBoundingClientRect() ?? null);
-                setAtQuery(atMatch[1]); setSlashQuery(null); return;
-              }
-              const slashMatch = val.match(/\/([-\w\u4e00-\u9fff]*)$/);
-              if (slashMatch) {
-                // Refresh skill list on every slash
-                if (window.agentApi) {
-                  void window.agentApi.listSkills().then((list) =>
-                    setSkills((list as Array<{name: string; description: string}>).filter(s => s.name))
-                  ).catch((e: unknown) => console.error('[listSkills] slash error:', e));
-                }
-                setPickerRect(pickerAnchorRef.current?.getBoundingClientRect() ?? null);
-                setSlashQuery(slashMatch[1]); setAtQuery(null); return;
-              }
-              setAtQuery(null);
-              setSlashQuery(null);
-            }}
-            onBlur={() => setTimeout(() => { setAtQuery(null); setSlashQuery(null); }, 120)}
-            onKeyDown={(e) => {
-              if (e.key === "Escape" && (atQuery !== null || slashQuery !== null)) {
-                e.preventDefault();
-                setAtQuery(null);
-                setSlashQuery(null);
-              } else if (e.key === "Escape" && isRunning) {
-                e.preventDefault();
-                handleAbort();
-              } else if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                handleSend();
-              }
-            }}
-            placeholder={isConfigured ? (isRunning ? "排队发送消息…" : "发送消息… (@智能体  /技能)") : "请先在设置中配置 API Key"}
-            disabled={!isConfigured}
-            style={{
-              flex: 1,
-              padding: "7px 4px",
-              border: "none",
-              background: "transparent",
-              color: "var(--text-primary)",
-              fontSize: 14,
-              outline: 0,
-              boxShadow: "none",
-              fontFamily: "var(--font-body)",
-              letterSpacing: "0.01em",
-            }}
-          />
+          {webShell ? (
+            <textarea
+              className="composer-text-input web-native-composer-textarea"
+              ref={inputRef as React.RefObject<HTMLTextAreaElement>}
+              rows={3}
+              value={input}
+              onChange={(event) => handleComposerChange(event.target.value)}
+              onBlur={() => setTimeout(() => { setAtQuery(null); setSlashQuery(null); }, 120)}
+              onKeyDown={handleComposerKeyDown}
+              placeholder={isConfigured ? (isRunning ? "输入下一条排队消息" : "提出后续修改要求") : "请先在设置中配置 API Key"}
+              disabled={!isConfigured}
+            />
+          ) : (
+            <input
+              className="composer-text-input"
+              ref={inputRef as React.RefObject<HTMLInputElement>}
+              value={input}
+              onChange={(event) => handleComposerChange(event.target.value)}
+              onBlur={() => setTimeout(() => { setAtQuery(null); setSlashQuery(null); }, 120)}
+              onKeyDown={handleComposerKeyDown}
+              placeholder={isConfigured ? (isRunning ? "排队发送消息…" : "发送消息… (@智能体  /技能)") : "请先在设置中配置 API Key"}
+              disabled={!isConfigured}
+              style={{
+                flex: 1,
+                padding: "7px 4px",
+                border: "none",
+                background: "transparent",
+                color: "var(--text-primary)",
+                fontSize: 14,
+                outline: 0,
+                boxShadow: "none",
+                fontFamily: "var(--font-body)",
+                letterSpacing: "0.01em",
+              }}
+            />
+          )}
 
           {/* Send / Queue / Stop button */}
           {webShell ? (
-            <>
+            <div className="web-native-composer-toolbar">
+              <div className="web-native-add-wrap">
+                <button
+                  type="button"
+                  className="web-native-add-button"
+                  aria-label="添加附件、图片或语音"
+                  aria-expanded={webAddMenuOpen}
+                  onClick={() => setWebAddMenuOpen((open) => !open)}
+                >
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true">
+                    <path d="M12 5v14M5 12h14" />
+                  </svg>
+                </button>
+                {webAddMenuOpen && (
+                  <div className="web-native-add-menu">
+                    <button type="button" onClick={() => { setWebAddMenuOpen(false); fileInputRef.current?.click(); }}>
+                      附件 / 图片
+                    </button>
+                    <button type="button" onClick={() => { setWebAddMenuOpen(false); handleMicToggle(); }}>
+                      语音输入
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              <span
+                className={`web-native-runtime-status ${isConfigured ? "is-ready" : ""}`}
+                role="status"
+                aria-label={isConfigured ? "Agent 已就绪" : "Agent 当前不可输入"}
+                title={isConfigured ? "Agent 已就绪" : "Agent 当前不可输入"}
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+                  <path d="M12 8v4" /><path d="M12 16h.01" />
+                </svg>
+              </span>
+
+              <div className="web-native-context-control">
+                <ContextUsageBar
+                  usage={viewSessionId ? contextUsageBySession[viewSessionId] : undefined}
+                  contextWindowK={contextWindow}
+                  compact
+                />
+              </div>
+
+              <label className="web-native-model-control" title="切换模型">
+                <select
+                  aria-label="当前模型"
+                  value={activeProfileId}
+                  disabled={profiles.length === 0}
+                  onChange={(event) => { void switchActiveProfile(event.target.value); }}
+                >
+                  {profiles.length === 0 ? (
+                    <option value="">未配置模型</option>
+                  ) : profiles.map((profile) => (
+                    <option key={profile.id} value={profile.id}>{profile.name || profile.modelId}</option>
+                  ))}
+                </select>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="m6 9 6 6 6-6" />
+                </svg>
+              </label>
+
+              {isRunning ? (
+                <button type="button" onClick={handleAbort} className="web-native-stop-button" aria-label="停止生成" title="停止生成">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                    <rect x="6" y="6" width="12" height="12" rx="2" />
+                  </svg>
+                </button>
+              ) : (
+                <span className="web-native-agent-status" role="status" aria-label="Agent 空闲" title="Agent 空闲">
+                  <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M9.5 4.5A3.5 3.5 0 0 0 6 8v1a3 3 0 0 0-2 2.83V14a3 3 0 0 0 3 3h.25A3.75 3.75 0 0 0 11 20.75V3.25A3.75 3.75 0 0 0 9.5 4.5Z" />
+                    <path d="M14.5 4.5A3.5 3.5 0 0 1 18 8v1a3 3 0 0 1 2 2.83V14a3 3 0 0 1-3 3h-.25A3.75 3.75 0 0 1 13 20.75V3.25a3.75 3.75 0 0 1 1.5 1.25Z" />
+                  </svg>
+                  <span aria-hidden="true" />
+                </span>
+              )}
+
               <button
                 type="button"
                 onClick={handleSend}
@@ -2645,14 +2719,7 @@ export default function ChatView({
                   <path d="M12 19V5M5 12l7-7 7 7" />
                 </svg>
               </button>
-              {isRunning && (
-                <button type="button" onClick={handleAbort} className="web-native-stop-button" aria-label="停止生成" title="停止生成">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-                    <rect x="6" y="6" width="12" height="12" rx="2" />
-                  </svg>
-                </button>
-              )}
-            </>
+            </div>
           ) : isRunning ? (
             <>
               {/* Queue send button */}

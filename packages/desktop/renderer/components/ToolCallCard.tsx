@@ -51,10 +51,10 @@ interface CardShellProps {
 }
 function CardShell({ statusColor, isDone, expanded, onToggle, header, children, maxBodyHeight = 600 }: CardShellProps) {
   return (
-    <div style={{ marginTop: 4, borderRadius: 9, border: "1px solid var(--border-subtle)", overflow: "hidden", background: "var(--bg-deepest)", fontSize: 12, minWidth: 0 }}>
-      <div style={{ display: "flex", alignItems: "stretch" }}>
+    <div className="tool-call-shell" style={{ marginTop: 4, borderRadius: 9, border: "1px solid var(--border-subtle)", overflow: "hidden", background: "var(--bg-deepest)", fontSize: 12, minWidth: 0 }}>
+      <div className="tool-call-shell__row" style={{ display: "flex", alignItems: "stretch" }}>
         {/* Left status gutter */}
-        <div style={{
+        <div className="tool-call-shell__status" style={{
           width: 3, flexShrink: 0,
           background: statusColor,
           animation: !isDone ? "statusBarPulse 1.8s ease-in-out infinite" : "none",
@@ -62,6 +62,7 @@ function CardShell({ statusColor, isDone, expanded, onToggle, header, children, 
         }} />
         {/* Header */}
         <button
+          className="tool-call-shell__header"
           onClick={onToggle}
           style={{ flex: 1, border: "none", background: "var(--bg-deep)", cursor: "pointer", padding: "7px 10px 7px 9px", display: "flex", alignItems: "center", gap: 7, fontFamily: "var(--font-body)", transition: "background 0.12s", textAlign: "left", minWidth: 0 }}
           onMouseEnter={e => (e.currentTarget.style.background = "var(--bg-elevated)")}
@@ -69,12 +70,12 @@ function CardShell({ statusColor, isDone, expanded, onToggle, header, children, 
         >
           {header}
           {/* Chevron */}
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2.5" strokeLinecap="round" style={{ transition: "transform 0.25s var(--ease-out)", transform: expanded ? "rotate(180deg)" : "rotate(0deg)", flexShrink: 0 }}><path d="m6 9 6 6 6-6"/></svg>
+          <svg className="tool-call-shell__chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2.5" strokeLinecap="round" style={{ transition: "transform 0.25s var(--ease-out)", transform: expanded ? "rotate(180deg)" : "rotate(0deg)", flexShrink: 0 }}><path d="m6 9 6 6 6-6"/></svg>
         </button>
       </div>
       {/* Body */}
-      <div style={{ overflow: "hidden", maxHeight: expanded ? maxBodyHeight : 0, opacity: expanded ? 1 : 0, transition: "max-height 0.35s cubic-bezier(0.4,0,0.2,1), opacity 0.25s ease" }}>
-        <div style={{ borderTop: "1px solid var(--border-subtle)", padding: "10px 12px", display: "flex", flexDirection: "column", gap: 8, boxSizing: "border-box", maxWidth: "100%" }}>
+      <div className="tool-call-shell__body" style={{ overflow: "hidden", maxHeight: expanded ? maxBodyHeight : 0, opacity: expanded ? 1 : 0, transition: "max-height 0.35s cubic-bezier(0.4,0,0.2,1), opacity 0.25s ease" }}>
+        <div className="tool-call-shell__body-content" style={{ borderTop: "1px solid var(--border-subtle)", padding: "10px 12px", display: "flex", flexDirection: "column", gap: 8, boxSizing: "border-box", maxWidth: "100%" }}>
           {children}
         </div>
       </div>

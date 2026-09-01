@@ -1,13 +1,51 @@
 
 /* React-native browser composer controls. These classes are rendered directly
    by ChatView in every non-Electron browser, so no DOM proxy is involved. */
+:root {
+  --web-composer-control-size: 38px;
+  --web-composer-icon-size: 20px;
+}
 .web-native-add-wrap {
   position: relative;
   flex-shrink: 0;
+  width: var(--web-composer-control-size);
+  height: var(--web-composer-control-size);
+}
+.web-native-composer-toolbar {
+  width: 100%;
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.web-native-composer-textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 76px;
+  max-height: 168px;
+  padding: 12px 14px 6px;
+  resize: none;
+  overflow-y: auto;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text-primary);
+  box-shadow: none;
+  font: 400 16px/1.5 var(--font-body);
+  letter-spacing: 0;
+}
+.web-native-composer-textarea::placeholder {
+  color: var(--text-muted);
+  opacity: 0.62;
+}
+.web-native-composer-textarea:disabled {
+  cursor: not-allowed;
 }
 .web-native-add-button,
 .web-native-send-button,
 .web-native-stop-button {
+  width: var(--web-composer-control-size);
+  height: var(--web-composer-control-size);
   padding: 0;
   border-radius: 999px;
   display: inline-flex;
@@ -18,19 +56,17 @@
   -webkit-tap-highlight-color: transparent;
 }
 .web-native-add-button {
-  width: 38px;
-  height: 38px;
-  border: 1px solid var(--border-default);
+  border: 0;
   background: transparent;
-  color: var(--text-secondary);
+  color: var(--text-primary);
 }
 .web-native-add-button[aria-expanded="true"] {
   background: var(--control-active, rgba(79,110,247,.09));
 }
 .web-native-add-menu {
-  position: fixed;
-  left: 10px;
-  bottom: calc(env(safe-area-inset-bottom) + 64px);
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 8px);
   z-index: 1300;
   display: flex;
   flex-direction: column;
@@ -63,52 +99,160 @@
   background: var(--control-active);
 }
 .web-native-send-button {
-  width: 38px;
-  height: 38px;
+  position: relative;
   border: 0;
-  background: var(--bg-deep);
+  background: transparent;
   color: var(--text-muted);
 }
+.web-native-send-button::before {
+  content: "";
+  position: absolute;
+  inset: 2px;
+  border: 1px solid var(--border-default);
+  border-radius: 9px;
+  background: var(--bg-deep);
+}
 .web-native-send-button:not(:disabled) {
-  background: var(--text-primary);
   color: #fff;
   cursor: pointer;
 }
+.web-native-send-button:not(:disabled)::before {
+  border-color: var(--text-primary);
+  background: var(--text-primary);
+}
 .web-native-stop-button {
-  width: 34px;
-  height: 34px;
   border: 0;
   background: rgba(244,63,94,.12);
   color: var(--danger);
+}
+.web-native-runtime-status,
+.web-native-agent-status {
+  width: var(--web-composer-control-size);
+  height: var(--web-composer-control-size);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  color: var(--text-muted);
+}
+.web-native-runtime-status.is-ready {
+  color: #f59e0b;
+}
+.web-native-agent-status {
+  gap: 4px;
+  color: var(--text-primary);
+}
+.web-native-agent-status > span {
+  width: 4px;
+  height: 18px;
+  border-radius: 999px;
+  background: #10b981;
+}
+.web-native-context-control {
+  width: var(--web-composer-control-size);
+  height: var(--web-composer-control-size);
+  flex: 0 0 var(--web-composer-control-size);
+}
+.web-native-context-control .context-usage-ribbon {
+  width: var(--web-composer-control-size);
+  height: var(--web-composer-control-size);
+  border: 0 !important;
+}
+.web-native-context-control .context-usage-ribbon__button {
+  width: var(--web-composer-control-size) !important;
+  height: var(--web-composer-control-size);
+  min-height: var(--web-composer-control-size) !important;
+  padding: 9px !important;
+  gap: 0 !important;
+  color: var(--text-muted);
+}
+.context-usage-ribbon__ring {
+  width: var(--web-composer-icon-size);
+  height: var(--web-composer-icon-size);
+  flex: 0 0 auto;
+}
+.context-usage-ribbon__summary--compact {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+.web-native-model-control {
+  min-width: 0;
+  flex: 1 1 120px;
+  height: var(--web-composer-control-size);
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  color: var(--text-primary);
+}
+.web-native-model-control select {
+  min-width: 0;
+  width: 100%;
+  height: var(--web-composer-control-size);
+  padding: 0 2px;
+  border: 0;
+  outline: 0;
+  appearance: none;
+  background: transparent;
+  color: inherit;
+  font: 500 15px/1 var(--font-body);
+  text-overflow: ellipsis;
+}
+.web-native-model-control select:disabled {
+  opacity: 1;
+}
+.web-native-model-control svg {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+}
+.web-native-runtime-status > svg,
+.web-native-agent-status > svg,
+.web-native-add-button > svg,
+.web-native-send-button > svg,
+.web-native-stop-button > svg {
+  position: relative;
+  z-index: 1;
+  width: var(--web-composer-icon-size);
+  height: var(--web-composer-icon-size);
 }
 
 @media (max-width: 899px) {
   .web-native-add-button,
   .web-native-send-button,
   .web-native-stop-button {
-    width: 38px;
-    height: 38px;
-  }
-
-  .web-native-add-button,
-  .web-native-send-button {
-    border-radius: 50%;
+    width: var(--web-composer-control-size);
+    height: var(--web-composer-control-size);
   }
 
   .web-native-add-button svg,
   .web-native-send-button svg {
-    width: 18px;
-    height: 18px;
+    width: var(--web-composer-icon-size);
+    height: var(--web-composer-icon-size);
   }
 
   .web-native-add-menu {
-    left: max(10px, env(safe-area-inset-left));
-    bottom: calc(env(safe-area-inset-bottom) + 76px);
+    left: 0;
+    bottom: calc(100% + 8px);
     min-width: 176px;
     border-radius: 8px;
   }
 
   .web-native-add-menu button {
     min-height: 44px;
+  }
+}
+
+@media (max-width: 359px) {
+  .web-native-composer-toolbar {
+    gap: 3px;
+  }
+  .web-native-runtime-status {
+    display: none;
+  }
+  .web-native-model-control {
+    flex-basis: 98px;
   }
 }
