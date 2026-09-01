@@ -22,8 +22,9 @@ OpenAI's App Server contract confirms that `thread/unsubscribe` only removes the
 - The fork title is `<原标题>（副本）`. Repeated forks are allowed only through separate explicit clicks.
 - On failure, the original session remains selected and read-only. The notice shows a concise failure message and allows retry.
 - If a stale session summary allows a send attempt but Codex returns `SESSION_OCCUPIED`, AgentRoam refreshes occupancy and presents the same fork command instead of exposing the raw protocol error.
+- When that recovery follows a failed send, AgentRoam restores the failed user text into the fork's composer without submitting it. The user can review or edit the text before sending.
 
-The fork action does not automatically send text. The user first creates and enters the fork, then submits the next message in the normal composer. This avoids moving or duplicating a draft across session identities.
+The fork action never automatically starts a turn. A proactive fork opens with an empty composer; a recovery fork carries only the failed user text as an editable draft.
 
 ## Runtime Contract
 
@@ -72,7 +73,7 @@ The fork request is separate from `agent:run`; no streaming event or session-rep
 - Unified service tests cover supported Codex forks, unsupported runtime rejection, and discovery-cache invalidation.
 - Electron preload/IPC contract tests cover `forkSession` routing.
 - Server route and Web gateway tests cover the 201 response, runtime error status mapping, and returned summary.
-- Shared renderer tests cover button visibility, loading suppression, successful refresh/selection, failure rollback, and `SESSION_OCCUPIED` recovery without the raw English writer error.
+- Shared renderer tests cover button visibility, loading suppression, successful refresh/selection, failure rollback, failed-text restoration, and `SESSION_OCCUPIED` recovery without the raw English writer error.
 - Run the affected desktop, renderer, server, and Web type checks and focused Vitest suites.
 - Perform one real Codex acceptance check with an externally held source thread: original stays read-only, fork appears as a new session, inherited history loads, and the first turn on the fork completes.
 
