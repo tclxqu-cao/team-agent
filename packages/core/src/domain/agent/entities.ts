@@ -120,6 +120,8 @@ export interface AgentConfig {
   /** Skill name allowlist. Only these skills can be activated.
    *  null = all skills available. */
   enabledSkills?: string[] | null;
+  /** Reasoning intensity forwarded to the provider. "off"/undefined = provider default. */
+  reasoningEffort?: import("../model/entities.js").ReasoningEffort;
 }
 
 export interface IAgentLoop {

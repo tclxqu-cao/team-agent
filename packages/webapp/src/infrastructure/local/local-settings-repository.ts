@@ -1,5 +1,7 @@
 import type { ModelProfile } from "../../domain/ports/agent-port";
 
+export type ReasoningEffort = "off" | "low" | "medium" | "high";
+
 export interface WebSettings {
   modelProvider: string;
   modelId: string;
@@ -9,6 +11,7 @@ export interface WebSettings {
   workingDirectory: string;
   profiles: ModelProfile[];
   activeProfileId: string;
+  reasoningEffort: ReasoningEffort;
 }
 
 const STORAGE_KEY = "webapp.settings.v1";
@@ -100,6 +103,12 @@ export class LocalSettingsRepository {
     return { provider, apiKey, modelId, ...(baseUrl ? { baseUrl } : {}) };
   }
 
+  /** Persisted reasoning intensity, defaulting to "off" (provider default behavior). */
+  getReasoningEffort(): ReasoningEffort {
+    const effort = this.get().reasoningEffort;
+    return ["off", "low", "medium", "high"].includes(effort) ? effort : "off";
+  }
+
   private defaults(): WebSettings {
     const profile: ModelProfile = {
       id: "server-managed",
@@ -118,6 +127,7 @@ export class LocalSettingsRepository {
       workingDirectory: "/",
       profiles: [profile],
       activeProfileId: profile.id,
+      reasoningEffort: "off",
     };
   }
 }

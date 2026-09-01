@@ -112,7 +112,7 @@ export default function SettingsPanel() {
 
       {/* ── Model Profiles ── */}
       <section style={{ marginBottom: 40 }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+        <div className="settings-head-row" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
           <h3 style={{ fontSize: 13, fontWeight: 600, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.06em", margin: 0 }}>
             模型提供商
           </h3>
@@ -148,7 +148,7 @@ export default function SettingsPanel() {
                 transition: "border-color 0.2s",
               }}>
                 {/* Row */}
-                <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px" }}>
+                <div className="profile-row" style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px" }}>
                   {/* Provider badge */}
                   <span style={{
                     fontSize: 10,
@@ -177,7 +177,7 @@ export default function SettingsPanel() {
                     <span style={{ fontSize: 11, color: "var(--accent)", fontWeight: 600, flexShrink: 0 }}>● 使用中</span>
                   )}
 
-                  <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                  <div className="profile-row-actions" style={{ display: "flex", gap: 6, flexShrink: 0 }}>
                     {!isActive && (
                       <button onClick={() => handleSwitch(p.id)} style={btnXsStyle}>切换</button>
                     )}

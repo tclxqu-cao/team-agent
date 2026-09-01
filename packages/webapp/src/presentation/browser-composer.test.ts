@@ -39,7 +39,7 @@ describe("browser composer panel layout", () => {
     expect(chatView).toContain('className="web-native-composer-toolbar"');
     expect(chatView).toContain('className="web-native-context-control"');
     expect(chatView).toContain('className="web-native-model-control"');
-    expect(chatView).toContain('placeholder={isConfigured ? (isRunning ? "输入下一条排队消息" : "提出后续修改要求")');
+    expect(chatView).toContain('placeholder={isReadOnly ? "原客户端使用中，当前只读" : runtimeReady ? (isRunning ? "输入下一条排队消息" : "提出后续修改要求")');
 
     expect(css).toContain(".web-native-composer-textarea {");
     expect(css).toContain("min-height: 76px");

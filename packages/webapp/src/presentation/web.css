@@ -56,6 +56,11 @@ body[data-web-shell="1"] .chat-top-bar > span:first-child {
 body[data-web-shell="1"] .chat-header-action--background {
   display: none !important;
 }
+/* Skin switching lives in the shell tab-bar avatar on web; layout/voice
+   settings stay desktop-only (Electron appearance panel). */
+body[data-web-shell="1"] .chat-header-action--appearance {
+  display: none !important;
+}
 
 /* Model/provider pills row: the server owns model config and the settings
    sheet manages profiles — the inline selector bar is noise on mobile. */
@@ -199,8 +204,8 @@ body[data-web-shell="1"] > div:has(.settings-tab) > div div[style*="border-radiu
 }
 /* Section headers ("添加服务器" + transport toggle) stack so the label never
    wraps mid-word and the toggle keeps its full width. */
-body[data-web-shell="1"] [data-webapp-settings-card] div:has(> h3),
-body[data-web-shell="1"] > div:has(.settings-tab) > div div:has(> h3) {
+body[data-web-shell="1"] [data-webapp-settings-card] div:has(> h3):not(.settings-head-row),
+body[data-web-shell="1"] > div:has(.settings-tab) > div div:has(> h3):not(.settings-head-row) {
   flex-direction: column !important;
   align-items: stretch !important;
   gap: 10px !important;
@@ -224,9 +229,20 @@ body[data-web-shell="1"] > div:has(.settings-tab) > div div[style*="overflow: hi
 }
 /* Side-by-side field pairs stack; flex children may shrink so inputs never
    force horizontal clipping. */
-body[data-web-shell="1"] [data-webapp-settings-card] div[style*="gap: 10px"],
-body[data-web-shell="1"] > div:has(.settings-tab) > div div[style*="gap: 10px"] {
+body[data-web-shell="1"] [data-webapp-settings-card] div[style*="gap: 10px"]:not(.profile-row),
+body[data-web-shell="1"] > div:has(.settings-tab) > div div[style*="gap: 10px"]:not(.profile-row) {
   flex-direction: column !important;
+}
+/* Provider cards: keep the row horizontal; let actions wrap to a right-aligned
+   second line on narrow phones instead of squeezing the title. */
+body[data-web-shell="1"] [data-webapp-settings-card] .profile-row,
+body[data-web-shell="1"] > div:has(.settings-tab) > div .profile-row {
+  flex-wrap: wrap !important;
+  row-gap: 8px !important;
+}
+body[data-web-shell="1"] [data-webapp-settings-card] .profile-row-actions,
+body[data-web-shell="1"] > div:has(.settings-tab) > div .profile-row-actions {
+  margin-left: auto;
 }
 body[data-web-shell="1"] [data-webapp-settings-card] [style*="flex: 1"],
 body[data-web-shell="1"] > div:has(.settings-tab) > div [style*="flex: 1"] {
@@ -324,11 +340,6 @@ body[data-web-shell="1"] {
       color var(--duration-fast) var(--ease-out);
   }
 
-  body[data-web-shell="1"] .mobile-drawer-toggle[aria-expanded="true"] {
-    background: var(--bg-deep) !important;
-    color: var(--text-primary) !important;
-  }
-
   body[data-web-shell="1"] .mobile-drawer-scrim {
     background: rgba(17, 24, 39, 0.34) !important;
     backdrop-filter: blur(2px);
@@ -337,7 +348,7 @@ body[data-web-shell="1"] {
 
   body[data-web-shell="1"] .app-sidebar {
     width: min(88vw, 348px) !important;
-    padding: calc(env(safe-area-inset-top) + 56px) 0 calc(env(safe-area-inset-bottom) + 12px) !important;
+    padding: calc(env(safe-area-inset-top) + 12px) 0 calc(env(safe-area-inset-bottom) + 12px) !important;
     border-right: 1px solid var(--border-default) !important;
     box-shadow: 10px 0 28px rgba(17, 24, 39, 0.18) !important;
   }

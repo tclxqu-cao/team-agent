@@ -79,6 +79,33 @@ export interface TodoItem {
   status: "pending" | "in-progress" | "completed";
 }
 
+export type AgentType = "customer-agent" | "codex" | "claude-code";
+
+export interface UnifiedSessionSummary {
+  id: string;
+  agentType: AgentType;
+  nativeSessionId: string;
+  title: string;
+  cwd: string;
+  projectId?: string;
+  parentSessionId?: string;
+  created: string;
+  updated: string;
+  status: "idle" | "running" | "completed" | "failed";
+  occupancy: "available" | "owned-by-customer-agent" | "owned-externally";
+  sourceLabel: string;
+  canResume: boolean;
+  canDelete: boolean;
+}
+
+export interface RuntimeHealth {
+  agentType: AgentType;
+  available: boolean;
+  label: string;
+  version?: string;
+  error?: string;
+}
+
 export interface AgentApi {
   // Window control (hide → background voice-wake mode, show → restore)
   hideWindow(): Promise<void>;
@@ -108,7 +135,7 @@ export interface AgentApi {
   onTtsEnd(callback: (payload: { generation: number }) => void): () => void;
   run(input: string, sessionId: string, agentIds?: string[], agentName?: string, images?: string[]): Promise<unknown[]>;
   steer(input: string, sessionId: string, agentName?: string): Promise<boolean>;
-  abort(): Promise<void>;
+  abort(sessionId?: string): Promise<void>;
   answerQuestion(questionId: string, answer: string, selectedIndices?: number[]): Promise<boolean>;
   subscribe(): Promise<void>;
   onEvent(callback: (event: unknown) => void): () => void;
@@ -134,11 +161,13 @@ export interface AgentApi {
   updateProject(id: string, update: Record<string, unknown>): Promise<unknown>;
   deleteProject(id: string): Promise<void>;
   checkProjectPath(path: string): Promise<boolean>;
-  listSessions(projectId?: string): Promise<unknown[]>;
+  listSessions(projectId?: string): Promise<UnifiedSessionSummary[]>;
   listChildSessions(parentId: string): Promise<unknown[]>;
   getSession(id: string): Promise<unknown>;
-  createSession(title: string, projectId?: string): Promise<unknown>;
+  createSession(title: string, projectId?: string, agentType?: AgentType, cwd?: string): Promise<UnifiedSessionSummary>;
   deleteSession(id: string): Promise<void>;
+  refreshSessions(projectId?: string): Promise<UnifiedSessionSummary[]>;
+  getRuntimeHealth(): Promise<RuntimeHealth[]>;
   listMemories(): Promise<unknown[]>;
   getMemory(name: string): Promise<unknown>;
   setMemory(entry: Record<string, unknown>): Promise<void>;

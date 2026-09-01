@@ -80,7 +80,7 @@ contextBridge.exposeInMainWorld("agentApi", {
     ipcRenderer.invoke("agent:run", input, sessionId, agentIds, agentName, images),
   steer: (input: string, sessionId: string, agentName?: string) =>
     ipcRenderer.invoke("agent:steer", input, sessionId, agentName),
-  abort: () => ipcRenderer.invoke("agent:abort"),
+  abort: (sessionId?: string) => ipcRenderer.invoke("agent:abort", sessionId),
   answerQuestion: (questionId: string, answer: string, selectedIndices?: number[]) =>
     ipcRenderer.invoke("agent:answer-question", questionId, answer, selectedIndices),
   onEvent: (callback: (event: unknown) => void): (() => void) => {
@@ -105,8 +105,11 @@ contextBridge.exposeInMainWorld("agentApi", {
   listSessions: (projectId?: string) => ipcRenderer.invoke("sessions:list", projectId),
   listChildSessions: (parentId: string) => ipcRenderer.invoke("sessions:listChildren", parentId),
   getSession: (id: string) => ipcRenderer.invoke("sessions:get", id),
-  createSession: (title: string, projectId?: string) => ipcRenderer.invoke("sessions:create", title, projectId),
+  createSession: (title: string, projectId?: string, agentType = "customer-agent", cwd?: string) =>
+    ipcRenderer.invoke("sessions:create", title, projectId, agentType, cwd),
   deleteSession: (id: string) => ipcRenderer.invoke("sessions:delete", id),
+  refreshSessions: (projectId?: string) => ipcRenderer.invoke("sessions:refresh", projectId),
+  getRuntimeHealth: () => ipcRenderer.invoke("sessions:runtimeHealth"),
 
   // Memory
   listMemories: () => ipcRenderer.invoke("memory:list"),

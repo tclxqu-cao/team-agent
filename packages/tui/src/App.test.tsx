@@ -417,7 +417,11 @@ describe("TuiApp palettes", () => {
     view.stdin.write("\r");
     await tick();
     expect(view.lastFrame()).not.toContain("↑↓ 移动");
-    expect(view.lastFrame()).toContain("› /sessions");
+    // Enter on /sessions executes the command (which appends a notice listing
+    // sessions, or "还没有会话" when there are none). The slash palette itself
+    // closes because setInput("") clears the trigger, so we assert on the
+    // command's side-effect rather than the now-closed palette.
+    expect(view.lastFrame()).toContain("还没有会话");
   });
 
   it("handles batched terminal input and exits palette mode with backspace", async () => {

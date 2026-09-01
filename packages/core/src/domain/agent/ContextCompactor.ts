@@ -105,6 +105,7 @@ export class ContextCompactor {
     let summary = "";
     for await (const event of this.modelProvider.streamChat(summaryMessages, {
       maxTokens: 2048,
+      reasoningEffort: "off",
     })) {
       if (event.type === "text_chunk") summary += event.text;
     }
@@ -155,6 +156,7 @@ export class ContextCompactor {
     let summary = "";
     for await (const event of this.modelProvider.streamChat(summaryMessages, {
       maxTokens: 4096,
+      reasoningEffort: "off",
     })) {
       if (event.type === "text_chunk") summary += event.text;
     }

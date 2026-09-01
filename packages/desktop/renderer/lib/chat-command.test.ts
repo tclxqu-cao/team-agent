@@ -91,4 +91,126 @@ describe("prepareChatCommand", () => {
     expect(activateSession).not.toHaveBeenCalled();
     expect(showUserMessage).not.toHaveBeenCalled();
   });
+
+  it("truncates the session title to 60 characters", async () => {
+    const titles: string[] = [];
+
+    await prepareChatCommand({
+      text: "x".repeat(120),
+      projectId: null,
+      sessionId: null,
+      createSession: async (title) => {
+        titles.push(title);
+        return { id: "session-new" };
+      },
+      activateSession: () => {},
+      showUserMessage: () => {},
+    });
+
+    expect(titles).toEqual(["x".repeat(60)]);
+  });
+
+  it("falls back to a default title when the message is empty", async () => {
+    const titles: string[] = [];
+
+    await prepareChatCommand({
+      text: "",
+      projectId: null,
+      sessionId: null,
+      createSession: async (title) => {
+        titles.push(title);
+        return { id: "session-new" };
+      },
+      activateSession: () => {},
+      showUserMessage: () => {},
+    });
+
+    expect(titles).toEqual(["New Session"]);
+  });
+
+  it("normalizes a null or empty project id to undefined", async () => {
+    const seen: Array<string | undefined> = [];
+
+    for (const projectId of [null, ""]) {
+      await prepareChatCommand({
+        text: "hi",
+        projectId,
+        sessionId: null,
+        createSession: async (_title, id) => {
+          seen.push(id);
+          return { id: "session-new" };
+        },
+        activateSession: () => {},
+        showUserMessage: () => {},
+      });
+    }
+
+    expect(seen).toEqual([undefined, undefined]);
+  });
+
+  it("trims whitespace around the created session id", async () => {
+    const activated: string[] = [];
+
+    const sessionId = await prepareChatCommand({
+      text: "hi",
+      projectId: null,
+      sessionId: null,
+      createSession: async () => ({ id: "  session-padded  " }),
+      activateSession: (id) => activated.push(id),
+      showUserMessage: () => {},
+    });
+
+    expect(sessionId).toBe("session-padded");
+    expect(activated).toEqual(["session-padded"]);
+  });
+
+  it("awaits an async onSessionCreated before returning", async () => {
+    const order: string[] = [];
+
+    await prepareChatCommand({
+      text: "hi",
+      projectId: null,
+      sessionId: null,
+      createSession: async () => ({ id: "session-new" }),
+      activateSession: () => {},
+      showUserMessage: () => {},
+      onSessionCreated: async () => {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+        order.push("onSessionCreated");
+      },
+    });
+    order.push("returned");
+
+    expect(order).toEqual(["onSessionCreated", "returned"]);
+  });
+
+  it("propagates failures from onSessionCreated", async () => {
+    await expect(prepareChatCommand({
+      text: "hi",
+      projectId: null,
+      sessionId: null,
+      createSession: async () => ({ id: "session-new" }),
+      activateSession: () => {},
+      showUserMessage: () => {},
+      onSessionCreated: async () => {
+        throw new Error("sidebar refresh failed");
+      },
+    })).rejects.toThrow("sidebar refresh failed");
+  });
+
+  it("skips onSessionCreated when reusing an existing session", async () => {
+    const onSessionCreated = vi.fn();
+
+    await prepareChatCommand({
+      text: "hi",
+      projectId: null,
+      sessionId: "session-existing",
+      createSession: async () => ({ id: "unexpected" }),
+      activateSession: () => {},
+      showUserMessage: () => {},
+      onSessionCreated,
+    });
+
+    expect(onSessionCreated).not.toHaveBeenCalled();
+  });
 });

@@ -25,6 +25,9 @@ export default function WebConsolePage() {
 // deletable; "+" adds regular terminal tabs.
 const WEBAPP_TAB = { id: "webapp-agent", title: "智能助手", kind: "webapp" } as const;
 
+// Shell → webapp iframe skin sync; the webapp bridge listens for this type.
+const WEBAPP_SKIN_MESSAGE_TYPE = "agent-web-shell:skin:v1";
+
 function AuthenticatedConsole({ auth }: { auth: WebAuthController }) {
   const { state, epoch, rpc, onEvent, onTerminalData, onTerminalReset, sendTerminalInput } = useGateway(() => {}, auth.getWsNonce, auth.refresh);
   const [tabs, setTabs] = useState<Array<{ id: string; title: string; kind?: "webapp" }>>([{ ...WEBAPP_TAB }]);
@@ -64,6 +67,15 @@ function AuthenticatedConsole({ auth }: { auth: WebAuthController }) {
   const draggedTab = useRef<string | null>(null);
   const tabBarRef = useRef<HTMLDivElement>(null);
   const webappFrameRef = useRef<HTMLIFrameElement>(null);
+  const postSkinToWebapp = useCallback((skin: WebThemeId) => {
+    webappFrameRef.current?.contentWindow?.postMessage(
+      { type: WEBAPP_SKIN_MESSAGE_TYPE, skin },
+      window.location.origin,
+    );
+  }, []);
+  useEffect(() => {
+    postSkinToWebapp(themeId);
+  }, [themeId, postSkinToWebapp]);
   const prevTabCount = useRef(0);
   const cwdHint = activeTerminalId ? cwdByTerminal[activeTerminalId] ?? null : null;
 
@@ -295,7 +307,7 @@ function AuthenticatedConsole({ auth }: { auth: WebAuthController }) {
           {tabs.map((tab) => (
             <div className="terminal-slide" key={tab.id}>
               {tab.kind === "webapp" ? (
-                <iframe ref={webappFrameRef} src="/app/" title={tab.title} style={{ width: "100%", height: "100%", border: "0", background: "#000" }} />
+                <iframe ref={webappFrameRef} src="/app/" title={tab.title} onLoad={() => postSkinToWebapp(themeId)} style={{ width: "100%", height: "100%", border: "0", background: "var(--ui-term-col-bg, #101014)" }} />
               ) : (
                 <TerminalPane terminalId={tab.id} title={tab.title} visible={tab.id === activeTerminalId} state={state} rpc={rpc} onEvent={onEvent} onTerminalData={onTerminalData} onTerminalReset={onTerminalReset} sendTerminalInput={sendTerminalInput} keyOrder={keyOrder} keybarHidden={keybarHidden} onKeyOrderChange={setKeyOrder} onKeybarHiddenChange={setKeybarHidden} terminalTheme={activeTheme} initialScrollLine={terminalScroll[tab.id] ?? null} onScrollLineChange={(line) => setTerminalScroll((current) => (current[tab.id] === line ? current : { ...current, [tab.id]: line }))} onRegisterFill={(fill) => registerTerminalFill(tab.id, fill)} onCwdChange={(cwd) => cwd && setCwdByTerminal((current) => ({ ...current, [tab.id]: cwd }))} />
               )}
@@ -369,7 +381,23 @@ const GLOBAL_CSS = `
   .terminal-add { min-width:30px; height:28px; margin-bottom:2px; border:1px solid var(--ui-tabbar-border, #303442); border-radius:6px; background:var(--ui-tab-bg, #1b1e28); color:var(--ui-tab-text, #9da2b2); }
   .terminal-connection { position:sticky; right:-8px; margin-left:auto; align-self:stretch; display:flex; align-items:center; gap:7px; padding:0 9px; background:var(--ui-connection-bg, #12141b); color:var(--ui-connection-text, #777b8c); font-size:10.5px; flex-shrink:0; z-index:5; box-shadow:-8px 0 12px color-mix(in srgb, var(--ui-connection-bg, #12141b) 90%, transparent); }
   .theme-picker { position:relative; flex-shrink:0; z-index:6; }
-  .theme-avatar { -webkit-tap-highlight-color:transparent; }
+  .theme-avatar { position:relative; display:flex; align-items:center; justify-content:center; width:22px; height:22px; padding:0; border-radius:99px; font-size:10px; font-weight:700; cursor:pointer; flex-shrink:0; touch-action:manipulation; -webkit-tap-highlight-color:transparent; transition:transform .12s ease, filter .12s ease; }
+  /* Hit-area padding: the 22px circle is far below the ~44px minimum touch
+     target, so an invisible ::after extends the tap region. Keep the visual
+     size unchanged — only the hit-test area grows. */
+  .theme-avatar::after { content:""; position:absolute; inset:-6px; border-radius:99px; }
+  .theme-avatar:active { transform:scale(.9); filter:brightness(1.15); }
+  .theme-popover-item { display:flex; align-items:center; gap:8px; padding:7px 8px; border:none; border-radius:8px; cursor:pointer; touch-action:manipulation; -webkit-tap-highlight-color:transparent; }
+  .theme-popover-item:active { background:color-mix(in srgb, var(--ui-tab-accent, #7aa2f7) 22%, transparent); }
+  /* Touch devices: grow the avatar hit area to ~44px and the popover rows to
+     ~40px tall. The tab bar must grow in step — it clips overflow-y, so an
+     expanded hit area taller than the bar would get cut off. */
+  @media (pointer: coarse) {
+    .terminal-tabs { min-height:44px; }
+    .theme-avatar::after { inset:-11px; }
+    .theme-popover-item { padding-top:11px; padding-bottom:11px; }
+  }
+  @media (prefers-reduced-motion: reduce) { .theme-avatar { transition:none; } }
   .terminal-track { display:flex; width:100%; height:100%; will-change:transform; }
   .terminal-slide { flex:0 0 100%; width:100%; height:100%; min-width:0; }
   .terminal-screen { display:flex; flex-direction:column; min-height:0; overflow:hidden; }
@@ -573,9 +601,9 @@ const S: Record<string, React.CSSProperties> = {
     minWidth: 28,
     height: 28,
     borderRadius: 7,
-    border: "1px solid #333",
-    background: "#17171d",
-    color: "#ccc",
+    border: "1px solid var(--ui-tabbar-border, #303442)",
+    background: "var(--ui-tab-bg, #202029)",
+    color: "var(--ui-tab-text, #aaaab8)",
     fontSize: 13,
   },
   workspace: {

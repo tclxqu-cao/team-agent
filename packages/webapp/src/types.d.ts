@@ -13,3 +13,14 @@ declare module "@desktop/renderer/App" {
   const App: ComponentType;
   export default App;
 }
+
+declare module "@desktop/renderer/stores/uiStore" {
+  export type SkinId = "pearl" | "scifi" | "noir";
+  interface UIStateSlice {
+    skin: SkinId;
+    setSkin: (skin: SkinId) => void;
+  }
+  export const useUIStore: {
+    getState: () => UIStateSlice;
+  };
+}

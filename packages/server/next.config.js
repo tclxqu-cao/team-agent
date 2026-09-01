@@ -13,6 +13,7 @@ const nextConfig = {
   ...(allowedDevOrigins.length ? { allowedDevOrigins } : {}),
   experimental: {
     externalDir: true,
+    serverComponentsExternalPackages: ["@anthropic-ai/claude-agent-sdk"],
   },
   webpack: (config) => {
     config.resolve.extensionAlias = {
@@ -23,6 +24,7 @@ const nextConfig = {
       config.externals = [config.externals];
     }
     config.externals.push({ "better-sqlite3": "commonjs better-sqlite3" });
+    config.externals.push({ "@anthropic-ai/claude-agent-sdk": "commonjs @anthropic-ai/claude-agent-sdk" });
     return config;
   },
   async headers() {

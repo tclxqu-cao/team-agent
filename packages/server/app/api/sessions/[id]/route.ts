@@ -1,5 +1,10 @@
 import { NextResponse } from "next/server";
 import { agentHost } from "../../agent-host";
+import {
+  getNativeRuntimeService,
+  isNativeSessionId,
+  runtimeErrorStatus,
+} from "../../../../lib/native-runtime-service";
 
 function rebuildMessagesFromEvents(events: Array<Record<string, unknown>>) {
   const messages: Array<Record<string, unknown>> = [];
@@ -87,6 +92,18 @@ export async function GET(
   _request: Request,
   { params }: { params: { id: string } },
 ) {
+  if (isNativeSessionId(params.id)) {
+    try {
+      const detail = await getNativeRuntimeService().get(params.id);
+      return NextResponse.json(detail);
+    } catch (err) {
+      return NextResponse.json(
+        { error: err instanceof Error ? err.message : "Internal error" },
+        { status: runtimeErrorStatus(err) },
+      );
+    }
+  }
+
   const session = await agentHost.getSessionStore().get(params.id);
   if (!session) {
     return NextResponse.json({ error: "Session not found" }, { status: 404 });
@@ -96,13 +113,6 @@ export async function GET(
     ? rebuildMessagesFromEvents(session.events as Array<Record<string, unknown>>)
     : session.messages;
 
-  console.log('[sessions/:id]', {
-    sessionId: params.id,
-    storedMessages: session.messages?.length ?? 0,
-    storedEvents: Array.isArray(session.events) ? session.events.length : 0,
-    rebuiltMessages: rebuiltMessages?.length ?? 0,
-  });
-
   const hydrated = { ...session, messages: rebuiltMessages };
   return NextResponse.json(hydrated);
 }
@@ -111,6 +121,12 @@ export async function DELETE(
   _request: Request,
   { params }: { params: { id: string } },
 ) {
+  if (isNativeSessionId(params.id)) {
+    return NextResponse.json(
+      { error: "External runtime sessions cannot be deleted" },
+      { status: 405 },
+    );
+  }
   await agentHost.getSessionStore().delete(params.id);
   return NextResponse.json({ status: "deleted" });
 }

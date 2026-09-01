@@ -316,11 +316,14 @@ select:focus {
 }
 
 .sidebar-row-action {
-  opacity: 0.42;
+  opacity: 0;
+  transition: opacity 0.12s ease;
 }
 
 .sidebar-row:hover .sidebar-row-action,
-.sidebar-row:focus-within .sidebar-row-action {
+.sidebar-row:focus-within .sidebar-row-action,
+.app-sidebar-section:hover .sidebar-row-action,
+.app-sidebar-section:focus-within .sidebar-row-action {
   opacity: 1;
 }
 

@@ -13,11 +13,12 @@ import {
   type RemoteToolRegistration,
   type Message,
 } from "@agent/core";
-import { getServerBaseDir } from "../../lib/server-data-dir";
+import { getAgentWorkingDirectory, getServerBaseDir } from "../../lib/server-data-dir";
 
 /** Singleton agent host shared across API routes */
 class AgentHost {
   private readonly baseDir = getServerBaseDir();
+  private readonly workingDirectory = getAgentWorkingDirectory();
   private builder: AgentBuilder | null = null;
   private readonly sessionStore = new SQLiteSessionStore(this.baseDir);
   private readonly projectStore = new SQLiteProjectStore(this.baseDir);
@@ -47,7 +48,9 @@ class AgentHost {
     const modelId = process.env.AGENT_MODEL_ID || "gpt-4o";
     const baseUrl = process.env.AGENT_BASE_URL || undefined;
 
-    const builder = new AgentBuilder().withSessionStore(this.sessionStore);
+    const builder = new AgentBuilder()
+      .withSessionStore(this.sessionStore)
+      .withWorkingDirectory(this.workingDirectory);
     builder.withRemoteToolStore(this.remoteToolStore, this.defaultRemoteToolsProjectId);
     if (apiKey) {
       builder.withModel(provider, { apiKey, modelId, baseUrl });
@@ -64,6 +67,7 @@ class AgentHost {
 
   setBuilder(builder: AgentBuilder): void {
     builder.withRemoteToolStore(this.remoteToolStore, this.defaultRemoteToolsProjectId);
+    builder.withWorkingDirectory(this.workingDirectory);
     this.builder = builder;
   }
 
@@ -154,6 +158,21 @@ class AgentHost {
     for (const fn of this.subscribers.get(sessionId) ?? []) {
       try { fn(event, id); } catch { /* ignore */ }
     }
+  }
+
+  /**
+   * Push an event from an external native runtime (Codex / Claude Code) into
+   * the SSE bus. Native history stays in the runtime's own storage — nothing
+   * is persisted to SQLite here.
+   */
+  publishExternal(sessionId: string, event: AgentEvent): void {
+    this.emit(sessionId, event);
+  }
+
+  /** Restart the event sequence for a native session before a new run. */
+  resetExternalStream(sessionId: string): void {
+    this.eventCounters.set(sessionId, 0);
+    this.recentEvents.set(sessionId, []);
   }
 
   private projectMessagesFromEvents(events: AgentEvent[]): Message[] {

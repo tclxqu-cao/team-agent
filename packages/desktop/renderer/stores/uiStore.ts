@@ -37,12 +37,18 @@ interface UIState {
   wakeEnabled: boolean;
   /** 唤醒词（命中即唤起窗口） */
   wakeWord: string;
+  /** 侧边栏将进行中的会话排在最前 */
+  runningFirst: boolean;
+  /** 侧边栏会话按机器人（agentType）分组，且每组可折叠 */
+  groupByBot: boolean;
 
   setSkin: (skin: SkinId) => void;
   setLayout: (layout: LayoutId) => void;
   setAutoSpeak: (v: boolean) => void;
   setWakeEnabled: (v: boolean) => void;
   setWakeWord: (w: string) => void;
+  setRunningFirst: (v: boolean) => void;
+  setGroupByBot: (v: boolean) => void;
 }
 
 export const useUIStore = create<UIState>()(
@@ -53,12 +59,16 @@ export const useUIStore = create<UIState>()(
       autoSpeak: false,
       wakeEnabled: true,
       wakeWord: "小智",
+      runningFirst: false,
+      groupByBot: false,
 
       setSkin: (skin) => set({ skin }),
       setLayout: (layout) => set({ layout }),
       setAutoSpeak: (autoSpeak) => set({ autoSpeak }),
       setWakeEnabled: (wakeEnabled) => set({ wakeEnabled }),
       setWakeWord: (wakeWord) => set({ wakeWord }),
+      setRunningFirst: (runningFirst) => set({ runningFirst }),
+      setGroupByBot: (groupByBot) => set({ groupByBot }),
     }),
     { name: "agent-ui-prefs" },
   ),

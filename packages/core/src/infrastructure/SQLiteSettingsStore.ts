@@ -1,5 +1,6 @@
 // ── SQLite Settings Store ──
 import type { ISettingsStore, SettingsData, ModelProfile } from '../domain/settings/entities.js';
+import type { ReasoningEffort } from '../domain/model/entities.js';
 import { getDatabase } from './SQLiteDatabase.js';
 
 export class SQLiteSettingsStore implements ISettingsStore {
@@ -78,6 +79,9 @@ export class SQLiteSettingsStore implements ISettingsStore {
       isConfigured: Boolean(apiKey),
       profiles,
       activeProfileId,
+      reasoningEffort: (["off", "low", "medium", "high"].includes(data["reasoningEffort"] ?? "")
+        ? (data["reasoningEffort"] as ReasoningEffort)
+        : "off"),
     };
   }
 
@@ -94,6 +98,7 @@ export class SQLiteSettingsStore implements ISettingsStore {
       upsert.run("workingDirectory", settings.workingDirectory);
       upsert.run("profiles", JSON.stringify(settings.profiles ?? []));
       upsert.run("activeProfileId", settings.activeProfileId ?? "");
+      upsert.run("reasoningEffort", settings.reasoningEffort ?? "off");
     });
     tx();
   }

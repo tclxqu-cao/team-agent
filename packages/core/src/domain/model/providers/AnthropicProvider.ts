@@ -34,6 +34,15 @@ export class AnthropicProvider implements IModelProvider {
       stream: true,
     };
 
+    if (options?.reasoningEffort && options.reasoningEffort !== "off") {
+      // Anthropic extended thinking: temperature must be 1 and max_tokens must
+      // exceed budget_tokens.
+      const budgetTokens = { low: 4096, medium: 16384, high: 32768 }[options.reasoningEffort];
+      body.thinking = { type: "enabled", budget_tokens: budgetTokens };
+      body.temperature = 1;
+      body.max_tokens = Math.max(body.max_tokens as number, budgetTokens + 8192);
+    }
+
     if (systemPrompt) {
       body.system = systemPrompt;
     }

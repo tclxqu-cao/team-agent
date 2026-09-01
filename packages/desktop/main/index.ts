@@ -9,6 +9,13 @@ import { fileURLToPath } from "node:url";
 import { readFile, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { AgentHost } from "./agent-host.js";
+import {
+  ClaudeRuntimeAdapter,
+  CodexRuntimeAdapter,
+  CustomerAgentRuntimeAdapter,
+  UnifiedSessionService,
+  type AgentType,
+} from "./agent-runtime/index.js";
 import { resolveDesktopBaseDir } from "./desktop-base-dir.js";
 import {
   getTtsListeningMode,
@@ -64,6 +71,14 @@ const appIconPath = [
 ].find((candidate) => existsSync(candidate));
 const desktopBaseDir = resolveDesktopBaseDir(app.getAppPath(), app.isPackaged, app.getPath("userData"));
 const agentHost = new AgentHost(desktopBaseDir);
+const unifiedSessions = new UnifiedSessionService(
+  [
+    new CustomerAgentRuntimeAdapter(agentHost),
+    new CodexRuntimeAdapter(),
+    new ClaudeRuntimeAdapter(),
+  ],
+  () => agentHost.getProjectStore().list(),
+);
 const voiceServiceCwd = app.isPackaged
   ? process.resourcesPath
   : join(app.getAppPath(), "..", "..");
@@ -737,28 +752,31 @@ ipcMain.handle("wake:conversation", (_event, on: boolean) => {
 // ── IPC: Agent control ──
 
 ipcMain.handle("agent:run", async (_event, input: string, sessionId: string, agentIds?: string[], agentName?: string, images?: string[]) => {
-  agentHost.setRunning(true);
   try {
-    for await (const _event of agentHost.run(input, sessionId, agentIds, agentName, images)) {
-      // events are forwarded to renderer via the global subscriber above
+    const agentType = unifiedSessions.agentTypeFor(sessionId);
+    for await (const agentEvent of unifiedSessions.run(sessionId, input, images, agentIds, agentName)) {
+      // Customer Agent already publishes through AgentHost (including cron and
+      // sub-agent events). Native adapters publish here with the unified ID.
+      if (agentType !== "customer-agent") {
+        mainWindow?.webContents.send("agent:event", { ...agentEvent, _sid: sessionId });
+      }
     }
   } catch (err) {
     mainWindow?.webContents.send("agent:event", {
       type: "error",
       message: err instanceof Error ? err.message : "Unknown error",
+      _sid: sessionId,
     });
-  } finally {
-    agentHost.setRunning(false);
   }
 });
 
-ipcMain.handle("agent:abort", () => {
-  agentHost.abort();
+ipcMain.handle("agent:abort", (_event, sessionId?: string) => {
+  return unifiedSessions.abort(sessionId);
 });
 
 // Resolve a pending ask_user question with the user's answer
 ipcMain.handle("agent:answer-question", (_event, questionId: string, answer: string, selectedIndices?: number[]) => {
-  return agentHost.answerQuestion(questionId, answer, selectedIndices);
+  return unifiedSessions.answerQuestion(questionId, { answer, selectedIndices });
 });
 
 /**
@@ -767,6 +785,9 @@ ipcMain.handle("agent:answer-question", (_event, questionId: string, answer: str
  * the message is still saved but the handler starts a new run.
  */
 ipcMain.handle("agent:steer", async (_event, input: string, sessionId: string, agentName?: string) => {
+  if (unifiedSessions.agentTypeFor(sessionId) !== "customer-agent") {
+    throw new Error("Native runtime sessions do not support mid-turn steering");
+  }
   const isRunning = await agentHost.steerInput(input, sessionId, agentName);
   if (!isRunning) {
     // No active agent loop — start a new run
@@ -865,25 +886,43 @@ ipcMain.handle("projects:checkPath", async (_event, path: string) => {
 // ── IPC: Sessions ──
 
 ipcMain.handle("sessions:list", async (_event, projectId?: string) => {
-  return agentHost.getSessionStore().list(projectId);
+  return unifiedSessions.list(projectId);
 });
 
 ipcMain.handle("sessions:listChildren", async (_event, parentId: string) => {
-  return agentHost.getSessionStore().listChildren(parentId);
+  return unifiedSessions.listChildren(parentId);
 });
 
 ipcMain.handle("sessions:get", async (_event, id: string) => {
-  return agentHost.getSessionStore().get(id);
+  return unifiedSessions.get(id);
 });
 
-ipcMain.handle("sessions:create", async (_event, title: string, projectId?: string) => {
-  return agentHost.createSession(title, projectId);
+ipcMain.handle("sessions:create", async (
+  _event,
+  title: string,
+  projectId?: string,
+  agentType: AgentType = "customer-agent",
+  cwd?: string,
+) => {
+  const project = projectId ? await agentHost.getProjectStore().get(projectId) : null;
+  return unifiedSessions.create({
+    title,
+    projectId,
+    agentType,
+    cwd: cwd || project?.description || agentHost.getSettings().workingDirectory || desktopBaseDir,
+  });
 });
 
 ipcMain.handle("sessions:delete", async (_event, id: string) => {
-  // Release cron locks held by this session and re-assign to sibling sessions
-  await agentHost.onSessionDeleted(id);
-  await agentHost.getSessionStore().delete(id);
+  await unifiedSessions.delete(id);
+});
+
+ipcMain.handle("sessions:refresh", async (_event, projectId?: string) => {
+  return unifiedSessions.refresh(projectId);
+});
+
+ipcMain.handle("sessions:runtimeHealth", async () => {
+  return unifiedSessions.health();
 });
 
 // ── IPC: Memory ──
@@ -1094,6 +1133,7 @@ app.whenReady().then(() => {
     callback(permission === "media");
   });
   createWindow();
+  void unifiedSessions.health();
   void connectVoiceProvider().then((provider) => {
     console.warn("[voice] provider ready:", provider.kind === "service" ? provider.source : "native");
   });
@@ -1105,6 +1145,7 @@ app.on("before-quit", () => {
   cancelActiveTts();
   stopWakeProc();
   voiceServiceManager.close();
+  void unifiedSessions.dispose();
 });
 
 app.on("window-all-closed", () => {

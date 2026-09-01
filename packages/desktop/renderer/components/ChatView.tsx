@@ -44,7 +44,7 @@ function renderInlineCode(text: string): React.ReactNode {
   return (
     <>
       {parts.map((part, i) =>
-        part.startsWith('`') && part.endsWith('`') && part.length > 2 ? (
+        i % 2 === 1 ? (
           <code key={i} style={{ fontFamily: 'var(--font-mono)', fontSize: '0.84em', background: 'rgba(17,24,39,0.06)', padding: '1px 5px', borderRadius: 4, color: 'var(--accent)', border: '1px solid var(--border-subtle)' }}>
             {part.slice(1, -1)}
           </code>
@@ -61,7 +61,7 @@ function renderRichInline(text: string): React.ReactNode {
   // Split by code spans first to avoid formatting inside code
   const codeParts = text.split(/(`[^`\n]+`)/g);
   return codeParts.map((part, i) => {
-    if (part.startsWith('`') && part.endsWith('`') && part.length > 2) {
+    if (i % 2 === 1) {
       return (
         <code key={i} style={{ fontFamily: 'var(--font-mono)', fontSize: '0.84em', background: 'rgba(17,24,39,0.06)', padding: '1px 5px', borderRadius: 4, color: 'var(--accent)', border: '1px solid var(--border-subtle)' }}>
           {part.slice(1, -1)}
@@ -137,16 +137,44 @@ function renderMarkdownTable(headers: string[], rows: string[][]): React.ReactNo
   );
 }
 
-/** Render assistant message text: supports Markdown tables, `code`, **bold**, *italic*, and newlines. */
+/** Render a fenced code block (```lang ... ```) as a labeled code panel. */
+function renderCodeFence(lang: string, code: string): React.ReactNode {
+  return (
+    <div style={{ margin: '8px 0', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-subtle)', overflow: 'hidden', background: 'var(--bg-surface)' }}>
+      <div style={{ padding: '4px 10px', background: 'var(--bg-deep)', borderBottom: '1px solid var(--border-subtle)', fontSize: 10, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.07em' }}>
+        {lang || 'code'}
+      </div>
+      <pre style={{ margin: 0, padding: '10px 12px', fontSize: 12, lineHeight: 1.6, fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)', whiteSpace: 'pre-wrap', wordBreak: 'break-word', overflow: 'auto', maxHeight: 420 }}>{code}</pre>
+    </div>
+  );
+}
+
+/** Render assistant message text: supports Markdown tables, fenced code blocks, `code`, **bold**, *italic*, and newlines. */
 function renderAssistantText(text: string): React.ReactNode {
   const lines = text.split('\n');
   const segments: React.ReactNode[] = [];
   let i = 0;
   let segKey = 0;
 
+  const isFenceStart = (line: string) => line.trimStart().startsWith('```');
+  const isTableStart = (idx: number) =>
+    lines[idx].trimStart().startsWith('|') && idx + 1 < lines.length && /^\|[\s\-:|]+\|$/.test(lines[idx + 1].trim());
+
   while (i < lines.length) {
+    if (isFenceStart(lines[i])) {
+      const lang = lines[i].trim().slice(3).trim();
+      i++;
+      const codeLines: string[] = [];
+      while (i < lines.length && !isFenceStart(lines[i])) {
+        codeLines.push(lines[i]);
+        i++;
+      }
+      i++;
+      segments.push(<div key={`code-${segKey++}`}>{renderCodeFence(lang, codeLines.join('\n'))}</div>);
+      continue;
+    }
     // Detect table block: line starts with '|' and next line is separator
-    if (lines[i].trimStart().startsWith('|') && i + 1 < lines.length && /^\|[\s\-:|]+\|$/.test(lines[i + 1].trim())) {
+    if (isTableStart(i)) {
       const tableLines: string[] = [];
       while (i < lines.length && lines[i].trimStart().startsWith('|')) {
         tableLines.push(lines[i].trim());
@@ -164,7 +192,7 @@ function renderAssistantText(text: string): React.ReactNode {
     } else {
       // Collect non-table lines into a plain text block
       const plainLines: string[] = [];
-      while (i < lines.length && !(lines[i].trimStart().startsWith('|') && i + 1 < lines.length && /^\|[\s\-:|]+\|$/.test(lines[i + 1].trim()))) {
+      while (i < lines.length && !isTableStart(i) && !isFenceStart(lines[i])) {
         plainLines.push(lines[i]);
         i++;
       }
@@ -193,6 +221,7 @@ import { widgetRegistry } from "./widgets/index.js";
 import { prepareVoiceCommand, shouldSkipVoiceSessionReload } from "../lib/voice-command";
 import { prepareChatCommand } from "../lib/chat-command";
 import { isBrowserRuntime } from "../web/webLayout";
+import type { UnifiedSessionSummary } from "../global";
 
 interface ChatViewProps {
   selectedProjectId?: string | null;
@@ -207,6 +236,7 @@ interface ChatViewProps {
   onSubAgentEvent?: (ev: { type: 'started' | 'completed' | 'failed'; agentName: string; task: string; subSessionId?: string }) => void;
   onRunComplete?: (projectId: string | null, sessionId: string) => void | Promise<void>;
   sessionTitle?: string;
+  sessionSummary?: UnifiedSessionSummary;
   onOpenSettings?: () => void;
   settingsOpen?: boolean;
   onHideToBackground?: () => void;
@@ -220,6 +250,14 @@ interface ChatViewProps {
   voiceCommand?: { text: string; projectId: string | null; sessionId?: string | null; nonce: number } | null;
 }
 
+const EFFORT_OPTIONS: Array<{ value: "off" | "low" | "medium" | "high"; label: string }> = [
+  { value: "off", label: "关" },
+  { value: "low", label: "低" },
+  { value: "medium", label: "中" },
+  { value: "high", label: "高" },
+];
+const EFFORT_LABELS = Object.fromEntries(EFFORT_OPTIONS.map((o) => [o.value, o.label])) as Record<"off" | "low" | "medium" | "high", string>;
+
 export default function ChatView({
   selectedProjectId = null,
   selectedSessionId = null,
@@ -230,6 +268,7 @@ export default function ChatView({
   onSubAgentEvent,
   onRunComplete,
   sessionTitle,
+  sessionSummary,
   onOpenSettings,
   settingsOpen = false,
   onHideToBackground,
@@ -260,7 +299,11 @@ export default function ChatView({
     cronTasks,
     setCronTasks,
   } = useAgentStore();
-  const { isConfigured, profiles, activeProfileId, switchActiveProfile, loadFromSystem, contextWindow } = useSettingsStore();
+  const { isConfigured, profiles, activeProfileId, switchActiveProfile, loadFromSystem, contextWindow, reasoningEffort, setField, saveToSystem } = useSettingsStore();
+  const isNativeRuntime = Boolean(sessionSummary && sessionSummary.agentType !== "customer-agent");
+  const isReadOnly = sessionSummary?.occupancy === "owned-externally";
+  const runtimeReady = isConfigured || isNativeRuntime;
+  const canCompose = runtimeReady && !isReadOnly;
   const runningSubIdsRef = useRef<Set<string>>(new Set());
 
   // This view's session is running only when the global running session matches
@@ -279,6 +322,20 @@ export default function ChatView({
   const [input, setInput] = useState("");
   const webShell = isBrowserRuntime();
   const [webAddMenuOpen, setWebAddMenuOpen] = useState(false);
+  const [effortMenuOpen, setEffortMenuOpen] = useState(false);
+  const effortMenuRef = useRef<HTMLDivElement>(null);
+
+  // Close the reasoning-effort menu on outside click
+  useEffect(() => {
+    if (!effortMenuOpen) return;
+    const onDown = (event: MouseEvent) => {
+      if (effortMenuRef.current && !effortMenuRef.current.contains(event.target as Node)) {
+        setEffortMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [effortMenuOpen]);
   const [error, setError] = useState<string | null>(null);
   const [attachedFiles, setAttachedFiles] = useState<File[]>([]);
   /** Base64 data URLs of images to send with the next message */
@@ -960,7 +1017,7 @@ export default function ChatView({
   const handleAbort = () => {
     abortRef.current = true;
     if (window.agentApi) {
-      window.agentApi.abort();
+      window.agentApi.abort(viewSessionId || undefined);
     }
     runningSessionRef.current = null;
     setRunningSession(null);
@@ -1029,7 +1086,7 @@ export default function ChatView({
   };
 
   const handleSend = async () => {
-    if (!input.trim() || !isConfigured) return;
+    if (!input.trim() || !canCompose) return;
 
     void interruptSpeech(window.agentApi, stopSpeaking);
 
@@ -1412,7 +1469,7 @@ export default function ChatView({
               textAlign: "center",
               lineHeight: 1.7,
             }}>
-              {isConfigured
+              {runtimeReady
                 ? "有什么我能帮你的？工具、记忆和技能随时待命。"
                 : "请先在设置中配置 API Key 以开始使用。"}
             </p>
@@ -1952,6 +2009,25 @@ export default function ChatView({
         background: "var(--bg-deepest)",
         borderTop: "1px solid var(--border-subtle)",
       }}>
+        {isReadOnly && (
+          <div style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            marginBottom: 9,
+            padding: "8px 10px",
+            border: "1px solid var(--border-default)",
+            borderRadius: 6,
+            background: "var(--bg-surface)",
+            color: "var(--text-muted)",
+            fontSize: 12,
+          }}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>
+            </svg>
+            <span>此会话正在被 {sessionSummary?.sourceLabel || "原客户端"} 使用，当前只读；原客户端释放后会自动恢复输入。</span>
+          </div>
+        )}
         {/* ── TodoList panel ── */}
         {todos.length > 0 && (
           <div style={{
@@ -2405,7 +2481,7 @@ export default function ChatView({
           )}
 
           {/* Model selector bar (shown only when profiles exist), grouped by provider */}
-          {!webShell && profiles.length > 0 && (() => {
+          {!webShell && !isNativeRuntime && profiles.length > 0 && (() => {
             // Build ordered groups: preserve first-appearance order of providers
             const providerOrder: string[] = [];
             const groups: Record<string, typeof profiles> = {};
@@ -2506,7 +2582,7 @@ export default function ChatView({
           {/* Attach button */}
           <button
             onClick={() => fileInputRef.current?.click()}
-            disabled={!isConfigured || isRunning}
+            disabled={!canCompose || isRunning}
             title="添加附件"
             className="ui-icon-button"
           >
@@ -2518,7 +2594,7 @@ export default function ChatView({
           {/* Voice input (dictation) button */}
           <button
             onClick={handleMicToggle}
-            disabled={!isConfigured}
+            disabled={!canCompose}
             className={`ui-icon-button ${isRecording ? "mic-recording" : ""}`}
             title={!isASRSupported() ? "当前环境不支持语音输入" : (isRecording ? "停止录音" : "语音输入")}
             style={isRecording ? {
@@ -2536,7 +2612,7 @@ export default function ChatView({
           {/* Screenshot / paste image button */}
           <button
             onClick={() => void handleScreenshot()}
-            disabled={!isConfigured || isRunning}
+            disabled={!canCompose || isRunning}
             title="粘贴截图（需先 Cmd+Shift+4 截图至剪贴板）"
             className={`ui-icon-button ${pendingImages.length > 0 ? "is-active" : ""}`}
             style={{
@@ -2598,8 +2674,8 @@ export default function ChatView({
               onChange={(event) => handleComposerChange(event.target.value)}
               onBlur={() => setTimeout(() => { setAtQuery(null); setSlashQuery(null); }, 120)}
               onKeyDown={handleComposerKeyDown}
-              placeholder={isConfigured ? (isRunning ? "输入下一条排队消息" : "提出后续修改要求") : "请先在设置中配置 API Key"}
-              disabled={!isConfigured}
+              placeholder={isReadOnly ? "原客户端使用中，当前只读" : runtimeReady ? (isRunning ? "输入下一条排队消息" : "提出后续修改要求") : "请先在设置中配置 API Key"}
+              disabled={!canCompose}
             />
           ) : (
             <input
@@ -2609,8 +2685,8 @@ export default function ChatView({
               onChange={(event) => handleComposerChange(event.target.value)}
               onBlur={() => setTimeout(() => { setAtQuery(null); setSlashQuery(null); }, 120)}
               onKeyDown={handleComposerKeyDown}
-              placeholder={isConfigured ? (isRunning ? "排队发送消息…" : "发送消息… (@智能体  /技能)") : "请先在设置中配置 API Key"}
-              disabled={!isConfigured}
+              placeholder={isReadOnly ? "原客户端使用中，当前只读" : runtimeReady ? (isRunning ? "排队发送消息…" : "发送消息… (@智能体  /技能)") : "请先在设置中配置 API Key"}
+              disabled={!canCompose}
               style={{
                 flex: 1,
                 padding: "7px 4px",
@@ -2654,10 +2730,10 @@ export default function ChatView({
               </div>
 
               <span
-                className={`web-native-runtime-status ${isConfigured ? "is-ready" : ""}`}
+                className={`web-native-runtime-status ${canCompose ? "is-ready" : ""}`}
                 role="status"
-                aria-label={isConfigured ? "Agent 已就绪" : "Agent 当前不可输入"}
-                title={isConfigured ? "Agent 已就绪" : "Agent 当前不可输入"}
+                aria-label={canCompose ? "Agent 已就绪" : "Agent 当前不可输入"}
+                title={canCompose ? "Agent 已就绪" : "Agent 当前不可输入"}
               >
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                   <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
@@ -2676,11 +2752,13 @@ export default function ChatView({
               <label className="web-native-model-control" title="切换模型">
                 <select
                   aria-label="当前模型"
-                  value={activeProfileId}
-                  disabled={profiles.length === 0}
+                  value={isNativeRuntime ? "" : activeProfileId}
+                  disabled={isNativeRuntime || profiles.length === 0}
                   onChange={(event) => { void switchActiveProfile(event.target.value); }}
                 >
-                  {profiles.length === 0 ? (
+                  {isNativeRuntime ? (
+                    <option value="">{sessionSummary?.agentType ?? "本地 Agent"}</option>
+                  ) : profiles.length === 0 ? (
                     <option value="">未配置模型</option>
                   ) : profiles.map((profile) => (
                     <option key={profile.id} value={profile.id}>{profile.name || profile.modelId}</option>
@@ -2697,7 +2775,7 @@ export default function ChatView({
                     <rect x="6" y="6" width="12" height="12" rx="2" />
                   </svg>
                 </button>
-              ) : (
+              ) : isNativeRuntime ? (
                 <span className="web-native-agent-status" role="status" aria-label="Agent 空闲" title="Agent 空闲">
                   <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                     <path d="M9.5 4.5A3.5 3.5 0 0 0 6 8v1a3 3 0 0 0-2 2.83V14a3 3 0 0 0 3 3h.25A3.75 3.75 0 0 0 11 20.75V3.25A3.75 3.75 0 0 0 9.5 4.5Z" />
@@ -2705,12 +2783,54 @@ export default function ChatView({
                   </svg>
                   <span aria-hidden="true" />
                 </span>
+              ) : (
+                <div className="web-native-effort-wrap" ref={effortMenuRef}>
+                  <button
+                    type="button"
+                    className="web-native-effort-button"
+                    aria-expanded={effortMenuOpen}
+                    aria-label={`推理强度：${EFFORT_LABELS[reasoningEffort]}`}
+                    title={`推理强度：${EFFORT_LABELS[reasoningEffort]}（点击切换）`}
+                    onClick={() => setEffortMenuOpen((open) => !open)}
+                  >
+                    <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <path d="M9.5 4.5A3.5 3.5 0 0 0 6 8v1a3 3 0 0 0-2 2.83V14a3 3 0 0 0 3 3h.25A3.75 3.75 0 0 0 11 20.75V3.25A3.75 3.75 0 0 0 9.5 4.5Z" />
+                      <path d="M14.5 4.5A3.5 3.5 0 0 1 18 8v1a3 3 0 0 1 2 2.83V14a3 3 0 0 1-3 3h-.25A3.75 3.75 0 0 1 13 20.75V3.25a3.75 3.75 0 0 1 1.5 1.25Z" />
+                    </svg>
+                    <span className={`web-native-effort-bars level-${reasoningEffort}`} aria-hidden="true">
+                      <i /><i /><i />
+                    </span>
+                  </button>
+                  {effortMenuOpen && (
+                    <div className="web-native-effort-menu" role="menu" aria-label="推理强度">
+                      {EFFORT_OPTIONS.map((option) => (
+                        <button
+                          key={option.value}
+                          type="button"
+                          role="menuitemradio"
+                          aria-checked={reasoningEffort === option.value}
+                          className={reasoningEffort === option.value ? "is-active" : undefined}
+                          onClick={() => {
+                            setField("reasoningEffort", option.value);
+                            void saveToSystem();
+                            setEffortMenuOpen(false);
+                          }}
+                        >
+                          <span className="web-native-effort-check" aria-hidden="true">
+                            {reasoningEffort === option.value ? "✓" : ""}
+                          </span>
+                          {option.label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
               )}
 
               <button
                 type="button"
                 onClick={handleSend}
-                disabled={!isConfigured || !input.trim()}
+                disabled={!canCompose || !input.trim()}
                 className="web-native-send-button"
                 aria-label={isRunning ? "排队发送" : "发送"}
                 title={isRunning ? "排队发送" : "发送"}
@@ -2725,22 +2845,22 @@ export default function ChatView({
               {/* Queue send button */}
               <button
                 onClick={handleSend}
-                disabled={!isConfigured || !input.trim()}
+                disabled={!canCompose || !input.trim()}
                 title="排队发送（等当前对话结束后自动执行）"
                 style={{
                   height: 34,
                   padding: "0 14px",
                   borderRadius: 10,
                   border: "none",
-                  background: isConfigured && input.trim()
+                  background: canCompose && input.trim()
                     ? "var(--accent)"
                     : "var(--bg-deep)",
-                  color: isConfigured && input.trim()
+                  color: canCompose && input.trim()
                     ? "var(--text-inverse)"
                     : "var(--text-muted)",
                   fontSize: 13,
                   fontWeight: 600,
-                  cursor: isConfigured && input.trim() ? "pointer" : "not-allowed",
+                  cursor: canCompose && input.trim() ? "pointer" : "not-allowed",
                   transition: "all 0.2s var(--ease-out)",
                   display: "flex", alignItems: "center", gap: 5,
                   whiteSpace: "nowrap",
@@ -2784,23 +2904,23 @@ export default function ChatView({
           ) : (
             <button
               onClick={handleSend}
-              disabled={!isConfigured || !input.trim()}
+              disabled={!canCompose || !input.trim()}
               style={{
                 height: 34,
                 padding: "0 16px",
                 borderRadius: 10,
                 border: "none",
-                background: isConfigured && input.trim()
+                background: canCompose && input.trim()
                   ? "var(--accent)"
                   : "var(--bg-deep)",
-                color: isConfigured && input.trim()
+                color: canCompose && input.trim()
                   ? "var(--text-inverse)"
                   : "var(--text-muted)",
                 fontSize: 13,
                 fontWeight: 600,
-                cursor: isConfigured && input.trim() ? "pointer" : "not-allowed",
+                cursor: canCompose && input.trim() ? "pointer" : "not-allowed",
                 transition: "all 0.2s var(--ease-out)",
-                boxShadow: isConfigured && input.trim()
+                boxShadow: canCompose && input.trim()
                   ? "0 2px 10px var(--accent-glow)"
                   : "none",
                 display: "flex", alignItems: "center", gap: 5,

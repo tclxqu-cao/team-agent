@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { WEB_THEMES, type WebThemeId } from "./themes";
 
 interface Props {
@@ -15,14 +16,26 @@ export default function ThemePicker({ username, themeId, onThemeChange, accent, 
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
+  const popoverRef = useRef<HTMLDivElement>(null);
   const [popoverPos, setPopoverPos] = useState<{ top: number; left: number } | null>(null);
+  // Portal target, resolved once after mount. The popover must NOT live inside
+  // .terminal-tabs: that bar is overflow-y:hidden with -webkit-overflow-scrolling:
+  // touch (clips fixed descendants on iOS) and .terminal-connection caps the
+  // popover's stacking at z-index 5, which let terminal content paint over it.
+  // Portaling into .web-root keeps the theme CSS vars (set on that element)
+  // working while escaping both problems.
+  const [portalNode, setPortalNode] = useState<HTMLElement | null>(null);
+
+  useEffect(() => {
+    setPortalNode(rootRef.current?.closest<HTMLElement>(".web-root") ?? document.body);
+  }, []);
   const initial = (username.trim()[0] ?? "?").toUpperCase();
 
   const syncPopoverPos = () => {
     const button = buttonRef.current;
     if (!button) return;
     const rect = button.getBoundingClientRect();
-    const width = 168;
+    const width = 176;
     const left = Math.max(8, Math.min(window.innerWidth - width - 8, rect.right - width));
     setPopoverPos({ top: rect.bottom + 6, left });
   };
@@ -46,6 +59,9 @@ export default function ThemePicker({ username, themeId, onThemeChange, accent, 
     const onPointerDown = (event: PointerEvent) => {
       const target = event.target as Node;
       if (rootRef.current?.contains(target)) return;
+      // The popover is portaled outside rootRef, so it needs its own contains check
+      // or pointerdown on a theme row would close it before the click lands.
+      if (popoverRef.current?.contains(target)) return;
       setOpen(false);
     };
     const onKeyDown = (event: KeyboardEvent) => {
@@ -80,24 +96,17 @@ export default function ThemePicker({ username, themeId, onThemeChange, accent, 
         onPointerDown={(event) => event.stopPropagation()}
         onClick={toggle}
         style={{
-          width: 28,
-          height: 28,
-          borderRadius: 99,
           border: `1px solid ${accent}`,
           background: accent,
           color: accentText,
-          fontSize: 12,
-          fontWeight: 700,
-          padding: 0,
-          cursor: "pointer",
-          flexShrink: 0,
-          touchAction: "manipulation",
         }}
       >
         {initial}
       </button>
-      {open && popoverPos && (
+      {open && popoverPos && portalNode &&
+        createPortal(
         <div
+          ref={popoverRef}
           className="theme-popover"
           role="dialog"
           aria-label="选择皮肤"
@@ -106,25 +115,25 @@ export default function ThemePicker({ username, themeId, onThemeChange, accent, 
             top: popoverPos.top,
             left: popoverPos.left,
             zIndex: 200,
-            width: 168,
-            padding: 10,
+            width: 176,
+            padding: 8,
             borderRadius: 10,
             border: "1px solid var(--ui-tabbar-border, #282b36)",
             background: "var(--ui-tab-active-bg, #262b38)",
             boxShadow: "0 10px 28px rgba(0,0,0,.45)",
           }}
         >
-          <div style={{ fontSize: 10, color: "var(--ui-connection-text, #777b8c)", marginBottom: 8, letterSpacing: 0.5 }}>
-            经典皮肤
+          <div style={{ fontSize: 10, color: "var(--ui-connection-text, #777b8c)", margin: "2px 4px 6px", letterSpacing: 0.5 }}>
+            皮肤
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 7 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
             {WEB_THEMES.map((theme) => {
               const active = theme.id === themeId;
               return (
                 <button
                   key={theme.id}
                   type="button"
-                  title={theme.label}
+                  className="theme-popover-item"
                   aria-label={theme.label}
                   aria-pressed={active}
                   onPointerDown={(event) => event.stopPropagation()}
@@ -133,35 +142,51 @@ export default function ThemePicker({ username, themeId, onThemeChange, accent, 
                     setOpen(false);
                   }}
                   style={{
-                    display: "flex",
-                    flexDirection: "column",
-                    alignItems: "center",
-                    gap: 4,
-                    padding: "6px 2px",
-                    borderRadius: 8,
-                    border: active ? `2px solid var(--ui-tab-accent, #7aa2f7)` : "1px solid var(--ui-tabbar-border, #282b36)",
-                    background: "var(--ui-tab-bg, #1b1e28)",
-                    cursor: "pointer",
-                    touchAction: "manipulation",
+                    background: active ? "color-mix(in srgb, var(--ui-tab-accent, #7aa2f7) 14%, transparent)" : "transparent",
                   }}
                 >
                   <span
                     style={{
-                      width: 22,
-                      height: 22,
-                      borderRadius: 6,
-                      background: theme.swatch,
-                      boxShadow: active ? "0 0 0 1px var(--ui-tab-accent, #7aa2f7)" : "inset 0 0 0 1px rgba(255,255,255,.08)",
+                      width: 18,
+                      height: 18,
+                      borderRadius: 5,
+                      flexShrink: 0,
+                      background: `linear-gradient(135deg, ${theme.preview[0]} 55%, ${theme.preview[1]} 55%)`,
+                      boxShadow: "inset 0 0 0 1px rgba(128,128,160,.25)",
                     }}
                   />
-                  <span style={{ fontSize: 9.5, color: active ? "var(--ui-tab-active-text, #edf0f7)" : "var(--ui-tab-text, #8f93a4)" }}>
+                  <span
+                    style={{
+                      flex: 1,
+                      textAlign: "left",
+                      fontSize: 12,
+                      fontWeight: active ? 600 : 400,
+                      color: active ? "var(--ui-tab-active-text, #edf0f7)" : "var(--ui-tab-text, #8f93a4)",
+                    }}
+                  >
                     {theme.label}
                   </span>
+                  {active && (
+                    <svg
+                      width="14"
+                      height="14"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="var(--ui-tab-accent, #7aa2f7)"
+                      strokeWidth="2.5"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      aria-hidden="true"
+                    >
+                      <path d="m5 12 4 4L19 6" />
+                    </svg>
+                  )}
                 </button>
               );
             })}
           </div>
-        </div>
+        </div>,
+        portalNode,
       )}
     </div>
   );

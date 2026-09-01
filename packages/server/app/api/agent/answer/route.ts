@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { agentHost } from "../../agent-host";
+import { getNativeRuntimeService } from "../../../../lib/native-runtime-service";
 
 export async function POST(request: Request) {
   try {
@@ -16,11 +17,18 @@ export async function POST(request: Request) {
       );
     }
 
-    const resolved = agentHost.answerQuestion(
+    let resolved = agentHost.answerQuestion(
       body.questionId,
       body.answer,
       body.selectedIndices,
     );
+
+    if (!resolved) {
+      resolved = await getNativeRuntimeService().answerQuestion(body.questionId, {
+        answer: body.answer,
+        selectedIndices: body.selectedIndices,
+      });
+    }
 
     if (!resolved) {
       return NextResponse.json(

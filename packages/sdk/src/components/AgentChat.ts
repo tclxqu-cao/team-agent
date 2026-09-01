@@ -4,99 +4,18 @@ import { unsafeHTML } from 'lit/directives/unsafe-html.js';
 import { AgentClient } from '../client/AgentClient';
 import { ChatStore } from '../store/ChatStore';
 import { themeStyles } from '../styles/theme';
-import type { AgentEvent, ChatMessage, ToolCall, RemoteToolRegistration } from '../client/types';
+import type { AgentEvent, ChatMessage, Session, ToolCall, RemoteToolRegistration } from '../client/types';
 import { renderMarkdown } from './markdown';
 import './AgentFab';
 
-/**
- * Lightweight Markdown → HTML renderer for assistant messages.
- * Escapes HTML first, then converts a safe subset:
- * fenced code blocks, inline code, bold, italic, tables, lists, headings.
- */
-function renderMarkdown(text: string): string {
-  const escapeHtml = (s: string) =>
-    s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-
-  // Split out fenced code blocks so their content is never markdown-processed
-  const parts: Array<{ code: boolean; text: string }> = [];
-  const fenceRe = /```(?:\w*)\n?([\s\S]*?)```/g;
-  let last = 0;
-  let m: RegExpExecArray | null;
-  while ((m = fenceRe.exec(text)) !== null) {
-    if (m.index > last) parts.push({ code: false, text: text.slice(last, m.index) });
-    parts.push({ code: true, text: m[1] });
-    last = m.index + m[0].length;
-  }
-  if (last < text.length) parts.push({ code: false, text: text.slice(last) });
-
-  const inline = (s: string) =>
-    escapeHtml(s)
-      .replace(/`([^`]+)`/g, '<code>$1</code>')
-      .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-      .replace(/\*([^*]+)\*/g, '<em>$1</em>');
-
-  const renderTable = (lines: string[]): string => {
-    const rows = lines
-      .map((l) => l.trim())
-      .filter((l) => l.startsWith('|'))
-      .filter((l) => !/^\|[\s:|-]+\|$/.test(l)); // drop separator row
-    if (rows.length === 0) return '';
-    const cells = (row: string) =>
-      row.split('|').slice(1, -1).map((c) => inline(c.trim()));
-    const head = cells(rows[0]);
-    const body = rows.slice(1).map((r) => `<tr>${cells(r).map((c) => `<td>${c}</td>`).join('')}</tr>`).join('');
-    return `<table><thead><tr>${head.map((c) => `<th>${c}</th>`).join('')}</tr></thead><tbody>${body}</tbody></table>`;
-  };
-
-  const renderBlock = (block: string): string => {
-    const lines = block.split('\n');
-    const out: string[] = [];
-    let i = 0;
-    while (i < lines.length) {
-      const line = lines[i];
-      if (line.trim().startsWith('|')) {
-        const tableLines: string[] = [];
-        while (i < lines.length && lines[i].trim().startsWith('|')) {
-          tableLines.push(lines[i]);
-          i++;
-        }
-        out.push(renderTable(tableLines));
-        continue;
-      }
-      const heading = line.match(/^(#{1,4})\s+(.*)$/);
-      if (heading) {
-        const level = heading[1].length + 2; // h3–h6 range inside chat
-        out.push(`<h${level}>${inline(heading[2])}</h${level}>`);
-        i++;
-        continue;
-      }
-      if (/^[-*]\s+/.test(line.trim())) {
-        const items: string[] = [];
-        while (i < lines.length && /^[-*]\s+/.test(lines[i].trim())) {
-          items.push(`<li>${inline(lines[i].trim().replace(/^[-*]\s+/, ''))}</li>`);
-          i++;
-        }
-        out.push(`<ul>${items.join('')}</ul>`);
-        continue;
-      }
-      if (line.trim() === '') {
-        i++;
-        continue;
-      }
-      out.push(`<p>${inline(line)}</p>`);
-      i++;
-    }
-    return out.join('');
-  };
-
-  return parts
-    .map((p) =>
-      p.code
-        ? `<pre><code>${escapeHtml(p.text.replace(/\n$/, ''))}</code></pre>`
-        : renderBlock(p.text),
-    )
-    .join('');
-}
+/** 机器人分组固定展示顺序与标签（与会话按机器人分组功能配套） */
+const BOT_GROUP_ORDER = ['customer-agent', 'codex', 'claude-code'] as const;
+type BotAgentType = (typeof BOT_GROUP_ORDER)[number];
+const BOT_GROUP_LABELS: Record<BotAgentType, string> = {
+  'customer-agent': 'Customer Agent',
+  codex: 'Codex',
+  'claude-code': 'Claude Code',
+};
 
 /**
  * Main SDK component — embed as <agent-chat token="..." server="..."></agent-chat>
@@ -115,6 +34,9 @@ export class AgentChat extends LitElement {
   @property({ attribute: 'remote-tools' }) remoteTools: RemoteToolRegistration[] | string = [];
 
   @state() private _store = new ChatStore();
+  /** 会话列表按机器人（agentType）分组，且每组可折叠 */
+  @state() private _groupByBot = false;
+  @state() private _collapsedBotGroups: Set<string> = new Set();
   private client: AgentClient | null = null;
   private currentSessionId = '';
   private registrationPromise: Promise<void> = Promise.resolve();
@@ -298,6 +220,89 @@ export class AgentChat extends LitElement {
         color: var(--text-muted);
         font-size: 12px;
         text-align: center;
+      }
+      /* ── 会话按机器人分组 ── */
+      .bot-toggle {
+        width: 26px; height: 26px;
+        border: none; border-radius: 6px;
+        background: transparent;
+        color: var(--text-muted);
+        cursor: pointer;
+        display: flex; align-items: center; justify-content: center;
+        transition: background 0.15s, color 0.15s;
+      }
+      .bot-toggle:hover {
+        background: var(--bg-deep);
+        color: var(--text-primary);
+      }
+      .bot-toggle.on {
+        background: var(--accent-dim);
+        color: var(--accent);
+      }
+      .bot-group-header {
+        width: 100%;
+        display: flex; align-items: center; gap: 6px;
+        padding: 6px 6px 4px;
+        border: none;
+        background: transparent;
+        color: var(--text-muted);
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        cursor: pointer;
+        text-align: left;
+      }
+      .bot-group-header:hover {
+        color: var(--text-secondary);
+      }
+      .bot-group-header .chev {
+        flex-shrink: 0;
+        transition: transform 0.2s ease;
+      }
+      .bot-group-header.collapsed .chev {
+        transform: rotate(-90deg);
+      }
+      .bot-group-label {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .bot-group-count {
+        flex-shrink: 0;
+        font-size: 9px;
+        padding: 0 5px;
+        border-radius: 8px;
+        background: var(--bg-deep);
+        color: var(--text-muted);
+      }
+      .bot-group-body {
+        padding-bottom: 4px;
+      }
+      /* ── 机器人分组批量操作 ── */
+      .bot-actions {
+        display: flex;
+        gap: 4px;
+        padding: 4px 8px;
+        border-bottom: 1px solid var(--border-subtle);
+      }
+      .bot-actions button {
+        flex: 1;
+        padding: 3px 0;
+        border: 1px solid var(--border-subtle);
+        border-radius: 6px;
+        background: transparent;
+        color: var(--text-muted);
+        font-size: 10px;
+        line-height: 1.4;
+        cursor: pointer;
+        transition: color 0.15s, border-color 0.15s;
+      }
+      .bot-actions button:hover {
+        color: var(--text-primary);
+        border-color: var(--border-default);
       }
 
       /* ── Messages ── */
@@ -920,34 +925,108 @@ export class AgentChat extends LitElement {
   }
 
   private _renderSessionMenu(): unknown {
+    const sessions = this._store.sessions;
+    const renderSessionItem = (session: Session) => html`
+      <button
+        class="session-item ${session.id === this.currentSessionId ? 'active' : ''}"
+        ?disabled=${this._store.isRunning}
+        @click=${() => this._switchSession(session.id)}
+      >
+        <span class="session-item-title">${session.title || '未命名聊天'}</span>
+        <span class="session-item-meta">${this._formatSessionTime(session.updated || session.created)}</span>
+      </button>
+    `;
+    let body: unknown;
+    if (this._store.isLoadingSessions) {
+      body = html`<div class="session-empty">加载中...</div>`;
+    } else if (sessions.length === 0) {
+      body = html`<div class="session-empty">暂无聊天</div>`;
+    } else if (!this._groupByBot) {
+      body = sessions.map(renderSessionItem);
+    } else {
+      const groups = BOT_GROUP_ORDER
+        .map((botType) => [botType, sessions.filter((s) => (s.agentType ?? 'customer-agent') === botType)] as const)
+        .filter(([, list]) => list.length > 0);
+      body = groups.map(([botType, list]) => {
+        const groupKey = botType;
+        const expanded = !this._collapsedBotGroups.has(groupKey);
+        return html`
+          <div class="bot-group">
+            <button
+              class="bot-group-header ${expanded ? '' : 'collapsed'}"
+              title=${BOT_GROUP_LABELS[botType]}
+              aria-expanded=${expanded}
+              @click=${() => {
+                const next = new Set(this._collapsedBotGroups);
+                if (next.has(groupKey)) next.delete(groupKey); else next.add(groupKey);
+                this._collapsedBotGroups = next;
+              }}
+            >
+              <svg class="chev" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="9" width="14" height="10" rx="2"/><path d="M12 9V6"/><circle cx="12" cy="4" r="1.6"/><path d="M9.5 13v1.6M14.5 13v1.6"/></svg>
+              <span class="bot-group-label">${BOT_GROUP_LABELS[botType]}</span>
+              <span class="bot-group-count">${list.length}</span>
+            </button>
+            ${expanded ? html`<div class="bot-group-body">${list.map(renderSessionItem)}</div>` : ''}
+          </div>
+        `;
+      });
+    }
     return html`
       <div class="session-menu">
         <div class="session-menu-header">
           <span class="session-menu-title">聊天</span>
+          <button
+            class="bot-toggle ${this._groupByBot ? 'on' : ''}"
+            title="会话按机器人分组"
+            aria-label="会话按机器人分组"
+            aria-pressed=${this._groupByBot}
+            @click=${() => { this._groupByBot = !this._groupByBot; }}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="9" width="14" height="10" rx="2"/><path d="M12 9V6"/><circle cx="12" cy="4" r="1.6"/><path d="M9.5 13v1.6M14.5 13v1.6"/></svg>
+          </button>
           <button
             class="session-new-btn"
             ?disabled=${this._store.isRunning}
             @click=${() => this._createNewSession()}
           >新建</button>
         </div>
-        <div class="session-list">
-          ${this._store.isLoadingSessions
-            ? html`<div class="session-empty">加载中...</div>`
-            : this._store.sessions.length === 0
-              ? html`<div class="session-empty">暂无聊天</div>`
-              : this._store.sessions.map((session) => html`
-                  <button
-                    class="session-item ${session.id === this.currentSessionId ? 'active' : ''}"
-                    ?disabled=${this._store.isRunning}
-                    @click=${() => this._switchSession(session.id)}
-                  >
-                    <span class="session-item-title">${session.title || '未命名聊天'}</span>
-                    <span class="session-item-meta">${this._formatSessionTime(session.updated || session.created)}</span>
-                  </button>
-                `)}
-        </div>
+        ${this._groupByBot && sessions.length > 0 ? html`
+        <div class="bot-actions">
+          <button
+            type="button"
+            title="折叠所有机器人的会话组"
+            @click=${() => {
+              this._collapsedBotGroups = new Set(
+                BOT_GROUP_ORDER.filter((botType) =>
+                  sessions.some((s) => (s.agentType ?? 'customer-agent') === botType)));
+            }}
+          >全部折叠</button>
+          <button
+            type="button"
+            title="每次展开一个机器人分组"
+            @click=${() => this._expandNextBotGroup()}
+          >逐层展开</button>
+          <button
+            type="button"
+            title="展开所有机器人分组"
+            @click=${() => { this._collapsedBotGroups = new Set(); }}
+          >全部展开</button>
+        </div>` : ''}
+        <div class="session-list">${body}</div>
       </div>
     `;
+  }
+
+  /** 逐层展开：每次展开一个仍折叠的机器人分组 */
+  private _expandNextBotGroup(): void {
+    const next = BOT_GROUP_ORDER.find((botType) =>
+      this._store.sessions.some((s) => (s.agentType ?? 'customer-agent') === botType)
+      && this._collapsedBotGroups.has(botType));
+    if (!next) return;
+    const nextSet = new Set(this._collapsedBotGroups);
+    nextSet.delete(next);
+    this._collapsedBotGroups = nextSet;
   }
 
   private _formatSessionTime(value: string): string {

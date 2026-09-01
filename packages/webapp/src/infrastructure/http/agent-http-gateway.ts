@@ -67,11 +67,11 @@ export class AgentHttpGateway {
     _agentName?: string,
     images?: string[],
   ): Promise<unknown[]> {
-    await this.openStream(sessionId);
-    const finished = new Promise<void>((resolve) => {
-      this.pendingRuns.set(sessionId, resolve);
-    });
     try {
+      await this.openStream(sessionId);
+      const finished = new Promise<void>((resolve) => {
+        this.pendingRuns.set(sessionId, resolve);
+      });
       // A user-configured model profile travels with the run; without one the
       // server keeps using its own env configuration.
       const model = this.settings.getModelOverride();
@@ -80,7 +80,9 @@ export class AgentHttpGateway {
         sessionId,
         ...(images?.length ? { images } : {}),
         ...(model ? { model } : {}),
+        reasoningEffort: this.settings.getReasoningEffort(),
       });
+      await finished;
     } catch (err) {
       this.dispatch(sessionId, {
         type: "error",
@@ -89,7 +91,6 @@ export class AgentHttpGateway {
       this.closeStream(sessionId);
       this.settle(sessionId);
     }
-    await finished;
     return [];
   }
 
@@ -102,9 +103,9 @@ export class AgentHttpGateway {
     return true;
   }
 
-  async abort(): Promise<void> {
+  async abort(sessionId?: string): Promise<void> {
     try {
-      await this.http.post("/api/agent/abort");
+      await this.http.post("/api/agent/abort", sessionId ? { sessionId } : {});
     } finally {
       // Aborted loops may not emit a terminal event — settle everything so
       // the renderer never stays stuck in "running".
@@ -126,6 +127,14 @@ export class AgentHttpGateway {
 
   async listSessions(projectId?: string): Promise<unknown[]> {
     const query = projectId ? `?projectId=${encodeURIComponent(projectId)}` : "";
+    return this.http.get<unknown[]>(`/api/sessions${query}`);
+  }
+
+  async refreshSessions(projectId?: string): Promise<unknown[]> {
+    // Forces native runtime rediscovery (occupancy / status freshness).
+    const query = projectId
+      ? `?refresh=1&projectId=${encodeURIComponent(projectId)}`
+      : "?refresh=1";
     return this.http.get<unknown[]>(`/api/sessions${query}`);
   }
 
@@ -157,15 +166,20 @@ export class AgentHttpGateway {
     }
   }
 
-  async createSession(title: string, projectId?: string): Promise<unknown> {
+  async createSession(title: string, projectId?: string, agentType?: string): Promise<unknown> {
     return this.http.post("/api/sessions", {
       title,
       projectId: projectId || WEB_DEFAULT_PROJECT_ID,
+      ...(agentType && agentType !== "customer-agent" ? { agentType } : {}),
     });
   }
 
   async deleteSession(id: string): Promise<void> {
     await this.http.delete(`/api/sessions/${encodeURIComponent(id)}`);
+  }
+
+  async getRuntimeHealth(): Promise<unknown[]> {
+    return this.http.get<unknown[]>("/api/agent/runtime-health");
   }
 
   // ── Projects (server has no project CRUD yet — one synthetic project) ──

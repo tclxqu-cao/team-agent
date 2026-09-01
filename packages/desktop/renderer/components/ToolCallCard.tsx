@@ -100,6 +100,79 @@ function lineCount(s: string): number {
   return s ? s.split("\n").length : 0;
 }
 
+// ── Human-readable summary for external agent tools (Codex / Claude Code) ─
+const COMMAND_TOOLS = new Set(["shell", "bash", "Bash", "execute_command", "run_command", "BashOutput", "KillShell"]);
+const FILE_TOOLS = new Set(["Read", "read_file", "Write", "write_file", "Edit", "MultiEdit", "str_replace", "apply_patch", "NotebookEdit"]);
+const SEARCH_TOOLS = new Set(["Glob", "glob_search", "Grep", "grep_search", "WebSearch", "WebFetch"]);
+
+type ToolFamily = "command" | "file" | "search" | "generic";
+
+function toolFamily(name: string): ToolFamily {
+  if (COMMAND_TOOLS.has(name)) return "command";
+  if (FILE_TOOLS.has(name)) return "file";
+  if (SEARCH_TOOLS.has(name)) return "search";
+  return "generic";
+}
+
+function toolPhrase(name: string): { done: string; doing: string } | null {
+  switch (name) {
+    case "shell": case "bash": case "Bash": case "execute_command": case "run_command":
+      return { done: "运行了命令", doing: "运行命令中" };
+    case "BashOutput": case "KillShell":
+      return { done: "查看了命令输出", doing: "查看输出中" };
+    case "Read": case "read_file":
+      return { done: "读取了文件", doing: "读取文件中" };
+    case "Write": case "write_file":
+      return { done: "写入了文件", doing: "写入文件中" };
+    case "Edit": case "MultiEdit": case "str_replace": case "apply_patch":
+      return { done: "修改了文件", doing: "修改文件中" };
+    case "Glob": case "glob_search":
+      return { done: "搜索了文件", doing: "搜索文件中" };
+    case "Grep": case "grep_search":
+      return { done: "搜索了内容", doing: "搜索内容中" };
+    case "Skill":
+      return { done: "调用了技能", doing: "调用技能中" };
+    case "Task":
+      return { done: "启动了子任务", doing: "启动子任务中" };
+    case "WebSearch":
+      return { done: "搜索了网络", doing: "搜索网络中" };
+    case "WebFetch":
+      return { done: "读取了网页", doing: "读取网页中" };
+    case "TodoWrite":
+      return { done: "更新了任务清单", doing: "更新任务清单中" };
+    case "NotebookEdit":
+      return { done: "编辑了 Notebook", doing: "编辑 Notebook 中" };
+    default:
+      if (name.startsWith("mcp__") || name.includes(":")) return { done: "调用了工具", doing: "调用工具中" };
+      return null;
+  }
+}
+
+function truncateLine(s: string, max = 60): string {
+  const first = (s ?? "").split("\n")[0].trim();
+  return first.length > max ? first.slice(0, max) + "…" : first;
+}
+
+function toolPreview(name: string, args: Record<string, unknown>): string | null {
+  if (COMMAND_TOOLS.has(name)) return truncateLine(String(args.command ?? ""));
+  if (name === "apply_patch") {
+    const changes = Array.isArray(args.changes) ? args.changes as Array<Record<string, unknown>> : [];
+    const paths = changes.map((c) => basename(String(c?.path ?? ""))).filter(Boolean);
+    if (!paths.length) return null;
+    return paths.length <= 3 ? paths.join("、") : `${paths.slice(0, 3).join("、")} 等 ${paths.length} 个文件`;
+  }
+  if (FILE_TOOLS.has(name)) return args.file_path ? basename(String(args.file_path)) : null;
+  if (name === "Glob" || name === "glob_search") return String(args.pattern ?? "") || null;
+  if (name === "Grep" || name === "grep_search") return String(args.pattern ?? args.query ?? "") || null;
+  if (name === "Skill") return String(args.skill ?? "") || null;
+  if (name === "Task") return truncateLine(String(args.description ?? args.task ?? ""), 80) || null;
+  if (name === "WebSearch") return truncateLine(String(args.query ?? ""));
+  if (name === "WebFetch") return String(args.url ?? "") || null;
+  if (name.startsWith("mcp__")) return name.split("__").slice(1).join("/");
+  if (name.includes(":")) return name.split(":").slice(1).join(":");
+  return null;
+}
+
 type DiffLine = { type: "added" | "removed" | "same"; text: string; lineNo: number };
 
 function computeDiff(before: string, after: string): DiffLine[] {
@@ -448,43 +521,39 @@ function GenericToolCard({ toolCall, onSelectSession }: { toolCall: ToolCallData
   const isError = isDispatch ? subAgentStatus === "failed" : toolCall.isError;
   const isDone = isDispatch ? (!!subAgentStatus || (!!toolCall.result && !runningSessionId)) : !!toolCall.result;
   const statusColor = isDone ? (isError ? "var(--danger)" : "var(--success)") : "var(--accent)";
-  const statusLabel = isDispatch
-    ? (subAgentStatus === "failed" ? "失败" : isDone ? "已完成" : "运行中")
-    : (toolCall.result ? (toolCall.isError ? "错误" : "完成") : "执行中");
+  const phrase = isDispatch ? null : toolPhrase(toolCall.name);
+  const statusLabel = isError
+    ? "错误"
+    : phrase
+      ? ""
+      : isDispatch
+        ? (subAgentStatus === "failed" ? "失败" : isDone ? "已完成" : "运行中")
+        : (toolCall.result ? "完成" : "执行中");
 
-  // Preview label: for bash show command snippet, for grep show query
-  const previewLabel = (() => {
-    if (toolCall.name === "bash") {
-      const cmd = (toolCall.arguments.command as string) ?? "";
-      const first = cmd.split("\n")[0].trim();
-      return first.length > 50 ? first.slice(0, 50) + "…" : first;
-    }
-    if (toolCall.name === "grep_search") {
-      const q = (toolCall.arguments.query as string) ?? "";
-      return q.length > 45 ? q.slice(0, 45) + "…" : q;
-    }
-    if (toolCall.name === "glob_search") {
-      return (toolCall.arguments.pattern as string) ?? "";
-    }
-    if (isDispatch) {
-      const t = (toolCall.arguments.task as string) ?? "";
-      const first = t.split("\n")[0];
-      return first.length > 80 ? first.slice(0, 80) + "…" : first;
-    }
-    return null;
-  })();
+  const previewLabel = isDispatch
+    ? (() => {
+        const t = (toolCall.arguments.task as string) ?? "";
+        const first = t.split("\n")[0];
+        return first.length > 80 ? first.slice(0, 80) + "…" : first;
+      })()
+    : toolPreview(toolCall.name, toolCall.arguments);
 
-  const toolLabel = isDispatch ? `@${(toolCall.arguments.agentName as string) ?? "agent"}` : toolCall.name;
+  const toolLabel = isDispatch
+    ? `@${(toolCall.arguments.agentName as string) ?? "agent"}`
+    : phrase
+      ? (isDone ? phrase.done : phrase.doing)
+      : toolCall.name;
 
   // Tool icon
+  const family = toolFamily(toolCall.name);
   const Icon = isDispatch ? (
     <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={statusColor} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a5 5 0 1 0 0 10A5 5 0 0 0 12 2z"/><path d="M12 12c-5.33 0-8 2.67-8 4v2h16v-2c0-1.33-2.67-4-8-4z"/></svg>
-  ) : toolCall.name === "bash" ? (
+  ) : family === "command" ? (
     <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={statusColor} strokeWidth="2" strokeLinecap="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
-  ) : toolCall.name === "grep_search" ? (
+  ) : family === "search" ? (
     <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={statusColor} strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-  ) : toolCall.name === "glob_search" ? (
-    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={statusColor} strokeWidth="2" strokeLinecap="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+  ) : family === "file" ? (
+    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={statusColor} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
   ) : (
     <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={statusColor} strokeWidth="2" strokeLinecap="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
   );
@@ -494,18 +563,21 @@ function GenericToolCard({ toolCall, onSelectSession }: { toolCall: ToolCallData
       <div style={{ width: 20, height: 20, borderRadius: 5, background: isDone ? (isError ? "rgba(220,38,38,0.1)" : "rgba(5,150,105,0.1)") : "var(--accent-dim)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
         {Icon}
       </div>
-      <span style={{ fontFamily: "var(--font-mono)", fontSize: 11.5, color: "var(--text-primary)", fontWeight: 600, flexShrink: 0 }}>
+      <span
+        title={phrase ? toolCall.name : undefined}
+        style={{ fontFamily: phrase ? "var(--font-body)" : "var(--font-mono)", fontSize: 11.5, color: "var(--text-primary)", fontWeight: 600, flexShrink: 0 }}
+      >
         {toolLabel}
       </span>
       {previewLabel && (
-        <span style={{ fontSize: 11, color: "var(--text-muted)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+        <span style={{ fontSize: 11, fontFamily: "var(--font-mono)", color: "var(--text-muted)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
           {previewLabel}
         </span>
       )}
       {!previewLabel && <span style={{ flex: 1 }} />}
       <span style={{ display: "flex", alignItems: "center", gap: 4, color: statusColor, flexShrink: 0 }}>
         <StatusIcon isDone={isDone} isError={!!isError} color={statusColor} />
-        <span style={{ fontSize: 10, fontWeight: 500 }}>{statusLabel}</span>
+        {statusLabel && <span style={{ fontSize: 10, fontWeight: 500 }}>{statusLabel}</span>}
       </span>
     </>
   );
@@ -515,6 +587,13 @@ function GenericToolCard({ toolCall, onSelectSession }: { toolCall: ToolCallData
       {/* Arguments */}
       {isDispatch ? (
         <DispatchArgs arguments={toolCall.arguments} />
+      ) : family === "command" && typeof toolCall.arguments.command === "string" ? (
+        <>
+          {typeof toolCall.arguments.cwd === "string" && toolCall.arguments.cwd && (
+            <div style={{ fontSize: 10, color: "var(--text-muted)", fontFamily: "var(--font-mono)", wordBreak: "break-all" }}>工作目录 {toolCall.arguments.cwd}</div>
+          )}
+          <CollapsiblePre label="命令" content={toolCall.arguments.command} maxPreviewLines={6} maxPreviewHeight={160} />
+        </>
       ) : (
         <ArgumentsBlock raw={JSON.stringify(toolCall.arguments, null, 2)} />
       )}

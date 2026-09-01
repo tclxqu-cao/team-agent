@@ -286,6 +286,7 @@ export class AgentLoop implements IAgentLoop {
         try {
           for await (const event of this.config.modelProvider.streamChat(messages, {
             tools: toolDefs.length > 0 ? toolDefs : undefined,
+            reasoningEffort: this.config.reasoningEffort,
             // Note: this.config.maxTokens is the context-window size used for compaction
             // thresholding, NOT the max completion tokens. Let each provider use its own
             // configured output limit (defaultMaxTokens) to avoid sending a huge value here.

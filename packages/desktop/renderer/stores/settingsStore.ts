@@ -17,6 +17,9 @@ interface SettingsState {
   profiles: ModelProfile[];
   activeProfileId: string;
 
+  /** Reasoning intensity for main-loop requests ("off" = provider default) */
+  reasoningEffort: "off" | "low" | "medium" | "high";
+
   // Actions
   setField: (key: string, value: string | number | boolean) => void;
   loadFromSystem: () => Promise<void>;
@@ -45,6 +48,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   isConfigured: false,
   profiles: [],
   activeProfileId: "",
+  reasoningEffort: "off",
 
   setField: (key, value) =>
     set((state) => {
@@ -71,6 +75,9 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
         isConfigured: Boolean((active?.apiKey ?? s.apiKey) && (active?.modelId ?? s.modelId)),
         profiles,
         activeProfileId,
+        reasoningEffort: (["off", "low", "medium", "high"].includes(s.reasoningEffort ?? "")
+          ? (s.reasoningEffort as "off" | "low" | "medium" | "high")
+          : "off"),
       });
     } catch (err) {
       console.error("Failed to load settings:", err);
@@ -91,6 +98,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       isConfigured: state.isConfigured,
       profiles: state.profiles,
       activeProfileId: state.activeProfileId,
+      reasoningEffort: state.reasoningEffort,
     });
   },
 

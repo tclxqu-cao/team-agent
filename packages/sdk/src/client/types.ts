@@ -3,6 +3,8 @@
 export interface Session {
   id: string;
   projectId?: string;
+  /** 所属机器人运行时；server 端 /api/sessions 会显式打标，缺失时按 customer-agent 处理 */
+  agentType?: 'customer-agent' | 'codex' | 'claude-code';
   title: string;
   status: string;
   messages?: ChatMessage[];

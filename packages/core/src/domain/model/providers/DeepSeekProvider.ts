@@ -32,6 +32,10 @@ export class DeepSeekProvider implements IModelProvider {
       stream: true,
     };
 
+    if (options?.reasoningEffort && options.reasoningEffort !== "off") {
+      body.reasoning_effort = options.reasoningEffort;
+    }
+
     if (options?.tools && options.tools.length > 0) {
       body.tools = options.tools.map((t) => ({
         type: "function",

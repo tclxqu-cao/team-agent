@@ -529,6 +529,7 @@ export class AgentHost {
       this.builder.withMaxIterations(latestSettings.maxIterations);
       this.builder.withMaxTokens((latestSettings.contextWindow ?? 100) * 1000);
     }
+    this.builder.withReasoningEffort(latestSettings.reasoningEffort ?? "off");
 
     // ── 3. Determine agents to run ────────────────────────────────────────
     // agentIds from caller OR fall back to active agent from settings

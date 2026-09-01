@@ -1,5 +1,22 @@
 import { AgentBuilder, type IModelProvider, type Message, type StreamEvent, type StreamOptions } from "@agent/core";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+// Keep these route tests independent of real Codex/Claude discovery on disk.
+vi.mock("../../lib/native-runtime-service", () => ({
+  getNativeRuntimeService: () => ({
+    health: async () => [],
+    list: async () => [],
+    refresh: async () => [],
+    create: async () => { throw new Error("not available in tests"); },
+    get: async () => { throw new Error("not available in tests"); },
+    run: async function* () { throw new Error("not available in tests"); },
+    answerQuestion: async () => false,
+    abort: async () => {},
+  }),
+  isNativeSessionId: () => false,
+  runtimeErrorStatus: () => 500,
+}));
+
 import { agentHost } from "./agent-host";
 import { POST as registerRemoteTools } from "./remote-tools/register/route";
 import { GET as listSessions, POST as createSession } from "./sessions/route";

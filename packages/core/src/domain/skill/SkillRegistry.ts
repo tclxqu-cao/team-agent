@@ -106,6 +106,7 @@ Return ONLY the names of relevant skills, one per line. If none are relevant, re
       for await (const event of this.modelProvider.streamChat(messages, {
         temperature: 0,
         maxTokens: 200,
+        reasoningEffort: "off",
       })) {
         if (event.type === 'text_chunk') {
           responseText += event.text;

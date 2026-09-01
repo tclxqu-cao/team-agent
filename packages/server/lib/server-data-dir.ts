@@ -8,3 +8,14 @@ export function resolveServerBaseDir(env: NodeJS.ProcessEnv = process.env, fallb
 }
 
 export function getServerBaseDir(): string { return resolveServerBaseDir(); }
+
+export function resolveAgentWorkingDirectory(
+  env: NodeJS.ProcessEnv = process.env,
+  fallback = DEFAULT_SERVER_DIR,
+): string {
+  return resolve(env.AGENT_WORKING_DIRECTORY?.trim() || fallback);
+}
+
+export function getAgentWorkingDirectory(): string {
+  return resolveAgentWorkingDirectory(process.env, getServerBaseDir());
+}

@@ -9,6 +9,8 @@ import SkillManager from "./components/SkillManager";
 import AgentManager from "./components/AgentManager";
 import LSPServerList from "./components/LSPServerList";
 import WakeOverlay from "./components/WakeOverlay";
+import RuntimeSessionMenu from "./components/RuntimeSessionMenu";
+import type { AgentType, RuntimeHealth } from "./global";
 import { useSettingsStore } from "./stores/settingsStore";
 import { useAgentStore } from "./stores/agentStore";
 import { useUIStore, SKINS, LAYOUTS } from "./stores/uiStore";
@@ -27,25 +29,102 @@ interface Project {
 
 interface Session {
   id: string;
-  projectId: string;
+  projectId?: string;
   parentSessionId?: string;
+  agentType: AgentType;
+  nativeSessionId: string;
   title: string;
   status: string;
+  occupancy: "available" | "owned-by-customer-agent" | "owned-externally";
+  sourceLabel: string;
+  canResume: boolean;
+  canDelete: boolean;
+  cwd: string;
   created: string;
   updated: string;
+}
+
+const RUNTIME_MARKS: Record<AgentType, string> = {
+  "customer-agent": "CA",
+  codex: "CX",
+  "claude-code": "CC",
+};
+
+const OTHER_GROUP_LABELS: Record<AgentType, string> = {
+  "claude-code": "Claude Code",
+  codex: "Codex",
+  "customer-agent": "Customer Agent",
+};
+
+/** 机器人分组在侧边栏中的固定展示顺序 */
+const BOT_GROUP_ORDER: AgentType[] = ["customer-agent", "codex", "claude-code"];
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Derive a readable sub-group label for a session listed under 其他本机会话. */
+function otherSessionGroup(session: Session, projectName?: string): { label: string; full: string } {
+  if (projectName) return { label: projectName, full: projectName };
+  const cwd = session.cwd || "";
+  const segs = cwd.split("/").filter(Boolean);
+  if (segs.length > 0) {
+    // Worktree sessions belong to their repo: ~/.claude/worktrees/<branch>
+    // keeps the repo before .claude; ~/.codex/worktrees/<hash>/<repo> keeps
+    // the repo after the meaningless hash.
+    const wt = segs.indexOf("worktrees");
+    if (wt >= 2) {
+      if (segs[wt - 1] === ".claude") {
+        return { label: segs[wt - 2], full: cwd };
+      }
+      if (segs[wt - 1] === ".codex") {
+        const repo = segs[wt + 2] || segs[wt + 1];
+        if (repo) return { label: repo, full: cwd };
+      }
+    }
+    // /Users/<name> itself is the home directory, not a project called <name>
+    if (segs[0] === "Users" && segs.length === 2) return { label: "主目录", full: cwd };
+    if (segs[0] === "Users") {
+      const rel = segs.slice(2);
+      if (rel.length <= 2) return { label: rel.join("/"), full: cwd };
+      return { label: `…/${rel.slice(-2).join("/")}`, full: cwd };
+    }
+    return { label: segs[segs.length - 1], full: cwd };
+  }
+  // Server-backed sessions carry readable project slugs (e.g. "kid-earth-learning");
+  // opaque uuids from deleted projects are not worth showing.
+  if (session.projectId && !UUID_RE.test(session.projectId)) {
+    return { label: session.projectId, full: session.projectId };
+  }
+  return { label: "未知项目", full: "" };
+}
+
+/** Stable sort that floats running sessions to the top, keeping recency order inside each partition. */
+function runningFirstSort(sessions: Session[], isRunning: (s: Session) => boolean): Session[] {
+  return sessions
+    .map((session, index) => ({ session, index }))
+    .sort((a, b) => Number(isRunning(b.session)) - Number(isRunning(a.session)) || a.index - b.index)
+    .map((entry) => entry.session);
 }
 
 export default function App() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [sessionsByProject, setSessionsByProject] = useState<Record<string, Session[]>>({});
+  const [otherLocalSessions, setOtherLocalSessions] = useState<Session[]>([]);
+  const [otherLocalExpanded, setOtherLocalExpanded] = useState(false);
+  const [sessionQuery, setSessionQuery] = useState("");
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [runtimeHealth, setRuntimeHealth] = useState<RuntimeHealth[]>([]);
   /** Child sessions keyed by parentSessionId */
   const [childSessionsByParent, setChildSessionsByParent] = useState<Record<string, Session[]>>({});
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   /** Set of parent session IDs whose children are collapsed */
   const [collapsedParents, setCollapsedParents] = useState<Set<string>>(new Set());
+  /** Set of directory keys (agentType::label) under 其他本机会话 whose sessions are collapsed */
+  const [collapsedDirs, setCollapsedDirs] = useState<Set<string>>(new Set());
   /** Set of project IDs whose session list is expanded */
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set());
+  /** Set of `${projectId}::${agentType}` bot-group keys whose sessions are collapsed */
+  const [collapsedBotGroups, setCollapsedBotGroups] = useState<Set<string>>(new Set());
   /** Project IDs whose working directory path no longer exists on disk */
   const [invalidProjectIds, setInvalidProjectIds] = useState<Set<string>>(new Set());
 
@@ -65,6 +144,51 @@ export default function App() {
   const setWakeWord = useUIStore((s) => s.setWakeWord);
   const autoSpeak = useUIStore((s) => s.autoSpeak);
   const setAutoSpeak = useUIStore((s) => s.setAutoSpeak);
+  const runningFirst = useUIStore((s) => s.runningFirst);
+  const setRunningFirst = useUIStore((s) => s.setRunningFirst);
+  const groupByBot = useUIStore((s) => s.groupByBot);
+  const setGroupByBot = useUIStore((s) => s.setGroupByBot);
+  const runningSessionId = useAgentStore((s) => s.runningSessionId);
+
+  const isSessionRunning = useCallback(
+    (session: Session) => session.status === "running" || runningSessionId === session.id,
+    [runningSessionId],
+  );
+
+  /** 当前存在的机器人分组 key，按展示顺序（项目顺序 × BOT_GROUP_ORDER，最后是「其他本机会话」）排列 */
+  const botGroupKeysInOrder = useCallback(() => {
+    const keys: string[] = [];
+    for (const project of projects) {
+      const list = sessionsByProject[project.id] ?? [];
+      for (const botType of BOT_GROUP_ORDER) {
+        if (list.some((s) => s.agentType === botType)) keys.push(`${project.id}::${botType}`);
+      }
+    }
+    // 「其他本机会话」按其展示顺序（OTHER_GROUP_LABELS 键序）追加
+    for (const botType of Object.keys(OTHER_GROUP_LABELS) as AgentType[]) {
+      if (otherLocalSessions.some((s) => s.agentType === botType)) keys.push(`other::${botType}`);
+    }
+    return keys;
+  }, [projects, sessionsByProject, otherLocalSessions]);
+
+  /** 全部折叠：把所有存在的机器人分组 key 都加入折叠集合 */
+  const handleCollapseAllBotGroups = () => {
+    setCollapsedBotGroups(new Set(botGroupKeysInOrder()));
+  };
+  /** 全部展开：清空折叠集合 */
+  const handleExpandAllBotGroups = () => {
+    setCollapsedBotGroups(new Set());
+  };
+  /** 逐层展开：每次按展示顺序展开一个仍折叠的机器人分组 */
+  const handleExpandNextBotGroup = () => {
+    const next = botGroupKeysInOrder().find((key) => collapsedBotGroups.has(key));
+    if (!next) return;
+    setCollapsedBotGroups((prev) => {
+      const nextSet = new Set(prev);
+      nextSet.delete(next);
+      return nextSet;
+    });
+  };
 
   // ── Web shell (packages/webapp): drawer sidebar on phone-width screens ──
   // Gated on the web-shell flag so the Electron app keeps its exact layout.
@@ -268,9 +392,17 @@ export default function App() {
     wakeHandleRef.current?.stop();
   }, []);
 
-  const selectedSessionTitle = selectedSessionId
-    ? Object.values(sessionsByProject).flat().find(s => s.id === selectedSessionId)?.title
+  const allVisibleSessions = [...Object.values(sessionsByProject).flat(), ...otherLocalSessions];
+  const sessionQueryTrim = sessionQuery.trim().toLowerCase();
+  const searchResults = sessionQueryTrim
+    ? allVisibleSessions.filter((s) =>
+        s.title.toLowerCase().includes(sessionQueryTrim) ||
+        (s.cwd || "").toLowerCase().includes(sessionQueryTrim))
+    : null;
+  const selectedSession = selectedSessionId
+    ? allVisibleSessions.find((session) => session.id === selectedSessionId)
     : undefined;
+  const selectedSessionTitle = selectedSession?.title;
 
   const [sidebarWidth, setSidebarWidth] = useState(260);
   const isDragging = useRef(false);
@@ -318,6 +450,31 @@ export default function App() {
     setTimeout(() => dismissToast(id), 12000);
   }, [dismissToast]);
 
+  const applySessionIndex = (list: Session[], projectList: Project[] = projects) => {
+    const rootMap: Record<string, Session[]> = Object.fromEntries(projectList.map((project) => [project.id, []]));
+    const childMap: Record<string, Session[]> = {};
+    const unmatched: Session[] = [];
+    for (const session of list) {
+      if (session.parentSessionId) {
+        (childMap[session.parentSessionId] ??= []).push(session);
+      } else if (session.projectId && rootMap[session.projectId]) {
+        rootMap[session.projectId].push(session);
+      } else {
+        unmatched.push(session);
+      }
+    }
+    for (const sessions of Object.values(rootMap)) {
+      sessions.sort((a, b) => b.updated.localeCompare(a.updated));
+    }
+    for (const sessions of Object.values(childMap)) {
+      sessions.sort((a, b) => a.created.localeCompare(b.created));
+    }
+    unmatched.sort((a, b) => b.updated.localeCompare(a.updated));
+    setSessionsByProject(rootMap);
+    setChildSessionsByParent(childMap);
+    setOtherLocalSessions(unmatched);
+  };
+
 const loadProjects = async () => {
     if (!window.agentApi) return;
     const list = await window.agentApi.listProjects() as Project[];
@@ -330,7 +487,8 @@ const loadProjects = async () => {
       }
     }));
     setInvalidProjectIds(invalid);
-    await Promise.all(list.map((p) => loadSessions(p.id)));
+    const sessions = await window.agentApi.refreshSessions() as Session[];
+    applySessionIndex(sessions, list);
   };
 
   const loadSessions = async (projectId?: string) => {
@@ -373,13 +531,57 @@ const loadProjects = async () => {
     }));
   };
 
-  const handleNewSession = async (projectId: string) => {
+  const handleNewRuntimeSession = async (projectId: string, agentType: AgentType) => {
     if (!window.agentApi) return;
-    const created = await window.agentApi.createSession("新会话", projectId) as { id: string };
-    await loadSessions(projectId);
-    setSelectedProjectId(projectId);
+    const created = await window.agentApi.createSession("新会话", projectId, agentType) as Session;
+    if (agentType === "customer-agent") {
+      await loadSessions(projectId);
+      setSelectedProjectId(projectId);
+      setSelectedSessionId(created.id);
+      if (mobileDrawer) setSidebarDrawerOpen(false);
+      return;
+    }
+    // Native runtimes hide freshly created empty sessions from discovery until
+    // the first turn runs, so insert the created session optimistically under
+    // "其他本机会话" to keep the selection resolvable.
+    setOtherLocalSessions((prev) => [created, ...prev.filter((s) => s.id !== created.id)]);
+    setOtherLocalExpanded(true);
+    setSelectedProjectId(null);
     setSelectedSessionId(created.id);
     if (mobileDrawer) setSidebarDrawerOpen(false);
+  };
+
+  /** New session from a directory row under 其他本机会话: defaults to the
+   *  group's agent. Native runtimes take the directory as cwd; customer-agent
+   *  sessions reuse the slug label as projectId so they stay in the folder. */
+  const handleNewGroupSession = async (agentType: AgentType, dirKey: string, collapseKey?: string) => {
+    if (!window.agentApi) return;
+    const isCustomerAgent = agentType === "customer-agent";
+    try {
+      const created = await window.agentApi.createSession(
+        "新会话",
+        isCustomerAgent ? dirKey : undefined,
+        agentType,
+        isCustomerAgent ? undefined : dirKey,
+      ) as Session;
+      setOtherLocalSessions((prev) => [created, ...prev.filter((s) => s.id !== created.id)]);
+      setOtherLocalExpanded(true);
+      if (collapseKey) {
+        setCollapsedDirs((prev) => {
+          if (!prev.has(collapseKey)) return prev;
+          const next = new Set(prev);
+          next.delete(collapseKey);
+          return next;
+        });
+      }
+      setSelectedProjectId(null);
+      setSelectedSessionId(created.id);
+      if (mobileDrawer) setSidebarDrawerOpen(false);
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : "新建会话失败");
+      setNoticeType("error");
+      setTimeout(() => setNotice(null), 4000);
+    }
   };
 
   useEffect(() => {
@@ -390,23 +592,24 @@ const loadProjects = async () => {
       const list = await window.agentApi.listProjects() as Project[];
       setProjects(list);
 
-      // Load sessions for all projects — filter roots/children just like loadSessions() does
-      const rootMap: Record<string, Session[]> = {};
+      const allSessions = await window.agentApi.listSessions() as Session[];
+      const rootMap: Record<string, Session[]> = Object.fromEntries(list.map((project) => [project.id, []]));
       const childMap: Record<string, Session[]> = {};
-      await Promise.all(list.map(async (p) => {
-        const sessions = await window.agentApi.listSessions(p.id) as Session[];
-        const roots = sessions.filter((s) => !s.parentSessionId);
-        rootMap[p.id] = roots;
-        for (const child of sessions.filter((s) => s.parentSessionId)) {
-          const pid = child.parentSessionId!;
-          (childMap[pid] ??= []).push(child);
+      const unmatched: Session[] = [];
+      for (const current of allSessions) {
+        if (current.parentSessionId) {
+          (childMap[current.parentSessionId] ??= []).push(current);
+        } else if (current.projectId && rootMap[current.projectId]) {
+          rootMap[current.projectId].push(current);
+        } else {
+          unmatched.push(current);
         }
-      }));
-      for (const kids of Object.values(childMap)) {
-        kids.sort((a, b) => (a.created < b.created ? -1 : 1));
       }
+      for (const kids of Object.values(childMap)) kids.sort((a, b) => a.created.localeCompare(b.created));
       setSessionsByProject(rootMap);
       setChildSessionsByParent(childMap);
+      setOtherLocalSessions(unmatched.sort((a, b) => b.updated.localeCompare(a.updated)));
+      setRuntimeHealth(await window.agentApi.getRuntimeHealth());
 
       // Auto-select: project + most recently updated ROOT session (never a child session)
       const allRoots = Object.entries(rootMap).flatMap(([pid, ss]) =>
@@ -417,6 +620,10 @@ const loadProjects = async () => {
         setSelectedProjectId(latest._pid);
         setSelectedSessionId(latest.id);
         setExpandedProjects(new Set([latest._pid]));
+      } else if (unmatched.length > 0) {
+        setSelectedProjectId(null);
+        setSelectedSessionId(unmatched[0].id);
+        setOtherLocalExpanded(true);
       } else if (list.length > 0) {
         setSelectedProjectId(list[0].id);
         setExpandedProjects(new Set([list[0].id]));
@@ -424,6 +631,24 @@ const loadProjects = async () => {
     };
     void bootstrap();
   }, []);
+
+  useEffect(() => {
+    if (!selectedSessionId || selectedSession?.agentType === "customer-agent" || !window.agentApi) return;
+    let cancelled = false;
+    const refresh = async () => {
+      if (document.visibilityState !== "visible") return;
+      const sessions = await window.agentApi!.refreshSessions() as Session[];
+      if (!cancelled) applySessionIndex(sessions);
+    };
+    const timer = window.setInterval(() => void refresh(), 10_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+    // Session identity and project registration are the only inputs relevant
+    // to native ownership polling.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedSessionId, selectedSession?.agentType, projects]);
 
   // Sync working directory whenever the selected project changes (covers startup,
   // session click, new session, and explicit project click).
@@ -552,12 +777,12 @@ const loadProjects = async () => {
           style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.45)", zIndex: 1150 }}
         />
       )}
-      {mobileDrawer && (
+      {mobileDrawer && !sidebarDrawerOpen && (
         <button
           className="mobile-drawer-toggle"
-          onClick={() => setSidebarDrawerOpen((open) => !open)}
+          onClick={() => setSidebarDrawerOpen(true)}
           aria-label="会话列表"
-          aria-expanded={sidebarDrawerOpen}
+          aria-expanded={false}
           style={{
             position: "fixed",
             top: "calc(env(safe-area-inset-top) + 8px)",
@@ -577,9 +802,7 @@ const loadProjects = async () => {
           } as React.CSSProperties}
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-            {sidebarDrawerOpen
-              ? <path d="M6 6l12 12M18 6 6 18" />
-              : <path d="M3 6h18M3 12h18M3 18h18" />}
+            <path d="M3 6h18M3 12h18M3 18h18" />
           </svg>
         </button>
       )}
@@ -630,7 +853,7 @@ const loadProjects = async () => {
             transform: sidebarDrawerOpen ? "translateX(0)" : "translateX(-103%)",
             transition: "transform .24s ease",
             boxShadow: "12px 0 32px rgba(0,0,0,.5)",
-            padding: "calc(env(safe-area-inset-top) + 56px) 0 20px",
+            padding: "calc(env(safe-area-inset-top) + 12px) 0 20px",
           } : {}),
         }}
       >
@@ -657,8 +880,80 @@ const loadProjects = async () => {
               color: "var(--text-primary)",
               letterSpacing: "-0.01em",
             }}>智能助手</span>
+            <button
+              type="button"
+              onClick={() => setSearchOpen(true)}
+              title="搜索会话"
+              aria-label="搜索会话"
+              className="ui-icon-button ui-icon-button--small"
+              style={{ marginLeft: "auto", color: "var(--text-muted)" }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <circle cx="11" cy="11" r="7" />
+                <path d="M21 21l-4.35-4.35" />
+              </svg>
+            </button>
+            <button
+              type="button"
+              onClick={() => setRunningFirst(!runningFirst)}
+              title="进行中的会话排在最前"
+              aria-label="进行中的会话排在最前"
+              aria-pressed={runningFirst}
+              className={`ui-icon-button ui-icon-button--small${runningFirst ? " is-active" : ""}`}
+              style={runningFirst ? undefined : { color: "var(--text-muted)" }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" />
+                <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+              </svg>
+            </button>
+            <button
+              type="button"
+              onClick={() => setGroupByBot(!groupByBot)}
+              title="会话按机器人分组"
+              aria-label="会话按机器人分组"
+              aria-pressed={groupByBot}
+              className={`ui-icon-button ui-icon-button--small${groupByBot ? " is-active" : ""}`}
+              style={groupByBot ? undefined : { color: "var(--text-muted)" }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <rect x="5" y="9" width="14" height="10" rx="2" />
+                <path d="M12 9V6" /><circle cx="12" cy="4" r="1.6" />
+                <path d="M9.5 13v1.6M14.5 13v1.6" />
+              </svg>
+            </button>
           </div>
         </div>
+
+        {/* 机器人分组批量操作：仅在开启分组时显示 */}
+        {groupByBot && (
+          <div style={{ display: "flex", gap: 4, padding: "0 14px 10px", justifyContent: "flex-end" }}>
+            {([
+              ["全部折叠", handleCollapseAllBotGroups, "折叠所有机器人的会话组"],
+              ["逐层展开", handleExpandNextBotGroup, "每次展开一个机器人分组"],
+              ["全部展开", handleExpandAllBotGroups, "展开所有机器人分组"],
+            ] as const).map(([label, handler, tip]) => (
+              <button
+                key={label}
+                type="button"
+                onClick={handler}
+                title={tip}
+                aria-label={tip}
+                style={{
+                  padding: "3px 8px",
+                  border: "1px solid var(--border-subtle)",
+                  borderRadius: 6,
+                  background: "transparent",
+                  color: "var(--text-muted)",
+                  fontSize: 10,
+                  lineHeight: 1.4,
+                  cursor: "pointer",
+                  transition: "color 0.15s, border-color 0.15s",
+                }}
+              >{label}</button>
+            ))}
+          </div>
+        )}
 
         {notice && (
           <div style={{
@@ -687,16 +982,18 @@ const loadProjects = async () => {
             letterSpacing: "0.1em",
             fontWeight: 600,
           }}>项目</span>
+          {!webShell && (
           <button
             onClick={() => void handleImportProject()}
             title="导入项目"
             aria-label="导入项目"
-            className="ui-icon-button ui-icon-button--small"
+            className="ui-icon-button ui-icon-button--small sidebar-row-action"
           >
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
               <path d="M12 5v14M5 12h14" />
             </svg>
           </button>
+          )}
         </div>
 
         {/* Project + session list */}
@@ -705,7 +1002,8 @@ const loadProjects = async () => {
             {projects.map((project) => {
               const isSelected = selectedProjectId === project.id && !selectedSessionId;
               const isExpanded = expandedProjects.has(project.id);
-              const projSessions = sessionsByProject[project.id] ?? [];
+              const projectSessions = sessionsByProject[project.id] ?? [];
+              const projSessions = runningFirst ? runningFirstSort(projectSessions, isSessionRunning) : projectSessions;
               const manySession = projSessions.length > 10;
               const isInvalid = invalidProjectIds.has(project.id);
               return (
@@ -770,17 +1068,11 @@ const loadProjects = async () => {
                         lineHeight: 1,
                       }}
                     >×</button>
-                    {/* New session button */}
-                    <button
-                      onClick={(e) => { e.stopPropagation(); void handleNewSession(project.id); }}
-                      title="新建会话"
-                      className={`sidebar-row-action sidebar-row-action--accent ui-icon-button ui-icon-button--small ${isSelected && !isInvalid ? "is-active" : ""}`}
-                      style={{
-                        flexShrink: 0,
-                        fontSize: 16,
-                        lineHeight: 1,
-                      }}
-                    >+</button>
+                    <RuntimeSessionMenu
+                      health={runtimeHealth}
+                      disabled={isInvalid}
+                      onSelect={(agentType) => handleNewRuntimeSession(project.id, agentType)}
+                    />
                   </div>
 
                   {/* Sessions under this project — collapsible, scrollable when > 10 */}
@@ -791,7 +1083,8 @@ const loadProjects = async () => {
                     transition: "max-height 0.45s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease",
                   }}>
                     <div style={{ display: "flex", flexDirection: "column", gap: 1, marginTop: 2, paddingLeft: 10, paddingBottom: 4, ...(manySession ? { maxHeight: 280, overflowY: "auto" as const } : {}) }}>
-                      {projSessions.map((session) => {
+                      {(() => {
+                        const renderSession = (session: Session) => {
                         const isActiveSession = selectedSessionId === session.id;
                         const children = childSessionsByParent[session.id] ?? [];
                         return (
@@ -829,12 +1122,19 @@ const loadProjects = async () => {
                               {/* dot indicator — same style as sessions without children */}
                               <span style={{
                                 width: 5, height: 5, borderRadius: "50%", flexShrink: 0,
-                                background: isActiveSession ? "var(--accent)" : (session.status === "completed" ? "var(--success)" : "var(--border-default)"),
+                                background: isActiveSession ? "var(--accent)" : isSessionRunning(session) ? "var(--accent)" : (session.status === "completed" ? "var(--success)" : "var(--border-default)"),
                                 transition: "background 0.15s",
                               }} />
-                              <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                              <span title={session.sourceLabel} style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                                 {session.title}
                               </span>
+                              {session.occupancy === "owned-externally" && (
+                                <span title="原客户端正在使用，只读" aria-label="只读" style={{ flexShrink: 0, display: "flex" }}>
+                                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                                    <rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>
+                                  </svg>
+                                </span>
+                              )}
                               {children.length > 0 && (
                                 <span className="sidebar-count" style={{
                                   flexShrink: 0, fontSize: 9, fontWeight: 600,
@@ -845,7 +1145,7 @@ const loadProjects = async () => {
                                 }}>{children.length}</span>
                               )}
                             </button>
-                            <button
+                            {session.canDelete && <button
                               onClick={() => void handleDeleteSession(session.id)}
                               title="删除会话"
                               className="sidebar-row-action ui-icon-button ui-icon-button--small ui-icon-button--danger"
@@ -853,7 +1153,7 @@ const loadProjects = async () => {
                                 fontSize: 14, flexShrink: 0,
                                 lineHeight: 1,
                               }}
-                            >×</button>
+                            >×</button>}
                           </div>
                           {/* Child sessions (sub-agents) — indented under parent, collapsible */}
                           <div style={{
@@ -910,7 +1210,66 @@ const loadProjects = async () => {
                           </div>
                           </div>
                         );
-                      })}
+                        };
+                        if (!groupByBot) return projSessions.map(renderSession);
+                        return BOT_GROUP_ORDER
+                          .map((botType) => [botType, projSessions.filter((s) => s.agentType === botType)] as const)
+                          .filter(([, list]) => list.length > 0)
+                          .map(([botType, list]) => {
+                            const groupKey = `${project.id}::${botType}`;
+                            const groupExpanded = !collapsedBotGroups.has(groupKey);
+                            return (
+                              <div key={botType}>
+                                <button
+                                  type="button"
+                                  onClick={() => setCollapsedBotGroups((prev) => {
+                                    const next = new Set(prev);
+                                    if (next.has(groupKey)) next.delete(groupKey); else next.add(groupKey);
+                                    return next;
+                                  })}
+                                  aria-expanded={groupExpanded}
+                                  title={OTHER_GROUP_LABELS[botType]}
+                                  style={{
+                                    width: "100%",
+                                    display: "flex",
+                                    alignItems: "center",
+                                    gap: 7,
+                                    padding: "5px 10px 2px 12px",
+                                    border: 0,
+                                    background: "transparent",
+                                    color: "var(--text-muted)",
+                                    fontSize: 9,
+                                    fontWeight: 700,
+                                    letterSpacing: "0.08em",
+                                    textTransform: "uppercase",
+                                    cursor: "pointer",
+                                    textAlign: "left" as const,
+                                  }}
+                                >
+                                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+                                    style={{ flexShrink: 0, opacity: 0.4, transform: groupExpanded ? "rotate(0deg)" : "rotate(-90deg)", transition: "transform 0.2s ease" }} aria-hidden="true">
+                                    <path d="M6 9l6 6 6-6" />
+                                  </svg>
+                                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, opacity: 0.55 }} aria-hidden="true">
+                                    <rect x="5" y="9" width="14" height="10" rx="2" />
+                                    <path d="M12 9V6" /><circle cx="12" cy="4" r="1.6" />
+                                    <path d="M9.5 13v1.6M14.5 13v1.6" />
+                                  </svg>
+                                  <span style={{ flex: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{OTHER_GROUP_LABELS[botType]}</span>
+                                  <span className="sidebar-count" style={{ flexShrink: 0, fontSize: 9, fontWeight: 600, background: "var(--bg-deep)", borderRadius: 8, padding: "0 5px", lineHeight: "15px", opacity: 0.8 }}>{list.length}</span>
+                                </button>
+                                <div style={{
+                                  overflow: "hidden",
+                                  maxHeight: groupExpanded ? list.length * 44 + 8 : 0,
+                                  opacity: groupExpanded ? 1 : 0,
+                                  transition: "max-height 0.35s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.25s ease",
+                                }}>
+                                  {list.map(renderSession)}
+                                </div>
+                              </div>
+                            );
+                          });
+                      })()}
                       {projSessions.length === 0 && (
                         <div style={{ color: "var(--text-muted)", fontSize: 11, padding: "4px 10px", opacity: 0.7 }}>
                           暂无会话
@@ -921,6 +1280,205 @@ const loadProjects = async () => {
                 </div>
               );
             })}
+            {otherLocalSessions.length > 0 && (
+              <div style={{ marginTop: 8, borderTop: "1px solid var(--border-subtle)", paddingTop: 7 }}>
+                <button
+                  type="button"
+                  onClick={() => setOtherLocalExpanded((expanded) => !expanded)}
+                  style={{
+                    width: "100%",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 7,
+                    padding: "7px 10px",
+                    border: 0,
+                    background: "transparent",
+                    color: "var(--text-muted)",
+                    fontSize: 11,
+                    cursor: "pointer",
+                    textAlign: "left",
+                  }}
+                >
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" style={{ transform: otherLocalExpanded ? "rotate(0deg)" : "rotate(-90deg)" }}>
+                    <path d="M6 9l6 6 6-6"/>
+                  </svg>
+                  <span style={{ flex: 1 }}>其他本机会话</span>
+                  <span className="sidebar-count" style={{ fontSize: 9, padding: "0 5px", borderRadius: 8, background: "var(--bg-deep)" }}>{otherLocalSessions.length}</span>
+                </button>
+                {otherLocalExpanded && (
+                  <div style={{ maxHeight: 340, overflowY: "auto", paddingLeft: 10 }}>
+                    {(Object.keys(OTHER_GROUP_LABELS) as AgentType[]).map((groupType) => {
+                      const group = otherLocalSessions.filter((s) => s.agentType === groupType);
+                      if (group.length === 0) return null;
+                      const subGroups: Array<[string, string, Session[]]> = [];
+                      for (const session of group) {
+                        const { label, full } = otherSessionGroup(
+                          session,
+                          projects.find((p) => p.id === session.projectId)?.name,
+                        );
+                        const bucket = subGroups.find(([name]) => name === label);
+                        if (bucket) bucket[2].push(session); else subGroups.push([label, full, [session]]);
+                      }
+                      subGroups.sort((a, b) =>
+                        (runningFirst ? Number(b[2].some(isSessionRunning)) - Number(a[2].some(isSessionRunning)) : 0) ||
+                        b[2].length - a[2].length ||
+                        a[0].localeCompare(b[0]));
+                      const otherBotKey = `other::${groupType}`;
+                      const botExpanded = !collapsedBotGroups.has(otherBotKey);
+                      return (
+                        <div key={groupType}>
+                          <button
+                            type="button"
+                            onClick={() => setCollapsedBotGroups((prev) => {
+                              const next = new Set(prev);
+                              if (next.has(otherBotKey)) next.delete(otherBotKey); else next.add(otherBotKey);
+                              return next;
+                            })}
+                            aria-expanded={botExpanded}
+                            title={OTHER_GROUP_LABELS[groupType]}
+                            style={{
+                              width: "100%",
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 8,
+                              padding: "7px 10px 3px",
+                              border: 0,
+                              background: "transparent",
+                              color: "var(--text-muted)",
+                              cursor: "pointer",
+                              textAlign: "left" as const,
+                            }}
+                          >
+                            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+                              style={{ flexShrink: 0, opacity: 0.4, transform: botExpanded ? "rotate(0deg)" : "rotate(-90deg)", transition: "transform 0.2s ease" }} aria-hidden="true">
+                              <path d="M6 9l6 6 6-6"/>
+                            </svg>
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, opacity: 0.55 }} aria-hidden="true">
+                              <rect x="5" y="9" width="14" height="10" rx="2"/>
+                              <path d="M12 9V6"/><circle cx="12" cy="4" r="1.6"/>
+                              <path d="M9.5 13v1.6M14.5 13v1.6"/>
+                            </svg>
+                            <span style={{
+                              flex: 1,
+                              fontSize: 9,
+                              fontWeight: 700,
+                              letterSpacing: "0.08em",
+                              textTransform: "uppercase",
+                            }}>{OTHER_GROUP_LABELS[groupType]}</span>
+                            <span className="sidebar-count" style={{ flexShrink: 0, fontSize: 9, fontWeight: 600, background: "var(--bg-deep)", borderRadius: 8, padding: "0 5px", lineHeight: "15px", opacity: 0.8 }}>{group.length}</span>
+                          </button>
+                          {botExpanded && subGroups.map(([projectName, full, sessions]) => {
+                            const dirKey = `${groupType}::${projectName}`;
+                            const dirExpanded = !collapsedDirs.has(dirKey);
+                            const manyDirSessions = sessions.length > 10;
+                            return (
+                            <div key={projectName}>
+                              <div className="sidebar-row" style={{ paddingRight: 4 }}>
+                                <button
+                                  type="button"
+                                  onClick={() => setCollapsedDirs((prev) => {
+                                    const next = new Set(prev);
+                                    if (next.has(dirKey)) next.delete(dirKey); else next.add(dirKey);
+                                    return next;
+                                  })}
+                                  title={full || undefined}
+                                  aria-expanded={dirExpanded}
+                                  style={{
+                                    flex: 1,
+                                    minWidth: 0,
+                                    display: "flex",
+                                    alignItems: "center",
+                                    gap: 8,
+                                    padding: "5px 10px 5px 14px",
+                                    border: 0,
+                                    background: "transparent",
+                                    color: "var(--text-muted)",
+                                    fontSize: 11,
+                                    fontWeight: 600,
+                                    cursor: "pointer",
+                                    textAlign: "left",
+                                  }}
+                                >
+                                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+                                    style={{ flexShrink: 0, opacity: 0.4, transform: dirExpanded ? "rotate(0deg)" : "rotate(-90deg)", transition: "transform 0.2s ease" }} aria-hidden="true">
+                                    <path d="M6 9l6 6 6-6"/>
+                                  </svg>
+                                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, opacity: 0.5 }} aria-hidden="true">
+                                    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+                                  </svg>
+                                  <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{projectName}</span>
+                                  <span className="sidebar-count" style={{ flexShrink: 0, fontSize: 9, fontWeight: 600, color: "var(--text-muted)", background: "var(--bg-deep)", borderRadius: 8, padding: "0 5px", lineHeight: "15px", opacity: 0.8 }}>{sessions.length}</span>
+                                </button>
+                                {!webShell && full && (
+                                  <button
+                                    type="button"
+                                    onClick={() => void handleNewGroupSession(groupType, full, dirKey)}
+                                    title="新建会话"
+                                    aria-label={`在 ${projectName} 新建会话`}
+                                    className="sidebar-row-action sidebar-row-action--accent ui-icon-button ui-icon-button--small"
+                                    style={{ fontSize: 16, lineHeight: 1, flexShrink: 0 }}
+                                  >+</button>
+                                )}
+                              </div>
+                              <div style={{
+                                overflow: "hidden",
+                                maxHeight: dirExpanded ? (manyDirSessions ? 300 : sessions.length * 34 + 8) : 0,
+                                opacity: dirExpanded ? 1 : 0,
+                                transition: "max-height 0.45s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease",
+                              }}>
+                                <div style={manyDirSessions ? { maxHeight: 280, overflowY: "auto" as const } : undefined}>
+                                {(runningFirst ? runningFirstSort(sessions, isSessionRunning) : sessions).map((session) => {
+                                  const active = selectedSessionId === session.id;
+                                  const tooltip = [session.sourceLabel, session.cwd].filter(Boolean).join("\n");
+                                  return (
+                                    <div key={session.id} className={`sidebar-row ${active ? "sidebar-row-active" : ""}`}>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setSelectedProjectId(null);
+                                          setSelectedSessionId(session.id);
+                                          if (mobileDrawer) setSidebarDrawerOpen(false);
+                                        }}
+                                        title={tooltip || undefined}
+                                        style={{
+                                          flex: 1,
+                                          minWidth: 0,
+                                          display: "flex",
+                                          alignItems: "center",
+                                          gap: 7,
+                                          padding: "6px 10px 6px 22px",
+                                          border: 0,
+                                          background: "transparent",
+                                          color: active ? "var(--accent)" : "var(--text-secondary)",
+                                          fontSize: 12,
+                                          cursor: "pointer",
+                                          textAlign: "left",
+                                        }}
+                                      >
+                                        <span style={{ flex: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{session.title}</span>
+                                        {session.occupancy === "owned-externally" && (
+                                          <span title="原客户端正在使用，只读" aria-label="只读" style={{ display: "flex", flexShrink: 0 }}>
+                                            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                                              <rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>
+                                            </svg>
+                                          </span>
+                                        )}
+                                      </button>
+                                    </div>
+                                  );
+                                })}
+                                </div>
+                              </div>
+                            </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
             {projects.length === 0 && (
               <div style={{
                 color: "var(--text-muted)", fontSize: 12,
@@ -948,6 +1506,135 @@ const loadProjects = async () => {
         onMouseEnter={(e) => (e.currentTarget.style.background = "var(--accent)")}
         onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
       />
+      )}
+
+      {searchOpen && (
+        <div
+          onClick={() => setSearchOpen(false)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 80,
+            background: "rgba(17,24,39,0.34)",
+            backdropFilter: "blur(2px)",
+            WebkitBackdropFilter: "blur(2px)",
+            display: "flex",
+            alignItems: "flex-start",
+            justifyContent: "center",
+            padding: "12vh 16px 16px",
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: "min(560px, 100%)",
+              maxHeight: "64vh",
+              display: "flex",
+              flexDirection: "column",
+              borderRadius: 12,
+              border: "1px solid var(--border-default)",
+              background: "var(--bg-surface)",
+              boxShadow: "0 18px 48px rgba(17,24,39,0.28)",
+              overflow: "hidden",
+            }}
+          >
+            <div style={{ padding: 10, borderBottom: "1px solid var(--border-subtle)" }}>
+              <input
+                autoFocus
+                value={sessionQuery}
+                onChange={(e) => setSessionQuery(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Escape") setSearchOpen(false); }}
+                placeholder="搜索所有会话（标题或目录）…"
+                aria-label="搜索所有会话"
+                style={{
+                  width: "100%",
+                  padding: "9px 12px",
+                  borderRadius: 8,
+                  border: "1px solid var(--border-default)",
+                  background: "var(--bg-glass)",
+                  color: "var(--text-primary)",
+                  fontSize: 14,
+                  outline: "none",
+                  fontFamily: "var(--font-body)",
+                  boxSizing: "border-box",
+                }}
+              />
+            </div>
+            <div style={{ overflowY: "auto", padding: 8 }}>
+              {sessionQueryTrim && searchResults && searchResults.length > 0 && (
+                <div style={{
+                  padding: "4px 10px 3px",
+                  fontSize: 9,
+                  fontWeight: 700,
+                  letterSpacing: "0.08em",
+                  textTransform: "uppercase",
+                  color: "var(--text-muted)",
+                }}>{searchResults.length} 个结果</div>
+              )}
+              {sessionQueryTrim && searchResults && searchResults.length === 0 && (
+                <div style={{ color: "var(--text-muted)", fontSize: 12, padding: "16px 10px", textAlign: "center", opacity: 0.7 }}>
+                  无匹配会话
+                </div>
+              )}
+              {!sessionQueryTrim && (
+                <div style={{ color: "var(--text-muted)", fontSize: 12, padding: "16px 10px", textAlign: "center", opacity: 0.7 }}>
+                  输入关键词搜索会话标题或工作目录
+                </div>
+              )}
+              {searchResults?.map((session) => {
+                const active = selectedSessionId === session.id;
+                return (
+                  <div key={session.id} className={`sidebar-row ${active ? "sidebar-row-active" : ""}`}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedProjectId(session.projectId && projects.some((p) => p.id === session.projectId) ? session.projectId : null);
+                        setSelectedSessionId(session.id);
+                        setSearchOpen(false);
+                        if (mobileDrawer) setSidebarDrawerOpen(false);
+                      }}
+                      title={`${session.sourceLabel}\n${session.cwd}`}
+                      style={{
+                        flex: 1,
+                        minWidth: 0,
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 7,
+                        padding: "6px 10px",
+                        border: 0,
+                        background: "transparent",
+                        color: active ? "var(--accent)" : "var(--text-secondary)",
+                        fontSize: 12,
+                        cursor: "pointer",
+                        textAlign: "left",
+                      }}
+                    >
+                      <span style={{
+                        flexShrink: 0,
+                        minWidth: 22,
+                        padding: "1px 3px",
+                        borderRadius: 3,
+                        border: "1px solid var(--border-subtle)",
+                        color: active ? "var(--accent)" : "var(--text-muted)",
+                        fontSize: 8,
+                        fontWeight: 700,
+                        textAlign: "center",
+                      }}>{RUNTIME_MARKS[session.agentType]}</span>
+                      <span style={{ flex: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{session.title}</span>
+                      {session.occupancy === "owned-externally" && (
+                        <span title="原客户端正在使用，只读" aria-label="只读" style={{ display: "flex", flexShrink: 0 }}>
+                          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                            <rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>
+                          </svg>
+                        </span>
+                      )}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
       )}
       </>
       )}
@@ -980,6 +1667,7 @@ const loadProjects = async () => {
             selectedProjectId={selectedProjectId}
             selectedSessionId={selectedSessionId}
             sessionTitle={selectedSessionTitle}
+            sessionSummary={selectedSession}
             voiceCommand={voiceCommand}
             onOpenSettings={toggleSettings}
             settingsOpen={showSettings}
@@ -1025,6 +1713,11 @@ const loadProjects = async () => {
                 }
                 return updated;
               });
+              setOtherLocalSessions((prev) => prev.map((session) => (
+                session.id === sessionId
+                  ? { ...session, title: latestMessage.slice(0, 60) || session.title }
+                  : session
+              )));
             }}
             onRunComplete={async (projId, completedSessionId) => {
               const currentConversation = convoRef.current;
@@ -1033,7 +1726,10 @@ const loadProjects = async () => {
               if (renewedConversation !== currentConversation) {
                 void window.agentApi?.wakeConversation(true);
               }
-              if (projId || selectedProjectId) await loadSessions(projId || selectedProjectId || "");
+              if (window.agentApi) {
+                const sessions = await window.agentApi.refreshSessions() as Session[];
+                applySessionIndex(sessions);
+              }
             }}
           />
         </div>

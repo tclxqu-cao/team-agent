@@ -1,5 +1,7 @@
 // ── Settings Domain ──
 
+import type { ReasoningEffort } from "../model/entities.js";
+
 export interface ModelProfile {
   id: string;
   /** Human-readable nickname, e.g. "GPT-4o" */
@@ -25,6 +27,8 @@ export interface SettingsData {
   profiles: ModelProfile[];
   /** ID of the currently active profile (empty string = use flat fields) */
   activeProfileId: string;
+  /** Reasoning intensity for main-loop requests. Default "off" = provider default behavior. */
+  reasoningEffort?: ReasoningEffort;
 }
 
 export interface ISettingsStore {

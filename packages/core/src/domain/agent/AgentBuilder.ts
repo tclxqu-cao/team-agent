@@ -41,6 +41,8 @@ export class AgentBuilder {
   private enabledSkills: string[] | null = null;
   /** Use the model to find a skill when local triggers do not match. */
   private semanticSkillMatching = true;
+  /** Reasoning intensity for main-loop requests. undefined/"off" = provider default. */
+  private reasoningEffort: import("../model/entities.js").ReasoningEffort | undefined;
 
   withWorkingDirectory(path: string): this {
     this.workingDirectory = path;
@@ -171,6 +173,11 @@ export class AgentBuilder {
     return this;
   }
 
+  withReasoningEffort(effort: import("../model/entities.js").ReasoningEffort): this {
+    this.reasoningEffort = effort;
+    return this;
+  }
+
   async build(): Promise<IAgentLoop> {
     if (!this.modelProvider) {
       throw new Error("Model provider is required. Call withModelProvider() or withModel()");
@@ -228,6 +235,7 @@ export class AgentBuilder {
       compactThreshold: this.compactThreshold,
       enabledTools: this.enabledTools,
       enabledSkills: this.enabledSkills,
+      reasoningEffort: this.reasoningEffort,
     };
 
     return new AgentFactory().create(config);
@@ -287,6 +295,7 @@ export class AgentBuilder {
       compactThreshold: this.compactThreshold,
       enabledTools: this.enabledTools,
       enabledSkills: this.enabledSkills,
+      reasoningEffort: this.reasoningEffort,
     };
 
     return new AgentFactory().create(config);

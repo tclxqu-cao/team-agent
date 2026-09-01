@@ -23,11 +23,14 @@ export interface ToolResult {
   metadata?: Record<string, unknown>;
 }
 
+export type ReasoningEffort = "off" | "low" | "medium" | "high";
+
 export interface StreamOptions {
   temperature?: number;
   maxTokens?: number;
   tools?: ToolDefinition[];
   stopSequences?: string[];
+  reasoningEffort?: ReasoningEffort;
 }
 
 export interface ToolDefinition {
