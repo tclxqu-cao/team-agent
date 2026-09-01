@@ -1,0 +1,56 @@
+packages/webapp/src/presentation/browser-composer.css
+  s_510afbc9531952::t_0e681e10eefffc 4-7,11-12,47-48,130-131,152-154,157-158,162-165,170-171,185,194,210-213,218-219,226-227
+  s_510afbc9531952::t_f79b99cebf5753 214-215,232-233
+  s_510afbc9531952::t_5c92cb63ad8456 102,104,107-110,112-114,119-121,216-217
+  s_510afbc9531952::t_4bd47e9e15e89b 13-42,59,61,67-69,111,122,128-129,132-151,155-156,159-161,166-169,172-184,186-193,195-209,220,237-238,247-258
+packages/desktop/renderer/components/ContextUsageBar.tsx
+  s_510afbc9531952::t_3cc1cd13353171 149-196,207-209,212
+packages/desktop/renderer/components/ToolCallCard.tsx
+  s_510afbc9531952::t_0e681e10eefffc 54-55,57,65,73,77-78
+packages/webapp/src/presentation/browser-composer.test.ts
+  s_510afbc9531952::t_5c92cb63ad8456 60-61
+  s_510afbc9531952::t_860abaac4b6888 5-8,35-52
+  s_510afbc9531952::t_0e681e10eefffc 9-13,53-59,62-73,75-79
+  s_510afbc9531952::t_b22b2a270dcd9a 74
+packages/webapp/src/presentation/web.css
+  s_510afbc9531952::t_103fd42a0687e6 76,84,87,90,94,97,100,109,117,120,123,130,136,140,146-155
+  s_510afbc9531952::t_d02731337bde55 73-75
+  s_510afbc9531952::t_7816f21084376a 77-79,81-83
+  s_510afbc9531952::t_5c59b4e43b6c87 85-86
+  s_510afbc9531952::t_091be13721f30f 88-89
+  s_510afbc9531952::t_c425857e2993d3 91-93
+  s_510afbc9531952::t_3008e909c2425f 95-96
+  s_510afbc9531952::t_526a218947bc2a 98-99
+  s_510afbc9531952::t_e11e3c3ba3040e 101-103,106-108
+  s_510afbc9531952::t_c4233a3ea05b95 110-112,114-116
+  s_510afbc9531952::t_865b91425372d7 118-119
+  s_510afbc9531952::t_f939a23cb841e0 121-122
+  s_510afbc9531952::t_6375b319c54550 124-129
+  s_510afbc9531952::t_dd9f8f71214273 131-135
+  s_510afbc9531952::t_bbea62838c8171 137-139
+packages/desktop/renderer/components/ChatView.tsx
+  s_510afbc9531952::t_f89ca0e141622f 2400-2402
+  s_510afbc9531952::t_576058675d6a1b 2408,2592-2627,2631-2670,2672-2701,2708
+  s_510afbc9531952::t_24ba3e753ee1ce 288,450-491,493
+  s_510afbc9531952::t_cf641fc4e2a6e7 2671
+  s_510afbc9531952::t_c4843f81d6fbeb 492
+  s_510afbc9531952::t_2c2b3cd44d3ec0 2403-2405
+  s_510afbc9531952::t_f9af3fa3fc85ce 2702-2707
+  s_510afbc9531952::t_b29491019a2164 2709
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "a8c55f15e6ed0b612ecd2c29f593b1fc787e5bed",
+  "prompts": {},
+  "sessions": {
+    "s_510afbc9531952": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a05597-d642-7211-84d8-9451f82d90ea",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": null
+    }
+  }
+}
