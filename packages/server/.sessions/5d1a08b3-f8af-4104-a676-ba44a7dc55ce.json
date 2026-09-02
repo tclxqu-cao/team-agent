@@ -1,0 +1,942 @@
+{
+  "id": "5d1a08b3-f8af-4104-a676-ba44a7dc55ce",
+  "projectId": "kid-earth-learning",
+  "title": "火星课程2",
+  "status": "completed",
+  "messages": [],
+  "events": [
+    {
+      "type": "thinking",
+      "message": "Iteration 1..."
+    },
+    {
+      "type": "tool_call",
+      "toolCall": {
+        "id": "call_00_NoRWWDBFUukgcR7Y1nZv7708",
+        "name": "remote_project_action",
+        "arguments": {
+          "action": "create_kid_earth_course",
+          "payload": {
+            "topic": "火星",
+            "type": "太阳课程"
+          }
+        }
+      }
+    },
+    {
+      "type": "text_done"
+    },
+    {
+      "type": "tool_result",
+      "result": {
+        "toolCallId": "call_00_NoRWWDBFUukgcR7Y1nZv7708",
+        "content": "{\"status\":\"queued\",\"jobId\":\"0c4423fb-e613-40d1-8e0c-d4f3ca887360\",\"message\":\"远程任务已提交\"}"
+      }
+    },
+    {
+      "type": "thinking",
+      "message": "Iteration 2..."
+    },
+    {
+      "type": "tool_call",
+      "toolCall": {
+        "id": "call_00_E4idh9onigHHC41H2eOm9042",
+        "name": "remote_project_action",
+        "arguments": {
+          "action": "remote_job_status",
+          "payload": {
+            "jobId": "0c4423fb-e613-40d1-8e0c-d4f3ca887360"
+          }
+        }
+      }
+    },
+    {
+      "type": "text_done"
+    },
+    {
+      "type": "tool_result",
+      "result": {
+        "toolCallId": "call_00_E4idh9onigHHC41H2eOm9042",
+        "content": "{\"status\":\"succeeded\",\"result\":{\"ok\":true,\"courseId\":14,\"title\":\"揭秘火星\",\"slug\":\"course-1783407000535\",\"published\":true,\"publication\":{\"course\":{\"id\":14,\"title\":\"揭秘火星\",\"slug\":\"course-1783407000535\",\"ageRange\":\"4 岁\"},\"chapters\":[{\"id\":35,\"sortOrder\":0,\"title\":\"认识火星\",\"shortTitle\":\"认识\",\"icon\":\"🌍\",\"sceneKey\":\"helloEarth\",\"narration\":\"火星藏着很多小秘密。我们一起用眼睛看、用耳朵听，发现它和地球宝宝的关系。\",\"tapPrompt\":\"点一点火星，看看会发生什么。\",\"guide\":\"请宝宝观察画面里的火星，说说它像什么。\",\"questionTitle\":\"小小问题\",\"questionText\":\"火星给我们带来了什么？\",\"choices\":[\"🌍 地球\",\"🌙 月亮\",\"⭐ 星星\"],\"answerIndex\":0,\"feedback\":\"答对啦！火星是今天的主角。\",\"funFact\":\"火星是自然里很重要的一部分。\",\"parentPrompt\":\"家长可以问孩子：你在哪里见过火星？\",\"videoUrl\":null,\"videoUpdatedAt\":null,\"videoPrompt\":null,\"videoStatus\":null,\"videoError\":null,\"videoJobId\":null,\"videoJobProvider\":null},{\"id\":36,\"sortOrder\":1,\"title\":\"火星的秘密\",\"shortTitle\":\"秘密\",\"icon\":\"🌍\",\"sceneKey\":\"helloEarth\",\"narration\":\"火星藏着很多小秘密。我们一起用眼睛看、用耳朵听，发现它和地球宝宝的关系。\",\"tapPrompt\":\"点一点火星，看看会发生什么。\",\"guide\":\"请宝宝观察画面里的火星，说说它像什么。\",\"questionTitle\":\"小小问题\",\"questionText\":\"火星给我们带来了什么？\",\"choices\":[\"🌍 地球\",\"🌙 月亮\",\"⭐ 星星\"],\"answerIndex\":0,\"feedback\":\"答对啦！火星是今天的主角。\",\"funFact\":\"火星是自然里很重要的一部分。\",\"parentPrompt\":\"家长可以问孩子：你在哪里见过火星？\",\"videoUrl\":null,\"videoUpdatedAt\":null,\"videoPrompt\":null,\"videoStatus\":null,\"videoError\":null,\"videoJobId\":null,\"videoJobProvider\":null},{\"id\":37,\"sortOrder\":2,\"title\":\"火星和我们\",\"shortTitle\":\"和我们\",\"icon\":\"🌍\",\"sceneKey\":\"helloEarth\",\"narration\":\"火星藏着很多小秘密。我们一起用眼睛看、用耳朵听，发现它和地球宝宝的关系。\",\"tapPrompt\":\"点一点火星，看看会发生什么。\",\"guide\":\"请宝宝观察画面里的火星，说说它像什么。\",\"questionTitle\":\"小小问题\",\"questionText\":\"火星给我们带来了什么？\",\"choices\":[\"🌍 地球\",\"🌙 月亮\",\"⭐ 星星\"],\"answerIndex\":0,\"feedback\":\"答对啦！火星是今天的主角。\",\"funFact\":\"火星是自然里很重要的一部分。\",\"parentPrompt\":\"家长可以问孩子：你在哪里见过火星？\",\"videoUrl\":null,\"videoUpdatedAt\":null,\"videoPrompt\":null,\"videoStatus\":null,\"videoError\":null,\"videoJobId\":null,\"videoJobProvider\":null},{\"id\":38,\"sortOrder\":3,\"title\":\"保护我们的火星\",\"shortTitle\":\"保护我们的\",\"icon\":\"🌍\",\"sceneKey\":\"helloEarth\",\"narration\":\"火星藏着很多小秘密。我们一起用眼睛看、用耳朵听，发现它和地球宝宝的关系。\",\"tapPrompt\":\"点一点火星，看看会发生什么。\",\"guide\":\"请宝宝观察画面里的火星，说说它像什么。\",\"questionTitle\":\"小小问题\",\"questionText\":\"火星给我们带来了什么？\",\"choices\":[\"🌍 地球\",\"🌙 月亮\",\"⭐ 星星\"],\"answerIndex\":0,\"feedback\":\"答对啦！火星是今天的主角。\",\"funFact\":\"火星是自然里很重要的一部分。\",\"parentPrompt\":\"家长可以问孩子：你在哪里见过火星？\",\"videoUrl\":null,\"videoUpdatedAt\":null,\"videoPrompt\":null,\"videoStatus\":null,\"videoError\":null,\"videoJobId\":null,\"videoJobProvider\":null}],\"version\":1,\"publishedAt\":\"2026-07-07T06:50:00.536Z\"}}}"
+      }
+    },
+    {
+      "type": "thinking",
+      "message": "Iteration 3..."
+    },
+    {
+      "type": "text_chunk",
+      "text": "火星"
+    },
+    {
+      "type": "text_chunk",
+      "text": "太阳"
+    },
+    {
+      "type": "text_chunk",
+      "text": "课程"
+    },
+    {
+      "type": "text_chunk",
+      "text": "已"
+    },
+    {
+      "type": "text_chunk",
+      "text": "成功"
+    },
+    {
+      "type": "text_chunk",
+      "text": "创建"
+    },
+    {
+      "type": "text_chunk",
+      "text": "！"
+    },
+    {
+      "type": "text_chunk",
+      "text": "以下是"
+    },
+    {
+      "type": "text_chunk",
+      "text": "课程"
+    },
+    {
+      "type": "text_chunk",
+      "text": "概"
+    },
+    {
+      "type": "text_chunk",
+      "text": "览"
+    },
+    {
+      "type": "text_chunk",
+      "text": "：\n\n"
+    },
+    {
+      "type": "text_chunk",
+      "text": "##"
+    },
+    {
+      "type": "text_chunk",
+      "text": " 🔴"
+    },
+    {
+      "type": "text_chunk",
+      "text": " "
+    },
+    {
+      "type": "text_chunk",
+      "text": "揭秘"
+    },
+    {
+      "type": "text_chunk",
+      "text": "火星"
+    },
+    {
+      "type": "text_chunk",
+      "text": "（"
+    },
+    {
+      "type": "text_chunk",
+      "text": "课程"
+    },
+    {
+      "type": "text_chunk",
+      "text": " #"
+    },
+    {
+      "type": "text_chunk",
+      "text": "14"
+    },
+    {
+      "type": "text_chunk",
+      "text": "）\n\n"
+    },
+    {
+      "type": "text_chunk",
+      "text": "**"
+    },
+    {
+      "type": "text_chunk",
+      "text": "适用"
+    },
+    {
+      "type": "text_chunk",
+      "text": "年龄"
+    },
+    {
+      "type": "text_chunk",
+      "text": "**"
+    },
+    {
+      "type": "text_chunk",
+      "text": "："
+    },
+    {
+      "type": "text_chunk",
+      "text": "4"
+    },
+    {
+      "type": "text_chunk",
+      "text": " "
+    },
+    {
+      "type": "text_chunk",
+      "text": "岁"
+    },
+    {
+      "type": "text_chunk",
+      "text": "\n\n"
+    },
+    {
+      "type": "text_chunk",
+      "text": "**"
+    },
+    {
+      "type": "text_chunk",
+      "text": "课程"
+    },
+    {
+      "type": "text_chunk",
+      "text": "包含"
+    },
+    {
+      "type": "text_chunk",
+      "text": " "
+    },
+    {
+      "type": "text_chunk",
+      "text": "4"
+    },
+    {
+      "type": "text_chunk",
+      "text": " "
+    },
+    {
+      "type": "text_chunk",
+      "text": "个"
+    },
+    {
+      "type": "text_chunk",
+      "text": "章节"
+    },
+    {
+      "type": "text_chunk",
+      "text": "："
+    },
+    {
+      "type": "text_chunk",
+      "text": "**\n\n"
+    },
+    {
+      "type": "text_chunk",
+      "text": "|"
+    },
+    {
+      "type": "text_chunk",
+      "text": " "
+    },
+    {
+      "type": "text_chunk",
+      "text": "序号"
+    },
+    {
+      "type": "text_chunk",
+      "text": " |"
+    },
+    {
+      "type": "text_chunk",
+      "text": " "
+    },
+    {
+      "type": "text_chunk",
+      "text": "章节"
+    },
+    {
+      "type": "text_chunk",
+      "text": "名称"
+    },
+    {
+      "type": "text_chunk",
+      "text": " |"
+    },
+    {
+      "type": "text_chunk",
+      "text": " "
+    },
+    {
+      "type": "text_chunk",
+      "text": "图标"
+    },
+    {
+      "type": "text_chunk",
+      "text": " |\n"
+    },
+    {
+      "type": "text_chunk",
+      "text": "|"
+    },
+    {
+      "type": "text_chunk",
+      "text": "------"
+    },
+    {
+      "type": "text_chunk",
+      "text": "|"
+    },
+    {
+      "type": "text_chunk",
+      "text": "---------"
+    },
+    {
+      "type": "text_chunk",
+      "text": "|"
+    },
+    {
+      "type": "text_chunk",
+      "text": "------"
+    },
+    {
+      "type": "text_chunk",
+      "text": "|\n"
+    },
+    {
+      "type": "text_chunk",
+      "text": "|"
+    },
+    {
+      "type": "text_chunk",
+      "text": " "
+    },
+    {
+      "type": "text_chunk",
+      "text": "1"
+    },
+    {
+      "type": "text_chunk",
+      "text": " |"
+    },
+    {
+      "type": "text_chunk",
+      "text": " "
+    },
+    {
+      "type": "text_chunk",
+      "text": "认识"
+    },
+    {
+      "type": "text_chunk",
+      "text": "火星"
+    },
+    {
+      "type": "text_chunk",
+      "text": " |"
+    },
+    {
+      "type": "text_chunk",
+      "text": " 🌍"
+    },
+    {
+      "type": "text_chunk",
+      "text": " |\n"
+    },
+    {
+      "type": "text_chunk",
+      "text": "|"
+    },
+    {
+      "type": "text_chunk",
+      "text": " "
+    },
+    {
+      "type": "text_chunk",
+      "text": "2"
+    },
+    {
+      "type": "text_chunk",
+      "text": " |"
+    },
+    {
+      "type": "text_chunk",
+      "text": " "
+    },
+    {
+      "type": "text_chunk",
+      "text": "火星"
+    },
+    {
+      "type": "text_chunk",
+      "text": "的秘密"
+    },
+    {
+      "type": "text_chunk",
+      "text": " |"
+    },
+    {
+      "type": "text_chunk",
+      "text": " 🌍"
+    },
+    {
+      "type": "text_chunk",
+      "text": " |\n"
+    },
+    {
+      "type": "text_chunk",
+      "text": "|"
+    },
+    {
+      "type": "text_chunk",
+      "text": " "
+    },
+    {
+      "type": "text_chunk",
+      "text": "3"
+    },
+    {
+      "type": "text_chunk",
+      "text": " |"
+    },
+    {
+      "type": "text_chunk",
+      "text": " "
+    },
+    {
+      "type": "text_chunk",
+      "text": "火星"
+    },
+    {
+      "type": "text_chunk",
+      "text": "和我们"
+    },
+    {
+      "type": "text_chunk",
+      "text": " |"
+    },
+    {
+      "type": "text_chunk",
+      "text": " 🌍"
+    },
+    {
+      "type": "text_chunk",
+      "text": " |\n"
+    },
+    {
+      "type": "text_chunk",
+      "text": "|"
+    },
+    {
+      "type": "text_chunk",
+      "text": " "
+    },
+    {
+      "type": "text_chunk",
+      "text": "4"
+    },
+    {
+      "type": "text_chunk",
+      "text": " |"
+    },
+    {
+      "type": "text_chunk",
+      "text": " "
+    },
+    {
+      "type": "text_chunk",
+      "text": "保护"
+    },
+    {
+      "type": "text_chunk",
+      "text": "我们的"
+    },
+    {
+      "type": "text_chunk",
+      "text": "火星"
+    },
+    {
+      "type": "text_chunk",
+      "text": " |"
+    },
+    {
+      "type": "text_chunk",
+      "text": " 🌍"
+    },
+    {
+      "type": "text_chunk",
+      "text": " |\n\n"
+    },
+    {
+      "type": "text_chunk",
+      "text": "每个"
+    },
+    {
+      "type": "text_chunk",
+      "text": "章节"
+    },
+    {
+      "type": "text_chunk",
+      "text": "都"
+    },
+    {
+      "type": "text_chunk",
+      "text": "包含"
+    },
+    {
+      "type": "text_chunk",
+      "text": "：\n"
+    },
+    {
+      "type": "text_chunk",
+      "text": "-"
+    },
+    {
+      "type": "text_chunk",
+      "text": " 🎙"
+    },
+    {
+      "type": "text_chunk",
+      "text": "️"
+    },
+    {
+      "type": "text_chunk",
+      "text": " **"
+    },
+    {
+      "type": "text_chunk",
+      "text": "旁"
+    },
+    {
+      "type": "text_chunk",
+      "text": "白"
+    },
+    {
+      "type": "text_chunk",
+      "text": "解说"
+    },
+    {
+      "type": "text_chunk",
+      "text": "**"
+    },
+    {
+      "type": "text_chunk",
+      "text": "："
+    },
+    {
+      "type": "text_chunk",
+      "text": "引导"
+    },
+    {
+      "type": "text_chunk",
+      "text": "宝宝"
+    },
+    {
+      "type": "text_chunk",
+      "text": "用"
+    },
+    {
+      "type": "text_chunk",
+      "text": "眼睛"
+    },
+    {
+      "type": "text_chunk",
+      "text": "看"
+    },
+    {
+      "type": "text_chunk",
+      "text": "、"
+    },
+    {
+      "type": "text_chunk",
+      "text": "用"
+    },
+    {
+      "type": "text_chunk",
+      "text": "耳朵"
+    },
+    {
+      "type": "text_chunk",
+      "text": "听"
+    },
+    {
+      "type": "text_chunk",
+      "text": "，"
+    },
+    {
+      "type": "text_chunk",
+      "text": "发现"
+    },
+    {
+      "type": "text_chunk",
+      "text": "火星"
+    },
+    {
+      "type": "text_chunk",
+      "text": "与"
+    },
+    {
+      "type": "text_chunk",
+      "text": "地球"
+    },
+    {
+      "type": "text_chunk",
+      "text": "的关系"
+    },
+    {
+      "type": "text_chunk",
+      "text": "\n"
+    },
+    {
+      "type": "text_chunk",
+      "text": "-"
+    },
+    {
+      "type": "text_chunk",
+      "text": " 👆"
+    },
+    {
+      "type": "text_chunk",
+      "text": " **"
+    },
+    {
+      "type": "text_chunk",
+      "text": "互动"
+    },
+    {
+      "type": "text_chunk",
+      "text": "提示"
+    },
+    {
+      "type": "text_chunk",
+      "text": "**"
+    },
+    {
+      "type": "text_chunk",
+      "text": "："
+    },
+    {
+      "type": "text_chunk",
+      "text": "让"
+    },
+    {
+      "type": "text_chunk",
+      "text": "宝宝"
+    },
+    {
+      "type": "text_chunk",
+      "text": "点"
+    },
+    {
+      "type": "text_chunk",
+      "text": "一点"
+    },
+    {
+      "type": "text_chunk",
+      "text": "火星"
+    },
+    {
+      "type": "text_chunk",
+      "text": "\n"
+    },
+    {
+      "type": "text_chunk",
+      "text": "-"
+    },
+    {
+      "type": "text_chunk",
+      "text": " 🧑"
+    },
+    {
+      "type": "text_chunk",
+      "text": "‍"
+    },
+    {
+      "type": "text_chunk",
+      "text": "🏫"
+    },
+    {
+      "type": "text_chunk",
+      "text": " **"
+    },
+    {
+      "type": "text_chunk",
+      "text": "引导"
+    },
+    {
+      "type": "text_chunk",
+      "text": "语"
+    },
+    {
+      "type": "text_chunk",
+      "text": "**"
+    },
+    {
+      "type": "text_chunk",
+      "text": "："
+    },
+    {
+      "type": "text_chunk",
+      "text": "鼓励"
+    },
+    {
+      "type": "text_chunk",
+      "text": "宝宝"
+    },
+    {
+      "type": "text_chunk",
+      "text": "观察"
+    },
+    {
+      "type": "text_chunk",
+      "text": "并"
+    },
+    {
+      "type": "text_chunk",
+      "text": "描述"
+    },
+    {
+      "type": "text_chunk",
+      "text": "火星"
+    },
+    {
+      "type": "text_chunk",
+      "text": "\n"
+    },
+    {
+      "type": "text_chunk",
+      "text": "-"
+    },
+    {
+      "type": "text_chunk",
+      "text": " ❓"
+    },
+    {
+      "type": "text_chunk",
+      "text": " **"
+    },
+    {
+      "type": "text_chunk",
+      "text": "趣味"
+    },
+    {
+      "type": "text_chunk",
+      "text": "问答"
+    },
+    {
+      "type": "text_chunk",
+      "text": "**"
+    },
+    {
+      "type": "text_chunk",
+      "text": "："
+    },
+    {
+      "type": "text_chunk",
+      "text": "关于"
+    },
+    {
+      "type": "text_chunk",
+      "text": "火星"
+    },
+    {
+      "type": "text_chunk",
+      "text": "的小"
+    },
+    {
+      "type": "text_chunk",
+      "text": "问题"
+    },
+    {
+      "type": "text_chunk",
+      "text": "\n"
+    },
+    {
+      "type": "text_chunk",
+      "text": "-"
+    },
+    {
+      "type": "text_chunk",
+      "text": " 💡"
+    },
+    {
+      "type": "text_chunk",
+      "text": " **"
+    },
+    {
+      "type": "text_chunk",
+      "text": "趣味"
+    },
+    {
+      "type": "text_chunk",
+      "text": "知识"
+    },
+    {
+      "type": "text_chunk",
+      "text": "**"
+    },
+    {
+      "type": "text_chunk",
+      "text": "："
+    },
+    {
+      "type": "text_chunk",
+      "text": "火星"
+    },
+    {
+      "type": "text_chunk",
+      "text": "相关"
+    },
+    {
+      "type": "text_chunk",
+      "text": "的小"
+    },
+    {
+      "type": "text_chunk",
+      "text": "知识点"
+    },
+    {
+      "type": "text_chunk",
+      "text": "\n"
+    },
+    {
+      "type": "text_chunk",
+      "text": "-"
+    },
+    {
+      "type": "text_chunk",
+      "text": " 👨"
+    },
+    {
+      "type": "text_chunk",
+      "text": "‍"
+    },
+    {
+      "type": "text_chunk",
+      "text": "👩"
+    },
+    {
+      "type": "text_chunk",
+      "text": "‍"
+    },
+    {
+      "type": "text_chunk",
+      "text": "👧"
+    },
+    {
+      "type": "text_chunk",
+      "text": " **"
+    },
+    {
+      "type": "text_chunk",
+      "text": "家长"
+    },
+    {
+      "type": "text_chunk",
+      "text": "提示"
+    },
+    {
+      "type": "text_chunk",
+      "text": "**"
+    },
+    {
+      "type": "text_chunk",
+      "text": "："
+    },
+    {
+      "type": "text_chunk",
+      "text": "给"
+    },
+    {
+      "type": "text_chunk",
+      "text": "家长的"
+    },
+    {
+      "type": "text_chunk",
+      "text": "互动"
+    },
+    {
+      "type": "text_chunk",
+      "text": "建议"
+    },
+    {
+      "type": "text_chunk",
+      "text": "\n\n"
+    },
+    {
+      "type": "text_chunk",
+      "text": "课程"
+    },
+    {
+      "type": "text_chunk",
+      "text": "已"
+    },
+    {
+      "type": "text_chunk",
+      "text": "发布"
+    },
+    {
+      "type": "text_chunk",
+      "text": "，"
+    },
+    {
+      "type": "text_chunk",
+      "text": "状态"
+    },
+    {
+      "type": "text_chunk",
+      "text": "为"
+    },
+    {
+      "type": "text_chunk",
+      "text": " **"
+    },
+    {
+      "type": "text_chunk",
+      "text": "已"
+    },
+    {
+      "type": "text_chunk",
+      "text": "上线"
+    },
+    {
+      "type": "text_chunk",
+      "text": "**"
+    },
+    {
+      "type": "text_chunk",
+      "text": "，"
+    },
+    {
+      "type": "text_chunk",
+      "text": "可以直接"
+    },
+    {
+      "type": "text_chunk",
+      "text": "用于"
+    },
+    {
+      "type": "text_chunk",
+      "text": "教学"
+    },
+    {
+      "type": "text_chunk",
+      "text": "啦"
+    },
+    {
+      "type": "text_chunk",
+      "text": "！"
+    },
+    {
+      "type": "text_chunk",
+      "text": "🚀"
+    },
+    {
+      "type": "text_done"
+    },
+    {
+      "type": "done",
+      "finalText": "火星太阳课程已成功创建！以下是课程概览：\n\n## 🔴 揭秘火星（课程 #14）\n\n**适用年龄**：4 岁\n\n**课程包含 4 个章节：**\n\n| 序号 | 章节名称 | 图标 |\n|------|---------|------|\n| 1 | 认识火星 | 🌍 |\n| 2 | 火星的秘密 | 🌍 |\n| 3 | 火星和我们 | 🌍 |\n| 4 | 保护我们的火星 | 🌍 |\n\n每个章节都包含：\n- 🎙️ **旁白解说**：引导宝宝用眼睛看、用耳朵听，发现火星与地球的关系\n- 👆 **互动提示**：让宝宝点一点火星\n- 🧑‍🏫 **引导语**：鼓励宝宝观察并描述火星\n- ❓ **趣味问答**：关于火星的小问题\n- 💡 **趣味知识**：火星相关的小知识点\n- 👨‍👩‍👧 **家长提示**：给家长的互动建议\n\n课程已发布，状态为 **已上线**，可以直接用于教学啦！🚀"
+    }
+  ],
+  "created": "2026-07-07T06:47:54.923Z",
+  "updated": "2026-07-07T06:50:09.088Z",
+  "metadata": {}
+}

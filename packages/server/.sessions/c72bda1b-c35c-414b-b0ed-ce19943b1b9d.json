@@ -1,0 +1,51 @@
+{
+  "id": "c72bda1b-c35c-414b-b0ed-ce19943b1b9d",
+  "projectId": "kid-earth-learning",
+  "title": "消息持久化测试",
+  "status": "completed",
+  "messages": [],
+  "events": [
+    {
+      "type": "thinking",
+      "message": "Iteration 1..."
+    },
+    {
+      "type": "text_chunk",
+      "text": "你好"
+    },
+    {
+      "type": "text_chunk",
+      "text": "！"
+    },
+    {
+      "type": "text_chunk",
+      "text": "有什么"
+    },
+    {
+      "type": "text_chunk",
+      "text": "可以"
+    },
+    {
+      "type": "text_chunk",
+      "text": "帮"
+    },
+    {
+      "type": "text_chunk",
+      "text": "你的"
+    },
+    {
+      "type": "text_chunk",
+      "text": "？"
+    },
+    {
+      "type": "text_done"
+    },
+    {
+      "type": "done",
+      "finalText": "你好！有什么可以帮你的？"
+    }
+  ],
+  "created": "2026-07-07T07:06:03.508Z",
+  "updated": "2026-07-07T07:06:08.122Z",
+  "metadata": {}
+}

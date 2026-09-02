@@ -1,0 +1,583 @@
+{
+  "id": "5b3fa343-c138-4580-b6e2-9acbf9eb1679",
+  "projectId": "kid-earth-learning",
+  "title": "persist-test",
+  "status": "completed",
+  "messages": [],
+  "events": [
+    {
+      "type": "thinking",
+      "message": "Iteration 1..."
+    },
+    {
+      "type": "text_chunk",
+      "text": "你好"
+    },
+    {
+      "type": "text_chunk",
+      "text": "！"
+    },
+    {
+      "type": "text_chunk",
+      "text": "👋"
+    },
+    {
+      "type": "text_chunk",
+      "text": " "
+    },
+    {
+      "type": "text_chunk",
+      "text": "很高兴"
+    },
+    {
+      "type": "text_chunk",
+      "text": "见到"
+    },
+    {
+      "type": "text_chunk",
+      "text": "你"
+    },
+    {
+      "type": "text_chunk",
+      "text": "！\n\n"
+    },
+    {
+      "type": "text_chunk",
+      "text": "我是"
+    },
+    {
+      "type": "text_chunk",
+      "text": "你的"
+    },
+    {
+      "type": "text_chunk",
+      "text": " AI"
+    },
+    {
+      "type": "text_chunk",
+      "text": " "
+    },
+    {
+      "type": "text_chunk",
+      "text": "智能"
+    },
+    {
+      "type": "text_chunk",
+      "text": "助手"
+    },
+    {
+      "type": "text_chunk",
+      "text": "，"
+    },
+    {
+      "type": "text_chunk",
+      "text": "可以在"
+    },
+    {
+      "type": "text_chunk",
+      "text": "当前"
+    },
+    {
+      "type": "text_chunk",
+      "text": "工作"
+    },
+    {
+      "type": "text_chunk",
+      "text": "环境中"
+    },
+    {
+      "type": "text_chunk",
+      "text": "帮你"
+    },
+    {
+      "type": "text_chunk",
+      "text": "完成"
+    },
+    {
+      "type": "text_chunk",
+      "text": "各种"
+    },
+    {
+      "type": "text_chunk",
+      "text": "任务"
+    },
+    {
+      "type": "text_chunk",
+      "text": "。"
+    },
+    {
+      "type": "text_chunk",
+      "text": "以下"
+    },
+    {
+      "type": "text_chunk",
+      "text": "是一些"
+    },
+    {
+      "type": "text_chunk",
+      "text": "我能"
+    },
+    {
+      "type": "text_chunk",
+      "text": "帮"
+    },
+    {
+      "type": "text_chunk",
+      "text": "到"
+    },
+    {
+      "type": "text_chunk",
+      "text": "你的"
+    },
+    {
+      "type": "text_chunk",
+      "text": "：\n\n"
+    },
+    {
+      "type": "text_chunk",
+      "text": "-"
+    },
+    {
+      "type": "text_chunk",
+      "text": " **"
+    },
+    {
+      "type": "text_chunk",
+      "text": "代码"
+    },
+    {
+      "type": "text_chunk",
+      "text": "编辑"
+    },
+    {
+      "type": "text_chunk",
+      "text": "**"
+    },
+    {
+      "type": "text_chunk",
+      "text": "："
+    },
+    {
+      "type": "text_chunk",
+      "text": "读取"
+    },
+    {
+      "type": "text_chunk",
+      "text": "、"
+    },
+    {
+      "type": "text_chunk",
+      "text": "修改"
+    },
+    {
+      "type": "text_chunk",
+      "text": "、"
+    },
+    {
+      "type": "text_chunk",
+      "text": "创建"
+    },
+    {
+      "type": "text_chunk",
+      "text": "文件"
+    },
+    {
+      "type": "text_chunk",
+      "text": "\n"
+    },
+    {
+      "type": "text_chunk",
+      "text": "-"
+    },
+    {
+      "type": "text_chunk",
+      "text": " **"
+    },
+    {
+      "type": "text_chunk",
+      "text": "搜索"
+    },
+    {
+      "type": "text_chunk",
+      "text": "代码"
+    },
+    {
+      "type": "text_chunk",
+      "text": "**"
+    },
+    {
+      "type": "text_chunk",
+      "text": "："
+    },
+    {
+      "type": "text_chunk",
+      "text": "在"
+    },
+    {
+      "type": "text_chunk",
+      "text": "项目中"
+    },
+    {
+      "type": "text_chunk",
+      "text": "查找"
+    },
+    {
+      "type": "text_chunk",
+      "text": "函数"
+    },
+    {
+      "type": "text_chunk",
+      "text": "、"
+    },
+    {
+      "type": "text_chunk",
+      "text": "类型"
+    },
+    {
+      "type": "text_chunk",
+      "text": "、"
+    },
+    {
+      "type": "text_chunk",
+      "text": "模式"
+    },
+    {
+      "type": "text_chunk",
+      "text": "等"
+    },
+    {
+      "type": "text_chunk",
+      "text": "\n"
+    },
+    {
+      "type": "text_chunk",
+      "text": "-"
+    },
+    {
+      "type": "text_chunk",
+      "text": " **"
+    },
+    {
+      "type": "text_chunk",
+      "text": "运行"
+    },
+    {
+      "type": "text_chunk",
+      "text": "命令"
+    },
+    {
+      "type": "text_chunk",
+      "text": "**"
+    },
+    {
+      "type": "text_chunk",
+      "text": "："
+    },
+    {
+      "type": "text_chunk",
+      "text": "执行"
+    },
+    {
+      "type": "text_chunk",
+      "text": " shell"
+    },
+    {
+      "type": "text_chunk",
+      "text": " "
+    },
+    {
+      "type": "text_chunk",
+      "text": "命令"
+    },
+    {
+      "type": "text_chunk",
+      "text": "、"
+    },
+    {
+      "type": "text_chunk",
+      "text": "脚本"
+    },
+    {
+      "type": "text_chunk",
+      "text": "、"
+    },
+    {
+      "type": "text_chunk",
+      "text": "测试"
+    },
+    {
+      "type": "text_chunk",
+      "text": "等"
+    },
+    {
+      "type": "text_chunk",
+      "text": "\n"
+    },
+    {
+      "type": "text_chunk",
+      "text": "-"
+    },
+    {
+      "type": "text_chunk",
+      "text": " **"
+    },
+    {
+      "type": "text_chunk",
+      "text": "网络"
+    },
+    {
+      "type": "text_chunk",
+      "text": "搜索"
+    },
+    {
+      "type": "text_chunk",
+      "text": "**"
+    },
+    {
+      "type": "text_chunk",
+      "text": "："
+    },
+    {
+      "type": "text_chunk",
+      "text": "搜索"
+    },
+    {
+      "type": "text_chunk",
+      "text": "最新"
+    },
+    {
+      "type": "text_chunk",
+      "text": "信息"
+    },
+    {
+      "type": "text_chunk",
+      "text": "或"
+    },
+    {
+      "type": "text_chunk",
+      "text": "文档"
+    },
+    {
+      "type": "text_chunk",
+      "text": "\n"
+    },
+    {
+      "type": "text_chunk",
+      "text": "-"
+    },
+    {
+      "type": "text_chunk",
+      "text": " **"
+    },
+    {
+      "type": "text_chunk",
+      "text": "远程"
+    },
+    {
+      "type": "text_chunk",
+      "text": "操作"
+    },
+    {
+      "type": "text_chunk",
+      "text": "**"
+    },
+    {
+      "type": "text_chunk",
+      "text": "："
+    },
+    {
+      "type": "text_chunk",
+      "text": "触发"
+    },
+    {
+      "type": "text_chunk",
+      "text": "已"
+    },
+    {
+      "type": "text_chunk",
+      "text": "注册"
+    },
+    {
+      "type": "text_chunk",
+      "text": "的"
+    },
+    {
+      "type": "text_chunk",
+      "text": "远程"
+    },
+    {
+      "type": "text_chunk",
+      "text": "项目"
+    },
+    {
+      "type": "text_chunk",
+      "text": "操作"
+    },
+    {
+      "type": "text_chunk",
+      "text": "（"
+    },
+    {
+      "type": "text_chunk",
+      "text": "如"
+    },
+    {
+      "type": "text_chunk",
+      "text": "创建"
+    },
+    {
+      "type": "text_chunk",
+      "text": "课程"
+    },
+    {
+      "type": "text_chunk",
+      "text": "等"
+    },
+    {
+      "type": "text_chunk",
+      "text": "）\n\n"
+    },
+    {
+      "type": "text_chunk",
+      "text": "当前"
+    },
+    {
+      "type": "text_chunk",
+      "text": "工作"
+    },
+    {
+      "type": "text_chunk",
+      "text": "目录"
+    },
+    {
+      "type": "text_chunk",
+      "text": "是"
+    },
+    {
+      "type": "text_chunk",
+      "text": " `/"
+    },
+    {
+      "type": "text_chunk",
+      "text": "Users"
+    },
+    {
+      "type": "text_chunk",
+      "text": "/c"
+    },
+    {
+      "type": "text_chunk",
+      "text": "ao"
+    },
+    {
+      "type": "text_chunk",
+      "text": "qu"
+    },
+    {
+      "type": "text_chunk",
+      "text": "/"
+    },
+    {
+      "type": "text_chunk",
+      "text": "team"
+    },
+    {
+      "type": "text_chunk",
+      "text": "-agent"
+    },
+    {
+      "type": "text_chunk",
+      "text": "/c"
+    },
+    {
+      "type": "text_chunk",
+      "text": "ustomer"
+    },
+    {
+      "type": "text_chunk",
+      "text": "-agent"
+    },
+    {
+      "type": "text_chunk",
+      "text": "/p"
+    },
+    {
+      "type": "text_chunk",
+      "text": "ackages"
+    },
+    {
+      "type": "text_chunk",
+      "text": "/server"
+    },
+    {
+      "type": "text_chunk",
+      "text": "`"
+    },
+    {
+      "type": "text_chunk",
+      "text": "，"
+    },
+    {
+      "type": "text_chunk",
+      "text": "看起来"
+    },
+    {
+      "type": "text_chunk",
+      "text": "是一个"
+    },
+    {
+      "type": "text_chunk",
+      "text": "服务"
+    },
+    {
+      "type": "text_chunk",
+      "text": "端"
+    },
+    {
+      "type": "text_chunk",
+      "text": "项目"
+    },
+    {
+      "type": "text_chunk",
+      "text": "。\n\n"
+    },
+    {
+      "type": "text_chunk",
+      "text": "有什么"
+    },
+    {
+      "type": "text_chunk",
+      "text": "我可以"
+    },
+    {
+      "type": "text_chunk",
+      "text": "帮"
+    },
+    {
+      "type": "text_chunk",
+      "text": "你的"
+    },
+    {
+      "type": "text_chunk",
+      "text": "吗"
+    },
+    {
+      "type": "text_chunk",
+      "text": "？"
+    },
+    {
+      "type": "text_chunk",
+      "text": "😊"
+    },
+    {
+      "type": "text_done"
+    },
+    {
+      "type": "done",
+      "finalText": "你好！👋 很高兴见到你！\n\n我是你的 AI 智能助手，可以在当前工作环境中帮你完成各种任务。以下是一些我能帮到你的：\n\n- **代码编辑**：读取、修改、创建文件\n- **搜索代码**：在项目中查找函数、类型、模式等\n- **运行命令**：执行 shell 命令、脚本、测试等\n- **网络搜索**：搜索最新信息或文档\n- **远程操作**：触发已注册的远程项目操作（如创建课程等）\n\n当前工作目录是 `/Users/caoqu/team-agent/customer-agent/packages/server`，看起来是一个服务端项目。\n\n有什么我可以帮你的吗？😊"
+    }
+  ],
+  "created": "2026-07-07T07:10:23.086Z",
+  "updated": "2026-07-07T07:10:31.318Z",
+  "metadata": {}
+}

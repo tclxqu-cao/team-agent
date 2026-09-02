@@ -1,0 +1,1399 @@
+{
+  "id": "aa9fe1a5-03e5-4325-8fec-71d83f31e5b5",
+  "projectId": "kid-earth-learning",
+  "title": "火星课程",
+  "status": "completed",
+  "messages": [],
+  "events": [
+    {
+      "type": "thinking",
+      "message": "Iteration 1..."
+    },
+    {
+      "type": "text_chunk",
+      "text": "让我"
+    },
+    {
+      "type": "text_chunk",
+      "text": "先"
+    },
+    {
+      "type": "text_chunk",
+      "text": "了解一下"
+    },
+    {
+      "type": "text_chunk",
+      "text": "这个"
+    },
+    {
+      "type": "text_chunk",
+      "text": "工具的"
+    },
+    {
+      "type": "text_chunk",
+      "text": "更多"
+    },
+    {
+      "type": "text_chunk",
+      "text": "信息"
+    },
+    {
+      "type": "text_chunk",
+      "text": "，"
+    },
+    {
+      "type": "text_chunk",
+      "text": "然后"
+    },
+    {
+      "type": "text_chunk",
+      "text": "为你"
+    },
+    {
+      "type": "text_chunk",
+      "text": "创建"
+    },
+    {
+      "type": "text_chunk",
+      "text": "课程"
+    },
+    {
+      "type": "text_chunk",
+      "text": "。"
+    },
+    {
+      "type": "tool_call",
+      "toolCall": {
+        "id": "call_00_vr749yCMrzBxceRAXpKM2563",
+        "name": "grep",
+        "arguments": {
+          "pattern": "create_kid_earth_course",
+          "path": "/Users/caoqu/team-agent/customer-agent/packages/server"
+        }
+      }
+    },
+    {
+      "type": "text_done"
+    },
+    {
+      "type": "tool_result",
+      "result": {
+        "toolCallId": "call_00_vr749yCMrzBxceRAXpKM2563",
+        "content": "Found 9 match(es) for \"create_kid_earth_course\":\n\napp/api/agent-host.test.ts:24: scheme: \"create_kid_earth_course\",\napp/api/agent-host.test.ts:60: await expect(response.json()).resolves.toMatchObject({ ok: true, tools: [{ scheme: \"create_kid_earth_course\" }] });\napp/api/agent-host.test.ts:69: expect(remoteToolDefinition?.description).toContain(\"create_kid_earth_course\");\napp/api/agent-host.test.ts:70: expect(provider.messages.find((message) => message.role === \"system\")?.content).toContain(\"create_kid_earth_course\");\napp/api/agent-host.test.ts:115: expect(remoteToolDefinition?.description).toContain(\"create_kid_earth_course\");\napp/api/agent-host.test.ts:117: expect(systemPrompt).toContain(\"create_kid_earth_course\");\napp/api/agent-host.test.ts:159: expect(projectAToolBefore?.description).toContain(\"create_kid_earth_course\");\napp/api/agent-host.test.ts:161: expect(projectAToolAfter?.description).toContain(\"create_kid_earth_course\");\napp/api/agent-host.test.ts:351: expect(remoteToolDefinition?.description).toContain(\"create_kid_earth_course\");"
+      }
+    },
+    {
+      "type": "thinking",
+      "message": "Iteration 2..."
+    },
+    {
+      "type": "text_chunk",
+      "text": "Let"
+    },
+    {
+      "type": "text_chunk",
+      "text": " me"
+    },
+    {
+      "type": "text_chunk",
+      "text": " check"
+    },
+    {
+      "type": "text_chunk",
+      "text": " the"
+    },
+    {
+      "type": "text_chunk",
+      "text": " test"
+    },
+    {
+      "type": "text_chunk",
+      "text": " file"
+    },
+    {
+      "type": "text_chunk",
+      "text": " and"
+    },
+    {
+      "type": "text_chunk",
+      "text": " relevant"
+    },
+    {
+      "type": "text_chunk",
+      "text": " source"
+    },
+    {
+      "type": "text_chunk",
+      "text": " code"
+    },
+    {
+      "type": "text_chunk",
+      "text": " to"
+    },
+    {
+      "type": "text_chunk",
+      "text": " understand"
+    },
+    {
+      "type": "text_chunk",
+      "text": " the"
+    },
+    {
+      "type": "text_chunk",
+      "text": " expected"
+    },
+    {
+      "type": "text_chunk",
+      "text": " payload"
+    },
+    {
+      "type": "text_chunk",
+      "text": " format"
+    },
+    {
+      "type": "text_chunk",
+      "text": " for"
+    },
+    {
+      "type": "text_chunk",
+      "text": " this"
+    },
+    {
+      "type": "text_chunk",
+      "text": " remote"
+    },
+    {
+      "type": "text_chunk",
+      "text": " action"
+    },
+    {
+      "type": "text_chunk",
+      "text": "."
+    },
+    {
+      "type": "tool_call",
+      "toolCall": {
+        "id": "call_00_Yw8v3ucLjt72BEajHq4e8258",
+        "name": "read_file",
+        "arguments": {
+          "file_path": "/Users/caoqu/team-agent/customer-agent/packages/server/app/api/agent-host.test.ts",
+          "offset": 1,
+          "limit": 80
+        }
+      }
+    },
+    {
+      "type": "tool_call",
+      "toolCall": {
+        "id": "call_01_E1BFJGYyvbh6RoMLlCDY2591",
+        "name": "grep",
+        "arguments": {
+          "pattern": "create_kid_earth_course",
+          "path": "/Users/caoqu/team-agent/customer-agent",
+          "include": "*.ts",
+          "max_results": 30
+        }
+      }
+    },
+    {
+      "type": "text_done"
+    },
+    {
+      "type": "tool_result",
+      "result": {
+        "toolCallId": "call_00_Yw8v3ucLjt72BEajHq4e8258",
+        "content": "import { AgentBuilder, type IModelProvider, type Message, type StreamEvent, type StreamOptions } from \"@agent/core\";\nimport { afterEach, describe, expect, it } from \"vitest\";\nimport { agentHost } from \"./agent-host\";\nimport { POST as registerRemoteTools } from \"./remote-tools/register/route\";\nimport { GET as listSessions, POST as createSession } from \"./sessions/route\";\n\nclass CapturingModelProvider implements IModelProvider {\n  readonly providerId = \"test\";\n  readonly modelId = \"test-model\";\n  messages: Message[] = [];\n  options: StreamOptions | undefined;\n\n  async *streamChat(messages: Message[], options?: StreamOptions): AsyncIterable<StreamEvent> {\n    this.messages = messages;\n    this.options = options;\n    yield { type: \"text_done\" };\n  }\n\n  async countTokens(): Promise<number> { return 1; }\n  supportsModel(): boolean { return true; }\n}\n\nconst kidEarthTool = {\n  scheme: \"create_kid_earth_course\",\n  purpose: \"创建课程\",\n  url: \"http://kid/api/agent-actions/create-course\",\n  method: \"POST\" as const,\n};\n\nconst projectBTool = {\n  scheme: \"create_project_b_course\",\n  purpose: \"项目 B 创建课程\",\n  url: \"http://project-b/api/agent-actions/create-course\",\n  method: \"POST\" as const,\n};\n\ndescribe(\"agentHost singleton\", () => {\n  const originalEnv = { ...process.env };\n\n  afterEach(() => {\n    process.env = { ...originalEnv };\n  });\n\n  it(\"stores the shared AgentHost on globalThis so answer routes can see pending questions from run routes\", () => {\n    expect((globalThis as unknown as { __agentHost?: unknown }).__agentHost).toBe(agentHost);\n  });\n\n  it(\"registers remote tools through the server route and exposes them through the runtime builder\", async () => {\n    process.env.AGENT_REMOTE_TOOLS_REGISTER_TOKEN = \"test-token\";\n    const provider = new CapturingModelProvider();\n    agentHost.setBuilder(new AgentBuilder().withModelProvider(provider));\n\n    const response = await registerRemoteTools(new Request(\"http://test/api/remote-tools/register\", {\n      method: \"POST\",\n      headers: { authorization: \"Bearer test-token\" },\n      body: JSON.stringify({ projectId: \"kid-earth-learning\", tools: [kidEarthTool] }),\n    }));\n\n    expect(response.status).toBe(200);\n    await expect(response.json()).resolves.toMatchObject({ ok: true, tools: [{ scheme: \"create_kid_earth_course\" }] });\n\n    const session = await agentHost.createSession(\"remote tools runtime test\", \"kid-earth-learning\");\n    const agent = await agentHost.getBuilder().withRemoteToolStore(agentHost.getRemoteToolStore(), \"kid-earth-learning\").build();\n    for await (const event of agent.run(\"生成课程\", session.id)) {\n      if (event.type === \"done\") break;\n    }\n\n    const remoteToolDefinition = provider.options?.tools?.find((tool) => tool.name === \"remote_project_action\");\n    expect(remoteToolDefinition?.description).toContain(\"create_kid_earth_course\");\n    expect(provider.messages.find((message) => message.role === \"system\")?.content).toContain(\"create_kid_earth_course\");\n  });\n\n  it(\"stores projectId from the sessions API\", async () => {\n    const response = await createSession(new Request(\"http://test/api/sessions\", {\n      method: \"POST\",\n      body: JSON.stringify({ title: \"课程创建\", projectId: \"kid-earth-learning\" }),\n    }));\n\n    expect(response.status).toBe(201);\n    const session = await response.json();"
+      }
+    },
+    {
+      "type": "tool_result",
+      "result": {
+        "toolCallId": "call_01_E1BFJGYyvbh6RoMLlCDY2591",
+        "content": "Found 30+ match(es) for \"create_kid_earth_course\":\n\n../core/src/domain/tool/builtin/RemoteProjectActionTool.test.ts:22: store.upsertTools(\"kid-earth-learning\", [{ scheme: \"create_kid_earth_course\", purpose: \"创建课程\", url: \"http://kid/api/agent-actions/create-course\", method: \"POST\", auth: { type: \"bearer\", tokenEnv: \"AGENT_ACTION_TOKEN\" } }]);\n../core/src/domain/tool/builtin/RemoteProjectActionTool.test.ts:26: const result = await tool.execute({ action: \"create_kid_earth_course\", payload: { title: \"揭秘太阳\", url: \"http://evil\" } }, { workingDirectory: \"/tmp\", sessionId: \"s1\" });\n../core/src/domain/tool/builtin/RemoteProjectActionTool.test.ts:36: const job = store.createJob(\"kid-earth-learning\", \"create_kid_earth_course\", { title: \"揭秘太阳\" });\n../core/src/domain/tool/builtin/RemoteProjectActionTool.test.ts:47: const otherJob = store.createJob(\"other-project\", \"create_kid_earth_course\", { title: \"其它项目\" });\n../core/src/domain/tool/builtin/RemoteProjectActionTool.test.ts:59: store.upsertTools(\"kid-earth-learning\", [{ scheme: \"create_kid_earth_course\", purpose: \"创建课程\", url: \"http://kid/api/agent-actions/create-course\", method: \"POST\", headers: { \"x-project-key\": \"kid-earth\" }, auth: { type: \"bearer\", tokenEnv: \"AGENT_ACTION_TOKEN\" } }]);\n../core/src/domain/tool/builtin/RemoteProjectActionTool.test.ts:63: await tool.execute({ action: \"create_kid_earth_course\", payload: { title: \"揭秘太阳\" } }, { workingDirectory: \"/tmp\", sessionId: \"s1\" });\n../core/src/domain/tool/builtin/RemoteProjectActionTool.test.ts:71: store.upsertTools(\"kid-earth-learning\", [{ scheme: \"create_kid_earth_course\", purpose: \"创建课程\", url: \"http://kid/api/agent-actions/create-course\", method: \"POST\", headers: { Authorization: \"Bearer attacker\", \"x-project-key\": \"kid-earth\" }, auth: { type: \"bearer\", tokenEnv: \"AGENT_ACTION_TOKEN\" } }]);\n../core/src/domain/tool/builtin/RemoteProjectActionTool.test.ts:75: await tool.execute({ action: \"create_kid_earth_course\", payload: { title: \"揭秘太阳\" } }, { workingDirectory: \"/tmp\", sessionId: \"s1\" });\n../core/src/domain/tool/builtin/RemoteProjectActionTool.test.ts:88: store.upsertTools(\"kid-earth-learning\", [{ scheme: \"create_kid_earth_course\", purpose: \"创建课程\", url: \"http://kid/api/agent-actions/create-course\", method: \"POST\" }]);\n../core/src/domain/tool/builtin/RemoteProjectActionTool.test.ts:92: const result = await tool.execute({ action: \"create_kid_earth_course\", payload: { title: \"揭秘太阳\" } }, { workingDirectory: \"/tmp\", sessionId: \"s1\" });\n../core/src/domain/tool/builtin/RemoteProjectActionTool.test.ts:100: store.upsertTools(\"kid-earth-learning\", [{ scheme: \"create_kid_earth_course\", purpose: \"创建课程\", url: \"http://kid/api/agent-actions/create-course\", method: \"POST\" }]);\n../core/src/domain/tool/builtin/RemoteProjectActionTool.test.ts:111: const result = await tool.execute({ action: \"create_kid_earth_course\", payload: { title: \"揭秘太阳\" } }, { workingDirectory: \"/tmp\", sessionId: \"s1\" });\n../core/src/domain/tool/builtin/__tests__/RemoteProjectActionTool.test.ts:7: { action: \"create_kid_earth_course\", payload: { title: \"揭秘太阳\" } },\n../core/src/domain/tool/builtin/__tests__/RemoteProjectActionTool.test.ts:17: create_kid_earth_course: {\n../core/src/domain/tool/builtin/__tests__/RemoteProjectActionTool.test.ts:24: expect(new RemoteProjectActionTool().description).not.toContain(\"create_kid_earth_course\");\n../core/src/infrastructure/SQLiteRemoteToolStore.test.ts:19: scheme: \"create_kid_earth_course\",\n../core/src/infrastructure/SQLiteRemoteToolStore.test.ts:39: scheme: \"create_kid_earth_course\",\n../core/src/infrastructure/SQLiteRemoteToolStore.test.ts:50: scheme: \"create_kid_earth_course\",\n../core/src/infrastructure/SQLiteRemoteToolStore.test.ts:63: expect(tools[0]).toMatchObject({ scheme: \"create_kid_earth_course\", purpose: \"创建并发布课程\" });\n../core/src/infrastructure/SQLiteRemoteToolStore.test.ts:70: const job = store.createJob(\"kid-earth-learning\", \"create_kid_earth_course\", { title: \"揭秘太阳\" });\n../core/src/infrastructure/SQLiteRemoteToolStore.test.ts:79: const failed = store.createJob(\"kid-earth-learning\", \"create_kid_earth_course\", { title: \"失败课程\" });\n../core/src/infrastructure/SQLiteRemoteToolStore.test.ts:95: const job = store.createJob(\"kid-earth-learning\", \"create_kid_earth_course\", { title: \"先成功后失败\" });\n../sdk/src/client/AgentClient.test.ts:19: scheme: \"create_kid_earth_course\",\n../sdk/src/client/AgentClient.test.ts:49: scheme: \"create_kid_earth_course\",\n../sdk/src/components/AgentChat.test.ts:57: scheme: \"create_kid_earth_course\",\n../sdk/src/components/AgentChat.test.ts:67: scheme: \"create_kid_earth_course\",\n../sdk/src/components/AgentChat.test.ts:102: chat.remoteTools = [{ scheme: \"create_kid_earth_course\", purpose: \"创建课程\", url: \"http://kid/api\" }];\n../sdk/src/components/AgentChat.test.ts:139: chat.remoteTools = [{ scheme: \"create_kid_earth_course\", purpose: \"创建课程\", url: \"http://kid/api\" }];\napp/api/agent-host.test.ts:24: scheme: \"create_kid_earth_course\",\napp/api/agent-host.test.ts:60: await expect(response.json()).resolves.toMatchObject({ ok: true, tools: [{ scheme: \"create_kid_earth_course\" }] });"
+      }
+    },
+    {
+      "type": "thinking",
+      "message": "Iteration 3..."
+    },
+    {
+      "type": "tool_call",
+      "toolCall": {
+        "id": "call_00_BxeT3m5rLItdrNHLv5Bs7378",
+        "name": "read_file",
+        "arguments": {
+          "file_path": "/Users/caoqu/team-agent/customer-agent/packages/core/src/domain/tool/builtin/RemoteProjectActionTool.test.ts"
+        }
+      }
+    },
+    {
+      "type": "tool_call",
+      "toolCall": {
+        "id": "call_01_EAqfMkuBRaHrHo9dS8a92355",
+        "name": "grep",
+        "arguments": {
+          "pattern": "RemoteProjectActionTool",
+          "include": "*.ts",
+          "path": "/Users/caoqu/team-agent/customer-agent/packages/core/src/domain/tool/builtin"
+        }
+      }
+    },
+    {
+      "type": "text_done"
+    },
+    {
+      "type": "tool_result",
+      "result": {
+        "toolCallId": "call_00_BxeT3m5rLItdrNHLv5Bs7378",
+        "content": "import { describe, expect, it, vi } from \"vitest\";\nimport { RemoteProjectActionTool } from \"./RemoteProjectActionTool.js\";\nimport type { RemoteToolStore } from \"../../remote-tools/RemoteToolStore.js\";\nimport type { RemoteToolDefinition, RemoteToolJob, RemoteToolRegistration } from \"../../remote-tools/entities.js\";\n\nclass MemoryStore implements RemoteToolStore {\n  tools = new Map<string, RemoteToolDefinition>();\n  jobs = new Map<string, RemoteToolJob>();\n  upsertTools(projectId: string, tools: RemoteToolRegistration[]) { return tools.map((tool) => { const row = { id: tool.scheme, projectId, scheme: tool.scheme, purpose: tool.purpose, url: tool.url, method: \"POST\" as const, headers: tool.headers ?? {}, inputSchema: tool.inputSchema ?? {}, outputSchema: tool.outputSchema ?? {}, examples: tool.examples ?? [], auth: tool.auth ?? {}, enabled: true, createdAt: \"now\", updatedAt: \"now\" }; this.tools.set(`${projectId}:${tool.scheme}`, row); return row; }); }\n  listEnabledTools(projectId: string) { return [...this.tools.values()].filter((tool) => tool.projectId === projectId && tool.enabled); }\n  getTool(projectId: string, scheme: string) { return this.tools.get(`${projectId}:${scheme}`) ?? null; }\n  createJob(projectId: string, scheme: string, requestPayload: Record<string, unknown>) { const job = { id: `job-${this.jobs.size + 1}`, projectId, scheme, requestPayload, status: \"queued\" as const, responsePayload: null, error: null, createdAt: \"now\", updatedAt: \"now\" }; this.jobs.set(job.id, job); return job; }\n  markJobRunning(id: string) { this.jobs.set(id, { ...this.jobs.get(id)!, status: \"running\" }); }\n  markJobSucceeded(id: string, responsePayload: Record<string, unknown>) { this.jobs.set(id, { ...this.jobs.get(id)!, status: \"succeeded\", responsePayload }); }\n  markJobFailed(id: string, error: string) { this.jobs.set(id, { ...this.jobs.get(id)!, status: \"failed\", error }); }\n  getJob(id: string) { return this.jobs.get(id) ?? null; }\n}\n\ndescribe(\"RemoteProjectActionTool\", () => {\n  it(\"creates a job and calls the registered URL without accepting a caller URL\", async () => {\n    const store = new MemoryStore();\n    store.upsertTools(\"kid-earth-learning\", [{ scheme: \"create_kid_earth_course\", purpose: \"创建课程\", url: \"http://kid/api/agent-actions/create-course\", method: \"POST\", auth: { type: \"bearer\", tokenEnv: \"AGENT_ACTION_TOKEN\" } }]);\n    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({ ok: true, courseId: 12 }), { status: 200, headers: { \"content-type\": \"application/json\" } }));\n    const tool = new RemoteProjectActionTool({ store, projectId: \"kid-earth-learning\", fetchImpl, actionToken: \"secret\" });\n\n    const result = await tool.execute({ action: \"create_kid_earth_course\", payload: { title: \"揭秘太阳\", url: \"http://evil\" } }, { workingDirectory: \"/tmp\", sessionId: \"s1\" });\n\n    expect(result.isError).toBeFalsy();\n    expect(JSON.parse(result.content)).toMatchObject({ status: \"queued\", jobId: \"job-1\" });\n    await vi.waitFor(() => expect(store.getJob(\"job-1\")?.status).toBe(\"succeeded\"));\n    expect(fetchImpl).toHaveBeenCalledWith(\"http://kid/api/agent-actions/create-course\", expect.objectContaining({ method: \"POST\", headers: expect.objectContaining({ authorization: \"Bearer secret\" }) }));\n  });\n\n  it(\"returns job status\", async () => {\n    const store = new MemoryStore();\n    const job = store.createJob(\"kid-earth-learning\", \"create_kid_earth_course\", { title: \"揭秘太阳\" });\n    store.markJobSucceeded(job.id, { ok: true, courseId: 12 });\n    const tool = new RemoteProjectActionTool({ store, projectId: \"kid-earth-learning\", fetchImpl: fetch, actionToken: \"secret\" });\n\n    const result = await tool.execute({ action: \"remote_job_status\", payload: { jobId: job.id } }, { workingDirectory: \"/tmp\", sessionId: \"s1\" });\n\n    expect(JSON.parse(result.content)).toEqual({ status: \"succeeded\", result: { ok: true, courseId: 12 } });\n  });\n\n  it(\"does not return another project's job status\", async () => {\n    const store = new MemoryStore();\n    const otherJob = store.createJob(\"other-project\", \"create_kid_earth_course\", { title: \"其它项目\" });\n    store.markJobSucceeded(otherJob.id, { ok: true, courseId: 99 });\n    const tool = new RemoteProjectActionTool({ store, projectId: \"kid-earth-learning\", fetchImpl: fetch, actionToken: \"secret\" });\n\n    const result = await tool.execute({ action: \"remote_job_status\", payload: { jobId: otherJob.id } }, { workingDirectory: \"/tmp\", sessionId: \"s1\" });\n\n    expect(result.isError).toBe(true);\n    expect(result.content).toContain(`Unknown remote job: ${otherJob.id}`);\n  });\n\n  it(\"includes registered static headers with authorization for remote execution\", async () => {\n    const store = new MemoryStore();\n    store.upsertTools(\"kid-earth-learning\", [{ scheme: \"create_kid_earth_course\", purpose: \"创建课程\", url: \"http://kid/api/agent-actions/create-course\", method: \"POST\", headers: { \"x-project-key\": \"kid-earth\" }, auth: { type: \"bearer\", tokenEnv: \"AGENT_ACTION_TOKEN\" } }]);\n    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({ ok: true }), { status: 200, headers: { \"content-type\": \"application/json\" } }));\n    const tool = new RemoteProjectActionTool({ store, projectId: \"kid-earth-learning\", fetchImpl, actionToken: \"secret\" });\n\n    await tool.execute({ action: \"create_kid_earth_course\", payload: { title: \"揭秘太阳\" } }, { workingDirectory: \"/tmp\", sessionId: \"s1\" });\n\n    await vi.waitFor(() => expect(store.getJob(\"job-1\")?.status).toBe(\"succeeded\"));\n    expect(fetchImpl).toHaveBeenCalledWith(\"http://kid/api/agent-actions/create-course\", expect.objectContaining({ headers: expect.objectContaining({ \"x-project-key\": \"kid-earth\", authorization: \"Bearer secret\" }) }));\n  });\n\n  it(\"strips registered authorization headers before applying the configured action token\", async () => {\n    const store = new MemoryStore();\n    store.upsertTools(\"kid-earth-learning\", [{ scheme: \"create_kid_earth_course\", purpose: \"创建课程\", url: \"http://kid/api/agent-actions/create-course\", method: \"POST\", headers: { Authorization: \"Bearer attacker\", \"x-project-key\": \"kid-earth\" }, auth: { type: \"bearer\", tokenEnv: \"AGENT_ACTION_TOKEN\" } }]);\n    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({ ok: true }), { status: 200, headers: { \"content-type\": \"application/json\" } }));\n    const tool = new RemoteProjectActionTool({ store, projectId: \"kid-earth-learning\", fetchImpl, actionToken: \"secret\" });\n\n    await tool.execute({ action: \"create_kid_earth_course\", payload: { title: \"揭秘太阳\" } }, { workingDirectory: \"/tmp\", sessionId: \"s1\" });\n\n    await vi.waitFor(() => expect(store.getJob(\"job-1\")?.status).toBe(\"succeeded\"));\n    const fetchCalls = fetchImpl.mock.calls as unknown as Array<[string, RequestInit]>;\n    const requestInit = fetchCalls[0][1];\n    const sentHeaders = requestInit.headers as Record<string, string>;\n    expect(sentHeaders).toEqual({ \"x-project-key\": \"kid-earth\", \"content-type\": \"application/json\", authorization: \"Bearer secret\" });\n    expect(Object.keys(sentHeaders).filter((key) => key.toLowerCase() === \"authorization\")).toEqual([\"authorization\"]);\n    expect(Object.values(sentHeaders)).not.toContain(\"Bearer attacker\");\n  });\n\n  it(\"returns an error result when creating a remote job fails\", async () => {\n    const store = new MemoryStore();\n    store.upsertTools(\"kid-earth-learning\", [{ scheme: \"create_kid_earth_course\", purpose: \"创建课程\", url: \"http://kid/api/agent-actions/create-course\", method: \"POST\" }]);\n    store.createJob = () => { throw new Error(\"store unavailable\"); };\n    const tool = new RemoteProjectActionTool({ store, projectId: \"kid-earth-learning\", fetchImpl: fetch, actionToken: \"secret\" });\n\n    const result = await tool.execute({ action: \"create_kid_earth_course\", payload: { title: \"揭秘太阳\" } }, { workingDirectory: \"/tmp\", sessionId: \"s1\" });\n\n    expect(result.isError).toBe(true);\n    expect(result.content).toContain(\"store unavailable\");\n  });\n\n  it(\"catches running-state failures without rejecting or calling the remote action\", async () => {\n    const store = new MemoryStore();\n    store.upsertTools(\"kid-earth-learning\", [{ scheme: \"create_kid_earth_course\", purpose: \"创建课程\", url: \"http://kid/api/agent-actions/create-course\", method: \"POST\" }]);\n    store.markJobRunning = () => { throw new Error(\"running state unavailable\"); };\n    const markFailed = vi.spyOn(store, \"markJobFailed\");\n    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({ ok: true }), { status: 200, headers: { \"content-type\": \"application/json\" } }));\n    const unhandledReasons: unknown[] = [];\n    const onUnhandled = (reason: unknown) => { unhandledReasons.push(reason); };\n    process.on(\"unhandledRejection\", onUnhandled);\n\n    try {\n      const tool = new RemoteProjectActionTool({ store, projectId: \"kid-earth-learning\", fetchImpl, actionToken: \"secret\" });\n\n      const result = await tool.execute({ action: \"create_kid_earth_course\", payload: { title: \"揭秘太阳\" } }, { workingDirectory: \"/tmp\", sessionId: \"s1\" });\n      await new Promise((resolve) => setTimeout(resolve, 0));\n\n      expect(result.isError).toBeFalsy();\n      expect(fetchImpl).not.toHaveBeenCalled();\n      expect(markFailed).toHaveBeenCalledWith(\"job-1\", \"running state unavailable\");\n      expect(store.getJob(\"job-1\")?.status).toBe(\"failed\");\n      expect(unhandledReasons).toEqual([]);\n    } finally {\n      process.off(\"unhandledRejection\", onUnhandled);\n    }\n  });\n\n  it(\"rejects unknown schemes\", async () => {\n    const tool = new RemoteProjectActionTool({ store: new MemoryStore(), projectId: \"kid-earth-learning\", fetchImpl: fetch, actionToken: \"secret\" });\n    const result = await tool.execute({ action: \"missing\", payload: {} }, { workingDirectory: \"/tmp\", sessionId: \"s1\" });\n    expect(result.isError).toBe(true);\n    expect(result.content).toContain(\"Unknown remote action: missing\");\n  });\n});\n"
+      }
+    },
+    {
+      "type": "tool_result",
+      "result": {
+        "toolCallId": "call_01_EAqfMkuBRaHrHo9dS8a92355",
+        "content": "Found 17 match(es) for \"RemoteProjectActionTool\":\n\n../core/src/domain/tool/builtin/RemoteProjectActionTool.test.ts:2: import { RemoteProjectActionTool } from \"./RemoteProjectActionTool.js\";\n../core/src/domain/tool/builtin/RemoteProjectActionTool.test.ts:19: describe(\"RemoteProjectActionTool\", () => {\n../core/src/domain/tool/builtin/RemoteProjectActionTool.test.ts:24: const tool = new RemoteProjectActionTool({ store, projectId: \"kid-earth-learning\", fetchImpl, actionToken: \"secret\" });\n../core/src/domain/tool/builtin/RemoteProjectActionTool.test.ts:38: const tool = new RemoteProjectActionTool({ store, projectId: \"kid-earth-learning\", fetchImpl: fetch, actionToken: \"secret\" });\n../core/src/domain/tool/builtin/RemoteProjectActionTool.test.ts:49: const tool = new RemoteProjectActionTool({ store, projectId: \"kid-earth-learning\", fetchImpl: fetch, actionToken: \"secret\" });\n../core/src/domain/tool/builtin/RemoteProjectActionTool.test.ts:61: const tool = new RemoteProjectActionTool({ store, projectId: \"kid-earth-learning\", fetchImpl, actionToken: \"secret\" });\n../core/src/domain/tool/builtin/RemoteProjectActionTool.test.ts:73: const tool = new RemoteProjectActionTool({ store, projectId: \"kid-earth-learning\", fetchImpl, actionToken: \"secret\" });\n../core/src/domain/tool/builtin/RemoteProjectActionTool.test.ts:90: const tool = new RemoteProjectActionTool({ store, projectId: \"kid-earth-learning\", fetchImpl: fetch, actionToken: \"secret\" });\n../core/src/domain/tool/builtin/RemoteProjectActionTool.test.ts:109: const tool = new RemoteProjectActionTool({ store, projectId: \"kid-earth-learning\", fetchImpl, actionToken: \"secret\" });\n../core/src/domain/tool/builtin/RemoteProjectActionTool.test.ts:125: const tool = new RemoteProjectActionTool({ store: new MemoryStore(), projectId: \"kid-earth-learning\", fetchImpl: fetch, actionToken: \"secret\" });\n../core/src/domain/tool/builtin/RemoteProjectActionTool.ts:15: export class RemoteProjectActionTool implements ITool {\n../core/src/domain/tool/builtin/__tests__/RemoteProjectActionTool.test.ts:2: import { RemoteProjectActionTool } from \"../RemoteProjectActionTool.js\";\n../core/src/domain/tool/builtin/__tests__/RemoteProjectActionTool.test.ts:4: describe(\"RemoteProjectActionTool default constructor\", () => {\n../core/src/domain/tool/builtin/__tests__/RemoteProjectActionTool.test.ts:6: const result = await new RemoteProjectActionTool().execute(\n../core/src/domain/tool/builtin/__tests__/RemoteProjectActionTool.test.ts:24: expect(new RemoteProjectActionTool().description).not.toContain(\"create_kid_earth_course\");\n../core/src/domain/tool/builtin/__tests__/RemoteProjectActionTool.test.ts:25: expect(new RemoteProjectActionTool().description).toContain(\"No remote actions are registered.\");\n../core/src/domain/tool/builtin/index.ts:17: export { RemoteProjectActionTool } from './RemoteProjectActionTool.js';"
+      }
+    },
+    {
+      "type": "thinking",
+      "message": "Iteration 4..."
+    },
+    {
+      "type": "tool_call",
+      "toolCall": {
+        "id": "call_00_iZYD2lr94o1NETCau8br6251",
+        "name": "read_file",
+        "arguments": {
+          "file_path": "/Users/caoqu/team-agent/customer-agent/packages/core/src/domain/tool/builtin/RemoteProjectActionTool.ts"
+        }
+      }
+    },
+    {
+      "type": "text_done"
+    },
+    {
+      "type": "tool_result",
+      "result": {
+        "toolCallId": "call_00_iZYD2lr94o1NETCau8br6251",
+        "content": "import { z } from \"zod\";\nimport type { ITool, ToolContext, ToolResult } from \"../entities.js\";\nimport type { RemoteToolStore } from \"../../remote-tools/RemoteToolStore.js\";\n\nconst schema = z.object({ action: z.string().min(1), payload: z.record(z.unknown()) });\n\ntype FetchLike = (input: string, init?: RequestInit) => Promise<Response>;\n\ninterface Options { store?: RemoteToolStore; projectId?: string; fetchImpl?: FetchLike; actionToken?: string; }\n\nfunction safeJson(text: string): Record<string, unknown> { try { const v = JSON.parse(text); return v && typeof v === \"object\" && !Array.isArray(v) ? v as Record<string, unknown> : { value: v }; } catch { return { text }; } }\nfunction errorMessage(error: unknown): string { return error instanceof Error ? error.message : String(error || \"Remote action failed\"); }\nfunction withoutAuthorization(headers: Record<string, string>): Record<string, string> { return Object.fromEntries(Object.entries(headers).filter(([key]) => key.toLowerCase() !== \"authorization\")); }\n\nexport class RemoteProjectActionTool implements ITool {\n  readonly name = \"remote_project_action\";\n  readonly schema = schema;\n  readonly parameters = { type: \"object\", properties: { action: { type: \"string\", description: \"Registered remote action name, or remote_job_status to check a job.\" }, payload: { type: \"object\", description: \"Small JSON payload for the registered remote action.\" } }, required: [\"action\", \"payload\"] };\n  private readonly store?: RemoteToolStore;\n  private readonly projectId: string;\n  private readonly fetchImpl: FetchLike;\n  private readonly actionToken?: string;\n\n  constructor(options: Options = {}) { this.store = options.store; this.projectId = options.projectId ?? process.env.AGENT_PROJECT_ID ?? \"default\"; this.fetchImpl = options.fetchImpl ?? fetch; this.actionToken = options.actionToken ?? process.env.AGENT_ACTION_TOKEN; }\n\n  get description(): string {\n    const tools = this.store?.listEnabledTools(this.projectId) ?? [];\n    const lines = tools.map((tool) => `- ${tool.scheme}: ${tool.purpose}`);\n    return `Execute registered remote project actions by scheme. Never pass URLs; this tool resolves URLs from the registry. Use remote_job_status with {jobId} to poll results. Registered actions:\\n${lines.length ? lines.join(\"\\n\") : \"No remote actions are registered.\"}`;\n  }\n\n  async execute(params: Record<string, unknown>, _ctx: ToolContext): Promise<ToolResult> {\n    const parsed = this.schema.safeParse(params);\n    if (!parsed.success) return { toolCallId: \"\", content: `Invalid parameters: ${parsed.error.message}`, isError: true };\n    if (!this.store) return { toolCallId: \"\", content: \"Remote tool registry is not configured\", isError: true };\n    if (parsed.data.action === \"remote_job_status\") return this.getJobStatus(parsed.data.payload);\n\n    const projectId = this.projectId;\n    const remoteTool = this.store.getTool(projectId, parsed.data.action);\n    if (!remoteTool) return { toolCallId: \"\", content: `Unknown remote action: ${parsed.data.action}`, isError: true };\n\n    try {\n      const job = this.store.createJob(projectId, remoteTool.scheme, parsed.data.payload);\n      void this.runJob(job.id, remoteTool.url, remoteTool.scheme, remoteTool.headers, parsed.data.payload);\n      return { toolCallId: \"\", content: JSON.stringify({ status: \"queued\", jobId: job.id, message: \"远程任务已提交\" }) };\n    } catch (error) {\n      return { toolCallId: \"\", content: errorMessage(error), isError: true };\n    }\n  }\n\n  private getJobStatus(payload: Record<string, unknown>): ToolResult {\n    const jobId = typeof payload.jobId === \"string\" ? payload.jobId : \"\";\n    if (!jobId) return { toolCallId: \"\", content: \"remote_job_status requires payload.jobId\", isError: true };\n    const job = this.store?.getJob(jobId);\n    if (!job || job.projectId !== this.projectId) return { toolCallId: \"\", content: `Unknown remote job: ${jobId}`, isError: true };\n    if (job.status === \"succeeded\") return { toolCallId: \"\", content: JSON.stringify({ status: job.status, result: job.responsePayload }) };\n    if (job.status === \"failed\") return { toolCallId: \"\", content: JSON.stringify({ status: job.status, error: job.error }) };\n    return { toolCallId: \"\", content: JSON.stringify({ status: job.status }) };\n  }\n\n  private async runJob(jobId: string, url: string, action: string, headers: Record<string, string>, payload: Record<string, unknown>): Promise<void> {\n    try {\n      this.store?.markJobRunning(jobId);\n      const response = await this.fetchImpl(url, { method: \"POST\", headers: { ...withoutAuthorization(headers), \"content-type\": \"application/json\", ...(this.actionToken ? { authorization: `Bearer ${this.actionToken}` } : {}) }, body: JSON.stringify({ action, payload }) });\n      const text = await response.text();\n      if (!response.ok) { this.markJobFailedSafely(jobId, `Remote action failed: ${response.status} ${text}`); return; }\n      this.store?.markJobSucceeded(jobId, safeJson(text));\n    } catch (error) {\n      this.markJobFailedSafely(jobId, errorMessage(error));\n    }\n  }\n\n  private markJobFailedSafely(jobId: string, error: string): void {\n    try { this.store?.markJobFailed(jobId, error); } catch { /* avoid unhandled async failures from best-effort job status updates */ }\n  }\n}\n"
+      }
+    },
+    {
+      "type": "thinking",
+      "message": "Iteration 5..."
+    },
+    {
+      "type": "text_chunk",
+      "text": "我来"
+    },
+    {
+      "type": "text_chunk",
+      "text": "为你"
+    },
+    {
+      "type": "text_chunk",
+      "text": "创建一个"
+    },
+    {
+      "type": "text_chunk",
+      "text": "关于"
+    },
+    {
+      "type": "text_chunk",
+      "text": "火星"
+    },
+    {
+      "type": "text_chunk",
+      "text": "的"
+    },
+    {
+      "type": "text_chunk",
+      "text": "儿童"
+    },
+    {
+      "type": "text_chunk",
+      "text": "地球"
+    },
+    {
+      "type": "text_chunk",
+      "text": "课程"
+    },
+    {
+      "type": "text_chunk",
+      "text": "。"
+    },
+    {
+      "type": "tool_call",
+      "toolCall": {
+        "id": "call_00_f7vgxPUtKBgtqRXoaaTR4709",
+        "name": "remote_project_action",
+        "arguments": {
+          "action": "create_kid_earth_course",
+          "payload": {
+            "title": "探索火星——太阳系中的红色星球"
+          }
+        }
+      }
+    },
+    {
+      "type": "text_done"
+    },
+    {
+      "type": "tool_result",
+      "result": {
+        "toolCallId": "call_00_f7vgxPUtKBgtqRXoaaTR4709",
+        "content": "{\"status\":\"queued\",\"jobId\":\"cf743f43-d5e1-4e3a-aa24-b1ac969d3b92\",\"message\":\"远程任务已提交\"}"
+      }
+    },
+    {
+      "type": "thinking",
+      "message": "Iteration 6..."
+    },
+    {
+      "type": "tool_call",
+      "toolCall": {
+        "id": "call_00_Er2HqoVomxmH2dL73wW62730",
+        "name": "remote_project_action",
+        "arguments": {
+          "action": "remote_job_status",
+          "payload": {
+            "jobId": "cf743f43-d5e1-4e3a-aa24-b1ac969d3b92"
+          }
+        }
+      }
+    },
+    {
+      "type": "text_done"
+    },
+    {
+      "type": "tool_result",
+      "result": {
+        "toolCallId": "call_00_Er2HqoVomxmH2dL73wW62730",
+        "content": "{\"status\":\"succeeded\",\"result\":{\"ok\":true,\"courseId\":13,\"title\":\"探索火星——太阳系中的红色星球\",\"slug\":\"course-1783406817853\",\"published\":true,\"publication\":{\"course\":{\"id\":13,\"title\":\"探索火星——太阳系中的红色星球\",\"slug\":\"course-1783406817853\",\"ageRange\":\"4 岁\"},\"chapters\":[{\"id\":31,\"sortOrder\":0,\"title\":\"认识探索火星——太阳系中的红色星球\",\"shortTitle\":\"认识\",\"icon\":\"🌍\",\"sceneKey\":\"helloEarth\",\"narration\":\"探索火星——太阳系中的红色星球藏着很多小秘密。我们一起用眼睛看、用耳朵听，发现它和地球宝宝的关系。\",\"tapPrompt\":\"点一点探索火星——太阳系中的红色星球，看看会发生什么。\",\"guide\":\"请宝宝观察画面里的探索火星——太阳系中的红色星球，说说它像什么。\",\"questionTitle\":\"小小问题\",\"questionText\":\"探索火星——太阳系中的红色星球给我们带来了什么？\",\"choices\":[\"🌍 地球\",\"🌙 月亮\",\"⭐ 星星\"],\"answerIndex\":0,\"feedback\":\"答对啦！探索火星——太阳系中的红色星球是今天的主角。\",\"funFact\":\"探索火星——太阳系中的红色星球是自然里很重要的一部分。\",\"parentPrompt\":\"家长可以问孩子：你在哪里见过探索火星——太阳系中的红色星球？\",\"videoUrl\":null,\"videoUpdatedAt\":null,\"videoPrompt\":null,\"videoStatus\":null,\"videoError\":null,\"videoJobId\":null,\"videoJobProvider\":null},{\"id\":32,\"sortOrder\":1,\"title\":\"探索火星——太阳系中的红色星球的秘密\",\"shortTitle\":\"秘密\",\"icon\":\"🌍\",\"sceneKey\":\"helloEarth\",\"narration\":\"探索火星——太阳系中的红色星球藏着很多小秘密。我们一起用眼睛看、用耳朵听，发现它和地球宝宝的关系。\",\"tapPrompt\":\"点一点探索火星——太阳系中的红色星球，看看会发生什么。\",\"guide\":\"请宝宝观察画面里的探索火星——太阳系中的红色星球，说说它像什么。\",\"questionTitle\":\"小小问题\",\"questionText\":\"探索火星——太阳系中的红色星球给我们带来了什么？\",\"choices\":[\"🌍 地球\",\"🌙 月亮\",\"⭐ 星星\"],\"answerIndex\":0,\"feedback\":\"答对啦！探索火星——太阳系中的红色星球是今天的主角。\",\"funFact\":\"探索火星——太阳系中的红色星球是自然里很重要的一部分。\",\"parentPrompt\":\"家长可以问孩子：你在哪里见过探索火星——太阳系中的红色星球？\",\"videoUrl\":null,\"videoUpdatedAt\":null,\"videoPrompt\":null,\"videoStatus\":null,\"videoError\":null,\"videoJobId\":null,\"videoJobProvider\":null},{\"id\":33,\"sortOrder\":2,\"title\":\"探索火星——太阳系中的红色星球和我们\",\"shortTitle\":\"和我们\",\"icon\":\"🌍\",\"sceneKey\":\"helloEarth\",\"narration\":\"探索火星——太阳系中的红色星球藏着很多小秘密。我们一起用眼睛看、用耳朵听，发现它和地球宝宝的关系。\",\"tapPrompt\":\"点一点探索火星——太阳系中的红色星球，看看会发生什么。\",\"guide\":\"请宝宝观察画面里的探索火星——太阳系中的红色星球，说说它像什么。\",\"questionTitle\":\"小小问题\",\"questionText\":\"探索火星——太阳系中的红色星球给我们带来了什么？\",\"choices\":[\"🌍 地球\",\"🌙 月亮\",\"⭐ 星星\"],\"answerIndex\":0,\"feedback\":\"答对啦！探索火星——太阳系中的红色星球是今天的主角。\",\"funFact\":\"探索火星——太阳系中的红色星球是自然里很重要的一部分。\",\"parentPrompt\":\"家长可以问孩子：你在哪里见过探索火星——太阳系中的红色星球？\",\"videoUrl\":null,\"videoUpdatedAt\":null,\"videoPrompt\":null,\"videoStatus\":null,\"videoError\":null,\"videoJobId\":null,\"videoJobProvider\":null},{\"id\":34,\"sortOrder\":3,\"title\":\"保护我们的探索火星——太阳系中的红色星球\",\"shortTitle\":\"保护我们的\",\"icon\":\"🌍\",\"sceneKey\":\"helloEarth\",\"narration\":\"探索火星——太阳系中的红色星球藏着很多小秘密。我们一起用眼睛看、用耳朵听，发现它和地球宝宝的关系。\",\"tapPrompt\":\"点一点探索火星——太阳系中的红色星球，看看会发生什么。\",\"guide\":\"请宝宝观察画面里的探索火星——太阳系中的红色星球，说说它像什么。\",\"questionTitle\":\"小小问题\",\"questionText\":\"探索火星——太阳系中的红色星球给我们带来了什么？\",\"choices\":[\"🌍 地球\",\"🌙 月亮\",\"⭐ 星星\"],\"answerIndex\":0,\"feedback\":\"答对啦！探索火星——太阳系中的红色星球是今天的主角。\",\"funFact\":\"探索火星——太阳系中的红色星球是自然里很重要的一部分。\",\"parentPrompt\":\"家长可以问孩子：你在哪里见过探索火星——太阳系中的红色星球？\",\"videoUrl\":null,\"videoUpdatedAt\":null,\"videoPrompt\":null,\"videoStatus\":null,\"videoError\":null,\"videoJobId\":null,\"videoJobProvider\":null}],\"version\":1,\"publishedAt\":\"2026-07-07T06:46:57.855Z\"}}}"
+      }
+    },
+    {
+      "type": "thinking",
+      "message": "Iteration 7..."
+    },
+    {
+      "type": "text_chunk",
+      "text": "关于"
+    },
+    {
+      "type": "text_chunk",
+      "text": "火星"
+    },
+    {
+      "type": "text_chunk",
+      "text": "的"
+    },
+    {
+      "type": "text_chunk",
+      "text": "儿童"
+    },
+    {
+      "type": "text_chunk",
+      "text": "地球"
+    },
+    {
+      "type": "text_chunk",
+      "text": "课程"
+    },
+    {
+      "type": "text_chunk",
+      "text": "「"
+    },
+    {
+      "type": "text_chunk",
+      "text": "**"
+    },
+    {
+      "type": "text_chunk",
+      "text": "探索"
+    },
+    {
+      "type": "text_chunk",
+      "text": "火星"
+    },
+    {
+      "type": "text_chunk",
+      "text": "——"
+    },
+    {
+      "type": "text_chunk",
+      "text": "太阳"
+    },
+    {
+      "type": "text_chunk",
+      "text": "系"
+    },
+    {
+      "type": "text_chunk",
+      "text": "中的"
+    },
+    {
+      "type": "text_chunk",
+      "text": "红色"
+    },
+    {
+      "type": "text_chunk",
+      "text": "星球"
+    },
+    {
+      "type": "text_chunk",
+      "text": "**"
+    },
+    {
+      "type": "text_chunk",
+      "text": "」"
+    },
+    {
+      "type": "text_chunk",
+      "text": "已"
+    },
+    {
+      "type": "text_chunk",
+      "text": "成功"
+    },
+    {
+      "type": "text_chunk",
+      "text": "创建"
+    },
+    {
+      "type": "text_chunk",
+      "text": "并"
+    },
+    {
+      "type": "text_chunk",
+      "text": "发布"
+    },
+    {
+      "type": "text_chunk",
+      "text": "！\n\n"
+    },
+    {
+      "type": "text_chunk",
+      "text": "以下是"
+    },
+    {
+      "type": "text_chunk",
+      "text": "课程"
+    },
+    {
+      "type": "text_chunk",
+      "text": "概"
+    },
+    {
+      "type": "text_chunk",
+      "text": "览"
+    },
+    {
+      "type": "text_chunk",
+      "text": "：\n\n"
+    },
+    {
+      "type": "text_chunk",
+      "text": "|"
+    },
+    {
+      "type": "text_chunk",
+      "text": " "
+    },
+    {
+      "type": "text_chunk",
+      "text": "项目"
+    },
+    {
+      "type": "text_chunk",
+      "text": " |"
+    },
+    {
+      "type": "text_chunk",
+      "text": " "
+    },
+    {
+      "type": "text_chunk",
+      "text": "详情"
+    },
+    {
+      "type": "text_chunk",
+      "text": " |\n"
+    },
+    {
+      "type": "text_chunk",
+      "text": "|"
+    },
+    {
+      "type": "text_chunk",
+      "text": "------"
+    },
+    {
+      "type": "text_chunk",
+      "text": "|"
+    },
+    {
+      "type": "text_chunk",
+      "text": "------"
+    },
+    {
+      "type": "text_chunk",
+      "text": "|\n"
+    },
+    {
+      "type": "text_chunk",
+      "text": "|"
+    },
+    {
+      "type": "text_chunk",
+      "text": " **"
+    },
+    {
+      "type": "text_chunk",
+      "text": "课程"
+    },
+    {
+      "type": "text_chunk",
+      "text": " ID"
+    },
+    {
+      "type": "text_chunk",
+      "text": "**"
+    },
+    {
+      "type": "text_chunk",
+      "text": " |"
+    },
+    {
+      "type": "text_chunk",
+      "text": " "
+    },
+    {
+      "type": "text_chunk",
+      "text": "13"
+    },
+    {
+      "type": "text_chunk",
+      "text": " |\n"
+    },
+    {
+      "type": "text_chunk",
+      "text": "|"
+    },
+    {
+      "type": "text_chunk",
+      "text": " **"
+    },
+    {
+      "type": "text_chunk",
+      "text": "标题"
+    },
+    {
+      "type": "text_chunk",
+      "text": "**"
+    },
+    {
+      "type": "text_chunk",
+      "text": " |"
+    },
+    {
+      "type": "text_chunk",
+      "text": " "
+    },
+    {
+      "type": "text_chunk",
+      "text": "探索"
+    },
+    {
+      "type": "text_chunk",
+      "text": "火星"
+    },
+    {
+      "type": "text_chunk",
+      "text": "——"
+    },
+    {
+      "type": "text_chunk",
+      "text": "太阳"
+    },
+    {
+      "type": "text_chunk",
+      "text": "系"
+    },
+    {
+      "type": "text_chunk",
+      "text": "中的"
+    },
+    {
+      "type": "text_chunk",
+      "text": "红色"
+    },
+    {
+      "type": "text_chunk",
+      "text": "星球"
+    },
+    {
+      "type": "text_chunk",
+      "text": " |\n"
+    },
+    {
+      "type": "text_chunk",
+      "text": "|"
+    },
+    {
+      "type": "text_chunk",
+      "text": " **"
+    },
+    {
+      "type": "text_chunk",
+      "text": "适用"
+    },
+    {
+      "type": "text_chunk",
+      "text": "年龄"
+    },
+    {
+      "type": "text_chunk",
+      "text": "**"
+    },
+    {
+      "type": "text_chunk",
+      "text": " |"
+    },
+    {
+      "type": "text_chunk",
+      "text": " "
+    },
+    {
+      "type": "text_chunk",
+      "text": "4"
+    },
+    {
+      "type": "text_chunk",
+      "text": " "
+    },
+    {
+      "type": "text_chunk",
+      "text": "岁"
+    },
+    {
+      "type": "text_chunk",
+      "text": " |\n"
+    },
+    {
+      "type": "text_chunk",
+      "text": "|"
+    },
+    {
+      "type": "text_chunk",
+      "text": " **"
+    },
+    {
+      "type": "text_chunk",
+      "text": "Sl"
+    },
+    {
+      "type": "text_chunk",
+      "text": "ug"
+    },
+    {
+      "type": "text_chunk",
+      "text": "**"
+    },
+    {
+      "type": "text_chunk",
+      "text": " |"
+    },
+    {
+      "type": "text_chunk",
+      "text": " course"
+    },
+    {
+      "type": "text_chunk",
+      "text": "-"
+    },
+    {
+      "type": "text_chunk",
+      "text": "178"
+    },
+    {
+      "type": "text_chunk",
+      "text": "340"
+    },
+    {
+      "type": "text_chunk",
+      "text": "681"
+    },
+    {
+      "type": "text_chunk",
+      "text": "785"
+    },
+    {
+      "type": "text_chunk",
+      "text": "3"
+    },
+    {
+      "type": "text_chunk",
+      "text": " |\n"
+    },
+    {
+      "type": "text_chunk",
+      "text": "|"
+    },
+    {
+      "type": "text_chunk",
+      "text": " **"
+    },
+    {
+      "type": "text_chunk",
+      "text": "状态"
+    },
+    {
+      "type": "text_chunk",
+      "text": "**"
+    },
+    {
+      "type": "text_chunk",
+      "text": " |"
+    },
+    {
+      "type": "text_chunk",
+      "text": " ✅"
+    },
+    {
+      "type": "text_chunk",
+      "text": " "
+    },
+    {
+      "type": "text_chunk",
+      "text": "已"
+    },
+    {
+      "type": "text_chunk",
+      "text": "发布"
+    },
+    {
+      "type": "text_chunk",
+      "text": " |\n\n"
+    },
+    {
+      "type": "text_chunk",
+      "text": "课程"
+    },
+    {
+      "type": "text_chunk",
+      "text": "包含"
+    },
+    {
+      "type": "text_chunk",
+      "text": " **"
+    },
+    {
+      "type": "text_chunk",
+      "text": "4"
+    },
+    {
+      "type": "text_chunk",
+      "text": " "
+    },
+    {
+      "type": "text_chunk",
+      "text": "个"
+    },
+    {
+      "type": "text_chunk",
+      "text": "章节"
+    },
+    {
+      "type": "text_chunk",
+      "text": "**"
+    },
+    {
+      "type": "text_chunk",
+      "text": "：\n\n"
+    },
+    {
+      "type": "text_chunk",
+      "text": "1"
+    },
+    {
+      "type": "text_chunk",
+      "text": "."
+    },
+    {
+      "type": "text_chunk",
+      "text": " **"
+    },
+    {
+      "type": "text_chunk",
+      "text": "认识"
+    },
+    {
+      "type": "text_chunk",
+      "text": "探索"
+    },
+    {
+      "type": "text_chunk",
+      "text": "火星"
+    },
+    {
+      "type": "text_chunk",
+      "text": "——"
+    },
+    {
+      "type": "text_chunk",
+      "text": "太阳"
+    },
+    {
+      "type": "text_chunk",
+      "text": "系"
+    },
+    {
+      "type": "text_chunk",
+      "text": "中的"
+    },
+    {
+      "type": "text_chunk",
+      "text": "红色"
+    },
+    {
+      "type": "text_chunk",
+      "text": "星球"
+    },
+    {
+      "type": "text_chunk",
+      "text": "**"
+    },
+    {
+      "type": "text_chunk",
+      "text": "（"
+    },
+    {
+      "type": "text_chunk",
+      "text": "认识"
+    },
+    {
+      "type": "text_chunk",
+      "text": "）"
+    },
+    {
+      "type": "text_chunk",
+      "text": "🌍"
+    },
+    {
+      "type": "text_chunk",
+      "text": " —"
+    },
+    {
+      "type": "text_chunk",
+      "text": " "
+    },
+    {
+      "type": "text_chunk",
+      "text": "引导"
+    },
+    {
+      "type": "text_chunk",
+      "text": "孩子"
+    },
+    {
+      "type": "text_chunk",
+      "text": "用"
+    },
+    {
+      "type": "text_chunk",
+      "text": "眼睛"
+    },
+    {
+      "type": "text_chunk",
+      "text": "看"
+    },
+    {
+      "type": "text_chunk",
+      "text": "、"
+    },
+    {
+      "type": "text_chunk",
+      "text": "用"
+    },
+    {
+      "type": "text_chunk",
+      "text": "耳朵"
+    },
+    {
+      "type": "text_chunk",
+      "text": "听"
+    },
+    {
+      "type": "text_chunk",
+      "text": "，"
+    },
+    {
+      "type": "text_chunk",
+      "text": "发现"
+    },
+    {
+      "type": "text_chunk",
+      "text": "火星"
+    },
+    {
+      "type": "text_chunk",
+      "text": "与"
+    },
+    {
+      "type": "text_chunk",
+      "text": "地球"
+    },
+    {
+      "type": "text_chunk",
+      "text": "的关系"
+    },
+    {
+      "type": "text_chunk",
+      "text": "\n"
+    },
+    {
+      "type": "text_chunk",
+      "text": "2"
+    },
+    {
+      "type": "text_chunk",
+      "text": "."
+    },
+    {
+      "type": "text_chunk",
+      "text": " **"
+    },
+    {
+      "type": "text_chunk",
+      "text": "探索"
+    },
+    {
+      "type": "text_chunk",
+      "text": "火星"
+    },
+    {
+      "type": "text_chunk",
+      "text": "——"
+    },
+    {
+      "type": "text_chunk",
+      "text": "太阳"
+    },
+    {
+      "type": "text_chunk",
+      "text": "系"
+    },
+    {
+      "type": "text_chunk",
+      "text": "中的"
+    },
+    {
+      "type": "text_chunk",
+      "text": "红色"
+    },
+    {
+      "type": "text_chunk",
+      "text": "星"
+    },
+    {
+      "type": "text_chunk",
+      "text": "球的"
+    },
+    {
+      "type": "text_chunk",
+      "text": "秘密"
+    },
+    {
+      "type": "text_chunk",
+      "text": "**"
+    },
+    {
+      "type": "text_chunk",
+      "text": "（"
+    },
+    {
+      "type": "text_chunk",
+      "text": "秘密"
+    },
+    {
+      "type": "text_chunk",
+      "text": "）"
+    },
+    {
+      "type": "text_chunk",
+      "text": "🌍"
+    },
+    {
+      "type": "text_chunk",
+      "text": " —"
+    },
+    {
+      "type": "text_chunk",
+      "text": " "
+    },
+    {
+      "type": "text_chunk",
+      "text": "探索"
+    },
+    {
+      "type": "text_chunk",
+      "text": "火星"
+    },
+    {
+      "type": "text_chunk",
+      "text": "的小"
+    },
+    {
+      "type": "text_chunk",
+      "text": "秘密"
+    },
+    {
+      "type": "text_chunk",
+      "text": "\n"
+    },
+    {
+      "type": "text_chunk",
+      "text": "3"
+    },
+    {
+      "type": "text_chunk",
+      "text": "."
+    },
+    {
+      "type": "text_chunk",
+      "text": " **"
+    },
+    {
+      "type": "text_chunk",
+      "text": "探索"
+    },
+    {
+      "type": "text_chunk",
+      "text": "火星"
+    },
+    {
+      "type": "text_chunk",
+      "text": "——"
+    },
+    {
+      "type": "text_chunk",
+      "text": "太阳"
+    },
+    {
+      "type": "text_chunk",
+      "text": "系"
+    },
+    {
+      "type": "text_chunk",
+      "text": "中的"
+    },
+    {
+      "type": "text_chunk",
+      "text": "红色"
+    },
+    {
+      "type": "text_chunk",
+      "text": "星球"
+    },
+    {
+      "type": "text_chunk",
+      "text": "和我们"
+    },
+    {
+      "type": "text_chunk",
+      "text": "**"
+    },
+    {
+      "type": "text_chunk",
+      "text": "（"
+    },
+    {
+      "type": "text_chunk",
+      "text": "和我们"
+    },
+    {
+      "type": "text_chunk",
+      "text": "）"
+    },
+    {
+      "type": "text_chunk",
+      "text": "🌍"
+    },
+    {
+      "type": "text_chunk",
+      "text": " —"
+    },
+    {
+      "type": "text_chunk",
+      "text": " "
+    },
+    {
+      "type": "text_chunk",
+      "text": "联系"
+    },
+    {
+      "type": "text_chunk",
+      "text": "孩子"
+    },
+    {
+      "type": "text_chunk",
+      "text": "与"
+    },
+    {
+      "type": "text_chunk",
+      "text": "火星"
+    },
+    {
+      "type": "text_chunk",
+      "text": "的关系"
+    },
+    {
+      "type": "text_chunk",
+      "text": "\n"
+    },
+    {
+      "type": "text_chunk",
+      "text": "4"
+    },
+    {
+      "type": "text_chunk",
+      "text": "."
+    },
+    {
+      "type": "text_chunk",
+      "text": " **"
+    },
+    {
+      "type": "text_chunk",
+      "text": "保护"
+    },
+    {
+      "type": "text_chunk",
+      "text": "我们的"
+    },
+    {
+      "type": "text_chunk",
+      "text": "探索"
+    },
+    {
+      "type": "text_chunk",
+      "text": "火星"
+    },
+    {
+      "type": "text_chunk",
+      "text": "——"
+    },
+    {
+      "type": "text_chunk",
+      "text": "太阳"
+    },
+    {
+      "type": "text_chunk",
+      "text": "系"
+    },
+    {
+      "type": "text_chunk",
+      "text": "中的"
+    },
+    {
+      "type": "text_chunk",
+      "text": "红色"
+    },
+    {
+      "type": "text_chunk",
+      "text": "星球"
+    },
+    {
+      "type": "text_chunk",
+      "text": "**"
+    },
+    {
+      "type": "text_chunk",
+      "text": "（"
+    },
+    {
+      "type": "text_chunk",
+      "text": "保护"
+    },
+    {
+      "type": "text_chunk",
+      "text": "我们的"
+    },
+    {
+      "type": "text_chunk",
+      "text": "）"
+    },
+    {
+      "type": "text_chunk",
+      "text": "🌍"
+    },
+    {
+      "type": "text_chunk",
+      "text": " —"
+    },
+    {
+      "type": "text_chunk",
+      "text": " "
+    },
+    {
+      "type": "text_chunk",
+      "text": "培养"
+    },
+    {
+      "type": "text_chunk",
+      "text": "保护"
+    },
+    {
+      "type": "text_chunk",
+      "text": "意识"
+    },
+    {
+      "type": "text_chunk",
+      "text": "\n\n"
+    },
+    {
+      "type": "text_chunk",
+      "text": "每个"
+    },
+    {
+      "type": "text_chunk",
+      "text": "章节"
+    },
+    {
+      "type": "text_chunk",
+      "text": "都"
+    },
+    {
+      "type": "text_chunk",
+      "text": "包含"
+    },
+    {
+      "type": "text_chunk",
+      "text": "互动"
+    },
+    {
+      "type": "text_chunk",
+      "text": "叙述"
+    },
+    {
+      "type": "text_chunk",
+      "text": "、"
+    },
+    {
+      "type": "text_chunk",
+      "text": "点击"
+    },
+    {
+      "type": "text_chunk",
+      "text": "提示"
+    },
+    {
+      "type": "text_chunk",
+      "text": "、"
+    },
+    {
+      "type": "text_chunk",
+      "text": "探索"
+    },
+    {
+      "type": "text_chunk",
+      "text": "引导"
+    },
+    {
+      "type": "text_chunk",
+      "text": "、"
+    },
+    {
+      "type": "text_chunk",
+      "text": "问答"
+    },
+    {
+      "type": "text_chunk",
+      "text": "环节"
+    },
+    {
+      "type": "text_chunk",
+      "text": "、"
+    },
+    {
+      "type": "text_chunk",
+      "text": "趣味"
+    },
+    {
+      "type": "text_chunk",
+      "text": "知识和"
+    },
+    {
+      "type": "text_chunk",
+      "text": "家长"
+    },
+    {
+      "type": "text_chunk",
+      "text": "引导"
+    },
+    {
+      "type": "text_chunk",
+      "text": "建议"
+    },
+    {
+      "type": "text_chunk",
+      "text": "，"
+    },
+    {
+      "type": "text_chunk",
+      "text": "非常适合"
+    },
+    {
+      "type": "text_chunk",
+      "text": " "
+    },
+    {
+      "type": "text_chunk",
+      "text": "4"
+    },
+    {
+      "type": "text_chunk",
+      "text": " "
+    },
+    {
+      "type": "text_chunk",
+      "text": "岁"
+    },
+    {
+      "type": "text_chunk",
+      "text": "儿童"
+    },
+    {
+      "type": "text_chunk",
+      "text": "的地"
+    },
+    {
+      "type": "text_chunk",
+      "text": "球"
+    },
+    {
+      "type": "text_chunk",
+      "text": "科普"
+    },
+    {
+      "type": "text_chunk",
+      "text": "学习"
+    },
+    {
+      "type": "text_chunk",
+      "text": "！"
+    },
+    {
+      "type": "text_done"
+    },
+    {
+      "type": "done",
+      "finalText": "关于火星的儿童地球课程「**探索火星——太阳系中的红色星球**」已成功创建并发布！\n\n以下是课程概览：\n\n| 项目 | 详情 |\n|------|------|\n| **课程 ID** | 13 |\n| **标题** | 探索火星——太阳系中的红色星球 |\n| **适用年龄** | 4 岁 |\n| **Slug** | course-1783406817853 |\n| **状态** | ✅ 已发布 |\n\n课程包含 **4 个章节**：\n\n1. **认识探索火星——太阳系中的红色星球**（认识）🌍 — 引导孩子用眼睛看、用耳朵听，发现火星与地球的关系\n2. **探索火星——太阳系中的红色星球的秘密**（秘密）🌍 — 探索火星的小秘密\n3. **探索火星——太阳系中的红色星球和我们**（和我们）🌍 — 联系孩子与火星的关系\n4. **保护我们的探索火星——太阳系中的红色星球**（保护我们的）🌍 — 培养保护意识\n\n每个章节都包含互动叙述、点击提示、探索引导、问答环节、趣味知识和家长引导建议，非常适合 4 岁儿童的地球科普学习！"
+    }
+  ],
+  "created": "2026-07-07T06:46:15.323Z",
+  "updated": "2026-07-07T06:47:07.127Z",
+  "metadata": {}
+}

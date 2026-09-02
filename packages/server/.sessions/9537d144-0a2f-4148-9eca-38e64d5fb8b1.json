@@ -1,0 +1,63 @@
+{
+  "id": "9537d144-0a2f-4148-9eca-38e64d5fb8b1",
+  "projectId": "kid-earth-learning",
+  "title": "persist-final-test",
+  "status": "completed",
+  "messages": [],
+  "events": [
+    {
+      "type": "thinking",
+      "message": "Iteration 1..."
+    },
+    {
+      "type": "text_chunk",
+      "text": "你好"
+    },
+    {
+      "type": "text_chunk",
+      "text": "！"
+    },
+    {
+      "type": "text_chunk",
+      "text": "😊"
+    },
+    {
+      "type": "text_chunk",
+      "text": " "
+    },
+    {
+      "type": "text_chunk",
+      "text": "有什么"
+    },
+    {
+      "type": "text_chunk",
+      "text": "我可以"
+    },
+    {
+      "type": "text_chunk",
+      "text": "帮"
+    },
+    {
+      "type": "text_chunk",
+      "text": "你的"
+    },
+    {
+      "type": "text_chunk",
+      "text": "吗"
+    },
+    {
+      "type": "text_chunk",
+      "text": "？"
+    },
+    {
+      "type": "text_done"
+    },
+    {
+      "type": "done",
+      "finalText": "你好！😊 有什么我可以帮你的吗？"
+    }
+  ],
+  "created": "2026-07-07T07:36:20.639Z",
+  "updated": "2026-07-07T07:36:25.291Z",
+  "metadata": {}
+}
