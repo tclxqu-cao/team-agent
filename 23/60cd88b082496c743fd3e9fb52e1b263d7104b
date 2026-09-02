@@ -1,0 +1,19 @@
+docs/superpowers/specs/2026-09-02-native-runtime-reasoning-progress-design.md
+  s_1867636efa84ba::t_d795ae0458eb42 1-147
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "2360cd88b082496c743fd3e9fb52e1b263d7104b",
+  "prompts": {},
+  "sessions": {
+    "s_1867636efa84ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a060b4-86c4-73d2-8af5-d5d0ecf1d037",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
