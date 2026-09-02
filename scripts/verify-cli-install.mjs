@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 /**
  * Fresh-directory install smoke test for the CLI tarball.
- * Usage: node scripts/verify-cli-install.mjs [main.tgz] [platform.tgz] [--node /path/to/node22]
+ * Usage: node scripts/verify-cli-install.mjs [main.tgz] [cloudflared.tgz] [tui.tgz] [--node /path/to/node22]
  */
-import { execFileSync, spawn } from "node:child_process";
+import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { accessSync, constants, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, dirname, resolve } from "node:path";
@@ -15,10 +15,12 @@ const nodeBin = args.includes("--node")
   ? args[args.indexOf("--node") + 1]
   : process.execPath;
 const tarballs = args.filter((arg) => arg.endsWith(".tgz")).map((path) => resolve(path));
-const tarball = tarballs.find((path) => /agentroam-0\.2\.0-preview\.5\.tgz$/.test(path))
-  ?? resolve(root, "packages/cli/agentroam-0.2.0-preview.5.tgz");
-const platformTarball = tarballs.find((path) => /agentroam-cloudflared-darwin-arm64-0\.2\.0-preview\.5\.tgz$/.test(path))
-  ?? resolve(root, "packages/cloudflared-darwin-arm64/agentroam-cloudflared-darwin-arm64-0.2.0-preview.5.tgz");
+const tarball = tarballs.find((path) => /agentroam-0\.2\.0-preview\.6\.tgz$/.test(path))
+  ?? resolve(root, "packages/cli/agentroam-0.2.0-preview.6.tgz");
+const platformTarball = tarballs.find((path) => /agentroam-cloudflared-darwin-arm64-0\.2\.0-preview\.6\.tgz$/.test(path))
+  ?? resolve(root, "packages/cloudflared-darwin-arm64/agentroam-cloudflared-darwin-arm64-0.2.0-preview.6.tgz");
+const tuiTarball = tarballs.find((path) => /agentroam-tui-darwin-arm64-0\.2\.0-preview\.6\.tgz$/.test(path))
+  ?? resolve(root, "packages/tui-darwin-arm64/agentroam-tui-darwin-arm64-0.2.0-preview.6.tgz");
 const commandEnv = { ...process.env, PATH: `${dirname(nodeBin)}${delimiter}${process.env.PATH ?? ""}` };
 
 const major = Number(String(execFileSync(nodeBin, ["-p", "process.versions.node"], { encoding: "utf8" }).trim()).split(".")[0]);
@@ -33,13 +35,20 @@ let child;
 try {
   execFileSync(nodeBin, ["-v"], { cwd: workdir, stdio: "inherit" });
   execFileSync("npm", ["init", "-y"], { cwd: workdir, stdio: "inherit", env: commandEnv });
-  execFileSync("npm", ["install", "--offline", platformTarball, tarball], {
+  execFileSync("npm", ["install", "--offline", platformTarball, tuiTarball, tarball], {
     cwd: workdir,
     stdio: "inherit",
     env: commandEnv,
   });
 
   const pkgBin = resolve(workdir, "node_modules/agentroam/bin/agentroam.mjs");
+  const tuiBin = resolve(workdir, "node_modules/.bin/agent-tui");
+  accessSync(tuiBin, constants.X_OK);
+  const tuiProbe = spawnSync(tuiBin, [], { cwd: workdir, encoding: "utf8", env: commandEnv });
+  if (tuiProbe.status !== 1 || !tuiProbe.stderr.includes("需要交互式终端")) {
+    throw new Error(`agent-tui load probe failed: ${JSON.stringify({ status: tuiProbe.status, stderr: tuiProbe.stderr })}`);
+  }
+  console.log("✓ bundled agent-tui command loads without Bun");
   const dataDir = resolve(workdir, "data");
   execFileSync(nodeBin, [pkgBin, "doctor", "--data-dir", dataDir], { cwd: workdir, stdio: "inherit", env: commandEnv });
   const cloudflared = resolve(dataDir, "bin/cloudflared");

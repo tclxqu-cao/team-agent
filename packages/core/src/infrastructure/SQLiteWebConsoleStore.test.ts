@@ -16,9 +16,10 @@ describe("SQLiteWebConsoleStore", () => {
     store.updateTab("t1","u1",{title:"OpenCode",currentCwd:"/Users/caoqu"});
     expect(store.listTabs("u1")[0]).toMatchObject({title:"OpenCode",currentCwd:"/Users/caoqu"});
 
-    const preferences={userId:"u1",revision:1,theme:"dark",terminalFontSize:11,fileButtonPosition:{xRatio:.8,yRatio:.5,anchor:"right" as const},keybarPosition:{xRatio:.5,yRatio:.9,anchor:"bottom" as const},keybarHidden:true,keyOrder:["Ctrl"],updatedAt:now};
+    const preferences={userId:"u1",revision:1,theme:"dark",terminalFontSize:11,fileButtonPosition:{xRatio:.8,yRatio:.5,anchor:"right" as const},keybarPosition:{xRatio:.5,yRatio:.9,anchor:"bottom" as const},keybarHidden:true,keyOrder:["Ctrl"],pinnedCommands:[{id:"codex",command:"codex"}],updatedAt:now};
     expect(store.savePreferences(preferences,null)).toBe(true);
     expect(store.getPreferences("u1")?.keybarHidden).toBe(true);
+    expect(store.getPreferences("u1")?.pinnedCommands).toEqual([{id:"codex",command:"codex"}]);
 
     const device={userId:"u1",deviceId:"phone",activeTerminalId:"t1",drawerOpen:true,drawerTab:"history" as const,fileTreeRoot:"/tmp",fileTreeFollowMode:false,expandedPaths:["/tmp"],selectedFile:null,terminalScroll:{t1:12},updatedAt:now};
     store.saveDeviceState(device);

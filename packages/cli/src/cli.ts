@@ -10,7 +10,7 @@ import { renderQr } from "./qr.js";
 import { RuntimeManager, type RuntimeHandle } from "./runtime-manager.js";
 import { selectRelay, type RelaySelection } from "./tunnel/relay-orchestrator.js";
 
-const VERSION = "0.2.0-preview.5";
+const VERSION = "0.2.0-preview.6";
 
 export async function main(argv: string[]): Promise<void> {
   const options = parseArgs(argv);
@@ -107,6 +107,13 @@ async function doctor(target: PlatformTarget, dataDir: string): Promise<void> {
     } catch (error) {
       reportDoctorFailure(error, `${module}: `);
     }
+  }
+
+  try {
+    runtimeRequire.resolve("agentroam-tui-darwin-arm64/entry");
+    console.log("✓ agent-tui optional package");
+  } catch (error) {
+    reportDoctorFailure(error, "agent-tui: ");
   }
 
   try {

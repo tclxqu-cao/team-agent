@@ -1,0 +1,32 @@
+{
+  "name": "agentroam-tui-darwin-arm64",
+  "version": "0.2.0-preview.6",
+  "description": "Bundled AgentRoam terminal UI for macOS arm64",
+  "license": "MIT",
+  "type": "module",
+  "os": [
+    "darwin"
+  ],
+  "cpu": [
+    "arm64"
+  ],
+  "bin": {
+    "agent-tui": "./bin/agent-tui.mjs"
+  },
+  "files": [
+    "README.md",
+    "bin",
+    "dist"
+  ],
+  "exports": {
+    "./entry": "./dist/agent-tui.js"
+  },
+  "engines": {
+    "node": ">=22 <23"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true,
+    "tag": "preview"
+  }
+}

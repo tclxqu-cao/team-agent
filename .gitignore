@@ -17,6 +17,8 @@ packages/server/.next-dev/
 packages/cli/dist/
 packages/cli/runtime/
 packages/cli/*.tgz
+packages/cloudflared-darwin-arm64/*.tgz
+packages/tui-darwin-arm64/*.tgz
 
 # 本地密钥配置
 packages/server/.env.local

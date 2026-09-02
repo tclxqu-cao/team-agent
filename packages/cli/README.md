@@ -7,7 +7,7 @@ Zero-install mobile remote terminal and file console. **No desktop app, no VPN**
 - **Node.js 22** (required)
 - macOS arm64
 
-> Preview status: `0.2.0-preview.5` is intentionally limited to macOS arm64.
+> Preview status: `0.2.0-preview.6` is intentionally limited to macOS arm64.
 > macOS x64 and Windows x64 remain future formal-release targets.
 
 ## Quick start
@@ -19,7 +19,9 @@ npx agentroam@preview
 Or install from tarball:
 
 ```bash
-npm install ./agentroam-cloudflared-darwin-arm64-0.2.0-preview.5.tgz ./agentroam-0.2.0-preview.5.tgz
+npm install ./agentroam-cloudflared-darwin-arm64-0.2.0-preview.6.tgz \
+  ./agentroam-tui-darwin-arm64-0.2.0-preview.6.tgz \
+  ./agentroam-0.2.0-preview.6.tgz
 npx agentroam
 ```
 
@@ -36,6 +38,7 @@ On first run:
 agentroam                 # start (default)
 agentroam doctor          # check native modules + platform
 agentroam version
+agent-tui                 # start the bundled terminal Agent UI
 ```
 
 ## Options
@@ -59,6 +62,7 @@ The macOS arm64 cloudflared binary is installed from npm as a verified platform 
 - Next.js **standalone** web gateway + WebSocket PTY server
 - `@agent/core` bundled runtime
 - Optional platform **cloudflared** package (verified size + SHA-256 before execution)
+- Optional platform **agent-tui** package (Node 22 bundle; Bun is not required)
 - **Pairing token** + secure cookies behind HTTPS tunnel
 
 Not included: Electron desktop app, SDK, dev `.env`, session caches.

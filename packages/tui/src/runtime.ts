@@ -1,8 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { promises as fsp } from "node:fs";
 import { pathToFileURL } from "node:url";
-import * as Core from "@agent/core";
-import type { AgentEvent, AskUserRequest, AskUserResponse, IAgentLoop, SkillMeta } from "@agent/core";
+import { AgentBuilder } from "../../core/src/domain/agent/AgentBuilder.js";
+import type { AgentEvent, IAgentLoop } from "../../core/src/domain/agent/entities.js";
+import { FileSystemSessionStore } from "../../core/src/domain/session/SessionStore.js";
+import type { ISessionStore, Session } from "../../core/src/domain/session/entities.js";
+import type { SkillMeta } from "../../core/src/domain/skill/entities.js";
+import { AskUserTool, type AskUserRequest, type AskUserResponse } from "../../core/src/domain/tool/builtin/AskUserTool.js";
 import type { ModelSelection } from "./model-config.js";
 
 export interface SessionSummary {
@@ -33,13 +37,13 @@ export class TuiRuntime {
     private workingDirectory: string,
     private model: ModelSelection,
     private readonly storeDir: string,
-    private readonly sessionStore: Core.ISessionStore = new Core.FileSystemSessionStore(storeDir),
+    private readonly sessionStore: ISessionStore = new FileSystemSessionStore(storeDir),
     private readonly agentFactory: AgentFactory = TuiRuntime.defaultAgentFactory(sessionStore),
   ) {}
 
-  private static defaultAgentFactory(sessionStore: Core.ISessionStore): AgentFactory {
+  private static defaultAgentFactory(sessionStore: ISessionStore): AgentFactory {
     return async (workingDirectory, model, question) => {
-      const builder = new Core.AgentBuilder()
+      const builder = new AgentBuilder()
         .withWorkingDirectory(workingDirectory)
         .withSessionStore(sessionStore)
         .withModel(model.provider, {
@@ -47,7 +51,7 @@ export class TuiRuntime {
           modelId: model.modelId,
           baseUrl: model.baseUrl,
         })
-        .withTool(new Core.AskUserTool(question));
+        .withTool(new AskUserTool(question));
       const agent = await builder.build();
       return { agent, skills: builder.getSkillRegistry().getAll() };
     };
@@ -105,7 +109,7 @@ export class TuiRuntime {
       const rows: SessionSummary[] = [];
       for (const file of files) {
         try {
-          const session = JSON.parse(await fsp.readFile(`${sessionDir}/${file}`, "utf8")) as Partial<Core.Session>;
+          const session = JSON.parse(await fsp.readFile(`${sessionDir}/${file}`, "utf8")) as Partial<Session>;
           if (!session.id) continue;
           rows.push({ id: session.id, title: session.title || session.id.slice(0, 8), created: session.created ?? "" });
         } catch {}

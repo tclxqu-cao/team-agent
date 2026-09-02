@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { defaultPinnedCommands, validatePinnedCommands } from "@agent/core";
 import { anonymousPrincipal, webConsoleStore } from "../../../../lib/web-auth/anonymous";
 
 const defaults = (userId: string) => ({
@@ -10,6 +11,7 @@ const defaults = (userId: string) => ({
   keybarPosition: { xRatio: .5, yRatio: .95, anchor: "bottom" },
   keybarHidden: false,
   keyOrder: [],
+  pinnedCommands: defaultPinnedCommands(),
   updatedAt: new Date().toISOString(),
 });
 
@@ -24,9 +26,21 @@ export async function PATCH(request: Request) {
   const { userId } = anonymousPrincipal();
   const current = webConsoleStore.getPreferences(userId) ?? defaults(userId);
   const body = await request.json();
+  let pinnedCommands = current.pinnedCommands;
+  if (Object.prototype.hasOwnProperty.call(body, "pinnedCommands")) {
+    try {
+      pinnedCommands = validatePinnedCommands(body.pinnedCommands);
+    } catch (error) {
+      return NextResponse.json(
+        { error: { code: "INVALID_PINNED_COMMANDS", message: error instanceof Error ? error.message : "置顶命令无效" } },
+        { status: 400 },
+      );
+    }
+  }
   const next = {
     ...current,
     ...body,
+    pinnedCommands,
     userId,
     revision: current.revision + 1,
     updatedAt: new Date().toISOString(),

@@ -17,7 +17,7 @@ const packageJson = JSON.parse(
 if (packageJson.name !== "agentroam") {
   throw new Error(`unexpected package name: ${packageJson.name}`);
 }
-if (packageJson.version !== "0.2.0-preview.5") {
+if (packageJson.version !== "0.2.0-preview.6") {
   throw new Error(`unexpected package version: ${packageJson.version}`);
 }
 if (JSON.stringify(packageJson.os) !== JSON.stringify(["darwin"])) {
@@ -26,11 +26,14 @@ if (JSON.stringify(packageJson.os) !== JSON.stringify(["darwin"])) {
 if (JSON.stringify(packageJson.cpu) !== JSON.stringify(["arm64"])) {
   throw new Error(`unexpected package cpu: ${JSON.stringify(packageJson.cpu)}`);
 }
-if (packageJson.bin?.agentroam !== "./bin/agentroam.mjs") {
+if (packageJson.bin?.agentroam !== "./bin/agentroam.mjs" || packageJson.bin?.["agent-tui"] !== "./bin/agent-tui.mjs") {
   throw new Error(`unexpected package bin: ${JSON.stringify(packageJson.bin)}`);
 }
-if (packageJson.optionalDependencies?.["agentroam-cloudflared-darwin-arm64"] !== "0.2.0-preview.5") {
+if (packageJson.optionalDependencies?.["agentroam-cloudflared-darwin-arm64"] !== "0.2.0-preview.6") {
   throw new Error(`unexpected cloudflared optional dependency: ${JSON.stringify(packageJson.optionalDependencies)}`);
+}
+if (packageJson.optionalDependencies?.["agentroam-tui-darwin-arm64"] !== "0.2.0-preview.6") {
+  throw new Error(`unexpected TUI optional dependency: ${JSON.stringify(packageJson.optionalDependencies)}`);
 }
 if (statSync(tarball).size >= 30_000_000) {
   throw new Error(`tarball exceeds 30 MB release limit: ${statSync(tarball).size}`);
@@ -78,6 +81,7 @@ if (platformLeaks.length) {
 
 for (const required of [
   "package/bin/agentroam.mjs",
+  "package/bin/agent-tui.mjs",
   "package/dist/cli.js",
   "package/dist/native-runtime.js",
   "package/dist/network.js",

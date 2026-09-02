@@ -15,10 +15,10 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const args = process.argv.slice(2);
 const nodeBin = args.includes("--node") ? args[args.indexOf("--node") + 1] : process.execPath;
 const tarballs = args.filter((arg) => arg.endsWith(".tgz")).map((path) => resolve(path));
-const tarball = tarballs.find((path) => /agentroam-0\.2\.0-preview\.5\.tgz$/.test(path))
-  ?? resolve(root, "packages/cli/agentroam-0.2.0-preview.5.tgz");
-const platformTarball = tarballs.find((path) => /agentroam-cloudflared-darwin-arm64-0\.2\.0-preview\.5\.tgz$/.test(path))
-  ?? resolve(root, "packages/cloudflared-darwin-arm64/agentroam-cloudflared-darwin-arm64-0.2.0-preview.5.tgz");
+const tarball = tarballs.find((path) => /agentroam-0\.2\.0-preview\.6\.tgz$/.test(path))
+  ?? resolve(root, "packages/cli/agentroam-0.2.0-preview.6.tgz");
+const platformTarball = tarballs.find((path) => /agentroam-cloudflared-darwin-arm64-0\.2\.0-preview\.6\.tgz$/.test(path))
+  ?? resolve(root, "packages/cloudflared-darwin-arm64/agentroam-cloudflared-darwin-arm64-0.2.0-preview.6.tgz");
 const provider = args.includes("--provider") ? args[args.indexOf("--provider") + 1] : "auto";
 if (!["auto", "cloudflare", "pinggy"].includes(provider)) throw new Error(`invalid provider: ${provider}`);
 const commandEnv = { ...process.env, PATH: `${dirname(nodeBin)}${delimiter}${process.env.PATH ?? ""}` };

@@ -181,9 +181,14 @@ const execFileAsync = (cmd, args, opts) =>
  */
 
 /** @returns {TerminalSession} */
-function startTerminal(id, { userId, cols = 80, rows = 24, cwd, command } = {}) {
+function startTerminal(id, { userId, cols = 80, rows = 24, cwd, command, initialCommand } = {}) {
   const existing = terminals.get(id);
   if (existing && !existing.exited) return existing;
+  const queuedCommand = typeof initialCommand === "string"
+    && initialCommand.length <= 1000
+    && !/[\r\n\0]/.test(initialCommand)
+    ? initialCommand
+    : "";
 
   const shell = process.env.SHELL || (process.platform==="win32"?(process.env.COMSPEC||"powershell.exe"):"/bin/zsh");
   const powershell=/powershell|pwsh/i.test(shell);
@@ -257,11 +262,18 @@ function startTerminal(id, { userId, cols = 80, rows = 24, cwd, command } = {}) 
   terminals.set(id, session);
   if (shell.endsWith("zsh")) {
     const hook = `autoload -Uz add-zsh-hook; function __ca_hist_preexec(){ local c=$(printf '%s' "$1"|base64|tr -d '\\n'); local d=$(printf '%s' "$PWD"|base64|tr -d '\\n'); printf '\\033]633;C;%s;%s\\007' "$c" "$d"; }; add-zsh-hook preexec __ca_hist_preexec; clear`;
-    setTimeout(() => { if (!session.exited) p.write(` ${hook}\r`); }, 350).unref?.();
+    setTimeout(() => {
+      if (session.exited) return;
+      p.write(` ${hook}\r`);
+      if (queuedCommand) p.write(`${queuedCommand}\r`);
+    }, 350).unref?.();
   }
   if (powershell) {
     const integration=`function global:prompt { $e=[char]27; $b=[char]7; Write-Host -NoNewline ($e + ']7;file:///' + ($PWD.Path -replace '\\\\','/') + $b); 'PS ' + $PWD.Path + '> ' }`;
-    setTimeout(()=>{if(!session.exited)p.write(`${integration}\r`);},350).unref?.();
+    setTimeout(()=>{if(!session.exited){p.write(`${integration}\r`);if(queuedCommand)p.write(`${queuedCommand}\r`);}},350).unref?.();
+  }
+  if (!shell.endsWith("zsh") && !powershell && queuedCommand) {
+    setTimeout(() => { if (!session.exited) p.write(`${queuedCommand}\r`); }, 350).unref?.();
   }
   return session;
 }

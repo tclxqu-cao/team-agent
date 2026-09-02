@@ -1,4 +1,4 @@
-# AgentRoam 0.2.0-preview.3 macOS arm64 预览发布验收
+# AgentRoam 0.2.0-preview.6 macOS arm64 预览发布验收
 
 面向：**仅 CLI + Web 控制台**，不含 desktop；同一局域网可直接扫码访问，跨网络时自动尝试 Cloudflare Quick Tunnel 和 Pinggy SSH 443 relay，**手机无需 VPN**。
 
@@ -7,8 +7,9 @@
 ```bash
 bun run pack:cli
 # 产物:
-# packages/cli/agentroam-0.2.0-preview.3.tgz
-# packages/cloudflared-darwin-arm64/agentroam-cloudflared-darwin-arm64-0.2.0-preview.3.tgz
+# packages/cli/agentroam-0.2.0-preview.6.tgz
+# packages/cloudflared-darwin-arm64/agentroam-cloudflared-darwin-arm64-0.2.0-preview.6.tgz
+# packages/tui-darwin-arm64/agentroam-tui-darwin-arm64-0.2.0-preview.6.tgz
 ```
 
 ## 验收清单
@@ -29,10 +30,12 @@ bun run pack:cli
 
 ```bash
 # 方式 1: 直接发 tarball
-scp packages/{cli/agentroam-0.2.0-preview.3.tgz,cloudflared-darwin-arm64/agentroam-cloudflared-darwin-arm64-0.2.0-preview.3.tgz} user@host:
+scp packages/{cli/agentroam-0.2.0-preview.6.tgz,cloudflared-darwin-arm64/agentroam-cloudflared-darwin-arm64-0.2.0-preview.6.tgz,tui-darwin-arm64/agentroam-tui-darwin-arm64-0.2.0-preview.6.tgz} user@host:
 
 # 对方安装（需 Node 22 + macOS arm64）
-npm install ./agentroam-cloudflared-darwin-arm64-0.2.0-preview.3.tgz ./agentroam-0.2.0-preview.3.tgz
+npm install ./agentroam-cloudflared-darwin-arm64-0.2.0-preview.6.tgz \
+  ./agentroam-tui-darwin-arm64-0.2.0-preview.6.tgz \
+  ./agentroam-0.2.0-preview.6.tgz
 npx agentroam
 ```
 
@@ -53,6 +56,7 @@ npx agentroam@preview
 - 默认 relay 顺序是 Cloudflare → Pinggy → RFC1918 LAN，只有通过公网健康检查后才输出二维码。
 - npm 首发曾自动保留 `latest=0.2.0-preview.1`；发布后必须重新复核 `preview` 与 `latest`。
 - runtime staging 排除 Next 构建期 SWC、前端构建期 Xterm 包和非 darwin-arm64 的 `node-pty` prebuild，tarball 从 79.7 MB 降至 29.0 MB
+- `agent-tui` 由独立 optional package 提供，Node 22 bundle 不要求最终用户安装 Bun。
 
 ## npm 发布结果
 
@@ -67,6 +71,7 @@ npx agentroam@preview
 
 1. 确认两个 `package.json` version
 2. `npm login`
-3. `npm publish packages/cloudflared-darwin-arm64/agentroam-cloudflared-darwin-arm64-0.2.0-preview.5.tgz --registry https://registry.npmjs.org --access public --tag preview --provenance=false`
-4. `npm publish packages/cli/agentroam-0.2.0-preview.5.tgz --registry https://registry.npmjs.org --access public --tag preview --provenance=false`
-5. 验证 `npx agentroam@preview doctor`
+3. `npm publish packages/cloudflared-darwin-arm64/agentroam-cloudflared-darwin-arm64-0.2.0-preview.6.tgz --registry https://registry.npmjs.org --access public --tag preview --provenance=false`
+4. `npm publish packages/tui-darwin-arm64/agentroam-tui-darwin-arm64-0.2.0-preview.6.tgz --registry https://registry.npmjs.org --access public --tag preview --provenance=false`
+5. `npm publish packages/cli/agentroam-0.2.0-preview.6.tgz --registry https://registry.npmjs.org --access public --tag preview --provenance=false`
+6. 验证 `npx agentroam@preview doctor` 与 `agent-tui`

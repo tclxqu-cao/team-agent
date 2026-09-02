@@ -13,9 +13,10 @@
     },
     "packages/cli": {
       "name": "agentroam",
-      "version": "0.2.0-preview.5",
+      "version": "0.2.0-preview.6",
       "bin": {
         "agentroam": "./bin/agentroam.mjs",
+        "agent-tui": "./bin/agent-tui.mjs",
       },
       "dependencies": {
         "qrcode-terminal": "^0.12.0",
@@ -28,12 +29,13 @@
         "vitest": "^2.1.0",
       },
       "optionalDependencies": {
-        "agentroam-cloudflared-darwin-arm64": "0.2.0-preview.5",
+        "agentroam-cloudflared-darwin-arm64": "0.2.0-preview.6",
+        "agentroam-tui-darwin-arm64": "0.2.0-preview.6",
       },
     },
     "packages/cloudflared-darwin-arm64": {
       "name": "agentroam-cloudflared-darwin-arm64",
-      "version": "0.2.0-preview.5",
+      "version": "0.2.0-preview.6",
     },
     "packages/core": {
       "name": "@agent/core",
@@ -113,6 +115,13 @@
       "devDependencies": {
         "@types/react": "18.3.24",
         "ink-testing-library": "4.0.0",
+      },
+    },
+    "packages/tui-darwin-arm64": {
+      "name": "agentroam-tui-darwin-arm64",
+      "version": "0.2.0-preview.6",
+      "bin": {
+        "agent-tui": "./bin/agent-tui.mjs",
       },
     },
     "packages/voice-service": {
@@ -439,6 +448,8 @@
     "agentroam": ["agentroam@workspace:packages/cli"],
 
     "agentroam-cloudflared-darwin-arm64": ["agentroam-cloudflared-darwin-arm64@workspace:packages/cloudflared-darwin-arm64"],
+
+    "agentroam-tui-darwin-arm64": ["agentroam-tui-darwin-arm64@workspace:packages/tui-darwin-arm64"],
 
     "ajv": ["ajv@8.20.0", "http://nexus.17usoft.com/repository/npm-all/ajv/-/ajv-8.20.0.tgz", { "dependencies": { "fast-deep-equal": "^3.1.3", "fast-uri": "^3.0.1", "json-schema-traverse": "^1.0.0", "require-from-string": "^2.0.2" } }, "sha512-Thbli+OlOj+iMPYFBVBfJ3OmCAnaSyNn4M1vz9T6Gka5Jt9ba/HIR56joy65tY6kx/FCF5VXNB819Y7/GUrBGA=="],
 

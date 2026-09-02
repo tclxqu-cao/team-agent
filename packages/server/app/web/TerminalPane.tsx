@@ -29,6 +29,7 @@ const KEY_LABELS: Record<string,string> = {ctrl:"Ctrl",esc:"Esc",tab:"Tab",up:"â
 interface Props {
   terminalId: string;
   title: string;
+  initialCommand?: string;
   visible: boolean;
   state: GatewayState;
   rpc: <T = any,>(type: string, params?: Record<string, unknown>, timeoutMs?: number) => Promise<T>;
@@ -45,12 +46,12 @@ interface Props {
   /** persisted scroll line from device state */
   initialScrollLine?: number | null;
   onScrollLineChange?: (line: number) => void;
-  /** register a handler that fills the live prompt without executing */
-  onRegisterFill?: (fill: (command: string) => void) => () => void;
+  /** register a handler that replaces the live prompt and optionally submits it */
+  onRegisterFill?: (fill: (command: string, submit?: boolean) => void) => () => void;
   terminalTheme: WebTheme;
 }
 
-export default function TerminalPane({ terminalId, title, visible, state, rpc, onEvent, onTerminalData, onTerminalReset, sendTerminalInput, keyOrder, keybarHidden, onKeyOrderChange, onKeybarHiddenChange, onCwdChange, initialScrollLine, onScrollLineChange, onRegisterFill, terminalTheme }: Props) {
+export default function TerminalPane({ terminalId, title, initialCommand, visible, state, rpc, onEvent, onTerminalData, onTerminalReset, sendTerminalInput, keyOrder, keybarHidden, onKeyOrderChange, onKeybarHiddenChange, onCwdChange, initialScrollLine, onScrollLineChange, onRegisterFill, terminalTheme }: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
@@ -81,7 +82,7 @@ export default function TerminalPane({ terminalId, title, visible, state, rpc, o
   }, [rpc, sendTerminalInput]);
   const sendInputRef = useRef(sendInput);
   sendInputRef.current = sendInput;
-  const fillCommandRef = useRef<(command: string) => void>(() => {});
+  const fillCommandRef = useRef<(command: string, submit?: boolean) => void>(() => {});
   const terminalThemeRef = useRef(terminalTheme);
   terminalThemeRef.current = terminalTheme;
   const keyStyles: React.CSSProperties = {
@@ -92,7 +93,7 @@ export default function TerminalPane({ terminalId, title, visible, state, rpc, o
   };
   const onRegisterFillRef = useRef(onRegisterFill);
   onRegisterFillRef.current = onRegisterFill;
-  const fillCommand = useCallback((command: string) => {
+  const fillCommand = useCallback((command: string, submit = false) => {
     void (async () => {
       followOutputRef.current = true;
       termRef.current?.scrollToBottom();
@@ -112,6 +113,7 @@ export default function TerminalPane({ terminalId, title, visible, state, rpc, o
         if (!term) return;
         if (typeof term.paste === "function") term.paste(command);
         else sendInput(command);
+        if (submit) window.setTimeout(() => sendInput("\r"), 20);
       }, 20);
     })();
   }, [rpc, sendInput]);
@@ -465,6 +467,7 @@ export default function TerminalPane({ terminalId, title, visible, state, rpc, o
         rpc<{ sessionId: string; channelId: number; cwd?: string | null }>("term:start", {
           id: terminalId,
           title,
+          initialCommand,
           cols: termRef.current?.cols ?? 80,
           rows: termRef.current?.rows ?? 24,
         });
@@ -499,14 +502,15 @@ export default function TerminalPane({ terminalId, title, visible, state, rpc, o
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.connected, terminalId, title, onTerminalData]);
+  }, [state.connected, terminalId, title, initialCommand, onTerminalData]);
 
   useEffect(() => {
     if (!onRegisterFill) return;
     const register = onRegisterFillRef.current;
     if (!register) return;
-    return register((command) => fillCommandRef.current(command));
-  }, [terminalId]);
+    if (!sessionReady) return;
+    return register((command, submit) => fillCommandRef.current(command, submit));
+  }, [terminalId, sessionReady]);
 
   useEffect(() => {
     if (!visible || !sessionReady) return;

@@ -6,6 +6,8 @@
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { FolderTree, X } from "lucide-react";
+import type { PinnedCommand } from "../../../core/src/domain/web-console/entities";
+import { defaultPinnedCommands } from "../../../core/src/domain/web-console/pinned-commands";
 import {
   WEBAPP_PROJECT_RESPONSE_TYPE,
   readWebProjectRequest,
@@ -31,29 +33,41 @@ export default function WebConsolePage() {
 // Built-in webapp agent tab (@agent/webapp at /app) — always present, never
 // deletable; "+" adds regular terminal tabs.
 const WEBAPP_TAB = { id: "webapp-agent", title: "智能助手", kind: "webapp" } as const;
+interface ConsoleTab { id: string; title: string; kind?: "webapp"; initialCommand?: string }
 
 // Shell → webapp iframe skin sync; the webapp bridge listens for this type.
 const WEBAPP_SKIN_MESSAGE_TYPE = "agent-web-shell:skin:v1";
 
 function AuthenticatedConsole({ auth }: { auth: WebAuthController }) {
   const { state, epoch, rpc, onEvent, onTerminalData, onTerminalReset, sendTerminalInput } = useGateway(() => {}, auth.getWsNonce, auth.refresh);
-  const [tabs, setTabs] = useState<Array<{ id: string; title: string; kind?: "webapp" }>>([{ ...WEBAPP_TAB }]);
+  const [tabs, setTabs] = useState<ConsoleTab[]>([{ ...WEBAPP_TAB }]);
   const [activeTerminalId, setActiveTerminalId] = useState<string | null>(WEBAPP_TAB.id);
   const [cwdByTerminal, setCwdByTerminal] = useState<Record<string, string>>({});
   const tabsHydrated = useRef(false);
   const restoredActiveId = useRef<string|null>(null);
-  const fillByTerminal = useRef(new Map<string, (command: string) => void>());
-  const registerTerminalFill = useCallback((id: string, fill: (command: string) => void) => {
+  const fillByTerminal = useRef(new Map<string, (command: string, submit?: boolean) => void>());
+  const pendingCommandByTerminal = useRef(new Map<string, string>());
+  const registerTerminalFill = useCallback((id: string, fill: (command: string, submit?: boolean) => void) => {
     fillByTerminal.current.set(id, fill);
-    return () => fillByTerminal.current.delete(id);
+    const timer = window.setTimeout(() => {
+      if (fillByTerminal.current.get(id) !== fill) return;
+      const pending = pendingCommandByTerminal.current.get(id);
+      if (!pending) return;
+      pendingCommandByTerminal.current.delete(id);
+      fill(pending, true);
+    }, 180);
+    return () => {
+      window.clearTimeout(timer);
+      if (fillByTerminal.current.get(id) === fill) fillByTerminal.current.delete(id);
+    };
   }, []);
   const fillActiveCommand = useCallback((command: string) => {
-    if (!activeTerminalId) return;
+    if (!activeTerminalId || tabs.find((tab) => tab.id === activeTerminalId)?.kind === "webapp") return;
     const fill = fillByTerminal.current.get(activeTerminalId);
     if (fill) fill(command);
     else rpc("term:input", { id: activeTerminalId, data: `\x15${command}` }).catch(() => {});
     setDrawerOpen(false);
-  }, [activeTerminalId, rpc]);
+  }, [activeTerminalId, rpc, tabs]);
   const [deviceStateLoaded, setDeviceStateLoaded] = useState(false);
   const [terminalScroll, setTerminalScroll] = useState<Record<string, number>>({});
   const [previewPath, setPreviewPath] = useState<string | null>(null);
@@ -65,6 +79,7 @@ function AuthenticatedConsole({ auth }: { auth: WebAuthController }) {
   const [fileButtonPosition,setFileButtonPosition]=useState({xRatio:.94,yRatio:.65,anchor:"right"});
   const [keybarHidden,setKeybarHidden]=useState(false);
   const [keyOrder,setKeyOrder]=useState<string[]>([]);
+  const [pinnedCommands,setPinnedCommands]=useState<PinnedCommand[]>(defaultPinnedCommands());
   const [themeId,setThemeId]=useState<WebThemeId>(DEFAULT_THEME_ID);
   const [preferencesLoaded,setPreferencesLoaded]=useState(false);
   const activeTheme = resolveWebTheme(themeId);
@@ -175,9 +190,9 @@ function AuthenticatedConsole({ auth }: { auth: WebAuthController }) {
     };
   }, []);
 
-  useEffect(()=>{fetch("/api/web-console/preferences",{credentials:"same-origin"}).then(r=>r.json()).then(body=>{if(body.preferences?.fileButtonPosition)setFileButtonPosition(body.preferences.fileButtonPosition);if(typeof body.preferences?.keybarHidden==="boolean")setKeybarHidden(body.preferences.keybarHidden);if(Array.isArray(body.preferences?.keyOrder))setKeyOrder(body.preferences.keyOrder);if(body.preferences?.theme)setThemeId(resolveWebTheme(body.preferences.theme).id);}).catch(()=>{}).finally(()=>setPreferencesLoaded(true));fetch("/api/web-console/device-state",{credentials:"same-origin"}).then(r=>r.json()).then(body=>{const state=body.deviceState;if(state?.drawerTab)setDrawerTab(state.drawerTab);if(state?.activeTerminalId)restoredActiveId.current=state.activeTerminalId;if(typeof state?.drawerOpen==="boolean")setDrawerOpen(state.drawerOpen);if(state?.fileTreeRoot)setFileTreeRoot(state.fileTreeRoot);if(typeof state?.fileTreeFollowMode==="boolean")setFileTreeFollow(state.fileTreeFollowMode);if(state?.selectedFile)setPreviewPath(state.selectedFile);if(state?.terminalScroll&&typeof state.terminalScroll==="object")setTerminalScroll(state.terminalScroll);}).catch(()=>{}).finally(()=>setDeviceStateLoaded(true));},[]);
+  useEffect(()=>{fetch("/api/web-console/preferences",{credentials:"same-origin"}).then(r=>r.json()).then(body=>{if(body.preferences?.fileButtonPosition)setFileButtonPosition(body.preferences.fileButtonPosition);if(typeof body.preferences?.keybarHidden==="boolean")setKeybarHidden(body.preferences.keybarHidden);if(Array.isArray(body.preferences?.keyOrder))setKeyOrder(body.preferences.keyOrder);if(Array.isArray(body.preferences?.pinnedCommands))setPinnedCommands(body.preferences.pinnedCommands);if(body.preferences?.theme)setThemeId(resolveWebTheme(body.preferences.theme).id);}).catch(()=>{}).finally(()=>setPreferencesLoaded(true));fetch("/api/web-console/device-state",{credentials:"same-origin"}).then(r=>r.json()).then(body=>{const state=body.deviceState;if(state?.drawerTab)setDrawerTab(state.drawerTab);if(state?.activeTerminalId)restoredActiveId.current=state.activeTerminalId;if(typeof state?.drawerOpen==="boolean")setDrawerOpen(state.drawerOpen);if(state?.fileTreeRoot)setFileTreeRoot(state.fileTreeRoot);if(typeof state?.fileTreeFollowMode==="boolean")setFileTreeFollow(state.fileTreeFollowMode);if(state?.selectedFile)setPreviewPath(state.selectedFile);if(state?.terminalScroll&&typeof state.terminalScroll==="object")setTerminalScroll(state.terminalScroll);}).catch(()=>{}).finally(()=>setDeviceStateLoaded(true));},[]);
   const savePreferences=useCallback((update:Record<string,unknown>)=>{fetch("/api/web-console/preferences",{method:"PATCH",credentials:"same-origin",headers:{"content-type":"application/json","x-csrf-token":auth.csrfToken},body:JSON.stringify(update)}).catch(()=>{});},[auth.csrfToken]);
-  useEffect(()=>{if(!preferencesLoaded)return;const timer=setTimeout(()=>savePreferences({fileButtonPosition,keybarHidden,keyOrder,theme:themeId}),500);return()=>clearTimeout(timer);},[fileButtonPosition,keybarHidden,keyOrder,themeId,preferencesLoaded,savePreferences]);
+  useEffect(()=>{if(!preferencesLoaded)return;const timer=setTimeout(()=>savePreferences({fileButtonPosition,keybarHidden,keyOrder,pinnedCommands,theme:themeId}),500);return()=>clearTimeout(timer);},[fileButtonPosition,keybarHidden,keyOrder,pinnedCommands,themeId,preferencesLoaded,savePreferences]);
   const persistDeviceState=useCallback((payload:Record<string,unknown>)=>{if(!auth.csrfToken)return;fetch("/api/web-console/device-state",{method:"PUT",credentials:"same-origin",headers:{"content-type":"application/json","x-csrf-token":auth.csrfToken},body:JSON.stringify(payload)}).catch(()=>{});},[auth.csrfToken]);
   useEffect(()=>{if(!auth.csrfToken)return;const timer=setTimeout(()=>persistDeviceState({activeTerminalId,drawerOpen,drawerTab,fileTreeRoot,fileTreeFollowMode:fileTreeFollow,selectedFile:previewPath,terminalScroll}),500);return()=>clearTimeout(timer);},[activeTerminalId,drawerOpen,drawerTab,fileTreeRoot,fileTreeFollow,previewPath,terminalScroll,auth.csrfToken,persistDeviceState]);
   useEffect(()=>{if(!auth.csrfToken)return;const flush=()=>persistDeviceState({activeTerminalId,drawerOpen,drawerTab,fileTreeRoot,fileTreeFollowMode:fileTreeFollow,selectedFile:previewPath,terminalScroll});window.addEventListener("pagehide",flush);return()=>window.removeEventListener("pagehide",flush);},[activeTerminalId,drawerOpen,drawerTab,fileTreeRoot,fileTreeFollow,previewPath,terminalScroll,auth.csrfToken,persistDeviceState]);
@@ -187,14 +202,32 @@ function AuthenticatedConsole({ auth }: { auth: WebAuthController }) {
     setDrawerOpen(false); // picking a file dismisses the drawer on phones
   }, []);
   const addTerminal = useCallback(() => {
-    let addedId: string | null = null;
+    if (tabs.length >= 8) return;
+    const addedId = `t-web-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
     setTabs((current) => {
       if (current.length >= 8) return current;
-      addedId = `t-web-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
       return [...current, { id: addedId, title: `Terminal ${current.length + 1}` }];
     });
-    if (addedId) setActiveTerminalId(addedId);
-  }, []);
+    setActiveTerminalId(addedId);
+  }, [tabs.length]);
+
+  const executeCommand = useCallback((command: string) => {
+    const activeTab = tabs.find((tab) => tab.id === activeTerminalId);
+    if (activeTab && activeTab.kind !== "webapp") {
+      const fill = fillByTerminal.current.get(activeTab.id);
+      if (fill) fill(command, true);
+      else pendingCommandByTerminal.current.set(activeTab.id, command);
+      setDrawerOpen(false);
+      return;
+    }
+
+    const reusable = tabs.length >= 8 ? tabs.find((tab) => tab.kind !== "webapp") : null;
+    const terminalId = reusable?.id ?? `t-web-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+    if (reusable) pendingCommandByTerminal.current.set(terminalId, command);
+    else setTabs((current) => [...current, { id: terminalId, title: `Terminal ${current.length + 1}`, initialCommand: command }]);
+    setActiveTerminalId(terminalId);
+    setDrawerOpen(false);
+  }, [activeTerminalId, tabs]);
 
   useEffect(() => {
     if (!state.connected || !deviceStateLoaded || tabsHydrated.current) return;
@@ -371,7 +404,7 @@ function AuthenticatedConsole({ auth }: { auth: WebAuthController }) {
               {tab.kind === "webapp" ? (
                 <iframe ref={webappFrameRef} src="/app/" title={tab.title} onLoad={() => postSkinToWebapp(themeId)} style={{ width: "100%", height: "100%", border: "0", background: "var(--ui-term-col-bg, #101014)" }} />
               ) : (
-                <TerminalPane terminalId={tab.id} title={tab.title} visible={tab.id === activeTerminalId} state={state} rpc={rpc} onEvent={onEvent} onTerminalData={onTerminalData} onTerminalReset={onTerminalReset} sendTerminalInput={sendTerminalInput} keyOrder={keyOrder} keybarHidden={keybarHidden} onKeyOrderChange={setKeyOrder} onKeybarHiddenChange={setKeybarHidden} terminalTheme={activeTheme} initialScrollLine={terminalScroll[tab.id] ?? null} onScrollLineChange={(line) => setTerminalScroll((current) => (current[tab.id] === line ? current : { ...current, [tab.id]: line }))} onRegisterFill={(fill) => registerTerminalFill(tab.id, fill)} onCwdChange={(cwd) => cwd && setCwdByTerminal((current) => ({ ...current, [tab.id]: cwd }))} />
+                <TerminalPane terminalId={tab.id} title={tab.title} initialCommand={tab.initialCommand} visible={tab.id === activeTerminalId} state={state} rpc={rpc} onEvent={onEvent} onTerminalData={onTerminalData} onTerminalReset={onTerminalReset} sendTerminalInput={sendTerminalInput} keyOrder={keyOrder} keybarHidden={keybarHidden} onKeyOrderChange={setKeyOrder} onKeybarHiddenChange={setKeybarHidden} terminalTheme={activeTheme} initialScrollLine={terminalScroll[tab.id] ?? null} onScrollLineChange={(line) => setTerminalScroll((current) => (current[tab.id] === line ? current : { ...current, [tab.id]: line }))} onRegisterFill={(fill) => registerTerminalFill(tab.id, fill)} onCwdChange={(cwd) => cwd && setCwdByTerminal((current) => ({ ...current, [tab.id]: cwd }))} />
               )}
             </div>
           ))}
@@ -408,8 +441,11 @@ function AuthenticatedConsole({ auth }: { auth: WebAuthController }) {
             onTreeStateChange={(root,following)=>{setFileTreeRoot(root);setFileTreeFollow(following);}}
           /> : <HistoryPanel
             csrfToken={auth.csrfToken}
-            terminalId={activeTerminalId}
+            terminalId={tabs.find((tab) => tab.id === activeTerminalId)?.kind === "webapp" ? null : activeTerminalId}
+            pinnedCommands={pinnedCommands}
+            onPinnedCommandsChange={setPinnedCommands}
             onFill={fillActiveCommand}
+            onExecute={executeCommand}
           />}
           <div style={S.treeFoot}>
             <span style={S.treeFootDot} />
@@ -528,9 +564,28 @@ const GLOBAL_CSS = `
   .tree-head button { height:26px; padding:0 10px; border:0; border-radius:6px 6px 0 0; background:transparent; color:var(--ui-drawer-tab-text, #74798a); font-size:11px; }
   .tree-head button.drawer-tab-active { color:var(--ui-drawer-tab-active, #e4e7ef); box-shadow:inset 0 -2px var(--ui-tab-accent, #7aa2f7); }
   .history-panel { flex:1; min-height:0; overflow:auto; padding:7px; }
-  .history-search { position:sticky; top:0; display:flex; gap:5px; padding:5px; background:var(--ui-tree-bg, #121218); z-index:2; }
+  .pinned-commands { position:sticky; top:0; z-index:3; margin:-1px -1px 7px; border:1px solid var(--ui-tabbar-border, #252832); border-radius:6px; background:var(--ui-tree-bg, #121218); box-shadow:0 7px 12px color-mix(in srgb, var(--ui-root-bg, #0b0b10) 58%, transparent); overflow:hidden; }
+  .pinned-command-head { display:flex; align-items:center; min-height:30px; padding:0 6px 0 10px; border-bottom:1px solid var(--ui-tabbar-border, #252832); color:var(--ui-history-meta, #74798a); font-size:10px; }
+  .pinned-command-head span { flex:1; }
+  .pinned-command-row { display:flex; align-items:center; min-height:34px; border-bottom:1px solid color-mix(in srgb, var(--ui-tabbar-border, #252832) 76%, transparent); cursor:pointer; outline:none; }
+  .pinned-command-row:last-child { border-bottom:0; }
+  .pinned-command-row:hover,.pinned-command-row:focus-visible { background:color-mix(in srgb, var(--ui-tab-active-bg, #1f2430) 76%, transparent); }
+  .pinned-command-row:focus-visible { box-shadow:inset 2px 0 var(--ui-tab-accent, #7aa2f7); }
+  .pinned-command-dragging { opacity:.66; background:var(--ui-tab-active-bg, #1f2430); }
+  .pinned-command-row code { flex:1; min-width:0; padding:0 5px; overflow:hidden; color:var(--ui-history-item-text, #d3d6df); font-size:11px; text-overflow:ellipsis; white-space:nowrap; }
+  .pinned-command-grip { display:inline-flex; align-items:center; justify-content:center; width:28px; height:32px; padding:0; border:0; background:transparent; color:var(--ui-history-meta, #626777); cursor:grab; touch-action:none; }
+  .pinned-command-grip:active { cursor:grabbing; }
+  .pinned-command-actions { display:flex; align-items:center; padding-right:3px; opacity:.42; transition:opacity .15s ease; }
+  .pinned-command-row:hover .pinned-command-actions,.pinned-command-row:focus-within .pinned-command-actions { opacity:1; }
+  .pinned-command-editor { display:grid; grid-template-columns:minmax(0,1fr) 27px 27px; gap:4px; align-items:center; min-height:39px; padding:4px 5px 4px 8px; border-bottom:1px solid var(--ui-tabbar-border, #252832); }
+  .pinned-command-editor input { min-width:0; height:27px; box-sizing:border-box; border:1px solid var(--ui-tab-accent, #536b9e); border-radius:5px; outline:none; padding:0 7px; background:var(--ui-panel-input-bg, #0f0f15); color:var(--ui-panel-input-text, #ddd); font-family:"SF Mono",Menlo,monospace; font-size:10.5px; }
+  .pinned-command-editor small { grid-column:1 / -1; color:var(--ui-danger, #e06c75); font-size:9px; }
+  .history-search { display:flex; gap:5px; padding:5px; background:var(--ui-tree-bg, #121218); }
   .history-search input { flex:1; min-width:0; height:28px; border:1px solid var(--ui-panel-input-border, #30303a); border-radius:6px; padding:0 8px; background:var(--ui-panel-input-bg, #0f0f15); color:var(--ui-panel-input-text, #ddd); font-size:11px; }
-  .history-search button,.history-item button { border:1px solid var(--ui-panel-input-border, #30303a); border-radius:5px; background:var(--ui-tab-bg, #202029); color:var(--ui-connection-text, #999dab); font-size:10px; }
+  .history-icon-button { display:inline-flex; align-items:center; justify-content:center; width:27px; min-width:27px; height:27px; padding:0; border:1px solid var(--ui-panel-input-border, #30303a); border-radius:5px; background:var(--ui-tab-bg, #202029); color:var(--ui-connection-text, #999dab); }
+  .history-icon-button:hover:not(:disabled) { color:var(--ui-drawer-tab-active, #e4e7ef); border-color:var(--ui-tab-accent, #536b9e); }
+  .history-icon-button:disabled { cursor:not-allowed; opacity:.32; }
+  .history-icon-danger:hover:not(:disabled) { color:var(--ui-danger, #e06c75); border-color:color-mix(in srgb, var(--ui-danger, #e06c75) 60%, var(--ui-panel-input-border, #30303a)); }
   .history-item { padding:9px 7px; border-bottom:1px solid var(--ui-tabbar-border, #242731); cursor:pointer; border-radius:6px; }
   .history-item:hover { background:color-mix(in srgb, var(--ui-tab-active-bg, #181b24) 80%, transparent); }
   .history-item:active { background:var(--ui-tab-active-bg, #1f2430); }
@@ -541,6 +596,7 @@ const GLOBAL_CSS = `
   .history-item small { display:block; margin:4px 0 7px; color:var(--ui-history-meta, #656a79); font-size:9.5px; }
   .history-item-actions { display:flex; gap:5px; }
   .history-empty { padding:18px; color:#5d6270; font-size:11px; text-align:center; }
+  @media (pointer:coarse) { .pinned-command-actions { opacity:.78; } }
   .keybar-scroll { scrollbar-width:none; }
   .keybar-scroll::-webkit-scrollbar { display:none; }
   .tree-filter {

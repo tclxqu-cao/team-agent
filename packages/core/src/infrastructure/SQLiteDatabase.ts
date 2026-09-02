@@ -252,6 +252,7 @@ export class SQLiteDatabase {
         keybar_position_json TEXT NOT NULL DEFAULT '{"xRatio":0.5,"yRatio":0.95,"anchor":"bottom"}',
         keybar_hidden INTEGER NOT NULL DEFAULT 0,
         key_order_json TEXT NOT NULL DEFAULT '[]',
+        pinned_commands_json TEXT DEFAULT NULL,
         updated_at TEXT NOT NULL
       );
 
@@ -299,6 +300,14 @@ export class SQLiteDatabase {
     this.migrateMCPServerHeaders();
     this.migrateSessionsParentId();
     this.migrateLSPServers();
+    this.migratePinnedCommands();
+  }
+
+  private migratePinnedCommands(): void {
+    const cols = this.db.prepare("PRAGMA table_info(user_preferences)").all() as Array<{ name: string }>;
+    if (!cols.some((column) => column.name === "pinned_commands_json")) {
+      this.db.exec("ALTER TABLE user_preferences ADD COLUMN pinned_commands_json TEXT DEFAULT NULL");
+    }
   }
 
   /** Create lsp_servers table if it doesn't exist (for DBs created before this feature). */
