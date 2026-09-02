@@ -1,0 +1,20 @@
+docs/superpowers/specs/2026-09-02-native-runtime-broker-permissions-design.md
+  s_2788589932be3d::t_ea6011c7e1c4bc 8-9,77-79,169-170,197-200,202-203
+  s_2788589932be3d::t_9134578ac8a472 95,97,152-168,171-196,201,204-213,341-348
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "5029430fa601fbaed97b4e55431bae9cd8f225d7",
+  "prompts": {},
+  "sessions": {
+    "s_2788589932be3d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a05fce-be50-78d2-804a-cd3b512e0634",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
