@@ -28,6 +28,7 @@ export class CodexAppServerClient {
   private disposed = false;
   private readonly pending = new Map<RpcId, PendingRequest>();
   private readonly notificationListeners = new Set<(message: RpcNotification) => void>();
+  private readonly exitListeners = new Set<(error: Error) => void>();
   private serverRequestHandler: ((message: RpcServerRequest) => void) | null = null;
 
   constructor(options: CodexAppServerClientOptions = {}) {
@@ -43,6 +44,11 @@ export class CodexAppServerClient {
   onNotification(listener: (message: RpcNotification) => void): () => void {
     this.notificationListeners.add(listener);
     return () => this.notificationListeners.delete(listener);
+  }
+
+  onExit(listener: (error: Error) => void): () => void {
+    this.exitListeners.add(listener);
+    return () => this.exitListeners.delete(listener);
   }
 
   setServerRequestHandler(handler: ((message: RpcServerRequest) => void) | null): void {
@@ -198,6 +204,7 @@ export class CodexAppServerClient {
       pending.reject(new RuntimeSessionError(error.message, "RUNTIME_UNAVAILABLE"));
     }
     this.pending.clear();
+    for (const listener of this.exitListeners) listener(error);
   }
 
   private async stop(): Promise<void> {

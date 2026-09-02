@@ -16,3 +16,10 @@ export { SQLiteRemoteToolStore } from './SQLiteRemoteToolStore.js';
 export { SQLiteAuthStore } from './SQLiteAuthStore.js';
 export { SQLiteAnonymousWebStore, type AnonymousWebPrincipal } from './SQLiteAnonymousWebStore.js';
 export { SQLiteWebConsoleStore } from './SQLiteWebConsoleStore.js';
+export {
+  HostPathError,
+  HostPathPolicy,
+  isPathInsideRoot,
+  type HostDirectoryEntry,
+  type HostPathErrorCode,
+} from './HostPathPolicy.js';

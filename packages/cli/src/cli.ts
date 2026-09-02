@@ -10,7 +10,7 @@ import { renderQr } from "./qr.js";
 import { RuntimeManager, type RuntimeHandle } from "./runtime-manager.js";
 import { selectRelay, type RelaySelection } from "./tunnel/relay-orchestrator.js";
 
-const VERSION = "0.2.0-preview.4";
+const VERSION = "0.2.0-preview.5";
 
 export async function main(argv: string[]): Promise<void> {
   const options = parseArgs(argv);

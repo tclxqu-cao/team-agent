@@ -1,4 +1,10 @@
 import { NextResponse } from "next/server";
+import {
+  isToolPermissionMode,
+  normalizeToolPermissionMode,
+  paginateSessionHistory,
+  type Message,
+} from "@agent/core";
 import { agentHost } from "../../agent-host";
 import {
   getNativeRuntimeService,
@@ -89,12 +95,18 @@ function rebuildMessagesFromEvents(events: Array<Record<string, unknown>>) {
 }
 
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: { id: string } },
 ) {
+  const url = new URL(request.url);
+  const before = url.searchParams.get("before");
+  const limit = url.searchParams.get("limit");
+  const historyQuery = before !== null || limit !== null
+    ? { before: before || undefined, limit: parseHistoryLimit(limit) }
+    : undefined;
   if (isNativeSessionId(params.id)) {
     try {
-      const detail = await getNativeRuntimeService().get(params.id);
+      const detail = await getNativeRuntimeService().get(params.id, historyQuery);
       return NextResponse.json(detail);
     } catch (err) {
       return NextResponse.json(
@@ -113,8 +125,60 @@ export async function GET(
     ? rebuildMessagesFromEvents(session.events as Array<Record<string, unknown>>)
     : session.messages;
 
-  const hydrated = { ...session, messages: rebuiltMessages };
+  const hydrated = historyQuery
+    ? {
+        ...session,
+        permissionMode: normalizeToolPermissionMode(session.metadata.permissionMode),
+        ...paginateSessionHistory(
+          (rebuiltMessages ?? []) as Message[],
+          session.events ?? [],
+          historyQuery,
+        ),
+      }
+    : {
+        ...session,
+        messages: rebuiltMessages,
+        permissionMode: normalizeToolPermissionMode(session.metadata.permissionMode),
+      };
   return NextResponse.json(hydrated);
+}
+
+export async function PATCH(
+  request: Request,
+  { params }: { params: { id: string } },
+) {
+  const body = await request.json() as { permissionMode?: unknown };
+  if (!isToolPermissionMode(body.permissionMode)) {
+    return NextResponse.json({ error: "Invalid permission mode" }, { status: 400 });
+  }
+  if (isNativeSessionId(params.id)) {
+    try {
+      const session = await getNativeRuntimeService().setPermissionMode(params.id, body.permissionMode);
+      return NextResponse.json(session);
+    } catch (error) {
+      return NextResponse.json(
+        { error: error instanceof Error ? error.message : "Unable to update permission mode" },
+        { status: runtimeErrorStatus(error) },
+      );
+    }
+  }
+  try {
+    const session = await agentHost.setSessionPermissionMode(params.id, body.permissionMode);
+    return NextResponse.json({
+      ...session,
+      permissionMode: normalizeToolPermissionMode(session.metadata.permissionMode),
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unable to update permission mode";
+    const status = message.startsWith("Session not found") ? 404 : 500;
+    return NextResponse.json({ error: message }, { status });
+  }
+}
+
+function parseHistoryLimit(value: string | null): number | undefined {
+  if (value === null) return undefined;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
 }
 
 export async function DELETE(

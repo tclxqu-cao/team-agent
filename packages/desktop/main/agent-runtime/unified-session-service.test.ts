@@ -17,6 +17,8 @@ interface AdapterOverrides {
   sessions?: UnifiedSessionSummary[];
   health?: Partial<Record<AgentType, unknown>>;
   supportsDelete?: boolean;
+  forkResult?: UnifiedSessionSummary;
+  steerResult?: boolean;
 }
 
 function summary(
@@ -70,13 +72,18 @@ function adapter(agentType: AgentType, discovered: UnifiedSessionSummary[], over
         ...(overrides.canResume?.[id] !== undefined ? { canResume: overrides.canResume[id]! } : {}),
       });
     }),
+    getSessionWatchPath: vi.fn(async (id: string) => `/sessions/${id}.jsonl`),
     create: vi.fn(async () => discovered[0]),
     async *run(): AsyncIterable<AgentEvent> {
       if (overrides.runError) throw overrides.runError;
       for (const event of overrides.events ?? [{ type: "done", finalText: "ok" }]) yield event;
     },
+    ...(overrides.steerResult !== undefined
+      ? { steer: vi.fn(async () => overrides.steerResult!) }
+      : {}),
     abort: vi.fn(async () => undefined),
     answerQuestion: vi.fn(async () => false),
+    ...(overrides.forkResult ? { fork: vi.fn(async () => overrides.forkResult!) } : {}),
     ...(overrides.supportsDelete === false ? {} : { delete: vi.fn(async () => undefined) }),
     dispose: vi.fn(async () => undefined),
   };
@@ -84,6 +91,15 @@ function adapter(agentType: AgentType, discovered: UnifiedSessionSummary[], over
 }
 
 describe("UnifiedSessionService", () => {
+  it("resolves transcript watch paths through the owning adapter", async () => {
+    const codex = adapter("codex", [summary("codex", "cx-1", "/repo", "2026-01-02T00:00:00.000Z")]);
+    const service = new UnifiedSessionService([codex], async () => []);
+
+    await expect(service.getSessionWatchPath(encodeUnifiedSessionId("codex", "cx-1")))
+      .resolves.toBe("/sessions/cx-1.jsonl");
+    expect(codex.getSessionWatchPath).toHaveBeenCalledWith("cx-1");
+  });
+
   it("isolates runtime discovery failures, sorts results, and matches the most specific project", async () => {
     const ca = adapter("customer-agent", [summary("customer-agent", "ca-1", "/repo", "2026-01-01T00:00:00.000Z")]);
     const codex = adapter("codex", [summary("codex", "cx-1", "/repo/packages/app", "2026-01-03T00:00:00.000Z")]);
@@ -110,6 +126,49 @@ describe("UnifiedSessionService", () => {
     expect(events).toEqual([{ type: "done", finalText: "ok" }]);
     expect(codex.getSession).toHaveBeenCalledWith("cx-1");
     expect(ca.getSession).not.toHaveBeenCalled();
+  });
+
+  it("forwards image data URLs to the owning adapter in upload order", async () => {
+    const codexSession = summary("codex", "cx-1", "/repo", "2026-01-02T00:00:00.000Z");
+    const codex = adapter("codex", [codexSession]);
+    const run = vi.fn(async function* (
+      _nativeSessionId: string,
+      _input: string,
+      _images?: string[],
+    ): AsyncIterable<AgentEvent> {
+      yield { type: "done", finalText: "ok" };
+    });
+    codex.run = run;
+    const service = new UnifiedSessionService([codex], async () => []);
+    const images = ["data:image/png;base64,first", "data:image/jpeg;base64,second"];
+
+    await drain(service.run(codexSession.id, "inspect", images));
+
+    expect(run).toHaveBeenCalledWith("cx-1", "inspect", images, undefined, undefined);
+  });
+
+  it("forks through the owning adapter and invalidates discovery", async () => {
+    const source = summary("codex", "cx-1", "/repo", "2026-01-02T00:00:00.000Z");
+    const forked = summary("codex", "cx-fork", "/repo", "2026-01-03T00:00:00.000Z");
+    const codex = adapter("codex", [source], { forkResult: forked });
+    const service = new UnifiedSessionService([codex], async () => []);
+    await service.list();
+
+    await expect(service.fork(source.id)).resolves.toEqual(forked);
+    await service.list();
+
+    expect(codex.fork).toHaveBeenCalledWith("cx-1");
+    expect(codex.discoverSessions).toHaveBeenCalledTimes(2);
+  });
+
+  it("rejects forks for runtimes without fork support", async () => {
+    const claudeSession = summary("claude-code", "cc-1", "/repo", "2026-01-02T00:00:00.000Z");
+    const claude = adapter("claude-code", [claudeSession]);
+    const service = new UnifiedSessionService([claude], async () => []);
+
+    await expect(service.fork(claudeSession.id)).rejects.toMatchObject({
+      code: "OPERATION_NOT_SUPPORTED",
+    });
   });
 
   it("keeps healthy runtimes listing when one discovery fails", async () => {
@@ -237,6 +296,31 @@ describe("UnifiedSessionService", () => {
 
     await iterator.return?.();
     await expect(drain(service.run(id, "third"))).resolves.toEqual([{ type: "text_chunk", text: "slow" }]);
+  });
+
+  it("routes steering only while a supported runtime run is active", async () => {
+    const claude = adapter(
+      "claude-code",
+      [summary("claude-code", "cc-1", "/repo", "2026-01-01T00:00:00.000Z")],
+      { events: [{ type: "text_chunk", text: "slow" }], steerResult: true },
+    );
+    const service = new UnifiedSessionService([claude], async () => []);
+    const id = encodeUnifiedSessionId("claude-code", "cc-1");
+
+    await expect(service.steer(id, "before run")).resolves.toBe(false);
+    const iterator = service.run(id, "start")[Symbol.asyncIterator]();
+    await iterator.next();
+    await expect(service.steer(id, "guide now")).resolves.toBe(true);
+    expect(claude.steer).toHaveBeenCalledWith("cc-1", "guide now");
+    await iterator.return?.();
+  });
+
+  it("rejects steering for runtimes without a steering adapter", async () => {
+    const codex = adapter("codex", [summary("codex", "cx-1", "/repo", "2026-01-01T00:00:00.000Z")]);
+    const service = new UnifiedSessionService([codex], async () => []);
+
+    await expect(service.steer(encodeUnifiedSessionId("codex", "cx-1"), "guide"))
+      .rejects.toMatchObject({ code: "OPERATION_NOT_SUPPORTED" });
   });
 
   it("rejects deleting external sessions and allows customer-agent deletes", async () => {

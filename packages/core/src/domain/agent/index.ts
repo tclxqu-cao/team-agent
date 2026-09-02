@@ -13,4 +13,10 @@ export {
   type AgentDefinition,
   type IAgentDefinitionStore,
   type TodoItem,
+  type ReasoningSummarySection,
+  type RuntimeProgress,
 } from './entities.js';
+export {
+  mergeReasoningSummaryDelta,
+  reduceRuntimeProgress,
+} from './native-runtime-events.js';

@@ -11,6 +11,8 @@ import {
   type SQLiteSessionStore,
   type SQLiteSettingsStore,
   type SQLiteMemoryStore,
+  type ToolPermissionGate,
+  normalizeToolPermissionMode,
 } from "@agent/core";
 
 /** Callback to register session-level tools on a builder */
@@ -41,6 +43,7 @@ export class SubAgentDispatcher {
     private readonly memoryStore: SQLiteMemoryStore,
     private readonly registerSessionTools: RegisterSessionToolsFn,
     private readonly emit: EmitFn,
+    private readonly toolPermissionGate?: ToolPermissionGate,
   ) {}
 
   /**
@@ -80,7 +83,10 @@ export class SubAgentDispatcher {
       events: [],
       created: new Date().toISOString(),
       updated: new Date().toISOString(),
-      metadata: { agentName },
+      metadata: {
+        agentName,
+        permissionMode: normalizeToolPermissionMode(parentSession?.metadata.permissionMode),
+      },
     });
     const subSessionId = subSession.id;
 
@@ -180,6 +186,7 @@ export class SubAgentDispatcher {
           ? agentDef.maxIterations
           : latestSettings.maxIterations,
       );
+    if (this.toolPermissionGate) subBuilder.withToolPermissionGate(this.toolPermissionGate);
 
     // Configure model
     let provider = latestSettings.modelProvider;

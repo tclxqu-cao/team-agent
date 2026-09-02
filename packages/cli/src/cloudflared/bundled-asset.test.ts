@@ -11,7 +11,7 @@ describe("resolveBundledCloudflared", () => {
     const archivePath = resolve(root, "cloudflared.tgz");
     await writeFile(archivePath, "archive");
     await writeFile(manifestPath, JSON.stringify({
-      packageVersion: "0.2.0-preview.4",
+      packageVersion: "0.2.0-preview.5",
       upstreamVersion: "2026.8.2",
       target: "darwin-arm64",
       fileName: "cloudflared",

@@ -6,7 +6,10 @@ import { basename, join, resolve } from "node:path";
 if (!process.argv[2]) throw new Error("usage: audit-cli-tarball.mjs <package.tgz>");
 
 const tarball = resolve(process.argv[2]);
-const list = execFileSync("tar", ["-tzf", tarball], { encoding: "utf8" }).trim().split("\n");
+const list = execFileSync("tar", ["-tzf", tarball], {
+  encoding: "utf8",
+  maxBuffer: 16 * 1024 * 1024,
+}).trim().split("\n");
 const packageJson = JSON.parse(
   execFileSync("tar", ["-xOf", tarball, "package/package.json"], { encoding: "utf8" }),
 );
@@ -14,7 +17,7 @@ const packageJson = JSON.parse(
 if (packageJson.name !== "agentroam") {
   throw new Error(`unexpected package name: ${packageJson.name}`);
 }
-if (packageJson.version !== "0.2.0-preview.4") {
+if (packageJson.version !== "0.2.0-preview.5") {
   throw new Error(`unexpected package version: ${packageJson.version}`);
 }
 if (JSON.stringify(packageJson.os) !== JSON.stringify(["darwin"])) {
@@ -26,7 +29,7 @@ if (JSON.stringify(packageJson.cpu) !== JSON.stringify(["arm64"])) {
 if (packageJson.bin?.agentroam !== "./bin/agentroam.mjs") {
   throw new Error(`unexpected package bin: ${JSON.stringify(packageJson.bin)}`);
 }
-if (packageJson.optionalDependencies?.["agentroam-cloudflared-darwin-arm64"] !== "0.2.0-preview.4") {
+if (packageJson.optionalDependencies?.["agentroam-cloudflared-darwin-arm64"] !== "0.2.0-preview.5") {
   throw new Error(`unexpected cloudflared optional dependency: ${JSON.stringify(packageJson.optionalDependencies)}`);
 }
 if (statSync(tarball).size >= 30_000_000) {

@@ -1,6 +1,6 @@
 // ── Agent Domain ──
 
-import type { Message, ToolCall, ToolResult } from '../model/entities.js';
+import type { Message, NativeSubagentActivity, ToolCall, ToolResult } from '../model/entities.js';
 
 import type { CronTask } from '../cron/entities.js';
 
@@ -19,8 +19,12 @@ export type AgentEventType =
   | "agent_dispatch"
   | "agent_done"
   | "agent_progress"
+  | "reasoning_summary_delta"
+  | "runtime_progress"
+  | "native_subagent_update"
   | "cron_update"
   | "ask_user"
+  | "approval_resolved"
   | "show_widget";
 
 export interface TodoItem {
@@ -30,6 +34,23 @@ export interface TodoItem {
   status: "pending" | "in-progress" | "completed";
   /** Titles of tasks that must be completed before this task can start */
   dependsOn?: string[];
+}
+
+export interface ReasoningSummarySection {
+  itemId: string;
+  sectionIndex: number;
+  text: string;
+}
+
+export interface RuntimeProgress {
+  progressId: string;
+  phase: "thinking" | "tool" | "retry" | "status";
+  label: string;
+  detail?: string;
+  toolCallId?: string;
+  elapsedSeconds?: number;
+  current?: number;
+  total?: number;
 }
 
 export type AgentEvent =
@@ -47,6 +68,9 @@ export type AgentEvent =
   | { type: "agent_dispatch"; agentName: string; task: string; subSessionId?: string }
   | { type: "agent_done"; agentName: string; subSessionId: string; status: "completed" | "failed"; summary?: string; error?: string }
   | { type: "agent_progress"; agentName: string; subSessionId: string; text: string }
+  | { type: "reasoning_summary_delta"; itemId: string; sectionIndex: number; delta: string }
+  | ({ type: "runtime_progress" } & RuntimeProgress)
+  | { type: "native_subagent_update"; activity: NativeSubagentActivity }
   | { type: "cron_update"; tasks: CronTask[] }
   | {
       type: "ask_user";
@@ -56,6 +80,7 @@ export type AgentEvent =
       fields?: Array<{ name: string; label: string; description?: string; type?: "text" | "secret" }>;
       multiSelect?: boolean;
     }
+  | { type: "approval_resolved"; questionId: string }
   | { type: "show_widget"; widgetType: string; data: Record<string, unknown>; widgetId: string };
 
 export type ContextUsageCategory =

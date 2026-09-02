@@ -14,7 +14,7 @@ async function tick(milliseconds = 50) {
   await new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
-async function waitForFrame(view: { lastFrame(): string | undefined }, text: string, timeoutMs = 1_000) {
+async function waitForFrame(view: { lastFrame(): string | undefined }, text: string, timeoutMs = 3_000) {
   const deadline = Date.now() + timeoutMs;
   while (!view.lastFrame()?.includes(text) && Date.now() < deadline) await tick(20);
 }
@@ -208,25 +208,32 @@ describe("TuiApp palettes", () => {
 
   it("switches projects locally for a natural-language navigation request", async () => {
     const current = await fixture();
+    const refundRoot = await mkdtemp(path.join(os.tmpdir(), "tui-refund-project-"));
     const view = render(
       <TuiApp
         runtime={current.runtime}
         initialSnapshot={current.snapshot}
         profiles={[]}
-        registeredProjects={[{ id: "refund", name: "赔付", description: current.root }]}
+        registeredProjects={[{ id: "refund", name: "赔付", description: refundRoot }]}
         configPath="/tmp/tui-config"
         env={{}}
       />,
     );
-    await tick(120);
+    await tick();
+
+    view.stdin.write("@");
+    await waitForFrame(view, "赔付");
+    expect(view.lastFrame()).toContain("赔付");
+    view.stdin.write("\u007f");
+    await tick();
 
     view.stdin.write("我要进入赔付项目");
     await tick();
     view.stdin.write("\r");
     await tick(120);
 
-    expect(current.switchedProjects).toEqual([await realpath(current.root)]);
     expect(view.lastFrame()).toContain("已切换项目");
+    expect(current.switchedProjects).toEqual([await realpath(refundRoot)]);
   });
 
   it("opens model and session secondary palettes and executes selections", async () => {

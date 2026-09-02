@@ -14,14 +14,14 @@ const packageJson = JSON.parse(execFileSync("tar", ["-xOf", tarball, "package/pa
 const manifest = JSON.parse(execFileSync("tar", ["-xOf", tarball, "package/manifest.json"], { encoding: "utf8" }));
 
 if (packageJson.name !== "agentroam-cloudflared-darwin-arm64") throw new Error(`unexpected package name: ${packageJson.name}`);
-if (packageJson.version !== "0.2.0-preview.4") throw new Error(`unexpected package version: ${packageJson.version}`);
+if (packageJson.version !== "0.2.0-preview.5") throw new Error(`unexpected package version: ${packageJson.version}`);
 if (JSON.stringify(packageJson.os) !== JSON.stringify(["darwin"])) throw new Error(`unexpected package os: ${JSON.stringify(packageJson.os)}`);
 if (JSON.stringify(packageJson.cpu) !== JSON.stringify(["arm64"])) throw new Error(`unexpected package cpu: ${JSON.stringify(packageJson.cpu)}`);
 if (packageJson.exports?.["./archive"] !== "./vendor/cloudflared-darwin-arm64.tgz") throw new Error("cloudflared archive export missing");
 if (packageJson.exports?.["./manifest.json"] !== "./manifest.json") throw new Error("cloudflared manifest export missing");
 if (basename(tarball) !== `${packageJson.name}-${packageJson.version}.tgz`) throw new Error("cloudflared tarball filename mismatch");
 if (statSync(tarball).size >= 30_000_000) throw new Error(`cloudflared package exceeds 30 MB release limit: ${statSync(tarball).size}`);
-if (manifest.packageVersion !== "0.2.0-preview.4") throw new Error(`unexpected manifest package version: ${manifest.packageVersion}`);
+if (manifest.packageVersion !== "0.2.0-preview.5") throw new Error(`unexpected manifest package version: ${manifest.packageVersion}`);
 if (manifest.upstreamVersion !== "2026.8.2") throw new Error(`unexpected cloudflared version: ${manifest.upstreamVersion}`);
 if (manifest.target !== "darwin-arm64" || manifest.fileName !== "cloudflared") throw new Error("unexpected cloudflared manifest target");
 if (manifest.size !== 19214189) throw new Error(`unexpected cloudflared archive size: ${manifest.size}`);

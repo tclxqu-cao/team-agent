@@ -5,6 +5,13 @@
 
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { FolderTree, X } from "lucide-react";
+import {
+  WEBAPP_PROJECT_RESPONSE_TYPE,
+  readWebProjectRequest,
+} from "../../../core/src/domain/web-console/WebProjectBridge";
+import { readWebArtifactOpenRequest } from "../../../core/src/domain/web-console/WebArtifactBridge";
+import type { FileTreeRevealRequest } from "./fileTreeReveal";
 import { useGateway } from "./useGateway";
 import AuthGate, { type WebAuthController } from "./AuthGate";
 import HistoryPanel from "./HistoryPanel";
@@ -54,13 +61,14 @@ function AuthenticatedConsole({ auth }: { auth: WebAuthController }) {
   const [drawerTab, setDrawerTab] = useState<"files"|"history">("files");
   const [fileTreeRoot,setFileTreeRoot]=useState<string|null>(null);
   const [fileTreeFollow,setFileTreeFollow]=useState(true);
+  const [fileTreeRevealRequest,setFileTreeRevealRequest]=useState<FileTreeRevealRequest|null>(null);
   const [fileButtonPosition,setFileButtonPosition]=useState({xRatio:.94,yRatio:.65,anchor:"right"});
   const [keybarHidden,setKeybarHidden]=useState(false);
   const [keyOrder,setKeyOrder]=useState<string[]>([]);
   const [themeId,setThemeId]=useState<WebThemeId>(DEFAULT_THEME_ID);
   const [preferencesLoaded,setPreferencesLoaded]=useState(false);
   const activeTheme = resolveWebTheme(themeId);
-  const fileDrag=useRef<{moved:boolean}|null>(null);
+  const fileDrag=useRef<{moved:boolean;startX:number;startY:number}|null>(null);
   const swipeStart = useRef<{ x: number; y: number; axis: "pending"|"horizontal"|"vertical" } | null>(null);
   const [swipeDelta,setSwipeDelta]=useState(0);
   const [swiping,setSwiping]=useState(false);
@@ -76,6 +84,49 @@ function AuthenticatedConsole({ auth }: { auth: WebAuthController }) {
   useEffect(() => {
     postSkinToWebapp(themeId);
   }, [themeId, postSkinToWebapp]);
+  useEffect(() => {
+    const onMessage = (event: MessageEvent) => {
+      const artifactRequest = readWebArtifactOpenRequest(
+        event,
+        window.location.origin,
+        webappFrameRef.current?.contentWindow ?? null,
+      );
+      if (artifactRequest) {
+        setDrawerTab("files");
+        setDrawerOpen(true);
+        setPreviewPath(artifactRequest.path);
+        setFileTreeRevealRequest(artifactRequest);
+        return;
+      }
+      const request = readWebProjectRequest(
+        event,
+        window.location.origin,
+        webappFrameRef.current?.contentWindow ?? null,
+      );
+      if (!request) return;
+      void rpc(request.method, request.payload).then(
+        (result) => {
+          webappFrameRef.current?.contentWindow?.postMessage({
+            type: WEBAPP_PROJECT_RESPONSE_TYPE,
+            id: request.id,
+            ok: true,
+            result,
+          }, window.location.origin);
+        },
+        (error: Error & { code?: string }) => {
+          webappFrameRef.current?.contentWindow?.postMessage({
+            type: WEBAPP_PROJECT_RESPONSE_TYPE,
+            id: request.id,
+            ok: false,
+            error: error.message || "项目操作失败",
+            code: error.code,
+          }, window.location.origin);
+        },
+      );
+    };
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, [rpc]);
   const prevTabCount = useRef(0);
   const cwdHint = activeTerminalId ? cwdByTerminal[activeTerminalId] ?? null : null;
 
@@ -201,6 +252,17 @@ function AuthenticatedConsole({ auth }: { auth: WebAuthController }) {
     setActiveTerminalId(tabs[nextIndex].id);
   }, [activeTerminalId, tabs]);
   const activeIndex=Math.max(0,tabs.findIndex(tab=>tab.id===activeTerminalId));
+  const activeContentBackground = tabs[activeIndex]?.kind === "webapp"
+    ? activeTheme.cssVars["--ui-term-col-bg"]
+    : activeTheme.termHostBg;
+  const rootStyle = {
+    ...S.root,
+    ...activeTheme.cssVars,
+    "--ui-active-content-bg": activeContentBackground,
+    "--ui-terminal-bg": activeTheme.termHostBg,
+    background: "var(--ui-root-bg)",
+    color: "var(--ui-text)",
+  } as React.CSSProperties;
   const resetSwipe=useCallback(()=>{swipeStart.current=null;setSwipeDelta(0);setSwiping(false);},[]);
   const handleTabSwipeEnd=useCallback((dx:number)=>{if(Math.abs(dx)>=64&&tabs.length>1)switchBy(dx<0?1:-1);resetSwipe();},[tabs.length,switchBy,resetSwipe]);
   const isTerminalScreen=(target:EventTarget|null)=>target instanceof Element&&!!target.closest(".terminal-screen");
@@ -262,7 +324,7 @@ function AuthenticatedConsole({ auth }: { auth: WebAuthController }) {
   }, [scrollActiveTabIntoView]);
 
   return (
-    <div className="web-root" style={{ ...S.root, ...activeTheme.cssVars, background: "var(--ui-root-bg)", color: "var(--ui-text)" }}>
+    <div className="web-root" style={rootStyle}>
       <style dangerouslySetInnerHTML={{ __html: GLOBAL_CSS }} />
 
       <div className="terminal-tabs" ref={tabBarRef}>
@@ -329,7 +391,7 @@ function AuthenticatedConsole({ auth }: { auth: WebAuthController }) {
               onClick={() => setDrawerOpen(false)}
               aria-label="close drawer"
             >
-              ✕
+              <X size={15} aria-hidden="true" />
             </button>
           </div>
           {drawerTab==="files" ? <FileTree
@@ -342,6 +404,7 @@ function AuthenticatedConsole({ auth }: { auth: WebAuthController }) {
             selectedPath={previewPath}
             initialRoot={fileTreeRoot}
             initialFollow={fileTreeFollow}
+            revealRequest={fileTreeRevealRequest}
             onTreeStateChange={(root,following)=>{setFileTreeRoot(root);setFileTreeFollow(following);}}
           /> : <HistoryPanel
             csrfToken={auth.csrfToken}
@@ -363,9 +426,9 @@ function AuthenticatedConsole({ auth }: { auth: WebAuthController }) {
       </main>
 
       {/* floating action: toggle file drawer (both mobile & desktop) */}
-      <button className="fab-files" style={{...S.fabFiles,left:`${fileButtonPosition.xRatio*100}%`,top:`${fileButtonPosition.yRatio*100}%`,right:"auto",bottom:"auto",transform:"translate(-50%,-50%)"}} onPointerDown={(event)=>{fileDrag.current={moved:false};event.currentTarget.setPointerCapture(event.pointerId);}} onPointerMove={(event)=>{if(!fileDrag.current)return;fileDrag.current.moved=true;const vv=window.visualViewport;setFileButtonPosition({xRatio:Math.max(.05,Math.min(.95,event.clientX/(vv?.width||innerWidth))),yRatio:Math.max(.08,Math.min(.92,(event.clientY-(vv?.offsetTop||0))/(vv?.height||innerHeight))),anchor:event.clientX<(vv?.width||innerWidth)/2?"left":"right"});}} onPointerUp={(event)=>{event.currentTarget.releasePointerCapture(event.pointerId);if(!fileDrag.current?.moved)setDrawerOpen(v=>!v);fileDrag.current=null;}} aria-label="files">
-        📂
-      </button>
+      {!drawerOpen && <button className="fab-files" style={{...S.fabFiles,left:`${fileButtonPosition.xRatio*100}%`,top:`${fileButtonPosition.yRatio*100}%`,right:"auto",bottom:"auto",transform:"translate(-50%,-50%)"}} onPointerDown={(event)=>{fileDrag.current={moved:false,startX:event.clientX,startY:event.clientY};event.currentTarget.setPointerCapture(event.pointerId);}} onPointerMove={(event)=>{const drag=fileDrag.current;if(!drag)return;if(!drag.moved&&Math.hypot(event.clientX-drag.startX,event.clientY-drag.startY)<4)return;drag.moved=true;const vv=window.visualViewport;setFileButtonPosition({xRatio:Math.max(.05,Math.min(.95,event.clientX/(vv?.width||innerWidth))),yRatio:Math.max(.08,Math.min(.92,(event.clientY-(vv?.offsetTop||0))/(vv?.height||innerHeight))),anchor:event.clientX<(vv?.width||innerWidth)/2?"left":"right"});}} onPointerUp={(event)=>{event.currentTarget.releasePointerCapture(event.pointerId);if(!fileDrag.current?.moved)setDrawerOpen(true);fileDrag.current=null;}} aria-label="files">
+        <FolderTree size={20} aria-hidden="true" />
+      </button>}
     </div>
   );
 }
@@ -373,9 +436,9 @@ function AuthenticatedConsole({ auth }: { auth: WebAuthController }) {
 const GLOBAL_CSS = `
   html, body { width:100%; height:100%; margin:0; overflow:hidden; background:var(--ui-root-bg, #0b0b10); overscroll-behavior:none; color:var(--ui-text, #e8e8ee); }
   * { -webkit-tap-highlight-color: transparent; }
-  .terminal-tabs { display:flex; align-items:end; gap:4px; min-height:38px; padding:0 8px; overflow-x:auto; overflow-y:hidden; touch-action:pan-x; overscroll-behavior-x:contain; -webkit-overflow-scrolling:touch; scroll-behavior:smooth; background:var(--ui-tabbar-bg, #12141b); border-bottom:1px solid var(--ui-tabbar-border, #282b36); scrollbar-width:none; flex-shrink:0; }
-  .terminal-tab { display:flex; align-items:center; gap:7px; min-width:74px; max-width:130px; height:32px; padding:0 7px 0 10px; border-radius:7px 7px 0 0; background:var(--ui-tab-bg, #1b1e28); color:var(--ui-tab-text, #8f93a4); font-size:11px; cursor:pointer; box-sizing:border-box; transition:background .2s ease,color .2s ease,box-shadow .2s ease; }
-  .terminal-tab.active { color:var(--ui-tab-active-text, #edf0f7); background:var(--ui-tab-active-bg, #262b38); box-shadow:inset 0 2px var(--ui-tab-accent, #7aa2f7); }
+  .terminal-tabs { display:flex; align-items:end; gap:4px; min-height:38px; padding:0 8px; overflow-x:auto; overflow-y:hidden; touch-action:pan-x; overscroll-behavior-x:contain; -webkit-overflow-scrolling:touch; scroll-behavior:smooth; background:var(--ui-tabbar-bg, #12141b); border-bottom:0; scrollbar-width:none; flex-shrink:0; }
+  .terminal-tab { display:flex; align-items:center; gap:7px; min-width:74px; max-width:130px; height:32px; padding:0 7px 0 10px; border-radius:7px 7px 0 0; background:var(--ui-tab-bg, #1b1e28); color:var(--ui-tab-text, #8f93a4); font-size:11px; cursor:pointer; box-sizing:border-box; transition:color .2s ease,box-shadow .2s ease; }
+  .terminal-tab.active { color:var(--ui-tab-active-text, #edf0f7); background:var(--ui-active-content-bg, var(--ui-tab-active-bg, #262b38)); box-shadow:inset 0 2px var(--ui-tab-accent, #7aa2f7); }
   .terminal-tab span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1; }
   .terminal-tab button { width:18px; height:18px; border:0; border-radius:4px; background:transparent; color:var(--ui-tab-text, #707586); padding:0; }
   .terminal-add { min-width:30px; height:28px; margin-bottom:2px; border:1px solid var(--ui-tabbar-border, #303442); border-radius:6px; background:var(--ui-tab-bg, #1b1e28); color:var(--ui-tab-text, #9da2b2); }
@@ -401,7 +464,8 @@ const GLOBAL_CSS = `
   .terminal-track { display:flex; width:100%; height:100%; will-change:transform; }
   .terminal-slide { flex:0 0 100%; width:100%; height:100%; min-width:0; }
   .terminal-screen { display:flex; flex-direction:column; min-height:0; overflow:hidden; }
-  .terminal-screen .xterm { flex:1; height:100%; }
+  .terminal-screen .xterm { flex:1; height:100%; background:var(--ui-terminal-bg, #101014); }
+  .terminal-screen .xterm .xterm-viewport { background-color:var(--ui-terminal-bg, #101014); }
   .terminal-screen .xterm-scrollable-element { touch-action:pan-y; -webkit-overflow-scrolling:touch; }
   @media (prefers-reduced-motion: reduce) { .terminal-track,.terminal-tab { transition:none !important; } }
   .web-root {
@@ -527,12 +591,35 @@ const GLOBAL_CSS = `
     white-space: nowrap;
     cursor: pointer;
   }
+  .tree-disclosure {
+    width: 13px;
+    min-width: 13px;
+    height: 16px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--ui-history-meta, #777785);
+  }
+  .tree-entry-icon {
+    width: 17px;
+    min-width: 17px;
+    height: 17px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .tree-folder-icon { color: var(--ui-tab-accent, #7aa2f7); }
+  .tree-entry-name { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .tree-spin { animation:tree-spin .8s linear infinite; }
+  @keyframes tree-spin { to { transform:rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .tree-spin { animation:none; } }
   .tree-row[data-selected="1"] { background: color-mix(in srgb, var(--ui-tab-accent, #26304a) 24%, transparent); }
   .tree-size { margin-left: auto; color: var(--ui-history-meta, #555); font-size: 10px; flex-shrink: 0; }
 
   /* phone-first: terminal is THE screen */
   .workspace { display: grid !important; grid-template-columns: 1fr; }
   .tree-col {
+    display: flex;
     position: fixed;
     top: var(--vv-top, 0px);
     height: var(--vv-height, 100dvh);
@@ -556,16 +643,16 @@ const GLOBAL_CSS = `
   .cwd-hint { max-width: 40vw; }
 
   @media (min-width: 900px) {
-    .workspace.has-preview { grid-template-columns: 1fr minmax(220px, 264px) minmax(320px, 34%); }
-    .workspace:not(.has-preview) { grid-template-columns: 1fr minmax(220px, 264px); }
-    /* desktop: tree is a persistent right column; hidden only via transform off */
+    .workspace.show-tree.has-preview { grid-template-columns: 46% 20% 34%; }
+    .workspace.show-tree:not(.has-preview) { grid-template-columns: 80% 20%; }
+    .workspace.has-preview:not(.show-tree) { grid-template-columns: 66% 34%; }
+    /* desktop: the tree becomes a right column only while the drawer is open */
     .tree-col {
       position: static; top: auto; height: auto; width: auto; transform: none;
       box-shadow: none; border-left: 1px solid var(--ui-tree-border, #1e1e26);
     }
     .workspace:not(.show-tree) .tree-col { display: none; }
     .preview-col { position: relative; inset: auto; width: auto; height: auto; border-left: 1px solid var(--ui-tree-border, #1e1e26); }
-    .fab-files { display: none; }
     .drawer-mask { display: none; }
   }
 `;
@@ -610,13 +697,11 @@ const S: Record<string, React.CSSProperties> = {
     flex: 1,
     minHeight: 0,
     display: "grid",
-    gridTemplateColumns: "1fr",
     position: "relative",
   },
   treeCol: {
     background: "var(--ui-tree-bg, #121218)",
     minHeight: 0,
-    display: "flex",
     flexDirection: "column",
   },
   treeHead: {

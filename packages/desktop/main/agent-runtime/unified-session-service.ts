@@ -1,5 +1,9 @@
 import { resolve, sep } from "node:path";
-import type { AgentEvent } from "@agent/core";
+import {
+  paginateSessionHistory,
+  type AgentEvent,
+  type SessionHistoryQuery,
+} from "@agent/core";
 import { decodeUnifiedSessionId } from "./session-id.js";
 import type {
   AgentRuntimeAdapter,
@@ -7,6 +11,7 @@ import type {
   CreateRuntimeSessionOptions,
   RuntimeHealth,
   RuntimeQuestionAnswer,
+  RuntimeRunOptions,
   UnifiedSessionDetail,
   UnifiedSessionSummary,
 } from "./types.js";
@@ -22,6 +27,7 @@ export class UnifiedSessionService {
   private readonly activeSessionIds = new Set<string>();
   private healthCache: RuntimeHealth[] = [];
   private discoveryPromise: Promise<UnifiedSessionSummary[]> | null = null;
+  private readonly detailCache = new Map<string, UnifiedSessionDetail>();
 
   constructor(
     adapters: AgentRuntimeAdapter[],
@@ -58,7 +64,13 @@ export class UnifiedSessionService {
 
   async refresh(projectId?: string): Promise<UnifiedSessionSummary[]> {
     this.discoveryPromise = null;
+    this.detailCache.clear();
     return this.list(projectId);
+  }
+
+  invalidate(id: string): void {
+    this.detailCache.delete(id);
+    this.discoveryPromise = null;
   }
 
   private async discoverAll(): Promise<UnifiedSessionSummary[]> {
@@ -91,11 +103,23 @@ export class UnifiedSessionService {
     return all.filter((session) => session.parentSessionId === parentId);
   }
 
-  async get(id: string): Promise<UnifiedSessionDetail> {
+  async get(id: string, query?: SessionHistoryQuery): Promise<UnifiedSessionDetail> {
     const { adapter, nativeSessionId } = this.resolveAdapter(id);
-    const detail = await adapter.getSession(nativeSessionId);
+    const cached = query?.before ? this.detailCache.get(id) : undefined;
+    const detail = cached ?? await adapter.getSession(nativeSessionId);
+    this.cacheDetail(id, detail);
     const projects = await this.listProjects();
-    return associateProject(detail, projects);
+    const associated = associateProject(detail, projects);
+    if (!query) return associated;
+    return {
+      ...associated,
+      ...paginateSessionHistory(associated.messages, associated.events, query),
+    };
+  }
+
+  async getSessionWatchPath(id: string): Promise<string | null> {
+    const { adapter, nativeSessionId } = this.resolveAdapter(id);
+    return adapter.getSessionWatchPath?.(nativeSessionId) ?? null;
   }
 
   async create(
@@ -113,12 +137,26 @@ export class UnifiedSessionService {
     return created;
   }
 
+  async fork(id: string): Promise<UnifiedSessionSummary> {
+    const { adapter, nativeSessionId } = this.resolveAdapter(id);
+    if (!adapter.fork) {
+      throw new RuntimeSessionError(
+        "This runtime does not support session forks",
+        "OPERATION_NOT_SUPPORTED",
+      );
+    }
+    const forked = await adapter.fork(nativeSessionId);
+    this.discoveryPromise = null;
+    return forked;
+  }
+
   async *run(
     id: string,
     input: string,
     images?: string[],
     agentIds?: string[],
     agentName?: string,
+    options?: RuntimeRunOptions,
   ): AsyncIterable<AgentEvent> {
     const { adapter, nativeSessionId } = this.resolveAdapter(id);
     const detail = await adapter.getSession(nativeSessionId);
@@ -129,10 +167,16 @@ export class UnifiedSessionService {
       throw new RuntimeSessionError("Session is already running", "SESSION_OCCUPIED");
     }
     this.activeSessionIds.add(id);
+    this.detailCache.delete(id);
     try {
-      yield* adapter.run(nativeSessionId, input, images, agentIds, agentName);
+      // Keep the legacy five-argument adapter invocation intact when no broker
+      // metadata is present. Native broker-owned turns use the sixth argument.
+      yield* options === undefined
+        ? adapter.run(nativeSessionId, input, images, agentIds, agentName)
+        : adapter.run(nativeSessionId, input, images, agentIds, agentName, options);
     } finally {
       this.activeSessionIds.delete(id);
+      this.detailCache.delete(id);
       this.discoveryPromise = null;
     }
   }
@@ -144,6 +188,18 @@ export class UnifiedSessionService {
       return;
     }
     await Promise.allSettled([...this.adapters.values()].map((adapter) => adapter.abort("")));
+  }
+
+  async steer(id: string, input: string): Promise<boolean> {
+    const { adapter, nativeSessionId } = this.resolveAdapter(id);
+    if (!adapter.steer) {
+      throw new RuntimeSessionError(
+        "This runtime does not support mid-turn steering",
+        "OPERATION_NOT_SUPPORTED",
+      );
+    }
+    if (!this.activeSessionIds.has(id)) return false;
+    return adapter.steer(nativeSessionId, input);
   }
 
   async answerQuestion(questionId: string, answer: RuntimeQuestionAnswer): Promise<boolean> {
@@ -159,6 +215,7 @@ export class UnifiedSessionService {
       throw new RuntimeSessionError("External runtime sessions cannot be deleted", "OPERATION_NOT_SUPPORTED");
     }
     await adapter.delete(nativeSessionId);
+    this.detailCache.delete(id);
     this.discoveryPromise = null;
   }
 
@@ -188,6 +245,16 @@ export class UnifiedSessionService {
       error: error instanceof Error ? error.message : String(error),
     };
     this.healthCache = [...this.healthCache.filter((entry) => entry.agentType !== agentType), failed];
+  }
+
+  private cacheDetail(id: string, detail: UnifiedSessionDetail): void {
+    this.detailCache.delete(id);
+    this.detailCache.set(id, detail);
+    while (this.detailCache.size > 3) {
+      const oldest = this.detailCache.keys().next().value as string | undefined;
+      if (!oldest) break;
+      this.detailCache.delete(oldest);
+    }
   }
 }
 

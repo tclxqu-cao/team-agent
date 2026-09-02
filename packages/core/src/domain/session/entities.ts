@@ -19,6 +19,25 @@ export interface Session {
   metadata: Record<string, unknown>;
 }
 
+/** Opaque backward cursor used to request an older session-history window. */
+export interface SessionHistoryQuery {
+  before?: string;
+  limit?: number;
+}
+
+export interface SessionHistoryWindow {
+  nextCursor: string | null;
+  hasMore: boolean;
+  pageSize: number;
+  totalItems: number;
+}
+
+export interface SessionHistoryPage {
+  messages: Message[];
+  events: AgentEvent[];
+  history: SessionHistoryWindow;
+}
+
 export interface ISessionStore {
   create(session: Session): Promise<Session>;
   get(id: string): Promise<Session | null>;

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   findLatestContextUsage,
+  reduceNativeSubagentActivities,
   useAgentStore,
   type ContextUsageSnapshot,
 } from "./agentStore";
@@ -24,6 +25,8 @@ describe("agentStore session message cache", () => {
       messages: [],
       messagesBySession: {},
       contextUsageBySession: {},
+      runtimeProgressBySession: {},
+      nativeSubagentsBySession: {},
       currentText: "",
       runningSessionId: null,
       sessionId: null,
@@ -101,5 +104,84 @@ describe("agentStore session message cache", () => {
       { type: "context_usage", usage: createUsage(2) },
     ])?.requestIndex).toBe(2);
     expect(findLatestContextUsage([{ type: "text_chunk" }])).toBeUndefined();
+  });
+
+  it("replaces session-scoped runtime progress and clears only the target session", () => {
+    const store = useAgentStore.getState();
+    store.applyRuntimeProgress({ progressId: "thinking", phase: "thinking", label: "Starting" }, "session-a");
+    store.applyRuntimeProgress({ progressId: "thinking", phase: "thinking", label: "Reasoning" }, "session-a");
+    store.applyRuntimeProgress({ progressId: "tool", phase: "tool", label: "Running" }, "session-b");
+
+    expect(useAgentStore.getState().runtimeProgressBySession["session-a"]).toEqual([
+      { progressId: "thinking", phase: "thinking", label: "Reasoning" },
+    ]);
+    store.clearRuntimeProgress("session-a");
+    expect(useAgentStore.getState().runtimeProgressBySession["session-a"]).toBeUndefined();
+    expect(useAgentStore.getState().runtimeProgressBySession["session-b"]).toHaveLength(1);
+  });
+
+  it("merges reasoning deltas into one stable assistant message", () => {
+    const store = useAgentStore.getState();
+    store.setSessionId("session-a");
+    store.applyReasoningSummary({
+      type: "reasoning_summary_delta",
+      itemId: "reasoning-1",
+      sectionIndex: 0,
+      delta: "Inspect ",
+    }, "session-a");
+    store.applyReasoningSummary({
+      type: "reasoning_summary_delta",
+      itemId: "reasoning-1",
+      sectionIndex: 0,
+      delta: "files",
+    }, "session-a");
+
+    expect(useAgentStore.getState().messages).toHaveLength(1);
+    expect(useAgentStore.getState().messages[0].presentation?.reasoning).toEqual([
+      { itemId: "reasoning-1", sectionIndex: 0, text: "Inspect files" },
+    ]);
+  });
+
+  it("replaces native subagent activity by session and parent tool call", () => {
+    const store = useAgentStore.getState();
+    const running = {
+      taskId: "task-1",
+      parentToolCallId: "agent-tool",
+      description: "Inspect",
+      status: "running" as const,
+      messages: [],
+    };
+    store.applyNativeSubagentActivity(running, "session-a");
+    store.applyNativeSubagentActivity({
+      ...running,
+      status: "completed",
+      summary: "Done",
+      messages: [{ role: "assistant", content: "Done" }],
+    }, "session-a");
+    store.applyNativeSubagentActivity({
+      ...running,
+      taskId: "task-2",
+      parentToolCallId: "agent-other",
+    }, "session-b");
+
+    expect(useAgentStore.getState().nativeSubagentsBySession["session-a"]["agent-tool"])
+      .toMatchObject({ status: "completed", summary: "Done" });
+    expect(useAgentStore.getState().nativeSubagentsBySession["session-b"]["agent-other"]?.taskId)
+      .toBe("task-2");
+  });
+
+  it("reduces replayed native activity to the latest replacement", () => {
+    const base = {
+      taskId: "task-1",
+      parentToolCallId: "agent-tool",
+      description: "Inspect",
+      status: "running" as const,
+      messages: [],
+    };
+    expect(reduceNativeSubagentActivities([
+      { type: "native_subagent_update", activity: base },
+      { type: "text_chunk" },
+      { type: "native_subagent_update", activity: { ...base, status: "completed", summary: "Done" } },
+    ])).toEqual([{ ...base, status: "completed", summary: "Done" }]);
   });
 });

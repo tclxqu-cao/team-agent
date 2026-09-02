@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import type { AgentEvent } from "@agent/core";
+import { RuntimeSessionError } from "../../../../../desktop/main/agent-runtime/types.js";
 import { agentHost } from "../../agent-host";
 import {
   getNativeRuntimeService,
@@ -23,22 +24,39 @@ export async function POST(request: Request) {
     if (body.sessionId && isNativeSessionId(body.sessionId)) {
       const sessionId = body.sessionId;
       const service = getNativeRuntimeService();
+      // Reserve the broker run before replacing any replay state. A rejected
+      // duplicate send must leave the live turn and the renderer draft intact.
+      const admission = await service.startRun(sessionId, body.input, body.images, "web");
       agentHost.resetExternalStream(sessionId);
-      void (async () => {
-        try {
-          for await (const event of service.run(sessionId, body.input, body.images)) {
-            agentHost.publishExternal(sessionId, event);
-          }
-        } catch (err) {
-          agentHost.publishExternal(sessionId, {
-            type: "error",
-            message: err instanceof Error ? err.message : "Native run failed",
-          } as AgentEvent);
+      agentHost.publishExternal(sessionId, {
+        type: "run_admitted",
+        _nativeRunId: admission.runId,
+        _nativeSequence: admission.snapshotRevision,
+      } as unknown as AgentEvent);
+      let unsubscribe: (() => void) | null = null;
+      let terminalSeen = false;
+      void service.subscribe(sessionId, 0, ({ event }) => {
+        agentHost.publishExternal(sessionId, event);
+        if (event.type === "done" || event.type === "error") {
+          terminalSeen = true;
+          unsubscribe?.();
         }
-      })();
+      }).then((stop) => {
+        unsubscribe = stop;
+        if (terminalSeen) stop();
+      }).catch((err) => {
+        const code = err instanceof RuntimeSessionError ? err.code : undefined;
+        agentHost.publishExternal(sessionId, {
+          type: "error",
+          message: err instanceof Error ? err.message : "Native run subscription failed",
+          ...(code ? { code } : {}),
+        } as AgentEvent);
+      });
       return NextResponse.json({
         sessionId,
         streamUrl: `/api/agent/stream?sessionId=${sessionId}`,
+        runId: admission.runId,
+        snapshotRevision: admission.snapshotRevision,
       });
     }
 
@@ -83,7 +101,7 @@ export async function POST(request: Request) {
   } catch (err) {
     return NextResponse.json(
       { error: err instanceof Error ? err.message : "Internal error" },
-      { status: 500 },
+      { status: err instanceof RuntimeSessionError && err.code === "SESSION_OCCUPIED" ? 409 : 500 },
     );
   }
 }

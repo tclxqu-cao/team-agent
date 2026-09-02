@@ -21,7 +21,7 @@ OpenAI's App Server contract confirms that `thread/unsubscribe` only removes the
 - On success, AgentRoam refreshes the session index, selects the new fork, loads its inherited history, and restores the normal composer. The original session stays unchanged and read-only.
 - The fork title is `<原标题>（副本）`. Repeated forks are allowed only through separate explicit clicks.
 - On failure, the original session remains selected and read-only. The notice shows a concise failure message and allows retry.
-- If a stale session summary allows a send attempt but Codex returns `SESSION_OCCUPIED`, AgentRoam refreshes occupancy and presents the same fork command instead of exposing the raw protocol error.
+- If a stale session summary allows a send attempt but Codex returns `SESSION_OCCUPIED`, AgentRoam enters the same occupied recovery state from the structured error code instead of exposing the raw protocol error.
 - When that recovery follows a failed send, AgentRoam restores the failed user text into the fork's composer without submitting it. The user can review or edit the text before sending.
 
 The fork action never automatically starts a turn. A proactive fork opens with an empty composer; a recovery fork carries only the failed user text as an editable draft.

@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
-import { agentHost } from "../agent-host";
+import { normalizeToolPermissionMode } from "@agent/core";
+import { agentHost, ProjectWorkingDirectoryError } from "../agent-host";
 import {
   getNativeRuntimeService,
   runtimeErrorStatus,
 } from "../../../lib/native-runtime-service";
-import { getAgentWorkingDirectory } from "../../../lib/server-data-dir";
 
 export async function GET(request: Request) {
   const url = new URL(request.url);
@@ -15,15 +15,15 @@ export async function GET(request: Request) {
   const service = getNativeRuntimeService();
   // The renderer treats a missing agentType as a native runtime, so CA
   // sessions must be tagged explicitly; canDelete drives the sidebar × button.
-  const tagged = sessions.map((session) => ({
+  const tagged = sessions.map(({ messages: _messages, events: _events, ...session }) => ({
     ...session,
     agentType: "customer-agent" as const,
     canDelete: true,
+    permissionMode: normalizeToolPermissionMode(session.metadata.permissionMode),
   }));
   try {
-    // Native sessions carry no projectId on this server (it registers no
-    // projects), so project-scoped queries return only customer-agent
-    // sessions; unfiltered queries merge natives for "其他本机会话".
+    // Native discovery associates cwd with the most specific registered
+    // project path, matching the desktop renderer's project tree.
     const native = refresh ? await service.refresh(projectId) : await service.list(projectId);
     return NextResponse.json([...tagged, ...native]);
   } catch (err) {
@@ -43,13 +43,23 @@ export async function POST(request: Request) {
 
   if (agentType !== "customer-agent") {
     try {
+      if (!body.projectId) {
+        throw new ProjectWorkingDirectoryError("请选择宿主机项目", "PROJECT_PATH_REQUIRED", 400);
+      }
+      const cwd = await agentHost.resolveProjectWorkingDirectory(body.projectId, true);
       const created = await getNativeRuntimeService().create({
         agentType,
         title: body.title ?? "新会话",
-        cwd: getAgentWorkingDirectory(),
+        cwd,
       });
       return NextResponse.json(created, { status: 201 });
     } catch (err) {
+      if (err instanceof ProjectWorkingDirectoryError) {
+        return NextResponse.json(
+          { error: { code: err.code, message: err.message } },
+          { status: err.status },
+        );
+      }
       return NextResponse.json(
         { error: err instanceof Error ? err.message : "Internal error" },
         { status: runtimeErrorStatus(err) },

@@ -31,7 +31,7 @@
 - Consumes: `listOpenSessionFiles(commandName, root, options)`.
 - Produces: `idleAfterMs?: number | null`, where `null` disables the idle exemption and treats every externally open file as occupied.
 
-- [ ] **Step 1: Add an explicit strict-open mode**
+- [x] **Step 1: Add an explicit strict-open mode**
 
 Change the option type and the mtime guard:
 
@@ -50,7 +50,7 @@ if (idleAfterMs !== null) {
 
 Keep vanished-file handling and PID exclusion unchanged.
 
-- [ ] **Step 2: Make Codex occupancy strict**
+- [x] **Step 2: Make Codex occupancy strict**
 
 Pass `idleAfterMs: null` in both Codex discovery and detail reads:
 
@@ -63,7 +63,7 @@ await listOpenSessionFiles("codex", this.sessionRoot, {
 
 Do not change `ClaudeRuntimeAdapter` call sites.
 
-- [ ] **Step 3: Add focused occupancy tests**
+- [x] **Step 3: Add focused occupancy tests**
 
 Mock `node:child_process` and `node:fs` so the test proves:
 
@@ -96,7 +96,7 @@ Also cover a vanished file returning no occupancy.
 - Produces: `UnifiedSessionService.fork(id: string): Promise<UnifiedSessionSummary>`.
 - Produces: `NativeRuntimeService.fork(id: string): Promise<UnifiedSessionSummary>`.
 
-- [ ] **Step 1: Extend the adapter and service contracts**
+- [x] **Step 1: Extend the adapter and service contracts**
 
 Add the optional method:
 
@@ -120,7 +120,7 @@ async fork(id: string): Promise<UnifiedSessionSummary> {
 }
 ```
 
-- [ ] **Step 2: Implement the Codex App Server fork**
+- [x] **Step 2: Implement the Codex App Server fork**
 
 Read the source, create the persisted fork, and apply the copy title:
 
@@ -145,7 +145,7 @@ async fork(nativeSessionId: string): Promise<UnifiedSessionSummary> {
 
 Do not unsubscribe the fork and do not mutate `ownedThreads`; the subsequent run owns active state.
 
-- [ ] **Step 3: Preserve Web pending discovery**
+- [x] **Step 3: Preserve Web pending discovery**
 
 Add `NativeRuntimeService.fork` and insert the returned summary into `pendingCreations`, matching native session creation:
 
@@ -163,7 +163,7 @@ async fork(id: string): Promise<UnifiedSessionSummary> {
 }
 ```
 
-- [ ] **Step 4: Add runtime fork tests**
+- [x] **Step 4: Add runtime fork tests**
 
 Use a fake Codex client that records requests and returns distinct source/fork threads. Assert the exact sequence includes:
 
@@ -193,7 +193,7 @@ Add unified-service coverage for Codex success, unsupported Claude rejection, an
 - Produces: `AgentApi.forkSession(id: string): Promise<UnifiedSessionSummary>`.
 - Produces: `POST /api/sessions/:id/fork` returning HTTP 201 and a unified summary.
 
-- [ ] **Step 1: Expose Electron IPC**
+- [x] **Step 1: Expose Electron IPC**
 
 Register and preload the method:
 
@@ -205,7 +205,7 @@ forkSession: (id: string) => ipcRenderer.invoke("sessions:fork", id),
 
 Add the exact signature to `AgentApi` in `global.d.ts`.
 
-- [ ] **Step 2: Add the Web route**
+- [x] **Step 2: Add the Web route**
 
 Implement a dedicated POST handler:
 
@@ -228,7 +228,7 @@ export async function POST(
 
 Service-level runtime validation must reject Customer Agent and unsupported runtimes; the route does not duplicate adapter checks.
 
-- [ ] **Step 3: Add the browser gateway method**
+- [x] **Step 3: Add the browser gateway method**
 
 ```ts
 async forkSession(id: string): Promise<unknown> {
@@ -236,7 +236,7 @@ async forkSession(id: string): Promise<unknown> {
 }
 ```
 
-- [ ] **Step 4: Preserve runtime error codes in run events**
+- [x] **Step 4: Preserve runtime error codes in run events**
 
 In Electron and Web run catches, include `RuntimeSessionError.code`:
 
@@ -251,7 +251,7 @@ const event: AgentEvent = {
 
 Keep already-yielded adapter error events unchanged.
 
-- [ ] **Step 5: Add transport tests**
+- [x] **Step 5: Add transport tests**
 
 Extend native route mocks with `fork`, call the new POST handler, and assert status 201 plus the returned ID. Add an unsupported-runtime status test. Extend the HTTP gateway test with:
 
@@ -279,7 +279,7 @@ Update the thrown-run test to require `code: "SESSION_OCCUPIED"` on the terminal
 - Produces: `forkOccupiedCodexSession(options): Promise<UnifiedSessionSummary>`.
 - Consumes: `AgentApi.forkSession(id)` and the existing `onSessionCreated`/`onSelectSession` callbacks.
 
-- [ ] **Step 1: Add pure recovery helpers**
+- [x] **Step 1: Add pure recovery helpers**
 
 Create strict eligibility and orchestration helpers:
 
@@ -307,7 +307,7 @@ export async function forkOccupiedCodexSession(options: {
 
 Only call activation callbacks after a successful fork so failures leave selection untouched.
 
-- [ ] **Step 2: Track occupied recovery state in ChatView**
+- [x] **Step 2: Track occupied recovery state in ChatView**
 
 Add:
 
@@ -319,7 +319,7 @@ const [isForkingSession, setIsForkingSession] = useState(false);
 
 On an error event with `SESSION_OCCUPIED`, derive the latest failed user message for the event session, store its text, suppress the raw English error, disable composition, and show the recovery notice. Clear recovery state when the selected session changes or fork succeeds.
 
-- [ ] **Step 3: Add the explicit fork action**
+- [x] **Step 3: Add the explicit fork action**
 
 Use the pure helper in a guarded handler:
 
@@ -352,13 +352,13 @@ const handleForkOccupiedSession = async () => {
 };
 ```
 
-- [ ] **Step 4: Update the read-only notice**
+- [x] **Step 4: Update the read-only notice**
 
 Render the notice when external occupancy or occupied recovery is active. Show the copy `此会话仍由原客户端持有，可创建副本继续。` and a `以副本继续` button only for Codex. While pending, render `正在创建…` and disable the button. Keep non-Codex occupied sessions on the existing read-only message without the button.
 
 Set `canCompose` to false while occupied recovery is active even if the stale summary still says `available`.
 
-- [ ] **Step 5: Add helper and source-contract tests**
+- [x] **Step 5: Add helper and source-contract tests**
 
 Test strict Codex-only eligibility, callback order, failure non-activation, and successful returned summary. Add a focused ChatView contract assertion proving the shared component contains the recovery button, pending label, `forkSession` call, `SESSION_OCCUPIED` branch, and failed-draft restoration.
 
@@ -372,11 +372,11 @@ Test strict Codex-only eligibility, callback order, failure non-activation, and 
 - Consumes: the implemented method names and final verified behavior.
 - Produces: checked plan boxes and an authoritative design matching the code.
 
-- [ ] **Step 1: Mark completed plan steps**
+- [x] **Step 1: Mark completed plan steps**
 
 Change each implemented checkbox from `- [ ]` to `- [x]` only after its code exists.
 
-- [ ] **Step 2: Verify docs against implementation**
+- [x] **Step 2: Verify docs against implementation**
 
 Confirm the final code uses these exact contracts:
 
@@ -388,7 +388,7 @@ idleAfterMs: number | null
 
 Update wording only where implementation evidence requires a correction; do not add unrelated project documentation.
 
-- [ ] **Step 3: Inspect the scoped diff**
+- [x] **Step 3: Inspect the scoped diff**
 
 Run:
 
@@ -401,7 +401,7 @@ Confirm no unrelated existing change was reverted or reformatted.
 
 ## Final Unit Test Verification
 
-- [ ] **Main agent: run affected unit tests after development is complete**
+- [x] **Main agent: run affected unit tests after development is complete**
 
 Run:
 

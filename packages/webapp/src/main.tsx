@@ -9,9 +9,10 @@ import { installWebShellSkinBridge } from "./presentation/web-shell-skin";
 // The desktop renderer's design-token sheet — the Electron entry imports it
 // via its own main.tsx; without it every var(--…) in the shared UI is void.
 import "@desktop/renderer/styles/global.css";
+import "@desktop/renderer/styles/composer.css";
 import "./presentation/web.css";
-import "./presentation/browser-composer.css";
 import type { AgentApi } from "../../desktop/renderer/global";
+import { WebShellProjectBridge } from "./infrastructure/web-shell-project-bridge";
 
 /**
  * Composition root: wire infrastructure adapters to the AgentApi port and
@@ -25,7 +26,8 @@ installWebShellSkinBridge();
 document.body.dataset.webShell = "1";
 
 const http = new HttpClient();
-const gateway = new AgentHttpGateway(http, new LocalSettingsRepository());
+const projectBridge = window.parent === window ? undefined : new WebShellProjectBridge();
+const gateway = new AgentHttpGateway(http, new LocalSettingsRepository(), projectBridge);
 
 const container = document.getElementById("root");
 if (!container) throw new Error("#root missing");

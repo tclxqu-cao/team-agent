@@ -20,6 +20,7 @@ vi.mock("../../lib/native-runtime-service", () => ({
 import { agentHost } from "./agent-host";
 import { POST as registerRemoteTools } from "./remote-tools/register/route";
 import { GET as listSessions, POST as createSession } from "./sessions/route";
+import { PATCH as updateSession } from "./sessions/[id]/route";
 
 class CapturingModelProvider implements IModelProvider {
   readonly providerId = "test";
@@ -55,8 +56,9 @@ const projectBTool = {
 describe("agentHost singleton", () => {
   const originalEnv = { ...process.env };
 
-  afterEach(() => {
+  afterEach(async () => {
     process.env = { ...originalEnv };
+    await agentHost.getProjectStore().delete("agent-host-cwd-test");
   });
 
   it("stores the shared AgentHost on globalThis so answer routes can see pending questions from run routes", () => {
@@ -99,6 +101,52 @@ describe("agentHost singleton", () => {
     const session = await response.json();
     expect(session).toMatchObject({ title: "课程创建", projectId: "kid-earth-learning" });
     await expect(agentHost.getSessionStore().get(session.id)).resolves.toMatchObject({ projectId: "kid-earth-learning" });
+  });
+
+  it("defaults permission mode to full access and persists session updates", async () => {
+    const session = await agentHost.createSession("permission mode test");
+    expect(session.metadata.permissionMode).toBe("full-access");
+
+    const response = await updateSession(new Request(`http://test/api/sessions/${session.id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ permissionMode: "request-approval" }),
+    }), { params: { id: session.id } });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      id: session.id,
+      permissionMode: "request-approval",
+      metadata: { permissionMode: "request-approval" },
+    });
+    await expect(agentHost.getSessionStore().get(session.id)).resolves.toMatchObject({
+      metadata: { permissionMode: "request-approval" },
+    });
+  });
+
+  it("rejects invalid permission modes", async () => {
+    const session = await agentHost.createSession("invalid permission mode test");
+    const response = await updateSession(new Request(`http://test/api/sessions/${session.id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ permissionMode: "anything" }),
+    }), { params: { id: session.id } });
+    expect(response.status).toBe(400);
+  });
+
+  it("resolves a registered project path and rejects a missing project", async () => {
+    const store = agentHost.getProjectStore();
+    const id = "agent-host-cwd-test";
+    const existing = await store.get(id);
+    if (existing) await store.update(id, { description: process.cwd() });
+    else {
+      const now = new Date().toISOString();
+      await store.create({ id, name: "cwd test", description: process.cwd(), created: now, updated: now });
+    }
+
+    await expect(agentHost.resolveProjectWorkingDirectory(id, true)).resolves.toBe(process.cwd());
+    await expect(agentHost.resolveProjectWorkingDirectory("missing-project", true)).rejects.toMatchObject({
+      code: "PROJECT_NOT_FOUND",
+      status: 404,
+    });
   });
 
   it("filters session listing by projectId", async () => {

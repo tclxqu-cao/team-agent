@@ -7,7 +7,7 @@ Zero-install mobile remote terminal and file console. **No desktop app, no VPN**
 - **Node.js 22** (required)
 - macOS arm64
 
-> Preview status: `0.2.0-preview.3` is intentionally limited to macOS arm64.
+> Preview status: `0.2.0-preview.5` is intentionally limited to macOS arm64.
 > macOS x64 and Windows x64 remain future formal-release targets.
 
 ## Quick start
@@ -19,7 +19,7 @@ npx agentroam@preview
 Or install from tarball:
 
 ```bash
-npm install ./agentroam-cloudflared-darwin-arm64-0.2.0-preview.3.tgz ./agentroam-0.2.0-preview.3.tgz
+npm install ./agentroam-cloudflared-darwin-arm64-0.2.0-preview.5.tgz ./agentroam-0.2.0-preview.5.tgz
 npx agentroam
 ```
 

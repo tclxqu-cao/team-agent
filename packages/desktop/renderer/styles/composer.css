@@ -1,9 +1,21 @@
 
-/* React-native browser composer controls. These classes are rendered directly
-   by ChatView in every non-Electron browser, so no DOM proxy is involved. */
+/* Shared Agent composer controls rendered directly by ChatView in Electron
+   and Web. Web-only viewport adjustments remain in the media rules below. */
 :root {
   --web-composer-control-size: 38px;
   --web-composer-icon-size: 20px;
+}
+.chat-view--codex-history .composer-shell {
+  border: 1px solid var(--border-default);
+  border-radius: 24px !important;
+  box-shadow: none;
+}
+.chat-view--codex-history .composer-input-row {
+  display: flex !important;
+  flex-direction: column;
+  align-items: stretch !important;
+  gap: 0 !important;
+  padding: 6px 10px 8px !important;
 }
 .web-native-add-wrap {
   position: relative;
@@ -135,6 +147,101 @@
   flex: 0 0 auto;
   color: var(--text-muted);
 }
+.web-native-permission-wrap {
+  position: relative;
+  width: var(--web-composer-control-size);
+  height: var(--web-composer-control-size);
+  flex: 0 0 var(--web-composer-control-size);
+}
+.web-native-permission-button {
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+.web-native-permission-button[aria-expanded="true"] {
+  background: var(--control-active, rgba(79,110,247,.09));
+}
+.web-native-permission-button:disabled {
+  cursor: default;
+  opacity: .48;
+}
+.web-native-permission-button.mode-request-approval {
+  color: var(--accent, #4f6ef7);
+}
+.web-native-permission-button.mode-auto-approval {
+  color: #0f9f72;
+}
+.web-native-permission-button.mode-full-access {
+  color: #f59e0b;
+}
+.web-native-permission-menu {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 8px);
+  z-index: 1300;
+  display: flex;
+  flex-direction: column;
+  width: min(304px, calc(100vw - 24px));
+  padding: 6px;
+  border: 1px solid var(--border-default);
+  border-radius: 12px;
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-md);
+}
+.web-native-permission-menu > button {
+  min-height: 54px;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 9px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-primary);
+  text-align: left;
+  cursor: pointer;
+}
+.web-native-permission-check {
+  width: 16px;
+  padding-top: 1px;
+  flex: 0 0 16px;
+  color: var(--accent, #4f6ef7);
+  font-size: 14px;
+  font-weight: 700;
+}
+.web-native-permission-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.web-native-permission-copy strong {
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 600;
+}
+.web-native-permission-copy small {
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 17px;
+}
+.web-native-permission-menu > button.is-active {
+  background: var(--control-active, rgba(79,110,247,.09));
+}
+@media (hover: hover) {
+  .web-native-permission-menu > button:hover {
+    background: var(--control-hover);
+  }
+}
+.web-native-permission-menu > button:focus-visible,
+.web-native-permission-button:focus-visible {
+  outline: 2px solid var(--accent, #4f6ef7);
+  outline-offset: 2px;
+}
 .web-native-runtime-status.is-ready {
   color: #f59e0b;
 }
@@ -163,7 +270,6 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 3px;
   background: transparent;
   color: var(--text-primary);
   cursor: pointer;
@@ -177,39 +283,6 @@
 .web-native-effort-button > svg {
   width: var(--web-composer-icon-size);
   height: var(--web-composer-icon-size);
-}
-.web-native-effort-bars {
-  display: inline-flex;
-  align-items: flex-end;
-  gap: 2px;
-}
-.web-native-effort-bars i {
-  width: 3px;
-  height: 6px;
-  border-radius: 999px;
-  background: var(--text-muted);
-  opacity: 0.55;
-}
-.web-native-effort-bars.level-low i,
-.web-native-effort-bars.level-medium i,
-.web-native-effort-bars.level-high i {
-  background: #10b981;
-  opacity: 1;
-}
-.web-native-effort-bars.level-low i:nth-child(1),
-.web-native-effort-bars.level-medium i:nth-child(1),
-.web-native-effort-bars.level-high i:nth-child(1) {
-  height: 8px;
-}
-.web-native-effort-bars.level-low i:nth-child(2),
-.web-native-effort-bars.level-medium i:nth-child(2),
-.web-native-effort-bars.level-high i:nth-child(2) {
-  height: 12px;
-}
-.web-native-effort-bars.level-low i:nth-child(3),
-.web-native-effort-bars.level-medium i:nth-child(3),
-.web-native-effort-bars.level-high i:nth-child(3) {
-  height: 18px;
 }
 .web-native-effort-menu {
   position: absolute;
@@ -293,33 +366,32 @@
   white-space: nowrap;
 }
 .web-native-model-control {
-  min-width: 0;
+  min-width: 56px;
   flex: 1 1 120px;
   height: var(--web-composer-control-size);
   display: flex;
   align-items: center;
   gap: 2px;
+  overflow: hidden;
   color: var(--text-primary);
 }
 .web-native-model-control select {
+  box-sizing: border-box;
   min-width: 0;
   width: 100%;
+  max-width: 180px;
   height: var(--web-composer-control-size);
-  padding: 0 2px;
+  padding: 0 8px;
   border: 0;
   outline: 0;
   appearance: none;
   background: transparent;
   color: inherit;
-  font: 500 15px/1 var(--font-body);
+  font: 500 15px/normal var(--font-body);
   text-overflow: ellipsis;
 }
 .web-native-model-control select:disabled {
   opacity: 1;
-}
-.web-native-model-control svg {
-  flex: 0 0 auto;
-  color: var(--text-muted);
 }
 .web-native-runtime-status > svg,
 .web-native-agent-status > svg,
@@ -362,8 +434,8 @@
   .web-native-composer-toolbar {
     gap: 3px;
   }
-  .web-native-runtime-status {
-    display: none;
+  .web-native-permission-menu {
+    left: calc(-1 * (var(--web-composer-control-size) + 6px));
   }
   .web-native-model-control {
     flex-basis: 98px;

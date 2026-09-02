@@ -67,6 +67,6 @@ npx agentroam@preview
 
 1. 确认两个 `package.json` version
 2. `npm login`
-3. `npm publish packages/cloudflared-darwin-arm64/agentroam-cloudflared-darwin-arm64-0.2.0-preview.3.tgz --registry https://registry.npmjs.org --access public --tag preview --provenance=false`
-4. `npm publish packages/cli/agentroam-0.2.0-preview.3.tgz --registry https://registry.npmjs.org --access public --tag preview --provenance=false`
+3. `npm publish packages/cloudflared-darwin-arm64/agentroam-cloudflared-darwin-arm64-0.2.0-preview.5.tgz --registry https://registry.npmjs.org --access public --tag preview --provenance=false`
+4. `npm publish packages/cli/agentroam-0.2.0-preview.5.tgz --registry https://registry.npmjs.org --access public --tag preview --provenance=false`
 5. 验证 `npx agentroam@preview doctor`

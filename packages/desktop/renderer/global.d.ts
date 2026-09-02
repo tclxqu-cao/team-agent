@@ -80,6 +80,7 @@ export interface TodoItem {
 }
 
 export type AgentType = "customer-agent" | "codex" | "claude-code";
+export type ToolPermissionMode = "request-approval" | "auto-approval" | "full-access";
 
 export interface UnifiedSessionSummary {
   id: string;
@@ -96,6 +97,9 @@ export interface UnifiedSessionSummary {
   sourceLabel: string;
   canResume: boolean;
   canDelete: boolean;
+  permissionMode?: ToolPermissionMode;
+  occupancyRevision?: number;
+  controller?: "web" | "desktop" | null;
 }
 
 export interface RuntimeHealth {
@@ -161,10 +165,25 @@ export interface AgentApi {
   updateProject(id: string, update: Record<string, unknown>): Promise<unknown>;
   deleteProject(id: string): Promise<void>;
   checkProjectPath(path: string): Promise<boolean>;
+  listProjectRoots(): Promise<string[]>;
+  listProjectDirectories(path: string): Promise<Array<{
+    name: string;
+    path: string;
+    kind: "directory" | "file";
+    hasChildren: boolean;
+  }>>;
   listSessions(projectId?: string): Promise<UnifiedSessionSummary[]>;
   listChildSessions(parentId: string): Promise<unknown[]>;
-  getSession(id: string): Promise<unknown>;
+  getSession(id: string, query?: { before?: string; limit?: number }): Promise<unknown>;
+  observeSession?(
+    id: string,
+    callback: (change: { type: "session_history_changed"; revision: number }) => void,
+    onError?: () => void,
+  ): () => void;
+  setSessionPermissionMode(id: string, mode: ToolPermissionMode): Promise<unknown>;
+  handoffSession?(id: string): Promise<unknown>;
   createSession(title: string, projectId?: string, agentType?: AgentType, cwd?: string): Promise<UnifiedSessionSummary>;
+  forkSession(id: string): Promise<UnifiedSessionSummary>;
   deleteSession(id: string): Promise<void>;
   refreshSessions(projectId?: string): Promise<UnifiedSessionSummary[]>;
   getRuntimeHealth(): Promise<RuntimeHealth[]>;

@@ -8,11 +8,14 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { readFile, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
+import type { AgentEvent } from "@agent/core";
 import { AgentHost } from "./agent-host.js";
 import {
-  ClaudeRuntimeAdapter,
-  CodexRuntimeAdapter,
+  BrokerRuntimeAdapter,
+  createNativeRuntimeBrokerClient,
+  createNativeRuntimeBrokerHostRuntime,
   CustomerAgentRuntimeAdapter,
+  RuntimeSessionError,
   UnifiedSessionService,
   type AgentType,
 } from "./agent-runtime/index.js";
@@ -71,14 +74,80 @@ const appIconPath = [
 ].find((candidate) => existsSync(candidate));
 const desktopBaseDir = resolveDesktopBaseDir(app.getAppPath(), app.isPackaged, app.getPath("userData"));
 const agentHost = new AgentHost(desktopBaseDir);
+const nativeRuntimeBroker = createNativeRuntimeBrokerClient({
+  runtimeFactory: (callbacks) => createNativeRuntimeBrokerHostRuntime(
+    process.env.AGENT_CODEX_BIN?.trim() || "codex",
+    callbacks,
+  ),
+});
 const unifiedSessions = new UnifiedSessionService(
   [
     new CustomerAgentRuntimeAdapter(agentHost),
-    new CodexRuntimeAdapter(),
-    new ClaudeRuntimeAdapter(),
+    new BrokerRuntimeAdapter("codex", nativeRuntimeBroker),
+    new BrokerRuntimeAdapter("claude-code", nativeRuntimeBroker),
   ],
   () => agentHost.getProjectStore().list(),
 );
+const nativeEventForwarders = new Map<string, () => void>();
+const nativeDesktopCursors = new Map<string, { runId: string | null; sequence: number }>();
+
+function forwardDesktopNativeEvent(sessionId: string, runId: string, sequence: number, event: AgentEvent): void {
+  nativeDesktopCursors.set(sessionId, { runId, sequence });
+  mainWindow?.webContents.send("agent:event", {
+    ...event,
+    _sid: sessionId,
+    _nativeRunId: runId,
+    _nativeSequence: sequence,
+  });
+}
+
+async function attachDesktopNativeEventForwarder(
+  sessionId: string,
+  deliveredCursor?: { runId: string | null; sequence: number },
+): Promise<void> {
+  nativeEventForwarders.get(sessionId)?.();
+  nativeEventForwarders.delete(sessionId);
+
+  const snapshot = await nativeRuntimeBroker.snapshot(sessionId);
+  if (snapshot.controller !== "desktop" || !snapshot.runId) return;
+  const afterSequence = deliveredCursor?.runId === snapshot.runId
+    ? deliveredCursor.sequence
+    : 0;
+  // The detail returned immediately before a handoff can be older than this
+  // snapshot. Replay only that gap, then subscribe after the latest snapshot
+  // so the Desktop renderer never loses a pending approval in between.
+  for (const { runId, sequence, event } of snapshot.events) {
+    if (sequence > afterSequence) {
+      forwardDesktopNativeEvent(sessionId, runId, sequence, event);
+    }
+  }
+  nativeDesktopCursors.set(sessionId, {
+    runId: snapshot.runId,
+    sequence: snapshot.snapshotRevision,
+  });
+
+  let unsubscribe: (() => void) | null = null;
+  let terminalBeforeSubscriptionReady = false;
+  const stop = () => {
+    unsubscribe?.();
+    if (nativeEventForwarders.get(sessionId) === stop) {
+      nativeEventForwarders.delete(sessionId);
+    }
+  };
+  unsubscribe = await nativeRuntimeBroker.subscribe(
+    sessionId,
+    snapshot.snapshotRevision,
+    ({ runId, sequence, event }) => {
+      forwardDesktopNativeEvent(sessionId, runId, sequence, event);
+      if (event.type === "done" || event.type === "error") {
+        terminalBeforeSubscriptionReady = true;
+        stop();
+      }
+    },
+  );
+  nativeEventForwarders.set(sessionId, stop);
+  if (terminalBeforeSubscriptionReady) stop();
+}
 const voiceServiceCwd = app.isPackaged
   ? process.resourcesPath
   : join(app.getAppPath(), "..", "..");
@@ -762,9 +831,11 @@ ipcMain.handle("agent:run", async (_event, input: string, sessionId: string, age
       }
     }
   } catch (err) {
+    const code = err instanceof RuntimeSessionError ? err.code : undefined;
     mainWindow?.webContents.send("agent:event", {
       type: "error",
       message: err instanceof Error ? err.message : "Unknown error",
+      ...(code ? { code } : {}),
       _sid: sessionId,
     });
   }
@@ -785,8 +856,15 @@ ipcMain.handle("agent:answer-question", (_event, questionId: string, answer: str
  * the message is still saved but the handler starts a new run.
  */
 ipcMain.handle("agent:steer", async (_event, input: string, sessionId: string, agentName?: string) => {
-  if (unifiedSessions.agentTypeFor(sessionId) !== "customer-agent") {
-    throw new Error("Native runtime sessions do not support mid-turn steering");
+  const agentType = unifiedSessions.agentTypeFor(sessionId);
+  if (agentType !== "customer-agent") {
+    const isRunning = await unifiedSessions.steer(sessionId, input);
+    if (!isRunning) {
+      for await (const agentEvent of unifiedSessions.run(sessionId, input, [], undefined, agentName)) {
+        mainWindow?.webContents.send("agent:event", { ...agentEvent, _sid: sessionId });
+      }
+    }
+    return true;
   }
   const isRunning = await agentHost.steerInput(input, sessionId, agentName);
   if (!isRunning) {
@@ -805,6 +883,7 @@ ipcMain.handle("agent:steer", async (_event, input: string, sessionId: string, a
       agentHost.setRunning(false);
     }
   }
+  return true;
 });
 
 // ── IPC: Cron (scheduled tasks) ───────────────────────────────────────────
@@ -893,8 +972,38 @@ ipcMain.handle("sessions:listChildren", async (_event, parentId: string) => {
   return unifiedSessions.listChildren(parentId);
 });
 
-ipcMain.handle("sessions:get", async (_event, id: string) => {
-  return unifiedSessions.get(id);
+ipcMain.handle("sessions:get", async (_event, id: string, query?: { before?: string; limit?: number }) => {
+  const detail = await unifiedSessions.get(id, query);
+  const deliveredCursor = {
+    runId: detail.snapshotRunId ?? null,
+    sequence: detail.snapshotRevision ?? 0,
+  };
+  if (detail.agentType !== "customer-agent") nativeDesktopCursors.set(id, deliveredCursor);
+  if (detail.agentType !== "customer-agent" && detail.controller === "desktop") {
+    void attachDesktopNativeEventForwarder(id, deliveredCursor).catch(() => undefined);
+  }
+  return detail;
+});
+
+ipcMain.handle("sessions:setPermissionMode", async (_event, id: string, mode: import("@agent/core").ToolPermissionMode) => {
+  if (unifiedSessions.agentTypeFor(id) !== "customer-agent") {
+    const session = await nativeRuntimeBroker.setPermissionMode(id, mode);
+    unifiedSessions.invalidate(id);
+    return session;
+  }
+  const session = await agentHost.setSessionPermissionMode(id, mode);
+  unifiedSessions.invalidate(id);
+  return session;
+});
+
+ipcMain.handle("sessions:handoff", async (_event, id: string) => {
+  if (unifiedSessions.agentTypeFor(id) === "customer-agent") {
+    throw new Error("Only native runtime sessions can be handed off");
+  }
+  const deliveredCursor = nativeDesktopCursors.get(id);
+  const snapshot = await nativeRuntimeBroker.handoff(id, "desktop");
+  await attachDesktopNativeEventForwarder(id, deliveredCursor);
+  return snapshot;
 });
 
 ipcMain.handle("sessions:create", async (
@@ -911,6 +1020,10 @@ ipcMain.handle("sessions:create", async (
     agentType,
     cwd: cwd || project?.description || agentHost.getSettings().workingDirectory || desktopBaseDir,
   });
+});
+
+ipcMain.handle("sessions:fork", async (_event, id: string) => {
+  return unifiedSessions.fork(id);
 });
 
 ipcMain.handle("sessions:delete", async (_event, id: string) => {

@@ -5,14 +5,19 @@ import type {
   LSPServerConfig,
   MCPServer,
 } from "../../domain/ports/agent-port";
-import { WEB_DEFAULT_PROJECT_ID } from "../../domain/ports/agent-port";
 import { HttpClient, listOf } from "./http-client";
 import { LocalCollection } from "../local/local-collection";
 import type { LocalSettingsRepository } from "../local/local-settings-repository";
 import { StreamingThinkFilter, stripThinkBlocks } from "./think-filter";
+import type { WebProjectBridge } from "../web-shell-project-bridge";
 
 type EventListener = (event: unknown) => void;
 type Unsubscribe = () => void;
+
+interface NativeStreamCursor {
+  runId?: string;
+  sequence: number;
+}
 
 /** Subset of the port the web gateway intentionally leaves to browser fallbacks. */
 type BrowserHandled = "wakeStart" | "dictationStart" | "dictationStop" | "onDictation" | "onDictationError";
@@ -38,6 +43,7 @@ type BrowserHandled = "wakeStart" | "dictationStart" | "dictationStop" | "onDict
  */
 export class AgentHttpGateway {
   private readonly streams = new Map<string, EventSource>();
+  private readonly nativeSnapshotRevisions = new Map<string, NativeStreamCursor>();
   private readonly pendingRuns = new Map<string, () => void>();
   private readonly listeners = new Set<EventListener>();
   private readonly thinkFilters = new Map<string, StreamingThinkFilter>();
@@ -49,7 +55,16 @@ export class AgentHttpGateway {
   constructor(
     private readonly http: HttpClient,
     private readonly settings: LocalSettingsRepository,
+    private readonly projectBridge?: WebProjectBridge,
   ) {}
+
+  private requireProjectBridge(): WebProjectBridge {
+    if (this.projectBridge) return this.projectBridge;
+    throw Object.assign(
+      new Error("请从 AgentRoam Web 控制台打开项目"),
+      { code: "WEB_SHELL_REQUIRED" },
+    );
+  }
 
   // ── Agent control ──────────────────────────────────────────────────────
 
@@ -67,29 +82,55 @@ export class AgentHttpGateway {
     _agentName?: string,
     images?: string[],
   ): Promise<unknown[]> {
+    const hadStream = this.streams.has(sessionId);
+    const hadPendingRun = this.pendingRuns.has(sessionId);
+    let pendingResolve: (() => void) | null = null;
     try {
-      await this.openStream(sessionId);
-      const finished = new Promise<void>((resolve) => {
-        this.pendingRuns.set(sessionId, resolve);
-      });
+      await this.openStream(sessionId, this.nativeSnapshotRevisions.get(sessionId));
+      const finished = hadPendingRun
+        ? null
+        : new Promise<void>((resolve) => {
+            pendingResolve = resolve;
+            this.pendingRuns.set(sessionId, resolve);
+          });
       // A user-configured model profile travels with the run; without one the
       // server keeps using its own env configuration.
       const model = this.settings.getModelOverride();
-      await this.http.post("/api/agent/run", {
+      const started = await this.http.post<{ runId?: string; snapshotRevision?: number }>("/api/agent/run", {
         input,
         sessionId,
         ...(images?.length ? { images } : {}),
         ...(model ? { model } : {}),
         reasoningEffort: this.settings.getReasoningEffort(),
       });
-      await finished;
+      if (typeof started.snapshotRevision === "number") {
+        this.rememberNativeSnapshot(sessionId, started.snapshotRevision, started.runId);
+      }
+      this.dispatch(sessionId, {
+        type: "run_admitted",
+        ...(typeof started.runId === "string" ? { _nativeRunId: started.runId } : {}),
+        ...(typeof started.snapshotRevision === "number" ? { _nativeSequence: started.snapshotRevision } : {}),
+      });
+      if (finished) await finished;
     } catch (err) {
+      const preserveActiveRun = hadStream || hadPendingRun;
       this.dispatch(sessionId, {
         type: "error",
         message: err instanceof Error ? err.message : "无法启动运行",
+        ...((err as { status?: number }).status === 409 ? { code: "SESSION_OCCUPIED" } : {}),
+        ...(preserveActiveRun ? { _preserveActiveRun: true } : {}),
       });
-      this.closeStream(sessionId);
-      this.settle(sessionId);
+      // A refresh can already be following the active run when the user
+      // retries a send. Keep that stream and its original completion promise
+      // intact; admission has failed, but the prior turn is still valid.
+      if (!preserveActiveRun) {
+        this.closeStream(sessionId);
+        this.settle(sessionId);
+      } else if (pendingResolve && this.pendingRuns.get(sessionId) === pendingResolve) {
+        // This attempt created no native run, so it must not replace or leave
+        // behind a completion promise for the already-followed turn.
+        this.pendingRuns.delete(sessionId);
+      }
     }
     return [];
   }
@@ -143,9 +184,15 @@ export class AgentHttpGateway {
     return [];
   }
 
-  async getSession(id: string): Promise<unknown> {
+  async getSession(id: string, query?: { before?: string; limit?: number }): Promise<unknown> {
     try {
-      const session = await this.http.get<Record<string, unknown>>(`/api/sessions/${encodeURIComponent(id)}`);
+      const params = new URLSearchParams();
+      if (query?.before) params.set("before", query.before);
+      if (query?.limit !== undefined) params.set("limit", String(query.limit));
+      const suffix = params.size > 0 ? `?${params.toString()}` : "";
+      const session = await this.http.get<Record<string, unknown>>(
+        `/api/sessions/${encodeURIComponent(id)}${suffix}`,
+      );
       // Stored history may contain reasoning tags — strip before display.
       if (Array.isArray(session.messages)) {
         session.messages = (session.messages as Array<Record<string, unknown>>).map((m) =>
@@ -159,6 +206,16 @@ export class AgentHttpGateway {
           return e;
         });
       }
+      if (id.startsWith("runtime:") && typeof session.snapshotRevision === "number") {
+        this.rememberNativeSnapshot(
+          id,
+          session.snapshotRevision,
+          typeof session.snapshotRunId === "string" ? session.snapshotRunId : undefined,
+        );
+        if (session.status === "running") {
+          void this.openStream(id, this.nativeSnapshotRevisions.get(id)).catch(() => undefined);
+        }
+      }
       return session;
     } catch (err) {
       if ((err as { status?: number }).status === 404) return null;
@@ -166,12 +223,54 @@ export class AgentHttpGateway {
     }
   }
 
+  observeSession(
+    id: string,
+    callback: (change: { type: "session_history_changed"; revision: number }) => void,
+    onError?: () => void,
+  ): Unsubscribe {
+    const source = new EventSource(`/api/sessions/${encodeURIComponent(id)}/changes`);
+    let closed = false;
+    source.onmessage = (message) => {
+      if (!message.data) return;
+      try {
+        const change = JSON.parse(message.data) as { type?: string; revision?: unknown };
+        if (change.type === "session_history_changed" && typeof change.revision === "number") {
+          callback({ type: change.type, revision: change.revision });
+        }
+      } catch {
+        // Ignore malformed events; a later valid revision will refresh the tail.
+      }
+    };
+    source.onerror = () => {
+      if (closed) return;
+      closed = true;
+      source.close();
+      onError?.();
+    };
+    return () => {
+      if (closed) return;
+      closed = true;
+      source.close();
+    };
+  }
+
+  async setSessionPermissionMode(
+    id: string,
+    mode: "request-approval" | "auto-approval" | "full-access",
+  ): Promise<unknown> {
+    return this.http.patch(`/api/sessions/${encodeURIComponent(id)}`, { permissionMode: mode });
+  }
+
   async createSession(title: string, projectId?: string, agentType?: string): Promise<unknown> {
     return this.http.post("/api/sessions", {
       title,
-      projectId: projectId || WEB_DEFAULT_PROJECT_ID,
+      ...(projectId ? { projectId } : {}),
       ...(agentType && agentType !== "customer-agent" ? { agentType } : {}),
     });
+  }
+
+  async forkSession(id: string): Promise<unknown> {
+    return this.http.post(`/api/sessions/${encodeURIComponent(id)}/fork`, {});
   }
 
   async deleteSession(id: string): Promise<void> {
@@ -182,30 +281,86 @@ export class AgentHttpGateway {
     return this.http.get<unknown[]>("/api/agent/runtime-health");
   }
 
-  // ── Projects (server has no project CRUD yet — one synthetic project) ──
+  // ── Host projects (brokered through the parent WebSocket) ─────────────
 
   async listProjects(): Promise<unknown[]> {
-    return [{ id: WEB_DEFAULT_PROJECT_ID, name: "会话", description: "", created: "", updated: "" }];
+    if (!this.projectBridge) return this.http.get<unknown[]>("/api/projects");
+    const result = await this.requireProjectBridge().request<{ projects: unknown[] }>("project:list");
+    return result.projects ?? [];
   }
 
   async getProject(id: string): Promise<unknown> {
-    return (await this.listProjects()).find((project) => (project as { id: string }).id === id) ?? null;
+    if (!this.projectBridge) return this.http.get(`/api/projects/${encodeURIComponent(id)}`);
+    const result = await this.requireProjectBridge().request<{ project: unknown }>("project:get", { projectId: id });
+    return result.project ?? null;
   }
 
-  async createProject(name: string): Promise<unknown> {
-    return { id: WEB_DEFAULT_PROJECT_ID, name, description: "", created: "", updated: "" };
+  async createProject(name: string, description?: string): Promise<unknown> {
+    if (!this.projectBridge) {
+      return this.http.post("/api/projects", { name, path: description ?? "" });
+    }
+    const result = await this.requireProjectBridge().request<{ project: unknown }>("project:create", {
+      name,
+      path: description ?? "",
+    });
+    return result.project;
   }
 
-  async updateProject(): Promise<unknown> {
-    return null;
+  async updateProject(id: string, update: Record<string, unknown>): Promise<unknown> {
+    if (!this.projectBridge) {
+      return this.http.patch(`/api/projects/${encodeURIComponent(id)}`, update);
+    }
+    const result = await this.requireProjectBridge().request<{ project: unknown }>("project:rename", {
+      projectId: id,
+      name: update.name,
+    });
+    return result.project;
   }
 
-  async deleteProject(): Promise<void> {
-    // The synthetic project cannot be deleted.
+  async deleteProject(id: string): Promise<void> {
+    if (!this.projectBridge) {
+      await this.http.delete(`/api/projects/${encodeURIComponent(id)}`);
+      return;
+    }
+    await this.requireProjectBridge().request("project:delete", { projectId: id });
   }
 
-  async checkProjectPath(): Promise<boolean> {
-    return true;
+  async checkProjectPath(path: string): Promise<boolean> {
+    if (!this.projectBridge) {
+      const result = await this.http.get<{ valid: boolean }>(`/api/projects/check?path=${encodeURIComponent(path)}`);
+      return result.valid === true;
+    }
+    const result = await this.requireProjectBridge().request<{ valid: boolean }>("project:check", { path });
+    return result.valid === true;
+  }
+
+  async listProjectRoots(): Promise<string[]> {
+    if (!this.projectBridge) return this.http.get<string[]>("/api/projects/roots");
+    const result = await this.requireProjectBridge().request<{ roots: string[] }>("project:roots");
+    return result.roots ?? [];
+  }
+
+  async listProjectDirectories(path: string): Promise<Array<{
+    name: string;
+    path: string;
+    kind: "directory" | "file";
+    hasChildren: boolean;
+  }>> {
+    if (!this.projectBridge) {
+      return this.http.get<Array<{
+        name: string;
+        path: string;
+        kind: "directory" | "file";
+        hasChildren: boolean;
+      }>>(`/api/projects/directories?path=${encodeURIComponent(path)}`);
+    }
+    const result = await this.requireProjectBridge().request<{ entries: Array<{
+      name: string;
+      path: string;
+      kind: "directory" | "file";
+      hasChildren: boolean;
+    }> }>("project:directories", { path });
+    return result.entries ?? [];
   }
 
   async setProjectWorkingDir(path: string): Promise<{ ok: boolean; path: string }> {
@@ -538,10 +693,13 @@ export class AgentHttpGateway {
     }
   }
 
-  private async openStream(sessionId: string): Promise<void> {
+  private async openStream(sessionId: string, cursor?: NativeStreamCursor): Promise<void> {
     if (this.streams.has(sessionId)) return;
     this.thinkFilters.set(sessionId, new StreamingThinkFilter());
-    const source = new EventSource(`/api/agent/stream?sessionId=${encodeURIComponent(sessionId)}`);
+    const query = new URLSearchParams({ sessionId });
+    if (Number.isSafeInteger(cursor?.sequence)) query.set("afterSequence", String(cursor!.sequence));
+    if (cursor?.runId) query.set("afterRunId", cursor.runId);
+    const source = new EventSource(`/api/agent/stream?${query.toString()}`);
     let sawTerminal = false;
     this.streams.set(sessionId, source);
 
@@ -576,6 +734,13 @@ export class AgentHttpGateway {
       if (event.type === "text_chunk" && typeof event.text === "string") {
         event.text = this.thinkFilters.get(sessionId)!.push(event.text);
       }
+      if (typeof event._nativeSequence === "number") {
+        this.rememberNativeSnapshot(
+          sessionId,
+          event._nativeSequence,
+          typeof event._nativeRunId === "string" ? event._nativeRunId : undefined,
+        );
+      }
       if (event.type === "done" || event.type === "error" || event.type === "turn_aborted") {
         // Flush the filter's held-back tail into the terminal event before
         // dispatching, so no visible text is lost to the partial-tag buffer.
@@ -609,7 +774,7 @@ export class AgentHttpGateway {
         for (let attempt = 0; attempt < 8 && !visible; attempt++) {
           if (attempt > 0) await new Promise((resolve) => setTimeout(resolve, 750));
           try {
-            const session = (await this.getSession(sessionId)) as {
+            const session = (await this.getSession(sessionId, { limit: 50 })) as {
               messages?: Array<{ role: string; content?: string }>;
             } | null;
             const messages = session?.messages ?? [];
@@ -633,6 +798,10 @@ export class AgentHttpGateway {
         this.settle(sessionId);
       })();
     };
+  }
+
+  private rememberNativeSnapshot(sessionId: string, sequence: number, runId?: string): void {
+    this.nativeSnapshotRevisions.set(sessionId, { sequence, ...(runId ? { runId } : {}) });
   }
 
   private closeStream(sessionId: string): void {

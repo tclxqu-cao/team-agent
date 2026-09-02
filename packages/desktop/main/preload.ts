@@ -100,13 +100,20 @@ contextBridge.exposeInMainWorld("agentApi", {
   updateProject: (id: string, update: Record<string, unknown>) => ipcRenderer.invoke("projects:update", id, update),
   deleteProject: (id: string) => ipcRenderer.invoke("projects:delete", id),
   checkProjectPath: (path: string) => ipcRenderer.invoke("projects:checkPath", path),
+  listProjectRoots: async () => [],
+  listProjectDirectories: async (_path: string) => [],
 
   // Sessions
   listSessions: (projectId?: string) => ipcRenderer.invoke("sessions:list", projectId),
   listChildSessions: (parentId: string) => ipcRenderer.invoke("sessions:listChildren", parentId),
-  getSession: (id: string) => ipcRenderer.invoke("sessions:get", id),
+  getSession: (id: string, query?: { before?: string; limit?: number }) =>
+    ipcRenderer.invoke("sessions:get", id, query),
+  setSessionPermissionMode: (id: string, mode: "request-approval" | "auto-approval" | "full-access") =>
+    ipcRenderer.invoke("sessions:setPermissionMode", id, mode),
+  handoffSession: (id: string) => ipcRenderer.invoke("sessions:handoff", id),
   createSession: (title: string, projectId?: string, agentType = "customer-agent", cwd?: string) =>
     ipcRenderer.invoke("sessions:create", title, projectId, agentType, cwd),
+  forkSession: (id: string) => ipcRenderer.invoke("sessions:fork", id),
   deleteSession: (id: string) => ipcRenderer.invoke("sessions:delete", id),
   refreshSessions: (projectId?: string) => ipcRenderer.invoke("sessions:refresh", projectId),
   getRuntimeHealth: () => ipcRenderer.invoke("sessions:runtimeHealth"),

@@ -2,6 +2,7 @@ import type { AgentConfig, IAgentLoop } from './entities.js';
 import type { IModelProvider } from '../model/entities.js';
 import type { IMemoryStore } from '../memory/entities.js';
 import type { ITool } from '../tool/entities.js';
+import { PermissionAwareToolExecutor, type ToolPermissionGate } from '../tool/permissions.js';
 import type { ISessionStore } from '../session/entities.js';
 import { AgentFactory } from './AgentFactory.js';
 import { ToolRegistry } from '../tool/ToolRegistry.js';
@@ -43,6 +44,7 @@ export class AgentBuilder {
   private semanticSkillMatching = true;
   /** Reasoning intensity for main-loop requests. undefined/"off" = provider default. */
   private reasoningEffort: import("../model/entities.js").ReasoningEffort | undefined;
+  private toolPermissionGate: ToolPermissionGate | undefined;
 
   withWorkingDirectory(path: string): this {
     this.workingDirectory = path;
@@ -178,6 +180,11 @@ export class AgentBuilder {
     return this;
   }
 
+  withToolPermissionGate(gate: ToolPermissionGate): this {
+    this.toolPermissionGate = gate;
+    return this;
+  }
+
   async build(): Promise<IAgentLoop> {
     if (!this.modelProvider) {
       throw new Error("Model provider is required. Call withModelProvider() or withModel()");
@@ -223,7 +230,9 @@ export class AgentBuilder {
     const config: AgentConfig = {
       modelProvider: this.modelProvider,
       toolRegistry,
-      toolExecutor: toolRegistry,
+      toolExecutor: this.toolPermissionGate
+        ? new PermissionAwareToolExecutor(toolRegistry, this.toolPermissionGate)
+        : toolRegistry,
       contextAssembler,
       skillRegistry: this.skillRegistry,
       memoryStore,
@@ -283,7 +292,9 @@ export class AgentBuilder {
     const config: AgentConfig = {
       modelProvider: this.modelProvider,
       toolRegistry,
-      toolExecutor: toolRegistry,
+      toolExecutor: this.toolPermissionGate
+        ? new PermissionAwareToolExecutor(toolRegistry, this.toolPermissionGate)
+        : toolRegistry,
       contextAssembler,
       skillRegistry: this.skillRegistry,
       memoryStore,

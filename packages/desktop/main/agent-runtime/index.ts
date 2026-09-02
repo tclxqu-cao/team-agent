@@ -1,5 +1,19 @@
 export { ClaudeRuntimeAdapter } from "./claude-runtime-adapter.js";
 export { CodexRuntimeAdapter } from "./codex-runtime-adapter.js";
 export { CustomerAgentRuntimeAdapter } from "./customer-agent-runtime-adapter.js";
+export {
+  BrokerRuntimeAdapter,
+  NativeRuntimeBrokerClient,
+  NativeRuntimeBrokerHost,
+  createNativeRuntimeBrokerClient,
+  createNativeRuntimeBrokerHostRuntime,
+  resolveNativeRuntimeDirectory,
+  type BrokerRunEvent,
+  type BrokerRunStart,
+  type NativeRuntimeBrokerSnapshot,
+  type NativeRuntimeController,
+  type NativeRuntimeBrokerCallbacks,
+  type NativeRuntimeBrokerRuntimeFactory,
+} from "./native-runtime-broker.js";
 export { UnifiedSessionService } from "./unified-session-service.js";
 export * from "./types.js";

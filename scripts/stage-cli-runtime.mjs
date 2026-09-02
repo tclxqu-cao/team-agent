@@ -26,20 +26,29 @@ const {
   "@agent/core": _core,
   "@xterm/addon-fit": _xtermFit,
   "@xterm/xterm": _xterm,
+  "lucide-react": _lucideReact,
   ...runtimeDeps
 } = serverPkg.dependencies;
 const runtimePkg = {
   name: "@agent/server-runtime",
   private: true,
   type: "module",
-  dependencies: runtimeDeps,
+  dependencies: {
+    ...runtimeDeps,
+    // claude-agent-sdk bundles its peer APIs, but loads AJV helpers dynamically.
+    ajv: "^8.17.1",
+    "ajv-formats": "^3.0.1",
+  },
 };
 await writeFile(resolve(target, "package.json"), `${JSON.stringify(runtimePkg, null, 2)}\n`);
 
-execFileSync("npm", ["install", "--omit=dev", "--omit=optional", "--no-audit", "--no-fund"], {
+execFileSync("npm", ["install", "--omit=dev", "--omit=optional", "--omit=peer", "--no-audit", "--no-fund"], {
   cwd: target,
   stdio: "inherit",
 });
+
+await removeMatchingFiles(resolve(target, "node_modules"), (name) => name.endsWith(".map") || name.endsWith(".d.ts"));
+await rm(resolve(target, "node_modules/node-pty/third_party/conpty"), { recursive: true, force: true });
 
 const nodePtyPrebuilds = resolve(target, "node_modules/node-pty/prebuilds");
 for (const platform of await readdir(nodePtyPrebuilds)) {
@@ -83,5 +92,16 @@ async function exists(path) {
     return true;
   } catch {
     return false;
+  }
+}
+
+async function removeMatchingFiles(directory, matches) {
+  for (const entry of await readdir(directory, { withFileTypes: true })) {
+    const path = resolve(directory, entry.name);
+    if (entry.isDirectory()) {
+      await removeMatchingFiles(path, matches);
+    } else if (matches(entry.name)) {
+      await rm(path, { force: true });
+    }
   }
 }

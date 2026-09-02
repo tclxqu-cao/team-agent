@@ -38,12 +38,24 @@ export class HttpClient {
     });
   }
 
+  async patch<T = unknown>(path: string, body?: unknown, options?: HttpOptions): Promise<T> {
+    return this.request<T>(path, {
+      method: "PATCH",
+      headers: { "content-type": "application/json", ...options?.headers },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+  }
+
   async delete<T = unknown>(path: string, options?: HttpOptions): Promise<T> {
     return this.request<T>(path, { method: "DELETE", headers: options?.headers });
   }
 
   private async request<T>(path: string, init: RequestInit): Promise<T> {
-    const response = await fetch(path, { credentials: "same-origin", ...init });
+    const response = await fetch(path, {
+      credentials: "same-origin",
+      cache: "no-store",
+      ...init,
+    });
     if (response.status === 401) {
       window.dispatchEvent(new CustomEvent("webapp:unauthorized"));
       throw new UnauthorizedError();

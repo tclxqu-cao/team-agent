@@ -1,9 +1,11 @@
-import { useRef, useState, useEffect } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import type { AgentEvent, RuntimeProgress } from "@agent/core";
+import { FileText } from "lucide-react";
 import {
   findLatestContextUsage,
+  reduceNativeSubagentActivities,
   useAgentStore,
-  type ContextUsageSnapshot,
   type StreamEvent,
   type CronTask,
 } from "../stores/agentStore";
@@ -16,6 +18,23 @@ import {
 } from "../lib/speech";
 import { interruptSpeech } from "../lib/voice-interruption";
 import { PcmStreamPlayer } from "../lib/pcm-stream-player";
+import {
+  mergeRefreshedSessionHistory,
+  restoreSessionHistoryPage,
+  type SessionHistoryDetail,
+} from "../lib/session-history";
+import { supportsMidTurnSteering } from "../lib/runtime-capabilities";
+import { copyTextToClipboard } from "../lib/clipboard";
+import { clearSessionDraft, readSessionDraft, writeSessionDraft } from "../lib/session-draft";
+import { postWebArtifactOpen } from "../lib/artifact-links";
+import { isWebShell } from "../web/webLayout";
+import {
+  latestGlobalRuntimeProgress,
+  reduceRuntimeProgressEvents,
+  toolRuntimeProgress,
+} from "../lib/native-runtime-progress";
+
+const SESSION_HISTORY_PAGE_SIZE = 50;
 
 /** Human-readable description of a cron/interval expression (browser-safe, no Node.js). */
 function describeCron(cron: string): string {
@@ -56,7 +75,21 @@ function renderInlineCode(text: string): React.ReactNode {
   );
 }
 
-/** Render inline markdown: `code`, **bold**, *italic* within a single line. */
+function renderEmphasis(text: string, keyPrefix: string): React.ReactNode[] {
+  const tokens = text.split(/(\*\*[^*]+\*\*|\*[^*]+\*)/g);
+  return tokens.map((token, index) => {
+    const key = `${keyPrefix}-${index}`;
+    if (token.startsWith('**') && token.endsWith('**') && token.length > 4) {
+      return <strong key={key} style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{token.slice(2, -2)}</strong>;
+    }
+    if (token.startsWith('*') && token.endsWith('*') && token.length > 2) {
+      return <em key={key}>{token.slice(1, -1)}</em>;
+    }
+    return <span key={key}>{token}</span>;
+  });
+}
+
+/** Render inline markdown: links, `code`, **bold**, *italic* within a single line. */
 function renderRichInline(text: string): React.ReactNode {
   // Split by code spans first to avoid formatting inside code
   const codeParts = text.split(/(`[^`\n]+`)/g);
@@ -68,16 +101,38 @@ function renderRichInline(text: string): React.ReactNode {
         </code>
       );
     }
-    // Parse **bold** and *italic* in non-code segments
-    const tokens = part.split(/(\*\*[^*]+\*\*|\*[^*]+\*)/g);
-    return tokens.map((tok, j) => {
-      if (tok.startsWith('**') && tok.endsWith('**') && tok.length > 4) {
-        return <strong key={`${i}-${j}`} style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{tok.slice(2, -2)}</strong>;
+    return parseMarkdownLinks(part).map((token, j) => {
+      if (token.type === "link") {
+        return (
+          <a
+            key={`${i}-${j}`}
+            className="chat-message-link"
+            href={token.href}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            {token.label}
+          </a>
+        );
       }
-      if (tok.startsWith('*') && tok.endsWith('*') && tok.length > 2) {
-        return <em key={`${i}-${j}`}>{tok.slice(1, -1)}</em>;
+      if (token.type === "artifact") {
+        if (!isWebShell()) return <span key={`${i}-${j}`}>{token.raw}</span>;
+        const locationLabel = token.line ? `${token.path}:${token.line}` : token.path;
+        return (
+          <button
+            key={`${i}-${j}`}
+            type="button"
+            className="chat-message-artifact-link"
+            title={locationLabel}
+            aria-label={`打开交付物 ${token.label}`}
+            onClick={() => postWebArtifactOpen(token.path)}
+          >
+            <FileText size={16} strokeWidth={1.8} aria-hidden="true" />
+            <span>{token.label}</span>
+          </button>
+        );
       }
-      return <span key={`${i}-${j}`}>{tok}</span>;
+      return renderEmphasis(token.value, `${i}-${j}`);
     });
   });
 }
@@ -149,7 +204,7 @@ function renderCodeFence(lang: string, code: string): React.ReactNode {
   );
 }
 
-/** Render assistant message text: supports Markdown tables, fenced code blocks, `code`, **bold**, *italic*, and newlines. */
+/** Render assistant message text: supports Markdown tables, links, fenced code blocks, `code`, **bold**, *italic*, and newlines. */
 function renderAssistantText(text: string): React.ReactNode {
   const lines = text.split('\n');
   const segments: React.ReactNode[] = [];
@@ -212,16 +267,25 @@ function renderAssistantText(text: string): React.ReactNode {
 }
 
 import { useSettingsStore } from "../stores/settingsStore";
-import ToolCallCard from "./ToolCallCard";
+import ToolCallCard, { ToolCallGroup } from "./ToolCallCard";
 import AskUserCard from "./AskUserCard";
 import ContextUsageBar from "./ContextUsageBar";
 import AgentActivityIndicator from "./AgentActivityIndicator";
+import ReasoningSummary from "./ReasoningSummary";
+import RuntimeProgressRow from "./RuntimeProgressRow";
 import ChatHeaderActions from "./ChatHeaderActions";
 import { widgetRegistry } from "./widgets/index.js";
 import { prepareVoiceCommand, shouldSkipVoiceSessionReload } from "../lib/voice-command";
 import { prepareChatCommand } from "../lib/chat-command";
-import { isBrowserRuntime } from "../web/webLayout";
-import type { UnifiedSessionSummary } from "../global";
+import { areToolCallsComplete } from "../lib/tool-call-status";
+import { parseMarkdownLinks } from "../lib/markdown-links";
+import { coalesceAdjacentToolCallMessages, groupAdjacentToolCallEntries } from "../lib/tool-call-groups";
+import { messageActionPolicy } from "../lib/message-actions";
+import {
+  canForkOccupiedCodexSession,
+  forkOccupiedCodexSession,
+} from "../lib/occupied-session-fork";
+import type { ToolPermissionMode, UnifiedSessionSummary } from "../global";
 
 interface ChatViewProps {
   selectedProjectId?: string | null;
@@ -258,6 +322,22 @@ const EFFORT_OPTIONS: Array<{ value: "off" | "low" | "medium" | "high"; label: s
 ];
 const EFFORT_LABELS = Object.fromEntries(EFFORT_OPTIONS.map((o) => [o.value, o.label])) as Record<"off" | "low" | "medium" | "high", string>;
 
+const PERMISSION_OPTIONS: Array<{
+  value: ToolPermissionMode;
+  label: string;
+  description: string;
+}> = [
+  { value: "request-approval", label: "请求批准", description: "编辑外部文件和使用互联网时始终询问" },
+  { value: "auto-approval", label: "帮我批准", description: "仅对检测到的风险操作请求批准" },
+  { value: "full-access", label: "完全访问权限", description: "可不受限制地访问互联网和你电脑上的任何文件" },
+];
+
+function normalizePermissionMode(value: unknown): ToolPermissionMode {
+  return PERMISSION_OPTIONS.some((option) => option.value === value)
+    ? value as ToolPermissionMode
+    : "full-access";
+}
+
 export default function ChatView({
   selectedProjectId = null,
   selectedSessionId = null,
@@ -291,7 +371,15 @@ export default function ChatView({
     setMessages,
     getMessagesForSession,
     contextUsageBySession,
+    runtimeProgressBySession,
+    nativeSubagentsBySession,
     setContextUsage,
+    applyRuntimeProgress,
+    setRuntimeProgress,
+    clearRuntimeProgress,
+    applyNativeSubagentActivity,
+    setNativeSubagentActivities,
+    applyReasoningSummary,
     clearMessages,
     sessionId,
     todos,
@@ -299,16 +387,25 @@ export default function ChatView({
     cronTasks,
     setCronTasks,
   } = useAgentStore();
+  const renderedMessages = useMemo(() => coalesceAdjacentToolCallMessages(messages), [messages]);
   const { isConfigured, profiles, activeProfileId, switchActiveProfile, loadFromSystem, contextWindow, reasoningEffort, setField, saveToSystem } = useSettingsStore();
+  const [sessionErrorCode, setSessionErrorCode] = useState<string>();
+  const [occupiedDraft, setOccupiedDraft] = useState<string>();
+  const [isForkingSession, setIsForkingSession] = useState(false);
   const isNativeRuntime = Boolean(sessionSummary && sessionSummary.agentType !== "customer-agent");
+  const canSteerQueuedMessages = supportsMidTurnSteering(sessionSummary?.agentType);
   const isReadOnly = sessionSummary?.occupancy === "owned-externally";
+  const isOccupiedRecovery = sessionErrorCode === "SESSION_OCCUPIED";
   const runtimeReady = isConfigured || isNativeRuntime;
-  const canCompose = runtimeReady && !isReadOnly;
+  const canCompose = runtimeReady && !isReadOnly && !isOccupiedRecovery;
   const runningSubIdsRef = useRef<Set<string>>(new Set());
 
   // This view's session is running only when the global running session matches
   const viewSessionId = selectedSessionId || sessionId;
   const isRunning = !!(viewSessionId && (runningSessionId === viewSessionId || runningSubIdsRef.current.has(viewSessionId)));
+  const runtimeProgress = viewSessionId ? runtimeProgressBySession[viewSessionId] ?? [] : [];
+  const nativeSubagents = viewSessionId ? nativeSubagentsBySession[viewSessionId] ?? {} : {};
+  const globalRuntimeProgress = latestGlobalRuntimeProgress(runtimeProgress);
 
   // Ensure profiles are loaded even if SettingsPanel was never opened
   useEffect(() => { loadFromSystem(); }, []);
@@ -320,10 +417,13 @@ export default function ChatView({
   }, []);
 
   const [input, setInput] = useState("");
-  const webShell = isBrowserRuntime();
-  const [webAddMenuOpen, setWebAddMenuOpen] = useState(false);
+  const [addMenuOpen, setAddMenuOpen] = useState(false);
   const [effortMenuOpen, setEffortMenuOpen] = useState(false);
+  const [permissionMenuOpen, setPermissionMenuOpen] = useState(false);
+  const [permissionMode, setPermissionMode] = useState<ToolPermissionMode>("full-access");
+  const [isSavingPermission, setIsSavingPermission] = useState(false);
   const effortMenuRef = useRef<HTMLDivElement>(null);
+  const permissionMenuRef = useRef<HTMLDivElement>(null);
 
   // Close the reasoning-effort menu on outside click
   useEffect(() => {
@@ -336,11 +436,46 @@ export default function ChatView({
     document.addEventListener("mousedown", onDown);
     return () => document.removeEventListener("mousedown", onDown);
   }, [effortMenuOpen]);
+
+  useEffect(() => {
+    if (!permissionMenuOpen) return;
+    const onDown = (event: MouseEvent) => {
+      if (permissionMenuRef.current && !permissionMenuRef.current.contains(event.target as Node)) {
+        setPermissionMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [permissionMenuOpen]);
+
+  useEffect(() => {
+    setPermissionMenuOpen(false);
+    setPermissionMode(normalizePermissionMode(sessionSummary?.permissionMode));
+  }, [isNativeRuntime, selectedSessionId, sessionSummary?.permissionMode]);
   const [error, setError] = useState<string | null>(null);
   const [attachedFiles, setAttachedFiles] = useState<File[]>([]);
   /** Base64 data URLs of images to send with the next message */
   const [pendingImages, setPendingImages] = useState<string[]>([]);
+  const messagesScrollRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const historyScrollTimerRef = useRef<number | null>(null);
+  const loadOlderHistoryRef = useRef<() => void>(() => undefined);
+  const historyCursorRef = useRef<string | null>(null);
+  const latestHistoryCursorRef = useRef<string | null>(null);
+  const historySessionIdRef = useRef<string | null>(null);
+  const historyRefreshSessionRef = useRef<string | null>(null);
+  const historyRefreshInFlightRef = useRef(false);
+  const historyRefreshPendingRef = useRef(false);
+  const seenNativeEventKeysRef = useRef<Set<string>>(new Set());
+  const draftSessionRef = useRef<string | null>(null);
+  const preserveNativeDraftRef = useRef(false);
+  const isLoadingOlderHistoryRef = useRef(false);
+  const prependScrollAnchorRef = useRef<{ scrollHeight: number; scrollTop: number } | null>(null);
+  const nextAutoScrollRef = useRef<"instant" | "skip" | null>(null);
+  const [isLoadingOlderHistory, setIsLoadingOlderHistory] = useState(false);
+  const [olderHistoryError, setOlderHistoryError] = useState<string | null>(null);
+  const [isInitialHistoryLoading, setIsInitialHistoryLoading] = useState(false);
+  const [showInitialHistoryLoading, setShowInitialHistoryLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const inputRef = useRef<HTMLInputElement | HTMLTextAreaElement>(null);
   const pickerAnchorRef = useRef<HTMLDivElement>(null);
@@ -355,6 +490,51 @@ export default function ChatView({
   const [expandedMessages, setExpandedMessages] = useState<Set<string>>(new Set());
   /** Tracks what the agent is currently doing: thinking, waiting for tools, or idle */
   const [agentActivity, setAgentActivity] = useState<"idle" | "thinking" | "tools">("idle");
+
+  useEffect(() => {
+    if (!isNativeRuntime || !viewSessionId) {
+      draftSessionRef.current = null;
+      return;
+    }
+    if (draftSessionRef.current !== viewSessionId) {
+      draftSessionRef.current = viewSessionId;
+      setInput(readSessionDraft(viewSessionId));
+      return;
+    }
+    if (preserveNativeDraftRef.current && input === "") {
+      preserveNativeDraftRef.current = false;
+      return;
+    }
+    writeSessionDraft(viewSessionId, input);
+  }, [input, isNativeRuntime, viewSessionId]);
+
+  const handleHistoryScroll = () => {
+    const container = messagesScrollRef.current;
+    if (!container) return;
+    if (container.scrollTop <= 240) loadOlderHistoryRef.current();
+    container.classList.add("is-scrolling");
+    if (historyScrollTimerRef.current !== null) {
+      window.clearTimeout(historyScrollTimerRef.current);
+    }
+    historyScrollTimerRef.current = window.setTimeout(() => {
+      container.classList.remove("is-scrolling");
+      historyScrollTimerRef.current = null;
+    }, 700);
+  };
+
+  useEffect(() => () => {
+    if (historyScrollTimerRef.current !== null) {
+      window.clearTimeout(historyScrollTimerRef.current);
+    }
+  }, []);
+
+  useLayoutEffect(() => {
+    const anchor = prependScrollAnchorRef.current;
+    const container = messagesScrollRef.current;
+    if (!anchor || !container) return;
+    container.scrollTop = anchor.scrollTop + (container.scrollHeight - anchor.scrollHeight);
+    prependScrollAnchorRef.current = null;
+  }, [messages]);
 
   // ── Voice: dictation (input) + per-message TTS (output) ────────────────
   const [isRecording, setIsRecording] = useState(false);
@@ -433,6 +613,9 @@ export default function ChatView({
   const runningSessionRef = useRef<string | null>(null);
   // Track whether the user aborted the current run (skip queue processing)
   const abortRef = useRef(false);
+  // A stale browser can try to send while a recovered native run is already
+  // active. Keep that original run marked as live when its admission rejects.
+  const preserveNativeConflictRef = useRef<Set<string>>(new Set());
   // Always-current refs for selectedSessionId and sessionId — used inside event
   // handlers that are captured in closures and may outlive React renders.
   const selectedSessionIdRef = useRef<string | null>(selectedSessionId ?? null);
@@ -440,6 +623,11 @@ export default function ChatView({
   const sessionLoadGenerationRef = useRef(0);
   useEffect(() => { selectedSessionIdRef.current = selectedSessionId ?? null; }, [selectedSessionId]);
   useEffect(() => { sessionIdRef.current = sessionId; }, [sessionId]);
+  useEffect(() => {
+    setSessionErrorCode(undefined);
+    setOccupiedDraft(undefined);
+    setIsForkingSession(false);
+  }, [selectedSessionId]);
 
   /** Parse an interval string like "5m", "30s", "2h", "1min" into milliseconds. Returns null if unrecognized. */
   const parseInterval = (raw: string): number | null => {
@@ -590,23 +778,6 @@ export default function ChatView({
       reader.readAsDataURL(blob);
     });
 
-  /** Screenshot button: read image from clipboard */
-  const handleScreenshot = async () => {
-    try {
-      const items = await navigator.clipboard.read();
-      for (const item of items) {
-        const imgType = item.types.find((t) => t.startsWith("image/"));
-        if (imgType) {
-          const blob = await item.getType(imgType);
-          addPendingImage(await blobToDataUrl(blob));
-          break;
-        }
-      }
-    } catch {
-      // Permission denied or no image in clipboard — silently ignore
-    }
-  };
-
   // Global paste handler: intercept image pastes into the chat input
   useEffect(() => {
     const handlePaste = async (e: ClipboardEvent) => {
@@ -623,7 +794,10 @@ export default function ChatView({
   }, [profiles, activeProfileId]);
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    const mode = nextAutoScrollRef.current;
+    nextAutoScrollRef.current = null;
+    if (mode === "skip") return;
+    messagesEndRef.current?.scrollIntoView({ behavior: mode === "instant" ? "auto" : "smooth" });
   }, [messages]);
 
   // Global event listener — receives both user-initiated and cron-fired events.
@@ -638,6 +812,7 @@ export default function ChatView({
   useEffect(() => {
     const loadGeneration = ++sessionLoadGenerationRef.current;
     const targetSid = selectedSessionId;
+    let slowLoadingTimer: number | null = null;
     const isCurrentLoad = () => (
       sessionLoadGenerationRef.current === loadGeneration
       && selectedSessionIdRef.current === targetSid
@@ -651,8 +826,15 @@ export default function ChatView({
         if (!isCurrentLoad()) return;
         clearMessages();
         setError(null);
+        historyCursorRef.current = null;
+        latestHistoryCursorRef.current = null;
+        setOlderHistoryError(null);
+        setIsInitialHistoryLoading(false);
+        setShowInitialHistoryLoading(false);
+        historySessionIdRef.current = null;
         sessionIdRef.current = null;
         setSessionId("");
+        setPermissionMode("full-access");
         return;
       }
       // Don't reload from DB while agent is streaming FOR THIS SESSION — messages are in-memory.
@@ -660,176 +842,298 @@ export default function ChatView({
       // and back, sessionId won't match and we must reload.
 
       setError(null);
+      setOlderHistoryError(null);
+      historyCursorRef.current = null;
+      latestHistoryCursorRef.current = null;
+      setIsInitialHistoryLoading(true);
+      setShowInitialHistoryLoading(false);
+      historySessionIdRef.current = targetSid;
+      sessionIdRef.current = targetSid;
+      setSessionId(targetSid);
+      const cachedMessages = getMessagesForSession(targetSid);
+      setMessages(cachedMessages, targetSid);
+      slowLoadingTimer = window.setTimeout(() => {
+        if (isCurrentLoad()) setShowInitialHistoryLoading(true);
+      }, 500);
       try {
-        const detail = await window.agentApi.getSession(targetSid) as {
-          messages?: Array<{
-            role?: string;
-            content?: string;
-            toolCalls?: Array<{ id: string; name: string; arguments: Record<string, unknown> }>;
-            toolCallId?: string;
-            name?: string;
-          }>;
-          events?: Array<{
-            type?: string;
-            text?: string;
-            finalText?: string;
-            toolCall?: { id: string; name: string; arguments: Record<string, unknown> };
-            result?: { toolCallId?: string; content?: string; isError?: boolean };
-            usage?: ContextUsageSnapshot;
-          }>;
-        } | null;
-        const persisted = detail?.messages ?? [];
+        const detail = await window.agentApi.getSession(targetSid, {
+          limit: SESSION_HISTORY_PAGE_SIZE,
+        }) as SessionHistoryDetail | null;
+        const permissionDetail = detail as (SessionHistoryDetail & {
+          permissionMode?: unknown;
+          metadata?: Record<string, unknown>;
+        }) | null;
         const restoredContextUsage = findLatestContextUsage(detail?.events ?? []);
-
-        // Build a fallback map of tool results from persisted events.
-        // Events are written to DB *before* the corresponding message rows,
-        // so when the user switches away mid-run the tool_result message may
-        // be missing while the event is already persisted.
-        const eventToolResults = new Map<string, { content: string; isError?: boolean }>();
-        for (const evt of detail?.events ?? []) {
-          if (evt.type === "tool_result" && evt.result?.toolCallId) {
-            eventToolResults.set(evt.result.toolCallId, {
-              content: evt.result.content ?? "",
-              isError: evt.result.isError,
-            });
-          }
-        }
-
-        // Build messages, merging tool results back into assistant toolCalls
-        const rawMessages = persisted
-          .filter((m) => (m.role === "user" || m.role === "assistant" || m.role === "tool") && m.name !== "__interrupt__")
-          .map((m) => {
-            // Convert compaction checkpoint to a display banner
-            if (m.name === "__compaction_checkpoint__") {
-              let summary = "";
-              try { summary = (JSON.parse(m.content ?? "{}") as { summary?: string }).summary ?? ""; } catch { /* ignore */ }
-              return {
-                id: crypto.randomUUID(),
-                role: "user" as const,
-                content: summary,
-                name: m.name,
-                isCompactionSummary: true,
-                timestamp: Date.now(),
-              };
-            }
-            return {
-              id: crypto.randomUUID(),
-              role: m.role as "user" | "assistant" | "tool",
-              content: m.content ?? "",
-              toolCalls: m.toolCalls && m.toolCalls.length > 0 ? m.toolCalls : undefined,
-              toolCallId: m.toolCallId,
-              name: m.name,
-              timestamp: Date.now(),
-            };
-          });
-
-        const eventRecoveredMessages = (() => {
-          let content = "";
-          const toolCalls: NonNullable<import("../stores/agentStore").ChatMessage["toolCalls"]> = [];
-          for (const evt of detail?.events ?? []) {
-            if (evt.type === "text_chunk" && evt.text) content += evt.text;
-            if (evt.type === "tool_call" && evt.toolCall) {
-              toolCalls.push({
-                id: evt.toolCall.id,
-                name: evt.toolCall.name,
-                arguments: evt.toolCall.arguments,
-              });
-            }
-            if (evt.type === "tool_result" && evt.result?.toolCallId) {
-              const toolCall = toolCalls.find((tc) => tc.id === evt.result?.toolCallId);
-              if (toolCall) {
-                toolCall.result = evt.result.content ?? "";
-                toolCall.isError = evt.result.isError;
-              }
-            }
-          }
-          if (!content.trim() && toolCalls.length === 0) return [];
-          return [{
-            id: crypto.randomUUID(),
-            role: "assistant" as const,
-            content: content.trim(),
-            toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
-            timestamp: Date.now(),
-          }];
-        })();
-
-        // Merge tool results into assistant toolCalls.result
-        // Priority: message-level result > event-level result (fallback)
-        let restored = rawMessages
-          .filter((m) => m.role !== "tool")
-          .map((m) => {
-            // Compaction banner — keep as-is
-            if ((m as { isCompactionSummary?: boolean }).isCompactionSummary) return m;
-            if (m.role === "assistant" && m.toolCalls?.length) {
-              const enriched = m.toolCalls.map((tc) => {
-                // 1. Try to find a tool result in persisted messages
-                const resultMsg = rawMessages.find(
-                  (r) => r.role === "tool" && r.toolCallId === tc.id
-                );
-                if (resultMsg) return { ...tc, result: resultMsg.content };
-                // 2. Fallback: recover from persisted events (tool_result
-                //    event is written to DB before the message row, so it
-                //    survives a session switch mid-run)
-                const evtResult = eventToolResults.get(tc.id);
-                if (evtResult) return { ...tc, result: evtResult.content, isError: evtResult.isError };
-                return tc;
-              });
-              return { ...m, toolCalls: enriched };
-            }
-            // For user messages, name field stores @agent label (skip checkpoint marker)
-            if (m.role === "user" && m.name && m.name !== "__compaction_checkpoint__") {
-              return { ...m, agentName: m.name };
-            }
-            return m;
-          });
-        if (!restored.some((m) => m.role === "assistant" && !m.isCompactionSummary) && eventRecoveredMessages.length > 0) {
-          const insertAfter = restored.findLastIndex((m) => m.role === "user" && !m.isCompactionSummary);
-          restored = insertAfter >= 0
-            ? [...restored.slice(0, insertAfter + 1), ...eventRecoveredMessages, ...restored.slice(insertAfter + 1)]
-            : [...restored, ...eventRecoveredMessages];
-        }
+        const restoredRuntimeProgress = reduceRuntimeProgressEvents((detail?.events ?? []) as AgentEvent[]);
+        const restoredNativeSubagents = reduceNativeSubagentActivities((detail?.events ?? []) as AgentEvent[]);
+        const restored = restoreSessionHistoryPage(detail);
         if (!isCurrentLoad()) return;
+        setPermissionMode(normalizePermissionMode(
+          permissionDetail?.permissionMode ?? permissionDetail?.metadata?.permissionMode,
+        ));
+        const nextCursor = detail?.history?.nextCursor ?? null;
+        historyCursorRef.current = nextCursor;
+        latestHistoryCursorRef.current = nextCursor;
         const liveMessages = getMessagesForSession(targetSid);
         const preferLive = liveMessages.length > 0
           && useAgentStore.getState().runningSessionId === targetSid;
         const nextMessages = preferLive ? liveMessages : restored;
+        nextAutoScrollRef.current = "instant";
         setMessages(nextMessages, targetSid);
+        setRuntimeProgress(restoredRuntimeProgress, targetSid);
+        setNativeSubagentActivities(restoredNativeSubagents, targetSid);
+        // Native runs can outlive a browser refresh. Rehydrate their running
+        // state from the broker detail so the composer queues a follow-up
+        // instead of sending a second concurrent turn against the same lock.
+        if (detail?.agentType !== "customer-agent" && detail?.status === "running") {
+          runningSessionRef.current = targetSid;
+          setRunningSession(targetSid);
+        } else if (runningSessionRef.current === targetSid) {
+          runningSessionRef.current = null;
+          setRunningSession(null);
+        }
         if (restoredContextUsage) setContextUsage(restoredContextUsage, targetSid);
-        sessionIdRef.current = targetSid;
-        setSessionId(targetSid);
 
-        // Infer agent activity phase from restored messages.
-        // If the last restored message has toolCalls without results, the agent
-        // is still executing tools — show "工具执行中" rather than "思考中".
+        // Infer agent activity phase from restored messages. Tool rows render
+        // their own running spinner, so this phase suppresses the text indicator.
         const lastMsg = nextMessages[nextMessages.length - 1];
         if (lastMsg?.role === "assistant" && lastMsg.toolCalls?.length) {
-          const allDone = lastMsg.toolCalls.every(tc => tc.result);
+          const allDone = areToolCallsComplete(lastMsg.toolCalls);
           setAgentActivity(allDone ? "thinking" : "tools");
         } else {
-          setAgentActivity("idle");
+          setAgentActivity(detail?.agentType !== "customer-agent" && detail?.status === "running"
+            ? "thinking"
+            : "idle");
         }
       } catch (error) {
         if (!isCurrentLoad()) return;
         console.error("[chat] failed to restore session", { sessionId: targetSid, error });
-        clearMessages(targetSid);
         setError(error instanceof Error ? error.message : "会话加载失败");
+      } finally {
+        if (slowLoadingTimer !== null) window.clearTimeout(slowLoadingTimer);
+        if (isCurrentLoad()) {
+          setIsInitialHistoryLoading(false);
+          setShowInitialHistoryLoading(false);
+        }
       }
     };
 
     void loadSelectedSession();
     return () => {
+      if (slowLoadingTimer !== null) window.clearTimeout(slowLoadingTimer);
       if (sessionLoadGenerationRef.current === loadGeneration) {
         sessionLoadGenerationRef.current += 1;
       }
     };
   }, [clearMessages, getMessagesForSession, runningSessionId, selectedSessionId, setContextUsage, setMessages, setSessionId]);
 
+  const refreshLatestHistory = useCallback(async (targetSid: string) => {
+    if (!window.agentApi || document.visibilityState === "hidden") return;
+    if (historyRefreshSessionRef.current !== targetSid) {
+      historyRefreshSessionRef.current = targetSid;
+      historyRefreshInFlightRef.current = false;
+      historyRefreshPendingRef.current = false;
+    }
+    if (historyRefreshInFlightRef.current) {
+      historyRefreshPendingRef.current = true;
+      return;
+    }
+
+    historyRefreshInFlightRef.current = true;
+    try {
+      do {
+        historyRefreshPendingRef.current = false;
+        const detail = await window.agentApi.getSession(targetSid, {
+          limit: SESSION_HISTORY_PAGE_SIZE,
+        }) as SessionHistoryDetail | null;
+        if (
+          selectedSessionIdRef.current !== targetSid
+          || historySessionIdRef.current !== targetSid
+        ) return;
+
+        const refreshed = restoreSessionHistoryPage(detail);
+        const current = getMessagesForSession(targetSid);
+        const merged = mergeRefreshedSessionHistory(current, refreshed);
+        const container = messagesScrollRef.current;
+        const isNearBottom = !container
+          || container.scrollHeight - container.scrollTop - container.clientHeight < 80;
+        nextAutoScrollRef.current = isNearBottom ? null : "skip";
+        setMessages(merged, targetSid);
+
+        const previousLatestCursor = latestHistoryCursorRef.current;
+        const nextLatestCursor = detail?.history?.nextCursor ?? null;
+        if (historyCursorRef.current === previousLatestCursor) {
+          historyCursorRef.current = nextLatestCursor;
+        }
+        latestHistoryCursorRef.current = nextLatestCursor;
+        const restoredContextUsage = findLatestContextUsage(detail?.events ?? []);
+        setRuntimeProgress(reduceRuntimeProgressEvents((detail?.events ?? []) as AgentEvent[]), targetSid);
+        setNativeSubagentActivities(
+          reduceNativeSubagentActivities((detail?.events ?? []) as AgentEvent[]),
+          targetSid,
+        );
+        if (restoredContextUsage) setContextUsage(restoredContextUsage, targetSid);
+
+        const lastMessage = merged[merged.length - 1];
+        if (lastMessage?.role === "assistant" && lastMessage.toolCalls?.length) {
+          setAgentActivity(areToolCallsComplete(lastMessage.toolCalls) ? "thinking" : "tools");
+        } else {
+          setAgentActivity("idle");
+        }
+      } while (historyRefreshPendingRef.current);
+    } catch (refreshError) {
+      console.error("[chat] failed to refresh native session history", {
+        sessionId: targetSid,
+        error: refreshError,
+      });
+    } finally {
+      if (historyRefreshSessionRef.current === targetSid) {
+        historyRefreshInFlightRef.current = false;
+      }
+    }
+  }, [getMessagesForSession, setContextUsage, setMessages]);
+
+  useEffect(() => {
+    const targetSid = selectedSessionId;
+    const shouldFollow = Boolean(
+      targetSid
+      && sessionSummary
+      && sessionSummary?.agentType !== "customer-agent"
+      && runningSessionId !== targetSid,
+    );
+    const shouldPollFallback = sessionSummary?.occupancy === "owned-externally"
+      || sessionSummary?.status === "running";
+    if (!targetSid || !shouldFollow || !window.agentApi) return;
+
+    let stopObserver: (() => void) | null = null;
+    let pollingTimer: number | null = null;
+    let disposed = false;
+
+    const refresh = () => {
+      if (!disposed && document.visibilityState !== "hidden") {
+        void refreshLatestHistory(targetSid);
+      }
+    };
+    const stopTransport = () => {
+      stopObserver?.();
+      stopObserver = null;
+      if (pollingTimer !== null) window.clearInterval(pollingTimer);
+      pollingTimer = null;
+    };
+    const startPolling = () => {
+      if (disposed || pollingTimer !== null || document.visibilityState === "hidden") return;
+      refresh();
+      pollingTimer = window.setInterval(refresh, 2_000);
+    };
+    const startTransport = () => {
+      if (disposed || document.visibilityState === "hidden") return;
+      if (typeof window.agentApi.observeSession !== "function") {
+        if (shouldPollFallback) startPolling();
+        return;
+      }
+      try {
+        stopObserver = window.agentApi.observeSession(targetSid, refresh, () => {
+          stopObserver = null;
+          if (shouldPollFallback) startPolling();
+        });
+      } catch {
+        if (shouldPollFallback) startPolling();
+      }
+    };
+    const handleVisibilityChange = () => {
+      stopTransport();
+      if (document.visibilityState !== "hidden") {
+        refresh();
+        startTransport();
+      }
+    };
+
+    startTransport();
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      disposed = true;
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      stopTransport();
+      if (historyRefreshSessionRef.current === targetSid) {
+        historyRefreshSessionRef.current = null;
+        historyRefreshPendingRef.current = false;
+      }
+    };
+  }, [
+    refreshLatestHistory,
+    selectedSessionId,
+    runningSessionId,
+    sessionSummary?.agentType,
+    sessionSummary?.occupancy,
+    sessionSummary?.status,
+  ]);
+
+  const loadOlderHistory = useCallback(async () => {
+    const targetSid = historySessionIdRef.current;
+    const cursor = historyCursorRef.current;
+    if (!window.agentApi || !targetSid || !cursor || isLoadingOlderHistoryRef.current) return;
+
+    isLoadingOlderHistoryRef.current = true;
+    setOlderHistoryError(null);
+    const slowLoadingTimer = window.setTimeout(() => {
+      if (historySessionIdRef.current === targetSid && isLoadingOlderHistoryRef.current) {
+        setIsLoadingOlderHistory(true);
+      }
+    }, 500);
+    try {
+      const detail = await window.agentApi.getSession(targetSid, {
+        before: cursor,
+        limit: SESSION_HISTORY_PAGE_SIZE,
+      }) as SessionHistoryDetail | null;
+      if (historySessionIdRef.current !== targetSid || selectedSessionIdRef.current !== targetSid) return;
+
+      const olderMessages = restoreSessionHistoryPage(detail);
+      const currentMessages = getMessagesForSession(targetSid);
+      const container = messagesScrollRef.current;
+      if (container && olderMessages.length > 0) {
+        prependScrollAnchorRef.current = {
+          scrollHeight: container.scrollHeight,
+          scrollTop: container.scrollTop,
+        };
+        nextAutoScrollRef.current = "skip";
+      }
+      const nextCursor = detail?.history?.nextCursor ?? null;
+      historyCursorRef.current = nextCursor;
+      if (olderMessages.length > 0) {
+        setMessages([...olderMessages, ...currentMessages], targetSid);
+      }
+    } catch (loadError) {
+      if (historySessionIdRef.current !== targetSid) return;
+      console.error("[chat] failed to load older history", { sessionId: targetSid, error: loadError });
+      setOlderHistoryError(loadError instanceof Error ? loadError.message : "历史消息加载失败");
+    } finally {
+      window.clearTimeout(slowLoadingTimer);
+      isLoadingOlderHistoryRef.current = false;
+      if (historySessionIdRef.current === targetSid) setIsLoadingOlderHistory(false);
+    }
+  }, [getMessagesForSession, setMessages]);
+
+  useEffect(() => {
+    loadOlderHistoryRef.current = () => { void loadOlderHistory(); };
+  }, [loadOlderHistory]);
+
   const handleEvent = (event: StreamEvent) => {
     // Route by _sid using always-current refs, not stale closure values.
     const viewedSid = selectedSessionIdRef.current || sessionIdRef.current;
     const eventSid = event._sid || viewedSid || undefined;
+    if (event._nativeRunId && Number.isSafeInteger(event._nativeSequence)) {
+      const key = `${event._nativeRunId}:${event._nativeSequence}`;
+      if (seenNativeEventKeysRef.current.has(key)) return;
+      seenNativeEventKeysRef.current.add(key);
+      if (seenNativeEventKeysRef.current.size > 2_000) {
+        seenNativeEventKeysRef.current = new Set([...seenNativeEventKeysRef.current].slice(-1_000));
+      }
+    }
     const isViewed = !eventSid || eventSid === viewedSid;
     switch (event.type) {
+      case "run_admitted":
+        if (eventSid && eventSid === viewedSid) clearSessionDraft(eventSid);
+        break;
       case "context_usage":
         if (event.usage) setContextUsage(event.usage, eventSid);
         break;
@@ -839,6 +1143,47 @@ export default function ChatView({
           if (isViewed) {
             setAgentActivity("thinking");
           }
+        }
+        break;
+      case "reasoning_summary_delta":
+        if (
+          typeof event.itemId === "string"
+          && Number.isSafeInteger(event.sectionIndex)
+          && typeof event.delta === "string"
+        ) {
+          applyReasoningSummary({
+            type: "reasoning_summary_delta",
+            itemId: event.itemId,
+            sectionIndex: event.sectionIndex!,
+            delta: event.delta,
+          }, eventSid);
+          if (isViewed) setAgentActivity("thinking");
+        }
+        break;
+      case "runtime_progress":
+        if (
+          typeof event.progressId === "string"
+          && typeof event.label === "string"
+          && ["thinking", "tool", "retry", "status"].includes(event.phase ?? "")
+        ) {
+          const progress: RuntimeProgress = {
+            progressId: event.progressId,
+            phase: event.phase!,
+            label: event.label,
+            ...(event.detail === undefined ? {} : { detail: event.detail }),
+            ...(event.toolCallId === undefined ? {} : { toolCallId: event.toolCallId }),
+            ...(event.elapsedSeconds === undefined ? {} : { elapsedSeconds: event.elapsedSeconds }),
+            ...(event.current === undefined ? {} : { current: event.current }),
+            ...(event.total === undefined ? {} : { total: event.total }),
+          };
+          applyRuntimeProgress(progress, eventSid);
+          if (isViewed) setAgentActivity(progress.phase === "tool" ? "tools" : "thinking");
+        }
+        break;
+      case "native_subagent_update":
+        if (event.activity?.parentToolCallId) {
+          applyNativeSubagentActivity(event.activity, eventSid);
+          if (isViewed && event.activity.status === "running") setAgentActivity("tools");
         }
         break;
       case "tool_call":
@@ -957,6 +1302,12 @@ export default function ChatView({
         break;
       }
       case "ask_user":
+        if (event.questionId) {
+          const sessionMessages = eventSid
+            ? useAgentStore.getState().getMessagesForSession(eventSid)
+            : useAgentStore.getState().messages;
+          if (sessionMessages.some((message) => message.askUser?.questionId === event.questionId)) break;
+        }
         addMessage({
           id: crypto.randomUUID(),
           role: "assistant",
@@ -971,6 +1322,22 @@ export default function ChatView({
           timestamp: Date.now(),
         }, eventSid);
         break;
+      case "approval_resolved": {
+        if (!event.questionId) break;
+        const sessionMessages = eventSid
+          ? useAgentStore.getState().getMessagesForSession(eventSid)
+          : useAgentStore.getState().messages;
+        const pending = sessionMessages.find((message) => message.askUser?.questionId === event.questionId);
+        if (pending) {
+          updateMessage(pending.id, (message) => ({
+            ...message,
+            askUser: message.askUser
+              ? { ...message.askUser, answered: true, answer: "已处理" }
+              : message.askUser,
+          }), eventSid);
+        }
+        break;
+      }
       case "text_done": break;
       case "thinking":
         if (isViewed) {
@@ -978,6 +1345,7 @@ export default function ChatView({
         }
         break;
       case "done":
+        clearRuntimeProgress(eventSid);
         // Only clear running state here if no queued messages — otherwise
         // startRun's finally block will chain the next run seamlessly.
         if (isViewed && !useAgentStore.getState().messages.some(m => m.isQueued)) {
@@ -1005,12 +1373,105 @@ export default function ChatView({
         }
         break;
       case "error":
+        if (!event._preserveActiveRun) clearRuntimeProgress(eventSid);
         if (isViewed) {
-          setError(event.message ?? "Unknown error");
+          if (event._preserveActiveRun && eventSid) {
+            preserveNativeConflictRef.current.add(eventSid);
+            runningSessionRef.current = eventSid;
+            setRunningSession(eventSid);
+            setAgentActivity("thinking");
+          }
+          if (event.code === "SESSION_OCCUPIED") {
+            const failedMessages = eventSid
+              ? useAgentStore.getState().getMessagesForSession(eventSid)
+              : useAgentStore.getState().messages;
+            const failedUserMessage = [...failedMessages].reverse().find(
+              (message) => message.role === "user" && !message.isQueued,
+            );
+            setOccupiedDraft(failedUserMessage?.content);
+            if (failedUserMessage?.content) {
+              setInput(failedUserMessage.content);
+              if (eventSid) writeSessionDraft(eventSid, failedUserMessage.content);
+            }
+            setSessionErrorCode(event.code);
+            setError(null);
+          } else {
+            setError(event.message ?? "Unknown error");
+            const failedMessages = eventSid
+              ? useAgentStore.getState().getMessagesForSession(eventSid)
+              : useAgentStore.getState().messages;
+            const failedUserMessage = [...failedMessages].reverse().find((message) => message.role === "user" && !message.isQueued);
+            if (isNativeRuntime && failedUserMessage?.content) {
+              setInput(failedUserMessage.content);
+              if (eventSid) writeSessionDraft(eventSid, failedUserMessage.content);
+            }
+          }
+          if (!event._preserveActiveRun) {
+            setRunningSession(null);
+            setAgentActivity("idle");
+          }
+        }
+        break;
+      case "turn_aborted":
+        clearRuntimeProgress(eventSid);
+        if (isViewed) {
           setRunningSession(null);
           setAgentActivity("idle");
         }
         break;
+    }
+  };
+
+  const handlePermissionModeChange = async (mode: ToolPermissionMode) => {
+    if (!viewSessionId || !window.agentApi?.setSessionPermissionMode || isSavingPermission) return;
+    const previous = permissionMode;
+    setPermissionMode(mode);
+    setPermissionMenuOpen(false);
+    setIsSavingPermission(true);
+    try {
+      await window.agentApi.setSessionPermissionMode(viewSessionId, mode);
+    } catch (error) {
+      setPermissionMode(previous);
+      setError(error instanceof Error ? error.message : "权限模式更新失败");
+    } finally {
+      setIsSavingPermission(false);
+    }
+  };
+
+  const handleDesktopHandoff = async () => {
+    if (!viewSessionId || !window.agentApi?.handoffSession) return;
+    try {
+      await window.agentApi.handoffSession(viewSessionId);
+      setError(null);
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "交接到 Desktop 失败");
+    }
+  };
+
+  const handleForkOccupiedSession = async () => {
+    if (!viewSessionId || !window.agentApi?.forkSession || isForkingSession) return;
+    setIsForkingSession(true);
+    try {
+      await forkOccupiedCodexSession({
+        sourceSessionId: viewSessionId,
+        forkSession: (id) => window.agentApi!.forkSession(id),
+        activateSession: (id) => {
+          sessionIdRef.current = id;
+          setSessionId(id);
+        },
+        refreshAndSelect: async (id) => {
+          if (onSessionCreated) await onSessionCreated(id);
+          else onSelectSession?.(id);
+        },
+      });
+      if (occupiedDraft) setInput(occupiedDraft);
+      setOccupiedDraft(undefined);
+      setSessionErrorCode(undefined);
+      setError(null);
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "创建会话副本失败");
+    } finally {
+      setIsForkingSession(false);
     }
   };
 
@@ -1069,6 +1530,12 @@ export default function ChatView({
     } catch (err) {
       setError(err instanceof Error ? err.message : "Agent run failed");
     } finally {
+      const preserveRecoveredRun = preserveNativeConflictRef.current.delete(targetSessionId);
+      if (preserveRecoveredRun) {
+        runningSessionRef.current = targetSessionId;
+        setRunningSession(targetSessionId);
+        return;
+      }
       // Check for next queued message (skip if user aborted)
       const nextQueued = !abortRef.current
         ? useAgentStore.getState().messages.find(m => m.isQueued)
@@ -1273,6 +1740,7 @@ export default function ChatView({
     const imagesToSend = pendingImages.length > 0 ? [...pendingImages] : undefined;
     const agentIdsToSend = pendingAgents.map(a => a.id);
     setPendingAgents([]);
+    if (isNativeRuntime && (selectedSessionId || sessionId)) preserveNativeDraftRef.current = true;
     setInput("");
     setAttachedFiles([]);
     setPendingImages([]);
@@ -1382,7 +1850,7 @@ export default function ChatView({
   }, [voiceCommand?.nonce]);
 
   return (
-    <div className="chat-view" style={{
+    <div className="chat-view chat-view--codex-history" style={{
       display: "flex",
       flexDirection: "column",
       height: "100%",
@@ -1425,13 +1893,78 @@ export default function ChatView({
       </div>
 
       {/* Messages area */}
-      <div className="chat-messages" style={{
+      <div ref={messagesScrollRef} className="chat-messages" onScroll={handleHistoryScroll} style={{
         flex: 1,
         overflow: "auto",
+        position: "relative",
         padding: "var(--chat-messages-padding)",
       }}>
 
-        {messages.length === 0 && (
+        {messages.length > 0 && (isLoadingOlderHistory || olderHistoryError) && (
+          <div
+            className="chat-history-page-status"
+            role={olderHistoryError ? "alert" : "status"}
+            style={{
+              position: "absolute",
+              top: 8,
+              left: "50%",
+              transform: "translateX(-50%)",
+              zIndex: 2,
+              minHeight: 32,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 7,
+              color: olderHistoryError ? "var(--danger)" : "var(--text-muted)",
+              fontSize: 12,
+            }}
+          >
+            {isLoadingOlderHistory ? (
+              <>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ animation: "spin 0.8s linear infinite" }} aria-hidden="true">
+                  <path d="M21 12a9 9 0 1 1-6.22-8.56" />
+                </svg>
+                <span>正在加载更早消息</span>
+              </>
+            ) : (
+              <button
+                type="button"
+                onClick={() => void loadOlderHistory()}
+                className="chat-history-retry"
+                style={{
+                  border: "1px solid color-mix(in srgb, var(--danger) 30%, transparent)",
+                  background: "color-mix(in srgb, var(--danger) 7%, transparent)",
+                  color: "var(--danger)",
+                  borderRadius: 6,
+                  padding: "5px 10px",
+                  cursor: "pointer",
+                  fontSize: 12,
+                }}
+              >
+                {olderHistoryError}，点击重试
+              </button>
+            )}
+          </div>
+        )}
+
+        {messages.length === 0 && isInitialHistoryLoading && showInitialHistoryLoading && (
+          <div className="chat-history-initial-loading" role="status" style={{
+            height: "100%",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 9,
+            color: "var(--text-muted)",
+            fontSize: 13,
+          }}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" style={{ animation: "spin 0.8s linear infinite" }} aria-hidden="true">
+              <path d="M21 12a9 9 0 1 1-6.22-8.56" />
+            </svg>
+            <span>正在加载历史消息</span>
+          </div>
+        )}
+
+        {messages.length === 0 && !isInitialHistoryLoading && !error && (
           <div style={{
             display: "flex",
             flexDirection: "column",
@@ -1476,11 +2009,12 @@ export default function ChatView({
           </div>
         )}
 
-        {messages.map((msg, i) => {
+        {renderedMessages.map((msg, i) => {
           const chatMsg = msg as import("../stores/agentStore").ChatMessage;
           // Skip queued messages — they are rendered in the queue bar above the input
           if (chatMsg.isQueued) return null;
           const isUser = msg.role === "user";
+          const actionPolicy = messageActionPolicy(renderedMessages, i, isRunning);
 
           // ── Compaction banner ──────────────────────────────────────────
           if (chatMsg.isCompactionSummary) {
@@ -1582,27 +2116,55 @@ export default function ChatView({
             ? chatMsg.agentName.charAt(0).toUpperCase()
             : "你";
 
-          // Show "思考中" label above the last streaming assistant bubble
-          const isLastAssistant = !isUser && i === messages.length - 1;
-          const showThinking = isRunning && isLastAssistant;
+          // Tool rows own their running state; only show a separate indicator while thinking.
+          const isLastAssistant = !isUser && i === renderedMessages.length - 1;
+          const showThinking = isRunning
+            && isLastAssistant
+            && agentActivity !== "tools"
+            && !globalRuntimeProgress;
 
           // Use larger bottom margin when the NEXT message switches role (turn boundary).
-          const nextMsg = messages[i + 1] as import("../stores/agentStore").ChatMessage | undefined;
+          const nextMsg = renderedMessages[i + 1] as import("../stores/agentStore").ChatMessage | undefined;
           const isTurnBoundary = nextMsg && nextMsg.role !== msg.role && !nextMsg.isCompactionSummary;
+          const toolCallEntries = (msg.toolCalls ?? []).map((toolCall, toolCallIndex) => {
+            let beforeContent: string | undefined;
+            if (toolCall.name === "write_file" && toolCall.arguments.file_path) {
+              const writePath = toolCall.arguments.file_path as string;
+              outer: for (let messageIndex = i; messageIndex >= 0; messageIndex--) {
+                const calls = renderedMessages[messageIndex].toolCalls;
+                if (!calls) continue;
+                const start = messageIndex === i ? toolCallIndex - 1 : calls.length - 1;
+                for (let callIndex = start; callIndex >= 0; callIndex--) {
+                  const previous = calls[callIndex];
+                  if (previous.name === "read_file" && previous.arguments.file_path === writePath && previous.result && !previous.isError) {
+                    beforeContent = previous.result;
+                    break outer;
+                  }
+                }
+              }
+            }
+            return {
+              toolCall,
+              beforeContent,
+              progress: toolRuntimeProgress(runtimeProgress, toolCall.id),
+              nativeSubagent: nativeSubagents[toolCall.id],
+            };
+          });
+          const toolCallGroups = groupAdjacentToolCallEntries(toolCallEntries);
 
           return (
           <div
             key={msg.id}
-            className="chat-message-group"
-            style={{ marginBottom: isTurnBoundary ? "var(--chat-turn-gap)" : "var(--chat-message-gap)" }}
+            className={`chat-message-group${actionPolicy.compact ? " chat-message-group--intermediate" : ""}`}
+            style={{ marginBottom: actionPolicy.compact ? 0 : (isTurnBoundary ? "var(--chat-turn-gap)" : "var(--chat-message-gap)") }}
           >
             {/* Activity status — single display, only for the last streaming assistant */}
             {showThinking && (
-              <div style={{
+              <div className="chat-message-activity" style={{
                 display: "flex",
-                paddingLeft: webShell ? 0 : "calc(var(--chat-avatar-size) + var(--chat-row-gap))", marginBottom: 4,
+                marginBottom: 4,
               }}>
-                <AgentActivityIndicator activity={agentActivity === "tools" ? "tools" : "thinking"} />
+                <AgentActivityIndicator />
               </div>
             )}
             {/* Main message row */}
@@ -1677,6 +2239,13 @@ export default function ChatView({
                 color: "var(--text-primary)",
                 letterSpacing: "0.01em",
               }}>
+                {msg.role === "assistant" && msg.presentation?.reasoning && (
+                  <ReasoningSummary
+                    sections={msg.presentation.reasoning}
+                    streaming={isRunning && i > renderedMessages.findLastIndex((message) => message.role === "user")}
+                    renderContent={renderAssistantText}
+                  />
+                )}
                 {/* @agent chip + message */}
                 {isUser && chatMsg.agentName ? (
                   <div>
@@ -1711,9 +2280,30 @@ export default function ChatView({
                   const displayed = isLong && !isExpanded
                     ? msg.content.slice(0, COLLAPSE_THRESHOLD)
                     : msg.content;
+                  const disclosureLabel = isExpanded
+                    ? "收起全文"
+                    : `展开全文，还有 ${msg.content.length - COLLAPSE_THRESHOLD} 字`;
                   return (
-                    <div>
-                      <div style={{ whiteSpace: "pre-wrap", wordBreak: "break-word", position: "relative" }}>
+                    <div className={isLong ? "chat-message-long-content" : undefined}>
+                      {isLong && (
+                        <button
+                          type="button"
+                          className="chat-message-disclosure"
+                          aria-expanded={isExpanded}
+                          aria-label={disclosureLabel}
+                          title={disclosureLabel}
+                          onClick={() => setExpandedMessages(prev => {
+                            const next = new Set(prev);
+                            if (isExpanded) next.delete(msg.id); else next.add(msg.id);
+                            return next;
+                          })}
+                        >
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                            <path d="m9 18 6-6-6-6" />
+                          </svg>
+                        </button>
+                      )}
+                      <div className={isLong ? "chat-message-long-content__body" : undefined} style={{ whiteSpace: "pre-wrap", wordBreak: "break-word", position: "relative" }}>
                         {isUser ? displayed : renderAssistantText(displayed)}
                         {isLong && !isExpanded && (
                           // Fade-out gradient at bottom
@@ -1723,49 +2313,11 @@ export default function ChatView({
                             height: 40,
                             background: isUser
                               ? "linear-gradient(transparent, rgba(232, 236, 254, 0.95))"
-                              : "linear-gradient(transparent, var(--bg-surface))",
+                              : "linear-gradient(transparent, var(--chat-assistant-fade-end))",
                             pointerEvents: "none",
                           }}/>
                         )}
                       </div>
-                      {isLong && (
-                        <button
-                          onClick={() => setExpandedMessages(prev => {
-                            const next = new Set(prev);
-                            if (isExpanded) next.delete(msg.id); else next.add(msg.id);
-                            return next;
-                          })}
-                          style={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: 4,
-                            marginTop: 6,
-                            padding: "3px 10px",
-                            borderRadius: 20,
-                            border: "1px solid var(--border-default)",
-                            background: "var(--bg-deep)",
-                            color: "var(--text-muted)",
-                            fontSize: 12,
-                            cursor: "pointer",
-                            fontFamily: "var(--font-body)",
-                          }}
-                          onMouseEnter={e => {
-                            (e.currentTarget as HTMLButtonElement).style.background = "var(--accent-dim)";
-                            (e.currentTarget as HTMLButtonElement).style.color = "var(--accent)";
-                            (e.currentTarget as HTMLButtonElement).style.borderColor = "rgba(79,110,247,0.3)";
-                          }}
-                          onMouseLeave={e => {
-                            (e.currentTarget as HTMLButtonElement).style.background = "var(--bg-deep)";
-                            (e.currentTarget as HTMLButtonElement).style.color = "var(--text-muted)";
-                            (e.currentTarget as HTMLButtonElement).style.borderColor = "var(--border-default)";
-                          }}
-                        >
-                          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" style={{ transform: isExpanded ? "rotate(180deg)" : "none", transition: "transform 0.2s" }}>
-                            <path d="M6 9l6 6 6-6"/>
-                          </svg>
-                          {isExpanded ? "收起" : `展开全文（还有 ${msg.content.length - COLLAPSE_THRESHOLD} 字）`}
-                        </button>
-                      )}
                     </div>
                   );
                 })() : (
@@ -1793,28 +2345,53 @@ export default function ChatView({
                     ))}
                   </div>
                 )}
-                {msg.toolCalls?.map((tc, tcIdx) => {
-                  // For write_file: find the most recent read_file result for the same path
-                  // so we can compute and show a diff between before/after.
-                  let beforeContent: string | undefined;
-                  if (tc.name === "write_file" && tc.arguments.file_path) {
-                    const writePath = tc.arguments.file_path as string;
-                    outer: for (let mi = i; mi >= 0; mi--) {
-                      const scanMsg = messages[mi];
-                      const tcs = scanMsg.toolCalls;
-                      if (!tcs) continue;
-                      const start = mi === i ? tcIdx - 1 : tcs.length - 1;
-                      for (let ti = start; ti >= 0; ti--) {
-                        const prev = tcs[ti];
-                        if (prev.name === "read_file" && prev.arguments.file_path === writePath && prev.result && !prev.isError) {
-                          beforeContent = prev.result;
-                          break outer;
-                        }
-                      }
-                    }
-                  }
-                  return <ToolCallCard key={tc.id} toolCall={tc} beforeContent={beforeContent} onSelectSession={onSelectSession} />;
-                })}
+                {isUser && chatMsg.presentation?.attachments && chatMsg.presentation.attachments.length > 0 && (
+                  <div className="chat-message-attachments">
+                    {chatMsg.presentation.attachments.map((attachment, idx) => (
+                      attachment.dataUrl ? (
+                        <img
+                          key={`${attachment.name}-${idx}`}
+                          className="chat-message-attachment-image"
+                          src={attachment.dataUrl}
+                          alt={attachment.name}
+                          title={attachment.name}
+                          onClick={() => window.open(attachment.dataUrl, "_blank")}
+                        />
+                      ) : (
+                        <div
+                          key={`${attachment.name}-${idx}`}
+                          className="chat-message-attachment-unavailable"
+                          aria-label={`${attachment.name}，图片已失效`}
+                        >
+                          <span className="chat-message-attachment-name">{attachment.name}</span>
+                          <span>图片已失效</span>
+                        </div>
+                      )
+                    ))}
+                  </div>
+                )}
+                {isUser && chatMsg.presentation?.rawContent && (
+                  <details className="chat-message-raw-content">
+                    <summary>查看原始内容</summary>
+                    <pre>{chatMsg.presentation.rawContent}</pre>
+                  </details>
+                )}
+                {toolCallGroups.map((group) => group.action && group.items.length > 1 ? (
+                  <ToolCallGroup
+                    key={`group-${group.items[0].toolCall.id}`}
+                    items={group.items}
+                    onSelectSession={onSelectSession}
+                  />
+                ) : (
+                  <ToolCallCard
+                    key={group.items[0].toolCall.id}
+                    toolCall={group.items[0].toolCall}
+                    beforeContent={group.items[0].beforeContent}
+                    progress={group.items[0].progress}
+                    nativeSubagent={group.items[0].nativeSubagent}
+                    onSelectSession={onSelectSession}
+                  />
+                ))}
                 {/* File change summary — one compact bar after all tool calls */}
                 {(() => {
                   const writes = (msg.toolCalls ?? []).filter(tc => tc.name === "write_file" && tc.result && !tc.isError);
@@ -1828,7 +2405,7 @@ export default function ChatView({
                     // Find read_file result for this path (search backwards through all messages up to current)
                     let beforeLines = 0;
                     outer2: for (let mi = i; mi >= 0; mi--) {
-                      const tcs = messages[mi].toolCalls ?? [];
+                      const tcs = renderedMessages[mi].toolCalls ?? [];
                       for (let ti = tcs.length - 1; ti >= 0; ti--) {
                         const p = tcs[ti];
                         if (p.name === "read_file" && p.arguments.file_path === path && p.result && !p.isError) {
@@ -1858,9 +2435,9 @@ export default function ChatView({
                 })()}
               </div>
               {/* Per-message controls sit below the message card boundary. */}
-              {msg.role === "assistant" && msg.content && (
+              {(actionPolicy.showCopy || actionPolicy.showSpeak) && (
                 <div className="msg-actions" style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                  {typeof window.agentApi?.ttsSpeak === "function" && (
+                  {actionPolicy.showSpeak && typeof window.agentApi?.ttsSpeak === "function" && (
                     <button
                       type="button"
                       onClick={() => handleSpeakMessage(msg.id, msg.content)}
@@ -1875,15 +2452,15 @@ export default function ChatView({
                       )}
                     </button>
                   )}
-                  <button
+                  {actionPolicy.showCopy && <button
                     type="button"
-                    onClick={() => { void navigator.clipboard?.writeText(msg.content); }}
+                    onClick={() => { void copyTextToClipboard(msg.content); }}
                     title="复制内容"
                     aria-label="复制内容"
                     className="ui-icon-button ui-icon-button--small msg-action-button"
                   >
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
-                  </button>
+                  </button>}
                 </div>
               )}
               {/* Queue / Steer badge for queued user messages */}
@@ -1902,7 +2479,7 @@ export default function ChatView({
                         </svg>
                         排队中
                       </span>
-                      <button
+                      {canSteerQueuedMessages && <button
                         onClick={() => void handleSteer(msg.id)}
                         title="将此消息引导到当前对话"
                         style={{
@@ -1930,7 +2507,7 @@ export default function ChatView({
                           <path d="M12 3v18" opacity="0.3"/>
                         </svg>
                         引导
-                      </button>
+                      </button>}
                     </>
                   )}
                   {chatMsg.isSteered && (
@@ -1954,33 +2531,19 @@ export default function ChatView({
           );
         })}
 
+        {isRunning && globalRuntimeProgress && (
+          <RuntimeProgressRow progress={globalRuntimeProgress} />
+        )}
+
         {/* Thinking indicator (no assistant reply yet) */}
-        {isRunning && messages.length > 0 && messages[messages.length - 1].role === "user" && !messages[messages.length - 1].isQueued && (
+        {isRunning && !globalRuntimeProgress && agentActivity !== "tools" && messages.length > 0 && messages[messages.length - 1].role === "user" && !messages[messages.length - 1].isQueued && (
           <div style={{
             display: "flex",
             alignItems: "flex-start",
-            gap: 10,
             padding: "4px 0 4px",
             animation: "fadeInUp 0.3s var(--ease-out)",
           }}>
-            {/* Robot avatar */}
-            <div style={{
-              width: 30, height: 30, borderRadius: "50%", flexShrink: 0,
-              display: "flex", alignItems: "center", justifyContent: "center",
-              background: "var(--bg-deep)",
-              color: "var(--text-muted)",
-              border: "1px solid var(--border-subtle)",
-            }}>
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                <rect x="3" y="11" width="18" height="10" rx="2"/>
-                <path d="M12 11V7"/>
-                <circle cx="12" cy="5" r="2"/>
-                <circle cx="8" cy="16" r="1" fill="currentColor" stroke="none"/>
-                <circle cx="16" cy="16" r="1" fill="currentColor" stroke="none"/>
-                <path d="M8 20h8"/>
-              </svg>
-            </div>
-            <AgentActivityIndicator activity={agentActivity === "tools" ? "tools" : "thinking"} />
+            <AgentActivityIndicator />
           </div>
         )}
 
@@ -2006,10 +2569,9 @@ export default function ChatView({
       {/* Input area */}
       <div className="chat-input-area" style={{
         padding: "var(--chat-input-padding)",
-        background: "var(--bg-deepest)",
-        borderTop: "1px solid var(--border-subtle)",
+        background: "var(--bg-workspace)",
       }}>
-        {isReadOnly && (
+        {(isReadOnly || isOccupiedRecovery) && (
           <div style={{
             display: "flex",
             alignItems: "center",
@@ -2025,7 +2587,32 @@ export default function ChatView({
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
               <rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>
             </svg>
-            <span>此会话正在被 {sessionSummary?.sourceLabel || "原客户端"} 使用，当前只读；原客户端释放后会自动恢复输入。</span>
+            <span style={{ flex: 1 }}>
+              {canForkOccupiedCodexSession(sessionSummary, sessionErrorCode)
+                ? "此会话仍由原客户端持有，可创建副本继续。"
+                : `此会话正在被 ${sessionSummary?.sourceLabel || "原客户端"} 使用，当前只读；原客户端释放后会自动恢复输入。`}
+            </span>
+            {canForkOccupiedCodexSession(sessionSummary, sessionErrorCode) && (
+              <button
+                type="button"
+                onClick={() => void handleForkOccupiedSession()}
+                disabled={isForkingSession}
+                style={{
+                  flexShrink: 0,
+                  border: "1px solid var(--border-default)",
+                  borderRadius: 5,
+                  padding: "5px 9px",
+                  background: "var(--bg-workspace)",
+                  color: "var(--text-primary)",
+                  fontSize: 12,
+                  fontWeight: 600,
+                  cursor: isForkingSession ? "wait" : "pointer",
+                  opacity: isForkingSession ? 0.65 : 1,
+                }}
+              >
+                {isForkingSession ? "正在创建…" : "以副本继续"}
+              </button>
+            )}
           </div>
         )}
         {/* ── TodoList panel ── */}
@@ -2424,7 +3011,7 @@ export default function ChatView({
                       )}
                       {preview}
                     </span>
-                    <button
+                    {canSteerQueuedMessages && <button
                       onClick={() => void handleSteer(msg.id)}
                       title="将此消息引导到当前对话"
                       style={{
@@ -2454,7 +3041,7 @@ export default function ChatView({
                         <path d="M12 3v18" opacity="0.3"/>
                       </svg>
                       引导
-                    </button>
+                    </button>}
                   </div>
                 );
               })}
@@ -2473,94 +3060,6 @@ export default function ChatView({
           borderRadius: 14,
           overflow: "visible",
         }}>
-          {!webShell && (
-            <ContextUsageBar
-              usage={viewSessionId ? contextUsageBySession[viewSessionId] : undefined}
-              contextWindowK={contextWindow}
-            />
-          )}
-
-          {/* Model selector bar (shown only when profiles exist), grouped by provider */}
-          {!webShell && !isNativeRuntime && profiles.length > 0 && (() => {
-            // Build ordered groups: preserve first-appearance order of providers
-            const providerOrder: string[] = [];
-            const groups: Record<string, typeof profiles> = {};
-            for (const p of profiles) {
-              if (!groups[p.provider]) {
-                providerOrder.push(p.provider);
-                groups[p.provider] = [];
-              }
-              groups[p.provider].push(p);
-            }
-            const PROVIDER_LABELS: Record<string, string> = {
-              anthropic: "Anthropic",
-              openai: "OpenAI",
-              deepseek: "DeepSeek",
-            };
-            return (
-              <div style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 0,
-                padding: "5px 10px 4px",
-                borderBottom: "1px solid var(--border-subtle)",
-                overflowX: "auto",
-                scrollbarWidth: "none",
-              }}>
-                {providerOrder.map((provider, gi) => (
-                  <div key={provider} style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 4,
-                    paddingLeft: gi > 0 ? 10 : 0,
-                    marginLeft: gi > 0 ? 8 : 0,
-                    borderLeft: gi > 0 ? "1px solid var(--border-subtle)" : "none",
-                    flexShrink: 0,
-                  }}>
-                    <span style={{
-                      fontSize: 10,
-                      color: "var(--text-muted)",
-                      opacity: 0.6,
-                      flexShrink: 0,
-                      letterSpacing: "0.03em",
-                      textTransform: "uppercase",
-                      fontWeight: 500,
-                    }}>
-                      {PROVIDER_LABELS[provider] ?? provider}
-                    </span>
-                    {groups[provider].map((p) => {
-                      const isActive = p.id === activeProfileId;
-                      return (
-                        <button
-                          key={p.id}
-                          onClick={() => switchActiveProfile(p.id)}
-                          title={`${p.provider} · ${p.modelId}`}
-                          style={{
-                            padding: "3px 10px",
-                            borderRadius: 20,
-                            border: isActive
-                              ? "1px solid var(--accent)"
-                              : "1px solid var(--border-subtle)",
-                            background: isActive ? "var(--accent-dim)" : "transparent",
-                            color: isActive ? "var(--accent)" : "var(--text-muted)",
-                            fontSize: 12,
-                            fontWeight: isActive ? 600 : 400,
-                            cursor: "pointer",
-                            whiteSpace: "nowrap",
-                            transition: "all 0.15s",
-                            flexShrink: 0,
-                          }}
-                        >
-                          {p.name || p.modelId}
-                        </button>
-                      );
-                    })}
-                  </div>
-                ))}
-              </div>
-            );
-          })()}
-
           {/* Inner input row */}
           <div className="composer-input-row" style={{
             display: "flex",
@@ -2576,67 +3075,6 @@ export default function ChatView({
             style={{ display: "none" }}
             onChange={handleFileAttach}
           />
-
-          {!webShell && (
-            <>
-          {/* Attach button */}
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            disabled={!canCompose || isRunning}
-            title="添加附件"
-            className="ui-icon-button"
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
-            </svg>
-          </button>
-
-          {/* Voice input (dictation) button */}
-          <button
-            onClick={handleMicToggle}
-            disabled={!canCompose}
-            className={`ui-icon-button ${isRecording ? "mic-recording" : ""}`}
-            title={!isASRSupported() ? "当前环境不支持语音输入" : (isRecording ? "停止录音" : "语音输入")}
-            style={isRecording ? {
-              background: "rgba(244,63,94,0.12)",
-              color: "var(--danger)",
-            } : undefined}
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/>
-              <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
-              <line x1="12" y1="19" x2="12" y2="22"/>
-            </svg>
-          </button>
-
-          {/* Screenshot / paste image button */}
-          <button
-            onClick={() => void handleScreenshot()}
-            disabled={!canCompose || isRunning}
-            title="粘贴截图（需先 Cmd+Shift+4 截图至剪贴板）"
-            className={`ui-icon-button ${pendingImages.length > 0 ? "is-active" : ""}`}
-            style={{
-              position: "relative",
-            }}
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <rect width="18" height="18" x="3" y="3" rx="2" ry="2"/>
-              <circle cx="9" cy="9" r="2"/>
-              <path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/>
-            </svg>
-            {pendingImages.length > 0 && (
-              <span style={{
-                position: "absolute", top: 1, right: 1,
-                width: 14, height: 14, borderRadius: "50%",
-                background: "var(--accent)", color: "#fff",
-                fontSize: 9, fontWeight: 700,
-                display: "flex", alignItems: "center", justifyContent: "center",
-                lineHeight: 1,
-              }}>{pendingImages.length}</span>
-            )}
-          </button>
-            </>
-          )}
 
           {/* Pending agent chips (multiple) */}
           {pendingAgents.length > 0 && (
@@ -2664,82 +3102,95 @@ export default function ChatView({
             </div>
           )}
 
-          {/* Text input */}
-          {webShell ? (
-            <textarea
-              className="composer-text-input web-native-composer-textarea"
-              ref={inputRef as React.RefObject<HTMLTextAreaElement>}
-              rows={3}
-              value={input}
-              onChange={(event) => handleComposerChange(event.target.value)}
-              onBlur={() => setTimeout(() => { setAtQuery(null); setSlashQuery(null); }, 120)}
-              onKeyDown={handleComposerKeyDown}
-              placeholder={isReadOnly ? "原客户端使用中，当前只读" : runtimeReady ? (isRunning ? "输入下一条排队消息" : "提出后续修改要求") : "请先在设置中配置 API Key"}
-              disabled={!canCompose}
-            />
-          ) : (
-            <input
-              className="composer-text-input"
-              ref={inputRef as React.RefObject<HTMLInputElement>}
-              value={input}
-              onChange={(event) => handleComposerChange(event.target.value)}
-              onBlur={() => setTimeout(() => { setAtQuery(null); setSlashQuery(null); }, 120)}
-              onKeyDown={handleComposerKeyDown}
-              placeholder={isReadOnly ? "原客户端使用中，当前只读" : runtimeReady ? (isRunning ? "排队发送消息…" : "发送消息… (@智能体  /技能)") : "请先在设置中配置 API Key"}
-              disabled={!canCompose}
-              style={{
-                flex: 1,
-                padding: "7px 4px",
-                border: "none",
-                background: "transparent",
-                color: "var(--text-primary)",
-                fontSize: 14,
-                outline: 0,
-                boxShadow: "none",
-                fontFamily: "var(--font-body)",
-                letterSpacing: "0.01em",
-              }}
-            />
-          )}
+          {/* Shared multiline input */}
+          <textarea
+            className="composer-text-input web-native-composer-textarea"
+            ref={inputRef as React.RefObject<HTMLTextAreaElement>}
+            rows={3}
+            value={input}
+            onChange={(event) => handleComposerChange(event.target.value)}
+            onBlur={() => setTimeout(() => { setAtQuery(null); setSlashQuery(null); }, 120)}
+            onKeyDown={handleComposerKeyDown}
+            placeholder={isReadOnly ? "原客户端使用中，当前只读" : runtimeReady ? (isRunning ? "输入下一条排队消息" : "提出后续修改要求") : "请先在设置中配置 API Key"}
+            disabled={!canCompose}
+          />
 
-          {/* Send / Queue / Stop button */}
-          {webShell ? (
-            <div className="web-native-composer-toolbar">
+          {/* Shared action toolbar */}
+          <div className="web-native-composer-toolbar">
               <div className="web-native-add-wrap">
                 <button
                   type="button"
                   className="web-native-add-button"
                   aria-label="添加附件、图片或语音"
-                  aria-expanded={webAddMenuOpen}
-                  onClick={() => setWebAddMenuOpen((open) => !open)}
+                  aria-expanded={addMenuOpen}
+                  onClick={() => setAddMenuOpen((open) => !open)}
                 >
                   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true">
                     <path d="M12 5v14M5 12h14" />
                   </svg>
                 </button>
-                {webAddMenuOpen && (
+                {addMenuOpen && (
                   <div className="web-native-add-menu">
-                    <button type="button" onClick={() => { setWebAddMenuOpen(false); fileInputRef.current?.click(); }}>
+                    <button type="button" onClick={() => { setAddMenuOpen(false); fileInputRef.current?.click(); }}>
                       附件 / 图片
                     </button>
-                    <button type="button" onClick={() => { setWebAddMenuOpen(false); handleMicToggle(); }}>
+                    <button type="button" onClick={() => { setAddMenuOpen(false); handleMicToggle(); }}>
                       语音输入
                     </button>
                   </div>
                 )}
               </div>
 
-              <span
-                className={`web-native-runtime-status ${canCompose ? "is-ready" : ""}`}
-                role="status"
-                aria-label={canCompose ? "Agent 已就绪" : "Agent 当前不可输入"}
-                title={canCompose ? "Agent 已就绪" : "Agent 当前不可输入"}
-              >
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-                  <path d="M12 8v4" /><path d="M12 16h.01" />
-                </svg>
-              </span>
+              <div className="web-native-permission-wrap" ref={permissionMenuRef}>
+                  <button
+                    type="button"
+                    className={`web-native-runtime-status web-native-permission-button mode-${permissionMode}`}
+                    aria-label={`会话权限：${PERMISSION_OPTIONS.find((option) => option.value === permissionMode)?.label}`}
+                    aria-haspopup="menu"
+                    aria-expanded={permissionMenuOpen}
+                    title={`会话权限：${PERMISSION_OPTIONS.find((option) => option.value === permissionMode)?.label}`}
+                    disabled={!viewSessionId || isSavingPermission}
+                    onClick={() => setPermissionMenuOpen((open) => !open)}
+                  >
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+                      <path d="M12 8v4" /><path d="M12 16h.01" />
+                    </svg>
+                  </button>
+                  {permissionMenuOpen && (
+                    <div className="web-native-permission-menu" role="menu" aria-label="会话权限模式">
+                      {PERMISSION_OPTIONS.map((option) => (
+                        <button
+                          key={option.value}
+                          type="button"
+                          role="menuitemradio"
+                          aria-checked={permissionMode === option.value}
+                          className={permissionMode === option.value ? "is-active" : ""}
+                          onClick={() => { void handlePermissionModeChange(option.value); }}
+                        >
+                          <span className="web-native-permission-check" aria-hidden="true">
+                            {permissionMode === option.value ? "✓" : ""}
+                          </span>
+                          <span className="web-native-permission-copy">
+                            <strong>{option.label}</strong>
+                            <small>{option.description}</small>
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+              </div>
+
+              {isNativeRuntime && sessionSummary?.controller === "web" && typeof window.agentApi?.handoffSession === "function" && (
+                <button
+                  type="button"
+                  className="web-native-runtime-status"
+                  onClick={() => { void handleDesktopHandoff(); }}
+                  title="交接到 Desktop"
+                >
+                  交接到 Desktop
+                </button>
+              )}
 
               <div className="web-native-context-control">
                 <ContextUsageBar
@@ -2764,9 +3215,6 @@ export default function ChatView({
                     <option key={profile.id} value={profile.id}>{profile.name || profile.modelId}</option>
                   ))}
                 </select>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <path d="m6 9 6 6 6-6" />
-                </svg>
               </label>
 
               {isRunning ? (
@@ -2797,9 +3245,6 @@ export default function ChatView({
                       <path d="M9.5 4.5A3.5 3.5 0 0 0 6 8v1a3 3 0 0 0-2 2.83V14a3 3 0 0 0 3 3h.25A3.75 3.75 0 0 0 11 20.75V3.25A3.75 3.75 0 0 0 9.5 4.5Z" />
                       <path d="M14.5 4.5A3.5 3.5 0 0 1 18 8v1a3 3 0 0 1 2 2.83V14a3 3 0 0 1-3 3h-.25A3.75 3.75 0 0 1 13 20.75V3.25a3.75 3.75 0 0 1 1.5 1.25Z" />
                     </svg>
-                    <span className={`web-native-effort-bars level-${reasoningEffort}`} aria-hidden="true">
-                      <i /><i /><i />
-                    </span>
                   </button>
                   {effortMenuOpen && (
                     <div className="web-native-effort-menu" role="menu" aria-label="推理强度">
@@ -2839,102 +3284,7 @@ export default function ChatView({
                   <path d="M12 19V5M5 12l7-7 7 7" />
                 </svg>
               </button>
-            </div>
-          ) : isRunning ? (
-            <>
-              {/* Queue send button */}
-              <button
-                onClick={handleSend}
-                disabled={!canCompose || !input.trim()}
-                title="排队发送（等当前对话结束后自动执行）"
-                style={{
-                  height: 34,
-                  padding: "0 14px",
-                  borderRadius: 10,
-                  border: "none",
-                  background: canCompose && input.trim()
-                    ? "var(--accent)"
-                    : "var(--bg-deep)",
-                  color: canCompose && input.trim()
-                    ? "var(--text-inverse)"
-                    : "var(--text-muted)",
-                  fontSize: 13,
-                  fontWeight: 600,
-                  cursor: canCompose && input.trim() ? "pointer" : "not-allowed",
-                  transition: "all 0.2s var(--ease-out)",
-                  display: "flex", alignItems: "center", gap: 5,
-                  whiteSpace: "nowrap",
-                  flexShrink: 0,
-                  letterSpacing: "0.02em",
-                }}
-              >
-                排队
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M5 12h14M12 5l7 7-7 7"/>
-                </svg>
-              </button>
-              {/* Stop button */}
-              <button
-                onClick={handleAbort}
-                title="停止生成 (Esc)"
-                style={{
-                  height: 34,
-                  width: 34,
-                  borderRadius: 10,
-                  border: "none",
-                  background: "rgba(244,63,94,0.12)",
-                  color: "var(--danger)",
-                  cursor: "pointer",
-                  transition: "all 0.2s var(--ease-out)",
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                  flexShrink: 0,
-                }}
-                onMouseEnter={e => {
-                  (e.currentTarget as HTMLButtonElement).style.background = "rgba(244,63,94,0.22)";
-                }}
-                onMouseLeave={e => {
-                  (e.currentTarget as HTMLButtonElement).style.background = "rgba(244,63,94,0.12)";
-                }}
-              >
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor">
-                  <rect x="4" y="4" width="16" height="16" rx="2"/>
-                </svg>
-              </button>
-            </>
-          ) : (
-            <button
-              onClick={handleSend}
-              disabled={!canCompose || !input.trim()}
-              style={{
-                height: 34,
-                padding: "0 16px",
-                borderRadius: 10,
-                border: "none",
-                background: canCompose && input.trim()
-                  ? "var(--accent)"
-                  : "var(--bg-deep)",
-                color: canCompose && input.trim()
-                  ? "var(--text-inverse)"
-                  : "var(--text-muted)",
-                fontSize: 13,
-                fontWeight: 600,
-                cursor: canCompose && input.trim() ? "pointer" : "not-allowed",
-                transition: "all 0.2s var(--ease-out)",
-                boxShadow: canCompose && input.trim()
-                  ? "0 2px 10px var(--accent-glow)"
-                  : "none",
-                display: "flex", alignItems: "center", gap: 5,
-                whiteSpace: "nowrap",
-                flexShrink: 0,
-                letterSpacing: "0.02em",
-              }}
-            >
-              发送
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M12 19V5M5 12l7-7 7 7"/>
-              </svg>
-            </button>
-          )}
+          </div>
           </div>{/* end inner input row */}
         </div>{/* end input box */}
         </div>{/* end relative wrapper */}

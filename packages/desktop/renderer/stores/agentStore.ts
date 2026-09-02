@@ -1,6 +1,14 @@
 import { create } from "zustand";
-import type { AskUserField, ContextUsageSnapshot } from "@agent/core";
+import type {
+  AgentEvent,
+  type AskUserField,
+  type ContextUsageSnapshot,
+  type MessagePresentation,
+  type NativeSubagentActivity,
+  type RuntimeProgress,
+} from "@agent/core";
 import type { CronTask } from "../global";
+import { mergeReasoningSummaryDelta, upsertRuntimeProgress } from "../lib/native-runtime-progress";
 
 export type { ContextUsageSnapshot, CronTask };
 
@@ -8,8 +16,14 @@ export interface StreamEvent {
   type: string;
   /** Session ID attached by agent-host; used for routing in the renderer */
   _sid?: string;
+  /** Durable broker event identity used to ignore snapshot/SSE replay duplicates. */
+  _nativeRunId?: string;
+  _nativeSequence?: number;
+  /** An admission conflict occurred while an existing native turn remains live. */
+  _preserveActiveRun?: boolean;
   text?: string;
   message?: string;
+  code?: string;
   toolCall?: { id: string; name: string; arguments: Record<string, unknown> };
   result?: { toolCallId: string; content: string; isError?: boolean };
   finalText?: string;
@@ -24,6 +38,17 @@ export interface StreamEvent {
   summary?: string;
   error?: string;
   removedMessages?: number;
+  itemId?: string;
+  sectionIndex?: number;
+  delta?: string;
+  progressId?: string;
+  phase?: RuntimeProgress["phase"];
+  label?: string;
+  detail?: string;
+  toolCallId?: string;
+  elapsedSeconds?: number;
+  current?: number;
+  total?: number;
   /** For ask_user events */
   questionId?: string;
   question?: string;
@@ -34,6 +59,7 @@ export interface StreamEvent {
   widgetId?: string;
   widgetType?: string;
   widgetData?: Record<string, unknown>;
+  activity?: NativeSubagentActivity;
 }
 
 export function findLatestContextUsage(
@@ -43,6 +69,18 @@ export function findLatestContextUsage(
     if (events[i].type === "context_usage" && events[i].usage) return events[i].usage;
   }
   return undefined;
+}
+
+export function reduceNativeSubagentActivities(
+  events: Array<{ type?: string; activity?: NativeSubagentActivity }>,
+): NativeSubagentActivity[] {
+  const activities = new Map<string, NativeSubagentActivity>();
+  for (const event of events) {
+    if (event.type === "native_subagent_update" && event.activity?.parentToolCallId) {
+      activities.set(event.activity.parentToolCallId, event.activity);
+    }
+  }
+  return [...activities.values()];
 }
 
 export interface TodoItem {
@@ -72,6 +110,8 @@ export interface ChatMessage {
   isCompactionSummary?: boolean;
   /** Base64 data URLs of images attached to this user message */
   images?: string[];
+  /** Display-only metadata restored from an external runtime. */
+  presentation?: MessagePresentation;
   /** True when this user message is queued and waiting for the current run to finish */
   isQueued?: boolean;
   /** True when this user message has been steered into the running loop */
@@ -95,6 +135,8 @@ interface AgentState {
   messages: ChatMessage[];
   messagesBySession: Record<string, ChatMessage[]>;
   contextUsageBySession: Record<string, ContextUsageSnapshot>;
+  runtimeProgressBySession: Record<string, RuntimeProgress[]>;
+  nativeSubagentsBySession: Record<string, Record<string, NativeSubagentActivity>>;
   /** The sessionId currently being streamed; null when idle */
   runningSessionId: string | null;
   currentText: string;
@@ -116,6 +158,15 @@ interface AgentState {
   setMessages: (messages: ChatMessage[], sessionId?: string) => void;
   getMessagesForSession: (sessionId: string) => ChatMessage[];
   setContextUsage: (usage: ContextUsageSnapshot, sessionId?: string) => void;
+  applyRuntimeProgress: (progress: RuntimeProgress, sessionId?: string) => void;
+  setRuntimeProgress: (progress: RuntimeProgress[], sessionId?: string) => void;
+  clearRuntimeProgress: (sessionId?: string) => void;
+  applyNativeSubagentActivity: (activity: NativeSubagentActivity, sessionId?: string) => void;
+  setNativeSubagentActivities: (activities: NativeSubagentActivity[], sessionId?: string) => void;
+  applyReasoningSummary: (
+    event: Extract<AgentEvent, { type: "reasoning_summary_delta" }>,
+    sessionId?: string,
+  ) => void;
   getContextUsageForSession: (sessionId: string) => ContextUsageSnapshot | undefined;
   /** Update a specific message by ID using a transform function */
   updateMessage: (id: string, updater: (msg: ChatMessage) => ChatMessage, sessionId?: string) => void;
@@ -194,10 +245,39 @@ function updateMessageInList(messages: ChatMessage[], id: string, updater: (msg:
   return messages.map((m) => (m.id === id ? updater(m) : m));
 }
 
+function applyReasoningSummaryToList(
+  messages: ChatMessage[],
+  event: Extract<AgentEvent, { type: "reasoning_summary_delta" }>,
+): ChatMessage[] {
+  const index = messages.findIndex((message) => message.presentation?.reasoning?.some(
+    (section) => section.itemId === event.itemId,
+  ));
+  if (index < 0) {
+    return [...messages, {
+      id: `native-reasoning:${event.itemId}`,
+      role: "assistant",
+      content: "",
+      presentation: { reasoning: mergeReasoningSummaryDelta(undefined, event) },
+      timestamp: Date.now(),
+    }];
+  }
+  return messages.map((message, messageIndex) => messageIndex === index
+    ? {
+        ...message,
+        presentation: {
+          ...message.presentation,
+          reasoning: mergeReasoningSummaryDelta(message.presentation?.reasoning, event),
+        },
+      }
+    : message);
+}
+
 export const useAgentStore = create<AgentState>((set, get) => ({
   messages: [],
   messagesBySession: {},
   contextUsageBySession: {},
+  runtimeProgressBySession: {},
+  nativeSubagentsBySession: {},
   runningSessionId: null,
   currentText: "",
   sessionId: null,
@@ -286,6 +366,74 @@ export const useAgentStore = create<AgentState>((set, get) => ({
 
   getContextUsageForSession: (sid) => get().contextUsageBySession[sid],
 
+  applyRuntimeProgress: (progress, sid) => set((state) => {
+    const targetSid = sid ?? state.sessionId ?? undefined;
+    if (!targetSid) return state;
+    return {
+      runtimeProgressBySession: {
+        ...state.runtimeProgressBySession,
+        [targetSid]: upsertRuntimeProgress(state.runtimeProgressBySession[targetSid] ?? [], progress),
+      },
+    };
+  }),
+
+  setRuntimeProgress: (progress, sid) => set((state) => {
+    const targetSid = sid ?? state.sessionId ?? undefined;
+    if (!targetSid) return state;
+    return {
+      runtimeProgressBySession: { ...state.runtimeProgressBySession, [targetSid]: progress },
+    };
+  }),
+
+  clearRuntimeProgress: (sid) => set((state) => {
+    const targetSid = sid ?? state.sessionId ?? undefined;
+    if (!targetSid || !state.runtimeProgressBySession[targetSid]?.length) return state;
+    const { [targetSid]: _removed, ...runtimeProgressBySession } = state.runtimeProgressBySession;
+    return { runtimeProgressBySession };
+  }),
+
+  applyNativeSubagentActivity: (activity, sid) => set((state) => {
+    const targetSid = sid ?? state.sessionId ?? undefined;
+    if (!targetSid) return state;
+    return {
+      nativeSubagentsBySession: {
+        ...state.nativeSubagentsBySession,
+        [targetSid]: {
+          ...(state.nativeSubagentsBySession[targetSid] ?? {}),
+          [activity.parentToolCallId]: activity,
+        },
+      },
+    };
+  }),
+
+  setNativeSubagentActivities: (activities, sid) => set((state) => {
+    const targetSid = sid ?? state.sessionId ?? undefined;
+    if (!targetSid) return state;
+    return {
+      nativeSubagentsBySession: {
+        ...state.nativeSubagentsBySession,
+        [targetSid]: Object.fromEntries(activities.map((activity) => [activity.parentToolCallId, activity])),
+      },
+    };
+  }),
+
+  applyReasoningSummary: (event, sid) => set((state) => {
+    const targetSid = sid ?? state.sessionId ?? undefined;
+    const visibleMessages = targetSid && targetSid !== state.sessionId
+      ? state.messages
+      : applyReasoningSummaryToList(state.messages, event);
+    const messagesBySession = targetSid
+      ? {
+          ...state.messagesBySession,
+          [targetSid]: applyReasoningSummaryToList(
+            state.messagesBySession[targetSid] ?? (targetSid === state.sessionId ? state.messages : []),
+            event,
+          ),
+        }
+      : state.messagesBySession;
+    return { messages: visibleMessages, messagesBySession };
+  }),
+
   updateMessage: (id, updater, sid) =>
     set((state) => {
       const targetSid = sid ?? state.sessionId ?? undefined;
@@ -336,10 +484,14 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     if (!targetSid) return { messages: [], currentText: "" };
     const { [targetSid]: _removedMessages, ...messagesBySession } = state.messagesBySession;
     const { [targetSid]: _removedUsage, ...contextUsageBySession } = state.contextUsageBySession;
+    const { [targetSid]: _removedProgress, ...runtimeProgressBySession } = state.runtimeProgressBySession;
+    const { [targetSid]: _removedSubagents, ...nativeSubagentsBySession } = state.nativeSubagentsBySession;
     return {
       messages: targetSid === state.sessionId ? [] : state.messages,
       messagesBySession,
       contextUsageBySession,
+      runtimeProgressBySession,
+      nativeSubagentsBySession,
       currentText: targetSid === state.sessionId ? "" : state.currentText,
     };
   }),

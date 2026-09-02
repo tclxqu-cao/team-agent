@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import { isBrowserRuntime } from "../web/webLayout";
 
 export type SkinId = "pearl" | "scifi" | "noir";
 export type LayoutId = "standard" | "focus" | "compact";
@@ -51,16 +52,23 @@ interface UIState {
   setGroupByBot: (v: boolean) => void;
 }
 
+const UI_PREFERENCES_VERSION = 2;
+
+/** Browser shells have no background window to wake, so they start opted out. */
+export function getDefaultWakeEnabled(browserRuntime = isBrowserRuntime()): boolean {
+  return !browserRuntime;
+}
+
 export const useUIStore = create<UIState>()(
   persist(
     (set) => ({
       skin: "pearl",
       layout: "standard",
       autoSpeak: false,
-      wakeEnabled: true,
+      wakeEnabled: getDefaultWakeEnabled(),
       wakeWord: "小智",
       runningFirst: false,
-      groupByBot: false,
+      groupByBot: true,
 
       setSkin: (skin) => set({ skin }),
       setLayout: (layout) => set({ layout }),
@@ -70,6 +78,17 @@ export const useUIStore = create<UIState>()(
       setRunningFirst: (runningFirst) => set({ runningFirst }),
       setGroupByBot: (groupByBot) => set({ groupByBot }),
     }),
-    { name: "agent-ui-prefs" },
+    {
+      name: "agent-ui-prefs",
+      version: UI_PREFERENCES_VERSION,
+      migrate: (persisted, version) => {
+        const preferences = persisted as Partial<UIState>;
+        return {
+          ...preferences,
+          ...(version < 1 ? { groupByBot: true } : {}),
+          ...(version < UI_PREFERENCES_VERSION && isBrowserRuntime() ? { wakeEnabled: false } : {}),
+        } as UIState;
+      },
+    },
   ),
 );

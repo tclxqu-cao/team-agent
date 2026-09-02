@@ -1,4 +1,4 @@
-import type { AgentEvent } from "@agent/core";
+import { normalizeToolPermissionMode, type AgentEvent } from "@agent/core";
 import type { AgentHost } from "../agent-host.js";
 import type {
   AgentRuntimeAdapter,
@@ -103,6 +103,7 @@ export class CustomerAgentRuntimeAdapter implements AgentRuntimeAdapter {
       sourceLabel: "Customer Agent",
       canResume: true,
       canDelete: true,
+      permissionMode: normalizeToolPermissionMode(session.metadata.permissionMode),
     };
   }
 }

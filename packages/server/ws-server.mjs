@@ -16,7 +16,7 @@
 //   AGENT_WEB_ROOTS   ":"-separated dirs the file APIs may touch (default: $HOME)
 
 import { createServer } from "node:http";
-import { randomBytes } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
 import fsSync from "node:fs";
@@ -26,7 +26,7 @@ import next from "next";
 import { WebSocketServer } from "ws";
 import pty from "node-pty";
 import chokidar from "chokidar";
-import { SQLiteAnonymousWebStore, SQLiteWebConsoleStore } from "@agent/core";
+import { HostPathPolicy, SQLiteAnonymousWebStore, SQLiteProjectStore, SQLiteWebConsoleStore } from "@agent/core";
 
 const dev = process.env.NODE_ENV !== "production";
 const port = Number(process.env.PORT || 3000);
@@ -35,11 +35,10 @@ const dir = path.dirname(new URL(import.meta.url).pathname);
 const serverBaseDir = path.resolve(process.env.AGENT_DATA_DIR?.trim() || dir);
 const anonymousWebStore = new SQLiteAnonymousWebStore(serverBaseDir);
 const consoleStore = new SQLiteWebConsoleStore(serverBaseDir);
+const projectStore = new SQLiteProjectStore(serverBaseDir);
 consoleStore.markStaleTerminalsExited(new Date().toISOString());
-const roots = (process.env.AGENT_WEB_ROOTS || os.homedir())
-  .split(path.delimiter)
-  .map((p) => path.resolve(p.trim()))
-  .filter(Boolean);
+const hostPathPolicy = HostPathPolicy.fromEnvironment(process.env.AGENT_WEB_ROOTS, os.homedir());
+const roots = hostPathPolicy.roots;
 
 // bun install drops the executable bit on node-pty's prebuilt spawn-helper,
 // which makes every pty.spawn fail with "posix_spawnp failed". Repair on boot
@@ -286,16 +285,12 @@ function captureShellHistory(session, data) {
 
 // ── filesystem service (read-only V1) ───────────────────────────────────────
 function assertAllowed(absPath, userId) {
-  const resolved = path.resolve(absPath);
   // Static configured roots + current directories of active PTY sessions.
   // The user can already access these paths through the terminal; this keeps
   // the file manager aligned with terminal navigation without opening `/`
   // globally when the terminal still lives under $HOME.
   const activeCwds = [...terminals.values()].filter((s) => s.userId === userId).map((s) => s.cwd).filter(Boolean);
-  const allowedRoots = [...roots, ...activeCwds];
-  const allowed = allowedRoots.some((root) => resolved === root || resolved.startsWith(root + path.sep));
-  if (!allowed) throw Object.assign(new Error(`path outside allowed roots`), { code: "EPATH" });
-  return resolved;
+  return new HostPathPolicy([...roots, ...activeCwds]).assertAllowed(absPath);
 }
 
 async function fsList(dirPath, userId) {
@@ -504,6 +499,22 @@ function detachTerminal(conn, id) {
   if (conn.focusId === id) conn.focusId = null;
 }
 
+function toWebProject(project) {
+  return {
+    id: project.id,
+    name: project.name,
+    description: project.description,
+    created: project.created,
+    updated: project.updated,
+  };
+}
+
+async function requireProject(id) {
+  const project = typeof id === "string" ? await projectStore.get(id) : null;
+  if (!project) throw Object.assign(new Error("项目不存在"), { code: "PROJECT_NOT_FOUND" });
+  return project;
+}
+
 const requestHandlers = {
   "hello": async () => ({
     roots: roots.map((r) => ({ path: r, label: path.basename(r) || r })),
@@ -614,6 +625,64 @@ const requestHandlers = {
   },
 
   "ping": async () => ({ pong: true, t: Date.now() }),
+
+  "project:list": async () => ({
+    projects: (await projectStore.list()).map(toWebProject),
+  }),
+
+  "project:get": async (msg) => ({
+    project: toWebProject(await requireProject(msg.projectId)),
+  }),
+
+  "project:create": async (msg) => {
+    const canonical = hostPathPolicy.assertDirectory(String(msg.path ?? ""));
+    const projects = await projectStore.list();
+    for (const existing of projects) {
+      try {
+        if (hostPathPolicy.assertDirectory(existing.description) === canonical) {
+          return { project: toWebProject(existing), existing: true };
+        }
+      } catch {}
+    }
+    const now = new Date().toISOString();
+    const requestedName = typeof msg.name === "string" ? msg.name.trim() : "";
+    const project = await projectStore.create({
+      id: randomUUID(),
+      name: requestedName || path.basename(canonical) || canonical,
+      description: canonical,
+      created: now,
+      updated: now,
+    });
+    return { project: toWebProject(project), existing: false };
+  },
+
+  "project:rename": async (msg) => {
+    await requireProject(msg.projectId);
+    const name = typeof msg.name === "string" ? msg.name.trim() : "";
+    if (!name) throw Object.assign(new Error("项目名称不能为空"), { code: "PROJECT_NAME_REQUIRED" });
+    return { project: toWebProject(await projectStore.update(msg.projectId, { name })) };
+  },
+
+  "project:delete": async (msg) => {
+    await requireProject(msg.projectId);
+    await projectStore.delete(msg.projectId);
+    return { deleted: true, projectId: msg.projectId };
+  },
+
+  "project:roots": async () => ({ roots: hostPathPolicy.roots }),
+
+  "project:directories": async (msg) => ({
+    path: hostPathPolicy.assertDirectory(String(msg.path ?? "")),
+    entries: hostPathPolicy.listDirectories(String(msg.path ?? "")),
+  }),
+
+  "project:check": async (msg) => {
+    try {
+      return { valid: true, path: hostPathPolicy.assertDirectory(String(msg.path ?? "")) };
+    } catch (error) {
+      return { valid: false, error: error.message, code: error.code };
+    }
+  },
 
   "term:kill": async (msg, conn) => {
     const id = msg.id || conn.focusId;

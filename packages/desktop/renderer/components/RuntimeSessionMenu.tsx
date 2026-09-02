@@ -57,7 +57,7 @@ export default function RuntimeSessionMenu({ health, disabled, onSelect }: Runti
         title="新建会话"
         aria-label="新建会话"
         aria-expanded={open}
-        className="sidebar-row-action sidebar-row-action--accent ui-icon-button ui-icon-button--small"
+        className="sidebar-row-action sidebar-row-action--accent sidebar-project-add-action ui-icon-button ui-icon-button--small"
         style={{ fontSize: 16, lineHeight: 1 }}
       >+</button>
       {open && anchor && createPortal(

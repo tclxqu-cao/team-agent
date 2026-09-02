@@ -4,7 +4,39 @@
 // the terminal's cwd: when the shell changes directory, the tree re-roots.
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { classifyFileContent, type FileContentKind } from "../../../core/src/domain/file/file-types";
+import {
+  ChevronDown,
+  ChevronRight,
+  CornerDownLeft,
+  Database,
+  File,
+  FileArchive,
+  FileAudio,
+  FileCode2,
+  FileImage,
+  FileJson2,
+  FileSpreadsheet,
+  FileText,
+  FileVideo2,
+  Folder,
+  FolderOpen,
+  LoaderCircle,
+  LocateFixed,
+  NotebookText,
+  Palette,
+  Presentation,
+  Search,
+  X,
+  type LucideIcon,
+} from "lucide-react";
 import type { FsEntry, FsEvent } from "./useGateway";
+import {
+  ancestorDirectories,
+  isPathInsideRoot,
+  parentDirectory,
+  type FileTreeRevealRequest,
+} from "./fileTreeReveal";
 
 interface Props {
   rpc: <T = any,>(type: string, params?: Record<string, unknown>, timeoutMs?: number) => Promise<T>;
@@ -18,19 +50,28 @@ interface Props {
   initialRoot?: string | null;
   initialFollow?: boolean;
   onTreeStateChange?: (root: string, following: boolean) => void;
+  revealRequest?: FileTreeRevealRequest | null;
 }
 
-const name2color: Record<string, string> = {
-  ts: "#7aa2f7", tsx: "#7aa2f7", js: "#e0af68", jsx: "#e0af68", mjs: "#e0af68",
-  json: "#9ece6a", md: "#bb9af7", css: "#bb9af7", html: "#f7768e",
-  sh: "#9ece6a", py: "#9ece6a", png: "#e0af68", jpg: "#e0af68", jpeg: "#e0af68",
-  gif: "#e0af68", svg: "#e0af68", pdf: "#f7768e", mp4: "#f7768e", mov: "#f7768e",
+const fileIconDetails: Record<FileContentKind, { icon: LucideIcon; color: string; label: string }> = {
+  code: { icon: FileCode2, color: "#7aa2f7", label: "代码文件" },
+  style: { icon: Palette, color: "#bb9af7", label: "样式文件" },
+  image: { icon: FileImage, color: "#9ece6a", label: "图片文件" },
+  video: { icon: FileVideo2, color: "#f7768e", label: "视频文件" },
+  audio: { icon: FileAudio, color: "#c099ff", label: "音频文件" },
+  markdown: { icon: NotebookText, color: "#73daca", label: "Markdown 文件" },
+  text: { icon: FileText, color: "#a9b1d6", label: "文本文件" },
+  json: { icon: FileJson2, color: "#e0af68", label: "JSON 文件" },
+  archive: { icon: FileArchive, color: "#ff9e64", label: "压缩文件" },
+  spreadsheet: { icon: FileSpreadsheet, color: "#9ece6a", label: "表格文件" },
+  presentation: { icon: Presentation, color: "#f7768e", label: "演示文件" },
+  database: { icon: Database, color: "#2ac3de", label: "数据库文件" },
+  file: { icon: File, color: "#c8c8d0", label: "文件" },
 };
 
-const fileColor = (name: string) => {
-  const ext = name.split(".").pop()?.toLowerCase() ?? "";
-  return name2color[ext] ?? "#c8c8d0";
-};
+function fileIcon(name: string) {
+  return fileIconDetails[classifyFileContent(name)];
+}
 
 function fmtSize(n: number): string {
   if (n < 1024) return `${n}B`;
@@ -48,7 +89,7 @@ interface DirState {
   error?: string;
 }
 
-export default function FileTree({ rpc, onEvent, onOpenFile, selectedPath, ready, cwd, followCwd, initialRoot, initialFollow = true, onTreeStateChange }: Props) {
+export default function FileTree({ rpc, onEvent, onOpenFile, selectedPath, ready, cwd, followCwd, initialRoot, initialFollow = true, onTreeStateChange, revealRequest }: Props) {
   const [root, setRoot] = useState<DirState | null>(null);
   const [filter, setFilter] = useState("");
   const [pathInput, setPathInput] = useState("");
@@ -57,6 +98,9 @@ export default function FileTree({ rpc, onEvent, onOpenFile, selectedPath, ready
   /** dirPath → children state map for all EXPANDED dirs */
   const dirsRef = useRef<Map<string, DirState>>(new Map());
   const lastRootRef = useRef<string | null>(null);
+  const treeScrollRef = useRef<HTMLDivElement>(null);
+  const latestRevealRequestRef = useRef(0);
+  const startedRevealRequestRef = useRef(0);
   const [, bump] = useState(0);
   const rerender = () => bump((x) => x + 1);
 
@@ -165,6 +209,39 @@ export default function FileTree({ rpc, onEvent, onOpenFile, selectedPath, ready
     [fetchDir],
   );
 
+  const revealFile = useCallback(async (targetPath: string, requestId: number) => {
+    const targetParent = parentDirectory(targetPath);
+    let revealRoot = root?.path ?? targetParent;
+    if (!isPathInsideRoot(targetPath, revealRoot)) {
+      revealRoot = targetParent;
+      setManualRoot(true);
+      applyRoot(revealRoot);
+      onTreeStateChange?.(revealRoot, false);
+    }
+
+    const ancestors = ancestorDirectories(revealRoot, targetPath);
+    for (let depth = 0; depth < ancestors.length; depth += 1) {
+      if (latestRevealRequestRef.current !== requestId) return;
+      await openDirAtDepth(ancestors[depth], depth);
+    }
+
+    const scrollToTarget = () => {
+      if (latestRevealRequestRef.current !== requestId) return;
+      const row = Array.from(treeScrollRef.current?.querySelectorAll<HTMLElement>("[data-tree-path]") ?? [])
+        .find((element) => element.dataset.treePath === targetPath);
+      row?.scrollIntoView({ block: "center", inline: "nearest" });
+    };
+    requestAnimationFrame(() => requestAnimationFrame(scrollToTarget));
+  }, [applyRoot, onTreeStateChange, openDirAtDepth, root?.path]);
+
+  useEffect(() => {
+    if (!ready || !revealRequest) return;
+    if (startedRevealRequestRef.current === revealRequest.requestId) return;
+    startedRevealRequestRef.current = revealRequest.requestId;
+    latestRevealRequestRef.current = revealRequest.requestId;
+    void revealFile(revealRequest.path, revealRequest.requestId);
+  }, [ready, revealFile, revealRequest?.requestId]);
+
   // realtime refresh of loaded+expanded dirs when fs events arrive nearby
   useEffect(() => {
     return onEvent("fs:event", (msg: { events: FsEvent[] }) => {
@@ -200,11 +277,13 @@ export default function FileTree({ rpc, onEvent, onOpenFile, selectedPath, ready
         return (
           <div key={full}>
             <div className="tree-row" onClick={() => toggleDir(full)} style={{ paddingLeft: 6 + depth * 12 }}>
-              <span style={{ width: 12, color: "#888", flexShrink: 0, textAlign: "center" }}>
-                {st?.loading ? "…" : expanded ? "▾" : "▸"}
+              <span className="tree-disclosure" aria-hidden="true">
+                {st?.loading ? <LoaderCircle className="tree-spin" size={13} /> : expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
               </span>
-              <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>📁</span>
-              <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{child.name}</span>
+              <span className="tree-entry-icon tree-folder-icon" aria-hidden="true">
+                {expanded ? <FolderOpen size={16} /> : <Folder size={16} />}
+              </span>
+              <span className="tree-entry-name">{child.name}</span>
             </div>
             {expanded &&
               (st!.children ? (
@@ -217,19 +296,23 @@ export default function FileTree({ rpc, onEvent, onOpenFile, selectedPath, ready
           </div>
         );
       }
+      const details = fileIcon(child.name);
+      const EntryIcon = details.icon;
       return (
         <div
           key={full}
           className="tree-row"
+          data-tree-path={full}
           data-selected={full === selectedPath ? "1" : undefined}
           onClick={() => onOpenFile(full)}
-          title={`${full} · ${fmtSize(child.size)}`}
+          title={`${details.label} · ${full} · ${fmtSize(child.size)}`}
           style={{ paddingLeft: 6 + depth * 12 }}
         >
-          <span style={{ width: 12, flexShrink: 0 }} />
-          <span style={{ color: fileColor(child.name), overflow: "hidden", textOverflow: "ellipsis" }}>
-            {child.name}
+          <span className="tree-disclosure" aria-hidden="true" />
+          <span className="tree-entry-icon" style={{ color: details.color }} aria-hidden="true">
+            <EntryIcon size={16} strokeWidth={1.8} />
           </span>
+          <span className="tree-entry-name">{child.name}</span>
           <span className="tree-size">{fmtSize(child.size)}</span>
         </div>
       );
@@ -245,7 +328,7 @@ export default function FileTree({ rpc, onEvent, onOpenFile, selectedPath, ready
 
   const rootSt = dirsRef.current.get(root.path);
   return (
-    <div className="tree-scroll">
+    <div className="tree-scroll" ref={treeScrollRef}>
       <div className="tree-location">
         <input
           value={pathInput}
@@ -257,17 +340,21 @@ export default function FileTree({ rpc, onEvent, onOpenFile, selectedPath, ready
           aria-label="文件树目录路径"
           spellCheck={false}
         />
-        <button tabIndex={-1} onClick={locatePath} title="定位目录" aria-label="定位目录">↵</button>
+        <button tabIndex={-1} onClick={locatePath} title="定位目录" aria-label="定位目录">
+          <CornerDownLeft size={14} aria-hidden="true" />
+        </button>
         <button
           tabIndex={-1}
           onClick={resumeFollowing}
           title="跟随终端目录"
           aria-label="跟随终端目录"
           data-active={followingTerminal ? "1" : undefined}
-        >⌖</button>
+        >
+          <LocateFixed size={14} aria-hidden="true" />
+        </button>
       </div>
       <div className="tree-filter">
-        <span aria-hidden="true">⌕</span>
+        <Search size={14} aria-hidden="true" />
         <input
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
@@ -276,17 +363,19 @@ export default function FileTree({ rpc, onEvent, onOpenFile, selectedPath, ready
         />
         {filter && (
           <button tabIndex={-1} onClick={() => setFilter("")} aria-label="清除筛选">
-            ✕
+            <X size={13} aria-hidden="true" />
           </button>
         )}
       </div>
       {/* root row — one tap expands level 1 */}
       <div className="tree-row" onClick={() => toggleDir(root.path)}>
-        <span style={{ width: 12, color: "#888", textAlign: "center", flexShrink: 0 }}>
-          {rootSt?.loading ? "…" : rootSt?.expanded ? "▾" : "▸"}
+        <span className="tree-disclosure" aria-hidden="true">
+          {rootSt?.loading ? <LoaderCircle className="tree-spin" size={13} /> : rootSt?.expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
         </span>
-        <span>📂</span>
-        <span style={{ overflow: "hidden", textOverflow: "ellipsis", direction: "rtl" as const, textAlign: "left" as const }}>
+        <span className="tree-entry-icon tree-folder-icon" aria-hidden="true">
+          {rootSt?.expanded ? <FolderOpen size={16} /> : <Folder size={16} />}
+        </span>
+        <span className="tree-entry-name" style={{ direction: "rtl" as const, textAlign: "left" as const }}>
           {root.path}
         </span>
       </div>

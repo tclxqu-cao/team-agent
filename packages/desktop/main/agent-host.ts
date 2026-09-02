@@ -19,6 +19,12 @@ import {
   WaitAgentTool,
   AskUserTool,
   type AskUserRequest,
+  ToolPermissionGate,
+  TOOL_APPROVAL_OPTIONS,
+  isToolPermissionMode,
+  normalizeToolPermissionMode,
+  toolApprovalDecisionFromAnswer,
+  type ToolPermissionMode,
   CronCreateTool,
   CronDeleteTool,
   CronListTool,
@@ -91,6 +97,7 @@ export class AgentHost {
   private readonly subAgentDispatcher: SubAgentDispatcher;
   /** Manages ask_user question lifecycle */
   private readonly questionManager: QuestionManager;
+  private readonly toolPermissionGate: ToolPermissionGate;
 
   constructor(baseDir: string) {
     this.workingDirectory = baseDir;
@@ -106,6 +113,21 @@ export class AgentHost {
     this.lspStore = new SQLiteLSPServerStore(baseDir);
     this.lspManager = new LSPManager();
     this.mcpConnectionManager = new MCPConnectionManager(this.mcpStore);
+    this.questionManager = new QuestionManager((event, sid) => this.emit(event, sid));
+    this.toolPermissionGate = new ToolPermissionGate({
+      resolveMode: async (sessionId) => {
+        const session = await this.sessionStore.get(sessionId);
+        return normalizeToolPermissionMode(session?.metadata.permissionMode);
+      },
+      requestApproval: async (request) => {
+        const response = await this.questionManager.create({
+          question: `Customer Agent 请求权限\n${request.summary}\n原因：${request.reason}`,
+          options: [...TOOL_APPROVAL_OPTIONS],
+          toolCallId: "",
+        }, request.sessionId);
+        return toolApprovalDecisionFromAnswer(response.answer, response.selectedIndices);
+      },
+    });
     this.subAgentDispatcher = new SubAgentDispatcher(
       this.agentStore,
       this.sessionStore,
@@ -113,12 +135,13 @@ export class AgentHost {
       this.memoryStore,
       (builder, sid, allowDispatch) => this.registerSessionTools(builder, sid, allowDispatch),
       (event, sid) => this.emit(event, sid),
+      this.toolPermissionGate,
     );
-    this.questionManager = new QuestionManager((event, sid) => this.emit(event, sid));
     this.builder = new AgentBuilder()
       .withWorkingDirectory(baseDir)
       .withMemoryStore(this.memoryStore)
-      .withSessionStore(this.sessionStore);
+      .withSessionStore(this.sessionStore)
+      .withToolPermissionGate(this.toolPermissionGate);
     this.cronTasks = new CronTasks(baseDir);
     this.cronLock = new CronTaskLock(baseDir);
     this.cronScheduler = new CronScheduler(
@@ -182,7 +205,8 @@ export class AgentHost {
     this.builder = new AgentBuilder()
       .withWorkingDirectory(settings.workingDirectory)
       .withMemoryStore(this.memoryStore)
-      .withSessionStore(this.sessionStore);
+      .withSessionStore(this.sessionStore)
+      .withToolPermissionGate(this.toolPermissionGate);
     if (settings.isConfigured) {
       this.builder.withModel(settings.modelProvider, {
         apiKey: settings.apiKey,
@@ -440,7 +464,17 @@ export class AgentHost {
       events: [],
       created: new Date().toISOString(),
       updated: new Date().toISOString(),
-      metadata: {},
+      metadata: { permissionMode: "full-access" },
+    });
+  }
+
+  async setSessionPermissionMode(sessionId: string, mode: ToolPermissionMode): Promise<Session> {
+    if (!isToolPermissionMode(mode)) throw new Error(`Invalid permission mode: ${String(mode)}`);
+    const session = await this.sessionStore.get(sessionId);
+    if (!session) throw new Error(`Session not found: ${sessionId}`);
+    this.toolPermissionGate.clearSession(sessionId);
+    return this.sessionStore.update(sessionId, {
+      metadata: { ...session.metadata, permissionMode: mode },
     });
   }
 
@@ -566,7 +600,7 @@ export class AgentHost {
         events: [],
         created: new Date().toISOString(),
         updated: new Date().toISOString(),
-        metadata: {},
+        metadata: { permissionMode: "full-access" },
       });
     } else {
       // Always update title to the latest user message
@@ -886,6 +920,7 @@ export class AgentHost {
    * re-assign them to the most-recently-updated remaining session.
    */
   async onSessionDeleted(deletedSessionId: string): Promise<void> {
+    this.toolPermissionGate.clearSession(deletedSessionId);
     const releasedTaskIds = this.cronLock.releaseBySession(deletedSessionId);
     if (releasedTaskIds.length === 0) return;
 

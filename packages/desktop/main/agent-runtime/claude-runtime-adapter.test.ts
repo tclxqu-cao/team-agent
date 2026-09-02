@@ -1,9 +1,15 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { SDKMessage, SessionMessage } from "@anthropic-ai/claude-agent-sdk";
 import {
   ClaudeRuntimeAdapter,
+  ClaudeSubagentTracker,
+  classifyClaudePermission,
   claudeHistoryToMessages,
   claudeSdkMessageToEvents,
+  requiresClaudeApproval,
 } from "./claude-runtime-adapter.js";
 
 const state = vi.hoisted(() => ({
@@ -11,6 +17,7 @@ const state = vi.hoisted(() => ({
   messages: [] as any[],
   stream: [] as any[],
   queryCalls: [] as any[],
+  inputMessages: [] as any[],
   closedQueries: 0,
   interrupted: 0,
   openFiles: [] as string[],
@@ -20,11 +27,22 @@ const state = vi.hoisted(() => ({
   triggerPermission: false,
   permissionResult: null as any,
   signal: undefined as AbortSignal | undefined,
+  subagentIds: [] as string[],
+  subagentMessages: {} as Record<string, any[]>,
 }));
+
+const temporaryDirectories: string[] = [];
 
 vi.mock("@anthropic-ai/claude-agent-sdk", () => ({
   query: (options: any) => {
     state.queryCalls.push(options);
+    if (typeof options.prompt === "string") {
+      state.inputMessages.push(options.prompt);
+    } else {
+      void (async () => {
+        for await (const message of options.prompt) state.inputMessages.push(message);
+      })();
+    }
     const canUseTool = options.options?.canUseTool as
       | ((tool: string, input: any, meta: any) => any)
       | undefined;
@@ -65,6 +83,8 @@ vi.mock("@anthropic-ai/claude-agent-sdk", () => ({
     return state.sessions.slice(offset, offset + limit);
   },
   getSessionMessages: async () => state.messages,
+  listSubagents: async () => state.subagentIds,
+  getSubagentMessages: async (_sessionId: string, agentId: string) => state.subagentMessages[agentId] ?? [],
 }));
 
 vi.mock("./native-processes.js", () => ({
@@ -111,6 +131,7 @@ beforeEach(() => {
   state.messages = [];
   state.stream = [];
   state.queryCalls = [];
+  state.inputMessages = [];
   state.closedQueries = 0;
   state.interrupted = 0;
   state.openFiles = [];
@@ -120,6 +141,12 @@ beforeEach(() => {
   state.triggerPermission = false;
   state.permissionResult = null;
   state.signal = undefined;
+  state.subagentIds = [];
+  state.subagentMessages = {};
+});
+
+afterEach(async () => {
+  await Promise.all(temporaryDirectories.splice(0).map((path) => rm(path, { recursive: true, force: true })));
 });
 
 describe("Claude history mapping", () => {
@@ -175,6 +202,33 @@ describe("Claude history mapping", () => {
     ]);
   });
 
+  it("restores base64 image blocks from user history", () => {
+    const history = [{
+      type: "user",
+      message: {
+        content: [
+          { type: "text", text: "inspect" },
+          {
+            type: "image",
+            source: { type: "base64", media_type: "image/png", data: "iVBORw0KGgo=" },
+          },
+        ],
+      },
+    }] as SessionMessage[];
+
+    expect(claudeHistoryToMessages(history)).toEqual([{
+      role: "user",
+      content: "inspect",
+      presentation: {
+        attachments: [{
+          type: "image",
+          name: "image-1.png",
+          dataUrl: "data:image/png;base64,iVBORw0KGgo=",
+        }],
+      },
+    }]);
+  });
+
   it("keeps error tool results as tool messages", () => {
     const history = [
       {
@@ -190,6 +244,46 @@ describe("Claude history mapping", () => {
 });
 
 describe("Claude SDK event mapping", () => {
+  it("maps allowlisted public progress without exposing private thinking", () => {
+    expect(claudeSdkMessageToEvents({
+      type: "system", subtype: "thinking_tokens", estimated_tokens: 1234,
+    } as SDKMessage, false)).toEqual([{
+      type: "runtime_progress",
+      progressId: "claude:thinking",
+      phase: "thinking",
+      label: "正在思考",
+      current: 1234,
+      detail: "1,234 tokens",
+    }]);
+    expect(claudeSdkMessageToEvents({
+      type: "tool_progress", tool_use_id: "tool-1", tool_name: "Bash", elapsed_time_seconds: 2.4,
+    } as SDKMessage, false)).toEqual([expect.objectContaining({
+      type: "runtime_progress",
+      progressId: "claude:tool:tool-1",
+      phase: "tool",
+      toolCallId: "tool-1",
+      elapsedSeconds: 2.4,
+    })]);
+    expect(claudeSdkMessageToEvents({
+      type: "system", subtype: "api_retry", attempt: 2, max_retries: 4,
+    } as SDKMessage, false)).toEqual([expect.objectContaining({
+      type: "runtime_progress", phase: "retry", current: 2, total: 4,
+    })]);
+    expect(claudeSdkMessageToEvents({
+      type: "system", subtype: "informational", content: "正在读取项目",
+    } as SDKMessage, false)).toEqual([expect.objectContaining({
+      type: "runtime_progress", phase: "status", label: "正在读取项目",
+    })]);
+
+    expect(claudeSdkMessageToEvents({
+      type: "assistant", message: { content: [{ type: "thinking", thinking: "private reasoning" }] },
+    } as SDKMessage, false)).toEqual([]);
+    expect(claudeSdkMessageToEvents({
+      type: "stream_event",
+      event: { type: "content_block_delta", delta: { type: "thinking_delta", thinking: "private delta" } },
+    } as SDKMessage, false)).toEqual([]);
+  });
+
   it("maps partial text and completed tool blocks to agent events", () => {
     const partial = {
       type: "stream_event",
@@ -241,9 +335,160 @@ describe("Claude SDK event mapping", () => {
     expect(claudeSdkMessageToEvents({ type: "system", subtype: "init" } as SDKMessage, false)).toEqual([]);
     expect(claudeSdkMessageToEvents({ type: "user", message: { content: "plain" } } as SDKMessage, false)).toEqual([]);
   });
+
+  it("keeps child frames out of the parent timeline", () => {
+    expect(claudeSdkMessageToEvents({
+      type: "stream_event",
+      parent_tool_use_id: "agent-tool",
+      event: { type: "content_block_delta", delta: { type: "text_delta", text: "child output" } },
+    } as SDKMessage, false)).toEqual([]);
+    expect(claudeSdkMessageToEvents({
+      type: "assistant",
+      parent_tool_use_id: "agent-tool",
+      message: { content: [{ type: "thinking", thinking: "private" }, { type: "text", text: "public" }] },
+    } as SDKMessage, false)).toEqual([]);
+  });
+});
+
+describe("ClaudeSubagentTracker", () => {
+  it("projects public child text, tool calls, results, and progress without thinking", () => {
+    const tracker = new ClaudeSubagentTracker();
+    const events = [
+      ...tracker.consume({
+        type: "system", subtype: "task_started", task_id: "task-1", tool_use_id: "agent-tool",
+        task_type: "local_agent", subagent_type: "Explore", description: "Inspect files", is_backgrounded: true,
+      } as SDKMessage),
+      ...tracker.consume({
+        type: "assistant", parent_tool_use_id: "agent-tool", message: { content: [
+          { type: "thinking", thinking: "private reasoning" },
+          { type: "text", text: "Reading source" },
+          { type: "tool_use", id: "read-1", name: "Read", input: { file_path: "a.ts" } },
+        ] },
+      } as SDKMessage),
+      ...tracker.consume({
+        type: "user", parent_tool_use_id: "agent-tool", message: { content: [
+          { type: "tool_result", tool_use_id: "read-1", content: "source", is_error: false },
+        ] },
+      } as SDKMessage),
+      ...tracker.consume({
+        type: "system", subtype: "task_progress", task_id: "task-1", description: "Inspect files",
+        subagent_type: "Explore", summary: "Found entry point", last_tool_name: "Read",
+        usage: { total_tokens: 10, tool_uses: 1, duration_ms: 2400 },
+      } as SDKMessage),
+    ];
+
+    const lastEvent = events.at(-1);
+    const activity = lastEvent?.type === "native_subagent_update" ? lastEvent.activity : null;
+    expect(activity).toMatchObject({
+      parentToolCallId: "agent-tool",
+      status: "running",
+      summary: "Found entry point",
+      lastToolName: "Read",
+      elapsedSeconds: 2,
+      toolUses: 1,
+    });
+    expect(activity?.messages).toEqual([
+      { role: "assistant", content: "Reading source", toolCalls: [{ id: "read-1", name: "Read", arguments: { file_path: "a.ts" } }] },
+      { role: "tool", content: "source", toolCallId: "read-1" },
+    ]);
+    expect(JSON.stringify(events)).not.toContain("private reasoning");
+    expect(tracker.hasActiveBackgroundTasks()).toBe(true);
+  });
+
+  it("isolates concurrent parents and ignores ambient tasks", () => {
+    const tracker = new ClaudeSubagentTracker();
+    expect(tracker.consume({
+      type: "system", subtype: "task_started", task_id: "ambient", tool_use_id: "hidden",
+      task_type: "local_agent", description: "watch", is_backgrounded: true, ambient: true,
+    } as SDKMessage)).toEqual([]);
+    tracker.consume({
+      type: "system", subtype: "task_started", task_id: "one", tool_use_id: "parent-one",
+      task_type: "local_agent", description: "one", is_backgrounded: true,
+    } as SDKMessage);
+    tracker.consume({
+      type: "system", subtype: "task_started", task_id: "two", tool_use_id: "parent-two",
+      task_type: "local_agent", description: "two", is_backgrounded: true,
+    } as SDKMessage);
+
+    const [update] = tracker.consume({
+      type: "assistant", parent_tool_use_id: "parent-two", message: { content: [{ type: "text", text: "second" }] },
+    } as SDKMessage);
+    expect(update.type === "native_subagent_update" && update.activity.parentToolCallId).toBe("parent-two");
+  });
 });
 
 describe("ClaudeRuntimeAdapter", () => {
+  it("finds only a direct project transcript for a UUID session", async () => {
+    const root = await mkdtemp(join(tmpdir(), "claude-watch-root-"));
+    temporaryDirectories.push(root);
+    const sessionId = "123e4567-e89b-42d3-a456-426614174000";
+    const project = join(root, "-repo");
+    await mkdir(join(project, "subagents"), { recursive: true });
+    await writeFile(join(project, "subagents", `${sessionId}.jsonl`), "{}\n");
+    const adapter = new ClaudeRuntimeAdapter({ sessionRoot: root });
+
+    await expect(adapter.getSessionWatchPath(sessionId)).resolves.toBeNull();
+    const transcript = join(project, `${sessionId}.jsonl`);
+    await writeFile(transcript, "{}\n");
+    await expect(adapter.getSessionWatchPath(sessionId)).resolves.toBe(transcript);
+    await expect(adapter.getSessionWatchPath("../unsafe")).resolves.toBeNull();
+  });
+
+  it("recovers public subagent history beside a visible Agent tool call", async () => {
+    const root = await mkdtemp(join(tmpdir(), "claude-subagent-history-"));
+    temporaryDirectories.push(root);
+    const sessionId = "123e4567-e89b-42d3-a456-426614174001";
+    const project = join(root, "-repo");
+    const subagents = join(project, sessionId, "subagents");
+    await mkdir(subagents, { recursive: true });
+    await writeFile(join(project, `${sessionId}.jsonl`), "{}\n");
+    await writeFile(join(subagents, "agent-child-1.meta.json"), JSON.stringify({
+      agentType: "Explore",
+      description: "Trace the runtime",
+      toolUseId: "agent-tool",
+      spawnDepth: 1,
+    }));
+    await writeFile(join(subagents, "agent-malformed.meta.json"), "not json");
+    state.sessions = [sdkSession(sessionId)];
+    state.messages = [{
+      type: "assistant",
+      message: { content: [{ type: "tool_use", id: "agent-tool", name: "Agent", input: { prompt: "trace" } }] },
+    }];
+    state.subagentIds = ["child-1", "malformed", "missing"];
+    state.subagentMessages = {
+      "child-1": [
+        { type: "assistant", message: { content: [{ type: "thinking", thinking: "secret" }] } },
+        { type: "assistant", message: { content: [
+          { type: "text", text: "Found the cause" },
+          { type: "tool_use", id: "read-1", name: "Read", input: { file_path: "runtime.ts" } },
+        ] } },
+        { type: "user", message: { content: [{ type: "tool_result", tool_use_id: "read-1", content: "source" }] } },
+      ],
+    };
+    const adapter = new ClaudeRuntimeAdapter({ sessionRoot: root });
+
+    const detail = await adapter.getSession(sessionId);
+
+    expect(detail.events).toEqual([{
+      type: "native_subagent_update",
+      activity: expect.objectContaining({
+        taskId: "child-1",
+        parentToolCallId: "agent-tool",
+        agentName: "Explore",
+        description: "Trace the runtime",
+        status: "completed",
+        summary: "Found the cause",
+      }),
+    }]);
+    expect(JSON.stringify(detail.events)).not.toContain("secret");
+    expect(detail.events[0]).toMatchObject({
+      activity: { messages: [
+        { role: "assistant", content: "Found the cause", toolCalls: [{ id: "read-1", name: "Read" }] },
+        { role: "tool", content: "source", toolCallId: "read-1" },
+      ] },
+    });
+  });
+
   it("reports health with the CLI version and degrades when the CLI is missing", async () => {
     const adapter = new ClaudeRuntimeAdapter({ sessionRoot: "/tmp/claude-projects" });
 
@@ -396,6 +641,151 @@ describe("ClaudeRuntimeAdapter", () => {
     ]);
   });
 
+  it("waits for a background subagent notification before emitting the main done event", async () => {
+    state.sessions = [sdkSession("cc-1")];
+    state.stream = [
+      {
+        type: "assistant", parent_tool_use_id: null,
+        message: { content: [{ type: "tool_use", id: "agent-tool", name: "Agent", input: { prompt: "inspect" } }] },
+      },
+      {
+        type: "system", subtype: "task_started", task_id: "task-1", tool_use_id: "agent-tool",
+        task_type: "local_agent", subagent_type: "Explore", description: "Inspect", is_backgrounded: true,
+      },
+      { type: "result", subtype: "success", is_error: false, result: "launched" },
+      {
+        type: "assistant", parent_tool_use_id: "agent-tool",
+        message: { content: [{ type: "text", text: "Child finished" }] },
+      },
+      {
+        type: "system", subtype: "task_updated", task_id: "task-1",
+        patch: { status: "completed" },
+      },
+      {
+        type: "system", subtype: "task_notification", task_id: "task-1", tool_use_id: "agent-tool",
+        status: "completed", output_file: "/tmp/task", summary: "Child finished",
+        usage: { total_tokens: 12, tool_uses: 2, duration_ms: 3200 },
+      },
+    ];
+    const adapter = new ClaudeRuntimeAdapter({ sessionRoot: "/tmp/claude-projects" });
+
+    const events = await drain(adapter.run("cc-1", "delegate"));
+
+    expect(state.queryCalls[0].options).toMatchObject({
+      includePartialMessages: true,
+      forwardSubagentText: true,
+      agentProgressSummaries: true,
+    });
+    expect(events.map((event) => event.type)).toEqual([
+      "tool_call",
+      "native_subagent_update",
+      "native_subagent_update",
+      "native_subagent_update",
+      "native_subagent_update",
+      "done",
+    ]);
+    expect(events.at(-2)).toMatchObject({
+      activity: { status: "completed", summary: "Child finished", toolUses: 2 },
+    });
+    expect(events.at(-1)).toEqual({ type: "done", finalText: "launched" });
+  });
+
+  it("reports a protocol error when the SDK ends with a background subagent still active", async () => {
+    state.sessions = [sdkSession("cc-1")];
+    state.stream = [{
+      type: "system", subtype: "task_started", task_id: "task-1", tool_use_id: "agent-tool",
+      task_type: "local_agent", description: "Inspect", is_backgrounded: true,
+    }];
+    const adapter = new ClaudeRuntimeAdapter({ sessionRoot: "/tmp/claude-projects" });
+
+    const events = await drain(adapter.run("cc-1", "delegate"));
+
+    expect(events).toEqual([
+      expect.objectContaining({ activity: expect.objectContaining({ status: "running" }) }),
+      expect.objectContaining({ activity: expect.objectContaining({ status: "stopped" }) }),
+      expect.objectContaining({ type: "error", code: "NATIVE_PROTOCOL_ERROR" }),
+    ]);
+  });
+
+  it("sends ordered base64 image blocks with the initial user message", async () => {
+    state.sessions = [sdkSession("cc-1")];
+    state.stream = [{ type: "result", subtype: "success", is_error: false, result: "done" }];
+    const adapter = new ClaudeRuntimeAdapter({ sessionRoot: "/tmp/claude-projects" });
+    const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x01]);
+    const webp = Buffer.from("RIFF0000WEBP", "ascii");
+
+    await drain(adapter.run("cc-1", "inspect both", [
+      `data:image/png;base64,${png.toString("base64")}`,
+      `data:image/webp;base64,${webp.toString("base64")}`,
+    ]));
+
+    await vi.waitFor(() => expect(state.inputMessages).toHaveLength(1));
+    expect(state.inputMessages[0]).toEqual({
+      type: "user",
+      message: {
+        role: "user",
+        content: [
+          { type: "text", text: "inspect both" },
+          {
+            type: "image",
+            source: { type: "base64", media_type: "image/png", data: png.toString("base64") },
+          },
+          {
+            type: "image",
+            source: { type: "base64", media_type: "image/webp", data: webp.toString("base64") },
+          },
+        ],
+      },
+      parent_tool_use_id: null,
+    });
+  });
+
+  it("rejects unsupported image data before opening an SDK query", async () => {
+    state.sessions = [sdkSession("cc-1")];
+    const adapter = new ClaudeRuntimeAdapter({ sessionRoot: "/tmp/claude-projects" });
+
+    await expect(drain(adapter.run("cc-1", "inspect", ["data:image/avif;base64,AAAA"])))
+      .rejects.toMatchObject({ code: "NATIVE_PROTOCOL_ERROR" });
+    expect(state.queryCalls).toHaveLength(0);
+  });
+
+  it("injects steering input into the active streaming query with now priority", async () => {
+    state.sessions = [sdkSession("cc-1")];
+    state.stream = [
+      { type: "assistant", message: { content: [{ type: "text", text: "working" }] } },
+      { type: "result", subtype: "success", is_error: false, result: "done" },
+    ];
+    const adapter = new ClaudeRuntimeAdapter({ sessionRoot: "/tmp/claude-projects" });
+    const iterator = adapter.run("cc-1", "initial")[Symbol.asyncIterator]();
+
+    await expect(iterator.next()).resolves.toMatchObject({
+      done: false,
+      value: { type: "text_chunk", text: "working" },
+    });
+    await expect(adapter.steer("cc-1", "focus on tests")).resolves.toBe(true);
+    await expect(iterator.next()).resolves.toMatchObject({
+      done: false,
+      value: { type: "done", finalText: "done" },
+    });
+    await expect(iterator.next()).resolves.toMatchObject({ done: true });
+
+    await vi.waitFor(() => expect(state.inputMessages).toHaveLength(2));
+    expect(state.inputMessages).toEqual([
+      {
+        type: "user",
+        message: { role: "user", content: "initial" },
+        parent_tool_use_id: null,
+      },
+      {
+        type: "user",
+        message: { role: "user", content: "focus on tests" },
+        parent_tool_use_id: null,
+        priority: "now",
+      },
+    ]);
+    await expect(adapter.steer("cc-1", "too late")).resolves.toBe(false);
+  });
+
   it("surfaces SDK failures as error events", async () => {
     state.sessions = [sdkSession("cc-1")];
     state.stream = [{ type: "result", subtype: "error_during_execution", is_error: true, errors: ["boom"] }];
@@ -417,6 +807,59 @@ describe("ClaudeRuntimeAdapter", () => {
     expect(events[0]).toMatchObject({ message: expect.stringContaining("cc-other") });
   });
 
+  it("uses Claude bypass permissions without installing a callback in full access mode", async () => {
+    state.sessions = [sdkSession("cc-1")];
+    state.stream = [{ type: "result", subtype: "success", is_error: false, result: "done" }];
+    state.triggerPermission = true;
+    const adapter = new ClaudeRuntimeAdapter({ sessionRoot: "/tmp/claude-projects" });
+
+    await drain(adapter.run("cc-1", "run without approval", undefined, undefined, undefined, {
+      permissionMode: "full-access",
+    }));
+
+    expect(state.queryCalls[0].options).toMatchObject({
+      permissionMode: "bypassPermissions",
+      allowDangerouslySkipPermissions: true,
+    });
+    expect(state.queryCalls[0].options).not.toHaveProperty("canUseTool");
+    expect(state.permissionResult).toBeNull();
+  });
+
+  it("keeps shell, network, and unknown Claude tools behind approval in auto mode", () => {
+    const cwd = "/repo";
+    expect(requiresClaudeApproval("auto-approval", classifyClaudePermission("Bash", { command: "pwd" }, cwd))).toBe(true);
+    expect(requiresClaudeApproval("auto-approval", classifyClaudePermission("WebFetch", { url: "https://example.test" }, cwd))).toBe(true);
+    expect(requiresClaudeApproval("auto-approval", classifyClaudePermission("UnrecognizedTool", {}, cwd))).toBe(true);
+    expect(requiresClaudeApproval("auto-approval", classifyClaudePermission("Read", { file_path: "README.md" }, cwd))).toBe(false);
+    expect(requiresClaudeApproval("auto-approval", classifyClaudePermission("Write", { file_path: "src/new.ts" }, cwd))).toBe(false);
+  });
+
+  it("routes an auto-approved Claude shell request through the persisted approval path", async () => {
+    state.sessions = [sdkSession("cc-1")];
+    state.stream = [
+      { type: "assistant", message: { content: [{ type: "text", text: "running" }] } },
+      { type: "result", subtype: "success", is_error: false, result: "ok" },
+    ];
+    state.triggerPermission = true;
+    state.signal = new AbortController().signal;
+    const adapter = new ClaudeRuntimeAdapter({ sessionRoot: "/tmp/claude-projects" });
+    const events: any[] = [];
+
+    for await (const event of adapter.run("cc-1", "run pwd", undefined, undefined, undefined, {
+      permissionMode: "auto-approval",
+    })) {
+      events.push(event);
+      if (event.type === "ask_user") {
+        await adapter.answerQuestion(event.questionId, { answer: "允许一次" });
+      }
+    }
+
+    expect(events).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: "ask_user", questionId: "claude:cc-1:req-1" }),
+    ]));
+    await expect(state.permissionResult).resolves.toMatchObject({ behavior: "allow" });
+  });
+
   it("routes permission prompts through the ask-user contract and resolves allow", async () => {
     state.sessions = [sdkSession("cc-1")];
     state.stream = [
@@ -429,7 +872,9 @@ describe("ClaudeRuntimeAdapter", () => {
 
     const events: any[] = [];
     let answered = false;
-    for await (const event of adapter.run("cc-1", "run pwd")) {
+    for await (const event of adapter.run("cc-1", "run pwd", undefined, undefined, undefined, {
+      permissionMode: "request-approval",
+    })) {
       events.push(event);
       if (event.type === "ask_user" && !answered) {
         answered = true;
@@ -458,7 +903,9 @@ describe("ClaudeRuntimeAdapter", () => {
     state.signal = new AbortController().signal;
     const adapter = new ClaudeRuntimeAdapter({ sessionRoot: "/tmp/claude-projects" });
 
-    for await (const event of adapter.run("cc-1", "run pwd")) {
+    for await (const event of adapter.run("cc-1", "run pwd", undefined, undefined, undefined, {
+      permissionMode: "request-approval",
+    })) {
       if (event.type === "ask_user") await adapter.answerQuestion(event.questionId, { answer: "取消" });
     }
     await expect(state.permissionResult).resolves.toMatchObject({ behavior: "deny", interrupt: true });
@@ -468,7 +915,9 @@ describe("ClaudeRuntimeAdapter", () => {
       { type: "assistant", message: { content: [{ type: "text", text: "running again" }] } },
       { type: "result", subtype: "success", is_error: false, result: "ok" },
     ];
-    for await (const event of adapter.run("cc-1", "again")) {
+    for await (const event of adapter.run("cc-1", "again", undefined, undefined, undefined, {
+      permissionMode: "request-approval",
+    })) {
       if (event.type === "ask_user") await adapter.answerQuestion(event.questionId, { answer: "本会话允许" });
     }
     const allowed = await state.permissionResult;
@@ -501,7 +950,9 @@ describe("ClaudeRuntimeAdapter", () => {
     state.signal = new AbortController().signal;
     const adapter = new ClaudeRuntimeAdapter({ sessionRoot: "/tmp/claude-projects" });
 
-    for await (const event of adapter.run("cc-1", "hi")) {
+    for await (const event of adapter.run("cc-1", "hi", undefined, undefined, undefined, {
+      permissionMode: "request-approval",
+    })) {
       if (event.type === "ask_user") {
         await adapter.dispose();
         break;

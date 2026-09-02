@@ -15,12 +15,26 @@ class FailedEventSource {
   close(): void {}
 }
 
+class ObservableEventSource {
+  static instances: ObservableEventSource[] = [];
+  readonly readyState = 1;
+  onopen: (() => void) | null = null;
+  onerror: ((event: Event) => void) | null = null;
+  onmessage: ((event: MessageEvent) => void) | null = null;
+  readonly close = vi.fn();
+
+  constructor(readonly url: string) {
+    ObservableEventSource.instances.push(this);
+  }
+}
+
 describe("AgentHttpGateway", () => {
   const originalEventSource = globalThis.EventSource;
 
   afterEach(() => {
     vi.restoreAllMocks();
     globalThis.EventSource = originalEventSource;
+    ObservableEventSource.instances = [];
   });
 
   it("settles the run and dispatches an error when the event stream cannot open", async () => {
@@ -38,6 +52,236 @@ describe("AgentHttpGateway", () => {
       type: "error",
       message: "事件流连接失败",
       _sid: "session-1",
+    });
+  });
+
+  it("keeps an existing native stream open when a refreshed page retries an occupied session", async () => {
+    globalThis.EventSource = ObservableEventSource as unknown as typeof EventSource;
+    const occupied = Object.assign(new Error("Session is already running"), { status: 409 });
+    const http = {
+      get: vi.fn().mockResolvedValue({
+        status: "running",
+        snapshotRevision: 4,
+        snapshotRunId: "native-run-existing",
+        messages: [],
+        events: [],
+      }),
+      post: vi.fn().mockRejectedValue(occupied),
+    };
+    const settings = {
+      getModelOverride: vi.fn(() => null),
+      getReasoningEffort: vi.fn(() => "off"),
+    };
+    const gateway = new AgentHttpGateway(http as never, settings as never);
+    const events: unknown[] = [];
+    gateway.onEvent((event) => events.push(event));
+
+    await gateway.getSession("runtime:codex:c291cmNl");
+    const source = ObservableEventSource.instances[0];
+    source.onopen?.();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    await gateway.run("retry after refresh", "runtime:codex:c291cmNl");
+
+    expect(http.post).toHaveBeenCalledOnce();
+    expect(source.close).not.toHaveBeenCalled();
+    expect(events).toContainEqual(expect.objectContaining({
+      type: "error",
+      code: "SESSION_OCCUPIED",
+      _preserveActiveRun: true,
+      _sid: "runtime:codex:c291cmNl",
+    }));
+  });
+
+  it("forwards native subagent activity from SSE without flattening its messages", async () => {
+    globalThis.EventSource = ObservableEventSource as unknown as typeof EventSource;
+    const http = {
+      post: vi.fn().mockResolvedValue({ runId: "run-1", snapshotRevision: 0 }),
+    };
+    const settings = {
+      getModelOverride: vi.fn(() => null),
+      getReasoningEffort: vi.fn(() => "off"),
+    };
+    const gateway = new AgentHttpGateway(http as never, settings as never);
+    const events: unknown[] = [];
+    gateway.onEvent((event) => events.push(event));
+
+    const run = gateway.run("delegate", "runtime:claude-code:c2Vzc2lvbg");
+    const source = ObservableEventSource.instances[0];
+    source.onopen?.();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    source.onmessage?.(new MessageEvent("message", { data: JSON.stringify({
+      type: "native_subagent_update",
+      _nativeRunId: "run-1",
+      _nativeSequence: 1,
+      activity: {
+        taskId: "task-1",
+        parentToolCallId: "agent-tool",
+        description: "Inspect",
+        status: "running",
+        messages: [{ role: "assistant", content: "Reading" }],
+      },
+    }) }));
+    source.onmessage?.(new MessageEvent("message", { data: JSON.stringify({
+      type: "done",
+      _nativeRunId: "run-1",
+      _nativeSequence: 2,
+      finalText: "done",
+    }) }));
+    await run;
+
+    expect(events).toContainEqual({
+      type: "native_subagent_update",
+      _nativeRunId: "run-1",
+      _nativeSequence: 1,
+      _sid: "runtime:claude-code:c2Vzc2lvbg",
+      activity: {
+        taskId: "task-1",
+        parentToolCallId: "agent-tool",
+        description: "Inspect",
+        status: "running",
+        messages: [{ role: "assistant", content: "Reading" }],
+      },
+    });
+  });
+
+  it("forks a session through the encoded native-session endpoint", async () => {
+    const forkedSummary = {
+      id: "runtime:codex:Zm9yaw",
+      nativeSessionId: "fork",
+      title: "原会话（副本）",
+    };
+    const http = { post: vi.fn().mockResolvedValue(forkedSummary) };
+    const gateway = new AgentHttpGateway(http as never, {} as never);
+
+    await expect(gateway.forkSession("runtime:codex:c291cmNl"))
+      .resolves.toEqual(forkedSummary);
+    expect(http.post).toHaveBeenCalledWith(
+      "/api/sessions/runtime%3Acodex%3Ac291cmNl/fork",
+      {},
+    );
+  });
+
+  it("requests a bounded history page with an encoded cursor", async () => {
+    const detail = { messages: [], events: [], history: { hasMore: true } };
+    const http = { get: vi.fn().mockResolvedValue(detail) };
+    const gateway = new AgentHttpGateway(http as never, {} as never);
+
+    await expect(gateway.getSession("runtime:codex:c291cmNl", {
+      before: "history.v1.50",
+      limit: 50,
+    })).resolves.toEqual(detail);
+
+    expect(http.get).toHaveBeenCalledWith(
+      "/api/sessions/runtime%3Acodex%3Ac291cmNl?before=history.v1.50&limit=50",
+    );
+  });
+
+  it("observes native history revisions and closes the SSE subscription", () => {
+    globalThis.EventSource = ObservableEventSource as unknown as typeof EventSource;
+    const gateway = new AgentHttpGateway({} as never, {} as never);
+    const callback = vi.fn();
+    const onError = vi.fn();
+
+    const unsubscribe = gateway.observeSession("runtime:codex:c291cmNl", callback, onError);
+    const source = ObservableEventSource.instances[0];
+    source.onmessage?.(new MessageEvent("message", {
+      data: JSON.stringify({ type: "session_history_changed", revision: 2 }),
+    }));
+    source.onmessage?.(new MessageEvent("message", { data: "not-json" }));
+
+    expect(source.url).toBe("/api/sessions/runtime%3Acodex%3Ac291cmNl/changes");
+    expect(callback).toHaveBeenCalledOnce();
+    expect(callback).toHaveBeenCalledWith({ type: "session_history_changed", revision: 2 });
+    expect(onError).not.toHaveBeenCalled();
+
+    unsubscribe();
+    expect(source.close).toHaveBeenCalledOnce();
+  });
+
+  it("closes a failed history observer so the renderer can fall back to polling", () => {
+    globalThis.EventSource = ObservableEventSource as unknown as typeof EventSource;
+    const gateway = new AgentHttpGateway({} as never, {} as never);
+    const onError = vi.fn();
+
+    gateway.observeSession("session-1", vi.fn(), onError);
+    const source = ObservableEventSource.instances[0];
+    source.onerror?.(new Event("error"));
+
+    expect(source.close).toHaveBeenCalledOnce();
+    expect(onError).toHaveBeenCalledOnce();
+  });
+
+  it("updates the permission mode for the encoded customer-agent session", async () => {
+    const updated = { id: "session/one", permissionMode: "auto-approval" };
+    const http = { patch: vi.fn().mockResolvedValue(updated) };
+    const gateway = new AgentHttpGateway(http as never, {} as never);
+
+    await expect(gateway.setSessionPermissionMode("session/one", "auto-approval"))
+      .resolves.toEqual(updated);
+    expect(http.patch).toHaveBeenCalledWith("/api/sessions/session%2Fone", {
+      permissionMode: "auto-approval",
+    });
+  });
+
+  it("uses the HTTP project adapter when the shared UI runs standalone", async () => {
+    const projects = [{ id: "project-1", name: "customer-agent", description: "/workspace/customer-agent" }];
+    const http = {
+      get: vi.fn().mockResolvedValueOnce(projects).mockResolvedValueOnce({ valid: true }),
+      post: vi.fn().mockResolvedValue(projects[0]),
+    };
+    const gateway = new AgentHttpGateway(http as never, {} as never);
+
+    await expect(gateway.listProjects()).resolves.toEqual(projects);
+    await expect(gateway.checkProjectPath("/workspace/customer-agent")).resolves.toBe(true);
+    await expect(gateway.createProject("customer-agent", "/workspace/customer-agent"))
+      .resolves.toEqual(projects[0]);
+
+    expect(http.get).toHaveBeenNthCalledWith(1, "/api/projects");
+    expect(http.get).toHaveBeenNthCalledWith(
+      2,
+      "/api/projects/check?path=%2Fworkspace%2Fcustomer-agent",
+    );
+    expect(http.post).toHaveBeenCalledWith("/api/projects", {
+      name: "customer-agent",
+      path: "/workspace/customer-agent",
+    });
+  });
+
+  it("brokers real host projects instead of returning a synthetic project", async () => {
+    const project = {
+      id: "project-1",
+      name: "customer-agent",
+      description: "/Users/caoqu/team-agent/customer-agent",
+      created: "2026-09-01T00:00:00.000Z",
+      updated: "2026-09-01T00:00:00.000Z",
+    };
+    const bridge = {
+      request: vi.fn(async (method: string) => {
+        if (method === "project:list") return { projects: [project] };
+        if (method === "project:roots") return { roots: ["/Users/caoqu"] };
+        if (method === "project:directories") return { entries: [
+          { name: "team-agent", path: "/Users/caoqu/team-agent", kind: "directory", hasChildren: true },
+          { name: "README.md", path: "/Users/caoqu/README.md", kind: "file", hasChildren: false },
+        ] };
+        if (method === "project:create") return { project };
+        if (method === "project:check") return { valid: true };
+        throw new Error(method);
+      }),
+    };
+    const gateway = new AgentHttpGateway({} as never, {} as never, bridge as never);
+
+    await expect(gateway.listProjects()).resolves.toEqual([project]);
+    await expect(gateway.listProjectRoots()).resolves.toEqual(["/Users/caoqu"]);
+    await expect(gateway.listProjectDirectories("/Users/caoqu")).resolves.toEqual([
+      { name: "team-agent", path: "/Users/caoqu/team-agent", kind: "directory", hasChildren: true },
+      { name: "README.md", path: "/Users/caoqu/README.md", kind: "file", hasChildren: false },
+    ]);
+    await expect(gateway.createProject("customer-agent", project.description)).resolves.toEqual(project);
+    await expect(gateway.checkProjectPath(project.description)).resolves.toBe(true);
+    expect(bridge.request).toHaveBeenCalledWith("project:create", {
+      name: "customer-agent",
+      path: project.description,
     });
   });
 });

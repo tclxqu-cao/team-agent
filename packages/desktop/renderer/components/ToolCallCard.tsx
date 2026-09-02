@@ -1,5 +1,9 @@
 import { useState, useMemo, useEffect } from "react";
+import type { NativeSubagentActivity, RuntimeProgress } from "@agent/core";
 import { useAgentStore } from "../stores/agentStore";
+import { hasToolCallResult } from "../lib/tool-call-status";
+import { toolFamily, toolPhrase, toolPreview, type ToolFamily } from "../lib/tool-call-presentation";
+import RuntimeProgressRow from "./RuntimeProgressRow";
 
 export interface ToolCallData {
   id: string;
@@ -11,6 +15,8 @@ export interface ToolCallData {
 
 interface ToolCallProps {
   toolCall: ToolCallData;
+  progress?: RuntimeProgress;
+  nativeSubagent?: NativeSubagentActivity;
   onSelectSession?: (sessionId: string) => void;
   /** For write_file: content BEFORE the write (from a preceding read_file) — enables diff view */
   beforeContent?: string;
@@ -37,6 +43,19 @@ function StatusIcon({ isDone, isError, color, size = 11 }: { isDone: boolean; is
       <polyline points="20 6 9 17 4 12"/>
     </svg>
   );
+}
+
+function ToolFamilyIcon({ family, color, size = 12 }: { family: ToolFamily; color: string; size?: number }) {
+  if (family === "command") {
+    return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>;
+  }
+  if (family === "search") {
+    return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>;
+  }
+  if (family === "file") {
+    return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>;
+  }
+  return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>;
 }
 
 // ── Shared card shell: left gutter bar + header button + expandable body ──
@@ -73,12 +92,14 @@ function CardShell({ statusColor, isDone, expanded, onToggle, header, children, 
           <svg className="tool-call-shell__chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2.5" strokeLinecap="round" style={{ transition: "transform 0.25s var(--ease-out)", transform: expanded ? "rotate(180deg)" : "rotate(0deg)", flexShrink: 0 }}><path d="m6 9 6 6 6-6"/></svg>
         </button>
       </div>
-      {/* Body */}
-      <div className="tool-call-shell__body" style={{ overflow: "hidden", maxHeight: expanded ? maxBodyHeight : 0, opacity: expanded ? 1 : 0, transition: "max-height 0.35s cubic-bezier(0.4,0,0.2,1), opacity 0.25s ease" }}>
-        <div className="tool-call-shell__body-content" style={{ borderTop: "1px solid var(--border-subtle)", padding: "10px 12px", display: "flex", flexDirection: "column", gap: 8, boxSizing: "border-box", maxWidth: "100%" }}>
-          {children}
+      {/* Collapsed bodies stay unmounted so large historical tool output is parsed on demand. */}
+      {expanded && (
+        <div className="tool-call-shell__body" style={{ overflow: "hidden", maxHeight: maxBodyHeight, opacity: 1, transition: "max-height 0.35s cubic-bezier(0.4,0,0.2,1), opacity 0.25s ease" }}>
+          <div className="tool-call-shell__body-content" style={{ borderTop: "1px solid var(--border-subtle)", padding: "10px 12px", display: "flex", flexDirection: "column", gap: 8, boxSizing: "border-box", maxWidth: "100%" }}>
+            {children}
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }
@@ -98,79 +119,6 @@ function basename(p: string): string {
 
 function lineCount(s: string): number {
   return s ? s.split("\n").length : 0;
-}
-
-// ── Human-readable summary for external agent tools (Codex / Claude Code) ─
-const COMMAND_TOOLS = new Set(["shell", "bash", "Bash", "execute_command", "run_command", "BashOutput", "KillShell"]);
-const FILE_TOOLS = new Set(["Read", "read_file", "Write", "write_file", "Edit", "MultiEdit", "str_replace", "apply_patch", "NotebookEdit"]);
-const SEARCH_TOOLS = new Set(["Glob", "glob_search", "Grep", "grep_search", "WebSearch", "WebFetch"]);
-
-type ToolFamily = "command" | "file" | "search" | "generic";
-
-function toolFamily(name: string): ToolFamily {
-  if (COMMAND_TOOLS.has(name)) return "command";
-  if (FILE_TOOLS.has(name)) return "file";
-  if (SEARCH_TOOLS.has(name)) return "search";
-  return "generic";
-}
-
-function toolPhrase(name: string): { done: string; doing: string } | null {
-  switch (name) {
-    case "shell": case "bash": case "Bash": case "execute_command": case "run_command":
-      return { done: "运行了命令", doing: "运行命令中" };
-    case "BashOutput": case "KillShell":
-      return { done: "查看了命令输出", doing: "查看输出中" };
-    case "Read": case "read_file":
-      return { done: "读取了文件", doing: "读取文件中" };
-    case "Write": case "write_file":
-      return { done: "写入了文件", doing: "写入文件中" };
-    case "Edit": case "MultiEdit": case "str_replace": case "apply_patch":
-      return { done: "修改了文件", doing: "修改文件中" };
-    case "Glob": case "glob_search":
-      return { done: "搜索了文件", doing: "搜索文件中" };
-    case "Grep": case "grep_search":
-      return { done: "搜索了内容", doing: "搜索内容中" };
-    case "Skill":
-      return { done: "调用了技能", doing: "调用技能中" };
-    case "Task":
-      return { done: "启动了子任务", doing: "启动子任务中" };
-    case "WebSearch":
-      return { done: "搜索了网络", doing: "搜索网络中" };
-    case "WebFetch":
-      return { done: "读取了网页", doing: "读取网页中" };
-    case "TodoWrite":
-      return { done: "更新了任务清单", doing: "更新任务清单中" };
-    case "NotebookEdit":
-      return { done: "编辑了 Notebook", doing: "编辑 Notebook 中" };
-    default:
-      if (name.startsWith("mcp__") || name.includes(":")) return { done: "调用了工具", doing: "调用工具中" };
-      return null;
-  }
-}
-
-function truncateLine(s: string, max = 60): string {
-  const first = (s ?? "").split("\n")[0].trim();
-  return first.length > max ? first.slice(0, max) + "…" : first;
-}
-
-function toolPreview(name: string, args: Record<string, unknown>): string | null {
-  if (COMMAND_TOOLS.has(name)) return truncateLine(String(args.command ?? ""));
-  if (name === "apply_patch") {
-    const changes = Array.isArray(args.changes) ? args.changes as Array<Record<string, unknown>> : [];
-    const paths = changes.map((c) => basename(String(c?.path ?? ""))).filter(Boolean);
-    if (!paths.length) return null;
-    return paths.length <= 3 ? paths.join("、") : `${paths.slice(0, 3).join("、")} 等 ${paths.length} 个文件`;
-  }
-  if (FILE_TOOLS.has(name)) return args.file_path ? basename(String(args.file_path)) : null;
-  if (name === "Glob" || name === "glob_search") return String(args.pattern ?? "") || null;
-  if (name === "Grep" || name === "grep_search") return String(args.pattern ?? args.query ?? "") || null;
-  if (name === "Skill") return String(args.skill ?? "") || null;
-  if (name === "Task") return truncateLine(String(args.description ?? args.task ?? ""), 80) || null;
-  if (name === "WebSearch") return truncateLine(String(args.query ?? ""));
-  if (name === "WebFetch") return String(args.url ?? "") || null;
-  if (name.startsWith("mcp__")) return name.split("__").slice(1).join("/");
-  if (name.includes(":")) return name.split(":").slice(1).join(":");
-  return null;
 }
 
 type DiffLine = { type: "added" | "removed" | "same"; text: string; lineNo: number };
@@ -273,7 +221,7 @@ function WriteFileCard({ toolCall, beforeContent }: { toolCall: ToolCallData; be
   const content = (toolCall.arguments.content as string)??"";
   const lines = lineCount(content);
   const isError = toolCall.isError;
-  const isDone = !!toolCall.result;
+  const isDone = hasToolCallResult(toolCall);
   const statusColor = isDone ? (isError ? "var(--danger)" : "var(--success)") : "var(--accent)";
   const diff = useMemo(() => beforeContent && content ? computeDiff(beforeContent, content) : null, [beforeContent, content]);
   const diffStats = useMemo(() => {
@@ -338,7 +286,7 @@ function ReadFileCard({ toolCall }: { toolCall: ToolCallData }) {
   const resultContent = toolCall.result??"";
   const lines = lineCount(resultContent);
   const isError = toolCall.isError;
-  const isDone = !!toolCall.result;
+  const isDone = hasToolCallResult(toolCall);
   const statusColor = isDone ? (isError ? "var(--danger)" : "var(--success)") : "var(--accent)";
   const rangeLabel = startLine !== undefined
     ? `L${startLine}–${endLine ?? "?"}`
@@ -381,7 +329,7 @@ function StrReplaceCard({ toolCall }: { toolCall: ToolCallData }) {
   const oldString = (toolCall.arguments.old_string as string)??"";
   const newString = (toolCall.arguments.new_string as string)??"";
   const isError = toolCall.isError;
-  const isDone = !!toolCall.result;
+  const isDone = hasToolCallResult(toolCall);
   const statusColor = isDone ? (isError ? "var(--danger)" : "var(--success)") : "var(--accent)";
   const statusLabel = isDone ? (isError ? "错误" : "已替换") : "替换中";
   const diff = useMemo(() => oldString && newString ? computeDiff(oldString, newString) : null, [oldString, newString]);
@@ -506,31 +454,107 @@ function ArgumentsBlock({ raw }: { raw: string }) {
   );
 }
 
-function GenericToolCard({ toolCall, onSelectSession }: { toolCall: ToolCallData; onSelectSession?: (id: string) => void }) {
+function NativeAgentActivity({ activity }: { activity: NativeSubagentActivity }) {
+  const toolResults = new Map(activity.messages.flatMap((message) => (
+    message.role === "tool" && message.toolCallId
+      ? [[message.toolCallId, { content: message.content, isError: message.name === "error" }] as const]
+      : []
+  )));
+  return (
+    <div className="native-subagent-activity">
+      <div className="native-subagent-activity__meta">
+        {activity.elapsedSeconds !== undefined && <span>{activity.elapsedSeconds} 秒</span>}
+        {activity.toolUses !== undefined && <span>{activity.toolUses} 次工具调用</span>}
+        {activity.lastToolName && <span>正在使用 {activity.lastToolName}</span>}
+      </div>
+      {activity.messages.map((message, messageIndex) => (
+        <div key={`${message.role}-${messageIndex}`} className="native-subagent-activity__entry">
+          {message.role === "assistant" && message.content && (
+            <pre className="native-subagent-activity__text">{message.content}</pre>
+          )}
+          {message.role === "assistant" && message.toolCalls?.map((toolCall) => {
+            const result = toolResults.get(toolCall.id);
+            return (
+              <div key={toolCall.id} className="native-subagent-activity__tool">
+                <ToolCallCard
+                  toolCall={{
+                    ...toolCall,
+                    ...(result ? { result: result.content, isError: result.isError } : {}),
+                  }}
+                />
+                {result && (
+                  <pre className={`native-subagent-activity__tool-result${result.isError ? " native-subagent-activity__tool-result--error" : ""}`}>
+                    {result.content}
+                  </pre>
+                )}
+              </div>
+            );
+          })}
+          {message.role === "tool" && message.toolCallId && !activity.messages.some(
+            (candidate) => candidate.toolCalls?.some((toolCall) => toolCall.id === message.toolCallId),
+          ) && (
+            <CollapsiblePre label="工具结果" content={message.content} error={message.name === "error"} maxPreviewHeight={180} />
+          )}
+        </div>
+      ))}
+      {activity.summary && (
+        <CollapsiblePre
+          label={activity.status === "failed" ? "错误信息" : "执行摘要"}
+          content={activity.summary}
+          error={activity.status === "failed"}
+          maxPreviewHeight={180}
+        />
+      )}
+      {activity.status === "running" && activity.messages.length === 0 && !activity.summary && (
+        <div className="native-subagent-activity__waiting">
+          <StatusIcon isDone={false} color="var(--accent)" size={10} />
+          子 agent 正在工作
+        </div>
+      )}
+    </div>
+  );
+}
+
+function GenericToolCard({ toolCall, onSelectSession, nativeSubagent }: { toolCall: ToolCallData; onSelectSession?: (id: string) => void; nativeSubagent?: NativeSubagentActivity }) {
   const runningSessionId = useAgentStore(s => s.runningSessionId);
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(() => Boolean(nativeSubagent));
   const isDispatch = toolCall.name === "dispatch_agent";
+  const isNativeAgent = toolCall.name === "Agent" && Boolean(nativeSubagent);
   const subAgentStatus = toolCall.arguments.subAgentStatus as "completed"|"failed"|undefined;
   const subAgentDetail = toolCall.arguments.subAgentDetail as string|undefined;
   const subAgentProgress = toolCall.arguments.subAgentProgress as string|undefined;
+  const hasResult = hasToolCallResult(toolCall);
 
   useEffect(() => {
     if (isDispatch && !subAgentStatus && subAgentProgress) setExpanded(true);
-  }, [isDispatch, subAgentStatus, subAgentProgress]);
+    if (isNativeAgent && (nativeSubagent!.messages.length > 0 || nativeSubagent!.summary)) setExpanded(true);
+  }, [isDispatch, isNativeAgent, nativeSubagent, subAgentStatus, subAgentProgress]);
 
-  const isError = isDispatch ? subAgentStatus === "failed" : toolCall.isError;
-  const isDone = isDispatch ? (!!subAgentStatus || (!!toolCall.result && !runningSessionId)) : !!toolCall.result;
+  const isError = isDispatch
+    ? subAgentStatus === "failed"
+    : isNativeAgent
+      ? nativeSubagent!.status === "failed"
+      : toolCall.isError;
+  const isDone = isDispatch
+    ? (!!subAgentStatus || (hasResult && !runningSessionId))
+    : isNativeAgent
+      ? nativeSubagent!.status !== "running"
+      : hasResult;
   const statusColor = isDone ? (isError ? "var(--danger)" : "var(--success)") : "var(--accent)";
   const phrase = isDispatch ? null : toolPhrase(toolCall.name);
   const statusLabel = isError
     ? "错误"
     : phrase
       ? ""
+      : isNativeAgent
+        ? nativeSubagent!.status === "stopped" ? "已停止" : isDone ? "已完成" : "运行中"
       : isDispatch
         ? (subAgentStatus === "failed" ? "失败" : isDone ? "已完成" : "运行中")
-        : (toolCall.result ? "完成" : "执行中");
+        : (isDone ? "完成" : "执行中");
 
-  const previewLabel = isDispatch
+  const previewLabel = isNativeAgent
+    ? nativeSubagent!.description
+    : isDispatch
     ? (() => {
         const t = (toolCall.arguments.task as string) ?? "";
         const first = t.split("\n")[0];
@@ -538,24 +562,20 @@ function GenericToolCard({ toolCall, onSelectSession }: { toolCall: ToolCallData
       })()
     : toolPreview(toolCall.name, toolCall.arguments);
 
-  const toolLabel = isDispatch
+  const toolLabel = isNativeAgent
+    ? `@${nativeSubagent!.agentName ?? "agent"}`
+    : isDispatch
     ? `@${(toolCall.arguments.agentName as string) ?? "agent"}`
     : phrase
-      ? (isDone ? phrase.done : phrase.doing)
+      ? phrase.done
       : toolCall.name;
 
   // Tool icon
   const family = toolFamily(toolCall.name);
-  const Icon = isDispatch ? (
+  const Icon = isDispatch || isNativeAgent ? (
     <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={statusColor} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a5 5 0 1 0 0 10A5 5 0 0 0 12 2z"/><path d="M12 12c-5.33 0-8 2.67-8 4v2h16v-2c0-1.33-2.67-4-8-4z"/></svg>
-  ) : family === "command" ? (
-    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={statusColor} strokeWidth="2" strokeLinecap="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
-  ) : family === "search" ? (
-    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={statusColor} strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-  ) : family === "file" ? (
-    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={statusColor} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
   ) : (
-    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={statusColor} strokeWidth="2" strokeLinecap="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+    <ToolFamilyIcon family={family} color={statusColor} size={11} />
   );
 
   const header = (
@@ -585,7 +605,9 @@ function GenericToolCard({ toolCall, onSelectSession }: { toolCall: ToolCallData
   return (
     <CardShell statusColor={statusColor} isDone={isDone} expanded={expanded} onToggle={() => setExpanded(!expanded)} header={header} maxBodyHeight={800}>
       {/* Arguments */}
-      {isDispatch ? (
+      {isNativeAgent ? (
+        <NativeAgentActivity activity={nativeSubagent!} />
+      ) : isDispatch ? (
         <DispatchArgs arguments={toolCall.arguments} />
       ) : family === "command" && typeof toolCall.arguments.command === "string" ? (
         <>
@@ -598,14 +620,14 @@ function GenericToolCard({ toolCall, onSelectSession }: { toolCall: ToolCallData
         <ArgumentsBlock raw={JSON.stringify(toolCall.arguments, null, 2)} />
       )}
       {/* Generic result */}
-      {toolCall.result && !isDispatch && (
+      {toolCall.result && !isDispatch && !isNativeAgent && (
         <CollapsiblePre label={toolCall.isError ? "错误信息" : "返回结果"} content={toolCall.result} error={toolCall.isError} maxPreviewHeight={240} />
       )}
       {/* Dispatch: summary / progress */}
       {isDispatch && subAgentStatus && subAgentDetail && (
         <CollapsiblePre label={subAgentStatus === "failed" ? "错误信息" : "执行摘要"} content={subAgentDetail} error={subAgentStatus === "failed"} maxPreviewHeight={180} />
       )}
-      {isDispatch && !subAgentStatus && subAgentProgress && (!!runningSessionId || !toolCall.result) && (
+      {isDispatch && !subAgentStatus && subAgentProgress && (!!runningSessionId || !hasResult) && (
         <div>
           <div style={{ fontSize: 10, color: "var(--text-muted)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 5 }}>实时输出</div>
           <pre style={{ fontSize: 11, color: "var(--text-secondary)", whiteSpace: "pre-wrap", wordBreak: "break-all", fontFamily: "var(--font-mono)", padding: "9px 11px", borderRadius: 7, background: "var(--bg-surface)", border: "1px solid var(--border-subtle)", borderLeft: "3px solid var(--accent)", maxHeight: 240, overflow: "auto", margin: 0, lineHeight: 1.6, boxSizing: "border-box", maxWidth: "100%" }}>
@@ -637,9 +659,74 @@ function GenericToolCard({ toolCall, onSelectSession }: { toolCall: ToolCallData
   );
 }
 
-export default function ToolCallCard({ toolCall, onSelectSession, beforeContent }: ToolCallProps) {
-  if (toolCall.name === "write_file") return <WriteFileCard toolCall={toolCall} beforeContent={beforeContent} />;
-  if (toolCall.name === "read_file") return <ReadFileCard toolCall={toolCall} />;
-  if (toolCall.name === "str_replace") return <StrReplaceCard toolCall={toolCall} />;
-  return <GenericToolCard toolCall={toolCall} onSelectSession={onSelectSession} />;
+export interface ToolCallGroupItem {
+  toolCall: ToolCallData;
+  beforeContent?: string;
+  progress?: RuntimeProgress;
+  nativeSubagent?: NativeSubagentActivity;
+}
+
+export function ToolCallGroup({ items, onSelectSession }: { items: ToolCallGroupItem[]; onSelectSession?: (id: string) => void }) {
+  const [expanded, setExpanded] = useState(false);
+  const first = items[0]?.toolCall;
+  const phrase = first ? toolPhrase(first.name) : null;
+  if (!first || !phrase || items.length < 2) return null;
+
+  const isDone = items.every(({ toolCall }) => hasToolCallResult(toolCall));
+  const errorCount = items.filter(({ toolCall }) => toolCall.isError).length;
+  const statusColor = errorCount > 0 ? "var(--danger)" : isDone ? "var(--text-muted)" : "var(--accent)";
+  const actionLabel = phrase.done;
+  const disclosureLabel = `${actionLabel}，${items.length} 项，${expanded ? "收起" : "展开"}`;
+
+  return (
+    <div className="tool-call-group">
+      <button
+        type="button"
+        className="tool-call-group__summary"
+        aria-expanded={expanded}
+        aria-label={disclosureLabel}
+        onClick={() => setExpanded((value) => !value)}
+      >
+        <span className="tool-call-group__icon" aria-hidden="true">
+          <ToolFamilyIcon family={toolFamily(first.name)} color={statusColor} size={13} />
+        </span>
+        <span className="tool-call-group__label">{actionLabel}</span>
+        <span className="tool-call-group__count">{items.length} 项</span>
+        <span className="tool-call-group__spacer" />
+        {errorCount > 0 && <span className="tool-call-group__error">{errorCount} 项失败</span>}
+        {!isDone && <StatusIcon isDone={false} color={statusColor} size={11} />}
+        <svg className="tool-call-group__chevron" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
+      </button>
+      {expanded && (
+        <div className="tool-call-group__items">
+          {items.map(({ toolCall, beforeContent, progress, nativeSubagent }) => (
+            <ToolCallCard
+              key={toolCall.id}
+              toolCall={toolCall}
+              beforeContent={beforeContent}
+              progress={progress}
+              nativeSubagent={nativeSubagent}
+              onSelectSession={onSelectSession}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default function ToolCallCard({ toolCall, onSelectSession, beforeContent, progress, nativeSubagent }: ToolCallProps) {
+  const card = toolCall.name === "write_file"
+    ? <WriteFileCard toolCall={toolCall} beforeContent={beforeContent} />
+    : toolCall.name === "read_file"
+      ? <ReadFileCard toolCall={toolCall} />
+      : toolCall.name === "str_replace"
+        ? <StrReplaceCard toolCall={toolCall} />
+        : <GenericToolCard toolCall={toolCall} onSelectSession={onSelectSession} nativeSubagent={nativeSubagent} />;
+  return (
+    <div className="tool-call-with-progress">
+      {card}
+      {progress && <RuntimeProgressRow progress={progress} compact />}
+    </div>
+  );
 }

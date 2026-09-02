@@ -1,13 +1,45 @@
 // ── Model Domain: Provider abstraction ──
 
+import type { ReasoningSummarySection } from '../agent/entities.js';
+
 export interface Message {
   role: "system" | "user" | "assistant" | "tool";
   content: string;
   /** Base64 data URLs for images (e.g. data:image/png;base64,...) — used for vision requests */
   images?: string[];
+  /** Display-only metadata derived from an external runtime's native message format. */
+  presentation?: MessagePresentation;
   name?: string;
   toolCallId?: string;
   toolCalls?: ToolCall[];
+}
+
+export interface NativeSubagentActivity {
+  taskId: string;
+  parentToolCallId: string;
+  agentName?: string;
+  description: string;
+  status: "running" | "completed" | "failed" | "stopped";
+  isBackgrounded?: boolean;
+  spawnDepth?: number;
+  summary?: string;
+  lastToolName?: string;
+  elapsedSeconds?: number;
+  toolUses?: number;
+  messages: Message[];
+}
+
+export interface MessageAttachment {
+  type: "image";
+  name: string;
+  dataUrl?: string;
+  unavailable?: boolean;
+}
+
+export interface MessagePresentation {
+  rawContent?: string;
+  attachments?: MessageAttachment[];
+  reasoning?: ReasoningSummarySection[];
 }
 
 export interface ToolCall {

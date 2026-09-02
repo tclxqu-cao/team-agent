@@ -1,5 +1,6 @@
 import {
   AgentBuilder,
+  HostPathPolicy,
   SQLiteSessionStore,
   AskUserTool,
   type IAgentLoop,
@@ -12,8 +13,26 @@ import {
   SQLiteRemoteToolStore,
   type RemoteToolRegistration,
   type Message,
+  ToolPermissionGate,
+  TOOL_APPROVAL_OPTIONS,
+  isToolPermissionMode,
+  normalizeToolPermissionMode,
+  toolApprovalDecisionFromAnswer,
+  type ToolPermissionMode,
 } from "@agent/core";
+import { homedir } from "node:os";
 import { getAgentWorkingDirectory, getServerBaseDir } from "../../lib/server-data-dir";
+
+export class ProjectWorkingDirectoryError extends Error {
+  constructor(
+    message: string,
+    readonly code: "PROJECT_NOT_FOUND" | "PROJECT_PATH_REQUIRED" | "PROJECT_PATH_INVALID",
+    readonly status: 400 | 404,
+  ) {
+    super(message);
+    this.name = "ProjectWorkingDirectoryError";
+  }
+}
 
 /** Singleton agent host shared across API routes */
 class AgentHost {
@@ -39,8 +58,23 @@ class AgentHost {
       timer: ReturnType<typeof setTimeout>;
     }
   >();
+  private readonly toolPermissionGate: ToolPermissionGate;
 
   constructor() {
+    this.toolPermissionGate = new ToolPermissionGate({
+      resolveMode: async (sessionId) => {
+        const session = await this.sessionStore.get(sessionId);
+        return normalizeToolPermissionMode(session?.metadata.permissionMode);
+      },
+      requestApproval: async (request) => {
+        const response = await this.createQuestion({
+          question: `Customer Agent 请求权限\n${request.summary}\n原因：${request.reason}`,
+          options: [...TOOL_APPROVAL_OPTIONS],
+          toolCallId: "",
+        }, request.sessionId);
+        return toolApprovalDecisionFromAnswer(response.answer, response.selectedIndices);
+      },
+    });
     // Configure model from environment variables
     const apiKey = process.env.AGENT_API_KEY;
     const provider = (process.env.AGENT_MODEL_PROVIDER || "openai") as
@@ -50,7 +84,8 @@ class AgentHost {
 
     const builder = new AgentBuilder()
       .withSessionStore(this.sessionStore)
-      .withWorkingDirectory(this.workingDirectory);
+      .withWorkingDirectory(this.workingDirectory)
+      .withToolPermissionGate(this.toolPermissionGate);
     builder.withRemoteToolStore(this.remoteToolStore, this.defaultRemoteToolsProjectId);
     if (apiKey) {
       builder.withModel(provider, { apiKey, modelId, baseUrl });
@@ -60,7 +95,7 @@ class AgentHost {
 
   getBuilder(): AgentBuilder {
     if (!this.builder) {
-      this.builder = new AgentBuilder();
+      this.builder = new AgentBuilder().withToolPermissionGate(this.toolPermissionGate);
     }
     return this.builder;
   }
@@ -68,11 +103,38 @@ class AgentHost {
   setBuilder(builder: AgentBuilder): void {
     builder.withRemoteToolStore(this.remoteToolStore, this.defaultRemoteToolsProjectId);
     builder.withWorkingDirectory(this.workingDirectory);
+    builder.withToolPermissionGate(this.toolPermissionGate);
     this.builder = builder;
   }
 
   getSessionStore() {
     return this.sessionStore;
+  }
+
+  getProjectStore() {
+    return this.projectStore;
+  }
+
+  async resolveProjectWorkingDirectory(projectId?: string, requirePath = false): Promise<string> {
+    if (!projectId) return this.workingDirectory;
+    const project = await this.projectStore.get(projectId);
+    if (!project) {
+      throw new ProjectWorkingDirectoryError("项目不存在", "PROJECT_NOT_FOUND", 404);
+    }
+    if (!project.description?.trim()) {
+      if (!requirePath) return this.workingDirectory;
+      throw new ProjectWorkingDirectoryError("该项目没有宿主机目录", "PROJECT_PATH_REQUIRED", 400);
+    }
+    try {
+      const policy = HostPathPolicy.fromEnvironment(process.env.AGENT_WEB_ROOTS, homedir());
+      return policy.assertDirectory(project.description);
+    } catch (error) {
+      throw new ProjectWorkingDirectoryError(
+        error instanceof Error ? error.message : "项目目录不可用",
+        "PROJECT_PATH_INVALID",
+        400,
+      );
+    }
   }
 
   /** Active model info for display (never exposes the key). */
@@ -121,7 +183,17 @@ class AgentHost {
       events: [],
       created: now,
       updated: now,
-      metadata: {},
+      metadata: { permissionMode: "full-access" },
+    });
+  }
+
+  async setSessionPermissionMode(sessionId: string, mode: ToolPermissionMode): Promise<Session> {
+    if (!isToolPermissionMode(mode)) throw new Error(`Invalid permission mode: ${String(mode)}`);
+    const session = await this.sessionStore.get(sessionId);
+    if (!session) throw new Error(`Session not found: ${sessionId}`);
+    this.toolPermissionGate.clearSession(sessionId);
+    return this.sessionStore.update(sessionId, {
+      metadata: { ...session.metadata, permissionMode: mode },
     });
   }
 
@@ -232,6 +304,7 @@ class AgentHost {
 
   async run(input: string, sessionId: string, images?: string[]): Promise<void> {
     const session = await this.sessionStore.get(sessionId);
+    const runWorkingDirectory = await this.resolveProjectWorkingDirectory(session?.projectId);
     await this.sessionStore.addMessage(sessionId, { role: "user", content: input });
     // a fresh run restarts the event sequence; late subscribers replay only it
     this.eventCounters.set(sessionId, 0);
@@ -240,6 +313,7 @@ class AgentHost {
     let agent: IAgentLoop;
     try {
       agent = await this.getBuilder()
+        .withWorkingDirectory(runWorkingDirectory)
         .withRemoteToolStore(this.remoteToolStore, runProjectId)
         .withTool(new AskUserTool(async (request: AskUserRequest) => {
           return this.createQuestion(request, sessionId);
@@ -255,7 +329,9 @@ class AgentHost {
       this.emit(sessionId, errorEvent);
       throw err;
     } finally {
-      this.builder?.withRemoteToolStore(this.remoteToolStore, this.defaultRemoteToolsProjectId);
+      this.builder
+        ?.withWorkingDirectory(this.workingDirectory)
+        .withRemoteToolStore(this.remoteToolStore, this.defaultRemoteToolsProjectId);
     }
 
     this.activeAgent = agent;
@@ -375,6 +451,11 @@ class AgentHost {
 
   abort(): void {
     this.activeAgent?.abort();
+    for (const [questionId, pending] of this.pendingQuestions) {
+      clearTimeout(pending.timer);
+      pending.reject(new Error("Agent aborted"));
+      this.pendingQuestions.delete(questionId);
+    }
   }
 }
 

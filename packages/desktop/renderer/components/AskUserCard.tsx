@@ -146,6 +146,7 @@ export default function AskUserCard({
             color: "var(--text-primary)",
             lineHeight: 1.6,
             fontWeight: 500,
+            whiteSpace: "pre-wrap",
           }}
         >
           {question}

@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { agentHost } from "../../agent-host";
-import { getNativeRuntimeService } from "../../../../lib/native-runtime-service";
+import {
+  getNativeRuntimeService,
+  runtimeErrorStatus,
+} from "../../../../lib/native-runtime-service";
 
 export async function POST(request: Request) {
   try {
@@ -41,7 +44,7 @@ export async function POST(request: Request) {
   } catch (err) {
     return NextResponse.json(
       { error: err instanceof Error ? err.message : "Internal error" },
-      { status: 500 },
+      { status: runtimeErrorStatus(err) },
     );
   }
 }

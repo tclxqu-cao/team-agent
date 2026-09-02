@@ -1,4 +1,8 @@
 import { agentHost } from "../../agent-host";
+import {
+  getNativeRuntimeService,
+  isNativeSessionId,
+} from "../../../../lib/native-runtime-service";
 
 export async function GET(request: Request) {
   const url = new URL(request.url);
@@ -6,6 +10,10 @@ export async function GET(request: Request) {
 
   if (!sessionId) {
     return new Response("sessionId is required", { status: 400 });
+  }
+
+  if (isNativeSessionId(sessionId)) {
+    return nativeStream(request, sessionId);
   }
 
   let streamDone = false;
@@ -74,4 +82,92 @@ export async function GET(request: Request) {
       Connection: "keep-alive",
     },
   });
+}
+
+async function nativeStream(request: Request, sessionId: string): Promise<Response> {
+  let streamDone = false;
+  let unsubscribe: (() => void) | null = null;
+  let abortListener: (() => void) | null = null;
+  const service = getNativeRuntimeService();
+  const url = new URL(request.url);
+  const fromQuery = Number.parseInt(url.searchParams.get("afterSequence") ?? "", 10);
+  const fromQueryRunId = url.searchParams.get("afterRunId");
+  const lastEventId = request.headers.get("last-event-id");
+
+  const stream = new ReadableStream({
+    async start(controller) {
+      const encoder = new TextEncoder();
+      const finish = () => {
+        if (streamDone) return;
+        streamDone = true;
+        unsubscribe?.();
+        unsubscribe = null;
+        if (abortListener) request.signal.removeEventListener("abort", abortListener);
+        try { controller.close(); } catch { /* already closed */ }
+      };
+      const push = (data: string): boolean => {
+        if (streamDone) return false;
+        try {
+          controller.enqueue(encoder.encode(data));
+          return true;
+        } catch {
+          finish();
+          return false;
+        }
+      };
+
+      if (!push(": connected\n\n")) return;
+      try {
+        const snapshot = await service.snapshot(sessionId);
+        const headerCursor = parseNativeEventCursor(lastEventId);
+        const queryCursor = Number.isSafeInteger(fromQuery)
+          ? { runId: fromQueryRunId, sequence: fromQuery }
+          : null;
+        const cursor = headerCursor ?? queryCursor;
+        // A first EventSource connection follows only future native events.
+        // A cursor from another run must replay the new run from its beginning
+        // because run-local sequence numbers restart at one.
+        const afterSequence = cursor
+          ? (!cursor.runId || cursor.runId === snapshot.runId ? cursor.sequence : 0)
+          : snapshot.snapshotRevision;
+        unsubscribe = await service.subscribe(sessionId, afterSequence, ({ runId, sequence, event }) => {
+          const payload = { ...event, _nativeRunId: runId, _nativeSequence: sequence };
+          if (!push(`id: ${runId}:${sequence}\ndata: ${JSON.stringify(payload)}\n\n`)) return;
+          if (event.type === "done" || event.type === "error") finish();
+        });
+        abortListener = finish;
+        if (request.signal.aborted) finish();
+        else request.signal.addEventListener("abort", abortListener, { once: true });
+      } catch (error) {
+        push(`event: error\ndata: ${JSON.stringify({ type: "error", message: error instanceof Error ? error.message : "Native stream failed" })}\n\n`);
+        finish();
+      }
+    },
+    cancel() {
+      streamDone = true;
+      unsubscribe?.();
+      unsubscribe = null;
+      if (abortListener) request.signal.removeEventListener("abort", abortListener);
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      Connection: "keep-alive",
+    },
+  });
+}
+
+function parseNativeEventCursor(value: string | null): { runId: string | null; sequence: number } | null {
+  if (!value) return null;
+  const separator = value.lastIndexOf(":");
+  if (separator < 0) {
+    const sequence = Number.parseInt(value, 10);
+    return Number.isSafeInteger(sequence) ? { runId: null, sequence } : null;
+  }
+  const runId = value.slice(0, separator);
+  const sequence = Number.parseInt(value.slice(separator + 1), 10);
+  return runId && Number.isSafeInteger(sequence) ? { runId, sequence } : null;
 }

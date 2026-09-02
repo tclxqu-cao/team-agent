@@ -1,5 +1,8 @@
 export {
   type Message,
+  type MessageAttachment,
+  type MessagePresentation,
+  type NativeSubagentActivity,
   type ToolCall,
   type ToolResult,
   type StreamOptions,

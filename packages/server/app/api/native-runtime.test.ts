@@ -1,25 +1,38 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AgentEvent } from "@agent/core";
 import { agentHost } from "./agent-host";
 import { GET as runtimeHealth } from "./agent/runtime-health/route";
 import { GET as listSessions, POST as createSession } from "./sessions/route";
-import { DELETE as deleteSession, GET as getSession } from "./sessions/[id]/route";
+import { DELETE as deleteSession, GET as getSession, PATCH as patchSession } from "./sessions/[id]/route";
+import { POST as forkSession } from "./sessions/[id]/fork/route";
+import { POST as handoffSession } from "./sessions/[id]/handoff/route";
 import { POST as runRoute } from "./agent/run/route";
 import { POST as answerRoute } from "./agent/answer/route";
 import { POST as abortRoute } from "./agent/abort/route";
 import { POST as steerRoute } from "./agent/steer/route";
+import { RuntimeSessionError } from "../../../desktop/main/agent-runtime/types";
 
 const state = {
   health: [] as Array<Record<string, unknown>>,
   sessions: [] as Array<Record<string, unknown>>,
   detail: null as Record<string, unknown> | null,
   createOptions: null as Record<string, unknown> | null,
+  forkResult: null as Record<string, unknown> | null,
+  forkError: null as Error | null,
   runEvents: [] as AgentEvent[],
   runError: null as Error | null,
+  started: null as { id: string; input: string; images?: string[]; controller?: string } | null,
   answered: null as { questionId: string; answer: { answer: string; selectedIndices?: number[] } } | null,
   answerResult: false,
+  answerError: null as Error | null,
   aborts: [] as Array<string | undefined>,
+  steerResult: false,
+  steerError: null as Error | null,
+  steered: null as { id: string; input: string } | null,
+  permissionUpdate: null as { id: string; permissionMode: string } | null,
+  handoff: null as { id: string; controller: string } | null,
   refreshCalls: 0,
+  getQuery: null as { before?: string; limit?: number } | null,
 };
 
 vi.mock("../../lib/native-runtime-service", () => ({
@@ -47,21 +60,73 @@ vi.mock("../../lib/native-runtime-service", () => ({
         canDelete: false,
       };
     },
-    get: async () => state.detail ?? (() => { throw new Error("not found"); })(),
+    fork: async () => {
+      if (state.forkError) throw state.forkError;
+      return state.forkResult;
+    },
+    get: async (_id: string, query?: { before?: string; limit?: number }) => {
+      state.getQuery = query ?? null;
+      return state.detail ?? (() => { throw new Error("not found"); })();
+    },
     run: async function* () {
       if (state.runError) throw state.runError;
       yield* state.runEvents;
     },
+    startRun: async (id: string, input: string, images?: string[], controller?: string) => {
+      state.started = { id, input, images, controller };
+      if (state.runError) throw state.runError;
+      return { runId: "mock-native-run", snapshotRevision: 0, permissionMode: "full-access" };
+    },
+    subscribe: async (_id: string, _afterSequence: number, listener: (event: { runId: string; sequence: number; event: AgentEvent }) => void) => {
+      let closed = false;
+      queueMicrotask(() => {
+        state.runEvents.forEach((event, index) => {
+          if (!closed) listener({ runId: "mock-native-run", sequence: index + 1, event });
+        });
+      });
+      return () => { closed = true; };
+    },
+    snapshot: async (id: string) => ({
+      sessionId: id,
+      runId: null,
+      snapshotRevision: 0,
+      events: [],
+      controller: null,
+    }),
+    setPermissionMode: async (id: string, permissionMode: string) => {
+      state.permissionUpdate = { id, permissionMode };
+      return { ...codexSummary, id, permissionMode };
+    },
+    handoff: async (id: string, controller: string) => {
+      state.handoff = { id, controller };
+      return {
+        sessionId: id,
+        runId: null,
+        snapshotRevision: 0,
+        events: [],
+        controller,
+      };
+    },
     answerQuestion: async (questionId: string, answer: { answer: string; selectedIndices?: number[] }) => {
       state.answered = { questionId, answer };
+      if (state.answerError) throw state.answerError;
       return state.answerResult;
     },
     abort: async (id?: string) => {
       state.aborts.push(id);
     },
+    steer: async (id: string, input: string) => {
+      if (state.steerError) throw state.steerError;
+      state.steered = { id, input };
+      return state.steerResult;
+    },
   }),
   isNativeSessionId: (id: string) => /^runtime:(codex|claude-code):/.test(id),
-  runtimeErrorStatus: () => 500,
+  runtimeErrorStatus: (error: { code?: string; status?: number }) => {
+    if (error.code === "OPERATION_NOT_SUPPORTED") return 405;
+    if (error.code === "APPROVAL_EXPIRED") return 409;
+    return error.status ?? 500;
+  },
 }));
 
 const codexSummary = {
@@ -103,7 +168,11 @@ function collectUntilTerminal(sessionId: string): { events: AgentEvent[]; settle
 }
 
 describe("native runtime routing", () => {
-  beforeEach(() => {
+  afterAll(async () => {
+    await agentHost.getProjectStore().delete("native-runtime-test-project");
+  });
+
+  beforeEach(async () => {
     state.health = [
       { agentType: "codex", available: true, label: "Codex" },
       { agentType: "claude-code", available: true, label: "Claude Code" },
@@ -111,12 +180,36 @@ describe("native runtime routing", () => {
     state.sessions = [codexSummary];
     state.detail = { ...codexSummary, messages: [], events: [] };
     state.createOptions = null;
+    state.forkResult = { ...codexSummary, id: "runtime:codex:Zm9yaw", nativeSessionId: "fork", title: "外部 Codex 会话（副本）" };
+    state.forkError = null;
     state.runEvents = [];
     state.runError = null;
+    state.started = null;
     state.answered = null;
     state.answerResult = false;
+    state.answerError = null;
     state.aborts = [];
+    state.steerResult = false;
+    state.steerError = null;
+    state.steered = null;
+    state.permissionUpdate = null;
+    state.handoff = null;
     state.refreshCalls = 0;
+    state.getQuery = null;
+    const store = agentHost.getProjectStore();
+    const existing = await store.get("native-runtime-test-project");
+    if (existing) {
+      await store.update(existing.id, { description: process.cwd() });
+    } else {
+      const now = new Date().toISOString();
+      await store.create({
+        id: "native-runtime-test-project",
+        name: "Native runtime test",
+        description: process.cwd(),
+        created: now,
+        updated: now,
+      });
+    }
   });
 
   it("reports customer-agent plus native runtime health", async () => {
@@ -131,11 +224,17 @@ describe("native runtime routing", () => {
 
   it("merges native sessions into the session list", async () => {
     const created = await agentHost.createSession("本地 CA 会话");
+    await agentHost.getSessionStore().addMessage(created.id, {
+      role: "user",
+      content: "Only detail requests should include this message",
+    });
     const response = await listSessions(json("GET", "http://test/api/sessions"));
     expect(response.status).toBe(200);
     const sessions = await response.json();
     expect(sessions).toEqual(expect.arrayContaining([expect.objectContaining({ id: created.id, agentType: "customer-agent" })]));
     expect(sessions).toEqual(expect.arrayContaining([expect.objectContaining({ id: codexSummary.id, agentType: "codex" })]));
+    expect(sessions.find((session: { id: string }) => session.id === created.id)).not.toHaveProperty("messages");
+    expect(sessions.find((session: { id: string }) => session.id === created.id)).not.toHaveProperty("events");
   });
 
   it("refreshes native discovery when ?refresh=1 is set", async () => {
@@ -147,6 +246,7 @@ describe("native runtime routing", () => {
     const response = await createSession(json("POST", "http://test/api/sessions", {
       title: "新会话",
       agentType: "codex",
+      projectId: "native-runtime-test-project",
     }));
     expect(response.status).toBe(201);
     expect(state.createOptions?.agentType).toBe("codex");
@@ -154,6 +254,18 @@ describe("native runtime routing", () => {
     const body = await response.json();
     expect(body.agentType).toBe("codex");
     expect(body.id).toBe("runtime:codex:bW9jaw");
+  });
+
+  it("rejects native session creation without a registered project", async () => {
+    const response = await createSession(json("POST", "http://test/api/sessions", {
+      title: "无项目会话",
+      agentType: "codex",
+    }));
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      error: { code: "PROJECT_PATH_REQUIRED" },
+    });
+    expect(state.createOptions).toBeNull();
   });
 
   it("serves native session detail from the runtime service", async () => {
@@ -164,11 +276,72 @@ describe("native runtime routing", () => {
     await expect(response.json()).resolves.toMatchObject({ id: codexSummary.id, messages: [] });
   });
 
+  it("forwards bounded history queries to the native runtime service", async () => {
+    const response = await getSession(json(
+      "GET",
+      "http://test/api/sessions/runtime:codex:bW9jaw?before=history.v1.50&limit=50",
+    ), {
+      params: { id: "runtime:codex:bW9jaw" },
+    });
+
+    expect(response.status).toBe(200);
+    expect(state.getQuery).toEqual({ before: "history.v1.50", limit: 50 });
+  });
+
+  it("creates a persisted native session fork", async () => {
+    const response = await forkSession(json("POST", "http://test/api/sessions/runtime:codex:bW9jaw/fork", {}), {
+      params: { id: "runtime:codex:bW9jaw" },
+    });
+
+    expect(response.status).toBe(201);
+    await expect(response.json()).resolves.toMatchObject({
+      id: "runtime:codex:Zm9yaw",
+      nativeSessionId: "fork",
+    });
+  });
+
+  it("maps unsupported fork errors to the runtime status", async () => {
+    state.forkError = Object.assign(new Error("This runtime does not support session forks"), { status: 405 });
+    const response = await forkSession(json("POST", "http://test/api/sessions/runtime:claude-code:bW9jaw/fork", {}), {
+      params: { id: "runtime:claude-code:bW9jaw" },
+    });
+
+    expect(response.status).toBe(405);
+  });
+
   it("rejects deleting native sessions", async () => {
     const response = await deleteSession(json("DELETE", "http://test/api/sessions/runtime:codex:bW9jaw"), {
       params: { id: "runtime:codex:bW9jaw" },
     });
     expect(response.status).toBe(405);
+  });
+
+  it("persists native permission mode changes through the broker", async () => {
+    const response = await patchSession(json("PATCH", "http://test/api/sessions/runtime:codex:bW9jaw", {
+      permissionMode: "request-approval",
+    }), {
+      params: { id: "runtime:codex:bW9jaw" },
+    });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({ permissionMode: "request-approval" });
+    expect(state.permissionUpdate).toEqual({
+      id: "runtime:codex:bW9jaw",
+      permissionMode: "request-approval",
+    });
+  });
+
+  it("hands off only the requested native session to Desktop", async () => {
+    const response = await handoffSession(json("POST", "http://test/api/sessions/runtime:codex:bW9jaw/handoff", {}), {
+      params: { id: "runtime:codex:bW9jaw" },
+    });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      sessionId: "runtime:codex:bW9jaw",
+      controller: "desktop",
+    });
+    expect(state.handoff).toEqual({ id: "runtime:codex:bW9jaw", controller: "desktop" });
   });
 
   it("streams native run events through the SSE bus without persisting them", async () => {
@@ -185,19 +358,24 @@ describe("native runtime routing", () => {
     await expect(response.json()).resolves.toMatchObject({ sessionId, streamUrl: `/api/agent/stream?sessionId=${sessionId}` });
     await settled;
 
-    expect(events).toEqual(state.runEvents);
+    expect(events[0]).toMatchObject({ type: "run_admitted", _nativeRunId: "mock-native-run" });
+    expect(events.slice(1)).toEqual(state.runEvents);
+    expect(state.started).toEqual({ id: sessionId, input: "hi", images: undefined, controller: "web" });
     await expect(agentHost.getSessionStore().get(sessionId)).resolves.toBeNull();
   });
 
-  it("emits a terminal error event when a native run throws", async () => {
+  it("returns conflict before replacing the prior native SSE replay", async () => {
     const sessionId = "runtime:claude-code:bW9jaw";
-    state.runError = new Error("Session is currently owned by another client");
-    const { events, settled } = collectUntilTerminal(sessionId);
+    state.runError = new RuntimeSessionError(
+      "Session is currently owned by another client",
+      "SESSION_OCCUPIED",
+    );
+    agentHost.publishExternal(sessionId, { type: "text_chunk", text: "existing native output" });
 
-    await runRoute(json("POST", "http://test/api/agent/run", { input: "hi", sessionId }));
-    await settled;
+    const response = await runRoute(json("POST", "http://test/api/agent/run", { input: "hi", sessionId }));
 
-    expect(events.at(-1)).toMatchObject({ type: "error", message: "Session is currently owned by another client" });
+    expect(response.status).toBe(409);
+    expect(agentHost.getLatestEventId(sessionId)).toBe(1);
   });
 
   it("falls back to the native service for ask_user approvals", async () => {
@@ -222,6 +400,23 @@ describe("native runtime routing", () => {
     expect(response.status).toBe(404);
   });
 
+  it("returns a clear conflict when the native approval request has expired", async () => {
+    state.answerError = new RuntimeSessionError(
+      "This approval request is no longer active; the native turn was interrupted.",
+      "APPROVAL_EXPIRED",
+    );
+
+    const response = await answerRoute(json("POST", "http://test/api/agent/answer", {
+      questionId: "expired-native-question",
+      answer: "allow",
+    }));
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toMatchObject({
+      error: expect.stringContaining("no longer active"),
+    });
+  });
+
   it("aborts native sessions by unified id", async () => {
     const response = await abortRoute(json("POST", "http://test/api/agent/abort", {
       sessionId: "runtime:codex:bW9jaw",
@@ -230,12 +425,33 @@ describe("native runtime routing", () => {
     expect(state.aborts).toEqual(["runtime:codex:bW9jaw"]);
   });
 
-  it("refuses to steer native sessions", async () => {
+  it("steers an active Claude Code native session", async () => {
+    state.steerResult = true;
+    const response = await steerRoute(json("POST", "http://test/api/agent/steer", {
+      input: "补充说明",
+      sessionId: "runtime:claude-code:bW9jaw",
+    }));
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ steered: true });
+    expect(state.steered).toEqual({
+      id: "runtime:claude-code:bW9jaw",
+      input: "补充说明",
+    });
+  });
+
+  it("returns 405 when a native runtime does not support steering", async () => {
+    state.steerError = new RuntimeSessionError(
+      "This runtime does not support mid-turn steering",
+      "OPERATION_NOT_SUPPORTED",
+    );
     const response = await steerRoute(json("POST", "http://test/api/agent/steer", {
       input: "补充说明",
       sessionId: "runtime:codex:bW9jaw",
     }));
-    expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toEqual({ steered: false });
+
+    expect(response.status).toBe(405);
+    await expect(response.json()).resolves.toEqual({
+      error: "This runtime does not support mid-turn steering",
+    });
   });
 });

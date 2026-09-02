@@ -18,6 +18,7 @@ export * from './domain/lsp/index.js';
 export * from './domain/terminal/TerminalSession.js';
 export * from './domain/auth/index.js';
 export * from './domain/web-console/index.js';
+export * from './domain/file/index.js';
 
 // Implementations
 export { AgentLoop } from './domain/agent/AgentLoop.js';

@@ -1,10 +1,20 @@
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
-import { delimiter, join } from "node:path";
-import type { AgentEvent } from "@agent/core";
-import { ClaudeRuntimeAdapter } from "../../desktop/main/agent-runtime/claude-runtime-adapter.js";
-import { CodexAppServerClient } from "../../desktop/main/agent-runtime/codex-app-server-client.js";
-import { CodexRuntimeAdapter } from "../../desktop/main/agent-runtime/codex-runtime-adapter.js";
+import { delimiter, join, resolve, sep } from "node:path";
+import {
+  SQLiteProjectStore,
+  type AgentEvent,
+  type SessionHistoryQuery,
+  type ToolPermissionMode,
+} from "@agent/core";
+import {
+  createNativeRuntimeBrokerClient,
+  createNativeRuntimeBrokerHostRuntime,
+  type BrokerRunEvent,
+  type BrokerRunStart,
+  type NativeRuntimeBrokerSnapshot,
+  type NativeRuntimeController,
+} from "../../desktop/main/agent-runtime/native-runtime-broker.js";
 import { decodeUnifiedSessionId } from "../../desktop/main/agent-runtime/session-id.js";
 import { RuntimeSessionError } from "../../desktop/main/agent-runtime/types.js";
 import type {
@@ -15,11 +25,16 @@ import type {
   UnifiedSessionDetail,
   UnifiedSessionSummary,
 } from "../../desktop/main/agent-runtime/types.js";
-import { UnifiedSessionService } from "../../desktop/main/agent-runtime/unified-session-service.js";
+import { getServerBaseDir } from "./server-data-dir";
 
 const globalWithService = globalThis as typeof globalThis & {
   __nativeRuntimeService?: NativeRuntimeService;
 };
+
+interface ProjectLike {
+  id: string;
+  description: string;
+}
 
 // The agentroam launchd job starts this server with PATH=/usr/bin:/bin:/usr/sbin:/sbin,
 // which lacks the directories where codex/claude CLIs are installed — spawning them
@@ -43,10 +58,27 @@ export interface NativeRuntimePort {
   list(projectId?: string): Promise<UnifiedSessionSummary[]>;
   refresh(projectId?: string): Promise<UnifiedSessionSummary[]>;
   create(options: CreateRuntimeSessionOptions & { agentType: AgentType }): Promise<UnifiedSessionSummary>;
-  get(id: string): Promise<UnifiedSessionDetail>;
+  fork(id: string): Promise<UnifiedSessionSummary>;
+  get(id: string, query?: SessionHistoryQuery): Promise<UnifiedSessionDetail>;
+  getSessionWatchPath(id: string): Promise<string | null>;
   run(id: string, input: string, images?: string[], agentIds?: string[], agentName?: string): AsyncIterable<AgentEvent>;
+  steer(id: string, input: string): Promise<boolean>;
   abort(id?: string): Promise<void>;
   answerQuestion(questionId: string, answer: RuntimeQuestionAnswer): Promise<boolean>;
+  startRun?(
+    id: string,
+    input: string,
+    images?: string[],
+    controller?: NativeRuntimeController,
+  ): Promise<BrokerRunStart>;
+  subscribe?(
+    id: string,
+    afterSequence: number,
+    listener: (event: BrokerRunEvent) => void,
+  ): Promise<() => void>;
+  snapshot?(id: string, afterSequence?: number): Promise<NativeRuntimeBrokerSnapshot>;
+  setPermissionMode?(id: string, mode: ToolPermissionMode): Promise<UnifiedSessionSummary>;
+  handoff?(id: string, controller: NativeRuntimeController): Promise<NativeRuntimeBrokerSnapshot>;
 }
 
 /**
@@ -56,44 +88,94 @@ export interface NativeRuntimePort {
  * that the native runtime cannot discover yet. Codex `thread/list` hides
  * threads until their first turn runs, so a freshly created session would
  * vanish from listings (and from the client's selection) until then. Pending
- * creations are merged into project-less listings and promoted out of the
- * registry once real discovery returns them.
+ * creations are projected into this client's project catalog, merged into
+ * listings, and promoted out of the registry once real discovery returns them.
  */
 export class NativeRuntimeService implements NativeRuntimePort {
   private readonly pendingCreations = new Map<string, UnifiedSessionSummary>();
 
-  constructor(private readonly runtime: Pick<NativeRuntimePort, keyof NativeRuntimePort>) {}
+  constructor(
+    private readonly runtime: Pick<NativeRuntimePort, keyof NativeRuntimePort>,
+    private readonly listProjects: () => Promise<ProjectLike[]> = async () => [],
+  ) {}
 
   health(): Promise<RuntimeHealth[]> {
     return this.runtime.health();
   }
 
   async list(projectId?: string): Promise<UnifiedSessionSummary[]> {
-    return this.withPendingCreations(await this.runtime.list(projectId), projectId);
+    const [discovered, projects] = await Promise.all([
+      this.runtime.list(),
+      this.listProjects(),
+    ]);
+    return filterByProject(
+      this.withPendingCreations(discovered.map((session) => associateLocalProject(session, projects))),
+      projectId,
+    );
   }
 
   async refresh(projectId?: string): Promise<UnifiedSessionSummary[]> {
-    return this.withPendingCreations(await this.runtime.refresh(projectId), projectId);
+    const [discovered, projects] = await Promise.all([
+      this.runtime.refresh(),
+      this.listProjects(),
+    ]);
+    return filterByProject(
+      this.withPendingCreations(discovered.map((session) => associateLocalProject(session, projects))),
+      projectId,
+    );
   }
 
   async create(options: CreateRuntimeSessionOptions & { agentType: AgentType }): Promise<UnifiedSessionSummary> {
-    const created = await this.runtime.create(options);
+    const created = associateLocalProject(
+      await this.runtime.create(options),
+      await this.listProjects(),
+    );
     this.pendingCreations.set(created.id, created);
     return created;
   }
 
-  async get(id: string): Promise<UnifiedSessionDetail> {
+  async fork(id: string): Promise<UnifiedSessionSummary> {
+    if (!isNativeSessionId(id)) {
+      throw new RuntimeSessionError(
+        "Customer Agent sessions do not support native forks",
+        "OPERATION_NOT_SUPPORTED",
+      );
+    }
+    const forked = associateLocalProject(
+      await this.runtime.fork(id),
+      await this.listProjects(),
+    );
+    this.pendingCreations.set(forked.id, forked);
+    return forked;
+  }
+
+  async get(id: string, query?: SessionHistoryQuery): Promise<UnifiedSessionDetail> {
+    let detail: UnifiedSessionDetail;
     try {
-      return await this.runtime.get(id);
+      detail = await this.runtime.get(id, query);
     } catch (error) {
       const pending = this.pendingCreations.get(id);
       if (!pending) throw error;
-      return { ...pending, messages: [], events: [] };
+      return query ? {
+        ...pending,
+        messages: [],
+        events: [],
+        history: { nextCursor: null, hasMore: false, pageSize: 0, totalItems: 0 },
+      } : { ...pending, messages: [], events: [] };
     }
+    return associateLocalProject(detail, await this.listProjects());
+  }
+
+  getSessionWatchPath(id: string): Promise<string | null> {
+    return this.runtime.getSessionWatchPath(id);
   }
 
   run(id: string, input: string, images?: string[], agentIds?: string[], agentName?: string): AsyncIterable<AgentEvent> {
     return this.runtime.run(id, input, images, agentIds, agentName);
+  }
+
+  steer(id: string, input: string): Promise<boolean> {
+    return this.runtime.steer(id, input);
   }
 
   abort(id?: string): Promise<void> {
@@ -104,13 +186,53 @@ export class NativeRuntimeService implements NativeRuntimePort {
     return this.runtime.answerQuestion(questionId, answer);
   }
 
+  async startRun(
+    id: string,
+    input: string,
+    images?: string[],
+    controller: NativeRuntimeController = "web",
+  ): Promise<BrokerRunStart> {
+    if (!this.runtime.startRun) {
+      throw new RuntimeSessionError("Native runtime broker is unavailable", "RUNTIME_UNAVAILABLE");
+    }
+    return this.runtime.startRun(id, input, images, controller);
+  }
+
+  async subscribe(
+    id: string,
+    afterSequence: number,
+    listener: (event: BrokerRunEvent) => void,
+  ): Promise<() => void> {
+    if (!this.runtime.subscribe) {
+      throw new RuntimeSessionError("Native runtime broker is unavailable", "RUNTIME_UNAVAILABLE");
+    }
+    return this.runtime.subscribe(id, afterSequence, listener);
+  }
+
+  async snapshot(id: string, afterSequence = 0): Promise<NativeRuntimeBrokerSnapshot> {
+    if (!this.runtime.snapshot) {
+      throw new RuntimeSessionError("Native runtime broker is unavailable", "RUNTIME_UNAVAILABLE");
+    }
+    return this.runtime.snapshot(id, afterSequence);
+  }
+
+  async setPermissionMode(id: string, mode: ToolPermissionMode): Promise<UnifiedSessionSummary> {
+    if (!this.runtime.setPermissionMode) {
+      throw new RuntimeSessionError("Native runtime broker is unavailable", "RUNTIME_UNAVAILABLE");
+    }
+    return this.runtime.setPermissionMode(id, mode);
+  }
+
+  async handoff(id: string, controller: NativeRuntimeController): Promise<NativeRuntimeBrokerSnapshot> {
+    if (!this.runtime.handoff) {
+      throw new RuntimeSessionError("Native runtime broker is unavailable", "RUNTIME_UNAVAILABLE");
+    }
+    return this.runtime.handoff(id, controller);
+  }
+
   private withPendingCreations(
     discovered: UnifiedSessionSummary[],
-    projectId?: string,
   ): UnifiedSessionSummary[] {
-    // Pending sessions have no project association; project-scoped queries
-    // must not leak them into other projects' lists.
-    if (projectId !== undefined) return discovered;
     const discoveredIds = new Set<string>();
     for (const session of discovered) {
       discoveredIds.add(session.id);
@@ -136,18 +258,39 @@ export class NativeRuntimeService implements NativeRuntimePort {
 export function getNativeRuntimeService(): NativeRuntimeService {
   if (!globalWithService.__nativeRuntimeService) {
     ensureNativeCliPath();
-    const codexClient = new CodexAppServerClient({
-      executable: process.env.AGENT_CODEX_BIN?.trim() || "codex",
-    });
-    const unified = new UnifiedSessionService(
-      [new CodexRuntimeAdapter({ client: codexClient }), new ClaudeRuntimeAdapter()],
-      // The web server registers no projects; native sessions without a
-      // matching project root render under "其他本机会话".
-      () => Promise.resolve([]),
+    const projectStore = new SQLiteProjectStore(getServerBaseDir());
+    globalWithService.__nativeRuntimeService = new NativeRuntimeService(
+      createNativeRuntimeBrokerClient({
+        runtimeFactory: (callbacks) => createNativeRuntimeBrokerHostRuntime(
+          process.env.AGENT_CODEX_BIN?.trim() || "codex",
+          callbacks,
+        ),
+      }),
+      () => projectStore.list(),
     );
-    globalWithService.__nativeRuntimeService = new NativeRuntimeService(unified);
   }
   return globalWithService.__nativeRuntimeService;
+}
+
+function associateLocalProject<T extends UnifiedSessionSummary>(
+  session: T,
+  projects: ProjectLike[],
+): T {
+  const { projectId: _foreignProjectId, ...unassociated } = session;
+  if (!session.cwd) return unassociated as T;
+  const cwd = resolve(session.cwd);
+  const match = projects
+    .filter((project) => project.description)
+    .map((project) => ({ project, path: resolve(project.description) }))
+    .filter(({ path }) => cwd === path || cwd.startsWith(`${path}${sep}`))
+    .sort((left, right) => right.path.length - left.path.length)[0];
+  return (match ? { ...unassociated, projectId: match.project.id } : unassociated) as T;
+}
+
+function filterByProject<T extends UnifiedSessionSummary>(sessions: T[], projectId?: string): T[] {
+  return projectId === undefined
+    ? sessions
+    : sessions.filter((session) => session.projectId === projectId);
 }
 
 /** True for unified IDs that belong to an external native runtime. */
@@ -170,6 +313,8 @@ export function runtimeErrorStatus(err: unknown): number {
         return 503;
       case "OPERATION_NOT_SUPPORTED":
         return 405;
+      case "APPROVAL_EXPIRED":
+        return 409;
       default:
         return 400;
     }
