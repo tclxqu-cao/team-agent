@@ -1,0 +1,19 @@
+docs/superpowers/specs/2026-09-02-codex-session-status-decoupling-design.md
+  s_a9e3b3d1cd5e40::t_5a35e9769ae907 1-66
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "cd1c6f30056547402b9525c0a86105fe678090cf",
+  "prompts": {},
+  "sessions": {
+    "s_a9e3b3d1cd5e40": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06101-83e4-7722-9896-00bd6997a09c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
