@@ -5,7 +5,8 @@
 Make Codex and Claude Code native sessions usable from both the Web app and
 AgentRoam Desktop without competing native writer locks. Each native session
 must expose the existing three permission modes, default Web-created sessions
-to full access, and preserve a pending approval across a Web refresh.
+to full access, and preserve its live messages and pending approval across a
+Web refresh without occupancy flicker.
 
 The design also removes the failure mode where a duplicate send clears the
 visible event stream and composer draft before the native runtime reports that
@@ -73,9 +74,9 @@ Web and Desktop clients acquire a renewable broker lease while they display or
 control a native session. An active run, including a pending approval, pins the
 broker independently of a renderer lease so a short refresh cannot terminate
 the original app-server request. Once there are no live client leases and no
-active native runs, the broker waits a short idle grace, disposes its app-server
-child and Claude runtime resources, then removes its socket. The next client
-starts a fresh broker and rehydrates only durable terminal/policy state.
+active native runs, the broker waits 60 seconds, disposes its app-server child
+and Claude runtime resources, then removes its socket. The next client starts
+a fresh broker and rehydrates only durable terminal/policy state.
 
 This prevents an orphaned AgentRoam process from retaining idle native threads
 when no AgentRoam surface is using them. The broker must not exit while any
@@ -91,7 +92,9 @@ cleanup. It has these logical records:
 | `native_session_policy` | unified session id | permission mode, updated timestamp |
 | `native_run` | unified session id | run id, agent type, native id, turn id, status, controller, mode snapshot, timestamps |
 | `native_run_event` | run id plus sequence | replayable agent event and sequence number |
+| `native_run_message` | run id plus message id | accepted user input and live assistant/tool projection needed before native history is durable |
 | `native_approval` | broker question id | run id, original RPC request id, protocol method, request payload needed to render/respond, state |
+| `native_session_lock` | unified session id | authoritative owner, evidence, revision, observed timestamp, and transition state |
 | `native_terminal` | unified session id | terminal reason and one replayable terminal event retained for reconnecting clients |
 
 The database is an implementation detail of the broker. No renderer, Next.js
@@ -145,6 +148,68 @@ native:<run-id>:<original-request-id>
 The UI keeps its optimistic user message until admission succeeds. A 409 leaves
 that draft in place and presents the occupied/fork recovery without clearing
 the event history of the active turn.
+
+## Refresh-Safe Conversation Projection
+
+Native transcript files are not a sufficient source for an in-flight turn: a
+user message may be accepted before a native transcript is flushed, and streamed
+assistant text or a pending tool can exist only in memory. The broker therefore
+persists a renderable live projection before and while it starts the native turn:
+
+1. Admission writes the accepted user message with a stable run-scoped message
+   id before invoking Codex or Claude Code.
+2. Each text chunk, tool item, tool result, and `ask_user` event updates the
+   same projection transactionally with its event sequence.
+3. `GET /api/sessions/:id` returns native persisted history plus the broker's
+   active projection and a `snapshotRevision` in one logical snapshot.
+4. The client subscribes with that revision before applying later SSE events,
+   so there is no fetch-to-subscribe gap. It merges data by stable run/message/
+   tool identifiers rather than clearing and rebuilding the entire message list.
+5. On terminal completion, the broker keeps the live projection until the
+   native transcript has been observed or its 10-minute terminal retention
+   window expires.
+   Merge identity prevents a transcript replay from duplicating the same user
+   or assistant content.
+
+The renderer also keeps an unsent text composer draft in session-scoped browser
+storage. It restores that draft after a page reload and clears it only after
+native admission succeeds. Attachments that cannot safely be reconstituted from
+browser storage are represented by their existing unavailable placeholder; a
+refresh must never silently erase the text portion of the user's draft.
+
+If a snapshot or SSE request fails, the renderer retains the last successfully
+rendered projection and local draft. It must not replace the conversation with
+an empty state while retrying. This covers refreshes during the first user
+message, streaming text, tool execution, and an unresolved approval.
+
+## Stable Occupancy State
+
+The broker is the sole authority for AgentRoam-owned native locks. Native
+session summaries include `occupancy`, an `occupancyRevision`, and a source of
+evidence. The renderer only applies a newer revision and cannot overwrite a
+broker-owned state with a raw discovery poll.
+
+The state machine is deliberately conservative:
+
+- A successfully admitted broker run immediately publishes
+  `owned-by-customer-agent` for that unified session. It stays so through a
+  pending approval and until that run reaches terminal cleanup.
+- A confirmed `SESSION_OCCUPIED` response publishes `owned-externally`
+  immediately. Process detection publishes that state only after two matching
+  external observations at least five seconds apart. A single missing or stale
+  `lsof` sample cannot flip it back to available.
+- An external lock becomes available only after a debounced recheck has two
+  consecutive clean observations at least five seconds apart, and no newer
+  failed-resume evidence exists.
+- Native discovery is advisory. It can create or refresh external evidence but
+  cannot downgrade an active broker run or reset its event log.
+- An actual send always performs atomic broker admission. If an external owner
+  wins a race after the displayed state says available, the result is the same
+  HTTP 409 preservation path, never a cleared draft or flickering lock.
+
+This makes one run's lock independent from other Web sessions and prevents the
+current occupied/available oscillation caused by independent Web and Desktop
+adapters plus periodic raw file-handle detection.
 
 ## Refresh And Approval Recovery
 
@@ -273,6 +338,14 @@ Focused automated coverage must prove:
 9. Web-to-Desktop handoff preserves a live turn and a pending approval without
    creating a second app-server client or affecting another active Web session.
 10. Existing external-ownership and fork behavior remains intact.
+11. Refresh during accepted user input, first streamed text, tool execution,
+    and a pending approval restores the same live message projection without
+    duplicates or an empty conversation flash.
+12. An unsent text draft survives refresh; a rejected duplicate send preserves
+    it; an accepted send clears it exactly once.
+13. Alternating raw external-process observations cannot make an active broker
+    lock flicker, and an external lock transitions to available only after the
+    debounced broker recheck.
 
 Run the focused core, native adapter, broker, server route, Web gateway,
 Electron IPC/preload, and shared renderer tests; then run the affected type
