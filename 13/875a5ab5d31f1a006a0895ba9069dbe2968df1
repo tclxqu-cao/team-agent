@@ -1,0 +1,143 @@
+packages/server/app/api/web-console/preferences/route.ts
+  s_1cb32e60293674::t_fddc1cfd3a38bb 2,14,29-39,43
+packages/cli/src/cloudflared/manifest.ts
+  s_b6c4b214800d85::t_56a5ffe8b18786 4
+packages/cloudflared-darwin-arm64/manifest.json
+  s_b6c4b214800d85::t_56a5ffe8b18786 2
+packages/core/src/domain/web-console/index.ts
+  s_1cb32e60293674::t_3f5c41ad3713cb 2
+scripts/audit-cli-tarball.mjs
+  s_1cb32e60293674::t_258629815a2281 29,35-37,84
+  s_b6c4b214800d85::t_56a5ffe8b18786 20,32
+packages/cli/bin/agent-tui.mjs
+  s_1cb32e60293674::t_45f6ca3abde94e 6,9-15,18
+  s_1cb32e60293674::t_258629815a2281 1-5,7-8,16-17,19-20
+packages/server/app/web/TerminalPane.tsx
+  s_1cb32e60293674::t_49e292b2192e84 49-50,85,96,116,511-513
+  s_1cb32e60293674::t_2d7ad5ba167bf2 470,505
+  s_1cb32e60293674::t_f857101f8f7d20 32,54
+scripts/audit-cloudflared-tarball.mjs
+  s_b6c4b214800d85::t_56a5ffe8b18786 17,24
+.gitignore
+  s_1cb32e60293674::t_a6721fc7468bb9 20
+  s_1cb32e60293674::t_45f6ca3abde94e 21
+packages/core/src/domain/web-console/entities.ts
+  s_1cb32e60293674::t_3f5c41ad3713cb 4-5
+packages/cli/package.json
+  s_b6c4b214800d85::t_56a5ffe8b18786 3
+  s_1cb32e60293674::t_258629815a2281 7-8,35-36
+packages/server/ws-server.mjs
+  s_1cb32e60293674::t_befd8a8ae67e81 187-191,268,273,275-276
+  s_1cb32e60293674::t_2d7ad5ba167bf2 184,265-267,269,274
+packages/cli/RELEASE.md
+  s_1cb32e60293674::t_45f6ca3abde94e 33,36-38,59
+  s_b6c4b214800d85::t_56a5ffe8b18786 74
+  s_1cb32e60293674::t_ba35b3428cc616 1,10-11
+  s_1cb32e60293674::t_258629815a2281 12,75-77
+scripts/build-tui-package.mjs
+  s_1cb32e60293674::t_913a48fb17139a 1-39
+packages/server/app/web/pinnedCommands.ts
+  s_1cb32e60293674::t_a3c3d811eb7c9b 1-19
+packages/cli/src/tunnel/public-readiness.ts
+  s_b6c4b214800d85::t_56a5ffe8b18786 47
+packages/core/src/infrastructure/SQLiteDatabase.ts
+  s_1cb32e60293674::t_3f5c41ad3713cb 255,303-310
+packages/tui-darwin-arm64/README.md
+  s_1cb32e60293674::t_258629815a2281 1-4
+packages/tui-darwin-arm64/bin/agent-tui.mjs
+  s_1cb32e60293674::t_258629815a2281 1-5
+packages/tui/src/runtime.ts
+  s_1cb32e60293674::t_69b18ea2e16162 4-9
+  s_1cb32e60293674::t_e9b19e02f76f31 44
+  s_1cb32e60293674::t_76aff4a38a707f 40,46,54,112
+packages/cli/README.md
+  s_b6c4b214800d85::t_56a5ffe8b18786 10
+  s_1cb32e60293674::t_45f6ca3abde94e 22-24
+  s_1cb32e60293674::t_258629815a2281 41,65
+package.json
+  s_1cb32e60293674::t_258629815a2281 14-15,27,31-32
+  s_b6c4b214800d85::t_56a5ffe8b18786 30
+  s_1cb32e60293674::t_913a48fb17139a 28
+packages/server/app/web/PinnedCommandList.tsx
+  s_1cb32e60293674::t_cee7e5c34d4264 74
+  s_1cb32e60293674::t_a3c3d811eb7c9b 1-73,75-116
+packages/core/src/domain/web-console/pinned-commands.test.ts
+  s_1cb32e60293674::t_3f5c41ad3713cb 1-28
+packages/server/app/web/page.tsx
+  s_1cb32e60293674::t_cee7e5c34d4264 205,212
+  s_1cb32e60293674::t_f857101f8f7d20 36,43,226-227,407
+  s_1cb32e60293674::t_49e292b2192e84 9-10,48-50,56-57,65,70,82,193,195,206,211,213-225,228-230,444-446,448,567-583,585-588,599
+  s_1cb32e60293674::t_1ca351459fc373 52-55,58-62
+packages/cli/src/cloudflared/bundled-asset.test.ts
+  s_b6c4b214800d85::t_56a5ffe8b18786 14
+packages/core/src/infrastructure/SQLiteWebConsoleStore.test.ts
+  s_1cb32e60293674::t_3f5c41ad3713cb 19,22
+packages/cli/src/cli.ts
+  s_b6c4b214800d85::t_56a5ffe8b18786 13
+  s_1cb32e60293674::t_1903e4d1987a3c 113-116
+  s_1cb32e60293674::t_b1f7b253a8c3c9 112
+  s_1cb32e60293674::t_983a46a6717eeb 117-118
+scripts/verify-cli-install.mjs
+  s_b6c4b214800d85::t_56a5ffe8b18786 18-21
+  s_1cb32e60293674::t_45f6ca3abde94e 4
+  s_1cb32e60293674::t_1903e4d1987a3c 6,22-23,38,45-51
+packages/core/src/infrastructure/SQLiteWebConsoleStore.ts
+  s_1cb32e60293674::t_3f5c41ad3713cb 1,18-19,31
+packages/core/src/domain/web-console/pinned-commands.ts
+  s_1cb32e60293674::t_3f5c41ad3713cb 1-41
+scripts/verify-cli-tunnel.mjs
+  s_b6c4b214800d85::t_56a5ffe8b18786 19,21
+  s_1cb32e60293674::t_ba35b3428cc616 18,20
+packages/server/app/web/pinnedCommands.test.ts
+  s_1cb32e60293674::t_a3c3d811eb7c9b 1-23
+scripts/audit-tui-tarball.mjs
+  s_1cb32e60293674::t_258629815a2281 1-30
+packages/cloudflared-darwin-arm64/package.json
+  s_b6c4b214800d85::t_56a5ffe8b18786 3
+packages/server/app/web/HistoryPanel.tsx
+  s_1cb32e60293674::t_a3c3d811eb7c9b 3-5,8,14-25
+packages/tui-darwin-arm64/package.json
+  s_1cb32e60293674::t_258629815a2281 1-32
+bun.lock
+  s_1cb32e60293674::t_ed22f91aade5ed 16,19,32-33,38,120-126,452-453
+packages/server/.next/app-build-manifest.json
+  s_1cb32e60293674::t_9fde85d514b36f 4,11,18,22
+packages/server/.next/build-manifest.json
+  s_1cb32e60293674::t_7fc2311627c938 8-9,12,19,25
+packages/server/.next/react-loadable-manifest.json
+  s_1cb32e60293674::t_1836420131dcd0 9,11,19
+packages/server/.next/server/app-paths-manifest.json
+  s_1cb32e60293674::t_999a9843a93439 6-7,9,14-15,19,23,26-27,34,36-39
+packages/server/.next/server/middleware-build-manifest.js
+  s_1cb32e60293674::t_46264b9943a33b 1
+packages/server/.next/server/middleware-react-loadable-manifest.js
+  s_1cb32e60293674::t_0ba4196ca94a7b 1
+packages/server/.next/server/server-reference-manifest.json
+  s_1cb32e60293674::t_f8d9cde258b494 1
+packages/server/.next/trace
+  s_1cb32e60293674::t_939062cc4714fa 1-4
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "13875a5ab5d31f1a006a0895ba9069dbe2968df1",
+  "prompts": {},
+  "sessions": {
+    "s_1cb32e60293674": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06180-1bf9-7f03-a7bb-16f4f2f7c0f8",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_b6c4b214800d85": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06137-93c2-7840-8f83-7bbaf5402129",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
