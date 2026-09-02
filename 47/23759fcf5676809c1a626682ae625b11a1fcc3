@@ -1,0 +1,19 @@
+docs/superpowers/specs/2026-09-02-claude-subagent-live-follow-design.md
+  s_80156e19b7ecf7::t_b75d6c05fc5153 1-119
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "4723759fcf5676809c1a626682ae625b11a1fcc3",
+  "prompts": {},
+  "sessions": {
+    "s_80156e19b7ecf7": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a060e3-8cc6-7e60-99e3-19ec382ea2db",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
