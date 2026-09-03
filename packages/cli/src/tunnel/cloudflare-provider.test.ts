@@ -2,7 +2,20 @@ import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
 import type { ChildProcess } from "node:child_process";
 import { describe, expect, it, vi } from "vitest";
-import { waitForConnectedUrl } from "./cloudflare-provider.js";
+import { buildCloudflaredArguments, waitForConnectedUrl } from "./cloudflare-provider.js";
+
+describe("buildCloudflaredArguments", () => {
+  it("uses HTTP/2 so launchd tunnels do not depend on outbound UDP", () => {
+    expect(buildCloudflaredArguments("http://127.0.0.1:3000")).toEqual([
+      "tunnel",
+      "--no-autoupdate",
+      "--protocol",
+      "http2",
+      "--url",
+      "http://127.0.0.1:3000",
+    ]);
+  });
+});
 
 describe("waitForConnectedUrl", () => {
   it("waits for both the public URL and a registered tunnel connection", async () => {

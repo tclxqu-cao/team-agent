@@ -20,8 +20,9 @@ describe("ToolCallGroup", () => {
       items: [command("one", "done"), command("two")],
     }));
 
-    expect(html).toContain("运行了命令");
+    expect(html).toContain("终端");
     expect(html).not.toContain("运行命令中");
+    expect(html).toContain("lucide-square-terminal");
     expect(html).toContain("animation:spin 1s linear infinite");
   });
 
@@ -30,8 +31,43 @@ describe("ToolCallGroup", () => {
       items: [command("one", "done"), command("two", "")],
     }));
 
-    expect(html).toContain("运行了命令");
+    expect(html).toContain("终端");
     expect(html).not.toContain("animation:spin 1s linear infinite");
+  });
+});
+
+describe("tool activity rows", () => {
+  it("uses distinct icons for terminal, read, write, and search operations", () => {
+    const terminal = renderToStaticMarkup(createElement(ToolCallCard, {
+      toolCall: { id: "terminal", name: "shell", arguments: { command: "pwd" }, result: "" },
+    }));
+    const read = renderToStaticMarkup(createElement(ToolCallCard, {
+      toolCall: { id: "read", name: "read_file", arguments: { file_path: "/tmp/a.ts" }, result: "source" },
+    }));
+    const write = renderToStaticMarkup(createElement(ToolCallCard, {
+      toolCall: { id: "write", name: "write_file", arguments: { file_path: "/tmp/a.ts", content: "source" }, result: "" },
+    }));
+    const search = renderToStaticMarkup(createElement(ToolCallCard, {
+      toolCall: { id: "search", name: "Grep", arguments: { pattern: "needle" }, result: "match" },
+    }));
+
+    expect(terminal).toContain("lucide-square-terminal");
+    expect(terminal).toContain("终端");
+    expect(read).toContain("lucide-file-text");
+    expect(read).toContain("查阅");
+    expect(write).toContain("lucide-pencil");
+    expect(write).toContain("写入");
+    expect(search).toContain("lucide-search");
+    expect(search).toContain("查阅");
+  });
+
+  it("keeps single activity rows expandable", () => {
+    const html = renderToStaticMarkup(createElement(ToolCallCard, {
+      toolCall: { id: "terminal", name: "shell", arguments: { command: "pwd" }, result: "/tmp" },
+    }));
+
+    expect(html).toContain('aria-expanded="false"');
+    expect(html).toContain("tool-call-shell__chevron");
   });
 });
 

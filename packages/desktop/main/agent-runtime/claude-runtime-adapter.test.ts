@@ -595,6 +595,22 @@ describe("ClaudeRuntimeAdapter", () => {
     expect(state.queryCalls[1].options).not.toHaveProperty("resume");
   });
 
+  it("uses Claude Code native goal input and enables SDK skills", async () => {
+    state.sessions = [sdkSession("cc-1")];
+    state.stream = [{ type: "result", subtype: "success", is_error: false, result: "done" }];
+    const adapter = new ClaudeRuntimeAdapter({ sessionRoot: "/tmp/claude-projects" });
+
+    await drain(adapter.run("cc-1", "ignored", undefined, undefined, undefined, {
+      goal: { id: "goal-1", objective: "finish the migration" },
+    }));
+
+    expect(state.queryCalls[0].options.skills).toBe("all");
+    expect(state.inputMessages[0]).toMatchObject({
+      type: "user",
+      message: { content: "/goal finish the migration" },
+    });
+  });
+
   it("refuses to run a session that another client owns", async () => {
     state.sessions = [sdkSession("cc-1")];
     state.openFiles = ["/root/proj/cc-1.jsonl"];

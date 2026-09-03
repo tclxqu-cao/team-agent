@@ -4,7 +4,8 @@ import type { PlatformTarget } from "../platform.js";
 import { CLOUDFLARED_PACKAGES, CLOUDFLARED_PACKAGE_VERSION } from "./manifest.js";
 
 export interface BundledCloudflaredAsset {
-  archivePath: string;
+  assetPath: string;
+  assetFormat: "tgz" | "executable";
   sha256: string;
   size: number;
   fileName: string;
@@ -15,6 +16,7 @@ interface PackageManifest {
   packageVersion?: unknown;
   upstreamVersion?: unknown;
   target?: unknown;
+  assetFormat?: unknown;
   fileName?: unknown;
   size?: unknown;
   sha256?: unknown;
@@ -28,10 +30,10 @@ export async function resolveBundledCloudflared(
   if (!packageName) return null;
 
   let manifestPath: string;
-  let archivePath: string;
+  let assetPath: string;
   try {
     manifestPath = requireFromCli.resolve(`${packageName}/manifest.json`);
-    archivePath = requireFromCli.resolve(`${packageName}/archive`);
+    assetPath = requireFromCli.resolve(`${packageName}/archive`);
   } catch (error) {
     if ((error as NodeJS.ErrnoException)?.code === "MODULE_NOT_FOUND") return null;
     throw error;
@@ -41,6 +43,7 @@ export async function resolveBundledCloudflared(
   if (
     manifest.packageVersion !== CLOUDFLARED_PACKAGE_VERSION ||
     manifest.target !== target ||
+    (manifest.assetFormat !== "tgz" && manifest.assetFormat !== "executable") ||
     typeof manifest.upstreamVersion !== "string" ||
     typeof manifest.fileName !== "string" ||
     typeof manifest.size !== "number" ||
@@ -52,7 +55,8 @@ export async function resolveBundledCloudflared(
   }
 
   return {
-    archivePath,
+    assetPath,
+    assetFormat: manifest.assetFormat,
     sha256: manifest.sha256,
     size: manifest.size,
     fileName: manifest.fileName,

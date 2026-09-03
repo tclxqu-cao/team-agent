@@ -4,6 +4,7 @@ import type {
   CronTask,
   LSPServerConfig,
   MCPServer,
+  SessionGoalState,
 } from "../../domain/ports/agent-port";
 import { HttpClient, listOf } from "./http-client";
 import { LocalCollection } from "../local/local-collection";
@@ -96,12 +97,15 @@ export class AgentHttpGateway {
       // A user-configured model profile travels with the run; without one the
       // server keeps using its own env configuration.
       const model = this.settings.getModelOverride();
+      const limits = this.settings.getRunLimits();
       const started = await this.http.post<{ runId?: string; snapshotRevision?: number }>("/api/agent/run", {
         input,
         sessionId,
         ...(images?.length ? { images } : {}),
         ...(model ? { model } : {}),
         reasoningEffort: this.settings.getReasoningEffort(),
+        maxIterations: limits.maxIterations,
+        maxTokens: limits.maxTokens,
       });
       if (typeof started.snapshotRevision === "number") {
         this.rememberNativeSnapshot(sessionId, started.snapshotRevision, started.runId);
@@ -212,7 +216,7 @@ export class AgentHttpGateway {
           session.snapshotRevision,
           typeof session.snapshotRunId === "string" ? session.snapshotRunId : undefined,
         );
-        if (session.status === "running") {
+        if (session.status === "running" && session.occupancy !== "owned-externally") {
           void this.openStream(id, this.nativeSnapshotRevisions.get(id)).catch(() => undefined);
         }
       }
@@ -259,6 +263,37 @@ export class AgentHttpGateway {
     mode: "request-approval" | "auto-approval" | "full-access",
   ): Promise<unknown> {
     return this.http.patch(`/api/sessions/${encodeURIComponent(id)}`, { permissionMode: mode });
+  }
+
+  async getSessionGoals(id: string): Promise<SessionGoalState> {
+    const state = await this.http.get<SessionGoalState>(`/api/sessions/${encodeURIComponent(id)}/goals`);
+    if (state.active) void this.openStream(id, this.nativeSnapshotRevisions.get(id)).catch(() => undefined);
+    return state;
+  }
+
+  async enqueueSessionGoal(id: string, objective: string, sourceMessageId?: string): Promise<SessionGoalState> {
+    await this.openStream(id, this.nativeSnapshotRevisions.get(id));
+    const result = await this.http.post<{
+      state: SessionGoalState;
+      started?: { runId?: string; snapshotRevision?: number };
+    }>(`/api/sessions/${encodeURIComponent(id)}/goals`, { objective, sourceMessageId });
+    if (typeof result.started?.snapshotRevision === "number") {
+      this.rememberNativeSnapshot(id, result.started.snapshotRevision, result.started.runId);
+      this.dispatch(id, {
+        type: "run_admitted",
+        ...(result.started.runId ? { _nativeRunId: result.started.runId } : {}),
+        _nativeSequence: result.started.snapshotRevision,
+      });
+    }
+    return result.state;
+  }
+
+  async reorderSessionGoals(id: string, orderedIds: string[]): Promise<SessionGoalState> {
+    return this.http.patch(`/api/sessions/${encodeURIComponent(id)}/goals`, { orderedIds });
+  }
+
+  async cancelSessionGoal(id: string, goalId: string): Promise<SessionGoalState> {
+    return this.http.delete(`/api/sessions/${encodeURIComponent(id)}/goals?goalId=${encodeURIComponent(goalId)}`);
   }
 
   async createSession(title: string, projectId?: string, agentType?: string): Promise<unknown> {

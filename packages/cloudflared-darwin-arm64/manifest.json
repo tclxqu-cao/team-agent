@@ -1,7 +1,8 @@
 {
-  "packageVersion": "0.2.0-preview.6",
+  "packageVersion": "0.2.0-preview.9",
   "upstreamVersion": "2026.8.2",
   "target": "darwin-arm64",
+  "assetFormat": "tgz",
   "fileName": "cloudflared",
   "archiveFileName": "cloudflared-darwin-arm64.tgz",
   "url": "https://github.com/cloudflare/cloudflared/releases/download/2026.8.2/cloudflared-darwin-arm64.tgz",

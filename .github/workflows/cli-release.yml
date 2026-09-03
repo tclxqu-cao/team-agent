@@ -1,23 +1,54 @@
 name: cli-release
+
 on:
   pull_request:
-    paths: ["packages/cli/**","packages/cloudflared-darwin-arm64/**","packages/server/**","packages/core/**","scripts/*.mjs"]
+    paths:
+      - "packages/cli/**"
+      - "packages/runtime-*/**"
+      - "packages/cloudflared-*/**"
+      - "packages/tui-*/**"
+      - "packages/server/**"
+      - "packages/core/**"
+      - "scripts/*.mjs"
+      - "package.json"
+      - "bun.lock"
   workflow_dispatch:
+
 jobs:
-  test:
-    strategy:
-      matrix:
-        os: [macos-14]
-    runs-on: ${{ matrix.os }}
+  macos-package:
+    runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
-        with: { bun-version: "1.3.10" }
+        with:
+          bun-version: "1.3.10"
       - uses: actions/setup-node@v4
-        with: { node-version: "22", registry-url: "https://registry.npmjs.org" }
+        with:
+          node-version: "22"
+          registry-url: "https://registry.npmjs.org"
       - run: node -e "if (process.platform !== 'darwin' || process.arch !== 'arm64') process.exit(1)"
-      - run: bun install
-      - run: bunx vitest run packages/cli/src
-      - run: npm run fetch:cloudflared
-      - run: npm run pack:cli
-      - run: node scripts/verify-cli-install.mjs packages/cli/agentroam-0.2.0-preview.3.tgz packages/cloudflared-darwin-arm64/agentroam-cloudflared-darwin-arm64-0.2.0-preview.3.tgz
+      - run: bun install --frozen-lockfile
+      - run: bunx vitest run packages/cli/src packages/core/src/domain/web-console/WebArtifactBridge.test.ts
+      - run: node --test packages/server/shell-platform.test.mjs
+      - run: npm run pack:cli:all
+      - run: node scripts/verify-cli-install.mjs --artifacts dist/cli-release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: agentroam-cli-${{ github.sha }}
+          path: dist/cli-release/
+          if-no-files-found: error
+          retention-days: 7
+
+  windows-verify:
+    needs: macos-package
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: actions/download-artifact@v4
+        with:
+          name: agentroam-cli-${{ github.sha }}
+          path: dist/cli-release
+      - run: node scripts/verify-cli-install.mjs --artifacts dist/cli-release

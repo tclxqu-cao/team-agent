@@ -55,6 +55,29 @@ describe("parseMarkdownLinks", () => {
     }]);
   });
 
+  it("parses Codex file citations as local artifacts", () => {
+    const path = "/Users/caoqu/Documents/Codex/outputs/自主移动机器人_中英综合版.pptx";
+    const raw = `:codex-file-citation{path="${path}" purpose="output"}`;
+
+    expect(parseMarkdownLinks(`交付物：${raw}`)).toEqual([
+      { type: "text", value: "交付物：" },
+      {
+        type: "artifact",
+        label: "自主移动机器人_中英综合版.pptx",
+        path,
+        raw,
+      },
+    ]);
+  });
+
+  it("keeps unsafe or malformed Codex file citations as plain text", () => {
+    const relative = ':codex-file-citation{path="outputs/report.pptx" purpose="output"}';
+    const unknownAttribute = ':codex-file-citation{path="/tmp/report.pptx" target="output"}';
+
+    expect(parseMarkdownLinks(relative)).toEqual([{ type: "text", value: relative }]);
+    expect(parseMarkdownLinks(unknownAttribute)).toEqual([{ type: "text", value: unknownAttribute }]);
+  });
+
   it("keeps relative paths and custom schemes as plain text", () => {
     const relative = "[报告](outputs/report.pdf)";
     const fileUrl = "[报告](file:///tmp/report.pdf)";

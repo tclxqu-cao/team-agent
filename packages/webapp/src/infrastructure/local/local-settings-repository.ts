@@ -8,6 +8,8 @@ export interface WebSettings {
   apiKey: string;
   baseUrl: string;
   maxIterations: number;
+  /** Context window in thousands of tokens. */
+  contextWindow: number;
   workingDirectory: string;
   profiles: ModelProfile[];
   activeProfileId: string;
@@ -62,6 +64,9 @@ export class LocalSettingsRepository {
     const current = this.get();
     const managed = current.profiles.find((p) => p.id === "server-managed");
     if (!managed) return;
+    // Once the user supplies real credentials, this entry becomes a local
+    // per-run override and must no longer be replaced by server discovery.
+    if (managed.apiKey !== "managed") return;
     if (managed.modelId === info.modelId && managed.provider === (info.provider || "openai")) return;
     const modelId = info.modelId;
     const provider = info.provider || "openai";
@@ -109,6 +114,13 @@ export class LocalSettingsRepository {
     return ["off", "low", "medium", "high"].includes(effort) ? effort : "off";
   }
 
+  getRunLimits(): { maxIterations: number; maxTokens: number } {
+    const settings = this.get();
+    const maxIterations = Math.min(50, Math.max(1, Math.trunc(Number(settings.maxIterations) || 10)));
+    const contextWindowK = Math.min(2_000, Math.max(8, Math.trunc(Number(settings.contextWindow) || 100)));
+    return { maxIterations, maxTokens: contextWindowK * 1_000 };
+  }
+
   private defaults(): WebSettings {
     const profile: ModelProfile = {
       id: "server-managed",
@@ -124,6 +136,7 @@ export class LocalSettingsRepository {
       apiKey: profile.apiKey,
       baseUrl: "",
       maxIterations: 10,
+      contextWindow: 100,
       workingDirectory: "/",
       profiles: [profile],
       activeProfileId: profile.id,

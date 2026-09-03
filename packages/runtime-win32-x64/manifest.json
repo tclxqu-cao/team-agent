@@ -1,0 +1,16 @@
+{
+  "packageVersion": "0.2.0-preview.9",
+  "target": "windows-amd64",
+  "nodeMajor": 22,
+  "nodeModuleAbi": 127,
+  "nativeFiles": {
+    "node_modules/better-sqlite3/build/Release/better_sqlite3.node": "c4b95a94a963258a9ef41b12fd3bb86f0b08a2ac5c5b499fe94de57a5443682d",
+    "node_modules/node-pty/prebuilds/win32-x64/conpty.node": "ee8f4e6f4dad71939eecfda11de249400e34bfefe4c8b48af13f3b5476f4035b",
+    "node_modules/node-pty/prebuilds/win32-x64/conpty_console_list.node": "879dd94cfc79f1e263a00077597ae9448a5394b7d193381aaa50d992a1f91090",
+    "node_modules/node-pty/prebuilds/win32-x64/pty.node": "ae323edd0835ee7b9e18cc96a7b2bb4b8173ff768317d178af2788406feb71ff",
+    "node_modules/node-pty/prebuilds/win32-x64/conpty/conpty.dll": "7c7430632052ff703540b68371ec43821820aa1335d8e11dfbcd9ff00e9daaed",
+    "node_modules/node-pty/prebuilds/win32-x64/conpty/OpenConsole.exe": "d1fe7faa62f9e955e2ac2371f95d7e5513df4d496255097158f979c94782c5fc",
+    "node_modules/node-pty/prebuilds/win32-x64/winpty-agent.exe": "0c4834a0ab2a4f8c855a2f1db9b21fa6e5fc324ae8e3c82addd53d503d999825",
+    "node_modules/node-pty/prebuilds/win32-x64/winpty.dll": "e1cb26d868c954ba26817bedf3e4a5744e4ca2030adf51a7156e5ff2fadb881b"
+  }
+}

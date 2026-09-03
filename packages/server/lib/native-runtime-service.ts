@@ -25,6 +25,7 @@ import type {
   UnifiedSessionDetail,
   UnifiedSessionSummary,
 } from "../../desktop/main/agent-runtime/types.js";
+import type { SessionGoalState } from "@agent/core";
 import { getServerBaseDir } from "./server-data-dir";
 
 const globalWithService = globalThis as typeof globalThis & {
@@ -79,6 +80,15 @@ export interface NativeRuntimePort {
   snapshot?(id: string, afterSequence?: number): Promise<NativeRuntimeBrokerSnapshot>;
   setPermissionMode?(id: string, mode: ToolPermissionMode): Promise<UnifiedSessionSummary>;
   handoff?(id: string, controller: NativeRuntimeController): Promise<NativeRuntimeBrokerSnapshot>;
+  getGoals?(id: string, controller?: NativeRuntimeController): Promise<SessionGoalState>;
+  enqueueGoal?(
+    id: string,
+    objective: string,
+    sourceMessageId?: string,
+    controller?: NativeRuntimeController,
+  ): Promise<{ state: SessionGoalState; started?: BrokerRunStart }>;
+  reorderGoals?(id: string, orderedIds: readonly string[]): Promise<SessionGoalState>;
+  cancelGoal?(id: string, goalId: string, controller?: NativeRuntimeController): Promise<SessionGoalState>;
 }
 
 /**
@@ -228,6 +238,31 @@ export class NativeRuntimeService implements NativeRuntimePort {
       throw new RuntimeSessionError("Native runtime broker is unavailable", "RUNTIME_UNAVAILABLE");
     }
     return this.runtime.handoff(id, controller);
+  }
+
+  async getGoals(id: string, controller: NativeRuntimeController = "web"): Promise<SessionGoalState> {
+    if (!this.runtime.getGoals) throw new RuntimeSessionError("Goal mode is unavailable", "OPERATION_NOT_SUPPORTED");
+    return this.runtime.getGoals(id, controller);
+  }
+
+  async enqueueGoal(
+    id: string,
+    objective: string,
+    sourceMessageId?: string,
+    controller: NativeRuntimeController = "web",
+  ): Promise<{ state: SessionGoalState; started?: BrokerRunStart }> {
+    if (!this.runtime.enqueueGoal) throw new RuntimeSessionError("Goal mode is unavailable", "OPERATION_NOT_SUPPORTED");
+    return this.runtime.enqueueGoal(id, objective, sourceMessageId, controller);
+  }
+
+  async reorderGoals(id: string, orderedIds: readonly string[]): Promise<SessionGoalState> {
+    if (!this.runtime.reorderGoals) throw new RuntimeSessionError("Goal mode is unavailable", "OPERATION_NOT_SUPPORTED");
+    return this.runtime.reorderGoals(id, orderedIds);
+  }
+
+  async cancelGoal(id: string, goalId: string): Promise<SessionGoalState> {
+    if (!this.runtime.cancelGoal) throw new RuntimeSessionError("Goal mode is unavailable", "OPERATION_NOT_SUPPORTED");
+    return this.runtime.cancelGoal(id, goalId, "web");
   }
 
   private withPendingCreations(

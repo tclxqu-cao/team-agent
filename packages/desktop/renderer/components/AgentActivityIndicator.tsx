@@ -1,12 +1,17 @@
-export default function AgentActivityIndicator() {
+import { Brain } from "lucide-react";
+import ElapsedTime from "./ElapsedTime";
+
+interface AgentActivityIndicatorProps {
+  startedAt: number;
+}
+
+export default function AgentActivityIndicator({ startedAt }: AgentActivityIndicatorProps) {
   return (
     <div className="agent-activity-indicator" role="status" aria-live="polite">
-      <span>思考中</span>
-      <span className="agent-activity-dots" aria-hidden="true">
-        {[0, 1, 2].map((index) => (
-          <span key={index} style={{ animationDelay: `${index * 0.16}s` }} />
-        ))}
+      <span className="agent-activity-icon" aria-hidden="true">
+        <Brain size={17} strokeWidth={1.8} />
       </span>
+      <span>思考中<ElapsedTime startedAt={startedAt} /></span>
     </div>
   );
 }

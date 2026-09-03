@@ -1,14 +1,18 @@
-import { rm } from "node:fs/promises";
+import { cp, rm } from "node:fs/promises";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
-const outdir = resolve(root, "packages/tui-darwin-arm64/dist");
-await rm(outdir, { recursive: true, force: true });
+const darwinOutdir = resolve(root, "packages/tui-darwin-arm64/dist");
+const windowsOutdir = resolve(root, "packages/tui-win32-x64/dist");
+await Promise.all([
+  rm(darwinOutdir, { recursive: true, force: true }),
+  rm(windowsOutdir, { recursive: true, force: true }),
+]);
 
 const result = await Bun.build({
   entrypoints: [resolve(root, "packages/tui/agent-tui.mjs")],
-  outdir,
+  outdir: darwinOutdir,
   naming: "agent-tui.js",
   target: "node",
   format: "esm",
@@ -34,6 +38,7 @@ if (!result.success) {
   for (const log of result.logs) console.error(log);
   process.exitCode = 1;
 } else {
+  await cp(darwinOutdir, windowsOutdir, { recursive: true });
   const output = result.outputs[0];
-  console.log(`bundled agent-tui: ${output.size} bytes`);
+  console.log(`bundled agent-tui for darwin-arm64 and windows-amd64: ${output.size} bytes each`);
 }

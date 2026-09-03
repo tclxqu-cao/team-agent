@@ -13,6 +13,7 @@ import {
   type PermissionResult,
   type Query,
   type SDKMessage,
+  type SDKActiveGoalMessage,
   type SDKSessionInfo,
   type SDKUserMessage,
   type SessionMessage,
@@ -341,7 +342,10 @@ export class ClaudeRuntimeAdapter implements AgentRuntimeAdapter {
     if (detail.occupancy === "owned-externally") {
       throw new RuntimeSessionError("Claude Code session is open in another client", "SESSION_OCCUPIED");
     }
-    const initialMessage = claudeUserMessage(input, undefined, images);
+    const effectiveInput = runOptions?.goal
+      ? `/goal ${runOptions.goal.objective}`
+      : input;
+    const initialMessage = claudeUserMessage(effectiveInput, undefined, images);
 
     const isDraft = this.drafts.has(nativeSessionId);
     const permissionMode = normalizeToolPermissionMode(runOptions?.permissionMode);
@@ -371,6 +375,7 @@ export class ClaudeRuntimeAdapter implements AgentRuntimeAdapter {
           ? { allowDangerouslySkipPermissions: true }
           : { canUseTool }),
         tools: { type: "preset", preset: "claude_code" },
+        skills: "all",
       } as Parameters<typeof query>[0]["options"],
     });
     this.activeQueries.set(nativeSessionId, activeQuery);
@@ -868,7 +873,21 @@ function claudeImageAttachments(blocks: unknown[]): MessageAttachment[] {
   return attachments;
 }
 
-export function claudeSdkMessageToEvents(message: SDKMessage, hasStreamedText: boolean): AgentEvent[] {
+export function claudeSdkMessageToEvents(
+  message: SDKMessage | SDKActiveGoalMessage,
+  hasStreamedText: boolean,
+): AgentEvent[] {
+  if (message.type === "active_goal") {
+    if (!message.value) return [];
+    return [{
+      type: "runtime_progress",
+      progressId: "claude:goal",
+      phase: "status",
+      label: "正在推进目标",
+      current: message.value.iterations,
+      detail: message.value.last_reason || message.value.condition,
+    }];
+  }
   if (parentToolUseId(message)) return [];
   if (message.type === "stream_event") {
     const event = message.event as unknown as Record<string, unknown>;

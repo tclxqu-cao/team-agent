@@ -4,6 +4,13 @@ export type MarkdownLinkToken =
   | { type: "artifact"; label: string; path: string; line?: number; raw: string };
 
 const MARKDOWN_LINK_PATTERN = /\[([^\]\n]+)\]\((https?:\/\/[^\s)]+|\/[^)\n]+)\)/gi;
+const CODEX_FILE_CITATION_PATTERN = /:codex-file-citation\{([^}\n]*)\}/g;
+const CODEX_FILE_CITATION_ATTRIBUTE_PATTERN = /([A-Za-z][\w-]*)="([^"\n]*)"/g;
+
+type InlineLinkMatch = {
+  kind: "markdown" | "citation";
+  match: RegExpMatchArray;
+};
 
 function parseArtifactTarget(target: string): { path: string; line?: number } | null {
   if (!target.startsWith("/") || target.includes("?") || target.includes("#") || target.includes("\0")) {
@@ -14,14 +21,45 @@ function parseArtifactTarget(target: string): { path: string; line?: number } | 
   return { path: lineMatch[1], line: Number(lineMatch[2]) };
 }
 
+function parseCodexFileCitation(attributesSource: string): { path: string; label: string } | null {
+  const attributes: Record<string, string> = {};
+  for (const match of attributesSource.matchAll(CODEX_FILE_CITATION_ATTRIBUTE_PATTERN)) {
+    const name = match[1];
+    if ((name !== "path" && name !== "purpose") || attributes[name] !== undefined) return null;
+    attributes[name] = match[2];
+  }
+  if (attributesSource.replace(CODEX_FILE_CITATION_ATTRIBUTE_PATTERN, "").trim()) return null;
+  const artifact = parseArtifactTarget(attributes.path ?? "");
+  if (!artifact || artifact.line !== undefined) return null;
+  const label = artifact.path.slice(artifact.path.lastIndexOf("/") + 1) || artifact.path;
+  return { path: artifact.path, label };
+}
+
 export function parseMarkdownLinks(text: string): MarkdownLinkToken[] {
   const tokens: MarkdownLinkToken[] = [];
   let cursor = 0;
+  const matches: InlineLinkMatch[] = [
+    ...[...text.matchAll(MARKDOWN_LINK_PATTERN)].map((match) => ({ kind: "markdown" as const, match })),
+    ...[...text.matchAll(CODEX_FILE_CITATION_PATTERN)].map((match) => ({ kind: "citation" as const, match })),
+  ].sort((left, right) => (left.match.index ?? 0) - (right.match.index ?? 0));
 
-  for (const match of text.matchAll(MARKDOWN_LINK_PATTERN)) {
+  for (const candidate of matches) {
+    const { match } = candidate;
     const index = match.index ?? 0;
+    if (index < cursor) continue;
     if (index > cursor) {
       tokens.push({ type: "text", value: text.slice(cursor, index) });
+    }
+    if (candidate.kind === "citation") {
+      const artifact = parseCodexFileCitation(match[1]);
+      tokens.push(artifact ? {
+        type: "artifact",
+        label: artifact.label,
+        path: artifact.path,
+        raw: match[0],
+      } : { type: "text", value: match[0] });
+      cursor = index + match[0].length;
+      continue;
     }
     const target = match[2];
     if (/^https?:\/\//i.test(target)) {

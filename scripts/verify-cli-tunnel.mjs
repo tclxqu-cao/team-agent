@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Public relay pairing + WebSocket smoke test.
- * Usage: node scripts/verify-cli-tunnel.mjs [main.tgz] [platform.tgz] [--node /path/to/node22] [--provider auto|cloudflare|pinggy]
+ * Usage: node scripts/verify-cli-tunnel.mjs [--artifacts dist/cli-release] [--node /path/to/node22] [--provider auto|cloudflare|pinggy]
  */
 import { execFileSync, spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
@@ -9,27 +9,36 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { delimiter, dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { releasePackageNames, resolveReleaseArtifacts } from "./cli-release-artifacts.mjs";
 
-const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const args = process.argv.slice(2);
 const nodeBin = args.includes("--node") ? args[args.indexOf("--node") + 1] : process.execPath;
-const tarballs = args.filter((arg) => arg.endsWith(".tgz")).map((path) => resolve(path));
-const tarball = tarballs.find((path) => /agentroam-0\.2\.0-preview\.6\.tgz$/.test(path))
-  ?? resolve(root, "packages/cli/agentroam-0.2.0-preview.6.tgz");
-const platformTarball = tarballs.find((path) => /agentroam-cloudflared-darwin-arm64-0\.2\.0-preview\.6\.tgz$/.test(path))
-  ?? resolve(root, "packages/cloudflared-darwin-arm64/agentroam-cloudflared-darwin-arm64-0.2.0-preview.6.tgz");
+const artifacts = resolveReleaseArtifacts(args);
+const packageSet = releasePackageNames(artifacts.target);
 const provider = args.includes("--provider") ? args[args.indexOf("--provider") + 1] : "auto";
 if (!["auto", "cloudflare", "pinggy"].includes(provider)) throw new Error(`invalid provider: ${provider}`);
 const commandEnv = { ...process.env, PATH: `${dirname(nodeBin)}${delimiter}${process.env.PATH ?? ""}` };
+const npmBin = process.platform === "win32" ? "npm.cmd" : "npm";
 
 const workdir = mkdtempSync(resolve(tmpdir(), "agentroam-tunnel-"));
 console.log(`workdir: ${workdir}`);
 let child;
 
 try {
-  execFileSync("npm", ["init", "-y"], { cwd: workdir, stdio: "inherit", env: commandEnv });
-  execFileSync("npm", ["install", "--offline", platformTarball, tarball], { cwd: workdir, stdio: "inherit", env: commandEnv });
+  execFileSync(npmBin, ["init", "-y"], { cwd: workdir, stdio: "inherit", env: commandEnv });
+  execFileSync(npmBin, [
+    "install",
+    "--prefer-offline",
+    "--no-audit",
+    "--no-fund",
+    artifacts.runtime,
+    artifacts.cloudflared,
+    artifacts.launcher,
+  ], {
+    cwd: workdir,
+    stdio: "inherit",
+    env: commandEnv,
+  });
   const pkgBin = resolve(workdir, "node_modules/agentroam/bin/agentroam.mjs");
   const dataDir = resolve(workdir, "data");
 
@@ -86,10 +95,19 @@ try {
   const bootstrap = await fetchJson(`${publicBase}/api/web-console/bootstrap`, { headers: { cookie } });
   if (!bootstrap.response.ok || !bootstrap.body.wsNonce) throw new Error("WebSocket bootstrap failed");
 
-  const runtimeRequire = createRequire(resolve(workdir, "node_modules/agentroam/runtime/package.json"));
+  const runtimeRequire = createRequire(resolve(workdir, "node_modules", packageSet.runtime, "runtime/package.json"));
   const { WebSocket } = runtimeRequire("ws");
   const wsUrl = `${publicBase.replace(/^https:/, "wss:")}/ws?nonce=${encodeURIComponent(bootstrap.body.wsNonce)}`;
-  const hello = await waitForWebSocketHello(WebSocket, wsUrl, { Cookie: cookie, Origin: publicBase });
+  const wsAgent = createWebSocketProxyAgent(runtimeRequire);
+  let hello;
+  try {
+    hello = await waitForWebSocketHello(WebSocket, wsUrl, {
+      headers: { Cookie: cookie, Origin: publicBase },
+      agent: wsAgent,
+    });
+  } finally {
+    wsAgent?.destroy?.();
+  }
   if (hello.type !== "connection:hello" || hello.userId !== setup.body.user.id) {
     throw new Error(`unexpected WebSocket hello: ${JSON.stringify(hello)}`);
   }
@@ -141,9 +159,27 @@ function assertCookieFlags(cookie, flags) {
   }
 }
 
-function waitForWebSocketHello(WebSocket, url, headers) {
+function createWebSocketProxyAgent(runtimeRequire) {
+  const value = process.env.HTTPS_PROXY || process.env.https_proxy || process.env.HTTP_PROXY || process.env.http_proxy;
+  if (!value) return undefined;
+  const proxy = new URL(value);
+  if (proxy.protocol !== "http:" && proxy.protocol !== "https:") return undefined;
+  const tunnel = runtimeRequire("tunnel-agent");
+  const proxyOptions = {
+    host: proxy.hostname,
+    port: Number(proxy.port || (proxy.protocol === "https:" ? 443 : 80)),
+    ...(proxy.username || proxy.password
+      ? { proxyAuth: `${decodeURIComponent(proxy.username)}:${decodeURIComponent(proxy.password)}` }
+      : {}),
+  };
+  return proxy.protocol === "https:"
+    ? tunnel.httpsOverHttps({ proxy: proxyOptions })
+    : tunnel.httpsOverHttp({ proxy: proxyOptions });
+}
+
+function waitForWebSocketHello(WebSocket, url, options) {
   return new Promise((resolve, reject) => {
-    const ws = new WebSocket(url, { headers });
+    const ws = new WebSocket(url, options);
     const timer = setTimeout(() => {
       ws.terminate();
       reject(new Error("WebSocket hello timeout"));

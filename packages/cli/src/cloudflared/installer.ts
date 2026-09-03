@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { constants } from "node:fs";
-import { access, chmod, mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
+import { access, chmod, copyFile, mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import { delimiter, resolve } from "node:path";
 import type { PlatformTarget } from "../platform.js";
 import { resolveBundledCloudflared, type BundledCloudflaredAsset } from "./bundled-asset.js";
@@ -17,7 +17,7 @@ export async function ensureCloudflared(
   options: EnsureCloudflaredOptions = {},
 ): Promise<string> {
   const binDir = resolve(dataDir, "bin");
-  const finalPath = resolve(binDir, process.platform === "win32" ? "cloudflared.exe" : "cloudflared");
+  const finalPath = resolve(binDir, target === "windows-amd64" ? "cloudflared.exe" : "cloudflared");
   const marker = `${finalPath}.source.sha256`;
   await mkdir(binDir, { recursive: true });
 
@@ -28,7 +28,7 @@ export async function ensureCloudflared(
   try {
     const bundled = await resolveBundled(target);
     if (bundled && (await cached(finalPath, marker, bundled.sha256))) return finalPath;
-    if (bundled) return await installBundledCloudflared(bundled, binDir, finalPath, marker);
+    if (bundled) return await installBundledCloudflared(bundled, target, binDir, finalPath, marker);
     failures.push(`platform package missing for ${target}`);
   } catch (error) {
     failures.push(describeError(error));
@@ -56,26 +56,33 @@ export async function findSystemCloudflared(
 
 async function installBundledCloudflared(
   asset: BundledCloudflaredAsset,
+  target: PlatformTarget,
   binDir: string,
   finalPath: string,
   marker: string,
 ): Promise<string> {
-  const archiveInfo = await stat(asset.archivePath);
+  const archiveInfo = await stat(asset.assetPath);
   if (!archiveInfo.isFile() || archiveInfo.size !== asset.size) throw new Error("bundled cloudflared size mismatch");
-  if ((await sha256File(asset.archivePath)) !== asset.sha256) throw new Error("bundled cloudflared checksum mismatch");
+  if ((await sha256File(asset.assetPath)) !== asset.sha256) throw new Error("bundled cloudflared checksum mismatch");
 
   const temporaryDir = resolve(binDir, `.cloudflared-${process.pid}-${Date.now()}`);
   const markerTemp = `${marker}.${process.pid}.tmp`;
   await mkdir(temporaryDir, { recursive: true });
   try {
-    await extractTgz(asset.archivePath, temporaryDir);
-    const entries = await readdir(temporaryDir);
-    if (entries.length !== 1 || entries[0] !== asset.fileName) {
-      throw new Error(`unexpected bundled cloudflared contents: ${entries.join(", ")}`);
+    let extracted: string;
+    if (asset.assetFormat === "tgz") {
+      await extractTgz(asset.assetPath, temporaryDir);
+      const entries = await readdir(temporaryDir);
+      if (entries.length !== 1 || entries[0] !== asset.fileName) {
+        throw new Error(`unexpected bundled cloudflared contents: ${entries.join(", ")}`);
+      }
+      extracted = resolve(temporaryDir, asset.fileName);
+    } else {
+      extracted = resolve(temporaryDir, asset.fileName);
+      await copyFile(asset.assetPath, extracted);
     }
-    const extracted = resolve(temporaryDir, asset.fileName);
     if (!(await stat(extracted)).isFile()) throw new Error("bundled cloudflared executable missing");
-    if (process.platform !== "win32") await chmod(extracted, 0o755);
+    if (target !== "windows-amd64") await chmod(extracted, 0o755);
     await rename(extracted, finalPath);
     await writeFile(markerTemp, `${asset.sha256}\n`);
     await rename(markerTemp, marker);

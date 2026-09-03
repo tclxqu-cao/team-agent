@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { readFile, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
-import type { AgentEvent } from "@agent/core";
+import { SessionGoalCoordinator, type AgentEvent } from "@agent/core";
 import { AgentHost } from "./agent-host.js";
 import {
   BrokerRuntimeAdapter,
@@ -87,6 +87,37 @@ const unifiedSessions = new UnifiedSessionService(
     new BrokerRuntimeAdapter("claude-code", nativeRuntimeBroker),
   ],
   () => agentHost.getProjectStore().list(),
+);
+const activeCustomerGoalRuns = new Set<string>();
+const customerGoalCoordinator = new SessionGoalCoordinator(
+  agentHost.getSessionStore(),
+  async (sessionId, objective) => {
+    while (true) {
+      let outcome: "completed" | "failed" = "completed";
+      let reason: string | undefined;
+      try {
+        activeCustomerGoalRuns.add(sessionId);
+        for await (const event of unifiedSessions.run(sessionId, objective)) {
+          if (event.type === "error") {
+            outcome = "failed";
+            reason = event.message;
+          } else if (event.type === "turn_aborted") {
+            outcome = "failed";
+            reason = "Goal was stopped";
+          }
+        }
+        activeCustomerGoalRuns.delete(sessionId);
+        return { outcome, reason };
+      } catch (error) {
+        activeCustomerGoalRuns.delete(sessionId);
+        if (!(error instanceof RuntimeSessionError) || error.code !== "SESSION_OCCUPIED") throw error;
+        await new Promise((resolve) => setTimeout(resolve, 250));
+      }
+    }
+  },
+  (sessionId) => activeCustomerGoalRuns.has(sessionId)
+    ? unifiedSessions.abort(sessionId)
+    : Promise.resolve(),
 );
 const nativeEventForwarders = new Map<string, () => void>();
 const nativeDesktopCursors = new Map<string, { runId: string | null; sequence: number }>();
@@ -994,6 +1025,41 @@ ipcMain.handle("sessions:setPermissionMode", async (_event, id: string, mode: im
   const session = await agentHost.setSessionPermissionMode(id, mode);
   unifiedSessions.invalidate(id);
   return session;
+});
+
+ipcMain.handle("sessions:getGoals", async (_event, id: string) => {
+  if (unifiedSessions.agentTypeFor(id) === "customer-agent") {
+    return customerGoalCoordinator.get(id);
+  }
+  const state = await nativeRuntimeBroker.getGoals(id, "desktop");
+  await attachDesktopNativeEventForwarder(id).catch(() => undefined);
+  return state;
+});
+
+ipcMain.handle("sessions:enqueueGoal", async (
+  _event,
+  id: string,
+  objective: string,
+  sourceMessageId?: string,
+) => {
+  if (unifiedSessions.agentTypeFor(id) === "customer-agent") {
+    return customerGoalCoordinator.enqueue(id, objective, sourceMessageId);
+  }
+  const result = await nativeRuntimeBroker.enqueueGoal(id, objective, sourceMessageId, "desktop");
+  await attachDesktopNativeEventForwarder(id).catch(() => undefined);
+  return result.state;
+});
+
+ipcMain.handle("sessions:reorderGoals", async (_event, id: string, orderedIds: string[]) => {
+  return unifiedSessions.agentTypeFor(id) === "customer-agent"
+    ? customerGoalCoordinator.reorder(id, orderedIds)
+    : nativeRuntimeBroker.reorderGoals(id, orderedIds);
+});
+
+ipcMain.handle("sessions:cancelGoal", async (_event, id: string, goalId: string) => {
+  return unifiedSessions.agentTypeFor(id) === "customer-agent"
+    ? customerGoalCoordinator.cancel(id, goalId)
+    : nativeRuntimeBroker.cancelGoal(id, goalId, "desktop");
 });
 
 ipcMain.handle("sessions:handoff", async (_event, id: string) => {

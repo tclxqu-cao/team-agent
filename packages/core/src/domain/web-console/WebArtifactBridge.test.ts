@@ -21,6 +21,13 @@ describe("web artifact bridge contract", () => {
     )).toEqual(request);
   });
 
+  it("accepts Windows drive-letter and UNC absolute paths", () => {
+    expect(parseWebArtifactOpenRequest({ ...request, path: "C:\\Users\\example\\report.pdf" }))
+      .toEqual({ ...request, path: "C:\\Users\\example\\report.pdf" });
+    expect(parseWebArtifactOpenRequest({ ...request, path: "\\\\server\\share\\report.pdf" }))
+      .toEqual({ ...request, path: "\\\\server\\share\\report.pdf" });
+  });
+
   it("rejects invalid ids and unsafe paths", () => {
     expect(parseWebArtifactOpenRequest({ ...request, requestId: 0 })).toBeNull();
     expect(parseWebArtifactOpenRequest({ ...request, requestId: Number.NaN })).toBeNull();

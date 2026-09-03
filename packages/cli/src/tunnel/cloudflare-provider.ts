@@ -6,7 +6,7 @@ export class CloudflareTunnelProvider implements TunnelProvider {
   constructor(private readonly executable: string) {}
 
   async start({ localUrl, signal, log }: { localUrl: string; signal: AbortSignal; log: (line: string) => void }): Promise<TunnelHandle> {
-    const child = spawn(this.executable, ["tunnel", "--no-autoupdate", "--url", localUrl], {
+    const child = spawn(this.executable, buildCloudflaredArguments(localUrl), {
       stdio: ["ignore", "pipe", "pipe"],
       windowsHide: true,
       detached: process.platform !== "win32",
@@ -25,6 +25,10 @@ export class CloudflareTunnelProvider implements TunnelProvider {
       throw error;
     }
   }
+}
+
+export function buildCloudflaredArguments(localUrl: string): string[] {
+  return ["tunnel", "--no-autoupdate", "--protocol", "http2", "--url", localUrl];
 }
 
 export function waitForConnectedUrl(

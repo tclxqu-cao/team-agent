@@ -116,6 +116,9 @@ export interface ChatMessage {
   isQueued?: boolean;
   /** True when this user message has been steered into the running loop */
   isSteered?: boolean;
+  /** Identifies a goal-mode user message and links it to the durable goal queue. */
+  isGoal?: boolean;
+  goalId?: string;
   /** ask_user question data */
   askUser?: {
     questionId: string;

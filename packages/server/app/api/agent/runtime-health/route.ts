@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { getNativeRuntimeService } from "../../../../lib/native-runtime-service";
 
+export const dynamic = "force-dynamic";
+
 export async function GET() {
   const native = await getNativeRuntimeService().health();
   return NextResponse.json([

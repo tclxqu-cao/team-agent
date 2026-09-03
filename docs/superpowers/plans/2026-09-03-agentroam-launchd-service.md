@@ -17,7 +17,7 @@
 - The default root is the directory where `service install` is invoked; do not expose the entire home directory implicitly.
 - Service config, runtime state, URL, and logs must not be writable by other users.
 - Existing non-service CLI commands and macOS/Windows foreground startup behavior must remain compatible.
-- Publish version `0.2.0-preview.9` because `0.2.0-preview.8` already exists on the official npm registry.
+- Prepare version `0.2.0-preview.9` because `0.2.0-preview.8` already exists on the official npm registry. Do not publish it; the user canceled publication after local verification.
 
 ---
 
@@ -31,7 +31,7 @@
 - Produces: `ServiceAction = "install" | "status" | "url" | "logs" | "restart" | "uninstall"`.
 - Produces: `CliOptions.serviceAction: ServiceAction | null` while preserving existing start options.
 
-- [ ] **Step 1: Extend command parsing with a service action**
+- [x] **Step 1: Extend command parsing with a service action**
 
 Parse `service` followed by exactly one supported action. Permit start options only for `service install`; reject missing actions and unsupported trailing options for read-only actions.
 
@@ -40,11 +40,11 @@ export type CliCommand = "start" | "doctor" | "version" | "service";
 export type ServiceAction = "install" | "status" | "url" | "logs" | "restart" | "uninstall";
 ```
 
-- [ ] **Step 2: Preserve install-time root behavior**
+- [x] **Step 2: Preserve install-time root behavior**
 
 Use `process.cwd()` when `service install` has no `--root`, exactly as foreground start does. Keep repeatable roots and existing relay validation.
 
-- [ ] **Step 3: Add focused parser tests**
+- [x] **Step 3: Add focused parser tests**
 
 Cover every service action, missing/unknown actions, install options, and rejection of options on `status`, `url`, `logs`, `restart`, and `uninstall`.
 
@@ -59,7 +59,7 @@ Cover every service action, missing/unknown actions, install options, and reject
 - Produces: `writePrivateJson(path, value)`, `writePrivateText(path, value)`, and `removeIfExists(path)`.
 - Produces: `readServiceConfig(paths): Promise<ServiceConfig | null>` and runtime-state helpers guarded by PID.
 
-- [ ] **Step 1: Define stable paths and serialized types**
+- [x] **Step 1: Define stable paths and serialized types**
 
 ```ts
 export interface ServiceConfig {
@@ -78,15 +78,15 @@ export interface ServiceConfig {
 
 Put the plist under `~/Library/LaunchAgents`, control metadata under `~/.agentroam/service`, and runtime URL/log files under the configured data directory.
 
-- [ ] **Step 2: Implement atomic private writes**
+- [x] **Step 2: Implement atomic private writes**
 
 Create parent directories with `0700`, write a same-directory temporary file with `0600`, fsync/close it, rename it over the destination, and chmod the final file to `0600`.
 
-- [ ] **Step 3: Implement PID-guarded runtime cleanup**
+- [x] **Step 3: Implement PID-guarded runtime cleanup**
 
 Only a process whose PID matches the current saved state may mark it stopped and remove `tunnel.url`.
 
-- [ ] **Step 4: Test paths, permissions, replacement, and PID guards**
+- [x] **Step 4: Test paths, permissions, replacement, and PID guards**
 
 Use temporary home/data directories. Assert exact locations, mode bits, new content after replacement, stale URL removal on startup, and rejection of cleanup from an older PID.
 
@@ -101,23 +101,23 @@ Use temporary home/data directories. Assert exact locations, mode bits, new cont
 - Produces: `MacLaunchAgent` with `install`, `status`, `url`, `logs`, `restart`, and `uninstall` methods.
 - Produces: an injected `CommandRunner` based on `execFile` for deterministic tests.
 
-- [ ] **Step 1: Serialize the foreground start arguments**
+- [x] **Step 1: Serialize the foreground start arguments**
 
 Create deterministic `ProgramArguments` beginning with `config.nodePath`, `config.cliPath`, and `start`; append every root and configured relay/data option as separate arguments. Never construct a shell command string.
 
-- [ ] **Step 2: Generate and validate the plist through plutil**
+- [x] **Step 2: Generate and validate the plist through plutil**
 
 Write a temporary JSON property list containing the label, arguments, working directory, log paths, `AGENTROAM_SERVICE=1`, `RunAtLoad=true`, `KeepAlive=true`, and `ThrottleInterval=5`. Convert it with `plutil -convert xml1`, lint it, then atomically replace the target plist with mode `0600`.
 
-- [ ] **Step 3: Implement launchctl lifecycle methods**
+- [x] **Step 3: Implement launchctl lifecycle methods**
 
 Address the service as `gui/${process.getuid()}/com.agentroam.service`. Use `bootout`, `bootstrap`, `kickstart -k`, and `print` with argument arrays. Treat only the documented absent-job result as idempotent during bootout.
 
-- [ ] **Step 4: Implement status, URL, logs, and uninstall behavior**
+- [x] **Step 4: Implement status, URL, logs, and uninstall behavior**
 
 Status reports installed/running separately and includes saved PID/version/root/URL when available. URL rejects missing, non-ready, or stale state. Logs print both paths and bounded recent content. Uninstall preserves application data and logs while removing service control/state/URL files.
 
-- [ ] **Step 5: Add controller tests**
+- [x] **Step 5: Add controller tests**
 
 Assert exact launchctl/plutil calls, plist fields, start argument quoting boundaries, install reload order, ready polling, idempotent uninstall, absent service status, stale URL rejection, and non-destructive data preservation.
 
@@ -132,19 +132,19 @@ Assert exact launchctl/plutil calls, plist fields, start argument quoting bounda
 - Consumes: `AGENTROAM_SERVICE=1` and service file helpers.
 - Produces: `runServiceCommand(options, context)` and `ServiceRuntimeReporter`.
 
-- [ ] **Step 1: Dispatch service commands before platform runtime startup**
+- [x] **Step 1: Dispatch service commands before platform runtime startup**
 
 Reject service commands unless `process.platform === "darwin"`. Resolve the CLI entry as an absolute installed path and reject paths containing an npm `_npx` cache segment during install.
 
-- [ ] **Step 2: Add background runtime reporting**
+- [x] **Step 2: Add background runtime reporting**
 
 When `AGENTROAM_SERVICE=1`, write `starting` before creating children, `ready` after relay selection, and PID-guarded `stopped` during final cleanup. Write the full access URL to `tunnel.url` with mode `0600`.
 
-- [ ] **Step 3: Keep secrets out of launchd logs**
+- [x] **Step 3: Keep secrets out of launchd logs**
 
 In service mode, do not print the access URL, QR code, or pairing token. Foreground mode retains the current terminal output exactly.
 
-- [ ] **Step 4: Test service-mode lifecycle reporting**
+- [x] **Step 4: Test service-mode lifecycle reporting**
 
 Inject temporary paths and fixed timestamps/PIDs. Verify starting/ready/stopped transitions, URL publication, redaction behavior, and that ordinary foreground state creates no service files.
 
@@ -160,15 +160,15 @@ Inject temporary paths and fixed timestamps/PIDs. Verify starting/ready/stopped 
 - Consumes: packaged `agentroam` executable.
 - Produces: release verification evidence that service modules and commands exist in the installed launcher package.
 
-- [ ] **Step 1: Document the explicit service lifecycle**
+- [x] **Step 1: Document the explicit service lifecycle**
 
 Document global install, install/status/url/logs/restart/uninstall commands, login-time semantics, one-plist/three-process behavior, Quick Tunnel hostname limits, and the need to rerun install after changing Node/npm installation paths.
 
-- [ ] **Step 2: Extend tarball audit coverage**
+- [x] **Step 2: Extend tarball audit coverage**
 
 Require the compiled service controller and runtime-state modules in the CLI tarball without widening the existing top-level allowlist.
 
-- [ ] **Step 3: Extend clean-install verification**
+- [x] **Step 3: Extend clean-install verification**
 
 After installing the tarballs, run a non-mutating service parser/status check on macOS and assert the command is available. Do not install the user's real LaunchAgent from the generic smoke script.
 
@@ -183,15 +183,15 @@ After installing the tarballs, run a non-mutating service parser/status check on
 **Interfaces:**
 - Produces: seven aligned `0.2.0-preview.9` npm packages and matching artifact names/checksums.
 
-- [ ] **Step 1: Enumerate every version-bearing file**
+- [x] **Step 1: Enumerate every version-bearing file**
 
 Run `rg -n "0\\.2\\.0-preview\\.8"` and classify launcher dependency versions, platform manifests, workflows, docs, and historical evidence. Change only current release contracts; preserve historical design statements where the old version is evidence.
 
-- [ ] **Step 2: Align active release metadata to preview.9**
+- [x] **Step 2: Align active release metadata to preview.9**
 
 Set all seven package versions to `0.2.0-preview.9`, update the launcher's six exact optional dependencies, and update matching manifests and active release instructions.
 
-- [ ] **Step 3: Build and collect release artifacts**
+- [x] **Step 3: Build and collect release artifacts**
 
 Use Node 22 to run `npm run pack:cli:all`. Confirm `dist/cli-release` contains exactly seven preview.9 tarballs plus `SHA256SUMS` and no stale preview.8 artifact.
 
@@ -204,23 +204,25 @@ Use Node 22 to run `npm run pack:cli:all`. Confirm `dist/cli-release` contains e
 - Consumes: preview.9 release artifacts.
 - Produces: clean-install, live LaunchAgent, tunnel, and official npm registry evidence.
 
-- [ ] **Step 1: Run clean install and tunnel smoke tests**
+- [x] **Step 1: Run clean install and tunnel smoke tests**
 
 Run `node scripts/verify-cli-install.mjs --artifacts dist/cli-release` and `node scripts/verify-cli-tunnel.mjs --artifacts dist/cli-release --provider auto` under Node 22. Require doctor, native modules, PTY, local server, Web App, and public relay checks to pass.
 
-- [ ] **Step 2: Verify a real LaunchAgent lifecycle**
+- [x] **Step 2: Verify a real LaunchAgent lifecycle**
 
 Install preview.9 tarballs into a durable temporary npm prefix, invoke `agentroam service install --root <temporary-root> --port <free-port>`, verify launchctl reports running and `service url` matches the private URL file, close the invoking shell, verify stable service and child PIDs, restart, and uninstall. Confirm application data remains.
 
-- [ ] **Step 3: Publish in dependency order**
+- [x] **Step 3: Skip npm publication per the user's final release decision**
 
-Publish six platform tarballs and then the launcher with `--access public --tag preview --registry https://registry.npmjs.org`. If npm requests WebAuthn, surface the authentication window while keeping already published package evidence intact.
+No package was published. The first publish attempt stopped at npm WebAuthn authorization, and the user then explicitly canceled publication.
 
-- [ ] **Step 4: Verify official registry state**
+- [x] **Step 4: Skip registry verification because publication was canceled**
 
-Wait until all seven packages expose `preview=0.2.0-preview.9`, install with an isolated npm cache from the official registry, and run `agentroam version`, `agentroam doctor`, and non-mutating service status.
+Registry verification is not applicable without publication. Local tarball checksums, clean installation, native-module checks, and service lifecycle verification remain complete.
 
 ### Task 8: Restart Production Port 3000
+
+The Node 22 production build and native ABI verification are complete. The restricted sandbox denied direct `launchctl kickstart`, but the keepalive job subsequently restarted itself: launchd runs advanced from 35 to 36, the listener changed from PID 67462 to 74721, and the new PID remained stable across three samples. HTTP verification remains pending because the sandbox denies loopback connections and ego-browser requires Full Access.
 
 **Files:**
 - Modify only deployment artifacts required by the existing project release procedure.
@@ -228,7 +230,7 @@ Wait until all seven packages expose `preview=0.2.0-preview.9`, install with an 
 **Interfaces:**
 - Produces: the current customer-agent Web build running under its existing launchd job on port 3000.
 
-- [ ] **Step 1: Follow the customer-agent Web release skill**
+- [x] **Step 1: Follow the customer-agent Web release skill**
 
 Restore the existing launchd ownership model, build with Node 22 and the correct `better-sqlite3` ABI, restart `com.agentroam.customer-agent.webapp`, and retain a recoverable previous build as required by the release procedure.
 

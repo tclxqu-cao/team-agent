@@ -22,15 +22,17 @@ import path from "node:path";
 import fsSync from "node:fs";
 import fsp from "node:fs/promises";
 import zlib from "node:zlib";
+import { fileURLToPath } from "node:url";
 import next from "next";
 import { WebSocketServer } from "ws";
 import pty from "node-pty";
 import chokidar from "chokidar";
 import { HostPathPolicy, SQLiteAnonymousWebStore, SQLiteProjectStore, SQLiteWebConsoleStore } from "@agent/core";
+import { decodeOsc7Path, isPowerShell, selectDefaultShell } from "./shell-platform.mjs";
 
 const dev = process.env.NODE_ENV !== "production";
 const port = Number(process.env.PORT || 3000);
-const dir = path.dirname(new URL(import.meta.url).pathname);
+const dir = path.dirname(fileURLToPath(import.meta.url));
 
 const serverBaseDir = path.resolve(process.env.AGENT_DATA_DIR?.trim() || dir);
 const anonymousWebStore = new SQLiteAnonymousWebStore(serverBaseDir);
@@ -105,6 +107,7 @@ async function lsofCwd(pid) {
 }
 
 async function readProcessCwd(shellPid) {
+  if (process.platform === "win32") return null;
   let foregroundPgid = shellPid;
   try {
     // tpgid is the foreground process-group leader for the PTY. While an
@@ -177,7 +180,7 @@ const execFileAsync = (cmd, args, opts) =>
 /**
  * @typedef {{id:string, userId:string, pid:number, cwd:string|null, pty:import('node-pty').IPty, scrollback:Scrollback,
  *            size:{cols:number,rows:number}, watchers:Set<(b:Uint8Array)=>void>,
- *            exited:boolean, closed:boolean, cwdWatchers:Set<(cwd:string)=>void>, inputOwner:string|null, oscTail:string}} TerminalSession
+ *            shell:string, exited:boolean, closed:boolean, cwdWatchers:Set<(cwd:string)=>void>, inputOwner:string|null, oscTail:string}} TerminalSession
  */
 
 /** @returns {TerminalSession} */
@@ -190,14 +193,15 @@ function startTerminal(id, { userId, cols = 80, rows = 24, cwd, command, initial
     ? initialCommand
     : "";
 
-  const shell = process.env.SHELL || (process.platform==="win32"?(process.env.COMSPEC||"powershell.exe"):"/bin/zsh");
-  const powershell=/powershell|pwsh/i.test(shell);
+  const shell = selectDefaultShell();
+  const powershell = isPowerShell(shell);
   const args = command ? (powershell?["-NoLogo","-Command",command]:["-l","-c",command]) : (powershell?["-NoLogo"]:["-l"]);
+  const initialCwd = cwd && fsSync.existsSync(cwd) ? path.resolve(cwd) : os.homedir();
   const p = pty.spawn(shell, args, {
     name: "xterm-256color",
     cols: clampInt(cols, 2, 500, 80),
     rows: clampInt(rows, 2, 300, 24),
-    cwd: cwd && fsSync.existsSync(cwd) ? cwd : os.homedir(),
+    cwd: initialCwd,
     env: process.env,
   });
 
@@ -206,7 +210,8 @@ function startTerminal(id, { userId, cols = 80, rows = 24, cwd, command, initial
     id,
     userId,
     pid: p.pid,
-    cwd: null,
+    cwd: initialCwd,
+    shell,
     pty: p,
     scrollback: new Scrollback(),
     size: { cols, rows },
@@ -269,7 +274,7 @@ function startTerminal(id, { userId, cols = 80, rows = 24, cwd, command, initial
     }, 350).unref?.();
   }
   if (powershell) {
-    const integration=`function global:prompt { $e=[char]27; $b=[char]7; Write-Host -NoNewline ($e + ']7;file:///' + ($PWD.Path -replace '\\\\','/') + $b); 'PS ' + $PWD.Path + '> ' }`;
+    const integration=`function global:prompt { $e=[char]27; $b=[char]7; $p=$PWD.Path -replace '\\\\','/'; $u=if($p.StartsWith('//')){'file:'+$p}else{'file:///'+$p}; Write-Host -NoNewline ($e + ']7;' + $u + $b); 'PS ' + $PWD.Path + '> ' }`;
     setTimeout(()=>{if(!session.exited){p.write(`${integration}\r`);if(queuedCommand)p.write(`${queuedCommand}\r`);}},350).unref?.();
   }
   if (!shell.endsWith("zsh") && !powershell && queuedCommand) {
@@ -290,6 +295,17 @@ function captureShellHistory(session, data) {
       const cwd = Buffer.from(match[2], "base64").toString("utf8");
       if (command.trim()) consoleStore.addHistory(session.userId, session.id, command, cwd, new Date().toISOString());
     } catch {}
+  }
+  const cwdRegex = /\x1b]7;(file:\/\/[^\x07\x1b]+)(?:\x07|\x1b\\)/g;
+  while ((match = cwdRegex.exec(combined))) {
+    lastEnd = Math.max(lastEnd, cwdRegex.lastIndex);
+    const cwd = decodeOsc7Path(match[1]);
+    if (!cwd || cwd === session.cwd) continue;
+    session.cwd = cwd;
+    consoleStore.updateTab(session.id, session.userId, { currentCwd: cwd, lastActiveAt: new Date().toISOString() });
+    for (const callback of [...session.cwdWatchers]) {
+      try { callback(cwd); } catch {}
+    }
   }
   const lastEscape = combined.lastIndexOf("\x1b]");
   session.oscTail = lastEscape >= lastEnd ? combined.slice(lastEscape).slice(-4096) : "";
@@ -546,7 +562,7 @@ const requestHandlers = {
 
     const channelId = assignChannel(conn, id);
     const now = new Date().toISOString();
-    if (!existingTab) consoleStore.createTab({ id, userId: conn.principal.userId, title: msg.title || `Terminal ${existingTabs.length + 1}`, shell: process.env.SHELL || "/bin/zsh", startCwd: msg.cwd || os.homedir(), currentCwd: msg.cwd || os.homedir(), status: "active", sortOrder: existingTabs.length, createdAt: now, lastActiveAt: now, exitedAt: null, closedAt: null });
+    if (!existingTab) consoleStore.createTab({ id, userId: conn.principal.userId, title: msg.title || `Terminal ${existingTabs.length + 1}`, shell: session.shell, startCwd: session.cwd || os.homedir(), currentCwd: session.cwd || os.homedir(), status: "active", sortOrder: existingTabs.length, createdAt: now, lastActiveAt: now, exitedAt: null, closedAt: null });
     else consoleStore.updateTab(id, conn.principal.userId, { status: "active", lastActiveAt: now, exitedAt: null, closedAt: null });
 
     const forward = (bytes) => conn.sendTerminal(id, bytes);
@@ -570,10 +586,10 @@ const requestHandlers = {
     if (snap.byteLength > 0) setImmediate(() => conn.sendTerminal(id, new Uint8Array(snap)));
 
     // best-effort immediate cwd (shell may not have cd'd yet → home)
-    let currentCwd = null;
+    let currentCwd = session.cwd;
     try {
-      currentCwd = await readProcessCwd(session.pid);
-      session.cwd = currentCwd;
+      const detectedCwd = await readProcessCwd(session.pid);
+      if (detectedCwd) currentCwd = session.cwd = detectedCwd;
     } catch {}
     return { sessionId: id, channelId, cols: session.size.cols, rows: session.size.rows, cwd: currentCwd };
   },

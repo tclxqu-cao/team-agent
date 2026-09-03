@@ -35,6 +35,7 @@ export const WEB_THEMES: WebTheme[] = [
     swatch: "#f5f6fa",
     preview: ["#f5f6fa", "#4f6ef7"],
     cssVars: {
+      "--ui-color-scheme": "light",
       "--ui-root-bg": "#f5f6fa",
       "--ui-text": "#111827",
       "--ui-tabbar-bg": "#eef0f6",
@@ -98,6 +99,7 @@ export const WEB_THEMES: WebTheme[] = [
     swatch: "#050a14",
     preview: ["#050a14", "#22d3ee"],
     cssVars: {
+      "--ui-color-scheme": "dark",
       "--ui-root-bg": "#050a14",
       "--ui-text": "#e2f3ff",
       "--ui-tabbar-bg": "#0a1220",
@@ -161,6 +163,7 @@ export const WEB_THEMES: WebTheme[] = [
     swatch: "#0f1115",
     preview: ["#0f1115", "#a78bfa"],
     cssVars: {
+      "--ui-color-scheme": "dark",
       "--ui-root-bg": "#0f1115",
       "--ui-text": "#eceff4",
       "--ui-tabbar-bg": "#14171d",

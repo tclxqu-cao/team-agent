@@ -6,14 +6,26 @@ import { repairNativeRuntimePermissions } from "./native-runtime.js";
 import { findLanUrl } from "./network.js";
 import { createPairingSecret } from "./pairing.js";
 import { detectPlatform, type PlatformTarget } from "./platform.js";
+import { AGENTROAM_VERSION, resolvePlatformRuntime, resolvePlatformTui } from "./platform-packages.js";
 import { renderQr } from "./qr.js";
 import { RuntimeManager, type RuntimeHandle } from "./runtime-manager.js";
+import { ServiceRuntimeReporter } from "./service/runtime-state.js";
+import { runServiceCommand } from "./service/service-command.js";
+import { resolveServicePaths } from "./service/service-files.js";
 import { selectRelay, type RelaySelection } from "./tunnel/relay-orchestrator.js";
 
-const VERSION = "0.2.0-preview.6";
+const VERSION = AGENTROAM_VERSION;
 
 export async function main(argv: string[]): Promise<void> {
   const options = parseArgs(argv);
+  if (options.command === "service") {
+    await runServiceCommand(options, {
+      nodePath: process.execPath,
+      cliPath: fileURLToPath(new URL("../bin/agentroam.mjs", import.meta.url)),
+      version: VERSION,
+    });
+    return;
+  }
   const target = detectPlatform();
 
   if (options.command === "version") {
@@ -31,6 +43,9 @@ export async function main(argv: string[]): Promise<void> {
   let runtime: RuntimeHandle | null = null;
   let relay: RelaySelection | null = null;
   let closing = false;
+  const serviceReporter = process.env.AGENTROAM_SERVICE === "1"
+    ? new ServiceRuntimeReporter(resolveServicePaths(undefined, options.dataDir), VERSION)
+    : null;
 
   const close = async () => {
     if (closing) return;
@@ -44,7 +59,8 @@ export async function main(argv: string[]): Promise<void> {
   process.once("SIGTERM", requestClose);
 
   try {
-    runtime = await new RuntimeManager().start(options, pairing);
+    await serviceReporter?.starting();
+    runtime = await new RuntimeManager().start(options, pairing, target);
     console.log(`✓ Local server: ${runtime.localUrl}/web`);
     const lanUrl = findLanUrl(runtime.port) ?? runtime.localUrl;
 
@@ -58,6 +74,7 @@ export async function main(argv: string[]): Promise<void> {
       log: (line) => process.stderr.write(`${line}\n`),
       onAttempt: (provider) => console.log(`▲ Trying ${providerDisplayName(provider)} relay...`),
       onFailure: (provider, message) => console.error(`⚠ ${providerDisplayName(provider)} unavailable: ${message}`),
+      allowLanFallback: serviceReporter === null,
     });
 
     if (controller.signal.aborted) return;
@@ -74,24 +91,35 @@ export async function main(argv: string[]): Promise<void> {
     }
 
     const accessUrl = `${relay.publicUrl}/web${runtime.needsSetup ? `?pair=${encodeURIComponent(pairing.token)}` : ""}`;
-    console.log(`\nOpen: ${accessUrl}`);
-    if (options.qr) console.log(`\n${await renderQr(accessUrl)}`);
-    if (runtime.needsSetup) console.log("First pairing link expires in 5 minutes.");
-    console.log("Ctrl+C stops the tunnel and local server.");
+    await serviceReporter?.ready({
+      localUrl: runtime.localUrl,
+      publicUrl: relay.publicUrl,
+      accessUrl,
+      provider: relay.provider,
+    });
+    if (serviceReporter) {
+      console.log("✓ Background service URL written to the private state file.");
+    } else {
+      console.log(`\nOpen: ${accessUrl}`);
+      if (options.qr) console.log(`\n${await renderQr(accessUrl)}`);
+      if (runtime.needsSetup) console.log("First pairing link expires in 5 minutes.");
+      console.log("Ctrl+C stops the tunnel and local server.");
+    }
 
     await Promise.race([runtime.exited, relay.tunnel?.exited ?? new Promise(() => {})]);
   } finally {
     process.removeListener("SIGINT", requestClose);
     process.removeListener("SIGTERM", requestClose);
     await close();
+    await serviceReporter?.stopped().catch(() => {});
   }
 }
 
 async function doctor(target: PlatformTarget, dataDir: string): Promise<void> {
   console.log(`✓ Node ${process.versions.node}`);
   console.log(`✓ Platform ${target}`);
-  const runtimeRoot = fileURLToPath(new URL("../runtime/", import.meta.url));
-  const runtimeRequire = createRequire(fileURLToPath(new URL("../runtime/package.json", import.meta.url)));
+  const { runtimeRoot } = resolvePlatformRuntime(target);
+  const runtimeRequire = createRequire(`${runtimeRoot}/package.json`);
 
   try {
     await repairNativeRuntimePermissions(runtimeRoot);
@@ -110,7 +138,7 @@ async function doctor(target: PlatformTarget, dataDir: string): Promise<void> {
   }
 
   try {
-    runtimeRequire.resolve("agentroam-tui-darwin-arm64/entry");
+    resolvePlatformTui(target);
     console.log("✓ agent-tui optional package");
   } catch (error) {
     reportDoctorFailure(error, "agent-tui: ");

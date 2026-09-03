@@ -8,6 +8,7 @@ const webMain = readFileSync(
   "utf8",
 );
 const css = readFileSync(new URL("../styles/composer.css", import.meta.url), "utf8");
+const globalCss = readFileSync(new URL("../styles/global.css", import.meta.url), "utf8");
 
 describe("shared Electron and Web composer", () => {
   it("renders one multiline structure without a runtime branch", () => {
@@ -28,7 +29,7 @@ describe("shared Electron and Web composer", () => {
 
   it("keeps model switching without a redundant dropdown chevron", () => {
     const start = chatView.indexOf('className="web-native-model-control"');
-    const end = chatView.indexOf("{isRunning ? (", start);
+    const end = chatView.indexOf("{isLocallyRunning ? (", start);
     const modelControl = chatView.slice(start, end);
 
     expect(start).toBeGreaterThan(-1);
@@ -55,7 +56,53 @@ describe("shared Electron and Web composer", () => {
     expect(chatView).toContain('className="web-native-context-control"');
     expect(chatView).toContain('className="web-native-model-control"');
     expect(chatView).toContain('className="web-native-stop-button"');
-    expect(chatView).toContain('aria-label={isRunning ? "排队发送" : "发送"}');
+    expect(chatView).toContain('aria-label={isLocallyRunning ? "排队发送" : "发送"}');
+  });
+
+  it("groups queued messages and keeps drag, copy, edit, delete, and steer icon actions", () => {
+    const start = chatView.indexOf("{/* Queued messages — shown above input when agent is running */}");
+    const end = chatView.indexOf("{/* Input box */}", start);
+    const queue = chatView.slice(start, end);
+
+    expect(start).toBeGreaterThan(-1);
+    expect(queue).not.toContain("排队消息（{queuedMsgs.length}）");
+    expect(queue).toContain("<GripVertical");
+    expect(queue).toContain("<CornerUpRight");
+    expect(queue).toContain("<Copy");
+    expect(queue).toContain("<Pencil");
+    expect(queue).toContain("<Trash2");
+    expect(queue).toContain('aria-label="复制排队消息"');
+    expect(queue).toContain('"编辑排队消息"');
+    expect(queue).toContain('aria-label="删除排队消息"');
+    expect(queue).toContain('aria-label="拖动调整排队顺序"');
+    expect(queue).toContain("reorderQueuedMessage(draggedQueuedMessageId, msg.id)");
+    expect(queue).not.toContain("<svg");
+    expect(globalCss).toMatch(/\.queued-message-list\s*\{[\s\S]*?gap:\s*0;/);
+    expect(globalCss).toMatch(/\.queued-message-list\s*\{[\s\S]*?border:\s*1px solid var\(--border-subtle\);/);
+    expect(globalCss).toMatch(/\.queued-message-list\s*\{[\s\S]*?margin-bottom:\s*0;/);
+    expect(globalCss).toMatch(/\.queued-message-list\s*\{[\s\S]*?border-bottom:\s*0;/);
+    expect(globalCss).toContain(".queued-message-list + .composer-anchor .composer-shell");
+    expect(globalCss).toMatch(/\.queued-message-row\s*\{[\s\S]*?border:\s*0;/);
+  });
+
+  it("drains queued chat after goal-managed or refresh-recovered runs finish", () => {
+    expect(chatView).toContain("scheduleQueuedMessageAfterTerminal(eventSid)");
+    expect(chatView).toContain("managedRunSessionsRef.current.has(eventSid)");
+    expect(chatView).toContain("await window.agentApi?.getSessionGoals(targetSessionId)");
+    expect(chatView).toContain("if (state?.active)");
+    expect(chatView).toContain("void startRun(nextQueued, targetSessionId)");
+    expect(chatView).toContain("getMessagesForSession(targetSessionId).find(m => m.isQueued)");
+  });
+
+  it("edits only queued content in place and supports keyboard save or cancel", () => {
+    expect(chatView).toContain("item.isQueued ? { ...item, content } : item");
+    expect(chatView).toContain('event.key === "Enter" && !event.nativeEvent.isComposing');
+    expect(chatView).toContain('event.key === "Escape"');
+    expect(chatView).toContain("currentMessages.filter((item) => item.id !== msgId)");
+    expect(chatView).toContain("copyTextToClipboard(message.content)");
+    expect(globalCss).toContain(".queued-message-actions");
+    expect(globalCss).toContain("flex-shrink: 0");
+    expect(globalCss).toContain(".queued-message-edit-input");
   });
 
   it("uses the existing shield as the three-mode Customer Agent permission control", () => {

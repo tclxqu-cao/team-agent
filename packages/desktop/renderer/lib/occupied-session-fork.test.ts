@@ -89,6 +89,10 @@ describe("occupied Codex session fork recovery", () => {
     expect(source).toContain("以副本继续");
     expect(source).toContain("正在创建…");
     expect(source).toContain("setInput(occupiedDraft)");
+    expect(source).toContain("loadSessionWithRetry");
+    expect(source).toContain("limit: SESSION_HISTORY_PAGE_SIZE");
+    expect(source).toContain("setSessionReloadGeneration((generation) => generation + 1)");
+    expect(source).toContain("重新加载会话");
   });
 
   it("keeps the Electron fork transport contract", () => {

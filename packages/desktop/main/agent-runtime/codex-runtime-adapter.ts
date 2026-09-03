@@ -80,6 +80,12 @@ interface PendingApproval {
   questionId: string;
 }
 
+type CodexGoalStatus = "active" | "paused" | "blocked" | "usageLimited" | "budgetLimited" | "complete";
+
+interface CodexGoalTerminalState {
+  status: Exclude<CodexGoalStatus, "active"> | "cleared";
+}
+
 export function codexThreadStatusToSessionStatus(
   statusType: unknown,
   ownedByUs = false,
@@ -99,6 +105,10 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
   private readonly activeQueues = new Map<string, AsyncEventQueue<AgentEvent>>();
   private readonly activeTurnIds = new Map<string, string>();
   private readonly activeBrokerRunIds = new Map<string, string>();
+  private readonly activeGoalThreads = new Set<string>();
+  private readonly completedGoalTurns = new Set<string>();
+  private readonly lastGoalTurnText = new Map<string, string>();
+  private readonly goalTerminalStates = new Map<string, CodexGoalTerminalState>();
   private readonly ownedThreads = new Set<string>();
   private readonly pendingApprovals = new Map<string, PendingApproval>();
 
@@ -268,16 +278,34 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
         threadId: nativeSessionId,
         excludeTurns: true,
       });
+      if (options?.goal) {
+        await this.client.request("thread/goal/set", {
+          threadId: nativeSessionId,
+          objective: options.goal.objective,
+          status: "active",
+        });
+        this.activeGoalThreads.add(nativeSessionId);
+      }
       const imageInputs = parsedImages.length > 0
         ? await persistCodexImages(parsedImages, this.imageTempRoot).then((result) => {
             imageDirectory = result.directory;
             return result.inputs;
           })
         : [];
+      const skillInvocation = parseExplicitSkillInvocation(input);
+      const skillPath = skillInvocation
+        ? await this.resolveSkillPath(detail.cwd, skillInvocation.name)
+        : null;
+      const text = skillInvocation
+        ? `$${skillInvocation.name}${skillInvocation.rest ? ` ${skillInvocation.rest}` : ""}`
+        : input;
       const response = await this.client.request<{ turn: { id: string } }>("turn/start", {
         threadId: nativeSessionId,
         input: [
-          { type: "text", text: input, text_elements: [] },
+          { type: "text", text, text_elements: [] },
+          ...(skillInvocation && skillPath
+            ? [{ type: "skill", name: skillInvocation.name, path: skillPath }]
+            : []),
           ...imageInputs,
         ],
         ...codexTurnPermissionOptions(
@@ -295,6 +323,10 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
       this.activeQueues.delete(nativeSessionId);
       this.ownedThreads.delete(nativeSessionId);
       this.activeBrokerRunIds.delete(nativeSessionId);
+      this.activeGoalThreads.delete(nativeSessionId);
+      this.completedGoalTurns.delete(nativeSessionId);
+      this.lastGoalTurnText.delete(nativeSessionId);
+      this.goalTerminalStates.delete(nativeSessionId);
       await this.client.request("thread/unsubscribe", { threadId: nativeSessionId }).catch(() => undefined);
       if (imageDirectory) {
         await rm(imageDirectory, { recursive: true, force: true }).catch(() => undefined);
@@ -304,8 +336,16 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
 
   async abort(nativeSessionId: string): Promise<void> {
     const turnId = this.activeTurnIds.get(nativeSessionId);
-    if (!turnId) return;
-    await this.client.request("turn/interrupt", { threadId: nativeSessionId, turnId });
+    const requests: Array<Promise<unknown>> = [];
+    if (turnId) {
+      requests.push(this.client.request("turn/interrupt", { threadId: nativeSessionId, turnId }));
+    }
+    if (this.activeGoalThreads.has(nativeSessionId)) {
+      requests.push(this.client.request("thread/goal/clear", { threadId: nativeSessionId }));
+    }
+    const results = await Promise.allSettled(requests);
+    const rejected = results.find((result): result is PromiseRejectedResult => result.status === "rejected");
+    if (rejected) throw rejected.reason;
   }
 
   async answerQuestion(questionId: string, answer: RuntimeQuestionAnswer): Promise<boolean> {
@@ -330,6 +370,35 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
 
   async dispose(): Promise<void> {
     await this.client.dispose();
+  }
+
+  private async resolveSkillPath(cwd: string, name: string): Promise<string | null> {
+    const localCandidates = [
+      join(homedir(), ".codex", "skills", name, "SKILL.md"),
+      join(homedir(), ".agent", "skills", name, "SKILL.md"),
+      ...(cwd ? [
+        join(cwd, ".codex", "skills", name, "SKILL.md"),
+        join(cwd, ".agent", "skills", name, "SKILL.md"),
+      ] : []),
+    ];
+    for (const candidate of localCandidates) {
+      try {
+        if ((await stat(candidate)).isFile()) return candidate;
+      } catch {
+        // Continue through the native app-server catalog.
+      }
+    }
+    try {
+      const response = await this.client.request<unknown>("skills/list", {
+        cwds: cwd ? [cwd] : [],
+        forceReload: false,
+      });
+      return findSkillPath(response, name);
+    } catch {
+      // `$skill-name` remains a valid native hint when an older app-server
+      // cannot enumerate skill paths.
+      return null;
+    }
   }
 
   private toSummary(
@@ -384,6 +453,27 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
     const queue = this.activeQueues.get(threadId);
     if (!queue) return;
 
+    if (message.method === "thread/goal/updated" && this.activeGoalThreads.has(threadId)) {
+      const status = readCodexGoalStatus(params.goal);
+      if (status && status !== "active") {
+        this.goalTerminalStates.set(threadId, { status });
+        if (!this.activeTurnIds.has(threadId)) this.completedGoalTurns.add(threadId);
+        this.finishGoalQueueIfReady(threadId, queue);
+      }
+      return;
+    }
+    if (message.method === "thread/goal/cleared" && this.activeGoalThreads.has(threadId)) {
+      this.goalTerminalStates.set(threadId, { status: "cleared" });
+      if (!this.activeTurnIds.has(threadId)) this.completedGoalTurns.add(threadId);
+      this.finishGoalQueueIfReady(threadId, queue);
+      return;
+    }
+    if (message.method === "turn/started") {
+      const turn = params.turn as { id?: unknown } | undefined;
+      if (typeof turn?.id === "string") this.activeTurnIds.set(threadId, turn.id);
+      this.completedGoalTurns.delete(threadId);
+    }
+
     const progressEvent = codexProgressNotificationToEvent(message);
     if (progressEvent) queue.push(progressEvent);
     const reasoningEvent = codexReasoningNotificationToEvent(message);
@@ -409,6 +499,25 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
     }
     if (message.method === "turn/completed") {
       const turn = params.turn as CodexTurn | undefined;
+      this.activeTurnIds.delete(threadId);
+      if (this.activeGoalThreads.has(threadId)) {
+        if (turn?.status === "failed") {
+          queue.push({ type: "error", message: turn.error?.message ?? "Codex turn failed" });
+          queue.close();
+        } else if (turn?.status === "interrupted") {
+          queue.push({
+            type: "error",
+            code: "NATIVE_PROTOCOL_ERROR",
+            message: "Codex turn was interrupted.",
+          });
+          queue.close();
+        } else {
+          this.lastGoalTurnText.set(threadId, lastCodexAgentText(turn?.items ?? []));
+          this.completedGoalTurns.add(threadId);
+          this.finishGoalQueueIfReady(threadId, queue);
+        }
+        return;
+      }
       if (turn?.status === "failed") {
         queue.push({ type: "error", message: turn.error?.message ?? "Codex turn failed" });
       } else if (turn?.status === "interrupted") {
@@ -437,6 +546,22 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
       queue.push({ type: "error", message: String(params.message ?? "Codex runtime error") });
       queue.close();
     }
+  }
+
+  private finishGoalQueueIfReady(threadId: string, queue: AsyncEventQueue<AgentEvent>): void {
+    if (!this.completedGoalTurns.has(threadId)) return;
+    const terminal = this.goalTerminalStates.get(threadId);
+    if (!terminal) return;
+    if (terminal.status === "complete") {
+      queue.push({ type: "done", finalText: this.lastGoalTurnText.get(threadId) ?? "" });
+    } else {
+      queue.push({
+        type: "error",
+        code: "NATIVE_PROTOCOL_ERROR",
+        message: codexGoalTerminalMessage(terminal.status),
+      });
+    }
+    queue.close();
   }
 
   private handleServerRequest(message: RpcServerRequest): void {
@@ -519,6 +644,30 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
       ],
     });
   }
+}
+
+export function parseExplicitSkillInvocation(input: string): { name: string; rest: string } | null {
+  const match = input.trim().match(/^\/([\w-]+)(?:\s+([\s\S]*))?$/);
+  if (!match || ["goal", "compact", "loop"].includes(match[1].toLowerCase())) return null;
+  return { name: match[1], rest: match[2]?.trim() ?? "" };
+}
+
+function findSkillPath(value: unknown, name: string): string | null {
+  if (!value || typeof value !== "object") return null;
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = findSkillPath(item, name);
+      if (found) return found;
+    }
+    return null;
+  }
+  const record = value as Record<string, unknown>;
+  if (record.name === name && typeof record.path === "string") return record.path;
+  for (const child of Object.values(record)) {
+    const found = findSkillPath(child, name);
+    if (found) return found;
+  }
+  return null;
 }
 
 export function codexTurnPermissionOptions(
@@ -814,6 +963,28 @@ function lastCodexAgentText(items: CodexItem[]): string {
     if (item.type === "agentMessage" && typeof item.text === "string") return item.text;
   }
   return "";
+}
+
+function readCodexGoalStatus(value: unknown): CodexGoalStatus | null {
+  const status = asRecord(value).status;
+  return status === "active"
+    || status === "paused"
+    || status === "blocked"
+    || status === "usageLimited"
+    || status === "budgetLimited"
+    || status === "complete"
+    ? status
+    : null;
+}
+
+function codexGoalTerminalMessage(status: Exclude<CodexGoalTerminalState["status"], "complete">): string {
+  switch (status) {
+    case "paused": return "Codex goal was paused.";
+    case "blocked": return "Codex goal is blocked.";
+    case "usageLimited": return "Codex goal stopped because the usage limit was reached.";
+    case "budgetLimited": return "Codex goal stopped because the token budget was reached.";
+    case "cleared": return "Codex goal was cleared.";
+  }
 }
 
 function asRecord(value: unknown): Record<string, unknown> {

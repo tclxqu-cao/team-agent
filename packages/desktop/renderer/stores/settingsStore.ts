@@ -144,6 +144,15 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
               isConfigured: Boolean(active.apiKey && active.modelId),
             }
           : {}),
+        ...(!active
+          ? {
+              modelProvider: "anthropic",
+              modelId: "",
+              apiKey: "",
+              baseUrl: "",
+              isConfigured: false,
+            }
+          : {}),
       };
     });
   },

@@ -1,0 +1,18 @@
+{
+  "name": "agentroam-cloudflared-win32-x64",
+  "version": "0.2.0-preview.9",
+  "description": "Verified cloudflared executable for AgentRoam on Windows x64",
+  "license": "MIT",
+  "os": ["win32"],
+  "cpu": ["x64"],
+  "files": ["README.md", "manifest.json", "vendor/cloudflared-windows-amd64.exe"],
+  "exports": {
+    "./manifest.json": "./manifest.json",
+    "./archive": "./vendor/cloudflared-windows-amd64.exe"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true,
+    "tag": "preview"
+  }
+}

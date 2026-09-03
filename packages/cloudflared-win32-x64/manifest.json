@@ -1,0 +1,11 @@
+{
+  "packageVersion": "0.2.0-preview.9",
+  "upstreamVersion": "2026.8.2",
+  "target": "windows-amd64",
+  "assetFormat": "executable",
+  "fileName": "cloudflared.exe",
+  "archiveFileName": "cloudflared-windows-amd64.exe",
+  "url": "https://github.com/cloudflare/cloudflared/releases/download/2026.8.2/cloudflared-windows-amd64.exe",
+  "size": 54893480,
+  "sha256": "c29eee2b121f5436a642eed69fd9767da7e7b8c510fa50aaa130337f931357b5"
+}

@@ -6,6 +6,12 @@ export interface WebArtifactOpenRequest {
   path: string;
 }
 
+function isAbsoluteHostPath(value: string): boolean {
+  return value.startsWith("/")
+    || /^[A-Za-z]:[\\/]/.test(value)
+    || /^\\\\[^\\/]+[\\/][^\\/]+/.test(value);
+}
+
 export function parseWebArtifactOpenRequest(data: unknown): WebArtifactOpenRequest | null {
   if (!data || typeof data !== "object") return null;
   const candidate = data as Record<string, unknown>;
@@ -13,7 +19,7 @@ export function parseWebArtifactOpenRequest(data: unknown): WebArtifactOpenReque
   if (!Number.isSafeInteger(candidate.requestId) || Number(candidate.requestId) < 1) return null;
   if (
     typeof candidate.path !== "string"
-    || !candidate.path.startsWith("/")
+    || !isAbsoluteHostPath(candidate.path)
     || candidate.path.includes("\0")
     || candidate.path.includes("\n")
     || candidate.path.includes("\r")

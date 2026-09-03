@@ -2,9 +2,12 @@ import { homedir } from "node:os";
 import { resolve } from "node:path";
 
 export type RelayMode = "auto" | "cloudflare" | "pinggy" | "custom";
+export type CliCommand = "start" | "doctor" | "version" | "service";
+export type ServiceAction = "install" | "status" | "url" | "logs" | "restart" | "uninstall";
 
 export interface CliOptions {
-  command: "start" | "doctor" | "version";
+  command: CliCommand;
+  serviceAction: ServiceAction | null;
   roots: string[];
   port: number | null;
   relay: RelayMode;
@@ -17,9 +20,23 @@ export interface CliOptions {
 export function parseArgs(argv: string[]): CliOptions {
   const values = [...argv];
   let command: CliOptions["command"] = "start";
-  if (values[0] && ["start", "doctor", "version"].includes(values[0])) command = values.shift() as CliOptions["command"];
+  if (values[0] && ["start", "doctor", "version", "service"].includes(values[0])) {
+    command = values.shift() as CliOptions["command"];
+  }
+  let serviceAction: ServiceAction | null = null;
+  if (command === "service") {
+    const action = values.shift();
+    if (!action || !(["install", "status", "url", "logs", "restart", "uninstall"] as string[]).includes(action)) {
+      throw cliError("service requires install, status, url, logs, restart, or uninstall");
+    }
+    serviceAction = action as ServiceAction;
+    if (serviceAction !== "install" && values.length > 0) {
+      throw cliError(`service ${serviceAction} does not accept options`);
+    }
+  }
   const options: CliOptions = {
     command,
+    serviceAction,
     roots: [],
     port: null,
     relay: "auto",

@@ -1,0 +1,11 @@
+{
+  "packageVersion": "0.2.0-preview.9",
+  "target": "darwin-arm64",
+  "nodeMajor": 22,
+  "nodeModuleAbi": 127,
+  "nativeFiles": {
+    "node_modules/better-sqlite3/build/Release/better_sqlite3.node": "1946ab352978b5b3493f99080dc04ed6d0a4157c511c7139cbf50b3d44d8d560",
+    "node_modules/node-pty/prebuilds/darwin-arm64/pty.node": "e6457d66f45af3facd02920a5b212164e80fe0bb758afe6e6eab1eceeba3fc9a",
+    "node_modules/node-pty/prebuilds/darwin-arm64/spawn-helper": "21c589109bca43e287df884f3c34ab888033a83927ea7d273949ac5030583f26"
+  }
+}

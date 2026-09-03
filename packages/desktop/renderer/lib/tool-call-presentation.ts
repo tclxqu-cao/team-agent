@@ -4,6 +4,9 @@ const SEARCH_TOOLS = new Set(["Glob", "glob_search", "Grep", "grep_search", "Web
 
 export type ToolFamily = "command" | "file" | "search" | "generic";
 
+const READ_TOOLS = new Set(["Read", "read_file"]);
+const WRITE_TOOLS = new Set(["Write", "write_file", "Edit", "MultiEdit", "str_replace", "apply_patch", "NotebookEdit"]);
+
 export function toolFamily(name: string): ToolFamily {
   if (COMMAND_TOOLS.has(name)) return "command";
   if (FILE_TOOLS.has(name)) return "file";
@@ -47,6 +50,18 @@ export function toolPhrase(name: string): { done: string; doing: string } | null
 
 export function toolCallActionKey(name: string): string | null {
   return toolPhrase(name)?.done ?? null;
+}
+
+export function toolActivityLabel(name: string): string | null {
+  if (COMMAND_TOOLS.has(name)) return "终端";
+  if (READ_TOOLS.has(name)) return "查阅";
+  if (WRITE_TOOLS.has(name)) return "写入";
+  if (SEARCH_TOOLS.has(name)) return "查阅";
+  if (name === "Skill") return "技能";
+  if (name === "Task" || name === "dispatch_agent" || name === "Agent") return "子任务";
+  if (name === "TodoWrite") return "任务";
+  if (name.startsWith("mcp__") || name.includes(":")) return "工具";
+  return null;
 }
 
 function basename(path: string): string {

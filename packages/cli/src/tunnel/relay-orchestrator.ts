@@ -26,6 +26,7 @@ interface RelayOrchestratorOptions {
   log: (line: string) => void;
   onAttempt?: (provider: PublicProviderName) => void;
   onFailure?: (provider: PublicProviderName, message: string) => void;
+  allowLanFallback?: boolean;
   providerFactories?: Partial<Record<PublicProviderName, () => Promise<TunnelProvider>>>;
   readiness?: typeof waitForPublicReadiness;
 }
@@ -55,6 +56,10 @@ export async function selectRelay(options: RelayOrchestratorOptions): Promise<Re
     }
   }
 
+  if (options.allowLanFallback === false) {
+    const detail = failures.map(({ provider, message }) => `${provider}: ${message}`).join("; ");
+    throw new Error(`public relay unavailable${detail ? ` (${detail})` : ""}`);
+  }
   return { tunnel: null, publicUrl: options.lanUrl, provider: "lan", failures };
 }
 

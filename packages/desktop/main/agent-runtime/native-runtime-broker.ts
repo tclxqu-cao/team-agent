@@ -4,11 +4,18 @@ import { createConnection, createServer, type Server, type Socket } from "node:n
 import { homedir } from "node:os";
 import { join } from "node:path";
 import {
+  cancelSessionGoal,
+  enqueueSessionGoal,
+  finishActiveSessionGoal,
   mergeReasoningSummaryDelta,
   normalizeToolPermissionMode,
+  readSessionGoalState,
+  reorderQueuedSessionGoals,
   SQLiteDatabase,
   type AgentEvent,
   type Message,
+  type SessionGoal,
+  type SessionGoalState,
   type SessionHistoryQuery,
   type ToolPermissionMode,
 } from "@agent/core";
@@ -51,6 +58,11 @@ export interface BrokerRunStart {
   permissionMode: ToolPermissionMode;
 }
 
+export interface BrokerGoalEnqueueResult {
+  state: SessionGoalState;
+  started?: BrokerRunStart;
+}
+
 export interface NativeRuntimeBrokerSnapshot {
   sessionId: string;
   runId: string | null;
@@ -85,6 +97,7 @@ interface BrokerRunRecord {
   nextSequence: number;
   createdAt: number;
   terminalAt: number | null;
+  goalId: string | null;
 }
 
 interface BrokerLockRecord {
@@ -130,6 +143,7 @@ interface StoredRunRow {
   next_sequence: number;
   created_at: number;
   terminal_at: number | null;
+  goal_id?: string | null;
 }
 
 interface StoredEventRow {
@@ -183,7 +197,8 @@ class NativeRuntimeBrokerState {
         status TEXT NOT NULL,
         next_sequence INTEGER NOT NULL DEFAULT 0,
         created_at INTEGER NOT NULL,
-        terminal_at INTEGER
+        terminal_at INTEGER,
+        goal_id TEXT
       );
       CREATE UNIQUE INDEX IF NOT EXISTS native_runtime_active_run_per_session
         ON native_runtime_run(session_id) WHERE status = 'active';
@@ -213,7 +228,16 @@ class NativeRuntimeBrokerState {
         sample_at INTEGER,
         updated_at INTEGER NOT NULL
       );
+      CREATE TABLE IF NOT EXISTS native_runtime_goal_state (
+        session_id TEXT PRIMARY KEY,
+        payload TEXT NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
     `);
+    const runColumns = this.database.db.prepare("PRAGMA table_info(native_runtime_run)").all() as Array<{ name: string }>;
+    if (!runColumns.some((column) => column.name === "goal_id")) {
+      this.database.db.exec("ALTER TABLE native_runtime_run ADD COLUMN goal_id TEXT");
+    }
   }
 
   recoverInterruptedRuns(): void {
@@ -247,12 +271,79 @@ class NativeRuntimeBrokerState {
     return mode;
   }
 
+  getGoalState(sessionId: string): SessionGoalState {
+    const row = this.database.db.prepare(
+      "SELECT payload FROM native_runtime_goal_state WHERE session_id = ?",
+    ).get(sessionId) as { payload?: string } | undefined;
+    if (!row?.payload) return readSessionGoalState(undefined);
+    try {
+      return readSessionGoalState({ goalState: JSON.parse(row.payload) });
+    } catch {
+      return readSessionGoalState(undefined);
+    }
+  }
+
+  enqueueGoal(sessionId: string, objective: string, sourceMessageId?: string): SessionGoalState {
+    return this.updateGoalState(sessionId, (state) => enqueueSessionGoal(state, {
+      id: randomUUID(),
+      sessionId,
+      objective,
+      sourceMessageId,
+      now: this.now(),
+    }));
+  }
+
+  reorderGoals(sessionId: string, orderedIds: readonly string[]): SessionGoalState {
+    return this.updateGoalState(sessionId, (state) => reorderQueuedSessionGoals(state, orderedIds));
+  }
+
+  cancelGoal(sessionId: string, goalId: string): SessionGoalState {
+    return this.updateGoalState(sessionId, (state) => cancelSessionGoal(state, goalId, this.now()));
+  }
+
+  finishGoal(sessionId: string, goalId: string, outcome: "completed" | "failed", reason?: string): SessionGoalState {
+    return this.updateGoalState(sessionId, (state) => (
+      state.active?.id === goalId
+        ? finishActiveSessionGoal(state, outcome, this.now(), reason)
+        : state
+    ));
+  }
+
+  listActiveGoals(): SessionGoal[] {
+    const rows = this.database.db.prepare("SELECT payload FROM native_runtime_goal_state").all() as Array<{ payload: string }>;
+    return rows.flatMap((row) => {
+      try {
+        const state = readSessionGoalState({ goalState: JSON.parse(row.payload) });
+        return state.active ? [state.active] : [];
+      } catch {
+        return [];
+      }
+    });
+  }
+
+  private updateGoalState(
+    sessionId: string,
+    update: (state: SessionGoalState) => SessionGoalState,
+  ): SessionGoalState {
+    const transaction = this.database.db.transaction(() => {
+      const next = update(this.getGoalState(sessionId));
+      this.database.db.prepare(`
+        INSERT INTO native_runtime_goal_state(session_id, payload, updated_at)
+        VALUES (?, ?, ?)
+        ON CONFLICT(session_id) DO UPDATE SET payload=excluded.payload, updated_at=excluded.updated_at
+      `).run(sessionId, JSON.stringify(next), this.now());
+      return next;
+    });
+    return transaction();
+  }
+
   admit(input: {
     sessionId: string;
     agentType: NativeAgentType;
     nativeSessionId: string;
     message: string;
     controller: NativeRuntimeController;
+    goalId?: string;
   }): BrokerRunRecord {
     const create = this.database.db.transaction(() => {
       const active = this.database.db.prepare(
@@ -274,12 +365,13 @@ class NativeRuntimeBrokerState {
         nextSequence: 0,
         createdAt,
         terminalAt: null,
+        goalId: input.goalId ?? null,
       };
       this.database.db.prepare(`
         INSERT INTO native_runtime_run(
           run_id, session_id, agent_type, native_session_id, input, permission_mode,
-          controller, status, next_sequence, created_at, terminal_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          controller, status, next_sequence, created_at, terminal_at, goal_id
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         run.runId,
         run.sessionId,
@@ -292,6 +384,7 @@ class NativeRuntimeBrokerState {
         run.nextSequence,
         run.createdAt,
         run.terminalAt,
+        run.goalId,
       );
       this.transitionLock(input.sessionId, "owned-by-customer-agent", null, null);
       return run;
@@ -461,6 +554,7 @@ class NativeRuntimeBrokerState {
       permissionMode: policy,
       occupancyRevision: lock.revision,
       controller: active?.controller ?? null,
+      goalState: this.getGoalState(summary.id),
     };
   }
 
@@ -625,6 +719,9 @@ export class NativeRuntimeBrokerHost {
     // Do this only after this host owns the socket. A losing startup race must
     // never interrupt a still-live turn owned by another process.
     this.state.recoverInterruptedRuns();
+    for (const goal of this.state.listActiveGoals()) {
+      void this.startGoal(goal, "web");
+    }
   }
 
   async stop(): Promise<void> {
@@ -682,6 +779,7 @@ export class NativeRuntimeBrokerHost {
     input: string,
     images?: string[],
     controller: NativeRuntimeController = "web",
+    goalId?: string,
   ): Promise<BrokerRunStart> {
     const decoded = decodeNativeSessionId(sessionId);
     try {
@@ -702,6 +800,7 @@ export class NativeRuntimeBrokerHost {
       nativeSessionId: decoded.nativeSessionId,
       message: input,
       controller,
+      goalId,
     });
     void this.executeRun(run, images);
     return {
@@ -709,6 +808,57 @@ export class NativeRuntimeBrokerHost {
       snapshotRevision: run.nextSequence,
       permissionMode: run.permissionMode,
     };
+  }
+
+  async getGoals(
+    sessionId: string,
+    controller: NativeRuntimeController = "web",
+  ): Promise<SessionGoalState> {
+    const state = this.state.getGoalState(sessionId);
+    if (state.active && !this.state.activeRun(sessionId)) {
+      await this.startGoal(state.active, controller);
+    }
+    return this.state.getGoalState(sessionId);
+  }
+
+  async enqueueGoal(
+    sessionId: string,
+    objective: string,
+    sourceMessageId?: string,
+    controller: NativeRuntimeController = "web",
+  ): Promise<BrokerGoalEnqueueResult> {
+    decodeNativeSessionId(sessionId);
+    const hadActive = Boolean(this.state.getGoalState(sessionId).active);
+    const state = this.state.enqueueGoal(sessionId, objective, sourceMessageId);
+    if (hadActive || !state.active) return { state };
+    const started = await this.startGoal(state.active, controller);
+    return {
+      state: this.state.getGoalState(sessionId),
+      ...(started ? { started } : {}),
+    };
+  }
+
+  reorderGoals(sessionId: string, orderedIds: readonly string[]): SessionGoalState {
+    decodeNativeSessionId(sessionId);
+    return this.state.reorderGoals(sessionId, orderedIds);
+  }
+
+  async cancelGoal(
+    sessionId: string,
+    goalId: string,
+    controller: NativeRuntimeController = "web",
+  ): Promise<SessionGoalState> {
+    decodeNativeSessionId(sessionId);
+    const wasActive = this.state.getGoalState(sessionId).active?.id === goalId;
+    const activeRun = this.state.activeRun(sessionId);
+    const state = this.state.cancelGoal(sessionId, goalId);
+    if (wasActive && activeRun?.goalId === goalId) {
+      await this.runtime.abort(sessionId).catch(() => undefined);
+      if (!this.state.activeRun(sessionId) && state.active) void this.startGoal(state.active, controller);
+    } else if (wasActive && !activeRun && state.active) {
+      void this.startGoal(state.active, controller);
+    }
+    return state;
   }
 
   subscribe(sessionId: string, afterSequence: number, listener: (event: BrokerRunEvent) => void): () => void {
@@ -806,6 +956,12 @@ export class NativeRuntimeBrokerHost {
       const options: RuntimeRunOptions = {
         permissionMode: run.permissionMode,
         brokerRunId: run.runId,
+        ...(run.goalId ? {
+          goal: {
+            id: run.goalId,
+            objective: this.state.getGoalState(run.sessionId).active?.objective ?? run.input,
+          },
+        } : {}),
       };
       for await (const event of this.runtime.run(run.sessionId, run.input, images, undefined, undefined, options)) {
         const recorded = this.state.appendEvent(run.runId, event);
@@ -838,6 +994,37 @@ export class NativeRuntimeBrokerHost {
       // appendTerminal releases this broker-owned run first. Only then can an
       // app-server writer-lock failure become an authoritative external lock.
       if (externallyOwned) this.state.recordExplicitExternalOwnership(run.sessionId);
+    } finally {
+      if (run.goalId) {
+        const events = this.state.getSnapshot(run.sessionId).events;
+        const terminal = [...events].reverse().find(({ event }) => isTerminalEvent(event))?.event;
+        const outcome = terminal?.type === "done" ? "completed" : "failed";
+        const reason = terminal?.type === "error" ? terminal.message : undefined;
+        const next = this.state.finishGoal(run.sessionId, run.goalId, outcome, reason).active;
+        if (next && !this.state.activeRun(run.sessionId)) void this.startGoal(next, run.controller);
+      } else {
+        const pendingGoal = this.state.getGoalState(run.sessionId).active;
+        if (pendingGoal && !this.state.activeRun(run.sessionId)) void this.startGoal(pendingGoal, run.controller);
+      }
+    }
+  }
+
+  private async startGoal(
+    goal: SessionGoal,
+    controller: NativeRuntimeController,
+  ): Promise<BrokerRunStart | undefined> {
+    if (this.state.activeRun(goal.sessionId)) return undefined;
+    try {
+      return await this.startRun(goal.sessionId, goal.objective, undefined, controller, goal.id);
+    } catch (error) {
+      const state = this.state.finishGoal(
+        goal.sessionId,
+        goal.id,
+        "failed",
+        error instanceof Error ? error.message : String(error),
+      );
+      if (state.active) void this.startGoal(state.active, controller);
+      return undefined;
     }
   }
 
@@ -937,6 +1124,25 @@ export class NativeRuntimeBrokerHost {
         controllerParam(request.params.controller),
       );
       case "snapshot": return this.snapshot(requireSessionId(sessionId), numberParam(request.params, "afterSequence") ?? 0);
+      case "getGoals": return this.getGoals(
+        requireSessionId(sessionId),
+        controllerParam(request.params.controller),
+      );
+      case "enqueueGoal": return this.enqueueGoal(
+        requireSessionId(sessionId),
+        stringParam(request.params, "objective") || "",
+        stringParam(request.params, "sourceMessageId") || undefined,
+        controllerParam(request.params.controller),
+      );
+      case "reorderGoals": return this.reorderGoals(
+        requireSessionId(sessionId),
+        arrayOfStrings(request.params.orderedIds) ?? [],
+      );
+      case "cancelGoal": return this.cancelGoal(
+        requireSessionId(sessionId),
+        stringParam(request.params, "goalId") || "",
+        controllerParam(request.params.controller),
+      );
       case "answer": return this.answerQuestion(
         stringParam(request.params, "questionId") || "",
         { answer: stringParam(request.params, "answer") || "", selectedIndices: arrayOfNumbers(request.params.selectedIndices) },
@@ -1107,6 +1313,31 @@ export class NativeRuntimeBrokerClient {
 
   async snapshot(id: string, afterSequence = 0): Promise<NativeRuntimeBrokerSnapshot> {
     return this.request("snapshot", { sessionId: id, afterSequence });
+  }
+
+  async getGoals(id: string, controller: NativeRuntimeController = "web"): Promise<SessionGoalState> {
+    return this.request("getGoals", { sessionId: id, controller });
+  }
+
+  async enqueueGoal(
+    id: string,
+    objective: string,
+    sourceMessageId?: string,
+    controller: NativeRuntimeController = "web",
+  ): Promise<BrokerGoalEnqueueResult> {
+    return this.request("enqueueGoal", { sessionId: id, objective, sourceMessageId, controller });
+  }
+
+  async reorderGoals(id: string, orderedIds: readonly string[]): Promise<SessionGoalState> {
+    return this.request("reorderGoals", { sessionId: id, orderedIds: [...orderedIds] });
+  }
+
+  async cancelGoal(
+    id: string,
+    goalId: string,
+    controller: NativeRuntimeController = "web",
+  ): Promise<SessionGoalState> {
+    return this.request("cancelGoal", { sessionId: id, goalId, controller });
   }
 
   async answerQuestion(questionId: string, answer: RuntimeQuestionAnswer): Promise<boolean> {
@@ -1339,6 +1570,7 @@ function toRunRecord(row: StoredRunRow): BrokerRunRecord {
     nextSequence: row.next_sequence,
     createdAt: row.created_at,
     terminalAt: row.terminal_at,
+    goalId: row.goal_id ?? null,
   };
 }
 

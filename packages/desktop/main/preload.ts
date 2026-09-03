@@ -110,6 +110,13 @@ contextBridge.exposeInMainWorld("agentApi", {
     ipcRenderer.invoke("sessions:get", id, query),
   setSessionPermissionMode: (id: string, mode: "request-approval" | "auto-approval" | "full-access") =>
     ipcRenderer.invoke("sessions:setPermissionMode", id, mode),
+  getSessionGoals: (id: string) => ipcRenderer.invoke("sessions:getGoals", id),
+  enqueueSessionGoal: (id: string, objective: string, sourceMessageId?: string) =>
+    ipcRenderer.invoke("sessions:enqueueGoal", id, objective, sourceMessageId),
+  reorderSessionGoals: (id: string, orderedIds: string[]) =>
+    ipcRenderer.invoke("sessions:reorderGoals", id, orderedIds),
+  cancelSessionGoal: (id: string, goalId: string) =>
+    ipcRenderer.invoke("sessions:cancelGoal", id, goalId),
   handoffSession: (id: string) => ipcRenderer.invoke("sessions:handoff", id),
   createSession: (title: string, projectId?: string, agentType = "customer-agent", cwd?: string) =>
     ipcRenderer.invoke("sessions:create", title, projectId, agentType, cwd),

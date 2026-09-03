@@ -111,6 +111,14 @@ class AgentHost {
     return this.sessionStore;
   }
 
+  isSessionRunning(sessionId: string): boolean {
+    return this.activeRunSessionId === sessionId;
+  }
+
+  hasActiveRun(): boolean {
+    return this.activeRunSessionId !== null;
+  }
+
   getProjectStore() {
     return this.projectStore;
   }

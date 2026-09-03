@@ -16,6 +16,8 @@ export type {
   LSPServerConfig,
   MCPServer,
   ModelProfile,
+  SessionGoal,
+  SessionGoalState,
   TtsStreamMetadata,
 } from "../../../../desktop/renderer/global";
 

@@ -7,3 +7,5 @@ export {
   type ISessionStore,
 } from './entities.js';
 export { paginateSessionHistory } from './SessionHistory.js';
+export * from './SessionGoals.js';
+export * from './SessionGoalCoordinator.js';

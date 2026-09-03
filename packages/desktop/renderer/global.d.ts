@@ -82,6 +82,25 @@ export interface TodoItem {
 export type AgentType = "customer-agent" | "codex" | "claude-code";
 export type ToolPermissionMode = "request-approval" | "auto-approval" | "full-access";
 
+export interface SessionGoal {
+  id: string;
+  sessionId: string;
+  objective: string;
+  status: "queued" | "active" | "completed" | "failed" | "cancelled";
+  position: number;
+  createdAt: number;
+  updatedAt: number;
+  sourceMessageId?: string;
+  iterations?: number;
+  lastReason?: string;
+}
+
+export interface SessionGoalState {
+  active: SessionGoal | null;
+  queued: SessionGoal[];
+  history: SessionGoal[];
+}
+
 export interface UnifiedSessionSummary {
   id: string;
   agentType: AgentType;
@@ -100,6 +119,7 @@ export interface UnifiedSessionSummary {
   permissionMode?: ToolPermissionMode;
   occupancyRevision?: number;
   controller?: "web" | "desktop" | null;
+  goalState?: SessionGoalState;
 }
 
 export interface RuntimeHealth {
@@ -149,6 +169,7 @@ export interface AgentApi {
     apiKey: string;
     baseUrl: string;
     maxIterations: number;
+    contextWindow: number;
     workingDirectory: string;
     profiles: ModelProfile[];
     activeProfileId: string;
@@ -181,6 +202,10 @@ export interface AgentApi {
     onError?: () => void,
   ): () => void;
   setSessionPermissionMode(id: string, mode: ToolPermissionMode): Promise<unknown>;
+  getSessionGoals(id: string): Promise<SessionGoalState>;
+  enqueueSessionGoal(id: string, objective: string, sourceMessageId?: string): Promise<SessionGoalState>;
+  reorderSessionGoals(id: string, orderedIds: string[]): Promise<SessionGoalState>;
+  cancelSessionGoal(id: string, goalId: string): Promise<SessionGoalState>;
   handoffSession?(id: string): Promise<unknown>;
   createSession(title: string, projectId?: string, agentType?: AgentType, cwd?: string): Promise<UnifiedSessionSummary>;
   forkSession(id: string): Promise<UnifiedSessionSummary>;

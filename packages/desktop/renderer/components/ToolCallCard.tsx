@@ -1,8 +1,22 @@
 import { useState, useMemo, useEffect } from "react";
 import type { NativeSubagentActivity, RuntimeProgress } from "@agent/core";
+import {
+  Check,
+  ChevronRight,
+  CircleX,
+  FileText,
+  ListTodo,
+  LoaderCircle,
+  Pencil,
+  Search,
+  Sparkles,
+  SquareTerminal,
+  UserRound,
+  Wrench,
+} from "lucide-react";
 import { useAgentStore } from "../stores/agentStore";
 import { hasToolCallResult } from "../lib/tool-call-status";
-import { toolFamily, toolPhrase, toolPreview, type ToolFamily } from "../lib/tool-call-presentation";
+import { toolActivityLabel, toolFamily, toolPhrase, toolPreview } from "../lib/tool-call-presentation";
 import RuntimeProgressRow from "./RuntimeProgressRow";
 
 export interface ToolCallData {
@@ -25,37 +39,33 @@ interface ToolCallProps {
 // ── Status icon: spinner / checkmark / x-circle ──────────────────────────
 function StatusIcon({ isDone, isError, color, size = 11 }: { isDone: boolean; isError?: boolean; color: string; size?: number }) {
   if (!isDone) {
-    return (
-      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round" style={{ animation: "spin 1s linear infinite", flexShrink: 0 }}>
-        <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
-      </svg>
-    );
+    return <LoaderCircle size={size} color={color} strokeWidth={2.5} style={{ animation: "spin 1s linear infinite", flexShrink: 0 }} aria-hidden="true" />;
   }
   if (isError) {
-    return (
-      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round">
-        <circle cx="12" cy="12" r="9"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/>
-      </svg>
-    );
+    return <CircleX size={size} color={color} strokeWidth={2.5} aria-hidden="true" />;
   }
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round">
-      <polyline points="20 6 9 17 4 12"/>
-    </svg>
-  );
+  return <Check size={size} color={color} strokeWidth={2.5} aria-hidden="true" />;
 }
 
-function ToolFamilyIcon({ family, color, size = 12 }: { family: ToolFamily; color: string; size?: number }) {
+function ToolActionIcon({ name, color, size = 14 }: { name: string; color: string; size?: number }) {
+  const family = toolFamily(name);
   if (family === "command") {
-    return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>;
+    return <SquareTerminal size={size} color={color} strokeWidth={1.8} aria-hidden="true" />;
   }
   if (family === "search") {
-    return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>;
+    return <Search size={size} color={color} strokeWidth={1.8} aria-hidden="true" />;
   }
   if (family === "file") {
-    return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>;
+    return name === "Read" || name === "read_file"
+      ? <FileText size={size} color={color} strokeWidth={1.8} aria-hidden="true" />
+      : <Pencil size={size} color={color} strokeWidth={1.8} aria-hidden="true" />;
   }
-  return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>;
+  if (name === "Skill") return <Sparkles size={size} color={color} strokeWidth={1.8} aria-hidden="true" />;
+  if (name === "TodoWrite") return <ListTodo size={size} color={color} strokeWidth={1.8} aria-hidden="true" />;
+  if (name === "Task" || name === "dispatch_agent" || name === "Agent") {
+    return <UserRound size={size} color={color} strokeWidth={1.8} aria-hidden="true" />;
+  }
+  return <Wrench size={size} color={color} strokeWidth={1.8} aria-hidden="true" />;
 }
 
 // ── Shared card shell: left gutter bar + header button + expandable body ──
@@ -81,7 +91,9 @@ function CardShell({ statusColor, isDone, expanded, onToggle, header, children, 
         }} />
         {/* Header */}
         <button
+          type="button"
           className="tool-call-shell__header"
+          aria-expanded={expanded}
           onClick={onToggle}
           style={{ flex: 1, border: "none", background: "var(--bg-deep)", cursor: "pointer", padding: "7px 10px 7px 9px", display: "flex", alignItems: "center", gap: 7, fontFamily: "var(--font-body)", transition: "background 0.12s", textAlign: "left", minWidth: 0 }}
           onMouseEnter={e => (e.currentTarget.style.background = "var(--bg-elevated)")}
@@ -89,7 +101,7 @@ function CardShell({ statusColor, isDone, expanded, onToggle, header, children, 
         >
           {header}
           {/* Chevron */}
-          <svg className="tool-call-shell__chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2.5" strokeLinecap="round" style={{ transition: "transform 0.25s var(--ease-out)", transform: expanded ? "rotate(180deg)" : "rotate(0deg)", flexShrink: 0 }}><path d="m6 9 6 6 6-6"/></svg>
+          <ChevronRight className="tool-call-shell__chevron" size={12} color="var(--text-muted)" strokeWidth={2.2} style={{ transition: "transform 0.25s var(--ease-out)", transform: expanded ? "rotate(90deg)" : "rotate(0deg)", flexShrink: 0 }} aria-hidden="true" />
         </button>
       </div>
       {/* Collapsed bodies stay unmounted so large historical tool output is parsed on demand. */}
@@ -228,16 +240,15 @@ function WriteFileCard({ toolCall, beforeContent }: { toolCall: ToolCallData; be
     if (!diff) return null;
     return { added: diff.filter(d => d.type === "added").length, removed: diff.filter(d => d.type === "removed").length };
   }, [diff]);
-  const statusLabel = isDone ? (isError ? "错误" : "已写入") : "写入中";
+  const iconColor = isError ? "var(--danger)" : isDone ? "var(--text-muted)" : "var(--accent)";
 
   const header = (
     <>
-      {/* Icon */}
-      <div style={{ width: 20, height: 20, borderRadius: 5, background: isDone ? (isError ? "rgba(220,38,38,0.1)" : "rgba(5,150,105,0.1)") : "var(--accent-dim)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={statusColor} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-      </div>
-      {/* Filename */}
-      <span style={{ fontFamily: "var(--font-mono)", fontSize: 11.5, color: "var(--text-primary)", fontWeight: 600, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={filePath}>
+      <span className="tool-call-shell__icon">
+        <ToolActionIcon name={toolCall.name} color={iconColor} />
+      </span>
+      <span className="tool-call-shell__label">写入</span>
+      <span className="tool-call-shell__preview" style={{ flex: 1 }} title={filePath}>
         {basename(filePath)}
       </span>
       {/* Meta */}
@@ -248,11 +259,12 @@ function WriteFileCard({ toolCall, beforeContent }: { toolCall: ToolCallData; be
           {diffStats.removed > 0 && <span style={{ color: "var(--danger)" }}>−{diffStats.removed}</span>}
         </span>
       )}
-      {/* Status */}
-      <span style={{ display: "flex", alignItems: "center", gap: 4, color: statusColor, flexShrink: 0 }}>
-        <StatusIcon isDone={isDone} isError={isError} color={statusColor} />
-        <span style={{ fontSize: 10, fontWeight: 500 }}>{statusLabel}</span>
-      </span>
+      {(!isDone || isError) && (
+        <span className="tool-call-shell__state" style={{ color: statusColor }}>
+          <StatusIcon isDone={isDone} isError={isError} color={statusColor} />
+          {isError && <span>错误</span>}
+        </span>
+      )}
     </>
   );
 
@@ -293,22 +305,25 @@ function ReadFileCard({ toolCall }: { toolCall: ToolCallData }) {
     : offset !== undefined
       ? `第${offset}行起${limit ? ` ×${limit}` : ""}`
       : null;
-  const statusLabel = isDone ? (isError ? "错误" : "已读取") : "读取中";
+  const iconColor = isError ? "var(--danger)" : isDone ? "var(--text-muted)" : "var(--accent)";
 
   const header = (
     <>
-      <div style={{ width: 20, height: 20, borderRadius: 5, background: isDone ? (isError ? "rgba(220,38,38,0.1)" : "rgba(5,150,105,0.1)") : "var(--accent-dim)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={statusColor} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-      </div>
-      <span style={{ fontFamily: "var(--font-mono)", fontSize: 11.5, color: "var(--text-primary)", fontWeight: 600, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={filePath}>
+      <span className="tool-call-shell__icon">
+        <ToolActionIcon name={toolCall.name} color={iconColor} />
+      </span>
+      <span className="tool-call-shell__label">查阅</span>
+      <span className="tool-call-shell__preview" style={{ flex: 1 }} title={filePath}>
         {basename(filePath)}
       </span>
       {rangeLabel && <Tag label={rangeLabel} color="var(--accent)" bg="var(--accent-dim)" />}
       {isDone && !isError && <Tag label={`${lines} 行`} color="var(--text-muted)" bg="var(--bg-surface)" />}
-      <span style={{ display: "flex", alignItems: "center", gap: 4, color: statusColor, flexShrink: 0 }}>
-        <StatusIcon isDone={isDone} isError={isError} color={statusColor} />
-        <span style={{ fontSize: 10, fontWeight: 500 }}>{statusLabel}</span>
-      </span>
+      {(!isDone || isError) && (
+        <span className="tool-call-shell__state" style={{ color: statusColor }}>
+          <StatusIcon isDone={isDone} isError={isError} color={statusColor} />
+          {isError && <span>错误</span>}
+        </span>
+      )}
     </>
   );
 
@@ -331,16 +346,17 @@ function StrReplaceCard({ toolCall }: { toolCall: ToolCallData }) {
   const isError = toolCall.isError;
   const isDone = hasToolCallResult(toolCall);
   const statusColor = isDone ? (isError ? "var(--danger)" : "var(--success)") : "var(--accent)";
-  const statusLabel = isDone ? (isError ? "错误" : "已替换") : "替换中";
+  const iconColor = isError ? "var(--danger)" : isDone ? "var(--text-muted)" : "var(--accent)";
   const diff = useMemo(() => oldString && newString ? computeDiff(oldString, newString) : null, [oldString, newString]);
   const diffStats = useMemo(() => diff ? { added: diff.filter(d => d.type === "added").length, removed: diff.filter(d => d.type === "removed").length } : null, [diff]);
 
   const header = (
     <>
-      <div style={{ width: 20, height: 20, borderRadius: 5, background: isDone ? (isError ? "rgba(220,38,38,0.1)" : "rgba(5,150,105,0.1)") : "var(--accent-dim)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={statusColor} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-      </div>
-      <span style={{ fontFamily: "var(--font-mono)", fontSize: 11.5, color: "var(--text-primary)", fontWeight: 600, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={filePath}>
+      <span className="tool-call-shell__icon">
+        <ToolActionIcon name={toolCall.name} color={iconColor} />
+      </span>
+      <span className="tool-call-shell__label">写入</span>
+      <span className="tool-call-shell__preview" style={{ flex: 1 }} title={filePath}>
         {basename(filePath)}
       </span>
       {diffStats && (
@@ -349,10 +365,12 @@ function StrReplaceCard({ toolCall }: { toolCall: ToolCallData }) {
           {diffStats.removed > 0 && <span style={{ color: "var(--danger)" }}>−{diffStats.removed}</span>}
         </span>
       )}
-      <span style={{ display: "flex", alignItems: "center", gap: 4, color: statusColor, flexShrink: 0 }}>
-        <StatusIcon isDone={isDone} isError={isError} color={statusColor} />
-        <span style={{ fontSize: 10, fontWeight: 500 }}>{statusLabel}</span>
-      </span>
+      {(!isDone || isError) && (
+        <span className="tool-call-shell__state" style={{ color: statusColor }}>
+          <StatusIcon isDone={isDone} isError={isError} color={statusColor} />
+          {isError && <span>错误</span>}
+        </span>
+      )}
     </>
   );
 
@@ -541,6 +559,7 @@ function GenericToolCard({ toolCall, onSelectSession, nativeSubagent }: { toolCa
       ? nativeSubagent!.status !== "running"
       : hasResult;
   const statusColor = isDone ? (isError ? "var(--danger)" : "var(--success)") : "var(--accent)";
+  const iconColor = isError ? "var(--danger)" : isDone ? "var(--text-muted)" : "var(--accent)";
   const phrase = isDispatch ? null : toolPhrase(toolCall.name);
   const statusLabel = isError
     ? "错误"
@@ -565,40 +584,36 @@ function GenericToolCard({ toolCall, onSelectSession, nativeSubagent }: { toolCa
   const toolLabel = isNativeAgent
     ? `@${nativeSubagent!.agentName ?? "agent"}`
     : isDispatch
-    ? `@${(toolCall.arguments.agentName as string) ?? "agent"}`
-    : phrase
-      ? phrase.done
-      : toolCall.name;
+      ? `@${(toolCall.arguments.agentName as string) ?? "agent"}`
+      : toolActivityLabel(toolCall.name) ?? toolCall.name;
 
-  // Tool icon
   const family = toolFamily(toolCall.name);
-  const Icon = isDispatch || isNativeAgent ? (
-    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={statusColor} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a5 5 0 1 0 0 10A5 5 0 0 0 12 2z"/><path d="M12 12c-5.33 0-8 2.67-8 4v2h16v-2c0-1.33-2.67-4-8-4z"/></svg>
-  ) : (
-    <ToolFamilyIcon family={family} color={statusColor} size={11} />
-  );
+  const showStatus = !isDone || Boolean(isError) || Boolean(statusLabel);
 
   const header = (
     <>
-      <div style={{ width: 20, height: 20, borderRadius: 5, background: isDone ? (isError ? "rgba(220,38,38,0.1)" : "rgba(5,150,105,0.1)") : "var(--accent-dim)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-        {Icon}
-      </div>
+      <span className="tool-call-shell__icon">
+        <ToolActionIcon name={toolCall.name} color={iconColor} />
+      </span>
       <span
+        className="tool-call-shell__label"
         title={phrase ? toolCall.name : undefined}
         style={{ fontFamily: phrase ? "var(--font-body)" : "var(--font-mono)", fontSize: 11.5, color: "var(--text-primary)", fontWeight: 600, flexShrink: 0 }}
       >
         {toolLabel}
       </span>
       {previewLabel && (
-        <span style={{ fontSize: 11, fontFamily: "var(--font-mono)", color: "var(--text-muted)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+        <span className="tool-call-shell__preview" style={{ fontSize: 11, fontFamily: "var(--font-mono)", color: "var(--text-muted)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
           {previewLabel}
         </span>
       )}
       {!previewLabel && <span style={{ flex: 1 }} />}
-      <span style={{ display: "flex", alignItems: "center", gap: 4, color: statusColor, flexShrink: 0 }}>
-        <StatusIcon isDone={isDone} isError={!!isError} color={statusColor} />
-        {statusLabel && <span style={{ fontSize: 10, fontWeight: 500 }}>{statusLabel}</span>}
-      </span>
+      {showStatus && (
+        <span className="tool-call-shell__state" style={{ color: statusColor }}>
+          <StatusIcon isDone={isDone} isError={!!isError} color={statusColor} />
+          {statusLabel && <span>{statusLabel}</span>}
+        </span>
+      )}
     </>
   );
 
@@ -675,7 +690,7 @@ export function ToolCallGroup({ items, onSelectSession }: { items: ToolCallGroup
   const isDone = items.every(({ toolCall }) => hasToolCallResult(toolCall));
   const errorCount = items.filter(({ toolCall }) => toolCall.isError).length;
   const statusColor = errorCount > 0 ? "var(--danger)" : isDone ? "var(--text-muted)" : "var(--accent)";
-  const actionLabel = phrase.done;
+  const actionLabel = toolActivityLabel(first.name) ?? phrase.done;
   const disclosureLabel = `${actionLabel}，${items.length} 项，${expanded ? "收起" : "展开"}`;
 
   return (
@@ -688,14 +703,14 @@ export function ToolCallGroup({ items, onSelectSession }: { items: ToolCallGroup
         onClick={() => setExpanded((value) => !value)}
       >
         <span className="tool-call-group__icon" aria-hidden="true">
-          <ToolFamilyIcon family={toolFamily(first.name)} color={statusColor} size={13} />
+          <ToolActionIcon name={first.name} color={statusColor} />
         </span>
         <span className="tool-call-group__label">{actionLabel}</span>
         <span className="tool-call-group__count">{items.length} 项</span>
         <span className="tool-call-group__spacer" />
         {errorCount > 0 && <span className="tool-call-group__error">{errorCount} 项失败</span>}
         {!isDone && <StatusIcon isDone={false} color={statusColor} size={11} />}
-        <svg className="tool-call-group__chevron" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
+        <ChevronRight className="tool-call-group__chevron" size={13} strokeWidth={2.2} aria-hidden="true" />
       </button>
       {expanded && (
         <div className="tool-call-group__items">

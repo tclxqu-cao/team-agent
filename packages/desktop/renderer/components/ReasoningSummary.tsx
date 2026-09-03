@@ -1,18 +1,28 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import type { ReasoningSummarySection } from "@agent/core";
+import { Brain, ChevronRight, LoaderCircle } from "lucide-react";
+import ElapsedTime from "./ElapsedTime";
 
 interface ReasoningSummaryProps {
   sections: ReasoningSummarySection[];
   streaming?: boolean;
+  startedAt?: number;
   renderContent: (text: string) => ReactNode;
 }
 
-export default function ReasoningSummary({ sections, streaming = false, renderContent }: ReasoningSummaryProps) {
+export default function ReasoningSummary({ sections, streaming = false, startedAt, renderContent }: ReasoningSummaryProps) {
   const text = useMemo(() => [...sections]
     .sort((left, right) => left.sectionIndex - right.sectionIndex)
     .map((section) => section.text.trim())
     .filter(Boolean)
     .join("\n\n"), [sections]);
+  const preview = useMemo(() => {
+    const firstLine = text.split("\n").find((line) => line.trim()) ?? "";
+    return firstLine
+      .replace(/^#{1,6}\s+/, "")
+      .replace(/\*\*([^*]+)\*\*/g, "$1")
+      .replace(/`([^`]+)`/g, "$1");
+  }, [text]);
   const [expanded, setExpanded] = useState(streaming);
 
   useEffect(() => {
@@ -20,19 +30,27 @@ export default function ReasoningSummary({ sections, streaming = false, renderCo
   }, [streaming]);
 
   if (!text) return null;
+  const label = streaming ? "思考中" : "思考";
   return (
     <div className="reasoning-summary">
       <button
         type="button"
         className="reasoning-summary__toggle"
         aria-expanded={expanded}
+        aria-label={`${label}，${expanded ? "收起" : "展开"}`}
         onClick={() => setExpanded((value) => !value)}
       >
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
-          <path d="M9 18l6-6-6-6" />
-        </svg>
-        <span>思考摘要</span>
-        {streaming && <span className="reasoning-summary__live">生成中</span>}
+        <span className="reasoning-summary__brain" aria-hidden="true">
+          <Brain size={17} strokeWidth={1.8} />
+        </span>
+        <span className="reasoning-summary__label">
+          {label}
+          {streaming && startedAt !== undefined && <ElapsedTime startedAt={startedAt} />}
+        </span>
+        {!expanded && <span className="reasoning-summary__preview">{preview}</span>}
+        <span className="reasoning-summary__spacer" />
+        {streaming && <LoaderCircle className="reasoning-summary__spinner" size={13} strokeWidth={2} aria-hidden="true" />}
+        <ChevronRight className="reasoning-summary__chevron" size={13} strokeWidth={2} aria-hidden="true" />
       </button>
       {expanded && <div className="reasoning-summary__content">{renderContent(text)}</div>}
     </div>

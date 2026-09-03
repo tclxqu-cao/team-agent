@@ -1,7 +1,7 @@
 # AgentRoam macOS 交叉打包 Windows CLI 设计
 
 **日期：** 2026-09-02
-**状态：** 待用户复核
+**状态：** 已批准并实现
 **项目：** customer-agent
 
 ## 1. 目标

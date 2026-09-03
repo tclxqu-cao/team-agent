@@ -127,6 +127,52 @@ afterEach(async () => {
 });
 
 describe("NativeRuntimeBrokerHost", () => {
+  it("persists one active goal, reorders the queue, and starts the next goal", async () => {
+    const runtime = new FakeNativeRuntime();
+    const host = new NativeRuntimeBrokerHost(await directory(), runtime as unknown as UnifiedSessionService);
+    try {
+      await host.enqueueGoal(sessionId, "first", "message-1", "desktop");
+      await host.enqueueGoal(sessionId, "second", "message-2", "desktop");
+      await host.enqueueGoal(sessionId, "third", "message-3", "desktop");
+      const reordered = host.reorderGoals(sessionId, [
+        (await host.getGoals(sessionId)).queued[1].id,
+        (await host.getGoals(sessionId)).queued[0].id,
+      ]);
+      expect(reordered.active?.objective).toBe("first");
+      expect(reordered.queued.map((goal) => goal.objective)).toEqual(["third", "second"]);
+      await waitFor(() => expect(host.snapshot(sessionId).events).toHaveLength(1));
+      const question = host.snapshot(sessionId).events[0].event;
+      await host.answerQuestion(question.type === "ask_user" ? question.questionId : "", { answer: "允许一次" });
+      await waitFor(() => expect(runtime.runOptions).toHaveLength(2));
+      expect(runtime.runOptions[0].goal).toMatchObject({ objective: "first" });
+      expect(runtime.runOptions[1].goal).toMatchObject({ objective: "third" });
+      expect((await host.getGoals(sessionId)).active?.objective).toBe("third");
+    } finally {
+      await host.stop();
+    }
+  });
+
+  it("recovers a persisted active goal when a replacement broker starts", async () => {
+    const path = await directory();
+    const priorRuntime = new FakeNativeRuntime();
+    const priorHost = new NativeRuntimeBrokerHost(path, priorRuntime as unknown as UnifiedSessionService);
+    const replacementRuntime = new FakeNativeRuntime();
+    const replacementHost = new NativeRuntimeBrokerHost(path, replacementRuntime as unknown as UnifiedSessionService);
+    try {
+      await priorHost.enqueueGoal(sessionId, "survive restart", "message-restart", "desktop");
+      await waitFor(() => expect(priorRuntime.runOptions).toHaveLength(1));
+
+      await replacementHost.start();
+
+      await waitFor(() => expect(replacementRuntime.runOptions).toHaveLength(1));
+      expect(replacementRuntime.runOptions[0].goal).toMatchObject({ objective: "survive restart" });
+      expect((await replacementHost.getGoals(sessionId, "desktop")).active?.objective).toBe("survive restart");
+    } finally {
+      await priorHost.stop();
+      await replacementHost.stop();
+    }
+  });
+
   it("replays native subagent activity snapshots without changing nested messages", async () => {
     const runtime = new FakeNativeRuntime();
     const activity = {

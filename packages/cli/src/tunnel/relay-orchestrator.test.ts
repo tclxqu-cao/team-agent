@@ -32,6 +32,20 @@ describe("selectRelay", () => {
     expect(result.failures).toHaveLength(2);
   });
 
+  it("fails instead of leaving a background service permanently on LAN", async () => {
+    const cloudflare = fakeProvider("https://bad.trycloudflare.com");
+    const pinggy = fakeProvider("https://bad.run.pinggy-free.link");
+
+    await expect(
+      selectRelay({
+        ...options("auto", { cloudflare, pinggy }, async () => { throw new Error("blocked"); }),
+        allowLanFallback: false,
+      }),
+    ).rejects.toThrow("public relay unavailable (cloudflare: blocked; pinggy: blocked)");
+    expect(cloudflare.handle.close).toHaveBeenCalledOnce();
+    expect(pinggy.handle.close).toHaveBeenCalledOnce();
+  });
+
   it("bypasses every public provider in local-only mode", async () => {
     const cloudflare = fakeProvider("https://unused.trycloudflare.com");
     const result = await selectRelay({ ...options("auto", { cloudflare }), cli: cli("auto", true) });
@@ -63,6 +77,7 @@ function options(
 function cli(relay: RelayMode, localOnly = false): CliOptions {
   return {
     command: "start",
+    serviceAction: null,
     roots: [process.cwd()],
     port: null,
     relay,

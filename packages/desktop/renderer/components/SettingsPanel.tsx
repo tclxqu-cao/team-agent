@@ -45,7 +45,13 @@ export default function SettingsPanel() {
   const startEdit = (p: ModelProfile) => {
     setIsNew(false);
     setEditingId(p.id);
-    setDraft({ name: p.name, provider: p.provider, modelId: p.modelId, apiKey: p.apiKey, baseUrl: p.baseUrl });
+    setDraft({
+      name: p.name,
+      provider: p.provider,
+      modelId: p.modelId,
+      apiKey: p.apiKey === "managed" ? "" : p.apiKey,
+      baseUrl: p.baseUrl,
+    });
   };
 
   const cancelEdit = () => { setEditingId(null); setIsNew(false); };

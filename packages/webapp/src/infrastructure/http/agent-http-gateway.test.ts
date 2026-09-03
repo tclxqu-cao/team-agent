@@ -71,6 +71,7 @@ describe("AgentHttpGateway", () => {
     const settings = {
       getModelOverride: vi.fn(() => null),
       getReasoningEffort: vi.fn(() => "off"),
+      getRunLimits: vi.fn(() => ({ maxIterations: 10, maxTokens: 100_000 })),
     };
     const gateway = new AgentHttpGateway(http as never, settings as never);
     const events: unknown[] = [];
@@ -101,6 +102,7 @@ describe("AgentHttpGateway", () => {
     const settings = {
       getModelOverride: vi.fn(() => null),
       getReasoningEffort: vi.fn(() => "off"),
+      getRunLimits: vi.fn(() => ({ maxIterations: 10, maxTokens: 100_000 })),
     };
     const gateway = new AgentHttpGateway(http as never, settings as never);
     const events: unknown[] = [];
@@ -145,6 +147,40 @@ describe("AgentHttpGateway", () => {
     });
   });
 
+  it("forwards configured model and run limits to ordinary Customer Agent runs", async () => {
+    globalThis.EventSource = ObservableEventSource as unknown as typeof EventSource;
+    const model = {
+      provider: "openai",
+      apiKey: "local-key",
+      modelId: "gpt-test",
+      baseUrl: "https://example.test/v1",
+    };
+    const http = { post: vi.fn().mockResolvedValue({}) };
+    const settings = {
+      getModelOverride: vi.fn(() => model),
+      getReasoningEffort: vi.fn(() => "high"),
+      getRunLimits: vi.fn(() => ({ maxIterations: 24, maxTokens: 256_000 })),
+    };
+    const gateway = new AgentHttpGateway(http as never, settings as never);
+
+    const run = gateway.run("configured run", "session-settings");
+    const source = ObservableEventSource.instances[0];
+    source.onopen?.();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(http.post).toHaveBeenCalledWith("/api/agent/run", {
+      input: "configured run",
+      sessionId: "session-settings",
+      model,
+      reasoningEffort: "high",
+      maxIterations: 24,
+      maxTokens: 256_000,
+    });
+
+    source.onmessage?.(new MessageEvent("message", { data: JSON.stringify({ type: "done", finalText: "done" }) }));
+    await run;
+  });
+
   it("forks a session through the encoded native-session endpoint", async () => {
     const forkedSummary = {
       id: "runtime:codex:Zm9yaw",
@@ -176,6 +212,28 @@ describe("AgentHttpGateway", () => {
       "/api/sessions/runtime%3Acodex%3Ac291cmNl?before=history.v1.50&limit=50",
     );
   });
+
+  it.each(["codex", "claude-code"])(
+    "does not open a broker event stream while following an external %s run",
+    async (agentType) => {
+      globalThis.EventSource = ObservableEventSource as unknown as typeof EventSource;
+      const http = {
+        get: vi.fn().mockResolvedValue({
+          agentType,
+          status: "running",
+          occupancy: "owned-externally",
+          snapshotRevision: 7,
+          messages: [],
+          events: [],
+        }),
+      };
+      const gateway = new AgentHttpGateway(http as never, {} as never);
+
+      await gateway.getSession(`runtime:${agentType}:c2Vzc2lvbg`);
+
+      expect(ObservableEventSource.instances).toHaveLength(0);
+    },
+  );
 
   it("observes native history revisions and closes the SSE subscription", () => {
     globalThis.EventSource = ObservableEventSource as unknown as typeof EventSource;

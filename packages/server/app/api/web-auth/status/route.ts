@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { AUTH_COOKIE, DEVICE_COOKIE, authErrorResponse, authTokenFromRequest, cookieOptions, webAuth } from "../../../../lib/web-auth/http";
 
+export const dynamic = "force-dynamic";
+
 const THIRTY_DAYS = 30 * 24 * 60 * 60;
 
 export async function GET(request: Request) {

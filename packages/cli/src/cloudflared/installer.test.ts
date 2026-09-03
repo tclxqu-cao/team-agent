@@ -34,6 +34,29 @@ describe("ensureCloudflared", () => {
     expect(resolver).toHaveBeenCalledTimes(2);
   });
 
+  it("copies a verified Windows executable without tar", async () => {
+    const root = await mkdtemp(resolve(tmpdir(), "agentroam-cloudflared-windows-"));
+    const assetPath = resolve(root, "source.exe");
+    const bytes = Buffer.from("MZ-test-windows-binary");
+    await writeFile(assetPath, bytes);
+    const asset: BundledCloudflaredAsset = {
+      assetPath,
+      assetFormat: "executable",
+      sha256: createHash("sha256").update(bytes).digest("hex"),
+      size: bytes.length,
+      fileName: "cloudflared.exe",
+      version: "test",
+    };
+
+    const executable = await ensureCloudflared("windows-amd64", resolve(root, "data"), {
+      resolveBundled: async () => asset,
+      findSystem: async () => null,
+    });
+
+    expect(executable).toBe(resolve(root, "data/bin/cloudflared.exe"));
+    expect(await readFile(executable)).toEqual(bytes);
+  });
+
   it("falls back to PATH when the bundled checksum is invalid", async () => {
     const root = await mkdtemp(resolve(tmpdir(), "agentroam-cloudflared-fallback-"));
     const asset = await createArchive(root, "#!/bin/sh\n");
@@ -76,7 +99,8 @@ async function createArchive(root: string, content: string): Promise<BundledClou
   execFileSync("tar", ["-czf", archivePath, "-C", source, "cloudflared"]);
   const bytes = await readFile(archivePath);
   return {
-    archivePath,
+    assetPath: archivePath,
+    assetFormat: "tgz",
     sha256: createHash("sha256").update(bytes).digest("hex"),
     size: (await stat(archivePath)).size,
     fileName: "cloudflared",

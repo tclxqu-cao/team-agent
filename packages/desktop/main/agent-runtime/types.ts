@@ -1,6 +1,7 @@
 import type {
   AgentEvent,
   Message,
+  SessionGoalState,
   SessionHistoryWindow,
   ToolPermissionMode,
 } from "@agent/core";
@@ -40,6 +41,7 @@ export interface UnifiedSessionSummary {
   occupancyRevision?: number;
   /** Logical AgentRoam client currently allowed to control a live native turn. */
   controller?: "web" | "desktop" | null;
+  goalState?: SessionGoalState;
 }
 
 export interface UnifiedSessionDetail extends UnifiedSessionSummary {
@@ -71,6 +73,10 @@ export interface RuntimeQuestionAnswer {
 export interface RuntimeRunOptions {
   permissionMode?: ToolPermissionMode;
   brokerRunId?: string;
+  goal?: {
+    id: string;
+    objective: string;
+  };
 }
 
 export interface AgentRuntimeAdapter {

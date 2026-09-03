@@ -51,7 +51,7 @@ describe("shared composer panel layout", () => {
     expect(chatView).toContain('type="file"');
     expect(chatView).toContain("fileInputRef.current?.click()");
     expect(chatView).not.toContain("isBrowserRuntime");
-    expect(chatView).toContain('placeholder={isReadOnly ? "原客户端使用中，当前只读" : runtimeReady ? (isRunning ? "输入下一条排队消息" : "提出后续修改要求")');
+    expect(chatView).toContain('placeholder={isReadOnly ? "原客户端使用中，当前只读" : runtimeReady ? (goalMode ? "输入要持续推进的目标" : isLocallyRunning ? "输入下一条排队消息" : "提出后续修改要求")');
 
     expect(css).toContain(".web-native-composer-textarea {");
     expect(css).toContain("min-height: 76px");
@@ -60,7 +60,7 @@ describe("shared composer panel layout", () => {
   });
 
   it("preserves queue-send and stop actions while the agent is running", () => {
-    expect(chatView).toContain('aria-label={isRunning ? "排队发送" : "发送"}');
+    expect(chatView).toContain('aria-label={isLocallyRunning ? "排队发送" : "发送"}');
     expect(chatView).toContain('className="web-native-stop-button" aria-label="停止生成"');
   });
 

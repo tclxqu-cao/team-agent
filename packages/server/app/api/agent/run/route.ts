@@ -6,6 +6,7 @@ import {
   getNativeRuntimeService,
   isNativeSessionId,
 } from "../../../../lib/native-runtime-service";
+import { normalizeCustomerAgentRunOptions } from "./run-options";
 
 export async function POST(request: Request) {
   try {
@@ -15,6 +16,8 @@ export async function POST(request: Request) {
       images?: string[];
       model?: { provider: string; apiKey: string; modelId: string; baseUrl?: string };
       reasoningEffort?: "off" | "low" | "medium" | "high";
+      maxIterations?: number;
+      maxTokens?: number;
     };
 
     if (!body.input) {
@@ -78,16 +81,20 @@ export async function POST(request: Request) {
       });
     }
 
+    const runOptions = normalizeCustomerAgentRunOptions(body);
+    const builder = agentHost.getBuilder()
+      .withMaxIterations(runOptions.maxIterations)
+      .withMaxTokens(runOptions.maxTokens)
+      .withReasoningEffort(body.reasoningEffort ?? "off");
+
     // Configure model if provided
     if (body.model) {
-      agentHost.getBuilder().withModel(body.model.provider, {
+      builder.withModel(body.model.provider, {
         apiKey: body.model.apiKey,
         modelId: body.model.modelId,
         baseUrl: body.model.baseUrl,
       });
     }
-
-    agentHost.getBuilder().withReasoningEffort(body.reasoningEffort ?? "off");
 
     // Run agent in background
     agentHost.run(body.input, sessionId, body.images).catch((err) => {

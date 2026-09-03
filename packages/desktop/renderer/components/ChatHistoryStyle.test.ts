@@ -6,8 +6,8 @@ const app = readFileSync(new URL("../App.tsx", import.meta.url), "utf8");
 const toolCallCard = readFileSync(new URL("./ToolCallCard.tsx", import.meta.url), "utf8");
 const globalCss = readFileSync(new URL("../styles/global.css", import.meta.url), "utf8");
 const pendingIndicator = chatView.slice(
-  chatView.indexOf("{/* Thinking indicator (no assistant reply yet) */}"),
-  chatView.indexOf("{error && ("),
+  chatView.indexOf("{/* Keep every otherwise-empty running state visible and consistent. */}"),
+  chatView.indexOf("{(sessionLoadError || error) && ("),
 );
 
 describe("shared Codex-style message history", () => {
@@ -18,22 +18,27 @@ describe("shared Codex-style message history", () => {
     expect(chatView).not.toContain('className={isNativeRuntime ? "chat-view');
   });
 
-  it("does not show an avatar before the first assistant reply", () => {
+  it("uses the shared brain indicator for every otherwise-empty running state", () => {
     expect(pendingIndicator).toContain("<AgentActivityIndicator");
-    expect(pendingIndicator).toContain('agentActivity !== "tools"');
+    expect(pendingIndicator).toContain("{showThinkingFallback && (");
     expect(pendingIndicator).not.toContain("chat-message-avatar");
     expect(pendingIndicator).not.toContain("Robot avatar");
+    expect(chatView).toContain("const showThinkingFallback = isRunning");
+    expect(chatView).toContain("&& !hasStreamingReasoning");
+    expect(chatView).toContain("&& !hasVisibleRunningTool;");
+    expect(chatView).toContain("messages.length === 0 && !isRunning");
   });
 
   it("keeps tool execution status inside the tool row", () => {
-    expect(chatView).toMatch(/showThinking = isRunning\s+&& isLastAssistant\s+&& agentActivity !== "tools"\s+&& !globalRuntimeProgress/);
-    expect(toolCallCard).toContain("const actionLabel = phrase.done");
+    expect(chatView).toContain("!areToolCallsComplete(message.toolCalls)");
+    expect(toolCallCard).toContain("const actionLabel = toolActivityLabel(first.name) ?? phrase.done");
     expect(toolCallCard).toContain("!isDone && <StatusIcon");
   });
 
   it("shows one left-aligned thinking status when native progress is available", () => {
-    expect(chatView).toContain("&& !globalRuntimeProgress;");
+    expect(chatView).toContain("&& !globalRuntimeProgress");
     expect(chatView).toContain("{isRunning && globalRuntimeProgress && (");
+    expect(chatView).toContain("<RuntimeProgressRow progress={globalRuntimeProgress} startedAt={thinkingStartedAt} />");
     expect(globalCss).toContain(".chat-view--codex-history .runtime-progress-row:not(.runtime-progress-row--compact)");
     expect(globalCss).toContain("width: min(100%, 860px)");
     expect(globalCss).toContain("margin-left: auto");
@@ -49,36 +54,26 @@ describe("shared Codex-style message history", () => {
   });
 
   it("folds adjacent repeated tool actions behind a right-facing disclosure", () => {
-    expect(chatView).toContain("coalesceAdjacentToolCallMessages(messages)");
+    expect(chatView).toContain("coalesceAdjacentToolCallMessages(messages.filter((message) => !message.isQueued))");
     expect(chatView).toContain("groupAdjacentToolCallEntries(toolCallEntries)");
     expect(chatView).toContain("<ToolCallGroup");
     expect(toolCallCard).toContain('className="tool-call-group__summary"');
     expect(toolCallCard).toContain("aria-expanded={expanded}");
     expect(toolCallCard).toContain('className="tool-call-group__items"');
     expect(toolCallCard).toContain("{expanded && (");
-    expect(toolCallCard).toContain('d="m9 18 6-6-6-6"');
+    expect(toolCallCard).toContain('<ChevronRight className="tool-call-group__chevron"');
+    expect(toolCallCard).toContain("<ToolActionIcon name={first.name}");
     expect(globalCss).toContain('.tool-call-group__summary[aria-expanded="true"] .tool-call-group__chevron');
     expect(globalCss).toContain("transform: rotate(90deg)");
-    expect(globalCss).toContain("padding-left: 24px");
+    expect(globalCss).toContain("padding-left: 0");
+    expect(globalCss).toContain("border-left: 0");
   });
 
-  it("uses an icon-only chevron for long-message disclosure", () => {
-    const disclosure = chatView.indexOf('className="chat-message-disclosure"');
-    const body = chatView.indexOf('className={isLong ? "chat-message-long-content__body" : undefined}');
-    expect(disclosure).toBeGreaterThan(-1);
-    expect(body).toBeGreaterThan(disclosure);
-    expect(chatView).toContain('className="chat-message-disclosure"');
-    expect(chatView).toContain("aria-expanded={isExpanded}");
-    expect(chatView).toContain("aria-label={disclosureLabel}");
-    expect(chatView).toContain('d="m9 18 6-6-6-6"');
-    expect(chatView).not.toContain('{isExpanded ? "收起" : `展开全文');
-    expect(globalCss).toContain(".chat-message-disclosure[aria-expanded=\"true\"] svg");
-    expect(globalCss).toContain("transform: rotate(90deg)");
-    expect(globalCss).toContain(".chat-message-long-content__body");
-    expect(globalCss).toContain("padding-right: 28px");
-    expect(globalCss).toContain("position: absolute");
-    expect(globalCss).toContain("top: 0");
-    expect(globalCss).toContain("right: 0");
+  it("renders long assistant messages in full without truncation disclosure", () => {
+    expect(chatView).not.toContain("COLLAPSE_THRESHOLD");
+    expect(chatView).not.toContain("expandedMessages");
+    expect(chatView).not.toContain('className="chat-message-disclosure"');
+    expect(chatView).not.toContain("chat-message-long-content");
   });
 
   it("owns the shared document lane, bubbles, and compact tool rows", () => {
@@ -91,6 +86,24 @@ describe("shared Codex-style message history", () => {
     expect(globalCss).toContain(".chat-view--codex-history .tool-call-shell__header");
     expect(globalCss).toContain("min-height: 32px");
     expect(globalCss).toContain("background: transparent !important");
+  });
+
+  it("aligns icon-led reasoning and tool rows without a timeline", () => {
+    expect(chatView).not.toContain("isExecutionTraceMessage");
+    expect(chatView).not.toContain("chat-message-group--trace");
+    expect(chatView).toContain('streaming={isRunning && isLastAssistant && agentActivity === "thinking"}');
+    expect(chatView).toContain("messages.filter((message) => !message.isQueued)");
+    expect(globalCss).not.toContain(".chat-message-group--trace::before");
+    expect(globalCss).not.toContain(".chat-message-group--trace::after");
+    expect(globalCss).toContain(".chat-view--codex-history .agent-activity-indicator");
+    expect(globalCss).toContain(".reasoning-summary__preview");
+    expect(globalCss).toContain(".tool-call-shell__preview");
+    expect(globalCss.match(/place-items: center start/g)).toHaveLength(5);
+    expect(globalCss.match(/padding: 5px 0;/g)).toHaveLength(3);
+    expect(globalCss).toContain("padding: 5px 0 !important");
+    expect(globalCss).toContain(".reasoning-summary__label");
+    expect(globalCss).toContain(".chat-view--codex-history .tool-call-shell__label");
+    expect(globalCss).not.toContain("transform: translateY(-1px)");
   });
 
   it("keeps the workspace close to the sidebar surface across skins", () => {
@@ -112,6 +125,10 @@ describe("shared Codex-style message history", () => {
 
   it("loads older history near the top without flashing a fast-request spinner", () => {
     expect(chatView).toContain("container.scrollTop <= 240");
+    expect(chatView).toContain('import { SinglePageHistoryPrefetch } from "../lib/session-history-prefetch"');
+    expect(chatView).toContain(".prefetch(targetSid, cursor");
+    expect(chatView).toContain("historyPrefetchRef.current!.consume(");
+    expect(chatView).toContain("prefetchOlderHistory(targetSid, nextCursor)");
     expect(chatView).toContain("before: cursor");
     expect(chatView).toContain("scrollTop: container.scrollTop");
     expect(chatView).toContain("container.scrollHeight - anchor.scrollHeight");
@@ -123,7 +140,9 @@ describe("shared Codex-style message history", () => {
   });
 
   it("follows selected native history immediately and limits fallback polling", () => {
-    expect(chatView).toContain("&& runningSessionId !== targetSid");
+    expect(chatView).toContain("shouldFollowNativeHistory(sessionSummary, targetSid, runningSessionId)");
+    expect(chatView).toContain("shouldRestoreLocalNativeRun(detail)");
+    expect(chatView).toContain("isLocallyRunning || isObservedNativeRun(sessionSummary)");
     expect(chatView).not.toContain('sessionSummary?.occupancy === "owned-externally"\n      && sessionSummary.status === "running"');
     expect(chatView).toContain('const shouldPollFallback = sessionSummary?.occupancy === "owned-externally"');
     expect(chatView).toContain("if (shouldPollFallback) startPolling()");
@@ -164,11 +183,13 @@ describe("shared Codex-style message history", () => {
 
   it("limits message actions to user copy and completed assistant responses", () => {
     expect(chatView).toContain("messageActionPolicy(renderedMessages, i, isRunning)");
-    expect(chatView).toContain("(actionPolicy.showCopy || actionPolicy.showSpeak)");
+    expect(chatView).toContain("(actionPolicy.showCopy || actionPolicy.showSpeak || isGoalMessage)");
     expect(chatView).toContain('actionPolicy.showSpeak && typeof window.agentApi?.ttsSpeak');
     expect(chatView).toContain("actionPolicy.showCopy && <button");
     expect(chatView).toContain("copyTextToClipboard(msg.content)");
     expect(chatView).toContain('aria-label="复制内容"');
+    expect(chatView).toContain('aria-label="目标消息"');
+    expect(chatView.indexOf('aria-label="目标消息"')).toBeLessThan(chatView.indexOf('aria-label="复制内容"'));
     expect(chatView).toContain('chat-message-group--intermediate');
     expect(globalCss).toContain(".chat-view--codex-history .chat-message-group--intermediate");
     expect(globalCss).toContain("margin-bottom: 0 !important");

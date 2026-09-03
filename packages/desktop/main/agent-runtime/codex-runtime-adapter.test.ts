@@ -10,7 +10,19 @@ import {
   codexTurnPermissionOptions,
   codexTurnsToMessages,
   normalizeCodexUserText,
+  parseExplicitSkillInvocation,
 } from "./codex-runtime-adapter.js";
+
+describe("Codex explicit skills", () => {
+  it("maps slash skills to native names while reserving built-in commands", () => {
+    expect(parseExplicitSkillInvocation("/frontend-design build it")).toEqual({
+      name: "frontend-design",
+      rest: "build it",
+    });
+    expect(parseExplicitSkillInvocation("/goal finish it")).toBeNull();
+    expect(parseExplicitSkillInvocation("plain text")).toBeNull();
+  });
+});
 
 const temporaryDirectories: string[] = [];
 
@@ -420,6 +432,223 @@ describe("Codex image input", () => {
     await expect(drain(adapter.run(thread.id, "inspect", ["data:image/png;base64,bm90LXBuZw=="])))
       .rejects.toMatchObject({ code: "NATIVE_PROTOCOL_ERROR" });
     expect(requests).not.toContain("turn/start");
+  });
+});
+
+describe("Codex native goal lifecycle", () => {
+  it("keeps the run open across completed turns until the native goal is complete", async () => {
+    const root = await mkdtemp(join(tmpdir(), "codex-goal-lifecycle-"));
+    temporaryDirectories.push(root);
+    const requests: Array<{ method: string; params: any }> = [];
+    let notify: (message: any) => void = () => undefined;
+    const thread = {
+      id: "cx-goal",
+      parentThreadId: null,
+      preview: "goal",
+      name: "goal",
+      createdAt: 1_788_220_800,
+      updatedAt: 1_788_220_800,
+      status: { type: "idle" },
+      path: null,
+      cwd: root,
+      source: { custom: "customer-agent" },
+      turns: [],
+    };
+    const client = {
+      onNotification: (handler: typeof notify) => {
+        notify = handler;
+        return () => undefined;
+      },
+      onExit: () => () => undefined,
+      setServerRequestHandler: () => undefined,
+      request: async (method: string, params: any) => {
+        requests.push({ method, params });
+        if (method === "thread/read") return { thread };
+        if (method === "thread/resume") return { thread };
+        if (method === "thread/goal/set") return { goal: { status: "active" } };
+        if (method === "turn/start") {
+          queueMicrotask(() => {
+            notify({
+              method: "turn/completed",
+              params: {
+                threadId: thread.id,
+                turn: {
+                  id: "turn-goal-1",
+                  status: "completed",
+                  items: [{ type: "agentMessage", text: "intermediate" }],
+                },
+              },
+            });
+            notify({
+              method: "turn/started",
+              params: { threadId: thread.id, turn: { id: "turn-goal-2" } },
+            });
+            notify({
+              method: "thread/goal/updated",
+              params: { threadId: thread.id, turnId: "turn-goal-2", goal: { status: "complete" } },
+            });
+            notify({
+              method: "turn/completed",
+              params: {
+                threadId: thread.id,
+                turn: {
+                  id: "turn-goal-2",
+                  status: "completed",
+                  items: [{ type: "agentMessage", text: "goal complete" }],
+                },
+              },
+            });
+          });
+          return { turn: { id: "turn-goal-1" } };
+        }
+        if (method === "thread/unsubscribe") return {};
+        throw new Error(`unexpected request: ${method}`);
+      },
+    };
+    const adapter = new CodexRuntimeAdapter({ client: client as never, sessionRoot: root });
+
+    const events = await drain(adapter.run(
+      thread.id,
+      "finish migration",
+      undefined,
+      undefined,
+      undefined,
+      { brokerRunId: "run-goal", goal: { id: "goal-1", objective: "finish migration" } },
+    ));
+
+    expect(requests).toContainEqual({
+      method: "thread/goal/set",
+      params: { threadId: thread.id, objective: "finish migration", status: "active" },
+    });
+    expect(events.filter((event: any) => event.type === "done" || event.type === "error"))
+      .toEqual([{ type: "done", finalText: "goal complete" }]);
+  });
+
+  it("ignores the cleared goal snapshot emitted while resuming before a new goal is set", async () => {
+    const root = await mkdtemp(join(tmpdir(), "codex-goal-resume-snapshot-"));
+    temporaryDirectories.push(root);
+    let notify: (message: any) => void = () => undefined;
+    const thread = {
+      id: "cx-goal-resume-snapshot",
+      parentThreadId: null,
+      preview: "goal",
+      name: "goal",
+      createdAt: 1_788_220_800,
+      updatedAt: 1_788_220_800,
+      status: { type: "idle" },
+      path: null,
+      cwd: root,
+      source: { custom: "customer-agent" },
+      turns: [],
+    };
+    const client = {
+      onNotification: (handler: typeof notify) => {
+        notify = handler;
+        return () => undefined;
+      },
+      onExit: () => () => undefined,
+      setServerRequestHandler: () => undefined,
+      request: async (method: string) => {
+        if (method === "thread/read") return { thread };
+        if (method === "thread/resume") {
+          notify({ method: "thread/goal/cleared", params: { threadId: thread.id } });
+          return { thread };
+        }
+        if (method === "thread/goal/set") return { goal: { status: "active" } };
+        if (method === "turn/start") {
+          queueMicrotask(() => {
+            notify({
+              method: "turn/started",
+              params: { threadId: thread.id, turn: { id: "turn-after-resume-snapshot" } },
+            });
+            notify({
+              method: "thread/goal/updated",
+              params: { threadId: thread.id, goal: { status: "complete" } },
+            });
+            notify({
+              method: "turn/completed",
+              params: {
+                threadId: thread.id,
+                turn: {
+                  id: "turn-after-resume-snapshot",
+                  status: "completed",
+                  items: [{ type: "agentMessage", text: "goal complete" }],
+                },
+              },
+            });
+          });
+          return { turn: { id: "turn-after-resume-snapshot" } };
+        }
+        if (method === "thread/unsubscribe") return {};
+        throw new Error(`unexpected request: ${method}`);
+      },
+    };
+    const adapter = new CodexRuntimeAdapter({ client: client as never, sessionRoot: root });
+
+    const events = await drain(adapter.run(
+      thread.id,
+      "finish migration",
+      undefined,
+      undefined,
+      undefined,
+      { goal: { id: "goal-after-resume-snapshot", objective: "finish migration" } },
+    ));
+
+    expect(events.filter((event: any) => event.type === "done" || event.type === "error"))
+      .toEqual([{ type: "done", finalText: "goal complete" }]);
+  });
+
+  it("finishes a cleared native goal even when no turn has started", async () => {
+    const root = await mkdtemp(join(tmpdir(), "codex-goal-cleared-"));
+    temporaryDirectories.push(root);
+    let notify: (message: any) => void = () => undefined;
+    const thread = {
+      id: "cx-goal-cleared",
+      parentThreadId: null,
+      preview: "goal",
+      name: "goal",
+      createdAt: 1_788_220_800,
+      updatedAt: 1_788_220_800,
+      status: { type: "idle" },
+      path: null,
+      cwd: root,
+      source: { custom: "customer-agent" },
+      turns: [],
+    };
+    const client = {
+      onNotification: (handler: typeof notify) => {
+        notify = handler;
+        return () => undefined;
+      },
+      onExit: () => () => undefined,
+      setServerRequestHandler: () => undefined,
+      request: async (method: string) => {
+        if (method === "thread/read" || method === "thread/resume") return { thread };
+        if (method === "thread/goal/set") return { goal: { status: "active" } };
+        if (method === "turn/start") {
+          notify({ method: "thread/goal/cleared", params: { threadId: thread.id } });
+          return { turn: { id: "turn-cleared" } };
+        }
+        if (method === "thread/unsubscribe") return {};
+        throw new Error(`unexpected request: ${method}`);
+      },
+    };
+    const adapter = new CodexRuntimeAdapter({ client: client as never, sessionRoot: root });
+
+    const events = await drain(adapter.run(
+      thread.id,
+      "finish migration",
+      undefined,
+      undefined,
+      undefined,
+      { goal: { id: "goal-cleared", objective: "finish migration" } },
+    ));
+
+    expect(events.at(-1)).toEqual({
+      type: "error",
+      code: "NATIVE_PROTOCOL_ERROR",
+      message: "Codex goal was cleared.",
+    });
   });
 });
 

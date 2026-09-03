@@ -18,6 +18,7 @@ export interface PersistedHistoryEvent {
 export interface SessionHistoryDetail {
   agentType?: "customer-agent" | "codex" | "claude-code";
   status?: "idle" | "running" | "completed" | "failed";
+  occupancy?: "available" | "owned-by-customer-agent" | "owned-externally";
   messages?: Array<{
     role?: string;
     content?: string;

@@ -6,9 +6,13 @@ const require = createRequire(import.meta.url);
 let entry;
 
 try {
-  entry = require.resolve("agentroam-tui-darwin-arm64/entry");
-} catch {
-  console.error("agent-tui: TUI 可选包未安装，请重新安装 agentroam@preview");
+  const [{ detectPlatform }, { resolvePlatformTui }] = await Promise.all([
+    import("../dist/platform.js"),
+    import("../dist/platform-packages.js"),
+  ]);
+  entry = resolvePlatformTui(detectPlatform(), require);
+} catch (error) {
+  console.error(`agent-tui: ${error?.message ?? error}`);
   process.exitCode = 1;
 }
 
