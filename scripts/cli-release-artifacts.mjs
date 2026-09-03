@@ -61,7 +61,7 @@ function verifyChecksums(artifactDirectory) {
   const checksumFile = resolve(artifactDirectory, "SHA256SUMS");
   if (!existsSync(checksumFile)) return;
   for (const line of readFileSync(checksumFile, "utf8").trim().split("\n")) {
-    const match = line.match(/^([a-f0-9]{64})  (.+\.tgz)$/);
+    const match = line.match(/^([a-f0-9]{64})  ([^/\\]+)$/);
     if (!match) throw new Error(`invalid checksum line: ${line}`);
     const path = resolve(dirname(checksumFile), match[2]);
     const actual = createHash("sha256").update(readFileSync(path)).digest("hex");

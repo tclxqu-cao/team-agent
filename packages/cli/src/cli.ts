@@ -2,6 +2,7 @@ import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "./args.js";
 import { ensureCloudflared } from "./cloudflared/installer.js";
+import { resolveCodexRuntime } from "./codex-runtime-manager.js";
 import { repairNativeRuntimePermissions } from "./native-runtime.js";
 import { findLanUrl } from "./network.js";
 import { createPairingSecret } from "./pairing.js";
@@ -142,6 +143,17 @@ async function doctor(target: PlatformTarget, dataDir: string): Promise<void> {
     console.log("✓ agent-tui optional package");
   } catch (error) {
     reportDoctorFailure(error, "agent-tui: ");
+  }
+
+  try {
+    const codex = await resolveCodexRuntime({
+      dataDir,
+      target,
+      onProgress: (message) => console.log(`… ${message}`),
+    });
+    console.log(`✓ Codex ${codex.version} (${codex.source}) ${codex.executable}`);
+  } catch (error) {
+    reportDoctorFailure(error, "Codex: ");
   }
 
   try {

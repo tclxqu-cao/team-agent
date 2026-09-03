@@ -1,0 +1,138 @@
+import { execFile } from "node:child_process";
+import { access } from "node:fs/promises";
+import { homedir } from "node:os";
+import { delimiter, dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
+
+const execFileAsync = promisify(execFile);
+const MANAGED_NODE_VERSION = "22.22.0";
+const RELEASE_VERSION = "0.2.0-preview.9";
+const RELEASE_BASE_URL = `https://gitee.com/caoqu/team-agent/releases/download/v${RELEASE_VERSION}`;
+const FORWARDED_SIGNALS = ["SIGINT", "SIGTERM", "SIGHUP"];
+
+export async function runNodePreflight(options = {}) {
+  const argv = options.argv ?? process.argv.slice(2);
+  const nodeVersion = options.nodeVersion ?? process.versions.node;
+  const platform = options.platform ?? process.platform;
+  const arch = options.arch ?? process.arch;
+  const launcherPath = options.launcherPath ?? fileURLToPath(new URL("./agentroam.mjs", import.meta.url));
+  const environment = options.environment ?? process.env;
+  const processHost = options.processHost ?? process;
+  const major = Number(nodeVersion.split(".")[0]);
+
+  if (major === 22) return { handled: false };
+  if (environment.AGENTROAM_MANAGED_NODE) {
+    throw cliError(
+      `managed Node.js re-entry failed: expected 22, got ${nodeVersion} (${environment.AGENTROAM_MANAGED_NODE})`,
+    );
+  }
+  if (!Number.isFinite(major) || major < 18) {
+    throw cliError(standaloneInstallerMessage(platform));
+  }
+
+  const target = detectManagedTarget(platform, arch);
+  const dataDir = parsePreflightDataDir(argv, environment, options.homeDir ?? homedir());
+  const findSystemNode22 = options.findSystemNode22 ?? defaultFindSystemNode22;
+  const systemNode = await findSystemNode22(environment, platform, options.currentExecutable ?? process.execPath);
+  let executable = systemNode;
+
+  if (!executable) {
+    const ensureNode = options.ensureNode ?? (async (installOptions) => {
+      const { ensureManagedNode } = await import("../dist/node-runtime-manager.js");
+      return ensureManagedNode(installOptions);
+    });
+    const resolution = await ensureNode({
+      dataDir,
+      target,
+      platform,
+      arch,
+      onProgress: options.onProgress ?? ((message) => processHost.stderr.write(`${message}\n`)),
+    });
+    executable = resolution.executable;
+  }
+
+  const spawnChild = options.spawnChild ?? defaultSpawnChild;
+  const child = spawnChild(executable, [launcherPath, ...argv], {
+    stdio: "inherit",
+    env: { ...environment, AGENTROAM_MANAGED_NODE: MANAGED_NODE_VERSION },
+  });
+  const result = await waitForChild(child, processHost);
+  return { handled: true, ...result };
+}
+
+export function parsePreflightDataDir(argv, environment = process.env, homeDir = homedir()) {
+  const index = argv.indexOf("--data-dir");
+  if (index >= 0) {
+    const value = argv[index + 1];
+    if (!value || value.startsWith("--")) throw cliError("missing value for --data-dir");
+    return resolve(value);
+  }
+  return resolve(environment.AGENTROAM_DATA_DIR?.trim() || homeDir, environment.AGENTROAM_DATA_DIR?.trim() ? "" : ".agentroam");
+}
+
+function detectManagedTarget(platform, arch) {
+  if (platform === "darwin" && arch === "arm64") return "darwin-arm64";
+  if (platform === "win32" && arch === "x64") return "windows-amd64";
+  throw cliError(`managed Node.js is unsupported on ${platform}-${arch}`);
+}
+
+async function defaultFindSystemNode22(environment, platform, currentExecutable) {
+  const executableName = platform === "win32" ? "node.exe" : "node";
+  const pathDelimiter = platform === "win32" ? ";" : delimiter;
+  const currentDirectory = dirname(currentExecutable);
+  for (const directory of (environment.PATH ?? "").split(pathDelimiter).filter(Boolean)) {
+    if (resolve(directory) === resolve(currentDirectory)) continue;
+    const candidate = resolve(directory, executableName);
+    try {
+      await access(candidate);
+      const { stdout } = await execFileAsync(candidate, ["-p", "process.versions.node"], {
+        encoding: "utf8",
+        timeout: 5_000,
+        windowsHide: true,
+      });
+      if (Number(stdout.trim().split(".")[0]) === 22) return candidate;
+    } catch {
+      // Ignore broken or incompatible PATH entries and continue to the private runtime.
+    }
+  }
+  return null;
+}
+
+async function defaultSpawnChild(executable, args, options) {
+  const { spawn } = await import("node:child_process");
+  return spawn(executable, args, options);
+}
+
+function waitForChild(childPromise, processHost) {
+  return Promise.resolve(childPromise).then((child) => new Promise((resolveChild, rejectChild) => {
+    const listeners = new Map();
+    const cleanup = () => {
+      for (const [signal, listener] of listeners) processHost.off(signal, listener);
+    };
+    for (const signal of FORWARDED_SIGNALS) {
+      const listener = () => child.kill(signal);
+      listeners.set(signal, listener);
+      processHost.on(signal, listener);
+    }
+    child.once("error", (error) => {
+      cleanup();
+      rejectChild(error);
+    });
+    child.once("exit", (exitCode, signal) => {
+      cleanup();
+      resolveChild({ exitCode, signal });
+    });
+  }));
+}
+
+function standaloneInstallerMessage(platform) {
+  if (platform === "win32") {
+    return `Node.js 18+ is required for automatic bootstrap. Run: irm ${RELEASE_BASE_URL}/install-agentroam.ps1 | iex`;
+  }
+  return `Node.js 18+ is required for automatic bootstrap. Run: curl -fsSL ${RELEASE_BASE_URL}/install-agentroam.sh | sh`;
+}
+
+function cliError(message) {
+  return Object.assign(new Error(message), { exitCode: 2 });
+}

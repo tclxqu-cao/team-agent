@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { selectOpenSessionFiles } from "./native-processes.js";
+import { describe, expect, it, vi } from "vitest";
+import { listOpenSessionFiles, selectOpenSessionFiles } from "./native-processes.js";
 
 const ROOT = "/tmp/sessions";
 const OLD_SESSION = `${ROOT}/old.jsonl`;
@@ -52,5 +52,33 @@ describe("selectOpenSessionFiles", () => {
     });
 
     expect(selected).toEqual(new Set());
+  });
+});
+
+describe("listOpenSessionFiles", () => {
+  it("does not invoke lsof on Windows", async () => {
+    const execute = vi.fn(async () => ({ stdout: lsofOutput() }));
+
+    await expect(listOpenSessionFiles("codex", ROOT, {
+      platform: "win32",
+      execute,
+    })).resolves.toEqual(new Set());
+    expect(execute).not.toHaveBeenCalled();
+  });
+
+  it("preserves the macOS lsof command and selection behavior", async () => {
+    const execute = vi.fn(async () => ({ stdout: lsofOutput() }));
+
+    await expect(listOpenSessionFiles("codex", ROOT, {
+      platform: "darwin",
+      execute,
+      idleAfterMs: null,
+      getMtimeMs: () => 0,
+    })).resolves.toEqual(new Set([OLD_SESSION, RECENT_SESSION]));
+    expect(execute).toHaveBeenCalledWith(
+      "lsof",
+      ["+c", "0", "-a", "-c", "codex", "-FpFn"],
+      { encoding: "utf8", timeout: 5000, maxBuffer: 4 * 1024 * 1024 },
+    );
   });
 });

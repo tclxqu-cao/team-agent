@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -11,6 +11,7 @@ import {
   codexTurnsToMessages,
   normalizeCodexUserText,
   parseExplicitSkillInvocation,
+  resolveCodexHome,
 } from "./codex-runtime-adapter.js";
 
 describe("Codex explicit skills", () => {
@@ -36,6 +37,84 @@ describe("Codex session status mapping", () => {
     expect(codexThreadStatusToSessionStatus("idle", true)).toBe("running");
     expect(codexThreadStatusToSessionStatus("idle", false, true)).toBe("running");
     expect(codexThreadStatusToSessionStatus("idle", false, false)).toBe("idle");
+  });
+});
+
+describe("Codex home and Windows occupancy", () => {
+  it("honors CODEX_HOME and falls back to the user home", () => {
+    expect(resolveCodexHome({ CODEX_HOME: " /custom/codex " }, "/users/test"))
+      .toBe("/custom/codex");
+    expect(resolveCodexHome({}, "/users/test")).toBe("/users/test/.codex");
+  });
+
+  it("reports launcher setup failures without falling back to another Codex", async () => {
+    const request = vi.fn();
+    const adapter = new CodexRuntimeAdapter({
+      client: {
+        onNotification: () => () => undefined,
+        onExit: () => () => undefined,
+        setServerRequestHandler: () => undefined,
+        request,
+      } as never,
+      environment: { AGENT_CODEX_RUNTIME_ERROR: "managed Codex download failed" },
+    });
+
+    await expect(adapter.health()).resolves.toMatchObject({
+      available: false,
+      error: "managed Codex download failed",
+    });
+    await expect(adapter.discoverSessions()).rejects.toMatchObject({
+      code: "RUNTIME_UNAVAILABLE",
+    });
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { activity: "running" as const, occupancy: "owned-externally", status: "running", canResume: false },
+    { activity: "idle" as const, occupancy: "available", status: "idle", canResume: true },
+  ])("projects a Windows $activity rollout without lsof as $occupancy", async (expected) => {
+    const path = "D:\\project\\.codex\\rollout.jsonl";
+    const thread = {
+      id: `cx-${expected.activity}`,
+      parentThreadId: null,
+      preview: "Windows Desktop session",
+      name: null,
+      createdAt: 1_788_220_800,
+      updatedAt: 1_788_220_800,
+      status: { type: "idle" },
+      path,
+      cwd: "D:\\project",
+      source: "desktop",
+      turns: [],
+    };
+    const client = {
+      onNotification: () => () => undefined,
+      onExit: () => () => undefined,
+      setServerRequestHandler: () => undefined,
+      request: async (method: string) => {
+        if (method === "thread/list") return { data: [thread], nextCursor: null };
+        throw new Error(`unexpected request: ${method}`);
+      },
+    };
+    const readMany = vi.fn(async (paths: Iterable<string>) => {
+      expect([...paths]).toEqual([path]);
+      return new Map([[path, expected.activity]]);
+    });
+    const adapter = new CodexRuntimeAdapter({
+      client: client as never,
+      platform: "win32",
+      sessionRoot: "C:\\Users\\test\\.codex\\sessions",
+      rolloutActivityReader: { readMany },
+    });
+
+    await expect(adapter.discoverSessions()).resolves.toEqual([
+      expect.objectContaining({
+        nativeSessionId: thread.id,
+        occupancy: expected.occupancy,
+        status: expected.status,
+        canResume: expected.canResume,
+      }),
+    ]);
   });
 });
 

@@ -5,7 +5,7 @@ import type {
 } from "../../desktop/main/agent-runtime/types.js";
 import { encodeUnifiedSessionId } from "../../desktop/main/agent-runtime/session-id.js";
 import type { NativeRuntimePort } from "./native-runtime-service";
-import { NativeRuntimeService } from "./native-runtime-service";
+import { NativeRuntimeService, normalizeProjectPath } from "./native-runtime-service";
 
 function summary(
   id: string,
@@ -157,6 +157,41 @@ describe("NativeRuntimeService", () => {
       expect.objectContaining({ id: "foreign", projectId: "local-app" }),
     ]);
     await expect(service.list("local-other")).resolves.toEqual([]);
+  });
+
+  it("associates Windows sessions across drive-letter and directory casing", async () => {
+    const runtime = new FakeRuntime();
+    runtime.discovered = [summary("windows", undefined, "d:\\REPO\\packages\\app")];
+    const service = new NativeRuntimeService(runtime, async () => [
+      { id: "repo", description: "D:\\repo" },
+    ], "win32");
+
+    await expect(service.list("repo")).resolves.toEqual([
+      expect.objectContaining({ id: "windows", projectId: "repo" }),
+    ]);
+  });
+
+  it("keeps Windows project matching boundary-safe and selects the longest root", async () => {
+    const runtime = new FakeRuntime();
+    runtime.discovered = [
+      summary("nested", undefined, "D:\\repo\\app\\src"),
+      summary("prefix-only", undefined, "D:\\repo-old\\src"),
+    ];
+    const service = new NativeRuntimeService(runtime, async () => [
+      { id: "root", description: "D:\\repo" },
+      { id: "app", description: "d:\\REPO\\app\\" },
+    ], "win32");
+
+    expect(await service.list("app")).toEqual([
+      expect.objectContaining({ id: "nested", projectId: "app" }),
+    ]);
+    expect((await service.list()).find((session) => session.id === "prefix-only")?.projectId)
+      .toBeUndefined();
+  });
+
+  it("keeps POSIX project matching case-sensitive", () => {
+    expect(normalizeProjectPath("/Repo/App", "darwin"))
+      .not.toBe(normalizeProjectPath("/repo/app", "darwin"));
   });
 
   it("keeps locally projected pending sessions visible in project-scoped listings", async () => {

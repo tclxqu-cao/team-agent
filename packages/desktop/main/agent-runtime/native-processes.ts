@@ -15,15 +15,22 @@ const execFileAsync = promisify(execFile);
  */
 const DEFAULT_IDLE_AFTER_MS = 120_000;
 
+type OpenSessionFileExecutor = (
+  command: string,
+  args: string[],
+  options: { encoding: "utf8"; timeout: number; maxBuffer: number },
+) => Promise<{ stdout: string }>;
+
 interface OpenSessionFileOptions {
   excludePids?: Iterable<number>;
   idleAfterMs?: number | null;
-}
-
-interface OpenSessionFileSelectionOptions extends OpenSessionFileOptions {
+  platform?: NodeJS.Platform;
+  execute?: OpenSessionFileExecutor;
   nowMs?: number;
   getMtimeMs?: (file: string) => number;
 }
+
+type OpenSessionFileSelectionOptions = OpenSessionFileOptions;
 
 export function selectOpenSessionFiles(
   stdout: string,
@@ -64,8 +71,10 @@ export async function listOpenSessionFiles(
   root: string,
   options: OpenSessionFileOptions = {},
 ): Promise<Set<string>> {
+  if ((options.platform ?? process.platform) === "win32") return new Set();
   try {
-    const { stdout } = await execFileAsync(
+    const execute = options.execute ?? execFileAsync as OpenSessionFileExecutor;
+    const { stdout } = await execute(
       "lsof",
       ["+c", "0", "-a", "-c", commandName, "-FpFn"],
       { encoding: "utf8", timeout: 5000, maxBuffer: 4 * 1024 * 1024 },

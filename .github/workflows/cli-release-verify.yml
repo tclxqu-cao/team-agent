@@ -28,7 +28,7 @@ jobs:
       - run: node -e "if (process.platform !== 'darwin' || process.arch !== 'arm64') process.exit(1)"
       - run: bun install --frozen-lockfile
       - run: npm run pack:cli:all
-      - run: node scripts/verify-cli-install.mjs --artifacts dist/cli-release
+      - run: node scripts/verify-cli-install.mjs --artifacts dist/cli-release --bootstrap-script
       - run: node scripts/verify-cli-tunnel.mjs --artifacts dist/cli-release --provider auto
         timeout-minutes: 5
       - uses: actions/upload-artifact@v4
@@ -50,4 +50,4 @@ jobs:
         with:
           name: agentroam-cli-${{ github.sha }}
           path: dist/cli-release
-      - run: node scripts/verify-cli-install.mjs --artifacts dist/cli-release
+      - run: node scripts/verify-cli-install.mjs --artifacts dist/cli-release --bootstrap-script

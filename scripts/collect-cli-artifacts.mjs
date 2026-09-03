@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { basename, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { sha256File } from "./native-binary.mjs";
@@ -30,5 +30,13 @@ for (const relativeDirectory of packageDirectories) {
   checksums.push(`${await sha256File(destination)}  ${basename(destination)}`);
 }
 
+for (const installer of ["install-agentroam.sh", "install-agentroam.ps1"]) {
+  const source = resolve(root, "packages/cli/install", installer);
+  const destination = resolve(output, installer);
+  await cp(source, destination);
+  if (installer.endsWith(".sh")) await chmod(destination, 0o755);
+  checksums.push(`${await sha256File(destination)}  ${installer}`);
+}
+
 await writeFile(resolve(output, "SHA256SUMS"), `${checksums.sort().join("\n")}\n`);
-console.log(`collected ${packageDirectories.length} CLI artifacts in ${output}`);
+console.log(`collected ${packageDirectories.length + 2} CLI artifacts in ${output}`);

@@ -1521,6 +1521,7 @@ export function createNativeRuntimeBrokerHostRuntime(
   return new UnifiedSessionService([
     new CodexRuntimeAdapter({
       client: codexClient,
+      codexExecutable: codexExecutable || "codex",
       onApprovalResolved: callbacks?.onApprovalResolved,
     }),
     new ClaudeRuntimeAdapter(),

@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
 import { mkdtemp, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
-import { basename, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { basename, extname, isAbsolute, join, relative, resolve, sep, win32 } from "node:path";
 import { promisify } from "node:util";
 import {
   normalizeToolPermissionMode,
@@ -96,10 +96,21 @@ export function codexThreadStatusToSessionStatus(
   return "idle";
 }
 
+export function resolveCodexHome(
+  environment: NodeJS.ProcessEnv = process.env,
+  homeDir = homedir(),
+): string {
+  return resolve(environment.CODEX_HOME?.trim() || join(homeDir, ".codex"));
+}
+
 export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
   readonly agentType = "codex" as const;
   private readonly client: CodexAppServerClient;
   private readonly sessionRoot: string;
+  private readonly codexHome: string;
+  private readonly codexExecutable: string;
+  private readonly unavailableError?: string;
+  private readonly platform: NodeJS.Platform;
   private readonly imageTempRoot: string;
   private readonly rolloutActivityReader: Pick<CodexRolloutActivityReader, "readMany">;
   private readonly activeQueues = new Map<string, AsyncEventQueue<AgentEvent>>();
@@ -117,12 +128,30 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
     sessionRoot?: string;
     imageTempRoot?: string;
     rolloutActivityReader?: Pick<CodexRolloutActivityReader, "readMany">;
+    codexExecutable?: string;
+    environment?: NodeJS.ProcessEnv;
+    homeDir?: string;
+    platform?: NodeJS.Platform;
+    unavailableError?: string;
     onApprovalResolved?: (questionId: string) => void;
   } = {}) {
-    this.client = options.client ?? new CodexAppServerClient();
-    this.sessionRoot = options.sessionRoot ?? join(homedir(), ".codex", "sessions");
+    const environmentExecutable = options.environment === undefined
+      ? process.env.AGENT_CODEX_BIN
+      : options.environment.AGENT_CODEX_BIN;
+    this.codexExecutable = options.codexExecutable?.trim()
+      || environmentExecutable?.trim()
+      || "codex";
+    this.unavailableError = options.unavailableError?.trim()
+      || options.environment?.AGENT_CODEX_RUNTIME_ERROR?.trim()
+      || (options.environment === undefined
+        ? process.env.AGENT_CODEX_RUNTIME_ERROR?.trim()
+        : undefined);
+    this.client = options.client ?? new CodexAppServerClient({ executable: this.codexExecutable });
+    this.codexHome = resolveCodexHome(options.environment, options.homeDir);
+    this.sessionRoot = options.sessionRoot ?? join(this.codexHome, "sessions");
     this.imageTempRoot = options.imageTempRoot ?? tmpdir();
     this.rolloutActivityReader = options.rolloutActivityReader ?? new CodexRolloutActivityReader();
+    this.platform = options.platform ?? process.platform;
     this.client.onNotification((message) => this.handleNotification(message));
     this.client.setServerRequestHandler((message) => this.handleServerRequest(message));
     this.client.onExit((error) => {
@@ -137,8 +166,16 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
   private readonly onApprovalResolved?: (questionId: string) => void;
 
   async health(): Promise<RuntimeHealth> {
+    if (this.unavailableError) {
+      return {
+        agentType: this.agentType,
+        available: false,
+        label: "Codex",
+        error: this.unavailableError,
+      };
+    }
     try {
-      const { stdout } = await execFileAsync("codex", ["--version"], { encoding: "utf8", timeout: 5000 });
+      const { stdout } = await execFileAsync(this.codexExecutable, ["--version"], { encoding: "utf8", timeout: 5000 });
       return { agentType: this.agentType, available: true, label: "Codex", version: stdout.trim() };
     } catch (error) {
       return {
@@ -151,9 +188,11 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
   }
 
   async discoverSessions(): Promise<UnifiedSessionSummary[]> {
+    this.ensureAvailable();
     const openFiles = await listOpenSessionFiles("codex", this.sessionRoot, {
       excludePids: this.client.pid ? [this.client.pid] : [],
       idleAfterMs: null,
+      platform: this.platform,
     });
     const threads: CodexThread[] = [];
     let cursor: string | null = null;
@@ -170,11 +209,14 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
       threads.push(...response.data);
       cursor = response.nextCursor;
     } while (cursor);
-    const rolloutActivities = await this.rolloutActivityReader.readMany(openFiles);
+    const rolloutActivities = await this.rolloutActivityReader.readMany(
+      this.platform === "win32" ? rolloutPaths(threads, this.platform) : openFiles,
+    );
     return threads.map((thread) => this.toSummary(thread, openFiles, rolloutActivities));
   }
 
   async getSession(nativeSessionId: string): Promise<UnifiedSessionDetail> {
+    this.ensureAvailable();
     const response = await this.client.request<{ thread: CodexThread }>("thread/read", {
       threadId: nativeSessionId,
       includeTurns: true,
@@ -182,8 +224,11 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
     const openFiles = await listOpenSessionFiles("codex", this.sessionRoot, {
       excludePids: this.client.pid ? [this.client.pid] : [],
       idleAfterMs: null,
+      platform: this.platform,
     });
-    const rolloutActivities = await this.rolloutActivityReader.readMany(openFiles);
+    const rolloutActivities = await this.rolloutActivityReader.readMany(
+      this.platform === "win32" ? rolloutPaths([response.thread], this.platform) : openFiles,
+    );
     return {
       ...this.toSummary(response.thread, openFiles, rolloutActivities),
       messages: await codexTurnsToMessages(response.thread.turns),
@@ -192,6 +237,7 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
   }
 
   async getSessionWatchPath(nativeSessionId: string): Promise<string | null> {
+    this.ensureAvailable();
     const response = await this.client.request<{ thread: CodexThread }>("thread/read", {
       threadId: nativeSessionId,
       includeTurns: false,
@@ -215,6 +261,7 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
   }
 
   async create(options: CreateRuntimeSessionOptions): Promise<UnifiedSessionSummary> {
+    this.ensureAvailable();
     const response = await this.client.request<{ thread: CodexThread }>("thread/start", {
       cwd: options.cwd,
       threadSource: "customer-agent",
@@ -231,6 +278,7 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
   }
 
   async fork(nativeSessionId: string): Promise<UnifiedSessionSummary> {
+    this.ensureAvailable();
     const sourceResponse = await this.client.request<{ thread: CodexThread }>("thread/read", {
       threadId: nativeSessionId,
       includeTurns: false,
@@ -372,9 +420,15 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
     await this.client.dispose();
   }
 
+  private ensureAvailable(): void {
+    if (this.unavailableError) {
+      throw new RuntimeSessionError(this.unavailableError, "RUNTIME_UNAVAILABLE");
+    }
+  }
+
   private async resolveSkillPath(cwd: string, name: string): Promise<string | null> {
     const localCandidates = [
-      join(homedir(), ".codex", "skills", name, "SKILL.md"),
+      join(this.codexHome, "skills", name, "SKILL.md"),
       join(homedir(), ".agent", "skills", name, "SKILL.md"),
       ...(cwd ? [
         join(cwd, ".codex", "skills", name, "SKILL.md"),
@@ -408,9 +462,13 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
   ): UnifiedSessionSummary {
     const ownedByUs = this.ownedThreads.has(thread.id);
     const heldOpen = Boolean(thread.path && openFiles.has(thread.path));
+    const rolloutRunning = Boolean(
+      thread.path && rolloutActivities.get(thread.path) === "running",
+    );
+    const externallyOccupied = this.platform === "win32" ? rolloutRunning : heldOpen;
     const occupancy = ownedByUs
       ? "owned-by-customer-agent" as const
-      : heldOpen
+      : externallyOccupied
         ? "owned-externally" as const
         : "available" as const;
     return {
@@ -427,7 +485,7 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
       status: codexThreadStatusToSessionStatus(
         thread.status?.type,
         ownedByUs,
-        heldOpen && Boolean(thread.path && rolloutActivities.get(thread.path) === "running"),
+        this.platform === "win32" ? rolloutRunning : heldOpen && rolloutRunning,
       ),
       occupancy,
       sourceLabel: codexSourceLabel(thread.source),
@@ -644,6 +702,14 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
       ],
     });
   }
+}
+
+function rolloutPaths(threads: CodexThread[], platform: NodeJS.Platform): string[] {
+  return threads.flatMap((thread) => {
+    if (!thread.path) return [];
+    const absolute = platform === "win32" ? win32.isAbsolute(thread.path) : isAbsolute(thread.path);
+    return absolute ? [thread.path] : [];
+  });
 }
 
 export function parseExplicitSkillInvocation(input: string): { name: string; rest: string } | null {

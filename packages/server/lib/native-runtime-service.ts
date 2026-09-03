@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
-import { delimiter, join, resolve, sep } from "node:path";
+import { delimiter, join, resolve, sep, win32 } from "node:path";
 import {
   SQLiteProjectStore,
   type AgentEvent,
@@ -107,6 +107,7 @@ export class NativeRuntimeService implements NativeRuntimePort {
   constructor(
     private readonly runtime: Pick<NativeRuntimePort, keyof NativeRuntimePort>,
     private readonly listProjects: () => Promise<ProjectLike[]> = async () => [],
+    private readonly platform: NodeJS.Platform = process.platform,
   ) {}
 
   health(): Promise<RuntimeHealth[]> {
@@ -119,7 +120,7 @@ export class NativeRuntimeService implements NativeRuntimePort {
       this.listProjects(),
     ]);
     return filterByProject(
-      this.withPendingCreations(discovered.map((session) => associateLocalProject(session, projects))),
+      this.withPendingCreations(discovered.map((session) => associateLocalProject(session, projects, this.platform))),
       projectId,
     );
   }
@@ -130,7 +131,7 @@ export class NativeRuntimeService implements NativeRuntimePort {
       this.listProjects(),
     ]);
     return filterByProject(
-      this.withPendingCreations(discovered.map((session) => associateLocalProject(session, projects))),
+      this.withPendingCreations(discovered.map((session) => associateLocalProject(session, projects, this.platform))),
       projectId,
     );
   }
@@ -139,6 +140,7 @@ export class NativeRuntimeService implements NativeRuntimePort {
     const created = associateLocalProject(
       await this.runtime.create(options),
       await this.listProjects(),
+      this.platform,
     );
     this.pendingCreations.set(created.id, created);
     return created;
@@ -154,6 +156,7 @@ export class NativeRuntimeService implements NativeRuntimePort {
     const forked = associateLocalProject(
       await this.runtime.fork(id),
       await this.listProjects(),
+      this.platform,
     );
     this.pendingCreations.set(forked.id, forked);
     return forked;
@@ -173,7 +176,7 @@ export class NativeRuntimeService implements NativeRuntimePort {
         history: { nextCursor: null, hasMore: false, pageSize: 0, totalItems: 0 },
       } : { ...pending, messages: [], events: [] };
     }
-    return associateLocalProject(detail, await this.listProjects());
+    return associateLocalProject(detail, await this.listProjects(), this.platform);
   }
 
   getSessionWatchPath(id: string): Promise<string | null> {
@@ -307,19 +310,34 @@ export function getNativeRuntimeService(): NativeRuntimeService {
   return globalWithService.__nativeRuntimeService;
 }
 
-function associateLocalProject<T extends UnifiedSessionSummary>(
+export function associateLocalProject<T extends UnifiedSessionSummary>(
   session: T,
   projects: ProjectLike[],
+  platform: NodeJS.Platform = process.platform,
 ): T {
   const { projectId: _foreignProjectId, ...unassociated } = session;
   if (!session.cwd) return unassociated as T;
-  const cwd = resolve(session.cwd);
+  const cwd = normalizeProjectPath(session.cwd, platform);
+  const separator = platform === "win32" ? win32.sep : sep;
   const match = projects
     .filter((project) => project.description)
-    .map((project) => ({ project, path: resolve(project.description) }))
-    .filter(({ path }) => cwd === path || cwd.startsWith(`${path}${sep}`))
+    .map((project) => ({ project, path: normalizeProjectPath(project.description, platform) }))
+    .filter(({ path }) => cwd === path || cwd.startsWith(`${path}${separator}`))
     .sort((left, right) => right.path.length - left.path.length)[0];
   return (match ? { ...unassociated, projectId: match.project.id } : unassociated) as T;
+}
+
+export function normalizeProjectPath(
+  value: string,
+  platform: NodeJS.Platform = process.platform,
+): string {
+  if (platform !== "win32") return resolve(value);
+  const normalized = win32.resolve(value);
+  const root = win32.parse(normalized).root;
+  const withoutTrailingSeparators = normalized.length > root.length
+    ? normalized.replace(/[\\/]+$/, "")
+    : normalized;
+  return withoutTrailingSeparators.toLowerCase();
 }
 
 function filterByProject<T extends UnifiedSessionSummary>(sessions: T[], projectId?: string): T[] {

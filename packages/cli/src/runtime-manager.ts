@@ -2,6 +2,11 @@ import type { ChildProcess } from "node:child_process";
 import { mkdir } from "node:fs/promises";
 import { delimiter, resolve } from "node:path";
 import type { CliOptions } from "./args.js";
+import {
+  resolveCodexRuntime,
+  type CodexRuntimeResolution,
+  type ResolveCodexRuntimeOptions,
+} from "./codex-runtime-manager.js";
 import { repairNativeRuntimePermissions } from "./native-runtime.js";
 import type { PairingSecret } from "./pairing.js";
 import type { PlatformTarget } from "./platform.js";
@@ -19,8 +24,15 @@ export interface RuntimeHandle {
   process: ChildProcess;
 }
 
+type CodexResolver = (options: ResolveCodexRuntimeOptions) => Promise<CodexRuntimeResolution>;
+type RuntimeReporter = (message: string) => void;
+
 export class RuntimeManager {
-  constructor(private supervisor = new ProcessSupervisor()) {}
+  constructor(
+    private supervisor = new ProcessSupervisor(),
+    private codexResolver: CodexResolver = resolveCodexRuntime,
+    private report: RuntimeReporter = (message) => process.stderr.write(`${message}\n`),
+  ) {}
 
   async start(
     options: CliOptions,
@@ -30,6 +42,12 @@ export class RuntimeManager {
     const port = await findAvailablePort(options.port);
     const dataDir = resolve(options.dataDir);
     await Promise.all(["data", "bin", "cache", "logs"].map((name) => mkdir(resolve(dataDir, name), { recursive: true })));
+    const childEnvironment = await prepareCodexRuntimeEnvironment(
+      process.env,
+      { dataDir, target },
+      this.codexResolver,
+      this.report,
+    );
 
     const { runtimeRoot } = resolvePlatformRuntime(target);
     await repairNativeRuntimePermissions(runtimeRoot);
@@ -37,7 +55,7 @@ export class RuntimeManager {
     const child = this.supervisor.spawn(process.execPath, [gateway], {
       cwd: runtimeRoot,
       env: {
-        ...process.env,
+        ...childEnvironment,
         NODE_ENV: "production",
         NEXT_DIST_DIR: ".next",
         PORT: String(port),
@@ -67,6 +85,34 @@ export class RuntimeManager {
       close: () => this.supervisor.stopAll(),
     };
   }
+}
+
+export async function prepareCodexRuntimeEnvironment(
+  environment: NodeJS.ProcessEnv,
+  options: Pick<ResolveCodexRuntimeOptions, "dataDir" | "target">,
+  resolver: CodexResolver = resolveCodexRuntime,
+  report: RuntimeReporter = (message) => process.stderr.write(`${message}\n`),
+): Promise<NodeJS.ProcessEnv> {
+  const childEnvironment = { ...environment };
+  report(`Checking Codex ${options.target} runtime...`);
+  try {
+    const resolution = await resolver({
+      ...options,
+      environment,
+      onProgress: report,
+    });
+    childEnvironment.AGENT_CODEX_BIN = resolution.executable;
+    delete childEnvironment.AGENT_CODEX_RUNTIME_ERROR;
+    report(`Codex ${resolution.version} (${resolution.source}): ${resolution.executable}`);
+  } catch (error) {
+    delete childEnvironment.AGENT_CODEX_BIN;
+    const message = error instanceof Error ? error.message : String(error);
+    childEnvironment.AGENT_CODEX_RUNTIME_ERROR = message;
+    report(
+      `Codex unavailable; AgentRoam will continue without Codex sessions: ${message}`,
+    );
+  }
+  return childEnvironment;
 }
 
 async function waitForHealth(url: string, child: ChildProcess, timeoutMs: number): Promise<{ needsSetup?: boolean }> {

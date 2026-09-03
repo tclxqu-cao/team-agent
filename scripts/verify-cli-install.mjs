@@ -8,6 +8,8 @@ import { releasePackageNames, resolveReleaseArtifacts } from "./cli-release-arti
 
 const args = process.argv.slice(2);
 const nodeBin = args.includes("--node") ? resolve(args[args.indexOf("--node") + 1]) : process.execPath;
+const verifyBootstrap = args.includes("--bootstrap-script");
+const nodeArchive = args.includes("--node-archive") ? resolve(args[args.indexOf("--node-archive") + 1]) : null;
 const artifacts = resolveReleaseArtifacts(args, { includeTui: true });
 const packageSet = releasePackageNames(artifacts.target);
 const commandEnv = { ...process.env, PATH: `${dirname(nodeBin)}${delimiter}${process.env.PATH ?? ""}` };
@@ -111,6 +113,7 @@ try {
   child.kill("SIGTERM");
   await waitExit(child, 10_000);
   child = undefined;
+  if (verifyBootstrap) runBootstrapSmoke(artifacts, workdir, nodeArchive);
   console.log(`✓ ${artifacts.target} fresh-install smoke passed`);
 } finally {
   if (child?.exitCode === null) {
@@ -118,6 +121,48 @@ try {
     await waitExit(child, 10_000).catch(() => {});
   }
   rmSync(workdir, { recursive: true, force: true });
+}
+
+function runBootstrapSmoke(artifacts, parentWorkdir, archivePath) {
+  const bootstrapHome = resolve(parentWorkdir, "bootstrap-home");
+  const bootstrapData = resolve(parentWorkdir, "bootstrap-data");
+  const scriptName = process.platform === "win32" ? "install-agentroam.ps1" : "install-agentroam.sh";
+  const scriptPath = resolve(artifacts.artifactDirectory, scriptName);
+  accessSync(scriptPath, constants.F_OK);
+  const extraSeparator = process.platform === "win32" ? ";" : " ";
+  const bootstrapEnv = {
+    ...process.env,
+    HOME: bootstrapHome,
+    USERPROFILE: bootstrapHome,
+    AGENTROAM_DATA_DIR: bootstrapData,
+    AGENTROAM_BOOTSTRAP_TEST: "1",
+    AGENTROAM_FORCE_PRIVATE_NODE: "1",
+    AGENTROAM_PACKAGE_SPEC: artifacts.launcher,
+    AGENTROAM_BOOTSTRAP_EXTRA_SPECS: [artifacts.runtime, artifacts.cloudflared, artifacts.tui].join(extraSeparator),
+    ...(archivePath ? { AGENTROAM_NODE_ARCHIVE_FILE: archivePath } : {}),
+  };
+  if (process.platform === "win32") {
+    execFileSync("powershell.exe", [
+      "-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", scriptPath,
+    ], { cwd: parentWorkdir, stdio: "inherit", env: bootstrapEnv });
+  } else {
+    execFileSync("/bin/sh", [scriptPath], { cwd: parentWorkdir, stdio: "inherit", env: bootstrapEnv });
+  }
+
+  const managedNode = resolve(bootstrapData, "runtimes", "node", "22.22.0", process.platform === "win32" ? "node.exe" : "bin/node");
+  const installedVersion = execFileSync(managedNode, ["-p", "process.versions.node"], {
+    encoding: "utf8",
+    env: bootstrapEnv,
+  }).trim();
+  if (installedVersion !== "22.22.0") throw new Error(`bootstrap Node mismatch: ${installedVersion}`);
+  const wrapper = process.platform === "win32"
+    ? resolve(bootstrapHome, ".agentroam", "bin", "agentroam.cmd")
+    : resolve(bootstrapHome, ".local", "bin", "agentroam");
+  const versionOutput = process.platform === "win32"
+    ? execFileSync("cmd.exe", ["/d", "/s", "/c", `"${wrapper}" version`], { encoding: "utf8", env: bootstrapEnv })
+    : execFileSync(wrapper, ["version"], { encoding: "utf8", env: bootstrapEnv });
+  if (!versionOutput.includes("0.2.0-preview.9")) throw new Error(`bootstrap wrapper mismatch: ${versionOutput}`);
+  console.log(`✓ standalone ${scriptName} installed private Node ${installedVersion} and the versioned wrapper`);
 }
 
 function runSqliteSmoke(node, runtimeRoot, cwd) {

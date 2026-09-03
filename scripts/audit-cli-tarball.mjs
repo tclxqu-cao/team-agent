@@ -29,18 +29,29 @@ for (const dependency of [
 if (statSync(tarball).size >= 5_000_000) throw new Error(`launcher tarball exceeds 5 MB release limit: ${statSync(tarball).size}`);
 if (basename(tarball) !== `${packageJson.name}-${packageJson.version}.tgz`) throw new Error("launcher tarball filename mismatch");
 
-const allowed = ["package/package.json", "package/README.md", "package/bin/", "package/dist/"];
+const allowed = ["package/package.json", "package/README.md", "package/bin/", "package/dist/", "package/install/"];
 const unexpected = list.filter((file) => !allowed.some((entry) => file === entry || (entry.endsWith("/") && file.startsWith(entry))));
 if (unexpected.length) throw new Error(`unexpected launcher files:\n${unexpected.slice(0, 50).join("\n")}`);
 
-const forbidden = [/\.env(?:\.|$)/, /\.sessions\//, /agent\.db/, /\.node$/, /package\/runtime\//, /\.git\//];
+const forbidden = [
+  /\.env(?:\.|$)/,
+  /\.sessions\//,
+  /agent\.db/,
+  /\.node$/,
+  /package\/runtime\//,
+  /package\/runtimes\//,
+  /node-v\d+.*\.(?:zip|tar\.(?:xz|gz))$/,
+  /\.git\//,
+];
 const hits = list.filter((file) => forbidden.some((pattern) => pattern.test(file)));
 if (hits.length) throw new Error(`forbidden launcher files:\n${hits.join("\n")}`);
 
 for (const required of [
   "package/bin/agentroam.mjs",
   "package/bin/agent-tui.mjs",
+  "package/bin/node-preflight.mjs",
   "package/dist/cli.js",
+  "package/dist/node-runtime-manager.js",
   "package/dist/platform.js",
   "package/dist/platform-packages.js",
   "package/dist/cloudflared/bundled-asset.js",
@@ -50,6 +61,9 @@ for (const required of [
   "package/dist/service/service-command.js",
   "package/dist/service/service-files.js",
   "package/dist/tunnel/relay-orchestrator.js",
+  "package/install/install-agentroam.sh",
+  "package/install/install-agentroam.ps1",
+  "package/install/README.md",
 ]) {
   if (!list.includes(required)) throw new Error(`missing launcher file: ${required}`);
 }
