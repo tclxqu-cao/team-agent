@@ -1,0 +1,19 @@
+docs/superpowers/specs/2026-09-03-webapp-sent-image-history-design.md
+  s_ff2b2d7ac93b28::t_3111b8f21d0bb9 1-36
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "eb8de50fd0014f43bf4ba78877308fa455f78b5b",
+  "prompts": {},
+  "sessions": {
+    "s_ff2b2d7ac93b28": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a066c2-13c8-7031-9522-1b95914c6543",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
