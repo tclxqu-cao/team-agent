@@ -1,0 +1,20 @@
+docs/superpowers/specs/2026-09-03-managed-codex-runtime-design.md
+  s_6ec2baf296ab2e::t_6bab184b475bf8 1-35,38-46,48-49,51-149
+  s_6ec2baf296ab2e::t_4ae9f59886207b 36-37,47,50
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "0f9453a60bab459f7ff856b46531f822db3a669c",
+  "prompts": {},
+  "sessions": {
+    "s_6ec2baf296ab2e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a066f1-bd4c-7f12-b529-e015daf9d336",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
