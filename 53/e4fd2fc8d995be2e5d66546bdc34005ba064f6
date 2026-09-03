@@ -1,0 +1,598 @@
+packages/server/app/api/agent/run/run-options.test.ts
+  s_faba9ad8310d46::t_89b118a8cac16c 1-26
+packages/desktop/renderer/lib/queued-message-order.ts
+  s_faba9ad8310d46::t_5cb6f441eb85ce 1-25
+packages/desktop/renderer/styles/global.css
+  s_26876fbaea0033::t_935d64fea1ca85 1100,1103-1104,1106-1110
+  s_b391f493c82c45::t_c37bea3c09342c 1075-1077
+  s_faba9ad8310d46::t_f69da830b37c16 1517,1736,1805,1957
+  s_faba9ad8310d46::t_5cb6f441eb85ce 1099,1101-1102,1105,1222-1256
+  s_faba9ad8310d46::t_056f3996d6f909 1357,1486,1519,1749,1772,1975,2003,2013,2057-2058,2065-2069
+  s_faba9ad8310d46::t_1d25f051e533aa 2059-2064
+  s_26876fbaea0033::t_064438eba85fd6 1113-1216,1483-1485
+  s_b391f493c82c45::t_a02623f11b551d 1515-1516,1518,1872-1874
+  s_b391f493c82c45::t_9be424a53c8d66 1066,1072,1751,1754,1756,1768-1769,1774-1780,1956,1963,1977-1978,1982,1986,1992-1994,1998-2002,2015,2018
+  s_a6abcdae67a723::t_4db8922ee1361b 1738,1742-1748,1757-1767,1770-1771,1784-1785,1787-1788,1810,1946,1951-1953,1959,1965,1968-1974,1995-1997,2005-2012,2016,2022-2023,2025-2026
+  s_b391f493c82c45::t_e742f8cdba8fd5 1067-1071,1755,1831,1955,1987-1991
+  s_faba9ad8310d46::t_b66eb37e69e3ab 1096-1098,1111-1112,1217-1221,1257-1356
+  s_faba9ad8310d46::t_7d963af2cd1dc4 1358
+  s_faba9ad8310d46::t_fb43e2e76b17a9 1487
+  s_faba9ad8310d46::t_dda4611bae800e 1520
+  s_faba9ad8310d46::t_01927aeff1b0d4 2070
+  s_26876fbaea0033::t_abc4da77129914 1750,1773,1976,2004,2014
+packages/core/src/domain/session/SessionGoals.test.ts
+  s_26876fbaea0033::t_9029ea54fc0f08 1-54
+packages/cli/src/tunnel/cloudflare-provider.test.ts
+  s_7f8a5af7a419ac::t_2c8dffabab5ec8 5-18
+packages/cli/src/cloudflared/bundled-asset.test.ts
+  s_7f8a5af7a419ac::t_277d699fc17a2a 14,59
+  s_7ad81678f8e7c6::t_8d2261376d428c 17,25-26,43,52-58,60-75
+  s_7f8a5af7a419ac::t_fbdf4ba2bbb9c6 76
+packages/desktop/main/agent-runtime/codex-runtime-adapter.test.ts
+  s_26876fbaea0033::t_b83caf67108a29 438-526,602-628,630-651
+  s_26876fbaea0033::t_f244d746ff2beb 13,16-25,653
+  s_26876fbaea0033::t_714a5321682ba5 601,629
+  s_26876fbaea0033::t_693d002cfefbc2 527-560,565-600,652
+  s_26876fbaea0033::t_ea448c2a14e76f 561-564
+  s_26876fbaea0033::t_c22f49ed5b60ee 26
+  s_26876fbaea0033::t_5dbdf627fa4543 654
+packages/cli/src/args.test.ts
+  s_7f8a5af7a419ac::t_a28adb0851c304 9,33-58
+  s_7f8a5af7a419ac::t_613ba03b3163c1 1
+scripts/fetch-cloudflared-package.mjs
+  s_7ad81678f8e7c6::t_5a2722e3188daa 6,9,11-14,32,34,39,48
+  s_7ad81678f8e7c6::t_fa5b382b639300 22-26
+scripts/pack-package.mjs
+  s_7ad81678f8e7c6::t_fa5b382b639300 1-24
+packages/cli/src/tunnel/public-readiness.ts
+  s_7f8a5af7a419ac::t_277d699fc17a2a 47
+packages/cli/src/tunnel/relay-orchestrator.test.ts
+  s_7f8a5af7a419ac::t_876b788dc8ef8a 80
+  s_7f8a5af7a419ac::t_2858623fb21780 35-48
+.github/workflows/cli-release.yml
+  s_7ad81678f8e7c6::t_5b2c4dcbb44c13 2,5-14,16,18-19,23-24,26-28,30-54
+packages/core/src/domain/session/SessionGoalCoordinator.ts
+  s_26876fbaea0033::t_9114c835aacc2f 19,37-47,54-59,63-70,101-110,112-120
+  s_26876fbaea0033::t_0ae4410e071c24 1-18,20-36,48-53,60-62,71-100,111,121-129
+packages/desktop/renderer/components/ReasoningSummary.test.tsx
+  s_a6abcdae67a723::t_83d3434e961ab9 1-15,19,21,23-28,30-34,39-41
+  s_b391f493c82c45::t_6f13dfb54b7def 29,37
+  s_b391f493c82c45::t_c37bea3c09342c 20
+  s_b391f493c82c45::t_39f8937b45c413 16-18,22,35-36,38
+packages/runtime-darwin-arm64/manifest.json
+  s_7f8a5af7a419ac::t_277d699fc17a2a 2
+  s_7ad81678f8e7c6::t_02227db198e796 1,3-5,11
+  s_7ad81678f8e7c6::t_171b392be3d308 6-10
+packages/server/app/web/FilePreview.tsx
+  s_faba9ad8310d46::t_a93535e7497759 244-252,254-263,267,290-292,319-321,327,335-339,349,370,372
+  s_faba9ad8310d46::t_9b3cddaeb9a3da 55,61
+  s_faba9ad8310d46::t_cb7fb20ae4be52 12,27-28,31-54,56-60,62-70,84,95-97,117,182,213-237,269-286,369,371
+  s_faba9ad8310d46::t_17e34cdb27a705 238
+packages/cli/src/runtime-manager.ts
+  s_7ad81678f8e7c6::t_7ef727e53c6be7 1-82
+packages/core/src/domain/session/SessionGoalCoordinator.test.ts
+  s_26876fbaea0033::t_cac83c47c13a11 1-47,90-104
+  s_26876fbaea0033::t_9b6d2ca4392af0 48-89
+packages/server/app/web/AuthGate.test.ts
+  s_faba9ad8310d46::t_dffb140415fbc8 13-23
+  s_faba9ad8310d46::t_5b0268cf75f4a1 1-12,24-30
+packages/cli/src/cloudflared/manifest.ts
+  s_7ad81678f8e7c6::t_c6df45500b0903 2,5,8-9
+packages/desktop/renderer/lib/tool-call-presentation.ts
+  s_b391f493c82c45::t_39f8937b45c413 7-9,55-64
+  s_b391f493c82c45::t_9895c1b1a3ecb6 65-66
+packages/core/src/domain/web-console/WebArtifactBridge.ts
+  s_7ad81678f8e7c6::t_1581bc56ab5ae0 9-14,22
+packages/webapp/src/domain/ports/agent-port.ts
+  s_26876fbaea0033::t_ab2322f3fa1a48 19-20
+packages/cli/src/service/service-command.ts
+  s_7f8a5af7a419ac::t_876b788dc8ef8a 1-10,12-17,19-25,30-95
+  s_7f8a5af7a419ac::t_95060ae42845e0 18
+  s_7f8a5af7a419ac::t_92aae6b0bf4271 11,26-29
+scripts/collect-cli-artifacts.mjs
+  s_7ad81678f8e7c6::t_14f6f2754b1215 1-34
+packages/desktop/renderer/lib/session-load-recovery.ts
+  s_93e5092a3f827f::t_6dcc8999194b0d 1-42
+docs/superpowers/plans/2026-09-02-session-load-recovery.md
+  s_93e5092a3f827f::t_50f77660249468 50
+  s_93e5092a3f827f::t_6dcc8999194b0d 5,16,38
+  s_93e5092a3f827f::t_ffe4362957d530 1-4,6-15,17-31,33-35,37,39,41-43,45-49,51,53-54
+  s_93e5092a3f827f::t_03201832aea7a2 52,55-56
+  s_93e5092a3f827f::t_597d367e3ec7e9 32,36,40,44
+packages/tui-win32-x64/package.json
+  s_7ad81678f8e7c6::t_2b1e848be0a408 2
+  s_7f8a5af7a419ac::t_277d699fc17a2a 3
+  s_7ad81678f8e7c6::t_02227db198e796 1,4-19
+packages/desktop/renderer/components/ChatComposerStyle.test.ts
+  s_6ec2baf296ab2e::t_5d16cf1c5a3674 32,59
+  s_faba9ad8310d46::t_f6110131d41f69 11,60-61,63-68,70-76,79,95-105
+  s_faba9ad8310d46::t_5cb6f441eb85ce 62,69,77-78,80-81,85
+  s_26876fbaea0033::t_935d64fea1ca85 82-84,86-94
+packages/desktop/renderer/lib/markdown-links.ts
+  s_faba9ad8310d46::t_7c69083c27b985 7-13,24-37,41-44,46-47,49,53-62
+  s_faba9ad8310d46::t_a55ba40705dcc3 63
+packages/desktop/renderer/lib/markdown-links.test.ts
+  s_faba9ad8310d46::t_88a2212fdafab9 58-80
+packages/desktop/main/agent-runtime/native-runtime-broker.ts
+  s_26876fbaea0033::t_965d30a48430a1 1005-1007
+  s_26876fbaea0033::t_78aa69440bd98e 821,835-837
+  s_26876fbaea0033::t_00114003d5370f 846-850,857,859,1144,1335-1340
+  s_26876fbaea0033::t_193f9ecdb7aa9f 1131-1143,1145,1320-1334,1341
+  s_26876fbaea0033::t_144fb31e48a5b9 722-724,782,803,817-818,820,822-834,839-845,851-852,854,856,860-863,959-964,997-1004,1008-1027
+  s_26876fbaea0033::t_98b38bd435a3de 819
+  s_26876fbaea0033::t_7fd824ec095afd 813-816,1127-1130,1318-1319
+  s_26876fbaea0033::t_776212354793c0 200-201,231-235,237-240,274-339,346,368,373-374,387
+  s_26876fbaea0033::t_156c34518c10ed 557,1573
+  s_26876fbaea0033::t_d904352cb195d7 853,855,858
+  s_26876fbaea0033::t_798daf3a08071c 7-9,12-13,17-18,61-65,100,146
+  s_26876fbaea0033::t_1916f3a4444849 838
+  s_26876fbaea0033::t_57d5b214a350b9 1342
+scripts/audit-cli-tarball.mjs
+  s_7ad81678f8e7c6::t_13a60e878da380 1,3-4,9-10,12-13,17-22,24-27,29-30,32-34,36,38,44-45,54,57
+  s_7f8a5af7a419ac::t_db0e9beac9c1ab 48-51
+  s_7ad81678f8e7c6::t_2b1e848be0a408 23
+packages/desktop/renderer/components/ElapsedTime.test.ts
+  s_b391f493c82c45::t_6f13dfb54b7def 1-9
+packages/server/app/api/agent/run/route.ts
+  s_faba9ad8310d46::t_89b118a8cac16c 9,19-20,84-89,92
+packages/server/app/web/AuthGate.tsx
+  s_faba9ad8310d46::t_f3bb061c0d5f14 48-60
+  s_faba9ad8310d46::t_dffb140415fbc8 30-47,61-68,73-88,90-104,106-145,148-155,157-167,170-182,185-258,260-265,267-318
+  s_faba9ad8310d46::t_621114f0cc8d12 69-72,89,105,146-147,156,168-169,183-184,259,266
+  s_faba9ad8310d46::t_5b0268cf75f4a1 2-3,8-11,15-26,28
+packages/cloudflared-darwin-arm64/package.json
+  s_7f8a5af7a419ac::t_277d699fc17a2a 3
+packages/cli/src/tunnel/relay-orchestrator.ts
+  s_7f8a5af7a419ac::t_2858623fb21780 29,59-62
+packages/cli/src/tunnel/cloudflare-provider.ts
+  s_7f8a5af7a419ac::t_2c8dffabab5ec8 9,30-31
+  s_7f8a5af7a419ac::t_e5b7bb3645edb9 32-33
+packages/desktop/renderer/styles/composer.css
+  s_26876fbaea0033::t_064438eba85fd6 150-167
+scripts/native-binary.mjs
+  s_7ad81678f8e7c6::t_c58a13d0d20419 1-47
+packages/cli/src/service/service-files.ts
+  s_7f8a5af7a419ac::t_07d6a9c37d151b 1-125
+docs/superpowers/plans/2026-09-03-session-history-prefetch.md
+  s_ff2b2d7ac93b28::t_cf9202ef1fadb5 1-29,31-62,64-66,70-73,75-93,95-112,114-116,118-131,133-145,147,149,151-155,157-162
+  s_ff2b2d7ac93b28::t_fac810afca8c35 30,63
+  s_ff2b2d7ac93b28::t_ae7011046f9000 146,148,150,156
+  s_ff2b2d7ac93b28::t_06c8582e29ee9f 94,113,117,132
+  s_ff2b2d7ac93b28::t_e11c173e8ee263 67-69,74
+packages/cli/src/service/runtime-state.test.ts
+  s_7f8a5af7a419ac::t_9cd1f6c7be3c8d 1-49
+packages/server/lib/customer-goal-service.ts
+  s_26876fbaea0033::t_f3a337f2d6cf19 14-16
+  s_26876fbaea0033::t_07acfed5f4d3ea 1-6,8-13,23-26,30-34
+  s_26876fbaea0033::t_d904352cb195d7 7,17-22,27-29
+packages/server/lib/native-runtime-service.ts
+  s_26876fbaea0033::t_00114003d5370f 91,265
+  s_26876fbaea0033::t_d106e362a04ea0 28,83-90,243-264,266
+  s_26876fbaea0033::t_2db5713fdb8029 267
+packages/cli/bin/agent-tui.mjs
+  s_7ad81678f8e7c6::t_0904be17443e3f 9-15
+scripts/audit-tui-tarball.mjs
+  s_7ad81678f8e7c6::t_aec71d8f64d680 1,11-12,14,16-20,26,29,34
+  s_7ad81678f8e7c6::t_2b1e848be0a408 13,23-24
+packages/cli/src/service/service-command.test.ts
+  s_7f8a5af7a419ac::t_876b788dc8ef8a 1-18,20-70
+  s_7f8a5af7a419ac::t_92aae6b0bf4271 19
+packages/desktop/main/preload.ts
+  s_26876fbaea0033::t_9e7559d6fed4a4 113-119
+packages/desktop/main/agent-runtime/types.ts
+  s_26876fbaea0033::t_01fb1c8e75902d 4,44,76-79
+packages/desktop/renderer/lib/native-session-view-state.ts
+  s_6ec2baf296ab2e::t_5d16cf1c5a3674 1-28
+packages/desktop/renderer/lib/native-session-view-state.test.ts
+  s_6ec2baf296ab2e::t_5d16cf1c5a3674 1-57
+docs/superpowers/plans/2026-09-02-macos-cross-build-windows-cli.md
+  s_7ad81678f8e7c6::t_4859760772cd14 1-35,37-52,54-63,65-67,69-92,94-96,98-110,112-114,116-133,135-141,143-145,147-149,151-162,164-181,183-185,187-198,200-202,204-217,219-223,225-227,229-231,233-235,237-254,256-258,260-262,264-266,268-272,274-287
+  s_7ad81678f8e7c6::t_82c6cea63ae18c 36,53,64,68,93,97,111,115,134,142,146,150,163,182,186,199,203,218,224,228,232,236,255,259,263,267,273
+scripts/cli-release-artifacts.mjs
+  s_7ad81678f8e7c6::t_ad6ed48a1a4e55 1-22,35-71
+  s_7ad81678f8e7c6::t_d8056e6b469051 23-34
+packages/cli/src/cloudflared/installer.test.ts
+  s_7ad81678f8e7c6::t_8d2261376d428c 37-59,102-103
+packages/desktop/main/agent-runtime/claude-runtime-adapter.test.ts
+  s_26876fbaea0033::t_f244d746ff2beb 598-613
+packages/core/src/domain/session/index.ts
+  s_26876fbaea0033::t_9029ea54fc0f08 10
+  s_26876fbaea0033::t_0ae4410e071c24 11
+packages/server/ws-server.mjs
+  s_7ad81678f8e7c6::t_c0fa9a2e5bfa49 25,31,35,110,183,196-197,199,204,213-214,299-300,302-309,565,589,591-592
+  s_7ad81678f8e7c6::t_1946f78097e197 277,301
+packages/desktop/renderer/components/ChatHistoryStyle.test.ts
+  s_faba9ad8310d46::t_845883ae770471 101
+  s_b391f493c82c45::t_80981b39dd2cc6 105
+  s_26876fbaea0033::t_035669bbf9662a 186,191-192
+  s_faba9ad8310d46::t_f69da830b37c16 102-103
+  s_6ec2baf296ab2e::t_5d16cf1c5a3674 143-145
+  s_faba9ad8310d46::t_2b0bf09d81aa0b 104
+  s_b391f493c82c45::t_c1fda469a7b5d6 94
+  s_b391f493c82c45::t_a02623f11b551d 68-76,91-93,96-98
+  s_b391f493c82c45::t_97d26955891f06 64-65
+  s_ff2b2d7ac93b28::t_fac810afca8c35 128-131
+  s_b391f493c82c45::t_ad218d1e39ce0f 34
+  s_faba9ad8310d46::t_0d89de62cb3460 106
+  s_ae1c95b9ccbab7::t_496a09aeb5f530 9-10,21,23,26-29,33,95
+  s_faba9ad8310d46::t_056f3996d6f909 41
+  s_a6abcdae67a723::t_b73d67f513b525 39
+  s_ae1c95b9ccbab7::t_bb97712de5ce54 57
+  s_a6abcdae67a723::t_4db8922ee1361b 99-100
+  s_faba9ad8310d46::t_3b1fc72a23b90d 107-108
+packages/cli/src/platform-packages.test.ts
+  s_7ad81678f8e7c6::t_966e45957f1c5c 1-18,24-86
+  s_7ad81678f8e7c6::t_2b1e848be0a408 19-23
+packages/core/src/domain/session/SessionGoals.ts
+  s_26876fbaea0033::t_f20fd4272ba231 132
+  s_26876fbaea0033::t_9029ea54fc0f08 1-131,133-163
+packages/webapp/src/presentation/browser-composer.test.ts
+  s_6ec2baf296ab2e::t_5d16cf1c5a3674 54,63
+packages/desktop/renderer/stores/agentStore.ts
+  s_26876fbaea0033::t_307a215e7ad6f1 119-121
+packages/desktop/renderer/stores/settingsStore.ts
+  s_faba9ad8310d46::t_89b118a8cac16c 147-155
+packages/desktop/renderer/components/ElapsedTime.tsx
+  s_b391f493c82c45::t_6f13dfb54b7def 1-21
+packages/server/lib/native-runtime-health-route-contract.test.ts
+  s_7f8a5af7a419ac::t_1c5504622e9355 1-13
+packages/desktop/renderer/global.d.ts
+  s_26876fbaea0033::t_495f4f1172f427 85-103,122,205-208
+  s_faba9ad8310d46::t_89b118a8cac16c 172
+packages/webapp/src/infrastructure/http/agent-http-gateway.ts
+  s_faba9ad8310d46::t_89b118a8cac16c 100,107-108
+  s_6ec2baf296ab2e::t_5d16cf1c5a3674 219
+  s_26876fbaea0033::t_4bd9a8c9fa5b65 7,268-297
+  s_26876fbaea0033::t_365df8aa3f058d 298
+packages/desktop/renderer/components/RuntimeProgressRow.test.tsx
+  s_faba9ad8310d46::t_1d25f051e533aa 1-13,15-17,33-50
+  s_faba9ad8310d46::t_056f3996d6f909 14,18-32
+packages/cloudflared-win32-x64/manifest.json
+  s_7f8a5af7a419ac::t_277d699fc17a2a 2
+  s_7ad81678f8e7c6::t_02227db198e796 1,3-11
+packages/desktop/renderer/lib/session-load-recovery.test.ts
+  s_93e5092a3f827f::t_6dcc8999194b0d 1-55
+docs/superpowers/plans/2026-09-03-queued-message-actions.md
+  s_faba9ad8310d46::t_4395ff3b477195 30,34,47,60,69
+  s_faba9ad8310d46::t_232bdcf2a3ee29 75
+  s_faba9ad8310d46::t_300118fd6c2902 1-29,31-33,35-46,48-59,61-68,70-74,76-79
+packages/server/app/api/agent/runtime-health/route.ts
+  s_7f8a5af7a419ac::t_1c5504622e9355 4-5
+scripts/verify-cli-install.mjs
+  s_7ad81678f8e7c6::t_d8056e6b469051 7,12
+  s_7f8a5af7a419ac::t_db0e9beac9c1ab 54-70
+  s_7ad81678f8e7c6::t_bb93819ab87862 2,4,10-11,21-22,25,46-48,52-53,72-78,80-85,89,92-94,96-98,100,102-103,107-109,112,114,118,123-140,145-150,152,162,166,170-171,178-181,183
+  s_7ad81678f8e7c6::t_4e6a4269cd03ab 32-40
+  s_7ad81678f8e7c6::t_f6a2dcb41e834e 14-19,30-31
+packages/cli/src/cloudflared/installer.ts
+  s_7ad81678f8e7c6::t_c6df45500b0903 3,20,31,59,64,66,72-82,85
+packages/cli/src/platform-packages.ts
+  s_7ad81678f8e7c6::t_966e45957f1c5c 1-5,7-30,32-98
+  s_7ad81678f8e7c6::t_2b1e848be0a408 31
+  s_7f8a5af7a419ac::t_277d699fc17a2a 6
+packages/desktop/renderer/components/ToolCallCard.tsx
+  s_b391f493c82c45::t_24c4ae2b27c0be 3-16,19,42,45,47,50-51,53,56,59-61,63-68,94,96,104
+  s_b391f493c82c45::t_ccd44fecd541f8 562,587-588,591,595-597,611-616,693,706,713
+  s_a6abcdae67a723::t_4db8922ee1361b 599,606
+  s_b391f493c82c45::t_e5824ac81ead66 243,247-251,262-267,308,312-316,321-326,349,355-359,368-373
+packages/server/shell-platform.test.mjs
+  s_7ad81678f8e7c6::t_14f6f2754b1215 1-2,7,12-16,20-22,26-28
+  s_7ad81678f8e7c6::t_1581bc56ab5ae0 3-6,8-11,17-19,23-25,29-30
+docs/superpowers/plans/2026-09-03-agent-runtime-version-upgrade.md
+  s_d2ddd46392f869::t_cb6a4be8068d0d 7,46-48,57,63,81
+  s_d2ddd46392f869::t_1fee332109bc05 75,79,85
+  s_d2ddd46392f869::t_791f6193a29a3f 1-6,8-31,33-35,37-41,43-45,50-54,56,58,60-62,64-74,76-78,80,82-84,86-93
+  s_d2ddd46392f869::t_fb6cee3105f6f0 36
+  s_d2ddd46392f869::t_b5ed21b251041b 42,49
+  s_d2ddd46392f869::t_d4078826f5779b 55,59
+  s_d2ddd46392f869::t_d9f6937cd61115 32
+packages/desktop/renderer/components/AgentActivityIndicator.test.ts
+  s_b391f493c82c45::t_6f13dfb54b7def 8-10,13
+  s_b391f493c82c45::t_39f8937b45c413 14
+packages/webapp/src/infrastructure/local/local-settings-repository.ts
+  s_faba9ad8310d46::t_89b118a8cac16c 11-12,67-69,117-123,139
+packages/desktop/main/agent-runtime/codex-runtime-adapter.ts
+  s_26876fbaea0033::t_55c71440e5a206 460,467
+  s_26876fbaea0033::t_62e0b2677a7db0 376-390
+  s_26876fbaea0033::t_fc7336b5aa7bf0 281-286,288,295-301,305-308,375,391-401,649-670
+  s_26876fbaea0033::t_01044a5368a3e2 83-88,108-111,326-329,339-348,456-459,461-466,468-476,502-520,551-564
+  s_26876fbaea0033::t_3a2554fbfdf4b9 402,565,671,968-988
+  s_26876fbaea0033::t_693d002cfefbc2 287
+  s_26876fbaea0033::t_7c1f1db938e4f5 403
+  s_26876fbaea0033::t_9510f2ca635d17 566
+  s_26876fbaea0033::t_933a77e478eb71 672
+  s_26876fbaea0033::t_57310861c5213f 989
+packages/cli/src/service/service-files.test.ts
+  s_7f8a5af7a419ac::t_07d6a9c37d151b 1-61
+packages/server/app/web/FilePreview.test.ts
+  s_faba9ad8310d46::t_9b3cddaeb9a3da 26-28,30,39,41
+  s_faba9ad8310d46::t_cb7fb20ae4be52 1,3-4,6,9-25,29,31-38,40,42,53-54
+  s_faba9ad8310d46::t_a93535e7497759 2,5,7-8,43-52
+packages/server/app/api/web-auth/status/route.ts
+  s_7f8a5af7a419ac::t_a510a66332e6e0 4-5
+packages/cli/src/cloudflared/bundled-asset.ts
+  s_7ad81678f8e7c6::t_c6df45500b0903 7-8,19,33,36,46,58-59
+packages/cli/src/cli.ts
+  s_7f8a5af7a419ac::t_876b788dc8ef8a 12-14,21-28,46-48,62,94-107,114
+  s_7ad81678f8e7c6::t_0904be17443e3f 9,17,63,121-122,141
+  s_7f8a5af7a419ac::t_2858623fb21780 77
+.gitignore
+  s_7ad81678f8e7c6::t_37a7e1c4c9b277 20-23,25,27
+packages/desktop/renderer/lib/queued-message-order.test.ts
+  s_faba9ad8310d46::t_5cb6f441eb85ce 1-39
+scripts/stage-cli-runtime.mjs
+  s_7ad81678f8e7c6::t_085968782aa7f4 5,10-13,15-53,88-110,112,115-118,122,137-146,149-165,183-184
+  s_7ad81678f8e7c6::t_1581bc56ab5ae0 66
+.github/workflows/cli-release-verify.yml
+  s_7ad81678f8e7c6::t_5b2c4dcbb44c13 8-15,18,29-32,34-53
+packages/desktop/renderer/components/ToolCallCard.test.tsx
+  s_b391f493c82c45::t_97d26955891f06 23,25,34,39-71
+  s_93e5092a3f827f::t_433807acd4293c 72-73
+packages/desktop/renderer/components/AgentActivityIndicator.tsx
+  s_b391f493c82c45::t_e742f8cdba8fd5 11-12
+  s_b391f493c82c45::t_6f13dfb54b7def 2,4-8,14
+  s_b391f493c82c45::t_39f8937b45c413 1,3
+scripts/audit-runtime-tarball.mjs
+  s_7ad81678f8e7c6::t_de1aeacbb79446 1-71
+packages/server/app/api/agent-host.ts
+  s_26876fbaea0033::t_f3a337f2d6cf19 118-121
+  s_26876fbaea0033::t_cc2ccde62449f1 114-117
+packages/tui-darwin-arm64/package.json
+  s_7f8a5af7a419ac::t_277d699fc17a2a 3
+package.json
+  s_7ad81678f8e7c6::t_fa5b382b639300 31-32,34-46
+  s_7ad81678f8e7c6::t_14f6f2754b1215 47
+  s_7ad81678f8e7c6::t_3fa4ef8a176490 14-15,17-19
+packages/cli/src/service/macos-launch-agent.test.ts
+  s_7f8a5af7a419ac::t_92aae6b0bf4271 48
+  s_7f8a5af7a419ac::t_6fcd7d2e9f8ea7 4,102,105-107,109,113-122
+  s_7f8a5af7a419ac::t_5ddbb4c466d725 1,165
+  s_7f8a5af7a419ac::t_bf0216f639ba8e 2-3,5-37,39-47,49-100,103-104,110-111,123-125,127-164,166
+  s_7f8a5af7a419ac::t_c5e3f4440c9887 38
+  s_7f8a5af7a419ac::t_4a22edc9d4b031 126
+  s_7f8a5af7a419ac::t_4449bef71e8854 101,108,112
+packages/webapp/src/infrastructure/http/agent-http-gateway.test.ts
+  s_faba9ad8310d46::t_f785a062183be5 74,105,150-181
+  s_6ec2baf296ab2e::t_5d16cf1c5a3674 216-237
+  s_faba9ad8310d46::t_d6d5683e4d1e17 182-183
+packages/desktop/renderer/components/ChatView.tsx
+  s_faba9ad8310d46::t_056f3996d6f909 2827
+  s_26876fbaea0033::t_b50265e948f6bc 772,2016-2020
+  s_faba9ad8310d46::t_52e1bc0e96d54a 462-464,1682-1685,1691-1722,1724-1728,1781-1783,1786
+  s_26876fbaea0033::t_5952e5bc6732a8 52-54,2350-2352,2354,2720,2737-2745
+  s_26876fbaea0033::t_fccba5c21572c1 4-5,471-473
+  s_93e5092a3f827f::t_597d367e3ec7e9 28-31,506-507,932-933,941,958,974-979,1030,2842,2853-2855,2857-2882
+  s_ff2b2d7ac93b28::t_fac810afca8c35 27,517-520,545-559,938,960,1001,1047,1085,1087-1090,1118,1193-1194,1204-1211,1229,1239
+  s_6ec2baf296ab2e::t_e671add530a7f0 428
+  s_26876fbaea0033::t_935d64fea1ca85 683-686,697-700,1245-1285,1541-1547,1586-1587,1589-1592,1794,1798,1800,1816,1839,1842,1851,3474
+  s_b391f493c82c45::t_de4fd67c2c1ee8 721-734,1021,1023,1103,1311,1327,1347,1353,1358,1511,1522,1556,1585,1600,2570,2838
+  s_26876fbaea0033::t_f59c9ef708d815 1744-1780
+  s_26876fbaea0033::t_aed1bb7a8207d7 3565-3574
+  s_ae1c95b9ccbab7::t_496a09aeb5f530 407-410,438-443,445-450,2300,2830-2831
+  s_26876fbaea0033::t_1681d4765997e9 1588
+  s_26876fbaea0033::t_6051d04dd8fd57 701-720
+  s_6ec2baf296ab2e::t_5d16cf1c5a3674 43-48,430-434,840,1007,1105,1122,2082,3535,3652,3712-3713,3733
+  s_faba9ad8310d46::t_5cb6f441eb85ce 36,465-466,1729-1743,3336-3360,3362-3367,3369-3391,3394-3395
+  s_26876fbaea0033::t_24453f7697b0f0 2353
+  s_b391f493c82c45::t_c1fda469a7b5d6 2569
+  s_26876fbaea0033::t_3328340077114e 3272-3321
+  s_faba9ad8310d46::t_eb3ec93e38ea36 1723,1784-1785
+  s_faba9ad8310d46::t_97953865797a5a 3323,3328,3331,3396-3465
+  s_ae1c95b9ccbab7::t_f5a23b7fae681b 422-426,444,2832
+  s_26876fbaea0033::t_8edec8c0011fa2 1823-1836,2039
+  s_26876fbaea0033::t_e4c7253a00e936 2021-2024,2037-2038,2040-2079
+  s_26876fbaea0033::t_e743ea0bd80b5b 55
+  s_26876fbaea0033::t_a933104262cc5b 1286
+  s_faba9ad8310d46::t_83eef788748547 1787
+  s_26876fbaea0033::t_c3ab14cdcc3e04 2080
+  s_26876fbaea0033::t_7e36a3504b1470 2746
+  s_26876fbaea0033::t_57967ce9e04e9b 3575
+  s_6ec2baf296ab2e::t_71c909544d51f4 2601-2605,3322
+packages/cloudflared-win32-x64/package.json
+  s_7ad81678f8e7c6::t_02227db198e796 1-2,4-18
+  s_7f8a5af7a419ac::t_277d699fc17a2a 3
+packages/runtime-win32-x64/package.json
+  s_7f8a5af7a419ac::t_277d699fc17a2a 3
+  s_7ad81678f8e7c6::t_02227db198e796 1-2,4-19
+packages/desktop/main/agent-runtime/customer-agent-runtime-adapter.ts
+  s_26876fbaea0033::t_8cf96c9f2dc78e 1,107
+packages/runtime-darwin-arm64/package.json
+  s_7ad81678f8e7c6::t_02227db198e796 1-2,4-19
+  s_7f8a5af7a419ac::t_277d699fc17a2a 3
+packages/server/shell-platform.mjs
+  s_7ad81678f8e7c6::t_1581bc56ab5ae0 1-43
+docs/superpowers/plans/2026-09-03-agentroam-launchd-service.md
+  s_7f8a5af7a419ac::t_68f88a2984c884 20,194,207,211,215,217,219,221
+  s_7f8a5af7a419ac::t_1e60141b83bfb8 225-226,233
+  s_7f8a5af7a419ac::t_5725e373ae0154 34,43,47,62,81,85,89,104,108,112,116,120,135,139,143,147,163,167,171,186,190
+packages/desktop/package.json
+  s_d2ddd46392f869::t_d9f6937cd61115 16
+packages/server/lib/web-auth/status-route-contract.test.ts
+  s_7f8a5af7a419ac::t_5f0082f5635bae 1-13
+packages/server/package.json
+  s_d2ddd46392f869::t_d9f6937cd61115 14
+packages/server/app/api/sessions/[id]/goals/route.ts
+  s_26876fbaea0033::t_07acfed5f4d3ea 1-91
+packages/server/app/web/themes.ts
+  s_faba9ad8310d46::t_a93535e7497759 38,102,166
+docs/superpowers/plans/2026-09-02-unified-execution-trace-rows.md
+  s_b391f493c82c45::t_012efc051f987f 33,37,53,57,61,75,79,85
+  s_b391f493c82c45::t_d092fb7ee4b9d9 1-32,34-36,38-52,54-56,58-60,62-74,76-78,80-84,86-91
+scripts/build-tui-package.mjs
+  s_7ad81678f8e7c6::t_37a7e1c4c9b277 1,6-11,15,41,43
+packages/desktop/renderer/lib/session-history-prefetch.ts
+  s_ff2b2d7ac93b28::t_e11c173e8ee263 1-49
+packages/desktop/renderer/lib/occupied-session-fork.test.ts
+  s_93e5092a3f827f::t_597d367e3ec7e9 92-95
+packages/server/app/api/agent/run/run-options.ts
+  s_faba9ad8310d46::t_89b118a8cac16c 1-17
+docs/superpowers/specs/2026-09-02-macos-cross-build-windows-cli-design.md
+  s_7ad81678f8e7c6::t_de352787b9169a 4
+packages/desktop/main/agent-runtime/claude-runtime-adapter.ts
+  s_26876fbaea0033::t_64fb7b533002e1 345-348,378,880-890
+  s_26876fbaea0033::t_9d9be43be933b2 16,876-879
+packages/cli/src/process-supervisor.ts
+  s_7ad81678f8e7c6::t_1aafce274e235d 1-69
+packages/desktop/renderer/components/SettingsPanel.tsx
+  s_faba9ad8310d46::t_89b118a8cac16c 48-54
+packages/cli/src/process-supervisor.test.ts
+  s_7ad81678f8e7c6::t_1aafce274e235d 1-50
+packages/desktop/main/agent-runtime/native-runtime-broker.test.ts
+  s_26876fbaea0033::t_f244d746ff2beb 130-154
+  s_26876fbaea0033::t_b70b8cca961306 155-175
+packages/webapp/src/infrastructure/local/local-settings-repository.test.ts
+  s_faba9ad8310d46::t_ef01c9afe2b91f 2-3,6-18,26-27,29-35,37-59
+  s_faba9ad8310d46::t_67088368fad44a 1,4-5,19-25,28,36
+packages/runtime-win32-x64/manifest.json
+  s_7ad81678f8e7c6::t_171b392be3d308 6-15
+  s_7ad81678f8e7c6::t_02227db198e796 1,3-5,16
+  s_7f8a5af7a419ac::t_277d699fc17a2a 2
+packages/cli/package.json
+  s_7ad81678f8e7c6::t_02227db198e796 21
+  s_7f8a5af7a419ac::t_277d699fc17a2a 3,28-33
+scripts/audit-cloudflared-tarball.mjs
+  s_7ad81678f8e7c6::t_d3eb16ad4262ef 3-4,7,15-18,20-31,36,39,43-55
+packages/core/src/domain/web-console/WebArtifactBridge.test.ts
+  s_7ad81678f8e7c6::t_1581bc56ab5ae0 24-30
+packages/desktop/renderer/components/RuntimeProgressRow.tsx
+  s_faba9ad8310d46::t_056f3996d6f909 2-3,8,12,18-19,31-34,40
+  s_faba9ad8310d46::t_1d25f051e533aa 17,27-30,35-37
+packages/cli/src/args.ts
+  s_7f8a5af7a419ac::t_a28adb0851c304 5-6,9-10,23-36,39
+packages/desktop/renderer/lib/session-history.ts
+  s_6ec2baf296ab2e::t_5d16cf1c5a3674 21
+packages/desktop/main/index.ts
+  s_26876fbaea0033::t_095dd83faa0efd 95-98,100-108,110-111,113-114
+  s_26876fbaea0033::t_00114003d5370f 1062
+  s_26876fbaea0033::t_b6daed9b05cf93 1030-1061,1063
+  s_26876fbaea0033::t_d2b9dfdddc41e0 91,109,112,118-120
+  s_26876fbaea0033::t_9114c835aacc2f 99
+  s_26876fbaea0033::t_0870bd0a2c3b94 11,92-94,115-117
+  s_26876fbaea0033::t_8a335a23909c90 121
+  s_26876fbaea0033::t_e5259cf7bb17a5 1064
+packages/cli/src/service/runtime-state.ts
+  s_7f8a5af7a419ac::t_9cd1f6c7be3c8d 1-59
+packages/desktop/renderer/components/ReasoningSummary.tsx
+  s_b391f493c82c45::t_6f13dfb54b7def 4,9,13,46-49
+  s_b391f493c82c45::t_39f8937b45c413 3,33,40,51-53
+  s_a6abcdae67a723::t_4db8922ee1361b 19-25,50
+  s_b391f493c82c45::t_e742f8cdba8fd5 43-45
+scripts/verify-cli-tunnel.mjs
+  s_7ad81678f8e7c6::t_6ab1e0a175f79f 4,16,21,28,38-41,98
+  s_7f8a5af7a419ac::t_14c8b63f77f652 102-110
+  s_7ad81678f8e7c6::t_d8056e6b469051 12,17
+  s_7ad81678f8e7c6::t_4e6a4269cd03ab 29-37
+  s_7f8a5af7a419ac::t_a2d1494740d553 101,162-180,182
+packages/desktop/renderer/lib/session-history-prefetch.test.ts
+  s_ff2b2d7ac93b28::t_e11c173e8ee263 1-96
+packages/cloudflared-darwin-arm64/manifest.json
+  s_7f8a5af7a419ac::t_277d699fc17a2a 2
+  s_7ad81678f8e7c6::t_c6df45500b0903 5
+docs/superpowers/specs/2026-09-03-agent-runtime-version-upgrade-design.md
+  s_d2ddd46392f869::t_cb6a4be8068d0d 20,27
+  s_d2ddd46392f869::t_b5ed21b251041b 13
+packages/cli/src/service/macos-launch-agent.ts
+  s_7f8a5af7a419ac::t_92aae6b0bf4271 2,29,86,104,107-108,175-180,200-201
+  s_7f8a5af7a419ac::t_6fcd7d2e9f8ea7 40,43,51,54,61,64,153-157,216-223,270-278
+  s_7f8a5af7a419ac::t_4082800d6789e5 142-143
+  s_7f8a5af7a419ac::t_c5e3f4440c9887 3,72,80,89-90,247
+  s_7f8a5af7a419ac::t_bf0216f639ba8e 1,4-28,30-39,41-42,44-50,52-53,55-60,62-63,65-71,73-79,81-85,87-88,91-103,105-106,109-141,144-152,158-174,181-199,202-215,224-246,248-269,279-294
+bun.lock
+  s_7f8a5af7a419ac::t_e11a1ae7591951 16,32-37,42-46,61,76-83,100,138-142,193,195,197,199,201,203,205,207,209,253-254,471-476,1077-1078
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "53e4fd2fc8d995be2e5d66546bdc34005ba064f6",
+  "prompts": {},
+  "sessions": {
+    "s_26876fbaea0033": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06495-d8e8-73f3-86aa-f62e0ce5ef32",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_6ec2baf296ab2e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a066f1-bd4c-7f12-b529-e015daf9d336",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_7ad81678f8e7c6": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0621a-b592-7902-bd35-250fa0391b67",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_7f8a5af7a419ac": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a066ab-f168-7730-913c-0c609110550d",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_93e5092a3f827f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06260-d131-7991-8310-b5c2b0e9d57b",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_a6abcdae67a723": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0622a-2e82-7c43-96f6-39f11e54357a",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_ae1c95b9ccbab7": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a066ea-6cea-74f3-b249-c1c5de08583e",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_b391f493c82c45": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06228-f10f-7b82-8fa3-ac5249345c67",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_d2ddd46392f869": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a064f6-deb8-7481-97e9-16a5f46958b9",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_faba9ad8310d46": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0628f-ad5d-70d2-9992-bc7ee65f3108",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_ff2b2d7ac93b28": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a066c2-13c8-7031-9522-1b95914c6543",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
