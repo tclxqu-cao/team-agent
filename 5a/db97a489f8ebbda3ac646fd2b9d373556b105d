@@ -1,0 +1,19 @@
+docs/superpowers/specs/2026-09-03-agent-runtime-version-upgrade-design.md
+  s_d2ddd46392f869::t_05d9395a0b890a 1-32
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "5adb97a489f8ebbda3ac646fd2b9d373556b105d",
+  "prompts": {},
+  "sessions": {
+    "s_d2ddd46392f869": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a064f6-deb8-7481-97e9-16a5f46958b9",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
