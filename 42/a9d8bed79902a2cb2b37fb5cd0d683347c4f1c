@@ -1,0 +1,137 @@
+packages/tui-win32-x64/README.md
+  s_7ad81678f8e7c6::t_02227db198e796 1-3
+packages/cli/src/runtime-manager.ts
+  s_cc09057576e79e::t_cae61597e46b57 11-15,33,41,52,58-63,131-148
+  s_cc09057576e79e::t_3c9ad7fda5aeff 149-152
+packages/cli/src/service/macos-launch-agent.ts
+  s_bf3f720bfb0f08::t_06d97e2f334a96 17-19,21-24,26-27,40,61,89-107,122,154
+  s_bf3f720bfb0f08::t_5bc3a55c3ac5c3 20
+packages/cli/RELEASE.md
+  s_7ad81678f8e7c6::t_4e6a4269cd03ab 51
+  s_7f8a5af7a419ac::t_277d699fc17a2a 1,15
+  s_b95fa2e9b9b282::t_b69078c63e2e25 72-75,77-83
+  s_7ad81678f8e7c6::t_94af8f76ceea08 3-5,7,10,13,16-17,19-22,34-36,39-40,43-50,52-56,59-71,86-87
+  s_bf3f720bfb0f08::t_a7ed177d5827ec 23-33,57-58
+packages/cli/src/power/sleep-inhibitor.test.ts
+  s_bf3f720bfb0f08::t_5bc3a55c3ac5c3 7-12,26,49-50,73-74,98
+  s_bf3f720bfb0f08::t_7aa4bb2d33e26c 1-6,13-25,27-48,51-72,75-97,99-122
+packages/cli/src/args.ts
+  s_bf3f720bfb0f08::t_06d97e2f334a96 6,29-30
+packages/cli/README.md
+  s_bf3f720bfb0f08::t_a7ed177d5827ec 56,58-63,65-67,71-72,81-88
+  s_7f8a5af7a419ac::t_277d699fc17a2a 23-26,33-36
+  s_7f8a5af7a419ac::t_db0e9beac9c1ab 57,64,68-70,73-80
+  s_7ad81678f8e7c6::t_3c64dc6839da32 8,10-12,30-32,104,120-122,125-127
+  s_bf3f720bfb0f08::t_1db69d1300e0d7 89
+  s_bf3f720bfb0f08::t_8644a04ab91aa8 27-29
+scripts/audit-cli-tarball.mjs
+  s_bf3f720bfb0f08::t_a7ed177d5827ec 57,62,65-66
+packages/cli/src/service/windows-service-host.ts
+  s_bf3f720bfb0f08::t_49fc48b1b25d7d 1-62
+packages/cli/install/install-agentroam.ps1
+  s_bf3f720bfb0f08::t_99f3d3c2eb3c84 19-26,168-173,175
+packages/cli/src/opencode-runtime-manager.ts
+  s_cc09057576e79e::t_cae61597e46b57 1-260
+scripts/audit-runtime-tarball.mjs
+  s_b95fa2e9b9b282::t_7958b9a5fd08a7 36
+packages/cli/src/runtime-manager.test.ts
+  s_cc09057576e79e::t_ed6413358e3cc8 2,38-63
+  s_cc09057576e79e::t_a625a2e8d7c4b4 64
+packages/cli/src/args.test.ts
+  s_bf3f720bfb0f08::t_8dad73831f7088 35,58-59
+packages/cli/install/install-agentroam.sh
+  s_bf3f720bfb0f08::t_99f3d3c2eb3c84 19-25,49-55,190-194
+scripts/stage-cli-runtime.mjs
+  s_b95fa2e9b9b282::t_7958b9a5fd08a7 67-68
+packages/cli/src/service/macos-launch-agent.test.ts
+  s_bf3f720bfb0f08::t_8dad73831f7088 89-141
+packages/cli/src/service/windows-task-service.ts
+  s_bf3f720bfb0f08::t_49fc48b1b25d7d 1-312
+packages/cli/src/service/windows-service-host.test.ts
+  s_bf3f720bfb0f08::t_8dad73831f7088 1-37,45-55
+  s_bf3f720bfb0f08::t_5bc3a55c3ac5c3 38-44
+packages/runtime-win32-x64/README.md
+  s_7ad81678f8e7c6::t_02227db198e796 1-3
+packages/cli/src/power/sleep-inhibitor.ts
+  s_bf3f720bfb0f08::t_7aa4bb2d33e26c 1-167
+packages/cli/src/cli.ts
+  s_bf3f720bfb0f08::t_7aa4bb2d33e26c 11,43,112-119,125
+packages/cli/src/service/windows-task-service.test.ts
+  s_bf3f720bfb0f08::t_8dad73831f7088 1-106
+scripts/verify-cli-install.mjs
+  s_bf3f720bfb0f08::t_2b882da271b057 4,129
+  s_bf3f720bfb0f08::t_99f3d3c2eb3c84 139-140
+packages/cloudflared-win32-x64/README.md
+  s_7ad81678f8e7c6::t_02227db198e796 1-3
+packages/cli/src/install-script-contract.test.ts
+  s_bf3f720bfb0f08::t_99f3d3c2eb3c84 21-24,38-41
+packages/cli/src/service/service-controller.ts
+  s_bf3f720bfb0f08::t_06d97e2f334a96 1-71
+packages/cli/src/opencode-runtime-manager.test.ts
+  s_cc09057576e79e::t_ed6413358e3cc8 2-60,78-92
+  s_cc09057576e79e::t_6d308c236e825b 1,61-77
+packages/runtime-darwin-arm64/README.md
+  s_7ad81678f8e7c6::t_02227db198e796 1-3
+packages/cli/src/service/service-command.test.ts
+  s_bf3f720bfb0f08::t_8dad73831f7088 4,12,24,45,50-55,60-84,89-100
+  s_bf3f720bfb0f08::t_5bc3a55c3ac5c3 88
+  s_bf3f720bfb0f08::t_61235b9cbab8c4 101
+packages/cli/src/service/service-files.ts
+  s_bf3f720bfb0f08::t_06d97e2f334a96 8
+packages/cli/src/service/service-command.ts
+  s_bf3f720bfb0f08::t_8a102e934dc36e 4-5,16,21,23,44-45,50-59,61,77,80,88,94,104-107
+  s_bf3f720bfb0f08::t_c4ac901cb85cdc 108-109
+packages/cli/install/README.md
+  s_bf3f720bfb0f08::t_99f3d3c2eb3c84 3,21-37
+  s_bf3f720bfb0f08::t_d2b5480871bd78 38
+bun.lock
+  s_cc09057576e79e::t_d9622989bf983a 62,102,349-350
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "42a9d8bed79902a2cb2b37fb5cd0d683347c4f1c",
+  "prompts": {},
+  "sessions": {
+    "s_7ad81678f8e7c6": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0621a-b592-7902-bd35-250fa0391b67",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_7f8a5af7a419ac": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a066ab-f168-7730-913c-0c609110550d",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_b95fa2e9b9b282": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06a27-5c57-7232-9522-e70895aadb95",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_bf3f720bfb0f08": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a067a3-c8a7-7de2-8176-3707ef48a42a",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_cc09057576e79e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a069a1-3af4-7f40-90db-37ad10a4b5fd",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
