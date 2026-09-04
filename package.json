@@ -48,7 +48,8 @@
     "verify:cli": "node scripts/verify-cli-install.mjs",
     "verify:cli:tunnel": "node scripts/verify-cli-tunnel.mjs --provider auto",
     "check:agent-runtime-versions": "node scripts/agent-runtime-upgrade.mjs check",
-    "test:agent-runtime-upgrade": "node --test scripts/agent-runtime-upgrade.test.mjs scripts/check-agent-runtime-diff.test.mjs scripts/publish-agentroam-release.test.mjs scripts/agent-runtime-workflow-contract.test.mjs && bunx vitest run scripts/agent-runtime-live-smoke.test.ts",
+    "configure:agent-runtime-github": "node scripts/configure-agent-runtime-github.mjs",
+    "test:agent-runtime-upgrade": "node --test scripts/agent-runtime-upgrade.test.mjs scripts/check-agent-runtime-diff.test.mjs scripts/publish-agentroam-release.test.mjs scripts/agent-runtime-workflow-contract.test.mjs scripts/agent-runtime-github-setup.test.mjs && bunx vitest run scripts/agent-runtime-live-smoke.test.ts",
     "test": "bunx vitest run",
     "test:watch": "bunx vitest",
     "lint": "bunx tsc --noEmit"

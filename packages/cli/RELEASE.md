@@ -94,6 +94,11 @@ Claude Agent SDK 和 OpenCode 的稳定版；预发布、降级以及 OpenCode C
 - `agent-runtime-publish-npm`：`NPM_TOKEN`
 - `agent-runtime-publish-gitee`：`GITEE_TOKEN`
 
+GitHub mirror 创建后，运行
+`npm run configure:agent-runtime-github -- apply --repo caoqu/team-agent` 可幂等配置
+非秘密控制面；随后使用同命令的 `audit` 子命令核对分支保护、Actions 权限、
+Environment、标签、变量和 secret 名称。配置器不会读取或写入 secret 值。
+
 在跟踪 issue 上添加 `promotion-hold` 可暂停提升；手动触发
 `agent-runtime-soak` 可立即补跑一次双平台检查；手动触发
 `agent-runtime-publish` 并指定 `preview` 或 `latest` 及已发布目标版本，可执行

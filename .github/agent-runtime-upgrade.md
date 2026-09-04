@@ -8,6 +8,16 @@ changes, and opens a same-repository candidate PR plus a tracking issue.
 
 ## Required Repository Configuration
 
+After the GitHub mirror exists, apply and audit the non-secret control plane:
+
+```bash
+npm run configure:agent-runtime-github -- apply --repo caoqu/team-agent
+npm run configure:agent-runtime-github -- audit --repo caoqu/team-agent
+```
+
+`apply` is idempotent and never writes secrets. `audit` fails closed until every
+Environment contains the required secret names below.
+
 Create these GitHub Environments. Do not reuse credentials between them:
 
 | Environment | Secrets |
