@@ -80,7 +80,9 @@ Claude Agent SDK 和 OpenCode 的稳定版；预发布、降级以及 OpenCode C
 两次受限 Codex 自动修复；其他失败保留候选并转人工处理。验证通过后，CI 从
 合并提交重新构建七个包，以 `preview` 发布并同步 Gitee。若 Gitee 同步失败，
 健康的 npm `preview` 保持不变，自动化每小时从原始审计产物重试同步，并在两端
-一致前阻止 `latest` 提升。macOS 和 Windows 在
+一致前阻止 `latest` 提升。Gitee 同步先将精确 GitHub merge commit 无强推地
+推进 `master`，再创建 tag 和 Release；非快进分叉必须失败并停留在待同步状态。
+macOS 和 Windows 在
 24 小时内每小时从空 npm 缓存安装该精确版本并执行 smoke；每个六小时窗口
 至少成功一次且最后一次成功不超过两小时，才将同一批不可变产物提升为
 `latest`。失败只恢复 dist-tag，不执行 `npm unpublish`。

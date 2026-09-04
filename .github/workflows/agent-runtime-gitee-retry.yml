@@ -132,6 +132,7 @@ jobs:
           node "$RUNNER_TEMP/toolkit/scripts/publish-agentroam-release.mjs" sync-gitee \
             --manifest "$GITHUB_WORKSPACE/release/release-manifest.json" \
             --commit "$MERGE_SHA" \
+            --branch master \
             --owner "$GITEE_OWNER" \
             --repo "$GITEE_REPOSITORY" \
             --remote gitee

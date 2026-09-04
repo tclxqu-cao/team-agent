@@ -50,13 +50,15 @@ export async function main(args = process.argv.slice(2), dependencies = {}) {
   }
   if (command === "sync-gitee") {
     const sourceCommit = required(args, "--commit");
-    if (args.includes("--dry-run")) return print({ dryRun: true, command, sourceCommit, version: releaseSet.version });
+    const sourceBranch = optional(args, "--branch") ?? "master";
+    if (args.includes("--dry-run")) return print({ dryRun: true, command, sourceCommit, sourceBranch, version: releaseSet.version });
     const owner = required(args, "--owner");
     const repo = required(args, "--repo");
     const token = process.env.GITEE_TOKEN;
     if (!token) throw new Error("GITEE_TOKEN is required");
     return print(await syncGiteeRelease(releaseSet, {
       sourceCommit,
+      sourceBranch,
       remote: optional(args, "--remote") ?? "gitee",
       gitClient: dependencies.gitClient ?? createGitClient(),
       giteeClient: dependencies.giteeClient ?? createGiteeClient({ owner, repo, token }),

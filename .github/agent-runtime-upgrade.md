@@ -51,7 +51,9 @@ the required check `agent-runtime-candidate-check`. Create these labels:
 
 The Gitee repository must be configured as the `gitee` Git remote in publish
 jobs. Authentication belongs in runner credential configuration, never in the
-remote URL. Gitee Releases are the canonical installer download location.
+remote URL. Synchronization fast-forwards the exact GitHub merge commit to
+Gitee `master` without force, then pushes the immutable version tag and Release.
+Gitee Releases are the canonical installer download location.
 
 ## Release Controls
 

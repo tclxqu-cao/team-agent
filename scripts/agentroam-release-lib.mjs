@@ -294,9 +294,11 @@ async function restoreTags(releaseSet, npmClient, tag, previous) {
 
 export async function syncGiteeRelease(releaseSet, options) {
   const tag = `v${releaseSet.version}`;
+  const branch = options.sourceBranch ?? "master";
   const git = options.gitClient;
   const api = options.giteeClient;
   if (!/^[0-9a-f]{40}$/i.test(options.sourceCommit)) throw new Error("sourceCommit must be a full 40-character SHA");
+  await git.pushBranch(options.remote ?? "gitee", options.sourceCommit, branch);
   await git.pushTag(options.remote ?? "gitee", options.sourceCommit, tag);
 
   let release = await api.getReleaseByTag(tag);
@@ -333,7 +335,7 @@ export async function syncGiteeRelease(releaseSet, options) {
     await api.uploadAsset(release.id, item.path, item.fileName);
     uploaded.push(item.fileName);
   }
-  return { tag, releaseId: release.id, uploaded };
+  return { branch, tag, releaseId: release.id, uploaded };
 }
 
 export function createNpmClient(options = {}) {
@@ -386,12 +388,29 @@ export function createNpmClient(options = {}) {
 export function createGitClient(options = {}) {
   const run = options.run ?? runCommand;
   return {
+    async pushBranch(remote, sourceCommit, branch) {
+      validateGitRemote(remote);
+      if (!isSafeBranch(branch)) throw new Error("invalid git branch name");
+      await run("git", ["push", remote, `${sourceCommit}:refs/heads/${branch}`], {});
+    },
     async pushTag(remote, sourceCommit, tag) {
-      if (!/^[A-Za-z0-9._-]+$/.test(remote)) throw new Error("invalid git remote name");
+      validateGitRemote(remote);
       if (!/^v\d+\.\d+\.\d+-preview\.\d+$/.test(tag)) throw new Error("invalid release tag");
       await run("git", ["push", remote, `${sourceCommit}:refs/tags/${tag}`], {});
     },
   };
+}
+
+function validateGitRemote(remote) {
+  if (!/^[A-Za-z0-9._-]+$/.test(remote)) throw new Error("invalid git remote name");
+}
+
+function isSafeBranch(branch) {
+  return typeof branch === "string"
+    && /^[A-Za-z0-9][A-Za-z0-9._/-]*$/.test(branch)
+    && !branch.includes("..")
+    && !branch.includes("//")
+    && !branch.endsWith("/");
 }
 
 export function createGiteeClient(options) {

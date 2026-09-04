@@ -35,6 +35,7 @@ test("Gitee retry reuses audited artifacts and starts soak only after recovery",
   assert.match(source, /run-id: \$\{\{ needs\.metadata\.outputs\.publish_run \}\}/);
   assert.match(source, /verify-preview --manifest/);
   assert.match(source, /sync-gitee[\s\S]*--commit "\$MERGE_SHA"/);
+  assert.match(source, /--branch master/);
   assert.match(source, /state: "soaking"/);
   assert.match(source, /The full 24-hour soak starts now/);
   assert.match(source, /healthy npm preview remains unchanged and latest promotion stays blocked/);

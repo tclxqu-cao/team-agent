@@ -7,6 +7,7 @@ import assert from "node:assert/strict";
 import {
   RELEASE_PACKAGE_DIRECTORIES,
   compareAgentRoamVersions,
+  createGitClient,
   inspectPublication,
   loadReleaseManifest,
   loadReleaseSet,
@@ -125,7 +126,11 @@ test("treats a null Gitee release as absent and uploads missing assets", async (
   const calls = [];
   const result = await syncGiteeRelease(releaseSet, {
     sourceCommit: "a".repeat(40),
-    gitClient: { pushTag: async (...args) => calls.push(["push", ...args]) },
+    sourceBranch: "master",
+    gitClient: {
+      pushBranch: async (...args) => calls.push(["branch", ...args]),
+      pushTag: async (...args) => calls.push(["tag", ...args]),
+    },
     giteeClient: {
       getReleaseByTag: async () => null,
       createRelease: async () => ({ id: 42 }),
@@ -136,8 +141,21 @@ test("treats a null Gitee release as absent and uploads missing assets", async (
     },
   });
   assert.equal(result.releaseId, 42);
+  assert.equal(result.branch, "master");
   assert.deepEqual(result.uploaded, ["install-agentroam.sh", "install-agentroam.ps1", "SHA256SUMS"]);
-  assert.equal(calls[0][0], "push");
+  assert.deepEqual(calls.slice(0, 2), [
+    ["branch", "gitee", "a".repeat(40), "master"],
+    ["tag", "gitee", "a".repeat(40), "v0.2.0-preview.11"],
+  ]);
+});
+
+test("pushes the exact source commit to a safe Gitee branch without force", async () => {
+  const calls = [];
+  const client = createGitClient({ run: async (...args) => calls.push(args) });
+  await client.pushBranch("gitee", "c".repeat(40), "master");
+  assert.deepEqual(calls, [["git", ["push", "gitee", `${"c".repeat(40)}:refs/heads/master`], {}]]);
+  await assert.rejects(client.pushBranch("gitee", "c".repeat(40), "../main"), /invalid git branch/);
+  await assert.rejects(client.pushBranch("gitee", "c".repeat(40), "release//next"), /invalid git branch/);
 });
 
 test("preserves retryable synchronization failures and redacts secrets", async () => {
@@ -146,7 +164,7 @@ test("preserves retryable synchronization failures and redacts secrets", async (
   failure.retryable = true;
   await assert.rejects(syncGiteeRelease(releaseSet, {
     sourceCommit: "b".repeat(40),
-    gitClient: { pushTag: async () => undefined },
+    gitClient: { pushBranch: async () => undefined, pushTag: async () => undefined },
     giteeClient: { getReleaseByTag: async () => { throw failure; } },
   }), (error) => {
     assert.equal(error.retryable, true);
