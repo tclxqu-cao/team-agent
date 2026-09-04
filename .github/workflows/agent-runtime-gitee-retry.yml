@@ -1,0 +1,197 @@
+name: agent-runtime-gitee-retry
+
+on:
+  schedule:
+    - cron: "7 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: agent-runtime-upgrade
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  issues: write
+  actions: read
+
+jobs:
+  metadata:
+    runs-on: ubuntu-24.04
+    outputs:
+      pending: ${{ steps.state.outputs.pending }}
+      issue: ${{ steps.state.outputs.issue }}
+      agent: ${{ steps.state.outputs.agent }}
+      runtime_version: ${{ steps.state.outputs.runtime_version }}
+      version: ${{ steps.state.outputs.version }}
+      base_sha: ${{ steps.state.outputs.base_sha }}
+      merge_sha: ${{ steps.state.outputs.merge_sha }}
+      publish_run: ${{ steps.state.outputs.publish_run }}
+      previous_preview: ${{ steps.state.outputs.previous_preview }}
+      previous_latest: ${{ steps.state.outputs.previous_latest }}
+    steps:
+      - name: Locate the only pending Gitee synchronization
+        id: state
+        uses: actions/github-script@v7
+        with:
+          script: |
+            core.setOutput("pending", "false");
+            const issues = (await github.paginate(github.rest.issues.listForRepo, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: "open",
+              labels: "agent-runtime-upgrade,agent-runtime-active,agent-runtime-gitee-pending",
+              per_page: 100,
+            })).filter((item) => !item.pull_request);
+            if (issues.length === 0) return core.notice("No Gitee synchronization is pending");
+            if (issues.length !== 1) throw new Error(`Expected one pending Gitee synchronization, found ${issues.length}`);
+            const issue = issues[0];
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issue.number,
+              per_page: 100,
+            });
+            const states = comments.flatMap((comment) => {
+              const match = comment.body?.match(/<!-- agent-runtime-state (\{.*\}) -->/);
+              if (!match) return [];
+              try { return [JSON.parse(match[1])]; } catch { return []; }
+            });
+            const state = states.at(-1);
+            if (!state || state.schemaVersion !== 1 || state.state !== "gitee-sync-pending") throw new Error("Pending issue has no valid Gitee state");
+            if (!["codex", "claude", "opencode"].includes(state.agent)) throw new Error("Pending state has an invalid Agent");
+            if (!/^\d+\.\d+\.\d+$/.test(state.runtimeVersion)) throw new Error("Pending state has an invalid runtime version");
+            if (!/^\d+\.\d+\.\d+-preview\.\d+$/.test(state.version)) throw new Error("Pending state has an invalid AgentRoam version");
+            if (!/^[0-9a-f]{40}$/i.test(state.baseSha) || !/^[0-9a-f]{40}$/i.test(state.mergeSha)) throw new Error("Pending state has an invalid source SHA");
+            if (!Number.isSafeInteger(state.publishRun) || state.publishRun <= 0) throw new Error("Pending state has an invalid publish run");
+            core.setOutput("pending", "true");
+            core.setOutput("issue", String(issue.number));
+            core.setOutput("agent", state.agent);
+            core.setOutput("runtime_version", state.runtimeVersion);
+            core.setOutput("version", state.version);
+            core.setOutput("base_sha", state.baseSha);
+            core.setOutput("merge_sha", state.mergeSha);
+            core.setOutput("publish_run", String(state.publishRun));
+            core.setOutput("previous_preview", state.previousPreview ?? "");
+            core.setOutput("previous_latest", state.previousLatest ?? "");
+
+  sync:
+    needs: metadata
+    if: needs.metadata.outputs.pending == 'true'
+    runs-on: ubuntu-24.04
+    environment: agent-runtime-publish-gitee
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.metadata.outputs.base_sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Stage trusted publisher toolkit
+        run: |
+          mkdir -p "$RUNNER_TEMP/toolkit/scripts"
+          cp scripts/agentroam-release-lib.mjs "$RUNNER_TEMP/toolkit/scripts/"
+          cp scripts/publish-agentroam-release.mjs "$RUNNER_TEMP/toolkit/scripts/"
+      - uses: actions/download-artifact@v4
+        with:
+          name: agent-runtime-release-${{ needs.metadata.outputs.merge_sha }}
+          path: release
+          run-id: ${{ needs.metadata.outputs.publish_run }}
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+      - name: Verify the immutable npm preview before synchronization
+        env:
+          VERSION: ${{ needs.metadata.outputs.version }}
+        run: |
+          test "$(node -p "require('./release/release-manifest.json').version")" = "$VERSION"
+          node "$RUNNER_TEMP/toolkit/scripts/publish-agentroam-release.mjs" verify-preview --manifest "$GITHUB_WORKSPACE/release/release-manifest.json"
+      - name: Configure artifact-only source repository
+        env:
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+          GITEE_OWNER: ${{ vars.GITEE_OWNER }}
+          GITEE_REPOSITORY: ${{ vars.GITEE_REPOSITORY }}
+          GITEE_USERNAME: ${{ vars.GITEE_USERNAME }}
+        run: |
+          test -n "$GITEE_TOKEN"
+          GITEE_OWNER=${GITEE_OWNER:-caoqu}
+          GITEE_REPOSITORY=${GITEE_REPOSITORY:-team-agent}
+          GITEE_USERNAME=${GITEE_USERNAME:-oauth2}
+          git clone --bare release/agentroam-source.bundle "$RUNNER_TEMP/source.git"
+          git -C "$RUNNER_TEMP/source.git" remote add gitee "https://gitee.com/$GITEE_OWNER/$GITEE_REPOSITORY.git"
+          git config --global credential.helper "store --file=$RUNNER_TEMP/git-credentials"
+          printf 'protocol=https\nhost=gitee.com\nusername=%s\npassword=%s\n\n' "$GITEE_USERNAME" "$GITEE_TOKEN" | git credential approve
+          echo "GITEE_OWNER=$GITEE_OWNER" >> "$GITHUB_ENV"
+          echo "GITEE_REPOSITORY=$GITEE_REPOSITORY" >> "$GITHUB_ENV"
+      - name: Retry exact Gitee source and Release synchronization
+        working-directory: ${{ runner.temp }}/source.git
+        env:
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+          MERGE_SHA: ${{ needs.metadata.outputs.merge_sha }}
+        run: |
+          node "$RUNNER_TEMP/toolkit/scripts/publish-agentroam-release.mjs" sync-gitee \
+            --manifest "$GITHUB_WORKSPACE/release/release-manifest.json" \
+            --commit "$MERGE_SHA" \
+            --owner "$GITEE_OWNER" \
+            --repo "$GITEE_REPOSITORY" \
+            --remote gitee
+      - name: Start the full soak after both release surfaces agree
+        uses: actions/github-script@v7
+        env:
+          ISSUE_NUMBER: ${{ needs.metadata.outputs.issue }}
+          AGENT: ${{ needs.metadata.outputs.agent }}
+          RUNTIME_VERSION: ${{ needs.metadata.outputs.runtime_version }}
+          VERSION: ${{ needs.metadata.outputs.version }}
+          BASE_SHA: ${{ needs.metadata.outputs.base_sha }}
+          MERGE_SHA: ${{ needs.metadata.outputs.merge_sha }}
+          PUBLISH_RUN: ${{ needs.metadata.outputs.publish_run }}
+          PREVIOUS_PREVIEW: ${{ needs.metadata.outputs.previous_preview }}
+          PREVIOUS_LATEST: ${{ needs.metadata.outputs.previous_latest }}
+        with:
+          script: |
+            const fs = require("fs");
+            const issue = Number(process.env.ISSUE_NUMBER);
+            const manifest = JSON.parse(fs.readFileSync("release/release-manifest.json", "utf8"));
+            const artifacts = [
+              ...manifest.packages.map(({ fileName, sha256 }) => ({ fileName, sha256 })),
+              ...manifest.installers.map(({ fileName, sha256 }) => ({ fileName, sha256 })),
+            ];
+            const state = {
+              schemaVersion: 1,
+              state: "soaking",
+              agent: process.env.AGENT,
+              runtimeVersion: process.env.RUNTIME_VERSION,
+              version: process.env.VERSION,
+              baseSha: process.env.BASE_SHA,
+              mergeSha: process.env.MERGE_SHA,
+              previewStartedAt: new Date().toISOString(),
+              previousPreview: process.env.PREVIOUS_PREVIEW || null,
+              previousLatest: process.env.PREVIOUS_LATEST || null,
+              publishRun: Number(process.env.PUBLISH_RUN),
+              artifacts,
+            };
+            await github.rest.issues.addLabels({ owner: context.repo.owner, repo: context.repo.repo, issue_number: issue, labels: ["agent-runtime-soak"] });
+            await github.rest.issues.removeLabel({ owner: context.repo.owner, repo: context.repo.repo, issue_number: issue, name: "agent-runtime-gitee-pending" }).catch(() => undefined);
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issue,
+              body: `<!-- agent-runtime-state ${JSON.stringify(state)} -->\nGitee synchronization recovered. The full 24-hour soak starts now.`,
+            });
+
+  record-failure:
+    needs: [metadata, sync]
+    if: always() && needs.metadata.outputs.pending == 'true' && needs.sync.result == 'failure'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/github-script@v7
+        env:
+          ISSUE_NUMBER: ${{ needs.metadata.outputs.issue }}
+        with:
+          script: |
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: Number(process.env.ISSUE_NUMBER),
+              body: `Gitee synchronization retry ${context.runId} failed. The healthy npm preview remains unchanged and latest promotion stays blocked.`,
+            });

@@ -200,7 +200,7 @@ jobs:
           name: agent-runtime-release-${{ needs.authorize.outputs.merge_sha }}
           path: dist/cli-release/
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 30
 
   npm-publish:
     needs: [authorize, rebuild]
@@ -297,6 +297,10 @@ jobs:
     needs: [authorize, npm-publish, gitee-sync]
     runs-on: ubuntu-24.04
     steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: agent-runtime-release-${{ needs.authorize.outputs.merge_sha }}
+          path: release
       - name: Record immutable preview state
         uses: actions/github-script@v7
         env:
@@ -310,7 +314,13 @@ jobs:
           PREVIOUS_LATEST: ${{ needs.npm-publish.outputs.previous_latest }}
         with:
           script: |
+            const fs = require("fs");
             const issue = Number(process.env.ISSUE_NUMBER);
+            const manifest = JSON.parse(fs.readFileSync("release/release-manifest.json", "utf8"));
+            const artifacts = [
+              ...manifest.packages.map(({ fileName, sha256 }) => ({ fileName, sha256 })),
+              ...manifest.installers.map(({ fileName, sha256 }) => ({ fileName, sha256 })),
+            ];
             const state = {
               schemaVersion: 1,
               state: "soaking",
@@ -323,6 +333,7 @@ jobs:
               previousPreview: process.env.PREVIOUS_PREVIEW || null,
               previousLatest: process.env.PREVIOUS_LATEST || null,
               publishRun: context.runId,
+              artifacts,
             };
             await github.rest.issues.addLabels({ owner: context.repo.owner, repo: context.repo.repo, issue_number: issue, labels: ["agent-runtime-soak"] });
             await github.rest.issues.createComment({
@@ -332,29 +343,55 @@ jobs:
               body: `<!-- agent-runtime-state ${JSON.stringify(state)} -->\nPreview published and 24-hour soak started.`,
             });
 
-  rollback-failed-preview:
+  mark-gitee-pending:
     if: always() && needs.npm-publish.result == 'success' && needs.gitee-sync.result == 'failure'
     needs: [authorize, rebuild, npm-publish, gitee-sync]
     runs-on: ubuntu-24.04
-    environment: agent-runtime-publish-npm
     steps:
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
       - uses: actions/download-artifact@v4
         with:
-          name: agent-runtime-publisher-toolkit-${{ github.run_id }}
-          path: toolkit
-      - name: Restore preview after downstream publication failure
+          name: agent-runtime-release-${{ needs.authorize.outputs.merge_sha }}
+          path: release
+      - name: Keep the healthy npm preview and queue Gitee retry
+        uses: actions/github-script@v7
         env:
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          ISSUE_NUMBER: ${{ needs.authorize.outputs.issue }}
+          AGENT: ${{ needs.authorize.outputs.agent }}
+          RUNTIME_VERSION: ${{ needs.authorize.outputs.runtime_version }}
+          VERSION: ${{ needs.authorize.outputs.agentroam_version }}
+          BASE_SHA: ${{ needs.authorize.outputs.base_sha }}
+          MERGE_SHA: ${{ needs.authorize.outputs.merge_sha }}
           PREVIOUS_PREVIEW: ${{ needs.npm-publish.outputs.previous_preview }}
-        run: |
-          test -n "$NPM_TOKEN"
-          test -n "$PREVIOUS_PREVIEW"
-          printf '//registry.npmjs.org/:_authToken=%s\n' "$NPM_TOKEN" > "$RUNNER_TEMP/npmrc"
-          export NPM_CONFIG_USERCONFIG="$RUNNER_TEMP/npmrc"
-          node toolkit/scripts/publish-agentroam-release.mjs rollback-preview --to "$PREVIOUS_PREVIEW"
+          PREVIOUS_LATEST: ${{ needs.npm-publish.outputs.previous_latest }}
+        with:
+          script: |
+            const fs = require("fs");
+            const issue = Number(process.env.ISSUE_NUMBER);
+            const manifest = JSON.parse(fs.readFileSync("release/release-manifest.json", "utf8"));
+            const artifacts = [
+              ...manifest.packages.map(({ fileName, sha256 }) => ({ fileName, sha256 })),
+              ...manifest.installers.map(({ fileName, sha256 }) => ({ fileName, sha256 })),
+            ];
+            const state = {
+              schemaVersion: 1,
+              state: "gitee-sync-pending",
+              agent: process.env.AGENT,
+              runtimeVersion: process.env.RUNTIME_VERSION,
+              version: process.env.VERSION,
+              baseSha: process.env.BASE_SHA,
+              mergeSha: process.env.MERGE_SHA,
+              previousPreview: process.env.PREVIOUS_PREVIEW || null,
+              previousLatest: process.env.PREVIOUS_LATEST || null,
+              publishRun: context.runId,
+              artifacts,
+            };
+            await github.rest.issues.addLabels({ owner: context.repo.owner, repo: context.repo.repo, issue_number: issue, labels: ["agent-runtime-gitee-pending"] });
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issue,
+              body: `<!-- agent-runtime-state ${JSON.stringify(state)} -->\nnpm preview is healthy. Gitee synchronization will retry automatically; latest promotion remains blocked.`,
+            });
 
   rollback-toolkit:
     if: github.event_name == 'workflow_dispatch' && inputs.rollback_tag != 'none'
@@ -404,8 +441,8 @@ jobs:
     if: >-
       always() && github.event_name == 'workflow_run' &&
       needs.authorize.outputs.eligible == 'true' &&
-      (needs.rebuild.result == 'failure' || needs.npm-publish.result == 'failure' || needs.gitee-sync.result == 'failure')
-    needs: [authorize, rebuild, npm-publish, gitee-sync, rollback-failed-preview]
+      (needs.rebuild.result == 'failure' || needs.npm-publish.result == 'failure')
+    needs: [authorize, rebuild, npm-publish, gitee-sync, mark-gitee-pending]
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/github-script@v7

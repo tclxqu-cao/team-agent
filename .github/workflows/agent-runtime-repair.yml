@@ -110,7 +110,7 @@ jobs:
         run: |
           mkdir -p "$RUNNER_TEMP/failures"
           gh run download "$RUN_ID" --pattern "candidate-failure-summary-$HEAD_SHA" --dir "$RUNNER_TEMP/failures" || true
-          gh run download "$RUN_ID" --pattern "*-smoke-$HEAD_SHA" --dir "$RUNNER_TEMP/failures" || true
+          gh run download "$RUN_ID" --pattern "agent-runtime-candidate-smoke-*-$HEAD_SHA" --dir "$RUNNER_TEMP/failures" || true
 
       - name: Normalize repair eligibility
         if: steps.metadata.outputs.eligible == 'true'
@@ -322,7 +322,7 @@ jobs:
           node "$RUNNER_TEMP/trusted/scripts/check-agent-runtime-diff.mjs" \
             --root "$GITHUB_WORKSPACE" --agent "$AGENT" --base "$BASE_SHA" --head HEAD
           node scripts/agent-runtime-upgrade.mjs check
-          node --test scripts/agent-runtime-upgrade.test.mjs scripts/check-agent-runtime-diff.test.mjs scripts/publish-agentroam-release.test.mjs
+          node --test scripts/agent-runtime-upgrade.test.mjs scripts/check-agent-runtime-diff.test.mjs scripts/publish-agentroam-release.test.mjs scripts/agent-runtime-workflow-contract.test.mjs
           bunx vitest run scripts/agent-runtime-live-smoke.test.ts
           case "$AGENT" in
             codex) bunx vitest run packages/cli/src/codex-runtime-manager.test.ts packages/desktop/main/agent-runtime/codex-runtime-adapter.test.ts ;;

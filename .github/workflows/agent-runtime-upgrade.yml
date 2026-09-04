@@ -95,7 +95,7 @@ jobs:
           git config user.name "agent-runtime-upgrade[bot]"
           git config user.email "agent-runtime-upgrade[bot]@users.noreply.github.com"
           node scripts/agent-runtime-upgrade.mjs check
-          node --test scripts/agent-runtime-upgrade.test.mjs scripts/check-agent-runtime-diff.test.mjs scripts/publish-agentroam-release.test.mjs
+          node --test scripts/agent-runtime-upgrade.test.mjs scripts/check-agent-runtime-diff.test.mjs scripts/publish-agentroam-release.test.mjs scripts/agent-runtime-workflow-contract.test.mjs
           bunx vitest run scripts/agent-runtime-live-smoke.test.ts
           BRANCH="chore/upgrade-$AGENT-$VERSION"
           git switch -c "$BRANCH"

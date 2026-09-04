@@ -76,9 +76,11 @@ Claude Agent SDK 和 OpenCode 的稳定版；预发布、降级以及 OpenCode C
 版本不一致都会被拒绝。三个 Agent 独立升级，同一时间只保留一个活动候选。
 
 候选会经过限定路径和依赖变更检查、单元测试、类型检查、生产构建、macOS
-打包、Windows 安装验证以及对应供应商账号的认证 smoke。兼容性失败最多允许
+打包、Windows 安装验证以及 macOS/Windows 对应供应商账号的认证 smoke。兼容性失败最多允许
 两次受限 Codex 自动修复；其他失败保留候选并转人工处理。验证通过后，CI 从
-合并提交重新构建七个包，以 `preview` 发布并同步 Gitee。macOS 和 Windows 在
+合并提交重新构建七个包，以 `preview` 发布并同步 Gitee。若 Gitee 同步失败，
+健康的 npm `preview` 保持不变，自动化每小时从原始审计产物重试同步，并在两端
+一致前阻止 `latest` 提升。macOS 和 Windows 在
 24 小时内每小时从空 npm 缓存安装该精确版本并执行 smoke；每个六小时窗口
 至少成功一次且最后一次成功不超过两小时，才将同一批不可变产物提升为
 `latest`。失败只恢复 dist-tag，不执行 `npm unpublish`。

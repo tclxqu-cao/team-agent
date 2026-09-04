@@ -30,6 +30,7 @@ the required check `agent-runtime-candidate-check`. Create these labels:
 - `agent-runtime-upgrade`
 - `agent-runtime-active`
 - `agent-runtime-candidate`
+- `agent-runtime-gitee-pending`
 - `agent-runtime-soak`
 - `agent-runtime-codex`
 - `agent-runtime-claude`
@@ -47,10 +48,14 @@ remote URL. Gitee Releases are the canonical installer download location.
 Candidate artifacts are published under npm `preview`. A candidate remains the
 only active upgrade during its 24-hour macOS and Windows soak. Promotion moves
 the same seven immutable package versions to `latest`; it never republishes.
+If npm publication succeeds but Gitee synchronization fails, the npm preview
+remains in place and `agent-runtime-gitee-retry` retries hourly from the original
+audited artifact set. The 24-hour soak starts only after both surfaces agree.
 
 - Run `agent-runtime-upgrade` manually to trigger discovery.
 - Add `promotion-hold` to the tracking issue to block promotion.
 - Dispatch `agent-runtime-soak` to run an immediate qualifying check.
+- Dispatch `agent-runtime-gitee-retry` to retry a pending mirror immediately.
 - Dispatch the publish workflow's rollback mode to restore `preview` or
   `latest` to an explicit prior version.
 

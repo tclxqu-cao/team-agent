@@ -69,7 +69,7 @@ jobs:
         run: |
           node scripts/agent-runtime-upgrade.mjs check
           node scripts/check-agent-runtime-diff.mjs --agent "$AGENT" --base "$BASE_SHA" --head "$HEAD_SHA"
-          node --test scripts/agent-runtime-upgrade.test.mjs scripts/check-agent-runtime-diff.test.mjs scripts/publish-agentroam-release.test.mjs
+          node --test scripts/agent-runtime-upgrade.test.mjs scripts/check-agent-runtime-diff.test.mjs scripts/publish-agentroam-release.test.mjs scripts/agent-runtime-workflow-contract.test.mjs
           bunx vitest run scripts/agent-runtime-live-smoke.test.ts
           bunx tsc -p scripts/tsconfig.agent-runtime.json
       - name: Focused runtime contracts
@@ -172,12 +172,15 @@ jobs:
       - run: node scripts/publish-agentroam-release.mjs preflight
       - run: node scripts/verify-cli-install.mjs --artifacts dist/cli-release --bootstrap-script
 
-  codex-smoke:
-    if: needs.metadata.outputs.agent == 'codex'
+  authenticated-smoke:
     needs: [metadata, static-checks]
-    runs-on: ubuntu-24.04
-    environment: agent-runtime-smoke-codex
-    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-14, windows-2022]
+    runs-on: ${{ matrix.os }}
+    environment: agent-runtime-smoke-${{ needs.metadata.outputs.agent }}
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
         with:
@@ -190,99 +193,68 @@ jobs:
         with:
           bun-version: "1.3.10"
       - run: bun install --frozen-lockfile
-      - run: npm install --prefix "$RUNNER_TEMP/codex" --ignore-scripts --no-audit --no-fund "@openai/codex@${{ needs.metadata.outputs.version }}"
-      - name: Authenticated Codex smoke
-        env:
-          OPENAI_API_KEY: ${{ secrets.PROVIDER_API_KEY }}
-        run: |
-          test -n "$OPENAI_API_KEY"
-          bun scripts/agent-runtime-live-smoke.ts --agent codex --workspace "$RUNNER_TEMP/workspace" --runtime-home "$RUNNER_TEMP/runtime-home" --expected-version "${{ needs.metadata.outputs.version }}" --executable "$RUNNER_TEMP/codex/node_modules/.bin/codex" > "$RUNNER_TEMP/codex-smoke.json" 2>&1
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: codex-smoke-${{ github.event.pull_request.head.sha }}
-          path: ${{ runner.temp }}/codex-smoke.json
-          if-no-files-found: error
-          retention-days: 7
-
-  claude-smoke:
-    if: needs.metadata.outputs.agent == 'claude'
-    needs: [metadata, static-checks]
-    runs-on: ubuntu-24.04
-    environment: agent-runtime-smoke-claude
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.head.sha }}
-          persist-credentials: false
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: "1.3.10"
-      - run: bun install --frozen-lockfile
-      - name: Expose bundled Claude executable
+      - name: Resolve exact native runtime
         shell: bash
-        run: |
-          CLAUDE_BIN=$(find node_modules/.bun -path "*claude-agent-sdk-linux-x64@${{ needs.metadata.outputs.version }}*/node_modules/@anthropic-ai/claude-agent-sdk-linux-x64/claude" -type f -print -quit)
-          test -n "$CLAUDE_BIN"
-          chmod +x "$CLAUDE_BIN"
-          echo "$(dirname "$CLAUDE_BIN")" >> "$GITHUB_PATH"
-      - name: Authenticated Claude smoke
         env:
-          ANTHROPIC_API_KEY: ${{ secrets.PROVIDER_API_KEY }}
+          AGENT: ${{ needs.metadata.outputs.agent }}
+          VERSION: ${{ needs.metadata.outputs.version }}
         run: |
-          test -n "$ANTHROPIC_API_KEY"
-          bun scripts/agent-runtime-live-smoke.ts --agent claude --workspace "$RUNNER_TEMP/workspace" --runtime-home "$RUNNER_TEMP/runtime-home" > "$RUNNER_TEMP/claude-smoke.json" 2>&1
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: claude-smoke-${{ github.event.pull_request.head.sha }}
-          path: ${{ runner.temp }}/claude-smoke.json
-          if-no-files-found: error
-          retention-days: 7
-
-  opencode-smoke:
-    if: needs.metadata.outputs.agent == 'opencode'
-    needs: [metadata, static-checks]
-    runs-on: ubuntu-24.04
-    environment: agent-runtime-smoke-opencode
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.head.sha }}
-          persist-credentials: false
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: "1.3.10"
-      - run: bun install --frozen-lockfile
-      - run: npm install --prefix "$RUNNER_TEMP/opencode" --ignore-scripts --no-audit --no-fund "opencode-ai@${{ needs.metadata.outputs.version }}"
-      - name: Authenticated OpenCode smoke
+          TARGET=darwin-arm64
+          if [ "$RUNNER_OS" = "Windows" ]; then TARGET=windows-amd64; fi
+          case "$AGENT" in
+            codex)
+              TARGET="$TARGET" DATA_DIR="$RUNNER_TEMP/managed" bun --eval 'import { resolveCodexRuntime } from "./packages/cli/src/codex-runtime-manager.ts"; const r = await resolveCodexRuntime({ dataDir: process.env.DATA_DIR, target: process.env.TARGET }); console.log(r.executable)' > "$RUNNER_TEMP/executable.txt"
+              ;;
+            opencode)
+              TARGET="$TARGET" DATA_DIR="$RUNNER_TEMP/managed" bun --eval 'import { resolveOpenCodeRuntime } from "./packages/cli/src/opencode-runtime-manager.ts"; const r = await resolveOpenCodeRuntime({ dataDir: process.env.DATA_DIR, target: process.env.TARGET }); console.log(r.executable)' > "$RUNNER_TEMP/executable.txt"
+              ;;
+            claude)
+              PLATFORM=darwin-arm64
+              FILE=claude
+              if [ "$RUNNER_OS" = "Windows" ]; then PLATFORM=win32-x64; FILE=claude.exe; fi
+              CLAUDE_BIN=$(find node_modules/.bun -path "*claude-agent-sdk-$PLATFORM@$VERSION*/node_modules/@anthropic-ai/claude-agent-sdk-$PLATFORM/$FILE" -type f -print -quit)
+              test -n "$CLAUDE_BIN"
+              chmod +x "$CLAUDE_BIN" || true
+              echo "$(dirname "$CLAUDE_BIN")" >> "$GITHUB_PATH"
+              ;;
+          esac
+      - name: Run authenticated exact-version smoke
+        shell: bash
         env:
-          OPENCODE_API_KEY: ${{ secrets.PROVIDER_API_KEY }}
+          AGENT: ${{ needs.metadata.outputs.agent }}
+          VERSION: ${{ needs.metadata.outputs.version }}
+          PROVIDER_API_KEY: ${{ secrets.PROVIDER_API_KEY }}
           AGENTROAM_OPENCODE_CONFIG_JSON: ${{ secrets.OPENCODE_CONFIG_JSON }}
         run: |
-          test -n "$OPENCODE_API_KEY"
-          test -n "$AGENTROAM_OPENCODE_CONFIG_JSON"
-          bun scripts/agent-runtime-live-smoke.ts --agent opencode --workspace "$RUNNER_TEMP/workspace" --runtime-home "$RUNNER_TEMP/runtime-home" --expected-version "${{ needs.metadata.outputs.version }}" --executable "$RUNNER_TEMP/opencode/node_modules/.bin/opencode" > "$RUNNER_TEMP/opencode-smoke.json" 2>&1
+          test -n "$PROVIDER_API_KEY"
+          EXTRA_ARGS=()
+          case "$AGENT" in
+            codex)
+              export OPENAI_API_KEY="$PROVIDER_API_KEY"
+              EXTRA_ARGS=(--expected-version "$VERSION" --executable "$(cat "$RUNNER_TEMP/executable.txt")")
+              ;;
+            claude)
+              export ANTHROPIC_API_KEY="$PROVIDER_API_KEY"
+              ;;
+            opencode)
+              export OPENCODE_API_KEY="$PROVIDER_API_KEY"
+              test -n "$AGENTROAM_OPENCODE_CONFIG_JSON"
+              EXTRA_ARGS=(--expected-version "$VERSION" --executable "$(cat "$RUNNER_TEMP/executable.txt")")
+              ;;
+          esac
+          bun scripts/agent-runtime-live-smoke.ts --agent "$AGENT" --workspace "$RUNNER_TEMP/workspace" --runtime-home "$RUNNER_TEMP/runtime-home" "${EXTRA_ARGS[@]}" > "$RUNNER_TEMP/smoke-$RUNNER_OS.json" 2>&1
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: opencode-smoke-${{ github.event.pull_request.head.sha }}
-          path: ${{ runner.temp }}/opencode-smoke.json
+          name: agent-runtime-candidate-smoke-${{ runner.os }}-${{ github.event.pull_request.head.sha }}
+          path: ${{ runner.temp }}/smoke-${{ runner.os }}.json
           if-no-files-found: error
           retention-days: 7
 
   candidate-check:
     name: agent-runtime-candidate-check
     if: always() && needs.metadata.result != 'skipped'
-    needs: [metadata, static-checks, macos-package, windows-install, codex-smoke, claude-smoke, opencode-smoke]
+    needs: [metadata, static-checks, macos-package, windows-install, authenticated-smoke]
     runs-on: ubuntu-24.04
     steps:
       - name: Require every applicable check
