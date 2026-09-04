@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "codex": { "package": "@openai/codex", "version": "0.153.0" },
+  "claude": { "package": "@anthropic-ai/claude-agent-sdk", "version": "0.3.259" },
+  "opencode": {
+    "cliPackage": "opencode-ai",
+    "cliVersion": "1.18.27",
+    "sdkPackage": "@opencode-ai/sdk",
+    "sdkVersion": "1.18.27"
+  }
+}
