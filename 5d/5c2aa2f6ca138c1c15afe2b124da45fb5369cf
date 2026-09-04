@@ -1,0 +1,20 @@
+docs/superpowers/specs/2026-09-04-codex-complete-session-pagination-design.md
+  s_43f20775d8fba6::t_ff4176cf5aab9a 1-27,29-53
+  s_43f20775d8fba6::t_4868ff8f2cf515 28
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "5d5c2aa2f6ca138c1c15afe2b124da45fb5369cf",
+  "prompts": {},
+  "sessions": {
+    "s_43f20775d8fba6": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06be7-83e3-7063-940d-e307a96cf58f",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
