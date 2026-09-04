@@ -1679,11 +1679,15 @@ export class NativeRuntimeBrokerHost {
     const seen = new Set(discovered.map((session) => session.id));
     const reconciled = discovered.map((session) => {
       const pending = this.pendingCreations.get(session.id);
-      if (pending && isMaterializedPendingSession(session)) {
+      const materialized = pending && isMaterializedPendingSession(session);
+      if (materialized) {
         this.pendingCreations.delete(session.id);
         this.state.deletePendingSession(session.id);
       }
-      return pending ? mergePendingSessionContext(session, pending) : session;
+      if (!pending) return session;
+      return materialized
+        ? mergePendingSessionContext(session, pending)
+        : mergePendingSessionContext(pending, session);
     });
     const merged = [
       ...reconciled,
@@ -2621,6 +2625,7 @@ function mergePendingSessionContext(
 }
 
 function isMaterializedPendingSession(session: UnifiedSessionSummary): boolean {
+  if (session.compatibility !== undefined) return false;
   return session.agentType !== "claude-code" || session.sourceLabel !== "Claude Code SDK";
 }
 

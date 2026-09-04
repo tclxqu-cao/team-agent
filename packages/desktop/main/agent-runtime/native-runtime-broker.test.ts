@@ -515,6 +515,38 @@ describe("NativeRuntimeBrokerHost", () => {
     }
   });
 
+  it("keeps a new Codex session writable while the disk catalog reports it as checking", async () => {
+    const created = { ...summary(), projectId: "workspace", title: "新会话" };
+    const supplemental = {
+      ...created,
+      compatibility: { status: "checking" as const, readerVersion: "0.153.0" },
+      canResume: false,
+    };
+    const runtime = new FakeNativeRuntime();
+    runtime.createResult = created;
+    runtime.workspaceSessions = [supplemental];
+    const host = new NativeRuntimeBrokerHost(await directory(), runtime as unknown as UnifiedSessionService);
+    try {
+      await host.create({ agentType: "codex", title: created.title, cwd: created.cwd, projectId: "workspace" });
+
+      const pendingPage = await host.listWorkspaceSessions("codex", "workspace");
+      expect(pendingPage).toMatchObject({
+        data: [{ id: created.id, canResume: true }],
+      });
+      expect(pendingPage.data[0]).not.toHaveProperty("compatibility");
+
+      runtime.workspaceSessions = [created];
+      await host.listWorkspaceSessions("codex", "workspace");
+      runtime.workspaceSessions = [supplemental];
+
+      await expect(host.listWorkspaceSessions("codex", "workspace")).resolves.toMatchObject({
+        data: [{ id: created.id, compatibility: supplemental.compatibility, canResume: false }],
+      });
+    } finally {
+      await host.stop();
+    }
+  });
+
   it.each([
     ["codex", "thread-title"],
     ["claude-code", "123e4567-e89b-42d3-a456-426614174099"],
