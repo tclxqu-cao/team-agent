@@ -1,0 +1,22 @@
+vitest.config.ts
+  s_c2f221873f144e::t_36aef1616c89cc 7
+scripts/agent-runtime-live-smoke.test.ts
+  s_c2f221873f144e::t_1aa3611c66ba73 72
+  s_c2f221873f144e::t_8cc818af839055 1-71,73-228
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "446c4d834e181e35abcb19fff1f91dc2fbbb8ca2",
+  "prompts": {},
+  "sessions": {
+    "s_c2f221873f144e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06d49-5ce1-7c11-8feb-44d455eb6627",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
