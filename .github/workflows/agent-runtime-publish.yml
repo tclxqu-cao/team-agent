@@ -1,0 +1,420 @@
+name: agent-runtime-publish
+
+on:
+  workflow_run:
+    workflows: [agent-runtime-candidate-check]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      rollback_tag:
+        description: Dist-tag to roll back
+        type: choice
+        required: false
+        options: [none, preview, latest]
+        default: none
+      rollback_to:
+        description: Exact previously published AgentRoam version
+        type: string
+        required: false
+
+concurrency:
+  group: agent-runtime-upgrade
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  actions: read
+
+jobs:
+  authorize:
+    if: github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-24.04
+    outputs:
+      eligible: ${{ steps.metadata.outputs.eligible }}
+      pr: ${{ steps.metadata.outputs.pr }}
+      issue: ${{ steps.metadata.outputs.issue }}
+      agent: ${{ steps.metadata.outputs.agent }}
+      runtime_version: ${{ steps.metadata.outputs.runtime_version }}
+      agentroam_version: ${{ steps.metadata.outputs.agentroam_version }}
+      head_sha: ${{ steps.metadata.outputs.head_sha }}
+      base_sha: ${{ steps.metadata.outputs.base_sha }}
+      merge_sha: ${{ steps.merge.outputs.merge_sha }}
+    steps:
+      - name: Revalidate candidate and current base
+        id: metadata
+        uses: actions/github-script@v7
+        with:
+          script: |
+            core.setOutput("eligible", "false");
+            const run = context.payload.workflow_run;
+            let refs = run.pull_requests ?? [];
+            if (refs.length === 0) {
+              refs = await github.paginate(github.rest.repos.listPullRequestsAssociatedWithCommit, {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                commit_sha: run.head_sha,
+                per_page: 100,
+              });
+            }
+            if (refs.length !== 1) return core.notice(`Expected one PR, found ${refs.length}`);
+            const number = refs[0].number;
+            const { data: pull } = await github.rest.pulls.get({ owner: context.repo.owner, repo: context.repo.repo, pull_number: number });
+            const labels = pull.labels.map((label) => label.name);
+            const agentLabels = ["codex", "claude", "opencode"].filter((value) => labels.includes(`agent-runtime-${value}`));
+            const agent = agentLabels[0];
+            const currentBase = await github.rest.repos.getBranch({ owner: context.repo.owner, repo: context.repo.repo, branch: pull.base.ref });
+            const repository = await github.rest.repos.get({ owner: context.repo.owner, repo: context.repo.repo });
+            const issueMatch = pull.body?.match(/\/issues\/(\d+)/);
+            const issue = issueMatch ? Number(issueMatch[1]) : 0;
+            const issueData = issue ? (await github.rest.issues.get({ owner: context.repo.owner, repo: context.repo.repo, issue_number: issue })).data : null;
+            const issueLabels = issueData?.labels.map((label) => typeof label === "string" ? label : label.name) ?? [];
+            const versionMatch = pull.body?.match(/AgentRoam candidate:\s*(\d+\.\d+\.\d+-preview\.\d+)/);
+            const runtimeMatch = agent ? pull.head.ref.match(new RegExp(`^chore/upgrade-${agent}-(\\d+\\.\\d+\\.\\d+)$`)) : null;
+            const activeIssues = (await github.paginate(github.rest.issues.listForRepo, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: "open",
+              labels: "agent-runtime-upgrade,agent-runtime-active",
+              per_page: 100,
+            })).filter((item) => !item.pull_request);
+            const valid = pull.state === "open"
+              && pull.head.repo?.full_name === `${context.repo.owner}/${context.repo.repo}`
+              && pull.head.sha === run.head_sha
+              && pull.base.sha === currentBase.data.commit.sha
+              && pull.base.ref === repository.data.default_branch
+              && labels.includes("automation")
+              && labels.includes("agent-runtime-candidate")
+              && agentLabels.length === 1
+              && !labels.includes("needs-human")
+              && !labels.includes("promotion-hold")
+              && Boolean(agent && issue && versionMatch && runtimeMatch)
+              && issueLabels.includes("agent-runtime-active")
+              && activeIssues.length === 1
+              && activeIssues[0].number === issue
+              && !issueLabels.includes("promotion-hold")
+              && run.name === "agent-runtime-candidate-check";
+            if (!valid) return core.notice("Candidate failed trusted merge metadata validation");
+            core.setOutput("eligible", "true");
+            core.setOutput("pr", String(number));
+            core.setOutput("issue", String(issue));
+            core.setOutput("agent", agent);
+            core.setOutput("runtime_version", runtimeMatch[1]);
+            core.setOutput("agentroam_version", versionMatch[1]);
+            core.setOutput("head_sha", pull.head.sha);
+            core.setOutput("base_sha", pull.base.sha);
+
+      - uses: actions/checkout@v4
+        if: steps.metadata.outputs.eligible == 'true'
+        with:
+          ref: ${{ steps.metadata.outputs.head_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        if: steps.metadata.outputs.eligible == 'true'
+        with:
+          node-version: "22"
+
+      - name: Run fresh gate from trusted base
+        if: steps.metadata.outputs.eligible == 'true'
+        shell: bash
+        env:
+          AGENT: ${{ steps.metadata.outputs.agent }}
+          BASE_SHA: ${{ steps.metadata.outputs.base_sha }}
+          HEAD_SHA: ${{ steps.metadata.outputs.head_sha }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/toolkit/scripts"
+          for file in \
+            scripts/agent-runtime-upgrade-lib.mjs \
+            scripts/agent-runtime-diff-policy.mjs \
+            scripts/check-agent-runtime-diff.mjs \
+            scripts/agentroam-release-lib.mjs \
+            scripts/publish-agentroam-release.mjs; do
+            git show "$BASE_SHA:$file" > "$RUNNER_TEMP/toolkit/$file"
+          done
+          node "$RUNNER_TEMP/toolkit/scripts/check-agent-runtime-diff.mjs" --root "$GITHUB_WORKSPACE" --agent "$AGENT" --base "$BASE_SHA" --head "$HEAD_SHA"
+          TRUSTED_LIB="$RUNNER_TEMP/toolkit/scripts/agent-runtime-upgrade-lib.mjs" node --input-type=module <<'NODE'
+          import { pathToFileURL } from "node:url";
+          const { checkRuntimeVersionDrift } = await import(pathToFileURL(process.env.TRUSTED_LIB));
+          await checkRuntimeVersionDrift(process.env.GITHUB_WORKSPACE);
+          NODE
+
+      - uses: actions/upload-artifact@v4
+        if: steps.metadata.outputs.eligible == 'true'
+        with:
+          name: agent-runtime-publisher-toolkit-${{ github.run_id }}
+          path: ${{ runner.temp }}/toolkit/
+          if-no-files-found: error
+          retention-days: 3
+
+      - name: Merge unchanged candidate
+        id: merge
+        if: steps.metadata.outputs.eligible == 'true'
+        uses: actions/github-script@v7
+        env:
+          PR_NUMBER: ${{ steps.metadata.outputs.pr }}
+          EXPECTED_HEAD: ${{ steps.metadata.outputs.head_sha }}
+        with:
+          script: |
+            const result = await github.rest.pulls.merge({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: Number(process.env.PR_NUMBER),
+              sha: process.env.EXPECTED_HEAD,
+              merge_method: "squash",
+              commit_title: `chore: promote validated Agent runtime candidate (#${process.env.PR_NUMBER})`,
+            });
+            if (!result.data.merged || !result.data.sha) throw new Error(result.data.message || "Candidate merge failed");
+            core.setOutput("merge_sha", result.data.sha);
+
+  rebuild:
+    needs: authorize
+    if: needs.authorize.outputs.eligible == 'true'
+    runs-on: macos-14
+    timeout-minutes: 70
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.authorize.outputs.merge_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.10"
+      - run: bun install --frozen-lockfile
+      - run: npm run pack:cli:all
+      - name: Audit release and source bundle
+        env:
+          MERGE_SHA: ${{ needs.authorize.outputs.merge_sha }}
+        run: |
+          node scripts/publish-agentroam-release.mjs preflight --write-manifest dist/cli-release/release-manifest.json
+          git branch release-source "$MERGE_SHA"
+          git bundle create dist/cli-release/agentroam-source.bundle refs/heads/release-source
+      - uses: actions/upload-artifact@v4
+        with:
+          name: agent-runtime-release-${{ needs.authorize.outputs.merge_sha }}
+          path: dist/cli-release/
+          if-no-files-found: error
+          retention-days: 7
+
+  npm-publish:
+    needs: [authorize, rebuild]
+    runs-on: ubuntu-24.04
+    environment: agent-runtime-publish-npm
+    timeout-minutes: 30
+    outputs:
+      previous_preview: ${{ steps.publish.outputs.previous_preview }}
+      previous_latest: ${{ steps.publish.outputs.previous_latest }}
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: actions/download-artifact@v4
+        with:
+          name: agent-runtime-publisher-toolkit-${{ github.run_id }}
+          path: toolkit
+      - uses: actions/download-artifact@v4
+        with:
+          name: agent-runtime-release-${{ needs.authorize.outputs.merge_sha }}
+          path: release
+      - name: Publish and verify immutable preview artifacts
+        id: publish
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          test -n "$NPM_TOKEN"
+          printf '//registry.npmjs.org/:_authToken=%s\n' "$NPM_TOKEN" > "$RUNNER_TEMP/npmrc"
+          export NPM_CONFIG_USERCONFIG="$RUNNER_TEMP/npmrc"
+          node toolkit/scripts/publish-agentroam-release.mjs publish-preview --manifest "$GITHUB_WORKSPACE/release/release-manifest.json" > "$RUNNER_TEMP/publish-result.json"
+          node toolkit/scripts/publish-agentroam-release.mjs verify-preview --manifest "$GITHUB_WORKSPACE/release/release-manifest.json"
+          PUBLISH_RESULT="$RUNNER_TEMP/publish-result.json" MANIFEST="$GITHUB_WORKSPACE/release/release-manifest.json" TOOLKIT="$GITHUB_WORKSPACE/toolkit/scripts/agentroam-release-lib.mjs" node --input-type=module <<'NODE'
+          import { readFileSync, appendFileSync } from "node:fs";
+          import { pathToFileURL } from "node:url";
+          const result = JSON.parse(readFileSync(process.env.PUBLISH_RESULT, "utf8"));
+          const priorPreview = [...new Set(Object.values(result.previous).filter((value) => value && value !== result.version))];
+          if (priorPreview.length > 1) throw new Error("Previous preview tags were not aligned");
+          const lib = await import(pathToFileURL(process.env.TOOLKIT));
+          const release = await lib.loadReleaseManifest(process.env.MANIFEST);
+          const client = lib.createNpmClient();
+          const priorLatest = [...new Set(await Promise.all(release.packages.map((item) => client.getTag(item.name, "latest"))))].filter(Boolean);
+          if (priorLatest.length > 1) throw new Error("Current latest tags are not aligned");
+          appendFileSync(process.env.GITHUB_OUTPUT, `previous_preview=${priorPreview[0] ?? priorLatest[0] ?? ""}\nprevious_latest=${priorLatest[0] ?? ""}\n`);
+          NODE
+
+  gitee-sync:
+    needs: [authorize, rebuild, npm-publish]
+    runs-on: ubuntu-24.04
+    environment: agent-runtime-publish-gitee
+    timeout-minutes: 20
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: actions/download-artifact@v4
+        with:
+          name: agent-runtime-publisher-toolkit-${{ github.run_id }}
+          path: toolkit
+      - uses: actions/download-artifact@v4
+        with:
+          name: agent-runtime-release-${{ needs.authorize.outputs.merge_sha }}
+          path: release
+      - name: Configure artifact-only source repository
+        env:
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+          GITEE_OWNER: ${{ vars.GITEE_OWNER }}
+          GITEE_REPOSITORY: ${{ vars.GITEE_REPOSITORY }}
+          GITEE_USERNAME: ${{ vars.GITEE_USERNAME }}
+        run: |
+          test -n "$GITEE_TOKEN"
+          GITEE_OWNER=${GITEE_OWNER:-caoqu}
+          GITEE_REPOSITORY=${GITEE_REPOSITORY:-team-agent}
+          GITEE_USERNAME=${GITEE_USERNAME:-oauth2}
+          git clone --bare release/agentroam-source.bundle "$RUNNER_TEMP/source.git"
+          git -C "$RUNNER_TEMP/source.git" remote add gitee "https://gitee.com/$GITEE_OWNER/$GITEE_REPOSITORY.git"
+          git config --global credential.helper "store --file=$RUNNER_TEMP/git-credentials"
+          printf 'protocol=https\nhost=gitee.com\nusername=%s\npassword=%s\n\n' "$GITEE_USERNAME" "$GITEE_TOKEN" | git credential approve
+          echo "GITEE_OWNER=$GITEE_OWNER" >> "$GITHUB_ENV"
+          echo "GITEE_REPOSITORY=$GITEE_REPOSITORY" >> "$GITHUB_ENV"
+      - name: Sync exact commit and audited release assets
+        working-directory: ${{ runner.temp }}/source.git
+        env:
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+          MERGE_SHA: ${{ needs.authorize.outputs.merge_sha }}
+        run: |
+          node "$GITHUB_WORKSPACE/toolkit/scripts/publish-agentroam-release.mjs" sync-gitee \
+            --manifest "$GITHUB_WORKSPACE/release/release-manifest.json" \
+            --commit "$MERGE_SHA" \
+            --owner "$GITEE_OWNER" \
+            --repo "$GITEE_REPOSITORY" \
+            --remote gitee
+
+  begin-soak:
+    needs: [authorize, npm-publish, gitee-sync]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Record immutable preview state
+        uses: actions/github-script@v7
+        env:
+          ISSUE_NUMBER: ${{ needs.authorize.outputs.issue }}
+          AGENT: ${{ needs.authorize.outputs.agent }}
+          RUNTIME_VERSION: ${{ needs.authorize.outputs.runtime_version }}
+          VERSION: ${{ needs.authorize.outputs.agentroam_version }}
+          BASE_SHA: ${{ needs.authorize.outputs.base_sha }}
+          MERGE_SHA: ${{ needs.authorize.outputs.merge_sha }}
+          PREVIOUS_PREVIEW: ${{ needs.npm-publish.outputs.previous_preview }}
+          PREVIOUS_LATEST: ${{ needs.npm-publish.outputs.previous_latest }}
+        with:
+          script: |
+            const issue = Number(process.env.ISSUE_NUMBER);
+            const state = {
+              schemaVersion: 1,
+              state: "soaking",
+              agent: process.env.AGENT,
+              runtimeVersion: process.env.RUNTIME_VERSION,
+              version: process.env.VERSION,
+              baseSha: process.env.BASE_SHA,
+              mergeSha: process.env.MERGE_SHA,
+              previewStartedAt: new Date().toISOString(),
+              previousPreview: process.env.PREVIOUS_PREVIEW || null,
+              previousLatest: process.env.PREVIOUS_LATEST || null,
+              publishRun: context.runId,
+            };
+            await github.rest.issues.addLabels({ owner: context.repo.owner, repo: context.repo.repo, issue_number: issue, labels: ["agent-runtime-soak"] });
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issue,
+              body: `<!-- agent-runtime-state ${JSON.stringify(state)} -->\nPreview published and 24-hour soak started.`,
+            });
+
+  rollback-failed-preview:
+    if: always() && needs.npm-publish.result == 'success' && needs.gitee-sync.result == 'failure'
+    needs: [authorize, rebuild, npm-publish, gitee-sync]
+    runs-on: ubuntu-24.04
+    environment: agent-runtime-publish-npm
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: actions/download-artifact@v4
+        with:
+          name: agent-runtime-publisher-toolkit-${{ github.run_id }}
+          path: toolkit
+      - name: Restore preview after downstream publication failure
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          PREVIOUS_PREVIEW: ${{ needs.npm-publish.outputs.previous_preview }}
+        run: |
+          test -n "$NPM_TOKEN"
+          test -n "$PREVIOUS_PREVIEW"
+          printf '//registry.npmjs.org/:_authToken=%s\n' "$NPM_TOKEN" > "$RUNNER_TEMP/npmrc"
+          export NPM_CONFIG_USERCONFIG="$RUNNER_TEMP/npmrc"
+          node toolkit/scripts/publish-agentroam-release.mjs rollback-preview --to "$PREVIOUS_PREVIEW"
+
+  rollback-toolkit:
+    if: github.event_name == 'workflow_dispatch' && inputs.rollback_tag != 'none'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Stage trusted dist-tag toolkit
+        run: |
+          mkdir -p "$RUNNER_TEMP/toolkit/scripts"
+          cp scripts/agentroam-release-lib.mjs "$RUNNER_TEMP/toolkit/scripts/"
+          cp scripts/publish-agentroam-release.mjs "$RUNNER_TEMP/toolkit/scripts/"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: agent-runtime-rollback-toolkit-${{ github.run_id }}
+          path: ${{ runner.temp }}/toolkit/
+          if-no-files-found: error
+          retention-days: 1
+
+  rollback:
+    if: github.event_name == 'workflow_dispatch' && inputs.rollback_tag != 'none'
+    needs: rollback-toolkit
+    runs-on: ubuntu-24.04
+    environment: agent-runtime-publish-npm
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: actions/download-artifact@v4
+        with:
+          name: agent-runtime-rollback-toolkit-${{ github.run_id }}
+          path: toolkit
+      - name: Move requested dist-tag to prior version
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          TAG: ${{ inputs.rollback_tag }}
+          TARGET: ${{ inputs.rollback_to }}
+        run: |
+          test -n "$NPM_TOKEN"
+          test -n "$TARGET"
+          printf '//registry.npmjs.org/:_authToken=%s\n' "$NPM_TOKEN" > "$RUNNER_TEMP/npmrc"
+          export NPM_CONFIG_USERCONFIG="$RUNNER_TEMP/npmrc"
+          node toolkit/scripts/publish-agentroam-release.mjs "rollback-$TAG" --to "$TARGET"
+
+  fail-candidate:
+    if: >-
+      always() && github.event_name == 'workflow_run' &&
+      needs.authorize.outputs.eligible == 'true' &&
+      (needs.rebuild.result == 'failure' || needs.npm-publish.result == 'failure' || needs.gitee-sync.result == 'failure')
+    needs: [authorize, rebuild, npm-publish, gitee-sync, rollback-failed-preview]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/github-script@v7
+        env:
+          ISSUE_NUMBER: ${{ needs.authorize.outputs.issue }}
+          PR_NUMBER: ${{ needs.authorize.outputs.pr }}
+        with:
+          script: |
+            const issue = Number(process.env.ISSUE_NUMBER);
+            await github.rest.issues.addLabels({ owner: context.repo.owner, repo: context.repo.repo, issue_number: issue, labels: ["needs-human"] });
+            await github.rest.issues.removeLabel({ owner: context.repo.owner, repo: context.repo.repo, issue_number: issue, name: "agent-runtime-active" }).catch(() => undefined);
+            await github.rest.issues.createComment({ owner: context.repo.owner, repo: context.repo.repo, issue_number: issue, body: "Trusted merge/publish pipeline failed. Candidate is terminal and requires human review; immutable packages, if any, were retained." });
