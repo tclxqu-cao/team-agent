@@ -1,0 +1,20 @@
+docs/superpowers/specs/2026-09-04-session-deletion-visibility-design.md
+  s_41b84bd2588fcb::t_229e6675bccd32 5,9,11,36
+  s_41b84bd2588fcb::t_2b49d8b9135a15 1-4,6-8,10,12-35,37-59
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "6d9eceb4e7dd88c4e80a6a5829169bd61b296579",
+  "prompts": {},
+  "sessions": {
+    "s_41b84bd2588fcb": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06a1a-6b44-7ad2-80ec-bd5bbb1ab941",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
