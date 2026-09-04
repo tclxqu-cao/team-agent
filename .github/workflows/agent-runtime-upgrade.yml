@@ -1,0 +1,140 @@
+name: agent-runtime-upgrade
+
+on:
+  schedule:
+    - cron: "17 2 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: agent-runtime-upgrade
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  discover:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check active candidate
+        id: active
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issues = await github.paginate(github.rest.issues.listForRepo, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: "open",
+              labels: "agent-runtime-upgrade,agent-runtime-active",
+              per_page: 100,
+            });
+            core.setOutput("exists", issues.length > 0 ? "true" : "false");
+            if (issues.length > 0) core.notice(`Active candidate issue: ${issues[0].html_url}`);
+
+      - uses: actions/checkout@v4
+        if: steps.active.outputs.exists != 'true'
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        if: steps.active.outputs.exists != 'true'
+        with:
+          node-version: "22"
+          registry-url: "https://registry.npmjs.org"
+
+      - uses: oven-sh/setup-bun@v2
+        if: steps.active.outputs.exists != 'true'
+        with:
+          bun-version: "1.3.10"
+
+      - name: Detect first stable upgrade
+        if: steps.active.outputs.exists != 'true'
+        id: candidate
+        shell: bash
+        run: |
+          node scripts/agent-runtime-upgrade.mjs detect-all > "$RUNNER_TEMP/candidates.json"
+          node --input-type=module <<'NODE'
+          import { appendFileSync, readFileSync } from "node:fs";
+          const candidates = JSON.parse(readFileSync(process.env.RUNNER_TEMP + "/candidates.json", "utf8"));
+          const candidate = candidates.find((value) => value.changed);
+          appendFileSync(process.env.GITHUB_OUTPUT, `changed=${candidate ? "true" : "false"}\n`);
+          if (!candidate) process.exit(0);
+          const version = candidate.target.cli ?? candidate.target.sdk;
+          appendFileSync(process.env.GITHUB_OUTPUT, `agent=${candidate.agent}\nversion=${version}\n`);
+          NODE
+
+      - name: Install locked dependencies
+        if: steps.active.outputs.exists != 'true' && steps.candidate.outputs.changed == 'true'
+        run: bun install --frozen-lockfile
+
+      - name: Reserve release and apply candidate
+        if: steps.active.outputs.exists != 'true' && steps.candidate.outputs.changed == 'true'
+        id: release
+        shell: bash
+        env:
+          AGENT: ${{ steps.candidate.outputs.agent }}
+          VERSION: ${{ steps.candidate.outputs.version }}
+        run: |
+          node scripts/agent-runtime-upgrade.mjs next-release > "$RUNNER_TEMP/release.json"
+          RELEASE_VERSION=$(node -p "JSON.parse(require('fs').readFileSync(process.env.RUNNER_TEMP + '/release.json')).next")
+          node scripts/agent-runtime-upgrade.mjs apply "$AGENT" "$VERSION" --agentroam-version "$RELEASE_VERSION"
+          echo "version=$RELEASE_VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Validate generated candidate
+        if: steps.active.outputs.exists != 'true' && steps.candidate.outputs.changed == 'true'
+        shell: bash
+        env:
+          AGENT: ${{ steps.candidate.outputs.agent }}
+          VERSION: ${{ steps.candidate.outputs.version }}
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          git config user.name "agent-runtime-upgrade[bot]"
+          git config user.email "agent-runtime-upgrade[bot]@users.noreply.github.com"
+          node scripts/agent-runtime-upgrade.mjs check
+          node --test scripts/agent-runtime-upgrade.test.mjs scripts/check-agent-runtime-diff.test.mjs scripts/publish-agentroam-release.test.mjs
+          bunx vitest run scripts/agent-runtime-live-smoke.test.ts
+          BRANCH="chore/upgrade-$AGENT-$VERSION"
+          git switch -c "$BRANCH"
+          git add .github/agent-runtime-versions.json bun.lock packages scripts
+          git commit -m "chore: upgrade $AGENT runtime to $VERSION"
+          node scripts/check-agent-runtime-diff.mjs --agent "$AGENT" --base "$GITHUB_SHA" --head HEAD
+          echo "BRANCH=$BRANCH" >> "$GITHUB_ENV"
+
+      - name: Push candidate and create tracking records
+        if: steps.active.outputs.exists != 'true' && steps.candidate.outputs.changed == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          AGENT: ${{ steps.candidate.outputs.agent }}
+          VERSION: ${{ steps.candidate.outputs.version }}
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          gh auth setup-git
+          git push --set-upstream origin "$BRANCH"
+          ISSUE_URL=$(gh issue create \
+            --title "Agent runtime candidate: $AGENT $VERSION" \
+            --label "agent-runtime-upgrade,agent-runtime-active" \
+            --body "agent: $AGENT
+          runtime_version: $VERSION
+          agentroam_version: $RELEASE_VERSION
+          head_sha: $(git rev-parse HEAD)
+          state: candidate")
+          PR_URL=$(gh pr create \
+            --base "$DEFAULT_BRANCH" \
+            --head "$BRANCH" \
+            --title "chore: upgrade $AGENT runtime to $VERSION" \
+            --label "automation,agent-runtime-candidate,agent-runtime-$AGENT" \
+            --body "Automated stable runtime upgrade.
+
+          Tracking issue: $ISSUE_URL
+          AgentRoam candidate: $RELEASE_VERSION")
+          gh issue comment "$ISSUE_URL" --body "candidate_pr: $PR_URL"
+
+      - name: No candidate
+        if: steps.active.outputs.exists != 'true' && steps.candidate.outputs.changed != 'true'
+        run: echo "No stable Agent runtime upgrade is available."
