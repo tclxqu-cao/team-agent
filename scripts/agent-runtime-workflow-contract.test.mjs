@@ -14,6 +14,8 @@ test("candidate publication requires authenticated smoke on macOS and Windows", 
   const source = await workflow("agent-runtime-candidate-check.yml");
   assert.match(source, /authenticated-smoke:[\s\S]*os: \[macos-14, windows-2022\]/);
   assert.match(source, /environment: agent-runtime-smoke-\$\{\{ needs\.metadata\.outputs\.agent \}\}/);
+  assert.match(source, /failureCategory: "authentication"/);
+  assert.match(source, /Missing PROVIDER_API_KEY in agent-runtime-smoke-\$AGENT/);
   assert.match(source, /needs: \[metadata, static-checks, macos-package, windows-install, authenticated-smoke\]/);
   assert.doesNotMatch(source, /(?:codex|claude|opencode)-smoke:[\s\S]*runs-on: ubuntu-24\.04/);
 });
@@ -50,9 +52,10 @@ test("soak keeps hold, window, freshness, promotion, and rollback gates", async 
 test("repair remains pinned, scoped, and bounded to two attempts", async () => {
   const source = await workflow("agent-runtime-repair.yml");
   assert.match(source, /--pattern "agent-runtime-candidate-smoke-\*-\$HEAD_SHA"/);
+  assert.match(source, /Configure PROVIDER_API_KEY in agent-runtime-smoke-/);
   assert.match(source, /uses: openai\/codex-action@[0-9a-f]{40}/);
   assert.match(source, /fromJSON\(steps\.metadata\.outputs\.attempts\) < 2/);
   assert.match(source, /safety-strategy: drop-sudo/);
   assert.match(source, /sandbox: workspace-write/);
-  assert.doesNotMatch(source, /NPM_TOKEN|GITEE_TOKEN|PROVIDER_API_KEY/);
+  assert.doesNotMatch(source, /\$\{\{\s*secrets\.(?:NPM_TOKEN|GITEE_TOKEN|PROVIDER_API_KEY)/);
 });
