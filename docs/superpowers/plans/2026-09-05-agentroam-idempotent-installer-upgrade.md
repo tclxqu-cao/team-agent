@@ -151,19 +151,19 @@ node scripts/verify-cli-install.mjs --artifacts dist/cli-release --bootstrap-scr
 
 Verify seven tarballs plus both installers and `SHA256SUMS`, and compare every checksum entry to its file.
 
-- [ ] **Step 3: Commit and push source**
+- [x] **Step 3: Commit and push source**
 
 Stage only the planned source, test, version and documentation files. Run `git diff --cached --check`, commit the fix, and push `master` using standard Git per project `CLAUDE.md`.
 
-- [ ] **Step 4: Publish npm packages**
+- [x] **Step 4: Publish npm packages**
 
 Create a mode-600 temporary user config from Keychain without echoing the token. Run `npm whoami`, publish six platform tarballs then the launcher, and remove the temporary config on exit.
 
-- [ ] **Step 5: Verify npm publication**
+- [x] **Step 5: Verify npm publication**
 
 Poll the official registry until all seven exact versions resolve and each `preview` dist-tag equals `0.2.0-preview.11`. Download each registry tarball into a new temporary directory and compare SHA-256 with `dist/cli-release`.
 
-- [ ] **Step 6: Publish Git tag and Gitee Release**
+- [x] **Step 6: Publish Git tag and Gitee Release**
 
 Create and push annotated tag `v0.2.0-preview.11` at the verified release commit. Create the Gitee Release for that tag and upload both installers plus `SHA256SUMS`; verify public download checksums.
 
