@@ -1,0 +1,364 @@
+name: agent-runtime-repair
+
+on:
+  workflow_run:
+    workflows: [agent-runtime-candidate-check]
+    types: [completed]
+
+concurrency:
+  group: agent-runtime-upgrade
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  actions: read
+
+jobs:
+  repair:
+    if: github.event.workflow_run.conclusion == 'failure'
+    runs-on: ubuntu-24.04
+    environment: agent-runtime-repair
+    timeout-minutes: 45
+    steps:
+      - name: Resolve trusted candidate metadata
+        id: metadata
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const run = context.payload.workflow_run;
+            core.setOutput("eligible", "false");
+            core.setOutput("attempts", "0");
+            let refs = run.pull_requests ?? [];
+            if (refs.length === 0) {
+              refs = await github.paginate(github.rest.repos.listPullRequestsAssociatedWithCommit, {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                commit_sha: run.head_sha,
+                per_page: 100,
+              });
+            }
+            if (refs.length !== 1) {
+              core.notice(`Expected one candidate PR, found ${refs.length}`);
+              return;
+            }
+            const number = refs[0].number;
+            const { data: pull } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: number,
+            });
+            const labels = pull.labels.map((label) => label.name);
+            const agentLabels = ["codex", "claude", "opencode"].filter((agent) => labels.includes(`agent-runtime-${agent}`));
+            const sameRepository = pull.head.repo?.full_name === `${context.repo.owner}/${context.repo.repo}`;
+            const trustedLabels = labels.includes("automation") && labels.includes("agent-runtime-candidate") && agentLabels.length === 1;
+            const unchangedHead = pull.head.sha === run.head_sha;
+            if (!sameRepository || !trustedLabels || !unchangedHead || pull.state !== "open") {
+              core.notice("Candidate failed same-repository, label, head SHA, or open-state validation");
+              return;
+            }
+            const commits = await github.paginate(github.rest.pulls.listCommits, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: number,
+              per_page: 100,
+            });
+            const issueMatch = pull.body?.match(/\/issues\/(\d+)/);
+            const issue = Number(issueMatch?.[1] ?? 0);
+            if (!issue) return core.notice("Candidate has no tracking issue");
+            const issueData = (await github.rest.issues.get({ owner: context.repo.owner, repo: context.repo.repo, issue_number: issue })).data;
+            const issueLabels = issueData.labels.map((label) => typeof label === "string" ? label : label.name);
+            const activeIssues = (await github.paginate(github.rest.issues.listForRepo, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: "open",
+              labels: "agent-runtime-upgrade,agent-runtime-active",
+              per_page: 100,
+            })).filter((item) => !item.pull_request);
+            if (!issueLabels.includes("agent-runtime-active") || issueLabels.includes("needs-human") || activeIssues.length !== 1 || activeIssues[0].number !== issue) {
+              return core.notice("Candidate tracking issue is not the only active upgrade");
+            }
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issue,
+              per_page: 100,
+            });
+            const commitAttempts = commits.filter((commit) => commit.commit.message.startsWith("agent-runtime-repair:")).length;
+            const recordedAttempts = comments.flatMap((comment) => {
+              const match = comment.body?.match(/<!-- agent-runtime-repair-attempt (\d+) -->/);
+              return match ? [Number(match[1])] : [];
+            });
+            const attempts = Math.max(commitAttempts, 0, ...recordedAttempts);
+            core.setOutput("eligible", "true");
+            core.setOutput("pr", String(number));
+            core.setOutput("agent", agentLabels[0]);
+            core.setOutput("attempts", String(attempts));
+            core.setOutput("head_sha", pull.head.sha);
+            core.setOutput("base_sha", pull.base.sha);
+            core.setOutput("branch", pull.head.ref);
+            core.setOutput("issue", String(issue));
+
+      - name: Download redacted failure summaries
+        if: steps.metadata.outputs.eligible == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          HEAD_SHA: ${{ steps.metadata.outputs.head_sha }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/failures"
+          gh run download "$RUN_ID" --pattern "candidate-failure-summary-$HEAD_SHA" --dir "$RUNNER_TEMP/failures" || true
+          gh run download "$RUN_ID" --pattern "*-smoke-$HEAD_SHA" --dir "$RUNNER_TEMP/failures" || true
+
+      - name: Normalize repair eligibility
+        if: steps.metadata.outputs.eligible == 'true'
+        id: failure
+        env:
+          AGENT: ${{ steps.metadata.outputs.agent }}
+          BASE_SHA: ${{ steps.metadata.outputs.base_sha }}
+          HEAD_SHA: ${{ steps.metadata.outputs.head_sha }}
+        run: |
+          node --input-type=module <<'NODE'
+          import { appendFileSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+          import { join } from "node:path";
+          const files = [];
+          const walk = (dir) => {
+            for (const name of readdirSync(dir)) {
+              const path = join(dir, name);
+              if (statSync(path).isDirectory()) walk(path);
+              else if (name.endsWith(".json")) files.push(path);
+            }
+          };
+          walk(process.env.RUNNER_TEMP + "/failures");
+          const summaries = files.flatMap((path) => {
+            try { return [JSON.parse(readFileSync(path, "utf8"))]; } catch { return []; }
+          });
+          const failure = summaries.find((value) => value.success === false && value.failureCategory)
+            ?? summaries.find((value) => value.success === false && value.category)
+            ?? { category: "runner", failure: "No classified compatibility summary was produced" };
+          const category = failure.failureCategory ?? failure.category ?? "unknown";
+          const normalized = {
+            schemaVersion: 1,
+            agent: process.env.AGENT,
+            baseSha: process.env.BASE_SHA,
+            headSha: process.env.HEAD_SHA,
+            category,
+            failure: String(failure.failure ?? "candidate validation failed").slice(0, 240),
+          };
+          writeFileSync(process.env.RUNNER_TEMP + "/normalized-failure.json", JSON.stringify(normalized, null, 2) + "\n");
+          appendFileSync(process.env.GITHUB_OUTPUT, `category=${category}\n`);
+          NODE
+
+      - name: Stop after two repair attempts
+        if: steps.metadata.outputs.eligible == 'true' && fromJSON(steps.metadata.outputs.attempts) >= 2
+        uses: actions/github-script@v7
+        env:
+          ISSUE_NUMBER: ${{ steps.metadata.outputs.issue }}
+          PR_NUMBER: ${{ steps.metadata.outputs.pr }}
+        with:
+          script: |
+            const issue = Number(process.env.ISSUE_NUMBER);
+            const pr = Number(process.env.PR_NUMBER);
+            await github.rest.issues.addLabels({ owner: context.repo.owner, repo: context.repo.repo, issue_number: pr, labels: ["needs-human"] });
+            if (issue) {
+              await github.rest.issues.addLabels({ owner: context.repo.owner, repo: context.repo.repo, issue_number: issue, labels: ["needs-human"] });
+              await github.rest.issues.removeLabel({ owner: context.repo.owner, repo: context.repo.repo, issue_number: issue, name: "agent-runtime-active" }).catch(() => undefined);
+              await github.rest.issues.createComment({ owner: context.repo.owner, repo: context.repo.repo, issue_number: issue, body: "Two scoped repair attempts were exhausted. Candidate preserved for human review." });
+            }
+
+      - name: Report non-compatibility failure
+        if: >-
+          steps.metadata.outputs.eligible == 'true' &&
+          steps.failure.outputs.category != 'compatibility' &&
+          fromJSON(steps.metadata.outputs.attempts) < 2
+        uses: actions/github-script@v7
+        env:
+          ISSUE_NUMBER: ${{ steps.metadata.outputs.issue }}
+          CATEGORY: ${{ steps.failure.outputs.category }}
+        with:
+          script: |
+            const issue = Number(process.env.ISSUE_NUMBER);
+            if (issue) await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issue,
+              body: `No Codex repair was attempted because the failure category is ${process.env.CATEGORY}.`,
+            });
+
+      - uses: actions/checkout@v4
+        if: >-
+          steps.metadata.outputs.eligible == 'true' &&
+          steps.failure.outputs.category == 'compatibility' &&
+          fromJSON(steps.metadata.outputs.attempts) < 2
+        with:
+          ref: ${{ steps.metadata.outputs.head_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        if: >-
+          steps.metadata.outputs.eligible == 'true' &&
+          steps.failure.outputs.category == 'compatibility' &&
+          fromJSON(steps.metadata.outputs.attempts) < 2
+        with:
+          node-version: "22"
+
+      - name: Revalidate trusted repair inputs
+        if: >-
+          steps.metadata.outputs.eligible == 'true' &&
+          steps.failure.outputs.category == 'compatibility' &&
+          fromJSON(steps.metadata.outputs.attempts) < 2
+        shell: bash
+        env:
+          AGENT: ${{ steps.metadata.outputs.agent }}
+          BASE_SHA: ${{ steps.metadata.outputs.base_sha }}
+          HEAD_SHA: ${{ steps.metadata.outputs.head_sha }}
+        run: |
+          git merge-base --is-ancestor "$BASE_SHA" "$HEAD_SHA"
+          mkdir -p "$RUNNER_TEMP/trusted/scripts"
+          for file in \
+            scripts/agent-runtime-upgrade-lib.mjs \
+            scripts/agent-runtime-diff-policy.mjs \
+            scripts/check-agent-runtime-diff.mjs; do
+            git show "$BASE_SHA:$file" > "$RUNNER_TEMP/trusted/$file"
+          done
+          node "$RUNNER_TEMP/trusted/scripts/check-agent-runtime-diff.mjs" \
+            --root "$GITHUB_WORKSPACE" --agent "$AGENT" --base "$BASE_SHA" --head "$HEAD_SHA"
+
+      - uses: oven-sh/setup-bun@v2
+        if: >-
+          steps.metadata.outputs.eligible == 'true' &&
+          steps.failure.outputs.category == 'compatibility' &&
+          fromJSON(steps.metadata.outputs.attempts) < 2
+        with:
+          bun-version: "1.3.10"
+
+      - name: Prepare isolated repair input
+        if: >-
+          steps.metadata.outputs.eligible == 'true' &&
+          steps.failure.outputs.category == 'compatibility' &&
+          fromJSON(steps.metadata.outputs.attempts) < 2
+        id: prepare
+        run: |
+          bun install --frozen-lockfile
+          cp "$RUNNER_TEMP/normalized-failure.json" .agent-runtime-failure.json
+          node -e "const m=require('./.github/agent-runtime-versions.json'); require('fs').appendFileSync(process.env.GITHUB_OUTPUT, 'codex_version=' + m.codex.version + '\n')"
+
+      - name: Record bounded repair attempt
+        if: >-
+          steps.metadata.outputs.eligible == 'true' &&
+          steps.failure.outputs.category == 'compatibility' &&
+          fromJSON(steps.metadata.outputs.attempts) < 2
+        uses: actions/github-script@v7
+        env:
+          ISSUE_NUMBER: ${{ steps.metadata.outputs.issue }}
+          PRIOR_ATTEMPTS: ${{ steps.metadata.outputs.attempts }}
+        with:
+          script: |
+            const attempt = Number(process.env.PRIOR_ATTEMPTS) + 1;
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: Number(process.env.ISSUE_NUMBER),
+              body: `<!-- agent-runtime-repair-attempt ${attempt} -->\nCodex compatibility repair attempt ${attempt} started from run ${context.runId}.`,
+            });
+
+      - name: Run scoped Codex repair
+        id: codex
+        if: >-
+          steps.metadata.outputs.eligible == 'true' &&
+          steps.failure.outputs.category == 'compatibility' &&
+          fromJSON(steps.metadata.outputs.attempts) < 2
+        uses: openai/codex-action@86365089eb2b84e0a8fb0717b304f8bdcb13b20e
+        with:
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          prompt-file: .github/codex/prompts/repair-agent-runtime.md
+          output-file: ${{ runner.temp }}/codex-final-message.txt
+          codex-version: ${{ steps.prepare.outputs.codex_version }}
+          safety-strategy: drop-sudo
+          sandbox: workspace-write
+          allow-bots: true
+          allow-bot-users: github-actions
+
+      - name: Handle failed Codex execution
+        if: always() && steps.codex.outcome == 'failure'
+        uses: actions/github-script@v7
+        env:
+          ISSUE_NUMBER: ${{ steps.metadata.outputs.issue }}
+          PR_NUMBER: ${{ steps.metadata.outputs.pr }}
+          PRIOR_ATTEMPTS: ${{ steps.metadata.outputs.attempts }}
+        with:
+          script: |
+            const attempt = Number(process.env.PRIOR_ATTEMPTS) + 1;
+            const issue = Number(process.env.ISSUE_NUMBER);
+            if (attempt < 2) {
+              await github.rest.issues.createComment({ owner: context.repo.owner, repo: context.repo.repo, issue_number: issue, body: "Codex execution failed before a validated repair commit. One bounded retry remains." });
+              return;
+            }
+            const pr = Number(process.env.PR_NUMBER);
+            await github.rest.issues.addLabels({ owner: context.repo.owner, repo: context.repo.repo, issue_number: pr, labels: ["needs-human"] });
+            await github.rest.issues.addLabels({ owner: context.repo.owner, repo: context.repo.repo, issue_number: issue, labels: ["needs-human"] });
+            await github.rest.issues.removeLabel({ owner: context.repo.owner, repo: context.repo.repo, issue_number: issue, name: "agent-runtime-active" }).catch(() => undefined);
+            await github.rest.issues.createComment({ owner: context.repo.owner, repo: context.repo.repo, issue_number: issue, body: "Two bounded Codex executions were exhausted without a validated repair commit. Candidate preserved for human review." });
+
+      - name: Validate scoped repair without credentials
+        if: steps.codex.outcome == 'success'
+        shell: bash
+        env:
+          AGENT: ${{ steps.metadata.outputs.agent }}
+          BASE_SHA: ${{ steps.metadata.outputs.base_sha }}
+          ATTEMPT: ${{ steps.metadata.outputs.attempts }}
+        run: |
+          node -e "require('fs').unlinkSync('.agent-runtime-failure.json')"
+          test -n "$(git status --porcelain)"
+          git diff --check
+          git config user.name "agent-runtime-repair[bot]"
+          git config user.email "agent-runtime-repair[bot]@users.noreply.github.com"
+          NEXT_ATTEMPT=$((ATTEMPT + 1))
+          git add -A
+          git commit -m "agent-runtime-repair: attempt $NEXT_ATTEMPT for $AGENT"
+          node "$RUNNER_TEMP/trusted/scripts/check-agent-runtime-diff.mjs" \
+            --root "$GITHUB_WORKSPACE" --agent "$AGENT" --base "$BASE_SHA" --head HEAD
+          node scripts/agent-runtime-upgrade.mjs check
+          node --test scripts/agent-runtime-upgrade.test.mjs scripts/check-agent-runtime-diff.test.mjs scripts/publish-agentroam-release.test.mjs
+          bunx vitest run scripts/agent-runtime-live-smoke.test.ts
+          case "$AGENT" in
+            codex) bunx vitest run packages/cli/src/codex-runtime-manager.test.ts packages/desktop/main/agent-runtime/codex-runtime-adapter.test.ts ;;
+            claude) bunx vitest run packages/desktop/main/agent-runtime/claude-runtime-adapter.test.ts ;;
+            opencode) bunx vitest run packages/cli/src/opencode-runtime-manager.test.ts packages/desktop/main/agent-runtime/opencode-runtime-adapter.test.ts packages/desktop/main/agent-runtime/opencode-server-client.test.ts ;;
+          esac
+
+      - name: Push validated repair
+        if: steps.codex.outcome == 'success' && success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH: ${{ steps.metadata.outputs.branch }}
+          EXPECTED_HEAD: ${{ steps.metadata.outputs.head_sha }}
+          ISSUE_NUMBER: ${{ steps.metadata.outputs.issue }}
+          ATTEMPT: ${{ steps.metadata.outputs.attempts }}
+        run: |
+          gh auth setup-git
+          git push --force-with-lease="$BRANCH:$EXPECTED_HEAD" origin "HEAD:$BRANCH"
+          NEXT_ATTEMPT=$((ATTEMPT + 1))
+          if [ -n "$ISSUE_NUMBER" ]; then
+            gh issue comment "$ISSUE_NUMBER" --body "agent-runtime-repair attempt $NEXT_ATTEMPT pushed: $(git rev-parse HEAD)"
+          fi
+
+      - name: Mark a locally invalid repair for human review
+        if: failure() && steps.codex.outcome == 'success'
+        uses: actions/github-script@v7
+        env:
+          ISSUE_NUMBER: ${{ steps.metadata.outputs.issue }}
+          PR_NUMBER: ${{ steps.metadata.outputs.pr }}
+        with:
+          script: |
+            const pr = Number(process.env.PR_NUMBER);
+            await github.rest.issues.addLabels({ owner: context.repo.owner, repo: context.repo.repo, issue_number: pr, labels: ["needs-human"] });
+            const issue = Number(process.env.ISSUE_NUMBER);
+            if (issue) {
+              await github.rest.issues.addLabels({ owner: context.repo.owner, repo: context.repo.repo, issue_number: issue, labels: ["needs-human"] });
+              await github.rest.issues.removeLabel({ owner: context.repo.owner, repo: context.repo.repo, issue_number: issue, name: "agent-runtime-active" }).catch(() => undefined);
+              await github.rest.issues.createComment({ owner: context.repo.owner, repo: context.repo.repo, issue_number: issue, body: "Codex produced a repair that failed the trusted local gate or focused tests. Candidate preserved for human review." });
+            }
