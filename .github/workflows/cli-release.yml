@@ -28,6 +28,8 @@ jobs:
           registry-url: "https://registry.npmjs.org"
       - run: node -e "if (process.platform !== 'darwin' || process.arch !== 'arm64') process.exit(1)"
       - run: bun install --frozen-lockfile
+      - run: npm run check:agent-runtime-versions
+      - run: npm run test:agent-runtime-upgrade
       - run: bunx vitest run packages/cli/src packages/core/src/domain/web-console/WebArtifactBridge.test.ts
       - run: node --test packages/server/shell-platform.test.mjs
       - run: npm run pack:cli:all

@@ -47,6 +47,8 @@
     "pack:cli:all": "npm run build:cli:shared && npm run stage:runtime:darwin-arm64 && npm run stage:runtime:windows-amd64 && npm run fetch:cloudflared && npm run pack:runtime:darwin-arm64 && npm run pack:runtime:windows-amd64 && npm run pack:cloudflared:darwin-arm64 && npm run pack:cloudflared:windows-amd64 && npm run pack:tui:darwin-arm64 && npm run pack:tui:windows-amd64 && npm run pack:launcher && node scripts/collect-cli-artifacts.mjs",
     "verify:cli": "node scripts/verify-cli-install.mjs",
     "verify:cli:tunnel": "node scripts/verify-cli-tunnel.mjs --provider auto",
+    "check:agent-runtime-versions": "node scripts/agent-runtime-upgrade.mjs check",
+    "test:agent-runtime-upgrade": "node --test scripts/agent-runtime-upgrade.test.mjs scripts/check-agent-runtime-diff.test.mjs scripts/publish-agentroam-release.test.mjs && bunx vitest run scripts/agent-runtime-live-smoke.test.ts",
     "test": "bunx vitest run",
     "test:watch": "bunx vitest",
     "lint": "bunx tsc --noEmit"

@@ -69,6 +69,37 @@ node scripts/verify-cli-install.mjs --artifacts dist/cli-release
 
 只有 macOS 打包和 Windows 实机验证均通过，产物才满足发布条件。
 
+## Agent 稳定版自动升级
+
+`agent-runtime-upgrade` 每天读取 npm 官方 registry 的 `latest`，只跟踪 Codex、
+Claude Agent SDK 和 OpenCode 的稳定版；预发布、降级以及 OpenCode CLI/SDK
+版本不一致都会被拒绝。三个 Agent 独立升级，同一时间只保留一个活动候选。
+
+候选会经过限定路径和依赖变更检查、单元测试、类型检查、生产构建、macOS
+打包、Windows 安装验证以及对应供应商账号的认证 smoke。兼容性失败最多允许
+两次受限 Codex 自动修复；其他失败保留候选并转人工处理。验证通过后，CI 从
+合并提交重新构建七个包，以 `preview` 发布并同步 Gitee。macOS 和 Windows 在
+24 小时内每小时从空 npm 缓存安装该精确版本并执行 smoke；每个六小时窗口
+至少成功一次且最后一次成功不超过两小时，才将同一批不可变产物提升为
+`latest`。失败只恢复 dist-tag，不执行 `npm unpublish`。
+
+自动化需要以下相互隔离的 GitHub Environments：
+
+- `agent-runtime-smoke-codex`：`PROVIDER_API_KEY`
+- `agent-runtime-smoke-claude`：`PROVIDER_API_KEY`
+- `agent-runtime-smoke-opencode`：`PROVIDER_API_KEY`、`OPENCODE_CONFIG_JSON`
+- `agent-runtime-repair`：`OPENAI_API_KEY`
+- `agent-runtime-publish-npm`：`NPM_TOKEN`
+- `agent-runtime-publish-gitee`：`GITEE_TOKEN`
+
+在跟踪 issue 上添加 `promotion-hold` 可暂停提升；手动触发
+`agent-runtime-soak` 可立即补跑一次双平台检查；手动触发
+`agent-runtime-publish` 并指定 `preview` 或 `latest` 及已发布目标版本，可执行
+紧急 dist-tag 回滚。仓库配置和标签清单见 `.github/agent-runtime-upgrade.md`。
+
+本地 token 发布只用于自动化不可用时的应急处理，与 CI 的环境级凭据完全
+分离。执行任何写操作前，先运行 `preflight` 以及对应命令的 `--dry-run`。
+
 ## npm 发布顺序
 
 本仓库的 npm 发布统一使用发布时提供的 access token，不走浏览器 WebAuthn。token 只能写入权限受限的临时 npm user config，发布进程退出时清空；禁止写入仓库或全局 `.npmrc`。本地发布没有 CI OIDC provider，必须显式关闭 provenance。
