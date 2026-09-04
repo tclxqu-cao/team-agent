@@ -1,0 +1,15 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "types": ["node", "vitest/globals"],
+    "paths": {
+      "@agent/core": ["packages/core/dist/index.d.ts"],
+      "@agent/core/*": ["packages/core/dist/*"]
+    }
+  },
+  "include": [
+    "agent-runtime-live-smoke.ts",
+    "agent-runtime-live-smoke.test.ts"
+  ]
+}
