@@ -198,6 +198,59 @@ describe("AgentHttpGateway", () => {
     );
   });
 
+  it("builds Agent workspace and session pagination URLs", async () => {
+    const http = { get: vi.fn().mockResolvedValue({ data: [], nextCursor: null, watermark: null }) };
+    const gateway = new AgentHttpGateway(http as never, {} as never);
+
+    await gateway.listAgentWorkspaces("codex", {
+      cursor: "page/2",
+      limit: 25,
+      refresh: true,
+      since: "water mark",
+    });
+    await gateway.listAgentWorkspaceSessions("claude-code", "repo one", {
+      cursor: "next page",
+      limit: 10,
+      refresh: true,
+    });
+
+    expect(http.get).toHaveBeenNthCalledWith(
+      1,
+      "/api/agent-workspaces?agentType=codex&cursor=page%2F2&limit=25&refresh=1&since=water+mark",
+    );
+    expect(http.get).toHaveBeenNthCalledWith(
+      2,
+      "/api/agent-workspaces/repo%20one/sessions?agentType=claude-code&cursor=next+page&limit=10&refresh=1",
+    );
+  });
+
+  it("imports an Agent workspace through the unified HTTP endpoint", async () => {
+    const result = { workspace: { workspaceId: "imported:repo" }, existing: true };
+    const http = { post: vi.fn().mockResolvedValue(result) };
+    const gateway = new AgentHttpGateway(http as never, {} as never);
+
+    await expect(gateway.importAgentWorkspace("claude-code", "/repo/app", "App"))
+      .resolves.toEqual(result);
+    expect(http.post).toHaveBeenCalledWith("/api/agent-workspaces", {
+      agentType: "claude-code",
+      path: "/repo/app",
+      name: "App",
+    });
+  });
+
+  it("forwards the native workspace cwd when creating a session", async () => {
+    const http = { post: vi.fn().mockResolvedValue({ id: "session" }) };
+    const gateway = new AgentHttpGateway(http as never, {} as never);
+
+    await gateway.createSession("New", undefined, "codex", "/repo");
+
+    expect(http.post).toHaveBeenCalledWith("/api/sessions", {
+      title: "New",
+      agentType: "codex",
+      cwd: "/repo",
+    });
+  });
+
   it("requests a bounded history page with an encoded cursor", async () => {
     const detail = { messages: [], events: [], history: { hasMore: true } };
     const http = { get: vi.fn().mockResolvedValue(detail) };

@@ -51,6 +51,24 @@ describe("restoreSessionHistoryPage", () => {
       expect.objectContaining({ askUser: expect.objectContaining({ questionId: "native:run-1:42" }) }),
     ]);
   });
+
+  it("keeps native projection identity internal instead of rendering it as an agent name", () => {
+    const [restored] = restoreSessionHistoryPage({
+      messages: [{
+        role: "user",
+        content: "long-running goal",
+        name: "__native_run:run-1",
+      }],
+      events: [],
+    });
+
+    expect(restored).toMatchObject({
+      role: "user",
+      content: "long-running goal",
+      name: "__native_run:run-1",
+    });
+    expect(restored.agentName).toBeUndefined();
+  });
 });
 
 function message(id: string, content: string): ChatMessage {
@@ -84,5 +102,37 @@ describe("mergeRefreshedSessionHistory", () => {
   it("does not erase visible history when a partial transcript yields no messages", () => {
     const current = [message("existing", "existing")];
     expect(mergeRefreshedSessionHistory(current, [])).toBe(current);
+  });
+
+  it("keeps optimistic images while refreshed history has no usable attachment", () => {
+    const image = "data:image/png;base64,AAAA";
+    const optimistic = { ...message("optimistic", "inspect"), images: [image] };
+    const refreshed = message("refreshed", "inspect");
+
+    expect(mergeRefreshedSessionHistory([optimistic], [refreshed])).toEqual([{
+      ...refreshed,
+      id: optimistic.id,
+      timestamp: optimistic.timestamp,
+      images: [image],
+    }]);
+  });
+
+  it("switches from optimistic images to usable persisted attachments", () => {
+    const image = "data:image/png;base64,AAAA";
+    const optimistic = { ...message("optimistic", "inspect"), images: [image] };
+    const refreshed = {
+      ...message("refreshed", "inspect"),
+      presentation: {
+        attachments: [{ type: "image" as const, name: "image-1.png", dataUrl: image }],
+      },
+    };
+
+    const merged = mergeRefreshedSessionHistory([optimistic], [refreshed]);
+
+    expect(merged[0]).toMatchObject({
+      id: optimistic.id,
+      presentation: refreshed.presentation,
+    });
+    expect(merged[0].images).toBeUndefined();
   });
 });

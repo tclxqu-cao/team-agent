@@ -5,6 +5,7 @@ import type { UnifiedSessionSummary } from "../global";
 import {
   canForkOccupiedCodexSession,
   forkOccupiedCodexSession,
+  isOccupiedSessionRecovery,
 } from "./occupied-session-fork";
 
 function summary(overrides: Partial<UnifiedSessionSummary> = {}): UnifiedSessionSummary {
@@ -27,11 +28,34 @@ function summary(overrides: Partial<UnifiedSessionSummary> = {}): UnifiedSession
 
 describe("occupied Codex session fork recovery", () => {
   it("allows only occupied Codex sessions or Codex sessions rejected as occupied", () => {
+    const sourceError = {
+      sessionId: "runtime:codex:c291cmNl",
+      code: "SESSION_OCCUPIED",
+    };
     expect(canForkOccupiedCodexSession(summary())).toBe(true);
-    expect(canForkOccupiedCodexSession(summary({ occupancy: "available" }), "SESSION_OCCUPIED")).toBe(true);
+    expect(canForkOccupiedCodexSession(summary({ agentType: "opencode" }))).toBe(true);
+    expect(canForkOccupiedCodexSession(summary({ occupancy: "available" }), sourceError)).toBe(true);
     expect(canForkOccupiedCodexSession(summary({ agentType: "claude-code" }))).toBe(false);
     expect(canForkOccupiedCodexSession(summary({ occupancy: "available" }))).toBe(false);
-    expect(canForkOccupiedCodexSession(undefined, "SESSION_OCCUPIED")).toBe(false);
+    expect(canForkOccupiedCodexSession(undefined, sourceError)).toBe(false);
+  });
+
+  it("does not carry the source recovery state into the selected fork", () => {
+    const sourceError = {
+      sessionId: "runtime:codex:c291cmNl",
+      code: "SESSION_OCCUPIED",
+    };
+    const forked = summary({
+      id: "runtime:codex:Zm9yaw",
+      nativeSessionId: "fork",
+      title: "原会话（副本）",
+      occupancy: "available",
+      canResume: true,
+    });
+
+    expect(isOccupiedSessionRecovery(summary().id, sourceError)).toBe(true);
+    expect(isOccupiedSessionRecovery(forked.id, sourceError)).toBe(false);
+    expect(canForkOccupiedCodexSession(forked, sourceError)).toBe(false);
   });
 
   it("activates and refreshes only after the fork succeeds", async () => {

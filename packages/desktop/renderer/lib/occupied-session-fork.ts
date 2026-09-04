@@ -1,11 +1,30 @@
 import type { UnifiedSessionSummary } from "../global";
 
+export interface OccupiedSessionError {
+  sessionId: string;
+  code: string;
+}
+
+export function isOccupiedSessionRecovery(
+  sessionId: string | null | undefined,
+  error: OccupiedSessionError | undefined,
+): boolean {
+  return Boolean(
+    sessionId
+    && error?.sessionId === sessionId
+    && error.code === "SESSION_OCCUPIED",
+  );
+}
+
 export function canForkOccupiedCodexSession(
   summary: UnifiedSessionSummary | undefined,
-  errorCode?: string,
+  error?: OccupiedSessionError,
 ): boolean {
-  return summary?.agentType === "codex"
-    && (summary.occupancy === "owned-externally" || errorCode === "SESSION_OCCUPIED");
+  return (summary?.agentType === "codex" || summary?.agentType === "opencode")
+    && (
+      summary.occupancy === "owned-externally"
+      || isOccupiedSessionRecovery(summary.id, error)
+    );
 }
 
 export async function forkOccupiedCodexSession(options: {

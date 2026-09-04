@@ -79,7 +79,29 @@ export interface TodoItem {
   status: "pending" | "in-progress" | "completed";
 }
 
-export type AgentType = "customer-agent" | "codex" | "claude-code";
+export type AgentType = "customer-agent" | "codex" | "claude-code" | "opencode";
+
+export interface AgentWorkspace {
+  agentType: AgentType;
+  workspaceId: string;
+  name: string;
+  roots: string[];
+  order: number;
+  updatedAt?: string;
+  source: "native" | "derived" | "imported";
+}
+
+export interface ImportAgentWorkspaceResult {
+  workspace: AgentWorkspace;
+  existing: boolean;
+}
+
+export interface WorkspacePage<T> {
+  data: T[];
+  nextCursor: string | null;
+  watermark: string | null;
+  stale?: boolean;
+}
 export type ToolPermissionMode = "request-approval" | "auto-approval" | "full-access";
 
 export interface SessionGoal {
@@ -194,6 +216,20 @@ export interface AgentApi {
     hasChildren: boolean;
   }>>;
   listSessions(projectId?: string): Promise<UnifiedSessionSummary[]>;
+  listAgentWorkspaces(
+    agentType: AgentType,
+    query?: { cursor?: string | null; limit?: number; refresh?: boolean; since?: string | null },
+  ): Promise<WorkspacePage<AgentWorkspace>>;
+  importAgentWorkspace(
+    agentType: AgentType,
+    path: string,
+    name?: string,
+  ): Promise<ImportAgentWorkspaceResult>;
+  listAgentWorkspaceSessions(
+    agentType: AgentType,
+    workspaceId: string,
+    query?: { cursor?: string | null; limit?: number; refresh?: boolean },
+  ): Promise<WorkspacePage<UnifiedSessionSummary>>;
   listChildSessions(parentId: string): Promise<unknown[]>;
   getSession(id: string, query?: { before?: string; limit?: number }): Promise<unknown>;
   observeSession?(

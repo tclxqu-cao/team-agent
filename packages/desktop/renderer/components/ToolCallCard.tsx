@@ -18,6 +18,7 @@ import { useAgentStore } from "../stores/agentStore";
 import { hasToolCallResult } from "../lib/tool-call-status";
 import { toolActivityLabel, toolFamily, toolPhrase, toolPreview } from "../lib/tool-call-presentation";
 import RuntimeProgressRow from "./RuntimeProgressRow";
+import { postWebArtifactOpen, resolveWebArtifactPath } from "../lib/artifact-links";
 
 export interface ToolCallData {
   id: string;
@@ -34,6 +35,8 @@ interface ToolCallProps {
   onSelectSession?: (sessionId: string) => void;
   /** For write_file: content BEFORE the write (from a preceding read_file) — enables diff view */
   beforeContent?: string;
+  workspacePath?: string | null;
+  enableFilePreview?: boolean;
 }
 
 // ── Status icon: spinner / checkmark / x-circle ──────────────────────────
@@ -77,8 +80,29 @@ interface CardShellProps {
   header: React.ReactNode;
   children: React.ReactNode;
   maxBodyHeight?: number;
+  primaryAction?: () => void;
+  primaryActionLabel?: string;
+  primaryActionTitle?: string;
 }
-function CardShell({ statusColor, isDone, expanded, onToggle, header, children, maxBodyHeight = 600 }: CardShellProps) {
+function CardShell({ statusColor, isDone, expanded, onToggle, header, children, maxBodyHeight = 600, primaryAction, primaryActionLabel, primaryActionTitle }: CardShellProps) {
+  const headerButton = (
+    <button
+      type="button"
+      className="tool-call-shell__header"
+      {...(primaryAction
+        ? { onClick: primaryAction, "aria-label": primaryActionLabel, title: primaryActionTitle }
+        : { onClick: onToggle, "aria-expanded": expanded })}
+      style={{ flex: 1, border: "none", background: "var(--bg-deep)", cursor: "pointer", padding: "7px 10px 7px 9px", display: "flex", alignItems: "center", gap: 7, fontFamily: "var(--font-body)", transition: "background 0.12s", textAlign: "left", minWidth: 0 }}
+      onMouseEnter={e => (e.currentTarget.style.background = "var(--bg-elevated)")}
+      onMouseLeave={e => (e.currentTarget.style.background = "var(--bg-deep)")}
+    >
+      {header}
+      {!primaryAction && (
+        <ChevronRight className="tool-call-shell__chevron" size={12} color="var(--text-muted)" strokeWidth={2.2} style={{ transition: "transform 0.25s var(--ease-out)", transform: expanded ? "rotate(90deg)" : "rotate(0deg)", flexShrink: 0 }} aria-hidden="true" />
+      )}
+    </button>
+  );
+
   return (
     <div className="tool-call-shell" style={{ marginTop: 4, borderRadius: 9, border: "1px solid var(--border-subtle)", overflow: "hidden", background: "var(--bg-deepest)", fontSize: 12, minWidth: 0 }}>
       <div className="tool-call-shell__row" style={{ display: "flex", alignItems: "stretch" }}>
@@ -89,20 +113,19 @@ function CardShell({ statusColor, isDone, expanded, onToggle, header, children, 
           animation: !isDone ? "statusBarPulse 1.8s ease-in-out infinite" : "none",
           borderRadius: "9px 0 0 0",
         }} />
-        {/* Header */}
-        <button
-          type="button"
-          className="tool-call-shell__header"
-          aria-expanded={expanded}
-          onClick={onToggle}
-          style={{ flex: 1, border: "none", background: "var(--bg-deep)", cursor: "pointer", padding: "7px 10px 7px 9px", display: "flex", alignItems: "center", gap: 7, fontFamily: "var(--font-body)", transition: "background 0.12s", textAlign: "left", minWidth: 0 }}
-          onMouseEnter={e => (e.currentTarget.style.background = "var(--bg-elevated)")}
-          onMouseLeave={e => (e.currentTarget.style.background = "var(--bg-deep)")}
-        >
-          {header}
-          {/* Chevron */}
-          <ChevronRight className="tool-call-shell__chevron" size={12} color="var(--text-muted)" strokeWidth={2.2} style={{ transition: "transform 0.25s var(--ease-out)", transform: expanded ? "rotate(90deg)" : "rotate(0deg)", flexShrink: 0 }} aria-hidden="true" />
-        </button>
+        {headerButton}
+        {primaryAction && (
+          <button
+            type="button"
+            className="tool-call-shell__disclosure"
+            onClick={onToggle}
+            aria-expanded={expanded}
+            aria-label={expanded ? "收起工具详情" : "展开工具详情"}
+            title={expanded ? "收起工具详情" : "展开工具详情"}
+          >
+            <ChevronRight className="tool-call-shell__chevron" size={12} strokeWidth={2.2} style={{ transition: "transform 0.25s var(--ease-out)", transform: expanded ? "rotate(90deg)" : "rotate(0deg)" }} aria-hidden="true" />
+          </button>
+        )}
       </div>
       {/* Collapsed bodies stay unmounted so large historical tool output is parsed on demand. */}
       {expanded && (
@@ -226,7 +249,7 @@ function DiffBlock({ diff, maxHeight = 360 }: { diff: DiffLine[]; maxHeight?: nu
   );
 }
 
-function WriteFileCard({ toolCall, beforeContent }: { toolCall: ToolCallData; beforeContent?: string }) {
+function WriteFileCard({ toolCall, beforeContent, previewPath }: { toolCall: ToolCallData; beforeContent?: string; previewPath?: string }) {
   const [expanded, setExpanded] = useState(false);
   const [tab, setTab] = useState<"content"|"diff">("content");
   const filePath = (toolCall.arguments.file_path as string)??"";
@@ -269,7 +292,7 @@ function WriteFileCard({ toolCall, beforeContent }: { toolCall: ToolCallData; be
   );
 
   return (
-    <CardShell statusColor={statusColor} isDone={isDone} expanded={expanded} onToggle={() => setExpanded(!expanded)} header={header}>
+    <CardShell statusColor={statusColor} isDone={isDone} expanded={expanded} onToggle={() => setExpanded(!expanded)} header={header} primaryAction={previewPath ? () => postWebArtifactOpen(previewPath) : undefined} primaryActionLabel={previewPath ? `预览文件 ${basename(previewPath)}` : undefined} primaryActionTitle={previewPath ? `预览 ${previewPath}` : undefined}>
       <div style={{ fontSize: 10, color: "var(--text-muted)", fontFamily: "var(--font-mono)", wordBreak: "break-all" }}>{filePath}</div>
       {diff && (
         <div style={{ display: "flex", gap: 3 }}>
@@ -288,7 +311,7 @@ function WriteFileCard({ toolCall, beforeContent }: { toolCall: ToolCallData; be
   );
 }
 
-function ReadFileCard({ toolCall }: { toolCall: ToolCallData }) {
+function ReadFileCard({ toolCall, previewPath }: { toolCall: ToolCallData; previewPath?: string }) {
   const [expanded, setExpanded] = useState(false);
   const filePath = (toolCall.arguments.file_path as string)??"";
   const startLine = toolCall.arguments.startLine as number|undefined;
@@ -328,7 +351,7 @@ function ReadFileCard({ toolCall }: { toolCall: ToolCallData }) {
   );
 
   return (
-    <CardShell statusColor={statusColor} isDone={isDone} expanded={expanded} onToggle={() => setExpanded(!expanded)} header={header} maxBodyHeight={480}>
+    <CardShell statusColor={statusColor} isDone={isDone} expanded={expanded} onToggle={() => setExpanded(!expanded)} header={header} maxBodyHeight={480} primaryAction={previewPath ? () => postWebArtifactOpen(previewPath) : undefined} primaryActionLabel={previewPath ? `预览文件 ${basename(previewPath)}` : undefined} primaryActionTitle={previewPath ? `预览 ${previewPath}` : undefined}>
       <div style={{ fontSize: 10, color: "var(--text-muted)", fontFamily: "var(--font-mono)", wordBreak: "break-all" }}>{filePath}</div>
       {isDone && !isError
         ? <CodeBlock content={resultContent} />
@@ -338,7 +361,7 @@ function ReadFileCard({ toolCall }: { toolCall: ToolCallData }) {
   );
 }
 
-function StrReplaceCard({ toolCall }: { toolCall: ToolCallData }) {
+function StrReplaceCard({ toolCall, previewPath }: { toolCall: ToolCallData; previewPath?: string }) {
   const [expanded, setExpanded] = useState(false);
   const filePath = (toolCall.arguments.file_path as string)??"";
   const oldString = (toolCall.arguments.old_string as string)??"";
@@ -375,7 +398,7 @@ function StrReplaceCard({ toolCall }: { toolCall: ToolCallData }) {
   );
 
   return (
-    <CardShell statusColor={statusColor} isDone={isDone} expanded={expanded} onToggle={() => setExpanded(!expanded)} header={header} maxBodyHeight={480}>
+    <CardShell statusColor={statusColor} isDone={isDone} expanded={expanded} onToggle={() => setExpanded(!expanded)} header={header} maxBodyHeight={480} primaryAction={previewPath ? () => postWebArtifactOpen(previewPath) : undefined} primaryActionLabel={previewPath ? `预览文件 ${basename(previewPath)}` : undefined} primaryActionTitle={previewPath ? `预览 ${previewPath}` : undefined}>
       <div style={{ fontSize: 10, color: "var(--text-muted)", fontFamily: "var(--font-mono)", wordBreak: "break-all" }}>{filePath}</div>
       {diff ? <DiffBlock diff={diff} /> : (
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -472,7 +495,7 @@ function ArgumentsBlock({ raw }: { raw: string }) {
   );
 }
 
-function NativeAgentActivity({ activity }: { activity: NativeSubagentActivity }) {
+function NativeAgentActivity({ activity, workspacePath, enableFilePreview }: { activity: NativeSubagentActivity; workspacePath?: string | null; enableFilePreview?: boolean }) {
   const toolResults = new Map(activity.messages.flatMap((message) => (
     message.role === "tool" && message.toolCallId
       ? [[message.toolCallId, { content: message.content, isError: message.name === "error" }] as const]
@@ -499,6 +522,8 @@ function NativeAgentActivity({ activity }: { activity: NativeSubagentActivity })
                     ...toolCall,
                     ...(result ? { result: result.content, isError: result.isError } : {}),
                   }}
+                  workspacePath={workspacePath}
+                  enableFilePreview={enableFilePreview}
                 />
                 {result && (
                   <pre className={`native-subagent-activity__tool-result${result.isError ? " native-subagent-activity__tool-result--error" : ""}`}>
@@ -533,7 +558,7 @@ function NativeAgentActivity({ activity }: { activity: NativeSubagentActivity })
   );
 }
 
-function GenericToolCard({ toolCall, onSelectSession, nativeSubagent }: { toolCall: ToolCallData; onSelectSession?: (id: string) => void; nativeSubagent?: NativeSubagentActivity }) {
+function GenericToolCard({ toolCall, onSelectSession, nativeSubagent, previewPaths, workspacePath, enableFilePreview }: { toolCall: ToolCallData; onSelectSession?: (id: string) => void; nativeSubagent?: NativeSubagentActivity; previewPaths: string[]; workspacePath?: string | null; enableFilePreview?: boolean }) {
   const runningSessionId = useAgentStore(s => s.runningSessionId);
   const [expanded, setExpanded] = useState(() => Boolean(nativeSubagent));
   const isDispatch = toolCall.name === "dispatch_agent";
@@ -618,10 +643,10 @@ function GenericToolCard({ toolCall, onSelectSession, nativeSubagent }: { toolCa
   );
 
   return (
-    <CardShell statusColor={statusColor} isDone={isDone} expanded={expanded} onToggle={() => setExpanded(!expanded)} header={header} maxBodyHeight={800}>
+    <CardShell statusColor={statusColor} isDone={isDone} expanded={expanded} onToggle={() => setExpanded(!expanded)} header={header} maxBodyHeight={800} primaryAction={previewPaths.length === 1 ? () => postWebArtifactOpen(previewPaths[0]) : undefined} primaryActionLabel={previewPaths.length === 1 ? `预览文件 ${basename(previewPaths[0])}` : undefined} primaryActionTitle={previewPaths.length === 1 ? `预览 ${previewPaths[0]}` : undefined}>
       {/* Arguments */}
       {isNativeAgent ? (
-        <NativeAgentActivity activity={nativeSubagent!} />
+        <NativeAgentActivity activity={nativeSubagent!} workspacePath={workspacePath} enableFilePreview={enableFilePreview} />
       ) : isDispatch ? (
         <DispatchArgs arguments={toolCall.arguments} />
       ) : family === "command" && typeof toolCall.arguments.command === "string" ? (
@@ -633,6 +658,15 @@ function GenericToolCard({ toolCall, onSelectSession, nativeSubagent }: { toolCa
         </>
       ) : (
         <ArgumentsBlock raw={JSON.stringify(toolCall.arguments, null, 2)} />
+      )}
+      {previewPaths.length > 1 && (
+        <div className="tool-call-file-list" aria-label="改动文件">
+          {previewPaths.map((previewPath) => (
+            <button key={previewPath} type="button" onClick={() => postWebArtifactOpen(previewPath)} title={previewPath}>
+              <span>{basename(previewPath)}</span>
+            </button>
+          ))}
+        </div>
       )}
       {/* Generic result */}
       {toolCall.result && !isDispatch && !isNativeAgent && (
@@ -681,7 +715,7 @@ export interface ToolCallGroupItem {
   nativeSubagent?: NativeSubagentActivity;
 }
 
-export function ToolCallGroup({ items, onSelectSession }: { items: ToolCallGroupItem[]; onSelectSession?: (id: string) => void }) {
+export function ToolCallGroup({ items, onSelectSession, workspacePath, enableFilePreview }: { items: ToolCallGroupItem[]; onSelectSession?: (id: string) => void; workspacePath?: string | null; enableFilePreview?: boolean }) {
   const [expanded, setExpanded] = useState(false);
   const first = items[0]?.toolCall;
   const phrase = first ? toolPhrase(first.name) : null;
@@ -722,6 +756,8 @@ export function ToolCallGroup({ items, onSelectSession }: { items: ToolCallGroup
               progress={progress}
               nativeSubagent={nativeSubagent}
               onSelectSession={onSelectSession}
+              workspacePath={workspacePath}
+              enableFilePreview={enableFilePreview}
             />
           ))}
         </div>
@@ -730,14 +766,26 @@ export function ToolCallGroup({ items, onSelectSession }: { items: ToolCallGroup
   );
 }
 
-export default function ToolCallCard({ toolCall, onSelectSession, beforeContent, progress, nativeSubagent }: ToolCallProps) {
+export function resolveToolPreviewPaths(toolCall: ToolCallData, workspacePath?: string | null): string[] {
+  if (toolFamily(toolCall.name) !== "file") return [];
+  const rawPaths = toolCall.name === "apply_patch" && Array.isArray(toolCall.arguments.changes)
+    ? (toolCall.arguments.changes as Array<Record<string, unknown>>).map((change) => change.path)
+    : [toolCall.arguments.file_path ?? toolCall.arguments.path ?? toolCall.arguments.notebook_path];
+  return [...new Set(rawPaths
+    .filter((value): value is string => typeof value === "string")
+    .map((value) => resolveWebArtifactPath(value, workspacePath))
+    .filter((value): value is string => Boolean(value)))];
+}
+
+export default function ToolCallCard({ toolCall, onSelectSession, beforeContent, progress, nativeSubagent, workspacePath, enableFilePreview = false }: ToolCallProps) {
+  const previewPaths = enableFilePreview ? resolveToolPreviewPaths(toolCall, workspacePath) : [];
   const card = toolCall.name === "write_file"
-    ? <WriteFileCard toolCall={toolCall} beforeContent={beforeContent} />
+    ? <WriteFileCard toolCall={toolCall} beforeContent={beforeContent} previewPath={previewPaths[0]} />
     : toolCall.name === "read_file"
-      ? <ReadFileCard toolCall={toolCall} />
+      ? <ReadFileCard toolCall={toolCall} previewPath={previewPaths[0]} />
       : toolCall.name === "str_replace"
-        ? <StrReplaceCard toolCall={toolCall} />
-        : <GenericToolCard toolCall={toolCall} onSelectSession={onSelectSession} nativeSubagent={nativeSubagent} />;
+        ? <StrReplaceCard toolCall={toolCall} previewPath={previewPaths[0]} />
+        : <GenericToolCard toolCall={toolCall} onSelectSession={onSelectSession} nativeSubagent={nativeSubagent} previewPaths={previewPaths} workspacePath={workspacePath} enableFilePreview={enableFilePreview} />;
   return (
     <div className="tool-call-with-progress">
       {card}

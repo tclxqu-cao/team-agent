@@ -40,8 +40,6 @@ interface UIState {
   wakeWord: string;
   /** 侧边栏将进行中的会话排在最前 */
   runningFirst: boolean;
-  /** 侧边栏会话按机器人（agentType）分组，且每组可折叠 */
-  groupByBot: boolean;
 
   setSkin: (skin: SkinId) => void;
   setLayout: (layout: LayoutId) => void;
@@ -49,10 +47,9 @@ interface UIState {
   setWakeEnabled: (v: boolean) => void;
   setWakeWord: (w: string) => void;
   setRunningFirst: (v: boolean) => void;
-  setGroupByBot: (v: boolean) => void;
 }
 
-const UI_PREFERENCES_VERSION = 2;
+const UI_PREFERENCES_VERSION = 3;
 
 /** Browser shells have no background window to wake, so they start opted out. */
 export function getDefaultWakeEnabled(browserRuntime = isBrowserRuntime()): boolean {
@@ -68,7 +65,6 @@ export const useUIStore = create<UIState>()(
       wakeEnabled: getDefaultWakeEnabled(),
       wakeWord: "小智",
       runningFirst: false,
-      groupByBot: true,
 
       setSkin: (skin) => set({ skin }),
       setLayout: (layout) => set({ layout }),
@@ -76,7 +72,6 @@ export const useUIStore = create<UIState>()(
       setWakeEnabled: (wakeEnabled) => set({ wakeEnabled }),
       setWakeWord: (wakeWord) => set({ wakeWord }),
       setRunningFirst: (runningFirst) => set({ runningFirst }),
-      setGroupByBot: (groupByBot) => set({ groupByBot }),
     }),
     {
       name: "agent-ui-prefs",
@@ -84,8 +79,12 @@ export const useUIStore = create<UIState>()(
       migrate: (persisted, version) => {
         const preferences = persisted as Partial<UIState>;
         return {
-          ...preferences,
-          ...(version < 1 ? { groupByBot: true } : {}),
+          ...(preferences.skin !== undefined ? { skin: preferences.skin } : {}),
+          ...(preferences.layout !== undefined ? { layout: preferences.layout } : {}),
+          ...(preferences.autoSpeak !== undefined ? { autoSpeak: preferences.autoSpeak } : {}),
+          ...(preferences.wakeEnabled !== undefined ? { wakeEnabled: preferences.wakeEnabled } : {}),
+          ...(preferences.wakeWord !== undefined ? { wakeWord: preferences.wakeWord } : {}),
+          ...(preferences.runningFirst !== undefined ? { runningFirst: preferences.runningFirst } : {}),
           ...(version < UI_PREFERENCES_VERSION && isBrowserRuntime() ? { wakeEnabled: false } : {}),
         } as UIState;
       },

@@ -9,6 +9,19 @@ const pendingIndicator = chatView.slice(
   chatView.indexOf("{/* Keep every otherwise-empty running state visible and consistent. */}"),
   chatView.indexOf("{(sessionLoadError || error) && ("),
 );
+const selectedSessionLoad = chatView.slice(
+  chatView.indexOf("const loadGeneration = ++sessionLoadGenerationRef.current;"),
+  chatView.indexOf("const refreshLatestHistory = useCallback"),
+);
+const selectedSessionLoadDependencies = selectedSessionLoad.slice(selectedSessionLoad.lastIndexOf("}, ["));
+const abortHandler = chatView.slice(
+  chatView.indexOf("const handleAbort = () => {"),
+  chatView.indexOf("const handleSteer = async"),
+);
+const startRun = chatView.slice(
+  chatView.indexOf("async function startRun("),
+  chatView.indexOf("const handleSend = async"),
+);
 
 describe("shared Codex-style message history", () => {
   it("applies one presentation path to every runtime", () => {
@@ -27,6 +40,13 @@ describe("shared Codex-style message history", () => {
     expect(chatView).toContain("&& !hasStreamingReasoning");
     expect(chatView).toContain("&& !hasVisibleRunningTool;");
     expect(chatView).toContain("messages.length === 0 && !isRunning");
+  });
+
+  it("starts every run with a fresh thinking timer before exposing the running state", () => {
+    expect(chatView).toContain("const beginAgentRunActivity = useCallback((targetSessionId: string) => {");
+    expect(startRun).toContain("beginAgentRunActivity(targetSessionId);");
+    expect(startRun.indexOf("beginAgentRunActivity(targetSessionId);"))
+      .toBeLessThan(startRun.indexOf("setRunningSession(targetSessionId);"));
   });
 
   it("keeps tool execution status inside the tool row", () => {
@@ -51,6 +71,8 @@ describe("shared Codex-style message history", () => {
     expect(toolCallCard).toContain('className="tool-call-shell__body-content"');
     expect(toolCallCard).toContain("{expanded && (");
     expect(toolCallCard).toContain("Collapsed bodies stay unmounted");
+    expect(globalCss).toContain(".tool-call-shell__disclosure:focus-visible");
+    expect(globalCss).not.toContain(".tool-call-shell__disclosure:hover");
   });
 
   it("folds adjacent repeated tool actions behind a right-facing disclosure", () => {
@@ -149,6 +171,14 @@ describe("shared Codex-style message history", () => {
     expect(chatView).toContain("window.setInterval(refresh, 2_000)");
   });
 
+  it("does not let a stale running snapshot restore the stop button after abort", () => {
+    expect(selectedSessionLoadDependencies).toContain("selectedSessionId");
+    expect(selectedSessionLoadDependencies).not.toContain("runningSessionId");
+    expect(abortHandler).toContain("sessionLoadGenerationRef.current += 1;");
+    expect(abortHandler.indexOf("sessionLoadGenerationRef.current += 1;"))
+      .toBeLessThan(abortHandler.indexOf("setRunningSession(null);"));
+  });
+
   it("renders normalized Codex attachments and keeps raw source collapsed", () => {
     expect(chatView).toContain('className="chat-message-attachments"');
     expect(chatView).toContain('className="chat-message-attachment-image"');
@@ -159,6 +189,16 @@ describe("shared Codex-style message history", () => {
     expect(globalCss).toContain(".chat-message-raw-content pre");
     expect(globalCss).toContain("max-height: 220px");
     expect(globalCss).toContain("overflow: auto");
+  });
+
+  it("opens every usable message image in the shared lightbox", () => {
+    expect(chatView).toContain('import MessageImageLightbox, { type MessageImagePreview } from "./MessageImageLightbox"');
+    expect(chatView).toContain("setPreviewedMessageImage({ src, alt:");
+    expect(chatView).toContain("setPreviewedMessageImage({ src: attachment.dataUrl!, alt:");
+    expect(chatView).toContain("<MessageImageLightbox");
+    expect(chatView).not.toContain('window.open(src, "_blank")');
+    expect(chatView).not.toContain('window.open(attachment.dataUrl, "_blank")');
+    expect(globalCss).toContain(".chat-message-image-button:focus-visible");
   });
 
   it("renders safe Markdown links as clickable Chinese text", () => {

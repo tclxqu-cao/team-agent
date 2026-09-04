@@ -8,8 +8,9 @@
 //   other   → hex dump (first 4 KiB) — everything is viewable
 // Auto-refreshes when the gateway reports the open file changed on disk.
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import { Check, Download, LoaderCircle, X } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Check, Download, LoaderCircle, Pencil, RefreshCw, RotateCcw, Save, X } from "lucide-react";
+import { parseUnifiedDiff, type FileDiffRow } from "./fileDiff";
 
 const TEXT_EXTS = new Set([
   "ts", "tsx", "js", "jsx", "mjs", "cjs", "json", "md", "mdx", "css", "scss",
@@ -36,6 +37,16 @@ interface FsReadResult {
   offset: number;
   eof: boolean;
   size: number;
+}
+
+interface TextInspectionResult {
+  tooLarge: boolean;
+  data: string | null;
+  size: number;
+  mtime: number;
+  diffStatus: "changed" | "unchanged" | "untracked" | "unavailable";
+  patch: string | null;
+  validUtf8: boolean;
 }
 
 function decodeBase64(data: string): Uint8Array {
@@ -96,7 +107,16 @@ export default function FilePreview({ path, rpc, onClose }: Props) {
   const [downloadProgress, setDownloadProgress] = useState<number | null>(null);
   const [downloadDone, setDownloadDone] = useState(false);
   const [eof, setEof] = useState(true);
+  const [patch, setPatch] = useState<string | null>(null);
+  const [view, setView] = useState<"diff" | "file">("file");
+  const [editable, setEditable] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [externalChange, setExternalChange] = useState(false);
   const offsetRef = useRef(0);
+  const editingRef = useRef(false);
 
   const kind = path ? kindOf(path) : "unsupported";
 
@@ -129,6 +149,31 @@ export default function FilePreview({ path, rpc, onClose }: Props) {
     },
     [rpc],
   );
+
+  const loadTextPreview = useCallback(async (target: string) => {
+    setLoading(true);
+    setErr(null);
+    try {
+      const result = await rpc<TextInspectionResult>("fs:inspect-text", { path: target }, 60_000);
+      setMeta({ size: result.size, mtime: result.mtime });
+      setPatch(result.patch);
+      setView(result.patch ? "diff" : "file");
+      setEditable(!result.tooLarge && result.validUtf8);
+      setExternalChange(false);
+      setSaveError(null);
+      offsetRef.current = 0;
+      if (result.tooLarge || result.data === null) {
+        await loadChunk(target, true);
+        return;
+      }
+      setText(new TextDecoder("utf-8", { fatal: false }).decode(decodeBase64(result.data)));
+      setEof(true);
+    } catch (e: any) {
+      setErr(e.message ?? String(e));
+    } finally {
+      setLoading(false);
+    }
+  }, [loadChunk, rpc]);
 
   // binary/media: fetch whole file as data URL (+ hex fallback bytes)
   const loadMedia = useCallback(
@@ -179,12 +224,13 @@ export default function FilePreview({ path, rpc, onClose }: Props) {
 
   // full reload on file switch
   useEffect(() => {
-    setText(""); setMediaUrl(null); setHexDump(""); setMeta(null); setErr(null); setDownloadError(null); setDownloadProgress(null); setDownloadDone(false); setEof(true);
+    setText(""); setMediaUrl(null); setHexDump(""); setMeta(null); setErr(null); setDownloadError(null); setDownloadProgress(null); setDownloadDone(false); setEof(true); setPatch(null); setView("file"); setEditable(false); setEditing(false); setDraft(""); setSaveError(null); setExternalChange(false);
+    editingRef.current = false;
     offsetRef.current = 0;
     if (!path) return;
     if (kind === "text") {
       rpc("fs:watch", { path: parentOf(path) }).catch(() => {});
-      loadChunk(path, true);
+      loadTextPreview(path);
     } else if (kind === "image" || kind === "video" || kind === "audio" || kind === "pdf") {
       rpc("fs:watch", { path: parentOf(path) }).catch(() => {});
       loadMedia(path, kind);
@@ -201,14 +247,20 @@ export default function FilePreview({ path, rpc, onClose }: Props) {
       const changed = (e as CustomEvent).detail as string;
       if (!changed || changed !== path) return;
       setTimeout(() => {
-        if (kind === "text") loadChunk(path!, true);
+        if (kind === "text" && editingRef.current) {
+          setExternalChange(true);
+        } else if (kind === "text") loadTextPreview(path!);
         else if (kind === "hex") loadMedia(path!, "hex");
         else loadMedia(path!, kind);
       }, 350);
     };
     window.addEventListener("file-changed", handler);
     return () => window.removeEventListener("file-changed", handler);
-  }, [path, kind, loadChunk, loadMedia]);
+  }, [path, kind, loadMedia, loadTextPreview]);
+
+  useEffect(() => {
+    editingRef.current = editing;
+  }, [editing]);
 
   const downloadToClient = useCallback(async () => {
     if (!path || downloadProgress !== null) return;
@@ -236,9 +288,65 @@ export default function FilePreview({ path, rpc, onClose }: Props) {
     }
   }, [downloadProgress, path, rpc]);
 
+  const beginEditing = useCallback(() => {
+    setDraft(text);
+    setSaveError(null);
+    setExternalChange(false);
+    editingRef.current = true;
+    setEditing(true);
+  }, [text]);
+
+  const cancelEditing = useCallback(() => {
+    if (draft !== text && !window.confirm("放弃未保存的修改？")) return;
+    editingRef.current = false;
+    setEditing(false);
+    setDraft("");
+    setSaveError(null);
+    setExternalChange(false);
+  }, [draft, text]);
+
+  const closePreview = useCallback(() => {
+    if (editing && draft !== text && !window.confirm("放弃未保存的修改并关闭预览？")) return;
+    onClose();
+  }, [draft, editing, onClose, text]);
+
+  const reloadExternalChange = useCallback(() => {
+    if (!path) return;
+    editingRef.current = false;
+    setEditing(false);
+    setDraft("");
+    void loadTextPreview(path);
+  }, [loadTextPreview, path]);
+
+  const saveDraft = useCallback(async () => {
+    if (!path || !meta || saving || draft === text) return;
+    setSaving(true);
+    setSaveError(null);
+    try {
+      await rpc("fs:write-text", {
+        path,
+        content: draft,
+        expectedSize: meta.size,
+        expectedMtime: meta.mtime,
+      }, 60_000);
+      editingRef.current = false;
+      setEditing(false);
+      setDraft("");
+      await loadTextPreview(path);
+    } catch (error: any) {
+      setSaveError(error?.message ?? String(error));
+    } finally {
+      setSaving(false);
+    }
+  }, [draft, loadTextPreview, meta, path, rpc, saving, text]);
+
+  const parsedDiff = useMemo(() => parseUnifiedDiff(patch ?? ""), [patch]);
+
   if (!path) return null;
 
   const tooBig = (meta?.size ?? 0) > MAX_TEXT;
+  const hasDiff = Boolean(patch);
+  const canEdit = kind === "text" && editable && !loading && !err;
 
   return (
     <div style={{
@@ -260,36 +368,91 @@ export default function FilePreview({ path, rpc, onClose }: Props) {
         background: "var(--ui-tree-bg, #121218)",
         flexShrink: 0,
       }}>
-        <span className="pv-name" style={{ fontSize: 12.5, color: "var(--ui-text, #e8e8ee)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+        <span className="pv-name" style={{ minWidth: 0, flex: "1 1 auto", fontSize: 12.5, color: "var(--ui-text, #e8e8ee)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
           {fileName(path)}
         </span>
         {meta && (
           <span style={{ fontSize: 10.5, color: "var(--ui-history-meta, #666)", flexShrink: 0 }}>{fmtSize(meta.size)}</span>
         )}
-        <button
-          type="button"
-          onClick={downloadToClient}
-          disabled={downloadProgress !== null}
-          style={{ marginLeft: "auto", ...HEADER_BUTTON_STYLES, opacity: downloadProgress !== null ? 0.72 : 1 }}
-          aria-label={downloadProgress === null ? "下载到当前设备" : `正在下载 ${downloadProgress}%`}
-          title={downloadProgress === null ? "下载到当前设备" : `正在下载 ${downloadProgress}%`}
-        >
-          {downloadProgress !== null ? (
-            <LoaderCircle className="tree-spin" size={15} strokeWidth={1.8} aria-hidden="true" />
-          ) : downloadDone ? (
-            <Check size={15} strokeWidth={1.8} aria-hidden="true" />
-          ) : (
-            <Download size={15} strokeWidth={1.8} aria-hidden="true" />
-          )}
-        </button>
-        <button type="button" onClick={onClose} style={HEADER_BUTTON_STYLES} aria-label="关闭预览" title="关闭预览">
+        {editing ? (
+          <>
+            <button type="button" onClick={cancelEditing} disabled={saving} style={HEADER_BUTTON_STYLES} aria-label="取消编辑" title="取消编辑">
+              <RotateCcw size={15} strokeWidth={1.8} aria-hidden="true" />
+            </button>
+            <button
+              type="button"
+              onClick={saveDraft}
+              disabled={saving || draft === text}
+              style={{ ...HEADER_BUTTON_STYLES, color: "var(--ui-tab-accent, #7aa2f7)", opacity: saving || draft === text ? 0.55 : 1 }}
+              aria-label={saving ? "正在保存" : "保存修改"}
+              title={saving ? "正在保存" : "保存修改"}
+            >
+              {saving ? <LoaderCircle className="tree-spin" size={15} strokeWidth={1.8} aria-hidden="true" /> : <Save size={15} strokeWidth={1.8} aria-hidden="true" />}
+            </button>
+          </>
+        ) : (
+          <>
+            {kind === "text" && (
+              <button
+                type="button"
+                onClick={beginEditing}
+                disabled={!canEdit}
+                style={{ ...HEADER_BUTTON_STYLES, opacity: canEdit ? 1 : 0.45 }}
+                aria-label="编辑文件"
+                title={tooBig ? "文件超过 8M，无法在线编辑" : editable ? "编辑文件" : "此文件不可编辑"}
+              >
+                <Pencil size={15} strokeWidth={1.8} aria-hidden="true" />
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={downloadToClient}
+              disabled={downloadProgress !== null}
+              style={{ ...HEADER_BUTTON_STYLES, opacity: downloadProgress !== null ? 0.72 : 1 }}
+              aria-label={downloadProgress === null ? "下载到当前设备" : `正在下载 ${downloadProgress}%`}
+              title={downloadProgress === null ? "下载到当前设备" : `正在下载 ${downloadProgress}%`}
+            >
+              {downloadProgress !== null ? (
+                <LoaderCircle className="tree-spin" size={15} strokeWidth={1.8} aria-hidden="true" />
+              ) : downloadDone ? (
+                <Check size={15} strokeWidth={1.8} aria-hidden="true" />
+              ) : (
+                <Download size={15} strokeWidth={1.8} aria-hidden="true" />
+              )}
+            </button>
+          </>
+        )}
+        <button type="button" onClick={closePreview} style={HEADER_BUTTON_STYLES} aria-label="关闭预览" title="关闭预览">
           <X size={15} strokeWidth={1.8} aria-hidden="true" />
         </button>
       </div>
 
+      {kind === "text" && hasDiff && !editing && (
+        <div style={{ display: "flex", alignItems: "center", minHeight: 34, padding: "0 12px", borderBottom: "1px solid var(--ui-tree-border, #222)", background: "var(--ui-tree-bg, #121218)", flexShrink: 0 }}>
+          <div role="tablist" aria-label="文件预览模式" style={{ display: "inline-flex", gap: 2, padding: 2, border: "1px solid var(--ui-panel-input-border, #333)", borderRadius: 6, background: "var(--ui-muted-surface, #1b1b22)" }}>
+            <PreviewTab active={view === "diff"} onClick={() => setView("diff")}>变更</PreviewTab>
+            <PreviewTab active={view === "file"} onClick={() => setView("file")}>文件</PreviewTab>
+          </div>
+          <span style={{ marginLeft: 9, display: "inline-flex", gap: 7, fontFamily: '"SF Mono", Menlo, Consolas, monospace', fontSize: 10.5 }}>
+            {parsedDiff.added > 0 && <span style={{ color: "var(--ui-success, #059669)" }}>+{parsedDiff.added}</span>}
+            {parsedDiff.removed > 0 && <span style={{ color: "var(--ui-error, #dc2626)" }}>-{parsedDiff.removed}</span>}
+          </span>
+        </div>
+      )}
+
       <div className="pv-body" style={{ flex: 1, minHeight: 0, overflow: "auto", background: "var(--ui-term-col-bg, #101014)", WebkitOverflowScrolling: "touch" }}>
         {downloadError && <div style={{ padding: "10px 14px 0", color: "var(--ui-error, #f7768e)", fontSize: 12.5 }}>下载失败：{downloadError}</div>}
         {err && <div style={{ padding: 14, color: "var(--ui-error, #f7768e)", fontSize: 12.5 }}>{err}</div>}
+        {saveError && <div role="alert" style={{ padding: "10px 14px", color: "var(--ui-error, #f7768e)", fontSize: 12.5 }}>{saveError}</div>}
+        {externalChange && editing && (
+          <div role="alert" style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", borderBottom: "1px solid var(--ui-tree-border, #222)", color: "var(--ui-error, #f7768e)", fontSize: 12 }}>
+            <span style={{ flex: 1 }}>文件已在其他位置更新</span>
+            <button type="button" onClick={reloadExternalChange} style={INLINE_ACTION_STYLES}>
+              <RefreshCw size={13} strokeWidth={1.8} aria-hidden="true" />
+              重新加载
+            </button>
+          </div>
+        )}
 
         {mediaUrl && kind === "image" && (
           // eslint-disable-next-line @next/next/no-img-element
@@ -307,7 +470,23 @@ export default function FilePreview({ path, rpc, onClose }: Props) {
           <iframe src={mediaUrl} title={path} style={{ width: "100%", height: "100%", border: "none" }} />
         )}
 
-        {(kind === "text" || kind === "hex") && !err && (
+        {kind === "text" && editing && !err && (
+          <textarea
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+            spellCheck={false}
+            autoCapitalize="off"
+            autoCorrect="off"
+            aria-label={`编辑 ${fileName(path)}`}
+            style={{ width: "100%", minHeight: "100%", boxSizing: "border-box", resize: "none", margin: 0, padding: "12px 14px calc(env(safe-area-inset-bottom) + 36px)", border: 0, outline: 0, background: "var(--ui-term-col-bg, #101014)", color: "var(--ui-history-item-text, var(--ui-text, #d6d6de))", fontFamily: '"SF Mono", Menlo, Consolas, monospace', fontSize: 12, lineHeight: 1.5, tabSize: 2 }}
+          />
+        )}
+
+        {kind === "text" && !editing && !err && hasDiff && view === "diff" && (
+          <DiffPreview rows={parsedDiff.rows} />
+        )}
+
+        {(kind === "hex" || (kind === "text" && !editing && (!hasDiff || view === "file"))) && !err && (
           <>
             <pre
               style={{
@@ -370,4 +549,67 @@ const HEADER_BUTTON_STYLES: React.CSSProperties = {
   width: 28, height: 28, borderRadius: 7, border: "1px solid var(--ui-panel-input-border, #333)",
   display: "inline-flex", alignItems: "center", justifyContent: "center",
   background: "var(--ui-muted-surface, #1b1b22)", color: "var(--ui-muted-text, #ccc)", flexShrink: 0, cursor: "pointer",
+};
+
+const INLINE_ACTION_STYLES: React.CSSProperties = {
+  minHeight: 28, padding: "0 9px", borderRadius: 6, border: "1px solid var(--ui-panel-input-border, #333)",
+  display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 5,
+  background: "var(--ui-muted-surface, #1b1b22)", color: "var(--ui-muted-text, #ccc)", cursor: "pointer",
+  fontSize: 11,
+};
+
+function PreviewTab({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={active}
+      onClick={onClick}
+      style={{ minWidth: 48, height: 24, padding: "0 9px", border: 0, borderRadius: 4, background: active ? "var(--ui-tab-accent, #7aa2f7)" : "transparent", color: active ? "var(--ui-tab-active-text, #fff)" : "var(--ui-muted-text, #9aa)", fontSize: 11, fontWeight: 600, cursor: "pointer" }}
+    >
+      {children}
+    </button>
+  );
+}
+
+function DiffPreview({ rows }: { rows: FileDiffRow[] }) {
+  return (
+    <div style={{ minWidth: "100%", width: "max-content", paddingBottom: "calc(env(safe-area-inset-bottom) + 36px)", fontFamily: '"SF Mono", Menlo, Consolas, monospace', fontSize: 11.5, lineHeight: 1.55 }}>
+      {rows.map((row, index) => {
+        const added = row.kind === "added";
+        const removed = row.kind === "removed";
+        const structural = row.kind === "hunk" || row.kind === "meta" || row.kind === "note";
+        const background = added
+          ? "color-mix(in srgb, var(--ui-success, #059669) 12%, transparent)"
+          : removed
+            ? "color-mix(in srgb, var(--ui-error, #dc2626) 11%, transparent)"
+            : row.kind === "hunk"
+              ? "color-mix(in srgb, var(--ui-tab-accent, #7aa2f7) 10%, transparent)"
+              : "transparent";
+        const color = added
+          ? "var(--ui-success, #059669)"
+          : removed
+            ? "var(--ui-error, #dc2626)"
+            : structural
+              ? "var(--ui-muted-text, #9aa)"
+              : "var(--ui-history-item-text, var(--ui-text, #d6d6de))";
+        return (
+          <div key={`${row.kind}-${index}`} style={{ display: "grid", gridTemplateColumns: "42px 42px 22px minmax(0, 1fr)", minHeight: 18, background, color }}>
+            <span style={DIFF_LINE_NUMBER_STYLES}>{row.oldLine ?? ""}</span>
+            <span style={DIFF_LINE_NUMBER_STYLES}>{row.newLine ?? ""}</span>
+            <span style={{ textAlign: "center", userSelect: "none", color }}>{added ? "+" : removed ? "-" : " "}</span>
+            <span style={{ padding: "0 12px 0 6px", whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{row.text || " "}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+const DIFF_LINE_NUMBER_STYLES: React.CSSProperties = {
+  padding: "0 6px",
+  borderRight: "1px solid var(--ui-tree-border, #222)",
+  color: "var(--ui-history-meta, #666)",
+  textAlign: "right",
+  userSelect: "none",
 };

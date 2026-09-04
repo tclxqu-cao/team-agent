@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { Plus, Search } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
 import ChatView from "./components/ChatView";
 import { renewVoiceConversation } from "./lib/voice-command";
@@ -11,6 +12,16 @@ import {
   sortNewestSessionsFirst,
   sortRunningSessionsFirst,
 } from "./lib/sidebar-session-sort";
+import {
+  EMPTY_SIDEBAR_SELECTION,
+  selectProject,
+  selectSession,
+  type SidebarSelection,
+} from "./lib/sidebar-selection";
+import {
+  removeSessionFromCollections,
+  sessionDeletionConfirmation,
+} from "./lib/session-deletion";
 import SettingsPanel from "./components/SettingsPanel";
 import MCPServerList from "./components/MCPServerList";
 import MemoryViewer from "./components/MemoryViewer";
@@ -18,9 +29,26 @@ import SkillManager from "./components/SkillManager";
 import AgentManager from "./components/AgentManager";
 import LSPServerList from "./components/LSPServerList";
 import WakeOverlay from "./components/WakeOverlay";
-import RuntimeSessionMenu from "./components/RuntimeSessionMenu";
+import AgentWorkspaceSwitcher from "./components/AgentWorkspaceSwitcher";
+import AgentBrandIcon from "./components/AgentBrandIcon";
+import SidebarDeleteConfirmation from "./components/SidebarDeleteConfirmation";
+import SidebarSessionRow, { type SidebarDeleteAnchor } from "./components/SidebarSessionRow";
 import HostProjectPicker from "./components/HostProjectPicker";
-import type { AgentType, RuntimeHealth } from "./global";
+import type {
+  AgentType,
+  AgentWorkspace,
+  ImportAgentWorkspaceResult,
+  RuntimeHealth,
+  WorkspacePage,
+} from "./global";
+import {
+  emptyAgentWorkspacePartition,
+  readAgentWorkspaceCache,
+  reconcileSessionPage,
+  reconcileWorkspacePage,
+  writeAgentWorkspaceCache,
+  type AgentWorkspaceCache,
+} from "./lib/agent-workspace-cache";
 import { useSettingsStore } from "./stores/settingsStore";
 import { useAgentStore } from "./stores/agentStore";
 import { useUIStore, SKINS, LAYOUTS } from "./stores/uiStore";
@@ -35,6 +63,8 @@ interface Project {
   description: string;
   created: string;
   updated: string;
+  agentType?: AgentType;
+  source?: AgentWorkspace["source"];
 }
 
 interface Session {
@@ -54,61 +84,11 @@ interface Session {
   updated: string;
 }
 
-const RUNTIME_MARKS: Record<AgentType, string> = {
-  "customer-agent": "CA",
-  codex: "CX",
-  "claude-code": "CC",
-};
-
-const OTHER_GROUP_LABELS: Record<AgentType, string> = {
-  "claude-code": "Claude Code",
-  codex: "Codex",
-  "customer-agent": "Customer Agent",
-};
-
-/** 机器人分组在侧边栏中的固定展示顺序 */
-const BOT_GROUP_ORDER: AgentType[] = ["customer-agent", "claude-code", "codex"];
-const SESSION_INDEX_CACHE_KEY = "agentroam.session-index.v1";
-
-function readSessionIndexCache(): Record<string, Session[]> {
-  try {
-    const cached = JSON.parse(localStorage.getItem(SESSION_INDEX_CACHE_KEY) ?? "{}") as unknown;
-    if (!cached || typeof cached !== "object" || Array.isArray(cached)) return {};
-    return Object.fromEntries(
-      Object.entries(cached).filter(([, sessions]) => Array.isArray(sessions)),
-    ) as Record<string, Session[]>;
-  } catch {
-    return {};
-  }
-}
-
-function writeProjectSessionCache(projectId: string, sessions: Session[]): void {
-  try {
-    localStorage.setItem(SESSION_INDEX_CACHE_KEY, JSON.stringify({
-      ...readSessionIndexCache(),
-      [projectId]: sessions,
-    }));
-  } catch {
-    // A full or unavailable browser store must not block live session loading.
-  }
-}
-
-function pruneSessionIndexCache(projectIds: Set<string>): void {
-  try {
-    const cache = readSessionIndexCache();
-    const next = Object.fromEntries(
-      Object.entries(cache).filter(([projectId]) => projectIds.has(projectId)),
-    );
-    localStorage.setItem(SESSION_INDEX_CACHE_KEY, JSON.stringify(next));
-  } catch {
-    // Cache cleanup is best-effort.
-  }
-}
-
-function buildCachedSessionState(cache: Record<string, Session[]>) {
+function buildCachedSessionState(cache: Record<string, { data: Session[]; loaded: boolean }>) {
   const roots: Record<string, Session[]> = {};
   const children: Record<string, Session[]> = {};
-  for (const [projectId, sessions] of Object.entries(cache)) {
+  for (const [projectId, entry] of Object.entries(cache)) {
+    const sessions = entry.data;
     roots[projectId] = sortNewestSessionsFirst(
       sessions.filter((session) => !session.parentSessionId),
     );
@@ -119,7 +99,23 @@ function buildCachedSessionState(cache: Record<string, Session[]>) {
   for (const group of Object.values(children)) {
     group.sort((left, right) => left.created.localeCompare(right.created));
   }
-  return { roots, children, projectIds: new Set(Object.keys(cache)) };
+  return {
+    roots,
+    children,
+    projectIds: new Set(Object.entries(cache).filter(([, entry]) => entry.loaded).map(([id]) => id)),
+  };
+}
+
+function workspaceToProject(workspace: AgentWorkspace): Project {
+  return {
+    id: workspace.workspaceId,
+    name: workspace.name,
+    description: workspace.roots[0] ?? "",
+    created: workspace.updatedAt ?? "",
+    updated: workspace.updatedAt ?? "",
+    agentType: workspace.agentType,
+    source: workspace.source,
+  };
 }
 
 function SidebarDeleteIcon() {
@@ -133,15 +129,52 @@ function SidebarDeleteIcon() {
   );
 }
 
+function blurDeactivatedPointerToggle(
+  event: React.MouseEvent<HTMLButtonElement>,
+  wasActive: boolean,
+): void {
+  if (wasActive && event.detail > 0) event.currentTarget.blur();
+}
+
+function blurActiveTextEntry(): void {
+  const activeElement = document.activeElement;
+  if (
+    activeElement instanceof HTMLElement
+    && (activeElement.matches("input, textarea, select") || activeElement.isContentEditable)
+  ) {
+    activeElement.blur();
+  }
+}
+
 export default function App() {
-  const [initialSessionState] = useState(() => buildCachedSessionState(readSessionIndexCache()));
-  const [projects, setProjects] = useState<Project[]>([]);
+  const [initialWorkspaceCache] = useState(readAgentWorkspaceCache);
+  const initialAgent = initialWorkspaceCache.activeAgent;
+  const initialPartition = initialWorkspaceCache.agents[initialAgent] ?? emptyAgentWorkspacePartition();
+  const [initialSessionState] = useState(() => buildCachedSessionState(
+    initialPartition.sessions as Record<string, { data: Session[]; loaded: boolean }>,
+  ));
+  const workspaceCacheRef = useRef<AgentWorkspaceCache>(initialWorkspaceCache);
+  const [activeAgent, setActiveAgent] = useState<AgentType>(initialAgent);
+  const activeAgentRef = useRef(activeAgent);
+  activeAgentRef.current = activeAgent;
+  const [projects, setProjects] = useState<Project[]>(
+    initialPartition.workspaces.map(workspaceToProject),
+  );
+  const [workspaceNextCursor, setWorkspaceNextCursor] = useState<string | null>(initialPartition.nextCursor);
+  const [workspaceWatermark, setWorkspaceWatermark] = useState<string | null>(initialPartition.watermark);
+  const [workspaceLoading, setWorkspaceLoading] = useState(false);
+  const [workspaceStale, setWorkspaceStale] = useState(false);
+  const [workspaceError, setWorkspaceError] = useState<string | null>(null);
   const [hostProjectPickerOpen, setHostProjectPickerOpen] = useState(false);
   const [sessionsByProject, setSessionsByProject] = useState<Record<string, Session[]>>(initialSessionState.roots);
-  const [otherLocalSessions, setOtherLocalSessions] = useState<Session[]>([]);
   const [sessionQuery, setSessionQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchListLimit, setSearchListLimit] = useState(10);
+  const [sessionDeleteRequest, setSessionDeleteRequest] = useState<{
+    session: Session;
+    anchor: SidebarDeleteAnchor;
+  } | null>(null);
+  const [sessionDeletePending, setSessionDeletePending] = useState(false);
   const [runtimeHealth, setRuntimeHealth] = useState<RuntimeHealth[]>([]);
   /** Child sessions keyed by parentSessionId */
   const [childSessionsByParent, setChildSessionsByParent] = useState<Record<string, Session[]>>(initialSessionState.children);
@@ -149,15 +182,24 @@ export default function App() {
   const [loadedProjectIds, setLoadedProjectIds] = useState<Set<string>>(initialSessionState.projectIds);
   const [loadingProjectIds, setLoadingProjectIds] = useState<Set<string>>(new Set());
   const [projectSessionErrors, setProjectSessionErrors] = useState<Record<string, string>>({});
+  const [staleProjectIds, setStaleProjectIds] = useState<Set<string>>(new Set());
+  const [sessionNextCursors, setSessionNextCursors] = useState<Record<string, string | null>>(
+    Object.fromEntries(Object.entries(initialPartition.sessions).map(([id, entry]) => [id, entry.nextCursor])),
+  );
   const projectSessionRequestIds = useRef(new Map<string, number>());
-  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
-  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
+  const workspaceRequestIds = useRef(new Map<AgentType, number>());
+  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(initialPartition.selectedWorkspaceId);
+  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(initialPartition.selectedSessionId);
+  const selectedProjectIdRef = useRef(selectedProjectId);
+  const selectedSessionIdRef = useRef(selectedSessionId);
+  selectedProjectIdRef.current = selectedProjectId;
+  selectedSessionIdRef.current = selectedSessionId;
   /** Set of parent session IDs whose children are collapsed */
   const [collapsedParents, setCollapsedParents] = useState<Set<string>>(new Set());
   /** Set of project IDs whose session list is expanded */
-  const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set());
-  /** Set of `${projectId}::${agentType}` bot-group keys whose sessions are collapsed */
-  const [collapsedBotGroups, setCollapsedBotGroups] = useState<Set<string>>(new Set());
+  const [expandedProjects, setExpandedProjects] = useState<Set<string>>(
+    new Set(initialPartition.expandedWorkspaceIds),
+  );
   /** Project IDs whose working directory path no longer exists on disk */
   const [invalidProjectIds, setInvalidProjectIds] = useState<Set<string>>(new Set());
 
@@ -179,8 +221,6 @@ export default function App() {
   const setAutoSpeak = useUIStore((s) => s.setAutoSpeak);
   const runningFirst = useUIStore((s) => s.runningFirst);
   const setRunningFirst = useUIStore((s) => s.setRunningFirst);
-  const groupByBot = useUIStore((s) => s.groupByBot);
-  const setGroupByBot = useUIStore((s) => s.setGroupByBot);
   const runningSessionId = useAgentStore((s) => s.runningSessionId);
   const sessionsNeedingInput = useAgentStore(useShallow((s) =>
     Object.entries(s.messagesBySession)
@@ -193,22 +233,9 @@ export default function App() {
     [runningSessionId],
   );
 
-  /** 当前项目内存在的机器人分组 key，按项目顺序 × BOT_GROUP_ORDER 排列 */
-  const botGroupKeysInOrder = useCallback(() => {
-    const keys: string[] = [];
-    for (const project of projects) {
-      const list = sessionsByProject[project.id] ?? [];
-      for (const botType of BOT_GROUP_ORDER) {
-        if (list.some((s) => s.agentType === botType)) keys.push(`${project.id}::${botType}`);
-      }
-    }
-    return keys;
-  }, [projects, sessionsByProject]);
-
   /** Collapse every project and nested session group in the sidebar. */
   const handleCollapseAllSessions = () => {
     setExpandedProjects(new Set());
-    setCollapsedBotGroups(new Set(botGroupKeysInOrder()));
     setCollapsedParents(new Set(Object.keys(childSessionsByParent)));
   };
   /** Expand every valid project and nested session group in the sidebar. */
@@ -217,7 +244,6 @@ export default function App() {
       .filter((project) => !invalidProjectIds.has(project.id))
       .map((project) => project.id);
     setExpandedProjects(new Set(projectIds));
-    setCollapsedBotGroups(new Set());
     setCollapsedParents(new Set());
     for (const projectId of projectIds) {
       if (loadingProjectIdsRef.current.has(projectId)) continue;
@@ -254,6 +280,7 @@ export default function App() {
   loadedProjectIdsRef.current = loadedProjectIds;
   const loadingProjectIdsRef = useRef(loadingProjectIds);
   loadingProjectIdsRef.current = loadingProjectIds;
+  const sidebarScrollRef = useRef<HTMLDivElement | null>(null);
 
   // Apply skin / layout to the DOM
   useEffect(() => {
@@ -262,6 +289,59 @@ export default function App() {
   useEffect(() => {
     document.body.classList.toggle("layout-compact", layout === "compact");
   }, [layout]);
+  useEffect(() => {
+    const workspaces: AgentWorkspace[] = projects.map((project, order) => ({
+      agentType: activeAgent,
+      workspaceId: project.id,
+      name: project.name,
+      roots: project.description ? [project.description] : [],
+      order,
+      updatedAt: project.updated || undefined,
+      source: project.source ?? (project.agentType === "claude-code" ? "derived" : "native"),
+    }));
+    const sessions = Object.fromEntries(projects.map((project) => [project.id, {
+      data: [
+        ...(sessionsByProject[project.id] ?? []),
+        ...Object.values(childSessionsByParent).flat().filter((session) => (
+          (sessionsByProject[project.id] ?? []).some((root) => root.id === session.parentSessionId)
+        )),
+      ],
+      nextCursor: sessionNextCursors[project.id] ?? null,
+      loaded: loadedProjectIds.has(project.id),
+    }]));
+    const cache: AgentWorkspaceCache = {
+      ...workspaceCacheRef.current,
+      version: 2,
+      activeAgent,
+      agents: {
+        ...workspaceCacheRef.current.agents,
+        [activeAgent]: {
+          workspaces,
+          nextCursor: workspaceNextCursor,
+          watermark: workspaceWatermark,
+          expandedWorkspaceIds: [...expandedProjects],
+          selectedWorkspaceId: selectedProjectId,
+          selectedSessionId,
+          sidebarScrollTop: sidebarScrollRef.current?.scrollTop ?? 0,
+          sessions,
+        },
+      },
+    };
+    workspaceCacheRef.current = cache;
+    writeAgentWorkspaceCache(cache);
+  }, [
+    activeAgent,
+    childSessionsByParent,
+    expandedProjects,
+    loadedProjectIds,
+    projects,
+    selectedProjectId,
+    selectedSessionId,
+    sessionNextCursors,
+    sessionsByProject,
+    workspaceNextCursor,
+    workspaceWatermark,
+  ]);
 
   const beginWakeListening = useCallback(() => {
     if (!window.agentApi || !wakeEnabled) return;
@@ -431,8 +511,11 @@ export default function App() {
     wakeHandleRef.current?.stop();
   }, []);
 
-  const allVisibleSessions = Object.values(sessionsByProject).flat();
-  const allKnownSessions = [...allVisibleSessions, ...otherLocalSessions];
+  const allVisibleSessions = [
+    ...Object.values(sessionsByProject).flat(),
+    ...Object.values(childSessionsByParent).flat(),
+  ];
+  const allKnownSessions = allVisibleSessions;
   const sessionQueryTrim = sessionQuery.trim().toLowerCase();
   const searchResults = sessionQueryTrim
     ? allVisibleSessions.filter((s) =>
@@ -443,6 +526,9 @@ export default function App() {
     ? allKnownSessions.find((session) => session.id === selectedSessionId)
     : undefined;
   const selectedSessionTitle = selectedSession?.title;
+  const selectedWorkspacePath = selectedSession?.cwd
+    || projects.find((project) => project.id === selectedProjectId)?.description
+    || null;
   const collapsibleProjectIds = projects
     .filter((project) => !invalidProjectIds.has(project.id))
     .map((project) => project.id);
@@ -478,7 +564,71 @@ export default function App() {
   }, [sidebarWidth, handleDrag, stopDrag]);
 
   const [notice, setNotice] = useState<string | null>(null);
-  const [noticeType, setNoticeType] = useState<"success" | "error">("success");
+  const [noticeType, setNoticeType] = useState<"success" | "info" | "error">("success");
+
+  const applySidebarSelection = (selection: SidebarSelection) => {
+    selectedProjectIdRef.current = selection.projectId;
+    selectedSessionIdRef.current = selection.sessionId;
+    setSelectedProjectId(selection.projectId);
+    setSelectedSessionId(selection.sessionId);
+    if (!selection.sessionId) setTodos([]);
+  };
+
+  const handleAgentChange = (agentType: AgentType) => {
+    if (agentType === activeAgentRef.current) return;
+    const currentAgent = activeAgentRef.current;
+    const currentPartition = workspaceCacheRef.current.agents[currentAgent];
+    if (currentPartition) {
+      workspaceCacheRef.current = {
+        ...workspaceCacheRef.current,
+        agents: {
+          ...workspaceCacheRef.current.agents,
+          [currentAgent]: {
+            ...currentPartition,
+            sidebarScrollTop: sidebarScrollRef.current?.scrollTop ?? currentPartition.sidebarScrollTop,
+          },
+        },
+      };
+    }
+    const partition = workspaceCacheRef.current.agents[agentType] ?? emptyAgentWorkspacePartition();
+    const cachedSessions = buildCachedSessionState(
+      partition.sessions as Record<string, { data: Session[]; loaded: boolean }>,
+    );
+    const nextProjects = partition.workspaces.map(workspaceToProject);
+    activeAgentRef.current = agentType;
+    projectsRef.current = nextProjects;
+    setActiveAgent(agentType);
+    setProjects(nextProjects);
+    setWorkspaceNextCursor(partition.nextCursor);
+    setWorkspaceWatermark(partition.watermark);
+    setWorkspaceLoading(false);
+    setWorkspaceStale(false);
+    setWorkspaceError(null);
+    setSessionsByProject(cachedSessions.roots);
+    setChildSessionsByParent(cachedSessions.children);
+    setLoadedProjectIds(cachedSessions.projectIds);
+    loadedProjectIdsRef.current = cachedSessions.projectIds;
+    setLoadingProjectIds(new Set());
+    loadingProjectIdsRef.current = new Set();
+    setProjectSessionErrors({});
+    setStaleProjectIds(new Set());
+    setSessionNextCursors(Object.fromEntries(
+      Object.entries(partition.sessions).map(([id, entry]) => [id, entry.nextCursor]),
+    ));
+    setExpandedProjects(new Set(partition.expandedWorkspaceIds));
+    setInvalidProjectIds(new Set());
+    applySidebarSelection({
+      projectId: partition.selectedWorkspaceId,
+      sessionId: partition.selectedSessionId,
+    });
+    window.requestAnimationFrame(() => {
+      if (sidebarScrollRef.current) sidebarScrollRef.current.scrollTop = partition.sidebarScrollTop;
+    });
+    void loadProjects(agentType, {
+      refresh: partition.workspaces.length > 0,
+      since: partition.watermark,
+    });
+  };
 
   // ── Toast notifications for sub-session events ──────────────────────────
   interface Toast {
@@ -498,55 +648,109 @@ export default function App() {
     setTimeout(() => dismissToast(id), 12000);
   }, [dismissToast]);
 
-  async function loadProjects() {
+  async function loadProjects(
+    agentType: AgentType = activeAgentRef.current,
+    options: {
+      refresh?: boolean;
+      cursor?: string | null;
+      since?: string | null;
+      refreshLoadedSessions?: boolean;
+    } = {},
+  ) {
     if (!window.agentApi) return;
-    const list = await window.agentApi.listProjects() as Project[];
-    setProjects(list);
-    const projectIds = new Set(list.map((project) => project.id));
-    const cachedProjectIds = new Set(
-      [...loadedProjectIdsRef.current].filter((projectId) => projectIds.has(projectId)),
-    );
-    pruneSessionIndexCache(projectIds);
-    setSessionsByProject((prev) => Object.fromEntries(
-      Object.entries(prev).filter(([projectId]) => projectIds.has(projectId)),
-    ));
-    setLoadedProjectIds((prev) => {
-      const next = new Set([...prev].filter((projectId) => projectIds.has(projectId)));
-      loadedProjectIdsRef.current = next;
-      return next;
-    });
-    setLoadingProjectIds((prev) => {
-      const next = new Set([...prev].filter((projectId) => projectIds.has(projectId)));
-      loadingProjectIdsRef.current = next;
-      return next;
-    });
-    setProjectSessionErrors((prev) => Object.fromEntries(
-      Object.entries(prev).filter(([projectId]) => projectIds.has(projectId)),
-    ));
-    // Check which project paths still exist on disk
-    const invalid = new Set<string>();
-    await Promise.all(list.map(async (p) => {
-      if (p.description && !(await window.agentApi!.checkProjectPath(p.description))) {
-        invalid.add(p.id);
+    const requestId = (workspaceRequestIds.current.get(agentType) ?? 0) + 1;
+    workspaceRequestIds.current.set(agentType, requestId);
+    setWorkspaceLoading(true);
+    setWorkspaceError(null);
+    try {
+      const page = await window.agentApi.listAgentWorkspaces(agentType, {
+        cursor: options.cursor,
+        limit: 50,
+        refresh: options.refresh,
+        since: options.refresh ? (options.since ?? workspaceWatermark) : null,
+      });
+      if (activeAgentRef.current !== agentType || workspaceRequestIds.current.get(agentType) !== requestId) return;
+      const current = projectsRef.current.map((project, order): AgentWorkspace => ({
+        agentType,
+        workspaceId: project.id,
+        name: project.name,
+        roots: project.description ? [project.description] : [],
+        order,
+        updatedAt: project.updated,
+        source: project.source ?? (agentType === "claude-code" ? "derived" : "native"),
+      }));
+      const workspaces = reconcileWorkspacePage(current, page, !options.cursor);
+      const list = workspaces.map(workspaceToProject);
+      projectsRef.current = list;
+      setProjects(list);
+      setWorkspaceNextCursor(page.nextCursor);
+      setWorkspaceWatermark(page.watermark);
+      setWorkspaceStale(page.stale === true);
+      const projectIds = new Set(list.map((project) => project.id));
+      const restoredProjectId = selectedProjectIdRef.current;
+      if (restoredProjectId && !projectIds.has(restoredProjectId)) {
+        applySidebarSelection(EMPTY_SIDEBAR_SELECTION);
       }
-    }));
-    setInvalidProjectIds(invalid);
+      const cachedProjectIds = new Set(
+        [...loadedProjectIdsRef.current].filter((projectId) => projectIds.has(projectId)),
+      );
+      if (restoredProjectId && projectIds.has(restoredProjectId)) {
+        cachedProjectIds.add(restoredProjectId);
+      }
+      setSessionsByProject((prev) => Object.fromEntries(
+        Object.entries(prev).filter(([projectId]) => projectIds.has(projectId)),
+      ));
+      setLoadedProjectIds((prev) => {
+        const next = new Set([...prev].filter((projectId) => projectIds.has(projectId)));
+        loadedProjectIdsRef.current = next;
+        return next;
+      });
+      setLoadingProjectIds((prev) => {
+        const next = new Set([...prev].filter((projectId) => projectIds.has(projectId)));
+        loadingProjectIdsRef.current = next;
+        return next;
+      });
+      setProjectSessionErrors((prev) => Object.fromEntries(
+        Object.entries(prev).filter(([projectId]) => projectIds.has(projectId)),
+      ));
 
-    // Cached rows make startup immediate, then a project-scoped refresh brings
-    // newly discovered native sessions into the sidebar without another click.
-    for (const projectId of cachedProjectIds) {
-      if (invalid.has(projectId) || loadingProjectIdsRef.current.has(projectId)) continue;
-      void loadSessions(projectId, { refresh: true, background: true });
+      const invalid = new Set<string>();
+      await Promise.all(list.map(async (project) => {
+        if (project.description && !(await window.agentApi!.checkProjectPath(project.description))) {
+          invalid.add(project.id);
+        }
+      }));
+      if (activeAgentRef.current !== agentType || workspaceRequestIds.current.get(agentType) !== requestId) return;
+      setInvalidProjectIds(invalid);
+
+      // Cached rows render immediately; page one then refreshes in place.
+      if (options.refreshLoadedSessions !== false) {
+        for (const projectId of cachedProjectIds) {
+          if (invalid.has(projectId) || loadingProjectIdsRef.current.has(projectId)) continue;
+          void loadSessions(projectId, { refresh: true, background: true });
+        }
+      }
+    } catch (error) {
+      if (activeAgentRef.current === agentType) {
+        if (projectsRef.current.length > 0) setWorkspaceStale(true);
+        setWorkspaceError(error instanceof Error ? error.message : "目录加载失败");
+      }
+    } finally {
+      if (activeAgentRef.current === agentType && workspaceRequestIds.current.get(agentType) === requestId) {
+        setWorkspaceLoading(false);
+      }
     }
   }
 
   async function loadSessions(
     projectId: string,
-    options: { refresh?: boolean; background?: boolean } = {},
+    options: { refresh?: boolean; background?: boolean; cursor?: string | null } = {},
   ) {
     if (!window.agentApi) return;
-    const requestId = (projectSessionRequestIds.current.get(projectId) ?? 0) + 1;
-    projectSessionRequestIds.current.set(projectId, requestId);
+    const agentType = activeAgentRef.current;
+    const requestKey = `${agentType}:${projectId}`;
+    const requestId = (projectSessionRequestIds.current.get(requestKey) ?? 0) + 1;
+    projectSessionRequestIds.current.set(requestKey, requestId);
     setLoadingProjectIds((prev) => {
       const next = new Set(prev).add(projectId);
       loadingProjectIdsRef.current = next;
@@ -560,21 +764,39 @@ export default function App() {
     });
 
     try {
-      const list = options.refresh
-        ? await window.agentApi.refreshSessions(projectId) as Session[]
-        : await window.agentApi.listSessions(projectId) as Session[];
-      if (projectSessionRequestIds.current.get(projectId) !== requestId) return;
+      const page = await window.agentApi.listAgentWorkspaceSessions(agentType, projectId, {
+        cursor: options.cursor,
+        limit: 50,
+        refresh: options.refresh,
+      }) as WorkspacePage<Session>;
+      if (activeAgentRef.current !== agentType || projectSessionRequestIds.current.get(requestKey) !== requestId) return;
 
       const previousRootIds = new Set((sessionsByProject[projectId] ?? []).map((session) => session.id));
+      const current = [
+        ...(sessionsByProject[projectId] ?? []),
+        ...[...previousRootIds].flatMap((rootId) => childSessionsByParent[rootId] ?? []),
+      ];
+      const list = (reconcileSessionPage(current, page, !options.cursor) as Session[])
+        .map((session) => ({ ...session, projectId: session.projectId ?? projectId }));
       const roots = sortNewestSessionsFirst(
         list.filter((session) => !session.parentSessionId),
       );
+      const activeProjectId = selectedProjectIdRef.current;
+      const activeSessionId = selectedSessionIdRef.current;
       const selectedPendingNative = (sessionsByProject[projectId] ?? []).find((session) => (
-        session.id === selectedSessionId
+        session.id === activeSessionId
         && session.agentType !== "customer-agent"
         && !roots.some((fresh) => fresh.id === session.id)
       ));
       if (selectedPendingNative) roots.unshift(selectedPendingNative);
+      if (
+        activeProjectId === projectId
+        && activeSessionId
+        && !list.some((session) => session.id === activeSessionId)
+        && !selectedPendingNative
+      ) {
+        applySidebarSelection(EMPTY_SIDEBAR_SELECTION);
+      }
       const freshChildGroups: Record<string, Session[]> = {};
       for (const child of list.filter((session) => session.parentSessionId)) {
         (freshChildGroups[child.parentSessionId!] ??= []).push(child);
@@ -583,10 +805,12 @@ export default function App() {
         children.sort((left, right) => left.created.localeCompare(right.created));
       }
 
-      writeProjectSessionCache(projectId, [
-        ...roots,
-        ...Object.values(freshChildGroups).flat(),
-      ]);
+      setSessionNextCursors((prev) => ({ ...prev, [projectId]: page.nextCursor }));
+      setStaleProjectIds((prev) => {
+        const next = new Set(prev);
+        if (page.stale) next.add(projectId); else next.delete(projectId);
+        return next;
+      });
       setSessionsByProject((prev) => ({ ...prev, [projectId]: roots }));
       setChildSessionsByParent((prev) => {
         const next = { ...prev };
@@ -602,13 +826,13 @@ export default function App() {
         return next;
       });
     } catch (error) {
-      if (projectSessionRequestIds.current.get(projectId) !== requestId) return;
+      if (projectSessionRequestIds.current.get(requestKey) !== requestId) return;
       setProjectSessionErrors((prev) => ({
         ...prev,
         [projectId]: error instanceof Error ? error.message : "会话加载失败",
       }));
     } finally {
-      if (projectSessionRequestIds.current.get(projectId) === requestId) {
+      if (projectSessionRequestIds.current.get(requestKey) === requestId) {
         setLoadingProjectIds((prev) => {
           const next = new Set(prev);
           next.delete(projectId);
@@ -631,7 +855,14 @@ export default function App() {
 
   const handleNewRuntimeSession = async (projectId: string, agentType: AgentType) => {
     if (!window.agentApi) return;
-    const created = await window.agentApi.createSession("新会话", projectId, agentType) as Session;
+    const workspace = projectsRef.current.find((project) => project.id === projectId);
+    const nativeProjectId = workspace?.source === "imported" ? undefined : projectId;
+    const created = await window.agentApi.createSession(
+      "新会话",
+      nativeProjectId,
+      agentType,
+      workspace?.description,
+    ) as Session;
     if (agentType === "customer-agent") {
       await loadSessions(projectId);
       setSelectedProjectId(projectId);
@@ -647,7 +878,6 @@ export default function App() {
       ...prev,
       [projectId]: [projectSession, ...(prev[projectId] ?? []).filter((s) => s.id !== created.id)],
     }));
-    setOtherLocalSessions((prev) => prev.filter((s) => s.id !== created.id));
     setSelectedProjectId(projectId);
     setSelectedSessionId(created.id);
     if (mobileDrawer) setSidebarDrawerOpen(false);
@@ -657,12 +887,28 @@ export default function App() {
     if (!window.agentApi) return;
     // Projects are the only blocking sidebar request. Settings and runtime
     // health hydrate independently; sessions load when a project is opened.
-    void loadProjects();
+    void loadProjects(activeAgentRef.current, {
+      refresh: (workspaceCacheRef.current.agents[activeAgentRef.current]?.workspaces.length ?? 0) > 0,
+    });
     void useSettingsStore.getState().loadFromSystem();
     void window.agentApi.getRuntimeHealth().then(setRuntimeHealth).catch(() => undefined);
     // loadProjects is stable for the lifetime of this mounted App.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      if (document.visibilityState !== "visible" || workspaceLoading) return;
+      void loadProjects(activeAgent, {
+        refresh: true,
+        since: workspaceWatermark,
+        refreshLoadedSessions: false,
+      });
+    }, 15_000);
+    return () => window.clearInterval(timer);
+    // Active Agent and its watermark define the incremental workspace poll.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeAgent, workspaceLoading, workspaceWatermark]);
 
   useEffect(() => {
     if (
@@ -697,18 +943,15 @@ export default function App() {
     if (path) void window.agentApi.setProjectWorkingDir(path);
   }, [selectedProjectId, projects]);
 
-  /** Toggle expand/collapse for a project; also selects it if switching from another project */
+  /** Project rows establish the workspace context and independently control disclosure. */
   const handleToggleProject = (projectId: string) => {
+    applySidebarSelection(selectProject(projectId));
     const opening = !expandedProjects.has(projectId);
     setExpandedProjects((prev) => {
       const next = new Set(prev);
       if (opening) next.add(projectId); else next.delete(projectId);
       return next;
     });
-    if (selectedProjectId !== projectId) {
-      setSelectedProjectId(projectId);
-      setSelectedSessionId(null);
-    }
     if (opening && !loadingProjectIdsRef.current.has(projectId)) {
       const hasCache = loadedProjectIdsRef.current.has(projectId);
       void loadSessions(projectId, { refresh: hasCache, background: hasCache });
@@ -720,14 +963,23 @@ export default function App() {
     const normalizedPath = selectedPath.replace(/\\/g, "/");
     const segments = normalizedPath.split("/").filter(Boolean);
     const name = segments[segments.length - 1] || normalizedPath || "导入的项目";
-    const created = await window.agentApi.createProject(name, normalizedPath) as Project;
-    await loadProjects();
-    setSelectedProjectId(created.id);
-    setSelectedSessionId(null);
-    await loadSessions(created.id);
-    setExpandedProjects((prev) => { const n = new Set(prev); n.add(created.id); return n; });
-    setNotice(`已导入：${name}`);
-    setNoticeType("success");
+    const result = await window.agentApi.importAgentWorkspace(
+      activeAgentRef.current,
+      normalizedPath,
+      name,
+    ) as ImportAgentWorkspaceResult;
+    await loadProjects(activeAgentRef.current, { refresh: true, refreshLoadedSessions: false });
+    applySidebarSelection(selectProject(result.workspace.workspaceId));
+    await loadSessions(result.workspace.workspaceId, { refresh: true });
+    setExpandedProjects((prev) => {
+      const next = new Set(prev);
+      next.add(result.workspace.workspaceId);
+      return next;
+    });
+    setNotice(result.existing
+      ? "该文件夹已在当前 Agent 的目录中"
+      : `已导入：${result.workspace.name}`);
+    setNoticeType(result.existing ? "info" : "success");
     setTimeout(() => setNotice(null), 3000);
   };
 
@@ -774,22 +1026,39 @@ export default function App() {
     }
   };
 
-  const handleDeleteSession = async (sessionId: string) => {
-    if (!window.agentApi) return;
+  const requestDeleteSession = (session: Session, anchor: SidebarDeleteAnchor) => {
+    setSessionDeleteRequest({ session, anchor });
+  };
+
+  const confirmDeleteSession = async () => {
+    if (!window.agentApi || !sessionDeleteRequest || sessionDeletePending) return;
+    const { session } = sessionDeleteRequest;
+    setSessionDeletePending(true);
     try {
-      await window.agentApi.deleteSession(sessionId);
-      if (selectedSessionId === sessionId) {
-        setSelectedSessionId(null);
-        setTodos([]);
+      await window.agentApi.deleteSession(session.id);
+      const removal = removeSessionFromCollections(
+        sessionsByProject,
+        childSessionsByParent,
+        [],
+        session.id,
+      );
+      setSessionsByProject(removal.sessionsByProject);
+      setChildSessionsByParent(removal.childSessionsByParent);
+      if (selectedSessionId && removal.removedIds.includes(selectedSessionId)) {
+        applySidebarSelection({ projectId: selectedProjectId, sessionId: null });
       }
       setNotice("会话删除成功");
       setNoticeType("success");
       setTimeout(() => setNotice(null), 2500);
-      if (selectedProjectId) await loadSessions(selectedProjectId);
+      setSessionDeleteRequest(null);
+      const ownerProjectId = session.projectId ?? selectedProjectId;
+      if (ownerProjectId) void loadSessions(ownerProjectId, { refresh: true, background: true });
     } catch (err) {
       setNotice(err instanceof Error ? err.message : "会话删除失败");
       setNoticeType("error");
       setTimeout(() => setNotice(null), 4000);
+    } finally {
+      setSessionDeletePending(false);
     }
   };
 
@@ -881,7 +1150,7 @@ export default function App() {
           flexDirection: "column",
           background: "var(--bg-surface)",
           borderRight: "1px solid var(--border-subtle)",
-          padding: "56px 0 20px",
+          padding: "56px 0 0",
           position: "relative",
           zIndex: 10,
           overflow: "hidden",
@@ -895,7 +1164,7 @@ export default function App() {
             transform: sidebarDrawerOpen ? "translateX(0)" : "translateX(-103%)",
             transition: "transform .24s ease",
             boxShadow: "12px 0 32px rgba(0,0,0,.5)",
-            padding: "calc(env(safe-area-inset-top) + 12px) 0 20px",
+            padding: "calc(env(safe-area-inset-top) + 12px) 0 0",
           } : {}),
         }}
       >
@@ -905,49 +1174,47 @@ export default function App() {
         }}>
           <div className="sidebar-brand-row">
             <div className="sidebar-brand-mark" aria-hidden="true">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z" />
-                <path d="M7 9h10M7 13h7" />
-              </svg>
+              <AgentBrandIcon agentType="customer-agent" size={24} />
             </div>
             <span className="sidebar-brand-name">AgentRoam</span>
           </div>
         </div>
 
+        <AgentWorkspaceSwitcher
+          value={activeAgent}
+          health={runtimeHealth}
+          onChange={handleAgentChange}
+        />
+
+        <button
+          type="button"
+          className="sidebar-search-field"
+          onClick={() => { setSearchOpen(true); setSearchListLimit(10); }}
+          title="搜索会话"
+          aria-label="搜索会话"
+        >
+          <Search size={15} aria-hidden="true" />
+          <span>搜索会话</span>
+          <kbd>⌘ K</kbd>
+        </button>
+
         <div className="sidebar-project-toolbar">
-          <span className="sidebar-project-title">项目</span>
+          <div className="sidebar-project-heading">
+            <span className="sidebar-project-title">目录</span>
+            <span className="sidebar-project-count" aria-label={`${projects.length} 个目录`}>{projects.length}</span>
+          </div>
           <div className="sidebar-project-actions">
             <button
               type="button"
-              onClick={() => { setSearchOpen(true); setSearchListLimit(10); }}
-              title="搜索会话"
-              aria-label="搜索会话"
-              className="ui-icon-button"
-            >
-              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <circle cx="11" cy="11" r="7" />
-                <path d="M21 21l-4.35-4.35" />
-              </svg>
-            </button>
-            <button
-              type="button"
-              onClick={() => setGroupByBot(!groupByBot)}
-              title="会话按 Agent 分组"
-              aria-label="会话按 Agent 分组"
-              aria-pressed={groupByBot}
-              className={`ui-icon-button${groupByBot ? " is-active" : ""}`}
-            >
-              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <path d="M9 6h11M9 12h11M9 18h11" /><path d="M4 6h.01M4 12h.01M4 18h.01" />
-              </svg>
-            </button>
-            <button
-              type="button"
-              onClick={allProjectsCollapsed ? handleExpandAllSessions : handleCollapseAllSessions}
+              onClick={(event) => {
+                if (allProjectsCollapsed) handleExpandAllSessions(); else handleCollapseAllSessions();
+                blurDeactivatedPointerToggle(event, allProjectsCollapsed);
+              }}
               title={allProjectsCollapsed ? "展开全部会话" : "折叠全部会话"}
               aria-label={allProjectsCollapsed ? "展开全部会话" : "折叠全部会话"}
+              aria-pressed={allProjectsCollapsed}
               disabled={collapsibleProjectIds.length === 0}
-              className="ui-icon-button"
+              className={`ui-icon-button sidebar-collapse-all${allProjectsCollapsed ? " is-active" : ""}`}
             >
               <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 {allProjectsCollapsed ? (
@@ -965,7 +1232,10 @@ export default function App() {
             </button>
             <button
               type="button"
-              onClick={() => setRunningFirst(!runningFirst)}
+              onClick={(event) => {
+                setRunningFirst(!runningFirst);
+                blurDeactivatedPointerToggle(event, runningFirst);
+              }}
               title={runningFirst ? "按新建时间排序" : "进行中会话优先"}
               aria-label={runningFirst ? "按新建时间排序" : "进行中会话优先"}
               aria-pressed={runningFirst}
@@ -979,8 +1249,8 @@ export default function App() {
             <button
               type="button"
               onClick={() => void handleImportProject()}
-              title="导入项目"
-              aria-label="导入项目"
+              title="导入目录"
+              aria-label="导入目录"
               className="ui-icon-button"
             >
               <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -990,29 +1260,23 @@ export default function App() {
           </div>
         </div>
 
-        {notice && (
-          <div style={{
-            margin: "0 12px 10px",
-            padding: "8px 10px",
-            borderRadius: "var(--radius-sm)",
-            border: noticeType === "success"
-              ? "1px solid rgba(52,211,153,0.35)"
-              : "1px solid rgba(244,63,94,0.35)",
-            background: noticeType === "success"
-              ? "rgba(52,211,153,0.08)"
-              : "rgba(244,63,94,0.08)",
-            color: noticeType === "success" ? "var(--success)" : "var(--danger)",
-            fontSize: 12,
-          }}>
-            {notice}
-          </div>
-        )}
-
         {/* Project + session list */}
-        <div className="app-sidebar-scroll" style={{ flex: 1, overflow: "auto", padding: "0 10px" }}>
+        <div
+          ref={sidebarScrollRef}
+          className="app-sidebar-scroll"
+          onPointerDownCapture={blurActiveTextEntry}
+          onScroll={(event) => {
+            const element = event.currentTarget;
+            const nearBottom = element.scrollHeight - element.scrollTop - element.clientHeight < 120;
+            if (nearBottom && workspaceNextCursor && !workspaceLoading) {
+              void loadProjects(activeAgent, { cursor: workspaceNextCursor });
+            }
+          }}
+          style={{ flex: 1, overflow: "auto", padding: "0 10px" }}
+        >
           <div style={{ display: "flex", flexDirection: "column", gap: 2, marginBottom: 12 }}>
             {projects.map((project) => {
-              const isSelected = selectedProjectId === project.id && !selectedSessionId;
+              const isSelected = selectedProjectId === project.id;
               const isExpanded = expandedProjects.has(project.id);
               const hasLoadedProject = loadedProjectIds.has(project.id);
               const isProjectLoading = loadingProjectIds.has(project.id);
@@ -1032,9 +1296,13 @@ export default function App() {
                   >
                     <button
                       className="sidebar-project-button"
-                      onClick={() => { if (!isInvalid) void handleToggleProject(project.id); }}
+                      onClick={() => {
+                        if (isInvalid) return;
+                        handleToggleProject(project.id);
+                      }}
                       disabled={isInvalid}
                       aria-expanded={isExpanded}
+                      aria-pressed={isSelected}
                       title={isInvalid ? `路径不存在：${project.description}` : project.name}
                       style={{
                         flex: 1,
@@ -1067,16 +1335,17 @@ export default function App() {
                       <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                         {project.name}
                       </span>
-                      {projSessions.length > 0 && groupByBot && (
-                        <span className="sidebar-count" style={{ flexShrink: 0, fontSize: 9, fontWeight: 600, color: isSelected && !isInvalid ? "var(--accent)" : "var(--text-muted)", background: isSelected && !isInvalid ? "var(--accent-dim)" : "var(--bg-deep)", borderRadius: 8, padding: "0 5px", lineHeight: "15px", opacity: 0.8 }}>{projSessions.length}</span>
-                      )}
                     </button>
-                    {/* Delete project button */}
-                    {!webShell && (
+                    {hasLoadedProject && (
+                      <span className="sidebar-project-session-count" title={`${projectSessions.length} 个会话`}>
+                        {projectSessions.length}
+                      </span>
+                    )}
+                    {activeAgent === "customer-agent" && !webShell && (
                       <button
                         onClick={(e) => { e.stopPropagation(); void handleDeleteProject(project.id); }}
-                        title="删除项目"
-                        aria-label={`删除项目：${project.name}`}
+                        title="删除目录"
+                        aria-label={`删除目录：${project.name}`}
                         className="sidebar-project-delete sidebar-row-action ui-icon-button ui-icon-button--small ui-icon-button--danger"
                         style={{
                           flexShrink: 0,
@@ -1085,11 +1354,21 @@ export default function App() {
                         <SidebarDeleteIcon />
                       </button>
                     )}
-                    <RuntimeSessionMenu
-                      health={runtimeHealth}
-                      disabled={isInvalid}
-                      onSelect={(agentType) => handleNewRuntimeSession(project.id, agentType)}
-                    />
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        void handleNewRuntimeSession(project.id, activeAgent);
+                      }}
+                      title={`新建 ${activeAgent === "customer-agent" ? "Customer Agent" : activeAgent === "claude-code" ? "Claude Code" : activeAgent === "codex" ? "Codex" : "OpenCode"} 会话`}
+                      aria-label={`在 ${project.name} 中新建会话`}
+                      disabled={isInvalid || runtimeHealth.find((runtime) => runtime.agentType === activeAgent)?.available === false}
+                      className="sidebar-runtime-create sidebar-project-add-action ui-icon-button ui-icon-button--small"
+                    >
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true">
+                        <path d="M12 5v14M5 12h14" />
+                      </svg>
+                    </button>
                   </div>
 
                   {/* Sessions under this project — collapsible, scrollable when > 10 */}
@@ -1100,11 +1379,18 @@ export default function App() {
                     transition: "max-height 0.45s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease",
                   }}>
                     <div
-                      className={`sidebar-project-sessions${groupByBot ? " is-grouped" : ""}`}
+                      className="sidebar-project-sessions"
+                      onScroll={(event) => {
+                        const element = event.currentTarget;
+                        const nearBottom = element.scrollHeight - element.scrollTop - element.clientHeight < 80;
+                        const nextCursor = sessionNextCursors[project.id];
+                        if (nearBottom && nextCursor && !isProjectLoading) {
+                          void loadSessions(project.id, { cursor: nextCursor });
+                        }
+                      }}
                       style={{ display: "flex", flexDirection: "column", gap: 1, marginTop: 2, paddingLeft: 10, paddingBottom: 4, ...(manySession ? { maxHeight: 280, overflowY: "auto" as const } : {}) }}
                     >
-                      {(() => {
-                        const renderSession = (session: Session) => {
+                      {projSessions.map((session) => {
                         const isActiveSession = selectedSessionId === session.id;
                         const running = isSessionRunning(session);
                         const visualState = getSidebarSessionVisualState({
@@ -1113,15 +1399,24 @@ export default function App() {
                           needsInput: running && sessionsNeedingInput.includes(session.id),
                         });
                         const children = childSessionsByParent[session.id] ?? [];
+                        const expanded = !collapsedParents.has(session.id);
                         return (
                           <div key={session.id}>
-                          <div className={`sidebar-row sidebar-session-row ${isActiveSession ? "sidebar-row-active" : ""}`} style={{ paddingRight: 4 }}>
-                            <button
-                              className="sidebar-session-button"
-                              onClick={() => {
+                            <SidebarSessionRow
+                              session={{
+                                id: session.id,
+                                title: session.title,
+                                visualState,
+                                statusLabel: SIDEBAR_SESSION_STATUS_LABELS[visualState],
+                                occupiedExternally: session.occupancy === "owned-externally",
+                                canDelete: session.canDelete,
+                                active: isActiveSession,
+                                hasChildren: children.length > 0,
+                                expanded,
+                              }}
+                              onSelect={() => {
                                 if (mobileDrawer) setSidebarDrawerOpen(false);
-                                setSelectedProjectId(project.id);
-                                setSelectedSessionId(session.id);
+                                applySidebarSelection(selectSession(project.id, session.id));
                                 if (children.length > 0) {
                                   setCollapsedParents((prev) => {
                                     const next = new Set(prev);
@@ -1130,174 +1425,48 @@ export default function App() {
                                   });
                                 }
                               }}
+                              onDelete={(anchor) => requestDeleteSession(session, anchor)}
+                            />
+                            <div
+                              className="sidebar-child-sessions"
                               style={{
-                                flex: 1,
-                                minWidth: 0,
-                                display: "flex",
-                                alignItems: "center",
-                                gap: 7,
-                                padding: "6px 10px",
-                                border: "none",
-                                background: "transparent",
-                                color: isActiveSession ? "var(--accent)" : "var(--text-secondary)",
-                                fontSize: 12,
-                                cursor: "pointer",
-                                textAlign: "left" as const,
-                                transition: "color 0.15s",
+                                maxHeight: expanded ? children.length * 40 : 0,
+                                opacity: expanded ? 1 : 0,
                               }}
                             >
-                              {/* dot indicator — same style as sessions without children */}
-                              <span
-                                className={`sidebar-status-dot is-${visualState}`}
-                                title={SIDEBAR_SESSION_STATUS_LABELS[visualState]}
-                              />
-                              <span title={session.sourceLabel} style={{ flex: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                                {session.title}
-                              </span>
-                              {session.occupancy === "owned-externally" && (
-                                <span className="sidebar-occupancy-badge" title="原客户端正在使用，只读">占用</span>
-                              )}
-                              {children.length > 0 && groupByBot && (
-                                <span className="sidebar-count" style={{
-                                  flexShrink: 0, fontSize: 9, fontWeight: 600,
-                                  color: isActiveSession ? "var(--accent)" : "var(--text-muted)",
-                                  background: isActiveSession ? "var(--accent-dim)" : "var(--bg-deep)",
-                                  borderRadius: 8, padding: "0 5px", lineHeight: "16px",
-                                  opacity: 0.8,
-                                }}>{children.length}</span>
-                              )}
-                              {children.length > 0 && (
-                                <svg className={`sidebar-session-disclosure${collapsedParents.has(session.id) ? "" : " is-expanded"}`} width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                                  <path d="m9 18 6-6-6-6" />
-                                </svg>
-                              )}
-                            </button>
-                            {session.canDelete && <button
-                              onClick={() => void handleDeleteSession(session.id)}
-                              title="删除会话"
-                              aria-label={`删除会话：${session.title}`}
-                              className="sidebar-session-delete sidebar-row-action ui-icon-button ui-icon-button--small ui-icon-button--danger"
-                            >
-                              <SidebarDeleteIcon />
-                            </button>}
-                            {!groupByBot && (
-                              <span className={`sidebar-runtime-mark sidebar-runtime-mark--${session.agentType}`}>
-                                {RUNTIME_MARKS[session.agentType]}
-                              </span>
-                            )}
-                          </div>
-                          {/* Child sessions (sub-agents) — indented under parent, collapsible */}
-                          <div style={{
-                            overflow: "hidden",
-                            maxHeight: collapsedParents.has(session.id) ? 0 : children.length * 40,
-                            opacity: collapsedParents.has(session.id) ? 0 : 1,
-                            transition: "max-height 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.25s ease",
-                          }}>
-                          {children.map((child) => {
-                            const isChildActive = selectedSessionId === child.id;
-                            return (
-                              <div key={child.id} className={`sidebar-row ${isChildActive ? "sidebar-row-active" : ""}`} style={{
-                                paddingRight: 4,
-                                marginLeft: 14,
-                                borderLeft: "1px solid var(--border-subtle)",
-                              }}>
-                                <button
-                                  className="sidebar-session-button"
-                                  onClick={() => { setSelectedProjectId(project.id); setSelectedSessionId(child.id); }}
-                                  style={{
-                                    flex: 1,
-                                    minWidth: 0,
-                                    display: "flex",
-                                    alignItems: "center",
-                                    gap: 6,
-                                    padding: "5px 8px",
-                                    border: "none",
-                                    background: "transparent",
-                                    color: isChildActive ? "var(--accent)" : "var(--text-muted)",
-                                    fontSize: 11,
-                                    cursor: "pointer",
-                                    textAlign: "left" as const,
-                                    transition: "color 0.15s",
-                                  }}
-                                >
-                                  {/* sub-agent icon */}
-                                  <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, opacity: 0.6 }}>
-                                    <path d="M12 2a5 5 0 1 0 0 10A5 5 0 0 0 12 2z"/><path d="M12 12c-5.33 0-8 2.67-8 4v2h16v-2c0-1.33-2.67-4-8-4z"/>
-                                  </svg>
-                                  <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                                    {child.title}
-                                  </span>
-                                </button>
-                                <button
-                                  onClick={() => void handleDeleteSession(child.id)}
-                                  title="删除子会话"
-                                  aria-label={`删除子会话：${child.title}`}
-                                  className="sidebar-session-delete sidebar-row-action ui-icon-button ui-icon-button--small ui-icon-button--danger"
-                                >
-                                  <SidebarDeleteIcon />
-                                </button>
-                              </div>
-                            );
-                          })}
-                          </div>
+                              {children.map((child) => {
+                                const childRunning = isSessionRunning(child);
+                                const childVisualState = getSidebarSessionVisualState({
+                                  status: child.status,
+                                  isRunning: childRunning,
+                                  needsInput: childRunning && sessionsNeedingInput.includes(child.id),
+                                });
+                                return (
+                                  <SidebarSessionRow
+                                    key={child.id}
+                                    session={{
+                                      id: child.id,
+                                      title: child.title,
+                                      visualState: childVisualState,
+                                      statusLabel: SIDEBAR_SESSION_STATUS_LABELS[childVisualState],
+                                      occupiedExternally: child.occupancy === "owned-externally",
+                                      canDelete: child.canDelete,
+                                      active: selectedSessionId === child.id,
+                                      child: true,
+                                    }}
+                                    deleteLabel="删除子会话"
+                                    onSelect={() => {
+                                      if (mobileDrawer) setSidebarDrawerOpen(false);
+                                      applySidebarSelection(selectSession(project.id, child.id));
+                                    }}
+                                    onDelete={(anchor) => requestDeleteSession(child, anchor)}
+                                  />
+                                );
+                              })}
+                            </div>
                           </div>
                         );
-                        };
-                        if (!groupByBot) return projSessions.map(renderSession);
-                        return BOT_GROUP_ORDER
-                          .map((botType) => [botType, projSessions.filter((s) => s.agentType === botType)] as const)
-                          .filter(([, list]) => list.length > 0)
-                          .map(([botType, list]) => {
-                            const groupKey = `${project.id}::${botType}`;
-                            const groupExpanded = !collapsedBotGroups.has(groupKey);
-                            return (
-                              <div key={botType}>
-                                <button
-                                  type="button"
-                                  className="sidebar-agent-group"
-                                  onClick={() => setCollapsedBotGroups((prev) => {
-                                    const next = new Set(prev);
-                                    if (next.has(groupKey)) next.delete(groupKey); else next.add(groupKey);
-                                    return next;
-                                  })}
-                                  aria-expanded={groupExpanded}
-                                  title={OTHER_GROUP_LABELS[botType]}
-                                  style={{
-                                    width: "100%",
-                                    display: "flex",
-                                    alignItems: "center",
-                                    gap: 7,
-                                    padding: "5px 10px 2px 12px",
-                                    border: 0,
-                                    background: "transparent",
-                                    color: "var(--text-muted)",
-                                    fontSize: 9,
-                                    fontWeight: 700,
-                                    letterSpacing: "0.08em",
-                                    textTransform: "uppercase",
-                                    cursor: "pointer",
-                                    textAlign: "left" as const,
-                                  }}
-                                >
-                                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
-                                    style={{ flexShrink: 0, opacity: 0.4, transform: groupExpanded ? "rotate(0deg)" : "rotate(-90deg)", transition: "transform 0.2s ease" }} aria-hidden="true">
-                                    <path d="M6 9l6 6 6-6" />
-                                  </svg>
-                                  <span style={{ flex: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{OTHER_GROUP_LABELS[botType]}</span>
-                                  <span className="sidebar-count" style={{ flexShrink: 0, fontSize: 9, fontWeight: 600, background: "var(--bg-deep)", borderRadius: 8, padding: "0 5px", lineHeight: "15px", opacity: 0.8 }}>{list.length}</span>
-                                </button>
-                                <div style={{
-                                  overflow: "hidden",
-                                  maxHeight: groupExpanded ? list.length * 44 + 8 : 0,
-                                  opacity: groupExpanded ? 1 : 0,
-                                  transition: "max-height 0.35s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.25s ease",
-                                }}>
-                                  {list.map(renderSession)}
-                                </div>
-                              </div>
-                            );
-                          });
-                      })()}
+                      })}
                       {isProjectLoading && !hasLoadedProject && (
                         <div style={{ color: "var(--text-muted)", fontSize: 11, padding: "4px 10px", opacity: 0.7 }}>
                           正在加载会话...
@@ -1318,6 +1487,9 @@ export default function App() {
                           </button>
                         </div>
                       )}
+                      {staleProjectIds.has(project.id) && !projectSessionError && (
+                        <div className="sidebar-cache-state">显示缓存，会话将在下次刷新时更新</div>
+                      )}
                       {projSessions.length === 0 && hasLoadedProject && !isProjectLoading && !projectSessionError && (
                         <div style={{ color: "var(--text-muted)", fontSize: 11, padding: "4px 10px", opacity: 0.7 }}>
                           暂无会话
@@ -1333,13 +1505,53 @@ export default function App() {
                 color: "var(--text-muted)", fontSize: 12,
                 padding: "24px 10px", textAlign: "center", opacity: 0.7,
               }}>
-                暂无项目
+                {workspaceLoading ? "正在加载目录..." : "暂无目录"}
+              </div>
+            )}
+            {projects.length > 0 && workspaceLoading && (
+              <div className="sidebar-cache-state">正在同步目录...</div>
+            )}
+            {workspaceStale && !workspaceError && (
+              <div className="sidebar-cache-state">当前显示缓存目录</div>
+            )}
+            {workspaceError && (
+              <div className="sidebar-load-error" title={workspaceError}>
+                <span>{projects.length > 0 ? "目录刷新失败，当前显示缓存" : "目录加载失败"}</span>
+                <button type="button" onClick={() => void loadProjects(activeAgent, { refresh: projects.length > 0 })}>重试</button>
               </div>
             )}
           </div>
         </div>
 
+        <div className="sidebar-bottom-action">
+          <button
+            type="button"
+            className="sidebar-new-session-primary"
+            disabled={
+              !selectedProjectId
+              || invalidProjectIds.has(selectedProjectId)
+              || runtimeHealth.find((runtime) => runtime.agentType === activeAgent)?.available === false
+            }
+            title={selectedProjectId ? "新建会话" : "请先选择目录"}
+            onClick={() => selectedProjectId && void handleNewRuntimeSession(selectedProjectId, activeAgent)}
+          >
+            <Plus size={16} aria-hidden="true" />
+            <span>新建会话</span>
+          </button>
+        </div>
+
       </aside>
+
+      {sessionDeleteRequest && (
+        <SidebarDeleteConfirmation
+          message={sessionDeletionConfirmation(sessionDeleteRequest.session)}
+          anchor={sessionDeleteRequest.anchor}
+          mobile={mobileDrawer}
+          pending={sessionDeletePending}
+          onCancel={() => setSessionDeleteRequest(null)}
+          onConfirm={() => void confirmDeleteSession()}
+        />
+      )}
 
       {!mobileDrawer && (
       <div
@@ -1426,53 +1638,35 @@ export default function App() {
               )}
               {(searchResults ?? allVisibleSessions.slice(0, searchListLimit)).map((session) => {
                 const active = selectedSessionId === session.id;
+                const running = isSessionRunning(session);
+                const visualState = getSidebarSessionVisualState({
+                  status: session.status,
+                  isRunning: running,
+                  needsInput: running && sessionsNeedingInput.includes(session.id),
+                });
                 return (
-                  <div key={session.id} className={`sidebar-row ${active ? "sidebar-row-active" : ""}`}>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSelectedProjectId(session.projectId && projects.some((p) => p.id === session.projectId) ? session.projectId : null);
-                        setSelectedSessionId(session.id);
-                        setSearchOpen(false);
-                        if (mobileDrawer) setSidebarDrawerOpen(false);
-                      }}
-                      title={`${session.sourceLabel}\n${session.cwd}`}
-                      style={{
-                        flex: 1,
-                        minWidth: 0,
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 7,
-                        padding: "6px 10px",
-                        border: 0,
-                        background: "transparent",
-                        color: active ? "var(--accent)" : "var(--text-secondary)",
-                        fontSize: 12,
-                        cursor: "pointer",
-                        textAlign: "left",
-                      }}
-                    >
-                      <span style={{
-                        flexShrink: 0,
-                        minWidth: 22,
-                        padding: "1px 3px",
-                        borderRadius: 3,
-                        border: "1px solid var(--border-subtle)",
-                        color: active ? "var(--accent)" : "var(--text-muted)",
-                        fontSize: 8,
-                        fontWeight: 700,
-                        textAlign: "center",
-                      }}>{RUNTIME_MARKS[session.agentType]}</span>
-                      <span style={{ flex: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{session.title}</span>
-                      {session.occupancy === "owned-externally" && (
-                        <span title="原客户端正在使用，只读" aria-label="只读" style={{ display: "flex", flexShrink: 0 }}>
-                          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                            <rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>
-                          </svg>
-                        </span>
-                      )}
-                    </button>
-                  </div>
+                  <SidebarSessionRow
+                    key={session.id}
+                    session={{
+                      id: session.id,
+                      title: session.title,
+                      visualState,
+                      statusLabel: SIDEBAR_SESSION_STATUS_LABELS[visualState],
+                      occupiedExternally: session.occupancy === "owned-externally",
+                      canDelete: session.canDelete,
+                      active,
+                      child: Boolean(session.parentSessionId),
+                    }}
+                    onSelect={() => {
+                      const projectId = session.projectId && projects.some((p) => p.id === session.projectId)
+                        ? session.projectId
+                        : null;
+                      applySidebarSelection(selectSession(projectId, session.id));
+                      setSearchOpen(false);
+                      if (mobileDrawer) setSidebarDrawerOpen(false);
+                    }}
+                    onDelete={(anchor) => requestDeleteSession(session, anchor)}
+                  />
                 );
               })}
               {!sessionQueryTrim && allVisibleSessions.length > searchListLimit && (
@@ -1497,6 +1691,20 @@ export default function App() {
         </div>
       )}
       </>
+      )}
+
+      {notice && createPortal(
+        <div
+          className={`app-action-notice is-${noticeType}`}
+          role={noticeType === "error" ? "alert" : "status"}
+          aria-live={noticeType === "error" ? "assertive" : "polite"}
+        >
+          <span className="app-action-notice-mark" aria-hidden="true">
+            {noticeType === "success" ? "✓" : noticeType === "info" ? "i" : "!"}
+          </span>
+          <span>{notice}</span>
+        </div>,
+        document.body,
       )}
 
       <main className="app-main" style={{
@@ -1528,6 +1736,7 @@ export default function App() {
             selectedSessionId={selectedSessionId}
             sessionTitle={selectedSessionTitle}
             sessionSummary={selectedSession}
+            workspacePath={selectedWorkspacePath}
             voiceCommand={voiceCommand}
             onOpenSettings={toggleSettings}
             settingsOpen={showSettings}
@@ -1573,11 +1782,6 @@ export default function App() {
                 }
                 return updated;
               });
-              setOtherLocalSessions((prev) => prev.map((session) => (
-                session.id === sessionId
-                  ? { ...session, title: latestMessage.slice(0, 60) || session.title }
-                  : session
-              )));
             }}
             onRunComplete={async (projId, completedSessionId) => {
               const currentConversation = convoRef.current;

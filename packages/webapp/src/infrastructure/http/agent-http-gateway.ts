@@ -175,6 +175,38 @@ export class AgentHttpGateway {
     return this.http.get<unknown[]>(`/api/sessions${query}`);
   }
 
+  async listAgentWorkspaces(
+    agentType: string,
+    query: { cursor?: string | null; limit?: number; refresh?: boolean; since?: string | null } = {},
+  ): Promise<unknown> {
+    const params = new URLSearchParams({ agentType });
+    if (query.cursor) params.set("cursor", query.cursor);
+    if (query.limit !== undefined) params.set("limit", String(query.limit));
+    if (query.refresh) params.set("refresh", "1");
+    if (query.since) params.set("since", query.since);
+    return this.http.get(`/api/agent-workspaces?${params.toString()}`);
+  }
+
+  async importAgentWorkspace(agentType: string, path: string, name?: string): Promise<unknown> {
+    return this.http.post("/api/agent-workspaces", {
+      agentType,
+      path,
+      ...(name ? { name } : {}),
+    });
+  }
+
+  async listAgentWorkspaceSessions(
+    agentType: string,
+    workspaceId: string,
+    query: { cursor?: string | null; limit?: number; refresh?: boolean } = {},
+  ): Promise<unknown> {
+    const params = new URLSearchParams({ agentType });
+    if (query.cursor) params.set("cursor", query.cursor);
+    if (query.limit !== undefined) params.set("limit", String(query.limit));
+    if (query.refresh) params.set("refresh", "1");
+    return this.http.get(`/api/agent-workspaces/${encodeURIComponent(workspaceId)}/sessions?${params.toString()}`);
+  }
+
   async refreshSessions(projectId?: string): Promise<unknown[]> {
     // Forces native runtime rediscovery (occupancy / status freshness).
     const query = projectId
@@ -296,11 +328,12 @@ export class AgentHttpGateway {
     return this.http.delete(`/api/sessions/${encodeURIComponent(id)}/goals?goalId=${encodeURIComponent(goalId)}`);
   }
 
-  async createSession(title: string, projectId?: string, agentType?: string): Promise<unknown> {
+  async createSession(title: string, projectId?: string, agentType?: string, cwd?: string): Promise<unknown> {
     return this.http.post("/api/sessions", {
       title,
       ...(projectId ? { projectId } : {}),
       ...(agentType && agentType !== "customer-agent" ? { agentType } : {}),
+      ...(cwd ? { cwd } : {}),
     });
   }
 

@@ -51,4 +51,20 @@ describe("FilePreview client download", () => {
     expect(filePreviewSource).not.toContain('background: "#101014"');
     expect(filePreviewSource).not.toContain('color: "#e8e8ee"');
   });
+
+  it("loads a Git-aware text preview and exposes edit and save controls", () => {
+    expect(filePreviewSource).toContain('"fs:inspect-text"');
+    expect(filePreviewSource).toContain('"fs:write-text"');
+    expect(filePreviewSource).toContain('aria-label="编辑文件"');
+    expect(filePreviewSource).toContain('aria-label={saving ? "正在保存" : "保存修改"}');
+    expect(filePreviewSource).toContain('<DiffPreview rows={parsedDiff.rows} />');
+    expect(filePreviewSource).toContain('setView(result.patch ? "diff" : "file")');
+  });
+
+  it("keeps an active draft when the watched file changes", () => {
+    expect(filePreviewSource).toContain("if (kind === \"text\" && editingRef.current)");
+    expect(filePreviewSource).toContain("setExternalChange(true)");
+    expect(filePreviewSource).toContain("expectedMtime: meta.mtime");
+    expect(filePreviewSource).toContain("expectedSize: meta.size");
+  });
 });

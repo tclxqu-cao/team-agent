@@ -32,7 +32,7 @@ import {
 import { supportsMidTurnSteering } from "../lib/runtime-capabilities";
 import { copyTextToClipboard } from "../lib/clipboard";
 import { clearSessionDraft, readSessionDraft, writeSessionDraft } from "../lib/session-draft";
-import { postWebArtifactOpen } from "../lib/artifact-links";
+import { postWebArtifactOpen, resolveWebArtifactPath } from "../lib/artifact-links";
 import { moveQueuedMessage } from "../lib/queued-message-order";
 import { isWebShell } from "../web/webLayout";
 import {
@@ -291,6 +291,7 @@ import AgentActivityIndicator from "./AgentActivityIndicator";
 import ReasoningSummary from "./ReasoningSummary";
 import RuntimeProgressRow from "./RuntimeProgressRow";
 import ChatHeaderActions from "./ChatHeaderActions";
+import MessageImageLightbox, { type MessageImagePreview } from "./MessageImageLightbox";
 import { widgetRegistry } from "./widgets/index.js";
 import { prepareVoiceCommand, shouldSkipVoiceSessionReload } from "../lib/voice-command";
 import { prepareChatCommand } from "../lib/chat-command";
@@ -298,9 +299,12 @@ import { areToolCallsComplete } from "../lib/tool-call-status";
 import { parseMarkdownLinks } from "../lib/markdown-links";
 import { coalesceAdjacentToolCallMessages, groupAdjacentToolCallEntries } from "../lib/tool-call-groups";
 import { messageActionPolicy } from "../lib/message-actions";
+import { prepareComposerFiles } from "../lib/composer-file-routing";
 import {
   canForkOccupiedCodexSession,
   forkOccupiedCodexSession,
+  isOccupiedSessionRecovery,
+  type OccupiedSessionError,
 } from "../lib/occupied-session-fork";
 import type { ToolPermissionMode, UnifiedSessionSummary } from "../global";
 
@@ -318,6 +322,7 @@ interface ChatViewProps {
   onRunComplete?: (projectId: string | null, sessionId: string) => void | Promise<void>;
   sessionTitle?: string;
   sessionSummary?: UnifiedSessionSummary;
+  workspacePath?: string | null;
   onOpenSettings?: () => void;
   settingsOpen?: boolean;
   onHideToBackground?: () => void;
@@ -366,6 +371,7 @@ export default function ChatView({
   onRunComplete,
   sessionTitle,
   sessionSummary,
+  workspacePath = null,
   onOpenSettings,
   settingsOpen = false,
   onHideToBackground,
@@ -409,13 +415,14 @@ export default function ChatView({
     [messages],
   );
   const { isConfigured, profiles, activeProfileId, switchActiveProfile, loadFromSystem, contextWindow, reasoningEffort, setField, saveToSystem } = useSettingsStore();
-  const [sessionErrorCode, setSessionErrorCode] = useState<string>();
+  const [sessionError, setSessionError] = useState<OccupiedSessionError>();
   const [occupiedDraft, setOccupiedDraft] = useState<string>();
   const [isForkingSession, setIsForkingSession] = useState(false);
+  const viewSessionId = selectedSessionId || sessionId;
   const isNativeRuntime = Boolean(sessionSummary && sessionSummary.agentType !== "customer-agent");
   const canSteerQueuedMessages = supportsMidTurnSteering(sessionSummary?.agentType);
   const isReadOnly = sessionSummary?.occupancy === "owned-externally";
-  const isOccupiedRecovery = sessionErrorCode === "SESSION_OCCUPIED";
+  const isOccupiedRecovery = isOccupiedSessionRecovery(viewSessionId, sessionError);
   const runtimeReady = isConfigured || isNativeRuntime;
   const canCompose = runtimeReady && !isReadOnly && !isOccupiedRecovery;
   const runningSubIdsRef = useRef<Set<string>>(new Set());
@@ -426,7 +433,6 @@ export default function ChatView({
   const [thinkingStartedAt, setThinkingStartedAt] = useState(() => Date.now());
 
   // Local ownership controls actions; externally observed activity remains visible.
-  const viewSessionId = selectedSessionId || sessionId;
   const isLocallyRunning = !!(
     viewSessionId
     && (runningSessionId === viewSessionId || runningSubIdsRef.current.has(viewSessionId))
@@ -508,6 +514,8 @@ export default function ChatView({
   const [attachedFiles, setAttachedFiles] = useState<File[]>([]);
   /** Base64 data URLs of images to send with the next message */
   const [pendingImages, setPendingImages] = useState<string[]>([]);
+  const [pendingImageReads, setPendingImageReads] = useState(0);
+  const [previewedMessageImage, setPreviewedMessageImage] = useState<MessageImagePreview | null>(null);
   const messagesScrollRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const historyScrollTimerRef = useRef<number | null>(null);
@@ -732,10 +740,17 @@ export default function ChatView({
     agentActivityRef.current = next;
     setAgentActivity(next);
   }, []);
+  const beginAgentRunActivity = useCallback((targetSessionId: string) => {
+    thinkingSessionIdRef.current = targetSessionId;
+    agentActivityRef.current = "thinking";
+    setThinkingStartedAt(Date.now());
+    setAgentActivity("thinking");
+  }, []);
   useEffect(() => {
-    setSessionErrorCode(undefined);
+    setSessionError(undefined);
     setOccupiedDraft(undefined);
     setIsForkingSession(false);
+    setPreviewedMessageImage(null);
   }, [selectedSessionId]);
 
   /** Parse an interval string like "5m", "30s", "2h", "1min" into milliseconds. Returns null if unrecognized. */
@@ -846,12 +861,29 @@ export default function ChatView({
     }
   };
 
-  const handleFileAttach = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileAttach = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files ?? []);
-    if (files.length > 0) {
-      setAttachedFiles((prev) => [...prev, ...files]);
-    }
     e.target.value = "";
+    if (files.length === 0) return;
+
+    const imageCount = files.filter((file) => file.type.toLowerCase().startsWith("image/")).length;
+    if (imageCount > 0) setPendingImageReads((count) => count + 1);
+    try {
+      const prepared = await prepareComposerFiles(files, blobToDataUrl);
+      if (prepared.attachments.length > 0) {
+        setAttachedFiles((previous) => [...previous, ...prepared.attachments]);
+      }
+      if (prepared.images.length > 0) {
+        setPendingImages((previous) => [...previous, ...prepared.images]);
+        if (!isNativeRuntime) autoSwitchVisionProfile();
+      }
+      const failed = [...prepared.unsupportedImages, ...prepared.failedImages];
+      if (failed.length > 0) {
+        setError(`无法添加图片：${failed.map((file) => file.name).join("、")}。仅支持 JPG、PNG、GIF 和 WebP。`);
+      }
+    } finally {
+      if (imageCount > 0) setPendingImageReads((count) => Math.max(0, count - 1));
+    }
   };
 
   const removeAttachedFile = (index: number) => {
@@ -1044,7 +1076,7 @@ export default function ChatView({
         sessionLoadGenerationRef.current += 1;
       }
     };
-  }, [clearMessages, getMessagesForSession, prefetchOlderHistory, runningSessionId, selectedSessionId, sessionReloadGeneration, setContextUsage, setMessages, setSessionId, updateAgentActivity]);
+  }, [clearMessages, getMessagesForSession, prefetchOlderHistory, selectedSessionId, sessionReloadGeneration, setContextUsage, setMessages, setSessionId, updateAgentActivity]);
 
   const refreshLatestHistory = useCallback(async (targetSid: string) => {
     if (!window.agentApi || document.visibilityState === "hidden") return;
@@ -1567,7 +1599,7 @@ export default function ChatView({
               setInput(failedUserMessage.content);
               if (eventSid) writeSessionDraft(eventSid, failedUserMessage.content);
             }
-            setSessionErrorCode(event.code);
+            if (eventSid) setSessionError({ sessionId: eventSid, code: event.code });
             setError(null);
           } else {
             setError(event.message ?? "Unknown error");
@@ -1647,7 +1679,7 @@ export default function ChatView({
       });
       if (occupiedDraft) setInput(occupiedDraft);
       setOccupiedDraft(undefined);
-      setSessionErrorCode(undefined);
+      setSessionError(undefined);
       setError(null);
     } catch (error) {
       setError(error instanceof Error ? error.message : "创建会话副本失败");
@@ -1658,8 +1690,9 @@ export default function ChatView({
 
   const handleAbort = () => {
     abortRef.current = true;
+    sessionLoadGenerationRef.current += 1;
     if (window.agentApi) {
-      window.agentApi.abort(viewSessionId || undefined);
+      void window.agentApi.abort(viewSessionId || undefined);
     }
     runningSessionRef.current = null;
     setRunningSession(null);
@@ -1798,6 +1831,7 @@ export default function ChatView({
   ) {
     abortRef.current = false;
     managedRunSessionsRef.current.add(targetSessionId);
+    beginAgentRunActivity(targetSessionId);
     runningSessionRef.current = targetSessionId;
     setRunningSession(targetSessionId);
     try {
@@ -1851,7 +1885,7 @@ export default function ChatView({
   }
 
   const handleSend = async () => {
-    if (!input.trim() || !canCompose) return;
+    if (!input.trim() || !canCompose || pendingImageReads > 0) return;
 
     void interruptSpeech(window.agentApi, stopSpeaking);
 
@@ -2613,32 +2647,40 @@ export default function ChatView({
                 {isUser && chatMsg.images && chatMsg.images.length > 0 && (
                   <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: msg.content ? 8 : 0 }}>
                     {chatMsg.images.map((src, idx) => (
-                      <img
+                      <button
                         key={idx}
-                        src={src}
-                        alt={`attachment-${idx}`}
-                        style={{
-                          maxWidth: 220, maxHeight: 180, objectFit: "cover",
-                          borderRadius: 6, border: "1px solid var(--border-subtle)",
-                          display: "block", cursor: "zoom-in",
-                        }}
-                        onClick={() => window.open(src, "_blank")}
-                      />
+                        type="button"
+                        className="chat-message-image-button"
+                        aria-label="放大查看图片"
+                        onClick={() => setPreviewedMessageImage({ src, alt: `用户发送的图片 ${idx + 1}` })}
+                      >
+                        <img
+                          className="chat-message-attachment-image"
+                          src={src}
+                          alt={`用户发送的图片 ${idx + 1}`}
+                        />
+                      </button>
                     ))}
                   </div>
                 )}
-                {isUser && chatMsg.presentation?.attachments && chatMsg.presentation.attachments.length > 0 && (
+                {isUser && !chatMsg.images?.length && chatMsg.presentation?.attachments && chatMsg.presentation.attachments.length > 0 && (
                   <div className="chat-message-attachments">
                     {chatMsg.presentation.attachments.map((attachment, idx) => (
                       attachment.dataUrl ? (
-                        <img
+                        <button
                           key={`${attachment.name}-${idx}`}
-                          className="chat-message-attachment-image"
-                          src={attachment.dataUrl}
-                          alt={attachment.name}
-                          title={attachment.name}
-                          onClick={() => window.open(attachment.dataUrl, "_blank")}
-                        />
+                          type="button"
+                          className="chat-message-image-button"
+                          aria-label={`放大查看图片：${attachment.name}`}
+                          onClick={() => setPreviewedMessageImage({ src: attachment.dataUrl!, alt: attachment.name })}
+                        >
+                          <img
+                            className="chat-message-attachment-image"
+                            src={attachment.dataUrl}
+                            alt={attachment.name}
+                            title={attachment.name}
+                          />
+                        </button>
                       ) : (
                         <div
                           key={`${attachment.name}-${idx}`}
@@ -2663,6 +2705,8 @@ export default function ChatView({
                     key={`group-${group.items[0].toolCall.id}`}
                     items={group.items}
                     onSelectSession={onSelectSession}
+                    workspacePath={workspacePath}
+                    enableFilePreview={isWebShell()}
                   />
                 ) : (
                   <ToolCallCard
@@ -2672,6 +2716,8 @@ export default function ChatView({
                     progress={group.items[0].progress}
                     nativeSubagent={group.items[0].nativeSubagent}
                     onSelectSession={onSelectSession}
+                    workspacePath={workspacePath}
+                    enableFilePreview={isWebShell()}
                   />
                 ))}
                 {/* File change summary — one compact bar after all tool calls */}
@@ -2702,16 +2748,31 @@ export default function ChatView({
                   return (
                     <div style={{ marginTop: 10, padding: "8px 12px", borderRadius: 8, background: "var(--bg-deep)", border: "1px solid var(--border-subtle)", display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
                       <span style={{ fontSize: 10, color: "var(--text-muted)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.07em", flexShrink: 0 }}>变更汇总</span>
-                      {entries.map(e => (
-                        <span key={e.path} style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, fontFamily: "var(--font-mono)", background: "var(--bg-surface)", border: "1px solid var(--border-subtle)", borderRadius: 5, padding: "2px 8px" }}>
+                      {entries.map(e => {
+                        const previewPath = resolveWebArtifactPath(e.path, workspacePath);
+                        const content = <>
                           <span style={{ color: "var(--text-secondary)", maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={e.path}>
                             {e.path.replace(/\\/g, "/").split("/").pop()}
                           </span>
                           {e.added > 0 && <span style={{ color: "var(--success)", fontWeight: 600 }}>+{e.added}</span>}
                           {e.removed > 0 && <span style={{ color: "var(--danger)", fontWeight: 600 }}>−{e.removed}</span>}
                           {e.added === 0 && e.removed === 0 && <span style={{ color: "var(--text-muted)" }}>{e.lines}行</span>}
-                        </span>
-                      ))}
+                        </>;
+                        return isWebShell() && previewPath ? (
+                          <button
+                            key={e.path}
+                            type="button"
+                            className="chat-file-change-link"
+                            onClick={() => postWebArtifactOpen(previewPath)}
+                            title={`预览 ${previewPath}`}
+                            aria-label={`预览改动文件 ${e.path.replace(/\\/g, "/").split("/").pop()}`}
+                          >
+                            {content}
+                          </button>
+                        ) : (
+                          <span key={e.path} className="chat-file-change-link chat-file-change-link--static">{content}</span>
+                        );
+                      })}
                     </div>
                   );
                 })()}
@@ -2908,11 +2969,11 @@ export default function ChatView({
               <rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>
             </svg>
             <span style={{ flex: 1 }}>
-              {canForkOccupiedCodexSession(sessionSummary, sessionErrorCode)
+              {canForkOccupiedCodexSession(sessionSummary, sessionError)
                 ? "此会话仍由原客户端持有，可创建副本继续。"
                 : `此会话正在被 ${sessionSummary?.sourceLabel || "原客户端"} 使用，当前只读；原客户端释放后会自动恢复输入。`}
             </span>
-            {canForkOccupiedCodexSession(sessionSummary, sessionErrorCode) && (
+            {canForkOccupiedCodexSession(sessionSummary, sessionError) && (
               <button
                 type="button"
                 onClick={() => void handleForkOccupiedSession()}
@@ -3221,7 +3282,7 @@ export default function ChatView({
         {/* Pending image previews */}
         {pendingImages.length > 0 && (() => {
           const currentProfile = profiles.find((p) => p.id === activeProfileId);
-          const noVision = !currentProfile || !isVisionModel(currentProfile.modelId);
+          const noVision = !isNativeRuntime && (!currentProfile || !isVisionModel(currentProfile.modelId));
           return (
             <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 10 }}>
               {noVision && (
@@ -3707,7 +3768,7 @@ export default function ChatView({
               <button
                 type="button"
                 onClick={handleSend}
-                disabled={!canCompose || !input.trim()}
+                disabled={!canCompose || pendingImageReads > 0 || !input.trim()}
                 className="web-native-send-button"
                 aria-label={isLocallyRunning ? "排队发送" : "发送"}
                 title={isLocallyRunning ? "排队发送" : "发送"}
@@ -3733,6 +3794,11 @@ export default function ChatView({
           Enter 发送{goalMode ? "目标" : isLocallyRunning ? "（排队）" : ""} · @智能体（可多选）· /技能 · Shift+Enter 换行{isRecording ? " · 🎤 正在聆听…" : ""}
         </div>
       </div>
+
+      <MessageImageLightbox
+        image={previewedMessageImage}
+        onClose={() => setPreviewedMessageImage(null)}
+      />
 
       {/* ── Picker overlays rendered via portal to escape overflow:hidden ancestors ── */}
       {pickerRect && atQuery !== null && filteredAgents.length > 0 && createPortal(

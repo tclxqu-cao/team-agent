@@ -64,6 +64,13 @@ describe("shared composer panel layout", () => {
     expect(chatView).toContain('className="web-native-stop-button" aria-label="停止生成"');
   });
 
+  it("routes picker images into the sent payload before enabling send", () => {
+    expect(chatView).toContain("await prepareComposerFiles(files, blobToDataUrl)");
+    expect(chatView).toContain("setPendingImages((previous) => [...previous, ...prepared.images])");
+    expect(chatView).toContain("!canCompose || pendingImageReads > 0 || !input.trim()");
+    expect(chatView).toContain("images: imagesToSend");
+  });
+
   it("uses one geometry token for every control in the shared toolbar", () => {
     expect(css).toContain("--web-composer-control-size: 38px");
     expect(css).toContain("width: var(--web-composer-control-size)");

@@ -1,5 +1,5 @@
 export interface NativeSessionViewState {
-  agentType?: "customer-agent" | "codex" | "claude-code";
+  agentType?: "customer-agent" | "codex" | "claude-code" | "opencode";
   status?: "idle" | "running" | "completed" | "failed";
   occupancy?: "available" | "owned-by-customer-agent" | "owned-externally";
 }

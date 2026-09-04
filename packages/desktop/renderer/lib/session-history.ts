@@ -16,7 +16,7 @@ export interface PersistedHistoryEvent {
 }
 
 export interface SessionHistoryDetail {
-  agentType?: "customer-agent" | "codex" | "claude-code";
+  agentType?: "customer-agent" | "codex" | "claude-code" | "opencode";
   status?: "idle" | "running" | "completed" | "failed";
   occupancy?: "available" | "owned-by-customer-agent" | "owned-externally";
   messages?: Array<{
@@ -85,7 +85,12 @@ export function restoreSessionHistoryPage(detail: SessionHistoryDetail | null): 
           }),
         };
       }
-      if (message.role === "user" && message.name && message.name !== "__compaction_checkpoint__") {
+      if (
+        message.role === "user"
+        && message.name
+        && message.name !== "__compaction_checkpoint__"
+        && !message.name.startsWith("__native_")
+      ) {
         return { ...message, agentName: message.name };
       }
       return message;
@@ -135,8 +140,8 @@ export function mergeRefreshedSessionHistory(
   if (refreshed.length === 0) return current;
   if (current.length === 0) return refreshed;
 
-  const currentKeys = current.map(sessionHistoryMessageKey);
-  const refreshedKeys = refreshed.map(sessionHistoryMessageKey);
+  const currentKeys = current.map(sessionHistoryMessageMatchKey);
+  const refreshedKeys = refreshed.map(sessionHistoryMessageMatchKey);
   const expectedStart = Math.max(0, current.length - refreshed.length);
   let best = { currentStart: expectedStart, length: 0, distance: Infinity };
 
@@ -163,13 +168,19 @@ export function mergeRefreshedSessionHistory(
   const replacementStart = best.length > 0 ? best.currentStart : expectedStart;
   const stableRefreshed = refreshed.map((message, index) => {
     const previous = current[replacementStart + index];
-    if (!previous || sessionHistoryMessageKey(previous) !== refreshedKeys[index]) return message;
-    return { ...message, id: previous.id, timestamp: previous.timestamp };
+    if (!previous || sessionHistoryMessageMatchKey(previous) !== refreshedKeys[index]) return message;
+    const hasPersistedImage = message.presentation?.attachments?.some((attachment) => attachment.dataUrl);
+    return {
+      ...message,
+      id: previous.id,
+      timestamp: previous.timestamp,
+      images: hasPersistedImage ? undefined : message.images ?? previous.images,
+    };
   });
   return [...current.slice(0, replacementStart), ...stableRefreshed];
 }
 
-function sessionHistoryMessageKey(message: ChatMessage): string {
+function sessionHistoryMessageMatchKey(message: ChatMessage): string {
   return JSON.stringify({
     role: message.role,
     content: message.content,
@@ -177,7 +188,7 @@ function sessionHistoryMessageKey(message: ChatMessage): string {
     toolCallId: message.toolCallId,
     name: message.name,
     agentName: message.agentName,
-    presentation: message.presentation,
+    presentation: message.role === "user" ? undefined : message.presentation,
     isCompactionSummary: message.isCompactionSummary,
   });
 }

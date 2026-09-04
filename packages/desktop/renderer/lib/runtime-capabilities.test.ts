@@ -6,6 +6,7 @@ describe("runtime capabilities", () => {
     expect(supportsMidTurnSteering("customer-agent")).toBe(true);
     expect(supportsMidTurnSteering("claude-code")).toBe(true);
     expect(supportsMidTurnSteering("codex")).toBe(false);
+    expect(supportsMidTurnSteering("opencode")).toBe(false);
     expect(supportsMidTurnSteering(undefined)).toBe(false);
   });
 });
