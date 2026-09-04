@@ -6,6 +6,8 @@ AgentRoam must keep every active Codex session under the effective `CODEX_HOME` 
 
 The change is additive. The existing Codex App Server discovery, workspace association, pagination, ordering, occupancy, fork, deletion, goal, permission, and live-follow behavior remains authoritative for sessions it already returns.
 
+The existing session-read implementation is frozen for this feature. `CodexRuntimeAdapter.discoverSessions`, `listWorkspaceSessions`, `listWorkspaceSessionsByPath`, `getSession`, `thread/read` request construction, Codex turn-to-message conversion, history pagination, and live-follow projection must retain their current behavior and call sequence. Cross-version support may call these public paths but must not replace, intercept, branch inside, or reinterpret them.
+
 ## Scope
 
 This design covers active rollout files below `$CODEX_HOME/sessions`. `CODEX_HOME` continues to resolve from a non-empty environment value and otherwise defaults to `<homedir>/.codex`.
@@ -69,6 +71,18 @@ Merge precedence is fixed:
 - Supplemental rows use the same project-ID and longest-root `cwd` association already used by `AgentWorkspaceIndex`.
 - A supplemental row without a matching workspace is placed in the existing Codex recent workspace.
 - Disk scanning failure removes or stales only supplemental rows; it never fails the primary App Server list.
+
+### Frozen Read Boundary
+
+The compatibility feature is implemented beside the existing adapter through a new application-layer `CodexSessionCompatibilityService`:
+
+- Primary App Server session IDs always dispatch directly to the existing unified-session and adapter methods.
+- Catalog-only IDs dispatch to the compatibility service and cannot enter the existing native read path as fabricated native IDs.
+- A catalog-only compatibility probe may call the existing `getSession` public operation once with a validated native ID. Success returns that unchanged result and promotes the row to the normal path; failure is handled outside the adapter.
+- A migration destination is a real current-format native thread. After validation, its native ID re-enters the existing discovery and read path with no compatibility overlay.
+- No compatibility parser output is merged into, substituted for, or appended to the history of an existing App Server session.
+
+The reconciliation layer belongs at the `AgentWorkspaceIndex` or an adjacent application service, after the adapter has produced its existing result. It must not be implemented by adding raw-file fallback behavior inside `CodexRuntimeAdapter`.
 
 ## Components
 
@@ -225,9 +239,9 @@ The existing generic runtime error union gains a structured version-compatibilit
 ### Opening A Supplemental Session
 
 1. Validate that the source path and metadata cache entry are still current.
-2. Try `thread/read` by exact native ID with the selected runtime.
-3. If the read and normalized detail validation succeed, mark the session `direct` and use the existing detail and continuation paths.
-4. Otherwise validate the full stream against candidate migrators.
+2. When a validated native ID exists, delegate one probe to the unchanged existing `getSession` operation.
+3. If that operation succeeds, return its result unchanged, mark the session `direct`, and use the existing detail and continuation paths.
+4. If it fails, leave the adapter result and error normalization untouched and validate the full stream against candidate migrators in the separate compatibility service.
 5. Mark it `migratable` only when one migrator consumes every required semantic record.
 6. Otherwise mark it `incompatible` with the producer version, reader version, format key, and reason.
 
@@ -322,6 +336,9 @@ Remove internal rollout gating only after performance budgets, source immutabili
 ### Regression Coverage
 
 - Existing App Server discovery produces the same sessions and existing fields before and after reconciliation.
+- Existing `thread/list` and `thread/read` request parameters, pagination sequence, normalized details, and event projections remain unchanged.
+- Existing session IDs never pass through a compatibility parser or migration-history overlay.
+- Catalog-only IDs cannot be mistaken for native IDs or sent to existing adapter methods unless a strict native ID was recovered and an explicit compatibility probe is running.
 - App Server and disk rows with the same native ID never duplicate.
 - Existing workspace ordering, recent-workspace behavior, session sorting, pagination, selection, occupancy, fork, deletion, goals, permissions, and live-follow tests remain green.
 - Missing, disabled, failed, or stale disk indexing leaves existing sessions operational.
@@ -371,5 +388,6 @@ On a supported Mac with multiple producer versions:
 - Editing or upgrading source rollout files in place.
 - Restoring historical process IDs, running terminals, unresolved approvals, or hidden reasoning.
 - Automatically migrating a session without an explicit continuation action.
+- Modifying, replacing, or adding fallback branches inside the existing Codex session discovery and read implementation.
 - Changing archived-session visibility.
 - Changing non-Codex runtime adapters.
