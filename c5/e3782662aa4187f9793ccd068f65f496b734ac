@@ -1,0 +1,23 @@
+scripts/agent-runtime-upgrade-lib.mjs
+  s_c2f221873f144e::t_10392f950886df 268
+  s_c2f221873f144e::t_c336cec7a89184 1-49,51-63,65-230,232-233,239-267,269-504
+  s_c2f221873f144e::t_d5a9d1fddfba30 50,64,231,234-238
+.github/agent-runtime-versions.json
+  s_c2f221873f144e::t_c336cec7a89184 1-11
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "c5e3782662aa4187f9793ccd068f65f496b734ac",
+  "prompts": {},
+  "sessions": {
+    "s_c2f221873f144e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06d49-5ce1-7c11-8feb-44d455eb6627",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
