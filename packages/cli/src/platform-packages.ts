@@ -3,7 +3,7 @@ import { createRequire } from "node:module";
 import { dirname } from "node:path";
 import type { PlatformTarget } from "./platform.js";
 
-export const AGENTROAM_VERSION = "0.2.0-preview.10";
+export const AGENTROAM_VERSION = "0.2.0-preview.11";
 
 export interface RuntimePackageManifest {
   packageVersion: string;

@@ -1,4 +1,4 @@
-# AgentRoam 0.2.0-preview.10 macOS / Windows CLI 发布验收
+# AgentRoam 0.2.0-preview.11 macOS / Windows CLI 发布验收
 
 支持平台：macOS arm64、Windows 10/11 x64，运行时固定使用 Node.js 22。
 全部构建和打包在 macOS arm64 完成；Windows 只下载同一批产物做实机验证，
@@ -12,7 +12,7 @@ PATH=/path/to/node-v22/bin:$PATH npm run pack:cli:all
 
 最终目录 `dist/cli-release` 包含：
 
-- 通用启动包 `agentroam-0.2.0-preview.10.tgz`
+- 通用启动包 `agentroam-0.2.0-preview.11.tgz`
 - macOS / Windows 各自的 runtime、cloudflared 和 TUI 包
 - 校验文件 `SHA256SUMS`
 
@@ -25,6 +25,8 @@ Mach-O arm64，Windows 必须为 PE32+ x86-64。Windows `better-sqlite3` 和
 版本化 `install-agentroam.sh` / `install-agentroam.ps1` 用于首次安装、升级和
 修复。安装器校验 Node 22 和精确 CLI 后，默认注册当前用户服务、启动并验证
 ready 状态；日常启停使用 `agentroam service start|stop|restart|status`。
+重复安装会先停止已有服务，等待旧进程和平台注册退出，再注册新版本；
+不删除数据目录中的会话、配对状态、托管运行时和日志。
 
 macOS 使用用户 LaunchAgent，Windows 使用当前用户 Task Scheduler。前台和
 服务运行期间都阻止系统因空闲进入睡眠，但不阻止显示器熄灭，也不修改全局
@@ -74,13 +76,13 @@ node scripts/verify-cli-install.mjs --artifacts dist/cli-release
 先发布六个平台包，再发布通用启动包。以下命令均使用官方 registry 和 `preview` tag：
 
 ```bash
-npm publish dist/cli-release/agentroam-runtime-darwin-arm64-0.2.0-preview.10.tgz --registry https://registry.npmjs.org --access public --tag preview --provenance=false
-npm publish dist/cli-release/agentroam-runtime-win32-x64-0.2.0-preview.10.tgz --registry https://registry.npmjs.org --access public --tag preview --provenance=false
-npm publish dist/cli-release/agentroam-cloudflared-darwin-arm64-0.2.0-preview.10.tgz --registry https://registry.npmjs.org --access public --tag preview --provenance=false
-npm publish dist/cli-release/agentroam-cloudflared-win32-x64-0.2.0-preview.10.tgz --registry https://registry.npmjs.org --access public --tag preview --provenance=false
-npm publish dist/cli-release/agentroam-tui-darwin-arm64-0.2.0-preview.10.tgz --registry https://registry.npmjs.org --access public --tag preview --provenance=false
-npm publish dist/cli-release/caoqu-agentroam-tui-win32-x64-0.2.0-preview.10.tgz --registry https://registry.npmjs.org --access public --tag preview --provenance=false
-npm publish dist/cli-release/agentroam-0.2.0-preview.10.tgz --registry https://registry.npmjs.org --access public --tag preview --provenance=false
+npm publish dist/cli-release/agentroam-runtime-darwin-arm64-0.2.0-preview.11.tgz --registry https://registry.npmjs.org --access public --tag preview --provenance=false
+npm publish dist/cli-release/agentroam-runtime-win32-x64-0.2.0-preview.11.tgz --registry https://registry.npmjs.org --access public --tag preview --provenance=false
+npm publish dist/cli-release/agentroam-cloudflared-darwin-arm64-0.2.0-preview.11.tgz --registry https://registry.npmjs.org --access public --tag preview --provenance=false
+npm publish dist/cli-release/agentroam-cloudflared-win32-x64-0.2.0-preview.11.tgz --registry https://registry.npmjs.org --access public --tag preview --provenance=false
+npm publish dist/cli-release/agentroam-tui-darwin-arm64-0.2.0-preview.11.tgz --registry https://registry.npmjs.org --access public --tag preview --provenance=false
+npm publish dist/cli-release/caoqu-agentroam-tui-win32-x64-0.2.0-preview.11.tgz --registry https://registry.npmjs.org --access public --tag preview --provenance=false
+npm publish dist/cli-release/agentroam-0.2.0-preview.11.tgz --registry https://registry.npmjs.org --access public --tag preview --provenance=false
 ```
 
 发布后复核 `preview` dist-tag，并分别在 macOS arm64 和 Windows x64 执行

@@ -61,6 +61,7 @@ export class MacLaunchAgent implements ServiceController {
   async install(config: ServiceConfig): Promise<{ paths: ServicePaths; state: ServiceRuntimeState | null; definition: string }> {
     await this.validateConfig(config);
     const paths = resolveServicePaths(this.homeDir, config.dataDir);
+    const previousState = await readServiceState(paths);
     await Promise.all([
       mkdir(paths.launchAgentsDir, { recursive: true }),
       ensurePrivateDirectory(paths.controlDir),
@@ -76,7 +77,10 @@ export class MacLaunchAgent implements ServiceController {
       await this.runRequired("plutil", ["-convert", "xml1", "-o", plistTempPath, jsonPath]);
       await this.runRequired("plutil", ["-lint", plistTempPath]);
       await chmod(plistTempPath, 0o600);
-      if ((await this.inspectJob()).loaded) await this.runRequired("launchctl", ["bootout", this.serviceTarget]);
+      if ((await this.inspectJob()).loaded) {
+        await this.runRequired("launchctl", ["bootout", this.serviceTarget]);
+        await this.waitForServiceExit(previousState?.pid);
+      }
       await rename(plistTempPath, paths.plistPath);
       await chmod(paths.plistPath, 0o600);
       await writePrivateJson(paths.configPath, config);
@@ -233,6 +237,20 @@ export class MacLaunchAgent implements ServiceController {
       if (Date.now() >= deadline) throw new Error(`service process ${pid} did not stop after launchctl bootout`);
       await delay(this.pollIntervalMs);
     }
+  }
+
+  private async waitForServiceExit(pid?: number): Promise<void> {
+    const deadline = Date.now() + this.stopTimeoutMs;
+    do {
+      const processRunning = pid ? this.processExists(pid) : false;
+      const job = await this.inspectJob();
+      if (!processRunning && !job.loaded) return;
+      if (Date.now() >= deadline) {
+        if (processRunning) throw new Error(`service process ${pid} did not stop after launchctl bootout`);
+        throw new Error(`service ${SERVICE_LABEL} did not unload after launchctl bootout`);
+      }
+      await delay(this.pollIntervalMs);
+    } while (true);
   }
 }
 

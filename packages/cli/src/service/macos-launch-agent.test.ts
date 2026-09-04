@@ -70,6 +70,130 @@ describe("MacLaunchAgent", () => {
     expect(JSON.parse(await readFile(paths.configPath, "utf8"))).toMatchObject({ roots: value.roots });
   });
 
+  it("waits for the previous launchd job and process before bootstrapping a replacement", async () => {
+    const home = await mkdtemp(resolve(tmpdir(), "agentroam-launch-agent-reinstall-"));
+    const paths = resolveServicePaths(home);
+    const value = config(home, paths.dataDir);
+    await createConfigFiles(value);
+    await mkdir(paths.launchAgentsDir, { recursive: true });
+    await writeFile(paths.plistPath, "old plist");
+    await writePrivateJson(paths.configPath, { ...value, version: "0.2.0-preview.8" });
+    await writePrivateJson(paths.statePath, {
+      status: "ready", pid: 700, version: "0.2.0-preview.8", startedAt: "x", updatedAt: "x",
+    });
+    await writePrivateText(resolve(paths.dataDir, "data/keep.txt"), "keep");
+    await writePrivateText(paths.stdoutPath, "keep logs");
+    let loaded = true;
+    let processChecks = 0;
+    const lifecycle: string[] = [];
+    const runner: CommandRunner = async (command, args) => {
+      if (command === "plutil" && args[0] === "-convert") {
+        await writeFile(args[3], "<?xml version=\"1.0\"?><plist version=\"1.0\"><dict/></plist>");
+      }
+      if (command === "launchctl" && args[0] === "print") {
+        return { code: loaded ? 0 : 1, stdout: loaded ? "state = running" : "", stderr: "" };
+      }
+      if (command === "launchctl" && args[0] === "bootout") lifecycle.push("bootout");
+      if (command === "launchctl" && args[0] === "bootstrap") {
+        lifecycle.push("bootstrap");
+        await writePrivateJson(paths.statePath, {
+          status: "ready", pid: 701, version: value.version, startedAt: "y", updatedAt: "y",
+          accessUrl: "https://ready.example/web",
+        });
+      }
+      return { code: 0, stdout: "", stderr: "" };
+    };
+    const processExists = vi.fn(() => {
+      processChecks++;
+      if (processChecks === 1) return true;
+      loaded = false;
+      lifecycle.push("process-exit");
+      return false;
+    });
+
+    const result = await new MacLaunchAgent({
+      homeDir: home,
+      uid: 501,
+      runner,
+      processExists,
+      readyTimeoutMs: 20,
+      stopTimeoutMs: 50,
+      pollIntervalMs: 1,
+    }).install(value);
+
+    expect(result.state).toMatchObject({ status: "ready", pid: 701 });
+    expect(lifecycle).toEqual(["bootout", "process-exit", "bootstrap"]);
+    expect(processExists).toHaveBeenCalledWith(700);
+    expect(await readFile(resolve(paths.dataDir, "data/keep.txt"), "utf8")).toBe("keep");
+    expect(await readFile(paths.stdoutPath, "utf8")).toBe("keep logs");
+  });
+
+  it("waits for launchd to remove a previous job when no runtime pid is available", async () => {
+    const home = await mkdtemp(resolve(tmpdir(), "agentroam-launch-agent-reinstall-no-pid-"));
+    const paths = resolveServicePaths(home);
+    const value = config(home, paths.dataDir);
+    await createConfigFiles(value);
+    let printCount = 0;
+    let bootedOut = false;
+    let bootstrapPrintCount = 0;
+    const runner: CommandRunner = async (command, args) => {
+      if (command === "plutil" && args[0] === "-convert") {
+        await writeFile(args[3], "<?xml version=\"1.0\"?><plist version=\"1.0\"><dict/></plist>");
+      }
+      if (command === "launchctl" && args[0] === "print") {
+        printCount++;
+        const loaded = !bootedOut || printCount < 3;
+        return { code: loaded ? 0 : 1, stdout: loaded ? "state = exited" : "", stderr: "" };
+      }
+      if (command === "launchctl" && args[0] === "bootout") bootedOut = true;
+      if (command === "launchctl" && args[0] === "bootstrap") {
+        bootstrapPrintCount = printCount;
+        await writePrivateJson(paths.statePath, {
+          status: "ready", pid: 701, version: value.version, startedAt: "y", updatedAt: "y",
+        });
+      }
+      return { code: 0, stdout: "", stderr: "" };
+    };
+
+    await new MacLaunchAgent({
+      homeDir: home,
+      uid: 501,
+      runner,
+      readyTimeoutMs: 20,
+      stopTimeoutMs: 50,
+      pollIntervalMs: 1,
+    }).install(value);
+
+    expect(bootstrapPrintCount).toBeGreaterThanOrEqual(3);
+  });
+
+  it("does not bootstrap while the previous launchd job is still loaded", async () => {
+    const home = await mkdtemp(resolve(tmpdir(), "agentroam-launch-agent-reinstall-timeout-"));
+    const paths = resolveServicePaths(home);
+    const value = config(home, paths.dataDir);
+    await createConfigFiles(value);
+    const calls: string[] = [];
+    const runner: CommandRunner = async (command, args) => {
+      calls.push(`${command} ${args[0] ?? ""}`);
+      if (command === "plutil" && args[0] === "-convert") {
+        await writeFile(args[3], "<?xml version=\"1.0\"?><plist version=\"1.0\"><dict/></plist>");
+      }
+      if (command === "launchctl" && args[0] === "print") {
+        return { code: 0, stdout: "state = exited", stderr: "" };
+      }
+      return { code: 0, stdout: "", stderr: "" };
+    };
+
+    await expect(new MacLaunchAgent({
+      homeDir: home,
+      uid: 501,
+      runner,
+      stopTimeoutMs: 0,
+      pollIntervalMs: 1,
+    }).install(value)).rejects.toThrow("did not unload after launchctl bootout");
+    expect(calls).not.toContain("launchctl bootstrap");
+  });
+
   it("reports ready URLs only while the installed job is running", async () => {
     const home = await mkdtemp(resolve(tmpdir(), "agentroam-launch-agent-url-"));
     const paths = resolveServicePaths(home);

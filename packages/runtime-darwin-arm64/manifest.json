@@ -1,5 +1,5 @@
 {
-  "packageVersion": "0.2.0-preview.10",
+  "packageVersion": "0.2.0-preview.11",
   "target": "darwin-arm64",
   "nodeMajor": 22,
   "nodeModuleAbi": 127,

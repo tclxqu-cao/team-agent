@@ -58,12 +58,19 @@ export class WindowsTaskService implements ServiceController {
     const hostPath = resolveWindowsServiceHost(config.cliPath);
     await this.validate(config, hostPath);
     const paths = resolveServicePaths(this.homeDir, config.dataDir);
+    const previousTask = await this.inspectTask();
+    const previousState = await readServiceState(paths);
     await Promise.all([
       ensurePrivateDirectory(paths.controlDir),
       ensurePrivateDirectory(paths.logsDir),
       ensurePrivateFile(paths.stdoutPath),
       ensurePrivateFile(paths.stderrPath),
     ]);
+    if (previousTask.running) {
+      await this.runRequired(buildStopTaskScript());
+      if (previousState?.pid) await this.waitForProcessExit(previousState.pid);
+    }
+    if (previousTask.installed) await this.runRequired(buildUnregisterTaskScript());
     await writePrivateJson(paths.configPath, config);
     await Promise.all([removeIfExists(paths.statePath), removeIfExists(paths.urlPath)]);
     await this.runRequired(buildRegisterTaskScript(config, hostPath, paths.configPath));

@@ -77,6 +77,144 @@ describe("WindowsTaskService", () => {
     expect(scripts.some((script) => script.includes("cmd.exe") || script.includes("ES_DISPLAY_REQUIRED"))).toBe(false);
   });
 
+  it("stops and unregisters a running task before installing its replacement", async () => {
+    const home = await mkdtemp(resolve(tmpdir(), "agentroam-windows-task-reinstall-"));
+    const paths = resolveServicePaths(home, resolve(home, "data"));
+    const value = config(home, paths.dataDir);
+    await mkdir(value.roots[0], { recursive: true });
+    await writePrivateText(paths.configPath, JSON.stringify({ ...value, version: "0.2.0-preview.8" }));
+    await writePrivateText(paths.statePath, JSON.stringify({
+      status: "ready", pid: 800, version: "0.2.0-preview.8", startedAt: "x", updatedAt: "x",
+    }));
+    await writePrivateText(resolve(paths.dataDir, "data/keep.txt"), "keep");
+    await writePrivateText(paths.stdoutPath, "keep logs");
+    let installed = true;
+    let running = true;
+    let processChecks = 0;
+    const lifecycle: string[] = [];
+    const runner: CommandRunner = async (_command, args) => {
+      const script = Buffer.from(args.at(-1)!, "base64").toString("utf16le");
+      if (script.includes("Get-ScheduledTask")) {
+        return { code: 0, stdout: JSON.stringify({ installed, running }), stderr: "" };
+      }
+      if (script.includes("Stop-ScheduledTask")) {
+        lifecycle.push("stop");
+        running = false;
+      }
+      if (script.includes("Unregister-ScheduledTask")) {
+        lifecycle.push("unregister");
+        installed = false;
+      }
+      if (script.includes("Register-ScheduledTask")) {
+        lifecycle.push("register");
+        installed = true;
+      }
+      if (script.includes("Start-ScheduledTask")) {
+        lifecycle.push("start");
+        running = true;
+        await writePrivateText(paths.statePath, JSON.stringify({
+          status: "ready", pid: 801, version: value.version, startedAt: "y", updatedAt: "y",
+        }));
+      }
+      return { code: 0, stdout: "", stderr: "" };
+    };
+    const processExists = vi.fn(() => {
+      processChecks++;
+      if (processChecks === 1) return true;
+      lifecycle.push("process-exit");
+      return false;
+    });
+
+    const result = await new WindowsTaskService({
+      homeDir: home,
+      runner,
+      processExists,
+      validateConfig: async () => undefined,
+      readyTimeoutMs: 20,
+      stopTimeoutMs: 50,
+      pollIntervalMs: 1,
+    }).install(value);
+
+    expect(result.state).toMatchObject({ status: "ready", pid: 801 });
+    expect(lifecycle).toEqual(["stop", "process-exit", "unregister", "register", "start"]);
+    expect(processExists).toHaveBeenCalledWith(800);
+    expect(await readFile(resolve(paths.dataDir, "data/keep.txt"), "utf8")).toBe("keep");
+    expect(await readFile(paths.stdoutPath, "utf8")).toBe("keep logs");
+  });
+
+  it("replaces an installed stopped task without stopping a process", async () => {
+    const home = await mkdtemp(resolve(tmpdir(), "agentroam-windows-task-reinstall-stopped-"));
+    const paths = resolveServicePaths(home, resolve(home, "data"));
+    const value = config(home, paths.dataDir);
+    await mkdir(value.roots[0], { recursive: true });
+    const lifecycle: string[] = [];
+    let installed = true;
+    const runner: CommandRunner = async (_command, args) => {
+      const script = Buffer.from(args.at(-1)!, "base64").toString("utf16le");
+      if (script.includes("Get-ScheduledTask")) {
+        return { code: 0, stdout: JSON.stringify({ installed, running: false }), stderr: "" };
+      }
+      if (script.includes("Stop-ScheduledTask")) lifecycle.push("stop");
+      if (script.includes("Unregister-ScheduledTask")) {
+        lifecycle.push("unregister");
+        installed = false;
+      }
+      if (script.includes("Register-ScheduledTask")) {
+        lifecycle.push("register");
+        installed = true;
+      }
+      if (script.includes("Start-ScheduledTask")) {
+        lifecycle.push("start");
+        await writePrivateText(paths.statePath, JSON.stringify({
+          status: "ready", pid: 801, version: value.version, startedAt: "y", updatedAt: "y",
+        }));
+      }
+      return { code: 0, stdout: "", stderr: "" };
+    };
+
+    await new WindowsTaskService({
+      homeDir: home,
+      runner,
+      processExists: vi.fn(() => false),
+      validateConfig: async () => undefined,
+      readyTimeoutMs: 20,
+      pollIntervalMs: 1,
+    }).install(value);
+
+    expect(lifecycle).toEqual(["unregister", "register", "start"]);
+  });
+
+  it("does not replace a running task while its previous process is still alive", async () => {
+    const home = await mkdtemp(resolve(tmpdir(), "agentroam-windows-task-reinstall-timeout-"));
+    const paths = resolveServicePaths(home, resolve(home, "data"));
+    const value = config(home, paths.dataDir);
+    await mkdir(value.roots[0], { recursive: true });
+    await writePrivateText(paths.statePath, JSON.stringify({
+      status: "ready", pid: 800, version: "0.2.0-preview.8", startedAt: "x", updatedAt: "x",
+    }));
+    const lifecycle: string[] = [];
+    const runner: CommandRunner = async (_command, args) => {
+      const script = Buffer.from(args.at(-1)!, "base64").toString("utf16le");
+      if (script.includes("Get-ScheduledTask")) {
+        return { code: 0, stdout: JSON.stringify({ installed: true, running: true }), stderr: "" };
+      }
+      if (script.includes("Stop-ScheduledTask")) lifecycle.push("stop");
+      if (script.includes("Unregister-ScheduledTask")) lifecycle.push("unregister");
+      if (script.includes("Register-ScheduledTask")) lifecycle.push("register");
+      return { code: 0, stdout: "", stderr: "" };
+    };
+
+    await expect(new WindowsTaskService({
+      homeDir: home,
+      runner,
+      processExists: () => true,
+      validateConfig: async () => undefined,
+      stopTimeoutMs: 0,
+      pollIntervalMs: 1,
+    }).install(value)).rejects.toThrow("did not stop after task termination");
+    expect(lifecycle).toEqual(["stop"]);
+  });
+
   it("builds a safely quoted task action for paths with spaces and apostrophes", () => {
     const value = config("C:\\Users\\O'Brien", "C:\\Users\\O'Brien\\.agentroam");
     const host = resolveWindowsServiceHost(value.cliPath);

@@ -20,20 +20,20 @@ npx agentroam@preview
 Or install from tarball:
 
 ```bash
-npm install ./agentroam-cloudflared-darwin-arm64-0.2.0-preview.10.tgz \
-  ./agentroam-runtime-darwin-arm64-0.2.0-preview.10.tgz \
-  ./agentroam-tui-darwin-arm64-0.2.0-preview.10.tgz \
-  ./agentroam-0.2.0-preview.10.tgz
+npm install ./agentroam-cloudflared-darwin-arm64-0.2.0-preview.11.tgz \
+  ./agentroam-runtime-darwin-arm64-0.2.0-preview.11.tgz \
+  ./agentroam-tui-darwin-arm64-0.2.0-preview.11.tgz \
+  ./agentroam-0.2.0-preview.11.tgz
 npx agentroam
 ```
 
 Windows PowerShell:
 
 ```powershell
-npm install ./agentroam-cloudflared-win32-x64-0.2.0-preview.10.tgz `
-  ./agentroam-runtime-win32-x64-0.2.0-preview.10.tgz `
-  ./caoqu-agentroam-tui-win32-x64-0.2.0-preview.10.tgz `
-  ./agentroam-0.2.0-preview.10.tgz
+npm install ./agentroam-cloudflared-win32-x64-0.2.0-preview.11.tgz `
+  ./agentroam-runtime-win32-x64-0.2.0-preview.11.tgz `
+  ./caoqu-agentroam-tui-win32-x64-0.2.0-preview.11.tgz `
+  ./agentroam-0.2.0-preview.11.tgz
 npx agentroam
 ```
 
@@ -71,6 +71,9 @@ downloaded only when no installed Node 22 is available.
 The service keeps running after the terminal closes, restarts after failure, and
 starts again when the user logs in. macOS uses a user LaunchAgent; Windows uses a
 current-user Task Scheduler task. Neither requires administrator privileges.
+Running a newer versioned installer automatically stops and replaces an existing
+AgentRoam user service before starting the new version. Session data, pairing
+state, managed runtimes, and service logs are preserved during the upgrade.
 
 ```bash
 agentroam service status
