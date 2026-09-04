@@ -1,0 +1,39 @@
+.github/workflows/agent-runtime-gitee-retry.yml
+  s_c2f221873f144e::t_c12f35356061e0 1-197
+.github/agent-runtime-upgrade.md
+  s_c2f221873f144e::t_4986acfe2f9d8b 33,51-53,58
+packages/cli/RELEASE.md
+  s_c2f221873f144e::t_4986acfe2f9d8b 79,81-83
+scripts/agent-runtime-workflow-contract.test.mjs
+  s_c2f221873f144e::t_44494ff0773959 52
+  s_c2f221873f144e::t_4986acfe2f9d8b 1-51,53-58
+.github/workflows/agent-runtime-upgrade.yml
+  s_c2f221873f144e::t_4986acfe2f9d8b 98
+.github/workflows/agent-runtime-repair.yml
+  s_c2f221873f144e::t_4986acfe2f9d8b 325
+  s_c2f221873f144e::t_44494ff0773959 113
+.github/workflows/agent-runtime-publish.yml
+  s_c2f221873f144e::t_87dccef353cc2c 300-303,317,319-323,336,346,353-356,358-363,365-394,444-445
+  s_c2f221873f144e::t_c12f35356061e0 203
+package.json
+  s_c2f221873f144e::t_4986acfe2f9d8b 51
+.github/workflows/agent-runtime-candidate-check.yml
+  s_c2f221873f144e::t_d1ce8fa107f272 175,177-183,196,199-200,202-222,224-226,229-245,249-250,257
+  s_c2f221873f144e::t_4986acfe2f9d8b 72
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "2ec83d116891cc733b86fafec7952b077ea41da8",
+  "prompts": {},
+  "sessions": {
+    "s_c2f221873f144e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06d49-5ce1-7c11-8feb-44d455eb6627",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
