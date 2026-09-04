@@ -380,6 +380,10 @@ body[data-web-shell="1"] {
     background: transparent;
   }
 
+  body[data-web-shell="1"] .msg-completion-footer {
+    min-height: 32px;
+  }
+
   body[data-web-shell="1"] .chat-input-area {
     padding: 0 max(10px, env(safe-area-inset-right)) calc(env(safe-area-inset-bottom) + 8px) max(10px, env(safe-area-inset-left)) !important;
     background: var(--bg-workspace) !important;

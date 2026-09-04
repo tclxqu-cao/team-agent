@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   isObservedNativeRun,
+  isNativeRuntimeSelection,
+  shouldQueueMessageForActiveRun,
   shouldFollowNativeHistory,
   shouldRestoreLocalNativeRun,
   type NativeSessionViewState,
@@ -13,6 +15,18 @@ const externalRunning = (agentType: "codex" | "claude-code"): NativeSessionViewS
 });
 
 describe("native session view state", () => {
+  it("keeps a newly selected native runtime ready while its summary is still loading", () => {
+    expect(isNativeRuntimeSelection(undefined, "codex")).toBe(true);
+    expect(isNativeRuntimeSelection(undefined, "claude-code")).toBe(true);
+    expect(isNativeRuntimeSelection(undefined, "opencode")).toBe(true);
+    expect(isNativeRuntimeSelection(undefined, "customer-agent")).toBe(false);
+  });
+
+  it("prefers the selected session runtime once its summary is available", () => {
+    expect(isNativeRuntimeSelection({ agentType: "codex" }, "customer-agent")).toBe(true);
+    expect(isNativeRuntimeSelection({ agentType: "customer-agent" }, "codex")).toBe(false);
+  });
+
   it.each(["codex", "claude-code"] as const)(
     "keeps an externally owned %s run visible without restoring local ownership",
     (agentType) => {
@@ -41,6 +55,20 @@ describe("native session view state", () => {
     expect(shouldRestoreLocalNativeRun(session)).toBe(true);
     expect(isObservedNativeRun(session)).toBe(false);
     expect(shouldFollowNativeHistory(session, "session-1", "session-1")).toBe(false);
+    expect(shouldQueueMessageForActiveRun(session, false)).toBe(true);
+  });
+
+  it("does not queue into an externally owned or idle native session", () => {
+    expect(shouldQueueMessageForActiveRun(externalRunning("codex"), false)).toBe(false);
+    expect(shouldQueueMessageForActiveRun({
+      agentType: "codex",
+      status: "idle",
+      occupancy: "available",
+    }, false)).toBe(false);
+  });
+
+  it("keeps locally tracked runs queueable regardless of summary lag", () => {
+    expect(shouldQueueMessageForActiveRun(undefined, true)).toBe(true);
   });
 
   it("does not present an externally owned idle session as actively running", () => {

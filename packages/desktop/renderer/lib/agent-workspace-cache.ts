@@ -112,7 +112,17 @@ export function reconcileSessionPage(
     if (seen.has(session.id)) return false;
     seen.add(session.id);
     return true;
-  }).slice(0, 300);
+  });
+}
+
+export function preservePendingNativeSession(
+  refreshed: readonly UnifiedSessionSummary[],
+  pendingSession?: UnifiedSessionSummary,
+): UnifiedSessionSummary[] {
+  if (!pendingSession || refreshed.some((session) => session.id === pendingSession.id)) {
+    return [...refreshed];
+  }
+  return [pendingSession, ...refreshed];
 }
 
 function parsePartition(value: unknown, agentType: AgentType): AgentWorkspacePartition | null {
@@ -126,6 +136,7 @@ function parsePartition(value: unknown, agentType: AgentType): AgentWorkspacePar
       && Array.isArray(workspace.roots)
       && workspace.roots.every((root) => typeof root === "string")
       && typeof workspace.order === "number"
+      && (workspace.canCreateSession === undefined || typeof workspace.canCreateSession === "boolean")
     ))
     : [];
   const sessions: Record<string, CachedWorkspaceSessions> = {};
@@ -135,7 +146,7 @@ function parsePartition(value: unknown, agentType: AgentType): AgentWorkspacePar
       sessions[workspaceId] = {
         data: raw.data.filter((session): session is UnifiedSessionSummary => (
           isRecord(session) && session.agentType === agentType && typeof session.id === "string"
-        )).slice(0, 300),
+        )),
         nextCursor: typeof raw.nextCursor === "string" ? raw.nextCursor : null,
         loaded: raw.loaded === true,
       };

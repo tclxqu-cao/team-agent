@@ -1,4 +1,4 @@
-import { StrictMode } from "react";
+import { StrictMode, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { HttpClient } from "./infrastructure/http/http-client";
 import { AgentHttpGateway } from "./infrastructure/http/agent-http-gateway";
@@ -6,6 +6,7 @@ import { LocalSettingsRepository } from "./infrastructure/local/local-settings-r
 import { installBrowserCryptoCompatibility } from "./infrastructure/browser-crypto";
 import { installParentTabSwipeBridge } from "./presentation/parent-tab-swipe";
 import { installWebShellSkinBridge } from "./presentation/web-shell-skin";
+import { announceWebappReady } from "./presentation/webapp-ready";
 // The desktop renderer's design-token sheet — the Electron entry imports it
 // via its own main.tsx; without it every var(--…) in the shared UI is void.
 import "@desktop/renderer/styles/global.css";
@@ -33,6 +34,13 @@ const container = document.getElementById("root");
 if (!container) throw new Error("#root missing");
 const root = createRoot(container);
 
+function WebappReadySignal() {
+  useEffect(() => {
+    announceWebappReady();
+  }, []);
+  return null;
+}
+
 void (async () => {
   window.agentApi = gateway as unknown as AgentApi;
   await gateway.refreshServerModel();
@@ -40,6 +48,7 @@ void (async () => {
   root.render(
     <StrictMode>
       <App />
+      <WebappReadySignal />
     </StrictMode>,
   );
   startBuildWatchdog();

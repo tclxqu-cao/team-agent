@@ -321,10 +321,27 @@ class AgentHost {
       }
 
       if (event.type === "done") {
+        const completionDurationMs = typeof event.durationMs === "number"
+          && Number.isFinite(event.durationMs)
+          && event.durationMs >= 0
+          ? event.durationMs
+          : undefined;
         if (streamingAssistant) {
           streamingAssistant.content = event.finalText || streamingAssistant.content;
+          if (completionDurationMs !== undefined) {
+            streamingAssistant.presentation = {
+              ...streamingAssistant.presentation,
+              completionDurationMs,
+            };
+          }
         } else if (event.finalText?.trim()) {
-          messages.push({ role: "assistant", content: event.finalText });
+          messages.push({
+            role: "assistant",
+            content: event.finalText,
+            ...(completionDurationMs === undefined
+              ? {}
+              : { presentation: { completionDurationMs } }),
+          });
         }
         streamingAssistant = null;
       }
@@ -334,6 +351,7 @@ class AgentHost {
   }
 
   async run(input: string, sessionId: string, images?: string[]): Promise<void> {
+    const runStartedAt = performance.now();
     const session = await this.sessionStore.get(sessionId);
     const runWorkingDirectory = await this.resolveProjectWorkingDirectory(session?.projectId);
     await this.sessionStore.consumePendingAutoTitle(sessionId, input);
@@ -378,19 +396,29 @@ class AgentHost {
 
     try {
       for await (const event of this.activeRun) {
-        await this.sessionStore.addEvent(sessionId, event);
+        const emittedEvent: AgentEvent = event.type === "done" && !runFailed
+          ? {
+              ...event,
+              durationMs: Math.max(0, Math.round(performance.now() - runStartedAt)),
+            }
+          : event;
+        await this.sessionStore.addEvent(sessionId, emittedEvent);
 
-        if (event.type === "error") {
+        if (emittedEvent.type === "error") {
           runFailed = true;
           await this.sessionStore.update(sessionId, { status: "failed" });
-        } else if (event.type === "done" && !runFailed) {
-          if (event.finalText.trim()) {
-            await this.sessionStore.addMessage(sessionId, { role: "assistant", content: event.finalText });
+        } else if (emittedEvent.type === "done" && !runFailed) {
+          if (emittedEvent.finalText.trim()) {
+            await this.sessionStore.addMessage(sessionId, {
+              role: "assistant",
+              content: emittedEvent.finalText,
+              presentation: { completionDurationMs: emittedEvent.durationMs },
+            });
           }
           await this.sessionStore.update(sessionId, { status: "completed" });
         }
 
-        this.emit(sessionId, event);
+        this.emit(sessionId, emittedEvent);
       }
     } catch (err) {
       // The loop itself threw (not an in-band error event) — without this the

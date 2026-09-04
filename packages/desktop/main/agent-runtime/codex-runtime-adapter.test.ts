@@ -1225,6 +1225,25 @@ describe("Codex native permissions", () => {
   });
 });
 
+describe("Codex session archive", () => {
+  it("archives the native thread through the app-server protocol", async () => {
+    const request = vi.fn(async () => ({}));
+    const adapter = new CodexRuntimeAdapter({
+      client: {
+        onNotification: () => () => undefined,
+        onExit: () => () => undefined,
+        setServerRequestHandler: () => undefined,
+        request,
+      } as never,
+    });
+
+    await expect(adapter.archiveSession("thread-1")).resolves.toBeUndefined();
+
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(request).toHaveBeenCalledWith("thread/archive", { threadId: "thread-1" });
+  });
+});
+
 describe("Codex transcript watch paths", () => {
   it("returns only real transcript files contained by the configured session root", async () => {
     const root = await mkdtemp(join(tmpdir(), "codex-watch-root-"));

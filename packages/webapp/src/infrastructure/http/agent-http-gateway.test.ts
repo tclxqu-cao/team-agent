@@ -55,9 +55,12 @@ describe("AgentHttpGateway", () => {
     });
   });
 
-  it("keeps an existing native stream open when a refreshed page retries an occupied session", async () => {
+  it("keeps an existing native stream open when a refreshed page retries its running session", async () => {
     globalThis.EventSource = ObservableEventSource as unknown as typeof EventSource;
-    const occupied = Object.assign(new Error("Session is already running"), { status: 409 });
+    const occupied = Object.assign(new Error("Session is already running"), {
+      status: 409,
+      code: "SESSION_ALREADY_RUNNING",
+    });
     const http = {
       get: vi.fn().mockResolvedValue({
         status: "running",
@@ -88,10 +91,111 @@ describe("AgentHttpGateway", () => {
     expect(source.close).not.toHaveBeenCalled();
     expect(events).toContainEqual(expect.objectContaining({
       type: "error",
-      code: "SESSION_OCCUPIED",
+      code: "SESSION_ALREADY_RUNNING",
       _preserveActiveRun: true,
       _sid: "runtime:codex:c291cmNl",
     }));
+  });
+
+  it("persists a queued native message before returning it to the renderer", async () => {
+    globalThis.EventSource = ObservableEventSource as unknown as typeof EventSource;
+    const state = {
+      active: null,
+      queued: [{
+        id: "queue-1",
+        sessionId: "runtime:codex:c291cmNl",
+        objective: "follow up",
+        sourceMessageId: "chat-1",
+        kind: "message",
+        status: "queued",
+        position: 0,
+        createdAt: 1,
+        updatedAt: 1,
+      }],
+      history: [],
+    };
+    const http = { post: vi.fn().mockResolvedValue({ state }) };
+    const gateway = new AgentHttpGateway(http as never, {} as never);
+
+    const request = gateway.enqueueSessionMessage("runtime:codex:c291cmNl", {
+      sourceMessageId: "chat-1",
+      content: "follow up",
+      images: ["data:image/png;base64,AAAA"],
+      agentIds: ["reviewer"],
+      agentName: "Reviewer",
+    });
+    ObservableEventSource.instances[0].onopen?.();
+
+    await expect(request).resolves.toEqual(state);
+    expect(http.post).toHaveBeenCalledWith("/api/sessions/runtime%3Acodex%3Ac291cmNl/goals", {
+      kind: "message",
+      objective: "follow up",
+      sourceMessageId: "chat-1",
+      messagePayload: {
+        images: ["data:image/png;base64,AAAA"],
+        agentIds: ["reviewer"],
+        agentName: "Reviewer",
+      },
+    });
+  });
+
+  it("follows the active run when admission reports a same-client conflict before a stream existed", async () => {
+    globalThis.EventSource = ObservableEventSource as unknown as typeof EventSource;
+    const conflict = Object.assign(new Error("Session is already running"), {
+      status: 409,
+      code: "SESSION_ALREADY_RUNNING",
+    });
+    const http = { post: vi.fn().mockRejectedValue(conflict) };
+    const settings = {
+      getModelOverride: vi.fn(() => null),
+      getReasoningEffort: vi.fn(() => "off"),
+      getRunLimits: vi.fn(() => ({ maxIterations: 10, maxTokens: 100_000 })),
+    };
+    const gateway = new AgentHttpGateway(http as never, settings as never);
+    const events: unknown[] = [];
+    gateway.onEvent((event) => events.push(event));
+
+    const run = gateway.run("queue after refresh", "runtime:codex:c291cmNl");
+    const source = ObservableEventSource.instances[0];
+    source.onopen?.();
+    await run;
+
+    expect(source.close).not.toHaveBeenCalled();
+    expect(events).toContainEqual(expect.objectContaining({
+      type: "error",
+      code: "SESSION_ALREADY_RUNNING",
+      _preserveActiveRun: true,
+    }));
+  });
+
+  it("does not turn a real external ownership conflict into a queued run", async () => {
+    globalThis.EventSource = ObservableEventSource as unknown as typeof EventSource;
+    const occupied = Object.assign(new Error("Session is owned by another client"), {
+      status: 409,
+      code: "SESSION_OCCUPIED",
+    });
+    const http = { post: vi.fn().mockRejectedValue(occupied) };
+    const settings = {
+      getModelOverride: vi.fn(() => null),
+      getReasoningEffort: vi.fn(() => "off"),
+      getRunLimits: vi.fn(() => ({ maxIterations: 10, maxTokens: 100_000 })),
+    };
+    const gateway = new AgentHttpGateway(http as never, settings as never);
+    const events: unknown[] = [];
+    gateway.onEvent((event) => events.push(event));
+
+    const run = gateway.run("must not queue", "runtime:codex:c291cmNl");
+    const source = ObservableEventSource.instances[0];
+    source.onopen?.();
+    await run;
+
+    expect(source.close).toHaveBeenCalledOnce();
+    expect(events).toContainEqual({
+      type: "error",
+      code: "SESSION_OCCUPIED",
+      message: "Session is owned by another client",
+      _sid: "runtime:codex:c291cmNl",
+    });
   });
 
   it("forwards native subagent activity from SSE without flattening its messages", async () => {
@@ -248,6 +352,19 @@ describe("AgentHttpGateway", () => {
       title: "New",
       agentType: "codex",
       cwd: "/repo",
+    });
+  });
+
+  it("steers a durable queued message through one server operation", async () => {
+    const state = { active: null, queued: [], history: [] };
+    const http = { post: vi.fn().mockResolvedValue({ steered: true, state }) };
+    const gateway = new AgentHttpGateway(http as never, {} as never);
+
+    await expect(gateway.steerSessionMessage("runtime:claude-code:c2Vzc2lvbg", "queue-1"))
+      .resolves.toEqual(state);
+    expect(http.post).toHaveBeenCalledWith("/api/agent/steer", {
+      sessionId: "runtime:claude-code:c2Vzc2lvbg",
+      messageId: "queue-1",
     });
   });
 

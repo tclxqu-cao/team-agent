@@ -6,6 +6,7 @@ const css = readFileSync(new URL("../styles/global.css", import.meta.url), "utf8
 const uiStore = readFileSync(new URL("../stores/uiStore.ts", import.meta.url), "utf8");
 const sessionRow = readFileSync(new URL("./SidebarSessionRow.tsx", import.meta.url), "utf8");
 const deleteConfirmation = readFileSync(new URL("./SidebarDeleteConfirmation.tsx", import.meta.url), "utf8");
+const sessionDeletion = readFileSync(new URL("../lib/session-deletion.ts", import.meta.url), "utf8");
 
 describe("AgentRoam reference sidebar", () => {
   it("keeps the requested brand, Agent switcher, directory toolbar, and hierarchy", () => {
@@ -87,6 +88,14 @@ describe("AgentRoam reference sidebar", () => {
     expect(sessionRow).toContain("aria-pressed={session.active}");
   });
 
+  it("shows Codex compatibility state in every sidebar session path", () => {
+    expect(app.match(/compatibility: session\.compatibility/g)).toHaveLength(2);
+    expect(app).toContain("compatibility: child.compatibility");
+    expect(sessionRow).toContain('session.compatibility?.status === "checking"');
+    expect(sessionRow).toContain('session.compatibility?.status === "incompatible"');
+    expect(sessionRow).toContain('aria-label="Codex 版本不兼容"');
+  });
+
   it("keeps the active project highlighted while viewing one of its sessions", () => {
     expect(app).toContain("const isSelected = selectedProjectId === project.id;");
     expect(app).not.toContain("selectedProjectId === project.id && !selectedSessionId");
@@ -133,6 +142,7 @@ describe("AgentRoam reference sidebar", () => {
     expect(bootstrap).not.toContain("listSessions()");
     expect(app).toContain("const [initialWorkspaceCache] = useState(readAgentWorkspaceCache)");
     expect(app).toContain("writeAgentWorkspaceCache(cache)");
+    expect(sessionDeletion).toContain("确定归档 Codex 会话");
     expect(app).toContain("workspaceCacheRef.current.agents[agentType]");
     expect(app).toContain("sidebarScrollTop: sidebarScrollRef.current?.scrollTop");
     expect(app).toContain("const activeSessionId = selectedSessionIdRef.current");
@@ -147,6 +157,10 @@ describe("AgentRoam reference sidebar", () => {
     expect(app).toContain("会话加载失败");
     expect(app).toContain("workspaceNextCursor && !workspaceLoading");
     expect(app).toContain("nextCursor && !isProjectLoading");
+    expect(app).toContain("limit: 20");
+    expect(app).toContain("project.canCreateSession === false");
+    expect(app).toContain("<History size={13}");
+    expect(app).toContain("project.canCreateSession !== false && (");
   });
 
   it("collapses and expands the complete project and session hierarchy", () => {
@@ -184,6 +198,11 @@ describe("AgentRoam reference sidebar", () => {
     expect(app).toContain("sessionDeletionConfirmation(sessionDeleteRequest.session)");
     expect(app).toContain("const confirmDeleteSession = async () =>");
     expect(app).toContain("removeSessionFromCollections(");
+    expect(app).toContain("removeSessionIdsFromWorkspacePartition(partition, removal.removedIds)");
+    expect(app).toContain("sessionsByProjectRef.current");
+    expect(app).toContain("childSessionsByParentRef.current");
+    expect(app).toContain("projectSessionRequestIds.current.set(");
+    expect(app).toContain("writeAgentWorkspaceCache(cache)");
     expect(app).toContain("requestDeleteSession(session, anchor)");
     expect(app).toContain("requestDeleteSession(child, anchor)");
     expect(app).toContain("<SidebarDeleteConfirmation");
@@ -260,11 +279,13 @@ describe("AgentRoam reference sidebar", () => {
   it("keeps directory paths and session metadata out of the visible rows", () => {
     const projectButton = app.slice(
       app.indexOf('className="sidebar-project-button"'),
-      app.indexOf('{hasLoadedProject && ('),
+      app.indexOf('{activeAgent === "customer-agent"'),
     );
     expect(projectButton).toContain("{project.name}");
     expect(projectButton).toContain("project.description}");
     expect(projectButton).not.toContain(">{project.description}<");
+    expect(app).not.toContain("sidebar-project-session-count");
+    expect(app).not.toContain("projectSessions.length} 个会话");
     expect(sessionRow).not.toContain("sourceLabel");
     expect(sessionRow).not.toContain("created");
     expect(sessionRow).not.toContain("updated");
@@ -276,12 +297,13 @@ describe("AgentRoam reference sidebar", () => {
     const buttonStart = app.indexOf('className="sidebar-new-session-primary"');
     const buttonEnd = app.indexOf("</button>", buttonStart);
     const button = app.slice(buttonStart, buttonEnd);
-    expect(button).toContain('title={selectedProjectId ? "新建会话" : "请先选择目录"}');
-    expect(button).toContain('aria-disabled={!selectedProjectId}');
+    expect(button).toContain("projects.find((project) => project.id === selectedProjectId)?.canCreateSession !== false");
+    expect(button).toContain("projects.find((project) => project.id === selectedProjectId)?.canCreateSession === false");
     expect(app).toContain('setNotice("请先选择目录")');
     expect(app).toContain('setNoticeType("info")');
     expect(button).toContain('onClick={handleBottomNewSession}');
-    expect(button).toContain("disabled={\n              (selectedProjectId !== null");
+    expect(button).toContain("disabled={\n              sessionCreationPending !== null");
+    expect(button).toContain("|| (selectedProjectId !== null && invalidProjectIds.has(selectedProjectId))");
     expect(app).toContain("handleNewRuntimeSession(selectedProjectId, activeAgent)");
     expect(app).toContain('workspace?.source === "imported" ? undefined : projectId');
     expect(css).toContain(".sidebar-bottom-action");
@@ -291,6 +313,50 @@ describe("AgentRoam reference sidebar", () => {
     const buttonCss = css.slice(buttonCssStart, buttonCssEnd);
     expect(buttonCss.match(/background: color-mix\(in srgb, var\(--accent\) 88%, var\(--text-primary\)\);/g))
       .toHaveLength(2);
+  });
+
+  it("shows stable loading feedback while a new session is being created", () => {
+    const projectActionClass = app.indexOf('className="sidebar-runtime-create sidebar-project-add-action');
+    const projectActionStart = app.lastIndexOf("<button", projectActionClass);
+    const projectActionEnd = app.indexOf("</button>", projectActionClass);
+    const projectAction = app.slice(projectActionStart, projectActionEnd);
+    const bottomActionStart = app.indexOf('className="sidebar-new-session-primary"');
+    const bottomActionEnd = app.indexOf("</button>", bottomActionStart);
+    const bottomAction = app.slice(bottomActionStart, bottomActionEnd);
+
+    expect(app).toContain('import { History, LoaderCircle, Plus, Search } from "lucide-react"');
+    expect(app).toContain("const [sessionCreationPending, setSessionCreationPending]");
+    expect(app).toContain("const isCreatingSession = sessionCreationPending?.agentType === activeAgent");
+    expect(projectAction).toContain('aria-busy={isCreatingSession}');
+    expect(projectAction).toContain('sessionCreationPending !== null');
+    expect(projectAction).toContain('<LoaderCircle size={13}');
+    expect(projectAction).toContain('"正在创建会话"');
+    expect(bottomAction).toContain('aria-busy={sessionCreationPending !== null}');
+    expect(bottomAction).toContain('sessionCreationPending !== null');
+    expect(bottomAction).toContain('<LoaderCircle size={16}');
+    expect(bottomAction).toContain("正在创建...");
+  });
+
+  it("guards and cleans up the new-session creation lifecycle", () => {
+    const handlerStart = app.indexOf("const handleNewRuntimeSession = async");
+    const handlerEnd = app.indexOf("const handleBottomNewSession", handlerStart);
+    const handler = app.slice(handlerStart, handlerEnd);
+    const selection = handler.indexOf("applySidebarSelection({ projectId, sessionId: created.id })");
+    const backgroundRefresh = handler.indexOf("void loadSessions(projectId, {");
+
+    expect(handler).toContain("if (sessionCreationPendingRef.current) return");
+    expect(handler).toContain("sessionCreationPendingRef.current = true");
+    expect(handler).toContain("setSessionCreationPending({ projectId, agentType })");
+    expect(handler).toContain("try {");
+    expect(handler).toContain("} catch (error) {");
+    expect(handler).toContain('error instanceof Error ? error.message : "新建会话失败"');
+    expect(handler).toContain("} finally {");
+    expect(handler).toContain("sessionCreationPendingRef.current = false");
+    expect(handler).toContain("setSessionCreationPending(null)");
+    expect(handler).toContain("sessionsByProjectRef.current = nextSessionsByProject");
+    expect(selection).toBeGreaterThan(-1);
+    expect(backgroundRefresh).toBeGreaterThan(selection);
+    expect(handler).not.toContain("await loadSessions(projectId)");
   });
 
   it("renders sidebar action feedback as a page-level portal without shifting the list", () => {

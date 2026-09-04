@@ -11,6 +11,7 @@ import {
   isNativeSessionId,
   runtimeErrorStatus,
 } from "../../../../lib/native-runtime-service";
+import { RuntimeSessionError } from "../../../../../desktop/main/agent-runtime/types";
 
 function rebuildMessagesFromEvents(events: Array<Record<string, unknown>>) {
   const messages: Array<Record<string, unknown>> = [];
@@ -110,7 +111,10 @@ export async function GET(
       return NextResponse.json(detail);
     } catch (err) {
       return NextResponse.json(
-        { error: err instanceof Error ? err.message : "Internal error" },
+        {
+          error: err instanceof Error ? err.message : "Internal error",
+          ...(err instanceof RuntimeSessionError ? { code: err.code } : {}),
+        },
         { status: runtimeErrorStatus(err) },
       );
     }

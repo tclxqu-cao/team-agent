@@ -1113,6 +1113,45 @@ ipcMain.handle("sessions:cancelGoal", async (_event, id: string, goalId: string)
     : nativeRuntimeBroker.cancelGoal(id, goalId, "desktop");
 });
 
+ipcMain.handle("sessions:enqueueMessage", async (
+  _event,
+  id: string,
+  message: { sourceMessageId: string; content: string; images?: string[]; agentIds?: string[]; agentName?: string },
+) => {
+  if (unifiedSessions.agentTypeFor(id) === "customer-agent") {
+    throw new Error("Durable message queue is only available for native sessions");
+  }
+  const result = await nativeRuntimeBroker.enqueueMessage(id, {
+    sourceMessageId: message.sourceMessageId,
+    content: message.content,
+    messagePayload: {
+      images: message.images,
+      agentIds: message.agentIds,
+      agentName: message.agentName,
+    },
+  }, "desktop");
+  await attachDesktopNativeEventForwarder(id).catch(() => undefined);
+  return result.state;
+});
+
+ipcMain.handle("sessions:updateMessage", async (_event, id: string, messageId: string, content: string) => {
+  return nativeRuntimeBroker.updateMessage(id, messageId, content);
+});
+
+ipcMain.handle("sessions:reorderMessages", async (_event, id: string, orderedIds: string[]) => {
+  return nativeRuntimeBroker.reorderMessages(id, orderedIds);
+});
+
+ipcMain.handle("sessions:cancelMessage", async (_event, id: string, messageId: string) => {
+  return nativeRuntimeBroker.cancelMessage(id, messageId);
+});
+
+ipcMain.handle("sessions:steerMessage", async (_event, id: string, messageId: string) => {
+  const result = await nativeRuntimeBroker.steerMessage(id, messageId);
+  if (!result.steered) throw new Error("当前运行不支持插队消息");
+  return result.state;
+});
+
 ipcMain.handle("sessions:handoff", async (_event, id: string) => {
   if (unifiedSessions.agentTypeFor(id) === "customer-agent") {
     throw new Error("Only native runtime sessions can be handed off");

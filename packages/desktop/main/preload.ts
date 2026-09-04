@@ -123,6 +123,18 @@ contextBridge.exposeInMainWorld("agentApi", {
     ipcRenderer.invoke("sessions:reorderGoals", id, orderedIds),
   cancelSessionGoal: (id: string, goalId: string) =>
     ipcRenderer.invoke("sessions:cancelGoal", id, goalId),
+  enqueueSessionMessage: (
+    id: string,
+    message: { sourceMessageId: string; content: string; images?: string[]; agentIds?: string[]; agentName?: string },
+  ) => ipcRenderer.invoke("sessions:enqueueMessage", id, message),
+  updateSessionMessage: (id: string, messageId: string, content: string) =>
+    ipcRenderer.invoke("sessions:updateMessage", id, messageId, content),
+  reorderSessionMessages: (id: string, orderedIds: string[]) =>
+    ipcRenderer.invoke("sessions:reorderMessages", id, orderedIds),
+  cancelSessionMessage: (id: string, messageId: string) =>
+    ipcRenderer.invoke("sessions:cancelMessage", id, messageId),
+  steerSessionMessage: (id: string, messageId: string) =>
+    ipcRenderer.invoke("sessions:steerMessage", id, messageId),
   handoffSession: (id: string) => ipcRenderer.invoke("sessions:handoff", id),
   createSession: (title: string, projectId?: string, agentType = "customer-agent", cwd?: string) =>
     ipcRenderer.invoke("sessions:create", title, projectId, agentType, cwd),

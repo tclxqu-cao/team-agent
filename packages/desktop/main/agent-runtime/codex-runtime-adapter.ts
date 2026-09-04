@@ -435,6 +435,11 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
     return this.toSummary({ ...response.thread, name: title }, new Set());
   }
 
+  async archiveSession(nativeSessionId: string): Promise<void> {
+    this.ensureAvailable();
+    await this.client.request("thread/archive", { threadId: nativeSessionId });
+  }
+
   async *run(
     nativeSessionId: string,
     input: string,
@@ -444,7 +449,7 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
     options?: RuntimeRunOptions,
   ): AsyncIterable<AgentEvent> {
     if (this.activeQueues.has(nativeSessionId)) {
-      throw new RuntimeSessionError("Codex session is already running", "SESSION_OCCUPIED");
+      throw new RuntimeSessionError("Codex session is already running", "SESSION_ALREADY_RUNNING");
     }
     const detail = await this.getSession(nativeSessionId);
     if (detail.occupancy === "owned-externally") {

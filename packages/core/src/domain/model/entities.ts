@@ -40,6 +40,8 @@ export interface MessagePresentation {
   rawContent?: string;
   attachments?: MessageAttachment[];
   reasoning?: ReasoningSummarySection[];
+  /** Authoritative wall-clock duration for a successfully completed turn. */
+  completionDurationMs?: number;
 }
 
 export interface ToolCall {

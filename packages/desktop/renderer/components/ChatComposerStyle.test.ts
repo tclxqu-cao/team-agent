@@ -56,7 +56,7 @@ describe("shared Electron and Web composer", () => {
     expect(chatView).toContain('className="web-native-context-control"');
     expect(chatView).toContain('className="web-native-model-control"');
     expect(chatView).toContain('className="web-native-stop-button"');
-    expect(chatView).toContain('aria-label={isLocallyRunning ? "排队发送" : "发送"}');
+    expect(chatView).toContain('aria-label={shouldQueueMessage ? "排队发送" : "发送"}');
   });
 
   it("groups queued messages and keeps drag, copy, edit, delete, and steer icon actions", () => {
@@ -86,12 +86,23 @@ describe("shared Electron and Web composer", () => {
   });
 
   it("drains queued chat after goal-managed or refresh-recovered runs finish", () => {
+    const drainStart = chatView.indexOf("const scheduleQueuedMessageAfterTerminal");
+    const drainEnd = chatView.indexOf("const handleEvent", drainStart);
+    const drain = chatView.slice(drainStart, drainEnd);
+
     expect(chatView).toContain("scheduleQueuedMessageAfterTerminal(eventSid)");
     expect(chatView).toContain("managedRunSessionsRef.current.has(eventSid)");
     expect(chatView).toContain("await window.agentApi?.getSessionGoals(targetSessionId)");
     expect(chatView).toContain("if (state?.active)");
     expect(chatView).toContain("void startRun(nextQueued, targetSessionId)");
-    expect(chatView).toContain("getMessagesForSession(targetSessionId).find(m => m.isQueued)");
+    expect(chatView).toContain("message.isQueued && !message.queueItemId");
+    expect(chatView).toContain("enqueueSessionMessage");
+    expect(chatView).toContain("sessionSummary?.messageQueueVersion === 1");
+    expect(chatView).toContain("reconcileDurableQueuedMessages");
+    expect(chatView).toContain("steerSessionMessage(targetSessionId, msg.queueItemId)");
+    expect(drain).toMatch(
+      /if \(state\?\.active\) \{[\s\S]*?abortRef\.current = false;[\s\S]*?setError\(null\);[\s\S]*?if \(abortRef\.current\) return;/,
+    );
   });
 
   it("edits only queued content in place and supports keyboard save or cancel", () => {

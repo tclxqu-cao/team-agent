@@ -16,6 +16,12 @@ import { RuntimeSessionError } from "./types.js";
 
 const DEFAULT_PAGE_SIZE = 50;
 const MAX_PAGE_SIZE = 200;
+export const CODEX_RECENT_WORKSPACE_ID = "codex:recent";
+
+export interface SessionCatalog {
+  byWorkspace: Map<string, UnifiedSessionSummary[]>;
+  watermark: string | null;
+}
 
 export function workspacePageSize(limit?: number): number {
   if (limit === undefined) return DEFAULT_PAGE_SIZE;
@@ -109,11 +115,17 @@ export class AgentWorkspaceIndexService {
   private readonly workspaceRequests = new Map<AgentType, Promise<WorkspaceCatalog>>();
   private readonly sessionCache = new Map<string, WorkspacePage<UnifiedSessionSummary>>();
   private readonly sessionRequests = new Map<string, Promise<WorkspacePage<UnifiedSessionSummary>>>();
+  private codexSessionCatalog: SessionCatalog | null = null;
+  private codexSessionCatalogRequest: Promise<SessionCatalog> | null = null;
+  private codexSessionCatalogGeneration = 0;
 
   constructor(
     adapters: readonly AgentRuntimeAdapter[],
     private readonly importedWorkspaces?: ImportedAgentWorkspaceRepository,
     private readonly platform: NodeJS.Platform = process.platform,
+    private readonly supplementCodexSessions?: (
+      primary: readonly UnifiedSessionSummary[],
+    ) => UnifiedSessionSummary[],
   ) {
     for (const adapter of adapters) this.adapters.set(adapter.agentType, adapter);
   }
@@ -137,6 +149,7 @@ export class AgentWorkspaceIndexService {
     try {
       const catalog = await request;
       this.workspaceCache.set(agentType, catalog);
+      if (query.refresh && agentType === "codex") this.clearSessionCache(agentType);
       return { ...paginateByOffset(catalog.data, query, catalog.watermark), stale: catalog.stale };
     } catch (error) {
       const cached = this.workspaceCache.get(agentType);
@@ -229,7 +242,9 @@ export class AgentWorkspaceIndexService {
     const imported = agentType === "customer-agent"
       ? null
       : this.importedWorkspaces?.list(agentType).find((workspace) => workspace.workspaceId === workspaceId) ?? null;
-    const request = imported
+    const request = agentType === "codex"
+      ? this.listCodexWorkspaceSessions(adapter, workspaceId, query)
+      : imported
       ? this.listImportedWorkspaceSessions(adapter, imported, query)
       : adapter.listWorkspaceSessions!(workspaceId, {
           ...query,
@@ -252,15 +267,31 @@ export class AgentWorkspaceIndexService {
   invalidate(agentType: AgentType, workspaceId?: string): void {
     this.workspaceCache.delete(agentType);
     if (!workspaceId) {
-      for (const key of this.sessionCache.keys()) {
-        if (key.startsWith(`${agentType}\0`)) this.sessionCache.delete(key);
-      }
+      this.clearSessionCache(agentType);
       return;
     }
+    if (agentType === "codex") this.resetCodexSessionCatalog();
     const prefix = `${agentType}\0${workspaceId}\0`;
     for (const key of this.sessionCache.keys()) {
       if (key.startsWith(prefix)) this.sessionCache.delete(key);
     }
+  }
+
+  private clearSessionCache(agentType: AgentType): void {
+    this.deleteSessionCacheEntries(agentType);
+    if (agentType === "codex") this.resetCodexSessionCatalog();
+  }
+
+  private deleteSessionCacheEntries(agentType: AgentType): void {
+    for (const key of this.sessionCache.keys()) {
+      if (key.startsWith(`${agentType}\0`)) this.sessionCache.delete(key);
+    }
+  }
+
+  private resetCodexSessionCatalog(): void {
+    this.codexSessionCatalogGeneration += 1;
+    this.codexSessionCatalog = null;
+    this.codexSessionCatalogRequest = null;
   }
 
   private requireWorkspaceAdapter(agentType: AgentType): AgentRuntimeAdapter {
@@ -295,17 +326,78 @@ export class AgentWorkspaceIndexService {
       cursor = page.nextCursor;
     } while (cursor);
 
-    if (!this.importedWorkspaces || adapter.agentType === "customer-agent") {
-      return { data, watermark, ...(stale ? { stale: true } : {}) };
+    let combined = data;
+    if (this.importedWorkspaces && adapter.agentType !== "customer-agent") {
+      const nativeRoots = new Set(data.flatMap((workspace) => workspace.roots.map(
+        (root) => normalizeAgentWorkspacePath(root, this.platform),
+      )));
+      const imports = this.importedWorkspaces
+        .list(adapter.agentType)
+        .filter((workspace) => !nativeRoots.has(workspace.normalizedPath))
+        .map((workspace, index) => importedWorkspaceToDomain(workspace, data.length + index));
+      combined = [...data, ...imports];
     }
-    const nativeRoots = new Set(data.flatMap((workspace) => workspace.roots.map(
-      (root) => normalizeAgentWorkspacePath(root, this.platform),
-    )));
-    const imports = this.importedWorkspaces
-      .list(adapter.agentType)
-      .filter((workspace) => !nativeRoots.has(workspace.normalizedPath))
-      .map((workspace, index) => importedWorkspaceToDomain(workspace, data.length + index));
-    return { data: [...data, ...imports], watermark, ...(stale ? { stale: true } : {}) };
+    if (adapter.agentType === "codex") {
+      combined = [{
+        agentType: "codex",
+        workspaceId: CODEX_RECENT_WORKSPACE_ID,
+        name: "最近",
+        roots: [],
+        order: -1,
+        source: "derived",
+        canCreateSession: false,
+      }, ...combined];
+    }
+    return { data: combined, watermark, ...(stale ? { stale: true } : {}) };
+  }
+
+  private async listCodexWorkspaceSessions(
+    adapter: AgentRuntimeAdapter,
+    workspaceId: string,
+    query: WorkspaceSessionQuery,
+  ): Promise<WorkspacePage<UnifiedSessionSummary>> {
+    const catalog = await this.getCodexSessionCatalog(adapter, query.refresh === true);
+    const sessions = catalog.byWorkspace.get(workspaceId);
+    if (!sessions) {
+      throw new RuntimeSessionError(`Codex workspace not found: ${workspaceId}`, "SESSION_NOT_FOUND");
+    }
+    return paginateByOffset(sessions, query, catalog.watermark);
+  }
+
+  private async getCodexSessionCatalog(
+    adapter: AgentRuntimeAdapter,
+    refresh: boolean,
+  ): Promise<SessionCatalog> {
+    if (refresh) this.resetCodexSessionCatalog();
+    if (!refresh && this.codexSessionCatalog) return this.codexSessionCatalog;
+    if (!refresh && this.codexSessionCatalogRequest) return this.codexSessionCatalogRequest;
+    const generation = this.codexSessionCatalogGeneration;
+    const request = this.loadCodexSessionCatalog(adapter);
+    this.codexSessionCatalogRequest = request;
+    try {
+      const catalog = await request;
+      if (generation !== this.codexSessionCatalogGeneration) {
+        return this.getCodexSessionCatalog(adapter, false);
+      }
+      if (refresh) this.deleteSessionCacheEntries("codex");
+      this.codexSessionCatalog = catalog;
+      return catalog;
+    } finally {
+      if (this.codexSessionCatalogRequest === request) this.codexSessionCatalogRequest = null;
+    }
+  }
+
+  private async loadCodexSessionCatalog(adapter: AgentRuntimeAdapter): Promise<SessionCatalog> {
+    if (!this.workspaceCache.has("codex")) {
+      await this.listWorkspaces("codex", { limit: MAX_PAGE_SIZE });
+    }
+    const workspaces = this.workspaceCache.get("codex")?.data;
+    if (!workspaces) {
+      throw new RuntimeSessionError("Codex workspace catalog is unavailable", "RUNTIME_UNAVAILABLE");
+    }
+    const primary = await adapter.discoverSessions();
+    const discovered = this.supplementCodexSessions?.(primary) ?? primary;
+    return classifyCodexSessions(discovered, workspaces, this.platform);
   }
 
   private async listImportedWorkspaceSessions(
@@ -328,4 +420,53 @@ export class AgentWorkspaceIndexService {
       data: page.data.map((session) => ({ ...session, projectId: workspace.workspaceId })),
     };
   }
+}
+
+export function classifyCodexSessions(
+  sessions: readonly UnifiedSessionSummary[],
+  workspaces: readonly AgentWorkspace[],
+  platform: NodeJS.Platform = process.platform,
+): SessionCatalog {
+  const candidates = workspaces.filter((workspace) => workspace.workspaceId !== CODEX_RECENT_WORKSPACE_ID);
+  const byId = new Map(candidates.map((workspace) => [workspace.workspaceId, workspace]));
+  const roots = candidates.flatMap((workspace) => workspace.roots.flatMap((root) => {
+    if (!root.trim()) return [];
+    try {
+      return [{ workspaceId: workspace.workspaceId, path: normalizeAgentWorkspacePath(root, platform) }];
+    } catch {
+      return [];
+    }
+  })).sort((left, right) => right.path.length - left.path.length);
+  const byWorkspace = new Map<string, UnifiedSessionSummary[]>(
+    workspaces.map((workspace) => [workspace.workspaceId, []]),
+  );
+  const ordered = [...sessions]
+    .sort((left, right) => right.updated.localeCompare(left.updated) || left.id.localeCompare(right.id));
+  const seen = new Set<string>();
+  for (const session of ordered) {
+    if (seen.has(session.id)) continue;
+    seen.add(session.id);
+    let workspaceId = session.projectId && byId.has(session.projectId) ? session.projectId : undefined;
+    if (!workspaceId && session.cwd.trim()) {
+      try {
+        const cwd = normalizeAgentWorkspacePath(session.cwd, platform);
+        workspaceId = roots.find((root) => pathContains(root.path, cwd, platform))?.workspaceId;
+      } catch {
+        // Invalid historical paths remain available through the recent workspace.
+      }
+    }
+    workspaceId ??= CODEX_RECENT_WORKSPACE_ID;
+    const target = byWorkspace.get(workspaceId) ?? byWorkspace.get(CODEX_RECENT_WORKSPACE_ID);
+    target?.push({ ...session, projectId: workspaceId });
+  }
+  return {
+    byWorkspace,
+    watermark: ordered[0]?.updated ?? null,
+  };
+}
+
+function pathContains(root: string, cwd: string, platform: NodeJS.Platform): boolean {
+  if (root === cwd) return true;
+  const separator = platform === "win32" ? "\\" : "/";
+  return cwd.startsWith(`${root}${separator}`);
 }

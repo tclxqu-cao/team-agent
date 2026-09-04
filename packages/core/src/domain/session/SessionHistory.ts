@@ -31,7 +31,8 @@ export function paginateSessionHistory(
   }
 
   const end = decodeCursor(query.before, visibleMessages.length);
-  const start = Math.max(0, end - pageSize);
+  const nominalStart = Math.max(0, end - pageSize);
+  const start = findTurnBoundaryStart(visibleMessages, nominalStart);
   const selected = visibleMessages.slice(start, end);
   const pageMessages: Message[] = [];
   const selectedToolCallIds = new Set<string>();
@@ -54,6 +55,16 @@ export function paginateSessionHistory(
       totalItems: visibleMessages.length,
     },
   };
+}
+
+function findTurnBoundaryStart(messages: Message[], nominalStart: number): number {
+  if (nominalStart <= 0 || messages[nominalStart]?.role === "user") {
+    return nominalStart;
+  }
+  for (let index = nominalStart - 1; index >= 0; index -= 1) {
+    if (messages[index].role === "user") return index;
+  }
+  return 0;
 }
 
 function normalizePageSize(limit?: number): number {

@@ -8,13 +8,22 @@ import {
 
 export async function POST(request: Request) {
   try {
-    const body = await request.json() as { input: string; sessionId?: string };
-    if (!body.input || !body.sessionId) {
-      return NextResponse.json({ error: "input and sessionId are required" }, { status: 400 });
+    const body = await request.json() as { input?: string; sessionId?: string; messageId?: string };
+    if (!body.sessionId || (!body.input && !body.messageId)) {
+      return NextResponse.json({ error: "sessionId and input or messageId are required" }, { status: 400 });
     }
     if (isNativeSessionId(body.sessionId)) {
+      if (body.messageId) {
+        return NextResponse.json(await getNativeRuntimeService().steerMessage(body.sessionId, body.messageId));
+      }
+      if (!body.input) {
+        return NextResponse.json({ error: "input is required" }, { status: 400 });
+      }
       const steered = await getNativeRuntimeService().steer(body.sessionId, body.input);
       return NextResponse.json({ steered });
+    }
+    if (!body.input) {
+      return NextResponse.json({ error: "input is required" }, { status: 400 });
     }
     const steered = await agentHost.steer(body.input, body.sessionId);
     return NextResponse.json({ steered });

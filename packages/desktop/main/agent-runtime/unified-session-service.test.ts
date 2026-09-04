@@ -16,6 +16,7 @@ interface AdapterOverrides {
   canResume?: Record<string, boolean>;
   sessions?: UnifiedSessionSummary[];
   health?: Partial<Record<AgentType, unknown>>;
+  supportsArchive?: boolean;
   supportsDelete?: boolean;
   forkResult?: UnifiedSessionSummary;
   steerResult?: boolean;
@@ -84,6 +85,7 @@ function adapter(agentType: AgentType, discovered: UnifiedSessionSummary[], over
     abort: vi.fn(async () => undefined),
     answerQuestion: vi.fn(async () => false),
     ...(overrides.forkResult ? { fork: vi.fn(async () => overrides.forkResult!) } : {}),
+    ...(overrides.supportsArchive ? { archiveSession: vi.fn(async () => undefined) } : {}),
     ...(overrides.supportsDelete === false ? {} : { delete: vi.fn(async () => undefined) }),
     dispose: vi.fn(async () => undefined),
   };
@@ -126,6 +128,33 @@ describe("UnifiedSessionService", () => {
     expect(events).toEqual([{ type: "done", finalText: "ok" }]);
     expect(codex.getSession).toHaveBeenCalledWith("cx-1");
     expect(ca.getSession).not.toHaveBeenCalled();
+  });
+
+  it("routes only catalog-only Codex IDs through the adjacent compatibility service", async () => {
+    const primary = summary("codex", "cx-primary", "/repo", "2026-01-02T00:00:00.000Z");
+    const supplemental = summary("codex", "cx-supplemental", "/repo", "2026-01-01T00:00:00.000Z", {
+      canResume: false,
+      compatibility: { status: "checking", readerVersion: "0.153.0" },
+    });
+    const codex = adapter("codex", [primary]);
+    const compatibility = {
+      supplement: vi.fn((rows: readonly UnifiedSessionSummary[]) => [...rows, supplemental]),
+      isSupplemental: vi.fn((id: string) => id === supplemental.nativeSessionId),
+      readSupplemental: vi.fn(async () => detail({ ...supplemental, canResume: true })),
+      dispose: vi.fn(),
+    };
+    const service = new UnifiedSessionService(
+      [codex],
+      async () => [],
+      undefined,
+      compatibility as never,
+    );
+
+    await expect(service.get(supplemental.id)).resolves.toMatchObject({ nativeSessionId: "cx-supplemental" });
+    await expect(service.get(primary.id)).resolves.toMatchObject({ nativeSessionId: "cx-primary" });
+    expect(compatibility.readSupplemental).toHaveBeenCalledWith("cx-supplemental");
+    expect(codex.getSession).toHaveBeenCalledWith("cx-primary");
+    expect(codex.getSession).not.toHaveBeenCalledWith("cx-supplemental");
   });
 
   it("reuses the complete detail cache for older-page projection", async () => {
@@ -302,7 +331,7 @@ describe("UnifiedSessionService", () => {
 
     await expect(drain(service.run(id, "second"))).rejects.toMatchObject({
       name: "RuntimeSessionError",
-      code: "SESSION_OCCUPIED",
+      code: "SESSION_ALREADY_RUNNING",
     });
 
     await iterator.return?.();
@@ -346,6 +375,44 @@ describe("UnifiedSessionService", () => {
 
     await expect(service.delete("ca-1")).resolves.toBeUndefined();
     expect(ca.delete).toHaveBeenCalledWith("ca-1");
+  });
+
+  it("archives through the owning adapter using the native ID and invalidates discovery", async () => {
+    const codexSession = summary("codex", "cx-1", "/repo", "2026-01-02T00:00:00.000Z");
+    const codex = adapter("codex", [codexSession], { supportsArchive: true });
+    const service = new UnifiedSessionService([codex], async () => []);
+    await service.list();
+
+    await expect(service.archive(codexSession.id)).resolves.toBeUndefined();
+    await service.list();
+
+    expect(codex.archiveSession).toHaveBeenCalledWith("cx-1");
+    expect(codex.discoverSessions).toHaveBeenCalledTimes(2);
+  });
+
+  it("rejects archive when the owning adapter does not support it", async () => {
+    const claudeSession = summary("claude-code", "cc-1", "/repo", "2026-01-02T00:00:00.000Z");
+    const claude = adapter("claude-code", [claudeSession]);
+    const service = new UnifiedSessionService([claude], async () => []);
+
+    await expect(service.archive(claudeSession.id)).rejects.toMatchObject({
+      code: "OPERATION_NOT_SUPPORTED",
+    });
+  });
+
+  it("rejects archiving a session while AgentRoam is running it", async () => {
+    const codexSession = summary("codex", "cx-1", "/repo", "2026-01-02T00:00:00.000Z");
+    const codex = adapter("codex", [codexSession], {
+      events: [{ type: "text_chunk", text: "slow" }],
+      supportsArchive: true,
+    });
+    const service = new UnifiedSessionService([codex], async () => []);
+    const iterator = service.run(codexSession.id, "keep running")[Symbol.asyncIterator]();
+    await iterator.next();
+
+    await expect(service.archive(codexSession.id)).rejects.toMatchObject({ code: "SESSION_OCCUPIED" });
+    expect(codex.archiveSession).not.toHaveBeenCalled();
+    await iterator.return?.();
   });
 
   it("rejects deleting a session while AgentRoam is running it", async () => {

@@ -82,7 +82,7 @@ export class CustomerAgentRuntimeAdapter implements AgentRuntimeAdapter {
     agentName?: string,
   ): AsyncIterable<AgentEvent> {
     if (this.activeSessions.has(nativeSessionId)) {
-      throw new RuntimeSessionError("Customer Agent session is already running", "SESSION_OCCUPIED");
+      throw new RuntimeSessionError("Customer Agent session is already running", "SESSION_ALREADY_RUNNING");
     }
     this.activeSessions.add(nativeSessionId);
     this.host.setRunning(true);

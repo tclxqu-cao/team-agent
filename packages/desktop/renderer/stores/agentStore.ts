@@ -27,6 +27,7 @@ export interface StreamEvent {
   toolCall?: { id: string; name: string; arguments: Record<string, unknown> };
   result?: { toolCallId: string; content: string; isError?: boolean };
   finalText?: string;
+  durationMs?: number;
   usage?: ContextUsageSnapshot;
   todos?: TodoItem[];
   tasks?: CronTask[];
@@ -114,6 +115,8 @@ export interface ChatMessage {
   presentation?: MessagePresentation;
   /** True when this user message is queued and waiting for the current run to finish */
   isQueued?: boolean;
+  /** Durable broker queue identity; absent for legacy in-memory queues. */
+  queueItemId?: string;
   /** True when this user message has been steered into the running loop */
   isSteered?: boolean;
   /** Identifies a goal-mode user message and links it to the durable goal queue. */
@@ -347,10 +350,11 @@ export const useAgentStore = create<AgentState>((set, get) => ({
 
   setMessages: (messages, sid) => set((state) => {
     const targetSid = sid ?? state.sessionId ?? undefined;
+    const isVisibleSession = !targetSid || targetSid === state.sessionId;
     return {
-      messages,
+      messages: isVisibleSession ? messages : state.messages,
       messagesBySession: targetSid ? { ...state.messagesBySession, [targetSid]: messages } : state.messagesBySession,
-      currentText: "",
+      currentText: isVisibleSession ? "" : state.currentText,
     };
   }),
 

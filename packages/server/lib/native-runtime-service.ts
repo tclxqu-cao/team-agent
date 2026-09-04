@@ -5,6 +5,7 @@ import {
   SQLiteProjectStore,
   type AgentEvent,
   type SessionHistoryQuery,
+  type SessionMessagePayload,
   type ToolPermissionMode,
 } from "@agent/core";
 import {
@@ -106,6 +107,23 @@ export interface NativeRuntimePort {
   ): Promise<{ state: SessionGoalState; started?: BrokerRunStart }>;
   reorderGoals?(id: string, orderedIds: readonly string[]): Promise<SessionGoalState>;
   cancelGoal?(id: string, goalId: string, controller?: NativeRuntimeController): Promise<SessionGoalState>;
+  enqueueMessage?(
+    id: string,
+    input: { sourceMessageId: string; content: string; messagePayload?: SessionMessagePayload },
+    controller?: NativeRuntimeController,
+  ): Promise<{ state: SessionGoalState; started?: BrokerRunStart }>;
+  reorderMessages?(id: string, orderedIds: readonly string[]): Promise<SessionGoalState>;
+  updateMessage?(
+    id: string,
+    messageId: string,
+    content: string,
+    messagePayload?: SessionMessagePayload,
+  ): Promise<SessionGoalState>;
+  cancelMessage?(id: string, messageId: string): Promise<SessionGoalState>;
+  steerMessage?(
+    id: string,
+    messageId: string,
+  ): Promise<{ steered: boolean; state: SessionGoalState }>;
 }
 
 /**
@@ -333,6 +351,53 @@ export class NativeRuntimeService implements NativeRuntimePort {
     return this.runtime.cancelGoal(id, goalId, "web");
   }
 
+  async enqueueMessage(
+    id: string,
+    input: { sourceMessageId: string; content: string; messagePayload?: SessionMessagePayload },
+    controller: NativeRuntimeController = "web",
+  ): Promise<{ state: SessionGoalState; started?: BrokerRunStart }> {
+    if (!this.runtime.enqueueMessage) {
+      throw new RuntimeSessionError("Message queue is unavailable", "OPERATION_NOT_SUPPORTED");
+    }
+    return this.runtime.enqueueMessage(id, input, controller);
+  }
+
+  async reorderMessages(id: string, orderedIds: readonly string[]): Promise<SessionGoalState> {
+    if (!this.runtime.reorderMessages) {
+      throw new RuntimeSessionError("Message queue is unavailable", "OPERATION_NOT_SUPPORTED");
+    }
+    return this.runtime.reorderMessages(id, orderedIds);
+  }
+
+  async updateMessage(
+    id: string,
+    messageId: string,
+    content: string,
+    messagePayload?: SessionMessagePayload,
+  ): Promise<SessionGoalState> {
+    if (!this.runtime.updateMessage) {
+      throw new RuntimeSessionError("Message queue is unavailable", "OPERATION_NOT_SUPPORTED");
+    }
+    return this.runtime.updateMessage(id, messageId, content, messagePayload);
+  }
+
+  async cancelMessage(id: string, messageId: string): Promise<SessionGoalState> {
+    if (!this.runtime.cancelMessage) {
+      throw new RuntimeSessionError("Message queue is unavailable", "OPERATION_NOT_SUPPORTED");
+    }
+    return this.runtime.cancelMessage(id, messageId);
+  }
+
+  async steerMessage(
+    id: string,
+    messageId: string,
+  ): Promise<{ steered: boolean; state: SessionGoalState }> {
+    if (!this.runtime.steerMessage) {
+      throw new RuntimeSessionError("Message queue is unavailable", "OPERATION_NOT_SUPPORTED");
+    }
+    return this.runtime.steerMessage(id, messageId);
+  }
+
   private withPendingCreations(
     discovered: UnifiedSessionSummary[],
   ): UnifiedSessionSummary[] {
@@ -439,12 +504,14 @@ export function runtimeErrorStatus(err: unknown): number {
       case "SESSION_NOT_FOUND":
         return 404;
       case "SESSION_OCCUPIED":
+      case "SESSION_ALREADY_RUNNING":
         return 409;
       case "RUNTIME_UNAVAILABLE":
         return 503;
       case "OPERATION_NOT_SUPPORTED":
         return 405;
       case "APPROVAL_EXPIRED":
+      case "CODEX_SESSION_VERSION_INCOMPATIBLE":
         return 409;
       default:
         return 400;

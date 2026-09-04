@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { AgentEvent, RuntimeProgress } from "@agent/core";
-import { Check, Copy, CornerUpRight, FileText, GripVertical, Pencil, RefreshCw, Target, Trash2 } from "lucide-react";
+import { Check, Copy, CornerUpRight, FileText, GripVertical, Pencil, RefreshCw, Square, Target, Trash2, Volume2 } from "lucide-react";
 import type { SessionGoalState } from "../global";
 import {
   findLatestContextUsage,
@@ -33,7 +33,13 @@ import { supportsMidTurnSteering } from "../lib/runtime-capabilities";
 import { copyTextToClipboard } from "../lib/clipboard";
 import { clearSessionDraft, readSessionDraft, writeSessionDraft } from "../lib/session-draft";
 import { postWebArtifactOpen, resolveWebArtifactPath } from "../lib/artifact-links";
-import { moveQueuedMessage } from "../lib/queued-message-order";
+import {
+  findLatestUnqueuedUserMessageId,
+  moveQueuedMessage,
+  projectSessionGoals,
+  queuedSessionMessages,
+  reconcileDurableQueuedMessages,
+} from "../lib/queued-message-order";
 import { isWebShell } from "../web/webLayout";
 import {
   latestGlobalRuntimeProgress,
@@ -42,8 +48,10 @@ import {
 } from "../lib/native-runtime-progress";
 import {
   isActiveNativeSession,
+  isNativeRuntimeSelection,
   isObservedNativeRun,
   shouldFollowNativeHistory,
+  shouldQueueMessageForActiveRun,
   shouldRestoreLocalNativeRun,
 } from "../lib/native-session-view-state";
 
@@ -106,51 +114,62 @@ function renderEmphasis(text: string, keyPrefix: string): React.ReactNode[] {
   });
 }
 
-/** Render inline markdown: links, `code`, **bold**, *italic* within a single line. */
-function renderRichInline(text: string): React.ReactNode {
-  // Split by code spans first to avoid formatting inside code
+function renderInlineLabel(text: string, keyPrefix: string): React.ReactNode {
   const codeParts = text.split(/(`[^`\n]+`)/g);
-  return codeParts.map((part, i) => {
-    if (i % 2 === 1) {
+  return codeParts.map((part, index) => {
+    if (index % 2 === 1) {
       return (
-        <code key={i} style={{ fontFamily: 'var(--font-mono)', fontSize: '0.84em', background: 'rgba(17,24,39,0.06)', padding: '1px 5px', borderRadius: 4, color: 'var(--accent)', border: '1px solid var(--border-subtle)' }}>
+        <code key={`${keyPrefix}-${index}`} style={{ fontFamily: 'var(--font-mono)', fontSize: '0.84em', background: 'rgba(17,24,39,0.06)', padding: '1px 5px', borderRadius: 4, color: 'var(--accent)', border: '1px solid var(--border-subtle)' }}>
           {part.slice(1, -1)}
         </code>
       );
     }
-    return parseMarkdownLinks(part).map((token, j) => {
-      if (token.type === "link") {
-        return (
-          <a
-            key={`${i}-${j}`}
-            className="chat-message-link"
-            href={token.href}
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            {token.label}
-          </a>
-        );
-      }
-      if (token.type === "artifact") {
-        if (!isWebShell()) return <span key={`${i}-${j}`}>{token.raw}</span>;
-        const locationLabel = token.line ? `${token.path}:${token.line}` : token.path;
-        return (
-          <button
-            key={`${i}-${j}`}
-            type="button"
-            className="chat-message-artifact-link"
-            title={locationLabel}
-            aria-label={`打开交付物 ${token.label}`}
-            onClick={() => postWebArtifactOpen(token.path)}
-          >
-            <FileText size={16} strokeWidth={1.8} aria-hidden="true" />
-            <span>{token.label}</span>
-          </button>
-        );
-      }
-      return renderEmphasis(token.value, `${i}-${j}`);
-    });
+    return renderEmphasis(part, `${keyPrefix}-${index}`);
+  });
+}
+
+/** Render inline markdown: links, `code`, **bold**, *italic* within a single line. */
+function renderRichInline(text: string): React.ReactNode {
+  return parseRichInlineTokens(text).map((token, index) => {
+    if (token.type === "code") {
+      return (
+        <code key={index} style={{ fontFamily: 'var(--font-mono)', fontSize: '0.84em', background: 'rgba(17,24,39,0.06)', padding: '1px 5px', borderRadius: 4, color: 'var(--accent)', border: '1px solid var(--border-subtle)' }}>
+          {token.value}
+        </code>
+      );
+    }
+    if (token.type === "link") {
+      return (
+        <a
+          key={index}
+          className="chat-message-link"
+          href={token.href}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          {renderInlineLabel(token.label, `${index}-label`)}
+        </a>
+      );
+    }
+    if (token.type === "artifact") {
+      if (!isWebShell()) return <span key={index}>{token.raw}</span>;
+      const locationLabel = token.line ? `${token.path}:${token.line}` : token.path;
+      const accessibleLabel = token.label.replace(/^`([^`\n]+)`$/, "$1");
+      return (
+        <button
+          key={index}
+          type="button"
+          className="chat-message-artifact-link"
+          title={locationLabel}
+          aria-label={`打开交付物 ${accessibleLabel}`}
+          onClick={() => postWebArtifactOpen(token.path)}
+        >
+          <FileText size={16} strokeWidth={1.8} aria-hidden="true" />
+          <span>{renderInlineLabel(token.label, `${index}-label`)}</span>
+        </button>
+      );
+    }
+    return renderEmphasis(token.value, `${index}`);
   });
 }
 
@@ -297,9 +316,13 @@ import { widgetRegistry } from "./widgets/index.js";
 import { prepareVoiceCommand, shouldSkipVoiceSessionReload } from "../lib/voice-command";
 import { prepareChatCommand } from "../lib/chat-command";
 import { areToolCallsComplete } from "../lib/tool-call-status";
-import { parseMarkdownLinks } from "../lib/markdown-links";
+import { parseRichInlineTokens } from "../lib/markdown-links";
 import { coalesceAdjacentToolCallMessages, groupAdjacentToolCallEntries } from "../lib/tool-call-groups";
-import { messageActionPolicy } from "../lib/message-actions";
+import {
+  formatCompletionDuration,
+  messageActionPolicy,
+  validCompletionDurationMs,
+} from "../lib/message-actions";
 import { prepareComposerFiles } from "../lib/composer-file-routing";
 import {
   canForkOccupiedCodexSession,
@@ -313,7 +336,10 @@ interface ChatViewProps {
   activeAgentType?: AgentType;
   selectedProjectId?: string | null;
   selectedSessionId?: string | null;
-  onSessionCreated?: (sessionId: string) => void | Promise<void>;
+  onSessionCreated?: (
+    sessionId: string,
+    pendingSession?: UnifiedSessionSummary,
+  ) => void | Promise<void>;
   onMessageSent?: (sessionId: string, firstMessage: string) => void | Promise<void>;
   /** Called when a sub-session is created by agent_dispatch, with the parent session ID */
   onSubSessionCreated?: (parentSessionId: string) => void | Promise<void>;
@@ -421,10 +447,19 @@ export default function ChatView({
   const [sessionError, setSessionError] = useState<OccupiedSessionError>();
   const [occupiedDraft, setOccupiedDraft] = useState<string>();
   const [isForkingSession, setIsForkingSession] = useState(false);
+  const [directCompatibilitySessionId, setDirectCompatibilitySessionId] = useState<string | null>(null);
+  const [compatibilityFailure, setCompatibilityFailure] = useState<string | null>(null);
   const viewSessionId = selectedSessionId || sessionId;
-  const isNativeRuntime = Boolean(sessionSummary && sessionSummary.agentType !== "customer-agent");
+  const isNativeRuntime = isNativeRuntimeSelection(sessionSummary, activeAgentType);
+  const hasDurableMessageQueue = sessionSummary?.messageQueueVersion === 1;
   const canSteerQueuedMessages = supportsMidTurnSteering(sessionSummary?.agentType);
-  const isReadOnly = sessionSummary?.occupancy === "owned-externally";
+  const compatibilityStatus = directCompatibilitySessionId === viewSessionId
+    ? "direct"
+    : compatibilityFailure
+      ? "incompatible"
+      : sessionSummary?.compatibility?.status;
+  const isCompatibilityReadOnly = compatibilityStatus !== undefined && compatibilityStatus !== "direct";
+  const isReadOnly = sessionSummary?.occupancy === "owned-externally" || isCompatibilityReadOnly;
   const isOccupiedRecovery = isOccupiedSessionRecovery(viewSessionId, sessionError);
   const runtimeReady = isConfigured || isNativeRuntime;
   const canCompose = runtimeReady && !isReadOnly && !isOccupiedRecovery;
@@ -440,6 +475,7 @@ export default function ChatView({
     viewSessionId
     && (runningSessionId === viewSessionId || runningSubIdsRef.current.has(viewSessionId))
   );
+  const shouldQueueMessage = shouldQueueMessageForActiveRun(sessionSummary, isLocallyRunning);
   const isRunning = isLocallyRunning || isObservedNativeRun(sessionSummary);
   const runtimeProgress = viewSessionId ? runtimeProgressBySession[viewSessionId] ?? [] : [];
   const nativeSubagents = viewSessionId ? nativeSubagentsBySession[viewSessionId] ?? {} : {};
@@ -483,6 +519,18 @@ export default function ChatView({
   const [isSavingPermission, setIsSavingPermission] = useState(false);
   const effortMenuRef = useRef<HTMLDivElement>(null);
   const permissionMenuRef = useRef<HTMLDivElement>(null);
+  const applySessionQueueState = useCallback((state: SessionGoalState, targetSessionId: string) => {
+    const viewedSessionId = selectedSessionIdRef.current || sessionIdRef.current;
+    if (targetSessionId === viewedSessionId) {
+      setGoalState(projectSessionGoals(state) as SessionGoalState);
+    }
+    if (!targetSessionId.startsWith("runtime:")) return;
+    const current = getMessagesForSession(targetSessionId);
+    setMessages(
+      reconcileDurableQueuedMessages(current, queuedSessionMessages(state)),
+      targetSessionId,
+    );
+  }, [getMessagesForSession, setMessages]);
 
   // Close the reasoning-effort menu on outside click
   useEffect(() => {
@@ -717,7 +765,7 @@ export default function ChatView({
     }
     try {
       const state = await window.agentApi.getSessionGoals(id);
-      setGoalState(state);
+      applySessionQueueState(state, id);
       if (state.active) {
         runningSessionRef.current = id;
         setRunningSession(id);
@@ -725,7 +773,7 @@ export default function ChatView({
     } catch (goalError) {
       setError(goalError instanceof Error ? goalError.message : "目标状态加载失败");
     }
-  }, [setRunningSession]);
+  }, [applySessionQueueState, setRunningSession]);
   useEffect(() => {
     void loadGoalState(viewSessionId);
   }, [viewSessionId, loadGoalState]);
@@ -981,6 +1029,8 @@ export default function ChatView({
         clearMessages();
         setError(null);
         setSessionLoadError(null);
+        setDirectCompatibilitySessionId(null);
+        setCompatibilityFailure(null);
         historyCursorRef.current = null;
         latestHistoryCursorRef.current = null;
         setOlderHistoryError(null);
@@ -998,6 +1048,8 @@ export default function ChatView({
 
       setError(null);
       setSessionLoadError(null);
+      setDirectCompatibilitySessionId(null);
+      setCompatibilityFailure(null);
       setOlderHistoryError(null);
       historyPrefetchRef.current?.invalidate();
       historyCursorRef.current = null;
@@ -1028,6 +1080,7 @@ export default function ChatView({
         const restoredNativeSubagents = reduceNativeSubagentActivities((detail?.events ?? []) as AgentEvent[]);
         const restored = restoreSessionHistoryPage(detail);
         if (!isCurrentLoad()) return;
+        if (sessionSummary?.compatibility) setDirectCompatibilitySessionId(targetSid);
         setPermissionMode(normalizePermissionMode(
           permissionDetail?.permissionMode ?? permissionDetail?.metadata?.permissionMode,
         ));
@@ -1037,7 +1090,10 @@ export default function ChatView({
         const liveMessages = getMessagesForSession(targetSid);
         const preferLive = liveMessages.length > 0
           && useAgentStore.getState().runningSessionId === targetSid;
-        const nextMessages = preferLive ? liveMessages : restored;
+        const baseMessages = preferLive ? liveMessages : restored;
+        const nextMessages = detail?.goalState && targetSid.startsWith("runtime:")
+          ? reconcileDurableQueuedMessages(baseMessages, queuedSessionMessages(detail.goalState))
+          : baseMessages;
         nextAutoScrollRef.current = "instant";
         setMessages(nextMessages, targetSid);
         prefetchOlderHistory(targetSid, nextCursor);
@@ -1069,7 +1125,9 @@ export default function ChatView({
       } catch (error) {
         if (!isCurrentLoad()) return;
         console.error("[chat] failed to restore session", { sessionId: targetSid, error });
-        setSessionLoadError(describeSessionLoadError(error));
+        const reason = describeSessionLoadError(error);
+        setSessionLoadError(reason);
+        if (sessionSummary?.compatibility) setCompatibilityFailure(reason);
       } finally {
         if (slowLoadingTimer !== null) window.clearTimeout(slowLoadingTimer);
         if (isCurrentLoad()) {
@@ -1114,12 +1172,16 @@ export default function ChatView({
 
         const refreshed = restoreSessionHistoryPage(detail);
         const current = getMessagesForSession(targetSid);
-        const merged = mergeRefreshedSessionHistory(current, refreshed);
+        const mergedHistory = mergeRefreshedSessionHistory(current, refreshed);
+        const merged = detail?.goalState && targetSid.startsWith("runtime:")
+          ? reconcileDurableQueuedMessages(mergedHistory, queuedSessionMessages(detail.goalState))
+          : mergedHistory;
         const container = messagesScrollRef.current;
         const isNearBottom = !container
           || container.scrollHeight - container.scrollTop - container.clientHeight < 80;
         nextAutoScrollRef.current = isNearBottom ? null : "skip";
         setMessages(merged, targetSid);
+        if (detail?.goalState) setGoalState(projectSessionGoals(detail.goalState) as SessionGoalState);
 
         const previousLatestCursor = latestHistoryCursorRef.current;
         const nextLatestCursor = detail?.history?.nextCursor ?? null;
@@ -1293,22 +1355,28 @@ export default function ChatView({
     const timer = window.setTimeout(() => {
       queuedRunDrainTimersRef.current.delete(targetSessionId);
       void (async () => {
-        if (managedRunSessionsRef.current.has(targetSessionId) || abortRef.current) return;
+        if (managedRunSessionsRef.current.has(targetSessionId)) return;
         try {
           const state = await window.agentApi?.getSessionGoals(targetSessionId);
           const viewedSid = selectedSessionIdRef.current || sessionIdRef.current;
-          if (state && targetSessionId === viewedSid) setGoalState(state);
+          if (state && targetSessionId === viewedSid) applySessionQueueState(state, targetSessionId);
           // The native goal coordinator may already have promoted and started
           // another goal. Ordinary queued chat must wait for that queue to end.
           if (state?.active) {
             runningSessionRef.current = targetSessionId;
-            if (targetSessionId === viewedSid) setRunningSession(targetSessionId);
+            if (targetSessionId === viewedSid) {
+              abortRef.current = false;
+              setError(null);
+              setRunningSession(targetSessionId);
+            }
             return;
           }
 
+          if (abortRef.current) return;
+
           const nextQueued = useAgentStore.getState()
             .getMessagesForSession(targetSessionId)
-            .find((message) => message.isQueued);
+            .find((message) => message.isQueued && !message.queueItemId);
           if (!nextQueued) {
             if (targetSessionId === viewedSid) {
               runningSessionRef.current = null;
@@ -1554,6 +1622,26 @@ export default function ChatView({
         }
         break;
       case "done":
+        if (eventSid) {
+          const durationMs = validCompletionDurationMs(event.durationMs);
+          if (durationMs !== undefined) {
+            const completedMessage = [...getMessagesForSession(eventSid)].reverse().find((message) => (
+              message.role === "assistant"
+              && Boolean(message.content.trim())
+              && !message.toolCalls?.length
+              && !message.isCompactionSummary
+            ));
+            if (completedMessage) {
+              updateMessage(completedMessage.id, (message) => ({
+                ...message,
+                presentation: {
+                  ...message.presentation,
+                  completionDurationMs: durationMs,
+                },
+              }), eventSid);
+            }
+          }
+        }
         clearRuntimeProgress(eventSid);
         // Only clear running state here if no queued messages — otherwise
         // startRun's finally block will chain the next run seamlessly.
@@ -1597,7 +1685,34 @@ export default function ChatView({
             setRunningSession(eventSid);
             updateAgentActivity("thinking");
           }
-          if (event.code === "SESSION_OCCUPIED") {
+          if (event.code === "SESSION_ALREADY_RUNNING") {
+            const conflictMessages = eventSid
+              ? useAgentStore.getState().getMessagesForSession(eventSid)
+              : useAgentStore.getState().messages;
+            const rejectedMessageId = findLatestUnqueuedUserMessageId(conflictMessages);
+            if (rejectedMessageId) {
+              const rejectedMessage = conflictMessages.find((message) => message.id === rejectedMessageId);
+              updateMessage(rejectedMessageId, (message) => ({ ...message, isQueued: true }), eventSid);
+              if (
+                hasDurableMessageQueue
+                && eventSid?.startsWith("runtime:")
+                && rejectedMessage
+                && window.agentApi?.enqueueSessionMessage
+              ) {
+                void window.agentApi.enqueueSessionMessage(eventSid, {
+                  sourceMessageId: rejectedMessage.id,
+                  content: rejectedMessage.content,
+                  images: rejectedMessage.images,
+                  agentName: rejectedMessage.agentName,
+                }).then((state) => applySessionQueueState(state, eventSid)).catch((queueError) => {
+                  setError(queueError instanceof Error ? queueError.message : "排队消息保存失败");
+                });
+              }
+            }
+            setOccupiedDraft(undefined);
+            setSessionError(undefined);
+            setError(null);
+          } else if (event.code === "SESSION_OCCUPIED") {
             const failedMessages = eventSid
               ? useAgentStore.getState().getMessagesForSession(eventSid)
               : useAgentStore.getState().messages;
@@ -1682,9 +1797,9 @@ export default function ChatView({
           sessionIdRef.current = id;
           setSessionId(id);
         },
-        refreshAndSelect: async (id) => {
-          if (onSessionCreated) await onSessionCreated(id);
-          else onSelectSession?.(id);
+        refreshAndSelect: async (forked) => {
+          if (onSessionCreated) await onSessionCreated(forked.id, forked);
+          else onSelectSession?.(forked.id);
         },
       });
       if (occupiedDraft) setInput(occupiedDraft);
@@ -1720,8 +1835,15 @@ export default function ChatView({
     const msg = useAgentStore.getState().messages.find(m => m.id === msgId);
     if (!msg || !msg.isQueued) return;
     try {
-      await window.agentApi.steer(msg.content, targetSessionId, msg.agentName);
-      updateMessage(msgId, (m) => ({ ...m, isQueued: false, isSteered: true }));
+      if (msg.queueItemId && targetSessionId.startsWith("runtime:")) {
+        applySessionQueueState(
+          await window.agentApi.steerSessionMessage(targetSessionId, msg.queueItemId),
+          targetSessionId,
+        );
+      } else {
+        await window.agentApi.steer(msg.content, targetSessionId, msg.agentName);
+        updateMessage(msgId, (m) => ({ ...m, isQueued: false, isSteered: true }));
+      }
       if (editingQueuedId === msgId) {
         setEditingQueuedId(null);
         setQueuedEditDraft("");
@@ -1743,12 +1865,23 @@ export default function ChatView({
     setQueuedEditDraft("");
   };
 
-  const saveQueuedMessageEdit = (msgId: string) => {
+  const saveQueuedMessageEdit = async (msgId: string) => {
     const content = queuedEditDraft.trim();
     const message = useAgentStore.getState().messages.find((item) => item.id === msgId && item.isQueued);
     if (!message || !content) return;
-    updateMessage(msgId, (item) => item.isQueued ? { ...item, content } : item, viewSessionId || undefined);
-    cancelQueuedMessageEdit();
+    try {
+      if (message.queueItemId && viewSessionId?.startsWith("runtime:")) {
+        applySessionQueueState(
+          await window.agentApi.updateSessionMessage(viewSessionId, message.queueItemId, content),
+          viewSessionId,
+        );
+      } else {
+        updateMessage(msgId, (item) => item.isQueued ? { ...item, content } : item, viewSessionId || undefined);
+      }
+      cancelQueuedMessageEdit();
+    } catch (queueError) {
+      setError(queueError instanceof Error ? queueError.message : "排队消息保存失败");
+    }
   };
 
   const copyQueuedMessage = async (msgId: string) => {
@@ -1762,18 +1895,45 @@ export default function ChatView({
     window.setTimeout(() => setCopiedQueuedId((current) => current === msgId ? null : current), 1_200);
   };
 
-  const deleteQueuedMessage = (msgId: string) => {
+  const deleteQueuedMessage = async (msgId: string) => {
     const currentMessages = useAgentStore.getState().messages;
-    if (!currentMessages.some((item) => item.id === msgId && item.isQueued)) return;
-    setMessages(currentMessages.filter((item) => item.id !== msgId), viewSessionId || undefined);
-    if (editingQueuedId === msgId) cancelQueuedMessageEdit();
+    const message = currentMessages.find((item) => item.id === msgId && item.isQueued);
+    if (!message) return;
+    try {
+      if (message.queueItemId && viewSessionId?.startsWith("runtime:")) {
+        applySessionQueueState(
+          await window.agentApi.cancelSessionMessage(viewSessionId, message.queueItemId),
+          viewSessionId,
+        );
+      } else {
+        setMessages(currentMessages.filter((item) => item.id !== msgId), viewSessionId || undefined);
+      }
+      if (editingQueuedId === msgId) cancelQueuedMessageEdit();
+    } catch (queueError) {
+      setError(queueError instanceof Error ? queueError.message : "排队消息删除失败");
+    }
   };
 
-  const reorderQueuedMessage = (sourceId: string, targetId: string) => {
+  const reorderQueuedMessage = async (sourceId: string, targetId: string) => {
     const currentMessages = useAgentStore.getState().messages;
     const reordered = moveQueuedMessage(currentMessages, sourceId, targetId);
     if (reordered !== currentMessages) {
       setMessages(reordered, viewSessionId || undefined);
+      const durable = reordered.filter((message) => message.isQueued && message.queueItemId);
+      if (viewSessionId?.startsWith("runtime:") && durable.length > 0) {
+        try {
+          applySessionQueueState(
+            await window.agentApi.reorderSessionMessages(
+              viewSessionId,
+              durable.map((message) => message.queueItemId!),
+            ),
+            viewSessionId,
+          );
+        } catch (queueError) {
+          setMessages(currentMessages, viewSessionId);
+          setError(queueError instanceof Error ? queueError.message : "排队消息排序保存失败");
+        }
+      }
     }
   };
 
@@ -1781,7 +1941,7 @@ export default function ChatView({
     const queued = useAgentStore.getState().messages.filter((message) => message.isQueued);
     const currentIndex = queued.findIndex((message) => message.id === msgId);
     const target = queued[currentIndex + direction];
-    if (target) reorderQueuedMessage(msgId, target.id);
+    if (target) void reorderQueuedMessage(msgId, target.id);
   };
 
   const dropQueuedGoal = async (targetGoalId: string) => {
@@ -1803,7 +1963,7 @@ export default function ChatView({
       })),
     });
     try {
-      setGoalState(await window.agentApi.reorderSessionGoals(viewSessionId, nextIds));
+      applySessionQueueState(await window.agentApi.reorderSessionGoals(viewSessionId, nextIds), viewSessionId);
     } catch (goalError) {
       setGoalState(previous);
       setError(goalError instanceof Error ? goalError.message : "目标排序保存失败");
@@ -1814,7 +1974,7 @@ export default function ChatView({
     if (!viewSessionId) return;
     try {
       const state = await window.agentApi.cancelSessionGoal(viewSessionId, goalId);
-      setGoalState(state);
+      applySessionQueueState(state, viewSessionId);
       if (!state.active) setRunningSession(null);
     } catch (goalError) {
       setError(goalError instanceof Error ? goalError.message : "目标删除失败");
@@ -1868,7 +2028,7 @@ export default function ChatView({
         ? await window.agentApi.getSessionGoals(targetSessionId).catch(() => undefined)
         : undefined;
       if (pendingGoals && targetSessionId === (selectedSessionIdRef.current || sessionIdRef.current)) {
-        setGoalState(pendingGoals);
+        applySessionQueueState(pendingGoals, targetSessionId);
       }
       // A goal queued during an ordinary run owns the next native slot. Its
       // terminal event drains ordinary queued chat after all goals finish.
@@ -1880,7 +2040,9 @@ export default function ChatView({
       }
       // Check for next queued message (skip if user aborted)
       const nextQueued = !abortRef.current
-        ? useAgentStore.getState().getMessagesForSession(targetSessionId).find(m => m.isQueued)
+        ? useAgentStore.getState().getMessagesForSession(targetSessionId).find(
+            (message) => message.isQueued && !message.queueItemId,
+          )
         : undefined;
       if (nextQueued) {
         updateMessage(nextQueued.id, (m) => ({ ...m, isQueued: false }), targetSessionId);
@@ -2113,7 +2275,7 @@ export default function ChatView({
           goalObjective,
           sourceMessageId,
         );
-        setGoalState(state);
+        applySessionQueueState(state, targetSessionId);
         if (onMessageSent) void onMessageSent(targetSessionId, goalObjective);
       } catch (goalError) {
         setRunningSession(null);
@@ -2123,16 +2285,38 @@ export default function ChatView({
     }
 
     // ── Queue message if agent is running ──────────────────────────────────
-    if (isLocallyRunning) {
-      addMessage({
-        id: crypto.randomUUID(),
+    if (shouldQueueMessage) {
+      const sourceMessageId = crypto.randomUUID();
+      const queuedMessage = {
+        id: sourceMessageId,
         role: "user",
         content: finalMsg,
         timestamp: Date.now(),
         agentName: agentNamesLabel,
         images: imagesToSend,
         isQueued: true,
-      });
+      } as const;
+      if (isNativeRuntime && hasDurableMessageQueue && viewSessionId && window.agentApi?.enqueueSessionMessage) {
+        try {
+          const state = await window.agentApi.enqueueSessionMessage(viewSessionId, {
+            sourceMessageId,
+            content: finalMsg,
+            images: imagesToSend,
+            agentIds: agentIdsToSend,
+            agentName: agentNamesLabel,
+          });
+          applySessionQueueState(state, viewSessionId);
+          if (state.active?.sourceMessageId === sourceMessageId) {
+            addMessage({ ...queuedMessage, isQueued: false }, viewSessionId);
+          }
+        } catch (queueError) {
+          setInput(finalMsg);
+          setPendingImages(imagesToSend ?? []);
+          setError(queueError instanceof Error ? queueError.message : "排队消息保存失败");
+        }
+      } else {
+        addMessage(queuedMessage);
+      }
       return;
     }
 
@@ -2361,6 +2545,7 @@ export default function ChatView({
               .some((goal) => Boolean(goal && normalizeGoalMessageText(goal.objective) === normalizeGoalMessageText(msg.content)))
           );
           const actionPolicy = messageActionPolicy(renderedMessages, i, isRunning);
+          const completionDuration = formatCompletionDuration(chatMsg.presentation?.completionDurationMs);
 
           // ── Compaction banner ──────────────────────────────────────────
           if (chatMsg.isCompactionSummary) {
@@ -2751,24 +2936,43 @@ export default function ChatView({
                   );
                 })()}
               </div>
-              {/* Per-message controls sit below the message card boundary. */}
-              {(actionPolicy.showCopy || actionPolicy.showSpeak || isGoalMessage) && (
-                <div className="msg-actions" style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                  {actionPolicy.showSpeak && typeof window.agentApi?.ttsSpeak === "function" && (
+              {/* Completed assistant footer remains visible after the live run disappears. */}
+              {actionPolicy.showCompletion && (
+                <div className="msg-completion-footer">
+                  <span className="msg-completion-status">
+                    <Check size={13} strokeWidth={2} aria-hidden="true" />
+                    <span>已完成</span>
+                    {completionDuration && <span> · 总耗时 {completionDuration}</span>}
+                  </span>
+                  <span className="msg-completion-actions">
+                    {!isWebShell() && actionPolicy.showSpeak && typeof window.agentApi?.ttsSpeak === "function" && (
+                      <button
+                        type="button"
+                        onClick={() => handleSpeakMessage(msg.id, msg.content)}
+                        title={speakingMsgId === msg.id ? "停止播报" : "语音播报"}
+                        aria-label={speakingMsgId === msg.id ? "停止播报" : "语音播报"}
+                        className={`ui-icon-button ui-icon-button--small msg-action-button ${speakingMsgId === msg.id ? "is-active" : ""}`}
+                      >
+                        {speakingMsgId === msg.id
+                          ? <Square size={12} fill="currentColor" aria-hidden="true" />
+                          : <Volume2 size={13} strokeWidth={1.8} aria-hidden="true" />}
+                      </button>
+                    )}
                     <button
                       type="button"
-                      onClick={() => handleSpeakMessage(msg.id, msg.content)}
-                      title={speakingMsgId === msg.id ? "停止播报" : "语音播报"}
-                      aria-label={speakingMsgId === msg.id ? "停止播报" : "语音播报"}
-                      className={`ui-icon-button ui-icon-button--small msg-action-button ${speakingMsgId === msg.id ? "is-active" : ""}`}
+                      onClick={() => { void copyTextToClipboard(msg.content); }}
+                      title="复制内容"
+                      aria-label="复制内容"
+                      className="ui-icon-button ui-icon-button--small msg-action-button"
                     >
-                      {speakingMsgId === msg.id ? (
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="2"/></svg>
-                      ) : (
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>
-                      )}
+                      <Copy size={13} strokeWidth={1.8} aria-hidden="true" />
                     </button>
-                  )}
+                  </span>
+                </div>
+              )}
+              {/* User controls and goal markers retain their existing behavior. */}
+              {!actionPolicy.showCompletion && (actionPolicy.showCopy || isGoalMessage) && (
+                <div className="msg-actions" style={{ display: "flex", alignItems: "center", gap: 4 }}>
                   {isGoalMessage && (
                     <span
                       className="ui-icon-button ui-icon-button--small msg-action-button msg-goal-marker"
@@ -2786,7 +2990,7 @@ export default function ChatView({
                     aria-label="复制内容"
                     className="ui-icon-button ui-icon-button--small msg-action-button"
                   >
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+                    <Copy size={13} strokeWidth={1.8} aria-hidden="true" />
                   </button>}
                 </div>
               )}
@@ -2926,7 +3130,27 @@ export default function ChatView({
         padding: "var(--chat-input-padding)",
         background: "var(--bg-workspace)",
       }}>
-        {(isReadOnly || isOccupiedRecovery) && (
+        {isCompatibilityReadOnly && (
+          <div style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            marginBottom: 9,
+            padding: "8px 10px",
+            border: "1px solid var(--border-default)",
+            borderRadius: 6,
+            background: "var(--bg-surface)",
+            color: compatibilityStatus === "incompatible" ? "var(--danger)" : "var(--text-muted)",
+            fontSize: 12,
+          }}>
+            <span style={{ flex: 1 }}>
+              {compatibilityStatus === "incompatible"
+                ? compatibilityFailure || sessionSummary?.compatibility?.reason || `Codex ${sessionSummary?.compatibility?.producerVersion ?? "未知版本"} 与当前 ${sessionSummary?.compatibility?.readerVersion ?? "运行时"} 不兼容`
+                : `正在使用 Codex ${sessionSummary?.compatibility?.readerVersion ?? "当前版本"} 验证此会话`}
+            </span>
+          </div>
+        )}
+        {(sessionSummary?.occupancy === "owned-externally" || isOccupiedRecovery) && (
           <div style={{
             display: "flex",
             alignItems: "center",
@@ -3277,16 +3501,25 @@ export default function ChatView({
               <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
                 {pendingImages.map((src, i) => (
                   <div key={i} style={{ position: "relative", display: "inline-block" }}>
-                    <img
-                      src={src}
-                      alt={`image-${i}`}
-                      style={{
-                        width: 72, height: 72, objectFit: "cover",
-                        borderRadius: 8, border: "1.5px solid var(--border-default)",
-                        display: "block",
-                      }}
-                    />
                     <button
+                      type="button"
+                      className="chat-message-image-button pending-image-preview-button"
+                      aria-label={`预览待发送图片 ${i + 1}`}
+                      onClick={() => setPreviewedMessageImage({ src, alt: `待发送图片 ${i + 1}` })}
+                    >
+                      <img
+                        src={src}
+                        alt={`待发送图片 ${i + 1}`}
+                        style={{
+                          width: 72, height: 72, objectFit: "cover",
+                          borderRadius: 8, border: "1.5px solid var(--border-default)",
+                          display: "block",
+                        }}
+                      />
+                    </button>
+                    <button
+                      type="button"
+                      aria-label={`删除待发送图片 ${i + 1}`}
                       onClick={() => removePendingImage(i)}
                       style={{
                         position: "absolute", top: -6, right: -6,
@@ -3567,7 +3800,7 @@ export default function ChatView({
             onChange={(event) => handleComposerChange(event.target.value)}
             onBlur={() => setTimeout(() => { setAtQuery(null); setSlashQuery(null); }, 120)}
             onKeyDown={handleComposerKeyDown}
-            placeholder={isReadOnly ? "原客户端使用中，当前只读" : runtimeReady ? (goalMode ? "输入要持续推进的目标" : isLocallyRunning ? "输入下一条排队消息" : "提出后续修改要求") : "请先在设置中配置 API Key"}
+            placeholder={isCompatibilityReadOnly ? (compatibilityStatus === "incompatible" ? "Codex 版本不兼容" : "正在验证会话兼容性") : isReadOnly ? "原客户端使用中，当前只读" : runtimeReady ? (goalMode ? "输入要持续推进的目标" : shouldQueueMessage ? "输入下一条排队消息" : "提出后续修改要求") : "请先在设置中配置 API Key"}
             disabled={!canCompose}
           />
 
@@ -3744,8 +3977,8 @@ export default function ChatView({
                 onClick={handleSend}
                 disabled={!canCompose || pendingImageReads > 0 || !input.trim()}
                 className="web-native-send-button"
-                aria-label={isLocallyRunning ? "排队发送" : "发送"}
-                title={isLocallyRunning ? "排队发送" : "发送"}
+                aria-label={shouldQueueMessage ? "排队发送" : "发送"}
+                title={shouldQueueMessage ? "排队发送" : "发送"}
               >
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M12 19V5M5 12l7-7 7 7" />
@@ -3765,7 +3998,7 @@ export default function ChatView({
           letterSpacing: "0.03em",
           opacity: 0.6,
         }}>
-          Enter 发送{goalMode ? "目标" : isLocallyRunning ? "（排队）" : ""} · @智能体（可多选）· /技能 · Shift+Enter 换行{isRecording ? " · 🎤 正在聆听…" : ""}
+          Enter 发送{goalMode ? "目标" : shouldQueueMessage ? "（排队）" : ""} · @智能体（可多选）· /技能 · Shift+Enter 换行{isRecording ? " · 🎤 正在聆听…" : ""}
         </div>
       </div>
 

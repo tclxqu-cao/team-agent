@@ -1,5 +1,6 @@
 import type { MessagePresentation } from "@agent/core";
 import type { ChatMessage, ContextUsageSnapshot } from "../stores/agentStore";
+import type { SessionGoalState } from "../global";
 
 export interface PersistedHistoryEvent {
   type?: string;
@@ -34,6 +35,7 @@ export interface SessionHistoryDetail {
     pageSize?: number;
     totalItems?: number;
   };
+  goalState?: SessionGoalState;
 }
 
 export function restoreSessionHistoryPage(detail: SessionHistoryDetail | null): ChatMessage[] {
@@ -143,6 +145,11 @@ export function mergeRefreshedSessionHistory(
   const currentKeys = current.map(sessionHistoryMessageMatchKey);
   const refreshedKeys = refreshed.map(sessionHistoryMessageMatchKey);
   const expectedStart = Math.max(0, current.length - refreshed.length);
+  const userBoundaryStart = findUserBoundaryMatch(
+    current,
+    refreshed,
+    expectedStart,
+  );
   let best = { currentStart: expectedStart, length: 0, distance: Infinity };
 
   for (let currentIndex = 0; currentIndex < currentKeys.length; currentIndex++) {
@@ -165,10 +172,10 @@ export function mergeRefreshedSessionHistory(
     }
   }
 
-  const replacementStart = best.length > 0 ? best.currentStart : expectedStart;
+  const replacementStart = userBoundaryStart ?? (best.length > 0 ? best.currentStart : expectedStart);
   const stableRefreshed = refreshed.map((message, index) => {
     const previous = current[replacementStart + index];
-    if (!previous || sessionHistoryMessageMatchKey(previous) !== refreshedKeys[index]) return message;
+    if (!previous || !sessionHistoryMessagesAlign(previous, message, refreshedKeys[index])) return message;
     const hasPersistedImage = message.presentation?.attachments?.some((attachment) => attachment.dataUrl);
     return {
       ...message,
@@ -177,7 +184,47 @@ export function mergeRefreshedSessionHistory(
       images: hasPersistedImage ? undefined : message.images ?? previous.images,
     };
   });
-  return [...current.slice(0, replacementStart), ...stableRefreshed];
+  const queued = current.filter((message) => message.isQueued);
+  return [...current.slice(0, replacementStart).filter((message) => !message.isQueued), ...stableRefreshed, ...queued];
+}
+
+function findUserBoundaryMatch(
+  current: ChatMessage[],
+  refreshed: ChatMessage[],
+  expectedStart: number,
+): number | null {
+  const refreshedBoundary = refreshed[0];
+  if (refreshedBoundary?.role !== "user") return null;
+  const refreshedKey = sessionHistoryUserBoundaryKey(refreshedBoundary);
+  let best: { start: number; distance: number } | null = null;
+  for (let currentIndex = 0; currentIndex < current.length; currentIndex += 1) {
+    if (current[currentIndex].role !== "user" || current[currentIndex].isQueued) continue;
+    if (sessionHistoryUserBoundaryKey(current[currentIndex]) !== refreshedKey) continue;
+    const distance = Math.abs(currentIndex - expectedStart);
+    if (!best || distance < best.distance) best = { start: currentIndex, distance };
+  }
+  return best?.start ?? null;
+}
+
+function sessionHistoryMessagesAlign(
+  current: ChatMessage,
+  refreshed: ChatMessage,
+  refreshedKey: string,
+): boolean {
+  if (sessionHistoryMessageMatchKey(current) === refreshedKey) return true;
+  return current.role === "user"
+    && refreshed.role === "user"
+    && sessionHistoryUserBoundaryKey(current) === sessionHistoryUserBoundaryKey(refreshed);
+}
+
+function sessionHistoryUserBoundaryKey(message: ChatMessage): string {
+  return JSON.stringify({
+    role: message.role,
+    content: message.content,
+    name: message.name?.startsWith("__native_") ? undefined : message.name,
+    agentName: message.agentName,
+    isCompactionSummary: message.isCompactionSummary,
+  });
 }
 
 function sessionHistoryMessageMatchKey(message: ChatMessage): string {

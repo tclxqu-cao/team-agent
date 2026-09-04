@@ -1,5 +1,6 @@
-import { ChevronRight, LockKeyhole, Trash2 } from "lucide-react";
+import { CircleAlert, ChevronRight, LoaderCircle, LockKeyhole, Trash2 } from "lucide-react";
 import type { SidebarSessionVisualState } from "../lib/sidebar-session-status";
+import type { SessionCompatibility } from "../global";
 
 export interface SidebarSessionRowModel {
   id: string;
@@ -12,6 +13,7 @@ export interface SidebarSessionRowModel {
   child?: boolean;
   hasChildren?: boolean;
   expanded?: boolean;
+  compatibility?: SessionCompatibility;
 }
 
 export interface SidebarDeleteAnchor {
@@ -52,6 +54,24 @@ export default function SidebarSessionRow({
           aria-label={session.statusLabel}
         />
         <span className="sidebar-session-title">{session.title}</span>
+        {session.compatibility?.status === "checking" && (
+          <span
+            className="sidebar-session-compatibility"
+            title={`正在验证 Codex ${session.compatibility.producerVersion ?? "未知版本"} 会话兼容性`}
+            aria-label="正在验证会话兼容性"
+          >
+            <LoaderCircle size={13} style={{ animation: "spin 1s linear infinite" }} aria-hidden="true" />
+          </span>
+        )}
+        {session.compatibility?.status === "incompatible" && (
+          <span
+            className="sidebar-session-compatibility"
+            title={session.compatibility.reason ?? "Codex 版本不兼容"}
+            aria-label="Codex 版本不兼容"
+          >
+            <CircleAlert size={13} aria-hidden="true" />
+          </span>
+        )}
         {session.occupiedExternally && (
           <span
             className="sidebar-session-lock"

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ChatMessage } from "../stores/agentStore";
-import { messageActionPolicy } from "./message-actions";
+import { formatCompletionDuration, messageActionPolicy, validCompletionDurationMs } from "./message-actions";
 
 function message(
   id: string,
@@ -16,6 +16,7 @@ describe("messageActionPolicy", () => {
     expect(messageActionPolicy([message("u1", "user", "hello")], 0, false)).toEqual({
       showCopy: true,
       showSpeak: false,
+      showCompletion: false,
       compact: false,
     });
   });
@@ -33,6 +34,7 @@ describe("messageActionPolicy", () => {
     expect(messageActionPolicy(messages, 1, false)).toEqual({
       showCopy: false,
       showSpeak: false,
+      showCompletion: false,
       compact: true,
     });
   });
@@ -47,6 +49,7 @@ describe("messageActionPolicy", () => {
     expect(messageActionPolicy(messages, 1, true)).toEqual({
       showCopy: true,
       showSpeak: true,
+      showCompletion: true,
       compact: false,
     });
   });
@@ -60,11 +63,13 @@ describe("messageActionPolicy", () => {
     expect(messageActionPolicy(messages, 1, true)).toEqual({
       showCopy: false,
       showSpeak: false,
+      showCompletion: false,
       compact: true,
     });
     expect(messageActionPolicy(messages, 1, false)).toEqual({
       showCopy: true,
       showSpeak: true,
+      showCompletion: true,
       compact: false,
     });
   });
@@ -80,6 +85,7 @@ describe("messageActionPolicy", () => {
     expect(messageActionPolicy(messages, 1, false)).toEqual({
       showCopy: false,
       showSpeak: false,
+      showCompletion: false,
       compact: true,
     });
   });
@@ -92,5 +98,22 @@ describe("messageActionPolicy", () => {
     ];
 
     expect(messageActionPolicy(messages, 1, true).showCopy).toBe(false);
+  });
+});
+
+describe("completion duration", () => {
+  it("formats authoritative milliseconds as rounded whole seconds", () => {
+    expect(formatCompletionDuration(0)).toBe("0 秒");
+    expect(formatCompletionDuration(499)).toBe("0 秒");
+    expect(formatCompletionDuration(34_499)).toBe("34 秒");
+    expect(formatCompletionDuration(34_500)).toBe("35 秒");
+    expect(formatCompletionDuration(65_000)).toBe("65 秒");
+  });
+
+  it("rejects missing, negative, and non-finite durations", () => {
+    expect(validCompletionDurationMs(undefined)).toBeUndefined();
+    expect(validCompletionDurationMs(-1)).toBeUndefined();
+    expect(validCompletionDurationMs(Number.NaN)).toBeUndefined();
+    expect(validCompletionDurationMs(Number.POSITIVE_INFINITY)).toBeUndefined();
   });
 });

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Plus, Search } from "lucide-react";
+import { History, LoaderCircle, Plus, Search } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
 import ChatView from "./components/ChatView";
 import { renewVoiceConversation } from "./lib/voice-command";
@@ -19,6 +19,7 @@ import {
   type SidebarSelection,
 } from "./lib/sidebar-selection";
 import {
+  removeSessionIdsFromWorkspacePartition,
   removeSessionFromCollections,
   sessionDeletionConfirmation,
 } from "./lib/session-deletion";
@@ -43,6 +44,7 @@ import type {
 } from "./global";
 import {
   emptyAgentWorkspacePartition,
+  preservePendingNativeSession,
   readAgentWorkspaceCache,
   reconcileSessionPage,
   reconcileWorkspacePage,
@@ -65,6 +67,7 @@ interface Project {
   updated: string;
   agentType?: AgentType;
   source?: AgentWorkspace["source"];
+  canCreateSession?: boolean;
 }
 
 interface Session {
@@ -82,6 +85,8 @@ interface Session {
   cwd: string;
   created: string;
   updated: string;
+  compatibility?: import("./global").SessionCompatibility;
+  migratedFrom?: string;
 }
 
 function buildCachedSessionState(cache: Record<string, { data: Session[]; loaded: boolean }>) {
@@ -115,6 +120,7 @@ function workspaceToProject(workspace: AgentWorkspace): Project {
     updated: workspace.updatedAt ?? "",
     agentType: workspace.agentType,
     source: workspace.source,
+    canCreateSession: workspace.canCreateSession,
   };
 }
 
@@ -175,9 +181,18 @@ export default function App() {
     anchor: SidebarDeleteAnchor;
   } | null>(null);
   const [sessionDeletePending, setSessionDeletePending] = useState(false);
+  const [sessionCreationPending, setSessionCreationPending] = useState<{
+    projectId: string;
+    agentType: AgentType;
+  } | null>(null);
+  const sessionCreationPendingRef = useRef(false);
   const [runtimeHealth, setRuntimeHealth] = useState<RuntimeHealth[]>([]);
   /** Child sessions keyed by parentSessionId */
   const [childSessionsByParent, setChildSessionsByParent] = useState<Record<string, Session[]>>(initialSessionState.children);
+  const sessionsByProjectRef = useRef(sessionsByProject);
+  const childSessionsByParentRef = useRef(childSessionsByParent);
+  sessionsByProjectRef.current = sessionsByProject;
+  childSessionsByParentRef.current = childSessionsByParent;
   /** Projects whose sessions have completed at least one successful load. */
   const [loadedProjectIds, setLoadedProjectIds] = useState<Set<string>>(initialSessionState.projectIds);
   const [loadingProjectIds, setLoadingProjectIds] = useState<Set<string>>(new Set());
@@ -298,6 +313,7 @@ export default function App() {
       order,
       updatedAt: project.updated || undefined,
       source: project.source ?? (project.agentType === "claude-code" ? "derived" : "native"),
+      canCreateSession: project.canCreateSession,
     }));
     const sessions = Object.fromEntries(projects.map((project) => [project.id, {
       data: [
@@ -604,6 +620,8 @@ export default function App() {
     setWorkspaceLoading(false);
     setWorkspaceStale(false);
     setWorkspaceError(null);
+    sessionsByProjectRef.current = cachedSessions.roots;
+    childSessionsByParentRef.current = cachedSessions.children;
     setSessionsByProject(cachedSessions.roots);
     setChildSessionsByParent(cachedSessions.children);
     setLoadedProjectIds(cachedSessions.projectIds);
@@ -678,6 +696,7 @@ export default function App() {
         order,
         updatedAt: project.updated,
         source: project.source ?? (agentType === "claude-code" ? "derived" : "native"),
+        canCreateSession: project.canCreateSession,
       }));
       const workspaces = reconcileWorkspacePage(current, page, !options.cursor);
       const list = workspaces.map(workspaceToProject);
@@ -744,7 +763,12 @@ export default function App() {
 
   async function loadSessions(
     projectId: string,
-    options: { refresh?: boolean; background?: boolean; cursor?: string | null } = {},
+    options: {
+      refresh?: boolean;
+      background?: boolean;
+      cursor?: string | null;
+      pendingSession?: Session;
+    } = {},
   ) {
     if (!window.agentApi) return;
     const agentType = activeAgentRef.current;
@@ -766,34 +790,39 @@ export default function App() {
     try {
       const page = await window.agentApi.listAgentWorkspaceSessions(agentType, projectId, {
         cursor: options.cursor,
-        limit: 50,
+        limit: 20,
         refresh: options.refresh,
       }) as WorkspacePage<Session>;
       if (activeAgentRef.current !== agentType || projectSessionRequestIds.current.get(requestKey) !== requestId) return;
 
-      const previousRootIds = new Set((sessionsByProject[projectId] ?? []).map((session) => session.id));
+      const existingRoots = sessionsByProjectRef.current[projectId] ?? [];
+      const pendingSession = options.pendingSession
+        ? {
+            ...options.pendingSession,
+            projectId,
+          }
+        : undefined;
+      const currentRoots = pendingSession
+        ? [pendingSession, ...existingRoots.filter((session) => session.id !== pendingSession.id)]
+        : existingRoots;
+      const previousRootIds = new Set(currentRoots.map((session) => session.id));
       const current = [
-        ...(sessionsByProject[projectId] ?? []),
-        ...[...previousRootIds].flatMap((rootId) => childSessionsByParent[rootId] ?? []),
+        ...currentRoots,
+        ...[...previousRootIds].flatMap((rootId) => childSessionsByParentRef.current[rootId] ?? []),
       ];
       const list = (reconcileSessionPage(current, page, !options.cursor) as Session[])
         .map((session) => ({ ...session, projectId: session.projectId ?? projectId }));
-      const roots = sortNewestSessionsFirst(
+      const refreshedRoots = sortNewestSessionsFirst(
         list.filter((session) => !session.parentSessionId),
       );
       const activeProjectId = selectedProjectIdRef.current;
       const activeSessionId = selectedSessionIdRef.current;
-      const selectedPendingNative = (sessionsByProject[projectId] ?? []).find((session) => (
-        session.id === activeSessionId
-        && session.agentType !== "customer-agent"
-        && !roots.some((fresh) => fresh.id === session.id)
-      ));
-      if (selectedPendingNative) roots.unshift(selectedPendingNative);
+      const roots = preservePendingNativeSession(refreshedRoots, pendingSession) as Session[];
       if (
         activeProjectId === projectId
         && activeSessionId
         && !list.some((session) => session.id === activeSessionId)
-        && !selectedPendingNative
+        && !roots.some((session) => session.id === activeSessionId)
       ) {
         applySidebarSelection(EMPTY_SIDEBAR_SELECTION);
       }
@@ -811,15 +840,16 @@ export default function App() {
         if (page.stale) next.add(projectId); else next.delete(projectId);
         return next;
       });
-      setSessionsByProject((prev) => ({ ...prev, [projectId]: roots }));
-      setChildSessionsByParent((prev) => {
-        const next = { ...prev };
-        for (const rootId of previousRootIds) delete next[rootId];
-        for (const [rootId, children] of Object.entries(freshChildGroups)) {
-          next[rootId] = children;
-        }
-        return next;
-      });
+      const nextSessionsByProject = { ...sessionsByProjectRef.current, [projectId]: roots };
+      const nextChildSessionsByParent = { ...childSessionsByParentRef.current };
+      for (const rootId of previousRootIds) delete nextChildSessionsByParent[rootId];
+      for (const [rootId, children] of Object.entries(freshChildGroups)) {
+        nextChildSessionsByParent[rootId] = children;
+      }
+      sessionsByProjectRef.current = nextSessionsByProject;
+      childSessionsByParentRef.current = nextChildSessionsByParent;
+      setSessionsByProject(nextSessionsByProject);
+      setChildSessionsByParent(nextChildSessionsByParent);
       setLoadedProjectIds((prev) => {
         const next = new Set(prev).add(projectId);
         loadedProjectIdsRef.current = next;
@@ -856,35 +886,59 @@ export default function App() {
   const handleNewRuntimeSession = async (projectId: string, agentType: AgentType) => {
     if (!window.agentApi) return;
     const workspace = projectsRef.current.find((project) => project.id === projectId);
-    const nativeProjectId = workspace?.source === "imported" ? undefined : projectId;
-    const created = await window.agentApi.createSession(
-      "新会话",
-      nativeProjectId,
-      agentType,
-      workspace?.description,
-    ) as Session;
-    if (agentType === "customer-agent") {
-      await loadSessions(projectId);
-      setSelectedProjectId(projectId);
-      setSelectedSessionId(created.id);
-      if (mobileDrawer) setSidebarDrawerOpen(false);
+    if (!workspace || workspace.canCreateSession === false) {
+      setNotice("请先选择目录");
+      setNoticeType("info");
+      setTimeout(() => setNotice(null), 3000);
       return;
     }
-    // Native runtimes hide freshly created empty sessions from discovery until
-    // the first turn runs. Keep the optimistic row under the project where the
-    // user created it so the project-only sidebar never loses the selection.
-    const projectSession = created.projectId === projectId ? created : { ...created, projectId };
-    setSessionsByProject((prev) => ({
-      ...prev,
-      [projectId]: [projectSession, ...(prev[projectId] ?? []).filter((s) => s.id !== created.id)],
-    }));
-    setSelectedProjectId(projectId);
-    setSelectedSessionId(created.id);
-    if (mobileDrawer) setSidebarDrawerOpen(false);
+    if (sessionCreationPendingRef.current) return;
+    sessionCreationPendingRef.current = true;
+    setSessionCreationPending({ projectId, agentType });
+    try {
+      const nativeProjectId = workspace?.source === "imported" ? undefined : projectId;
+      const created = await window.agentApi.createSession(
+        "新会话",
+        nativeProjectId,
+        agentType,
+        workspace?.description,
+      ) as Session;
+      if (activeAgentRef.current !== agentType) return;
+
+      // Native runtimes may hide a fresh empty session from discovery. Insert
+      // every successful creation immediately and reconcile CA in the background.
+      const projectSession = created.projectId === projectId ? created : { ...created, projectId };
+      const nextSessionsByProject = {
+        ...sessionsByProjectRef.current,
+        [projectId]: [
+          projectSession,
+          ...(sessionsByProjectRef.current[projectId] ?? []).filter((session) => session.id !== created.id),
+        ],
+      };
+      sessionsByProjectRef.current = nextSessionsByProject;
+      setSessionsByProject(nextSessionsByProject);
+      applySidebarSelection({ projectId, sessionId: created.id });
+      if (mobileDrawer) setSidebarDrawerOpen(false);
+      if (agentType === "customer-agent") {
+        void loadSessions(projectId, {
+          refresh: true,
+          background: true,
+          pendingSession: projectSession,
+        });
+      }
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "新建会话失败");
+      setNoticeType("error");
+      setTimeout(() => setNotice(null), 3000);
+    } finally {
+      sessionCreationPendingRef.current = false;
+      setSessionCreationPending(null);
+    }
   };
 
   const handleBottomNewSession = () => {
-    if (!selectedProjectId) {
+    const selectedWorkspace = projectsRef.current.find((project) => project.id === selectedProjectId);
+    if (!selectedProjectId || selectedWorkspace?.canCreateSession === false) {
       setNotice("请先选择目录");
       setNoticeType("info");
       setTimeout(() => setNotice(null), 3000);
@@ -1046,22 +1100,44 @@ export default function App() {
     setSessionDeletePending(true);
     try {
       await window.agentApi.deleteSession(session.id);
+      const ownerProjectId = session.projectId ?? selectedProjectIdRef.current;
+      const agentType = session.agentType;
+      if (ownerProjectId) {
+        const requestKey = `${agentType}:${ownerProjectId}`;
+        projectSessionRequestIds.current.set(
+          requestKey,
+          (projectSessionRequestIds.current.get(requestKey) ?? 0) + 1,
+        );
+      }
       const removal = removeSessionFromCollections(
-        sessionsByProject,
-        childSessionsByParent,
+        sessionsByProjectRef.current,
+        childSessionsByParentRef.current,
         [],
         session.id,
       );
+      sessionsByProjectRef.current = removal.sessionsByProject;
+      childSessionsByParentRef.current = removal.childSessionsByParent;
       setSessionsByProject(removal.sessionsByProject);
       setChildSessionsByParent(removal.childSessionsByParent);
-      if (selectedSessionId && removal.removedIds.includes(selectedSessionId)) {
-        applySidebarSelection({ projectId: selectedProjectId, sessionId: null });
+      const partition = workspaceCacheRef.current.agents[agentType];
+      if (partition) {
+        const cache = {
+          ...workspaceCacheRef.current,
+          agents: {
+            ...workspaceCacheRef.current.agents,
+            [agentType]: removeSessionIdsFromWorkspacePartition(partition, removal.removedIds),
+          },
+        };
+        workspaceCacheRef.current = cache;
+        writeAgentWorkspaceCache(cache);
+      }
+      if (selectedSessionIdRef.current && removal.removedIds.includes(selectedSessionIdRef.current)) {
+        applySidebarSelection({ projectId: selectedProjectIdRef.current, sessionId: null });
       }
       setNotice("会话删除成功");
       setNoticeType("success");
       setTimeout(() => setNotice(null), 2500);
       setSessionDeleteRequest(null);
-      const ownerProjectId = session.projectId ?? selectedProjectId;
       if (ownerProjectId) void loadSessions(ownerProjectId, { refresh: true, background: true });
     } catch (err) {
       setNotice(err instanceof Error ? err.message : "会话删除失败");
@@ -1297,6 +1373,8 @@ export default function App() {
                 : projectSessions;
               const manySession = projSessions.length > 10;
               const isInvalid = invalidProjectIds.has(project.id);
+              const isCreatingSession = sessionCreationPending?.agentType === activeAgent
+                && sessionCreationPending.projectId === project.id;
               return (
                 <div key={project.id} className="sidebar-project-block" aria-busy={isProjectLoading}>
                   {/* Project row */}
@@ -1335,6 +1413,8 @@ export default function App() {
                         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, opacity: 0.6 }}>
                           <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
                         </svg>
+                      ) : project.canCreateSession === false ? (
+                        <History size={13} aria-hidden="true" style={{ flexShrink: 0, opacity: isSelected ? 1 : 0.5 }} />
                       ) : (
                         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, opacity: isSelected ? 1 : 0.5 }}>
                           {isExpanded
@@ -1346,11 +1426,6 @@ export default function App() {
                         {project.name}
                       </span>
                     </button>
-                    {hasLoadedProject && (
-                      <span className="sidebar-project-session-count" title={`${projectSessions.length} 个会话`}>
-                        {projectSessions.length}
-                      </span>
-                    )}
                     {activeAgent === "customer-agent" && !webShell && (
                       <button
                         onClick={(e) => { e.stopPropagation(); void handleDeleteProject(project.id); }}
@@ -1364,21 +1439,30 @@ export default function App() {
                         <SidebarDeleteIcon />
                       </button>
                     )}
-                    <button
-                      type="button"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        void handleNewRuntimeSession(project.id, activeAgent);
-                      }}
-                      title={`新建 ${activeAgent === "customer-agent" ? "Customer Agent" : activeAgent === "claude-code" ? "Claude Code" : activeAgent === "codex" ? "Codex" : "OpenCode"} 会话`}
-                      aria-label={`在 ${project.name} 中新建会话`}
-                      disabled={isInvalid || runtimeHealth.find((runtime) => runtime.agentType === activeAgent)?.available === false}
-                      className="sidebar-runtime-create sidebar-project-add-action ui-icon-button ui-icon-button--small"
-                    >
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true">
-                        <path d="M12 5v14M5 12h14" />
-                      </svg>
-                    </button>
+                    {project.canCreateSession !== false && (
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          void handleNewRuntimeSession(project.id, activeAgent);
+                        }}
+                        title={isCreatingSession
+                          ? "正在创建会话"
+                          : `新建 ${activeAgent === "customer-agent" ? "Customer Agent" : activeAgent === "claude-code" ? "Claude Code" : activeAgent === "codex" ? "Codex" : "OpenCode"} 会话`}
+                        aria-label={isCreatingSession ? "正在创建会话" : `在 ${project.name} 中新建会话`}
+                        aria-busy={isCreatingSession}
+                        disabled={
+                          sessionCreationPending !== null
+                          || isInvalid
+                          || runtimeHealth.find((runtime) => runtime.agentType === activeAgent)?.available === false
+                        }
+                        className="sidebar-runtime-create sidebar-project-add-action ui-icon-button ui-icon-button--small"
+                      >
+                        {isCreatingSession
+                          ? <LoaderCircle size={13} style={{ animation: "spin 0.8s linear infinite" }} aria-hidden="true" />
+                          : <Plus size={13} aria-hidden="true" />}
+                      </button>
+                    )}
                   </div>
 
                   {/* Sessions under this project — collapsible, scrollable when > 10 */}
@@ -1423,6 +1507,7 @@ export default function App() {
                                 active: isActiveSession,
                                 hasChildren: children.length > 0,
                                 expanded,
+                                compatibility: session.compatibility,
                               }}
                               onSelect={() => {
                                 if (mobileDrawer) setSidebarDrawerOpen(false);
@@ -1463,6 +1548,7 @@ export default function App() {
                                       canDelete: child.canDelete,
                                       active: selectedSessionId === child.id,
                                       child: true,
+                                      compatibility: child.compatibility,
                                     }}
                                     deleteLabel="删除子会话"
                                     onSelect={() => {
@@ -1538,15 +1624,37 @@ export default function App() {
             type="button"
             className="sidebar-new-session-primary"
             disabled={
-              (selectedProjectId !== null && invalidProjectIds.has(selectedProjectId))
+              sessionCreationPending !== null
+              || (selectedProjectId !== null && invalidProjectIds.has(selectedProjectId))
               || runtimeHealth.find((runtime) => runtime.agentType === activeAgent)?.available === false
             }
-            aria-disabled={!selectedProjectId}
-            title={selectedProjectId ? "新建会话" : "请先选择目录"}
+            aria-busy={sessionCreationPending !== null}
+            aria-disabled={
+              sessionCreationPending !== null
+              || !selectedProjectId
+              || projects.find((project) => project.id === selectedProjectId)?.canCreateSession === false
+            }
+            title={
+              sessionCreationPending
+                ? "正在创建会话"
+                : selectedProjectId
+              && projects.find((project) => project.id === selectedProjectId)?.canCreateSession !== false
+                ? "新建会话"
+                : "请先选择目录"
+            }
             onClick={handleBottomNewSession}
           >
-            <Plus size={16} aria-hidden="true" />
-            <span>新建会话</span>
+            {sessionCreationPending ? (
+              <>
+                <LoaderCircle size={16} style={{ animation: "spin 0.8s linear infinite" }} aria-hidden="true" />
+                <span>正在创建...</span>
+              </>
+            ) : (
+              <>
+                <Plus size={16} aria-hidden="true" />
+                <span>新建会话</span>
+              </>
+            )}
           </button>
         </div>
 
@@ -1666,6 +1774,7 @@ export default function App() {
                       canDelete: session.canDelete,
                       active,
                       child: Boolean(session.parentSessionId),
+                      compatibility: session.compatibility,
                     }}
                     onSelect={() => {
                       const projectId = session.projectId && projects.some((p) => p.id === session.projectId)
@@ -1755,15 +1864,16 @@ export default function App() {
             onToggleAppearance={toggleAppearance}
             appearanceOpen={showAppearance}
             hideToBackgroundTitle={wakeEnabled ? `隐藏到后台（说“${wakeWord}”唤醒）` : "隐藏到后台"}
-            onSessionCreated={async (sessionId) => {
-              setSelectedSessionId(sessionId);
+            onSessionCreated={async (sessionId, pendingSession) => {
+              const projectId = selectedProjectIdRef.current;
+              applySidebarSelection({ projectId, sessionId });
               // Arm two-way voice conversation for voice-originated sessions
               if (pendingVoiceConvo.current) {
                 pendingVoiceConvo.current = false;
                 convoRef.current = { sessionId, until: Date.now() + 90000 };
                 void window.agentApi?.wakeConversation(true);
               }
-              if (selectedProjectId) await loadSessions(selectedProjectId);
+              if (projectId) await loadSessions(projectId, { pendingSession });
             }}
             onSubSessionCreated={async (parentSessionId) => {
               await loadChildSessions(parentSessionId);

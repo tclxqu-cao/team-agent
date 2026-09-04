@@ -1,6 +1,4 @@
 /* ── Pearl Light Design System (default skin) ── */
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300..700&family=IBM+Plex+Mono:wght@400;500&display=swap');
-
 :root, [data-skin="pearl"] {
   /* Depth layers */
   --bg-deepest: #f5f6fa;
@@ -1801,6 +1799,38 @@ input:focus, select:focus, textarea:focus {
 
 .msg-action-button {
   color: var(--text-muted);
+}
+
+.msg-completion-footer {
+  min-height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.msg-completion-status,
+.msg-completion-actions {
+  display: inline-flex;
+  align-items: center;
+}
+
+.msg-completion-status {
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.msg-completion-status svg {
+  flex: 0 0 auto;
+  color: var(--success);
+}
+
+.msg-completion-actions {
+  flex: 0 0 auto;
+  gap: 4px;
 }
 
 .msg-goal-marker {

@@ -18,12 +18,24 @@ describe("session load recovery", () => {
     const load = vi.fn()
       .mockRejectedValueOnce(new TypeError("Load failed"))
       .mockRejectedValueOnce(new TypeError("Failed to fetch"))
+      .mockRejectedValueOnce(new TypeError("Network request failed"))
       .mockResolvedValue({ id: "fork" });
     const sleep = vi.fn(async () => undefined);
 
     await expect(loadSessionWithRetry(load, { sleep })).resolves.toEqual({ id: "fork" });
-    expect(load).toHaveBeenCalledTimes(3);
-    expect(sleep.mock.calls).toEqual([[250], [500]]);
+    expect(load).toHaveBeenCalledTimes(4);
+    expect(sleep.mock.calls).toEqual([[500], [1_000], [2_000]]);
+  });
+
+  it("stops retrying as soon as one attempt succeeds", async () => {
+    const load = vi.fn()
+      .mockRejectedValueOnce(new TypeError("Load failed"))
+      .mockResolvedValueOnce({ id: "recovered" });
+    const sleep = vi.fn(async () => undefined);
+
+    await expect(loadSessionWithRetry(load, { sleep })).resolves.toEqual({ id: "recovered" });
+    expect(load).toHaveBeenCalledTimes(2);
+    expect(sleep.mock.calls).toEqual([[500]]);
   });
 
   it("stops after the configured attempt limit", async () => {

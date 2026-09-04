@@ -527,6 +527,8 @@ export class AgentHost {
       return;
     }
 
+    const runStartedAt = performance.now();
+
     // ── 0. If a run is already active, interrupt it and inject turn_aborted marker ──
     if (shouldInterruptPreviousRun(this._runCount)) {
       yield { type: "thinking", message: "Interrupting previous turn..." };
@@ -739,21 +741,27 @@ export class AgentHost {
       const toolCallNameMap = new Map<string, string>();
 
       for await (const event of this.agent.run(agentInput, sessionId, agentImages)) {
-        this.emit(event, sessionId);
-        yield event;
+        const emittedEvent: AgentEvent = event.type === "done"
+          ? {
+              ...event,
+              durationMs: Math.max(0, Math.round(performance.now() - runStartedAt)),
+            }
+          : event;
+        this.emit(emittedEvent, sessionId);
+        yield emittedEvent;
 
-        await this.sessionStore.addEvent(sessionId, event);
+        await this.sessionStore.addEvent(sessionId, emittedEvent);
 
-        if (event.type === "text_chunk" && event.text) {
-          assistantText += event.text;
+        if (emittedEvent.type === "text_chunk" && emittedEvent.text) {
+          assistantText += emittedEvent.text;
         }
 
-        if (event.type === "tool_call" && event.toolCall) {
-          pendingToolCalls.push(event.toolCall);
-          toolCallNameMap.set(event.toolCall.id, event.toolCall.name);
+        if (emittedEvent.type === "tool_call" && emittedEvent.toolCall) {
+          pendingToolCalls.push(emittedEvent.toolCall);
+          toolCallNameMap.set(emittedEvent.toolCall.id, emittedEvent.toolCall.name);
         }
 
-        if (event.type === "tool_result" && event.result) {
+        if (emittedEvent.type === "tool_result" && emittedEvent.result) {
           if (pendingToolCalls.length > 0) {
             await this.sessionStore.addMessage(sessionId, {
               role: "assistant",
@@ -765,18 +773,19 @@ export class AgentHost {
           }
           await this.sessionStore.addMessage(sessionId, {
             role: "tool",
-            content: event.result.content,
-            toolCallId: event.result.toolCallId,
-            name: toolCallNameMap.get(event.result.toolCallId),
+            content: emittedEvent.result.content,
+            toolCallId: emittedEvent.result.toolCallId,
+            name: toolCallNameMap.get(emittedEvent.result.toolCallId),
           } as Message);
         }
 
-        if (event.type === "done") {
-          const finalText = (event.finalText ?? assistantText).trim();
+        if (emittedEvent.type === "done") {
+          const finalText = (emittedEvent.finalText ?? assistantText).trim();
           if (finalText) {
             await this.sessionStore.addMessage(sessionId, {
               role: "assistant",
               content: finalText,
+              presentation: { completionDurationMs: emittedEvent.durationMs },
             } as Message);
           }
         }

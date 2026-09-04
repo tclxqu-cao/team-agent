@@ -5,6 +5,7 @@ const chatView = readFileSync(new URL("./ChatView.tsx", import.meta.url), "utf8"
 const app = readFileSync(new URL("../App.tsx", import.meta.url), "utf8");
 const toolCallCard = readFileSync(new URL("./ToolCallCard.tsx", import.meta.url), "utf8");
 const globalCss = readFileSync(new URL("../styles/global.css", import.meta.url), "utf8");
+const webCss = readFileSync(new URL("../../../webapp/src/presentation/web.css", import.meta.url), "utf8");
 const pendingIndicator = chatView.slice(
   chatView.indexOf("{/* Keep every otherwise-empty running state visible and consistent. */}"),
   chatView.indexOf("{(sessionLoadError || error) && ("),
@@ -211,11 +212,13 @@ describe("shared Codex-style message history", () => {
   });
 
   it("renders local artifact links with a file icon in the Web shell", () => {
+    expect(chatView).toContain("parseRichInlineTokens(text).map");
     expect(chatView).toContain('token.type === "artifact"');
     expect(chatView).toContain("if (!isWebShell())");
     expect(chatView).toContain('className="chat-message-artifact-link"');
     expect(chatView).toContain("<FileText");
     expect(chatView).toContain("postWebArtifactOpen(token.path)");
+    expect(chatView).toContain("renderInlineLabel(token.label");
     expect(chatView).toContain("打开交付物");
     expect(globalCss).toContain(".chat-message-artifact-link svg");
     expect(globalCss).toContain("overflow-wrap: anywhere");
@@ -223,16 +226,21 @@ describe("shared Codex-style message history", () => {
 
   it("limits message actions to user copy and completed assistant responses", () => {
     expect(chatView).toContain("messageActionPolicy(renderedMessages, i, isRunning)");
-    expect(chatView).toContain("(actionPolicy.showCopy || actionPolicy.showSpeak || isGoalMessage)");
-    expect(chatView).toContain('actionPolicy.showSpeak && typeof window.agentApi?.ttsSpeak');
+    expect(chatView).toContain("actionPolicy.showCompletion && (");
+    expect(chatView).toContain('className="msg-completion-footer"');
+    expect(chatView).toContain("已完成");
+    expect(chatView).toContain("总耗时 {completionDuration}");
+    expect(chatView).toContain('!isWebShell() && actionPolicy.showSpeak && typeof window.agentApi?.ttsSpeak');
     expect(chatView).toContain("actionPolicy.showCopy && <button");
     expect(chatView).toContain("copyTextToClipboard(msg.content)");
     expect(chatView).toContain('aria-label="复制内容"');
     expect(chatView).toContain('aria-label="目标消息"');
-    expect(chatView.indexOf('aria-label="目标消息"')).toBeLessThan(chatView.indexOf('aria-label="复制内容"'));
     expect(chatView).toContain('chat-message-group--intermediate');
     expect(globalCss).toContain(".chat-view--codex-history .chat-message-group--intermediate");
     expect(globalCss).toContain("margin-bottom: 0 !important");
+    expect(globalCss).toContain(".msg-completion-footer");
+    expect(globalCss).toContain("min-height: 32px");
+    expect(webCss).toContain('body[data-web-shell="1"] .msg-completion-footer');
     expect(globalCss).toContain(".chat-message-content .msg-actions");
     expect(globalCss).toContain(".chat-message-content:hover .msg-actions");
     expect(globalCss).toContain(".chat-message-content:focus-within .msg-actions");

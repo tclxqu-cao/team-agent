@@ -51,7 +51,7 @@ describe("shared composer panel layout", () => {
     expect(chatView).toContain('type="file"');
     expect(chatView).toContain("fileInputRef.current?.click()");
     expect(chatView).not.toContain("isBrowserRuntime");
-    expect(chatView).toContain('placeholder={isReadOnly ? "原客户端使用中，当前只读" : runtimeReady ? (goalMode ? "输入要持续推进的目标" : isLocallyRunning ? "输入下一条排队消息" : "提出后续修改要求")');
+    expect(chatView).toContain('placeholder={isCompatibilityReadOnly ? (compatibilityStatus === "incompatible" ? "Codex 版本不兼容" : "正在验证会话兼容性") : isReadOnly ? "原客户端使用中，当前只读" : runtimeReady ? (goalMode ? "输入要持续推进的目标" : shouldQueueMessage ? "输入下一条排队消息" : "提出后续修改要求")');
 
     expect(css).toContain(".web-native-composer-textarea {");
     expect(css).toContain("min-height: 76px");
@@ -60,7 +60,7 @@ describe("shared composer panel layout", () => {
   });
 
   it("preserves queue-send and stop actions while the agent is running", () => {
-    expect(chatView).toContain('aria-label={isLocallyRunning ? "排队发送" : "发送"}');
+    expect(chatView).toContain('aria-label={shouldQueueMessage ? "排队发送" : "发送"}');
     expect(chatView).toContain('className="web-native-stop-button" aria-label="停止生成"');
   });
 
@@ -69,6 +69,14 @@ describe("shared composer panel layout", () => {
     expect(chatView).toContain("setPendingImages((previous) => [...previous, ...prepared.images])");
     expect(chatView).toContain("!canCompose || pendingImageReads > 0 || !input.trim()");
     expect(chatView).toContain("images: imagesToSend");
+  });
+
+  it("opens pending image thumbnails in the shared image preview", () => {
+    expect(chatView).toContain('className="chat-message-image-button pending-image-preview-button"');
+    expect(chatView).toContain('aria-label={`预览待发送图片 ${i + 1}`}');
+    expect(chatView).toContain('setPreviewedMessageImage({ src, alt: `待发送图片 ${i + 1}` })');
+    expect(chatView).toContain('aria-label={`删除待发送图片 ${i + 1}`}');
+    expect(chatView).toContain("<MessageImageLightbox");
   });
 
   it("uses one geometry token for every control in the shared toolbar", () => {

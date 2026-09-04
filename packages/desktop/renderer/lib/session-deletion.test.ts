@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   removeSessionFromCollections,
   removeSessionIdsFromIndex,
+  removeSessionIdsFromWorkspacePartition,
   sessionDeletionConfirmation,
 } from "./session-deletion";
+import { emptyAgentWorkspacePartition } from "./agent-workspace-cache";
 
 interface TestSession {
   id: string;
@@ -15,7 +17,7 @@ describe("session deletion", () => {
     expect(sessionDeletionConfirmation({ agentType: "customer-agent", title: "CA 会话" }))
       .toContain("永久删除");
     expect(sessionDeletionConfirmation({ agentType: "codex", title: "Codex 会话" }))
-      .toContain("原生客户端中的历史记录会保留");
+      .toContain("归档 Codex 会话");
   });
 
   it("removes a parent and its direct children from every collection", () => {
@@ -62,5 +64,34 @@ describe("session deletion", () => {
       first: [{ id: "kept" }],
       second: [{ id: "other" }],
     });
+  });
+
+  it("removes deleted ids from every cached page without dropping pagination state", () => {
+    const partition = {
+      ...emptyAgentWorkspacePartition(),
+      selectedSessionId: "child",
+      sessions: {
+        first: {
+          data: [{ id: "parent" }, { id: "kept" }],
+          nextCursor: "page-2",
+          loaded: true,
+        },
+        second: {
+          data: [{ id: "child", parentSessionId: "parent" }, { id: "other" }],
+          nextCursor: null,
+          loaded: true,
+        },
+      },
+    };
+
+    const result = removeSessionIdsFromWorkspacePartition(partition, ["parent", "child"]);
+
+    expect(result.selectedSessionId).toBeNull();
+    expect(result.sessions.first).toEqual({
+      data: [{ id: "kept" }],
+      nextCursor: "page-2",
+      loaded: true,
+    });
+    expect(result.sessions.second.data).toEqual([{ id: "other" }]);
   });
 });

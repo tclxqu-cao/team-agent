@@ -4,18 +4,22 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { reduceRuntimeProgress, type AgentEvent } from "@agent/core";
 import { encodeUnifiedSessionId } from "./session-id";
+import type { CodexDiskSessionCatalogEntry, CodexSessionCatalogRepository } from "./codex-session-disk-catalog";
 import {
   NativeRuntimeBrokerClient,
   NativeRuntimeBrokerHost,
 } from "./native-runtime-broker";
 import type {
   AgentRuntimeAdapter,
+  AgentType,
   AgentWorkspace,
   RuntimeHealth,
   RuntimeQuestionAnswer,
   RuntimeRunOptions,
   UnifiedSessionDetail,
   UnifiedSessionSummary,
+  WorkspacePage,
+  WorkspaceSessionQuery,
 } from "./types";
 import { RuntimeSessionError } from "./types";
 import { UnifiedSessionService } from "./unified-session-service";
@@ -46,6 +50,12 @@ class FakeNativeRuntime {
   private resolveRun: (() => void) | null = null;
   private adapterRunActive = false;
   readonly runOptions: RuntimeRunOptions[] = [];
+  readonly runInputs: Array<{
+    input: string;
+    images?: string[];
+    agentIds?: string[];
+    agentName?: string;
+  }> = [];
   readonly answers: Array<{ questionId: string; answer: RuntimeQuestionAnswer }> = [];
   occupancy: UnifiedSessionSummary["occupancy"] = "available";
   status: UnifiedSessionSummary["status"] = "idle";
@@ -61,11 +71,33 @@ class FakeNativeRuntime {
   listResult: UnifiedSessionSummary[] | null = null;
   createResult: UnifiedSessionSummary | null = null;
   readonly restoredDrafts: UnifiedSessionSummary[] = [];
+  readonly archivedSessionIds: string[] = [];
   readonly invalidatedSessionIds: string[] = [];
+  archiveError: Error | null = null;
+  readonly workspaceSessionQueries: WorkspaceSessionQuery[] = [];
+  workspaceSessions: UnifiedSessionSummary[] = [];
+  steerResult = true;
+  readonly steeredInputs: Array<{ id: string; input: string }> = [];
 
   health = async (): Promise<RuntimeHealth[]> => [{ agentType: "codex", available: true, label: "Codex" }];
   list = async (): Promise<UnifiedSessionSummary[]> => this.listResult ?? [summary(this.occupancy, this.status)];
   refresh = this.list;
+  listWorkspaceSessions = async (
+    _agentType: AgentType,
+    _workspaceId: string,
+    query: WorkspaceSessionQuery = {},
+  ): Promise<WorkspacePage<UnifiedSessionSummary>> => {
+    this.workspaceSessionQueries.push(query);
+    const offset = Number(query.cursor ?? 0);
+    const limit = query.limit ?? 50;
+    const data = this.workspaceSessions.slice(offset, offset + limit);
+    const nextOffset = offset + data.length;
+    return {
+      data,
+      nextCursor: nextOffset < this.workspaceSessions.length ? String(nextOffset) : null,
+      watermark: this.workspaceSessions[0]?.updated ?? null,
+    };
+  };
   create = async (): Promise<UnifiedSessionSummary> => this.createResult ?? summary();
   fork = async (): Promise<UnifiedSessionSummary> => summary();
   restoreDrafts = (drafts: UnifiedSessionSummary[]): void => {
@@ -74,8 +106,15 @@ class FakeNativeRuntime {
   invalidate = (id: string): void => {
     this.invalidatedSessionIds.push(id);
   };
+  archive = async (id: string): Promise<void> => {
+    this.archivedSessionIds.push(id);
+    if (this.archiveError) throw this.archiveError;
+  };
   getSessionWatchPath = async (): Promise<string | null> => null;
-  steer = async (): Promise<boolean> => true;
+  steer = async (id: string, input: string): Promise<boolean> => {
+    this.steeredInputs.push({ id, input });
+    return this.steerResult;
+  };
   abort = async (): Promise<void> => { this.resolveRun?.(); };
   dispose = async (): Promise<void> => { this.resolveRun?.(); };
   get = async (): Promise<UnifiedSessionDetail> => ({
@@ -87,18 +126,19 @@ class FakeNativeRuntime {
 
   async *run(
     _id: string,
-    _input: string,
-    _images?: string[],
-    _agentIds?: string[],
-    _agentName?: string,
+    input: string,
+    images?: string[],
+    agentIds?: string[],
+    agentName?: string,
     options?: RuntimeRunOptions,
   ): AsyncIterable<AgentEvent> {
     if (this.rejectOverlappingRuns && this.adapterRunActive) {
-      throw new RuntimeSessionError("Native adapter cleanup is still pending", "SESSION_OCCUPIED");
+      throw new RuntimeSessionError("Native adapter cleanup is still pending", "SESSION_ALREADY_RUNNING");
     }
     this.adapterRunActive = true;
     try {
       this.runOptions.push(options ?? {});
+      this.runInputs.push({ input, images, agentIds, agentName });
       if (this.runFailure) {
         yield this.runFailure;
         return;
@@ -154,6 +194,224 @@ afterEach(async () => {
 });
 
 describe("NativeRuntimeBrokerHost", () => {
+  it("keeps completed-turn duration after broker restart and event pruning", async () => {
+    const path = await directory();
+    let now = 1_000;
+    const runtime = new FakeNativeRuntime();
+    const host = new NativeRuntimeBrokerHost(path, runtime as unknown as UnifiedSessionService, () => now);
+    await host.startRun(sessionId, "measure");
+    await waitFor(() => expect(host.snapshot(sessionId).events).toHaveLength(1));
+    const question = host.snapshot(sessionId).events[0].event;
+    now = 4_500;
+    await host.answerQuestion(question.type === "ask_user" ? question.questionId : "", { answer: "允许一次" });
+    await waitFor(() => expect(host.snapshot(sessionId).events.some(({ event }) => event.type === "done")).toBe(true));
+    runtime.messages = [
+      { role: "user", content: "measure" },
+      { role: "assistant", content: "completed" },
+    ];
+    expect(host.snapshot(sessionId).events.find(({ event }) => event.type === "done")?.event).toMatchObject({
+      type: "done",
+      durationMs: 3_500,
+    });
+    await expect(host.get(sessionId)).resolves.toMatchObject({
+      messages: [
+        { role: "user", content: "measure" },
+        { role: "assistant", content: "completed", presentation: { completionDurationMs: 3_500 } },
+      ],
+    });
+    await host.stop();
+
+    now += 10 * 60 * 1_000 + 1;
+    const replacementRuntime = new FakeNativeRuntime();
+    replacementRuntime.messages = runtime.messages;
+    const replacementHost = new NativeRuntimeBrokerHost(
+      path,
+      replacementRuntime as unknown as UnifiedSessionService,
+      () => now,
+    );
+    try {
+      await replacementHost.start();
+      expect(replacementHost.snapshot(sessionId).events).toEqual([]);
+      await expect(replacementHost.get(sessionId)).resolves.toMatchObject({
+        messages: [
+          { role: "user", content: "measure" },
+          { role: "assistant", content: "completed", presentation: { completionDurationMs: 3_500 } },
+        ],
+      });
+    } finally {
+      await replacementHost.stop();
+    }
+  });
+
+  it("omits duration when identical native turns make attribution ambiguous", async () => {
+    let now = 1_000;
+    const runtime = new FakeNativeRuntime();
+    const host = new NativeRuntimeBrokerHost(
+      await directory(),
+      runtime as unknown as UnifiedSessionService,
+      () => now,
+    );
+    try {
+      await host.startRun(sessionId, "repeat");
+      await waitFor(() => expect(host.snapshot(sessionId).events).toHaveLength(1));
+      const question = host.snapshot(sessionId).events[0].event;
+      now = 2_000;
+      await host.answerQuestion(question.type === "ask_user" ? question.questionId : "", { answer: "允许一次" });
+      await waitFor(() => expect(host.snapshot(sessionId).events.some(({ event }) => event.type === "done")).toBe(true));
+      runtime.messages = [
+        { role: "user", content: "repeat" },
+        { role: "assistant", content: "completed" },
+        { role: "user", content: "repeat" },
+        { role: "assistant", content: "completed" },
+      ];
+
+      const detail = await host.get(sessionId);
+      expect(detail.messages.filter((message) => message.role === "assistant")).toEqual([
+        { role: "assistant", content: "completed" },
+        { role: "assistant", content: "completed" },
+      ]);
+    } finally {
+      await host.stop();
+    }
+  });
+
+  it("persists the Codex compatibility catalog in broker-owned SQLite", async () => {
+    const path = await directory();
+    let firstRepository!: CodexSessionCatalogRepository;
+    const firstHost = new NativeRuntimeBrokerHost(path, (callbacks) => {
+      firstRepository = callbacks.codexSessionCatalogRepository;
+      return new UnifiedSessionService([], async () => []);
+    });
+    const cachedEntry: CodexDiskSessionCatalogEntry = {
+      canonicalPath: "/sessions/legacy.jsonl",
+      size: 100,
+      mtimeNs: "123",
+      nativeSessionId: "019f0000-0000-7000-8000-000000000301",
+      probeable: true,
+      producerVersion: "0.122.0",
+      cwd: "/repo",
+      created: "2026-09-04T00:00:00.000Z",
+      updated: "2026-09-04T00:00:00.000Z",
+      formatKey: "meta-v1:test",
+      compatibility: { status: "checking", producerVersion: "0.122.0", readerVersion: "0.153.0" },
+    };
+    firstRepository.replace([cachedEntry], {
+      schemaVersion: 1,
+      registryVersion: 1,
+      readerVersion: "0.153.0",
+    });
+    await firstHost.stop();
+
+    let replacementRepository!: CodexSessionCatalogRepository;
+    const replacementHost = new NativeRuntimeBrokerHost(path, (callbacks) => {
+      replacementRepository = callbacks.codexSessionCatalogRepository;
+      return new UnifiedSessionService([], async () => []);
+    });
+    try {
+      expect(replacementRepository.load({
+        schemaVersion: 1,
+        registryVersion: 1,
+        readerVersion: "0.153.0",
+      })).toEqual([cachedEntry]);
+    } finally {
+      await replacementHost.stop();
+    }
+  });
+
+  it("replaces a previous Codex reader snapshot without path conflicts", async () => {
+    const path = await directory();
+    let repository!: CodexSessionCatalogRepository;
+    const host = new NativeRuntimeBrokerHost(path, (callbacks) => {
+      repository = callbacks.codexSessionCatalogRepository;
+      return new UnifiedSessionService([], async () => []);
+    });
+    const cachedEntry: CodexDiskSessionCatalogEntry = {
+      canonicalPath: "/sessions/shared.jsonl",
+      size: 100,
+      mtimeNs: "123",
+      nativeSessionId: "019f0000-0000-7000-8000-000000000302",
+      probeable: true,
+      producerVersion: "0.140.0",
+      cwd: "/repo",
+      created: "2026-09-04T00:00:00.000Z",
+      updated: "2026-09-04T00:00:00.000Z",
+      compatibility: { status: "checking", producerVersion: "0.140.0", readerVersion: "0.152.0" },
+    };
+
+    try {
+      repository.replace([cachedEntry], {
+        schemaVersion: 1,
+        registryVersion: 1,
+        readerVersion: "0.152.0",
+      });
+      repository.replace([{
+        ...cachedEntry,
+        compatibility: { status: "checking", producerVersion: "0.140.0", readerVersion: "0.153.0" },
+      }], {
+        schemaVersion: 1,
+        registryVersion: 1,
+        readerVersion: "0.153.0",
+      });
+
+      expect(repository.load({
+        schemaVersion: 1,
+        registryVersion: 1,
+        readerVersion: "0.152.0",
+      })).toEqual([]);
+      expect(repository.load({
+        schemaVersion: 1,
+        registryVersion: 1,
+        readerVersion: "0.153.0",
+      })).toEqual([expect.objectContaining({
+        canonicalPath: cachedEntry.canonicalPath,
+        compatibility: expect.objectContaining({ readerVersion: "0.153.0" }),
+      })]);
+    } finally {
+      await host.stop();
+    }
+  });
+
+  it("fills workspace pages past hidden sessions without skipping later sessions", async () => {
+    const runtime = new FakeNativeRuntime();
+    runtime.workspaceSessions = Array.from({ length: 50 }, (_, index) => {
+      const nativeSessionId = `thread-${index}`;
+      return {
+        ...summary(),
+        id: encodeUnifiedSessionId("codex", nativeSessionId),
+        nativeSessionId,
+        projectId: "workspace",
+        title: `Session ${index}`,
+        updated: new Date(Date.UTC(2026, 8, 4, 0, 0, 50 - index)).toISOString(),
+      };
+    });
+    const host = new NativeRuntimeBrokerHost(
+      await directory(),
+      runtime as unknown as UnifiedSessionService,
+    );
+    try {
+      for (const session of runtime.workspaceSessions.slice(0, 20)) await host.delete(session.id);
+
+      const first = await host.listWorkspaceSessions("codex", "workspace", { limit: 20 });
+      expect(first.data).toHaveLength(20);
+      expect(first.data[0]?.nativeSessionId).toBe("thread-20");
+      expect(first.nextCursor).toBe("40");
+      expect(runtime.workspaceSessionQueries.slice(0, 2)).toEqual([
+        expect.objectContaining({ cursor: null, limit: 20, refresh: false }),
+        expect.objectContaining({ cursor: "20", limit: 20, refresh: false }),
+      ]);
+
+      const second = await host.listWorkspaceSessions("codex", "workspace", {
+        cursor: first.nextCursor,
+        limit: 20,
+      });
+      expect(second.data).toHaveLength(10);
+      expect(second.data[0]?.nativeSessionId).toBe("thread-40");
+      expect(second.nextCursor).toBeNull();
+    } finally {
+      await host.stop();
+    }
+  });
+
   it("persists imported workspaces and exposes same-Agent duplicates through the broker", async () => {
     const path = await directory();
     const runtimeFactory = (callbacks: import("./native-runtime-broker").NativeRuntimeBrokerCallbacks) => {
@@ -196,6 +454,7 @@ describe("NativeRuntimeBrokerHost", () => {
     try {
       await expect(replacementClient.listWorkspaces("codex")).resolves.toMatchObject({
         data: [
+          expect.objectContaining({ workspaceId: "codex:recent", canCreateSession: false }),
           expect.objectContaining({ workspaceId: "native-project" }),
           expect.objectContaining({ workspaceId: created.workspace.workspaceId, source: "imported" }),
         ],
@@ -434,7 +693,8 @@ describe("NativeRuntimeBrokerHost", () => {
       await expect(host.list()).resolves.toEqual([]);
       await expect(host.refresh()).resolves.toEqual([]);
       await expect(host.delete(sessionId)).resolves.toBeUndefined();
-      expect(runtime.invalidatedSessionIds).toEqual([sessionId, sessionId]);
+      expect(runtime.archivedSessionIds).toEqual([sessionId]);
+      expect(runtime.invalidatedSessionIds).toEqual([sessionId]);
     } finally {
       await host.stop();
     }
@@ -449,6 +709,44 @@ describe("NativeRuntimeBrokerHost", () => {
       await expect(replacementHost.list()).resolves.toEqual([]);
     } finally {
       await replacementHost.stop();
+    }
+  });
+
+  it("keeps a Codex session visible when native archive fails and allows retry", async () => {
+    const runtime = new FakeNativeRuntime();
+    runtime.listResult = [summary()];
+    runtime.archiveError = new Error("archive failed");
+    const host = new NativeRuntimeBrokerHost(await directory(), runtime as unknown as UnifiedSessionService);
+    try {
+      await expect(host.delete(sessionId)).rejects.toThrow("archive failed");
+      await expect(host.list()).resolves.toEqual([
+        expect.objectContaining({ id: sessionId }),
+      ]);
+      expect(runtime.invalidatedSessionIds).toEqual([]);
+
+      runtime.archiveError = null;
+      await expect(host.delete(sessionId)).resolves.toBeUndefined();
+      await expect(host.list()).resolves.toEqual([]);
+      expect(runtime.archivedSessionIds).toEqual([sessionId, sessionId]);
+      expect(runtime.invalidatedSessionIds).toEqual([sessionId]);
+    } finally {
+      await host.stop();
+    }
+  });
+
+  it("keeps Claude Code and OpenCode deletion tombstone-only", async () => {
+    const runtime = new FakeNativeRuntime();
+    const claudeId = encodeUnifiedSessionId("claude-code", "claude-1");
+    const opencodeId = encodeUnifiedSessionId("opencode", "opencode-1");
+    const host = new NativeRuntimeBrokerHost(await directory(), runtime as unknown as UnifiedSessionService);
+    try {
+      await host.delete(claudeId);
+      await host.delete(opencodeId);
+
+      expect(runtime.archivedSessionIds).toEqual([]);
+      expect(runtime.invalidatedSessionIds).toEqual([claudeId, opencodeId]);
+    } finally {
+      await host.stop();
     }
   });
 
@@ -511,6 +809,7 @@ describe("NativeRuntimeBrokerHost", () => {
       await waitFor(() => expect(host.snapshot(sessionId).events).toHaveLength(1));
 
       await expect(host.delete(sessionId)).rejects.toMatchObject({ code: "SESSION_OCCUPIED" });
+      expect(runtime.archivedSessionIds).toEqual([]);
       await expect(host.list()).resolves.toEqual([
         expect.objectContaining({ id: sessionId, canDelete: false }),
       ]);
@@ -545,6 +844,103 @@ describe("NativeRuntimeBrokerHost", () => {
     }
   });
 
+  it("persists ordinary queued messages and starts them without goal semantics", async () => {
+    const runtime = new FakeNativeRuntime();
+    const host = new NativeRuntimeBrokerHost(await directory(), runtime as unknown as UnifiedSessionService);
+    try {
+      await host.startRun(sessionId, "current");
+      await waitFor(() => expect(host.snapshot(sessionId).events).toHaveLength(1));
+
+      const queued = await host.enqueueMessage(sessionId, {
+        sourceMessageId: "chat-message-1",
+        content: "follow up",
+        messagePayload: {
+          images: ["data:image/png;base64,AAAA"],
+          agentIds: ["reviewer"],
+          agentName: "Reviewer",
+        },
+      });
+      expect(queued.started).toBeUndefined();
+      expect(queued.state.queued).toEqual([
+        expect.objectContaining({
+          kind: "message",
+          objective: "follow up",
+          sourceMessageId: "chat-message-1",
+        }),
+      ]);
+      await expect(host.get(sessionId)).resolves.toMatchObject({
+        goalState: {
+          queued: [expect.objectContaining({ kind: "message", objective: "follow up" })],
+        },
+      });
+
+      const firstQuestion = host.snapshot(sessionId).events[0].event;
+      await host.answerQuestion(
+        firstQuestion.type === "ask_user" ? firstQuestion.questionId : "",
+        { answer: "允许一次" },
+      );
+      await waitFor(() => expect(runtime.runInputs).toHaveLength(2));
+      expect(runtime.runInputs[1]).toEqual({
+        input: "follow up",
+        images: ["data:image/png;base64,AAAA"],
+        agentIds: ["reviewer"],
+        agentName: "Reviewer",
+      });
+      expect(runtime.runOptions[1].goal).toBeUndefined();
+      expect((await host.getGoals(sessionId)).active).toMatchObject({ kind: "message" });
+    } finally {
+      await host.stop();
+    }
+  });
+
+  it("steers a persisted queued message and removes it only after the runtime accepts it", async () => {
+    const runtime = new FakeNativeRuntime();
+    const host = new NativeRuntimeBrokerHost(await directory(), runtime as unknown as UnifiedSessionService);
+    try {
+      await host.startRun(sessionId, "current");
+      await waitFor(() => expect(host.snapshot(sessionId).events).toHaveLength(1));
+      const queued = await host.enqueueMessage(sessionId, {
+        sourceMessageId: "chat-steer",
+        content: "use this now",
+      });
+      const queueItemId = queued.state.queued[0].id;
+
+      await expect(host.steerMessage(sessionId, queueItemId)).resolves.toEqual({
+        steered: true,
+        state: expect.objectContaining({ queued: [] }),
+      });
+      expect(runtime.steeredInputs).toEqual([{ id: sessionId, input: "use this now" }]);
+      expect((await host.getGoals(sessionId)).queued).toEqual([]);
+    } finally {
+      await host.stop();
+    }
+  });
+
+  it("keeps a persisted queued message when the runtime rejects steering", async () => {
+    const runtime = new FakeNativeRuntime();
+    runtime.steerResult = false;
+    const host = new NativeRuntimeBrokerHost(await directory(), runtime as unknown as UnifiedSessionService);
+    try {
+      await host.startRun(sessionId, "current");
+      await waitFor(() => expect(host.snapshot(sessionId).events).toHaveLength(1));
+      const queued = await host.enqueueMessage(sessionId, {
+        sourceMessageId: "chat-steer-rejected",
+        content: "keep queued",
+      });
+      const queueItemId = queued.state.queued[0].id;
+
+      await expect(host.steerMessage(sessionId, queueItemId)).resolves.toMatchObject({
+        steered: false,
+        state: { queued: [expect.objectContaining({ id: queueItemId })] },
+      });
+      expect((await host.getGoals(sessionId)).queued).toEqual([
+        expect.objectContaining({ id: queueItemId, objective: "keep queued" }),
+      ]);
+    } finally {
+      await host.stop();
+    }
+  });
+
   it("recovers a persisted active goal when a replacement broker starts", async () => {
     const path = await directory();
     const priorRuntime = new FakeNativeRuntime();
@@ -560,6 +956,55 @@ describe("NativeRuntimeBrokerHost", () => {
       await waitFor(() => expect(replacementRuntime.runOptions).toHaveLength(1));
       expect(replacementRuntime.runOptions[0].goal).toMatchObject({ objective: "survive restart" });
       expect((await replacementHost.getGoals(sessionId, "desktop")).active?.objective).toBe("survive restart");
+    } finally {
+      await priorHost.stop();
+      await replacementHost.stop();
+    }
+  });
+
+  it("resumes an unclaimed queued message after broker restart", async () => {
+    const path = await directory();
+    const priorRuntime = new FakeNativeRuntime();
+    const priorHost = new NativeRuntimeBrokerHost(path, priorRuntime as unknown as UnifiedSessionService);
+    const replacementRuntime = new FakeNativeRuntime();
+    const replacementHost = new NativeRuntimeBrokerHost(path, replacementRuntime as unknown as UnifiedSessionService);
+    try {
+      await priorHost.startRun(sessionId, "interrupted current run");
+      await waitFor(() => expect(priorRuntime.runInputs).toHaveLength(1));
+      await priorHost.enqueueMessage(sessionId, {
+        sourceMessageId: "chat-restart",
+        content: "survive restart",
+      });
+
+      await replacementHost.start();
+
+      await waitFor(() => expect(replacementRuntime.runInputs).toHaveLength(1));
+      expect(replacementRuntime.runInputs[0].input).toBe("survive restart");
+      expect(replacementRuntime.runOptions[0].goal).toBeUndefined();
+    } finally {
+      await priorHost.stop();
+      await replacementHost.stop();
+    }
+  });
+
+  it("does not replay a queued message that was already admitted before restart", async () => {
+    const path = await directory();
+    const priorRuntime = new FakeNativeRuntime();
+    const priorHost = new NativeRuntimeBrokerHost(path, priorRuntime as unknown as UnifiedSessionService);
+    const replacementRuntime = new FakeNativeRuntime();
+    const replacementHost = new NativeRuntimeBrokerHost(path, replacementRuntime as unknown as UnifiedSessionService);
+    try {
+      await priorHost.enqueueMessage(sessionId, {
+        sourceMessageId: "chat-admitted",
+        content: "do not replay",
+      });
+      await waitFor(() => expect(priorRuntime.runInputs).toHaveLength(1));
+
+      await replacementHost.start();
+
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      expect(replacementRuntime.runInputs).toHaveLength(0);
+      expect(await replacementHost.getGoals(sessionId)).toEqual({ active: null, queued: [], history: [] });
     } finally {
       await priorHost.stop();
       await replacementHost.stop();
@@ -759,32 +1204,41 @@ describe("NativeRuntimeBrokerHost", () => {
 
   it("deduplicates the active projection before splitting native history into pages", async () => {
     const runtime = new FakeNativeRuntime();
+    const turnResponses = [
+      ...Array.from({ length: 53 }, (_, index) => `Update ${index + 1}`),
+      "Final response",
+    ];
     runtime.messages = [
+      { role: "user", content: "older input" },
+      { role: "assistant", content: "Older response" },
       { role: "user", content: "long-running goal" },
-      { role: "assistant", content: "First update. " },
-      { role: "assistant", content: "Second update." },
+      ...turnResponses.map((content) => ({
+        role: "assistant" as const,
+        content,
+      })),
     ];
-    runtime.eventsBeforeApproval = [
-      { type: "text_chunk", text: "First update. " },
-      { type: "text_chunk", text: "Second update." },
-    ];
+    runtime.eventsBeforeApproval = turnResponses.map((text) => ({ type: "text_chunk" as const, text }));
     const host = new NativeRuntimeBrokerHost(await directory(), runtime as unknown as UnifiedSessionService);
     try {
       await host.startRun(sessionId, "long-running goal");
-      await waitFor(() => expect(host.snapshot(sessionId).events).toHaveLength(3));
+      await waitFor(() => expect(host.snapshot(sessionId).events).toHaveLength(55));
 
-      const latest = await host.get(sessionId, { limit: 2 });
-      const oldest = await host.get(sessionId, { before: latest.history?.nextCursor ?? undefined, limit: 2 });
+      const latest = await host.get(sessionId, { limit: 50 });
+      const oldest = await host.get(sessionId, { before: latest.history?.nextCursor ?? undefined, limit: 50 });
       const combined = [...oldest.messages, ...latest.messages];
 
+      expect(latest.messages[0]).toEqual({ role: "user", content: "long-running goal" });
+      expect(latest.history).toMatchObject({ nextCursor: "history.v1.2", pageSize: 55 });
+      expect(oldest.messages).toEqual([
+        { role: "user", content: "older input" },
+        { role: "assistant", content: "Older response" },
+      ]);
       expect(combined.filter((message) => message.role === "user")).toEqual([
+        { role: "user", content: "older input" },
         { role: "user", content: "long-running goal" },
       ]);
       expect(combined.filter((message) => message.name?.startsWith("__native_run:"))).toEqual([]);
-      expect(combined.filter((message) => message.role === "assistant").map((message) => message.content)).toEqual([
-        "First update. ",
-        "Second update.",
-      ]);
+      expect(combined.filter((message) => message.role === "assistant" && message.content === "Final response")).toHaveLength(1);
     } finally {
       await host.stop();
     }
@@ -823,7 +1277,7 @@ describe("NativeRuntimeBrokerHost", () => {
       const first = await host.startRun(sessionId, "first input");
       await waitFor(() => expect(host.snapshot(sessionId).runId).toBe(first.runId));
 
-      await expect(host.startRun(sessionId, "second input")).rejects.toMatchObject({ code: "SESSION_OCCUPIED" });
+      await expect(host.startRun(sessionId, "second input")).rejects.toMatchObject({ code: "SESSION_ALREADY_RUNNING" });
       const detail = await host.get(sessionId);
       expect(detail.messages.some((message) => message.role === "user" && message.content === "first input")).toBe(true);
       expect(detail.messages.some((message) => message.content === "second input")).toBe(false);
@@ -869,6 +1323,75 @@ describe("NativeRuntimeBrokerHost", () => {
         occupancy: "owned-by-customer-agent",
         canResume: true,
       });
+    } finally {
+      releaseCleanup();
+      await host.stop();
+    }
+  });
+
+  it("promotes a queued message after interrupted adapter cleanup", async () => {
+    const runtime = new FakeNativeRuntime();
+    runtime.rejectOverlappingRuns = true;
+    runtime.terminalEvent = {
+      type: "error",
+      code: "NATIVE_PROTOCOL_ERROR",
+      message: "Codex turn was interrupted.",
+    };
+    let releaseCleanup: () => void = () => undefined;
+    runtime.cleanupAfterTerminal = new Promise<void>((resolve) => { releaseCleanup = resolve; });
+    const host = new NativeRuntimeBrokerHost(await directory(), runtime as unknown as UnifiedSessionService);
+    try {
+      await host.startRun(sessionId, "first input");
+      await waitFor(() => expect(host.snapshot(sessionId).events).toHaveLength(1));
+      await host.abort(sessionId);
+      await waitFor(() => {
+        expect(host.snapshot(sessionId).events).toEqual(expect.arrayContaining([
+          expect.objectContaining({ event: expect.objectContaining({ type: "error" }) }),
+        ]));
+      });
+
+      let enqueueSettled = false;
+      const queued = host.enqueueMessage(sessionId, {
+        sourceMessageId: "chat-after-interrupt",
+        content: "queued after interrupt",
+      }).then((result) => {
+        enqueueSettled = true;
+        return result;
+      });
+      await expect(host.get(sessionId)).resolves.toMatchObject({
+        goalState: {
+          active: expect.objectContaining({
+            kind: "message",
+            objective: "queued after interrupt",
+          }),
+        },
+      });
+
+      let goalsSettled = false;
+      const goals = host.getGoals(sessionId).then((state) => {
+        goalsSettled = true;
+        return state;
+      });
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      expect(enqueueSettled).toBe(false);
+      expect(goalsSettled).toBe(false);
+      expect(runtime.runInputs).toHaveLength(1);
+
+      releaseCleanup();
+      await expect(queued).resolves.toMatchObject({
+        state: {
+          active: expect.objectContaining({ kind: "message", objective: "queued after interrupt" }),
+          queued: [],
+        },
+      });
+      await expect(goals).resolves.toMatchObject({
+        active: expect.objectContaining({ kind: "message", objective: "queued after interrupt" }),
+        queued: [],
+      });
+      await waitFor(() => expect(runtime.runInputs).toHaveLength(2));
+      expect(runtime.runInputs[1].input).toBe("queued after interrupt");
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      expect(runtime.runInputs).toHaveLength(2);
     } finally {
       releaseCleanup();
       await host.stop();
@@ -1013,7 +1536,7 @@ describe("NativeRuntimeBrokerHost", () => {
       await expect(client.setPermissionMode(sessionId, "auto-approval")).resolves.toMatchObject({ permissionMode: "auto-approval" });
       await expect(client.startRun(sessionId, "socket input")).resolves.toMatchObject({ permissionMode: "auto-approval" });
       await waitFor(() => expect(runtime.runOptions).toHaveLength(1));
-      await expect(client.startRun(sessionId, "duplicate")).rejects.toMatchObject({ code: "SESSION_OCCUPIED" });
+      await expect(client.startRun(sessionId, "duplicate")).rejects.toMatchObject({ code: "SESSION_ALREADY_RUNNING" });
       expect(runtime.runOptions).toHaveLength(1);
     } finally {
       await host.stop();

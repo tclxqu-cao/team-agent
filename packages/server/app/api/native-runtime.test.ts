@@ -10,6 +10,11 @@ import { POST as runRoute } from "./agent/run/route";
 import { POST as answerRoute } from "./agent/answer/route";
 import { POST as abortRoute } from "./agent/abort/route";
 import { POST as steerRoute } from "./agent/steer/route";
+import {
+  DELETE as deleteQueuedMessage,
+  PATCH as patchQueuedMessage,
+  POST as enqueueQueuedMessage,
+} from "./sessions/[id]/goals/route";
 import { RuntimeSessionError } from "../../../desktop/main/agent-runtime/types";
 
 const state = {
@@ -35,6 +40,7 @@ const state = {
   getQuery: null as { before?: string; limit?: number } | null,
   deletedSessionIds: [] as string[],
   deleteError: null as Error | null,
+  queueCalls: [] as Array<Record<string, unknown>>,
 };
 
 vi.mock("../../lib/native-runtime-service", () => ({
@@ -112,6 +118,46 @@ vi.mock("../../lib/native-runtime-service", () => ({
         events: [],
         controller,
       };
+    },
+    enqueueMessage: async (
+      id: string,
+      input: Record<string, unknown>,
+      controller: string,
+    ) => {
+      state.queueCalls.push({ operation: "enqueue", id, input, controller });
+      return {
+        state: {
+          active: null,
+          queued: [{
+            id: "queue-1",
+            sessionId: id,
+            objective: input.content,
+            sourceMessageId: input.sourceMessageId,
+            kind: "message",
+            status: "queued",
+            position: 0,
+            createdAt: 1,
+            updatedAt: 1,
+          }],
+          history: [],
+        },
+      };
+    },
+    updateMessage: async (id: string, messageId: string, content: string) => {
+      state.queueCalls.push({ operation: "update", id, messageId, content });
+      return { active: null, queued: [], history: [] };
+    },
+    reorderMessages: async (id: string, orderedIds: string[]) => {
+      state.queueCalls.push({ operation: "reorder", id, orderedIds });
+      return { active: null, queued: [], history: [] };
+    },
+    cancelMessage: async (id: string, messageId: string) => {
+      state.queueCalls.push({ operation: "cancel", id, messageId });
+      return { active: null, queued: [], history: [] };
+    },
+    steerMessage: async (id: string, messageId: string) => {
+      state.queueCalls.push({ operation: "steer", id, messageId });
+      return { steered: true, state: { active: null, queued: [], history: [] } };
     },
     answerQuestion: async (questionId: string, answer: { answer: string; selectedIndices?: number[] }) => {
       state.answered = { questionId, answer };
@@ -205,6 +251,7 @@ describe("native runtime routing", () => {
     state.getQuery = null;
     state.deletedSessionIds = [];
     state.deleteError = null;
+    state.queueCalls = [];
     const store = agentHost.getProjectStore();
     const existing = await store.get("native-runtime-test-project");
     if (existing) {
@@ -452,7 +499,60 @@ describe("native runtime routing", () => {
     const response = await runRoute(json("POST", "http://test/api/agent/run", { input: "hi", sessionId }));
 
     expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toMatchObject({ code: "SESSION_OCCUPIED" });
     expect(agentHost.getLatestEventId(sessionId)).toBe(1);
+  });
+
+  it("distinguishes a same-client active run from external ownership", async () => {
+    const sessionId = "runtime:codex:bW9jaw";
+    state.runError = new RuntimeSessionError(
+      "Session is already running",
+      "SESSION_ALREADY_RUNNING",
+    );
+
+    const response = await runRoute(json("POST", "http://test/api/agent/run", { input: "queue me", sessionId }));
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toMatchObject({
+      error: "Session is already running",
+      code: "SESSION_ALREADY_RUNNING",
+    });
+  });
+
+  it("persists and mutates native queued messages through the mixed goal-state route", async () => {
+    const id = "runtime:codex:bW9jaw";
+    const enqueued = await enqueueQueuedMessage(json("POST", `http://test/api/sessions/${id}/goals`, {
+      kind: "message",
+      objective: "follow up",
+      sourceMessageId: "chat-1",
+      messagePayload: { images: ["data:image/png;base64,AAAA"] },
+    }), { params: { id } });
+    const updated = await patchQueuedMessage(json("PATCH", `http://test/api/sessions/${id}/goals`, {
+      kind: "message",
+      messageId: "queue-1",
+      objective: "edited",
+    }), { params: { id } });
+    const reordered = await patchQueuedMessage(json("PATCH", `http://test/api/sessions/${id}/goals`, {
+      kind: "message",
+      orderedIds: ["queue-2", "queue-1"],
+    }), { params: { id } });
+    const removed = await deleteQueuedMessage(
+      new Request(`http://test/api/sessions/${id}/goals?kind=message&goalId=queue-1`, { method: "DELETE" }),
+      { params: { id } },
+    );
+
+    expect([enqueued.status, updated.status, reordered.status, removed.status]).toEqual([200, 200, 200, 200]);
+    expect(state.queueCalls).toEqual([
+      expect.objectContaining({
+        operation: "enqueue",
+        id,
+        controller: "web",
+        input: expect.objectContaining({ sourceMessageId: "chat-1", content: "follow up" }),
+      }),
+      { operation: "update", id, messageId: "queue-1", content: "edited" },
+      { operation: "reorder", id, orderedIds: ["queue-2", "queue-1"] },
+      { operation: "cancel", id, messageId: "queue-1" },
+    ]);
   });
 
   it("falls back to the native service for ask_user approvals", async () => {
@@ -513,6 +613,24 @@ describe("native runtime routing", () => {
     expect(state.steered).toEqual({
       id: "runtime:claude-code:bW9jaw",
       input: "补充说明",
+    });
+  });
+
+  it("atomically steers a durable queued native message", async () => {
+    const response = await steerRoute(json("POST", "http://test/api/agent/steer", {
+      sessionId: "runtime:claude-code:bW9jaw",
+      messageId: "queue-1",
+    }));
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      steered: true,
+      state: { active: null, queued: [], history: [] },
+    });
+    expect(state.queueCalls).toContainEqual({
+      operation: "steer",
+      id: "runtime:claude-code:bW9jaw",
+      messageId: "queue-1",
     });
   });
 

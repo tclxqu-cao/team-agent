@@ -13,6 +13,31 @@ export type SessionOccupancy =
   | "owned-by-customer-agent"
   | "owned-externally";
 
+export type SessionCompatibilityStatus =
+  | "checking"
+  | "direct"
+  | "migratable"
+  | "incompatible";
+
+export type CodexCompatibilityReasonCode =
+  | "CODEX_SESSION_VERSION_UNSUPPORTED"
+  | "CODEX_SESSION_SCHEMA_UNKNOWN"
+  | "CODEX_SESSION_DIRECT_READ_FAILED"
+  | "CODEX_SESSION_IMPORT_UNAVAILABLE"
+  | "CODEX_SESSION_MIGRATION_FAILED"
+  | "CODEX_SESSION_SOURCE_ACTIVE"
+  | "CODEX_SESSION_ASSET_REQUIRED"
+  | "CODEX_SESSION_RUNTIME_UNAVAILABLE";
+
+export interface SessionCompatibility {
+  status: SessionCompatibilityStatus;
+  producerVersion?: string;
+  readerVersion: string;
+  formatKey?: string;
+  reasonCode?: CodexCompatibilityReasonCode;
+  reason?: string;
+}
+
 export interface RuntimeHealth {
   agentType: AgentType;
   available: boolean;
@@ -42,6 +67,9 @@ export interface UnifiedSessionSummary {
   /** Logical AgentRoam client currently allowed to control a live native turn. */
   controller?: "web" | "desktop" | null;
   goalState?: SessionGoalState;
+  messageQueueVersion?: 1;
+  compatibility?: SessionCompatibility;
+  migratedFrom?: string;
 }
 
 export interface UnifiedSessionDetail extends UnifiedSessionSummary {
@@ -62,6 +90,7 @@ export interface AgentWorkspace {
   order: number;
   updatedAt?: string;
   source: "native" | "derived" | "imported";
+  canCreateSession?: boolean;
 }
 
 export interface ImportedAgentWorkspace {
@@ -164,6 +193,7 @@ export interface AgentRuntimeAdapter {
   steer?(nativeSessionId: string, input: string): Promise<boolean>;
   abort(nativeSessionId: string): Promise<void>;
   answerQuestion(questionId: string, answer: RuntimeQuestionAnswer): Promise<boolean>;
+  archiveSession?(nativeSessionId: string): Promise<void>;
   delete?(nativeSessionId: string): Promise<void>;
   dispose?(): Promise<void>;
 }
@@ -175,9 +205,11 @@ export class RuntimeSessionError extends Error {
       | "INVALID_SESSION_ID"
       | "SESSION_NOT_FOUND"
       | "SESSION_OCCUPIED"
+      | "SESSION_ALREADY_RUNNING"
       | "RUNTIME_UNAVAILABLE"
       | "OPERATION_NOT_SUPPORTED"
       | "APPROVAL_EXPIRED"
+      | "CODEX_SESSION_VERSION_INCOMPATIBLE"
       | "NATIVE_PROTOCOL_ERROR",
   ) {
     super(message);

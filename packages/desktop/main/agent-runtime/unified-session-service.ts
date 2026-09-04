@@ -6,6 +6,7 @@ import {
 } from "@agent/core";
 import { decodeUnifiedSessionId } from "./session-id.js";
 import { AgentWorkspaceIndexService } from "./agent-workspace-index.js";
+import type { CodexSessionCompatibilityService } from "./codex-session-compatibility.js";
 import type {
   AgentRuntimeAdapter,
   AgentType,
@@ -41,9 +42,15 @@ export class UnifiedSessionService {
     adapters: AgentRuntimeAdapter[],
     private readonly listProjects: () => Promise<ProjectLike[]>,
     importedWorkspaces?: ImportedAgentWorkspaceRepository,
+    private readonly codexCompatibility?: CodexSessionCompatibilityService,
   ) {
     for (const adapter of adapters) this.adapters.set(adapter.agentType, adapter);
-    this.workspaceIndex = new AgentWorkspaceIndexService(adapters, importedWorkspaces);
+    this.workspaceIndex = new AgentWorkspaceIndexService(
+      adapters,
+      importedWorkspaces,
+      process.platform,
+      codexCompatibility ? (primary) => codexCompatibility.supplement(primary) : undefined,
+    );
   }
 
   listWorkspaces(agentType: AgentType, query?: WorkspaceQuery): Promise<WorkspacePage<AgentWorkspace>> {
@@ -118,7 +125,10 @@ export class UnifiedSessionService {
     const projects = await this.listProjects();
     const batches = await Promise.all([...this.adapters.values()].map(async (adapter) => {
       try {
-        const sessions = await adapter.discoverSessions();
+        const primary = await adapter.discoverSessions();
+        const sessions = adapter.agentType === "codex" && this.codexCompatibility
+          ? this.codexCompatibility.supplement(primary)
+          : primary;
         return sessions.map((session) => associateProject(session, projects));
       } catch (error) {
         this.recordFailure(adapter.agentType, error);
@@ -147,7 +157,11 @@ export class UnifiedSessionService {
   async getUnpaginated(id: string, preferCache = false): Promise<UnifiedSessionDetail> {
     const { adapter, nativeSessionId } = this.resolveAdapter(id);
     const cached = preferCache ? this.detailCache.get(id) : undefined;
-    const detail = cached ?? await adapter.getSession(nativeSessionId);
+    const detail = cached ?? await (
+      adapter.agentType === "codex" && this.codexCompatibility?.isSupplemental(nativeSessionId)
+        ? this.codexCompatibility.readSupplemental(nativeSessionId)
+        : adapter.getSession(nativeSessionId)
+    );
     this.cacheDetail(id, detail);
     const projects = await this.listProjects();
     return associateProject(detail, projects);
@@ -207,7 +221,7 @@ export class UnifiedSessionService {
       throw new RuntimeSessionError("Session is currently owned by another client", "SESSION_OCCUPIED");
     }
     if (this.activeSessionIds.has(id)) {
-      throw new RuntimeSessionError("Session is already running", "SESSION_OCCUPIED");
+      throw new RuntimeSessionError("Session is already running", "SESSION_ALREADY_RUNNING");
     }
     this.activeSessionIds.add(id);
     this.detailCache.delete(id);
@@ -252,6 +266,18 @@ export class UnifiedSessionService {
     return false;
   }
 
+  async archive(id: string): Promise<void> {
+    const { adapter, nativeSessionId } = this.resolveAdapter(id);
+    if (this.activeSessionIds.has(id)) {
+      throw new RuntimeSessionError("Session is currently running", "SESSION_OCCUPIED");
+    }
+    if (!adapter.archiveSession) {
+      throw new RuntimeSessionError("This session cannot be archived", "OPERATION_NOT_SUPPORTED");
+    }
+    await adapter.archiveSession(nativeSessionId);
+    this.invalidate(id);
+  }
+
   async delete(id: string): Promise<void> {
     const { adapter, nativeSessionId } = this.resolveAdapter(id);
     if (this.activeSessionIds.has(id)) {
@@ -266,6 +292,7 @@ export class UnifiedSessionService {
   }
 
   async dispose(): Promise<void> {
+    this.codexCompatibility?.dispose();
     await Promise.allSettled([...this.adapters.values()].map((adapter) => adapter.dispose?.()));
   }
 

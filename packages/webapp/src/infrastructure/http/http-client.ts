@@ -9,9 +9,11 @@ export class UnauthorizedError extends Error {
 /** Domain-level transport error surfaced to the UI as-is. */
 export class ApiError extends Error {
   readonly status: number;
-  constructor(status: number, message: string) {
+  readonly code?: string;
+  constructor(status: number, message: string, code?: string) {
     super(message);
     this.status = status;
+    this.code = code;
     this.name = "ApiError";
   }
 }
@@ -62,12 +64,14 @@ export class HttpClient {
     }
     if (!response.ok) {
       let message = `请求失败 (${response.status})`;
+      let code: string | undefined;
       try {
-        const body = (await response.json()) as { error?: { message?: string } | string };
+        const body = (await response.json()) as { error?: { message?: string } | string; code?: unknown };
         if (typeof body.error === "string") message = body.error;
         else if (body.error?.message) message = body.error.message;
+        if (typeof body.code === "string") code = body.code;
       } catch { /* keep default message */ }
-      throw new ApiError(response.status, message);
+      throw new ApiError(response.status, message, code);
     }
     if (response.status === 204) return undefined as T;
     return (await response.json()) as T;

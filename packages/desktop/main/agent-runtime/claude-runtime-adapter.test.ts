@@ -673,7 +673,7 @@ describe("ClaudeRuntimeAdapter", () => {
 
     await expect(drain(adapter.run("cc-1", "second"))).rejects.toMatchObject({
       name: "RuntimeSessionError",
-      code: "SESSION_OCCUPIED",
+      code: "SESSION_ALREADY_RUNNING",
     });
 
     await first.return?.();

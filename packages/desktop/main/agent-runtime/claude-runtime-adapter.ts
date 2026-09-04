@@ -430,7 +430,7 @@ export class ClaudeRuntimeAdapter implements AgentRuntimeAdapter {
     runOptions?: RuntimeRunOptions,
   ): AsyncIterable<AgentEvent> {
     if (this.activeQueries.has(nativeSessionId)) {
-      throw new RuntimeSessionError("Claude Code session is already running", "SESSION_OCCUPIED");
+      throw new RuntimeSessionError("Claude Code session is already running", "SESSION_ALREADY_RUNNING");
     }
     const detail = await this.getSession(nativeSessionId);
     if (detail.occupancy === "owned-externally") {

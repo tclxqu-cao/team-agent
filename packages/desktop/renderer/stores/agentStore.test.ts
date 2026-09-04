@@ -57,6 +57,31 @@ describe("agentStore session message cache", () => {
     ]);
   });
 
+  it("updates a background session cache without replacing the visible messages", () => {
+    const visible = [{
+      id: "visible-message",
+      role: "assistant" as const,
+      content: "keep me visible",
+      timestamp: 1,
+    }];
+    const background = [{
+      id: "background-message",
+      role: "assistant" as const,
+      content: "completed in background",
+      timestamp: 2,
+    }];
+    const store = useAgentStore.getState();
+    store.setSessionId("visible");
+    store.setMessages(visible, "visible");
+    useAgentStore.setState({ currentText: "visible stream" });
+
+    useAgentStore.getState().setMessages(background, "background");
+
+    expect(useAgentStore.getState().messages).toEqual(visible);
+    expect(useAgentStore.getState().currentText).toBe("visible stream");
+    expect(useAgentStore.getState().getMessagesForSession("background")).toEqual(background);
+  });
+
   it("merges assistant tool calls into the prior assistant text in a background session", () => {
     const store = useAgentStore.getState();
     store.setSessionId("visible");

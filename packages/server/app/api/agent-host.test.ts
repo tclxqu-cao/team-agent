@@ -260,12 +260,14 @@ describe("agentHost singleton", () => {
     agentHost.setBuilder(new AgentBuilder().withModelProvider(provider));
     const session = await agentHost.createSession("done ordering test");
     let sessionAtDone: Promise<{ messages?: Message[] } | null> | undefined;
+    let completedEvent: { type?: string; durationMs?: number } | undefined;
     const subscribe = agentHost.subscribe as unknown as (
       sessionId: string,
-      listener: (event: { type?: string }) => void,
+      listener: (event: { type?: string; durationMs?: number }) => void,
     ) => () => void;
     const unsubscribe = subscribe.call(agentHost, session.id, (event) => {
       if (event.type === "done") {
+        completedEvent = event;
         sessionAtDone = agentHost.getSessionStore().get(session.id);
       }
     });
@@ -276,9 +278,14 @@ describe("agentHost singleton", () => {
     await expect(sessionAtDone).resolves.toMatchObject({
       messages: [
         { role: "user", content: "persist before done" },
-        { role: "assistant", content: "Persisted first" },
+        {
+          role: "assistant",
+          content: "Persisted first",
+          presentation: { completionDurationMs: expect.any(Number) },
+        },
       ],
     });
+    expect(completedEvent?.durationMs).toEqual(expect.any(Number));
   });
 
   it("persists sent images as display attachments without replaying them on later turns", async () => {
@@ -361,7 +368,11 @@ describe("agentHost singleton", () => {
     const stored = await agentHost.getSessionStore().get(session.id);
     expect(stored?.messages).toEqual([
       { role: "user", content: "Please look it up" },
-      { role: "assistant", content: "Final answer" },
+      {
+        role: "assistant",
+        content: "Final answer",
+        presentation: { completionDurationMs: expect.any(Number) },
+      },
     ]);
   });
 

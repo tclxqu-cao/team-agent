@@ -117,11 +117,17 @@ export class AgentHttpGateway {
       });
       if (finished) await finished;
     } catch (err) {
-      const preserveActiveRun = hadStream || hadPendingRun;
+      const reportedCode = (err as { code?: unknown }).code;
+      const code = typeof reportedCode === "string"
+        ? reportedCode
+        : (err as { status?: number }).status === 409
+          ? "SESSION_OCCUPIED"
+          : undefined;
+      const preserveActiveRun = hadStream || hadPendingRun || code === "SESSION_ALREADY_RUNNING";
       this.dispatch(sessionId, {
         type: "error",
         message: err instanceof Error ? err.message : "无法启动运行",
-        ...((err as { status?: number }).status === 409 ? { code: "SESSION_OCCUPIED" } : {}),
+        ...(code ? { code } : {}),
         ...(preserveActiveRun ? { _preserveActiveRun: true } : {}),
       });
       // A refresh can already be following the active run when the user
@@ -146,6 +152,15 @@ export class AgentHttpGateway {
       void this.run(input, sessionId).catch(() => {});
     }
     return true;
+  }
+
+  async steerSessionMessage(id: string, messageId: string): Promise<SessionGoalState> {
+    const result = await this.http.post<{ steered: boolean; state: SessionGoalState }>("/api/agent/steer", {
+      sessionId: id,
+      messageId,
+    });
+    if (!result.steered) throw new Error("当前运行不支持插队消息");
+    return result.state;
   }
 
   async abort(sessionId?: string): Promise<void> {
@@ -326,6 +341,56 @@ export class AgentHttpGateway {
 
   async cancelSessionGoal(id: string, goalId: string): Promise<SessionGoalState> {
     return this.http.delete(`/api/sessions/${encodeURIComponent(id)}/goals?goalId=${encodeURIComponent(goalId)}`);
+  }
+
+  async enqueueSessionMessage(
+    id: string,
+    message: { sourceMessageId: string; content: string; images?: string[]; agentIds?: string[]; agentName?: string },
+  ): Promise<SessionGoalState> {
+    await this.openStream(id, this.nativeSnapshotRevisions.get(id));
+    const result = await this.http.post<{
+      state: SessionGoalState;
+      started?: { runId?: string; snapshotRevision?: number };
+    }>(`/api/sessions/${encodeURIComponent(id)}/goals`, {
+      kind: "message",
+      objective: message.content,
+      sourceMessageId: message.sourceMessageId,
+      messagePayload: {
+        images: message.images,
+        agentIds: message.agentIds,
+        agentName: message.agentName,
+      },
+    });
+    if (typeof result.started?.snapshotRevision === "number") {
+      this.rememberNativeSnapshot(id, result.started.snapshotRevision, result.started.runId);
+      this.dispatch(id, {
+        type: "run_admitted",
+        ...(result.started.runId ? { _nativeRunId: result.started.runId } : {}),
+        _nativeSequence: result.started.snapshotRevision,
+      });
+    }
+    return result.state;
+  }
+
+  async updateSessionMessage(id: string, messageId: string, content: string): Promise<SessionGoalState> {
+    return this.http.patch(`/api/sessions/${encodeURIComponent(id)}/goals`, {
+      kind: "message",
+      messageId,
+      objective: content,
+    });
+  }
+
+  async reorderSessionMessages(id: string, orderedIds: string[]): Promise<SessionGoalState> {
+    return this.http.patch(`/api/sessions/${encodeURIComponent(id)}/goals`, {
+      kind: "message",
+      orderedIds,
+    });
+  }
+
+  async cancelSessionMessage(id: string, messageId: string): Promise<SessionGoalState> {
+    return this.http.delete(
+      `/api/sessions/${encodeURIComponent(id)}/goals?kind=message&goalId=${encodeURIComponent(messageId)}`,
+    );
   }
 
   async createSession(title: string, projectId?: string, agentType?: string, cwd?: string): Promise<unknown> {

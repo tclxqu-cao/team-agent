@@ -23,8 +23,8 @@ export async function loadSessionWithRetry<T>(
   load: () => Promise<T>,
   options: SessionLoadRetryOptions = {},
 ): Promise<T> {
-  const maxAttempts = Math.max(1, Math.floor(options.maxAttempts ?? 3));
-  const baseDelayMs = Math.max(0, options.baseDelayMs ?? 250);
+  const maxAttempts = Math.max(1, Math.floor(options.maxAttempts ?? 4));
+  const baseDelayMs = Math.max(0, options.baseDelayMs ?? 500);
   const sleep = options.sleep ?? ((delayMs: number) => new Promise<void>((resolve) => {
     setTimeout(resolve, delayMs);
   }));
@@ -34,7 +34,7 @@ export async function loadSessionWithRetry<T>(
       return await load();
     } catch (error) {
       if (attempt === maxAttempts || !isSessionTransportError(error)) throw error;
-      await sleep(baseDelayMs * attempt);
+      await sleep(baseDelayMs * (2 ** (attempt - 1)));
     }
   }
 

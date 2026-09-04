@@ -25,6 +25,7 @@ class CompletingModelProvider implements IModelProvider {
   readonly modelId = "test";
 
   async *streamChat(_messages: Message[]): AsyncIterable<StreamEvent> {
+    yield { type: "text_chunk", text: "completed" };
     yield { type: "text_done" };
   }
 
@@ -33,6 +34,38 @@ class CompletingModelProvider implements IModelProvider {
 }
 
 describe("AgentHost session titles", () => {
+  it("persists and emits an authoritative completion duration", async () => {
+    const path = await mkdtemp(join(tmpdir(), "agentroam-desktop-duration-"));
+    const host = new agentHostModule.AgentHost(path);
+    host.getBuilder()
+      .withModelProvider(new CompletingModelProvider())
+      .withSemanticSkillMatching(false);
+
+    try {
+      const session = await host.createSession("duration");
+      const events = [];
+      for await (const event of host.run("measure", session.id)) events.push(event);
+
+      expect(events.find((event) => event.type === "done")).toMatchObject({
+        type: "done",
+        durationMs: expect.any(Number),
+      });
+      await expect(host.getSessionStore().get(session.id)).resolves.toMatchObject({
+        messages: [
+          { role: "user", content: "measure" },
+          {
+            role: "assistant",
+            content: "completed",
+            presentation: { completionDurationMs: expect.any(Number) },
+          },
+        ],
+      });
+    } finally {
+      (host as unknown as { cronScheduler: { stop(): void } }).cronScheduler.stop();
+      await rm(path, { recursive: true, force: true });
+    }
+  });
+
   it("consumes a new placeholder marker once without renaming historical placeholders", async () => {
     const path = await mkdtemp(join(tmpdir(), "agentroam-desktop-title-"));
     const host = new agentHostModule.AgentHost(path);

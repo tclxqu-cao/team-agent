@@ -106,9 +106,14 @@ export async function POST(request: Request) {
       streamUrl: `/api/agent/stream?sessionId=${session.id}`,
     });
   } catch (err) {
+    const code = err instanceof RuntimeSessionError ? err.code : undefined;
+    const isConflict = code === "SESSION_OCCUPIED" || code === "SESSION_ALREADY_RUNNING";
     return NextResponse.json(
-      { error: err instanceof Error ? err.message : "Internal error" },
-      { status: err instanceof RuntimeSessionError && err.code === "SESSION_OCCUPIED" ? 409 : 500 },
+      {
+        error: err instanceof Error ? err.message : "Internal error",
+        ...(code ? { code } : {}),
+      },
+      { status: isConflict ? 409 : 500 },
     );
   }
 }

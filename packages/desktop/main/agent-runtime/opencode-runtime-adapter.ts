@@ -268,7 +268,7 @@ export class OpenCodeRuntimeAdapter implements AgentRuntimeAdapter {
     options?: RuntimeRunOptions,
   ): AsyncIterable<AgentEvent> {
     if (this.activeRuns.has(nativeSessionId)) {
-      throw new RuntimeSessionError("OpenCode session is already running", "SESSION_OCCUPIED");
+      throw new RuntimeSessionError("OpenCode session is already running", "SESSION_ALREADY_RUNNING");
     }
     const detail = await this.getSession(nativeSessionId);
     if (detail.occupancy === "owned-externally") {

@@ -21,6 +21,7 @@ import ThemePicker from "./ThemePicker";
 import { resetHorizontalScroll, resolveVisualViewport } from "./mobileViewport";
 import { DEFAULT_THEME_ID, resolveWebTheme, type WebThemeId } from "./themes";
 import { readWebappTabSwipeMessage } from "./webappTabSwipe";
+import { readWebappReadyMessage } from "./webappReady";
 
 const TerminalPane = dynamic(() => import("./TerminalPane"), { ssr: false });
 const FileTree = dynamic(() => import("./FileTree"), { ssr: false });
@@ -82,6 +83,7 @@ function AuthenticatedConsole({ auth }: { auth: WebAuthController }) {
   const [pinnedCommands,setPinnedCommands]=useState<PinnedCommand[]>(defaultPinnedCommands());
   const [themeId,setThemeId]=useState<WebThemeId>(DEFAULT_THEME_ID);
   const [preferencesLoaded,setPreferencesLoaded]=useState(false);
+  const [webappReady, setWebappReady] = useState(false);
   const activeTheme = resolveWebTheme(themeId);
   const fileDrag=useRef<{moved:boolean;startX:number;startY:number}|null>(null);
   const swipeStart = useRef<{ x: number; y: number; axis: "pending"|"horizontal"|"vertical" } | null>(null);
@@ -101,6 +103,15 @@ function AuthenticatedConsole({ auth }: { auth: WebAuthController }) {
   }, [themeId, postSkinToWebapp]);
   useEffect(() => {
     const onMessage = (event: MessageEvent) => {
+      const readyMessage = readWebappReadyMessage(
+        event,
+        window.location.origin,
+        webappFrameRef.current?.contentWindow ?? null,
+      );
+      if (readyMessage) {
+        setWebappReady(true);
+        return;
+      }
       const artifactRequest = readWebArtifactOpenRequest(
         event,
         window.location.origin,
@@ -402,7 +413,18 @@ function AuthenticatedConsole({ auth }: { auth: WebAuthController }) {
           {tabs.map((tab) => (
             <div className="terminal-slide" key={tab.id}>
               {tab.kind === "webapp" ? (
-                <iframe ref={webappFrameRef} src="/app/" title={tab.title} onLoad={() => postSkinToWebapp(themeId)} style={{ width: "100%", height: "100%", border: "0", background: "var(--ui-term-col-bg, #101014)" }} />
+                <>
+                  <iframe ref={webappFrameRef} className="webapp-frame" src="/app/" title={tab.title} onLoad={() => postSkinToWebapp(themeId)} />
+                  <div className={`webapp-boot${webappReady ? " is-ready" : ""}`} role="status" aria-live="polite" aria-hidden={webappReady}>
+                    <div className="webapp-boot-mark" aria-hidden="true">
+                      <span className="webapp-boot-orbit" />
+                      <span className="webapp-boot-diamond" />
+                      <span className="webapp-boot-core" />
+                    </div>
+                    <strong>AgentRoam</strong>
+                    <span>正在唤醒工作区</span>
+                  </div>
+                </>
               ) : (
                 <TerminalPane terminalId={tab.id} title={tab.title} initialCommand={tab.initialCommand} visible={tab.id === activeTerminalId} state={state} rpc={rpc} onEvent={onEvent} onTerminalData={onTerminalData} onTerminalReset={onTerminalReset} sendTerminalInput={sendTerminalInput} keyOrder={keyOrder} keybarHidden={keybarHidden} onKeyOrderChange={setKeyOrder} onKeybarHiddenChange={setKeybarHidden} terminalTheme={activeTheme} initialScrollLine={terminalScroll[tab.id] ?? null} onScrollLineChange={(line) => setTerminalScroll((current) => (current[tab.id] === line ? current : { ...current, [tab.id]: line }))} onRegisterFill={(fill) => registerTerminalFill(tab.id, fill)} onCwdChange={(cwd) => cwd && setCwdByTerminal((current) => ({ ...current, [tab.id]: cwd }))} />
               )}
@@ -498,12 +520,23 @@ const GLOBAL_CSS = `
   }
   @media (prefers-reduced-motion: reduce) { .theme-avatar { transition:none; } }
   .terminal-track { display:flex; width:100%; height:100%; will-change:transform; }
-  .terminal-slide { flex:0 0 100%; width:100%; height:100%; min-width:0; }
+  .terminal-slide { position:relative; flex:0 0 100%; width:100%; height:100%; min-width:0; overflow:hidden; }
+  .webapp-frame { display:block; width:100%; height:100%; border:0; background:var(--ui-term-col-bg, #101014); }
+  .webapp-boot { position:absolute; inset:0; z-index:2; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:6px; padding:24px; box-sizing:border-box; background:var(--ui-term-col-bg, #101014); color:var(--ui-text, #e8e8ee); opacity:1; visibility:visible; pointer-events:none; transition:opacity .28s ease,visibility 0s linear 0s; }
+  .webapp-boot.is-ready { opacity:0; visibility:hidden; transition:opacity .28s ease,visibility 0s linear .28s; }
+  .webapp-boot strong { margin-top:15px; font-size:16px; line-height:1.25; font-weight:650; letter-spacing:0; }
+  .webapp-boot > span { color:var(--ui-muted-text, #8f93a4); font-size:12px; line-height:1.5; letter-spacing:0; }
+  .webapp-boot-mark { position:relative; width:66px; height:66px; color:var(--ui-tab-accent, #7aa2f7); }
+  .webapp-boot-orbit { position:absolute; inset:3px; border:1px solid color-mix(in srgb,currentColor 34%,transparent); border-top-color:currentColor; border-right-color:transparent; border-radius:50%; animation:webapp-boot-spin 1.65s linear infinite; }
+  .webapp-boot-diamond { position:absolute; top:19px; left:19px; width:26px; height:26px; border:2px solid currentColor; border-radius:4px; transform:rotate(45deg); animation:webapp-boot-breathe 1.35s ease-in-out infinite; }
+  .webapp-boot-core { position:absolute; top:30px; left:30px; width:6px; height:6px; border-radius:50%; background:currentColor; box-shadow:0 0 0 6px color-mix(in srgb,currentColor 12%,transparent); }
+  @keyframes webapp-boot-spin { to { transform:rotate(360deg); } }
+  @keyframes webapp-boot-breathe { 0%,100% { opacity:.58; transform:rotate(45deg) scale(.9); } 50% { opacity:1; transform:rotate(45deg) scale(1); } }
   .terminal-screen { display:flex; flex-direction:column; min-height:0; overflow:hidden; }
   .terminal-screen .xterm { flex:1; height:100%; background:var(--ui-terminal-bg, #101014); }
   .terminal-screen .xterm .xterm-viewport { background-color:var(--ui-terminal-bg, #101014); }
   .terminal-screen .xterm-scrollable-element { touch-action:pan-y; -webkit-overflow-scrolling:touch; }
-  @media (prefers-reduced-motion: reduce) { .terminal-track,.terminal-tab { transition:none !important; } }
+  @media (prefers-reduced-motion: reduce) { .terminal-track,.terminal-tab,.webapp-boot { transition:none !important; } .webapp-boot-orbit,.webapp-boot-diamond { animation:none !important; } }
   .web-root {
     position: fixed;
     top: var(--vv-top, 0px);

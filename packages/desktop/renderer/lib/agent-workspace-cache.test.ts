@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   AGENT_WORKSPACE_CACHE_KEY,
   emptyAgentWorkspaceCache,
+  emptyAgentWorkspacePartition,
+  preservePendingNativeSession,
   readAgentWorkspaceCache,
   reconcileSessionPage,
   reconcileWorkspacePage,
@@ -94,7 +96,7 @@ describe("agent workspace cache", () => {
     ]);
   });
 
-  it("appends session pages without duplicates and caps cached rows", () => {
+  it("appends every session page without duplicates or a total-row cap", () => {
     const current = Array.from({ length: 300 }, (_, index) => session(String(index)));
     const result = reconcileSessionPage(current, {
       data: [session("299"), session("300")],
@@ -103,7 +105,7 @@ describe("agent workspace cache", () => {
     }, false);
 
     expect(new Set(result.map((item) => item.id)).size).toBe(result.length);
-    expect(result).toHaveLength(300);
+    expect(result).toHaveLength(301);
   });
 
   it("removes missing sessions when the refreshed first page is the complete list", () => {
@@ -116,7 +118,55 @@ describe("agent workspace cache", () => {
     expect(result.map((item) => item.id)).toEqual(["kept"]);
   });
 
+  it("preserves an explicit pending native fork while discovery has not returned it yet", () => {
+    const source = session("source");
+    const forked = session("forked");
+
+    expect(preservePendingNativeSession(
+      [source],
+      forked,
+    ).map((item) => item.id)).toEqual(["forked", "source"]);
+  });
+
+  it("does not duplicate a pending session already returned by discovery", () => {
+    const pending = session("pending");
+
+    expect(preservePendingNativeSession([pending], pending)).toEqual([pending]);
+  });
+
+  it("does not preserve a stale selected row without an explicit pending session", () => {
+    expect(preservePendingNativeSession([session("source")])).toEqual([session("source")]);
+  });
+
   it("ignores corrupted storage", () => {
     expect(readAgentWorkspaceCache({ getItem: () => "not-json" })).toEqual(emptyAgentWorkspaceCache());
+  });
+
+  it("preserves a read-only workspace and more than 300 cached sessions", () => {
+    const cache = emptyAgentWorkspaceCache();
+    cache.activeAgent = "codex";
+    cache.agents.codex = {
+      ...emptyAgentWorkspacePartition(),
+      workspaces: [{
+        ...workspace("codex", "codex:recent", "最近"),
+        roots: [],
+        source: "derived",
+        canCreateSession: false,
+      }],
+      sessions: {
+        "codex:recent": {
+          data: Array.from({ length: 325 }, (_, index) => session(String(index))),
+          nextCursor: null,
+          loaded: true,
+        },
+      },
+    };
+    let stored = "";
+    writeAgentWorkspaceCache(cache, { setItem: (_key, value) => { stored = value; } });
+
+    const restored = readAgentWorkspaceCache({ getItem: () => stored });
+
+    expect(restored.agents.codex?.workspaces[0]?.canCreateSession).toBe(false);
+    expect(restored.agents.codex?.sessions["codex:recent"]?.data).toHaveLength(325);
   });
 });

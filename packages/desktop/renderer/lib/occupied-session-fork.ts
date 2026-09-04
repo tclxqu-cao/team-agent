@@ -31,10 +31,10 @@ export async function forkOccupiedCodexSession(options: {
   sourceSessionId: string;
   forkSession: (id: string) => Promise<UnifiedSessionSummary>;
   activateSession: (id: string) => void;
-  refreshAndSelect: (id: string) => void | Promise<void>;
+  refreshAndSelect: (session: UnifiedSessionSummary) => void | Promise<void>;
 }): Promise<UnifiedSessionSummary> {
   const forked = await options.forkSession(options.sourceSessionId);
   options.activateSession(forked.id);
-  await options.refreshAndSelect(forked.id);
+  await options.refreshAndSelect(forked);
   return forked;
 }

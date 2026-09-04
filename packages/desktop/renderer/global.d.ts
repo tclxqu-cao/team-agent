@@ -89,6 +89,7 @@ export interface AgentWorkspace {
   order: number;
   updatedAt?: string;
   source: "native" | "derived" | "imported";
+  canCreateSession?: boolean;
 }
 
 export interface ImportAgentWorkspaceResult {
@@ -103,6 +104,16 @@ export interface WorkspacePage<T> {
   stale?: boolean;
 }
 export type ToolPermissionMode = "request-approval" | "auto-approval" | "full-access";
+export type SessionCompatibilityStatus = "checking" | "direct" | "migratable" | "incompatible";
+
+export interface SessionCompatibility {
+  status: SessionCompatibilityStatus;
+  producerVersion?: string;
+  readerVersion: string;
+  formatKey?: string;
+  reasonCode?: string;
+  reason?: string;
+}
 
 export interface SessionGoal {
   id: string;
@@ -113,6 +124,12 @@ export interface SessionGoal {
   createdAt: number;
   updatedAt: number;
   sourceMessageId?: string;
+  kind?: "goal" | "message";
+  messagePayload?: {
+    images?: string[];
+    agentIds?: string[];
+    agentName?: string;
+  };
   iterations?: number;
   lastReason?: string;
 }
@@ -142,6 +159,9 @@ export interface UnifiedSessionSummary {
   occupancyRevision?: number;
   controller?: "web" | "desktop" | null;
   goalState?: SessionGoalState;
+  messageQueueVersion?: 1;
+  compatibility?: SessionCompatibility;
+  migratedFrom?: string;
 }
 
 export interface RuntimeHealth {
@@ -242,6 +262,14 @@ export interface AgentApi {
   enqueueSessionGoal(id: string, objective: string, sourceMessageId?: string): Promise<SessionGoalState>;
   reorderSessionGoals(id: string, orderedIds: string[]): Promise<SessionGoalState>;
   cancelSessionGoal(id: string, goalId: string): Promise<SessionGoalState>;
+  enqueueSessionMessage(
+    id: string,
+    message: { sourceMessageId: string; content: string; images?: string[]; agentIds?: string[]; agentName?: string },
+  ): Promise<SessionGoalState>;
+  updateSessionMessage(id: string, messageId: string, content: string): Promise<SessionGoalState>;
+  reorderSessionMessages(id: string, orderedIds: string[]): Promise<SessionGoalState>;
+  cancelSessionMessage(id: string, messageId: string): Promise<SessionGoalState>;
+  steerSessionMessage(id: string, messageId: string): Promise<SessionGoalState>;
   handoffSession?(id: string): Promise<unknown>;
   createSession(title: string, projectId?: string, agentType?: AgentType, cwd?: string): Promise<UnifiedSessionSummary>;
   forkSession(id: string): Promise<UnifiedSessionSummary>;

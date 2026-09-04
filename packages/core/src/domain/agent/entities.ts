@@ -63,7 +63,7 @@ export type AgentEvent =
   | { type: "compacted"; summary: string; removedMessages: number }
   | { type: "turn_aborted" }
   | { type: "error"; message: string; code?: string }
-  | { type: "done"; finalText: string; usage?: TokenUsage }
+  | { type: "done"; finalText: string; usage?: TokenUsage; durationMs?: number }
   | { type: "todo_update"; todos: TodoItem[] }
   | { type: "agent_dispatch"; agentName: string; task: string; subSessionId?: string }
   | { type: "agent_done"; agentName: string; subSessionId: string; status: "completed" | "failed"; summary?: string; error?: string }

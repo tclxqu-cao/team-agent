@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseMarkdownLinks } from "./markdown-links";
+import { parseMarkdownLinks, parseRichInlineTokens } from "./markdown-links";
 
 describe("parseMarkdownLinks", () => {
   it("turns Chinese Markdown labels into links and preserves surrounding text", () => {
@@ -53,6 +53,28 @@ describe("parseMarkdownLinks", () => {
       path: "/Users/caoqu/My Project/demo deck.pptx",
       raw: "[演示文稿](/Users/caoqu/My Project/demo deck.pptx)",
     }]);
+  });
+
+  it("parses a code-styled artifact label with whitespace before the absolute path", () => {
+    const raw = "[`111c424`]( /Users/caoqu/team-agent/customer-agent/docs/superpowers/specs/archive-design.md)";
+
+    expect(parseRichInlineTokens(`设计规格已写入并单独提交：${raw}。`)).toEqual([
+      { type: "text", value: "设计规格已写入并单独提交：" },
+      {
+        type: "artifact",
+        label: "`111c424`",
+        path: "/Users/caoqu/team-agent/customer-agent/docs/superpowers/specs/archive-design.md",
+        raw,
+      },
+      { type: "text", value: "。" },
+    ]);
+  });
+
+  it("does not parse an artifact-looking value inside inline code", () => {
+    expect(parseRichInlineTokens("示例：`[报告](/tmp/report.md)`")).toEqual([
+      { type: "text", value: "示例：" },
+      { type: "code", value: "[报告](/tmp/report.md)" },
+    ]);
   });
 
   it("parses Codex file citations as local artifacts", () => {

@@ -75,8 +75,8 @@ describe("occupied Codex session fork recovery", () => {
         return forked;
       },
       activateSession: (id) => calls.push(`activate:${id}`),
-      refreshAndSelect: async (id) => {
-        calls.push(`select:${id}`);
+      refreshAndSelect: async (session) => {
+        calls.push(`select:${session.id}`);
       },
     })).resolves.toEqual(forked);
 
@@ -109,7 +109,12 @@ describe("occupied Codex session fork recovery", () => {
     ), "utf8");
 
     expect(source).toContain("SESSION_OCCUPIED");
+    expect(source).toContain('event.code === "SESSION_ALREADY_RUNNING"');
+    expect(source).toContain("findLatestUnqueuedUserMessageId");
+    expect(source).toContain("isQueued: true");
+    expect(source).toContain("shouldQueueMessageForActiveRun");
     expect(source).toContain("forkSession: (id) => window.agentApi!.forkSession(id)");
+    expect(source).toContain("onSessionCreated(forked.id, forked)");
     expect(source).toContain("以副本继续");
     expect(source).toContain("正在创建…");
     expect(source).toContain("setInput(occupiedDraft)");

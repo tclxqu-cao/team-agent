@@ -4,6 +4,13 @@ export interface NativeSessionViewState {
   occupancy?: "available" | "owned-by-customer-agent" | "owned-externally";
 }
 
+export function isNativeRuntimeSelection(
+  session: NativeSessionViewState | null | undefined,
+  activeAgentType: NonNullable<NativeSessionViewState["agentType"]>,
+): boolean {
+  return (session?.agentType ?? activeAgentType) !== "customer-agent";
+}
+
 export function isActiveNativeSession(session: NativeSessionViewState | null | undefined): boolean {
   return session?.agentType !== undefined
     && session.agentType !== "customer-agent"
@@ -16,6 +23,13 @@ export function isObservedNativeRun(session: NativeSessionViewState | null | und
 
 export function shouldRestoreLocalNativeRun(session: NativeSessionViewState | null | undefined): boolean {
   return isActiveNativeSession(session) && session?.occupancy !== "owned-externally";
+}
+
+export function shouldQueueMessageForActiveRun(
+  session: NativeSessionViewState | null | undefined,
+  isLocallyRunning: boolean,
+): boolean {
+  return isLocallyRunning || shouldRestoreLocalNativeRun(session);
 }
 
 export function shouldFollowNativeHistory(
