@@ -1,0 +1,19 @@
+docs/superpowers/specs/2026-09-04-progressive-whole-file-preview-design.md
+  s_b95fa2e9b9b282::t_e1093d020054cd 1-84
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "a3c12edf6c1446a68d8295091a625541a865de99",
+  "prompts": {},
+  "sessions": {
+    "s_b95fa2e9b9b282": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06a27-5c57-7232-9522-e70895aadb95",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
