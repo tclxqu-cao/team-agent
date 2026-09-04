@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { access } from "node:fs/promises";
+import { access, readdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import { delimiter, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -7,7 +7,7 @@ import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
 const MANAGED_NODE_VERSION = "22.22.0";
-const RELEASE_VERSION = "0.2.0-preview.9";
+const RELEASE_VERSION = "0.2.0-preview.10";
 const RELEASE_BASE_URL = `https://gitee.com/caoqu/team-agent/releases/download/v${RELEASE_VERSION}`;
 const FORWARDED_SIGNALS = ["SIGINT", "SIGTERM", "SIGHUP"];
 
@@ -84,19 +84,58 @@ async function defaultFindSystemNode22(environment, platform, currentExecutable)
   for (const directory of (environment.PATH ?? "").split(pathDelimiter).filter(Boolean)) {
     if (resolve(directory) === resolve(currentDirectory)) continue;
     const candidate = resolve(directory, executableName);
+    const version = await inspectNodeVersion(candidate);
+    if (version?.[0] === 22) return candidate;
+  }
+  return findNvmNode22(environment, platform);
+}
+
+export async function findNvmNode22(environment = process.env, platform = process.platform) {
+  const windows = platform === "win32";
+  const homeDir = environment.HOME || environment.USERPROFILE || homedir();
+  const roots = windows
+    ? [environment.NVM_HOME, environment.APPDATA ? resolve(environment.APPDATA, "nvm") : undefined]
+    : [environment.NVM_DIR, resolve(homeDir, ".nvm")];
+  const candidates = [];
+  for (const root of [...new Set(roots.filter(Boolean))]) {
+    const versionsRoot = windows ? root : resolve(root, "versions", "node");
+    let entries;
     try {
-      await access(candidate);
-      const { stdout } = await execFileAsync(candidate, ["-p", "process.versions.node"], {
-        encoding: "utf8",
-        timeout: 5_000,
-        windowsHide: true,
-      });
-      if (Number(stdout.trim().split(".")[0]) === 22) return candidate;
+      entries = await readdir(versionsRoot, { withFileTypes: true });
     } catch {
-      // Ignore broken or incompatible PATH entries and continue to the private runtime.
+      continue;
+    }
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      const candidate = resolve(versionsRoot, entry.name, windows ? "node.exe" : "bin/node");
+      const version = await inspectNodeVersion(candidate);
+      if (version?.[0] === 22) candidates.push({ candidate, version });
     }
   }
-  return null;
+  candidates.sort((left, right) => compareVersions(right.version, left.version));
+  return candidates[0]?.candidate ?? null;
+}
+
+async function inspectNodeVersion(candidate) {
+  try {
+    await access(candidate);
+    const { stdout } = await execFileAsync(candidate, ["-p", "process.versions.node"], {
+      encoding: "utf8",
+      timeout: 5_000,
+      windowsHide: true,
+    });
+    const parts = stdout.trim().split(".").map((part) => Number(part));
+    return parts.length >= 3 && parts.every(Number.isInteger) ? parts.slice(0, 3) : null;
+  } catch {
+    return null;
+  }
+}
+
+function compareVersions(left, right) {
+  for (let index = 0; index < 3; index++) {
+    if (left[index] !== right[index]) return left[index] - right[index];
+  }
+  return 0;
 }
 
 async function defaultSpawnChild(executable, args, options) {

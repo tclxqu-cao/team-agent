@@ -29,7 +29,13 @@ import pty from "node-pty";
 import chokidar from "chokidar";
 import { HostPathPolicy, SQLiteAnonymousWebStore, SQLiteProjectStore, SQLiteWebConsoleStore } from "@agent/core";
 import { decodeOsc7Path, isPowerShell, selectDefaultShell } from "./shell-platform.mjs";
-import { inspectTextFile, saveTextFile } from "./lib/file-preview-service.mjs";
+import {
+  createPreviewTicketRegistry,
+  inspectTextFile,
+  inspectTextFileStatus,
+  saveTextFile,
+  servePreviewFile,
+} from "./lib/file-preview-service.mjs";
 
 const dev = process.env.NODE_ENV !== "production";
 const port = Number(process.env.PORT || 3000);
@@ -42,6 +48,7 @@ const projectStore = new SQLiteProjectStore(serverBaseDir);
 consoleStore.markStaleTerminalsExited(new Date().toISOString());
 const hostPathPolicy = HostPathPolicy.fromEnvironment(process.env.AGENT_WEB_ROOTS, os.homedir());
 const roots = hostPathPolicy.roots;
+const previewTickets = createPreviewTicketRegistry();
 
 // bun install drops the executable bit on node-pty's prebuilt spawn-helper,
 // which makes every pty.spawn fail with "posix_spawnp failed". Repair on boot
@@ -729,6 +736,7 @@ const requestHandlers = {
   "fs:list": async (msg, conn) => ({ entries: await fsList(msg.path, conn.principal.userId) }),
   "fs:read": async (msg, conn) => await fsRead(msg.path, msg.offset ?? 0, msg.length, conn.principal.userId),
   "fs:inspect-text": async (msg, conn) => await inspectTextFile(assertAllowed(msg.path, conn.principal.userId)),
+  "fs:inspect-text-status": async (msg, conn) => await inspectTextFileStatus(assertAllowed(msg.path, conn.principal.userId)),
   "fs:write-text": async (msg, conn) => await saveTextFile(
     assertAllowed(msg.path, conn.principal.userId),
     msg.content,
@@ -740,6 +748,23 @@ const requestHandlers = {
   },
   "fs:watch": async (msg, conn) => watchPath(conn, msg.path),
   "fs:unwatch": async (msg, conn) => { await unwatchPath(conn, msg.path); return null; },
+
+  "fs:preview-open": async (msg, conn) => {
+    const abs = assertAllowed(msg.path, conn.principal.userId);
+    const st = await fsp.stat(abs);
+    if (!st.isFile()) throw Object.assign(new Error("not a regular file"), { code: "EISDIR" });
+    const ticketId = previewTickets.issue(abs, conn.principal.userId);
+    return {
+      ticketId,
+      url: `/api/web-console/file-preview/${ticketId}`,
+      size: st.size,
+      mtime: st.mtimeMs,
+      mime: mimeFor(abs),
+    };
+  },
+  "fs:preview-close": async (msg, conn) => ({
+    revoked: previewTickets.revoke(String(msg.ticketId ?? ""), conn.principal.userId),
+  }),
 
   "fs:download": async (msg, conn) => {
     // small-file download convenience (≤1 MiB) as base64 data URL payload
@@ -906,10 +931,42 @@ async function serveWebApp(req, res) {
   return true;
 }
 
+async function serveTicketedFilePreview(req, res) {
+  const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
+  const prefix = "/api/web-console/file-preview/";
+  if (!url.pathname.startsWith(prefix)) return false;
+  if (req.method !== "GET" && req.method !== "HEAD") {
+    res.writeHead(405, { allow: "GET, HEAD" }).end();
+    return true;
+  }
+  const ticketId = url.pathname.slice(prefix.length);
+  const ticket = ticketId && !ticketId.includes("/") ? previewTickets.resolve(ticketId) : null;
+  if (!ticket) {
+    res.writeHead(404, { "cache-control": "private, no-store" }).end("Not found");
+    return true;
+  }
+  try {
+    const abs = assertAllowed(ticket.path, ticket.userId);
+    await servePreviewFile(req, res, abs, mimeFor(abs));
+  } catch (error) {
+    if (!res.headersSent) {
+      const status = error?.code === "EACCES" || error?.code === "EPATH_NOT_ALLOWED" ? 403 : 404;
+      res.writeHead(status, { "cache-control": "private, no-store" }).end("Not found");
+    } else {
+      res.destroy(error);
+    }
+  }
+  return true;
+}
+
 const server = createServer((req, res) => {
-  void serveWebApp(req, res).then((handled) => {
-    if (!handled) handle(req, res);
-  });
+  void serveTicketedFilePreview(req, res)
+    .then((handled) => handled || serveWebApp(req, res))
+    .then((handled) => { if (!handled) handle(req, res); })
+    .catch((error) => {
+      if (!res.headersSent) res.writeHead(500).end("Internal server error");
+      else res.destroy(error);
+    });
 });
 const wss = new WebSocketServer({ noServer: true, maxPayload: 1024 * 1024 });
 

@@ -25,6 +25,9 @@ export interface ServiceConfig {
   version: string;
   nodePath: string;
   cliPath: string;
+  environmentPath?: string;
+  codexPath?: string;
+  codexHome?: string;
   roots: string[];
   port: number | null;
   relay: RelayMode;

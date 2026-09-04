@@ -3,9 +3,16 @@ import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { inspectTextFile, saveTextFile } from "./file-preview-service.mjs";
+import {
+  createPreviewTicketRegistry,
+  inspectTextFile,
+  inspectTextFileStatus,
+  parsePreviewRange,
+  saveTextFile,
+} from "./file-preview-service.mjs";
 
 const temporaryDirectories: string[] = [];
+const wsServerSource = readFileSync(new URL("../ws-server.mjs", import.meta.url), "utf8");
 
 function temporaryDirectory(name: string) {
   const directory = mkdtempSync(join(tmpdir(), `${name}-`));
@@ -55,6 +62,21 @@ describe("file preview service", () => {
     expect(result.patch).toContain("+gamma");
   });
 
+  it("reports Git status without returning full file data", async () => {
+    const { file } = committedRepository();
+    writeFileSync(file, "alpha\ngamma\n");
+
+    const result = await inspectTextFileStatus(file);
+
+    expect(result).toMatchObject({
+      size: Buffer.byteLength("alpha\ngamma\n"),
+      tooLarge: false,
+      diffStatus: "changed",
+    });
+    expect(result).not.toHaveProperty("data");
+    expect(result).not.toHaveProperty("patch");
+  });
+
   it("returns an all-added patch for an untracked text file", async () => {
     const { directory } = committedRepository();
     const file = join(directory, "new note.txt");
@@ -93,5 +115,68 @@ describe("file preview service", () => {
     writeFileSync(file, "external change");
     await expect(saveTextFile(file, "three", saved)).rejects.toMatchObject({ code: "EFILECHANGED" });
     expect(readFileSync(file, "utf8")).toBe("external change");
+  });
+});
+
+describe("file preview ranges", () => {
+  it.each([
+    [undefined, null],
+    ["bytes=2-5", { start: 2, end: 5 }],
+    ["bytes=6-", { start: 6, end: 9 }],
+    ["bytes=-3", { start: 7, end: 9 }],
+    ["bytes=8-20", { start: 8, end: 9 }],
+  ])("parses %s", (header, expected) => {
+    expect(parsePreviewRange(header, 10)).toEqual(expected);
+  });
+
+  it.each(["items=0-2", "bytes=", "bytes=5-3", "bytes=20-", "bytes=0-1,4-5"])("rejects %s", (header) => {
+    expect(() => parsePreviewRange(header, 10)).toThrow("invalid byte range");
+  });
+});
+
+describe("file preview ticket registry", () => {
+  it("refreshes valid tickets and enforces ownership during revocation", () => {
+    let current = 1_000;
+    let sequence = 0;
+    const registry = createPreviewTicketRegistry({
+      ttlMs: 100,
+      now: () => current,
+      token: () => `ticket-${++sequence}`,
+    });
+
+    const id = registry.issue("/tmp/report.pdf", "user-a");
+    current = 1_050;
+    expect(registry.resolve(id)).toMatchObject({ path: "/tmp/report.pdf", userId: "user-a" });
+    expect(registry.revoke(id, "user-b")).toBe(false);
+    expect(registry.revoke(id, "user-a")).toBe(true);
+    expect(registry.resolve(id)).toBeNull();
+  });
+
+  it("expires idle tickets", () => {
+    let current = 1_000;
+    const registry = createPreviewTicketRegistry({ ttlMs: 100, now: () => current, token: () => "ticket" });
+    registry.issue("/tmp/report.pdf", "user-a");
+    current = 1_100;
+    expect(registry.resolve("ticket")).toBeNull();
+  });
+});
+
+describe("file preview gateway authorization contract", () => {
+  it("authorizes both ticket issuance and every ticketed HTTP open", () => {
+    const issuance = wsServerSource.slice(
+      wsServerSource.indexOf('"fs:preview-open"'),
+      wsServerSource.indexOf('"fs:preview-close"'),
+    );
+    const serving = wsServerSource.slice(
+      wsServerSource.indexOf("async function serveTicketedFilePreview"),
+      wsServerSource.indexOf("const server = createServer"),
+    );
+
+    expect(issuance).toContain("assertAllowed(msg.path, conn.principal.userId)");
+    expect(serving).toContain("assertAllowed(ticket.path, ticket.userId)");
+    const serverCallback = wsServerSource.slice(wsServerSource.indexOf("const server = createServer"));
+    expect(serverCallback.indexOf("serveTicketedFilePreview(req, res)")).toBeLessThan(
+      serverCallback.indexOf("serveWebApp(req, res)"),
+    );
   });
 });

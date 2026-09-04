@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { chmod, copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { execFileSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
@@ -22,7 +22,9 @@ describe("standalone installer contracts", () => {
     expect(script).toContain('AGENTROAM_INSTALL_SKIP_SERVICE');
     expect(script).toContain('service install --root "$SERVICE_ROOT" --data-dir "$DATA_DIR"');
     expect(script).toContain("refusing to expose the entire home directory implicitly");
-    expect(script).not.toMatch(/\b(?:brew|sudo|nvm|fnm|volta)\b/);
+    expect(script).toContain("find_nvm_node_22");
+    expect(script).toContain('${NVM_DIR:-}');
+    expect(script).not.toMatch(/\b(?:brew|sudo|fnm|volta)\b/);
     execFileSync("sh", ["-n", scriptPath]);
   });
 
@@ -39,6 +41,93 @@ describe("standalone installer contracts", () => {
     expect(script).toContain("$env:AGENTROAM_INSTALL_SKIP_SERVICE");
     expect(script).toContain("service install --root $ServiceRoot --data-dir $DataDir");
     expect(script).toContain("Refusing to expose the entire home directory implicitly");
+    expect(script).toContain("Find-NvmNode22");
+    expect(script).toContain("$env:NVM_HOME");
     expect(script).not.toMatch(/\b(?:winget|choco|scoop|Start-Process\s+.*RunAs)\b/i);
   });
+
+  it.skipIf(process.platform !== "darwin" || process.arch !== "arm64")(
+    "selects the highest installed NVM Node 22 without changing the active version",
+    async () => {
+      const root = await mkdtemp(resolve(process.env.TMPDIR || "/tmp", "agentroam-nvm-discovery-"));
+      try {
+        const home = resolve(root, "home");
+        const workspace = resolve(root, "workspace");
+        const activeBin = resolve(root, "active-bin");
+        const nvmRoot = resolve(root, "nvm root with spaces");
+        await Promise.all([mkdir(home), mkdir(workspace), mkdir(activeBin), mkdir(nvmRoot)]);
+        await fakeNode(resolve(activeBin, "node"), "20.19.0");
+        await fakeNode(resolve(nvmRoot, "versions/node/v22.3.0/bin/node"), "22.3.0");
+        const expected = await fakeNode(resolve(nvmRoot, "versions/node/v22.22.2/bin/node"), "22.22.2");
+        await fakeNode(resolve(nvmRoot, "versions/node/v22.99.0/bin/node"), "21.99.0");
+
+        const output = execFileSync("/bin/sh", [resolve(installRoot, "install-agentroam.sh")], {
+          cwd: workspace,
+          encoding: "utf8",
+          env: {
+            ...process.env,
+            HOME: home,
+            NVM_DIR: nvmRoot,
+            PATH: `${activeBin}:/usr/bin:/bin`,
+            AGENTROAM_BOOTSTRAP_TEST: "1",
+            AGENTROAM_BOOTSTRAP_NODE_DISCOVERY_ONLY: "1",
+          },
+        });
+
+        expect(output.trim().split("\n").at(-1)).toBe(expected);
+        expect(output).toContain("Using Node.js v22.22.2 from NVM");
+      } finally {
+        await rm(root, { recursive: true, force: true });
+      }
+    },
+  );
+
+  it.skipIf(process.platform !== "win32" || Number(process.versions.node.split(".")[0]) !== 22)(
+    "selects an installed nvm-windows Node 22 when the active PATH has no Node",
+    async () => {
+      const root = await mkdtemp(resolve(process.env.TEMP || process.env.TMP || "C:\\Windows\\Temp", "agentroam-nvm-windows-"));
+      try {
+        const home = resolve(root, "home");
+        const workspace = resolve(root, "workspace");
+        const nvmRoot = resolve(root, "nvm root with spaces");
+        const expected = resolve(nvmRoot, `v${process.versions.node}`, "node.exe");
+        await Promise.all([
+          mkdir(home),
+          mkdir(workspace),
+          mkdir(resolve(expected, ".."), { recursive: true }),
+        ]);
+        await copyFile(process.execPath, expected);
+
+        const output = execFileSync("powershell.exe", [
+          "-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
+          "-File", resolve(installRoot, "install-agentroam.ps1"),
+        ], {
+          cwd: workspace,
+          encoding: "utf8",
+          env: {
+            ...process.env,
+            HOME: home,
+            USERPROFILE: home,
+            APPDATA: resolve(root, "appdata"),
+            NVM_HOME: nvmRoot,
+            PATH: `${process.env.SystemRoot || "C:\\Windows"}\\System32`,
+            AGENTROAM_BOOTSTRAP_TEST: "1",
+            AGENTROAM_BOOTSTRAP_NODE_DISCOVERY_ONLY: "1",
+          },
+        });
+
+        expect(output.trim().split(/\r?\n/).at(-1)).toBe(expected);
+        expect(output).toContain(`Using Node.js v${process.versions.node} from NVM`);
+      } finally {
+        await rm(root, { recursive: true, force: true });
+      }
+    },
+  );
 });
+
+async function fakeNode(path: string, version: string): Promise<string> {
+  await mkdir(resolve(path, ".."), { recursive: true });
+  await writeFile(path, `#!/bin/sh\ncase "$1" in\n  -p) printf '%s\\n' '${version}' ;;\n  --version) printf '%s\\n' 'v${version}' ;;\nesac\n`);
+  await chmod(path, 0o755);
+  return path;
+}

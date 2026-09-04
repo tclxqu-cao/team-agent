@@ -1,6 +1,6 @@
 {
   "name": "agentroam-cloudflared-win32-x64",
-  "version": "0.2.0-preview.9",
+  "version": "0.2.0-preview.10",
   "description": "Verified cloudflared executable for AgentRoam on Windows x64",
   "license": "MIT",
   "os": ["win32"],

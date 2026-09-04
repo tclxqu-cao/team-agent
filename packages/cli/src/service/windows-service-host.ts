@@ -24,7 +24,13 @@ export async function runWindowsServiceHost(
   try {
     child = (dependencies.spawnProcess ?? spawn)(command, args, {
       cwd: config.roots[0],
-      env: { ...process.env, AGENTROAM_SERVICE: "1" },
+      env: {
+        ...process.env,
+        ...(config.environmentPath ? { PATH: config.environmentPath } : {}),
+        ...(config.codexPath ? { AGENT_CODEX_BIN: config.codexPath } : {}),
+        ...(config.codexHome ? { CODEX_HOME: config.codexHome } : {}),
+        AGENTROAM_SERVICE: "1",
+      },
       stdio: ["ignore", stdoutHandle.fd, stderrHandle.fd],
       windowsHide: true,
     });

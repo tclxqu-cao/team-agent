@@ -1,4 +1,7 @@
+import { delimiter, dirname, isAbsolute, resolve, win32 } from "node:path";
 import type { CliOptions } from "../args.js";
+import { resolveCodexRuntime, type CodexRuntimeResolution, type ResolveCodexRuntimeOptions } from "../codex-runtime-manager.js";
+import { detectPlatform } from "../platform.js";
 import { MacLaunchAgent } from "./macos-launch-agent.js";
 import type { ServiceConfig } from "./service-files.js";
 import type { ServiceController } from "./service-controller.js";
@@ -11,6 +14,9 @@ interface ServiceCommandContext {
   cliPath: string;
   version: string;
   nodeVersion?: string;
+  arch?: string;
+  environment?: NodeJS.ProcessEnv;
+  codexResolver?: (options: ResolveCodexRuntimeOptions) => Promise<CodexRuntimeResolution>;
   now?: () => Date;
   log?: (line: string) => void;
   controller?: ServiceController;
@@ -29,10 +35,33 @@ export async function runServiceCommand(options: CliOptions, context: ServiceCom
         throw cliError(`Node.js 22 is required to install the service (current ${nodeVersion})`);
       }
       const now = context.now?.() ?? new Date();
+      const environment = context.environment ?? process.env;
+      const environmentPath = buildServiceEnvironmentPath(
+        context.nodePath,
+        environment.PATH ?? environment.Path,
+        platform,
+      );
+      let codexPath: string | undefined;
+      try {
+        const codex = await (context.codexResolver ?? resolveCodexRuntime)({
+          dataDir: options.dataDir,
+          target: detectPlatform(platform, context.arch ?? process.arch, nodeVersion),
+          environment: { ...environment, PATH: environmentPath },
+          platform,
+          nodeExecutable: context.nodePath,
+          onProgress: (message) => log(`… ${message}`),
+        });
+        codexPath = codex.executable;
+      } catch (error) {
+        log(`⚠ Codex runtime was not pinned during service install: ${error instanceof Error ? error.message : error}`);
+      }
       const config: ServiceConfig = {
         version: context.version,
         nodePath: context.nodePath,
         cliPath: context.cliPath,
+        environmentPath,
+        ...(codexPath ? { codexPath } : {}),
+        ...(environment.CODEX_HOME?.trim() ? { codexHome: resolve(environment.CODEX_HOME.trim()) } : {}),
         roots: options.roots,
         port: options.port,
         relay: options.relay,
@@ -99,6 +128,21 @@ export async function runServiceCommand(options: CliOptions, context: ServiceCom
     default:
       throw cliError("service action is required");
   }
+}
+
+export function buildServiceEnvironmentPath(
+  nodePath: string,
+  pathValue: string | undefined,
+  platform: NodeJS.Platform,
+): string {
+  const separator = platform === "win32" ? ";" : delimiter;
+  const nodeDirectory = platform === "win32" ? win32.dirname(nodePath) : dirname(nodePath);
+  const absolute = platform === "win32" ? win32.isAbsolute : isAbsolute;
+  const required = platform === "darwin" ? ["/usr/bin", "/bin", "/usr/sbin", "/sbin"] : [];
+  const entries = [nodeDirectory, ...(pathValue ?? "").split(separator), ...required]
+    .map((entry) => entry.trim())
+    .filter((entry) => entry && absolute(entry));
+  return [...new Set(entries)].join(separator);
 }
 
 function createController(platform: NodeJS.Platform, homeDir?: string): ServiceController {

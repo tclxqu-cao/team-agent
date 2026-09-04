@@ -1,6 +1,6 @@
 import { constants } from "node:fs";
 import { access, chmod, mkdir, readFile, rename, stat } from "node:fs/promises";
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 import {
   SERVICE_LABEL,
   ensurePrivateDirectory,
@@ -210,6 +210,7 @@ export class MacLaunchAgent implements ServiceController {
     await Promise.all([
       access(config.nodePath, constants.X_OK),
       access(config.cliPath, constants.R_OK),
+      ...(config.codexPath ? [access(config.codexPath, constants.X_OK)] : []),
       ...config.roots.map(async (root) => {
         if (!(await stat(root)).isDirectory()) throw new Error(`service root is not a directory: ${root}`);
       }),
@@ -236,11 +237,17 @@ export class MacLaunchAgent implements ServiceController {
 }
 
 export function buildLaunchAgentPlist(config: ServiceConfig, paths: ServicePaths): Record<string, unknown> {
+  const environmentVariables: Record<string, string> = {
+    AGENTROAM_SERVICE: "1",
+    PATH: config.environmentPath || `${dirname(config.nodePath)}:/usr/bin:/bin:/usr/sbin:/sbin`,
+  };
+  if (config.codexPath) environmentVariables.AGENT_CODEX_BIN = config.codexPath;
+  if (config.codexHome) environmentVariables.CODEX_HOME = config.codexHome;
   return {
     Label: SERVICE_LABEL,
     ProgramArguments: buildStartArguments(config),
     WorkingDirectory: config.roots[0],
-    EnvironmentVariables: { AGENTROAM_SERVICE: "1" },
+    EnvironmentVariables: environmentVariables,
     RunAtLoad: true,
     KeepAlive: true,
     ThrottleInterval: 5,

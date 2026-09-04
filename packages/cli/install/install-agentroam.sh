@@ -2,7 +2,7 @@
 set -eu
 
 NODE_VERSION="22.22.0"
-AGENTROAM_VERSION="0.2.0-preview.9"
+AGENTROAM_VERSION="0.2.0-preview.10"
 NODE_ARCHIVE="node-v22.22.0-darwin-arm64.tar.xz"
 NODE_SHA256="2bd596bbfc4a275ceb8721a5954ee97daea5ebe673e96a185ebd732f6fb023ac"
 NODE_URL="https://nodejs.org/dist/v22.22.0/$NODE_ARCHIVE"
@@ -60,6 +60,29 @@ node_is_22() {
   [ -x "$1" ] && [ "$("$1" -p 'process.versions.node.split(".")[0]' 2>/dev/null || true)" = "22" ]
 }
 
+find_nvm_node_22() {
+  best_bin=""
+  best_minor=-1
+  best_patch=-1
+  for nvm_root in "${NVM_DIR:-}" "$HOME/.nvm"; do
+    [ -n "$nvm_root" ] || continue
+    for candidate in "$nvm_root"/versions/node/v22*/bin/node; do
+      [ -x "$candidate" ] || continue
+      version=$("$candidate" -p 'process.versions.node' 2>/dev/null || true)
+      major=$(printf '%s\n' "$version" | awk -F. '{ print $1 + 0 }')
+      minor=$(printf '%s\n' "$version" | awk -F. '{ print $2 + 0 }')
+      patch=$(printf '%s\n' "$version" | awk -F. '{ sub(/[^0-9].*$/, "", $3); print $3 + 0 }')
+      [ "$major" -eq 22 ] 2>/dev/null || continue
+      if [ "$minor" -gt "$best_minor" ] || { [ "$minor" -eq "$best_minor" ] && [ "$patch" -gt "$best_patch" ]; }; then
+        best_bin="$candidate"
+        best_minor=$minor
+        best_patch=$patch
+      fi
+    done
+  done
+  [ -n "$best_bin" ] && printf '%s\n' "$best_bin"
+}
+
 runtime_is_valid() {
   [ -x "$NODE_ROOT/bin/node" ] \
     && [ -f "$NODE_ROOT/lib/node_modules/npm/bin/npm-cli.js" ] \
@@ -92,44 +115,59 @@ fi
 if [ -n "$SYSTEM_NODE" ] && node_is_22 "$SYSTEM_NODE"; then
   NODE_BIN="$SYSTEM_NODE"
 else
-  if ! runtime_is_valid; then
-    acquire_directory_lock "$NODE_LOCK"
-    OWN_NODE_LOCK=1
-    if ! runtime_is_valid; then
-      TEMP_ROOT=$(mktemp -d "$NODE_PARENT/.node-$NODE_VERSION.XXXXXX")
-      archive_path="$TEMP_ROOT/$NODE_ARCHIVE"
-      extract_path="$TEMP_ROOT/extract"
-      mkdir "$extract_path"
-      printf 'Downloading Node.js %s...\n' "$NODE_VERSION"
-      if [ -n "${AGENTROAM_NODE_ARCHIVE_FILE:-}" ]; then
-        cp "$AGENTROAM_NODE_ARCHIVE_FILE" "$archive_path"
-      else
-        download_attempt=1
-        while ! curl -fL -C - --connect-timeout 15 --max-time 600 "$NODE_URL" -o "$archive_path"; do
-          [ "$download_attempt" -lt 3 ] || fail "Node.js download failed after 3 attempts"
-          download_attempt=$((download_attempt + 1))
-          sleep "$download_attempt"
-        done
-      fi
-      actual_sha=$(shasum -a 256 "$archive_path" | awk '{print $1}')
-      [ "$actual_sha" = "$NODE_SHA256" ] || fail "Node.js archive checksum mismatch"
-      /usr/bin/tar -xJf "$archive_path" -C "$extract_path"
-      entry_count=$(find "$extract_path" -mindepth 1 -maxdepth 1 | wc -l | tr -d ' ')
-      [ "$entry_count" = "1" ] || fail "unexpected Node.js archive layout"
-      extracted="$extract_path/node-v$NODE_VERSION-darwin-arm64"
-      [ -x "$extracted/bin/node" ] || fail "Node.js executable is missing"
-      [ -f "$extracted/lib/node_modules/npm/bin/npm-cli.js" ] || fail "npm CLI is missing"
-      [ "$("$extracted/bin/node" --version)" = "v$NODE_VERSION" ] || fail "Node.js version validation failed"
-      rm -rf "$NODE_ROOT"
-      mv "$extracted" "$NODE_ROOT"
-      runtime_is_valid || fail "Node.js activation validation failed"
-      rm -rf "$TEMP_ROOT"
-      TEMP_ROOT=""
-    fi
-    rmdir "$NODE_LOCK" 2>/dev/null || true
-    OWN_NODE_LOCK=0
+  if [ "${AGENTROAM_BOOTSTRAP_TEST:-}" = "1" ] && [ "${AGENTROAM_FORCE_PRIVATE_NODE:-}" = "1" ]; then
+    NVM_NODE=""
+  else
+    NVM_NODE=$(find_nvm_node_22 || true)
   fi
-  NODE_BIN="$NODE_ROOT/bin/node"
+  if [ -n "$NVM_NODE" ]; then
+    NODE_BIN="$NVM_NODE"
+    printf 'Using Node.js %s from NVM: %s\n' "$("$NODE_BIN" --version)" "$NODE_BIN"
+  else
+    if ! runtime_is_valid; then
+      acquire_directory_lock "$NODE_LOCK"
+      OWN_NODE_LOCK=1
+      if ! runtime_is_valid; then
+        TEMP_ROOT=$(mktemp -d "$NODE_PARENT/.node-$NODE_VERSION.XXXXXX")
+        archive_path="$TEMP_ROOT/$NODE_ARCHIVE"
+        extract_path="$TEMP_ROOT/extract"
+        mkdir "$extract_path"
+        printf 'Downloading Node.js %s...\n' "$NODE_VERSION"
+        if [ -n "${AGENTROAM_NODE_ARCHIVE_FILE:-}" ]; then
+          cp "$AGENTROAM_NODE_ARCHIVE_FILE" "$archive_path"
+        else
+          download_attempt=1
+          while ! curl -fL -C - --connect-timeout 15 --max-time 600 "$NODE_URL" -o "$archive_path"; do
+            [ "$download_attempt" -lt 3 ] || fail "Node.js download failed after 3 attempts"
+            download_attempt=$((download_attempt + 1))
+            sleep "$download_attempt"
+          done
+        fi
+        actual_sha=$(shasum -a 256 "$archive_path" | awk '{print $1}')
+        [ "$actual_sha" = "$NODE_SHA256" ] || fail "Node.js archive checksum mismatch"
+        /usr/bin/tar -xJf "$archive_path" -C "$extract_path"
+        entry_count=$(find "$extract_path" -mindepth 1 -maxdepth 1 | wc -l | tr -d ' ')
+        [ "$entry_count" = "1" ] || fail "unexpected Node.js archive layout"
+        extracted="$extract_path/node-v$NODE_VERSION-darwin-arm64"
+        [ -x "$extracted/bin/node" ] || fail "Node.js executable is missing"
+        [ -f "$extracted/lib/node_modules/npm/bin/npm-cli.js" ] || fail "npm CLI is missing"
+        [ "$("$extracted/bin/node" --version)" = "v$NODE_VERSION" ] || fail "Node.js version validation failed"
+        rm -rf "$NODE_ROOT"
+        mv "$extracted" "$NODE_ROOT"
+        runtime_is_valid || fail "Node.js activation validation failed"
+        rm -rf "$TEMP_ROOT"
+        TEMP_ROOT=""
+      fi
+      rmdir "$NODE_LOCK" 2>/dev/null || true
+      OWN_NODE_LOCK=0
+    fi
+    NODE_BIN="$NODE_ROOT/bin/node"
+  fi
+fi
+
+if [ "${AGENTROAM_BOOTSTRAP_TEST:-}" = "1" ] && [ "${AGENTROAM_BOOTSTRAP_NODE_DISCOVERY_ONLY:-}" = "1" ]; then
+  printf '%s\n' "$NODE_BIN"
+  exit 0
 fi
 
 find_npm_cli() {

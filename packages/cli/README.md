@@ -20,20 +20,20 @@ npx agentroam@preview
 Or install from tarball:
 
 ```bash
-npm install ./agentroam-cloudflared-darwin-arm64-0.2.0-preview.9.tgz \
-  ./agentroam-runtime-darwin-arm64-0.2.0-preview.9.tgz \
-  ./agentroam-tui-darwin-arm64-0.2.0-preview.9.tgz \
-  ./agentroam-0.2.0-preview.9.tgz
+npm install ./agentroam-cloudflared-darwin-arm64-0.2.0-preview.10.tgz \
+  ./agentroam-runtime-darwin-arm64-0.2.0-preview.10.tgz \
+  ./agentroam-tui-darwin-arm64-0.2.0-preview.10.tgz \
+  ./agentroam-0.2.0-preview.10.tgz
 npx agentroam
 ```
 
 Windows PowerShell:
 
 ```powershell
-npm install ./agentroam-cloudflared-win32-x64-0.2.0-preview.9.tgz `
-  ./agentroam-runtime-win32-x64-0.2.0-preview.9.tgz `
-  ./caoqu-agentroam-tui-win32-x64-0.2.0-preview.9.tgz `
-  ./agentroam-0.2.0-preview.9.tgz
+npm install ./agentroam-cloudflared-win32-x64-0.2.0-preview.10.tgz `
+  ./agentroam-runtime-win32-x64-0.2.0-preview.10.tgz `
+  ./caoqu-agentroam-tui-win32-x64-0.2.0-preview.10.tgz `
+  ./agentroam-0.2.0-preview.10.tgz
 npx agentroam
 ```
 
@@ -61,6 +61,12 @@ installs Node 22 and the matching CLI, registers the current-user service, start
 it, checks readiness, and prints the access URL. Set `AGENTROAM_ROOT` to select a
 different root explicitly. An implicit root equal to the home directory is
 rejected.
+
+If the active Node is not 22, the installer checks nvm-sh on macOS and
+nvm-windows on Windows, validates every installed candidate, and uses the
+highest installed Node 22. It pins that executable for AgentRoam without
+changing the user's global or active NVM version. A private Node 22.22.0 is
+downloaded only when no installed Node 22 is available.
 
 The service keeps running after the terminal closes, restarts after failure, and
 starts again when the user logs in. macOS uses a user LaunchAgent; Windows uses a

@@ -27,7 +27,12 @@ describe("MacLaunchAgent", () => {
       RunAtLoad: true,
       KeepAlive: true,
       ThrottleInterval: 5,
-      EnvironmentVariables: { AGENTROAM_SERVICE: "1" },
+      EnvironmentVariables: {
+        AGENTROAM_SERVICE: "1",
+        PATH: value.environmentPath,
+        AGENT_CODEX_BIN: value.codexPath,
+        CODEX_HOME: value.codexHome,
+      },
     });
   });
 
@@ -199,6 +204,9 @@ function config(home: string, dataDir: string): ServiceConfig {
     version: "0.2.0-preview.9",
     nodePath,
     cliPath,
+    environmentPath: `${resolve(home, "bin")}:/usr/bin:/bin:/usr/sbin:/sbin`,
+    codexPath: resolve(home, "bin/codex"),
+    codexHome: resolve(home, ".codex"),
     roots,
     port: 3001,
     relay: "custom",
@@ -213,7 +221,9 @@ async function createConfigFiles(value: ServiceConfig): Promise<void> {
   await Promise.all([
     writePrivateText(value.nodePath, "node"),
     writePrivateText(value.cliPath, "cli"),
+    ...(value.codexPath ? [writePrivateText(value.codexPath, "codex")] : []),
     ...value.roots.map((root) => mkdir(root, { recursive: true })),
   ]);
   await chmod(value.nodePath, 0o700);
+  if (value.codexPath) await chmod(value.codexPath, 0o700);
 }

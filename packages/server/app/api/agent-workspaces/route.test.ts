@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { GET as listWorkspaces, POST as importWorkspace, readAgentType, readWorkspaceQuery } from "./route";
+import { readAgentType, readWorkspaceQuery } from "./agent-workspace-http";
+import { GET as listWorkspaces, POST as importWorkspace } from "./route";
 import { GET as listWorkspaceSessions } from "./[workspaceId]/sessions/route";
 
 const state = {

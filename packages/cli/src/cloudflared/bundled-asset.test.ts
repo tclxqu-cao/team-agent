@@ -11,7 +11,7 @@ describe("resolveBundledCloudflared", () => {
     const archivePath = resolve(root, "cloudflared.tgz");
     await writeFile(archivePath, "archive");
     await writeFile(manifestPath, JSON.stringify({
-      packageVersion: "0.2.0-preview.9",
+      packageVersion: "0.2.0-preview.10",
       upstreamVersion: "2026.8.2",
       target: "darwin-arm64",
       assetFormat: "tgz",
@@ -56,7 +56,7 @@ describe("resolveBundledCloudflared", () => {
     const assetPath = resolve(root, "cloudflared.exe");
     await writeFile(assetPath, "binary");
     await writeFile(manifestPath, JSON.stringify({
-      packageVersion: "0.2.0-preview.9",
+      packageVersion: "0.2.0-preview.10",
       upstreamVersion: "2026.8.2",
       target: "windows-amd64",
       assetFormat: "executable",

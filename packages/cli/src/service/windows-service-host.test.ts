@@ -17,6 +17,9 @@ describe("Windows service host", () => {
       version: "0.2.0-preview.9",
       nodePath: "C:\\Node Runtime\\node.exe",
       cliPath: "C:\\AgentRoam\\bin\\agentroam.mjs",
+      environmentPath: "C:\\Node Runtime;C:\\Windows\\System32",
+      codexPath: "C:\\Users\\test\\.nvm\\v22.22.2\\codex.exe",
+      codexHome: "C:\\Users\\test\\.codex",
       roots: [workspace],
       port: 3010,
       relay: "cloudflare",
@@ -49,6 +52,9 @@ describe("Windows service host", () => {
     ]);
     expect(options).toMatchObject({ cwd: workspace, windowsHide: true });
     expect(options.env.AGENTROAM_SERVICE).toBe("1");
+    expect(options.env.PATH).toBe(config.environmentPath);
+    expect(options.env.AGENT_CODEX_BIN).toBe(config.codexPath);
+    expect(options.env.CODEX_HOME).toBe(config.codexHome);
     expect(typeof options.stdio[1]).toBe("number");
     expect(typeof options.stdio[2]).toBe("number");
   });

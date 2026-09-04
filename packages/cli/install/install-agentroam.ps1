@@ -2,7 +2,7 @@ $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
 
 $NodeVersion = "22.22.0"
-$AgentRoamVersion = "0.2.0-preview.9"
+$AgentRoamVersion = "0.2.0-preview.10"
 $NodeArchive = "node-v22.22.0-win-x64.zip"
 $NodeSha256 = "c97fa376d2becdc8863fcd3ca2dd9a83a9f3468ee7ccf7a6d076ec66a645c77a"
 $NodeUrl = "https://nodejs.org/dist/v22.22.0/$NodeArchive"
@@ -30,6 +30,43 @@ New-Item -ItemType Directory -Force -Path $NodeParent, $LauncherParent, $Wrapper
 function Test-Node22([string]$NodeBin) {
   if (-not (Test-Path -LiteralPath $NodeBin -PathType Leaf)) { return $false }
   try { return (& $NodeBin -p 'process.versions.node.split(".")[0]' 2>$null) -eq "22" } catch { return $false }
+}
+
+function Get-NvmRoots {
+  $Candidates = @()
+  if ($env:NVM_HOME) { $Candidates += $env:NVM_HOME }
+  if ($env:APPDATA) { $Candidates += (Join-Path $env:APPDATA "nvm") }
+  $NvmCommand = Get-Command nvm.exe -ErrorAction SilentlyContinue
+  if ($NvmCommand) {
+    try {
+      $RootOutput = (& $NvmCommand.Source root 2>$null | Select-Object -Last 1)
+      if ($RootOutput) {
+        $RootText = $RootOutput.Trim()
+        if ($RootText -match '^[^:]+:\s+(.+)$') { $RootText = $Matches[1].Trim() }
+        $Candidates += $RootText
+      }
+    } catch {}
+  }
+  @($Candidates | Where-Object { $_ -and (Test-Path -LiteralPath $_ -PathType Container) } | Select-Object -Unique)
+}
+
+function Find-NvmNode22 {
+  $VersionMatches = foreach ($NvmRoot in (Get-NvmRoots)) {
+    foreach ($VersionDirectory in Get-ChildItem -LiteralPath $NvmRoot -Directory -ErrorAction SilentlyContinue) {
+      $Candidate = Join-Path $VersionDirectory.FullName "node.exe"
+      if (-not (Test-Path -LiteralPath $Candidate -PathType Leaf)) { continue }
+      try {
+        $VersionText = (& $Candidate -p 'process.versions.node' 2>$null).Trim()
+        $Version = [Version]$VersionText
+        if ($Version.Major -eq 22) {
+          [pscustomobject]@{ Path = $Candidate; Version = $Version }
+        }
+      } catch {}
+    }
+  }
+  $Best = $VersionMatches | Sort-Object Version -Descending | Select-Object -First 1
+  if ($Best) { return $Best.Path }
+  return $null
 }
 
 function Test-ManagedNode {
@@ -63,43 +100,54 @@ if ($env:AGENTROAM_BOOTSTRAP_TEST -eq "1" -and $env:AGENTROAM_FORCE_PRIVATE_NODE
 if ($SystemNode -and (Test-Node22 $SystemNode.Source)) {
   $NodeBin = $SystemNode.Source
 } else {
-  if (-not (Test-ManagedNode)) {
-    $NodeLockHandle = Enter-InstallLock $NodeLock
-    try {
-      if (-not (Test-ManagedNode)) {
-        $TempRoot = Join-Path $NodeParent ".node-$NodeVersion-$PID-$([Guid]::NewGuid().ToString('N'))"
-        $ArchivePath = Join-Path $TempRoot $NodeArchive
-        $ExtractPath = Join-Path $TempRoot "extract"
-        New-Item -ItemType Directory -Force -Path $ExtractPath | Out-Null
-        try {
-          Write-Host "Downloading Node.js $NodeVersion..."
-          if ($env:AGENTROAM_NODE_ARCHIVE_FILE) {
-            Copy-Item -LiteralPath $env:AGENTROAM_NODE_ARCHIVE_FILE -Destination $ArchivePath
-          } else {
-            Invoke-WebRequest -UseBasicParsing -TimeoutSec 600 -Uri $NodeUrl -OutFile $ArchivePath
+  $NvmNode = if ($env:AGENTROAM_BOOTSTRAP_TEST -eq "1" -and $env:AGENTROAM_FORCE_PRIVATE_NODE -eq "1") { $null } else { Find-NvmNode22 }
+  if ($NvmNode) {
+    $NodeBin = $NvmNode
+    Write-Host "Using Node.js $(& $NodeBin --version) from NVM: $NodeBin"
+  } else {
+    if (-not (Test-ManagedNode)) {
+      $NodeLockHandle = Enter-InstallLock $NodeLock
+      try {
+        if (-not (Test-ManagedNode)) {
+          $TempRoot = Join-Path $NodeParent ".node-$NodeVersion-$PID-$([Guid]::NewGuid().ToString('N'))"
+          $ArchivePath = Join-Path $TempRoot $NodeArchive
+          $ExtractPath = Join-Path $TempRoot "extract"
+          New-Item -ItemType Directory -Force -Path $ExtractPath | Out-Null
+          try {
+            Write-Host "Downloading Node.js $NodeVersion..."
+            if ($env:AGENTROAM_NODE_ARCHIVE_FILE) {
+              Copy-Item -LiteralPath $env:AGENTROAM_NODE_ARCHIVE_FILE -Destination $ArchivePath
+            } else {
+              Invoke-WebRequest -UseBasicParsing -TimeoutSec 600 -Uri $NodeUrl -OutFile $ArchivePath
+            }
+            $ActualHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $ArchivePath).Hash.ToLowerInvariant()
+            if ($ActualHash -ne $NodeSha256) { throw "Node.js archive checksum mismatch" }
+            Expand-Archive -LiteralPath $ArchivePath -DestinationPath $ExtractPath -Force
+            $Entries = @(Get-ChildItem -LiteralPath $ExtractPath)
+            if ($Entries.Count -ne 1 -or $Entries[0].Name -ne "node-v$NodeVersion-win-x64") { throw "Unexpected Node.js archive layout" }
+            $Extracted = $Entries[0].FullName
+            $ExtractedNode = Join-Path $Extracted "node.exe"
+            $ExtractedNpm = Join-Path $Extracted "node_modules\npm\bin\npm-cli.js"
+            if (-not (Test-Path -LiteralPath $ExtractedNpm) -or (& $ExtractedNode --version) -ne "v$NodeVersion") { throw "Node.js runtime validation failed" }
+            Remove-Item -LiteralPath $NodeRoot -Recurse -Force -ErrorAction SilentlyContinue
+            Move-Item -LiteralPath $Extracted -Destination $NodeRoot
+            if (-not (Test-ManagedNode)) { throw "Node.js activation validation failed" }
+          } finally {
+            Remove-Item -LiteralPath $TempRoot -Recurse -Force -ErrorAction SilentlyContinue
           }
-          $ActualHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $ArchivePath).Hash.ToLowerInvariant()
-          if ($ActualHash -ne $NodeSha256) { throw "Node.js archive checksum mismatch" }
-          Expand-Archive -LiteralPath $ArchivePath -DestinationPath $ExtractPath -Force
-          $Entries = @(Get-ChildItem -LiteralPath $ExtractPath)
-          if ($Entries.Count -ne 1 -or $Entries[0].Name -ne "node-v$NodeVersion-win-x64") { throw "Unexpected Node.js archive layout" }
-          $Extracted = $Entries[0].FullName
-          $ExtractedNode = Join-Path $Extracted "node.exe"
-          $ExtractedNpm = Join-Path $Extracted "node_modules\npm\bin\npm-cli.js"
-          if (-not (Test-Path -LiteralPath $ExtractedNpm) -or (& $ExtractedNode --version) -ne "v$NodeVersion") { throw "Node.js runtime validation failed" }
-          Remove-Item -LiteralPath $NodeRoot -Recurse -Force -ErrorAction SilentlyContinue
-          Move-Item -LiteralPath $Extracted -Destination $NodeRoot
-          if (-not (Test-ManagedNode)) { throw "Node.js activation validation failed" }
-        } finally {
-          Remove-Item -LiteralPath $TempRoot -Recurse -Force -ErrorAction SilentlyContinue
         }
+      } finally {
+        $NodeLockHandle.Dispose()
+        Remove-Item -LiteralPath $NodeLock -Force -ErrorAction SilentlyContinue
       }
-    } finally {
-      $NodeLockHandle.Dispose()
-      Remove-Item -LiteralPath $NodeLock -Force -ErrorAction SilentlyContinue
     }
+    $NodeBin = Join-Path $NodeRoot "node.exe"
   }
-  $NodeBin = Join-Path $NodeRoot "node.exe"
+}
+
+if ($env:AGENTROAM_BOOTSTRAP_TEST -eq "1" -and $env:AGENTROAM_BOOTSTRAP_NODE_DISCOVERY_ONLY -eq "1") {
+  Write-Output $NodeBin
+  exit 0
 }
 
 $NodeDirectory = Split-Path -Parent $NodeBin

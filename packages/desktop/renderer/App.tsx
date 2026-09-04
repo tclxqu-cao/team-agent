@@ -883,6 +883,16 @@ export default function App() {
     if (mobileDrawer) setSidebarDrawerOpen(false);
   };
 
+  const handleBottomNewSession = () => {
+    if (!selectedProjectId) {
+      setNotice("请先选择目录");
+      setNoticeType("info");
+      setTimeout(() => setNotice(null), 3000);
+      return;
+    }
+    void handleNewRuntimeSession(selectedProjectId, activeAgent);
+  };
+
   useEffect(() => {
     if (!window.agentApi) return;
     // Projects are the only blocking sidebar request. Settings and runtime
@@ -1528,12 +1538,12 @@ export default function App() {
             type="button"
             className="sidebar-new-session-primary"
             disabled={
-              !selectedProjectId
-              || invalidProjectIds.has(selectedProjectId)
+              (selectedProjectId !== null && invalidProjectIds.has(selectedProjectId))
               || runtimeHealth.find((runtime) => runtime.agentType === activeAgent)?.available === false
             }
+            aria-disabled={!selectedProjectId}
             title={selectedProjectId ? "新建会话" : "请先选择目录"}
-            onClick={() => selectedProjectId && void handleNewRuntimeSession(selectedProjectId, activeAgent)}
+            onClick={handleBottomNewSession}
           >
             <Plus size={16} aria-hidden="true" />
             <span>新建会话</span>

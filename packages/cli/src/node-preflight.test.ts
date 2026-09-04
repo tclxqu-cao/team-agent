@@ -1,8 +1,16 @@
 import { EventEmitter } from "node:events";
+import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { resolve } from "node:path";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 // @ts-expect-error The preflight intentionally remains plain ESM for Node 18 bootstrap.
-import { parsePreflightDataDir, runNodePreflight } from "../bin/node-preflight.mjs";
+import { findNvmNode22, parsePreflightDataDir, runNodePreflight } from "../bin/node-preflight.mjs";
+
+const temporaryDirectories: string[] = [];
+
+afterEach(async () => {
+  await Promise.all(temporaryDirectories.splice(0).map((path) => rm(path, { recursive: true, force: true })));
+});
 
 describe("Node launcher preflight", () => {
   it("passes through any Node 22 patch without installing", async () => {
@@ -61,6 +69,17 @@ describe("Node launcher preflight", () => {
     })).resolves.toMatchObject({ handled: true, exitCode: 7 });
     expect(ensureNode).not.toHaveBeenCalled();
     expect(spawnChild.mock.calls[0][0]).toBe("C:\\Node22\\node.exe");
+  });
+
+  it.skipIf(process.platform === "win32")("selects the highest inactive NVM Node 22", async () => {
+    const root = await mkdtemp(resolve(tmpdir(), "agentroam-preflight-nvm-"));
+    temporaryDirectories.push(root);
+    await fakeNodeExecutable(resolve(root, "versions/node/v22.3.0/bin/node"), "22.3.0");
+    const expected = await fakeNodeExecutable(resolve(root, "versions/node/v22.22.2/bin/node"), "22.22.2");
+    await fakeNodeExecutable(resolve(root, "versions/node/v23.1.0/bin/node"), "23.1.0");
+
+    await expect(findNvmNode22({ NVM_DIR: root, HOME: resolve(root, "home") }, "darwin"))
+      .resolves.toBe(expected);
   });
 
   it("rejects a failed managed re-entry instead of looping", async () => {
@@ -122,4 +141,11 @@ function fakeProcessHost() {
   const host = new EventEmitter() as EventEmitter & { stderr: { write: ReturnType<typeof vi.fn> } };
   host.stderr = { write: vi.fn() };
   return host;
+}
+
+async function fakeNodeExecutable(path: string, version: string): Promise<string> {
+  await mkdir(resolve(path, ".."), { recursive: true });
+  await writeFile(path, `#!/bin/sh\nprintf '%s\\n' '${version}'\n`);
+  await chmod(path, 0o755);
+  return path;
 }

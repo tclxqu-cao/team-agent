@@ -4,7 +4,7 @@ import { paginateByOffset } from "../../../../../../desktop/main/agent-runtime/a
 import type { WorkspaceSessionQuery } from "../../../../../../desktop/main/agent-runtime/types";
 import { agentHost } from "../../../agent-host";
 import { getNativeRuntimeService, runtimeErrorStatus } from "../../../../../lib/native-runtime-service";
-import { readAgentType, readWorkspaceQuery } from "../../route";
+import { readAgentType, readWorkspaceQuery } from "../../agent-workspace-http";
 
 export async function GET(
   request: Request,

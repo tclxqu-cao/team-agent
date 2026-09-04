@@ -184,6 +184,28 @@ describe("Codex npm executor", () => {
     })).resolves.toEqual({ command: expected, argsPrefix: [] });
   });
 
+  it("finds npm-cli.js beside an NVM Node without relying on PATH", async () => {
+    const nodeExecutable = "/Users/test/.nvm/versions/node/v22.22.2/bin/node";
+    const npmCli = "/Users/test/.nvm/versions/node/v22.22.2/lib/node_modules/npm/bin/npm-cli.js";
+    await expect(resolveNpmExecutor({
+      environment: { PATH: "" },
+      platform: "darwin",
+      nodeExecutable,
+      canAccess: async (path) => path === npmCli,
+    })).resolves.toEqual({ command: nodeExecutable, argsPrefix: [npmCli] });
+  });
+
+  it("finds npm-cli.js beside an nvm-windows Node without relying on PATH", async () => {
+    const nodeExecutable = "C:\\Users\\test\\AppData\\Roaming\\nvm\\v22.22.2\\node.exe";
+    const npmCli = "C:\\Users\\test\\AppData\\Roaming\\nvm\\v22.22.2\\node_modules\\npm\\bin\\npm-cli.js";
+    await expect(resolveNpmExecutor({
+      environment: { PATH: "" },
+      platform: "win32",
+      nodeExecutable,
+      canAccess: async (path) => path === npmCli,
+    })).resolves.toEqual({ command: nodeExecutable, argsPrefix: [npmCli] });
+  });
+
   it("runs a standard Windows npm.cmd installation through npm-cli.js", async () => {
     const npmCmd = win32.resolve("C:\\Program Files\\nodejs", "npm.cmd");
     const npmCli = win32.resolve(

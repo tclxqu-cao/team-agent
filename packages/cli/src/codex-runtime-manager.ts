@@ -10,7 +10,7 @@ import {
   rm,
   stat,
 } from "node:fs/promises";
-import { delimiter, isAbsolute, relative, resolve, win32 } from "node:path";
+import { delimiter, dirname, isAbsolute, relative, resolve, win32 } from "node:path";
 import { promisify } from "node:util";
 import type { PlatformTarget } from "./platform.js";
 
@@ -134,6 +134,23 @@ export async function resolveNpmExecutor(
       command: options.nodeExecutable ?? process.execPath,
       argsPrefix: [npmExecPath],
     };
+  }
+
+  const nodeExecutable = options.nodeExecutable ?? process.execPath;
+  const nodeDirectory = platform === "win32" ? win32.dirname(nodeExecutable) : dirname(nodeExecutable);
+  const adjacentNpmCandidates = platform === "win32"
+    ? [
+      win32.resolve(nodeDirectory, "node_modules", "npm", "bin", "npm-cli.js"),
+      win32.resolve(nodeDirectory, "..", "node_modules", "npm", "bin", "npm-cli.js"),
+    ]
+    : [
+      resolve(nodeDirectory, "..", "lib", "node_modules", "npm", "bin", "npm-cli.js"),
+      resolve(nodeDirectory, "lib", "node_modules", "npm", "bin", "npm-cli.js"),
+    ];
+  for (const npmCliPath of adjacentNpmCandidates) {
+    if (await canAccess(npmCliPath)) {
+      return { command: nodeExecutable, argsPrefix: [npmCliPath] };
+    }
   }
 
   const names = platform === "win32" ? ["npm.cmd", "npm.exe", "npm"] : ["npm"];

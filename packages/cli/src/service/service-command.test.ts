@@ -2,7 +2,7 @@ import { resolve } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import type { CliOptions, ServiceAction } from "../args.js";
 import type { ServiceController } from "./service-controller.js";
-import { runServiceCommand } from "./service-command.js";
+import { buildServiceEnvironmentPath, runServiceCommand } from "./service-command.js";
 
 describe("runServiceCommand", () => {
   it("installs the service using absolute runtime context and parsed start options", async () => {
@@ -19,6 +19,8 @@ describe("runServiceCommand", () => {
       cliPath: "/agentroam.mjs",
       version: "0.2.0-preview.9",
       nodeVersion: "22.22.0",
+      environment: { PATH: "/nvm/versions/node/v22.22.0/bin:/usr/bin", CODEX_HOME: "/Users/test/.custom-codex" },
+      codexResolver: vi.fn(async () => ({ executable: "/nvm/versions/node/v22.22.0/bin/codex", version: "0.153.0", source: "global" as const })),
       now: () => new Date("2026-09-03T00:00:00.000Z"),
       log,
       controller: controller({ install }),
@@ -29,9 +31,20 @@ describe("runServiceCommand", () => {
       cliPath: "/agentroam.mjs",
       roots: [resolve("workspace")],
       version: "0.2.0-preview.9",
+      environmentPath: "/:/nvm/versions/node/v22.22.0/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+      codexPath: "/nvm/versions/node/v22.22.0/bin/codex",
+      codexHome: "/Users/test/.custom-codex",
       installedAt: "2026-09-03T00:00:00.000Z",
     }));
     expect(log).toHaveBeenCalledWith("Open: https://ready.example/web");
+  });
+
+  it("pins the selected Node directory ahead of the inherited service PATH", () => {
+    expect(buildServiceEnvironmentPath(
+      "/Users/test/.nvm/versions/node/v22.22.2/bin/node",
+      "/usr/bin:/Users/test/.nvm/versions/node/v22.22.2/bin",
+      "darwin",
+    )).toBe("/Users/test/.nvm/versions/node/v22.22.2/bin:/usr/bin:/bin:/usr/sbin:/sbin");
   });
 
   it("reports status without mutating an uninstalled service", async () => {

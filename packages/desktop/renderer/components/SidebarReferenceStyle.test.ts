@@ -273,15 +273,22 @@ describe("AgentRoam reference sidebar", () => {
   });
 
   it("keeps the bottom action scoped to the selected directory", () => {
-    expect(app).toContain('title={selectedProjectId ? "新建会话" : "请先选择目录"}');
-    expect(app).toContain("!selectedProjectId");
+    const buttonStart = app.indexOf('className="sidebar-new-session-primary"');
+    const buttonEnd = app.indexOf("</button>", buttonStart);
+    const button = app.slice(buttonStart, buttonEnd);
+    expect(button).toContain('title={selectedProjectId ? "新建会话" : "请先选择目录"}');
+    expect(button).toContain('aria-disabled={!selectedProjectId}');
+    expect(app).toContain('setNotice("请先选择目录")');
+    expect(app).toContain('setNoticeType("info")');
+    expect(button).toContain('onClick={handleBottomNewSession}');
+    expect(button).toContain("disabled={\n              (selectedProjectId !== null");
     expect(app).toContain("handleNewRuntimeSession(selectedProjectId, activeAgent)");
     expect(app).toContain('workspace?.source === "imported" ? undefined : projectId');
     expect(css).toContain(".sidebar-bottom-action");
     expect(css).toContain(".sidebar-new-session-primary:disabled");
-    const buttonStart = css.indexOf(".sidebar-new-session-primary {");
-    const buttonEnd = css.indexOf(".sidebar-delete-confirmation-layer", buttonStart);
-    const buttonCss = css.slice(buttonStart, buttonEnd);
+    const buttonCssStart = css.indexOf(".sidebar-new-session-primary {");
+    const buttonCssEnd = css.indexOf(".sidebar-delete-confirmation-layer", buttonCssStart);
+    const buttonCss = css.slice(buttonCssStart, buttonCssEnd);
     expect(buttonCss.match(/background: color-mix\(in srgb, var\(--accent\) 88%, var\(--text-primary\)\);/g))
       .toHaveLength(2);
   });
