@@ -1,0 +1,27 @@
+scripts/agent-runtime-diff-policy.mjs
+  s_c2f221873f144e::t_db265b96db8138 91
+  s_c2f221873f144e::t_ebb39c01fd00c9 1-90,92-280
+scripts/check-agent-runtime-diff.mjs
+  s_c2f221873f144e::t_5c2cf3c2aa1fca 15-16,42-46,57-58
+  s_c2f221873f144e::t_ebb39c01fd00c9 1-14,17-41,47-56,59-67
+scripts/check-agent-runtime-diff.test.mjs
+  s_c2f221873f144e::t_ebb39c01fd00c9 1-38,40,43-127
+  s_c2f221873f144e::t_6da1b478ecde6e 41-42
+  s_c2f221873f144e::t_db265b96db8138 39
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "0ff948907bd881b7d41283d1f3d69cb6778e55a2",
+  "prompts": {},
+  "sessions": {
+    "s_c2f221873f144e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06d49-5ce1-7c11-8feb-44d455eb6627",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
