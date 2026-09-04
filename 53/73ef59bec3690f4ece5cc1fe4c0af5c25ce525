@@ -1,0 +1,19 @@
+docs/superpowers/specs/2026-09-04-new-session-loading-design.md
+  s_8ae583e6ee5ec3::t_13e69a86059540 1-57
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "5373ef59bec3690f4ece5cc1fe4c0af5c25ce525",
+  "prompts": {},
+  "sessions": {
+    "s_8ae583e6ee5ec3": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06c4c-97fa-7c20-aaae-74bcea6ac0d2",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
