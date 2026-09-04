@@ -1,0 +1,35 @@
+.github/workflows/cli-release-verify.yml
+  s_c3d5b1753265d1::t_65d30ec2684816 30-31
+.github/workflows/cli-release.yml
+  s_c3d5b1753265d1::t_6448a815ca1bba 31-32
+package.json
+  s_c3d5b1753265d1::t_f4a6b4cec4cb1c 50-51
+packages/cli/RELEASE.md
+  s_c3d5b1753265d1::t_033a5f9b9f124b 72-102
+docs/superpowers/plans/2026-09-05-agent-runtime-continuous-upgrade.md
+  s_c2f221873f144e::t_9368f0c833b1ee 37,55,70,74,78,82,97,101,105,109,123,127,131,135,139,154,158,162,166,170,174,189,193,197,201,205,219,223,227,231,245,249,253,257,261,277,281,285,289,295
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "7936b1508f12b704511a8c1e81c14e3599733f4a",
+  "prompts": {},
+  "sessions": {
+    "s_c2f221873f144e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06d49-5ce1-7c11-8feb-44d455eb6627",
+        "model": "unknown"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_c3d5b1753265d1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06bb1-1112-7a71-bc86-5f4332503821",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
