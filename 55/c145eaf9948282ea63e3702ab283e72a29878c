@@ -1,0 +1,19 @@
+.github/workflows/agent-runtime-publish.yml
+  s_c3d5b1753265d1::t_5e00ae3c7beb3e 1-420
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "55c145eaf9948282ea63e3702ab283e72a29878c",
+  "prompts": {},
+  "sessions": {
+    "s_c3d5b1753265d1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06bb1-1112-7a71-bc86-5f4332503821",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
