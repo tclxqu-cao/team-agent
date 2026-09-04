@@ -1,0 +1,97 @@
+#!/usr/bin/env node
+import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import {
+  createGitClient,
+  createGiteeClient,
+  createNpmClient,
+  inspectPublication,
+  loadReleaseManifest,
+  loadReleaseSet,
+  moveReleaseTag,
+  publishPreviewRelease,
+  redactReleaseError,
+  releaseSetForVersion,
+  syncGiteeRelease,
+  verifyRegistryArtifacts,
+  writeReleaseManifest,
+} from "./agentroam-release-lib.mjs";
+
+const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
+
+export async function main(args = process.argv.slice(2), dependencies = {}) {
+  const [command] = args;
+  const npmClient = dependencies.npmClient ?? createNpmClient();
+
+  if (command === "promote-latest" || command === "rollback-preview" || command === "rollback-latest") {
+    const targetVersion = command === "promote-latest" ? required(args, "--version") : required(args, "--to");
+    const tag = command === "rollback-preview" ? "preview" : "latest";
+    const releaseSet = releaseSetForVersion(targetVersion);
+    if (args.includes("--dry-run")) return print({ dryRun: true, command, tag, targetVersion });
+    return print(await moveReleaseTag(releaseSet, { npmClient, tag, targetVersion }));
+  }
+
+  const manifestPath = optional(args, "--manifest");
+  const releaseSet = manifestPath
+    ? await loadReleaseManifest(manifestPath)
+    : await loadReleaseSet(root, { artifactDirectory: optional(args, "--artifacts") });
+  if (command === "preflight") {
+    const writeManifest = optional(args, "--write-manifest");
+    if (writeManifest) await writeReleaseManifest(releaseSet, resolve(writeManifest));
+    return print(releaseSummary(releaseSet));
+  }
+
+  if (command === "publish-preview") {
+    if (args.includes("--dry-run")) return print({ dryRun: true, command, state: await inspectPublication(releaseSet, npmClient) });
+    return print(await publishPreviewRelease(releaseSet, { npmClient }));
+  }
+  if (command === "verify-preview") {
+    return print(await verifyRegistryArtifacts(releaseSet, npmClient, { tag: "preview" }));
+  }
+  if (command === "sync-gitee") {
+    const sourceCommit = required(args, "--commit");
+    if (args.includes("--dry-run")) return print({ dryRun: true, command, sourceCommit, version: releaseSet.version });
+    const owner = required(args, "--owner");
+    const repo = required(args, "--repo");
+    const token = process.env.GITEE_TOKEN;
+    if (!token) throw new Error("GITEE_TOKEN is required");
+    return print(await syncGiteeRelease(releaseSet, {
+      sourceCommit,
+      remote: optional(args, "--remote") ?? "gitee",
+      gitClient: dependencies.gitClient ?? createGitClient(),
+      giteeClient: dependencies.giteeClient ?? createGiteeClient({ owner, repo, token }),
+    }));
+  }
+  throw new Error("usage: publish-agentroam-release.mjs preflight|publish-preview|verify-preview|promote-latest|rollback-preview|rollback-latest|sync-gitee [options]");
+}
+
+function releaseSummary(releaseSet) {
+  return {
+    version: releaseSet.version,
+    packages: releaseSet.packages.map(({ name, fileName, sha256, launcher }) => ({ name, fileName, sha256, launcher })),
+    installers: releaseSet.installers.map(({ fileName, sha256, size }) => ({ fileName, sha256, size })),
+  };
+}
+
+function optional(args, name) {
+  const index = args.indexOf(name);
+  return index >= 0 ? args[index + 1] : undefined;
+}
+
+function required(args, name) {
+  const value = optional(args, name);
+  if (!value) throw new Error(`missing ${name}`);
+  return value;
+}
+
+function print(value) {
+  process.stdout.write(`${JSON.stringify(value, null, 2)}\n`);
+  return value;
+}
+
+if (resolve(process.argv[1] ?? "") === fileURLToPath(import.meta.url)) {
+  main().catch((error) => {
+    process.stderr.write(`${redactReleaseError(error.message)}\n`);
+    process.exitCode = 1;
+  });
+}
