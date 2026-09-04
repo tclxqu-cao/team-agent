@@ -34,6 +34,8 @@ Use a hybrid compatibility strategy:
 
 AgentRoam will not install and retain every historical producer runtime. The observed history contains too many stable and alpha versions for exact-version runtime selection to be operationally safe or maintainable. Compatibility is instead declared for tested schema generations against the currently selected reader and migrator set.
 
+Performance is a release-blocking contract, not a best-effort optimization. Primary App Server discovery must never await disk reconciliation, list operations must never read rollout bodies, and large-history parsing must never run on the broker or server event loop.
+
 ## Architecture
 
 ### Existing Primary Path
@@ -85,9 +87,9 @@ For each regular `.jsonl` file it records:
 - a lightweight header fingerprint derived from the `session_meta` record shape;
 - scan status and a safe diagnostic reason.
 
-The scanner validates real paths below the session root, rejects escaping symlinks, caps the metadata record read, and treats malformed files independently. One malformed rollout cannot abort the directory scan. When `session_meta` cannot be parsed, the scanner first derives the native ID from the strict Codex rollout filename shape. If no valid native ID can be recovered, it emits a stable catalog-only ID derived from the canonical path digest; that diagnostic row remains visible as incompatible but is never passed to an App Server operation.
+The scanner validates real paths below the session root, rejects escaping symlinks, caps each metadata record read at 256 KiB, and treats malformed files independently. One malformed rollout cannot abort the directory scan. When `session_meta` cannot be parsed, the scanner first derives the native ID from the strict Codex rollout filename shape. If no valid native ID can be recovered, it emits a stable catalog-only ID derived from the canonical path digest; that diagnostic row remains visible as incompatible but is never passed to an App Server operation.
 
-Catalog rows are cached in broker-owned SQLite. The cache key includes canonical path, size, modification time, catalog schema version, compatibility-registry version, and selected reader version. Unchanged files require no content read on later scans.
+Catalog rows are cached in broker-owned SQLite using prepared statements and batched transactions. The cache key includes canonical path, size, modification time, catalog schema version, compatibility-registry version, and selected reader version. Unchanged files require no content read on later scans. Discovery computes no full-file digest; content hashing is reserved for an explicitly requested migration.
 
 ### CodexCompatibilityRegistry
 
@@ -123,6 +125,8 @@ Migration stages are:
 9. Remove the temporary snapshot. On failure, delete the incomplete destination when possible and retain a failed migration record for diagnosis.
 
 The selected reader must expose and pass a capability check for the import operation before any format rule can be marked migratable. For the current protocol this is expected to be `thread/inject_items`; its exact request and response schema must come from the selected runtime's generated schema and be covered by an integration test. If the capability is absent, the session is not migratable with that reader version.
+
+Full-history parsing and normalization run in a worker thread or isolated child process with bounded, backpressured IPC. At most one large Codex migration runs by default; normal App Server reads and turns have priority over queued migrations. Cancellation terminates the worker, closes source descriptors, and leaves the primary event loop available for other sessions.
 
 ### Migration Store
 
@@ -212,10 +216,11 @@ The existing generic runtime error union gains a structured version-compatibilit
 ### Discovery
 
 1. Return the last SQLite catalog immediately.
-2. In parallel, run the existing App Server requests and an incremental disk reconciliation.
-3. Merge by native session ID using App Server precedence.
-4. Associate supplemental sessions through the existing workspace index.
-5. Publish a refreshed catalog only when its generation is still current.
+2. Start the existing App Server request and return its result without awaiting an uncached disk scan.
+3. Run incremental disk reconciliation as a separately scheduled background operation.
+4. Merge a completed cache snapshot by native session ID using App Server precedence.
+5. Associate supplemental sessions through the existing workspace index.
+6. Publish a later refreshed catalog only when its generation is still current.
 
 ### Opening A Supplemental Session
 
@@ -241,25 +246,34 @@ The list path never scans full histories. A local reference measurement contains
 Performance controls are:
 
 - cached rows render before background reconciliation;
-- metadata reads use bounded concurrency, initially 16 files;
-- each metadata read stops at the first newline and has a fixed safety cap;
+- the primary App Server response never joins on or awaits the disk-catalog promise;
+- metadata-read concurrency is adaptive and capped at `min(8, availableParallelism())`;
+- each metadata read stops at the first newline and reads at most 256 KiB;
 - unchanged files are skipped by cache identity;
+- a warm reconciliation reads zero rollout-content bytes for unchanged files;
+- SQLite updates use one bounded batch transaction instead of one transaction per file;
 - filesystem notifications are debounced for 500 ms;
 - a 60-second low-priority reconciliation repairs missed notifications;
 - App Server listing retains 200-row cursor pagination;
-- disk and App Server discovery run concurrently;
+- disk work yields between batches and cannot monopolize the Node.js event loop;
 - full parsing occurs only for an opened supplemental session;
-- migration uses streaming input and bounded buffers rather than `readFile`;
+- migration uses an isolated worker, streaming input, backpressure, and bounded buffers rather than `readFile`;
+- only one migration worker runs by default, while interactive session traffic retains priority;
 - migration reports progress and supports cancellation without affecting other sessions.
 
 Reference-Mac acceptance budgets are:
 
 - cached sidebar data available within 100 ms of catalog initialization;
+- existing App Server sessions become available without waiting for a cold disk scan;
 - a cold 1,000-file metadata scan completes within 1 second;
 - a normal incremental refresh completes within 200 ms when only a few files changed;
+- a warm unchanged scan performs zero rollout-content reads;
+- catalog work keeps p99 event-loop delay below 50 ms during the reference benchmark;
 - migration adds no more than 64 MiB peak resident memory above the normal runtime baseline for a 100 MiB rollout.
 
-Performance-budget failure does not hide primary App Server sessions. It marks the supplemental index stale and schedules a later retry.
+Performance-budget failure does not hide primary App Server sessions. It marks the supplemental index stale and schedules a later retry. Three consecutive scan-budget breaches open an internal circuit breaker for five minutes: AgentRoam serves the last cache, stops automatic disk reconciliation, and keeps manual retry available. The breaker never disables App Server discovery or active runs.
+
+Operational metrics include scan duration, files visited, metadata bytes read, cache-hit ratio, changed-file count, queue depth, event-loop delay, migration throughput, migration peak memory, cancellation count, and circuit-breaker state. Metrics contain no conversation content or full source paths.
 
 ## User Experience
 
@@ -334,6 +348,10 @@ Fixture provenance records the producer version and expected format key. Compati
 ### Performance Verification
 
 Use a generated directory with approximately 1,000 files and 4 GiB of aggregate history. Measure cold metadata indexing, warm cache startup, small incremental updates, a 100 MiB streaming migration, cancellation, and simultaneous normal App Server use. Reject an implementation that meets functional tests by reading every rollout body during discovery.
+
+Filesystem dependencies must be injectable so unit tests assert exact content bytes read. Tests prove an unchanged warm scan reads zero rollout-content bytes, a changed file reads no more than its capped metadata record, and primary App Server results resolve while a disk scan is deliberately stalled. Worker tests prove a 100 MiB migration does not parse on the broker event loop, respects backpressure, stays within the memory budget, and yields promptly to cancellation.
+
+The 4 GiB benchmark is a release benchmark rather than a routine unit-test allocation. It may use sparse or generated files, but byte counters and event-loop measurements must observe the real scanner and migration code paths.
 
 ### Real Acceptance
 
