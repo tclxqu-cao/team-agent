@@ -44,3 +44,10 @@ bun test             # Run tests
 ## Git Push Policy
 
 - This project uses standard Git for commits and pushes. Do not run `git-ai`, create AI attribution checkpoints, or sync `refs/notes/ai`.
+
+## npm Publishing Policy
+
+- Publish npm packages with an npm access token supplied at release time. Do not use the browser WebAuthn publishing flow.
+- Never store or commit the token. Put it in a permission-restricted temporary npm user config, clear that file when publishing exits, and leave the global `.npmrc` unchanged.
+- Always publish against `https://registry.npmjs.org` with public access. Local token-based publishes must pass `--provenance=false`; the dist-tag must match the release target (`preview` for prereleases).
+- Publish platform dependency packages before the `agentroam` launcher, then verify dist-tags and exact versions from the official registry.
