@@ -1742,6 +1742,7 @@ export default function App() {
         )}
         <div style={{ height: "100%", paddingTop: 0 }}>
           <ChatView
+            activeAgentType={activeAgent}
             selectedProjectId={selectedProjectId}
             selectedSessionId={selectedSessionId}
             sessionTitle={selectedSessionTitle}

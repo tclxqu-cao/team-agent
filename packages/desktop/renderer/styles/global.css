@@ -2378,6 +2378,262 @@ input:focus, select:focus, textarea:focus {
   background: var(--text-muted);
 }
 
+/* Empty session: one short activation moment, then a quiet task launcher. */
+.empty-session-welcome {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: min(100%, 760px);
+  min-height: 420px;
+  margin: auto;
+  padding: 28px 16px;
+  box-sizing: border-box;
+  color: var(--text-primary);
+  text-align: center;
+}
+
+.empty-session-welcome__core {
+  position: relative;
+  width: 104px;
+  height: 104px;
+  margin-bottom: 18px;
+  isolation: isolate;
+}
+
+.empty-session-welcome__core svg {
+  position: relative;
+  z-index: 1;
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  opacity: 0;
+  transform: scale(.42) rotate(-18deg);
+  animation: empty-session-core-enter 720ms var(--ease-out) 80ms forwards;
+}
+
+.empty-session-welcome__glow {
+  position: absolute;
+  inset: 19px;
+  z-index: 0;
+  border-radius: 50%;
+  background: var(--accent-dim);
+  box-shadow: 0 0 34px 10px var(--accent-glow);
+  opacity: 0;
+  transform: scale(.2);
+  animation: empty-session-glow 1000ms var(--ease-out) forwards;
+}
+
+.empty-session-welcome__orbit {
+  fill: none;
+  stroke: color-mix(in srgb, var(--accent) 44%, transparent);
+  stroke-width: 1.2;
+  stroke-linecap: round;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.empty-session-welcome__orbit--outer {
+  stroke-dasharray: 56 221;
+  animation: empty-session-orbit-outer 1050ms var(--ease-out) 80ms both;
+}
+
+.empty-session-welcome__orbit--inner {
+  stroke: color-mix(in srgb, var(--accent) 24%, transparent);
+  stroke-dasharray: 35 172;
+  animation: empty-session-orbit-inner 940ms var(--ease-out) 140ms both;
+}
+
+.empty-session-welcome__diamond {
+  fill: color-mix(in srgb, var(--accent-dim) 70%, transparent);
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-dasharray: 136;
+  stroke-dashoffset: 136;
+  transform-box: fill-box;
+  transform-origin: center;
+  transform: rotate(45deg);
+  animation: empty-session-diamond-draw 620ms var(--ease-out) 210ms forwards;
+}
+
+.empty-session-welcome__pulse {
+  fill: var(--accent);
+  opacity: 0;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: empty-session-pulse 620ms var(--ease-out) 420ms forwards;
+}
+
+.empty-session-welcome__copy {
+  opacity: 0;
+  transform: translateY(10px);
+  animation: empty-session-copy-enter 520ms var(--ease-out) 430ms forwards;
+}
+
+.empty-session-welcome__status {
+  margin: 0 0 9px;
+  color: var(--accent);
+  font: 500 11px/1.4 var(--font-mono);
+}
+
+.empty-session-welcome h2 {
+  margin: 0;
+  color: var(--text-primary);
+  font: 500 30px/1.2 var(--font-display);
+  letter-spacing: 0;
+}
+
+.empty-session-welcome__prompt {
+  margin: 9px 0 0;
+  color: var(--text-secondary);
+  font: 400 14px/1.6 var(--font-body);
+}
+
+.empty-session-welcome__starters {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  width: min(100%, 680px);
+  margin-top: 28px;
+  opacity: 0;
+  transform: translateY(12px);
+  animation: empty-session-starters-enter 520ms var(--ease-out) 620ms forwards;
+}
+
+.empty-session-welcome__starters button {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 9px;
+  min-width: 0;
+  min-height: 46px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-default);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--bg-surface) 78%, transparent);
+  color: var(--text-secondary);
+  box-shadow: 0 4px 14px color-mix(in srgb, var(--text-primary) 5%, transparent);
+  font: 500 13px/1.35 var(--font-body);
+  letter-spacing: 0;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color var(--duration-fast), background var(--duration-fast), color var(--duration-fast);
+}
+
+.empty-session-welcome__starters button svg {
+  flex: 0 0 auto;
+  color: var(--accent);
+}
+
+.empty-session-welcome__starters button:hover:not(:disabled) {
+  border-color: var(--border-glow);
+  background: color-mix(in srgb, var(--accent-dim) 70%, var(--bg-surface));
+  color: var(--text-primary);
+}
+
+.empty-session-welcome__starters button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.empty-session-welcome__starters button:disabled {
+  cursor: not-allowed;
+  opacity: .42;
+  box-shadow: none;
+}
+
+@keyframes empty-session-core-enter {
+  0% { opacity: 0; transform: scale(.42) rotate(-18deg); }
+  62% { opacity: 1; transform: scale(1.06) rotate(2deg); }
+  100% { opacity: 1; transform: scale(1) rotate(0); }
+}
+
+@keyframes empty-session-glow {
+  0% { opacity: 0; transform: scale(.2); }
+  46% { opacity: .92; transform: scale(1.34); }
+  100% { opacity: .58; transform: scale(1); }
+}
+
+@keyframes empty-session-orbit-outer {
+  from { opacity: 0; transform: rotate(-130deg); }
+  40% { opacity: 1; }
+  to { opacity: .82; transform: rotate(86deg); }
+}
+
+@keyframes empty-session-orbit-inner {
+  from { opacity: 0; transform: rotate(150deg); }
+  40% { opacity: 1; }
+  to { opacity: .64; transform: rotate(-52deg); }
+}
+
+@keyframes empty-session-diamond-draw {
+  from { stroke-dashoffset: 136; opacity: 0; transform: rotate(25deg) scale(.72); }
+  to { stroke-dashoffset: 0; opacity: 1; transform: rotate(45deg) scale(1); }
+}
+
+@keyframes empty-session-pulse {
+  0% { opacity: 0; transform: scale(.2); }
+  44% { opacity: 1; transform: scale(2.6); }
+  100% { opacity: .72; transform: scale(1); }
+}
+
+@keyframes empty-session-starters-enter {
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes empty-session-copy-enter {
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (max-width: 640px) {
+  .empty-session-welcome {
+    min-height: 360px;
+    padding: 22px 4px;
+  }
+
+  .empty-session-welcome__core {
+    width: 92px;
+    height: 92px;
+    margin-bottom: 14px;
+  }
+
+  .empty-session-welcome h2 {
+    font-size: 26px;
+  }
+
+  .empty-session-welcome__starters {
+    grid-template-columns: 1fr;
+    width: min(100%, 340px);
+    margin-top: 22px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .empty-session-welcome__core svg,
+  .empty-session-welcome__glow,
+  .empty-session-welcome__orbit,
+  .empty-session-welcome__diamond,
+  .empty-session-welcome__pulse,
+  .empty-session-welcome__copy,
+  .empty-session-welcome__starters {
+    animation: none;
+    opacity: 1;
+    transform: none;
+    stroke-dashoffset: 0;
+  }
+
+  .empty-session-welcome__diamond {
+    transform: rotate(45deg);
+  }
+
+  .empty-session-welcome__starters button {
+    transition: none;
+  }
+}
+
 .layout-compact .chat-view {
   --chat-max-width: 1040px;
   --chat-header-height: 44px;

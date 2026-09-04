@@ -291,6 +291,7 @@ import AgentActivityIndicator from "./AgentActivityIndicator";
 import ReasoningSummary from "./ReasoningSummary";
 import RuntimeProgressRow from "./RuntimeProgressRow";
 import ChatHeaderActions from "./ChatHeaderActions";
+import EmptySessionWelcome from "./EmptySessionWelcome";
 import MessageImageLightbox, { type MessageImagePreview } from "./MessageImageLightbox";
 import { widgetRegistry } from "./widgets/index.js";
 import { prepareVoiceCommand, shouldSkipVoiceSessionReload } from "../lib/voice-command";
@@ -306,9 +307,10 @@ import {
   isOccupiedSessionRecovery,
   type OccupiedSessionError,
 } from "../lib/occupied-session-fork";
-import type { ToolPermissionMode, UnifiedSessionSummary } from "../global";
+import type { AgentType, ToolPermissionMode, UnifiedSessionSummary } from "../global";
 
 interface ChatViewProps {
+  activeAgentType?: AgentType;
   selectedProjectId?: string | null;
   selectedSessionId?: string | null;
   onSessionCreated?: (sessionId: string) => void | Promise<void>;
@@ -361,6 +363,7 @@ function normalizePermissionMode(value: unknown): ToolPermissionMode {
 }
 
 export default function ChatView({
+  activeAgentType = "customer-agent",
   selectedProjectId = null,
   selectedSessionId = null,
   onSessionCreated,
@@ -845,6 +848,13 @@ export default function ChatView({
     }
     setAtQuery(null);
     setSlashQuery(null);
+  };
+
+  const selectStarterPrompt = (prompt: string) => {
+    handleComposerChange(prompt);
+    setAtQuery(null);
+    setSlashQuery(null);
+    requestAnimationFrame(() => inputRef.current?.focus());
   };
 
   const handleComposerKeyDown = (event: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
@@ -2332,48 +2342,12 @@ export default function ChatView({
         )}
 
         {messages.length === 0 && !isRunning && !isInitialHistoryLoading && !error && (
-          <div style={{
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            justifyContent: "center",
-            height: "100%",
-            gap: 16,
-          }}>
-            <div style={{
-              width: 64,
-              height: 64,
-              borderRadius: "50%",
-              background: "linear-gradient(135deg, var(--accent-dim) 0%, transparent 100%)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              fontSize: 28,
-              color: "var(--accent)",
-              marginBottom: 8,
-            }}>
-              ◇
-            </div>
-            <h2 style={{
-              fontFamily: "var(--font-display)",
-              fontSize: 26,
-              color: "var(--text-primary)",
-              fontWeight: 400,
-              letterSpacing: "-0.02em",
-            }}>
-              智能助手
-            </h2>
-            <p style={{
-              fontSize: 14,
-              color: "var(--text-muted)",
-              textAlign: "center",
-              lineHeight: 1.7,
-            }}>
-              {runtimeReady
-                ? "有什么我能帮你的？工具、记忆和技能随时待命。"
-                : "请先在设置中配置 API Key 以开始使用。"}
-            </p>
-          </div>
+          <EmptySessionWelcome
+            key={viewSessionId ?? "initial-empty-session"}
+            agentType={sessionSummary?.agentType ?? activeAgentType}
+            ready={canCompose}
+            onSelectPrompt={selectStarterPrompt}
+          />
         )}
 
         {renderedMessages.map((msg, i) => {

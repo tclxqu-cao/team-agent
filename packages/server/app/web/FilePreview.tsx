@@ -78,7 +78,17 @@ export interface NativeShareClient {
   share?: (data?: ShareData) => Promise<void>;
 }
 
+export type NativeShareReadiness = "ready" | "insecure-context" | "unsupported-browser";
 export type NativeShareOutcome = "shared" | "cancelled" | "unsupported";
+
+export function nativeFileShareReadiness(
+  client: NativeShareClient,
+  isSecureContext: boolean,
+): NativeShareReadiness {
+  if (!isSecureContext) return "insecure-context";
+  if (!client.share || !client.canShare) return "unsupported-browser";
+  return "ready";
+}
 
 export function mimeTypeForPath(path: string): string {
   const extension = path.split(".").pop()?.toLowerCase() ?? "";
@@ -191,7 +201,6 @@ export default function FilePreview({ path, rpc, onClose }: Props) {
   const [downloadProgress, setDownloadProgress] = useState<number | null>(null);
   const [downloadDone, setDownloadDone] = useState(false);
   const [shareError, setShareError] = useState<string | null>(null);
-  const [shareNotice, setShareNotice] = useState<string | null>(null);
   const [shareProgress, setShareProgress] = useState<number | null>(null);
   const [shareDone, setShareDone] = useState(false);
   const [eof, setEof] = useState(true);
@@ -340,7 +349,7 @@ export default function FilePreview({ path, rpc, onClose }: Props) {
     chunkInFlightRef.current = false;
     revokeMediaTicket();
     activeMediaUrlRef.current = null;
-    setTextChunks([]); setMediaUrl(null); setHexDump(""); setMeta(null); setErr(null); setLoadMoreError(null); setLoadedBytes(0); setDownloadError(null); setDownloadProgress(null); setDownloadDone(false); setShareError(null); setShareNotice(null); setShareProgress(null); setShareDone(false); setEof(true); setPatch(null); setDiffStatus("unavailable"); setDiffLoading(false); setDiffError(null); setView("file"); setEditable(false); setEditLoading(false); setEditing(false); setDraft(""); setSaveError(null); setExternalChange(false); setPhase("initial-loading");
+    setTextChunks([]); setMediaUrl(null); setHexDump(""); setMeta(null); setErr(null); setLoadMoreError(null); setLoadedBytes(0); setDownloadError(null); setDownloadProgress(null); setDownloadDone(false); setShareError(null); setShareProgress(null); setShareDone(false); setEof(true); setPatch(null); setDiffStatus("unavailable"); setDiffLoading(false); setDiffError(null); setView("file"); setEditable(false); setEditLoading(false); setEditing(false); setDraft(""); setSaveError(null); setExternalChange(false); setPhase("initial-loading");
     editingRef.current = false;
     offsetRef.current = 0;
     decoderRef.current = new TextDecoder("utf-8", { fatal: false });
@@ -430,7 +439,6 @@ export default function FilePreview({ path, rpc, onClose }: Props) {
     const target = path;
     setDownloadError(null);
     setShareError(null);
-    setShareNotice(null);
     setDownloadDone(false);
     setDownloadProgress(0);
     try {
@@ -450,8 +458,16 @@ export default function FilePreview({ path, rpc, onClose }: Props) {
     const target = path;
     setDownloadError(null);
     setShareError(null);
-    setShareNotice(null);
     setShareDone(false);
+    const readiness = nativeFileShareReadiness(navigator, window.isSecureContext);
+    if (readiness === "insecure-context") {
+      setShareError("当前页面是 HTTP，手机 Chrome 仅允许 HTTPS 页面分享文件，请改用 HTTPS 地址后重试");
+      return;
+    }
+    if (readiness === "unsupported-browser") {
+      setShareError("当前浏览器不支持分享文件，请使用最新版手机 Chrome 或系统浏览器");
+      return;
+    }
     setShareProgress(0);
     try {
       const blob = await readFileForClientDownload(target, rpc, setShareProgress);
@@ -461,8 +477,7 @@ export default function FilePreview({ path, rpc, onClose }: Props) {
       });
       const outcome = await shareFileWithNativePicker(file, navigator);
       if (outcome === "unsupported") {
-        downloadBlob(blob, target);
-        setShareNotice("当前浏览器不支持直接分享文件，已改为下载");
+        setShareError("当前浏览器不支持分享此文件类型，请使用下载按钮");
       } else if (outcome === "shared") {
         setShareDone(true);
         window.setTimeout(() => setShareDone(false), 1_500);
@@ -472,7 +487,7 @@ export default function FilePreview({ path, rpc, onClose }: Props) {
     } finally {
       setShareProgress(null);
     }
-  }, [downloadBlob, downloadProgress, meta?.mtime, path, rpc, shareProgress]);
+  }, [downloadProgress, meta?.mtime, path, rpc, shareProgress]);
 
   const inspectFullText = useCallback(async (target: string, generation: number) => {
     const result = await rpc<TextInspectionResult>("fs:inspect-text", { path: target }, 60_000);
@@ -704,10 +719,14 @@ export default function FilePreview({ path, rpc, onClose }: Props) {
         </div>
       )}
 
+      {shareError && (
+        <div role="alert" style={{ flexShrink: 0, padding: "8px 12px", borderBottom: "1px solid var(--ui-tree-border, #222)", background: "var(--ui-tree-bg, #121218)", color: "var(--ui-error, #f7768e)", fontSize: 12.5, lineHeight: 1.5 }}>
+          分享失败：{shareError}
+        </div>
+      )}
+
       <div ref={bodyRef} className="pv-body" style={{ position: "relative", flex: 1, minHeight: 0, overflow: "auto", background: "var(--ui-term-col-bg, #101014)", WebkitOverflowScrolling: "touch" }}>
         {downloadError && <div style={{ padding: "10px 14px 0", color: "var(--ui-error, #f7768e)", fontSize: 12.5 }}>下载失败：{downloadError}</div>}
-        {shareNotice && <div role="status" style={{ padding: "10px 14px 0", color: "var(--ui-muted-text, #9aa)", fontSize: 12.5 }}>{shareNotice}</div>}
-        {shareError && <div role="alert" style={{ padding: "10px 14px 0", color: "var(--ui-error, #f7768e)", fontSize: 12.5 }}>分享失败：{shareError}</div>}
         {saveError && <div role="alert" style={{ padding: "10px 14px", color: "var(--ui-error, #f7768e)", fontSize: 12.5 }}>{saveError}</div>}
         {externalChange && editing && (
           <div role="alert" style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", borderBottom: "1px solid var(--ui-tree-border, #222)", color: "var(--ui-error, #f7768e)", fontSize: 12 }}>

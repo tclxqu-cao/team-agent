@@ -5,6 +5,7 @@ import {
   MAX_CLIENT_DOWNLOAD_BYTES,
   decodeTextChunk,
   mimeTypeForPath,
+  nativeFileShareReadiness,
   readFileForClientDownload,
   shareFileWithNativePicker,
 } from "./FilePreview";
@@ -85,6 +86,14 @@ describe("FilePreview client download", () => {
     await expect(shareFileWithNativePicker(file, client)).resolves.toBe("unsupported");
   });
 
+  it("distinguishes insecure pages from missing browser share support", () => {
+    const supportedClient = { canShare: vi.fn(() => true), share: vi.fn(async () => {}) };
+
+    expect(nativeFileShareReadiness(supportedClient, false)).toBe("insecure-context");
+    expect(nativeFileShareReadiness({}, true)).toBe("unsupported-browser");
+    expect(nativeFileShareReadiness(supportedClient, true)).toBe("ready");
+  });
+
   it("provides useful MIME types for shared files", () => {
     expect(mimeTypeForPath("/tmp/report.PDF")).toBe("application/pdf");
     expect(mimeTypeForPath("/tmp/deck.pptx")).toBe("application/vnd.openxmlformats-officedocument.presentationml.presentation");
@@ -157,7 +166,9 @@ describe("FilePreview client download", () => {
     const closeButton = filePreviewSource.indexOf('aria-label="关闭预览"');
 
     expect(filePreviewSource).toContain("Share2");
-    expect(filePreviewSource).toContain("当前浏览器不支持直接分享文件，已改为下载");
+    expect(filePreviewSource).toContain("当前页面是 HTTP，手机 Chrome 仅允许 HTTPS 页面分享文件");
+    expect(filePreviewSource).toContain("当前浏览器不支持分享此文件类型，请使用下载按钮");
+    expect(filePreviewSource).not.toContain("当前浏览器不支持直接分享文件，已改为下载");
     expect(downloadButton).toBeGreaterThan(-1);
     expect(shareButton).toBeGreaterThan(downloadButton);
     expect(closeButton).toBeGreaterThan(shareButton);
