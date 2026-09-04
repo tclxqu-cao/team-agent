@@ -1,0 +1,19 @@
+.github/workflows/agent-runtime-soak.yml
+  s_c2f221873f144e::t_b4b58a2d047555 1-368
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "6e713d63d35497e6166f4af6390221236c5d7c22",
+  "prompts": {},
+  "sessions": {
+    "s_c2f221873f144e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06d49-5ce1-7c11-8feb-44d455eb6627",
+        "model": "unknown"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
