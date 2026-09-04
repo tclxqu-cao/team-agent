@@ -1,0 +1,19 @@
+docs/superpowers/plans/2026-09-05-agent-runtime-continuous-upgrade.md
+  s_c2f221873f144e::t_9767c1174b4048 1-308
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "b14655c5fe0da733106cc928fc39d71a8554445b",
+  "prompts": {},
+  "sessions": {
+    "s_c2f221873f144e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06d49-5ce1-7c11-8feb-44d455eb6627",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
