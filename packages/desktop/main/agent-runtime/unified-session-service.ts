@@ -5,15 +5,22 @@ import {
   type SessionHistoryQuery,
 } from "@agent/core";
 import { decodeUnifiedSessionId } from "./session-id.js";
+import { AgentWorkspaceIndexService } from "./agent-workspace-index.js";
 import type {
   AgentRuntimeAdapter,
   AgentType,
+  AgentWorkspace,
+  ImportedAgentWorkspaceRepository,
+  ImportAgentWorkspaceResult,
   CreateRuntimeSessionOptions,
   RuntimeHealth,
   RuntimeQuestionAnswer,
   RuntimeRunOptions,
   UnifiedSessionDetail,
   UnifiedSessionSummary,
+  WorkspacePage,
+  WorkspaceQuery,
+  WorkspaceSessionQuery,
 } from "./types.js";
 import { RuntimeSessionError } from "./types.js";
 
@@ -24,6 +31,7 @@ interface ProjectLike {
 
 export class UnifiedSessionService {
   private readonly adapters = new Map<AgentType, AgentRuntimeAdapter>();
+  private readonly workspaceIndex: AgentWorkspaceIndexService;
   private readonly activeSessionIds = new Set<string>();
   private healthCache: RuntimeHealth[] = [];
   private discoveryPromise: Promise<UnifiedSessionSummary[]> | null = null;
@@ -32,8 +40,30 @@ export class UnifiedSessionService {
   constructor(
     adapters: AgentRuntimeAdapter[],
     private readonly listProjects: () => Promise<ProjectLike[]>,
+    importedWorkspaces?: ImportedAgentWorkspaceRepository,
   ) {
     for (const adapter of adapters) this.adapters.set(adapter.agentType, adapter);
+    this.workspaceIndex = new AgentWorkspaceIndexService(adapters, importedWorkspaces);
+  }
+
+  listWorkspaces(agentType: AgentType, query?: WorkspaceQuery): Promise<WorkspacePage<AgentWorkspace>> {
+    return this.workspaceIndex.listWorkspaces(agentType, query);
+  }
+
+  listWorkspaceSessions(
+    agentType: AgentType,
+    workspaceId: string,
+    query?: WorkspaceSessionQuery,
+  ): Promise<WorkspacePage<UnifiedSessionSummary>> {
+    return this.workspaceIndex.listWorkspaceSessions(agentType, workspaceId, query);
+  }
+
+  importWorkspace(
+    agentType: AgentType,
+    path: string,
+    name?: string,
+  ): Promise<ImportAgentWorkspaceResult> {
+    return this.workspaceIndex.importWorkspace(agentType, path, name);
   }
 
   async health(): Promise<RuntimeHealth[]> {
@@ -71,6 +101,8 @@ export class UnifiedSessionService {
   invalidate(id: string): void {
     this.detailCache.delete(id);
     this.discoveryPromise = null;
+    const decoded = decodeUnifiedSessionId(id);
+    this.workspaceIndex.invalidate(decoded.agentType);
   }
 
   private async discoverAll(): Promise<UnifiedSessionSummary[]> {
@@ -104,17 +136,21 @@ export class UnifiedSessionService {
   }
 
   async get(id: string, query?: SessionHistoryQuery): Promise<UnifiedSessionDetail> {
-    const { adapter, nativeSessionId } = this.resolveAdapter(id);
-    const cached = query?.before ? this.detailCache.get(id) : undefined;
-    const detail = cached ?? await adapter.getSession(nativeSessionId);
-    this.cacheDetail(id, detail);
-    const projects = await this.listProjects();
-    const associated = associateProject(detail, projects);
+    const associated = await this.getUnpaginated(id, Boolean(query?.before));
     if (!query) return associated;
     return {
       ...associated,
       ...paginateSessionHistory(associated.messages, associated.events, query),
     };
+  }
+
+  async getUnpaginated(id: string, preferCache = false): Promise<UnifiedSessionDetail> {
+    const { adapter, nativeSessionId } = this.resolveAdapter(id);
+    const cached = preferCache ? this.detailCache.get(id) : undefined;
+    const detail = cached ?? await adapter.getSession(nativeSessionId);
+    this.cacheDetail(id, detail);
+    const projects = await this.listProjects();
+    return associateProject(detail, projects);
   }
 
   async getSessionWatchPath(id: string): Promise<string | null> {
@@ -135,6 +171,13 @@ export class UnifiedSessionService {
     const created = await adapter.create(options);
     this.discoveryPromise = null;
     return created;
+  }
+
+  restoreDrafts(summaries: readonly UnifiedSessionSummary[]): void {
+    for (const summary of summaries) {
+      this.adapters.get(summary.agentType)?.restoreDraft?.(summary);
+    }
+    this.discoveryPromise = null;
   }
 
   async fork(id: string): Promise<UnifiedSessionSummary> {
@@ -211,8 +254,11 @@ export class UnifiedSessionService {
 
   async delete(id: string): Promise<void> {
     const { adapter, nativeSessionId } = this.resolveAdapter(id);
-    if (!adapter.delete || adapter.agentType !== "customer-agent") {
-      throw new RuntimeSessionError("External runtime sessions cannot be deleted", "OPERATION_NOT_SUPPORTED");
+    if (this.activeSessionIds.has(id)) {
+      throw new RuntimeSessionError("Session is currently running", "SESSION_OCCUPIED");
+    }
+    if (!adapter.delete) {
+      throw new RuntimeSessionError("This session cannot be deleted", "OPERATION_NOT_SUPPORTED");
     }
     await adapter.delete(nativeSessionId);
     this.detailCache.delete(id);

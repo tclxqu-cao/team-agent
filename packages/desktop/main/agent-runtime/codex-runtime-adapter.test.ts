@@ -118,6 +118,196 @@ describe("Codex home and Windows occupancy", () => {
   });
 });
 
+describe("Codex project workspace index", () => {
+  it("uses native project identity, names, and position order and refreshes after project changes", async () => {
+    let notify: (message: any) => void = () => undefined;
+    let revision = 0;
+    const request = vi.fn(async (method: string) => {
+      if (method !== "project/list") throw new Error(`unexpected request: ${method}`);
+      revision += 1;
+      return {
+        data: [
+          { id: "project-b", name: revision === 1 ? "Beta" : "Beta renamed", roots: [{ path: "/beta" }], position: 20, updatedAt: revision },
+          { id: "project-a", name: "Alpha", roots: [{ path: "/alpha" }], position: 10, updatedAt: revision },
+        ],
+        nextCursor: null,
+      };
+    });
+    const adapter = new CodexRuntimeAdapter({
+      client: {
+        onNotification: (handler: typeof notify) => { notify = handler; return () => undefined; },
+        onExit: () => () => undefined,
+        setServerRequestHandler: () => undefined,
+        request,
+      } as never,
+    });
+
+    const first = await adapter.listWorkspaces();
+    expect(first.data.map(({ workspaceId, name, order }) => [workspaceId, name, order])).toEqual([
+      ["project-b", "Beta", 20],
+      ["project-a", "Alpha", 10],
+    ]);
+
+    notify({ method: "project/changed", params: { projectId: "project-b", changeType: "updated" } });
+    const refreshed = await adapter.listWorkspaces();
+    expect(refreshed.data[0]).toMatchObject({ workspaceId: "project-b", name: "Beta renamed" });
+    expect(request).toHaveBeenCalledTimes(2);
+  });
+
+  it("queries sessions by stable project ID before using the legacy cwd fallback", async () => {
+    const root = await mkdtemp(join(tmpdir(), "codex-project-index-"));
+    temporaryDirectories.push(root);
+    const requests: Array<{ method: string; params: Record<string, unknown> }> = [];
+    const thread = {
+      id: "thread-1",
+      parentThreadId: null,
+      preview: "project session",
+      name: null,
+      createdAt: 1_788_220_800,
+      updatedAt: 1_788_220_800,
+      status: { type: "idle" },
+      path: null,
+      cwd: root,
+      source: "desktop",
+      turns: [],
+      projectId: "project-1",
+    };
+    const adapter = new CodexRuntimeAdapter({
+      client: {
+        onNotification: () => () => undefined,
+        onExit: () => () => undefined,
+        setServerRequestHandler: () => undefined,
+        request: async (method: string, params: Record<string, unknown>) => {
+          requests.push({ method, params });
+          if (method === "project/list") {
+            return { data: [{ id: "project-1", name: "Repo", roots: [{ path: root }], position: 0, updatedAt: 1 }], nextCursor: null };
+          }
+          if (method === "thread/list") return { data: [thread], nextCursor: null };
+          throw new Error(`unexpected request: ${method}`);
+        },
+      } as never,
+      sessionRoot: root,
+      rolloutActivityReader: { readMany: async () => new Map() },
+    });
+
+    await adapter.listWorkspaces();
+    await expect(adapter.listWorkspaceSessions("project-1")).resolves.toMatchObject({
+      data: [expect.objectContaining({ nativeSessionId: "thread-1" })],
+    });
+    expect(requests.find((entry) => entry.method === "thread/list")?.params).toMatchObject({
+      projectId: "project-1",
+    });
+  });
+
+  it("queries imported workspace sessions by cwd without a project ID", async () => {
+    const root = await mkdtemp(join(tmpdir(), "codex-imported-index-"));
+    temporaryDirectories.push(root);
+    const requests: Array<{ method: string; params: Record<string, unknown> }> = [];
+    const adapter = new CodexRuntimeAdapter({
+      client: {
+        onNotification: () => () => undefined,
+        onExit: () => () => undefined,
+        setServerRequestHandler: () => undefined,
+        request: async (method: string, params: Record<string, unknown>) => {
+          requests.push({ method, params });
+          if (method === "thread/list") return { data: [], nextCursor: null };
+          throw new Error(`unexpected request: ${method}`);
+        },
+      } as never,
+      sessionRoot: root,
+      rolloutActivityReader: { readMany: async () => new Map() },
+    });
+
+    await adapter.listWorkspaceSessionsByPath(root, { limit: 25 });
+
+    expect(requests[0]).toEqual({
+      method: "thread/list",
+      params: {
+        cursor: null,
+        limit: 25,
+        sortKey: "updated_at",
+        sortDirection: "desc",
+        cwd: [root],
+      },
+    });
+  });
+
+  it("assigns newly created threads to the selected native project", async () => {
+    const requests: Array<{ method: string; params: Record<string, unknown> }> = [];
+    const thread = {
+      id: "new-thread",
+      parentThreadId: null,
+      preview: "",
+      name: null,
+      createdAt: 1_788_220_800,
+      updatedAt: 1_788_220_800,
+      status: { type: "idle" },
+      path: null,
+      cwd: "/repo",
+      source: "desktop",
+      turns: [],
+      projectId: null,
+    };
+    const adapter = new CodexRuntimeAdapter({
+      client: {
+        onNotification: () => () => undefined,
+        onExit: () => () => undefined,
+        setServerRequestHandler: () => undefined,
+        request: async (method: string, params: Record<string, unknown>) => {
+          requests.push({ method, params });
+          if (method === "thread/start") return { thread };
+          return {};
+        },
+      } as never,
+    });
+
+    const created = await adapter.create({ title: "New", cwd: "/repo", projectId: "project-1" });
+
+    expect(requests[0]).toEqual({
+      method: "thread/start",
+      params: { cwd: "/repo", threadSource: "customer-agent", projectId: "project-1" },
+    });
+    expect(created.projectId).toBe("project-1");
+  });
+
+  it("creates a cwd-only thread for an imported workspace", async () => {
+    const requests: Array<{ method: string; params: Record<string, unknown> }> = [];
+    const thread = {
+      id: "imported-thread",
+      parentThreadId: null,
+      preview: "",
+      name: null,
+      createdAt: 1_788_220_800,
+      updatedAt: 1_788_220_800,
+      status: { type: "idle" },
+      path: null,
+      cwd: "/manual/repo",
+      source: "desktop",
+      turns: [],
+      projectId: null,
+    };
+    const adapter = new CodexRuntimeAdapter({
+      client: {
+        onNotification: () => () => undefined,
+        onExit: () => () => undefined,
+        setServerRequestHandler: () => undefined,
+        request: async (method: string, params: Record<string, unknown>) => {
+          requests.push({ method, params });
+          if (method === "thread/start") return { thread };
+          return {};
+        },
+      } as never,
+    });
+
+    await adapter.create({ title: "New", cwd: "/manual/repo" });
+
+    expect(requests[0]).toEqual({
+      method: "thread/start",
+      params: { cwd: "/manual/repo", threadSource: "customer-agent" },
+    });
+  });
+});
+
 describe("Codex reasoning mapping", () => {
   it("maps public turn and reasoning-item lifecycle progress", () => {
     expect(codexProgressNotificationToEvent({
@@ -414,11 +604,13 @@ describe("Codex session forks", () => {
 });
 
 describe("Codex image input", () => {
-  it("writes ordered localImage inputs for turn/start and removes the temporary files", async () => {
+  it("writes ordered localImage inputs for turn/start and keeps accepted image files", async () => {
     const root = await mkdtemp(join(tmpdir(), "codex-image-input-"));
     temporaryDirectories.push(root);
+    const imageStorageRoot = join(root, "images");
     const requests: Array<{ method: string; params: any }> = [];
     const capturedBytes: Buffer[] = [];
+    const capturedPaths: string[] = [];
     let notify: (message: any) => void = () => undefined;
     const thread = {
       id: "cx-images",
@@ -445,7 +637,10 @@ describe("Codex image input", () => {
         if (method === "thread/read") return { thread };
         if (method === "thread/resume") return { thread };
         if (method === "turn/start") {
-          for (const item of params.input.slice(1)) capturedBytes.push(await readFile(item.path));
+          for (const item of params.input.slice(1)) {
+            capturedPaths.push(item.path);
+            capturedBytes.push(await readFile(item.path));
+          }
           queueMicrotask(() => notify({
             method: "turn/completed",
             params: {
@@ -462,7 +657,7 @@ describe("Codex image input", () => {
     const adapter = new CodexRuntimeAdapter({
       client: client as never,
       sessionRoot: root,
-      imageTempRoot: root,
+      imageStorageRoot,
     });
     const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x01]);
     const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0x01]);
@@ -479,7 +674,53 @@ describe("Codex image input", () => {
       { type: "localImage", path: expect.stringMatching(/image-2\.jpg$/) },
     ]);
     expect(capturedBytes).toEqual([png, jpeg]);
-    expect(await readdir(root)).toEqual([]);
+    expect(await Promise.all(capturedPaths.map((path) => readFile(path)))).toEqual([png, jpeg]);
+    expect(await readdir(imageStorageRoot)).toHaveLength(1);
+  });
+
+  it("removes image files when Codex rejects turn/start", async () => {
+    const root = await mkdtemp(join(tmpdir(), "codex-image-rejected-"));
+    temporaryDirectories.push(root);
+    const imageStorageRoot = join(root, "images");
+    const thread = {
+      id: "cx-rejected-images",
+      parentThreadId: null,
+      preview: "images",
+      name: "images",
+      createdAt: 1_788_220_800,
+      updatedAt: 1_788_220_800,
+      status: { type: "idle" },
+      path: null,
+      cwd: root,
+      source: { custom: "customer-agent" },
+      turns: [],
+    };
+    const client = {
+      onNotification: () => () => undefined,
+      onExit: () => () => undefined,
+      setServerRequestHandler: () => undefined,
+      request: async (method: string) => {
+        if (method === "thread/read" || method === "thread/resume") return { thread };
+        if (method === "turn/start") throw new Error("turn rejected");
+        if (method === "thread/unsubscribe") return {};
+        throw new Error(`unexpected request: ${method}`);
+      },
+    };
+    const adapter = new CodexRuntimeAdapter({
+      client: client as never,
+      sessionRoot: root,
+      imageStorageRoot,
+    });
+    const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x01]);
+
+    const events = await drain(adapter.run(
+      thread.id,
+      "inspect",
+      [`data:image/png;base64,${png.toString("base64")}`],
+    ));
+
+    expect(events).toEqual([expect.objectContaining({ type: "error", message: "turn rejected" })]);
+    expect(await readdir(imageStorageRoot)).toEqual([]);
   });
 
   it("rejects malformed image data before starting a turn", async () => {
@@ -748,6 +989,121 @@ describe("Codex native permissions", () => {
     expect(codexTurnPermissionOptions("full-access", "/repo")).toEqual({
       approvalPolicy: "never",
       sandboxPolicy: { type: "dangerFullAccess" },
+    });
+  });
+
+  it("auto-accepts approval requests in full-access goals while preserving user input questions", async () => {
+    const thread = {
+      id: "cx-full-access-permissions",
+      parentThreadId: null,
+      preview: "permissions",
+      name: "permissions",
+      createdAt: 1_788_220_800,
+      updatedAt: 1_788_220_800,
+      status: { type: "idle" },
+      path: null,
+      cwd: "/repo",
+      source: { custom: "customer-agent" },
+      turns: [],
+    };
+    let notification: (message: any) => void = () => undefined;
+    let serverRequest: (message: any) => void = () => undefined;
+    let turnStarted = false;
+    const responses: Array<{ id: unknown; result: unknown }> = [];
+    const client = {
+      onNotification: (handler: typeof notification) => {
+        notification = handler;
+        return () => undefined;
+      },
+      onExit: () => () => undefined,
+      setServerRequestHandler: (handler: typeof serverRequest) => {
+        serverRequest = handler;
+      },
+      respond: (id: unknown, result: unknown) => {
+        responses.push({ id, result });
+      },
+      respondError: () => undefined,
+      request: async (method: string) => {
+        if (method === "thread/read" || method === "thread/resume") return { thread };
+        if (method === "thread/goal/set") return { goal: { status: "active" } };
+        if (method === "turn/start") {
+          turnStarted = true;
+          return { turn: { id: "turn-full-access" } };
+        }
+        if (method === "thread/unsubscribe") return {};
+        throw new Error(`unexpected request: ${method}`);
+      },
+      dispose: async () => undefined,
+    };
+    const adapter = new CodexRuntimeAdapter({ client: client as never, sessionRoot: "/tmp" });
+    const iterator = adapter.run(thread.id, "continue", undefined, undefined, undefined, {
+      permissionMode: "full-access",
+      brokerRunId: "run-full-access",
+      goal: { id: "goal-full-access", objective: "finish the target" },
+    })[Symbol.asyncIterator]();
+    let nextEventSettled = false;
+    const nextEvent = iterator.next().then((result) => {
+      nextEventSettled = true;
+      return result;
+    });
+    for (let attempt = 0; attempt < 150 && !turnStarted; attempt++) {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+    expect(turnStarted).toBe(true);
+
+    serverRequest({
+      id: "legacy-command",
+      method: "item/commandExecution/requestApproval",
+      params: { threadId: thread.id, command: "pwd" },
+    });
+    serverRequest({
+      id: "scoped-permissions",
+      method: "item/permissions/requestApproval",
+      params: {
+        threadId: thread.id,
+        permissions: { filesystem: { paths: ["/repo/src"] } },
+      },
+    });
+
+    expect(responses).toEqual([
+      { id: "legacy-command", result: { decision: "accept" } },
+      {
+        id: "scoped-permissions",
+        result: {
+          permissions: { filesystem: { paths: ["/repo/src"] } },
+          scope: "turn",
+        },
+      },
+    ]);
+    expect(nextEventSettled).toBe(false);
+
+    serverRequest({
+      id: "user-input",
+      method: "item/tool/requestUserInput",
+      params: {
+        threadId: thread.id,
+        questions: [{ id: "choice", question: "Which option?", options: null }],
+      },
+    });
+    await expect(nextEvent).resolves.toMatchObject({
+      value: {
+        type: "ask_user",
+        questionId: "native:run-full-access:user-input",
+        question: "Which option?",
+      },
+    });
+    await expect(adapter.answerQuestion(
+      "native:run-full-access:user-input",
+      { answer: "Continue" },
+    )).resolves.toBe(true);
+    expect(responses.at(-1)).toEqual({
+      id: "user-input",
+      result: { answers: { choice: { answers: ["Continue"] } } },
+    });
+
+    notification({ method: "turn/interrupt", params: { threadId: thread.id, turnId: "turn-full-access" } });
+    await expect(iterator.next()).resolves.toMatchObject({
+      value: { type: "error", code: "NATIVE_PROTOCOL_ERROR" },
     });
   });
 

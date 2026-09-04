@@ -2,6 +2,7 @@
 import type { ISessionStore, Session } from '../domain/session/entities.js';
 import type { Message } from '../domain/model/entities.js';
 import type { AgentEvent } from '../domain/agent/entities.js';
+import { consumePendingAutoTitle } from '../domain/session/SessionTitle.js';
 import { getDatabase } from './SQLiteDatabase.js';
 
 export class SQLiteSessionStore implements ISessionStore {
@@ -63,6 +64,29 @@ export class SQLiteSessionStore implements ISessionStore {
     return merged;
   }
 
+  async consumePendingAutoTitle(id: string, input: string): Promise<Session | null> {
+    const db = getDatabase(this.baseDir);
+    const consume = db.db.transaction(() => {
+      const row = db.db.prepare("SELECT * FROM sessions WHERE id = ?").get(id) as Record<string, unknown> | undefined;
+      if (!row) return null;
+      const result = consumePendingAutoTitle({
+        metadata: JSON.parse(row.metadata as string) as Record<string, unknown>,
+      }, input);
+      if (!result) return null;
+
+      const updated = new Date().toISOString();
+      db.db.prepare("UPDATE sessions SET title = ?, metadata = ?, updated = ? WHERE id = ?")
+        .run(result.title, JSON.stringify(result.metadata), updated, id);
+      return this.rowToSession({
+        ...row,
+        title: result.title,
+        metadata: JSON.stringify(result.metadata),
+        updated,
+      });
+    });
+    return consume();
+  }
+
   async delete(id: string): Promise<void> {
     const db = getDatabase(this.baseDir);
     db.db.prepare("DELETE FROM messages WHERE session_id = ?").run(id);
@@ -90,11 +114,12 @@ export class SQLiteSessionStore implements ISessionStore {
   async addMessage(sessionId: string, message: Message): Promise<void> {
     const db = getDatabase(this.baseDir);
     db.db.prepare(
-      "INSERT INTO messages (session_id, role, content, tool_calls, tool_call_id, name, timestamp) VALUES (?,?,?,?,?,?,?)"
+      "INSERT INTO messages (session_id, role, content, tool_calls, tool_call_id, name, presentation, timestamp) VALUES (?,?,?,?,?,?,?,?)"
     ).run(
       sessionId, message.role, message.content ?? "",
       JSON.stringify(message.toolCalls ?? []),
       message.toolCallId ?? null, message.name ?? null,
+      message.presentation ? JSON.stringify(message.presentation) : null,
       Date.now()
     );
   }
@@ -109,7 +134,7 @@ export class SQLiteSessionStore implements ISessionStore {
   async replaceMessages(sessionId: string, messages: Message[]): Promise<void> {
     const db = getDatabase(this.baseDir);
     const insert = db.db.prepare(
-      "INSERT INTO messages (session_id, role, content, tool_calls, tool_call_id, name, timestamp) VALUES (?,?,?,?,?,?,?)"
+      "INSERT INTO messages (session_id, role, content, tool_calls, tool_call_id, name, presentation, timestamp) VALUES (?,?,?,?,?,?,?,?)"
     );
     const tx = db.db.transaction(() => {
       db.db.prepare("DELETE FROM messages WHERE session_id = ?").run(sessionId);
@@ -119,6 +144,7 @@ export class SQLiteSessionStore implements ISessionStore {
           sessionId, m.role, m.content ?? "",
           JSON.stringify(m.toolCalls ?? []),
           m.toolCallId ?? null, m.name ?? null,
+          m.presentation ? JSON.stringify(m.presentation) : null,
           Date.now() + i, // preserve ordering
         );
       }
@@ -141,12 +167,16 @@ export class SQLiteSessionStore implements ISessionStore {
         const toolCalls = JSON.parse(m.tool_calls as string) as Message["toolCalls"];
         const toolCallId = (m.tool_call_id as string | null) ?? undefined;
         const name = (m.name as string | null) ?? undefined;
+        const presentation = m.presentation
+          ? JSON.parse(m.presentation as string) as Message["presentation"]
+          : undefined;
         return {
           role: m.role as Message["role"],
           content: m.content as string,
           ...(toolCalls?.length ? { toolCalls } : {}),
           ...(toolCallId !== undefined ? { toolCallId } : {}),
           ...(name !== undefined ? { name } : {}),
+          ...(presentation !== undefined ? { presentation } : {}),
         };
       }),
       events: evtRows.map((e) => JSON.parse(e.data as string)),

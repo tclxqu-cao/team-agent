@@ -13,15 +13,38 @@ import {
   SQLiteRemoteToolStore,
   type RemoteToolRegistration,
   type Message,
+  type MessageAttachment,
   ToolPermissionGate,
   TOOL_APPROVAL_OPTIONS,
   isToolPermissionMode,
   normalizeToolPermissionMode,
   toolApprovalDecisionFromAnswer,
   type ToolPermissionMode,
+  withPendingAutoTitle,
 } from "@agent/core";
 import { homedir } from "node:os";
 import { getAgentWorkingDirectory, getServerBaseDir } from "../../lib/server-data-dir";
+
+const IMAGE_FILE_EXTENSIONS: Record<string, string> = {
+  jpeg: "jpg",
+  png: "png",
+  gif: "gif",
+  webp: "webp",
+};
+
+function sentImagePresentation(images?: readonly string[]): Message["presentation"] | undefined {
+  const attachments: MessageAttachment[] = [];
+  for (const [index, dataUrl] of (images ?? []).entries()) {
+    const match = /^data:image\/(jpeg|png|gif|webp);base64,/i.exec(dataUrl);
+    if (!match) continue;
+    attachments.push({
+      type: "image",
+      name: `image-${index + 1}.${IMAGE_FILE_EXTENSIONS[match[1].toLowerCase()]}`,
+      dataUrl,
+    });
+  }
+  return attachments.length > 0 ? { attachments } : undefined;
+}
 
 export class ProjectWorkingDirectoryError extends Error {
   constructor(
@@ -191,7 +214,7 @@ class AgentHost {
       events: [],
       created: now,
       updated: now,
-      metadata: { permissionMode: "full-access" },
+      metadata: withPendingAutoTitle(title, { permissionMode: "full-access" }),
     });
   }
 
@@ -313,7 +336,13 @@ class AgentHost {
   async run(input: string, sessionId: string, images?: string[]): Promise<void> {
     const session = await this.sessionStore.get(sessionId);
     const runWorkingDirectory = await this.resolveProjectWorkingDirectory(session?.projectId);
-    await this.sessionStore.addMessage(sessionId, { role: "user", content: input });
+    await this.sessionStore.consumePendingAutoTitle(sessionId, input);
+    const presentation = sentImagePresentation(images);
+    await this.sessionStore.addMessage(sessionId, {
+      role: "user",
+      content: input,
+      ...(presentation ? { presentation } : {}),
+    });
     // a fresh run restarts the event sequence; late subscribers replay only it
     this.eventCounters.set(sessionId, 0);
     this.recentEvents.set(sessionId, []);

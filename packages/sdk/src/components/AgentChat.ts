@@ -9,12 +9,13 @@ import { renderMarkdown } from './markdown';
 import './AgentFab';
 
 /** 机器人分组固定展示顺序与标签（与会话按机器人分组功能配套） */
-const BOT_GROUP_ORDER = ['customer-agent', 'codex', 'claude-code'] as const;
+const BOT_GROUP_ORDER = ['customer-agent', 'opencode', 'codex', 'claude-code'] as const;
 type BotAgentType = (typeof BOT_GROUP_ORDER)[number];
 const BOT_GROUP_LABELS: Record<BotAgentType, string> = {
   'customer-agent': 'Customer Agent',
   codex: 'Codex',
   'claude-code': 'Claude Code',
+  opencode: 'OpenCode',
 };
 
 /**

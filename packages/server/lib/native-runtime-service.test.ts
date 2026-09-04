@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type {
+  AgentType,
+  AgentWorkspace,
   RuntimeHealth,
   UnifiedSessionSummary,
+  WorkspacePage,
 } from "../../desktop/main/agent-runtime/types.js";
 import { encodeUnifiedSessionId } from "../../desktop/main/agent-runtime/session-id.js";
 import type { NativeRuntimePort } from "./native-runtime-service";
@@ -35,8 +38,20 @@ class FakeRuntime implements NativeRuntimePort {
   getError: unknown = null;
   listCalls: Array<string | undefined> = [];
   refreshCalls: Array<string | undefined> = [];
+  deletedIds: string[] = [];
+  workspaceSessions: UnifiedSessionSummary[] = [];
 
   health = async (): Promise<RuntimeHealth[]> => [];
+  listWorkspaces = async (agentType: Exclude<AgentType, "customer-agent">): Promise<WorkspacePage<AgentWorkspace>> => ({
+    data: [{ agentType, workspaceId: "workspace", name: "Workspace", roots: ["/tmp"], order: 0, source: "native" }],
+    nextCursor: null,
+    watermark: null,
+  });
+  listWorkspaceSessions = async (): Promise<WorkspacePage<UnifiedSessionSummary>> => ({
+    data: this.workspaceSessions,
+    nextCursor: null,
+    watermark: null,
+  });
   list = async (projectId?: string): Promise<UnifiedSessionSummary[]> => {
     this.listCalls.push(projectId);
     return projectId === undefined
@@ -56,6 +71,9 @@ class FakeRuntime implements NativeRuntimePort {
   fork = async (): Promise<UnifiedSessionSummary> => {
     if (!this.forkResult) throw new Error("no fork result configured");
     return this.forkResult;
+  };
+  delete = async (id: string): Promise<void> => {
+    this.deletedIds.push(id);
   };
   get = async (id: string) => {
     if (this.getError) throw this.getError;
@@ -91,6 +109,23 @@ describe("NativeRuntimeService", () => {
     expect(listed.map((s) => s.id)).toEqual(["fresh", "old"]);
   });
 
+  it("keeps a pending native session in its stable workspace page", async () => {
+    const runtime = new FakeRuntime();
+    runtime.createResult = summary("fresh", "2026-08-31T12:00:00.000Z", "/repo");
+    const service = new NativeRuntimeService(runtime);
+
+    await service.create({
+      agentType: "codex",
+      title: "新会话",
+      cwd: "/repo",
+      projectId: "codex-project",
+    });
+
+    await expect(service.listWorkspaceSessions("codex", "codex-project")).resolves.toMatchObject({
+      data: [expect.objectContaining({ id: "fresh", projectId: "codex-project" })],
+    });
+  });
+
   it("drops pending entries once discovery returns them", async () => {
     const runtime = new FakeRuntime();
     runtime.createResult = summary("fresh");
@@ -102,6 +137,20 @@ describe("NativeRuntimeService", () => {
 
     expect(listed.map((s) => s.id)).toEqual(["fresh"]);
     expect(listed[0].updated).toBe("2026-08-31T12:05:00.000Z");
+  });
+
+  it("keeps pending project context when discovery returns the same session without cwd", async () => {
+    const runtime = new FakeRuntime();
+    runtime.createResult = summary("fresh", "2026-08-31T12:00:00.000Z", "/repo/app");
+    const service = new NativeRuntimeService(runtime, async () => [
+      { id: "app", description: "/repo/app" },
+    ]);
+    const created = await service.create({ agentType: "claude-code", title: "新会话", cwd: "/repo/app" });
+    runtime.discovered = [{ ...created, cwd: "", projectId: undefined }];
+
+    await expect(service.refresh("app")).resolves.toEqual([
+      expect.objectContaining({ id: "fresh", cwd: "/repo/app", projectId: "app" }),
+    ]);
   });
 
   it("keeps forked sessions visible until the runtime discovers them", async () => {
@@ -118,6 +167,18 @@ describe("NativeRuntimeService", () => {
 
     expect(forked.id).toBe(runtime.forkResult.id);
     expect(listed.map((session) => session.id)).toEqual([runtime.forkResult.id]);
+  });
+
+  it("delegates deletion and removes a pending session projection", async () => {
+    const runtime = new FakeRuntime();
+    runtime.createResult = summary("fresh");
+    const service = new NativeRuntimeService(runtime);
+    await service.create({ agentType: "codex", title: "新会话", cwd: "/tmp" });
+
+    await service.delete("fresh");
+
+    expect(runtime.deletedIds).toEqual(["fresh"]);
+    await expect(service.list()).resolves.toEqual([]);
   });
 
   it("rejects Customer Agent session forks", async () => {

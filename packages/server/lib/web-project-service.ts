@@ -88,4 +88,8 @@ export class WebProjectService {
       return false;
     }
   }
+
+  canonicalDirectory(path: string): string {
+    return this.paths.assertDirectory(path);
+  }
 }

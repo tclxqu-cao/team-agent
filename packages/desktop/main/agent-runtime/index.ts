@@ -1,5 +1,7 @@
 export { ClaudeRuntimeAdapter } from "./claude-runtime-adapter.js";
 export { CodexRuntimeAdapter } from "./codex-runtime-adapter.js";
+export { OpenCodeRuntimeAdapter } from "./opencode-runtime-adapter.js";
+export { OpenCodeServerClient } from "./opencode-server-client.js";
 export { CustomerAgentRuntimeAdapter } from "./customer-agent-runtime-adapter.js";
 export {
   BrokerRuntimeAdapter,
@@ -16,4 +18,11 @@ export {
   type NativeRuntimeBrokerRuntimeFactory,
 } from "./native-runtime-broker.js";
 export { UnifiedSessionService } from "./unified-session-service.js";
+export {
+  AgentWorkspaceIndexService,
+  decodeOffsetCursor,
+  encodeOffsetCursor,
+  paginateByOffset,
+  workspacePageSize,
+} from "./agent-workspace-index.js";
 export * from "./types.js";

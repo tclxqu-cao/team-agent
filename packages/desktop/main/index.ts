@@ -4,10 +4,10 @@ import { createRequire } from "module";
 const require = createRequire(import.meta.url);
 const { app, BrowserWindow, ipcMain, dialog, nativeImage, session } = require("electron") as typeof import("electron");
 import { spawn, type ChildProcess } from "node:child_process";
-import { join } from "node:path";
+import { basename, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { readFile, writeFile } from "node:fs/promises";
-import { existsSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 import { SessionGoalCoordinator, type AgentEvent } from "@agent/core";
 import { AgentHost } from "./agent-host.js";
 import {
@@ -78,6 +78,7 @@ const nativeRuntimeBroker = createNativeRuntimeBrokerClient({
   runtimeFactory: (callbacks) => createNativeRuntimeBrokerHostRuntime(
     process.env.AGENT_CODEX_BIN?.trim() || "codex",
     callbacks,
+    process.env.AGENT_OPENCODE_BIN?.trim() || "opencode",
   ),
 });
 const unifiedSessions = new UnifiedSessionService(
@@ -85,6 +86,7 @@ const unifiedSessions = new UnifiedSessionService(
     new CustomerAgentRuntimeAdapter(agentHost),
     new BrokerRuntimeAdapter("codex", nativeRuntimeBroker),
     new BrokerRuntimeAdapter("claude-code", nativeRuntimeBroker),
+    new BrokerRuntimeAdapter("opencode", nativeRuntimeBroker),
   ],
   () => agentHost.getProjectStore().list(),
 );
@@ -998,6 +1000,55 @@ ipcMain.handle("projects:checkPath", async (_event, path: string) => {
 ipcMain.handle("sessions:list", async (_event, projectId?: string) => {
   return unifiedSessions.list(projectId);
 });
+
+ipcMain.handle("workspaces:list", async (
+  _event,
+  agentType: AgentType,
+  query?: import("./agent-runtime/types.js").WorkspaceQuery,
+) => unifiedSessions.listWorkspaces(agentType, query));
+
+ipcMain.handle("workspaces:import", async (
+  _event,
+  agentType: AgentType,
+  path: string,
+  name?: string,
+) => {
+  const canonicalPath = resolve(path.trim());
+  if (!canonicalPath || !existsSync(canonicalPath) || !statSync(canonicalPath).isDirectory()) {
+    throw new Error("请选择有效的文件夹");
+  }
+  if (agentType !== "customer-agent") {
+    return unifiedSessions.importWorkspace(agentType, canonicalPath, name);
+  }
+  const projects = await agentHost.getProjectStore().list();
+  const existing = projects.find((project) => resolve(project.description) === canonicalPath);
+  const project = existing ?? await agentHost.getProjectStore().create({
+    id: crypto.randomUUID(),
+    name: name?.trim() || basename(canonicalPath) || canonicalPath,
+    description: canonicalPath,
+    created: new Date().toISOString(),
+    updated: new Date().toISOString(),
+  });
+  return {
+    workspace: {
+      agentType,
+      workspaceId: project.id,
+      name: project.name,
+      roots: [project.description],
+      order: Math.max(0, projects.findIndex((candidate) => candidate.id === project.id)),
+      updatedAt: project.updated,
+      source: "native",
+    },
+    existing: Boolean(existing),
+  };
+});
+
+ipcMain.handle("workspaces:listSessions", async (
+  _event,
+  agentType: AgentType,
+  workspaceId: string,
+  query?: import("./agent-runtime/types.js").WorkspaceSessionQuery,
+) => unifiedSessions.listWorkspaceSessions(agentType, workspaceId, query));
 
 ipcMain.handle("sessions:listChildren", async (_event, parentId: string) => {
   return unifiedSessions.listChildren(parentId);

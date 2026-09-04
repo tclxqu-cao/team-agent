@@ -44,6 +44,7 @@ import {
   type ModelProfile,
   type Message,
   type TodoItem,
+  withPendingAutoTitle,
 } from "@agent/core";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -464,7 +465,7 @@ export class AgentHost {
       events: [],
       created: new Date().toISOString(),
       updated: new Date().toISOString(),
-      metadata: { permissionMode: "full-access" },
+      metadata: withPendingAutoTitle(title, { permissionMode: "full-access" }),
     });
   }
 
@@ -603,11 +604,8 @@ export class AgentHost {
         metadata: { permissionMode: "full-access" },
       });
     } else {
-      // Always update title to the latest user message
-      await this.sessionStore.update(sessionId, {
-        status: "active" as const,
-        title: input.slice(0, 60) || existing.title,
-      });
+      await this.sessionStore.consumePendingAutoTitle(sessionId, input);
+      await this.sessionStore.update(sessionId, { status: "active" as const });
     }
     await this.sessionStore.addMessage(sessionId, {
       role: "user",

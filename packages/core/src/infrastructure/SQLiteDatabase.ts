@@ -71,6 +71,7 @@ export class SQLiteDatabase {
         tool_calls TEXT NOT NULL DEFAULT '[]',
         tool_call_id TEXT,
         name TEXT,
+        presentation TEXT,
         timestamp INTEGER NOT NULL
       );
 
@@ -299,6 +300,7 @@ export class SQLiteDatabase {
     this.migrateMCPServerCommandNullable();
     this.migrateMCPServerHeaders();
     this.migrateSessionsParentId();
+    this.migrateMessagePresentation();
     this.migrateLSPServers();
     this.migratePinnedCommands();
   }
@@ -423,6 +425,14 @@ export class SQLiteDatabase {
     if (!cols.find((c) => c.name === "parent_id")) {
       this.db.exec("ALTER TABLE sessions ADD COLUMN parent_id TEXT REFERENCES sessions(id) ON DELETE CASCADE");
       this.db.exec("CREATE INDEX IF NOT EXISTS idx_sessions_parent ON sessions(parent_id)");
+    }
+  }
+
+  /** Add display-only message metadata without changing semantic history fields. */
+  private migrateMessagePresentation(): void {
+    const cols = this.db.prepare("PRAGMA table_info(messages)").all() as Array<{ name: string }>;
+    if (!cols.some((column) => column.name === "presentation")) {
+      this.db.exec("ALTER TABLE messages ADD COLUMN presentation TEXT");
     }
   }
 

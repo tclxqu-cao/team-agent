@@ -1,12 +1,17 @@
 import { normalizeToolPermissionMode, readSessionGoalState, type AgentEvent } from "@agent/core";
 import type { AgentHost } from "../agent-host.js";
+import { paginateByOffset } from "./agent-workspace-index.js";
 import type {
   AgentRuntimeAdapter,
+  AgentWorkspace,
   CreateRuntimeSessionOptions,
   RuntimeHealth,
   RuntimeQuestionAnswer,
   UnifiedSessionDetail,
   UnifiedSessionSummary,
+  WorkspacePage,
+  WorkspaceQuery,
+  WorkspaceSessionQuery,
 } from "./types.js";
 import { RuntimeSessionError } from "./types.js";
 
@@ -23,6 +28,33 @@ export class CustomerAgentRuntimeAdapter implements AgentRuntimeAdapter {
   async discoverSessions(): Promise<UnifiedSessionSummary[]> {
     const sessions = await this.host.getSessionStore().list();
     return Promise.all(sessions.map((session) => this.toSummary(session)));
+  }
+
+  async listWorkspaces(query: WorkspaceQuery = {}): Promise<WorkspacePage<AgentWorkspace>> {
+    const projects = await this.host.getProjectStore().list();
+    const workspaces = projects.map((project, order): AgentWorkspace => ({
+      agentType: this.agentType,
+      workspaceId: project.id,
+      name: project.name,
+      roots: project.description ? [project.description] : [],
+      order,
+      updatedAt: project.updated,
+      source: "native",
+    }));
+    return paginateByOffset(workspaces, query, workspaces[0]?.updatedAt ?? null);
+  }
+
+  async listWorkspaceSessions(
+    workspaceId: string,
+    query: WorkspaceSessionQuery = {},
+  ): Promise<WorkspacePage<UnifiedSessionSummary>> {
+    const project = await this.host.getProjectStore().get(workspaceId);
+    if (!project) {
+      throw new RuntimeSessionError(`Customer Agent workspace not found: ${workspaceId}`, "SESSION_NOT_FOUND");
+    }
+    const sessions = await this.host.getSessionStore().list(workspaceId);
+    const summaries = await Promise.all(sessions.map((session) => this.toSummary(session)));
+    return paginateByOffset(summaries, query, summaries[0]?.updated ?? project.updated);
   }
 
   async getSession(nativeSessionId: string): Promise<UnifiedSessionDetail> {
@@ -102,7 +134,7 @@ export class CustomerAgentRuntimeAdapter implements AgentRuntimeAdapter {
       occupancy: owned ? "owned-by-customer-agent" : "available",
       sourceLabel: "Customer Agent",
       canResume: true,
-      canDelete: true,
+      canDelete: !owned,
       permissionMode: normalizeToolPermissionMode(session.metadata.permissionMode),
       goalState: readSessionGoalState(session.metadata),
     };

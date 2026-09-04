@@ -19,11 +19,16 @@ import { decodeUnifiedSessionId } from "../../desktop/main/agent-runtime/session
 import { RuntimeSessionError } from "../../desktop/main/agent-runtime/types.js";
 import type {
   AgentType,
+  AgentWorkspace,
   CreateRuntimeSessionOptions,
+  ImportAgentWorkspaceResult,
   RuntimeHealth,
   RuntimeQuestionAnswer,
   UnifiedSessionDetail,
   UnifiedSessionSummary,
+  WorkspacePage,
+  WorkspaceQuery,
+  WorkspaceSessionQuery,
 } from "../../desktop/main/agent-runtime/types.js";
 import type { SessionGoalState } from "@agent/core";
 import { getServerBaseDir } from "./server-data-dir";
@@ -56,10 +61,22 @@ function ensureNativeCliPath(): void {
 /** Operations the web application needs from a native runtime host. */
 export interface NativeRuntimePort {
   health(): Promise<RuntimeHealth[]>;
+  listWorkspaces(agentType: Exclude<AgentType, "customer-agent">, query?: WorkspaceQuery): Promise<WorkspacePage<AgentWorkspace>>;
+  listWorkspaceSessions(
+    agentType: Exclude<AgentType, "customer-agent">,
+    workspaceId: string,
+    query?: WorkspaceSessionQuery,
+  ): Promise<WorkspacePage<UnifiedSessionSummary>>;
+  importWorkspace?(
+    agentType: Exclude<AgentType, "customer-agent">,
+    path: string,
+    name?: string,
+  ): Promise<ImportAgentWorkspaceResult>;
   list(projectId?: string): Promise<UnifiedSessionSummary[]>;
   refresh(projectId?: string): Promise<UnifiedSessionSummary[]>;
   create(options: CreateRuntimeSessionOptions & { agentType: AgentType }): Promise<UnifiedSessionSummary>;
   fork(id: string): Promise<UnifiedSessionSummary>;
+  delete(id: string): Promise<void>;
   get(id: string, query?: SessionHistoryQuery): Promise<UnifiedSessionDetail>;
   getSessionWatchPath(id: string): Promise<string | null>;
   run(id: string, input: string, images?: string[], agentIds?: string[], agentName?: string): AsyncIterable<AgentEvent>;
@@ -114,13 +131,55 @@ export class NativeRuntimeService implements NativeRuntimePort {
     return this.runtime.health();
   }
 
+  listWorkspaces(
+    agentType: Exclude<AgentType, "customer-agent">,
+    query?: WorkspaceQuery,
+  ): Promise<WorkspacePage<AgentWorkspace>> {
+    return this.runtime.listWorkspaces(agentType, query);
+  }
+
+  importWorkspace(
+    agentType: Exclude<AgentType, "customer-agent">,
+    path: string,
+    name?: string,
+  ): Promise<ImportAgentWorkspaceResult> {
+    if (!this.runtime.importWorkspace) {
+      throw new RuntimeSessionError("Native workspace import is unavailable", "OPERATION_NOT_SUPPORTED");
+    }
+    return this.runtime.importWorkspace(agentType, path, name);
+  }
+
+  async listWorkspaceSessions(
+    agentType: Exclude<AgentType, "customer-agent">,
+    workspaceId: string,
+    query?: WorkspaceSessionQuery,
+  ): Promise<WorkspacePage<UnifiedSessionSummary>> {
+    const page = await this.runtime.listWorkspaceSessions(agentType, workspaceId, query);
+    if (query?.cursor) return page;
+    const discoveredIds = new Set(page.data.map((session) => session.id));
+    const data = page.data.map((session) => {
+      const pending = this.pendingCreations.get(session.id);
+      if (!pending) return session;
+      this.pendingCreations.delete(session.id);
+      return mergePendingSessionContext(session, pending);
+    });
+    for (const pending of this.pendingCreations.values()) {
+      if (
+        pending.agentType === agentType
+        && pending.projectId === workspaceId
+        && !discoveredIds.has(pending.id)
+      ) data.unshift(pending);
+    }
+    return { ...page, data };
+  }
+
   async list(projectId?: string): Promise<UnifiedSessionSummary[]> {
     const [discovered, projects] = await Promise.all([
       this.runtime.list(),
       this.listProjects(),
     ]);
     return filterByProject(
-      this.withPendingCreations(discovered.map((session) => associateLocalProject(session, projects, this.platform))),
+      this.withPendingCreations(discovered).map((session) => associateLocalProject(session, projects, this.platform)),
       projectId,
     );
   }
@@ -131,17 +190,18 @@ export class NativeRuntimeService implements NativeRuntimePort {
       this.listProjects(),
     ]);
     return filterByProject(
-      this.withPendingCreations(discovered.map((session) => associateLocalProject(session, projects, this.platform))),
+      this.withPendingCreations(discovered).map((session) => associateLocalProject(session, projects, this.platform)),
       projectId,
     );
   }
 
   async create(options: CreateRuntimeSessionOptions & { agentType: AgentType }): Promise<UnifiedSessionSummary> {
-    const created = associateLocalProject(
+    const associated = associateLocalProject(
       await this.runtime.create(options),
       await this.listProjects(),
       this.platform,
     );
+    const created = options.projectId ? { ...associated, projectId: options.projectId } : associated;
     this.pendingCreations.set(created.id, created);
     return created;
   }
@@ -160,6 +220,11 @@ export class NativeRuntimeService implements NativeRuntimePort {
     );
     this.pendingCreations.set(forked.id, forked);
     return forked;
+  }
+
+  async delete(id: string): Promise<void> {
+    await this.runtime.delete(id);
+    this.pendingCreations.delete(id);
   }
 
   async get(id: string, query?: SessionHistoryQuery): Promise<UnifiedSessionDetail> {
@@ -272,16 +337,28 @@ export class NativeRuntimeService implements NativeRuntimePort {
     discovered: UnifiedSessionSummary[],
   ): UnifiedSessionSummary[] {
     const discoveredIds = new Set<string>();
-    for (const session of discovered) {
+    const merged = discovered.map((session) => {
       discoveredIds.add(session.id);
+      const pending = this.pendingCreations.get(session.id);
       this.pendingCreations.delete(session.id);
-    }
-    const merged = [...discovered];
+      return pending ? mergePendingSessionContext(session, pending) : session;
+    });
     for (const pending of this.pendingCreations.values()) {
       if (!discoveredIds.has(pending.id)) merged.push(pending);
     }
     return merged.sort((left, right) => right.updated.localeCompare(left.updated));
   }
+}
+
+function mergePendingSessionContext(
+  discovered: UnifiedSessionSummary,
+  pending: UnifiedSessionSummary,
+): UnifiedSessionSummary {
+  return {
+    ...discovered,
+    cwd: discovered.cwd || pending.cwd,
+    projectId: discovered.projectId ?? pending.projectId,
+  };
 }
 
 /**
@@ -302,6 +379,7 @@ export function getNativeRuntimeService(): NativeRuntimeService {
         runtimeFactory: (callbacks) => createNativeRuntimeBrokerHostRuntime(
           process.env.AGENT_CODEX_BIN?.trim() || "codex",
           callbacks,
+          process.env.AGENT_OPENCODE_BIN?.trim() || "opencode",
         ),
       }),
       () => projectStore.list(),

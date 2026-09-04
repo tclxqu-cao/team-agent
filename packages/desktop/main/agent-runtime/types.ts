@@ -6,7 +6,7 @@ import type {
   ToolPermissionMode,
 } from "@agent/core";
 
-export type AgentType = "customer-agent" | "codex" | "claude-code";
+export type AgentType = "customer-agent" | "codex" | "claude-code" | "opencode";
 
 export type SessionOccupancy =
   | "available"
@@ -54,6 +54,58 @@ export interface UnifiedSessionDetail extends UnifiedSessionSummary {
   snapshotRunId?: string | null;
 }
 
+export interface AgentWorkspace {
+  agentType: AgentType;
+  workspaceId: string;
+  name: string;
+  roots: string[];
+  order: number;
+  updatedAt?: string;
+  source: "native" | "derived" | "imported";
+}
+
+export interface ImportedAgentWorkspace {
+  agentType: Exclude<AgentType, "customer-agent">;
+  workspaceId: string;
+  normalizedPath: string;
+  name: string;
+  createdAt: number;
+}
+
+export interface ImportAgentWorkspaceResult {
+  workspace: AgentWorkspace;
+  existing: boolean;
+}
+
+export interface ImportedAgentWorkspaceRepository {
+  list(agentType: Exclude<AgentType, "customer-agent">): ImportedAgentWorkspace[];
+  findByPath(
+    agentType: Exclude<AgentType, "customer-agent">,
+    normalizedPath: string,
+  ): ImportedAgentWorkspace | null;
+  save(workspace: ImportedAgentWorkspace): { workspace: ImportedAgentWorkspace; existing: boolean };
+}
+
+export interface WorkspacePage<T> {
+  data: T[];
+  nextCursor: string | null;
+  watermark: string | null;
+  stale?: boolean;
+}
+
+export interface WorkspaceQuery {
+  cursor?: string | null;
+  limit?: number;
+  refresh?: boolean;
+  since?: string | null;
+}
+
+export interface WorkspaceSessionQuery {
+  cursor?: string | null;
+  limit?: number;
+  refresh?: boolean;
+}
+
 export interface CreateRuntimeSessionOptions {
   title: string;
   cwd: string;
@@ -83,9 +135,23 @@ export interface AgentRuntimeAdapter {
   readonly agentType: AgentType;
   health(): Promise<RuntimeHealth>;
   discoverSessions(): Promise<UnifiedSessionSummary[]>;
+  listWorkspaces?(query?: WorkspaceQuery): Promise<WorkspacePage<AgentWorkspace>>;
+  listWorkspaceSessions?(
+    workspaceId: string,
+    query?: WorkspaceSessionQuery,
+  ): Promise<WorkspacePage<UnifiedSessionSummary>>;
+  listWorkspaceSessionsByPath?(
+    cwd: string,
+    query?: WorkspaceSessionQuery,
+  ): Promise<WorkspacePage<UnifiedSessionSummary>>;
+  importWorkspace?(
+    path: string,
+    name?: string,
+  ): Promise<ImportAgentWorkspaceResult>;
   getSession(nativeSessionId: string): Promise<UnifiedSessionDetail>;
   getSessionWatchPath?(nativeSessionId: string): Promise<string | null>;
   create(options: CreateRuntimeSessionOptions): Promise<UnifiedSessionSummary>;
+  restoreDraft?(summary: UnifiedSessionSummary): void;
   fork?(nativeSessionId: string): Promise<UnifiedSessionSummary>;
   run(
     nativeSessionId: string,

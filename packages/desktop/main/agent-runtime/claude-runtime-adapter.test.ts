@@ -557,6 +557,30 @@ describe("ClaudeRuntimeAdapter", () => {
     expect(titles).toEqual(["Claude Code session", "帮我看一下这个报错", "重构会话服务"]);
   });
 
+  it("recovers a missing SDK cwd from the native transcript without failing on malformed JSONL", async () => {
+    const root = await mkdtemp(join(tmpdir(), "claude-session-cwd-"));
+    temporaryDirectories.push(root);
+    const project = join(root, "-repo");
+    await mkdir(project, { recursive: true });
+    const recoveredId = "123e4567-e89b-42d3-a456-426614174010";
+    const malformedId = "123e4567-e89b-42d3-a456-426614174011";
+    await writeFile(
+      join(project, `${recoveredId}.jsonl`),
+      `${JSON.stringify({ type: "user", payload: "x".repeat(300 * 1024), cwd: "/repo/from-transcript" })}\n`,
+    );
+    await writeFile(join(project, `${malformedId}.jsonl`), "{not-json}\n");
+    state.sessions = [
+      sdkSession(recoveredId, { cwd: "" }),
+      sdkSession(malformedId, { cwd: "" }),
+    ];
+
+    const sessions = await new ClaudeRuntimeAdapter({ sessionRoot: root }).discoverSessions();
+
+    expect(sessions.find((session) => session.nativeSessionId === recoveredId)?.cwd)
+      .toBe("/repo/from-transcript");
+    expect(sessions.find((session) => session.nativeSessionId === malformedId)?.cwd).toBe("");
+  });
+
   it("keeps newly created drafts visible before the native index catches up", async () => {
     const adapter = new ClaudeRuntimeAdapter({ sessionRoot: "/tmp/claude-projects" });
     const created = await adapter.create({ title: "新会话", cwd: "/repo" });
@@ -569,6 +593,22 @@ describe("ClaudeRuntimeAdapter", () => {
     expect(detail.title).toBe("新会话");
     expect((await adapter.discoverSessions()).map((session) => session.nativeSessionId))
       .toContain(created.nativeSessionId);
+  });
+
+  it("restores a persisted draft with the same native session id", async () => {
+    const original = new ClaudeRuntimeAdapter({ sessionRoot: "/tmp/claude-projects" });
+    const created = await original.create({ title: "持久草稿", cwd: "/repo" });
+    const restored = new ClaudeRuntimeAdapter({ sessionRoot: "/tmp/claude-projects" });
+    restored.restoreDraft(created);
+    state.stream = [{ type: "result", subtype: "success", is_error: false, result: "done" }];
+
+    await expect(restored.getSession(created.nativeSessionId)).resolves.toMatchObject({
+      id: created.id,
+      title: "持久草稿",
+      cwd: "/repo",
+    });
+    await drain(restored.run(created.nativeSessionId, "start after restart"));
+    expect(state.queryCalls[0].options).toMatchObject({ sessionId: created.nativeSessionId, cwd: "/repo" });
   });
 
   it("throws SESSION_NOT_FOUND for unknown native sessions", async () => {

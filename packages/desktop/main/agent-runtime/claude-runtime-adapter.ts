@@ -1,7 +1,8 @@
 import { execFile } from "node:child_process";
-import { readFile, readdir, stat } from "node:fs/promises";
+import { open, readFile, readdir, stat, type FileHandle } from "node:fs/promises";
 import { homedir } from "node:os";
-import { basename, dirname, join } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
+import { StringDecoder } from "node:string_decoder";
 import { promisify } from "node:util";
 import {
   getSessionMessages,
@@ -32,19 +33,31 @@ import { AsyncEventQueue } from "./async-event-queue.js";
 import { parseImageDataUrls } from "./image-input.js";
 import { listOpenSessionFiles } from "./native-processes.js";
 import { encodeUnifiedSessionId } from "./session-id.js";
+import {
+  decodeOffsetCursor,
+  encodeOffsetCursor,
+  paginateByOffset,
+  workspacePageSize,
+} from "./agent-workspace-index.js";
 import type {
   AgentRuntimeAdapter,
+  AgentWorkspace,
   CreateRuntimeSessionOptions,
   RuntimeHealth,
   RuntimeQuestionAnswer,
   RuntimeRunOptions,
   UnifiedSessionDetail,
   UnifiedSessionSummary,
+  WorkspacePage,
+  WorkspaceQuery,
+  WorkspaceSessionQuery,
 } from "./types.js";
 import { RuntimeSessionError } from "./types.js";
 
 const execFileAsync = promisify(execFile);
 const PAGE_SIZE = 200;
+const TRANSCRIPT_CWD_SCAN_LIMIT = 2 * 1024 * 1024;
+const TRANSCRIPT_SCAN_CHUNK_SIZE = 64 * 1024;
 const CLAUDE_SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 interface PendingPermission {
@@ -236,6 +249,7 @@ export class ClaudeRuntimeAdapter implements AgentRuntimeAdapter {
   readonly agentType = "claude-code" as const;
   private readonly sessionRoot: string;
   private readonly drafts = new Map<string, UnifiedSessionSummary>();
+  private readonly workspaces = new Map<string, AgentWorkspace>();
   private readonly ownedSessions = new Set<string>();
   private readonly activeQueries = new Map<string, Query>();
   private readonly activeInputs = new Map<string, AsyncEventQueue<SDKUserMessage>>();
@@ -273,12 +287,80 @@ export class ClaudeRuntimeAdapter implements AgentRuntimeAdapter {
       this.listAllSessions(),
       this.externalOccupancy(),
     ]);
-    const discovered = sessions.map((session) => this.toSummary(session, occupiedIds));
+    const discovered = await Promise.all(sessions.map(async (session) => {
+      const summary = await this.toSummary(session, occupiedIds);
+      const draft = this.drafts.get(session.sessionId);
+      if (!draft) return summary;
+      this.drafts.delete(session.sessionId);
+      return mergeClaudeDraftContext(summary, draft);
+    }));
     const discoveredIds = new Set(discovered.map((session) => session.nativeSessionId));
     for (const draft of this.drafts.values()) {
       if (!discoveredIds.has(draft.nativeSessionId)) discovered.push(draft);
     }
     return discovered;
+  }
+
+  async listWorkspaces(query: WorkspaceQuery = {}): Promise<WorkspacePage<AgentWorkspace>> {
+    const sessions = await this.listAllSessions();
+    const workspaces: AgentWorkspace[] = [];
+    const seen = new Set<string>();
+    for (const session of sessions) {
+      const cwd = session.cwd?.trim() || await this.readSessionCwd(session.sessionId);
+      if (!cwd) continue;
+      const workspaceId = claudeWorkspaceId(cwd);
+      if (seen.has(workspaceId)) continue;
+      seen.add(workspaceId);
+      const workspace: AgentWorkspace = {
+        agentType: this.agentType,
+        workspaceId,
+        name: basename(cwd) || cwd,
+        roots: [cwd],
+        order: workspaces.length,
+        updatedAt: new Date(session.lastModified).toISOString(),
+        source: "derived",
+      };
+      this.workspaces.set(workspaceId, workspace);
+      workspaces.push(workspace);
+    }
+    return paginateByOffset(workspaces, query, workspaces[0]?.updatedAt ?? null);
+  }
+
+  async listWorkspaceSessions(
+    workspaceId: string,
+    query: WorkspaceSessionQuery = {},
+  ): Promise<WorkspacePage<UnifiedSessionSummary>> {
+    let workspace = this.workspaces.get(workspaceId);
+    if (!workspace) {
+      let cursor: string | null = null;
+      do {
+        const page = await this.listWorkspaces({ cursor, limit: 200, refresh: true });
+        workspace = page.data.find((candidate) => candidate.workspaceId === workspaceId);
+        cursor = page.nextCursor;
+      } while (!workspace && cursor);
+    }
+    const cwd = workspace?.roots[0];
+    if (!cwd) throw new RuntimeSessionError(`Claude Code workspace not found: ${workspaceId}`, "SESSION_NOT_FOUND");
+    const page = await this.listWorkspaceSessionsByPath(cwd, query);
+    return { ...page, watermark: page.watermark ?? workspace?.updatedAt ?? null };
+  }
+
+  async listWorkspaceSessionsByPath(
+    cwd: string,
+    query: WorkspaceSessionQuery = {},
+  ): Promise<WorkspacePage<UnifiedSessionSummary>> {
+    const limit = workspacePageSize(query.limit);
+    const offset = decodeOffsetCursor(query.cursor);
+    const [sessions, occupiedIds] = await Promise.all([
+      listSessions({ dir: cwd, limit, offset }),
+      this.externalOccupancy(),
+    ]);
+    const data = await Promise.all(sessions.map((session) => this.toSummary(session, occupiedIds)));
+    return {
+      data,
+      nextCursor: sessions.length === limit ? encodeOffsetCursor(offset + sessions.length) : null,
+      watermark: data[0]?.updated ?? null,
+    };
   }
 
   async getSession(nativeSessionId: string): Promise<UnifiedSessionDetail> {
@@ -291,7 +373,9 @@ export class ClaudeRuntimeAdapter implements AgentRuntimeAdapter {
     if (!session && !draft) {
       throw new RuntimeSessionError(`Claude Code session not found: ${nativeSessionId}`, "SESSION_NOT_FOUND");
     }
-    const summary = session ? this.toSummary(session, occupiedIds) : draft!;
+    const summary = session
+      ? mergeClaudeDraftContext(await this.toSummary(session, occupiedIds), draft)
+      : draft!;
     const messages = claudeHistoryToMessages(history);
     const events = await this.recoverSubagentActivities(nativeSessionId, summary.cwd, messages);
     return {
@@ -325,6 +409,16 @@ export class ClaudeRuntimeAdapter implements AgentRuntimeAdapter {
     };
     this.drafts.set(nativeSessionId, summary);
     return summary;
+  }
+
+  restoreDraft(summary: UnifiedSessionSummary): void {
+    if (
+      summary.agentType !== this.agentType
+      || !CLAUDE_SESSION_ID.test(summary.nativeSessionId)
+      || summary.id !== encodeUnifiedSessionId(this.agentType, summary.nativeSessionId)
+      || !summary.cwd.trim()
+    ) return;
+    this.drafts.set(summary.nativeSessionId, { ...summary });
   }
 
   async *run(
@@ -625,7 +719,7 @@ export class ClaudeRuntimeAdapter implements AgentRuntimeAdapter {
     return null;
   }
 
-  private toSummary(session: SDKSessionInfo, occupiedIds: Set<string>): UnifiedSessionSummary {
+  private async toSummary(session: SDKSessionInfo, occupiedIds: Set<string>): Promise<UnifiedSessionSummary> {
     const ownedByUs = this.ownedSessions.has(session.sessionId);
     const occupied = occupiedIds.has(session.sessionId);
     const occupancy = ownedByUs
@@ -634,12 +728,13 @@ export class ClaudeRuntimeAdapter implements AgentRuntimeAdapter {
         ? "owned-externally" as const
         : "available" as const;
     const timestamp = new Date(session.lastModified).toISOString();
+    const cwd = session.cwd?.trim() || await this.readSessionCwd(session.sessionId);
     return {
       id: encodeUnifiedSessionId(this.agentType, session.sessionId),
       agentType: this.agentType,
       nativeSessionId: session.sessionId,
       title: (session.customTitle || session.summary || session.firstPrompt || "Claude Code session").trim(),
-      cwd: session.cwd || "",
+      cwd,
       created: new Date(session.createdAt ?? session.lastModified).toISOString(),
       updated: timestamp,
       status: occupancy === "available" ? "idle" : "running",
@@ -648,6 +743,39 @@ export class ClaudeRuntimeAdapter implements AgentRuntimeAdapter {
       canResume: occupancy !== "owned-externally",
       canDelete: false,
     };
+  }
+
+  private async readSessionCwd(nativeSessionId: string): Promise<string> {
+    const path = await this.findSessionPath(nativeSessionId);
+    if (!path) return "";
+    let handle: FileHandle | undefined;
+    try {
+      handle = await open(path, "r");
+      const buffer = Buffer.alloc(TRANSCRIPT_SCAN_CHUNK_SIZE);
+      const decoder = new StringDecoder("utf8");
+      let pending = "";
+      let position = 0;
+      while (position < TRANSCRIPT_CWD_SCAN_LIMIT) {
+        const length = Math.min(buffer.length, TRANSCRIPT_CWD_SCAN_LIMIT - position);
+        const { bytesRead } = await handle.read(buffer, 0, length, position);
+        if (bytesRead === 0) return cwdFromTranscriptLine(pending + decoder.end());
+        position += bytesRead;
+        pending += decoder.write(buffer.subarray(0, bytesRead));
+        let newline = pending.indexOf("\n");
+        while (newline >= 0) {
+          const cwd = cwdFromTranscriptLine(pending.slice(0, newline));
+          if (cwd) return cwd;
+          pending = pending.slice(newline + 1);
+          newline = pending.indexOf("\n");
+        }
+      }
+      return cwdFromTranscriptLine(pending + decoder.end());
+    } catch {
+      return "";
+    } finally {
+      await handle?.close().catch(() => undefined);
+    }
+    return "";
   }
 
   private requestPermission(
@@ -711,6 +839,32 @@ export class ClaudeRuntimeAdapter implements AgentRuntimeAdapter {
       this.pendingPermissions.delete(questionId);
     }
   }
+}
+
+function mergeClaudeDraftContext(
+  summary: UnifiedSessionSummary,
+  draft?: UnifiedSessionSummary,
+): UnifiedSessionSummary {
+  if (!draft) return summary;
+  return {
+    ...summary,
+    cwd: summary.cwd || draft.cwd,
+    projectId: summary.projectId ?? draft.projectId,
+  };
+}
+
+function cwdFromTranscriptLine(line: string): string {
+  if (!line.trim()) return "";
+  try {
+    const record = JSON.parse(line) as { cwd?: unknown };
+    return typeof record.cwd === "string" ? record.cwd.trim() : "";
+  } catch {
+    return "";
+  }
+}
+
+export function claudeWorkspaceId(cwd: string): string {
+  return `cwd_${Buffer.from(resolve(cwd), "utf8").toString("base64url")}`;
 }
 
 export function classifyClaudePermission(

@@ -18,7 +18,7 @@ export async function GET(request: Request) {
   const tagged = sessions.map(({ messages: _messages, events: _events, ...session }) => ({
     ...session,
     agentType: "customer-agent" as const,
-    canDelete: true,
+    canDelete: !agentHost.isSessionRunning(session.id),
     permissionMode: normalizeToolPermissionMode(session.metadata.permissionMode),
   }));
   try {
@@ -37,20 +37,23 @@ export async function POST(request: Request) {
   const body = await request.json() as {
     title?: string;
     projectId?: string;
-    agentType?: "customer-agent" | "codex" | "claude-code";
+    cwd?: string;
+    agentType?: "customer-agent" | "codex" | "claude-code" | "opencode";
   };
   const agentType = body.agentType ?? "customer-agent";
 
   if (agentType !== "customer-agent") {
     try {
-      if (!body.projectId) {
+      if (!body.projectId && !body.cwd?.trim()) {
         throw new ProjectWorkingDirectoryError("请选择宿主机项目", "PROJECT_PATH_REQUIRED", 400);
       }
-      const cwd = await agentHost.resolveProjectWorkingDirectory(body.projectId, true);
+      const cwd = body.cwd?.trim()
+        || (body.projectId ? await agentHost.resolveProjectWorkingDirectory(body.projectId, true) : "");
       const created = await getNativeRuntimeService().create({
         agentType,
         title: body.title ?? "新会话",
         cwd,
+        ...(body.projectId ? { projectId: body.projectId } : {}),
       });
       return NextResponse.json(created, { status: 201 });
     } catch (err) {

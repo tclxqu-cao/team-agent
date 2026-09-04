@@ -29,6 +29,7 @@ import pty from "node-pty";
 import chokidar from "chokidar";
 import { HostPathPolicy, SQLiteAnonymousWebStore, SQLiteProjectStore, SQLiteWebConsoleStore } from "@agent/core";
 import { decodeOsc7Path, isPowerShell, selectDefaultShell } from "./shell-platform.mjs";
+import { inspectTextFile, saveTextFile } from "./lib/file-preview-service.mjs";
 
 const dev = process.env.NODE_ENV !== "production";
 const port = Number(process.env.PORT || 3000);
@@ -311,7 +312,7 @@ function captureShellHistory(session, data) {
   session.oscTail = lastEscape >= lastEnd ? combined.slice(lastEscape).slice(-4096) : "";
 }
 
-// ── filesystem service (read-only V1) ───────────────────────────────────────
+// ── filesystem service ───────────────────────────────────────────────────────
 function assertAllowed(absPath, userId) {
   // Static configured roots + current directories of active PTY sessions.
   // The user can already access these paths through the terminal; this keeps
@@ -727,6 +728,12 @@ const requestHandlers = {
 
   "fs:list": async (msg, conn) => ({ entries: await fsList(msg.path, conn.principal.userId) }),
   "fs:read": async (msg, conn) => await fsRead(msg.path, msg.offset ?? 0, msg.length, conn.principal.userId),
+  "fs:inspect-text": async (msg, conn) => await inspectTextFile(assertAllowed(msg.path, conn.principal.userId)),
+  "fs:write-text": async (msg, conn) => await saveTextFile(
+    assertAllowed(msg.path, conn.principal.userId),
+    msg.content,
+    { size: msg.expectedSize, mtime: msg.expectedMtime },
+  ),
   "fs:stat": async (msg, conn) => {
     const st = await fsp.stat(assertAllowed(msg.path, conn.principal.userId));
     return { size: st.size, mtime: st.mtimeMs, dir: st.isDirectory() };

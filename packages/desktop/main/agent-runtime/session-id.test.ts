@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { decodeUnifiedSessionId, encodeUnifiedSessionId } from "./session-id.js";
 
 describe("unified session IDs", () => {
-  it.each(["customer-agent", "codex", "claude-code"] as const)(
+  it.each(["customer-agent", "codex", "claude-code", "opencode"] as const)(
     "round trips %s IDs",
     (agentType) => {
       const nativeSessionId = "会话/id:with punctuation";

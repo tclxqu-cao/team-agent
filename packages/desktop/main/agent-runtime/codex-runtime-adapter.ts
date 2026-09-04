@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
-import { mkdtemp, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
-import { homedir, tmpdir } from "node:os";
+import { mkdir, mkdtemp, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
+import { homedir } from "node:os";
 import { basename, extname, isAbsolute, join, relative, resolve, sep, win32 } from "node:path";
 import { promisify } from "node:util";
 import {
@@ -22,14 +22,19 @@ import { CodexRolloutActivityReader, type CodexRolloutActivity } from "./codex-r
 import { parseImageDataUrls, type ParsedImageDataUrl } from "./image-input.js";
 import { listOpenSessionFiles } from "./native-processes.js";
 import { encodeUnifiedSessionId } from "./session-id.js";
+import { workspacePageSize } from "./agent-workspace-index.js";
 import type {
   AgentRuntimeAdapter,
+  AgentWorkspace,
   CreateRuntimeSessionOptions,
   RuntimeHealth,
   RuntimeQuestionAnswer,
   RuntimeRunOptions,
   UnifiedSessionDetail,
   UnifiedSessionSummary,
+  WorkspacePage,
+  WorkspaceQuery,
+  WorkspaceSessionQuery,
 } from "./types.js";
 import { RuntimeSessionError } from "./types.js";
 
@@ -62,6 +67,15 @@ interface CodexThread {
   cwd: string;
   source: unknown;
   turns: CodexTurn[];
+  projectId?: string | null;
+}
+
+interface CodexProject {
+  id: string;
+  name: string;
+  roots: Array<{ path: string }>;
+  position: number;
+  updatedAt: number;
 }
 
 interface CodexTurn {
@@ -111,22 +125,25 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
   private readonly codexExecutable: string;
   private readonly unavailableError?: string;
   private readonly platform: NodeJS.Platform;
-  private readonly imageTempRoot: string;
+  private readonly imageStorageRoot: string;
   private readonly rolloutActivityReader: Pick<CodexRolloutActivityReader, "readMany">;
   private readonly activeQueues = new Map<string, AsyncEventQueue<AgentEvent>>();
   private readonly activeTurnIds = new Map<string, string>();
   private readonly activeBrokerRunIds = new Map<string, string>();
+  private readonly activePermissionModes = new Map<string, ToolPermissionMode>();
   private readonly activeGoalThreads = new Set<string>();
   private readonly completedGoalTurns = new Set<string>();
   private readonly lastGoalTurnText = new Map<string, string>();
   private readonly goalTerminalStates = new Map<string, CodexGoalTerminalState>();
   private readonly ownedThreads = new Set<string>();
   private readonly pendingApprovals = new Map<string, PendingApproval>();
+  private readonly workspaces = new Map<string, AgentWorkspace>();
+  private workspaceSnapshot: WorkspacePage<AgentWorkspace> | null = null;
 
   constructor(options: {
     client?: CodexAppServerClient;
     sessionRoot?: string;
-    imageTempRoot?: string;
+    imageStorageRoot?: string;
     rolloutActivityReader?: Pick<CodexRolloutActivityReader, "readMany">;
     codexExecutable?: string;
     environment?: NodeJS.ProcessEnv;
@@ -149,9 +166,9 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
     this.client = options.client ?? new CodexAppServerClient({ executable: this.codexExecutable });
     this.codexHome = resolveCodexHome(options.environment, options.homeDir);
     this.sessionRoot = options.sessionRoot ?? join(this.codexHome, "sessions");
-    this.imageTempRoot = options.imageTempRoot ?? tmpdir();
-    this.rolloutActivityReader = options.rolloutActivityReader ?? new CodexRolloutActivityReader();
+    this.imageStorageRoot = options.imageStorageRoot ?? join(this.codexHome, "agentroam-images");
     this.platform = options.platform ?? process.platform;
+    this.rolloutActivityReader = options.rolloutActivityReader ?? new CodexRolloutActivityReader();
     this.client.onNotification((message) => this.handleNotification(message));
     this.client.setServerRequestHandler((message) => this.handleServerRequest(message));
     this.client.onExit((error) => {
@@ -215,6 +232,124 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
     return threads.map((thread) => this.toSummary(thread, openFiles, rolloutActivities));
   }
 
+  async listWorkspaces(query: WorkspaceQuery = {}): Promise<WorkspacePage<AgentWorkspace>> {
+    this.ensureAvailable();
+    if (!query.cursor && !query.refresh && this.workspaceSnapshot) return this.workspaceSnapshot;
+    try {
+      const response = await this.client.request<{ data: CodexProject[]; nextCursor: string | null }>(
+        "project/list",
+        {
+          cursor: query.cursor ?? null,
+          limit: workspacePageSize(query.limit),
+          sortKey: "position",
+          sortDirection: "asc",
+        },
+      );
+      const data = response.data.map((project): AgentWorkspace => ({
+        agentType: this.agentType,
+        workspaceId: project.id,
+        name: project.name,
+        roots: project.roots.map((root) => root.path),
+        order: project.position,
+        updatedAt: new Date(project.updatedAt * 1000).toISOString(),
+        source: "native",
+      }));
+      for (const workspace of data) this.workspaces.set(workspace.workspaceId, workspace);
+      const page: WorkspacePage<AgentWorkspace> = {
+        data,
+        nextCursor: response.nextCursor,
+        watermark: String(Math.max(0, ...response.data.map((project) => project.updatedAt))),
+      };
+      if (!query.cursor) this.workspaceSnapshot = page;
+      return page;
+    } catch (error) {
+      if (!query.cursor && this.workspaceSnapshot) return { ...this.workspaceSnapshot, stale: true };
+      throw normalizeCodexError(error);
+    }
+  }
+
+  async listWorkspaceSessions(
+    workspaceId: string,
+    query: WorkspaceSessionQuery = {},
+  ): Promise<WorkspacePage<UnifiedSessionSummary>> {
+    this.ensureAvailable();
+    const workspace = await this.findWorkspace(workspaceId);
+    if (workspace.roots.length === 0) {
+      return { data: [], nextCursor: null, watermark: workspace.updatedAt ?? null };
+    }
+    let response = await this.client.request<{ data: CodexThread[]; nextCursor: string | null }>(
+      "thread/list",
+      {
+        cursor: query.cursor ?? null,
+        limit: workspacePageSize(query.limit),
+        sortKey: "updated_at",
+        sortDirection: "desc",
+        projectId: workspaceId,
+      },
+    );
+    // Threads created before Codex introduced projects can be unassigned. If
+    // the native project query has no rows, retain access through exact roots.
+    if (!query.cursor && response.data.length === 0) {
+      const legacy = await this.client.request<{ data: CodexThread[]; nextCursor: string | null }>(
+        "thread/list",
+        {
+          cursor: null,
+          limit: workspacePageSize(query.limit),
+          sortKey: "updated_at",
+          sortDirection: "desc",
+          cwd: workspace.roots,
+        },
+      );
+      response = {
+        ...legacy,
+        data: legacy.data.filter((thread) => !thread.projectId || thread.projectId === workspaceId),
+      };
+    }
+    const openFiles = await listOpenSessionFiles("codex", this.sessionRoot, {
+      excludePids: this.client.pid ? [this.client.pid] : [],
+      idleAfterMs: null,
+      platform: this.platform,
+    });
+    const rolloutActivities = await this.rolloutActivityReader.readMany(
+      this.platform === "win32" ? rolloutPaths(response.data, this.platform) : openFiles,
+    );
+    return {
+      data: response.data.map((thread) => this.toSummary(thread, openFiles, rolloutActivities)),
+      nextCursor: response.nextCursor,
+      watermark: String(Math.max(0, ...response.data.map((thread) => thread.updatedAt))),
+    };
+  }
+
+  async listWorkspaceSessionsByPath(
+    cwd: string,
+    query: WorkspaceSessionQuery = {},
+  ): Promise<WorkspacePage<UnifiedSessionSummary>> {
+    this.ensureAvailable();
+    const response = await this.client.request<{ data: CodexThread[]; nextCursor: string | null }>(
+      "thread/list",
+      {
+        cursor: query.cursor ?? null,
+        limit: workspacePageSize(query.limit),
+        sortKey: "updated_at",
+        sortDirection: "desc",
+        cwd: [cwd],
+      },
+    );
+    const openFiles = await listOpenSessionFiles("codex", this.sessionRoot, {
+      excludePids: this.client.pid ? [this.client.pid] : [],
+      idleAfterMs: null,
+      platform: this.platform,
+    });
+    const rolloutActivities = await this.rolloutActivityReader.readMany(
+      this.platform === "win32" ? rolloutPaths(response.data, this.platform) : openFiles,
+    );
+    return {
+      data: response.data.map((thread) => this.toSummary(thread, openFiles, rolloutActivities)),
+      nextCursor: response.nextCursor,
+      watermark: String(Math.max(0, ...response.data.map((thread) => thread.updatedAt))),
+    };
+  }
+
   async getSession(nativeSessionId: string): Promise<UnifiedSessionDetail> {
     this.ensureAvailable();
     const response = await this.client.request<{ thread: CodexThread }>("thread/read", {
@@ -265,6 +400,7 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
     const response = await this.client.request<{ thread: CodexThread }>("thread/start", {
       cwd: options.cwd,
       threadSource: "customer-agent",
+      ...(options.projectId ? { projectId: options.projectId } : {}),
     });
     await this.client.request("thread/name/set", {
       threadId: response.thread.id,
@@ -272,7 +408,7 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
     }).catch(() => undefined);
     await this.client.request("thread/unsubscribe", { threadId: response.thread.id }).catch(() => undefined);
     return this.toSummary(
-      { ...response.thread, name: options.title },
+      { ...response.thread, name: options.title, projectId: response.thread.projectId ?? options.projectId },
       new Set(),
     );
   }
@@ -317,8 +453,11 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
     const parsedImages = parseImageDataUrls(images);
 
     const queue = new AsyncEventQueue<AgentEvent>();
+    const permissionMode = normalizeToolPermissionMode(options?.permissionMode);
     let imageDirectory: string | null = null;
+    let imageDirectoryReferencedByTurn = false;
     this.activeQueues.set(nativeSessionId, queue);
+    this.activePermissionModes.set(nativeSessionId, permissionMode);
     this.ownedThreads.add(nativeSessionId);
     if (options?.brokerRunId) this.activeBrokerRunIds.set(nativeSessionId, options.brokerRunId);
     try {
@@ -335,7 +474,7 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
         this.activeGoalThreads.add(nativeSessionId);
       }
       const imageInputs = parsedImages.length > 0
-        ? await persistCodexImages(parsedImages, this.imageTempRoot).then((result) => {
+        ? await persistCodexImages(parsedImages, this.imageStorageRoot).then((result) => {
             imageDirectory = result.directory;
             return result.inputs;
           })
@@ -356,11 +495,9 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
             : []),
           ...imageInputs,
         ],
-        ...codexTurnPermissionOptions(
-          normalizeToolPermissionMode(options?.permissionMode),
-          detail.cwd,
-        ),
+        ...codexTurnPermissionOptions(permissionMode, detail.cwd),
       });
+      imageDirectoryReferencedByTurn = imageDirectory !== null;
       this.activeTurnIds.set(nativeSessionId, response.turn.id);
       for await (const event of queue) yield event;
     } catch (error) {
@@ -369,6 +506,7 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
     } finally {
       this.activeTurnIds.delete(nativeSessionId);
       this.activeQueues.delete(nativeSessionId);
+      this.activePermissionModes.delete(nativeSessionId);
       this.ownedThreads.delete(nativeSessionId);
       this.activeBrokerRunIds.delete(nativeSessionId);
       this.activeGoalThreads.delete(nativeSessionId);
@@ -376,7 +514,7 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
       this.lastGoalTurnText.delete(nativeSessionId);
       this.goalTerminalStates.delete(nativeSessionId);
       await this.client.request("thread/unsubscribe", { threadId: nativeSessionId }).catch(() => undefined);
-      if (imageDirectory) {
+      if (imageDirectory && !imageDirectoryReferencedByTurn) {
         await rm(imageDirectory, { recursive: true, force: true }).catch(() => undefined);
       }
     }
@@ -477,6 +615,7 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
       nativeSessionId: thread.id,
       title: (thread.name || thread.preview || "Codex session").trim(),
       cwd: thread.cwd,
+      projectId: thread.projectId ?? undefined,
       parentSessionId: thread.parentThreadId
         ? encodeUnifiedSessionId(this.agentType, thread.parentThreadId)
         : undefined,
@@ -496,6 +635,10 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
 
   private handleNotification(message: RpcNotification): void {
     const params = message.params ?? {};
+    if (message.method === "project/changed") {
+      this.workspaceSnapshot = null;
+      return;
+    }
     if (message.method === "serverRequest/resolved") {
       const requestId = params.requestId ?? params.id;
       for (const [questionId, pending] of this.pendingApprovals) {
@@ -606,6 +749,19 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
     }
   }
 
+  private async findWorkspace(workspaceId: string): Promise<AgentWorkspace> {
+    const cached = this.workspaces.get(workspaceId);
+    if (cached) return cached;
+    let cursor: string | null = null;
+    do {
+      const page = await this.listWorkspaces({ cursor, limit: 200, refresh: true });
+      const found = page.data.find((workspace) => workspace.workspaceId === workspaceId);
+      if (found) return found;
+      cursor = page.nextCursor;
+    } while (cursor);
+    throw new RuntimeSessionError(`Codex workspace not found: ${workspaceId}`, "SESSION_NOT_FOUND");
+  }
+
   private finishGoalQueueIfReady(threadId: string, queue: AsyncEventQueue<AgentEvent>): void {
     if (!this.completedGoalTurns.has(threadId)) return;
     const terminal = this.goalTerminalStates.get(threadId);
@@ -643,14 +799,15 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
     const questionId = brokerRunId
       ? `native:${brokerRunId}:${String(message.id)}`
       : `codex:${String(message.id)}`;
-    this.pendingApprovals.set(questionId, {
+    const pending: PendingApproval = {
       requestId: message.id,
       method: message.method,
       params,
       questionId,
-    });
+    };
 
     if (message.method === "item/tool/requestUserInput") {
+      this.pendingApprovals.set(questionId, pending);
       const questions = params.questions as Array<{
         question?: string;
         options?: Array<{ label: string; description?: string }> | null;
@@ -676,10 +833,16 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
       "execCommandApproval",
     ]);
     if (!approvalMethods.has(message.method)) {
-      this.pendingApprovals.delete(questionId);
       this.client.respondError(message.id, -32601, `Unsupported server request: ${message.method}`);
       return;
     }
+
+    if (threadId && this.activePermissionModes.get(threadId) === "full-access") {
+      this.client.respond(message.id, codexApprovalResponse(pending, "允许一次"));
+      return;
+    }
+
+    this.pendingApprovals.set(questionId, pending);
 
     const command = typeof params.command === "string"
       ? params.command
@@ -804,12 +967,13 @@ function describeCodexPermissionRequest(params: Record<string, unknown>): string
 
 async function persistCodexImages(
   images: readonly ParsedImageDataUrl[],
-  tempRoot: string,
+  storageRoot: string,
 ): Promise<{
   directory: string;
   inputs: Array<{ type: "localImage"; path: string }>;
 }> {
-  const directory = await mkdtemp(join(tempRoot, "customer-agent-codex-images-"));
+  await mkdir(storageRoot, { recursive: true, mode: 0o700 });
+  const directory = await mkdtemp(join(storageRoot, "customer-agent-codex-images-"));
   try {
     const inputs: Array<{ type: "localImage"; path: string }> = [];
     for (const [index, image] of images.entries()) {

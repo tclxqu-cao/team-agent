@@ -128,6 +128,17 @@ describe("UnifiedSessionService", () => {
     expect(ca.getSession).not.toHaveBeenCalled();
   });
 
+  it("reuses the complete detail cache for older-page projection", async () => {
+    const codexSession = summary("codex", "cx-1", "/repo", "2026-01-02T00:00:00.000Z");
+    const codex = adapter("codex", [codexSession]);
+    const service = new UnifiedSessionService([codex], async () => []);
+
+    await service.getUnpaginated(codexSession.id);
+    await service.getUnpaginated(codexSession.id, true);
+
+    expect(codex.getSession).toHaveBeenCalledTimes(1);
+  });
+
   it("forwards image data URLs to the owning adapter in upload order", async () => {
     const codexSession = summary("codex", "cx-1", "/repo", "2026-01-02T00:00:00.000Z");
     const codex = adapter("codex", [codexSession]);
@@ -323,21 +334,31 @@ describe("UnifiedSessionService", () => {
       .rejects.toMatchObject({ code: "OPERATION_NOT_SUPPORTED" });
   });
 
-  it("rejects deleting external sessions and allows customer-agent deletes", async () => {
+  it("routes deletion through both native and customer-agent adapters", async () => {
     const ca = adapter("customer-agent", [summary("customer-agent", "ca-1", "/repo", "2026-01-01T00:00:00.000Z")]);
     const codex = adapter("codex", [summary("codex", "cx-1", "/repo", "2026-01-02T00:00:00.000Z")], {
       supportsDelete: true,
     });
     const service = new UnifiedSessionService([ca, codex], async () => []);
 
-    await expect(service.delete(encodeUnifiedSessionId("codex", "cx-1"))).rejects.toMatchObject({
-      name: "RuntimeSessionError",
-      code: "OPERATION_NOT_SUPPORTED",
-    });
-    expect(codex.delete).not.toHaveBeenCalled();
+    await expect(service.delete(encodeUnifiedSessionId("codex", "cx-1"))).resolves.toBeUndefined();
+    expect(codex.delete).toHaveBeenCalledWith("cx-1");
 
     await expect(service.delete("ca-1")).resolves.toBeUndefined();
     expect(ca.delete).toHaveBeenCalledWith("ca-1");
+  });
+
+  it("rejects deleting a session while AgentRoam is running it", async () => {
+    const ca = adapter("customer-agent", [
+      summary("customer-agent", "ca-1", "/repo", "2026-01-01T00:00:00.000Z"),
+    ], { events: [{ type: "text_chunk", text: "slow" }] });
+    const service = new UnifiedSessionService([ca], async () => []);
+    const iterator = service.run("ca-1", "keep running")[Symbol.asyncIterator]();
+    await iterator.next();
+
+    await expect(service.delete("ca-1")).rejects.toMatchObject({ code: "SESSION_OCCUPIED" });
+    expect(ca.delete).not.toHaveBeenCalled();
+    await iterator.return?.();
   });
 
   it("validates create payloads per runtime", async () => {
@@ -367,6 +388,17 @@ describe("UnifiedSessionService", () => {
     ]);
 
     await expect(service.list()).resolves.toHaveLength(2);
+  });
+
+  it("restores persisted drafts through their owning adapter", () => {
+    const draft = summary("claude-code", "cc-draft", "/repo", "2026-01-03T00:00:00.000Z");
+    const claude = adapter("claude-code", []);
+    claude.restoreDraft = vi.fn();
+    const service = new UnifiedSessionService([claude], async () => []);
+
+    service.restoreDrafts([draft]);
+
+    expect(claude.restoreDraft).toHaveBeenCalledWith(draft);
   });
 
   it("polls adapters for question answers and stops at the first hit", async () => {

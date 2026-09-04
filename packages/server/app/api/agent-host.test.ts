@@ -123,6 +123,48 @@ describe("agentHost singleton", () => {
     });
   });
 
+  it("persists the first input as the title only for newly marked placeholder sessions", async () => {
+    const provider = new CapturingModelProvider();
+    provider.eventBatches = [
+      [{ type: "text_done" }],
+      [{ type: "text_done" }],
+      [{ type: "text_done" }],
+      [{ type: "text_done" }],
+    ];
+    agentHost.setBuilder(new AgentBuilder()
+      .withModelProvider(provider)
+      .withSemanticSkillMatching(false));
+
+    const placeholder = await agentHost.createSession("新会话");
+    expect(placeholder.metadata.autoTitleFromFirstMessage).toBe(true);
+    await agentHost.run("第一条消息", placeholder.id);
+    await agentHost.run("后续消息", placeholder.id);
+    await expect(agentHost.getSessionStore().get(placeholder.id)).resolves.toMatchObject({
+      title: "第一条消息",
+      metadata: { permissionMode: "full-access" },
+    });
+
+    const explicit = await agentHost.createSession("显式标题");
+    await agentHost.run("不能覆盖显式标题", explicit.id);
+    await expect(agentHost.getSessionStore().get(explicit.id)).resolves.toMatchObject({ title: "显式标题" });
+
+    const now = new Date().toISOString();
+    const historicalId = crypto.randomUUID();
+    await agentHost.getSessionStore().create({
+      id: historicalId,
+      projectId: "",
+      title: "新会话",
+      status: "idle",
+      messages: [],
+      events: [],
+      created: now,
+      updated: now,
+      metadata: { permissionMode: "full-access" },
+    });
+    await agentHost.run("不能回填历史会话", historicalId);
+    await expect(agentHost.getSessionStore().get(historicalId)).resolves.toMatchObject({ title: "新会话" });
+  }, 15_000);
+
   it("rejects invalid permission modes", async () => {
     const session = await agentHost.createSession("invalid permission mode test");
     const response = await updateSession(new Request(`http://test/api/sessions/${session.id}`, {
@@ -236,6 +278,49 @@ describe("agentHost singleton", () => {
         { role: "user", content: "persist before done" },
         { role: "assistant", content: "Persisted first" },
       ],
+    });
+  });
+
+  it("persists sent images as display attachments without replaying them on later turns", async () => {
+    const provider = new CapturingModelProvider();
+    provider.eventBatches = [
+      [{ type: "text_chunk", text: "First reply" }, { type: "text_done" }],
+      [{ type: "text_chunk", text: "Second reply" }, { type: "text_done" }],
+    ];
+    agentHost.setBuilder(new AgentBuilder()
+      .withModelProvider(provider)
+      .withSemanticSkillMatching(false));
+    const session = await agentHost.createSession("image history test");
+    const pngDataUrl = "data:image/png;base64,iVBORw0KGgo=";
+
+    await agentHost.run("inspect", session.id, [pngDataUrl]);
+
+    expect(provider.messages.filter((message) => message.role === "user")).toEqual([
+      expect.objectContaining({ content: "inspect", images: [pngDataUrl] }),
+    ]);
+    await expect(agentHost.getSessionStore().get(session.id)).resolves.toMatchObject({
+      messages: [
+        {
+          role: "user",
+          content: "inspect",
+          presentation: {
+            attachments: [{ type: "image", name: "image-1.png", dataUrl: pngDataUrl }],
+          },
+        },
+        { role: "assistant", content: "First reply" },
+      ],
+    });
+
+    await agentHost.run("continue", session.id);
+
+    const historicalUserMessage = provider.messages.find((message) => message.content === "inspect");
+    expect(historicalUserMessage?.images).toBeUndefined();
+    const stored = await agentHost.getSessionStore().get(session.id);
+    expect(stored?.messages.find((message) => message.content === "inspect")).toMatchObject({
+      role: "user",
+      presentation: {
+        attachments: [{ type: "image", name: "image-1.png", dataUrl: pngDataUrl }],
+      },
     });
   });
 

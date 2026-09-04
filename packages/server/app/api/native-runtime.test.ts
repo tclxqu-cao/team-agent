@@ -33,6 +33,8 @@ const state = {
   handoff: null as { id: string; controller: string } | null,
   refreshCalls: 0,
   getQuery: null as { before?: string; limit?: number } | null,
+  deletedSessionIds: [] as string[],
+  deleteError: null as Error | null,
 };
 
 vi.mock("../../lib/native-runtime-service", () => ({
@@ -63,6 +65,10 @@ vi.mock("../../lib/native-runtime-service", () => ({
     fork: async () => {
       if (state.forkError) throw state.forkError;
       return state.forkResult;
+    },
+    delete: async (id: string) => {
+      if (state.deleteError) throw state.deleteError;
+      state.deletedSessionIds.push(id);
     },
     get: async (_id: string, query?: { before?: string; limit?: number }) => {
       state.getQuery = query ?? null;
@@ -121,9 +127,10 @@ vi.mock("../../lib/native-runtime-service", () => ({
       return state.steerResult;
     },
   }),
-  isNativeSessionId: (id: string) => /^runtime:(codex|claude-code):/.test(id),
+  isNativeSessionId: (id: string) => /^runtime:(codex|claude-code|opencode):/.test(id),
   runtimeErrorStatus: (error: { code?: string; status?: number }) => {
     if (error.code === "OPERATION_NOT_SUPPORTED") return 405;
+    if (error.code === "SESSION_OCCUPIED") return 409;
     if (error.code === "APPROVAL_EXPIRED") return 409;
     return error.status ?? 500;
   },
@@ -196,6 +203,8 @@ describe("native runtime routing", () => {
     state.handoff = null;
     state.refreshCalls = 0;
     state.getQuery = null;
+    state.deletedSessionIds = [];
+    state.deleteError = null;
     const store = agentHost.getProjectStore();
     const existing = await store.get("native-runtime-test-project");
     if (existing) {
@@ -256,6 +265,36 @@ describe("native runtime routing", () => {
     expect(body.id).toBe("runtime:codex:bW9jaw");
   });
 
+  it("preserves a native workspace ID when an explicit root is supplied", async () => {
+    const response = await createSession(json("POST", "http://test/api/sessions", {
+      title: "项目会话",
+      agentType: "codex",
+      projectId: "codex-native-project",
+      cwd: "/native/repo",
+    }));
+
+    expect(response.status).toBe(201);
+    expect(state.createOptions).toMatchObject({
+      agentType: "codex",
+      projectId: "codex-native-project",
+      cwd: "/native/repo",
+    });
+  });
+
+  it("creates OpenCode sessions through the same native runtime port", async () => {
+    const response = await createSession(json("POST", "http://test/api/sessions", {
+      title: "OpenCode 会话",
+      agentType: "opencode",
+      projectId: "native-runtime-test-project",
+    }));
+    expect(response.status).toBe(201);
+    expect(state.createOptions?.agentType).toBe("opencode");
+    await expect(response.json()).resolves.toMatchObject({
+      id: "runtime:opencode:bW9jaw",
+      agentType: "opencode",
+    });
+  });
+
   it("rejects native session creation without a registered project", async () => {
     const response = await createSession(json("POST", "http://test/api/sessions", {
       title: "无项目会话",
@@ -309,11 +348,49 @@ describe("native runtime routing", () => {
     expect(response.status).toBe(405);
   });
 
-  it("rejects deleting native sessions", async () => {
+  it("hides native sessions through the runtime service", async () => {
     const response = await deleteSession(json("DELETE", "http://test/api/sessions/runtime:codex:bW9jaw"), {
       params: { id: "runtime:codex:bW9jaw" },
     });
-    expect(response.status).toBe(405);
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ status: "deleted" });
+    expect(state.deletedSessionIds).toEqual(["runtime:codex:bW9jaw"]);
+  });
+
+  it("rejects hiding a native session owned by AgentRoam", async () => {
+    state.deleteError = new RuntimeSessionError("Session is currently running", "SESSION_OCCUPIED");
+    const response = await deleteSession(json("DELETE", "http://test/api/sessions/runtime:codex:bW9jaw"), {
+      params: { id: "runtime:codex:bW9jaw" },
+    });
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({ error: "Session is currently running" });
+  });
+
+  it("still permanently deletes Customer Agent sessions", async () => {
+    const created = await agentHost.createSession("Delete me");
+    const response = await deleteSession(json("DELETE", `http://test/api/sessions/${created.id}`), {
+      params: { id: created.id },
+    });
+
+    expect(response.status).toBe(200);
+    await expect(agentHost.getSessionStore().get(created.id)).resolves.toBeNull();
+  });
+
+  it("rejects deleting a running Customer Agent session", async () => {
+    const created = await agentHost.createSession("Running CA session");
+    const running = vi.spyOn(agentHost, "isSessionRunning").mockImplementation((id) => id === created.id);
+    try {
+      const response = await deleteSession(json("DELETE", `http://test/api/sessions/${created.id}`), {
+        params: { id: created.id },
+      });
+
+      expect(response.status).toBe(409);
+      await expect(agentHost.getSessionStore().get(created.id)).resolves.not.toBeNull();
+    } finally {
+      running.mockRestore();
+      await agentHost.getSessionStore().delete(created.id);
+    }
   });
 
   it("persists native permission mode changes through the broker", async () => {

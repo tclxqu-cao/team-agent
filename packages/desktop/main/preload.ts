@@ -105,6 +105,12 @@ contextBridge.exposeInMainWorld("agentApi", {
 
   // Sessions
   listSessions: (projectId?: string) => ipcRenderer.invoke("sessions:list", projectId),
+  listAgentWorkspaces: (agentType: string, query?: Record<string, unknown>) =>
+    ipcRenderer.invoke("workspaces:list", agentType, query),
+  importAgentWorkspace: (agentType: string, path: string, name?: string) =>
+    ipcRenderer.invoke("workspaces:import", agentType, path, name),
+  listAgentWorkspaceSessions: (agentType: string, workspaceId: string, query?: Record<string, unknown>) =>
+    ipcRenderer.invoke("workspaces:listSessions", agentType, workspaceId, query),
   listChildSessions: (parentId: string) => ipcRenderer.invoke("sessions:listChildren", parentId),
   getSession: (id: string, query?: { before?: string; limit?: number }) =>
     ipcRenderer.invoke("sessions:get", id, query),

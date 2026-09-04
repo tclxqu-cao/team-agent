@@ -6,6 +6,7 @@ const AGENT_TYPES = new Set<AgentType>([
   "customer-agent",
   "codex",
   "claude-code",
+  "opencode",
 ]);
 
 export function encodeUnifiedSessionId(

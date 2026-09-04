@@ -8,7 +8,9 @@ import {
   enqueueSessionGoal,
   finishActiveSessionGoal,
   mergeReasoningSummaryDelta,
+  NEW_SESSION_PLACEHOLDER_TITLE,
   normalizeToolPermissionMode,
+  paginateSessionHistory,
   readSessionGoalState,
   reorderQueuedSessionGoals,
   SQLiteDatabase,
@@ -20,20 +22,30 @@ import {
   type ToolPermissionMode,
 } from "@agent/core";
 import { AsyncEventQueue } from "./async-event-queue.js";
+import { normalizeAgentWorkspacePath } from "./agent-workspace-index.js";
 import { ClaudeRuntimeAdapter } from "./claude-runtime-adapter.js";
 import { CodexAppServerClient } from "./codex-app-server-client.js";
 import { CodexRuntimeAdapter } from "./codex-runtime-adapter.js";
+import { OpenCodeRuntimeAdapter } from "./opencode-runtime-adapter.js";
+import { OpenCodeServerClient } from "./opencode-server-client.js";
 import { decodeUnifiedSessionId, encodeUnifiedSessionId } from "./session-id.js";
 import type {
   AgentRuntimeAdapter,
   AgentType,
+  AgentWorkspace,
   CreateRuntimeSessionOptions,
+  ImportedAgentWorkspace,
+  ImportedAgentWorkspaceRepository,
+  ImportAgentWorkspaceResult,
   RuntimeHealth,
   RuntimeQuestionAnswer,
   RuntimeRunOptions,
   SessionOccupancy,
   UnifiedSessionDetail,
   UnifiedSessionSummary,
+  WorkspacePage,
+  WorkspaceQuery,
+  WorkspaceSessionQuery,
 } from "./types.js";
 import { RuntimeSessionError } from "./types.js";
 import { UnifiedSessionService } from "./unified-session-service.js";
@@ -73,6 +85,7 @@ export interface NativeRuntimeBrokerSnapshot {
 
 export interface NativeRuntimeBrokerCallbacks {
   onApprovalResolved(questionId: string): void;
+  importedWorkspaceRepository: ImportedAgentWorkspaceRepository;
 }
 
 export type NativeRuntimeBrokerRuntimeFactory = (
@@ -152,6 +165,14 @@ interface StoredEventRow {
   payload: string;
 }
 
+interface StoredImportedWorkspaceRow {
+  workspace_id: string;
+  agent_type: NativeAgentType;
+  normalized_path: string;
+  name: string;
+  created_at: number;
+}
+
 interface StoredLockRow {
   session_id: string;
   occupancy: SessionOccupancy;
@@ -170,7 +191,7 @@ interface SnapshotProjection {
  * cross-process boundary while SQLite makes page reloads independent of a
  * particular Next.js route or Electron renderer instance.
  */
-class NativeRuntimeBrokerState {
+class NativeRuntimeBrokerState implements ImportedAgentWorkspaceRepository {
   private readonly database: SQLiteDatabase;
 
   constructor(
@@ -233,11 +254,82 @@ class NativeRuntimeBrokerState {
         payload TEXT NOT NULL,
         updated_at INTEGER NOT NULL
       );
+      CREATE TABLE IF NOT EXISTS native_runtime_pending_session (
+        session_id TEXT PRIMARY KEY,
+        payload TEXT NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS native_runtime_session_title (
+        session_id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        auto_title_pending INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS native_runtime_hidden_session (
+        session_id TEXT PRIMARY KEY,
+        hidden_at INTEGER NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS native_runtime_imported_workspace (
+        workspace_id TEXT PRIMARY KEY,
+        agent_type TEXT NOT NULL,
+        normalized_path TEXT NOT NULL,
+        name TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        UNIQUE(agent_type, normalized_path)
+      );
+      CREATE INDEX IF NOT EXISTS native_runtime_imported_workspace_order
+        ON native_runtime_imported_workspace(agent_type, created_at ASC, workspace_id ASC);
     `);
     const runColumns = this.database.db.prepare("PRAGMA table_info(native_runtime_run)").all() as Array<{ name: string }>;
     if (!runColumns.some((column) => column.name === "goal_id")) {
       this.database.db.exec("ALTER TABLE native_runtime_run ADD COLUMN goal_id TEXT");
     }
+  }
+
+  list(agentType: NativeAgentType): ImportedAgentWorkspace[] {
+    const rows = this.database.db.prepare(`
+      SELECT workspace_id, agent_type, normalized_path, name, created_at
+      FROM native_runtime_imported_workspace
+      WHERE agent_type = ?
+      ORDER BY created_at ASC, workspace_id ASC
+    `).all(agentType) as StoredImportedWorkspaceRow[];
+    return rows.map(toImportedWorkspace);
+  }
+
+  findByPath(agentType: NativeAgentType, normalizedPath: string): ImportedAgentWorkspace | null {
+    const row = this.database.db.prepare(`
+      SELECT workspace_id, agent_type, normalized_path, name, created_at
+      FROM native_runtime_imported_workspace
+      WHERE agent_type = ? AND normalized_path = ?
+    `).get(agentType, normalizedPath) as StoredImportedWorkspaceRow | undefined;
+    return row ? toImportedWorkspace(row) : null;
+  }
+
+  findImportedWorkspace(agentType: NativeAgentType, workspaceId: string): ImportedAgentWorkspace | null {
+    const row = this.database.db.prepare(`
+      SELECT workspace_id, agent_type, normalized_path, name, created_at
+      FROM native_runtime_imported_workspace
+      WHERE agent_type = ? AND workspace_id = ?
+    `).get(agentType, workspaceId) as StoredImportedWorkspaceRow | undefined;
+    return row ? toImportedWorkspace(row) : null;
+  }
+
+  save(workspace: ImportedAgentWorkspace): { workspace: ImportedAgentWorkspace; existing: boolean } {
+    const result = this.database.db.prepare(`
+      INSERT OR IGNORE INTO native_runtime_imported_workspace(
+        workspace_id, agent_type, normalized_path, name, created_at
+      ) VALUES (?, ?, ?, ?, ?)
+    `).run(
+      workspace.workspaceId,
+      workspace.agentType,
+      workspace.normalizedPath,
+      workspace.name,
+      workspace.createdAt,
+    );
+    return {
+      workspace: this.findByPath(workspace.agentType, workspace.normalizedPath) ?? workspace,
+      existing: result.changes === 0,
+    };
   }
 
   recoverInterruptedRuns(): void {
@@ -269,6 +361,84 @@ class NativeRuntimeBrokerState {
       ON CONFLICT(session_id) DO UPDATE SET permission_mode=excluded.permission_mode, updated_at=excluded.updated_at
     `).run(sessionId, mode, this.now());
     return mode;
+  }
+
+  trackPendingAutoTitle(sessionId: string, title: string): void {
+    if (title !== NEW_SESSION_PLACEHOLDER_TITLE) return;
+    this.database.db.prepare(`
+      INSERT OR IGNORE INTO native_runtime_session_title(
+        session_id, title, auto_title_pending, updated_at
+      ) VALUES (?, ?, 1, ?)
+    `).run(sessionId, title, this.now());
+  }
+
+  getDisplayTitle(sessionId: string): string | null {
+    const row = this.database.db.prepare(
+      "SELECT title FROM native_runtime_session_title WHERE session_id = ?",
+    ).get(sessionId) as { title?: string } | undefined;
+    return row?.title ?? null;
+  }
+
+  listPendingSessions(): UnifiedSessionSummary[] {
+    const rows = this.database.db.prepare(
+      "SELECT payload FROM native_runtime_pending_session ORDER BY updated_at DESC",
+    ).all() as Array<{ payload: string }>;
+    return rows.flatMap((row) => {
+      const parsed = parsePendingSession(row.payload);
+      return parsed ? [parsed] : [];
+    });
+  }
+
+  savePendingSession(session: UnifiedSessionSummary): void {
+    this.database.db.prepare(`
+      INSERT INTO native_runtime_pending_session(session_id, payload, updated_at)
+      VALUES (?, ?, ?)
+      ON CONFLICT(session_id) DO UPDATE SET payload=excluded.payload, updated_at=excluded.updated_at
+    `).run(session.id, JSON.stringify(session), this.now());
+  }
+
+  deletePendingSession(sessionId: string): void {
+    this.database.db.prepare(
+      "DELETE FROM native_runtime_pending_session WHERE session_id = ?",
+    ).run(sessionId);
+  }
+
+  hideSession(sessionId: string): void {
+    const hide = this.database.db.transaction(() => {
+      if (this.activeRun(sessionId)) {
+        throw new RuntimeSessionError("Session is currently running", "SESSION_OCCUPIED");
+      }
+      this.database.db.prepare(`
+        INSERT OR IGNORE INTO native_runtime_hidden_session(session_id, hidden_at)
+        VALUES (?, ?)
+      `).run(sessionId, this.now());
+      this.database.db.prepare(
+        "DELETE FROM native_runtime_pending_session WHERE session_id = ?",
+      ).run(sessionId);
+      this.database.db.prepare(
+        "DELETE FROM native_runtime_goal_state WHERE session_id = ?",
+      ).run(sessionId);
+    });
+    hide();
+  }
+
+  isSessionHidden(sessionId: string): boolean {
+    return Boolean(this.database.db.prepare(
+      "SELECT 1 AS hidden FROM native_runtime_hidden_session WHERE session_id = ?",
+    ).get(sessionId));
+  }
+
+  filterHiddenSessions(sessions: UnifiedSessionSummary[]): UnifiedSessionSummary[] {
+    const hiddenIds = new Set((this.database.db.prepare(
+      "SELECT session_id FROM native_runtime_hidden_session",
+    ).all() as Array<{ session_id: string }>).map((row) => row.session_id));
+    return sessions.filter((session) => !hiddenIds.has(session.id));
+  }
+
+  assertSessionVisible(sessionId: string): void {
+    if (this.isSessionHidden(sessionId)) {
+      throw new RuntimeSessionError(`Native session not found: ${sessionId}`, "SESSION_NOT_FOUND");
+    }
   }
 
   getGoalState(sessionId: string): SessionGoalState {
@@ -353,6 +523,13 @@ class NativeRuntimeBrokerState {
         throw new RuntimeSessionError("Session is already running", "SESSION_OCCUPIED");
       }
       const createdAt = this.now();
+      if (input.message.trim()) {
+        this.database.db.prepare(`
+          UPDATE native_runtime_session_title
+          SET title = ?, auto_title_pending = 0, updated_at = ?
+          WHERE session_id = ? AND auto_title_pending = 1
+        `).run(input.message.slice(0, 60), createdAt, input.sessionId);
+      }
       const run: BrokerRunRecord = {
         sessionId: input.sessionId,
         runId: randomUUID(),
@@ -548,9 +725,11 @@ class NativeRuntimeBrokerState {
     const occupancy = active ? "owned-by-customer-agent" : lock.occupancy;
     return {
       ...summary,
+      title: this.getDisplayTitle(summary.id) ?? summary.title,
       occupancy,
       status: active ? "running" : summary.status,
       canResume: occupancy !== "owned-externally",
+      canDelete: !active,
       permissionMode: policy,
       occupancyRevision: lock.revision,
       controller: active?.controller ?? null,
@@ -669,6 +848,7 @@ class NativeRuntimeBrokerState {
 export class NativeRuntimeBrokerHost {
   private readonly state: NativeRuntimeBrokerState;
   private readonly runtime: UnifiedSessionService;
+  private readonly activeExecutions = new Map<string, Promise<void>>();
   private readonly subscribers = new Map<Socket, BrokerSubscription>();
   private readonly localSubscribers = new Set<LocalBrokerSubscription>();
   private readonly pendingCreations = new Map<string, UnifiedSessionSummary>();
@@ -682,8 +862,14 @@ export class NativeRuntimeBrokerHost {
   ) {
     this.state = new NativeRuntimeBrokerState(directory, now);
     this.runtime = typeof runtime === "function"
-      ? runtime({ onApprovalResolved: (questionId) => this.handleApprovalResolved(questionId) })
+      ? runtime({
+          onApprovalResolved: (questionId) => this.handleApprovalResolved(questionId),
+          importedWorkspaceRepository: this.state,
+        })
       : runtime;
+    const pendingSessions = this.state.listPendingSessions();
+    for (const pending of pendingSessions) this.pendingCreations.set(pending.id, pending);
+    this.runtime.restoreDrafts?.(pendingSessions);
   }
 
   get socketPath(): string {
@@ -741,36 +927,92 @@ export class NativeRuntimeBrokerHost {
   }
 
   async list(projectId?: string): Promise<UnifiedSessionSummary[]> {
-    return this.mergePending(await this.runtime.list(projectId), projectId).map((session) => this.state.applySummary(session));
+    return this.state
+      .filterHiddenSessions(this.mergePending(await this.runtime.list(projectId), projectId))
+      .map((session) => this.state.applySummary(session));
+  }
+
+  listWorkspaces(agentType: NativeAgentType, query?: WorkspaceQuery): Promise<WorkspacePage<AgentWorkspace>> {
+    return this.runtime.listWorkspaces(agentType, query);
+  }
+
+  importWorkspace(
+    agentType: NativeAgentType,
+    path: string,
+    name?: string,
+  ): Promise<ImportAgentWorkspaceResult> {
+    return this.runtime.importWorkspace(agentType, path, name);
+  }
+
+  async listWorkspaceSessions(
+    agentType: NativeAgentType,
+    workspaceId: string,
+    query?: WorkspaceSessionQuery,
+  ): Promise<WorkspacePage<UnifiedSessionSummary>> {
+    const page = await this.runtime.listWorkspaceSessions(agentType, workspaceId, query);
+    const imported = this.state.findImportedWorkspace(agentType, workspaceId);
+    return {
+      ...page,
+      data: this.state.filterHiddenSessions(this.mergePending(
+        page.data,
+        undefined,
+        (session) => session.agentType === agentType && (
+          session.projectId === workspaceId
+          || Boolean(imported && session.cwd && normalizeAgentWorkspacePath(session.cwd) === imported.normalizedPath)
+        ),
+      )).map((session) => this.state.applySummary(session)),
+    };
   }
 
   async refresh(projectId?: string): Promise<UnifiedSessionSummary[]> {
-    return this.mergePending(await this.runtime.refresh(projectId), projectId).map((session) => this.state.applySummary(session));
+    return this.state
+      .filterHiddenSessions(this.mergePending(await this.runtime.refresh(projectId), projectId))
+      .map((session) => this.state.applySummary(session));
   }
 
   async create(options: CreateRuntimeSessionOptions & { agentType: NativeAgentType }): Promise<UnifiedSessionSummary> {
     const created = await this.runtime.create(options);
     this.pendingCreations.set(created.id, created);
+    if (created.agentType === "claude-code") this.state.savePendingSession(created);
+    this.state.trackPendingAutoTitle(created.id, options.title);
     return this.state.applySummary(created);
   }
 
   async fork(id: string): Promise<UnifiedSessionSummary> {
+    this.state.assertSessionVisible(id);
     const forked = await this.runtime.fork(id);
     this.pendingCreations.set(forked.id, forked);
     return this.state.applySummary(forked);
   }
 
+  async delete(sessionId: string): Promise<void> {
+    this.state.hideSession(sessionId);
+    this.pendingCreations.delete(sessionId);
+    this.runtime.invalidate(sessionId);
+  }
+
   async get(id: string, query?: SessionHistoryQuery): Promise<UnifiedSessionDetail> {
+    this.state.assertSessionVisible(id);
     try {
-      return this.state.applyDetail(await this.runtime.get(id, query));
+      // Reconcile retained run events against the complete transcript before
+      // paging, otherwise the run input can be projected once per page.
+      const detail = await this.runtime.getUnpaginated(id, Boolean(query?.before));
+      const projected = this.state.applyDetail(detail);
+      return query
+        ? { ...projected, ...paginateSessionHistory(projected.messages, projected.events, query) }
+        : projected;
     } catch (error) {
       const pending = this.pendingCreations.get(id);
       if (!pending) throw error;
-      return this.state.applyDetail({ ...pending, messages: [], events: [] });
+      const projected = this.state.applyDetail({ ...pending, messages: [], events: [] });
+      return query
+        ? { ...projected, ...paginateSessionHistory(projected.messages, projected.events, query) }
+        : projected;
     }
   }
 
-  getSessionWatchPath(id: string): Promise<string | null> {
+  async getSessionWatchPath(id: string): Promise<string | null> {
+    this.state.assertSessionVisible(id);
     return this.runtime.getSessionWatchPath(id);
   }
 
@@ -781,6 +1023,11 @@ export class NativeRuntimeBrokerHost {
     controller: NativeRuntimeController = "web",
     goalId?: string,
   ): Promise<BrokerRunStart> {
+    this.state.assertSessionVisible(sessionId);
+    const settlingExecution = this.activeExecutions.get(sessionId);
+    if (settlingExecution && !this.state.activeRun(sessionId)) {
+      await settlingExecution;
+    }
     const decoded = decodeNativeSessionId(sessionId);
     try {
       const detail = await this.runtime.get(sessionId);
@@ -802,7 +1049,14 @@ export class NativeRuntimeBrokerHost {
       controller,
       goalId,
     });
-    void this.executeRun(run, images);
+    const execution = this.executeRun(run, images);
+    this.activeExecutions.set(sessionId, execution);
+    const clearExecution = () => {
+      if (this.activeExecutions.get(sessionId) === execution) {
+        this.activeExecutions.delete(sessionId);
+      }
+    };
+    void execution.then(clearExecution, clearExecution);
     return {
       runId: run.runId,
       snapshotRevision: run.nextSequence,
@@ -952,6 +1206,7 @@ export class NativeRuntimeBrokerHost {
 
   private async executeRun(run: BrokerRunRecord, images?: string[]): Promise<void> {
     let terminalSeen = false;
+    let completed = false;
     try {
       const options: RuntimeRunOptions = {
         permissionMode: run.permissionMode,
@@ -974,6 +1229,7 @@ export class NativeRuntimeBrokerHost {
           this.state.recordExplicitExternalOwnership(run.sessionId);
         }
         terminalSeen ||= isTerminalEvent(event);
+        completed ||= event.type === "done";
       }
       if (!terminalSeen) {
         const recorded = this.state.appendTerminal(run.runId, {
@@ -982,6 +1238,9 @@ export class NativeRuntimeBrokerHost {
           message: "Native runtime stopped without a terminal event.",
         });
         if (recorded) this.broadcast(recorded);
+      } else if (completed) {
+        this.pendingCreations.delete(run.sessionId);
+        this.state.deletePendingSession(run.sessionId);
       }
     } catch (error) {
       const externallyOwned = error instanceof RuntimeSessionError && error.code === "SESSION_OCCUPIED";
@@ -1033,12 +1292,29 @@ export class NativeRuntimeBrokerHost {
     if (event) this.broadcast(event);
   }
 
-  private mergePending(discovered: UnifiedSessionSummary[], projectId?: string): UnifiedSessionSummary[] {
-    if (projectId !== undefined) return discovered;
+  private mergePending(
+    discovered: UnifiedSessionSummary[],
+    projectId?: string,
+    pendingFilter: (session: UnifiedSessionSummary) => boolean = () => true,
+  ): UnifiedSessionSummary[] {
     const seen = new Set(discovered.map((session) => session.id));
-    for (const session of discovered) this.pendingCreations.delete(session.id);
-    return [...discovered, ...[...this.pendingCreations.values()].filter((session) => !seen.has(session.id))]
-      .sort((left, right) => right.updated.localeCompare(left.updated));
+    const reconciled = discovered.map((session) => {
+      const pending = this.pendingCreations.get(session.id);
+      if (pending && isMaterializedPendingSession(session)) {
+        this.pendingCreations.delete(session.id);
+        this.state.deletePendingSession(session.id);
+      }
+      return pending ? mergePendingSessionContext(session, pending) : session;
+    });
+    const merged = [
+      ...reconciled,
+      ...[...this.pendingCreations.values()].filter((session) => (
+        !seen.has(session.id) && pendingFilter(session)
+      )),
+    ].sort((left, right) => right.updated.localeCompare(left.updated));
+    return projectId === undefined
+      ? merged
+      : merged.filter((session) => session.projectId === projectId);
   }
 
   private handleSocket(socket: Socket): void {
@@ -1106,6 +1382,20 @@ export class NativeRuntimeBrokerHost {
     switch (request.method) {
       case "ping": return { ok: true };
       case "health": return this.health();
+      case "listWorkspaces": return this.listWorkspaces(
+        nativeAgentTypeParam(request.params, "agentType"),
+        workspaceQueryParam(request.params),
+      );
+      case "importWorkspace": return this.importWorkspace(
+        nativeAgentTypeParam(request.params, "agentType"),
+        requiredStringParam(request.params, "path"),
+        stringParam(request.params, "name") || undefined,
+      );
+      case "listWorkspaceSessions": return this.listWorkspaceSessions(
+        nativeAgentTypeParam(request.params, "agentType"),
+        requiredStringParam(request.params, "workspaceId"),
+        workspaceSessionQueryParam(request.params),
+      );
       case "list": return this.list(stringParam(request.params, "projectId") || undefined);
       case "refresh": return this.refresh(stringParam(request.params, "projectId") || undefined);
       case "create": return this.create({
@@ -1115,6 +1405,7 @@ export class NativeRuntimeBrokerHost {
         ...(stringParam(request.params, "projectId") ? { projectId: stringParam(request.params, "projectId")! } : {}),
       });
       case "fork": return this.fork(requireSessionId(sessionId));
+      case "delete": return this.delete(requireSessionId(sessionId));
       case "get": return this.get(requireSessionId(sessionId), queryParam(request.params));
       case "watchPath": return this.getSessionWatchPath(requireSessionId(sessionId));
       case "startRun": return this.startRun(
@@ -1210,6 +1501,26 @@ export class NativeRuntimeBrokerClient {
     return this.request("list", projectId ? { projectId } : {});
   }
 
+  listWorkspaces(agentType: NativeAgentType, query: WorkspaceQuery = {}): Promise<WorkspacePage<AgentWorkspace>> {
+    return this.request("listWorkspaces", { agentType, ...query });
+  }
+
+  importWorkspace(
+    agentType: NativeAgentType,
+    path: string,
+    name?: string,
+  ): Promise<ImportAgentWorkspaceResult> {
+    return this.request("importWorkspace", { agentType, path, ...(name ? { name } : {}) });
+  }
+
+  listWorkspaceSessions(
+    agentType: NativeAgentType,
+    workspaceId: string,
+    query: WorkspaceSessionQuery = {},
+  ): Promise<WorkspacePage<UnifiedSessionSummary>> {
+    return this.request("listWorkspaceSessions", { agentType, workspaceId, ...query });
+  }
+
   async refresh(projectId?: string): Promise<UnifiedSessionSummary[]> {
     return this.request("refresh", projectId ? { projectId } : {});
   }
@@ -1220,6 +1531,10 @@ export class NativeRuntimeBrokerClient {
 
   async fork(id: string): Promise<UnifiedSessionSummary> {
     return this.request("fork", { sessionId: id });
+  }
+
+  async delete(id: string): Promise<void> {
+    await this.request("delete", { sessionId: id });
   }
 
   async get(id: string, query?: SessionHistoryQuery): Promise<UnifiedSessionDetail> {
@@ -1459,6 +1774,21 @@ export class BrokerRuntimeAdapter implements AgentRuntimeAdapter {
     return (await this.client.list()).filter((session) => session.agentType === this.agentType);
   }
 
+  listWorkspaces(query?: WorkspaceQuery): Promise<WorkspacePage<AgentWorkspace>> {
+    return this.client.listWorkspaces(this.agentType, query);
+  }
+
+  importWorkspace(path: string, name?: string): Promise<ImportAgentWorkspaceResult> {
+    return this.client.importWorkspace(this.agentType, path, name);
+  }
+
+  listWorkspaceSessions(
+    workspaceId: string,
+    query?: WorkspaceSessionQuery,
+  ): Promise<WorkspacePage<UnifiedSessionSummary>> {
+    return this.client.listWorkspaceSessions(this.agentType, workspaceId, query);
+  }
+
   getSession(nativeSessionId: string): Promise<UnifiedSessionDetail> {
     return this.client.get(encodeUnifiedSessionId(this.agentType, nativeSessionId));
   }
@@ -1473,6 +1803,10 @@ export class BrokerRuntimeAdapter implements AgentRuntimeAdapter {
 
   fork(nativeSessionId: string): Promise<UnifiedSessionSummary> {
     return this.client.fork(encodeUnifiedSessionId(this.agentType, nativeSessionId));
+  }
+
+  delete(nativeSessionId: string): Promise<void> {
+    return this.client.delete(encodeUnifiedSessionId(this.agentType, nativeSessionId));
   }
 
   run(
@@ -1516,8 +1850,13 @@ export function createNativeRuntimeBrokerClient(options: NativeRuntimeBrokerOpti
 export function createNativeRuntimeBrokerHostRuntime(
   codexExecutable?: string,
   callbacks?: Partial<NativeRuntimeBrokerCallbacks>,
+  opencodeExecutable?: string,
 ): UnifiedSessionService {
   const codexClient = new CodexAppServerClient({ executable: codexExecutable || "codex" });
+  const opencodeServer = new OpenCodeServerClient({
+    executable: opencodeExecutable || "opencode",
+    unavailableError: process.env.AGENT_OPENCODE_RUNTIME_ERROR,
+  });
   return new UnifiedSessionService([
     new CodexRuntimeAdapter({
       client: codexClient,
@@ -1525,7 +1864,13 @@ export function createNativeRuntimeBrokerHostRuntime(
       onApprovalResolved: callbacks?.onApprovalResolved,
     }),
     new ClaudeRuntimeAdapter(),
-  ], () => Promise.resolve([]));
+    new OpenCodeRuntimeAdapter({
+      server: opencodeServer,
+      executable: opencodeExecutable || "opencode",
+      unavailableError: process.env.AGENT_OPENCODE_RUNTIME_ERROR,
+      onApprovalResolved: callbacks?.onApprovalResolved,
+    }),
+  ], () => Promise.resolve([]), callbacks?.importedWorkspaceRepository);
 }
 
 export function resolveNativeRuntimeDirectory(explicit?: string): string {
@@ -1575,6 +1920,16 @@ function toRunRecord(row: StoredRunRow): BrokerRunRecord {
   };
 }
 
+function toImportedWorkspace(row: StoredImportedWorkspaceRow): ImportedAgentWorkspace {
+  return {
+    workspaceId: row.workspace_id,
+    agentType: row.agent_type,
+    normalizedPath: row.normalized_path,
+    name: row.name,
+    createdAt: row.created_at,
+  };
+}
+
 function mergeProjectionMessages(
   messages: Message[],
   run: BrokerRunRecord | null,
@@ -1582,8 +1937,29 @@ function mergeProjectionMessages(
 ): Message[] {
   if (!run) return messages;
   const projected = [...messages];
-  const lastUser = [...projected].reverse().find((message) => message.role === "user");
-  if (!lastUser || lastUser.content !== run.input) {
+  let runUserIndex = -1;
+  for (let index = projected.length - 1; index >= 0; index -= 1) {
+    const message = projected[index];
+    if (message.role !== "user" || message.content !== run.input) continue;
+    runUserIndex = index;
+    break;
+  }
+  const hasPersistedRunInput = runUserIndex >= 0;
+  let nextUserIndex = projected.length;
+  for (let index = runUserIndex + 1; hasPersistedRunInput && index < projected.length; index += 1) {
+    if (projected[index].role !== "user") continue;
+    nextUserIndex = index;
+    break;
+  }
+  const persistedAssistantText = hasPersistedRunInput
+    ? projected
+      .slice(runUserIndex + 1, nextUserIndex)
+      .filter((message) => message.role === "assistant")
+      .map((message) => message.content)
+      .join("")
+    : null;
+  let consumedAssistantText = 0;
+  if (!hasPersistedRunInput) {
     projected.push({ role: "user", content: run.input, name: `__native_run:${run.runId}` });
   }
   const eventMessages: Message[] = [];
@@ -1646,27 +2022,88 @@ function mergeProjectionMessages(
       }
       continue;
     }
-    const missing = missingProjectionMessage(projected, message);
-    if (missing) projected.push(missing);
+    const missing = missingProjectionMessage(
+      projected,
+      message,
+      persistedAssistantText?.slice(consumedAssistantText) ?? null,
+    );
+    consumedAssistantText += missing.consumedAssistantText;
+    if (missing.message) projected.push(missing.message);
   }
   return projected;
 }
 
-function missingProjectionMessage(messages: Message[], candidate: Message): Message | null {
+function missingProjectionMessage(
+  messages: Message[],
+  candidate: Message,
+  persistedAssistantText: string | null,
+): { message: Message | null; consumedAssistantText: number } {
   const assistantMessages = messages.filter((message) => message.role === "assistant");
-  const content = candidate.content && assistantMessages.some((message) => message.content === candidate.content)
-    ? ""
-    : candidate.content;
+  let content = candidate.content;
+  let consumedAssistantText = 0;
+  if (content && persistedAssistantText !== null) {
+    if (content.startsWith(persistedAssistantText)) {
+      consumedAssistantText = persistedAssistantText.length;
+      content = content.slice(consumedAssistantText);
+    } else if (persistedAssistantText.startsWith(content)) {
+      consumedAssistantText = content.length;
+      content = "";
+    }
+  } else if (content && assistantMessages.some((message) => message.content === content)) {
+    content = "";
+  }
   const projectedToolIds = new Set(assistantMessages.flatMap(
     (message) => message.toolCalls?.map((toolCall) => toolCall.id) ?? [],
   ));
   const toolCalls = candidate.toolCalls?.filter((toolCall) => !projectedToolIds.has(toolCall.id));
-  if (!content && !toolCalls?.length) return null;
   return {
-    ...candidate,
-    content,
-    toolCalls: toolCalls?.length ? toolCalls : undefined,
+    consumedAssistantText,
+    message: !content && !toolCalls?.length
+      ? null
+      : {
+          ...candidate,
+          content,
+          toolCalls: toolCalls?.length ? toolCalls : undefined,
+        },
   };
+}
+
+function mergePendingSessionContext(
+  discovered: UnifiedSessionSummary,
+  pending: UnifiedSessionSummary,
+): UnifiedSessionSummary {
+  return {
+    ...discovered,
+    cwd: discovered.cwd || pending.cwd,
+    projectId: discovered.projectId ?? pending.projectId,
+  };
+}
+
+function isMaterializedPendingSession(session: UnifiedSessionSummary): boolean {
+  return session.agentType !== "claude-code" || session.sourceLabel !== "Claude Code SDK";
+}
+
+function parsePendingSession(value: string): UnifiedSessionSummary | null {
+  try {
+    const parsed = JSON.parse(value) as Partial<UnifiedSessionSummary>;
+    if (
+      parsed.agentType !== "claude-code"
+      || typeof parsed.id !== "string"
+      || typeof parsed.nativeSessionId !== "string"
+      || typeof parsed.title !== "string"
+      || typeof parsed.cwd !== "string"
+      || typeof parsed.created !== "string"
+      || typeof parsed.updated !== "string"
+      || (parsed.status !== "idle" && parsed.status !== "running")
+      || !["available", "owned-externally", "owned-by-customer-agent"].includes(parsed.occupancy ?? "")
+      || typeof parsed.sourceLabel !== "string"
+      || typeof parsed.canResume !== "boolean"
+      || typeof parsed.canDelete !== "boolean"
+    ) return null;
+    return parsed as UnifiedSessionSummary;
+  } catch {
+    return null;
+  }
 }
 
 function parseAgentEvent(value: string): AgentEvent | null {
@@ -1716,6 +2153,12 @@ function stringParam(params: Record<string, unknown>, key: string): string | nul
   return typeof params[key] === "string" ? params[key] : null;
 }
 
+function requiredStringParam(params: Record<string, unknown>, key: string): string {
+  const value = stringParam(params, key);
+  if (!value) throw new RuntimeSessionError(`${key} is required`, "INVALID_SESSION_ID");
+  return value;
+}
+
 function numberParam(params: Record<string, unknown>, key: string): number | null {
   return typeof params[key] === "number" && Number.isSafeInteger(params[key]) ? params[key] : null;
 }
@@ -1730,7 +2173,7 @@ function arrayOfNumbers(value: unknown): number[] | undefined {
 
 function nativeAgentTypeParam(params: Record<string, unknown>, key: string): NativeAgentType {
   const value = stringParam(params, key);
-  if (value === "codex" || value === "claude-code") return value;
+  if (value === "codex" || value === "claude-code" || value === "opencode") return value;
   throw new RuntimeSessionError("A native agent type is required", "INVALID_SESSION_ID");
 }
 
@@ -1743,6 +2186,23 @@ function queryParam(params: Record<string, unknown>): SessionHistoryQuery | unde
   const before = stringParam(params, "before") || undefined;
   const limit = numberParam(params, "limit") ?? undefined;
   return before || limit !== undefined ? { before, limit } : undefined;
+}
+
+function workspaceQueryParam(params: Record<string, unknown>): WorkspaceQuery {
+  return {
+    cursor: stringParam(params, "cursor"),
+    limit: numberParam(params, "limit") ?? undefined,
+    refresh: params.refresh === true,
+    since: stringParam(params, "since"),
+  };
+}
+
+function workspaceSessionQueryParam(params: Record<string, unknown>): WorkspaceSessionQuery {
+  return {
+    cursor: stringParam(params, "cursor"),
+    limit: numberParam(params, "limit") ?? undefined,
+    refresh: params.refresh === true,
+  };
 }
 
 function isAddressInUse(error: unknown): boolean {

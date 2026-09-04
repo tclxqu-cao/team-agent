@@ -186,9 +186,20 @@ export async function DELETE(
   { params }: { params: { id: string } },
 ) {
   if (isNativeSessionId(params.id)) {
+    try {
+      await getNativeRuntimeService().delete(params.id);
+      return NextResponse.json({ status: "deleted" });
+    } catch (error) {
+      return NextResponse.json(
+        { error: error instanceof Error ? error.message : "Unable to delete session" },
+        { status: runtimeErrorStatus(error) },
+      );
+    }
+  }
+  if (agentHost.isSessionRunning(params.id)) {
     return NextResponse.json(
-      { error: "External runtime sessions cannot be deleted" },
-      { status: 405 },
+      { error: "Session is currently running" },
+      { status: 409 },
     );
   }
   await agentHost.getSessionStore().delete(params.id);

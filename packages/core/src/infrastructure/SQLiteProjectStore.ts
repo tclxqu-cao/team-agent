@@ -44,7 +44,7 @@ export class SQLiteProjectStore implements IProjectStore {
 
   async list(): Promise<Project[]> {
     const db = getDatabase(this.baseDir);
-    const rows = db.db.prepare("SELECT * FROM projects ORDER BY updated DESC").all() as Array<Record<string, unknown>>;
+    const rows = db.db.prepare("SELECT * FROM projects ORDER BY created DESC, id ASC").all() as Array<Record<string, unknown>>;
     return rows.map((r) => this.rowToProject(r));
   }
 
