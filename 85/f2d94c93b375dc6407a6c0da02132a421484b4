@@ -1,0 +1,22 @@
+docs/superpowers/specs/2026-09-04-sidebar-reference-redesign.md
+  s_b95fa2e9b9b282::t_748ad7d2da1d59 1-33,35,44-47,49,51-71,73-76,78-128,130-133,135-136,138-139
+  s_b95fa2e9b9b282::t_92961de1c8aaeb 34,36-43,129,137
+  s_b95fa2e9b9b282::t_6838476a0c4f10 48,50,134
+  s_b95fa2e9b9b282::t_5fcd770ef4c5e3 72,77
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "85f2d94c93b375dc6407a6c0da02132a421484b4",
+  "prompts": {},
+  "sessions": {
+    "s_b95fa2e9b9b282": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06a27-5c57-7232-9522-e70895aadb95",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": null
+    }
+  }
+}
