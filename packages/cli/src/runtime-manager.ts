@@ -8,6 +8,11 @@ import {
   type ResolveCodexRuntimeOptions,
 } from "./codex-runtime-manager.js";
 import { repairNativeRuntimePermissions } from "./native-runtime.js";
+import {
+  resolveOpenCodeRuntime,
+  type OpenCodeRuntimeResolution,
+  type ResolveOpenCodeRuntimeOptions,
+} from "./opencode-runtime-manager.js";
 import type { PairingSecret } from "./pairing.js";
 import type { PlatformTarget } from "./platform.js";
 import { resolvePlatformRuntime } from "./platform-packages.js";
@@ -25,6 +30,7 @@ export interface RuntimeHandle {
 }
 
 type CodexResolver = (options: ResolveCodexRuntimeOptions) => Promise<CodexRuntimeResolution>;
+type OpenCodeResolver = (options: ResolveOpenCodeRuntimeOptions) => Promise<OpenCodeRuntimeResolution>;
 type RuntimeReporter = (message: string) => void;
 
 export class RuntimeManager {
@@ -32,6 +38,7 @@ export class RuntimeManager {
     private supervisor = new ProcessSupervisor(),
     private codexResolver: CodexResolver = resolveCodexRuntime,
     private report: RuntimeReporter = (message) => process.stderr.write(`${message}\n`),
+    private opencodeResolver: OpenCodeResolver = resolveOpenCodeRuntime,
   ) {}
 
   async start(
@@ -42,10 +49,16 @@ export class RuntimeManager {
     const port = await findAvailablePort(options.port);
     const dataDir = resolve(options.dataDir);
     await Promise.all(["data", "bin", "cache", "logs"].map((name) => mkdir(resolve(dataDir, name), { recursive: true })));
-    const childEnvironment = await prepareCodexRuntimeEnvironment(
+    const codexEnvironment = await prepareCodexRuntimeEnvironment(
       process.env,
       { dataDir, target },
       this.codexResolver,
+      this.report,
+    );
+    const childEnvironment = await prepareOpenCodeRuntimeEnvironment(
+      codexEnvironment,
+      { dataDir, target },
+      this.opencodeResolver,
       this.report,
     );
 
@@ -111,6 +124,28 @@ export async function prepareCodexRuntimeEnvironment(
     report(
       `Codex unavailable; AgentRoam will continue without Codex sessions: ${message}`,
     );
+  }
+  return childEnvironment;
+}
+
+export async function prepareOpenCodeRuntimeEnvironment(
+  environment: NodeJS.ProcessEnv,
+  options: Pick<ResolveOpenCodeRuntimeOptions, "dataDir" | "target">,
+  resolver: OpenCodeResolver = resolveOpenCodeRuntime,
+  report: RuntimeReporter = (message) => process.stderr.write(`${message}\n`),
+): Promise<NodeJS.ProcessEnv> {
+  const childEnvironment = { ...environment };
+  report(`Checking OpenCode ${options.target} runtime...`);
+  try {
+    const resolution = await resolver({ ...options, environment, onProgress: report });
+    childEnvironment.AGENT_OPENCODE_BIN = resolution.executable;
+    delete childEnvironment.AGENT_OPENCODE_RUNTIME_ERROR;
+    report(`OpenCode ${resolution.version} (${resolution.source}): ${resolution.executable}`);
+  } catch (error) {
+    delete childEnvironment.AGENT_OPENCODE_BIN;
+    const message = error instanceof Error ? error.message : String(error);
+    childEnvironment.AGENT_OPENCODE_RUNTIME_ERROR = message;
+    report(`OpenCode unavailable; AgentRoam will continue without OpenCode sessions: ${message}`);
   }
   return childEnvironment;
 }

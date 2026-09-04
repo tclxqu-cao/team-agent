@@ -16,6 +16,14 @@ $LauncherRoot = Join-Path $LauncherParent $AgentRoamVersion
 $LauncherLock = "$LauncherRoot.lock"
 $WrapperDir = Join-Path $HOME ".agentroam\bin"
 $WrapperPath = Join-Path $WrapperDir "agentroam.cmd"
+$ServiceRootExplicit = -not [string]::IsNullOrWhiteSpace($env:AGENTROAM_ROOT)
+$ServiceRoot = if ($ServiceRootExplicit) { $env:AGENTROAM_ROOT } else { (Get-Location).Path }
+if (-not (Test-Path -LiteralPath $ServiceRoot -PathType Container)) { throw "AgentRoam root is not a directory: $ServiceRoot" }
+$ServiceRoot = [System.IO.Path]::GetFullPath($ServiceRoot).TrimEnd([System.IO.Path]::DirectorySeparatorChar)
+$HomeRoot = [System.IO.Path]::GetFullPath($HOME).TrimEnd([System.IO.Path]::DirectorySeparatorChar)
+if (-not $ServiceRootExplicit -and $ServiceRoot -eq $HomeRoot) {
+  throw "Refusing to expose the entire home directory implicitly; run from a project directory or set AGENTROAM_ROOT explicitly"
+}
 
 New-Item -ItemType Directory -Force -Path $NodeParent, $LauncherParent, $WrapperDir | Out-Null
 
@@ -157,5 +165,11 @@ if ($PathParts -notcontains $WrapperDir) {
 
 & $NodeBin $Entry doctor --data-dir $DataDir
 if ($LASTEXITCODE -ne 0) { throw "AgentRoam doctor failed with exit code $LASTEXITCODE" }
+if ($env:AGENTROAM_INSTALL_SKIP_SERVICE -eq "1") {
+  Write-Host "AgentRoam service registration skipped for isolated verification."
+} else {
+  & $NodeBin $Entry service install --root $ServiceRoot --data-dir $DataDir
+  if ($LASTEXITCODE -ne 0) { throw "AgentRoam service installation failed with exit code $LASTEXITCODE" }
+}
 Write-Host "`nAgentRoam $AgentRoamVersion installed: $WrapperPath"
-Write-Host "Open a new terminal, then run: agentroam"
+Write-Host "Open a new terminal, then run: agentroam service status"

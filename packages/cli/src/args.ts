@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 
 export type RelayMode = "auto" | "cloudflare" | "pinggy" | "custom";
 export type CliCommand = "start" | "doctor" | "version" | "service";
-export type ServiceAction = "install" | "status" | "url" | "logs" | "restart" | "uninstall";
+export type ServiceAction = "install" | "start" | "stop" | "status" | "url" | "logs" | "restart" | "uninstall";
 
 export interface CliOptions {
   command: CliCommand;
@@ -26,8 +26,8 @@ export function parseArgs(argv: string[]): CliOptions {
   let serviceAction: ServiceAction | null = null;
   if (command === "service") {
     const action = values.shift();
-    if (!action || !(["install", "status", "url", "logs", "restart", "uninstall"] as string[]).includes(action)) {
-      throw cliError("service requires install, status, url, logs, restart, or uninstall");
+    if (!action || !(["install", "start", "stop", "status", "url", "logs", "restart", "uninstall"] as string[]).includes(action)) {
+      throw cliError("service requires install, start, stop, status, url, logs, restart, or uninstall");
     }
     serviceAction = action as ServiceAction;
     if (serviceAction !== "install" && values.length > 0) {

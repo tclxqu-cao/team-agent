@@ -33,6 +33,7 @@ if (unexpected.length) throw new Error(`unexpected runtime files:\n${unexpected.
 for (const required of [
   "package/runtime/package.json",
   "package/runtime/ws-server.mjs",
+  "package/runtime/lib/file-preview-service.mjs",
   "package/runtime/.next/BUILD_ID",
   "package/runtime/node_modules/node-pty/package.json",
   "package/runtime/node_modules/better-sqlite3/package.json",

@@ -1,4 +1,3 @@
-import { spawn } from "node:child_process";
 import { constants } from "node:fs";
 import { access, chmod, mkdir, readFile, rename, stat } from "node:fs/promises";
 import { resolve } from "node:path";
@@ -15,23 +14,17 @@ import {
   type ServicePaths,
   type ServiceRuntimeState,
 } from "./service-files.js";
+import {
+  buildStartArguments,
+  runCommand,
+  type CommandResult,
+  type CommandRunner,
+  type ServiceController,
+  type ServiceStatus,
+} from "./service-controller.js";
 
-export interface CommandResult {
-  code: number;
-  stdout: string;
-  stderr: string;
-}
-
-export type CommandRunner = (command: string, args: string[]) => Promise<CommandResult>;
-
-export interface ServiceStatus {
-  installed: boolean;
-  loaded: boolean;
-  running: boolean;
-  config: ServiceConfig | null;
-  state: ServiceRuntimeState | null;
-  plistPath: string;
-}
+export { buildStartArguments } from "./service-controller.js";
+export type { CommandRunner } from "./service-controller.js";
 
 interface LaunchAgentOptions {
   homeDir?: string;
@@ -44,7 +37,7 @@ interface LaunchAgentOptions {
   pollIntervalMs?: number;
 }
 
-export class MacLaunchAgent {
+export class MacLaunchAgent implements ServiceController {
   private readonly homeDir?: string;
   private readonly uid: number;
   private readonly runner: CommandRunner;
@@ -65,7 +58,7 @@ export class MacLaunchAgent {
     this.pollIntervalMs = options.pollIntervalMs ?? 250;
   }
 
-  async install(config: ServiceConfig): Promise<{ paths: ServicePaths; state: ServiceRuntimeState | null }> {
+  async install(config: ServiceConfig): Promise<{ paths: ServicePaths; state: ServiceRuntimeState | null; definition: string }> {
     await this.validateConfig(config);
     const paths = resolveServicePaths(this.homeDir, config.dataDir);
     await Promise.all([
@@ -93,7 +86,25 @@ export class MacLaunchAgent {
       await Promise.all([removeIfExists(jsonPath), removeIfExists(plistTempPath)]);
     }
 
-    return { paths, state: await this.waitForReady(paths) };
+    return { paths, state: await this.waitForReady(paths), definition: paths.plistPath };
+  }
+
+  async start(): Promise<ServiceRuntimeState | null> {
+    const status = await this.status();
+    if (!status.installed) throw new Error("AgentRoam service is not installed");
+    if (status.running) return status.state;
+    if (status.loaded) await this.runRequired("launchctl", ["kickstart", this.serviceTarget]);
+    else await this.runRequired("launchctl", ["bootstrap", this.domainTarget, status.definition]);
+    const paths = resolveServicePaths(this.homeDir, status.config?.dataDir);
+    return this.waitForReady(paths, status.state?.pid);
+  }
+
+  async stop(): Promise<void> {
+    const status = await this.status();
+    if (!status.installed) throw new Error("AgentRoam service is not installed");
+    if (!status.loaded) return;
+    await this.runRequired("launchctl", ["bootout", this.serviceTarget]);
+    if (status.state?.pid) await this.waitForProcessExit(status.state.pid);
   }
 
   async status(): Promise<ServiceStatus> {
@@ -108,7 +119,7 @@ export class MacLaunchAgent {
       running: job.running,
       config,
       state: await readServiceState(paths),
-      plistPath: paths.plistPath,
+      definition: paths.plistPath,
     };
   }
 
@@ -140,7 +151,7 @@ export class MacLaunchAgent {
     const status = await this.status();
     if (!status.installed) throw new Error("AgentRoam service is not installed");
     if (status.loaded) await this.runRequired("launchctl", ["kickstart", "-k", this.serviceTarget]);
-    else await this.runRequired("launchctl", ["bootstrap", this.domainTarget, status.plistPath]);
+    else await this.runRequired("launchctl", ["bootstrap", this.domainTarget, status.definition]);
     const paths = resolveServicePaths(this.homeDir, status.config?.dataDir);
     return this.waitForReady(paths, status.state?.pid);
   }
@@ -236,29 +247,6 @@ export function buildLaunchAgentPlist(config: ServiceConfig, paths: ServicePaths
     StandardOutPath: paths.stdoutPath,
     StandardErrorPath: paths.stderrPath,
   };
-}
-
-export function buildStartArguments(config: ServiceConfig): string[] {
-  const args = [config.nodePath, config.cliPath, "start"];
-  for (const root of config.roots) args.push("--root", root);
-  if (config.port !== null) args.push("--port", String(config.port));
-  if (config.localOnly) args.push("--local-only");
-  else args.push("--relay", config.relay);
-  if (!config.localOnly && config.tunnelCommand) args.push("--tunnel-command", config.tunnelCommand);
-  args.push("--data-dir", config.dataDir, "--no-qr");
-  return args;
-}
-
-export function runCommand(command: string, args: string[]): Promise<CommandResult> {
-  return new Promise((resolveResult, reject) => {
-    const child = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
-    let stdout = "";
-    let stderr = "";
-    child.stdout.on("data", (chunk) => { stdout += chunk; });
-    child.stderr.on("data", (chunk) => { stderr += chunk; });
-    child.once("error", reject);
-    child.once("exit", (code) => resolveResult({ code: code ?? 1, stdout, stderr }));
-  });
 }
 
 async function pathExists(path: string): Promise<boolean> {

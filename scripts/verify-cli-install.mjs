@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /** Fresh-directory runtime smoke for the platform selected by Node.js. */
 import { execFileSync, spawn, spawnSync } from "node:child_process";
-import { accessSync, constants, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { accessSync, constants, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, dirname, resolve } from "node:path";
 import { releasePackageNames, resolveReleaseArtifacts } from "./cli-release-artifacts.mjs";
@@ -126,6 +126,7 @@ try {
 function runBootstrapSmoke(artifacts, parentWorkdir, archivePath) {
   const bootstrapHome = resolve(parentWorkdir, "bootstrap-home");
   const bootstrapData = resolve(parentWorkdir, "bootstrap-data");
+  mkdirSync(bootstrapHome, { recursive: true });
   const scriptName = process.platform === "win32" ? "install-agentroam.ps1" : "install-agentroam.sh";
   const scriptPath = resolve(artifacts.artifactDirectory, scriptName);
   accessSync(scriptPath, constants.F_OK);
@@ -135,6 +136,8 @@ function runBootstrapSmoke(artifacts, parentWorkdir, archivePath) {
     HOME: bootstrapHome,
     USERPROFILE: bootstrapHome,
     AGENTROAM_DATA_DIR: bootstrapData,
+    AGENTROAM_ROOT: parentWorkdir,
+    AGENTROAM_INSTALL_SKIP_SERVICE: "1",
     AGENTROAM_BOOTSTRAP_TEST: "1",
     AGENTROAM_FORCE_PRIVATE_NODE: "1",
     AGENTROAM_PACKAGE_SPEC: artifacts.launcher,

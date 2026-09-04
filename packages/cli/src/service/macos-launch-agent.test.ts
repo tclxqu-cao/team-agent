@@ -86,6 +86,59 @@ describe("MacLaunchAgent", () => {
     await expect(new MacLaunchAgent({ homeDir: home, uid: 501, runner: running }).url()).rejects.toThrow("stale");
   });
 
+  it("starts and stops an installed service while preserving registration", async () => {
+    const home = await mkdtemp(resolve(tmpdir(), "agentroam-launch-agent-start-stop-"));
+    const paths = resolveServicePaths(home);
+    const value = config(home, paths.dataDir);
+    await mkdir(paths.launchAgentsDir, { recursive: true });
+    await writeFile(paths.plistPath, "plist");
+    await writePrivateJson(paths.configPath, value);
+    await writePrivateJson(paths.statePath, {
+      status: "stopped", pid: 700, version: value.version, startedAt: "x", updatedAt: "x",
+    });
+    let loaded = false;
+    let processRunning = false;
+    const calls: string[][] = [];
+    const runner: CommandRunner = async (command, args) => {
+      calls.push([command, ...args]);
+      if (command === "launchctl" && args[0] === "print") {
+        return { code: loaded ? 0 : 1, stdout: loaded ? "state = running" : "", stderr: "" };
+      }
+      if (command === "launchctl" && args[0] === "bootstrap") {
+        loaded = true;
+        processRunning = true;
+        await writePrivateJson(paths.statePath, {
+          status: "ready", pid: 701, version: value.version, startedAt: "y", updatedAt: "y",
+          accessUrl: "https://ready.example/web",
+        });
+      }
+      if (command === "launchctl" && args[0] === "bootout") {
+        loaded = false;
+        processRunning = false;
+      }
+      return { code: 0, stdout: "", stderr: "" };
+    };
+    const launchAgent = new MacLaunchAgent({
+      homeDir: home,
+      uid: 501,
+      runner,
+      processExists: () => processRunning,
+      readyTimeoutMs: 50,
+      stopTimeoutMs: 50,
+      pollIntervalMs: 1,
+    });
+
+    const state = await launchAgent.start();
+    expect(state).toMatchObject({ status: "ready", pid: 701 });
+    expect((await launchAgent.status()).definition).toBe(paths.plistPath);
+    await launchAgent.stop();
+
+    expect(calls).toContainEqual(["launchctl", "bootstrap", "gui/501", paths.plistPath]);
+    expect(calls).toContainEqual(["launchctl", "bootout", "gui/501/com.agentroam.service"]);
+    expect(await readFile(paths.plistPath, "utf8")).toBe("plist");
+    expect(JSON.parse(await readFile(paths.configPath, "utf8"))).toMatchObject({ version: value.version });
+  });
+
   it("uninstalls service control files but preserves application data and logs", async () => {
     const home = await mkdtemp(resolve(tmpdir(), "agentroam-launch-agent-uninstall-"));
     const paths = resolveServicePaths(home);

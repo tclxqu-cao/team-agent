@@ -1,6 +1,8 @@
 import type { CliOptions } from "../args.js";
 import { MacLaunchAgent } from "./macos-launch-agent.js";
 import type { ServiceConfig } from "./service-files.js";
+import type { ServiceController } from "./service-controller.js";
+import { WindowsTaskService } from "./windows-task-service.js";
 
 interface ServiceCommandContext {
   platform?: NodeJS.Platform;
@@ -11,15 +13,14 @@ interface ServiceCommandContext {
   nodeVersion?: string;
   now?: () => Date;
   log?: (line: string) => void;
+  controller?: ServiceController;
   launchAgent?: MacLaunchAgent;
 }
 
 export async function runServiceCommand(options: CliOptions, context: ServiceCommandContext): Promise<void> {
-  if ((context.platform ?? process.platform) !== "darwin") {
-    throw cliError("agentroam service is available only on macOS");
-  }
+  const platform = context.platform ?? process.platform;
   const log = context.log ?? console.log;
-  const launchAgent = context.launchAgent ?? new MacLaunchAgent({ homeDir: context.homeDir });
+  const controller = context.controller ?? context.launchAgent ?? createController(platform, context.homeDir);
 
   switch (options.serviceAction) {
     case "install": {
@@ -40,14 +41,24 @@ export async function runServiceCommand(options: CliOptions, context: ServiceCom
         dataDir: options.dataDir,
         installedAt: now.toISOString(),
       };
-      const { paths, state } = await launchAgent.install(config);
-      log(`✓ AgentRoam service installed: ${paths.plistPath}`);
+      const { definition, state } = await controller.install(config);
+      log(`✓ AgentRoam service installed: ${definition}`);
       if (state?.status === "ready" && state.accessUrl) log(`Open: ${state.accessUrl}`);
       else log("Service is starting. Run `agentroam service url` shortly.");
       return;
     }
+    case "start": {
+      const state = await controller.start();
+      log("✓ AgentRoam service started");
+      if (state?.status === "ready" && state.accessUrl) log(`Open: ${state.accessUrl}`);
+      return;
+    }
+    case "stop":
+      await controller.stop();
+      log("✓ AgentRoam service stopped");
+      return;
     case "status": {
-      const status = await launchAgent.status();
+      const status = await controller.status();
       if (!status.installed) {
         log("AgentRoam service: not installed");
         return;
@@ -63,10 +74,10 @@ export async function runServiceCommand(options: CliOptions, context: ServiceCom
       return;
     }
     case "url":
-      log(await launchAgent.url());
+      log(await controller.url());
       return;
     case "logs": {
-      const logs = await launchAgent.logs();
+      const logs = await controller.logs();
       log(`stdout: ${logs.stdoutPath}`);
       if (logs.stdout) log(logs.stdout.trimEnd());
       log(`stderr: ${logs.stderrPath}`);
@@ -74,13 +85,13 @@ export async function runServiceCommand(options: CliOptions, context: ServiceCom
       return;
     }
     case "restart": {
-      const state = await launchAgent.restart();
+      const state = await controller.restart();
       log("✓ AgentRoam service restarted");
       if (state?.status === "ready" && state.accessUrl) log(`Open: ${state.accessUrl}`);
       return;
     }
     case "uninstall": {
-      const result = await launchAgent.uninstall();
+      const result = await controller.uninstall();
       log(result.removed ? "✓ AgentRoam service uninstalled" : "AgentRoam service was not installed");
       log(`Application data preserved: ${result.preservedDataDir}`);
       return;
@@ -88,6 +99,12 @@ export async function runServiceCommand(options: CliOptions, context: ServiceCom
     default:
       throw cliError("service action is required");
   }
+}
+
+function createController(platform: NodeJS.Platform, homeDir?: string): ServiceController {
+  if (platform === "darwin") return new MacLaunchAgent({ homeDir });
+  if (platform === "win32") return new WindowsTaskService({ homeDir });
+  throw cliError(`agentroam service is unavailable on ${platform}; supported platforms are macOS and Windows`);
 }
 
 function cliError(message: string): Error {

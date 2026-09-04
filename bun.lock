@@ -59,6 +59,7 @@
       "dependencies": {
         "@agent/core": "*",
         "@anthropic-ai/claude-agent-sdk": "^0.3.259",
+        "@opencode-ai/sdk": "1.18.27",
         "lucide-react": "^0.468.0",
         "ws": "^8.18.0",
         "zod": "^4.0.0",
@@ -98,6 +99,7 @@
       "dependencies": {
         "@agent/core": "*",
         "@anthropic-ai/claude-agent-sdk": "^0.3.259",
+        "@opencode-ai/sdk": "1.18.27",
         "@xterm/addon-fit": "^0.11.0",
         "@xterm/xterm": "^6.0.0",
         "better-sqlite3": "^12.9.0",
@@ -343,6 +345,8 @@
     "@next/swc-win32-ia32-msvc": ["@next/swc-win32-ia32-msvc@14.2.33", "http://nexus.17usoft.com/repository/npm-all/@next/swc-win32-ia32-msvc/-/swc-win32-ia32-msvc-14.2.33.tgz", { "os": "win32", "cpu": "ia32" }, "sha512-pc9LpGNKhJ0dXQhZ5QMmYxtARwwmWLpeocFmVG5Z0DzWq5Uf0izcI8tLc+qOpqxO1PWqZ5A7J1blrUIKrIFc7Q=="],
 
     "@next/swc-win32-x64-msvc": ["@next/swc-win32-x64-msvc@14.2.33", "http://nexus.17usoft.com/repository/npm-all/@next/swc-win32-x64-msvc/-/swc-win32-x64-msvc-14.2.33.tgz", { "os": "win32", "cpu": "x64" }, "sha512-nOjfZMy8B94MdisuzZo9/57xuFVLHJaDj5e/xrduJp9CV2/HrfxTRH2fbyLe+K9QT41WBLUd4iXX3R7jBp0EUg=="],
+
+    "@opencode-ai/sdk": ["@opencode-ai/sdk@1.18.27", "http://nexus.17usoft.com/repository/npm-all/@opencode-ai/sdk/-/sdk-1.18.27.tgz", { "dependencies": { "cross-spawn": "7.0.6" } }, "sha512-VTfAB9SWaGiMtI2L9rf2xl+0fTYDMHB2pHYKCquWG5OIX3rHvth9oM915d9Z38IuPZUZkmdNMVz2iAdxG4IR+A=="],
 
     "@rolldown/pluginutils": ["@rolldown/pluginutils@1.0.0-beta.27", "http://nexus.17usoft.com/repository/npm-all/@rolldown/pluginutils/-/pluginutils-1.0.0-beta.27.tgz", {}, "sha512-+d0F4MKMCbeVUJwG96uQ4SgAznZNSq93I3V+9NHA4OpvqG8mRCpGdKmK8l/dl02h2CCDHwW2FqilnTyDcAnqjA=="],
 

@@ -1,77 +1,87 @@
-# AgentRoam 0.2.0-preview.6 macOS arm64 预览发布验收
+# AgentRoam 0.2.0-preview.9 macOS / Windows CLI 发布验收
 
-面向：**仅 CLI + Web 控制台**，不含 desktop；同一局域网可直接扫码访问，跨网络时自动尝试 Cloudflare Quick Tunnel 和 Pinggy SSH 443 relay，**手机无需 VPN**。
+支持平台：macOS arm64、Windows 10/11 x64，运行时固定使用 Node.js 22。
+全部构建和打包在 macOS arm64 完成；Windows 只下载同一批产物做实机验证，
+不安装 Bun、Python、Visual Studio Build Tools，也不运行 `node-gyp`。
 
-## 一键打包
-
-```bash
-bun run pack:cli
-# 产物:
-# packages/cli/agentroam-0.2.0-preview.6.tgz
-# packages/cloudflared-darwin-arm64/agentroam-cloudflared-darwin-arm64-0.2.0-preview.6.tgz
-# packages/tui-darwin-arm64/agentroam-tui-darwin-arm64-0.2.0-preview.6.tgz
-```
-
-## 验收清单
-
-| 步骤 | 命令 | 状态 |
-|------|------|------|
-| 构建 + standalone runtime | `bun run build:cli` | macOS arm64 已通过 |
-| 双 tarball 审计 | `npm run pack:cli` | 已通过；主包 8,959 条目，平台包 4 条目，均小于 30 MB |
-| Node 22 离线双包安装 + 本地启动 | `npm run verify:cli` | Node 22.22.0 已通过；SQLite、真实 zsh PTY、RFC1918 pairing URL 正常 |
-| bundled cloudflared 解包 | `agentroam doctor` | cloudflared 2026.8.2 大小/SHA-256 校验、解包与执行权限通过 |
-| Cloudflare → Pinggy → LAN 回退 | `npm run verify:cli:tunnel` | Cloudflare QUIC 注册成功但公网 readiness fetch 失败；自动关闭后 Pinggy SSH 443 成功 |
-| pairing 公网 E2E | setup → Secure Cookie → WSS hello | Pinggy 全链路已通过；首次安全页进入后 pairing query 保留 |
-| Windows ConPTY | `agentroam doctor` + 启动 | 不属于 macOS arm64 预览范围 |
-| npm preview publish | 先平台包，后主包 | 2026-08-28 已发布并通过 automated validation |
-| git commit / push | 见下方 | 本次未执行 |
-
-## 分发给他人
+## macOS 打包
 
 ```bash
-# 方式 1: 直接发 tarball
-scp packages/{cli/agentroam-0.2.0-preview.6.tgz,cloudflared-darwin-arm64/agentroam-cloudflared-darwin-arm64-0.2.0-preview.6.tgz,tui-darwin-arm64/agentroam-tui-darwin-arm64-0.2.0-preview.6.tgz} user@host:
-
-# 对方安装（需 Node 22 + macOS arm64）
-npm install ./agentroam-cloudflared-darwin-arm64-0.2.0-preview.6.tgz \
-  ./agentroam-tui-darwin-arm64-0.2.0-preview.6.tgz \
-  ./agentroam-0.2.0-preview.6.tgz
-npx agentroam
+PATH=/path/to/node-v22/bin:$PATH npm run pack:cli:all
 ```
+
+最终目录 `dist/cli-release` 包含：
+
+- 通用启动包 `agentroam-0.2.0-preview.9.tgz`
+- macOS / Windows 各自的 runtime、cloudflared 和 TUI 包
+- 校验文件 `SHA256SUMS`
+
+runtime tarball 在打包时静态校验 native 文件格式和架构：macOS 必须为
+Mach-O arm64，Windows 必须为 PE32+ x86-64。Windows `better-sqlite3` 和
+`node-pty` 必须命中 Node 22 ABI 127 的预编译文件，缺失时直接中止打包。
+
+## 安装器与常驻服务
+
+版本化 `install-agentroam.sh` / `install-agentroam.ps1` 用于首次安装、升级和
+修复。安装器校验 Node 22 和精确 CLI 后，默认注册当前用户服务、启动并验证
+ready 状态；日常启停使用 `agentroam service start|stop|restart|status`。
+
+macOS 使用用户 LaunchAgent，Windows 使用当前用户 Task Scheduler。前台和
+服务运行期间都阻止系统因空闲进入睡眠，但不阻止显示器熄灭，也不修改全局
+`pmset` / `powercfg`。Windows 的任务计划和 `ES_SYSTEM_REQUIRED` 必须由真实
+Windows runner 验证，不能用 macOS 静态审计替代。
+
+## 本机验收
+
+macOS arm64：
 
 ```bash
-# 方式 2: 发布后
-npx agentroam@preview
+node scripts/verify-cli-install.mjs --artifacts dist/cli-release
+node scripts/verify-cli-tunnel.mjs --artifacts dist/cli-release --provider auto
 ```
 
-## 平台说明
+Windows x64 PowerShell（将 macOS 生成的整个目录复制到相同位置）：
 
-- **macOS arm64**：本次预览发布唯一支持的平台
-- **macOS x64 / Windows x64**：留待跨平台分发方案完成后的正式版本
-- tarball 内 `runtime/node_modules` 含预编译 native 模块，**安装时不再编译 Next/React**
-- 当前 `better-sqlite3` 仅包含打包宿主机二进制；同一 npm name/version 不能直接发布多份平台 tarball，正式发布前必须先确定跨平台分发方案
-- `preview.3` 启动时恢复 npm tarball 剥离的 `node-pty/spawn-helper` 执行权限，并在全新安装 smoke 中实际创建 PTY。
-- Tunnel 下载或连接失败后，二维码优先使用 RFC1918 局域网地址，不再编码 `127.0.0.1`。
-- cloudflared 从 npm 平台包离线解包并校验大小与 SHA-256，运行时不再访问 GitHub；之后才回退到 `PATH` 中的系统安装。
-- 默认 relay 顺序是 Cloudflare → Pinggy → RFC1918 LAN，只有通过公网健康检查后才输出二维码。
-- npm 首发曾自动保留 `latest=0.2.0-preview.1`；发布后必须重新复核 `preview` 与 `latest`。
-- runtime staging 排除 Next 构建期 SWC、前端构建期 Xterm 包和非 darwin-arm64 的 `node-pty` prebuild，tarball 从 79.7 MB 降至 29.0 MB
-- `agent-tui` 由独立 optional package 提供，Node 22 bundle 不要求最终用户安装 Bun。
+```powershell
+node scripts/verify-cli-install.mjs --artifacts dist/cli-release
+```
 
-## npm 发布结果
+安装 smoke 会重新核验 `SHA256SUMS`，随后在全新临时目录完成：
 
-- `agentroam@0.2.0-preview.3`：29,106,251 bytes，SHA-256 `b1f8c408b9c9075dbe3d2813a72e959772c6ffa6346138287363e8263d8105c1`
-- 主包 npm integrity：`sha512-hRMGgAqFfNJ4XDCFO6lwhSr1PE3KKNmBsbMxYoWsPkXKZyJav7F+J11SZ1ejeRGEryFLwOwP52EnFdxYXGepyA==`
-- `agentroam-cloudflared-darwin-arm64@0.2.0-preview.3`：19,185,202 bytes，SHA-256 `7216a1d12caf90c5543879c8c775a4ed91f9636b673f16079b7e72404506974d`
-- 平台包 npm integrity：`sha512-n3GLXp5JIQZjcuukK/11EAxxGchHuVLxMkmnvfoQ0Rb+h+Ab4NiWx9O//ak2B1OHyZdMkEEz5KLdnH1eQqDL2Q==`
-- dist-tags：主包 `preview=0.2.0-preview.3`、`latest=0.2.0-preview.1`；平台包 `preview=latest=0.2.0-preview.3`。
-- 官方 registry 空缓存安装两个 `.3` 包通过；`doctor`、cloudflared 2026.8.2 解包、local-only 健康接口与 SIGINT 退出通过。
+- 从本地 tarball 安装通用包和当前平台的三个 optional package；纯 JS 依赖可从 registry 补齐
+- `agentroam doctor`
+- cloudflared `--version`
+- `better-sqlite3` 建表、写入、读取
+- macOS zsh PTY 或 Windows PowerShell ConPTY
+- `agentroam start --local-only`、健康接口和 webapp 页面
+- `service start|stop|status` 解析与平台控制器
+- 安装器隔离模式不会注册开发机真实服务
 
-## npm publish 前
+## CI 约束
 
-1. 确认两个 `package.json` version
-2. `npm login`
-3. `npm publish packages/cloudflared-darwin-arm64/agentroam-cloudflared-darwin-arm64-0.2.0-preview.6.tgz --registry https://registry.npmjs.org --access public --tag preview --provenance=false`
-4. `npm publish packages/tui-darwin-arm64/agentroam-tui-darwin-arm64-0.2.0-preview.6.tgz --registry https://registry.npmjs.org --access public --tag preview --provenance=false`
-5. `npm publish packages/cli/agentroam-0.2.0-preview.6.tgz --registry https://registry.npmjs.org --access public --tag preview --provenance=false`
-6. 验证 `npx agentroam@preview doctor` 与 `agent-tui`
+`.github/workflows/cli-release.yml` 和 `cli-release-verify.yml` 都遵循同一顺序：
+
+1. macOS arm64 构建、打包、静态审计并完成 macOS smoke。
+2. macOS job 上传 `dist/cli-release`。
+3. Windows x64 job 下载该 artifact，只运行安装和实机 smoke，不重新构建。
+
+只有 macOS 打包和 Windows 实机验证均通过，产物才满足发布条件。
+
+## npm 发布顺序
+
+本仓库的 npm 发布统一使用发布时提供的 access token，不走浏览器 WebAuthn。token 只能写入权限受限的临时 npm user config，发布进程退出时清空；禁止写入仓库或全局 `.npmrc`。本地发布没有 CI OIDC provider，必须显式关闭 provenance。
+
+先发布六个平台包，再发布通用启动包。以下命令均使用官方 registry 和 `preview` tag：
+
+```bash
+npm publish dist/cli-release/agentroam-runtime-darwin-arm64-0.2.0-preview.9.tgz --registry https://registry.npmjs.org --access public --tag preview --provenance=false
+npm publish dist/cli-release/agentroam-runtime-win32-x64-0.2.0-preview.9.tgz --registry https://registry.npmjs.org --access public --tag preview --provenance=false
+npm publish dist/cli-release/agentroam-cloudflared-darwin-arm64-0.2.0-preview.9.tgz --registry https://registry.npmjs.org --access public --tag preview --provenance=false
+npm publish dist/cli-release/agentroam-cloudflared-win32-x64-0.2.0-preview.9.tgz --registry https://registry.npmjs.org --access public --tag preview --provenance=false
+npm publish dist/cli-release/agentroam-tui-darwin-arm64-0.2.0-preview.9.tgz --registry https://registry.npmjs.org --access public --tag preview --provenance=false
+npm publish dist/cli-release/caoqu-agentroam-tui-win32-x64-0.2.0-preview.9.tgz --registry https://registry.npmjs.org --access public --tag preview --provenance=false
+npm publish dist/cli-release/agentroam-0.2.0-preview.9.tgz --registry https://registry.npmjs.org --access public --tag preview --provenance=false
+```
+
+发布后复核 `preview` dist-tag，并分别在 macOS arm64 和 Windows x64 执行
+`npx agentroam@preview doctor`。

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { prepareCodexRuntimeEnvironment } from "./runtime-manager.js";
+import { prepareCodexRuntimeEnvironment, prepareOpenCodeRuntimeEnvironment } from "./runtime-manager.js";
 
 describe("prepareCodexRuntimeEnvironment", () => {
   it("injects the resolved absolute Codex executable", async () => {
@@ -33,5 +33,32 @@ describe("prepareCodexRuntimeEnvironment", () => {
     expect(environment.AGENT_CODEX_RUNTIME_ERROR).toBe("download failed");
     expect(environment.PATH).toBe("/bin");
     expect(report).toHaveBeenLastCalledWith(expect.stringContaining("continue without Codex sessions"));
+  });
+});
+
+describe("prepareOpenCodeRuntimeEnvironment", () => {
+  it("injects OpenCode independently from Codex", async () => {
+    const environment = await prepareOpenCodeRuntimeEnvironment(
+      { PATH: "/bin", AGENT_CODEX_BIN: "/managed/codex" },
+      { dataDir: "/data", target: "darwin-arm64" },
+      async () => ({ executable: "/managed/opencode", version: "1.18.27", source: "managed" }),
+      vi.fn(),
+    );
+    expect(environment).toMatchObject({
+      AGENT_CODEX_BIN: "/managed/codex",
+      AGENT_OPENCODE_BIN: "/managed/opencode",
+    });
+  });
+
+  it("records OpenCode failure without removing Codex", async () => {
+    const environment = await prepareOpenCodeRuntimeEnvironment(
+      { AGENT_CODEX_BIN: "/managed/codex", AGENT_OPENCODE_BIN: "/bad/opencode" },
+      { dataDir: "/data", target: "darwin-arm64" },
+      async () => { throw new Error("OpenCode download failed"); },
+      vi.fn(),
+    );
+    expect(environment.AGENT_CODEX_BIN).toBe("/managed/codex");
+    expect(environment.AGENT_OPENCODE_BIN).toBeUndefined();
+    expect(environment.AGENT_OPENCODE_RUNTIME_ERROR).toBe("OpenCode download failed");
   });
 });

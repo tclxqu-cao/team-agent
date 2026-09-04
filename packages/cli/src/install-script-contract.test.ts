@@ -18,6 +18,10 @@ describe("standalone installer contracts", () => {
     expect(script).toContain("https://registry.npmjs.org");
     expect(script).toContain("$HOME/.agentroam");
     expect(script).toContain("$HOME/.local/bin");
+    expect(script).toContain('AGENTROAM_ROOT');
+    expect(script).toContain('AGENTROAM_INSTALL_SKIP_SERVICE');
+    expect(script).toContain('service install --root "$SERVICE_ROOT" --data-dir "$DATA_DIR"');
+    expect(script).toContain("refusing to expose the entire home directory implicitly");
     expect(script).not.toMatch(/\b(?:brew|sudo|nvm|fnm|volta)\b/);
     execFileSync("sh", ["-n", scriptPath]);
   });
@@ -31,6 +35,10 @@ describe("standalone installer contracts", () => {
     expect(script).toContain("https://registry.npmjs.org");
     expect(script).toContain(".agentroam\\bin");
     expect(script).toContain('[Environment]::SetEnvironmentVariable("Path", $UpdatedPath, "User")');
+    expect(script).toContain("$env:AGENTROAM_ROOT");
+    expect(script).toContain("$env:AGENTROAM_INSTALL_SKIP_SERVICE");
+    expect(script).toContain("service install --root $ServiceRoot --data-dir $DataDir");
+    expect(script).toContain("Refusing to expose the entire home directory implicitly");
     expect(script).not.toMatch(/\b(?:winget|choco|scoop|Start-Process\s+.*RunAs)\b/i);
   });
 });

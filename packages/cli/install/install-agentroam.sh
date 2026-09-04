@@ -16,6 +16,13 @@ LAUNCHER_ROOT="$LAUNCHER_PARENT/$AGENTROAM_VERSION"
 LAUNCHER_LOCK="$LAUNCHER_ROOT.lock"
 WRAPPER_DIR="$HOME/.local/bin"
 WRAPPER_PATH="$WRAPPER_DIR/agentroam"
+SERVICE_ROOT_EXPLICIT=0
+if [ "${AGENTROAM_ROOT+x}" = "x" ]; then
+  SERVICE_ROOT="$AGENTROAM_ROOT"
+  SERVICE_ROOT_EXPLICIT=1
+else
+  SERVICE_ROOT="$PWD"
+fi
 TEMP_ROOT=""
 OWN_NODE_LOCK=0
 OWN_LAUNCHER_LOCK=0
@@ -39,6 +46,13 @@ trap cleanup EXIT HUP INT TERM
 command -v curl >/dev/null 2>&1 || fail "curl is required"
 command -v shasum >/dev/null 2>&1 || fail "shasum is required"
 [ -x /usr/bin/tar ] || fail "/usr/bin/tar is required"
+[ -d "$SERVICE_ROOT" ] || fail "AgentRoam root is not a directory: $SERVICE_ROOT"
+service_root_physical=$(cd "$SERVICE_ROOT" && pwd -P)
+home_physical=$(cd "$HOME" && pwd -P)
+if [ "$SERVICE_ROOT_EXPLICIT" -eq 0 ] && [ "$service_root_physical" = "$home_physical" ]; then
+  fail "refusing to expose the entire home directory implicitly; run from a project directory or set AGENTROAM_ROOT explicitly"
+fi
+SERVICE_ROOT="$service_root_physical"
 
 mkdir -p "$NODE_PARENT" "$LAUNCHER_PARENT" "$WRAPPER_DIR"
 
@@ -173,6 +187,11 @@ chmod 755 "$wrapper_temp"
 mv "$wrapper_temp" "$WRAPPER_PATH"
 
 "$NODE_BIN" "$entry" doctor --data-dir "$DATA_DIR"
+if [ "${AGENTROAM_INSTALL_SKIP_SERVICE:-}" = "1" ]; then
+  printf 'AgentRoam service registration skipped for isolated verification.\n'
+else
+  "$NODE_BIN" "$entry" service install --root "$SERVICE_ROOT" --data-dir "$DATA_DIR"
+fi
 printf '\nAgentRoam %s installed: %s\n' "$AGENTROAM_VERSION" "$WRAPPER_PATH"
 case ":${PATH:-}:" in
   *":$WRAPPER_DIR:"*) ;;

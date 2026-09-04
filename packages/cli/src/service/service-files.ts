@@ -5,6 +5,7 @@ import { chmod, mkdir, open, readFile, rename, rm } from "node:fs/promises";
 import type { RelayMode } from "../args.js";
 
 export const SERVICE_LABEL = "com.agentroam.service";
+export const WINDOWS_SERVICE_NAME = "AgentRoam";
 
 export interface ServicePaths {
   homeDir: string;

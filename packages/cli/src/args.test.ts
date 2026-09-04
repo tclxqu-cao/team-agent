@@ -32,7 +32,7 @@ describe("parseArgs", () => {
   });
 
   it("parses every service action", () => {
-    for (const action of ["install", "status", "url", "logs", "restart", "uninstall"] as const) {
+    for (const action of ["install", "start", "stop", "status", "url", "logs", "restart", "uninstall"] as const) {
       const value = parseArgs(["service", action]);
       expect(value.command).toBe("service");
       expect(value.serviceAction).toBe(action);
@@ -55,5 +55,7 @@ describe("parseArgs", () => {
     expect(() => parseArgs(["service"])).toThrow("service requires");
     expect(() => parseArgs(["service", "unknown"])).toThrow("service requires");
     expect(() => parseArgs(["service", "status", "--root", "."])).toThrow("does not accept options");
+    expect(() => parseArgs(["service", "start", "--port", "3000"])).toThrow("does not accept options");
+    expect(() => parseArgs(["service", "stop", "--local-only"])).toThrow("does not accept options");
   });
 });

@@ -1,6 +1,6 @@
 # AgentRoam bootstrap installers
 
-These versioned installers support macOS Apple Silicon and Windows x64. They reuse a visible Node.js 22 installation when available. Otherwise they install the verified private Node.js `22.22.0` runtime under the AgentRoam data directory. They never modify, replace, or uninstall system Node.js.
+These versioned installers support macOS Apple Silicon and Windows x64. They reuse a visible Node.js 22 installation when available. Otherwise they install the verified private Node.js `22.22.0` runtime under the AgentRoam data directory. They then register and start the current-user AgentRoam background service. They never modify, replace, or uninstall system Node.js or global power settings.
 
 ## macOS Apple Silicon
 
@@ -17,6 +17,24 @@ irm https://gitee.com/caoqu/team-agent/releases/download/v0.2.0-preview.9/instal
 ```
 
 The command installs `%USERPROFILE%\.agentroam\bin\agentroam.cmd` and adds only that user directory to the user-level `PATH`. It does not require administrator access or change the machine-level `PATH`.
+
+## Service behavior
+
+Run the installer from the project directory AgentRoam should expose, or set `AGENTROAM_ROOT` explicitly. An installer launched from the home directory without an explicit root stops before service registration so it cannot expose the entire home directory accidentally.
+
+The installer registers and starts the service after Node, CLI, and `doctor` validation. While foreground AgentRoam or the service is running, it prevents idle system sleep but still allows the display to dim and turn off. Lid close, explicit sleep, hibernation, shutdown, and low-battery forced sleep remain controlled by the operating system.
+
+Use the installer for first installation, upgrades, and repair. Use these commands for routine control:
+
+```text
+agentroam service start
+agentroam service stop
+agentroam service restart
+agentroam service status
+agentroam service url
+agentroam service logs
+agentroam service uninstall
+```
 
 ## Data and updates
 

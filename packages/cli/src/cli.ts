@@ -8,6 +8,7 @@ import { findLanUrl } from "./network.js";
 import { createPairingSecret } from "./pairing.js";
 import { detectPlatform, type PlatformTarget } from "./platform.js";
 import { AGENTROAM_VERSION, resolvePlatformRuntime, resolvePlatformTui } from "./platform-packages.js";
+import { acquireSleepInhibitor } from "./power/sleep-inhibitor.js";
 import { renderQr } from "./qr.js";
 import { RuntimeManager, type RuntimeHandle } from "./runtime-manager.js";
 import { ServiceRuntimeReporter } from "./service/runtime-state.js";
@@ -39,6 +40,7 @@ export async function main(argv: string[]): Promise<void> {
   }
 
   console.log(`AgentRoam ${VERSION}\n✓ Node ${process.versions.node} · ${target}`);
+  const sleepInhibitor = await acquireSleepInhibitor();
   const pairing = createPairingSecret();
   const controller = new AbortController();
   let runtime: RuntimeHandle | null = null;
@@ -107,12 +109,20 @@ export async function main(argv: string[]): Promise<void> {
       console.log("Ctrl+C stops the tunnel and local server.");
     }
 
-    await Promise.race([runtime.exited, relay.tunnel?.exited ?? new Promise(() => {})]);
+    await Promise.race([
+      runtime.exited,
+      relay.tunnel?.exited ?? new Promise(() => {}),
+      sleepInhibitor.lost.then(async (error) => {
+        await new Promise<void>((resolveTurn) => setImmediate(resolveTurn));
+        if (!closing) throw error;
+      }),
+    ]);
   } finally {
     process.removeListener("SIGINT", requestClose);
     process.removeListener("SIGTERM", requestClose);
     await close();
     await serviceReporter?.stopped().catch(() => {});
+    await sleepInhibitor.release();
   }
 }
 
