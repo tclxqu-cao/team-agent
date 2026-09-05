@@ -1,0 +1,14 @@
+packages/server/app/web/page.tsx
+  h_86bb4e0e04237b 89,407-409
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "f1d4ecc7785e407f28047bbdef16af7867abd618",
+  "prompts": {},
+  "humans": {
+    "h_86bb4e0e04237b": {
+      "author": "caoqu <qu.cao@ly.com>"
+    }
+  }
+}
