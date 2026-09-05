@@ -102,21 +102,21 @@ test("applies an upgrade only inside a temporary fixture", async () => {
       current: { cli: "1.18.27", sdk: "1.18.27" },
       target: { cli: "1.18.28", sdk: "1.18.28" },
       changed: true,
-      agentroamVersion: "0.2.0-preview.12",
+      agentroamVersion: "0.2.0-preview.13",
     }, {
       runCommand: async (command, args, options) => {
         assert.deepEqual([command, ...args], ["bun", "install", "--lockfile-only"]);
         const lockPath = resolve(options.cwd, "bun.lock");
         const lock = await readFile(lockPath, "utf8");
-        await writeFile(lockPath, lock.replaceAll("1.18.27", "1.18.28").replaceAll("0.2.0-preview.11", "0.2.0-preview.12"));
+        await writeFile(lockPath, lock.replaceAll("1.18.27", "1.18.28").replaceAll("0.2.0-preview.12", "0.2.0-preview.13"));
       },
     });
-    assert.equal(result.agentroamVersion, "0.2.0-preview.12");
+    assert.equal(result.agentroamVersion, "0.2.0-preview.13");
     assert.deepEqual(await checkRuntimeVersionDrift(fixture), {
       codex: "0.153.0",
       claude: "0.3.259",
       opencode: "1.18.28",
-      agentroam: "0.2.0-preview.12",
+      agentroam: "0.2.0-preview.13",
     });
   } finally {
     await rm(fixture, { recursive: true, force: true });
@@ -133,7 +133,7 @@ test("restores fixture files when lockfile regeneration fails", async () => {
       current: { sdk: "0.3.259" },
       target: { sdk: "0.3.260" },
       changed: true,
-      agentroamVersion: "0.2.0-preview.12",
+      agentroamVersion: "0.2.0-preview.13",
     }, { runCommand: async () => { throw new Error("offline"); } }), /restored original files/);
     assert.equal(await readFile(manifestPath, "utf8"), before);
   } finally {

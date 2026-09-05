@@ -23,7 +23,9 @@ async function fixture(options: {
   run?: (input: string, onEvent: (event: AgentEvent) => void) => Promise<void>;
   sessions?: Array<{ id: string; title: string; created: string }>;
 } = {}) {
-  const root = await mkdtemp(path.join(os.tmpdir(), "tui-app-"));
+  const fixtureParent = await mkdtemp(path.join(os.tmpdir(), "tui-app-parent-"));
+  const root = path.join(fixtureParent, "current");
+  await mkdir(root);
   await mkdir(path.join(root, "src"));
   await writeFile(path.join(root, "src", "main.ts"), "export {};");
   const snapshot = {

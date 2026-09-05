@@ -20,6 +20,6 @@ describe("webapp shell loading state", () => {
   });
 
   it("honors reduced motion for the loading indicator", () => {
-    expect(pageSource).toContain(".webapp-boot-orbit,.webapp-boot-diamond { animation:none !important; }");
+    expect(pageSource).toContain(".webapp-boot-orbit,.webapp-boot-diamond,.terminal-boot-spinner { animation:none !important; }");
   });
 });
