@@ -19,8 +19,10 @@ const execFileAsync = promisify(execFile);
 export const CODEX_RUNTIME_VERSION = "0.153.0";
 const CODEX_PACKAGE = `@openai/codex@${CODEX_RUNTIME_VERSION}`;
 const NPM_REGISTRY = "https://registry.npmjs.org";
+export const CODEX_INSTALL_TIMEOUT_MS = 60 * 60_000;
 const DEFAULT_LOCK_WAIT_MS = 190_000;
-const DEFAULT_STALE_LOCK_MS = 5 * 60_000;
+export const CODEX_INSTALL_STALE_LOCK_MS = CODEX_INSTALL_TIMEOUT_MS + 5 * 60_000;
+const DEFAULT_STALE_LOCK_MS = CODEX_INSTALL_STALE_LOCK_MS;
 
 export type CodexRuntimeSource = "explicit" | "global" | "managed";
 
@@ -276,7 +278,7 @@ async function installManagedCodex(
       "--prefix",
       temporaryRoot,
       CODEX_PACKAGE,
-    ], 180_000);
+    ], CODEX_INSTALL_TIMEOUT_MS);
 
     const temporary = await validateManagedRuntime(
       temporaryRoot,

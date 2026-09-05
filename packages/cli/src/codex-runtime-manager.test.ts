@@ -3,6 +3,8 @@ import { tmpdir } from "node:os";
 import { dirname, resolve, win32 } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  CODEX_INSTALL_STALE_LOCK_MS,
+  CODEX_INSTALL_TIMEOUT_MS,
   CODEX_RUNTIME_VERSION,
   managedCodexBinaryCandidates,
   parseCodexVersion,
@@ -84,13 +86,14 @@ describe("managed Codex runtime", () => {
     const root = await temporaryRoot();
     const npmExecPath = await fakeExecutable(resolve(root, "npm-cli.js"));
     let installs = 0;
-    const run = vi.fn(async (command: string, args: string[]) => {
+    const run = vi.fn(async (command: string, args: string[], timeoutMs: number) => {
       if (command === "/test/node" && args.includes("install")) {
         installs += 1;
         const prefix = args[args.indexOf("--prefix") + 1];
         await fakeExecutable(managedCodexBinaryCandidates(prefix, "darwin-arm64")[0]);
         expect(args).toContain("@openai/codex@0.153.0");
         expect(args).toContain("--registry=https://registry.npmjs.org");
+        expect(timeoutMs).toBe(60 * 60_000);
         return { stdout: "installed", stderr: "" };
       }
       return {
@@ -109,6 +112,7 @@ describe("managed Codex runtime", () => {
     });
 
     expect(installs).toBe(1);
+    expect(CODEX_INSTALL_STALE_LOCK_MS).toBeGreaterThan(CODEX_INSTALL_TIMEOUT_MS);
     expect(resolution.executable).toContain(`/runtimes/codex/${CODEX_RUNTIME_VERSION}/`);
     expect(resolution.source).toBe("managed");
   });

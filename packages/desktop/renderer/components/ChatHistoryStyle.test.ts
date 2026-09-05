@@ -126,7 +126,8 @@ describe("shared Codex-style message history", () => {
     expect(globalCss).toContain("padding: 5px 0 !important");
     expect(globalCss).toContain(".reasoning-summary__label");
     expect(globalCss).toContain(".chat-view--codex-history .tool-call-shell__label");
-    expect(globalCss).not.toContain("transform: translateY(-1px)");
+    expect(globalCss).not.toMatch(/\.reasoning-summary__label\s*\{[^}]*transform:/s);
+    expect(globalCss).not.toMatch(/\.chat-view--codex-history \.tool-call-shell__label\s*\{[^}]*transform:/s);
   });
 
   it("keeps the workspace close to the sidebar surface across skins", () => {

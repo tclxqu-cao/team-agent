@@ -97,26 +97,27 @@ test("drift check reports every disagreement", async () => {
 test("applies an upgrade only inside a temporary fixture", async () => {
   const fixture = await makeFixture();
   try {
+    const { currentReleaseVersion, nextReleaseVersion } = await fixtureReleaseVersions(fixture);
     const result = await applyAgentUpgrade(fixture, {
       agent: "opencode",
       current: { cli: "1.18.27", sdk: "1.18.27" },
       target: { cli: "1.18.28", sdk: "1.18.28" },
       changed: true,
-      agentroamVersion: "0.2.0-preview.13",
+      agentroamVersion: nextReleaseVersion,
     }, {
       runCommand: async (command, args, options) => {
         assert.deepEqual([command, ...args], ["bun", "install", "--lockfile-only"]);
         const lockPath = resolve(options.cwd, "bun.lock");
         const lock = await readFile(lockPath, "utf8");
-        await writeFile(lockPath, lock.replaceAll("1.18.27", "1.18.28").replaceAll("0.2.0-preview.12", "0.2.0-preview.13"));
+        await writeFile(lockPath, lock.replaceAll("1.18.27", "1.18.28").replaceAll(currentReleaseVersion, nextReleaseVersion));
       },
     });
-    assert.equal(result.agentroamVersion, "0.2.0-preview.13");
+    assert.equal(result.agentroamVersion, nextReleaseVersion);
     assert.deepEqual(await checkRuntimeVersionDrift(fixture), {
       codex: "0.153.0",
       claude: "0.3.259",
       opencode: "1.18.28",
-      agentroam: "0.2.0-preview.13",
+      agentroam: nextReleaseVersion,
     });
   } finally {
     await rm(fixture, { recursive: true, force: true });
@@ -128,12 +129,13 @@ test("restores fixture files when lockfile regeneration fails", async () => {
   const manifestPath = resolve(fixture, ".github/agent-runtime-versions.json");
   const before = await readFile(manifestPath, "utf8");
   try {
+    const { nextReleaseVersion } = await fixtureReleaseVersions(fixture);
     await assert.rejects(applyAgentUpgrade(fixture, {
       agent: "claude",
       current: { sdk: "0.3.259" },
       target: { sdk: "0.3.260" },
       changed: true,
-      agentroamVersion: "0.2.0-preview.13",
+      agentroamVersion: nextReleaseVersion,
     }, { runCommand: async () => { throw new Error("offline"); } }), /restored original files/);
     assert.equal(await readFile(manifestPath, "utf8"), before);
   } finally {
@@ -161,6 +163,16 @@ function packuments(versions) {
     const version = versions[name];
     if (!version) throw new Error(`unexpected package ${name}`);
     return { "dist-tags": { latest: version }, versions: { [version]: {} } };
+  };
+}
+
+async function fixtureReleaseVersions(fixture) {
+  const packageJson = JSON.parse(await readFile(resolve(fixture, "packages/cli/package.json"), "utf8"));
+  const match = packageJson.version.match(/^(\d+\.\d+\.\d+-preview\.)(\d+)$/);
+  assert.ok(match, `invalid fixture release version: ${packageJson.version}`);
+  return {
+    currentReleaseVersion: packageJson.version,
+    nextReleaseVersion: `${match[1]}${Number(match[2]) + 1}`,
   };
 }
 

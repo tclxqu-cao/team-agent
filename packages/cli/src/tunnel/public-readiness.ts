@@ -44,7 +44,7 @@ export async function waitForPublicReadiness(
       try {
         const response = await fetchImpl(endpoint, {
           cache: "no-store",
-          headers: { "user-agent": "agentroam-readiness/0.2.0-preview.12" },
+          headers: { "user-agent": "agentroam-readiness/0.2.0-preview.13" },
           signal: options.signal,
         });
         if (response.ok) {
