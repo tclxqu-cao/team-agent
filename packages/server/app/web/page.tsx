@@ -86,7 +86,7 @@ function AuthenticatedConsole({ auth }: { auth: WebAuthController }) {
   const [webappReady, setWebappReady] = useState(false);
   const activeTheme = resolveWebTheme(themeId);
   const fileDrag=useRef<{moved:boolean;startX:number;startY:number}|null>(null);
-  const swipeStart = useRef<{ x: number; y: number; axis: "pending"|"horizontal"|"vertical" } | null>(null);
+  const swipeStart = useRef<{ x: number; y: number; axis: "pending"|"horizontal"|"vertical"; pointerId: number } | null>(null);
   const [swipeDelta,setSwipeDelta]=useState(0);
   const [swiping,setSwiping]=useState(false);
   const draggedTab = useRef<string | null>(null);
@@ -404,9 +404,9 @@ function AuthenticatedConsole({ auth }: { auth: WebAuthController }) {
         <section
           className="term-col"
           style={S.termCol}
-          onPointerDownCapture={(event)=>{if(event.pointerType!=="touch"||!isTerminalScreen(event.target))return;swipeStart.current={x:event.clientX,y:event.clientY,axis:"pending"};}}
-          onPointerMoveCapture={(event)=>{const start=swipeStart.current;if(!start||event.pointerType!=="touch")return;const dx=event.clientX-start.x,dy=event.clientY-start.y;if(start.axis==="pending"){if(Math.max(Math.abs(dx),Math.abs(dy))<=8)return;if(Math.abs(dy)>=Math.abs(dx)*1.2){swipeStart.current=null;return;}start.axis="horizontal";setSwiping(true);}if(start.axis!=="horizontal")return;event.preventDefault();setSwipeDelta(dx);}}
-          onPointerUpCapture={(event)=>{const start=swipeStart.current;if(!start||event.pointerType!=="touch")return;const dx=event.clientX-start.x;if(start.axis==="horizontal"&&Math.abs(dx)>=64)handleTabSwipeEnd(dx);else resetSwipe();}}
+          onPointerDownCapture={(event)=>{if(event.pointerType!=="touch"||!isTerminalScreen(event.target))return;resetSwipe();swipeStart.current={x:event.clientX,y:event.clientY,axis:"pending",pointerId:event.pointerId};}}
+          onPointerMoveCapture={(event)=>{const start=swipeStart.current;if(!start||event.pointerId!==start.pointerId||event.pointerType!=="touch")return;const dx=event.clientX-start.x,dy=event.clientY-start.y;if(start.axis==="pending"){if(Math.max(Math.abs(dx),Math.abs(dy))<=8)return;if(Math.abs(dy)>=Math.abs(dx)*1.2){swipeStart.current=null;return;}start.axis="horizontal";setSwiping(true);const settle=(e:PointerEvent)=>{window.removeEventListener("pointerup",settle);window.removeEventListener("pointercancel",settle);if(swipeStart.current===start)resetSwipe();};window.addEventListener("pointerup",settle);window.addEventListener("pointercancel",settle);}if(start.axis!=="horizontal")return;event.preventDefault();setSwipeDelta(dx);}}
+          onPointerUpCapture={(event)=>{const start=swipeStart.current;if(!start||event.pointerId!==start.pointerId)return;const dx=event.clientX-start.x;if(start.axis==="horizontal"&&Math.abs(dx)>=64)handleTabSwipeEnd(dx);else resetSwipe();}}
           onPointerCancelCapture={resetSwipe}
         >
           <div className="terminal-track" style={{transform:`translate3d(calc(${-activeIndex*100}% + ${swipeDelta}px),0,0)`,transition:swiping?"none":"transform 260ms cubic-bezier(.22,.8,.32,1)"}}>
@@ -857,7 +857,6 @@ const S: Record<string, React.CSSProperties> = {
     color: "var(--ui-text, #dde)",
     fontSize: 18,
     zIndex: 45,
-    boxShadow: "0 4px 16px rgba(0,0,0,.45)",
   },
   logoutBtn: { height: 24, padding: "0 8px", border: "1px solid var(--ui-muted-border, #2d303a)", borderRadius: 6, background: "var(--ui-muted-surface, #171920)", color: "var(--ui-muted-text, #8c909f)", fontSize: 10.5 },
 };
