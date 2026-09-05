@@ -63,6 +63,7 @@ await cp(resolve(standaloneServer, ".next"), resolve(target, ".next"), { recursi
 await cp(resolve(standaloneServer, "server.js"), resolve(target, "server.js"));
 await cp(resolve(server, ".next/static"), resolve(target, ".next/static"), { recursive: true });
 await cp(resolve(server, "ws-server.mjs"), resolve(target, "ws-server.mjs"));
+await cp(resolve(server, "shell-integration.mjs"), resolve(target, "shell-integration.mjs"));
 await cp(resolve(server, "shell-platform.mjs"), resolve(target, "shell-platform.mjs"));
 await mkdir(resolve(target, "lib"), { recursive: true });
 await cp(resolve(server, "lib/file-preview-service.mjs"), resolve(target, "lib/file-preview-service.mjs"));
