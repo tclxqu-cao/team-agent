@@ -65,7 +65,7 @@ describe("shared composer panel layout", () => {
   });
 
   it("routes picker images into the sent payload before enabling send", () => {
-    expect(chatView).toContain("await prepareComposerFiles(files, blobToDataUrl)");
+    expect(chatView).toContain("blobToDataUrl(await normalizeComposerImage(file))");
     expect(chatView).toContain("setPendingImages((previous) => [...previous, ...prepared.images])");
     expect(chatView).toContain("!canCompose || pendingImageReads > 0 || !input.trim()");
     expect(chatView).toContain("images: imagesToSend");

@@ -37,6 +37,7 @@ import {
   describeSessionLoadError,
   loadSessionWithRetry,
 } from "../lib/session-load-recovery";
+import { normalizeComposerImage } from "../lib/browser-image-normalization";
 import { supportsMidTurnSteering } from "../lib/runtime-capabilities";
 import { copyTextToClipboard } from "../lib/clipboard";
 import { clearSessionDraft, readSessionDraft, writeSessionDraft } from "../lib/session-draft";
@@ -1053,7 +1054,9 @@ export default function ChatView({
     const imageCount = files.filter((file) => file.type.toLowerCase().startsWith("image/")).length;
     if (imageCount > 0) setPendingImageReads((count) => count + 1);
     try {
-      const prepared = await prepareComposerFiles(files, blobToDataUrl);
+      const prepared = await prepareComposerFiles(files, async (file) => (
+        blobToDataUrl(await normalizeComposerImage(file))
+      ));
       if (prepared.attachments.length > 0) {
         setAttachedFiles((previous) => [...previous, ...prepared.attachments]);
       }
@@ -1112,7 +1115,15 @@ export default function ChatView({
       if (!imageItem) return;
       e.preventDefault();
       const file = imageItem.getAsFile();
-      if (file) addPendingImage(await blobToDataUrl(file));
+      if (!file) return;
+      setPendingImageReads((count) => count + 1);
+      try {
+        addPendingImage(await blobToDataUrl(await normalizeComposerImage(file)));
+      } catch {
+        setError("无法添加图片。仅支持 JPG、PNG、GIF 和 WebP。");
+      } finally {
+        setPendingImageReads((count) => Math.max(0, count - 1));
+      }
     };
     window.addEventListener("paste", handlePaste);
     return () => window.removeEventListener("paste", handlePaste);

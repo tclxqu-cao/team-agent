@@ -20,6 +20,14 @@ interface NativeStreamCursor {
   sequence: number;
 }
 
+const TRANSPORT_FAILURE = /^(?:load failed|failed to fetch|network request failed|networkerror when attempting to fetch resource\.?|the network connection was lost\.?|fetch failed)$/i;
+
+function isTransportFailure(error: unknown): boolean {
+  return error instanceof Error
+    && error.name !== "AbortError"
+    && TRANSPORT_FAILURE.test(error.message.trim());
+}
+
 /** Subset of the port the web gateway intentionally leaves to browser fallbacks. */
 type BrowserHandled = "wakeStart" | "dictationStart" | "dictationStop" | "onDictation" | "onDictationError";
 
@@ -35,8 +43,9 @@ type BrowserHandled = "wakeStart" | "dictationStart" | "dictationStop" | "onDict
  *   - run() resolves only when the whole run settles;
  *   - events are fanned out through the persistent onEvent bus, stamped with
  *     the `_sid` session tag the renderer routes by;
- *   - the SSE stream is opened BEFORE the run starts so no early text_chunk
- *     is lost (the stream route subscribes without requiring the session).
+ *   - ordinary runs open SSE before admission; native runs admit first and
+ *     replay from their persisted pre-run cursor, avoiding mobile connection
+ *     limits without losing early events.
  *
  * Voice wake/dictation are deliberately NOT implemented: the renderer's
  * lib/speech falls back to the Web Speech API when those bridge methods are
@@ -84,12 +93,17 @@ export class AgentHttpGateway {
     images?: string[],
     nativeOptions?: { model?: { id: string; providerID?: string }; reasoningEffort?: string },
   ): Promise<unknown[]> {
+    const isNativeSession = sessionId.startsWith("runtime:");
     const hadStream = this.streams.has(sessionId);
     const hadPendingRun = this.pendingRuns.has(sessionId);
+    const nativeCursorBeforeRun = this.nativeSnapshotRevisions.get(sessionId);
     let pendingResolve: (() => void) | null = null;
+    let finished: Promise<void> | null = null;
     try {
-      await this.openStream(sessionId, this.nativeSnapshotRevisions.get(sessionId));
-      const finished = hadPendingRun
+      if (!isNativeSession) {
+        await this.openStream(sessionId, this.nativeSnapshotRevisions.get(sessionId));
+      }
+      finished = hadPendingRun
         ? null
         : new Promise<void>((resolve) => {
             pendingResolve = resolve;
@@ -110,6 +124,13 @@ export class AgentHttpGateway {
         ...(nativeOptions?.model?.id ? { nativeModel: nativeOptions.model } : {}),
         ...(nativeOptions?.reasoningEffort ? { nativeReasoningEffort: nativeOptions.reasoningEffort } : {}),
       });
+      if (isNativeSession) {
+        await this.openStream(
+          sessionId,
+          nativeCursorBeforeRun ?? { sequence: 0 },
+          { waitForOpen: false },
+        );
+      }
       if (typeof started.snapshotRevision === "number") {
         this.rememberNativeSnapshot(sessionId, started.snapshotRevision, started.runId);
       }
@@ -120,16 +141,39 @@ export class AgentHttpGateway {
       });
       if (finished) await finished;
     } catch (err) {
+      if (
+        !hadPendingRun
+        && isNativeSession
+        && isTransportFailure(err)
+        && await this.recoverNativeAdmission(sessionId, nativeCursorBeforeRun)
+      ) {
+        await this.openStream(
+          sessionId,
+          nativeCursorBeforeRun ?? { sequence: 0 },
+          { waitForOpen: false },
+        );
+        if (finished) await finished;
+        return [];
+      }
       const reportedCode = (err as { code?: unknown }).code;
       const code = typeof reportedCode === "string"
         ? reportedCode
         : (err as { status?: number }).status === 409
           ? "SESSION_OCCUPIED"
           : undefined;
+      if (isNativeSession && code === "SESSION_ALREADY_RUNNING") {
+        await this.openStream(
+          sessionId,
+          nativeCursorBeforeRun ?? { sequence: 0 },
+          { waitForOpen: false },
+        );
+      }
       const preserveActiveRun = hadStream || hadPendingRun || code === "SESSION_ALREADY_RUNNING";
       this.dispatch(sessionId, {
         type: "error",
-        message: err instanceof Error ? err.message : "无法启动运行",
+        message: isTransportFailure(err)
+          ? "网络连接中断，消息未确认发送，请重试"
+          : err instanceof Error ? err.message : "无法启动运行",
         ...(code ? { code } : {}),
         ...(preserveActiveRun ? { _preserveActiveRun: true } : {}),
       });
@@ -146,6 +190,45 @@ export class AgentHttpGateway {
       }
     }
     return [];
+  }
+
+  private async recoverNativeAdmission(
+    sessionId: string,
+    previousCursor?: NativeStreamCursor,
+  ): Promise<boolean> {
+    const observedCursor = this.nativeSnapshotRevisions.get(sessionId);
+    if (observedCursor?.runId && observedCursor.runId !== previousCursor?.runId) {
+      this.dispatchRecoveredAdmission(sessionId, observedCursor);
+      return true;
+    }
+    try {
+      const detail = await this.http.get<{
+        status?: string;
+        snapshotRevision?: number;
+        snapshotRunId?: string | null;
+      }>(`/api/sessions/${encodeURIComponent(sessionId)}?limit=1`);
+      const runId = typeof detail.snapshotRunId === "string" ? detail.snapshotRunId : undefined;
+      const sequence = typeof detail.snapshotRevision === "number" ? detail.snapshotRevision : 0;
+      const isNewRun = Boolean(runId && previousCursor?.runId && runId !== previousCursor.runId);
+      const isFirstObservedActiveRun = Boolean(
+        runId && !previousCursor?.runId && detail.status === "running",
+      );
+      if (!isNewRun && !isFirstObservedActiveRun) return false;
+
+      this.dispatchRecoveredAdmission(sessionId, { runId, sequence });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private dispatchRecoveredAdmission(sessionId: string, cursor: NativeStreamCursor): void {
+    this.rememberNativeSnapshot(sessionId, cursor.sequence, cursor.runId);
+    this.dispatch(sessionId, {
+      type: "run_admitted",
+      ...(cursor.runId ? { _nativeRunId: cursor.runId } : {}),
+      _nativeSequence: 0,
+    });
   }
 
   async steer(input: string, sessionId: string, _agentName?: string): Promise<boolean> {
@@ -833,8 +916,12 @@ export class AgentHttpGateway {
     }
   }
 
-  private async openStream(sessionId: string, cursor?: NativeStreamCursor): Promise<void> {
-    if (this.streams.has(sessionId)) return;
+  private openStream(
+    sessionId: string,
+    cursor?: NativeStreamCursor,
+    options: { waitForOpen?: boolean } = {},
+  ): Promise<void> {
+    if (this.streams.has(sessionId)) return Promise.resolve();
     this.thinkFilters.set(sessionId, new StreamingThinkFilter());
     const query = new URLSearchParams({ sessionId });
     if (Number.isSafeInteger(cursor?.sequence)) query.set("afterSequence", String(cursor!.sequence));
@@ -843,23 +930,28 @@ export class AgentHttpGateway {
     let sawTerminal = false;
     this.streams.set(sessionId, source);
 
-    // Do not start the agent until the SSE transport is actually open. Fast
-    // replies can otherwise finish before the subscription is registered.
-    await new Promise<void>((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error("事件流连接超时")), 8000);
-      source.onopen = () => {
-        clearTimeout(timer);
-        resolve();
-      };
-      const initialError = source.onerror;
-      source.onerror = () => {
-        if (source.readyState === EventSource.CLOSED) {
-          clearTimeout(timer);
-          reject(new Error("事件流连接失败"));
-        }
-        if (typeof initialError === "function") initialError.call(source, new Event("error"));
-      };
-    });
+    const waitForOpen = options.waitForOpen !== false;
+    let gatePending = waitForOpen;
+    let gateTimer: ReturnType<typeof setTimeout> | null = null;
+    let resolveGate: (() => void) | null = null;
+    let rejectGate: ((error: Error) => void) | null = null;
+    const opening = waitForOpen
+      ? new Promise<void>((resolve, reject) => {
+          resolveGate = resolve;
+          rejectGate = reject;
+          gateTimer = setTimeout(() => {
+            gatePending = false;
+            reject(new Error("事件流连接超时"));
+          }, 8000);
+        })
+      : Promise.resolve();
+
+    source.onopen = () => {
+      if (!gatePending) return;
+      gatePending = false;
+      if (gateTimer) clearTimeout(gateTimer);
+      resolveGate?.();
+    };
 
     source.onmessage = (message) => {
       if (!message.data) return;
@@ -898,6 +990,12 @@ export class AgentHttpGateway {
       }
     };
     source.onerror = () => {
+      if (gatePending && source.readyState === EventSource.CLOSED) {
+        gatePending = false;
+        if (gateTimer) clearTimeout(gateTimer);
+        rejectGate?.(new Error("事件流连接失败"));
+        return;
+      }
       if (source.readyState !== EventSource.CLOSED) return; // auto-reconnecting
       // The connection died before the run settled (network drop): recover
       // the persisted reply from the session and re-stream it as text, so a
@@ -938,6 +1036,7 @@ export class AgentHttpGateway {
         this.settle(sessionId);
       })();
     };
+    return opening;
   }
 
   private rememberNativeSnapshot(sessionId: string, sequence: number, runId?: string): void {

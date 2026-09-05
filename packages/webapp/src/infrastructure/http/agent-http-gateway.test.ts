@@ -55,6 +55,39 @@ describe("AgentHttpGateway", () => {
     });
   });
 
+  it("admits a native run before opening SSE and does not wait for onopen", async () => {
+    globalThis.EventSource = ObservableEventSource as unknown as typeof EventSource;
+    let resolvePost!: (value: { runId: string; snapshotRevision: number }) => void;
+    const http = {
+      post: vi.fn(() => new Promise<{ runId: string; snapshotRevision: number }>((resolve) => {
+        resolvePost = resolve;
+      })),
+    };
+    const settings = {
+      getModelOverride: vi.fn(() => null),
+      getReasoningEffort: vi.fn(() => "off"),
+      getRunLimits: vi.fn(() => ({ maxIterations: 10, maxTokens: 100_000 })),
+    };
+    const gateway = new AgentHttpGateway(http as never, settings as never);
+
+    const run = gateway.run("hello", "runtime:codex:c291cmNl");
+    expect(http.post).toHaveBeenCalledOnce();
+    expect(ObservableEventSource.instances).toHaveLength(0);
+
+    resolvePost({ runId: "run-new", snapshotRevision: 0 });
+    await vi.waitFor(() => expect(ObservableEventSource.instances).toHaveLength(1));
+    const source = ObservableEventSource.instances[0];
+    expect(source.url).toBe("/api/agent/stream?sessionId=runtime%3Acodex%3Ac291cmNl&afterSequence=0");
+
+    source.onmessage?.(new MessageEvent("message", { data: JSON.stringify({
+      type: "done",
+      finalText: "done",
+      _nativeRunId: "run-new",
+      _nativeSequence: 1,
+    }) }));
+    await run;
+  });
+
   it("keeps an existing native stream open when a refreshed page retries its running session", async () => {
     globalThis.EventSource = ObservableEventSource as unknown as typeof EventSource;
     const occupied = Object.assign(new Error("Session is already running"), {
@@ -95,6 +128,143 @@ describe("AgentHttpGateway", () => {
       _preserveActiveRun: true,
       _sid: "runtime:codex:c291cmNl",
     }));
+  });
+
+  it("continues an admitted native run when Safari loses the POST response", async () => {
+    globalThis.EventSource = ObservableEventSource as unknown as typeof EventSource;
+    const http = {
+      get: vi.fn()
+        .mockResolvedValueOnce({
+          status: "idle",
+          snapshotRevision: 6,
+          snapshotRunId: "run-before",
+          messages: [],
+          events: [],
+        })
+        .mockResolvedValueOnce({
+          status: "running",
+          snapshotRevision: 1,
+          snapshotRunId: "run-after",
+        }),
+      post: vi.fn().mockRejectedValue(new TypeError("Load failed")),
+    };
+    const settings = {
+      getModelOverride: vi.fn(() => null),
+      getReasoningEffort: vi.fn(() => "off"),
+      getRunLimits: vi.fn(() => ({ maxIterations: 10, maxTokens: 100_000 })),
+    };
+    const gateway = new AgentHttpGateway(http as never, settings as never);
+    const events: Array<Record<string, unknown>> = [];
+    gateway.onEvent((event) => events.push(event as Record<string, unknown>));
+
+    await gateway.getSession("runtime:codex:c291cmNl");
+    const run = gateway.run("inspect image", "runtime:codex:c291cmNl", undefined, undefined, [
+      "data:image/png;base64,AAAA",
+    ]);
+    await vi.waitFor(() => expect(http.get).toHaveBeenCalledTimes(2));
+    const source = ObservableEventSource.instances[0];
+
+    expect(http.post).toHaveBeenCalledOnce();
+    expect(events).toContainEqual({
+      type: "run_admitted",
+      _nativeRunId: "run-after",
+      _nativeSequence: 0,
+      _sid: "runtime:codex:c291cmNl",
+    });
+    expect(events.some((event) => event.type === "error")).toBe(false);
+    expect(source.close).not.toHaveBeenCalled();
+
+    source.onmessage?.(new MessageEvent("message", { data: JSON.stringify({
+      type: "done",
+      finalText: "done",
+      _nativeRunId: "run-after",
+      _nativeSequence: 2,
+    }) }));
+    await run;
+
+    expect(source.close).toHaveBeenCalledOnce();
+  });
+
+  it("uses an observed native SSE event to recover without another HTTP connection", async () => {
+    globalThis.EventSource = ObservableEventSource as unknown as typeof EventSource;
+    let rejectPost!: (error: Error) => void;
+    const http = {
+      get: vi.fn().mockResolvedValue({
+        status: "running",
+        snapshotRevision: 4,
+        snapshotRunId: "run-before",
+        messages: [],
+        events: [],
+      }),
+      post: vi.fn(() => new Promise((_resolve, reject) => { rejectPost = reject; })),
+    };
+    const settings = {
+      getModelOverride: vi.fn(() => null),
+      getReasoningEffort: vi.fn(() => "off"),
+      getRunLimits: vi.fn(() => ({ maxIterations: 10, maxTokens: 100_000 })),
+    };
+    const gateway = new AgentHttpGateway(http as never, settings as never);
+    const events: Array<Record<string, unknown>> = [];
+    gateway.onEvent((event) => events.push(event as Record<string, unknown>));
+
+    await gateway.getSession("runtime:codex:c291cmNl");
+    const source = ObservableEventSource.instances[0];
+    source.onopen?.();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const run = gateway.run("inspect image", "runtime:codex:c291cmNl");
+    await vi.waitFor(() => expect(http.post).toHaveBeenCalledOnce());
+    source.onmessage?.(new MessageEvent("message", { data: JSON.stringify({
+      type: "thinking",
+      _nativeRunId: "run-after",
+      _nativeSequence: 1,
+    }) }));
+    rejectPost(new TypeError("Load failed"));
+    await vi.waitFor(() => expect(events).toContainEqual(expect.objectContaining({
+      type: "run_admitted",
+      _nativeRunId: "run-after",
+    })));
+
+    expect(http.get).toHaveBeenCalledOnce();
+    expect(events.some((event) => event.type === "error")).toBe(false);
+
+    source.onmessage?.(new MessageEvent("message", { data: JSON.stringify({
+      type: "done",
+      finalText: "done",
+      _nativeRunId: "run-after",
+      _nativeSequence: 2,
+    }) }));
+    await run;
+  });
+
+  it("localizes an unconfirmed native transport failure without retrying the run", async () => {
+    globalThis.EventSource = ObservableEventSource as unknown as typeof EventSource;
+    const http = {
+      get: vi.fn().mockResolvedValue({
+        status: "idle",
+        snapshotRevision: 5,
+        snapshotRunId: "old-run",
+      }),
+      post: vi.fn().mockRejectedValue(new TypeError("Load failed")),
+    };
+    const settings = {
+      getModelOverride: vi.fn(() => null),
+      getReasoningEffort: vi.fn(() => "off"),
+      getRunLimits: vi.fn(() => ({ maxIterations: 10, maxTokens: 100_000 })),
+    };
+    const gateway = new AgentHttpGateway(http as never, settings as never);
+    const events: unknown[] = [];
+    gateway.onEvent((event) => events.push(event));
+
+    const run = gateway.run("inspect image", "runtime:codex:c291cmNl");
+    await run;
+
+    expect(http.post).toHaveBeenCalledOnce();
+    expect(events).toContainEqual({
+      type: "error",
+      message: "网络连接中断，消息未确认发送，请重试",
+      _sid: "runtime:codex:c291cmNl",
+    });
+    expect(ObservableEventSource.instances).toHaveLength(0);
   });
 
   it("persists a queued native message before returning it to the renderer", async () => {
@@ -156,10 +326,9 @@ describe("AgentHttpGateway", () => {
     gateway.onEvent((event) => events.push(event));
 
     const run = gateway.run("queue after refresh", "runtime:codex:c291cmNl");
-    const source = ObservableEventSource.instances[0];
-    source.onopen?.();
     await run;
 
+    const source = ObservableEventSource.instances[0];
     expect(source.close).not.toHaveBeenCalled();
     expect(events).toContainEqual(expect.objectContaining({
       type: "error",
@@ -185,11 +354,9 @@ describe("AgentHttpGateway", () => {
     gateway.onEvent((event) => events.push(event));
 
     const run = gateway.run("must not queue", "runtime:codex:c291cmNl");
-    const source = ObservableEventSource.instances[0];
-    source.onopen?.();
     await run;
 
-    expect(source.close).toHaveBeenCalledOnce();
+    expect(ObservableEventSource.instances).toHaveLength(0);
     expect(events).toContainEqual({
       type: "error",
       code: "SESSION_OCCUPIED",
@@ -213,9 +380,8 @@ describe("AgentHttpGateway", () => {
     gateway.onEvent((event) => events.push(event));
 
     const run = gateway.run("delegate", "runtime:claude-code:c2Vzc2lvbg");
+    await vi.waitFor(() => expect(ObservableEventSource.instances).toHaveLength(1));
     const source = ObservableEventSource.instances[0];
-    source.onopen?.();
-    await new Promise((resolve) => setTimeout(resolve, 0));
     source.onmessage?.(new MessageEvent("message", { data: JSON.stringify({
       type: "native_subagent_update",
       _nativeRunId: "run-1",
