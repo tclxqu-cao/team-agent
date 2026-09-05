@@ -1,0 +1,56 @@
+docs/superpowers/plans/2026-09-05-web-terminal-clean-shell-startup.md
+  s_0d51ca33fa59ea::t_eccd4e1eb8ec49 259
+  s_0d51ca33fa59ea::t_0892d05f1dbc42 172,181
+  s_0d51ca33fa59ea::t_f75ac6cb9354c2 33,57,74,90
+  s_0d51ca33fa59ea::t_e459dfa06a9dbe 26,150-151
+  s_0d51ca33fa59ea::t_99c8b2e36a4e69 112,121,140,153
+  s_0d51ca33fa59ea::t_10db2158de9b37 204,216,229,245
+  s_0d51ca33fa59ea::t_e604ccd53abe78 1-25,27-32,34-56,58-73,75-89,91-111,113-120,122-139,141-149,152,154-171,173-180,182-203,205-215,217-228,230-244,246-258,260-277
+docs/superpowers/plans/2026-09-05-mobile-image-send-recovery.md
+  s_0d51ca33fa59ea::t_c47a77c05ec523 31,35,49,53,67,71,75,79
+  s_0d51ca33fa59ea::t_061b1805d7805b 1-30,32-34,36-48,50-52,54-66,68-70,72-74,76-78,80-84,86-93
+  s_0d51ca33fa59ea::t_77b8acf3b2f254 85
+packages/webapp/src/infrastructure/http/agent-http-gateway.test.ts
+  s_0d51ca33fa59ea::t_6d63e8d9e7e569 133-164,166-170,172-187,239-266,268-269
+  s_0d51ca33fa59ea::t_0db2a931ce4b3a 171
+  s_0d51ca33fa59ea::t_015baea5304dc0 188-192,194-212,215-238
+  s_0d51ca33fa59ea::t_70035b315d38e8 58-90
+  s_0d51ca33fa59ea::t_f1207c3d3c1e6f 165,193,213-214,267,331,359,383
+packages/webapp/src/infrastructure/http/agent-http-gateway.ts
+  s_0d51ca33fa59ea::t_f1207c3d3c1e6f 164-170
+  s_0d51ca33fa59ea::t_015baea5304dc0 199-203,218,223-229,231-232
+  s_0d51ca33fa59ea::t_6d63e8d9e7e569 212-215
+  s_0d51ca33fa59ea::t_0db2a931ce4b3a 230
+  s_0d51ca33fa59ea::t_030d37162c7b47 46-48,924
+  s_0d51ca33fa59ea::t_f78050109110a1 96,103-105,127-133,146,150-154,919-923,933-954,993-998,1039
+  s_0d51ca33fa59ea::t_8275add53da306 23-30,99,101,106,144-145,147-149,155-157,174-176,195-198,204-211,216-217,219-222
+  s_0d51ca33fa59ea::t_a11f10bff07512 233
+packages/webapp/src/presentation/browser-composer.test.ts
+  s_0d51ca33fa59ea::t_136d97334064cb 68
+docs/superpowers/plans/2026-09-05-native-sse-admission-order.md
+  s_0d51ca33fa59ea::t_e4eca6af595663 1-29,31-33,35-37,39-41,43-47,49-56
+  s_0d51ca33fa59ea::t_db88cd4dc5ab6c 30,34,38,42,48
+packages/desktop/renderer/components/ChatView.tsx
+  s_0d51ca33fa59ea::t_c47a77c05ec523 1118-1126
+  s_0d51ca33fa59ea::t_6e4b4eaf2807f1 40,1057-1059
+packages/desktop/renderer/lib/browser-image-normalization.ts
+  s_0d51ca33fa59ea::t_6e4b4eaf2807f1 1-98
+packages/desktop/renderer/lib/browser-image-normalization.test.ts
+  s_0d51ca33fa59ea::t_6e4b4eaf2807f1 1-104
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "4ac0d13987d78cf07036954fee75264294f91029",
+  "prompts": {},
+  "sessions": {
+    "s_0d51ca33fa59ea": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a07055-b40e-7883-b432-fe5a564e974a",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
