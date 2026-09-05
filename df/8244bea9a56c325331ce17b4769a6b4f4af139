@@ -1,0 +1,22 @@
+packages/server/app/web/FilePreview.test.ts
+  h_86bb4e0e04237b 176-195
+packages/server/app/web/FilePreview.tsx
+  h_86bb4e0e04237b 4,13,24-27,179-183,222,239,242,362,374,387-388,561-568,727-743,751,798-809,831
+packages/server/lib/file-preview-service.mjs
+  h_86bb4e0e04237b 176,191,205
+packages/server/lib/file-preview-service.test.ts
+  h_86bb4e0e04237b 5,13,139-155,183-206,226-255
+packages/server/ws-server.mjs
+  h_86bb4e0e04237b 353-357,939-944,953-954,960-972
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "df8244bea9a56c325331ce17b4769a6b4f4af139",
+  "prompts": {},
+  "humans": {
+    "h_86bb4e0e04237b": {
+      "author": "caoqu <qu.cao@ly.com>"
+    }
+  }
+}
