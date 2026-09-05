@@ -1,0 +1,176 @@
+packages/desktop/renderer/components/QueryNavigationRail.test.tsx
+  s_ae3299e49115eb::t_bb72412698de97 2,4,29-47
+  s_ae3299e49115eb::t_a742214f8bd491 1,3,5-28,48-49
+packages/desktop/renderer/components/ToolCallCard.test.tsx
+  s_68254ec11fb4c4::t_e977c3b01919e7 7-9,127-138,140-143
+  s_68254ec11fb4c4::t_ba5965e16f9b7c 1,139
+packages/webapp/src/presentation/web.css
+  s_ae3299e49115eb::t_c81d82e141ee50 116-122
+  s_ae3299e49115eb::t_a742214f8bd491 94-108
+packages/webapp/src/infrastructure/http/agent-http-gateway.ts
+  s_ae3299e49115eb::t_70a2f52eb7b3b2 8,325-328,332-333,369-372
+  s_ae3299e49115eb::t_6e751b67dc2382 373-374
+packages/desktop/main/agent-runtime/native-runtime-broker.ts
+  s_ae3299e49115eb::t_267a65ddf15313 1320-1329
+  s_ae3299e49115eb::t_5dd6811f18fde4 23-24,32,1114,1304,1318-1319,1330-1331,1826,1993-1996,2739-2741,2761,2844-2845,2847-2849
+  s_ae3299e49115eb::t_1681c7ac988400 72-75,1302
+packages/desktop/renderer/lib/session-history.test.ts
+  s_ae3299e49115eb::t_5284eb1c5536d2 6-14
+packages/server/app/api/sessions/[id]/query-index/route.ts
+  s_ae3299e49115eb::t_bc45b0add3531a 1-41
+packages/desktop/main/agent-runtime/unified-session-service.test.ts
+  s_ae3299e49115eb::t_b0eed062468cd8 172-173,175-179,181-184,186,192-193,195-196
+  s_ae3299e49115eb::t_4727bd8aab7e5b 174
+  s_ae3299e49115eb::t_1681c7ac988400 171,185,187-191,194
+  s_ae3299e49115eb::t_926225ba1955f1 180
+packages/desktop/renderer/lib/session-history.ts
+  s_ae3299e49115eb::t_6d790456d56d32 187
+  s_ae3299e49115eb::t_c8fc3b700a9545 24,38-41,266
+packages/core/src/domain/session/SessionHistory.test.ts
+  s_ae3299e49115eb::t_96411edd86120c 23,52,82,84,102-103
+packages/server/app/web/FilePreview.test.ts
+  s_1dd1c6eec51a4a::t_9a2a2916e39ddf 7,104-111,186-187,191,195,200-201,203
+  s_1dd1c6eec51a4a::t_f62a4ae1efb1c8 194,202
+  s_68254ec11fb4c4::t_a478668ca6a2ce 204
+packages/server/app/web/FilePreview.tsx
+  s_1dd1c6eec51a4a::t_423df65ba80c51 806-807
+  s_1dd1c6eec51a4a::t_f62a4ae1efb1c8 809
+  s_1dd1c6eec51a4a::t_9a2a2916e39ddf 4,17-18,25,185-189,249,369,381,734,745-746,805
+packages/server/app/api/sessions/[id]/route.ts
+  s_ae3299e49115eb::t_bc45b0add3531a 6,16,24-25,27-33,59-81
+packages/core/src/domain/model/entities.ts
+  s_ae3299e49115eb::t_ea5e8f03dcaa4f 8-9
+packages/server/lib/file-preview-service.test.ts
+  s_1dd1c6eec51a4a::t_9a2a2916e39ddf 227,234,242-246
+packages/server/app/web/drawerLayout.test.ts
+  s_8f17efd939a041::t_abe15d8c76be97 24-32
+packages/webapp/src/presentation/browser-composer.test.ts
+  s_ae3299e49115eb::t_c81d82e141ee50 90-97
+packages/desktop/renderer/styles/global.css
+  s_ae3299e49115eb::t_a742214f8bd491 2042,2428-2500,2523-2571,2576-2611
+  s_68254ec11fb4c4::t_e977c3b01919e7 1988,1999-2002,2006-2007,2012-2014,2016,2020,2025,2030-2041
+  s_ae3299e49115eb::t_bb72412698de97 2501-2522,2572-2575
+  s_1dd1c6eec51a4a::t_56dc62e85fb359 2043
+packages/core/src/domain/session/index.ts
+  s_ae3299e49115eb::t_ea5e8f03dcaa4f 7-8,12-18
+packages/desktop/main/agent-runtime/native-runtime-broker.test.ts
+  s_ae3299e49115eb::t_55cda0208f3e48 1290,1292,1296
+  s_ae3299e49115eb::t_4bfcb8f8cc44a0 1241-1264
+  s_ae3299e49115eb::t_1681c7ac988400 81,126-129
+packages/desktop/main/agent-runtime/unified-session-service.ts
+  s_ae3299e49115eb::t_eeaa8556cc1dd9 3,7,43,121,127,168,176-178
+  s_ae3299e49115eb::t_1681c7ac988400 167,358-359
+  s_ae3299e49115eb::t_9b2a71c299cf31 179-180
+  s_ae3299e49115eb::t_b16afd9d4fadb0 360-361
+packages/core/src/domain/session/SessionQueryIndex.test.ts
+  s_ae3299e49115eb::t_8ab612d4376a3a 1-57,76-97,100-105
+  s_ae3299e49115eb::t_8acc2743b10c6f 98-99
+  s_ae3299e49115eb::t_df7beb7dffdec6 58-75
+packages/core/src/domain/session/SessionQueryIndexCache.test.ts
+  s_ae3299e49115eb::t_8ab612d4376a3a 1-17,19-21,23,25-27
+  s_ae3299e49115eb::t_96411edd86120c 18,22,24
+packages/core/src/domain/session/entities.ts
+  s_ae3299e49115eb::t_ea5e8f03dcaa4f 25-26,30-43,49-52
+packages/desktop/renderer/components/QueryNavigationRail.tsx
+  s_ae3299e49115eb::t_bb72412698de97 2,40,47,62,80,141-145
+  s_ae3299e49115eb::t_a742214f8bd491 3-39,41-46,48-49,53-55,58-61,63-74,76-79,81-140,146-154
+  s_ae3299e49115eb::t_267a65ddf15313 75
+  s_ae3299e49115eb::t_345434e5d36706 1,50-52,56-57
+packages/server/app/api/sessions/[id]/query-index/route.test.ts
+  s_ae3299e49115eb::t_4d5a31b0596dd6 1-66
+packages/server/app/web/page.tsx
+  s_8f17efd939a041::t_abe15d8c76be97 724
+packages/desktop/main/agent-runtime/types.ts
+  s_ae3299e49115eb::t_eeaa8556cc1dd9 6,86-87,238
+packages/core/src/domain/session/SessionHistory.ts
+  s_ae3299e49115eb::t_e4b69ec9d8c0e1 7-12,39-45,49-52,54,70-73,78-90,92-93,95-121
+  s_ae3299e49115eb::t_6d790456d56d32 53
+  s_ae3299e49115eb::t_df7beb7dffdec6 91,94
+  s_ae3299e49115eb::t_0f1c5239f84dfb 122
+packages/desktop/renderer/components/ChatView.tsx
+  s_ae3299e49115eb::t_c17745be44231c 1831-1834
+  s_ae3299e49115eb::t_6bac13bb0c3618 2892-2897,3119,3562-3566,3568-3576,3578-3579,3581-3582,3586-3587
+  s_ae3299e49115eb::t_996439ebd2511f 1614-1621,1623-1624,1626-1650,1652-1653,1655-1661,1663,1667-1683,1686-1694,1698-1707,1709-1712,1715-1717,1719-1738,1752-1762,1767-1769
+  s_ae3299e49115eb::t_ae757b3d02f733 1359-1402,1406-1409
+  s_ae3299e49115eb::t_7b19b4df28894a 713,1622,1625,1651,1654,2492-2495
+  s_ae3299e49115eb::t_bb72412698de97 4,718-719,734,737,834-840,1228-1230,1258-1260,1662,1664-1666,1684-1685,1695-1697,1708,1713,1718,1763-1766,3567,3577,3580,3583-3585
+  s_ae3299e49115eb::t_c8ea63be263222 1222-1227,1231,1251,1254-1257,1261-1265,1299,1357
+  s_ae3299e49115eb::t_a16a92e0a3fc2d 1456-1461,1487
+  s_ae3299e49115eb::t_92ec935a069a41 36-37,703,711-712,714-717,731-733,735-736,766-770,792-797,822-828,830-831
+  s_ae3299e49115eb::t_479cd668caf42f 829,1714,1739-1751,4624-4636
+  s_ae3299e49115eb::t_d6465d3a8f53de 832-833
+  s_ae3299e49115eb::t_f4e2e76fe8bc8c 1358
+  s_ae3299e49115eb::t_4be7e9e8150755 2496
+  s_ae3299e49115eb::t_491c7686f38965 4637
+packages/desktop/main/index.ts
+  s_ae3299e49115eb::t_70a2f52eb7b3b2 1075-1079,1092-1093
+  s_ae3299e49115eb::t_faaad8402d72de 1094-1095
+packages/core/src/domain/session/SessionQueryIndexCache.ts
+  s_ae3299e49115eb::t_ea5e8f03dcaa4f 1-22,24-41
+  s_ae3299e49115eb::t_267a65ddf15313 23
+packages/server/ws-server.mjs
+  s_1dd1c6eec51a4a::t_9a2a2916e39ddf 370-374,383-389,392
+packages/desktop/renderer/global.d.ts
+  s_ae3299e49115eb::t_70a2f52eb7b3b2 84-97,290-294
+packages/webapp/src/domain/ports/agent-port.ts
+  s_ae3299e49115eb::t_70a2f52eb7b3b2 21-22
+packages/webapp/src/infrastructure/http/agent-http-gateway.test.ts
+  s_ae3299e49115eb::t_4d5a31b0596dd6 552-582
+packages/desktop/renderer/components/ToolCallCard.tsx
+  s_68254ec11fb4c4::t_e977c3b01919e7 647-662
+packages/server/lib/session-history-source.ts
+  s_ae3299e49115eb::t_bc45b0add3531a 1-75
+packages/desktop/main/preload.ts
+  s_ae3299e49115eb::t_70a2f52eb7b3b2 116,118
+packages/server/lib/native-runtime-service.ts
+  s_ae3299e49115eb::t_eeaa8556cc1dd9 8,93,282-286
+  s_ae3299e49115eb::t_bc45b0add3531a 540
+  s_ae3299e49115eb::t_1e2ba656552df3 287-288
+docs/superpowers/plans/2026-09-05-query-navigation-rail.md
+  s_ae3299e49115eb::t_64f3a5e16b7264 1-231
+packages/core/src/domain/session/SessionQueryIndex.ts
+  s_ae3299e49115eb::t_4136bd4267393a 47-48,62-64
+  s_ae3299e49115eb::t_ea5e8f03dcaa4f 1-19,21-27,29-46,49-56,68-126
+  s_ae3299e49115eb::t_267a65ddf15313 20
+  s_ae3299e49115eb::t_6d790456d56d32 28,57-61,65-67
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "4339ba401704c41050a10f80fcb250d72ed81080",
+  "prompts": {},
+  "sessions": {
+    "s_1dd1c6eec51a4a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a07248-b138-7443-9868-ef34af401371",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_68254ec11fb4c4": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a07247-e612-72c3-987c-437e7b2bca0f",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_8f17efd939a041": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a07247-0f4a-7352-90f7-d127d20ddfc0",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_ae3299e49115eb": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a071de-7deb-77e2-83af-d3590ef1f2d8",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
