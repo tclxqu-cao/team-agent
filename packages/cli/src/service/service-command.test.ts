@@ -39,6 +39,50 @@ describe("runServiceCommand", () => {
     expect(log).toHaveBeenCalledWith("Open: https://ready.example/web");
   });
 
+  it("prints a scannable QR code after the URL on interactive terminals", async () => {
+    const log = vi.fn();
+    await runServiceCommand({ ...options("start"), qr: true }, {
+      platform: "darwin",
+      nodePath: "/node",
+      cliPath: "/agentroam.mjs",
+      version: "test",
+      isTTY: true,
+      log,
+      controller: controller({ start: vi.fn(async () => ({ status: "ready", accessUrl: "https://ready.example/web" })) }),
+    });
+    const openIndex = log.mock.calls.findIndex(([line]) => line === "Open: https://ready.example/web");
+    expect(openIndex).toBeGreaterThanOrEqual(0);
+    const qr = log.mock.calls[openIndex + 2]?.[0] as string | undefined;
+    expect(qr).toMatch(/[▀▄█]/);
+    expect(qr).toContain("\n");
+  });
+
+  it("keeps service output QR-free when piped or when --no-qr is set", async () => {
+    const log = vi.fn();
+    const start = vi.fn(async () => ({ status: "ready", accessUrl: "https://ready.example/web" }));
+    await runServiceCommand({ ...options("start"), qr: true }, {
+      platform: "darwin",
+      nodePath: "/node",
+      cliPath: "/agentroam.mjs",
+      version: "test",
+      isTTY: false,
+      log,
+      controller: controller({ start }),
+    });
+    await runServiceCommand(options("start"), {
+      platform: "darwin",
+      nodePath: "/node",
+      cliPath: "/agentroam.mjs",
+      version: "test",
+      isTTY: true,
+      log,
+      controller: controller({ start }),
+    });
+    const lines = log.mock.calls.map(([line]) => line);
+    expect(lines).toContain("Open: https://ready.example/web");
+    expect(lines.some((line) => /[▀▄█]/.test(String(line)))).toBe(false);
+  });
+
   it("pins the selected Node directory ahead of the inherited service PATH", () => {
     expect(buildServiceEnvironmentPath(
       "/Users/test/.nvm/versions/node/v22.22.2/bin/node",

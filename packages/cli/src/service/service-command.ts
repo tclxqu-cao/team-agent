@@ -2,6 +2,7 @@ import { delimiter, dirname, isAbsolute, resolve, win32 } from "node:path";
 import type { CliOptions } from "../args.js";
 import { resolveCodexRuntime, type CodexRuntimeResolution, type ResolveCodexRuntimeOptions } from "../codex-runtime-manager.js";
 import { detectPlatform } from "../platform.js";
+import { renderQr } from "../qr.js";
 import { MacLaunchAgent } from "./macos-launch-agent.js";
 import type { ServiceConfig } from "./service-files.js";
 import type { ServiceController } from "./service-controller.js";
@@ -19,6 +20,7 @@ interface ServiceCommandContext {
   codexResolver?: (options: ResolveCodexRuntimeOptions) => Promise<CodexRuntimeResolution>;
   now?: () => Date;
   log?: (line: string) => void;
+  isTTY?: boolean;
   controller?: ServiceController;
   launchAgent?: MacLaunchAgent;
 }
@@ -26,6 +28,13 @@ interface ServiceCommandContext {
 export async function runServiceCommand(options: CliOptions, context: ServiceCommandContext): Promise<void> {
   const platform = context.platform ?? process.platform;
   const log = context.log ?? console.log;
+  const stdoutIsTTY = context.isTTY ?? process.stdout.isTTY === true;
+  const logAccessUrl = async (accessUrl: string): Promise<void> => {
+    log(`Open: ${accessUrl}`);
+    if (!options.qr || !stdoutIsTTY) return;
+    log("");
+    log(await renderQr(accessUrl));
+  };
   const controller = context.controller ?? context.launchAgent ?? createController(platform, context.homeDir);
 
   switch (options.serviceAction) {
@@ -72,14 +81,14 @@ export async function runServiceCommand(options: CliOptions, context: ServiceCom
       };
       const { definition, state } = await controller.install(config);
       log(`✓ AgentRoam service installed: ${definition}`);
-      if (state?.status === "ready" && state.accessUrl) log(`Open: ${state.accessUrl}`);
+      if (state?.status === "ready" && state.accessUrl) await logAccessUrl(state.accessUrl);
       else log("Service is starting. Run `agentroam service url` shortly.");
       return;
     }
     case "start": {
       const state = await controller.start();
       log("✓ AgentRoam service started");
-      if (state?.status === "ready" && state.accessUrl) log(`Open: ${state.accessUrl}`);
+      if (state?.status === "ready" && state.accessUrl) await logAccessUrl(state.accessUrl);
       return;
     }
     case "stop":
@@ -98,7 +107,7 @@ export async function runServiceCommand(options: CliOptions, context: ServiceCom
         log(`Root: ${status.config.roots.join(", ")}`);
       }
       if (status.running && status.state?.status === "ready" && status.state.accessUrl) {
-        log(`Open: ${status.state.accessUrl}`);
+        await logAccessUrl(status.state.accessUrl);
       }
       return;
     }
@@ -116,7 +125,7 @@ export async function runServiceCommand(options: CliOptions, context: ServiceCom
     case "restart": {
       const state = await controller.restart();
       log("✓ AgentRoam service restarted");
-      if (state?.status === "ready" && state.accessUrl) log(`Open: ${state.accessUrl}`);
+      if (state?.status === "ready" && state.accessUrl) await logAccessUrl(state.accessUrl);
       return;
     }
     case "uninstall": {

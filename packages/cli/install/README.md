@@ -24,6 +24,8 @@ Run the installer from the project directory AgentRoam should expose, or set `AG
 
 The installer registers and starts the service after Node, CLI, and `doctor` validation. When a previous AgentRoam user service is installed, the new CLI stops it, waits for its process and platform registration to exit, removes only the old service registration, and then registers the replacement. Session data, pairing state, managed runtimes, and logs remain in the data directory. While foreground AgentRoam or the service is running, it prevents idle system sleep but still allows the display to dim and turn off. Lid close, explicit sleep, hibernation, shutdown, and low-battery forced sleep remain controlled by the operating system.
 
+On interactive terminals, `service install`, `start`, `status`, and `restart` print a scannable QR code beside the `Open:` URL. Piped or redirected output stays plain text, and `agentroam service install --no-qr` suppresses the code. `service url` always prints only the raw URL for scripting.
+
 Use the installer for first installation, upgrades, and repair. Use these commands for routine control:
 
 ```text
