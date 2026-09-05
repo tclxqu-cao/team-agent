@@ -146,6 +146,24 @@ export interface RuntimeQuestionAnswer {
   selectedIndices?: number[];
 }
 
+/** Reasoning effort levels accepted by native runtimes (no "off" — that is customer-agent only). */
+export type NativeReasoningEffort = "low" | "medium" | "high" | "xhigh" | "max";
+
+/** Model a turn should run on. `providerID` is required by runtimes that namespace models per provider (opencode). */
+export interface RuntimeModelSelection {
+  id: string;
+  providerID?: string;
+}
+
+/** A model offered by a runtime's own connection, as surfaced in the composer model picker. */
+export interface RuntimeModelInfo {
+  id: string;
+  providerID?: string;
+  displayName?: string;
+  description?: string;
+  reasoningEfforts?: NativeReasoningEffort[];
+}
+
 /**
  * Per-turn values supplied by the shared native runtime broker. They are kept
  * separate from the session policy because a policy update must not alter an
@@ -154,6 +172,8 @@ export interface RuntimeQuestionAnswer {
 export interface RuntimeRunOptions {
   permissionMode?: ToolPermissionMode;
   brokerRunId?: string;
+  model?: RuntimeModelSelection;
+  reasoningEffort?: NativeReasoningEffort;
   goal?: {
     id: string;
     objective: string;
@@ -195,6 +215,8 @@ export interface AgentRuntimeAdapter {
   answerQuestion(questionId: string, answer: RuntimeQuestionAnswer): Promise<boolean>;
   archiveSession?(nativeSessionId: string): Promise<void>;
   delete?(nativeSessionId: string): Promise<void>;
+  /** Models the runtime's own connection offers; undefined when the runtime cannot enumerate them. */
+  listModels?(): Promise<RuntimeModelInfo[]>;
   dispose?(): Promise<void>;
 }
 

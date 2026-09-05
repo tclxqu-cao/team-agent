@@ -51,7 +51,10 @@ import type {
   ImportedAgentWorkspace,
   ImportedAgentWorkspaceRepository,
   ImportAgentWorkspaceResult,
+  NativeReasoningEffort,
   RuntimeHealth,
+  RuntimeModelInfo,
+  RuntimeModelSelection,
   RuntimeQuestionAnswer,
   RuntimeRunOptions,
   SessionCompatibility,
@@ -1317,6 +1320,7 @@ export class NativeRuntimeBrokerHost {
     goalId?: string,
     agentIds?: string[],
     agentName?: string,
+    runOverrides?: Pick<RuntimeRunOptions, "model" | "reasoningEffort">,
   ): Promise<BrokerRunStart> {
     this.state.assertSessionVisible(sessionId);
     const settlingExecution = this.activeExecutions.get(sessionId);
@@ -1344,7 +1348,7 @@ export class NativeRuntimeBrokerHost {
       controller,
       goalId,
     });
-    const execution = this.executeRun(run, images, agentIds, agentName);
+    const execution = this.executeRun(run, images, agentIds, agentName, runOverrides);
     this.activeExecutions.set(sessionId, execution);
     const clearExecution = () => {
       if (this.activeExecutions.get(sessionId) === execution) {
@@ -1357,6 +1361,10 @@ export class NativeRuntimeBrokerHost {
       snapshotRevision: run.nextSequence,
       permissionMode: run.permissionMode,
     };
+  }
+
+  async listModels(agentType: NativeAgentType): Promise<RuntimeModelInfo[]> {
+    return this.runtime.listModels(agentType);
   }
 
   async getGoals(
@@ -1557,6 +1565,7 @@ export class NativeRuntimeBrokerHost {
     images?: string[],
     agentIds?: string[],
     agentName?: string,
+    runOverrides?: Pick<RuntimeRunOptions, "model" | "reasoningEffort">,
   ): Promise<void> {
     let terminalSeen = false;
     let completed = false;
@@ -1565,6 +1574,8 @@ export class NativeRuntimeBrokerHost {
       const options: RuntimeRunOptions = {
         permissionMode: run.permissionMode,
         brokerRunId: run.runId,
+        ...(runOverrides?.model ? { model: runOverrides.model } : {}),
+        ...(runOverrides?.reasoningEffort ? { reasoningEffort: runOverrides.reasoningEffort } : {}),
         ...(run.goalId && activeItem?.id === run.goalId && sessionQueueItemKind(activeItem) === "goal" ? {
           goal: {
             id: run.goalId,
@@ -1796,7 +1807,12 @@ export class NativeRuntimeBrokerHost {
         stringParam(request.params, "input") || "",
         arrayOfStrings(request.params.images),
         controllerParam(request.params.controller),
+        undefined,
+        undefined,
+        undefined,
+        runOverridesParam(request.params),
       );
+      case "listModels": return this.listModels(nativeAgentTypeParam(request.params, "agentType"));
       case "snapshot": return this.snapshot(requireSessionId(sessionId), numberParam(request.params, "afterSequence") ?? 0);
       case "getGoals": return this.getGoals(
         requireSessionId(sessionId),
@@ -1955,8 +1971,24 @@ export class NativeRuntimeBrokerClient {
     return this.request("watchPath", { sessionId: id });
   }
 
-  async startRun(id: string, input: string, images?: string[], controller: NativeRuntimeController = "web"): Promise<BrokerRunStart> {
-    return this.request("startRun", { sessionId: id, input, images, controller });
+  async startRun(
+    id: string,
+    input: string,
+    images?: string[],
+    controller: NativeRuntimeController = "web",
+    runOverrides?: Pick<RuntimeRunOptions, "model" | "reasoningEffort">,
+  ): Promise<BrokerRunStart> {
+    return this.request("startRun", {
+      sessionId: id,
+      input,
+      images,
+      controller,
+      ...(runOverrides ? { runOverrides } : {}),
+    });
+  }
+
+  async listModels(agentType: NativeAgentType): Promise<RuntimeModelInfo[]> {
+    return this.request("listModels", { agentType });
   }
 
   async *run(
@@ -1966,8 +1998,9 @@ export class NativeRuntimeBrokerClient {
     _agentIds?: string[],
     _agentName?: string,
     controller: NativeRuntimeController = "desktop",
+    runOverrides?: Pick<RuntimeRunOptions, "model" | "reasoningEffort">,
   ): AsyncIterable<AgentEvent> {
-    const started = await this.startRun(id, input, images, controller);
+    const started = await this.startRun(id, input, images, controller, runOverrides);
     yield {
       type: "run_admitted",
       _nativeRunId: started.runId,
@@ -2254,6 +2287,7 @@ export class BrokerRuntimeAdapter implements AgentRuntimeAdapter {
     images?: string[],
     _agentIds?: string[],
     _agentName?: string,
+    options?: RuntimeRunOptions,
   ): AsyncIterable<AgentEvent> {
     return this.client.run(
       encodeUnifiedSessionId(this.agentType, nativeSessionId),
@@ -2262,7 +2296,14 @@ export class BrokerRuntimeAdapter implements AgentRuntimeAdapter {
       undefined,
       undefined,
       "desktop",
+      options?.model || options?.reasoningEffort
+        ? { ...(options.model ? { model: options.model } : {}), ...(options.reasoningEffort ? { reasoningEffort: options.reasoningEffort } : {}) }
+        : undefined,
     );
+  }
+
+  listModels(): Promise<RuntimeModelInfo[]> {
+    return this.client.listModels(this.agentType);
   }
 
   steer(nativeSessionId: string, input: string): Promise<boolean> {
@@ -2741,6 +2782,31 @@ function nativeAgentTypeParam(params: Record<string, unknown>, key: string): Nat
 function controllerParam(value: unknown): NativeRuntimeController {
   if (value === "desktop" || value === "web") return value;
   return "web";
+}
+
+const NATIVE_REASONING_EFFORTS: readonly NativeReasoningEffort[] = ["low", "medium", "high", "xhigh", "max"];
+
+function runOverridesParam(params: Record<string, unknown>): Pick<RuntimeRunOptions, "model" | "reasoningEffort"> | undefined {
+  const raw = params.runOverrides;
+  if (!raw || typeof raw !== "object") return undefined;
+  const overrides = raw as Record<string, unknown>;
+  const modelRaw = overrides.model;
+  let model: RuntimeModelSelection | undefined;
+  if (modelRaw && typeof modelRaw === "object") {
+    const candidate = modelRaw as Record<string, unknown>;
+    if (typeof candidate.id === "string" && candidate.id !== "") {
+      model = {
+        id: candidate.id,
+        ...(typeof candidate.providerID === "string" && candidate.providerID !== "" ? { providerID: candidate.providerID } : {}),
+      };
+    }
+  }
+  const reasoningEffort = NATIVE_REASONING_EFFORTS.find((effort) => effort === overrides.reasoningEffort);
+  if (!model && !reasoningEffort) return undefined;
+  return {
+    ...(model ? { model } : {}),
+    ...(reasoningEffort ? { reasoningEffort } : {}),
+  };
 }
 
 function queryParam(params: Record<string, unknown>): SessionHistoryQuery | undefined {

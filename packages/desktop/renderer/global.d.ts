@@ -81,6 +81,27 @@ export interface TodoItem {
 
 export type AgentType = "customer-agent" | "codex" | "claude-code" | "opencode";
 
+export type NativeReasoningEffort = "low" | "medium" | "high" | "xhigh" | "max";
+
+export interface RuntimeModelSelection {
+  id: string;
+  providerID?: string;
+}
+
+export interface RuntimeModelInfo {
+  id: string;
+  providerID?: string;
+  displayName?: string;
+  description?: string;
+  reasoningEfforts?: NativeReasoningEffort[];
+}
+
+/** Per-run model/effort the composer pins onto native runtime turns. */
+export interface NativeRunOptions {
+  model?: RuntimeModelSelection;
+  reasoningEffort?: NativeReasoningEffort;
+}
+
 export interface AgentWorkspace {
   agentType: AgentType;
   workspaceId: string;
@@ -199,7 +220,8 @@ export interface AgentApi {
   onTtsStreamEnd(callback: (payload: { generation: number }) => void): () => void;
   onTtsFlush(callback: (payload: { generation: number }) => void): () => void;
   onTtsEnd(callback: (payload: { generation: number }) => void): () => void;
-  run(input: string, sessionId: string, agentIds?: string[], agentName?: string, images?: string[]): Promise<unknown[]>;
+  run(input: string, sessionId: string, agentIds?: string[], agentName?: string, images?: string[], nativeOptions?: NativeRunOptions): Promise<unknown[]>;
+  listAgentModels(agentType: AgentType): Promise<{ agentType: AgentType; models: RuntimeModelInfo[]; supported?: boolean }>;
   steer(input: string, sessionId: string, agentName?: string): Promise<boolean>;
   abort(sessionId?: string): Promise<void>;
   answerQuestion(questionId: string, answer: string, selectedIndices?: number[]): Promise<boolean>;

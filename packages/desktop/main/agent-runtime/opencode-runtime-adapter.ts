@@ -32,6 +32,7 @@ import type {
   AgentWorkspace,
   CreateRuntimeSessionOptions,
   RuntimeHealth,
+  RuntimeModelInfo,
   RuntimeQuestionAnswer,
   RuntimeRunOptions,
   UnifiedSessionDetail,
@@ -132,6 +133,26 @@ export class OpenCodeRuntimeAdapter implements AgentRuntimeAdapter {
     } catch (error) {
       return { agentType: this.agentType, available: false, label: "OpenCode", error: errorMessage(error) };
     }
+  }
+
+  /** Models from the opencode server's own provider configuration, keyed by provider. */
+  async listModels(): Promise<RuntimeModelInfo[]> {
+    const client = await this.getClient();
+    const response = await client.config.providers({ throwOnError: true });
+    const providers = (response.data as { providers?: Array<{ id?: string; models?: Record<string, { name?: string } > }> } | undefined)?.providers ?? [];
+    const models: RuntimeModelInfo[] = [];
+    for (const provider of providers) {
+      if (!provider?.id) continue;
+      for (const [modelID, model] of Object.entries(provider.models ?? {})) {
+        if (!modelID) continue;
+        models.push({
+          id: modelID,
+          providerID: provider.id,
+          displayName: model?.name || `${provider.id}/${modelID}`,
+        });
+      }
+    }
+    return models;
   }
 
   async discoverSessions(): Promise<UnifiedSessionSummary[]> {
@@ -303,6 +324,9 @@ export class OpenCodeRuntimeAdapter implements AgentRuntimeAdapter {
         body: {
           messageID,
           parts: [{ type: "text", text: input }, ...imageParts],
+          ...(options?.model?.id && options.model.providerID
+            ? { model: { providerID: options.model.providerID, modelID: options.model.id } }
+            : {}),
         },
         throwOnError: true,
       });

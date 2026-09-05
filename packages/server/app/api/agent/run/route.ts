@@ -18,6 +18,8 @@ export async function POST(request: Request) {
       reasoningEffort?: "off" | "low" | "medium" | "high";
       maxIterations?: number;
       maxTokens?: number;
+      nativeModel?: { id: string; providerID?: string };
+      nativeReasoningEffort?: "low" | "medium" | "high" | "xhigh" | "max";
     };
 
     if (!body.input) {
@@ -29,7 +31,10 @@ export async function POST(request: Request) {
       const service = getNativeRuntimeService();
       // Reserve the broker run before replacing any replay state. A rejected
       // duplicate send must leave the live turn and the renderer draft intact.
-      const admission = await service.startRun(sessionId, body.input, body.images, "web");
+      const admission = await service.startRun(sessionId, body.input, body.images, "web", {
+        ...(body.nativeModel?.id ? { model: body.nativeModel } : {}),
+        ...(body.nativeReasoningEffort ? { reasoningEffort: body.nativeReasoningEffort } : {}),
+      });
       agentHost.resetExternalStream(sessionId);
       agentHost.publishExternal(sessionId, {
         type: "run_admitted",

@@ -1029,3 +1029,37 @@ async function drain(iterable: AsyncIterable<any>): Promise<any[]> {
   for await (const event of iterable) events.push(event);
   return events;
 }
+
+describe("Claude model & reasoning-effort overrides", () => {
+  it("forwards per-run model and effort into the SDK query options", async () => {
+    state.sessions = [sdkSession("cc-model")];
+    state.stream = [{ type: "result", subtype: "success", is_error: false, result: "done" }];
+    const adapter = new ClaudeRuntimeAdapter({ sessionRoot: "/tmp/claude-projects" });
+
+    await drain(adapter.run("cc-model", "hello", undefined, undefined, undefined, {
+      model: { id: "claude-opus-4-6" },
+      reasoningEffort: "high",
+    }));
+
+    expect(state.queryCalls[0].options.model).toBe("claude-opus-4-6");
+    expect(state.queryCalls[0].options.effort).toBe("high");
+  });
+
+  it("omits model and effort when the run carries none", async () => {
+    state.sessions = [sdkSession("cc-model")];
+    state.stream = [{ type: "result", subtype: "success", is_error: false, result: "done" }];
+    const adapter = new ClaudeRuntimeAdapter({ sessionRoot: "/tmp/claude-projects" });
+
+    await drain(adapter.run("cc-model", "hello"));
+
+    expect(state.queryCalls[0].options.model).toBeUndefined();
+    expect(state.queryCalls[0].options.effort).toBeUndefined();
+  });
+
+  it("exposes the stable model aliases for the picker", async () => {
+    const adapter = new ClaudeRuntimeAdapter({ sessionRoot: "/tmp/claude-projects" });
+    const models = await adapter.listModels();
+    expect(models.map((model) => model.id)).toEqual(["sonnet", "opus", "haiku"]);
+    expect(models.find((model) => model.id === "opus")?.reasoningEfforts).toContain("max");
+  });
+});

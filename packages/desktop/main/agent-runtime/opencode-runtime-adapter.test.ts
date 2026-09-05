@@ -172,3 +172,49 @@ describe("OpenCodeRuntimeAdapter", () => {
     await expect(result).resolves.toContainEqual({ type: "turn_aborted" });
   });
 });
+
+describe("OpenCode model selection", () => {
+  it("sends the provider-scoped model with the prompt when provided", async () => {
+    const fixture = mockServer();
+    const adapter = new OpenCodeRuntimeAdapter({ server: fixture.server });
+    const result = drain(adapter.run("ses_1", "hello", undefined, undefined, undefined, {
+      model: { id: "gpt-5.6-sol", providerID: "openai" },
+    }));
+    await vi.waitFor(() => expect(fixture.client.session.promptAsync).toHaveBeenCalled());
+    expect(fixture.client.session.promptAsync).toHaveBeenCalledWith(expect.objectContaining({
+      body: expect.objectContaining({ model: { providerID: "openai", modelID: "gpt-5.6-sol" } }),
+    }));
+    fixture.emit({ type: "session.idle", properties: { sessionID: "ses_1" } });
+    await result;
+  });
+
+  it("omits the model field when the run carries none", async () => {
+    const fixture = mockServer();
+    const adapter = new OpenCodeRuntimeAdapter({ server: fixture.server });
+    const result = drain(adapter.run("ses_1", "hello"));
+    await vi.waitFor(() => expect(fixture.client.session.promptAsync).toHaveBeenCalled());
+    const call = (vi.mocked(fixture.client.session.promptAsync).mock.calls as unknown as Array<[{ body: Record<string, unknown> }]>)[0]?.[0];
+    expect(call.body.model).toBeUndefined();
+    fixture.emit({ type: "session.idle", properties: { sessionID: "ses_1" } });
+    await result;
+  });
+
+  it("flattens provider catalogs into provider-scoped picker models", async () => {
+    const fixture = mockServer();
+    (fixture.client as Record<string, unknown>).config = {
+      providers: vi.fn(async () => ({ data: {
+        providers: [
+          { id: "openai", name: "OpenAI", models: { "gpt-5.6-sol": { name: "GPT-5.6-Sol" }, "gpt-5-mini": {} } },
+          { id: "anthropic", name: "Anthropic", models: { "claude-opus-4-6": { name: "Claude Opus 4.6" } } },
+        ],
+      } })),
+    };
+    const adapter = new OpenCodeRuntimeAdapter({ server: fixture.server });
+    const models = await adapter.listModels();
+    expect(models).toEqual([
+      { id: "gpt-5.6-sol", providerID: "openai", displayName: "GPT-5.6-Sol" },
+      { id: "gpt-5-mini", providerID: "openai", displayName: "openai/gpt-5-mini" },
+      { id: "claude-opus-4-6", providerID: "anthropic", displayName: "Claude Opus 4.6" },
+    ]);
+  });
+});

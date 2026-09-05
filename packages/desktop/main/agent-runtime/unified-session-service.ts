@@ -15,6 +15,7 @@ import type {
   ImportAgentWorkspaceResult,
   CreateRuntimeSessionOptions,
   RuntimeHealth,
+  RuntimeModelInfo,
   RuntimeQuestionAnswer,
   RuntimeRunOptions,
   UnifiedSessionDetail,
@@ -92,6 +93,18 @@ export class UnifiedSessionService {
 
   getCachedHealth(): RuntimeHealth[] {
     return this.healthCache;
+  }
+
+  /** Models offered by one runtime's own connection (codex account, opencode providers, …). */
+  async listModels(agentType: AgentType): Promise<RuntimeModelInfo[]> {
+    const adapter = this.adapters.get(agentType);
+    if (!adapter || !adapter.listModels) {
+      throw new RuntimeSessionError(
+        `Runtime ${agentType} does not expose a model list`,
+        "OPERATION_NOT_SUPPORTED",
+      );
+    }
+    return adapter.listModels();
   }
 
   async list(projectId?: string): Promise<UnifiedSessionSummary[]> {

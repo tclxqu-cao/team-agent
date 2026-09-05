@@ -853,10 +853,14 @@ ipcMain.handle("wake:conversation", (_event, on: boolean) => {
 
 // ── IPC: Agent control ──
 
-ipcMain.handle("agent:run", async (_event, input: string, sessionId: string, agentIds?: string[], agentName?: string, images?: string[]) => {
+ipcMain.handle("agent:run", async (_event, input: string, sessionId: string, agentIds?: string[], agentName?: string, images?: string[], nativeOptions?: { model?: { id: string; providerID?: string }; reasoningEffort?: "low" | "medium" | "high" | "xhigh" | "max" }) => {
   try {
     const agentType = unifiedSessions.agentTypeFor(sessionId);
-    for await (const agentEvent of unifiedSessions.run(sessionId, input, images, agentIds, agentName)) {
+    const runOptions = agentType === "customer-agent" ? undefined : {
+      ...(nativeOptions?.model?.id ? { model: nativeOptions.model } : {}),
+      ...(nativeOptions?.reasoningEffort ? { reasoningEffort: nativeOptions.reasoningEffort } : {}),
+    };
+    for await (const agentEvent of unifiedSessions.run(sessionId, input, images, agentIds, agentName, runOptions)) {
       // Customer Agent already publishes through AgentHost (including cron and
       // sub-agent events). Native adapters publish here with the unified ID.
       if (agentType !== "customer-agent") {
@@ -872,6 +876,20 @@ ipcMain.handle("agent:run", async (_event, input: string, sessionId: string, age
       _sid: sessionId,
     });
   }
+});
+
+ipcMain.handle("agent:list-models", (_event, agentType: string) => {
+  if (agentType !== "codex" && agentType !== "claude-code" && agentType !== "opencode") {
+    return { agentType, models: [], supported: false };
+  }
+  return unifiedSessions.listModels(agentType)
+    .then((models) => ({ agentType, models }))
+    .catch((err) => {
+      if (err instanceof RuntimeSessionError && err.code === "OPERATION_NOT_SUPPORTED") {
+        return { agentType, models: [], supported: false };
+      }
+      throw err;
+    });
 });
 
 ipcMain.handle("agent:abort", (_event, sessionId?: string) => {

@@ -1274,3 +1274,91 @@ async function drain(iterable: AsyncIterable<unknown>): Promise<unknown[]> {
   for await (const event of iterable) events.push(event);
   return events;
 }
+
+describe("Codex model & reasoning-effort overrides", () => {
+  const baseThread = {
+    id: "cx-model",
+    parentThreadId: null,
+    preview: "model",
+    name: "model",
+    createdAt: 1_788_220_800,
+    updatedAt: 1_788_220_800,
+    status: { type: "idle" },
+    path: null,
+    cwd: "/tmp",
+    source: { custom: "customer-agent" },
+    turns: [],
+  };
+
+  function clientFor(requests: Array<{ method: string; params: any }>) {
+    let notify: (message: any) => void = () => undefined;
+    return {
+      onNotification: (handler: typeof notify) => {
+        notify = handler;
+        return () => undefined;
+      },
+      onExit: () => () => undefined,
+      setServerRequestHandler: () => undefined,
+      request: async (method: string, params: any) => {
+        requests.push({ method, params });
+        if (method === "thread/read") return { thread: baseThread };
+        if (method === "thread/resume") return { thread: baseThread };
+        if (method === "model/list") {
+          return {
+            data: [
+              { id: "gpt-5.6-sol", displayName: "GPT-5.6-Sol", description: "Latest", supportedReasoningEfforts: [{ reasoningEffort: "low" }, { reasoningEffort: "medium" }, { reasoningEffort: "high" }, { reasoningEffort: "xhigh" }] },
+              { id: "secret", hidden: true },
+              { id: "plain-model" },
+            ],
+          };
+        }
+        if (method === "turn/start") {
+          queueMicrotask(() => notify({
+            method: "turn/completed",
+            params: { threadId: baseThread.id, turn: { id: "turn-model", status: "completed", items: [] } },
+          }));
+          return { turn: { id: "turn-model" } };
+        }
+        if (method === "thread/unsubscribe") return {};
+        throw new Error(`unexpected request: ${method}`);
+      },
+    };
+  }
+
+  it("forwards per-run model and effort onto turn/start", async () => {
+    const requests: Array<{ method: string; params: any }> = [];
+    const adapter = new CodexRuntimeAdapter({ client: clientFor(requests) as never });
+    await drain(adapter.run("cx-model", "hi", undefined, undefined, undefined, {
+      model: { id: "gpt-5.6-sol" },
+      reasoningEffort: "xhigh",
+    }));
+    const turnStart = requests.find((request) => request.method === "turn/start");
+    expect(turnStart?.params.model).toBe("gpt-5.6-sol");
+    expect(turnStart?.params.effort).toBe("xhigh");
+  });
+
+  it("omits model and effort when the run carries none", async () => {
+    const requests: Array<{ method: string; params: any }> = [];
+    const adapter = new CodexRuntimeAdapter({ client: clientFor(requests) as never });
+    await drain(adapter.run("cx-model", "hi"));
+    const turnStart = requests.find((request) => request.method === "turn/start");
+    expect(turnStart?.params.model).toBeUndefined();
+    expect(turnStart?.params.effort).toBeUndefined();
+  });
+
+  it("lists connection models with supported reasoning efforts and drops hidden rows", async () => {
+    const requests: Array<{ method: string; params: any }> = [];
+    const adapter = new CodexRuntimeAdapter({ client: clientFor(requests) as never });
+    const models = await adapter.listModels();
+    expect(requests.find((request) => request.method === "model/list")).toBeTruthy();
+    expect(models).toEqual([
+      {
+        id: "gpt-5.6-sol",
+        displayName: "GPT-5.6-Sol",
+        description: "Latest",
+        reasoningEfforts: ["low", "medium", "high", "xhigh"],
+      },
+      { id: "plain-model", displayName: "plain-model" },
+    ]);
+  });
+});

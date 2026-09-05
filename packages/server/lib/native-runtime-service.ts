@@ -23,7 +23,10 @@ import type {
   AgentWorkspace,
   CreateRuntimeSessionOptions,
   ImportAgentWorkspaceResult,
+  NativeReasoningEffort,
   RuntimeHealth,
+  RuntimeModelInfo,
+  RuntimeModelSelection,
   RuntimeQuestionAnswer,
   UnifiedSessionDetail,
   UnifiedSessionSummary,
@@ -59,9 +62,16 @@ function ensureNativeCliPath(): void {
   }
 }
 
+/** Model/effort the UI pins onto one native run (per agent type, persisted client-side). */
+export interface NativeRunOverrides {
+  model?: RuntimeModelSelection;
+  reasoningEffort?: NativeReasoningEffort;
+}
+
 /** Operations the web application needs from a native runtime host. */
 export interface NativeRuntimePort {
   health(): Promise<RuntimeHealth[]>;
+  listModels(agentType: Exclude<AgentType, "customer-agent">): Promise<RuntimeModelInfo[]>;
   listWorkspaces(agentType: Exclude<AgentType, "customer-agent">, query?: WorkspaceQuery): Promise<WorkspacePage<AgentWorkspace>>;
   listWorkspaceSessions(
     agentType: Exclude<AgentType, "customer-agent">,
@@ -89,6 +99,7 @@ export interface NativeRuntimePort {
     input: string,
     images?: string[],
     controller?: NativeRuntimeController,
+    runOverrides?: NativeRunOverrides,
   ): Promise<BrokerRunStart>;
   subscribe?(
     id: string,
@@ -147,6 +158,10 @@ export class NativeRuntimeService implements NativeRuntimePort {
 
   health(): Promise<RuntimeHealth[]> {
     return this.runtime.health();
+  }
+
+  listModels(agentType: Exclude<AgentType, "customer-agent">): Promise<RuntimeModelInfo[]> {
+    return this.runtime.listModels(agentType);
   }
 
   listWorkspaces(
@@ -287,11 +302,12 @@ export class NativeRuntimeService implements NativeRuntimePort {
     input: string,
     images?: string[],
     controller: NativeRuntimeController = "web",
+    runOverrides?: NativeRunOverrides,
   ): Promise<BrokerRunStart> {
     if (!this.runtime.startRun) {
       throw new RuntimeSessionError("Native runtime broker is unavailable", "RUNTIME_UNAVAILABLE");
     }
-    return this.runtime.startRun(id, input, images, controller);
+    return this.runtime.startRun(id, input, images, controller, runOverrides);
   }
 
   async subscribe(

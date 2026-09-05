@@ -45,7 +45,7 @@ describe("shared composer panel layout", () => {
     expect(chatView).toContain('className="composer-text-input web-native-composer-textarea"');
     expect(chatView).toContain('className="web-native-composer-toolbar"');
     expect(chatView).toContain('className="web-native-context-control"');
-    expect(chatView).toContain('className="web-native-model-control"');
+    expect(chatView).toContain("web-native-model-control");
     expect(chatView).not.toContain("粘贴截图");
     expect(chatView).toContain('window.addEventListener("paste", handlePaste)');
     expect(chatView).toContain('type="file"');

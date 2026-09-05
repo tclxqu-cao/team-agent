@@ -411,6 +411,25 @@
 .web-native-model-control select:disabled {
   opacity: 1;
 }
+.web-native-model-agent {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding-left: 8px;
+  color: var(--text-primary);
+  opacity: 0.75;
+}
+.web-native-model-agent svg {
+  flex: none;
+}
+.web-native-model-agent-name {
+  font: 500 14px/normal var(--font-body);
+  white-space: nowrap;
+}
+.web-native-model-control--native select {
+  padding-left: 2px;
+}
 .web-native-runtime-status > svg,
 .web-native-agent-status > svg,
 .web-native-add-button > svg,
@@ -457,5 +476,11 @@
   }
   .web-native-model-control {
     flex-basis: 98px;
+  }
+  .web-native-model-agent-name {
+    display: none;
+  }
+  .web-native-model-agent {
+    padding-left: 6px;
   }
 }

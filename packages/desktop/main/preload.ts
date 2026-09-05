@@ -76,8 +76,9 @@ contextBridge.exposeInMainWorld("agentApi", {
   },
 
   // Agent control
-  run: (input: string, sessionId: string, agentIds?: string[], agentName?: string, images?: string[]) =>
-    ipcRenderer.invoke("agent:run", input, sessionId, agentIds, agentName, images),
+  run: (input: string, sessionId: string, agentIds?: string[], agentName?: string, images?: string[], nativeOptions?: unknown) =>
+    ipcRenderer.invoke("agent:run", input, sessionId, agentIds, agentName, images, nativeOptions),
+  listAgentModels: (agentType: string) => ipcRenderer.invoke("agent:list-models", agentType),
   steer: (input: string, sessionId: string, agentName?: string) =>
     ipcRenderer.invoke("agent:steer", input, sessionId, agentName),
   abort: (sessionId?: string) => ipcRenderer.invoke("agent:abort", sessionId),

@@ -522,3 +522,22 @@ async function drain(iterable: AsyncIterable<AgentEvent>): Promise<AgentEvent[]>
   for await (const event of iterable) events.push(event);
   return events;
 }
+
+describe("UnifiedSessionService.listModels", () => {
+  it("forwards to the owning adapter", async () => {
+    const codex = adapter("codex", []);
+    (codex as unknown as Record<string, unknown>).listModels = vi.fn(async () => [{ id: "gpt-5.6-sol" }]);
+    const service = new UnifiedSessionService([codex], async () => []);
+
+    await expect(service.listModels("codex")).resolves.toEqual([{ id: "gpt-5.6-sol" }]);
+    expect(codex.listModels).toHaveBeenCalled();
+  });
+
+  it("reports OPERATION_NOT_SUPPORTED for runtimes without a model list", async () => {
+    const codex = adapter("codex", []);
+    const service = new UnifiedSessionService([codex], async () => []);
+
+    await expect(service.listModels("codex")).rejects.toMatchObject({ code: "OPERATION_NOT_SUPPORTED" });
+    await expect(service.listModels("customer-agent")).rejects.toMatchObject({ code: "OPERATION_NOT_SUPPORTED" });
+  });
+});

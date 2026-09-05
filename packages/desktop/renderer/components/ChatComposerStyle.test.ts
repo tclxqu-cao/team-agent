@@ -28,21 +28,25 @@ describe("shared Electron and Web composer", () => {
   });
 
   it("keeps model switching without a redundant dropdown chevron", () => {
-    const start = chatView.indexOf('className="web-native-model-control"');
+    const start = chatView.indexOf("web-native-model-control");
     const end = chatView.indexOf("{isLocallyRunning ? (", start);
     const modelControl = chatView.slice(start, end);
 
     expect(start).toBeGreaterThan(-1);
     expect(modelControl).toContain('aria-label="当前模型"');
     expect(modelControl).toContain("switchActiveProfile(event.target.value)");
-    expect(modelControl).not.toContain("<svg");
+    // Native runtimes get a brand icon + agent name beside the picker, never a chevron icon.
+    expect(modelControl).toContain("<AgentBrandIcon");
+    expect(modelControl).toContain("web-native-model-agent-name");
+    expect(modelControl).not.toContain("ChevronDown");
   });
 
   it("keeps the model chooser compact and the reasoning trigger icon-only", () => {
     expect(css).toContain("max-width: 180px");
     expect(css).toContain("flex: 1 1 120px");
     expect(css).toContain("font: 500 15px/normal var(--font-body)");
-    expect(chatView).not.toContain("web-native-effort-bars");
+    expect(css).toContain(".web-native-model-agent");
+    expect(css).not.toContain("web-native-effort-bars");
     expect(css).not.toContain(".web-native-effort-bars");
   });
 
@@ -54,7 +58,7 @@ describe("shared Electron and Web composer", () => {
     expect(chatView).toContain('type="file"');
     expect(chatView).toContain("fileInputRef.current?.click()");
     expect(chatView).toContain('className="web-native-context-control"');
-    expect(chatView).toContain('className="web-native-model-control"');
+    expect(chatView).toContain("web-native-model-control");
     expect(chatView).toContain('className="web-native-stop-button"');
     expect(chatView).toContain('aria-label={shouldQueueMessage ? "排队发送" : "发送"}');
   });

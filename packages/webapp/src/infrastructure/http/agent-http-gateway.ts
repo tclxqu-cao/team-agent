@@ -82,6 +82,7 @@ export class AgentHttpGateway {
     _agentIds?: string[],
     _agentName?: string,
     images?: string[],
+    nativeOptions?: { model?: { id: string; providerID?: string }; reasoningEffort?: string },
   ): Promise<unknown[]> {
     const hadStream = this.streams.has(sessionId);
     const hadPendingRun = this.pendingRuns.has(sessionId);
@@ -106,6 +107,8 @@ export class AgentHttpGateway {
         reasoningEffort: this.settings.getReasoningEffort(),
         maxIterations: limits.maxIterations,
         maxTokens: limits.maxTokens,
+        ...(nativeOptions?.model?.id ? { nativeModel: nativeOptions.model } : {}),
+        ...(nativeOptions?.reasoningEffort ? { nativeReasoningEffort: nativeOptions.reasoningEffort } : {}),
       });
       if (typeof started.snapshotRevision === "number") {
         this.rememberNativeSnapshot(sessionId, started.snapshotRevision, started.runId);
@@ -412,6 +415,10 @@ export class AgentHttpGateway {
 
   async getRuntimeHealth(): Promise<unknown[]> {
     return this.http.get<unknown[]>("/api/agent/runtime-health");
+  }
+
+  async listAgentModels(agentType: string): Promise<{ agentType: string; models: unknown[]; supported?: boolean }> {
+    return this.http.get(`/api/agent/models?agentType=${encodeURIComponent(agentType)}`);
   }
 
   // ── Host projects (brokered through the parent WebSocket) ─────────────

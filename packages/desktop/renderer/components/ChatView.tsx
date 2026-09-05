@@ -2,7 +2,15 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { createPortal } from "react-dom";
 import type { AgentEvent, RuntimeProgress } from "@agent/core";
 import { Check, Copy, CornerUpRight, FileText, GripVertical, Pencil, RefreshCw, Square, Target, Trash2, Volume2 } from "lucide-react";
-import type { SessionGoalState } from "../global";
+import AgentBrandIcon from "./AgentBrandIcon";
+import {
+  isNativeAgentType,
+  loadNativeRunPref,
+  nativeModelFromKey,
+  nativeModelKey,
+  saveNativeRunPref,
+  type NativeAgentRunPref,
+} from "../lib/native-agent-run-prefs";
 import {
   findLatestContextUsage,
   reduceNativeSubagentActivities,
@@ -330,7 +338,7 @@ import {
   isOccupiedSessionRecovery,
   type OccupiedSessionError,
 } from "../lib/occupied-session-fork";
-import type { AgentType, ToolPermissionMode, UnifiedSessionSummary } from "../global";
+import type { AgentType, NativeReasoningEffort, RuntimeModelInfo, RuntimeModelSelection, SessionGoalState, ToolPermissionMode, UnifiedSessionSummary } from "../global";
 
 interface ChatViewProps {
   activeAgentType?: AgentType;
@@ -371,6 +379,35 @@ const EFFORT_OPTIONS: Array<{ value: "off" | "low" | "medium" | "high"; label: s
   { value: "high", label: "高" },
 ];
 const EFFORT_LABELS = Object.fromEntries(EFFORT_OPTIONS.map((o) => [o.value, o.label])) as Record<"off" | "low" | "medium" | "high", string>;
+
+/** One pickable model in the native-runtime composer dropdown. */
+interface ComposerModelOption {
+  key: string;
+  label: string;
+  model: RuntimeModelSelection;
+  reasoningEfforts?: NativeReasoningEffort[];
+}
+
+const NATIVE_EFFORT_LABELS: Record<NativeReasoningEffort, string> = {
+  low: "低",
+  medium: "中",
+  high: "高",
+  xhigh: "超高",
+  max: "最大",
+};
+
+const NATIVE_AGENT_LABELS: Record<Exclude<AgentType, "customer-agent">, string> = {
+  codex: "Codex",
+  "claude-code": "Claude Code",
+  opencode: "OpenCode",
+};
+
+/** Settings profiles only transfer to a runtime whose provider they match (opencode understands all providers). */
+function profileProviderMatches(provider: string, agentType: AgentType): boolean {
+  if (agentType === "codex") return provider === "openai";
+  if (agentType === "claude-code") return provider === "anthropic";
+  return false;
+}
 
 const PERMISSION_OPTIONS: Array<{
   value: ToolPermissionMode;
@@ -451,6 +488,95 @@ export default function ChatView({
   const [compatibilityFailure, setCompatibilityFailure] = useState<string | null>(null);
   const viewSessionId = selectedSessionId || sessionId;
   const isNativeRuntime = isNativeRuntimeSelection(sessionSummary, activeAgentType);
+  const composerAgentType: AgentType = sessionSummary?.agentType ?? activeAgentType;
+
+  // ── Native runtime model & reasoning-effort picker ──────────────────────
+  // The choice is per agent type, lives in localStorage, and rides along with
+  // every native run (see startRun); the model list comes from each runtime's
+  // own connection via /api/agent/models.
+  const [nativeModels, setNativeModels] = useState<RuntimeModelInfo[]>([]);
+  const nativeModelsAgentRef = useRef<AgentType | null>(null);
+  const [nativePref, setNativePref] = useState<NativeAgentRunPref>(() => loadNativeRunPref(composerAgentType));
+  const [nativeEffortMenuOpen, setNativeEffortMenuOpen] = useState(false);
+  const nativeEffortMenuRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    setNativePref(loadNativeRunPref(composerAgentType));
+    setNativeEffortMenuOpen(false);
+  }, [composerAgentType]);
+  useEffect(() => {
+    if (!isNativeRuntime || !window.agentApi?.listAgentModels) return;
+    if (nativeModelsAgentRef.current === composerAgentType) return;
+    nativeModelsAgentRef.current = composerAgentType;
+    setNativeModels([]);
+    void window.agentApi.listAgentModels(composerAgentType)
+      .then((result) => setNativeModels(result.models ?? []))
+      .catch(() => {
+        setNativeModels([]);
+        // Allow a retry when the composer renders this agent type again.
+        nativeModelsAgentRef.current = null;
+      });
+  }, [isNativeRuntime, composerAgentType]);
+  useEffect(() => {
+    if (!nativeEffortMenuOpen) return;
+    const onDown = (event: MouseEvent) => {
+      if (nativeEffortMenuRef.current && !nativeEffortMenuRef.current.contains(event.target as Node)) {
+        setNativeEffortMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [nativeEffortMenuOpen]);
+  const updateNativePref = useCallback((patch: NativeAgentRunPref) => {
+    setNativePref((prev) => {
+      const next = { ...prev, ...patch };
+      saveNativeRunPref(composerAgentType, next);
+      return next;
+    });
+  }, [composerAgentType]);
+  const runtimeModelOptions = useMemo<ComposerModelOption[]>(() => {
+    if (!isNativeRuntime) return [];
+    return nativeModels.map((model) => ({
+      key: nativeModelKey(model),
+      label: model.displayName || model.id,
+      model: { id: model.id, ...(model.providerID ? { providerID: model.providerID } : {}) },
+      reasoningEfforts: model.reasoningEfforts,
+    }));
+  }, [isNativeRuntime, nativeModels]);
+  const profileModelOptions = useMemo<ComposerModelOption[]>(() => {
+    if (!isNativeRuntime) return [];
+    return (profiles ?? [])
+      .filter((profile) => profile.modelId?.trim())
+      .filter((profile) => composerAgentType === "opencode" || profileProviderMatches(profile.provider, composerAgentType))
+      .map((profile) => ({
+        key: composerAgentType === "opencode"
+          ? nativeModelKey({ id: profile.modelId, providerID: profile.provider })
+          : profile.modelId,
+        label: profile.name || profile.modelId,
+        model: {
+          id: profile.modelId,
+          ...(composerAgentType === "opencode" ? { providerID: profile.provider } : {}),
+        },
+      }));
+  }, [isNativeRuntime, profiles, composerAgentType]);
+  const selectedNativeModelKey = nativePref.model?.id ? nativeModelKey(nativePref.model) : "";
+  const selectedModelEfforts = useMemo<NativeReasoningEffort[] | undefined>(() => {
+    const selected = runtimeModelOptions.find((option) => option.key === selectedNativeModelKey);
+    if (selected?.reasoningEfforts?.length) return selected.reasoningEfforts;
+    if (composerAgentType === "claude-code") return ["low", "medium", "high", "xhigh"];
+    return undefined;
+  }, [runtimeModelOptions, selectedNativeModelKey, composerAgentType]);
+  const nativeEffortOptions = useMemo<NativeReasoningEffort[]>(() => {
+    if (!isNativeRuntime) return [];
+    if (composerAgentType === "codex") return selectedModelEfforts ?? [];
+    if (composerAgentType === "claude-code") return selectedModelEfforts ?? ["low", "medium", "high", "xhigh"];
+    return [];
+  }, [isNativeRuntime, composerAgentType, selectedModelEfforts]);
+  const activeNativeEffort = nativePref.reasoningEffort
+    && nativeEffortOptions.includes(nativePref.reasoningEffort)
+    ? nativePref.reasoningEffort
+    : undefined;
+  const nativeModelPickerReady = runtimeModelOptions.length > 0 || profileModelOptions.length > 0;
+
   const hasDurableMessageQueue = sessionSummary?.messageQueueVersion === 1;
   const canSteerQueuedMessages = supportsMidTurnSteering(sessionSummary?.agentType);
   const compatibilityStatus = directCompatibilitySessionId === viewSessionId
@@ -2006,12 +2132,17 @@ export default function ChatView({
     setRunningSession(targetSessionId);
     try {
       if (window.agentApi) {
+        const runNativeOptions = isNativeRuntime && isNativeAgentType(composerAgentType) ? {
+          ...(nativePref.model?.id ? { model: nativePref.model } : {}),
+          ...(activeNativeEffort ? { reasoningEffort: activeNativeEffort } : {}),
+        } : undefined;
         await window.agentApi.run(
           message.content,
           targetSessionId,
           agentIds,
           message.agentName,
           message.images,
+          runNativeOptions,
         );
       }
     } catch (err) {
@@ -3900,21 +4031,55 @@ export default function ChatView({
                 />
               </div>
 
-              <label className="web-native-model-control" title="切换模型">
-                <select
-                  aria-label="当前模型"
-                  value={isNativeRuntime ? "" : activeProfileId}
-                  disabled={isNativeRuntime || profiles.length === 0}
-                  onChange={(event) => { void switchActiveProfile(event.target.value); }}
-                >
-                  {isNativeRuntime ? (
-                    <option value="">{sessionSummary?.agentType ?? "本地 Agent"}</option>
-                  ) : profiles.length === 0 ? (
-                    <option value="">未配置模型</option>
-                  ) : profiles.map((profile) => (
-                    <option key={profile.id} value={profile.id}>{profile.name || profile.modelId}</option>
-                  ))}
-                </select>
+              <label className={`web-native-model-control${isNativeRuntime ? " web-native-model-control--native" : ""}`} title="切换模型">
+                {isNativeRuntime && isNativeAgentType(composerAgentType) ? (
+                  <>
+                    <span
+                      className="web-native-model-agent"
+                      title={`${NATIVE_AGENT_LABELS[composerAgentType]} 会话`}
+                    >
+                      <AgentBrandIcon agentType={composerAgentType} size={14} />
+                      <span className="web-native-model-agent-name">{NATIVE_AGENT_LABELS[composerAgentType]}</span>
+                    </span>
+                    {nativeModelPickerReady && (
+                      <select
+                        aria-label="当前模型"
+                        title="切换模型"
+                        value={selectedNativeModelKey}
+                        onChange={(event) => {
+                          updateNativePref({
+                            model: event.target.value ? nativeModelFromKey(event.target.value) : undefined,
+                          });
+                        }}
+                      >
+                        <option value="">默认模型</option>
+                        {runtimeModelOptions.map((option) => (
+                          <option key={option.key} value={option.key}>{option.label}</option>
+                        ))}
+                        {profileModelOptions.length > 0 && (
+                          <optgroup label="设置里的模型">
+                            {profileModelOptions.map((option) => (
+                              <option key={option.key} value={option.key}>{option.label}</option>
+                            ))}
+                          </optgroup>
+                        )}
+                      </select>
+                    )}
+                  </>
+                ) : (
+                  <select
+                    aria-label="当前模型"
+                    value={activeProfileId}
+                    disabled={profiles.length === 0}
+                    onChange={(event) => { void switchActiveProfile(event.target.value); }}
+                  >
+                    {profiles.length === 0 ? (
+                      <option value="">未配置模型</option>
+                    ) : profiles.map((profile) => (
+                      <option key={profile.id} value={profile.id}>{profile.name || profile.modelId}</option>
+                    ))}
+                  </select>
+                )}
               </label>
 
               {isLocallyRunning ? (
@@ -3923,6 +4088,59 @@ export default function ChatView({
                     <rect x="6" y="6" width="12" height="12" rx="2" />
                   </svg>
                 </button>
+              ) : isNativeRuntime && nativeEffortOptions.length > 0 ? (
+                <div className="web-native-effort-wrap" ref={nativeEffortMenuRef}>
+                  <button
+                    type="button"
+                    className="web-native-effort-button"
+                    aria-expanded={nativeEffortMenuOpen}
+                    aria-label={`推理强度：${activeNativeEffort ? NATIVE_EFFORT_LABELS[activeNativeEffort] : "默认"}`}
+                    title={`推理强度：${activeNativeEffort ? NATIVE_EFFORT_LABELS[activeNativeEffort] : "默认"}（点击切换）`}
+                    onClick={() => setNativeEffortMenuOpen((open) => !open)}
+                  >
+                    <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <path d="M9.5 4.5A3.5 3.5 0 0 0 6 8v1a3 3 0 0 0-2 2.83V14a3 3 0 0 0 3 3h.25A3.75 3.75 0 0 0 11 20.75V3.25A3.75 3.75 0 0 0 9.5 4.5Z" />
+                      <path d="M14.5 4.5A3.5 3.5 0 0 1 18 8v1a3 3 0 0 1 2 2.83V14a3 3 0 0 1-3 3h-.25A3.75 3.75 0 0 1 13 20.75V3.25a3.75 3.75 0 0 1 1.5 1.25Z" />
+                    </svg>
+                  </button>
+                  {nativeEffortMenuOpen && (
+                    <div className="web-native-effort-menu" role="menu" aria-label="推理强度">
+                      <button
+                        type="button"
+                        role="menuitemradio"
+                        aria-checked={!activeNativeEffort}
+                        className={!activeNativeEffort ? "is-active" : undefined}
+                        onClick={() => {
+                          updateNativePref({ reasoningEffort: undefined });
+                          setNativeEffortMenuOpen(false);
+                        }}
+                      >
+                        <span className="web-native-effort-check" aria-hidden="true">
+                          {!activeNativeEffort ? "✓" : ""}
+                        </span>
+                        默认
+                      </button>
+                      {nativeEffortOptions.map((option) => (
+                        <button
+                          key={option}
+                          type="button"
+                          role="menuitemradio"
+                          aria-checked={activeNativeEffort === option}
+                          className={activeNativeEffort === option ? "is-active" : undefined}
+                          onClick={() => {
+                            updateNativePref({ reasoningEffort: option });
+                            setNativeEffortMenuOpen(false);
+                          }}
+                        >
+                          <span className="web-native-effort-check" aria-hidden="true">
+                            {activeNativeEffort === option ? "✓" : ""}
+                          </span>
+                          {NATIVE_EFFORT_LABELS[option]}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
               ) : isNativeRuntime ? (
                 <span className="web-native-agent-status" role="status" aria-label="Agent 空闲" title="Agent 空闲">
                   <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">

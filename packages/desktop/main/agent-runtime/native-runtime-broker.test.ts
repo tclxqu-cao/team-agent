@@ -1642,3 +1642,38 @@ describe("NativeRuntimeBrokerHost", () => {
     }
   });
 });
+
+describe("NativeRuntimeBrokerHost run overrides", () => {
+  it("passes composer model/effort choices through to the adapter run options", async () => {
+    const path = await directory();
+    const runtime = new FakeNativeRuntime();
+    const host = new NativeRuntimeBrokerHost(path, runtime as unknown as UnifiedSessionService);
+    try {
+      await host.startRun(sessionId, "hi", undefined, "web", undefined, undefined, undefined, {
+        model: { id: "gpt-5.6-sol", providerID: "openai" },
+        reasoningEffort: "xhigh",
+      });
+      await waitFor(() => expect(runtime.runOptions).toHaveLength(1));
+      expect(runtime.runOptions[0]).toMatchObject({
+        model: { id: "gpt-5.6-sol", providerID: "openai" },
+        reasoningEffort: "xhigh",
+      });
+    } finally {
+      await host.stop();
+    }
+  });
+
+  it("keeps adapter options untouched when the run carries no overrides", async () => {
+    const path = await directory();
+    const runtime = new FakeNativeRuntime();
+    const host = new NativeRuntimeBrokerHost(path, runtime as unknown as UnifiedSessionService);
+    try {
+      await host.startRun(sessionId, "hi");
+      await waitFor(() => expect(runtime.runOptions).toHaveLength(1));
+      expect(runtime.runOptions[0].model).toBeUndefined();
+      expect(runtime.runOptions[0].reasoningEffort).toBeUndefined();
+    } finally {
+      await host.stop();
+    }
+  });
+});
