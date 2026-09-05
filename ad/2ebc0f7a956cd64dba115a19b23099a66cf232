@@ -1,0 +1,44 @@
+packages/server/app/web/terminalStartup.test.ts
+  s_0d51ca33fa59ea::t_1e89a4392e216b 1-30
+packages/server/lib/shell-integration.test.ts
+  s_0d51ca33fa59ea::t_658ef8bc0dedfb 40-41
+  s_0d51ca33fa59ea::t_d5269fb2d7909a 1,62-71
+  s_0d51ca33fa59ea::t_c757d69081f190 2-39,42-61,72-109
+packages/server/app/web/page.tsx
+  s_0d51ca33fa59ea::t_1e89a4392e216b 535-536,540-544
+packages/server/shell-integration.d.mts
+  s_0d51ca33fa59ea::t_f5cc28e162d2bb 1-20
+packages/server/lib/command-history-capture.test.ts
+  s_0d51ca33fa59ea::t_43ff5ef9d90879 5,9-13
+packages/server/shell-integration.mjs
+  s_0d51ca33fa59ea::t_c757d69081f190 1-41,44-126
+  s_0d51ca33fa59ea::t_d5269fb2d7909a 42-43
+packages/server/lib/terminal-readiness-contract.test.ts
+  s_0d51ca33fa59ea::t_43ff5ef9d90879 1-28,33
+  s_0d51ca33fa59ea::t_33d5c33dde6a50 29-32
+packages/server/lib/shell-integration-pty.test.ts
+  s_0d51ca33fa59ea::t_12712b48bceb14 1-68,74-78
+  s_0d51ca33fa59ea::t_8e5cb2ddc997a1 69-73
+packages/server/ws-server.mjs
+  s_0d51ca33fa59ea::t_33d5c33dde6a50 625-633
+  s_0d51ca33fa59ea::t_43ff5ef9d90879 31
+  s_0d51ca33fa59ea::t_f828713ec96d9f 32,192-193,196-208,220,222,227,245-249,261-265,284,301,503-504,548,551,554,613-617,634
+packages/server/app/web/TerminalPane.tsx
+  s_0d51ca33fa59ea::t_1e89a4392e216b 59,69,445-448,459,466,474,494,514-520,752-768
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "ad2ebc0f7a956cd64dba115a19b23099a66cf232",
+  "prompts": {},
+  "sessions": {
+    "s_0d51ca33fa59ea": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a07055-b40e-7883-b432-fe5a564e974a",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
