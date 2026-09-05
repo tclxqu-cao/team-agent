@@ -44,6 +44,7 @@ import type {
   AgentWorkspace,
   CreateRuntimeSessionOptions,
   RuntimeHealth,
+  RuntimeModelInfo,
   RuntimeQuestionAnswer,
   RuntimeRunOptions,
   UnifiedSessionDetail,
@@ -59,6 +60,15 @@ const PAGE_SIZE = 200;
 const TRANSCRIPT_CWD_SCAN_LIMIT = 2 * 1024 * 1024;
 const TRANSCRIPT_SCAN_CHUNK_SIZE = 64 * 1024;
 const CLAUDE_SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+// The Agent SDK only exposes supportedModels() on a live Query, so the picker
+// falls back to these stable aliases; explicit ids from settings profiles are
+// passed through untouched.
+const CLAUDE_MODEL_ALIASES: RuntimeModelInfo[] = [
+  { id: "sonnet", displayName: "Claude Sonnet（均衡）", reasoningEfforts: ["low", "medium", "high", "xhigh"] },
+  { id: "opus", displayName: "Claude Opus（最强）", reasoningEfforts: ["low", "medium", "high", "xhigh", "max"] },
+  { id: "haiku", displayName: "Claude Haiku（最快）", reasoningEfforts: ["low", "medium", "high"] },
+];
 
 interface PendingPermission {
   nativeSessionId: string;
@@ -248,6 +258,7 @@ export class ClaudeSubagentTracker {
 export class ClaudeRuntimeAdapter implements AgentRuntimeAdapter {
   readonly agentType = "claude-code" as const;
   private readonly sessionRoot: string;
+  private contextUsageRequestIndex = 0;
   private readonly drafts = new Map<string, UnifiedSessionSummary>();
   private readonly workspaces = new Map<string, AgentWorkspace>();
   private readonly ownedSessions = new Set<string>();
@@ -280,6 +291,11 @@ export class ClaudeRuntimeAdapter implements AgentRuntimeAdapter {
         error: error instanceof Error ? error.message : String(error),
       };
     }
+  }
+
+  /** Stable model aliases; explicit ids from settings profiles are passed through by the caller. */
+  async listModels(): Promise<RuntimeModelInfo[]> {
+    return CLAUDE_MODEL_ALIASES;
   }
 
   async discoverSessions(): Promise<UnifiedSessionSummary[]> {
@@ -464,6 +480,8 @@ export class ClaudeRuntimeAdapter implements AgentRuntimeAdapter {
         includePartialMessages: true,
         forwardSubagentText: true,
         agentProgressSummaries: true,
+        ...(runOptions?.model?.id ? { model: runOptions.model.id } : {}),
+        ...(runOptions?.reasoningEffort ? { effort: runOptions.reasoningEffort } : {}),
         permissionMode: permissionMode === "full-access" ? "bypassPermissions" : "default",
         ...(permissionMode === "full-access"
           ? { allowDangerouslySkipPermissions: true }
@@ -529,6 +547,8 @@ export class ClaudeRuntimeAdapter implements AgentRuntimeAdapter {
         }
         if (message.type === "result") {
           mainResult = message;
+          const contextUsage = claudeContextUsageEvent(mainResult, ++this.contextUsageRequestIndex);
+          if (contextUsage) yield contextUsage;
         }
         if (mainResult && !subagents.hasActiveBackgroundTasks()) {
           yield claudeResultToEvent(mainResult, streamedText);
@@ -1177,6 +1197,43 @@ export function claudeSdkMessageToEvents(
     });
   }
   return [];
+}
+
+// The claude-code result message carries the LAST request's token accounting;
+// input + cache numbers approximate the context the next request will resend.
+const CLAUDE_DEFAULT_CONTEXT_WINDOW = 200_000;
+function claudeContextUsageEvent(
+  message: Extract<SDKMessage, { type: "result" }>,
+  requestIndex: number,
+): AgentEvent | null {
+  const usage = "usage" in message && typeof message.usage === "object" && message.usage !== null
+    ? (message.usage as Record<string, unknown>)
+    : null;
+  if (!usage) return null;
+  const tokens = (key: string) => {
+    const value = usage[key];
+    return typeof value === "number" && Number.isFinite(value) && value > 0 ? Math.round(value) : 0;
+  };
+  const promptTokens = tokens("input_tokens") + tokens("cache_read_input_tokens") + tokens("cache_creation_input_tokens");
+  const outputTokens = tokens("output_tokens");
+  const totalTokens = promptTokens + outputTokens;
+  if (totalTokens <= 0) return null;
+  return {
+    type: "context_usage",
+    usage: {
+      requestIndex,
+      providerId: "claude",
+      modelId: "model" in message && typeof message.model === "string" ? message.model : "claude",
+      maxTokens: CLAUDE_DEFAULT_CONTEXT_WINDOW,
+      totalTokens,
+      ratio: Math.min(totalTokens / CLAUDE_DEFAULT_CONTEXT_WINDOW, 1),
+      estimationMode: "heuristic",
+      segments: [
+        { category: "conversationHistory", tokens: promptTokens },
+        ...(outputTokens > 0 ? [{ category: "assistantMessages", tokens: outputTokens }] : []),
+      ],
+    },
+  } as AgentEvent;
 }
 
 function claudeResultToEvent(

@@ -27,7 +27,9 @@ import type {
   AgentRuntimeAdapter,
   AgentWorkspace,
   CreateRuntimeSessionOptions,
+  NativeReasoningEffort,
   RuntimeHealth,
+  RuntimeModelInfo,
   RuntimeQuestionAnswer,
   RuntimeRunOptions,
   UnifiedSessionDetail,
@@ -121,6 +123,7 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
   readonly agentType = "codex" as const;
   private readonly client: CodexAppServerClient;
   private readonly sessionRoot: string;
+  private contextUsageRequestIndex = 0;
   private readonly codexHome: string;
   private readonly codexExecutable: string;
   private readonly unavailableError?: string;
@@ -202,6 +205,36 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
         error: error instanceof Error ? error.message : String(error),
       };
     }
+  }
+
+  /** Models offered by the connected codex account, as reported by the app-server. */
+  async listModels(): Promise<RuntimeModelInfo[]> {
+    this.ensureAvailable();
+    const response = await this.client.request<{
+      data?: Array<{
+        id?: string;
+        displayName?: string;
+        description?: string | null;
+        hidden?: boolean;
+        supportedReasoningEfforts?: Array<{ reasoningEffort?: string }>;
+      }>;
+    }>("model/list", {});
+    return (response.data ?? [])
+      .filter((model) => typeof model.id === "string" && model.id !== "" && !model.hidden)
+      .map((model) => ({
+        id: model.id!,
+        displayName: model.displayName || model.id!,
+        ...(model.description ? { description: model.description } : {}),
+        ...(Array.isArray(model.supportedReasoningEfforts) && model.supportedReasoningEfforts.length > 0
+          ? {
+              reasoningEfforts: model.supportedReasoningEfforts
+                .map((entry) => entry.reasoningEffort)
+                .filter((effort): effort is NativeReasoningEffort =>
+                  effort === "low" || effort === "medium" || effort === "high" || effort === "xhigh" || effort === "max",
+                ),
+            }
+          : {}),
+      }));
   }
 
   async discoverSessions(): Promise<UnifiedSessionSummary[]> {
@@ -500,6 +533,8 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
             : []),
           ...imageInputs,
         ],
+        ...(options?.model?.id ? { model: options.model.id } : {}),
+        ...(options?.reasoningEffort ? { effort: options.reasoningEffort } : {}),
         ...codexTurnPermissionOptions(permissionMode, detail.cwd),
       });
       imageDirectoryReferencedByTurn = imageDirectory !== null;
@@ -734,6 +769,8 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
         });
       } else {
         const finalText = lastCodexAgentText(turn?.items ?? []);
+        const contextUsage = codexContextUsageEvent(turn, ++this.contextUsageRequestIndex);
+        if (contextUsage) queue.push(contextUsage);
         queue.push({ type: "done", finalText });
       }
       queue.close();
@@ -1190,6 +1227,46 @@ function codexItemToToolResult(item?: CodexItem): { toolCallId: string; content:
     };
   }
   return null;
+}
+
+// Codex turns may report the token accounting of the completed turn; prompt
+// tokens approximate the context the next turn will resend. Missing usage data
+// simply yields no estimate — the ring stays empty rather than lying.
+const CODEX_DEFAULT_CONTEXT_WINDOW = 272_000;
+function codexContextUsageEvent(turn: unknown, requestIndex: number): AgentEvent | null {
+  const turnRecord = typeof turn === "object" && turn !== null ? (turn as Record<string, unknown>) : {};
+  const usage = typeof turnRecord.usage === "object" && turnRecord.usage !== null
+    ? (turnRecord.usage as Record<string, unknown>)
+    : {};
+  const tokens = (key: string) => {
+    const value = usage[key];
+    return typeof value === "number" && Number.isFinite(value) && value > 0 ? Math.round(value) : 0;
+  };
+  const promptTokens = tokens("input_tokens") + tokens("cached_input_tokens");
+  const outputTokens = tokens("output_tokens");
+  const totalTokens = promptTokens + outputTokens;
+  if (totalTokens <= 0) return null;
+  const contextWindow = typeof turnRecord.model_context_window === "number"
+    && Number.isFinite(turnRecord.model_context_window)
+    && turnRecord.model_context_window > 0
+    ? Math.round(turnRecord.model_context_window)
+    : CODEX_DEFAULT_CONTEXT_WINDOW;
+  return {
+    type: "context_usage",
+    usage: {
+      requestIndex,
+      providerId: "codex",
+      modelId: typeof turnRecord.model === "string" ? turnRecord.model : "codex",
+      maxTokens: contextWindow,
+      totalTokens,
+      ratio: Math.min(totalTokens / contextWindow, 1),
+      estimationMode: "heuristic",
+      segments: [
+        { category: "conversationHistory", tokens: promptTokens },
+        ...(outputTokens > 0 ? [{ category: "assistantMessages", tokens: outputTokens }] : []),
+      ],
+    },
+  } as AgentEvent;
 }
 
 function lastCodexAgentText(items: CodexItem[]): string {
