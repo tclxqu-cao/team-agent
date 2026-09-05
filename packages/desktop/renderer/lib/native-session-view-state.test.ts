@@ -45,7 +45,7 @@ describe("native session view state", () => {
     },
   );
 
-  it("restores and exclusively streams a native run owned by Customer Agent", () => {
+  it("restores and reconciles a native run owned by Customer Agent", () => {
     const session: NativeSessionViewState = {
       agentType: "codex",
       status: "running",
@@ -54,8 +54,29 @@ describe("native session view state", () => {
 
     expect(shouldRestoreLocalNativeRun(session)).toBe(true);
     expect(isObservedNativeRun(session)).toBe(false);
-    expect(shouldFollowNativeHistory(session, "session-1", "session-1")).toBe(false);
+    expect(shouldFollowNativeHistory(session, "session-1", "session-1")).toBe(true);
     expect(shouldQueueMessageForActiveRun(session, false)).toBe(true);
+  });
+
+  it.each(["codex", "claude-code", "opencode"] as const)(
+    "follows an available idle %s session so later transcript writes appear without a reload",
+    (agentType) => {
+      expect(shouldFollowNativeHistory({
+        agentType,
+        status: "idle",
+        occupancy: "available",
+      }, "session-1", null)).toBe(true);
+    },
+  );
+
+  it("does not follow Customer Agent sessions or an absent selection", () => {
+    expect(shouldFollowNativeHistory({
+      agentType: "customer-agent",
+      status: "idle",
+      occupancy: "available",
+    }, "session-1", null)).toBe(false);
+    expect(shouldFollowNativeHistory({ agentType: "codex" }, null, null)).toBe(false);
+    expect(shouldFollowNativeHistory(undefined, "session-1", null)).toBe(false);
   });
 
   it("does not queue into an externally owned or idle native session", () => {

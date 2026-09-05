@@ -100,6 +100,57 @@ describe("parseMarkdownLinks", () => {
     expect(parseMarkdownLinks(unknownAttribute)).toEqual([{ type: "text", value: unknownAttribute }]);
   });
 
+  it("parses Codex visualize markers as local artifacts", () => {
+    const raw = '\uE200visualize\uE202{"path":"/tmp/demo.html","mode":"wide","title":"原型图"}\uE201';
+
+    expect(parseRichInlineTokens(`交付物：${raw}`)).toEqual([
+      { type: "text", value: "交付物：" },
+      {
+        type: "artifact",
+        label: "原型图",
+        path: "/tmp/demo.html",
+        raw,
+      },
+    ]);
+  });
+
+  it("uses the visualize artifact basename when its title is missing or blank", () => {
+    const missingTitle = '\uE200visualize\uE202{"path":"/tmp/first-demo.html","mode":"wide"}\uE201';
+    const blankTitle = '\uE200visualize\uE202{"path":"/tmp/second-demo.html","title":"  "}\uE201';
+
+    expect(parseRichInlineTokens(`${missingTitle} ${blankTitle}`)).toEqual([
+      {
+        type: "artifact",
+        label: "first-demo.html",
+        path: "/tmp/first-demo.html",
+        raw: missingTitle,
+      },
+      { type: "text", value: " " },
+      {
+        type: "artifact",
+        label: "second-demo.html",
+        path: "/tmp/second-demo.html",
+        raw: blankTitle,
+      },
+    ]);
+  });
+
+  it.each([
+    '\uE200visualize\uE202{broken}\uE201',
+    '\uE200visualize\uE202{"path":"outputs/demo.html","title":"原型图"}\uE201',
+    '\uE200visualize\uE202{"path":"/tmp/demo.html?download=1","title":"原型图"}\uE201',
+    '\uE200visualize\uE202{"path":"/tmp/demo.html#preview","title":"原型图"}\uE201',
+    '\uE200visualize\uE202{"path":"/tmp/demo.html","title":42}\uE201',
+    '\uE200visualize\uE202{"path":"/tmp/demo.html","mode":true}\uE201',
+  ])("keeps an invalid Codex visualize marker as plain text", (raw) => {
+    expect(parseRichInlineTokens(raw)).toEqual([{ type: "text", value: raw }]);
+  });
+
+  it("does not parse a Codex visualize marker inside inline code", () => {
+    const raw = '\uE200visualize\uE202{"path":"/tmp/demo.html","title":"原型图"}\uE201';
+    expect(parseRichInlineTokens(`\`${raw}\``)).toEqual([{ type: "code", value: raw }]);
+  });
+
   it("keeps relative paths and custom schemes as plain text", () => {
     const relative = "[报告](outputs/report.pdf)";
     const fileUrl = "[报告](file:///tmp/report.pdf)";

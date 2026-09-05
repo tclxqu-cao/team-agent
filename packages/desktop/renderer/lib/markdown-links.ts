@@ -9,9 +9,10 @@ const MARKDOWN_LINK_PATTERN = /\[([^\]\n]+)\]\((https?:\/\/[^\s)]+|[ \t]*\/[^)\n
 const INLINE_CODE_PATTERN = /`([^`\n]+)`/g;
 const CODEX_FILE_CITATION_PATTERN = /:codex-file-citation\{([^}\n]*)\}/g;
 const CODEX_FILE_CITATION_ATTRIBUTE_PATTERN = /([A-Za-z][\w-]*)="([^"\n]*)"/g;
+const CODEX_VISUALIZE_PATTERN = /\uE200visualize\uE202([^\uE201\n]+)\uE201/g;
 
 type InlineLinkMatch = {
-  kind: "markdown" | "citation" | "code";
+  kind: "markdown" | "citation" | "visualize" | "code";
   match: RegExpMatchArray;
 };
 
@@ -38,6 +39,24 @@ function parseCodexFileCitation(attributesSource: string): { path: string; label
   return { path: artifact.path, label };
 }
 
+function parseCodexVisualize(payloadSource: string): { path: string; label: string } | null {
+  try {
+    const payload: unknown = JSON.parse(payloadSource);
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
+    const { path, title, mode } = payload as Record<string, unknown>;
+    if (typeof path !== "string" || (title !== undefined && typeof title !== "string")) return null;
+    if (mode !== undefined && typeof mode !== "string") return null;
+    const artifact = parseArtifactTarget(path);
+    if (!artifact || artifact.line !== undefined) return null;
+    const label = title?.trim()
+      || artifact.path.slice(artifact.path.lastIndexOf("/") + 1)
+      || artifact.path;
+    return { path: artifact.path, label };
+  } catch {
+    return null;
+  }
+}
+
 function parseInlineTokens(text: string, includeCode: false): MarkdownLinkToken[];
 function parseInlineTokens(text: string, includeCode: true): RichInlineToken[];
 function parseInlineTokens(text: string, includeCode: boolean): RichInlineToken[] {
@@ -46,6 +65,7 @@ function parseInlineTokens(text: string, includeCode: boolean): RichInlineToken[
   const matches: InlineLinkMatch[] = [
     ...[...text.matchAll(MARKDOWN_LINK_PATTERN)].map((match) => ({ kind: "markdown" as const, match })),
     ...[...text.matchAll(CODEX_FILE_CITATION_PATTERN)].map((match) => ({ kind: "citation" as const, match })),
+    ...[...text.matchAll(CODEX_VISUALIZE_PATTERN)].map((match) => ({ kind: "visualize" as const, match })),
     ...(includeCode
       ? [...text.matchAll(INLINE_CODE_PATTERN)].map((match) => ({ kind: "code" as const, match }))
       : []),
@@ -65,6 +85,17 @@ function parseInlineTokens(text: string, includeCode: boolean): RichInlineToken[
     }
     if (candidate.kind === "citation") {
       const artifact = parseCodexFileCitation(match[1]);
+      tokens.push(artifact ? {
+        type: "artifact",
+        label: artifact.label,
+        path: artifact.path,
+        raw: match[0],
+      } : { type: "text", value: match[0] });
+      cursor = index + match[0].length;
+      continue;
+    }
+    if (candidate.kind === "visualize") {
+      const artifact = parseCodexVisualize(match[1]);
       tokens.push(artifact ? {
         type: "artifact",
         label: artifact.label,

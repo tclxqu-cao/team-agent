@@ -35,8 +35,7 @@ export function shouldQueueMessageForActiveRun(
 export function shouldFollowNativeHistory(
   session: NativeSessionViewState | null | undefined,
   targetSessionId: string | null,
-  runningSessionId: string | null,
+  _runningSessionId: string | null,
 ): boolean {
-  if (!targetSessionId || !session || session.agentType === "customer-agent") return false;
-  return session.occupancy === "owned-externally" || runningSessionId !== targetSessionId;
+  return Boolean(targetSessionId && session && session.agentType !== "customer-agent");
 }
