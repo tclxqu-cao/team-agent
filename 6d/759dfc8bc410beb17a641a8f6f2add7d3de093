@@ -1,0 +1,19 @@
+docs/superpowers/specs/2026-09-05-codex-visualize-live-history-reconciliation-design.md
+  s_9921e31911a098::t_cef5136df681b7 1-78
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "6d759dfc8bc410beb17a641a8f6f2add7d3de093",
+  "prompts": {},
+  "sessions": {
+    "s_9921e31911a098": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06fd4-dcc0-7df2-a9f2-9808ce6f6125",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
