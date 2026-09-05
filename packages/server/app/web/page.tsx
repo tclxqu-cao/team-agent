@@ -532,11 +532,16 @@ const GLOBAL_CSS = `
   .webapp-boot-core { position:absolute; top:30px; left:30px; width:6px; height:6px; border-radius:50%; background:currentColor; box-shadow:0 0 0 6px color-mix(in srgb,currentColor 12%,transparent); }
   @keyframes webapp-boot-spin { to { transform:rotate(360deg); } }
   @keyframes webapp-boot-breathe { 0%,100% { opacity:.58; transform:rotate(45deg) scale(.9); } 50% { opacity:1; transform:rotate(45deg) scale(1); } }
-  .terminal-screen { display:flex; flex-direction:column; min-height:0; overflow:hidden; }
+  .terminal-surface { position:relative; flex:1; min-height:90px; overflow:hidden; }
+  .terminal-screen { display:flex; flex-direction:column; width:100%; min-height:0; overflow:hidden; box-sizing:border-box; }
   .terminal-screen .xterm { flex:1; height:100%; background:var(--ui-terminal-bg, #101014); }
   .terminal-screen .xterm .xterm-viewport { background-color:var(--ui-terminal-bg, #101014); }
   .terminal-screen .xterm-scrollable-element { touch-action:pan-y; -webkit-overflow-scrolling:touch; }
-  @media (prefers-reduced-motion: reduce) { .terminal-track,.terminal-tab,.webapp-boot { transition:none !important; } .webapp-boot-orbit,.webapp-boot-diamond { animation:none !important; } }
+  .terminal-boot { position:absolute; inset:0; z-index:46; display:flex; align-items:center; justify-content:center; gap:9px; pointer-events:auto; font-size:12px; line-height:1.4; letter-spacing:0; }
+  .terminal-boot-spinner { width:16px; height:16px; box-sizing:border-box; border:2px solid color-mix(in srgb,currentColor 24%,transparent); border-top-color:currentColor; border-radius:50%; animation:terminal-boot-spin .8s linear infinite; }
+  .terminal-boot-warning { position:absolute; top:9px; left:50%; z-index:45; transform:translateX(-50%); max-width:calc(100% - 24px); padding:5px 8px; border:1px solid; border-radius:6px; pointer-events:none; font-size:11px; line-height:1.35; letter-spacing:0; white-space:normal; text-align:center; }
+  @keyframes terminal-boot-spin { to { transform:rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .terminal-track,.terminal-tab,.webapp-boot { transition:none !important; } .webapp-boot-orbit,.webapp-boot-diamond,.terminal-boot-spinner { animation:none !important; } }
   .web-root {
     position: fixed;
     top: var(--vv-top, 0px);

@@ -28,7 +28,8 @@ import { WebSocketServer } from "ws";
 import pty from "node-pty";
 import chokidar from "chokidar";
 import { HostPathPolicy, SQLiteAnonymousWebStore, SQLiteProjectStore, SQLiteWebConsoleStore } from "@agent/core";
-import { decodeOsc7Path, isPowerShell, selectDefaultShell } from "./shell-platform.mjs";
+import { decodeOsc7Path, selectDefaultShell } from "./shell-platform.mjs";
+import { consumeTerminalReadyMarker, createTerminalShellLaunch } from "./shell-integration.mjs";
 import {
   createPreviewTicketRegistry,
   inspectTextFile,
@@ -188,8 +189,22 @@ const execFileAsync = (cmd, args, opts) =>
 /**
  * @typedef {{id:string, userId:string, pid:number, cwd:string|null, pty:import('node-pty').IPty, scrollback:Scrollback,
  *            size:{cols:number,rows:number}, watchers:Set<(b:Uint8Array)=>void>,
- *            shell:string, exited:boolean, closed:boolean, cwdWatchers:Set<(cwd:string)=>void>, inputOwner:string|null, oscTail:string}} TerminalSession
+ *            shell:string, exited:boolean, closed:boolean, cwdWatchers:Set<(cwd:string)=>void>, inputOwner:string|null, oscTail:string,
+ *            ready:boolean, readyTail:string, readyWatchers:Set<()=>void>, initialCommand:string, initialCommandSent:boolean}} TerminalSession
  */
+
+function markTerminalReady(session) {
+  if (session.ready) return;
+  session.ready = true;
+  if (session.initialCommand && !session.initialCommandSent) {
+    session.initialCommandSent = true;
+    session.pty.write(`${session.initialCommand}\r`);
+  }
+  for (const notify of [...session.readyWatchers]) {
+    try { notify(); } catch {}
+  }
+  session.readyWatchers.clear();
+}
 
 /** @returns {TerminalSession} */
 function startTerminal(id, { userId, cols = 80, rows = 24, cwd, command, initialCommand } = {}) {
@@ -202,15 +217,14 @@ function startTerminal(id, { userId, cols = 80, rows = 24, cwd, command, initial
     : "";
 
   const shell = selectDefaultShell();
-  const powershell = isPowerShell(shell);
-  const args = command ? (powershell?["-NoLogo","-Command",command]:["-l","-c",command]) : (powershell?["-NoLogo"]:["-l"]);
+  const launch = createTerminalShellLaunch({ shell, command, serverBaseDir, homeDir: os.homedir(), env: process.env });
   const initialCwd = cwd && fsSync.existsSync(cwd) ? path.resolve(cwd) : os.homedir();
-  const p = pty.spawn(shell, args, {
+  const p = pty.spawn(shell, launch.args, {
     name: "xterm-256color",
     cols: clampInt(cols, 2, 500, 80),
     rows: clampInt(rows, 2, 300, 24),
     cwd: initialCwd,
-    env: process.env,
+    env: launch.env,
   });
 
   /** @type {TerminalSession} */
@@ -228,6 +242,11 @@ function startTerminal(id, { userId, cols = 80, rows = 24, cwd, command, initial
     inputOwner: null,
     closed: false,
     oscTail: "",
+    ready: false,
+    readyTail: "",
+    readyWatchers: new Set(),
+    initialCommand: queuedCommand,
+    initialCommandSent: false,
     exited: false,
   };
   watchTerminalCwd(session, (cwd2) => {
@@ -239,6 +258,11 @@ function startTerminal(id, { userId, cols = 80, rows = 24, cwd, command, initial
   });
 
   p.onData((data) => {
+    if (!session.ready) {
+      const readiness = consumeTerminalReadyMarker(session.readyTail, data);
+      session.readyTail = readiness.tail;
+      if (readiness.ready) markTerminalReady(session);
+    }
     captureShellHistory(session, data);
     const copy = session.scrollback.append(data);
     for (const send of [...session.watchers]) {
@@ -257,6 +281,7 @@ function startTerminal(id, { userId, cols = 80, rows = 24, cwd, command, initial
       try { cb(null); } catch {}
     }
     session.cwdWatchers.clear();
+    session.readyWatchers.clear();
     const note = Buffer.from(`\r\n\x1b[90m[process exited with code ${exitCode}]\x1b[0m\r\n`, "utf8");
     session.scrollback.append(note);
     for (const send of [...session.watchers]) {
@@ -273,26 +298,7 @@ function startTerminal(id, { userId, cols = 80, rows = 24, cwd, command, initial
   }, TERMINAL_IDLE_MS).unref?.();
 
   terminals.set(id, session);
-  if (shell.endsWith("zsh")) {
-    // preexec remembers the command line; precmd reports it together with the
-    // real exit status ($?) once the command finished — the history panel only
-    // keeps successful commands. Both hooks are PREPENDED to the zsh hook
-    // arrays: precmd hooks registered earlier (e.g. from the user's zshrc)
-    // would run commands of their own and clobber $? before we read it.
-    const hook = `function __ca_hist_preexec(){ __ca_hist_cmd="$1"; }; function __ca_hist_precmd(){ local e=$?; if [[ -n "\${__ca_hist_cmd+x}" ]]; then local c=$(printf '%s' "$__ca_hist_cmd"|base64|tr -d '\\n'); local d=$(printf '%s' "$PWD"|base64|tr -d '\\n'); printf '\\033]633;C;%s;%s;%s\\007' "$c" "$d" "$e"; unset __ca_hist_cmd; fi; }; precmd_functions=(__ca_hist_precmd $precmd_functions); preexec_functions=(__ca_hist_preexec $preexec_functions); clear`;
-    setTimeout(() => {
-      if (session.exited) return;
-      p.write(` ${hook}\r`);
-      if (queuedCommand) p.write(`${queuedCommand}\r`);
-    }, 350).unref?.();
-  }
-  if (powershell) {
-    const integration=`function global:prompt { $e=[char]27; $b=[char]7; $p=$PWD.Path -replace '\\\\','/'; $u=if($p.StartsWith('//')){'file:'+$p}else{'file:///'+$p}; Write-Host -NoNewline ($e + ']7;' + $u + $b); 'PS ' + $PWD.Path + '> ' }`;
-    setTimeout(()=>{if(!session.exited){p.write(`${integration}\r`);if(queuedCommand)p.write(`${queuedCommand}\r`);}},350).unref?.();
-  }
-  if (!shell.endsWith("zsh") && !powershell && queuedCommand) {
-    setTimeout(() => { if (!session.exited) p.write(`${queuedCommand}\r`); }, 350).unref?.();
-  }
+  if (!launch.waitsForReady) markTerminalReady(session);
   return session;
 }
 
@@ -494,6 +500,8 @@ function makeConn(ws) {
     forwards: new Map(),
     /** id → cwd forwarding fn registered into session.cwdWatchers */
     cwdForwards: new Map(),
+    /** id → ready forwarding fn registered into session.readyWatchers */
+    readyForwards: new Map(),
     nextChannelId: 1,
     terminalToChannel: new Map(),
     channelToTerminal: new Map(),
@@ -537,10 +545,13 @@ function detachTerminal(conn, id) {
   const session = terminals.get(id);
   const fwd = conn.forwards.get(id);
   const cwdFwd = conn.cwdForwards.get(id);
+  const readyFwd = conn.readyForwards.get(id);
   if (session && fwd) session.watchers.delete(fwd);
   if (session && cwdFwd) session.cwdWatchers.delete(cwdFwd);
+  if (session && readyFwd) session.readyWatchers.delete(readyFwd);
   conn.forwards.delete(id);
   conn.cwdForwards.delete(id);
+  conn.readyForwards.delete(id);
   conn.attachedTo.delete(id);
   const channelId = conn.terminalToChannel.get(id);
   if (channelId) conn.channelToTerminal.delete(channelId);
@@ -599,12 +610,11 @@ const requestHandlers = {
     session.cwdWatchers.add(cwdForward);
     conn.cwdForwards.set(id, cwdForward);
 
-    // Replay scrollback to restore the screen after reconnect. Reset the client
-    // pane first: a reconnecting client still holds the old buffer, and
-    // appending the replay onto it duplicates all the content.
-    conn.sendTerminalReset(id);
-    const snap = session.scrollback.snapshot();
-    if (snap.byteLength > 0) setImmediate(() => conn.sendTerminal(id, new Uint8Array(snap)));
+    const readyForward = () => conn.sendJson({ type: "term:ready", id });
+    if (!session.ready) {
+      session.readyWatchers.add(readyForward);
+      conn.readyForwards.set(id, readyForward);
+    }
 
     // best-effort immediate cwd (shell may not have cd'd yet → home)
     let currentCwd = session.cwd;
@@ -612,7 +622,16 @@ const requestHandlers = {
       const detectedCwd = await readProcessCwd(session.pid);
       if (detectedCwd) currentCwd = session.cwd = detectedCwd;
     } catch {}
-    return { sessionId: id, channelId, cols: session.size.cols, rows: session.size.rows, cwd: currentCwd };
+
+    // Queue replay after the RPC response. WebSocket frame ordering then lets a
+    // new client install its channel subscription before reset + scrollback.
+    setImmediate(() => {
+      if (!conn.attachedTo.has(id)) return;
+      conn.sendTerminalReset(id);
+      const snap = session.scrollback.snapshot();
+      if (snap.byteLength > 0) conn.sendTerminal(id, new Uint8Array(snap));
+    });
+    return { sessionId: id, channelId, cols: session.size.cols, rows: session.size.rows, cwd: currentCwd, ready: session.ready };
   },
 
   "term:list": async (_msg, conn) => ({ tabs: consoleStore.listTabs(conn.principal.userId) }),

@@ -56,6 +56,7 @@ export default function TerminalPane({ terminalId, title, initialCommand, visibl
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
   const [sessionReady, setSessionReady] = useState(false);
+  const [startupTimedOut, setStartupTimedOut] = useState(false);
   const [sessionError, setSessionError] = useState<string | null>(null);
   const [writeLocked, setWriteLocked] = useState(false);
   const ctrlArmed = useRef(false);
@@ -65,7 +66,7 @@ export default function TerminalPane({ terminalId, title, initialCommand, visibl
   const dataSubscription = useRef<(() => void) | null>(null);
   const resetSubscription = useRef<(() => void) | null>(null);
   const writer = useRef<(bytes: Uint8Array) => void>(() => {});
-  const startRequestRef = useRef<Promise<{ sessionId: string; channelId: number; cwd?: string | null }> | null>(null);
+  const startRequestRef = useRef<Promise<{ sessionId: string; channelId: number; cwd?: string | null; ready: boolean }> | null>(null);
   const followOutputRef = useRef(true);
   const lockedViewportYRef = useRef(0);
   const keybarRef = useRef<HTMLDivElement>(null);
@@ -441,6 +442,10 @@ export default function TerminalPane({ terminalId, title, initialCommand, visibl
       .catch((error: any) => { if (error?.code === "EWRITELOCK") setWriteLocked(true); });
   }, [applySavedScroll, doFit, initialScrollLine, reportScrollLine, rpc]);
 
+  useEffect(() => onEvent("term:ready", (message: any) => {
+    if (message.id === sessionId.current) setSessionReady(true);
+  }), [onEvent]);
+
   // session handshake + cwd subscription
   useEffect(() => {
     if (!state.connected) {
@@ -451,12 +456,14 @@ export default function TerminalPane({ terminalId, title, initialCommand, visibl
       resetSubscription.current?.();
       resetSubscription.current = null;
       setSessionReady(false);
+      setStartupTimedOut(false);
       setSessionError(null);
       tabFocusCount.current = 0;
       return;
     }
     let cancelled = false;
     setSessionError(null);
+    setStartupTimedOut(false);
     doFit();
     requestAnimationFrame(doFit);
     // React StrictMode runs effects twice in development. Reuse one in-flight
@@ -464,7 +471,7 @@ export default function TerminalPane({ terminalId, title, initialCommand, visibl
     // a live prompt plus replay) are written on the very first connection.
     const start =
       startRequestRef.current ??=
-        rpc<{ sessionId: string; channelId: number; cwd?: string | null }>("term:start", {
+        rpc<{ sessionId: string; channelId: number; cwd?: string | null; ready: boolean }>("term:start", {
           id: terminalId,
           title,
           initialCommand,
@@ -484,7 +491,7 @@ export default function TerminalPane({ terminalId, title, initialCommand, visibl
           termRef.current?.reset();
         });
         dataSubscription.current = onTerminalData(res.channelId, (bytes) => writer.current(bytes));
-        setSessionReady(true);
+        if (res.ready) setSessionReady(true);
         onCwdChange?.(res.cwd ?? null);
         window.setTimeout(() => doFit(), 80);
         // Nudge full-screen TUIs (opencode etc.) to repaint after scrollback replay.
@@ -503,6 +510,13 @@ export default function TerminalPane({ terminalId, title, initialCommand, visibl
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.connected, terminalId, title, initialCommand, onTerminalData]);
+
+  useEffect(() => {
+    if (!state.connected || sessionReady) return;
+    setStartupTimedOut(false);
+    const timer = window.setTimeout(() => setStartupTimedOut(true), 8_000);
+    return () => window.clearTimeout(timer);
+  }, [state.connected, terminalId, sessionReady]);
 
   useEffect(() => {
     if (!onRegisterFill) return;
@@ -735,19 +749,23 @@ export default function TerminalPane({ terminalId, title, initialCommand, visibl
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0, position:"relative" }}>
-      {/* xterm host — never unmounted by overlays */}
-      <div
-        ref={hostRef}
-        className="terminal-screen"
-        onClick={() => {
-          termRef.current?.focus();
-          if (!suppressTerminalClickScroll.current && followOutputRef.current) {
-            focusLivePrompt({ forceLive: true });
-          }
-          void acquireWrite(false);
-        }}
-        style={{ flex: 1, minHeight: 90, padding: "3px 5px 3px 9px", background: terminalTheme.termHostBg, touchAction: "none", overflow: "hidden" }}
-      />
+      <div className="terminal-surface" style={{ background: terminalTheme.termHostBg }}>
+        {/* xterm host stays mounted and fitted underneath startup feedback. */}
+        <div
+          ref={hostRef}
+          className="terminal-screen"
+          onClick={() => {
+            termRef.current?.focus();
+            if (!suppressTerminalClickScroll.current && followOutputRef.current) {
+              focusLivePrompt({ forceLive: true });
+            }
+            void acquireWrite(false);
+          }}
+          style={{ height: "100%", padding: "3px 5px 3px 9px", background: terminalTheme.termHostBg, touchAction: "none", overflow: "hidden" }}
+        />
+        {!sessionReady && !startupTimedOut && !sessionError && visible && <div className="terminal-boot" role="status" aria-live="polite" style={{background:terminalTheme.termHostBg,color:terminalTheme.xterm.foreground}}><span className="terminal-boot-spinner" aria-hidden="true" style={{color:terminalTheme.keybar.accent}}/><span>正在启动终端</span></div>}
+        {!sessionReady && startupTimedOut && !sessionError && visible && <div className="terminal-boot-warning" role="status" style={{background:terminalTheme.keybar.bg,borderColor:terminalTheme.keybar.border,color:terminalTheme.keybar.keyText}}>终端初始化较慢</div>}
+      </div>
       {sessionError && visible && <div role="alert" style={{position:"absolute",inset:"42% auto auto 50%",transform:"translate(-50%,-50%)",zIndex:47,maxWidth:"min(420px,calc(100% - 32px))",padding:"10px 12px",border:`1px solid ${terminalTheme.keybar.keyBorder}`,borderRadius:7,background:"rgba(24,24,29,.96)",color:terminalTheme.xterm.foreground,fontSize:12,lineHeight:1.5,textAlign:"center"}}>终端启动失败：{sessionError}</div>}
       {writeLocked && visible && <div style={{position:"absolute",top:10,right:10,zIndex:48,display:"flex",alignItems:"center",gap:7,padding:"7px 9px",border:"1px solid #6b5634",borderRadius:8,background:"rgba(39,32,22,.95)",color:"#d9b56c",fontSize:11}}>其他设备正在输入 <button style={{border:0,borderRadius:5,padding:"4px 7px",background:"#e0af68",color:"#17120a",fontSize:10}} onClick={()=>acquireWrite(true)}>接管输入</button></div>}
 
