@@ -5,6 +5,7 @@ import type {
   LSPServerConfig,
   MCPServer,
   SessionGoalState,
+  SessionQueryIndex,
 } from "../../domain/ports/agent-port";
 import { HttpClient, listOf } from "./http-client";
 import { LocalCollection } from "../local/local-collection";
@@ -321,10 +322,15 @@ export class AgentHttpGateway {
     return [];
   }
 
-  async getSession(id: string, query?: { before?: string; limit?: number }): Promise<unknown> {
+  async getSession(
+    id: string,
+    query?: { before?: string; after?: string; anchor?: string; limit?: number },
+  ): Promise<unknown> {
     try {
       const params = new URLSearchParams();
       if (query?.before) params.set("before", query.before);
+      if (query?.after) params.set("after", query.after);
+      if (query?.anchor) params.set("anchor", query.anchor);
       if (query?.limit !== undefined) params.set("limit", String(query.limit));
       const suffix = params.size > 0 ? `?${params.toString()}` : "";
       const session = await this.http.get<Record<string, unknown>>(
@@ -358,6 +364,12 @@ export class AgentHttpGateway {
       if ((err as { status?: number }).status === 404) return null;
       throw err;
     }
+  }
+
+  async getSessionQueryIndex(id: string): Promise<SessionQueryIndex> {
+    return this.http.get<SessionQueryIndex>(
+      `/api/sessions/${encodeURIComponent(id)}/query-index`,
+    );
   }
 
   observeSession(

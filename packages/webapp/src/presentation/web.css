@@ -91,6 +91,21 @@ body[data-web-shell="1"] .chat-messages {
   padding-right: max(12px, env(safe-area-inset-right));
 }
 
+body[data-web-shell="1"] .query-navigation-rail {
+  right: max(1px, env(safe-area-inset-right));
+}
+
+@media (max-width: 899px) {
+  body[data-web-shell="1"] .query-navigation-rail {
+    top: 14%;
+    height: 70%;
+  }
+
+  body[data-web-shell="1"] .query-navigation-rail__preview {
+    width: min(228px, calc(100vw - 58px));
+  }
+}
+
 /* The shared renderer stylesheet owns the Codex-style history lane and tool
    rows for both Electron and Web. This file only tunes the Web shell itself. */
 
@@ -98,6 +113,13 @@ body[data-web-shell="1"] .chat-messages {
 body[data-web-shell="1"] .chat-input-area {
   padding-bottom: calc(env(safe-area-inset-bottom) + 10px) !important;
 }
+
+/* The native runtime identity is already conveyed by its brand icon. Keep
+   the compact model picker to icon + model name in the Web shell. */
+body[data-web-shell="1"] .web-native-model-agent-name {
+  display: none;
+}
+
 /* ── Settings modal: full-bleed sheet with phone-proportioned content ────
    Dual scoping on every rule: the shell tags the portal with
    data-webapp-settings-* when it can, and a pure-CSS :has() fallback covers

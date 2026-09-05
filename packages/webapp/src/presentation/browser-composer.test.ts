@@ -87,6 +87,14 @@ describe("shared composer panel layout", () => {
     expect(css).toContain(".web-native-send-button::before {");
     expect(css).toContain("inset: 2px");
   });
+
+  it("shows only the native agent icon and model name in the Web model picker", () => {
+    expect(chatView).toContain("<AgentBrandIcon agentType={composerAgentType} size={14} />");
+    expect(chatView).toContain('className="web-native-model-agent-name"');
+    expect(webCss).toMatch(
+      /body\[data-web-shell="1"\] \.web-native-model-agent-name \{\s*display: none;\s*\}/,
+    );
+  });
 });
 
 describe("Codex-style Web message history", () => {

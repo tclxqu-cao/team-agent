@@ -3,6 +3,7 @@ import type {
   Message,
   SessionGoalState,
   SessionHistoryWindow,
+  SessionQueryIndex,
   ToolPermissionMode,
 } from "@agent/core";
 
@@ -81,6 +82,8 @@ export interface UnifiedSessionDetail extends UnifiedSessionSummary {
   /** Broker run identity paired with snapshotRevision for reconnect safety. */
   snapshotRunId?: string | null;
 }
+
+export type { SessionQueryIndex };
 
 export interface AgentWorkspace {
   agentType: AgentType;
@@ -232,6 +235,7 @@ export class RuntimeSessionError extends Error {
       | "OPERATION_NOT_SUPPORTED"
       | "APPROVAL_EXPIRED"
       | "CODEX_SESSION_VERSION_INCOMPATIBLE"
+      | "STALE_SESSION_ANCHOR"
       | "NATIVE_PROTOCOL_ERROR",
   ) {
     super(message);

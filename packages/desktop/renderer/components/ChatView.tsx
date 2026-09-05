@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { AgentEvent, RuntimeProgress } from "@agent/core";
-import { Check, Copy, CornerUpRight, FileText, GripVertical, Pencil, RefreshCw, Square, Target, Trash2, Volume2 } from "lucide-react";
+import { ArrowDownToLine, Check, Copy, CornerUpRight, FileText, GripVertical, LoaderCircle, Pencil, RefreshCw, Square, Target, Trash2, Volume2 } from "lucide-react";
 import AgentBrandIcon from "./AgentBrandIcon";
 import {
   isNativeAgentType,
@@ -33,6 +33,8 @@ import {
   type SessionHistoryDetail,
 } from "../lib/session-history";
 import { SinglePageHistoryPrefetch } from "../lib/session-history-prefetch";
+import { QueryNavigationRail } from "./QueryNavigationRail";
+import type { SessionQueryIndex, SessionQueryIndexEntry } from "../global";
 import {
   describeSessionLoadError,
   loadSessionWithRetry,
@@ -698,6 +700,7 @@ export default function ChatView({
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const historyScrollTimerRef = useRef<number | null>(null);
   const loadOlderHistoryRef = useRef<() => void>(() => undefined);
+  const loadNewerHistoryRef = useRef<() => void>(() => undefined);
   const historyCursorRef = useRef<string | null>(null);
   const latestHistoryCursorRef = useRef<string | null>(null);
   const historyPrefetchRef = useRef<SinglePageHistoryPrefetch<SessionHistoryDetail | null> | null>(null);
@@ -705,6 +708,15 @@ export default function ChatView({
     historyPrefetchRef.current = new SinglePageHistoryPrefetch<SessionHistoryDetail | null>();
   }
   const historySessionIdRef = useRef<string | null>(null);
+  const historyWindowModeRef = useRef<"latest" | "anchored">("latest");
+  const anchoredNewerCursorRef = useRef<string | null>(null);
+  const isLoadingNewerHistoryRef = useRef(false);
+  const queryIndexRef = useRef<SessionQueryIndex | null>(null);
+  const queryIndexGenerationRef = useRef(0);
+  const anchorRequestGenerationRef = useRef(0);
+  const pendingQueryScrollRef = useRef<string | null>(null);
+  const pendingLatestScrollRef = useRef(false);
+  const isReturningLatestHistoryRef = useRef(false);
   const historyRefreshSessionRef = useRef<string | null>(null);
   const historyRefreshInFlightRef = useRef(false);
   const historyRefreshPendingRef = useRef(false);
@@ -716,6 +728,13 @@ export default function ChatView({
   const nextAutoScrollRef = useRef<"instant" | "skip" | null>(null);
   const [isLoadingOlderHistory, setIsLoadingOlderHistory] = useState(false);
   const [olderHistoryError, setOlderHistoryError] = useState<string | null>(null);
+  const [queryIndex, setQueryIndex] = useState<SessionQueryIndex | null>(null);
+  const [historyWindowMode, setHistoryWindowMode] = useState<"latest" | "anchored">("latest");
+  const [activeQueryMessageId, setActiveQueryMessageId] = useState<string | null>(null);
+  const [loadingQueryMessageId, setLoadingQueryMessageId] = useState<string | null>(null);
+  const [hasLatestHistoryUpdates, setHasLatestHistoryUpdates] = useState(false);
+  const [isLoadingNewerHistory, setIsLoadingNewerHistory] = useState(false);
+  const [isReturningLatestHistory, setIsReturningLatestHistory] = useState(false);
   const [isInitialHistoryLoading, setIsInitialHistoryLoading] = useState(false);
   const [showInitialHistoryLoading, setShowInitialHistoryLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -744,6 +763,11 @@ export default function ChatView({
       });
   }, []);
 
+  const setHistoryMode = useCallback((mode: "latest" | "anchored") => {
+    historyWindowModeRef.current = mode;
+    setHistoryWindowMode(mode);
+  }, []);
+
   useEffect(() => {
     if (!isNativeRuntime || !viewSessionId) {
       draftSessionRef.current = null;
@@ -765,6 +789,12 @@ export default function ChatView({
     const container = messagesScrollRef.current;
     if (!container) return;
     if (container.scrollTop <= 240) loadOlderHistoryRef.current();
+    if (
+      historyWindowModeRef.current === "anchored"
+      && container.scrollHeight - container.scrollTop - container.clientHeight <= 240
+    ) {
+      loadNewerHistoryRef.current();
+    }
     container.classList.add("is-scrolling");
     if (historyScrollTimerRef.current !== null) {
       window.clearTimeout(historyScrollTimerRef.current);
@@ -788,6 +818,25 @@ export default function ChatView({
     container.scrollTop = anchor.scrollTop + (container.scrollHeight - anchor.scrollHeight);
     prependScrollAnchorRef.current = null;
   }, [messages]);
+
+  useLayoutEffect(() => {
+    const messageId = pendingQueryScrollRef.current;
+    const container = messagesScrollRef.current;
+    if (!messageId || !container) return;
+    const target = Array.from(container.querySelectorAll<HTMLElement>("[data-message-id]"))
+      .find((element) => element.dataset.messageId === messageId);
+    if (!target) return;
+    scrollMessageToCenter(container, target);
+    pendingQueryScrollRef.current = null;
+    setActiveQueryMessageId(messageId);
+  }, [messages]);
+
+  useLayoutEffect(() => {
+    const container = messagesScrollRef.current;
+    if (!pendingLatestScrollRef.current || !container || historyWindowMode !== "latest") return;
+    pendingLatestScrollRef.current = false;
+    container.scrollTop = container.scrollHeight;
+  }, [historyWindowMode, messages]);
 
   // ── Voice: dictation (input) + per-message TTS (output) ────────────────
   const [isRecording, setIsRecording] = useState(false);
@@ -1170,6 +1219,16 @@ export default function ChatView({
         setCompatibilityFailure(null);
         historyCursorRef.current = null;
         latestHistoryCursorRef.current = null;
+        anchoredNewerCursorRef.current = null;
+        queryIndexGenerationRef.current += 1;
+        queryIndexRef.current = null;
+        setQueryIndex(null);
+        setHistoryMode("latest");
+        setActiveQueryMessageId(null);
+        setLoadingQueryMessageId(null);
+        isReturningLatestHistoryRef.current = false;
+        setIsReturningLatestHistory(false);
+        setHasLatestHistoryUpdates(false);
         setOlderHistoryError(null);
         setIsInitialHistoryLoading(false);
         setShowInitialHistoryLoading(false);
@@ -1189,8 +1248,21 @@ export default function ChatView({
       setCompatibilityFailure(null);
       setOlderHistoryError(null);
       historyPrefetchRef.current?.invalidate();
+      anchorRequestGenerationRef.current += 1;
       historyCursorRef.current = null;
       latestHistoryCursorRef.current = null;
+      anchoredNewerCursorRef.current = null;
+      setHistoryMode("latest");
+      setHasLatestHistoryUpdates(false);
+      setActiveQueryMessageId(null);
+      setLoadingQueryMessageId(null);
+      isReturningLatestHistoryRef.current = false;
+      setIsReturningLatestHistory(false);
+      if (queryIndexRef.current?.sessionId !== targetSid) {
+        queryIndexGenerationRef.current += 1;
+        queryIndexRef.current = null;
+        setQueryIndex(null);
+      }
       setIsInitialHistoryLoading(true);
       setShowInitialHistoryLoading(false);
       historySessionIdRef.current = targetSid;
@@ -1224,6 +1296,7 @@ export default function ChatView({
         const nextCursor = detail?.history?.nextCursor ?? null;
         historyCursorRef.current = nextCursor;
         latestHistoryCursorRef.current = nextCursor;
+        anchoredNewerCursorRef.current = null;
         const liveMessages = getMessagesForSession(targetSid);
         const preferLive = liveMessages.length > 0
           && useAgentStore.getState().runningSessionId === targetSid;
@@ -1281,10 +1354,59 @@ export default function ChatView({
         sessionLoadGenerationRef.current += 1;
       }
     };
-  }, [clearMessages, getMessagesForSession, prefetchOlderHistory, selectedSessionId, sessionReloadGeneration, setContextUsage, setMessages, setSessionId, updateAgentActivity]);
+  }, [clearMessages, getMessagesForSession, prefetchOlderHistory, selectedSessionId, sessionReloadGeneration, setContextUsage, setHistoryMode, setMessages, setSessionId, updateAgentActivity]);
+
+  const loadSessionQueryIndex = useCallback(async (targetSid: string) => {
+    const agentApi = window.agentApi;
+    if (!agentApi?.getSessionQueryIndex) return null;
+    const generation = ++queryIndexGenerationRef.current;
+    try {
+      const loaded = await agentApi.getSessionQueryIndex(targetSid);
+      if (
+        queryIndexGenerationRef.current !== generation
+        || selectedSessionIdRef.current !== targetSid
+        || loaded.sessionId !== targetSid
+      ) return null;
+      queryIndexRef.current = loaded;
+      setQueryIndex(loaded);
+      return loaded;
+    } catch (indexError) {
+      if (queryIndexGenerationRef.current === generation) {
+        console.warn("[chat] failed to load query index", { sessionId: targetSid, error: indexError });
+      }
+      return null;
+    }
+  }, []);
+
+  useEffect(() => {
+    const targetSid = selectedSessionId;
+    if (!targetSid || isInitialHistoryLoading || !window.agentApi?.getSessionQueryIndex) return;
+    let cancelled = false;
+    const run = () => {
+      if (!cancelled && selectedSessionIdRef.current === targetSid) {
+        void loadSessionQueryIndex(targetSid);
+      }
+    };
+    const host = window as typeof window & {
+      requestIdleCallback?: (callback: () => void, options?: { timeout: number }) => number;
+      cancelIdleCallback?: (handle: number) => void;
+    };
+    const handle = host.requestIdleCallback
+      ? host.requestIdleCallback(run, { timeout: 1_000 })
+      : window.setTimeout(run, 0);
+    return () => {
+      cancelled = true;
+      if (host.cancelIdleCallback && host.requestIdleCallback) host.cancelIdleCallback(handle);
+      else window.clearTimeout(handle);
+    };
+  }, [isInitialHistoryLoading, loadSessionQueryIndex, selectedSessionId, sessionReloadGeneration]);
 
   const refreshLatestHistory = useCallback(async (targetSid: string) => {
     if (!window.agentApi || document.visibilityState === "hidden") return;
+    if (historyWindowModeRef.current === "anchored") {
+      setHasLatestHistoryUpdates(true);
+      return;
+    }
     if (historyRefreshSessionRef.current !== targetSid) {
       historyRefreshSessionRef.current = targetSid;
       historyRefreshInFlightRef.current = false;
@@ -1331,6 +1453,12 @@ export default function ChatView({
           }
         }
         latestHistoryCursorRef.current = nextLatestCursor;
+        if (
+          detail?.history?.revision
+          && detail.history.revision !== queryIndexRef.current?.revision
+        ) {
+          void loadSessionQueryIndex(targetSid);
+        }
         const restoredContextUsage = findLatestContextUsage(detail?.events ?? []);
         setRuntimeProgress(reduceRuntimeProgressEvents((detail?.events ?? []) as AgentEvent[]), targetSid);
         setNativeSubagentActivities(
@@ -1356,7 +1484,7 @@ export default function ChatView({
         historyRefreshInFlightRef.current = false;
       }
     }
-  }, [getMessagesForSession, prefetchOlderHistory, setContextUsage, setMessages, updateAgentActivity]);
+  }, [getMessagesForSession, loadSessionQueryIndex, prefetchOlderHistory, setContextUsage, setMessages, updateAgentActivity]);
 
   useEffect(() => {
     const targetSid = selectedSessionId;
@@ -1483,6 +1611,162 @@ export default function ChatView({
     loadOlderHistoryRef.current = () => { void loadOlderHistory(); };
   }, [loadOlderHistory]);
 
+  const loadNewerHistory = useCallback(async () => {
+    const targetSid = historySessionIdRef.current;
+    const cursor = anchoredNewerCursorRef.current;
+    if (
+      !window.agentApi
+      || !targetSid
+      || !cursor
+      || historyWindowModeRef.current !== "anchored"
+      || isLoadingNewerHistoryRef.current
+    ) return;
+
+    isLoadingNewerHistoryRef.current = true;
+    setIsLoadingNewerHistory(true);
+    try {
+      const detail = await window.agentApi.getSession(targetSid, {
+        after: cursor,
+        limit: SESSION_HISTORY_PAGE_SIZE,
+      }) as SessionHistoryDetail | null;
+      if (
+        selectedSessionIdRef.current !== targetSid
+        || historySessionIdRef.current !== targetSid
+        || historyWindowModeRef.current !== "anchored"
+      ) return;
+      const current = getMessagesForSession(targetSid);
+      const existingIds = new Set(current.map((message) => message.id));
+      const newer = restoreSessionHistoryPage(detail).filter((message) => !existingIds.has(message.id));
+      anchoredNewerCursorRef.current = detail?.history?.newerCursor ?? null;
+      if (newer.length > 0) {
+        nextAutoScrollRef.current = "skip";
+        setMessages([...current, ...newer], targetSid);
+      }
+    } catch (loadError) {
+      console.error("[chat] failed to load newer anchored history", {
+        sessionId: targetSid,
+        error: loadError,
+      });
+    } finally {
+      isLoadingNewerHistoryRef.current = false;
+      setIsLoadingNewerHistory(false);
+    }
+  }, [getMessagesForSession, setMessages]);
+
+  useEffect(() => {
+    loadNewerHistoryRef.current = () => { void loadNewerHistory(); };
+  }, [loadNewerHistory]);
+
+  const returnToLatestHistory = useCallback(async () => {
+    const targetSid = selectedSessionIdRef.current;
+    if (!window.agentApi || !targetSid || isReturningLatestHistoryRef.current) return false;
+    const requestGeneration = ++anchorRequestGenerationRef.current;
+    isReturningLatestHistoryRef.current = true;
+    setIsReturningLatestHistory(true);
+    setLoadingQueryMessageId(null);
+    try {
+      const detail = await window.agentApi.getSession(targetSid, {
+        limit: SESSION_HISTORY_PAGE_SIZE,
+      }) as SessionHistoryDetail | null;
+      if (
+        anchorRequestGenerationRef.current !== requestGeneration
+        || selectedSessionIdRef.current !== targetSid
+      ) return false;
+      const restored = restoreSessionHistoryPage(detail);
+      const cursor = detail?.history?.nextCursor ?? null;
+      historyPrefetchRef.current?.invalidate();
+      historyCursorRef.current = cursor;
+      latestHistoryCursorRef.current = cursor;
+      anchoredNewerCursorRef.current = null;
+      setHistoryMode("latest");
+      setHasLatestHistoryUpdates(false);
+      setActiveQueryMessageId(queryIndexRef.current?.entries.at(-1)?.messageId ?? null);
+      pendingLatestScrollRef.current = true;
+      nextAutoScrollRef.current = "skip";
+      setMessages(restored, targetSid);
+      prefetchOlderHistory(targetSid, cursor);
+      if (detail?.history?.revision !== queryIndexRef.current?.revision) {
+        void loadSessionQueryIndex(targetSid);
+      }
+      return true;
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : "返回最新消息失败");
+      return false;
+    } finally {
+      isReturningLatestHistoryRef.current = false;
+      setIsReturningLatestHistory(false);
+    }
+  }, [loadSessionQueryIndex, prefetchOlderHistory, setHistoryMode, setMessages]);
+
+  const activateQuery = useCallback(async (
+    entry: SessionQueryIndexEntry,
+    retryOnStale = true,
+  ): Promise<void> => {
+    const targetSid = selectedSessionIdRef.current;
+    const container = messagesScrollRef.current;
+    if (!window.agentApi || !targetSid || !container) return;
+    const requestGeneration = ++anchorRequestGenerationRef.current;
+    setActiveQueryMessageId(entry.messageId);
+    const rendered = Array.from(container.querySelectorAll<HTMLElement>("[data-message-id]"))
+      .find((element) => element.dataset.messageId === entry.messageId);
+    if (rendered) {
+      setLoadingQueryMessageId(null);
+      scrollMessageToCenter(container, rendered, "smooth");
+      return;
+    }
+
+    setLoadingQueryMessageId(entry.messageId);
+    historyPrefetchRef.current?.invalidate();
+    try {
+      const detail = await window.agentApi.getSession(targetSid, {
+        anchor: entry.pageToken,
+        limit: SESSION_HISTORY_PAGE_SIZE,
+      }) as SessionHistoryDetail | null;
+      if (
+        anchorRequestGenerationRef.current !== requestGeneration
+        || selectedSessionIdRef.current !== targetSid
+        || queryIndexRef.current?.revision !== detail?.history?.revision
+      ) return;
+      const restored = restoreSessionHistoryPage(detail);
+      const olderCursor = detail?.history?.olderCursor ?? detail?.history?.nextCursor ?? null;
+      historyCursorRef.current = olderCursor;
+      anchoredNewerCursorRef.current = detail?.history?.newerCursor ?? null;
+      setHistoryMode("anchored");
+      setHasLatestHistoryUpdates(false);
+      pendingQueryScrollRef.current = entry.messageId;
+      nextAutoScrollRef.current = "skip";
+      setMessages(restored, targetSid);
+      window.requestAnimationFrame(() => {
+        if (
+          anchorRequestGenerationRef.current !== requestGeneration
+          || selectedSessionIdRef.current !== targetSid
+        ) return;
+        const currentContainer = messagesScrollRef.current;
+        const target = Array.from(currentContainer?.querySelectorAll<HTMLElement>("[data-message-id]") ?? [])
+          .find((element) => element.dataset.messageId === entry.messageId);
+        if (!currentContainer || !target) return;
+        scrollMessageToCenter(currentContainer, target);
+        pendingQueryScrollRef.current = null;
+        setActiveQueryMessageId(entry.messageId);
+      });
+      prefetchOlderHistory(targetSid, olderCursor);
+    } catch (anchorError) {
+      const stale = (anchorError as { code?: string }).code === "STALE_SESSION_ANCHOR";
+      if (stale && retryOnStale) {
+        const refreshed = await loadSessionQueryIndex(targetSid);
+        const replacement = refreshed?.entries.find((candidate) => candidate.ordinal === entry.ordinal);
+        if (replacement) await activateQuery(replacement, false);
+        return;
+      }
+      console.error("[chat] failed to open indexed query", { sessionId: targetSid, error: anchorError });
+      setError(anchorError instanceof Error ? anchorError.message : "无法打开这条消息");
+    } finally {
+      if (anchorRequestGenerationRef.current === requestGeneration) {
+        setLoadingQueryMessageId(null);
+      }
+    }
+  }, [loadSessionQueryIndex, prefetchOlderHistory, setHistoryMode, setMessages]);
+
   const scheduleQueuedMessageAfterTerminal = (targetSessionId: string) => {
     if (
       managedRunSessionsRef.current.has(targetSessionId)
@@ -1544,6 +1828,10 @@ export default function ChatView({
       }
     }
     const isViewed = !eventSid || eventSid === viewedSid;
+    if (isViewed && historyWindowModeRef.current === "anchored") {
+      setHasLatestHistoryUpdates(true);
+      return;
+    }
     switch (event.type) {
       case "run_admitted":
         if (eventSid && eventSid === viewedSid) clearSessionDraft(eventSid);
@@ -2201,6 +2489,11 @@ export default function ChatView({
   const handleSend = async () => {
     if (!input.trim() || !canCompose || pendingImageReads > 0) return;
 
+    if (historyWindowModeRef.current === "anchored") {
+      const restoredLatest = await returnToLatestHistory();
+      if (!restoredLatest) return;
+    }
+
     void interruptSpeech(window.agentApi, stopSpeaking);
 
     setError(null);
@@ -2596,12 +2889,12 @@ export default function ChatView({
       </div>
 
       {/* Messages area */}
-      <div ref={messagesScrollRef} className="chat-messages" onScroll={handleHistoryScroll} style={{
-        flex: 1,
-        overflow: "auto",
-        position: "relative",
-        padding: "var(--chat-messages-padding)",
-      }}>
+      <div className="chat-messages-frame">
+        <div ref={messagesScrollRef} className="chat-messages" onScroll={handleHistoryScroll} style={{
+          overflow: "auto",
+          position: "relative",
+          padding: "var(--chat-messages-padding)",
+        }}>
 
         {messages.length > 0 && (isLoadingOlderHistory || olderHistoryError) && (
           <div
@@ -2823,6 +3116,7 @@ export default function ChatView({
           return (
           <div
             key={msg.id}
+            data-message-id={msg.id}
             className={`chat-message-group${actionPolicy.compact ? " chat-message-group--intermediate" : ""}`}
             style={{ marginBottom: actionPolicy.compact ? 0 : (isTurnBoundary ? "var(--chat-turn-gap)" : "var(--chat-message-gap)") }}
           >
@@ -3265,6 +3559,32 @@ export default function ChatView({
         )}
 
         <div ref={messagesEndRef} />
+        </div>
+
+        <QueryNavigationRail
+          entries={queryIndex?.entries ?? []}
+          activeMessageId={activeQueryMessageId}
+          loadingMessageId={loadingQueryMessageId}
+          onActivate={(entry) => { void activateQuery(entry); }}
+        />
+
+        {historyWindowMode === "anchored" && (
+          <button
+            type="button"
+            className="chat-history-return-latest"
+            data-has-updates={hasLatestHistoryUpdates}
+            data-loading-newer={isLoadingNewerHistory}
+            aria-busy={isReturningLatestHistory || undefined}
+            aria-label="回到最新消息"
+            title="回到最新消息"
+            disabled={isReturningLatestHistory}
+            onClick={() => { void returnToLatestHistory(); }}
+          >
+            {isReturningLatestHistory
+              ? <LoaderCircle className="chat-history-return-latest__spinner" size={16} aria-hidden="true" />
+              : <ArrowDownToLine size={16} aria-hidden="true" />}
+          </button>
+        )}
       </div>
 
       {/* Input area */}
@@ -4300,4 +4620,18 @@ export default function ChatView({
       )}
     </div>
   );
+}
+
+function scrollMessageToCenter(
+  container: HTMLElement,
+  target: HTMLElement,
+  behavior: ScrollBehavior = "auto",
+): void {
+  const containerRect = container.getBoundingClientRect();
+  const targetRect = target.getBoundingClientRect();
+  const top = container.scrollTop
+    + targetRect.top
+    - containerRect.top
+    - Math.max(0, (container.clientHeight - targetRect.height) / 2);
+  container.scrollTo({ top: Math.max(0, top), behavior });
 }

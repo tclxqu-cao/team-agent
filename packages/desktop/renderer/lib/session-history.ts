@@ -21,6 +21,7 @@ export interface SessionHistoryDetail {
   status?: "idle" | "running" | "completed" | "failed";
   occupancy?: "available" | "owned-by-customer-agent" | "owned-externally";
   messages?: Array<{
+    historyId?: string;
     role?: string;
     content?: string;
     toolCalls?: Array<{ id: string; name: string; arguments: Record<string, unknown> }>;
@@ -34,6 +35,10 @@ export interface SessionHistoryDetail {
     hasMore?: boolean;
     pageSize?: number;
     totalItems?: number;
+    olderCursor?: string | null;
+    newerCursor?: string | null;
+    kind?: "latest" | "anchored";
+    revision?: string;
   };
   goalState?: SessionGoalState;
 }
@@ -179,7 +184,7 @@ export function mergeRefreshedSessionHistory(
     const hasPersistedImage = message.presentation?.attachments?.some((attachment) => attachment.dataUrl);
     return {
       ...message,
-      id: previous.id,
+      id: message.id.startsWith("history-message.v1.") ? message.id : previous.id,
       timestamp: previous.timestamp,
       images: hasPersistedImage ? undefined : message.images ?? previous.images,
     };
@@ -258,7 +263,7 @@ function toChatMessage(message: NonNullable<SessionHistoryDetail["messages"]>[nu
     };
   }
   return {
-    id: crypto.randomUUID(),
+    id: message.historyId ?? crypto.randomUUID(),
     role: message.role as "user" | "assistant" | "tool",
     content: message.content ?? "",
     toolCalls: message.toolCalls?.length ? message.toolCalls : undefined,

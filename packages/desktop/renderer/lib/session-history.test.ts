@@ -3,6 +3,15 @@ import type { ChatMessage } from "../stores/agentStore";
 import { mergeRefreshedSessionHistory, restoreSessionHistoryPage } from "./session-history";
 
 describe("restoreSessionHistoryPage", () => {
+  it("preserves the stable history identity used by query navigation", () => {
+    const [restored] = restoreSessionHistoryPage({
+      messages: [{ historyId: "history-message.v1.rev.1", role: "user", content: "jump here" }],
+      events: [],
+    });
+
+    expect(restored.id).toBe("history-message.v1.rev.1");
+  });
+
   it("merges tool results in linear lookup order", () => {
     const restored = restoreSessionHistoryPage({
       messages: [

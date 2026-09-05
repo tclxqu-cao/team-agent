@@ -81,6 +81,20 @@ export interface TodoItem {
 
 export type AgentType = "customer-agent" | "codex" | "claude-code" | "opencode";
 
+export interface SessionQueryIndexEntry {
+  messageId: string;
+  ordinal: number;
+  preview: string;
+  pageToken: string;
+}
+
+export interface SessionQueryIndex {
+  sessionId: string;
+  revision: string;
+  totalQueries: number;
+  entries: SessionQueryIndexEntry[];
+}
+
 export type NativeReasoningEffort = "low" | "medium" | "high" | "xhigh" | "max";
 
 export interface RuntimeModelSelection {
@@ -273,7 +287,11 @@ export interface AgentApi {
     query?: { cursor?: string | null; limit?: number; refresh?: boolean },
   ): Promise<WorkspacePage<UnifiedSessionSummary>>;
   listChildSessions(parentId: string): Promise<unknown[]>;
-  getSession(id: string, query?: { before?: string; limit?: number }): Promise<unknown>;
+  getSession(
+    id: string,
+    query?: { before?: string; after?: string; anchor?: string; limit?: number },
+  ): Promise<unknown>;
+  getSessionQueryIndex?(id: string): Promise<SessionQueryIndex>;
   observeSession?(
     id: string,
     callback: (change: { type: "session_history_changed"; revision: number }) => void,

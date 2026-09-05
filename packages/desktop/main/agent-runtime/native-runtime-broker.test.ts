@@ -78,6 +78,7 @@ class FakeNativeRuntime {
   workspaceSessions: UnifiedSessionSummary[] = [];
   steerResult = true;
   readonly steeredInputs: Array<{ id: string; input: string }> = [];
+  readonly getUnpaginatedCachePreferences: boolean[] = [];
 
   health = async (): Promise<RuntimeHealth[]> => [{ agentType: "codex", available: true, label: "Codex" }];
   list = async (): Promise<UnifiedSessionSummary[]> => this.listResult ?? [summary(this.occupancy, this.status)];
@@ -122,7 +123,10 @@ class FakeNativeRuntime {
     messages: this.messages,
     events: [],
   });
-  getUnpaginated = this.get;
+  getUnpaginated = async (_id: string, preferCache = false): Promise<UnifiedSessionDetail> => {
+    this.getUnpaginatedCachePreferences.push(preferCache);
+    return this.get();
+  };
 
   async *run(
     _id: string,
@@ -1234,6 +1238,30 @@ describe("NativeRuntimeBrokerHost", () => {
     }
   });
 
+  it("refreshes latest pages while reusing the warmed detail for index and cursor reads", async () => {
+    const runtime = new FakeNativeRuntime();
+    runtime.messages = [
+      { role: "user", content: "older" },
+      { role: "assistant", content: "older answer" },
+      { role: "user", content: "latest" },
+      { role: "assistant", content: "latest answer" },
+    ];
+    const host = new NativeRuntimeBrokerHost(await directory(), runtime as unknown as UnifiedSessionService);
+    try {
+      const latest = await host.get(sessionId, { limit: 2 });
+      await host.getQueryIndex(sessionId);
+      await host.get(sessionId, { limit: 2 });
+      await host.get(sessionId, {
+        before: latest.history?.olderCursor ?? undefined,
+        limit: 2,
+      });
+
+      expect(runtime.getUnpaginatedCachePreferences).toEqual([false, true, false, true]);
+    } finally {
+      await host.stop();
+    }
+  });
+
   it("deduplicates the active projection before splitting native history into pages", async () => {
     const runtime = new FakeNativeRuntime();
     const turnResponses = [
@@ -1259,13 +1287,13 @@ describe("NativeRuntimeBrokerHost", () => {
       const oldest = await host.get(sessionId, { before: latest.history?.nextCursor ?? undefined, limit: 50 });
       const combined = [...oldest.messages, ...latest.messages];
 
-      expect(latest.messages[0]).toEqual({ role: "user", content: "long-running goal" });
+      expect(latest.messages[0]).toMatchObject({ role: "user", content: "long-running goal" });
       expect(latest.history).toMatchObject({ nextCursor: "history.v1.2", pageSize: 55 });
-      expect(oldest.messages).toEqual([
+      expect(oldest.messages.map(({ role, content }) => ({ role, content }))).toEqual([
         { role: "user", content: "older input" },
         { role: "assistant", content: "Older response" },
       ]);
-      expect(combined.filter((message) => message.role === "user")).toEqual([
+      expect(combined.filter((message) => message.role === "user").map(({ role, content }) => ({ role, content }))).toEqual([
         { role: "user", content: "older input" },
         { role: "user", content: "long-running goal" },
       ]);

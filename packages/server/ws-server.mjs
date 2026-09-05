@@ -367,7 +367,11 @@ const MIME_BY_EXT = {
   html: "text/html; charset=utf-8", htm: "text/html; charset=utf-8",
   css: "text/css; charset=utf-8",
   js: "text/javascript; charset=utf-8", mjs: "text/javascript; charset=utf-8",
-  json: "application/json", txt: "text/plain; charset=utf-8",
+  json: "application/json; charset=utf-8", xml: "application/xml; charset=utf-8",
+  csv: "text/csv; charset=utf-8",
+  md: "text/markdown; charset=utf-8", markdown: "text/markdown; charset=utf-8",
+  mdown: "text/markdown; charset=utf-8", mkdn: "text/markdown; charset=utf-8",
+  mdx: "text/markdown; charset=utf-8", txt: "text/plain; charset=utf-8",
   woff: "font/woff", woff2: "font/woff2", ttf: "font/ttf", otf: "font/otf",
   png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif",
   webp: "image/webp", bmp: "image/bmp", ico: "image/x-icon", svg: "image/svg+xml",
@@ -376,9 +380,16 @@ const MIME_BY_EXT = {
   pdf: "application/pdf",
 };
 
+const PLAIN_TEXT_EXTS = new Set([
+  "ts", "tsx", "jsx", "cjs", "scss", "yml", "yaml", "toml", "sh", "zsh", "bash",
+  "py", "rb", "go", "rs", "java", "kt", "c", "h", "cpp", "hpp", "sql", "env",
+  "gitignore", "log", "conf", "properties", "gradle", "lock", "vue", "svelte", "astro",
+  "graphql", "prisma", "proto",
+]);
+
 function mimeFor(p) {
   const ext = p.split(".").pop()?.toLowerCase() ?? "";
-  return MIME_BY_EXT[ext] ?? "application/octet-stream";
+  return MIME_BY_EXT[ext] ?? (PLAIN_TEXT_EXTS.has(ext) ? "text/plain; charset=utf-8" : "application/octet-stream");
 }
 
 async function fsRead(filePath, offset = 0, length = MAX_READ_CHUNK, userId) {

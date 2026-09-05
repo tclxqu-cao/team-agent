@@ -22,7 +22,23 @@ export interface Session {
 /** Opaque backward cursor used to request an older session-history window. */
 export interface SessionHistoryQuery {
   before?: string;
+  after?: string;
+  anchor?: string;
   limit?: number;
+}
+
+export interface SessionQueryIndexEntry {
+  messageId: string;
+  ordinal: number;
+  preview: string;
+  pageToken: string;
+}
+
+export interface SessionQueryIndex {
+  sessionId: string;
+  revision: string;
+  totalQueries: number;
+  entries: SessionQueryIndexEntry[];
 }
 
 export interface SessionHistoryWindow {
@@ -30,6 +46,10 @@ export interface SessionHistoryWindow {
   hasMore: boolean;
   pageSize: number;
   totalItems: number;
+  olderCursor?: string | null;
+  newerCursor?: string | null;
+  kind?: "latest" | "anchored";
+  revision?: string;
 }
 
 export interface SessionHistoryPage {

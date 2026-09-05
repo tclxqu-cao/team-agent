@@ -3,6 +3,7 @@ import {
   isToolPermissionMode,
   normalizeToolPermissionMode,
   paginateSessionHistory,
+  StaleSessionAnchorError,
   type Message,
 } from "@agent/core";
 import { agentHost } from "../../agent-host";
@@ -12,88 +13,7 @@ import {
   runtimeErrorStatus,
 } from "../../../../lib/native-runtime-service";
 import { RuntimeSessionError } from "../../../../../desktop/main/agent-runtime/types";
-
-function rebuildMessagesFromEvents(events: Array<Record<string, unknown>>) {
-  const messages: Array<Record<string, unknown>> = [];
-  let streamingAssistant: Record<string, unknown> | null = null;
-
-  for (const event of events) {
-    const type = event.type;
-    if (type === "text_chunk") {
-      if (!streamingAssistant) {
-        streamingAssistant = {
-          id: crypto.randomUUID(),
-          role: "assistant",
-          content: "",
-          isStreaming: true,
-          timestamp: Date.now(),
-        };
-        messages.push(streamingAssistant);
-      }
-      streamingAssistant.content = `${streamingAssistant.content ?? ""}${event.text ?? ""}`;
-      continue;
-    }
-
-    if (type === "tool_call" && event.toolCall) {
-      streamingAssistant = {
-        id: crypto.randomUUID(),
-        role: "assistant",
-        content: streamingAssistant?.content ?? "",
-        toolCalls: [event.toolCall],
-        isStreaming: false,
-        timestamp: Date.now(),
-      };
-      messages.push(streamingAssistant);
-      streamingAssistant = null;
-      continue;
-    }
-
-    if (type === "tool_result" && (event as { result?: { content?: string; toolCallId?: string } }).result) {
-      const result = (event as { result: { content?: string; toolCallId?: string } }).result;
-      messages.push({
-        id: crypto.randomUUID(),
-        role: "tool",
-        content: result.content ?? "",
-        toolCallId: result.toolCallId,
-        timestamp: Date.now(),
-      });
-      continue;
-    }
-
-    if (type === "ask_user") {
-      messages.push({
-        id: crypto.randomUUID(),
-        role: "assistant",
-        content: "",
-        askUser: {
-          questionId: event.questionId,
-          question: event.question ?? "",
-          options: event.options,
-          multiSelect: event.multiSelect,
-        },
-        timestamp: Date.now(),
-      });
-      continue;
-    }
-
-    if (type === "done" && typeof event.finalText === "string") {
-      if (streamingAssistant) {
-        streamingAssistant.content = event.finalText;
-        streamingAssistant.isStreaming = false;
-      } else if (event.finalText.trim()) {
-        messages.push({
-          id: crypto.randomUUID(),
-          role: "assistant",
-          content: event.finalText,
-          timestamp: Date.now(),
-        });
-      }
-      streamingAssistant = null;
-    }
-  }
-
-  return messages;
-}
+import { rebuildMessagesFromEvents } from "../../../../lib/session-history-source";
 
 export async function GET(
   request: Request,
@@ -101,9 +21,16 @@ export async function GET(
 ) {
   const url = new URL(request.url);
   const before = url.searchParams.get("before");
+  const after = url.searchParams.get("after");
+  const anchor = url.searchParams.get("anchor");
   const limit = url.searchParams.get("limit");
-  const historyQuery = before !== null || limit !== null
-    ? { before: before || undefined, limit: parseHistoryLimit(limit) }
+  const historyQuery = before !== null || after !== null || anchor !== null || limit !== null
+    ? {
+        before: before || undefined,
+        after: after || undefined,
+        anchor: anchor || undefined,
+        limit: parseHistoryLimit(limit),
+      }
     : undefined;
   if (isNativeSessionId(params.id)) {
     try {
@@ -129,22 +56,29 @@ export async function GET(
     ? rebuildMessagesFromEvents(session.events as Array<Record<string, unknown>>)
     : session.messages;
 
-  const hydrated = historyQuery
-    ? {
-        ...session,
-        permissionMode: normalizeToolPermissionMode(session.metadata.permissionMode),
-        ...paginateSessionHistory(
-          (rebuiltMessages ?? []) as Message[],
-          session.events ?? [],
-          historyQuery,
-        ),
-      }
-    : {
-        ...session,
-        messages: rebuiltMessages,
-        permissionMode: normalizeToolPermissionMode(session.metadata.permissionMode),
-      };
-  return NextResponse.json(hydrated);
+  try {
+    const hydrated = historyQuery
+      ? {
+          ...session,
+          permissionMode: normalizeToolPermissionMode(session.metadata.permissionMode),
+          ...paginateSessionHistory(
+            (rebuiltMessages ?? []) as Message[],
+            session.events ?? [],
+            historyQuery,
+          ),
+        }
+      : {
+          ...session,
+          messages: rebuiltMessages,
+          permissionMode: normalizeToolPermissionMode(session.metadata.permissionMode),
+        };
+    return NextResponse.json(hydrated);
+  } catch (error) {
+    if (error instanceof StaleSessionAnchorError) {
+      return NextResponse.json({ error: error.message, code: error.code }, { status: 409 });
+    }
+    throw error;
+  }
 }
 
 export async function PATCH(

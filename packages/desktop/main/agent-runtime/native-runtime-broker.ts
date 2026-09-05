@@ -20,6 +20,8 @@ import {
   reorderQueuedSessionMessages,
   sessionQueueItemKind,
   SQLiteDatabase,
+  SessionQueryIndexCache,
+  StaleSessionAnchorError,
   updateQueuedSessionMessage,
   type AgentEvent,
   type Message,
@@ -27,6 +29,7 @@ import {
   type SessionGoalState,
   type SessionMessagePayload,
   type SessionHistoryQuery,
+  type SessionQueryIndex,
   type ToolPermissionMode,
 } from "@agent/core";
 import { AsyncEventQueue } from "./async-event-queue.js";
@@ -66,7 +69,10 @@ import type {
   WorkspaceSessionQuery,
 } from "./types.js";
 import { RuntimeSessionError } from "./types.js";
-import { UnifiedSessionService } from "./unified-session-service.js";
+import {
+  shouldReuseSessionDetailCache,
+  UnifiedSessionService,
+} from "./unified-session-service.js";
 
 const BROKER_SOCKET_NAME = "native-runtime.sock";
 const EXTERNAL_OBSERVATION_DEBOUNCE_MS = 5_000;
@@ -1105,6 +1111,7 @@ export class NativeRuntimeBrokerHost {
   private readonly subscribers = new Map<Socket, BrokerSubscription>();
   private readonly localSubscribers = new Set<LocalBrokerSubscription>();
   private readonly pendingCreations = new Map<string, UnifiedSessionSummary>();
+  private readonly queryIndexCache = new SessionQueryIndexCache();
   private server: Server | null = null;
   private ownsSocket = false;
 
@@ -1292,8 +1299,9 @@ export class NativeRuntimeBrokerHost {
     try {
       // Reconcile retained run events against the complete transcript before
       // paging, otherwise the run input can be projected once per page.
-      const detail = await this.runtime.getUnpaginated(id, Boolean(query?.before));
+      const detail = await this.runtime.getUnpaginated(id, shouldReuseSessionDetailCache(query));
       const projected = this.state.applyDetail(detail);
+      this.queryIndexCache.getOrCreate(id, projected.messages);
       return query
         ? { ...projected, ...paginateSessionHistory(projected.messages, projected.events, query) }
         : projected;
@@ -1304,6 +1312,20 @@ export class NativeRuntimeBrokerHost {
       return query
         ? { ...projected, ...paginateSessionHistory(projected.messages, projected.events, query) }
         : projected;
+    }
+  }
+
+  async getQueryIndex(id: string): Promise<SessionQueryIndex> {
+    this.state.assertSessionVisible(id);
+    try {
+      const detail = await this.runtime.getUnpaginated(id, true);
+      const projected = this.state.applyDetail(detail);
+      return this.queryIndexCache.getOrCreate(id, projected.messages);
+    } catch (error) {
+      const pending = this.pendingCreations.get(id);
+      if (!pending) throw error;
+      const projected = this.state.applyDetail({ ...pending, messages: [], events: [] });
+      return this.queryIndexCache.getOrCreate(id, projected.messages);
     }
   }
 
@@ -1801,6 +1823,7 @@ export class NativeRuntimeBrokerHost {
       case "fork": return this.fork(requireSessionId(sessionId));
       case "delete": return this.delete(requireSessionId(sessionId));
       case "get": return this.get(requireSessionId(sessionId), queryParam(request.params));
+      case "getQueryIndex": return this.getQueryIndex(requireSessionId(sessionId));
       case "watchPath": return this.getSessionWatchPath(requireSessionId(sessionId));
       case "startRun": return this.startRun(
         requireSessionId(sessionId),
@@ -1965,6 +1988,10 @@ export class NativeRuntimeBrokerClient {
 
   async get(id: string, query?: SessionHistoryQuery): Promise<UnifiedSessionDetail> {
     return this.request("get", { sessionId: id, ...(query ?? {}) });
+  }
+
+  async getQueryIndex(id: string): Promise<SessionQueryIndex> {
+    return this.request("getQueryIndex", { sessionId: id });
   }
 
   async getSessionWatchPath(id: string): Promise<string | null> {
@@ -2709,7 +2736,9 @@ function isTerminalEvent(event: AgentEvent): event is Extract<AgentEvent, { type
 function serializeBrokerError(error: unknown): { message: string; code?: string } {
   return {
     message: error instanceof Error ? error.message : String(error),
-    ...(error instanceof RuntimeSessionError ? { code: error.code } : {}),
+    ...(error instanceof RuntimeSessionError || error instanceof StaleSessionAnchorError
+      ? { code: error.code }
+      : {}),
   };
 }
 
@@ -2729,6 +2758,7 @@ function isRuntimeErrorCode(value: string): value is ConstructorParameters<typeo
     "OPERATION_NOT_SUPPORTED",
     "APPROVAL_EXPIRED",
     "CODEX_SESSION_VERSION_INCOMPATIBLE",
+    "STALE_SESSION_ANCHOR",
     "NATIVE_PROTOCOL_ERROR",
   ].includes(value);
 }
@@ -2811,8 +2841,12 @@ function runOverridesParam(params: Record<string, unknown>): Pick<RuntimeRunOpti
 
 function queryParam(params: Record<string, unknown>): SessionHistoryQuery | undefined {
   const before = stringParam(params, "before") || undefined;
+  const after = stringParam(params, "after") || undefined;
+  const anchor = stringParam(params, "anchor") || undefined;
   const limit = numberParam(params, "limit") ?? undefined;
-  return before || limit !== undefined ? { before, limit } : undefined;
+  return before || after || anchor || limit !== undefined
+    ? { before, after, anchor, limit }
+    : undefined;
 }
 
 function workspaceQueryParam(params: Record<string, unknown>): WorkspaceQuery {

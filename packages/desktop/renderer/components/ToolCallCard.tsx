@@ -644,6 +644,22 @@ function GenericToolCard({ toolCall, onSelectSession, nativeSubagent, previewPat
 
   return (
     <CardShell statusColor={statusColor} isDone={isDone} expanded={expanded} onToggle={() => setExpanded(!expanded)} header={header} maxBodyHeight={800} primaryAction={previewPaths.length === 1 ? () => postWebArtifactOpen(previewPaths[0]) : undefined} primaryActionLabel={previewPaths.length === 1 ? `预览文件 ${basename(previewPaths[0])}` : undefined} primaryActionTitle={previewPaths.length === 1 ? `预览 ${previewPaths[0]}` : undefined}>
+      {previewPaths.length > 1 && (
+        <div className="tool-call-file-list" aria-label="改动文件">
+          {previewPaths.map((previewPath) => (
+            <button
+              key={previewPath}
+              type="button"
+              onClick={() => postWebArtifactOpen(previewPath)}
+              aria-label={`预览文件 ${basename(previewPath)}`}
+              title={`预览 ${previewPath}`}
+            >
+              <FileText size={12} strokeWidth={1.8} aria-hidden="true" />
+              <span>{basename(previewPath)}</span>
+            </button>
+          ))}
+        </div>
+      )}
       {/* Arguments */}
       {isNativeAgent ? (
         <NativeAgentActivity activity={nativeSubagent!} workspacePath={workspacePath} enableFilePreview={enableFilePreview} />
@@ -658,15 +674,6 @@ function GenericToolCard({ toolCall, onSelectSession, nativeSubagent, previewPat
         </>
       ) : (
         <ArgumentsBlock raw={JSON.stringify(toolCall.arguments, null, 2)} />
-      )}
-      {previewPaths.length > 1 && (
-        <div className="tool-call-file-list" aria-label="改动文件">
-          {previewPaths.map((previewPath) => (
-            <button key={previewPath} type="button" onClick={() => postWebArtifactOpen(previewPath)} title={previewPath}>
-              <span>{basename(previewPath)}</span>
-            </button>
-          ))}
-        </div>
       )}
       {/* Generic result */}
       {toolCall.result && !isDispatch && !isNativeAgent && (

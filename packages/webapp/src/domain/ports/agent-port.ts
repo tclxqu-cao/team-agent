@@ -18,6 +18,8 @@ export type {
   ModelProfile,
   SessionGoal,
   SessionGoalState,
+  SessionQueryIndex,
+  SessionQueryIndexEntry,
   TtsStreamMetadata,
 } from "../../../../desktop/renderer/global";
 

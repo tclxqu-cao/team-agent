@@ -549,6 +549,37 @@ describe("AgentHttpGateway", () => {
     );
   });
 
+  it("requests an anchored page and its newer neighbor independently", async () => {
+    const http = { get: vi.fn().mockResolvedValue({ messages: [], events: [] }) };
+    const gateway = new AgentHttpGateway(http as never, {} as never);
+
+    await gateway.getSession("session/one", { anchor: "history-anchor.v1.rev.2", limit: 50 });
+    await gateway.getSession("session/one", { after: "history.v1.50", limit: 50 });
+
+    expect(http.get).toHaveBeenNthCalledWith(
+      1,
+      "/api/sessions/session%2Fone?anchor=history-anchor.v1.rev.2&limit=50",
+    );
+    expect(http.get).toHaveBeenNthCalledWith(
+      2,
+      "/api/sessions/session%2Fone?after=history.v1.50&limit=50",
+    );
+  });
+
+  it("loads the compact query index from its dedicated endpoint", async () => {
+    const index = {
+      sessionId: "session/one",
+      revision: "rev",
+      totalQueries: 1,
+      entries: [{ messageId: "m1", ordinal: 1, preview: "hello", pageToken: "a1" }],
+    };
+    const http = { get: vi.fn().mockResolvedValue(index) };
+    const gateway = new AgentHttpGateway(http as never, {} as never);
+
+    await expect(gateway.getSessionQueryIndex("session/one")).resolves.toEqual(index);
+    expect(http.get).toHaveBeenCalledWith("/api/sessions/session%2Fone/query-index");
+  });
+
   it.each(["codex", "claude-code"])(
     "does not open a broker event stream while following an external %s run",
     async (agentType) => {

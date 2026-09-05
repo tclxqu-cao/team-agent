@@ -5,6 +5,8 @@ import type { ReasoningSummarySection } from '../agent/entities.js';
 export interface Message {
   role: "system" | "user" | "assistant" | "tool";
   content: string;
+  /** Stable, revision-scoped identity used by paged history navigation. */
+  historyId?: string;
   /** Base64 data URLs for images (e.g. data:image/png;base64,...) — used for vision requests */
   images?: string[];
   /** Display-only metadata derived from an external runtime's native message format. */

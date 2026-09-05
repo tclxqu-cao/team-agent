@@ -20,7 +20,7 @@ describe("paginateSessionHistory", () => {
     const page = paginateSessionHistory(messages, [], { limit: 2 });
 
     expect(page.messages.map((message) => message.content)).toEqual(["three", "four"]);
-    expect(page.history).toEqual({
+    expect(page.history).toMatchObject({
       nextCursor: "history.v1.3",
       hasMore: true,
       pageSize: 2,
@@ -49,7 +49,7 @@ describe("paginateSessionHistory", () => {
       limit: 0,
     });
 
-    expect(page.messages).toEqual([
+    expect(page.messages.map(({ role, content }) => ({ role, content }))).toEqual([
       { role: "user", content: "three" },
       { role: "assistant", content: "four" },
     ]);
@@ -79,9 +79,9 @@ describe("paginateSessionHistory", () => {
       limit: 50,
     });
 
-    expect(latest.messages[0]).toEqual({ role: "user", content: "run" });
+    expect(latest.messages[0]).toMatchObject({ role: "user", content: "run" });
     expect(latest.messages.at(-1)).toEqual({ role: "tool", content: "/workspace", toolCallId: "tool-long" });
-    expect(latest.history).toEqual({
+    expect(latest.history).toMatchObject({
       nextCursor: "history.v1.2",
       hasMore: true,
       pageSize: 55,
@@ -99,8 +99,8 @@ describe("paginateSessionHistory", () => {
 
     const page = paginateSessionHistory(legacy, [], { limit: 50 });
 
-    expect(page.messages).toEqual(legacy);
-    expect(page.history).toEqual({
+    expect(page.messages.map(({ role, content }) => ({ role, content }))).toEqual(legacy);
+    expect(page.history).toMatchObject({
       nextCursor: null,
       hasMore: false,
       pageSize: 60,

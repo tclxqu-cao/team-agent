@@ -5,6 +5,7 @@ import {
   SQLiteProjectStore,
   type AgentEvent,
   type SessionHistoryQuery,
+  type SessionQueryIndex,
   type SessionMessagePayload,
   type ToolPermissionMode,
 } from "@agent/core";
@@ -89,6 +90,7 @@ export interface NativeRuntimePort {
   fork(id: string): Promise<UnifiedSessionSummary>;
   delete(id: string): Promise<void>;
   get(id: string, query?: SessionHistoryQuery): Promise<UnifiedSessionDetail>;
+  getQueryIndex?(id: string): Promise<SessionQueryIndex>;
   getSessionWatchPath(id: string): Promise<string | null>;
   run(id: string, input: string, images?: string[], agentIds?: string[], agentName?: string): AsyncIterable<AgentEvent>;
   steer(id: string, input: string): Promise<boolean>;
@@ -275,6 +277,13 @@ export class NativeRuntimeService implements NativeRuntimePort {
       } : { ...pending, messages: [], events: [] };
     }
     return associateLocalProject(detail, await this.listProjects(), this.platform);
+  }
+
+  async getQueryIndex(id: string): Promise<SessionQueryIndex> {
+    if (this.runtime.getQueryIndex) return this.runtime.getQueryIndex(id);
+    const detail = await this.runtime.get(id);
+    const { buildSessionQueryIndex } = await import("@agent/core");
+    return buildSessionQueryIndex(id, detail.messages);
   }
 
   getSessionWatchPath(id: string): Promise<string | null> {
@@ -528,6 +537,7 @@ export function runtimeErrorStatus(err: unknown): number {
         return 405;
       case "APPROVAL_EXPIRED":
       case "CODEX_SESSION_VERSION_INCOMPATIBLE":
+      case "STALE_SESSION_ANCHOR":
         return 409;
       default:
         return 400;

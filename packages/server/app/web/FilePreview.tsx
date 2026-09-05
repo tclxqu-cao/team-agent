@@ -1,7 +1,7 @@
 "use client";
 // FilePreview — routes by file type:
 //   text    → progressive UTF-8 chunks driven by viewport demand
-//   html    → sandboxed <iframe> rendering, source view still available
+//   browser → sandboxed <iframe> using the file's original bytes and MIME
 //   image   → <img> from a ticketed streaming URL
 //   video   → <video controls>
 //   audio   → <audio controls>
@@ -14,14 +14,15 @@ import { Check, Download, Eye, LoaderCircle, Pencil, RefreshCw, RotateCcw, Save,
 import { parseUnifiedDiff, type FileDiffRow } from "./fileDiff";
 
 const TEXT_EXTS = new Set([
-  "ts", "tsx", "js", "jsx", "mjs", "cjs", "json", "md", "mdx", "css", "scss",
-  "html", "xml", "yml", "yaml", "toml", "sh", "zsh", "bash", "py", "rb", "go",
+  "ts", "tsx", "js", "jsx", "mjs", "cjs", "json", "md", "markdown", "mdown", "mkdn", "mdx", "css", "scss",
+  "html", "htm", "xml", "yml", "yaml", "toml", "sh", "zsh", "bash", "py", "rb", "go",
   "rs", "java", "kt", "c", "h", "cpp", "hpp", "sql", "env", "gitignore",
   "dockerfile", "txt", "log", "conf", "properties", "gradle", "lock", "csv",
   "vue", "svelte", "astro", "graphql", "prisma", "proto",
 ]);
 const IMG_EXTS = new Set(["png", "jpg", "jpeg", "gif", "webp", "bmp", "ico", "svg"]);
 const HTML_EXTS = new Set(["html", "htm"]);
+const BROWSER_PREVIEW_EXTS = new Set(TEXT_EXTS);
 // Mirrors the server's `HTML_PREVIEW_CSP`: unique opaque origin for the
 // rendered deliverable — scripts run, console origin stays out of reach.
 const HTML_IFRAME_SANDBOX = "allow-scripts allow-popups allow-forms allow-modals";
@@ -181,6 +182,11 @@ export function isHtmlPreviewPath(path: string): boolean {
   return HTML_EXTS.has(ext);
 }
 
+export function isBrowserPreviewPath(path: string): boolean {
+  const ext = path.split(".").pop()?.toLowerCase() ?? "";
+  return BROWSER_PREVIEW_EXTS.has(ext);
+}
+
 function kindOf(path: string): Kind {
   const ext = path.split(".").pop()?.toLowerCase() ?? "";
   if (TEXT_EXTS.has(ext) || !path.includes(".")) return "text";
@@ -240,6 +246,7 @@ export default function FilePreview({ path, rpc, onClose }: Props) {
 
   const kind = path ? kindOf(path) : "unsupported";
   const isHtml = path ? isHtmlPreviewPath(path) : false;
+  const hasBrowserPreview = path ? isBrowserPreviewPath(path) : false;
   const text = useMemo(() => textChunks.join(""), [textChunks]);
 
   const revokeMediaTicket = useCallback(() => {
@@ -359,7 +366,7 @@ export default function FilePreview({ path, rpc, onClose }: Props) {
 
   const startPreview = useCallback((target: string, targetKind: Kind) => {
     const generation = ++generationRef.current;
-    const htmlTarget = isHtmlPreviewPath(target);
+    const browserTarget = isBrowserPreviewPath(target);
     chunkInFlightRef.current = false;
     revokeMediaTicket();
     activeMediaUrlRef.current = null;
@@ -371,7 +378,7 @@ export default function FilePreview({ path, rpc, onClose }: Props) {
     if (targetKind === "text") {
       void loadTextStatus(target, generation);
       void loadChunk(target, true, generation);
-      if (htmlTarget && previewModeRef.current) void loadMedia(target, generation);
+      if (browserTarget && previewModeRef.current) void loadMedia(target, generation);
     } else if (targetKind === "image" || targetKind === "video" || targetKind === "audio" || targetKind === "pdf") {
       void loadMedia(target, generation);
     } else if (targetKind === "hex") {
@@ -724,7 +731,7 @@ export default function FilePreview({ path, rpc, onClose }: Props) {
                 <Share2 size={15} strokeWidth={1.8} aria-hidden="true" />
               )}
             </button>
-            {isHtml && (
+            {hasBrowserPreview && (
               <button
                 type="button"
                 onClick={togglePreviewMode}
@@ -735,8 +742,8 @@ export default function FilePreview({ path, rpc, onClose }: Props) {
                     ? { color: "var(--ui-tab-accent, #7aa2f7)", borderColor: "var(--ui-tab-accent, #7aa2f7)" }
                     : {}),
                 }}
-                aria-label={previewMode ? "退出页面预览" : "预览页面"}
-                title={previewMode ? "退出页面预览" : "在浏览器中预览渲染效果"}
+                aria-label={previewMode ? "退出浏览器预览" : "浏览器预览"}
+                title={previewMode ? "退出浏览器预览" : isHtml ? "在浏览器中预览渲染效果" : "在浏览器中查看原始文件"}
               >
                 <Eye size={15} strokeWidth={1.8} aria-hidden="true" />
               </button>
@@ -795,11 +802,11 @@ export default function FilePreview({ path, rpc, onClose }: Props) {
         {mediaUrl && !err && kind === "pdf" && (
           <iframe src={mediaUrl} title={path} onLoad={() => markMediaReady(mediaUrl)} onError={() => markMediaFailed(mediaUrl)} style={{ width: "100%", height: "100%", border: "none" }} />
         )}
-        {mediaUrl && !err && kind === "text" && isHtml && previewMode && !editing && (
-          // Document URL carries the file name so relative css/js/img
-          // references resolve to sibling workspace files via the ticket route.
+        {mediaUrl && !err && kind === "text" && hasBrowserPreview && previewMode && !editing && (
+          // HTML carries the file name so relative assets resolve through the
+          // ticket route. Other text opens the primary URL to preserve symlinks.
           <iframe
-            src={`${mediaUrl}/${encodeURIComponent(fileName(path))}`}
+            src={isHtml ? `${mediaUrl}/${encodeURIComponent(fileName(path))}` : mediaUrl}
             sandbox={HTML_IFRAME_SANDBOX}
             title={path}
             onLoad={() => markMediaReady(mediaUrl)}

@@ -1072,7 +1072,11 @@ ipcMain.handle("sessions:listChildren", async (_event, parentId: string) => {
   return unifiedSessions.listChildren(parentId);
 });
 
-ipcMain.handle("sessions:get", async (_event, id: string, query?: { before?: string; limit?: number }) => {
+ipcMain.handle("sessions:get", async (
+  _event,
+  id: string,
+  query?: { before?: string; after?: string; anchor?: string; limit?: number },
+) => {
   const detail = await unifiedSessions.get(id, query);
   const deliveredCursor = {
     runId: detail.snapshotRunId ?? null,
@@ -1083,6 +1087,10 @@ ipcMain.handle("sessions:get", async (_event, id: string, query?: { before?: str
     void attachDesktopNativeEventForwarder(id, deliveredCursor).catch(() => undefined);
   }
   return detail;
+});
+
+ipcMain.handle("sessions:getQueryIndex", async (_event, id: string) => {
+  return unifiedSessions.getQueryIndex(id);
 });
 
 ipcMain.handle("sessions:setPermissionMode", async (_event, id: string, mode: import("@agent/core").ToolPermissionMode) => {

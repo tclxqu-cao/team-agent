@@ -4,6 +4,12 @@ import type {
   SessionHistoryPage,
   SessionHistoryQuery,
 } from "./entities.js";
+import {
+  computeSessionHistoryRevision,
+  decodeSessionHistoryAnchor,
+  sessionHistoryMessageId,
+  StaleSessionAnchorError,
+} from "./SessionQueryIndex.js";
 
 export const DEFAULT_SESSION_HISTORY_PAGE_SIZE = 50;
 export const MAX_SESSION_HISTORY_PAGE_SIZE = 100;
@@ -30,14 +36,22 @@ export function paginateSessionHistory(
     }
   }
 
-  const end = decodeCursor(query.before, visibleMessages.length);
-  const nominalStart = Math.max(0, end - pageSize);
-  const start = findTurnBoundaryStart(visibleMessages, nominalStart);
+  const revision = computeSessionHistoryRevision(messages);
+  const { start, end, kind } = selectHistoryRange(
+    visibleMessages,
+    pageSize,
+    query,
+    revision,
+  );
   const selected = visibleMessages.slice(start, end);
   const pageMessages: Message[] = [];
   const selectedToolCallIds = new Set<string>();
-  for (const message of selected) {
-    pageMessages.push(message);
+  for (let offset = 0; offset < selected.length; offset += 1) {
+    const message = selected[offset];
+    pageMessages.push({
+      ...message,
+      historyId: sessionHistoryMessageId(start + offset, message),
+    });
     for (const toolCall of message.toolCalls ?? []) {
       selectedToolCallIds.add(toolCall.id);
       const result = toolResults.get(toolCall.id);
@@ -53,8 +67,57 @@ export function paginateSessionHistory(
       hasMore: start > 0,
       pageSize: selected.length,
       totalItems: visibleMessages.length,
+      olderCursor: start > 0 ? `${CURSOR_PREFIX}${start}` : null,
+      newerCursor: end < visibleMessages.length ? `${CURSOR_PREFIX}${end}` : null,
+      kind,
+      revision,
     },
   };
+}
+
+function selectHistoryRange(
+  messages: Message[],
+  pageSize: number,
+  query: SessionHistoryQuery,
+  revision: string,
+): { start: number; end: number; kind: "latest" | "anchored" } {
+  if (query.anchor) {
+    const target = decodeSessionHistoryAnchor(query.anchor, revision);
+    if (target >= messages.length || messages[target]?.role !== "user") {
+      throw new StaleSessionAnchorError();
+    }
+    const nominalStart = Math.max(0, target - Math.floor(pageSize / 2));
+    const start = findTurnBoundaryStart(messages, nominalStart);
+    const requiredPageSize = Math.max(pageSize, target - start + 1);
+    return {
+      start,
+      end: findTurnBoundaryEnd(messages, start, requiredPageSize),
+      kind: "anchored",
+    };
+  }
+
+  if (query.after) {
+    const start = decodeCursor(query.after, messages.length);
+    return {
+      start,
+      end: findTurnBoundaryEnd(messages, start, pageSize),
+      kind: "anchored",
+    };
+  }
+
+  const end = decodeCursor(query.before, messages.length);
+  const nominalStart = Math.max(0, end - pageSize);
+  return {
+    start: findTurnBoundaryStart(messages, nominalStart),
+    end,
+    kind: "latest",
+  };
+}
+
+function findTurnBoundaryEnd(messages: Message[], start: number, pageSize: number): number {
+  let end = Math.min(messages.length, start + pageSize);
+  while (end < messages.length && messages[end]?.role !== "user") end += 1;
+  return end;
 }
 
 function findTurnBoundaryStart(messages: Message[], nominalStart: number): number {

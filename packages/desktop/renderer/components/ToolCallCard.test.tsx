@@ -1,7 +1,11 @@
+import { readFileSync } from "node:fs";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import ToolCallCard, { resolveToolPreviewPaths, ToolCallGroup } from "./ToolCallCard";
+
+const toolCallCardSource = readFileSync(new URL("./ToolCallCard.tsx", import.meta.url), "utf8");
+const globalCss = readFileSync(new URL("../styles/global.css", import.meta.url), "utf8");
 
 function command(id: string, result?: string) {
   return {
@@ -119,6 +123,23 @@ describe("tool activity rows", () => {
     expect(html).toContain("a.ts");
     expect(html).toContain("b.ts");
     expect(html).not.toContain("lucide-eye");
+  });
+
+  it("places multi-file preview actions before verbose tool arguments", () => {
+    const previewList = toolCallCardSource.indexOf('{previewPaths.length > 1 && (');
+    const argumentsBlock = toolCallCardSource.indexOf('{/* Arguments */}', previewList);
+
+    expect(previewList).toBeGreaterThan(-1);
+    expect(argumentsBlock).toBeGreaterThan(previewList);
+    expect(toolCallCardSource).toContain('aria-label={`预览文件 ${basename(previewPath)}`}');
+    expect(toolCallCardSource).toContain('<FileText size={12}');
+  });
+
+  it("keeps the file disclosure visually integrated with the tool row", () => {
+    const disclosureRule = globalCss.match(/\.tool-call-shell__disclosure\s*\{([^}]+)\}/)?.[1] ?? "";
+
+    expect(disclosureRule).toContain("background: transparent");
+    expect(disclosureRule).not.toContain("border-left");
   });
 });
 

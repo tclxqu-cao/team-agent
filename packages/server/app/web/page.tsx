@@ -720,9 +720,8 @@ const GLOBAL_CSS = `
     right: calc(100vw - var(--vv-left, 0px) - var(--vv-width, 100vw));
     width: min(82vw, 320px); z-index: 40;
     transform: translateX(102%); transition: transform .22s ease;
-    box-shadow: -12px 0 32px rgba(0,0,0,.5);
   }
-  .tree-col-open { transform: translateX(0); }
+  .tree-col-open { transform: translateX(0); box-shadow: -12px 0 32px rgba(0,0,0,.5); }
   .drawer-mask { position:fixed; top:var(--vv-top, 0px); left:var(--vv-left, 0px); width:var(--vv-width, 100vw); height:var(--vv-height, 100dvh); background:rgba(0,0,0,.45); z-index:39; }
   .preview-col {
     position: fixed;

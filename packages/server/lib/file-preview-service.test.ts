@@ -224,14 +224,14 @@ describe("file preview gateway authorization contract", () => {
   });
 });
 
-describe("html deliverable preview gateway contract", () => {
+describe("browser preview gateway contract", () => {
   const serving = () =>
     wsServerSource.slice(
       wsServerSource.indexOf("async function serveTicketedFilePreview"),
       wsServerSource.indexOf("const server = createServer"),
     );
 
-  it("serves html deliverables with a renderable mime type", () => {
+  it("serves browser-readable text formats with inline mime types", () => {
     const mimeMap = wsServerSource.slice(
       wsServerSource.indexOf("const MIME_BY_EXT"),
       wsServerSource.indexOf("function mimeFor"),
@@ -239,6 +239,11 @@ describe("html deliverable preview gateway contract", () => {
     expect(mimeMap).toContain('html: "text/html; charset=utf-8"');
     expect(mimeMap).toContain('htm: "text/html; charset=utf-8"');
     expect(mimeMap).toContain('css: "text/css; charset=utf-8"');
+    expect(mimeMap).toContain('md: "text/markdown; charset=utf-8"');
+    expect(mimeMap).toContain('markdown: "text/markdown; charset=utf-8"');
+    expect(mimeMap).toContain('json: "application/json; charset=utf-8"');
+    expect(mimeMap).toContain('xml: "application/xml; charset=utf-8"');
+    expect(wsServerSource).toContain('PLAIN_TEXT_EXTS.has(ext) ? "text/plain; charset=utf-8"');
   });
 
   it("confines rendered html to an opaque origin sandbox", () => {

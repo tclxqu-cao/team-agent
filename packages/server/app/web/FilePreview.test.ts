@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   MAX_CLIENT_DOWNLOAD_BYTES,
   decodeTextChunk,
+  isBrowserPreviewPath,
   mimeTypeForPath,
   nativeFileShareReadiness,
   readFileForClientDownload,
@@ -100,6 +101,14 @@ describe("FilePreview client download", () => {
     expect(mimeTypeForPath("/tmp/archive.unknown")).toBe("application/octet-stream");
   });
 
+  it("offers browser preview for text formats without treating binary files as text", () => {
+    for (const path of ["/tmp/page.html", "/tmp/README.md", "/tmp/data.JSON", "/tmp/feed.xml", "/tmp/app.ts"]) {
+      expect(isBrowserPreviewPath(path)).toBe(true);
+    }
+    expect(isBrowserPreviewPath("/tmp/report.pdf")).toBe(false);
+    expect(isBrowserPreviewPath("/tmp/archive.zip")).toBe(false);
+  });
+
   it("inherits preview surfaces and text colors from the selected shell skin", () => {
     expect(WEB_THEMES.map((theme) => theme.cssVars["--ui-color-scheme"])).toEqual(["light", "dark", "dark"]);
     expect(filePreviewSource).toContain('background: "var(--ui-term-col-bg, #101014)"');
@@ -174,17 +183,23 @@ describe("FilePreview client download", () => {
     expect(closeButton).toBeGreaterThan(shareButton);
   });
 
-  it("adds a toggleable sandboxed render preview for html deliverables", () => {
-    const previewButton = filePreviewSource.indexOf('aria-label={previewMode ? "退出页面预览" : "预览页面"}');
+  it("adds a toggleable sandboxed browser preview for supported text files", () => {
+    const previewButton = filePreviewSource.indexOf('aria-label={previewMode ? "退出浏览器预览" : "浏览器预览"}');
     const shareButton = filePreviewSource.indexOf('aria-label="分享文件"');
 
     expect(filePreviewSource).toContain("isHtmlPreviewPath");
+    expect(filePreviewSource).toContain("isBrowserPreviewPath");
     expect(filePreviewSource).toContain('sandbox={HTML_IFRAME_SANDBOX}');
     expect(filePreviewSource).toContain('"allow-scripts allow-popups allow-forms allow-modals"');
-    expect(filePreviewSource).toContain('src={`${mediaUrl}/${encodeURIComponent(fileName(path))}`}');
-    expect(filePreviewSource).toContain("kind === \"text\" && isHtml && previewMode && !editing");
+    expect(filePreviewSource).toContain('src={isHtml ? `${mediaUrl}/${encodeURIComponent(fileName(path))}` : mediaUrl}');
+    expect(filePreviewSource).toContain("kind === \"text\" && hasBrowserPreview && previewMode && !editing");
     expect(previewButton).toBeGreaterThan(-1);
     expect(previewButton).toBeGreaterThan(shareButton);
+  });
+
+  it("streams markdown directly instead of converting it to html", () => {
+    expect(filePreviewSource).not.toMatch(/marked|markdown-it|react-markdown|remark/);
+    expect(filePreviewSource).toContain('src={isHtml ? `${mediaUrl}/${encodeURIComponent(fileName(path))}` : mediaUrl}');
   });
 
   it("keeps diff and content tabs authoritative while the html preview is off", () => {

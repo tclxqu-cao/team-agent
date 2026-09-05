@@ -168,6 +168,32 @@ describe("UnifiedSessionService", () => {
     expect(codex.getSession).toHaveBeenCalledTimes(1);
   });
 
+  it("refreshes latest history while reusing its detail for the index and older page", async () => {
+    const codexSession = summary("codex", "cx-1", "/repo", "2026-01-02T00:00:00.000Z");
+    const codex = adapter("codex", [codexSession]);
+    codex.getSession = vi.fn(async (): Promise<UnifiedSessionDetail> => ({
+      ...detail(codexSession),
+      messages: [
+        { role: "user", content: "first" },
+        { role: "assistant", content: "answer" },
+        { role: "user", content: "second" },
+        { role: "assistant", content: "second answer" },
+      ],
+    }));
+    const service = new UnifiedSessionService([codex], async () => []);
+
+    const firstPage = await service.get(codexSession.id, { limit: 2 });
+    const index = await service.getQueryIndex(codexSession.id);
+    await service.get(codexSession.id, { limit: 2 });
+    await service.get(codexSession.id, {
+      before: firstPage.history?.olderCursor ?? undefined,
+      limit: 2,
+    });
+
+    expect(index.entries.map((entry) => entry.preview)).toEqual(["first", "second"]);
+    expect(codex.getSession).toHaveBeenCalledTimes(2);
+  });
+
   it("forwards image data URLs to the owning adapter in upload order", async () => {
     const codexSession = summary("codex", "cx-1", "/repo", "2026-01-02T00:00:00.000Z");
     const codex = adapter("codex", [codexSession]);

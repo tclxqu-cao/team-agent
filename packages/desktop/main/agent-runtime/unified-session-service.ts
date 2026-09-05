@@ -1,8 +1,10 @@
 import { resolve, sep } from "node:path";
 import {
+  SessionQueryIndexCache,
   paginateSessionHistory,
   type AgentEvent,
   type SessionHistoryQuery,
+  type SessionQueryIndex,
 } from "@agent/core";
 import { decodeUnifiedSessionId } from "./session-id.js";
 import { AgentWorkspaceIndexService } from "./agent-workspace-index.js";
@@ -38,6 +40,7 @@ export class UnifiedSessionService {
   private healthCache: RuntimeHealth[] = [];
   private discoveryPromise: Promise<UnifiedSessionSummary[]> | null = null;
   private readonly detailCache = new Map<string, UnifiedSessionDetail>();
+  private readonly queryIndexCache = new SessionQueryIndexCache();
 
   constructor(
     adapters: AgentRuntimeAdapter[],
@@ -115,11 +118,13 @@ export class UnifiedSessionService {
   async refresh(projectId?: string): Promise<UnifiedSessionSummary[]> {
     this.discoveryPromise = null;
     this.detailCache.clear();
+    this.queryIndexCache.clear();
     return this.list(projectId);
   }
 
   invalidate(id: string): void {
     this.detailCache.delete(id);
+    this.queryIndexCache.invalidate(id);
     this.discoveryPromise = null;
     const decoded = decodeUnifiedSessionId(id);
     this.workspaceIndex.invalidate(decoded.agentType);
@@ -159,12 +164,18 @@ export class UnifiedSessionService {
   }
 
   async get(id: string, query?: SessionHistoryQuery): Promise<UnifiedSessionDetail> {
-    const associated = await this.getUnpaginated(id, Boolean(query?.before));
+    const associated = await this.getUnpaginated(id, shouldReuseSessionDetailCache(query));
+    this.queryIndexCache.getOrCreate(id, associated.messages);
     if (!query) return associated;
     return {
       ...associated,
       ...paginateSessionHistory(associated.messages, associated.events, query),
     };
+  }
+
+  async getQueryIndex(id: string): Promise<SessionQueryIndex> {
+    const detail = await this.getUnpaginated(id, true);
+    return this.queryIndexCache.getOrCreate(id, detail.messages);
   }
 
   async getUnpaginated(id: string, preferCache = false): Promise<UnifiedSessionDetail> {
@@ -342,6 +353,10 @@ export class UnifiedSessionService {
       this.detailCache.delete(oldest);
     }
   }
+}
+
+export function shouldReuseSessionDetailCache(query?: SessionHistoryQuery): boolean {
+  return Boolean(query?.before || query?.after || query?.anchor);
 }
 
 function associateProject<T extends UnifiedSessionSummary>(session: T, projects: ProjectLike[]): T {

@@ -113,8 +113,9 @@ contextBridge.exposeInMainWorld("agentApi", {
   listAgentWorkspaceSessions: (agentType: string, workspaceId: string, query?: Record<string, unknown>) =>
     ipcRenderer.invoke("workspaces:listSessions", agentType, workspaceId, query),
   listChildSessions: (parentId: string) => ipcRenderer.invoke("sessions:listChildren", parentId),
-  getSession: (id: string, query?: { before?: string; limit?: number }) =>
+  getSession: (id: string, query?: { before?: string; after?: string; anchor?: string; limit?: number }) =>
     ipcRenderer.invoke("sessions:get", id, query),
+  getSessionQueryIndex: (id: string) => ipcRenderer.invoke("sessions:getQueryIndex", id),
   setSessionPermissionMode: (id: string, mode: "request-approval" | "auto-approval" | "full-access") =>
     ipcRenderer.invoke("sessions:setPermissionMode", id, mode),
   getSessionGoals: (id: string) => ipcRenderer.invoke("sessions:getGoals", id),

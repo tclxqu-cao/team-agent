@@ -21,6 +21,15 @@ describe("web console file drawer layout", () => {
     expect(pageSource).toMatch(/Math\.hypot\([^)]*drag\.startX[^)]*drag\.startY[^)]*\)<4/);
   });
 
+  it("only casts the mobile drawer shadow while the drawer is open", () => {
+    const closedTreeColStyles = pageSource.match(/\.tree-col\s*\{([\s\S]*?)\n  \}/)?.[1] ?? "";
+
+    expect(closedTreeColStyles).not.toContain("box-shadow");
+    expect(pageSource).toMatch(
+      /\.tree-col-open\s*\{[^}]*box-shadow:\s*-12px 0 32px rgba\(0,0,0,\.5\);[^}]*\}/,
+    );
+  });
+
   it("opens, previews, and reveals artifact requests from the expected Web App frame", () => {
     expect(pageSource).toContain("readWebArtifactOpenRequest(");
     expect(pageSource).toContain('setDrawerTab("files")');
