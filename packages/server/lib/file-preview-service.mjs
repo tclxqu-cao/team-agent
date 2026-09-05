@@ -173,7 +173,7 @@ export function parsePreviewRange(header, size) {
   return { start, end };
 }
 
-export async function servePreviewFile(request, response, filePath, mime = "application/octet-stream") {
+export async function servePreviewFile(request, response, filePath, mime = "application/octet-stream", extraHeaders = {}) {
   const canonicalPath = await fsp.realpath(filePath);
   const stat = await fsp.stat(canonicalPath);
   if (!stat.isFile()) throw fileError("EISDIR", "not a regular file");
@@ -188,6 +188,7 @@ export async function servePreviewFile(request, response, filePath, mime = "appl
       "content-range": `bytes */${stat.size}`,
       "cache-control": "private, no-store",
       "x-content-type-options": "nosniff",
+      ...extraHeaders,
     });
     response.end();
     return;
@@ -201,6 +202,7 @@ export async function servePreviewFile(request, response, filePath, mime = "appl
     "content-length": String(stat.size === 0 ? 0 : end - start + 1),
     "content-type": mime,
     "x-content-type-options": "nosniff",
+    ...extraHeaders,
     ...(range ? { "content-range": `bytes ${start}-${end}/${stat.size}` } : {}),
   };
   response.writeHead(range ? 206 : 200, headers);

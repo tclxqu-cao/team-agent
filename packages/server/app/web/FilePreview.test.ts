@@ -173,4 +173,24 @@ describe("FilePreview client download", () => {
     expect(shareButton).toBeGreaterThan(downloadButton);
     expect(closeButton).toBeGreaterThan(shareButton);
   });
+
+  it("adds a toggleable sandboxed render preview for html deliverables", () => {
+    const previewButton = filePreviewSource.indexOf('aria-label={previewMode ? "退出页面预览" : "预览页面"}');
+    const shareButton = filePreviewSource.indexOf('aria-label="分享文件"');
+
+    expect(filePreviewSource).toContain("isHtmlPreviewPath");
+    expect(filePreviewSource).toContain('sandbox={HTML_IFRAME_SANDBOX}');
+    expect(filePreviewSource).toContain('"allow-scripts allow-popups allow-forms allow-modals"');
+    expect(filePreviewSource).toContain('src={`${mediaUrl}/${encodeURIComponent(fileName(path))}`}');
+    expect(filePreviewSource).toContain("kind === \"text\" && isHtml && previewMode && !editing");
+    expect(previewButton).toBeGreaterThan(-1);
+    expect(previewButton).toBeGreaterThan(shareButton);
+  });
+
+  it("keeps diff and content tabs authoritative while the html preview is off", () => {
+    expect(filePreviewSource).toContain('kind === "text" && hasDiff && !editing && !previewMode');
+    expect(filePreviewSource).toContain("<PreviewTab active={view === \"diff\"} onClick={selectDiffView}>变更</PreviewTab>");
+    expect(filePreviewSource).toContain("<PreviewTab active={view === \"file\"} onClick={() => setView(\"file\")}>文件</PreviewTab>");
+    expect(filePreviewSource).toContain('!editing && !previewMode && (!hasDiff || view === "file")');
+  });
 });

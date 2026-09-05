@@ -350,6 +350,11 @@ async function fsList(dirPath, userId) {
 const MAX_READ_CHUNK = 256 * 1024;
 
 const MIME_BY_EXT = {
+  html: "text/html; charset=utf-8", htm: "text/html; charset=utf-8",
+  css: "text/css; charset=utf-8",
+  js: "text/javascript; charset=utf-8", mjs: "text/javascript; charset=utf-8",
+  json: "application/json", txt: "text/plain; charset=utf-8",
+  woff: "font/woff", woff2: "font/woff2", ttf: "font/ttf", otf: "font/otf",
   png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif",
   webp: "image/webp", bmp: "image/bmp", ico: "image/x-icon", svg: "image/svg+xml",
   mp4: "video/mp4", mov: "video/quicktime", webm: "video/webm", m4v: "video/x-m4v",
@@ -931,6 +936,12 @@ async function serveWebApp(req, res) {
   return true;
 }
 
+// HTML deliverables run with a unique opaque origin (CSP `sandbox`, no
+// allow-same-origin): scripts execute, but the page can never touch the
+// console origin's storage, cookies or same-origin APIs — even when the
+// ticket URL is opened as a top-level browser tab.
+const HTML_PREVIEW_CSP = "sandbox allow-scripts allow-popups allow-forms allow-modals";
+
 async function serveTicketedFilePreview(req, res) {
   const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
   const prefix = "/api/web-console/file-preview/";
@@ -939,15 +950,26 @@ async function serveTicketedFilePreview(req, res) {
     res.writeHead(405, { allow: "GET, HEAD" }).end();
     return true;
   }
-  const ticketId = url.pathname.slice(prefix.length);
-  const ticket = ticketId && !ticketId.includes("/") ? previewTickets.resolve(ticketId) : null;
+  const [ticketId, ...relativeSegments] = url.pathname.slice(prefix.length).split("/");
+  const ticket = ticketId ? previewTickets.resolve(ticketId) : null;
   if (!ticket) {
     res.writeHead(404, { "cache-control": "private, no-store" }).end("Not found");
     return true;
   }
   try {
-    const abs = assertAllowed(ticket.path, ticket.userId);
-    await servePreviewFile(req, res, abs, mimeFor(abs));
+    const primary = assertAllowed(ticket.path, ticket.userId);
+    let target = primary;
+    let extraHeaders = {};
+    if (relativeSegments.length > 0) {
+      // Sub-path → a relative resource (css/js/img/…) referenced by the
+      // previewed HTML, resolved against the deliverable's own directory.
+      const relative = relativeSegments.map(decodeURIComponent).join("/");
+      target = assertAllowed(path.resolve(path.dirname(primary), relative), ticket.userId);
+    }
+    if (mimeFor(target).startsWith("text/html")) {
+      extraHeaders = { "content-security-policy": HTML_PREVIEW_CSP };
+    }
+    await servePreviewFile(req, res, target, mimeFor(target), extraHeaders);
   } catch (error) {
     if (!res.headersSent) {
       const status = error?.code === "EACCES" || error?.code === "EPATH_NOT_ALLOWED" ? 403 : 404;

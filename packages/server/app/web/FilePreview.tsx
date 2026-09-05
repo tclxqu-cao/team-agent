@@ -1,6 +1,7 @@
 "use client";
 // FilePreview — routes by file type:
 //   text    → progressive UTF-8 chunks driven by viewport demand
+//   html    → sandboxed <iframe> rendering, source view still available
 //   image   → <img> from a ticketed streaming URL
 //   video   → <video controls>
 //   audio   → <audio controls>
@@ -9,7 +10,7 @@
 // Auto-refreshes when the gateway reports the open file changed on disk.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Check, Download, LoaderCircle, Pencil, RefreshCw, RotateCcw, Save, Share2, X } from "lucide-react";
+import { Check, Download, Eye, LoaderCircle, Pencil, RefreshCw, RotateCcw, Save, Share2, X } from "lucide-react";
 import { parseUnifiedDiff, type FileDiffRow } from "./fileDiff";
 
 const TEXT_EXTS = new Set([
@@ -20,6 +21,10 @@ const TEXT_EXTS = new Set([
   "vue", "svelte", "astro", "graphql", "prisma", "proto",
 ]);
 const IMG_EXTS = new Set(["png", "jpg", "jpeg", "gif", "webp", "bmp", "ico", "svg"]);
+const HTML_EXTS = new Set(["html", "htm"]);
+// Mirrors the server's `HTML_PREVIEW_CSP`: unique opaque origin for the
+// rendered deliverable — scripts run, console origin stays out of reach.
+const HTML_IFRAME_SANDBOX = "allow-scripts allow-popups allow-forms allow-modals";
 const VIDEO_EXTS = new Set(["mp4", "webm", "mov", "m4v"]);
 const AUDIO_EXTS = new Set(["mp3", "wav", "m4a", "aac", "ogg", "flac"]);
 const PDF_EXTS = new Set(["pdf"]);
@@ -171,6 +176,11 @@ export async function readFileForClientDownload(
   return new Blob(chunks, { type: "application/octet-stream" });
 }
 
+export function isHtmlPreviewPath(path: string): boolean {
+  const ext = path.split(".").pop()?.toLowerCase() ?? "";
+  return HTML_EXTS.has(ext);
+}
+
 function kindOf(path: string): Kind {
   const ext = path.split(".").pop()?.toLowerCase() ?? "";
   if (TEXT_EXTS.has(ext) || !path.includes(".")) return "text";
@@ -209,6 +219,7 @@ export default function FilePreview({ path, rpc, onClose }: Props) {
   const [diffLoading, setDiffLoading] = useState(false);
   const [diffError, setDiffError] = useState<string | null>(null);
   const [view, setView] = useState<"diff" | "file">("file");
+  const [previewMode, setPreviewMode] = useState(false);
   const [editable, setEditable] = useState(false);
   const [editLoading, setEditLoading] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -225,8 +236,10 @@ export default function FilePreview({ path, rpc, onClose }: Props) {
   const decoderRef = useRef(new TextDecoder("utf-8", { fatal: false }));
   const mediaTicketRef = useRef<string | null>(null);
   const activeMediaUrlRef = useRef<string | null>(null);
+  const previewModeRef = useRef(false);
 
   const kind = path ? kindOf(path) : "unsupported";
+  const isHtml = path ? isHtmlPreviewPath(path) : false;
   const text = useMemo(() => textChunks.join(""), [textChunks]);
 
   const revokeMediaTicket = useCallback(() => {
@@ -346,6 +359,7 @@ export default function FilePreview({ path, rpc, onClose }: Props) {
 
   const startPreview = useCallback((target: string, targetKind: Kind) => {
     const generation = ++generationRef.current;
+    const htmlTarget = isHtmlPreviewPath(target);
     chunkInFlightRef.current = false;
     revokeMediaTicket();
     activeMediaUrlRef.current = null;
@@ -357,6 +371,7 @@ export default function FilePreview({ path, rpc, onClose }: Props) {
     if (targetKind === "text") {
       void loadTextStatus(target, generation);
       void loadChunk(target, true, generation);
+      if (htmlTarget && previewModeRef.current) void loadMedia(target, generation);
     } else if (targetKind === "image" || targetKind === "video" || targetKind === "audio" || targetKind === "pdf") {
       void loadMedia(target, generation);
     } else if (targetKind === "hex") {
@@ -369,6 +384,8 @@ export default function FilePreview({ path, rpc, onClose }: Props) {
 
   useEffect(() => {
     if (!path) return;
+    previewModeRef.current = false;
+    setPreviewMode(false);
     startPreview(path, kind);
     return () => {
       generationRef.current++;
@@ -541,6 +558,14 @@ export default function FilePreview({ path, rpc, onClose }: Props) {
     }
   }, [diffLoading, inspectFullText, patch, path]);
 
+  const togglePreviewMode = useCallback(() => {
+    if (!path) return;
+    const next = !previewMode;
+    previewModeRef.current = next;
+    setPreviewMode(next);
+    if (next && !mediaUrl) void loadMedia(path, generationRef.current);
+  }, [loadMedia, mediaUrl, path, previewMode]);
+
   const markMediaReady = useCallback((expectedUrl: string) => {
     if (activeMediaUrlRef.current !== expectedUrl) return;
     setErr(null);
@@ -699,6 +724,23 @@ export default function FilePreview({ path, rpc, onClose }: Props) {
                 <Share2 size={15} strokeWidth={1.8} aria-hidden="true" />
               )}
             </button>
+            {isHtml && (
+              <button
+                type="button"
+                onClick={togglePreviewMode}
+                aria-pressed={previewMode}
+                style={{
+                  ...HEADER_BUTTON_STYLES,
+                  ...(previewMode
+                    ? { color: "var(--ui-tab-accent, #7aa2f7)", borderColor: "var(--ui-tab-accent, #7aa2f7)" }
+                    : {}),
+                }}
+                aria-label={previewMode ? "退出页面预览" : "预览页面"}
+                title={previewMode ? "退出页面预览" : "在浏览器中预览渲染效果"}
+              >
+                <Eye size={15} strokeWidth={1.8} aria-hidden="true" />
+              </button>
+            )}
           </>
         )}
         <button type="button" onClick={closePreview} style={HEADER_BUTTON_STYLES} aria-label="关闭预览" title="关闭预览">
@@ -706,7 +748,7 @@ export default function FilePreview({ path, rpc, onClose }: Props) {
         </button>
       </div>
 
-      {kind === "text" && hasDiff && !editing && (
+      {kind === "text" && hasDiff && !editing && !previewMode && (
         <div style={{ display: "flex", alignItems: "center", minHeight: 34, padding: "0 12px", borderBottom: "1px solid var(--ui-tree-border, #222)", background: "var(--ui-tree-bg, #121218)", flexShrink: 0 }}>
           <div role="tablist" aria-label="文件预览模式" style={{ display: "inline-flex", gap: 2, padding: 2, border: "1px solid var(--ui-panel-input-border, #333)", borderRadius: 6, background: "var(--ui-muted-surface, #1b1b22)" }}>
             <PreviewTab active={view === "diff"} onClick={selectDiffView}>变更</PreviewTab>
@@ -753,6 +795,18 @@ export default function FilePreview({ path, rpc, onClose }: Props) {
         {mediaUrl && !err && kind === "pdf" && (
           <iframe src={mediaUrl} title={path} onLoad={() => markMediaReady(mediaUrl)} onError={() => markMediaFailed(mediaUrl)} style={{ width: "100%", height: "100%", border: "none" }} />
         )}
+        {mediaUrl && !err && kind === "text" && isHtml && previewMode && !editing && (
+          // Document URL carries the file name so relative css/js/img
+          // references resolve to sibling workspace files via the ticket route.
+          <iframe
+            src={`${mediaUrl}/${encodeURIComponent(fileName(path))}`}
+            sandbox={HTML_IFRAME_SANDBOX}
+            title={path}
+            onLoad={() => markMediaReady(mediaUrl)}
+            onError={() => markMediaFailed(mediaUrl)}
+            style={{ width: "100%", height: "100%", border: "none", background: "#fff" }}
+          />
+        )}
 
         {kind === "text" && editing && !err && (
           <textarea
@@ -774,7 +828,7 @@ export default function FilePreview({ path, rpc, onClose }: Props) {
             : <DiffPreview rows={parsedDiff.rows} />
         )}
 
-        {(kind === "hex" || (kind === "text" && !editing && (!hasDiff || view === "file"))) && !err && (
+        {(kind === "hex" || (kind === "text" && !editing && !previewMode && (!hasDiff || view === "file"))) && !err && (
           <>
             <pre
               style={{

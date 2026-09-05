@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { Writable } from "node:stream";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   createPreviewTicketRegistry,
@@ -9,6 +10,7 @@ import {
   inspectTextFileStatus,
   parsePreviewRange,
   saveTextFile,
+  servePreviewFile,
 } from "./file-preview-service.mjs";
 
 const temporaryDirectories: string[] = [];
@@ -134,6 +136,23 @@ describe("file preview ranges", () => {
   });
 });
 
+function createMockPreviewResponse() {
+  const state: { statusCode: number; headers: Record<string, string> | null } = { statusCode: 0, headers: null };
+  const chunks: Buffer[] = [];
+  const response = new Writable({
+    write(chunk: Buffer, _encoding, callback) {
+      chunks.push(Buffer.from(chunk));
+      callback();
+    },
+  });
+  (response as unknown as { writeHead: (status: number, headers?: Record<string, string>) => unknown }).writeHead = (status, headers) => {
+    state.statusCode = status;
+    state.headers = headers ?? null;
+    return response;
+  };
+  return { response, state, chunks };
+}
+
 describe("file preview ticket registry", () => {
   it("refreshes valid tickets and enforces ownership during revocation", () => {
     let current = 1_000;
@@ -161,6 +180,30 @@ describe("file preview ticket registry", () => {
   });
 });
 
+describe("html deliverable preview", () => {
+  it("streams the file with extra response headers such as the html sandbox CSP", async () => {
+    const directory = temporaryDirectory("preview-extra-headers");
+    const file = join(directory, "page.html");
+    writeFileSync(file, "<!doctype html><p>hello preview</p>");
+    const { response, state, chunks } = createMockPreviewResponse();
+
+    await servePreviewFile(
+      { headers: {} } as never,
+      response as never,
+      file,
+      "text/html; charset=utf-8",
+      { "content-security-policy": "sandbox allow-scripts allow-popups allow-forms allow-modals" },
+    );
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(state.statusCode).toBe(200);
+    expect(state.headers?.["content-type"]).toBe("text/html; charset=utf-8");
+    expect(state.headers?.["content-security-policy"]).toBe("sandbox allow-scripts allow-popups allow-forms allow-modals");
+    expect(state.headers?.["x-content-type-options"]).toBe("nosniff");
+    expect(Buffer.concat(chunks).toString("utf8")).toContain("hello preview");
+  });
+});
+
 describe("file preview gateway authorization contract", () => {
   it("authorizes both ticket issuance and every ticketed HTTP open", () => {
     const issuance = wsServerSource.slice(
@@ -178,5 +221,35 @@ describe("file preview gateway authorization contract", () => {
     expect(serverCallback.indexOf("serveTicketedFilePreview(req, res)")).toBeLessThan(
       serverCallback.indexOf("serveWebApp(req, res)"),
     );
+  });
+});
+
+describe("html deliverable preview gateway contract", () => {
+  const serving = () =>
+    wsServerSource.slice(
+      wsServerSource.indexOf("async function serveTicketedFilePreview"),
+      wsServerSource.indexOf("const server = createServer"),
+    );
+
+  it("serves html deliverables with a renderable mime type", () => {
+    const mimeMap = wsServerSource.slice(
+      wsServerSource.indexOf("const MIME_BY_EXT"),
+      wsServerSource.indexOf("function mimeFor"),
+    );
+    expect(mimeMap).toContain('html: "text/html; charset=utf-8"');
+    expect(mimeMap).toContain('htm: "text/html; charset=utf-8"');
+    expect(mimeMap).toContain('css: "text/css; charset=utf-8"');
+  });
+
+  it("confines rendered html to an opaque origin sandbox", () => {
+    expect(wsServerSource).toContain('const HTML_PREVIEW_CSP = "sandbox allow-scripts allow-popups allow-forms allow-modals"');
+    expect(serving()).toContain('mimeFor(target).startsWith("text/html")');
+    expect(serving()).toContain('"content-security-policy": HTML_PREVIEW_CSP');
+  });
+
+  it("resolves relative resources against the deliverable directory through authorization", () => {
+    expect(serving()).toContain("relativeSegments");
+    expect(serving()).toContain("path.resolve(path.dirname(primary), relative)");
+    expect(serving()).toContain("assertAllowed(path.resolve(path.dirname(primary), relative), ticket.userId)");
   });
 });
