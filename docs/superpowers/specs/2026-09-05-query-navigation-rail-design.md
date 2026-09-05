@@ -1,14 +1,14 @@
-# Web Query Navigation Rail Design
+# Query Navigation Rail Design
 
 ## Goal
 
-Add a WebApp-only navigation rail on the right edge of the message viewport. The rail represents every sent user query in the current session. Pointer or touch movement previews a query, and selection opens the page containing that query and scrolls it into view.
+Add a shared navigation rail to the WebApp and Electron desktop message viewport. The rail represents every sent user query in the current session. Pointer or touch movement previews a query, and selection opens the page containing that query and scrolls it into view.
 
-The feature must not delay the initial conversation render, download every history page into the browser, or regress the existing one-page-ahead preload for older history.
+The feature must not delay the initial conversation render, download every history page into either renderer, or regress the existing one-page-ahead preload for older history.
 
 ## Scope
 
-This design applies to the WebApp presentation of Customer Agent, Codex, Claude Code, and OpenCode sessions. The Electron UI remains unchanged.
+This design applies to the WebApp and Electron desktop presentation of Customer Agent, Codex, Claude Code, and OpenCode sessions. Both surfaces use the same rail component and history-window state machine; only their HTTP and IPC transports differ.
 
 Included:
 
@@ -27,13 +27,13 @@ Not included:
 - eager download of every history page;
 - permanent on-disk index storage;
 - general message-list virtualization;
-- changes to the Electron header or message controls.
+- changes to either surface's header or message controls.
 
 ## User Experience
 
 ### Resting State
 
-The rail sits inside the message viewport at the far right, separate from the browser scrollbar and clear of the composer. It is not added beside the Settings button.
+The rail sits inside the message viewport at the far right, separate from the native scrollbar and clear of the composer. It is not added beside the Settings button on either surface.
 
 On pointer devices, the resting rail is a faint narrow affordance. Entering its interaction zone reveals the query ticks. Moving vertically selects the closest query and opens a floating preview beside the rail.
 
@@ -59,7 +59,7 @@ Scrolling near the top of an anchored window loads its older neighbor. Scrolling
 
 ### Index Shape
 
-The server exposes a Web endpoint for the current session's query index:
+The Web server exposes an HTTP endpoint for the current session's query index:
 
 ```text
 GET /api/sessions/:id/query-index
@@ -89,11 +89,13 @@ The index uses the same normalized, reconciled user/assistant timeline that hist
 
 The first latest-page request remains the critical path and returns as it does today. Once that request has produced the complete server-side session detail, the server records or refreshes the compact query index in a bounded in-memory LRU cache.
 
-After the first history paint, the WebApp requests the query index during idle time. It cancels the request when the selected session changes. The browser stores only compact entries, not historical assistant or tool data.
+Electron exposes the same operation through a `sessions:getQueryIndex` IPC handler and preload method. Its existing `sessions:get` IPC query accepts the same opaque anchor token as the Web route. HTTP and IPC responses share the same domain types and validation rules.
+
+After the first history paint, each renderer requests the query index during idle time. It cancels the request when the selected session changes. Renderers store only compact entries, not historical assistant or tool data.
 
 For the current adapters this avoids a second conceptual full-history operation: Customer Agent, Codex, Claude Code, and OpenCode already form a complete unified message list before the shared route slices the latest history page. Index extraction piggybacks on that normalized list.
 
-The cache key combines session identity with a history revision fingerprint. A changed revision invalidates the cached index. Newly sent user messages may be appended optimistically to the browser index, but the server revision remains authoritative.
+The Web server and Electron main process each keep their own bounded cache because they are separate hosts. Both use the same cache implementation and key entries by session identity plus a history revision fingerprint. A changed revision invalidates the cached index. Newly sent user messages may be appended optimistically to the renderer index, but the host revision remains authoritative.
 
 ## Anchored History Pages
 
@@ -167,14 +169,15 @@ Session switching aborts outstanding index and anchor requests, clears the previ
 The implementation should keep navigation mechanics out of the already large `ChatView` body:
 
 - `SessionQueryIndex` domain helpers build compact entries and anchored page tokens from the normalized timeline.
-- The Server session routes own index delivery, cache lookup, token validation, and anchored pagination.
-- The Web gateway exposes optional query-index and anchor request methods through the existing `agentApi` boundary.
+- The Server session routes own HTTP index delivery, cache lookup, token validation, and anchored pagination.
+- Electron main owns the matching IPC handlers and uses the same index, cache, and pagination helpers.
+- The Web gateway and Electron preload expose matching query-index and anchor request methods through the existing `agentApi` boundary.
 - `QueryNavigationRail` owns pointer, touch, keyboard, tick aggregation, and preview rendering.
 - `ChatView` owns history-window state, request generations, page acceptance, and the final scroll-to-message action.
 
 Rendered message groups receive a stable `data-message-id`. After an anchor page is committed, a layout effect finds the selected row inside `messagesScrollRef` and scrolls it into view without changing page scroll.
 
-The rail is available only when the Web shell is active and the optional gateway method exists. Desktop preload support is not required for the Electron UI.
+The rail is available on both surfaces when the query-index API method exists. A host that does not advertise the method keeps the current history UI without a disabled or misleading rail.
 
 ## Accessibility
 
@@ -198,7 +201,7 @@ The visible rail remains narrow, but its hit area is at least 24 CSS pixels on p
 - The rail renders at most 60 tick buckets regardless of query count.
 - Pointer movement updates only rail selection and one preview, not the message collection.
 - Index extraction is linear in the already normalized message list and cached by revision.
-- Server query-index caches are bounded and evicted by LRU policy.
+- Web server and Electron main query-index caches are bounded and evicted by the same LRU policy.
 - The existing history page size and one-page older prefetch depth remain unchanged.
 
 ## Testing
@@ -225,9 +228,9 @@ The visible rail remains narrow, but its hit area is at least 24 CSS pixels on p
 - Live refresh while anchored shows a latest-content affordance and does not merge discontinuous pages.
 - Switching sessions prevents stale index, anchor, and prefetch responses from changing the new session.
 
-### Browser Acceptance
+### Surface Acceptance
 
-Use the project-required browser workflow to verify desktop Web, `390x844`, and `320x700` layouts. Confirm:
+Use the project-required browser workflow to verify desktop Web, `390x844`, and `320x700` layouts, and verify the shared renderer in an Electron desktop window. Confirm:
 
 - the collapsed rail does not cover message actions, the native scrollbar, or the composer;
 - hover and touch dragging show the correct preview and selected marker;
@@ -237,4 +240,4 @@ Use the project-required browser workflow to verify desktop Web, `390x844`, and 
 - returning to latest resumes live updates and keeps the composer usable;
 - the page has no horizontal overflow or incoherent overlap.
 
-Run focused Core pagination, Server route, Web gateway, renderer history/prefetch, and rail interaction tests, followed by affected TypeScript checks, the WebApp production build, and `git diff --check`.
+Run focused Core pagination, Server route, Electron IPC/preload, Web gateway, renderer history/prefetch, and rail interaction tests, followed by affected TypeScript checks, WebApp and Electron production builds, and `git diff --check`.
