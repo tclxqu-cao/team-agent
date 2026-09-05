@@ -1,0 +1,18 @@
+packages/cli/install/README.md
+  h_86bb4e0e04237b 27-28
+packages/cli/src/service/service-command.test.ts
+  h_86bb4e0e04237b 42-85
+packages/cli/src/service/service-command.ts
+  h_86bb4e0e04237b 5,23,31-37,84,91,110,128
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "b7aaccb1113b2104941a0caf8f105d2455f4da0c",
+  "prompts": {},
+  "humans": {
+    "h_86bb4e0e04237b": {
+      "author": "caoqu <qu.cao@ly.com>"
+    }
+  }
+}
