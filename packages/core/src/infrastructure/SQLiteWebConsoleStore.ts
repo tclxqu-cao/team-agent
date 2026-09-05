@@ -20,8 +20,23 @@ export class SQLiteWebConsoleStore {
   }
   getDeviceState(userId:string,deviceId:string):DeviceState|null { const row=this.db.prepare("SELECT * FROM device_states WHERE user_id=? AND device_id=?").get(userId,deviceId) as any; return row?rowToDevice(row):null; }
   saveDeviceState(value:DeviceState):void { this.db.prepare("INSERT INTO device_states (user_id,device_id,active_terminal_id,drawer_open,drawer_tab,file_tree_root,file_tree_follow_mode,expanded_paths_json,selected_file,terminal_scroll_json,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(user_id,device_id) DO UPDATE SET active_terminal_id=excluded.active_terminal_id,drawer_open=excluded.drawer_open,drawer_tab=excluded.drawer_tab,file_tree_root=excluded.file_tree_root,file_tree_follow_mode=excluded.file_tree_follow_mode,expanded_paths_json=excluded.expanded_paths_json,selected_file=excluded.selected_file,terminal_scroll_json=excluded.terminal_scroll_json,updated_at=excluded.updated_at").run(value.userId,value.deviceId,value.activeTerminalId,value.drawerOpen?1:0,value.drawerTab,value.fileTreeRoot,value.fileTreeFollowMode?1:0,JSON.stringify(value.expandedPaths),value.selectedFile,JSON.stringify(value.terminalScroll),value.updatedAt); }
-  addHistory(userId:string,terminalId:string,command:string,cwd:string,executedAt:string):void { const normalized=command.toLowerCase(); this.db.prepare("INSERT INTO command_history (user_id,terminal_id,command,command_normalized,cwd,executed_at) VALUES (?,?,?,?,?,?)").run(userId,terminalId,redact(command),redact(normalized),cwd,executedAt); this.db.prepare("DELETE FROM command_history WHERE user_id=? AND id NOT IN (SELECT id FROM command_history WHERE user_id=? ORDER BY id DESC LIMIT 5000)").run(userId,userId); }
-  listHistory(userId:string,query="",limit=100,terminalId?:string):CommandHistoryRecord[] { const q=`%${query.toLowerCase()}%`; const rows=terminalId?this.db.prepare("SELECT * FROM command_history WHERE user_id=? AND terminal_id=? AND command_normalized LIKE ? ORDER BY id DESC LIMIT ?").all(userId,terminalId,q,limit):this.db.prepare("SELECT * FROM command_history WHERE user_id=? AND command_normalized LIKE ? ORDER BY id DESC LIMIT ?").all(userId,q,limit); return (rows as any[]).map(rowToHistory); }
+  addHistory(userId:string,terminalId:string,command:string,cwd:string,executedAt:string,exitCode:number|null=null):void {
+    const normalized=command.toLowerCase();
+    const insert=this.db.prepare("INSERT INTO command_history (user_id,terminal_id,command,command_normalized,cwd,executed_at,exit_code) VALUES (?,?,?,?,?,?,?)").run(userId,terminalId,redact(command),redact(normalized),cwd,executedAt,exitCode);
+    // History exists to re-run commands — a repeat only needs its newest entry.
+    this.db.prepare("DELETE FROM command_history WHERE user_id=? AND command_normalized=? AND id<>?").run(userId,redact(normalized),insert.lastInsertRowid);
+    this.db.prepare("DELETE FROM command_history WHERE user_id=? AND id NOT IN (SELECT id FROM command_history WHERE user_id=? ORDER BY id DESC LIMIT 5000)").run(userId,userId);
+  }
+  listHistory(userId:string,query="",limit=100,terminalId?:string):CommandHistoryRecord[] {
+    const q=`%${query.toLowerCase()}%`;
+    // Successful commands only; NULL exit codes are legacy rows captured before tracking existed.
+    const successFilter="AND (exit_code IS NULL OR exit_code=0)";
+    const rows=terminalId
+      ?this.db.prepare(`SELECT * FROM command_history WHERE user_id=? AND terminal_id=? AND command_normalized LIKE ? ${successFilter} ORDER BY id DESC LIMIT ?`).all(userId,terminalId,q,limit)
+      :this.db.prepare(`SELECT * FROM command_history WHERE user_id=? AND command_normalized LIKE ? ${successFilter} ORDER BY id DESC LIMIT ?`).all(userId,q,limit);
+    const seen=new Set<string>();
+    return (rows as any[]).filter((row)=>{ if(seen.has(row.command_normalized))return false; seen.add(row.command_normalized); return true; }).map(rowToHistory);
+  }
   deleteHistory(userId:string,id:number):boolean{return this.db.prepare("DELETE FROM command_history WHERE id=? AND user_id=?").run(id,userId).changes===1;}
   clearHistory(userId:string,terminalId?:string):number{return(terminalId?this.db.prepare("DELETE FROM command_history WHERE user_id=? AND terminal_id=?").run(userId,terminalId):this.db.prepare("DELETE FROM command_history WHERE user_id=?").run(userId)).changes;}
 }
@@ -30,5 +45,5 @@ const parse=(value:string,fallback:any)=>{try{return JSON.parse(value);}catch{re
 const rowToTab=(r:any):TerminalTabRecord=>({id:r.id,userId:r.user_id,title:r.title,shell:r.shell,startCwd:r.start_cwd,currentCwd:r.current_cwd,status:r.status as TerminalTabStatus,sortOrder:r.sort_order,createdAt:r.created_at,lastActiveAt:r.last_active_at,exitedAt:r.exited_at,closedAt:r.closed_at});
 const rowToPreferences=(r:any):UserPreferences=>({userId:r.user_id,revision:r.revision,theme:r.theme,terminalFontSize:r.terminal_font_size,fileButtonPosition:parse(r.file_button_position_json,{}),keybarPosition:parse(r.keybar_position_json,{}),keybarHidden:!!r.keybar_hidden,keyOrder:parse(r.key_order_json,[]),pinnedCommands:parseStoredPinnedCommands(r.pinned_commands_json),updatedAt:r.updated_at});
 const rowToDevice=(r:any):DeviceState=>({userId:r.user_id,deviceId:r.device_id,activeTerminalId:r.active_terminal_id,drawerOpen:!!r.drawer_open,drawerTab:r.drawer_tab,fileTreeRoot:r.file_tree_root,fileTreeFollowMode:!!r.file_tree_follow_mode,expandedPaths:parse(r.expanded_paths_json,[]),selectedFile:r.selected_file,terminalScroll:parse(r.terminal_scroll_json,{}),updatedAt:r.updated_at});
-const rowToHistory=(r:any):CommandHistoryRecord=>({id:r.id,userId:r.user_id,terminalId:r.terminal_id,command:r.command,cwd:r.cwd,executedAt:r.executed_at});
+const rowToHistory=(r:any):CommandHistoryRecord=>({id:r.id,userId:r.user_id,terminalId:r.terminal_id,command:r.command,cwd:r.cwd,executedAt:r.executed_at,exitCode:r.exit_code??null});
 function redact(value:string):string{return /(?:token|password|secret|api[_-]?key)\s*=/.test(value.toLowerCase())?"[REDACTED]":value;}

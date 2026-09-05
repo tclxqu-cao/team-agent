@@ -279,7 +279,8 @@ export class SQLiteDatabase {
         command TEXT NOT NULL,
         command_normalized TEXT NOT NULL,
         cwd TEXT NOT NULL,
-        executed_at TEXT NOT NULL
+        executed_at TEXT NOT NULL,
+        exit_code INTEGER
       );
 
       CREATE INDEX IF NOT EXISTS idx_remote_tools_project ON remote_tools(project_id);
@@ -303,6 +304,15 @@ export class SQLiteDatabase {
     this.migrateMessagePresentation();
     this.migrateLSPServers();
     this.migratePinnedCommands();
+    this.migrateCommandHistoryExitCode();
+  }
+
+  /** exit_code arrived after the first command_history release; NULL = captured before exit codes existed. */
+  private migrateCommandHistoryExitCode(): void {
+    const cols = this.db.prepare("PRAGMA table_info(command_history)").all() as Array<{ name: string }>;
+    if (!cols.some((column) => column.name === "exit_code")) {
+      this.db.exec("ALTER TABLE command_history ADD COLUMN exit_code INTEGER");
+    }
   }
 
   private migratePinnedCommands(): void {

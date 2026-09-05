@@ -274,7 +274,12 @@ function startTerminal(id, { userId, cols = 80, rows = 24, cwd, command, initial
 
   terminals.set(id, session);
   if (shell.endsWith("zsh")) {
-    const hook = `autoload -Uz add-zsh-hook; function __ca_hist_preexec(){ local c=$(printf '%s' "$1"|base64|tr -d '\\n'); local d=$(printf '%s' "$PWD"|base64|tr -d '\\n'); printf '\\033]633;C;%s;%s\\007' "$c" "$d"; }; add-zsh-hook preexec __ca_hist_preexec; clear`;
+    // preexec remembers the command line; precmd reports it together with the
+    // real exit status ($?) once the command finished — the history panel only
+    // keeps successful commands. Both hooks are PREPENDED to the zsh hook
+    // arrays: precmd hooks registered earlier (e.g. from the user's zshrc)
+    // would run commands of their own and clobber $? before we read it.
+    const hook = `function __ca_hist_preexec(){ __ca_hist_cmd="$1"; }; function __ca_hist_precmd(){ local e=$?; if [[ -n "\${__ca_hist_cmd+x}" ]]; then local c=$(printf '%s' "$__ca_hist_cmd"|base64|tr -d '\\n'); local d=$(printf '%s' "$PWD"|base64|tr -d '\\n'); printf '\\033]633;C;%s;%s;%s\\007' "$c" "$d" "$e"; unset __ca_hist_cmd; fi; }; precmd_functions=(__ca_hist_precmd $precmd_functions); preexec_functions=(__ca_hist_preexec $preexec_functions); clear`;
     setTimeout(() => {
       if (session.exited) return;
       p.write(` ${hook}\r`);
@@ -293,7 +298,9 @@ function startTerminal(id, { userId, cols = 80, rows = 24, cwd, command, initial
 
 function captureShellHistory(session, data) {
   const combined = session.oscTail + data;
-  const regex = /\x1b]633;C;([^;\x07]+);([^\x07]+)\x07/g;
+  // 633;C;<b64 command>;<b64 cwd>[;<exit code>] — the exit code field is sent
+  // by the zsh precmd hook; absent for reports from older hooks.
+  const regex = /\x1b]633;C;([^;\x07]+);([^;\x07]+)(?:;(\d+))?\x07/g;
   let match;
   let lastEnd = 0;
   while ((match = regex.exec(combined))) {
@@ -301,7 +308,8 @@ function captureShellHistory(session, data) {
     try {
       const command = Buffer.from(match[1], "base64").toString("utf8");
       const cwd = Buffer.from(match[2], "base64").toString("utf8");
-      if (command.trim()) consoleStore.addHistory(session.userId, session.id, command, cwd, new Date().toISOString());
+      const exitCode = match[3] !== undefined ? Number(match[3]) : null;
+      if (command.trim()) consoleStore.addHistory(session.userId, session.id, command, cwd, new Date().toISOString(), exitCode);
     } catch {}
   }
   const cwdRegex = /\x1b]7;(file:\/\/[^\x07\x1b]+)(?:\x07|\x1b\\)/g;
