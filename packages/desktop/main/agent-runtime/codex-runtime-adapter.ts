@@ -543,11 +543,6 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
       for await (const event of queue) yield event;
     } catch (error) {
       const normalized = normalizeCodexError(error);
-      if (normalized.code === "SESSION_OCCUPIED") {
-        // Thrown, not yielded, so the broker appends the terminal event itself
-        // and can attach fork-forwarding metadata to it.
-        throw normalized;
-      }
       yield { type: "error", message: normalized.message, code: normalized.code };
     } finally {
       this.activeTurnIds.delete(nativeSessionId);

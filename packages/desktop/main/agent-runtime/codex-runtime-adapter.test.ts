@@ -1438,17 +1438,17 @@ describe("Codex occupied-session takeover", () => {
     expect(events.at(-1)).toMatchObject({ type: "done" });
   });
 
-  it("throws SESSION_OCCUPIED when the app-server reports an active writer elsewhere", async () => {
+  it("surfaces a writer-lock failure as an occupied error event", async () => {
     const requests: Array<{ method: string; params: any }> = [];
     const adapter = buildAdapter(requests, {
       // The app-server client maps writer-lock responses to this error.
       resumeError: new RuntimeSessionError("Thread is already loaded by another client", "SESSION_OCCUPIED"),
     });
 
-    // Thrown, not yielded as an error event, so the broker can finalize the
-    // run and attach fork-forwarding metadata.
-    await expect(drain(adapter.run(occupiedThread.id, "hello")))
-      .rejects.toMatchObject({ name: "RuntimeSessionError", code: "SESSION_OCCUPIED" });
+    // Yielded as a terminal event so the UI can offer the manual
+    // "以副本继续" recovery flow.
+    const events = await drain(adapter.run(occupiedThread.id, "hello"));
+    expect(events).toEqual([expect.objectContaining({ type: "error", code: "SESSION_OCCUPIED" })]);
     expect(requests.some(({ method }) => method === "turn/start")).toBe(false);
   });
 });

@@ -62,7 +62,6 @@ class FakeNativeRuntime {
   runFailure: AgentEvent | null = null;
   throwSessionOccupiedOn = new Set<string>();
   immediateTerminal = false;
-  forkResult: UnifiedSessionSummary | null = null;
   forkCalls = 0;
   answerResult = true;
   answerError: Error | null = null;
@@ -106,7 +105,7 @@ class FakeNativeRuntime {
   create = async (): Promise<UnifiedSessionSummary> => this.createResult ?? summary();
   fork = async (): Promise<UnifiedSessionSummary> => {
     this.forkCalls += 1;
-    return this.forkResult ?? summary();
+    return summary();
   };
   restoreDrafts = (drafts: UnifiedSessionSummary[]): void => {
     this.restoredDrafts.push(...drafts);
@@ -1542,6 +1541,8 @@ describe("NativeRuntimeBrokerHost", () => {
         occupancy: "owned-externally",
         canResume: false,
       });
+      // The occupied turn is surfaced for manual recovery, never auto-forked.
+      expect(runtime.forkCalls).toBe(0);
     } finally {
       await host.stop();
     }
@@ -1568,54 +1569,25 @@ describe("NativeRuntimeBrokerHost", () => {
     }
   });
 
-  it("forks and forwards the message when a codex takeover attempt confirms an external holder", async () => {
+  it("surfaces a failed codex takeover as an occupied terminal without auto-forking", async () => {
     const runtime = new FakeNativeRuntime();
     runtime.throwSessionOccupiedOn.add(sessionId);
     runtime.immediateTerminal = true;
-    const forkId = encodeUnifiedSessionId("codex", "thread-1-copy");
-    runtime.forkResult = { ...summary(), id: forkId, nativeSessionId: "thread-1-copy", title: "Native test（副本）" };
     const host = new NativeRuntimeBrokerHost(await directory(), runtime as unknown as UnifiedSessionService);
     try {
-      await host.startRun(sessionId, "接管失败就转发");
+      await host.startRun(sessionId, "接管失败走手工副本");
       await waitFor(() => {
         expect(host.snapshot(sessionId).events).toEqual(expect.arrayContaining([
           expect.objectContaining({
-            event: expect.objectContaining({ type: "error", code: "SESSION_OCCUPIED", forkSessionId: forkId }),
+            event: expect.objectContaining({ type: "error", code: "SESSION_OCCUPIED" }),
           }),
         ]));
       });
-      expect(runtime.forkCalls).toBe(1);
-      await waitFor(() => {
-        expect(host.snapshot(forkId).events.some(({ event }) => event.type === "done")).toBe(true);
-      });
-      // Only the fork run reaches the runtime: the source run's generator
-      // throws before doing any turn work.
-      expect(runtime.runInputs.map((entry) => entry.input)).toEqual(["接管失败就转发"]);
+      // No automatic copy: the UI offers the manual "以副本继续" action instead.
+      expect(runtime.forkCalls).toBe(0);
       // The failed takeover leaves an authoritative external lock on the source.
       const [source] = await host.list();
       expect(source.occupancy).toBe("owned-externally");
-    } finally {
-      await host.stop();
-    }
-  });
-
-  it("reuses the auto-fork target when the locked session fails again", async () => {
-    const runtime = new FakeNativeRuntime();
-    runtime.throwSessionOccupiedOn.add(sessionId);
-    runtime.immediateTerminal = true;
-    const forkId = encodeUnifiedSessionId("codex", "thread-1-copy");
-    runtime.forkResult = { ...summary(), id: forkId, nativeSessionId: "thread-1-copy", title: "Native test（副本）" };
-    const host = new NativeRuntimeBrokerHost(await directory(), runtime as unknown as UnifiedSessionService);
-    try {
-      await host.startRun(sessionId, "第一条");
-      await waitFor(() => {
-        expect(host.snapshot(forkId).events.some(({ event }) => event.type === "done")).toBe(true);
-      });
-      await host.startRun(sessionId, "第二条");
-      await waitFor(() => {
-        expect(runtime.runInputs.map((entry) => entry.input)).toEqual(["第一条", "第二条"]);
-      });
-      expect(runtime.forkCalls).toBe(1);
     } finally {
       await host.stop();
     }

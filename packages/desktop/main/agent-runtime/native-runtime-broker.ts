@@ -1108,8 +1108,6 @@ export class NativeRuntimeBrokerHost {
   private readonly state: NativeRuntimeBrokerState;
   private readonly runtime: UnifiedSessionService;
   private readonly activeExecutions = new Map<string, Promise<void>>();
-  /** Best-effort auto-fork target per source session, reused across retries. */
-  private readonly occupiedForkTargets = new Map<string, string>();
   private readonly subscribers = new Map<Socket, BrokerSubscription>();
   private readonly localSubscribers = new Set<LocalBrokerSubscription>();
   private readonly pendingCreations = new Map<string, UnifiedSessionSummary>();
@@ -1598,7 +1596,6 @@ export class NativeRuntimeBrokerHost {
   ): Promise<void> {
     let terminalSeen = false;
     let completed = false;
-    let forwardedForkId: string | undefined;
     try {
       const activeItem = run.goalId ? this.state.getGoalState(run.sessionId).active : null;
       const options: RuntimeRunOptions = {
@@ -1639,29 +1636,10 @@ export class NativeRuntimeBrokerHost {
       }
     } catch (error) {
       const externallyOwned = error instanceof RuntimeSessionError && error.code === "SESSION_OCCUPIED";
-      // The takeover attempt confirmed a genuine external holder. Fall back to
-      // the user's own proposal: fork a copy of the locked session and send
-      // the just-typed message there, instead of bouncing it back as an error.
-      if (externallyOwned && run.agentType === "codex" && !run.goalId) {
-        forwardedForkId = await this.forwardOccupiedRunToFork(
-          run.sessionId,
-          run.input,
-          run.controller,
-          images,
-          agentIds,
-          agentName,
-          runOverrides,
-        );
-      }
       const recorded = this.state.appendTerminal(run.runId, {
         type: "error",
         code: error instanceof RuntimeSessionError ? error.code : "NATIVE_PROTOCOL_ERROR",
-        ...(forwardedForkId
-          ? {
-              message: "会话仍被其他客户端占用，已创建副本并转发这条消息",
-              forkSessionId: forwardedForkId,
-            }
-          : { message: error instanceof Error ? error.message : "Native runtime failed" }),
+        message: error instanceof Error ? error.message : "Native runtime failed",
       });
       if (recorded) this.broadcast(recorded);
       // appendTerminal releases this broker-owned run first. Only then can an
@@ -1675,46 +1653,13 @@ export class NativeRuntimeBrokerHost {
         const reason = terminal?.type === "error" ? terminal.message : undefined;
         const next = this.state.finishGoal(run.sessionId, run.goalId, outcome, reason).active;
         if (next && !this.state.activeRun(run.sessionId)) void this.startQueueItem(next, run.controller);
-      } else if (!forwardedForkId) {
-        // Queued items stay on the source session when the turn was forwarded
-        // to a fork; promoting them here would hammer the locked session and
-        // spawn a fork per queued message.
+      } else {
         let pendingItem = this.state.getGoalState(run.sessionId).active;
         if (!pendingItem && !this.state.activeRun(run.sessionId)) {
           pendingItem = this.state.promoteNextItem(run.sessionId).active;
         }
         if (pendingItem && !this.state.activeRun(run.sessionId)) void this.startQueueItem(pendingItem, run.controller);
       }
-    }
-  }
-
-  private async forwardOccupiedRunToFork(
-    sessionId: string,
-    input: string,
-    controller: NativeRuntimeController,
-    images?: string[],
-    agentIds?: string[],
-    agentName?: string,
-    runOverrides?: Pick<RuntimeRunOptions, "model" | "reasoningEffort">,
-  ): Promise<string | undefined> {
-    const reuse = this.occupiedForkTargets.get(sessionId);
-    if (reuse && reuse !== sessionId && !this.state.isSessionHidden(reuse) && !this.state.activeRun(reuse)) {
-      try {
-        await this.startRun(reuse, input, images, controller, undefined, agentIds, agentName, runOverrides);
-        return reuse;
-      } catch {
-        this.occupiedForkTargets.delete(sessionId);
-      }
-    }
-    try {
-      const forked = await this.fork(sessionId);
-      if (!forked.id || forked.id === sessionId) return undefined;
-      this.occupiedForkTargets.set(sessionId, forked.id);
-      await this.startRun(forked.id, input, images, controller, undefined, agentIds, agentName, runOverrides);
-      return forked.id;
-    } catch (error) {
-      console.warn("[native-runtime-broker] Auto-fork forwarding failed:", error);
-      return undefined;
     }
   }
 
