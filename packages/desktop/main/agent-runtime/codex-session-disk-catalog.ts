@@ -97,6 +97,7 @@ export class CodexSessionDiskCatalog {
   private readonly setRepeatingTimer: typeof setInterval;
   private readonly clearRepeatingTimer: typeof clearInterval;
   private readonly concurrency: number;
+  private onCheckingEntry?: (entry: CodexDiskSessionCatalogEntry) => void;
 
   constructor(private readonly options: CodexSessionDiskCatalogOptions) {
     this.fileSystem = options.fileSystem ?? nodeCatalogFileSystem;
@@ -123,6 +124,10 @@ export class CodexSessionDiskCatalog {
 
   findByNativeSessionId(nativeSessionId: string): CodexDiskSessionCatalogEntry | undefined {
     return this.entries.find((entry) => entry.nativeSessionId === nativeSessionId);
+  }
+
+  setOnCheckingEntry(callback?: (entry: CodexDiskSessionCatalogEntry) => void): void {
+    this.onCheckingEntry = callback;
   }
 
   start(): void {
@@ -187,7 +192,10 @@ export class CodexSessionDiskCatalog {
           changedFiles += 1;
           const metadata = await this.fileSystem.readMetadata(canonicalPath, CODEX_METADATA_LIMIT_BYTES);
           metadataBytesRead += metadata.bytesRead;
-          next[index] = parseCatalogEntry(canonicalPath, fileStat, metadata, this.options.readerVersion);
+          const parsed = parseCatalogEntry(canonicalPath, fileStat, metadata, this.options.readerVersion);
+          next[index] = previous && sameCompatibilityIdentity(previous, parsed)
+            ? { ...parsed, compatibility: previous.compatibility }
+            : parsed;
         } catch {
           // Each rollout is isolated. A disappearing or unreadable file cannot abort the catalog.
         }
@@ -200,10 +208,19 @@ export class CodexSessionDiskCatalog {
       .sort((left, right) => right.updated.localeCompare(left.updated) || left.nativeSessionId.localeCompare(right.nativeSessionId));
     const membershipChanged = nextEntries.length !== this.entries.length
       || nextEntries.some((entry, index) => entry.canonicalPath !== this.entries[index]?.canonicalPath);
+    const notifyCheckingEntries = this.hasCompletedScan
+      ? nextEntries.filter((entry) => {
+          const previous = cached.get(entry.canonicalPath);
+          return entry.probeable
+            && entry.compatibility.status === "checking"
+            && (!previous || previous.size !== entry.size || previous.mtimeNs !== entry.mtimeNs);
+        })
+      : [];
     this.entries = nextEntries;
     if (changedFiles > 0 || membershipChanged) {
       this.options.repository.replace(this.entries, this.cacheIdentity());
     }
+    for (const entry of notifyCheckingEntries) this.onCheckingEntry?.(entry);
     const durationMs = Math.max(0, this.now() - startedAt);
     const budgetMs = this.hasCompletedScan ? 200 : 1_000;
     this.hasCompletedScan = true;
@@ -283,6 +300,16 @@ export function catalogEntryToSummary(entry: CodexDiskSessionCatalogEntry): Unif
     canDelete: true,
     compatibility: entry.compatibility,
   };
+}
+
+function sameCompatibilityIdentity(
+  previous: CodexDiskSessionCatalogEntry,
+  next: CodexDiskSessionCatalogEntry,
+): boolean {
+  return previous.nativeSessionId === next.nativeSessionId
+    && previous.producerVersion === next.producerVersion
+    && previous.formatKey === next.formatKey
+    && previous.probeable === next.probeable;
 }
 
 export function parseCatalogEntry(

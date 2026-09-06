@@ -2378,12 +2378,11 @@ export function createNativeRuntimeBrokerHostRuntime(
         }),
       )
     : undefined;
-  codexCompatibility?.start();
   const opencodeServer = new OpenCodeServerClient({
     executable: opencodeExecutable || "opencode",
     unavailableError: process.env.AGENT_OPENCODE_RUNTIME_ERROR,
   });
-  return new UnifiedSessionService([
+  const service = new UnifiedSessionService([
     codexAdapter,
     new ClaudeRuntimeAdapter(),
     new OpenCodeRuntimeAdapter({
@@ -2393,6 +2392,9 @@ export function createNativeRuntimeBrokerHostRuntime(
       onApprovalResolved: callbacks?.onApprovalResolved,
     }),
   ], () => Promise.resolve([]), callbacks?.importedWorkspaceRepository, codexCompatibility);
+  codexCompatibility?.setOnCompatibilityChanged(() => service.invalidateCodexCompatibility());
+  codexCompatibility?.start();
+  return service;
 }
 
 export function resolveNativeRuntimeDirectory(explicit?: string): string {

@@ -123,6 +123,59 @@ describe("CodexSessionDiskCatalog", () => {
     expect(catalog.findByNativeSessionId(firstId)?.producerVersion).toBe("0.141.0");
   });
 
+  it("notifies checking entries only after the initial scan", async () => {
+    const root = await tempSessionRoot();
+    const firstId = "019f0000-0000-7000-8000-000000000013";
+    const first = rolloutPath(root, firstId);
+    await writeFile(first, `${metadata(firstId)}\nold\n`);
+    const catalog = new CodexSessionDiskCatalog({
+      sessionRoot: root,
+      readerVersion: "0.153.0",
+      repository: new MemoryCatalogRepository(),
+    });
+    const onCheckingEntry = vi.fn();
+    catalog.setOnCheckingEntry(onCheckingEntry);
+
+    await catalog.reconcile();
+    expect(onCheckingEntry).not.toHaveBeenCalled();
+
+    await writeFile(first, `${metadata(firstId, "0.153.0")}\nchanged body\n`);
+    await catalog.reconcile();
+
+    expect(onCheckingEntry).toHaveBeenCalledTimes(1);
+    expect(onCheckingEntry).toHaveBeenCalledWith(expect.objectContaining({
+      nativeSessionId: firstId,
+      producerVersion: "0.153.0",
+      compatibility: expect.objectContaining({ status: "checking" }),
+    }));
+  });
+
+  it("preserves settled compatibility when only the rollout body grows", async () => {
+    const root = await tempSessionRoot();
+    const firstId = "019f0000-0000-7000-8000-000000000014";
+    const first = rolloutPath(root, firstId);
+    await writeFile(first, `${metadata(firstId, "0.153.0")}\nold\n`);
+    const catalog = new CodexSessionDiskCatalog({
+      sessionRoot: root,
+      readerVersion: "0.153.0",
+      repository: new MemoryCatalogRepository(),
+    });
+    const onCheckingEntry = vi.fn();
+    catalog.setOnCheckingEntry(onCheckingEntry);
+    await catalog.reconcile();
+    catalog.updateCompatibility(firstId, {
+      status: "direct",
+      readerVersion: "0.153.0",
+      producerVersion: "0.153.0",
+    });
+
+    await writeFile(first, `${metadata(firstId, "0.153.0")}\nbody grew without metadata changes\n`);
+    await catalog.reconcile();
+
+    expect(catalog.findByNativeSessionId(firstId)?.compatibility.status).toBe("direct");
+    expect(onCheckingEntry).not.toHaveBeenCalled();
+  });
+
   it("isolates malformed metadata, recovers strict filename IDs, and rejects symlinks", async () => {
     const root = await tempSessionRoot();
     const recoveredId = "019f0000-0000-7000-8000-000000000021";

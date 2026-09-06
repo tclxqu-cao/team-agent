@@ -160,4 +160,76 @@ describe("CodexSessionCompatibilityService", () => {
     release();
     service.dispose();
   });
+
+  it("automatically validates a checking entry discovered after startup", async () => {
+    const repository = new SeedRepository([]);
+    let files: string[] = [];
+    let fileSize = 100;
+    const runtime = adapter(async () => detail());
+    const fileSystem: CodexSessionCatalogFileSystem = {
+      listFiles: async () => files,
+      realpath: async (path) => path,
+      stat: async () => ({ isFile: () => true, size: fileSize, mtimeNs: String(fileSize) }),
+      readMetadata: async () => ({
+        text: JSON.stringify({ type: "session_meta", payload: {
+          id: nativeId,
+          timestamp: "2026-09-04T00:00:00.000Z",
+          cwd: "/repo",
+          cli_version: "0.153.0",
+        } }),
+        bytesRead: 100,
+        complete: true,
+      }),
+      watch: () => null,
+    };
+    const diskCatalog = catalog(repository, fileSystem);
+    const changed = vi.fn();
+    const service = new CodexSessionCompatibilityService(runtime, diskCatalog, changed);
+
+    await diskCatalog.reconcile();
+    files = ["/sessions/new.jsonl"];
+    fileSize = 101;
+    await diskCatalog.reconcile();
+    await vi.waitFor(() => expect(repository.entries[0]?.compatibility.status).toBe("direct"));
+
+    expect(runtime.getSession).toHaveBeenCalledTimes(1);
+    expect(changed).toHaveBeenCalledTimes(1);
+    service.dispose();
+  });
+
+  it("keeps transiently unavailable incremental sessions checking", async () => {
+    const repository = new SeedRepository([]);
+    let files: string[] = [];
+    const runtime = adapter(async () => {
+      throw new RuntimeSessionError("starting", "SESSION_NOT_FOUND");
+    });
+    const fileSystem: CodexSessionCatalogFileSystem = {
+      listFiles: async () => files,
+      realpath: async (path) => path,
+      stat: async () => ({ isFile: () => true, size: 101, mtimeNs: "101" }),
+      readMetadata: async () => ({
+        text: JSON.stringify({ type: "session_meta", payload: {
+          id: nativeId,
+          timestamp: "2026-09-04T00:00:00.000Z",
+          cwd: "/repo",
+          cli_version: "0.153.0",
+        } }),
+        bytesRead: 100,
+        complete: true,
+      }),
+      watch: () => null,
+    };
+    const diskCatalog = catalog(repository, fileSystem);
+    const changed = vi.fn();
+    const service = new CodexSessionCompatibilityService(runtime, diskCatalog, changed);
+
+    await diskCatalog.reconcile();
+    files = ["/sessions/new.jsonl"];
+    await diskCatalog.reconcile();
+    await vi.waitFor(() => expect(runtime.getSession).toHaveBeenCalledTimes(1));
+
+    expect(repository.entries[0]?.compatibility.status).toBe("checking");
+    expect(changed).not.toHaveBeenCalled();
+    service.dispose();
+  });
 });

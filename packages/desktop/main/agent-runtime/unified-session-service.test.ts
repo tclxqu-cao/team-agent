@@ -157,6 +157,36 @@ describe("UnifiedSessionService", () => {
     expect(codex.getSession).not.toHaveBeenCalledWith("cx-supplemental");
   });
 
+  it("invalidates cached Codex discovery after compatibility settles", async () => {
+    const primary = summary("codex", "cx-primary", "/repo", "2026-01-02T00:00:00.000Z");
+    let status: "checking" | "direct" = "checking";
+    const codex = adapter("codex", [primary]);
+    const compatibility = {
+      supplement: vi.fn((rows: readonly UnifiedSessionSummary[]) => [...rows, summary(
+        "codex",
+        "cx-supplemental",
+        "/repo",
+        "2026-01-01T00:00:00.000Z",
+        status === "checking"
+          ? { canResume: false, compatibility: { status, readerVersion: "0.153.0" } }
+          : { canResume: true, compatibility: { status, readerVersion: "0.153.0" } },
+      )]),
+      isSupplemental: vi.fn(() => true),
+      readSupplemental: vi.fn(),
+      dispose: vi.fn(),
+    };
+    const service = new UnifiedSessionService([codex], async () => [], undefined, compatibility as never);
+
+    expect((await service.list()).find((session) => session.nativeSessionId === "cx-supplemental")?.compatibility?.status)
+      .toBe("checking");
+    status = "direct";
+    service.invalidateCodexCompatibility();
+
+    expect((await service.list()).find((session) => session.nativeSessionId === "cx-supplemental")?.compatibility?.status)
+      .toBe("direct");
+    expect(codex.discoverSessions).toHaveBeenCalledTimes(2);
+  });
+
   it("reuses the complete detail cache for older-page projection", async () => {
     const codexSession = summary("codex", "cx-1", "/repo", "2026-01-02T00:00:00.000Z");
     const codex = adapter("codex", [codexSession]);

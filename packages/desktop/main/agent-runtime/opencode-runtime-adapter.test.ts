@@ -145,6 +145,28 @@ describe("OpenCodeRuntimeAdapter", () => {
     ]);
   });
 
+  it("ignores malformed message events without losing a later idle event", async () => {
+    const fixture = mockServer();
+    const adapter = new OpenCodeRuntimeAdapter({ server: fixture.server });
+    const result = drain(adapter.run("ses_1", "hello"));
+    await vi.waitFor(() => expect(fixture.client.session.promptAsync).toHaveBeenCalled());
+
+    expect(() => fixture.emit({
+      type: "message.updated",
+      properties: {},
+    } as unknown as Event)).not.toThrow();
+    expect(() => fixture.emit({
+      type: "message.part.updated",
+      properties: {},
+    } as unknown as Event)).not.toThrow();
+    fixture.emit({ type: "session.idle", properties: { sessionID: "ses_1" } });
+
+    await expect(result).resolves.toEqual([
+      { type: "text_done" },
+      { type: "done", finalText: "" },
+    ]);
+  });
+
   it("auto-approves safe requests but surfaces request-approval operations", async () => {
     const fixture = mockServer();
     const adapter = new OpenCodeRuntimeAdapter({ server: fixture.server });

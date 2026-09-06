@@ -130,6 +130,11 @@ export class UnifiedSessionService {
     this.workspaceIndex.invalidate(decoded.agentType);
   }
 
+  invalidateCodexCompatibility(): void {
+    this.discoveryPromise = null;
+    this.workspaceIndex.invalidate("codex");
+  }
+
   private async discoverAll(): Promise<UnifiedSessionSummary[]> {
     if (this.discoveryPromise) return this.discoveryPromise;
     this.discoveryPromise = this.performDiscovery().catch((error) => {

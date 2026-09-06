@@ -21,7 +21,7 @@ export class OpenCodeServerClient {
   private readonly environment: NodeJS.ProcessEnv;
   private startPromise: Promise<OpencodeClient> | null = null;
   private process: ChildProcess | null = null;
-  private eventAbort: AbortController | null = null;
+  private stopEventStream: (() => void) | null = null;
   private readonly listeners = new Set<EventListener>();
   private readonly failureListeners = new Set<FailureListener>();
   private disposed = false;
@@ -59,8 +59,8 @@ export class OpenCodeServerClient {
 
   async dispose(): Promise<void> {
     this.disposed = true;
-    this.eventAbort?.abort();
-    this.eventAbort = null;
+    this.stopEventStream?.();
+    this.stopEventStream = null;
     const child = this.process;
     this.process = null;
     this.startPromise = null;
@@ -116,8 +116,8 @@ export class OpenCodeServerClient {
       if (this.process !== child || this.disposed) return;
       this.process = null;
       this.startPromise = null;
-      this.eventAbort?.abort();
-      this.eventAbort = null;
+      this.stopEventStream?.();
+      this.stopEventStream = null;
       this.notifyFailure(new Error(
         `OpenCode server exited${code === null ? "" : ` with code ${code}`}${signal ? ` (${signal})` : ""}`,
       ));
@@ -127,22 +127,108 @@ export class OpenCodeServerClient {
   }
 
   private startEventStream(client: OpencodeClient): void {
-    const abort = new AbortController();
-    this.eventAbort = abort;
-    void client.global.event({ signal: abort.signal }).then(async ({ stream }) => {
-      for await (const event of stream) {
-        if (abort.signal.aborted) break;
-        for (const listener of this.listeners) listener(event);
-      }
-      if (!abort.signal.aborted) this.notifyFailure(new Error("OpenCode event stream ended unexpectedly"));
-    }).catch((error) => {
-      if (!abort.signal.aborted) this.notifyFailure(normalizeError(error));
+    this.stopEventStream?.();
+    this.stopEventStream = subscribeToOpenCodeEvents(client, {
+      onEvent: (event) => {
+        for (const listener of this.listeners) {
+          try {
+            listener(event);
+          } catch (error) {
+            console.warn("[opencode-server] Ignoring malformed event", normalizeError(error));
+          }
+        }
+      },
+      onEventError: (error) => {
+        console.warn("[opencode-server] Ignoring malformed event", error);
+      },
+      onFailure: (error) => this.notifyFailure(error),
     });
   }
 
   private notifyFailure(error: Error): void {
-    for (const listener of this.failureListeners) listener(error);
+    for (const listener of this.failureListeners) {
+      try {
+        listener(error);
+      } catch (listenerError) {
+        console.warn("[opencode-server] Failure listener rejected an event", normalizeError(listenerError));
+      }
+    }
   }
+}
+
+interface OpenCodeEventSubscriptionOptions {
+  onEvent: (event: GlobalEvent) => void;
+  onEventError: (error: Error) => void;
+  onFailure: (error: Error) => void;
+  reconnectDelayMs?: (attempt: number) => number;
+}
+
+export function subscribeToOpenCodeEvents(
+  client: OpencodeClient,
+  options: OpenCodeEventSubscriptionOptions,
+): () => void {
+  let disposed = false;
+  let currentAbort: AbortController | null = null;
+  let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  let reconnectAttempt = 0;
+  const reconnectDelayMs = options.reconnectDelayMs
+    ?? ((attempt: number) => Math.min(250 * (2 ** attempt), 5_000));
+
+  const reportEventError = (error: unknown) => {
+    try {
+      options.onEventError(normalizeError(error));
+    } catch {
+      // Diagnostics must not interrupt the shared event stream.
+    }
+  };
+
+  const connect = () => {
+    if (disposed) return;
+    const abort = new AbortController();
+    currentAbort = abort;
+    void client.global.event({ signal: abort.signal }).then(async ({ stream }) => {
+      if (disposed || abort.signal.aborted) return;
+      for await (const event of stream) {
+        if (disposed || abort.signal.aborted) return;
+        reconnectAttempt = 0;
+        try {
+          options.onEvent(event);
+        } catch (error) {
+          reportEventError(error);
+        }
+      }
+      if (!disposed && !abort.signal.aborted) {
+        handleDisconnect(abort, new Error("OpenCode event stream ended unexpectedly"));
+      }
+    }).catch((error) => {
+      if (!disposed && !abort.signal.aborted) handleDisconnect(abort, normalizeError(error));
+    });
+  };
+
+  const handleDisconnect = (abort: AbortController, error: Error) => {
+    if (disposed || currentAbort !== abort) return;
+    currentAbort = null;
+    try {
+      options.onFailure(error);
+    } catch (failureError) {
+      reportEventError(failureError);
+    }
+    const delay = Math.max(0, reconnectDelayMs(reconnectAttempt));
+    reconnectAttempt += 1;
+    reconnectTimer = setTimeout(() => {
+      reconnectTimer = null;
+      connect();
+    }, delay);
+  };
+
+  connect();
+  return () => {
+    disposed = true;
+    currentAbort?.abort();
+    currentAbort = null;
+    if (reconnectTimer !== null) clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  };
 }
 
 async function reservePort(): Promise<number> {

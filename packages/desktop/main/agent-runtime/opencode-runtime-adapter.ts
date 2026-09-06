@@ -666,15 +666,28 @@ export function openCodeHistoryToMessages(
   return messages;
 }
 
-function eventSessionId(event: Event): string | undefined {
-  if (event.type === "message.updated") return event.properties.info.sessionID;
-  if (event.type === "message.part.updated") return event.properties.part.sessionID;
-  const properties = event.properties as Record<string, unknown>;
+function eventSessionId(event: unknown): string | undefined {
+  if (!isRecord(event) || typeof event.type !== "string" || !isRecord(event.properties)) return undefined;
+  const properties = event.properties;
+  if (event.type === "message.updated") {
+    return isRecord(properties.info) && typeof properties.info.sessionID === "string"
+      ? properties.info.sessionID
+      : undefined;
+  }
+  if (event.type === "message.part.updated") {
+    return isRecord(properties.part) && typeof properties.part.sessionID === "string"
+      ? properties.part.sessionID
+      : undefined;
+  }
   return typeof properties.sessionID === "string"
     ? properties.sessionID
-    : typeof (properties.info as { id?: unknown } | undefined)?.id === "string" && event.type.startsWith("session.")
-      ? (properties.info as { id: string }).id
+    : isRecord(properties.info) && typeof properties.info.id === "string" && event.type.startsWith("session.")
+      ? properties.info.id
       : undefined;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 function openCodePermissionTool(permission: Permission): { name: string; arguments: Record<string, unknown> } {
