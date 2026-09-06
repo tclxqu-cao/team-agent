@@ -13,6 +13,7 @@ import {
   parseExplicitSkillInvocation,
   resolveCodexHome,
 } from "./codex-runtime-adapter.js";
+import { RuntimeSessionError } from "./types.js";
 
 describe("Codex explicit skills", () => {
   it("maps slash skills to native names while reserving built-in commands", () => {
@@ -1360,5 +1361,94 @@ describe("Codex model & reasoning-effort overrides", () => {
       },
       { id: "plain-model", displayName: "plain-model" },
     ]);
+  });
+});
+
+describe("Codex occupied-session takeover", () => {
+  const occupiedThread = {
+    id: "cx-occupied",
+    parentThreadId: null,
+    preview: "occupied",
+    name: "occupied",
+    createdAt: 1_788_220_800,
+    updatedAt: 1_788_220_800,
+    status: { type: "idle" },
+    path: "D:\\project\\.codex\\rollout.jsonl",
+    cwd: "D:\\project",
+    source: "desktop",
+    turns: [],
+  };
+
+  function buildAdapter(
+    requests: Array<{ method: string; params: any }>,
+    options: { resumeError?: Error; turnCompleted?: boolean } = {},
+  ) {
+    let notify: (message: any) => void = () => undefined;
+    const client = {
+      onNotification: (handler: typeof notify) => {
+        notify = handler;
+        return () => undefined;
+      },
+      onExit: () => () => undefined,
+      setServerRequestHandler: () => undefined,
+      request: async (method: string, params: any) => {
+        requests.push({ method, params });
+        if (method === "thread/read") return { thread: occupiedThread };
+        if (method === "thread/resume") {
+          if (options.resumeError) throw options.resumeError;
+          return { thread: occupiedThread };
+        }
+        if (method === "turn/start") {
+          if (options.turnCompleted) {
+            queueMicrotask(() => notify({
+              method: "turn/completed",
+              params: { threadId: occupiedThread.id, turn: { id: "turn-occupied", status: "completed", items: [] } },
+            }));
+          }
+          return { turn: { id: "turn-occupied" } };
+        }
+        if (method === "thread/unsubscribe") return {};
+        throw new Error(`unexpected request: ${method}`);
+      },
+    };
+    return new CodexRuntimeAdapter({
+      client: client as never,
+      platform: "win32",
+      sessionRoot: "C:\\Users\\test\\.codex\\sessions",
+      rolloutActivityReader: {
+        readMany: async (paths: Iterable<string>) => new Map([...paths].map((path) => [path, "running" as const])),
+      },
+    });
+  }
+
+  it("attempts the takeover even while the rollout is externally occupied", async () => {
+    const requests: Array<{ method: string; params: any }> = [];
+    const adapter = buildAdapter(requests, { turnCompleted: true });
+
+    // A stale owned-externally marker must not refuse the run; the app-server
+    // writer lock is the authority.
+    const events = await drain(adapter.run(occupiedThread.id, "接管试试"));
+
+    expect(requests.map(({ method }) => method)).toEqual([
+      "thread/read",
+      "thread/resume",
+      "turn/start",
+      "thread/unsubscribe",
+    ]);
+    expect(events.at(-1)).toMatchObject({ type: "done" });
+  });
+
+  it("throws SESSION_OCCUPIED when the app-server reports an active writer elsewhere", async () => {
+    const requests: Array<{ method: string; params: any }> = [];
+    const adapter = buildAdapter(requests, {
+      // The app-server client maps writer-lock responses to this error.
+      resumeError: new RuntimeSessionError("Thread is already loaded by another client", "SESSION_OCCUPIED"),
+    });
+
+    // Thrown, not yielded as an error event, so the broker can finalize the
+    // run and attach fork-forwarding metadata.
+    await expect(drain(adapter.run(occupiedThread.id, "hello")))
+      .rejects.toMatchObject({ name: "RuntimeSessionError", code: "SESSION_OCCUPIED" });
+    expect(requests.some(({ method }) => method === "turn/start")).toBe(false);
   });
 });

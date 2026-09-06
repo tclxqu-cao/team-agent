@@ -246,7 +246,12 @@ export class UnifiedSessionService {
   ): AsyncIterable<AgentEvent> {
     const { adapter, nativeSessionId } = this.resolveAdapter(id);
     const detail = await adapter.getSession(nativeSessionId);
-    if (!detail.canResume || detail.occupancy === "owned-externally") {
+    // Codex occupancy is advisory: the app-server writer lock authoritatively
+    // rejects a second writer, so a stale "owned-externally" marker must not
+    // block an attempted takeover. Other runtimes cannot report a reliable
+    // conflict and keep the upfront refusal.
+    const occupancyAdvisory = adapter.agentType === "codex";
+    if (!occupancyAdvisory && (!detail.canResume || detail.occupancy === "owned-externally")) {
       throw new RuntimeSessionError("Session is currently owned by another client", "SESSION_OCCUPIED");
     }
     if (this.activeSessionIds.has(id)) {

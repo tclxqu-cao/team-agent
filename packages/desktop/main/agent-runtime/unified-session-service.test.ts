@@ -358,7 +358,24 @@ describe("UnifiedSessionService", () => {
     expect(codex.getSession).not.toHaveBeenCalled();
   });
 
-  it("refuses to run a session owned by another client", async () => {
+  it("refuses to run a non-codex session owned by another client", async () => {
+    const claude = adapter("claude-code", [
+      summary("claude-code", "cc-1", "/repo", "2026-01-01T00:00:00.000Z", {
+        occupancy: "owned-externally",
+        canResume: false,
+      }),
+    ]);
+    const service = new UnifiedSessionService([claude], async () => []);
+
+    await expect(
+      drain(service.run(encodeUnifiedSessionId("claude-code", "cc-1"), "hello")),
+    ).rejects.toMatchObject({ name: "RuntimeSessionError", code: "SESSION_OCCUPIED" });
+
+    const sessions = await service.list();
+    expect(sessions[0].canResume).toBe(false);
+  });
+
+  it("attempts the takeover run for an occupied codex session", async () => {
     const codex = adapter("codex", [
       summary("codex", "cx-1", "/repo", "2026-01-01T00:00:00.000Z", {
         occupancy: "owned-externally",
@@ -367,12 +384,11 @@ describe("UnifiedSessionService", () => {
     ]);
     const service = new UnifiedSessionService([codex], async () => []);
 
+    // Codex occupancy is advisory; the app-server writer lock decides, so the
+    // service must hand the run to the adapter instead of refusing upfront.
     await expect(
       drain(service.run(encodeUnifiedSessionId("codex", "cx-1"), "hello")),
-    ).rejects.toMatchObject({ name: "RuntimeSessionError", code: "SESSION_OCCUPIED" });
-
-    const sessions = await service.list();
-    expect(sessions[0].canResume).toBe(false);
+    ).resolves.toEqual([{ type: "done", finalText: "ok" }]);
   });
 
   it("refuses concurrent runs of the same session", async () => {

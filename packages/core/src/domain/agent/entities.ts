@@ -62,7 +62,7 @@ export type AgentEvent =
   | { type: "context_usage"; usage: ContextUsageSnapshot }
   | { type: "compacted"; summary: string; removedMessages: number }
   | { type: "turn_aborted" }
-  | { type: "error"; message: string; code?: string }
+  | { type: "error"; message: string; code?: string; forkSessionId?: string }
   | { type: "done"; finalText: string; usage?: TokenUsage; durationMs?: number }
   | { type: "todo_update"; todos: TodoItem[] }
   | { type: "agent_dispatch"; agentName: string; task: string; subSessionId?: string }

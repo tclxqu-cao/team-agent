@@ -2140,6 +2140,19 @@ export default function ChatView({
             setOccupiedDraft(undefined);
             setSessionError(undefined);
             setError(null);
+          } else if (event.code === "SESSION_OCCUPIED" && event.forkSessionId) {
+            // The broker already forked the locked session and forwarded this
+            // message; follow it instead of showing the occupied recovery UI.
+            const forkId = event.forkSessionId;
+            setOccupiedDraft(undefined);
+            setSessionError(undefined);
+            setError(null);
+            sessionIdRef.current = forkId;
+            setSessionId(forkId);
+            void (async () => {
+              if (onSessionCreated) await onSessionCreated(forkId);
+              else onSelectSession?.(forkId);
+            })();
           } else if (event.code === "SESSION_OCCUPIED") {
             const failedMessages = eventSid
               ? useAgentStore.getState().getMessagesForSession(eventSid)

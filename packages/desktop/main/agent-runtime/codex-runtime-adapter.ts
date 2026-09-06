@@ -484,10 +484,11 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
     if (this.activeQueues.has(nativeSessionId)) {
       throw new RuntimeSessionError("Codex session is already running", "SESSION_ALREADY_RUNNING");
     }
+    // The occupancy marker is advisory (lsof says the rollout file is open
+    // elsewhere); the app-server writer lock is the authority. Attempt the
+    // takeover so a stale marker does not block the send, and let a genuine
+    // second writer fail the resume with SESSION_OCCUPIED below.
     const detail = await this.getSession(nativeSessionId);
-    if (detail.occupancy === "owned-externally") {
-      throw new RuntimeSessionError("Codex session is open in another client", "SESSION_OCCUPIED");
-    }
     const parsedImages = parseImageDataUrls(images);
 
     const queue = new AsyncEventQueue<AgentEvent>();
@@ -542,6 +543,11 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
       for await (const event of queue) yield event;
     } catch (error) {
       const normalized = normalizeCodexError(error);
+      if (normalized.code === "SESSION_OCCUPIED") {
+        // Thrown, not yielded, so the broker appends the terminal event itself
+        // and can attach fork-forwarding metadata to it.
+        throw normalized;
+      }
       yield { type: "error", message: normalized.message, code: normalized.code };
     } finally {
       this.activeTurnIds.delete(nativeSessionId);
