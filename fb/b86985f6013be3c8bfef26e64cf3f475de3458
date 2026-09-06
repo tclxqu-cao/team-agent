@@ -1,0 +1,77 @@
+packages/webapp/src/presentation/browser-composer.test.ts
+  s_5652acd19c5653::t_4e3bc5cf480191 131-135,137-140
+  s_5652acd19c5653::t_891b8ed039ef40 136
+packages/server/package.json
+  s_0f29a5d8f1185e::t_b706aa58772807 21
+packages/server/lib/file-preview-service.mjs
+  s_0f29a5d8f1185e::t_9c3630c2d4493d 6-9,224-246
+  s_b7980c0f8aecfa::t_d02cd32108e7ed 247-248
+packages/server/app/web/FilePreview.test.ts
+  s_0f29a5d8f1185e::t_d2ba11c4f02a0d 8,202-203
+  s_0f29a5d8f1185e::t_ac2d103af2439d 195,201,204-207
+packages/server/lib/file-preview-service.test.ts
+  s_0f29a5d8f1185e::t_9c3630c2d4493d 255-262
+packages/server/ws-server.mjs
+  s_0f29a5d8f1185e::t_9c3630c2d4493d 38,41,984-990,1016-1018
+  s_b7980c0f8aecfa::t_3f43ad1d6c0f38 1019
+packages/server/lib/markdown-preview.mjs
+  s_0f29a5d8f1185e::t_b706aa58772807 1-65
+packages/webapp/src/presentation/web.css
+  s_5652acd19c5653::t_891b8ed039ef40 98
+  s_5652acd19c5653::t_4e3bc5cf480191 95,97,99
+docs/superpowers/plans/2026-09-06-markdown-artifact-rendered-preview.md
+  s_0f29a5d8f1185e::t_09780e9f4613c7 123,127,139,154
+  s_0f29a5d8f1185e::t_2fed9bc123e90d 1-33,35-43,45-60,62-88,90-92,94-108,110-122,124-126,128-138,140-153,155-182
+  s_0f29a5d8f1185e::t_ac2d103af2439d 89,93,109
+  s_0f29a5d8f1185e::t_7aecb5da1a6404 34,44,61
+packages/server/lib/file-preview-stream.test.ts
+  s_0f29a5d8f1185e::t_9c3630c2d4493d 6-7,109-173
+  s_b7980c0f8aecfa::t_d912423cd4c083 174
+packages/server/app/web/FilePreview.tsx
+  s_0f29a5d8f1185e::t_ac2d103af2439d 25,186-190,255-256,754-760,820-821,823
+packages/server/lib/markdown-preview.test.ts
+  s_0f29a5d8f1185e::t_7aecb5da1a6404 38
+  s_0f29a5d8f1185e::t_b706aa58772807 1-37,39-59
+packages/server/app/web/page.tsx
+  s_5652acd19c5653::t_50a2a871b359fb 518,521-522,532
+  s_5652acd19c5653::t_f953fe8b29d0ec 8,202,204,385-394,514-516
+  s_5652acd19c5653::t_a34d58c5a2277f 395-408,517,519
+packages/server/app/web/drawerLayout.test.ts
+  s_5652acd19c5653::t_50a2a871b359fb 29-30
+  s_5652acd19c5653::t_f953fe8b29d0ec 19-24
+  s_5652acd19c5653::t_a34d58c5a2277f 25-28
+bun.lock
+  s_b7980c0f8aecfa::t_4320b3a2563761 108
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "fbb86985f6013be3c8bfef26e64cf3f475de3458",
+  "prompts": {},
+  "sessions": {
+    "s_0f29a5d8f1185e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a07437-b956-77a1-b4ab-f1974fd1e7b0",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_5652acd19c5653": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a07267-e7f0-7c11-9172-28de9e062b00",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_b7980c0f8aecfa": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06727-a07e-75b2-8e44-30fd92f1b754",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
