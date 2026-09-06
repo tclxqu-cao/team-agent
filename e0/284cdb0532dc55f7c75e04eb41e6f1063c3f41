@@ -1,0 +1,20 @@
+docs/superpowers/specs/2026-09-06-codex-compatibility-auto-validation-design.md
+  s_0140abcc5d1b85::t_bd8dea95ff031d 1-31,33-47
+  s_0140abcc5d1b85::t_bb807024142080 32
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "e0284cdb0532dc55f7c75e04eb41e6f1063c3f41",
+  "prompts": {},
+  "sessions": {
+    "s_0140abcc5d1b85": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a07524-7952-70a3-a640-7f7ee3879a27",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

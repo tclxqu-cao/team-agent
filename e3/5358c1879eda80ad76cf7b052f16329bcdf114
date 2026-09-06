@@ -1,0 +1,19 @@
+docs/superpowers/specs/2026-09-05-query-navigation-rail-design.md
+  s_7fe2f3de1bbaa3::t_2cdfffca1bc461 48-49
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "e35358c1879eda80ad76cf7b052f16329bcdf114",
+  "prompts": {},
+  "sessions": {
+    "s_7fe2f3de1bbaa3": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0750e-099d-7ec1-9589-8960c1a6d291",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
