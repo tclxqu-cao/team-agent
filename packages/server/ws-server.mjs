@@ -35,8 +35,10 @@ import {
   inspectTextFile,
   inspectTextFileStatus,
   saveTextFile,
+  serveMarkdownPreview,
   servePreviewFile,
 } from "./lib/file-preview-service.mjs";
+import { isMarkdownPreviewPath } from "./lib/markdown-preview.mjs";
 
 const dev = process.env.NODE_ENV !== "production";
 const port = Number(process.env.PORT || 3000);
@@ -979,6 +981,13 @@ async function serveWebApp(req, res) {
 // console origin's storage, cookies or same-origin APIs — even when the
 // ticket URL is opened as a top-level browser tab.
 const HTML_PREVIEW_CSP = "sandbox allow-scripts allow-popups allow-forms allow-modals";
+const MARKDOWN_PREVIEW_CSP = [
+  "sandbox allow-popups allow-forms",
+  "default-src 'none'",
+  "img-src 'self' data: https: http:",
+  "media-src 'self' https: http:",
+  "style-src 'unsafe-inline'",
+].join("; ");
 
 async function serveTicketedFilePreview(req, res) {
   const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
@@ -1003,6 +1012,10 @@ async function serveTicketedFilePreview(req, res) {
       // previewed HTML, resolved against the deliverable's own directory.
       const relative = relativeSegments.map(decodeURIComponent).join("/");
       target = assertAllowed(path.resolve(path.dirname(primary), relative), ticket.userId);
+    }
+    if (relativeSegments.length > 0 && target === primary && isMarkdownPreviewPath(primary)) {
+      await serveMarkdownPreview(req, res, primary, { "content-security-policy": MARKDOWN_PREVIEW_CSP });
+      return true;
     }
     if (mimeFor(target).startsWith("text/html")) {
       extraHeaders = { "content-security-policy": HTML_PREVIEW_CSP };

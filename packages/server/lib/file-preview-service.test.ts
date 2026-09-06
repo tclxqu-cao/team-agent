@@ -252,6 +252,14 @@ describe("browser preview gateway contract", () => {
     expect(serving()).toContain('"content-security-policy": HTML_PREVIEW_CSP');
   });
 
+  it("renders only the primary Markdown document with a script-free CSP", () => {
+    expect(wsServerSource).toContain("const MARKDOWN_PREVIEW_CSP = [");
+    expect(wsServerSource).toContain('"sandbox allow-popups allow-forms"');
+    expect(wsServerSource).toContain('"default-src \'none\'"');
+    expect(serving()).toContain("relativeSegments.length > 0 && target === primary && isMarkdownPreviewPath(primary)");
+    expect(serving()).toContain('serveMarkdownPreview(req, res, primary, { "content-security-policy": MARKDOWN_PREVIEW_CSP })');
+  });
+
   it("resolves relative resources against the deliverable directory through authorization", () => {
     expect(serving()).toContain("relativeSegments");
     expect(serving()).toContain("path.resolve(path.dirname(primary), relative)");

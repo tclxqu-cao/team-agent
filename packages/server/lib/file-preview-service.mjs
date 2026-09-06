@@ -3,6 +3,10 @@ import { randomBytes } from "node:crypto";
 import { createReadStream } from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
+import {
+  MAX_MARKDOWN_PREVIEW_BYTES,
+  renderMarkdownPreviewDocument,
+} from "./markdown-preview.mjs";
 
 export const MAX_EDITABLE_TEXT_BYTES = 8 * 1024 * 1024;
 const MAX_GIT_OUTPUT_BYTES = 16 * 1024 * 1024;
@@ -215,6 +219,31 @@ export async function servePreviewFile(request, response, filePath, mime = "appl
   stream.on("error", (error) => response.destroy(error));
   response.on("close", () => stream.destroy());
   stream.pipe(response);
+}
+
+export async function serveMarkdownPreview(request, response, filePath, extraHeaders = {}) {
+  const canonicalPath = await fsp.realpath(filePath);
+  const stat = await fsp.stat(canonicalPath);
+  if (!stat.isFile()) throw fileError("EISDIR", "not a regular file");
+
+  const oversized = stat.size > MAX_MARKDOWN_PREVIEW_BYTES;
+  const source = oversized
+    ? "# 无法渲染此 Markdown\n\n文件超过 8 MiB，请退出眼睛预览后使用渐进式源码视图阅读。"
+    : await fsp.readFile(canonicalPath, "utf8");
+  const document = renderMarkdownPreviewDocument(source, { title: path.basename(canonicalPath) });
+  const length = Buffer.byteLength(document);
+  response.writeHead(oversized ? 413 : 200, {
+    "cache-control": "private, no-store",
+    "content-length": String(length),
+    "content-type": "text/html; charset=utf-8",
+    "x-content-type-options": "nosniff",
+    ...extraHeaders,
+  });
+  if (request.method === "HEAD") {
+    response.end();
+    return;
+  }
+  response.end(document);
 }
 
 export function createPreviewTicketRegistry({

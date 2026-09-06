@@ -5,7 +5,7 @@
 
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { FolderTree, X } from "lucide-react";
+import { PanelRight, X } from "lucide-react";
 import type { PinnedCommand } from "../../../core/src/domain/web-console/entities";
 import { defaultPinnedCommands } from "../../../core/src/domain/web-console/pinned-commands";
 import {
@@ -77,7 +77,6 @@ function AuthenticatedConsole({ auth }: { auth: WebAuthController }) {
   const [fileTreeRoot,setFileTreeRoot]=useState<string|null>(null);
   const [fileTreeFollow,setFileTreeFollow]=useState(true);
   const [fileTreeRevealRequest,setFileTreeRevealRequest]=useState<FileTreeRevealRequest|null>(null);
-  const [fileButtonPosition,setFileButtonPosition]=useState({xRatio:.94,yRatio:.65,anchor:"right"});
   const [keybarHidden,setKeybarHidden]=useState(false);
   const [keyOrder,setKeyOrder]=useState<string[]>([]);
   const [pinnedCommands,setPinnedCommands]=useState<PinnedCommand[]>(defaultPinnedCommands());
@@ -85,7 +84,6 @@ function AuthenticatedConsole({ auth }: { auth: WebAuthController }) {
   const [preferencesLoaded,setPreferencesLoaded]=useState(false);
   const [webappReady, setWebappReady] = useState(false);
   const activeTheme = resolveWebTheme(themeId);
-  const fileDrag=useRef<{moved:boolean;startX:number;startY:number}|null>(null);
   const swipeStart = useRef<{ x: number; y: number; axis: "pending"|"horizontal"|"vertical"; pointerId: number } | null>(null);
   const [swipeDelta,setSwipeDelta]=useState(0);
   const [swiping,setSwiping]=useState(false);
@@ -201,9 +199,9 @@ function AuthenticatedConsole({ auth }: { auth: WebAuthController }) {
     };
   }, []);
 
-  useEffect(()=>{fetch("/api/web-console/preferences",{credentials:"same-origin"}).then(r=>r.json()).then(body=>{if(body.preferences?.fileButtonPosition)setFileButtonPosition(body.preferences.fileButtonPosition);if(typeof body.preferences?.keybarHidden==="boolean")setKeybarHidden(body.preferences.keybarHidden);if(Array.isArray(body.preferences?.keyOrder))setKeyOrder(body.preferences.keyOrder);if(Array.isArray(body.preferences?.pinnedCommands))setPinnedCommands(body.preferences.pinnedCommands);if(body.preferences?.theme)setThemeId(resolveWebTheme(body.preferences.theme).id);}).catch(()=>{}).finally(()=>setPreferencesLoaded(true));fetch("/api/web-console/device-state",{credentials:"same-origin"}).then(r=>r.json()).then(body=>{const state=body.deviceState;if(state?.drawerTab)setDrawerTab(state.drawerTab);if(state?.activeTerminalId)restoredActiveId.current=state.activeTerminalId;if(typeof state?.drawerOpen==="boolean")setDrawerOpen(state.drawerOpen);if(state?.fileTreeRoot)setFileTreeRoot(state.fileTreeRoot);if(typeof state?.fileTreeFollowMode==="boolean")setFileTreeFollow(state.fileTreeFollowMode);if(state?.selectedFile)setPreviewPath(state.selectedFile);if(state?.terminalScroll&&typeof state.terminalScroll==="object")setTerminalScroll(state.terminalScroll);}).catch(()=>{}).finally(()=>setDeviceStateLoaded(true));},[]);
+  useEffect(()=>{fetch("/api/web-console/preferences",{credentials:"same-origin"}).then(r=>r.json()).then(body=>{if(typeof body.preferences?.keybarHidden==="boolean")setKeybarHidden(body.preferences.keybarHidden);if(Array.isArray(body.preferences?.keyOrder))setKeyOrder(body.preferences.keyOrder);if(Array.isArray(body.preferences?.pinnedCommands))setPinnedCommands(body.preferences.pinnedCommands);if(body.preferences?.theme)setThemeId(resolveWebTheme(body.preferences.theme).id);}).catch(()=>{}).finally(()=>setPreferencesLoaded(true));fetch("/api/web-console/device-state",{credentials:"same-origin"}).then(r=>r.json()).then(body=>{const state=body.deviceState;if(state?.drawerTab)setDrawerTab(state.drawerTab);if(state?.activeTerminalId)restoredActiveId.current=state.activeTerminalId;if(typeof state?.drawerOpen==="boolean")setDrawerOpen(state.drawerOpen);if(state?.fileTreeRoot)setFileTreeRoot(state.fileTreeRoot);if(typeof state?.fileTreeFollowMode==="boolean")setFileTreeFollow(state.fileTreeFollowMode);if(state?.selectedFile)setPreviewPath(state.selectedFile);if(state?.terminalScroll&&typeof state.terminalScroll==="object")setTerminalScroll(state.terminalScroll);}).catch(()=>{}).finally(()=>setDeviceStateLoaded(true));},[]);
   const savePreferences=useCallback((update:Record<string,unknown>)=>{fetch("/api/web-console/preferences",{method:"PATCH",credentials:"same-origin",headers:{"content-type":"application/json","x-csrf-token":auth.csrfToken},body:JSON.stringify(update)}).catch(()=>{});},[auth.csrfToken]);
-  useEffect(()=>{if(!preferencesLoaded)return;const timer=setTimeout(()=>savePreferences({fileButtonPosition,keybarHidden,keyOrder,pinnedCommands,theme:themeId}),500);return()=>clearTimeout(timer);},[fileButtonPosition,keybarHidden,keyOrder,pinnedCommands,themeId,preferencesLoaded,savePreferences]);
+  useEffect(()=>{if(!preferencesLoaded)return;const timer=setTimeout(()=>savePreferences({keybarHidden,keyOrder,pinnedCommands,theme:themeId}),500);return()=>clearTimeout(timer);},[keybarHidden,keyOrder,pinnedCommands,themeId,preferencesLoaded,savePreferences]);
   const persistDeviceState=useCallback((payload:Record<string,unknown>)=>{if(!auth.csrfToken)return;fetch("/api/web-console/device-state",{method:"PUT",credentials:"same-origin",headers:{"content-type":"application/json","x-csrf-token":auth.csrfToken},body:JSON.stringify(payload)}).catch(()=>{});},[auth.csrfToken]);
   useEffect(()=>{if(!auth.csrfToken)return;const timer=setTimeout(()=>persistDeviceState({activeTerminalId,drawerOpen,drawerTab,fileTreeRoot,fileTreeFollowMode:fileTreeFollow,selectedFile:previewPath,terminalScroll}),500);return()=>clearTimeout(timer);},[activeTerminalId,drawerOpen,drawerTab,fileTreeRoot,fileTreeFollow,previewPath,terminalScroll,auth.csrfToken,persistDeviceState]);
   useEffect(()=>{if(!auth.csrfToken)return;const flush=()=>persistDeviceState({activeTerminalId,drawerOpen,drawerTab,fileTreeRoot,fileTreeFollowMode:fileTreeFollow,selectedFile:previewPath,terminalScroll});window.addEventListener("pagehide",flush);return()=>window.removeEventListener("pagehide",flush);},[activeTerminalId,drawerOpen,drawerTab,fileTreeRoot,fileTreeFollow,previewPath,terminalScroll,auth.csrfToken,persistDeviceState]);
@@ -384,14 +382,30 @@ function AuthenticatedConsole({ auth }: { auth: WebAuthController }) {
         ))}
         <button className="terminal-add" disabled={tabs.length >= 8} onClick={addTerminal}>＋</button>
         <div className="terminal-connection">
-          <span style={{width:8,height:8,borderRadius:99,background:state.connected?"var(--ui-success)":"var(--ui-error)"}} />
-          <ThemePicker
-            username={auth.user?.username ?? "?"}
-            themeId={themeId}
-            onThemeChange={setThemeId}
-            accent={activeTheme.keybar.accent}
-            accentText={activeTheme.keybar.accentText}
-          />
+          <button
+            type="button"
+            className="file-drawer-toggle"
+            aria-label={drawerOpen ? "关闭我的文件" : "打开我的文件"}
+            title="我的文件"
+            aria-expanded={drawerOpen}
+            onClick={() => setDrawerOpen((open) => !open)}
+          >
+            <PanelRight size={17} aria-hidden="true" />
+          </button>
+          <div className="theme-avatar-with-status">
+            <ThemePicker
+              username={auth.user?.username ?? "?"}
+              themeId={themeId}
+              onThemeChange={setThemeId}
+              accent={activeTheme.keybar.accent}
+              accentText={activeTheme.keybar.accentText}
+            />
+            <span
+              className="theme-avatar-status"
+              data-connected={state.connected}
+              aria-label={state.connected ? "已连接" : "未连接"}
+            />
+          </div>
         </div>
       </div>
 
@@ -483,10 +497,6 @@ function AuthenticatedConsole({ auth }: { auth: WebAuthController }) {
         )}
       </main>
 
-      {/* floating action: toggle file drawer (both mobile & desktop) */}
-      {!drawerOpen && <button className="fab-files" style={{...S.fabFiles,left:`${fileButtonPosition.xRatio*100}%`,top:`${fileButtonPosition.yRatio*100}%`,right:"auto",bottom:"auto",transform:"translate(-50%,-50%)"}} onPointerDown={(event)=>{fileDrag.current={moved:false,startX:event.clientX,startY:event.clientY};event.currentTarget.setPointerCapture(event.pointerId);}} onPointerMove={(event)=>{const drag=fileDrag.current;if(!drag)return;if(!drag.moved&&Math.hypot(event.clientX-drag.startX,event.clientY-drag.startY)<4)return;drag.moved=true;const vv=window.visualViewport;setFileButtonPosition({xRatio:Math.max(.05,Math.min(.95,event.clientX/(vv?.width||innerWidth))),yRatio:Math.max(.08,Math.min(.92,(event.clientY-(vv?.offsetTop||0))/(vv?.height||innerHeight))),anchor:event.clientX<(vv?.width||innerWidth)/2?"left":"right"});}} onPointerUp={(event)=>{event.currentTarget.releasePointerCapture(event.pointerId);if(!fileDrag.current?.moved)setDrawerOpen(true);fileDrag.current=null;}} aria-label="files">
-        <FolderTree size={20} aria-hidden="true" />
-      </button>}
     </div>
   );
 }
@@ -501,11 +511,15 @@ const GLOBAL_CSS = `
   .terminal-tab button { width:18px; height:18px; border:0; border-radius:4px; background:transparent; color:var(--ui-tab-text, #707586); padding:0; }
   .terminal-add { min-width:30px; height:28px; margin-bottom:2px; border:1px solid var(--ui-tabbar-border, #303442); border-radius:6px; background:var(--ui-tab-bg, #1b1e28); color:var(--ui-tab-text, #9da2b2); }
   .terminal-connection { position:sticky; right:-8px; margin-left:auto; align-self:stretch; display:flex; align-items:center; gap:7px; padding:0 9px; background:var(--ui-connection-bg, #12141b); color:var(--ui-connection-text, #777b8c); font-size:10.5px; flex-shrink:0; z-index:5; box-shadow:-8px 0 12px color-mix(in srgb, var(--ui-connection-bg, #12141b) 90%, transparent); }
+  .file-drawer-toggle { display:grid; place-items:center; width:28px; height:28px; padding:0; border:0; border-radius:6px; background:transparent; color:var(--ui-connection-text, #777b8c); cursor:pointer; flex-shrink:0; touch-action:manipulation; }
+  .file-drawer-toggle:hover, .file-drawer-toggle[aria-expanded="true"] { background:color-mix(in srgb, var(--ui-tab-accent, #7aa2f7) 12%, transparent); color:var(--ui-tab-active-text, #edf0f7); }
+  .file-drawer-toggle:focus-visible { outline:2px solid var(--ui-tab-accent, #7aa2f7); outline-offset:-2px; }
+  .theme-avatar-with-status { position:relative; display:flex; flex-shrink:0; }
+  .theme-avatar-status { position:absolute; right:-2px; bottom:-2px; z-index:7; width:6px; height:6px; box-sizing:border-box; border:1px solid var(--ui-connection-bg, #12141b); border-radius:50%; background:var(--ui-error); pointer-events:none; }
+  .theme-avatar-status[data-connected="true"] { background:var(--ui-success); }
   .theme-picker { position:relative; flex-shrink:0; z-index:6; }
-  .theme-avatar { position:relative; display:flex; align-items:center; justify-content:center; width:22px; height:22px; padding:0; border-radius:99px; font-size:10px; font-weight:700; cursor:pointer; flex-shrink:0; touch-action:manipulation; -webkit-tap-highlight-color:transparent; transition:transform .12s ease, filter .12s ease; }
-  /* Hit-area padding: the 22px circle is far below the ~44px minimum touch
-     target, so an invisible ::after extends the tap region. Keep the visual
-     size unchanged — only the hit-test area grows. */
+  .theme-avatar { position:relative; display:flex; align-items:center; justify-content:center; width:18px; height:18px; padding:0; border-radius:99px; font-size:9px; font-weight:700; cursor:pointer; flex-shrink:0; touch-action:manipulation; -webkit-tap-highlight-color:transparent; transition:transform .12s ease, filter .12s ease; }
+  /* Hit-area padding keeps the compact visual circle easy to target. */
   .theme-avatar::after { content:""; position:absolute; inset:-6px; border-radius:99px; }
   .theme-avatar:active { transform:scale(.9); filter:brightness(1.15); }
   .theme-popover-item { display:flex; align-items:center; gap:8px; padding:7px 8px; border:none; border-radius:8px; cursor:pointer; touch-action:manipulation; -webkit-tap-highlight-color:transparent; }
@@ -515,7 +529,7 @@ const GLOBAL_CSS = `
      expanded hit area taller than the bar would get cut off. */
   @media (pointer: coarse) {
     .terminal-tabs { min-height:44px; }
-    .theme-avatar::after { inset:-11px; }
+    .theme-avatar::after { inset:-9px; }
     .theme-popover-item { padding-top:11px; padding-bottom:11px; }
   }
   @media (prefers-reduced-motion: reduce) { .theme-avatar { transition:none; } }
@@ -732,7 +746,6 @@ const GLOBAL_CSS = `
     z-index: 50;
     background: var(--ui-term-col-bg, #101014);
   }
-  .fab-files { display: grid; place-items: center; }
   .cwd-hint { max-width: 40vw; }
 
   @media (min-width: 900px) {
@@ -849,18 +862,5 @@ const S: Record<string, React.CSSProperties> = {
     overflow: "hidden",
   },
   previewCol: { minWidth: 0, minHeight: 0 },
-  fabFiles: {
-    position: "absolute",
-    right: 14,
-    bottom: "calc(env(safe-area-inset-bottom) + 64px)",
-    width: 44,
-    height: 44,
-    borderRadius: 99,
-    border: "1px solid var(--ui-fab-border, #2c2c38)",
-    background: "var(--ui-fab-bg, #1b1b26)",
-    color: "var(--ui-text, #dde)",
-    fontSize: 18,
-    zIndex: 45,
-  },
   logoutBtn: { height: 24, padding: "0 8px", border: "1px solid var(--ui-muted-border, #2d303a)", borderRadius: 6, background: "var(--ui-muted-surface, #171920)", color: "var(--ui-muted-text, #8c909f)", fontSize: 10.5 },
 };

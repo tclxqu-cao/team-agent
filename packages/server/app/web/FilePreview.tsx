@@ -22,6 +22,7 @@ const TEXT_EXTS = new Set([
 ]);
 const IMG_EXTS = new Set(["png", "jpg", "jpeg", "gif", "webp", "bmp", "ico", "svg"]);
 const HTML_EXTS = new Set(["html", "htm"]);
+const MARKDOWN_EXTS = new Set(["md", "markdown", "mdown", "mkdn", "mdx"]);
 const BROWSER_PREVIEW_EXTS = new Set(TEXT_EXTS);
 // Mirrors the server's `HTML_PREVIEW_CSP`: unique opaque origin for the
 // rendered deliverable — scripts run, console origin stays out of reach.
@@ -182,6 +183,11 @@ export function isHtmlPreviewPath(path: string): boolean {
   return HTML_EXTS.has(ext);
 }
 
+export function isMarkdownPreviewPath(path: string): boolean {
+  const ext = path.split(".").pop()?.toLowerCase() ?? "";
+  return MARKDOWN_EXTS.has(ext);
+}
+
 export function isBrowserPreviewPath(path: string): boolean {
   const ext = path.split(".").pop()?.toLowerCase() ?? "";
   return BROWSER_PREVIEW_EXTS.has(ext);
@@ -246,6 +252,8 @@ export default function FilePreview({ path, rpc, onClose }: Props) {
 
   const kind = path ? kindOf(path) : "unsupported";
   const isHtml = path ? isHtmlPreviewPath(path) : false;
+  const isMarkdown = path ? isMarkdownPreviewPath(path) : false;
+  const isRenderedDocument = isHtml || isMarkdown;
   const hasBrowserPreview = path ? isBrowserPreviewPath(path) : false;
   const text = useMemo(() => textChunks.join(""), [textChunks]);
 
@@ -743,7 +751,13 @@ export default function FilePreview({ path, rpc, onClose }: Props) {
                     : {}),
                 }}
                 aria-label={previewMode ? "退出浏览器预览" : "浏览器预览"}
-                title={previewMode ? "退出浏览器预览" : isHtml ? "在浏览器中预览渲染效果" : "在浏览器中查看原始文件"}
+                title={previewMode
+                  ? "退出浏览器预览"
+                  : isHtml
+                    ? "在浏览器中预览渲染效果"
+                    : isMarkdown
+                      ? "预览 Markdown 排版效果"
+                      : "在浏览器中查看原始文件"}
               >
                 <Eye size={15} strokeWidth={1.8} aria-hidden="true" />
               </button>
@@ -803,10 +817,10 @@ export default function FilePreview({ path, rpc, onClose }: Props) {
           <iframe src={mediaUrl} title={path} onLoad={() => markMediaReady(mediaUrl)} onError={() => markMediaFailed(mediaUrl)} style={{ width: "100%", height: "100%", border: "none" }} />
         )}
         {mediaUrl && !err && kind === "text" && hasBrowserPreview && previewMode && !editing && (
-          // HTML carries the file name so relative assets resolve through the
-          // ticket route. Other text opens the primary URL to preserve symlinks.
+          // Rendered documents carry the file name so relative assets resolve
+          // through the ticket route. Other text opens the primary raw URL.
           <iframe
-            src={isHtml ? `${mediaUrl}/${encodeURIComponent(fileName(path))}` : mediaUrl}
+            src={isRenderedDocument ? `${mediaUrl}/${encodeURIComponent(fileName(path))}` : mediaUrl}
             sandbox={HTML_IFRAME_SANDBOX}
             title={path}
             onLoad={() => markMediaReady(mediaUrl)}

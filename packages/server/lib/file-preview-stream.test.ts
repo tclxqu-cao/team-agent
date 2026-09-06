@@ -3,7 +3,8 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { servePreviewFile } from "./file-preview-service.mjs";
+import { MAX_MARKDOWN_PREVIEW_BYTES } from "./markdown-preview.mjs";
+import { serveMarkdownPreview, servePreviewFile } from "./file-preview-service.mjs";
 
 const directories: string[] = [];
 
@@ -103,5 +104,71 @@ describe("servePreviewFile", () => {
     expect(result.headers["content-length"]).toBe("0");
     expect(result.headers["content-type"]).toBe("text/plain");
     expect(result.headers["x-content-type-options"]).toBe("nosniff");
+  });
+});
+
+describe("serveMarkdownPreview", () => {
+  async function fetchMarkdown(method = "GET", content = "# Rendered") {
+    const directory = mkdtempSync(join(tmpdir(), "markdown-preview-stream-"));
+    directories.push(directory);
+    const file = join(directory, "README.md");
+    writeFileSync(file, content);
+    const server = createServer((req, res) => {
+      void serveMarkdownPreview(req, res, file, {
+        "content-security-policy": "sandbox; default-src 'none'; style-src 'unsafe-inline'",
+      }).catch((error) => {
+        res.writeHead(500).end(error.message);
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("missing test address");
+
+    try {
+      return await new Promise<{ status: number; headers: Record<string, string | string[] | undefined>; body: string }>((resolve, reject) => {
+        const responseHeaders: Record<string, string | string[] | undefined> = {};
+        const req = request({ hostname: "127.0.0.1", port: address.port, method }, (res) => {
+          Object.assign(responseHeaders, res.headers);
+          let body = "";
+          res.setEncoding("utf8");
+          res.on("data", (chunk) => { body += chunk; });
+          res.on("end", () => resolve({ status: res.statusCode ?? 0, headers: responseHeaders, body }));
+        });
+        req.on("error", reject);
+        req.end();
+      });
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  }
+
+  it("returns a private sandboxed HTML document", async () => {
+    const result = await fetchMarkdown("GET", "# Rendered\n\n<script>alert(1)</script>");
+
+    expect(result.status).toBe(200);
+    expect(result.headers["content-type"]).toBe("text/html; charset=utf-8");
+    expect(result.headers["cache-control"]).toBe("private, no-store");
+    expect(result.headers["x-content-type-options"]).toBe("nosniff");
+    expect(result.headers["content-security-policy"]).toContain("default-src 'none'");
+    expect(result.body).toContain("<h1>Rendered</h1>");
+    expect(result.body).toContain("&lt;script&gt;alert(1)&lt;/script&gt;");
+    expect(Number(result.headers["content-length"])).toBe(Buffer.byteLength(result.body));
+  });
+
+  it("returns the rendered document length without a HEAD body", async () => {
+    const get = await fetchMarkdown();
+    const head = await fetchMarkdown("HEAD");
+
+    expect(head.status).toBe(200);
+    expect(head.body).toBe("");
+    expect(head.headers["content-length"]).toBe(get.headers["content-length"]);
+  });
+
+  it("returns an isolated capacity message for oversized Markdown", async () => {
+    const result = await fetchMarkdown("GET", "x".repeat(MAX_MARKDOWN_PREVIEW_BYTES + 1));
+
+    expect(result.status).toBe(413);
+    expect(result.body).toContain("文件超过 8 MiB");
+    expect(result.body).not.toContain("x".repeat(1024));
   });
 });

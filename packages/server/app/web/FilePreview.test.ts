@@ -5,6 +5,7 @@ import {
   MAX_CLIENT_DOWNLOAD_BYTES,
   decodeTextChunk,
   isBrowserPreviewPath,
+  isMarkdownPreviewPath,
   mimeTypeForPath,
   nativeFileShareReadiness,
   readFileForClientDownload,
@@ -191,15 +192,19 @@ describe("FilePreview client download", () => {
     expect(filePreviewSource).toContain("isBrowserPreviewPath");
     expect(filePreviewSource).toContain('sandbox={HTML_IFRAME_SANDBOX}');
     expect(filePreviewSource).toContain('"allow-scripts allow-popups allow-forms allow-modals"');
-    expect(filePreviewSource).toContain('src={isHtml ? `${mediaUrl}/${encodeURIComponent(fileName(path))}` : mediaUrl}');
+    expect(filePreviewSource).toContain('src={isRenderedDocument ? `${mediaUrl}/${encodeURIComponent(fileName(path))}` : mediaUrl}');
     expect(filePreviewSource).toContain("kind === \"text\" && hasBrowserPreview && previewMode && !editing");
     expect(previewButton).toBeGreaterThan(-1);
     expect(previewButton).toBeGreaterThan(shareButton);
   });
 
-  it("streams markdown directly instead of converting it to html", () => {
-    expect(filePreviewSource).not.toMatch(/marked|markdown-it|react-markdown|remark/);
-    expect(filePreviewSource).toContain('src={isHtml ? `${mediaUrl}/${encodeURIComponent(fileName(path))}` : mediaUrl}');
+  it("routes Markdown through its rendered document preview", () => {
+    expect(isMarkdownPreviewPath("/tmp/README.MD")).toBe(true);
+    expect(isMarkdownPreviewPath("/tmp/page.html")).toBe(false);
+    expect(filePreviewSource).toContain("isMarkdownPreviewPath");
+    expect(filePreviewSource).toContain("const isRenderedDocument = isHtml || isMarkdown");
+    expect(filePreviewSource).toContain('src={isRenderedDocument ? `${mediaUrl}/${encodeURIComponent(fileName(path))}` : mediaUrl}');
+    expect(filePreviewSource).toContain('"预览 Markdown 排版效果"');
   });
 
   it("keeps diff and content tabs authoritative while the html preview is off", () => {

@@ -16,9 +16,18 @@ describe("web console file drawer layout", () => {
     expect(pageSource).toMatch(/\.workspace\.show-tree\.has-preview\s*\{\s*grid-template-columns:\s*46% 20% 34%;/);
     expect(pageSource).toMatch(/\.workspace\.has-preview:not\(\.show-tree\)\s*\{\s*grid-template-columns:\s*66% 34%;/);
     expect(pageSource).not.toMatch(/grid-template-columns:\s*1fr minmax\(220px, 264px\)/);
-    expect(pageSource).toMatch(/\{!drawerOpen && <button className="fab-files"/);
-    expect(pageSource).not.toMatch(/\.fab-files\s*\{\s*display:\s*none;/);
-    expect(pageSource).toMatch(/Math\.hypot\([^)]*drag\.startX[^)]*drag\.startY[^)]*\)<4/);
+    expect(pageSource).toContain('className="file-drawer-toggle"');
+    expect(pageSource).toContain('<PanelRight size={17} aria-hidden="true" />');
+    expect(pageSource).toContain('aria-label={drawerOpen ? "关闭我的文件" : "打开我的文件"}');
+    expect(pageSource).toContain('onClick={() => setDrawerOpen((open) => !open)}');
+    expect(pageSource).not.toContain('className="fab-files"');
+    expect(pageSource).not.toContain("fileButtonPosition");
+    expect(pageSource).toContain('className="theme-avatar-with-status"');
+    expect(pageSource).toContain('className="theme-avatar-status"');
+    expect(pageSource).toContain('aria-label={state.connected ? "已连接" : "未连接"}');
+    expect(pageSource).toContain('.theme-avatar-status[data-connected="true"]');
+    expect(pageSource).toMatch(/\.theme-avatar \{[^}]*width:18px; height:18px;/);
+    expect(pageSource).toMatch(/@media \(pointer: coarse\)[\s\S]*\.theme-avatar::after \{ inset:-9px; \}/);
   });
 
   it("only casts the mobile drawer shadow while the drawer is open", () => {

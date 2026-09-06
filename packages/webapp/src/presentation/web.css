@@ -92,15 +92,14 @@ body[data-web-shell="1"] .chat-messages {
 }
 
 body[data-web-shell="1"] .query-navigation-rail {
+  top: auto;
   right: max(1px, env(safe-area-inset-right));
+  bottom: 12px;
+  height: min(64%, var(--query-navigation-rail-web-height, 288px));
+  transform: none;
 }
 
 @media (max-width: 899px) {
-  body[data-web-shell="1"] .query-navigation-rail {
-    top: 14%;
-    height: 70%;
-  }
-
   body[data-web-shell="1"] .query-navigation-rail__preview {
     width: min(228px, calc(100vw - 58px));
   }

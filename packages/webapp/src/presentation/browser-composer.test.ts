@@ -128,4 +128,14 @@ describe("Codex-style Web message history", () => {
     expect(webCss).toContain("width: var(--web-chat-lane-width)");
     expect(webCss).toContain("--web-chat-lane-width: 100%");
   });
+
+  it("anchors the Web query rail at the bottom of the message viewport", () => {
+    expect(webCss).toMatch(
+      /body\[data-web-shell="1"\] \.query-navigation-rail \{\s*top: auto;[\s\S]*bottom: 12px;[\s\S]*transform: none;/,
+    );
+    expect(webCss).toContain("height: min(64%, var(--query-navigation-rail-web-height, 288px))");
+    expect(globalCss).toMatch(
+      /\.query-navigation-rail \{[\s\S]*top: 50%;[\s\S]*transform: translateY\(-50%\);/,
+    );
+  });
 });
