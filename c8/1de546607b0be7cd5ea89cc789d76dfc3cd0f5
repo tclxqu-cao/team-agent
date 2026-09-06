@@ -1,0 +1,26 @@
+packages/core/src/domain/session/index.ts
+  h_86bb4e0e04237b 16
+packages/desktop/main/agent-runtime/codex-runtime-adapter.test.ts
+  h_86bb4e0e04237b 1455-1556
+packages/desktop/main/agent-runtime/codex-runtime-adapter.ts
+  h_86bb4e0e04237b 7-9,11-12,16-18,141-148,423-682,1372-1393
+packages/desktop/main/agent-runtime/native-runtime-broker.ts
+  h_86bb4e0e04237b 1320-1323
+packages/desktop/main/agent-runtime/types.ts
+  h_86bb4e0e04237b 5,205-215
+packages/desktop/main/agent-runtime/unified-session-service.test.ts
+  h_86bb4e0e04237b 10,617-676
+packages/desktop/main/agent-runtime/unified-session-service.ts
+  h_86bb4e0e04237b 172-175,185-209,211-212,217-223
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "c81de546607b0be7cd5ea89cc789d76dfc3cd0f5",
+  "prompts": {},
+  "humans": {
+    "h_86bb4e0e04237b": {
+      "author": "caoqu <qu.cao@ly.com>"
+    }
+  }
+}
