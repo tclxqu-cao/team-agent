@@ -45,6 +45,8 @@ The preview contains the query ordinal and at most three lines of normalized use
 
 Every query remains selectable, but the DOM never contains one element per query for very long sessions. The rail renders no more than 60 visual tick buckets plus one active marker. Pointer position maps to the complete ordered query index, so aggregated ticks do not reduce selection precision.
 
+The rail height uses 6 CSS pixels per visible tick bucket on Electron. Web keeps its existing 1.2 density scale, yielding 7.2 CSS pixels per bucket before rounding. Both surfaces retain the 32 px minimum and 240 px maximum height, so short histories gain clearer separation without allowing long histories to dominate the viewport.
+
 The selected query uses the longer high-contrast marker shown by the reference. The rail stays hidden when the session has fewer than two indexed user queries.
 
 ### Selection And Navigation
