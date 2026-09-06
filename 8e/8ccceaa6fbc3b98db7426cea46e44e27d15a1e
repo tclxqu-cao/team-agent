@@ -1,0 +1,16 @@
+packages/desktop/main/agent-runtime/claude-runtime-adapter.test.ts
+  h_86bb4e0e04237b 428,468,493,513,526,537,554,577,585,599,601,615,626,641,657,669,689,726,755,769,801,814,848,858,870,901,927,960,985,1007,1037,1051,1060
+packages/desktop/main/agent-runtime/claude-runtime-adapter.ts
+  h_86bb4e0e04237b 64-69,275-290,292,659-664,669-672,678-683,685-706,708,768-772,783-787
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "8e8ccceaa6fbc3b98db7426cea46e44e27d15a1e",
+  "prompts": {},
+  "humans": {
+    "h_86bb4e0e04237b": {
+      "author": "caoqu <qu.cao@ly.com>"
+    }
+  }
+}
