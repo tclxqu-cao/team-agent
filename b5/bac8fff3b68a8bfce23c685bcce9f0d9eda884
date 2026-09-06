@@ -1,0 +1,20 @@
+docs/superpowers/specs/2026-09-06-cross-host-session-transfer-design.md
+  s_2998a596ef5160::t_842ea8306d7bbe 1-19,21-158,160-180,182-353
+  s_2998a596ef5160::t_86e82bf98ccb77 20,159,181
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "b5bac8fff3b68a8bfce23c685bcce9f0d9eda884",
+  "prompts": {},
+  "sessions": {
+    "s_2998a596ef5160": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06f74-d368-7201-9040-821436d4f6df",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "caoqu <qu.cao@ly.com>"
+    }
+  }
+}
