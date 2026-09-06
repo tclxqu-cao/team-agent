@@ -1765,3 +1765,77 @@ describe("NativeRuntimeBrokerHost run overrides", () => {
     }
   });
 });
+
+describe("NativeRuntimeBrokerHost native paged get", () => {
+  const pagedSummary = () => ({
+    ...summary("available", "idle"),
+    history: { nextCursor: null, hasMore: false, pageSize: 2, totalItems: 2, olderCursor: null, newerCursor: null as string | null, kind: "latest" as const },
+  });
+
+  it("merges the retained run into a tail-inclusive native page without duplication", async () => {
+    const path = await directory();
+    const runtime = new FakeNativeRuntime();
+    runtime.immediateTerminal = true;
+    const host = new NativeRuntimeBrokerHost(path, runtime as unknown as UnifiedSessionService);
+    await host.startRun(sessionId, "run-input");
+    await waitFor(() => host.snapshot(sessionId).events.some(({ event }) => event.type === "done"));
+
+    (runtime as unknown as Record<string, unknown>).getPagedDetail = async (_id: string, query: unknown) => ({
+      ...pagedSummary(),
+      messages: [
+        { role: "user", content: "run-input" },
+        { role: "assistant", content: "completed" },
+      ],
+      events: [],
+      history: { ...pagedSummary().history, nextCursor: null, hasMore: false },
+      pagedQuery: query,
+    });
+    const detail = await host.get(sessionId, { limit: 50 });
+
+    expect(detail.messages.filter((m) => m.role === "user" && m.content === "run-input")).toHaveLength(1);
+    expect(detail.messageQueueVersion).toBe(1);
+    expect(detail.snapshotRevision).toBeGreaterThan(0);
+    expect(detail.goalState).toBeDefined();
+    expect((detail as Record<string, unknown>).pagedQuery).toEqual({ limit: 50 });
+    await host.stop();
+  });
+
+  it("does not inject the live turn into an older native page", async () => {
+    const path = await directory();
+    const runtime = new FakeNativeRuntime();
+    runtime.immediateTerminal = true;
+    const host = new NativeRuntimeBrokerHost(path, runtime as unknown as UnifiedSessionService);
+    await host.startRun(sessionId, "run-input");
+    await waitFor(() => host.snapshot(sessionId).events.some(({ event }) => event.type === "done"));
+
+    (runtime as unknown as Record<string, unknown>).getPagedDetail = async () => ({
+      ...pagedSummary(),
+      messages: [{ role: "user", content: "q-old" }, { role: "assistant", content: "s-old" }],
+      events: [],
+      history: {
+        nextCursor: "history.v1.2", hasMore: true, pageSize: 2, totalItems: 10,
+        olderCursor: "history.v1.2", newerCursor: "history.v1.4", kind: "latest" as const,
+      },
+    });
+    const detail = await host.get(sessionId, { before: "history.v1.4", limit: 2 });
+
+    expect(detail.messages.some((m) => m.role === "user" && m.content === "run-input")).toBe(false);
+    expect(detail.messages.map((m) => m.content)).toEqual(["q-old", "s-old"]);
+    expect(detail.messageQueueVersion).toBe(1);
+    expect(detail.snapshotRevision).toBeGreaterThan(0);
+    await host.stop();
+  });
+
+  it("falls back to the legacy full read when the adapter cannot page", async () => {
+    const path = await directory();
+    const runtime = new FakeNativeRuntime();
+    runtime.immediateTerminal = true;
+    const host = new NativeRuntimeBrokerHost(path, runtime as unknown as UnifiedSessionService);
+    (runtime as unknown as Record<string, unknown>).getPagedDetail = async () => null;
+
+    const detail = await host.get(sessionId, { limit: 50 });
+    expect(runtime.getUnpaginatedCachePreferences).toEqual([false]);
+    expect(detail.messages).toEqual(runtime.messages ?? detail.messages);
+    await host.stop();
+  });
+});

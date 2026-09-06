@@ -992,10 +992,17 @@ class NativeRuntimeBrokerState implements ImportedAgentWorkspaceRepository, Code
     };
   }
 
-  applyDetail(detail: UnifiedSessionDetail): UnifiedSessionDetail {
+  applyDetail(detail: UnifiedSessionDetail, options: { mergeProjection?: boolean } = {}): UnifiedSessionDetail {
     const summary = this.applySummary(detail);
     const projection = this.projection(detail.id);
-    const projectedMessages = mergeProjectionMessages(detail.messages, projection.run, projection.events);
+    // Windowed pages that exclude the session tail must not merge the retained
+    // run: the merge anchors on the run's user message and appends the whole
+    // live turn when it is absent, which would inject tail content into an
+    // older page (the legacy path merges before cutting the window).
+    const mergeProjection = options.mergeProjection ?? true;
+    const projectedMessages = mergeProjection
+      ? mergeProjectionMessages(detail.messages, projection.run, projection.events)
+      : detail.messages;
     const completionRows = this.database.db.prepare(`
       SELECT run_id, session_id, input, final_text, duration_ms, completed_at
       FROM native_runtime_turn_completion
@@ -1007,7 +1014,7 @@ class NativeRuntimeBrokerState implements ImportedAgentWorkspaceRepository, Code
       ...detail,
       ...summary,
       messages,
-      events: projection.events.map(({ event }) => event),
+      events: mergeProjection ? projection.events.map(({ event }) => event) : detail.events,
       snapshotRevision: projection.run?.nextSequence ?? 0,
       snapshotRunId: projection.run?.runId ?? null,
     };
@@ -1296,6 +1303,17 @@ export class NativeRuntimeBrokerHost {
 
   async get(id: string, query?: SessionHistoryQuery): Promise<UnifiedSessionDetail> {
     this.state.assertSessionVisible(id);
+    if (query) {
+      // Adapter-native windowed read (Codex turn paging): skips the full
+      // transcript read and serves one self-consistent ordinal space for
+      // cursors, historyIds and anchors. Only tail-inclusive pages merge the
+      // retained run — the merge anchors on the run's user message and would
+      // append the whole live turn to an older page that lacks it.
+      const native = await this.runtime.getPagedDetail?.(id, query).catch(() => null);
+      if (native) {
+        return this.state.applyDetail(native, { mergeProjection: native.history?.newerCursor == null });
+      }
+    }
     try {
       // Reconcile retained run events against the complete transcript before
       // paging, otherwise the run input can be projected once per page.
