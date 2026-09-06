@@ -46,9 +46,9 @@ import { clearSessionDraft, readSessionDraft, writeSessionDraft } from "../lib/s
 import { postWebArtifactOpen, resolveWebArtifactPath } from "../lib/artifact-links";
 import {
   findLatestUnqueuedUserMessageId,
+  hideQueuedGoalMessages,
   moveQueuedMessage,
   projectSessionGoals,
-  queuedSessionMessages,
   reconcileDurableQueuedMessages,
 } from "../lib/queued-message-order";
 import { isWebShell } from "../web/webLayout";
@@ -479,9 +479,13 @@ export default function ChatView({
     cronTasks,
     setCronTasks,
   } = useAgentStore();
+  const [goalState, setGoalState] = useState<SessionGoalState>({ active: null, queued: [], history: [] });
   const renderedMessages = useMemo(
-    () => coalesceAdjacentToolCallMessages(messages.filter((message) => !message.isQueued)),
-    [messages],
+    () => coalesceAdjacentToolCallMessages(hideQueuedGoalMessages(
+      messages.filter((message) => !message.isQueued),
+      goalState.queued,
+    )),
+    [goalState.queued, messages],
   );
   const { isConfigured, profiles, activeProfileId, switchActiveProfile, loadFromSystem, contextWindow, reasoningEffort, setField, saveToSystem } = useSettingsStore();
   const [sessionError, setSessionError] = useState<OccupiedSessionError>();
@@ -643,7 +647,6 @@ export default function ChatView({
   const [permissionMenuOpen, setPermissionMenuOpen] = useState(false);
   const [permissionMode, setPermissionMode] = useState<ToolPermissionMode>("full-access");
   const [goalMode, setGoalMode] = useState(false);
-  const [goalState, setGoalState] = useState<SessionGoalState>({ active: null, queued: [], history: [] });
   const [draggedGoalId, setDraggedGoalId] = useState<string | null>(null);
   const [isSavingPermission, setIsSavingPermission] = useState(false);
   const effortMenuRef = useRef<HTMLDivElement>(null);
@@ -656,7 +659,7 @@ export default function ChatView({
     if (!targetSessionId.startsWith("runtime:")) return;
     const current = getMessagesForSession(targetSessionId);
     setMessages(
-      reconcileDurableQueuedMessages(current, queuedSessionMessages(state)),
+      reconcileDurableQueuedMessages(current, state),
       targetSessionId,
     );
   }, [getMessagesForSession, setMessages]);
@@ -1302,7 +1305,7 @@ export default function ChatView({
           && useAgentStore.getState().runningSessionId === targetSid;
         const baseMessages = preferLive ? liveMessages : restored;
         const nextMessages = detail?.goalState && targetSid.startsWith("runtime:")
-          ? reconcileDurableQueuedMessages(baseMessages, queuedSessionMessages(detail.goalState))
+          ? reconcileDurableQueuedMessages(baseMessages, detail.goalState)
           : baseMessages;
         nextAutoScrollRef.current = "instant";
         setMessages(nextMessages, targetSid);
@@ -1433,7 +1436,7 @@ export default function ChatView({
         const current = getMessagesForSession(targetSid);
         const mergedHistory = mergeRefreshedSessionHistory(current, refreshed);
         const merged = detail?.goalState && targetSid.startsWith("runtime:")
-          ? reconcileDurableQueuedMessages(mergedHistory, queuedSessionMessages(detail.goalState))
+          ? reconcileDurableQueuedMessages(mergedHistory, detail.goalState)
           : mergedHistory;
         const container = messagesScrollRef.current;
         const isNearBottom = !container
@@ -2397,9 +2400,17 @@ export default function ChatView({
 
   const removeGoal = async (goalId: string) => {
     if (!viewSessionId) return;
+    const queuedGoal = goalState.queued.find((goal) => goal.id === goalId);
     try {
       const state = await window.agentApi.cancelSessionGoal(viewSessionId, goalId);
       applySessionQueueState(state, viewSessionId);
+      if (queuedGoal?.sourceMessageId) {
+        const currentMessages = useAgentStore.getState().getMessagesForSession(viewSessionId);
+        setMessages(
+          currentMessages.filter((message) => message.id !== queuedGoal.sourceMessageId),
+          viewSessionId,
+        );
+      }
       if (!state.active) setRunningSession(null);
     } catch (goalError) {
       setError(goalError instanceof Error ? goalError.message : "目标删除失败");
@@ -2677,6 +2688,7 @@ export default function ChatView({
 
     if (goalObjective !== null) {
       const sourceMessageId = crypto.randomUUID();
+      let optimisticSessionId: string | null = null;
       abortRef.current = false;
       try {
         const targetSessionId = await prepareChatCommand({
@@ -2693,16 +2705,19 @@ export default function ChatView({
             runningSessionRef.current = id;
             setRunningSession(id);
           },
-          showUserMessage: (text, id) => addMessage({
-            id: sourceMessageId,
-            role: "user",
-            content: text,
-            timestamp: Date.now(),
-            agentName: agentNamesLabel,
-            images: imagesToSend,
-            isGoal: true,
-            goalId: sourceMessageId,
-          }, id),
+          showUserMessage: (text, id) => {
+            optimisticSessionId = id;
+            addMessage({
+              id: sourceMessageId,
+              role: "user",
+              content: text,
+              timestamp: Date.now(),
+              agentName: agentNamesLabel,
+              images: imagesToSend,
+              isGoal: true,
+              goalId: sourceMessageId,
+            }, id);
+          },
           onSessionCreated,
         });
         const state = await window.agentApi.enqueueSessionGoal(
@@ -2713,6 +2728,13 @@ export default function ChatView({
         applySessionQueueState(state, targetSessionId);
         if (onMessageSent) void onMessageSent(targetSessionId, goalObjective);
       } catch (goalError) {
+        if (optimisticSessionId) {
+          const currentMessages = useAgentStore.getState().getMessagesForSession(optimisticSessionId);
+          setMessages(
+            currentMessages.filter((message) => message.id !== sourceMessageId),
+            optimisticSessionId,
+          );
+        }
         setRunningSession(null);
         setError(goalError instanceof Error ? goalError.message : "目标创建失败");
       }

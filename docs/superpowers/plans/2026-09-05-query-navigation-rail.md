@@ -154,6 +154,10 @@ Use existing semantic color, type, focus, and surface tokens. Keep the idle rail
 
 Cover tick bounds, pointer mapping, touch release, keyboard activation, hidden state below two queries, and preview fallback.
 
+- [x] **Step 5: Increase visible tick spacing**
+
+Set the shared rail-height calculation to 6 CSS pixels per visible tick bucket. Preserve the 32 px minimum, 240 px maximum, 60-tick cap, and Web 1.2 scale. Update focused helper assertions so 20 entries produce 120 px on Electron and 144 px on Web.
+
 ### Task 5: Renderer History-Window State Machine
 
 **Files:**

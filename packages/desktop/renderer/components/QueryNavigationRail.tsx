@@ -3,6 +3,10 @@ import { LoaderCircle } from "lucide-react";
 import type { SessionQueryIndexEntry } from "../global";
 
 const MAX_TICKS = 60;
+const MIN_RAIL_HEIGHT = 32;
+const MAX_RAIL_HEIGHT = 240;
+const TICK_SPACING = 6;
+const WEB_TICK_SPACING = 10;
 
 export function queryIndexFromPointer(clientY: number, top: number, height: number, count: number): number {
   if (count <= 1 || height <= 0) return 0;
@@ -16,6 +20,13 @@ export function queryTickIndices(count: number): number[] {
   return Array.from({ length: tickCount }, (_, index) => (
     Math.round((index / (tickCount - 1)) * (count - 1))
   ));
+}
+
+export function queryRailHeight(count: number, tickSpacing = TICK_SPACING): number {
+  return Math.min(
+    MAX_RAIL_HEIGHT,
+    Math.max(MIN_RAIL_HEIGHT, Math.min(Math.max(0, count), MAX_TICKS) * tickSpacing),
+  );
 }
 
 export function queryKeyboardIndex(
@@ -69,6 +80,10 @@ export function QueryNavigationRail({
   return (
     <div
       className={`query-navigation-rail${open ? " query-navigation-rail--open" : ""}`}
+      style={{
+        "--query-navigation-rail-height": `${queryRailHeight(entries.length)}px`,
+        "--query-navigation-rail-web-height": `${queryRailHeight(entries.length, WEB_TICK_SPACING)}px`,
+      } as React.CSSProperties}
       role="slider"
       tabIndex={0}
       aria-label="用户消息导航"

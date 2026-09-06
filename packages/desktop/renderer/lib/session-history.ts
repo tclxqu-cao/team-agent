@@ -190,7 +190,81 @@ export function mergeRefreshedSessionHistory(
     };
   });
   const queued = current.filter((message) => message.isQueued);
-  return [...current.slice(0, replacementStart).filter((message) => !message.isQueued), ...stableRefreshed, ...queued];
+  const currentTail = current.slice(replacementStart).filter((message) => !message.isQueued);
+  const reconciledRefreshed = preserveTrailingAssistantSuffix(currentTail, stableRefreshed);
+  return [
+    ...current.slice(0, replacementStart).filter((message) => !message.isQueued),
+    ...reconciledRefreshed,
+    ...queued,
+  ];
+}
+
+function preserveTrailingAssistantSuffix(
+  current: ChatMessage[],
+  refreshed: ChatMessage[],
+): ChatMessage[] {
+  const refreshedTurnStart = refreshed.findLastIndex((message) => message.role === "user" && !message.isQueued);
+  if (refreshedTurnStart < 0) return refreshed;
+
+  const boundaryKey = sessionHistoryUserBoundaryKey(refreshed[refreshedTurnStart]);
+  let currentTurnStart = -1;
+  let closestDistance = Infinity;
+  for (let index = 0; index < current.length; index += 1) {
+    const message = current[index];
+    if (message.role !== "user" || message.isQueued) continue;
+    if (sessionHistoryUserBoundaryKey(message) !== boundaryKey) continue;
+    const distance = Math.abs(index - refreshedTurnStart);
+    if (distance < closestDistance) {
+      currentTurnStart = index;
+      closestDistance = distance;
+    }
+  }
+  if (currentTurnStart < 0) return refreshed;
+
+  const nextCurrentTurnStart = current.findIndex((message, index) => (
+    index > currentTurnStart && message.role === "user" && !message.isQueued
+  ));
+  const currentTurn = current.slice(
+    currentTurnStart + 1,
+    nextCurrentTurnStart < 0 ? current.length : nextCurrentTurnStart,
+  );
+  const refreshedTurn = refreshed.slice(refreshedTurnStart + 1);
+  const currentText = assistantText(currentTurn);
+  const refreshedText = assistantText(refreshedTurn);
+  if (currentText.length <= refreshedText.length || !currentText.startsWith(refreshedText)) return refreshed;
+
+  const suffix = currentText.slice(refreshedText.length);
+  const mergeIndex = refreshed.findLastIndex((message, index) => (
+    index > refreshedTurnStart
+    && message.role === "assistant"
+    && !message.toolCalls?.length
+    && !message.askUser
+    && !message.isCompactionSummary
+  ));
+  if (mergeIndex >= 0) {
+    return refreshed.map((message, index) => index === mergeIndex
+      ? { ...message, content: message.content + suffix }
+      : message);
+  }
+
+  const suffixSource = currentTurn.findLast((message) => (
+    message.role === "assistant"
+    && Boolean(message.content)
+    && !message.isCompactionSummary
+  ));
+  return [...refreshed, {
+    id: suffixSource?.id ?? crypto.randomUUID(),
+    role: "assistant",
+    content: suffix,
+    timestamp: suffixSource?.timestamp ?? Date.now(),
+  }];
+}
+
+function assistantText(messages: ChatMessage[]): string {
+  return messages
+    .filter((message) => message.role === "assistant" && !message.isCompactionSummary)
+    .map((message) => message.content)
+    .join("");
 }
 
 function findUserBoundaryMatch(

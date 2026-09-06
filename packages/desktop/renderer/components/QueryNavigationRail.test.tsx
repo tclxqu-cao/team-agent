@@ -4,6 +4,7 @@ import {
   QueryNavigationRail,
   queryIndexFromPointer,
   queryKeyboardIndex,
+  queryRailHeight,
   queryTickIndices,
 } from "./QueryNavigationRail";
 
@@ -19,6 +20,14 @@ describe("QueryNavigationRail helpers", () => {
     expect(ticks).toHaveLength(60);
     expect(ticks[0]).toBe(0);
     expect(ticks.at(-1)).toBe(999);
+  });
+
+  it("keeps short rails compact and caps long-session density", () => {
+    expect(queryRailHeight(2)).toBe(32);
+    expect(queryRailHeight(20)).toBe(120);
+    expect(queryRailHeight(1_000)).toBe(240);
+    expect(queryRailHeight(20, 10)).toBe(200);
+    expect(queryRailHeight(1_000, 10)).toBe(240);
   });
 
   it("supports discrete slider keyboard movement", () => {
@@ -45,5 +54,7 @@ describe("QueryNavigationRail helpers", () => {
     expect(html).toContain('aria-busy="true"');
     expect(html).toContain('aria-label="正在定位消息"');
     expect(html).toContain('query-navigation-rail__loading');
+    expect(html).toContain('--query-navigation-rail-height:32px');
+    expect(html).toContain('--query-navigation-rail-web-height:32px');
   });
 });

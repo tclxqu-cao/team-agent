@@ -2439,11 +2439,11 @@ input:focus, select:focus, textarea:focus {
 .query-navigation-rail {
   position: absolute;
   z-index: 8;
-  top: 18%;
+  top: 50%;
   right: 2px;
   width: 24px;
-  height: 64%;
-  min-height: 180px;
+  height: min(64%, var(--query-navigation-rail-height, 240px));
+  transform: translateY(-50%);
   outline: none;
   cursor: ns-resize;
   touch-action: none;

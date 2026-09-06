@@ -17,7 +17,7 @@ renderer 的队列对账同时处理 `state.active` 和 `state.queued`：
 - `kind=message` 且仍在 `queued` 的项目继续显示在排队列表。
 - `kind=message` 且已成为 `active` 的项目立即复用其 `sourceMessageId`、正文、附件和 Agent 信息，转换为非排队用户消息并显示在消息区。
 - active 普通消息不进入目标队列；消息区的运行状态继续使用现有“思考中”反馈。
-- transcript 到达后，现有用户边界合并按角色和正文对齐，保留稳定本地 ID 与附件，不生成第二条相同用户消息。
+- transcript 到达后，优先按稳定来源 ID 对齐；Codex 已持久化输入而没有内部 run 标记时，只匹配最新且正文相同的用户边界，不生成第二条相同用户消息，也不误合并更早的同文轮次。
 - active 项结束后，以 transcript 历史为准；队列投影不保留已经结束的临时 active 项。
 
 ## 错误处理

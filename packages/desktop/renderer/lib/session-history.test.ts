@@ -160,6 +160,65 @@ describe("mergeRefreshedSessionHistory", () => {
     expect(merged.at(-1)?.toolCalls?.[0].result).toBe("/workspace");
   });
 
+  it("keeps a complete streamed reply when the refreshed Codex turn is only a prefix", () => {
+    const current = [
+      message("live-user", "explain"),
+      assistant("live-assistant", "Complete streamed reply"),
+    ];
+    const refreshed = [
+      message("persisted-user", "explain"),
+      assistant("persisted-assistant", "Complete streamed"),
+    ];
+
+    const merged = mergeRefreshedSessionHistory(current, refreshed);
+
+    expect(merged.map((entry) => entry.content)).toEqual(["explain", "Complete streamed reply"]);
+  });
+
+  it("keeps a streamed suffix after tools while accepting refreshed tool results", () => {
+    const current = [
+      message("live-user", "run"),
+      assistant("live-prefix", "Checking "),
+      assistant("live-tool", "", [{ id: "call-1", name: "shell", arguments: { command: "pwd" } }]),
+      assistant("live-suffix", "finished"),
+    ];
+    const refreshed = [
+      message("persisted-user", "run"),
+      assistant("persisted-tool", "Checking ", [{
+        id: "call-1",
+        name: "shell",
+        arguments: { command: "pwd" },
+        result: "/workspace",
+      }]),
+    ];
+
+    const merged = mergeRefreshedSessionHistory(current, refreshed);
+
+    expect(merged.filter((entry) => entry.role === "assistant").map((entry) => entry.content).join(""))
+      .toBe("Checking finished");
+    expect(merged.find((entry) => entry.toolCalls)?.toolCalls?.[0].result).toBe("/workspace");
+  });
+
+  it("does not borrow a suffix from the following turn", () => {
+    const current = [
+      message("first-user", "first"),
+      assistant("first-assistant", "first complete"),
+      message("second-user", "second"),
+      assistant("second-assistant", "second complete"),
+    ];
+    const refreshed = [
+      message("persisted-user", "first"),
+      assistant("persisted-assistant", "first"),
+      assistant("persisted-tool-1", "", [{ id: "call-1", name: "shell", arguments: {} }]),
+      assistant("persisted-tool-2", "", [{ id: "call-2", name: "read", arguments: {} }]),
+    ];
+
+    const merged = mergeRefreshedSessionHistory(current, refreshed);
+
+    expect(merged.filter((entry) => entry.role === "assistant").map((entry) => entry.content).join(""))
+      .toBe("first complete");
+  });
+
   it("preserves identical text in separate turns", () => {
     const current = [
       message("first-user", "repeat"),

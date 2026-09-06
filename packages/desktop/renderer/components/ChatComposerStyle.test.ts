@@ -102,11 +102,25 @@ describe("shared Electron and Web composer", () => {
     expect(chatView).toContain("message.isQueued && !message.queueItemId");
     expect(chatView).toContain("enqueueSessionMessage");
     expect(chatView).toContain("sessionSummary?.messageQueueVersion === 1");
-    expect(chatView).toContain("reconcileDurableQueuedMessages");
+    expect(chatView).toContain("reconcileDurableQueuedMessages(current, state)");
+    expect(chatView).toContain("reconcileDurableQueuedMessages(baseMessages, detail.goalState)");
+    expect(chatView).toContain("reconcileDurableQueuedMessages(mergedHistory, detail.goalState)");
+    expect(chatView).not.toContain("reconcileDurableQueuedMessages(current, queuedSessionMessages(state))");
     expect(chatView).toContain("steerSessionMessage(targetSessionId, msg.queueItemId)");
     expect(drain).toMatch(
       /if \(state\?\.active\) \{[\s\S]*?abortRef\.current = false;[\s\S]*?setError\(null\);[\s\S]*?if \(abortRef\.current\) return;/,
     );
+  });
+
+  it("keeps waiting goals out of chat history until they become active", () => {
+    expect(chatView).toContain("hideQueuedGoalMessages(");
+    expect(chatView).toContain("goalState.queued,");
+    expect(chatView).toContain("const queuedGoal = goalState.queued.find");
+    expect(chatView).toContain("message.id !== queuedGoal.sourceMessageId");
+    expect(chatView).toContain("let optimisticSessionId: string | null = null");
+    expect(chatView).toContain("getMessagesForSession(optimisticSessionId)");
+    expect(chatView).toContain("message.id !== sourceMessageId");
+    expect(chatView).toContain("setMessages(");
   });
 
   it("edits only queued content in place and supports keyboard save or cancel", () => {

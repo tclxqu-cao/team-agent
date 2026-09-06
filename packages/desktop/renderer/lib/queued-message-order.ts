@@ -37,9 +37,20 @@ export function findLatestUnqueuedUserMessageId<T extends UserMessageLike>(messa
   return [...messages].reverse().find((message) => message.role === "user" && !message.isQueued)?.id ?? null;
 }
 
+export function hideQueuedGoalMessages<T extends { id: string }>(
+  messages: T[],
+  queuedGoals: Array<{ sourceMessageId?: string }>,
+): T[] {
+  const queuedMessageIds = new Set(
+    queuedGoals.flatMap((goal) => goal.sourceMessageId ? [goal.sourceMessageId] : []),
+  );
+  if (queuedMessageIds.size === 0) return messages;
+  return messages.filter((message) => !queuedMessageIds.has(message.id));
+}
+
 export function reconcileDurableQueuedMessages<T extends DurableQueuedMessageLike>(
   messages: T[],
-  items: DurableQueueItemLike[],
+  state: MixedQueueStateLike<DurableQueueItemLike>,
 ): T[] {
   const history = messages.filter((message) => !message.isQueued);
   const currentByQueueId = new Map(
@@ -47,7 +58,38 @@ export function reconcileDurableQueuedMessages<T extends DurableQueuedMessageLik
       .filter((message) => message.isQueued && message.queueItemId)
       .map((message) => [message.queueItemId!, message]),
   );
-  const queued = items
+  const activeItem = state.active?.kind === "message" ? state.active : null;
+  if (activeItem) {
+    const current = currentByQueueId.get(activeItem.id);
+    const activeMessageId = activeItem.sourceMessageId || current?.id || activeItem.id;
+    const latestUserIndex = history.findLastIndex((message) => message.role === "user");
+    const historyIndex = history.findLastIndex((message, index) => (
+      message.id === activeMessageId
+      || message.queueItemId === activeItem.id
+      || (
+        !current
+        && index === latestUserIndex
+        && message.role === "user"
+        && message.content === activeItem.objective
+      )
+    ));
+    const previous = historyIndex >= 0 ? history[historyIndex] : current;
+    const activeMessage = {
+      ...(previous ?? {}),
+      id: previous?.id || activeMessageId,
+      role: "user",
+      content: activeItem.objective,
+      timestamp: previous?.timestamp ?? activeItem.createdAt,
+      agentName: previous?.agentName ?? activeItem.messagePayload?.agentName,
+      images: previous?.images ?? activeItem.messagePayload?.images,
+      isQueued: false,
+      queueItemId: undefined,
+    } as T;
+    if (historyIndex >= 0) history[historyIndex] = activeMessage;
+    else history.push(activeMessage);
+  }
+
+  const queued = state.queued
     .filter((item) => item.kind === "message")
     .map((item) => {
       const current = currentByQueueId.get(item.id);

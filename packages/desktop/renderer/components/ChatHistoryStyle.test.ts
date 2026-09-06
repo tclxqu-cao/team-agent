@@ -77,7 +77,7 @@ describe("shared Codex-style message history", () => {
   });
 
   it("folds adjacent repeated tool actions behind a right-facing disclosure", () => {
-    expect(chatView).toContain("coalesceAdjacentToolCallMessages(messages.filter((message) => !message.isQueued))");
+    expect(chatView).toContain("coalesceAdjacentToolCallMessages(hideQueuedGoalMessages(");
     expect(chatView).toContain("groupAdjacentToolCallEntries(toolCallEntries)");
     expect(chatView).toContain("<ToolCallGroup");
     expect(toolCallCard).toContain('className="tool-call-group__summary"');
@@ -112,6 +112,11 @@ describe("shared Codex-style message history", () => {
   });
 
   it("aligns icon-led reasoning and tool rows without a timeline", () => {
+    const historyRowsCss = globalCss.slice(
+      globalCss.indexOf(".chat-view--codex-history .agent-activity-indicator"),
+      globalCss.indexOf(".query-navigation-rail"),
+    );
+
     expect(chatView).not.toContain("isExecutionTraceMessage");
     expect(chatView).not.toContain("chat-message-group--trace");
     expect(chatView).toContain('streaming={isRunning && isLastAssistant && agentActivity === "thinking"}');
@@ -128,6 +133,7 @@ describe("shared Codex-style message history", () => {
     expect(globalCss).toContain(".chat-view--codex-history .tool-call-shell__label");
     expect(globalCss).not.toMatch(/\.reasoning-summary__label\s*\{[^}]*transform:/s);
     expect(globalCss).not.toMatch(/\.chat-view--codex-history \.tool-call-shell__label\s*\{[^}]*transform:/s);
+    expect(historyRowsCss).not.toContain("transform: translateY(-1px)");
   });
 
   it("keeps the workspace close to the sidebar surface across skins", () => {
