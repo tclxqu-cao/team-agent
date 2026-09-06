@@ -1,0 +1,16 @@
+packages/desktop/main/agent-runtime/native-runtime-broker.test.ts
+  h_86bb4e0e04237b 1768-1841
+packages/desktop/main/agent-runtime/native-runtime-broker.ts
+  h_86bb4e0e04237b 995,998-1005,1017,1306-1316
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "c8cd7f998bfc1f2d05840b8909a431051fba6047",
+  "prompts": {},
+  "humans": {
+    "h_86bb4e0e04237b": {
+      "author": "caoqu <qu.cao@ly.com>"
+    }
+  }
+}
