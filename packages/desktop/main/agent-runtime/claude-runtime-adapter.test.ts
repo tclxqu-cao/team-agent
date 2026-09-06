@@ -425,7 +425,7 @@ describe("ClaudeRuntimeAdapter", () => {
     const project = join(root, "-repo");
     await mkdir(join(project, "subagents"), { recursive: true });
     await writeFile(join(project, "subagents", `${sessionId}.jsonl`), "{}\n");
-    const adapter = new ClaudeRuntimeAdapter({ sessionRoot: root });
+    const adapter = new ClaudeRuntimeAdapter({ occupancyTtlMs: 0, sessionRoot: root });
 
     await expect(adapter.getSessionWatchPath(sessionId)).resolves.toBeNull();
     const transcript = join(project, `${sessionId}.jsonl`);
@@ -465,7 +465,7 @@ describe("ClaudeRuntimeAdapter", () => {
         { type: "user", message: { content: [{ type: "tool_result", tool_use_id: "read-1", content: "source" }] } },
       ],
     };
-    const adapter = new ClaudeRuntimeAdapter({ sessionRoot: root });
+    const adapter = new ClaudeRuntimeAdapter({ occupancyTtlMs: 0, sessionRoot: root });
 
     const detail = await adapter.getSession(sessionId);
 
@@ -490,7 +490,7 @@ describe("ClaudeRuntimeAdapter", () => {
   });
 
   it("reports health with the CLI version and degrades when the CLI is missing", async () => {
-    const adapter = new ClaudeRuntimeAdapter({ sessionRoot: "/tmp/claude-projects" });
+    const adapter = new ClaudeRuntimeAdapter({ occupancyTtlMs: 0, sessionRoot: "/tmp/claude-projects" });
 
     await expect(adapter.health()).resolves.toEqual({
       agentType: "claude-code",
@@ -510,7 +510,7 @@ describe("ClaudeRuntimeAdapter", () => {
     state.openFiles = ["/root/proj/cc-1.jsonl"];
     state.agentRecords = [{ sessionId: "cc-2", state: "working", status: "active" }];
 
-    const adapter = new ClaudeRuntimeAdapter({ sessionRoot: "/tmp/claude-projects" });
+    const adapter = new ClaudeRuntimeAdapter({ occupancyTtlMs: 0, sessionRoot: "/tmp/claude-projects" });
     const sessions = await adapter.discoverSessions();
 
     expect(sessions.find((session) => session.nativeSessionId === "cc-1")?.occupancy).toBe("owned-externally");
@@ -523,7 +523,7 @@ describe("ClaudeRuntimeAdapter", () => {
     state.sessions = [sdkSession("cc-1")];
     state.agentRecords = [{ sessionId: "cc-1", state: "done", status: "completed" }];
 
-    const adapter = new ClaudeRuntimeAdapter({ sessionRoot: "/tmp/claude-projects" });
+    const adapter = new ClaudeRuntimeAdapter({ occupancyTtlMs: 0, sessionRoot: "/tmp/claude-projects" });
     const [session] = await adapter.discoverSessions();
 
     expect(session.occupancy).toBe("available");
@@ -534,7 +534,7 @@ describe("ClaudeRuntimeAdapter", () => {
   it("pages through the native session index", async () => {
     state.sessions = Array.from({ length: 250 }, (_, index) => sdkSession(`cc-${index}`));
 
-    const adapter = new ClaudeRuntimeAdapter({ sessionRoot: "/tmp/claude-projects" });
+    const adapter = new ClaudeRuntimeAdapter({ occupancyTtlMs: 0, sessionRoot: "/tmp/claude-projects" });
     const sessions = await adapter.discoverSessions();
 
     expect(sessions).toHaveLength(250);
@@ -551,7 +551,7 @@ describe("ClaudeRuntimeAdapter", () => {
       sdkSession("cc-3", { customTitle: undefined, summary: undefined, firstPrompt: undefined }),
     ];
 
-    const adapter = new ClaudeRuntimeAdapter({ sessionRoot: "/tmp/claude-projects" });
+    const adapter = new ClaudeRuntimeAdapter({ occupancyTtlMs: 0, sessionRoot: "/tmp/claude-projects" });
     const titles = (await adapter.discoverSessions()).map((session) => session.title).sort();
 
     expect(titles).toEqual(["Claude Code session", "帮我看一下这个报错", "重构会话服务"]);
@@ -574,7 +574,7 @@ describe("ClaudeRuntimeAdapter", () => {
       sdkSession(malformedId, { cwd: "" }),
     ];
 
-    const sessions = await new ClaudeRuntimeAdapter({ sessionRoot: root }).discoverSessions();
+    const sessions = await new ClaudeRuntimeAdapter({ occupancyTtlMs: 0, sessionRoot: root }).discoverSessions();
 
     expect(sessions.find((session) => session.nativeSessionId === recoveredId)?.cwd)
       .toBe("/repo/from-transcript");
@@ -582,7 +582,7 @@ describe("ClaudeRuntimeAdapter", () => {
   });
 
   it("keeps newly created drafts visible before the native index catches up", async () => {
-    const adapter = new ClaudeRuntimeAdapter({ sessionRoot: "/tmp/claude-projects" });
+    const adapter = new ClaudeRuntimeAdapter({ occupancyTtlMs: 0, sessionRoot: "/tmp/claude-projects" });
     const created = await adapter.create({ title: "新会话", cwd: "/repo" });
 
     expect(created.agentType).toBe("claude-code");
@@ -596,9 +596,9 @@ describe("ClaudeRuntimeAdapter", () => {
   });
 
   it("restores a persisted draft with the same native session id", async () => {
-    const original = new ClaudeRuntimeAdapter({ sessionRoot: "/tmp/claude-projects" });
+    const original = new ClaudeRuntimeAdapter({ occupancyTtlMs: 0, sessionRoot: "/tmp/claude-projects" });
     const created = await original.create({ title: "持久草稿", cwd: "/repo" });
-    const restored = new ClaudeRuntimeAdapter({ sessionRoot: "/tmp/claude-projects" });
+    const restored = new ClaudeRuntimeAdapter({ occupancyTtlMs: 0, sessionRoot: "/tmp/claude-projects" });
     restored.restoreDraft(created);
     state.stream = [{ type: "result", subtype: "success", is_error: false, result: "done" }];
 
@@ -612,7 +612,7 @@ describe("ClaudeRuntimeAdapter", () => {
   });
 
   it("throws SESSION_NOT_FOUND for unknown native sessions", async () => {
-    const adapter = new ClaudeRuntimeAdapter({ sessionRoot: "/tmp/claude-projects" });
+    const adapter = new ClaudeRuntimeAdapter({ occupancyTtlMs: 0, sessionRoot: "/tmp/claude-projects" });
 
     await expect(adapter.getSession("missing")).rejects.toMatchObject({
       name: "RuntimeSessionError",
@@ -623,7 +623,7 @@ describe("ClaudeRuntimeAdapter", () => {
   it("resumes an existing session and seeds a draft with an explicit session id", async () => {
     state.sessions = [sdkSession("cc-1")];
     state.stream = [{ type: "result", subtype: "success", is_error: false, result: "done" }];
-    const adapter = new ClaudeRuntimeAdapter({ sessionRoot: "/tmp/claude-projects" });
+    const adapter = new ClaudeRuntimeAdapter({ occupancyTtlMs: 0, sessionRoot: "/tmp/claude-projects" });
 
     await drain(adapter.run("cc-1", "continue"));
     expect(state.queryCalls[0].options).toMatchObject({ resume: "cc-1", cwd: "/repo" });
@@ -638,7 +638,7 @@ describe("ClaudeRuntimeAdapter", () => {
   it("uses Claude Code native goal input and enables SDK skills", async () => {
     state.sessions = [sdkSession("cc-1")];
     state.stream = [{ type: "result", subtype: "success", is_error: false, result: "done" }];
-    const adapter = new ClaudeRuntimeAdapter({ sessionRoot: "/tmp/claude-projects" });
+    const adapter = new ClaudeRuntimeAdapter({ occupancyTtlMs: 0, sessionRoot: "/tmp/claude-projects" });
 
     await drain(adapter.run("cc-1", "ignored", undefined, undefined, undefined, {
       goal: { id: "goal-1", objective: "finish the migration" },
@@ -654,7 +654,7 @@ describe("ClaudeRuntimeAdapter", () => {
   it("refuses to run a session that another client owns", async () => {
     state.sessions = [sdkSession("cc-1")];
     state.openFiles = ["/root/proj/cc-1.jsonl"];
-    const adapter = new ClaudeRuntimeAdapter({ sessionRoot: "/tmp/claude-projects" });
+    const adapter = new ClaudeRuntimeAdapter({ occupancyTtlMs: 0, sessionRoot: "/tmp/claude-projects" });
 
     await expect(drain(adapter.run("cc-1", "hello"))).rejects.toMatchObject({
       name: "RuntimeSessionError",
@@ -666,7 +666,7 @@ describe("ClaudeRuntimeAdapter", () => {
   it("refuses concurrent runs of the same session", async () => {
     state.sessions = [sdkSession("cc-1")];
     state.stream = [{ type: "result", subtype: "success", is_error: false, result: "done" }];
-    const adapter = new ClaudeRuntimeAdapter({ sessionRoot: "/tmp/claude-projects" });
+    const adapter = new ClaudeRuntimeAdapter({ occupancyTtlMs: 0, sessionRoot: "/tmp/claude-projects" });
 
     const first = adapter.run("cc-1", "first")[Symbol.asyncIterator]();
     await first.next();
@@ -686,7 +686,7 @@ describe("ClaudeRuntimeAdapter", () => {
       { type: "stream_event", event: { type: "content_block_delta", delta: { type: "text_delta", text: "lo" } } },
       { type: "result", subtype: "success", is_error: false, result: "" },
     ];
-    const adapter = new ClaudeRuntimeAdapter({ sessionRoot: "/tmp/claude-projects" });
+    const adapter = new ClaudeRuntimeAdapter({ occupancyTtlMs: 0, sessionRoot: "/tmp/claude-projects" });
 
     const events = await drain(adapter.run("cc-1", "hi"));
 
@@ -723,7 +723,7 @@ describe("ClaudeRuntimeAdapter", () => {
         usage: { total_tokens: 12, tool_uses: 2, duration_ms: 3200 },
       },
     ];
-    const adapter = new ClaudeRuntimeAdapter({ sessionRoot: "/tmp/claude-projects" });
+    const adapter = new ClaudeRuntimeAdapter({ occupancyTtlMs: 0, sessionRoot: "/tmp/claude-projects" });
 
     const events = await drain(adapter.run("cc-1", "delegate"));
 
@@ -752,7 +752,7 @@ describe("ClaudeRuntimeAdapter", () => {
       type: "system", subtype: "task_started", task_id: "task-1", tool_use_id: "agent-tool",
       task_type: "local_agent", description: "Inspect", is_backgrounded: true,
     }];
-    const adapter = new ClaudeRuntimeAdapter({ sessionRoot: "/tmp/claude-projects" });
+    const adapter = new ClaudeRuntimeAdapter({ occupancyTtlMs: 0, sessionRoot: "/tmp/claude-projects" });
 
     const events = await drain(adapter.run("cc-1", "delegate"));
 
@@ -766,7 +766,7 @@ describe("ClaudeRuntimeAdapter", () => {
   it("sends ordered base64 image blocks with the initial user message", async () => {
     state.sessions = [sdkSession("cc-1")];
     state.stream = [{ type: "result", subtype: "success", is_error: false, result: "done" }];
-    const adapter = new ClaudeRuntimeAdapter({ sessionRoot: "/tmp/claude-projects" });
+    const adapter = new ClaudeRuntimeAdapter({ occupancyTtlMs: 0, sessionRoot: "/tmp/claude-projects" });
     const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x01]);
     const webp = Buffer.from("RIFF0000WEBP", "ascii");
 
@@ -798,7 +798,7 @@ describe("ClaudeRuntimeAdapter", () => {
 
   it("rejects unsupported image data before opening an SDK query", async () => {
     state.sessions = [sdkSession("cc-1")];
-    const adapter = new ClaudeRuntimeAdapter({ sessionRoot: "/tmp/claude-projects" });
+    const adapter = new ClaudeRuntimeAdapter({ occupancyTtlMs: 0, sessionRoot: "/tmp/claude-projects" });
 
     await expect(drain(adapter.run("cc-1", "inspect", ["data:image/avif;base64,AAAA"])))
       .rejects.toMatchObject({ code: "NATIVE_PROTOCOL_ERROR" });
@@ -811,7 +811,7 @@ describe("ClaudeRuntimeAdapter", () => {
       { type: "assistant", message: { content: [{ type: "text", text: "working" }] } },
       { type: "result", subtype: "success", is_error: false, result: "done" },
     ];
-    const adapter = new ClaudeRuntimeAdapter({ sessionRoot: "/tmp/claude-projects" });
+    const adapter = new ClaudeRuntimeAdapter({ occupancyTtlMs: 0, sessionRoot: "/tmp/claude-projects" });
     const iterator = adapter.run("cc-1", "initial")[Symbol.asyncIterator]();
 
     await expect(iterator.next()).resolves.toMatchObject({
@@ -845,7 +845,7 @@ describe("ClaudeRuntimeAdapter", () => {
   it("surfaces SDK failures as error events", async () => {
     state.sessions = [sdkSession("cc-1")];
     state.stream = [{ type: "result", subtype: "error_during_execution", is_error: true, errors: ["boom"] }];
-    const adapter = new ClaudeRuntimeAdapter({ sessionRoot: "/tmp/claude-projects" });
+    const adapter = new ClaudeRuntimeAdapter({ occupancyTtlMs: 0, sessionRoot: "/tmp/claude-projects" });
 
     const events = await drain(adapter.run("cc-1", "hi"));
 
@@ -855,7 +855,7 @@ describe("ClaudeRuntimeAdapter", () => {
   it("rejects a session id that does not match the SDK init message", async () => {
     state.sessions = [sdkSession("cc-1")];
     state.stream = [{ type: "system", subtype: "init", session_id: "cc-other" }];
-    const adapter = new ClaudeRuntimeAdapter({ sessionRoot: "/tmp/claude-projects" });
+    const adapter = new ClaudeRuntimeAdapter({ occupancyTtlMs: 0, sessionRoot: "/tmp/claude-projects" });
 
     const events = await drain(adapter.run("cc-1", "hi"));
 
@@ -867,7 +867,7 @@ describe("ClaudeRuntimeAdapter", () => {
     state.sessions = [sdkSession("cc-1")];
     state.stream = [{ type: "result", subtype: "success", is_error: false, result: "done" }];
     state.triggerPermission = true;
-    const adapter = new ClaudeRuntimeAdapter({ sessionRoot: "/tmp/claude-projects" });
+    const adapter = new ClaudeRuntimeAdapter({ occupancyTtlMs: 0, sessionRoot: "/tmp/claude-projects" });
 
     await drain(adapter.run("cc-1", "run without approval", undefined, undefined, undefined, {
       permissionMode: "full-access",
@@ -898,7 +898,7 @@ describe("ClaudeRuntimeAdapter", () => {
     ];
     state.triggerPermission = true;
     state.signal = new AbortController().signal;
-    const adapter = new ClaudeRuntimeAdapter({ sessionRoot: "/tmp/claude-projects" });
+    const adapter = new ClaudeRuntimeAdapter({ occupancyTtlMs: 0, sessionRoot: "/tmp/claude-projects" });
     const events: any[] = [];
 
     for await (const event of adapter.run("cc-1", "run pwd", undefined, undefined, undefined, {
@@ -924,7 +924,7 @@ describe("ClaudeRuntimeAdapter", () => {
     ];
     state.triggerPermission = true;
     state.signal = new AbortController().signal;
-    const adapter = new ClaudeRuntimeAdapter({ sessionRoot: "/tmp/claude-projects" });
+    const adapter = new ClaudeRuntimeAdapter({ occupancyTtlMs: 0, sessionRoot: "/tmp/claude-projects" });
 
     const events: any[] = [];
     let answered = false;
@@ -957,7 +957,7 @@ describe("ClaudeRuntimeAdapter", () => {
     ];
     state.triggerPermission = true;
     state.signal = new AbortController().signal;
-    const adapter = new ClaudeRuntimeAdapter({ sessionRoot: "/tmp/claude-projects" });
+    const adapter = new ClaudeRuntimeAdapter({ occupancyTtlMs: 0, sessionRoot: "/tmp/claude-projects" });
 
     for await (const event of adapter.run("cc-1", "run pwd", undefined, undefined, undefined, {
       permissionMode: "request-approval",
@@ -982,7 +982,7 @@ describe("ClaudeRuntimeAdapter", () => {
   });
 
   it("aborts an active query and stays silent when nothing is running", async () => {
-    const adapter = new ClaudeRuntimeAdapter({ sessionRoot: "/tmp/claude-projects" });
+    const adapter = new ClaudeRuntimeAdapter({ occupancyTtlMs: 0, sessionRoot: "/tmp/claude-projects" });
     await expect(adapter.abort("nothing")).resolves.toBeUndefined();
     expect(state.interrupted).toBe(0);
 
@@ -1004,7 +1004,7 @@ describe("ClaudeRuntimeAdapter", () => {
     ];
     state.triggerPermission = true;
     state.signal = new AbortController().signal;
-    const adapter = new ClaudeRuntimeAdapter({ sessionRoot: "/tmp/claude-projects" });
+    const adapter = new ClaudeRuntimeAdapter({ occupancyTtlMs: 0, sessionRoot: "/tmp/claude-projects" });
 
     for await (const event of adapter.run("cc-1", "hi", undefined, undefined, undefined, {
       permissionMode: "request-approval",
@@ -1034,7 +1034,7 @@ describe("Claude model & reasoning-effort overrides", () => {
   it("forwards per-run model and effort into the SDK query options", async () => {
     state.sessions = [sdkSession("cc-model")];
     state.stream = [{ type: "result", subtype: "success", is_error: false, result: "done" }];
-    const adapter = new ClaudeRuntimeAdapter({ sessionRoot: "/tmp/claude-projects" });
+    const adapter = new ClaudeRuntimeAdapter({ occupancyTtlMs: 0, sessionRoot: "/tmp/claude-projects" });
 
     await drain(adapter.run("cc-model", "hello", undefined, undefined, undefined, {
       model: { id: "claude-opus-4-6" },
@@ -1048,7 +1048,7 @@ describe("Claude model & reasoning-effort overrides", () => {
   it("omits model and effort when the run carries none", async () => {
     state.sessions = [sdkSession("cc-model")];
     state.stream = [{ type: "result", subtype: "success", is_error: false, result: "done" }];
-    const adapter = new ClaudeRuntimeAdapter({ sessionRoot: "/tmp/claude-projects" });
+    const adapter = new ClaudeRuntimeAdapter({ occupancyTtlMs: 0, sessionRoot: "/tmp/claude-projects" });
 
     await drain(adapter.run("cc-model", "hello"));
 
@@ -1057,7 +1057,7 @@ describe("Claude model & reasoning-effort overrides", () => {
   });
 
   it("exposes the stable model aliases for the picker", async () => {
-    const adapter = new ClaudeRuntimeAdapter({ sessionRoot: "/tmp/claude-projects" });
+    const adapter = new ClaudeRuntimeAdapter({ occupancyTtlMs: 0, sessionRoot: "/tmp/claude-projects" });
     const models = await adapter.listModels();
     expect(models.map((model) => model.id)).toEqual(["sonnet", "opus", "haiku"]);
     expect(models.find((model) => model.id === "opus")?.reasoningEfforts).toContain("max");

@@ -61,6 +61,12 @@ const TRANSCRIPT_CWD_SCAN_LIMIT = 2 * 1024 * 1024;
 const TRANSCRIPT_SCAN_CHUNK_SIZE = 64 * 1024;
 const CLAUDE_SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
+/** Cheap cache validator: appends change mtime and size, so staleness is impossible. */
+async function transcriptStamp(path: string): Promise<string> {
+  const entry = await stat(path);
+  return `${entry.mtimeMs}:${entry.size}`;
+}
+
 // The Agent SDK only exposes supportedModels() on a live Query, so the picker
 // falls back to these stable aliases; explicit ids from settings profiles are
 // passed through untouched.
@@ -266,9 +272,24 @@ export class ClaudeRuntimeAdapter implements AgentRuntimeAdapter {
   private readonly activeInputs = new Map<string, AsyncEventQueue<SDKUserMessage>>();
   private readonly pendingPermissions = new Map<string, PendingPermission>();
   private readonly abortedSessions = new Set<string>();
+  /** Transcript file paths are stable; the raw scan to find them is not free. */
+  private readonly sessionPaths = new Map<string, string>();
+  /**
+   * listSessions scans transcript contents for titles/prompts — too costly to
+   * repeat on every history refresh. Cached entries are validated against the
+   * transcript file's mtime+size, so appends still force a re-scan.
+   */
+  private readonly sessionInfoCache = new Map<string, { info: SDKSessionInfo; stamp: string }>();
+  /**
+   * Occupancy detection spawns `lsof` and `claude agents` (~170ms combined);
+   * cache the raw external set briefly. ownedSessions is applied fresh per call.
+   */
+  private occupancyCache: { at: number; raw: Set<string> } | null = null;
+  private readonly occupancyTtlMs: number;
 
-  constructor(options: { sessionRoot?: string } = {}) {
+  constructor(options: { sessionRoot?: string; occupancyTtlMs?: number } = {}) {
     this.sessionRoot = options.sessionRoot ?? join(homedir(), ".claude", "projects");
+    this.occupancyTtlMs = options.occupancyTtlMs ?? 1_000;
   }
 
   async health(): Promise<RuntimeHealth> {
@@ -635,33 +656,56 @@ export class ClaudeRuntimeAdapter implements AgentRuntimeAdapter {
   }
 
   private async findSession(nativeSessionId: string): Promise<SDKSessionInfo | undefined> {
+    const cached = this.sessionInfoCache.get(nativeSessionId);
+    if (cached) {
+      const path = await this.findSessionPath(nativeSessionId);
+      if (path && await transcriptStamp(path) === cached.stamp) return cached.info;
+      this.sessionInfoCache.delete(nativeSessionId);
+    }
     let offset = 0;
     while (true) {
       const page = await listSessions({ limit: PAGE_SIZE, offset });
       const found = page.find((session) => session.sessionId === nativeSessionId);
-      if (found) return found;
+      if (found) {
+        await this.cacheSessionInfo(nativeSessionId, found);
+        return found;
+      }
       if (page.length < PAGE_SIZE) return undefined;
       offset += PAGE_SIZE;
     }
   }
 
+  private async cacheSessionInfo(nativeSessionId: string, info: SDKSessionInfo): Promise<void> {
+    const path = await this.findSessionPath(nativeSessionId);
+    if (!path) return;
+    this.sessionInfoCache.set(nativeSessionId, { info, stamp: await transcriptStamp(path) });
+  }
+
   private async externalOccupancy(): Promise<Set<string>> {
-    const occupied = new Set<string>();
-    const [openFiles, agentRecords] = await Promise.all([
-      listOpenSessionFiles("claude", this.sessionRoot),
-      listClaudeAgentRecords(),
-    ]);
-    for (const path of openFiles) {
-      const name = basename(path);
-      if (name.endsWith(".jsonl")) occupied.add(name.slice(0, -6));
+    const now = Date.now();
+    let raw: Set<string>;
+    if (this.occupancyCache && now - this.occupancyCache.at < this.occupancyTtlMs) {
+      raw = this.occupancyCache.raw;
+    } else {
+      const [openFiles, agentRecords] = await Promise.all([
+        listOpenSessionFiles("claude", this.sessionRoot),
+        listClaudeAgentRecords(),
+      ]);
+      raw = new Set<string>();
+      for (const path of openFiles) {
+        const name = basename(path);
+        if (name.endsWith(".jsonl")) raw.add(name.slice(0, -6));
+      }
+      for (const record of agentRecords) {
+        if (!record.sessionId) continue;
+        const active = record.state !== "done"
+          || record.status === "active"
+          || record.status === "running";
+        if (active) raw.add(record.sessionId);
+      }
+      this.occupancyCache = { at: now, raw };
     }
-    for (const record of agentRecords) {
-      if (!record.sessionId) continue;
-      const active = record.state !== "done"
-        || record.status === "active"
-        || record.status === "running";
-      if (active) occupied.add(record.sessionId);
-    }
+    const occupied = new Set(raw);
     for (const sessionId of this.ownedSessions) occupied.delete(sessionId);
     return occupied;
   }
@@ -721,6 +765,11 @@ export class ClaudeRuntimeAdapter implements AgentRuntimeAdapter {
 
   private async findSessionPath(nativeSessionId: string): Promise<string | null> {
     if (basename(nativeSessionId) !== nativeSessionId || !CLAUDE_SESSION_ID.test(nativeSessionId)) return null;
+    const cachedPath = this.sessionPaths.get(nativeSessionId);
+    if (cachedPath && (await stat(cachedPath).then((entry) => entry.isFile()).catch(() => false))) {
+      return cachedPath;
+    }
+    this.sessionPaths.delete(nativeSessionId);
     let projectDirectories;
     try {
       projectDirectories = await readdir(this.sessionRoot, { withFileTypes: true });
@@ -731,7 +780,11 @@ export class ClaudeRuntimeAdapter implements AgentRuntimeAdapter {
       if (!directory.isDirectory()) continue;
       const candidate = join(this.sessionRoot, directory.name, `${nativeSessionId}.jsonl`);
       try {
-        if ((await stat(candidate)).isFile()) return candidate;
+        if ((await stat(candidate)).isFile()) {
+          // Not caching misses: a running session's transcript may not exist yet.
+          this.sessionPaths.set(nativeSessionId, candidate);
+          return candidate;
+        }
       } catch {
         // Continue across project directories; session IDs are globally unique.
       }
