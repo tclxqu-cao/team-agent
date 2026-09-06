@@ -4,10 +4,18 @@ import { homedir } from "node:os";
 import { basename, extname, isAbsolute, join, relative, resolve, sep, win32 } from "node:path";
 import { promisify } from "node:util";
 import {
+  buildSessionQueryIndex,
+  computeSessionHistoryRevision,
+  decodeSessionHistoryAnchor,
   normalizeToolPermissionMode,
+  sessionHistoryMessageId,
+  StaleSessionAnchorError,
   type AgentEvent,
   type Message,
   type MessageAttachment,
+  type SessionHistoryQuery,
+  type SessionHistoryWindow,
+  type SessionQueryIndex,
   type ToolCall,
   type ToolPermissionMode,
 } from "@agent/core";
@@ -130,6 +138,14 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
   private readonly platform: NodeJS.Platform;
   private readonly imageStorageRoot: string;
   private readonly rolloutActivityReader: Pick<CodexRolloutActivityReader, "readMany">;
+  /** Flipped off permanently when the app-server rejects the paginated turn protocol. */
+  private nativePagingSupported = true;
+  /** Progressive full-item hydration per session; the summary skeleton stays the ordinal source of truth. */
+  private readonly pagedTurnItems = new Map<string, {
+    turns: Map<string, CodexItem[]>;
+    walkCursor?: string;
+    exhausted: boolean;
+  }>();
   private readonly activeQueues = new Map<string, AsyncEventQueue<AgentEvent>>();
   private readonly activeTurnIds = new Map<string, string>();
   private readonly activeBrokerRunIds = new Map<string, string>();
@@ -402,6 +418,266 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
       messages: await codexTurnsToMessages(response.thread.turns),
       events: [],
     };
+  }
+
+  /**
+   * Source-paginated history over the native turn protocol.
+   *
+   * The ordinal space counts userMessage/agentMessage items only — the summary
+   * view cannot see tool items, so tool-call carrier messages do not consume
+   * ordinals (unlike the legacy full conversion). Every windowed query kind
+   * (limit/before/after/anchor) and the query index MUST be served by this
+   * path for the session; mixing with the legacy full-read space would
+   * misalign cursors and anchors.
+   */
+  async getSessionPaged(nativeSessionId: string, query: SessionHistoryQuery): Promise<UnifiedSessionDetail> {
+    this.ensureAvailable();
+    if (!this.nativePagingSupported) {
+      throw new RuntimeSessionError("Codex native history paging is unavailable", "OPERATION_NOT_SUPPORTED");
+    }
+    let meta: { thread: CodexThread };
+    try {
+      meta = await this.client.request<{ thread: CodexThread }>("thread/read", {
+        threadId: nativeSessionId,
+        includeTurns: false,
+      });
+    } catch (error) {
+      throw this.normalizePagedError(error);
+    }
+    const openFiles = await listOpenSessionFiles("codex", this.sessionRoot, {
+      excludePids: this.client.pid ? [this.client.pid] : [],
+      idleAfterMs: null,
+      platform: this.platform,
+    });
+    const rolloutActivities = await this.rolloutActivityReader.readMany(
+      this.platform === "win32" ? rolloutPaths([meta.thread], this.platform) : openFiles,
+    );
+
+    let ascTurns: CodexTurn[];
+    try {
+      ascTurns = await this.loadSummaryTurns(nativeSessionId);
+    } catch (error) {
+      throw this.normalizePagedError(error);
+    }
+
+    // The skeleton: every visible user/agent item in rollout order. This is
+    // the entire ordinal space — cheap (tens of KB) and hydration-independent.
+    const skeleton: Array<{ turnId: string; role: "user" | "assistant" }> = [];
+    for (const turn of ascTurns) {
+      for (const item of turn.items ?? []) {
+        if (item.type === "userMessage") skeleton.push({ turnId: turn.id, role: "user" });
+        else if (item.type === "agentMessage") skeleton.push({ turnId: turn.id, role: "assistant" });
+      }
+    }
+    const skeletonMessages = await codexTurnsToMessages(
+      ascTurns.map((turn) => ({ ...turn, items: (turn.items ?? []).filter((item) => this.isNativeVisibleItem(item)) })),
+    );
+    const revision = computeSessionHistoryRevision(skeletonMessages);
+
+    const { start, end, kind } = this.selectNativeRange(skeleton, query, revision);
+    const firstTurnId = skeleton[start]?.turnId;
+    const lastTurnId = end > start ? skeleton[end - 1].turnId : undefined;
+    if (firstTurnId && lastTurnId) {
+      await this.hydrateTurnRange(nativeSessionId, ascTurns, firstTurnId, lastTurnId);
+    }
+
+    const state = this.pagedTurnItems.get(nativeSessionId);
+    const idxA = ascTurns.findIndex((turn) => turn.id === firstTurnId);
+    const idxB = ascTurns.findIndex((turn) => turn.id === lastTurnId);
+    const windowTurns = idxA >= 0 && idxB >= idxA
+      ? ascTurns.slice(idxA, idxB + 1).map((turn) => ({
+          ...turn,
+          items: state?.turns.get(turn.id) ?? turn.items ?? [],
+        }))
+      : [];
+    const messages = await codexTurnsToMessages(windowTurns);
+    this.assignNativeHistoryIds(messages, skeleton, start, end);
+
+    const history: SessionHistoryWindow = {
+      nextCursor: start > 0 ? nativeHistoryCursor(start) : null,
+      hasMore: start > 0,
+      pageSize: Math.max(0, end - start),
+      totalItems: skeleton.length,
+      olderCursor: start > 0 ? nativeHistoryCursor(start) : null,
+      newerCursor: end < skeleton.length ? nativeHistoryCursor(end) : null,
+      kind,
+      revision,
+    };
+    return {
+      ...this.toSummary(meta.thread, openFiles, rolloutActivities),
+      messages,
+      events: [],
+      history,
+    };
+  }
+
+  /**
+   * Query index over the same skeleton space as getSessionPaged, so search
+   * pageTokens (anchors) decode against the revision the history pages serve.
+   */
+  async getQueryIndex(nativeSessionId: string): Promise<SessionQueryIndex | null> {
+    this.ensureAvailable();
+    if (!this.nativePagingSupported) return null;
+    let ascTurns: CodexTurn[];
+    try {
+      ascTurns = await this.loadSummaryTurns(nativeSessionId);
+    } catch (error) {
+      throw this.normalizePagedError(error);
+    }
+    const skeletonMessages = await codexTurnsToMessages(
+      ascTurns.map((turn) => ({ ...turn, items: (turn.items ?? []).filter((item) => this.isNativeVisibleItem(item)) })),
+    );
+    return buildSessionQueryIndex(
+      encodeUnifiedSessionId(this.agentType, nativeSessionId),
+      skeletonMessages,
+    );
+  }
+
+  private isNativeVisibleItem(item: CodexItem): boolean {
+    return item.type === "userMessage" || item.type === "agentMessage";
+  }
+
+  /** thread/turns/list answers newest-first; history needs rollout order. */
+  private async loadSummaryTurns(nativeSessionId: string): Promise<CodexTurn[]> {
+    const response = await this.client.request<{ data?: CodexTurn[] }>("thread/turns/list", {
+      threadId: nativeSessionId,
+      itemsView: "summary",
+    });
+    return (response.data ?? []).slice().reverse();
+  }
+
+  private selectNativeRange(
+    skeleton: Array<{ role: "user" | "assistant" }>,
+    query: SessionHistoryQuery,
+    revision: string,
+  ): { start: number; end: number; kind: "latest" | "anchored" } {
+    const total = skeleton.length;
+    const pageSize = normalizeNativePageSize(query.limit);
+    const boundaryEnd = (start: number, size: number): number => {
+      let end = Math.min(total, start + size);
+      while (end < total && skeleton[end]?.role !== "user") end += 1;
+      return end;
+    };
+    const boundaryStart = (nominal: number): number => {
+      if (nominal <= 0 || skeleton[nominal]?.role === "user") return Math.max(0, nominal);
+      for (let index = nominal - 1; index >= 0; index -= 1) {
+        if (skeleton[index].role === "user") return index;
+      }
+      return 0;
+    };
+    if (query.anchor) {
+      const target = decodeSessionHistoryAnchor(query.anchor, revision);
+      if (target >= total || skeleton[target]?.role !== "user") {
+        throw new StaleSessionAnchorError();
+      }
+      const nominalStart = Math.max(0, target - Math.floor(pageSize / 2));
+      const start = boundaryStart(nominalStart);
+      const requiredPageSize = Math.max(pageSize, target - start + 1);
+      return { start, end: boundaryEnd(start, requiredPageSize), kind: "anchored" };
+    }
+    if (query.after) {
+      const start = decodeNativeHistoryCursor(query.after, total);
+      return { start, end: boundaryEnd(start, pageSize), kind: "anchored" };
+    }
+    const end = decodeNativeHistoryCursor(query.before, total);
+    const nominalStart = Math.max(0, end - pageSize);
+    return { start: boundaryStart(nominalStart), end, kind: "latest" };
+  }
+
+  /**
+   * Fetch full items for the window's turns. The walk always starts at the
+   * rollout tail (desc) and resumes from the stored cursor for deeper pages;
+   * newly appended turns reset the cursor so the fresh tail is re-walked.
+   */
+  private async hydrateTurnRange(
+    nativeSessionId: string,
+    ascTurns: CodexTurn[],
+    firstTurnId: string,
+    lastTurnId: string,
+  ): Promise<void> {
+    let state = this.pagedTurnItems.get(nativeSessionId);
+    if (!state) {
+      state = { turns: new Map<string, CodexItem[]>(), walkCursor: undefined, exhausted: false };
+      this.pagedTurnItems.set(nativeSessionId, state);
+    }
+    const cached = state;
+    if (ascTurns.length > 0 && !cached.turns.has(ascTurns[ascTurns.length - 1].id)) {
+      cached.walkCursor = undefined;
+      cached.exhausted = false;
+    }
+    const wanted = new Set<string>();
+    let collecting = false;
+    for (const turn of ascTurns) {
+      if (turn.id === firstTurnId) collecting = true;
+      if (collecting) wanted.add(turn.id);
+      if (turn.id === lastTurnId) break;
+    }
+    if ([...wanted].every((turnId) => cached.turns.has(turnId))) return;
+    let pages = 0;
+    let cursor = cached.walkCursor;
+    while (pages < 400) {
+      const stillMissing = [...wanted].some((turnId) => !cached.turns.has(turnId));
+      if ((!stillMissing && cached.walkCursor) || cached.exhausted) break;
+      const page = await this.client.request<{ data?: CodexTurn[]; nextCursor?: string | null }>("thread/turns/list", {
+        threadId: nativeSessionId,
+        itemsView: "full",
+        limit: 5,
+        sortDirection: "desc",
+        ...(cursor ? { cursor } : {}),
+      });
+      const pageTurns = page.data ?? [];
+      for (const turn of pageTurns) {
+        if (!cached.turns.has(turn.id)) cached.turns.set(turn.id, turn.items ?? []);
+      }
+      pages += 1;
+      const next = page.nextCursor ?? undefined;
+      if (!next || pageTurns.length === 0) {
+        cached.exhausted = true;
+        break;
+      }
+      cursor = next;
+      cached.walkCursor = next;
+    }
+    if (cached.turns.size > 800) {
+      this.pagedTurnItems.delete(nativeSessionId);
+    }
+  }
+
+  /**
+   * Ordinals follow the skeleton (user/agent items only). Within a turn:
+   * user-role messages map to the turn's userMessage entries in order, and
+   * the final answer assistant maps to the agentMessage entry. Tool-call and
+   * reasoning carrier messages take no ordinal.
+   */
+  private assignNativeHistoryIds(
+    messages: Message[],
+    skeleton: Array<{ role: "user" | "assistant" }>,
+    start: number,
+    end: number,
+  ): void {
+    let pointer = start;
+    for (const message of messages) {
+      if (pointer >= end) break;
+      const role = message.role;
+      if (role !== "user" && role !== "assistant") continue;
+      if (role === "assistant" && (message.toolCalls?.length || message.presentation?.reasoning)) continue;
+      if (skeleton[pointer]?.role !== role) continue;
+      message.historyId = sessionHistoryMessageId(pointer, message);
+      pointer += 1;
+    }
+  }
+
+  private normalizePagedError(error: unknown): RuntimeSessionError {
+    if (error instanceof RuntimeSessionError) return error;
+    const message = error instanceof Error ? error.message : String(error);
+    if (/unknown (method|variant)|expected one of|failed to deserialize|invalid request|-3260/i.test(message)) {
+      this.nativePagingSupported = false;
+      return new RuntimeSessionError(
+        `Codex native history paging failed: ${message}`,
+        "OPERATION_NOT_SUPPORTED",
+      );
+    }
+    return new RuntimeSessionError(message, "NATIVE_PROTOCOL_ERROR");
   }
 
   async getSessionWatchPath(nativeSessionId: string): Promise<string | null> {
@@ -1091,6 +1367,28 @@ async function loadCodexImageAttachment(path: string): Promise<MessageAttachment
   } catch {
     return { type: "image", name, unavailable: true };
   }
+}
+
+// Native history cursors share the `history.v1.` format with the core
+// paginator so the renderer treats them identically; the ordinal space is the
+// adapter's skeleton (see getSessionPaged).
+const NATIVE_HISTORY_CURSOR_PREFIX = "history.v1.";
+const NATIVE_HISTORY_MAX_PAGE_SIZE = 100;
+
+function normalizeNativePageSize(limit?: number): number {
+  if (!Number.isFinite(limit)) return 50;
+  return Math.max(1, Math.min(NATIVE_HISTORY_MAX_PAGE_SIZE, Math.floor(limit!)));
+}
+
+function nativeHistoryCursor(ordinal: number): string {
+  return `${NATIVE_HISTORY_CURSOR_PREFIX}${ordinal}`;
+}
+
+function decodeNativeHistoryCursor(cursor: string | undefined, fallback: number): number {
+  if (!cursor?.startsWith(NATIVE_HISTORY_CURSOR_PREFIX)) return fallback;
+  const value = Number(cursor.slice(NATIVE_HISTORY_CURSOR_PREFIX.length));
+  if (!Number.isSafeInteger(value) || value < 0) return fallback;
+  return Math.min(value, fallback);
 }
 
 export async function codexTurnsToMessages(turns: CodexTurn[]): Promise<Message[]> {

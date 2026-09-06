@@ -169,6 +169,10 @@ export class UnifiedSessionService {
   }
 
   async get(id: string, query?: SessionHistoryQuery): Promise<UnifiedSessionDetail> {
+    if (query) {
+      const paged = await this.getPagedDetail(id, query);
+      if (paged) return paged;
+    }
     const associated = await this.getUnpaginated(id, shouldReuseSessionDetailCache(query));
     this.queryIndexCache.getOrCreate(id, associated.messages);
     if (!query) return associated;
@@ -178,9 +182,43 @@ export class UnifiedSessionService {
     };
   }
 
+  /**
+   * Adapter-native windowed history (e.g. Codex turn paging). The adapter owns
+   * ONE self-consistent ordinal space for the session — latest/before/after/
+   * anchor pages and the query index all come from it, so cursors, historyIds
+   * and anchors cross-reference correctly. The hybrid detail is deliberately
+   * NOT stored in the full detail cache: tool bodies outside the window are
+   * absent, and the legacy cache is keyed by a different ordinal space.
+   */
+  private async getPagedDetail(
+    id: string,
+    query: SessionHistoryQuery,
+  ): Promise<UnifiedSessionDetail | null> {
+    const { adapter, nativeSessionId } = this.resolveAdapter(id);
+    if (!adapter.getSessionPaged) return null;
+    if (adapter.agentType === "codex" && this.codexCompatibility?.isSupplemental(nativeSessionId)) return null;
+    try {
+      const detail = await adapter.getSessionPaged(nativeSessionId, query);
+      const projects = await this.listProjects();
+      return associateProject(detail, projects);
+    } catch (error) {
+      if (error instanceof RuntimeSessionError && error.code === "OPERATION_NOT_SUPPORTED") return null;
+      throw error;
+    }
+  }
+
   async getQueryIndex(id: string): Promise<SessionQueryIndex> {
+    const native = await this.getQueryIndexNative(id).catch(() => null);
+    if (native) return native;
     const detail = await this.getUnpaginated(id, true);
     return this.queryIndexCache.getOrCreate(id, detail.messages);
+  }
+
+  async getQueryIndexNative(id: string): Promise<SessionQueryIndex | null> {
+    const { adapter, nativeSessionId } = this.resolveAdapter(id);
+    if (!adapter.getQueryIndex) return null;
+    if (adapter.agentType === "codex" && this.codexCompatibility?.isSupplemental(nativeSessionId)) return null;
+    return adapter.getQueryIndex(nativeSessionId);
   }
 
   async getUnpaginated(id: string, preferCache = false): Promise<UnifiedSessionDetail> {

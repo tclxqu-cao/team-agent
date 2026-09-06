@@ -2,6 +2,7 @@ import type {
   AgentEvent,
   Message,
   SessionGoalState,
+  SessionHistoryQuery,
   SessionHistoryWindow,
   SessionQueryIndex,
   ToolPermissionMode,
@@ -201,6 +202,17 @@ export interface AgentRuntimeAdapter {
     name?: string,
   ): Promise<ImportAgentWorkspaceResult>;
   getSession(nativeSessionId: string): Promise<UnifiedSessionDetail>;
+  /**
+   * Source-paginated history window over the runtime's own protocol. When
+   * implemented, it must serve ALL windowed query kinds (limit/before/after/
+   * anchor) with one self-consistent ordinal space, because the renderer
+   * treats cursors, historyIds and anchors as opaque but cross-referencing.
+   * Must throw OPERATION_NOT_SUPPORTED when the runtime cannot serve it, so
+   * callers fall back to getSession + in-memory pagination.
+   */
+  getSessionPaged?(nativeSessionId: string, query: SessionHistoryQuery): Promise<UnifiedSessionDetail>;
+  /** Query index over the same ordinal space as getSessionPaged; null when paging is unavailable. */
+  getQueryIndex?(nativeSessionId: string): Promise<SessionQueryIndex | null>;
   getSessionWatchPath?(nativeSessionId: string): Promise<string | null>;
   create(options: CreateRuntimeSessionOptions): Promise<UnifiedSessionSummary>;
   restoreDraft?(summary: UnifiedSessionSummary): void;

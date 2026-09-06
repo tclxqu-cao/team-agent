@@ -7,6 +7,7 @@ import type {
   UnifiedSessionDetail,
   UnifiedSessionSummary,
 } from "./types.js";
+import { RuntimeSessionError } from "./types.js";
 import { UnifiedSessionService } from "./unified-session-service.js";
 
 interface AdapterOverrides {
@@ -611,5 +612,65 @@ describe("UnifiedSessionService.listModels", () => {
 
     await expect(service.listModels("codex")).rejects.toMatchObject({ code: "OPERATION_NOT_SUPPORTED" });
     await expect(service.listModels("customer-agent")).rejects.toMatchObject({ code: "OPERATION_NOT_SUPPORTED" });
+  });
+});
+
+describe("UnifiedSessionService paged history routing", () => {
+  function pagedAdapter() {
+    const codex = adapter("codex", [summary("codex", "cx-1", "/repo", "2026-01-02T00:00:00.000Z")]);
+    const pagedDetail = {
+      ...summary("codex", "cx-1", "/repo", "2026-01-02T00:00:00.000Z"),
+      messages: [],
+      events: [],
+      history: { nextCursor: "history.v1.8", hasMore: true, pageSize: 2, totalItems: 10 },
+    };
+    (codex as unknown as Record<string, unknown>).getSessionPaged = vi.fn(async () => pagedDetail);
+    return codex;
+  }
+
+  it("routes latest and older windowed queries to the adapter paged path", async () => {
+    const codex = pagedAdapter();
+    const service = new UnifiedSessionService([codex], async () => []);
+    const id = encodeUnifiedSessionId("codex", "cx-1");
+
+    await service.get(id, { limit: 2 });
+    await service.get(id, { before: "history.v1.8", limit: 2 });
+    expect(codex.getSessionPaged).toHaveBeenCalledTimes(2);
+    expect(codex.getSession).not.toHaveBeenCalled();
+  });
+
+  it("keeps no-query reads on the legacy full path", async () => {
+    const codex = pagedAdapter();
+    const service = new UnifiedSessionService([codex], async () => []);
+
+    await service.get(encodeUnifiedSessionId("codex", "cx-1"));
+    expect(codex.getSessionPaged).not.toHaveBeenCalled();
+    expect(codex.getSession).toHaveBeenCalledWith("cx-1");
+  });
+
+  it("falls back to the legacy full read when paging is unsupported", async () => {
+    const codex = adapter("codex", [summary("codex", "cx-1", "/repo", "2026-01-02T00:00:00.000Z")]);
+    (codex as unknown as Record<string, unknown>).getSessionPaged = vi.fn(async () => {
+      throw new RuntimeSessionError("no paging", "OPERATION_NOT_SUPPORTED");
+    });
+    const service = new UnifiedSessionService([codex], async () => []);
+
+    const detail = await service.get(encodeUnifiedSessionId("codex", "cx-1"), { limit: 50 });
+    expect(codex.getSession).toHaveBeenCalledWith("cx-1");
+    expect(detail.messages).toEqual([]);
+  });
+
+  it("prefers the adapter query index and falls back when it returns null", async () => {
+    const nativeIndex = { sessionId: "s", revision: "r1", totalQueries: 1, entries: [] };
+    const codex = pagedAdapter();
+    (codex as unknown as Record<string, unknown>).getQueryIndex = vi.fn(async () => nativeIndex);
+    const service = new UnifiedSessionService([codex], async () => []);
+    await expect(service.getQueryIndex(encodeUnifiedSessionId("codex", "cx-1"))).resolves.toBe(nativeIndex);
+
+    const plain = adapter("codex", [summary("codex", "cx-1", "/repo", "2026-01-02T00:00:00.000Z")]);
+    (plain as unknown as Record<string, unknown>).getQueryIndex = vi.fn(async () => null);
+    const fallback = new UnifiedSessionService([plain], async () => []);
+    await expect(fallback.getQueryIndex(encodeUnifiedSessionId("codex", "cx-1"))).resolves.toHaveProperty("sessionId");
+    expect(plain.getSession).toHaveBeenCalled();
   });
 });

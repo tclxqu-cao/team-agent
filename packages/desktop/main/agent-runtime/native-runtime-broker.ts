@@ -1317,6 +1317,10 @@ export class NativeRuntimeBrokerHost {
 
   async getQueryIndex(id: string): Promise<SessionQueryIndex> {
     this.state.assertSessionVisible(id);
+    // Adapter-native ordinal space (e.g. Codex turn paging) wins when present;
+    // cursors and anchors must not mix with the legacy full-read space.
+    const native = await this.runtime.getQueryIndexNative?.(id).catch(() => null);
+    if (native) return native;
     try {
       const detail = await this.runtime.getUnpaginated(id, true);
       const projected = this.state.applyDetail(detail);

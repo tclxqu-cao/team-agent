@@ -13,6 +13,7 @@ export {
   StaleSessionAnchorError,
   buildSessionQueryIndex,
   computeSessionHistoryRevision,
+  decodeSessionHistoryAnchor,
   sessionHistoryMessageId,
 } from './SessionQueryIndex.js';
 export { SessionQueryIndexCache } from './SessionQueryIndexCache.js';

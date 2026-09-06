@@ -1452,3 +1452,105 @@ describe("Codex occupied-session takeover", () => {
     expect(requests.some(({ method }) => method === "turn/start")).toBe(false);
   });
 });
+
+describe("Codex native paged history", () => {
+  const turn = (id: string, index: number, withTool = false) => ({
+    id,
+    status: "completed",
+    items: [
+      { type: "userMessage", id: `u-${id}`, content: [{ type: "text", text: `q-${id}`, text_elements: [] }] },
+      ...(withTool ? [{ type: "commandExecution", id: `call-${id}`, command: "pwd", cwd: "/repo", aggregatedOutput: `out-${id}` }] : []),
+      { type: "agentMessage", id: `a-${id}`, text: `s-${id}` },
+    ],
+  });
+  const turns = [
+    turn("t1", 1, true),
+    turn("t2", 2),
+    turn("t3", 3),
+    turn("t4", 4, true),
+    turn("t5", 5),
+  ];
+  const baseThread = {
+    id: "cx-paged",
+    parentThreadId: null,
+    preview: "paged",
+    name: "paged",
+    createdAt: 1_788_220_800,
+    updatedAt: 1_788_220_800,
+    status: { type: "idle" },
+    path: null,
+    cwd: "/tmp",
+    source: { custom: "customer-agent" },
+    turns: [] as any[],
+  };
+
+  function pagingClientFor(requests: Array<{ method: string; params: any }>, opts: { failTurnsList?: boolean } = {}) {
+    let notify: (message: any) => void = () => undefined;
+    const desc = [...turns].reverse();
+    return {
+      pid: undefined,
+      onNotification: (handler: typeof notify) => { notify = handler; return () => undefined; },
+      onExit: () => () => undefined,
+      setServerRequestHandler: () => undefined,
+      request: async (method: string, params: any) => {
+        requests.push({ method, params });
+        if (method === "thread/read" && params.includeTurns === false) return { thread: baseThread };
+        if (method === "thread/turns/list") {
+          if (opts.failTurnsList) throw new Error("unknown method: thread/turns/list");
+          if (params.itemsView === "summary") {
+            return { data: desc.map((t) => ({ ...t, items: t.items.filter((i: any) => i.type === "userMessage" || i.type === "agentMessage") })) };
+          }
+          const start = params.cursor ? Number(params.cursor.replace("c", "")) : 0;
+          const slice = desc.slice(start, start + (params.limit ?? 5));
+          const nextIndex = start + slice.length;
+          return { data: slice, nextCursor: nextIndex < desc.length ? `c${nextIndex}` : null };
+        }
+        throw new Error(`unexpected request: ${method}`);
+      },
+    };
+  }
+
+  it("serves the latest window without a full thread/read, in rollout order", async () => {
+    const requests: Array<{ method: string; params: any }> = [];
+    const adapter = new CodexRuntimeAdapter({ client: pagingClientFor(requests) as never });
+    const detail = await adapter.getSessionPaged("cx-paged", { limit: 2 });
+
+    expect(requests.some((r) => r.method === "thread/read" && r.params.includeTurns === true)).toBe(false);
+    expect(detail.messages.map((m) => (typeof m.content === "string" ? m.content : ""))).toEqual(["q-t5", "s-t5"]);
+    expect(detail.history).toMatchObject({ totalItems: 10, pageSize: 2, hasMore: true, kind: "latest", nextCursor: "history.v1.8" });
+  });
+
+  it("keeps before-pages contiguous with the latest page", async () => {
+    const requests: Array<{ method: string; params: any }> = [];
+    const adapter = new CodexRuntimeAdapter({ client: pagingClientFor(requests) as never });
+    const latest = await adapter.getSessionPaged("cx-paged", { limit: 2 });
+    const older = await adapter.getSessionPaged("cx-paged", { before: latest.history!.nextCursor!, limit: 2 });
+
+    expect(older.messages.map((m) => (typeof m.content === "string" ? m.content : ""))).toEqual(["q-t4", "", "out-t4", "s-t4"]);
+    expect(older.history?.pageSize).toBe(2);
+    expect(older.history).toMatchObject({ totalItems: 10, pageSize: 2, nextCursor: "history.v1.6", newerCursor: "history.v1.8" });
+  });
+
+  it("serves anchors from the query index in the same ordinal space", async () => {
+    const requests: Array<{ method: string; params: any }> = [];
+    const adapter = new CodexRuntimeAdapter({ client: pagingClientFor(requests) as never });
+    const index = await adapter.getQueryIndex("cx-paged");
+    expect(index?.entries).toHaveLength(5);
+    const target = index!.entries[3];
+
+    const detail = await adapter.getSessionPaged("cx-paged", { anchor: target.pageToken, limit: 2 });
+    expect(detail.history?.kind).toBe("anchored");
+    expect(detail.history?.revision).toBe(index!.revision);
+    expect(detail.messages.some((m) => m.content === "q-t4")).toBe(true);
+  });
+
+  it("degrades permanently when the protocol method is missing", async () => {
+    const requests: Array<{ method: string; params: any }> = [];
+    const adapter = new CodexRuntimeAdapter({ client: pagingClientFor(requests, { failTurnsList: true }) as never });
+    await expect(adapter.getSessionPaged("cx-paged", { limit: 2 })).rejects.toMatchObject({ code: "OPERATION_NOT_SUPPORTED" });
+    expect(await adapter.getQueryIndex("cx-paged")).toBeNull();
+    const seen = requests.length;
+    await expect(adapter.getSessionPaged("cx-paged", { limit: 2 })).rejects.toMatchObject({ code: "OPERATION_NOT_SUPPORTED" });
+    expect(requests.length).toBe(seen);
+  });
+});
