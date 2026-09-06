@@ -1,0 +1,19 @@
+docs/superpowers/specs/2026-09-06-queued-goal-message-visibility-design.md
+  s_90511e47e60910::t_51bfee57400069 1-34
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "fd3fb60c3d03c91f559e4d6c0a11a912f80b7f6b",
+  "prompts": {},
+  "sessions": {
+    "s_90511e47e60910": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0741f-2a83-7a23-aefe-770e9832007b",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
