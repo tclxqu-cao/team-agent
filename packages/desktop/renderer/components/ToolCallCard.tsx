@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from "react";
-import type { NativeSubagentActivity, RuntimeProgress } from "@agent/core";
+import type { NativeSubagentActivity, RuntimeProgress, SessionToolResultRef } from "@agent/core";
 import {
   Check,
   ChevronRight,
@@ -26,6 +26,7 @@ export interface ToolCallData {
   arguments: Record<string, unknown>;
   result?: string;
   isError?: boolean;
+  resultRef?: SessionToolResultRef;
 }
 
 interface ToolCallProps {
@@ -37,6 +38,7 @@ interface ToolCallProps {
   beforeContent?: string;
   workspacePath?: string | null;
   enableFilePreview?: boolean;
+  onLoadResult?: (ref: SessionToolResultRef) => Promise<void>;
 }
 
 // ── Status icon: spinner / checkmark / x-circle ──────────────────────────
@@ -156,6 +158,61 @@ function lineCount(s: string): number {
   return s ? s.split("\n").length : 0;
 }
 
+function useToolExpansion(
+  toolCall: ToolCallData,
+  onLoadResult?: (ref: SessionToolResultRef) => Promise<void>,
+  initiallyExpanded = false,
+) {
+  const [expanded, setExpanded] = useState(initiallyExpanded);
+  const [loadingResult, setLoadingResult] = useState(false);
+  const [resultError, setResultError] = useState<string | null>(null);
+  const loadResult = async () => {
+    if (!toolCall.resultRef || toolCall.result !== undefined || loadingResult || !onLoadResult) return;
+    setLoadingResult(true);
+    setResultError(null);
+    try {
+      await onLoadResult(toolCall.resultRef);
+    } catch (error) {
+      setResultError(error instanceof Error ? error.message : "工具结果加载失败");
+    } finally {
+      setLoadingResult(false);
+    }
+  };
+  const toggle = () => {
+    const next = !expanded;
+    setExpanded(next);
+    if (next) void loadResult();
+  };
+  return { expanded, setExpanded, toggle, loadingResult, resultError, loadResult };
+}
+
+function LazyToolResultState({
+  toolCall,
+  loading,
+  error,
+  retry,
+}: {
+  toolCall: ToolCallData;
+  loading: boolean;
+  error: string | null;
+  retry: () => Promise<void>;
+}) {
+  if (!toolCall.resultRef || toolCall.result !== undefined) return null;
+  if (error) {
+    return (
+      <button type="button" onClick={() => void retry()} className="ui-text-button">
+        重新加载工具结果
+      </button>
+    );
+  }
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 6, color: "var(--text-muted)", fontSize: 11 }}>
+      <LoaderCircle size={11} strokeWidth={2.2} style={{ animation: loading ? "spin 1s linear infinite" : "none" }} aria-hidden="true" />
+      {loading ? "正在加载工具结果" : `${toolCall.resultRef.byteSize.toLocaleString()} 字节，展开后加载`}
+    </div>
+  );
+}
+
 type DiffLine = { type: "added" | "removed" | "same"; text: string; lineNo: number };
 
 function computeDiff(before: string, after: string): DiffLine[] {
@@ -249,8 +306,9 @@ function DiffBlock({ diff, maxHeight = 360 }: { diff: DiffLine[]; maxHeight?: nu
   );
 }
 
-function WriteFileCard({ toolCall, beforeContent, previewPath }: { toolCall: ToolCallData; beforeContent?: string; previewPath?: string }) {
-  const [expanded, setExpanded] = useState(false);
+function WriteFileCard({ toolCall, beforeContent, previewPath, onLoadResult }: { toolCall: ToolCallData; beforeContent?: string; previewPath?: string; onLoadResult?: (ref: SessionToolResultRef) => Promise<void> }) {
+  const expansion = useToolExpansion(toolCall, onLoadResult);
+  const { expanded } = expansion;
   const [tab, setTab] = useState<"content"|"diff">("content");
   const filePath = (toolCall.arguments.file_path as string)??"";
   const content = (toolCall.arguments.content as string)??"";
@@ -292,7 +350,8 @@ function WriteFileCard({ toolCall, beforeContent, previewPath }: { toolCall: Too
   );
 
   return (
-    <CardShell statusColor={statusColor} isDone={isDone} expanded={expanded} onToggle={() => setExpanded(!expanded)} header={header} primaryAction={previewPath ? () => postWebArtifactOpen(previewPath) : undefined} primaryActionLabel={previewPath ? `预览文件 ${basename(previewPath)}` : undefined} primaryActionTitle={previewPath ? `预览 ${previewPath}` : undefined}>
+    <CardShell statusColor={statusColor} isDone={isDone} expanded={expanded} onToggle={expansion.toggle} header={header} primaryAction={previewPath ? () => postWebArtifactOpen(previewPath) : undefined} primaryActionLabel={previewPath ? `预览文件 ${basename(previewPath)}` : undefined} primaryActionTitle={previewPath ? `预览 ${previewPath}` : undefined}>
+      <LazyToolResultState toolCall={toolCall} loading={expansion.loadingResult} error={expansion.resultError} retry={expansion.loadResult} />
       <div style={{ fontSize: 10, color: "var(--text-muted)", fontFamily: "var(--font-mono)", wordBreak: "break-all" }}>{filePath}</div>
       {diff && (
         <div style={{ display: "flex", gap: 3 }}>
@@ -311,8 +370,9 @@ function WriteFileCard({ toolCall, beforeContent, previewPath }: { toolCall: Too
   );
 }
 
-function ReadFileCard({ toolCall, previewPath }: { toolCall: ToolCallData; previewPath?: string }) {
-  const [expanded, setExpanded] = useState(false);
+function ReadFileCard({ toolCall, previewPath, onLoadResult }: { toolCall: ToolCallData; previewPath?: string; onLoadResult?: (ref: SessionToolResultRef) => Promise<void> }) {
+  const expansion = useToolExpansion(toolCall, onLoadResult);
+  const { expanded } = expansion;
   const filePath = (toolCall.arguments.file_path as string)??"";
   const startLine = toolCall.arguments.startLine as number|undefined;
   const endLine = toolCall.arguments.endLine as number|undefined;
@@ -351,7 +411,8 @@ function ReadFileCard({ toolCall, previewPath }: { toolCall: ToolCallData; previ
   );
 
   return (
-    <CardShell statusColor={statusColor} isDone={isDone} expanded={expanded} onToggle={() => setExpanded(!expanded)} header={header} maxBodyHeight={480} primaryAction={previewPath ? () => postWebArtifactOpen(previewPath) : undefined} primaryActionLabel={previewPath ? `预览文件 ${basename(previewPath)}` : undefined} primaryActionTitle={previewPath ? `预览 ${previewPath}` : undefined}>
+    <CardShell statusColor={statusColor} isDone={isDone} expanded={expanded} onToggle={expansion.toggle} header={header} maxBodyHeight={480} primaryAction={previewPath ? () => postWebArtifactOpen(previewPath) : undefined} primaryActionLabel={previewPath ? `预览文件 ${basename(previewPath)}` : undefined} primaryActionTitle={previewPath ? `预览 ${previewPath}` : undefined}>
+      <LazyToolResultState toolCall={toolCall} loading={expansion.loadingResult} error={expansion.resultError} retry={expansion.loadResult} />
       <div style={{ fontSize: 10, color: "var(--text-muted)", fontFamily: "var(--font-mono)", wordBreak: "break-all" }}>{filePath}</div>
       {isDone && !isError
         ? <CodeBlock content={resultContent} />
@@ -361,8 +422,9 @@ function ReadFileCard({ toolCall, previewPath }: { toolCall: ToolCallData; previ
   );
 }
 
-function StrReplaceCard({ toolCall, previewPath }: { toolCall: ToolCallData; previewPath?: string }) {
-  const [expanded, setExpanded] = useState(false);
+function StrReplaceCard({ toolCall, previewPath, onLoadResult }: { toolCall: ToolCallData; previewPath?: string; onLoadResult?: (ref: SessionToolResultRef) => Promise<void> }) {
+  const expansion = useToolExpansion(toolCall, onLoadResult);
+  const { expanded } = expansion;
   const filePath = (toolCall.arguments.file_path as string)??"";
   const oldString = (toolCall.arguments.old_string as string)??"";
   const newString = (toolCall.arguments.new_string as string)??"";
@@ -398,7 +460,8 @@ function StrReplaceCard({ toolCall, previewPath }: { toolCall: ToolCallData; pre
   );
 
   return (
-    <CardShell statusColor={statusColor} isDone={isDone} expanded={expanded} onToggle={() => setExpanded(!expanded)} header={header} maxBodyHeight={480} primaryAction={previewPath ? () => postWebArtifactOpen(previewPath) : undefined} primaryActionLabel={previewPath ? `预览文件 ${basename(previewPath)}` : undefined} primaryActionTitle={previewPath ? `预览 ${previewPath}` : undefined}>
+    <CardShell statusColor={statusColor} isDone={isDone} expanded={expanded} onToggle={expansion.toggle} header={header} maxBodyHeight={480} primaryAction={previewPath ? () => postWebArtifactOpen(previewPath) : undefined} primaryActionLabel={previewPath ? `预览文件 ${basename(previewPath)}` : undefined} primaryActionTitle={previewPath ? `预览 ${previewPath}` : undefined}>
+      <LazyToolResultState toolCall={toolCall} loading={expansion.loadingResult} error={expansion.resultError} retry={expansion.loadResult} />
       <div style={{ fontSize: 10, color: "var(--text-muted)", fontFamily: "var(--font-mono)", wordBreak: "break-all" }}>{filePath}</div>
       {diff ? <DiffBlock diff={diff} /> : (
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -558,9 +621,10 @@ function NativeAgentActivity({ activity, workspacePath, enableFilePreview }: { a
   );
 }
 
-function GenericToolCard({ toolCall, onSelectSession, nativeSubagent, previewPaths, workspacePath, enableFilePreview }: { toolCall: ToolCallData; onSelectSession?: (id: string) => void; nativeSubagent?: NativeSubagentActivity; previewPaths: string[]; workspacePath?: string | null; enableFilePreview?: boolean }) {
+function GenericToolCard({ toolCall, onSelectSession, nativeSubagent, previewPaths, workspacePath, enableFilePreview, onLoadResult }: { toolCall: ToolCallData; onSelectSession?: (id: string) => void; nativeSubagent?: NativeSubagentActivity; previewPaths: string[]; workspacePath?: string | null; enableFilePreview?: boolean; onLoadResult?: (ref: SessionToolResultRef) => Promise<void> }) {
   const runningSessionId = useAgentStore(s => s.runningSessionId);
-  const [expanded, setExpanded] = useState(() => Boolean(nativeSubagent));
+  const expansion = useToolExpansion(toolCall, onLoadResult, Boolean(nativeSubagent));
+  const { expanded, setExpanded } = expansion;
   const isDispatch = toolCall.name === "dispatch_agent";
   const isNativeAgent = toolCall.name === "Agent" && Boolean(nativeSubagent);
   const subAgentStatus = toolCall.arguments.subAgentStatus as "completed"|"failed"|undefined;
@@ -643,7 +707,8 @@ function GenericToolCard({ toolCall, onSelectSession, nativeSubagent, previewPat
   );
 
   return (
-    <CardShell statusColor={statusColor} isDone={isDone} expanded={expanded} onToggle={() => setExpanded(!expanded)} header={header} maxBodyHeight={800} primaryAction={previewPaths.length === 1 ? () => postWebArtifactOpen(previewPaths[0]) : undefined} primaryActionLabel={previewPaths.length === 1 ? `预览文件 ${basename(previewPaths[0])}` : undefined} primaryActionTitle={previewPaths.length === 1 ? `预览 ${previewPaths[0]}` : undefined}>
+    <CardShell statusColor={statusColor} isDone={isDone} expanded={expanded} onToggle={expansion.toggle} header={header} maxBodyHeight={800} primaryAction={previewPaths.length === 1 ? () => postWebArtifactOpen(previewPaths[0]) : undefined} primaryActionLabel={previewPaths.length === 1 ? `预览文件 ${basename(previewPaths[0])}` : undefined} primaryActionTitle={previewPaths.length === 1 ? `预览 ${previewPaths[0]}` : undefined}>
+      <LazyToolResultState toolCall={toolCall} loading={expansion.loadingResult} error={expansion.resultError} retry={expansion.loadResult} />
       {previewPaths.length > 1 && (
         <div className="tool-call-file-list" aria-label="改动文件">
           {previewPaths.map((previewPath) => (
@@ -722,7 +787,7 @@ export interface ToolCallGroupItem {
   nativeSubagent?: NativeSubagentActivity;
 }
 
-export function ToolCallGroup({ items, onSelectSession, workspacePath, enableFilePreview }: { items: ToolCallGroupItem[]; onSelectSession?: (id: string) => void; workspacePath?: string | null; enableFilePreview?: boolean }) {
+export function ToolCallGroup({ items, onSelectSession, workspacePath, enableFilePreview, onLoadResult }: { items: ToolCallGroupItem[]; onSelectSession?: (id: string) => void; workspacePath?: string | null; enableFilePreview?: boolean; onLoadResult?: (ref: SessionToolResultRef) => Promise<void> }) {
   const [expanded, setExpanded] = useState(false);
   const first = items[0]?.toolCall;
   const phrase = first ? toolPhrase(first.name) : null;
@@ -765,6 +830,7 @@ export function ToolCallGroup({ items, onSelectSession, workspacePath, enableFil
               onSelectSession={onSelectSession}
               workspacePath={workspacePath}
               enableFilePreview={enableFilePreview}
+              onLoadResult={onLoadResult}
             />
           ))}
         </div>
@@ -784,15 +850,15 @@ export function resolveToolPreviewPaths(toolCall: ToolCallData, workspacePath?: 
     .filter((value): value is string => Boolean(value)))];
 }
 
-export default function ToolCallCard({ toolCall, onSelectSession, beforeContent, progress, nativeSubagent, workspacePath, enableFilePreview = false }: ToolCallProps) {
+export default function ToolCallCard({ toolCall, onSelectSession, beforeContent, progress, nativeSubagent, workspacePath, enableFilePreview = false, onLoadResult }: ToolCallProps) {
   const previewPaths = enableFilePreview ? resolveToolPreviewPaths(toolCall, workspacePath) : [];
   const card = toolCall.name === "write_file"
-    ? <WriteFileCard toolCall={toolCall} beforeContent={beforeContent} previewPath={previewPaths[0]} />
+    ? <WriteFileCard toolCall={toolCall} beforeContent={beforeContent} previewPath={previewPaths[0]} onLoadResult={onLoadResult} />
     : toolCall.name === "read_file"
-      ? <ReadFileCard toolCall={toolCall} previewPath={previewPaths[0]} />
+      ? <ReadFileCard toolCall={toolCall} previewPath={previewPaths[0]} onLoadResult={onLoadResult} />
       : toolCall.name === "str_replace"
-        ? <StrReplaceCard toolCall={toolCall} previewPath={previewPaths[0]} />
-        : <GenericToolCard toolCall={toolCall} onSelectSession={onSelectSession} nativeSubagent={nativeSubagent} previewPaths={previewPaths} workspacePath={workspacePath} enableFilePreview={enableFilePreview} />;
+        ? <StrReplaceCard toolCall={toolCall} previewPath={previewPaths[0]} onLoadResult={onLoadResult} />
+        : <GenericToolCard toolCall={toolCall} onSelectSession={onSelectSession} nativeSubagent={nativeSubagent} previewPaths={previewPaths} workspacePath={workspacePath} enableFilePreview={enableFilePreview} onLoadResult={onLoadResult} />;
   return (
     <div className="tool-call-with-progress">
       {card}

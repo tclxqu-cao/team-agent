@@ -386,6 +386,80 @@ describe("Codex reasoning mapping", () => {
   });
 });
 
+describe("Codex live execution events", () => {
+  it("attaches the native turn ID to streamed tool calls and results", async () => {
+    let notify: (message: any) => void = () => undefined;
+    const thread = {
+      id: "cx-live-tools",
+      parentThreadId: null,
+      preview: "live tools",
+      name: "live tools",
+      createdAt: 1_788_220_800,
+      updatedAt: 1_788_220_800,
+      status: { type: "idle" },
+      path: null,
+      cwd: "/repo",
+      source: { custom: "customer-agent" },
+      turns: [],
+    };
+    const client = {
+      onNotification: (handler: typeof notify) => {
+        notify = handler;
+        return () => undefined;
+      },
+      onExit: () => () => undefined,
+      setServerRequestHandler: () => undefined,
+      request: async (method: string) => {
+        if (method === "thread/read" || method === "thread/resume") return { thread };
+        if (method === "turn/start") {
+          queueMicrotask(() => {
+            notify({
+              method: "item/started",
+              params: {
+                threadId: thread.id,
+                turnId: "turn-live",
+                item: { id: "call-1", type: "commandExecution", command: "pwd", cwd: "/repo" },
+              },
+            });
+            notify({
+              method: "item/completed",
+              params: {
+                threadId: thread.id,
+                turnId: "turn-live",
+                item: { id: "call-1", type: "commandExecution", command: "pwd", cwd: "/repo", aggregatedOutput: "/repo", exitCode: 0 },
+              },
+            });
+            notify({
+              method: "turn/completed",
+              params: {
+                threadId: thread.id,
+                turn: { id: "turn-live", status: "completed", items: [] },
+              },
+            });
+          });
+          return { turn: { id: "turn-live" } };
+        }
+        if (method === "thread/unsubscribe") return {};
+        throw new Error(`unexpected request: ${method}`);
+      },
+    };
+    const adapter = new CodexRuntimeAdapter({ client: client as never, sessionRoot: "/tmp" });
+
+    const events = await drain(adapter.run(thread.id, "run pwd"));
+
+    expect(events).toContainEqual(expect.objectContaining({
+      type: "tool_call",
+      turnId: "turn-live",
+      toolCall: expect.objectContaining({ id: "call-1" }),
+    }));
+    expect(events).toContainEqual(expect.objectContaining({
+      type: "tool_result",
+      turnId: "turn-live",
+      result: expect.objectContaining({ toolCallId: "call-1", content: "/repo" }),
+    }));
+  });
+});
+
 function attachmentEnvelope(request: string): string {
   return `
 # Files mentioned by the user:
@@ -537,6 +611,31 @@ describe("Codex history mapping", () => {
       { role: "user", content: "first\nsecond" },
       { role: "assistant", content: "answer" },
     ]);
+  });
+
+  it("bounds trace reasoning and arguments while omitting large tool bodies", async () => {
+    const largeResult = "r".repeat(100_000);
+    const messages = await codexTurnsToMessages([{
+      id: "turn-1",
+      status: "completed",
+      items: [
+        { type: "reasoning", id: "reasoning-1", summary: ["思".repeat(10_000)] },
+        { type: "commandExecution", id: "call-1", command: "x".repeat(10_000), aggregatedOutput: largeResult },
+      ],
+    }], {
+      toolResultMode: "lazy",
+      revision: "rev-1",
+      reasoningMaxBytes: 4 * 1024,
+      toolArgumentsMaxBytes: 2 * 1024,
+    });
+
+    const reasoning = messages[0].presentation?.reasoning?.[0].text ?? "";
+    const args = messages.find((message) => message.toolCalls)?.toolCalls?.[0].arguments ?? {};
+    const result = messages.find((message) => message.role === "tool");
+    expect(Buffer.byteLength(reasoning, "utf8")).toBeLessThanOrEqual(4 * 1024);
+    expect(Buffer.byteLength(JSON.stringify(args), "utf8")).toBeLessThanOrEqual(2 * 1024);
+    expect(result).toMatchObject({ content: "", toolResultRef: { byteSize: 100_000 } });
+    expect(JSON.stringify(messages)).not.toContain(largeResult);
   });
 });
 
@@ -1438,6 +1537,18 @@ describe("Codex occupied-session takeover", () => {
     expect(events.at(-1)).toMatchObject({ type: "done" });
   });
 
+  it("explicitly unsubscribes when releasing a session to Codex Desktop", async () => {
+    const requests: Array<{ method: string; params: any }> = [];
+    const adapter = buildAdapter(requests);
+
+    await adapter.release(occupiedThread.id);
+
+    expect(requests).toEqual([{
+      method: "thread/unsubscribe",
+      params: { threadId: occupiedThread.id },
+    }]);
+  });
+
   it("surfaces a writer-lock failure as an occupied error event", async () => {
     const requests: Array<{ method: string; params: any }> = [];
     const adapter = buildAdapter(requests, {
@@ -1484,9 +1595,17 @@ describe("Codex native paged history", () => {
     turns: [] as any[],
   };
 
-  function pagingClientFor(requests: Array<{ method: string; params: any }>, opts: { failTurnsList?: boolean } = {}) {
+  function pagingClientFor(
+    requests: Array<{ method: string; params: any }>,
+    opts: {
+      failTurnsList?: boolean;
+      sourceTurns?: any[];
+      threadStatus?: string;
+      getThreadStatus?: () => string;
+      threadPath?: string;
+    } = {},
+  ) {
     let notify: (message: any) => void = () => undefined;
-    const desc = [...turns].reverse();
     return {
       pid: undefined,
       onNotification: (handler: typeof notify) => { notify = handler; return () => undefined; },
@@ -1494,9 +1613,18 @@ describe("Codex native paged history", () => {
       setServerRequestHandler: () => undefined,
       request: async (method: string, params: any) => {
         requests.push({ method, params });
-        if (method === "thread/read" && params.includeTurns === false) return { thread: baseThread };
+        if (method === "thread/read" && params.includeTurns === false) {
+          return {
+            thread: {
+              ...baseThread,
+              path: opts.threadPath ?? baseThread.path,
+              status: { type: opts.getThreadStatus?.() ?? opts.threadStatus ?? baseThread.status.type },
+            },
+          };
+        }
         if (method === "thread/turns/list") {
           if (opts.failTurnsList) throw new Error("unknown method: thread/turns/list");
+          const desc = [...(opts.sourceTurns ?? turns)].reverse();
           if (params.itemsView === "summary") {
             return { data: desc.map((t) => ({ ...t, items: t.items.filter((i: any) => i.type === "userMessage" || i.type === "agentMessage") })) };
           }
@@ -1520,6 +1648,45 @@ describe("Codex native paged history", () => {
     expect(detail.history).toMatchObject({ totalItems: 10, pageSize: 2, hasMore: true, kind: "latest", nextCursor: "history.v1.8" });
   });
 
+  it("keeps a durable final answer visible before task_complete reaches native summary history", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "codex-finalizing-history-"));
+    temporaryDirectories.push(directory);
+    const path = join(directory, "rollout.jsonl");
+    const liveTurn = turn("live", 1);
+    liveTurn.status = "inProgress";
+    liveTurn.items = [liveTurn.items[0]];
+    await writeFile(path, [
+      JSON.stringify({ type: "event_msg", payload: { type: "task_started", turn_id: "live" } }),
+      JSON.stringify({
+        type: "response_item",
+        payload: {
+          type: "message",
+          id: "final-live",
+          role: "assistant",
+          content: [{ type: "output_text", text: "durable final" }],
+          phase: "final_answer",
+          internal_chat_message_metadata_passthrough: { turn_id: "live" },
+        },
+      }),
+      "",
+    ].join("\n"));
+    const requests: Array<{ method: string; params: any }> = [];
+    const adapter = new CodexRuntimeAdapter({
+      client: pagingClientFor(requests, {
+        sourceTurns: [liveTurn],
+        threadStatus: "active",
+        threadPath: path,
+      }) as never,
+    });
+
+    const detail = await adapter.getSessionPaged("cx-paged", { limit: 2, view: "core" });
+
+    expect(detail.status).toBe("idle");
+    expect(detail.messages.map((message) => message.content)).toEqual(["q-live", "durable final"]);
+    expect(detail.history).toMatchObject({ totalItems: 2, pageSize: 2, delivery: "core" });
+    expect(requests.filter((request) => request.params.itemsView === "full")).toHaveLength(0);
+  });
+
   it("keeps before-pages contiguous with the latest page", async () => {
     const requests: Array<{ method: string; params: any }> = [];
     const adapter = new CodexRuntimeAdapter({ client: pagingClientFor(requests) as never });
@@ -1529,6 +1696,179 @@ describe("Codex native paged history", () => {
     expect(older.messages.map((m) => (typeof m.content === "string" ? m.content : ""))).toEqual(["q-t4", "", "out-t4", "s-t4"]);
     expect(older.history?.pageSize).toBe(2);
     expect(older.history).toMatchObject({ totalItems: 10, pageSize: 2, nextCursor: "history.v1.6", newerCursor: "history.v1.8" });
+  });
+
+  it("loads core without hydration, then exposes trace results through lazy locators", async () => {
+    const requests: Array<{ method: string; params: any }> = [];
+    const adapter = new CodexRuntimeAdapter({ client: pagingClientFor(requests) as never });
+    const query = { before: "history.v1.8", limit: 2 };
+
+    const core = await adapter.getSessionPaged("cx-paged", { ...query, view: "core" });
+    expect(core.messages.map((message) => message.content)).toEqual(["q-t4", "s-t4"]);
+    expect(core.messages[0].presentation?.executionTrace).toEqual({ turnId: "t4" });
+    expect(requests.filter((request) => request.params.itemsView === "full")).toHaveLength(0);
+
+    const trace = await adapter.getSessionPaged("cx-paged", {
+      ...query,
+      view: "trace",
+      revision: core.history?.revision,
+    });
+    const toolMessage = trace.messages.find((message) => message.role === "tool");
+    expect(toolMessage).toMatchObject({
+      content: "",
+      toolCallId: "call-t4",
+      toolResultRef: {
+        turnId: "t4",
+        itemId: "call-t4",
+        revision: core.history?.revision,
+        byteSize: 6,
+      },
+    });
+    expect(JSON.stringify(trace)).not.toContain("out-t4");
+
+    await expect(adapter.getSessionToolResult("cx-paged", toolMessage!.toolResultRef!)).resolves.toMatchObject({
+      itemId: "call-t4",
+      content: "out-t4",
+      byteSize: 6,
+    });
+  });
+
+  it("hydrates only the selected turn for an on-demand execution trace", async () => {
+    const requests: Array<{ method: string; params: any }> = [];
+    const adapter = new CodexRuntimeAdapter({ client: pagingClientFor(requests) as never });
+    const core = await adapter.getSessionPaged("cx-paged", { limit: 10, view: "core" });
+
+    const trace = await adapter.getSessionPaged("cx-paged", {
+      view: "trace",
+      revision: core.history?.revision,
+      turnId: "t4",
+    });
+
+    expect(trace.messages.some((message) => message.role === "user")).toBe(false);
+    expect(trace.messages.some((message) => message.content === "s-t4")).toBe(false);
+    expect(trace.messages.find((message) => message.role === "tool")?.toolResultRef)
+      .toMatchObject({ turnId: "t4", itemId: "call-t4" });
+    expect(requests.filter((request) => request.params.itemsView === "full")).toHaveLength(1);
+  });
+
+  it("rejects an unknown on-demand trace turn", async () => {
+    const adapter = new CodexRuntimeAdapter({ client: pagingClientFor([]) as never });
+    const core = await adapter.getSessionPaged("cx-paged", { limit: 2, view: "core" });
+
+    await expect(adapter.getSessionPaged("cx-paged", {
+      view: "trace",
+      revision: core.history?.revision,
+      turnId: "missing",
+    })).rejects.toMatchObject({ code: "STALE_SESSION_ANCHOR" });
+  });
+
+  it("refreshes a cached running tail turn as its streamed text grows", async () => {
+    const requests: Array<{ method: string; params: any }> = [];
+    const liveTurns = [turn("live", 1)];
+    liveTurns[0].status = "inProgress";
+    (liveTurns[0].items.at(-1) as { text: string }).text = "partial";
+    const adapter = new CodexRuntimeAdapter({
+      client: pagingClientFor(requests, { sourceTurns: liveTurns, threadStatus: "active" }) as never,
+    });
+
+    const firstCore = await adapter.getSessionPaged("cx-paged", { limit: 2, view: "core" });
+    const firstTrace = await adapter.getSessionPaged("cx-paged", {
+      limit: 2,
+      view: "trace",
+      revision: firstCore.history?.revision,
+    });
+    expect(firstTrace.messages.at(-1)?.content).toBe("partial");
+
+    (liveTurns[0].items.at(-1) as { text: string }).text = "partial response keeps growing";
+    const secondCore = await adapter.getSessionPaged("cx-paged", { limit: 2, view: "core" });
+    const secondTrace = await adapter.getSessionPaged("cx-paged", {
+      limit: 2,
+      view: "trace",
+      revision: secondCore.history?.revision,
+    });
+
+    expect(secondTrace.messages.at(-1)?.content).toBe("partial response keeps growing");
+    expect(requests.filter((request) => request.params.itemsView === "full")).toHaveLength(2);
+  });
+
+  it("keeps visible running text when a later native snapshot temporarily contains only tools", async () => {
+    const requests: Array<{ method: string; params: any }> = [];
+    const liveTurns = [turn("live", 1)];
+    liveTurns[0].status = "inProgress";
+    (liveTurns[0].items.at(-1) as { text: string }).text = "visible progress";
+    const adapter = new CodexRuntimeAdapter({
+      client: pagingClientFor(requests, { sourceTurns: liveTurns, threadStatus: "active" }) as never,
+    });
+
+    const firstCore = await adapter.getSessionPaged("cx-paged", { limit: 2, view: "core" });
+    await adapter.getSessionPaged("cx-paged", {
+      limit: 2,
+      view: "trace",
+      revision: firstCore.history?.revision,
+    });
+    liveTurns[0].items = [
+      liveTurns[0].items[0],
+      { type: "commandExecution", id: "call-live", command: "pwd", cwd: "/repo", aggregatedOutput: "/repo" },
+    ];
+
+    const secondCore = await adapter.getSessionPaged("cx-paged", { limit: 2, view: "core" });
+    const secondTrace = await adapter.getSessionPaged("cx-paged", {
+      limit: 2,
+      view: "trace",
+      revision: secondCore.history?.revision,
+    });
+
+    expect(secondTrace.messages.some((message) => message.content === "visible progress")).toBe(true);
+    expect(secondTrace.messages.some((message) => message.toolCalls?.[0]?.id === "call-live")).toBe(true);
+  });
+
+  it("refreshes the tail once more after a running turn completes", async () => {
+    const requests: Array<{ method: string; params: any }> = [];
+    const liveTurns = [turn("live", 1)];
+    let threadStatus = "active";
+    liveTurns[0].status = "inProgress";
+    (liveTurns[0].items.at(-1) as { text: string }).text = "partial";
+    const adapter = new CodexRuntimeAdapter({
+      client: pagingClientFor(requests, {
+        sourceTurns: liveTurns,
+        getThreadStatus: () => threadStatus,
+      }) as never,
+    });
+
+    const runningCore = await adapter.getSessionPaged("cx-paged", { limit: 2, view: "core" });
+    await adapter.getSessionPaged("cx-paged", {
+      limit: 2,
+      view: "trace",
+      revision: runningCore.history?.revision,
+    });
+
+    threadStatus = "idle";
+    liveTurns[0].status = "completed";
+    (liveTurns[0].items.at(-1) as { text: string }).text = "final answer";
+    const completedCore = await adapter.getSessionPaged("cx-paged", { limit: 2, view: "core" });
+    const completedTrace = await adapter.getSessionPaged("cx-paged", {
+      limit: 2,
+      view: "trace",
+      revision: completedCore.history?.revision,
+    });
+
+    expect(completedTrace.messages.at(-1)?.content).toBe("final answer");
+    expect(requests.filter((request) => request.params.itemsView === "full")).toHaveLength(2);
+  });
+
+  it("rejects trace and lazy-result reads from a stale revision", async () => {
+    const adapter = new CodexRuntimeAdapter({ client: pagingClientFor([]) as never });
+
+    await expect(adapter.getSessionPaged("cx-paged", {
+      limit: 2,
+      view: "trace",
+      revision: "stale",
+    })).rejects.toMatchObject({ code: "STALE_SESSION_ANCHOR" });
+    await expect(adapter.getSessionToolResult("cx-paged", {
+      turnId: "t4",
+      itemId: "call-t4",
+      revision: "stale",
+    })).rejects.toMatchObject({ code: "STALE_SESSION_ANCHOR" });
   });
 
   it("serves anchors from the query index in the same ordinal space", async () => {

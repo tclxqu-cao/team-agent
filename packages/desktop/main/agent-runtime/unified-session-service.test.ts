@@ -566,6 +566,16 @@ describe("UnifiedSessionService", () => {
     expect(codex.abort).toHaveBeenCalledWith("");
   });
 
+  it("releases only Codex sessions through their owning adapter", async () => {
+    const codex = adapter("codex", [summary("codex", "cx-1", "/repo", "2026-01-02T00:00:00.000Z")]);
+    codex.release = vi.fn(async () => undefined);
+    const service = new UnifiedSessionService([codex], async () => []);
+
+    await service.release(encodeUnifiedSessionId("codex", "cx-1"));
+
+    expect(codex.release).toHaveBeenCalledWith("cx-1");
+  });
+
   it("passes runtime events through untouched and disposes every adapter", async () => {
     const events: AgentEvent[] = [
       { type: "text_chunk", text: "a" },
@@ -658,6 +668,24 @@ describe("UnifiedSessionService paged history routing", () => {
     const detail = await service.get(encodeUnifiedSessionId("codex", "cx-1"), { limit: 50 });
     expect(codex.getSession).toHaveBeenCalledWith("cx-1");
     expect(detail.messages).toEqual([]);
+  });
+
+  it("routes one lazy tool-result locator to the owning adapter", async () => {
+    const codex = pagedAdapter();
+    const result = {
+      turnId: "turn-1",
+      itemId: "call-1",
+      revision: "rev-1",
+      byteSize: 6,
+      content: "output",
+    };
+    (codex as unknown as Record<string, unknown>).getSessionToolResult = vi.fn(async () => result);
+    const service = new UnifiedSessionService([codex], async () => []);
+    const id = encodeUnifiedSessionId("codex", "cx-1");
+    const locator = { turnId: "turn-1", itemId: "call-1", revision: "rev-1" };
+
+    await expect(service.getSessionToolResult(id, locator)).resolves.toEqual(result);
+    expect(codex.getSessionToolResult).toHaveBeenCalledWith("cx-1", locator);
   });
 
   it("prefers the adapter query index and falls back when it returns null", async () => {

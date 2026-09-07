@@ -5,6 +5,7 @@ import { join } from "node:path";
 import {
   CodexRolloutActivityReader,
   codexRolloutActivityFromLine,
+  readCodexRolloutFinalizingAnswer,
 } from "./codex-rollout-activity.js";
 
 const temporaryDirectories: string[] = [];
@@ -115,5 +116,64 @@ describe("CodexRolloutActivityReader", () => {
     await expect(reader.read(path)).resolves.toBe("idle");
     await rm(path);
     await expect(reader.read(path)).resolves.toBe("unknown");
+  });
+});
+
+describe("readCodexRolloutFinalizingAnswer", () => {
+  const finalAnswer = (turnId = "turn-1", text = "durable final") => JSON.stringify({
+    type: "response_item",
+    payload: {
+      type: "message",
+      id: "message-1",
+      role: "assistant",
+      content: [{ type: "output_text", text }],
+      phase: "final_answer",
+      internal_chat_message_metadata_passthrough: { turn_id: turnId },
+    },
+  });
+
+  it("finds a durable final answer before task_complete arrives", async () => {
+    const path = await temporaryRollout([
+      event("task_started"),
+      finalAnswer(),
+      JSON.stringify({ type: "event_msg", payload: { type: "token_count" } }),
+      "",
+    ].join("\n"));
+
+    await expect(readCodexRolloutFinalizingAnswer(path)).resolves.toEqual({
+      turnId: "turn-1",
+      itemId: "message-1",
+      text: "durable final",
+    });
+  });
+
+  it("stops at terminal and newer-start boundaries", async () => {
+    const completed = await temporaryRollout(`${event("task_started")}\n${finalAnswer()}\n${event("task_complete")}\n`);
+    const restarted = await temporaryRollout(`${event("task_started")}\n${finalAnswer()}\n${event("task_started")}\n`);
+
+    await expect(readCodexRolloutFinalizingAnswer(completed)).resolves.toBeNull();
+    await expect(readCodexRolloutFinalizingAnswer(restarted)).resolves.toBeNull();
+  });
+
+  it("recognizes the item_completed AgentMessage shape", async () => {
+    const path = await temporaryRollout(`${event("task_started")}\n${JSON.stringify({
+      type: "event_msg",
+      payload: {
+        type: "item_completed",
+        turn_id: "turn-2",
+        item: {
+          type: "AgentMessage",
+          id: "message-2",
+          content: [{ type: "Text", text: "second final" }],
+          phase: "final_answer",
+        },
+      },
+    })}\n`);
+
+    await expect(readCodexRolloutFinalizingAnswer(path)).resolves.toEqual({
+      turnId: "turn-2",
+      itemId: "message-2",
+      text: "second final",
+    });
   });
 });

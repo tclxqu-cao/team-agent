@@ -63,15 +63,19 @@ It does not wait for full-turn hydration and does not include reasoning bodies, 
 
 ### Trace Enrichment
 
-After the core page is visible, the renderer requests trace metadata for the same session, history window, and revision. The Codex adapter hydrates only the turns intersecting that window and returns lightweight execution rows:
+The core page marks each Codex user turn with its stable native `turnId`. The renderer immediately inserts one collapsed execution disclosure after that user message, but it does not request trace data in the background. This keeps the initial history response limited to user messages, final answers, cursors, and trace locators.
+
+When the user expands one disclosure, the renderer requests trace metadata for that `turnId` and the core page revision. The Codex adapter hydrates only the selected turn and returns lightweight execution rows:
 
 - stable turn and item locators;
 - reasoning summaries needed by the collapsed row, capped at 4 KiB of UTF-8 text per item;
 - tool name, status, and an argument preview capped at 2 KiB of UTF-8 JSON per item;
 - tool-result availability and byte size, without the result body;
-- ordering metadata for merging the trace between the existing user and final-answer messages.
+- ordering metadata for rendering the trace inside the selected disclosure.
 
-The renderer merges enrichment only when session ID, window revision, and request generation still match. Switching sessions or receiving a newer history revision discards stale enrichment. Failure leaves the already visible core messages intact and exposes a retry for execution details without turning the whole session into `Load failed`.
+The renderer caches loaded trace data by session, revision, and turn for the mounted history view. Concurrent expansion requests for the same turn are deduplicated. Switching sessions or receiving a newer history revision discards stale enrichment. Failure leaves the already visible core messages intact and exposes a retry inside the disclosure without turning the whole session into `Load failed`.
+
+The existing page-wide `view=trace` behavior remains available as a compatibility path, but the renderer no longer invokes it automatically. A `view=trace&turnId=...` request validates the revision and native turn membership, hydrates only that turn, and omits its duplicate user/final-answer messages from the response.
 
 ### Tool Body On Demand
 
@@ -106,7 +110,9 @@ Focused automated coverage must prove:
 - A post-fork send retry reuses the created fork; a fork failure remains retryable without changing selection.
 - `SESSION_ALREADY_RUNNING` continues to queue and never enters fork recovery.
 - The initial native history page uses summary data without full-turn hydration and contains ordered user/final messages.
-- Trace enrichment is revision-scoped and stale responses are discarded.
+- Opening a Codex page performs only the core request and creates one stable disclosure per user turn.
+- Expanding one disclosure sends `view=trace`, `turnId`, and the core revision, and does not hydrate neighboring turns.
+- Trace enrichment is revision-scoped, deduplicated per turn, and stale responses are discarded.
 - all tool-result bodies are absent from core and trace responses, load on first expansion, deduplicate concurrent requests, and stay cached for the current revision.
 - unsupported or incompatible Codex pagination still falls back to readable legacy history.
 

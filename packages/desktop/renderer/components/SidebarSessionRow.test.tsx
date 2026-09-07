@@ -1,7 +1,10 @@
+import { readFileSync } from "node:fs";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import SidebarSessionRow from "./SidebarSessionRow";
+
+const appSource = readFileSync(new URL("../App.tsx", import.meta.url), "utf8");
 
 describe("SidebarSessionRow", () => {
   it("renders one compact line with the status before the title and an accessible lock", () => {
@@ -60,5 +63,10 @@ describe("SidebarSessionRow", () => {
     expect(child).toContain("lucide-trash2");
     expect(parent).toContain('aria-expanded="true"');
     expect(parent).toContain("sidebar-session-disclosure is-expanded");
+  });
+
+  it("does not label advisory Codex occupancy as read-only in sidebar mappings", () => {
+    expect(appSource.match(/occupiedExternally: (?:session|child)\.agentType !== "codex"/g))
+      .toHaveLength(3);
   });
 });

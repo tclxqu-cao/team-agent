@@ -5,6 +5,8 @@ import {
   type AgentEvent,
   type SessionHistoryQuery,
   type SessionQueryIndex,
+  type SessionToolResultBody,
+  type SessionToolResultRef,
 } from "@agent/core";
 import { decodeUnifiedSessionId } from "./session-id.js";
 import { AgentWorkspaceIndexService } from "./agent-workspace-index.js";
@@ -176,9 +178,14 @@ export class UnifiedSessionService {
     const associated = await this.getUnpaginated(id, shouldReuseSessionDetailCache(query));
     this.queryIndexCache.getOrCreate(id, associated.messages);
     if (!query) return associated;
+    const page = paginateSessionHistory(associated.messages, associated.events, query);
     return {
       ...associated,
-      ...paginateSessionHistory(associated.messages, associated.events, query),
+      ...page,
+      history: {
+        ...page.history,
+        ...(query.view ? { delivery: "legacy-full" as const } : {}),
+      },
     };
   }
 
@@ -212,6 +219,17 @@ export class UnifiedSessionService {
     if (native) return native;
     const detail = await this.getUnpaginated(id, true);
     return this.queryIndexCache.getOrCreate(id, detail.messages);
+  }
+
+  async getSessionToolResult(
+    id: string,
+    ref: Pick<SessionToolResultRef, "turnId" | "itemId" | "revision">,
+  ): Promise<SessionToolResultBody> {
+    const { adapter, nativeSessionId } = this.resolveAdapter(id);
+    if (!adapter.getSessionToolResult) {
+      throw new RuntimeSessionError("Session tool results are unavailable", "OPERATION_NOT_SUPPORTED");
+    }
+    return adapter.getSessionToolResult(nativeSessionId, ref);
   }
 
   async getQueryIndexNative(id: string): Promise<SessionQueryIndex | null> {
@@ -317,6 +335,18 @@ export class UnifiedSessionService {
       return;
     }
     await Promise.allSettled([...this.adapters.values()].map((adapter) => adapter.abort("")));
+  }
+
+  async release(id: string): Promise<void> {
+    const { adapter, nativeSessionId } = this.resolveAdapter(id);
+    if (adapter.agentType !== "codex" || !adapter.release) {
+      throw new RuntimeSessionError(
+        "Only Codex sessions can be released to the native client",
+        "OPERATION_NOT_SUPPORTED",
+      );
+    }
+    await adapter.release(nativeSessionId);
+    this.invalidate(id);
   }
 
   async steer(id: string, input: string): Promise<boolean> {

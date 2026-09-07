@@ -1,8 +1,12 @@
+import { Check, LoaderCircle, Unplug } from "lucide-react";
+
 interface ChatHeaderActionsProps {
   appearanceOpen: boolean;
   settingsOpen: boolean;
   hideToBackgroundTitle?: string;
+  codexReleaseState?: "idle" | "releasing" | "released";
   onHideToBackground: () => void;
+  onReleaseCodex?: () => void;
   onToggleAppearance: (anchor: DOMRect) => void;
   onOpenSettings: () => void;
 }
@@ -11,12 +15,35 @@ export default function ChatHeaderActions({
   appearanceOpen,
   settingsOpen,
   hideToBackgroundTitle = "隐藏到后台",
+  codexReleaseState = "idle",
   onHideToBackground,
+  onReleaseCodex,
   onToggleAppearance,
   onOpenSettings,
 }: ChatHeaderActionsProps) {
+  const releaseTitle = codexReleaseState === "releasing"
+    ? "正在释放 Codex 会话"
+    : codexReleaseState === "released"
+      ? "已释放，可在 Codex 桌面端重试"
+      : "交接到 Codex 桌面端";
   return (
     <div className="chat-header-actions">
+      {onReleaseCodex && (
+        <button
+          type="button"
+          onClick={onReleaseCodex}
+          title={releaseTitle}
+          aria-label={releaseTitle}
+          disabled={codexReleaseState !== "idle"}
+          className={`ui-icon-button chat-header-action chat-header-action--codex-release is-${codexReleaseState}`}
+        >
+          {codexReleaseState === "releasing"
+            ? <LoaderCircle size={15} className="spin" aria-hidden="true" />
+            : codexReleaseState === "released"
+              ? <Check size={15} aria-hidden="true" />
+              : <Unplug size={15} aria-hidden="true" />}
+        </button>
+      )}
       <button
         type="button"
         onClick={onHideToBackground}

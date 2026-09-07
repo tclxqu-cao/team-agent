@@ -26,7 +26,7 @@ export function getCustomerGoalCoordinator(): SessionGoalCoordinator {
           : { outcome: "completed" };
       },
       (sessionId) => {
-        if (activeGoalRuns.has(sessionId)) agentHost.abort();
+        if (activeGoalRuns.has(sessionId)) agentHost.abort(sessionId);
       },
     );
   }

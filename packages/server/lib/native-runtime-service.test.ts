@@ -39,9 +39,11 @@ class FakeRuntime implements NativeRuntimePort {
   listCalls: Array<string | undefined> = [];
   refreshCalls: Array<string | undefined> = [];
   deletedIds: string[] = [];
+  releasedIds: string[] = [];
   workspaceSessions: UnifiedSessionSummary[] = [];
 
   health = async (): Promise<RuntimeHealth[]> => [];
+  listModels = async () => [];
   listWorkspaces = async (agentType: Exclude<AgentType, "customer-agent">): Promise<WorkspacePage<AgentWorkspace>> => ({
     data: [{ agentType, workspaceId: "workspace", name: "Workspace", roots: ["/tmp"], order: 0, source: "native" }],
     nextCursor: null,
@@ -82,12 +84,27 @@ class FakeRuntime implements NativeRuntimePort {
     return { ...found, messages: [], events: [] };
   };
   getSessionWatchPath = async (id: string): Promise<string | null> => `/tmp/${id}.jsonl`;
+  getSessionToolResult = async (
+    _id: string,
+    ref: { turnId: string; itemId: string; revision: string },
+  ) => ({ ...ref, byteSize: 6, content: "output" });
+  steer = async (): Promise<boolean> => false;
   run = async function* (): AsyncGenerator<never> {};
   abort = async (): Promise<void> => {};
+  release = async (id: string): Promise<void> => { this.releasedIds.push(id); };
   answerQuestion = async (): Promise<boolean> => false;
 }
 
 describe("NativeRuntimeService", () => {
+  it("forwards an explicit Codex release to the native broker", async () => {
+    const runtime = new FakeRuntime();
+    const service = new NativeRuntimeService(runtime);
+
+    await service.release("runtime:codex:dGhyZWFkLTE");
+
+    expect(runtime.releasedIds).toEqual(["runtime:codex:dGhyZWFkLTE"]);
+  });
+
   it("keeps transcript watch paths internal while forwarding their lookup", async () => {
     const service = new NativeRuntimeService(new FakeRuntime());
 

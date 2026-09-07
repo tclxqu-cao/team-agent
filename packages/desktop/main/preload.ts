@@ -113,8 +113,10 @@ contextBridge.exposeInMainWorld("agentApi", {
   listAgentWorkspaceSessions: (agentType: string, workspaceId: string, query?: Record<string, unknown>) =>
     ipcRenderer.invoke("workspaces:listSessions", agentType, workspaceId, query),
   listChildSessions: (parentId: string) => ipcRenderer.invoke("sessions:listChildren", parentId),
-  getSession: (id: string, query?: { before?: string; after?: string; anchor?: string; limit?: number }) =>
+  getSession: (id: string, query?: { before?: string; after?: string; anchor?: string; limit?: number; view?: "core" | "trace"; revision?: string; turnId?: string }) =>
     ipcRenderer.invoke("sessions:get", id, query),
+  getSessionToolResult: (id: string, ref: { turnId: string; itemId: string; revision: string }) =>
+    ipcRenderer.invoke("sessions:getToolResult", id, ref),
   getSessionQueryIndex: (id: string) => ipcRenderer.invoke("sessions:getQueryIndex", id),
   setSessionPermissionMode: (id: string, mode: "request-approval" | "auto-approval" | "full-access") =>
     ipcRenderer.invoke("sessions:setPermissionMode", id, mode),
@@ -138,6 +140,7 @@ contextBridge.exposeInMainWorld("agentApi", {
   steerSessionMessage: (id: string, messageId: string) =>
     ipcRenderer.invoke("sessions:steerMessage", id, messageId),
   handoffSession: (id: string) => ipcRenderer.invoke("sessions:handoff", id),
+  releaseCodexSession: (id: string) => ipcRenderer.invoke("sessions:releaseCodex", id),
   createSession: (title: string, projectId?: string, agentType = "customer-agent", cwd?: string) =>
     ipcRenderer.invoke("sessions:create", title, projectId, agentType, cwd),
   forkSession: (id: string) => ipcRenderer.invoke("sessions:fork", id),

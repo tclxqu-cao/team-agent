@@ -5,6 +5,8 @@ import {
   paginateSessionHistory,
   StaleSessionAnchorError,
   type Message,
+  type SessionHistoryQuery,
+  type SessionHistoryView,
 } from "@agent/core";
 import { agentHost } from "../../agent-host";
 import {
@@ -24,12 +26,19 @@ export async function GET(
   const after = url.searchParams.get("after");
   const anchor = url.searchParams.get("anchor");
   const limit = url.searchParams.get("limit");
-  const historyQuery = before !== null || after !== null || anchor !== null || limit !== null
+  const view = url.searchParams.get("view");
+  const revision = url.searchParams.get("revision");
+  const turnId = url.searchParams.get("turnId");
+  const historyView: SessionHistoryView | undefined = view === "core" || view === "trace" ? view : undefined;
+  const historyQuery: SessionHistoryQuery | undefined = before !== null || after !== null || anchor !== null || limit !== null || historyView || revision || turnId
     ? {
         before: before || undefined,
         after: after || undefined,
         anchor: anchor || undefined,
         limit: parseHistoryLimit(limit),
+        view: historyView,
+        revision: revision || undefined,
+        turnId: turnId || undefined,
       }
     : undefined;
   if (isNativeSessionId(params.id)) {
@@ -52,15 +61,36 @@ export async function GET(
     return NextResponse.json({ error: "Session not found" }, { status: 404 });
   }
 
-  const rebuiltMessages = !session.messages?.length && Array.isArray(session.events) && session.events.length > 0
+  const recoverableRun = agentHost.getRecoverableRun(session);
+  const committedMessages = !session.messages?.length && !recoverableRun && Array.isArray(session.events) && session.events.length > 0
     ? rebuildMessagesFromEvents(session.events as Array<Record<string, unknown>>)
     : session.messages;
+  const currentRunMessages = recoverableRun
+    ? rebuildMessagesFromEvents(
+        session.events.slice(recoverableRun.eventStart) as Array<Record<string, unknown>>,
+        { runId: recoverableRun.runId, isStreaming: recoverableRun.running },
+      )
+    : [];
+  const rebuiltMessages = [...(committedMessages ?? []), ...currentRunMessages];
+  const effectiveStatus = recoverableRun
+    ? recoverableRun.running ? "active" : "failed"
+    : session.status;
+  const activeRun = recoverableRun
+    ? {
+        runId: recoverableRun.runId,
+        eventId: recoverableRun.eventId,
+        running: recoverableRun.running,
+      }
+    : undefined;
 
   try {
     const hydrated = historyQuery
       ? {
           ...session,
+          agentType: "customer-agent" as const,
+          status: effectiveStatus,
           permissionMode: normalizeToolPermissionMode(session.metadata.permissionMode),
+          ...(activeRun ? { activeRun } : {}),
           ...paginateSessionHistory(
             (rebuiltMessages ?? []) as Message[],
             session.events ?? [],
@@ -69,8 +99,11 @@ export async function GET(
         }
       : {
           ...session,
+          agentType: "customer-agent" as const,
+          status: effectiveStatus,
           messages: rebuiltMessages,
           permissionMode: normalizeToolPermissionMode(session.metadata.permissionMode),
+          ...(activeRun ? { activeRun } : {}),
         };
     return NextResponse.json(hydrated);
   } catch (error) {

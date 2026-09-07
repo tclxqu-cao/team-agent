@@ -130,6 +130,30 @@ describe("AgentHttpGateway", () => {
     }));
   });
 
+  it("resumes an active customer-agent stream from the session refresh cursor", async () => {
+    globalThis.EventSource = ObservableEventSource as unknown as typeof EventSource;
+    const http = {
+      get: vi.fn().mockResolvedValue({
+        status: "active",
+        activeRun: { runId: "ca-run-1", eventId: 7, running: true },
+        messages: [
+          { role: "user", content: "inspect" },
+          { role: "assistant", content: "", toolCalls: [{ id: "call-1", name: "lookup", arguments: {} }] },
+        ],
+        events: [],
+      }),
+    };
+    const gateway = new AgentHttpGateway(http as never, {} as never);
+
+    const session = await gateway.getSession("ca-session-1");
+
+    expect(session).toMatchObject({ status: "active" });
+    expect(ObservableEventSource.instances).toHaveLength(1);
+    expect(ObservableEventSource.instances[0].url).toBe(
+      "/api/agent/stream?sessionId=ca-session-1&afterEventId=7",
+    );
+  });
+
   it("continues an admitted native run when Safari loses the POST response", async () => {
     globalThis.EventSource = ObservableEventSource as unknown as typeof EventSource;
     const http = {
@@ -521,6 +545,18 @@ describe("AgentHttpGateway", () => {
     });
   });
 
+  it("releases a Codex session through its dedicated endpoint", async () => {
+    const http = { post: vi.fn().mockResolvedValue({ status: "released" }) };
+    const gateway = new AgentHttpGateway(http as never, {} as never);
+
+    await gateway.releaseCodexSession("runtime:codex:c291cmNl");
+
+    expect(http.post).toHaveBeenCalledWith(
+      "/api/sessions/runtime%3Acodex%3Ac291cmNl/release",
+      {},
+    );
+  });
+
   it("steers a durable queued message through one server operation", async () => {
     const state = { active: null, queued: [], history: [] };
     const http = { post: vi.fn().mockResolvedValue({ steered: true, state }) };
@@ -546,6 +582,34 @@ describe("AgentHttpGateway", () => {
 
     expect(http.get).toHaveBeenCalledWith(
       "/api/sessions/runtime%3Acodex%3Ac291cmNl?before=history.v1.50&limit=50",
+    );
+  });
+
+  it("serializes progressive history views and lazy tool-result locators", async () => {
+    const body = { turnId: "turn/1", itemId: "call 1", revision: "rev:1", byteSize: 6, content: "output" };
+    const http = { get: vi.fn().mockResolvedValue(body) };
+    const gateway = new AgentHttpGateway(http as never, {} as never);
+
+    await gateway.getSession("runtime:codex:c291cmNl", {
+      before: "history.v1.50",
+      limit: 50,
+      view: "trace",
+      revision: "rev:1",
+      turnId: "turn/1",
+    });
+    await expect(gateway.getSessionToolResult("runtime:codex:c291cmNl", {
+      turnId: "turn/1",
+      itemId: "call 1",
+      revision: "rev:1",
+    })).resolves.toEqual(body);
+
+    expect(http.get).toHaveBeenNthCalledWith(
+      1,
+      "/api/sessions/runtime%3Acodex%3Ac291cmNl?before=history.v1.50&limit=50&view=trace&revision=rev%3A1&turnId=turn%2F1",
+    );
+    expect(http.get).toHaveBeenNthCalledWith(
+      2,
+      "/api/sessions/runtime%3Acodex%3Ac291cmNl/tool-result?turnId=turn%2F1&itemId=call+1&revision=rev%3A1",
     );
   });
 

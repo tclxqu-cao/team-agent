@@ -4,8 +4,14 @@ import { describe, expect, it, vi } from "vitest";
 import type { UnifiedSessionSummary } from "../global";
 import {
   canForkOccupiedCodexSession,
+  clearOccupiedRecovery,
+  createOccupiedSessionRecovery,
+  findOccupiedRecovery,
   forkOccupiedCodexSession,
   isOccupiedSessionRecovery,
+  isOccupiedRecoveryVisible,
+  markOccupiedRecoveryForked,
+  storeOccupiedRecovery,
 } from "./occupied-session-fork";
 
 function summary(overrides: Partial<UnifiedSessionSummary> = {}): UnifiedSessionSummary {
@@ -27,17 +33,64 @@ function summary(overrides: Partial<UnifiedSessionSummary> = {}): UnifiedSession
 }
 
 describe("occupied Codex session fork recovery", () => {
-  it("allows only occupied Codex sessions or Codex sessions rejected as occupied", () => {
+  it("allows recovery only after the selected native session is rejected as occupied", () => {
     const sourceError = {
       sessionId: "runtime:codex:c291cmNl",
       code: "SESSION_OCCUPIED",
     };
-    expect(canForkOccupiedCodexSession(summary())).toBe(true);
-    expect(canForkOccupiedCodexSession(summary({ agentType: "opencode" }))).toBe(true);
+    expect(canForkOccupiedCodexSession(summary())).toBe(false);
+    expect(canForkOccupiedCodexSession(summary(), sourceError)).toBe(true);
+    expect(canForkOccupiedCodexSession(summary({ agentType: "opencode" }), sourceError)).toBe(true);
     expect(canForkOccupiedCodexSession(summary({ occupancy: "available" }), sourceError)).toBe(true);
     expect(canForkOccupiedCodexSession(summary({ agentType: "claude-code" }))).toBe(false);
     expect(canForkOccupiedCodexSession(summary({ occupancy: "available" }))).toBe(false);
     expect(canForkOccupiedCodexSession(undefined, sourceError)).toBe(false);
+  });
+
+  it("preserves the send payload and reuses one fork for retries", () => {
+    const recovery = createOccupiedSessionRecovery(
+      summary().id,
+      { content: "continue", images: ["image"], agentIds: ["agent-1"] },
+      "recovery-1",
+    );
+    const forked = markOccupiedRecoveryForked(recovery, "runtime:codex:Zm9yaw");
+
+    expect(forked).toMatchObject({
+      token: "recovery-1",
+      sourceSessionId: summary().id,
+      forkSessionId: "runtime:codex:Zm9yaw",
+      sendAttempted: true,
+      payload: { content: "continue", images: ["image"], agentIds: ["agent-1"] },
+    });
+    expect(markOccupiedRecoveryForked(forked, forked.forkSessionId!)).toBe(forked);
+    expect(isOccupiedRecoveryVisible(forked, forked.sourceSessionId)).toBe(true);
+    expect(isOccupiedRecoveryVisible(forked, forked.forkSessionId)).toBe(true);
+  });
+
+  it("keeps recoveries isolated by source and fork session", () => {
+    const first = createOccupiedSessionRecovery(
+      "runtime:codex:c291cmNl",
+      { content: "first" },
+      "recovery-1",
+    );
+    const second = createOccupiedSessionRecovery(
+      "runtime:codex:c2Vjb25k",
+      { content: "second" },
+      "recovery-2",
+    );
+    let recoveries = storeOccupiedRecovery({}, first);
+    recoveries = storeOccupiedRecovery(recoveries, second);
+
+    expect(findOccupiedRecovery(recoveries, first.sourceSessionId)).toBe(first);
+    expect(findOccupiedRecovery(recoveries, second.sourceSessionId)).toBe(second);
+
+    const forked = markOccupiedRecoveryForked(first, "runtime:codex:Zm9yaw");
+    recoveries = storeOccupiedRecovery(recoveries, forked);
+    expect(findOccupiedRecovery(recoveries, forked.forkSessionId)).toBe(forked);
+
+    recoveries = clearOccupiedRecovery(recoveries, forked.forkSessionId!);
+    expect(findOccupiedRecovery(recoveries, first.sourceSessionId)).toBeUndefined();
+    expect(findOccupiedRecovery(recoveries, second.sourceSessionId)).toBe(second);
   });
 
   it("does not carry the source recovery state into the selected fork", () => {
@@ -117,7 +170,12 @@ describe("occupied Codex session fork recovery", () => {
     expect(source).toContain("onSessionCreated(forked.id, forked)");
     expect(source).toContain("以副本继续");
     expect(source).toContain("正在创建…");
-    expect(source).toContain("setInput(occupiedDraft)");
+    expect(source).toContain("setInput(recoveryPayload.content)");
+    expect(source).toContain("pendingNativeSendPayloadRef.current.set")
+    expect(source).toContain("startRun(nextRecovery.payload, forked.id");
+    expect(source).toContain("existingRecovery ?? createOccupiedSessionRecovery");
+    expect(source).toContain("commitOccupiedRecovery(nextRecovery)");
+    expect(source).toContain('sessionSummary.agentType !== "codex"');
     expect(source).toContain("loadSessionWithRetry");
     expect(source).toContain("limit: SESSION_HISTORY_PAGE_SIZE");
     expect(source).toContain("setSessionReloadGeneration((generation) => generation + 1)");

@@ -18,9 +18,10 @@ vi.mock("../../lib/native-runtime-service", () => ({
 }));
 
 import { agentHost } from "./agent-host";
+import { POST as runAgent } from "./agent/run/route";
 import { POST as registerRemoteTools } from "./remote-tools/register/route";
 import { GET as listSessions, POST as createSession } from "./sessions/route";
-import { PATCH as updateSession } from "./sessions/[id]/route";
+import { GET as getSession, PATCH as updateSession } from "./sessions/[id]/route";
 
 class CapturingModelProvider implements IModelProvider {
   readonly providerId = "test";
@@ -37,6 +38,34 @@ class CapturingModelProvider implements IModelProvider {
 
   async countTokens(): Promise<number> { return 1; }
   supportsModel(): boolean { return true; }
+}
+
+class BlockingTool {
+  readonly name = "blocking_lookup";
+  readonly description = "Wait until the test releases the tool";
+  readonly parameters = { type: "object", properties: {} };
+  readonly schema = {
+    safeParse: (value: unknown) => ({ success: true as const, data: value }),
+  } as never;
+  readonly started: Promise<void>;
+  private signalStarted!: () => void;
+  private releaseTool!: () => void;
+  private readonly released: Promise<void>;
+
+  constructor() {
+    this.started = new Promise((resolve) => { this.signalStarted = resolve; });
+    this.released = new Promise((resolve) => { this.releaseTool = resolve; });
+  }
+
+  release(): void {
+    this.releaseTool();
+  }
+
+  async execute() {
+    this.signalStarted();
+    await this.released;
+    return { toolCallId: "", content: "lookup result" };
+  }
 }
 
 const kidEarthTool = {
@@ -288,6 +317,181 @@ describe("agentHost singleton", () => {
     expect(completedEvent?.durationMs).toEqual(expect.any(Number));
   });
 
+  it("restores the current customer-agent tool call while the tool is still running", async () => {
+    const provider = new CapturingModelProvider();
+    provider.eventBatches = [
+      [
+        { type: "tool_call", toolCall: { id: "blocking-call", name: "blocking_lookup", arguments: {} } },
+        { type: "text_done" },
+      ],
+      [{ type: "text_chunk", text: "Tool finished" }, { type: "text_done" }],
+    ];
+    const tool = new BlockingTool();
+    agentHost.setBuilder(new AgentBuilder()
+      .withModelProvider(provider)
+      .withSemanticSkillMatching(false)
+      .withTool(tool));
+    const session = await agentHost.createSession("active tool recovery test");
+
+    const running = agentHost.run("look it up", session.id);
+    await tool.started;
+
+    const response = await getSession(
+      new Request(`http://test/api/sessions/${session.id}`),
+      { params: { id: session.id } },
+    );
+    const active = await response.json();
+
+    expect(active).toMatchObject({
+      status: "active",
+      activeRun: {
+        eventId: expect.any(Number),
+        runId: expect.any(String),
+      },
+      messages: [
+        { role: "user", content: "look it up" },
+        {
+          role: "assistant",
+          toolCalls: [{ id: "blocking-call", name: "blocking_lookup", arguments: {} }],
+        },
+      ],
+    });
+
+    tool.release();
+    await running;
+  });
+
+  it("preserves chronological message order across customer-agent turns", async () => {
+    const provider = new CapturingModelProvider();
+    provider.eventBatches = [
+      [{ type: "text_chunk", text: "first answer" }, { type: "text_done" }],
+      [{ type: "text_chunk", text: "second answer" }, { type: "text_done" }],
+    ];
+    agentHost.setBuilder(new AgentBuilder()
+      .withModelProvider(provider)
+      .withSemanticSkillMatching(false));
+    const session = await agentHost.createSession("turn ordering test");
+
+    await agentHost.run("first question", session.id);
+    await agentHost.run("second question", session.id);
+
+    const stored = await agentHost.getSessionStore().get(session.id);
+    expect(stored?.messages).toEqual([
+      { role: "user", content: "first question" },
+      { role: "assistant", content: "first answer", presentation: { completionDurationMs: expect.any(Number) } },
+      { role: "user", content: "second question" },
+      { role: "assistant", content: "second answer", presentation: { completionDurationMs: expect.any(Number) } },
+    ]);
+  });
+
+  it("commits a stale interrupted run before starting the next customer-agent turn", async () => {
+    const provider = new CapturingModelProvider();
+    provider.eventBatches = [[
+      { type: "text_chunk", text: "new answer" },
+      { type: "text_done" },
+    ]];
+    agentHost.setBuilder(new AgentBuilder()
+      .withModelProvider(provider)
+      .withSemanticSkillMatching(false));
+    const session = await agentHost.createSession("stale run recovery test");
+    await agentHost.getSessionStore().addMessage(session.id, { role: "user", content: "old question" });
+    await agentHost.getSessionStore().addEvent(session.id, { type: "text_chunk", text: "old partial" });
+    await agentHost.getSessionStore().update(session.id, {
+      status: "active",
+      metadata: {
+        ...session.metadata,
+        customerAgentActiveRun: {
+          runId: "stale-run",
+          eventStart: 0,
+          startedAt: "2026-09-07T00:00:00.000Z",
+        },
+      },
+    });
+
+    await agentHost.run("new question", session.id);
+
+    await expect(agentHost.getSessionStore().get(session.id)).resolves.toMatchObject({
+      status: "completed",
+      messages: [
+        { role: "user", content: "old question" },
+        { role: "assistant", content: "old partial" },
+        { role: "user", content: "new question" },
+        { role: "assistant", content: "new answer" },
+      ],
+    });
+  });
+
+  it("rejects a duplicate customer-agent run without disturbing the active turn", async () => {
+    const provider = new CapturingModelProvider();
+    provider.eventBatches = [
+      [
+        { type: "tool_call", toolCall: { id: "blocking-call", name: "blocking_lookup", arguments: {} } },
+        { type: "text_done" },
+      ],
+      [{ type: "text_chunk", text: "original answer" }, { type: "text_done" }],
+    ];
+    const tool = new BlockingTool();
+    agentHost.setBuilder(new AgentBuilder()
+      .withModelProvider(provider)
+      .withSemanticSkillMatching(false)
+      .withTool(tool));
+    const session = await agentHost.createSession("duplicate run test");
+
+    const running = agentHost.run("original question", session.id);
+    await tool.started;
+    const duplicate = await runAgent(new Request("http://test/api/agent/run", {
+      method: "POST",
+      body: JSON.stringify({ input: "duplicate question", sessionId: session.id }),
+    }));
+
+    expect(duplicate.status).toBe(409);
+    await expect(duplicate.json()).resolves.toMatchObject({ code: "SESSION_ALREADY_RUNNING" });
+    expect(agentHost.isSessionRunning(session.id)).toBe(true);
+
+    tool.release();
+    await running;
+    await expect(agentHost.getSessionStore().get(session.id)).resolves.toMatchObject({
+      messages: [
+        { role: "user", content: "original question" },
+        expect.any(Object),
+        expect.any(Object),
+        { role: "assistant", content: "original answer" },
+      ],
+    });
+  });
+
+  it("commits the recoverable tool trace when a customer-agent run is aborted", async () => {
+    const provider = new CapturingModelProvider();
+    provider.eventBatches = [[
+      { type: "tool_call", toolCall: { id: "aborted-call", name: "blocking_lookup", arguments: {} } },
+      { type: "text_done" },
+    ]];
+    const tool = new BlockingTool();
+    agentHost.setBuilder(new AgentBuilder()
+      .withModelProvider(provider)
+      .withSemanticSkillMatching(false)
+      .withTool(tool));
+    const session = await agentHost.createSession("aborted run history test");
+
+    const running = agentHost.run("start then stop", session.id);
+    await tool.started;
+    agentHost.abort(session.id);
+    await running;
+    tool.release();
+
+    await expect(agentHost.getSessionStore().get(session.id)).resolves.toMatchObject({
+      status: "aborted",
+      metadata: expect.not.objectContaining({ customerAgentActiveRun: expect.anything() }),
+      messages: [
+        { role: "user", content: "start then stop" },
+        {
+          role: "assistant",
+          toolCalls: [{ id: "aborted-call", name: "blocking_lookup", arguments: {} }],
+        },
+      ],
+    });
+  });
+
   it("persists sent images as display attachments without replaying them on later turns", async () => {
     const provider = new CapturingModelProvider();
     provider.eventBatches = [
@@ -336,7 +540,9 @@ describe("agentHost singleton", () => {
     provider.eventBatches = [[
       { type: "error", message: "provider unavailable" },
     ]];
-    agentHost.setBuilder(new AgentBuilder().withModelProvider(provider));
+    agentHost.setBuilder(new AgentBuilder()
+      .withModelProvider(provider)
+      .withSemanticSkillMatching(false));
     const session = await agentHost.createSession("failed history test");
 
     await agentHost.run("This will fail", session.id);
@@ -344,6 +550,28 @@ describe("agentHost singleton", () => {
     await expect(agentHost.getSessionStore().get(session.id)).resolves.toMatchObject({
       status: "failed",
       messages: [{ role: "user", content: "This will fail" }],
+    });
+  });
+
+  it("persists partial assistant output when a customer-agent run fails", async () => {
+    const provider = new CapturingModelProvider();
+    provider.eventBatches = [[
+      { type: "text_chunk", text: "Partial answer" },
+      { type: "error", message: "provider unavailable" },
+    ]];
+    agentHost.setBuilder(new AgentBuilder()
+      .withModelProvider(provider)
+      .withSemanticSkillMatching(false));
+    const session = await agentHost.createSession("partial failure history test");
+
+    await agentHost.run("This partly fails", session.id);
+
+    await expect(agentHost.getSessionStore().get(session.id)).resolves.toMatchObject({
+      status: "failed",
+      messages: [
+        { role: "user", content: "This partly fails" },
+        { role: "assistant", content: "Partial answer" },
+      ],
     });
   });
 

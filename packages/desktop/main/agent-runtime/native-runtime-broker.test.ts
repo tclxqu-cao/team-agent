@@ -76,12 +76,14 @@ class FakeNativeRuntime {
   readonly restoredDrafts: UnifiedSessionSummary[] = [];
   readonly archivedSessionIds: string[] = [];
   readonly invalidatedSessionIds: string[] = [];
+  readonly releasedSessionIds: string[] = [];
   archiveError: Error | null = null;
   readonly workspaceSessionQueries: WorkspaceSessionQuery[] = [];
   workspaceSessions: UnifiedSessionSummary[] = [];
   steerResult = true;
   readonly steeredInputs: Array<{ id: string; input: string }> = [];
   readonly getUnpaginatedCachePreferences: boolean[] = [];
+  readonly toolResultRequests: Array<{ id: string; turnId: string; itemId: string; revision: string }> = [];
 
   health = async (): Promise<RuntimeHealth[]> => [{ agentType: "codex", available: true, label: "Codex" }];
   list = async (): Promise<UnifiedSessionSummary[]> => this.listResult ?? [summary(this.occupancy, this.status)];
@@ -123,6 +125,7 @@ class FakeNativeRuntime {
     return this.steerResult;
   };
   abort = async (): Promise<void> => { this.resolveRun?.(); };
+  release = async (id: string): Promise<void> => { this.releasedSessionIds.push(id); };
   dispose = async (): Promise<void> => { this.resolveRun?.(); };
   get = async (): Promise<UnifiedSessionDetail> => ({
     ...summary(this.occupancy, this.status),
@@ -132,6 +135,13 @@ class FakeNativeRuntime {
   getUnpaginated = async (_id: string, preferCache = false): Promise<UnifiedSessionDetail> => {
     this.getUnpaginatedCachePreferences.push(preferCache);
     return this.get();
+  };
+  getSessionToolResult = async (
+    id: string,
+    ref: { turnId: string; itemId: string; revision: string },
+  ) => {
+    this.toolResultRequests.push({ id, ...ref });
+    return { ...ref, byteSize: 6, content: "output" };
   };
 
   async *run(
@@ -211,6 +221,23 @@ afterEach(async () => {
 });
 
 describe("NativeRuntimeBrokerHost", () => {
+  it("stops an active Codex turn before releasing it to the native client", async () => {
+    const runtime = new FakeNativeRuntime();
+    const host = new NativeRuntimeBrokerHost(await directory(), runtime as unknown as UnifiedSessionService);
+    try {
+      await host.startRun(sessionId, "mobile run");
+      await waitFor(() => expect(host.snapshot(sessionId).events).toHaveLength(1));
+
+      await host.release(sessionId);
+
+      expect(runtime.releasedSessionIds).toEqual([sessionId]);
+      expect(host.snapshot(sessionId).controller).toBeNull();
+      expect(host.snapshot(sessionId).events.some(({ event }) => event.type === "done")).toBe(true);
+    } finally {
+      await host.stop();
+    }
+  });
+
   it("keeps completed-turn duration after broker restart and event pruning", async () => {
     const path = await directory();
     let now = 1_000;
@@ -1571,6 +1598,10 @@ describe("NativeRuntimeBrokerHost", () => {
 
   it("surfaces a failed codex takeover as an occupied terminal without auto-forking", async () => {
     const runtime = new FakeNativeRuntime();
+    runtime.messages = [
+      { role: "user", content: "previous question" },
+      { role: "assistant", content: "previous answer" },
+    ];
     runtime.throwSessionOccupiedOn.add(sessionId);
     runtime.immediateTerminal = true;
     const host = new NativeRuntimeBrokerHost(await directory(), runtime as unknown as UnifiedSessionService);
@@ -1588,6 +1619,9 @@ describe("NativeRuntimeBrokerHost", () => {
       // The failed takeover leaves an authoritative external lock on the source.
       const [source] = await host.list();
       expect(source.occupancy).toBe("owned-externally");
+      // A rejected turn never reached Codex and must not appear as an
+      // unanswered user message while the terminal run is retained.
+      expect((await host.get(sessionId)).messages).toEqual(runtime.messages);
     } finally {
       await host.stop();
     }
@@ -1658,6 +1692,42 @@ describe("NativeRuntimeBrokerHost", () => {
       await waitFor(() => expect(runtime.runOptions).toHaveLength(1));
       await expect(client.startRun(sessionId, "duplicate")).rejects.toMatchObject({ code: "SESSION_ALREADY_RUNNING" });
       expect(runtime.runOptions).toHaveLength(1);
+    } finally {
+      await host.stop();
+    }
+  });
+
+  it("carries progressive history queries and lazy result locators over the socket", async () => {
+    const runtime = new FakeNativeRuntime();
+    let pagedQuery: unknown;
+    (runtime as unknown as Record<string, unknown>).getPagedDetail = async (_id: string, query: unknown) => {
+      pagedQuery = query;
+      return {
+        ...summary(),
+        messages: [],
+        events: [],
+        history: { nextCursor: null, hasMore: false, pageSize: 0, totalItems: 0, revision: "rev-1" },
+      };
+    };
+    const path = await directory();
+    const host = new NativeRuntimeBrokerHost(path, runtime as unknown as UnifiedSessionService);
+    await host.start();
+    try {
+      const client = new NativeRuntimeBrokerClient({ directory: path });
+      await client.get(sessionId, { limit: 50, view: "trace", revision: "rev-1", turnId: "turn-1" });
+      await expect(client.getSessionToolResult(sessionId, {
+        turnId: "turn-1",
+        itemId: "call-1",
+        revision: "rev-1",
+      })).resolves.toMatchObject({ content: "output", byteSize: 6 });
+
+      expect(runtime.toolResultRequests).toEqual([{
+        id: sessionId,
+        turnId: "turn-1",
+        itemId: "call-1",
+        revision: "rev-1",
+      }]);
+      expect(pagedQuery).toEqual({ limit: 50, view: "trace", revision: "rev-1", turnId: "turn-1" });
     } finally {
       await host.stop();
     }
@@ -1770,6 +1840,41 @@ describe("NativeRuntimeBrokerHost native paged get", () => {
   const pagedSummary = () => ({
     ...summary("available", "idle"),
     history: { nextCursor: null, hasMore: false, pageSize: 2, totalItems: 2, olderCursor: null, newerCursor: null as string | null, kind: "latest" as const },
+  });
+
+  it("omits an occupied rejection from a retained native tail page", async () => {
+    const path = await directory();
+    const runtime = new FakeNativeRuntime();
+    runtime.throwSessionOccupiedOn.add(sessionId);
+    const host = new NativeRuntimeBrokerHost(path, runtime as unknown as UnifiedSessionService);
+    try {
+      await host.startRun(sessionId, "rejected input");
+      await waitFor(() => {
+        expect(host.snapshot(sessionId).events).toEqual(expect.arrayContaining([
+          expect.objectContaining({
+            event: expect.objectContaining({ type: "error", code: "SESSION_OCCUPIED" }),
+          }),
+        ]));
+      });
+
+      (runtime as unknown as Record<string, unknown>).getPagedDetail = async () => ({
+        ...pagedSummary(),
+        messages: [
+          { role: "user", content: "previous question" },
+          { role: "assistant", content: "previous answer" },
+        ],
+        events: [],
+      });
+      const detail = await host.get(sessionId, { limit: 50, view: "core" });
+
+      expect(detail.messages.map((message) => message.content)).toEqual([
+        "previous question",
+        "previous answer",
+      ]);
+      expect(detail.messages.some((message) => message.content === "rejected input")).toBe(false);
+    } finally {
+      await host.stop();
+    }
   });
 
   it("merges the retained run into a tail-inclusive native page without duplication", async () => {

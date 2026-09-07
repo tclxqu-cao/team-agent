@@ -57,6 +57,40 @@ export class ProjectWorkingDirectoryError extends Error {
   }
 }
 
+const ACTIVE_RUN_METADATA_KEY = "customerAgentActiveRun";
+
+interface CustomerAgentRunMarker {
+  runId: string;
+  eventStart: number;
+  startedAt: string;
+}
+
+interface ActiveCustomerAgentRun {
+  runId: string;
+  agent: IAgentLoop | null;
+}
+
+export class CustomerAgentRunConflictError extends Error {
+  readonly code = "SESSION_ALREADY_RUNNING";
+
+  constructor(readonly sessionId: string) {
+    super(`Customer Agent session is already running: ${sessionId}`);
+    this.name = "CustomerAgentRunConflictError";
+  }
+}
+
+function readRunMarker(metadata: Record<string, unknown>): CustomerAgentRunMarker | null {
+  const value = metadata[ACTIVE_RUN_METADATA_KEY];
+  if (!value || typeof value !== "object") return null;
+  const marker = value as Partial<CustomerAgentRunMarker>;
+  return typeof marker.runId === "string"
+    && Number.isSafeInteger(marker.eventStart)
+    && (marker.eventStart ?? -1) >= 0
+    && typeof marker.startedAt === "string"
+    ? marker as CustomerAgentRunMarker
+    : null;
+}
+
 /** Singleton agent host shared across API routes */
 class AgentHost {
   private readonly baseDir = getServerBaseDir();
@@ -66,9 +100,7 @@ class AgentHost {
   private readonly projectStore = new SQLiteProjectStore(this.baseDir);
   private readonly remoteToolStore = new SQLiteRemoteToolStore(getDatabase(this.baseDir).db);
   private readonly defaultRemoteToolsProjectId = process.env.AGENT_PROJECT_ID ?? "default";
-  private activeRun: AsyncIterable<AgentEvent> | null = null;
-  private activeAgent: IAgentLoop | null = null;
-  private activeRunSessionId: string | null = null;
+  private readonly activeRuns = new Map<string, ActiveCustomerAgentRun>();
   private subscribers = new Map<string, Set<(event: AgentEvent, id: number) => void>>();
   /** events of the current run per session — replayed to late/reconnecting subscribers */
   private recentEvents = new Map<string, { id: number; event: AgentEvent }[]>();
@@ -79,6 +111,7 @@ class AgentHost {
       resolve: (response: AskUserResponse) => void;
       reject: (err: Error) => void;
       timer: ReturnType<typeof setTimeout>;
+      sessionId: string;
     }
   >();
   private readonly toolPermissionGate: ToolPermissionGate;
@@ -135,11 +168,33 @@ class AgentHost {
   }
 
   isSessionRunning(sessionId: string): boolean {
-    return this.activeRunSessionId === sessionId;
+    return this.activeRuns.has(sessionId);
   }
 
   hasActiveRun(): boolean {
-    return this.activeRunSessionId !== null;
+    return this.activeRuns.size > 0;
+  }
+
+  getRecoverableRun(session: Session): {
+    runId: string;
+    eventStart: number;
+    eventId: number;
+    running: boolean;
+  } | null {
+    const marker = readRunMarker(session.metadata);
+    if (!marker) return null;
+    const active = this.activeRuns.get(session.id);
+    return {
+      runId: marker.runId,
+      eventStart: marker.eventStart,
+      eventId: active?.runId === marker.runId
+        ? Math.max(
+            this.getLatestEventId(session.id),
+            session.events.length - marker.eventStart,
+          )
+        : Math.max(0, session.events.length - marker.eventStart),
+      running: active?.runId === marker.runId,
+    };
   }
 
   getProjectStore() {
@@ -237,15 +292,26 @@ class AgentHost {
     // already failed, or EventSource auto-reconnect mid-run). Subscribers pass
     // the last SSE id they saw; only newer buffered events are flushed.
     const buffer = this.recentEvents.get(sessionId) ?? [];
+    let deliveredEventId = lastEventId;
     for (const entry of buffer) {
-      if (entry.id <= lastEventId) continue;
-      try { fn(entry.event, entry.id); } catch { /* ignore */ }
+      if (entry.id <= deliveredEventId) continue;
+      try {
+        fn(entry.event, entry.id);
+        deliveredEventId = entry.id;
+      } catch { /* ignore */ }
     }
+    const subscriber = (event: AgentEvent, id: number) => {
+      if (id <= deliveredEventId) return;
+      try {
+        fn(event, id);
+        deliveredEventId = id;
+      } catch { /* ignore */ }
+    };
     const subscribers = this.subscribers.get(sessionId) ?? new Set<(event: AgentEvent, id: number) => void>();
-    subscribers.add(fn);
+    subscribers.add(subscriber);
     this.subscribers.set(sessionId, subscribers);
     return () => {
-      subscribers.delete(fn);
+      subscribers.delete(subscriber);
       if (subscribers.size === 0) this.subscribers.delete(sessionId);
     };
   }
@@ -350,16 +416,60 @@ class AgentHost {
     return messages;
   }
 
+  startRun(input: string, sessionId: string, images?: string[]): {
+    runId: string;
+    completion: Promise<void>;
+  } {
+    if (this.activeRuns.has(sessionId)) {
+      throw new CustomerAgentRunConflictError(sessionId);
+    }
+
+    const runId = crypto.randomUUID();
+    this.activeRuns.set(sessionId, { runId, agent: null });
+    const completion = this.executeRun(input, sessionId, runId, images).finally(() => {
+      if (this.activeRuns.get(sessionId)?.runId === runId) {
+        this.activeRuns.delete(sessionId);
+      }
+    });
+    return { runId, completion };
+  }
+
   async run(input: string, sessionId: string, images?: string[]): Promise<void> {
+    await this.startRun(input, sessionId, images).completion;
+  }
+
+  private async executeRun(
+    input: string,
+    sessionId: string,
+    runId: string,
+    images?: string[],
+  ): Promise<void> {
     const runStartedAt = performance.now();
-    const session = await this.sessionStore.get(sessionId);
+    let session = await this.sessionStore.get(sessionId);
+    if (!session) throw new Error(`Session not found: ${sessionId}`);
+    const staleMarker = readRunMarker(session.metadata);
+    if (staleMarker && staleMarker.runId !== runId) {
+      await this.commitRun(sessionId, staleMarker, "failed");
+      session = await this.sessionStore.get(sessionId);
+      if (!session) throw new Error(`Session not found: ${sessionId}`);
+    }
     const runWorkingDirectory = await this.resolveProjectWorkingDirectory(session?.projectId);
     await this.sessionStore.consumePendingAutoTitle(sessionId, input);
+    session = await this.sessionStore.get(sessionId);
+    if (!session) throw new Error(`Session not found: ${sessionId}`);
+    const marker: CustomerAgentRunMarker = {
+      runId,
+      eventStart: session.events.length,
+      startedAt: new Date().toISOString(),
+    };
     const presentation = sentImagePresentation(images);
-    await this.sessionStore.addMessage(sessionId, {
+    await this.appendMessagesAndUpdate(sessionId, [{
       role: "user",
       content: input,
       ...(presentation ? { presentation } : {}),
+    }], {
+      status: "active",
+      metadata: { ...session.metadata, [ACTIVE_RUN_METADATA_KEY]: marker },
     });
     // a fresh run restarts the event sequence; late subscribers replay only it
     this.eventCounters.set(sessionId, 0);
@@ -380,7 +490,10 @@ class AgentHost {
         type: "error",
         message: err instanceof Error ? err.message : "Failed to build agent",
       } as AgentEvent;
-      try { await this.sessionStore.addEvent(sessionId, errorEvent); } catch {}
+      try {
+        await this.sessionStore.addEvent(sessionId, errorEvent);
+        await this.commitRun(sessionId, marker, "failed");
+      } catch {}
       this.emit(sessionId, errorEvent);
       throw err;
     } finally {
@@ -389,13 +502,15 @@ class AgentHost {
         .withRemoteToolStore(this.remoteToolStore, this.defaultRemoteToolsProjectId);
     }
 
-    this.activeAgent = agent;
-    this.activeRunSessionId = sessionId;
-    this.activeRun = agent.run(input, sessionId, images);
+    const active = this.activeRuns.get(sessionId);
+    if (!active || active.runId !== runId) return;
+    active.agent = agent;
+    const activeRun = agent.run(input, sessionId, images);
     let runFailed = false;
+    let terminalCommitted = false;
 
     try {
-      for await (const event of this.activeRun) {
+      for await (const event of activeRun) {
         const emittedEvent: AgentEvent = event.type === "done" && !runFailed
           ? {
               ...event,
@@ -406,16 +521,18 @@ class AgentHost {
 
         if (emittedEvent.type === "error") {
           runFailed = true;
-          await this.sessionStore.update(sessionId, { status: "failed" });
-        } else if (emittedEvent.type === "done" && !runFailed) {
-          if (emittedEvent.finalText.trim()) {
-            await this.sessionStore.addMessage(sessionId, {
-              role: "assistant",
-              content: emittedEvent.finalText,
-              presentation: { completionDurationMs: emittedEvent.durationMs },
-            });
+          if (!terminalCommitted) {
+            await this.commitRun(sessionId, marker, "failed");
+            terminalCommitted = true;
           }
-          await this.sessionStore.update(sessionId, { status: "completed" });
+        } else if (emittedEvent.type === "turn_aborted") {
+          if (!terminalCommitted) {
+            await this.commitRun(sessionId, marker, "aborted");
+            terminalCommitted = true;
+          }
+        } else if (emittedEvent.type === "done" && !terminalCommitted) {
+          await this.commitRun(sessionId, marker, runFailed ? "failed" : "completed");
+          terminalCommitted = true;
         }
 
         this.emit(sessionId, emittedEvent);
@@ -430,55 +547,105 @@ class AgentHost {
       } as AgentEvent;
       try {
         await this.sessionStore.addEvent(sessionId, errorEvent);
-        await this.sessionStore.update(sessionId, { status: "failed" });
+        if (!terminalCommitted) {
+          await this.commitRun(sessionId, marker, "failed");
+          terminalCommitted = true;
+        }
       } catch {}
       this.emit(sessionId, errorEvent);
-    } finally {
-      if (this.activeRunSessionId === sessionId) {
-        this.activeAgent = null;
-        this.activeRunSessionId = null;
-      }
-      this.activeRun = null;
     }
 
-    // Persist a stable SDK-facing message projection from the recorded events
-    try {
-      const stored = await this.sessionStore.get(sessionId);
-      const userMessages = (stored?.messages ?? []).filter((message) => message.role === "user");
-      const projected = this.projectMessagesFromEvents(stored?.events ?? []);
-      await this.sessionStore.replaceMessages(sessionId, [...userMessages, ...projected]);
-    } catch {
-      // ignore persistence errors
+    if (!terminalCommitted) {
+      const errorEvent = { type: "error", message: "Agent run ended without a terminal event" } as AgentEvent;
+      try {
+        await this.sessionStore.addEvent(sessionId, errorEvent);
+        await this.commitRun(sessionId, marker, "failed");
+      } catch {}
+      this.emit(sessionId, errorEvent);
     }
   }
 
+  private async commitRun(
+    sessionId: string,
+    marker: CustomerAgentRunMarker,
+    status: Session["status"],
+  ): Promise<void> {
+    const stored = await this.sessionStore.get(sessionId);
+    if (!stored) return;
+    const currentMarker = readRunMarker(stored.metadata);
+    if (!currentMarker || currentMarker.runId !== marker.runId) return;
+
+    const metadata = { ...stored.metadata };
+    delete metadata[ACTIVE_RUN_METADATA_KEY];
+    const projected = this.projectMessagesFromEvents(stored.events.slice(marker.eventStart));
+    await this.appendMessagesAndUpdate(sessionId, projected, { status, metadata });
+  }
+
+  private async appendMessagesAndUpdate(
+    sessionId: string,
+    messages: Message[],
+    update: Pick<Partial<Session>, "status" | "metadata">,
+  ): Promise<void> {
+    const database = getDatabase(this.baseDir).db;
+    const insert = database.prepare(
+      "INSERT INTO messages (session_id, role, content, tool_calls, tool_call_id, name, presentation, timestamp) VALUES (?,?,?,?,?,?,?,?)",
+    );
+    const transaction = database.transaction(() => {
+      const row = database.prepare("SELECT status, metadata FROM sessions WHERE id = ?").get(sessionId) as
+        | { status: Session["status"]; metadata: string }
+        | undefined;
+      if (!row) throw new Error(`Session not found: ${sessionId}`);
+
+      const timestamp = Date.now();
+      messages.forEach((message, index) => {
+        insert.run(
+          sessionId,
+          message.role,
+          message.content ?? "",
+          JSON.stringify(message.toolCalls ?? []),
+          message.toolCallId ?? null,
+          message.name ?? null,
+          message.presentation ? JSON.stringify(message.presentation) : null,
+          timestamp + index,
+        );
+      });
+      database.prepare("UPDATE sessions SET status = ?, updated = ?, metadata = ? WHERE id = ?").run(
+        update.status ?? row.status,
+        new Date().toISOString(),
+        JSON.stringify(update.metadata ?? JSON.parse(row.metadata)),
+        sessionId,
+      );
+    });
+    transaction();
+  }
+
   /** Create a pending question and emit ask_user event to SSE subscribers */
-  private createQuestion(
+  private async createQuestion(
     request: AskUserRequest,
     sessionId: string,
   ): Promise<AskUserResponse> {
     const questionId = crypto.randomUUID();
-    this.emit(
-      sessionId,
-      {
-        type: "ask_user" as any,
-        ...({
-          questionId,
-          question: request.question,
-          options: request.options,
-          multiSelect: request.multiSelect,
-        } as any),
-      } as AgentEvent,
-    );
-    return new Promise<AskUserResponse>((resolve, reject) => {
+    const event = {
+      type: "ask_user" as any,
+      ...({
+        questionId,
+        question: request.question,
+        options: request.options,
+        multiSelect: request.multiSelect,
+      } as any),
+    } as AgentEvent;
+    const response = new Promise<AskUserResponse>((resolve, reject) => {
       const timer = setTimeout(() => {
         if (this.pendingQuestions.has(questionId)) {
           this.pendingQuestions.delete(questionId);
           reject(new Error("Question timed out after 5 minutes"));
         }
       }, 5 * 60 * 1000);
-      this.pendingQuestions.set(questionId, { resolve, reject, timer });
+      this.pendingQuestions.set(questionId, { resolve, reject, timer, sessionId });
     });
+    await this.sessionStore.addEvent(sessionId, event);
+    this.emit(sessionId, event);
+    return response;
   }
 
   /** Resolve a pending question — called from /api/agent/answer */
@@ -507,16 +674,18 @@ class AgentHost {
       content: input,
       name: "__steer__",
     } as Message);
-    if (this.activeRunSessionId === sessionId && this.activeAgent) {
+    if (this.activeRuns.get(sessionId)?.agent) {
       this.emit(sessionId, { type: "thinking", message: `User added: ${input.slice(0, 60)}` } as AgentEvent);
       return true;
     }
     return false;
   }
 
-  abort(): void {
-    this.activeAgent?.abort();
+  abort(sessionId?: string): void {
+    if (sessionId) this.activeRuns.get(sessionId)?.agent?.abort();
+    else for (const run of this.activeRuns.values()) run.agent?.abort();
     for (const [questionId, pending] of this.pendingQuestions) {
+      if (sessionId && pending.sessionId !== sessionId) continue;
       clearTimeout(pending.timer);
       pending.reject(new Error("Agent aborted"));
       this.pendingQuestions.delete(questionId);

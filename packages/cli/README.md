@@ -20,20 +20,20 @@ npx agentroam@preview
 Or install from tarball:
 
 ```bash
-npm install ./agentroam-cloudflared-darwin-arm64-0.2.0-preview.13.tgz \
-  ./agentroam-runtime-darwin-arm64-0.2.0-preview.13.tgz \
-  ./agentroam-tui-darwin-arm64-0.2.0-preview.13.tgz \
-  ./agentroam-0.2.0-preview.13.tgz
+npm install ./agentroam-cloudflared-darwin-arm64-0.2.0-preview.14.tgz \
+  ./agentroam-runtime-darwin-arm64-0.2.0-preview.14.tgz \
+  ./agentroam-tui-darwin-arm64-0.2.0-preview.14.tgz \
+  ./agentroam-0.2.0-preview.14.tgz
 npx agentroam
 ```
 
 Windows PowerShell:
 
 ```powershell
-npm install ./agentroam-cloudflared-win32-x64-0.2.0-preview.13.tgz `
-  ./agentroam-runtime-win32-x64-0.2.0-preview.13.tgz `
-  ./caoqu-agentroam-tui-win32-x64-0.2.0-preview.13.tgz `
-  ./agentroam-0.2.0-preview.13.tgz
+npm install ./agentroam-cloudflared-win32-x64-0.2.0-preview.14.tgz `
+  ./agentroam-runtime-win32-x64-0.2.0-preview.14.tgz `
+  ./caoqu-agentroam-tui-win32-x64-0.2.0-preview.14.tgz `
+  ./agentroam-0.2.0-preview.14.tgz
 npx agentroam
 ```
 

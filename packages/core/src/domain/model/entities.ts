@@ -1,6 +1,7 @@
 // ── Model Domain: Provider abstraction ──
 
 import type { ReasoningSummarySection } from '../agent/entities.js';
+import type { SessionToolResultRef } from '../session/entities.js';
 
 export interface Message {
   role: "system" | "user" | "assistant" | "tool";
@@ -14,6 +15,8 @@ export interface Message {
   name?: string;
   toolCallId?: string;
   toolCalls?: ToolCall[];
+  /** Revision-scoped pointer to a native tool result loaded only on expansion. */
+  toolResultRef?: SessionToolResultRef;
 }
 
 export interface NativeSubagentActivity {
@@ -42,6 +45,8 @@ export interface MessagePresentation {
   rawContent?: string;
   attachments?: MessageAttachment[];
   reasoning?: ReasoningSummarySection[];
+  /** Native Codex turn owning the execution details shown after this message. */
+  executionTrace?: { turnId: string };
   /** Authoritative wall-clock duration for a successfully completed turn. */
   completionDurationMs?: number;
 }

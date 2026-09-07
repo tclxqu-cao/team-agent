@@ -25,6 +25,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ status: "aborted" });
   }
 
-  agentHost.abort();
+  agentHost.abort(sessionId);
   return NextResponse.json({ status: "aborted" });
 }

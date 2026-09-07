@@ -30,6 +30,8 @@ import {
   type SessionMessagePayload,
   type SessionHistoryQuery,
   type SessionQueryIndex,
+  type SessionToolResultBody,
+  type SessionToolResultRef,
   type ToolPermissionMode,
 } from "@agent/core";
 import { AsyncEventQueue } from "./async-event-queue.js";
@@ -78,6 +80,7 @@ const BROKER_SOCKET_NAME = "native-runtime.sock";
 const EXTERNAL_OBSERVATION_DEBOUNCE_MS = 5_000;
 const TERMINAL_RETENTION_MS = 10 * 60_000;
 const ABORT_FALLBACK_MS = 3_000;
+const RELEASE_SETTLE_TIMEOUT_MS = ABORT_FALLBACK_MS + 1_000;
 
 type NativeAgentType = Exclude<AgentType, "customer-agent">;
 export type NativeRuntimeController = "web" | "desktop";
@@ -1351,6 +1354,14 @@ export class NativeRuntimeBrokerHost {
     }
   }
 
+  async getSessionToolResult(
+    id: string,
+    ref: Pick<SessionToolResultRef, "turnId" | "itemId" | "revision">,
+  ): Promise<SessionToolResultBody> {
+    this.state.assertSessionVisible(id);
+    return this.runtime.getSessionToolResult(id, ref);
+  }
+
   async getSessionWatchPath(id: string): Promise<string | null> {
     this.state.assertSessionVisible(id);
     return this.runtime.getSessionWatchPath(id);
@@ -1578,6 +1589,39 @@ export class NativeRuntimeBrokerHost {
         if (terminal) this.broadcast(terminal);
       }, ABORT_FALLBACK_MS).unref?.();
     }
+  }
+
+  async release(sessionId: string): Promise<void> {
+    const decoded = decodeNativeSessionId(sessionId);
+    if (decoded.agentType !== "codex") {
+      throw new RuntimeSessionError(
+        "Only Codex sessions can be released to the native client",
+        "OPERATION_NOT_SUPPORTED",
+      );
+    }
+
+    const queue = this.state.getGoalState(sessionId);
+    for (const item of queue.queued) {
+      if (sessionQueueItemKind(item) === "message") this.state.cancelMessage(sessionId, item.id);
+      else this.state.cancelGoal(sessionId, item.id);
+    }
+    if (queue.active) this.state.cancelGoal(sessionId, queue.active.id);
+
+    const settlingExecution = this.activeExecutions.get(sessionId);
+    if (this.state.activeRun(sessionId)) await this.abort(sessionId);
+    if (settlingExecution) {
+      await new Promise<void>((resolve, reject) => {
+        const timer = setTimeout(resolve, RELEASE_SETTLE_TIMEOUT_MS);
+        void settlingExecution.then(
+          () => { clearTimeout(timer); resolve(); },
+          (error) => { clearTimeout(timer); reject(error); },
+        );
+      });
+    }
+    if (this.state.activeRun(sessionId)) {
+      throw new RuntimeSessionError("Codex session is still stopping", "SESSION_ALREADY_RUNNING");
+    }
+    await this.runtime.release(sessionId);
   }
 
   steer(sessionId: string, input: string): Promise<boolean> {
@@ -1850,6 +1894,10 @@ export class NativeRuntimeBrokerHost {
       case "fork": return this.fork(requireSessionId(sessionId));
       case "delete": return this.delete(requireSessionId(sessionId));
       case "get": return this.get(requireSessionId(sessionId), queryParam(request.params));
+      case "getToolResult": return this.getSessionToolResult(
+        requireSessionId(sessionId),
+        toolResultRefParam(request.params),
+      );
       case "getQueryIndex": return this.getQueryIndex(requireSessionId(sessionId));
       case "watchPath": return this.getSessionWatchPath(requireSessionId(sessionId));
       case "startRun": return this.startRun(
@@ -1915,6 +1963,7 @@ export class NativeRuntimeBrokerHost {
         { answer: stringParam(request.params, "answer") || "", selectedIndices: arrayOfNumbers(request.params.selectedIndices) },
       );
       case "abort": return this.abort(sessionId || undefined);
+      case "release": return this.release(requireSessionId(sessionId));
       case "steer": return this.steer(requireSessionId(sessionId), stringParam(request.params, "input") || "");
       case "setPermissionMode": return this.setPermissionMode(
         requireSessionId(sessionId),
@@ -2019,6 +2068,13 @@ export class NativeRuntimeBrokerClient {
 
   async getQueryIndex(id: string): Promise<SessionQueryIndex> {
     return this.request("getQueryIndex", { sessionId: id });
+  }
+
+  async getSessionToolResult(
+    id: string,
+    ref: Pick<SessionToolResultRef, "turnId" | "itemId" | "revision">,
+  ): Promise<SessionToolResultBody> {
+    return this.request("getToolResult", { sessionId: id, ...ref });
   }
 
   async getSessionWatchPath(id: string): Promise<string | null> {
@@ -2189,6 +2245,10 @@ export class NativeRuntimeBrokerClient {
     await this.request("abort", id ? { sessionId: id } : {});
   }
 
+  async release(id: string): Promise<void> {
+    await this.request("release", { sessionId: id });
+  }
+
   async steer(id: string, input: string): Promise<boolean> {
     return this.request("steer", { sessionId: id, input });
   }
@@ -2319,6 +2379,13 @@ export class BrokerRuntimeAdapter implements AgentRuntimeAdapter {
     return this.client.get(encodeUnifiedSessionId(this.agentType, nativeSessionId));
   }
 
+  getSessionToolResult(
+    nativeSessionId: string,
+    ref: Pick<SessionToolResultRef, "turnId" | "itemId" | "revision">,
+  ): Promise<SessionToolResultBody> {
+    return this.client.getSessionToolResult(encodeUnifiedSessionId(this.agentType, nativeSessionId), ref);
+  }
+
   getSessionWatchPath(nativeSessionId: string): Promise<string | null> {
     return this.client.getSessionWatchPath(encodeUnifiedSessionId(this.agentType, nativeSessionId));
   }
@@ -2366,6 +2433,10 @@ export class BrokerRuntimeAdapter implements AgentRuntimeAdapter {
 
   abort(nativeSessionId: string): Promise<void> {
     return this.client.abort(encodeUnifiedSessionId(this.agentType, nativeSessionId));
+  }
+
+  release(nativeSessionId: string): Promise<void> {
+    return this.client.release(encodeUnifiedSessionId(this.agentType, nativeSessionId));
   }
 
   answerQuestion(questionId: string, answer: RuntimeQuestionAnswer): Promise<boolean> {
@@ -2487,6 +2558,17 @@ function mergeProjectionMessages(
   events: BrokerRunEvent[],
 ): Message[] {
   if (!run) return messages;
+  if (
+    run.status === "terminal"
+    && events.some(({ event }) => event.type === "error" && event.code === "SESSION_OCCUPIED")
+    && !events.some(({ event }) => (
+      event.type === "text_chunk"
+      || event.type === "reasoning_summary_delta"
+      || event.type === "tool_call"
+    ))
+  ) {
+    return messages;
+  }
   const projected = [...messages];
   let runUserIndex = -1;
   for (let index = projected.length - 1; index >= 0; index -= 1) {
@@ -2873,9 +2955,24 @@ function queryParam(params: Record<string, unknown>): SessionHistoryQuery | unde
   const after = stringParam(params, "after") || undefined;
   const anchor = stringParam(params, "anchor") || undefined;
   const limit = numberParam(params, "limit") ?? undefined;
-  return before || after || anchor || limit !== undefined
-    ? { before, after, anchor, limit }
+  const view = params.view === "core" || params.view === "trace" ? params.view : undefined;
+  const revision = stringParam(params, "revision") || undefined;
+  const turnId = stringParam(params, "turnId") || undefined;
+  return before || after || anchor || limit !== undefined || view || revision || turnId
+    ? { before, after, anchor, limit, view, revision, turnId }
     : undefined;
+}
+
+function toolResultRefParam(
+  params: Record<string, unknown>,
+): Pick<SessionToolResultRef, "turnId" | "itemId" | "revision"> {
+  const turnId = stringParam(params, "turnId");
+  const itemId = stringParam(params, "itemId");
+  const revision = stringParam(params, "revision");
+  if (!turnId || !itemId || !revision) {
+    throw new RuntimeSessionError("A complete tool result reference is required", "INVALID_SESSION_ID");
+  }
+  return { turnId, itemId, revision };
 }
 
 function workspaceQueryParam(params: Record<string, unknown>): WorkspaceQuery {

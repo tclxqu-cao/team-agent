@@ -6,6 +6,7 @@ import { GET as listSessions, POST as createSession } from "./sessions/route";
 import { DELETE as deleteSession, GET as getSession, PATCH as patchSession } from "./sessions/[id]/route";
 import { POST as forkSession } from "./sessions/[id]/fork/route";
 import { POST as handoffSession } from "./sessions/[id]/handoff/route";
+import { POST as releaseCodexSession } from "./sessions/[id]/release/route";
 import { POST as runRoute } from "./agent/run/route";
 import { POST as answerRoute } from "./agent/answer/route";
 import { POST as abortRoute } from "./agent/abort/route";
@@ -36,8 +37,9 @@ const state = {
   steered: null as { id: string; input: string } | null,
   permissionUpdate: null as { id: string; permissionMode: string } | null,
   handoff: null as { id: string; controller: string } | null,
+  releasedSessionId: null as string | null,
   refreshCalls: 0,
-  getQuery: null as { before?: string; limit?: number } | null,
+  getQuery: null as { before?: string; limit?: number; view?: "core" | "trace"; revision?: string } | null,
   deletedSessionIds: [] as string[],
   deleteError: null as Error | null,
   queueCalls: [] as Array<Record<string, unknown>>,
@@ -76,7 +78,7 @@ vi.mock("../../lib/native-runtime-service", () => ({
       if (state.deleteError) throw state.deleteError;
       state.deletedSessionIds.push(id);
     },
-    get: async (_id: string, query?: { before?: string; limit?: number }) => {
+    get: async (_id: string, query?: { before?: string; limit?: number; view?: "core" | "trace"; revision?: string }) => {
       state.getQuery = query ?? null;
       return state.detail ?? (() => { throw new Error("not found"); })();
     },
@@ -118,6 +120,9 @@ vi.mock("../../lib/native-runtime-service", () => ({
         events: [],
         controller,
       };
+    },
+    release: async (id: string) => {
+      state.releasedSessionId = id;
     },
     enqueueMessage: async (
       id: string,
@@ -247,6 +252,7 @@ describe("native runtime routing", () => {
     state.steered = null;
     state.permissionUpdate = null;
     state.handoff = null;
+    state.releasedSessionId = null;
     state.refreshCalls = 0;
     state.getQuery = null;
     state.deletedSessionIds = [];
@@ -374,6 +380,22 @@ describe("native runtime routing", () => {
     expect(state.getQuery).toEqual({ before: "history.v1.50", limit: 50 });
   });
 
+  it("forwards progressive history view and revision queries", async () => {
+    const response = await getSession(json(
+      "GET",
+      "http://test/api/sessions/runtime:codex:bW9jaw?before=history.v1.50&limit=50&view=trace&revision=rev%3A1&turnId=turn%2F1",
+    ), { params: { id: "runtime:codex:bW9jaw" } });
+
+    expect(response.status).toBe(200);
+    expect(state.getQuery).toEqual({
+      before: "history.v1.50",
+      limit: 50,
+      view: "trace",
+      revision: "rev:1",
+      turnId: "turn/1",
+    });
+  });
+
   it("creates a persisted native session fork", async () => {
     const response = await forkSession(json("POST", "http://test/api/sessions/runtime:codex:bW9jaw/fork", {}), {
       params: { id: "runtime:codex:bW9jaw" },
@@ -466,6 +488,33 @@ describe("native runtime routing", () => {
       controller: "desktop",
     });
     expect(state.handoff).toEqual({ id: "runtime:codex:bW9jaw", controller: "desktop" });
+  });
+
+  it("releases a Codex session to the native desktop client", async () => {
+    const response = await releaseCodexSession(json(
+      "POST",
+      "http://test/api/sessions/runtime:codex:bW9jaw/release",
+      {},
+    ), {
+      params: { id: "runtime:codex:bW9jaw" },
+    });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ status: "released" });
+    expect(state.releasedSessionId).toBe("runtime:codex:bW9jaw");
+  });
+
+  it("rejects release for non-Codex sessions", async () => {
+    const response = await releaseCodexSession(json(
+      "POST",
+      "http://test/api/sessions/runtime:claude-code:bW9jaw/release",
+      {},
+    ), {
+      params: { id: "runtime:claude-code:bW9jaw" },
+    });
+
+    expect(response.status).toBe(405);
+    expect(state.releasedSessionId).toBeNull();
   });
 
   it("streams native run events through the SSE bus without persisting them", async () => {

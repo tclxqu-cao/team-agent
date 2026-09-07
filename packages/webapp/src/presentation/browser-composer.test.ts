@@ -64,6 +64,12 @@ describe("shared composer panel layout", () => {
     expect(chatView).toContain('className="web-native-stop-button" aria-label="停止生成"');
   });
 
+  it("keeps Codex writable when external occupancy is only advisory", () => {
+    expect(chatView).toContain('sessionSummary?.occupancy === "owned-externally"');
+    expect(chatView).toContain('&& sessionSummary.agentType !== "codex"');
+    expect(chatView).toContain("const canCompose = runtimeReady && !isReadOnly && !isOccupiedRecovery");
+  });
+
   it("routes picker images into the sent payload before enabling send", () => {
     expect(chatView).toContain("blobToDataUrl(await normalizeComposerImage(file))");
     expect(chatView).toContain("setPendingImages((previous) => [...previous, ...prepared.images])");

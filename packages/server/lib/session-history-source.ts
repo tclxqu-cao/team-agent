@@ -1,15 +1,20 @@
-export function rebuildMessagesFromEvents(events: Array<Record<string, unknown>>) {
+export function rebuildMessagesFromEvents(
+  events: Array<Record<string, unknown>>,
+  options: { runId?: string; isStreaming?: boolean } = {},
+) {
   const messages: Array<Record<string, unknown>> = [];
   let streamingAssistant: Record<string, unknown> | null = null;
+  let messageIndex = 0;
+  const nextId = () => `${options.runId ?? "event-history"}:${messageIndex++}`;
 
   for (const event of events) {
     if (event.type === "text_chunk") {
       if (!streamingAssistant) {
         streamingAssistant = {
-          id: crypto.randomUUID(),
+          id: nextId(),
           role: "assistant",
           content: "",
-          isStreaming: true,
+          isStreaming: options.isStreaming ?? true,
           timestamp: Date.now(),
         };
         messages.push(streamingAssistant);
@@ -18,22 +23,26 @@ export function rebuildMessagesFromEvents(events: Array<Record<string, unknown>>
       continue;
     }
     if (event.type === "tool_call" && event.toolCall) {
-      streamingAssistant = {
-        id: crypto.randomUUID(),
-        role: "assistant",
-        content: streamingAssistant?.content ?? "",
-        toolCalls: [event.toolCall],
-        isStreaming: false,
-        timestamp: Date.now(),
-      };
-      messages.push(streamingAssistant);
+      if (streamingAssistant) {
+        streamingAssistant.toolCalls = [event.toolCall];
+        streamingAssistant.isStreaming = false;
+      } else {
+        messages.push({
+          id: nextId(),
+          role: "assistant",
+          content: "",
+          toolCalls: [event.toolCall],
+          isStreaming: false,
+          timestamp: Date.now(),
+        });
+      }
       streamingAssistant = null;
       continue;
     }
     if (event.type === "tool_result" && (event as { result?: { content?: string; toolCallId?: string } }).result) {
       const result = (event as { result: { content?: string; toolCallId?: string } }).result;
       messages.push({
-        id: crypto.randomUUID(),
+        id: nextId(),
         role: "tool",
         content: result.content ?? "",
         toolCallId: result.toolCallId,
@@ -43,7 +52,7 @@ export function rebuildMessagesFromEvents(events: Array<Record<string, unknown>>
     }
     if (event.type === "ask_user") {
       messages.push({
-        id: crypto.randomUUID(),
+        id: nextId(),
         role: "assistant",
         content: "",
         askUser: {
@@ -62,7 +71,7 @@ export function rebuildMessagesFromEvents(events: Array<Record<string, unknown>>
         streamingAssistant.isStreaming = false;
       } else if (event.finalText.trim()) {
         messages.push({
-          id: crypto.randomUUID(),
+          id: nextId(),
           role: "assistant",
           content: event.finalText,
           timestamp: Date.now(),

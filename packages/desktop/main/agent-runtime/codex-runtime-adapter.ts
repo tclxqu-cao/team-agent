@@ -16,6 +16,8 @@ import {
   type SessionHistoryQuery,
   type SessionHistoryWindow,
   type SessionQueryIndex,
+  type SessionToolResultBody,
+  type SessionToolResultRef,
   type ToolCall,
   type ToolPermissionMode,
 } from "@agent/core";
@@ -26,7 +28,12 @@ import {
   type RpcNotification,
   type RpcServerRequest,
 } from "./codex-app-server-client.js";
-import { CodexRolloutActivityReader, type CodexRolloutActivity } from "./codex-rollout-activity.js";
+import {
+  CodexRolloutActivityReader,
+  readCodexRolloutFinalizingAnswer,
+  type CodexRolloutActivity,
+  type CodexRolloutFinalAnswer,
+} from "./codex-rollout-activity.js";
 import { parseImageDataUrls, type ParsedImageDataUrl } from "./image-input.js";
 import { listOpenSessionFiles } from "./native-processes.js";
 import { encodeUnifiedSessionId } from "./session-id.js";
@@ -146,6 +153,8 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
     walkCursor?: string;
     exhausted: boolean;
   }>();
+  /** Final responses observed on disk before Codex publishes task_complete. */
+  private readonly finalizingAnswers = new Map<string, CodexRolloutFinalAnswer>();
   private readonly activeQueues = new Map<string, AsyncEventQueue<AgentEvent>>();
   private readonly activeTurnIds = new Map<string, string>();
   private readonly activeBrokerRunIds = new Map<string, string>();
@@ -452,12 +461,23 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
     const rolloutActivities = await this.rolloutActivityReader.readMany(
       this.platform === "win32" ? rolloutPaths([meta.thread], this.platform) : openFiles,
     );
+    let summary = this.toSummary(meta.thread, openFiles, rolloutActivities);
 
     let ascTurns: CodexTurn[];
     try {
       ascTurns = await this.loadSummaryTurns(nativeSessionId);
     } catch (error) {
       throw this.normalizePagedError(error);
+    }
+    const isLatestCorePage = query.view === "core" && !query.before && !query.after && !query.anchor;
+    if (isLatestCorePage && summary.status === "running" && meta.thread.path) {
+      const finalizing = await readCodexRolloutFinalizingAnswer(meta.thread.path);
+      if (finalizing) this.finalizingAnswers.set(nativeSessionId, finalizing);
+    }
+    const reconciliation = this.reconcileFinalizingAnswer(nativeSessionId, ascTurns);
+    ascTurns = reconciliation.turns;
+    if (reconciliation.latestTurnFinalizing && summary.status === "running") {
+      summary = { ...summary, status: "idle" };
     }
 
     // The skeleton: every visible user/agent item in rollout order. This is
@@ -469,45 +489,141 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
         else if (item.type === "agentMessage") skeleton.push({ turnId: turn.id, role: "assistant" });
       }
     }
-    const skeletonMessages = await codexTurnsToMessages(
-      ascTurns.map((turn) => ({ ...turn, items: (turn.items ?? []).filter((item) => this.isNativeVisibleItem(item)) })),
-    );
+    const skeletonMessages = codexSummaryTurnsToMessages(ascTurns);
     const revision = computeSessionHistoryRevision(skeletonMessages);
+
+    if (query.view === "trace" && query.turnId) {
+      if (!query.revision || query.revision !== revision) {
+        throw new RuntimeSessionError("Session history changed; reload the core page", "STALE_SESSION_ANCHOR");
+      }
+      const turn = ascTurns.find((candidate) => candidate.id === query.turnId);
+      if (!turn) {
+        throw new RuntimeSessionError("Session history turn changed; reload the core page", "STALE_SESSION_ANCHOR");
+      }
+      await this.hydrateTurnRange(nativeSessionId, ascTurns, turn.id, turn.id, {
+        refreshTurnId: ascTurns.at(-1)?.id === turn.id ? turn.id : undefined,
+        preserveRefreshedItems: summary.status === "running",
+      });
+      const hydratedTurn = {
+        ...turn,
+        items: this.pagedTurnItems.get(nativeSessionId)?.turns.get(turn.id) ?? turn.items ?? [],
+      };
+      const messages = (await codexTurnsToMessages([hydratedTurn], {
+        toolResultMode: "lazy",
+        revision,
+        reasoningMaxBytes: 4 * 1024,
+        toolArgumentsMaxBytes: 2 * 1024,
+      })).filter(isCodexExecutionMessage);
+      return {
+        ...summary,
+        messages,
+        events: [],
+        history: {
+          nextCursor: null,
+          hasMore: false,
+          pageSize: 0,
+          totalItems: skeleton.length,
+          kind: "anchored",
+          revision,
+          delivery: "trace",
+        },
+      };
+    }
 
     const { start, end, kind } = this.selectNativeRange(skeleton, query, revision);
     const firstTurnId = skeleton[start]?.turnId;
     const lastTurnId = end > start ? skeleton[end - 1].turnId : undefined;
+    const idxA = ascTurns.findIndex((turn) => turn.id === firstTurnId);
+    const idxB = ascTurns.findIndex((turn) => turn.id === lastTurnId);
+    const selectedSummaryTurns = idxA >= 0 && idxB >= idxA
+      ? ascTurns.slice(idxA, idxB + 1)
+      : [];
+
+    if (query.view === "core") {
+      const messages = codexSummaryTurnsToMessages(selectedSummaryTurns);
+      this.assignNativeHistoryIds(messages, skeleton, start, end);
+      return {
+        ...summary,
+        messages,
+        events: [],
+        history: {
+          ...this.nativeHistoryWindow(start, end, skeleton.length, kind, revision),
+          delivery: "core",
+        },
+      };
+    }
+
+    if (query.view === "trace" && query.revision && query.revision !== revision) {
+      throw new RuntimeSessionError("Session history changed; reload the core page", "STALE_SESSION_ANCHOR");
+    }
+
     if (firstTurnId && lastTurnId) {
-      await this.hydrateTurnRange(nativeSessionId, ascTurns, firstTurnId, lastTurnId);
+      await this.hydrateTurnRange(nativeSessionId, ascTurns, firstTurnId, lastTurnId, {
+        refreshTurnId: end === skeleton.length ? lastTurnId : undefined,
+        preserveRefreshedItems: summary.status === "running",
+      });
     }
 
     const state = this.pagedTurnItems.get(nativeSessionId);
-    const idxA = ascTurns.findIndex((turn) => turn.id === firstTurnId);
-    const idxB = ascTurns.findIndex((turn) => turn.id === lastTurnId);
     const windowTurns = idxA >= 0 && idxB >= idxA
       ? ascTurns.slice(idxA, idxB + 1).map((turn) => ({
           ...turn,
           items: state?.turns.get(turn.id) ?? turn.items ?? [],
         }))
       : [];
-    const messages = await codexTurnsToMessages(windowTurns);
+    const messages = await codexTurnsToMessages(windowTurns, query.view === "trace" ? {
+      toolResultMode: "lazy",
+      revision,
+      reasoningMaxBytes: 4 * 1024,
+      toolArgumentsMaxBytes: 2 * 1024,
+    } : undefined);
     this.assignNativeHistoryIds(messages, skeleton, start, end);
 
-    const history: SessionHistoryWindow = {
-      nextCursor: start > 0 ? nativeHistoryCursor(start) : null,
-      hasMore: start > 0,
-      pageSize: Math.max(0, end - start),
-      totalItems: skeleton.length,
-      olderCursor: start > 0 ? nativeHistoryCursor(start) : null,
-      newerCursor: end < skeleton.length ? nativeHistoryCursor(end) : null,
-      kind,
-      revision,
-    };
     return {
-      ...this.toSummary(meta.thread, openFiles, rolloutActivities),
+      ...summary,
       messages,
       events: [],
-      history,
+      history: {
+        ...this.nativeHistoryWindow(start, end, skeleton.length, kind, revision),
+        delivery: query.view === "trace" ? "trace" : "legacy-full",
+      },
+    };
+  }
+
+  async getSessionToolResult(
+    nativeSessionId: string,
+    ref: Pick<SessionToolResultRef, "turnId" | "itemId" | "revision">,
+  ): Promise<SessionToolResultBody> {
+    this.ensureAvailable();
+    if (!this.nativePagingSupported) {
+      throw new RuntimeSessionError("Codex native history paging is unavailable", "OPERATION_NOT_SUPPORTED");
+    }
+    let ascTurns: CodexTurn[];
+    try {
+      ascTurns = await this.loadSummaryTurns(nativeSessionId);
+    } catch (error) {
+      throw this.normalizePagedError(error);
+    }
+    ascTurns = this.reconcileFinalizingAnswer(nativeSessionId, ascTurns).turns;
+    const revision = computeSessionHistoryRevision(codexSummaryTurnsToMessages(ascTurns));
+    if (revision !== ref.revision) {
+      throw new RuntimeSessionError("Session history changed; reload the tool result", "STALE_SESSION_ANCHOR");
+    }
+    const turn = ascTurns.find((candidate) => candidate.id === ref.turnId);
+    if (!turn) throw new RuntimeSessionError("Codex turn not found", "SESSION_NOT_FOUND");
+    await this.hydrateTurnRange(nativeSessionId, ascTurns, turn.id, turn.id);
+    const item = this.pagedTurnItems.get(nativeSessionId)?.turns.get(turn.id)?.find(
+      (candidate) => candidate.id === ref.itemId,
+    );
+    const result = codexItemToToolResult(item);
+    if (!result) throw new RuntimeSessionError("Codex tool result not found", "SESSION_NOT_FOUND");
+    return {
+      turnId: turn.id,
+      itemId: ref.itemId,
+      revision,
+      byteSize: Buffer.byteLength(result.content, "utf8"),
+      ...(result.isError === undefined ? {} : { isError: result.isError }),
+      content: result.content,
     };
   }
 
@@ -524,17 +640,31 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
     } catch (error) {
       throw this.normalizePagedError(error);
     }
-    const skeletonMessages = await codexTurnsToMessages(
-      ascTurns.map((turn) => ({ ...turn, items: (turn.items ?? []).filter((item) => this.isNativeVisibleItem(item)) })),
-    );
+    ascTurns = this.reconcileFinalizingAnswer(nativeSessionId, ascTurns).turns;
+    const skeletonMessages = codexSummaryTurnsToMessages(ascTurns);
     return buildSessionQueryIndex(
       encodeUnifiedSessionId(this.agentType, nativeSessionId),
       skeletonMessages,
     );
   }
 
-  private isNativeVisibleItem(item: CodexItem): boolean {
-    return item.type === "userMessage" || item.type === "agentMessage";
+  private nativeHistoryWindow(
+    start: number,
+    end: number,
+    totalItems: number,
+    kind: "latest" | "anchored",
+    revision: string,
+  ): SessionHistoryWindow {
+    return {
+      nextCursor: start > 0 ? nativeHistoryCursor(start) : null,
+      hasMore: start > 0,
+      pageSize: Math.max(0, end - start),
+      totalItems,
+      olderCursor: start > 0 ? nativeHistoryCursor(start) : null,
+      newerCursor: end < totalItems ? nativeHistoryCursor(end) : null,
+      kind,
+      revision,
+    };
   }
 
   /** thread/turns/list answers newest-first; history needs rollout order. */
@@ -544,6 +674,48 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
       itemsView: "summary",
     });
     return (response.data ?? []).slice().reverse();
+  }
+
+  private reconcileFinalizingAnswer(
+    nativeSessionId: string,
+    turns: CodexTurn[],
+  ): { turns: CodexTurn[]; latestTurnFinalizing: boolean } {
+    const finalizing = this.finalizingAnswers.get(nativeSessionId);
+    if (!finalizing) return { turns, latestTurnFinalizing: false };
+    const turnIndex = turns.findIndex((turn) => turn.id === finalizing.turnId);
+    if (turnIndex < 0) {
+      if (turns.length > 0 && turns.at(-1)?.id !== finalizing.turnId) {
+        this.finalizingAnswers.delete(nativeSessionId);
+      }
+      return { turns, latestTurnFinalizing: false };
+    }
+    const turn = turns[turnIndex];
+    const items = turn.items ?? [];
+    const existingIndex = items.findIndex((item) => (
+      item.type === "agentMessage"
+      && (
+        (finalizing.itemId && item.id === finalizing.itemId)
+        || item.text === finalizing.text
+      )
+    ));
+    if (existingIndex >= 0 && items[existingIndex].text === finalizing.text) {
+      this.finalizingAnswers.delete(nativeSessionId);
+      return { turns, latestTurnFinalizing: turnIndex === turns.length - 1 };
+    }
+    const nextItems = [...items];
+    const reconciledItem: CodexItem = {
+      type: "agentMessage",
+      ...(finalizing.itemId ? { id: finalizing.itemId } : {}),
+      text: finalizing.text,
+    };
+    if (existingIndex >= 0) nextItems[existingIndex] = reconciledItem;
+    else nextItems.push(reconciledItem);
+    const nextTurns = [...turns];
+    nextTurns[turnIndex] = { ...turn, items: nextItems };
+    return {
+      turns: nextTurns,
+      latestTurnFinalizing: turnIndex === turns.length - 1,
+    };
   }
 
   private selectNativeRange(
@@ -594,6 +766,7 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
     ascTurns: CodexTurn[],
     firstTurnId: string,
     lastTurnId: string,
+    options: { refreshTurnId?: string; preserveRefreshedItems?: boolean } = {},
   ): Promise<void> {
     let state = this.pagedTurnItems.get(nativeSessionId);
     if (!state) {
@@ -612,6 +785,17 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
       if (collecting) wanted.add(turn.id);
       if (turn.id === lastTurnId) break;
     }
+    const previousRefreshedItems = options.refreshTurnId && wanted.has(options.refreshTurnId)
+      ? cached.turns.get(options.refreshTurnId)
+      : undefined;
+    if (options.refreshTurnId && wanted.has(options.refreshTurnId)) {
+      // The latest turn keeps the same id while it grows and when it changes
+      // from running to completed. Always refresh it so the final answer does
+      // not remain stuck behind the last running snapshot.
+      cached.turns.delete(options.refreshTurnId);
+      cached.walkCursor = undefined;
+      cached.exhausted = false;
+    }
     if ([...wanted].every((turnId) => cached.turns.has(turnId))) return;
     let pages = 0;
     let cursor = cached.walkCursor;
@@ -627,7 +811,13 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
       });
       const pageTurns = page.data ?? [];
       for (const turn of pageTurns) {
-        if (!cached.turns.has(turn.id)) cached.turns.set(turn.id, turn.items ?? []);
+        if (cached.turns.has(turn.id)) continue;
+        const items = turn.id === options.refreshTurnId
+          && options.preserveRefreshedItems
+          && previousRefreshedItems
+          ? mergeGrowingCodexTurnItems(previousRefreshedItems, turn.items ?? [])
+          : turn.items ?? [];
+        cached.turns.set(turn.id, items);
       }
       pages += 1;
       const next = page.nextCursor ?? undefined;
@@ -851,6 +1041,11 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
     if (rejected) throw rejected.reason;
   }
 
+  async release(nativeSessionId: string): Promise<void> {
+    this.ensureAvailable();
+    await this.client.request("thread/unsubscribe", { threadId: nativeSessionId });
+  }
+
   async answerQuestion(questionId: string, answer: RuntimeQuestionAnswer): Promise<boolean> {
     const pending = this.pendingApprovals.get(questionId);
     if (!pending) return false;
@@ -991,12 +1186,17 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
       if (typeof turn?.id === "string") this.activeTurnIds.set(threadId, turn.id);
       this.completedGoalTurns.delete(threadId);
     }
+    const eventTurnId = typeof params.turnId === "string"
+      ? params.turnId
+      : typeof (params.turn as { id?: unknown } | undefined)?.id === "string"
+        ? (params.turn as { id: string }).id
+        : this.activeTurnIds.get(threadId);
 
     const progressEvent = codexProgressNotificationToEvent(message);
     if (progressEvent) queue.push(progressEvent);
     const reasoningEvent = codexReasoningNotificationToEvent(message);
     if (reasoningEvent) {
-      queue.push(reasoningEvent);
+      queue.push(eventTurnId ? { ...reasoningEvent, turnId: eventTurnId } : reasoningEvent);
       return;
     }
     if (message.method === "item/reasoning/textDelta") return;
@@ -1007,12 +1207,12 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
     }
     if (message.method === "item/started") {
       const toolCall = codexItemToToolCall(params.item as CodexItem | undefined);
-      if (toolCall) queue.push({ type: "tool_call", toolCall });
+      if (toolCall) queue.push({ type: "tool_call", toolCall, ...(eventTurnId ? { turnId: eventTurnId } : {}) });
       return;
     }
     if (message.method === "item/completed") {
       const result = codexItemToToolResult(params.item as CodexItem | undefined);
-      if (result) queue.push({ type: "tool_result", result });
+      if (result) queue.push({ type: "tool_result", result, ...(eventTurnId ? { turnId: eventTurnId } : {}) });
       return;
     }
     if (message.method === "turn/completed") {
@@ -1184,6 +1384,22 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
       ],
     });
   }
+}
+
+function mergeGrowingCodexTurnItems(previous: CodexItem[], refreshed: CodexItem[]): CodexItem[] {
+  const refreshedById = new Map(
+    refreshed.flatMap((item) => typeof item.id === "string" ? [[item.id, item] as const] : []),
+  );
+  const previousIds = new Set(
+    previous.flatMap((item) => typeof item.id === "string" ? [item.id] : []),
+  );
+  return [
+    ...previous.flatMap((item) => {
+      if (typeof item.id !== "string") return [];
+      return [refreshedById.get(item.id) ?? item];
+    }),
+    ...refreshed.filter((item) => typeof item.id !== "string" || !previousIds.has(item.id)),
+  ];
 }
 
 function rolloutPaths(threads: CodexThread[], platform: NodeJS.Platform): string[] {
@@ -1391,7 +1607,103 @@ function decodeNativeHistoryCursor(cursor: string | undefined, fallback: number)
   return Math.min(value, fallback);
 }
 
-export async function codexTurnsToMessages(turns: CodexTurn[]): Promise<Message[]> {
+interface CodexMessageConversionOptions {
+  toolResultMode?: "full" | "lazy";
+  revision?: string;
+  reasoningMaxBytes?: number;
+  toolArgumentsMaxBytes?: number;
+}
+
+function codexSummaryTurnsToMessages(turns: CodexTurn[]): Message[] {
+  const messages: Message[] = [];
+  for (const turn of turns) {
+    for (const item of turn.items ?? []) {
+      if (item.type === "userMessage") {
+        const entries = item.content as Array<Record<string, unknown>> | undefined;
+        const sourceText = entries
+          ?.filter((entry) => entry.type === "text" && typeof entry.text === "string")
+          .map((entry) => String(entry.text))
+          .join("\n")
+          .trim();
+        if (!sourceText) continue;
+        const normalized = normalizeCodexUserText(sourceText);
+        const attachmentNames = (entries ?? []).flatMap((entry) => (
+          (entry.type === "local_image" || entry.type === "localImage") && typeof entry.path === "string"
+            ? [basename(entry.path)]
+            : []
+        ));
+        messages.push({
+          role: "user",
+          content: normalized.content,
+          presentation: {
+            executionTrace: { turnId: turn.id },
+            ...(normalized.rawContent ? { rawContent: normalized.rawContent } : {}),
+            ...(attachmentNames.length > 0 ? {
+              attachments: attachmentNames.map((name) => ({ type: "image" as const, name, unavailable: true })),
+            } : {}),
+          },
+        });
+      } else if (item.type === "agentMessage" && typeof item.text === "string" && item.text.trim()) {
+        messages.push({ role: "assistant", content: item.text });
+      }
+    }
+  }
+  return messages;
+}
+
+function truncateUtf8(value: string, maxBytes: number): string {
+  if (Buffer.byteLength(value, "utf8") <= maxBytes) return value;
+  let result = "";
+  let size = 0;
+  for (const character of value) {
+    const next = Buffer.byteLength(character, "utf8");
+    if (size + next > Math.max(0, maxBytes - 3)) break;
+    result += character;
+    size += next;
+  }
+  return `${result}...`;
+}
+
+function boundedToolArguments(
+  value: Record<string, unknown>,
+  maxBytes: number,
+): Record<string, unknown> {
+  const serialized = JSON.stringify(value);
+  if (Buffer.byteLength(serialized, "utf8") <= maxBytes) return value;
+
+  const bounded: Record<string, unknown> = { __truncated: true };
+  for (const [key, entry] of Object.entries(value)) {
+    if (typeof entry === "string") {
+      bounded[key] = truncateUtf8(entry, 512);
+    } else if (typeof entry === "number" || typeof entry === "boolean" || entry === null) {
+      bounded[key] = entry;
+    } else if (key === "changes" && Array.isArray(entry)) {
+      bounded[key] = entry.slice(0, 20).map((change) => {
+        const record = asRecord(change);
+        return Object.fromEntries(
+          ["path", "file_path", "kind", "status"].flatMap((field) => (
+            field in record ? [[field, record[field]]] : []
+          )),
+        );
+      });
+    } else if (Array.isArray(entry)) {
+      bounded[key] = `[${entry.length} items omitted]`;
+    } else {
+      bounded[key] = "[object omitted]";
+    }
+  }
+  const boundedSerialized = JSON.stringify(bounded);
+  if (Buffer.byteLength(boundedSerialized, "utf8") <= maxBytes) return bounded;
+  return {
+    __truncated: true,
+    preview: truncateUtf8(serialized, maxBytes - 64),
+  };
+}
+
+export async function codexTurnsToMessages(
+  turns: CodexTurn[],
+  options: CodexMessageConversionOptions = {},
+): Promise<Message[]> {
   const messages: Message[] = [];
   for (const turn of turns) {
     for (const item of turn.items ?? []) {
@@ -1427,7 +1739,13 @@ export async function codexTurnsToMessages(turns: CodexTurn[]): Promise<Message[
       } else if (item.type === "reasoning" && Array.isArray(item.summary)) {
         const reasoning = item.summary.flatMap((entry, sectionIndex) => (
           typeof entry === "string" && entry.trim()
-            ? [{ itemId: item.id ?? `reasoning-${sectionIndex}`, sectionIndex, text: entry }]
+            ? [{
+                itemId: item.id ?? `reasoning-${sectionIndex}`,
+                sectionIndex,
+                text: options.reasoningMaxBytes
+                  ? truncateUtf8(entry, options.reasoningMaxBytes)
+                  : entry,
+              }]
             : []
         ));
         if (reasoning.length > 0) {
@@ -1435,16 +1753,44 @@ export async function codexTurnsToMessages(turns: CodexTurn[]): Promise<Message[
         }
       } else {
         const toolCall = codexItemToToolCall(item);
-        if (toolCall) messages.push({ role: "assistant", content: "", toolCalls: [toolCall] });
+        const convertedToolCall = toolCall && options.toolArgumentsMaxBytes
+          ? { ...toolCall, arguments: boundedToolArguments(toolCall.arguments, options.toolArgumentsMaxBytes) }
+          : toolCall;
+        if (convertedToolCall) messages.push({ role: "assistant", content: "", toolCalls: [convertedToolCall] });
         const result = codexItemToToolResult(item);
-        if (result) messages.push({ role: "tool", content: result.content, toolCallId: result.toolCallId, name: toolCall?.name });
+        if (result && options.toolResultMode === "lazy" && options.revision && item.id) {
+          messages.push({
+            role: "tool",
+            content: "",
+            toolCallId: result.toolCallId,
+            name: toolCall?.name,
+            toolResultRef: {
+              turnId: turn.id,
+              itemId: item.id,
+              revision: options.revision,
+              byteSize: Buffer.byteLength(result.content, "utf8"),
+              ...(result.isError === undefined ? {} : { isError: result.isError }),
+            },
+          });
+        } else if (result) {
+          messages.push({ role: "tool", content: result.content, toolCallId: result.toolCallId, name: toolCall?.name });
+        }
       }
     }
   }
   return messages;
 }
 
-export function codexReasoningNotificationToEvent(message: RpcNotification): AgentEvent | null {
+function isCodexExecutionMessage(message: Message): boolean {
+  return message.role === "tool"
+    || (message.role === "assistant" && Boolean(
+      message.toolCalls?.length || message.presentation?.reasoning?.length,
+    ));
+}
+
+export function codexReasoningNotificationToEvent(
+  message: RpcNotification,
+): Extract<AgentEvent, { type: "reasoning_summary_delta" }> | null {
   if (
     message.method !== "item/reasoning/summaryTextDelta"
     && message.method !== "item/reasoning/summaryPartAdded"

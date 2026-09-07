@@ -55,8 +55,8 @@ export interface RuntimeProgress {
 
 export type AgentEvent =
   | { type: "thinking"; message: string }
-  | { type: "tool_call"; toolCall: ToolCall }
-  | { type: "tool_result"; result: ToolResult }
+  | { type: "tool_call"; toolCall: ToolCall; turnId?: string }
+  | { type: "tool_result"; result: ToolResult; turnId?: string }
   | { type: "text_chunk"; text: string }
   | { type: "text_done" }
   | { type: "context_usage"; usage: ContextUsageSnapshot }
@@ -68,7 +68,7 @@ export type AgentEvent =
   | { type: "agent_dispatch"; agentName: string; task: string; subSessionId?: string }
   | { type: "agent_done"; agentName: string; subSessionId: string; status: "completed" | "failed"; summary?: string; error?: string }
   | { type: "agent_progress"; agentName: string; subSessionId: string; text: string }
-  | { type: "reasoning_summary_delta"; itemId: string; sectionIndex: number; delta: string }
+  | { type: "reasoning_summary_delta"; itemId: string; sectionIndex: number; delta: string; turnId?: string }
   | ({ type: "runtime_progress" } & RuntimeProgress)
   | { type: "native_subagent_update"; activity: NativeSubagentActivity }
   | { type: "cron_update"; tasks: CronTask[] }

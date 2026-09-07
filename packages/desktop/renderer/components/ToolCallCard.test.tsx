@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import ToolCallCard, { resolveToolPreviewPaths, ToolCallGroup } from "./ToolCallCard";
 
 const toolCallCardSource = readFileSync(new URL("./ToolCallCard.tsx", import.meta.url), "utf8");
@@ -41,6 +41,56 @@ describe("ToolCallGroup", () => {
 });
 
 describe("tool activity rows", () => {
+  it("keeps lazy tool results unrequested and unmounted while collapsed", () => {
+    const onLoadResult = vi.fn(async () => undefined);
+    const html = renderToStaticMarkup(createElement(ToolCallCard, {
+      toolCall: {
+        id: "terminal",
+        name: "shell",
+        arguments: { command: "pwd" },
+        resultRef: {
+          turnId: "turn-1",
+          itemId: "terminal",
+          revision: "rev-1",
+          byteSize: 100_000,
+        },
+      },
+      onLoadResult,
+    }));
+
+    expect(onLoadResult).not.toHaveBeenCalled();
+    expect(html).toContain('aria-expanded="false"');
+    expect(html).not.toContain("100,000 字节");
+    expect(html).not.toContain("tool-call-shell__body");
+  });
+
+  it("loads a lazy body only on expansion and exposes loading and retry states", () => {
+    expect(toolCallCardSource).toContain("if (next) void loadResult()");
+    expect(toolCallCardSource).toContain("toolCall.result !== undefined || loadingResult || !onLoadResult");
+    expect(toolCallCardSource).toContain("await onLoadResult(toolCall.resultRef)");
+    expect(toolCallCardSource).toContain("正在加载工具结果");
+    expect(toolCallCardSource).toContain("重新加载工具结果");
+
+    const html = renderToStaticMarkup(createElement(ToolCallCard, {
+      toolCall: {
+        id: "terminal",
+        name: "shell",
+        arguments: { command: "pwd" },
+        result: "complete lazy body",
+      },
+      nativeSubagent: {
+        taskId: "task-1",
+        parentToolCallId: "terminal",
+        description: "Inspect",
+        status: "completed",
+        messages: [],
+      },
+    }));
+
+    expect(html).toContain('aria-expanded="true"');
+    expect(html).toContain("complete lazy body");
+  });
+
   it("uses distinct icons for terminal, read, write, and search operations", () => {
     const terminal = renderToStaticMarkup(createElement(ToolCallCard, {
       toolCall: { id: "terminal", name: "shell", arguments: { command: "pwd" }, result: "" },

@@ -1075,7 +1075,7 @@ ipcMain.handle("sessions:listChildren", async (_event, parentId: string) => {
 ipcMain.handle("sessions:get", async (
   _event,
   id: string,
-  query?: { before?: string; after?: string; anchor?: string; limit?: number },
+  query?: import("@agent/core").SessionHistoryQuery,
 ) => {
   const detail = await unifiedSessions.get(id, query);
   const deliveredCursor = {
@@ -1088,6 +1088,12 @@ ipcMain.handle("sessions:get", async (
   }
   return detail;
 });
+
+ipcMain.handle("sessions:getToolResult", async (
+  _event,
+  id: string,
+  ref: Pick<import("@agent/core").SessionToolResultRef, "turnId" | "itemId" | "revision">,
+) => unifiedSessions.getSessionToolResult(id, ref));
 
 ipcMain.handle("sessions:getQueryIndex", async (_event, id: string) => {
   return unifiedSessions.getQueryIndex(id);
@@ -1186,6 +1192,13 @@ ipcMain.handle("sessions:handoff", async (_event, id: string) => {
   const snapshot = await nativeRuntimeBroker.handoff(id, "desktop");
   await attachDesktopNativeEventForwarder(id, deliveredCursor);
   return snapshot;
+});
+
+ipcMain.handle("sessions:releaseCodex", async (_event, id: string) => {
+  if (unifiedSessions.agentTypeFor(id) !== "codex") {
+    throw new Error("Only Codex sessions can be released to the native client");
+  }
+  await nativeRuntimeBroker.release(id);
 });
 
 ipcMain.handle("sessions:create", async (

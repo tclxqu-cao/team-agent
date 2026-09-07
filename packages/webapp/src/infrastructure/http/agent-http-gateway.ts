@@ -324,7 +324,7 @@ export class AgentHttpGateway {
 
   async getSession(
     id: string,
-    query?: { before?: string; after?: string; anchor?: string; limit?: number },
+    query?: { before?: string; after?: string; anchor?: string; limit?: number; view?: "core" | "trace"; revision?: string; turnId?: string },
   ): Promise<unknown> {
     try {
       const params = new URLSearchParams();
@@ -332,6 +332,9 @@ export class AgentHttpGateway {
       if (query?.after) params.set("after", query.after);
       if (query?.anchor) params.set("anchor", query.anchor);
       if (query?.limit !== undefined) params.set("limit", String(query.limit));
+      if (query?.view) params.set("view", query.view);
+      if (query?.revision) params.set("revision", query.revision);
+      if (query?.turnId) params.set("turnId", query.turnId);
       const suffix = params.size > 0 ? `?${params.toString()}` : "";
       const session = await this.http.get<Record<string, unknown>>(
         `/api/sessions/${encodeURIComponent(id)}${suffix}`,
@@ -358,12 +361,27 @@ export class AgentHttpGateway {
         if (session.status === "running" && session.occupancy !== "owned-externally") {
           void this.openStream(id, this.nativeSnapshotRevisions.get(id)).catch(() => undefined);
         }
+      } else if (!id.startsWith("runtime:") && session.status === "active") {
+        const activeRun = session.activeRun as { eventId?: unknown; running?: unknown } | undefined;
+        if (activeRun?.running === true && typeof activeRun.eventId === "number") {
+          void this.openStream(id, { sequence: activeRun.eventId }).catch(() => undefined);
+        }
       }
       return session;
     } catch (err) {
       if ((err as { status?: number }).status === 404) return null;
       throw err;
     }
+  }
+
+  async getSessionToolResult(
+    id: string,
+    ref: { turnId: string; itemId: string; revision: string },
+  ): Promise<unknown> {
+    const params = new URLSearchParams(ref);
+    return this.http.get(
+      `/api/sessions/${encodeURIComponent(id)}/tool-result?${params.toString()}`,
+    );
   }
 
   async getSessionQueryIndex(id: string): Promise<SessionQueryIndex> {
@@ -502,6 +520,10 @@ export class AgentHttpGateway {
 
   async forkSession(id: string): Promise<unknown> {
     return this.http.post(`/api/sessions/${encodeURIComponent(id)}/fork`, {});
+  }
+
+  async releaseCodexSession(id: string): Promise<void> {
+    await this.http.post(`/api/sessions/${encodeURIComponent(id)}/release`, {});
   }
 
   async deleteSession(id: string): Promise<void> {
@@ -936,8 +958,10 @@ export class AgentHttpGateway {
     if (this.streams.has(sessionId)) return Promise.resolve();
     this.thinkFilters.set(sessionId, new StreamingThinkFilter());
     const query = new URLSearchParams({ sessionId });
-    if (Number.isSafeInteger(cursor?.sequence)) query.set("afterSequence", String(cursor!.sequence));
-    if (cursor?.runId) query.set("afterRunId", cursor.runId);
+    if (Number.isSafeInteger(cursor?.sequence)) {
+      query.set(sessionId.startsWith("runtime:") ? "afterSequence" : "afterEventId", String(cursor!.sequence));
+    }
+    if (sessionId.startsWith("runtime:") && cursor?.runId) query.set("afterRunId", cursor.runId);
     const source = new EventSource(`/api/agent/stream?${query.toString()}`);
     let sawTerminal = false;
     this.streams.set(sessionId, source);

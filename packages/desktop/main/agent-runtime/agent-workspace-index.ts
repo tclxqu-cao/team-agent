@@ -16,6 +16,8 @@ import { RuntimeSessionError } from "./types.js";
 
 const DEFAULT_PAGE_SIZE = 50;
 const MAX_PAGE_SIZE = 200;
+const CODEX_NATIVE_CURSOR_PREFIX = "codex-native:";
+const CODEX_CATALOG_CURSOR_PREFIX = "codex-catalog:";
 export const CODEX_RECENT_WORKSPACE_ID = "codex:recent";
 
 export interface SessionCatalog {
@@ -49,6 +51,40 @@ export function decodeOffsetCursor(cursor?: string | null): number {
   }
 }
 
+type CodexCursor =
+  | { kind: "native"; value: string }
+  | { kind: "catalog"; value: string };
+
+function encodeCodexCursor(kind: CodexCursor["kind"], value: string): string {
+  const prefix = kind === "native" ? CODEX_NATIVE_CURSOR_PREFIX : CODEX_CATALOG_CURSOR_PREFIX;
+  return `${prefix}${Buffer.from(value, "utf8").toString("base64url")}`;
+}
+
+function decodeTaggedCodexCursor(cursor: string, prefix: string): string {
+  const encoded = cursor.slice(prefix.length);
+  const value = Buffer.from(encoded, "base64url").toString("utf8");
+  if (!encoded || !value || Buffer.from(value, "utf8").toString("base64url") !== encoded) {
+    throw new RuntimeSessionError("Invalid Codex workspace cursor", "INVALID_SESSION_ID");
+  }
+  return value;
+}
+
+function decodeCodexCursor(cursor?: string | null): CodexCursor | null {
+  if (!cursor) return null;
+  if (cursor.startsWith(CODEX_NATIVE_CURSOR_PREFIX)) {
+    return { kind: "native", value: decodeTaggedCodexCursor(cursor, CODEX_NATIVE_CURSOR_PREFIX) };
+  }
+  if (cursor.startsWith(CODEX_CATALOG_CURSOR_PREFIX)) {
+    return { kind: "catalog", value: decodeTaggedCodexCursor(cursor, CODEX_CATALOG_CURSOR_PREFIX) };
+  }
+  try {
+    decodeOffsetCursor(cursor);
+    return { kind: "catalog", value: cursor };
+  } catch {
+    return { kind: "native", value: cursor };
+  }
+}
+
 export function paginateByOffset<T>(
   data: readonly T[],
   query: { cursor?: string | null; limit?: number } = {},
@@ -63,6 +99,52 @@ export function paginateByOffset<T>(
     nextCursor: nextOffset < data.length ? encodeOffsetCursor(nextOffset) : null,
     watermark,
   };
+}
+
+function paginateCodexCatalog<T>(
+  data: readonly T[],
+  query: WorkspaceSessionQuery,
+  watermark: string | null,
+): WorkspacePage<T> {
+  const cursor = decodeCodexCursor(query.cursor);
+  if (cursor?.kind === "native") {
+    throw new RuntimeSessionError("Native Codex cursor cannot page the classified catalog", "INVALID_SESSION_ID");
+  }
+  const page = paginateByOffset(data, { ...query, cursor: cursor?.value ?? null }, watermark);
+  return {
+    ...page,
+    nextCursor: page.nextCursor ? encodeCodexCursor("catalog", page.nextCursor) : null,
+  };
+}
+
+function wrapCodexNativePage<T>(page: WorkspacePage<T>): WorkspacePage<T> {
+  return {
+    ...page,
+    nextCursor: page.nextCursor ? encodeCodexCursor("native", page.nextCursor) : null,
+  };
+}
+
+function mergeSessionRows(
+  fresh: readonly UnifiedSessionSummary[],
+  existing: readonly UnifiedSessionSummary[],
+  workspaceId: string,
+): UnifiedSessionSummary[] {
+  const freshIds = new Set(fresh.map((session) => session.id));
+  return [
+    ...fresh.map((session) => ({ ...session, projectId: workspaceId })),
+    ...existing.filter((session) => !freshIds.has(session.id)),
+  ].sort((left, right) => right.updated.localeCompare(left.updated) || left.id.localeCompare(right.id));
+}
+
+function codexWorkspaceClassificationKey(
+  workspaces: readonly AgentWorkspace[],
+  platform: NodeJS.Platform,
+): string {
+  return JSON.stringify(workspaces.map((workspace) => ({
+    workspaceId: workspace.workspaceId,
+    source: workspace.source,
+    roots: workspace.roots.map((root) => normalizeAgentWorkspacePath(root, platform)).sort(),
+  })).sort((left, right) => left.workspaceId.localeCompare(right.workspaceId)));
 }
 
 export function normalizeAgentWorkspacePath(
@@ -117,6 +199,7 @@ export class AgentWorkspaceIndexService {
   private readonly sessionRequests = new Map<string, Promise<WorkspacePage<UnifiedSessionSummary>>>();
   private codexSessionCatalog: SessionCatalog | null = null;
   private codexSessionCatalogRequest: Promise<SessionCatalog> | null = null;
+  private readonly codexDirectSessions = new Map<string, UnifiedSessionSummary[]>();
   private codexSessionCatalogGeneration = 0;
 
   constructor(
@@ -147,9 +230,16 @@ export class AgentWorkspaceIndexService {
     const request = this.loadWorkspaceCatalog(adapter, query);
     this.workspaceRequests.set(agentType, request);
     try {
+      const previous = this.workspaceCache.get(agentType);
       const catalog = await request;
       this.workspaceCache.set(agentType, catalog);
-      if (query.refresh && agentType === "codex") this.clearSessionCache(agentType);
+      if (
+        query.refresh
+        && agentType === "codex"
+        && previous
+        && codexWorkspaceClassificationKey(previous.data, this.platform)
+          !== codexWorkspaceClassificationKey(catalog.data, this.platform)
+      ) this.clearSessionCache(agentType);
       return { ...paginateByOffset(catalog.data, query, catalog.watermark), stale: catalog.stale };
     } catch (error) {
       const cached = this.workspaceCache.get(agentType);
@@ -292,6 +382,7 @@ export class AgentWorkspaceIndexService {
     this.codexSessionCatalogGeneration += 1;
     this.codexSessionCatalog = null;
     this.codexSessionCatalogRequest = null;
+    this.codexDirectSessions.clear();
   }
 
   private requireWorkspaceAdapter(agentType: AgentType): AgentRuntimeAdapter {
@@ -356,12 +447,54 @@ export class AgentWorkspaceIndexService {
     workspaceId: string,
     query: WorkspaceSessionQuery,
   ): Promise<WorkspacePage<UnifiedSessionSummary>> {
-    const catalog = await this.getCodexSessionCatalog(adapter, query.refresh === true);
+    if (!this.workspaceCache.has("codex")) {
+      await this.listWorkspaces("codex", { limit: MAX_PAGE_SIZE });
+    }
+    const workspace = this.workspaceCache.get("codex")?.data.find(
+      (candidate) => candidate.workspaceId === workspaceId,
+    );
+    if (!workspace) {
+      throw new RuntimeSessionError(`Codex workspace not found: ${workspaceId}`, "SESSION_NOT_FOUND");
+    }
+
+    const cursor = decodeCodexCursor(query.cursor);
+    if (workspace.source === "native" && cursor?.kind !== "catalog") {
+      const direct = await adapter.listWorkspaceSessions!(workspaceId, {
+        ...query,
+        cursor: cursor?.value ?? null,
+        limit: workspacePageSize(query.limit),
+      });
+      this.rememberCodexDirectSessions(workspaceId, direct.data);
+      if (!query.cursor && this.codexSessionCatalog) {
+        const sessions = this.codexSessionCatalog.byWorkspace.get(workspaceId) ?? [];
+        return paginateCodexCatalog(sessions, query, this.codexSessionCatalog.watermark);
+      }
+      void this.getCodexSessionCatalog(adapter, false).catch(() => undefined);
+      return wrapCodexNativePage(direct);
+    }
+
+    const refresh = query.refresh === true && !query.cursor;
+    const catalog = await this.getCodexSessionCatalog(adapter, refresh);
     const sessions = catalog.byWorkspace.get(workspaceId);
     if (!sessions) {
       throw new RuntimeSessionError(`Codex workspace not found: ${workspaceId}`, "SESSION_NOT_FOUND");
     }
-    return paginateByOffset(sessions, query, catalog.watermark);
+    return paginateCodexCatalog(sessions, query, catalog.watermark);
+  }
+
+  private rememberCodexDirectSessions(
+    workspaceId: string,
+    sessions: readonly UnifiedSessionSummary[],
+  ): void {
+    const merged = mergeSessionRows(sessions, this.codexDirectSessions.get(workspaceId) ?? [], workspaceId);
+    this.codexDirectSessions.set(workspaceId, merged);
+    if (!this.codexSessionCatalog?.byWorkspace.has(workspaceId)) return;
+    const catalogRows = this.codexSessionCatalog.byWorkspace.get(workspaceId) ?? [];
+    this.codexSessionCatalog.byWorkspace.set(workspaceId, mergeSessionRows(merged, catalogRows, workspaceId));
+    const newest = this.codexSessionCatalog.byWorkspace.get(workspaceId)?.[0]?.updated;
+    if (newest && (!this.codexSessionCatalog.watermark || newest > this.codexSessionCatalog.watermark)) {
+      this.codexSessionCatalog.watermark = newest;
+    }
   }
 
   private async getCodexSessionCatalog(
@@ -379,8 +512,8 @@ export class AgentWorkspaceIndexService {
       if (generation !== this.codexSessionCatalogGeneration) {
         return this.getCodexSessionCatalog(adapter, false);
       }
-      if (refresh) this.deleteSessionCacheEntries("codex");
       this.codexSessionCatalog = catalog;
+      this.deleteSessionCacheEntries("codex");
       return catalog;
     } finally {
       if (this.codexSessionCatalogRequest === request) this.codexSessionCatalogRequest = null;
@@ -397,7 +530,15 @@ export class AgentWorkspaceIndexService {
     }
     const primary = await adapter.discoverSessions();
     const discovered = this.supplementCodexSessions?.(primary) ?? primary;
-    return classifyCodexSessions(discovered, workspaces, this.platform);
+    const catalog = classifyCodexSessions(discovered, workspaces, this.platform);
+    for (const [workspaceId, direct] of this.codexDirectSessions) {
+      const existing = catalog.byWorkspace.get(workspaceId);
+      if (!existing) continue;
+      catalog.byWorkspace.set(workspaceId, mergeSessionRows(direct, existing, workspaceId));
+      const newest = catalog.byWorkspace.get(workspaceId)?.[0]?.updated;
+      if (newest && (!catalog.watermark || newest > catalog.watermark)) catalog.watermark = newest;
+    }
+    return catalog;
   }
 
   private async listImportedWorkspaceSessions(

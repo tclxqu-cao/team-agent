@@ -1374,6 +1374,14 @@ select:focus {
   color: var(--text-muted);
 }
 
+.chat-header-action--codex-release.is-releasing svg {
+  animation: spin 0.8s linear infinite;
+}
+
+.chat-header-action--codex-release.is-released {
+  color: var(--success);
+}
+
 .agent-activity-indicator {
   min-height: 24px;
   display: inline-flex;
@@ -2384,6 +2392,107 @@ input:focus, select:focus, textarea:focus {
   margin-left: 0;
   padding-left: 0;
   border-left: 0;
+}
+
+.chat-view--codex-history .codex-execution-trace {
+  width: min(100%, 860px);
+  margin: 0 auto 2px;
+  color: var(--text-secondary);
+}
+
+.chat-view--codex-history .codex-execution-trace__summary {
+  width: 100%;
+  min-width: 0;
+  min-height: 32px;
+  padding: 5px 0;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font: 600 11.5px/1.4 var(--font-body);
+  letter-spacing: 0;
+  text-align: left;
+}
+
+.chat-view--codex-history .codex-execution-trace__summary:hover {
+  background: color-mix(in srgb, var(--text-primary) 4%, transparent);
+}
+
+.chat-view--codex-history .codex-execution-trace__summary:focus-visible {
+  outline: none;
+  box-shadow: inset var(--focus-ring);
+}
+
+.chat-view--codex-history .codex-execution-trace__icon {
+  width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center start;
+  flex: 0 0 18px;
+}
+
+.chat-view--codex-history .codex-execution-trace__summary[aria-label^="执行过程加载中"] .codex-execution-trace__icon {
+  color: var(--accent);
+  animation: spin 1s linear infinite;
+}
+
+.chat-view--codex-history .codex-execution-trace__label,
+.chat-view--codex-history .codex-execution-trace__error {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.chat-view--codex-history .codex-execution-trace__error {
+  color: var(--danger);
+  font-size: 10px;
+  font-weight: 500;
+}
+
+.chat-view--codex-history .codex-execution-trace__spacer {
+  min-width: 0;
+  flex: 1;
+}
+
+.chat-view--codex-history .codex-execution-trace__chevron {
+  flex: 0 0 13px;
+  transition: transform var(--duration-fast) var(--ease-out);
+}
+
+.chat-view--codex-history .codex-execution-trace__summary[aria-expanded="true"] .codex-execution-trace__chevron {
+  transform: rotate(90deg);
+}
+
+.chat-view--codex-history .codex-execution-trace__body {
+  min-width: 0;
+  padding: 0 0 8px;
+}
+
+.chat-view--codex-history .codex-execution-trace__timeline {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.chat-view--codex-history .codex-execution-trace__item {
+  min-width: 0;
+}
+
+.chat-view--codex-history .codex-execution-trace__loading,
+.chat-view--codex-history .codex-execution-trace__empty {
+  min-height: 30px;
+  display: flex;
+  align-items: center;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.chat-view--codex-history .codex-execution-trace__retry {
+  margin: 4px 0;
 }
 
 /* ── Compact layout density ── */

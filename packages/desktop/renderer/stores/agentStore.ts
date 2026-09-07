@@ -6,8 +6,13 @@ import type {
   type MessagePresentation,
   type NativeSubagentActivity,
   type RuntimeProgress,
+  type SessionToolResultRef,
 } from "@agent/core";
 import type { CronTask } from "../global";
+import {
+  applyCodexLiveExecutionEvent,
+  type CodexLiveExecutionEvent,
+} from "../lib/codex-execution-trace";
 import { mergeReasoningSummaryDelta, upsertRuntimeProgress } from "../lib/native-runtime-progress";
 
 export type { ContextUsageSnapshot, CronTask };
@@ -42,6 +47,7 @@ export interface StreamEvent {
   itemId?: string;
   sectionIndex?: number;
   delta?: string;
+  turnId?: string;
   progressId?: string;
   phase?: RuntimeProgress["phase"];
   label?: string;
@@ -104,8 +110,10 @@ export interface ChatMessage {
     arguments: Record<string, unknown>;
     result?: string;
     isError?: boolean;
+    resultRef?: SessionToolResultRef;
   }>;
   toolCallId?: string;
+  toolResultRef?: SessionToolResultRef;
   name?: string;
   /** True when this message is a context-compaction banner, not a real chat bubble */
   isCompactionSummary?: boolean;
@@ -113,6 +121,12 @@ export interface ChatMessage {
   images?: string[];
   /** Display-only metadata restored from an external runtime. */
   presentation?: MessagePresentation;
+  /** Collapsed Codex execution details loaded only when this row is expanded. */
+  executionTrace?: {
+    turnId: string;
+    revision: string;
+    liveMessages?: ChatMessage[];
+  };
   /** True when this user message is queued and waiting for the current run to finish */
   isQueued?: boolean;
   /** Durable broker queue identity; absent for legacy in-memory queues. */
@@ -171,6 +185,11 @@ interface AgentState {
   setNativeSubagentActivities: (activities: NativeSubagentActivity[], sessionId?: string) => void;
   applyReasoningSummary: (
     event: Extract<AgentEvent, { type: "reasoning_summary_delta" }>,
+    sessionId?: string,
+  ) => void;
+  applyCodexExecutionEvent: (
+    turnId: string,
+    event: CodexLiveExecutionEvent,
     sessionId?: string,
   ) => void;
   getContextUsageForSession: (sessionId: string) => ContextUsageSnapshot | undefined;
@@ -435,6 +454,26 @@ export const useAgentStore = create<AgentState>((set, get) => ({
           [targetSid]: applyReasoningSummaryToList(
             state.messagesBySession[targetSid] ?? (targetSid === state.sessionId ? state.messages : []),
             event,
+          ),
+        }
+      : state.messagesBySession;
+    return { messages: visibleMessages, messagesBySession };
+  }),
+
+  applyCodexExecutionEvent: (turnId, event, sid) => set((state) => {
+    const targetSid = sid ?? state.sessionId ?? undefined;
+    const timestamp = Date.now();
+    const visibleMessages = targetSid && targetSid !== state.sessionId
+      ? state.messages
+      : applyCodexLiveExecutionEvent(state.messages, turnId, event, timestamp);
+    const messagesBySession = targetSid
+      ? {
+          ...state.messagesBySession,
+          [targetSid]: applyCodexLiveExecutionEvent(
+            state.messagesBySession[targetSid] ?? (targetSid === state.sessionId ? state.messages : []),
+            turnId,
+            event,
+            timestamp,
           ),
         }
       : state.messagesBySession;

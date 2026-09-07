@@ -1,6 +1,6 @@
 export interface NativeSessionViewState {
   agentType?: "customer-agent" | "codex" | "claude-code" | "opencode";
-  status?: "idle" | "running" | "completed" | "failed";
+  status?: "active" | "idle" | "running" | "completed" | "failed";
   occupancy?: "available" | "owned-by-customer-agent" | "owned-externally";
 }
 
@@ -23,6 +23,10 @@ export function isObservedNativeRun(session: NativeSessionViewState | null | und
 
 export function shouldRestoreLocalNativeRun(session: NativeSessionViewState | null | undefined): boolean {
   return isActiveNativeSession(session) && session?.occupancy !== "owned-externally";
+}
+
+export function shouldRestoreCustomerAgentRun(session: NativeSessionViewState | null | undefined): boolean {
+  return session?.agentType === "customer-agent" && session.status === "active";
 }
 
 export function shouldQueueMessageForActiveRun(

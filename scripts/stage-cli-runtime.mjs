@@ -67,6 +67,7 @@ await cp(resolve(server, "shell-integration.mjs"), resolve(target, "shell-integr
 await cp(resolve(server, "shell-platform.mjs"), resolve(target, "shell-platform.mjs"));
 await mkdir(resolve(target, "lib"), { recursive: true });
 await cp(resolve(server, "lib/file-preview-service.mjs"), resolve(target, "lib/file-preview-service.mjs"));
+await cp(resolve(server, "lib/markdown-preview.mjs"), resolve(target, "lib/markdown-preview.mjs"));
 
 const serverPkg = JSON.parse(await readFile(resolve(server, "package.json"), "utf8"));
 const {

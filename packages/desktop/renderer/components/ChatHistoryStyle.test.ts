@@ -126,9 +126,16 @@ describe("shared Codex-style message history", () => {
     expect(globalCss).toContain(".chat-view--codex-history .agent-activity-indicator");
     expect(globalCss).toContain(".reasoning-summary__preview");
     expect(globalCss).toContain(".tool-call-shell__preview");
-    expect(globalCss.match(/place-items: center start/g)).toHaveLength(5);
-    expect(globalCss.match(/padding: 5px 0;/g)).toHaveLength(3);
+    expect(globalCss.match(/place-items: center start/g)).toHaveLength(6);
+    expect(globalCss.match(/padding: 5px 0;/g)).toHaveLength(4);
+    expect(globalCss).toContain(".codex-execution-trace__summary");
     expect(globalCss).toContain("padding: 5px 0 !important");
+    const executionTraceBodyCss = globalCss.slice(
+      globalCss.indexOf(".chat-view--codex-history .codex-execution-trace__body"),
+      globalCss.indexOf(".chat-view--codex-history .codex-execution-trace__timeline"),
+    );
+    expect(executionTraceBodyCss).toContain("padding: 0 0 8px;");
+    expect(executionTraceBodyCss).not.toContain("25px");
     expect(globalCss).toContain(".reasoning-summary__label");
     expect(globalCss).toContain(".chat-view--codex-history .tool-call-shell__label");
     expect(globalCss).not.toMatch(/\.reasoning-summary__label\s*\{[^}]*transform:/s);

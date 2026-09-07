@@ -1,6 +1,17 @@
-import type { MessagePresentation } from "@agent/core";
+import type {
+  AgentType,
+  MessagePresentation,
+  SessionHistoryQuery,
+  SessionToolResultRef,
+} from "@agent/core";
 import type { ChatMessage, ContextUsageSnapshot } from "../stores/agentStore";
 import type { SessionGoalState } from "../global";
+import {
+  applyCodexLiveExecutionEvent,
+  groupCodexExecutionTrace,
+  isCodexExecutionCarrier,
+  type CodexLiveExecutionEvent,
+} from "./codex-execution-trace";
 
 export interface PersistedHistoryEvent {
   type?: string;
@@ -8,6 +19,10 @@ export interface PersistedHistoryEvent {
   finalText?: string;
   toolCall?: { id: string; name: string; arguments: Record<string, unknown> };
   result?: { toolCallId?: string; content?: string; isError?: boolean };
+  turnId?: string;
+  itemId?: string;
+  sectionIndex?: number;
+  delta?: string;
   usage?: ContextUsageSnapshot;
   questionId?: string;
   question?: string;
@@ -18,7 +33,7 @@ export interface PersistedHistoryEvent {
 
 export interface SessionHistoryDetail {
   agentType?: "customer-agent" | "codex" | "claude-code" | "opencode";
-  status?: "idle" | "running" | "completed" | "failed";
+  status?: "active" | "idle" | "running" | "completed" | "failed";
   occupancy?: "available" | "owned-by-customer-agent" | "owned-externally";
   messages?: Array<{
     historyId?: string;
@@ -26,6 +41,7 @@ export interface SessionHistoryDetail {
     content?: string;
     toolCalls?: Array<{ id: string; name: string; arguments: Record<string, unknown> }>;
     toolCallId?: string;
+    toolResultRef?: SessionToolResultRef;
     name?: string;
     presentation?: MessagePresentation;
   }>;
@@ -39,11 +55,179 @@ export interface SessionHistoryDetail {
     newerCursor?: string | null;
     kind?: "latest" | "anchored";
     revision?: string;
+    delivery?: "core" | "trace" | "legacy-full";
   };
   goalState?: SessionGoalState;
 }
 
+export type ProgressiveHistoryPhase = "full" | "core" | "trace";
+
+interface SessionHistoryApi {
+  getSession(id: string, query?: SessionHistoryQuery): Promise<unknown>;
+}
+
+export async function loadProgressiveSessionHistoryPage(
+  api: SessionHistoryApi,
+  sessionId: string,
+  agentType: AgentType | undefined,
+  query: SessionHistoryQuery,
+  onPage: (detail: SessionHistoryDetail | null, phase: ProgressiveHistoryPhase) => void,
+  isCurrent: () => boolean,
+  coreLoader?: () => Promise<SessionHistoryDetail | null>,
+): Promise<void> {
+  if (agentType !== "codex") {
+    const detail = coreLoader
+      ? await coreLoader()
+      : await api.getSession(sessionId, query) as SessionHistoryDetail | null;
+    if (isCurrent()) onPage(detail, "full");
+    return;
+  }
+
+  const core = coreLoader
+    ? await coreLoader()
+    : await api.getSession(sessionId, { ...query, view: "core" }) as SessionHistoryDetail | null;
+  if (!isCurrent()) return;
+  onPage(core, "core");
+}
+
+export function mergeProgressiveSessionHistoryPage(
+  current: ChatMessage[],
+  refreshed: ChatMessage[],
+  phase: ProgressiveHistoryPhase,
+  history?: SessionHistoryDetail["history"],
+): ChatMessage[] {
+  const traceWillFollow = phase === "core"
+    && history?.delivery !== "legacy-full"
+    && Boolean(history?.revision);
+  const hasVisibleHistory = current.some((message) => !message.isQueued);
+  if (traceWillFollow && hasVisibleHistory) {
+    return mergeCoreSessionHistory(current, refreshed);
+  }
+  return mergeRefreshedSessionHistory(current, refreshed);
+}
+
+function mergeCoreSessionHistory(
+  current: ChatMessage[],
+  refreshed: ChatMessage[],
+): ChatMessage[] {
+  if (refreshed.length === 0) return current;
+  if (current.length === 0) return refreshed;
+
+  let currentHistory = current.filter((message) => !message.isQueued);
+  const queued = current.filter((message) => message.isQueued);
+  const refreshedTurnStart = refreshed.findLastIndex((message) => (
+    message.role === "user" && !message.isCompactionSummary
+  ));
+  if (refreshedTurnStart < 0) return current;
+
+  const refreshedUser = refreshed[refreshedTurnStart];
+  let currentTurnStart = currentHistory.findLastIndex((message) => (
+    message.role === "user"
+    && !message.isCompactionSummary
+    && sessionHistoryUserBoundaryKey(message) === sessionHistoryUserBoundaryKey(refreshedUser)
+  ));
+
+  if (currentTurnStart < 0) {
+    // A new native turn can appear between core refreshes. Keep the previous
+    // turn's trace and append the new core-only turn until its trace arrives.
+    return [...currentHistory, ...refreshed.slice(refreshedTurnStart), ...queued];
+  }
+
+  const mergedPrefix = mergeRefreshedSessionHistory(
+    currentHistory.slice(0, currentTurnStart),
+    refreshed.slice(0, refreshedTurnStart),
+  );
+  currentHistory = [...mergedPrefix, ...currentHistory.slice(currentTurnStart)];
+  currentTurnStart = mergedPrefix.length;
+
+  const currentTurnEnd = currentHistory.findIndex((message, index) => (
+    index > currentTurnStart && message.role === "user" && !message.isCompactionSummary
+  ));
+  const insertionIndex = currentTurnEnd < 0 ? currentHistory.length : currentTurnEnd;
+  const currentAssistantIndexes: number[] = [];
+  for (let index = currentTurnStart + 1; index < insertionIndex; index += 1) {
+    if (isCoreAssistantMessage(currentHistory[index])) currentAssistantIndexes.push(index);
+  }
+  const refreshedAssistants = refreshed
+    .slice(refreshedTurnStart + 1)
+    .filter(isCoreAssistantMessage);
+  const refreshedRevision = refreshed.find((message) => message.executionTrace)?.executionTrace?.revision;
+  const merged = currentHistory.map((message) => message.executionTrace && refreshedRevision
+    ? {
+        ...message,
+        executionTrace: { ...message.executionTrace, revision: refreshedRevision },
+      }
+    : message);
+  const refreshedTrace = refreshed
+    .slice(refreshedTurnStart + 1)
+    .find((message) => message.executionTrace);
+  const currentTraceIndex = currentHistory.findIndex((message, index) => (
+    index > currentTurnStart
+    && index < insertionIndex
+    && message.executionTrace?.turnId === refreshedTrace?.executionTrace?.turnId
+  ));
+  if (refreshedTrace && currentTraceIndex >= 0) {
+    const currentTrace = currentHistory[currentTraceIndex].executionTrace;
+    merged[currentTraceIndex] = {
+      ...refreshedTrace,
+      id: currentHistory[currentTraceIndex].id,
+      timestamp: currentHistory[currentTraceIndex].timestamp,
+      executionTrace: {
+        ...refreshedTrace.executionTrace!,
+        ...(currentTrace?.liveMessages ? { liveMessages: currentTrace.liveMessages } : {}),
+      },
+    };
+  }
+  const shared = Math.min(currentAssistantIndexes.length, refreshedAssistants.length);
+
+  for (let index = 0; index < shared; index += 1) {
+    const currentIndex = currentAssistantIndexes[index];
+    const previous = merged[currentIndex];
+    const next = refreshedAssistants[index];
+    merged[currentIndex] = {
+      ...previous,
+      ...next,
+      id: next.id.startsWith("history-message.v1.") ? next.id : previous.id,
+      timestamp: previous.timestamp,
+      images: next.images ?? previous.images,
+      presentation: next.presentation ?? previous.presentation,
+    };
+  }
+
+  if (refreshedAssistants.length > shared) {
+    merged.splice(insertionIndex, 0, ...refreshedAssistants.slice(shared));
+  }
+  return [...merged, ...queued];
+}
+
+function isCoreAssistantMessage(message: ChatMessage): boolean {
+  return message.role === "assistant"
+    && !message.executionTrace
+    && !message.toolCalls?.length
+    && !message.askUser
+    && !message.isCompactionSummary
+    && !message.presentation?.reasoning?.length;
+}
+
 export function restoreSessionHistoryPage(detail: SessionHistoryDetail | null): ChatMessage[] {
+  const isCodexCore = detail?.history?.delivery === "core";
+  const restored = restoreSessionMessages(detail, !isCodexCore);
+  const revision = detail?.history?.revision;
+  if (!isCodexCore || !revision) return restored;
+  return restoreCodexLiveExecutionEvents(
+    groupCodexExecutionTrace(restored, revision),
+    detail?.events ?? [],
+  );
+}
+
+export function restoreCodexExecutionTrace(detail: SessionHistoryDetail | null): ChatMessage[] {
+  return restoreSessionMessages(detail).filter(isCodexExecutionCarrier);
+}
+
+function restoreSessionMessages(
+  detail: SessionHistoryDetail | null,
+  recoverEventTools = true,
+): ChatMessage[] {
   const persisted = detail?.messages ?? [];
   const events = detail?.events ?? [];
   const resolvedQuestionIds = new Set(
@@ -84,7 +268,15 @@ export function restoreSessionHistoryPage(detail: SessionHistoryDetail | null): 
           ...message,
           toolCalls: message.toolCalls.map((toolCall) => {
             const resultMessage = messageToolResults.get(toolCall.id);
-            if (resultMessage) return { ...toolCall, result: resultMessage.content };
+            if (resultMessage) return {
+              ...toolCall,
+              ...(resultMessage.toolResultRef
+                ? {
+                    resultRef: resultMessage.toolResultRef,
+                    isError: resultMessage.toolResultRef.isError,
+                  }
+                : { result: resultMessage.content }),
+            };
             const eventResult = eventToolResults.get(toolCall.id);
             return eventResult
               ? { ...toolCall, result: eventResult.content, isError: eventResult.isError }
@@ -103,7 +295,7 @@ export function restoreSessionHistoryPage(detail: SessionHistoryDetail | null): 
       return message;
     });
 
-  const recovered = recoverEventOnlyAssistant(events);
+  const recovered = recoverEventOnlyAssistant(events, recoverEventTools);
   if (!restored.some((message) => message.role === "assistant" && !message.isCompactionSummary) && recovered) {
     const insertAfter = restored.findLastIndex(
       (message) => message.role === "user" && !message.isCompactionSummary,
@@ -182,11 +374,18 @@ export function mergeRefreshedSessionHistory(
     const previous = current[replacementStart + index];
     if (!previous || !sessionHistoryMessagesAlign(previous, message, refreshedKeys[index])) return message;
     const hasPersistedImage = message.presentation?.attachments?.some((attachment) => attachment.dataUrl);
+    const toolCalls = message.toolCalls?.map((toolCall) => {
+      const previousToolCall = previous.toolCalls?.find((candidate) => candidate.id === toolCall.id);
+      return previousToolCall?.result === undefined
+        ? toolCall
+        : { ...toolCall, result: previousToolCall.result, isError: previousToolCall.isError };
+    });
     return {
       ...message,
       id: message.id.startsWith("history-message.v1.") ? message.id : previous.id,
       timestamp: previous.timestamp,
       images: hasPersistedImage ? undefined : message.images ?? previous.images,
+      ...(toolCalls ? { toolCalls } : {}),
     };
   });
   const queued = current.filter((message) => message.isQueued);
@@ -291,6 +490,13 @@ function sessionHistoryMessagesAlign(
   refreshedKey: string,
 ): boolean {
   if (sessionHistoryMessageMatchKey(current) === refreshedKey) return true;
+  if (
+    current.role === "assistant"
+    && refreshed.role === "assistant"
+    && current.content === refreshed.content
+    && JSON.stringify(current.toolCalls?.map((toolCall) => toolCall.id) ?? [])
+      === JSON.stringify(refreshed.toolCalls?.map((toolCall) => toolCall.id) ?? [])
+  ) return true;
   return current.role === "user"
     && refreshed.role === "user"
     && sessionHistoryUserBoundaryKey(current) === sessionHistoryUserBoundaryKey(refreshed);
@@ -312,6 +518,7 @@ function sessionHistoryMessageMatchKey(message: ChatMessage): string {
     content: message.content,
     toolCalls: message.toolCalls,
     toolCallId: message.toolCallId,
+    toolResultRef: message.toolResultRef,
     name: message.name,
     agentName: message.agentName,
     presentation: message.role === "user" ? undefined : message.presentation,
@@ -342,19 +549,62 @@ function toChatMessage(message: NonNullable<SessionHistoryDetail["messages"]>[nu
     content: message.content ?? "",
     toolCalls: message.toolCalls?.length ? message.toolCalls : undefined,
     toolCallId: message.toolCallId,
+    toolResultRef: message.toolResultRef,
     name: message.name,
     presentation: message.presentation,
     timestamp: Date.now(),
   };
 }
 
-function recoverEventOnlyAssistant(events: PersistedHistoryEvent[]): ChatMessage | null {
+function restoreCodexLiveExecutionEvents(
+  messages: ChatMessage[],
+  events: readonly PersistedHistoryEvent[],
+): ChatMessage[] {
+  return events.reduce((current, event) => {
+    if (!event.turnId) return current;
+    let liveEvent: CodexLiveExecutionEvent | null = null;
+    if (
+      event.type === "reasoning_summary_delta"
+      && event.itemId
+      && Number.isSafeInteger(event.sectionIndex)
+      && typeof event.delta === "string"
+    ) {
+      liveEvent = {
+        type: "reasoning_summary_delta",
+        turnId: event.turnId,
+        itemId: event.itemId,
+        sectionIndex: event.sectionIndex!,
+        delta: event.delta,
+      };
+    } else if (event.type === "tool_call" && event.toolCall) {
+      liveEvent = { type: "tool_call", turnId: event.turnId, toolCall: event.toolCall };
+    } else if (event.type === "tool_result" && event.result?.toolCallId) {
+      liveEvent = {
+        type: "tool_result",
+        turnId: event.turnId,
+        result: {
+          toolCallId: event.result.toolCallId,
+          content: event.result.content ?? "",
+          isError: event.result.isError,
+        },
+      };
+    }
+    return liveEvent
+      ? applyCodexLiveExecutionEvent(current, event.turnId, liveEvent)
+      : current;
+  }, messages);
+}
+
+function recoverEventOnlyAssistant(
+  events: PersistedHistoryEvent[],
+  includeTools = true,
+): ChatMessage | null {
   let content = "";
   const toolCalls: NonNullable<ChatMessage["toolCalls"]> = [];
   const toolCallsById = new Map<string, NonNullable<ChatMessage["toolCalls"]>[number]>();
   for (const event of events) {
     if (event.type === "text_chunk" && event.text) content += event.text;
-    if (event.type === "tool_call" && event.toolCall) {
+    if (includeTools && event.type === "tool_call" && event.toolCall) {
       const toolCall = {
         id: event.toolCall.id,
         name: event.toolCall.name,
@@ -363,7 +613,7 @@ function recoverEventOnlyAssistant(events: PersistedHistoryEvent[]): ChatMessage
       toolCalls.push(toolCall);
       toolCallsById.set(toolCall.id, toolCall);
     }
-    if (event.type === "tool_result" && event.result?.toolCallId) {
+    if (includeTools && event.type === "tool_result" && event.result?.toolCallId) {
       const toolCall = toolCallsById.get(event.result.toolCallId);
       if (toolCall) {
         toolCall.result = event.result.content ?? "";

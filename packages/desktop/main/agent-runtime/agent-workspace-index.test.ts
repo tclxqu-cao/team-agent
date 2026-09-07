@@ -129,6 +129,39 @@ describe("AgentWorkspaceIndexService", () => {
     expect(refreshed.data.some((item) => item.workspaceId === "repo")).toBe(true);
   });
 
+  it("keeps the Codex session catalog when a workspace refresh does not change classification", async () => {
+    const codex = adapter("codex", [workspace("codex", "repo", 0)]);
+    codex.discoverSessions = vi.fn(async () => [{
+      ...session("codex", "recent"),
+      cwd: "/elsewhere",
+    }]);
+    const service = new AgentWorkspaceIndexService([codex]);
+
+    await service.listWorkspaceSessions("codex", CODEX_RECENT_WORKSPACE_ID);
+    await service.listWorkspaces("codex", { refresh: true });
+    await service.listWorkspaceSessions("codex", CODEX_RECENT_WORKSPACE_ID);
+
+    expect(codex.discoverSessions).toHaveBeenCalledTimes(1);
+  });
+
+  it("invalidates the Codex session catalog when workspace roots change", async () => {
+    const original = workspace("codex", "repo", 0);
+    const changed = { ...original, roots: ["/repo-renamed"] };
+    const codex = adapter("codex", [original]);
+    codex.discoverSessions = vi.fn(async () => [{
+      ...session("codex", "recent"),
+      cwd: "/elsewhere",
+    }]);
+    const service = new AgentWorkspaceIndexService([codex]);
+
+    await service.listWorkspaceSessions("codex", CODEX_RECENT_WORKSPACE_ID);
+    codex.listWorkspaces = vi.fn(async () => ({ data: [changed], nextCursor: null, watermark: "2" }));
+    await service.listWorkspaces("codex", { refresh: true });
+    await service.listWorkspaceSessions("codex", CODEX_RECENT_WORKSPACE_ID);
+
+    expect(codex.discoverSessions).toHaveBeenCalledTimes(2);
+  });
+
   it("delegates a workspace session page only to its owning Agent", async () => {
     const codex = adapter("codex", [workspace("codex", "repo", 0)]);
     const claude = adapter("claude-code", [workspace("claude-code", "other", 0)]);
@@ -201,30 +234,121 @@ describe("AgentWorkspaceIndexService", () => {
     });
   });
 
-  it("merges project-ID and legacy-path Codex sessions without omissions", async () => {
-    const repo = workspace("codex", "repo", 0);
-    const codex = adapter("codex", [repo]);
-    codex.discoverSessions = vi.fn(async () => [
-      ...Array.from({ length: 5 }, (_, index) => ({
-        ...session("codex", `project-${index}`),
-        cwd: "/repo",
-        projectId: "repo",
-        updated: `2026-09-04T00:00:0${index}.000Z`,
-      })),
-      ...Array.from({ length: 2 }, (_, index) => ({
-        ...session("codex", `legacy-${index}`),
-        cwd: "/repo/legacy",
-        updated: `2026-09-03T00:00:0${index}.000Z`,
-      })),
-    ]);
+  it("returns a native Codex project page before global discovery settles", async () => {
+    let resolveDiscovery!: (sessions: UnifiedSessionSummary[]) => void;
+    const discovery = new Promise<UnifiedSessionSummary[]>((resolve) => {
+      resolveDiscovery = resolve;
+    });
+    const codex = adapter("codex", [workspace("codex", "repo", 0)]);
+    const direct = { ...session("codex", "direct"), projectId: "repo" };
+    codex.listWorkspaceSessions = vi.fn(async () => ({
+      data: [direct],
+      nextCursor: "native-next",
+      watermark: direct.updated,
+    }));
+    codex.discoverSessions = vi.fn(() => discovery);
     const service = new AgentWorkspaceIndexService([codex]);
 
     const page = await service.listWorkspaceSessions("codex", "repo", { limit: 20 });
 
-    expect(page.data).toHaveLength(7);
-    expect(new Set(page.data.map((item) => item.id)).size).toBe(7);
-    expect(page.data.every((item) => item.projectId === "repo")).toBe(true);
-    expect(page.nextCursor).toBeNull();
+    expect(page.data).toEqual([direct]);
+    expect(page.nextCursor).toMatch(/^codex-native:/);
+    expect(codex.discoverSessions).toHaveBeenCalledTimes(1);
+    resolveDiscovery([]);
+    await discovery;
+  });
+
+  it("merges project-ID, legacy-path, and supplemental Codex sessions after background discovery", async () => {
+    let resolveDiscovery!: (sessions: UnifiedSessionSummary[]) => void;
+    const discovery = new Promise<UnifiedSessionSummary[]>((resolve) => {
+      resolveDiscovery = resolve;
+    });
+    const repo = workspace("codex", "repo", 0);
+    const codex = adapter("codex", [repo]);
+    const direct = Array.from({ length: 5 }, (_, index) => ({
+      ...session("codex", `project-${index}`),
+      cwd: "/repo",
+      projectId: "repo",
+      updated: `2026-09-04T00:00:0${index}.000Z`,
+    }));
+    const legacy = Array.from({ length: 2 }, (_, index) => ({
+      ...session("codex", `legacy-${index}`),
+      cwd: "/repo/legacy",
+      updated: `2026-09-03T00:00:0${index}.000Z`,
+    }));
+    const supplemental = {
+      ...session("codex", "supplemental"),
+      cwd: "/repo",
+      updated: "2026-09-02T00:00:00.000Z",
+      compatibility: { status: "checking" as const, readerVersion: "0.153.0" },
+      canResume: false,
+    };
+    codex.listWorkspaceSessions = vi.fn(async () => ({
+      data: direct,
+      nextCursor: null,
+      watermark: direct[direct.length - 1]!.updated,
+    }));
+    codex.discoverSessions = vi.fn(() => discovery);
+    const supplement = vi.fn((rows: readonly UnifiedSessionSummary[]) => [...rows, supplemental]);
+    const service = new AgentWorkspaceIndexService([codex], undefined, "darwin", supplement);
+
+    const first = await service.listWorkspaceSessions("codex", "repo", { limit: 20 });
+    resolveDiscovery([...direct, ...legacy]);
+    await discovery;
+    await vi.waitFor(() => expect(supplement).toHaveBeenCalled());
+    const reconciled = await service.listWorkspaceSessions("codex", "repo", { limit: 20, refresh: true });
+
+    expect(first.data).toHaveLength(5);
+    expect(reconciled.data).toHaveLength(8);
+    expect(new Set(reconciled.data.map((item) => item.id)).size).toBe(8);
+    expect(reconciled.data.every((item) => item.projectId === "repo")).toBe(true);
+    expect(reconciled.data.map((item) => item.id)).toEqual([
+      "project-4",
+      "project-3",
+      "project-2",
+      "project-1",
+      "project-0",
+      "legacy-1",
+      "legacy-0",
+      "supplemental",
+    ]);
+    expect(supplement).toHaveBeenCalledWith([
+      ...direct,
+      ...legacy,
+    ]);
+  });
+
+  it("continues a native Codex cursor after background catalog reconciliation", async () => {
+    let resolveDiscovery!: (sessions: UnifiedSessionSummary[]) => void;
+    const discovery = new Promise<UnifiedSessionSummary[]>((resolve) => {
+      resolveDiscovery = resolve;
+    });
+    const codex = adapter("codex", [workspace("codex", "repo", 0)]);
+    codex.listWorkspaceSessions = vi.fn(async (_workspaceId: string, query = {}) => ({
+      data: [{ ...session("codex", query.cursor ? "second" : "first"), projectId: "repo" }],
+      nextCursor: query.cursor ? null : "native-next",
+      watermark: "1",
+    }));
+    codex.discoverSessions = vi.fn(() => discovery);
+    const service = new AgentWorkspaceIndexService([codex]);
+
+    const first = await service.listWorkspaceSessions("codex", "repo", { limit: 1 });
+    resolveDiscovery([
+      { ...session("codex", "catalog-first"), cwd: "/repo", projectId: "repo" },
+      { ...session("codex", "catalog-second"), cwd: "/repo", projectId: "repo" },
+    ]);
+    await discovery;
+    await vi.waitFor(() => expect(codex.discoverSessions).toHaveBeenCalledTimes(1));
+    const second = await service.listWorkspaceSessions("codex", "repo", {
+      limit: 1,
+      cursor: first.nextCursor,
+    });
+
+    expect(second.data.map((item) => item.id)).toEqual(["second"]);
+    expect(codex.listWorkspaceSessions).toHaveBeenLastCalledWith("repo", expect.objectContaining({
+      cursor: "native-next",
+      limit: 1,
+    }));
   });
 
   it("uses the most specific path and keeps sibling-prefix sessions in recent", async () => {
@@ -234,6 +358,7 @@ describe("AgentWorkspaceIndexService", () => {
     nested.roots = ["/repo/app/packages/core"];
     const repository = new MemoryImportedWorkspaceRepository();
     const codex = adapter("codex", [root, nested]);
+    codex.listWorkspaceSessions = vi.fn(async () => ({ data: [], nextCursor: null, watermark: "1" }));
     codex.discoverSessions = vi.fn(async () => [
       { ...session("codex", "direct"), cwd: "/elsewhere", projectId: "root" },
       { ...session("codex", "nested"), cwd: "/repo/app/packages/core/src" },
@@ -243,6 +368,9 @@ describe("AgentWorkspaceIndexService", () => {
     const service = new AgentWorkspaceIndexService([codex], repository, "darwin");
     const imported = await service.importWorkspace("codex", "/manual/repo", "Manual");
 
+    await expect(service.listWorkspaceSessions("codex", CODEX_RECENT_WORKSPACE_ID)).resolves.toMatchObject({
+      data: [expect.objectContaining({ id: "sibling", projectId: CODEX_RECENT_WORKSPACE_ID })],
+    });
     await expect(service.listWorkspaceSessions("codex", "root")).resolves.toMatchObject({
       data: [expect.objectContaining({ id: "direct", projectId: "root" })],
     });
@@ -252,29 +380,27 @@ describe("AgentWorkspaceIndexService", () => {
     await expect(service.listWorkspaceSessions("codex", imported.workspace.workspaceId)).resolves.toMatchObject({
       data: [expect.objectContaining({ id: "imported", projectId: imported.workspace.workspaceId })],
     });
-    await expect(service.listWorkspaceSessions("codex", CODEX_RECENT_WORKSPACE_ID)).resolves.toMatchObject({
-      data: [expect.objectContaining({ id: "sibling", projectId: CODEX_RECENT_WORKSPACE_ID })],
-    });
     expect(codex.discoverSessions).toHaveBeenCalledTimes(1);
   });
 
-  it("pages every Codex session from one stable classified snapshot", async () => {
+  it("pages every recent Codex session from one stable classified snapshot", async () => {
     const codex = adapter("codex", [workspace("codex", "repo", 0)]);
     codex.discoverSessions = vi.fn(async () => Array.from({ length: 45 }, (_, index) => ({
       ...session("codex", `session-${String(index).padStart(2, "0")}`),
-      projectId: "repo",
+      cwd: "/elsewhere",
       updated: new Date(Date.UTC(2026, 8, 4, 0, 0, index)).toISOString(),
     })));
     const service = new AgentWorkspaceIndexService([codex]);
 
-    const first = await service.listWorkspaceSessions("codex", "repo", { limit: 20 });
-    const second = await service.listWorkspaceSessions("codex", "repo", { limit: 20, cursor: first.nextCursor });
-    const third = await service.listWorkspaceSessions("codex", "repo", { limit: 20, cursor: second.nextCursor });
+    const first = await service.listWorkspaceSessions("codex", CODEX_RECENT_WORKSPACE_ID, { limit: 20 });
+    const second = await service.listWorkspaceSessions("codex", CODEX_RECENT_WORKSPACE_ID, { limit: 20, cursor: first.nextCursor });
+    const third = await service.listWorkspaceSessions("codex", CODEX_RECENT_WORKSPACE_ID, { limit: 20, cursor: second.nextCursor });
     const all = [...first.data, ...second.data, ...third.data];
 
     expect([first.data.length, second.data.length, third.data.length]).toEqual([20, 20, 5]);
     expect(new Set(all.map((item) => item.id)).size).toBe(45);
     expect(third.nextCursor).toBeNull();
+    expect(first.nextCursor).toMatch(/^codex-catalog:/);
     expect(codex.discoverSessions).toHaveBeenCalledTimes(1);
   });
 
@@ -288,25 +414,23 @@ describe("AgentWorkspaceIndexService", () => {
       .mockImplementationOnce(() => oldDiscovery)
       .mockResolvedValueOnce([{
         ...session("codex", "new-session"),
-        cwd: "/repo",
-        projectId: "repo",
+        cwd: "/elsewhere",
       }]);
     const service = new AgentWorkspaceIndexService([codex]);
     await service.listWorkspaces("codex");
 
-    const olderRequest = service.listWorkspaceSessions("codex", "repo", { limit: 20 });
-    const refreshed = await service.listWorkspaceSessions("codex", "repo", { limit: 20, refresh: true });
+    const olderRequest = service.listWorkspaceSessions("codex", CODEX_RECENT_WORKSPACE_ID, { limit: 20 });
+    const refreshed = await service.listWorkspaceSessions("codex", CODEX_RECENT_WORKSPACE_ID, { limit: 20, refresh: true });
     resolveOldDiscovery([{
       ...session("codex", "old-session"),
-      cwd: "/repo",
-      projectId: "repo",
+      cwd: "/elsewhere",
     }]);
 
     expect(refreshed.data.map((item) => item.id)).toEqual(["new-session"]);
     await expect(olderRequest).resolves.toMatchObject({
       data: [expect.objectContaining({ id: "new-session" })],
     });
-    await expect(service.listWorkspaceSessions("codex", "repo", { limit: 20 })).resolves.toMatchObject({
+    await expect(service.listWorkspaceSessions("codex", CODEX_RECENT_WORKSPACE_ID, { limit: 20 })).resolves.toMatchObject({
       data: [expect.objectContaining({ id: "new-session" })],
     });
     expect(codex.discoverSessions).toHaveBeenCalledTimes(2);
@@ -316,14 +440,13 @@ describe("AgentWorkspaceIndexService", () => {
     const codex = adapter("codex", [workspace("codex", "repo", 0)]);
     codex.discoverSessions = vi.fn(async () => [{
       ...session("codex", "cached-session"),
-      cwd: "/repo",
-      projectId: "repo",
+      cwd: "/elsewhere",
     }]);
     const service = new AgentWorkspaceIndexService([codex]);
-    await service.listWorkspaceSessions("codex", "repo", { limit: 20 });
+    await service.listWorkspaceSessions("codex", CODEX_RECENT_WORKSPACE_ID, { limit: 20 });
     codex.discoverSessions = vi.fn(async () => { throw new Error("offline"); });
 
-    await expect(service.listWorkspaceSessions("codex", "repo", { limit: 20, refresh: true })).resolves.toMatchObject({
+    await expect(service.listWorkspaceSessions("codex", CODEX_RECENT_WORKSPACE_ID, { limit: 20, refresh: true })).resolves.toMatchObject({
       stale: true,
       data: [expect.objectContaining({ id: "cached-session" })],
     });
@@ -331,10 +454,10 @@ describe("AgentWorkspaceIndexService", () => {
 
   it("supplements the complete Codex snapshot after unchanged adapter discovery", async () => {
     const codex = adapter("codex", [workspace("codex", "repo", 0)]);
-    const primary = { ...session("codex", "primary"), cwd: "/repo", projectId: "repo" };
+    const primary = { ...session("codex", "primary"), cwd: "/elsewhere" };
     const supplemental = {
       ...session("codex", "supplemental"),
-      cwd: "/repo",
+      cwd: "/elsewhere",
       compatibility: { status: "checking" as const, readerVersion: "0.153.0" },
       canResume: false,
     };
@@ -342,7 +465,7 @@ describe("AgentWorkspaceIndexService", () => {
     const supplement = vi.fn((rows: readonly UnifiedSessionSummary[]) => [...rows, supplemental]);
     const service = new AgentWorkspaceIndexService([codex], undefined, "darwin", supplement);
 
-    const page = await service.listWorkspaceSessions("codex", "repo", { limit: 20 });
+    const page = await service.listWorkspaceSessions("codex", CODEX_RECENT_WORKSPACE_ID, { limit: 20 });
 
     expect(page.data.map((item) => item.id)).toEqual(["primary", "supplemental"]);
     expect(supplement).toHaveBeenCalledWith([primary]);

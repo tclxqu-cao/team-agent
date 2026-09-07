@@ -20,11 +20,29 @@ export interface Session {
 }
 
 /** Opaque backward cursor used to request an older session-history window. */
+export type SessionHistoryView = "core" | "trace";
+
 export interface SessionHistoryQuery {
   before?: string;
   after?: string;
   anchor?: string;
   limit?: number;
+  view?: SessionHistoryView;
+  revision?: string;
+  /** Native turn selected for on-demand execution-trace hydration. */
+  turnId?: string;
+}
+
+export interface SessionToolResultRef {
+  turnId: string;
+  itemId: string;
+  revision: string;
+  byteSize: number;
+  isError?: boolean;
+}
+
+export interface SessionToolResultBody extends SessionToolResultRef {
+  content: string;
 }
 
 export interface SessionQueryIndexEntry {
@@ -50,6 +68,7 @@ export interface SessionHistoryWindow {
   newerCursor?: string | null;
   kind?: "latest" | "anchored";
   revision?: string;
+  delivery?: SessionHistoryView | "legacy-full";
 }
 
 export interface SessionHistoryPage {

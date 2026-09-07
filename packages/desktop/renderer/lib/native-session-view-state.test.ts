@@ -4,6 +4,7 @@ import {
   isNativeRuntimeSelection,
   shouldQueueMessageForActiveRun,
   shouldFollowNativeHistory,
+  shouldRestoreCustomerAgentRun,
   shouldRestoreLocalNativeRun,
   type NativeSessionViewState,
 } from "./native-session-view-state";
@@ -56,6 +57,19 @@ describe("native session view state", () => {
     expect(isObservedNativeRun(session)).toBe(false);
     expect(shouldFollowNativeHistory(session, "session-1", "session-1")).toBe(true);
     expect(shouldQueueMessageForActiveRun(session, false)).toBe(true);
+  });
+
+  it("restores a customer-agent run after the browser reloads", () => {
+    const session: NativeSessionViewState = {
+      agentType: "customer-agent",
+      status: "active",
+      occupancy: "available",
+    };
+
+    expect(shouldRestoreCustomerAgentRun(session)).toBe(true);
+    expect(shouldRestoreLocalNativeRun(session)).toBe(false);
+    expect(shouldQueueMessageForActiveRun(session, false)).toBe(false);
+    expect(shouldQueueMessageForActiveRun(session, true)).toBe(true);
   });
 
   it.each(["codex", "claude-code", "opencode"] as const)(

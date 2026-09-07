@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import type { AgentEvent, RuntimeProgress } from "@agent/core";
+import type { AgentEvent, RuntimeProgress, SessionHistoryQuery, SessionToolResultBody, SessionToolResultRef } from "@agent/core";
 import { ArrowDownToLine, Check, Copy, CornerUpRight, FileText, GripVertical, LoaderCircle, Pencil, RefreshCw, Square, Target, Trash2, Volume2 } from "lucide-react";
 import AgentBrandIcon from "./AgentBrandIcon";
 import {
@@ -28,7 +28,9 @@ import {
 import { interruptSpeech } from "../lib/voice-interruption";
 import { PcmStreamPlayer } from "../lib/pcm-stream-player";
 import {
-  mergeRefreshedSessionHistory,
+  mergeProgressiveSessionHistoryPage,
+  loadProgressiveSessionHistoryPage,
+  restoreCodexExecutionTrace,
   restoreSessionHistoryPage,
   type SessionHistoryDetail,
 } from "../lib/session-history";
@@ -63,6 +65,7 @@ import {
   isObservedNativeRun,
   shouldFollowNativeHistory,
   shouldQueueMessageForActiveRun,
+  shouldRestoreCustomerAgentRun,
   shouldRestoreLocalNativeRun,
 } from "../lib/native-session-view-state";
 
@@ -319,6 +322,7 @@ import AskUserCard from "./AskUserCard";
 import ContextUsageBar from "./ContextUsageBar";
 import AgentActivityIndicator from "./AgentActivityIndicator";
 import ReasoningSummary from "./ReasoningSummary";
+import CodexExecutionTrace from "./CodexExecutionTrace";
 import RuntimeProgressRow from "./RuntimeProgressRow";
 import ChatHeaderActions from "./ChatHeaderActions";
 import EmptySessionWelcome from "./EmptySessionWelcome";
@@ -336,10 +340,16 @@ import {
 } from "../lib/message-actions";
 import { prepareComposerFiles } from "../lib/composer-file-routing";
 import {
-  canForkOccupiedCodexSession,
+  clearOccupiedRecovery,
+  createOccupiedSessionRecovery,
+  findOccupiedRecovery,
   forkOccupiedCodexSession,
-  isOccupiedSessionRecovery,
-  type OccupiedSessionError,
+  isOccupiedRecoveryVisible,
+  markOccupiedRecoveryForked,
+  storeOccupiedRecovery,
+  type OccupiedRecoveryRegistry,
+  type OccupiedSendPayload,
+  type OccupiedSessionRecovery,
 } from "../lib/occupied-session-fork";
 import type { AgentType, NativeReasoningEffort, RuntimeModelInfo, RuntimeModelSelection, SessionGoalState, ToolPermissionMode, UnifiedSessionSummary } from "../global";
 
@@ -472,6 +482,7 @@ export default function ChatView({
     applyNativeSubagentActivity,
     setNativeSubagentActivities,
     applyReasoningSummary,
+    applyCodexExecutionEvent,
     clearMessages,
     sessionId,
     todos,
@@ -488,12 +499,26 @@ export default function ChatView({
     [goalState.queued, messages],
   );
   const { isConfigured, profiles, activeProfileId, switchActiveProfile, loadFromSystem, contextWindow, reasoningEffort, setField, saveToSystem } = useSettingsStore();
-  const [sessionError, setSessionError] = useState<OccupiedSessionError>();
-  const [occupiedDraft, setOccupiedDraft] = useState<string>();
+  const viewSessionId = selectedSessionId || sessionId;
+  const [occupiedRecoveries, setOccupiedRecoveries] = useState<OccupiedRecoveryRegistry>({});
+  const occupiedRecoveriesRef = useRef<OccupiedRecoveryRegistry>({});
+  const commitOccupiedRecovery = useCallback((
+    next: OccupiedSessionRecovery | undefined,
+    sessionIdToClear?: string,
+  ) => {
+    const updated = next
+      ? storeOccupiedRecovery(occupiedRecoveriesRef.current, next)
+      : sessionIdToClear
+        ? clearOccupiedRecovery(occupiedRecoveriesRef.current, sessionIdToClear)
+        : occupiedRecoveriesRef.current;
+    occupiedRecoveriesRef.current = updated;
+    setOccupiedRecoveries(updated);
+  }, []);
+  const occupiedRecovery = findOccupiedRecovery(occupiedRecoveries, viewSessionId);
   const [isForkingSession, setIsForkingSession] = useState(false);
+  const [codexReleaseState, setCodexReleaseState] = useState<"idle" | "releasing" | "released">("idle");
   const [directCompatibilitySessionId, setDirectCompatibilitySessionId] = useState<string | null>(null);
   const [compatibilityFailure, setCompatibilityFailure] = useState<string | null>(null);
-  const viewSessionId = selectedSessionId || sessionId;
   const isNativeRuntime = isNativeRuntimeSelection(sessionSummary, activeAgentType);
   const composerAgentType: AgentType = sessionSummary?.agentType ?? activeAgentType;
 
@@ -592,10 +617,13 @@ export default function ChatView({
       ? "incompatible"
       : sessionSummary?.compatibility?.status;
   const isCompatibilityReadOnly = compatibilityStatus !== undefined && compatibilityStatus !== "direct";
-  const isReadOnly = sessionSummary?.occupancy === "owned-externally" || isCompatibilityReadOnly;
-  const isOccupiedRecovery = isOccupiedSessionRecovery(viewSessionId, sessionError);
+  const isReadOnly = isCompatibilityReadOnly || (
+    sessionSummary?.occupancy === "owned-externally"
+    && sessionSummary.agentType !== "codex"
+  );
+  const isOccupiedRecovery = isOccupiedRecoveryVisible(occupiedRecovery, viewSessionId);
   const runtimeReady = isConfigured || isNativeRuntime;
-  const canCompose = runtimeReady && !isReadOnly && !isOccupiedRecovery;
+  const canCompose = runtimeReady && !isReadOnly && !isOccupiedRecovery && codexReleaseState !== "released";
   const runningSubIdsRef = useRef<Set<string>>(new Set());
   /** Tracks what the agent is currently doing: thinking, waiting for tools, or idle */
   const [agentActivity, setAgentActivity] = useState<"idle" | "thinking" | "tools">("idle");
@@ -723,6 +751,8 @@ export default function ChatView({
   const historyRefreshSessionRef = useRef<string | null>(null);
   const historyRefreshInFlightRef = useRef(false);
   const historyRefreshPendingRef = useRef(false);
+  const toolResultScopeRef = useRef<string | null>(null);
+  const toolResultLoadsRef = useRef<Map<string, Promise<Awaited<ReturnType<NonNullable<typeof window.agentApi>["getSessionToolResult"]>>>>>(new Map());
   const seenNativeEventKeysRef = useRef<Set<string>>(new Set());
   const draftSessionRef = useRef<string | null>(null);
   const preserveNativeDraftRef = useRef(false);
@@ -750,6 +780,74 @@ export default function ChatView({
   const [pendingAgents, setPendingAgents] = useState<Array<{id: string; name: string}>>([]);
   const [atQuery, setAtQuery] = useState<string | null>(null);
   const [slashQuery, setSlashQuery] = useState<string | null>(null);
+  const historyAgentType = useCallback((targetSid: string): AgentType | undefined => (
+    selectedSessionIdRef.current === targetSid
+      ? sessionSummary?.agentType
+      : targetSid.startsWith("runtime:codex:") ? "codex" : undefined
+  ), [sessionSummary?.agentType]);
+  const syncToolResultScope = useCallback((targetSid: string, revision?: string) => {
+    if (!revision) return;
+    const scope = `${targetSid}:${revision}`;
+    if (toolResultScopeRef.current === scope) return;
+    toolResultScopeRef.current = scope;
+    toolResultLoadsRef.current.clear();
+  }, []);
+  const fetchToolResult = useCallback(async (ref: SessionToolResultRef): Promise<SessionToolResultBody> => {
+    const agentApi = window.agentApi;
+    const targetSid = selectedSessionIdRef.current;
+    if (!agentApi || !targetSid) throw new Error("当前会话不可用");
+    syncToolResultScope(targetSid, ref.revision);
+    const key = `${ref.turnId}:${ref.itemId}`;
+    let pending = toolResultLoadsRef.current.get(key);
+    if (!pending) {
+      pending = agentApi.getSessionToolResult(targetSid, ref);
+      toolResultLoadsRef.current.set(key, pending);
+      void pending.catch(() => {
+        if (toolResultLoadsRef.current.get(key) === pending) toolResultLoadsRef.current.delete(key);
+      });
+    }
+    const body = await pending;
+    if (
+      selectedSessionIdRef.current !== targetSid
+      || toolResultScopeRef.current !== `${targetSid}:${ref.revision}`
+    ) return body;
+    return body;
+  }, [syncToolResultScope]);
+
+  const loadToolResult = useCallback(async (ref: SessionToolResultRef) => {
+    const targetSid = selectedSessionIdRef.current;
+    if (!targetSid) throw new Error("当前会话不可用");
+    const body = await fetchToolResult(ref);
+    if (selectedSessionIdRef.current !== targetSid) return;
+    updateToolResult(ref.itemId, body.content, body.isError, targetSid);
+  }, [fetchToolResult, updateToolResult]);
+
+  const loadCodexExecutionTrace = useCallback(async (
+    trace: NonNullable<import("../stores/agentStore").ChatMessage["executionTrace"]>,
+  ) => {
+    const agentApi = window.agentApi;
+    const targetSid = selectedSessionIdRef.current;
+    if (!agentApi || !targetSid) throw new Error("当前会话不可用");
+    const detail = await agentApi.getSession(targetSid, {
+      view: "trace",
+      revision: trace.revision,
+      turnId: trace.turnId,
+    }) as SessionHistoryDetail | null;
+    if (selectedSessionIdRef.current !== targetSid) {
+      throw new DOMException("Session selection changed", "AbortError");
+    }
+    if (detail?.history?.revision !== trace.revision) {
+      throw new Error("会话内容已更新，请重新展开执行过程");
+    }
+    syncToolResultScope(targetSid, trace.revision);
+    return restoreCodexExecutionTrace(detail);
+  }, [syncToolResultScope]);
+
+  useEffect(() => {
+    toolResultScopeRef.current = null;
+    toolResultLoadsRef.current.clear();
+  }, [selectedSessionId]);
+
   const prefetchOlderHistory = useCallback((targetSid: string, cursor: string | null) => {
     const agentApi = window.agentApi;
     if (!cursor || !agentApi) return;
@@ -757,6 +855,7 @@ export default function ChatView({
       .prefetch(targetSid, cursor, () => agentApi.getSession(targetSid, {
         before: cursor,
         limit: SESSION_HISTORY_PAGE_SIZE,
+        ...(historyAgentType(targetSid) === "codex" ? { view: "core" as const } : {}),
       }) as Promise<SessionHistoryDetail | null>)
       .catch((prefetchError) => {
         console.warn("[chat] failed to prefetch older history", {
@@ -764,7 +863,7 @@ export default function ChatView({
           error: prefetchError,
         });
       });
-  }, []);
+  }, [historyAgentType]);
 
   const setHistoryMode = useCallback((mode: "latest" | "anchored") => {
     historyWindowModeRef.current = mode;
@@ -778,7 +877,9 @@ export default function ChatView({
     }
     if (draftSessionRef.current !== viewSessionId) {
       draftSessionRef.current = viewSessionId;
-      setInput(readSessionDraft(viewSessionId));
+      const recovery = findOccupiedRecovery(occupiedRecoveriesRef.current, viewSessionId);
+      setInput(recovery?.payload.content ?? readSessionDraft(viewSessionId));
+      setPendingImages(recovery?.payload.images ?? []);
       return;
     }
     if (preserveNativeDraftRef.current && input === "") {
@@ -925,6 +1026,8 @@ export default function ChatView({
   // A stale browser can try to send while a recovered native run is already
   // active. Keep that original run marked as live when its admission rejects.
   const preserveNativeConflictRef = useRef<Set<string>>(new Set());
+  const pendingNativeSendPayloadRef = useRef<Map<string, OccupiedSendPayload>>(new Map());
+  const occupiedRecoveryActionRef = useRef<string | null>(null);
   // Always-current refs for selectedSessionId and sessionId — used inside event
   // handlers that are captured in closures and may outlive React renders.
   const selectedSessionIdRef = useRef<string | null>(selectedSessionId ?? null);
@@ -977,9 +1080,8 @@ export default function ChatView({
     setAgentActivity("thinking");
   }, []);
   useEffect(() => {
-    setSessionError(undefined);
-    setOccupiedDraft(undefined);
     setIsForkingSession(false);
+    setCodexReleaseState("idle");
     setPreviewedMessageImage(null);
   }, [selectedSessionId]);
 
@@ -1277,64 +1379,72 @@ export default function ChatView({
         if (isCurrentLoad()) setShowInitialHistoryLoading(true);
       }, 500);
       try {
-        const detail = await loadSessionWithRetry(async () => {
+        await loadSessionWithRetry(async () => {
           if (!isCurrentLoad()) throw new DOMException("Session selection changed", "AbortError");
-          return agentApi.getSession(targetSid, {
-            limit: SESSION_HISTORY_PAGE_SIZE,
-          }) as Promise<SessionHistoryDetail | null>;
-        });
-        const permissionDetail = detail as (SessionHistoryDetail & {
-          permissionMode?: unknown;
-          metadata?: Record<string, unknown>;
-        }) | null;
-        const restoredContextUsage = findLatestContextUsage(detail?.events ?? []);
-        const restoredRuntimeProgress = reduceRuntimeProgressEvents((detail?.events ?? []) as AgentEvent[]);
-        const restoredNativeSubagents = reduceNativeSubagentActivities((detail?.events ?? []) as AgentEvent[]);
-        const restored = restoreSessionHistoryPage(detail);
-        if (!isCurrentLoad()) return;
-        if (sessionSummary?.compatibility) setDirectCompatibilitySessionId(targetSid);
-        setPermissionMode(normalizePermissionMode(
-          permissionDetail?.permissionMode ?? permissionDetail?.metadata?.permissionMode,
-        ));
-        const nextCursor = detail?.history?.nextCursor ?? null;
-        historyCursorRef.current = nextCursor;
-        latestHistoryCursorRef.current = nextCursor;
-        anchoredNewerCursorRef.current = null;
-        const liveMessages = getMessagesForSession(targetSid);
-        const preferLive = liveMessages.length > 0
-          && useAgentStore.getState().runningSessionId === targetSid;
-        const baseMessages = preferLive ? liveMessages : restored;
-        const nextMessages = detail?.goalState && targetSid.startsWith("runtime:")
-          ? reconcileDurableQueuedMessages(baseMessages, detail.goalState)
-          : baseMessages;
-        nextAutoScrollRef.current = "instant";
-        setMessages(nextMessages, targetSid);
-        prefetchOlderHistory(targetSid, nextCursor);
-        setRuntimeProgress(restoredRuntimeProgress, targetSid);
-        setNativeSubagentActivities(restoredNativeSubagents, targetSid);
-        // Native runs can outlive a browser refresh. Rehydrate their running
-        // state from the broker detail so the composer queues a follow-up
-        // instead of sending a second concurrent turn against the same lock.
-        if (shouldRestoreLocalNativeRun(detail)) {
-          runningSessionRef.current = targetSid;
-          setRunningSession(targetSid);
-        } else if (runningSessionRef.current === targetSid) {
-          runningSessionRef.current = null;
-          setRunningSession(null);
-        }
-        if (restoredContextUsage) setContextUsage(restoredContextUsage, targetSid);
+          await loadProgressiveSessionHistoryPage(
+            agentApi,
+            targetSid,
+            historyAgentType(targetSid),
+            { limit: SESSION_HISTORY_PAGE_SIZE },
+            (detail, phase) => {
+              if (!isCurrentLoad()) return;
+              const permissionDetail = detail as (SessionHistoryDetail & {
+                permissionMode?: unknown;
+                metadata?: Record<string, unknown>;
+              }) | null;
+              const restoredContextUsage = findLatestContextUsage(detail?.events ?? []);
+              const restoredRuntimeProgress = reduceRuntimeProgressEvents((detail?.events ?? []) as AgentEvent[]);
+              const restoredNativeSubagents = reduceNativeSubagentActivities((detail?.events ?? []) as AgentEvent[]);
+              const restored = restoreSessionHistoryPage(detail);
+              syncToolResultScope(targetSid, detail?.history?.revision);
+              if (sessionSummary?.compatibility) setDirectCompatibilitySessionId(targetSid);
+              setPermissionMode(normalizePermissionMode(
+                permissionDetail?.permissionMode ?? permissionDetail?.metadata?.permissionMode,
+              ));
+              const nextCursor = detail?.history?.nextCursor ?? null;
+              historyCursorRef.current = nextCursor;
+              latestHistoryCursorRef.current = nextCursor;
+              anchoredNewerCursorRef.current = null;
+              const liveMessages = getMessagesForSession(targetSid);
+              const baseMessages = mergeProgressiveSessionHistoryPage(
+                liveMessages,
+                restored,
+                phase,
+                detail?.history,
+              );
+              const nextMessages = detail?.goalState && targetSid.startsWith("runtime:")
+                ? reconcileDurableQueuedMessages(baseMessages, detail.goalState)
+                : baseMessages;
+              nextAutoScrollRef.current = "instant";
+              setMessages(nextMessages, targetSid);
+              prefetchOlderHistory(targetSid, nextCursor);
+              setRuntimeProgress(restoredRuntimeProgress, targetSid);
+              setNativeSubagentActivities(restoredNativeSubagents, targetSid);
+              if (shouldRestoreLocalNativeRun(detail) || shouldRestoreCustomerAgentRun(detail)) {
+                runningSessionRef.current = targetSid;
+                setRunningSession(targetSid);
+              } else if (runningSessionRef.current === targetSid) {
+                runningSessionRef.current = null;
+                setRunningSession(null);
+              }
+              if (restoredContextUsage) setContextUsage(restoredContextUsage, targetSid);
 
-        // Infer agent activity phase from restored messages. Tool rows render
-        // their own running spinner, so this phase suppresses the text indicator.
-        const lastMsg = nextMessages[nextMessages.length - 1];
-        if (lastMsg?.role === "assistant" && lastMsg.toolCalls?.length) {
-          const allDone = areToolCallsComplete(lastMsg.toolCalls);
-          updateAgentActivity(allDone ? "thinking" : "tools");
-        } else {
-          updateAgentActivity(detail?.agentType !== "customer-agent" && detail?.status === "running"
-            ? "thinking"
-            : "idle");
-        }
+              const lastMsg = nextMessages[nextMessages.length - 1];
+              if (lastMsg?.role === "assistant" && lastMsg.toolCalls?.length) {
+                updateAgentActivity(areToolCallsComplete(lastMsg.toolCalls) ? "thinking" : "tools");
+              } else {
+                updateAgentActivity(detail?.agentType !== "customer-agent" && detail?.status === "running"
+                  ? "thinking"
+                  : "idle");
+              }
+              if (slowLoadingTimer !== null) window.clearTimeout(slowLoadingTimer);
+              setIsInitialHistoryLoading(false);
+              setShowInitialHistoryLoading(false);
+            },
+            isCurrentLoad,
+          );
+          return true;
+        });
       } catch (error) {
         if (!isCurrentLoad()) return;
         console.error("[chat] failed to restore session", { sessionId: targetSid, error });
@@ -1357,7 +1467,7 @@ export default function ChatView({
         sessionLoadGenerationRef.current += 1;
       }
     };
-  }, [clearMessages, getMessagesForSession, prefetchOlderHistory, selectedSessionId, sessionReloadGeneration, setContextUsage, setHistoryMode, setMessages, setSessionId, updateAgentActivity]);
+  }, [clearMessages, getMessagesForSession, historyAgentType, prefetchOlderHistory, selectedSessionId, sessionReloadGeneration, setContextUsage, setHistoryMode, setMessages, setSessionId, syncToolResultScope, updateAgentActivity]);
 
   const loadSessionQueryIndex = useCallback(async (targetSid: string) => {
     const agentApi = window.agentApi;
@@ -1424,58 +1534,68 @@ export default function ChatView({
     try {
       do {
         historyRefreshPendingRef.current = false;
-        const detail = await window.agentApi.getSession(targetSid, {
-          limit: SESSION_HISTORY_PAGE_SIZE,
-        }) as SessionHistoryDetail | null;
-        if (
-          selectedSessionIdRef.current !== targetSid
-          || historySessionIdRef.current !== targetSid
-        ) return;
-
-        const refreshed = restoreSessionHistoryPage(detail);
-        const current = getMessagesForSession(targetSid);
-        const mergedHistory = mergeRefreshedSessionHistory(current, refreshed);
-        const merged = detail?.goalState && targetSid.startsWith("runtime:")
-          ? reconcileDurableQueuedMessages(mergedHistory, detail.goalState)
-          : mergedHistory;
-        const container = messagesScrollRef.current;
-        const isNearBottom = !container
-          || container.scrollHeight - container.scrollTop - container.clientHeight < 80;
-        nextAutoScrollRef.current = isNearBottom ? null : "skip";
-        setMessages(merged, targetSid);
-        if (detail?.goalState) setGoalState(projectSessionGoals(detail.goalState) as SessionGoalState);
-
-        const previousLatestCursor = latestHistoryCursorRef.current;
-        const nextLatestCursor = detail?.history?.nextCursor ?? null;
-        if (historyCursorRef.current === previousLatestCursor) {
-          const cursorChanged = historyCursorRef.current !== nextLatestCursor;
-          historyCursorRef.current = nextLatestCursor;
-          if (cursorChanged) {
-            historyPrefetchRef.current?.invalidate();
-            prefetchOlderHistory(targetSid, nextLatestCursor);
-          }
-        }
-        latestHistoryCursorRef.current = nextLatestCursor;
-        if (
-          detail?.history?.revision
-          && detail.history.revision !== queryIndexRef.current?.revision
-        ) {
-          void loadSessionQueryIndex(targetSid);
-        }
-        const restoredContextUsage = findLatestContextUsage(detail?.events ?? []);
-        setRuntimeProgress(reduceRuntimeProgressEvents((detail?.events ?? []) as AgentEvent[]), targetSid);
-        setNativeSubagentActivities(
-          reduceNativeSubagentActivities((detail?.events ?? []) as AgentEvent[]),
+        await loadProgressiveSessionHistoryPage(
+          window.agentApi,
           targetSid,
-        );
-        if (restoredContextUsage) setContextUsage(restoredContextUsage, targetSid);
+          historyAgentType(targetSid),
+          { limit: SESSION_HISTORY_PAGE_SIZE },
+          (detail, phase) => {
+            const refreshed = restoreSessionHistoryPage(detail);
+            const current = getMessagesForSession(targetSid);
+            const mergedHistory = mergeProgressiveSessionHistoryPage(
+              current,
+              refreshed,
+              phase,
+              detail?.history,
+            );
+            const merged = detail?.goalState && targetSid.startsWith("runtime:")
+              ? reconcileDurableQueuedMessages(mergedHistory, detail.goalState)
+              : mergedHistory;
+            const container = messagesScrollRef.current;
+            const isNearBottom = !container
+              || container.scrollHeight - container.scrollTop - container.clientHeight < 80;
+            nextAutoScrollRef.current = isNearBottom ? null : "skip";
+            setMessages(merged, targetSid);
+            syncToolResultScope(targetSid, detail?.history?.revision);
+            if (detail?.goalState) setGoalState(projectSessionGoals(detail.goalState) as SessionGoalState);
 
-        const lastMessage = merged[merged.length - 1];
-        if (lastMessage?.role === "assistant" && lastMessage.toolCalls?.length) {
-          updateAgentActivity(areToolCallsComplete(lastMessage.toolCalls) ? "thinking" : "tools");
-        } else {
-          updateAgentActivity(isActiveNativeSession(detail) ? "thinking" : "idle");
-        }
+            const previousLatestCursor = latestHistoryCursorRef.current;
+            const nextLatestCursor = detail?.history?.nextCursor ?? null;
+            if (historyCursorRef.current === previousLatestCursor) {
+              const cursorChanged = historyCursorRef.current !== nextLatestCursor;
+              historyCursorRef.current = nextLatestCursor;
+              if (cursorChanged) {
+                historyPrefetchRef.current?.invalidate();
+                prefetchOlderHistory(targetSid, nextLatestCursor);
+              }
+            }
+            latestHistoryCursorRef.current = nextLatestCursor;
+            if (
+              detail?.history?.revision
+              && detail.history.revision !== queryIndexRef.current?.revision
+            ) {
+              void loadSessionQueryIndex(targetSid);
+            }
+            const restoredContextUsage = findLatestContextUsage(detail?.events ?? []);
+            setRuntimeProgress(reduceRuntimeProgressEvents((detail?.events ?? []) as AgentEvent[]), targetSid);
+            setNativeSubagentActivities(
+              reduceNativeSubagentActivities((detail?.events ?? []) as AgentEvent[]),
+              targetSid,
+            );
+            if (restoredContextUsage) setContextUsage(restoredContextUsage, targetSid);
+
+            const lastMessage = merged[merged.length - 1];
+            if (lastMessage?.role === "assistant" && lastMessage.toolCalls?.length) {
+              updateAgentActivity(areToolCallsComplete(lastMessage.toolCalls) ? "thinking" : "tools");
+            } else {
+              updateAgentActivity(isActiveNativeSession(detail) ? "thinking" : "idle");
+            }
+          },
+          () => (
+            selectedSessionIdRef.current === targetSid
+            && historySessionIdRef.current === targetSid
+          ),
+        );
       } while (historyRefreshPendingRef.current);
     } catch (refreshError) {
       console.error("[chat] failed to refresh native session history", {
@@ -1487,7 +1607,7 @@ export default function ChatView({
         historyRefreshInFlightRef.current = false;
       }
     }
-  }, [getMessagesForSession, loadSessionQueryIndex, prefetchOlderHistory, setContextUsage, setMessages, updateAgentActivity]);
+  }, [getMessagesForSession, historyAgentType, loadSessionQueryIndex, prefetchOlderHistory, setContextUsage, setMessages, syncToolResultScope, updateAgentActivity]);
 
   useEffect(() => {
     const targetSid = selectedSessionId;
@@ -1573,32 +1693,41 @@ export default function ChatView({
       }
     }, 500);
     try {
-      const detail = await historyPrefetchRef.current!.consume(
-        targetSid,
-        cursor,
-        () => agentApi.getSession(targetSid, {
-          before: cursor,
-          limit: SESSION_HISTORY_PAGE_SIZE,
-        }) as Promise<SessionHistoryDetail | null>,
-      );
-      if (historySessionIdRef.current !== targetSid || selectedSessionIdRef.current !== targetSid) return;
-
-      const olderMessages = restoreSessionHistoryPage(detail);
       const currentMessages = getMessagesForSession(targetSid);
-      const container = messagesScrollRef.current;
-      if (container && olderMessages.length > 0) {
-        prependScrollAnchorRef.current = {
-          scrollHeight: container.scrollHeight,
-          scrollTop: container.scrollTop,
-        };
-        nextAutoScrollRef.current = "skip";
-      }
-      const nextCursor = detail?.history?.nextCursor ?? null;
-      historyCursorRef.current = nextCursor;
-      if (olderMessages.length > 0) {
-        setMessages([...olderMessages, ...currentMessages], targetSid);
-      }
-      prefetchOlderHistory(targetSid, nextCursor);
+      await loadProgressiveSessionHistoryPage(
+        agentApi,
+        targetSid,
+        historyAgentType(targetSid),
+        { before: cursor, limit: SESSION_HISTORY_PAGE_SIZE },
+        (detail, phase) => {
+          const olderMessages = restoreSessionHistoryPage(detail);
+          const container = messagesScrollRef.current;
+          if (phase !== "trace" && container && olderMessages.length > 0) {
+            prependScrollAnchorRef.current = {
+              scrollHeight: container.scrollHeight,
+              scrollTop: container.scrollTop,
+            };
+            nextAutoScrollRef.current = "skip";
+          }
+          const nextCursor = detail?.history?.nextCursor ?? null;
+          historyCursorRef.current = nextCursor;
+          syncToolResultScope(targetSid, detail?.history?.revision);
+          if (olderMessages.length > 0) {
+            setMessages([...olderMessages, ...currentMessages], targetSid);
+          }
+          if (phase !== "trace") prefetchOlderHistory(targetSid, nextCursor);
+        },
+        () => historySessionIdRef.current === targetSid && selectedSessionIdRef.current === targetSid,
+        () => historyPrefetchRef.current!.consume(
+          targetSid,
+          cursor,
+          () => agentApi.getSession(targetSid, {
+            before: cursor,
+            limit: SESSION_HISTORY_PAGE_SIZE,
+            ...(historyAgentType(targetSid) === "codex" ? { view: "core" as const } : {}),
+          }) as Promise<SessionHistoryDetail | null>,
+        ),
+      );
     } catch (loadError) {
       if (historySessionIdRef.current !== targetSid) return;
       console.error("[chat] failed to load older history", { sessionId: targetSid, error: loadError });
@@ -1608,7 +1737,7 @@ export default function ChatView({
       isLoadingOlderHistoryRef.current = false;
       if (historySessionIdRef.current === targetSid) setIsLoadingOlderHistory(false);
     }
-  }, [getMessagesForSession, prefetchOlderHistory, setMessages]);
+  }, [getMessagesForSession, historyAgentType, prefetchOlderHistory, setMessages, syncToolResultScope]);
 
   useEffect(() => {
     loadOlderHistoryRef.current = () => { void loadOlderHistory(); };
@@ -1628,23 +1757,28 @@ export default function ChatView({
     isLoadingNewerHistoryRef.current = true;
     setIsLoadingNewerHistory(true);
     try {
-      const detail = await window.agentApi.getSession(targetSid, {
-        after: cursor,
-        limit: SESSION_HISTORY_PAGE_SIZE,
-      }) as SessionHistoryDetail | null;
-      if (
-        selectedSessionIdRef.current !== targetSid
-        || historySessionIdRef.current !== targetSid
-        || historyWindowModeRef.current !== "anchored"
-      ) return;
       const current = getMessagesForSession(targetSid);
       const existingIds = new Set(current.map((message) => message.id));
-      const newer = restoreSessionHistoryPage(detail).filter((message) => !existingIds.has(message.id));
-      anchoredNewerCursorRef.current = detail?.history?.newerCursor ?? null;
-      if (newer.length > 0) {
-        nextAutoScrollRef.current = "skip";
-        setMessages([...current, ...newer], targetSid);
-      }
+      await loadProgressiveSessionHistoryPage(
+        window.agentApi,
+        targetSid,
+        historyAgentType(targetSid),
+        { after: cursor, limit: SESSION_HISTORY_PAGE_SIZE },
+        (detail) => {
+          const newer = restoreSessionHistoryPage(detail).filter((message) => !existingIds.has(message.id));
+          anchoredNewerCursorRef.current = detail?.history?.newerCursor ?? null;
+          syncToolResultScope(targetSid, detail?.history?.revision);
+          if (newer.length > 0) {
+            nextAutoScrollRef.current = "skip";
+            setMessages([...current, ...newer], targetSid);
+          }
+        },
+        () => (
+          selectedSessionIdRef.current === targetSid
+          && historySessionIdRef.current === targetSid
+          && historyWindowModeRef.current === "anchored"
+        ),
+      );
     } catch (loadError) {
       console.error("[chat] failed to load newer anchored history", {
         sessionId: targetSid,
@@ -1654,7 +1788,7 @@ export default function ChatView({
       isLoadingNewerHistoryRef.current = false;
       setIsLoadingNewerHistory(false);
     }
-  }, [getMessagesForSession, setMessages]);
+  }, [getMessagesForSession, historyAgentType, setMessages, syncToolResultScope]);
 
   useEffect(() => {
     loadNewerHistoryRef.current = () => { void loadNewerHistory(); };
@@ -1668,30 +1802,38 @@ export default function ChatView({
     setIsReturningLatestHistory(true);
     setLoadingQueryMessageId(null);
     try {
-      const detail = await window.agentApi.getSession(targetSid, {
-        limit: SESSION_HISTORY_PAGE_SIZE,
-      }) as SessionHistoryDetail | null;
-      if (
-        anchorRequestGenerationRef.current !== requestGeneration
-        || selectedSessionIdRef.current !== targetSid
-      ) return false;
-      const restored = restoreSessionHistoryPage(detail);
-      const cursor = detail?.history?.nextCursor ?? null;
-      historyPrefetchRef.current?.invalidate();
-      historyCursorRef.current = cursor;
-      latestHistoryCursorRef.current = cursor;
-      anchoredNewerCursorRef.current = null;
-      setHistoryMode("latest");
-      setHasLatestHistoryUpdates(false);
-      setActiveQueryMessageId(queryIndexRef.current?.entries.at(-1)?.messageId ?? null);
-      pendingLatestScrollRef.current = true;
-      nextAutoScrollRef.current = "skip";
-      setMessages(restored, targetSid);
-      prefetchOlderHistory(targetSid, cursor);
-      if (detail?.history?.revision !== queryIndexRef.current?.revision) {
-        void loadSessionQueryIndex(targetSid);
-      }
-      return true;
+      let applied = false;
+      await loadProgressiveSessionHistoryPage(
+        window.agentApi,
+        targetSid,
+        historyAgentType(targetSid),
+        { limit: SESSION_HISTORY_PAGE_SIZE },
+        (detail, phase) => {
+          applied = true;
+          const restored = restoreSessionHistoryPage(detail);
+          const cursor = detail?.history?.nextCursor ?? null;
+          if (phase !== "trace") historyPrefetchRef.current?.invalidate();
+          historyCursorRef.current = cursor;
+          latestHistoryCursorRef.current = cursor;
+          anchoredNewerCursorRef.current = null;
+          syncToolResultScope(targetSid, detail?.history?.revision);
+          setHistoryMode("latest");
+          setHasLatestHistoryUpdates(false);
+          setActiveQueryMessageId(queryIndexRef.current?.entries.at(-1)?.messageId ?? null);
+          pendingLatestScrollRef.current = true;
+          nextAutoScrollRef.current = "skip";
+          setMessages(restored, targetSid);
+          if (phase !== "trace") prefetchOlderHistory(targetSid, cursor);
+          if (detail?.history?.revision !== queryIndexRef.current?.revision) {
+            void loadSessionQueryIndex(targetSid);
+          }
+        },
+        () => (
+          anchorRequestGenerationRef.current === requestGeneration
+          && selectedSessionIdRef.current === targetSid
+        ),
+      );
+      return applied;
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "返回最新消息失败");
       return false;
@@ -1699,7 +1841,7 @@ export default function ChatView({
       isReturningLatestHistoryRef.current = false;
       setIsReturningLatestHistory(false);
     }
-  }, [loadSessionQueryIndex, prefetchOlderHistory, setHistoryMode, setMessages]);
+  }, [historyAgentType, loadSessionQueryIndex, prefetchOlderHistory, setHistoryMode, setMessages, syncToolResultScope]);
 
   const activateQuery = useCallback(async (
     entry: SessionQueryIndexEntry,
@@ -1721,38 +1863,45 @@ export default function ChatView({
     setLoadingQueryMessageId(entry.messageId);
     historyPrefetchRef.current?.invalidate();
     try {
-      const detail = await window.agentApi.getSession(targetSid, {
-        anchor: entry.pageToken,
-        limit: SESSION_HISTORY_PAGE_SIZE,
-      }) as SessionHistoryDetail | null;
-      if (
-        anchorRequestGenerationRef.current !== requestGeneration
-        || selectedSessionIdRef.current !== targetSid
-        || queryIndexRef.current?.revision !== detail?.history?.revision
-      ) return;
-      const restored = restoreSessionHistoryPage(detail);
-      const olderCursor = detail?.history?.olderCursor ?? detail?.history?.nextCursor ?? null;
-      historyCursorRef.current = olderCursor;
-      anchoredNewerCursorRef.current = detail?.history?.newerCursor ?? null;
-      setHistoryMode("anchored");
-      setHasLatestHistoryUpdates(false);
-      pendingQueryScrollRef.current = entry.messageId;
-      nextAutoScrollRef.current = "skip";
-      setMessages(restored, targetSid);
-      window.requestAnimationFrame(() => {
-        if (
-          anchorRequestGenerationRef.current !== requestGeneration
-          || selectedSessionIdRef.current !== targetSid
-        ) return;
-        const currentContainer = messagesScrollRef.current;
-        const target = Array.from(currentContainer?.querySelectorAll<HTMLElement>("[data-message-id]") ?? [])
-          .find((element) => element.dataset.messageId === entry.messageId);
-        if (!currentContainer || !target) return;
-        scrollMessageToCenter(currentContainer, target);
-        pendingQueryScrollRef.current = null;
-        setActiveQueryMessageId(entry.messageId);
-      });
-      prefetchOlderHistory(targetSid, olderCursor);
+      await loadProgressiveSessionHistoryPage(
+        window.agentApi,
+        targetSid,
+        historyAgentType(targetSid),
+        { anchor: entry.pageToken, limit: SESSION_HISTORY_PAGE_SIZE },
+        (detail, phase) => {
+          if (queryIndexRef.current?.revision !== detail?.history?.revision) return;
+          const restored = restoreSessionHistoryPage(detail);
+          const olderCursor = detail?.history?.olderCursor ?? detail?.history?.nextCursor ?? null;
+          historyCursorRef.current = olderCursor;
+          anchoredNewerCursorRef.current = detail?.history?.newerCursor ?? null;
+          syncToolResultScope(targetSid, detail?.history?.revision);
+          setHistoryMode("anchored");
+          setHasLatestHistoryUpdates(false);
+          pendingQueryScrollRef.current = entry.messageId;
+          nextAutoScrollRef.current = "skip";
+          setMessages(restored, targetSid);
+          if (phase !== "trace") {
+            window.requestAnimationFrame(() => {
+              if (
+                anchorRequestGenerationRef.current !== requestGeneration
+                || selectedSessionIdRef.current !== targetSid
+              ) return;
+              const currentContainer = messagesScrollRef.current;
+              const target = Array.from(currentContainer?.querySelectorAll<HTMLElement>("[data-message-id]") ?? [])
+                .find((element) => element.dataset.messageId === entry.messageId);
+              if (!currentContainer || !target) return;
+              scrollMessageToCenter(currentContainer, target);
+              pendingQueryScrollRef.current = null;
+              setActiveQueryMessageId(entry.messageId);
+            });
+            prefetchOlderHistory(targetSid, olderCursor);
+          }
+        },
+        () => (
+          anchorRequestGenerationRef.current === requestGeneration
+          && selectedSessionIdRef.current === targetSid
+        ),
+      );
     } catch (anchorError) {
       const stale = (anchorError as { code?: string }).code === "STALE_SESSION_ANCHOR";
       if (stale && retryOnStale) {
@@ -1768,7 +1917,7 @@ export default function ChatView({
         setLoadingQueryMessageId(null);
       }
     }
-  }, [loadSessionQueryIndex, prefetchOlderHistory, setHistoryMode, setMessages]);
+  }, [historyAgentType, loadSessionQueryIndex, prefetchOlderHistory, setHistoryMode, setMessages, syncToolResultScope]);
 
   const scheduleQueuedMessageAfterTerminal = (targetSessionId: string) => {
     if (
@@ -1837,7 +1986,17 @@ export default function ChatView({
     }
     switch (event.type) {
       case "run_admitted":
-        if (eventSid && eventSid === viewedSid) clearSessionDraft(eventSid);
+        if (eventSid) {
+          pendingNativeSendPayloadRef.current.delete(eventSid);
+          const currentRecovery = findOccupiedRecovery(occupiedRecoveriesRef.current, eventSid);
+          if (currentRecovery) {
+            if (occupiedRecoveryActionRef.current === currentRecovery.token) {
+              occupiedRecoveryActionRef.current = null;
+            }
+            commitOccupiedRecovery(undefined, eventSid);
+          }
+          clearSessionDraft(eventSid);
+        }
         break;
       case "context_usage":
         if (event.usage) setContextUsage(event.usage, eventSid);
@@ -1856,12 +2015,18 @@ export default function ChatView({
           && Number.isSafeInteger(event.sectionIndex)
           && typeof event.delta === "string"
         ) {
-          applyReasoningSummary({
+          const reasoningEvent = {
             type: "reasoning_summary_delta",
             itemId: event.itemId,
             sectionIndex: event.sectionIndex!,
             delta: event.delta,
-          }, eventSid);
+            ...(event.turnId ? { turnId: event.turnId } : {}),
+          } as const;
+          if (eventSid && event.turnId && historyAgentType(eventSid) === "codex") {
+            applyCodexExecutionEvent(event.turnId, reasoningEvent, eventSid);
+          } else {
+            applyReasoningSummary(reasoningEvent, eventSid);
+          }
           if (isViewed) updateAgentActivity("thinking");
         }
         break;
@@ -1900,7 +2065,13 @@ export default function ChatView({
         // ask_user is handled by the subsequent "ask_user" event with its own card.
         // show_widget is handled by the subsequent "show_widget" event with its own card.
         if (event.toolCall && event.toolCall.name !== "dispatch_agent" && event.toolCall.name !== "ask_user" && event.toolCall.name !== "show_widget") {
-          addMessage({
+          if (eventSid && event.turnId && historyAgentType(eventSid) === "codex") {
+            applyCodexExecutionEvent(event.turnId, {
+              type: "tool_call",
+              toolCall: event.toolCall,
+              turnId: event.turnId,
+            }, eventSid);
+          } else addMessage({
             id: crypto.randomUUID(),
             role: "assistant",
             content: "",
@@ -1915,7 +2086,15 @@ export default function ChatView({
         break;
       case "tool_result":
         if (event.result) {
-          updateToolResult(event.result.toolCallId, event.result.content, event.result.isError, eventSid);
+          if (eventSid && event.turnId && historyAgentType(eventSid) === "codex") {
+            applyCodexExecutionEvent(event.turnId, {
+              type: "tool_result",
+              result: event.result,
+              turnId: event.turnId,
+            }, eventSid);
+          } else {
+            updateToolResult(event.result.toolCallId, event.result.content, event.result.isError, eventSid);
+          }
         }
         break;
       case "todo_update":
@@ -2106,6 +2285,46 @@ export default function ChatView({
         break;
       case "error":
         if (!event._preserveActiveRun) clearRuntimeProgress(eventSid);
+        if (eventSid && event.code === "SESSION_OCCUPIED") {
+          const failedMessages = useAgentStore.getState().getMessagesForSession(eventSid);
+          const capturedPayload = pendingNativeSendPayloadRef.current.get(eventSid);
+          const existingRecovery = findOccupiedRecovery(occupiedRecoveriesRef.current, eventSid);
+          const expectedPayload = capturedPayload ?? existingRecovery?.payload;
+          const failedUserMessage = expectedPayload
+            ? [...failedMessages].reverse().find(
+                (message) => message.role === "user"
+                  && !message.isQueued
+                  && message.content === expectedPayload.content,
+              )
+            : isViewed
+              ? [...failedMessages].reverse().find(
+                  (message) => message.role === "user" && !message.isQueued,
+                )
+              : undefined;
+          const recoveryPayload = expectedPayload ?? (failedUserMessage ? {
+            content: failedUserMessage.content,
+            images: failedUserMessage.images,
+            agentName: failedUserMessage.agentName,
+          } : undefined);
+          if (failedUserMessage) {
+            setMessages(
+              failedMessages.filter((message) => message.id !== failedUserMessage.id),
+              eventSid,
+            );
+          }
+          pendingNativeSendPayloadRef.current.delete(eventSid);
+          if (recoveryPayload?.content) {
+            commitOccupiedRecovery(
+              existingRecovery ?? createOccupiedSessionRecovery(eventSid, recoveryPayload),
+            );
+            writeSessionDraft(eventSid, recoveryPayload.content);
+            if (isViewed) {
+              setInput(recoveryPayload.content);
+              setPendingImages(recoveryPayload.images ?? []);
+            }
+          }
+          if (isViewed) setError(null);
+        }
         if (isViewed) {
           if (event._preserveActiveRun && eventSid) {
             preserveNativeConflictRef.current.add(eventSid);
@@ -2137,24 +2356,10 @@ export default function ChatView({
                 });
               }
             }
-            setOccupiedDraft(undefined);
-            setSessionError(undefined);
+            if (eventSid) pendingNativeSendPayloadRef.current.delete(eventSid);
+            if (eventSid) commitOccupiedRecovery(undefined, eventSid);
             setError(null);
-          } else if (event.code === "SESSION_OCCUPIED") {
-            const failedMessages = eventSid
-              ? useAgentStore.getState().getMessagesForSession(eventSid)
-              : useAgentStore.getState().messages;
-            const failedUserMessage = [...failedMessages].reverse().find(
-              (message) => message.role === "user" && !message.isQueued,
-            );
-            setOccupiedDraft(failedUserMessage?.content);
-            if (failedUserMessage?.content) {
-              setInput(failedUserMessage.content);
-              if (eventSid) writeSessionDraft(eventSid, failedUserMessage.content);
-            }
-            if (eventSid) setSessionError({ sessionId: eventSid, code: event.code });
-            setError(null);
-          } else {
+          } else if (event.code !== "SESSION_OCCUPIED") {
             setError(event.message ?? "Unknown error");
             const failedMessages = eventSid
               ? useAgentStore.getState().getMessagesForSession(eventSid)
@@ -2165,10 +2370,16 @@ export default function ChatView({
               if (eventSid) writeSessionDraft(eventSid, failedUserMessage.content);
             }
           }
-          if (!event._preserveActiveRun) {
-            setRunningSession(null);
-            updateAgentActivity("idle");
+        }
+        if (!event._preserveActiveRun) {
+          const trackedSessionId = eventSid ?? viewedSid;
+          if (!trackedSessionId || runningSessionRef.current === trackedSessionId) {
+            runningSessionRef.current = null;
           }
+          if (!trackedSessionId || useAgentStore.getState().runningSessionId === trackedSessionId) {
+            setRunningSession(null);
+          }
+          if (isViewed) updateAgentActivity("idle");
         }
         if (eventSid && !event._preserveActiveRun) {
           if (managedRunSessionsRef.current.has(eventSid)) {
@@ -2214,12 +2425,66 @@ export default function ChatView({
     }
   };
 
+  const handleCodexRelease = async () => {
+    if (
+      !viewSessionId
+      || sessionSummary?.agentType !== "codex"
+      || !window.agentApi?.releaseCodexSession
+      || codexReleaseState !== "idle"
+    ) return;
+    if (isRunning && !window.confirm("停止当前执行并交接到 Codex 桌面端？")) return;
+
+    setCodexReleaseState("releasing");
+    try {
+      await window.agentApi.releaseCodexSession(viewSessionId);
+      abortRef.current = true;
+      sessionLoadGenerationRef.current += 1;
+      runningSessionRef.current = null;
+      setRunningSession(null);
+      runningSubIdsRef.current.clear();
+      setGoalState((current) => ({ ...current, active: null, queued: [] }));
+      setAgentActivity("idle");
+      setError(null);
+      setCodexReleaseState("released");
+    } catch (error) {
+      setCodexReleaseState("idle");
+      setError(error instanceof Error ? error.message : "释放 Codex 会话失败");
+    }
+  };
+
   const handleForkOccupiedSession = async () => {
-    if (!viewSessionId || !window.agentApi?.forkSession || isForkingSession) return;
+    const recovery = occupiedRecovery;
+    if (!recovery || !viewSessionId || isForkingSession) return;
+    if (occupiedRecoveryActionRef.current === recovery.token) return;
+    occupiedRecoveryActionRef.current = recovery.token;
+
+    if (recovery.forkSessionId) {
+      setIsForkingSession(true);
+      const retry = markOccupiedRecoveryForked(recovery, recovery.forkSessionId);
+      commitOccupiedRecovery(retry);
+      addMessage({
+        id: crypto.randomUUID(),
+        role: "user",
+        content: retry.payload.content,
+        timestamp: Date.now(),
+        agentName: retry.payload.agentName,
+        images: retry.payload.images,
+      }, retry.forkSessionId);
+      void startRun(retry.payload, retry.forkSessionId, retry.payload.agentIds).finally(() => {
+        occupiedRecoveryActionRef.current = null;
+        setIsForkingSession(false);
+      });
+      return;
+    }
+
+    if (!window.agentApi?.forkSession) {
+      occupiedRecoveryActionRef.current = null;
+      return;
+    }
     setIsForkingSession(true);
     try {
-      await forkOccupiedCodexSession({
-        sourceSessionId: viewSessionId,
+      const forked = await forkOccupiedCodexSession({
+        sourceSessionId: recovery.sourceSessionId,
         forkSession: (id) => window.agentApi!.forkSession(id),
         activateSession: (id) => {
           sessionIdRef.current = id;
@@ -2230,13 +2495,24 @@ export default function ChatView({
           else onSelectSession?.(forked.id);
         },
       });
-      if (occupiedDraft) setInput(occupiedDraft);
-      setOccupiedDraft(undefined);
-      setSessionError(undefined);
+      const nextRecovery = markOccupiedRecoveryForked(recovery, forked.id);
+      commitOccupiedRecovery(nextRecovery);
+      addMessage({
+        id: crypto.randomUUID(),
+        role: "user",
+        content: nextRecovery.payload.content,
+        timestamp: Date.now(),
+        agentName: nextRecovery.payload.agentName,
+        images: nextRecovery.payload.images,
+      }, forked.id);
+      void startRun(nextRecovery.payload, forked.id, nextRecovery.payload.agentIds).finally(() => {
+        occupiedRecoveryActionRef.current = null;
+        setIsForkingSession(false);
+      });
       setError(null);
     } catch (error) {
+      occupiedRecoveryActionRef.current = null;
       setError(error instanceof Error ? error.message : "创建会话副本失败");
-    } finally {
       setIsForkingSession(false);
     }
   };
@@ -2435,6 +2711,14 @@ export default function ChatView({
     targetSessionId: string,
     agentIds?: string[],
   ) {
+    if (targetSessionId.startsWith("runtime:")) {
+      pendingNativeSendPayloadRef.current.set(targetSessionId, {
+        content: message.content,
+        images: message.images ? [...message.images] : undefined,
+        agentIds: agentIds ? [...agentIds] : undefined,
+        agentName: message.agentName,
+      });
+    }
     abortRef.current = false;
     managedRunSessionsRef.current.add(targetSessionId);
     beginAgentRunActivity(targetSessionId);
@@ -2903,7 +3187,11 @@ export default function ChatView({
             appearanceOpen={appearanceOpen}
             settingsOpen={settingsOpen}
             hideToBackgroundTitle={hideToBackgroundTitle}
+            codexReleaseState={codexReleaseState}
             onHideToBackground={onHideToBackground}
+            onReleaseCodex={sessionSummary?.agentType === "codex" && sessionSummary.occupancy !== "owned-externally"
+              ? () => { void handleCodexRelease(); }
+              : undefined}
             onToggleAppearance={onToggleAppearance}
             onOpenSettings={onOpenSettings}
           />
@@ -2995,6 +3283,22 @@ export default function ChatView({
           const chatMsg = msg as import("../stores/agentStore").ChatMessage;
           // Skip queued messages — they are rendered in the queue bar above the input
           if (chatMsg.isQueued) return null;
+          if (chatMsg.executionTrace) {
+            return (
+              <CodexExecutionTrace
+                key={msg.id}
+                trace={chatMsg.executionTrace}
+                loadTrace={loadCodexExecutionTrace}
+                loadToolResult={fetchToolResult}
+                renderContent={renderAssistantText}
+                runtimeProgress={runtimeProgress}
+                nativeSubagents={nativeSubagents}
+                onSelectSession={onSelectSession}
+                workspacePath={workspacePath}
+                enableFilePreview={isWebShell()}
+              />
+            );
+          }
           const isUser = msg.role === "user";
           const isGoalMessage = isUser && (
             chatMsg.isGoal === true
@@ -3324,6 +3628,7 @@ export default function ChatView({
                     onSelectSession={onSelectSession}
                     workspacePath={workspacePath}
                     enableFilePreview={isWebShell()}
+                    onLoadResult={loadToolResult}
                   />
                 ) : (
                   <ToolCallCard
@@ -3335,6 +3640,7 @@ export default function ChatView({
                     onSelectSession={onSelectSession}
                     workspacePath={workspacePath}
                     enableFilePreview={isWebShell()}
+                    onLoadResult={loadToolResult}
                   />
                 ))}
                 {/* File change summary — one compact bar after all tool calls */}
@@ -3634,7 +3940,7 @@ export default function ChatView({
             </span>
           </div>
         )}
-        {(sessionSummary?.occupancy === "owned-externally" || isOccupiedRecovery) && (
+        {isOccupiedRecovery && (
           <div style={{
             display: "flex",
             alignItems: "center",
@@ -3651,11 +3957,11 @@ export default function ChatView({
               <rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>
             </svg>
             <span style={{ flex: 1 }}>
-              {canForkOccupiedCodexSession(sessionSummary, sessionError)
-                ? "此会话仍由原客户端持有，可创建副本继续。"
-                : `此会话正在被 ${sessionSummary?.sourceLabel || "原客户端"} 使用，当前只读；原客户端释放后会自动恢复输入。`}
+              {occupiedRecovery?.forkSessionId
+                ? "副本已创建，但消息尚未发送成功。"
+                : "此会话仍由原客户端持有，可创建副本继续。"}
             </span>
-            {canForkOccupiedCodexSession(sessionSummary, sessionError) && (
+            {isOccupiedRecovery && (
               <button
                 type="button"
                 onClick={() => void handleForkOccupiedSession()}
@@ -3673,7 +3979,9 @@ export default function ChatView({
                   opacity: isForkingSession ? 0.65 : 1,
                 }}
               >
-                {isForkingSession ? "正在创建…" : "以副本继续"}
+                {isForkingSession
+                  ? occupiedRecovery?.forkSessionId ? "正在发送…" : "正在创建…"
+                  : occupiedRecovery?.forkSessionId ? "重新发送" : "以副本继续"}
               </button>
             )}
           </div>

@@ -51,6 +51,29 @@ describe("GET /api/agent/stream", () => {
     await reader?.cancel();
   });
 
+  it("replays buffered customer-agent events after the refresh cursor", async () => {
+    const session = await agentHost.createSession("customer-agent replay test");
+    agentHost.resetExternalStream(session.id);
+    agentHost.publishExternal(session.id, {
+      type: "tool_call",
+      toolCall: { id: "call-1", name: "lookup", arguments: {} },
+    });
+    agentHost.publishExternal(session.id, {
+      type: "done",
+      finalText: "recovered",
+    });
+
+    const response = await GET(new Request(
+      `http://test/api/agent/stream?sessionId=${session.id}&afterEventId=0`,
+    ));
+    const body = await response.text();
+
+    expect(body).toContain("id: 1");
+    expect(body).toContain('"type":"tool_call"');
+    expect(body).toContain("id: 2");
+    expect(body).toContain('"finalText":"recovered"');
+  });
+
   it("replays a new native run from sequence zero when the browser cursor belongs to an older run", async () => {
     nativeState.afterSequence = null;
     nativeState.events = [

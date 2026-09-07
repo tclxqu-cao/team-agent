@@ -5,6 +5,8 @@ import type {
   SessionHistoryQuery,
   SessionHistoryWindow,
   SessionQueryIndex,
+  SessionToolResultBody,
+  SessionToolResultRef,
   ToolPermissionMode,
 } from "@agent/core";
 
@@ -211,6 +213,10 @@ export interface AgentRuntimeAdapter {
    * callers fall back to getSession + in-memory pagination.
    */
   getSessionPaged?(nativeSessionId: string, query: SessionHistoryQuery): Promise<UnifiedSessionDetail>;
+  getSessionToolResult?(
+    nativeSessionId: string,
+    ref: Pick<SessionToolResultRef, "turnId" | "itemId" | "revision">,
+  ): Promise<SessionToolResultBody>;
   /** Query index over the same ordinal space as getSessionPaged; null when paging is unavailable. */
   getQueryIndex?(nativeSessionId: string): Promise<SessionQueryIndex | null>;
   getSessionWatchPath?(nativeSessionId: string): Promise<string | null>;
@@ -227,6 +233,7 @@ export interface AgentRuntimeAdapter {
   ): AsyncIterable<AgentEvent>;
   steer?(nativeSessionId: string, input: string): Promise<boolean>;
   abort(nativeSessionId: string): Promise<void>;
+  release?(nativeSessionId: string): Promise<void>;
   answerQuestion(questionId: string, answer: RuntimeQuestionAnswer): Promise<boolean>;
   archiveSession?(nativeSessionId: string): Promise<void>;
   delete?(nativeSessionId: string): Promise<void>;

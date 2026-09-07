@@ -167,6 +167,32 @@ describe("agentStore session message cache", () => {
     ]);
   });
 
+  it("keeps Codex live tools inside one turn-scoped execution trace", () => {
+    const store = useAgentStore.getState();
+    store.setSessionId("runtime:codex:test");
+    store.addMessage({ id: "user-1", role: "user", content: "run", timestamp: 1 }, "runtime:codex:test");
+    store.applyCodexExecutionEvent("turn-1", {
+      type: "tool_call",
+      turnId: "turn-1",
+      toolCall: { id: "call-1", name: "shell", arguments: { command: "pwd" } },
+    }, "runtime:codex:test");
+    store.applyCodexExecutionEvent("turn-1", {
+      type: "tool_result",
+      turnId: "turn-1",
+      result: { toolCallId: "call-1", content: "/repo" },
+    }, "runtime:codex:test");
+
+    expect(useAgentStore.getState().messages).toHaveLength(2);
+    expect(useAgentStore.getState().messages[1]).toMatchObject({
+      executionTrace: {
+        turnId: "turn-1",
+        liveMessages: [expect.objectContaining({
+          toolCalls: [expect.objectContaining({ id: "call-1", result: "/repo" })],
+        })],
+      },
+    });
+  });
+
   it("replaces native subagent activity by session and parent tool call", () => {
     const store = useAgentStore.getState();
     const running = {

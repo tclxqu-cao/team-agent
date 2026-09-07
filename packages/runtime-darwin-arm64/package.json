@@ -1,6 +1,6 @@
 {
   "name": "agentroam-runtime-darwin-arm64",
-  "version": "0.2.0-preview.13",
+  "version": "0.2.0-preview.14",
   "description": "AgentRoam server runtime for macOS arm64",
   "license": "MIT",
   "os": ["darwin"],

@@ -289,8 +289,12 @@ export interface AgentApi {
   listChildSessions(parentId: string): Promise<unknown[]>;
   getSession(
     id: string,
-    query?: { before?: string; after?: string; anchor?: string; limit?: number },
+    query?: { before?: string; after?: string; anchor?: string; limit?: number; view?: "core" | "trace"; revision?: string; turnId?: string },
   ): Promise<unknown>;
+  getSessionToolResult(
+    id: string,
+    ref: { turnId: string; itemId: string; revision: string },
+  ): Promise<{ turnId: string; itemId: string; revision: string; byteSize: number; isError?: boolean; content: string }>;
   getSessionQueryIndex?(id: string): Promise<SessionQueryIndex>;
   observeSession?(
     id: string,
@@ -311,6 +315,7 @@ export interface AgentApi {
   cancelSessionMessage(id: string, messageId: string): Promise<SessionGoalState>;
   steerSessionMessage(id: string, messageId: string): Promise<SessionGoalState>;
   handoffSession?(id: string): Promise<unknown>;
+  releaseCodexSession?(id: string): Promise<void>;
   createSession(title: string, projectId?: string, agentType?: AgentType, cwd?: string): Promise<UnifiedSessionSummary>;
   forkSession(id: string): Promise<UnifiedSessionSummary>;
   deleteSession(id: string): Promise<void>;

@@ -7,6 +7,8 @@ import {
   type SessionHistoryQuery,
   type SessionQueryIndex,
   type SessionMessagePayload,
+  type SessionToolResultBody,
+  type SessionToolResultRef,
   type ToolPermissionMode,
 } from "@agent/core";
 import {
@@ -90,11 +92,16 @@ export interface NativeRuntimePort {
   fork(id: string): Promise<UnifiedSessionSummary>;
   delete(id: string): Promise<void>;
   get(id: string, query?: SessionHistoryQuery): Promise<UnifiedSessionDetail>;
+  getSessionToolResult(
+    id: string,
+    ref: Pick<SessionToolResultRef, "turnId" | "itemId" | "revision">,
+  ): Promise<SessionToolResultBody>;
   getQueryIndex?(id: string): Promise<SessionQueryIndex>;
   getSessionWatchPath(id: string): Promise<string | null>;
   run(id: string, input: string, images?: string[], agentIds?: string[], agentName?: string): AsyncIterable<AgentEvent>;
   steer(id: string, input: string): Promise<boolean>;
   abort(id?: string): Promise<void>;
+  release?(id: string): Promise<void>;
   answerQuestion(questionId: string, answer: RuntimeQuestionAnswer): Promise<boolean>;
   startRun?(
     id: string,
@@ -286,6 +293,13 @@ export class NativeRuntimeService implements NativeRuntimePort {
     return buildSessionQueryIndex(id, detail.messages);
   }
 
+  getSessionToolResult(
+    id: string,
+    ref: Pick<SessionToolResultRef, "turnId" | "itemId" | "revision">,
+  ): Promise<SessionToolResultBody> {
+    return this.runtime.getSessionToolResult(id, ref);
+  }
+
   getSessionWatchPath(id: string): Promise<string | null> {
     return this.runtime.getSessionWatchPath(id);
   }
@@ -300,6 +314,13 @@ export class NativeRuntimeService implements NativeRuntimePort {
 
   abort(id?: string): Promise<void> {
     return this.runtime.abort(id);
+  }
+
+  async release(id: string): Promise<void> {
+    if (!this.runtime.release) {
+      throw new RuntimeSessionError("Native runtime release is unavailable", "RUNTIME_UNAVAILABLE");
+    }
+    await this.runtime.release(id);
   }
 
   answerQuestion(questionId: string, answer: RuntimeQuestionAnswer): Promise<boolean> {

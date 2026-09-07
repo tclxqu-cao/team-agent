@@ -30,4 +30,26 @@ describe("ChatHeaderActions", () => {
 
     expect(html).toContain("chat-header-action--appearance is-active");
   });
+
+  it("renders the Codex release action as an icon-only button", () => {
+    const html = renderToStaticMarkup(createElement(ChatHeaderActions, {
+      ...baseProps,
+      onReleaseCodex: () => {},
+    }));
+
+    expect(html).toContain('aria-label="交接到 Codex 桌面端"');
+    expect(html).toContain("chat-header-action--codex-release is-idle");
+    expect(html).not.toContain(">交接到 Codex 桌面端<");
+  });
+
+  it("disables the Codex release action while releasing", () => {
+    const html = renderToStaticMarkup(createElement(ChatHeaderActions, {
+      ...baseProps,
+      codexReleaseState: "releasing",
+      onReleaseCodex: () => {},
+    }));
+
+    expect(html).toContain('aria-label="正在释放 Codex 会话"');
+    expect(html).toContain("disabled");
+  });
 });

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import type { AgentEvent } from "@agent/core";
 import { RuntimeSessionError } from "../../../../../desktop/main/agent-runtime/types.js";
-import { agentHost } from "../../agent-host";
+import { agentHost, CustomerAgentRunConflictError } from "../../agent-host";
 import {
   getNativeRuntimeService,
   isNativeSessionId,
@@ -101,22 +101,27 @@ export async function POST(request: Request) {
       });
     }
 
-    // Run agent in background
-    agentHost.run(body.input, sessionId, body.images).catch((err) => {
+    // Reserve synchronously so duplicate sends receive a deterministic 409
+    // without replacing the active run's replay state.
+    const started = agentHost.startRun(body.input, sessionId, body.images);
+    started.completion.catch((err) => {
       console.error("Agent run error:", err);
     });
 
     return NextResponse.json({
       sessionId: session.id,
       streamUrl: `/api/agent/stream?sessionId=${session.id}`,
+      runId: started.runId,
     });
   } catch (err) {
     const code = err instanceof RuntimeSessionError ? err.code : undefined;
-    const isConflict = code === "SESSION_OCCUPIED" || code === "SESSION_ALREADY_RUNNING";
+    const customerAgentCode = err instanceof CustomerAgentRunConflictError ? err.code : undefined;
+    const resolvedCode = code ?? customerAgentCode;
+    const isConflict = resolvedCode === "SESSION_OCCUPIED" || resolvedCode === "SESSION_ALREADY_RUNNING";
     return NextResponse.json(
       {
         error: err instanceof Error ? err.message : "Internal error",
-        ...(code ? { code } : {}),
+        ...(resolvedCode ? { code: resolvedCode } : {}),
       },
       { status: isConflict ? 409 : 500 },
     );

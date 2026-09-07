@@ -48,12 +48,18 @@ export async function GET(request: Request) {
 
       const lastEventIdRaw = request.headers.get("last-event-id");
       const parsedLastEventId = Number.parseInt(lastEventIdRaw ?? "", 10);
-      // A brand-new EventSource wants only future events; replaying an old
-      // terminal event would immediately close the stream before the next run
-      // starts. Auto-reconnects carry Last-Event-ID and still replay gaps.
+      const url = new URL(request.url);
+      const parsedQueryEventId = Number.parseInt(url.searchParams.get("afterEventId") ?? "", 10);
+      // A refreshed active session replays its current run. A pre-run stream
+      // still follows only future events so an old terminal event cannot close
+      // the connection before admission.
       const lastEventId = Number.isSafeInteger(parsedLastEventId)
         ? parsedLastEventId
-        : agentHost.getLatestEventId(sessionId);
+        : Number.isSafeInteger(parsedQueryEventId)
+          ? parsedQueryEventId
+          : agentHost.isSessionRunning(sessionId)
+            ? 0
+            : agentHost.getLatestEventId(sessionId);
       unsubscribe = agentHost.subscribe(
         sessionId,
         (event, id) => {

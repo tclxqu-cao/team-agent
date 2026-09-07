@@ -1502,7 +1502,8 @@ export default function App() {
                                 title: session.title,
                                 visualState,
                                 statusLabel: SIDEBAR_SESSION_STATUS_LABELS[visualState],
-                                occupiedExternally: session.occupancy === "owned-externally",
+                                occupiedExternally: session.agentType !== "codex"
+                                  && session.occupancy === "owned-externally",
                                 canDelete: session.canDelete,
                                 active: isActiveSession,
                                 hasChildren: children.length > 0,
@@ -1544,7 +1545,8 @@ export default function App() {
                                       title: child.title,
                                       visualState: childVisualState,
                                       statusLabel: SIDEBAR_SESSION_STATUS_LABELS[childVisualState],
-                                      occupiedExternally: child.occupancy === "owned-externally",
+                                      occupiedExternally: child.agentType !== "codex"
+                                        && child.occupancy === "owned-externally",
                                       canDelete: child.canDelete,
                                       active: selectedSessionId === child.id,
                                       child: true,
@@ -1770,7 +1772,8 @@ export default function App() {
                       title: session.title,
                       visualState,
                       statusLabel: SIDEBAR_SESSION_STATUS_LABELS[visualState],
-                      occupiedExternally: session.occupancy === "owned-externally",
+                      occupiedExternally: session.agentType !== "codex"
+                        && session.occupancy === "owned-externally",
                       canDelete: session.canDelete,
                       active,
                       child: Boolean(session.parentSessionId),
