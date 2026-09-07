@@ -1,0 +1,21 @@
+packages/desktop/main/agent-runtime/unified-session-service.ts
+  s_e66ad1b229c376::t_bbae66d991c4c4 193
+packages/desktop/main/agent-runtime/native-runtime-broker.test.ts
+  s_e66ad1b229c376::t_bbae66d991c4c4 1799
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "79b0df38338489e06bd3b22dcb5b3a6340fbb7dd",
+  "prompts": {},
+  "sessions": {
+    "s_e66ad1b229c376": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a07986-9cdc-71d1-b4ee-5cb993f523aa",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
