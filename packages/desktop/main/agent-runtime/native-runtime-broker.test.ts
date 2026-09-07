@@ -1796,7 +1796,7 @@ describe("NativeRuntimeBrokerHost native paged get", () => {
     expect(detail.messageQueueVersion).toBe(1);
     expect(detail.snapshotRevision).toBeGreaterThan(0);
     expect(detail.goalState).toBeDefined();
-    expect((detail as Record<string, unknown>).pagedQuery).toEqual({ limit: 50 });
+    expect((detail as unknown as Record<string, unknown>).pagedQuery).toEqual({ limit: 50 });
     await host.stop();
   });
 

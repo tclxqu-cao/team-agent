@@ -190,7 +190,7 @@ export class UnifiedSessionService {
    * NOT stored in the full detail cache: tool bodies outside the window are
    * absent, and the legacy cache is keyed by a different ordinal space.
    */
-  private async getPagedDetail(
+  async getPagedDetail(
     id: string,
     query: SessionHistoryQuery,
   ): Promise<UnifiedSessionDetail | null> {
