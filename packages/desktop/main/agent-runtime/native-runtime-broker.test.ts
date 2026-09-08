@@ -1931,6 +1931,65 @@ describe("NativeRuntimeBrokerHost native paged get", () => {
     await host.stop();
   });
 
+  it.each(["core", "trace"] as const)(
+    "keeps retained run payloads out of adapter-native %s responses",
+    async (delivery) => {
+      const path = await directory();
+      const runtime = new FakeNativeRuntime();
+      runtime.eventsBeforeApproval = [
+        {
+          type: "text_chunk",
+          text: "checking",
+        },
+        {
+          type: "tool_call",
+          toolCall: { id: "call-live", name: "shell", arguments: { command: "pwd" } },
+        },
+        {
+          type: "tool_result",
+          result: { toolCallId: "call-live", content: "x".repeat(256 * 1024) },
+        },
+      ];
+      const host = new NativeRuntimeBrokerHost(path, runtime as unknown as UnifiedSessionService);
+      try {
+        await host.startRun(sessionId, "run-input");
+        await waitFor(() => expect(host.snapshot(sessionId).events.some(
+          ({ event }) => event.type === "ask_user",
+        )).toBe(true));
+
+        (runtime as unknown as Record<string, unknown>).getPagedDetail = async () => ({
+          ...pagedSummary(),
+          status: "running",
+          messages: [{
+            role: "user",
+            content: "run-input",
+            presentation: { executionTrace: { turnId: "turn-live" } },
+          }],
+          events: [],
+          history: { ...pagedSummary().history, delivery },
+        });
+
+        const detail = await host.get(sessionId, {
+          limit: 50,
+          view: delivery,
+          ...(delivery === "trace" ? { revision: "rev-1", turnId: "turn-live" } : {}),
+        });
+
+        expect(detail.status).toBe("running");
+        expect(detail.messages).toEqual([expect.objectContaining({
+          role: "user",
+          content: "run-input",
+          presentation: { executionTrace: { turnId: "turn-live" } },
+        })]);
+        expect(detail.events).toEqual([]);
+        expect(detail.snapshotRevision).toBeGreaterThan(0);
+        expect(Buffer.byteLength(JSON.stringify(detail), "utf8")).toBeLessThan(16 * 1024);
+      } finally {
+        await host.stop();
+      }
+    },
+  );
+
   it("falls back to the legacy full read when the adapter cannot page", async () => {
     const path = await directory();
     const runtime = new FakeNativeRuntime();

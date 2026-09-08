@@ -258,6 +258,24 @@ describe("UnifiedSessionService", () => {
     expect(codex.discoverSessions).toHaveBeenCalledTimes(2);
   });
 
+  it("registers a Codex fork as primary before discovery can expose it", async () => {
+    const source = summary("codex", "cx-1", "/repo", "2026-01-02T00:00:00.000Z");
+    const forked = summary("codex", "cx-fork", "/repo", "2026-01-03T00:00:00.000Z");
+    const codex = adapter("codex", [source], { forkResult: forked });
+    const compatibility = {
+      supplement: vi.fn((rows: readonly UnifiedSessionSummary[]) => [...rows]),
+      isSupplemental: vi.fn(() => false),
+      readSupplemental: vi.fn(),
+      registerPrimary: vi.fn(),
+      dispose: vi.fn(),
+    };
+    const service = new UnifiedSessionService([codex], async () => [], undefined, compatibility as never);
+
+    await service.fork(source.id);
+
+    expect(compatibility.registerPrimary).toHaveBeenCalledWith("cx-fork");
+  });
+
   it("rejects forks for runtimes without fork support", async () => {
     const claudeSession = summary("claude-code", "cc-1", "/repo", "2026-01-02T00:00:00.000Z");
     const claude = adapter("claude-code", [claudeSession]);
@@ -514,6 +532,23 @@ describe("UnifiedSessionService", () => {
       code: "RUNTIME_UNAVAILABLE",
     });
     await expect(service.create({ title: "x", cwd: "", agentType: "customer-agent" })).resolves.toBeDefined();
+  });
+
+  it("registers a newly created Codex session as primary immediately", async () => {
+    const created = summary("codex", "cx-created", "/repo", "2026-01-02T00:00:00.000Z");
+    const codex = adapter("codex", [created]);
+    const compatibility = {
+      supplement: vi.fn((rows: readonly UnifiedSessionSummary[]) => [...rows]),
+      isSupplemental: vi.fn(() => false),
+      readSupplemental: vi.fn(),
+      registerPrimary: vi.fn(),
+      dispose: vi.fn(),
+    };
+    const service = new UnifiedSessionService([codex], async () => [], undefined, compatibility as never);
+
+    await service.create({ title: "new", cwd: "/repo", agentType: "codex" });
+
+    expect(compatibility.registerPrimary).toHaveBeenCalledWith("cx-created");
   });
 
   it("invalidates discovery after create and delete", async () => {

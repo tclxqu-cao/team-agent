@@ -1314,7 +1314,11 @@ export class NativeRuntimeBrokerHost {
       // append the whole live turn to an older page that lacks it.
       const native = await this.runtime.getPagedDetail?.(id, query).catch(() => null);
       if (native) {
-        return this.state.applyDetail(native, { mergeProjection: native.history?.newerCursor == null });
+        const progressiveDelivery = native.history?.delivery === "core"
+          || native.history?.delivery === "trace";
+        return this.state.applyDetail(native, {
+          mergeProjection: !progressiveDelivery && native.history?.newerCursor == null,
+        });
       }
     }
     try {

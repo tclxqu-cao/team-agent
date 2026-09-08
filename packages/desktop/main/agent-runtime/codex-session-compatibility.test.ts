@@ -91,6 +91,29 @@ describe("CodexSessionCompatibilityService", () => {
     expect(runtime.getSession).not.toHaveBeenCalled();
   });
 
+  it("does not forget primary IDs when a scoped query omits them", () => {
+    const repository = new SeedRepository();
+    const runtime = adapter(async () => detail());
+    const service = new CodexSessionCompatibilityService(runtime, catalog(repository));
+    const primary = [{ ...detail(), messages: undefined, events: undefined } as never];
+
+    service.supplement(primary);
+
+    expect(service.supplement([])).toEqual([]);
+    expect(service.isSupplemental(nativeId)).toBe(false);
+  });
+
+  it("keeps a newly created primary session out of the catalog-only path", () => {
+    const repository = new SeedRepository();
+    const runtime = adapter(async () => detail());
+    const service = new CodexSessionCompatibilityService(runtime, catalog(repository));
+
+    service.registerPrimary(nativeId);
+
+    expect(service.supplement([])).toEqual([]);
+    expect(service.isSupplemental(nativeId)).toBe(false);
+  });
+
   it("returns the existing adapter detail unchanged after a successful explicit probe", async () => {
     const repository = new SeedRepository();
     const expected = detail();

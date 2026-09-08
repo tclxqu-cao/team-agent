@@ -57,7 +57,13 @@ export type AgentEvent =
   | { type: "thinking"; message: string }
   | { type: "tool_call"; toolCall: ToolCall; turnId?: string }
   | { type: "tool_result"; result: ToolResult; turnId?: string }
-  | { type: "text_chunk"; text: string }
+  | {
+      type: "text_chunk";
+      text: string;
+      turnId?: string;
+      itemId?: string;
+      messagePhase?: "commentary" | "final_answer";
+    }
   | { type: "text_done" }
   | { type: "context_usage"; usage: ContextUsageSnapshot }
   | { type: "compacted"; summary: string; removedMessages: number }

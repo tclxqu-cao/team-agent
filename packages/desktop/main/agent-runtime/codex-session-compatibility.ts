@@ -28,11 +28,15 @@ export class CodexSessionCompatibilityService {
   }
 
   supplement(primary: readonly UnifiedSessionSummary[]): UnifiedSessionSummary[] {
-    this.primaryNativeSessionIds = new Set(primary.map((session) => session.nativeSessionId));
+    for (const session of primary) this.primaryNativeSessionIds.add(session.nativeSessionId);
     const supplemental = this.catalog.summaries().filter(
       (session) => !this.primaryNativeSessionIds.has(session.nativeSessionId),
     );
     return [...primary, ...supplemental];
+  }
+
+  registerPrimary(nativeSessionId: string): void {
+    this.primaryNativeSessionIds.add(nativeSessionId);
   }
 
   isSupplemental(nativeSessionId: string): boolean {

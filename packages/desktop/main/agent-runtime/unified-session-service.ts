@@ -268,6 +268,9 @@ export class UnifiedSessionService {
       throw new RuntimeSessionError("A project working directory is required", "INVALID_SESSION_ID");
     }
     const created = await adapter.create(options);
+    if (created.agentType === "codex") {
+      this.codexCompatibility?.registerPrimary(created.nativeSessionId);
+    }
     this.discoveryPromise = null;
     return created;
   }
@@ -288,6 +291,9 @@ export class UnifiedSessionService {
       );
     }
     const forked = await adapter.fork(nativeSessionId);
+    if (forked.agentType === "codex") {
+      this.codexCompatibility?.registerPrimary(forked.nativeSessionId);
+    }
     this.discoveryPromise = null;
     return forked;
   }

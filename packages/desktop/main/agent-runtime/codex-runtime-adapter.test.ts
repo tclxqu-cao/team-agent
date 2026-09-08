@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -13,6 +13,7 @@ import {
   parseExplicitSkillInvocation,
   resolveCodexHome,
 } from "./codex-runtime-adapter.js";
+import { CodexRolloutCommentaryReader } from "./codex-rollout-activity.js";
 import { RuntimeSessionError } from "./types.js";
 
 describe("Codex explicit skills", () => {
@@ -378,11 +379,38 @@ describe("Codex reasoning mapping", () => {
     expect(messages[0]).toEqual({
       role: "assistant",
       content: "",
+      historyId: "codex-trace:turn-1:reasoning:reasoning-1",
       presentation: { reasoning: [{ itemId: "reasoning-1", sectionIndex: 0, text: "Checked files" }] },
     });
     expect(JSON.stringify(messages)).not.toContain("private chain");
     expect(messages.map((message) => message.role)).toEqual(["assistant", "assistant", "tool", "assistant"]);
     expect(messages.at(-1)?.content).toBe("Done");
+  });
+
+  it("preserves Codex agent message phases for presentation filtering", async () => {
+    const messages = await codexTurnsToMessages([{
+      id: "turn-1",
+      status: "completed",
+      items: [
+        { type: "agentMessage", id: "commentary-1", text: "正在检查文件", phase: "commentary" },
+        { type: "agentMessage", id: "answer-1", text: "检查完成", phase: "final_answer" },
+      ],
+    }]);
+
+    expect(messages).toEqual([
+      {
+        role: "assistant",
+        content: "正在检查文件",
+        historyId: "codex-trace:turn-1:agent:commentary-1",
+        presentation: { agentMessagePhase: "commentary" },
+      },
+      {
+        role: "assistant",
+        content: "检查完成",
+        historyId: "codex-trace:turn-1:agent:answer-1",
+        presentation: { agentMessagePhase: "final_answer" },
+      },
+    ]);
   });
 });
 
@@ -418,6 +446,31 @@ describe("Codex live execution events", () => {
               params: {
                 threadId: thread.id,
                 turnId: "turn-live",
+                item: { id: "commentary-1", type: "agentMessage", text: "", phase: "commentary" },
+              },
+            });
+            notify({
+              method: "item/agentMessage/delta",
+              params: {
+                threadId: thread.id,
+                turnId: "turn-live",
+                itemId: "commentary-1",
+                delta: "Checking files",
+              },
+            });
+            notify({
+              method: "item/completed",
+              params: {
+                threadId: thread.id,
+                turnId: "turn-live",
+                item: { id: "commentary-1", type: "agentMessage", text: "Checking files", phase: "commentary" },
+              },
+            });
+            notify({
+              method: "item/started",
+              params: {
+                threadId: thread.id,
+                turnId: "turn-live",
                 item: { id: "call-1", type: "commandExecution", command: "pwd", cwd: "/repo" },
               },
             });
@@ -430,10 +483,31 @@ describe("Codex live execution events", () => {
               },
             });
             notify({
+              method: "item/started",
+              params: {
+                threadId: thread.id,
+                turnId: "turn-live",
+                item: { id: "answer-1", type: "agentMessage", text: "", phase: "final_answer" },
+              },
+            });
+            notify({
+              method: "item/agentMessage/delta",
+              params: {
+                threadId: thread.id,
+                turnId: "turn-live",
+                itemId: "answer-1",
+                delta: "Done",
+              },
+            });
+            notify({
               method: "turn/completed",
               params: {
                 threadId: thread.id,
-                turn: { id: "turn-live", status: "completed", items: [] },
+                turn: {
+                  id: "turn-live",
+                  status: "completed",
+                  items: [{ id: "answer-1", type: "agentMessage", text: "Done", phase: "final_answer" }],
+                },
               },
             });
           });
@@ -448,6 +522,13 @@ describe("Codex live execution events", () => {
     const events = await drain(adapter.run(thread.id, "run pwd"));
 
     expect(events).toContainEqual(expect.objectContaining({
+      type: "text_chunk",
+      text: "Checking files",
+      turnId: "turn-live",
+      itemId: "commentary-1",
+      messagePhase: "commentary",
+    }));
+    expect(events).toContainEqual(expect.objectContaining({
       type: "tool_call",
       turnId: "turn-live",
       toolCall: expect.objectContaining({ id: "call-1" }),
@@ -456,6 +537,13 @@ describe("Codex live execution events", () => {
       type: "tool_result",
       turnId: "turn-live",
       result: expect.objectContaining({ toolCallId: "call-1", content: "/repo" }),
+    }));
+    expect(events).toContainEqual(expect.objectContaining({
+      type: "text_chunk",
+      text: "Done",
+      turnId: "turn-live",
+      itemId: "answer-1",
+      messagePhase: "final_answer",
     }));
   });
 });
@@ -1599,6 +1687,7 @@ describe("Codex native paged history", () => {
     requests: Array<{ method: string; params: any }>,
     opts: {
       failTurnsList?: boolean;
+      turnsListErrors?: Error[];
       sourceTurns?: any[];
       threadStatus?: string;
       getThreadStatus?: () => string;
@@ -1623,7 +1712,14 @@ describe("Codex native paged history", () => {
           };
         }
         if (method === "thread/turns/list") {
-          if (opts.failTurnsList) throw new Error("unknown method: thread/turns/list");
+          if (opts.failTurnsList) {
+            throw new RuntimeSessionError(
+              "unknown method: thread/turns/list",
+              "NATIVE_PROTOCOL_ERROR",
+            );
+          }
+          const turnsListError = opts.turnsListErrors?.shift();
+          if (turnsListError) throw turnsListError;
           const desc = [...(opts.sourceTurns ?? turns)].reverse();
           if (params.itemsView === "summary") {
             return { data: desc.map((t) => ({ ...t, items: t.items.filter((i: any) => i.type === "userMessage" || i.type === "agentMessage") })) };
@@ -1648,13 +1744,56 @@ describe("Codex native paged history", () => {
     expect(detail.history).toMatchObject({ totalItems: 10, pageSize: 2, hasMore: true, kind: "latest", nextCursor: "history.v1.8" });
   });
 
+  it("treats a one-item latest core window as the complete latest turn", async () => {
+    const requests: Array<{ method: string; params: any }> = [];
+    const adapter = new CodexRuntimeAdapter({ client: pagingClientFor(requests) as never });
+
+    const detail = await adapter.getSessionPaged("cx-paged", { limit: 1, view: "core" });
+
+    expect(detail.messages.map((message) => message.content)).toEqual(["q-t5", "s-t5"]);
+    expect(detail.history).toMatchObject({
+      totalItems: 10,
+      pageSize: 2,
+      hasMore: true,
+      nextCursor: "history.v1.8",
+      delivery: "core",
+    });
+    expect(requests.some((request) => (
+      request.method === "thread/read" && request.params.includeTurns === true
+    ))).toBe(false);
+  });
+
+  it("does not expose an unphased running agent summary as a final answer", async () => {
+    const requests: Array<{ method: string; params: any }> = [];
+    const liveTurn = turn("live", 1);
+    liveTurn.status = "inProgress";
+    liveTurn.items = [
+      liveTurn.items[0],
+      { type: "agentMessage", id: "commentary-live", text: "正在检查文件" },
+    ];
+    const adapter = new CodexRuntimeAdapter({
+      client: pagingClientFor(requests, {
+        sourceTurns: [liveTurn],
+        threadStatus: "active",
+      }) as never,
+    });
+
+    const detail = await adapter.getSessionPaged("cx-paged", { limit: 10, view: "core" });
+
+    expect(detail.messages.map((message) => message.content)).toEqual(["q-live"]);
+    expect(detail.history).toMatchObject({ totalItems: 1, pageSize: 1, delivery: "core" });
+  });
+
   it("keeps a durable final answer visible before task_complete reaches native summary history", async () => {
     const directory = await mkdtemp(join(tmpdir(), "codex-finalizing-history-"));
     temporaryDirectories.push(directory);
     const path = join(directory, "rollout.jsonl");
     const liveTurn = turn("live", 1);
     liveTurn.status = "inProgress";
-    liveTurn.items = [liveTurn.items[0]];
+    liveTurn.items = [
+      liveTurn.items[0],
+      { type: "agentMessage", id: "final-live", text: "durable final" },
+    ];
     await writeFile(path, [
       JSON.stringify({ type: "event_msg", payload: { type: "task_started", turn_id: "live" } }),
       JSON.stringify({
@@ -1749,6 +1888,59 @@ describe("Codex native paged history", () => {
     expect(trace.messages.find((message) => message.role === "tool")?.toolResultRef)
       .toMatchObject({ turnId: "t4", itemId: "call-t4" });
     expect(requests.filter((request) => request.params.itemsView === "full")).toHaveLength(1);
+  });
+
+  it("returns commentary in the trace without adding it to core pagination", async () => {
+    const requests: Array<{ method: string; params: any }> = [];
+    const directory = await mkdtemp(join(tmpdir(), "codex-commentary-history-"));
+    temporaryDirectories.push(directory);
+    const path = join(directory, "rollout.jsonl");
+    const commentary = (id: string, text: string) => JSON.stringify({
+      type: "response_item",
+      payload: {
+        type: "message",
+        id,
+        role: "assistant",
+        content: [{ type: "output_text", text }],
+        phase: "commentary",
+        internal_chat_message_metadata_passthrough: { turn_id: "phased" },
+      },
+    });
+    await writeFile(path, `${commentary("commentary-phased", "正在读取项目")}\n`);
+    const phasedTurn = turn("phased", 1) as any;
+    phasedTurn.items = [
+      phasedTurn.items[0],
+      { type: "agentMessage", id: "commentary-phased", text: "正在读取项目" },
+      { type: "commandExecution", id: "call-phased", command: "pwd", cwd: "/repo", aggregatedOutput: "/repo" },
+      { type: "agentMessage", id: "answer-phased", text: "读取完成", phase: "final_answer" },
+    ];
+    const rolloutCommentaryReader = new CodexRolloutCommentaryReader();
+    const commentaryRead = vi.spyOn(rolloutCommentaryReader, "read");
+    const adapter = new CodexRuntimeAdapter({
+      client: pagingClientFor(requests, { sourceTurns: [phasedTurn], threadPath: path }) as never,
+      rolloutCommentaryReader,
+    });
+
+    const core = await adapter.getSessionPaged("cx-paged", { limit: 10, view: "core" });
+    expect(core.messages.map((message) => message.content)).toEqual(["q-phased", "读取完成"]);
+    expect(core.history).toMatchObject({ totalItems: 2, pageSize: 2 });
+    expect(commentaryRead).not.toHaveBeenCalled();
+
+    await appendFile(path, `${commentary("commentary-phased-2", "正在读取项目和依赖")}\n`);
+    const refreshedCore = await adapter.getSessionPaged("cx-paged", { limit: 10, view: "core" });
+    expect(refreshedCore.history?.revision).toBe(core.history?.revision);
+    expect(refreshedCore.history).toMatchObject({ totalItems: 2, pageSize: 2 });
+    expect(commentaryRead).not.toHaveBeenCalled();
+
+    const trace = await adapter.getSessionPaged("cx-paged", {
+      view: "trace",
+      revision: core.history?.revision,
+      turnId: "phased",
+    });
+    expect(trace.messages.filter((message) => message.presentation?.agentMessagePhase === "commentary")
+      .map((message) => message.content)).toEqual(["正在读取项目", "正在读取项目和依赖"]);
+    expect(trace.messages.some((message) => message.content === "读取完成")).toBe(false);
+    expect(commentaryRead).toHaveBeenCalledOnce();
   });
 
   it("rejects an unknown on-demand trace turn", async () => {
@@ -1892,5 +2084,24 @@ describe("Codex native paged history", () => {
     const seen = requests.length;
     await expect(adapter.getSessionPaged("cx-paged", { limit: 2 })).rejects.toMatchObject({ code: "OPERATION_NOT_SUPPORTED" });
     expect(requests.length).toBe(seen);
+  });
+
+  it("falls back only for the current request after a session-level paging error", async () => {
+    const requests: Array<{ method: string; params: any }> = [];
+    const adapter = new CodexRuntimeAdapter({
+      client: pagingClientFor(requests, {
+        turnsListErrors: [new RuntimeSessionError(
+          "Invalid request (-32602): thread not loaded: unavailable-session",
+          "NATIVE_PROTOCOL_ERROR",
+        )],
+      }) as never,
+    });
+
+    await expect(adapter.getSessionPaged("unavailable-session", { limit: 2, view: "core" }))
+      .rejects.toMatchObject({ code: "OPERATION_NOT_SUPPORTED" });
+
+    const detail = await adapter.getSessionPaged("cx-paged", { limit: 2, view: "core" });
+    expect(detail.history).toMatchObject({ delivery: "core", pageSize: 2 });
+    expect(requests.filter((request) => request.method === "thread/turns/list")).toHaveLength(2);
   });
 });

@@ -8,6 +8,32 @@ export interface CodexRolloutFinalAnswer {
   text: string;
 }
 
+export interface CodexRolloutCommentary {
+  turnId: string;
+  itemId?: string;
+  text: string;
+}
+
+export interface CodexRolloutCommentarySnapshot {
+  commentary: CodexRolloutCommentary[];
+  itemOrder: string[];
+}
+
+interface CommentaryTurnCache {
+  commentary: Map<string, CodexRolloutCommentary>;
+  itemOrder: string[];
+  itemIds: Set<string>;
+}
+
+interface CommentaryCacheEntry {
+  identity: string;
+  size: number;
+  mtimeMs: number;
+  trailing: Buffer;
+  trailingOverflow: boolean;
+  turns: Map<string, CommentaryTurnCache>;
+}
+
 interface ActivityCacheEntry {
   identity: string;
   size: number;
@@ -113,7 +139,17 @@ function finalAnswerFromItem(value: unknown, fallbackTurnId: unknown): CodexRoll
     || asString(item.turn_id)
     || asString(fallbackTurnId);
   if (!turnId) return null;
-  const text = Array.isArray(item.content)
+  const text = agentMessageText(item);
+  if (!text.trim()) return null;
+  return {
+    turnId,
+    ...(typeof item.id === "string" ? { itemId: item.id } : {}),
+    text,
+  };
+}
+
+function agentMessageText(item: Record<string, unknown>): string {
+  return Array.isArray(item.content)
     ? item.content.flatMap((entry) => {
         const part = asRecord(entry);
         const partType = typeof part.type === "string" ? part.type.toLowerCase() : "";
@@ -121,13 +157,144 @@ function finalAnswerFromItem(value: unknown, fallbackTurnId: unknown): CodexRoll
           ? [part.text]
           : [];
       }).join("")
-    : "";
-  if (!text.trim()) return null;
-  return {
-    turnId,
-    ...(typeof item.id === "string" ? { itemId: item.id } : {}),
-    text,
-  };
+    : typeof item.text === "string" ? item.text : "";
+}
+
+export class CodexRolloutCommentaryReader {
+  private readonly cache = new Map<string, CommentaryCacheEntry>();
+
+  constructor(private readonly chunkSize = DEFAULT_CHUNK_SIZE) {
+    if (!Number.isInteger(chunkSize) || chunkSize <= 0) {
+      throw new Error("Codex rollout commentary chunk size must be a positive integer");
+    }
+  }
+
+  async read(path: string, turnId: string): Promise<CodexRolloutCommentarySnapshot> {
+    let handle: FileHandle | null = null;
+    try {
+      handle = await open(path, "r");
+      const metadata = await handle.stat();
+      if (!metadata.isFile()) return { commentary: [], itemOrder: [] };
+      const identity = `${metadata.dev}:${metadata.ino}`;
+      const previous = this.cache.get(path);
+      const canContinue = previous
+        && previous.identity === identity
+        && metadata.size >= previous.size
+        && (metadata.size > previous.size || metadata.mtimeMs === previous.mtimeMs);
+      const entry = canContinue
+        ? previous
+        : {
+            identity,
+            size: 0,
+            mtimeMs: metadata.mtimeMs,
+            trailing: Buffer.alloc(0),
+            trailingOverflow: false,
+            turns: new Map<string, CommentaryTurnCache>(),
+          };
+      await this.readAppendedCommentary(handle, entry, metadata.size);
+      entry.size = metadata.size;
+      entry.mtimeMs = metadata.mtimeMs;
+      this.cache.set(path, entry);
+      if (this.cache.size > 64) {
+        this.cache.delete(this.cache.keys().next().value!);
+      }
+      const turn = entry.turns.get(turnId);
+      return turn
+        ? { commentary: [...turn.commentary.values()], itemOrder: [...turn.itemOrder] }
+        : { commentary: [], itemOrder: [] };
+    } catch {
+      this.cache.delete(path);
+      return { commentary: [], itemOrder: [] };
+    } finally {
+      await handle?.close().catch(() => undefined);
+    }
+  }
+
+  private async readAppendedCommentary(
+    handle: FileHandle,
+    entry: CommentaryCacheEntry,
+    targetSize: number,
+  ): Promise<void> {
+    let offset = entry.size;
+    while (offset < targetSize) {
+      const length = Math.min(this.chunkSize, targetSize - offset);
+      const chunk = Buffer.allocUnsafe(length);
+      const { bytesRead } = await handle.read(chunk, 0, length, offset);
+      if (bytesRead <= 0) break;
+      offset += bytesRead;
+      let content = chunk.subarray(0, bytesRead);
+      if (entry.trailingOverflow) {
+        const newline = content.indexOf(0x0a);
+        if (newline < 0) continue;
+        content = content.subarray(newline + 1);
+        entry.trailingOverflow = false;
+      } else if (entry.trailing.length > 0) {
+        content = Buffer.concat([entry.trailing, content]);
+      }
+
+      const lastNewline = content.lastIndexOf(0x0a);
+      if (lastNewline < 0) {
+        entry.trailing = content.length <= MAX_BUFFERED_LINE_BYTES ? Buffer.from(content) : Buffer.alloc(0);
+        entry.trailingOverflow = content.length > MAX_BUFFERED_LINE_BYTES;
+        continue;
+      }
+      const complete = content.subarray(0, lastNewline).toString("utf8").split("\n");
+      for (const line of complete) this.consumeCommentaryLine(entry, line);
+      const trailing = content.subarray(lastNewline + 1);
+      entry.trailing = trailing.length <= MAX_BUFFERED_LINE_BYTES ? Buffer.from(trailing) : Buffer.alloc(0);
+      entry.trailingOverflow = trailing.length > MAX_BUFFERED_LINE_BYTES;
+    }
+  }
+
+  private consumeCommentaryLine(entry: CommentaryCacheEntry, line: string): void {
+    if (!line.trim()) return;
+    try {
+      const record = JSON.parse(line) as Record<string, unknown>;
+      const payload = asRecord(record.payload);
+      let item: Record<string, unknown>;
+      let fallbackTurnId: unknown;
+      if (record.type === "response_item") {
+        item = payload;
+        fallbackTurnId = payload.turn_id;
+      } else if (record.type === "event_msg" && payload.type === "item_completed") {
+        item = asRecord(payload.item);
+        fallbackTurnId = payload.turn_id;
+      } else {
+        return;
+      }
+      const turnId = asString(asRecord(item.internal_chat_message_metadata_passthrough).turn_id)
+        || asString(item.turn_id)
+        || asString(fallbackTurnId);
+      if (!turnId) return;
+      let turn = entry.turns.get(turnId);
+      if (!turn) {
+        turn = { commentary: new Map(), itemOrder: [], itemIds: new Set() };
+        entry.turns.set(turnId, turn);
+      }
+      const itemId = asString(item.id);
+      if (itemId && !turn.itemIds.has(itemId)) {
+        turn.itemIds.add(itemId);
+        turn.itemOrder.push(itemId);
+      }
+      const type = asString(item.type).toLowerCase();
+      const role = asString(item.role).toLowerCase();
+      if (
+        item.phase !== "commentary"
+        || (type !== "agentmessage" && type !== "message")
+        || (role && role !== "assistant")
+      ) return;
+      const text = agentMessageText(item);
+      if (!text.trim()) return;
+      const key = itemId || `text:${text}`;
+      turn.commentary.set(key, {
+        turnId,
+        ...(itemId ? { itemId } : {}),
+        text,
+      });
+    } catch {
+      // Writers can leave an incomplete final JSONL record between file events.
+    }
+  }
 }
 
 function asRecord(value: unknown): Record<string, unknown> {

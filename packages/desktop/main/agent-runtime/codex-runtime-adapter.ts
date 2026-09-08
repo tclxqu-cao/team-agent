@@ -30,8 +30,10 @@ import {
 } from "./codex-app-server-client.js";
 import {
   CodexRolloutActivityReader,
+  CodexRolloutCommentaryReader,
   readCodexRolloutFinalizingAnswer,
   type CodexRolloutActivity,
+  type CodexRolloutCommentarySnapshot,
   type CodexRolloutFinalAnswer,
 } from "./codex-rollout-activity.js";
 import { parseImageDataUrls, type ParsedImageDataUrl } from "./image-input.js";
@@ -145,7 +147,9 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
   private readonly platform: NodeJS.Platform;
   private readonly imageStorageRoot: string;
   private readonly rolloutActivityReader: Pick<CodexRolloutActivityReader, "readMany">;
-  /** Flipped off permanently when the app-server rejects the paginated turn protocol. */
+  private readonly rolloutCommentaryReader: Pick<CodexRolloutCommentaryReader, "read">;
+  private readonly agentMessagePhases = new Map<string, "commentary" | "final_answer">();
+  /** Flipped off permanently only when the app-server lacks the paginated turn protocol. */
   private nativePagingSupported = true;
   /** Progressive full-item hydration per session; the summary skeleton stays the ordinal source of truth. */
   private readonly pagedTurnItems = new Map<string, {
@@ -173,6 +177,7 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
     sessionRoot?: string;
     imageStorageRoot?: string;
     rolloutActivityReader?: Pick<CodexRolloutActivityReader, "readMany">;
+    rolloutCommentaryReader?: Pick<CodexRolloutCommentaryReader, "read">;
     codexExecutable?: string;
     environment?: NodeJS.ProcessEnv;
     homeDir?: string;
@@ -197,6 +202,7 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
     this.imageStorageRoot = options.imageStorageRoot ?? join(this.codexHome, "agentroam-images");
     this.platform = options.platform ?? process.platform;
     this.rolloutActivityReader = options.rolloutActivityReader ?? new CodexRolloutActivityReader();
+    this.rolloutCommentaryReader = options.rolloutCommentaryReader ?? new CodexRolloutCommentaryReader();
     this.client.onNotification((message) => this.handleNotification(message));
     this.client.setServerRequestHandler((message) => this.handleServerRequest(message));
     this.client.onExit((error) => {
@@ -479,14 +485,16 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
     if (reconciliation.latestTurnFinalizing && summary.status === "running") {
       summary = { ...summary, status: "idle" };
     }
-
     // The skeleton: every visible user/agent item in rollout order. This is
     // the entire ordinal space — cheap (tens of KB) and hydration-independent.
     const skeleton: Array<{ turnId: string; role: "user" | "assistant" }> = [];
     for (const turn of ascTurns) {
+      const legacyFinalAgentMessage = codexLegacyFinalAgentMessage(turn);
       for (const item of turn.items ?? []) {
         if (item.type === "userMessage") skeleton.push({ turnId: turn.id, role: "user" });
-        else if (item.type === "agentMessage") skeleton.push({ turnId: turn.id, role: "assistant" });
+        else if (isCodexCoreAgentMessage(item, turn.status, legacyFinalAgentMessage)) {
+          skeleton.push({ turnId: turn.id, role: "assistant" });
+        }
       }
     }
     const skeletonMessages = codexSummaryTurnsToMessages(ascTurns);
@@ -504,9 +512,14 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
         refreshTurnId: ascTurns.at(-1)?.id === turn.id ? turn.id : undefined,
         preserveRefreshedItems: summary.status === "running",
       });
+      let hydratedItems = this.pagedTurnItems.get(nativeSessionId)?.turns.get(turn.id) ?? turn.items ?? [];
+      if (meta.thread.path) {
+        const commentary = await this.rolloutCommentaryReader.read(meta.thread.path, turn.id);
+        hydratedItems = mergeCodexRolloutCommentary(hydratedItems, commentary);
+      }
       const hydratedTurn = {
         ...turn,
-        items: this.pagedTurnItems.get(nativeSessionId)?.turns.get(turn.id) ?? turn.items ?? [],
+        items: hydratedItems,
       };
       const messages = (await codexTurnsToMessages([hydratedTurn], {
         toolResultMode: "lazy",
@@ -698,7 +711,11 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
         || item.text === finalizing.text
       )
     ));
-    if (existingIndex >= 0 && items[existingIndex].text === finalizing.text) {
+    if (
+      existingIndex >= 0
+      && items[existingIndex].text === finalizing.text
+      && items[existingIndex].phase === "final_answer"
+    ) {
       this.finalizingAnswers.delete(nativeSessionId);
       return { turns, latestTurnFinalizing: turnIndex === turns.length - 1 };
     }
@@ -707,6 +724,7 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
       type: "agentMessage",
       ...(finalizing.itemId ? { id: finalizing.itemId } : {}),
       text: finalizing.text,
+      phase: "final_answer",
     };
     if (existingIndex >= 0) nextItems[existingIndex] = reconciledItem;
     else nextItems.push(reconciledItem);
@@ -850,7 +868,11 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
       if (pointer >= end) break;
       const role = message.role;
       if (role !== "user" && role !== "assistant") continue;
-      if (role === "assistant" && (message.toolCalls?.length || message.presentation?.reasoning)) continue;
+      if (role === "assistant" && (
+        message.toolCalls?.length
+        || message.presentation?.reasoning
+        || message.presentation?.agentMessagePhase === "commentary"
+      )) continue;
       if (skeleton[pointer]?.role !== role) continue;
       message.historyId = sessionHistoryMessageId(pointer, message);
       pointer += 1;
@@ -858,16 +880,33 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
   }
 
   private normalizePagedError(error: unknown): RuntimeSessionError {
-    if (error instanceof RuntimeSessionError) return error;
+    if (error instanceof RuntimeSessionError && error.code !== "NATIVE_PROTOCOL_ERROR") {
+      return error;
+    }
     const message = error instanceof Error ? error.message : String(error);
-    if (/unknown (method|variant)|expected one of|failed to deserialize|invalid request|-3260/i.test(message)) {
+    const pagingCapabilityMissing = (
+      /unknown method|method not found|unknown variant [`'"](?:thread\/(?:read|turns\/list)|summary|full|notLoaded)[`'"]|(?:^|\D)-32601(?:\D|$)/i
+    ).test(message);
+    if (pagingCapabilityMissing) {
       this.nativePagingSupported = false;
       return new RuntimeSessionError(
         `Codex native history paging failed: ${message}`,
         "OPERATION_NOT_SUPPORTED",
       );
     }
-    return new RuntimeSessionError(message, "NATIVE_PROTOCOL_ERROR");
+
+    const requestCannotPage = (
+      /invalid (?:request|params?)|expected one of|failed to deserialize|thread (?:not loaded|not found)|(?:^|\D)-3260(?:0|2)(?:\D|$)/i
+    ).test(message);
+    if (requestCannotPage) {
+      return new RuntimeSessionError(
+        `Codex native history paging failed for this request: ${message}`,
+        "OPERATION_NOT_SUPPORTED",
+      );
+    }
+    return error instanceof RuntimeSessionError
+      ? error
+      : new RuntimeSessionError(message, "NATIVE_PROTOCOL_ERROR");
   }
 
   async getSessionWatchPath(nativeSessionId: string): Promise<string | null> {
@@ -1194,6 +1233,15 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
 
     const progressEvent = codexProgressNotificationToEvent(message);
     if (progressEvent) queue.push(progressEvent);
+    const notificationItem = params.item as CodexItem | undefined;
+    if (
+      message.method === "item/started"
+      && notificationItem?.type === "agentMessage"
+      && typeof notificationItem.id === "string"
+    ) {
+      const phase = codexAgentMessagePhase(notificationItem.phase);
+      if (phase) this.agentMessagePhases.set(`${threadId}:${notificationItem.id}`, phase);
+    }
     const reasoningEvent = codexReasoningNotificationToEvent(message);
     if (reasoningEvent) {
       queue.push(eventTurnId ? { ...reasoningEvent, turnId: eventTurnId } : reasoningEvent);
@@ -1202,7 +1250,17 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
     if (message.method === "item/reasoning/textDelta") return;
 
     if (message.method === "item/agentMessage/delta" && typeof params.delta === "string") {
-      queue.push({ type: "text_chunk", text: params.delta });
+      const itemId = typeof params.itemId === "string" ? params.itemId : undefined;
+      const messagePhase = itemId
+        ? this.agentMessagePhases.get(`${threadId}:${itemId}`)
+        : undefined;
+      queue.push({
+        type: "text_chunk",
+        text: params.delta,
+        ...(eventTurnId ? { turnId: eventTurnId } : {}),
+        ...(itemId ? { itemId } : {}),
+        ...(messagePhase ? { messagePhase } : {}),
+      });
       return;
     }
     if (message.method === "item/started") {
@@ -1211,13 +1269,19 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
       return;
     }
     if (message.method === "item/completed") {
-      const result = codexItemToToolResult(params.item as CodexItem | undefined);
+      if (notificationItem?.type === "agentMessage" && typeof notificationItem.id === "string") {
+        this.agentMessagePhases.delete(`${threadId}:${notificationItem.id}`);
+      }
+      const result = codexItemToToolResult(notificationItem);
       if (result) queue.push({ type: "tool_result", result, ...(eventTurnId ? { turnId: eventTurnId } : {}) });
       return;
     }
     if (message.method === "turn/completed") {
       const turn = params.turn as CodexTurn | undefined;
       this.activeTurnIds.delete(threadId);
+      for (const key of this.agentMessagePhases.keys()) {
+        if (key.startsWith(`${threadId}:`)) this.agentMessagePhases.delete(key);
+      }
       if (this.activeGoalThreads.has(threadId)) {
         if (turn?.status === "failed") {
           queue.push({ type: "error", message: turn.error?.message ?? "Codex turn failed" });
@@ -1617,6 +1681,7 @@ interface CodexMessageConversionOptions {
 function codexSummaryTurnsToMessages(turns: CodexTurn[]): Message[] {
   const messages: Message[] = [];
   for (const turn of turns) {
+    const legacyFinalAgentMessage = codexLegacyFinalAgentMessage(turn);
     for (const item of turn.items ?? []) {
       if (item.type === "userMessage") {
         const entries = item.content as Array<Record<string, unknown>> | undefined;
@@ -1643,8 +1708,17 @@ function codexSummaryTurnsToMessages(turns: CodexTurn[]): Message[] {
             } : {}),
           },
         });
-      } else if (item.type === "agentMessage" && typeof item.text === "string" && item.text.trim()) {
-        messages.push({ role: "assistant", content: item.text });
+      } else if (
+        isCodexCoreAgentMessage(item, turn.status, legacyFinalAgentMessage)
+        && typeof item.text === "string"
+        && item.text.trim()
+      ) {
+        const presentation = codexAgentMessagePresentation(item);
+        messages.push({
+          role: "assistant",
+          content: item.text,
+          ...(presentation ? { presentation } : {}),
+        });
       }
     }
   }
@@ -1735,7 +1809,15 @@ export async function codexTurnsToMessages(
           });
         }
       } else if (item.type === "agentMessage" && typeof item.text === "string" && item.text.trim()) {
-        messages.push({ role: "assistant", content: item.text });
+        const presentation = codexAgentMessagePresentation(item);
+        messages.push({
+          role: "assistant",
+          content: item.text,
+          ...(codexTraceHistoryId(turn.id, "agent", item.id) ? {
+            historyId: codexTraceHistoryId(turn.id, "agent", item.id),
+          } : {}),
+          ...(presentation ? { presentation } : {}),
+        });
       } else if (item.type === "reasoning" && Array.isArray(item.summary)) {
         const reasoning = item.summary.flatMap((entry, sectionIndex) => (
           typeof entry === "string" && entry.trim()
@@ -1749,19 +1831,34 @@ export async function codexTurnsToMessages(
             : []
         ));
         if (reasoning.length > 0) {
-          messages.push({ role: "assistant", content: "", presentation: { reasoning } });
+          messages.push({
+            role: "assistant",
+            content: "",
+            ...(codexTraceHistoryId(turn.id, "reasoning", item.id) ? {
+              historyId: codexTraceHistoryId(turn.id, "reasoning", item.id),
+            } : {}),
+            presentation: { reasoning },
+          });
         }
       } else {
         const toolCall = codexItemToToolCall(item);
         const convertedToolCall = toolCall && options.toolArgumentsMaxBytes
           ? { ...toolCall, arguments: boundedToolArguments(toolCall.arguments, options.toolArgumentsMaxBytes) }
           : toolCall;
-        if (convertedToolCall) messages.push({ role: "assistant", content: "", toolCalls: [convertedToolCall] });
+        if (convertedToolCall) messages.push({
+          role: "assistant",
+          content: "",
+          ...(codexTraceHistoryId(turn.id, "tool-call", item.id) ? {
+            historyId: codexTraceHistoryId(turn.id, "tool-call", item.id),
+          } : {}),
+          toolCalls: [convertedToolCall],
+        });
         const result = codexItemToToolResult(item);
         if (result && options.toolResultMode === "lazy" && options.revision && item.id) {
           messages.push({
             role: "tool",
             content: "",
+            historyId: codexTraceHistoryId(turn.id, "tool-result", item.id),
             toolCallId: result.toolCallId,
             name: toolCall?.name,
             toolResultRef: {
@@ -1773,7 +1870,15 @@ export async function codexTurnsToMessages(
             },
           });
         } else if (result) {
-          messages.push({ role: "tool", content: result.content, toolCallId: result.toolCallId, name: toolCall?.name });
+          messages.push({
+            role: "tool",
+            content: result.content,
+            ...(codexTraceHistoryId(turn.id, "tool-result", item.id) ? {
+              historyId: codexTraceHistoryId(turn.id, "tool-result", item.id),
+            } : {}),
+            toolCallId: result.toolCallId,
+            name: toolCall?.name,
+          });
         }
       }
     }
@@ -1784,8 +1889,104 @@ export async function codexTurnsToMessages(
 function isCodexExecutionMessage(message: Message): boolean {
   return message.role === "tool"
     || (message.role === "assistant" && Boolean(
-      message.toolCalls?.length || message.presentation?.reasoning?.length,
+      message.toolCalls?.length
+      || message.presentation?.reasoning?.length
+      || message.presentation?.agentMessagePhase === "commentary",
     ));
+}
+
+function codexLegacyFinalAgentMessage(turn: CodexTurn): CodexItem | undefined {
+  if (turn.status !== "completed" || turn.items.some((item) => item.phase === "final_answer")) {
+    return undefined;
+  }
+  for (let index = turn.items.length - 1; index >= 0; index -= 1) {
+    const item = turn.items[index];
+    if (
+      item.type === "agentMessage"
+      && item.phase !== "commentary"
+      && typeof item.text === "string"
+      && item.text.trim()
+    ) return item;
+  }
+  return undefined;
+}
+
+function isCodexCoreAgentMessage(
+  item: CodexItem,
+  turnStatus: string,
+  legacyFinalAgentMessage?: CodexItem,
+): boolean {
+  if (item.type !== "agentMessage" || item.phase === "commentary") return false;
+  if (item.phase === "final_answer") return true;
+  // Summary items from a running Codex turn can omit `phase` even when the
+  // latest agent message is commentary. Completed legacy turns may use only
+  // their last unphased agent message as the final-answer compatibility item.
+  return turnStatus === "completed" && item === legacyFinalAgentMessage;
+}
+
+function codexAgentMessagePresentation(
+  item: CodexItem,
+): Message["presentation"] | undefined {
+  const phase = codexAgentMessagePhase(item.phase);
+  return phase
+    ? { agentMessagePhase: phase }
+    : undefined;
+}
+
+function codexAgentMessagePhase(value: unknown): "commentary" | "final_answer" | undefined {
+  return value === "commentary" || value === "final_answer" ? value : undefined;
+}
+
+function codexTraceHistoryId(
+  turnId: string,
+  kind: "agent" | "reasoning" | "tool-call" | "tool-result",
+  itemId: unknown,
+): string | undefined {
+  return typeof itemId === "string" && itemId
+    ? `codex-trace:${turnId}:${kind}:${itemId}`
+    : undefined;
+}
+
+function mergeCodexRolloutCommentary(
+  items: CodexItem[],
+  snapshot: CodexRolloutCommentarySnapshot,
+): CodexItem[] {
+  if (snapshot.commentary.length === 0) return items;
+  const merged = [...items];
+  const existingIds = new Set(merged.flatMap((item) => typeof item.id === "string" ? [item.id] : []));
+  for (const commentary of snapshot.commentary) {
+    if (commentary.itemId && existingIds.has(commentary.itemId)) {
+      const existingIndex = merged.findIndex((item) => item.id === commentary.itemId);
+      const existing = merged[existingIndex];
+      if (existing?.type === "agentMessage") {
+        merged[existingIndex] = {
+          ...existing,
+          text: commentary.text,
+          phase: "commentary",
+        };
+      }
+      continue;
+    }
+    merged.push({
+      type: "agentMessage",
+      ...(commentary.itemId ? { id: commentary.itemId } : {}),
+      text: commentary.text,
+      phase: "commentary",
+    });
+    if (commentary.itemId) existingIds.add(commentary.itemId);
+  }
+  const order = new Map(snapshot.itemOrder.map((itemId, index) => [itemId, index]));
+  return merged
+    .map((item, index) => ({ item, index }))
+    .sort((left, right) => {
+      const leftOrder = left.item.id ? order.get(left.item.id) : undefined;
+      const rightOrder = right.item.id ? order.get(right.item.id) : undefined;
+      if (leftOrder === undefined && rightOrder === undefined) return left.index - right.index;
+      if (leftOrder === undefined) return 1;
+      if (rightOrder === undefined) return -1;
+      return leftOrder - rightOrder;
+    })
+    .map(({ item }) => item);
 }
 
 export function codexReasoningNotificationToEvent(

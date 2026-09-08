@@ -45,6 +45,8 @@ export interface MessagePresentation {
   rawContent?: string;
   attachments?: MessageAttachment[];
   reasoning?: ReasoningSummarySection[];
+  /** Native Codex agent-message phase used to separate progress from final answers. */
+  agentMessagePhase?: "commentary" | "final_answer";
   /** Native Codex turn owning the execution details shown after this message. */
   executionTrace?: { turnId: string };
   /** Authoritative wall-clock duration for a successfully completed turn. */

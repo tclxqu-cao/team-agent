@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   CodexRolloutActivityReader,
+  CodexRolloutCommentaryReader,
   codexRolloutActivityFromLine,
   readCodexRolloutFinalizingAnswer,
 } from "./codex-rollout-activity.js";
@@ -174,6 +175,54 @@ describe("readCodexRolloutFinalizingAnswer", () => {
       turnId: "turn-2",
       itemId: "message-2",
       text: "second final",
+    });
+  });
+});
+
+describe("CodexRolloutCommentaryReader", () => {
+  const commentary = (id: string, text: string) => JSON.stringify({
+    type: "response_item",
+    payload: {
+      type: "message",
+      id,
+      role: "assistant",
+      content: [{ type: "output_text", text }],
+      phase: "commentary",
+      internal_chat_message_metadata_passthrough: { turn_id: "turn-1" },
+    },
+  });
+
+  it("deduplicates repeated rollout records and incrementally reads appended commentary", async () => {
+    const path = await temporaryRollout([
+      event("task_started"),
+      commentary("message-1", "正在检查文件"),
+      JSON.stringify({
+        type: "event_msg",
+        payload: {
+          type: "item_completed",
+          turn_id: "turn-1",
+          item: {
+            type: "AgentMessage",
+            id: "message-1",
+            content: [{ type: "Text", text: "正在检查文件" }],
+            phase: "commentary",
+          },
+        },
+      }),
+      "",
+    ].join("\n"));
+    const reader = new CodexRolloutCommentaryReader(37);
+
+    await expect(reader.read(path, "turn-1")).resolves.toMatchObject({
+      commentary: [{ turnId: "turn-1", itemId: "message-1", text: "正在检查文件" }],
+    });
+
+    await appendFile(path, `${commentary("message-2", "正在运行测试")}\n`);
+    await expect(reader.read(path, "turn-1")).resolves.toMatchObject({
+      commentary: [
+        { itemId: "message-1", text: "正在检查文件" },
+        { itemId: "message-2", text: "正在运行测试" },
+      ],
     });
   });
 });
