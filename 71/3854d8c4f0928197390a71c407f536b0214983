@@ -1,0 +1,19 @@
+docs/superpowers/specs/2026-09-08-agentroam-bundled-node-fallback-design.md
+  s_95994cf22b2dee::t_cfa888b30d9aa1 1-497
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "713854d8c4f0928197390a71c407f536b0214983",
+  "prompts": {},
+  "sessions": {
+    "s_95994cf22b2dee": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a080ed-c127-7d63-8ce1-fb6238f81fb0",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "zhangfan <fan13.zhang@ly.com>"
+    }
+  }
+}
