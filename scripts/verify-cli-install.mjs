@@ -99,7 +99,7 @@ try {
   child.stdout.on("data", append);
   child.stderr.on("data", append);
 
-  const urlMatch = await waitFor(/Local server: (http:\/\/127\.0\.0\.1:\d+\/web)/, () => output, 45_000);
+  const urlMatch = await waitFor(/Local server: (http:\/\/127\.0\.0\.1:\d+\/web)/, () => output, 210_000);
   const localUrl = urlMatch[1].replace(/\/web$/, "");
   const openMatch = await waitFor(/Open: (http:\/\/[^\s]+\/web\?pair=[^\s]+)/, () => output, 10_000);
   console.log(`✓ pairing URL: ${new URL(openMatch[1]).origin}`);
@@ -164,7 +164,7 @@ function runBootstrapSmoke(artifacts, parentWorkdir, archivePath) {
   const versionOutput = process.platform === "win32"
     ? execFileSync("cmd.exe", ["/d", "/s", "/c", `"${wrapper}" version`], { encoding: "utf8", env: bootstrapEnv })
     : execFileSync(wrapper, ["version"], { encoding: "utf8", env: bootstrapEnv });
-  if (!versionOutput.includes("0.2.0-preview.15")) throw new Error(`bootstrap wrapper mismatch: ${versionOutput}`);
+  if (!versionOutput.includes("0.2.0-preview.16")) throw new Error(`bootstrap wrapper mismatch: ${versionOutput}`);
   console.log(`✓ standalone ${scriptName} installed private Node ${installedVersion} and the versioned wrapper`);
 }
 

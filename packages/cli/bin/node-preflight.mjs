@@ -7,7 +7,7 @@ import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
 const MANAGED_NODE_VERSION = "22.22.0";
-const RELEASE_VERSION = "0.2.0-preview.15";
+const RELEASE_VERSION = "0.2.0-preview.16";
 const RELEASE_BASE_URL = `https://gitee.com/caoqu/team-agent/releases/download/v${RELEASE_VERSION}`;
 const FORWARDED_SIGNALS = ["SIGINT", "SIGTERM", "SIGHUP"];
 
