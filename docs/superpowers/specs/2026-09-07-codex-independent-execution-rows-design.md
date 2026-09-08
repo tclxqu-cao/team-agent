@@ -6,8 +6,8 @@ Restore the earlier Codex execution presentation without giving up the current
 core-first history performance model. After execution metadata is available,
 the chat timeline shows separate Chinese rows such as `思考`, `终端`, `查阅`,
 `写入`, and `工具`. It must not keep those rows inside one expandable
-`执行过程` container, and adjacent tool calls must not be merged into one tool
-group.
+`执行过程` container. Consecutive same-action tool calls remain grouped inside
+the sequence so the timeline reads as `思考 / 中文过程 / 工具组 / 中文过程`.
 
 ## Display States
 
@@ -28,10 +28,10 @@ contents. There is no outer disclosure or `执行过程 · N 项` summary around
 loaded contents.
 
 Reasoning summaries use the existing `ReasoningSummary` row and retain their
-own detail disclosure. Every tool call uses its own `ToolCallCard`, including
-consecutive terminal, read, write, search, skill, and MCP calls. The trace view
-does not call `groupAdjacentToolCallEntries`, so one command cannot hide other
-commands behind a shared group.
+own detail disclosure. Consecutive tool calls with the same action family use
+the existing `ToolCallGroup`; a reasoning or commentary row, or a tool from a
+different action family, breaks the group. Expanding the group reveals its
+individual `ToolCallCard` entries.
 
 Codex public `commentary` text remains in rollout order between reasoning and
 tool rows. It is rendered as ordinary secondary process text, while the final
@@ -40,14 +40,14 @@ answer remains a top-level assistant message outside the trace.
 ### Active Turn
 
 When a turn has live reasoning, commentary, or tool events, those events are
-shown immediately as independent rows. The user does not need to click
+shown immediately as ordered rows and local tool groups. The user does not need to click
 `查看执行过程` for the currently running turn because the data is already in
 renderer memory.
 
 The active turn continues to reconcile live events with trace refreshes by
-stable reasoning item and tool-call IDs. A refresh must not duplicate rows,
-collapse them into a group, or replace the visible process with an outer
-summary.
+stable reasoning item and tool-call IDs. A refresh must not duplicate rows or
+replace the visible process with an outer summary; adjacent same-action tools
+may still use their local group.
 
 ## Loading And Performance Boundaries
 
@@ -74,10 +74,12 @@ and live/snapshot reconciliation. Its render contract changes by state:
 - live trace: render `CodexExecutionTraceContent` directly.
 
 `CodexExecutionTraceContent` renders messages in source order. It may continue
-to coalesce split records belonging to the same tool call, but it renders every
-resulting tool call independently and does not create `ToolCallGroup` entries.
-No protocol or server endpoint changes are required for this presentation
-change.
+to coalesce adjacent tool-only assistant carriers, then applies
+`groupAdjacentToolCallEntries` within that uninterrupted span.
+Codex execution events that lack a `turnId` and therefore use the legacy
+top-level message fallback use the same adjacent-tool grouping. Other agents
+retain their existing grouping behavior. No protocol or server endpoint
+changes are required for this presentation change.
 
 ## Error Handling
 
@@ -93,10 +95,10 @@ Focused tests must prove:
 
 - mounting an unloaded historical trace makes no request;
 - clicking `查看执行过程` loads exactly one turn and replaces the action with
-  independent rows;
-- a live trace displays independent rows without a click;
-- multiple adjacent terminal or same-action tools render as multiple tool
-  cards and never as `ToolCallGroup`;
+  the ordered trace rows;
+- a live trace displays ordered rows without a click;
+- multiple adjacent terminal or same-action tools render as one local
+  `ToolCallGroup`, without restoring an outer execution disclosure;
 - reasoning and public commentary preserve source order with tool calls;
 - loaded traces are reused, refresh safely, and keep lazy tool-result loading;
 - loading, empty, and retry labels remain accessible and Chinese;

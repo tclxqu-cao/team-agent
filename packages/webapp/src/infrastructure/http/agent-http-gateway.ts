@@ -21,7 +21,13 @@ interface NativeStreamCursor {
   sequence: number;
 }
 
+interface BufferedStreamText {
+  event: Record<string, unknown>;
+  timer: ReturnType<typeof setTimeout>;
+}
+
 const TRANSPORT_FAILURE = /^(?:load failed|failed to fetch|network request failed|networkerror when attempting to fetch resource\.?|the network connection was lost\.?|fetch failed)$/i;
+const CODEX_COMMENTARY_FRAME_MS = 50;
 
 function isTransportFailure(error: unknown): boolean {
   return error instanceof Error
@@ -54,10 +60,11 @@ type BrowserHandled = "wakeStart" | "dictationStart" | "dictationStop" | "onDict
  */
 export class AgentHttpGateway {
   private readonly streams = new Map<string, EventSource>();
-  private readonly nativeSnapshotRevisions = new Map<string, NativeStreamCursor>();
+  private readonly nativeStreamCursors = new Map<string, NativeStreamCursor>();
   private readonly pendingRuns = new Map<string, () => void>();
   private readonly listeners = new Set<EventListener>();
   private readonly thinkFilters = new Map<string, StreamingThinkFilter>();
+  private readonly bufferedStreamText = new Map<string, BufferedStreamText>();
 
   private readonly agentDefs = new LocalCollection<AgentDefinition>("webapp.agentDefs");
   private readonly lspServers = new LocalCollection<LSPServerConfig>("webapp.lspServers");
@@ -97,12 +104,12 @@ export class AgentHttpGateway {
     const isNativeSession = sessionId.startsWith("runtime:");
     const hadStream = this.streams.has(sessionId);
     const hadPendingRun = this.pendingRuns.has(sessionId);
-    const nativeCursorBeforeRun = this.nativeSnapshotRevisions.get(sessionId);
+    const nativeCursorBeforeRun = this.nativeStreamCursors.get(sessionId);
     let pendingResolve: (() => void) | null = null;
     let finished: Promise<void> | null = null;
     try {
       if (!isNativeSession) {
-        await this.openStream(sessionId, this.nativeSnapshotRevisions.get(sessionId));
+        await this.openStream(sessionId, this.nativeStreamCursors.get(sessionId));
       }
       finished = hadPendingRun
         ? null
@@ -126,31 +133,34 @@ export class AgentHttpGateway {
         ...(nativeOptions?.reasoningEffort ? { nativeReasoningEffort: nativeOptions.reasoningEffort } : {}),
       });
       if (isNativeSession) {
+        const streamCursor = typeof started.runId === "string"
+          && nativeCursorBeforeRun?.runId !== started.runId
+          ? { sequence: 0, runId: started.runId }
+          : nativeCursorBeforeRun ?? {
+              sequence: 0,
+              ...(typeof started.runId === "string" ? { runId: started.runId } : {}),
+            };
         await this.openStream(
           sessionId,
-          nativeCursorBeforeRun ?? { sequence: 0 },
+          streamCursor,
           { waitForOpen: false },
         );
-      }
-      if (typeof started.snapshotRevision === "number") {
-        this.rememberNativeSnapshot(sessionId, started.snapshotRevision, started.runId);
       }
       this.dispatch(sessionId, {
         type: "run_admitted",
         ...(typeof started.runId === "string" ? { _nativeRunId: started.runId } : {}),
-        ...(typeof started.snapshotRevision === "number" ? { _nativeSequence: started.snapshotRevision } : {}),
       });
       if (finished) await finished;
     } catch (err) {
+      const recoveredCursor = !hadPendingRun && isNativeSession && isTransportFailure(err)
+        ? await this.recoverNativeAdmission(sessionId, nativeCursorBeforeRun)
+        : null;
       if (
-        !hadPendingRun
-        && isNativeSession
-        && isTransportFailure(err)
-        && await this.recoverNativeAdmission(sessionId, nativeCursorBeforeRun)
+        recoveredCursor
       ) {
         await this.openStream(
           sessionId,
-          nativeCursorBeforeRun ?? { sequence: 0 },
+          recoveredCursor,
           { waitForOpen: false },
         );
         if (finished) await finished;
@@ -196,11 +206,11 @@ export class AgentHttpGateway {
   private async recoverNativeAdmission(
     sessionId: string,
     previousCursor?: NativeStreamCursor,
-  ): Promise<boolean> {
-    const observedCursor = this.nativeSnapshotRevisions.get(sessionId);
+  ): Promise<NativeStreamCursor | null> {
+    const observedCursor = this.nativeStreamCursors.get(sessionId);
     if (observedCursor?.runId && observedCursor.runId !== previousCursor?.runId) {
       this.dispatchRecoveredAdmission(sessionId, observedCursor);
-      return true;
+      return observedCursor;
     }
     try {
       const detail = await this.http.get<{
@@ -214,21 +224,19 @@ export class AgentHttpGateway {
       const isFirstObservedActiveRun = Boolean(
         runId && !previousCursor?.runId && detail.status === "running",
       );
-      if (!isNewRun && !isFirstObservedActiveRun) return false;
+      if (!isNewRun && !isFirstObservedActiveRun) return null;
 
       this.dispatchRecoveredAdmission(sessionId, { runId, sequence });
-      return true;
+      return { runId: runId!, sequence: 0 };
     } catch {
-      return false;
+      return null;
     }
   }
 
   private dispatchRecoveredAdmission(sessionId: string, cursor: NativeStreamCursor): void {
-    this.rememberNativeSnapshot(sessionId, cursor.sequence, cursor.runId);
     this.dispatch(sessionId, {
       type: "run_admitted",
       ...(cursor.runId ? { _nativeRunId: cursor.runId } : {}),
-      _nativeSequence: 0,
     });
   }
 
@@ -353,13 +361,21 @@ export class AgentHttpGateway {
         });
       }
       if (id.startsWith("runtime:") && typeof session.snapshotRevision === "number") {
-        this.rememberNativeSnapshot(
-          id,
-          session.snapshotRevision,
-          typeof session.snapshotRunId === "string" ? session.snapshotRunId : undefined,
-        );
+        const snapshotRunId = typeof session.snapshotRunId === "string"
+          ? session.snapshotRunId
+          : undefined;
+        const history = session.history as { delivery?: unknown } | undefined;
+        const progressive = history?.delivery === "core" || history?.delivery === "trace";
+        if (!progressive) {
+          this.rememberNativeStreamCursor(id, session.snapshotRevision, snapshotRunId);
+        }
         if (session.status === "running" && session.occupancy !== "owned-externally") {
-          void this.openStream(id, this.nativeSnapshotRevisions.get(id)).catch(() => undefined);
+          const rememberedCursor = this.nativeStreamCursors.get(id);
+          const cursor = progressive && snapshotRunId && rememberedCursor?.runId !== snapshotRunId
+            ? { sequence: 0, runId: snapshotRunId }
+            : rememberedCursor
+              ?? (progressive ? { sequence: 0, ...(snapshotRunId ? { runId: snapshotRunId } : {}) } : undefined);
+          void this.openStream(id, cursor).catch(() => undefined);
         }
       } else if (!id.startsWith("runtime:") && session.status === "active") {
         const activeRun = session.activeRun as { eventId?: unknown; running?: unknown } | undefined;
@@ -430,22 +446,20 @@ export class AgentHttpGateway {
 
   async getSessionGoals(id: string): Promise<SessionGoalState> {
     const state = await this.http.get<SessionGoalState>(`/api/sessions/${encodeURIComponent(id)}/goals`);
-    if (state.active) void this.openStream(id, this.nativeSnapshotRevisions.get(id)).catch(() => undefined);
+    if (state.active) void this.openStream(id, this.nativeStreamCursors.get(id)).catch(() => undefined);
     return state;
   }
 
   async enqueueSessionGoal(id: string, objective: string, sourceMessageId?: string): Promise<SessionGoalState> {
-    await this.openStream(id, this.nativeSnapshotRevisions.get(id));
+    await this.openStream(id, this.nativeStreamCursors.get(id));
     const result = await this.http.post<{
       state: SessionGoalState;
       started?: { runId?: string; snapshotRevision?: number };
     }>(`/api/sessions/${encodeURIComponent(id)}/goals`, { objective, sourceMessageId });
     if (typeof result.started?.snapshotRevision === "number") {
-      this.rememberNativeSnapshot(id, result.started.snapshotRevision, result.started.runId);
       this.dispatch(id, {
         type: "run_admitted",
         ...(result.started.runId ? { _nativeRunId: result.started.runId } : {}),
-        _nativeSequence: result.started.snapshotRevision,
       });
     }
     return result.state;
@@ -463,7 +477,7 @@ export class AgentHttpGateway {
     id: string,
     message: { sourceMessageId: string; content: string; images?: string[]; agentIds?: string[]; agentName?: string },
   ): Promise<SessionGoalState> {
-    await this.openStream(id, this.nativeSnapshotRevisions.get(id));
+    await this.openStream(id, this.nativeStreamCursors.get(id));
     const result = await this.http.post<{
       state: SessionGoalState;
       started?: { runId?: string; snapshotRevision?: number };
@@ -478,11 +492,9 @@ export class AgentHttpGateway {
       },
     });
     if (typeof result.started?.snapshotRevision === "number") {
-      this.rememberNativeSnapshot(id, result.started.snapshotRevision, result.started.runId);
       this.dispatch(id, {
         type: "run_admitted",
         ...(result.started.runId ? { _nativeRunId: result.started.runId } : {}),
-        _nativeSequence: result.started.snapshotRevision,
       });
     }
     return result.state;
@@ -942,6 +954,43 @@ export class AgentHttpGateway {
     }
   }
 
+  private dispatchStreamEvent(sessionId: string, event: Record<string, unknown>): void {
+    const shouldFrameCommentary = sessionId.startsWith("runtime:codex:")
+      && event.type === "text_chunk"
+      && event.messagePhase === "commentary"
+      && typeof event.text === "string";
+    if (!shouldFrameCommentary) {
+      this.flushBufferedStreamText(sessionId);
+      this.dispatch(sessionId, event);
+      return;
+    }
+
+    const buffered = this.bufferedStreamText.get(sessionId);
+    const sameItem = buffered
+      && buffered.event._nativeRunId === event._nativeRunId
+      && buffered.event.turnId === event.turnId
+      && buffered.event.itemId === event.itemId;
+    if (sameItem) {
+      buffered.event = {
+        ...buffered.event,
+        ...event,
+        text: String(buffered.event.text ?? "") + event.text,
+      };
+      return;
+    }
+    this.flushBufferedStreamText(sessionId);
+    const timer = setTimeout(() => this.flushBufferedStreamText(sessionId), CODEX_COMMENTARY_FRAME_MS);
+    this.bufferedStreamText.set(sessionId, { event: { ...event }, timer });
+  }
+
+  private flushBufferedStreamText(sessionId: string): void {
+    const buffered = this.bufferedStreamText.get(sessionId);
+    if (!buffered) return;
+    this.bufferedStreamText.delete(sessionId);
+    clearTimeout(buffered.timer);
+    this.dispatch(sessionId, buffered.event);
+  }
+
   private settle(sessionId: string): void {
     const resolve = this.pendingRuns.get(sessionId);
     if (resolve) {
@@ -997,17 +1046,14 @@ export class AgentHttpGateway {
       } catch {
         return;
       }
-      // Never render reasoning tags: filter streamed text through the
-      // chunk-boundary-safe think filter.
+      if (typeof event._nativeSequence === "number") {
+        const runId = typeof event._nativeRunId === "string" ? event._nativeRunId : undefined;
+        if (!this.acceptNativeStreamEvent(sessionId, event._nativeSequence, runId)) return;
+      }
+      // Deduplicate transport delivery before mutating the stateful filter.
+      // Otherwise a replayed partial tag can corrupt the next visible chunk.
       if (event.type === "text_chunk" && typeof event.text === "string") {
         event.text = this.thinkFilters.get(sessionId)!.push(event.text);
-      }
-      if (typeof event._nativeSequence === "number") {
-        this.rememberNativeSnapshot(
-          sessionId,
-          event._nativeSequence,
-          typeof event._nativeRunId === "string" ? event._nativeRunId : undefined,
-        );
       }
       if (event.type === "done" || event.type === "error" || event.type === "turn_aborted") {
         // Flush the filter's held-back tail into the terminal event before
@@ -1019,7 +1065,7 @@ export class AgentHttpGateway {
         sawTerminal = true;
       }
       if (event.type === "text_chunk" && event.text === "") return; // fully filtered chunk
-      this.dispatch(sessionId, event);
+      this.dispatchStreamEvent(sessionId, event);
       if (event.type === "done" || event.type === "error" || event.type === "turn_aborted") {
         this.closeStream(sessionId);
         this.settle(sessionId);
@@ -1075,11 +1121,33 @@ export class AgentHttpGateway {
     return opening;
   }
 
-  private rememberNativeSnapshot(sessionId: string, sequence: number, runId?: string): void {
-    this.nativeSnapshotRevisions.set(sessionId, { sequence, ...(runId ? { runId } : {}) });
+  private rememberNativeStreamCursor(sessionId: string, sequence: number, runId?: string): void {
+    const previous = this.nativeStreamCursors.get(sessionId);
+    const sameRun = previous && (
+      previous.runId === runId
+      || !runId
+    );
+    if (sameRun && sequence < previous.sequence) return;
+    const resolvedRunId = runId ?? previous?.runId;
+    this.nativeStreamCursors.set(sessionId, {
+      sequence,
+      ...(resolvedRunId ? { runId: resolvedRunId } : {}),
+    });
+  }
+
+  private acceptNativeStreamEvent(sessionId: string, sequence: number, runId?: string): boolean {
+    const previous = this.nativeStreamCursors.get(sessionId);
+    const sameRun = previous && (
+      previous.runId === runId
+      || !runId
+    );
+    if (sameRun && sequence <= previous.sequence) return false;
+    this.rememberNativeStreamCursor(sessionId, sequence, runId);
+    return true;
   }
 
   private closeStream(sessionId: string): void {
+    this.flushBufferedStreamText(sessionId);
     const source = this.streams.get(sessionId);
     if (source) {
       source.close();

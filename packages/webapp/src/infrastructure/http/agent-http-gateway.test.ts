@@ -32,9 +32,73 @@ describe("AgentHttpGateway", () => {
   const originalEventSource = globalThis.EventSource;
 
   afterEach(() => {
+    vi.useRealTimers();
     vi.restoreAllMocks();
     globalThis.EventSource = originalEventSource;
     ObservableEventSource.instances = [];
+  });
+
+  it("frames streamed Codex commentary and flushes it before the next tool event", async () => {
+    vi.useFakeTimers();
+    globalThis.EventSource = ObservableEventSource as unknown as typeof EventSource;
+    const sessionId = "runtime:codex:c291cmNl";
+    const http = {
+      get: vi.fn().mockResolvedValue({
+        agentType: "codex",
+        status: "running",
+        snapshotRevision: 0,
+        snapshotRunId: "run-current",
+        messages: [],
+        events: [],
+        history: { delivery: "core", revision: "rev-1" },
+      }),
+    };
+    const gateway = new AgentHttpGateway(http as never, {} as never);
+    const events: Array<Record<string, unknown>> = [];
+    gateway.onEvent((event) => events.push(event as Record<string, unknown>));
+
+    await gateway.getSession(sessionId, { view: "core", limit: 1 });
+    const source = ObservableEventSource.instances[0];
+    for (const [sequence, text] of [[1, "查"], [2, "询"], [3, "文件"]] as const) {
+      source.onmessage?.(new MessageEvent("message", { data: JSON.stringify({
+        type: "text_chunk",
+        text,
+        messagePhase: "commentary",
+        turnId: "turn-1",
+        itemId: "message-1",
+        _nativeRunId: "run-current",
+        _nativeSequence: sequence,
+      }) }));
+    }
+
+    expect(events.filter((event) => event.type === "text_chunk")).toEqual([]);
+    await vi.advanceTimersByTimeAsync(50);
+    expect(events.filter((event) => event.type === "text_chunk")).toEqual([expect.objectContaining({
+      text: "查询文件",
+      _nativeSequence: 3,
+    })]);
+
+    source.onmessage?.(new MessageEvent("message", { data: JSON.stringify({
+      type: "text_chunk",
+      text: "准备写入",
+      messagePhase: "commentary",
+      turnId: "turn-1",
+      itemId: "message-2",
+      _nativeRunId: "run-current",
+      _nativeSequence: 4,
+    }) }));
+    source.onmessage?.(new MessageEvent("message", { data: JSON.stringify({
+      type: "tool_call",
+      toolCall: { id: "call-1", name: "write_file", arguments: { file_path: "a.ts" } },
+      turnId: "turn-1",
+      _nativeRunId: "run-current",
+      _nativeSequence: 5,
+    }) }));
+
+    expect(events.slice(-2).map((event) => [event.type, event.text])).toEqual([
+      ["text_chunk", "准备写入"],
+      ["tool_call", undefined],
+    ]);
   });
 
   it("settles the run and dispatches an error when the event stream cannot open", async () => {
@@ -69,23 +133,42 @@ describe("AgentHttpGateway", () => {
       getRunLimits: vi.fn(() => ({ maxIterations: 10, maxTokens: 100_000 })),
     };
     const gateway = new AgentHttpGateway(http as never, settings as never);
+    const events: Array<Record<string, unknown>> = [];
+    gateway.onEvent((event) => events.push(event as Record<string, unknown>));
 
     const run = gateway.run("hello", "runtime:codex:c291cmNl");
     expect(http.post).toHaveBeenCalledOnce();
     expect(ObservableEventSource.instances).toHaveLength(0);
 
-    resolvePost({ runId: "run-new", snapshotRevision: 0 });
+    resolvePost({ runId: "run-new", snapshotRevision: 3 });
     await vi.waitFor(() => expect(ObservableEventSource.instances).toHaveLength(1));
     const source = ObservableEventSource.instances[0];
-    expect(source.url).toBe("/api/agent/stream?sessionId=runtime%3Acodex%3Ac291cmNl&afterSequence=0");
+    expect(source.url).toBe(
+      "/api/agent/stream?sessionId=runtime%3Acodex%3Ac291cmNl&afterSequence=0&afterRunId=run-new",
+    );
 
+    for (let sequence = 1; sequence <= 3; sequence += 1) {
+      source.onmessage?.(new MessageEvent("message", { data: JSON.stringify({
+        type: "runtime_progress",
+        progressId: `progress-${sequence}`,
+        _nativeRunId: "run-new",
+        _nativeSequence: sequence,
+      }) }));
+    }
     source.onmessage?.(new MessageEvent("message", { data: JSON.stringify({
       type: "done",
       finalText: "done",
       _nativeRunId: "run-new",
-      _nativeSequence: 1,
+      _nativeSequence: 4,
     }) }));
     await run;
+
+    expect(events.filter((event) => event.type === "runtime_progress")).toHaveLength(3);
+    expect(events.find((event) => event.type === "run_admitted")).toEqual({
+      type: "run_admitted",
+      _nativeRunId: "run-new",
+      _sid: "runtime:codex:c291cmNl",
+    });
   });
 
   it("keeps an existing native stream open when a refreshed page retries its running session", async () => {
@@ -154,6 +237,152 @@ describe("AgentHttpGateway", () => {
     );
   });
 
+  it("replays progressive native events from zero and reconnects after the greatest dispatched sequence", async () => {
+    globalThis.EventSource = ObservableEventSource as unknown as typeof EventSource;
+    const sessionId = "runtime:codex:c291cmNl";
+    const http = {
+      get: vi.fn().mockResolvedValue({
+        agentType: "codex",
+        status: "running",
+        snapshotRevision: 7,
+        snapshotRunId: "run-current",
+        messages: [],
+        events: [],
+        history: { delivery: "core", revision: "rev-1" },
+      }),
+      post: vi.fn().mockResolvedValue({}),
+    };
+    const gateway = new AgentHttpGateway(http as never, {} as never);
+    const events: Array<Record<string, unknown>> = [];
+    gateway.onEvent((event) => events.push(event as Record<string, unknown>));
+
+    await gateway.getSession(sessionId, { view: "core", limit: 50 });
+    const first = ObservableEventSource.instances[0];
+    expect(first.url).toBe(
+      "/api/agent/stream?sessionId=runtime%3Acodex%3Ac291cmNl&afterSequence=0&afterRunId=run-current",
+    );
+
+    const progress = {
+      type: "runtime_progress",
+      progressId: "progress-7",
+      phase: "thinking",
+      label: "working",
+      _nativeRunId: "run-current",
+      _nativeSequence: 7,
+    };
+    first.onmessage?.(new MessageEvent("message", { data: JSON.stringify(progress) }));
+    first.onmessage?.(new MessageEvent("message", { data: JSON.stringify(progress) }));
+    expect(events.filter((event) => event.progressId === "progress-7")).toHaveLength(1);
+
+    await gateway.abort(sessionId);
+    await gateway.getSession(sessionId, { view: "core", limit: 50 });
+    const second = ObservableEventSource.instances[1];
+    expect(second.url).toBe(
+      "/api/agent/stream?sessionId=runtime%3Acodex%3Ac291cmNl&afterSequence=7&afterRunId=run-current",
+    );
+
+    second.onmessage?.(new MessageEvent("message", { data: JSON.stringify({
+      ...progress,
+      progressId: "new-run-progress",
+      _nativeRunId: "run-next",
+      _nativeSequence: 1,
+    }) }));
+    expect(events.filter((event) => event.progressId === "new-run-progress")).toHaveLength(1);
+  });
+
+  it("does not carry an ambiguous legacy cursor into a known progressive run", async () => {
+    globalThis.EventSource = ObservableEventSource as unknown as typeof EventSource;
+    const sessionId = "runtime:codex:c291cmNl";
+    const progressive = {
+      agentType: "codex",
+      status: "running",
+      snapshotRevision: 9,
+      snapshotRunId: "run-current",
+      messages: [],
+      events: [],
+      history: { delivery: "core", revision: "rev-current" },
+    };
+    const http = {
+      get: vi.fn()
+        .mockResolvedValueOnce({
+          agentType: "codex",
+          status: "running",
+          snapshotRevision: 7,
+          messages: [],
+          events: [],
+          history: { delivery: "legacy-full" },
+        })
+        .mockResolvedValue(progressive),
+      post: vi.fn().mockResolvedValue({}),
+    };
+    const gateway = new AgentHttpGateway(http as never, {} as never);
+
+    await gateway.getSession(sessionId);
+    expect(ObservableEventSource.instances[0].url).toBe(
+      "/api/agent/stream?sessionId=runtime%3Acodex%3Ac291cmNl&afterSequence=7",
+    );
+
+    await gateway.abort(sessionId);
+    await gateway.getSession(sessionId, { view: "core", limit: 50 });
+    const currentRun = ObservableEventSource.instances[1];
+    expect(currentRun.url).toBe(
+      "/api/agent/stream?sessionId=runtime%3Acodex%3Ac291cmNl&afterSequence=0&afterRunId=run-current",
+    );
+
+    currentRun.onmessage?.(new MessageEvent("message", { data: JSON.stringify({
+      type: "runtime_progress",
+      progressId: "current-progress",
+      _nativeRunId: "run-current",
+      _nativeSequence: 1,
+    }) }));
+    await gateway.abort(sessionId);
+    await gateway.getSession(sessionId, { view: "core", limit: 50 });
+    expect(ObservableEventSource.instances[2].url).toBe(
+      "/api/agent/stream?sessionId=runtime%3Acodex%3Ac291cmNl&afterSequence=1&afterRunId=run-current",
+    );
+  });
+
+  it("drops a repeated native chunk before it can corrupt the streaming think filter", async () => {
+    globalThis.EventSource = ObservableEventSource as unknown as typeof EventSource;
+    const sessionId = "runtime:codex:c291cmNl";
+    const http = {
+      get: vi.fn().mockResolvedValue({
+        agentType: "codex",
+        status: "running",
+        snapshotRevision: 2,
+        snapshotRunId: "run-current",
+        messages: [],
+        events: [],
+        history: { delivery: "core", revision: "rev-1" },
+      }),
+    };
+    const gateway = new AgentHttpGateway(http as never, {} as never);
+    const events: Array<Record<string, unknown>> = [];
+    gateway.onEvent((event) => events.push(event as Record<string, unknown>));
+
+    await gateway.getSession(sessionId, { view: "core", limit: 50 });
+    const source = ObservableEventSource.instances[0];
+    const partial = {
+      type: "text_chunk",
+      text: "<thi",
+      _nativeRunId: "run-current",
+      _nativeSequence: 1,
+    };
+    source.onmessage?.(new MessageEvent("message", { data: JSON.stringify(partial) }));
+    source.onmessage?.(new MessageEvent("message", { data: JSON.stringify(partial) }));
+    source.onmessage?.(new MessageEvent("message", { data: JSON.stringify({
+      type: "text_chunk",
+      text: "nk>hidden</think>visible",
+      _nativeRunId: "run-current",
+      _nativeSequence: 2,
+    }) }));
+
+    expect(events.filter((event) => event.type === "text_chunk")).toEqual([expect.objectContaining({
+      text: "visible",
+      _nativeSequence: 2,
+    })]);
+  });
+
   it("continues an admitted native run when Safari loses the POST response", async () => {
     globalThis.EventSource = ObservableEventSource as unknown as typeof EventSource;
     const http = {
@@ -192,12 +421,21 @@ describe("AgentHttpGateway", () => {
     expect(events).toContainEqual({
       type: "run_admitted",
       _nativeRunId: "run-after",
-      _nativeSequence: 0,
       _sid: "runtime:codex:c291cmNl",
     });
     expect(events.some((event) => event.type === "error")).toBe(false);
     expect(source.close).not.toHaveBeenCalled();
+    expect(source.url).toBe(
+      "/api/agent/stream?sessionId=runtime%3Acodex%3Ac291cmNl&afterSequence=0&afterRunId=run-after",
+    );
 
+    source.onmessage?.(new MessageEvent("message", { data: JSON.stringify({
+      type: "text_chunk",
+      text: "still replayed",
+      messagePhase: "commentary",
+      _nativeRunId: "run-after",
+      _nativeSequence: 1,
+    }) }));
     source.onmessage?.(new MessageEvent("message", { data: JSON.stringify({
       type: "done",
       finalText: "done",
@@ -207,6 +445,12 @@ describe("AgentHttpGateway", () => {
     await run;
 
     expect(source.close).toHaveBeenCalledOnce();
+    expect(events).toContainEqual(expect.objectContaining({
+      type: "text_chunk",
+      text: "still replayed",
+      _nativeRunId: "run-after",
+      _nativeSequence: 1,
+    }));
   });
 
   it("uses an observed native SSE event to recover without another HTTP connection", async () => {
