@@ -550,7 +550,7 @@ async function verifyRemoteArtifact(npmClient, item) {
 }
 
 async function waitForVersion(npmClient, name, version, options) {
-  const attempts = options.visibilityAttempts ?? 12;
+  const attempts = options.visibilityAttempts ?? 60;
   const sleep = options.sleep ?? ((ms) => new Promise((resolveDelay) => setTimeout(resolveDelay, ms)));
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     if (await npmClient.getVersion(name, version)) return;
