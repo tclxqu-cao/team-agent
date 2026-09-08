@@ -245,7 +245,7 @@ export async function publishPreviewRelease(releaseSet, options) {
         published.push(item.name);
         await waitForVersion(npmClient, item.name, releaseSet.version, options);
       }
-      await verifyRemoteArtifact(npmClient, item);
+      await verifyRemoteArtifact(npmClient, item, options);
       verified.push(item.name);
     }
     for (const item of releaseSet.packages) {
@@ -266,7 +266,7 @@ export async function verifyRegistryArtifacts(releaseSet, npmClient, options = {
   const verified = [];
   for (const item of releaseSet.packages) {
     await waitForVersion(npmClient, item.name, releaseSet.version, options);
-    await verifyRemoteArtifact(npmClient, item);
+    await verifyRemoteArtifact(npmClient, item, options);
     verified.push(item.name);
   }
   if (options.tag) await verifyReleaseTag(releaseSet, npmClient, options.tag, releaseSet.version);
@@ -543,8 +543,21 @@ async function verifyArtifactChecksum(path, expected, label) {
   return actual;
 }
 
-async function verifyRemoteArtifact(npmClient, item) {
-  const content = await npmClient.download(item.name, item.version);
+async function verifyRemoteArtifact(npmClient, item, options = {}) {
+  const attempts = options.artifactAttempts ?? 60;
+  const sleep = options.sleep ?? ((ms) => new Promise((resolveDelay) => setTimeout(resolveDelay, ms)));
+  let content;
+  let lastError;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      content = await npmClient.download(item.name, item.version);
+      break;
+    } catch (error) {
+      lastError = error;
+      if (attempt < attempts) await sleep(options.artifactDelayMs ?? 5_000);
+    }
+  }
+  if (!content) throw lastError;
   const actual = sha256(content);
   if (actual !== item.sha256) throw new Error(`registry checksum mismatch for ${item.name}@${item.version}`);
 }
