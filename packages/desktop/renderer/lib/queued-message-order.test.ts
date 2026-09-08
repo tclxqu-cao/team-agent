@@ -83,6 +83,27 @@ describe("hideQueuedGoalMessages", () => {
 });
 
 describe("reconcileDurableQueuedMessages", () => {
+  it("projects an immediately active durable message exactly once", () => {
+    const result = reconcileDurableQueuedMessages([], {
+      active: {
+        id: "queue-1",
+        sourceMessageId: "source-1",
+        objective: "deploy",
+        createdAt: 3,
+        kind: "message",
+      },
+      queued: [],
+      history: [],
+    });
+
+    expect(result).toEqual([expect.objectContaining({
+      id: "source-1",
+      role: "user",
+      content: "deploy",
+      isQueued: false,
+    })]);
+  });
+
   it("replaces only queued messages from the durable broker snapshot", () => {
     const current = [
       { id: "history", role: "assistant", content: "working", timestamp: 1 },

@@ -1,12 +1,48 @@
 import { describe, expect, it, vi } from "vitest";
 import type { ChatMessage } from "../stores/agentStore";
 import {
+  loadCodexExecutionTracePage,
   loadProgressiveSessionHistoryPage,
   mergeProgressiveSessionHistoryPage,
   mergeRefreshedSessionHistory,
   restoreCodexExecutionTrace,
   restoreSessionHistoryPage,
 } from "./session-history";
+
+describe("loadCodexExecutionTracePage", () => {
+  it("refreshes the core revision and retries one stale trace request", async () => {
+    const stale = Object.assign(new Error("stale"), { code: "STALE_SESSION_ANCHOR" });
+    const getSession = vi.fn()
+      .mockRejectedValueOnce(stale)
+      .mockResolvedValueOnce({ history: { revision: "rev-2", delivery: "core" } })
+      .mockResolvedValueOnce({ messages: [], history: { revision: "rev-2", delivery: "trace" } });
+
+    const loaded = await loadCodexExecutionTracePage(
+      { getSession },
+      "session-1",
+      { turnId: "turn-1", revision: "rev-1" },
+    );
+
+    expect(loaded).toMatchObject({ revision: "rev-2", recovered: true });
+    expect(getSession.mock.calls.map(([, query]) => query)).toEqual([
+      { view: "trace", revision: "rev-1", turnId: "turn-1" },
+      { view: "core", limit: 50 },
+      { view: "trace", revision: "rev-2", turnId: "turn-1" },
+    ]);
+  });
+
+  it("does not retry non-stale trace failures", async () => {
+    const failure = Object.assign(new Error("network"), { code: "NETWORK_ERROR" });
+    const getSession = vi.fn().mockRejectedValue(failure);
+
+    await expect(loadCodexExecutionTracePage(
+      { getSession },
+      "session-1",
+      { turnId: "turn-1", revision: "rev-1" },
+    )).rejects.toBe(failure);
+    expect(getSession).toHaveBeenCalledOnce();
+  });
+});
 
 describe("restoreSessionHistoryPage", () => {
   it("adds one stable Codex execution disclosure from core turn metadata", () => {
@@ -137,6 +173,46 @@ describe("restoreSessionHistoryPage", () => {
 
     expect(restored.map((message) => message.content)).toEqual(["run", "done"]);
     expect(restored[1].toolCalls?.[0].result).toBe("ok");
+  });
+
+  it("restores persisted Codex commentary into its owning turn trace", () => {
+    const restored = restoreSessionHistoryPage({
+      history: { delivery: "core", revision: "rev-1" },
+      messages: [{
+        role: "user",
+        content: "deploy",
+        presentation: { executionTrace: { turnId: "turn-1" } },
+      }],
+      events: [
+        {
+          type: "text_chunk",
+          text: "正在打包",
+          turnId: "turn-1",
+          itemId: "commentary-1",
+          messagePhase: "commentary",
+        },
+        {
+          type: "text_chunk",
+          text: "前端",
+          turnId: "turn-1",
+          itemId: "commentary-1",
+          messagePhase: "commentary",
+        },
+        {
+          type: "text_chunk",
+          text: "发布完成",
+          turnId: "turn-1",
+          itemId: "answer-1",
+          messagePhase: "final_answer",
+        },
+      ],
+    });
+
+    expect(restored[1].executionTrace?.liveMessages).toEqual([expect.objectContaining({
+      id: "codex-trace:turn-1:agent:commentary-1",
+      content: "正在打包前端",
+      presentation: { agentMessagePhase: "commentary" },
+    })]);
   });
 
   it("restores one unresolved approval card from the persisted native event stream", () => {

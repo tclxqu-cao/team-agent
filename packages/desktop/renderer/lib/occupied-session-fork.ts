@@ -81,6 +81,10 @@ export function markOccupiedRecoveryForked(
     : { ...recovery, forkSessionId, sendAttempted: true };
 }
 
+export function occupiedRecoveryMessageId(recovery: OccupiedSessionRecovery): string {
+  return `occupied-recovery:${recovery.token}`;
+}
+
 export function isOccupiedRecoveryVisible(
   recovery: OccupiedSessionRecovery | undefined,
   sessionId: string | null | undefined,

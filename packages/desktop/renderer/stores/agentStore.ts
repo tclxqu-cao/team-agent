@@ -45,6 +45,7 @@ export interface StreamEvent {
   error?: string;
   removedMessages?: number;
   itemId?: string;
+  messagePhase?: "commentary" | "final_answer";
   sectionIndex?: number;
   delta?: string;
   turnId?: string;

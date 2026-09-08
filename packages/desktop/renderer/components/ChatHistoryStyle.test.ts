@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 const chatView = readFileSync(new URL("./ChatView.tsx", import.meta.url), "utf8");
+const codexExecutionTrace = readFileSync(new URL("./CodexExecutionTrace.tsx", import.meta.url), "utf8");
 const app = readFileSync(new URL("../App.tsx", import.meta.url), "utf8");
 const toolCallCard = readFileSync(new URL("./ToolCallCard.tsx", import.meta.url), "utf8");
 const globalCss = readFileSync(new URL("../styles/global.css", import.meta.url), "utf8");
@@ -76,9 +77,12 @@ describe("shared Codex-style message history", () => {
     expect(globalCss).not.toContain(".tool-call-shell__disclosure:hover");
   });
 
-  it("folds adjacent repeated tool actions behind a right-facing disclosure", () => {
+  it("folds adjacent same-action tools in both trace and fallback rendering", () => {
     expect(chatView).toContain("coalesceAdjacentToolCallMessages(hideQueuedGoalMessages(");
     expect(chatView).toContain("groupAdjacentToolCallEntries(toolCallEntries)");
+    expect(chatView).not.toContain("renderToolCallsIndividually");
+    expect(codexExecutionTrace).toContain("groupAdjacentToolCallEntries(toolEntries)");
+    expect(codexExecutionTrace).toContain("<ToolCallGroup");
     expect(chatView).toContain("<ToolCallGroup");
     expect(toolCallCard).toContain('className="tool-call-group__summary"');
     expect(toolCallCard).toContain("aria-expanded={expanded}");
@@ -128,19 +132,24 @@ describe("shared Codex-style message history", () => {
     expect(globalCss).toContain(".tool-call-shell__preview");
     expect(globalCss.match(/place-items: center start/g)).toHaveLength(6);
     expect(globalCss.match(/padding: 5px 0;/g)).toHaveLength(4);
-    expect(globalCss).toContain(".codex-execution-trace__summary");
+    expect(globalCss).toContain(".codex-execution-trace__load");
+    expect(globalCss).not.toContain(".codex-execution-trace__summary");
     expect(globalCss).toContain("padding: 5px 0 !important");
-    const executionTraceBodyCss = globalCss.slice(
-      globalCss.indexOf(".chat-view--codex-history .codex-execution-trace__body"),
-      globalCss.indexOf(".chat-view--codex-history .codex-execution-trace__timeline"),
-    );
-    expect(executionTraceBodyCss).toContain("padding: 0 0 8px;");
-    expect(executionTraceBodyCss).not.toContain("25px");
+    expect(globalCss).not.toContain(".codex-execution-trace__body");
+    expect(globalCss).toContain(".chat-view--codex-history .codex-execution-trace__timeline");
+    expect(globalCss).toMatch(/\.chat-view--codex-history \.codex-execution-trace__commentary\s*\{[^}]*padding: 6px 0 7px;[^}]*color: var\(--text-primary\);[^}]*font-size: var\(--chat-bubble-font-size\);[^}]*line-height: var\(--chat-bubble-line-height\);/s);
     expect(globalCss).toContain(".reasoning-summary__label");
     expect(globalCss).toContain(".chat-view--codex-history .tool-call-shell__label");
     expect(globalCss).not.toMatch(/\.reasoning-summary__label\s*\{[^}]*transform:/s);
     expect(globalCss).not.toMatch(/\.chat-view--codex-history \.tool-call-shell__label\s*\{[^}]*transform:/s);
     expect(historyRowsCss).not.toContain("transform: translateY(-1px)");
+  });
+
+  it("throttles visible Codex trace refreshes independently from core pagination", () => {
+    expect(chatView).toContain("CODEX_TRACE_REFRESH_MIN_INTERVAL_MS = 750");
+    expect(chatView).toContain("scheduleCodexTraceRefresh(targetSid)");
+    expect(chatView).toContain("refreshSignal={chatMsg.executionTrace.turnId === latestCodexExecutionTurnId");
+    expect(chatView).toContain("autoLoad={chatMsg.executionTrace.turnId === latestCodexExecutionTurnId}");
   });
 
   it("keeps the workspace close to the sidebar surface across skins", () => {
@@ -174,6 +183,16 @@ describe("shared Codex-style message history", () => {
     expect(chatView).toContain('position: "absolute"');
     expect(chatView).toContain('transform: "translateX(-50%)"');
     expect(chatView).toContain("点击重试");
+  });
+
+  it("shows the initial history loader immediately while an uncached session opens", () => {
+    expect(chatView).toContain("CODEX_LATEST_HISTORY_PAGE_SIZE = 1");
+    expect(selectedSessionLoad).toContain('historyAgentType(targetSid) === "codex"\n                ? CODEX_LATEST_HISTORY_PAGE_SIZE');
+    expect(selectedSessionLoad).toContain("setIsInitialHistoryLoading(true);\n      setShowInitialHistoryLoading(true);");
+    expect(selectedSessionLoad).toContain("const cachedMessages = getMessagesForSession(targetSid);");
+    expect(selectedSessionLoad).toContain("setMessages(cachedMessages, targetSid);");
+    expect(selectedSessionLoad).not.toContain("slowLoadingTimer");
+    expect(chatView).toContain("messages.length === 0 && isInitialHistoryLoading && showInitialHistoryLoading");
   });
 
   it("follows selected native history immediately and limits fallback polling", () => {

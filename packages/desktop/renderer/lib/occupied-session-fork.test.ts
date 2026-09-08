@@ -11,6 +11,7 @@ import {
   isOccupiedSessionRecovery,
   isOccupiedRecoveryVisible,
   markOccupiedRecoveryForked,
+  occupiedRecoveryMessageId,
   storeOccupiedRecovery,
 } from "./occupied-session-fork";
 
@@ -63,6 +64,7 @@ describe("occupied Codex session fork recovery", () => {
       payload: { content: "continue", images: ["image"], agentIds: ["agent-1"] },
     });
     expect(markOccupiedRecoveryForked(forked, forked.forkSessionId!)).toBe(forked);
+    expect(occupiedRecoveryMessageId(forked)).toBe("occupied-recovery:recovery-1");
     expect(isOccupiedRecoveryVisible(forked, forked.sourceSessionId)).toBe(true);
     expect(isOccupiedRecoveryVisible(forked, forked.forkSessionId)).toBe(true);
   });
@@ -175,6 +177,8 @@ describe("occupied Codex session fork recovery", () => {
     expect(source).toContain("startRun(nextRecovery.payload, forked.id");
     expect(source).toContain("existingRecovery ?? createOccupiedSessionRecovery");
     expect(source).toContain("commitOccupiedRecovery(nextRecovery)");
+    expect(source).toContain("occupiedRecoveryMessageId(targetRecovery)");
+    expect(source).toContain("if (messages.some((message) => message.id === messageId)) return");
     expect(source).toContain('sessionSummary.agentType !== "codex"');
     expect(source).toContain("loadSessionWithRetry");
     expect(source).toContain("limit: SESSION_HISTORY_PAGE_SIZE");

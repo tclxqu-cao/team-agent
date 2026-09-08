@@ -29,6 +29,7 @@ import { interruptSpeech } from "../lib/voice-interruption";
 import { PcmStreamPlayer } from "../lib/pcm-stream-player";
 import {
   mergeProgressiveSessionHistoryPage,
+  loadCodexExecutionTracePage,
   loadProgressiveSessionHistoryPage,
   restoreCodexExecutionTrace,
   restoreSessionHistoryPage,
@@ -70,6 +71,7 @@ import {
 } from "../lib/native-session-view-state";
 
 const SESSION_HISTORY_PAGE_SIZE = 50;
+const CODEX_LATEST_HISTORY_PAGE_SIZE = 1;
 
 function normalizeGoalMessageText(value: string): string {
   return value.trim().replace(/^\/goal\s+/i, "").replace(/^\$([\w-]+)/, "/$1").trim();
@@ -346,6 +348,7 @@ import {
   forkOccupiedCodexSession,
   isOccupiedRecoveryVisible,
   markOccupiedRecoveryForked,
+  occupiedRecoveryMessageId,
   storeOccupiedRecovery,
   type OccupiedRecoveryRegistry,
   type OccupiedSendPayload,
@@ -392,6 +395,7 @@ const EFFORT_OPTIONS: Array<{ value: "off" | "low" | "medium" | "high"; label: s
   { value: "high", label: "高" },
 ];
 const EFFORT_LABELS = Object.fromEntries(EFFORT_OPTIONS.map((o) => [o.value, o.label])) as Record<"off" | "low" | "medium" | "high", string>;
+const CODEX_TRACE_REFRESH_MIN_INTERVAL_MS = 750;
 
 /** One pickable model in the native-runtime composer dropdown. */
 interface ComposerModelOption {
@@ -491,12 +495,17 @@ export default function ChatView({
     setCronTasks,
   } = useAgentStore();
   const [goalState, setGoalState] = useState<SessionGoalState>({ active: null, queued: [], history: [] });
+  const [codexTraceRefreshSignal, setCodexTraceRefreshSignal] = useState(0);
   const renderedMessages = useMemo(
     () => coalesceAdjacentToolCallMessages(hideQueuedGoalMessages(
       messages.filter((message) => !message.isQueued),
       goalState.queued,
     )),
     [goalState.queued, messages],
+  );
+  const latestCodexExecutionTurnId = useMemo(
+    () => renderedMessages.findLast((message) => message.executionTrace)?.executionTrace?.turnId,
+    [renderedMessages],
   );
   const { isConfigured, profiles, activeProfileId, switchActiveProfile, loadFromSystem, contextWindow, reasoningEffort, setField, saveToSystem } = useSettingsStore();
   const viewSessionId = selectedSessionId || sessionId;
@@ -751,6 +760,9 @@ export default function ChatView({
   const historyRefreshSessionRef = useRef<string | null>(null);
   const historyRefreshInFlightRef = useRef(false);
   const historyRefreshPendingRef = useRef(false);
+  const codexTraceRefreshTimerRef = useRef<number | null>(null);
+  const codexTraceRefreshSessionRef = useRef<string | null>(null);
+  const codexTraceLastRefreshAtRef = useRef(0);
   const toolResultScopeRef = useRef<string | null>(null);
   const toolResultLoadsRef = useRef<Map<string, Promise<Awaited<ReturnType<NonNullable<typeof window.agentApi>["getSessionToolResult"]>>>>>(new Map());
   const seenNativeEventKeysRef = useRef<Set<string>>(new Set());
@@ -828,20 +840,30 @@ export default function ChatView({
     const agentApi = window.agentApi;
     const targetSid = selectedSessionIdRef.current;
     if (!agentApi || !targetSid) throw new Error("当前会话不可用");
-    const detail = await agentApi.getSession(targetSid, {
-      view: "trace",
-      revision: trace.revision,
-      turnId: trace.turnId,
-    }) as SessionHistoryDetail | null;
+    const loaded = await loadCodexExecutionTracePage(
+      agentApi,
+      targetSid,
+      trace,
+      SESSION_HISTORY_PAGE_SIZE,
+    );
+    const detail = loaded.detail;
     if (selectedSessionIdRef.current !== targetSid) {
       throw new DOMException("Session selection changed", "AbortError");
     }
-    if (detail?.history?.revision !== trace.revision) {
+    if (detail?.history?.revision !== loaded.revision) {
       throw new Error("会话内容已更新，请重新展开执行过程");
     }
-    syncToolResultScope(targetSid, trace.revision);
+    if (loaded.recovered) {
+      setMessages(getMessagesForSession(targetSid).map((message) => message.executionTrace
+        ? {
+            ...message,
+            executionTrace: { ...message.executionTrace, revision: loaded.revision },
+          }
+        : message), targetSid);
+    }
+    syncToolResultScope(targetSid, loaded.revision);
     return restoreCodexExecutionTrace(detail);
-  }, [syncToolResultScope]);
+  }, [getMessagesForSession, setMessages, syncToolResultScope]);
 
   useEffect(() => {
     toolResultScopeRef.current = null;
@@ -1303,7 +1325,6 @@ export default function ChatView({
   useEffect(() => {
     const loadGeneration = ++sessionLoadGenerationRef.current;
     const targetSid = selectedSessionId;
-    let slowLoadingTimer: number | null = null;
     const isCurrentLoad = () => (
       sessionLoadGenerationRef.current === loadGeneration
       && selectedSessionIdRef.current === targetSid
@@ -1369,15 +1390,12 @@ export default function ChatView({
         setQueryIndex(null);
       }
       setIsInitialHistoryLoading(true);
-      setShowInitialHistoryLoading(false);
+      setShowInitialHistoryLoading(true);
       historySessionIdRef.current = targetSid;
       sessionIdRef.current = targetSid;
       setSessionId(targetSid);
       const cachedMessages = getMessagesForSession(targetSid);
       setMessages(cachedMessages, targetSid);
-      slowLoadingTimer = window.setTimeout(() => {
-        if (isCurrentLoad()) setShowInitialHistoryLoading(true);
-      }, 500);
       try {
         await loadSessionWithRetry(async () => {
           if (!isCurrentLoad()) throw new DOMException("Session selection changed", "AbortError");
@@ -1385,7 +1403,11 @@ export default function ChatView({
             agentApi,
             targetSid,
             historyAgentType(targetSid),
-            { limit: SESSION_HISTORY_PAGE_SIZE },
+            {
+              limit: historyAgentType(targetSid) === "codex"
+                ? CODEX_LATEST_HISTORY_PAGE_SIZE
+                : SESSION_HISTORY_PAGE_SIZE,
+            },
             (detail, phase) => {
               if (!isCurrentLoad()) return;
               const permissionDetail = detail as (SessionHistoryDetail & {
@@ -1437,7 +1459,6 @@ export default function ChatView({
                   ? "thinking"
                   : "idle");
               }
-              if (slowLoadingTimer !== null) window.clearTimeout(slowLoadingTimer);
               setIsInitialHistoryLoading(false);
               setShowInitialHistoryLoading(false);
             },
@@ -1452,7 +1473,6 @@ export default function ChatView({
         setSessionLoadError(reason);
         if (sessionSummary?.compatibility) setCompatibilityFailure(reason);
       } finally {
-        if (slowLoadingTimer !== null) window.clearTimeout(slowLoadingTimer);
         if (isCurrentLoad()) {
           setIsInitialHistoryLoading(false);
           setShowInitialHistoryLoading(false);
@@ -1462,7 +1482,6 @@ export default function ChatView({
 
     void loadSelectedSession();
     return () => {
-      if (slowLoadingTimer !== null) window.clearTimeout(slowLoadingTimer);
       if (sessionLoadGenerationRef.current === loadGeneration) {
         sessionLoadGenerationRef.current += 1;
       }
@@ -1489,6 +1508,29 @@ export default function ChatView({
       }
       return null;
     }
+  }, []);
+
+  const scheduleCodexTraceRefresh = useCallback((targetSid: string) => {
+    if (codexTraceRefreshSessionRef.current !== targetSid) {
+      if (codexTraceRefreshTimerRef.current !== null) {
+        window.clearTimeout(codexTraceRefreshTimerRef.current);
+      }
+      codexTraceRefreshSessionRef.current = targetSid;
+      codexTraceRefreshTimerRef.current = null;
+      codexTraceLastRefreshAtRef.current = 0;
+    }
+    if (codexTraceRefreshTimerRef.current !== null) return;
+    const delay = Math.max(
+      0,
+      CODEX_TRACE_REFRESH_MIN_INTERVAL_MS - (Date.now() - codexTraceLastRefreshAtRef.current),
+    );
+    codexTraceRefreshTimerRef.current = window.setTimeout(() => {
+      codexTraceRefreshTimerRef.current = null;
+      codexTraceLastRefreshAtRef.current = Date.now();
+      if (selectedSessionIdRef.current === targetSid) {
+        setCodexTraceRefreshSignal((signal) => signal + 1);
+      }
+    }, delay);
   }, []);
 
   useEffect(() => {
@@ -1538,7 +1580,11 @@ export default function ChatView({
           window.agentApi,
           targetSid,
           historyAgentType(targetSid),
-          { limit: SESSION_HISTORY_PAGE_SIZE },
+          {
+            limit: historyAgentType(targetSid) === "codex"
+              ? CODEX_LATEST_HISTORY_PAGE_SIZE
+              : SESSION_HISTORY_PAGE_SIZE,
+          },
           (detail, phase) => {
             const refreshed = restoreSessionHistoryPage(detail);
             const current = getMessagesForSession(targetSid);
@@ -1596,6 +1642,9 @@ export default function ChatView({
             && historySessionIdRef.current === targetSid
           ),
         );
+        if (historyAgentType(targetSid) === "codex") {
+          scheduleCodexTraceRefresh(targetSid);
+        }
       } while (historyRefreshPendingRef.current);
     } catch (refreshError) {
       console.error("[chat] failed to refresh native session history", {
@@ -1607,7 +1656,7 @@ export default function ChatView({
         historyRefreshInFlightRef.current = false;
       }
     }
-  }, [getMessagesForSession, historyAgentType, loadSessionQueryIndex, prefetchOlderHistory, setContextUsage, setMessages, syncToolResultScope, updateAgentActivity]);
+  }, [getMessagesForSession, historyAgentType, loadSessionQueryIndex, prefetchOlderHistory, scheduleCodexTraceRefresh, setContextUsage, setMessages, syncToolResultScope, updateAgentActivity]);
 
   useEffect(() => {
     const targetSid = selectedSessionId;
@@ -1668,6 +1717,14 @@ export default function ChatView({
       if (historyRefreshSessionRef.current === targetSid) {
         historyRefreshSessionRef.current = null;
         historyRefreshPendingRef.current = false;
+      }
+      if (codexTraceRefreshSessionRef.current === targetSid) {
+        if (codexTraceRefreshTimerRef.current !== null) {
+          window.clearTimeout(codexTraceRefreshTimerRef.current);
+        }
+        codexTraceRefreshSessionRef.current = null;
+        codexTraceRefreshTimerRef.current = null;
+        codexTraceLastRefreshAtRef.current = 0;
       }
     };
   }, [
@@ -1807,7 +1864,11 @@ export default function ChatView({
         window.agentApi,
         targetSid,
         historyAgentType(targetSid),
-        { limit: SESSION_HISTORY_PAGE_SIZE },
+        {
+          limit: historyAgentType(targetSid) === "codex"
+            ? CODEX_LATEST_HISTORY_PAGE_SIZE
+            : SESSION_HISTORY_PAGE_SIZE,
+        },
         (detail, phase) => {
           applied = true;
           const restored = restoreSessionHistoryPage(detail);
@@ -2003,7 +2064,22 @@ export default function ChatView({
         break;
       case "text_chunk":
         if (event.text) {
-          appendText(event.text, eventSid);
+          if (
+            eventSid
+            && event.turnId
+            && event.messagePhase === "commentary"
+            && historyAgentType(eventSid) === "codex"
+          ) {
+            applyCodexExecutionEvent(event.turnId, {
+              type: "text_chunk",
+              text: event.text,
+              turnId: event.turnId,
+              itemId: event.itemId,
+              messagePhase: "commentary",
+            }, eventSid);
+          } else {
+            appendText(event.text, eventSid);
+          }
           if (isViewed) {
             updateAgentActivity("thinking");
           }
@@ -2458,18 +2534,28 @@ export default function ChatView({
     if (occupiedRecoveryActionRef.current === recovery.token) return;
     occupiedRecoveryActionRef.current = recovery.token;
 
+    const addRecoveryMessage = (
+      targetRecovery: OccupiedSessionRecovery,
+      targetSessionId: string,
+    ) => {
+      const messageId = occupiedRecoveryMessageId(targetRecovery);
+      const messages = getMessagesForSession(targetSessionId);
+      if (messages.some((message) => message.id === messageId)) return;
+      addMessage({
+        id: messageId,
+        role: "user",
+        content: targetRecovery.payload.content,
+        timestamp: Date.now(),
+        agentName: targetRecovery.payload.agentName,
+        images: targetRecovery.payload.images,
+      }, targetSessionId);
+    };
+
     if (recovery.forkSessionId) {
       setIsForkingSession(true);
       const retry = markOccupiedRecoveryForked(recovery, recovery.forkSessionId);
       commitOccupiedRecovery(retry);
-      addMessage({
-        id: crypto.randomUUID(),
-        role: "user",
-        content: retry.payload.content,
-        timestamp: Date.now(),
-        agentName: retry.payload.agentName,
-        images: retry.payload.images,
-      }, retry.forkSessionId);
+      addRecoveryMessage(retry, retry.forkSessionId);
       void startRun(retry.payload, retry.forkSessionId, retry.payload.agentIds).finally(() => {
         occupiedRecoveryActionRef.current = null;
         setIsForkingSession(false);
@@ -2497,14 +2583,7 @@ export default function ChatView({
       });
       const nextRecovery = markOccupiedRecoveryForked(recovery, forked.id);
       commitOccupiedRecovery(nextRecovery);
-      addMessage({
-        id: crypto.randomUUID(),
-        role: "user",
-        content: nextRecovery.payload.content,
-        timestamp: Date.now(),
-        agentName: nextRecovery.payload.agentName,
-        images: nextRecovery.payload.images,
-      }, forked.id);
+      addRecoveryMessage(nextRecovery, forked.id);
       void startRun(nextRecovery.payload, forked.id, nextRecovery.payload.agentIds).finally(() => {
         occupiedRecoveryActionRef.current = null;
         setIsForkingSession(false);
@@ -3047,9 +3126,6 @@ export default function ChatView({
             agentName: agentNamesLabel,
           });
           applySessionQueueState(state, viewSessionId);
-          if (state.active?.sourceMessageId === sourceMessageId) {
-            addMessage({ ...queuedMessage, isQueued: false }, viewSessionId);
-          }
         } catch (queueError) {
           setInput(finalMsg);
           setPendingImages(imagesToSend ?? []);
@@ -3296,6 +3372,10 @@ export default function ChatView({
                 onSelectSession={onSelectSession}
                 workspacePath={workspacePath}
                 enableFilePreview={isWebShell()}
+                refreshSignal={chatMsg.executionTrace.turnId === latestCodexExecutionTurnId
+                  ? codexTraceRefreshSignal
+                  : 0}
+                autoLoad={chatMsg.executionTrace.turnId === latestCodexExecutionTurnId}
               />
             );
           }

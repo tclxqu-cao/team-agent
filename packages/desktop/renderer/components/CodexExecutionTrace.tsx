@@ -5,11 +5,10 @@ import type {
   SessionToolResultBody,
   SessionToolResultRef,
 } from "@agent/core";
-import { ChevronRight, CircleAlert, LoaderCircle, Workflow } from "lucide-react";
+import { CircleAlert, LoaderCircle, Workflow } from "lucide-react";
 import type { ChatMessage } from "../stores/agentStore";
 import {
   applyCodexExecutionToolResult,
-  codexExecutionItemCount,
   mergeCodexExecutionMessages,
 } from "../lib/codex-execution-trace";
 import { coalesceAdjacentToolCallMessages, groupAdjacentToolCallEntries } from "../lib/tool-call-groups";
@@ -27,6 +26,8 @@ interface CodexExecutionTraceProps {
   onSelectSession?: (sessionId: string) => void;
   workspacePath?: string | null;
   enableFilePreview?: boolean;
+  refreshSignal?: number;
+  autoLoad?: boolean;
 }
 
 export default function CodexExecutionTrace({
@@ -39,12 +40,14 @@ export default function CodexExecutionTrace({
   onSelectSession,
   workspacePath,
   enableFilePreview = false,
+  refreshSignal = 0,
+  autoLoad = false,
 }: CodexExecutionTraceProps) {
   const scope = trace.turnId;
   const scopeRef = useRef(scope);
   const revisionRef = useRef(trace.revision);
+  const handledRefreshSignalRef = useRef(refreshSignal);
   const pendingRef = useRef<Promise<ChatMessage[]> | null>(null);
-  const [expanded, setExpanded] = useState(false);
   const [loading, setLoading] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -52,10 +55,10 @@ export default function CodexExecutionTrace({
   useEffect(() => {
     scopeRef.current = scope;
     pendingRef.current = null;
-    setExpanded(false);
     setLoading(false);
     setMessages(null);
     setError(null);
+    handledRefreshSignalRef.current = refreshSignal;
   }, [scope]);
 
   useEffect(() => {
@@ -77,9 +80,9 @@ export default function CodexExecutionTrace({
   );
   const hasMessages = messages !== null || liveMessages.length > 0;
 
-  const ensureLoaded = useCallback(async () => {
-    if (messages) return messages;
-    if (liveMessages.length > 0) return liveMessages;
+  const ensureLoaded = useCallback(async (force = false) => {
+    if (!force && messages) return messages;
+    if (!force && liveMessages.length > 0) return liveMessages;
     if (pendingRef.current) return pendingRef.current;
     const requestedScope = scope;
     const requestedRevision = trace.revision;
@@ -104,11 +107,17 @@ export default function CodexExecutionTrace({
     }
   }, [liveMessages, loadTrace, messages, scope, trace]);
 
-  const toggle = () => {
-    const next = !expanded;
-    setExpanded(next);
-    if (next && !hasMessages) void ensureLoaded().catch(() => undefined);
-  };
+  useEffect(() => {
+    if (!autoLoad || hasMessages) return;
+    void ensureLoaded().catch(() => undefined);
+  }, [autoLoad, ensureLoaded, hasMessages]);
+
+  useEffect(() => {
+    if ((!hasMessages && !autoLoad) || refreshSignal === 0) return;
+    if (handledRefreshSignalRef.current === refreshSignal) return;
+    handledRefreshSignalRef.current = refreshSignal;
+    void ensureLoaded(true).catch(() => undefined);
+  }, [autoLoad, ensureLoaded, hasMessages, refreshSignal]);
 
   const loadLocalToolResult = useCallback(async (ref: SessionToolResultRef) => {
     const body = await loadToolResult(ref);
@@ -118,59 +127,55 @@ export default function CodexExecutionTrace({
       : current);
   }, [loadToolResult, scope]);
 
-  const itemCount = hasMessages ? codexExecutionItemCount(displayMessages) : null;
-  const label = itemCount !== null
-    ? `执行过程 · ${itemCount} 项`
-    : loading
-      ? "执行过程加载中"
-      : "执行过程";
+  const loadLabel = loading
+    ? "正在加载执行过程"
+    : error
+      ? "重新加载执行过程"
+      : "查看执行过程";
 
   return (
     <div className="codex-execution-trace" data-turn-id={trace.turnId}>
-      <button
-        type="button"
-        className="codex-execution-trace__summary"
-        aria-expanded={expanded}
-        aria-label={`${label}，${expanded ? "收起" : "展开"}`}
-        onClick={toggle}
-      >
-        <span className="codex-execution-trace__icon" aria-hidden="true">
-          {loading
-            ? <LoaderCircle size={14} strokeWidth={2} />
-            : error
-              ? <CircleAlert size={14} strokeWidth={2} />
-              : <Workflow size={14} strokeWidth={1.8} />}
-        </span>
-        <span className="codex-execution-trace__label">{label}</span>
-        {error && <span className="codex-execution-trace__error">加载失败</span>}
-        <span className="codex-execution-trace__spacer" />
-        <ChevronRight className="codex-execution-trace__chevron" size={13} strokeWidth={2.2} aria-hidden="true" />
-      </button>
-      {expanded && (
-        <div className="codex-execution-trace__body">
-          {error && !hasMessages ? (
-            <button
-              type="button"
-              className="ui-text-button codex-execution-trace__retry"
-              onClick={() => void ensureLoaded().catch(() => undefined)}
-            >
-              重新加载执行过程
-            </button>
-          ) : hasMessages ? (
-            <CodexExecutionTraceContent
-              messages={displayMessages}
-              renderContent={renderContent}
-              runtimeProgress={runtimeProgress}
-              nativeSubagents={nativeSubagents}
-              onSelectSession={onSelectSession}
-              workspacePath={workspacePath}
-              enableFilePreview={enableFilePreview}
-              onLoadResult={loadLocalToolResult}
-            />
-          ) : loading ? (
-            <div className="codex-execution-trace__loading" role="status">正在加载这一轮的执行过程</div>
-          ) : null}
+      {hasMessages ? (
+        <CodexExecutionTraceContent
+          messages={displayMessages}
+          renderContent={renderContent}
+          runtimeProgress={runtimeProgress}
+          nativeSubagents={nativeSubagents}
+          onSelectSession={onSelectSession}
+          workspacePath={workspacePath}
+          enableFilePreview={enableFilePreview}
+          onLoadResult={loadLocalToolResult}
+        />
+      ) : autoLoad && !error ? (
+        <div
+          className="codex-execution-trace__status"
+          role="status"
+          aria-live="polite"
+          aria-busy="true"
+        >
+          <span className="codex-execution-trace__icon" aria-hidden="true">
+            <LoaderCircle size={14} strokeWidth={2} />
+          </span>
+          <span className="codex-execution-trace__label">正在加载会话</span>
         </div>
+      ) : (
+        <button
+          type="button"
+          className="codex-execution-trace__load"
+          aria-busy={loading || undefined}
+          disabled={loading}
+          onClick={() => void ensureLoaded().catch(() => undefined)}
+        >
+          <span className="codex-execution-trace__icon" aria-hidden="true">
+            {loading
+              ? <LoaderCircle size={14} strokeWidth={2} />
+              : error
+                ? <CircleAlert size={14} strokeWidth={2} />
+                : <Workflow size={14} strokeWidth={1.8} />}
+          </span>
+          <span className="codex-execution-trace__label">{loadLabel}</span>
+          {error && <span className="codex-execution-trace__error">加载失败</span>}
+        </button>
       )}
     </div>
   );
@@ -238,6 +243,11 @@ export function CodexExecutionTraceContent({
               renderContent={renderContent}
             />
           ) : null}
+          {message.presentation?.agentMessagePhase === "commentary" && message.content ? (
+            <div className="codex-execution-trace__commentary">
+              {renderContent(message.content)}
+            </div>
+          ) : null}
           {toolGroups.map((group) => group.action && group.items.length > 1 ? (
             <ToolCallGroup
               key={`group-${group.items[0].toolCall.id}`}
@@ -247,19 +257,19 @@ export function CodexExecutionTraceContent({
               enableFilePreview={enableFilePreview}
               onLoadResult={onLoadResult}
             />
-          ) : group.items.map(({ toolCall, beforeContent, progress, nativeSubagent }) => (
+          ) : (
             <ToolCallCard
-              key={toolCall.id}
-              toolCall={toolCall}
-              beforeContent={beforeContent}
-              progress={progress}
-              nativeSubagent={nativeSubagent}
+              key={group.items[0].toolCall.id}
+              toolCall={group.items[0].toolCall}
+              beforeContent={group.items[0].beforeContent}
+              progress={group.items[0].progress}
+              nativeSubagent={group.items[0].nativeSubagent}
               onSelectSession={onSelectSession}
               workspacePath={workspacePath}
               enableFilePreview={enableFilePreview}
               onLoadResult={onLoadResult}
             />
-          )))}
+          ))}
         </div>
       ))}
     </div>

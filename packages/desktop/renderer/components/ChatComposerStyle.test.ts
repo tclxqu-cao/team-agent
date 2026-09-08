@@ -106,6 +106,9 @@ describe("shared Electron and Web composer", () => {
     expect(chatView).toContain("reconcileDurableQueuedMessages(baseMessages, detail.goalState)");
     expect(chatView).toContain("reconcileDurableQueuedMessages(mergedHistory, detail.goalState)");
     expect(chatView).not.toContain("reconcileDurableQueuedMessages(current, queuedSessionMessages(state))");
+    expect(chatView).not.toContain("state.active?.sourceMessageId === sourceMessageId");
+    expect(chatView).toContain('event.messagePhase === "commentary"');
+    expect(chatView).toContain("applyCodexExecutionEvent(event.turnId");
     expect(chatView).toContain("steerSessionMessage(targetSessionId, msg.queueItemId)");
     expect(drain).toMatch(
       /if \(state\?\.active\) \{[\s\S]*?abortRef\.current = false;[\s\S]*?setError\(null\);[\s\S]*?if \(abortRef\.current\) return;/,

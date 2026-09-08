@@ -21,6 +21,7 @@ export interface PersistedHistoryEvent {
   result?: { toolCallId?: string; content?: string; isError?: boolean };
   turnId?: string;
   itemId?: string;
+  messagePhase?: "commentary" | "final_answer";
   sectionIndex?: number;
   delta?: string;
   usage?: ContextUsageSnapshot;
@@ -64,6 +65,30 @@ export type ProgressiveHistoryPhase = "full" | "core" | "trace";
 
 interface SessionHistoryApi {
   getSession(id: string, query?: SessionHistoryQuery): Promise<unknown>;
+}
+
+export async function loadCodexExecutionTracePage(
+  api: SessionHistoryApi,
+  sessionId: string,
+  trace: { turnId: string; revision: string },
+  limit = 50,
+): Promise<{ detail: SessionHistoryDetail | null; revision: string; recovered: boolean }> {
+  const requestTrace = (revision: string) => api.getSession(sessionId, {
+    view: "trace",
+    revision,
+    turnId: trace.turnId,
+  }) as Promise<SessionHistoryDetail | null>;
+
+  try {
+    return { detail: await requestTrace(trace.revision), revision: trace.revision, recovered: false };
+  } catch (error) {
+    if ((error as { code?: string }).code !== "STALE_SESSION_ANCHOR") throw error;
+  }
+
+  const core = await api.getSession(sessionId, { view: "core", limit }) as SessionHistoryDetail | null;
+  const revision = core?.history?.revision;
+  if (!revision) throw new Error("会话内容已更新，请刷新后重试");
+  return { detail: await requestTrace(revision), revision, recovered: true };
 }
 
 export async function loadProgressiveSessionHistoryPage(
@@ -564,6 +589,19 @@ function restoreCodexLiveExecutionEvents(
     if (!event.turnId) return current;
     let liveEvent: CodexLiveExecutionEvent | null = null;
     if (
+      event.type === "text_chunk"
+      && event.messagePhase === "commentary"
+      && typeof event.text === "string"
+      && event.text
+    ) {
+      liveEvent = {
+        type: "text_chunk",
+        text: event.text,
+        turnId: event.turnId,
+        itemId: event.itemId,
+        messagePhase: "commentary",
+      };
+    } else if (
       event.type === "reasoning_summary_delta"
       && event.itemId
       && Number.isSafeInteger(event.sectionIndex)
