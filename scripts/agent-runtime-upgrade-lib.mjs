@@ -24,6 +24,7 @@ const RELEASE_PACKAGE_FILES = [
   "packages/tui-darwin-arm64/package.json",
   "packages/tui-win32-x64/package.json",
   "packages/cli/package.json",
+  "packages/desktop/package.json",
 ];
 
 const RELEASE_MANIFEST_FILES = [

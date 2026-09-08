@@ -153,9 +153,13 @@ jobs:
             const fs = require("fs");
             const issue = Number(process.env.ISSUE_NUMBER);
             const manifest = JSON.parse(fs.readFileSync("release/release-manifest.json", "utf8"));
+            const installers = [
+              ...Object.values(manifest.installers?.cli ?? {}),
+              ...Object.values(manifest.installers?.desktop ?? {}),
+            ];
             const artifacts = [
               ...manifest.packages.map(({ fileName, sha256 }) => ({ fileName, sha256 })),
-              ...manifest.installers.map(({ fileName, sha256 }) => ({ fileName, sha256 })),
+              ...installers.map(({ fileName, sha256 }) => ({ fileName, sha256 })),
             ];
             const state = {
               schemaVersion: 1,

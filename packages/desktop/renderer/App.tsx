@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { History, LoaderCircle, Plus, Search } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
 import ChatView from "./components/ChatView";
+import UpdateNotice from "./components/UpdateNotice";
 import { renewVoiceConversation } from "./lib/voice-command";
 import {
   getSidebarSessionVisualState,
@@ -10,6 +11,7 @@ import {
 } from "./lib/sidebar-session-status";
 import {
   sortNewestSessionsFirst,
+  sortPinnedSessionsFirst,
   sortRunningSessionsFirst,
 } from "./lib/sidebar-session-sort";
 import {
@@ -236,6 +238,10 @@ export default function App() {
   const setAutoSpeak = useUIStore((s) => s.setAutoSpeak);
   const runningFirst = useUIStore((s) => s.runningFirst);
   const setRunningFirst = useUIStore((s) => s.setRunningFirst);
+  const pinnedSessionIds = useUIStore((s) => s.pinnedSessionIds);
+  const togglePinnedSession = useUIStore((s) => s.togglePinnedSession);
+  const removePinnedSessions = useUIStore((s) => s.removePinnedSessions);
+  const pinnedSessionIdSet = new Set(pinnedSessionIds);
   const runningSessionId = useAgentStore((s) => s.runningSessionId);
   const sessionsNeedingInput = useAgentStore(useShallow((s) =>
     Object.entries(s.messagesBySession)
@@ -531,10 +537,25 @@ export default function App() {
     ...Object.values(sessionsByProject).flat(),
     ...Object.values(childSessionsByParent).flat(),
   ];
+  const orderedVisibleSessions = sortPinnedSessionsFirst(
+    allVisibleSessions,
+    (session) => pinnedSessionIdSet.has(session.id),
+  );
+  const collectedPinnedRootSessions = Object.entries(sessionsByProject).flatMap(
+    ([projectId, sessions]) => sessions
+      .filter((session) => pinnedSessionIdSet.has(session.id))
+      .map((session) => ({ projectId, session, created: session.created })),
+  );
+  const pinnedRootSessions = runningFirst
+    ? sortRunningSessionsFirst(
+        collectedPinnedRootSessions,
+        ({ session }) => isSessionRunning(session),
+      )
+    : sortNewestSessionsFirst(collectedPinnedRootSessions);
   const allKnownSessions = allVisibleSessions;
   const sessionQueryTrim = sessionQuery.trim().toLowerCase();
   const searchResults = sessionQueryTrim
-    ? allVisibleSessions.filter((s) =>
+    ? orderedVisibleSessions.filter((s) =>
         s.title.toLowerCase().includes(sessionQueryTrim) ||
         (s.cwd || "").toLowerCase().includes(sessionQueryTrim))
     : null;
@@ -1119,6 +1140,7 @@ export default function App() {
       childSessionsByParentRef.current = removal.childSessionsByParent;
       setSessionsByProject(removal.sessionsByProject);
       setChildSessionsByParent(removal.childSessionsByParent);
+      removePinnedSessions(removal.removedIds);
       const partition = workspaceCacheRef.current.agents[agentType];
       if (partition) {
         const cache = {
@@ -1157,6 +1179,91 @@ export default function App() {
     { id: "lsp", label: "LSP" },
   ];
 
+  const renderRootSession = (session: Session, projectId: string) => {
+    const isActiveSession = selectedSessionId === session.id;
+    const running = isSessionRunning(session);
+    const visualState = getSidebarSessionVisualState({
+      status: session.status,
+      isRunning: running,
+      needsInput: running && sessionsNeedingInput.includes(session.id),
+    });
+    const children = childSessionsByParent[session.id] ?? [];
+    const expanded = !collapsedParents.has(session.id);
+
+    return (
+      <div key={session.id} className="sidebar-session-tree">
+        <SidebarSessionRow
+          session={{
+            id: session.id,
+            title: session.title,
+            visualState,
+            statusLabel: SIDEBAR_SESSION_STATUS_LABELS[visualState],
+            occupiedExternally: session.agentType !== "codex"
+              && session.occupancy === "owned-externally",
+            canDelete: session.canDelete,
+            active: isActiveSession,
+            hasChildren: children.length > 0,
+            expanded,
+            compatibility: session.compatibility,
+            pinned: pinnedSessionIdSet.has(session.id),
+          }}
+          onSelect={() => {
+            if (mobileDrawer) setSidebarDrawerOpen(false);
+            applySidebarSelection(selectSession(projectId, session.id));
+            if (children.length > 0) {
+              setCollapsedParents((prev) => {
+                const next = new Set(prev);
+                if (next.has(session.id)) next.delete(session.id); else next.add(session.id);
+                return next;
+              });
+            }
+          }}
+          onPin={() => togglePinnedSession(session.id)}
+          onDelete={(anchor) => requestDeleteSession(session, anchor)}
+        />
+        <div
+          className="sidebar-child-sessions"
+          style={{
+            maxHeight: expanded ? children.length * 40 : 0,
+            opacity: expanded ? 1 : 0,
+          }}
+        >
+          {children.map((child) => {
+            const childRunning = isSessionRunning(child);
+            const childVisualState = getSidebarSessionVisualState({
+              status: child.status,
+              isRunning: childRunning,
+              needsInput: childRunning && sessionsNeedingInput.includes(child.id),
+            });
+            return (
+              <SidebarSessionRow
+                key={child.id}
+                session={{
+                  id: child.id,
+                  title: child.title,
+                  visualState: childVisualState,
+                  statusLabel: SIDEBAR_SESSION_STATUS_LABELS[childVisualState],
+                  occupiedExternally: child.agentType !== "codex"
+                    && child.occupancy === "owned-externally",
+                  canDelete: child.canDelete,
+                  active: selectedSessionId === child.id,
+                  child: true,
+                  compatibility: child.compatibility,
+                }}
+                deleteLabel="删除子会话"
+                onSelect={() => {
+                  if (mobileDrawer) setSidebarDrawerOpen(false);
+                  applySidebarSelection(selectSession(projectId, child.id));
+                }}
+                onDelete={(anchor) => requestDeleteSession(child, anchor)}
+              />
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="app-shell" style={{
       display: "flex",
@@ -1166,6 +1273,7 @@ export default function App() {
       position: "relative",
       overflow: "hidden",
     }}>
+      <UpdateNotice />
       {/* Web mobile: drawer mask + hamburger */}
       {mobileDrawer && sidebarDrawerOpen && (
         <div
@@ -1361,6 +1469,12 @@ export default function App() {
           style={{ flex: 1, overflow: "auto", padding: "0 10px" }}
         >
           <div style={{ display: "flex", flexDirection: "column", gap: 2, marginBottom: 12 }}>
+            {pinnedRootSessions.length > 0 && (
+              <section className="sidebar-pinned-section" aria-label="置顶会话">
+                <div className="sidebar-pinned-heading">置顶</div>
+                {pinnedRootSessions.map(({ projectId, session }) => renderRootSession(session, projectId))}
+              </section>
+            )}
             {projects.map((project) => {
               const isSelected = selectedProjectId === project.id;
               const isExpanded = expandedProjects.has(project.id);
@@ -1368,9 +1482,13 @@ export default function App() {
               const isProjectLoading = loadingProjectIds.has(project.id);
               const projectSessionError = projectSessionErrors[project.id];
               const projectSessions = sessionsByProject[project.id] ?? [];
-              const projSessions = runningFirst
-                ? sortRunningSessionsFirst(projectSessions, isSessionRunning)
-                : projectSessions;
+              const unpinnedProjectSessions = projectSessions.filter(
+                (session) => !pinnedSessionIdSet.has(session.id),
+              );
+              const orderedProjectSessions = runningFirst
+                ? sortRunningSessionsFirst(unpinnedProjectSessions, isSessionRunning)
+                : unpinnedProjectSessions;
+              const projSessions = orderedProjectSessions;
               const manySession = projSessions.length > 10;
               const isInvalid = invalidProjectIds.has(project.id);
               const isCreatingSession = sessionCreationPending?.agentType === activeAgent
@@ -1484,87 +1602,7 @@ export default function App() {
                       }}
                       style={{ display: "flex", flexDirection: "column", gap: 1, marginTop: 2, paddingLeft: 10, paddingBottom: 4, ...(manySession ? { maxHeight: 280, overflowY: "auto" as const } : {}) }}
                     >
-                      {projSessions.map((session) => {
-                        const isActiveSession = selectedSessionId === session.id;
-                        const running = isSessionRunning(session);
-                        const visualState = getSidebarSessionVisualState({
-                          status: session.status,
-                          isRunning: running,
-                          needsInput: running && sessionsNeedingInput.includes(session.id),
-                        });
-                        const children = childSessionsByParent[session.id] ?? [];
-                        const expanded = !collapsedParents.has(session.id);
-                        return (
-                          <div key={session.id}>
-                            <SidebarSessionRow
-                              session={{
-                                id: session.id,
-                                title: session.title,
-                                visualState,
-                                statusLabel: SIDEBAR_SESSION_STATUS_LABELS[visualState],
-                                occupiedExternally: session.agentType !== "codex"
-                                  && session.occupancy === "owned-externally",
-                                canDelete: session.canDelete,
-                                active: isActiveSession,
-                                hasChildren: children.length > 0,
-                                expanded,
-                                compatibility: session.compatibility,
-                              }}
-                              onSelect={() => {
-                                if (mobileDrawer) setSidebarDrawerOpen(false);
-                                applySidebarSelection(selectSession(project.id, session.id));
-                                if (children.length > 0) {
-                                  setCollapsedParents((prev) => {
-                                    const next = new Set(prev);
-                                    if (next.has(session.id)) next.delete(session.id); else next.add(session.id);
-                                    return next;
-                                  });
-                                }
-                              }}
-                              onDelete={(anchor) => requestDeleteSession(session, anchor)}
-                            />
-                            <div
-                              className="sidebar-child-sessions"
-                              style={{
-                                maxHeight: expanded ? children.length * 40 : 0,
-                                opacity: expanded ? 1 : 0,
-                              }}
-                            >
-                              {children.map((child) => {
-                                const childRunning = isSessionRunning(child);
-                                const childVisualState = getSidebarSessionVisualState({
-                                  status: child.status,
-                                  isRunning: childRunning,
-                                  needsInput: childRunning && sessionsNeedingInput.includes(child.id),
-                                });
-                                return (
-                                  <SidebarSessionRow
-                                    key={child.id}
-                                    session={{
-                                      id: child.id,
-                                      title: child.title,
-                                      visualState: childVisualState,
-                                      statusLabel: SIDEBAR_SESSION_STATUS_LABELS[childVisualState],
-                                      occupiedExternally: child.agentType !== "codex"
-                                        && child.occupancy === "owned-externally",
-                                      canDelete: child.canDelete,
-                                      active: selectedSessionId === child.id,
-                                      child: true,
-                                      compatibility: child.compatibility,
-                                    }}
-                                    deleteLabel="删除子会话"
-                                    onSelect={() => {
-                                      if (mobileDrawer) setSidebarDrawerOpen(false);
-                                      applySidebarSelection(selectSession(project.id, child.id));
-                                    }}
-                                    onDelete={(anchor) => requestDeleteSession(child, anchor)}
-                                  />
-                                );
-                              })}
-                            </div>
-                          </div>
-                        );
-                      })}
+                      {projSessions.map((session) => renderRootSession(session, project.id))}
                       {isProjectLoading && !hasLoadedProject && (
                         <div style={{ color: "var(--text-muted)", fontSize: 11, padding: "4px 10px", opacity: 0.7 }}>
                           正在加载会话...
@@ -1588,7 +1626,7 @@ export default function App() {
                       {staleProjectIds.has(project.id) && !projectSessionError && (
                         <div className="sidebar-cache-state">显示缓存，会话将在下次刷新时更新</div>
                       )}
-                      {projSessions.length === 0 && hasLoadedProject && !isProjectLoading && !projectSessionError && (
+                      {projectSessions.length === 0 && hasLoadedProject && !isProjectLoading && !projectSessionError && (
                         <div style={{ color: "var(--text-muted)", fontSize: 11, padding: "4px 10px", opacity: 0.7 }}>
                           暂无会话
                         </div>
@@ -1751,12 +1789,12 @@ export default function App() {
                   无匹配会话
                 </div>
               )}
-              {!sessionQueryTrim && allVisibleSessions.length === 0 && (
+              {!sessionQueryTrim && orderedVisibleSessions.length === 0 && (
                 <div style={{ color: "var(--text-muted)", fontSize: 12, padding: "16px 10px", textAlign: "center", opacity: 0.7 }}>
                   暂无会话
                 </div>
               )}
-              {(searchResults ?? allVisibleSessions.slice(0, searchListLimit)).map((session) => {
+              {(searchResults ?? orderedVisibleSessions.slice(0, searchListLimit)).map((session) => {
                 const active = selectedSessionId === session.id;
                 const running = isSessionRunning(session);
                 const visualState = getSidebarSessionVisualState({
@@ -1778,6 +1816,7 @@ export default function App() {
                       active,
                       child: Boolean(session.parentSessionId),
                       compatibility: session.compatibility,
+                      pinned: pinnedSessionIdSet.has(session.id),
                     }}
                     onSelect={() => {
                       const projectId = session.projectId && projects.some((p) => p.id === session.projectId)
@@ -1787,11 +1826,12 @@ export default function App() {
                       setSearchOpen(false);
                       if (mobileDrawer) setSidebarDrawerOpen(false);
                     }}
+                    onPin={session.parentSessionId ? undefined : () => togglePinnedSession(session.id)}
                     onDelete={(anchor) => requestDeleteSession(session, anchor)}
                   />
                 );
               })}
-              {!sessionQueryTrim && allVisibleSessions.length > searchListLimit && (
+              {!sessionQueryTrim && orderedVisibleSessions.length > searchListLimit && (
                 <button
                   type="button"
                   onClick={() => setSearchListLimit((limit) => limit + 10)}

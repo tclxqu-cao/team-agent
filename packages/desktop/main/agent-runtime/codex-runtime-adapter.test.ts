@@ -471,7 +471,18 @@ describe("Codex live execution events", () => {
               params: {
                 threadId: thread.id,
                 turnId: "turn-live",
-                item: { id: "call-1", type: "commandExecution", command: "pwd", cwd: "/repo" },
+                item: {
+                  id: "call-1",
+                  type: "commandExecution",
+                  command: "cat /repo/SKILL.md",
+                  cwd: "/repo",
+                  commandActions: [{
+                    type: "read",
+                    command: "cat /repo/SKILL.md",
+                    name: "SKILL.md",
+                    path: "/repo/SKILL.md",
+                  }],
+                },
               },
             });
             notify({
@@ -479,7 +490,20 @@ describe("Codex live execution events", () => {
               params: {
                 threadId: thread.id,
                 turnId: "turn-live",
-                item: { id: "call-1", type: "commandExecution", command: "pwd", cwd: "/repo", aggregatedOutput: "/repo", exitCode: 0 },
+                item: {
+                  id: "call-1",
+                  type: "commandExecution",
+                  command: "cat /repo/SKILL.md",
+                  cwd: "/repo",
+                  commandActions: [{
+                    type: "read",
+                    command: "cat /repo/SKILL.md",
+                    name: "SKILL.md",
+                    path: "/repo/SKILL.md",
+                  }],
+                  aggregatedOutput: "skill instructions",
+                  exitCode: 0,
+                },
               },
             });
             notify({
@@ -531,12 +555,20 @@ describe("Codex live execution events", () => {
     expect(events).toContainEqual(expect.objectContaining({
       type: "tool_call",
       turnId: "turn-live",
-      toolCall: expect.objectContaining({ id: "call-1" }),
+      toolCall: {
+        id: "call-1",
+        name: "read_file",
+        arguments: {
+          file_path: "/repo/SKILL.md",
+          command: "cat /repo/SKILL.md",
+          cwd: "/repo",
+        },
+      },
     }));
     expect(events).toContainEqual(expect.objectContaining({
       type: "tool_result",
       turnId: "turn-live",
-      result: expect.objectContaining({ toolCallId: "call-1", content: "/repo" }),
+      result: expect.objectContaining({ toolCallId: "call-1", content: "skill instructions" }),
     }));
     expect(events).toContainEqual(expect.objectContaining({
       type: "text_chunk",
@@ -627,6 +659,59 @@ describe("Codex user message normalization", () => {
 });
 
 describe("Codex history mapping", () => {
+  it("presents a single structured read command as a file read", async () => {
+    const messages = await codexTurnsToMessages([{
+      id: "turn-read",
+      status: "completed",
+      items: [
+        {
+          type: "commandExecution",
+          id: "read-1",
+          command: "cat /repo/SKILL.md",
+          cwd: "/repo",
+          commandActions: [{
+            type: "read",
+            command: "cat /repo/SKILL.md",
+            name: "SKILL.md",
+            path: "/repo/SKILL.md",
+          }],
+          aggregatedOutput: "skill instructions",
+        },
+        {
+          type: "commandExecution",
+          id: "mixed-1",
+          command: "cat /repo/SKILL.md | rg rule",
+          cwd: "/repo",
+          commandActions: [
+            { type: "read", command: "cat /repo/SKILL.md", name: "SKILL.md", path: "/repo/SKILL.md" },
+            { type: "search", command: "rg rule", query: "rule", path: null },
+          ],
+          aggregatedOutput: "rule",
+        },
+      ],
+    }]);
+
+    expect(messages.filter((message) => message.role === "assistant").map((message) => message.toolCalls?.[0]))
+      .toEqual([
+        {
+          id: "read-1",
+          name: "read_file",
+          arguments: {
+            file_path: "/repo/SKILL.md",
+            command: "cat /repo/SKILL.md",
+            cwd: "/repo",
+          },
+        },
+        {
+          id: "mixed-1",
+          name: "shell",
+          arguments: { command: "cat /repo/SKILL.md | rg rule", cwd: "/repo" },
+        },
+      ]);
+    expect(messages.filter((message) => message.role === "tool").map((message) => message.name))
+      .toEqual(["read_file", "shell"]);
+  });
+
   it("loads image entries as ordered data URL attachments", async () => {
     const directory = await mkdtemp(join(tmpdir(), "codex-runtime-adapter-"));
     temporaryDirectories.push(directory);
@@ -788,6 +873,29 @@ describe("Codex session forks", () => {
       occupancy: "available",
       canResume: true,
     });
+  });
+});
+
+describe("Codex session rename", () => {
+  it("updates the native thread name", async () => {
+    const requests: Array<{ method: string; params: unknown }> = [];
+    const client = {
+      onNotification: () => () => undefined,
+      onExit: () => () => undefined,
+      setServerRequestHandler: () => undefined,
+      request: async (method: string, params: unknown) => {
+        requests.push({ method, params });
+        return {};
+      },
+    };
+    const adapter = new CodexRuntimeAdapter({ client: client as never, sessionRoot: "/tmp" });
+
+    await adapter.renameSession("thread-1", "第一条消息");
+
+    expect(requests).toEqual([{
+      method: "thread/name/set",
+      params: { threadId: "thread-1", name: "第一条消息" },
+    }]);
   });
 });
 

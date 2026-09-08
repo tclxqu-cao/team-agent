@@ -29,7 +29,7 @@ export const LAYOUTS: LayoutMeta[] = [
   { id: "compact", label: "紧凑", description: "更小间距与字号，信息密度优先" },
 ];
 
-interface UIState {
+export interface UIState {
   skin: SkinId;
   layout: LayoutId;
   /** 助手回复自动语音播报 */
@@ -40,6 +40,8 @@ interface UIState {
   wakeWord: string;
   /** 侧边栏将进行中的会话排在最前 */
   runningFirst: boolean;
+  /** 侧边栏置顶的根会话 ID */
+  pinnedSessionIds: string[];
 
   setSkin: (skin: SkinId) => void;
   setLayout: (layout: LayoutId) => void;
@@ -47,9 +49,30 @@ interface UIState {
   setWakeEnabled: (v: boolean) => void;
   setWakeWord: (w: string) => void;
   setRunningFirst: (v: boolean) => void;
+  togglePinnedSession: (id: string) => void;
+  removePinnedSessions: (ids: readonly string[]) => void;
 }
 
-const UI_PREFERENCES_VERSION = 3;
+const UI_PREFERENCES_VERSION = 4;
+
+export function normalizePinnedSessionIds(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return [...new Set(value.filter((id): id is string => typeof id === "string" && id.length > 0))];
+}
+
+export function migrateUIPreferences(persisted: unknown, version: number): Partial<UIState> {
+  const preferences = (persisted ?? {}) as Partial<UIState>;
+  return {
+    ...(preferences.skin !== undefined ? { skin: preferences.skin } : {}),
+    ...(preferences.layout !== undefined ? { layout: preferences.layout } : {}),
+    ...(preferences.autoSpeak !== undefined ? { autoSpeak: preferences.autoSpeak } : {}),
+    ...(preferences.wakeEnabled !== undefined ? { wakeEnabled: preferences.wakeEnabled } : {}),
+    ...(preferences.wakeWord !== undefined ? { wakeWord: preferences.wakeWord } : {}),
+    ...(preferences.runningFirst !== undefined ? { runningFirst: preferences.runningFirst } : {}),
+    pinnedSessionIds: normalizePinnedSessionIds(preferences.pinnedSessionIds),
+    ...(version < UI_PREFERENCES_VERSION && isBrowserRuntime() ? { wakeEnabled: false } : {}),
+  };
+}
 
 /** Browser shells have no background window to wake, so they start opted out. */
 export function getDefaultWakeEnabled(browserRuntime = isBrowserRuntime()): boolean {
@@ -65,6 +88,7 @@ export const useUIStore = create<UIState>()(
       wakeEnabled: getDefaultWakeEnabled(),
       wakeWord: "小智",
       runningFirst: false,
+      pinnedSessionIds: [],
 
       setSkin: (skin) => set({ skin }),
       setLayout: (layout) => set({ layout }),
@@ -72,22 +96,22 @@ export const useUIStore = create<UIState>()(
       setWakeEnabled: (wakeEnabled) => set({ wakeEnabled }),
       setWakeWord: (wakeWord) => set({ wakeWord }),
       setRunningFirst: (runningFirst) => set({ runningFirst }),
+      togglePinnedSession: (id) => set((state) => ({
+        pinnedSessionIds: state.pinnedSessionIds.includes(id)
+          ? state.pinnedSessionIds.filter((sessionId) => sessionId !== id)
+          : normalizePinnedSessionIds([...state.pinnedSessionIds, id]),
+      })),
+      removePinnedSessions: (ids) => set((state) => {
+        const removedIds = new Set(ids);
+        return {
+          pinnedSessionIds: state.pinnedSessionIds.filter((id) => !removedIds.has(id)),
+        };
+      }),
     }),
     {
       name: "agent-ui-prefs",
       version: UI_PREFERENCES_VERSION,
-      migrate: (persisted, version) => {
-        const preferences = persisted as Partial<UIState>;
-        return {
-          ...(preferences.skin !== undefined ? { skin: preferences.skin } : {}),
-          ...(preferences.layout !== undefined ? { layout: preferences.layout } : {}),
-          ...(preferences.autoSpeak !== undefined ? { autoSpeak: preferences.autoSpeak } : {}),
-          ...(preferences.wakeEnabled !== undefined ? { wakeEnabled: preferences.wakeEnabled } : {}),
-          ...(preferences.wakeWord !== undefined ? { wakeWord: preferences.wakeWord } : {}),
-          ...(preferences.runningFirst !== undefined ? { runningFirst: preferences.runningFirst } : {}),
-          ...(version < UI_PREFERENCES_VERSION && isBrowserRuntime() ? { wakeEnabled: false } : {}),
-        } as UIState;
-      },
+      migrate: migrateUIPreferences,
     },
   ),
 );

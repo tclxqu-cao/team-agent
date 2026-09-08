@@ -2,7 +2,7 @@
 
 ## Goal
 
-Add a persistent pin action beside the existing delete action on session rows. Pinned sessions stay above the normal recent-session order after refresh, without changing native runtime data or the existing project and parent/child hierarchy.
+Add a persistent pin action beside the existing delete action on session rows. Pinned sessions move into a dedicated section above the `最近` workspace after refresh, without changing native runtime data or the existing parent/child hierarchy.
 
 ## Considered Approaches
 
@@ -14,7 +14,7 @@ Add a persistent pin action beside the existing delete action on session rows. P
 
 Extend the persisted `agent-ui-prefs` store with a deduplicated `pinnedSessionIds` array and actions to pin, unpin, or toggle a session. The preference schema version advances so older saved preferences migrate with an empty pin list.
 
-Add a stable pinned-first sorting helper. Each project list is ordered with these priorities:
+Add a stable pinned-first sorting helper for the search overlay. In the main sidebar, visible pinned root sessions are collected across loaded workspaces and rendered in a dedicated `置顶` section immediately before the workspace list. They are removed from their original workspace list while pinned. The pinned section and each unpinned workspace list use these priorities:
 
 1. Pinned sessions before unpinned sessions.
 2. Inside each partition, preserve the current mode: newest-created first by default, or running sessions first when the existing preference is enabled.
@@ -22,7 +22,7 @@ Add a stable pinned-first sorting helper. Each project list is ordered with thes
 
 The global search overlay uses the same pinned-first ordering. A text query still filters by title or working directory first, then places matching pinned sessions first.
 
-Child sessions remain under their parent and keep their execution order. They do not expose a pin action because moving a child into the root pinned section would break the visible parent/child relationship.
+Child sessions remain under their parent and keep their execution order. A pinned parent carries its existing child disclosure into the pinned section. Children do not expose a pin action because moving a child into the root pinned section would break the visible parent/child relationship.
 
 ## Interaction
 
@@ -41,7 +41,7 @@ Pinning is a local synchronous preference update, so it does not depend on runti
 - Unit-test pinned-first ordering, interaction with running-first mode, stable order, and input immutability.
 - Unit-test UI preference migration and deduplication behavior.
 - Render-test the pin/unpin icon states, accessible labels, action order, event isolation, and absence on child rows.
-- Extend sidebar structure/style tests to cover both project rows and the search overlay plus touch visibility.
+- Extend sidebar structure/style tests to cover the top-level pinned section, project rows, the search overlay, and touch visibility.
 - Run focused renderer tests, Desktop/Web TypeScript checks, and the WebApp build.
 - Use the required browser workflow to verify desktop-width and 390x844 layouts without action overlap.
 

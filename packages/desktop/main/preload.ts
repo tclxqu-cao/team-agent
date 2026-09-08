@@ -8,6 +8,14 @@ ipcRenderer.on("agent:event", (_ipcEvent, data) => {
 });
 
 contextBridge.exposeInMainWorld("agentApi", {
+  getUpdateStatus: () => ipcRenderer.invoke("update:get-status"),
+  checkForUpdate: () => ipcRenderer.invoke("update:check"),
+  installUpdate: () => ipcRenderer.invoke("update:install"),
+  onUpdateStatus: (callback: (status: unknown) => void): (() => void) => {
+    const handler = (_event: unknown, status: unknown) => callback(status);
+    ipcRenderer.on("update:status", handler);
+    return () => ipcRenderer.removeListener("update:status", handler);
+  },
   // Window control (hide → background voice-wake mode, show → restore)
   hideWindow: () => ipcRenderer.invoke("window:hide"),
   showWindow: () => ipcRenderer.invoke("window:show"),

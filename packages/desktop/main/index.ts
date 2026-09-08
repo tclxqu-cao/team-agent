@@ -2,7 +2,7 @@
 // on electron 32 / Node 20.18 (cjsPreparseModuleExports: "exports" undefined).
 import { createRequire } from "module";
 const require = createRequire(import.meta.url);
-const { app, BrowserWindow, ipcMain, dialog, nativeImage, session } = require("electron") as typeof import("electron");
+const { app, BrowserWindow, ipcMain, dialog, nativeImage, session, shell } = require("electron") as typeof import("electron");
 import { spawn, type ChildProcess } from "node:child_process";
 import { basename, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -20,6 +20,7 @@ import {
   type AgentType,
 } from "./agent-runtime/index.js";
 import { resolveDesktopBaseDir } from "./desktop-base-dir.js";
+import { DesktopUpdateService } from "./update-service.js";
 import {
   getTtsListeningMode,
   getVoiceCaptureSilenceTimeout,
@@ -67,6 +68,14 @@ if (!gotLock) {
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 let mainWindow: import("electron").BrowserWindow | null = null;
+const desktopUpdateService = new DesktopUpdateService({
+  version: app.getVersion(),
+  platform: process.platform,
+  arch: process.arch,
+  downloadsDirectory: app.getPath("downloads"),
+  reveal: (path) => shell.showItemInFolder(path),
+});
+desktopUpdateService.subscribe((status) => mainWindow?.webContents.send("update:status", status));
 const appIconPath = [
   join(app.getAppPath(), "assets", "app-icon.png"),
   join(process.resourcesPath, "assets", "app-icon.png"),
@@ -279,6 +288,10 @@ ipcMain.handle("window:show", () => {
   }
   return { ok: true };
 });
+
+ipcMain.handle("update:get-status", () => desktopUpdateService.getStatus());
+ipcMain.handle("update:check", () => desktopUpdateService.check());
+ipcMain.handle("update:install", () => desktopUpdateService.install());
 
 // ── IPC: Native voice wake (macOS Speech framework helper) ──────────────
 // The helper streams transcripts over stdout; on wake-word match we restore
@@ -1441,6 +1454,7 @@ app.whenReady().then(() => {
     callback(permission === "media");
   });
   createWindow();
+  desktopUpdateService.schedule();
   void unifiedSessions.health();
   void connectVoiceProvider().then((provider) => {
     console.warn("[voice] provider ready:", provider.kind === "service" ? provider.source : "native");

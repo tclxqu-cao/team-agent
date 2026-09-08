@@ -223,6 +223,7 @@ export interface AgentRuntimeAdapter {
   create(options: CreateRuntimeSessionOptions): Promise<UnifiedSessionSummary>;
   restoreDraft?(summary: UnifiedSessionSummary): void;
   fork?(nativeSessionId: string): Promise<UnifiedSessionSummary>;
+  renameSession?(nativeSessionId: string, title: string): Promise<void>;
   run(
     nativeSessionId: string,
     input: string,

@@ -152,6 +152,11 @@ interface BrokerRunRecord {
   goalId: string | null;
 }
 
+interface BrokerRunAdmission {
+  run: BrokerRunRecord;
+  autoTitle: string | null;
+}
+
 interface BrokerLockRecord {
   sessionId: string;
   occupancy: SessionOccupancy;
@@ -752,7 +757,7 @@ class NativeRuntimeBrokerState implements ImportedAgentWorkspaceRepository, Code
     message: string;
     controller: NativeRuntimeController;
     goalId?: string;
-  }): BrokerRunRecord {
+  }): BrokerRunAdmission {
     const create = this.database.db.transaction(() => {
       const active = this.database.db.prepare(
         "SELECT run_id FROM native_runtime_run WHERE session_id = ? AND status = 'active'",
@@ -761,12 +766,15 @@ class NativeRuntimeBrokerState implements ImportedAgentWorkspaceRepository, Code
         throw new RuntimeSessionError("Session is already running", "SESSION_ALREADY_RUNNING");
       }
       const createdAt = this.now();
+      let autoTitle: string | null = null;
       if (input.message.trim()) {
-        this.database.db.prepare(`
+        const title = input.message.slice(0, 60);
+        const renamed = this.database.db.prepare(`
           UPDATE native_runtime_session_title
           SET title = ?, auto_title_pending = 0, updated_at = ?
           WHERE session_id = ? AND auto_title_pending = 1
-        `).run(input.message.slice(0, 60), createdAt, input.sessionId);
+        `).run(title, createdAt, input.sessionId);
+        if (renamed.changes > 0) autoTitle = title;
       }
       const run: BrokerRunRecord = {
         sessionId: input.sessionId,
@@ -802,7 +810,7 @@ class NativeRuntimeBrokerState implements ImportedAgentWorkspaceRepository, Code
         run.goalId,
       );
       this.transitionLock(input.sessionId, "owned-by-customer-agent", null, null);
-      return run;
+      return { run, autoTitle };
     });
     return create();
   }
@@ -1404,7 +1412,7 @@ export class NativeRuntimeBrokerHost {
       }
       throw error;
     }
-    const run = this.state.admit({
+    const admission = this.state.admit({
       sessionId,
       agentType: decoded.agentType,
       nativeSessionId: decoded.nativeSessionId,
@@ -1412,6 +1420,10 @@ export class NativeRuntimeBrokerHost {
       controller,
       goalId,
     });
+    if (decoded.agentType === "codex" && admission.autoTitle) {
+      await this.runtime.rename(sessionId, admission.autoTitle).catch(() => undefined);
+    }
+    const run = admission.run;
     const execution = this.executeRun(run, images, agentIds, agentName, runOverrides);
     this.activeExecutions.set(sessionId, execution);
     const clearExecution = () => {

@@ -951,6 +951,14 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
     );
   }
 
+  async renameSession(nativeSessionId: string, title: string): Promise<void> {
+    this.ensureAvailable();
+    await this.client.request("thread/name/set", {
+      threadId: nativeSessionId,
+      name: title,
+    });
+  }
+
   async fork(nativeSessionId: string): Promise<UnifiedSessionSummary> {
     this.ensureAvailable();
     const sourceResponse = await this.client.request<{ thread: CodexThread }>("thread/read", {
@@ -2039,6 +2047,19 @@ export function codexProgressNotificationToEvent(message: RpcNotification): Agen
 function codexItemToToolCall(item?: CodexItem): ToolCall | null {
   if (!item?.id) return null;
   if (item.type === "commandExecution") {
+    const actions = Array.isArray(item.commandActions) ? item.commandActions : [];
+    const readAction = actions.length === 1 ? asRecord(actions[0]) : null;
+    if (readAction?.type === "read" && typeof readAction.path === "string" && readAction.path) {
+      return {
+        id: item.id,
+        name: "read_file",
+        arguments: {
+          file_path: readAction.path,
+          command: item.command,
+          cwd: item.cwd,
+        },
+      };
+    }
     return { id: item.id, name: "shell", arguments: { command: item.command, cwd: item.cwd } };
   }
   if (item.type === "fileChange") {

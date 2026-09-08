@@ -821,6 +821,23 @@ select:focus {
   color: var(--text-muted);
 }
 
+.sidebar-pinned-section {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin-bottom: 7px;
+  padding: 0 0 7px 10px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.sidebar-pinned-heading {
+  padding: 4px 8px 3px;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0;
+}
+
 .sidebar-project-block {
   margin-bottom: 7px;
 }
@@ -924,11 +941,17 @@ select:focus {
   font-size: 12px !important;
 }
 
+.sidebar-session-pin,
 .sidebar-session-delete {
   width: 28px;
   height: 28px;
   margin-left: 2px;
   flex: 0 0 28px;
+}
+
+.sidebar-session-pin[aria-pressed="true"] {
+  opacity: 1;
+  pointer-events: auto;
 }
 
 .sidebar-session-disclosure {
@@ -945,6 +968,7 @@ select:focus {
 
 @media (hover: none) {
   .sidebar-project-add-action,
+  .sidebar-session-pin,
   .sidebar-session-delete {
     opacity: 1;
     pointer-events: auto;
@@ -2712,6 +2736,48 @@ input:focus, select:focus, textarea:focus {
   .query-navigation-rail__track {
     transition: none;
   }
+}
+
+.update-notice {
+  position: fixed;
+  top: 14px;
+  right: 18px;
+  z-index: 21000;
+  display: flex;
+  width: min(360px, calc(100vw - 28px));
+  min-height: 58px;
+  box-sizing: border-box;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--border-default);
+  border-left: 3px solid var(--accent);
+  border-radius: 8px;
+  background: var(--bg-surface);
+  padding: 10px 10px 10px 13px;
+  box-shadow: var(--shadow-md);
+  color: var(--text-primary);
+  -webkit-app-region: no-drag;
+}
+
+.update-notice--failed { border-left-color: var(--danger); }
+.update-notice__content { display: flex; min-width: 0; flex: 1; flex-direction: column; gap: 2px; }
+.update-notice__content strong { overflow-wrap: anywhere; font-size: 12px; line-height: 1.4; }
+.update-notice__content span { overflow-wrap: anywhere; color: var(--text-muted); font-size: 11px; line-height: 1.35; }
+.update-notice__action,
+.update-notice__close {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  cursor: pointer;
+}
+.update-notice__action { min-height: 32px; gap: 5px; border-radius: 6px; background: var(--accent); padding: 0 10px; color: white; font-size: 12px; }
+.update-notice__close { width: 28px; height: 28px; border-radius: 6px; background: transparent; color: var(--text-muted); }
+.update-notice__close:hover { background: var(--bg-hover); color: var(--text-primary); }
+
+@media (max-width: 600px) {
+  .update-notice { top: 10px; right: 10px; width: calc(100vw - 20px); }
 }
 
 /* Empty session: one short activation moment, then a quiet task launcher. */

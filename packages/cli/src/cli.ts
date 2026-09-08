@@ -15,11 +15,17 @@ import { ServiceRuntimeReporter } from "./service/runtime-state.js";
 import { runServiceCommand } from "./service/service-command.js";
 import { resolveServicePaths } from "./service/service-files.js";
 import { selectRelay, type RelaySelection } from "./tunnel/relay-orchestrator.js";
+import { currentCliPath, startUpdate } from "./update/update-command.js";
+import { runUpdateWorker } from "./update/update-worker.js";
 
 const VERSION = AGENTROAM_VERSION;
 
 export async function main(argv: string[]): Promise<void> {
   const options = parseArgs(argv);
+  if (options.command === "update-worker") {
+    await runUpdateWorker(options.updateStateFile!);
+    return;
+  }
   if (options.command === "service") {
     await runServiceCommand(options, {
       nodePath: process.execPath,
@@ -29,6 +35,13 @@ export async function main(argv: string[]): Promise<void> {
     return;
   }
   const target = detectPlatform();
+
+  if (options.command === "update") {
+    if (target !== "darwin-arm64" && target !== "windows-amd64") throw new Error(`updates are unavailable for ${target}`);
+    const state = await startUpdate({ currentVersion: VERSION, requestedVersion: options.updateVersion ?? null, dataDir: options.dataDir, target, cliPath: currentCliPath() });
+    console.log(`AgentRoam ${state.targetVersion} update started in the background.`);
+    return;
+  }
 
   if (options.command === "version") {
     console.log(`agentroam ${VERSION}`);

@@ -58,4 +58,10 @@ describe("parseArgs", () => {
     expect(() => parseArgs(["service", "start", "--port", "3000"])).toThrow("does not accept options");
     expect(() => parseArgs(["service", "stop", "--local-only"])).toThrow("does not accept options");
   });
+
+  it("parses update with an optional exact stable version", () => {
+    expect(parseArgs(["update"]).updateVersion).toBeNull();
+    expect(parseArgs(["update", "1.2.3", "--data-dir", "./data"])).toMatchObject({ command: "update", updateVersion: "1.2.3" });
+    expect(() => parseArgs(["update", "1.2.3-preview.1"])).toThrow("exact stable");
+  });
 });

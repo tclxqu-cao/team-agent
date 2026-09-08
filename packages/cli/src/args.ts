@@ -2,7 +2,7 @@ import { homedir } from "node:os";
 import { resolve } from "node:path";
 
 export type RelayMode = "auto" | "cloudflare" | "pinggy" | "custom";
-export type CliCommand = "start" | "doctor" | "version" | "service";
+export type CliCommand = "start" | "doctor" | "version" | "service" | "update" | "update-worker";
 export type ServiceAction = "install" | "start" | "stop" | "status" | "url" | "logs" | "restart" | "uninstall";
 
 export interface CliOptions {
@@ -15,12 +15,14 @@ export interface CliOptions {
   localOnly: boolean;
   qr: boolean;
   dataDir: string;
+  updateVersion?: string | null;
+  updateStateFile?: string | null;
 }
 
 export function parseArgs(argv: string[]): CliOptions {
   const values = [...argv];
   let command: CliOptions["command"] = "start";
-  if (values[0] && ["start", "doctor", "version", "service"].includes(values[0])) {
+  if (values[0] && ["start", "doctor", "version", "service", "update", "update-worker"].includes(values[0])) {
     command = values.shift() as CliOptions["command"];
   }
   let serviceAction: ServiceAction | null = null;
@@ -34,6 +36,14 @@ export function parseArgs(argv: string[]): CliOptions {
       throw cliError(`service ${serviceAction} does not accept options`);
     }
   }
+  let updateVersion: string | null = null;
+  let updateStateFile: string | null = null;
+  if (command === "update" && values[0] && !values[0].startsWith("--")) updateVersion = values.shift()!;
+  if (command === "update-worker") {
+    const stateFile = values.shift();
+    if (!stateFile || values.length > 0) throw cliError("update-worker requires one state file");
+    updateStateFile = resolve(stateFile);
+  }
   const options: CliOptions = {
     command,
     serviceAction,
@@ -44,9 +54,11 @@ export function parseArgs(argv: string[]): CliOptions {
     localOnly: false,
     qr: true,
     dataDir: resolve(homedir(), ".agentroam"),
+    updateVersion,
+    updateStateFile,
   };
 
-  for (let index = 0; index < values.length; index++) {
+  for (let index = 0; index < values.length && command !== "update-worker"; index++) {
     const arg = values[index];
     const next = () => {
       const value = values[++index];
@@ -70,6 +82,10 @@ export function parseArgs(argv: string[]): CliOptions {
     else if (arg === "--no-qr") options.qr = false;
     else if (arg === "--help" || arg === "-h") throw Object.assign(new Error("help"), { exitCode: 0 });
     else throw cliError(`unknown argument: ${arg}`);
+  }
+
+  if (command === "update" && updateVersion && !/^\d+\.\d+\.\d+$/.test(updateVersion)) {
+    throw cliError("update version must be an exact stable X.Y.Z version");
   }
 
   if (!options.roots.length) options.roots = [process.cwd()];

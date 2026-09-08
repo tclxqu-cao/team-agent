@@ -81,6 +81,15 @@ export interface TodoItem {
 
 export type AgentType = "customer-agent" | "codex" | "claude-code" | "opencode";
 
+export interface UpdateStatus {
+  phase: "idle" | "checking" | "up-to-date" | "available" | "unavailable" | "downloading" | "installing" | "reconnecting" | "complete" | "failed";
+  currentVersion: string;
+  targetVersion?: string;
+  checkedAt?: number;
+  progress?: number;
+  message?: string;
+}
+
 export interface SessionQueryIndexEntry {
   messageId: string;
   ordinal: number;
@@ -208,6 +217,10 @@ export interface RuntimeHealth {
 }
 
 export interface AgentApi {
+  getUpdateStatus(): Promise<UpdateStatus>;
+  checkForUpdate(): Promise<UpdateStatus>;
+  installUpdate(): Promise<UpdateStatus>;
+  onUpdateStatus(callback: (status: UpdateStatus) => void): () => void;
   // Window control (hide → background voice-wake mode, show → restore)
   hideWindow(): Promise<void>;
   showWindow(): Promise<void>;

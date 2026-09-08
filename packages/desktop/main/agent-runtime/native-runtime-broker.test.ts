@@ -77,7 +77,9 @@ class FakeNativeRuntime {
   readonly archivedSessionIds: string[] = [];
   readonly invalidatedSessionIds: string[] = [];
   readonly releasedSessionIds: string[] = [];
+  readonly renamedSessions: Array<{ id: string; title: string }> = [];
   archiveError: Error | null = null;
+  renameError: Error | null = null;
   readonly workspaceSessionQueries: WorkspaceSessionQuery[] = [];
   workspaceSessions: UnifiedSessionSummary[] = [];
   steerResult = true;
@@ -126,6 +128,10 @@ class FakeNativeRuntime {
   };
   abort = async (): Promise<void> => { this.resolveRun?.(); };
   release = async (id: string): Promise<void> => { this.releasedSessionIds.push(id); };
+  rename = async (id: string, title: string): Promise<void> => {
+    this.renamedSessions.push({ id, title });
+    if (this.renameError) throw this.renameError;
+  };
   dispose = async (): Promise<void> => { this.resolveRun?.(); };
   get = async (): Promise<UnifiedSessionDetail> => ({
     ...summary(this.occupancy, this.status),
@@ -615,6 +621,9 @@ describe("NativeRuntimeBrokerHost", () => {
       await expect(host.list()).resolves.toEqual([
         expect.objectContaining({ id: created.id, title: "第一条消息" }),
       ]);
+      expect(runtime.renamedSessions).toEqual(agentType === "codex"
+        ? [{ id: created.id, title: "第一条消息" }]
+        : []);
     } finally {
       await host.stop();
     }
@@ -660,6 +669,7 @@ describe("NativeRuntimeBrokerHost", () => {
       await expect(host.list()).resolves.toEqual([
         expect.objectContaining({ id: historical.id, title: "新会话" }),
       ]);
+      expect(runtime.renamedSessions).toEqual([]);
     } finally {
       await host.stop();
     }
@@ -674,6 +684,7 @@ describe("NativeRuntimeBrokerHost", () => {
     try {
       await host.create({ agentType: "codex", title: "新会话", cwd: created.cwd });
       await host.startRun(created.id, "   ");
+      expect(runtime.renamedSessions).toEqual([]);
       await waitFor(() => expect(host.snapshot(created.id).events).toHaveLength(1));
       await host.abort(created.id);
       await waitFor(() => expect(host.snapshot(created.id).events.some(({ event }) => event.type === "done")).toBe(true));
@@ -681,6 +692,31 @@ describe("NativeRuntimeBrokerHost", () => {
       await host.startRun(created.id, "first non-empty input");
       await expect(host.list()).resolves.toEqual([
         expect.objectContaining({ id: created.id, title: "first non-empty input" }),
+      ]);
+      expect(runtime.renamedSessions).toEqual([
+        { id: created.id, title: "first non-empty input" },
+      ]);
+    } finally {
+      await host.stop();
+    }
+  });
+
+  it("continues the run when native Codex rename fails", async () => {
+    const created = { ...summary(), title: "新会话" };
+    const runtime = new FakeNativeRuntime();
+    runtime.createResult = created;
+    runtime.listResult = [created];
+    runtime.renameError = new Error("rename unavailable");
+    runtime.immediateTerminal = true;
+    const host = new NativeRuntimeBrokerHost(await directory(), runtime as unknown as UnifiedSessionService);
+    try {
+      await host.create({ agentType: "codex", title: "新会话", cwd: created.cwd });
+      await host.startRun(created.id, "第一条消息");
+      await waitFor(() => expect(host.snapshot(created.id).events.some(({ event }) => event.type === "done")).toBe(true));
+
+      expect(runtime.renamedSessions).toEqual([{ id: created.id, title: "第一条消息" }]);
+      await expect(host.list()).resolves.toEqual([
+        expect.objectContaining({ id: created.id, title: "第一条消息" }),
       ]);
     } finally {
       await host.stop();

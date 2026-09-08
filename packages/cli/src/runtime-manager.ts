@@ -1,6 +1,7 @@
 import type { ChildProcess } from "node:child_process";
 import { mkdir } from "node:fs/promises";
 import { delimiter, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { CliOptions } from "./args.js";
 import {
   resolveCodexRuntime,
@@ -78,6 +79,9 @@ export class RuntimeManager {
         AGENT_TRUST_TUNNEL_PROXY: "1",
         AGENT_PAIRING_HASH: pairing?.hashHex || "",
         AGENT_PAIRING_EXPIRES_AT: pairing?.expiresAt || "",
+        AGENTROAM_VERSION: resolvePlatformRuntime(target).manifest.packageVersion,
+        AGENTROAM_DATA_DIR: dataDir,
+        AGENTROAM_CLI_PATH: fileURLToPath(new URL("../bin/agentroam.mjs", import.meta.url)),
       },
     });
     const log = (stream: NodeJS.ReadableStream | null) => stream?.on("data", (chunk) => process.stderr.write(chunk));

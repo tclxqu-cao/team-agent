@@ -30,9 +30,23 @@ test("round-trips and revalidates an artifact-only release manifest", async () =
   const fixture = await releaseFixture();
   const path = resolve(fixture.releaseSet.artifactDirectory, "release-manifest.json");
   await writeReleaseManifest(fixture.releaseSet, path);
+  const written = JSON.parse(await (await import("node:fs/promises")).readFile(path, "utf8"));
+  assert.equal(written.schemaVersion, 2);
+  assert.equal(written.channel, "preview");
   const loaded = await loadReleaseManifest(path);
   assert.deepEqual(loaded.packages.map((item) => item.name), fixture.releaseSet.packages.map((item) => item.name));
   assert.equal(loaded.version, fixture.releaseSet.version);
+});
+
+test("blocks a stable release when either Desktop installer is absent", async () => {
+  const fixture = await releaseFixture();
+  for (const directory of RELEASE_PACKAGE_DIRECTORIES) {
+    const path = resolve(fixture.root, directory, "package.json");
+    const value = JSON.parse(await (await import("node:fs/promises")).readFile(path, "utf8"));
+    value.version = "0.2.0";
+    await writeFile(path, `${JSON.stringify(value)}\n`);
+  }
+  await assert.rejects(loadReleaseSet(fixture.root), /requires both Desktop installers/);
 });
 
 test("rejects extra checksum entries in an artifact-only manifest", async () => {

@@ -29,3 +29,14 @@ export function sortRunningSessionsFirst<T extends SortableSidebarSession>(
     (left, right) => Number(isRunning(right)) - Number(isRunning(left)),
   );
 }
+
+/** Float pinned sessions without changing the order inside either partition. */
+export function sortPinnedSessionsFirst<T>(
+  sessions: readonly T[],
+  isPinned: (session: T) => boolean,
+): T[] {
+  return stableSort(
+    sessions,
+    (left, right) => Number(isPinned(right)) - Number(isPinned(left)),
+  );
+}

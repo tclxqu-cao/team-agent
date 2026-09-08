@@ -1,5 +1,13 @@
 # AgentRoam 0.2.0-preview.15 macOS / Windows CLI 发布验收
 
+## Desktop 安装包与客户端更新
+
+CLI、常驻 WebApp 和 Desktop 共用一个 AgentRoam 版本。原生 CI 分别构建未签名的 macOS arm64 DMG `AgentRoam-<version>-arm64.dmg` 和 Windows x64 NSIS 安装包 `AgentRoam-Setup-<version>-x64.exe`，并和 `release-manifest.json`、`SHA256SUMS` 一起上传到同版本 Gitee Release。
+
+客户端只把 npm 官方 registry 的 `agentroam@latest` 当成稳定更新开关。稳定版本的 schema-2 清单缺少任一 CLI 或 Desktop 安装包时必须失败；preview 清单保持 `preview` channel，不提醒普通用户。Desktop 安装包当前不签名，应用只下载、校验并在文件管理器中显示，绝不自动执行。
+
+本地 preflight 和测试不得发布 npm、移动 dist-tag、推送 Git tag 或创建 Gitee Release。远程发布仍由显式 workflow 执行，保持六个平台包先于 launcher，并在 Gitee 资产验证与 soak 完成后才移动 `latest`。
+
 支持平台：macOS arm64、Windows 10/11 x64，运行时固定使用 Node.js 22。
 全部构建和打包在 macOS arm64 完成；Windows 只下载同一批产物做实机验证，
 不安装 Bun、Python、Visual Studio Build Tools，也不运行 `node-gyp`。

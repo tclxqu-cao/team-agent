@@ -1,4 +1,4 @@
-import { CircleAlert, ChevronRight, LoaderCircle, LockKeyhole, Trash2 } from "lucide-react";
+import { CircleAlert, ChevronRight, LoaderCircle, LockKeyhole, Pin, Trash2 } from "lucide-react";
 import type { SidebarSessionVisualState } from "../lib/sidebar-session-status";
 import type { SessionCompatibility } from "../global";
 
@@ -14,6 +14,7 @@ export interface SidebarSessionRowModel {
   hasChildren?: boolean;
   expanded?: boolean;
   compatibility?: SessionCompatibility;
+  pinned?: boolean;
 }
 
 export interface SidebarDeleteAnchor {
@@ -27,6 +28,7 @@ interface SidebarSessionRowProps {
   session: SidebarSessionRowModel;
   deleteLabel?: string;
   onSelect(): void;
+  onPin?(): void;
   onDelete?(anchor: SidebarDeleteAnchor): void;
 }
 
@@ -34,6 +36,7 @@ export default function SidebarSessionRow({
   session,
   deleteLabel = "删除会话",
   onSelect,
+  onPin,
   onDelete,
 }: SidebarSessionRowProps) {
   return (
@@ -89,6 +92,21 @@ export default function SidebarSessionRow({
           />
         )}
       </button>
+      {onPin && !session.child && (
+        <button
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation();
+            onPin();
+          }}
+          title={session.pinned ? "取消置顶" : "置顶会话"}
+          aria-label={`${session.pinned ? "取消置顶" : "置顶会话"}：${session.title}`}
+          aria-pressed={Boolean(session.pinned)}
+          className={`sidebar-session-pin sidebar-row-action ui-icon-button ui-icon-button--small${session.pinned ? " sidebar-row-action--accent" : ""}`}
+        >
+          <Pin size={14} aria-hidden="true" />
+        </button>
+      )}
       {session.canDelete && onDelete && (
         <button
           type="button"

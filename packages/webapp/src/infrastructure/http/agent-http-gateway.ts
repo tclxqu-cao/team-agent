@@ -546,6 +546,22 @@ export class AgentHttpGateway {
     return this.http.get<unknown[]>("/api/agent/runtime-health");
   }
 
+  getUpdateStatus() {
+    return this.http.get<import("../../../../desktop/renderer/global").UpdateStatus>("/api/update/status");
+  }
+
+  checkForUpdate() {
+    return this.http.post<import("../../../../desktop/renderer/global").UpdateStatus>("/api/update/check", {});
+  }
+
+  installUpdate() {
+    return this.http.post<import("../../../../desktop/renderer/global").UpdateStatus>("/api/update/install", {});
+  }
+
+  onUpdateStatus(_callback: (status: import("../../../../desktop/renderer/global").UpdateStatus) => void): Unsubscribe {
+    return () => undefined;
+  }
+
   async listAgentModels(agentType: string): Promise<{ agentType: string; models: unknown[]; supported?: boolean }> {
     return this.http.get(`/api/agent/models?agentType=${encodeURIComponent(agentType)}`);
   }

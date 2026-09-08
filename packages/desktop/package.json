@@ -1,6 +1,6 @@
 {
   "name": "@agent/desktop",
-  "version": "0.1.0",
+  "version": "0.2.0-preview.15",
   "private": true,
   "type": "module",
   "main": "./dist/main/index.js",
@@ -9,7 +9,9 @@
     "build": "bunx --bun vite build && bun run compile",
     "compile": "bun run --cwd ../voice-service build && bunx tsc && bunx tsc -p tsconfig.preload.json && mv dist/main/preload.js dist/main/preload.cjs",
     "electron": "bun run compile && NODE_ENV=production electron .",
-    "start": "bunx --bun vite build && bun run compile && NODE_ENV=production electron ."
+    "start": "bunx --bun vite build && bun run compile && NODE_ENV=production electron .",
+    "package:mac": "bun run build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --config electron-builder.yml --mac dmg --arm64",
+    "package:win": "bun run build && electron-builder --config electron-builder.yml --win nsis --x64"
   },
   "dependencies": {
     "@agent/core": "*",
@@ -24,6 +26,7 @@
     "@types/ws": "^8.5.13",
     "@vitejs/plugin-react": "^4.3.0",
     "electron": "32.3.3",
+    "electron-builder": "^25.1.8",
     "react": "^18.3.0",
     "react-dom": "^18.3.0",
     "vite": "^5.4.0"

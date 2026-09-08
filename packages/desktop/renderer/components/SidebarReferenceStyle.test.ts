@@ -77,8 +77,8 @@ describe("AgentRoam reference sidebar", () => {
 
   it("keeps session selection stable across repeated clicks and project disclosure", () => {
     expect(app).toContain("applySidebarSelection(selectProject(projectId))");
-    expect(app).toContain("applySidebarSelection(selectSession(project.id, session.id))");
-    expect(app).toContain("applySidebarSelection(selectSession(project.id, child.id))");
+    expect(app).toContain("applySidebarSelection(selectSession(projectId, session.id))");
+    expect(app).toContain("applySidebarSelection(selectSession(projectId, child.id))");
     expect(app).not.toContain("toggleProjectSelection(");
     expect(app).not.toContain("toggleSessionSelection(");
     expect(app).not.toContain("const nextSelection = active");
@@ -188,12 +188,24 @@ describe("AgentRoam reference sidebar", () => {
     expect(css).not.toContain(".sidebar-agent-group");
   });
 
-  it("keeps session deletion beside the session title", () => {
+  it("keeps session pinning and deletion beside the session title", () => {
     const sessionButton = sessionRow.indexOf('className="sidebar-session-button"');
+    const pinButton = sessionRow.indexOf('className={`sidebar-session-pin sidebar-row-action', sessionButton);
     const deleteButton = sessionRow.indexOf('className="sidebar-session-delete sidebar-row-action', sessionButton);
+    expect(pinButton).toBeGreaterThan(sessionButton);
     expect(deleteButton).toBeGreaterThan(-1);
-    expect(deleteButton).toBeGreaterThan(sessionButton);
+    expect(deleteButton).toBeGreaterThan(pinButton);
+    expect(sessionRow).toContain("<Pin");
     expect(sessionRow).toContain("<Trash2");
+    expect(app.match(/onPin=/g)).toHaveLength(2);
+    expect(app).toContain("onPin={() => togglePinnedSession(session.id)}");
+    expect(app).toContain("onPin={session.parentSessionId ? undefined : () => togglePinnedSession(session.id)}");
+    expect(app.indexOf('className="sidebar-pinned-section"')).toBeLessThan(app.indexOf("{projects.map((project) =>"));
+    expect(app).toContain("pinnedRootSessions.map(({ projectId, session }) => renderRootSession(session, projectId))");
+    expect(app).toContain("(session) => !pinnedSessionIdSet.has(session.id)");
+    expect(app).toContain("projSessions.map((session) => renderRootSession(session, project.id))");
+    expect(app).toContain("sortPinnedSessionsFirst(");
+    expect(app).toContain("removePinnedSessions(removal.removedIds)");
     expect(app).not.toContain("window.confirm(");
     expect(app).toContain("sessionDeletionConfirmation(sessionDeleteRequest.session)");
     expect(app).toContain("const confirmDeleteSession = async () =>");
@@ -207,6 +219,9 @@ describe("AgentRoam reference sidebar", () => {
     expect(app).toContain("requestDeleteSession(child, anchor)");
     expect(app).toContain("<SidebarDeleteConfirmation");
     expect(deleteConfirmation).toContain('role="alertdialog"');
+    expect(css).toContain(".sidebar-session-pin,");
+    expect(css).toContain('.sidebar-session-pin[aria-pressed="true"]');
+    expect(css).toContain(".sidebar-pinned-section");
     expect(css).toContain(".sidebar-session-delete");
     expect(css).not.toContain(".sidebar-session-row > .sidebar-runtime-mark");
   });
@@ -272,7 +287,7 @@ describe("AgentRoam reference sidebar", () => {
     expect(sidebarCss).toContain("var(--warning)");
     expect(sidebarCss).not.toMatch(/#[0-9a-f]{3,8}/i);
     expect(uiStore).not.toContain("groupByBot");
-    expect(uiStore).toContain("UI_PREFERENCES_VERSION = 3");
+    expect(uiStore).toContain("UI_PREFERENCES_VERSION = 4");
     expect(uiStore).toContain("version: UI_PREFERENCES_VERSION");
   });
 

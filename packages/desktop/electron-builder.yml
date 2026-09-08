@@ -1,0 +1,34 @@
+appId: com.agentroam.desktop
+productName: AgentRoam
+asar: true
+directories:
+  output: release
+files:
+  - dist/main/**/*
+  - renderer-dist/**/*
+  - package.json
+  - node_modules/**/*
+extraResources:
+  - from: assets
+    to: assets
+    filter:
+      - app-icon.png
+mac:
+  target:
+    - target: dmg
+      arch: arm64
+  identity: null
+  hardenedRuntime: false
+  gatekeeperAssess: false
+  artifactName: AgentRoam-${version}-arm64.dmg
+win:
+  target:
+    - target: nsis
+      arch: x64
+  verifyUpdateCodeSignature: false
+  artifactName: AgentRoam-Setup-${version}-x64.exe
+nsis:
+  oneClick: false
+  perMachine: false
+  allowElevation: true
+  allowToChangeInstallationDirectory: true

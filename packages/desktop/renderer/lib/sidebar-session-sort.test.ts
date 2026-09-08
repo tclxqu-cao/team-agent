@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   sortNewestSessionsFirst,
+  sortPinnedSessionsFirst,
   sortRunningSessionsFirst,
 } from "./sidebar-session-sort";
 
@@ -8,6 +9,7 @@ interface TestSession {
   id: string;
   created: string;
   running: boolean;
+  pinned?: boolean;
 }
 
 const sessions: TestSession[] = [
@@ -39,6 +41,34 @@ describe("sidebar session sorting", () => {
   it("does not mutate the cached session order", () => {
     const originalOrder = sessions.map((session) => session.id);
     sortRunningSessionsFirst(sessions, (session) => session.running);
+    expect(sessions.map((session) => session.id)).toEqual(originalOrder);
+  });
+
+  it("puts pinned sessions before running sessions while preserving each partition order", () => {
+    const withPinned = sessions.map((session) => ({
+      ...session,
+      pinned: session.id === "new-completed" || session.id === "old-running",
+    }));
+    const runningFirst = sortRunningSessionsFirst(withPinned, (session) => session.running);
+
+    expect(sortPinnedSessionsFirst(runningFirst, (session) => session.pinned).map((session) => session.id)).toEqual([
+      "old-running",
+      "new-completed",
+      "new-running",
+      "old-completed",
+    ]);
+  });
+
+  it("stably partitions pinned sessions without mutating the input", () => {
+    const originalOrder = sessions.map((session) => session.id);
+    const result = sortPinnedSessionsFirst(sessions, (session) => session.id.endsWith("completed"));
+
+    expect(result.map((session) => session.id)).toEqual([
+      "new-completed",
+      "old-completed",
+      "old-running",
+      "new-running",
+    ]);
     expect(sessions.map((session) => session.id)).toEqual(originalOrder);
   });
 });

@@ -298,6 +298,18 @@ export class UnifiedSessionService {
     return forked;
   }
 
+  async rename(id: string, title: string): Promise<void> {
+    const { adapter, nativeSessionId } = this.resolveAdapter(id);
+    if (!adapter.renameSession) {
+      throw new RuntimeSessionError(
+        `Runtime ${adapter.agentType} does not support session rename`,
+        "OPERATION_NOT_SUPPORTED",
+      );
+    }
+    await adapter.renameSession(nativeSessionId, title);
+    this.invalidate(id);
+  }
+
   async *run(
     id: string,
     input: string,

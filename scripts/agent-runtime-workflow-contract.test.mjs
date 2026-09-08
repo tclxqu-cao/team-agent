@@ -27,6 +27,10 @@ test("Gitee failure preserves npm preview and records a retryable state", async 
   assert.doesNotMatch(source, /rollback-failed-preview:/);
   assert.doesNotMatch(source, /needs\.gitee-sync\.result == 'failure'\)\s*\n\s*needs: \[authorize, rebuild, npm-publish, gitee-sync, mark-gitee-pending\]/);
   assert.match(source, /retention-days: 30/);
+  assert.match(source, /desktop-macos:[\s\S]*package:desktop:mac/);
+  assert.match(source, /desktop-windows:[\s\S]*package:desktop:win/);
+  assert.match(source, /Object\.values\(manifest\.installers\?\.desktop \?\? \{\}\)/);
+  assert.doesNotMatch(source, /manifest\.installers\.map/);
 });
 
 test("Gitee retry reuses audited artifacts and starts soak only after recovery", async () => {
@@ -39,6 +43,8 @@ test("Gitee retry reuses audited artifacts and starts soak only after recovery",
   assert.match(source, /state: "soaking"/);
   assert.match(source, /The full 24-hour soak starts now/);
   assert.match(source, /healthy npm preview remains unchanged and latest promotion stays blocked/);
+  assert.match(source, /Object\.values\(manifest\.installers\?\.desktop \?\? \{\}\)/);
+  assert.doesNotMatch(source, /manifest\.installers\.map/);
 });
 
 test("soak keeps hold, window, freshness, promotion, and rollback gates", async () => {

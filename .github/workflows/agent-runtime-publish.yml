@@ -169,8 +169,56 @@ jobs:
             if (!result.data.merged || !result.data.sha) throw new Error(result.data.message || "Candidate merge failed");
             core.setOutput("merge_sha", result.data.sha);
 
-  rebuild:
+  desktop-macos:
     needs: authorize
+    if: needs.authorize.outputs.eligible == 'true'
+    runs-on: macos-14
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.authorize.outputs.merge_sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.10"
+      - run: bun install --frozen-lockfile
+      - run: npm run package:desktop:mac
+      - uses: actions/upload-artifact@v4
+        with:
+          name: agentroam-desktop-macos-${{ needs.authorize.outputs.merge_sha }}
+          path: packages/desktop/release/AgentRoam-*-arm64.dmg
+          if-no-files-found: error
+
+  desktop-windows:
+    needs: authorize
+    if: needs.authorize.outputs.eligible == 'true'
+    runs-on: windows-2022
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.authorize.outputs.merge_sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.10"
+      - run: bun install --frozen-lockfile
+      - run: npm run package:desktop:win
+      - uses: actions/upload-artifact@v4
+        with:
+          name: agentroam-desktop-windows-${{ needs.authorize.outputs.merge_sha }}
+          path: packages/desktop/release/AgentRoam-Setup-*-x64.exe
+          if-no-files-found: error
+
+  rebuild:
+    needs: [authorize, desktop-macos, desktop-windows]
     if: needs.authorize.outputs.eligible == 'true'
     runs-on: macos-14
     timeout-minutes: 70
@@ -188,6 +236,20 @@ jobs:
           bun-version: "1.3.10"
       - run: bun install --frozen-lockfile
       - run: npm run pack:cli:all
+      - uses: actions/download-artifact@v4
+        with:
+          name: agentroam-desktop-macos-${{ needs.authorize.outputs.merge_sha }}
+          path: desktop-macos
+      - uses: actions/download-artifact@v4
+        with:
+          name: agentroam-desktop-windows-${{ needs.authorize.outputs.merge_sha }}
+          path: desktop-windows
+      - name: Add native Desktop installers to the audited release
+        run: |
+          node scripts/collect-desktop-artifacts.mjs \
+            "$(find desktop-macos -name 'AgentRoam-*-arm64.dmg' -type f -print -quit)" \
+            "$(find desktop-windows -name 'AgentRoam-Setup-*-x64.exe' -type f -print -quit)"
+          node scripts/audit-desktop-artifacts.mjs dist/cli-release
       - name: Audit release and source bundle
         env:
           MERGE_SHA: ${{ needs.authorize.outputs.merge_sha }}
@@ -318,9 +380,13 @@ jobs:
             const fs = require("fs");
             const issue = Number(process.env.ISSUE_NUMBER);
             const manifest = JSON.parse(fs.readFileSync("release/release-manifest.json", "utf8"));
+            const installers = [
+              ...Object.values(manifest.installers?.cli ?? {}),
+              ...Object.values(manifest.installers?.desktop ?? {}),
+            ];
             const artifacts = [
               ...manifest.packages.map(({ fileName, sha256 }) => ({ fileName, sha256 })),
-              ...manifest.installers.map(({ fileName, sha256 }) => ({ fileName, sha256 })),
+              ...installers.map(({ fileName, sha256 }) => ({ fileName, sha256 })),
             ];
             const state = {
               schemaVersion: 1,
@@ -369,9 +435,13 @@ jobs:
             const fs = require("fs");
             const issue = Number(process.env.ISSUE_NUMBER);
             const manifest = JSON.parse(fs.readFileSync("release/release-manifest.json", "utf8"));
+            const installers = [
+              ...Object.values(manifest.installers?.cli ?? {}),
+              ...Object.values(manifest.installers?.desktop ?? {}),
+            ];
             const artifacts = [
               ...manifest.packages.map(({ fileName, sha256 }) => ({ fileName, sha256 })),
-              ...manifest.installers.map(({ fileName, sha256 }) => ({ fileName, sha256 })),
+              ...installers.map(({ fileName, sha256 }) => ({ fileName, sha256 })),
             ];
             const state = {
               schemaVersion: 1,

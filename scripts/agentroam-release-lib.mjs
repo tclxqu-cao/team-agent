@@ -39,8 +39,8 @@ export async function loadReleaseSet(root, options = {}) {
     if (packageJson.version !== version) {
       throw new Error(`${directory} version ${packageJson.version} does not match ${version}`);
     }
-    if (!/^\d+\.\d+\.\d+-preview\.\d+$/.test(packageJson.version)) {
-      throw new Error(`release version must be X.Y.Z-preview.N: ${packageJson.version}`);
+    if (!/^\d+\.\d+\.\d+(?:-preview\.\d+)?$/.test(packageJson.version)) {
+      throw new Error(`release version must be X.Y.Z or X.Y.Z-preview.N: ${packageJson.version}`);
     }
     const fileName = packageTarballName(packageJson.name, version);
     packages.push({
@@ -56,7 +56,12 @@ export async function loadReleaseSet(root, options = {}) {
   const installerNames = ["install-agentroam.sh", "install-agentroam.ps1"];
   const checksumPath = resolve(artifactDirectory, "SHA256SUMS");
   const checksums = parseChecksumFile(await readFile(checksumPath, "utf8"));
-  const expectedNames = [...packages.map((item) => item.fileName), ...installerNames].sort();
+  const desktopNames = [`AgentRoam-${version}-arm64.dmg`, `AgentRoam-Setup-${version}-x64.exe`];
+  const desktopPresent = await Promise.all(desktopNames.map((name) => stat(resolve(artifactDirectory, name)).then(() => true).catch(() => false)));
+  if (!version.includes("-preview.") && desktopPresent.some((present) => !present)) throw new Error("stable release requires both Desktop installers");
+  if (desktopPresent.some(Boolean) && !desktopPresent.every(Boolean)) throw new Error("Desktop installers must be supplied together");
+  const includedDesktopNames = desktopPresent.every(Boolean) ? desktopNames : [];
+  const expectedNames = [...packages.map((item) => item.fileName), ...installerNames, ...includedDesktopNames].sort();
   if (JSON.stringify([...checksums.keys()].sort()) !== JSON.stringify(expectedNames)) {
     throw new Error(`SHA256SUMS must contain exactly: ${expectedNames.join(", ")}`);
   }
@@ -71,15 +76,33 @@ export async function loadReleaseSet(root, options = {}) {
     const sha256 = await verifyArtifactChecksum(path, checksums.get(fileName), fileName);
     installers.push({ fileName, path, sha256, size: fileStat.size });
   }
-  return { version, artifactDirectory, packages, installers, checksumPath, checksums };
+  const desktopInstallers = [];
+  for (const fileName of includedDesktopNames) {
+    const path = resolve(artifactDirectory, fileName);
+    const fileStat = await stat(path);
+    const sha256 = await verifyArtifactChecksum(path, checksums.get(fileName), fileName);
+    desktopInstallers.push({ fileName, path, sha256, size: fileStat.size, signed: false });
+  }
+  return { version, artifactDirectory, packages, installers, desktopInstallers, checksumPath, checksums };
 }
 
 export async function writeReleaseManifest(releaseSet, path) {
   const manifest = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     version: releaseSet.version,
+    channel: releaseSet.version.includes("-preview.") ? "preview" : "latest",
+    publishedAt: new Date().toISOString(),
     packages: releaseSet.packages.map(({ name, fileName, sha256, launcher }) => ({ name, fileName, sha256, launcher })),
-    installers: releaseSet.installers.map(({ fileName, sha256, size }) => ({ fileName, sha256, size })),
+    installers: {
+      cli: {
+        "darwin-arm64": pickInstaller(releaseSet.installers, "install-agentroam.sh"),
+        "windows-amd64": pickInstaller(releaseSet.installers, "install-agentroam.ps1"),
+      },
+      desktop: Object.fromEntries((releaseSet.desktopInstallers ?? []).map((item) => [
+        item.fileName.endsWith("arm64.dmg") ? "darwin-arm64" : "windows-amd64",
+        { fileName: item.fileName, sha256: item.sha256, size: item.size, signed: false },
+      ])),
+    },
   };
   await writeFile(path, `${JSON.stringify(manifest, null, 2)}\n`);
   return manifest;
@@ -89,7 +112,7 @@ export async function loadReleaseManifest(path) {
   const manifestPath = resolve(path);
   const artifactDirectory = resolve(manifestPath, "..");
   const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
-  if (manifest.schemaVersion !== 1 || !/^\d+\.\d+\.\d+-preview\.\d+$/.test(manifest.version ?? "")) {
+  if (manifest.schemaVersion !== 2 || !/^\d+\.\d+\.\d+(?:-preview\.\d+)?$/.test(manifest.version ?? "") || !["preview", "latest"].includes(manifest.channel)) {
     throw new Error("invalid release manifest schema or version");
   }
   if (JSON.stringify(manifest.packages?.map((item) => item.name)) !== JSON.stringify(RELEASE_PACKAGE_NAMES)) {
@@ -97,10 +120,13 @@ export async function loadReleaseManifest(path) {
   }
   const checksumPath = resolve(artifactDirectory, "SHA256SUMS");
   const checksums = parseChecksumFile(await readFile(checksumPath, "utf8"));
+  const desktopEntries = Object.values(manifest.installers?.desktop ?? {});
+  if (!manifest.version.includes("-preview.") && desktopEntries.length !== 2) throw new Error("stable release manifest requires both Desktop installers");
   const expectedChecksumNames = [
     ...manifest.packages.map((item) => item.fileName),
     "install-agentroam.sh",
     "install-agentroam.ps1",
+    ...desktopEntries.map((item) => item.fileName),
   ].sort();
   if (JSON.stringify([...checksums.keys()].sort()) !== JSON.stringify(expectedChecksumNames)) {
     throw new Error(`SHA256SUMS must contain exactly: ${expectedChecksumNames.join(", ")}`);
@@ -119,7 +145,8 @@ export async function loadReleaseManifest(path) {
   }
   const installers = [];
   for (const fileName of ["install-agentroam.sh", "install-agentroam.ps1"]) {
-    const item = manifest.installers?.find((value) => value.fileName === fileName);
+    const platform = fileName.endsWith(".sh") ? "darwin-arm64" : "windows-amd64";
+    const item = manifest.installers?.cli?.[platform];
     if (!item) throw new Error(`release manifest is missing ${fileName}`);
     const artifact = { ...item, path: resolve(artifactDirectory, fileName) };
     const fileStat = await stat(artifact.path);
@@ -127,7 +154,23 @@ export async function loadReleaseManifest(path) {
     if (actual !== item.sha256 || fileStat.size !== item.size) throw new Error(`release manifest metadata mismatch for ${fileName}`);
     installers.push(artifact);
   }
-  return { version: manifest.version, artifactDirectory, packages, installers, checksumPath, checksums };
+  const desktopInstallers = [];
+  for (const [platform, item] of Object.entries(manifest.installers?.desktop ?? {})) {
+    const expectedName = platform === "darwin-arm64" ? `AgentRoam-${manifest.version}-arm64.dmg` : platform === "windows-amd64" ? `AgentRoam-Setup-${manifest.version}-x64.exe` : "";
+    if (!expectedName || item.fileName !== expectedName || item.signed !== false) throw new Error(`invalid Desktop installer entry for ${platform}`);
+    const artifact = { ...item, path: resolve(artifactDirectory, item.fileName) };
+    const fileStat = await stat(artifact.path);
+    const actual = await verifyArtifactChecksum(artifact.path, checksums.get(item.fileName), item.fileName);
+    if (actual !== item.sha256 || fileStat.size !== item.size) throw new Error(`release manifest metadata mismatch for ${item.fileName}`);
+    desktopInstallers.push(artifact);
+  }
+  return { version: manifest.version, channel: manifest.channel, artifactDirectory, packages, installers, desktopInstallers, manifestPath, checksumPath, checksums };
+}
+
+function pickInstaller(installers, fileName) {
+  const item = installers.find((value) => value.fileName === fileName);
+  if (!item) throw new Error(`release is missing ${fileName}`);
+  return { fileName: item.fileName, sha256: item.sha256, size: item.size };
 }
 
 export function releaseSetForVersion(version) {
@@ -321,6 +364,8 @@ export async function syncGiteeRelease(releaseSet, options) {
   const assets = await api.listAssets(release.id);
   const desired = [
     ...releaseSet.installers,
+    ...(releaseSet.desktopInstallers ?? []),
+    ...(releaseSet.manifestPath ? [{ fileName: "release-manifest.json", path: releaseSet.manifestPath, size: (await stat(releaseSet.manifestPath)).size }] : []),
     {
       fileName: basename(releaseSet.checksumPath),
       path: releaseSet.checksumPath,
@@ -334,6 +379,18 @@ export async function syncGiteeRelease(releaseSet, options) {
     if (existing?.id) await api.deleteAsset(release.id, existing.id);
     await api.uploadAsset(release.id, item.path, item.fileName);
     uploaded.push(item.fileName);
+  }
+  if (api.downloadAsset) {
+    const currentAssets = await api.listAssets(release.id);
+    for (const item of desired) {
+      const remote = currentAssets.find((asset) => asset.name === item.fileName);
+      if (!remote || Number(remote.size) !== item.size) throw new Error(`Gitee asset metadata mismatch for ${item.fileName}`);
+      const remoteBytes = await api.downloadAsset(remote);
+      const localHash = sha256(await readFile(item.path));
+      if (sha256(remoteBytes) !== localHash) throw new Error(`Gitee asset checksum mismatch for ${item.fileName}`);
+    }
+  } else if (!releaseSet.version.includes("-preview.")) {
+    throw new Error("stable Gitee synchronization requires remote asset verification");
   }
   return { branch, tag, releaseId: release.id, uploaded };
 }
@@ -395,7 +452,7 @@ export function createGitClient(options = {}) {
     },
     async pushTag(remote, sourceCommit, tag) {
       validateGitRemote(remote);
-      if (!/^v\d+\.\d+\.\d+-preview\.\d+$/.test(tag)) throw new Error("invalid release tag");
+      if (!/^v\d+\.\d+\.\d+(?:-preview\.\d+)?$/.test(tag)) throw new Error("invalid release tag");
       await run("git", ["push", remote, `${sourceCommit}:refs/tags/${tag}`], {});
     },
   };
@@ -453,6 +510,17 @@ export function createGiteeClient(options) {
       const form = new FormData();
       form.append("file", new Blob([await readFile(path)]), fileName);
       return call(`/releases/${encodeURIComponent(id)}/attach_files`, { method: "POST", body: form });
+    },
+    downloadAsset: async (asset) => {
+      const value = asset.browser_download_url ?? asset.download_url;
+      if (typeof value !== "string") throw new Error("Gitee asset has no download URL");
+      const url = new URL(value);
+      if (url.protocol !== "https:" || url.hostname !== "gitee.com" || !url.pathname.startsWith(`/${options.owner}/${options.repo}/`)) {
+        throw new Error("Gitee asset download URL is outside the configured repository");
+      }
+      const response = await request(url, { headers });
+      if (!response.ok) throw new Error(`Gitee asset download HTTP ${response.status}`);
+      return Buffer.from(await response.arrayBuffer());
     },
   };
 }
