@@ -1,0 +1,19 @@
+docs/superpowers/specs/2026-09-08-agentroam-user-update-design.md
+  s_18d02180f7ddcf::t_5ff39cfa437169 1-233
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "d4818b61f6cfb21c0da9d9f8a7101c2ec1a220ba",
+  "prompts": {},
+  "sessions": {
+    "s_18d02180f7ddcf": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a07c00-888b-7d63-8f0f-98fbe5b95ea7",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
