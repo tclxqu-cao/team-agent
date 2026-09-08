@@ -5,7 +5,7 @@ These versioned installers support macOS Apple Silicon and Windows x64. They reu
 ## macOS Apple Silicon
 
 ```sh
-curl -fsSL https://gitee.com/caoqu/team-agent/releases/download/v0.2.0-preview.14/install-agentroam.sh | sh
+curl -fsSL https://gitee.com/caoqu/team-agent/releases/download/v0.2.0-preview.15/install-agentroam.sh | sh
 ```
 
 The command installs the wrapper at `~/.local/bin/agentroam`. If that directory is not already in `PATH`, the installer prints the required shell setting without editing shell profiles.
@@ -13,7 +13,7 @@ The command installs the wrapper at `~/.local/bin/agentroam`. If that directory 
 ## Windows x64
 
 ```powershell
-irm https://gitee.com/caoqu/team-agent/releases/download/v0.2.0-preview.14/install-agentroam.ps1 | iex
+irm https://gitee.com/caoqu/team-agent/releases/download/v0.2.0-preview.15/install-agentroam.ps1 | iex
 ```
 
 The command installs `%USERPROFILE%\.agentroam\bin\agentroam.cmd` and adds only that user directory to the user-level `PATH`. It does not require administrator access or change the machine-level `PATH`.
@@ -40,7 +40,7 @@ agentroam service uninstall
 
 ## Data and updates
 
-Set `AGENTROAM_DATA_DIR` before running either installer to override the default `~/.agentroam` data directory. Node is stored at `<data-dir>/runtimes/node/22.22.0`, and the launcher is stored at `<data-dir>/launcher/0.2.0-preview.14`.
+Set `AGENTROAM_DATA_DIR` before running either installer to override the default `~/.agentroam` data directory. Node is stored at `<data-dir>/runtimes/node/22.22.0`, and the launcher is stored at `<data-dir>/launcher/0.2.0-preview.15`.
 
 Each AgentRoam release pins its own Node patch and installer assets. Updates happen only by running a newer versioned installer or installing a newer AgentRoam release; startup never follows a moving Node.js release channel.
 

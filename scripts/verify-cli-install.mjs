@@ -164,7 +164,7 @@ function runBootstrapSmoke(artifacts, parentWorkdir, archivePath) {
   const versionOutput = process.platform === "win32"
     ? execFileSync("cmd.exe", ["/d", "/s", "/c", `"${wrapper}" version`], { encoding: "utf8", env: bootstrapEnv })
     : execFileSync(wrapper, ["version"], { encoding: "utf8", env: bootstrapEnv });
-  if (!versionOutput.includes("0.2.0-preview.14")) throw new Error(`bootstrap wrapper mismatch: ${versionOutput}`);
+  if (!versionOutput.includes("0.2.0-preview.15")) throw new Error(`bootstrap wrapper mismatch: ${versionOutput}`);
   console.log(`✓ standalone ${scriptName} installed private Node ${installedVersion} and the versioned wrapper`);
 }
 
