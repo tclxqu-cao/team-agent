@@ -1,10 +1,12 @@
 import {
-  AGENTROAM_REGISTRY_LATEST_URL,
   buildGiteeManifestUrl,
   compareAgentRoamVersions,
   parseAgentRoamVersion,
-  parseStableVersion,
+  parseChannelVersion,
+  registryUrlsForChannel,
+  resolveUpdateChannel,
   validateReleaseManifest,
+  type UpdateChannel,
   type UpdateClient,
   type UpdatePlatform,
   type UpdateStatus,
@@ -25,8 +27,9 @@ export interface UpdateCheckerOptions {
 export class UpdateChecker {
   private status: UpdateStatus;
   private checkedAt = 0;
-  private etag: string | undefined;
+  private readonly etags = new Map<string, string>();
   private inFlight: Promise<UpdateStatus> | null = null;
+  private readonly channel: UpdateChannel;
   private readonly fetchImpl: typeof globalThis.fetch;
   private readonly now: () => number;
   private readonly random: () => number;
@@ -38,6 +41,7 @@ export class UpdateChecker {
 
   constructor(private readonly options: UpdateCheckerOptions) {
     if (!parseAgentRoamVersion(options.currentVersion)) throw new Error("invalid current AgentRoam version");
+    this.channel = resolveUpdateChannel(options.currentVersion);
     this.fetchImpl = options.fetch ?? globalThis.fetch;
     this.now = options.now ?? Date.now;
     this.random = options.random ?? Math.random;
@@ -87,15 +91,13 @@ export class UpdateChecker {
     const timer = setTimeout(() => controller.abort(), this.timeoutMs);
     timer.unref?.();
     try {
-      const headers: Record<string, string> = { accept: "application/json" };
-      if (this.etag) headers["if-none-match"] = this.etag;
-      const registry = await this.fetchImpl(AGENTROAM_REGISTRY_LATEST_URL, { headers, signal: controller.signal });
+      const candidate = await this.readRegistryCandidate(controller.signal);
       this.checkedAt = this.now();
-      if (registry.status === 304) return this.publish({ ...previous, checkedAt: this.checkedAt });
-      if (!registry.ok) throw new Error("registry unavailable");
-      this.etag = registry.headers.get("etag") ?? this.etag;
-      const latest = parseStableVersion((await registry.json() as { version?: unknown }).version);
-      if (!latest) throw new Error("registry latest is not stable");
+      if (!candidate.version) {
+        if (candidate.notModified) return this.publish({ ...previous, checkedAt: this.checkedAt });
+        throw new Error("registry candidate unavailable");
+      }
+      const latest = candidate.version;
       if (compareAgentRoamVersions(latest, this.options.currentVersion) <= 0) {
         return this.publish({ phase: "up-to-date", currentVersion: this.options.currentVersion, checkedAt: this.checkedAt });
       }
@@ -110,6 +112,30 @@ export class UpdateChecker {
     } finally {
       clearTimeout(timer);
     }
+  }
+
+  // Preview installations watch both the preview and latest npm dist-tags and
+  // follow the higher version, so a newer stable release can pull them onto the
+  // stable track. Stable installations only ever read latest.
+  private async readRegistryCandidate(signal: AbortSignal): Promise<{ version: string | null; notModified: boolean }> {
+    let best: string | null = null;
+    let notModified = false;
+    let sawResponse = false;
+    for (const url of registryUrlsForChannel(this.channel)) {
+      const headers: Record<string, string> = { accept: "application/json" };
+      const etag = this.etags.get(url);
+      if (etag) headers["if-none-match"] = etag;
+      const response = await this.fetchImpl(url, { headers, signal });
+      const responseEtag = response.headers.get("etag");
+      if (responseEtag) this.etags.set(url, responseEtag);
+      if (response.status === 304) { notModified = true; continue; }
+      if (!response.ok) continue;
+      sawResponse = true;
+      const candidate = parseChannelVersion((await response.json() as { version?: unknown }).version, this.channel);
+      if (!candidate) continue;
+      if (!best || compareAgentRoamVersions(candidate, best) > 0) best = candidate;
+    }
+    return { version: best, notModified: notModified && !sawResponse };
   }
 
   private publish(status: UpdateStatus): UpdateStatus {

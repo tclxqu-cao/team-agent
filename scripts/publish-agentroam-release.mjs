@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -51,12 +52,20 @@ export async function main(args = process.argv.slice(2), dependencies = {}) {
   if (command === "sync-gitee") {
     const sourceCommit = required(args, "--commit");
     const sourceBranch = optional(args, "--branch") ?? "master";
-    if (args.includes("--dry-run")) return print({ dryRun: true, command, sourceCommit, sourceBranch, version: releaseSet.version });
+    // Prefer the client update manifest produced by collect-cli-artifacts when
+    // no explicit --manifest was given, so the release-manifest.json asset is
+    // published together with the installers and checksums.
+    let effectiveReleaseSet = releaseSet;
+    if (!manifestPath) {
+      const autoManifest = resolve(releaseSet.artifactDirectory, "release-manifest.json");
+      if (existsSync(autoManifest)) effectiveReleaseSet = await loadReleaseManifest(autoManifest);
+    }
+    if (args.includes("--dry-run")) return print({ dryRun: true, command, sourceCommit, sourceBranch, version: effectiveReleaseSet.version });
     const owner = required(args, "--owner");
     const repo = required(args, "--repo");
     const token = process.env.GITEE_TOKEN;
     if (!token) throw new Error("GITEE_TOKEN is required");
-    return print(await syncGiteeRelease(releaseSet, {
+    return print(await syncGiteeRelease(effectiveReleaseSet, {
       sourceCommit,
       sourceBranch,
       remote: optional(args, "--remote") ?? "gitee",

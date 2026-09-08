@@ -40,3 +40,11 @@ for (const installer of ["install-agentroam.sh", "install-agentroam.ps1"]) {
 
 await writeFile(resolve(output, "SHA256SUMS"), `${checksums.sort().join("\n")}\n`);
 console.log(`collected ${packageDirectories.length + 2} CLI artifacts in ${output}`);
+
+// Emit the client update manifest so `sync-gitee` can publish it alongside the
+// installers. Preview releases carry a `preview` channel and may omit Desktop
+// installers; stable releases require them via loadReleaseSet.
+const { loadReleaseSet, writeReleaseManifest } = await import("./agentroam-release-lib.mjs");
+const releaseSet = await loadReleaseSet(root);
+await writeReleaseManifest(releaseSet, resolve(output, "release-manifest.json"));
+console.log(`wrote release-manifest.json (channel=${releaseSet.version.includes("-preview.") ? "preview" : "latest"}) in ${output}`);

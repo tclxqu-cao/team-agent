@@ -19,7 +19,37 @@ describe("resolveUpdate", () => {
 
   it("rejects a requested version that is not npm latest", async () => {
     const fetcher = vi.fn().mockResolvedValue(response({ version: "1.2.3" }));
-    await expect(resolveUpdate({ currentVersion: "1.0.0", requestedVersion: "1.2.2", dataDir: "data", target: "darwin-arm64", cliPath: "cli" }, fetcher)).rejects.toThrow("not the current npm latest");
+    await expect(resolveUpdate({ currentVersion: "1.0.0", requestedVersion: "1.2.2", dataDir: "data", target: "darwin-arm64", cliPath: "cli" }, fetcher)).rejects.toThrow("not the current npm candidate");
+  });
+
+  it("follows the preview channel and offers a higher preview", async () => {
+    const fetcher = vi.fn((url: string) => {
+      if (url.endsWith("/preview")) return Promise.resolve(response({ version: "1.2.3-preview.4" }));
+      if (url.endsWith("/latest")) return Promise.resolve(response({ version: "1.2.2" }));
+      return Promise.resolve(response({ schemaVersion: 2, version: "1.2.3-preview.4", channel: "preview", installers: { cli: { "darwin-arm64": { fileName: "install-agentroam.sh", sha256 } } } }));
+    });
+    await expect(resolveUpdate({ currentVersion: "1.2.3-preview.3", requestedVersion: null, dataDir: "data", target: "darwin-arm64", cliPath: "cli" }, fetcher))
+      .resolves.toEqual({ targetVersion: "1.2.3-preview.4", fileName: "install-agentroam.sh", sha256 });
+  });
+
+  it("offers a newer stable release to preview users", async () => {
+    const fetcher = vi.fn((url: string) => {
+      if (url.endsWith("/preview")) return Promise.resolve(response({ version: "1.2.3-preview.4" }));
+      if (url.endsWith("/latest")) return Promise.resolve(response({ version: "1.2.4" }));
+      return Promise.resolve(response({ schemaVersion: 2, version: "1.2.4", channel: "latest", installers: { cli: { "darwin-arm64": { fileName: "install-agentroam.sh", sha256 } } } }));
+    });
+    await expect(resolveUpdate({ currentVersion: "1.2.3-preview.4", requestedVersion: null, dataDir: "data", target: "darwin-arm64", cliPath: "cli" }, fetcher))
+      .resolves.toEqual({ targetVersion: "1.2.4", fileName: "install-agentroam.sh", sha256 });
+  });
+
+  it("stable channel never queries the preview tag", async () => {
+    const fetcher = vi.fn((url: string) => {
+      expect(url).not.toContain("/preview");
+      if (url.endsWith("/latest")) return Promise.resolve(response({ version: "1.2.4" }));
+      return Promise.resolve(response({ schemaVersion: 2, version: "1.2.4", channel: "latest", installers: { cli: { "darwin-arm64": { fileName: "install-agentroam.sh", sha256 } } } }));
+    });
+    await resolveUpdate({ currentVersion: "1.2.3", requestedVersion: null, dataDir: "data", target: "darwin-arm64", cliPath: "cli" }, fetcher);
+    expect(fetcher.mock.calls.map((call) => call[0]).some((url) => url.includes("/preview"))).toBe(false);
   });
 
   it("writes durable state atomically and excludes concurrent workers", async () => {

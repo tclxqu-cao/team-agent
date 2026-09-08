@@ -1,6 +1,9 @@
-export const AGENTROAM_REGISTRY_LATEST_URL = "https://registry.npmjs.org/agentroam/latest";
+export const AGENTROAM_REGISTRY_BASE = "https://registry.npmjs.org/agentroam";
+export const AGENTROAM_REGISTRY_LATEST_URL = `${AGENTROAM_REGISTRY_BASE}/latest`;
+export const AGENTROAM_REGISTRY_PREVIEW_URL = `${AGENTROAM_REGISTRY_BASE}/preview`;
 export const AGENTROAM_GITEE_RELEASE_BASE = "https://gitee.com/caoqu/team-agent/releases/download";
 
+export type UpdateChannel = "latest" | "preview";
 export type UpdatePlatform = "darwin-arm64" | "windows-amd64";
 export type UpdateClient = "cli" | "desktop";
 export type UpdatePhase =
@@ -25,11 +28,11 @@ export interface UpdateAsset {
 export interface UpdateReleaseManifest {
   schemaVersion: 2;
   version: string;
-  channel: "latest";
+  channel: UpdateChannel;
   publishedAt: string;
   installers: {
     cli: Record<UpdatePlatform, UpdateAsset>;
-    desktop: Record<UpdatePlatform, UpdateAsset & { signed: false }>;
+    desktop?: Partial<Record<UpdatePlatform, UpdateAsset & { signed: false }>>;
   };
 }
 
@@ -60,6 +63,34 @@ export function parseStableVersion(value: unknown): string | null {
   return parsed && parsed.preview === null ? value : null;
 }
 
+// A prerelease installation follows the preview channel; a stable installation
+// follows latest. Preview users are also offered a newer stable release when
+// npm latest overtakes the preview line, so they can migrate to the stable
+// track without reinstalling.
+export function resolveUpdateChannel(currentVersion: string): UpdateChannel {
+  const parsed = parseAgentRoamVersion(currentVersion);
+  if (!parsed) throw new Error("invalid AgentRoam version");
+  return parsed.preview === null ? "latest" : "preview";
+}
+
+export function resolveReleaseChannel(version: string): UpdateChannel {
+  const parsed = parseAgentRoamVersion(version);
+  if (!parsed) throw new Error("invalid AgentRoam version");
+  return parsed.preview === null ? "latest" : "preview";
+}
+
+export function registryUrlsForChannel(channel: UpdateChannel): string[] {
+  return channel === "preview" ? [AGENTROAM_REGISTRY_LATEST_URL, AGENTROAM_REGISTRY_PREVIEW_URL] : [AGENTROAM_REGISTRY_LATEST_URL];
+}
+
+export function parseChannelVersion(value: unknown, channel: UpdateChannel): string | null {
+  const stable = parseStableVersion(value);
+  if (stable) return stable;
+  if (channel !== "preview") return null;
+  if (typeof value !== "string") return null;
+  return parseAgentRoamVersion(value) ? value : null;
+}
+
 export function compareAgentRoamVersions(leftValue: string, rightValue: string): number {
   const left = parseAgentRoamVersion(leftValue);
   const right = parseAgentRoamVersion(rightValue);
@@ -74,7 +105,7 @@ export function compareAgentRoamVersions(leftValue: string, rightValue: string):
 }
 
 export function expectedUpdateFileName(client: UpdateClient, platform: UpdatePlatform, version: string): string {
-  if (!parseStableVersion(version)) throw new Error("update version must be stable");
+  if (!parseAgentRoamVersion(version)) throw new Error("invalid update version");
   if (client === "cli") return platform === "darwin-arm64" ? "install-agentroam.sh" : "install-agentroam.ps1";
   return platform === "darwin-arm64"
     ? `AgentRoam-${version}-arm64.dmg`
@@ -82,12 +113,12 @@ export function expectedUpdateFileName(client: UpdateClient, platform: UpdatePla
 }
 
 export function buildGiteeManifestUrl(version: string): string {
-  if (!parseStableVersion(version)) throw new Error("update version must be stable");
+  if (!parseAgentRoamVersion(version)) throw new Error("invalid update version");
   return `${AGENTROAM_GITEE_RELEASE_BASE}/v${version}/release-manifest.json`;
 }
 
 export function buildGiteeAssetUrl(version: string, fileName: string): string {
-  if (!parseStableVersion(version) || fileName.includes("/") || fileName.includes("\\")) {
+  if (!parseAgentRoamVersion(version) || fileName.includes("/") || fileName.includes("\\")) {
     throw new Error("invalid update asset coordinates");
   }
   return `${AGENTROAM_GITEE_RELEASE_BASE}/v${version}/${encodeURIComponent(fileName)}`;
@@ -99,10 +130,11 @@ export function validateReleaseManifest(
   client: UpdateClient,
   platform: UpdatePlatform,
 ): { manifest: UpdateReleaseManifest; asset: UpdateAsset } {
-  if (!isRecord(value) || value.schemaVersion !== 2 || value.channel !== "latest" || value.version !== candidateVersion) {
+  const expectedChannel = resolveReleaseChannel(candidateVersion);
+  if (!isRecord(value) || value.schemaVersion !== 2 || value.channel !== expectedChannel || value.version !== candidateVersion) {
     throw new Error("invalid update manifest identity");
   }
-  if (!parseStableVersion(candidateVersion) || typeof value.publishedAt !== "string" || !Number.isFinite(Date.parse(value.publishedAt))) {
+  if (!parseAgentRoamVersion(candidateVersion) || typeof value.publishedAt !== "string" || !Number.isFinite(Date.parse(value.publishedAt))) {
     throw new Error("invalid update manifest release");
   }
   const installers = value.installers;

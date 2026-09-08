@@ -46,4 +46,37 @@ describe("UpdateChecker", () => {
     expect(scheduledDelay).toBeGreaterThanOrEqual(6_000);
     expect(scheduledDelay).toBeLessThanOrEqual(30_000);
   });
+
+  it("preview users follow a higher preview", async () => {
+    const fetcher = vi.fn(async (url: string | URL | Request) => {
+      const u = String(url);
+      if (u.endsWith("/preview")) return json({ version: "1.1.0-preview.3" });
+      if (u.endsWith("/latest")) return json({ version: "1.0.0" });
+      return json({ schemaVersion: 2, version: "1.1.0-preview.3", channel: "preview", publishedAt: new Date().toISOString(), installers: { cli: { "darwin-arm64": { fileName: "install-agentroam.sh", sha256 } } } });
+    });
+    const checker = new UpdateChecker({ currentVersion: "1.1.0-preview.2", client: "cli", platform: "darwin-arm64", fetch: fetcher as typeof fetch });
+    await expect(checker.refresh()).resolves.toMatchObject({ phase: "available", targetVersion: "1.1.0-preview.3" });
+  });
+
+  it("preview users migrate to a higher stable release", async () => {
+    const fetcher = vi.fn(async (url: string | URL | Request) => {
+      const u = String(url);
+      if (u.endsWith("/preview")) return json({ version: "1.1.0-preview.2" });
+      if (u.endsWith("/latest")) return json({ version: "1.1.0" });
+      return json({ schemaVersion: 2, version: "1.1.0", channel: "latest", publishedAt: new Date().toISOString(), installers: { cli: { "darwin-arm64": { fileName: "install-agentroam.sh", sha256 } } } });
+    });
+    const checker = new UpdateChecker({ currentVersion: "1.1.0-preview.2", client: "cli", platform: "darwin-arm64", fetch: fetcher as typeof fetch });
+    await expect(checker.refresh()).resolves.toMatchObject({ phase: "available", targetVersion: "1.1.0" });
+  });
+
+  it("stable users never read the preview tag", async () => {
+    const fetcher = vi.fn(async (url: string | URL | Request) => {
+      const u = String(url);
+      expect(u).not.toContain("/preview");
+      if (u.includes("registry")) return json({ version: "1.1.0" });
+      return json({ schemaVersion: 2, version: "1.1.0", channel: "latest", publishedAt: new Date().toISOString(), installers: { cli: { "darwin-arm64": { fileName: "install-agentroam.sh", sha256 } } } });
+    });
+    const checker = new UpdateChecker({ currentVersion: "1.0.0", client: "cli", platform: "darwin-arm64", fetch: fetcher as typeof fetch });
+    await expect(checker.refresh()).resolves.toMatchObject({ phase: "available", targetVersion: "1.1.0" });
+  });
 });

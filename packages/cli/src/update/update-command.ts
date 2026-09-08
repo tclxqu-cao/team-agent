@@ -4,29 +4,49 @@ import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
 import { updatePaths, writeUpdateState, type DurableUpdateState } from "./update-state.js";
+import {
+  parseChannelVersion,
+  registryUrlsForChannel,
+  resolveReleaseChannel,
+  resolveUpdateChannel,
+  type UpdateChannel,
+} from "./update-channel.js";
 
-const REGISTRY_URL = "https://registry.npmjs.org/agentroam/latest";
+const REGISTRY_BASE = "https://registry.npmjs.org/agentroam";
 const RELEASE_BASE = "https://gitee.com/caoqu/team-agent/releases/download";
 const SHA = /^[a-f0-9]{64}$/;
 
 export interface StartUpdateOptions { currentVersion: string; requestedVersion: string | null; dataDir: string; target: "darwin-arm64" | "windows-amd64"; cliPath: string; }
 
 export async function resolveUpdate(options: StartUpdateOptions, fetchImpl: typeof fetch = fetch) {
-  const registry = await fetchWithTimeout(fetchImpl, REGISTRY_URL);
-  if (!registry.ok) throw new Error("unable to check npm latest");
-  const latest = (await registry.json() as { version?: unknown }).version;
-  if (typeof latest !== "string" || !/^\d+\.\d+\.\d+$/.test(latest)) throw new Error("npm latest is not a stable AgentRoam version");
-  if (options.requestedVersion && options.requestedVersion !== latest) throw new Error("requested version is not the current npm latest");
-  if (compare(latest, options.currentVersion) <= 0) throw new Error("AgentRoam is already up to date");
-  const response = await fetchWithTimeout(fetchImpl, `${RELEASE_BASE}/v${latest}/release-manifest.json`);
+  const channel = resolveUpdateChannel(options.currentVersion);
+  const target = await readRegistryCandidate(fetchImpl, channel);
+  if (!target) throw new Error("unable to check the npm release channel");
+  if (options.requestedVersion && options.requestedVersion !== target) throw new Error("requested version is not the current npm candidate");
+  if (compare(target, options.currentVersion) <= 0) throw new Error("AgentRoam is already up to date");
+  const response = await fetchWithTimeout(fetchImpl, `${RELEASE_BASE}/v${target}/release-manifest.json`);
   if (!response.ok) throw new Error("release manifest is unavailable");
   const manifest = await response.json() as any;
   const asset = manifest?.installers?.cli?.[options.target];
   const fileName = options.target === "darwin-arm64" ? "install-agentroam.sh" : "install-agentroam.ps1";
-  if (manifest?.schemaVersion !== 2 || manifest.version !== latest || manifest.channel !== "latest" || asset?.fileName !== fileName || !SHA.test(asset?.sha256 ?? "")) {
+  if (manifest?.schemaVersion !== 2 || manifest.version !== target || manifest.channel !== resolveReleaseChannel(target) || asset?.fileName !== fileName || !SHA.test(asset?.sha256 ?? "")) {
     throw new Error("release manifest is invalid for this platform");
   }
-  return { targetVersion: latest, fileName, sha256: asset.sha256 as string };
+  return { targetVersion: target, fileName, sha256: asset.sha256 as string };
+}
+
+// Preview installations follow the higher of the preview and latest npm
+// dist-tags so a newer stable release can move them onto the stable track.
+async function readRegistryCandidate(fetchImpl: typeof fetch, channel: UpdateChannel): Promise<string | null> {
+  let best: string | null = null;
+  for (const url of registryUrlsForChannel(channel, REGISTRY_BASE)) {
+    const response = await fetchWithTimeout(fetchImpl, url).catch(() => null);
+    if (!response?.ok) continue;
+    const candidate = parseChannelVersion((await response.json() as { version?: unknown }).version, channel);
+    if (!candidate) continue;
+    if (!best || compare(candidate, best) > 0) best = candidate;
+  }
+  return best;
 }
 
 export async function startUpdate(options: StartUpdateOptions): Promise<DurableUpdateState> {

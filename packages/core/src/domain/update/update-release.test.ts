@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { buildGiteeAssetUrl, compareAgentRoamVersions, parseStableVersion, validateReleaseManifest } from "./update-release.js";
+import {
+  buildGiteeAssetUrl,
+  buildGiteeManifestUrl,
+  compareAgentRoamVersions,
+  parseChannelVersion,
+  parseStableVersion,
+  resolveReleaseChannel,
+  resolveUpdateChannel,
+  validateReleaseManifest,
+} from "./update-release.js";
 
 const sha256 = "a".repeat(64);
 function manifest(version = "1.2.3") {
@@ -42,5 +51,31 @@ describe("update release", () => {
   it("constructs only allowlisted release URLs", () => {
     expect(buildGiteeAssetUrl("1.2.3", "install-agentroam.sh")).toContain("/v1.2.3/install-agentroam.sh");
     expect(() => buildGiteeAssetUrl("1.2.3", "../payload")).toThrow();
+  });
+
+  it("routes prerelease installs to preview and stable to latest", () => {
+    expect(resolveUpdateChannel("1.2.3")).toBe("latest");
+    expect(resolveUpdateChannel("1.2.3-preview.4")).toBe("preview");
+    expect(resolveReleaseChannel("1.2.3")).toBe("latest");
+    expect(resolveReleaseChannel("1.2.3-preview.4")).toBe("preview");
+  });
+
+  it("parses channel candidates with preview-to-stable migration", () => {
+    expect(parseChannelVersion("1.2.3", "latest")).toBe("1.2.3");
+    expect(parseChannelVersion("1.2.3-preview.4", "latest")).toBeNull();
+    expect(parseChannelVersion("1.2.3-preview.4", "preview")).toBe("1.2.3-preview.4");
+    expect(parseChannelVersion("1.2.3", "preview")).toBe("1.2.3");
+    expect(parseChannelVersion("not-a-version", "preview")).toBeNull();
+  });
+
+  it("validates a preview manifest for a preview candidate", () => {
+    const previewManifest = manifest("1.2.3-preview.4");
+    previewManifest.channel = "preview";
+    expect(validateReleaseManifest(previewManifest, "1.2.3-preview.4", "cli", "darwin-arm64").asset.fileName)
+      .toBe("install-agentroam.sh");
+  });
+
+  it("builds preview manifest URLs", () => {
+    expect(buildGiteeManifestUrl("1.2.3-preview.4")).toContain("/v1.2.3-preview.4/release-manifest.json");
   });
 });
