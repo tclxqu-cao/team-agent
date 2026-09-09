@@ -72,6 +72,7 @@ import {
 
 const SESSION_HISTORY_PAGE_SIZE = 50;
 const CODEX_LATEST_HISTORY_PAGE_SIZE = 1;
+const JUMP_TO_BOTTOM_THRESHOLD_PX = 160;
 
 function normalizeGoalMessageText(value: string): string {
   return value.trim().replace(/^\/goal\s+/i, "").replace(/^\$([\w-]+)/, "/$1").trim();
@@ -327,6 +328,7 @@ import ReasoningSummary from "./ReasoningSummary";
 import CodexExecutionTrace from "./CodexExecutionTrace";
 import RuntimeProgressRow from "./RuntimeProgressRow";
 import ChatHeaderActions from "./ChatHeaderActions";
+import BrowserLivePanel from "./BrowserLivePanel";
 import EmptySessionWelcome from "./EmptySessionWelcome";
 import MessageImageLightbox, { type MessageImagePreview } from "./MessageImageLightbox";
 import { widgetRegistry } from "./widgets/index.js";
@@ -378,6 +380,7 @@ interface ChatViewProps {
   onOpenSettings?: () => void;
   settingsOpen?: boolean;
   onHideToBackground?: () => void;
+  onOpenHub?: () => void;
   onToggleAppearance?: (anchor: DOMRect) => void;
   appearanceOpen?: boolean;
   hideToBackgroundTitle?: string;
@@ -458,6 +461,7 @@ export default function ChatView({
   onOpenSettings,
   settingsOpen = false,
   onHideToBackground,
+  onOpenHub,
   onToggleAppearance,
   appearanceOpen = false,
   hideToBackgroundTitle,
@@ -526,6 +530,7 @@ export default function ChatView({
   const occupiedRecovery = findOccupiedRecovery(occupiedRecoveries, viewSessionId);
   const [isForkingSession, setIsForkingSession] = useState(false);
   const [codexReleaseState, setCodexReleaseState] = useState<"idle" | "releasing" | "released">("idle");
+  const [browserLiveOpen, setBrowserLiveOpen] = useState(false);
   const [directCompatibilitySessionId, setDirectCompatibilitySessionId] = useState<string | null>(null);
   const [compatibilityFailure, setCompatibilityFailure] = useState<string | null>(null);
   const isNativeRuntime = isNativeRuntimeSelection(sessionSummary, activeAgentType);
@@ -780,6 +785,7 @@ export default function ChatView({
   const [hasLatestHistoryUpdates, setHasLatestHistoryUpdates] = useState(false);
   const [isLoadingNewerHistory, setIsLoadingNewerHistory] = useState(false);
   const [isReturningLatestHistory, setIsReturningLatestHistory] = useState(false);
+  const [showJumpToBottom, setShowJumpToBottom] = useState(false);
   const [isInitialHistoryLoading, setIsInitialHistoryLoading] = useState(false);
   const [showInitialHistoryLoading, setShowInitialHistoryLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -921,6 +927,9 @@ export default function ChatView({
     ) {
       loadNewerHistoryRef.current();
     }
+    setShowJumpToBottom(
+      container.scrollHeight - container.scrollTop - container.clientHeight > JUMP_TO_BOTTOM_THRESHOLD_PX,
+    );
     container.classList.add("is-scrolling");
     if (historyScrollTimerRef.current !== null) {
       window.clearTimeout(historyScrollTimerRef.current);
@@ -935,6 +944,14 @@ export default function ChatView({
     if (historyScrollTimerRef.current !== null) {
       window.clearTimeout(historyScrollTimerRef.current);
     }
+  }, []);
+
+  const scrollToLatestMessages = useCallback(() => {
+    const container = messagesScrollRef.current;
+    if (!container) return;
+    const reduceMotion = typeof window.matchMedia === "function"
+      && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    container.scrollTo({ top: container.scrollHeight, behavior: reduceMotion ? "auto" : "smooth" });
   }, []);
 
   useLayoutEffect(() => {
@@ -963,6 +980,17 @@ export default function ChatView({
     pendingLatestScrollRef.current = false;
     container.scrollTop = container.scrollHeight;
   }, [historyWindowMode, messages]);
+
+  // Auto-follow mode scrolls to the bottom right after this effect, so the
+  // arrow only needs recomputing when auto-scroll is suppressed ("skip").
+  useLayoutEffect(() => {
+    if (nextAutoScrollRef.current !== "skip") return;
+    const container = messagesScrollRef.current;
+    if (!container) return;
+    setShowJumpToBottom(
+      container.scrollHeight - container.scrollTop - container.clientHeight > JUMP_TO_BOTTOM_THRESHOLD_PX,
+    );
+  }, [messages]);
 
   // ── Voice: dictation (input) + per-message TTS (output) ────────────────
   const [isRecording, setIsRecording] = useState(false);
@@ -2508,7 +2536,7 @@ export default function ChatView({
       || !window.agentApi?.releaseCodexSession
       || codexReleaseState !== "idle"
     ) return;
-    if (isRunning && !window.confirm("停止当前执行并交接到 Codex 桌面端？")) return;
+    if (isRunning && !window.confirm("停止当前执行并退出此会话？Codex Desktop 最长约 30 分钟后可用。")) return;
 
     setCodexReleaseState("releasing");
     try {
@@ -3268,11 +3296,21 @@ export default function ChatView({
             onReleaseCodex={sessionSummary?.agentType === "codex" && sessionSummary.occupancy !== "owned-externally"
               ? () => { void handleCodexRelease(); }
               : undefined}
+            onOpenBrowserLive={isWebShell() && window.browserLiveApi
+              ? () => setBrowserLiveOpen(true)
+              : undefined}
+            onOpenHub={onOpenHub}
             onToggleAppearance={onToggleAppearance}
             onOpenSettings={onOpenSettings}
           />
         )}
       </div>
+
+      <BrowserLivePanel
+        open={browserLiveOpen}
+        agentSessionId={viewSessionId}
+        onClose={() => setBrowserLiveOpen(false)}
+      />
 
       {/* Messages area */}
       <div className="chat-messages-frame">
@@ -3993,6 +4031,18 @@ export default function ChatView({
               : <ArrowDownToLine size={16} aria-hidden="true" />}
           </button>
         )}
+
+        {historyWindowMode !== "anchored" && showJumpToBottom && (
+          <button
+            type="button"
+            className="chat-jump-to-bottom"
+            aria-label="回到底部"
+            title="回到底部"
+            onClick={scrollToLatestMessages}
+          >
+            <ArrowDownToLine size={16} aria-hidden="true" />
+          </button>
+        )}
       </div>
 
       {/* Input area */}
@@ -4672,7 +4722,7 @@ export default function ChatView({
             onChange={(event) => handleComposerChange(event.target.value)}
             onBlur={() => setTimeout(() => { setAtQuery(null); setSlashQuery(null); }, 120)}
             onKeyDown={handleComposerKeyDown}
-            placeholder={isCompatibilityReadOnly ? (compatibilityStatus === "incompatible" ? "Codex 版本不兼容" : "正在验证会话兼容性") : isReadOnly ? "原客户端使用中，当前只读" : runtimeReady ? (goalMode ? "输入要持续推进的目标" : shouldQueueMessage ? "输入下一条排队消息" : "提出后续修改要求") : "请先在设置中配置 API Key"}
+            placeholder={codexReleaseState === "released" ? "已停止在 AgentRoam 中使用；Codex Desktop 最长约 30 分钟后可用" : isCompatibilityReadOnly ? (compatibilityStatus === "incompatible" ? "Codex 版本不兼容" : "正在验证会话兼容性") : isReadOnly ? "原客户端使用中，当前只读" : runtimeReady ? (goalMode ? "输入要持续推进的目标" : shouldQueueMessage ? "输入下一条排队消息" : "提出后续修改要求") : "请先在设置中配置 API Key"}
             disabled={!canCompose}
           />
 

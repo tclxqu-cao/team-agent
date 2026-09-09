@@ -2,13 +2,18 @@
 // on electron 32 / Node 20.18 (cjsPreparseModuleExports: "exports" undefined).
 import { createRequire } from "module";
 const require = createRequire(import.meta.url);
-const { app, BrowserWindow, ipcMain, dialog, nativeImage, session, shell } = require("electron") as typeof import("electron");
+const { app, BrowserWindow, ipcMain, dialog, nativeImage, session, shell, desktopCapturer, systemPreferences, screen } = require("electron") as typeof import("electron");
 import { spawn, type ChildProcess } from "node:child_process";
 import { basename, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { readFile, writeFile } from "node:fs/promises";
 import { existsSync, statSync } from "node:fs";
 import { SessionGoalCoordinator, type AgentEvent } from "@agent/core";
+import { LiveViewProducerClient } from "@agent/core";
+import { DesktopInputGateway } from "./desktop-input-gateway.js";
+import { DesktopScreenScreencast } from "./desktop-screen-screencast.js";
+import { DesktopScreenLive, type ScreenPermission } from "./desktop-screen-live.js";
+import { readDesktopLiveState, writeDesktopLiveState } from "./desktop-live-state.js";
 import { AgentHost } from "./agent-host.js";
 import {
   BrokerRuntimeAdapter,
@@ -21,6 +26,8 @@ import {
 } from "./agent-runtime/index.js";
 import { resolveDesktopBaseDir } from "./desktop-base-dir.js";
 import { DesktopUpdateService } from "./update-service.js";
+import { AIHubManager, type HubPaneRect } from "./ai-hub/manager.js";
+import { startAiHubRelay, type AiHubRelay } from "./ai-hub/relay.js";
 import {
   getTtsListeningMode,
   getVoiceCaptureSilenceTimeout,
@@ -76,6 +83,13 @@ const desktopUpdateService = new DesktopUpdateService({
   reveal: (path) => shell.showItemInFolder(path),
 });
 desktopUpdateService.subscribe((status) => mainWindow?.webContents.send("update:status", status));
+const aiHubManager = new AIHubManager({
+  configPath: join(app.getPath("userData"), "ai-hub-config.json"),
+  getWindow: () => mainWindow,
+});
+aiHubManager.subscribe((event) => mainWindow?.webContents.send("hub:event", event));
+// AI Hub 中继：供 :3000 server（web 控制台）转发发送请求，由桌面端注入已登录页面
+let aiHubRelay: AiHubRelay | null = null;
 const appIconPath = [
   join(app.getAppPath(), "assets", "app-icon.png"),
   join(process.resourcesPath, "assets", "app-icon.png"),
@@ -292,6 +306,17 @@ ipcMain.handle("window:show", () => {
 ipcMain.handle("update:get-status", () => desktopUpdateService.getStatus());
 ipcMain.handle("update:check", () => desktopUpdateService.check());
 ipcMain.handle("update:install", () => desktopUpdateService.install());
+
+// ── IPC: AI Hub (embedded multi-AI web aggregation) ─────────────────────
+
+ipcMain.handle("hub:get-config", () => aiHubManager.getConfig());
+ipcMain.handle("hub:set-config", (_event, raw: unknown) => aiHubManager.setConfig(raw));
+ipcMain.handle("hub:open", (_event, siteId: string) => aiHubManager.openSite(siteId));
+ipcMain.handle("hub:close", (_event, siteId: string) => aiHubManager.closeSite(siteId));
+ipcMain.handle("hub:hide-all", () => aiHubManager.setBounds([]));
+ipcMain.handle("hub:set-bounds", (_event, panes: HubPaneRect[]) => aiHubManager.setBounds(panes));
+ipcMain.handle("hub:reload", (_event, siteId: string) => aiHubManager.reloadSite(siteId));
+ipcMain.handle("hub:broadcast", (_event, text: string, siteIds: string[]) => aiHubManager.broadcast(text, siteIds));
 
 // ── IPC: Native voice wake (macOS Speech framework helper) ──────────────
 // The helper streams transcripts over stdout; on wake-word match we restore
@@ -1444,7 +1469,72 @@ app.on("second-instance", () => {
   }
 });
 
-app.whenReady().then(() => {
+// ── IPC: Desktop live view (screen capture + remote control) ──
+
+const desktopLiveStatePath = join(app.getPath("userData"), "desktop-live.json");
+const desktopInputHelperPath = app.isPackaged
+  ? join(process.resourcesPath, "bin", "desktop-input")
+  : join(__dirname, "../../assets/bin/desktop-input");
+const desktopLiveEndpoint = process.env.AGENT_LIVE_ENDPOINT?.trim() || "http://127.0.0.1:3000";
+
+let desktopScreenLive: DesktopScreenLive | null = null;
+
+function probeScreenPermission(): ScreenPermission {
+  return systemPreferences.getMediaAccessStatus("screen") as ScreenPermission;
+}
+
+function getDesktopScreenLive(): DesktopScreenLive {
+  if (desktopScreenLive) return desktopScreenLive;
+  const gateway = new DesktopInputGateway({
+    helperPath: desktopInputHelperPath,
+    onStderr: (line) => console.log("[desktop-input]", line),
+  });
+  const screencast = new DesktopScreenScreencast({
+    input: gateway,
+    displayInfo: () => {
+      const display = screen.getPrimaryDisplay();
+      return { width: display.size.width, height: display.size.height, scaleFactor: display.scaleFactor };
+    },
+    captureSources: async (thumbnailSize) => {
+      const sources = await desktopCapturer.getSources({ types: ["screen"], thumbnailSize });
+      return sources.map((source) => {
+        const thumbnail = source.thumbnail;
+        return {
+          id: source.display_id || source.id,
+          thumbnail: thumbnail ? {
+            toJPEG: (quality: number) => thumbnail.toJPEG(quality),
+            getSize: () => thumbnail.getSize(),
+          } : null,
+        };
+      });
+    },
+    primaryDisplayId: () => String(screen.getPrimaryDisplay().id),
+  });
+  desktopScreenLive = new DesktopScreenLive({
+    clientFactory: () => new LiveViewProducerClient({ endpoint: desktopLiveEndpoint }),
+    screencast,
+    input: gateway,
+    probeScreen: probeScreenPermission,
+    probeAccessibility: () => gateway.checkAccessibility(),
+  });
+  desktopScreenLive.onStatus((status) => {
+    mainWindow?.webContents.send("desktop-live:status", status);
+    const controlled = status.enabled && status.controlState !== null && status.controlState !== "agent-controlled";
+    if (process.platform === "darwin") app.dock?.setBadge(controlled ? "●" : "");
+  });
+  return desktopScreenLive;
+}
+
+ipcMain.handle("desktop-live:get-status", async () => getDesktopScreenLive().getStatus());
+
+ipcMain.handle("desktop-live:set-enabled", async (_event, enabled: unknown) => {
+  const live = getDesktopScreenLive();
+  const status = enabled === true ? await live.enable() : await live.disable();
+  await writeDesktopLiveState(desktopLiveStatePath, { enabled: status.enabled }).catch(() => undefined);
+  return status;
+});
+
+app.whenReady().then(async () => {
   if (process.platform === "darwin" && appIconPath) {
     const icon = nativeImage.createFromPath(appIconPath);
     if (!icon.isEmpty()) app.dock.setIcon(icon);
@@ -1454,11 +1544,22 @@ app.whenReady().then(() => {
     callback(permission === "media");
   });
   createWindow();
+  aiHubRelay = await startAiHubRelay(aiHubManager).catch((error) => {
+    console.warn("[ai-hub] relay unavailable:", error);
+    return null;
+  });
   desktopUpdateService.schedule();
   void unifiedSessions.health();
   void connectVoiceProvider().then((provider) => {
     console.warn("[voice] provider ready:", provider.kind === "service" ? provider.source : "native");
   });
+  // Restore desktop live view if the user left it enabled.
+  const desktopLivePersisted = await readDesktopLiveState(desktopLiveStatePath);
+  if (desktopLivePersisted.enabled) {
+    await getDesktopScreenLive().enable().catch((error) => {
+      console.warn("[desktop-live] auto-start failed:", error);
+    });
+  }
 });
 
 app.on("before-quit", () => {
@@ -1467,6 +1568,9 @@ app.on("before-quit", () => {
   cancelActiveTts();
   stopWakeProc();
   voiceServiceManager.close();
+  aiHubRelay?.close();
+  aiHubManager.destroyAll();
+  void desktopScreenLive?.disable();
   void unifiedSessions.dispose();
 });
 

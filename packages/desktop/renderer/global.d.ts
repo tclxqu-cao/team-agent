@@ -1,3 +1,6 @@
+import type { BrowserLiveSessionView } from "../../core/src/domain/browser-live/entities";
+import type { LiveViewOwnershipState } from "../../core/src/domain/live-view/entities";
+
 export interface LSPServerConfig {
   id: string;
   name: string;
@@ -374,6 +377,76 @@ export interface AgentApi {
   lspSave(config: Omit<LSPServerConfig, 'id'> & { id?: string }): Promise<void>;
   lspDelete(id: string): Promise<void>;
   lspSetEnabled(id: string, enabled: boolean): Promise<void>;
+  // AI Hub (embedded multi-AI web aggregation)
+  hubGetConfig(): Promise<HubConfig>;
+  hubSetConfig(raw: unknown): Promise<HubConfig>;
+  hubOpenSite(siteId: string): Promise<void>;
+  hubCloseSite(siteId: string): Promise<void>;
+  hubHideAll(): Promise<void>;
+  hubSetBounds(panes: HubPaneRect[]): Promise<void>;
+  hubReload(siteId: string): Promise<void>;
+  hubBroadcast(text: string, siteIds: string[]): Promise<HubBroadcastResult[]>;
+  onHubEvent(callback: (event: HubEvent) => void): () => void;
+
+  // Desktop live view (screen capture + remote control)
+  desktopLiveGetStatus(): Promise<DesktopLiveStatus>;
+  desktopLiveSetEnabled(enabled: boolean): Promise<DesktopLiveStatus>;
+  onDesktopLiveStatus(callback: (status: DesktopLiveStatus) => void): () => void;
+}
+
+export type HubAdapterId = "deepseek" | "chatgpt" | "gemini" | "grok" | "generic";
+
+export interface HubSite {
+  id: string;
+  name: string;
+  url: string;
+  icon?: string;
+  adapter?: HubAdapterId;
+}
+
+export interface HubConfig {
+  version: 1;
+  sites: HubSite[];
+}
+
+export interface HubPaneRect {
+  siteId: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface HubBroadcastResult {
+  siteId: string;
+  ok: boolean;
+  reason?: string;
+}
+
+export interface HubEvent {
+  type: "loading" | "loaded" | "load-failed" | "title";
+  siteId: string;
+  errorCode?: number;
+  title?: string;
+}
+
+export type BrowserLiveSession = BrowserLiveSessionView;
+
+export interface DesktopLiveStatus {
+  enabled: boolean;
+  permissionScreen: "granted" | "denied" | "not-determined" | "restricted" | "unknown";
+  accessibilityTrusted: boolean | null;
+  sessionOnline: boolean;
+  controlState: LiveViewOwnershipState | null;
+  error?: string;
+}
+
+export interface BrowserLiveApi {
+  request<T = unknown>(
+    method: "browser:list" | "browser:watch" | "browser:unwatch" | "browser:takeover" | "browser:return" | "browser:input",
+    payload?: Record<string, unknown>,
+  ): Promise<T>;
+  onEvent(listener: (event: Record<string, unknown> & { type: string }) => void): () => void;
 }
 
 export interface TtsStreamMetadata {
@@ -387,5 +460,6 @@ export interface TtsStreamMetadata {
 declare global {
   interface Window {
     agentApi: AgentApi;
+    browserLiveApi?: BrowserLiveApi;
   }
 }

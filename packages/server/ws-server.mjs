@@ -27,7 +27,7 @@ import next from "next";
 import { WebSocketServer } from "ws";
 import pty from "node-pty";
 import chokidar from "chokidar";
-import { HostPathPolicy, SQLiteAnonymousWebStore, SQLiteProjectStore, SQLiteWebConsoleStore } from "@agent/core";
+import { LiveViewRegistry, HostPathPolicy, SQLiteAnonymousWebStore, SQLiteProjectStore, SQLiteWebConsoleStore } from "@agent/core";
 import { decodeOsc7Path, selectDefaultShell } from "./shell-platform.mjs";
 import { consumeTerminalReadyMarker, createTerminalShellLaunch } from "./shell-integration.mjs";
 import {
@@ -39,6 +39,7 @@ import {
   servePreviewFile,
 } from "./lib/file-preview-service.mjs";
 import { isMarkdownPreviewPath } from "./lib/markdown-preview.mjs";
+import { aiHubRelayBroadcast, aiHubRelayCapture, aiHubRelayStatus } from "./lib/ai-hub-relay-client.mjs";
 
 const dev = process.env.NODE_ENV !== "production";
 const port = Number(process.env.PORT || 3000);
@@ -52,6 +53,7 @@ consoleStore.markStaleTerminalsExited(new Date().toISOString());
 const hostPathPolicy = HostPathPolicy.fromEnvironment(process.env.AGENT_WEB_ROOTS, os.homedir());
 const roots = hostPathPolicy.roots;
 const previewTickets = createPreviewTicketRegistry();
+const liveViewRegistry = new LiveViewRegistry();
 
 // bun install drops the executable bit on node-pty's prebuilt spawn-helper,
 // which makes every pty.spawn fail with "posix_spawnp failed". Repair on boot
@@ -518,6 +520,9 @@ function makeConn(ws) {
     nextChannelId: 1,
     terminalToChannel: new Map(),
     channelToTerminal: new Map(),
+    browserPeer: null,
+    browserSessionToChannel: new Map(),
+    browserChannelToSession: new Map(),
     sendJson(obj) { if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(obj)); },
     sendTerminal(terminalId, bytes) {
       if (ws.readyState !== ws.OPEN) return;
@@ -534,6 +539,18 @@ function makeConn(ws) {
       frame[0] = 1; frame[1] = 3; frame.writeUInt32BE(channelId, 2);
       ws.send(frame);
     },
+    sendBrowserFrame(browserSessionId, sequence, bytes) {
+      if (ws.readyState !== ws.OPEN) return;
+      const channelId = assignBrowserChannel(this, browserSessionId);
+      const payload = Buffer.from(bytes);
+      const frame = Buffer.allocUnsafe(10 + payload.byteLength);
+      frame[0] = 1;
+      frame[1] = 4;
+      frame.writeUInt32BE(channelId, 2);
+      frame.writeUInt32BE(sequence >>> 0, 6);
+      payload.copy(frame, 10);
+      ws.send(frame);
+    },
   };
 }
 
@@ -543,6 +560,15 @@ function assignChannel(conn, terminalId) {
   const channelId = conn.nextChannelId++;
   conn.terminalToChannel.set(terminalId, channelId);
   conn.channelToTerminal.set(channelId, terminalId);
+  return channelId;
+}
+
+function assignBrowserChannel(conn, browserSessionId) {
+  const existing = conn.browserSessionToChannel.get(browserSessionId);
+  if (existing) return existing;
+  const channelId = conn.nextChannelId++;
+  conn.browserSessionToChannel.set(browserSessionId, channelId);
+  conn.browserChannelToSession.set(channelId, browserSessionId);
   return channelId;
 }
 
@@ -707,6 +733,29 @@ const requestHandlers = {
 
   "ping": async () => ({ pong: true, t: Date.now() }),
 
+  "browser:list": async (_msg, conn) => ({ sessions: liveViewRegistry.list(conn.browserPeer) }),
+  "browser:publish": async (msg, conn) => {
+    const session = liveViewRegistry.publish(conn.browserPeer, msg);
+    return { session, channelId: assignBrowserChannel(conn, session.id) };
+  },
+  "browser:frame": async (msg, conn) => liveViewRegistry.updateFrame(conn.browserPeer, {
+    ...msg,
+    data: typeof msg.data === "string" ? Buffer.from(msg.data, "base64") : msg.data,
+  }),
+  "browser:watch": async (msg, conn) => {
+    const session = liveViewRegistry.watch(conn.browserPeer, msg.sessionId);
+    return { session, channelId: assignBrowserChannel(conn, session.id) };
+  },
+  "browser:unwatch": async (_msg, conn) => liveViewRegistry.unwatch(conn.browserPeer),
+  "browser:takeover": async (msg, conn) => ({ session: liveViewRegistry.takeOver(conn.browserPeer, msg.sessionId) }),
+  "browser:return": async (msg, conn) => ({ session: liveViewRegistry.returnControl(conn.browserPeer, msg.sessionId) }),
+  "browser:input": async (msg, conn) => {
+    liveViewRegistry.input(conn.browserPeer, msg.sessionId, msg.input);
+    return { accepted: true };
+  },
+  "browser:producer-state": async (msg, conn) => ({ session: liveViewRegistry.producerState(conn.browserPeer, msg.sessionId, msg.state) }),
+  "browser:close": async (msg, conn) => { liveViewRegistry.close(conn.browserPeer, msg.sessionId); return { closed: true, sessionId: msg.sessionId }; },
+
   "project:list": async () => ({
     projects: (await projectStore.list()).map(toWebProject),
   }),
@@ -780,6 +829,28 @@ const requestHandlers = {
 
   "fs:list": async (msg, conn) => ({ entries: await fsList(msg.path, conn.principal.userId) }),
   "fs:read": async (msg, conn) => await fsRead(msg.path, msg.offset ?? 0, msg.length, conn.principal.userId),
+
+  // ── AI Hub：转发到桌面端 App（已登录 WebContentsView 注入）──
+  "aihub:status": async () => await aiHubRelayStatus(),
+  "aihub:capture": async (msg) => {
+    const siteIds = Array.isArray(msg.siteIds) ? msg.siteIds.map((id) => String(id)).filter(Boolean).slice(0, 8) : [];
+    if (siteIds.length === 0) throw Object.assign(new Error("no sites"), { code: "EINVAL" });
+    return aiHubRelayCapture(siteIds);
+  },
+  "aihub:send": async (msg) => {
+    const text = String(msg.text ?? "").slice(0, 20000);
+    const siteIds = Array.isArray(msg.siteIds) ? msg.siteIds.map((id) => String(id)).filter(Boolean).slice(0, 8) : [];
+    // 图片：data:image/*;base64 数据 URL，最多 4 张，单张截断到 4M base64 字符（桌面端还会再校验）
+    const images = Array.isArray(msg.images)
+      ? msg.images
+        .filter((item) => typeof item === "string" && item.startsWith("data:image/"))
+        .map((item) => item.slice(0, 4_000_000))
+        .slice(0, 4)
+      : [];
+    if (!text.trim() && images.length === 0) throw Object.assign(new Error("empty text"), { code: "EINVAL" });
+    if (siteIds.length === 0) throw Object.assign(new Error("no sites"), { code: "EINVAL" });
+    return aiHubRelayBroadcast(text, siteIds, images);
+  },
   "fs:inspect-text": async (msg, conn) => await inspectTextFile(assertAllowed(msg.path, conn.principal.userId)),
   "fs:inspect-text-status": async (msg, conn) => await inspectTextFileStatus(assertAllowed(msg.path, conn.principal.userId)),
   "fs:write-text": async (msg, conn) => await saveTextFile(
@@ -1071,12 +1142,40 @@ server.on("upgrade", (req, socket, head) => {
 wss.on("connection", (ws, _req, principal) => {
   const conn = makeConn(ws);
   conn.principal = principal;
+  conn.browserPeer = {
+    id: conn.id,
+    userId: principal.userId,
+    send: (event) => {
+      if (event.type === "browser:frame" && event.data instanceof Uint8Array) {
+        conn.sendBrowserFrame(event.sessionId, event.sequence, event.data);
+      } else {
+        conn.sendJson(event);
+      }
+    },
+    producerSessionIds: new Set(),
+    watchedSessionId: null,
+  };
+  liveViewRegistry.connect(conn.browserPeer);
   connections.add(conn);
   conn.sendJson({ type: "connection:hello", userId: principal.userId, deviceId: principal.deviceId });
 
   ws.on("message", (data, isBinary) => {
     if (isBinary) {
       const frame = Buffer.from(data);
+      if (frame.byteLength >= 10 && frame[0] === 1 && frame[1] === 5) {
+        const browserSessionId = conn.browserChannelToSession.get(frame.readUInt32BE(2));
+        if (!browserSessionId) return;
+        try {
+          liveViewRegistry.updateFrame(conn.browserPeer, {
+            sessionId: browserSessionId,
+            sequence: frame.readUInt32BE(6),
+            data: frame.subarray(10),
+          });
+        } catch (error) {
+          conn.sendJson({ type: "browser:frame-rejected", sessionId: browserSessionId, error: error.message, code: error.code });
+        }
+        return;
+      }
       if (frame.byteLength < 6 || frame[0] !== 1 || frame[1] !== 1) return;
       const terminalId = conn.channelToTerminal.get(frame.readUInt32BE(2));
       if (!terminalId) return;
@@ -1093,6 +1192,7 @@ wss.on("connection", (ws, _req, principal) => {
   });
 
   ws.on("close", () => {
+    liveViewRegistry.disconnect(conn.browserPeer);
     connections.delete(conn);
     for (const id of [...conn.attachedTo]) {
       const session = terminals.get(id);

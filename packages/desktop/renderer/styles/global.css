@@ -2716,6 +2716,37 @@ input:focus, select:focus, textarea:focus {
   content: "";
 }
 
+.chat-jump-to-bottom {
+  position: absolute;
+  z-index: 7;
+  right: 28px;
+  bottom: 14px;
+  display: inline-flex;
+  width: 32px;
+  height: 32px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border-default);
+  border-radius: 50%;
+  background: var(--bg-elevated);
+  color: var(--accent);
+  box-shadow: var(--shadow-sm);
+  cursor: pointer;
+  animation: fadeIn 0.2s var(--ease-out);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-jump-to-bottom {
+    animation: none;
+  }
+}
+
+@media (pointer: coarse) {
+  .chat-jump-to-bottom {
+    right: 36px;
+  }
+}
+
 @media (pointer: coarse) {
   .query-navigation-rail {
     right: 0;
