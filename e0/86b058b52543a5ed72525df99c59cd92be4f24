@@ -1,0 +1,24 @@
+packages/server/app/web/AiHubPane.test.tsx
+  h_b0bf4228a0b7ec 1-163
+packages/server/app/web/AiHubPane.tsx
+  h_b0bf4228a0b7ec 1-778
+packages/server/app/web/aiHubSites.test.ts
+  h_b0bf4228a0b7ec 1-47
+packages/server/app/web/aiHubSites.ts
+  h_b0bf4228a0b7ec 1-52
+packages/server/lib/ai-hub-relay-client.mjs
+  h_b0bf4228a0b7ec 1-119
+packages/server/lib/ai-hub-relay-client.test.ts
+  h_b0bf4228a0b7ec 1-92
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "e086b058b52543a5ed72525df99c59cd92be4f24",
+  "prompts": {},
+  "humans": {
+    "h_b0bf4228a0b7ec": {
+      "author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
