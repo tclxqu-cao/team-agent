@@ -6,7 +6,8 @@
   "main": "./dist/main/index.js",
   "scripts": {
     "dev": "lsof -ti:5173 | xargs kill -9 2>/dev/null; bun run compile && bunx concurrently --kill-others -n vite,electron 'VITE_PORT=5173 bunx --bun vite --port 5173' 'sleep 2 && VITE_PORT=5173 electron .'",
-    "build": "bunx --bun vite build && bun run compile",
+    "build": "bun run build:helper && bunx --bun vite build && bun run compile",
+    "build:helper": "bash scripts/build-desktop-input.sh",
     "compile": "bun run --cwd ../voice-service build && bunx tsc && bunx tsc -p tsconfig.preload.json && mv dist/main/preload.js dist/main/preload.cjs",
     "electron": "bun run compile && NODE_ENV=production electron .",
     "start": "bunx --bun vite build && bun run compile && NODE_ENV=production electron .",

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useSettingsStore } from "../stores/settingsStore";
 import type { ModelProfile } from "../global.d.ts";
+import DesktopLiveSettings from "./DesktopLiveSettings";
 
 const PROVIDERS = [
   { value: "anthropic", label: "Anthropic" },
@@ -251,6 +252,8 @@ export default function SettingsPanel() {
 
         </div>
       </section>
+
+      <DesktopLiveSettings />
 
       <div style={{ marginTop: 28, display: "flex", gap: 14, alignItems: "center" }}>
         <button onClick={handleSaveGeneral} style={btnPrimaryStyle}>保存</button>
