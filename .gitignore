@@ -29,3 +29,9 @@ packages/tui-win32-x64/*.tgz
 # 本地密钥配置
 packages/server/.env.local
 packages/server/.env
+
+# build artifacts & runtime junk (2026-09-09)
+packages/server/.next-browser-live-dev/
+packages/server/shell-integration/
+.claude/worktrees/
+packages/server/.next*/
