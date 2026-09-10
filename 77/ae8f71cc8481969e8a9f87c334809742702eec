@@ -1,0 +1,19 @@
+docs/superpowers/specs/2026-09-10-ai-hub-safe-auth-and-first-load-design.md
+  s_95cdb9361849bb::t_7b95f56b8e2612 1-87
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "77ae8f71cc8481969e8a9f87c334809742702eec",
+  "prompts": {},
+  "sessions": {
+    "s_95cdb9361849bb": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a08905-1d00-7401-b1d4-ee27e58a23a1",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
