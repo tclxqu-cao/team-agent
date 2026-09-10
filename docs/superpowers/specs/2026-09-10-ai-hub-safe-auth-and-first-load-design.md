@@ -7,6 +7,8 @@ Fix AI Hub panes that remain blank until a manual refresh, remove browser-identi
 ## Scope
 
 - DeepSeek, ChatGPT, Gemini, Grok, and custom sites must render on the first selection without requiring refresh.
+- The desktop site selector matches the mobile Web AI Hub interaction: it lives inside the composer and supports one to four selected sites.
+- One selected site fills the available page area; two to four selected sites automatically render as resizable split panes.
 - Existing embedded logins that the provider allows, including direct email login, remain available.
 - Google authentication URLs are not loaded inside `WebContentsView`.
 - A Google authentication attempt opens the selected provider's home page in the system browser and marks that pane with a clear message directing the user to use email login inside AI Hub when available.
@@ -53,15 +55,33 @@ The existing sandbox, context isolation, disabled Node integration, persistent p
 
 The warning does not claim that system-browser login will synchronize back to AI Hub. Reloading or navigating normally clears the stale warning.
 
+### Unified Site Selection
+
+The desktop renderer will remove the fixed left site sidebar and the top-bar `单屏` / `对比` segmented control. A single ordered `selectedIds: string[]` state becomes the source of truth for both visible panes and broadcast recipients:
+
+- exactly one selected ID renders one full-width pane;
+- two to four selected IDs render the existing resizable split-pane layout;
+- the selection cannot become empty;
+- selecting a fifth site is ignored while the existing four selections remain unchanged;
+- pane order follows selection order.
+
+The site picker moves into the left side of the expanded composer, matching `packages/server/app/web/AiHubPane.tsx`: a compact `N 个 AI` button with a chevron opens an upward listbox. Each site row has a visible selected indicator and remains open while the user toggles multiple sites. Clicking outside or pressing Escape closes it.
+
+`添加站点` moves to the bottom of the same picker. Its existing name and URL form opens inside the picker, and custom-site deletion remains available on the corresponding custom row. The pane header keeps refresh and close actions; closing a pane removes it from `selectedIds` only when at least one other pane remains.
+
+The composer remains expanded so the selector is always reachable. The old collapsed-bar state and its `收起` control are removed. The current broadcast implementation continues to send to `selectedIds` without a separate layout mode conversion.
+
 ## Data Flow
 
 1. The renderer calculates pane rectangles and sends `hub:set-bounds`.
 2. The main process stores the rectangles even if a view does not yet exist.
 3. `hub:open` creates the view and immediately attaches it using the stored rectangle.
-4. Normal provider pages load with Electron's truthful browser identity.
-5. A Google authentication navigation is cancelled before it enters the embedded view.
-6. The configured provider page opens in the system browser and the renderer receives `google-auth-external`.
-7. Embedded sites that are already logged in or use provider-supported direct login continue participating in broadcast.
+4. Selecting one site produces one full pane; selecting additional sites produces the existing resizable split layout.
+5. The same ordered selection is passed to `hub:broadcast`.
+6. Normal provider pages load with Electron's truthful browser identity.
+7. A Google authentication navigation is cancelled before it enters the embedded view.
+8. The configured provider page opens in the system browser and the renderer receives `google-auth-external`.
+9. Embedded sites that are already logged in or use provider-supported direct login continue participating in broadcast.
 
 ## Error Handling
 
@@ -75,8 +95,10 @@ The warning does not claim that system-browser login will synchronize back to AI
 - Unit-test retained bounds for both orderings: bounds-before-open and open-before-bounds, plus clearing the layout.
 - Unit-test the Google authentication URL policy against valid Google Accounts URLs, non-HTTPS URLs, and lookalike domains.
 - Update renderer tests to require the dedicated event and user-facing email-login guidance, and to reject title-based detection.
+- Test that the desktop renderer has no fixed site sidebar or explicit layout tabs, exposes the composer listbox, preserves at least one selection, caps selection at four, and derives both pane count and broadcast recipients from the same selection.
 - Run desktop AI Hub tests and the desktop TypeScript compilation.
-- Restart the existing desktop development process and verify first selection for Gemini, Grok, and ChatGPT displays without refresh.
+- Restart the existing desktop development process and verify the selector at desktop and narrow window sizes, including one-site full view and two-to-four-site splits.
+- Verify first selection for Gemini, Grok, and ChatGPT displays without refresh.
 - Verify a Google login attempt opens the provider in the system browser, leaves the embedded view out of the blocked login page, and does not break broadcast for embedded logged-in sites.
 
 ## Security Boundaries
