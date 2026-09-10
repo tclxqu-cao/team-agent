@@ -8,6 +8,7 @@ import type { CodexDiskSessionCatalogEntry, CodexSessionCatalogRepository } from
 import {
   NativeRuntimeBrokerClient,
   NativeRuntimeBrokerHost,
+  resolveNativeRuntimeSocketPath,
 } from "./native-runtime-broker";
 import type {
   AgentRuntimeAdapter,
@@ -224,6 +225,23 @@ async function directory(): Promise<string> {
 
 afterEach(async () => {
   await Promise.all(cleanup.splice(0).map((path) => rm(path, { recursive: true, force: true })));
+});
+
+describe("resolveNativeRuntimeSocketPath", () => {
+  it("uses a Unix socket inside the runtime directory on POSIX", () => {
+    expect(resolveNativeRuntimeSocketPath("/tmp/agentroam", "linux"))
+      .toBe(join("/tmp/agentroam", "native-runtime.sock"));
+  });
+
+  it("uses a stable directory-scoped named pipe on Windows", () => {
+    const first = resolveNativeRuntimeSocketPath("C:\\Users\\Alice\\.agentroam\\native-runtime", "win32");
+    const sameDirectory = resolveNativeRuntimeSocketPath("c:\\users\\alice\\.agentroam\\native-runtime", "win32");
+    const otherDirectory = resolveNativeRuntimeSocketPath("C:\\Users\\Bob\\.agentroam\\native-runtime", "win32");
+
+    expect(first).toMatch(/^\\\\\.\\pipe\\agentroam-native-runtime-[a-f0-9]{24}$/);
+    expect(sameDirectory).toBe(first);
+    expect(otherDirectory).not.toBe(first);
+  });
 });
 
 describe("NativeRuntimeBrokerHost", () => {
