@@ -1,0 +1,24 @@
+packages/desktop/main/agent-runtime/native-runtime-broker.ts
+  s_4d6628d0061af2::t_c14803fcc1e5b8 1,5,1162,1169,1188-1190,1208-1209,2169,2310-2311,2340,2535-2550
+  s_4d6628d0061af2::t_b6cf1587afa644 264,1210,1212-1216
+  s_4d6628d0061af2::t_06afe9ccb0f245 387-392
+packages/desktop/main/agent-runtime/native-runtime-broker.test.ts
+  s_4d6628d0061af2::t_c14803fcc1e5b8 11,230-243
+  s_4d6628d0061af2::t_2d822d65defd78 244-246
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "61852aac6d049631aa04ad077c424e997515700e",
+  "prompts": {},
+  "sessions": {
+    "s_4d6628d0061af2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a080ec-0377-7541-afd5-15907bbc2bb2",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "daibiao.hu <daibiao.hu@ly.com>"
+    }
+  }
+}
