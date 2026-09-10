@@ -2,7 +2,7 @@
 // on electron 32 / Node 20.18 (cjsPreparseModuleExports: "exports" undefined).
 import { createRequire } from "module";
 const require = createRequire(import.meta.url);
-const { app, BrowserWindow, ipcMain, dialog, nativeImage, session, shell, desktopCapturer, systemPreferences, screen } = require("electron") as typeof import("electron");
+const { app, BrowserWindow, ipcMain, dialog, nativeImage, session, shell, desktopCapturer, systemPreferences, screen, globalShortcut } = require("electron") as typeof import("electron");
 import { spawn, type ChildProcess } from "node:child_process";
 import { basename, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -1534,6 +1534,32 @@ ipcMain.handle("desktop-live:set-enabled", async (_event, enabled: unknown) => {
   return status;
 });
 
+// ── Global shortcut: wake the window straight into the AI Hub page ──
+// Alt+Space (Raycast-style) is the default; fall back when taken.
+const AI_HUB_WAKE_CANDIDATES = ["Alt+Space", "CmdOrCtrl+Shift+A", "CmdOrCtrl+Shift+H"];
+
+function wakeToAiHub(): void {
+  if (!mainWindow) return;
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+  mainWindow.webContents.send("app:wake-aihub");
+}
+
+function registerAiHubWakeShortcut(): void {
+  for (const accel of AI_HUB_WAKE_CANDIDATES) {
+    if (globalShortcut.isRegistered(accel)) continue;
+    if (!globalShortcut.register(accel, () => {
+      // Already frontmost → hide back to background (voice wake keeps running).
+      if (mainWindow?.isVisible() && mainWindow.isFocused()) mainWindow.hide();
+      else wakeToAiHub();
+    })) continue;
+    console.log("[shortcut] AI Hub wake:", accel);
+    return;
+  }
+  console.warn("[shortcut] AI Hub wake unavailable, all taken:", AI_HUB_WAKE_CANDIDATES.join(", "));
+}
+
 app.whenReady().then(async () => {
   // 暴露完整辅助功能树（AX 驱动/自动化测试依赖）
   app.setAccessibilitySupportEnabled(true);
@@ -1546,6 +1572,7 @@ app.whenReady().then(async () => {
     callback(permission === "media");
   });
   createWindow();
+  registerAiHubWakeShortcut();
   aiHubRelay = await startAiHubRelay(aiHubManager).catch((error) => {
     console.warn("[ai-hub] relay unavailable:", error);
     return null;
@@ -1565,6 +1592,7 @@ app.whenReady().then(async () => {
 });
 
 app.on("before-quit", () => {
+  globalShortcut.unregisterAll();
   wakeDesired = false;
   dictationActive = false;
   cancelActiveTts();

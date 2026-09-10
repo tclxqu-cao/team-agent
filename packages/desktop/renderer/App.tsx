@@ -417,6 +417,15 @@ export default function App() {
     });
   }, []);
 
+  // 全局唤醒快捷键：主进程已把窗口带到前台，这里只展示 AI Hub 页（focus 布局隐藏侧边栏）
+  useEffect(() => {
+    if (!window.agentApi?.onWakeAiHub) return;
+    return window.agentApi.onWakeAiHub(() => {
+      setHubOpen(true);
+      setLayout("focus");
+    });
+  }, []);
+
   // Voice command captured right after the wake word: route to a project
   // when its name is mentioned in the command, then hand the command to
   // ChatView which creates a session and runs the agent. No project mention

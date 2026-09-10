@@ -236,4 +236,11 @@ contextBridge.exposeInMainWorld("agentApi", {
     ipcRenderer.on("desktop-live:status", handler);
     return () => ipcRenderer.removeListener("desktop-live:status", handler);
   },
+
+  // Global wake shortcut: main has already shown/focused the window
+  onWakeAiHub: (callback: () => void): (() => void) => {
+    const handler = () => callback();
+    ipcRenderer.on("app:wake-aihub", handler);
+    return () => ipcRenderer.removeListener("app:wake-aihub", handler);
+  },
 });

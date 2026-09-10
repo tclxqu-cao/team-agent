@@ -392,6 +392,9 @@ export interface AgentApi {
   desktopLiveGetStatus(): Promise<DesktopLiveStatus>;
   desktopLiveSetEnabled(enabled: boolean): Promise<DesktopLiveStatus>;
   onDesktopLiveStatus(callback: (status: DesktopLiveStatus) => void): () => void;
+
+  // Global wake shortcut: fired after main has shown/focused the window
+  onWakeAiHub(callback: () => void): () => void;
 }
 
 export type HubAdapterId = "deepseek" | "chatgpt" | "gemini" | "grok" | "generic";
