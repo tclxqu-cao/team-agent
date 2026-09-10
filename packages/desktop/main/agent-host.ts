@@ -21,10 +21,11 @@ import {
   type AskUserRequest,
   ToolPermissionGate,
   TOOL_APPROVAL_OPTIONS,
-  isToolPermissionMode,
-  normalizeToolPermissionMode,
   toolApprovalDecisionFromAnswer,
   type ToolPermissionMode,
+  createSessionPermissionGate,
+  newSessionMetadata,
+  setSessionPermissionMode as applySessionPermissionMode,
   CronCreateTool,
   CronDeleteTool,
   CronListTool,
@@ -44,7 +45,6 @@ import {
   type ModelProfile,
   type Message,
   type TodoItem,
-  withPendingAutoTitle,
 } from "@agent/core";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -115,11 +115,8 @@ export class AgentHost {
     this.lspManager = new LSPManager();
     this.mcpConnectionManager = new MCPConnectionManager(this.mcpStore);
     this.questionManager = new QuestionManager((event, sid) => this.emit(event, sid));
-    this.toolPermissionGate = new ToolPermissionGate({
-      resolveMode: async (sessionId) => {
-        const session = await this.sessionStore.get(sessionId);
-        return normalizeToolPermissionMode(session?.metadata.permissionMode);
-      },
+    this.toolPermissionGate = createSessionPermissionGate({
+      sessionStore: this.sessionStore,
       requestApproval: async (request) => {
         const response = await this.questionManager.create({
           question: `Customer Agent 请求权限\n${request.summary}\n原因：${request.reason}`,
@@ -465,18 +462,12 @@ export class AgentHost {
       events: [],
       created: new Date().toISOString(),
       updated: new Date().toISOString(),
-      metadata: withPendingAutoTitle(title, { permissionMode: "full-access" }),
+      metadata: newSessionMetadata(title),
     });
   }
 
   async setSessionPermissionMode(sessionId: string, mode: ToolPermissionMode): Promise<Session> {
-    if (!isToolPermissionMode(mode)) throw new Error(`Invalid permission mode: ${String(mode)}`);
-    const session = await this.sessionStore.get(sessionId);
-    if (!session) throw new Error(`Session not found: ${sessionId}`);
-    this.toolPermissionGate.clearSession(sessionId);
-    return this.sessionStore.update(sessionId, {
-      metadata: { ...session.metadata, permissionMode: mode },
-    });
+    return applySessionPermissionMode(this.sessionStore, this.toolPermissionGate, sessionId, mode);
   }
 
   subscribe(fn: (event: AgentEvent & { _sid: string }) => void): () => void {

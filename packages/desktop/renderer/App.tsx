@@ -3,7 +3,9 @@ import { createPortal } from "react-dom";
 import { History, LoaderCircle, Plus, Search } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
 import ChatView from "./components/ChatView";
+import AIHubView from "./components/AIHubView";
 import UpdateNotice from "./components/UpdateNotice";
+import DesktopLiveControlBanner from "./components/DesktopLiveControlBanner";
 import { renewVoiceConversation } from "./lib/voice-command";
 import {
   getSidebarSessionVisualState,
@@ -221,6 +223,8 @@ export default function App() {
   const [invalidProjectIds, setInvalidProjectIds] = useState<Set<string>>(new Set());
 
   const [showSettings, setShowSettings] = useState(false);
+  // AI Hub（多 AI 网页聚合）：打开时内容区切换为 AIHubView，ChatView 保持挂载仅隐藏
+  const [hubOpen, setHubOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState<SettingsTab>("settings");
 
   const setTodos = useAgentStore((s) => s.setTodos);
@@ -410,6 +414,15 @@ export default function App() {
       wakeNativeActive.current = false;
       setWakeHeard(heard);
       setWakeTrigger((t) => t + 1);
+    });
+  }, []);
+
+  // 全局唤醒快捷键：主进程已把窗口带到前台，这里只展示 AI Hub 页（focus 布局隐藏侧边栏）
+  useEffect(() => {
+    if (!window.agentApi?.onWakeAiHub) return;
+    return window.agentApi.onWakeAiHub(() => {
+      setHubOpen(true);
+      setLayout("focus");
     });
   }, []);
 
@@ -1274,6 +1287,7 @@ export default function App() {
       overflow: "hidden",
     }}>
       <UpdateNotice />
+      <DesktopLiveControlBanner />
       {/* Web mobile: drawer mask + hamburger */}
       {mobileDrawer && sidebarDrawerOpen && (
         <div
@@ -1892,7 +1906,7 @@ export default function App() {
             } as React.CSSProperties}
           >← 侧边栏</button>
         )}
-        <div style={{ height: "100%", paddingTop: 0 }}>
+        <div style={{ height: "100%", paddingTop: 0, display: hubOpen ? "none" : undefined }}>
           <ChatView
             activeAgentType={activeAgent}
             selectedProjectId={selectedProjectId}
@@ -1904,6 +1918,7 @@ export default function App() {
             onOpenSettings={toggleSettings}
             settingsOpen={showSettings}
             onHideToBackground={() => void hideToBackground()}
+            onOpenHub={window.agentApi?.hubGetConfig ? () => setHubOpen(true) : undefined}
             onToggleAppearance={toggleAppearance}
             appearanceOpen={showAppearance}
             hideToBackgroundTitle={wakeEnabled ? `隐藏到后台（说“${wakeWord}”唤醒）` : "隐藏到后台"}
@@ -1961,6 +1976,11 @@ export default function App() {
             }}
           />
         </div>
+
+        {/* AI Hub（多 AI 网页聚合）：与 ChatView 互斥显示 */}
+        {hubOpen && (
+          <AIHubView onExit={() => setHubOpen(false)} />
+        )}
 
         {/* modal moved to portal below */}
       </main>

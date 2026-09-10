@@ -1,11 +1,27 @@
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
+// The contract test drives the real toolchain. When the host's swiftc is
+// broken (e.g. the known CommandLineTools bug where a stale
+// usr/include/swift/module.modulemap redefines SwiftBridging), fail fast
+// with a clear skip instead of a cryptic compile wall — a healthy CLT/Xcode
+// still runs the full test.
+function swiftcUsable(): boolean {
+  const probe = join(mkdtempSync(join(tmpdir(), "swiftc-probe-")), "probe.swift");
+  writeFileSync(probe, 'import Foundation\nlet _ = ProcessInfo.processInfo\n');
+  const result = spawnSync("swiftc", ["-o", probe.replace(/\.swift$/, ".o"), "-c", probe], { timeout: 60_000 });
+  return result.status === 0;
+}
+
 describe("wakelistener external ASR contract", () => {
-  it("emits only 16 kHz mono float32 PCM on stdout and controls on stderr", () => {
+  it("emits only 16 kHz mono float32 PCM on stdout and controls on stderr", (ctx) => {
+    if (!swiftcUsable()) {
+      ctx.skip();
+      return;
+    }
     const source = new URL("./wakelistener.swift", import.meta.url).pathname;
     const binary = join(mkdtempSync(join(tmpdir(), "wakelistener-")), "wakelistener");
     execFileSync("swiftc", [

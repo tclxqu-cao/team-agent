@@ -1,4 +1,4 @@
-import { Check, LoaderCircle, Unplug } from "lucide-react";
+import { Check, LayoutGrid, LoaderCircle, MonitorUp, Unplug } from "lucide-react";
 
 interface ChatHeaderActionsProps {
   appearanceOpen: boolean;
@@ -7,6 +7,8 @@ interface ChatHeaderActionsProps {
   codexReleaseState?: "idle" | "releasing" | "released";
   onHideToBackground: () => void;
   onReleaseCodex?: () => void;
+  onOpenBrowserLive?: () => void;
+  onOpenHub?: () => void;
   onToggleAppearance: (anchor: DOMRect) => void;
   onOpenSettings: () => void;
 }
@@ -18,16 +20,40 @@ export default function ChatHeaderActions({
   codexReleaseState = "idle",
   onHideToBackground,
   onReleaseCodex,
+  onOpenBrowserLive,
+  onOpenHub,
   onToggleAppearance,
   onOpenSettings,
 }: ChatHeaderActionsProps) {
   const releaseTitle = codexReleaseState === "releasing"
-    ? "正在释放 Codex 会话"
+    ? "正在停止 AgentRoam 使用此会话"
     : codexReleaseState === "released"
-      ? "已释放，可在 Codex 桌面端重试"
-      : "交接到 Codex 桌面端";
+      ? "已停止在 AgentRoam 中使用；Codex Desktop 最长约 30 分钟后可用"
+      : "停止在 AgentRoam 中使用（Codex Desktop 最长约 30 分钟后可用）";
   return (
     <div className="chat-header-actions">
+      {onOpenHub && (
+        <button
+          type="button"
+          onClick={onOpenHub}
+          title="AI Hub · 多模型网页对比"
+          aria-label="打开 AI Hub"
+          className="ui-icon-button chat-header-action chat-header-action--ai-hub"
+        >
+          <LayoutGrid size={15} aria-hidden="true" />
+        </button>
+      )}
+      {onOpenBrowserLive && (
+        <button
+          type="button"
+          onClick={onOpenBrowserLive}
+          title="浏览器直播"
+          aria-label="打开浏览器直播"
+          className="ui-icon-button chat-header-action chat-header-action--browser-live"
+        >
+          <MonitorUp size={15} aria-hidden="true" />
+        </button>
+      )}
       {onReleaseCodex && (
         <button
           type="button"

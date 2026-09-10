@@ -110,13 +110,14 @@ execFileSync("npm", [
 
 const prebuildInstall = resolve(target, "node_modules/prebuild-install/bin.js");
 await mustExist(prebuildInstall);
-execFileSync(process.execPath, [prebuildInstall], {
+execFileSync(process.execPath, [prebuildInstall, "--prefer-offline", "--runtime", "node"], {
   cwd: resolve(target, "node_modules/better-sqlite3"),
   stdio: "inherit",
   env: installEnv,
 });
 
 await removeMatchingFiles(resolve(target, "node_modules"), (name) => name.endsWith(".map") || name.endsWith(".d.ts") || name.endsWith(".pdb"));
+// node-pty ships source/build dirs we never need at runtime.
 await rm(resolve(target, "node_modules/node-pty/third_party"), { recursive: true, force: true });
 await rm(resolve(target, "node_modules/node-pty/deps"), { recursive: true, force: true });
 await rm(resolve(target, "node_modules/node-pty/src"), { recursive: true, force: true });

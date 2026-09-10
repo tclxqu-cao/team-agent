@@ -2,7 +2,7 @@ $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
 
 $NodeVersion = "22.22.0"
-$AgentRoamVersion = "0.2.0-preview.15"
+$AgentRoamVersion = "0.2.0-preview.16"
 $NodeArchive = "node-v22.22.0-win-x64.zip"
 $NodeSha256 = "c97fa376d2becdc8863fcd3ca2dd9a83a9f3468ee7ccf7a6d076ec66a645c77a"
 $NodeUrl = "https://nodejs.org/dist/v22.22.0/$NodeArchive"

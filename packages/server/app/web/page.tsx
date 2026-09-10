@@ -5,14 +5,21 @@
 
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { PanelRight, X } from "lucide-react";
+import { PanelRight, X, LayoutGrid } from "lucide-react";
 import type { PinnedCommand } from "../../../core/src/domain/web-console/entities";
 import { defaultPinnedCommands } from "../../../core/src/domain/web-console/pinned-commands";
 import {
   WEBAPP_PROJECT_RESPONSE_TYPE,
   readWebProjectRequest,
 } from "../../../core/src/domain/web-console/WebProjectBridge";
+import {
+  WEBAPP_BROWSER_EVENT_TYPE,
+  WEBAPP_BROWSER_BINARY_FRAME_TYPE,
+  WEBAPP_BROWSER_RESPONSE_TYPE,
+  readWebBrowserRequest,
+} from "../../../core/src/domain/web-console/WebBrowserBridge";
 import { readWebArtifactOpenRequest } from "../../../core/src/domain/web-console/WebArtifactBridge";
+import { readLiveFramePacket, LIVE_FRAME_PACKET_TYPE } from "../../../core/src/infrastructure/live-view/frame-packet";
 import type { FileTreeRevealRequest } from "./fileTreeReveal";
 import { useGateway } from "./useGateway";
 import AuthGate, { type WebAuthController } from "./AuthGate";
@@ -26,6 +33,7 @@ import { readWebappReadyMessage } from "./webappReady";
 const TerminalPane = dynamic(() => import("./TerminalPane"), { ssr: false });
 const FileTree = dynamic(() => import("./FileTree"), { ssr: false });
 const FilePreview = dynamic(() => import("./FilePreview"), { ssr: false });
+const AiHubPane = dynamic(() => import("./AiHubPane"), { ssr: false });
 
 export default function WebConsolePage() {
   return <AuthGate>{(auth) => <AuthenticatedConsole auth={auth} />}</AuthGate>;
@@ -34,13 +42,28 @@ export default function WebConsolePage() {
 // Built-in webapp agent tab (@agent/webapp at /app) — always present, never
 // deletable; "+" adds regular terminal tabs.
 const WEBAPP_TAB = { id: "webapp-agent", title: "智能助手", kind: "webapp" } as const;
-interface ConsoleTab { id: string; title: string; kind?: "webapp"; initialCommand?: string }
+// AI Hub tab (multi-AI comparison workbench) — opened from the file-tree
+// toolbar icon; reusable, never duplicated.
+const AI_HUB_TAB = { id: "ai-hub", title: "AI Hub", kind: "aihub" } as const;
+interface ConsoleTab { id: string; title: string; kind?: "webapp" | "aihub"; initialCommand?: string }
 
 // Shell → webapp iframe skin sync; the webapp bridge listens for this type.
 const WEBAPP_SKIN_MESSAGE_TYPE = "agent-web-shell:skin:v1";
 
 function AuthenticatedConsole({ auth }: { auth: WebAuthController }) {
-  const { state, epoch, rpc, onEvent, onTerminalData, onTerminalReset, sendTerminalInput } = useGateway(() => {}, auth.getWsNonce, auth.refresh);
+  const webappFrameRef = useRef<HTMLIFrameElement>(null);
+  const forwardBrowserBinary = useCallback((frame: Uint8Array) => {
+    const packet = readLiveFramePacket(frame);
+    if (!packet || packet.type !== LIVE_FRAME_PACKET_TYPE.watcherFrame) return;
+    const payload = packet.payload.slice().buffer;
+    webappFrameRef.current?.contentWindow?.postMessage({
+      type: WEBAPP_BROWSER_BINARY_FRAME_TYPE,
+      channelId: packet.channelId,
+      sequence: packet.sequence,
+      data: payload,
+    }, window.location.origin, [payload]);
+  }, []);
+  const { state, epoch, rpc, onEvent, onTerminalData, onTerminalReset, sendTerminalInput } = useGateway(forwardBrowserBinary, auth.getWsNonce, auth.refresh);
   const [tabs, setTabs] = useState<ConsoleTab[]>([{ ...WEBAPP_TAB }]);
   const [activeTerminalId, setActiveTerminalId] = useState<string | null>(WEBAPP_TAB.id);
   const [cwdByTerminal, setCwdByTerminal] = useState<Record<string, string>>({});
@@ -89,7 +112,6 @@ function AuthenticatedConsole({ auth }: { auth: WebAuthController }) {
   const [swiping,setSwiping]=useState(false);
   const draggedTab = useRef<string | null>(null);
   const tabBarRef = useRef<HTMLDivElement>(null);
-  const webappFrameRef = useRef<HTMLIFrameElement>(null);
   const postSkinToWebapp = useCallback((skin: WebThemeId) => {
     webappFrameRef.current?.contentWindow?.postMessage(
       { type: WEBAPP_SKIN_MESSAGE_TYPE, skin },
@@ -122,6 +144,33 @@ function AuthenticatedConsole({ auth }: { auth: WebAuthController }) {
         setFileTreeRevealRequest(artifactRequest);
         return;
       }
+      const browserRequest = readWebBrowserRequest(
+        event,
+        window.location.origin,
+        webappFrameRef.current?.contentWindow ?? null,
+      );
+      if (browserRequest) {
+        void rpc(browserRequest.method, browserRequest.payload).then(
+          (result) => {
+            webappFrameRef.current?.contentWindow?.postMessage({
+              type: WEBAPP_BROWSER_RESPONSE_TYPE,
+              id: browserRequest.id,
+              ok: true,
+              result,
+            }, window.location.origin);
+          },
+          (error: Error & { code?: string }) => {
+            webappFrameRef.current?.contentWindow?.postMessage({
+              type: WEBAPP_BROWSER_RESPONSE_TYPE,
+              id: browserRequest.id,
+              ok: false,
+              error: error.message || "浏览器操作失败",
+              code: error.code,
+            }, window.location.origin);
+          },
+        );
+        return;
+      }
       const request = readWebProjectRequest(
         event,
         window.location.origin,
@@ -151,6 +200,17 @@ function AuthenticatedConsole({ auth }: { auth: WebAuthController }) {
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
   }, [rpc]);
+  useEffect(() => {
+    const forward = (event: Record<string, unknown>) => {
+      webappFrameRef.current?.contentWindow?.postMessage({
+        type: WEBAPP_BROWSER_EVENT_TYPE,
+        event,
+      }, window.location.origin);
+    };
+    const eventTypes = ["browser:session", "browser:frame", "browser:state", "browser:closed"];
+    const unsubscribers = eventTypes.map((type) => onEvent(type, forward));
+    return () => unsubscribers.forEach((unsubscribe) => unsubscribe());
+  }, [onEvent]);
   const prevTabCount = useRef(0);
   const cwdHint = activeTerminalId ? cwdByTerminal[activeTerminalId] ?? null : null;
 
@@ -254,7 +314,9 @@ function AuthenticatedConsole({ auth }: { auth: WebAuthController }) {
 
   const closeTerminal = (id: string) => {
     if (id === WEBAPP_TAB.id) return;
-    if (!window.confirm("关闭页签会终止该终端进程，确认关闭？")) return;
+    const closingKind = tabs.find((tab) => tab.id === id)?.kind;
+    // AI Hub tab has no terminal process behind it — no confirm, no kill RPC.
+    if (closingKind !== "aihub" && !window.confirm("关闭页签会终止该终端进程，确认关闭？")) return;
     // Drop the tab immediately — the kill RPC rides in the background because
     // its reply queues behind any terminal output on the same socket, and
     // waiting on it made close feel stuck (or hung until timeout).
@@ -263,8 +325,21 @@ function AuthenticatedConsole({ auth }: { auth: WebAuthController }) {
       if (activeTerminalId === id) setActiveTerminalId(next[0]?.id ?? null);
       return next;
     });
-    void rpc("term:kill", { id }).catch(() => {});
+    if (closingKind !== "aihub") void rpc("term:kill", { id }).catch(() => {});
   };
+
+  // 打开（或聚焦已有的）AI Hub 页签
+  const openAiHubTab = useCallback(() => {
+    setTabs((current) => {
+      const existing = current.find((tab) => tab.kind === "aihub");
+      if (existing) {
+        setActiveTerminalId(existing.id);
+        return current;
+      }
+      setActiveTerminalId(AI_HUB_TAB.id);
+      return [...current, { ...AI_HUB_TAB }];
+    });
+  }, []);
 
   useEffect(() => {
     const off = onEvent("term:exited", (msg: any) => {
@@ -372,7 +447,7 @@ function AuthenticatedConsole({ auth }: { auth: WebAuthController }) {
       <div className="terminal-tabs" ref={tabBarRef}>
         {tabs.map((tab) => (
           <div key={tab.id} data-terminal-id={tab.id} draggable className={`terminal-tab ${tab.id === activeTerminalId ? "active" : ""}`} onDragStart={()=>{draggedTab.current=tab.id;}} onDragOver={(event)=>event.preventDefault()} onDrop={(event)=>{event.preventDefault();const source=draggedTab.current;draggedTab.current=null;if(!source||source===tab.id)return;setTabs((current)=>{const from=current.findIndex(item=>item.id===source),to=current.findIndex(item=>item.id===tab.id);if(from<0||to<0)return current;const next=[...current];const [moved]=next.splice(from,1);next.splice(to,0,moved);rpc("term:reorder",{ids:next.map(item=>item.id).filter(itemId=>itemId!==WEBAPP_TAB.id)}).catch(()=>{});return next;});}} onClick={() => setActiveTerminalId(tab.id)} onDoubleClick={() => {
-            if (tab.kind === "webapp") return;
+            if (tab.kind === "webapp" || tab.kind === "aihub") return;
             const title = window.prompt("页签名称", tab.title)?.trim();
             if (!title) return;
             rpc("term:rename", { id: tab.id, title }).then(() => setTabs((items) => items.map((item) => item.id === tab.id ? { ...item, title } : item))).catch(() => {});
@@ -382,6 +457,15 @@ function AuthenticatedConsole({ auth }: { auth: WebAuthController }) {
         ))}
         <button className="terminal-add" disabled={tabs.length >= 8} onClick={addTerminal}>＋</button>
         <div className="terminal-connection">
+          <button
+            type="button"
+            className="file-drawer-toggle"
+            aria-label="打开 AI Hub"
+            title="AI Hub · 多模型对比"
+            onClick={openAiHubTab}
+          >
+            <LayoutGrid size={17} aria-hidden="true" />
+          </button>
           <button
             type="button"
             className="file-drawer-toggle"
@@ -425,7 +509,7 @@ function AuthenticatedConsole({ auth }: { auth: WebAuthController }) {
         >
           <div className="terminal-track" style={{transform:`translate3d(calc(${-activeIndex*100}% + ${swipeDelta}px),0,0)`,transition:swiping?"none":"transform 260ms cubic-bezier(.22,.8,.32,1)"}}>
           {tabs.map((tab) => (
-            <div className="terminal-slide" key={tab.id}>
+            <div className="terminal-slide" key={tab.id} style={{ position: "relative" }}>
               {tab.kind === "webapp" ? (
                 <>
                   <iframe ref={webappFrameRef} className="webapp-frame" src="/app/" title={tab.title} onLoad={() => postSkinToWebapp(themeId)} />
@@ -439,6 +523,8 @@ function AuthenticatedConsole({ auth }: { auth: WebAuthController }) {
                     <span>正在唤醒工作区</span>
                   </div>
                 </>
+              ) : tab.kind === "aihub" ? (
+                <AiHubPane visible={tab.id === activeTerminalId} rpc={rpc} />
               ) : (
                 <TerminalPane terminalId={tab.id} title={tab.title} initialCommand={tab.initialCommand} visible={tab.id === activeTerminalId} state={state} rpc={rpc} onEvent={onEvent} onTerminalData={onTerminalData} onTerminalReset={onTerminalReset} sendTerminalInput={sendTerminalInput} keyOrder={keyOrder} keybarHidden={keybarHidden} onKeyOrderChange={setKeyOrder} onKeybarHiddenChange={setKeybarHidden} terminalTheme={activeTheme} initialScrollLine={terminalScroll[tab.id] ?? null} onScrollLineChange={(line) => setTerminalScroll((current) => (current[tab.id] === line ? current : { ...current, [tab.id]: line }))} onRegisterFill={(fill) => registerTerminalFill(tab.id, fill)} onCwdChange={(cwd) => cwd && setCwdByTerminal((current) => ({ ...current, [tab.id]: cwd }))} />
               )}

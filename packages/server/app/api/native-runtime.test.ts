@@ -226,7 +226,10 @@ function collectUntilTerminal(sessionId: string): { events: AgentEvent[]; settle
 }
 
 describe("native runtime routing", () => {
+  const previousWebRoots = process.env.AGENT_WEB_ROOTS;
   afterAll(async () => {
+    if (previousWebRoots === undefined) delete process.env.AGENT_WEB_ROOTS;
+    else process.env.AGENT_WEB_ROOTS = previousWebRoots;
     await agentHost.getProjectStore().delete("native-runtime-test-project");
   });
 
@@ -272,6 +275,9 @@ describe("native runtime routing", () => {
         updated: now,
       });
     }
+    // 允许根默认是 $HOME，仓库可能检出在任意卷（如外置盘）；把 cwd 显式
+    // 加入 AGENT_WEB_ROOTS，否则 create 路由的宿主机目录校验会 400。
+    process.env.AGENT_WEB_ROOTS = [process.env.AGENT_WEB_ROOTS, process.cwd()].filter(Boolean).join(":");
   });
 
   it("reports customer-agent plus native runtime health", async () => {

@@ -99,6 +99,25 @@ test("polls bounded registry visibility after publish", async () => {
   assert.ok(sleeps.length >= releaseSet.packages.length);
 });
 
+test("retries remote tarball downloads after metadata becomes visible", async () => {
+  const { releaseSet, contents } = await releaseFixture();
+  const client = fakeNpm(contents);
+  for (const item of releaseSet.packages) client.present.add(item.name);
+  const download = client.download.bind(client);
+  let failures = 2;
+  client.download = async (name, version) => {
+    if (name === releaseSet.packages[0].name && failures-- > 0) throw new Error("tarball not visible");
+    return download(name, version);
+  };
+  const sleeps = [];
+  await verifyRegistryArtifacts(releaseSet, client, {
+    artifactAttempts: 3,
+    artifactDelayMs: 1,
+    sleep: async (ms) => { sleeps.push(ms); },
+  });
+  assert.deepEqual(sleeps, [1, 1]);
+});
+
 test("rejects a registry tarball checksum mismatch", async () => {
   const { releaseSet, contents } = await releaseFixture();
   const client = fakeNpm(contents);

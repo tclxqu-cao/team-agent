@@ -13,6 +13,8 @@ extraResources:
     to: assets
     filter:
       - app-icon.png
+  - from: assets/bin
+    to: bin
 mac:
   target:
     - target: dmg

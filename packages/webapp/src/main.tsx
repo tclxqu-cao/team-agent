@@ -14,6 +14,7 @@ import "@desktop/renderer/styles/composer.css";
 import "./presentation/web.css";
 import type { AgentApi } from "../../desktop/renderer/global";
 import { WebShellProjectBridge } from "./infrastructure/web-shell-project-bridge";
+import { WebShellBrowserBridge } from "./infrastructure/web-shell-browser-bridge";
 
 /**
  * Composition root: wire infrastructure adapters to the AgentApi port and
@@ -28,7 +29,9 @@ document.body.dataset.webShell = "1";
 
 const http = new HttpClient();
 const projectBridge = window.parent === window ? undefined : new WebShellProjectBridge();
+const browserBridge = window.parent === window ? undefined : new WebShellBrowserBridge();
 const gateway = new AgentHttpGateway(http, new LocalSettingsRepository(), projectBridge);
+window.browserLiveApi = browserBridge;
 
 const container = document.getElementById("root");
 if (!container) throw new Error("#root missing");
@@ -68,7 +71,10 @@ function startBuildWatchdog(): void {
   if (!own) return;
   setInterval(async () => {
     try {
-      const res = await fetch("/api/agent/model", { credentials: "same-origin" });
+      const res = await fetch("/api/agent/model", {
+        credentials: "same-origin",
+        cache: "no-store",
+      });
       const info = (await res.json()) as { buildId?: string };
       const server = (info.buildId || "").replace(/^index-|\.js$/g, "");
       if (server && server !== own) location.reload();

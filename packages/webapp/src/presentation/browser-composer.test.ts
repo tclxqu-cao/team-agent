@@ -51,7 +51,7 @@ describe("shared composer panel layout", () => {
     expect(chatView).toContain('type="file"');
     expect(chatView).toContain("fileInputRef.current?.click()");
     expect(chatView).not.toContain("isBrowserRuntime");
-    expect(chatView).toContain('placeholder={isCompatibilityReadOnly ? (compatibilityStatus === "incompatible" ? "Codex 版本不兼容" : "正在验证会话兼容性") : isReadOnly ? "原客户端使用中，当前只读" : runtimeReady ? (goalMode ? "输入要持续推进的目标" : shouldQueueMessage ? "输入下一条排队消息" : "提出后续修改要求")');
+    expect(chatView).toContain('placeholder={codexReleaseState === "released" ? "已停止在 AgentRoam 中使用；Codex Desktop 最长约 30 分钟后可用" : isCompatibilityReadOnly ? (compatibilityStatus === "incompatible" ? "Codex 版本不兼容" : "正在验证会话兼容性")');
 
     expect(css).toContain(".web-native-composer-textarea {");
     expect(css).toContain("min-height: 76px");

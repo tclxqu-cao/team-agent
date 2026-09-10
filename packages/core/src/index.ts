@@ -17,7 +17,11 @@ export * from './domain/settings/index.js';
 export * from './domain/lsp/index.js';
 export * from './domain/terminal/TerminalSession.js';
 export * from './domain/auth/index.js';
+export * from './domain/browser-live/index.js';
+export * from './domain/live-view/index.js';
+export * from './infrastructure/live-view/index.js';
 export * from './domain/web-console/index.js';
+export * from './domain/ai-hub/index.js';
 export * from './domain/file/index.js';
 export * from './domain/update/index.js';
 
