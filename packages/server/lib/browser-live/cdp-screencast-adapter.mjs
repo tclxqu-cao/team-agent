@@ -1,13 +1,10 @@
+import { LiveViewCapabilityError, LiveViewFramePacer } from "@agent/core";
+
 const BUTTONS = { left: "left", right: "right", middle: "middle" };
 const MODIFIER_BITS = { Alt: 1, Control: 2, Meta: 4, Shift: 8 };
 
-export class BrowserLiveCapabilityError extends Error {
-  constructor(message) {
-    super(message);
-    this.name = "BrowserLiveCapabilityError";
-    this.code = "BROWSER_LIVE_STREAM_UNAVAILABLE";
-  }
-}
+/** Legacy name for the shared live-view capability error; kept for existing imports. */
+export const BrowserLiveCapabilityError = LiveViewCapabilityError;
 
 function directFrame(event) {
   if (event?.method === "Page.screencastFrame") return event.params;
@@ -20,15 +17,31 @@ function directFrame(event) {
   }
 }
 
+/** Translate a normalized live-view input into CDP Input domain calls (shared by CDP and ego adapters). */
+async function dispatchCdpInput(send, viewport, input) {
+  if (input.kind === "pointer") {
+    const x = Math.round(input.x * viewport.width);
+    const y = Math.round(input.y * viewport.height);
+    const type = input.action === "down" ? "mousePressed" : input.action === "up" ? "mouseReleased" : input.action === "wheel" ? "mouseWheel" : "mouseMoved";
+    await send("Input.dispatchMouseEvent", { type, x, y, button: BUTTONS[input.button] ?? "left", clickCount: input.action === "down" || input.action === "up" ? 1 : 0, deltaX: input.deltaX ?? 0, deltaY: input.deltaY ?? 0 });
+    return;
+  }
+  if (input.text && !input.key && !input.code) {
+    await send("Input.insertText", { text: input.text });
+    return;
+  }
+  const modifiers = (input.modifiers ?? []).reduce((bits, name) => bits | (MODIFIER_BITS[name] ?? 0), 0);
+  const type = input.action === "up" ? "keyUp" : input.text ? "char" : "keyDown";
+  await send("Input.dispatchKeyEvent", { type, key: input.key, code: input.code, text: input.text, modifiers });
+}
+
 /** Pull-based CDP adapter used by runtimes that expose a replayable event cursor. */
 export class CdpScreencastAdapter {
   constructor({ send, readEvents, pageState, fps = 5, quality = 70, maxWidth = 1440, maxHeight = 900, firstFrameTimeoutMs = 4_000, now = () => Date.now() }) {
     this.send = send;
     this.readEvents = readEvents;
     this.pageState = pageState;
-    this.maxFps = Math.max(2, Math.min(5, fps));
-    this.targetFps = this.maxFps;
-    this.fastFrameStreak = 0;
+    this.pacer = new LiveViewFramePacer({ fps });
     this.lastForwardedAt = null;
     this.quality = quality;
     this.maxWidth = maxWidth;
@@ -53,7 +66,7 @@ export class CdpScreencastAdapter {
       quality: this.quality,
       maxWidth: this.maxWidth,
       maxHeight: this.maxHeight,
-      everyNthFrame: Math.max(1, Math.round(60 / this.maxFps)),
+      everyNthFrame: Math.max(1, Math.round(60 / this.pacer.maxFps)),
     });
     const firstFrameDeadline = this.now() + this.firstFrameTimeoutMs;
     let receivedFrame = false;
@@ -71,13 +84,13 @@ export class CdpScreencastAdapter {
         receivedFrame = true;
         const timestamp = this.now();
         await this.send("Page.screencastFrameAck", { sessionId: frame.sessionId });
-        if (this.lastForwardedAt !== null && timestamp - this.lastForwardedAt < 1_000 / this.targetFps) continue;
+        if (this.lastForwardedAt !== null && timestamp - this.lastForwardedAt < 1_000 / this.pacer.targetFps) continue;
         this.lastForwardedAt = timestamp;
         const state = await this.pageState();
         this.viewport = { width: state.width, height: state.height, deviceScaleFactor: state.deviceScaleFactor ?? 1 };
         const sendStartedAt = this.now();
         const result = await onFrame({ data: frame.data, viewport: this.viewport, title: state.title, url: state.url, timestamp });
-        this.#adaptFps(result, Math.max(0, this.now() - sendStartedAt));
+        this.pacer.recordSend(result, Math.max(0, this.now() - sendStartedAt));
       }
       if (!receivedFrame && this.now() >= firstFrameDeadline) {
         throw new BrowserLiveCapabilityError("The browser runtime did not expose Page.screencastFrame events");
@@ -93,35 +106,14 @@ export class CdpScreencastAdapter {
     await this.stopPromise;
   }
 
-  #adaptFps(result, durationMs) {
-    if (result?.accepted === false || durationMs > 500) {
-      this.targetFps = Math.max(2, this.targetFps - 1);
-      this.fastFrameStreak = 0;
-      return;
-    }
-    this.fastFrameStreak += 1;
-    if (this.targetFps < this.maxFps && this.fastFrameStreak >= this.targetFps * 2) {
-      this.targetFps += 1;
-      this.fastFrameStreak = 0;
-    }
+  /** Current adaptive target rate (kept as a property for tests and diagnostics). */
+  get targetFps() {
+    return this.pacer.targetFps;
   }
 
   async dispatchInput(input) {
     if (!this.viewport) this.viewport = await this.pageState();
-    if (input.kind === "pointer") {
-      const x = Math.round(input.x * this.viewport.width);
-      const y = Math.round(input.y * this.viewport.height);
-      const type = input.action === "down" ? "mousePressed" : input.action === "up" ? "mouseReleased" : input.action === "wheel" ? "mouseWheel" : "mouseMoved";
-      await this.send("Input.dispatchMouseEvent", { type, x, y, button: BUTTONS[input.button] ?? "left", clickCount: input.action === "down" || input.action === "up" ? 1 : 0, deltaX: input.deltaX ?? 0, deltaY: input.deltaY ?? 0 });
-      return;
-    }
-    if (input.text && !input.key && !input.code) {
-      await this.send("Input.insertText", { text: input.text });
-      return;
-    }
-    const modifiers = (input.modifiers ?? []).reduce((bits, name) => bits | (MODIFIER_BITS[name] ?? 0), 0);
-    const type = input.action === "up" ? "keyUp" : input.text ? "char" : "keyDown";
-    await this.send("Input.dispatchKeyEvent", { type, key: input.key, code: input.code, text: input.text, modifiers });
+    await dispatchCdpInput(this.send, this.viewport, input);
   }
 }
 
@@ -131,9 +123,7 @@ export class EgoScreencastAdapter {
     this.send = send;
     this.subscribe = subscribe;
     this.pageState = pageState;
-    this.maxFps = Math.max(2, Math.min(5, fps));
-    this.targetFps = this.maxFps;
-    this.fastFrameStreak = 0;
+    this.pacer = new LiveViewFramePacer({ fps });
     this.lastForwardedAt = null;
     this.quality = quality;
     this.maxWidth = maxWidth;
@@ -178,14 +168,14 @@ export class EgoScreencastAdapter {
           receivedFrame = true;
           clearTimeout(firstFrameTimer);
           const timestamp = this.now();
-          if (this.lastForwardedAt !== null && timestamp - this.lastForwardedAt < 1_000 / this.targetFps) return;
+          if (this.lastForwardedAt !== null && timestamp - this.lastForwardedAt < 1_000 / this.pacer.targetFps) return;
           this.lastForwardedAt = timestamp;
           const state = await this.pageState();
           this.viewport = { width: state.width, height: state.height, deviceScaleFactor: state.deviceScaleFactor ?? 1 };
           const sendStartedAt = this.now();
           try {
             const result = await onFrame({ data: frame.data, viewport: this.viewport, title: state.title, url: state.url, timestamp });
-            this.#adaptFps(result, Math.max(0, this.now() - sendStartedAt));
+            this.pacer.recordSend(result, Math.max(0, this.now() - sendStartedAt));
           } catch (error) {
             this.rejectStopped?.(error);
             void this.#disposeSubscription();
@@ -214,35 +204,14 @@ export class EgoScreencastAdapter {
     if (subscription?.dispose) await subscription.dispose();
   }
 
-  #adaptFps(result, durationMs) {
-    if (result?.accepted === false || durationMs > 500) {
-      this.targetFps = Math.max(2, this.targetFps - 1);
-      this.fastFrameStreak = 0;
-      return;
-    }
-    this.fastFrameStreak += 1;
-    if (this.targetFps < this.maxFps && this.fastFrameStreak >= this.targetFps * 2) {
-      this.targetFps += 1;
-      this.fastFrameStreak = 0;
-    }
+  /** Current adaptive target rate (kept as a property for tests and diagnostics). */
+  get targetFps() {
+    return this.pacer.targetFps;
   }
 
   async dispatchInput(input) {
     if (!this.viewport) this.viewport = await this.pageState();
-    if (input.kind === "pointer") {
-      const x = Math.round(input.x * this.viewport.width);
-      const y = Math.round(input.y * this.viewport.height);
-      const type = input.action === "down" ? "mousePressed" : input.action === "up" ? "mouseReleased" : input.action === "wheel" ? "mouseWheel" : "mouseMoved";
-      await this.send("Input.dispatchMouseEvent", { type, x, y, button: BUTTONS[input.button] ?? "left", clickCount: input.action === "down" || input.action === "up" ? 1 : 0, deltaX: input.deltaX ?? 0, deltaY: input.deltaY ?? 0 });
-      return;
-    }
-    if (input.text && !input.key && !input.code) {
-      await this.send("Input.insertText", { text: input.text });
-      return;
-    }
-    const modifiers = (input.modifiers ?? []).reduce((bits, name) => bits | (MODIFIER_BITS[name] ?? 0), 0);
-    const type = input.action === "up" ? "keyUp" : input.text ? "char" : "keyDown";
-    await this.send("Input.dispatchKeyEvent", { type, key: input.key, code: input.code, text: input.text, modifiers });
+    await dispatchCdpInput(this.send, this.viewport, input);
   }
 }
 

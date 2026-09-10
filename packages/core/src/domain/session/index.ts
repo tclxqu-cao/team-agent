@@ -23,3 +23,4 @@ export { SessionQueryIndexCache } from './SessionQueryIndexCache.js';
 export * from './SessionTitle.js';
 export * from './SessionGoals.js';
 export * from './SessionGoalCoordinator.js';
+export * from './SessionPermission.js';

@@ -19,6 +19,7 @@ import {
   readWebBrowserRequest,
 } from "../../../core/src/domain/web-console/WebBrowserBridge";
 import { readWebArtifactOpenRequest } from "../../../core/src/domain/web-console/WebArtifactBridge";
+import { readLiveFramePacket, LIVE_FRAME_PACKET_TYPE } from "../../../core/src/infrastructure/live-view/frame-packet";
 import type { FileTreeRevealRequest } from "./fileTreeReveal";
 import { useGateway } from "./useGateway";
 import AuthGate, { type WebAuthController } from "./AuthGate";
@@ -52,13 +53,13 @@ const WEBAPP_SKIN_MESSAGE_TYPE = "agent-web-shell:skin:v1";
 function AuthenticatedConsole({ auth }: { auth: WebAuthController }) {
   const webappFrameRef = useRef<HTMLIFrameElement>(null);
   const forwardBrowserBinary = useCallback((frame: Uint8Array) => {
-    if (frame.byteLength < 10 || frame[0] !== 1 || frame[1] !== 4) return;
-    const view = new DataView(frame.buffer, frame.byteOffset, frame.byteLength);
-    const payload = frame.buffer.slice(frame.byteOffset + 10, frame.byteOffset + frame.byteLength);
+    const packet = readLiveFramePacket(frame);
+    if (!packet || packet.type !== LIVE_FRAME_PACKET_TYPE.watcherFrame) return;
+    const payload = packet.payload.slice().buffer;
     webappFrameRef.current?.contentWindow?.postMessage({
       type: WEBAPP_BROWSER_BINARY_FRAME_TYPE,
-      channelId: view.getUint32(2),
-      sequence: view.getUint32(6),
+      channelId: packet.channelId,
+      sequence: packet.sequence,
       data: payload,
     }, window.location.origin, [payload]);
   }, []);

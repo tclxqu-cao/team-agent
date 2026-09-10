@@ -58,11 +58,13 @@
     "lint": "bunx tsc --noEmit"
   },
   "resolutions": {
-    "sherpa-onnx-darwin-arm64": "1.13.4"
+    "sherpa-onnx-darwin-arm64": "1.13.4",
+    "node-abi": "4.35.0"
   },
   "devDependencies": {
     "@electron/rebuild": "^4.0.4",
     "@types/node": "^22.0.0",
+    "better-sqlite3": "13.0.3",
     "typescript": "^5.6.0",
     "vitest": "^2.1.0"
   }

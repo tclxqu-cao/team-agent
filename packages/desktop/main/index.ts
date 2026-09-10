@@ -1535,9 +1535,11 @@ ipcMain.handle("desktop-live:set-enabled", async (_event, enabled: unknown) => {
 });
 
 app.whenReady().then(async () => {
+  // 暴露完整辅助功能树（AX 驱动/自动化测试依赖）
+  app.setAccessibilitySupportEnabled(true);
   if (process.platform === "darwin" && appIconPath) {
     const icon = nativeImage.createFromPath(appIconPath);
-    if (!icon.isEmpty()) app.dock.setIcon(icon);
+    if (!icon.isEmpty()) app.dock?.setIcon(icon);
   }
   // Allow microphone access for voice input & wake-word listening
   session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {

@@ -497,6 +497,12 @@ select:focus {
   height: 28px;
 }
 
+/* 文字按钮：内容自适应宽度，配合内联 padding 使用 */
+.ui-icon-button--auto {
+  width: auto;
+  min-width: 32px;
+}
+
 .ui-quiet-button {
   min-height: 36px;
   padding: 9px 12px;

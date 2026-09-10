@@ -206,18 +206,27 @@ describe("agentHost singleton", () => {
   it("resolves a registered project path and rejects a missing project", async () => {
     const store = agentHost.getProjectStore();
     const id = "agent-host-cwd-test";
-    const existing = await store.get(id);
-    if (existing) await store.update(id, { description: process.cwd() });
-    else {
-      const now = new Date().toISOString();
-      await store.create({ id, name: "cwd test", description: process.cwd(), created: now, updated: now });
-    }
+    // 允许根默认是 $HOME，而仓库可能位于任意卷（如外置盘）；把 cwd 显式
+    // 加入 AGENT_WEB_ROOTS，测试才不依赖检出路径的位置。
+    const previousRoots = process.env.AGENT_WEB_ROOTS;
+    process.env.AGENT_WEB_ROOTS = [previousRoots, process.cwd()].filter(Boolean).join(":");
+    try {
+      const existing = await store.get(id);
+      if (existing) await store.update(id, { description: process.cwd() });
+      else {
+        const now = new Date().toISOString();
+        await store.create({ id, name: "cwd test", description: process.cwd(), created: now, updated: now });
+      }
 
-    await expect(agentHost.resolveProjectWorkingDirectory(id, true)).resolves.toBe(process.cwd());
-    await expect(agentHost.resolveProjectWorkingDirectory("missing-project", true)).rejects.toMatchObject({
-      code: "PROJECT_NOT_FOUND",
-      status: 404,
-    });
+      await expect(agentHost.resolveProjectWorkingDirectory(id, true)).resolves.toBe(process.cwd());
+      await expect(agentHost.resolveProjectWorkingDirectory("missing-project", true)).rejects.toMatchObject({
+        code: "PROJECT_NOT_FOUND",
+        status: 404,
+      });
+    } finally {
+      if (previousRoots === undefined) delete process.env.AGENT_WEB_ROOTS;
+      else process.env.AGENT_WEB_ROOTS = previousRoots;
+    }
   });
 
   it("filters session listing by projectId", async () => {

@@ -17,6 +17,7 @@ export interface InputGatewayProcess {
   stdout: { on(event: "data", listener: (chunk: Buffer | string) => void): void };
   stderr: { on(event: "data", listener: (chunk: Buffer | string) => void): void };
   on(event: "exit", listener: (code: number | null) => void): void;
+  on(event: "error", listener: (error: Error) => void): void;
   kill(): void;
 }
 
@@ -31,6 +32,7 @@ export class DesktopInputGateway {
   private readonly helperPath: string;
   private readonly spawnImpl: SpawnInputHelper;
   private readonly lineTimeoutMs: number;
+  private readonly startSettleMs: number;
   private process: InputGatewayProcess | null = null;
   private buffer = "";
   private sequence = 0;
@@ -38,15 +40,17 @@ export class DesktopInputGateway {
   private startPromise: Promise<void> | null = null;
   private readonly onStderr: (line: string) => void;
 
-  constructor({ helperPath, spawnImpl = defaultSpawn, lineTimeoutMs = 4_000, onStderr = () => undefined }: {
+  constructor({ helperPath, spawnImpl = defaultSpawn, lineTimeoutMs = 4_000, startSettleMs = 50, onStderr = () => undefined }: {
     helperPath: string;
     spawnImpl?: SpawnInputHelper;
     lineTimeoutMs?: number;
+    startSettleMs?: number;
     onStderr?: (line: string) => void;
   }) {
     this.helperPath = helperPath;
     this.spawnImpl = spawnImpl;
     this.lineTimeoutMs = lineTimeoutMs;
+    this.startSettleMs = startSettleMs;
     this.onStderr = onStderr;
   }
 
@@ -61,14 +65,26 @@ export class DesktopInputGateway {
         reject(error instanceof Error ? error : new Error(String(error)));
         return;
       }
+      // spawn() reports a missing/blocked binary through the async "error"
+      // event; an unhandled one crashes the main process with a modal dialog.
+      let spawnError: Error | null = null;
       child.stdout.on("data", (chunk) => this.#handleChunk(typeof chunk === "string" ? chunk : chunk.toString("utf8")));
       child.stderr.on("data", (chunk) => {
         const line = (typeof chunk === "string" ? chunk : chunk.toString("utf8")).trim();
         if (line) this.onStderr(line);
       });
       child.on("exit", () => this.#handleExit());
+      child.on("error", (error) => {
+        spawnError = error;
+        this.#handleSpawnError(error);
+      });
       this.process = child;
-      resolve();
+      // Settle past the tick the spawn error fires on so start() rejects with
+      // it and enable() can surface it as a status error instead of crashing.
+      setTimeout(() => {
+        if (spawnError) reject(spawnError);
+        else resolve();
+      }, this.startSettleMs);
     });
     return this.startPromise;
   }
@@ -133,6 +149,13 @@ export class DesktopInputGateway {
     this.startPromise = null;
     this.buffer = "";
     this.#failPending(new Error("desktop input helper exited"));
+  }
+
+  #handleSpawnError(error: Error): void {
+    this.process = null;
+    this.startPromise = null;
+    this.buffer = "";
+    this.#failPending(new Error(`desktop input helper failed to start: ${error.message}`));
   }
 
   #failPending(error: Error): void {

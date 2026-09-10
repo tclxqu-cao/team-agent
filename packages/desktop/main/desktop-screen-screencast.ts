@@ -1,5 +1,6 @@
 import type { LiveViewInput, LiveViewViewport } from "@agent/core";
 import type { LiveScreencastFrame, LiveScreencastPort } from "@agent/core";
+import { LiveViewCapabilityError, LiveViewFramePacer } from "@agent/core";
 import type { DesktopInputCommand } from "./desktop-input-gateway";
 
 export interface DesktopDisplayInfo {
@@ -18,14 +19,8 @@ export interface DesktopCapturedSource {
 
 export type CaptureDesktopSources = (thumbnailSize: { width: number; height: number }) => Promise<ArrayLike<DesktopCapturedSource>>;
 
-export class DesktopLiveCapabilityError extends Error {
-  readonly code = "BROWSER_LIVE_STREAM_UNAVAILABLE";
-
-  constructor(message: string) {
-    super(message);
-    this.name = "DesktopLiveCapabilityError";
-  }
-}
+/** Legacy name for the shared live-view capability error; kept for existing imports. */
+export const DesktopLiveCapabilityError = LiveViewCapabilityError;
 
 /** Input sink for dispatching desktop commands to the helper. */
 export type DesktopInputSink = { dispatch(command: DesktopInputCommand): Promise<unknown> };
@@ -42,9 +37,7 @@ export class DesktopScreenScreencast implements LiveScreencastPort {
   private readonly firstFrameTimeoutMs: number;
   private readonly now: () => number;
   private readonly sleep: (ms: number) => Promise<void>;
-  private readonly maxFps: number;
-  private targetFps: number;
-  private fastFrameStreak = 0;
+  private readonly pacer: LiveViewFramePacer;
   private running = false;
   private viewport: LiveViewViewport | null = null;
   private pointerDown = false;
@@ -66,8 +59,7 @@ export class DesktopScreenScreencast implements LiveScreencastPort {
     this.displayInfo = displayInfo;
     this.captureSources = captureSources;
     this.primaryDisplayId = primaryDisplayId;
-    this.maxFps = Math.max(2, Math.min(5, fps));
-    this.targetFps = this.maxFps;
+    this.pacer = new LiveViewFramePacer({ fps });
     this.quality = quality;
     this.maxWidth = maxWidth;
     this.maxHeight = maxHeight;
@@ -119,13 +111,13 @@ export class DesktopScreenScreencast implements LiveScreencastPort {
           url: "",
           timestamp: sendStartedAt,
         });
-        this.#adaptFps(result, Math.max(0, this.now() - sendStartedAt));
+        this.pacer.recordSend(result, Math.max(0, this.now() - sendStartedAt));
       } else if (!receivedFrame && this.now() >= firstFrameDeadline) {
-        throw new DesktopLiveCapabilityError("The desktop runtime did not return a screen capture source");
+        throw new LiveViewCapabilityError("The desktop runtime did not return a screen capture source");
       }
       if (!this.running) return;
       const elapsed = this.now() - frameStartedAt;
-      await this.sleep(Math.max(0, 1_000 / this.targetFps - elapsed));
+      await this.sleep(Math.max(0, 1_000 / this.pacer.targetFps - elapsed));
     }
   }
 
@@ -188,16 +180,8 @@ export class DesktopScreenScreencast implements LiveScreencastPort {
     return list[0];
   }
 
-  #adaptFps(result: { accepted?: boolean } | void, durationMs: number): void {
-    if (result?.accepted === false || durationMs > 500) {
-      this.targetFps = Math.max(2, this.targetFps - 1);
-      this.fastFrameStreak = 0;
-      return;
-    }
-    this.fastFrameStreak += 1;
-    if (this.targetFps < this.maxFps && this.fastFrameStreak >= this.targetFps * 2) {
-      this.targetFps += 1;
-      this.fastFrameStreak = 0;
-    }
+  /** Current adaptive target rate (kept as a property for tests and diagnostics). */
+  get targetFps(): number {
+    return this.pacer.targetFps;
   }
 }

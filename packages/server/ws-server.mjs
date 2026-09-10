@@ -27,7 +27,7 @@ import next from "next";
 import { WebSocketServer } from "ws";
 import pty from "node-pty";
 import chokidar from "chokidar";
-import { LiveViewRegistry, HostPathPolicy, SQLiteAnonymousWebStore, SQLiteProjectStore, SQLiteWebConsoleStore } from "@agent/core";
+import { LiveViewRegistry, HostPathPolicy, SQLiteAnonymousWebStore, SQLiteProjectStore, SQLiteWebConsoleStore, encodeLiveFramePacket, readLiveFramePacket, LIVE_FRAME_PACKET_TYPE, MAX_RELAY_SITES, MAX_RELAY_TEXT_LENGTH, MAX_RELAY_IMAGES, MAX_RELAY_IMAGE_LENGTH } from "@agent/core";
 import { decodeOsc7Path, selectDefaultShell } from "./shell-platform.mjs";
 import { consumeTerminalReadyMarker, createTerminalShellLaunch } from "./shell-integration.mjs";
 import {
@@ -44,6 +44,21 @@ import { aiHubRelayBroadcast, aiHubRelayCapture, aiHubRelayStatus } from "./lib/
 const dev = process.env.NODE_ENV !== "production";
 const port = Number(process.env.PORT || 3000);
 const dir = path.dirname(fileURLToPath(import.meta.url));
+
+// Next.js 会自动加载 .env.local，但本进程在 Next 启动前就要读 AGENT_* 变量
+// （如 AGENT_WEB_ROOTS、AGENT_DATA_DIR），因此这里自行加载同目录的 .env.local。
+// 已存在的进程环境变量优先，不被覆盖。
+try {
+  for (const rawLine of fsSync.readFileSync(path.join(dir, ".env.local"), "utf8").split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith("#")) continue;
+    const eq = line.indexOf("=");
+    if (eq <= 0) continue;
+    const key = line.slice(0, eq).trim();
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key) || key in process.env) continue;
+    process.env[key] = line.slice(eq + 1).trim().replace(/^["']|["']$/g, "");
+  }
+} catch {}
 
 const serverBaseDir = path.resolve(process.env.AGENT_DATA_DIR?.trim() || dir);
 const anonymousWebStore = new SQLiteAnonymousWebStore(serverBaseDir);
@@ -541,15 +556,12 @@ function makeConn(ws) {
     },
     sendBrowserFrame(browserSessionId, sequence, bytes) {
       if (ws.readyState !== ws.OPEN) return;
-      const channelId = assignBrowserChannel(this, browserSessionId);
-      const payload = Buffer.from(bytes);
-      const frame = Buffer.allocUnsafe(10 + payload.byteLength);
-      frame[0] = 1;
-      frame[1] = 4;
-      frame.writeUInt32BE(channelId, 2);
-      frame.writeUInt32BE(sequence >>> 0, 6);
-      payload.copy(frame, 10);
-      ws.send(frame);
+      ws.send(encodeLiveFramePacket({
+        type: LIVE_FRAME_PACKET_TYPE.watcherFrame,
+        channelId: assignBrowserChannel(this, browserSessionId),
+        sequence,
+        payload: Buffer.from(bytes),
+      }));
     },
   };
 }
@@ -833,19 +845,20 @@ const requestHandlers = {
   // ── AI Hub：转发到桌面端 App（已登录 WebContentsView 注入）──
   "aihub:status": async () => await aiHubRelayStatus(),
   "aihub:capture": async (msg) => {
-    const siteIds = Array.isArray(msg.siteIds) ? msg.siteIds.map((id) => String(id)).filter(Boolean).slice(0, 8) : [];
+    const siteIds = Array.isArray(msg.siteIds) ? msg.siteIds.map((id) => String(id)).filter(Boolean).slice(0, MAX_RELAY_SITES) : [];
     if (siteIds.length === 0) throw Object.assign(new Error("no sites"), { code: "EINVAL" });
     return aiHubRelayCapture(siteIds);
   },
   "aihub:send": async (msg) => {
-    const text = String(msg.text ?? "").slice(0, 20000);
-    const siteIds = Array.isArray(msg.siteIds) ? msg.siteIds.map((id) => String(id)).filter(Boolean).slice(0, 8) : [];
-    // 图片：data:image/*;base64 数据 URL，最多 4 张，单张截断到 4M base64 字符（桌面端还会再校验）
+    const text = String(msg.text ?? "").slice(0, MAX_RELAY_TEXT_LENGTH);
+    const siteIds = Array.isArray(msg.siteIds) ? msg.siteIds.map((id) => String(id)).filter(Boolean).slice(0, MAX_RELAY_SITES) : [];
+    // 图片：data:image/*;base64 数据 URL，最多 MAX_RELAY_IMAGES 张，单张截断到
+    // MAX_RELAY_IMAGE_LENGTH 个 base64 字符（桌面端还会再校验）
     const images = Array.isArray(msg.images)
       ? msg.images
         .filter((item) => typeof item === "string" && item.startsWith("data:image/"))
-        .map((item) => item.slice(0, 4_000_000))
-        .slice(0, 4)
+        .map((item) => item.slice(0, MAX_RELAY_IMAGE_LENGTH))
+        .slice(0, MAX_RELAY_IMAGES)
       : [];
     if (!text.trim() && images.length === 0) throw Object.assign(new Error("empty text"), { code: "EINVAL" });
     if (siteIds.length === 0) throw Object.assign(new Error("no sites"), { code: "EINVAL" });
@@ -1162,14 +1175,15 @@ wss.on("connection", (ws, _req, principal) => {
   ws.on("message", (data, isBinary) => {
     if (isBinary) {
       const frame = Buffer.from(data);
-      if (frame.byteLength >= 10 && frame[0] === 1 && frame[1] === 5) {
-        const browserSessionId = conn.browserChannelToSession.get(frame.readUInt32BE(2));
+      const livePacket = readLiveFramePacket(frame);
+      if (livePacket && livePacket.type === LIVE_FRAME_PACKET_TYPE.producerFrame) {
+        const browserSessionId = conn.browserChannelToSession.get(livePacket.channelId);
         if (!browserSessionId) return;
         try {
           liveViewRegistry.updateFrame(conn.browserPeer, {
             sessionId: browserSessionId,
-            sequence: frame.readUInt32BE(6),
-            data: frame.subarray(10),
+            sequence: livePacket.sequence,
+            data: livePacket.payload,
           });
         } catch (error) {
           conn.sendJson({ type: "browser:frame-rejected", sessionId: browserSessionId, error: error.message, code: error.code });

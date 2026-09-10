@@ -1,16 +1,12 @@
 // AI Hub 桌面端中继客户端：连接桌面 App 持有的 ai-hub-relay.sock（Unix 域，
-// 行式 JSON 请求/响应）。socket 目录与桌面端 resolveNativeRuntimeDirectory
-// 的解析约定保持一致（AGENT_NATIVE_RUNTIME_DIR || ~/.agentroam/native-runtime）。
+// 行式 JSON 请求/响应）。socket 目录解析与协议常量统一定义在 core 的
+// domain/ai-hub/relay-protocol，与桌面端、ws-server 共用同一份。
 // 桌面 App 没运行 = socket 不存在 = 离线。
 import { createConnection } from "node:net";
 import { existsSync } from "node:fs";
-import { homedir } from "node:os";
-import { join } from "node:path";
+import { resolveAiHubRelaySocketPath } from "@agent/core";
 
-export function resolveAiHubRelaySocketPath(env = process.env) {
-  const directory = env.AGENT_NATIVE_RUNTIME_DIR?.trim() || join(homedir(), ".agentroam", "native-runtime");
-  return join(directory, "ai-hub-relay.sock");
-}
+export { resolveAiHubRelaySocketPath };
 
 function offlineError() {
   return Object.assign(new Error("desktop offline"), { code: "EDESKTOPOFFLINE" });

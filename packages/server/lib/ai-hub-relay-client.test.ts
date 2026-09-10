@@ -55,18 +55,21 @@ describe("ai-hub relay client", () => {
   });
 
   it("broadcast 往返返回逐站结果", async () => {
-    const result = await aiHubRelayBroadcast("你好", ["deepseek"], env);
+    // 注意：env 是第四个参数；漏传 images 会让 env 落到 images 位，
+    // 客户端退回默认 socket 路径，连上真机上正在运行的桌面中继。
+    const result = await aiHubRelayBroadcast("你好", ["deepseek"], [], env);
     expect(result.available).toBe(true);
     expect(result.results).toEqual([{ siteId: "deepseek", ok: true }]);
   });
 
   it("socket 不存在时 status 报告离线、broadcast 返回逐站失败", async () => {
     const missing = join(dir, "missing.sock");
-    const status = await aiHubRelayStatus({ AGENT_NATIVE_RUNTIME_DIR: dir + "-none" } as NodeJS.ProcessEnv);
+    const offlineEnv = { AGENT_NATIVE_RUNTIME_DIR: dir + "-none" } as NodeJS.ProcessEnv;
+    const status = await aiHubRelayStatus(offlineEnv);
     expect(status).toEqual({ available: false });
     const result = await relayRequest(missing, { type: "status" }, 500).catch((error) => error);
     expect(result.code ?? result.message).toBe("EDESKTOPOFFLINE");
-    const broadcast = await aiHubRelayBroadcast("hi", ["deepseek", "grok"], { AGENT_NATIVE_RUNTIME_DIR: dir + "-none" } as NodeJS.ProcessEnv);
+    const broadcast = await aiHubRelayBroadcast("hi", ["deepseek", "grok"], [], offlineEnv);
     expect(broadcast.available).toBe(false);
     expect(broadcast.reason).toBe("desktop-offline");
     expect(broadcast.results).toEqual([

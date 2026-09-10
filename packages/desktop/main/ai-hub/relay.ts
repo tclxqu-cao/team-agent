@@ -2,18 +2,23 @@ import { createServer, type Server, type Socket } from "node:net";
 import { chmodSync, existsSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { resolveNativeRuntimeDirectory } from "../agent-runtime/native-runtime-broker.js";
+import {
+  AI_HUB_RELAY_SOCKET_NAME,
+  MAX_RELAY_IMAGES,
+  MAX_RELAY_IMAGE_LENGTH,
+  MAX_RELAY_SITES,
+  MAX_RELAY_TEXT_LENGTH,
+} from "@agent/core";
 import type { AIHubManager, HubBroadcastResult } from "./manager.js";
 
 // AI Hub 桌面端中继：桌面 App 持有一个 Unix 域 socket（行式 JSON 请求/响应），
 // :3000 server 收到 web 控制台的 aihub:send 后连过来，由桌面端的
 // WebContentsView（已登录会话）执行真实注入。桌面没运行 = socket 不存在 = 离线。
 // socket 目录沿用 native-runtime broker 的解析约定，两端无需额外配置即可对齐。
+// 协议常量（上限、socket 名）定义在 core 的 domain/ai-hub/relay-protocol，server
+// 侧预校验与客户端共用同一份，避免三处漂移。
 
-export const AI_HUB_RELAY_SOCKET_NAME = "ai-hub-relay.sock";
-export const MAX_RELAY_TEXT_LENGTH = 20_000;
-export const MAX_RELAY_SITES = 8;
-export const MAX_RELAY_IMAGES = 4;
-export const MAX_RELAY_IMAGE_LENGTH = 4_000_000; // base64 字符数上限（约 3MB 二进制）
+export { AI_HUB_RELAY_SOCKET_NAME, MAX_RELAY_IMAGES, MAX_RELAY_IMAGE_LENGTH, MAX_RELAY_SITES, MAX_RELAY_TEXT_LENGTH };
 const RELAY_IMAGE_PATTERN = /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/;
 
 export type AiHubRelayRequest =

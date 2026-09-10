@@ -16,11 +16,11 @@ import {
   type MessageAttachment,
   ToolPermissionGate,
   TOOL_APPROVAL_OPTIONS,
-  isToolPermissionMode,
-  normalizeToolPermissionMode,
   toolApprovalDecisionFromAnswer,
   type ToolPermissionMode,
-  withPendingAutoTitle,
+  createSessionPermissionGate,
+  newSessionMetadata,
+  setSessionPermissionMode as applySessionPermissionMode,
 } from "@agent/core";
 import { homedir } from "node:os";
 import { getAgentWorkingDirectory, getServerBaseDir } from "../../lib/server-data-dir";
@@ -117,11 +117,8 @@ class AgentHost {
   private readonly toolPermissionGate: ToolPermissionGate;
 
   constructor() {
-    this.toolPermissionGate = new ToolPermissionGate({
-      resolveMode: async (sessionId) => {
-        const session = await this.sessionStore.get(sessionId);
-        return normalizeToolPermissionMode(session?.metadata.permissionMode);
-      },
+    this.toolPermissionGate = createSessionPermissionGate({
+      sessionStore: this.sessionStore,
       requestApproval: async (request) => {
         const response = await this.createQuestion({
           question: `Customer Agent 请求权限\n${request.summary}\n原因：${request.reason}`,
@@ -269,18 +266,12 @@ class AgentHost {
       events: [],
       created: now,
       updated: now,
-      metadata: withPendingAutoTitle(title, { permissionMode: "full-access" }),
+      metadata: newSessionMetadata(title),
     });
   }
 
   async setSessionPermissionMode(sessionId: string, mode: ToolPermissionMode): Promise<Session> {
-    if (!isToolPermissionMode(mode)) throw new Error(`Invalid permission mode: ${String(mode)}`);
-    const session = await this.sessionStore.get(sessionId);
-    if (!session) throw new Error(`Session not found: ${sessionId}`);
-    this.toolPermissionGate.clearSession(sessionId);
-    return this.sessionStore.update(sessionId, {
-      metadata: { ...session.metadata, permissionMode: mode },
-    });
+    return applySessionPermissionMode(this.sessionStore, this.toolPermissionGate, sessionId, mode);
   }
 
   getLatestEventId(sessionId: string): number {

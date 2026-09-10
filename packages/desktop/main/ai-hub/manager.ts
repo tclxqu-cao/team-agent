@@ -6,7 +6,60 @@ const require = createRequire(import.meta.url);
 // Load electron via createRequire (CJS) — see main/index.ts for the ESM crash rationale.
 // WebContentsView is accessed off the namespace to avoid clashing with the type import.
 const electron = require("electron") as typeof import("electron");
-const { app, clipboard, nativeImage } = electron;
+const { clipboard, nativeImage } = electron;
+
+// 声明的 Chrome 版本：内核已是 Electron 44（Chromium 140+），直接用真实版本号，
+// 与引擎特征天然一致；保留常量以便未来再次调整
+const CLAIMED_CHROME_VERSION = process.versions.chrome;
+
+// 标准 Chrome 浏览器 UA，供 AI Hub 站点视图使用：
+// Google 登录会拒绝非标准 UA / Chromium 环境（"此浏览器或应用可能不安全"）
+function buildChromeUserAgent(): string {
+  const platform = process.platform === "darwin"
+    ? "Macintosh; Intel Mac OS X 10_15_7"
+    : process.platform === "win32"
+      ? "Windows NT 10.0; Win64; x64"
+      : "X11; Linux x86_64";
+  return `Mozilla/5.0 (${platform}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${CLAIMED_CHROME_VERSION} Safari/537.36`;
+}
+
+// Chrome 客户端提示（Sec-CH-UA）头与 UA 必须同源一致：Electron 只报 "Chromium" 品牌，
+// 与伪装的 Chrome UA 对不上时 Google 登录同样拒绝
+function chromeClientHints(): { brands: string; fullVersionBrands: string; platform: string } {
+  const chromeVersion = CLAIMED_CHROME_VERSION;
+  const major = chromeVersion.split(".")[0] ?? "140";
+  const brands = `"Google Chrome";v="${major}", "Chromium";v="${major}", "Not_A Brand";v="99"`;
+  const fullVersionBrands = `"Google Chrome";v="${chromeVersion}", "Chromium";v="${chromeVersion}", "Not_A Brand";v="99"`;
+  const platform = process.platform === "win32" ? '"Windows"' : process.platform === "darwin" ? '"macOS"' : '"Linux"';
+  return { brands, fullVersionBrands, platform };
+}
+
+// 页面内 navigator.userAgentData 同步为 Chrome 品牌（best effort），
+// 避免 Google 登录脚本读到 Chromium 品牌后判定环境异常
+function buildUserAgentDataShim(): string {
+  const { platform } = chromeClientHints();
+  const major = CLAIMED_CHROME_VERSION.split(".")[0] ?? "140";
+  const platformName = platform === '"Windows"' ? "Windows" : platform === '"macOS"' ? "macOS" : "Linux";
+  const platformVersion = (process.platform === "darwin" ? process.getSystemVersion?.() : null) || "10.0.0";
+  return `(function(){
+    try {
+      var brandList = [{brand:"Google Chrome",version:"${major}"},{brand:"Chromium",version:"${major}"},{brand:"Not_A Brand",version:"99"}];
+      var shim = {
+        brands: brandList, mobile: false, platform: "${platformName}",
+        toJSON: function(){ return { brands: brandList, mobile: false, platform: this.platform }; },
+        getHighEntropyValues: function(){ return Promise.resolve({ architecture:"${process.arch === "arm64" ? "arm" : "x86"}", bitness:"64", model:"", platform:this.platform, platformVersion:"${platformVersion}", uaFullVersion:"${CLAIMED_CHROME_VERSION}", fullVersionList: brandList }); }
+      };
+      // 真实 Chrome 的 userAgentData 挂在 Navigator.prototype 上；
+      // 实例自有属性会被 Object.getOwnPropertyDescriptor 探测出篡改痕迹
+      Object.defineProperty(Navigator.prototype, "userAgentData", {
+        get: function(){ return shim; },
+        set: function(){},
+        configurable: true,
+        enumerable: true
+      });
+    } catch (e) {}
+  })();`;
+}
 
 export interface HubPaneRect {
   siteId: string;
@@ -297,29 +350,45 @@ export class AIHubManager {
     return entry;
   }
 
-  // 去 Electron 特征，避免站点前端拦截
+  // 整串替换为同版本 Chrome 的标准 UA：删 token 的混合 UA 仍带非标准产品名，
+  // 且 Sec-CH-UA / userAgentData 暴露 Chromium 环境，会被 Google 判定"浏览器或应用可能不安全"拒绝登录
   private sanitizeUserAgent(view: WebContentsView): void {
     try {
-      const userAgent = view.webContents.getUserAgent();
-      const cleaned = userAgent
-        .replace(/\s*Electron\/[\d.]+/g, "")
-        .replace(new RegExp(`\\s*${app.getName()}\\/[\\w.-]+`, "g"), "")
-        .replace(/\s{2,}/g, " ")
-        .trim();
-      view.webContents.setUserAgent(cleaned);
+      const userAgent = buildChromeUserAgent();
+      view.webContents.setUserAgent(userAgent);
+      view.webContents.session.setUserAgent(userAgent);
     } catch (error) {
       console.warn("[ai-hub] sanitizeUserAgent failed:", error);
     }
   }
 
   private hardenSession(view: WebContentsView): void {
-    view.webContents.session.setPermissionRequestHandler((_webContents, permission, callback) => {
+    const session = view.webContents.session;
+    session.setPermissionRequestHandler((_webContents, permission, callback) => {
       callback(permission === "media");
     });
+    const { brands, fullVersionBrands, platform } = chromeClientHints();
+    try {
+      session.webRequest.onBeforeSendHeaders((details, callback) => {
+        const requestHeaders = { ...details.requestHeaders };
+        requestHeaders["sec-ch-ua"] = brands;
+        requestHeaders["sec-ch-ua-mobile"] = "?0";
+        requestHeaders["sec-ch-ua-platform"] = platform;
+        requestHeaders["sec-ch-ua-full-version-list"] = fullVersionBrands;
+        callback({ requestHeaders });
+      });
+    } catch (error) {
+      console.warn("[ai-hub] client hint spoof failed:", error);
+    }
   }
 
   private wireEvents(siteId: string, view: WebContentsView): void {
     const webContents = view.webContents;
+    // 导航提交后立即同步 userAgentData（早于页面脚本读取；dom-ready 已晚）
+    webContents.on("did-navigate", (event, url) => {
+      if (!url.startsWith("http")) return;
+      void webContents.executeJavaScript(buildUserAgentDataShim(), true).catch(() => {});
+    });
     webContents.on("did-start-loading", () => this.emit({ type: "loading", siteId }));
     webContents.on("did-finish-load", () => this.emit({ type: "loaded", siteId }));
     webContents.on("did-fail-load", (_event, errorCode, _description, _url, isMainFrame) => {
@@ -340,9 +409,9 @@ export class AIHubManager {
   // 剪贴板粘贴回退：保存 → 写入 → focus + paste → Enter → 恢复。
   // 不依赖站点 DOM，是适配器失效时的可用性底线。
   private async pasteFallback(entry: PoolEntry, text: string): Promise<void> {
-    const previous = clipboard.readText();
+    const previous = await clipboard.readText();
     try {
-      clipboard.writeText(text);
+      await clipboard.writeText(text);
       entry.view.webContents.focus();
       entry.view.webContents.paste();
       await sleep(150);
@@ -350,11 +419,9 @@ export class AIHubManager {
     } finally {
       // 给站点输入框足够时间消费剪贴板后再恢复
       setTimeout(() => {
-        try {
-          clipboard.writeText(previous);
-        } catch {
+        void clipboard.writeText(previous).catch(() => {
           // 剪贴板恢复失败可忽略
-        }
+        });
       }, 300);
     }
   }
@@ -362,18 +429,14 @@ export class AIHubManager {
   // 带图片的注入：剪贴板逐张粘贴图片 → 粘贴文本 → 派发 Enter。
   // 适配器脚本只能填文本，图片必须走真实剪贴板，因此带图时统一走这条路径。
   private async pasteImagesFallback(entry: PoolEntry, text: string, images: string[]): Promise<void> {
-    const previousText = clipboard.readText();
-    const previousImage = clipboard.readImage();
+    // Electron 44 起剪贴板为 W3C 风格（ClipboardItem 按 MIME 键控），整组回写恢复最稳
+    const previousItems = await clipboard.read().catch(() => [] as Electron.ClipboardItem[]);
     const restoreClipboard = () => {
       setTimeout(() => {
-        try {
-          clipboard.write({
-            text: previousText,
-            image: previousImage.isEmpty() ? undefined : previousImage,
-          });
-        } catch {
+        if (previousItems.length === 0) return;
+        void clipboard.write(previousItems).catch(() => {
           // 剪贴板恢复失败可忽略
-        }
+        });
       }, 300);
     };
     try {
@@ -381,13 +444,13 @@ export class AIHubManager {
         const base64 = dataUrl.slice(dataUrl.indexOf(",") + 1);
         const image = nativeImage.createFromBuffer(Buffer.from(base64, "base64"));
         if (image.isEmpty()) continue;
-        clipboard.writeImage(image);
+        await clipboard.write([new electron.ClipboardItem({ "image/png": new Blob([new Uint8Array(image.toPNG())], { type: "image/png" }) })]);
         entry.view.webContents.focus();
         entry.view.webContents.paste();
         await sleep(250);
       }
       if (text) {
-        clipboard.writeText(text);
+        await clipboard.writeText(text);
         entry.view.webContents.focus();
         entry.view.webContents.paste();
         await sleep(150);

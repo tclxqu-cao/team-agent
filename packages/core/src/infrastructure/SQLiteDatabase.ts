@@ -3,24 +3,41 @@ import Database from "better-sqlite3";
 import { join } from "node:path";
 import { existsSync, mkdirSync, readdirSync } from "node:fs";
 import { homedir } from "node:os";
+import { createRequire } from "node:module";
 
 // Local dev machines keep better-sqlite3 builds for each runtime ABI under the
 // team-agent native cache (node-gyp for the web server vs @electron/rebuild
-// for the desktop shell). Pick the build matching the running ABI so both can
-// share one node_modules; fall back to default resolution when it's absent.
-function resolveNativeBinding(): string | undefined {
+// for the desktop shell). The cache is keyed by better-sqlite3 version as well
+// (`better-sqlite3-<version>/better_sqlite3.node`), so a mismatched pairing —
+// e.g. the 12.9.0 addon against the 13.x JS — fails at `addon.initialize`.
+// Candidate order: exact JS-library version from the cache, then the library's
+// own resolution (13.x ships prebuilds), then any other cached build.
+function nativeBindingCandidates(): Array<string | undefined> {
   const kind = process.versions.electron ? `electron-${process.versions.electron}` : `node-${process.versions.modules}`;
+  const root = process.platform === "darwin"
+    ? join(homedir(), "Library", "Caches", "team-agent", "native")
+    : join(homedir(), ".cache", "team-agent", "native");
+  const candidates: Array<string | undefined> = [];
+  const push = (entry: string) => {
+    const candidate = join(root, kind, entry, "better_sqlite3.node");
+    if (existsSync(candidate) && !candidates.includes(candidate)) candidates.push(candidate);
+  };
+
+  let cached: string[] = [];
   try {
-    const root = process.platform === "darwin"
-      ? join(homedir(), "Library", "Caches", "team-agent", "native")
-      : join(homedir(), ".cache", "team-agent", "native");
-    for (const entry of readdirSync(join(root, kind))) {
-      if (!entry.startsWith("better-sqlite3-")) continue;
-      const candidate = join(root, kind, entry, "better_sqlite3.node");
-      if (existsSync(candidate)) return candidate;
-    }
+    cached = readdirSync(join(root, kind)).filter((entry) => entry.startsWith("better-sqlite3-")).sort().reverse();
   } catch { /* no per-ABI cache for this runtime */ }
-  return undefined;
+
+  try {
+    const { version } = createRequire(import.meta.url)("better-sqlite3/package.json") as { version?: string };
+    if (version) push(`better-sqlite3-${version}`);
+  } catch { /* resolution differs in packaged runtimes */ }
+  // Electron ABI differs from the node prebuilds, so only plain-node runtimes
+  // may fall back to the library's own binding resolution.
+  if (!process.versions.electron) candidates.push(undefined);
+  for (const entry of cached) push(entry);
+  if (process.env.AGENT_SQLITE_DEBUG) console.error("[sqlite] kind:", kind, "cached:", cached.join(","), "candidates:", candidates.map((c) => c ?? "(default)").join(" | "));
+  return candidates;
 }
 
 export class SQLiteDatabase {
@@ -30,11 +47,25 @@ export class SQLiteDatabase {
     const dataDir = join(baseDir, ".agent-data");
     try { mkdirSync(dataDir, { recursive: true }); } catch { /* exists */ }
     const dbPath = join(dataDir, "agent.db");
-    const binding = resolveNativeBinding();
-    this.db = new Database(dbPath, binding ? { nativeBinding: binding } : undefined);
-    this.db.pragma("journal_mode = WAL");
-    this.db.pragma("foreign_keys = ON");
-    this.migrate();
+    // A wrong-version addon can pass construction yet disagree on call
+    // signatures, so each candidate must survive the pragmas too.
+    let lastError: unknown;
+    for (const binding of nativeBindingCandidates()) {
+      let candidate: Database | null = null;
+      try {
+        candidate = new Database(dbPath, binding ? { nativeBinding: binding } : undefined);
+        candidate.pragma("journal_mode = WAL");
+        candidate.pragma("foreign_keys = ON");
+        this.db = candidate;
+        this.migrate();
+        return;
+      } catch (error) {
+        lastError = error;
+        if (process.env.AGENT_SQLITE_DEBUG) console.error("[sqlite] binding candidate failed:", binding ?? "(library default)", error instanceof Error ? error.message : error);
+        try { candidate?.close(); } catch { /* already closed */ }
+      }
+    }
+    throw lastError instanceof Error ? lastError : new Error("better-sqlite3 native binding unavailable");
   }
 
   private migrate(): void {

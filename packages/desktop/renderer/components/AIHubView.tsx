@@ -47,6 +47,7 @@ export default function AIHubView({ onExit }: AIHubViewProps) {
   const [containerRect, setContainerRect] = useState<HubRect | null>(null);
   const [failed, setFailed] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState<Record<string, boolean>>({});
+  const [googleBlocked, setGoogleBlocked] = useState<Record<string, boolean>>({});
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const [chips, setChips] = useState<SendChip[]>([]);
@@ -146,6 +147,16 @@ export default function AIHubView({ onExit }: AIHubViewProps) {
         setLoading((previous) => ({ ...previous, [event.siteId]: false }));
       } else if (event.type === "loading") {
         setLoading((previous) => ({ ...previous, [event.siteId]: true }));
+      } else if (event.type === "title") {
+        // Google 在嵌入式浏览器中封锁账号登录（signin/rejected / 无法登录），给出明确引导而不是死页面
+        const googleBlocked = event.title.includes("无法登录") || event.title.includes("可能不安全");
+        setGoogleBlocked((previous) => {
+          if (googleBlocked === (event.siteId in previous && previous[event.siteId])) return previous;
+          const next = { ...previous };
+          if (googleBlocked) next[event.siteId] = true;
+          else delete next[event.siteId];
+          return next;
+        });
       }
     });
     return () => {
@@ -296,7 +307,7 @@ export default function AIHubView({ onExit }: AIHubViewProps) {
       <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", background: "var(--bg-workspace)", zIndex: 30 }}>
         <div style={{ textAlign: "center", color: "var(--text-muted)", fontSize: 13, display: "grid", gap: 12 }}>
           <span>AI Hub 仅在桌面端可用</span>
-          <button type="button" onClick={onExit} className="ui-icon-button" style={{ justifySelf: "center", padding: "6px 14px" }}>
+          <button type="button" onClick={onExit} className="ui-icon-button ui-icon-button--auto" style={{ justifySelf: "center", padding: "6px 14px" }}>
             返回
           </button>
         </div>
@@ -324,8 +335,8 @@ export default function AIHubView({ onExit }: AIHubViewProps) {
           onClick={onExit}
           title="返回对话"
           aria-label="返回对话"
-          className="ui-icon-button"
-          style={{ WebkitAppRegion: "no-drag", padding: "5px 10px" } as React.CSSProperties}
+          className="ui-icon-button ui-icon-button--auto"
+          style={{ WebkitAppRegion: "no-drag", padding: "5px 10px", whiteSpace: "nowrap" } as React.CSSProperties}
         >
           ← 返回
         </button>
@@ -343,7 +354,7 @@ export default function AIHubView({ onExit }: AIHubViewProps) {
               role="tab"
               aria-selected={mode === value}
               onClick={() => switchMode(value)}
-              className={`ui-icon-button ${mode === value ? "is-active" : ""}`}
+              className={`ui-icon-button ui-icon-button--auto ${mode === value ? "is-active" : ""}`}
               style={{ padding: "5px 12px", fontSize: 12 }}
             >
               {value === "single" ? "单屏" : "对比"}
@@ -431,16 +442,16 @@ export default function AIHubView({ onExit }: AIHubViewProps) {
                 style={{ padding: "6px 8px", borderRadius: 6, border: "1px solid var(--border-default)", background: "transparent", color: "var(--text-secondary)", fontSize: 12 }}
               />
               <div style={{ display: "flex", gap: 6 }}>
-                <button type="button" onClick={() => void addSite()} disabled={!isValidHttpUrl(newUrl)} className="ui-icon-button" style={{ padding: "5px 10px", fontSize: 12 }}>
+                <button type="button" onClick={() => void addSite()} disabled={!isValidHttpUrl(newUrl)} className="ui-icon-button ui-icon-button--auto" style={{ padding: "5px 10px", fontSize: 12, whiteSpace: "nowrap" }}>
                   添加
                 </button>
-                <button type="button" onClick={() => setFormOpen(false)} className="ui-icon-button" style={{ padding: "5px 10px", fontSize: 12 }}>
+                <button type="button" onClick={() => setFormOpen(false)} className="ui-icon-button ui-icon-button--auto" style={{ padding: "5px 10px", fontSize: 12, whiteSpace: "nowrap" }}>
                   取消
                 </button>
               </div>
             </div>
           ) : (
-            <button type="button" onClick={() => setFormOpen(true)} className="ui-icon-button" style={{ padding: "7px 8px", fontSize: 12, textAlign: "left" }}>
+            <button type="button" onClick={() => setFormOpen(true)} className="ui-icon-button ui-icon-button--auto" style={{ padding: "7px 8px", fontSize: 12, textAlign: "left", whiteSpace: "nowrap" }}>
               ＋ 添加站点
             </button>
           )}
@@ -495,6 +506,26 @@ export default function AIHubView({ onExit }: AIHubViewProps) {
                     }}
                   />
                   <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{site?.name ?? siteId}</span>
+                  {googleBlocked[siteId] && (
+                    <span
+                      title="Google 限制嵌入式浏览器登录此页面。请使用站点的邮箱/密码登录方式，或先在系统浏览器完成站点登录。"
+                      aria-label="Google 登录受限"
+                      style={{
+                        flexShrink: 0,
+                        fontSize: 10,
+                        padding: "1px 6px",
+                        borderRadius: 999,
+                        color: "#f7768e",
+                        border: "1px solid currentColor",
+                        whiteSpace: "nowrap",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        maxWidth: 180,
+                      }}
+                    >
+                      Google 登录受限，建议邮箱登录
+                    </span>
+                  )}
                   <button type="button" title="刷新" aria-label={`刷新 ${site?.name ?? siteId}`} onClick={() => retrySite(siteId)} className="ui-icon-button" style={{ padding: 2 }}>
                     ⟳
                   </button>
@@ -508,7 +539,7 @@ export default function AIHubView({ onExit }: AIHubViewProps) {
                     <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center" }}>
                       <div style={{ textAlign: "center", display: "grid", gap: 10, color: "var(--text-muted)", fontSize: 12 }}>
                         <span>页面加载失败（{failed[siteId]}）</span>
-                        <button type="button" onClick={() => retrySite(siteId)} className="ui-icon-button" style={{ justifySelf: "center", padding: "5px 12px" }}>
+                        <button type="button" onClick={() => retrySite(siteId)} className="ui-icon-button ui-icon-button--auto" style={{ justifySelf: "center", padding: "5px 12px" }}>
                           重试
                         </button>
                       </div>
@@ -540,14 +571,14 @@ export default function AIHubView({ onExit }: AIHubViewProps) {
         <button
           type="button"
           onClick={() => setBarCollapsed(false)}
-          className="ui-icon-button"
-          style={{ alignSelf: "flex-end", margin: 6, padding: "4px 10px", fontSize: 12 }}
+          className="ui-icon-button ui-icon-button--auto"
+          style={{ alignSelf: "flex-end", margin: 6, padding: "4px 10px", fontSize: 12, whiteSpace: "nowrap" }}
         >
           ⬆ 同步发送
         </button>
       ) : (
-        <div style={{ borderTop: "1px solid var(--border-subtle)", padding: "8px 10px", display: "flex", flexDirection: "column", gap: 6 }}>
-          <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
+        <div style={{ borderTop: "1px solid var(--border-subtle)", padding: "10px 12px", display: "flex", flexDirection: "column", gap: 8, background: "var(--bg-surface)" }}>
+          <div style={{ display: "flex", gap: 8, alignItems: "stretch" }}>
             <textarea
               value={draft}
               onChange={(event) => setDraft(event.target.value)}
@@ -556,26 +587,36 @@ export default function AIHubView({ onExit }: AIHubViewProps) {
               }}
               rows={2}
               placeholder={`一次输入，同步发送到 ${visibleIds.length} 个站点（⌘⏎ 发送）`}
-              style={{ flex: 1, resize: "none", padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border-default)", background: "var(--bg-surface)", color: "var(--text-secondary)", fontSize: 13 }}
+              style={{ flex: 1, resize: "none", padding: "9px 12px", borderRadius: 8, border: "1px solid var(--border-default)", background: "var(--bg-workspace)", color: "var(--text-primary)", fontSize: 13, lineHeight: 1.5 }}
             />
-            <button
-              type="button"
-              onClick={() => void send()}
-              disabled={!draft.trim() || sending || visibleIds.length === 0}
-              className="ui-icon-button"
-              style={{ padding: "8px 16px", fontSize: 13 }}
-            >
-              {sending ? "发送中…" : "同步发送"}
-            </button>
-            <button type="button" onClick={() => setBarCollapsed(true)} title="收起" aria-label="收起同步发送条" className="ui-icon-button" style={{ padding: "8px 10px" }}>
-              ⬇
-            </button>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6, alignItems: "stretch" }}>
+              <button
+                type="button"
+                onClick={() => void send()}
+                disabled={!draft.trim() || sending || visibleIds.length === 0}
+                className="ui-icon-button ui-icon-button--auto"
+                style={{ height: 38, padding: "0 18px", fontSize: 13, whiteSpace: "nowrap", borderRadius: 8, background: "var(--accent-glow)", color: "var(--text-primary)", fontWeight: 600 }}
+              >
+                {sending ? "发送中…" : "同步发送"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setBarCollapsed(true)}
+                title="收起"
+                aria-label="收起同步发送条"
+                className="ui-icon-button ui-icon-button--auto"
+                style={{ height: 24, padding: "0 10px", fontSize: 11, whiteSpace: "nowrap" }}
+              >
+                ⬇ 收起
+              </button>
+            </div>
           </div>
-          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", minHeight: 18 }}>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", minHeight: 18 }}>
+            <span style={{ fontSize: 11, color: "var(--text-muted)" }}>接收方</span>
             {visibleIds.map((siteId) => {
               const site = sites.find((candidate) => candidate.id === siteId);
               return (
-                <span key={siteId} style={{ fontSize: 11, padding: "2px 8px", borderRadius: 999, border: "1px solid var(--border-default)", color: "var(--text-muted)" }}>
+                <span key={siteId} style={{ fontSize: 11, padding: "3px 10px", borderRadius: 999, background: "var(--bg-glass)", color: "var(--text-secondary)", whiteSpace: "nowrap" }}>
                   {site?.name ?? siteId}
                 </span>
               );
@@ -586,10 +627,11 @@ export default function AIHubView({ onExit }: AIHubViewProps) {
                 role="status"
                 style={{
                   fontSize: 11,
-                  padding: "2px 8px",
+                  padding: "3px 10px",
                   borderRadius: 999,
                   color: chip.ok ? "#9ece6a" : "#f7768e",
-                  border: "1px solid currentColor",
+                  background: "var(--bg-glass)",
+                  whiteSpace: "nowrap",
                 }}
               >
                 {(sites.find((candidate) => candidate.id === chip.siteId)?.name ?? chip.siteId)

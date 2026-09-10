@@ -1,11 +1,12 @@
 import { createRequire } from "node:module";
 import http from "node:http";
 import https from "node:https";
+import { encodeLiveFramePacket, LIVE_FRAME_PACKET_TYPE } from "./frame-packet.js";
 
 interface LiveSocket {
   readonly readyState: number;
   readonly bufferedAmount: number;
-  send(data: string | Buffer): void;
+  send(data: string | Buffer | Uint8Array): void;
   close(): void;
   on(event: "message", cb: (raw: Buffer) => void): void;
   on(event: "close" | "error", cb: () => void): void;
@@ -148,13 +149,7 @@ export class LiveViewProducerClient {
     if (!channelId || !socket || socket.readyState !== this.WebSocketImpl.OPEN) throw new Error("browser bridge is not connected");
     if (socket.bufferedAmount > 2 * 1024 * 1024) return { accepted: false, dropped: "backpressure" };
     const jpeg = typeof frame.data === "string" ? Buffer.from(frame.data, "base64") : Buffer.from(frame.data);
-    const packet = Buffer.allocUnsafe(10 + jpeg.byteLength);
-    packet[0] = 1;
-    packet[1] = 5;
-    packet.writeUInt32BE(channelId, 2);
-    packet.writeUInt32BE(frame.sequence >>> 0, 6);
-    jpeg.copy(packet, 10);
-    socket.send(packet);
+    socket.send(encodeLiveFramePacket({ type: LIVE_FRAME_PACKET_TYPE.producerFrame, channelId, sequence: frame.sequence, payload: jpeg }));
     return { accepted: true };
   }
 
