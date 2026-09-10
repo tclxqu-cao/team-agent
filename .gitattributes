@@ -1,0 +1,3 @@
+packages/desktop/.agent-data/asr-models/** -text
+packages/desktop/.agent-data/kws-models/** -text
+packages/desktop/.agent-data/asr-models/**/tokens.txt whitespace=cr-at-eol

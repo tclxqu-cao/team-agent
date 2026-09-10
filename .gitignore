@@ -1,6 +1,11 @@
 node_modules/
 dist/
 .agent-data/
+!packages/desktop/.agent-data/
+packages/desktop/.agent-data/*
+!packages/desktop/.agent-data/asr-models/
+!packages/desktop/.agent-data/kws-models/
+packages/desktop/.agent-data/asr-models/**/encoder.int8.onnx
 .agent-todos/
 *.db
 *.db-shm
