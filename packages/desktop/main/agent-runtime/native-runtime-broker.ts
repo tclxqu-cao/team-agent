@@ -1,8 +1,8 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync, rmSync } from "node:fs";
 import { createConnection, createServer, type Server, type Socket } from "node:net";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import {
   cancelQueuedSessionMessage,
   cancelSessionGoal,
@@ -261,6 +261,7 @@ interface SnapshotProjection {
  */
 class NativeRuntimeBrokerState implements ImportedAgentWorkspaceRepository, CodexSessionCatalogRepository {
   private readonly database: SQLiteDatabase;
+  private closed = false;
 
   constructor(
     directory: string,
@@ -381,6 +382,12 @@ class NativeRuntimeBrokerState implements ImportedAgentWorkspaceRepository, Code
     if (!runColumns.some((column) => column.name === "goal_id")) {
       this.database.db.exec("ALTER TABLE native_runtime_run ADD COLUMN goal_id TEXT");
     }
+  }
+
+  close(): void {
+    if (this.closed) return;
+    this.closed = true;
+    this.database.close();
   }
 
   load(options: {
@@ -1152,14 +1159,14 @@ export class NativeRuntimeBrokerHost {
   }
 
   get socketPath(): string {
-    return join(this.directory, BROKER_SOCKET_NAME);
+    return resolveNativeRuntimeSocketPath(this.directory);
   }
 
   async start(): Promise<void> {
     if (this.server) return;
     mkdirSync(this.directory, { recursive: true, mode: 0o700 });
     try { chmodSync(this.directory, 0o700); } catch { /* Best effort. */ }
-    if (existsSync(this.socketPath)) {
+    if (isFilesystemSocket(this.socketPath) && existsSync(this.socketPath)) {
       const error = new Error(`Native runtime broker socket is already in use: ${this.socketPath}`) as NodeJS.ErrnoException;
       error.code = "EADDRINUSE";
       throw error;
@@ -1178,7 +1185,9 @@ export class NativeRuntimeBrokerHost {
       server.once("listening", onListening);
       server.listen(this.socketPath);
     });
-    try { chmodSync(this.socketPath, 0o600); } catch { /* Best effort. */ }
+    if (isFilesystemSocket(this.socketPath)) {
+      try { chmodSync(this.socketPath, 0o600); } catch { /* Best effort. */ }
+    }
     this.server = server;
     this.ownsSocket = true;
     // Do this only after this host owns the socket. A losing startup race must
@@ -1196,9 +1205,15 @@ export class NativeRuntimeBrokerHost {
     this.subscribers.clear();
     this.localSubscribers.clear();
     if (server) await new Promise<void>((resolve) => server.close(() => resolve()));
-    if (this.ownsSocket && existsSync(this.socketPath)) rmSync(this.socketPath, { force: true });
+    if (this.ownsSocket && isFilesystemSocket(this.socketPath) && existsSync(this.socketPath)) {
+      rmSync(this.socketPath, { force: true });
+    }
     this.ownsSocket = false;
-    await this.runtime.dispose();
+    try {
+      await this.runtime.dispose();
+    } finally {
+      this.state.close();
+    }
   }
 
   async health(): Promise<RuntimeHealth[]> {
@@ -2151,7 +2166,7 @@ export class NativeRuntimeBrokerClient {
 
   async subscribe(id: string, afterSequence: number, listener: (event: BrokerRunEvent) => void): Promise<() => void> {
     await this.ensureHost();
-    const socket = await openBrokerSocket(join(this.directory, BROKER_SOCKET_NAME));
+    const socket = await openBrokerSocket(resolveNativeRuntimeSocketPath(this.directory));
     const requestId = randomUUID();
     let settled = false;
     let buffer = "";
@@ -2292,8 +2307,8 @@ export class NativeRuntimeBrokerClient {
         const factory = this.options.runtimeFactory;
         if (!factory) throw new RuntimeSessionError("Native runtime broker is unavailable", "RUNTIME_UNAVAILABLE");
         const directory = this.directory;
-        const socketPath = join(directory, BROKER_SOCKET_NAME);
-        if (existsSync(socketPath)) {
+        const socketPath = resolveNativeRuntimeSocketPath(directory);
+        if (isFilesystemSocket(socketPath) && existsSync(socketPath)) {
           try {
             await this.requestRaw("ping", {});
             return;
@@ -2322,7 +2337,7 @@ export class NativeRuntimeBrokerClient {
   }
 
   private async requestRaw<T>(method: string, params: Record<string, unknown>): Promise<T> {
-    const socket = await openBrokerSocket(join(this.directory, BROKER_SOCKET_NAME));
+    const socket = await openBrokerSocket(resolveNativeRuntimeSocketPath(this.directory));
     const requestId = randomUUID();
     return new Promise<T>((resolve, reject) => {
       let buffer = "";
@@ -2515,6 +2530,22 @@ export function resolveNativeRuntimeDirectory(explicit?: string): string {
   return explicit
     || process.env.AGENT_NATIVE_RUNTIME_DIR?.trim()
     || join(homedir(), ".agentroam", "native-runtime");
+}
+
+export function resolveNativeRuntimeSocketPath(
+  directory: string,
+  platform: NodeJS.Platform = process.platform,
+): string {
+  if (platform !== "win32") return join(directory, BROKER_SOCKET_NAME);
+  const scope = createHash("sha256")
+    .update(resolve(directory).toLowerCase())
+    .digest("hex")
+    .slice(0, 24);
+  return `\\\\.\\pipe\\agentroam-native-runtime-${scope}`;
+}
+
+function isFilesystemSocket(socketPath: string): boolean {
+  return !socketPath.startsWith("\\\\.\\pipe\\");
 }
 
 function brokerHosts(): Map<string, NativeRuntimeBrokerHost> {
