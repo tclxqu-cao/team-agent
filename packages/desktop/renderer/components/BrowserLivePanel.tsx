@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ExternalLink, LoaderCircle, MonitorUp, MousePointer2, RotateCcw, X } from "lucide-react";
+import { ExternalLink, Hand, LoaderCircle, MonitorUp, MousePointer2, RotateCcw, X, ZoomIn, ZoomOut } from "lucide-react";
 import type { BrowserLiveSession } from "../global";
 
 interface BrowserFrame {
@@ -61,6 +61,11 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [controlPending, setControlPending] = useState(false);
+  const [zoom, setZoom] = useState(1);
+  const [panMode, setPanMode] = useState(false);
+  const [surfaceSize, setSurfaceSize] = useState({ width: 0, height: 0 });
+  const viewportRef = useRef<HTMLDivElement>(null);
+  const panStart = useRef<{ x: number; y: number; left: number; top: number } | null>(null);
   const pointerDown = useRef(false);
   const textInputRef = useRef<HTMLInputElement>(null);
 
@@ -68,6 +73,38 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
     () => sessions.find((session) => session.id === selectedId) ?? null,
     [selectedId, sessions],
   );
+  const isDesktop = selected?.backend === "desktop";
+  const hasControl = selected?.isController && selected.state === "user-controlled";
+  const viewport = frame?.viewport ?? selected?.viewport;
+  const fitScale = viewport && surfaceSize.width && surfaceSize.height
+    ? Math.min(surfaceSize.width / viewport.width, surfaceSize.height / viewport.height)
+    : null;
+
+  useEffect(() => {
+    setZoom(1);
+    setPanMode(false);
+    panStart.current = null;
+    viewportRef.current?.scrollTo(0, 0);
+  }, [open, selectedId]);
+
+  useEffect(() => {
+    const element = viewportRef.current;
+    if (!open || !element) return;
+    const observer = new ResizeObserver(() => {
+      setSurfaceSize({ width: element.clientWidth, height: element.clientHeight });
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [open, isDesktop]);
+
+  useEffect(() => {
+    const element = viewportRef.current;
+    if (!open || !element || !hasControl || panMode) return;
+    // React wheel listeners are passive; cancel local scrolling while controlling remotely.
+    const preventLocalScroll = (event: WheelEvent) => event.preventDefault();
+    element.addEventListener("wheel", preventLocalScroll, { passive: false });
+    return () => element.removeEventListener("wheel", preventLocalScroll);
+  }, [open, hasControl, panMode]);
   const frameSrc = useMemo(() => {
     if (!frame) return null;
     if (typeof frame.data === "string") return `data:${frame.mime};base64,${frame.data}`;
@@ -195,8 +232,6 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
   if (!open || typeof document === "undefined") return null;
 
   const controllable = selected?.online && !selected.controlledByAnotherViewer;
-  const hasControl = selected?.isController && selected.state === "user-controlled";
-  const isDesktop = selected?.backend === "desktop";
   const statusLabel = selected?.availability === "unavailable"
     ? (isDesktop ? "桌面直播不可用" : "浏览器直播不可用")
     : selected?.availability === "starting"
@@ -266,64 +301,93 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
           </div>
         )}
 
-        <div className={`browser-live-surface ${hasControl ? "is-controlling" : ""}`}>
-          {frame && frameSrc ? (
-            <div
-              className="browser-live-image-hit-area"
-              tabIndex={hasControl ? 0 : -1}
-              onPointerDown={(event) => {
-                if (!hasControl) return;
-                const point = pointerCoordinates(event);
-                if (!point) return;
-                pointerDown.current = true;
-                event.currentTarget.setPointerCapture(event.pointerId);
-                textInputRef.current?.focus({ preventScroll: true });
-                sendInput({ kind: "pointer", action: "down", ...point, button: "left" });
-              }}
-              onPointerMove={(event) => {
-                if (!hasControl || !pointerDown.current) return;
-                const point = pointerCoordinates(event);
-                if (point) sendInput({ kind: "pointer", action: "move", ...point, button: "left" });
-              }}
-              onPointerUp={(event) => {
-                if (!hasControl) return;
-                const point = pointerCoordinates(event);
-                pointerDown.current = false;
-                if (point) sendInput({ kind: "pointer", action: "up", ...point, button: "left" });
-              }}
-              onWheel={(event) => {
-                if (!hasControl) return;
-                const point = pointerCoordinates(event);
-                if (point) sendInput({ kind: "pointer", action: "wheel", ...point, deltaX: event.deltaX, deltaY: event.deltaY });
-              }}
-              onKeyDown={(event) => {
-                if (!hasControl) return;
-                sendInput({ kind: "key", action: "down", key: event.key, code: event.code, text: event.key.length === 1 ? event.key : "", modifiers: modifierNames(event) });
-                if (["Backspace", "Tab", "Enter", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "PageUp", "PageDown", "Home", "End", "Escape"].includes(event.key)) event.preventDefault();
-              }}
-              onKeyUp={(event) => {
-                if (hasControl) sendInput({ kind: "key", action: "up", key: event.key, code: event.code, modifiers: modifierNames(event) });
-              }}
-            >
-              <img src={frameSrc} alt={selected?.title || "浏览器实时画面"} draggable={false} />
-              <input
-                ref={textInputRef}
-                className="browser-live-mobile-input"
-                aria-label="浏览器键盘输入"
-                value=""
-                onChange={(event) => {
-                  if (event.target.value) sendInput({ kind: "key", action: "down", text: event.target.value, key: "", code: "", modifiers: [] });
-                }}
-              />
-            </div>
-          ) : (
-            <div className="browser-live-empty">
-              {(loading || selected?.availability === "starting") ? <LoaderCircle size={22} className="spin" aria-hidden="true" /> : <MonitorUp size={24} aria-hidden="true" />}
-              <strong>{loading ? "正在连接浏览器" : emptyTitle}</strong>
-              <span>{emptyDetail}</span>
+        <div className={`browser-live-surface ${hasControl ? "is-controlling" : ""} ${isDesktop ? "has-zoom" : ""}`}>
+          {isDesktop && (
+            <div className="browser-live-zoom" role="group" aria-label="桌面画面缩放">
+              <button type="button" aria-label="缩小桌面画面" title="缩小" disabled={!frame || zoom <= 0.5} onClick={() => setZoom((value) => Math.max(0.5, value - 0.25))}><ZoomOut size={16} /></button>
+              <output aria-label="桌面缩放比例">{Math.round(zoom * 100)}%</output>
+              <button type="button" aria-label="放大桌面画面" title="放大" disabled={!frame || zoom >= 3} onClick={() => setZoom((value) => Math.min(3, value + 0.25))}><ZoomIn size={16} /></button>
+              <button type="button" disabled={!frame} onClick={() => { setZoom(1); setPanMode(false); viewportRef.current?.scrollTo(0, 0); }}>适应窗口</button>
+              <button type="button" aria-label="移动桌面画面" aria-pressed={panMode} title="拖动或滚动画面，不发送远程输入" disabled={!frame} onClick={() => setPanMode((value) => !value)}><Hand size={15} />移动画面</button>
             </div>
           )}
-          {hasControl && (
+          <div ref={viewportRef} className="browser-live-viewport">
+            {frame && frameSrc ? (
+              <div
+                className="browser-live-image-hit-area"
+                style={isDesktop && fitScale && viewport ? {
+                  width: viewport.width * fitScale * zoom,
+                  height: viewport.height * fitScale * zoom,
+                  cursor: panMode ? "grab" : undefined,
+                } : undefined}
+                tabIndex={hasControl && !panMode ? 0 : -1}
+                onPointerDown={(event) => {
+                  if (panMode && viewportRef.current) {
+                    const element = viewportRef.current;
+                    panStart.current = { x: event.clientX, y: event.clientY, left: element.scrollLeft, top: element.scrollTop };
+                    event.currentTarget.setPointerCapture(event.pointerId);
+                    return;
+                  }
+                  if (!hasControl) return;
+                  const point = pointerCoordinates(event);
+                  if (!point) return;
+                  pointerDown.current = true;
+                  event.currentTarget.setPointerCapture(event.pointerId);
+                  textInputRef.current?.focus({ preventScroll: true });
+                  sendInput({ kind: "pointer", action: "down", ...point, button: "left" });
+                }}
+                onPointerMove={(event) => {
+                  if (panMode && panStart.current && viewportRef.current) {
+                    const start = panStart.current;
+                    viewportRef.current.scrollTo(start.left + start.x - event.clientX, start.top + start.y - event.clientY);
+                    return;
+                  }
+                  if (!hasControl || !pointerDown.current) return;
+                  const point = pointerCoordinates(event);
+                  if (point) sendInput({ kind: "pointer", action: "move", ...point, button: "left" });
+                }}
+                onPointerUp={(event) => {
+                  if (panMode) { panStart.current = null; return; }
+                  if (!hasControl) return;
+                  const point = pointerCoordinates(event);
+                  pointerDown.current = false;
+                  if (point) sendInput({ kind: "pointer", action: "up", ...point, button: "left" });
+                }}
+                onPointerCancel={() => { panStart.current = null; pointerDown.current = false; }}
+                onWheel={(event) => {
+                  if (!hasControl || panMode) return;
+                  const point = pointerCoordinates(event);
+                  if (point) sendInput({ kind: "pointer", action: "wheel", ...point, deltaX: event.deltaX, deltaY: event.deltaY });
+                }}
+                onKeyDown={(event) => {
+                  if (!hasControl || panMode) return;
+                  sendInput({ kind: "key", action: "down", key: event.key, code: event.code, text: event.key.length === 1 ? event.key : "", modifiers: modifierNames(event) });
+                  if (["Backspace", "Tab", "Enter", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "PageUp", "PageDown", "Home", "End", "Escape"].includes(event.key)) event.preventDefault();
+                }}
+                onKeyUp={(event) => {
+                  if (hasControl && !panMode) sendInput({ kind: "key", action: "up", key: event.key, code: event.code, modifiers: modifierNames(event) });
+                }}
+              >
+                <img src={frameSrc} alt={selected?.title || "浏览器实时画面"} draggable={false} />
+                <input
+                  ref={textInputRef}
+                  className="browser-live-mobile-input"
+                  aria-label="浏览器键盘输入"
+                  value=""
+                  onChange={(event) => {
+                    if (!panMode && event.target.value) sendInput({ kind: "key", action: "down", text: event.target.value, key: "", code: "", modifiers: [] });
+                  }}
+                />
+              </div>
+            ) : (
+              <div className="browser-live-empty">
+                {(loading || selected?.availability === "starting") ? <LoaderCircle size={22} className="spin" aria-hidden="true" /> : <MonitorUp size={24} aria-hidden="true" />}
+                <strong>{loading ? "正在连接浏览器" : emptyTitle}</strong>
+                <span>{emptyDetail}</span>
+              </div>
+            )}
+          </div>
+          {hasControl && !panMode && (
             <div className="browser-live-control-cue"><MousePointer2 size={13} aria-hidden="true" /> {isDesktop ? "当前输入会发送到本机" : "当前输入会发送到浏览器"}</div>
           )}
         </div>

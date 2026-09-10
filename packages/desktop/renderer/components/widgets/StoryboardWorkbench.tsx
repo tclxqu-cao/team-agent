@@ -17,6 +17,7 @@ interface StoryboardWorkbenchProps {
   shots?: Shot[];
   status?: string;
   composedVideoUrl?: string;
+  isAgentRunning?: boolean;
 }
 
 const statusIcon: Record<string, string> = {
@@ -28,7 +29,7 @@ const statusIcon: Record<string, string> = {
 };
 
 export function StoryboardWorkbench(props: StoryboardWorkbenchProps) {
-  const { title = "视频工作台", shots = [], status = "generating", composedVideoUrl } = props;
+  const { title = "视频工作台", shots = [], status = "generating", composedVideoUrl, isAgentRunning } = props;
   const [collapsed, setCollapsed] = useState(false);
   const [activeVideo, setActiveVideo] = useState<string | null>(null);
 
@@ -130,7 +131,11 @@ export function StoryboardWorkbench(props: StoryboardWorkbenchProps) {
 
           {/* Status bar */}
           <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "var(--text-muted)" }}>
-            {status === "generating" && <span>🔄 生成中...</span>}
+            {status === "generating" && (
+              <span>{isAgentRunning === false
+                ? "本轮已结束"
+                : "🔄 生成中..."}</span>
+            )}
             {status === "preview_ready" && <span>📷 预览图已就绪</span>}
             {status === "video_ready" && <span>🎬 视频片段已就绪</span>}
             {status === "composed" && <span>✅ 合成完成</span>}

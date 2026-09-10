@@ -42,8 +42,22 @@ function inputLocatorScript(useExplicitSelectors: boolean, inputsJson: string): 
   }`;
 }
 
-// 返回可交给 webContents.executeJavaScript(script, true) 的异步 IIFE：
-// 成功 resolve true；任一步失败 reject Error("reason")，由主进程走剪贴板回退。
+// 图片粘贴前只聚焦站点输入框，保留站点已有草稿。
+export function buildFocusInputScript(adapter: HubAdapterId | undefined): string {
+  const spec = ADAPTER_SELECTORS[adapter ?? "generic"];
+  return `(() => {
+  const visible = (el) => {
+    const r = el.getBoundingClientRect();
+    return r.width > 40 && r.height > 12 && getComputedStyle(el).visibility !== "hidden";
+  };
+${inputLocatorScript(spec.inputs.length > 0, JSON.stringify(spec.inputs))}
+  if (!input) throw new Error("input-not-found");
+  input.focus();
+  return true;
+})()`;
+}
+
+// executeJavaScript(script, true) 执行异步 IIFE；失败时由主进程走剪贴板回退。
 export function buildAdapterScript(adapter: HubAdapterId | undefined, text: string): string {
   const spec = ADAPTER_SELECTORS[adapter ?? "generic"];
   const useExplicit = spec.inputs.length > 0;

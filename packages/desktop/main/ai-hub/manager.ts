@@ -1,80 +1,27 @@
 import { createRequire } from "node:module";
-import type { BrowserWindow, WebContentsView } from "electron";import { CONVERSATION_EXTRACT_SCRIPT, ENTER_DISPATCH_SCRIPT, buildAdapterScript } from "./adapters.js";
+import type { BrowserWindow, WebContents, WebContentsView } from "electron";
+import { CONVERSATION_EXTRACT_SCRIPT, ENTER_DISPATCH_SCRIPT, buildAdapterScript, buildFocusInputScript } from "./adapters.js";
+import type { ChromeHubBridge } from "./chrome-bridge.js";
+import { isChromeHubSite, chromeHubErrorMessage } from "./chrome-bridge-protocol.js";
 import { HubConfigStore, normalizeHubConfig, type HubConfig } from "./config.js";
+import { isGoogleAuthUrl } from "./navigation-policy.js";
+import { HubPaneLayoutState, type HubPaneRect } from "./pane-layout-state.js";
+import { resolveHubSessionPlan } from "./session-choice.js";
+
+export type { HubPaneRect } from "./pane-layout-state.js";
 
 const require = createRequire(import.meta.url);
 // Load electron via createRequire (CJS) — see main/index.ts for the ESM crash rationale.
 // WebContentsView is accessed off the namespace to avoid clashing with the type import.
 const electron = require("electron") as typeof import("electron");
-const { clipboard, nativeImage } = electron;
+const { clipboard, nativeImage, session, shell } = electron;
 
-// 声明的 Chrome 版本：内核已是 Electron 44（Chromium 140+），直接用真实版本号，
-// 与引擎特征天然一致；保留常量以便未来再次调整
-const CLAIMED_CHROME_VERSION = process.versions.chrome;
+export type GoogleReauthEventState = "started" | "synchronized" | "canceled" | "timeout" | "failed" | "unavailable";
 
-// 标准 Chrome 浏览器 UA，供 AI Hub 站点视图使用：
-// Google 登录会拒绝非标准 UA / Chromium 环境（"此浏览器或应用可能不安全"）
-function buildChromeUserAgent(): string {
-  const platform = process.platform === "darwin"
-    ? "Macintosh; Intel Mac OS X 10_15_7"
-    : process.platform === "win32"
-      ? "Windows NT 10.0; Win64; x64"
-      : "X11; Linux x86_64";
-  return `Mozilla/5.0 (${platform}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${CLAIMED_CHROME_VERSION} Safari/537.36`;
-}
-
-// Chrome 客户端提示（Sec-CH-UA）头与 UA 必须同源一致：Electron 只报 "Chromium" 品牌，
-// 与伪装的 Chrome UA 对不上时 Google 登录同样拒绝
-function chromeClientHints(): { brands: string; fullVersionBrands: string; platform: string } {
-  const chromeVersion = CLAIMED_CHROME_VERSION;
-  const major = chromeVersion.split(".")[0] ?? "140";
-  const brands = `"Google Chrome";v="${major}", "Chromium";v="${major}", "Not_A Brand";v="99"`;
-  const fullVersionBrands = `"Google Chrome";v="${chromeVersion}", "Chromium";v="${chromeVersion}", "Not_A Brand";v="99"`;
-  const platform = process.platform === "win32" ? '"Windows"' : process.platform === "darwin" ? '"macOS"' : '"Linux"';
-  return { brands, fullVersionBrands, platform };
-}
-
-// 页面内 navigator.userAgentData 同步为 Chrome 品牌（best effort），
-// 避免 Google 登录脚本读到 Chromium 品牌后判定环境异常
-function buildUserAgentDataShim(): string {
-  const { platform } = chromeClientHints();
-  const major = CLAIMED_CHROME_VERSION.split(".")[0] ?? "140";
-  const platformName = platform === '"Windows"' ? "Windows" : platform === '"macOS"' ? "macOS" : "Linux";
-  const platformVersion = (process.platform === "darwin" ? process.getSystemVersion?.() : null) || "10.0.0";
-  return `(function(){
-    try {
-      var brandList = [{brand:"Google Chrome",version:"${major}"},{brand:"Chromium",version:"${major}"},{brand:"Not_A Brand",version:"99"}];
-      var shim = {
-        brands: brandList, mobile: false, platform: "${platformName}",
-        toJSON: function(){ return { brands: brandList, mobile: false, platform: this.platform }; },
-        getHighEntropyValues: function(){ return Promise.resolve({ architecture:"${process.arch === "arm64" ? "arm" : "x86"}", bitness:"64", model:"", platform:this.platform, platformVersion:"${platformVersion}", uaFullVersion:"${CLAIMED_CHROME_VERSION}", fullVersionList: brandList }); }
-      };
-      // 真实 Chrome 的 userAgentData 挂在 Navigator.prototype 上；
-      // 实例自有属性会被 Object.getOwnPropertyDescriptor 探测出篡改痕迹
-      Object.defineProperty(Navigator.prototype, "userAgentData", {
-        get: function(){ return shim; },
-        set: function(){},
-        configurable: true,
-        enumerable: true
-      });
-    } catch (e) {}
-  })();`;
-}
-
-export interface HubPaneRect {
-  siteId: string;
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-}
-
-export interface HubEvent {
-  type: "loading" | "loaded" | "load-failed" | "title";
-  siteId: string;
-  errorCode?: number;
-  title?: string;
-}
+export type HubEvent =
+  | { type: "loading" | "loaded" | "load-failed" | "title"; siteId: string; errorCode?: number; title?: string }
+  | { type: "google-auth-external"; siteId: string }
+  | { type: "google-reauth"; siteId: string; state: GoogleReauthEventState };
 
 export interface HubBroadcastResult {
   siteId: string;
@@ -94,6 +41,11 @@ export interface HubCaptureResult {
 interface AIHubManagerDeps {
   configPath: string;
   getWindow: () => BrowserWindow | null;
+  /** 已完成导入时返回共享 Profile 快照的绝对路径；null = 保持每站点分区 */
+  getImportedProfilePath?: () => string | null;
+  /** 在用户日常浏览器中打开登录，不访问其 Cookie。 */
+  requestBrowserLogin?: (siteId: string) => void;
+  chromeBridge?: ChromeHubBridge;
 }
 
 interface PoolEntry {
@@ -109,13 +61,20 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 export class AIHubManager {
   private readonly store: HubConfigStore;
   private readonly getWindow: () => BrowserWindow | null;
+  private readonly getImportedProfilePath?: () => string | null;
+  private readonly requestBrowserLogin?: (siteId: string) => void;
+  private readonly chromeBridge?: ChromeHubBridge;
   private readonly pool = new Map<string, PoolEntry>();
+  private readonly layout = new HubPaneLayoutState();
   private config: HubConfig;
   private readonly listeners = new Set<(event: HubEvent) => void>();
 
   constructor(deps: AIHubManagerDeps) {
     this.store = new HubConfigStore(deps.configPath);
     this.getWindow = deps.getWindow;
+    this.getImportedProfilePath = deps.getImportedProfilePath;
+    this.requestBrowserLogin = deps.requestBrowserLogin;
+    this.chromeBridge = deps.chromeBridge;
     const loaded = this.store.loadSync();
     this.config = loaded.config;
     if (loaded.resetFromCorruption) {
@@ -150,7 +109,10 @@ export class AIHubManager {
   async openSite(siteId: string): Promise<void> {
     const site = this.config.sites.find((candidate) => candidate.id === siteId);
     if (!site) return;
+    if (this.usesChrome(siteId)) return;
     const entry = this.ensureView(site.id, site.url);
+    const pane = this.layout.get(siteId);
+    if (pane) this.applyBounds(entry, pane);
     if (!entry.loaded) {
       entry.loaded = true;
       try {
@@ -163,14 +125,18 @@ export class AIHubManager {
     }
   }
 
-  // 关闭并销毁站点视图（侧边栏“关闭页面”；登录态在 persist 分区中保留）
+  usesChrome(siteId: string): boolean { return isChromeHubSite(siteId) && !!this.chromeBridge; }
+
+  // 关闭并销毁站点视图（pane 头部“关闭页面”；登录态在 persist 分区中保留）
   closeSite(siteId: string): void {
+    if (this.usesChrome(siteId)) { void this.chromeBridge!.request(siteId, "detach").catch(() => {}); return; }
     const entry = this.pool.get(siteId);
     if (!entry) return;
     this.destroyEntry(siteId, entry);
   }
 
   setBounds(panes: HubPaneRect[]): void {
+    this.layout.replace(panes);
     const window = this.getWindow();
     if (!window) return;
     const listed = new Set<string>();
@@ -178,19 +144,7 @@ export class AIHubManager {
       const entry = this.pool.get(pane.siteId);
       if (!entry) continue;
       listed.add(pane.siteId);
-      const x = Math.round(pane.x);
-      const y = Math.round(pane.y);
-      const width = Math.round(pane.width);
-      const height = Math.round(pane.height);
-      if (width <= 0 || height <= 0) {
-        this.detach(entry);
-        continue;
-      }
-      if (!entry.attached) {
-        window.contentView.addChildView(entry.view);
-        entry.attached = true;
-      }
-      entry.view.setBounds({ x, y, width, height });
+      this.applyBounds(entry, pane);
     }
     // 不在本次布局中的已 attach 视图 → detach（隐藏不销毁）
     for (const [siteId, entry] of this.pool) {
@@ -199,6 +153,7 @@ export class AIHubManager {
   }
 
   reloadSite(siteId: string): void {
+    if (this.usesChrome(siteId)) { void this.chromeBridge!.request(siteId, "reload").catch(() => {}); return; }
     const entry = this.pool.get(siteId);
     if (!entry) return;
     entry.view.webContents.reload();
@@ -238,8 +193,14 @@ export class AIHubManager {
   // 同步发送：纯文本走适配器优先；带图片或适配器失败走剪贴板粘贴回退；单站点失败不影响其他站点。
   async broadcast(text: string, siteIds: string[], images: string[] = []): Promise<HubBroadcastResult[]> {
     const results: HubBroadcastResult[] = [];
+    // Chrome tabs do not share Electron's system-clipboard fallback; dispatch them concurrently.
+    const chromeResults = new Map([...new Set(siteIds)].filter((siteId) => this.usesChrome(siteId) && this.config.sites.some((site) => site.id === siteId)).map((siteId) => [siteId, this.sendToChrome(siteId, text, images)]));
     for (const siteId of siteIds) {
       const site = this.config.sites.find((candidate) => candidate.id === siteId);
+      if (site && this.usesChrome(siteId)) {
+        results.push(await chromeResults.get(siteId)!);
+        continue;
+      }
       const entry = this.pool.get(siteId);
       if (!site || !entry) {
         results.push({ siteId, ok: false, reason: "site-not-open" });
@@ -247,6 +208,7 @@ export class AIHubManager {
       }
       if (images.length > 0) {
         try {
+          await entry.view.webContents.executeJavaScript(buildFocusInputScript(site.adapter), true);
           await this.pasteImagesFallback(entry, text, images);
           results.push({ siteId, ok: true });
         } catch (fallbackError) {
@@ -279,14 +241,40 @@ export class AIHubManager {
     return results;
   }
 
+  private async sendToChrome(siteId: string, text: string, images: string[]): Promise<HubBroadcastResult> {
+    try {
+      const result = await this.chromeBridge!.request(siteId, "send-message", { text, images }) as { submitted?: boolean } | undefined;
+      if (result?.submitted !== true) throw new Error("chrome-submit-unconfirmed");
+      return { siteId, ok: true };
+    } catch (error) {
+      return { siteId, ok: false, reason: error instanceof Error ? chromeHubErrorMessage(error.message) : "Chrome 页面发送失败" };
+    }
+  }
+
   destroyAll(): void {
     for (const [siteId, entry] of this.pool) this.destroyEntry(siteId, entry);
+  }
+
+  /** 认证始终在用户日常浏览器中进行。 */
+  requestExistingBrowserLogin(siteId: string): boolean {
+    if (!this.requestBrowserLogin) return false;
+    this.requestBrowserLogin(siteId);
+    return true;
   }
 
   // 会话抽取（web 控制台 capture 轮询）：只读已打开站点的 DOM，未打开的站点返回 site-not-open。
   async captureConversations(siteIds: string[]): Promise<HubCaptureResult[]> {
     const results: HubCaptureResult[] = [];
     for (const siteId of siteIds) {
+      if (this.usesChrome(siteId)) {
+        try {
+          const extract = await this.chromeBridge!.request(siteId, "snapshot") as { messages?: Array<{ role: string; content: string }>; debug?: Record<string, unknown> };
+          results.push({ siteId, ok: true, strategy: siteId, debug: extract?.debug, messages: (extract?.messages ?? []).map((message) => ({ role: message.role, text: message.content })) });
+        } catch (error) {
+          results.push({ siteId, ok: false, reason: error instanceof Error ? error.message : "Chrome 页面读取失败" });
+        }
+        continue;
+      }
       const entry = this.pool.get(siteId);
       if (!entry) {
         results.push({ siteId, ok: false, reason: "site-not-open" });
@@ -318,6 +306,27 @@ export class AIHubManager {
     entry.attached = false;
   }
 
+  private applyBounds(entry: PoolEntry, pane: HubPaneRect): void {
+    const width = Math.round(pane.width);
+    const height = Math.round(pane.height);
+    if (width <= 0 || height <= 0) {
+      this.detach(entry);
+      return;
+    }
+    const window = this.getWindow();
+    if (!window) return;
+    if (!entry.attached) {
+      window.contentView.addChildView(entry.view);
+      entry.attached = true;
+    }
+    entry.view.setBounds({
+      x: Math.round(pane.x),
+      y: Math.round(pane.y),
+      width,
+      height,
+    });
+  }
+
   private destroyEntry(siteId: string, entry: PoolEntry): void {
     this.detach(entry);
     this.pool.delete(siteId);
@@ -331,10 +340,13 @@ export class AIHubManager {
   private ensureView(siteId: string, url: string): PoolEntry {
     const existing = this.pool.get(siteId);
     if (existing) return existing;
-    const partition = `persist:aihub-${siteId}`;
+    // 已导入 Profile：全部窗格共享同一 Session（一个浏览器身份）；否则保持每站点持久分区
+    const plan = resolveHubSessionPlan(siteId, this.getImportedProfilePath?.() ?? null);
     const view = new electron.WebContentsView({
       webPreferences: {
-        partition,
+        ...(plan.kind === "shared-imported"
+          ? { session: session.fromPath(plan.profilePath) }
+          : { partition: plan.partition }),
         contextIsolation: true,
         nodeIntegration: false,
         sandbox: true,
@@ -342,52 +354,47 @@ export class AIHubManager {
       },
     });
     view.setBackgroundColor("#ffffff");
-    this.sanitizeUserAgent(view);
     this.hardenSession(view);
-    this.wireEvents(siteId, view);
+    this.wireEvents(siteId, url, view);
     const entry: PoolEntry = { view, attached: false, loaded: false };
     this.pool.set(siteId, entry);
     return entry;
   }
 
-  // 整串替换为同版本 Chrome 的标准 UA：删 token 的混合 UA 仍带非标准产品名，
-  // 且 Sec-CH-UA / userAgentData 暴露 Chromium 环境，会被 Google 判定"浏览器或应用可能不安全"拒绝登录
-  private sanitizeUserAgent(view: WebContentsView): void {
-    try {
-      const userAgent = buildChromeUserAgent();
-      view.webContents.setUserAgent(userAgent);
-      view.webContents.session.setUserAgent(userAgent);
-    } catch (error) {
-      console.warn("[ai-hub] sanitizeUserAgent failed:", error);
-    }
-  }
-
   private hardenSession(view: WebContentsView): void {
-    const session = view.webContents.session;
-    session.setPermissionRequestHandler((_webContents, permission, callback) => {
+    view.webContents.session.setPermissionRequestHandler((_webContents, permission, callback) => {
       callback(permission === "media");
     });
-    const { brands, fullVersionBrands, platform } = chromeClientHints();
-    try {
-      session.webRequest.onBeforeSendHeaders((details, callback) => {
-        const requestHeaders = { ...details.requestHeaders };
-        requestHeaders["sec-ch-ua"] = brands;
-        requestHeaders["sec-ch-ua-mobile"] = "?0";
-        requestHeaders["sec-ch-ua-platform"] = platform;
-        requestHeaders["sec-ch-ua-full-version-list"] = fullVersionBrands;
-        callback({ requestHeaders });
-      });
-    } catch (error) {
-      console.warn("[ai-hub] client hint spoof failed:", error);
-    }
   }
 
-  private wireEvents(siteId: string, view: WebContentsView): void {
+  private wireEvents(siteId: string, siteUrl: string, view: WebContentsView): void {
     const webContents = view.webContents;
-    // 导航提交后立即同步 userAgentData（早于页面脚本读取；dom-ready 已晚）
-    webContents.on("did-navigate", (event, url) => {
-      if (!url.startsWith("http")) return;
-      void webContents.executeJavaScript(buildUserAgentDataShim(), true).catch(() => {});
+    const openGoogleAuthExternally = () => {
+      // 认证转交日常浏览器，不尝试从调试 Chrome 迁移 Cookie。
+      if (this.requestExistingBrowserLogin(siteId)) return;
+      this.emit({ type: "google-auth-external", siteId });
+      void shell.openExternal(siteUrl).catch((error) => {
+        console.warn("[ai-hub] failed to open provider in system browser:", siteId, error instanceof Error ? error.message : "unknown error");
+      });
+    };
+    const protectNavigation = (target: WebContents, close?: () => void) => {
+      const handleNavigation = (event: Electron.Event, url: string) => {
+        if (!isGoogleAuthUrl(url)) return;
+        event.preventDefault();
+        close?.();
+        openGoogleAuthExternally();
+      };
+      target.on("will-navigate", handleNavigation);
+      target.on("will-redirect", handleNavigation);
+    };
+    protectNavigation(webContents);
+    webContents.setWindowOpenHandler(({ url }) => {
+      if (!isGoogleAuthUrl(url)) return { action: "allow" };
+      openGoogleAuthExternally();
+      return { action: "deny" };
+    });
+    webContents.on("did-create-window", (window) => {
+      protectNavigation(window.webContents, () => window.close());
     });
     webContents.on("did-start-loading", () => this.emit({ type: "loading", siteId }));
     webContents.on("did-finish-load", () => this.emit({ type: "loaded", siteId }));

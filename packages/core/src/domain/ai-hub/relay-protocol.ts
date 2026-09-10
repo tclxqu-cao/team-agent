@@ -12,8 +12,7 @@ import { join } from "node:path";
 export const AI_HUB_RELAY_SOCKET_NAME = "ai-hub-relay.sock";
 export const MAX_RELAY_TEXT_LENGTH = 20_000;
 export const MAX_RELAY_SITES = 8;
-export const MAX_RELAY_IMAGES = 4;
-export const MAX_RELAY_IMAGE_LENGTH = 4_000_000; // base64 字符数上限（约 3MB 二进制）
+export { MAX_RELAY_IMAGES, MAX_RELAY_IMAGE_LENGTH } from "./image-limits";
 
 export function resolveAiHubRelayDirectory(env: NodeJS.ProcessEnv = process.env): string {
   return env.AGENT_NATIVE_RUNTIME_DIR?.trim() || join(homedir(), ".agentroam", "native-runtime");

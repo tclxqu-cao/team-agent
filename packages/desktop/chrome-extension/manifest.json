@@ -1,0 +1,29 @@
+{
+  "manifest_version": 3,
+  "name": "AgentRoam AI Hub — 已有 Chrome 连接",
+  "version": "0.3.4",
+  "description": "自动将已登录的 ChatGPT、Gemini、Grok 标签页连接到本机 AI Hub。登录态留在 Chrome。",
+  "minimum_chrome_version": "120",
+  "permissions": [
+    "debugger",
+    "storage",
+    "webNavigation",
+    "alarms"
+  ],
+  "host_permissions": [
+    "https://chatgpt.com/*",
+    "https://gemini.google.com/*",
+    "https://grok.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "连接到 AI Hub"
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' ws://127.0.0.1:*"
+  }
+}

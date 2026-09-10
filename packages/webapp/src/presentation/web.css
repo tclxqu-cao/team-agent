@@ -215,6 +215,75 @@ body[data-web-shell="1"] .chat-header-action--appearance {
   place-items: center;
   outline: none;
   touch-action: none;
+  flex: none;
+  margin: auto;
+}
+
+.browser-live-viewport {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.browser-live-viewport .browser-live-empty {
+  margin: auto;
+}
+
+.browser-live-surface.has-zoom .browser-live-viewport {
+  top: 44px;
+}
+
+.browser-live-zoom {
+  position: absolute;
+  inset: 0 0 auto;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+}
+
+.browser-live-zoom button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-width: 36px;
+  height: 36px;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.browser-live-zoom button:hover:not(:disabled),
+.browser-live-zoom button[aria-pressed="true"] {
+  background: var(--bg-surface);
+  border-color: var(--border-default);
+}
+
+.browser-live-zoom button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.browser-live-zoom output {
+  min-width: 42px;
+  text-align: center;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.browser-live-surface.has-zoom .browser-live-control-cue {
+  top: 54px;
 }
 
 .browser-live-image-hit-area img {

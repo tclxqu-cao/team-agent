@@ -201,10 +201,20 @@ interface AgentState {
   setCronTasks: (tasks: CronTask[]) => void;
 }
 
+function canAppendAssistantOutput(message: ChatMessage | undefined): message is ChatMessage {
+  return Boolean(message
+    && message.role === "assistant"
+    && !message.toolCalls?.length
+    && !message.widget
+    && !message.askUser
+    && !message.isCompactionSummary
+    && !message.executionTrace);
+}
+
 function addMessageToList(messages: ChatMessage[], msg: ChatMessage): ChatMessage[] {
   if (msg.role === "assistant" && msg.toolCalls?.length) {
     const last = messages[messages.length - 1];
-    if (last && last.role === "assistant" && !last.toolCalls?.length) {
+    if (canAppendAssistantOutput(last)) {
       return [
         ...messages.slice(0, -1),
         { ...last, content: last.content, toolCalls: msg.toolCalls },
@@ -217,7 +227,7 @@ function addMessageToList(messages: ChatMessage[], msg: ChatMessage): ChatMessag
 function appendTextToList(messages: ChatMessage[], text: string): ChatMessage[] {
   if (!text) return messages;
   const lastMsg = messages[messages.length - 1];
-  if (lastMsg && lastMsg.role === "assistant" && !lastMsg.toolCalls?.length && !lastMsg.askUser && !lastMsg.isCompactionSummary) {
+  if (canAppendAssistantOutput(lastMsg)) {
     const updated = [...messages];
     updated[updated.length - 1] = { ...lastMsg, content: lastMsg.content + text };
     return updated;
@@ -333,17 +343,19 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     set((state) => {
       if (!text) return state;
       const targetSid = sid ?? state.sessionId ?? undefined;
-      const visibleMessages = targetSid && targetSid !== state.sessionId
-        ? state.messages
-        : appendTextToList(state.messages, text);
+      const isVisibleSession = !targetSid || targetSid === state.sessionId;
+      const updatedMessages = appendTextToList(
+        isVisibleSession ? state.messages : state.messagesBySession[targetSid!] ?? [],
+        text,
+      );
       const messagesBySession = targetSid
         ? {
             ...state.messagesBySession,
-            [targetSid]: appendTextToList(state.messagesBySession[targetSid] ?? (targetSid === state.sessionId ? state.messages : []), text),
+            [targetSid]: updatedMessages,
           }
         : state.messagesBySession;
       return {
-        messages: visibleMessages,
+        messages: isVisibleSession ? updatedMessages : state.messages,
         messagesBySession,
         currentText: targetSid && targetSid !== state.sessionId ? state.currentText : state.currentText + text,
       };

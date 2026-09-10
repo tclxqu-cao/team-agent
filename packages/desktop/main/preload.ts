@@ -221,11 +221,30 @@ contextBridge.exposeInMainWorld("agentApi", {
   hubSetBounds: (panes: Array<{ siteId: string; x: number; y: number; width: number; height: number }>) =>
     ipcRenderer.invoke("hub:set-bounds", panes),
   hubReload: (siteId: string) => ipcRenderer.invoke("hub:reload", siteId),
-  hubBroadcast: (text: string, siteIds: string[]) => ipcRenderer.invoke("hub:broadcast", text, siteIds),
+  hubBroadcast: (text: string, siteIds: string[], images: string[] = []) => ipcRenderer.invoke("hub:broadcast", text, siteIds, images),
   onHubEvent: (callback: (event: unknown) => void): (() => void) => {
     const handler = (_event: unknown, data: unknown) => callback(data);
     ipcRenderer.on("hub:event", handler);
     return () => ipcRenderer.removeListener("hub:event", handler);
+  },
+
+  // AI Hub 浏览器 Profile 导入 + 托管 Google 重登录（只传固定来源 id，不传路径）
+  hubListProfileSources: () => ipcRenderer.invoke("hub:list-profile-sources"),
+  hubImportProfile: (sourceId: string) => ipcRenderer.invoke("hub:import-profile", sourceId),
+  hubGetProfileImportStatus: () => ipcRenderer.invoke("hub:get-profile-import-status"),
+  hubRestartAfterProfileImport: () => ipcRenderer.invoke("hub:restart-after-profile-import"),
+  hubOpenChrome: (siteId: string) => ipcRenderer.invoke("hub:open-chrome", siteId),
+  hubChromeStatus: () => ipcRenderer.invoke("hub:chrome-status"),
+  hubChromeResume: () => ipcRenderer.invoke("hub:chrome-resume"),
+  hubChromeConversation: (siteId: string) => ipcRenderer.invoke("hub:chrome-conversation", siteId),
+  hubChromeFrame: (siteId: string) => ipcRenderer.invoke("hub:chrome-frame", siteId),
+  hubChromeCopyPairing: () => ipcRenderer.invoke("hub:chrome-copy-pairing"),
+  hubChromeRevealExtension: () => ipcRenderer.invoke("hub:chrome-reveal-extension"),
+  hubChromeInput: (siteId: string, input: unknown) => ipcRenderer.invoke("hub:chrome-input", siteId, input),
+  onHubChromeEvent: (callback: (event: unknown) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, event: unknown) => callback(event);
+    ipcRenderer.on("hub:chrome-event", listener);
+    return () => ipcRenderer.removeListener("hub:chrome-event", listener);
   },
 
   // Desktop live view (screen capture + remote control)

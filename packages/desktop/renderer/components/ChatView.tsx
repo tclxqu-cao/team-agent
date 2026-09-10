@@ -258,7 +258,7 @@ function renderCodeFence(lang: string, code: string): React.ReactNode {
 }
 
 /** Render assistant message text: supports Markdown tables, links, fenced code blocks, `code`, **bold**, *italic*, and newlines. */
-function renderAssistantText(text: string): React.ReactNode {
+export function renderAssistantText(text: string): React.ReactNode {
   const lines = text.split('\n');
   const segments: React.ReactNode[] = [];
   let i = 0;
@@ -3470,7 +3470,13 @@ export default function ChatView({
             if (WidgetComponent) {
               return (
                 <div key={msg.id} style={{ marginBottom: 16, display: "flex", justifyContent: "flex-start" }}>
-                  <WidgetComponent {...chatMsg.widget.data} widgetId={chatMsg.widget.widgetId} />
+                  <WidgetComponent
+                    {...chatMsg.widget.data}
+                    widgetId={chatMsg.widget.widgetId}
+                    isAgentRunning={isRunning && !renderedMessages.slice(i + 1).some((message) => (
+                      message.role === "user" && !message.isQueued && !message.isSteered
+                    ))}
+                  />
                 </div>
               );
             }

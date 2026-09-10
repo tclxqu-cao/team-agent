@@ -385,8 +385,22 @@ export interface AgentApi {
   hubHideAll(): Promise<void>;
   hubSetBounds(panes: HubPaneRect[]): Promise<void>;
   hubReload(siteId: string): Promise<void>;
-  hubBroadcast(text: string, siteIds: string[]): Promise<HubBroadcastResult[]>;
+  hubBroadcast(text: string, siteIds: string[], images?: string[]): Promise<HubBroadcastResult[]>;
   onHubEvent(callback: (event: HubEvent) => void): () => void;
+  // AI Hub 浏览器 Profile 导入 + 托管 Google 重登录
+  hubListProfileSources(): Promise<BrowserProfileSourceView[]>;
+  hubImportProfile(sourceId: BrowserProfileSourceId): Promise<BrowserProfileImportResult>;
+  hubGetProfileImportStatus(): Promise<BrowserProfileImportStatus>;
+  hubRestartAfterProfileImport(): Promise<void>;
+  hubOpenChrome(siteId: string): Promise<void>;
+  hubChromeStatus(): Promise<import("../main/ai-hub/chrome-bridge-protocol").ChromeHubStatus>;
+  hubChromeResume(): Promise<import("../main/ai-hub/chrome-bridge-protocol").ChromeHubStatus>;
+  hubChromeConversation(siteId: string): Promise<import("../main/ai-hub/chrome-bridge-protocol").ChromeHubConversation | null>;
+  hubChromeFrame(siteId: string): Promise<import("../main/ai-hub/chrome-bridge-protocol").ChromeHubFrame | null>;
+  hubChromeCopyPairing(): Promise<void>;
+  hubChromeRevealExtension(): Promise<void>;
+  hubChromeInput(siteId: string, input: import("../main/ai-hub/chrome-bridge-protocol").ChromeHubInput): Promise<void>;
+  onHubChromeEvent(callback: (event: import("../main/ai-hub/chrome-bridge").ChromeBridgeEvent) => void): () => void;
 
   // Desktop live view (screen capture + remote control)
   desktopLiveGetStatus(): Promise<DesktopLiveStatus>;
@@ -427,10 +441,72 @@ export interface HubBroadcastResult {
 }
 
 export interface HubEvent {
-  type: "loading" | "loaded" | "load-failed" | "title";
-  siteId: string;
+  type: "loading" | "loaded" | "load-failed" | "title" | "google-auth-external" | "google-reauth" | "profile-import";
+  siteId?: string;
   errorCode?: number;
   title?: string;
+  state?: GoogleReauthEventState;
+  phase?: ProfileImportPhase;
+}
+
+export type GoogleReauthEventState = "started" | "synchronized" | "canceled" | "timeout" | "failed" | "unavailable";
+
+export type ProfileImportPhase = "checking" | "copying" | "importing-cookies" | "validating" | "complete";
+
+export type BrowserProfileSourceId = "chrome-default" | "ego-lite-default";
+
+/** 渲染端只拿清洗后的元数据：绝不含 profilePath / Keychain 名称 */
+export interface BrowserProfileSourceView {
+  id: BrowserProfileSourceId;
+  browserName: string;
+  profileName: "Default";
+  available: boolean;
+  running: boolean;
+  sizeBytes?: number;
+  reason?: string;
+}
+
+export interface BrowserProfileImportResult {
+  ok: boolean;
+  sourceId: BrowserProfileSourceId;
+  errorCategory?: ProfileImportErrorCategory;
+  copiedBytes?: number;
+  importedCookieCount?: number;
+  skippedCookieCount?: number;
+  completedAt?: string;
+  restartRequired?: boolean;
+}
+
+export interface BrowserProfileImportStatus {
+  active: boolean;
+  restartRequired: boolean;
+  sourceId?: string;
+  completedAt?: string;
+  copiedBytes?: number;
+  importedCookieCount?: number;
+  skippedCookieCount?: number;
+  lastErrorCategory?: ProfileImportErrorCategory;
+}
+
+export type ProfileImportErrorCategory =
+  | "source-unavailable"
+  | "source-browser-running"
+  | "keychain-denied"
+  | "unsupported-profile"
+  | "insufficient-disk-space"
+  | "copy-failed"
+  | "cookie-migration-failed"
+  | "validation-failed"
+  | "restart-required"
+  | "chrome-unavailable"
+  | "chrome-login-canceled"
+  | "chrome-login-timeout"
+  | "login-callback-origin-mismatch"
+  | "cookie-sync-failed";
+
+export interface GoogleReauthResult {
+  status: "synchronized" | "waiting" | "canceled" | "timeout" | "failed" | "unavailable";
+  reason?: string;
 }
 
 export type BrowserLiveSession = BrowserLiveSessionView;

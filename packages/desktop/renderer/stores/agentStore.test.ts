@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
+import { messageActionPolicy } from "../lib/message-actions";
 import {
   findLatestContextUsage,
   reduceNativeSubagentActivities,
@@ -43,6 +44,60 @@ describe("agentStore session message cache", () => {
     expect(useAgentStore.getState().getMessagesForSession("background")).toMatchObject([
       { role: "assistant", content: "background text" },
     ]);
+  });
+
+  it.each(["visible", "background"])("keeps tool execution and final output outside cards in %s sessions", (sid) => {
+    const store = useAgentStore.getState();
+    store.setSessionId("visible");
+    store.addMessage({
+      id: "question", role: "assistant", content: "", timestamp: 1,
+      askUser: { questionId: "q1", question: "选择配置", answered: true },
+    }, sid);
+    store.addMessage({
+      id: "command", role: "assistant", content: "", timestamp: 2,
+      toolCalls: [{ id: "tc1", name: "bash", arguments: {} }],
+    }, sid);
+    store.updateToolResult("tc1", "分镜已生成", false, sid);
+    store.addMessage({
+      id: "workbench", role: "assistant", content: "", timestamp: 3,
+      widget: { widgetId: "w1", widgetType: "storyboard_workbench", data: { status: "generating" } },
+    }, sid);
+    store.appendText("分镜完成，", sid);
+    store.appendText("视频尚未生成。", sid);
+
+    const messages = store.getMessagesForSession(sid);
+    expect(messages).toHaveLength(4);
+    expect(messages[0].toolCalls).toBeUndefined();
+    expect(messages[1].toolCalls?.[0].result).toBe("分镜已生成");
+    expect(messages[2].content).toBe("");
+    expect(messages[3]).toMatchObject({ role: "assistant", content: "分镜完成，视频尚未生成。" });
+    expect(messages[3].widget).toBeUndefined();
+    expect(messageActionPolicy(messages, 3, true).showCompletion).toBe(false);
+    expect(messageActionPolicy(messages, 3, false).showCompletion).toBe(true);
+    expect(useAgentStore.getState().messages).toEqual(sid === "visible" ? messages : []);
+    store.updateMessage(messages[3].id, (message) => ({
+      ...message, presentation: { completionDurationMs: 90000 },
+    }), sid);
+    expect(store.getMessagesForSession(sid)[3].presentation?.completionDurationMs).toBe(90000);
+    if (sid === "visible") {
+      expect(useAgentStore.getState().messages[3].presentation?.completionDurationMs).toBe(90000);
+    }
+  });
+
+  it("keeps commands after a widget in their own visible message", () => {
+    const store = useAgentStore.getState();
+    store.setSessionId("visible");
+    store.addMessage({
+      id: "workbench", role: "assistant", content: "", timestamp: 1,
+      widget: { widgetId: "w1", widgetType: "storyboard_workbench", data: {} },
+    });
+    store.addMessage({
+      id: "command", role: "assistant", content: "", timestamp: 2,
+      toolCalls: [{ id: "tc1", name: "bash", arguments: {} }],
+    });
+    expect(useAgentStore.getState().messages).toHaveLength(2);
+    expect(useAgentStore.getState().messages[0].toolCalls).toBeUndefined();
+    expect(useAgentStore.getState().messages[1].widget).toBeUndefined();
   });
 
   it("updates visible messages when the event belongs to the current session", () => {

@@ -1,8 +1,9 @@
+import { prepareChromeExtension } from "./ai-hub/chrome-extension-install.js";
 // Load electron via createRequire (CJS) instead of ESM `import`, which crashes
 // on electron 32 / Node 20.18 (cjsPreparseModuleExports: "exports" undefined).
 import { createRequire } from "module";
 const require = createRequire(import.meta.url);
-const { app, BrowserWindow, ipcMain, dialog, nativeImage, session, shell, desktopCapturer, systemPreferences, screen, globalShortcut } = require("electron") as typeof import("electron");
+const { app, BrowserWindow, ipcMain, dialog, nativeImage, session, shell, desktopCapturer, systemPreferences, screen, globalShortcut, clipboard } = require("electron") as typeof import("electron");
 import { spawn, type ChildProcess } from "node:child_process";
 import { basename, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -27,7 +28,13 @@ import {
 import { resolveDesktopBaseDir } from "./desktop-base-dir.js";
 import { DesktopUpdateService } from "./update-service.js";
 import { AIHubManager, type HubPaneRect } from "./ai-hub/manager.js";
-import { startAiHubRelay, type AiHubRelay } from "./ai-hub/relay.js";
+import { normalizeRelayImages, startAiHubRelay, type AiHubRelay } from "./ai-hub/relay.js";
+import { BrowserProfileImporter, HUB_PROFILE_DIR_NAME } from "./ai-hub/browser-profile-importer.js";
+import { ProfileImportStateStore } from "./ai-hub/import-state.js";
+import { isBrowserProfileSourceId, isProcessNameRunning, listBrowserProfileSources, toSourceView } from "./ai-hub/browser-profile-source.js";
+import { ChromeHubBridge } from "./ai-hub/chrome-bridge.js";
+import { isChromeHubSite, validChromeHubInput } from "./ai-hub/chrome-bridge-protocol.js";
+import { openExistingChrome } from "./ai-hub/existing-chrome.js";
 import {
   getTtsListeningMode,
   getVoiceCaptureSilenceTimeout,
@@ -83,13 +90,39 @@ const desktopUpdateService = new DesktopUpdateService({
   reveal: (path) => shell.showItemInFolder(path),
 });
 desktopUpdateService.subscribe((status) => mainWindow?.webContents.send("update:status", status));
+// ── AI Hub 浏览器 Profile 导入 + 共享 Session + 托管 Chrome 重登录 ─────────
+const profileImportStateStore = new ProfileImportStateStore(join(app.getPath("userData"), "ai-hub-profile-import.json"));
+const profileImporter = new BrowserProfileImporter({
+  destRoot: join(app.getPath("userData"), HUB_PROFILE_DIR_NAME),
+  stateStore: profileImportStateStore,
+  isProcessRunning: isProcessNameRunning,
+  onProgress: (phase) => mainWindow?.webContents.send("hub:event", { type: "profile-import", phase }),
+});
+let importedAiHubProfilePath: string | null = null;
+const chromeHubBridge = new ChromeHubBridge(join(app.getPath("userData"), "ai-hub-chrome-bridge.json"));
 const aiHubManager = new AIHubManager({
   configPath: join(app.getPath("userData"), "ai-hub-config.json"),
   getWindow: () => mainWindow,
+  getImportedProfilePath: () => importedAiHubProfilePath,
+  chromeBridge: chromeHubBridge,
+  requestBrowserLogin: (siteId) => { void openAiHubInChrome(siteId).catch(() => {}); },
 });
 aiHubManager.subscribe((event) => mainWindow?.webContents.send("hub:event", event));
 // AI Hub 中继：供 :3000 server（web 控制台）转发发送请求，由桌面端注入已登录页面
 let aiHubRelay: AiHubRelay | null = null;
+
+chromeHubBridge.subscribe((event) => {
+  if (mainWindow && !mainWindow.webContents.isDestroyed()) mainWindow.webContents.send("hub:chrome-event", event);
+});
+async function openAiHubInChrome(siteId: string): Promise<void> {
+  const site = aiHubManager.getConfig().sites.find((candidate) => candidate.id === siteId);
+  if (!site) throw new Error("站点不存在");
+  await openExistingChrome(site.url);
+}
+function chromeExtensionPath(): string {
+  const source = app.isPackaged ? join(process.resourcesPath, "chrome-extension") : join(app.getAppPath(), "chrome-extension");
+  return prepareChromeExtension(source, join(app.getPath("userData"), "ai-hub-chrome-extension"), chromeHubBridge.pairingCode());
+}
 const appIconPath = [
   join(app.getAppPath(), "assets", "app-icon.png"),
   join(process.resourcesPath, "assets", "app-icon.png"),
@@ -316,7 +349,42 @@ ipcMain.handle("hub:close", (_event, siteId: string) => aiHubManager.closeSite(s
 ipcMain.handle("hub:hide-all", () => aiHubManager.setBounds([]));
 ipcMain.handle("hub:set-bounds", (_event, panes: HubPaneRect[]) => aiHubManager.setBounds(panes));
 ipcMain.handle("hub:reload", (_event, siteId: string) => aiHubManager.reloadSite(siteId));
-ipcMain.handle("hub:broadcast", (_event, text: string, siteIds: string[]) => aiHubManager.broadcast(text, siteIds));
+ipcMain.handle("hub:broadcast", (_event, text: string, siteIds: string[], images: unknown = []) => aiHubManager.broadcast(text, siteIds, normalizeRelayImages(images)));
+
+// ── IPC: AI Hub 浏览器 Profile 导入 / 共享身份 / 托管重登录 ───────────────
+// 边界：渲染层只允许提交固定来源 id；主进程校验后自行解析路径与 Keychain。
+
+ipcMain.handle("hub:list-profile-sources", async () => {
+  if (process.platform !== "darwin") return [];
+  const sources = await listBrowserProfileSources();
+  return sources.map(toSourceView);
+});
+
+ipcMain.handle("hub:import-profile", (_event, sourceId: unknown): Promise<unknown> => {
+  if (!isBrowserProfileSourceId(sourceId)) {
+    throw new Error("unknown-profile-source");
+  }
+  return profileImporter.import(sourceId);
+});
+
+ipcMain.handle("hub:get-profile-import-status", () => profileImporter.getStatus());
+
+ipcMain.handle("hub:restart-after-profile-import", () => {
+  app.relaunch();
+  app.quit();
+});
+
+ipcMain.handle("hub:open-chrome", (_event, siteId: string) => openAiHubInChrome(siteId));
+ipcMain.handle("hub:chrome-status", () => chromeHubBridge.status());
+ipcMain.handle("hub:chrome-resume", () => chromeHubBridge.resume());
+ipcMain.handle("hub:chrome-conversation", (_event, siteId: string) => chromeHubBridge.conversation(siteId));
+ipcMain.handle("hub:chrome-frame", (_event, siteId: string) => chromeHubBridge.frame(siteId));
+ipcMain.handle("hub:chrome-copy-pairing", async () => { await clipboard.writeText(chromeHubBridge.pairingCode()); });
+ipcMain.handle("hub:chrome-reveal-extension", () => { shell.showItemInFolder(join(chromeExtensionPath(), "manifest.json")); });
+ipcMain.handle("hub:chrome-input", (_event, siteId: unknown, input: unknown) => {
+  if (typeof siteId !== "string" || !isChromeHubSite(siteId) || !validChromeHubInput(input)) throw new Error("无效的 Chrome 操作");
+  return chromeHubBridge.request(siteId, "input", { input });
+});
 
 // ── IPC: Native voice wake (macOS Speech framework helper) ──────────────
 // The helper streams transcripts over stdout; on wake-word match we restore
@@ -1567,6 +1635,18 @@ app.whenReady().then(async () => {
     const icon = nativeImage.createFromPath(appIconPath);
     if (!icon.isEmpty()) app.dock?.setIcon(icon);
   }
+  // AI Hub 导入快照维护先行：清理遗留 staging、校验/回滚 current，之后才允许打开任何窗格
+  const preparedProfile = await profileImporter.prepareForStartup().catch((error) => {
+    console.warn("[ai-hub] profile startup maintenance failed:", error instanceof Error ? error.message : "unknown error");
+    return { profilePath: null, recovered: false };
+  });
+  importedAiHubProfilePath = preparedProfile.profilePath;
+  if (preparedProfile.recovered) {
+    console.warn("[ai-hub] imported profile failed startup validation; rolled back to previous backup");
+  }
+  await chromeHubBridge.start().then(() => { chromeExtensionPath(); }).catch(() => {
+    console.warn("[ai-hub] existing Chrome bridge could not start on the local port");
+  });
   // Allow microphone access for voice input & wake-word listening
   session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
     callback(permission === "media");
@@ -1599,6 +1679,7 @@ app.on("before-quit", () => {
   stopWakeProc();
   voiceServiceManager.close();
   aiHubRelay?.close();
+  chromeHubBridge.close();
   aiHubManager.destroyAll();
   void desktopScreenLive?.disable();
   void unifiedSessions.dispose();
