@@ -1,0 +1,22 @@
+scripts/publish-agentroam-release.test.mjs
+  s_b9674d0ed6114f::t_e714e231fc72e2 102-119
+  s_b9674d0ed6114f::t_a4da17f194a096 101
+scripts/agentroam-release-lib.mjs
+  s_b9674d0ed6114f::t_e714e231fc72e2 248,269,546-560
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "7a1354bf6bfa32c0c55d06375716307d57419122",
+  "prompts": {},
+  "sessions": {
+    "s_b9674d0ed6114f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0800d-808d-7d70-84e6-5219c5eae518",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

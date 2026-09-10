@@ -1,0 +1,63 @@
+packages/runtime-darwin-arm64/manifest.json
+  s_300ad083baebde::t_25d9e028350341 2
+packages/cloudflared-darwin-arm64/manifest.json
+  s_b9674d0ed6114f::t_5ff68622b328b3 2
+scripts/stage-cli-runtime.mjs
+  s_300ad083baebde::t_fc0fe4237d6671 113,120
+bun.lock
+  s_b9674d0ed6114f::t_a26eb0d664c003 16,32-37,42,46,58,80,84,142,146
+packages/cli/install/install-agentroam.sh
+  s_b9674d0ed6114f::t_5ff68622b328b3 5
+packages/cloudflared-win32-x64/manifest.json
+  s_b9674d0ed6114f::t_5ff68622b328b3 2
+packages/cli/bin/node-preflight.mjs
+  s_b9674d0ed6114f::t_5ff68622b328b3 10
+scripts/verify-cli-install.mjs
+  s_b9674d0ed6114f::t_83fbb7934b1330 102
+  s_b9674d0ed6114f::t_5ff68622b328b3 167
+packages/cli/src/tunnel/public-readiness.ts
+  s_b9674d0ed6114f::t_5ff68622b328b3 47
+packages/cli/RELEASE.md
+  s_b9674d0ed6114f::t_746d5f2f27203e 1,23,127-133
+packages/cli/README.md
+  s_b9674d0ed6114f::t_746d5f2f27203e 23-26,33-36
+packages/cli/install/README.md
+  s_b9674d0ed6114f::t_746d5f2f27203e 8,16,43
+packages/desktop/package.json
+  s_b9674d0ed6114f::t_5ff68622b328b3 3
+packages/cli/package.json
+  s_300ad083baebde::t_b6091b62b922d1 3
+  s_b9674d0ed6114f::t_5ff68622b328b3 29-34
+scripts/agentroam-release-lib.mjs
+  s_b9674d0ed6114f::t_d0f655aed9cdbd 553
+packages/cli/install/install-agentroam.ps1
+  s_b9674d0ed6114f::t_5ff68622b328b3 5
+packages/cli/src/update/update-command.test.ts
+  s_300ad083baebde::t_318206bff0d8bd 26-29,37-40,48-51,55
+packages/cli/src/platform-packages.ts
+  s_b9674d0ed6114f::t_5ff68622b328b3 6
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "b25064b2e8a1500e0bd0c760da7b4c29b1dfac79",
+  "prompts": {},
+  "sessions": {
+    "s_300ad083baebde": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06c1c-d88e-7070-9c5f-a385abe461af",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_b9674d0ed6114f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0800d-808d-7d70-84e6-5219c5eae518",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": null
+    }
+  }
+}
