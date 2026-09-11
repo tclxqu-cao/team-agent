@@ -40,3 +40,10 @@ packages/server/.next-browser-live-dev/
 packages/server/shell-integration/
 .claude/worktrees/
 packages/server/.next*/
+
+# build snapshots & local junk (2026-09-11)
+packages/webapp/dist.rollback-*/
+packages/webapp/dist-shared-verify/
+outputs/release-*/
+outputs/_cover-backup-*/
+outputs/shots/
