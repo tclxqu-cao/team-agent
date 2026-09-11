@@ -331,7 +331,7 @@ jobs:
           case "$AGENT" in
             codex) bunx vitest run packages/cli/src/codex-runtime-manager.test.ts packages/desktop/main/agent-runtime/codex-runtime-adapter.test.ts ;;
             claude) bunx vitest run packages/desktop/main/agent-runtime/claude-runtime-adapter.test.ts ;;
-            opencode) bunx vitest run packages/cli/src/opencode-runtime-manager.test.ts packages/desktop/main/agent-runtime/opencode-runtime-adapter.test.ts packages/desktop/main/agent-runtime/opencode-server-client.test.ts ;;
+            opencode) bunx vitest run packages/cli/src/opencode-runtime-manager.test.ts packages/desktop/main/agent-runtime/opencode-runtime-adapter.test.ts packages/desktop/main/agent-runtime/opencode-runtime-health.test.ts packages/desktop/main/agent-runtime/opencode-server-client.test.ts ;;
           esac
 
       - name: Push validated repair

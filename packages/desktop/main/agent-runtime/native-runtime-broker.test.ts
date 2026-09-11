@@ -1681,6 +1681,30 @@ describe("NativeRuntimeBrokerHost", () => {
     }
   });
 
+  it("restores an async question after failed steering without interrupting its run", async () => {
+    const runtime = new FakeNativeRuntime();
+    (runtime as unknown as Record<string, unknown>).getPagedDetail = async () => ({
+      ...summary(), messages: [], events: [],
+      history: { delivery: "core", newerCursor: null, totalItems: 0, pageSize: 0 },
+    });
+    runtime.answerError = new RuntimeSessionError("Temporary disconnect", "QUESTION_ANSWER_FAILED");
+    const host = new NativeRuntimeBrokerHost(await directory(), runtime as unknown as UnifiedSessionService);
+    try {
+      await host.startRun(sessionId, "async question");
+      await waitFor(() => expect(host.snapshot(sessionId).events).toHaveLength(1));
+      const question = host.snapshot(sessionId).events[0].event;
+      if (question.type !== "ask_user") throw new Error("Expected question");
+      await expect(host.answerQuestion(question.questionId, { answer: "recommended" }))
+        .rejects.toMatchObject({ code: "QUESTION_ANSWER_FAILED" });
+      const restored = await host.get(sessionId, { view: "core" });
+      expect(restored.events.some((event) => event.type === "ask_user" && event.questionId === question.questionId)).toBe(true);
+      expect(host.snapshot(sessionId).events.some(({ event }) => event.type === "error")).toBe(false);
+      runtime.answerError = null;
+      await expect(host.answerQuestion(question.questionId, { answer: "recommended" })).resolves.toBe(true);
+      expect(runtime.runInputs).toHaveLength(1);
+    } finally { await host.stop(); }
+  });
+
   it("resets a subscriber cursor when the same session starts a later run", async () => {
     const runtime = new FakeNativeRuntime();
     const host = new NativeRuntimeBrokerHost(await directory(), runtime as unknown as UnifiedSessionService);
@@ -2035,7 +2059,9 @@ describe("NativeRuntimeBrokerHost native paged get", () => {
           content: "run-input",
           presentation: { executionTrace: { turnId: "turn-live" } },
         })]);
-        expect(detail.events).toEqual([]);
+        expect(detail.events).toEqual(delivery === "core"
+          ? [expect.objectContaining({ type: "ask_user" })]
+          : []);
         expect(detail.snapshotRevision).toBeGreaterThan(0);
         expect(Buffer.byteLength(JSON.stringify(detail), "utf8")).toBeLessThan(16 * 1024);
       } finally {

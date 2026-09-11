@@ -5,6 +5,7 @@ import { accessSync, constants, mkdirSync, mkdtempSync, readFileSync, rmSync } f
 import { tmpdir } from "node:os";
 import { delimiter, dirname, resolve } from "node:path";
 import { releasePackageNames, resolveReleaseArtifacts } from "./cli-release-artifacts.mjs";
+import { assertSupportedNodeVersion } from "../packages/cli/bin/runtime-policy.mjs";
 
 const args = process.argv.slice(2);
 const nodeBin = args.includes("--node") ? resolve(args[args.indexOf("--node") + 1]) : process.execPath;
@@ -21,7 +22,7 @@ const npmCommand = process.platform === "win32"
   : { file: "npm", args: [] };
 
 const version = execFileSync(nodeBin, ["-p", "process.versions.node"], { encoding: "utf8" }).trim();
-if (Number(version.split(".")[0]) !== 22) throw new Error(`Node.js 22 is required for smoke verification, got ${version}`);
+assertSupportedNodeVersion(version);
 
 const workdir = mkdtempSync(resolve(tmpdir(), "agentroam-install-"));
 console.log(`target: ${artifacts.target}`);

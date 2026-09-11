@@ -30,6 +30,9 @@
     ".next-dev/types/**/*.ts",
     ".next-dev-selftest/types/**/*.ts",
     ".next-dev-web-picker/types/**/*.ts",
-    ".next-e2e/types/**/*.ts"
+    ".next-e2e/types/**/*.ts",
+    ".next-shared-verify/types/**/*.ts",
+    ".next-shared-dev/types/**/*.ts",
+    ".next-release-20260911-184156/types/**/*.ts"
   ]
 }

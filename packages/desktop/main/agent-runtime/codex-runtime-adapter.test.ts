@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import * as filesystem from "node:fs/promises";
 import { appendFile, mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -15,6 +16,11 @@ import {
 } from "./codex-runtime-adapter.js";
 import { CodexRolloutCommentaryReader } from "./codex-rollout-activity.js";
 import { RuntimeSessionError } from "./types.js";
+
+vi.mock("node:fs/promises", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:fs/promises")>();
+  return { ...actual, readFile: vi.fn(actual.readFile) };
+});
 
 describe("Codex explicit skills", () => {
   it("maps slash skills to native names while reserving built-in commands", () => {
@@ -1945,6 +1951,82 @@ describe("Codex native paged history", () => {
     expect(older.history).toMatchObject({ totalItems: 10, pageSize: 2, nextCursor: "history.v1.6", newerCursor: "history.v1.8" });
   });
 
+  it("restores core image attachments without replaying images or changing history identity", async () => {
+    const root = await mkdtemp(join(tmpdir(), "codex-core-images-"));
+    temporaryDirectories.push(root);
+    const pngPath = join(root, "image-1.png");
+    const jpegPath = join(root, "image-2.jpg");
+    const missingPath = join(root, "missing.png");
+    const unsupportedPath = join(root, "unsupported.txt");
+    const oversizedPath = join(root, "oversized.png");
+    await writeFile(pngPath, "png-image");
+    await writeFile(jpegPath, "jpeg-image");
+    await writeFile(unsupportedPath, "not-an-image");
+    await writeFile(oversizedPath, "");
+    await filesystem.truncate(oversizedPath, 20 * 1024 * 1024 + 1);
+    const requests: Array<{ method: string; params: any }> = [];
+    const sourceTurn = turn("images", 1, true);
+    sourceTurn.items[0].content = [
+      { type: "text", text: "show images", text_elements: [] },
+      { type: "localImage", path: pngPath },
+      { type: "local_image", path: jpegPath },
+      { type: "localImage", path: missingPath },
+      { type: "localImage", path: unsupportedPath },
+      { type: "localImage", path: oversizedPath },
+    ] as any;
+    const adapter = new CodexRuntimeAdapter({
+      client: pagingClientFor(requests, { sourceTurns: [sourceTurn] }) as never,
+    });
+
+    const core = await adapter.getSessionPaged("cx-paged", { limit: 2, view: "core" });
+    expect(core.messages[0].presentation).toMatchObject({
+      executionTrace: { turnId: "images" },
+      attachments: [
+        { type: "image", name: "image-1.png", dataUrl: `data:image/png;base64,${Buffer.from("png-image").toString("base64")}` },
+        { type: "image", name: "image-2.jpg", dataUrl: `data:image/jpeg;base64,${Buffer.from("jpeg-image").toString("base64")}` },
+        { type: "image", name: "missing.png", unavailable: true },
+        { type: "image", name: "unsupported.txt", unavailable: true },
+        { type: "image", name: "oversized.png", unavailable: true },
+      ],
+    });
+    expect(core.messages[0].presentation?.attachments?.[0].unavailable).toBeUndefined();
+    expect(core.messages[0].images).toBeUndefined();
+    expect(JSON.stringify(core)).not.toContain(root);
+    expect(requests.some((request) => request.params.itemsView === "full" || request.params.includeTurns === true)).toBe(false);
+
+    await rm(pngPath);
+    const refreshed = await adapter.getSessionPaged("cx-paged", { limit: 2, view: "core" });
+    expect(refreshed.messages[0].presentation?.attachments?.[0]).toEqual({
+      type: "image", name: "image-1.png", unavailable: true,
+    });
+    expect(refreshed.history?.revision).toBe(core.history?.revision);
+    expect(refreshed.messages.map((message) => message.historyId)).toEqual(core.messages.map((message) => message.historyId));
+  });
+
+  it("reads images only from turns in the selected core page", async () => {
+    const root = await mkdtemp(join(tmpdir(), "codex-core-image-window-"));
+    temporaryDirectories.push(root);
+    const sourceTurns = [turn("t1", 1), turn("t2", 2), turn("t3", 3)];
+    for (const sourceTurn of sourceTurns) {
+      const path = join(root, `${sourceTurn.id}.png`);
+      await writeFile(path, sourceTurn.id);
+      sourceTurn.items[0].content!.push({ type: "localImage", path } as any);
+    }
+    const requests: Array<{ method: string; params: any }> = [];
+    const adapter = new CodexRuntimeAdapter({ client: pagingClientFor(requests, { sourceTurns }) as never });
+    const readImage = vi.spyOn(filesystem, "readFile");
+    try {
+      const core = await adapter.getSessionPaged("cx-paged", { before: "history.v1.4", limit: 2, view: "core" });
+      expect(core.messages.map((message) => message.content)).toEqual(["q-t2", "s-t2"]);
+      expect(core.messages[0].presentation?.attachments?.[0].dataUrl).toBe(`data:image/png;base64,${Buffer.from("t2").toString("base64")}`);
+      const imageReads = readImage.mock.calls.filter(([path]) => String(path).startsWith(root));
+      expect(imageReads).toEqual([[join(root, "t2.png")]]);
+      expect(requests.some((request) => request.params.itemsView === "full" || request.params.includeTurns === true)).toBe(false);
+    } finally {
+      readImage.mockRestore();
+    }
+  });
+
   it("loads core without hydration, then exposes trace results through lazy locators", async () => {
     const requests: Array<{ method: string; params: any }> = [];
     const adapter = new CodexRuntimeAdapter({ client: pagingClientFor(requests) as never });
@@ -2154,6 +2236,50 @@ describe("Codex native paged history", () => {
 
     expect(completedTrace.messages.at(-1)?.content).toBe("final answer");
     expect(requests.filter((request) => request.params.itemsView === "full")).toHaveLength(2);
+  });
+
+  it("finishes a cached previous turn after the next queued turn has already started", async () => {
+    const requests: Array<{ method: string; params: any }> = [];
+    const liveTurns = [turn("previous", 1, true)];
+    liveTurns[0].status = "inProgress";
+    const adapter = new CodexRuntimeAdapter({
+      client: pagingClientFor(requests, { sourceTurns: liveTurns, threadStatus: "active" }) as never,
+    });
+    const initialCore = await adapter.getSessionPaged("cx-paged", { view: "core" });
+    await adapter.getSessionPaged("cx-paged", {
+      view: "trace", turnId: "previous", revision: initialCore.history?.revision,
+    });
+
+    liveTurns[0] = {
+      ...liveTurns[0], status: "completed",
+      items: [...liveTurns[0].items, {
+        type: "commandExecution", id: "late-write", command: "write output", cwd: "/repo", aggregatedOutput: "saved",
+      }],
+    };
+    liveTurns.push({ ...turn("next", 2), status: "inProgress" });
+    const core = await adapter.getSessionPaged("cx-paged", { view: "core" });
+    const query = { view: "trace" as const, turnId: "previous", revision: core.history?.revision };
+    const trace = await adapter.getSessionPaged("cx-paged", query);
+    expect(trace.messages.flatMap((message) => message.toolCalls ?? []).map((call) => call.id))
+      .toEqual(["call-previous", "late-write"]);
+    const fullReads = requests.filter(({ params }) => params.itemsView === "full").length;
+    await adapter.getSessionPaged("cx-paged", query);
+    expect(requests.filter(({ params }) => params.itemsView === "full")).toHaveLength(fullReads);
+  });
+
+  it("excludes async questions from core even with a final_answer phase", async () => {
+    const sourceTurns = [{
+      ...turn("questions", 1),
+      items: [
+        turn("questions", 1).items[0],
+        { type: "agentMessage", id: "async", text: "Choose one", phase: "final_answer", delivery: "async" },
+        { type: "agentMessage", id: "final", text: "Actual final" },
+      ],
+    }];
+    const adapter = new CodexRuntimeAdapter({ client: pagingClientFor([], { sourceTurns }) as never });
+    const core = await adapter.getSessionPaged("cx-paged", { view: "core" });
+    expect(core.messages.map((message) => message.content)).toEqual(["q-questions", "Actual final"]);
+    expect(core.history?.totalItems).toBe(2);
   });
 
   it("rejects trace and lazy-result reads from a stale revision", async () => {

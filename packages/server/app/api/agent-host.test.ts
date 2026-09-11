@@ -18,6 +18,7 @@ vi.mock("../../lib/native-runtime-service", () => ({
 }));
 
 import { agentHost } from "./agent-host";
+import { businessCatalog } from "../../lib/business-catalog";
 import { POST as runAgent } from "./agent/run/route";
 import { POST as registerRemoteTools } from "./remote-tools/register/route";
 import { GET as listSessions, POST as createSession } from "./sessions/route";
@@ -84,6 +85,30 @@ const projectBTool = {
 
 describe("agentHost singleton", () => {
   const originalEnv = { ...process.env };
+
+  it("runs all selected agents in order and emits one terminal completion", async () => {
+    const provider = new CapturingModelProvider();
+    provider.eventBatches = [
+      [{ type: "text_chunk", text: "first agent reply" }, { type: "text_done" }],
+      [{ type: "text_chunk", text: "second agent reply" }, { type: "text_done" }],
+    ];
+    agentHost.setBuilder(new AgentBuilder().withModelProvider(provider).withSemanticSkillMatching(false));
+    const catalog = businessCatalog();
+    const first = await catalog.call("createAgentDef", [{ name: "first", systemPrompt: "First role" }]) as { id: string };
+    const second = await catalog.call("createAgentDef", [{ name: "second", systemPrompt: "Second role" }]) as { id: string };
+    const session = await agentHost.createSession("sequential shared agents");
+    const events: Array<{ type: string }> = [];
+    const stop = agentHost.subscribe(session.id, (event) => events.push(event));
+    try {
+      await agentHost.startRun("shared request", session.id, undefined, { agentIds: [first.id, second.id] }).completion;
+      const history = await agentHost.getSessionStore().get(session.id);
+      expect(history?.status).toBe("completed");
+      expect(history?.messages.filter((m) => m.role === "user")).toHaveLength(1);
+      expect(history?.messages.filter((m) => m.role === "assistant").map((m) => m.content)).toEqual(["first agent reply", "second agent reply"]);
+      expect(provider.messages.some((m) => m.content === "first agent reply")).toBe(true);
+      expect(events.filter((event) => event.type === "done")).toHaveLength(1);
+    } finally { stop(); await catalog.agents.delete(first.id); await catalog.agents.delete(second.id); }
+  });
 
   afterEach(async () => {
     process.env = { ...originalEnv };

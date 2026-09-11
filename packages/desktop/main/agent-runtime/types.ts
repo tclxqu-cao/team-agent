@@ -254,6 +254,7 @@ export class RuntimeSessionError extends Error {
       | "RUNTIME_UNAVAILABLE"
       | "OPERATION_NOT_SUPPORTED"
       | "APPROVAL_EXPIRED"
+      | "QUESTION_ANSWER_FAILED"
       | "CODEX_SESSION_VERSION_INCOMPATIBLE"
       | "STALE_SESSION_ANCHOR"
       | "NATIVE_PROTOCOL_ERROR",

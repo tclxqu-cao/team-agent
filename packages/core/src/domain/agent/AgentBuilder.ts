@@ -1,7 +1,7 @@
 import type { AgentConfig, IAgentLoop } from './entities.js';
 import type { IModelProvider } from '../model/entities.js';
 import type { IMemoryStore } from '../memory/entities.js';
-import type { ITool } from '../tool/entities.js';
+import type { ITool, IToolExecutor } from '../tool/entities.js';
 import { PermissionAwareToolExecutor, type ToolPermissionGate } from '../tool/permissions.js';
 import type { ISessionStore } from '../session/entities.js';
 import { AgentFactory } from './AgentFactory.js';
@@ -18,6 +18,18 @@ import { describeRemoteTool, RemoteProjectActionTool } from '../tool/builtin/Rem
 
 export class AgentBuilder {
   private workingDirectory = process.cwd();
+  private diagnosticObserver: AgentConfig["diagnosticObserver"];
+
+  withDiagnosticObserver(observer: AgentConfig["diagnosticObserver"]): this {
+    this.diagnosticObserver = observer;
+    return this;
+  }
+  private runCheckpointStore: import('./run-checkpoint.js').IRunCheckpointStore | undefined;
+
+  withRunCheckpointStore(store: import('./run-checkpoint.js').IRunCheckpointStore): this {
+    this.runCheckpointStore = store;
+    return this;
+  }
   private modelProvider: IModelProvider | null = null;
   private modelRegistry = new ModelRegistry();
   private toolRegistry = new ToolRegistry();
@@ -45,6 +57,8 @@ export class AgentBuilder {
   /** Reasoning intensity for main-loop requests. undefined/"off" = provider default. */
   private reasoningEffort: import("../model/entities.js").ReasoningEffort | undefined;
   private toolPermissionGate: ToolPermissionGate | undefined;
+  /** Last-mile decorator applied to the composed executor (after the permission gate). */
+  private toolExecutorDecorator: ((executor: IToolExecutor) => IToolExecutor) | undefined;
 
   withWorkingDirectory(path: string): this {
     this.workingDirectory = path;
@@ -185,6 +199,18 @@ export class AgentBuilder {
     return this;
   }
 
+  /**
+   * Register a decorator applied to the fully composed tool executor
+   * (after the permission gate, e.g. for checkpointing or auditing).
+   * Multiple decorators compose in registration order.
+   */
+  withToolExecutorDecorator(decorator: (executor: IToolExecutor) => IToolExecutor): this {
+    this.toolExecutorDecorator = this.toolExecutorDecorator
+      ? (executor) => decorator(this.toolExecutorDecorator!(executor))
+      : decorator;
+    return this;
+  }
+
   async build(): Promise<IAgentLoop> {
     if (!this.modelProvider) {
       throw new Error("Model provider is required. Call withModelProvider() or withModel()");
@@ -228,11 +254,13 @@ export class AgentBuilder {
     const contextAssembler = new ContextAssembler(this.contextLoader);
 
     const config: AgentConfig = {
+      diagnosticObserver: this.diagnosticObserver,
+      runCheckpointStore: this.runCheckpointStore,
       modelProvider: this.modelProvider,
       toolRegistry,
-      toolExecutor: this.toolPermissionGate
+      toolExecutor: this.decorateExecutor(this.toolPermissionGate
         ? new PermissionAwareToolExecutor(toolRegistry, this.toolPermissionGate)
-        : toolRegistry,
+        : toolRegistry),
       contextAssembler,
       skillRegistry: this.skillRegistry,
       memoryStore,
@@ -290,11 +318,13 @@ export class AgentBuilder {
     const contextAssembler = new ContextAssembler(this.contextLoader);
 
     const config: AgentConfig = {
+      diagnosticObserver: this.diagnosticObserver,
+      runCheckpointStore: this.runCheckpointStore,
       modelProvider: this.modelProvider,
       toolRegistry,
-      toolExecutor: this.toolPermissionGate
+      toolExecutor: this.decorateExecutor(this.toolPermissionGate
         ? new PermissionAwareToolExecutor(toolRegistry, this.toolPermissionGate)
-        : toolRegistry,
+        : toolRegistry),
       contextAssembler,
       skillRegistry: this.skillRegistry,
       memoryStore,
@@ -310,6 +340,10 @@ export class AgentBuilder {
     };
 
     return new AgentFactory().create(config);
+  }
+
+  private decorateExecutor(executor: IToolExecutor): IToolExecutor {
+    return this.toolExecutorDecorator ? this.toolExecutorDecorator(executor) : executor;
   }
 
   getToolRegistry(): ToolRegistry {

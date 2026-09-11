@@ -22,7 +22,7 @@ function makeThumbnail(bytes: number, width: number, height: number): NonNullabl
 }
 
 describe("DesktopScreenScreencast", () => {
-  it("captures the primary display and derives viewport from thumbnail pixels", async () => {
+  it("captures Retina pixels while keeping logical screen coordinates", async () => {
     const clock = fakeClock();
     const captureSources = vi.fn().mockResolvedValue([
       { id: "screen:1", thumbnail: makeThumbnail(64, 2880, 1800) },
@@ -42,7 +42,7 @@ describe("DesktopScreenScreencast", () => {
       await screencast.stop();
     });
     await running;
-    expect(captureSources).toHaveBeenCalledWith({ width: 1440, height: 900 });
+    expect(captureSources).toHaveBeenCalledWith({ width: 2880, height: 1800 });
     expect(viewports).toEqual([{ width: 1440, height: 900, deviceScaleFactor: 2 }]);
   });
 
@@ -116,6 +116,9 @@ describe("DesktopScreenScreencast", () => {
       now: () => 1,
       sleep: async () => undefined,
     });
+    // Electron may downsample the returned image. Input must still use the
+    // real 1440×900 desktop after capture, not 1440/2 × 900/2.
+    await screencast.start(async () => { await screencast.stop(); });
     await screencast.dispatchInput({ kind: "pointer", action: "move", x: 0.5, y: 0.25, button: "left", deltaX: 0, deltaY: 0 });
     await screencast.dispatchInput({ kind: "pointer", action: "down", x: 0.5, y: 0.25, button: "left", deltaX: 0, deltaY: 0 });
     await screencast.dispatchInput({ kind: "pointer", action: "move", x: 0.6, y: 0.3, button: "left", deltaX: 0, deltaY: 0 });
@@ -133,5 +136,62 @@ describe("DesktopScreenScreencast", () => {
       { op: "key", action: "down", code: "KeyA", modifiers: ["Shift"] },
       { op: "text", text: "你好" },
     ]);
+  });
+});
+
+
+describe("desktop capture quality budget", () => {
+  it("keeps native resolution and reduces encoding quality to fit the frame cap", async () => {
+    const toJPEG = vi.fn((quality: number) => Buffer.alloc(quality > 70 ? 700 * 1024 : 600 * 1024));
+    const captureSources = vi.fn(async () => [{ id: "screen:0", thumbnail: { toJPEG, getSize: () => ({ width: 3840, height: 2160 }) } }]);
+    const screencast = new DesktopScreenScreencast({
+      input: { dispatch: async () => undefined },
+      displayInfo: () => ({ width: 2560, height: 1440, scaleFactor: 2 }),
+      captureSources,
+    });
+    await screencast.start(async (frame) => {
+      expect(frame.data).toBeInstanceOf(Uint8Array);
+      expect((frame.data as Uint8Array).byteLength).toBeLessThanOrEqual(640 * 1024);
+      expect(frame.viewport).toEqual({ width: 2560, height: 1440, deviceScaleFactor: 2 });
+      await screencast.stop();
+    });
+    expect(captureSources).toHaveBeenCalledWith({ width: 3840, height: 2160 });
+    expect(toJPEG.mock.calls.map(([quality]) => quality)).toEqual([90, 80, 70]);
+  });
+});
+
+describe("input driven screen refresh", () => {
+  it("wakes the sleeping capture loop as soon as input finishes", async () => {
+    let sleeping!: () => void;
+    const enteredSleep = new Promise<void>((resolve) => { sleeping = resolve; });
+    let count = 0;
+    const screencast = new DesktopScreenScreencast({
+      input: { dispatch: async () => undefined },
+      displayInfo: () => ({ width: 1440, height: 900, scaleFactor: 1 }),
+      captureSources: async () => [{ id: "screen:0", thumbnail: makeThumbnail(32, 1440, 900) }],
+      sleep: () => { sleeping(); return new Promise(() => {}); },
+    });
+    const running = screencast.start(async () => {
+      count++;
+      if (count === 2) await screencast.stop();
+    });
+    await enteredSleep;
+    await screencast.dispatchInput({ kind: "pointer", action: "up", x: .5, y: .5, button: "left", deltaX: 0, deltaY: 0 });
+    await running;
+    expect(count).toBe(2);
+  });
+
+  it("reuses the JPEG quality that fit instead of retrying oversized encodings", async () => {
+    const toJPEG = vi.fn((quality: number) => Buffer.alloc(quality > 70 ? 700 * 1024 : 32));
+    let frames = 0;
+    const screencast = new DesktopScreenScreencast({
+      input: { dispatch: async () => undefined },
+      displayInfo: () => ({ width: 1440, height: 900, scaleFactor: 2 }),
+      captureSources: async () => [{ id: "screen:0", thumbnail: { toJPEG, getSize: () => ({ width: 2880, height: 1800 }) } }],
+      now: () => 100,
+      sleep: async () => undefined,
+    });
+    await screencast.start(async () => { if (++frames === 3) await screencast.stop(); });
+    expect(toJPEG.mock.calls.map(([quality]) => quality)).toEqual([90, 80, 70, 70, 70]);
   });
 });

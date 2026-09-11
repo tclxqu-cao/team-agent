@@ -1,5 +1,7 @@
 import { promises as fsp } from "node:fs";
 import path from "node:path";
+import { isToolPermissionMode, type ToolPermissionMode } from "@agent/core";
+import { DEFAULT_THEME_NAME, isThemeName, type ThemeName } from "./theme.js";
 
 export interface DesktopModelProfile {
   id: string;
@@ -9,6 +11,17 @@ export interface DesktopModelProfile {
   apiKey: string;
   baseUrl?: string;
   sourcePath: string;
+}
+
+/** User-configured MCP server (stdio or HTTP) connected at startup. */
+export interface McpServerEntry {
+  id: string;
+  name?: string;
+  command?: string;
+  args?: string[];
+  env?: Record<string, string>;
+  url?: string;
+  headers?: Record<string, string>;
 }
 
 export interface ModelSelection {
@@ -49,10 +62,24 @@ export interface TuiConfig {
   version: 2;
   active: PersistedModelSelection | null;
   endpoints: CustomModelEndpoint[];
+  permissionMode: ToolPermissionMode;
+  theme: ThemeName;
+  vimMode: boolean;
+  mcpServers: McpServerEntry[];
 }
 
+export const DEFAULT_PERMISSION_MODE: ToolPermissionMode = "auto-approval";
+
 export function emptyTuiConfig(): TuiConfig {
-  return { version: 2, active: null, endpoints: [] };
+  return {
+    version: 2,
+    active: null,
+    endpoints: [],
+    permissionMode: DEFAULT_PERMISSION_MODE,
+    theme: DEFAULT_THEME_NAME,
+    vimMode: false,
+    mcpServers: [],
+  };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -93,6 +120,28 @@ function readEndpoint(value: unknown): CustomModelEndpoint | null {
   };
 }
 
+export function readMcpServerEntry(value: unknown): McpServerEntry | null {
+  if (!isRecord(value) || !value.id) return null;
+  const command = typeof value.command === "string" && value.command.trim() ? value.command.trim() : undefined;
+  const url = typeof value.url === "string" && value.url.trim() ? value.url.trim() : undefined;
+  if (!command && !url) return null;
+  return {
+    id: String(value.id),
+    name: typeof value.name === "string" ? value.name : undefined,
+    command,
+    args: Array.isArray(value.args) ? value.args.map(String) : undefined,
+    env: readStringRecord(value.env),
+    url,
+    headers: readStringRecord(value.headers),
+  };
+}
+
+function readStringRecord(value: unknown): Record<string, string> | undefined {
+  if (!isRecord(value)) return undefined;
+  const entries = Object.entries(value).filter((entry): entry is [string, string] => typeof entry[1] === "string");
+  return entries.length ? Object.fromEntries(entries) : undefined;
+}
+
 export async function loadTuiConfig(configPath: string): Promise<TuiConfig> {
   try {
     const parsed = JSON.parse(await fsp.readFile(configPath, "utf8")) as unknown;
@@ -100,9 +149,30 @@ export async function loadTuiConfig(configPath: string): Promise<TuiConfig> {
       const endpoints = Array.isArray(parsed.endpoints)
         ? parsed.endpoints.map(readEndpoint).filter((endpoint): endpoint is CustomModelEndpoint => Boolean(endpoint))
         : [];
-      return { version: 2, active: readPersistedSelection(parsed.active), endpoints };
+      const mcpServers = Array.isArray(parsed.mcpServers)
+        ? parsed.mcpServers.map(readMcpServerEntry).filter((entry): entry is McpServerEntry => Boolean(entry))
+        : [];
+      return {
+        version: 2,
+        active: readPersistedSelection(parsed.active),
+        endpoints,
+        permissionMode: isToolPermissionMode(parsed.permissionMode)
+          ? parsed.permissionMode
+          : DEFAULT_PERMISSION_MODE,
+        theme: isThemeName(parsed.theme) ? parsed.theme : DEFAULT_THEME_NAME,
+        vimMode: parsed.vimMode === true,
+        mcpServers,
+      };
     }
-    return { version: 2, active: readPersistedSelection(parsed), endpoints: [] };
+    return {
+      version: 2,
+      active: readPersistedSelection(parsed),
+      endpoints: [],
+      permissionMode: DEFAULT_PERMISSION_MODE,
+      theme: DEFAULT_THEME_NAME,
+      vimMode: false,
+      mcpServers: [],
+    };
   } catch {
     return emptyTuiConfig();
   }

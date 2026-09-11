@@ -4,14 +4,37 @@ import { execFileSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
 import { MANAGED_NODE_VERSION, NODE_RUNTIME_ASSETS } from "./node-runtime-manager.js";
 import { AGENTROAM_VERSION } from "./platform-packages.js";
+import { MINIMUM_NODE_VERSION, isSupportedNodeVersion } from "../bin/runtime-policy.mjs";
 
 const installRoot = resolve(import.meta.dirname, "../install");
 
 describe("standalone installer contracts", () => {
+  it.skipIf(process.platform !== "darwin" || process.arch !== "arm64")("keeps a compatible active Node instead of selecting a different NVM version", async () => {
+    const root = await mkdtemp(resolve(process.env.TMPDIR || "/tmp", "agentroam-active-node-"));
+    try {
+      const homeDir = resolve(root, "home");
+      const workspace = resolve(root, "workspace");
+      const activeBin = resolve(root, "active bin");
+      const nvmRoot = resolve(root, "nvm");
+      await Promise.all([mkdir(homeDir), mkdir(workspace), mkdir(activeBin), mkdir(nvmRoot)]);
+      const expected = await fakeNode(resolve(activeBin, "node"), "24.13.0");
+      await fakeNode(resolve(nvmRoot, "versions/node/v26.0.0/bin/node"), "26.0.0");
+      const output = execFileSync("/bin/sh", [resolve(installRoot, "install-agentroam.sh")], {
+        cwd: workspace, encoding: "utf8",
+        env: { ...process.env, HOME: homeDir, NVM_DIR: nvmRoot, PATH: `${activeBin}:/usr/bin:/bin`,
+          AGENTROAM_BOOTSTRAP_TEST: "1", AGENTROAM_BOOTSTRAP_NODE_DISCOVERY_ONLY: "1" },
+      });
+      expect(output.trim()).toBe(expected);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("keeps the macOS installer aligned with the runtime manifest", async () => {
     const scriptPath = resolve(installRoot, "install-agentroam.sh");
     const script = await readFile(scriptPath, "utf8");
     expect(script).toContain(`NODE_VERSION="${MANAGED_NODE_VERSION}"`);
+    expect(script).toContain(`MINIMUM_NODE_VERSION="${MINIMUM_NODE_VERSION}"`);
     expect(script).toContain(`AGENTROAM_VERSION="${AGENTROAM_VERSION}"`);
     expect(script).toContain(NODE_RUNTIME_ASSETS["darwin-arm64"].archive);
     expect(script).toContain(NODE_RUNTIME_ASSETS["darwin-arm64"].sha256);
@@ -22,7 +45,7 @@ describe("standalone installer contracts", () => {
     expect(script).toContain('AGENTROAM_INSTALL_SKIP_SERVICE');
     expect(script).toContain('service install --root "$SERVICE_ROOT" --data-dir "$DATA_DIR"');
     expect(script).toContain("refusing to expose the entire home directory implicitly");
-    expect(script).toContain("find_nvm_node_22");
+    expect(script).toContain("find_nvm_node");
     expect(script).toContain('${NVM_DIR:-}');
     expect(script).not.toMatch(/\b(?:brew|sudo|fnm|volta)\b/);
     execFileSync("sh", ["-n", scriptPath]);
@@ -31,6 +54,7 @@ describe("standalone installer contracts", () => {
   it("keeps the Windows installer aligned with the runtime manifest", async () => {
     const script = await readFile(resolve(installRoot, "install-agentroam.ps1"), "utf8");
     expect(script).toContain(`$NodeVersion = "${MANAGED_NODE_VERSION}"`);
+    expect(script).toContain(`$MinimumNodeVersion = "${MINIMUM_NODE_VERSION}"`);
     expect(script).toContain(`$AgentRoamVersion = "${AGENTROAM_VERSION}"`);
     expect(script).toContain(NODE_RUNTIME_ASSETS["windows-amd64"].archive);
     expect(script).toContain(NODE_RUNTIME_ASSETS["windows-amd64"].sha256);
@@ -41,13 +65,13 @@ describe("standalone installer contracts", () => {
     expect(script).toContain("$env:AGENTROAM_INSTALL_SKIP_SERVICE");
     expect(script).toContain("service install --root $ServiceRoot --data-dir $DataDir");
     expect(script).toContain("Refusing to expose the entire home directory implicitly");
-    expect(script).toContain("Find-NvmNode22");
+    expect(script).toContain("Find-NvmNode");
     expect(script).toContain("$env:NVM_HOME");
     expect(script).not.toMatch(/\b(?:winget|choco|scoop|Start-Process\s+.*RunAs)\b/i);
   });
 
   it.skipIf(process.platform !== "darwin" || process.arch !== "arm64")(
-    "selects the highest installed NVM Node 22 without changing the active version",
+    "selects the highest compatible NVM Node without changing the active version",
     async () => {
       const root = await mkdtemp(resolve(process.env.TMPDIR || "/tmp", "agentroam-nvm-discovery-"));
       try {
@@ -58,7 +82,8 @@ describe("standalone installer contracts", () => {
         await Promise.all([mkdir(home), mkdir(workspace), mkdir(activeBin), mkdir(nvmRoot)]);
         await fakeNode(resolve(activeBin, "node"), "20.19.0");
         await fakeNode(resolve(nvmRoot, "versions/node/v22.3.0/bin/node"), "22.3.0");
-        const expected = await fakeNode(resolve(nvmRoot, "versions/node/v22.22.2/bin/node"), "22.22.2");
+        await fakeNode(resolve(nvmRoot, "versions/node/v22.22.2/bin/node"), "22.22.2");
+        const expected = await fakeNode(resolve(nvmRoot, "versions/node/v25.8.0/bin/node"), "25.8.0");
         await fakeNode(resolve(nvmRoot, "versions/node/v22.99.0/bin/node"), "21.99.0");
 
         const output = execFileSync("/bin/sh", [resolve(installRoot, "install-agentroam.sh")], {
@@ -75,15 +100,15 @@ describe("standalone installer contracts", () => {
         });
 
         expect(output.trim().split("\n").at(-1)).toBe(expected);
-        expect(output).toContain("Using Node.js v22.22.2 from NVM");
+        expect(output).toContain("Using Node.js v25.8.0 from NVM");
       } finally {
         await rm(root, { recursive: true, force: true });
       }
     },
   );
 
-  it.skipIf(process.platform !== "win32" || Number(process.versions.node.split(".")[0]) !== 22)(
-    "selects an installed nvm-windows Node 22 when the active PATH has no Node",
+  it.skipIf(process.platform !== "win32" || !isSupportedNodeVersion(process.versions.node))(
+    "selects a compatible nvm-windows Node when the active PATH has no Node",
     async () => {
       const root = await mkdtemp(resolve(process.env.TEMP || process.env.TMP || "C:\\Windows\\Temp", "agentroam-nvm-windows-"));
       try {

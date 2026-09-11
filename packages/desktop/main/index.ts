@@ -3,29 +3,19 @@ import { prepareChromeExtension } from "./ai-hub/chrome-extension-install.js";
 // on electron 32 / Node 20.18 (cjsPreparseModuleExports: "exports" undefined).
 import { createRequire } from "module";
 const require = createRequire(import.meta.url);
-const { app, BrowserWindow, ipcMain, dialog, nativeImage, session, shell, desktopCapturer, systemPreferences, screen, globalShortcut, clipboard } = require("electron") as typeof import("electron");
-import { spawn, type ChildProcess } from "node:child_process";
+const { app, BrowserWindow, ipcMain, dialog, nativeImage, session, shell, desktopCapturer, systemPreferences, screen, globalShortcut, clipboard, powerSaveBlocker } = require("electron") as typeof import("electron");
+import { execFile, spawn, type ChildProcess } from "node:child_process";
 import { basename, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { readFile, writeFile } from "node:fs/promises";
 import { existsSync, statSync } from "node:fs";
-import { SessionGoalCoordinator, type AgentEvent } from "@agent/core";
 import { LiveViewProducerClient } from "@agent/core";
 import { DesktopInputGateway } from "./desktop-input-gateway.js";
 import { DesktopScreenScreencast } from "./desktop-screen-screencast.js";
 import { DesktopScreenLive, type ScreenPermission } from "./desktop-screen-live.js";
+import { DisplayKeepAwake } from "./display-keep-awake.js";
 import { readDesktopLiveState, writeDesktopLiveState } from "./desktop-live-state.js";
-import { AgentHost } from "./agent-host.js";
-import {
-  BrokerRuntimeAdapter,
-  createNativeRuntimeBrokerClient,
-  createNativeRuntimeBrokerHostRuntime,
-  CustomerAgentRuntimeAdapter,
-  RuntimeSessionError,
-  UnifiedSessionService,
-  type AgentType,
-} from "./agent-runtime/index.js";
-import { resolveDesktopBaseDir } from "./desktop-base-dir.js";
+import { SharedServiceConnection } from "./shared-service.js";
 import { DesktopUpdateService } from "./update-service.js";
 import { AIHubManager, type HubPaneRect } from "./ai-hub/manager.js";
 import { normalizeRelayImages, startAiHubRelay, type AiHubRelay } from "./ai-hub/relay.js";
@@ -72,6 +62,7 @@ process.stdout.on("error", (err: NodeJS.ErrnoException) => { if (err.code !== "E
 process.stderr.on("error", (err: NodeJS.ErrnoException) => { if (err.code !== "EPIPE") throw err; });
 
 // ── Single-instance lock ──────────────────────────────────────────────────
+if (process.env.AGENTROAM_DESKTOP_USER_DATA?.trim()) app.setPath("userData", resolve(process.env.AGENTROAM_DESKTOP_USER_DATA));
 // Electron uses an OS-level lock tied to the app's userData directory.
 // If a second instance starts, it focuses the existing window and quits.
 const gotLock = app.requestSingleInstanceLock();
@@ -128,115 +119,20 @@ const appIconPath = [
   join(process.resourcesPath, "assets", "app-icon.png"),
   join(process.resourcesPath, "app.asar.unpacked", "assets", "app-icon.png"),
 ].find((candidate) => existsSync(candidate));
-const desktopBaseDir = resolveDesktopBaseDir(app.getAppPath(), app.isPackaged, app.getPath("userData"));
-const agentHost = new AgentHost(desktopBaseDir);
-const nativeRuntimeBroker = createNativeRuntimeBrokerClient({
-  runtimeFactory: (callbacks) => createNativeRuntimeBrokerHostRuntime(
-    process.env.AGENT_CODEX_BIN?.trim() || "codex",
-    callbacks,
-    process.env.AGENT_OPENCODE_BIN?.trim() || "opencode",
-  ),
+const sharedService = new SharedServiceConnection(join(app.getPath("userData"), "shared-service.json"));
+const trustedServiceSender = (event: import("electron").IpcMainInvokeEvent) => {
+  if (event.sender !== mainWindow?.webContents || event.senderFrame !== event.sender.mainFrame) throw new Error("Untrusted desktop sender");
+};
+ipcMain.handle("service:status", (event) => { trustedServiceSender(event); return sharedService.status(); });
+ipcMain.handle("service:select", (event, id: string) => { trustedServiceSender(event); return sharedService.select(id); });
+ipcMain.handle("service:request", (event, path: string, method: string, body?: string) => { trustedServiceSender(event); return sharedService.json(path, method, body); });
+ipcMain.handle("service:stream", (event, id: string, path: string, lastEventId: string) => {
+  trustedServiceSender(event);
+  void sharedService.stream(id, path, lastEventId, (frame) => { if (!event.sender.isDestroyed()) event.sender.send("service:stream-frame", frame); }).catch(() => {
+    if (!event.sender.isDestroyed()) event.sender.send("service:stream-frame", { id, type: "error" });
+  });
 });
-const unifiedSessions = new UnifiedSessionService(
-  [
-    new CustomerAgentRuntimeAdapter(agentHost),
-    new BrokerRuntimeAdapter("codex", nativeRuntimeBroker),
-    new BrokerRuntimeAdapter("claude-code", nativeRuntimeBroker),
-    new BrokerRuntimeAdapter("opencode", nativeRuntimeBroker),
-  ],
-  () => agentHost.getProjectStore().list(),
-);
-const activeCustomerGoalRuns = new Set<string>();
-const customerGoalCoordinator = new SessionGoalCoordinator(
-  agentHost.getSessionStore(),
-  async (sessionId, objective) => {
-    while (true) {
-      let outcome: "completed" | "failed" = "completed";
-      let reason: string | undefined;
-      try {
-        activeCustomerGoalRuns.add(sessionId);
-        for await (const event of unifiedSessions.run(sessionId, objective)) {
-          if (event.type === "error") {
-            outcome = "failed";
-            reason = event.message;
-          } else if (event.type === "turn_aborted") {
-            outcome = "failed";
-            reason = "Goal was stopped";
-          }
-        }
-        activeCustomerGoalRuns.delete(sessionId);
-        return { outcome, reason };
-      } catch (error) {
-        activeCustomerGoalRuns.delete(sessionId);
-        if (!(error instanceof RuntimeSessionError) || error.code !== "SESSION_OCCUPIED") throw error;
-        await new Promise((resolve) => setTimeout(resolve, 250));
-      }
-    }
-  },
-  (sessionId) => activeCustomerGoalRuns.has(sessionId)
-    ? unifiedSessions.abort(sessionId)
-    : Promise.resolve(),
-);
-const nativeEventForwarders = new Map<string, () => void>();
-const nativeDesktopCursors = new Map<string, { runId: string | null; sequence: number }>();
-
-function forwardDesktopNativeEvent(sessionId: string, runId: string, sequence: number, event: AgentEvent): void {
-  nativeDesktopCursors.set(sessionId, { runId, sequence });
-  mainWindow?.webContents.send("agent:event", {
-    ...event,
-    _sid: sessionId,
-    _nativeRunId: runId,
-    _nativeSequence: sequence,
-  });
-}
-
-async function attachDesktopNativeEventForwarder(
-  sessionId: string,
-  deliveredCursor?: { runId: string | null; sequence: number },
-): Promise<void> {
-  nativeEventForwarders.get(sessionId)?.();
-  nativeEventForwarders.delete(sessionId);
-
-  const snapshot = await nativeRuntimeBroker.snapshot(sessionId);
-  if (snapshot.controller !== "desktop" || !snapshot.runId) return;
-  const afterSequence = deliveredCursor?.runId === snapshot.runId
-    ? deliveredCursor.sequence
-    : 0;
-  // The detail returned immediately before a handoff can be older than this
-  // snapshot. Replay only that gap, then subscribe after the latest snapshot
-  // so the Desktop renderer never loses a pending approval in between.
-  for (const { runId, sequence, event } of snapshot.events) {
-    if (sequence > afterSequence) {
-      forwardDesktopNativeEvent(sessionId, runId, sequence, event);
-    }
-  }
-  nativeDesktopCursors.set(sessionId, {
-    runId: snapshot.runId,
-    sequence: snapshot.snapshotRevision,
-  });
-
-  let unsubscribe: (() => void) | null = null;
-  let terminalBeforeSubscriptionReady = false;
-  const stop = () => {
-    unsubscribe?.();
-    if (nativeEventForwarders.get(sessionId) === stop) {
-      nativeEventForwarders.delete(sessionId);
-    }
-  };
-  unsubscribe = await nativeRuntimeBroker.subscribe(
-    sessionId,
-    snapshot.snapshotRevision,
-    ({ runId, sequence, event }) => {
-      forwardDesktopNativeEvent(sessionId, runId, sequence, event);
-      if (event.type === "done" || event.type === "error") {
-        terminalBeforeSubscriptionReady = true;
-        stop();
-      }
-    },
-  );
-  nativeEventForwarders.set(sessionId, stop);
-  if (terminalBeforeSubscriptionReady) stop();
-}
+ipcMain.handle("service:stream-stop", (event, id: string) => { trustedServiceSender(event); sharedService.stop(id); });
 const voiceServiceCwd = app.isPackaged
   ? process.resourcesPath
   : join(app.getAppPath(), "..", "..");
@@ -286,12 +182,6 @@ function invalidateVoiceProvider(provider: VoiceProvider): void {
   activeVoiceProvider = null;
 }
 
-// Forward ALL agent events (including cron-fired runs) to the renderer.
-// This covers both user-initiated runs and background cron queue drains.
-agentHost.subscribe((event) => {
-  mainWindow?.webContents.send("agent:event", event);
-});
-
 function createWindow(): void {
   mainWindow = new BrowserWindow({
     width: 1200,
@@ -307,6 +197,11 @@ function createWindow(): void {
     },
     titleBarStyle: "hiddenInset",
     title: "Customer Agent",
+  });
+  const window = mainWindow;
+  window.on("closed", () => {
+    if (mainWindow === window) mainWindow = null;
+    sharedService.closeStreams();
   });
 
   const port = process.env.VITE_PORT ?? "5173";
@@ -803,7 +698,9 @@ function cancelActiveTts(): number {
   ttsGeneration += 1;
   ttsAbortController?.abort();
   ttsAbortController = null;
-  mainWindow?.webContents.send("tts:flush", { generation: cancelledGeneration });
+  if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.webContents.isDestroyed()) {
+    mainWindow.webContents.send("tts:flush", { generation: cancelledGeneration });
+  }
   return cancelledGeneration;
 }
 
@@ -957,575 +854,21 @@ ipcMain.handle("wake:conversation", (_event, on: boolean) => {
   return { ok: true, conversation };
 });
 
-// ── IPC: Agent control ──
-
-ipcMain.handle("agent:run", async (_event, input: string, sessionId: string, agentIds?: string[], agentName?: string, images?: string[], nativeOptions?: { model?: { id: string; providerID?: string }; reasoningEffort?: "low" | "medium" | "high" | "xhigh" | "max" }) => {
-  try {
-    const agentType = unifiedSessions.agentTypeFor(sessionId);
-    const runOptions = agentType === "customer-agent" ? undefined : {
-      ...(nativeOptions?.model?.id ? { model: nativeOptions.model } : {}),
-      ...(nativeOptions?.reasoningEffort ? { reasoningEffort: nativeOptions.reasoningEffort } : {}),
-    };
-    for await (const agentEvent of unifiedSessions.run(sessionId, input, images, agentIds, agentName, runOptions)) {
-      // Customer Agent already publishes through AgentHost (including cron and
-      // sub-agent events). Native adapters publish here with the unified ID.
-      if (agentType !== "customer-agent") {
-        mainWindow?.webContents.send("agent:event", { ...agentEvent, _sid: sessionId });
-      }
-    }
-  } catch (err) {
-    const code = err instanceof RuntimeSessionError ? err.code : undefined;
-    mainWindow?.webContents.send("agent:event", {
-      type: "error",
-      message: err instanceof Error ? err.message : "Unknown error",
-      ...(code ? { code } : {}),
-      _sid: sessionId,
-    });
-  }
-});
-
-ipcMain.handle("agent:list-models", (_event, agentType: string) => {
-  if (agentType !== "codex" && agentType !== "claude-code" && agentType !== "opencode") {
-    return { agentType, models: [], supported: false };
-  }
-  return unifiedSessions.listModels(agentType)
-    .then((models) => ({ agentType, models }))
-    .catch((err) => {
-      if (err instanceof RuntimeSessionError && err.code === "OPERATION_NOT_SUPPORTED") {
-        return { agentType, models: [], supported: false };
-      }
-      throw err;
-    });
-});
-
-ipcMain.handle("agent:abort", (_event, sessionId?: string) => {
-  return unifiedSessions.abort(sessionId);
-});
-
-// Resolve a pending ask_user question with the user's answer
-ipcMain.handle("agent:answer-question", (_event, questionId: string, answer: string, selectedIndices?: number[]) => {
-  return unifiedSessions.answerQuestion(questionId, { answer, selectedIndices });
-});
-
-/**
- * Steer additional user input into an already-running session without
- * interrupting the current agent loop. If the agent is not running,
- * the message is still saved but the handler starts a new run.
- */
-ipcMain.handle("agent:steer", async (_event, input: string, sessionId: string, agentName?: string) => {
-  const agentType = unifiedSessions.agentTypeFor(sessionId);
-  if (agentType !== "customer-agent") {
-    const isRunning = await unifiedSessions.steer(sessionId, input);
-    if (!isRunning) {
-      for await (const agentEvent of unifiedSessions.run(sessionId, input, [], undefined, agentName)) {
-        mainWindow?.webContents.send("agent:event", { ...agentEvent, _sid: sessionId });
-      }
-    }
-    return true;
-  }
-  const isRunning = await agentHost.steerInput(input, sessionId, agentName);
-  if (!isRunning) {
-    // No active agent loop — start a new run
-    agentHost.setRunning(true);
-    try {
-      for await (const _event of agentHost.run(input, sessionId, [], agentName)) {
-        // events forwarded via subscriber
-      }
-    } catch (err) {
-      mainWindow?.webContents.send("agent:event", {
-        type: "error",
-        message: err instanceof Error ? err.message : "Unknown error",
-      });
-    } finally {
-      agentHost.setRunning(false);
-    }
-  }
-  return true;
-});
-
-// ── IPC: Cron (scheduled tasks) ───────────────────────────────────────────
-
-ipcMain.handle("cron:create", (_event, cron: string, prompt: string, options?: Record<string, unknown>) => {
-  return agentHost.createCronTask(cron, prompt, options as any);
-});
-
-ipcMain.handle("cron:pause", (_event, id: string) => {
-  return agentHost.pauseCronTask(id);
-});
-
-ipcMain.handle("cron:resume", (_event, id: string) => {
-  return agentHost.resumeCronTask(id);
-});
-
-ipcMain.handle("cron:delete", (_event, id: string) => {
-  return agentHost.deleteCronTask(id);
-});
-
-ipcMain.handle("cron:delete-all", () => {
-  agentHost.deleteAllCronTasks();
-  return { ok: true };
-});
-
-ipcMain.handle("cron:list", () => {
-  return agentHost.listCronTasks();
-});
-
-// ── IPC: Settings ──
-
-ipcMain.handle("settings:get", () => {
-  return agentHost.getSettings();
-});
-
-ipcMain.handle("settings:save", (_event, settings: Record<string, unknown>) => {
-  agentHost.configure(settings as any);
-  return agentHost.getSettings();
-});
-
-ipcMain.handle("settings:setActiveProfile", (_event, profileId: string) => {
-  agentHost.setActiveProfile(profileId);
-  return agentHost.getSettings();
-});
-
-// ── IPC: Projects ──
-
-ipcMain.handle("projects:list", async () => {
-  return agentHost.getProjectStore().list();
-});
-
-ipcMain.handle("projects:get", async (_event, id: string) => {
-  return agentHost.getProjectStore().get(id);
-});
-
-ipcMain.handle("projects:create", async (_event, data: { name: string; description?: string }) => {
-  const now = new Date().toISOString();
-  return agentHost.getProjectStore().create({
-    id: crypto.randomUUID(),
-    name: data.name,
-    description: data.description ?? "",
-    created: now,
-    updated: now,
-  });
-});
-
-ipcMain.handle("projects:update", async (_event, id: string, update: Record<string, unknown>) => {
-  return agentHost.getProjectStore().update(id, update as any);
-});
-
-ipcMain.handle("projects:delete", async (_event, id: string) => {
-  await agentHost.getProjectStore().delete(id);
-});
-
-ipcMain.handle("projects:checkPath", async (_event, path: string) => {
-  return existsSync(path);
-});
-
-// ── IPC: Sessions ──
-
-ipcMain.handle("sessions:list", async (_event, projectId?: string) => {
-  return unifiedSessions.list(projectId);
-});
-
-ipcMain.handle("workspaces:list", async (
-  _event,
-  agentType: AgentType,
-  query?: import("./agent-runtime/types.js").WorkspaceQuery,
-) => unifiedSessions.listWorkspaces(agentType, query));
-
-ipcMain.handle("workspaces:import", async (
-  _event,
-  agentType: AgentType,
-  path: string,
-  name?: string,
-) => {
-  const canonicalPath = resolve(path.trim());
-  if (!canonicalPath || !existsSync(canonicalPath) || !statSync(canonicalPath).isDirectory()) {
-    throw new Error("请选择有效的文件夹");
-  }
-  if (agentType !== "customer-agent") {
-    return unifiedSessions.importWorkspace(agentType, canonicalPath, name);
-  }
-  const projects = await agentHost.getProjectStore().list();
-  const existing = projects.find((project) => resolve(project.description) === canonicalPath);
-  const project = existing ?? await agentHost.getProjectStore().create({
-    id: crypto.randomUUID(),
-    name: name?.trim() || basename(canonicalPath) || canonicalPath,
-    description: canonicalPath,
-    created: new Date().toISOString(),
-    updated: new Date().toISOString(),
-  });
-  return {
-    workspace: {
-      agentType,
-      workspaceId: project.id,
-      name: project.name,
-      roots: [project.description],
-      order: Math.max(0, projects.findIndex((candidate) => candidate.id === project.id)),
-      updatedAt: project.updated,
-      source: "native",
-    },
-    existing: Boolean(existing),
-  };
-});
-
-ipcMain.handle("workspaces:listSessions", async (
-  _event,
-  agentType: AgentType,
-  workspaceId: string,
-  query?: import("./agent-runtime/types.js").WorkspaceSessionQuery,
-) => unifiedSessions.listWorkspaceSessions(agentType, workspaceId, query));
-
-ipcMain.handle("sessions:listChildren", async (_event, parentId: string) => {
-  return unifiedSessions.listChildren(parentId);
-});
-
-ipcMain.handle("sessions:get", async (
-  _event,
-  id: string,
-  query?: import("@agent/core").SessionHistoryQuery,
-) => {
-  const detail = await unifiedSessions.get(id, query);
-  const deliveredCursor = {
-    runId: detail.snapshotRunId ?? null,
-    sequence: detail.snapshotRevision ?? 0,
-  };
-  if (detail.agentType !== "customer-agent") nativeDesktopCursors.set(id, deliveredCursor);
-  if (detail.agentType !== "customer-agent" && detail.controller === "desktop") {
-    void attachDesktopNativeEventForwarder(id, deliveredCursor).catch(() => undefined);
-  }
-  return detail;
-});
-
-ipcMain.handle("sessions:getToolResult", async (
-  _event,
-  id: string,
-  ref: Pick<import("@agent/core").SessionToolResultRef, "turnId" | "itemId" | "revision">,
-) => unifiedSessions.getSessionToolResult(id, ref));
-
-ipcMain.handle("sessions:getQueryIndex", async (_event, id: string) => {
-  return unifiedSessions.getQueryIndex(id);
-});
-
-ipcMain.handle("sessions:setPermissionMode", async (_event, id: string, mode: import("@agent/core").ToolPermissionMode) => {
-  if (unifiedSessions.agentTypeFor(id) !== "customer-agent") {
-    const session = await nativeRuntimeBroker.setPermissionMode(id, mode);
-    unifiedSessions.invalidate(id);
-    return session;
-  }
-  const session = await agentHost.setSessionPermissionMode(id, mode);
-  unifiedSessions.invalidate(id);
-  return session;
-});
-
-ipcMain.handle("sessions:getGoals", async (_event, id: string) => {
-  if (unifiedSessions.agentTypeFor(id) === "customer-agent") {
-    return customerGoalCoordinator.get(id);
-  }
-  const state = await nativeRuntimeBroker.getGoals(id, "desktop");
-  await attachDesktopNativeEventForwarder(id).catch(() => undefined);
-  return state;
-});
-
-ipcMain.handle("sessions:enqueueGoal", async (
-  _event,
-  id: string,
-  objective: string,
-  sourceMessageId?: string,
-) => {
-  if (unifiedSessions.agentTypeFor(id) === "customer-agent") {
-    return customerGoalCoordinator.enqueue(id, objective, sourceMessageId);
-  }
-  const result = await nativeRuntimeBroker.enqueueGoal(id, objective, sourceMessageId, "desktop");
-  await attachDesktopNativeEventForwarder(id).catch(() => undefined);
-  return result.state;
-});
-
-ipcMain.handle("sessions:reorderGoals", async (_event, id: string, orderedIds: string[]) => {
-  return unifiedSessions.agentTypeFor(id) === "customer-agent"
-    ? customerGoalCoordinator.reorder(id, orderedIds)
-    : nativeRuntimeBroker.reorderGoals(id, orderedIds);
-});
-
-ipcMain.handle("sessions:cancelGoal", async (_event, id: string, goalId: string) => {
-  return unifiedSessions.agentTypeFor(id) === "customer-agent"
-    ? customerGoalCoordinator.cancel(id, goalId)
-    : nativeRuntimeBroker.cancelGoal(id, goalId, "desktop");
-});
-
-ipcMain.handle("sessions:enqueueMessage", async (
-  _event,
-  id: string,
-  message: { sourceMessageId: string; content: string; images?: string[]; agentIds?: string[]; agentName?: string },
-) => {
-  if (unifiedSessions.agentTypeFor(id) === "customer-agent") {
-    throw new Error("Durable message queue is only available for native sessions");
-  }
-  const result = await nativeRuntimeBroker.enqueueMessage(id, {
-    sourceMessageId: message.sourceMessageId,
-    content: message.content,
-    messagePayload: {
-      images: message.images,
-      agentIds: message.agentIds,
-      agentName: message.agentName,
-    },
-  }, "desktop");
-  await attachDesktopNativeEventForwarder(id).catch(() => undefined);
-  return result.state;
-});
-
-ipcMain.handle("sessions:updateMessage", async (_event, id: string, messageId: string, content: string) => {
-  return nativeRuntimeBroker.updateMessage(id, messageId, content);
-});
-
-ipcMain.handle("sessions:reorderMessages", async (_event, id: string, orderedIds: string[]) => {
-  return nativeRuntimeBroker.reorderMessages(id, orderedIds);
-});
-
-ipcMain.handle("sessions:cancelMessage", async (_event, id: string, messageId: string) => {
-  return nativeRuntimeBroker.cancelMessage(id, messageId);
-});
-
-ipcMain.handle("sessions:steerMessage", async (_event, id: string, messageId: string) => {
-  const result = await nativeRuntimeBroker.steerMessage(id, messageId);
-  if (!result.steered) throw new Error("当前运行不支持插队消息");
-  return result.state;
-});
-
-ipcMain.handle("sessions:handoff", async (_event, id: string) => {
-  if (unifiedSessions.agentTypeFor(id) === "customer-agent") {
-    throw new Error("Only native runtime sessions can be handed off");
-  }
-  const deliveredCursor = nativeDesktopCursors.get(id);
-  const snapshot = await nativeRuntimeBroker.handoff(id, "desktop");
-  await attachDesktopNativeEventForwarder(id, deliveredCursor);
-  return snapshot;
-});
-
-ipcMain.handle("sessions:releaseCodex", async (_event, id: string) => {
-  if (unifiedSessions.agentTypeFor(id) !== "codex") {
-    throw new Error("Only Codex sessions can be released to the native client");
-  }
-  await nativeRuntimeBroker.release(id);
-});
-
-ipcMain.handle("sessions:create", async (
-  _event,
-  title: string,
-  projectId?: string,
-  agentType: AgentType = "customer-agent",
-  cwd?: string,
-) => {
-  const project = projectId ? await agentHost.getProjectStore().get(projectId) : null;
-  return unifiedSessions.create({
-    title,
-    projectId,
-    agentType,
-    cwd: cwd || project?.description || agentHost.getSettings().workingDirectory || desktopBaseDir,
-  });
-});
-
-ipcMain.handle("sessions:fork", async (_event, id: string) => {
-  return unifiedSessions.fork(id);
-});
-
-ipcMain.handle("sessions:delete", async (_event, id: string) => {
-  await unifiedSessions.delete(id);
-});
-
-ipcMain.handle("sessions:refresh", async (_event, projectId?: string) => {
-  return unifiedSessions.refresh(projectId);
-});
-
-ipcMain.handle("sessions:runtimeHealth", async () => {
-  return unifiedSessions.health();
-});
-
-// ── IPC: Memory ──
-
-ipcMain.handle("memory:list", async () => {
-  return agentHost.getMemoryStore().list();
-});
-
-ipcMain.handle("memory:get", async (_event, name: string) => {
-  return agentHost.getMemoryStore().get(name);
-});
-
-ipcMain.handle("memory:set", async (_event, entry: Record<string, unknown>) => {
-  await agentHost.getMemoryStore().set(entry as any);
-});
-
-ipcMain.handle("memory:delete", async (_event, name: string) => {
-  await agentHost.getMemoryStore().delete(name);
-});
-
-ipcMain.handle("memory:search", async (_event, query: string) => {
-  return agentHost.getMemoryStore().search(query);
-});
-
-// ── IPC: MCP Servers ──
-
-ipcMain.handle("mcp:list", async () => {
-  return agentHost.getMCPStore().listAll();
-});
-
-ipcMain.handle("mcp:save", async (_event, server: Record<string, unknown>) => {
-  await agentHost.getMCPStore().save(server as any);
-});
-
-ipcMain.handle("mcp:delete", async (_event, id: string) => {
-  await agentHost.getMCPStore().delete(id);
-});
-
-ipcMain.handle("mcp:setEnabled", async (_event, id: string, enabled: boolean) => {
-  await agentHost.getMCPStore().setEnabled(id, enabled);
-});
-
-ipcMain.handle("mcp:probe", async (_event, server: Record<string, unknown>) => {
-  return agentHost.probeServerTools(server as any);
-});
-
-// ── IPC: LSP ──
-
-ipcMain.handle("lsp:list", async () => {
-  return agentHost.getLSPStore().listAll();
-});
-
-ipcMain.handle("lsp:save", async (_event, config: Record<string, unknown>) => {
-  await agentHost.getLSPStore().save(config as any);
-});
-
-ipcMain.handle("lsp:delete", async (_event, id: string) => {
-  await agentHost.getLSPStore().delete(id);
-});
-
-ipcMain.handle("lsp:setEnabled", async (_event, id: string, enabled: boolean) => {
-  await agentHost.getLSPStore().setEnabled(id, enabled);
-});
-
-// ── IPC: Skills ──
-
-ipcMain.handle("skills:list", async () => {
-  try {
-    const result = await agentHost.listSkills();
-    console.log("[skills:list] workingDir:", (agentHost as any).workingDirectory, "found:", result.length);
-    return result;
-  } catch (err) {
-    console.error("[skills:list] ERROR:", err);
-    return [];
-  }
-});
-
-ipcMain.handle("skills:save", async (_event, skill: Record<string, unknown>) => {
-  await agentHost.getSkillStore().save(skill as any);
-});
-
-ipcMain.handle("skills:delete", async (_event, name: string) => {
-  await agentHost.getSkillStore().delete(name);
-});
-
-ipcMain.handle("skills:set-enabled", async (_event, name: string, enabled: boolean) => {
-  await agentHost.getSkillStore().setEnabled(name, enabled);
-});
-
-ipcMain.handle("skills:import", async () => {
-  const result = await dialog.showOpenDialog(mainWindow!, {
-    title: "导入技能",
-    buttonLabel: "导入",
-    properties: ["openDirectory", "openFile"],
-    filters: [{ name: "Skill", extensions: ["md"] }],
-  });
-  if (result.canceled || result.filePaths.length === 0) return null;
-  return agentHost.importSkill(result.filePaths[0]);
-});
-
-// ── IPC: Upload ──
-
-ipcMain.handle("upload:list", async () => {
-  return agentHost.getUploadStore().list();
-});
-
-ipcMain.handle("upload:get", async (_event, id: string) => {
-  return agentHost.getUploadStore().get(id);
-});
-
-ipcMain.handle("upload:save", async (_event, entry: Record<string, unknown>) => {
-  await agentHost.getUploadStore().save(entry as any);
-});
-
-ipcMain.handle("upload:delete", async (_event, id: string) => {
-  await agentHost.getUploadStore().delete(id);
-});
-
-// ── IPC: File operations ──
-
+// Business operations use the shared service. Only device file pickers stay local.
 ipcMain.handle("file:dialog:open", async () => {
-  const result = await dialog.showOpenDialog(mainWindow!, {
-    properties: ["openDirectory", "createDirectory"],
-    title: "选择项目文件夹",
-    buttonLabel: "选择此文件夹",
-  });
+  const result = await dialog.showOpenDialog(mainWindow!, { properties: ["openDirectory", "createDirectory"], title: "选择项目文件夹", buttonLabel: "选择此文件夹" });
   return result.canceled ? null : result.filePaths[0];
 });
-
-ipcMain.handle("project:set-working-dir", (_event, path: string) => {
-  agentHost.setWorkingDirectory(path);
-  return { ok: true, path };
+ipcMain.handle("file:read", (_event, path: string) => readFile(path, "utf-8"));
+ipcMain.handle("file:write", async (_event, path: string, content: string) => { await writeFile(path, content, "utf-8"); return true; });
+ipcMain.handle("skills:import", async () => {
+  const result = await dialog.showOpenDialog(mainWindow!, { title: "导入技能", properties: ["openDirectory", "openFile"], filters: [{ name: "Skill", extensions: ["md"] }] });
+  if (result.canceled || !result.filePaths.length) return null;
+  const response = await sharedService.json("/api/business", "POST", JSON.stringify({ method: "importSkill", args: [result.filePaths[0]] }));
+  const body = JSON.parse(response.body);
+  if (response.status >= 400) throw new Error(body.error || "导入失败");
+  return body;
 });
-
-ipcMain.handle("file:read", async (_event, path: string) => {
-  return readFile(path, "utf-8");
-});
-
-ipcMain.handle("file:write", async (_event, path: string, content: string) => {
-  await writeFile(path, content, "utf-8");
-  return true;
-});
-
-// ── IPC: Agent Definitions ──
-
-ipcMain.handle("agentdef:list", async () => {
-  const list = await agentHost.getAgentStore().list();
-  const settings = agentHost.getSettings();
-  const activeSet = new Set<string>(settings.activeAgentIds ?? []);
-  return list.map((a) => ({ ...a, isActive: activeSet.has(a.id) }));
-});
-
-ipcMain.handle("agentdef:get", async (_event, id: string) => {
-  return agentHost.getAgentStore().get(id);
-});
-
-ipcMain.handle("agentdef:create", async (_event, data: Record<string, unknown>) => {
-  const now = new Date().toISOString();
-  return agentHost.getAgentStore().create({
-    id: crypto.randomUUID(),
-    name: (data.name as string) ?? "新智能体",
-    description: (data.description as string) ?? "",
-    systemPrompt: (data.systemPrompt as string) ?? "",
-    contextPlaceholders: (data.contextPlaceholders as any[]) ?? [],
-    capabilities: (data.capabilities as any) ?? { profileId: "", enabledTools: [], enabledSkills: [], enabledMCPServers: [] },
-    maxIterations: (data.maxIterations as number) ?? 0,
-    isDefault: Boolean(data.isDefault),
-    created: now,
-    updated: now,
-  });
-});
-
-ipcMain.handle("agentdef:update", async (_event, id: string, update: Record<string, unknown>) => {
-  return agentHost.getAgentStore().update(id, update as any);
-});
-
-ipcMain.handle("agentdef:delete", async (_event, id: string) => {
-  await agentHost.getAgentStore().delete(id);
-  // Remove from active agents list if present
-  const settings = agentHost.getSettings();
-  const filtered = (settings.activeAgentIds ?? []).filter((aid) => aid !== id);
-  agentHost.setActiveAgentIds(filtered);
-});
-
-ipcMain.handle("agentdef:setActive", (_event, id: string) => {
-  agentHost.toggleActiveAgent(id);
-  return agentHost.getSettings();
-});
-
 
 // ── App lifecycle ──
 
@@ -1578,12 +921,22 @@ function getDesktopScreenLive(): DesktopScreenLive {
     },
     primaryDisplayId: () => String(screen.getPrimaryDisplay().id),
   });
+  const keepAwake = new DisplayKeepAwake({
+    // `caffeinate -u` declares user activity, which lights up an asleep
+    // display; the powerSaveBlocker then holds it awake until disable().
+    wake: () => {
+      if (process.platform === "darwin") execFile("/usr/bin/caffeinate", ["-u", "-t", "3"], () => undefined);
+    },
+    acquire: () => powerSaveBlocker.start("prevent-display-sleep"),
+    release: (blockerId) => powerSaveBlocker.stop(blockerId),
+  });
   desktopScreenLive = new DesktopScreenLive({
     clientFactory: () => new LiveViewProducerClient({ endpoint: desktopLiveEndpoint }),
     screencast,
     input: gateway,
     probeScreen: probeScreenPermission,
     probeAccessibility: () => gateway.checkAccessibility(),
+    keepAwake,
   });
   desktopScreenLive.onStatus((status) => {
     mainWindow?.webContents.send("desktop-live:status", status);
@@ -1629,6 +982,7 @@ function registerAiHubWakeShortcut(): void {
 }
 
 app.whenReady().then(async () => {
+  await sharedService.initialize();
   // 暴露完整辅助功能树（AX 驱动/自动化测试依赖）
   app.setAccessibilitySupportEnabled(true);
   if (process.platform === "darwin" && appIconPath) {
@@ -1658,7 +1012,6 @@ app.whenReady().then(async () => {
     return null;
   });
   desktopUpdateService.schedule();
-  void unifiedSessions.health();
   void connectVoiceProvider().then((provider) => {
     console.warn("[voice] provider ready:", provider.kind === "service" ? provider.source : "native");
   });
@@ -1672,9 +1025,13 @@ app.whenReady().then(async () => {
 });
 
 app.on("before-quit", () => {
+  sharedService.closeStreams();
   globalShortcut.unregisterAll();
   wakeDesired = false;
   dictationActive = false;
+  endConversation();
+  if (ttsGraceTimer) { clearTimeout(ttsGraceTimer); ttsGraceTimer = null; }
+  ttsSpeaking = false;
   cancelActiveTts();
   stopWakeProc();
   voiceServiceManager.close();
@@ -1682,7 +1039,6 @@ app.on("before-quit", () => {
   chromeHubBridge.close();
   aiHubManager.destroyAll();
   void desktopScreenLive?.disable();
-  void unifiedSessions.dispose();
 });
 
 app.on("window-all-closed", () => {

@@ -31,12 +31,15 @@ export { AgentFactory } from './domain/agent/AgentFactory.js';
 export { AgentBuilder } from './domain/agent/AgentBuilder.js';
 export { ContextCompactor } from './domain/agent/ContextCompactor.js';
 export type { CompactResult } from './domain/agent/ContextCompactor.js';
+export type { SessionCompaction } from './domain/agent/entities.js';
 export { AnthropicProvider } from './domain/model/providers/AnthropicProvider.js';
 export { OpenAIProvider } from './domain/model/providers/OpenAIProvider.js';
 export { DeepSeekProvider } from './domain/model/providers/DeepSeekProvider.js';
 export { ModelRegistry } from './domain/model/ModelRegistry.js';
 export { ToolRegistry } from './domain/tool/ToolRegistry.js';
 export { ReadFileTool, WriteFileTool, BashTool, WebFetchTool, WebSearchTool, GrepTool, GlobTool, TodoAddTool, TodoUpdateTool, TodoListTool, DispatchAgentTool, type DispatchResult, WaitAgentTool, AskUserTool, type AskUserField, type AskUserRequest, type AskUserResponse, type AskUserCallback, CronCreateTool, CronDeleteTool, CronListTool, LspDiagnosticsTool, LspHoverTool, LspDefinitionTool, LspReferencesTool, RemoteProjectActionTool, registerBuiltinTools } from './domain/tool/builtin/index.js';
+export { ToolPermissionGate, PermissionAwareToolExecutor, classifyToolPermission, normalizeToolPermissionMode, isToolPermissionMode, toolApprovalDecisionFromAnswer, TOOL_PERMISSION_MODES, TOOL_APPROVAL_OPTIONS, type ToolPermissionMode, type ToolApprovalDecision, type ToolPermissionGateOptions, type ToolPermissionRequest, type ToolPermissionClassification } from './domain/tool/permissions.js';
+export { CheckpointAwareToolExecutor, InMemoryFileCheckpointJournal, type FileSnapshot, type IFileCheckpointJournal } from './domain/tool/checkpoints.js';
 export { MCPClient } from './domain/mcp/MCPClient.js';
 export { MCPManager } from './domain/mcp/MCPManager.js';
 export { SkillLoader } from './domain/skill/SkillLoader.js';
@@ -55,3 +58,9 @@ export * from './domain/cron/index.js';
 
 // Infrastructure
 export * from './infrastructure/index.js';
+
+// Opt-in durable Harness run recovery.
+export type { RunCheckpoint, IRunCheckpointStore } from './domain/agent/run-checkpoint.js';
+export { FileRunCheckpointStore } from './infrastructure/RunCheckpointStore.js';
+export { HarnessServiceClient } from './infrastructure/HarnessServiceClient.js';
+export type { HarnessModelSettings, HarnessServiceStatus } from './infrastructure/HarnessServiceClient.js';

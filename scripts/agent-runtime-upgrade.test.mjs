@@ -94,6 +94,20 @@ test("drift check reports every disagreement", async () => {
   }
 });
 
+test("drift check rejects mismatched minimums and a default below the minimum", async () => {
+  const fixture = await makeFixture();
+  try {
+    const adapterPath = resolve(fixture, "packages/desktop/main/agent-runtime/opencode-runtime-adapter.ts");
+    await writeFile(adapterPath, (await readFile(adapterPath, "utf8")).replace('OPENCODE_MINIMUM_VERSION = "1.18.27"', 'OPENCODE_MINIMUM_VERSION = "1.18.28"'));
+    await assert.rejects(checkRuntimeVersionDrift(fixture), /OpenCode minimum runtime/);
+    const cliPath = resolve(fixture, "packages/cli/src/opencode-runtime-manager.ts");
+    await writeFile(cliPath, (await readFile(cliPath, "utf8")).replace('OPENCODE_MINIMUM_VERSION = "1.18.27"', 'OPENCODE_MINIMUM_VERSION = "1.18.28"'));
+    await assert.rejects(checkRuntimeVersionDrift(fixture), /OpenCode managed runtime must be >=1.18.28/);
+  } finally {
+    await rm(fixture, { recursive: true, force: true });
+  }
+});
+
 test("applies an upgrade only inside a temporary fixture", async () => {
   const fixture = await makeFixture();
   try {
@@ -113,6 +127,9 @@ test("applies an upgrade only inside a temporary fixture", async () => {
       },
     });
     assert.equal(result.agentroamVersion, nextReleaseVersion);
+    for (const file of ["packages/cli/src/opencode-runtime-manager.ts", "packages/desktop/main/agent-runtime/opencode-runtime-adapter.ts"]) {
+      assert.match(await readFile(resolve(fixture, file), "utf8"), /const OPENCODE_MINIMUM_VERSION = "1\.18\.27";/);
+    }
     assert.deepEqual(await checkRuntimeVersionDrift(fixture), {
       codex: "0.153.0",
       claude: "0.3.259",

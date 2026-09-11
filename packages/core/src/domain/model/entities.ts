@@ -101,6 +101,11 @@ export interface IModelProvider {
   /** Count tokens for the given messages */
   countTokens(messages: Message[]): Promise<number>;
 
+  /** Runtime context size, when the server exposes it (not the training maximum). */
+  getContextWindow?(): Promise<number | undefined>;
+  /** Count the complete templated request, including native tool schemas. */
+  countRequestTokens?(messages: Message[], tools?: ToolDefinition[]): Promise<number>;
+
   /** Check if the provider supports a given model */
   supportsModel(modelId: string): boolean;
 }

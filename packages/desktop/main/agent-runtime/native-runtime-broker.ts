@@ -1010,7 +1010,7 @@ class NativeRuntimeBrokerState implements ImportedAgentWorkspaceRepository, Code
     };
   }
 
-  applyDetail(detail: UnifiedSessionDetail, options: { mergeProjection?: boolean } = {}): UnifiedSessionDetail {
+  applyDetail(detail: UnifiedSessionDetail, options: { mergeProjection?: boolean; includePendingQuestions?: boolean } = {}): UnifiedSessionDetail {
     const summary = this.applySummary(detail);
     const projection = this.projection(detail.id);
     // Windowed pages that exclude the session tail must not merge the retained
@@ -1032,7 +1032,11 @@ class NativeRuntimeBrokerState implements ImportedAgentWorkspaceRepository, Code
       ...detail,
       ...summary,
       messages,
-      events: mergeProjection ? projection.events.map(({ event }) => event) : detail.events,
+      events: mergeProjection
+        ? projection.events.map(({ event }) => event)
+        : options.includePendingQuestions
+          ? [...detail.events, ...projection.events.flatMap(({ event }) => event.type === "ask_user" ? [event] : [])]
+          : detail.events,
       snapshotRevision: projection.run?.nextSequence ?? 0,
       snapshotRunId: projection.run?.runId ?? null,
     };
@@ -1341,6 +1345,9 @@ export class NativeRuntimeBrokerHost {
           || native.history?.delivery === "trace";
         return this.state.applyDetail(native, {
           mergeProjection: !progressiveDelivery && native.history?.newerCursor == null,
+          // Restore only actionable cards before advancing the SSE cursor.
+          // Tool/commentary history must remain in the lazy trace path.
+          includePendingQuestions: native.history?.delivery === "core" && native.history.newerCursor == null,
         });
       }
     }
@@ -1588,7 +1595,11 @@ export class NativeRuntimeBrokerHost {
         this.handleApprovalResolved(questionId);
         return true;
       }
-    } catch {
+    } catch (error) {
+      if (error instanceof RuntimeSessionError && error.code === "QUESTION_ANSWER_FAILED") {
+        this.state.restoreApproval(questionId);
+        throw error;
+      }
       // The app-server request can disappear after a native runtime restart.
       // Treat that as an interrupted turn rather than leaving a claimed card
       // that can no longer be answered after a page refresh.

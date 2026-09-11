@@ -4,6 +4,8 @@ import { mkdtempSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { assertNativeTarget, sha256File } from "./native-binary.mjs";
+import { MINIMUM_NODE_VERSION } from "../packages/cli/bin/runtime-policy.mjs";
+import { validateNativeInventory } from "./runtime-native-files.mjs";
 
 if (!process.argv[2]) throw new Error("usage: audit-runtime-tarball.mjs <package.tgz>");
 
@@ -22,7 +24,10 @@ if (packageJson.version !== manifest.packageVersion) throw new Error(`runtime pa
 if (JSON.stringify(packageJson.os) !== JSON.stringify(expected.os) || JSON.stringify(packageJson.cpu) !== JSON.stringify(expected.cpu)) {
   throw new Error(`unexpected runtime platform: ${JSON.stringify({ os: packageJson.os, cpu: packageJson.cpu })}`);
 }
-if (manifest.nodeMajor !== 22 || manifest.nodeModuleAbi !== 127) throw new Error("runtime must target Node 22 ABI 127");
+if (manifest.schemaVersion !== 2 || manifest.minimumNodeVersion !== MINIMUM_NODE_VERSION) {
+  throw new Error(`runtime must require Node.js >=${MINIMUM_NODE_VERSION} with manifest v2`);
+}
+if (packageJson.engines?.node !== `>=${MINIMUM_NODE_VERSION}`) throw new Error("runtime Node.js engines mismatch");
 if (basename(tarball) !== `${packageJson.name}-${packageJson.version}.tgz`) throw new Error("runtime tarball filename mismatch");
 if (statSync(tarball).size >= 30_000_000) throw new Error(`runtime package exceeds 30 MB release limit: ${statSync(tarball).size}`);
 
@@ -36,6 +41,7 @@ for (const required of [
   "package/runtime/shell-integration.mjs",
   "package/runtime/lib/file-preview-service.mjs",
   "package/runtime/lib/markdown-preview.mjs",
+  "package/runtime/lib/ai-hub-relay-client.mjs",
   "package/runtime/.next/BUILD_ID",
   "package/runtime/node_modules/node-pty/package.json",
   "package/runtime/node_modules/better-sqlite3/package.json",
@@ -45,17 +51,15 @@ for (const required of [
 
 const platformLeaks = list.filter((file) => {
   if (file.startsWith("package/runtime/node_modules/@next/swc-")) return true;
+  const sqlite = file.match(/^package\/runtime\/node_modules\/better-sqlite3\/prebuilds\/([^/]+\.node)$/);
+  if (sqlite && sqlite[1] !== `${expected.pty}.node`) return true;
   const match = file.match(/^package\/runtime\/node_modules\/node-pty\/prebuilds\/([^/]+)\//);
   return Boolean(match && match[1] !== expected.pty);
 });
 if (platformLeaks.length) throw new Error(`unexpected cross-platform runtime files:\n${platformLeaks.slice(0, 50).join("\n")}`);
 
 const nativeEntries = Object.entries(manifest.nativeFiles || {});
-if (nativeEntries.length < 3) throw new Error("runtime manifest has no native file inventory");
-for (const [path, hash] of nativeEntries) {
-  if (!/^[a-f0-9]{64}$/.test(hash)) throw new Error(`invalid native hash: ${path}`);
-  if (!list.includes(`package/runtime/${path}`)) throw new Error(`missing inventoried native file: ${path}`);
-}
+validateNativeInventory(manifest, list);
 
 const auditDir = mkdtempSync(join(tmpdir(), "agentroam-runtime-audit-"));
 try {

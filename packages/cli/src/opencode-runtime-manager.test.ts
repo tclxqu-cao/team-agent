@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   OPENCODE_RUNTIME_VERSION,
+  OPENCODE_MINIMUM_VERSION,
   managedOpenCodeBinaryCandidates,
   parseOpenCodeVersion,
   resolveOpenCodeRuntime,
@@ -38,6 +39,40 @@ describe("resolveOpenCodeRuntime", () => {
       dependencies: { run },
     })).resolves.toEqual({ executable: binary.path, version: OPENCODE_RUNTIME_VERSION, source: "explicit" });
     expect(run).toHaveBeenCalledWith(binary.path, ["serve", "--help"], 5_000);
+  });
+
+  it.each([OPENCODE_MINIMUM_VERSION, "1.18.30", "1.18.100", "1.19.0", "2.0.0"])("reuses PATH version %s without installation", async (version) => {
+    const binary = await executable();
+    const run = vi.fn(async (_command: string, args: string[]) => ({
+      stdout: args[0] === "--version" ? version : "serve help", stderr: "",
+    }));
+    await expect(resolveOpenCodeRuntime({
+      dataDir: binary.root, target: "darwin-arm64", platform: "darwin",
+      environment: { PATH: binary.root }, dependencies: { run },
+    })).resolves.toEqual({ executable: binary.path, version, source: "global" });
+    expect(run.mock.calls.map(([, args]) => args)).toEqual([["--version"], ["serve", "--help"]]);
+  });
+
+  it.each(["1.18.26", "1.18.9", "1.17.99", "0.99.99", "dev", "1.19.0-beta.1", "01.19.0"])("rejects unsupported explicit version %s", async (version) => {
+    const binary = await executable();
+    const run = vi.fn(async () => ({ stdout: version, stderr: "" }));
+    await expect(resolveOpenCodeRuntime({
+      dataDir: binary.root, target: "darwin-arm64", platform: "darwin",
+      environment: { AGENT_OPENCODE_BIN: binary.path, PATH: "" }, dependencies: { run },
+    })).rejects.toThrow(/requires >=|Unable to parse OpenCode version/);
+    expect(run).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects a newer executable without serve support", async () => {
+    const binary = await executable();
+    await expect(resolveOpenCodeRuntime({
+      dataDir: binary.root, target: "darwin-arm64", platform: "darwin",
+      environment: { AGENT_OPENCODE_BIN: binary.path, PATH: "" },
+      dependencies: { run: async (_command, args) => {
+        if (args[0] === "serve") throw new Error("serve unavailable");
+        return { stdout: "1.18.30", stderr: "" };
+      } },
+    })).rejects.toThrow("serve unavailable");
   });
 
   it("rejects relative explicit overrides", async () => {

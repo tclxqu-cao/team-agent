@@ -10,7 +10,10 @@ import "@xterm/xterm/css/xterm.css";
 import type { GatewayState } from "./useGateway";
 import type { WebTheme } from "./themes";
 import { resetHorizontalScroll } from "./mobileViewport";
-import { shouldSuppressTouchScrollInput } from "./terminalInputPolicy";
+import { shouldSuppressTouchScrollInput, terminalClipboardShortcut } from "./terminalInputPolicy";
+import { createTerminalOutput } from "./terminalOutput";
+import { copyTextToClipboard } from "../../../desktop/renderer/lib/clipboard";
+import { installNativeTerminalTouch, type NativeTerminalTouch } from "./nativeTerminalTouch";
 
 const KEY_STYLES_BASE: React.CSSProperties = {
   minWidth: 34,
@@ -34,7 +37,7 @@ interface Props {
   state: GatewayState;
   rpc: <T = any,>(type: string, params?: Record<string, unknown>, timeoutMs?: number) => Promise<T>;
   onEvent: (type: string, fn: (msg: any) => void) => () => void;
-  onTerminalData: (channelId: number, fn: (data: Uint8Array) => void) => () => void;
+  onTerminalData: (channelId: number, fn: (data: Uint8Array, replay: boolean) => void) => () => void;
   onTerminalReset: (channelId: number, fn: () => void) => () => void;
   sendTerminalInput: (channelId: number, data: string) => boolean;
   keyOrder: string[];
@@ -59,13 +62,16 @@ export default function TerminalPane({ terminalId, title, initialCommand, visibl
   const [startupTimedOut, setStartupTimedOut] = useState(false);
   const [sessionError, setSessionError] = useState<string | null>(null);
   const [writeLocked, setWriteLocked] = useState(false);
+  const [clipboardStatus, setClipboardStatus] = useState("");
+  const nativeTouchRef = useRef<NativeTerminalTouch | null>(null);
   const ctrlArmed = useRef(false);
   const [ctrlOn, setCtrlOn] = useState(false);
   const sessionId = useRef<string>(terminalId);
   const channelId = useRef<number | null>(null);
   const dataSubscription = useRef<(() => void) | null>(null);
   const resetSubscription = useRef<(() => void) | null>(null);
-  const writer = useRef<(bytes: Uint8Array) => void>(() => {});
+  const writer = useRef<(bytes: Uint8Array, replay: boolean) => void>(() => {});
+  const resetOutput = useRef<() => void>(() => {});
   const startRequestRef = useRef<Promise<{ sessionId: string; channelId: number; cwd?: string | null; ready: boolean }> | null>(null);
   const followOutputRef = useRef(true);
   const lockedViewportYRef = useRef(0);
@@ -181,6 +187,11 @@ export default function TerminalPane({ terminalId, title, initialCommand, visibl
     termRef.current = term;
     fitRef.current = fit;
     try { fit.fit(); } catch {}
+    const nativeTouch = installNativeTerminalTouch(term, (text) => {
+      disarmCtrl();
+      term.paste(text);
+    });
+    nativeTouchRef.current = nativeTouch;
 
     // Standard terminal cwd notification: OSC 7 ; file://host/path ST.
     // Agents/shell integrations that expose their internal workspace can
@@ -199,17 +210,18 @@ export default function TerminalPane({ terminalId, title, initialCommand, visibl
       }
     });
 
-    writer.current = (bytes) => {
-      term.write(bytes, () => {
-        // Alternate-screen TUIs (opencode, claude code) redraw the full frame;
-        // scrolling xterm's viewport corrupts their layout.
-        if (term.buffer.active.type === "alternate") return;
-        const xtermElement = hostRef.current?.querySelector<HTMLElement>(".xterm");
-        if (xtermElement?.style.transform) { xtermElement.style.transform = ""; xtermElement.style.willChange = ""; }
-        if (followOutputRef.current) term.scrollToBottom();
-        else term.scrollToLine(Math.min(lockedViewportYRef.current, term.buffer.active.baseY));
-      });
-    };
+    const output = createTerminalOutput(term, () => {
+      if (nativeTouch?.isHoldingText()) return;
+      // Alternate-screen TUIs (opencode, claude code) redraw the full frame;
+      // scrolling xterm's viewport corrupts their layout.
+      if (term.buffer.active.type === "alternate") return;
+      const xtermElement = hostRef.current?.querySelector<HTMLElement>(".xterm");
+      if (xtermElement?.style.transform) { xtermElement.style.transform = ""; xtermElement.style.willChange = ""; }
+      if (followOutputRef.current) term.scrollToBottom();
+      else term.scrollToLine(Math.min(lockedViewportYRef.current, term.buffer.active.baseY));
+    });
+    writer.current = output.write;
+    resetOutput.current = output.reset;
 
     term.onData((data) => {
       if (!state.connected) return;
@@ -253,6 +265,17 @@ export default function TerminalPane({ terminalId, title, initialCommand, visibl
     // reach the app — normal-buffer TUIs (qoder, claude) rely on them, and
     // leaked escapes are still filtered data-side by shouldSuppressTouchScrollInput.
     term.attachCustomKeyEventHandler((event) => {
+      const clipboardShortcut = terminalClipboardShortcut(event, term.hasSelection());
+      if (clipboardShortcut === "copy") {
+        if (nativeTouch?.hasSelection() || !term.hasSelection()) return false;
+        event.preventDefault();
+        void copyTextToClipboard(term.getSelection()).then((copied) => {
+          setClipboardStatus(copied ? "" : "复制失败，请使用系统复制菜单");
+          if (copied) term.focus();
+        });
+        return false;
+      }
+      if (clipboardShortcut === "paste") return false;
       if (term.buffer.active.type === "alternate" || event.type !== "keydown") return true;
       if (!touchScrollActiveRef.current) return true;
       if (event.key === "ArrowUp") {
@@ -300,6 +323,7 @@ export default function TerminalPane({ terminalId, title, initialCommand, visibl
     const scrollSurface = term.element ?? hostRef.current;
     const onTouchDown = (event: PointerEvent) => {
       if (event.pointerType !== "touch" || !event.isPrimary) return;
+      if (nativeTouch?.ownsTouch(event.target)) { touchTracking = false; return; }
       touchPointerId = event.pointerId;
       touchStartX = event.clientX;
       touchStartY = event.clientY;
@@ -308,16 +332,18 @@ export default function TerminalPane({ terminalId, title, initialCommand, visibl
       touchAxis = "pending";
       touchTracking = true;
       if (term.buffer.active.type !== "alternate") followOutputRef.current = false;
-      try { scrollSurface?.setPointerCapture(event.pointerId); } catch {}
+      if (!nativeTouch) try { scrollSurface?.setPointerCapture(event.pointerId); } catch {}
     };
     const onTouchMove = (event: PointerEvent) => {
       if (!touchTracking || event.pointerId !== touchPointerId) return;
+      if (nativeTouch?.ownsTouch(event.target)) { touchTracking = false; return; }
       const totalX = event.clientX - touchStartX;
       const totalY = event.clientY - touchStartY;
       if (touchAxis === "pending" && Math.max(Math.abs(totalX), Math.abs(totalY)) > 8) {
         touchAxis = Math.abs(totalX) > Math.abs(totalY) * 1.2 ? "horizontal" : "vertical";
       }
       if (touchAxis !== "vertical") return;
+      try { scrollSurface?.setPointerCapture(event.pointerId); } catch {}
       const dy = touchLastY - event.clientY;
       touchLastY = event.clientY;
       touchAcc += dy;
@@ -381,6 +407,9 @@ export default function TerminalPane({ terminalId, title, initialCommand, visibl
 
     return () => {
       clearTimeout(resizeTimer);
+      output.dispose();
+      nativeTouch?.dispose();
+      nativeTouchRef.current = null;
       scrollDisposable.dispose();
       term.attachCustomKeyEventHandler(() => true);
       term.attachCustomWheelEventHandler(() => true);
@@ -423,6 +452,7 @@ export default function TerminalPane({ terminalId, title, initialCommand, visibl
   }, []);
 
   const focusLivePrompt = useCallback((opts?: { restoreScroll?: boolean; forceLive?: boolean }) => {
+    if (nativeTouchRef.current?.hasSelection()) return;
     const restoreScroll = opts?.restoreScroll ?? false;
     const forceLive = opts?.forceLive ?? false;
     doFit();
@@ -475,6 +505,7 @@ export default function TerminalPane({ terminalId, title, initialCommand, visibl
           id: terminalId,
           title,
           initialCommand,
+          replayFrames: true,
           cols: termRef.current?.cols ?? 80,
           rows: termRef.current?.rows ?? 24,
         });
@@ -488,9 +519,9 @@ export default function TerminalPane({ terminalId, title, initialCommand, visibl
         resetSubscription.current = onTerminalReset(res.channelId, () => {
           // server sends this marker before replaying scrollback after a
           // reconnect — clear the old buffer or the replay duplicates content
-          termRef.current?.reset();
+          resetOutput.current();
         });
-        dataSubscription.current = onTerminalData(res.channelId, (bytes) => writer.current(bytes));
+        dataSubscription.current = onTerminalData(res.channelId, (bytes, replay) => writer.current(bytes, replay));
         if (res.ready) setSessionReady(true);
         onCwdChange?.(res.cwd ?? null);
         window.setTimeout(() => doFit(), 80);
@@ -737,11 +768,11 @@ export default function TerminalPane({ terminalId, title, initialCommand, visibl
   const endKeyDrag=(event:React.PointerEvent<HTMLButtonElement>)=>{const drag=keyDrag.current;if(!drag)return;if(drag.timer)clearTimeout(drag.timer);suppressKeyClick.current=true;if(event.pointerType==="touch"&&!drag.active&&!drag.scrolling)runShortcut(()=>runKey(drag.key));keyDrag.current=null;touchKeyTap.current=null;setDraggingKey(null);};
   const cancelKeyDrag=()=>{const drag=keyDrag.current;if(drag?.timer)clearTimeout(drag.timer);keyDrag.current=null;setDraggingKey(null);};
 
-  const acquireWrite = async (force = false) => {
+  const acquireWrite = async (force = false, focus = true) => {
     try {
       await rpc(force ? "term:request-write" : "term:focus", { id: sessionId.current, force });
       setWriteLocked(false);
-      termRef.current?.focus();
+      if (focus) termRef.current?.focus();
     } catch (error: any) {
       if (error?.code === "EWRITELOCK") setWriteLocked(true);
     }
@@ -754,7 +785,9 @@ export default function TerminalPane({ terminalId, title, initialCommand, visibl
         <div
           ref={hostRef}
           className="terminal-screen"
+          onFocusCapture={() => { if (nativeTouchRef.current) void acquireWrite(false, false); }}
           onClick={() => {
+            if (nativeTouchRef.current?.consumeClick()) return;
             termRef.current?.focus();
             if (!suppressTerminalClickScroll.current && followOutputRef.current) {
               focusLivePrompt({ forceLive: true });
@@ -768,6 +801,8 @@ export default function TerminalPane({ terminalId, title, initialCommand, visibl
       </div>
       {sessionError && visible && <div role="alert" style={{position:"absolute",inset:"42% auto auto 50%",transform:"translate(-50%,-50%)",zIndex:47,maxWidth:"min(420px,calc(100% - 32px))",padding:"10px 12px",border:`1px solid ${terminalTheme.keybar.keyBorder}`,borderRadius:7,background:"rgba(24,24,29,.96)",color:terminalTheme.xterm.foreground,fontSize:12,lineHeight:1.5,textAlign:"center"}}>终端启动失败：{sessionError}</div>}
       {writeLocked && visible && <div style={{position:"absolute",top:10,right:10,zIndex:48,display:"flex",alignItems:"center",gap:7,padding:"7px 9px",border:"1px solid #6b5634",borderRadius:8,background:"rgba(39,32,22,.95)",color:"#d9b56c",fontSize:11}}>其他设备正在输入 <button style={{border:0,borderRadius:5,padding:"4px 7px",background:"#e0af68",color:"#17120a",fontSize:10}} onClick={()=>acquireWrite(true)}>接管输入</button></div>}
+
+      {clipboardStatus && visible && <div className="terminal-clipboard-notice" role="status" style={{ background: terminalTheme.keybar.bg, color: terminalTheme.keybar.keyText }}>{clipboardStatus}</div>}
 
       {/* virtual key bar stays above the system keyboard; individual keys reorder by long-press drag */}
       {keybarHidden ? <div className="keybar" style={{display:"flex",justifyContent:"center",padding:"5px 7px calc(env(safe-area-inset-bottom) + 5px)",borderTop:`1px solid ${terminalTheme.keybar.border}`,background:terminalTheme.keybar.bg,flexShrink:0}}><button className="keybar-restore" style={{...keyStyles,minWidth:80}} onPointerDown={(event)=>event.preventDefault()} onClick={()=>onKeybarHiddenChange(false)}>⌨ 显示快捷键</button></div> : <div

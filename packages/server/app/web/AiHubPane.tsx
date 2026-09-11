@@ -196,7 +196,7 @@ export default function AiHubPane({ visible, rpc }: AiHubPaneProps) {
     // 注意：这条路径有 await，不能在它之后 window.open（手势会失效）。
     if (relay === "online" && rpc) {
       setSending(true);
-      setNotice(`正在通过桌面端向 ${selected.length} 个站点注入${images.length > 0 ? "（含图片）" : ""}；首次发送需打开站点，可能需要数十秒…`);
+      setNotice(`正在发送至 ${selected.length} 个 AI${images.length > 0 ? "（含图片）" : ""}…`);
       setNoticeError(false);
       rpc<RelaySendResponse>("aihub:send", { text, siteIds: selected, images: imagePayload }, 60000)
         .then((response) => {
@@ -212,10 +212,12 @@ export default function AiHubPane({ visible, rpc }: AiHubPaneProps) {
           }
           setSendStates((current) => ({ ...current, ...next }));
           const okCount = Object.values(next).filter((state) => state === "injected").length;
-          setNotice(`已通过桌面端向 ${okCount}/${selected.length} 个站点注入消息，回答在桌面端 AI Hub 窗口里生成。`);
-          setNoticeError(false);
-          setDraft("");
-          setImages([]);
+          setNotice(okCount === 0 ? "发送失败，请检查桌面端站点连接" : `已发送至 ${okCount}/${selected.length} 个 AI${okCount < selected.length ? "，部分失败" : ""}`);
+          setNoticeError(okCount < selected.length);
+          if (okCount > 0) {
+            setDraft("");
+            setImages([]);
+          }
         })
         .catch(() => {
           setRelay("offline");
@@ -448,29 +450,14 @@ export default function AiHubPane({ visible, rpc }: AiHubPaneProps) {
           gap: 8,
         }}
       >
-        <div style={{ display: "flex", justifyContent: "flex-end" }}>
-          <span style={{ fontSize: 11, color: relay === "online" ? "var(--ui-success)" : "var(--ui-muted-text)" }}>
-            {relay === "online"
-              ? "● 桌面端中继在线：发送将直接注入已登录页面"
-              : relay === "probing"
-                ? "正在探测桌面端…"
-                : "桌面端离线 · 发送 = 新标签直达 + 剪贴板接力"}
+        <div role="status" style={{ minWidth: 0, fontSize: 11, color: noticeError && notice ? "var(--ui-error)" : relay === "online" ? "var(--ui-success)" : "var(--ui-muted-text)", display: "flex", alignItems: "center", gap: 8 }}>
+          <span title={notice || (relay === "online" ? "通过电脑上已登录的 AI 页面发送和同步回复" : "连接桌面端后可同步回复")} style={{ flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+            {notice || (relay === "online" ? "● 桌面端已连接" : relay === "probing" ? "正在连接桌面端…" : "桌面端未连接 · 发送将打开网页")}
           </span>
+          {notice && <button type="button" onClick={() => setNotice(null)} aria-label="关闭提示" style={{ flexShrink: 0, background: "none", border: 0, color: "var(--ui-muted-text)", cursor: "pointer", display: "grid", placeItems: "center" }}>
+            <X size={12} aria-hidden="true" />
+          </button>}
         </div>
-
-        {notice && (
-          <div role="status" style={{ fontSize: 12, color: noticeError ? "var(--ui-error)" : "var(--ui-success)", display: "flex", alignItems: "center", gap: 8 }}>
-            <span style={{ flex: 1 }}>{notice}</span>
-            <button
-              type="button"
-              onClick={() => setNotice(null)}
-              aria-label="关闭提示"
-              style={{ background: "none", border: 0, color: "var(--ui-muted-text)", cursor: "pointer", display: "grid", placeItems: "center" }}
-            >
-              <X size={12} aria-hidden="true" />
-            </button>
-          </div>
-        )}
 
         <div
           style={{

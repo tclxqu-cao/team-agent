@@ -1,3 +1,4 @@
+import { getCustomerGoalCoordinator } from "../../../../lib/customer-goal-service";
 import { NextResponse } from "next/server";
 import { agentHost } from "../../agent-host";
 import {
@@ -22,6 +23,7 @@ export async function POST(request: Request) {
       const steered = await getNativeRuntimeService().steer(body.sessionId, body.input);
       return NextResponse.json({ steered });
     }
+    if (body.messageId) return NextResponse.json({ steered: true, state: await getCustomerGoalCoordinator().steer(body.sessionId, body.messageId) });
     if (!body.input) {
       return NextResponse.json({ error: "input is required" }, { status: 400 });
     }

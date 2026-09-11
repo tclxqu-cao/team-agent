@@ -1,4 +1,5 @@
 import os from 'os';
+import { estimateTextTokens, truncateToTokenBudget } from '../model/tokenBudget.js';
 import type {
   IContextAssembler,
   IContextLoader,
@@ -94,7 +95,9 @@ export class ContextAssembler implements IContextAssembler {
 
     // ── Token budget allocation ──
     const userMsgTokens = this.estimateTokens(input.userMessage);
-    const historyTokens = this.estimateHistoryTokens(input.history);
+    // Oversized history is compacted by AgentLoop. It must not consume the entire
+    // assembly budget and erase the system instructions before compaction runs.
+    const historyTokens = Math.min(this.estimateHistoryTokens(input.history), Math.floor(maxTokens / 2));
     const baseTokens = this.estimateTokens(basePrompt);
     const envTokens = this.estimateTokens(envSection);
 
@@ -165,7 +168,7 @@ export class ContextAssembler implements IContextAssembler {
   // ── Token estimation ──
 
   private estimateTokens(text: string): number {
-    return Math.ceil(text.length / 4);
+    return estimateTextTokens(text);
   }
 
   private estimateHistoryTokens(messages: AssembleInput['history']): number {
@@ -184,7 +187,7 @@ export class ContextAssembler implements IContextAssembler {
   /** Truncate a section to fit within a token budget. */
   private truncateSection(section: string, tokenBudget: number): string {
     if (!section || tokenBudget <= 0) return "";
-    return this.truncateText(section, tokenBudget * 4);
+    return truncateToTokenBudget(section, tokenBudget);
   }
 
   /**
@@ -251,7 +254,7 @@ export class ContextAssembler implements IContextAssembler {
       embeddedTools: "",
       memory: "",
     };
-    let remainingChars = tokenBudget * 4;
+    let remainingTokens = tokenBudget;
     let hasContent = false;
     const keys: Array<keyof SystemPromptSections> = [
       "systemBase",
@@ -264,12 +267,12 @@ export class ContextAssembler implements IContextAssembler {
 
     for (const key of keys) {
       const section = sections[key];
-      if (!section || remainingChars <= 0) continue;
-      const separatorChars = hasContent ? 2 : 0;
-      if (remainingChars <= separatorChars) break;
-      remainingChars -= separatorChars;
-      result[key] = this.truncateText(section, remainingChars);
-      remainingChars -= result[key].length;
+      if (!section || remainingTokens <= 0) continue;
+      const separatorTokens = hasContent ? 1 : 0;
+      if (remainingTokens <= separatorTokens) break;
+      remainingTokens -= separatorTokens;
+      result[key] = truncateToTokenBudget(section, remainingTokens);
+      remainingTokens -= this.estimateTokens(result[key]);
       hasContent = result[key].length > 0 || hasContent;
       if (result[key].length < section.length) break;
     }

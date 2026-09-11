@@ -75,6 +75,6 @@ export default function ChromeHubPane({ siteId, name, onSetup }: { siteId: strin
       </article>)}
     </div>
     {!following && <button className="ui-icon-button ui-icon-button--auto" style={{ alignSelf: "center", padding: "7px 12px", margin: 8 }} onClick={() => setFollowing(true)}>回到最新回复 ↓</button>}
-    {(error || stale) && <div role="alert" style={{ padding: "10px 16px", fontSize: 12, lineHeight: 1.6, color: "var(--danger)" }}>{error || "回复同步已暂停，请检查 Chrome 标签页或重新连接扩展"}</div>}
+    {(error || stale) && <div role={error ? "alert" : "status"} title={error || "暂未收到网页更新，请检查 Chrome 标签页或扩展连接；不代表 AI 已停止回答"} style={{ padding: "6px 16px", fontSize: 12, lineHeight: 1.6, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", color: error ? "var(--danger)" : "var(--text-muted)" }}>{error || "同步暂未更新"}</div>}
   </div>;
 }

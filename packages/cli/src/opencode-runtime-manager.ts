@@ -7,7 +7,9 @@ import { resolveNpmExecutor } from "./codex-runtime-manager.js";
 import type { PlatformTarget } from "./platform.js";
 
 const execFileAsync = promisify(execFile);
+// Default managed installation; compatibility has an independent minimum.
 export const OPENCODE_RUNTIME_VERSION = "1.18.27";
+export const OPENCODE_MINIMUM_VERSION = "1.18.27";
 const OPENCODE_PACKAGE = `opencode-ai@${OPENCODE_RUNTIME_VERSION}`;
 const NPM_REGISTRY = "https://registry.npmjs.org";
 
@@ -79,7 +81,7 @@ export async function resolveOpenCodeRuntime(
 }
 
 export function parseOpenCodeVersion(output: string): string | null {
-  return output.match(/(?:^|\s)(\d+\.\d+\.\d+)(?:\s|$)/)?.[1] ?? null;
+  return output.match(/(?:^|\s)((?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*))(?:\s|$)/)?.[1] ?? null;
 }
 
 export function managedOpenCodeBinaryCandidates(root: string, platform: NodeJS.Platform): string[] {
@@ -234,11 +236,21 @@ async function validate(
   const result = await dependencies.run(executable, ["--version"], 5_000);
   const version = parseOpenCodeVersion(`${result.stdout}\n${result.stderr}`);
   if (!version) throw new Error(`Unable to parse OpenCode version from ${executable}`);
-  if (version !== OPENCODE_RUNTIME_VERSION) {
-    throw new Error(`OpenCode ${version} at ${executable} is incompatible; AgentRoam requires ${OPENCODE_RUNTIME_VERSION}`);
+  if (!meetsOpenCodeMinimum(version)) {
+    throw new Error(`OpenCode ${version} at ${executable} is incompatible; AgentRoam requires >=${OPENCODE_MINIMUM_VERSION}`);
   }
   await dependencies.run(executable, ["serve", "--help"], 5_000);
   return { executable, version, source };
+}
+
+// Compare numeric components, so 1.18.100 and 1.19.0 both exceed 1.18.27.
+function meetsOpenCodeMinimum(version: string): boolean {
+  const actual = version.split(".").map(BigInt);
+  const minimum = OPENCODE_MINIMUM_VERSION.split(".").map(BigInt);
+  for (let index = 0; index < minimum.length; index += 1) {
+    if (actual[index] !== minimum[index]) return actual[index] > minimum[index];
+  }
+  return true;
 }
 
 async function accessible(path: string, executable = false): Promise<boolean> {

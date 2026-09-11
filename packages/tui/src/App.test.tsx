@@ -5,7 +5,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, render } from "ink-testing-library";
 import { TuiApp } from "./App.js";
-import type { AgentEvent, AskUserRequest, AskUserResponse } from "@agent/core";
+import type { AgentEvent, AskUserRequest, AskUserResponse, ToolApprovalDecision, ToolPermissionMode, ToolPermissionRequest } from "@agent/core";
 import type { TuiRuntime } from "./runtime.js";
 
 afterEach(() => cleanup());
@@ -22,6 +22,7 @@ async function waitForFrame(view: { lastFrame(): string | undefined }, text: str
 async function fixture(options: {
   run?: (input: string, onEvent: (event: AgentEvent) => void) => Promise<void>;
   sessions?: Array<{ id: string; title: string; created: string }>;
+  messages?: Array<{ role: "user" | "assistant"; content: string }>;
 } = {}) {
   const fixtureParent = await mkdtemp(path.join(os.tmpdir(), "tui-app-parent-"));
   const root = path.join(fixtureParent, "current");
@@ -35,6 +36,8 @@ async function fixture(options: {
     skills: [{ name: "wiki-query", description: "Search wiki", triggers: [], filePath: "/skill", source: "custom" as const }],
   };
   let questionHandler: ((request: AskUserRequest) => Promise<AskUserResponse>) | undefined;
+  let approvalHandler: ((request: ToolPermissionRequest) => Promise<ToolApprovalDecision>) | undefined;
+  const permissionModes: ToolPermissionMode[] = [];
   const openedSessions: string[] = [];
   const switchedModels: string[] = [];
   const steeredInputs: string[] = [];
@@ -42,6 +45,14 @@ async function fixture(options: {
   const runtime = {
     snapshot: () => snapshot,
     setQuestionHandler: (handler: (request: AskUserRequest) => Promise<AskUserResponse>) => { questionHandler = handler; },
+    setApprovalHandler: (handler: (request: ToolPermissionRequest) => Promise<ToolApprovalDecision>) => { approvalHandler = handler; },
+    setPermissionMode: (mode: ToolPermissionMode) => { permissionModes.push(mode); },
+    setDispatchReporter: () => {},
+    setMcpServers: () => {},
+    getMcpStatuses: () => [],
+    compactSession: async () => null,
+    journal: { undoLastBatch: async () => null, beginBatch: () => {}, snapshot: async () => {}, batchCount: () => 0 },
+    loadSessionTranscript: async () => options.messages ?? [],
     listSessions: async () => options.sessions ?? [],
     newSession: async () => "session-two",
     openSession: async (id: string) => { openedSessions.push(id); return id; },
@@ -54,7 +65,7 @@ async function fixture(options: {
       return { ...snapshot, workingDirectory: directory, sessionId: "project-session" };
     },
   } as unknown as TuiRuntime;
-  return { root, snapshot, runtime, openedSessions, switchedModels, steeredInputs, switchedProjects, getQuestionHandler: () => questionHandler };
+  return { root, snapshot, runtime, openedSessions, switchedModels, steeredInputs, switchedProjects, permissionModes, getQuestionHandler: () => questionHandler, getApprovalHandler: () => approvalHandler };
 }
 
 describe("TuiApp palettes", () => {
@@ -400,27 +411,27 @@ describe("TuiApp palettes", () => {
     await tick();
     view.stdin.write("/");
     await tick();
-    expect(view.lastFrame()).toContain("1/12");
+    expect(view.lastFrame()).toContain("1/21");
     expect(view.lastFrame()).toContain("› /help");
 
     view.stdin.write("\u001b[B");
     await tick();
-    expect(view.lastFrame()).toContain("2/12");
+    expect(view.lastFrame()).toContain("2/21");
     expect(view.lastFrame()).toContain("› /new");
 
     view.stdin.write("\u001bOB");
     await tick();
-    expect(view.lastFrame()).toContain("3/12");
+    expect(view.lastFrame()).toContain("3/21");
     expect(view.lastFrame()).toContain("› /sessions");
 
     view.stdin.write("\u001bOA");
     await tick();
-    expect(view.lastFrame()).toContain("2/12");
+    expect(view.lastFrame()).toContain("2/21");
 
     view.stdin.write("\u001b");
     view.stdin.write("[B");
     await tick();
-    expect(view.lastFrame()).toContain("3/12");
+    expect(view.lastFrame()).toContain("3/21");
     expect(view.lastFrame()).toContain("› /sessions");
 
     view.stdin.write("\r");
@@ -440,7 +451,7 @@ describe("TuiApp palettes", () => {
 
     view.stdin.write("/\u001b[B");
     await tick();
-    expect(view.lastFrame()).toContain("2/12");
+    expect(view.lastFrame()).toContain("2/21");
     expect(view.lastFrame()).toContain("› /new");
     expect(view.lastFrame()).toContain("⌕ /");
 
@@ -449,5 +460,136 @@ describe("TuiApp palettes", () => {
     expect(view.lastFrame()).not.toContain("↑↓ 移动");
     expect(view.lastFrame()).not.toContain("⌕ /");
     expect(view.lastFrame()).toContain("/ 命令  @ 引用");
+  });
+
+  it("routes tool approval decisions through the runtime approval handler", async () => {
+    let decision: ToolApprovalDecision | undefined;
+    const current = await fixture();
+    const runtime = current.runtime as unknown as {
+      run: (input: string, onEvent: (event: AgentEvent) => void) => Promise<void>;
+    };
+    runtime.run = async () => {
+      const handler = current.getApprovalHandler();
+      if (!handler) throw new Error("approval handler missing");
+      decision = await handler({
+        sessionId: "session-one",
+        toolName: "bash",
+        summary: "运行命令：pwd",
+        reason: "命令将在当前工作区的终端中运行",
+        resourceKey: "bash:pwd",
+        args: { command: "pwd" },
+      });
+    };
+    const view = render(<TuiApp runtime={current.runtime} initialSnapshot={current.snapshot} profiles={[]} registeredProjects={[]} configPath="/tmp/tui-config" env={{}} />);
+    await tick();
+    view.stdin.write("run pwd");
+    await tick();
+    view.stdin.write("\r");
+    await waitForFrame(view, "工具执行审批");
+    expect(view.lastFrame()).toContain("bash");
+    expect(view.lastFrame()).toContain("1. 允许一次");
+    expect(view.lastFrame()).toContain("输入 1-4 选择");
+
+    view.stdin.write("2");
+    await tick();
+    view.stdin.write("\r");
+    await tick(120);
+    expect(decision).toBe("allow-session");
+  });
+
+  it("switches permission mode from the /permissions palette", async () => {
+    const current = await fixture();
+    const view = render(<TuiApp runtime={current.runtime} initialSnapshot={current.snapshot} profiles={[]} registeredProjects={[]} configPath="/tmp/tui-config" env={{}} />);
+    await tick();
+    view.stdin.write("/permissions");
+    await tick();
+    view.stdin.write("\r");
+    await tick();
+    expect(view.lastFrame()).toContain("审批模式");
+    expect(view.lastFrame()).toContain("仅高风险询问");
+    expect(view.lastFrame()).toContain("当前 ·");
+
+    // First row is the first enabled non-current mode (enabled items sort first).
+    view.stdin.write("\r");
+    await tick(100);
+    expect(current.permissionModes.at(-1)).toBe("request-approval");
+    expect(view.lastFrame()).toContain("工具审批模式：全部询问");
+  });
+
+  it("replays persisted messages when a historical session is opened", async () => {
+    const sessions = [{ id: "history-session", title: "History", created: "2026-08-28T12:00:00Z" }];
+    const current = await fixture({
+      sessions,
+      messages: [
+        { role: "user", content: "上一轮的问题" },
+        { role: "assistant", content: "上一轮的回答" },
+      ],
+    });
+    const view = render(<TuiApp runtime={current.runtime} initialSnapshot={current.snapshot} profiles={[]} registeredProjects={[]} configPath="/tmp/tui-config" env={{}} />);
+    await tick();
+    view.stdin.write("/open history");
+    await tick();
+    view.stdin.write("\r");
+    await tick(120);
+
+    expect(current.openedSessions).toEqual(["history"]);
+    expect(view.lastFrame()).toContain("重放 2 条历史消息");
+    expect(view.lastFrame()).toContain("上一轮的问题");
+    expect(view.lastFrame()).toContain("上一轮的回答");
+  });
+
+  it("keeps a pasted multi-line chunk as one message and submits on Enter", async () => {
+    const inputs: string[] = [];
+    const current = await fixture({
+      run: async (input) => {
+        inputs.push(input);
+      },
+    });
+    const view = render(<TuiApp runtime={current.runtime} initialSnapshot={current.snapshot} profiles={[]} registeredProjects={[]} configPath="/tmp/tui-config" env={{}} />);
+    await tick();
+
+    view.stdin.write("line1\nline2");
+    await tick();
+    expect(view.lastFrame()).toContain("line1");
+    expect(view.lastFrame()).toContain("line2");
+
+    view.stdin.write("\r");
+    await tick(120);
+    expect(inputs).toEqual(["line1\nline2"]);
+    expect(view.lastFrame()).toContain("line1");
+    expect(view.lastFrame()).toContain("line2");
+  });
+
+  it("removes a queued message with /unqueue", async () => {
+    let releaseFirst!: () => void;
+    const firstPending = new Promise<void>((resolve) => { releaseFirst = resolve; });
+    const inputs: string[] = [];
+    const current = await fixture({
+      run: async (input, onEvent) => {
+        inputs.push(input);
+        onEvent({ type: "thinking", message: "Iteration 1..." });
+        if (input === "first") await firstPending;
+        onEvent({ type: "done", finalText: `done:${input}` });
+      },
+    });
+    const view = render(<TuiApp runtime={current.runtime} initialSnapshot={current.snapshot} profiles={[]} registeredProjects={[]} configPath="/tmp/tui-config" env={{}} />);
+    await tick();
+
+    for (const message of ["first", "keep", "drop me"]) {
+      view.stdin.write(message);
+      await tick();
+      view.stdin.write("\r");
+      await tick();
+    }
+    view.stdin.write("/unqueue 2");
+    await tick();
+    view.stdin.write("\r");
+    await tick(100);
+    expect(view.lastFrame()).toContain("已移除排队消息 2");
+    expect(view.lastFrame()).not.toContain("2. drop me");
+
+    releaseFirst();
+    await tick(120);
+    expect(inputs).toEqual(["first", "keep"]);
   });
 });

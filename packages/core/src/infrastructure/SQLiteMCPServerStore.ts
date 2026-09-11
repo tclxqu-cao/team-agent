@@ -55,10 +55,11 @@ export class SQLiteMCPServerStore {
     db.db.prepare("UPDATE mcp_servers SET enabled = ? WHERE id = ?").run(enabled ? 1 : 0, id);
   }
 
-  private rowToConfig(row: Record<string, unknown>): MCPServerConfig {
+  private rowToConfig(row: Record<string, unknown>): MCPServerConfig & { enabled: boolean } {
     const transport = (row.transport as string ?? "stdio") as "stdio" | "sse" | "streamableHttp";
     return {
       id: row.id as string,
+      enabled: Number(row.enabled) === 1,
       name: row.name as string,
       transport,
       command: row.command as string || undefined,

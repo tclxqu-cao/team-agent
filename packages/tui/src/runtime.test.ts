@@ -99,4 +99,60 @@ describe("TuiRuntime", () => {
     await expect(runtime.switchModel({ ...baseModel, modelId: "broken" })).rejects.toThrow("build failed");
     expect(runtime.snapshot().model.modelId).toBe("gpt-test");
   });
+
+  it("builds the default agent with a permission gate and safe host defaults", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "tui-runtime-"));
+    const runtime = new TuiRuntime(root, baseModel, path.join(root, "store"), new MemorySessions());
+    expect(runtime.resolvePermissionMode()).toBe("auto-approval");
+    await expect(runtime.requestApproval({
+      sessionId: "s",
+      toolName: "bash",
+      summary: "运行命令：pwd",
+      reason: "测试",
+      resourceKey: "bash:pwd",
+      args: {},
+    })).resolves.toBe("deny");
+
+    runtime.setPermissionMode("full-access");
+    expect(runtime.resolvePermissionMode()).toBe("full-access");
+    // Uses the real default factory: proves the gate wiring builds a working agent.
+    await runtime.initialize();
+    expect(runtime.snapshot().sessionId).toBeTruthy();
+  });
+
+  it("names a new session after its first user message", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "tui-runtime-"));
+    const sessions = new MemorySessions();
+    const agent: IAgentLoop = {
+      async *run(): AsyncIterable<AgentEvent> { yield { type: "done", finalText: "ok" }; },
+      abort() {},
+    };
+    const runtime = new TuiRuntime(root, baseModel, path.join(root, "store"), sessions, async () => ({ agent, skills: [] }));
+    await runtime.initialize();
+    await runtime.run("帮我修复登录问题\n第二行", () => {});
+    expect(sessions.sessions[0]?.title).toBe("帮我修复登录问题");
+
+    // The title is decided once; later turns never rename the session.
+    await runtime.run("another question", () => {});
+    expect(sessions.sessions[0]?.title).toBe("帮我修复登录问题");
+  });
+
+  it("replays persisted user and assistant turns for session restore", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "tui-runtime-"));
+    const agent: IAgentLoop = {
+      async *run(): AsyncIterable<AgentEvent> { yield { type: "done", finalText: "final answer" }; },
+      abort() {},
+    };
+    // Real FileSystemSessionStore: replay reads sessions back from disk.
+    const runtime = new TuiRuntime(root, baseModel, path.join(root, "store"), undefined, async () => ({ agent, skills: [] }));
+    await runtime.initialize();
+    await runtime.run("first question", () => {});
+
+    const messages = await runtime.loadSessionTranscript(runtime.snapshot().sessionId);
+    expect(messages).toEqual([
+      { role: "user", content: "first question" },
+      { role: "assistant", content: "final answer" },
+    ]);
+    await expect(runtime.loadSessionTranscript("no-such-id")).rejects.toThrow("找不到会话");
+  });
 });

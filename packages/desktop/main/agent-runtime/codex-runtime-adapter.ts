@@ -154,6 +154,7 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
   /** Progressive full-item hydration per session; the summary skeleton stays the ordinal source of truth. */
   private readonly pagedTurnItems = new Map<string, {
     turns: Map<string, CodexItem[]>;
+    statuses: Map<string, string>;
     walkCursor?: string;
     exhausted: boolean;
   }>();
@@ -169,6 +170,12 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
   private readonly goalTerminalStates = new Map<string, CodexGoalTerminalState>();
   private readonly ownedThreads = new Set<string>();
   private readonly pendingApprovals = new Map<string, PendingApproval>();
+  private readonly asyncInputItems = new Set<string>();
+  private readonly pendingAsyncInputs = new Map<string, {
+    threadId: string;
+    turnId: string;
+    question: string;
+  }>();
   private readonly workspaces = new Map<string, AgentWorkspace>();
   private workspaceSnapshot: WorkspacePage<AgentWorkspace> | null = null;
 
@@ -553,7 +560,19 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
       : [];
 
     if (query.view === "core") {
-      const messages = codexSummaryTurnsToMessages(selectedSummaryTurns);
+      const imageAttachments = new Map<string, MessageAttachment>();
+      for (const turn of selectedSummaryTurns) {
+        for (const item of turn.items ?? []) {
+          if (item.type !== "userMessage") continue;
+          const entries = item.content as Array<Record<string, unknown>> | undefined;
+          for (const path of codexUserImagePaths(entries)) {
+            if (!imageAttachments.has(path)) {
+              imageAttachments.set(path, await loadCodexImageAttachment(path));
+            }
+          }
+        }
+      }
+      const messages = codexSummaryTurnsToMessages(selectedSummaryTurns, imageAttachments);
       this.assignNativeHistoryIds(messages, skeleton, start, end);
       return {
         ...summary,
@@ -788,10 +807,21 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
   ): Promise<void> {
     let state = this.pagedTurnItems.get(nativeSessionId);
     if (!state) {
-      state = { turns: new Map<string, CodexItem[]>(), walkCursor: undefined, exhausted: false };
+      state = { turns: new Map<string, CodexItem[]>(), statuses: new Map(), walkCursor: undefined, exhausted: false };
       this.pagedTurnItems.set(nativeSessionId, state);
     }
     const cached = state;
+    // A queued turn can start before the previous running snapshot is read
+    // once more. Invalidate that snapshot even when it is no longer the tail.
+    for (const turn of ascTurns) {
+      const cachedStatus = cached.statuses.get(turn.id);
+      if (cachedStatus !== undefined && cachedStatus !== turn.status) {
+        cached.turns.delete(turn.id);
+        cached.statuses.delete(turn.id);
+        cached.walkCursor = undefined;
+        cached.exhausted = false;
+      }
+    }
     if (ascTurns.length > 0 && !cached.turns.has(ascTurns[ascTurns.length - 1].id)) {
       cached.walkCursor = undefined;
       cached.exhausted = false;
@@ -836,6 +866,7 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
           ? mergeGrowingCodexTurnItems(previousRefreshedItems, turn.items ?? [])
           : turn.items ?? [];
         cached.turns.set(turn.id, items);
+        cached.statuses.set(turn.id, turn.status);
       }
       pages += 1;
       const next = page.nextCursor ?? undefined;
@@ -1058,6 +1089,7 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
       const normalized = normalizeCodexError(error);
       yield { type: "error", message: normalized.message, code: normalized.code };
     } finally {
+      this.clearAsyncInputs(nativeSessionId);
       this.activeTurnIds.delete(nativeSessionId);
       this.activeQueues.delete(nativeSessionId);
       this.activePermissionModes.delete(nativeSessionId);
@@ -1094,6 +1126,29 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
   }
 
   async answerQuestion(questionId: string, answer: RuntimeQuestionAnswer): Promise<boolean> {
+    const asyncInput = this.pendingAsyncInputs.get(questionId);
+    if (asyncInput) {
+      const value = answer.answer.trim();
+      if (!value || this.activeTurnIds.get(asyncInput.threadId) !== asyncInput.turnId) {
+        throw new RuntimeSessionError("问题已结束或回答为空，请刷新会话后重试。", "QUESTION_ANSWER_FAILED");
+      }
+      try {
+        await this.client.request("turn/steer", {
+          threadId: asyncInput.threadId,
+          expectedTurnId: asyncInput.turnId,
+          input: [{ type: "text", text: `关于“${asyncInput.question}”的回答：\n${value}`, text_elements: [] }],
+        });
+      } catch (error) {
+        // Keep the card retryable; a failed steer must not terminate the run
+        // or silently enqueue the answer for a different turn.
+        throw new RuntimeSessionError(
+          error instanceof Error ? error.message : "回答发送失败，请重试。",
+          "QUESTION_ANSWER_FAILED",
+        );
+      }
+      this.pendingAsyncInputs.delete(questionId);
+      return true;
+    }
     const pending = this.pendingApprovals.get(questionId);
     if (!pending) return false;
     this.pendingApprovals.delete(questionId);
@@ -1210,6 +1265,17 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
     }
     const threadId = typeof params.threadId === "string" ? params.threadId : undefined;
     if (!threadId) return;
+    if (message.method === "turn/completed") {
+      const completedTurnId = asRecord(params.turn).id;
+      const cached = this.pagedTurnItems.get(threadId);
+      if (cached && typeof completedTurnId === "string") {
+        cached.turns.delete(completedTurnId);
+        cached.statuses.delete(completedTurnId);
+        cached.walkCursor = undefined;
+        cached.exhausted = false;
+      }
+      this.clearAsyncInputs(threadId);
+    }
     const queue = this.activeQueues.get(threadId);
     if (!queue) return;
 
@@ -1243,6 +1309,39 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
     if (progressEvent) queue.push(progressEvent);
     const notificationItem = params.item as CodexItem | undefined;
     if (
+      (message.method === "item/started" || message.method === "item/completed")
+      && notificationItem?.type === "agentMessage"
+      && notificationItem.delivery === "async"
+      && notificationItem.id
+      && eventTurnId
+    ) {
+      const itemKey = `${threadId}:${notificationItem.id}`;
+      this.asyncInputItems.add(itemKey);
+      // The completed item carries the full question list. Some runtimes
+      // send an empty list at item/started, so wait for completion.
+      if (message.method === "item/completed") {
+        if (this.asyncInputItems.has(`${itemKey}:completed`)) return;
+        this.asyncInputItems.add(`${itemKey}:completed`);
+        const questions = Array.isArray(notificationItem.questions) ? notificationItem.questions : [];
+        questions.forEach((value, index) => {
+          const question = asRecord(value);
+          if (typeof question.title !== "string" || !question.title.trim()) return;
+          const questionId = `native:${this.activeBrokerRunIds.get(threadId) ?? threadId}:async:${notificationItem.id}:${index}`;
+          if (this.pendingAsyncInputs.has(questionId)) return;
+          this.pendingAsyncInputs.set(questionId, { threadId, turnId: eventTurnId, question: question.title });
+          queue.push({
+            type: "ask_user",
+            questionId,
+            question: question.title,
+            options: Array.isArray(question.options)
+              ? question.options.flatMap((label) => typeof label === "string" ? [{ label, description: "" }] : [])
+              : undefined,
+          });
+        });
+      }
+      return;
+    }
+    if (
       message.method === "item/started"
       && notificationItem?.type === "agentMessage"
       && typeof notificationItem.id === "string"
@@ -1259,6 +1358,7 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
 
     if (message.method === "item/agentMessage/delta" && typeof params.delta === "string") {
       const itemId = typeof params.itemId === "string" ? params.itemId : undefined;
+      if (itemId && this.asyncInputItems.has(`${threadId}:${itemId}`)) return;
       const messagePhase = itemId
         ? this.agentMessagePhases.get(`${threadId}:${itemId}`)
         : undefined;
@@ -1337,6 +1437,17 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
     if (message.method === "error") {
       queue.push({ type: "error", message: String(params.message ?? "Codex runtime error") });
       queue.close();
+    }
+  }
+
+  private clearAsyncInputs(threadId: string): void {
+    for (const [questionId, pending] of this.pendingAsyncInputs) {
+      if (pending.threadId !== threadId) continue;
+      this.pendingAsyncInputs.delete(questionId);
+      this.onApprovalResolved?.(questionId);
+    }
+    for (const key of this.asyncInputItems) {
+      if (key.startsWith(`${threadId}:`)) this.asyncInputItems.delete(key);
     }
   }
 
@@ -1686,7 +1797,18 @@ interface CodexMessageConversionOptions {
   toolArgumentsMaxBytes?: number;
 }
 
-function codexSummaryTurnsToMessages(turns: CodexTurn[]): Message[] {
+function codexUserImagePaths(entries: Array<Record<string, unknown>> | undefined): string[] {
+  return (entries ?? []).flatMap((entry) => (
+    (entry.type === "local_image" || entry.type === "localImage") && typeof entry.path === "string"
+      ? [entry.path]
+      : []
+  ));
+}
+
+function codexSummaryTurnsToMessages(
+  turns: CodexTurn[],
+  imageAttachments?: ReadonlyMap<string, MessageAttachment>,
+): Message[] {
   const messages: Message[] = [];
   for (const turn of turns) {
     const legacyFinalAgentMessage = codexLegacyFinalAgentMessage(turn);
@@ -1700,19 +1822,17 @@ function codexSummaryTurnsToMessages(turns: CodexTurn[]): Message[] {
           .trim();
         if (!sourceText) continue;
         const normalized = normalizeCodexUserText(sourceText);
-        const attachmentNames = (entries ?? []).flatMap((entry) => (
-          (entry.type === "local_image" || entry.type === "localImage") && typeof entry.path === "string"
-            ? [basename(entry.path)]
-            : []
-        ));
+        const imagePaths = codexUserImagePaths(entries);
         messages.push({
           role: "user",
           content: normalized.content,
           presentation: {
             executionTrace: { turnId: turn.id },
             ...(normalized.rawContent ? { rawContent: normalized.rawContent } : {}),
-            ...(attachmentNames.length > 0 ? {
-              attachments: attachmentNames.map((name) => ({ type: "image" as const, name, unavailable: true })),
+            ...(imagePaths.length > 0 ? {
+              attachments: imagePaths.map((path) => imageAttachments?.get(path) ?? {
+                type: "image" as const, name: basename(path), unavailable: true,
+              }),
             } : {}),
           },
         });
@@ -1798,11 +1918,7 @@ export async function codexTurnsToMessages(
           .trim();
         if (sourceText) {
           const normalized = normalizeCodexUserText(sourceText);
-          const imagePaths = (entries ?? [])
-            .filter((entry) => (
-              entry.type === "local_image" || entry.type === "localImage"
-            ) && typeof entry.path === "string")
-            .map((entry) => String(entry.path));
+          const imagePaths = codexUserImagePaths(entries);
           const attachments = await Promise.all(imagePaths.map(loadCodexImageAttachment));
           const presentation = normalized.rawContent || attachments.length > 0
             ? {
@@ -1817,6 +1933,9 @@ export async function codexTurnsToMessages(
           });
         }
       } else if (item.type === "agentMessage" && typeof item.text === "string" && item.text.trim()) {
+        // Pending async questions are replayed as broker ask_user events.
+        // Keep their text only in completed history, without a duplicate live card.
+        if (item.delivery === "async" && turn.status === "inProgress") continue;
         const presentation = codexAgentMessagePresentation(item);
         messages.push({
           role: "assistant",
@@ -1904,13 +2023,14 @@ function isCodexExecutionMessage(message: Message): boolean {
 }
 
 function codexLegacyFinalAgentMessage(turn: CodexTurn): CodexItem | undefined {
-  if (turn.status !== "completed" || turn.items.some((item) => item.phase === "final_answer")) {
+  if (turn.status !== "completed" || turn.items.some((item) => item.phase === "final_answer" && item.delivery !== "async")) {
     return undefined;
   }
   for (let index = turn.items.length - 1; index >= 0; index -= 1) {
     const item = turn.items[index];
     if (
       item.type === "agentMessage"
+      && item.delivery !== "async"
       && item.phase !== "commentary"
       && typeof item.text === "string"
       && item.text.trim()
@@ -1924,7 +2044,7 @@ function isCodexCoreAgentMessage(
   turnStatus: string,
   legacyFinalAgentMessage?: CodexItem,
 ): boolean {
-  if (item.type !== "agentMessage" || item.phase === "commentary") return false;
+  if (item.type !== "agentMessage" || item.phase === "commentary" || item.delivery === "async") return false;
   if (item.phase === "final_answer") return true;
   // Summary items from a running Codex turn can omit `phase` even when the
   // latest agent message is commentary. Completed legacy turns may use only
@@ -1935,7 +2055,7 @@ function isCodexCoreAgentMessage(
 function codexAgentMessagePresentation(
   item: CodexItem,
 ): Message["presentation"] | undefined {
-  const phase = codexAgentMessagePhase(item.phase);
+  const phase = item.delivery === "async" ? "commentary" : codexAgentMessagePhase(item.phase);
   return phase
     ? { agentMessagePhase: phase }
     : undefined;
@@ -2139,7 +2259,7 @@ function codexContextUsageEvent(turn: unknown, requestIndex: number): AgentEvent
 function lastCodexAgentText(items: CodexItem[]): string {
   for (let index = items.length - 1; index >= 0; index--) {
     const item = items[index];
-    if (item.type === "agentMessage" && typeof item.text === "string") return item.text;
+    if (item.type === "agentMessage" && item.delivery !== "async" && typeof item.text === "string") return item.text;
   }
   return "";
 }

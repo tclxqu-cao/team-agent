@@ -5,13 +5,23 @@ export type TranscriptEntry =
   | { id: string; type: "assistant"; text: string }
   | { id: string; type: "notice"; text: string }
   | { id: string; type: "error"; text: string }
-  | { id: string; type: "tool"; name: string; text: string; error?: boolean };
+  | { id: string; type: "tool"; name: string; text: string; full?: string; error?: boolean };
+
+/** Live view truncates tool payloads; scrollback keeps a bounded full copy. */
+const TOOL_FULL_LIMIT = 8000;
 
 export interface ProgressState {
   label: string;
   startedAt: number;
   completedAt?: number;
   usage?: TokenUsage;
+}
+
+export interface UsageTotals {
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  turns: number;
 }
 
 export interface TuiState {
@@ -23,6 +33,7 @@ export interface TuiState {
   running: boolean;
   progress: ProgressState | null;
   streamEntryId: string | null;
+  usage: UsageTotals;
 }
 
 export type TuiAction =
@@ -31,19 +42,21 @@ export type TuiAction =
   | { type: "turn_start"; now: number }
   | { type: "agent_event"; event: AgentEvent; now: number }
   | { type: "append"; entry: TranscriptEntry }
+  | { type: "replace_transcript"; entries: TranscriptEntry[] }
   | { type: "history"; direction: -1 | 1 }
   | { type: "clear" };
 
-export const initialTuiState: TuiState = {
+export const initialTuiState = (history: string[] = []): TuiState => ({
   transcript: [],
   input: "",
   cursor: 0,
-  history: [],
-  historyIndex: 0,
+  history: [...history],
+  historyIndex: history.length,
   running: false,
   progress: null,
   streamEntryId: null,
-};
+  usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0, turns: 0 },
+});
 
 function nextId(prefix: string, count: number): string {
   return `${prefix}:${Date.now()}:${count}`;
@@ -53,6 +66,25 @@ function flat(value: unknown, limit: number): string {
   const raw = typeof value === "string" ? value : JSON.stringify(value ?? {});
   const flattened = raw.replace(/\s+/g, " ");
   return flattened.slice(0, limit) + (flattened.length > limit ? "..." : "");
+}
+
+function flattenFull(value: unknown): string {
+  // String payloads (patch bodies, shell commands, tool output) read better
+  // raw than as pretty-printed JSON.
+  const direct = typeof value === "string"
+    ? value
+    : pickStringField(value, ["patch", "command", "content", "url", "query"]);
+  const raw = direct ?? JSON.stringify(value ?? null, null, 2);
+  return raw.slice(0, TOOL_FULL_LIMIT) + (raw.length > TOOL_FULL_LIMIT ? "\n…(已截断)" : "");
+}
+
+function pickStringField(value: unknown, fields: string[]): string | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  for (const field of fields) {
+    const candidate = (value as Record<string, unknown>)[field];
+    if (typeof candidate === "string" && candidate.trim()) return candidate;
+  }
+  return null;
 }
 
 function thinkingLabel(message: string): string {
@@ -88,6 +120,7 @@ function reduceEvent(state: TuiState, event: AgentEvent, now: number): TuiState 
           type: "tool",
           name: event.toolCall.name,
           text: flat(event.toolCall.arguments, 140),
+          full: flattenFull(event.toolCall.arguments),
         }],
       };
     case "tool_result":
@@ -98,6 +131,7 @@ function reduceEvent(state: TuiState, event: AgentEvent, now: number): TuiState 
           type: "tool",
           name: event.result.isError ? "失败" : "结果",
           text: flat(event.result.content, 180),
+          full: flattenFull(event.result.content),
           error: event.result.isError,
         }],
       };
@@ -117,13 +151,23 @@ function reduceEvent(state: TuiState, event: AgentEvent, now: number): TuiState 
         streamEntryId: null,
         transcript: [...state.transcript, { id: nextId("notice", state.transcript.length), type: "notice", text: "已中断当前回复" }],
       };
-    case "done":
+    case "done": {
+      const usage = event.usage
+        ? {
+            inputTokens: state.usage.inputTokens + event.usage.inputTokens,
+            outputTokens: state.usage.outputTokens + event.usage.outputTokens,
+            totalTokens: state.usage.totalTokens + event.usage.totalTokens,
+            turns: state.usage.turns + 1,
+          }
+        : state.usage;
       return {
         ...state,
         running: false,
         streamEntryId: null,
+        usage,
         progress: state.progress ? { ...state.progress, completedAt: now, usage: event.usage } : null,
       };
+    }
     default:
       return state;
   }
@@ -147,6 +191,8 @@ export function tuiReducer(state: TuiState, action: TuiAction): TuiState {
       return reduceEvent(state, action.event, action.now);
     case "append":
       return { ...state, transcript: [...state.transcript, action.entry] };
+    case "replace_transcript":
+      return { ...state, transcript: action.entries, progress: null, streamEntryId: null };
     case "history": {
       if (state.history.length === 0) return state;
       const index = Math.max(0, Math.min(state.history.length, state.historyIndex + action.direction));

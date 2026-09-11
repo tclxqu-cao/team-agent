@@ -91,7 +91,7 @@ describe("AiHubPane", () => {
 
   it("shows immediate feedback when a relay send starts", () => {
     const sendBody = source.slice(source.indexOf("const send = useCallback"), source.indexOf("const columns = useMemo"));
-    const noticeIndex = sendBody.indexOf("正在通过桌面端向");
+    const noticeIndex = sendBody.indexOf("正在发送至");
     const rpcIndex = sendBody.indexOf('rpc<RelaySendResponse>');
     expect(noticeIndex).toBeGreaterThan(-1);
     expect(noticeIndex).toBeLessThan(rpcIndex);
@@ -120,7 +120,7 @@ describe("AiHubPane", () => {
     const openIndex = sendBody.indexOf("window.open(url");
     expect(relayIndex).toBeGreaterThan(-1);
     expect(relayIndex).toBeLessThan(openIndex);
-    expect(source).toContain("已通过桌面端向");
+    expect(source).toContain("已发送至");
   });
 
   it("falls back to browser tabs and marks the relay offline when unavailable", () => {

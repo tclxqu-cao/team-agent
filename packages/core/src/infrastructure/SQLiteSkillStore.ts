@@ -53,9 +53,10 @@ export class SQLiteSkillStore {
     db.db.prepare("UPDATE skills SET enabled = ? WHERE name = ?").run(enabled ? 1 : 0, name);
   }
 
-  private rowToSkill(row: Record<string, unknown>): SkillDefinition {
+  private rowToSkill(row: Record<string, unknown>): SkillDefinition & { enabled: boolean } {
     return {
       name: row.name as string,
+      enabled: Number(row.enabled) === 1,
       description: row.description as string,
       triggers: JSON.parse(row.triggers as string),
       prompt: row.prompt as string,

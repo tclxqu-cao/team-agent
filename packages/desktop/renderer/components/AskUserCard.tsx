@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { AskUserField } from "@agent/core";
 
 interface AskUserCardProps {
@@ -9,7 +9,7 @@ interface AskUserCardProps {
   multiSelect?: boolean;
   answered?: boolean;
   answer?: string;
-  onAnswer: (answer: string, selectedIndices?: number[]) => void;
+  onAnswer: (answer: string, selectedIndices?: number[]) => void | Promise<void>;
 }
 
 export default function AskUserCard({
@@ -24,6 +24,24 @@ export default function AskUserCard({
   const [selectedIndices, setSelectedIndices] = useState<Set<number>>(new Set());
   const [freeText, setFreeText] = useState("");
   const [fieldValues, setFieldValues] = useState<Record<string, string>>({});
+  const submittingRef = useRef(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState("");
+
+  const submit = async (value: string, indices?: number[]) => {
+    if (answered || submittingRef.current) return;
+    submittingRef.current = true;
+    setSubmitting(true);
+    setSubmitError("");
+    try {
+      await onAnswer(value, indices);
+    } catch (error) {
+      setSubmitError(error instanceof Error ? error.message : "回答发送失败，请重试。");
+    } finally {
+      submittingRef.current = false;
+      setSubmitting(false);
+    }
+  };
 
   const hasOptions = Boolean(options?.length);
   const hasFields = Boolean(fields?.length);
@@ -46,7 +64,7 @@ export default function AskUserCard({
   const handleSubmitOptions = () => {
     if (selectedIndices.size === 0) return;
     const labels = Array.from(selectedIndices).map((i) => options![i].label);
-    onAnswer(labels.join(", "), Array.from(selectedIndices));
+    void submit(labels.join(", "), Array.from(selectedIndices));
   };
 
   const handleSubmitFields = () => {
@@ -56,16 +74,18 @@ export default function AskUserCard({
     );
     if (!values.model && selected.length > 0) values.model = selected[0];
     if (!Object.values(values).some(Boolean) && selected.length === 0) return;
-    onAnswer(JSON.stringify({ fields: values, selectedOptions: selected }), Array.from(selectedIndices));
+    void submit(JSON.stringify({ fields: values, selectedOptions: selected }), Array.from(selectedIndices));
   };
 
   const handleSubmitText = () => {
     if (!freeText.trim()) return;
-    onAnswer(freeText.trim());
+    void submit(freeText.trim());
   };
 
   return (
     <div style={{ marginBottom: 12 }}>
+      {submitError && !answered && <div role="alert" style={{ color: "var(--danger)", marginBottom: 8 }}>{submitError}</div>}
+      {submitting && <div role="status">正在发送回答…</div>}
       <div
         style={{
           borderRadius: 12,
@@ -243,7 +263,7 @@ export default function AskUserCard({
             {!hasFields && (
               <button
                 onClick={handleSubmitOptions}
-                disabled={selectedIndices.size === 0}
+                disabled={submitting || selectedIndices.size === 0}
                 style={{
                   marginTop: 2,
                   padding: "7px 16px",
@@ -298,6 +318,7 @@ export default function AskUserCard({
             ))}
             <button
               onClick={handleSubmitFields}
+              disabled={submitting}
               style={{
                 padding: "8px 16px",
                 borderRadius: 8,
@@ -357,7 +378,7 @@ export default function AskUserCard({
             />
             <button
               onClick={handleSubmitText}
-              disabled={!freeText.trim()}
+              disabled={submitting || !freeText.trim()}
               style={{
                 padding: "8px 16px",
                 borderRadius: 8,

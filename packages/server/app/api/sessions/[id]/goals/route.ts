@@ -57,7 +57,7 @@ export async function POST(
       return NextResponse.json(result);
     }
     if (body.kind === "message") {
-      return NextResponse.json({ error: "Durable message queue is only available for native sessions" }, { status: 400 });
+      return NextResponse.json({ state: await getCustomerGoalCoordinator().enqueueMessage(params.id, body.objective, typeof body.sourceMessageId === "string" ? body.sourceMessageId : crypto.randomUUID(), normalizeMessagePayload(body.messagePayload)) });
     }
     const state = await getCustomerGoalCoordinator().enqueue(
       params.id,
@@ -83,12 +83,10 @@ export async function PATCH(
       messagePayload?: unknown;
     };
     if (body.kind === "message" && typeof body.messageId === "string") {
-      if (!isNativeSessionId(params.id)) {
-        return NextResponse.json({ error: "Durable message queue is only available for native sessions" }, { status: 400 });
-      }
       if (typeof body.objective !== "string" || !body.objective.trim()) {
         return NextResponse.json({ error: "objective is required" }, { status: 400 });
       }
+      if (!isNativeSessionId(params.id)) return NextResponse.json(await getCustomerGoalCoordinator().updateMessage(params.id, body.messageId, body.objective, normalizeMessagePayload(body.messagePayload)));
       return NextResponse.json(await getNativeRuntimeService().updateMessage(
         params.id,
         body.messageId,
@@ -103,7 +101,7 @@ export async function PATCH(
       ? body.kind === "message"
         ? await getNativeRuntimeService().reorderMessages(params.id, body.orderedIds)
         : await getNativeRuntimeService().reorderGoals(params.id, body.orderedIds)
-      : await getCustomerGoalCoordinator().reorder(params.id, body.orderedIds);
+      : await getCustomerGoalCoordinator().reorder(params.id, body.orderedIds, body.kind === "message");
     return NextResponse.json(state);
   } catch (error) {
     return goalError(error);

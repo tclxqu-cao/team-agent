@@ -4,9 +4,9 @@ import { homedir } from "node:os";
 import { delimiter, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
+import { MINIMUM_NODE_VERSION, compareNodeVersions, isSupportedNodeVersion, parseNodeVersion } from "./runtime-policy.mjs";
 
 const execFileAsync = promisify(execFile);
-const MANAGED_NODE_VERSION = "22.22.0";
 const RELEASE_VERSION = "0.2.0-preview.16";
 const RELEASE_BASE_URL = `https://gitee.com/caoqu/team-agent/releases/download/v${RELEASE_VERSION}`;
 const FORWARDED_SIGNALS = ["SIGINT", "SIGTERM", "SIGHUP"];
@@ -21,10 +21,10 @@ export async function runNodePreflight(options = {}) {
   const processHost = options.processHost ?? process;
   const major = Number(nodeVersion.split(".")[0]);
 
-  if (major === 22) return { handled: false };
+  if (isSupportedNodeVersion(nodeVersion)) return { handled: false };
   if (environment.AGENTROAM_MANAGED_NODE) {
     throw cliError(
-      `managed Node.js re-entry failed: expected 22, got ${nodeVersion} (${environment.AGENTROAM_MANAGED_NODE})`,
+      `managed Node.js re-entry failed: expected >=${MINIMUM_NODE_VERSION}, got ${nodeVersion} (${environment.AGENTROAM_MANAGED_NODE})`,
     );
   }
   if (!Number.isFinite(major) || major < 18) {
@@ -33,8 +33,8 @@ export async function runNodePreflight(options = {}) {
 
   const target = detectManagedTarget(platform, arch);
   const dataDir = parsePreflightDataDir(argv, environment, options.homeDir ?? homedir());
-  const findSystemNode22 = options.findSystemNode22 ?? defaultFindSystemNode22;
-  const systemNode = await findSystemNode22(environment, platform, options.currentExecutable ?? process.execPath);
+  const findSystemNode = options.findSystemNode ?? defaultFindSystemNode;
+  const systemNode = await findSystemNode(environment, platform, options.currentExecutable ?? process.execPath);
   let executable = systemNode;
 
   if (!executable) {
@@ -55,7 +55,7 @@ export async function runNodePreflight(options = {}) {
   const spawnChild = options.spawnChild ?? defaultSpawnChild;
   const child = spawnChild(executable, [launcherPath, ...argv], {
     stdio: "inherit",
-    env: { ...environment, AGENTROAM_MANAGED_NODE: MANAGED_NODE_VERSION },
+    env: { ...environment, AGENTROAM_MANAGED_NODE: executable },
   });
   const result = await waitForChild(child, processHost);
   return { handled: true, ...result };
@@ -77,7 +77,7 @@ function detectManagedTarget(platform, arch) {
   throw cliError(`managed Node.js is unsupported on ${platform}-${arch}`);
 }
 
-async function defaultFindSystemNode22(environment, platform, currentExecutable) {
+async function defaultFindSystemNode(environment, platform, currentExecutable) {
   const executableName = platform === "win32" ? "node.exe" : "node";
   const pathDelimiter = platform === "win32" ? ";" : delimiter;
   const currentDirectory = dirname(currentExecutable);
@@ -85,12 +85,12 @@ async function defaultFindSystemNode22(environment, platform, currentExecutable)
     if (resolve(directory) === resolve(currentDirectory)) continue;
     const candidate = resolve(directory, executableName);
     const version = await inspectNodeVersion(candidate);
-    if (version?.[0] === 22) return candidate;
+    if (isSupportedNodeVersion(version)) return candidate;
   }
-  return findNvmNode22(environment, platform);
+  return findNvmNode(environment, platform);
 }
 
-export async function findNvmNode22(environment = process.env, platform = process.platform) {
+export async function findNvmNode(environment = process.env, platform = process.platform) {
   const windows = platform === "win32";
   const homeDir = environment.HOME || environment.USERPROFILE || homedir();
   const roots = windows
@@ -109,10 +109,10 @@ export async function findNvmNode22(environment = process.env, platform = proces
       if (!entry.isDirectory()) continue;
       const candidate = resolve(versionsRoot, entry.name, windows ? "node.exe" : "bin/node");
       const version = await inspectNodeVersion(candidate);
-      if (version?.[0] === 22) candidates.push({ candidate, version });
+      if (isSupportedNodeVersion(version)) candidates.push({ candidate, version });
     }
   }
-  candidates.sort((left, right) => compareVersions(right.version, left.version));
+  candidates.sort((left, right) => compareNodeVersions(right.version, left.version));
   return candidates[0]?.candidate ?? null;
 }
 
@@ -124,18 +124,11 @@ async function inspectNodeVersion(candidate) {
       timeout: 5_000,
       windowsHide: true,
     });
-    const parts = stdout.trim().split(".").map((part) => Number(part));
-    return parts.length >= 3 && parts.every(Number.isInteger) ? parts.slice(0, 3) : null;
+    const version = stdout.trim();
+    return parseNodeVersion(version) ? version : null;
   } catch {
     return null;
   }
-}
-
-function compareVersions(left, right) {
-  for (let index = 0; index < 3; index++) {
-    if (left[index] !== right[index]) return left[index] - right[index];
-  }
-  return 0;
 }
 
 async function defaultSpawnChild(executable, args, options) {

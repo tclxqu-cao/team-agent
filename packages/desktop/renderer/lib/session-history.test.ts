@@ -233,6 +233,24 @@ describe("restoreSessionHistoryPage", () => {
     ]);
   });
 
+  it("restores an async question on a core page without adding it to the execution trace", () => {
+    const question = {
+      type: "ask_user" as const, questionId: "native:run:async:item:0",
+      question: "选择范围？", options: [{ label: "推荐", description: "" }],
+    };
+    const detail = {
+      messages: [{ role: "user" as const, content: "计划", presentation: { executionTrace: { turnId: "turn" } } }],
+      history: { delivery: "core" as const, revision: "rev", pageSize: 1, totalItems: 1, nextCursor: null, hasMore: false },
+      events: [question, question],
+    };
+    const restored = restoreSessionHistoryPage(detail);
+    expect(restored.filter((message) => message.askUser)).toHaveLength(1);
+    expect(restored.find((message) => message.executionTrace)?.executionTrace?.liveMessages ?? []).toEqual([]);
+    expect(restoreSessionHistoryPage({
+      ...detail, events: [question, { type: "approval_resolved", questionId: question.questionId }],
+    }).some((message) => message.askUser)).toBe(false);
+  });
+
   it("keeps native projection identity internal instead of rendering it as an agent name", () => {
     const [restored] = restoreSessionHistoryPage({
       messages: [{

@@ -24,6 +24,8 @@ export class MCPClient implements IMCPClient {
   private process: ChildProcess | null = null;
   private requestId = 0;
   private pendingRequests = new Map<number, (res: JsonRpcResponse) => void>();
+  /** Live request timers — flushed when the transport dies so they never keep the event loop alive. */
+  private pendingTimeouts = new Map<number, ReturnType<typeof setTimeout>>();
   private _connected = false;
   private config: MCPServerConfig | null = null;
   private toolCache: MCPTool[] = [];
@@ -35,6 +37,17 @@ export class MCPClient implements IMCPClient {
 
   constructor(serverId: string) {
     this.serverId = serverId;
+  }
+
+  /** Reject and clean up every in-flight request (transport died or shutdown). */
+  private flushPendingRequests(message: string): void {
+    for (const [id, timeout] of this.pendingTimeouts) {
+      clearTimeout(timeout);
+      const pending = this.pendingRequests.get(id);
+      if (pending) pending({ jsonrpc: "2.0", id, error: { code: -1, message } });
+    }
+    this.pendingTimeouts.clear();
+    this.pendingRequests.clear();
   }
 
   get connected(): boolean {
@@ -90,16 +103,12 @@ export class MCPClient implements IMCPClient {
 
       proc.on("exit", (code) => {
         this._connected = false;
-        if (code !== 0 && this.pendingRequests.size > 0) {
-          for (const [, reject] of this.pendingRequests) {
-            reject({ jsonrpc: "2.0", id: 0, error: { code: -1, message: `Process exited with code ${code}` } });
-          }
-          this.pendingRequests.clear();
-        }
+        this.flushPendingRequests(`MCP server ${this.serverId} exited with code ${code}`);
       });
 
       proc.on("error", (err) => {
         this._connected = false;
+        this.flushPendingRequests(`MCP server ${this.serverId} failed: ${err.message}`);
         reject(err);
       });
 
@@ -118,6 +127,7 @@ export class MCPClient implements IMCPClient {
   }
 
   disconnect(): void {
+    this.flushPendingRequests(`MCP server ${this.serverId} disconnected`);
     if (this.process) {
       this.process.kill();
       this.process = null;
@@ -191,14 +201,17 @@ export class MCPClient implements IMCPClient {
       });
 
       const timeout = setTimeout(() => {
+        this.pendingTimeouts.delete(id);
         this.pendingRequests.delete(id);
         reject(new Error(`MCP request ${method} timed out`));
       }, 30000);
+      this.pendingTimeouts.set(id, timeout);
 
-      // Remove the timeout on resolution
+      // Clear the timeout on resolution
       const originalPending = this.pendingRequests.get(id);
       this.pendingRequests.set(id, (response) => {
         clearTimeout(timeout);
+        this.pendingTimeouts.delete(id);
         if (originalPending) originalPending(response);
       });
 

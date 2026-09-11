@@ -7,6 +7,7 @@ import { MacLaunchAgent } from "./macos-launch-agent.js";
 import type { ServiceConfig } from "./service-files.js";
 import type { ServiceController } from "./service-controller.js";
 import { WindowsTaskService } from "./windows-task-service.js";
+import { assertSupportedNodeVersion } from "../../bin/runtime-policy.mjs";
 
 interface ServiceCommandContext {
   platform?: NodeJS.Platform;
@@ -40,9 +41,7 @@ export async function runServiceCommand(options: CliOptions, context: ServiceCom
   switch (options.serviceAction) {
     case "install": {
       const nodeVersion = context.nodeVersion ?? process.versions.node;
-      if (Number(nodeVersion.split(".")[0]) !== 22) {
-        throw cliError(`Node.js 22 is required to install the service (current ${nodeVersion})`);
-      }
+      assertSupportedNodeVersion(nodeVersion);
       const now = context.now?.() ?? new Date();
       const environment = context.environment ?? process.env;
       const environmentPath = buildServiceEnvironmentPath(

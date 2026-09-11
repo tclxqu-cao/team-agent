@@ -1,4 +1,7 @@
 import type { IModelProvider, Message, StreamEvent, StreamOptions, ModelProviderConfig } from '../entities.js';
+import type { ToolDefinition } from '../entities.js';
+import { openAIEndpoint } from './openAIEndpoint.js';
+import { estimateRequestTokens } from '../tokenBudget.js';
 
 const DEFAULT_BASE_URL = "https://api.openai.com";
 
@@ -9,10 +12,11 @@ export class OpenAIProvider implements IModelProvider {
   private readonly baseUrl: string;
   private readonly defaultMaxTokens: number;
   private readonly defaultTemperature: number;
+  private localContext?: Promise<number | undefined>;
 
   constructor(config: ModelProviderConfig) {
     this.apiKey = config.apiKey;
-    this.baseUrl = config.baseUrl ?? DEFAULT_BASE_URL;
+    this.baseUrl = openAIEndpoint(config.baseUrl || DEFAULT_BASE_URL);
     this.modelId = config.modelId;
     this.defaultMaxTokens = config.maxTokens ?? 16384;
     this.defaultTemperature = config.temperature ?? 0.7;
@@ -23,6 +27,7 @@ export class OpenAIProvider implements IModelProvider {
     options?: StreamOptions,
   ): AsyncIterable<StreamEvent> {
     const adaptedMessages = messages.map((m) => this.adaptMessage(m));
+    const localContext = await this.getContextWindow();
 
     const body: Record<string, unknown> = {
       model: this.modelId,
@@ -34,6 +39,9 @@ export class OpenAIProvider implements IModelProvider {
 
     if (options?.reasoningEffort && options.reasoningEffort !== "off") {
       body.reasoning_effort = options.reasoningEffort;
+    }
+    if (localContext && options?.reasoningEffort === "off") {
+      body.chat_template_kwargs = { enable_thinking: false };
     }
 
     if (options?.tools && options.tools.length > 0) {
@@ -47,7 +55,7 @@ export class OpenAIProvider implements IModelProvider {
       }));
     }
 
-    const response = await fetch(`${this.baseUrl}/v1/chat/completions`, {
+    const response = await fetch(this.baseUrl, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -172,7 +180,57 @@ export class OpenAIProvider implements IModelProvider {
   }
 
   async countTokens(messages: Message[]): Promise<number> {
-    return messages.reduce((sum, m) => sum + Math.ceil(this.stringContent(m.content).length / 4), 0);
+    return this.countRequestTokens(messages);
+  }
+
+  getContextWindow(): Promise<number | undefined> {
+    return this.localContext ??= this.discoverLocalContext();
+  }
+
+  private async discoverLocalContext(): Promise<number | undefined> {
+    const endpoint = new URL(this.baseUrl);
+    if (!["localhost", "127.0.0.1", "[::1]"].includes(endpoint.hostname)) return undefined;
+    try {
+      const url = new URL(endpoint);
+      url.pathname = url.pathname.replace(/\/chat\/completions$/, "/models");
+      const response = await fetch(url, {
+        headers: { Authorization: `Bearer ${this.apiKey}` }, signal: AbortSignal.timeout(3000),
+      });
+      if (!response.ok) return undefined;
+      const data = await response.json() as { data?: Array<{ id: string; owned_by?: string; meta?: { n_ctx?: number } }> };
+      const model = data.data?.find((m) => m.id === this.modelId || `local/${m.id}` === this.modelId)
+        ?? (data.data?.length === 1 ? data.data[0] : undefined);
+      const size = model?.meta?.n_ctx;
+      return model?.owned_by === "llamacpp" && Number.isFinite(size) && size! > 0 ? size : undefined;
+    } catch { return undefined; }
+  }
+
+  async countRequestTokens(messages: Message[], tools: ToolDefinition[] = []): Promise<number> {
+    if (await this.getContextWindow() && !messages.some((m) => m.images?.length)) {
+      try {
+        const endpoint = new URL(this.baseUrl);
+        const prefix = endpoint.pathname.replace(/\/v1\/chat\/completions$/, "");
+        const post = async (path: string, body: unknown) => {
+          const url = new URL(endpoint);
+          url.pathname = `${prefix}/${path}`;
+          const response = await fetch(url, {
+            method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${this.apiKey}` },
+            body: JSON.stringify(body), signal: AbortSignal.timeout(5000),
+          });
+          if (!response.ok) throw new Error(`Token count failed: ${response.status}`);
+          return response.json();
+        };
+        // Count with the default thinking template: conservative when thinking is off.
+        const rendered = await post("apply-template", {
+          messages: (messages.length ? messages : [{ role: "user" as const, content: " " }]).map((m) => this.adaptMessage(m)), add_generation_prompt: true,
+          ...(tools.length ? { tools: tools.map((t) => ({ type: "function", function: t })) } : {}),
+        }) as { prompt?: string };
+        if (typeof rendered.prompt !== "string") throw new Error("Missing template");
+        const tokenized = await post("tokenize", { content: rendered.prompt, add_special: true, parse_special: true }) as { tokens?: unknown[] };
+        if (Array.isArray(tokenized.tokens)) return tokenized.tokens.length;
+      } catch { /* Compatible servers may not expose the tokenizer. */ }
+    }
+    return estimateRequestTokens(messages, tools);
   }
 
   supportsModel(modelId: string): boolean {

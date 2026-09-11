@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 // @ts-expect-error The preflight intentionally remains plain ESM for Node 18 bootstrap.
-import { findNvmNode22, parsePreflightDataDir, runNodePreflight } from "../bin/node-preflight.mjs";
+import { findNvmNode, parsePreflightDataDir, runNodePreflight } from "../bin/node-preflight.mjs";
 
 const temporaryDirectories: string[] = [];
 
@@ -13,13 +13,17 @@ afterEach(async () => {
 });
 
 describe("Node launcher preflight", () => {
-  it("passes through any Node 22 patch without installing", async () => {
+  it.each(["22.22.0", "22.23.0", "24.0.0", "25.8.0", "26.0.0", "100.0.0"])("passes through Node %s without installing or switching", async (nodeVersion) => {
     const ensureNode = vi.fn();
-    await expect(runNodePreflight({ nodeVersion: "22.1.0", ensureNode })).resolves.toEqual({ handled: false });
+    const findSystemNode = vi.fn();
+    const spawnChild = vi.fn();
+    await expect(runNodePreflight({ nodeVersion, ensureNode, findSystemNode, spawnChild, environment: { AGENTROAM_MANAGED_NODE: "/older/node" } })).resolves.toEqual({ handled: false });
     expect(ensureNode).not.toHaveBeenCalled();
+    expect(findSystemNode).not.toHaveBeenCalled();
+    expect(spawnChild).not.toHaveBeenCalled();
   });
 
-  it.each(["18.20.0", "20.18.0", "24.0.0", "25.1.0"])(
+  it.each(["18.20.0", "20.18.0", "22.1.0", "22.21.9"])(
     "re-executes Node %s through the managed runtime",
     async (nodeVersion) => {
       const child = fakeChild(0, null);
@@ -33,7 +37,7 @@ describe("Node launcher preflight", () => {
         launcherPath: "/launcher/agentroam.mjs",
         environment: { PATH: "" },
         ensureNode,
-        findSystemNode22: async () => null,
+        findSystemNode: async () => null,
         spawnChild,
         processHost: fakeProcessHost(),
       });
@@ -47,44 +51,46 @@ describe("Node launcher preflight", () => {
         ["/launcher/agentroam.mjs", "doctor", "--data-dir", "./custom"],
         expect.objectContaining({
           stdio: "inherit",
-          env: expect.objectContaining({ AGENTROAM_MANAGED_NODE: "22.22.0" }),
+          env: expect.objectContaining({ AGENTROAM_MANAGED_NODE: "/managed/node" }),
         }),
       );
     },
   );
 
-  it("reuses another visible system Node 22", async () => {
+  it("reuses another visible compatible system Node", async () => {
     const ensureNode = vi.fn();
     const spawnChild = vi.fn((_executable: string, _args: string[], _options: object) => fakeChild(7, null));
     await expect(runNodePreflight({
       argv: ["version"],
-      nodeVersion: "25.0.0",
+      nodeVersion: "20.0.0",
       platform: "win32",
       arch: "x64",
       environment: { PATH: "" },
-      findSystemNode22: async () => "C:\\Node22\\node.exe",
+      findSystemNode: async () => "C:\\Node25\\node.exe",
       ensureNode,
       spawnChild,
       processHost: fakeProcessHost(),
     })).resolves.toMatchObject({ handled: true, exitCode: 7 });
     expect(ensureNode).not.toHaveBeenCalled();
-    expect(spawnChild.mock.calls[0][0]).toBe("C:\\Node22\\node.exe");
+    expect(spawnChild.mock.calls[0][0]).toBe("C:\\Node25\\node.exe");
   });
 
-  it.skipIf(process.platform === "win32")("selects the highest inactive NVM Node 22", async () => {
+  it.skipIf(process.platform === "win32")("selects the highest compatible inactive NVM Node", async () => {
     const root = await mkdtemp(resolve(tmpdir(), "agentroam-preflight-nvm-"));
     temporaryDirectories.push(root);
     await fakeNodeExecutable(resolve(root, "versions/node/v22.3.0/bin/node"), "22.3.0");
-    const expected = await fakeNodeExecutable(resolve(root, "versions/node/v22.22.2/bin/node"), "22.22.2");
+    await fakeNodeExecutable(resolve(root, "versions/node/v22.22.2/bin/node"), "22.22.2");
     await fakeNodeExecutable(resolve(root, "versions/node/v23.1.0/bin/node"), "23.1.0");
+    const expected = await fakeNodeExecutable(resolve(root, "versions/node/v25.8.0/bin/node"), "25.8.0");
+    await fakeNodeExecutable(resolve(root, "versions/node/v26.0.0-rc.1/bin/node"), "26.0.0-rc.1");
 
-    await expect(findNvmNode22({ NVM_DIR: root, HOME: resolve(root, "home") }, "darwin"))
+    await expect(findNvmNode({ NVM_DIR: root, HOME: resolve(root, "home") }, "darwin"))
       .resolves.toBe(expected);
   });
 
   it("rejects a failed managed re-entry instead of looping", async () => {
     await expect(runNodePreflight({
-      nodeVersion: "25.0.0",
+      nodeVersion: "22.21.9",
       environment: { AGENTROAM_MANAGED_NODE: "22.22.0" },
     })).rejects.toMatchObject({ message: expect.stringContaining("re-entry failed"), exitCode: 2 });
   });
@@ -111,7 +117,7 @@ describe("Node launcher preflight", () => {
       platform: "darwin",
       arch: "arm64",
       environment: { PATH: "" },
-      findSystemNode22: async () => "/node22",
+      findSystemNode: async () => "/compatible-node",
       spawnChild: () => child,
       processHost,
     });

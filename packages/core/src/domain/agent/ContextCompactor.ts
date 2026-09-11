@@ -1,5 +1,6 @@
 import type { Message } from '../model/entities.js';
 import type { IModelProvider } from '../model/entities.js';
+import { truncateToTokenBudget } from '../model/tokenBudget.js';
 
 const COMPACT_PROMPT = `You are summarizing a conversation for handoff to another model that will continue the task.
 
@@ -46,7 +47,7 @@ export class ContextCompactor {
       if (messages[i].role === "tool") toolResultIndices.push(i);
     }
 
-    const keepSet = new Set(toolResultIndices.slice(-keepRecent));
+    const keepSet = new Set(keepRecent > 0 ? toolResultIndices.slice(-keepRecent) : []);
 
     return messages.map((msg, i) => {
       if (msg.role === "tool" && !keepSet.has(i) && msg.content.length > TOOL_RESULT_TRUNCATE) {
@@ -67,6 +68,7 @@ export class ContextCompactor {
   async compact(
     messages: Message[],
     keepRecent = 8,
+    contextWindow?: number,
   ): Promise<CompactResult> {
     // Separate system prompt from conversation
     const [systemMsg, ...conversation] = messages;
@@ -89,13 +91,19 @@ export class ContextCompactor {
     }
 
     // Build a plain-text transcript for the summarizer
-    const transcript = toSummarize
+    let transcript = toSummarize
       .map((m) => {
         const role = m.role === "tool" ? `tool(${m.name ?? ""})` : m.role;
         const content = m.content.slice(0, 2000); // cap per message for summarizer
         return `[${role}]: ${content}`;
       })
       .join("\n\n");
+
+    const outputTokens = Math.min(2048, Math.floor((contextWindow ?? 100_000) / 8));
+    if (contextWindow) {
+      const overhead = await this.estimateTokens([{ role: "system", content: COMPACT_PROMPT }]);
+      transcript = truncateToTokenBudget(transcript, Math.max(0, contextWindow - overhead - outputTokens - 256));
+    }
 
     const summaryMessages: Message[] = [
       { role: "system", content: COMPACT_PROMPT },
@@ -104,12 +112,14 @@ export class ContextCompactor {
 
     let summary = "";
     for await (const event of this.modelProvider.streamChat(summaryMessages, {
-      maxTokens: 2048,
+      maxTokens: outputTokens,
       reasoningEffort: "off",
     })) {
       if (event.type === "text_chunk") summary += event.text;
     }
     summary = summary.trim();
+    // A failed or empty summarizer must not erase conversation history.
+    if (!summary) return { messages, summary: "", removedMessages: 0 };
 
     // Reconstruct: system + summary pair + recent tail
     const compacted: Message[] = [

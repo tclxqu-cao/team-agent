@@ -4,7 +4,32 @@ import type { TranscriptEntry } from "../state.js";
 import { ROLE_GLYPHS, TUI_THEME } from "../theme.js";
 import { MarkdownText } from "./MarkdownText.js";
 
-function Entry({ entry, separated }: { entry: TranscriptEntry; separated: boolean }) {
+const LIVE_ROWS = 80;
+const SCROLLBACK_ROWS = 200;
+
+function DiffLines({ text }: { text: string }) {
+  return (
+    <Box flexDirection="column">
+      {text.split("\n").map((line, index) => (
+        <Text
+          key={`${index}:${line.slice(0, 12)}`}
+          wrap="wrap"
+          color={line.startsWith("+")
+            ? TUI_THEME.user
+            : line.startsWith("-")
+              ? TUI_THEME.error
+              : line.startsWith("@@") || line.startsWith("***")
+                ? TUI_THEME.muted
+                : TUI_THEME.text}
+        >
+          {line}
+        </Text>
+      ))}
+    </Box>
+  );
+}
+
+function Entry({ entry, separated, expanded }: { entry: TranscriptEntry; separated: boolean; expanded: boolean }) {
   let label: string;
   let color: string;
   let text = entry.text;
@@ -27,9 +52,12 @@ function Entry({ entry, separated }: { entry: TranscriptEntry; separated: boolea
     const result = entry.name === "结果" || entry.name === "失败";
     label = result ? ROLE_GLYPHS.result : ROLE_GLYPHS.tool;
     color = entry.error ? TUI_THEME.error : result ? TUI_THEME.muted : TUI_THEME.tool;
-    text = result ? entry.text : `${entry.name}${entry.text ? `  ${entry.text}` : ""}`;
+    if (expanded && entry.type === "tool" && entry.full) text = entry.full;
+    else text = result ? entry.text : `${entry.name}${entry.text ? `  ${entry.text}` : ""}`;
     dimmed = result && !entry.error;
   }
+
+  const isPatch = expanded && entry.type === "tool" && Boolean(entry.full) && entry.name === "apply_patch";
 
   return (
     <Box marginTop={separated ? 1 : 0} alignItems="flex-start">
@@ -48,6 +76,8 @@ function Entry({ entry, separated }: { entry: TranscriptEntry; separated: boolea
       >
         {entry.type === "assistant" ? (
           <MarkdownText>{text}</MarkdownText>
+        ) : isPatch && entry.full ? (
+          <DiffLines text={entry.full} />
         ) : (
           <Text color={entry.type === "error" || (entry.type === "tool" && entry.error) ? TUI_THEME.error : TUI_THEME.text} dimColor={dimmed} wrap="wrap">
             {text}
@@ -58,11 +88,21 @@ function Entry({ entry, separated }: { entry: TranscriptEntry; separated: boolea
   );
 }
 
-export function Transcript({ entries, maxRows = 80 }: { entries: TranscriptEntry[]; maxRows?: number }) {
-  const visible = entries.slice(-maxRows);
+export function Transcript({ entries, offset = 0 }: { entries: TranscriptEntry[]; offset?: number }) {
+  const total = entries.length;
+  const scrolled = offset > 0;
+  const maxRows = scrolled ? SCROLLBACK_ROWS : LIVE_ROWS;
+  const end = Math.max(0, total - offset);
+  const start = Math.max(0, end - maxRows);
+  const visible = entries.slice(start, end);
   return (
     <Box flexDirection="column" marginTop={visible.length ? 1 : 0}>
-      {visible.map((entry, index) => <Entry key={entry.id} entry={entry} separated={index > 0 && entry.type === "user"} />)}
+      {scrolled ? (
+        <Text color={TUI_THEME.progress}>── 回看 · 第 {start + 1}–{end} 条 / 共 {total} 条 ──  PgUp/PgDn 翻页 · Ctrl+O/Esc 返回实时</Text>
+      ) : null}
+      {visible.map((entry, index) => (
+        <Entry key={entry.id} entry={entry} separated={index > 0 && entry.type === "user"} expanded={scrolled} />
+      ))}
     </Box>
   );
 }

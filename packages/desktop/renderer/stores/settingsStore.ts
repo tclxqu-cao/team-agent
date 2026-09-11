@@ -2,6 +2,7 @@ import { create } from "zustand";
 import type { ModelProfile } from "../global.d.ts";
 
 interface SettingsState {
+  revision?: number;
   // Legacy single-model fields (reflect active profile)
   modelProvider: string;
   modelId: string;
@@ -65,6 +66,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       const activeProfileId = s.activeProfileId ?? "";
       const active = resolveActive(profiles, activeProfileId);
       set({
+        revision: s.revision,
         modelProvider: active?.provider ?? s.modelProvider ?? "anthropic",
         modelId: active?.modelId ?? s.modelId ?? "claude-sonnet-4-6",
         apiKey: active?.apiKey ?? s.apiKey ?? "",
@@ -88,6 +90,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     if (!window.agentApi) return;
     const state = get();
     await window.agentApi.saveSettings({
+      revision: state.revision,
       modelProvider: state.modelProvider,
       modelId: state.modelId,
       apiKey: state.apiKey,
@@ -100,6 +103,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       activeProfileId: state.activeProfileId,
       reasoningEffort: state.reasoningEffort,
     });
+    await get().loadFromSystem();
   },
 
   addProfile: (profile) => {
@@ -172,9 +176,9 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   },
 
   switchActiveProfile: async (id) => {
-    get().setActiveProfileLocal(id);
     if (window.agentApi) {
       await window.agentApi.setActiveProfile(id);
+      await get().loadFromSystem();
     }
   },
 }));

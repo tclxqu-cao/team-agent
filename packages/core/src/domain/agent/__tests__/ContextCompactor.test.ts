@@ -17,6 +17,25 @@ function createMockModel(summary = "handoff summary"): IModelProvider {
 }
 
 describe("ContextCompactor", () => {
+  it("keeps history when summarization returns no text", async () => {
+    const messages: Message[] = [{ role: "system", content: "rules" }, { role: "user", content: "earlier" }, { role: "user", content: "latest" }];
+    expect((await new ContextCompactor(createMockModel("")).compact(messages, 1, 8192)).messages).toEqual(messages);
+  });
+
+  it("bounds the summarizer request and preserves the current instruction with short history", async () => {
+    const model = createMockModel();
+    model.streamChat = async function* (messages, options) {
+      expect(messages[1].content.length).toBeLessThan(7000);
+      expect(options?.maxTokens).toBe(1024);
+      yield { type: "text_chunk", text: "Earlier progress" };
+    };
+    const messages: Message[] = [{ role: "system", content: "rules" },
+      ...Array.from({ length: 5 }, () => ({ role: "user" as const, content: "中文".repeat(4000) })),
+      { role: "user", content: "latest instruction" }];
+    const result = await new ContextCompactor(model).compact(messages, 1, 8192);
+    expect(result.removedMessages).toBe(5);
+    expect(result.messages.at(-1)?.content).toBe("latest instruction");
+  });
   it("compacts a session into recent user messages plus a handoff summary", async () => {
     const compactor = new ContextCompactor(createMockModel());
     const result = await compactor.compactForHandoff([

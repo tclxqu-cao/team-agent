@@ -1,6 +1,7 @@
 export type TerminalInputToken =
   | { type: "text"; value: string }
-  | { type: "up" | "down" | "left" | "right" | "enter" | "escape" | "backspace" | "delete" | "ctrl_c" | "tab" };
+  | { type: "up" | "down" | "left" | "right" | "enter" | "escape" | "backspace" | "delete" | "ctrl_c" | "tab" | "pageup" | "pagedown" | "ctrl_o" }
+  | { type: "home" | "end" | "kill_end" | "kill_start" | "delete_word" | "word_left" | "word_right" };
 
 export interface ParsedTerminalInput {
   tokens: TerminalInputToken[];
@@ -22,6 +23,8 @@ function csiToken(parameters: string, final: string): TerminalInputToken | null 
   const code = Number.parseInt(fields[0] ?? "", 10);
   if (final === "~") {
     if (code === 3) return { type: "delete" };
+    if (code === 5) return { type: "pageup" };
+    if (code === 6) return { type: "pagedown" };
     if (code === 27) return { type: "escape" };
     return null;
   }
@@ -63,6 +66,20 @@ export function parseTerminalInput(input: string, flushEscape = false): ParsedTe
         continue;
       }
 
+      // Alt+Enter arrives as ESC followed by CR/LF; treat it as a hard newline.
+      if (rest[1] === "\r" || rest[1] === "\n") {
+        tokens.push({ type: "text", value: "\n" });
+        index += 2;
+        continue;
+      }
+
+      // Alt+B / Alt+F move by word (Emacs-style).
+      if (rest[1] === "b" || rest[1] === "f") {
+        tokens.push({ type: rest[1] === "b" ? "word_left" : "word_right" });
+        index += 2;
+        continue;
+      }
+
       const incomplete = rest === "\u001b" || /^\u001b(?:\[[0-9;:?]*|O)$/.test(rest);
       if (incomplete && !flushEscape) return { tokens, remainder: rest };
       tokens.push({ type: "escape" });
@@ -75,8 +92,40 @@ export function parseTerminalInput(input: string, flushEscape = false): ParsedTe
       index += 1;
       continue;
     }
+    if (current === "\u000f") {
+      tokens.push({ type: "ctrl_o" });
+      index += 1;
+      continue;
+    }
+    if (current === "\u0001") {
+      tokens.push({ type: "home" });
+      index += 1;
+      continue;
+    }
+    if (current === "\u0005") {
+      tokens.push({ type: "end" });
+      index += 1;
+      continue;
+    }
+    if (current === "\u000b") {
+      tokens.push({ type: "kill_end" });
+      index += 1;
+      continue;
+    }
+    if (current === "\u0015") {
+      tokens.push({ type: "kill_start" });
+      index += 1;
+      continue;
+    }
+    if (current === "\u0017") {
+      tokens.push({ type: "delete_word" });
+      index += 1;
+      continue;
+    }
     if (current === "\r" || current === "\n") {
-      tokens.push(pastedOrBatched ? { type: "text", value: " " } : { type: "enter" });
+      // A newline inside a multi-char chunk is a paste: keep it as a literal
+      // line break instead of collapsing it into a submit or a space.
+      tokens.push(pastedOrBatched ? { type: "text", value: "\n" } : { type: "enter" });
       index += 1;
       continue;
     }
@@ -92,7 +141,7 @@ export function parseTerminalInput(input: string, flushEscape = false): ParsedTe
     }
 
     let end = index + 1;
-    while (end < input.length && !/[\u0003\u0008\u0009\u000a\u000d\u001b\u007f]/.test(input[end] ?? "")) end += 1;
+    while (end < input.length && !/[\u0001\u0003\u0005\u0008\u0009\u000a\u000b\u000f\u000d\u0015\u0017\u001b\u007f]/.test(input[end] ?? "")) end += 1;
     tokens.push({ type: "text", value: input.slice(index, end) });
     index = end;
   }

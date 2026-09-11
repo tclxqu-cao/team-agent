@@ -18,6 +18,7 @@ export async function GET(request: Request) {
   const tagged = sessions.map(({ messages: _messages, events: _events, ...session }) => ({
     ...session,
     agentType: "customer-agent" as const,
+    messageQueueVersion: 1 as const,
     canDelete: !agentHost.isSessionRunning(session.id),
     permissionMode: normalizeToolPermissionMode(session.metadata.permissionMode),
   }));
@@ -71,5 +72,5 @@ export async function POST(request: Request) {
   }
 
   const session = await agentHost.createSession(body.title ?? "Untitled", body.projectId ?? "");
-  return NextResponse.json(session, { status: 201 });
+  return NextResponse.json({ ...session, agentType: "customer-agent", messageQueueVersion: 1 }, { status: 201 });
 }

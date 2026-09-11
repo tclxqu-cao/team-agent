@@ -72,9 +72,17 @@ describe("TUI model configuration", () => {
         baseUrl: endpoint.baseUrl,
       },
       endpoints: [endpoint],
+      permissionMode: "auto-approval",
+      theme: "dim",
+      vimMode: true,
+      mcpServers: [{ id: "docs", command: "npx", args: ["-y", "docs-mcp"] }],
     });
 
     const config = await loadTuiConfig(configPath);
+    expect(config.permissionMode).toBe("auto-approval");
+    expect(config.theme).toBe("dim");
+    expect(config.vimMode).toBe(true);
+    expect(config.mcpServers).toEqual([{ id: "docs", name: undefined, command: "npx", args: ["-y", "docs-mcp"], env: undefined, url: undefined, headers: undefined }]);
     expect(await readFile(configPath, "utf8")).toContain("saved-secret");
     expect((await stat(configPath)).mode & 0o777).toBe(0o600);
     expect(resolveStartupModel({

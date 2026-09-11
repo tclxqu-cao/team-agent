@@ -10,7 +10,7 @@
     "./manifest.json": "./manifest.json",
     "./runtime": "./runtime/package.json"
   },
-  "engines": { "node": ">=22 <23" },
+  "engines": { "node": ">=22.22.0" },
   "publishConfig": {
     "access": "public",
     "provenance": true,

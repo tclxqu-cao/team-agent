@@ -120,7 +120,7 @@ function patchPaths(patch: unknown): string[] {
     .map((path) => path.startsWith("b/") ? path.slice(2) : path);
 }
 
-function writePaths(toolName: string, args: Record<string, unknown>): string[] {
+export function writePaths(toolName: string, args: Record<string, unknown>): string[] {
   if (toolName === "apply_patch") return patchPaths(args.patch);
   return typeof args.file_path === "string" ? [args.file_path] : [];
 }

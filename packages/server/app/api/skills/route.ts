@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { SkillLoader } from "@agent/core";
-import { agentHost } from "../agent-host";
+import { businessCatalog } from "../../../lib/business-catalog";
 
 export async function GET() {
-  const skills = agentHost.getBuilder().getSkillRegistry().getAll();
+  const skills = await businessCatalog().call("listSkills", []) as Array<{ name: string; description: string; triggers: string[]; filePath: string }>;
   return NextResponse.json(
     skills.map((s) => ({
       name: s.name,
@@ -18,20 +18,20 @@ export async function POST(request: Request) {
   try {
     const body = await request.json() as { filePath?: string; dirPath?: string };
     const loader = new SkillLoader();
-    const registry = agentHost.getBuilder().getSkillRegistry();
+    const registry = businessCatalog().skills;
 
     let imported: Array<{ name: string; description: string }> = [];
 
     if (body.filePath) {
       // Import a single SKILL.md file
       const skill = await loader.loadFromFile(body.filePath);
-      registry.register(skill);
+      await registry.save(skill);
       imported.push({ name: skill.name, description: skill.description });
     } else if (body.dirPath) {
       // Import all SKILL.md files from a directory
       const skills = await loader.loadFromDirectory(body.dirPath);
       for (const skill of skills) {
-        registry.register(skill);
+        await registry.save(await loader.loadFromFile(skill.filePath));
         imported.push({ name: skill.name, description: skill.description });
       }
     } else {

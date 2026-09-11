@@ -61,10 +61,7 @@ const AGENT_TEXT_FILES = {
   ],
   claude: [],
   opencode: [
-    ["packages/cli/src/opencode-runtime-manager.ts", 1],
-    ["packages/cli/src/opencode-runtime-manager.test.ts", 2],
     ["packages/cli/src/runtime-manager.test.ts", 1],
-    ["packages/desktop/main/agent-runtime/opencode-runtime-adapter.ts", 1],
     ["packages/desktop/main/agent-runtime/opencode-runtime-adapter.test.ts", 1],
   ],
 };
@@ -186,7 +183,17 @@ export async function checkRuntimeVersionDrift(root, options = {}) {
 
   await checkTextValue(io, root, "packages/cli/src/codex-runtime-manager.ts", /export const CODEX_RUNTIME_VERSION = "([^"]+)";/, manifest.codex.version, "Codex runtime", issues);
   await checkTextValue(io, root, "packages/cli/src/opencode-runtime-manager.ts", /export const OPENCODE_RUNTIME_VERSION = "([^"]+)";/, manifest.opencode.cliVersion, "OpenCode managed runtime", issues);
-  await checkTextValue(io, root, "packages/desktop/main/agent-runtime/opencode-runtime-adapter.ts", /const OPENCODE_RUNTIME_VERSION = "([^"]+)";/, manifest.opencode.cliVersion, "OpenCode desktop runtime", issues);
+  // A default CLI/SDK upgrade must not silently raise the supported minimum.
+  try {
+    const cli = await io.readFile(resolve(root, "packages/cli/src/opencode-runtime-manager.ts"), "utf8");
+    const minimum = cli.match(/export const OPENCODE_MINIMUM_VERSION = "([^"]+)";/)?.[1];
+    if (compareStableSemver(manifest.opencode.cliVersion, minimum) < 0) {
+      issues.push(`OpenCode managed runtime must be >=${minimum}`);
+    }
+    await checkTextValue(io, root, "packages/desktop/main/agent-runtime/opencode-runtime-adapter.ts", /const OPENCODE_MINIMUM_VERSION = "([^"]+)";/, minimum, "OpenCode minimum runtime", issues);
+  } catch (error) {
+    issues.push(`OpenCode minimum runtime: ${error.message}`);
+  }
 
   for (const file of DEPENDENCY_FILES) {
     const packageJson = await readJsonForDrift(io, root, file, issues);
@@ -243,6 +250,12 @@ export async function applyAgentUpgrade(root, candidateValue, options = {}) {
 
   const oldAgentVersion = candidateValue.agent === "opencode" ? current.cli : current.cli ?? current.sdk;
   const newAgentVersion = candidateValue.agent === "opencode" ? candidateValue.target.cli : candidateValue.target.cli ?? candidateValue.target.sdk;
+  if (candidateValue.agent === "opencode") {
+    const file = "packages/cli/src/opencode-runtime-manager.ts";
+    stage(file, replaceExactOccurrences(await read(file),
+      `export const OPENCODE_RUNTIME_VERSION = "${oldAgentVersion}";`,
+      `export const OPENCODE_RUNTIME_VERSION = "${newAgentVersion}";`, 1, file));
+  }
   for (const [file, expectedCount] of AGENT_TEXT_FILES[candidateValue.agent]) {
     stage(file, replaceExactOccurrences(await read(file), oldAgentVersion, newAgentVersion, expectedCount, file));
   }

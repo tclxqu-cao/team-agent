@@ -52,9 +52,11 @@ const WEBAPP_SKIN_MESSAGE_TYPE = "agent-web-shell:skin:v1";
 
 function AuthenticatedConsole({ auth }: { auth: WebAuthController }) {
   const webappFrameRef = useRef<HTMLIFrameElement>(null);
+  const browserFrameAck = useRef<(channelId: number, sequence: number) => void>(() => {});
   const forwardBrowserBinary = useCallback((frame: Uint8Array) => {
     const packet = readLiveFramePacket(frame);
     if (!packet || packet.type !== LIVE_FRAME_PACKET_TYPE.watcherFrame) return;
+    browserFrameAck.current(packet.channelId, packet.sequence);
     const payload = packet.payload.slice().buffer;
     webappFrameRef.current?.contentWindow?.postMessage({
       type: WEBAPP_BROWSER_BINARY_FRAME_TYPE,
@@ -64,6 +66,9 @@ function AuthenticatedConsole({ auth }: { auth: WebAuthController }) {
     }, window.location.origin, [payload]);
   }, []);
   const { state, epoch, rpc, onEvent, onTerminalData, onTerminalReset, sendTerminalInput } = useGateway(forwardBrowserBinary, auth.getWsNonce, auth.refresh);
+  browserFrameAck.current = (channelId, sequence) => {
+    void rpc("browser:frame-ack", { channelId, sequence }).catch(() => undefined);
+  };
   const [tabs, setTabs] = useState<ConsoleTab[]>([{ ...WEBAPP_TAB }]);
   const [activeTerminalId, setActiveTerminalId] = useState<string | null>(WEBAPP_TAB.id);
   const [cwdByTerminal, setCwdByTerminal] = useState<Record<string, string>>({});
@@ -150,7 +155,10 @@ function AuthenticatedConsole({ auth }: { auth: WebAuthController }) {
         webappFrameRef.current?.contentWindow ?? null,
       );
       if (browserRequest) {
-        void rpc(browserRequest.method, browserRequest.payload).then(
+        void rpc(browserRequest.method, {
+          ...browserRequest.payload,
+          ...(browserRequest.method === "browser:watch" ? { frameAck: true } : {}),
+        }).then(
           (result) => {
             webappFrameRef.current?.contentWindow?.postMessage({
               type: WEBAPP_BROWSER_RESPONSE_TYPE,
@@ -718,6 +726,12 @@ const GLOBAL_CSS = `
   .pinned-command-editor { display:grid; grid-template-columns:minmax(0,1fr) 27px 27px; gap:4px; align-items:center; min-height:39px; padding:4px 5px 4px 8px; border-bottom:1px solid var(--ui-tabbar-border, #252832); }
   .pinned-command-editor input { min-width:0; height:27px; box-sizing:border-box; border:1px solid var(--ui-tab-accent, #536b9e); border-radius:5px; outline:none; padding:0 7px; background:var(--ui-panel-input-bg, #0f0f15); color:var(--ui-panel-input-text, #ddd); font-family:"SF Mono",Menlo,monospace; font-size:10.5px; }
   .pinned-command-editor small { grid-column:1 / -1; color:var(--ui-danger, #e06c75); font-size:9px; }
+  .terminal-clipboard-notice { padding:4px 8px; flex-shrink:0; font-size:12px; }
+  .terminal-native-touch, .terminal-native-touch .xterm-screen, .terminal-native-touch .terminal-native-rows, .terminal-native-touch .terminal-native-rows * { -webkit-user-select:text !important; user-select:text !important; -webkit-touch-callout:default; }
+  .terminal-native-touch .terminal-native-rows { position:absolute; top:0; left:0; z-index:4; pointer-events:auto !important; }
+  .terminal-native-touch .xterm-rows:not(.terminal-native-rows) { -webkit-user-select:none !important; user-select:none !important; }
+  .terminal-native-touch .terminal-native-rows span { display:inline !important; }
+  .terminal-native-touch .xterm-helper-textarea { opacity:1; background:transparent; color:transparent; -webkit-text-fill-color:transparent; caret-color:transparent; outline:none; text-shadow:none; -webkit-appearance:none; appearance:none; -webkit-user-select:text; user-select:text; -webkit-touch-callout:default; font-size:16px !important; left:var(--native-input-left, 0px) !important; top:var(--native-input-top, 0px) !important; width:var(--native-input-width, 80px) !important; height:var(--native-input-height, 32px) !important; z-index:10 !important; pointer-events:var(--native-input-events, none); }
   .history-search { display:flex; gap:5px; padding:5px; background:var(--ui-tree-bg, #121218); }
   .history-search input { flex:1; min-width:0; height:28px; border:1px solid var(--ui-panel-input-border, #30303a); border-radius:6px; padding:0 8px; background:var(--ui-panel-input-bg, #0f0f15); color:var(--ui-panel-input-text, #ddd); font-size:11px; }
   .history-icon-button { display:inline-flex; align-items:center; justify-content:center; width:27px; min-width:27px; height:27px; padding:0; border:1px solid var(--ui-panel-input-border, #30303a); border-radius:5px; background:var(--ui-tab-bg, #202029); color:var(--ui-connection-text, #999dab); }
@@ -764,6 +778,10 @@ const GLOBAL_CSS = `
     font-size: 11px;
   }
   .tree-filter input:focus { border-color: var(--ui-tab-accent, #536b9e); }
+  @media (max-width:768px), (pointer:coarse) {
+    .pinned-command-editor input, .history-search input, .tree-filter input { font-size:16px; }
+    .terminal-screen .xterm-helper-textarea { font-size:16px !important; }
+  }
   .tree-filter button {
     width: 25px;
     height: 25px;

@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import type { AgentEvent, RuntimeProgress, SessionHistoryQuery, SessionToolResultBody, SessionToolResultRef } from "@agent/core";
 import { ArrowDownToLine, Check, Copy, CornerUpRight, FileText, GripVertical, LoaderCircle, Pencil, RefreshCw, Square, Target, Trash2, Volume2 } from "lucide-react";
 import AgentBrandIcon from "./AgentBrandIcon";
+import MermaidBlock from "./MermaidBlock";
 import {
   isNativeAgentType,
   loadNativeRunPref,
@@ -246,7 +247,10 @@ function renderMarkdownTable(headers: string[], rows: string[][]): React.ReactNo
 }
 
 /** Render a fenced code block (```lang ... ```) as a labeled code panel. */
-function renderCodeFence(lang: string, code: string): React.ReactNode {
+function renderCodeFence(lang: string, code: string, complete: boolean): React.ReactNode {
+  if (lang.toLowerCase() === "mermaid") {
+    return <MermaidBlock code={code} complete={complete} />;
+  }
   return (
     <div style={{ margin: '8px 0', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-subtle)', overflow: 'hidden', background: 'var(--bg-surface)' }}>
       <div style={{ padding: '4px 10px', background: 'var(--bg-deep)', borderBottom: '1px solid var(--border-subtle)', fontSize: 10, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.07em' }}>
@@ -277,8 +281,9 @@ export function renderAssistantText(text: string): React.ReactNode {
         codeLines.push(lines[i]);
         i++;
       }
+      const complete = i < lines.length;
       i++;
-      segments.push(<div key={`code-${segKey++}`}>{renderCodeFence(lang, codeLines.join('\n'))}</div>);
+      segments.push(<div key={`code-${segKey++}`}>{renderCodeFence(lang, codeLines.join('\n'), complete)}</div>);
       continue;
     }
     // Detect table block: line starts with '|' and next line is separator
@@ -698,7 +703,7 @@ export default function ChatView({
     if (targetSessionId === viewedSessionId) {
       setGoalState(projectSessionGoals(state) as SessionGoalState);
     }
-    if (!targetSessionId.startsWith("runtime:")) return;
+
     const current = getMessagesForSession(targetSessionId);
     setMessages(
       reconcileDurableQueuedMessages(current, state),
@@ -1462,7 +1467,7 @@ export default function ChatView({
                 phase,
                 detail?.history,
               );
-              const nextMessages = detail?.goalState && targetSid.startsWith("runtime:")
+              const nextMessages = detail?.goalState
                 ? reconcileDurableQueuedMessages(baseMessages, detail.goalState)
                 : baseMessages;
               nextAutoScrollRef.current = "instant";
@@ -1622,7 +1627,7 @@ export default function ChatView({
               phase,
               detail?.history,
             );
-            const merged = detail?.goalState && targetSid.startsWith("runtime:")
+            const merged = detail?.goalState
               ? reconcileDurableQueuedMessages(mergedHistory, detail.goalState)
               : mergedHistory;
             const container = messagesScrollRef.current;
@@ -1688,8 +1693,10 @@ export default function ChatView({
 
   useEffect(() => {
     const targetSid = selectedSessionId;
-    const shouldFollow = shouldFollowNativeHistory(sessionSummary, targetSid, runningSessionId);
-    const shouldPollFallback = sessionSummary?.occupancy === "owned-externally"
+    const shouldFollow = shouldFollowNativeHistory(sessionSummary, targetSid, runningSessionId)
+      || (sessionSummary?.agentType === "customer-agent" && targetSid !== runningSessionId);
+    const shouldPollFallback = sessionSummary?.agentType === "customer-agent"
+      || sessionSummary?.occupancy === "owned-externally"
       || sessionSummary?.status === "running";
     if (!targetSid || !shouldFollow || !window.agentApi) return;
 
@@ -2446,7 +2453,7 @@ export default function ChatView({
               updateMessage(rejectedMessageId, (message) => ({ ...message, isQueued: true }), eventSid);
               if (
                 hasDurableMessageQueue
-                && eventSid?.startsWith("runtime:")
+                && eventSid
                 && rejectedMessage
                 && window.agentApi?.enqueueSessionMessage
               ) {
@@ -2646,7 +2653,7 @@ export default function ChatView({
     const msg = useAgentStore.getState().messages.find(m => m.id === msgId);
     if (!msg || !msg.isQueued) return;
     try {
-      if (msg.queueItemId && targetSessionId.startsWith("runtime:")) {
+      if (msg.queueItemId) {
         applySessionQueueState(
           await window.agentApi.steerSessionMessage(targetSessionId, msg.queueItemId),
           targetSessionId,
@@ -2681,7 +2688,7 @@ export default function ChatView({
     const message = useAgentStore.getState().messages.find((item) => item.id === msgId && item.isQueued);
     if (!message || !content) return;
     try {
-      if (message.queueItemId && viewSessionId?.startsWith("runtime:")) {
+      if (message.queueItemId && viewSessionId) {
         applySessionQueueState(
           await window.agentApi.updateSessionMessage(viewSessionId, message.queueItemId, content),
           viewSessionId,
@@ -2711,7 +2718,7 @@ export default function ChatView({
     const message = currentMessages.find((item) => item.id === msgId && item.isQueued);
     if (!message) return;
     try {
-      if (message.queueItemId && viewSessionId?.startsWith("runtime:")) {
+      if (message.queueItemId && viewSessionId) {
         applySessionQueueState(
           await window.agentApi.cancelSessionMessage(viewSessionId, message.queueItemId),
           viewSessionId,
@@ -2731,7 +2738,7 @@ export default function ChatView({
     if (reordered !== currentMessages) {
       setMessages(reordered, viewSessionId || undefined);
       const durable = reordered.filter((message) => message.isQueued && message.queueItemId);
-      if (viewSessionId?.startsWith("runtime:") && durable.length > 0) {
+      if (viewSessionId && durable.length > 0) {
         try {
           applySessionQueueState(
             await window.agentApi.reorderSessionMessages(
@@ -3144,7 +3151,7 @@ export default function ChatView({
         images: imagesToSend,
         isQueued: true,
       } as const;
-      if (isNativeRuntime && hasDurableMessageQueue && viewSessionId && window.agentApi?.enqueueSessionMessage) {
+      if (hasDurableMessageQueue && viewSessionId && window.agentApi?.enqueueSessionMessage) {
         try {
           const state = await window.agentApi.enqueueSessionMessage(viewSessionId, {
             sourceMessageId,
@@ -3511,18 +3518,17 @@ export default function ChatView({
                 multiSelect={chatMsg.askUser.multiSelect}
                 answered={chatMsg.askUser.answered}
                 answer={chatMsg.askUser.answer}
-                onAnswer={(answer, selectedIndices) => {
-                  // Mark as answered in the message list
-                  updateMessage(msg.id, (m) => ({
-                    ...m,
-                    askUser: { ...m.askUser!, answered: true, answer },
-                  }));
-                  // Send answer back to main process
-                  window.agentApi?.answerQuestion(
+                onAnswer={async (answer, selectedIndices) => {
+                  const resolved = await window.agentApi?.answerQuestion(
                     chatMsg.askUser!.questionId,
                     answer,
                     selectedIndices,
                   );
+                  if (!resolved) throw new Error("回答未发送成功，请重试；若问题已结束，请刷新会话。");
+                  updateMessage(msg.id, (m) => ({
+                    ...m,
+                    askUser: { ...m.askUser!, answered: true, answer },
+                  }), viewSessionId ?? undefined);
                 }}
               />
             );

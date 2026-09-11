@@ -68,7 +68,9 @@ export function pageAction(siteId, action, payload = {}) {
     const bodySelectors = siteId === 'gemini' && isUser
       ? ['.query-text', '.query-content'] : ['.response-content-markdown', '.markdown-main-panel', '.markdown', '.query-text', '.query-content'];
     const body = bodySelectors.flatMap(sel => [...el.querySelectorAll(sel)]).find(visible) ?? el;
-    return { id: `${index}:${el.getAttribute('data-message-id') ?? el.id ?? ''}`.slice(0,512), role: isUser ? 'user' : 'assistant', content: markdown(body).replace(/\n{3,}/g, '\n\n').trim().slice(0, 50_000), plainText: plainText(body).trim().slice(0, 50_000) };
+    // ChatGPT virtualizes older turns. Its message ID survives index/count changes.
+    const messageId = el.getAttribute('data-message-id') || null;
+    return { id: `${index}:${messageId ?? el.id ?? ''}`.slice(0,512), messageId, role: isUser ? 'user' : 'assistant', content: markdown(body).replace(/\n{3,}/g, '\n\n').trim().slice(0, 50_000), plainText: plainText(body).trim().slice(0, 50_000) };
   }).filter((message) => message.content);
   const enabled = el => !el.disabled && el.getAttribute("aria-disabled") !== "true";
   const stopButtons = [...document.querySelectorAll(spec.stop)].filter(visible);

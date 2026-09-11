@@ -1,4 +1,5 @@
 import type { IModelProvider, Message, StreamEvent, StreamOptions, ModelProviderConfig } from '../entities.js';
+import { openAIEndpoint } from './openAIEndpoint.js';
 
 const DEFAULT_BASE_URL = "https://api.deepseek.com";
 
@@ -12,7 +13,7 @@ export class DeepSeekProvider implements IModelProvider {
 
   constructor(config: ModelProviderConfig) {
     this.apiKey = config.apiKey;
-    this.baseUrl = config.baseUrl ?? DEFAULT_BASE_URL;
+    this.baseUrl = openAIEndpoint(config.baseUrl || DEFAULT_BASE_URL);
     this.modelId = config.modelId;
     this.defaultMaxTokens = config.maxTokens ?? 16384;
     this.defaultTemperature = config.temperature ?? 0.7;
@@ -47,7 +48,7 @@ export class DeepSeekProvider implements IModelProvider {
       }));
     }
 
-    const response = await fetch(`${this.baseUrl}/v1/chat/completions`, {
+    const response = await fetch(this.baseUrl, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

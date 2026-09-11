@@ -16,6 +16,9 @@ export interface DesktopLiveStatus {
 
 export const DESKTOP_LIVE_SESSION_ID = "desktop:primary";
 
+/** Holds the display awake while the live session is enabled (see DisplayKeepAwake). */
+export type DisplayWakeControl = { start(): void; stop(): void };
+
 type ClientFactory = () => LiveViewProducerClientPort;
 type ProbeScreen = () => Promise<ScreenPermission> | ScreenPermission;
 type ProbeAccessibility = () => Promise<boolean | null> | boolean | null;
@@ -31,6 +34,7 @@ export class DesktopScreenLive {
   private readonly metadata: { sessionId: string; backend: LiveViewSource; title: string; url: string };
   private readonly probeScreen: ProbeScreen;
   private readonly probeAccessibility: ProbeAccessibility;
+  private readonly keepAwake: DisplayWakeControl | null;
   private readonly sleep: (ms: number) => Promise<void>;
   private enabled = false;
   private loopPromise: Promise<void> | null = null;
@@ -45,12 +49,13 @@ export class DesktopScreenLive {
   };
   private readonly listeners = new Set<(status: DesktopLiveStatus) => void>();
 
-  constructor({ clientFactory, screencast, input, probeScreen = () => "unknown", probeAccessibility = async () => null, sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)) }: {
+  constructor({ clientFactory, screencast, input, probeScreen = () => "unknown", probeAccessibility = async () => null, keepAwake = null, sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)) }: {
     clientFactory: ClientFactory;
     screencast: LiveScreencastPort;
     input: DesktopInputGateway;
     probeScreen?: ProbeScreen;
     probeAccessibility?: ProbeAccessibility;
+    keepAwake?: DisplayWakeControl | null;
     sleep?: (ms: number) => Promise<void>;
   }) {
     this.clientFactory = clientFactory;
@@ -59,6 +64,7 @@ export class DesktopScreenLive {
     this.metadata = { sessionId: DESKTOP_LIVE_SESSION_ID, backend: "desktop", title: "桌面屏幕", url: "" };
     this.probeScreen = probeScreen;
     this.probeAccessibility = probeAccessibility;
+    this.keepAwake = keepAwake;
     this.sleep = sleep;
   }
 
@@ -90,6 +96,9 @@ export class DesktopScreenLive {
     }
     this.status.accessibilityTrusted = await this.#probeAccessibility();
     if (this.status.accessibilityTrusted === false) this.status.error = ACCESSIBILITY_HINT;
+    // Wake the display and hold it awake so a locked or dimmed Mac keeps
+    // streaming frames (remote unlock works from the lock screen).
+    this.keepAwake?.start();
     this.status.sessionOnline = true;
     this.#emit();
     if (!this.loopPromise) {
@@ -103,6 +112,7 @@ export class DesktopScreenLive {
   async disable(): Promise<DesktopLiveStatus> {
     this.enabled = false;
     this.status = { ...this.status, enabled: false, sessionOnline: false, controlState: null, error: undefined };
+    this.keepAwake?.stop();
     this.unsubscribeState?.();
     this.unsubscribeState = null;
     await this.input.stop().catch(() => undefined);

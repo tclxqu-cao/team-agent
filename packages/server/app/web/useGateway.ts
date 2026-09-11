@@ -18,7 +18,7 @@ export function useGateway(onBinary: (data: Uint8Array) => void, getWsNonce: () 
   const queue = useRef<string[]>([]);
   const requestId = useRef(0);
   const listeners = useRef(new Map<string, Set<(message: any) => void>>());
-  const terminalListeners = useRef(new Map<number, Set<(data: Uint8Array) => void>>());
+  const terminalListeners = useRef(new Map<number, Set<(data: Uint8Array, replay: boolean) => void>>());
   const terminalResetListeners = useRef(new Map<number, Set<() => void>>());
   const reconnectDelay = useRef(1000);
   const stopped = useRef(false);
@@ -37,7 +37,7 @@ export function useGateway(onBinary: (data: Uint8Array) => void, getWsNonce: () 
     return () => set!.delete(handler);
   }, []);
 
-  const onTerminalData = useCallback((channelId: number, handler: (data: Uint8Array) => void) => {
+  const onTerminalData = useCallback((channelId: number, handler: (data: Uint8Array, replay: boolean) => void) => {
     let set = terminalListeners.current.get(channelId);
     if (!set) terminalListeners.current.set(channelId, (set = new Set()));
     set.add(handler);
@@ -117,9 +117,10 @@ export function useGateway(onBinary: (data: Uint8Array) => void, getWsNonce: () 
       if (currentGeneration !== generation.current || wsRef.current !== ws) return;
       if (typeof event.data !== "string") {
         const frame = new Uint8Array(event.data);
-        if (frame.byteLength >= 6 && frame[0] === 1 && frame[1] === 2) {
+        // Opcode 4 belongs to live-view JPEG frames; terminal replay uses 6.
+        if (frame.byteLength >= 6 && frame[0] === 1 && (frame[1] === 2 || frame[1] === 6)) {
           const channelId = new DataView(frame.buffer, frame.byteOffset, frame.byteLength).getUint32(2);
-          terminalListeners.current.get(channelId)?.forEach((handler) => handler(frame.subarray(6)));
+          terminalListeners.current.get(channelId)?.forEach((handler) => handler(frame.subarray(6), frame[1] === 6));
         } else if (frame.byteLength >= 6 && frame[0] === 1 && frame[1] === 3) {
           // server reset marker: a scrollback replay follows, so the pane must
           // clear its (possibly still populated) buffer first

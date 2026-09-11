@@ -1,9 +1,8 @@
 import { NextResponse } from "next/server";
-import { MCPManager } from "@agent/core";
+import { businessCatalog } from "../../../../lib/business-catalog";
 
-const mcpManager = new MCPManager();
 
 export async function GET() {
-  const servers = mcpManager.listServers();
+  const servers = await businessCatalog().mcp.listAll();
   return NextResponse.json(servers);
 }

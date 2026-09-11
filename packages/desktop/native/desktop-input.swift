@@ -123,17 +123,70 @@ func postKey(_ command: [String: Any]) throws {
     }
 }
 
+// Character → (virtualKey, requiresShift) on the US (ABC) layout. Secure text
+// entry (loginwindow password box) drops keyboardSetUnicodeString events, so
+// typed text must go out as real keycode events to unlock a locked Mac.
+let charKeycodes: [String: (Int64, Bool)] = [
+    "a": (0x00, false), "s": (0x01, false), "d": (0x02, false), "f": (0x03, false),
+    "h": (0x04, false), "g": (0x05, false), "z": (0x06, false), "x": (0x07, false),
+    "c": (0x08, false), "v": (0x09, false), "b": (0x0B, false), "q": (0x0C, false),
+    "w": (0x0D, false), "e": (0x0E, false), "r": (0x0F, false), "y": (0x10, false),
+    "t": (0x11, false), "o": (0x1F, false), "u": (0x20, false), "i": (0x22, false),
+    "p": (0x23, false), "l": (0x25, false), "j": (0x26, false), "k": (0x28, false),
+    "n": (0x2D, false), "m": (0x2E, false),
+    "1": (0x12, false), "2": (0x13, false), "3": (0x14, false), "4": (0x15, false),
+    "5": (0x17, false), "6": (0x16, false), "7": (0x1A, false), "8": (0x1C, false),
+    "9": (0x19, false), "0": (0x1D, false),
+    "-": (0x1B, false), "=": (0x18, false), "[": (0x21, false), "]": (0x1E, false),
+    "\\": (0x2A, false), ";": (0x29, false), "'": (0x27, false), ",": (0x2B, false),
+    ".": (0x2F, false), "/": (0x2C, false), "`": (0x32, false), " ": (0x31, false),
+    "\n": (0x24, false), "\t": (0x30, false),
+    "!": (0x12, true), "@": (0x13, true), "#": (0x14, true), "$": (0x15, true),
+    "%": (0x17, true), "^": (0x16, true), "&": (0x1A, true), "*": (0x1C, true),
+    "(": (0x19, true), ")": (0x1D, true),
+    "_": (0x1B, true), "+": (0x18, true), "{": (0x21, true), "}": (0x1E, true),
+    "|": (0x2A, true), ":": (0x29, true), "\"": (0x27, true), "<": (0x2B, true),
+    ">": (0x2F, true), "?": (0x2C, true), "~": (0x32, true),
+]
+
 func postText(_ command: [String: Any]) throws {
     guard let text = command["text"] as? String, !text.isEmpty else { throw HelperError("text command missing text") }
     let flags = modifierFlags(command["modifiers"] as? [String] ?? [])
-    let utf16 = Array(text.utf16)
-    for action in [true, false] {
-        guard let event = CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: action) else {
-            throw HelperError("failed to create text event")
+    for ch in text {
+        // Accented letters outside the ASCII table (é, ü, …) map through their
+        // uppercase base letter with shift; everything else keeps unicode injection.
+        let resolved: (Int64, Bool)?
+        if let direct = charKeycodes[String(ch)] {
+            resolved = direct
+        } else if ch.isLetter, String(ch) != String(ch).uppercased(),
+                  let upperKey = charKeycodes[String(ch).uppercased()] {
+            resolved = (upperKey.0, true)
+        } else {
+            resolved = nil
         }
-        event.flags = flags
-        event.keyboardSetUnicodeString(stringLength: utf16.count, unicodeString: utf16)
-        event.post(tap: .cghidEventTap)
+        if let (virtualKey, requiresShift) = resolved {
+            var eventFlags = flags
+            if requiresShift { eventFlags.insert(.maskShift) }
+            for down in [true, false] {
+                guard let event = CGEvent(keyboardEventSource: nil, virtualKey: CGKeyCode(clamping: virtualKey), keyDown: down) else {
+                    throw HelperError("failed to create keyboard event")
+                }
+                event.flags = eventFlags
+                event.post(tap: .cghidEventTap)
+            }
+        } else {
+            // Non-ASCII (CJK etc.) has no US-layout keycode; unicode-string
+            // injection still works in ordinary (non-secure) text fields.
+            let utf16 = Array(String(ch).utf16)
+            for down in [true, false] {
+                guard let event = CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: down) else {
+                    throw HelperError("failed to create text event")
+                }
+                event.flags = flags
+                event.keyboardSetUnicodeString(stringLength: utf16.count, unicodeString: utf16)
+                event.post(tap: .cghidEventTap)
+            }
+        }
     }
 }
 

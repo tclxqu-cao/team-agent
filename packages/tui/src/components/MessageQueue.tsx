@@ -22,7 +22,7 @@ export function MessageQueue({ items, maxRows = 3 }: { items: string[]; maxRows?
       >
         {visible.map((item, index) => (
           <Text key={`${index}:${item}`} color={TUI_THEME.text} wrap="truncate">
-            <Text color={TUI_THEME.progress}>{index + 1}.</Text> {item}
+            <Text color={TUI_THEME.progress}>{index + 1}.</Text> {item.replace(/\n/g, " ⏎ ")}
           </Text>
         ))}
         {items.length > visible.length ? (

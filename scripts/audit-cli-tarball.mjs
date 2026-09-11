@@ -2,6 +2,7 @@
 import { execFileSync } from "node:child_process";
 import { statSync } from "node:fs";
 import { basename, resolve } from "node:path";
+import { MINIMUM_NODE_VERSION } from "../packages/cli/bin/runtime-policy.mjs";
 
 if (!process.argv[2]) throw new Error("usage: audit-cli-tarball.mjs <package.tgz>");
 
@@ -10,6 +11,7 @@ const list = execFileSync("tar", ["-tzf", tarball], { encoding: "utf8", maxBuffe
 const packageJson = JSON.parse(execFileSync("tar", ["-xOf", tarball, "package/package.json"], { encoding: "utf8" }));
 
 if (packageJson.name !== "agentroam") throw new Error(`unexpected package name: ${packageJson.name}`);
+if (packageJson.engines?.node !== `>=${MINIMUM_NODE_VERSION}`) throw new Error("launcher Node.js engines mismatch");
 if (packageJson.os || packageJson.cpu) throw new Error("the agentroam launcher must not be platform-gated");
 if (packageJson.bin?.agentroam !== "./bin/agentroam.mjs" || packageJson.bin?.["agent-tui"] !== "./bin/agent-tui.mjs") {
   throw new Error(`unexpected package bin: ${JSON.stringify(packageJson.bin)}`);
@@ -50,6 +52,8 @@ for (const required of [
   "package/bin/agentroam.mjs",
   "package/bin/agent-tui.mjs",
   "package/bin/node-preflight.mjs",
+  "package/bin/runtime-policy.mjs",
+  "package/bin/node-runtime-policy.json",
   "package/dist/cli.js",
   "package/dist/node-runtime-manager.js",
   "package/dist/platform.js",

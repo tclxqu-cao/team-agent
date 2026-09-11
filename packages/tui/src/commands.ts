@@ -4,7 +4,7 @@ import type { PaletteItem } from "./palette.js";
 export interface BuiltinCommand {
   name: string;
   description: string;
-  secondary?: "sessions" | "models" | "projects" | "skills";
+  secondary?: "sessions" | "models" | "projects" | "skills" | "permissions" | "themes" | "mcp";
 }
 
 export const BUILTIN_COMMANDS: readonly BuiltinCommand[] = [
@@ -16,7 +16,16 @@ export const BUILTIN_COMMANDS: readonly BuiltinCommand[] = [
   { name: "/model", description: "查看或切换模型", secondary: "models" },
   { name: "/projects", description: "切换项目", secondary: "projects" },
   { name: "/skills", description: "查看已发现技能", secondary: "skills" },
+  { name: "/permissions", description: "切换工具审批模式", secondary: "permissions" },
+  { name: "/mcp", description: "查看/重连 MCP 服务", secondary: "mcp" },
+  { name: "/theme", description: "切换配色主题", secondary: "themes" },
+  { name: "/vim", description: "开关 vim 编辑模式" },
+  { name: "/compact", description: "手动压缩会话上下文" },
+  { name: "/image", description: "附加图片到下一条消息" },
+  { name: "/undo", description: "撤销最近一轮文件修改" },
   { name: "/steer", description: "将排队消息插入当前轮" },
+  { name: "/unqueue", description: "移除一条排队消息" },
+  { name: "/cost", description: "查看本会话 token 统计" },
   { name: "/clear", description: "清空当前屏幕消息" },
   { name: "/exit", description: "退出 TUI" },
 ];
@@ -58,7 +67,10 @@ export function parseSlashCommand(input: string, builtinNames = BUILTIN_NAMES): 
 export function helpText(): string[] {
   return [
     "输入 / 查看命令和技能，输入 @ 引用项目、文件或文件夹",
+    "Alt+Enter 或行尾 \\ + Enter 换行；粘贴多行文本自动保留换行",
+    "Ctrl+A/E 行首行尾 · Ctrl+K/U 删至行尾/行首 · Ctrl+W 删词 · Alt+B/F 词间跳转",
+    "Ctrl+O 或 PgUp 回看历史（PgUp/PgDn 翻页，工具输出完整显示）",
     "↑/↓ 选择 · Enter 确认 · Esc 关闭候选 · Ctrl+C 中断/退出",
-    ...BUILTIN_COMMANDS.map((command) => `${command.name.padEnd(11)} ${command.description}`),
+    ...BUILTIN_COMMANDS.map((command) => `${command.name.padEnd(15)} ${command.description}`),
   ];
 }

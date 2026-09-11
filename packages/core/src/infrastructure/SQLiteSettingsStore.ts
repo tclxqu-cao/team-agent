@@ -74,7 +74,7 @@ export class SQLiteSettingsStore implements ISettingsStore {
       apiKey,
       baseUrl,
       maxIterations: parseInt(data["maxIterations"] ?? "10", 10),
-      contextWindow: parseInt(data["contextWindow"] ?? "100", 10),
+      contextWindow: Number(data["contextWindow"] ?? "100"),
       workingDirectory: data["workingDirectory"] ?? this.baseDir,
       isConfigured: Boolean(apiKey),
       profiles,

@@ -1,8 +1,16 @@
+import { sharedCron } from "../../lib/shared-cron";
+import { sharedSettings, type SharedSettings } from "../../lib/shared-settings";
+import { configureSharedRun, type SharedRunOptions } from "../../lib/shared-run-config";
+import { businessCatalog } from "../../lib/business-catalog";
+import { SubAgentDispatcher } from "../../../desktop/main/sub-agent-dispatcher";
 import {
   AgentBuilder,
+  HarnessServiceClient,
   HostPathPolicy,
   SQLiteSessionStore,
   AskUserTool,
+  TodoAddTool, TodoUpdateTool, TodoListTool, DispatchAgentTool, WaitAgentTool,
+  CronCreateTool, CronDeleteTool, CronListTool, type TodoItem, type CronTask,
   type IAgentLoop,
   type AgentEvent,
   type Session,
@@ -68,6 +76,8 @@ interface CustomerAgentRunMarker {
 interface ActiveCustomerAgentRun {
   runId: string;
   agent: IAgentLoop | null;
+  aborted?: boolean;
+  abortChildren?: () => void;
 }
 
 export class CustomerAgentRunConflictError extends Error {
@@ -93,9 +103,11 @@ function readRunMarker(metadata: Record<string, unknown>): CustomerAgentRunMarke
 
 /** Singleton agent host shared across API routes */
 class AgentHost {
+  private readonly harness = new HarnessServiceClient({ owner: "server" });
   private readonly baseDir = getServerBaseDir();
   private readonly workingDirectory = getAgentWorkingDirectory();
   private builder: AgentBuilder | null = null;
+  private runBuilderOverride: AgentBuilder | null = null;
   private readonly sessionStore = new SQLiteSessionStore(this.baseDir);
   private readonly projectStore = new SQLiteProjectStore(this.baseDir);
   private readonly remoteToolStore = new SQLiteRemoteToolStore(getDatabase(this.baseDir).db);
@@ -120,11 +132,11 @@ class AgentHost {
     this.toolPermissionGate = createSessionPermissionGate({
       sessionStore: this.sessionStore,
       requestApproval: async (request) => {
-        const response = await this.createQuestion({
+        const response = await this.harness.withUserWait(request.sessionId, () => this.createQuestion({
           question: `Customer Agent 请求权限\n${request.summary}\n原因：${request.reason}`,
           options: [...TOOL_APPROVAL_OPTIONS],
           toolCallId: "",
-        }, request.sessionId);
+        }, request.sessionId));
         return toolApprovalDecisionFromAnswer(response.answer, response.selectedIndices);
       },
     });
@@ -135,7 +147,7 @@ class AgentHost {
     const modelId = process.env.AGENT_MODEL_ID || "gpt-4o";
     const baseUrl = process.env.AGENT_BASE_URL || undefined;
 
-    const builder = new AgentBuilder()
+    const builder = new AgentBuilder().withDiagnosticObserver((sessionId, observation) => this.harness.observe(sessionId, observation))
       .withSessionStore(this.sessionStore)
       .withWorkingDirectory(this.workingDirectory)
       .withToolPermissionGate(this.toolPermissionGate);
@@ -144,16 +156,23 @@ class AgentHost {
       builder.withModel(provider, { apiKey, modelId, baseUrl });
     }
     this.builder = builder;
+    this.harness.setModel({ provider, modelId, apiKey: apiKey ?? "", baseUrl });
+    if (process.env.NEXT_PHASE !== "phase-production-build") {
+      void this.harness.start();
+      sharedCron();
+    }
   }
 
   getBuilder(): AgentBuilder {
     if (!this.builder) {
-      this.builder = new AgentBuilder().withToolPermissionGate(this.toolPermissionGate);
+      this.builder = new AgentBuilder().withDiagnosticObserver((sessionId, observation) => this.harness.observe(sessionId, observation)).withToolPermissionGate(this.toolPermissionGate);
     }
     return this.builder;
   }
 
   setBuilder(builder: AgentBuilder): void {
+    this.runBuilderOverride = builder;
+    builder.withDiagnosticObserver((sessionId, observation) => this.harness.observe(sessionId, observation));
     builder.withRemoteToolStore(this.remoteToolStore, this.defaultRemoteToolsProjectId);
     builder.withWorkingDirectory(this.workingDirectory);
     builder.withToolPermissionGate(this.toolPermissionGate);
@@ -198,14 +217,14 @@ class AgentHost {
     return this.projectStore;
   }
 
-  async resolveProjectWorkingDirectory(projectId?: string, requirePath = false): Promise<string> {
-    if (!projectId) return this.workingDirectory;
+  async resolveProjectWorkingDirectory(projectId?: string, requirePath = false, defaultDirectory = sharedSettings().read().workingDirectory || this.workingDirectory): Promise<string> {
+    if (!projectId) return defaultDirectory;
     const project = await this.projectStore.get(projectId);
     if (!project) {
       throw new ProjectWorkingDirectoryError("项目不存在", "PROJECT_NOT_FOUND", 404);
     }
     if (!project.description?.trim()) {
-      if (!requirePath) return this.workingDirectory;
+      if (!requirePath) return defaultDirectory;
       throw new ProjectWorkingDirectoryError("该项目没有宿主机目录", "PROJECT_PATH_REQUIRED", 400);
     }
     try {
@@ -221,12 +240,11 @@ class AgentHost {
   }
 
   /** Active model info for display (never exposes the key). */
+  getHarnessStatus() { return this.harness.status; }
+
   getModelConfig() {
-    return {
-      provider: (process.env.AGENT_MODEL_PROVIDER || "openai") as string,
-      modelId: process.env.AGENT_MODEL_ID || "gpt-4o",
-      baseUrl: process.env.AGENT_BASE_URL || "",
-    };
+    const settings = sharedSettings().read();
+    return { provider: settings.modelProvider, modelId: settings.modelId, baseUrl: settings.baseUrl };
   }
 
   getWebAppBuildId() {
@@ -407,7 +425,7 @@ class AgentHost {
     return messages;
   }
 
-  startRun(input: string, sessionId: string, images?: string[]): {
+  startRun(input: string, sessionId: string, images?: string[], options: SharedRunOptions = {}): {
     runId: string;
     completion: Promise<void>;
   } {
@@ -417,7 +435,7 @@ class AgentHost {
 
     const runId = crypto.randomUUID();
     this.activeRuns.set(sessionId, { runId, agent: null });
-    const completion = this.executeRun(input, sessionId, runId, images).finally(() => {
+    const completion = this.executeRun(input, sessionId, runId, images, sharedSettings().read(), options).finally(() => {
       if (this.activeRuns.get(sessionId)?.runId === runId) {
         this.activeRuns.delete(sessionId);
       }
@@ -433,7 +451,9 @@ class AgentHost {
     input: string,
     sessionId: string,
     runId: string,
-    images?: string[],
+    images: string[] | undefined,
+    settings: SharedSettings,
+    options: SharedRunOptions,
   ): Promise<void> {
     const runStartedAt = performance.now();
     let session = await this.sessionStore.get(sessionId);
@@ -444,11 +464,11 @@ class AgentHost {
       session = await this.sessionStore.get(sessionId);
       if (!session) throw new Error(`Session not found: ${sessionId}`);
     }
-    const runWorkingDirectory = await this.resolveProjectWorkingDirectory(session?.projectId);
+    const runWorkingDirectory = await this.resolveProjectWorkingDirectory(session?.projectId, false, settings.workingDirectory || this.workingDirectory);
     await this.sessionStore.consumePendingAutoTitle(sessionId, input);
     session = await this.sessionStore.get(sessionId);
     if (!session) throw new Error(`Session not found: ${sessionId}`);
-    const marker: CustomerAgentRunMarker = {
+    let marker: CustomerAgentRunMarker = {
       runId,
       eventStart: session.events.length,
       startedAt: new Date().toISOString(),
@@ -466,94 +486,159 @@ class AgentHost {
     this.eventCounters.set(sessionId, 0);
     this.recentEvents.set(sessionId, []);
     const runProjectId = session?.projectId || this.defaultRemoteToolsProjectId;
-    let agent: IAgentLoop;
-    try {
-      agent = await this.getBuilder()
-        .withWorkingDirectory(runWorkingDirectory)
-        .withRemoteToolStore(this.remoteToolStore, runProjectId)
-        .withTool(new AskUserTool(async (request: AskUserRequest) => {
-          return this.createQuestion(request, sessionId);
-        }))
-        .build();
-    } catch (err) {
-      // Emit error to SSE subscribers so the SDK can display it
-      const errorEvent = {
-        type: "error",
-        message: err instanceof Error ? err.message : "Failed to build agent",
-      } as AgentEvent;
+    const catalog = businessCatalog();
+    const emitChild = (event: AgentEvent, id = sessionId) => {
+      void this.sessionStore.addEvent(id, event).catch((error) => console.error("Child event persistence failed", error));
+      this.emit(id, event);
+    };
+    const dispatcher = new SubAgentDispatcher(catalog.agents, this.sessionStore, sharedSettings().store, catalog.memory,
+      (builder, id) => this.registerCustomerTools(builder, id, emitChild), emitChild, this.toolPermissionGate);
+    const owner = this.activeRuns.get(sessionId);
+    if (owner) owner.abortChildren = () => dispatcher.abortAll();
+    const selectedIds = options.agentIds?.length ? options.agentIds : settings.activeAgentIds.slice(0, 1);
+    const agentIds: Array<string | undefined> = selectedIds.length ? selectedIds : [undefined];
+    for (let index = 0; index < agentIds.length; index++) {
+      const lastAgent = index === agentIds.length - 1;
+      let agent: IAgentLoop;
+      let resources: Awaited<ReturnType<typeof configureSharedRun>> | undefined;
       try {
-        await this.sessionStore.addEvent(sessionId, errorEvent);
-        await this.commitRun(sessionId, marker, "failed");
-      } catch {}
-      this.emit(sessionId, errorEvent);
-      throw err;
-    } finally {
-      this.builder
-        ?.withWorkingDirectory(this.workingDirectory)
-        .withRemoteToolStore(this.remoteToolStore, this.defaultRemoteToolsProjectId);
-    }
+        const runBuilder = (this.runBuilderOverride ?? new AgentBuilder())
+          .withDiagnosticObserver((sid, observation) => this.harness.observe(sid, observation))
+          .withSessionStore(this.sessionStore)
+          .withToolPermissionGate(this.toolPermissionGate);
+        resources = await configureSharedRun(runBuilder, settings, { ...options, agentIds: agentIds[index] ? [agentIds[index]!] : [] });
+        agent = await runBuilder
+          .withWorkingDirectory(runWorkingDirectory)
+          .withRemoteToolStore(this.remoteToolStore, runProjectId)
+          .withTool(new AskUserTool(async (request: AskUserRequest) => {
+            return this.createQuestion(request, sessionId);
+          }))
+          .build();
+        await resources.applySkills();
+        this.registerCustomerTools(runBuilder, sessionId, emitChild, dispatcher);
+      } catch (err) {
+        await resources?.close();
+        // Emit error to SSE subscribers so the SDK can display it
+        const errorEvent = {
+          type: "error",
+          message: err instanceof Error ? err.message : "Failed to build agent",
+        } as AgentEvent;
+        try {
+          await this.sessionStore.addEvent(sessionId, errorEvent);
+          await this.commitRun(sessionId, marker, "failed");
+        } catch {}
+        this.emit(sessionId, errorEvent);
+        throw err;
+      } finally {
+        this.builder
+          ?.withWorkingDirectory(this.workingDirectory)
+          .withRemoteToolStore(this.remoteToolStore, this.defaultRemoteToolsProjectId);
+      }
 
-    const active = this.activeRuns.get(sessionId);
-    if (!active || active.runId !== runId) return;
-    active.agent = agent;
-    const activeRun = agent.run(input, sessionId, images);
-    let runFailed = false;
-    let terminalCommitted = false;
+      const active = this.activeRuns.get(sessionId);
+      if (!active || active.runId !== runId) { await resources?.close(); return; }
+      active.agent = agent;
+      if (active.aborted) {
+        await resources?.close();
+        const event = { type: "turn_aborted" } as AgentEvent;
+        await this.sessionStore.addEvent(sessionId, event);
+        await this.commitRun(sessionId, marker, "aborted");
+        this.emit(sessionId, event);
+        return;
+      }
+      const activeRun = this.harness.monitor(agent.run(input, sessionId, images), {
+        input, sessionId, workingDirectory: runWorkingDirectory,
+      });
+      let runFailed = false;
+      let terminalCommitted = false;
 
-    try {
-      for await (const event of activeRun) {
-        const emittedEvent: AgentEvent = event.type === "done" && !runFailed
-          ? {
-              ...event,
-              durationMs: Math.max(0, Math.round(performance.now() - runStartedAt)),
+      try {
+        for await (const event of activeRun) {
+          const emittedEvent: AgentEvent = event.type === "done" && !runFailed
+            ? {
+                ...event,
+                durationMs: Math.max(0, Math.round(performance.now() - runStartedAt)),
+              }
+            : event;
+          await this.sessionStore.addEvent(sessionId, emittedEvent);
+
+          if (emittedEvent.type === "error") {
+            runFailed = true;
+            if (!terminalCommitted) {
+              await this.commitRun(sessionId, marker, "failed");
+              terminalCommitted = true;
             }
-          : event;
-        await this.sessionStore.addEvent(sessionId, emittedEvent);
+          } else if (emittedEvent.type === "turn_aborted") {
+            if (!terminalCommitted) {
+              await this.commitRun(sessionId, marker, "aborted");
+              terminalCommitted = true;
+            }
+          } else if (emittedEvent.type === "done" && !terminalCommitted) {
+            await this.commitRun(sessionId, marker, runFailed ? "failed" : lastAgent ? "completed" : "active");
+            terminalCommitted = true;
+          }
 
-        if (emittedEvent.type === "error") {
-          runFailed = true;
+          if (emittedEvent.type !== "done" || lastAgent || runFailed) this.emit(sessionId, emittedEvent);
+        }
+      } catch (err) {
+        // The loop itself threw (not an in-band error event) — without this the
+        // subscriber would wait forever with no feedback.
+        runFailed = true;
+        const errorEvent = {
+          type: "error",
+          message: err instanceof Error ? err.message : "Agent run failed",
+        } as AgentEvent;
+        try {
+          await this.sessionStore.addEvent(sessionId, errorEvent);
           if (!terminalCommitted) {
             await this.commitRun(sessionId, marker, "failed");
             terminalCommitted = true;
           }
-        } else if (emittedEvent.type === "turn_aborted") {
-          if (!terminalCommitted) {
-            await this.commitRun(sessionId, marker, "aborted");
-            terminalCommitted = true;
-          }
-        } else if (emittedEvent.type === "done" && !terminalCommitted) {
-          await this.commitRun(sessionId, marker, runFailed ? "failed" : "completed");
-          terminalCommitted = true;
-        }
-
-        this.emit(sessionId, emittedEvent);
+        } catch {}
+        this.emit(sessionId, errorEvent);
+      } finally {
+        await resources?.close();
       }
-    } catch (err) {
-      // The loop itself threw (not an in-band error event) — without this the
-      // subscriber would wait forever with no feedback.
-      runFailed = true;
-      const errorEvent = {
-        type: "error",
-        message: err instanceof Error ? err.message : "Agent run failed",
-      } as AgentEvent;
-      try {
-        await this.sessionStore.addEvent(sessionId, errorEvent);
-        if (!terminalCommitted) {
-          await this.commitRun(sessionId, marker, "failed");
-          terminalCommitted = true;
-        }
-      } catch {}
-      this.emit(sessionId, errorEvent);
-    }
 
-    if (!terminalCommitted) {
-      const errorEvent = { type: "error", message: "Agent run ended without a terminal event" } as AgentEvent;
-      try {
-        await this.sessionStore.addEvent(sessionId, errorEvent);
-        await this.commitRun(sessionId, marker, "failed");
-      } catch {}
-      this.emit(sessionId, errorEvent);
+      if (!terminalCommitted) {
+        const errorEvent = { type: "error", message: "Agent run ended without a terminal event" } as AgentEvent;
+        try {
+          await this.sessionStore.addEvent(sessionId, errorEvent);
+          await this.commitRun(sessionId, marker, "failed");
+        } catch {}
+        this.emit(sessionId, errorEvent);
+        return;
+      }
+      const completed = await this.sessionStore.get(sessionId);
+      if (lastAgent || runFailed || completed?.status === "aborted" || !completed) return;
+      if (active.aborted) {
+        const event = { type: "turn_aborted" } as AgentEvent;
+        await this.sessionStore.addEvent(sessionId, event);
+        await this.sessionStore.update(sessionId, { status: "aborted" });
+        this.emit(sessionId, event);
+        return;
+      }
+      marker = { ...marker, eventStart: completed.events.length };
+      await this.sessionStore.update(sessionId, { metadata: { ...completed.metadata, [ACTIVE_RUN_METADATA_KEY]: marker } });
     }
+  }
+
+  private registerCustomerTools(builder: AgentBuilder, sessionId: string, emit: (event: AgentEvent, id?: string) => void, dispatcher?: SubAgentDispatcher): void {
+    const registry = builder.getToolRegistry();
+    let todos: TodoItem[] = [];
+    const update = (next: TodoItem[]) => { todos = next; emit({ type: "todo_update", todos: [...next] }, sessionId); };
+    registry.register(new TodoAddTool(() => todos, update));
+    registry.register(new TodoUpdateTool(() => todos, update));
+    registry.register(new TodoListTool(() => todos));
+    if (dispatcher) {
+      registry.register(new DispatchAgentTool((name, task, id) => dispatcher.dispatch(name, task, id)));
+      registry.register(new WaitAgentTool((id, timeout) => dispatcher.wait(id, timeout)));
+    }
+    const cron = sharedCron();
+    registry.register(new CronCreateTool((expression, prompt, options) => cron.call("cronCreate", [expression, prompt, options]) as CronTask));
+    registry.register(new CronDeleteTool(cron.tasks));
+    registry.register(new CronListTool(cron.tasks));
+    registry.register(new AskUserTool((request) => this.createQuestion(request, sessionId)));
   }
 
   private async commitRun(
@@ -600,10 +685,15 @@ class AgentHost {
           timestamp + index,
         );
       });
+      const latestMetadata = JSON.parse(row.metadata);
+      if (update.metadata) {
+        if (ACTIVE_RUN_METADATA_KEY in update.metadata) latestMetadata[ACTIVE_RUN_METADATA_KEY] = update.metadata[ACTIVE_RUN_METADATA_KEY];
+        else delete latestMetadata[ACTIVE_RUN_METADATA_KEY];
+      }
       database.prepare("UPDATE sessions SET status = ?, updated = ?, metadata = ? WHERE id = ?").run(
         update.status ?? row.status,
         new Date().toISOString(),
-        JSON.stringify(update.metadata ?? JSON.parse(row.metadata)),
+        JSON.stringify(latestMetadata),
         sessionId,
       );
     });
@@ -673,8 +763,8 @@ class AgentHost {
   }
 
   abort(sessionId?: string): void {
-    if (sessionId) this.activeRuns.get(sessionId)?.agent?.abort();
-    else for (const run of this.activeRuns.values()) run.agent?.abort();
+    const runs = sessionId ? [this.activeRuns.get(sessionId)] : [...this.activeRuns.values()];
+    for (const run of runs) if (run) { run.aborted = true; run.agent?.abort(); run.abortChildren?.(); }
     for (const [questionId, pending] of this.pendingQuestions) {
       if (sessionId && pending.sessionId !== sessionId) continue;
       clearTimeout(pending.timer);

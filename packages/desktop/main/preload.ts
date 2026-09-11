@@ -7,7 +7,7 @@ ipcRenderer.on("agent:event", (_ipcEvent, data) => {
   for (const fn of agentEventBus) fn(data);
 });
 
-contextBridge.exposeInMainWorld("agentApi", {
+contextBridge.exposeInMainWorld("desktopDeviceApi", {
   getUpdateStatus: () => ipcRenderer.invoke("update:get-status"),
   checkForUpdate: () => ipcRenderer.invoke("update:check"),
   installUpdate: () => ipcRenderer.invoke("update:install"),
@@ -261,5 +261,19 @@ contextBridge.exposeInMainWorld("agentApi", {
     const handler = () => callback();
     ipcRenderer.on("app:wake-aihub", handler);
     return () => ipcRenderer.removeListener("app:wake-aihub", handler);
+  },
+});
+
+// Fixed transport capability; credentials and service discovery stay in main.
+contextBridge.exposeInMainWorld("sharedServiceApi", {
+  status: () => ipcRenderer.invoke("service:status"),
+  select: (id: string) => ipcRenderer.invoke("service:select", id),
+  request: (path: string, method: string, body?: string) => ipcRenderer.invoke("service:request", path, method, body),
+  stream: (id: string, path: string, lastEventId: string) => ipcRenderer.invoke("service:stream", id, path, lastEventId),
+  stop: (id: string) => ipcRenderer.invoke("service:stream-stop", id),
+  onFrame: (callback: (frame: unknown) => void) => {
+    const listener = (_event: unknown, frame: unknown) => callback(frame);
+    ipcRenderer.on("service:stream-frame", listener);
+    return () => ipcRenderer.removeListener("service:stream-frame", listener);
   },
 });

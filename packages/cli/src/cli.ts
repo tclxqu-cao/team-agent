@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 import { parseArgs } from "./args.js";
 import { ensureCloudflared } from "./cloudflared/installer.js";
 import { resolveCodexRuntime } from "./codex-runtime-manager.js";
-import { repairNativeRuntimePermissions } from "./native-runtime.js";
+import { probeSQLiteRuntime, probeTerminalRuntime, repairNativeRuntimePermissions } from "./native-runtime.js";
 import { findLanUrl } from "./network.js";
 import { createPairingSecret } from "./pairing.js";
 import { detectPlatform, type PlatformTarget } from "./platform.js";
@@ -140,7 +140,7 @@ export async function main(argv: string[]): Promise<void> {
 }
 
 async function doctor(target: PlatformTarget, dataDir: string): Promise<void> {
-  console.log(`✓ Node ${process.versions.node}`);
+  console.log(`✓ Node ${process.versions.node} · Node-API ${process.versions.napi}`);
   console.log(`✓ Platform ${target}`);
   const { runtimeRoot } = resolvePlatformRuntime(target);
   const runtimeRequire = createRequire(`${runtimeRoot}/package.json`);
@@ -152,9 +152,12 @@ async function doctor(target: PlatformTarget, dataDir: string): Promise<void> {
     reportDoctorFailure(error);
   }
 
-  for (const module of ["node-pty", "better-sqlite3"]) {
+  for (const [module, probe] of [
+    ["node-pty", probeTerminalRuntime],
+    ["better-sqlite3", probeSQLiteRuntime],
+  ] as const) {
     try {
-      runtimeRequire(module);
+      await probe(runtimeRequire);
       console.log(`✓ ${module}`);
     } catch (error) {
       reportDoctorFailure(error, `${module}: `);

@@ -25,6 +25,15 @@ describe("ContextAssembler", () => {
     expect(ctx.tokenUsed).toBeGreaterThan(0);
   });
 
+  it("retains system instructions while oversized history waits for compaction", async () => {
+    const ctx = await assembler.assemble({ ...baseInput, maxTokens: 2400,
+      history: [{ role: "user", content: "历史消息".repeat(10000) }],
+    });
+    expect(ctx.systemPrompt).toContain("expert AI assistant");
+    expect(ctx.systemPrompt).toContain("After completing a task");
+    expect(ctx.messages[0].content.length).toBe(40000);
+  });
+
   it("should include memory context when provided", async () => {
     const ctx = await assembler.assemble({
       ...baseInput,

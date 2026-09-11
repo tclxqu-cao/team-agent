@@ -129,6 +129,10 @@ export interface TokenUsage {
 }
 
 export interface AgentConfig {
+  /** Private observer; failures must never affect the business run. */
+  diagnosticObserver?: (sessionId: string, observation: unknown) => void;
+  /** Optional durable, single-run recovery. Pending tool effects fail closed. */
+  runCheckpointStore?: import('./run-checkpoint.js').IRunCheckpointStore;
   modelProvider: import("../model/entities.js").IModelProvider;
   toolRegistry: import("../tool/entities.js").IToolRegistry;
   toolExecutor: import("../tool/entities.js").IToolExecutor;
@@ -160,6 +164,20 @@ export interface IAgentLoop {
   run(input: string, sessionId: string, images?: string[]): AsyncIterable<AgentEvent>;
   /** Abort the current run */
   abort(): void;
+  /**
+   * Compact the persisted session history on demand — same semantics as the
+   * automatic threshold compaction (summarize + persist a hidden checkpoint so
+   * the next run restores the compacted context). Returns null when there was
+   * nothing to compact. Optional: loop implementations choose whether to
+   * support it.
+   */
+  compactSession?(sessionId: string): Promise<SessionCompaction | null>;
+}
+
+/** Outcome of an on-demand history compaction. */
+export interface SessionCompaction {
+  summary: string;
+  removedMessages: number;
 }
 
 export interface IAgentFactory {

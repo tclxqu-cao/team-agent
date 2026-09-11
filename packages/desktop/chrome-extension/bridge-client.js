@@ -65,7 +65,7 @@ export class ChromeTabBridge {
     this.socket = socket;
     const connected = new Promise((resolve, reject) => {
       const timer = setTimeout(() => { reject(new Error("无法连接 AI Hub，请确认桌面端已经启动")); socket.close(); }, 5000);
-      socket.onopen = () => socket.send(JSON.stringify({ type: "hello", token: pairing.token, version: "0.3.4", capabilities: ["conversations-v1", "auto-connect-control-v1"] }));
+      socket.onopen = () => socket.send(JSON.stringify({ type: "hello", token: pairing.token, version: "0.3.5", capabilities: ["conversations-v1", "auto-connect-control-v1"] }));
       socket.onerror = () => { clearTimeout(timer); reject(new Error("无法连接 AI Hub，请确认桌面端已启动")); };
       socket.onmessage = ({ data }) => {
         let message;
@@ -216,6 +216,8 @@ export class ChromeTabBridge {
     await this.assertProviderPage(siteId, tab.id);
     await this.sendCommand(target, "Emulation.setFocusEmulationEnabled", { enabled: true });
     const before = await this.readPage(siteId, "prepare", { text });
+    const previousUserIds = new Set(before.messages.filter(message => message.role === "user").map(message => message.messageId).filter(Boolean));
+    tab.sendConfirmation = undefined;
     const assertCurrent = async () => {
       if (this.tabs.get(siteId) !== tab || !this.ready) throw new Error("chrome-tab-disconnected");
       await this.assertProviderPage(siteId, tab.id);
@@ -256,15 +258,20 @@ export class ChromeTabBridge {
     }
     const normalize = (value) => String(value ?? "").replace(/\s+/g, " ").trim();
     let acceptedAt = null;
-    for (let attempt = 0; attempt < 40; attempt++) {
+    const confirmationDeadline = Date.now() + 24_000;
+    while (Date.now() < confirmationDeadline) {
       await new Promise((resolve) => setTimeout(resolve, 250));
       const after = await this.readPage(siteId);
       this.publishConversation(siteId, after);
       const lastUser = after.messages.filter((message) => message.role === "user").at(-1);
       if (/^chrome-gemini-error-\d{1,6}$/.test(after.websiteError ?? '') && after.draft?.trim() && !after.generating) throw new Error(after.websiteError);
       const responseStarted = siteId !== "gemini" || (after.messages.at(-1)?.role === "assistant" && !!after.messages.at(-1)?.content.trim());
-      tab.sendConfirmation = { beforeUserCount: before.userCount, afterUserCount: after.userCount, draftEmpty: !after.draft?.trim(), textMatches: normalize(lastUser?.plainText) === normalize(text), responseStarted, lastRole: after.messages.at(-1)?.role, lastUserLength: lastUser?.plainText?.length ?? 0, sentLength: text.length };
-      const accepted = responseStarted && after.userCount > before.userCount && !after.draft?.trim()
+      // Prefer the provider's identity: removing old DOM turns can keep/decrease the count.
+      // Never use the display ID here, since its index changes when history is virtualized.
+      const newUser = lastUser?.messageId && (previousUserIds.size || before.userCount === 0)
+        ? !previousUserIds.has(lastUser.messageId) : after.userCount > before.userCount;
+      tab.sendConfirmation = { beforeUserCount: before.userCount, afterUserCount: after.userCount, draftEmpty: !after.draft?.trim(), textMatches: normalize(lastUser?.plainText) === normalize(text), newUser: !!newUser, stableMessageId: !!lastUser?.messageId, responseStarted, lastRole: after.messages.at(-1)?.role };
+      const accepted = responseStarted && newUser && !after.draft?.trim()
         && (!text.trim() || normalize(lastUser?.plainText) === normalize(text));
       if (!accepted) acceptedAt = null;
       else if (acceptedAt === null) acceptedAt = Date.now();

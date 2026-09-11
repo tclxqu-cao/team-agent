@@ -1,8 +1,20 @@
 import React, { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { randomUUID } from "node:crypto";
-import { Box, useApp } from "ink";
-import type { AskUserRequest, AskUserResponse, SkillMeta } from "@agent/core";
+import { Box, Text, useApp } from "ink";
+import {
+  TOOL_APPROVAL_OPTIONS,
+  TOOL_PERMISSION_MODES,
+  toolApprovalDecisionFromAnswer,
+  type AskUserRequest,
+  type AskUserResponse,
+  type SkillMeta,
+  type ToolApprovalDecision,
+  type ToolPermissionMode,
+  type ToolPermissionRequest,
+} from "@agent/core";
 import { BUILTIN_COMMANDS, createSlashItems, helpText, parseSlashCommand } from "./commands.js";
+import { appendInputHistory } from "./input-history.js";
+import { extractImagePaths, readImageFile } from "./images.js";
 import {
   emptyTuiConfig,
   endpointModelSelection,
@@ -13,6 +25,7 @@ import {
   upsertCustomEndpoint,
   type CustomModelEndpoint,
   type DesktopModelProfile,
+  type McpServerEntry,
   type ModelSelection,
   type TuiConfig,
 } from "./model-config.js";
@@ -23,22 +36,33 @@ import { filterPaletteItems, getActiveTrigger, replaceTrigger, type PaletteItem 
 import { resolveProjectNavigation } from "./project-routing.js";
 import { indexProjectResources, mergeProjects, replaceMentionToken, scanSiblingProjects, type ProjectCandidate, type RegisteredProject } from "./resources.js";
 import { initialTuiState, tuiReducer, type TranscriptEntry } from "./state.js";
-import { TuiRuntime, type RuntimeSnapshot, type SessionSummary } from "./runtime.js";
+import { TuiRuntime, type McpStatus, type RuntimeSnapshot, type SessionSummary } from "./runtime.js";
 import { CommandPalette } from "./components/CommandPalette.js";
 import { Composer } from "./components/Composer.js";
+import { ApprovalPrompt } from "./components/ApprovalPrompt.js";
 import { InlineQuestion } from "./components/InlineQuestion.js";
 import { MessageQueue } from "./components/MessageQueue.js";
 import { ModelWizard } from "./components/ModelWizard.js";
 import { ProgressLine } from "./components/ProgressLine.js";
 import { Transcript } from "./components/Transcript.js";
 import { Header } from "./components/Header.js";
-import { PALETTE_TITLES } from "./theme.js";
+import { applyTheme, PALETTE_TITLES, TUI_THEME, THEME_LABELS, THEME_NAMES, type ThemeName } from "./theme.js";
 
-type SecondaryPalette = "models" | "wizard-models" | "sessions" | "projects" | "skills";
+type SecondaryPalette = "models" | "wizard-models" | "sessions" | "projects" | "skills" | "permissions" | "themes" | "mcp";
 interface PendingQuestion {
   request: AskUserRequest;
   resolve: (response: AskUserResponse) => void;
 }
+interface PendingApproval {
+  request: ToolPermissionRequest;
+  resolve: (decision: ToolApprovalDecision) => void;
+}
+
+const PERMISSION_META: Record<ToolPermissionMode, { label: string; description: string }> = {
+  "request-approval": { label: "全部询问（request-approval）", description: "每个执行类工具都先确认" },
+  "auto-approval": { label: "仅高风险询问（auto-approval）", description: "推荐；sudo、外部写入、MCP 等才确认" },
+  "full-access": { label: "全部放行（full-access）", description: "不再询问，注意操作风险" },
+};
 
 export interface TuiAppProps {
   runtime: TuiRuntime;
@@ -51,6 +75,9 @@ export interface TuiAppProps {
   nativeCursor?: boolean;
   initialConfig?: TuiConfig;
   modelFetcher?: typeof fetchAvailableModels;
+  initialHistory?: string[];
+  historyPath?: string;
+  initialSessionId?: string;
 }
 
 function entry(type: "user" | "notice" | "error", text: string): TranscriptEntry {
@@ -132,9 +159,58 @@ function skillItems(skills: SkillMeta[]): PaletteItem[] {
   return createSlashItems(skills).filter((item) => item.kind === "skill");
 }
 
+function permissionItems(active: ToolPermissionMode): PaletteItem[] {
+  return TOOL_PERMISSION_MODES.map((mode) => ({
+    id: `permission:${mode}`,
+    kind: "action" as const,
+    label: PERMISSION_META[mode].label,
+    description: mode === active ? `当前 · ${PERMISSION_META[mode].description}` : PERMISSION_META[mode].description,
+    value: mode,
+    disabled: mode === active,
+  }));
+}
+
+function themeItems(active: ThemeName): PaletteItem[] {
+  const DESCRIPTIONS: Record<ThemeName, string> = {
+    default: "冷色蓝紫，深色终端",
+    dim: "低饱和墨绿，长时间使用",
+    light: "深字浅底，浅色终端",
+  };
+  return THEME_NAMES.map((name) => ({
+    id: `theme:${name}`,
+    kind: "action" as const,
+    label: THEME_LABELS[name],
+    description: name === active ? `当前 · ${DESCRIPTIONS[name]}` : DESCRIPTIONS[name],
+    value: name,
+    disabled: name === active,
+  }));
+}
+
+function mcpItems(statuses: McpStatus[]): PaletteItem[] {
+  if (statuses.length === 0) {
+    return [{
+      id: "mcp:empty",
+      kind: "action",
+      label: "未配置 MCP 服务",
+      description: "在 ~/.customer-agent-tui/config.json 的 mcpServers 中添加",
+      value: "__noop__",
+      disabled: true,
+    }];
+  }
+  return statuses.map((status) => ({
+    id: `mcp:${status.id}`,
+    kind: "action" as const,
+    label: `${status.connected ? "断开" : "重连"} ${status.id}`,
+    description: status.connected
+      ? `${status.tools.length} 个工具${status.tools.length ? `：${status.tools.slice(0, 4).join("、")}${status.tools.length > 4 ? "…" : ""}` : ""}`
+      : status.error ?? "未连接",
+    value: `${status.connected ? "disconnect" : "reconnect"}:${status.id}`,
+  }));
+}
+
 export function TuiApp(props: TuiAppProps) {
   const { exit } = useApp();
-  const [state, dispatch] = useReducer(tuiReducer, initialTuiState);
+  const [state, dispatch] = useReducer(tuiReducer, props.initialHistory ?? [], initialTuiState);
   const [snapshot, setSnapshot] = useState(props.initialSnapshot);
   const [projects, setProjects] = useState<ProjectCandidate[]>([]);
   const [resources, setResources] = useState<PaletteItem[]>([]);
@@ -142,13 +218,19 @@ export function TuiApp(props: TuiAppProps) {
   const [secondaryItems, setSecondaryItems] = useState<PaletteItem[]>([]);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [question, setQuestion] = useState<PendingQuestion | null>(null);
+  const [pendingApproval, setPendingApproval] = useState<PendingApproval | null>(null);
   const [paletteDismissed, setPaletteDismissed] = useState(false);
   const [queuedInputs, setQueuedInputs] = useState<string[]>([]);
   const [tuiConfig, setTuiConfig] = useState<TuiConfig>(props.initialConfig ?? emptyTuiConfig());
   const [modelWizard, setModelWizard] = useState<ModelWizardState | null>(null);
+  const [scrollback, setScrollback] = useState(0);
+  const [pendingImages, setPendingImages] = useState<Array<{ name: string; dataUrl: string }>>([]);
   const queuedInputsRef = useRef<string[]>([]);
   const abortingRef = useRef(false);
   const wizardGenerationRef = useRef(0);
+  const persistedHistoryRef = useRef<string[]>([...(props.initialHistory ?? [])]);
+  const transcriptLengthRef = useRef(0);
+  transcriptLengthRef.current = state.transcript.length;
 
   const append = useCallback((type: "notice" | "error", text: string) => {
     dispatch({ type: "append", entry: entry(type, text) });
@@ -179,9 +261,35 @@ export function TuiApp(props: TuiAppProps) {
 
   useEffect(() => {
     props.runtime.setQuestionHandler((request) => new Promise((resolve) => setQuestion({ request, resolve })));
+    props.runtime.setApprovalHandler((request) => new Promise((resolve) => setPendingApproval({ request, resolve })));
   }, [props.runtime]);
 
-  const trigger = question || secondary || modelWizard ? null : getActiveTrigger(state.input, state.cursor);
+  useEffect(() => {
+    props.runtime.setPermissionMode(tuiConfig.permissionMode);
+  }, [props.runtime, tuiConfig.permissionMode]);
+
+  useEffect(() => {
+    applyTheme(tuiConfig.theme);
+  }, [tuiConfig.theme]);
+
+  useEffect(() => {
+    props.runtime.setMcpServers(tuiConfig.mcpServers);
+  }, [props.runtime, tuiConfig.mcpServers]);
+
+  useEffect(() => {
+    props.runtime.setDispatchReporter((activity) => {
+      if (activity.kind === "tool" && activity.name) {
+        dispatch({
+          type: "append",
+          entry: { id: `sub:${Date.now()}:${Math.random()}`, type: "tool", name: `└ ${activity.agentName}·${activity.name}`, text: "" },
+        });
+      } else if (activity.kind === "done") {
+        append("notice", `└ 子代理 ${activity.agentName} 完成`);
+      }
+    });
+  }, [append, props.runtime]);
+
+  const trigger = question || pendingApproval || secondary || modelWizard ? null : getActiveTrigger(state.input, state.cursor);
   const slashItems = useMemo(() => createSlashItems(snapshot.skills), [snapshot.skills]);
   const baseItems = useMemo(() => {
     if (secondary) return secondaryItems;
@@ -200,9 +308,13 @@ export function TuiApp(props: TuiAppProps) {
     () => filterPaletteItems(
       baseItems,
       query,
-      secondary === "models" || secondary === "wizard-models" ? Math.max(1, baseItems.length) : 12,
+      secondary === "models" || secondary === "wizard-models"
+        ? Math.max(1, baseItems.length)
+        : trigger?.type === "slash"
+          ? 40
+          : 12,
     ),
-    [baseItems, query, secondary],
+    [baseItems, query, secondary, trigger?.type],
   );
   const paletteOpen = !paletteDismissed && Boolean(secondary || trigger);
   const paletteTitle = secondary
@@ -223,10 +335,13 @@ export function TuiApp(props: TuiAppProps) {
     if (kind === "sessions") setSecondaryItems(sessionItems(await props.runtime.listSessions()));
     if (kind === "projects") setSecondaryItems(projects);
     if (kind === "skills") setSecondaryItems(skillItems(snapshot.skills));
+    if (kind === "permissions") setSecondaryItems(permissionItems(tuiConfig.permissionMode));
+    if (kind === "themes") setSecondaryItems(themeItems(tuiConfig.theme));
+    if (kind === "mcp") setSecondaryItems(mcpItems(props.runtime.getMcpStatuses()));
     setPaletteDismissed(false);
     setSecondary(kind);
     setSelectedIndex(0);
-  }, [projects, props.profiles, props.runtime, snapshot.model, snapshot.skills, tuiConfig.endpoints]);
+  }, [projects, props.profiles, props.runtime, snapshot.model, snapshot.skills, tuiConfig.endpoints, tuiConfig.permissionMode, tuiConfig.theme]);
 
   const switchModel = useCallback(async (selection: ModelSelection) => {
     try {
@@ -235,6 +350,7 @@ export function TuiApp(props: TuiAppProps) {
       setTuiConfig(await loadTuiConfig(props.configPath));
       setSnapshot(next);
       dispatch({ type: "clear" });
+      setScrollback(0);
       append("notice", `已切换模型 ${selection.provider}/${selection.modelId} · 新会话 ${next.sessionId.slice(0, 8)}`);
     } catch (error) {
       append("error", `模型切换失败，保留当前模型: ${error instanceof Error ? error.message : String(error)}`);
@@ -246,12 +362,90 @@ export function TuiApp(props: TuiAppProps) {
       const next = await props.runtime.switchProject(directory);
       setSnapshot(next);
       dispatch({ type: "clear" });
+      setScrollback(0);
       setInput("");
       append("notice", `已切换项目 ${next.workingDirectory} · 新会话 ${next.sessionId.slice(0, 8)}`);
     } catch (error) {
       append("error", `项目切换失败，保留当前项目: ${error instanceof Error ? error.message : String(error)}`);
     }
   }, [append, props.runtime, setInput]);
+
+  const switchPermissionMode = useCallback(async (mode: ToolPermissionMode) => {
+    props.runtime.setPermissionMode(mode);
+    const nextConfig: TuiConfig = { ...tuiConfig, permissionMode: mode };
+    setTuiConfig(nextConfig);
+    try {
+      await saveTuiConfig(props.configPath, nextConfig);
+    } catch (error) {
+      append("error", `审批模式保存失败（本次运行仍生效）: ${error instanceof Error ? error.message : String(error)}`);
+    }
+    append("notice", `工具审批模式：${PERMISSION_META[mode].label}`);
+  }, [append, props.configPath, props.runtime, tuiConfig]);
+
+  const switchTheme = useCallback(async (name: ThemeName) => {
+    const nextConfig: TuiConfig = { ...tuiConfig, theme: name };
+    setTuiConfig(nextConfig);
+    try {
+      await saveTuiConfig(props.configPath, nextConfig);
+    } catch (error) {
+      append("error", `主题保存失败（本次运行仍生效）: ${error instanceof Error ? error.message : String(error)}`);
+    }
+    append("notice", `主题已切换：${THEME_LABELS[name]}`);
+  }, [append, props.configPath, tuiConfig]);
+
+  const toggleVimMode = useCallback(async () => {
+    const enabled = !tuiConfig.vimMode;
+    const nextConfig: TuiConfig = { ...tuiConfig, vimMode: enabled };
+    setTuiConfig(nextConfig);
+    try {
+      await saveTuiConfig(props.configPath, nextConfig);
+    } catch (error) {
+      append("error", `vim 模式保存失败（本次运行仍生效）: ${error instanceof Error ? error.message : String(error)}`);
+    }
+    append("notice", enabled
+      ? "vim 模式已开启：NORMAL 下 Enter 发送、i 进入编辑、Esc 返回 NORMAL"
+      : "vim 模式已关闭");
+  }, [append, props.configPath, tuiConfig]);
+
+  const attachImage = useCallback(async (pathValue: string) => {
+    try {
+      const image = await readImageFile(pathValue);
+      setPendingImages((current) => [...current, image]);
+      append("notice", `已附加图片 ${image.name}，将随下一条消息发送`);
+    } catch (error) {
+      append("error", `读取图片失败: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }, [append]);
+
+  /** Open a historical session and replay its persisted turns onto the screen. */
+  const openSessionById = useCallback(async (idPrefix: string) => {
+    await props.runtime.openSession(idPrefix);
+    const nextSnapshot = props.runtime.snapshot();
+    setSnapshot(nextSnapshot);
+    let replayed = 0;
+    try {
+      const messages = await props.runtime.loadSessionTranscript(idPrefix);
+      replayed = messages.length;
+      dispatch({
+        type: "replace_transcript",
+        entries: messages.map((message, index) => ({
+          id: `replay:${index}:${message.content.length}`,
+          type: message.role,
+          text: message.content,
+        })),
+      });
+    } catch {
+      dispatch({ type: "clear" });
+    }
+    append("notice", `已打开会话 ${nextSnapshot.sessionId.slice(0, 8)} · 重放 ${replayed} 条历史消息`);
+  }, [append, props.runtime]);
+
+  const resumeStartedRef = useRef(false);
+  useEffect(() => {
+    if (!props.initialSessionId || resumeStartedRef.current) return;
+    resumeStartedRef.current = true;
+    void openSessionById(props.initialSessionId);
+  }, [openSessionById, props.initialSessionId]);
 
   const cancelModelWizard = useCallback(() => {
     wizardGenerationRef.current++;
@@ -378,6 +572,7 @@ export function TuiApp(props: TuiAppProps) {
       case "/new": {
         const id = await props.runtime.newSession();
         dispatch({ type: "clear" });
+        setScrollback(0);
         append("notice", `已新建会话 ${id.slice(0, 8)}`);
         setSnapshot(props.runtime.snapshot());
         break;
@@ -391,9 +586,7 @@ export function TuiApp(props: TuiAppProps) {
       }
       case "/open":
         if (!args) return void await openSecondary("sessions");
-        await props.runtime.openSession(args);
-        setSnapshot(props.runtime.snapshot());
-        append("notice", `已打开会话 ${props.runtime.snapshot().sessionId.slice(0, 8)}`);
+        await openSessionById(args);
         break;
       case "/cwd":
         append("notice", snapshot.workingDirectory);
@@ -408,32 +601,110 @@ export function TuiApp(props: TuiAppProps) {
       case "/skills":
         await openSecondary("skills");
         break;
+      case "/permissions":
+        await openSecondary("permissions");
+        break;
+      case "/mcp":
+        await openSecondary("mcp");
+        break;
+      case "/theme":
+        await openSecondary("themes");
+        break;
+      case "/vim":
+        await toggleVimMode();
+        break;
+      case "/compact": {
+        if (state.running) {
+          append("error", "运行中不能压缩上下文，请先 Ctrl+C 中断");
+          break;
+        }
+        append("notice", "正在压缩会话上下文…");
+        try {
+          const result = await props.runtime.compactSession(props.runtime.snapshot().sessionId);
+          append("notice", result
+            ? `已压缩上下文：摘要 ${result.summary.slice(0, 80)}… · 移除 ${result.removedMessages} 条历史`
+            : "上下文还很简短，无需压缩");
+        } catch (error) {
+          append("error", `压缩失败: ${error instanceof Error ? error.message : String(error)}`);
+        }
+        break;
+      }
+      case "/image": {
+        const pathArg = args.trim();
+        if (!pathArg) {
+          append("notice", pendingImages.length
+            ? `已附加 ${pendingImages.length} 张图片，随下一条消息发送`
+            : "用法: /image <图片路径>（png/jpg/gif/webp）");
+          break;
+        }
+        await attachImage(pathArg);
+        break;
+      }
+      case "/undo": {
+        if (state.running) {
+          append("error", "运行中不能撤销，请先 Ctrl+C 中断");
+          break;
+        }
+        try {
+          const restored = await props.runtime.journal.undoLastBatch();
+          append("notice", !restored || restored.length === 0
+            ? "没有可撤销的文件修改"
+            : `已撤销 ${restored.length} 个文件的修改:\n${restored.join("\n")}`);
+        } catch (error) {
+          append("error", `撤销失败: ${error instanceof Error ? error.message : String(error)}`);
+        }
+        break;
+      }
       case "/steer":
         await steerQueuedInput(args);
         break;
+      case "/unqueue": {
+        const queueIndex = Number(args);
+        if (!Number.isInteger(queueIndex) || queueIndex < 1 || queueIndex > queuedInputsRef.current.length) {
+          append("error", `用法: /unqueue <序号>；当前有 ${queuedInputsRef.current.length} 条排队消息`);
+          break;
+        }
+        const [removed] = queuedInputsRef.current.splice(queueIndex - 1, 1);
+        setQueuedInputs([...queuedInputsRef.current]);
+        append("notice", `已移除排队消息 ${queueIndex}：${removed.slice(0, 60).replace(/\n/g, " ")}`);
+        break;
+      }
+      case "/cost": {
+        const { usage } = state;
+        append("notice", usage.turns === 0
+          ? "本会话还没有完成的回合"
+          : `本会话累计 ${usage.turns} 个回合 · 输入 ${usage.inputTokens} + 输出 ${usage.outputTokens} = ${usage.totalTokens} tokens`);
+        break;
+      }
       case "/clear":
         dispatch({ type: "clear" });
+        setScrollback(0);
         break;
       case "/exit":
         exit();
         break;
     }
-  }, [append, exit, openSecondary, props.env, props.runtime, snapshot.sessionId, snapshot.workingDirectory, steerQueuedInput, switchModel]);
+  }, [append, attachImage, exit, openSecondary, openSessionById, props.env, props.runtime, snapshot.sessionId, snapshot.workingDirectory, state.running, state.usage, steerQueuedInput, switchModel, toggleVimMode, pendingImages.length]);
 
-  const runInputQueue = useCallback(async (firstInput: string) => {
+  const runInputQueue = useCallback(async (firstInput: string, firstImages?: string[]) => {
     abortingRef.current = false;
     let currentInput: string | undefined = firstInput;
+    let currentImages: string[] | undefined = firstImages;
     while (currentInput) {
       const parsed = parseSlashCommand(currentInput);
-      dispatch({ type: "append", entry: entry("user", currentInput) });
+      dispatch({ type: "append", entry: entry("user", currentInput + (currentImages?.length ? `  🖼×${currentImages.length}` : "")) });
       dispatch({ type: "turn_start", now: Date.now() });
       const eventBuffer = new AgentEventBuffer((event) => {
+        if (event.type === "done" || event.type === "error") {
+          // Terminal bell so long turns are noticeable when the window is backgrounded.
+          process.stdout.write("\x07");
+        }
         dispatch({ type: "agent_event", event, now: Date.now() });
       });
       try {
         await props.runtime.run(parsed.type === "agent" ? parsed.input : currentInput, (event) => {
           eventBuffer.push(event);
-        });
+        }, currentImages);
       } catch (error) {
         eventBuffer.push({ type: "error", message: error instanceof Error ? error.message : String(error) });
       } finally {
@@ -441,6 +712,7 @@ export function TuiApp(props: TuiAppProps) {
       }
       if (abortingRef.current) break;
       currentInput = queuedInputsRef.current.shift();
+      currentImages = undefined;
       setQueuedInputs([...queuedInputsRef.current]);
     }
   }, [props.runtime]);
@@ -452,6 +724,16 @@ export function TuiApp(props: TuiAppProps) {
     }
     const input = state.input.trim();
     if (!input) return;
+    if (pendingApproval) {
+      const numeric = Number.parseInt(input, 10);
+      const answer = Number.isInteger(numeric) && numeric >= 1 && numeric <= TOOL_APPROVAL_OPTIONS.length
+        ? TOOL_APPROVAL_OPTIONS[numeric - 1].label
+        : input;
+      pendingApproval.resolve(toolApprovalDecisionFromAnswer(answer));
+      setPendingApproval(null);
+      setInput("");
+      return;
+    }
     if (question) {
       const numeric = Number.parseInt(input, 10);
       const answer = Number.isInteger(numeric) && numeric >= 1 && numeric <= (question.request.options?.length ?? 0)
@@ -463,10 +745,16 @@ export function TuiApp(props: TuiAppProps) {
       return;
     }
     dispatch({ type: "submit_input", input });
+    setScrollback(0);
+    if (props.historyPath) {
+      void appendInputHistory(props.historyPath, persistedHistoryRef.current, input).then((next) => {
+        persistedHistoryRef.current = next;
+      });
+    }
     setSecondary(null);
     const parsed = parseSlashCommand(input);
     if (parsed.type === "builtin") {
-      if (state.running && parsed.name !== "/steer") {
+      if (state.running && parsed.name !== "/steer" && parsed.name !== "/unqueue") {
         append("notice", `运行中未执行 ${parsed.name}；普通消息可以继续排队`);
         return;
       }
@@ -494,8 +782,18 @@ export function TuiApp(props: TuiAppProps) {
       append("notice", `找到多个“${navigation.query}”项目，请选择`);
       return;
     }
-    void runInputQueue(input);
-  }, [append, executeBuiltin, modelWizard, projects, question, runInputQueue, setInput, state.input, state.running, submitModelWizard, switchProject]);
+    // /image attachments plus any image paths pasted into the message body.
+    const images = pendingImages.map((image) => image.dataUrl);
+    for (const imagePath of extractImagePaths(input)) {
+      try {
+        images.push((await readImageFile(imagePath)).dataUrl);
+      } catch {
+        // Unreadable path — keep it as plain message text.
+      }
+    }
+    if (images.length > 0) setPendingImages([]);
+    void runInputQueue(input, images.length > 0 ? images : undefined);
+  }, [append, executeBuiltin, modelWizard, pendingApproval, pendingImages, projects, props.historyPath, question, runInputQueue, setInput, state.input, state.running, submitModelWizard, switchProject]);
 
   const choosePaletteItem = useCallback(async () => {
     const item = visibleItems[selectedIndex];
@@ -559,11 +857,45 @@ export function TuiApp(props: TuiAppProps) {
       return;
     }
     if (secondary === "sessions") {
-      await props.runtime.openSession(item.value);
-      setSnapshot(props.runtime.snapshot());
-      append("notice", `已打开会话 ${item.value.slice(0, 8)}`);
       setSecondary(null);
       setInput("");
+      await openSessionById(item.value);
+      return;
+    }
+    if (secondary === "permissions") {
+      if (TOOL_PERMISSION_MODES.includes(item.value as ToolPermissionMode)) {
+        await switchPermissionMode(item.value as ToolPermissionMode);
+        setSecondary(null);
+        setInput("");
+      }
+      return;
+    }
+    if (secondary === "themes") {
+      if (THEME_NAMES.includes(item.value as ThemeName)) {
+        await switchTheme(item.value as ThemeName);
+        setSecondary(null);
+        setInput("");
+      }
+      return;
+    }
+    if (secondary === "mcp") {
+      const [action, serverId] = item.value.split(":");
+      if (action === "reconnect" || action === "disconnect") {
+        try {
+          if (action === "reconnect") {
+            const status = await props.runtime.reconnectMcp(serverId);
+            append("notice", status.connected
+              ? `已连接 ${status.id} · ${status.tools.length} 个工具`
+              : `连接 ${status.id} 失败: ${status.error ?? "未知错误"}`);
+          } else {
+            await props.runtime.disconnectMcp(serverId);
+            append("notice", `已断开 ${serverId}`);
+          }
+        } catch (error) {
+          append("error", `MCP 操作失败: ${error instanceof Error ? error.message : String(error)}`);
+        }
+        setSecondaryItems(mcpItems(props.runtime.getMcpStatuses()));
+      }
       return;
     }
     if (secondary === "projects" || item.kind === "project") {
@@ -579,10 +911,10 @@ export function TuiApp(props: TuiAppProps) {
     if (trigger?.type === "slash") {
       if (item.kind === "command") {
         const command = BUILTIN_COMMANDS.find((candidate) => candidate.name === item.value);
-        // No-argument commands (/exit, /clear, /help, /new, /cwd) run on
+        // No-argument commands (/exit, /clear, /help, /new, /cwd, /cost) run on
         // select — filling the input made them look broken until a second
-        // Enter. Argument-taking (/steer) and panel commands keep the old path.
-        if (command && !command.secondary && command.name !== "/steer") {
+        // Enter. Argument-taking (/steer, /unqueue) and panel commands keep the old path.
+        if (command && !command.secondary && command.name !== "/steer" && command.name !== "/unqueue") {
           setInput("");
           await executeBuiltin(item.value, "");
           return;
@@ -600,7 +932,7 @@ export function TuiApp(props: TuiAppProps) {
       const next = replaceMentionToken(state.input, state.cursor, trigger, item.value);
       setInput(next.buffer, next.cursor);
     }
-  }, [append, beginModelWizard, executeBuiltin, modelWizard, openSecondary, props.configPath, props.profiles, props.runtime, refreshCustomEndpoint, secondary, selectedIndex, setInput, state.cursor, state.input, switchModel, switchProject, trigger, tuiConfig, visibleItems]);
+  }, [append, beginModelWizard, executeBuiltin, modelWizard, openSecondary, openSessionById, props.configPath, props.profiles, props.runtime, refreshCustomEndpoint, secondary, selectedIndex, setInput, state.cursor, state.input, switchModel, switchPermissionMode, switchProject, switchTheme, trigger, tuiConfig, visibleItems]);
 
   const abortTurn = useCallback(() => {
     abortingRef.current = true;
@@ -611,8 +943,26 @@ export function TuiApp(props: TuiAppProps) {
       setQuestion(null);
       setInput("");
     }
+    if (pendingApproval) {
+      pendingApproval.resolve("cancel");
+      setPendingApproval(null);
+      setInput("");
+    }
     props.runtime.abort();
-  }, [props.runtime, question, setInput]);
+  }, [pendingApproval, props.runtime, question, setInput]);
+
+  const scrollBy = useCallback((delta: number) => {
+    setScrollback((current) => {
+      const limit = Math.max(0, transcriptLengthRef.current - 1);
+      if (current <= 0 && delta <= 0) return 0;
+      const next = current <= 0 && delta > 0 ? 1 : current + delta;
+      return Math.max(0, Math.min(next, limit));
+    });
+  }, []);
+
+  const toggleScrollback = useCallback(() => {
+    setScrollback((current) => (current > 0 ? 0 : 1));
+  }, []);
 
   const closePalette = useCallback(() => {
     if (secondary === "wizard-models") {
@@ -634,9 +984,13 @@ export function TuiApp(props: TuiAppProps) {
   return (
     <Box flexDirection="column">
       <Header snapshot={snapshot} running={state.running} expanded={!paletteOpen && !modelWizard && !conversationStarted} />
-      <Transcript entries={state.transcript} />
+      <Transcript entries={state.transcript} offset={scrollback} />
       <ProgressLine progress={state.progress} />
+      {pendingApproval ? <ApprovalPrompt request={pendingApproval.request} mode={tuiConfig.permissionMode} /> : null}
       {question ? <InlineQuestion request={question.request} /> : null}
+      {pendingImages.length > 0 ? (
+        <Text color={TUI_THEME.progress}>  🖼 {pendingImages.length} 张图片待发送（下一条消息附上）</Text>
+      ) : null}
       <MessageQueue items={queuedInputs} />
       {modelWizard ? <ModelWizard state={modelWizard} /> : null}
       <Box
@@ -649,8 +1003,11 @@ export function TuiApp(props: TuiAppProps) {
           cursor={state.cursor}
           running={state.running}
           questionActive={Boolean(question)}
+          approvalActive={Boolean(pendingApproval)}
           paletteOpen={paletteOpen}
           nativeCursor={props.nativeCursor}
+          scrollback={scrollback > 0}
+          vimMode={tuiConfig.vimMode}
           inputMode={modelWizard
             ? modelWizard.step === "url"
               ? "model-url"
@@ -663,6 +1020,10 @@ export function TuiApp(props: TuiAppProps) {
           onChange={setInput}
           onSubmit={() => void submit()}
           onHistory={(direction) => dispatch({ type: "history", direction })}
+          onPageUp={() => scrollBy(20)}
+          onPageDown={() => scrollBy(-20)}
+          onToggleScrollback={toggleScrollback}
+          onCloseScrollback={() => setScrollback(0)}
           onPaletteMove={(direction) => {
             setTimeout(() => setSelectedIndex((value) => {
               if (visibleItems.length === 0) return 0;

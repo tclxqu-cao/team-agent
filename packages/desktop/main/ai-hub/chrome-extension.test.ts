@@ -7,7 +7,7 @@ function setup(siteId = "chatgpt") {
   let url = siteId === "gemini" ? "https://gemini.google.com/app" : "https://chatgpt.com/";
   let acceptSubmit = true;
   let draft = "";
-  const messages: Array<{ id: string; role: string; content: string; plainText: string }> = [];
+  const messages: Array<{ id: string; messageId?: string; role: string; content: string; plainText: string }> = [];
   const snapshot = () => ({ conversationId: "/", messages: messages.map((m) => ({ ...m })), userCount: messages.filter((m) => m.role === "user").length, generating: false, composerAvailable: true, draft });
   const api = {
     debugger: {
@@ -83,8 +83,56 @@ describe("Chrome native conversations", () => {
     vi.useFakeTimers();
     const { bridge, api, sent, setAccept } = setup(); await bridge.attach(1); setAccept(false);
     const run = bridge.handleCommand({ id: 2, siteId: "chatgpt", command: "send-message", payload: { text: "hi" } });
-    await vi.advanceTimersByTimeAsync(11000); await run;
+    await vi.advanceTimersByTimeAsync(26000); await run;
     expect(sent).toContainEqual({ type: "reply", id: 2, ok: false, error: "chrome-submit-unconfirmed" });
+    expect(api.debugger.sendCommand.mock.calls.filter(([, method, params]) => method === "Input.dispatchMouseEvent" && params?.type === "mouseReleased")).toHaveLength(1);
+  });
+  it("confirms a new stable message when ChatGPT removes older DOM turns and the user count decreases", async () => {
+    vi.useFakeTimers();
+    const { bridge, api, sent, messages } = setup(); await bridge.attach(1);
+    for (let i = 0; i < 3; i++) messages.push({ id: `${i}:old-${i}`, messageId: `old-${i}`, role: "user", content: "earlier", plainText: "earlier" });
+    const normal = api.debugger.sendCommand.getMockImplementation()!;
+    api.debugger.sendCommand.mockImplementation(async (...args) => {
+      const result = await normal(...args);
+      if (args[1] === "Input.dispatchMouseEvent" && args[2]?.type === "mouseReleased") {
+        const latest = messages.at(-1)!;
+        messages.splice(0, messages.length, { ...latest, id: "0:new-message", messageId: "new-message" });
+      }
+      return result;
+    });
+    const run = bridge.handleCommand({ id: 7, siteId: "chatgpt", command: "send-message", payload: { text: "收到了" } });
+    await vi.advanceTimersByTimeAsync(2500); await run;
+    expect(messages).toHaveLength(1);
+    expect(sent).toContainEqual({ type: "reply", id: 7, ok: true, result: { submitted: true } });
+    expect(api.debugger.sendCommand.mock.calls.filter(([, method, params]) => method === "Input.dispatchMouseEvent" && params?.type === "mouseReleased")).toHaveLength(1);
+  });
+  it("does not mistake a previous identical message for a new send when history loads and its display index changes", async () => {
+    vi.useFakeTimers();
+    const { bridge, api, sent, messages, setAccept, setDraft } = setup(); await bridge.attach(1); setAccept(false);
+    messages.push({ id: "0:previous", messageId: "previous", role: "user", content: "收到了", plainText: "收到了" });
+    const normal = api.debugger.sendCommand.getMockImplementation()!;
+    api.debugger.sendCommand.mockImplementation(async (...args) => {
+      const result = await normal(...args);
+      if (args[1] === "Input.dispatchMouseEvent" && args[2]?.type === "mouseReleased") {
+        messages[0].id = "1:previous";
+        messages.unshift({ id: "0:older", messageId: "older", role: "user", content: "older", plainText: "older" });
+        setDraft("");
+      }
+      return result;
+    });
+    const run = bridge.handleCommand({ id: 8, siteId: "chatgpt", command: "send-message", payload: { text: "收到了" } });
+    await vi.advanceTimersByTimeAsync(26000); await run;
+    expect(sent).toContainEqual({ type: "reply", id: 8, ok: false, error: "chrome-submit-unconfirmed" });
+  });
+  it("confirms a delayed website receipt after the former ten-second window without resending", async () => {
+    vi.useFakeTimers();
+    const { bridge, api, sent, messages, setAccept, setDraft } = setup(); await bridge.attach(1); setAccept(false);
+    const run = bridge.handleCommand({ id: 9, siteId: "chatgpt", command: "send-message", payload: { text: "delayed" } });
+    await vi.advanceTimersByTimeAsync(12000);
+    expect(sent.some(message => message.type === "reply")).toBe(false);
+    messages.push({ id: "new", messageId: "new", role: "user", content: "delayed", plainText: "delayed" }); setDraft("");
+    await vi.advanceTimersByTimeAsync(2000); await run;
+    expect(sent).toContainEqual({ type: "reply", id: 9, ok: true, result: { submitted: true } });
     expect(api.debugger.sendCommand.mock.calls.filter(([, method, params]) => method === "Input.dispatchMouseEvent" && params?.type === "mouseReleased")).toHaveLength(1);
   });
   it("does not acknowledge an optimistic message that the website rolls back", async () => {

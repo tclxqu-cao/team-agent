@@ -1,7 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { createPortal } from "react-dom";
-import { ExternalLink, Hand, LoaderCircle, MonitorUp, MousePointer2, RotateCcw, X, ZoomIn, ZoomOut } from "lucide-react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createPortal, flushSync } from "react-dom";
+import { ExternalLink, Hand, Keyboard, LoaderCircle, MonitorUp, MousePointer2, RotateCcw, X, ZoomIn, ZoomOut } from "lucide-react";
 import type { BrowserLiveSession } from "../global";
+
+import { BrowserLiveTouch } from "./browser-live-touch";
 
 interface BrowserFrame {
   sessionId: string;
@@ -67,7 +69,22 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
   const viewportRef = useRef<HTMLDivElement>(null);
   const panStart = useRef<{ x: number; y: number; left: number; top: number } | null>(null);
   const pointerDown = useRef(false);
+  const touch = useRef(new BrowserLiveTouch());
+  const zoomRef = useRef(zoom);
+  const zoomAnchor = useRef<{ x: number; y: number; clientX: number; clientY: number } | null>(null);
+  useLayoutEffect(() => {
+    zoomRef.current = zoom;
+    const anchor = zoomAnchor.current;
+    const element = viewportRef.current;
+    const image = element?.querySelector<HTMLElement>(".browser-live-image-hit-area");
+    if (!anchor || !element || !image) return;
+    const rect = image.getBoundingClientRect();
+    element.scrollLeft += rect.left + anchor.x * rect.width - anchor.clientX;
+    element.scrollTop += rect.top + anchor.y * rect.height - anchor.clientY;
+    zoomAnchor.current = null;
+  }, [zoom]);
   const textInputRef = useRef<HTMLInputElement>(null);
+  const [imeOn, setImeOn] = useState(false);
 
   const selected = useMemo(
     () => sessions.find((session) => session.id === selectedId) ?? null,
@@ -84,6 +101,8 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
     setZoom(1);
     setPanMode(false);
     panStart.current = null;
+    touch.current.reset();
+    zoomAnchor.current = null;
     viewportRef.current?.scrollTo(0, 0);
   }, [open, selectedId]);
 
@@ -105,6 +124,26 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
     element.addEventListener("wheel", preventLocalScroll, { passive: false });
     return () => element.removeEventListener("wheel", preventLocalScroll);
   }, [open, hasControl, panMode]);
+
+  // The soft keyboard only summons from a real user gesture (click), so the
+  // toolbar keyboard button owns it; drop the IME when control or pan changes.
+  const toggleIme = useCallback(() => {
+    const input = textInputRef.current;
+    if (!input) return;
+    if (imeOn) {
+      input.blur();
+      setImeOn(false);
+    } else {
+      input.focus({ preventScroll: true });
+      setImeOn(true);
+    }
+  }, [imeOn]);
+  useEffect(() => {
+    if ((!hasControl || panMode) && imeOn) {
+      textInputRef.current?.blur();
+      setImeOn(false);
+    }
+  }, [hasControl, panMode, imeOn]);
   const frameSrc = useMemo(() => {
     if (!frame) return null;
     if (typeof frame.data === "string") return `data:${frame.mime};base64,${frame.data}`;
@@ -261,7 +300,7 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
         : "Agent 开始浏览网页后，会话会出现在这里";
 
   return createPortal(
-    <div className="browser-live-backdrop" role="presentation" onMouseDown={(event) => {
+    <div className="browser-live-backdrop" data-tab-swipe-ignore role="presentation" onMouseDown={(event) => {
       if (event.target === event.currentTarget) onClose();
     }}>
       <section className={`browser-live-panel ${sessions.length > 1 ? "has-session-tabs" : ""}`} role="dialog" aria-modal="true" aria-label="浏览器直播">
@@ -301,27 +340,35 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
           </div>
         )}
 
-        <div className={`browser-live-surface ${hasControl ? "is-controlling" : ""} ${isDesktop ? "has-zoom" : ""}`}>
-          {isDesktop && (
+        <div className={`browser-live-surface ${hasControl ? "is-controlling" : ""} has-zoom`}>
+          {(
             <div className="browser-live-zoom" role="group" aria-label="桌面画面缩放">
               <button type="button" aria-label="缩小桌面画面" title="缩小" disabled={!frame || zoom <= 0.5} onClick={() => setZoom((value) => Math.max(0.5, value - 0.25))}><ZoomOut size={16} /></button>
               <output aria-label="桌面缩放比例">{Math.round(zoom * 100)}%</output>
-              <button type="button" aria-label="放大桌面画面" title="放大" disabled={!frame || zoom >= 3} onClick={() => setZoom((value) => Math.min(3, value + 0.25))}><ZoomIn size={16} /></button>
+              <button type="button" aria-label="放大桌面画面" title="放大" disabled={!frame || zoom >= 5} onClick={() => setZoom((value) => Math.min(5, value + 0.25))}><ZoomIn size={16} /></button>
               <button type="button" disabled={!frame} onClick={() => { setZoom(1); setPanMode(false); viewportRef.current?.scrollTo(0, 0); }}>适应窗口</button>
               <button type="button" aria-label="移动桌面画面" aria-pressed={panMode} title="拖动或滚动画面，不发送远程输入" disabled={!frame} onClick={() => setPanMode((value) => !value)}><Hand size={15} />移动画面</button>
+              <button type="button" aria-label="唤起键盘" aria-pressed={imeOn} title="唤起手机键盘输入文字" disabled={!frame || !hasControl} onClick={toggleIme}><Keyboard size={15} />键盘</button>
             </div>
           )}
+          <div className="browser-live-touch-hint">双指缩放 · 单指移动画面 · 开始控制后轻点操作</div>
           <div ref={viewportRef} className="browser-live-viewport">
             {frame && frameSrc ? (
               <div
                 className="browser-live-image-hit-area"
-                style={isDesktop && fitScale && viewport ? {
+                style={fitScale && viewport ? {
                   width: viewport.width * fitScale * zoom,
                   height: viewport.height * fitScale * zoom,
                   cursor: panMode ? "grab" : undefined,
                 } : undefined}
                 tabIndex={hasControl && !panMode ? 0 : -1}
                 onPointerDown={(event) => {
+                  if (event.pointerType === "touch") {
+                    event.preventDefault();
+                    touch.current.down(event.pointerId, { x: event.clientX, y: event.clientY });
+                    event.currentTarget.setPointerCapture(event.pointerId);
+                    return;
+                  }
                   if (panMode && viewportRef.current) {
                     const element = viewportRef.current;
                     panStart.current = { x: event.clientX, y: event.clientY, left: element.scrollLeft, top: element.scrollTop };
@@ -337,6 +384,28 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
                   sendInput({ kind: "pointer", action: "down", ...point, button: "left" });
                 }}
                 onPointerMove={(event) => {
+                  if (event.pointerType === "touch") {
+                    event.preventDefault();
+                    const movement = touch.current.move(event.pointerId, { x: event.clientX, y: event.clientY });
+                    const element = viewportRef.current;
+                    if (!movement || !element) return;
+                    const nextZoom = Math.max(0.5, Math.min(5, zoomRef.current * movement.scale));
+                    if (nextZoom !== zoomRef.current) {
+                      const rect = event.currentTarget.getBoundingClientRect();
+                      zoomAnchor.current = {
+                        x: (movement.from.x - rect.left) / rect.width,
+                        y: (movement.from.y - rect.top) / rect.height,
+                        clientX: movement.to.x, clientY: movement.to.y,
+                      };
+                      zoomRef.current = nextZoom;
+                      // Commit geometry before the next finger move reads its anchor.
+                      flushSync(() => setZoom(nextZoom));
+                    } else {
+                      element.scrollLeft += movement.from.x - movement.to.x;
+                      element.scrollTop += movement.from.y - movement.to.y;
+                    }
+                    return;
+                  }
                   if (panMode && panStart.current && viewportRef.current) {
                     const start = panStart.current;
                     viewportRef.current.scrollTo(start.left + start.x - event.clientX, start.top + start.y - event.clientY);
@@ -347,13 +416,29 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
                   if (point) sendInput({ kind: "pointer", action: "move", ...point, button: "left" });
                 }}
                 onPointerUp={(event) => {
+                  if (event.pointerType === "touch") {
+                    event.preventDefault();
+                    const tap = touch.current.up(event.pointerId, { x: event.clientX, y: event.clientY });
+                    const point = pointerCoordinates(event);
+                    if (tap && point && hasControl && !panMode) {
+                      sendInput({ kind: "pointer", action: "down", ...point, button: "left" });
+                      sendInput({ kind: "pointer", action: "up", ...point, button: "left" });
+                    }
+                    return;
+                  }
                   if (panMode) { panStart.current = null; return; }
                   if (!hasControl) return;
                   const point = pointerCoordinates(event);
                   pointerDown.current = false;
                   if (point) sendInput({ kind: "pointer", action: "up", ...point, button: "left" });
                 }}
-                onPointerCancel={() => { panStart.current = null; pointerDown.current = false; }}
+                onPointerCancel={(event) => {
+                  touch.current.up(event.pointerId, { x: event.clientX, y: event.clientY }, true);
+                  panStart.current = null; pointerDown.current = false;
+                }}
+                onLostPointerCapture={(event) => {
+                  touch.current.up(event.pointerId, { x: event.clientX, y: event.clientY }, true);
+                }}
                 onWheel={(event) => {
                   if (!hasControl || panMode) return;
                   const point = pointerCoordinates(event);
@@ -361,11 +446,16 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
                 }}
                 onKeyDown={(event) => {
                   if (!hasControl || panMode) return;
+                  // Printable chars typed into the hidden IME input bubble up
+                  // here; they are delivered once through onChange instead.
+                  if (event.target === textInputRef.current && event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) return;
                   sendInput({ kind: "key", action: "down", key: event.key, code: event.code, text: event.key.length === 1 ? event.key : "", modifiers: modifierNames(event) });
                   if (["Backspace", "Tab", "Enter", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "PageUp", "PageDown", "Home", "End", "Escape"].includes(event.key)) event.preventDefault();
                 }}
                 onKeyUp={(event) => {
-                  if (hasControl && !panMode) sendInput({ kind: "key", action: "up", key: event.key, code: event.code, modifiers: modifierNames(event) });
+                  if (!hasControl || panMode) return;
+                  if (event.target === textInputRef.current && event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) return;
+                  if (hasControl) sendInput({ kind: "key", action: "up", key: event.key, code: event.code, modifiers: modifierNames(event) });
                 }}
               >
                 <img src={frameSrc} alt={selected?.title || "浏览器实时画面"} draggable={false} />
@@ -374,6 +464,12 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
                   className="browser-live-mobile-input"
                   aria-label="浏览器键盘输入"
                   value=""
+                  inputMode="text"
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  autoComplete="off"
+                  spellCheck={false}
+                  onBlur={() => setImeOn(false)}
                   onChange={(event) => {
                     if (!panMode && event.target.value) sendInput({ kind: "key", action: "down", text: event.target.value, key: "", code: "", modifiers: [] });
                   }}

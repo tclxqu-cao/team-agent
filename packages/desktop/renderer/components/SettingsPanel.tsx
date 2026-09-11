@@ -29,6 +29,8 @@ export default function SettingsPanel() {
 
   const [notice, setNotice] = useState<string | null>(null);
   const [noticeType, setNoticeType] = useState<"success" | "error">("success");
+  const [contextTokensDraft, setContextTokensDraft] = useState(String(Math.round((contextWindow ?? 100) * 1000)));
+  useEffect(() => { setContextTokensDraft(String(Math.round((contextWindow ?? 100) * 1000))); }, [contextWindow]);
 
   // Profile editor state
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -50,7 +52,7 @@ export default function SettingsPanel() {
       name: p.name,
       provider: p.provider,
       modelId: p.modelId,
-      apiKey: p.apiKey === "managed" ? "" : p.apiKey,
+      apiKey: ["managed", "__agentroam_stored_secret__"].includes(p.apiKey) ? "" : p.apiKey,
       baseUrl: p.baseUrl,
     });
   };
@@ -89,6 +91,14 @@ export default function SettingsPanel() {
 
   const handleSaveGeneral = async () => {
     setNotice(null);
+    const tokens = Number(contextTokensDraft);
+    if (!Number.isInteger(tokens) || tokens < 1024 || tokens > 2_000_000) {
+      setNotice("上下文窗口请输入 1024 到 2000000 之间的整数 tokens，例如 8192。");
+      setNoticeType("error");
+      return;
+    }
+    // Persist K tokens for compatibility with existing settings and consumers.
+    setField("contextWindow", tokens / 1000);
     try {
       await saveToSystem();
       setNotice("设置保存成功");
@@ -239,14 +249,15 @@ export default function SettingsPanel() {
               style={inputStyle}
             />
           </Field>
-          <Field label="上下文窗口（K tokens）">
+          <Field label="上下文窗口（tokens，输入与输出合计）">
             <input
               type="number"
-              value={contextWindow ?? 100}
-              onChange={(e) => setField("contextWindow", parseInt(e.target.value) || 100)}
-              min={8} max={2000}
+              value={contextTokensDraft}
+              onChange={(e) => setContextTokensDraft(e.target.value)}
+              min={1024} max={2000000} step={1}
               style={inputStyle}
             />
+            <div style={{ fontSize: 12, opacity: 0.65 }}>8K 模型填 8192；不能超过模型服务实际启动的上下文大小。</div>
           </Field>
 
 

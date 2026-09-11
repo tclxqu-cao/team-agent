@@ -8,7 +8,7 @@ CLI、常驻 WebApp 和 Desktop 共用一个 AgentRoam 版本。原生 CI 分别
 
 本地 preflight 和测试不得发布 npm、移动 dist-tag、推送 Git tag 或创建 Gitee Release。远程发布仍由显式 workflow 执行，保持六个平台包先于 launcher，并在 Gitee 资产验证与 soak 完成后才移动 `latest`。
 
-支持平台：macOS arm64、Windows 10/11 x64，运行时固定使用 Node.js 22。
+支持平台：macOS arm64、Windows 10/11 x64，只要求 Node.js >=22.22.0，不限制更高主版本。
 全部构建和打包在 macOS arm64 完成；Windows 只下载同一批产物做实机验证，
 不安装 Bun、Python、Visual Studio Build Tools，也不运行 `node-gyp`。
 
@@ -26,12 +26,13 @@ PATH=/path/to/node-v22/bin:$PATH npm run pack:cli:all
 
 runtime tarball 在打包时静态校验 native 文件格式和架构：macOS 必须为
 Mach-O arm64，Windows 必须为 PE32+ x86-64。Windows `better-sqlite3` 和
-`node-pty` 必须命中 Node 22 ABI 127 的预编译文件，缺失时直接中止打包。
+`node-pty` 使用匹配平台和架构的 Node-API 预构建文件，缺失时直接中止打包。
+runtime manifest v2 声明最低 Node 版本，不再限定 Node 22 / ABI 127；同一平台包在多个 Node 版本下运行验证。
 
 ## 安装器与常驻服务
 
 版本化 `install-agentroam.sh` / `install-agentroam.ps1` 用于首次安装、升级和
-修复。安装器校验 Node 22 和精确 CLI 后，默认注册当前用户服务、启动并验证
+修复。安装器校验 Node 最低版本和精确 CLI 后，默认注册当前用户服务、启动并验证
 ready 状态；日常启停使用 `agentroam service start|stop|restart|status`。
 重复安装会先停止已有服务，等待旧进程和平台注册退出，再注册新版本；
 不删除数据目录中的会话、配对状态、托管运行时和日志。

@@ -36,8 +36,8 @@ describe("platform packages", () => {
     writeFileSync(manifestPath, JSON.stringify({
       packageVersion: AGENTROAM_VERSION,
       target: "windows-amd64",
-      nodeMajor: 22,
-      nodeModuleAbi: 127,
+      schemaVersion: 2,
+      minimumNodeVersion: "22.22.0",
       nativeFiles: { "node_modules/example.node": "a".repeat(64) },
     }));
 
@@ -58,8 +58,8 @@ describe("platform packages", () => {
     writeFileSync(manifestPath, JSON.stringify({
       packageVersion: "0.0.0",
       target: "darwin-arm64",
-      nodeMajor: 22,
-      nodeModuleAbi: 127,
+      schemaVersion: 2,
+      minimumNodeVersion: "22.22.0",
       nativeFiles: {},
     }));
     expect(() => resolvePlatformRuntime("windows-amd64", fakeRequire({
@@ -71,6 +71,18 @@ describe("platform packages", () => {
   it("resolves the target TUI entry", () => {
     const entry = resolvePlatformTui("windows-amd64", fakeRequire({ "/entry": "C:\\agentroam\\agent-tui.js" }));
     expect(entry).toBe("C:\\agentroam\\agent-tui.js");
+  });
+
+  it("rejects legacy ABI manifests even when their release version matches", () => {
+    const root = mkdtempSync(resolve(tmpdir(), "agentroam-runtime-legacy-"));
+    const manifestPath = resolve(root, "manifest.json");
+    writeFileSync(manifestPath, JSON.stringify({
+      packageVersion: AGENTROAM_VERSION, target: "darwin-arm64",
+      nodeMajor: 22, nodeModuleAbi: 127, nativeFiles: {},
+    }));
+    expect(() => resolvePlatformRuntime("darwin-arm64", fakeRequire({
+      "/manifest.json": manifestPath, "/runtime": resolve(root, "runtime/package.json"),
+    }))).toThrow("invalid AgentRoam runtime manifest");
   });
 });
 

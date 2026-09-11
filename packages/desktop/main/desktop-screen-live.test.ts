@@ -67,6 +67,38 @@ describe("DesktopScreenLive", () => {
     await live.disable();
   });
 
+  it("wakes and holds the display while enabled, releasing on disable", async () => {
+    const gateway = fakeGateway();
+    const keepAwake = { start: vi.fn(), stop: vi.fn() };
+    const live = new DesktopScreenLive({
+      clientFactory: () => fakeClient(),
+      screencast: runningScreencast,
+      input: gateway as never,
+      probeScreen: () => "granted",
+      probeAccessibility: async () => true,
+      keepAwake,
+    });
+    await live.enable();
+    expect(keepAwake.start).toHaveBeenCalledTimes(1);
+    await live.disable();
+    expect(keepAwake.stop).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not hold the display awake when the live source is unavailable", async () => {
+    const gateway = fakeGateway();
+    const keepAwake = { start: vi.fn(), stop: vi.fn() };
+    const live = new DesktopScreenLive({
+      clientFactory: () => fakeClient(),
+      screencast: runningScreencast,
+      input: gateway as never,
+      probeScreen: () => "denied",
+      keepAwake,
+    });
+    await live.enable();
+    expect(keepAwake.start).not.toHaveBeenCalled();
+    await live.disable();
+  });
+
   it("publishes a desktop session and relays ownership state", async () => {
     const gateway = fakeGateway();
     const client = fakeClient();

@@ -30,4 +30,15 @@ describe("terminal readiness lifecycle contract", () => {
   it("queues reset and scrollback after the start response can install its channel", () => {
     expect(wsServerSource).toMatch(/setImmediate\(\(\) => \{[\s\S]*conn\.sendTerminalReset\(id\);[\s\S]*session\.scrollback\.snapshot\(\)/);
   });
+
+  it("marks replay frames explicitly for clients that support silent replay", () => {
+    expect(wsServerSource).toContain("frame[1] = replay ? 6 : 2");
+    expect(wsServerSource).toContain("conn.sendTerminal(id, new Uint8Array(snap), msg.replayFrames === true)");
+    const gatewaySource = readFileSync(new URL("../app/web/useGateway.ts", import.meta.url), "utf8");
+    const paneSource = readFileSync(new URL("../app/web/TerminalPane.tsx", import.meta.url), "utf8");
+    expect(gatewaySource).toContain("handler(frame.subarray(6), frame[1] === 6)");
+    expect(gatewaySource).not.toContain("frame[1] === 4");
+    expect(paneSource).toContain("replayFrames: true");
+    expect(paneSource).toContain("writer.current(bytes, replay)");
+  });
 });

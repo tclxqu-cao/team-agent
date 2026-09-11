@@ -1,3 +1,5 @@
+import { assertSupportedNodeVersion } from "../bin/runtime-policy.mjs";
+
 export type PlatformTarget = "darwin-arm64" | "darwin-amd64" | "windows-amd64";
 
 export function detectPlatformTarget(
@@ -15,9 +17,6 @@ export function detectPlatform(
   arch: string = process.arch,
   nodeVersion: string = process.versions.node,
 ): PlatformTarget {
-  const major = Number(nodeVersion.split(".")[0]);
-  if (major !== 22) {
-    throw Object.assign(new Error(`Node.js 22 required (current ${nodeVersion})`), { exitCode: 2 });
-  }
+  assertSupportedNodeVersion(nodeVersion);
   return detectPlatformTarget(platform, arch);
 }

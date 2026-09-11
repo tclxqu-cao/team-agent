@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { createDesktopDiscovery } from "./lib/desktop-discovery.mjs";
 // ws-server.mjs — custom server for @agent/server.
 // Serves the Next.js app (API + /web console) and multiplexes a WebSocket
 // channel on the SAME port for the remote terminal (PTY) and file services.
@@ -15,6 +16,7 @@
 //   AGENT_WEB_ALLOWED_ORIGINS comma-separated extra browser origins
 //   AGENT_WEB_ROOTS   ":"-separated dirs the file APIs may touch (default: $HOME)
 
+import { ViewerFrameFlow } from "./lib/browser-live/viewer-frame-flow.mjs";
 import { createServer } from "node:http";
 import { randomBytes, randomUUID } from "node:crypto";
 import os from "node:os";
@@ -517,6 +519,12 @@ async function unwatchPath(conn, target) {
 const connections = new Set();
 
 function makeConn(ws) {
+  const browserFrameFlow = new ViewerFrameFlow(
+    ({ channelId, sequence, bytes }) => ws.send(encodeLiveFramePacket({
+      type: LIVE_FRAME_PACKET_TYPE.watcherFrame, channelId, sequence, payload: bytes,
+    })),
+    () => ws.readyState === ws.OPEN && ws.bufferedAmount === 0,
+  );
   return {
     id: randomBytes(8).toString("hex"),
     ws,
@@ -536,15 +544,16 @@ function makeConn(ws) {
     terminalToChannel: new Map(),
     channelToTerminal: new Map(),
     browserPeer: null,
+    browserFrameFlow,
     browserSessionToChannel: new Map(),
     browserChannelToSession: new Map(),
     sendJson(obj) { if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(obj)); },
-    sendTerminal(terminalId, bytes) {
+    sendTerminal(terminalId, bytes, replay = false) {
       if (ws.readyState !== ws.OPEN) return;
       const channelId = assignChannel(this, terminalId);
       const payload = Buffer.from(bytes);
       const frame = Buffer.allocUnsafe(6 + payload.byteLength);
-      frame[0] = 1; frame[1] = 2; frame.writeUInt32BE(channelId, 2); payload.copy(frame, 6);
+      frame[0] = 1; frame[1] = replay ? 6 : 2; frame.writeUInt32BE(channelId, 2); payload.copy(frame, 6);
       ws.send(frame);
     },
     sendTerminalReset(terminalId) {
@@ -556,12 +565,9 @@ function makeConn(ws) {
     },
     sendBrowserFrame(browserSessionId, sequence, bytes) {
       if (ws.readyState !== ws.OPEN) return;
-      ws.send(encodeLiveFramePacket({
-        type: LIVE_FRAME_PACKET_TYPE.watcherFrame,
-        channelId: assignBrowserChannel(this, browserSessionId),
-        sequence,
-        payload: Buffer.from(bytes),
-      }));
+      browserFrameFlow.offer({
+        channelId: assignBrowserChannel(this, browserSessionId), sequence, bytes,
+      });
     },
   };
 }
@@ -680,7 +686,7 @@ const requestHandlers = {
       if (!conn.attachedTo.has(id)) return;
       conn.sendTerminalReset(id);
       const snap = session.scrollback.snapshot();
-      if (snap.byteLength > 0) conn.sendTerminal(id, new Uint8Array(snap));
+      if (snap.byteLength > 0) conn.sendTerminal(id, new Uint8Array(snap), msg.replayFrames === true);
     });
     return { sessionId: id, channelId, cols: session.size.cols, rows: session.size.rows, cwd: currentCwd, ready: session.ready };
   },
@@ -755,10 +761,18 @@ const requestHandlers = {
     data: typeof msg.data === "string" ? Buffer.from(msg.data, "base64") : msg.data,
   }),
   "browser:watch": async (msg, conn) => {
+    conn.browserFrameFlow.reset(msg.frameAck === true);
     const session = liveViewRegistry.watch(conn.browserPeer, msg.sessionId);
     return { session, channelId: assignBrowserChannel(conn, session.id) };
   },
-  "browser:unwatch": async (_msg, conn) => liveViewRegistry.unwatch(conn.browserPeer),
+  "browser:frame-ack": async (msg, conn) => {
+    conn.browserFrameFlow.ack(msg.channelId, msg.sequence);
+    return { accepted: true };
+  },
+  "browser:unwatch": async (_msg, conn) => {
+    conn.browserFrameFlow.reset(false);
+    return liveViewRegistry.unwatch(conn.browserPeer);
+  },
   "browser:takeover": async (msg, conn) => ({ session: liveViewRegistry.takeOver(conn.browserPeer, msg.sessionId) }),
   "browser:return": async (msg, conn) => ({ session: liveViewRegistry.returnControl(conn.browserPeer, msg.sessionId) }),
   "browser:input": async (msg, conn) => {
@@ -1116,7 +1130,9 @@ async function serveTicketedFilePreview(req, res) {
   return true;
 }
 
+const desktopDiscovery = createDesktopDiscovery({ dataDir: serverBaseDir });
 const server = createServer((req, res) => {
+  if (desktopDiscovery.handle(req, res)) return;
   void serveTicketedFilePreview(req, res)
     .then((handled) => handled || serveWebApp(req, res))
     .then((handled) => { if (!handled) handle(req, res); })
@@ -1206,6 +1222,7 @@ wss.on("connection", (ws, _req, principal) => {
   });
 
   ws.on("close", () => {
+    conn.browserFrameFlow.reset(false);
     liveViewRegistry.disconnect(conn.browserPeer);
     connections.delete(conn);
     for (const id of [...conn.attachedTo]) {
@@ -1221,7 +1238,16 @@ wss.on("connection", (ws, _req, principal) => {
   });
 });
 
+server.on("close", () => { void desktopDiscovery.close(); });
 server.listen(port, () => {
+  void desktopDiscovery.publish(server.address().port).catch(() => console.error("Desktop service discovery could not be published"));
+  // Load the server-owned Customer runtime (including persisted schedules)
+  // without requiring a desktop/browser visit after a service restart.
+  void fetch(`http://127.0.0.1:${server.address().port}/api/agent/model`, {
+    signal: AbortSignal.timeout(60_000),
+  }).then((response) => {
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  }).catch((error) => console.error("Customer runtime initialization failed", error));
   const urls = [];
   for (const list of Object.values(os.networkInterfaces())) {
     for (const net of list || []) {

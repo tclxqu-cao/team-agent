@@ -1,5 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createPinnedCommand, movePinnedCommand } from "./pinnedCommands";
+import { validatePinnedCommands } from "../../../core/src/domain/web-console/pinned-commands";
+
+afterEach(() => vi.unstubAllGlobals());
 
 describe("pinned command ordering", () => {
   const commands = [
@@ -19,5 +22,14 @@ describe("pinned command ordering", () => {
 
   it("trims a manually entered command", () => {
     expect(createPinnedCommand("  npm test  ", "test")).toEqual({ id: "test", command: "npm test" });
+  });
+
+  it("creates distinct persistable commands on HTTP pages without randomUUID", () => {
+    const getRandomValues = globalThis.crypto.getRandomValues.bind(globalThis.crypto);
+    vi.stubGlobal("crypto", { getRandomValues });
+    const first = createPinnedCommand("npm test");
+    const second = createPinnedCommand("npm run dev");
+    expect(first.id).not.toBe(second.id);
+    expect(validatePinnedCommands([first, second])).toEqual([first, second]);
   });
 });

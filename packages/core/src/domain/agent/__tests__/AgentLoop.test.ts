@@ -1,7 +1,8 @@
 import { describe, it, expect, vi } from "vitest";
 import { AgentLoop } from '../AgentLoop.js';
 import type { AgentConfig, AgentEvent } from '../entities.js';
-import type { IModelProvider, StreamEvent } from '../../model/entities.js';
+import type { IModelProvider, StreamEvent, Message, StreamOptions } from '../../model/entities.js';
+import { estimateRequestTokens } from '../../model/tokenBudget.js';
 import type { IToolRegistry, IToolExecutor, ToolContext, ToolResult } from '../../tool/entities.js';
 import type { IContextAssembler, AssembledContext } from '../../context/entities.js';
 import type { IMemoryStore } from '../../memory/entities.js';
@@ -93,6 +94,64 @@ function createConfig(overrides?: Partial<AgentConfig>): AgentConfig {
 }
 
 describe("AgentLoop", () => {
+  it("caps an oversized setting to the runtime 8192 window and reserves output and native tools", async () => {
+    const model = createMockModel();
+    model.getContextWindow = async () => 8192;
+    model.countRequestTokens = async (messages, tools) => estimateRequestTokens(messages, tools);
+    let options: StreamOptions | undefined;
+    model.streamChat = async function* (messages, opts) {
+      options = opts;
+      expect(estimateRequestTokens(messages, opts?.tools) + opts!.maxTokens!).toBeLessThan(8192);
+      yield { type: "text_chunk", text: "OK" };
+    };
+    const assembler = createMockContextAssembler();
+    const assemble = vi.spyOn(assembler, "assemble");
+    const events = [];
+    for await (const event of new AgentLoop(createConfig({ modelProvider: model, contextAssembler: assembler, maxTokens: 8192000 })).run("你好", "8k")) events.push(event);
+    expect(options?.maxTokens).toBe(1024);
+    expect(assemble.mock.calls[0][0].tools).toBe("");
+    expect(assemble.mock.calls[0][0].maxTokens).toBeLessThan(8192 - 1024);
+    expect(events.find((e) => e.type === "context_usage")).toMatchObject({ usage: { maxTokens: 8192 } });
+  });
+
+  it("prunes an oversized recent tool result without breaking the tool exchange", async () => {
+    const model = createMockModel();
+    model.countRequestTokens = async (messages, tools) => estimateRequestTokens(messages, tools);
+    let sent: Message[] = [];
+    let calls = 0;
+    model.streamChat = async function* (messages) {
+      if (calls++ === 0) yield { type: "tool_call", toolCall: { id: "call1", name: "echo", arguments: {} } };
+      else { sent = messages; yield { type: "text_chunk", text: "OK" }; }
+    };
+    const executor = createMockToolRegistry();
+    executor.execute = async () => ({ toolCallId: "call1", content: "中文".repeat(10000) });
+    for await (const _ of new AgentLoop(createConfig({ modelProvider: model, toolExecutor: executor, maxTokens: 8192 })).run("检查文件", "8k")) { /* consume */ }
+    expect(sent.find((m) => m.toolCallId === "call1")?.content.length).toBeLessThan(600);
+    expect(sent.find((m) => m.toolCalls)?.toolCalls?.[0].id).toBe("call1");
+  });
+
+  it("reports fixed overhead exceeding the budget without issuing an invalid chat request", async () => {
+    const model = createMockModel();
+    model.countRequestTokens = async () => 9000;
+    const stream = vi.spyOn(model, "streamChat");
+    const events = [];
+    for await (const e of new AgentLoop(createConfig({ modelProvider: model, maxTokens: 8192 })).run("Hi", "8k")) events.push(e);
+    expect(stream).not.toHaveBeenCalled();
+    expect(events.at(-1)).toMatchObject({ type: "error", code: "context_limit" });
+  });
+
+  it("fits a 7248 token desktop prompt into 8192 by sizing the output to the remaining space", async () => {
+    const model = createMockModel();
+    model.countRequestTokens = async () => 7248;
+    let maxTokens = 0;
+    model.streamChat = async function* (_messages, options) {
+      maxTokens = options!.maxTokens!;
+      yield { type: "text_chunk", text: "OK" };
+    };
+    for await (const _ of new AgentLoop(createConfig({ modelProvider: model, maxTokens: 8192 })).run("Hi", "8k")) { /* consume */ }
+    expect(maxTokens).toBe(688);
+  });
+
   it("should complete a simple run without tools", async () => {
     const loop = new AgentLoop(createConfig());
     const events: AgentEvent[] = [];
@@ -369,5 +428,20 @@ describe("AgentLoop", () => {
 
     const doneEvent = events.find((e) => e.type === "done");
     expect(doneEvent).toBeDefined();
+  });
+});
+
+describe('private Harness context observer', () => {
+  it('observes the actual request context without changing public events or propagating observer failure', async () => {
+    const observations: unknown[] = [];
+    const agent = new AgentLoop(createConfig({ diagnosticObserver: (sessionId, observation) => {
+      expect(sessionId).toBe('diagnostic-session'); observations.push(observation); throw new Error('storage unavailable');
+    } }));
+    const events: AgentEvent[] = [];
+    for await (const event of agent.run('keep user constraint', 'diagnostic-session')) events.push(event);
+    expect(observations).toEqual(expect.arrayContaining([expect.objectContaining({ type: 'request_context', iteration: 1,
+      messages: expect.arrayContaining([expect.objectContaining({ preview: 'keep user constraint' })]) })]));
+    expect(events.some(event => event.type === 'done')).toBe(true);
+    expect(events.some(event => event.type === 'error')).toBe(false);
   });
 });

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import {
   isToolPermissionMode,
+  readSessionGoalState,
   normalizeToolPermissionMode,
   paginateSessionHistory,
   StaleSessionAnchorError,
@@ -105,7 +106,7 @@ export async function GET(
           permissionMode: normalizeToolPermissionMode(session.metadata.permissionMode),
           ...(activeRun ? { activeRun } : {}),
         };
-    return NextResponse.json(hydrated);
+    return NextResponse.json({ ...hydrated, messageQueueVersion: 1, goalState: readSessionGoalState(session.metadata) });
   } catch (error) {
     if (error instanceof StaleSessionAnchorError) {
       return NextResponse.json({ error: error.message, code: error.code }, { status: 409 });

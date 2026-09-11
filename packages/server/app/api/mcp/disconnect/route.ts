@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
-import { MCPManager } from "@agent/core";
+import { businessCatalog } from "../../../../lib/business-catalog";
 
-const mcpManager = new MCPManager();
 
 export async function DELETE(request: Request) {
   const url = new URL(request.url);
@@ -9,6 +8,6 @@ export async function DELETE(request: Request) {
   if (!serverId) {
     return NextResponse.json({ error: "serverId is required" }, { status: 400 });
   }
-  await mcpManager.disconnectServer(serverId);
+  await businessCatalog().mcp.setEnabled(serverId, false);
   return NextResponse.json({ status: "disconnected" });
 }

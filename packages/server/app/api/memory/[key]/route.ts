@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
-import { FileSystemMemoryStore } from "@agent/core";
 
-const memoryStore = new FileSystemMemoryStore(process.cwd());
+
+import { businessCatalog } from "../../../../lib/business-catalog";
+const memoryStore = businessCatalog().memory;
 
 export async function GET(
   _request: Request,

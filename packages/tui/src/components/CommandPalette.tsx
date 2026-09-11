@@ -18,16 +18,19 @@ export function CommandPalette({
   items,
   selectedIndex,
   title,
-  maxRows = 12,
+  maxRows,
 }: {
   items: PaletteItem[];
   selectedIndex: number;
   title?: string;
   maxRows?: number;
 }) {
+  // Small lists (e.g. the root palette with all commands and skills) render in
+  // full so nothing hides below the fold; larger lists scroll around the caret.
+  const rows = maxRows ?? Math.min(Math.max(items.length, 1), 24);
   const selected = Math.max(0, Math.min(selectedIndex, Math.max(0, items.length - 1)));
-  const start = Math.max(0, Math.min(selected - Math.floor(maxRows / 2), Math.max(0, items.length - maxRows)));
-  const visible = items.slice(start, start + maxRows);
+  const start = Math.max(0, Math.min(selected - Math.floor(rows / 2), Math.max(0, items.length - rows)));
+  const visible = items.slice(start, start + rows);
   let previousKind: PaletteItem["kind"] | null = null;
   return (
     <Box

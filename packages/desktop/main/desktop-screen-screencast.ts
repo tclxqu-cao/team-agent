@@ -41,8 +41,12 @@ export class DesktopScreenScreencast implements LiveScreencastPort {
   private running = false;
   private viewport: LiveViewViewport | null = null;
   private pointerDown = false;
+  private wakeCapture: (() => void) | null = null;
+  private refreshUntil = 0;
+  private encodingQuality: number;
+  private nextQualityProbe = 0;
 
-  constructor({ input, displayInfo, captureSources, primaryDisplayId = () => null, fps = 4, quality = 65, maxWidth = 1440, maxHeight = 900, firstFrameTimeoutMs = 4_000, now = () => Date.now(), sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)) }: {
+  constructor({ input, displayInfo, captureSources, primaryDisplayId = () => null, fps = 4, quality = 90, maxWidth = 3840, maxHeight = 2160, firstFrameTimeoutMs = 4_000, now = () => Date.now(), sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)) }: {
     input: DesktopInputSink;
     displayInfo: () => DesktopDisplayInfo;
     captureSources: CaptureDesktopSources;
@@ -61,6 +65,7 @@ export class DesktopScreenScreencast implements LiveScreencastPort {
     this.primaryDisplayId = primaryDisplayId;
     this.pacer = new LiveViewFramePacer({ fps });
     this.quality = quality;
+    this.encodingQuality = quality;
     this.maxWidth = maxWidth;
     this.maxHeight = maxHeight;
     this.firstFrameTimeoutMs = firstFrameTimeoutMs;
@@ -78,18 +83,26 @@ export class DesktopScreenScreencast implements LiveScreencastPort {
     while (this.running) {
       const frameStartedAt = this.now();
       let jpeg: Buffer | null = null;
-      let pixelWidth = 0;
-      let pixelHeight = 0;
+      const display = this.displayInfo();
       try {
         const sources = await this.captureSources(this.#thumbnailSize(display));
         const source = this.#pickPrimary(sources);
         if (source?.thumbnail) {
-          const candidate = source.thumbnail.toJPEG(this.quality);
-          if (candidate.byteLength >= 16) {
-            jpeg = candidate;
-            const size = source.thumbnail.getSize();
-            pixelWidth = size.width;
-            pixelHeight = size.height;
+          // Preserve text resolution first; lower JPEG quality only when the
+          // shared live-view transport's 640 KiB frame limit requires it.
+          // Reuse the last fitting quality instead of recompressing an entire
+          // 4K frame at several rejected qualities on every capture.
+          if (this.now() >= this.nextQualityProbe) {
+            this.encodingQuality = Math.min(this.quality, this.encodingQuality + 10);
+            this.nextQualityProbe = this.now() + 2_000;
+          }
+          for (let quality = this.encodingQuality; quality >= 10; quality -= 10) {
+            const candidate = source.thumbnail.toJPEG(quality);
+            if (candidate.byteLength >= 16 && candidate.byteLength <= 640 * 1024) {
+              jpeg = candidate;
+              this.encodingQuality = quality;
+              break;
+            }
           }
         }
       } catch {
@@ -99,8 +112,9 @@ export class DesktopScreenScreencast implements LiveScreencastPort {
         receivedFrame = true;
         const scaleFactor = display.scaleFactor || 1;
         this.viewport = {
-          width: Math.max(1, Math.round(pixelWidth / scaleFactor)),
-          height: Math.max(1, Math.round(pixelHeight / scaleFactor)),
+          // CGEvent uses logical screen coordinates, not thumbnail pixels.
+          width: display.width,
+          height: display.height,
           deviceScaleFactor: scaleFactor,
         };
         const sendStartedAt = this.now();
@@ -117,27 +131,29 @@ export class DesktopScreenScreencast implements LiveScreencastPort {
       }
       if (!this.running) return;
       const elapsed = this.now() - frameStartedAt;
-      await this.sleep(Math.max(0, 1_000 / this.pacer.targetFps - elapsed));
+      // Input briefly accelerates capture; idle viewing retains the normal
+      // adaptive rate. The viewer ACK still bounds downstream image traffic.
+      const interval = this.now() < this.refreshUntil ? 80 : 1_000 / this.pacer.targetFps;
+      await this.#waitForCapture(Math.max(0, interval - elapsed));
     }
   }
 
   async stop(): Promise<void> {
     this.running = false;
     this.pointerDown = false;
+    this.refreshUntil = 0;
+    this.wakeCapture?.();
   }
 
   async dispatchInput(input: LiveViewInput): Promise<void> {
-    if (!this.viewport) {
-      const display = this.displayInfo();
-      this.viewport = { width: display.width, height: display.height, deviceScaleFactor: display.scaleFactor };
-    }
+    const display = this.displayInfo();
     if (input.kind === "pointer") {
       if (input.action === "wheel") {
         await this.#send({ op: "wheel", deltaX: Math.round(input.deltaX), deltaY: Math.round(input.deltaY) });
         return;
       }
-      const x = Math.round(input.x * this.viewport.width);
-      const y = Math.round(input.y * this.viewport.height);
+      const x = Math.min(display.width - 1, Math.round(input.x * display.width));
+      const y = Math.min(display.height - 1, Math.round(input.y * display.height));
       if (input.action === "down") {
         this.pointerDown = true;
         await this.#send({ op: "down", x, y, button: input.button });
@@ -160,12 +176,30 @@ export class DesktopScreenScreencast implements LiveScreencastPort {
 
   async #send(command: DesktopInputCommand): Promise<void> {
     await this.input.dispatch(command);
+    if (this.running && command.op !== "move") {
+      this.refreshUntil = this.now() + 400;
+      this.wakeCapture?.();
+    }
+  }
+
+  async #waitForCapture(delay: number): Promise<void> {
+    let wake!: () => void;
+    const interrupted = new Promise<void>((resolve) => { wake = resolve; });
+    this.wakeCapture = wake;
+    try {
+      await Promise.race([this.sleep(delay), interrupted]);
+    } finally {
+      if (this.wakeCapture === wake) this.wakeCapture = null;
+    }
   }
 
   #thumbnailSize(display: DesktopDisplayInfo): { width: number; height: number } {
+    const pixelWidth = display.width * (display.scaleFactor || 1);
+    const pixelHeight = display.height * (display.scaleFactor || 1);
+    const scale = Math.min(1, this.maxWidth / pixelWidth, this.maxHeight / pixelHeight);
     return {
-      width: Math.max(1, Math.min(this.maxWidth, display.width)),
-      height: Math.max(1, Math.min(this.maxHeight, display.height)),
+      width: Math.max(1, Math.round(pixelWidth * scale)),
+      height: Math.max(1, Math.round(pixelHeight * scale)),
     };
   }
 

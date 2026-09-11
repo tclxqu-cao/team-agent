@@ -2,6 +2,7 @@ $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
 
 $NodeVersion = "22.22.0"
+$MinimumNodeVersion = "22.22.0"
 $AgentRoamVersion = "0.2.0-preview.16"
 $NodeArchive = "node-v22.22.0-win-x64.zip"
 $NodeSha256 = "c97fa376d2becdc8863fcd3ca2dd9a83a9f3468ee7ccf7a6d076ec66a645c77a"
@@ -27,9 +28,14 @@ if (-not $ServiceRootExplicit -and $ServiceRoot -eq $HomeRoot) {
 
 New-Item -ItemType Directory -Force -Path $NodeParent, $LauncherParent, $WrapperDir | Out-Null
 
-function Test-Node22([string]$NodeBin) {
+function Test-NodeVersion([string]$VersionText) {
+  if ($VersionText -notmatch '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$') { return $false }
+  try { return [Version]($VersionText.Split('+')[0]) -ge [Version]$MinimumNodeVersion } catch { return $false }
+}
+
+function Test-SupportedNode([string]$NodeBin) {
   if (-not (Test-Path -LiteralPath $NodeBin -PathType Leaf)) { return $false }
-  try { return (& $NodeBin -p 'process.versions.node.split(".")[0]' 2>$null) -eq "22" } catch { return $false }
+  try { return Test-NodeVersion ((& $NodeBin -p 'process.versions.node' 2>$null).Trim()) } catch { return $false }
 }
 
 function Get-NvmRoots {
@@ -50,15 +56,15 @@ function Get-NvmRoots {
   @($Candidates | Where-Object { $_ -and (Test-Path -LiteralPath $_ -PathType Container) } | Select-Object -Unique)
 }
 
-function Find-NvmNode22 {
+function Find-NvmNode {
   $VersionMatches = foreach ($NvmRoot in (Get-NvmRoots)) {
     foreach ($VersionDirectory in Get-ChildItem -LiteralPath $NvmRoot -Directory -ErrorAction SilentlyContinue) {
       $Candidate = Join-Path $VersionDirectory.FullName "node.exe"
       if (-not (Test-Path -LiteralPath $Candidate -PathType Leaf)) { continue }
       try {
         $VersionText = (& $Candidate -p 'process.versions.node' 2>$null).Trim()
-        $Version = [Version]$VersionText
-        if ($Version.Major -eq 22) {
+        if (Test-NodeVersion $VersionText) {
+          $Version = [Version]($VersionText.Split('+')[0])
           [pscustomobject]@{ Path = $Candidate; Version = $Version }
         }
       } catch {}
@@ -97,10 +103,10 @@ function Enter-InstallLock([string]$Path) {
 
 $SystemNode = Get-Command node.exe -ErrorAction SilentlyContinue
 if ($env:AGENTROAM_BOOTSTRAP_TEST -eq "1" -and $env:AGENTROAM_FORCE_PRIVATE_NODE -eq "1") { $SystemNode = $null }
-if ($SystemNode -and (Test-Node22 $SystemNode.Source)) {
+if ($SystemNode -and (Test-SupportedNode $SystemNode.Source)) {
   $NodeBin = $SystemNode.Source
 } else {
-  $NvmNode = if ($env:AGENTROAM_BOOTSTRAP_TEST -eq "1" -and $env:AGENTROAM_FORCE_PRIVATE_NODE -eq "1") { $null } else { Find-NvmNode22 }
+  $NvmNode = if ($env:AGENTROAM_BOOTSTRAP_TEST -eq "1" -and $env:AGENTROAM_FORCE_PRIVATE_NODE -eq "1") { $null } else { Find-NvmNode }
   if ($NvmNode) {
     $NodeBin = $NvmNode
     Write-Host "Using Node.js $(& $NodeBin --version) from NVM: $NodeBin"

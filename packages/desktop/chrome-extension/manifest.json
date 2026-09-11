@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "AgentRoam AI Hub — 已有 Chrome 连接",
-  "version": "0.3.4",
+  "version": "0.3.5",
   "description": "自动将已登录的 ChatGPT、Gemini、Grok 标签页连接到本机 AI Hub。登录态留在 Chrome。",
   "minimum_chrome_version": "120",
   "permissions": [

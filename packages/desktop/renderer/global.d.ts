@@ -258,6 +258,7 @@ export interface AgentApi {
   subscribe(): Promise<void>;
   onEvent(callback: (event: unknown) => void): () => void;
   getSettings(): Promise<{
+    revision?: number;
     modelProvider: string;
     modelId: string;
     apiKey: string;

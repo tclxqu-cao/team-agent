@@ -44,7 +44,8 @@ import type {
 import { RuntimeSessionError } from "./types.js";
 
 const execFileAsync = promisify(execFile);
-const OPENCODE_RUNTIME_VERSION = "1.18.27";
+// Kept in sync with the CLI minimum by checkRuntimeVersionDrift.
+const OPENCODE_MINIMUM_VERSION = "1.18.27";
 
 interface ActiveRun {
   queue: AsyncEventQueue<AgentEvent>;
@@ -124,11 +125,17 @@ export class OpenCodeRuntimeAdapter implements AgentRuntimeAdapter {
         timeout: 5_000,
         windowsHide: true,
       });
+      const version = validatedOpenCodeVersion(`${stdout}\n${stderr}`, this.executable);
+      await execFileAsync(this.executable, ["serve", "--help"], {
+        encoding: "utf8",
+        timeout: 5_000,
+        windowsHide: true,
+      });
       return {
         agentType: this.agentType,
         available: true,
         label: "OpenCode",
-        version: validatedOpenCodeVersion(`${stdout}\n${stderr}`, this.executable),
+        version,
       };
     } catch (error) {
       return { agentType: this.agentType, available: false, label: "OpenCode", error: errorMessage(error) };
@@ -743,10 +750,20 @@ function errorMessage(error: unknown): string {
 }
 
 function validatedOpenCodeVersion(output: string, executable: string): string {
-  const version = output.match(/(?:^|\s)(\d+\.\d+\.\d+)(?:\s|$)/)?.[1];
+  const version = output.match(/(?:^|\s)((?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*))(?:\s|$)/)?.[1];
   if (!version) throw new Error(`Unable to parse OpenCode version from ${executable}`);
-  if (version !== OPENCODE_RUNTIME_VERSION) {
-    throw new Error(`OpenCode ${version} at ${executable} is incompatible; AgentRoam requires ${OPENCODE_RUNTIME_VERSION}`);
+  if (!meetsOpenCodeMinimum(version)) {
+    throw new Error(`OpenCode ${version} at ${executable} is incompatible; AgentRoam requires >=${OPENCODE_MINIMUM_VERSION}`);
   }
   return version;
+}
+
+// Compare numeric components, so 1.18.100 and 1.19.0 both exceed 1.18.27.
+function meetsOpenCodeMinimum(version: string): boolean {
+  const actual = version.split(".").map(BigInt);
+  const minimum = OPENCODE_MINIMUM_VERSION.split(".").map(BigInt);
+  for (let index = 0; index < minimum.length; index += 1) {
+    if (actual[index] !== minimum[index]) return actual[index] > minimum[index];
+  }
+  return true;
 }

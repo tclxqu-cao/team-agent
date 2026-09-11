@@ -1,5 +1,6 @@
 import {
   AgentBuilder,
+  HarnessServiceClient,
   ContextCompactor,
   SQLiteSettingsStore,
   SQLiteSessionStore,
@@ -59,6 +60,7 @@ export function shouldInterruptPreviousRun(runCountIncludingCurrent: number): bo
 }
 
 export class AgentHost {
+  private readonly harness = new HarnessServiceClient({ owner: "desktop" });
   private agent: IAgentLoop | null = null;
   private builder: AgentBuilder;
   private readonly settingsStore: SQLiteSettingsStore;
@@ -118,11 +120,11 @@ export class AgentHost {
     this.toolPermissionGate = createSessionPermissionGate({
       sessionStore: this.sessionStore,
       requestApproval: async (request) => {
-        const response = await this.questionManager.create({
+        const response = await this.harness.withUserWait(request.sessionId, () => this.questionManager.create({
           question: `Customer Agent 请求权限\n${request.summary}\n原因：${request.reason}`,
           options: [...TOOL_APPROVAL_OPTIONS],
           toolCallId: "",
-        }, request.sessionId);
+        }, request.sessionId));
         return toolApprovalDecisionFromAnswer(response.answer, response.selectedIndices);
       },
     });
@@ -135,7 +137,7 @@ export class AgentHost {
       (event, sid) => this.emit(event, sid),
       this.toolPermissionGate,
     );
-    this.builder = new AgentBuilder()
+    this.builder = new AgentBuilder().withDiagnosticObserver((sessionId, observation) => this.harness.observe(sessionId, observation))
       .withWorkingDirectory(baseDir)
       .withMemoryStore(this.memoryStore)
       .withSessionStore(this.sessionStore)
@@ -149,11 +151,13 @@ export class AgentHost {
     );
     this.cronScheduler.start();
     this.tryConfigureFromStore();
+    void this.harness.start();
   }
 
   /** Try to build the model provider from stored settings */
   private tryConfigureFromStore(): void {
     const settings = this.settingsStore.getAll();
+    this.harness.setModel({ provider: settings.modelProvider, modelId: settings.modelId, apiKey: settings.apiKey, baseUrl: settings.baseUrl });
     // Restore working directory from persisted settings (overrides process.cwd())
     if (settings.workingDirectory) {
       this.workingDirectory = settings.workingDirectory;
@@ -194,13 +198,15 @@ export class AgentHost {
       isConfigured: Boolean(profile.apiKey),
     };
     this.settingsStore.saveAll(updated);
+    this.harness.setModel({ provider: updated.modelProvider, modelId: updated.modelId, apiKey: updated.apiKey, baseUrl: updated.baseUrl });
   }
 
   /** Save settings and reconfigure the builder */
   configure(settings: SettingsData): void {
     this.settingsStore.saveAll(settings);
+    this.harness.setModel({ provider: settings.modelProvider, modelId: settings.modelId, apiKey: settings.apiKey, baseUrl: settings.baseUrl });
     this.workingDirectory = settings.workingDirectory || this.workingDirectory;
-    this.builder = new AgentBuilder()
+    this.builder = new AgentBuilder().withDiagnosticObserver((sessionId, observation) => this.harness.observe(sessionId, observation))
       .withWorkingDirectory(settings.workingDirectory)
       .withMemoryStore(this.memoryStore)
       .withSessionStore(this.sessionStore)
@@ -482,7 +488,19 @@ export class AgentHost {
     }
   }
 
-  async *run(
+  closeHarness(): void { this.harness.close(); }
+
+  getHarnessStatus() { return this.harness.status; }
+
+  async *run(input: string, sessionId: string, agentIds?: string[], agentName?: string, images?: string[]): AsyncIterable<AgentEvent> {
+    const settings = this.settingsStore.getAll();
+    this.harness.setModel({ provider: settings.modelProvider, modelId: settings.modelId, apiKey: settings.apiKey, baseUrl: settings.baseUrl });
+    yield* this.harness.monitor(this.runInternal(input, sessionId, agentIds, agentName, images), {
+      input, sessionId, workingDirectory: this.workingDirectory,
+    });
+  }
+
+  private async *runInternal(
     input: string,
     sessionId: string,
     agentIds?: string[],

@@ -28,6 +28,7 @@ export interface HttpOptions {
  * can swap to the login screen without every adapter caring.
  */
 export class HttpClient {
+  constructor(private readonly transport: typeof fetch = (...args) => fetch(...args)) {}
   async get<T>(path: string, options?: HttpOptions): Promise<T> {
     return this.request<T>(path, { method: "GET", headers: options?.headers });
   }
@@ -53,7 +54,7 @@ export class HttpClient {
   }
 
   private async request<T>(path: string, init: RequestInit): Promise<T> {
-    const response = await fetch(path, {
+    const response = await this.transport(path, {
       credentials: "same-origin",
       cache: "no-store",
       ...init,

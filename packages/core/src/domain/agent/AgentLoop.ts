@@ -2,6 +2,7 @@ import type {
   IAgentLoop,
   AgentEvent,
   AgentConfig,
+  SessionCompaction,
 } from './entities.js';
 import type { Message, ToolCall } from '../model/entities.js';
 import type { ToolContext } from '../tool/entities.js';
@@ -9,8 +10,11 @@ import {
   COMPACTION_ACKNOWLEDGEMENT,
   COMPACTION_SUMMARY_PREFIX,
   ContextCompactor,
+  type CompactResult,
 } from './ContextCompactor.js';
 import { estimateContextUsage } from './ContextUsageEstimator.js';
+import { estimateRequestTokens } from '../model/tokenBudget.js';
+import { validateRunCheckpoint, type RunCheckpoint } from './run-checkpoint.js';
 
 export class AgentLoop implements IAgentLoop {
   private readonly config: AgentConfig;
@@ -70,6 +74,22 @@ export class AgentLoop implements IAgentLoop {
   async *run(input: string, sessionId: string, images?: string[]): AsyncIterable<AgentEvent> {
     this.abortController = new AbortController();
 
+    const restored = await this.config.runCheckpointStore?.load();
+    if (restored) {
+      validateRunCheckpoint(restored);
+      if (restored.sessionId !== sessionId || restored.input !== input ||
+          restored.workingDirectory !== this.config.workingDirectory) {
+        throw new Error('Harness checkpoint identity mismatch');
+      }
+      if (restored.phase === 'tools_pending') {
+        throw new Error('Harness recovery requires reconciliation of pending tool effects');
+      }
+      if (restored.phase === 'completed') {
+        yield { type: 'done', finalText: restored.finalText! };
+        return;
+      }
+    }
+
     // 1. Load session history
     let history: Message[] = [];
     if (this.config.sessionStore) {
@@ -106,15 +126,26 @@ export class AgentLoop implements IAgentLoop {
     history = this.sanitizeHistory(history);
 
     // 2. Assemble context
+    const provider = this.config.modelProvider;
+    const runtimeLimit = await provider.getContextWindow?.();
+    const tokenLimit = Math.max(1, Math.floor(Math.min(this.config.maxTokens, runtimeLimit ?? Infinity)));
+    const outputTokens = Math.min(16384, Math.max(1, Math.floor(tokenLimit / 8)));
+    const inputBudget = tokenLimit - outputTokens - 256;
+    const minimumOutputTokens = Math.min(outputTokens, 256);
+    const hardInputBudget = tokenLimit - minimumOutputTokens - 256;
+    const countRequest = (msgs: Message[], tools = this.getFilteredToolDefinitions()) =>
+      provider.countRequestTokens?.(msgs, tools) ?? Promise.resolve(estimateRequestTokens(msgs, tools));
+    const toolOverhead = await countRequest([]);
     const memoryContext = await this.config.memoryStore.generateContext(input);
     const assembled = await this.config.contextAssembler.assemble({
       rootDir: this.config.workingDirectory,
       userMessage: input,
       history,
-      tools: JSON.stringify(this.getFilteredToolDefinitions()),
+      // Providers already send the schemas via native tools. Do not duplicate them in system text.
+      tools: "",
       memoryContext,
       skillPrompts: await this.config.skillRegistry.getSkillPrompts(input, this.config.enabledSkills),
-      maxTokens: this.config.maxTokens,
+      maxTokens: Math.max(1, inputBudget - toolOverhead),
       systemPrompt: this.config.systemPrompt,
     });
 
@@ -155,10 +186,17 @@ export class AgentLoop implements IAgentLoop {
     }
 
     const compactThreshold = this.config.compactThreshold ?? 0.6;
-    const tokenLimit = this.config.maxTokens;
 
     let currentText = "";
-    let iteration = 0;
+    let iteration = restored?.iteration ?? 0;
+    if (restored) messages = restored.messages;
+    const checkpoint = async (phase: RunCheckpoint['phase'], pendingToolIds: string[] = [], finalText?: string) => {
+      await this.config.runCheckpointStore?.save({
+        schema: 1, sessionId, input, workingDirectory: this.config.workingDirectory,
+        messages, iteration, phase, pendingToolIds, ...(finalText === undefined ? {} : { finalText }),
+      });
+    };
+    await checkpoint('ready');
     // Track total session messages so we can pick up externally-added ones mid-loop
     let msgCheckpoint = (await this.config.sessionStore?.get(sessionId))?.messages?.length ?? 0;
 
@@ -199,10 +237,10 @@ export class AgentLoop implements IAgentLoop {
       messages = this.compactor.pruneToolResults(messages);
 
       // Step B: token check → AutoCompact if over threshold
-      const tokenCount = await this.compactor.estimateTokens(messages);
-      if (tokenCount > tokenLimit * compactThreshold) {
+      const tokenCount = await countRequest(messages);
+      if (tokenCount > Math.min(inputBudget, tokenLimit * compactThreshold)) {
         yield { type: "thinking", message: "Context approaching limit — compacting…" };
-        const result = await this.compactor.compact(messages);
+        const result = await this.compactor.compact(messages, tokenCount > inputBudget ? 1 : 8, tokenLimit);
         messages = result.messages;
         if (result.removedMessages > 0) {
           yield {
@@ -210,26 +248,26 @@ export class AgentLoop implements IAgentLoop {
             summary: result.summary,
             removedMessages: result.removedMessages,
           };
-          // Persist a self-contained checkpoint so the NEXT run can restore the
-          // compacted context without re-compressing. Original messages are kept
-          // for display; the checkpoint is hidden from the chat UI.
-          if (this.config.sessionStore) {
-            // recentMessages = in-memory compacted list minus system + summary pair
-            const recentMessages = result.messages
-              .filter((m) => m.role !== "system")
-              .slice(2); // skip the summary user+assistant pair
-            // Silently ignore FK errors — the session may have been deleted while running
-            await this.config.sessionStore.addMessage(sessionId, {
-              role: "user",
-              content: JSON.stringify({ summary: result.summary, recentMessages }),
-              name: "__compaction_checkpoint__",
-            }).catch(() => {});
-          }
+          await this.persistCompactionCheckpoint(sessionId, result);
         }
       }
       // ───────────────────────────────────────────────────────────────
 
       const toolDefs = this.getFilteredToolDefinitions();
+      // A single recent tool result can overflow even when there are fewer than eight messages.
+      let requestTokens = await countRequest(messages, toolDefs);
+      if (requestTokens > inputBudget) {
+        messages = this.compactor.pruneToolResults(messages, 0);
+        requestTokens = await countRequest(messages, toolDefs);
+      }
+      if (requestTokens > hardInputBudget) {
+        yield { type: "error", code: "context_limit", message:
+          `模型上下文上限为 ${tokenLimit} tokens，当前输入和工具约 ${requestTokens} tokens，另需至少预留 ${minimumOutputTokens} tokens 用于回答。请减少启用的工具/技能、缩短输入或增大模型服务的上下文窗口。` };
+        return;
+      }
+      // Prefer the output allowance above; on a tight window use the actual space
+      // left after tokenization rather than reject an otherwise valid prompt.
+      const requestOutputTokens = Math.min(outputTokens, tokenLimit - requestTokens - 256);
       yield {
         type: "context_usage",
         usage: estimateContextUsage({
@@ -243,6 +281,18 @@ export class AgentLoop implements IAgentLoop {
           systemSections: assembled.systemSections,
         }),
       };
+      try {
+        this.config.diagnosticObserver?.(sessionId, {
+          type: 'request_context', iteration, modelId: this.config.modelProvider.modelId,
+          providerId: this.config.modelProvider.providerId, requestTokens, inputBudget,
+          messageCount: messages.length,
+          systemSections: Object.fromEntries(Object.entries(assembled.systemSections).map(([key, value]) =>
+            [key, { characters: value.length, preview: value.slice(0, 1500) }])),
+          messages: messages.slice(-16).map(message => ({ role: message.role, name: message.name,
+            characters: message.content.length, preview: message.content.slice(0, 800) })),
+          truncated: messages.length > 16 || messages.some(message => message.content.length > 800),
+        });
+      } catch { /* Diagnostics cannot interrupt an Agent request. */ }
       const toolCalls: ToolCall[] = [];
       let hasError = false;
       const maxRetries = this.config.streamMaxRetries ?? 0;
@@ -287,9 +337,7 @@ export class AgentLoop implements IAgentLoop {
           for await (const event of this.config.modelProvider.streamChat(messages, {
             tools: toolDefs.length > 0 ? toolDefs : undefined,
             reasoningEffort: this.config.reasoningEffort,
-            // Note: this.config.maxTokens is the context-window size used for compaction
-            // thresholding, NOT the max completion tokens. Let each provider use its own
-            // configured output limit (defaultMaxTokens) to avoid sending a huge value here.
+            maxTokens: requestOutputTokens,
           })) {
             if (this.abortController?.signal.aborted) break;
 
@@ -346,6 +394,7 @@ export class AgentLoop implements IAgentLoop {
 
       // If no tool calls, we're done
       if (toolCalls.length === 0 || hasError) {
+        if (!hasError) await checkpoint('completed', [], currentText);
         yield { type: "done", finalText: currentText };
         return;
       }
@@ -357,6 +406,8 @@ export class AgentLoop implements IAgentLoop {
         toolCalls,
       };
       messages.push(assistantMsg);
+      // Persist BEFORE dispatch. A crash anywhere in the batch cannot replay side effects.
+      await checkpoint('tools_pending', toolCalls.map(tc => tc.id));
 
       // 5. Execute all tool calls in parallel with abort support
       // Each tool is raced against the abort signal so cancellation is instant.
@@ -436,11 +487,14 @@ export class AgentLoop implements IAgentLoop {
         return;
       }
 
+      // Save complete call/result pairs before compaction or another model request.
+      await checkpoint('ready');
+
       // ── Post-tool compaction: if tool results pushed context over limit, compact ──
-      const postTokenCount = await this.compactor.estimateTokens(messages);
-      if (postTokenCount > tokenLimit * compactThreshold) {
+      const postTokenCount = await countRequest(messages);
+      if (postTokenCount > Math.min(inputBudget, tokenLimit * compactThreshold)) {
         yield { type: "thinking", message: "Context growing after tool results — compacting…" };
-        const result = await this.compactor.compact(messages);
+        const result = await this.compactor.compact(messages, postTokenCount > inputBudget ? 1 : 8, tokenLimit);
         messages = result.messages;
         if (result.removedMessages > 0) {
           yield {
@@ -466,6 +520,7 @@ export class AgentLoop implements IAgentLoop {
       currentText = "";
     }
 
+    try { this.config.diagnosticObserver?.(sessionId, { type: 'iteration_limit', iteration }); } catch { /* observational */ }
     yield {
       type: "done",
       finalText: currentText || `Reached max iterations (${this.config.maxIterations})`,
@@ -474,6 +529,45 @@ export class AgentLoop implements IAgentLoop {
 
   abort(): void {
     this.abortController?.abort();
+  }
+
+  /**
+   * On-demand compaction of the persisted session history. Mirrors the
+   * automatic threshold compaction: prune tool results, summarize the head,
+   * keep the recent tail, and persist a hidden checkpoint so the next run()
+   * restores the compacted context. Returns null when nothing was compacted.
+   */
+  async compactSession(sessionId: string): Promise<SessionCompaction | null> {
+    if (!this.config.sessionStore) return null;
+    const session = await this.config.sessionStore.get(sessionId);
+    const rawHistory = (session?.messages ?? [])
+      .filter((m) => m.role !== "system" && m.name !== "__compaction_checkpoint__");
+    if (rawHistory.length === 0) return null;
+
+    const provider = this.config.modelProvider;
+    const runtimeLimit = await provider.getContextWindow?.();
+    const tokenLimit = Math.max(1, Math.floor(Math.min(this.config.maxTokens, runtimeLimit ?? Infinity)));
+    const messages = this.compactor.pruneToolResults(this.sanitizeHistory(rawHistory));
+
+    const result = await this.compactor.compact(messages, 8, tokenLimit);
+    if (result.removedMessages <= 0) return null;
+    await this.persistCompactionCheckpoint(sessionId, result);
+    return { summary: result.summary, removedMessages: result.removedMessages };
+  }
+
+  /** Persist a self-contained checkpoint so the NEXT run restores the compacted context. */
+  private async persistCompactionCheckpoint(sessionId: string, result: CompactResult): Promise<void> {
+    if (!this.config.sessionStore) return;
+    // recentMessages = in-memory compacted list minus system + summary pair
+    const recentMessages = result.messages
+      .filter((m) => m.role !== "system")
+      .slice(2); // skip the summary user+assistant pair
+    // Silently ignore FK errors — the session may have been deleted while running
+    await this.config.sessionStore.addMessage(sessionId, {
+      role: "user",
+      content: JSON.stringify({ summary: result.summary, recentMessages }),
+      name: "__compaction_checkpoint__",
+    }).catch(() => {});
   }
 
   /**
@@ -489,4 +583,3 @@ export class AgentLoop implements IAgentLoop {
     );
   }
 }
-

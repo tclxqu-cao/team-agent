@@ -12,6 +12,7 @@ export async function POST(request: Request) {
   try {
     const body = await request.json() as {
       input: string;
+      agentIds?: string[];
       sessionId?: string;
       images?: string[];
       model?: { provider: string; apiKey: string; modelId: string; baseUrl?: string };
@@ -24,6 +25,9 @@ export async function POST(request: Request) {
 
     if (!body.input) {
       return NextResponse.json({ error: "input is required" }, { status: 400 });
+    }
+    if (body.agentIds !== undefined && (!Array.isArray(body.agentIds) || body.agentIds.length > 20 || body.agentIds.some((id) => typeof id !== "string" || !id.trim()))) {
+      return NextResponse.json({ error: "agentIds must contain at most 20 non-empty IDs" }, { status: 400 });
     }
 
     if (body.sessionId && isNativeSessionId(body.sessionId)) {
@@ -86,24 +90,16 @@ export async function POST(request: Request) {
       });
     }
 
-    const runOptions = normalizeCustomerAgentRunOptions(body);
-    const builder = agentHost.getBuilder()
-      .withMaxIterations(runOptions.maxIterations)
-      .withMaxTokens(runOptions.maxTokens)
-      .withReasoningEffort(body.reasoningEffort ?? "off");
-
-    // Configure model if provided
-    if (body.model) {
-      builder.withModel(body.model.provider, {
-        apiKey: body.model.apiKey,
-        modelId: body.model.modelId,
-        baseUrl: body.model.baseUrl,
-      });
-    }
-
-    // Reserve synchronously so duplicate sends receive a deterministic 409
-    // without replacing the active run's replay state.
-    const started = agentHost.startRun(body.input, sessionId, body.images);
+    const limits = normalizeCustomerAgentRunOptions(body);
+    // Browser/Desktop use persisted settings. Explicit SDK overrides remain
+    // scoped to this run instead of mutating a shared builder.
+    const started = agentHost.startRun(body.input, sessionId, body.images, {
+      ...(body.model ? { model: body.model } : {}),
+      ...(body.reasoningEffort ? { reasoningEffort: body.reasoningEffort } : {}),
+      ...(body.maxIterations === undefined ? {} : { maxIterations: limits.maxIterations }),
+      ...(body.maxTokens === undefined ? {} : { maxTokens: limits.maxTokens }),
+      ...(body.agentIds ? { agentIds: body.agentIds } : {}),
+    });
     started.completion.catch((err) => {
       console.error("Agent run error:", err);
     });

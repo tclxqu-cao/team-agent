@@ -4,7 +4,7 @@ Zero-install mobile remote terminal and file console. **No desktop app, no VPN**
 
 ## Requirements
 
-- **Node.js 22** (required)
+- **Node.js >=22.22.0** (no upper version bound)
 - macOS arm64 or Windows 10/11 x64
 
 The release is assembled on macOS arm64. Windows does not need Bun, Python,
@@ -57,16 +57,17 @@ agent-tui                 # start the bundled terminal Agent UI
 
 Run the versioned Shell installer on macOS or PowerShell installer on Windows
 from the project directory AgentRoam should expose. The installer verifies or
-installs Node 22 and the matching CLI, registers the current-user service, starts
+installs a compatible Node and the matching CLI, registers the current-user service, starts
 it, checks readiness, and prints the access URL. Set `AGENTROAM_ROOT` to select a
 different root explicitly. An implicit root equal to the home directory is
 rejected.
 
-If the active Node is not 22, the installer checks nvm-sh on macOS and
-nvm-windows on Windows, validates every installed candidate, and uses the
-highest installed Node 22. It pins that executable for AgentRoam without
+The installer reuses the active Node when it meets the minimum version. Otherwise
+it checks nvm-sh on macOS and nvm-windows on Windows and uses the highest
+compatible installed version. The service records that executable without
 changing the user's global or active NVM version. A private Node 22.22.0 is
-downloaded only when no installed Node 22 is available.
+downloaded only when no compatible installed Node is available. Higher Node
+versions are never rejected or downgraded solely because of their major version.
 
 The service keeps running after the terminal closes, restarts after failure, and
 starts again when the user logs in. macOS uses a user LaunchAgent; Windows uses a
@@ -117,7 +118,7 @@ The platform cloudflared binary is installed from npm after size and SHA-256 ver
 - Next.js **standalone** web gateway + WebSocket PTY server
 - `@agent/core` bundled runtime
 - Optional platform **cloudflared** package (verified size + SHA-256 before execution)
-- Optional platform **agent-tui** package (Node 22 bundle; Bun is not required)
+- Optional platform **agent-tui** package (Node >=22.22.0 bundle; Bun is not required)
 - **Pairing token** + secure cookies behind HTTPS tunnel
 
 Not included: Electron desktop app, SDK, dev `.env`, session caches.

@@ -1,6 +1,7 @@
 import React from "react";
 import { Box, Text } from "ink";
 import { marked, type Token, type Tokens } from "marked";
+import { highlightCode, mergeSegments } from "../syntax-highlight.js";
 import { TUI_THEME } from "../theme.js";
 
 function Inline({ tokens }: { tokens: Token[] }) {
@@ -100,8 +101,19 @@ function Block({ token }: { token: Token }) {
           <MarkdownBlocks tokens={(token as Tokens.Blockquote).tokens} />
         </Box>
       );
-    case "code":
-      return <Box paddingLeft={1}><Text color={TUI_THEME.code}>{token.text}</Text></Box>;
+    case "code": {
+      const code = token as Tokens.Code;
+      const segments = mergeSegments(highlightCode(code.text, code.lang));
+      return (
+        <Box paddingLeft={1}>
+          <Text>
+            {segments.map((segment, index) => (
+              <Text key={index} color={segment.color ?? TUI_THEME.code}>{segment.text}</Text>
+            ))}
+          </Text>
+        </Box>
+      );
+    }
     case "table":
       return <TableBlock token={token as Tokens.Table} />;
     case "hr":

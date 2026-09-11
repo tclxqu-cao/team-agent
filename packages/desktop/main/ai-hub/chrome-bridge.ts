@@ -130,8 +130,8 @@ export class ChromeHubBridge {
   }
 
   request(siteId: string, command: string, payload: Record<string, unknown> = {}): Promise<unknown> {
-    if (!this.peer || this.peer.readyState !== WebSocket.OPEN || !this.tabs.has(siteId)) return Promise.reject(new Error("请在 Chrome 打开并登录该站点，等待扩展自动连接"));
     if (this.paused) return Promise.reject(new Error("Chrome 连接已暂停，请点击恢复连接"));
+    if (!this.peer || this.peer.readyState !== WebSocket.OPEN || !this.tabs.has(siteId)) return Promise.reject(new Error("请在 Chrome 打开并登录该站点，等待扩展自动连接"));
     if (!this.compatible) return Promise.reject(new Error("请从桌面端加载 0.3.0 版自动连接扩展"));
     return this.dispatch(siteId, command, payload);
   }

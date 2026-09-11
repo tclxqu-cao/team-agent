@@ -8,7 +8,7 @@ import type {
   SessionQueryIndex,
 } from "../../domain/ports/agent-port";
 import { HttpClient, listOf } from "./http-client";
-import { LocalCollection } from "../local/local-collection";
+
 import type { LocalSettingsRepository } from "../local/local-settings-repository";
 import { StreamingThinkFilter, stripThinkBlocks } from "./think-filter";
 import type { WebProjectBridge } from "../web-shell-project-bridge";
@@ -66,14 +66,13 @@ export class AgentHttpGateway {
   private readonly thinkFilters = new Map<string, StreamingThinkFilter>();
   private readonly bufferedStreamText = new Map<string, BufferedStreamText>();
 
-  private readonly agentDefs = new LocalCollection<AgentDefinition>("webapp.agentDefs");
-  private readonly lspServers = new LocalCollection<LSPServerConfig>("webapp.lspServers");
-  private readonly uploads = new Map<string, Record<string, unknown>>();
+
 
   constructor(
     private readonly http: HttpClient,
     private readonly settings: LocalSettingsRepository,
     private readonly projectBridge?: WebProjectBridge,
+    private readonly createEventSource: (url: string) => EventSource = (url) => new EventSource(url),
   ) {}
 
   private requireProjectBridge(): WebProjectBridge {
@@ -119,16 +118,11 @@ export class AgentHttpGateway {
           });
       // A user-configured model profile travels with the run; without one the
       // server keeps using its own env configuration.
-      const model = this.settings.getModelOverride();
-      const limits = this.settings.getRunLimits();
       const started = await this.http.post<{ runId?: string; snapshotRevision?: number }>("/api/agent/run", {
         input,
         sessionId,
         ...(images?.length ? { images } : {}),
-        ...(model ? { model } : {}),
-        reasoningEffort: this.settings.getReasoningEffort(),
-        maxIterations: limits.maxIterations,
-        maxTokens: limits.maxTokens,
+        ...(_agentIds?.length ? { agentIds: _agentIds } : {}),
         ...(nativeOptions?.model?.id ? { nativeModel: nativeOptions.model } : {}),
         ...(nativeOptions?.reasoningEffort ? { nativeReasoningEffort: nativeOptions.reasoningEffort } : {}),
       });
@@ -411,7 +405,7 @@ export class AgentHttpGateway {
     callback: (change: { type: "session_history_changed"; revision: number }) => void,
     onError?: () => void,
   ): Unsubscribe {
-    const source = new EventSource(`/api/sessions/${encodeURIComponent(id)}/changes`);
+    const source = this.createEventSource(`/api/sessions/${encodeURIComponent(id)}/changes`);
     let closed = false;
     source.onmessage = (message) => {
       if (!message.data) return;
@@ -649,242 +643,72 @@ export class AgentHttpGateway {
   }
 
   async setProjectWorkingDir(path: string): Promise<{ ok: boolean; path: string }> {
+    await this.saveSettings({ workingDirectory: path });
     return { ok: true, path };
   }
 
-  // ── Settings (localStorage-backed; server keeps model config in env) ──
-
-  getSettings() {
-    return this.settings.get();
+  // Shared business settings and catalogs. Device storage never overrides a run.
+  async getSettings(): Promise<any> { return this.http.get("/api/settings"); }
+  async setSetting(key: string, value: string): Promise<void> {
+    const current = await this.getSettings();
+    if (!(key in current) || key === "revision" || key === "settingsSpaceId") throw new Error("Unsupported setting");
+    const parsed = typeof current[key] === "number" ? Number(value) : Array.isArray(current[key]) ? JSON.parse(value) : value;
+    await this.saveSettings({ [key]: parsed, revision: current.revision });
   }
-
-  async saveSettings(update: Record<string, unknown>): Promise<void> {
-    this.settings.save(update);
-  }
-
-  async setActiveProfile(profileId: string): Promise<void> {
-    this.settings.setActiveProfile(profileId);
-  }
-
-  /** Best-effort: surface the server's active model in the settings panel. */
+  async subscribe(): Promise<void> {}
+  async handoffSession(id: string): Promise<unknown> { return this.http.post(`/api/sessions/${encodeURIComponent(id)}/handoff`, {}); }
+  async saveSettings(update: Record<string, unknown>): Promise<any> { return this.http.post("/api/settings", update); }
+  async setActiveProfile(profileId: string): Promise<any> { return this.http.post("/api/settings", { activeProfileId: profileId }); }
   async refreshServerModel(): Promise<void> {
-    try {
-      const info = await this.http.get<{ provider?: string; modelId?: string; baseUrl?: string }>(
-        "/api/agent/model",
-      );
-      this.settings.reflectServerModel(info);
-    } catch {
-      // server unreachable or older build without the route — keep local view
-    }
-  }
-
-  // ── Memory (server-backed) ─────────────────────────────────────────────
-
-  async listMemories(): Promise<unknown[]> {
-    return listOf<unknown>(await this.http.get("/api/memory"), "entries", "memories", "items");
-  }
-
-  async searchMemories(query: string): Promise<unknown[]> {
-    return listOf<unknown>(
-      await this.http.get(`/api/memory?q=${encodeURIComponent(query)}`),
-      "entries", "memories", "items",
-    );
-  }
-
-  async getMemory(name: string): Promise<unknown> {
-    try {
-      return await this.http.get(`/api/memory/${encodeURIComponent(name)}`);
-    } catch (err) {
-      if ((err as { status?: number }).status === 404) return null;
-      throw err;
-    }
-  }
-
-  async setMemory(entry: Record<string, unknown>): Promise<void> {
-    await this.http.post("/api/memory", entry);
-  }
-
-  async deleteMemory(name: string): Promise<void> {
-    await this.http.delete(`/api/memory/${encodeURIComponent(name)}`);
-  }
-
-  // ── MCP (server-backed; probe/enabled not supported server-side yet) ──
-
-  async mcpList(): Promise<MCPServer[]> {
-    return listOf<MCPServer>(await this.http.get("/api/mcp/servers"), "servers", "items");
-  }
-
-  async mcpSave(server: Record<string, unknown>): Promise<void> {
-    await this.http.post("/api/mcp/connect", server);
-  }
-
-  async mcpDelete(id: string): Promise<void> {
-    await this.http.delete(`/api/mcp/disconnect?serverId=${encodeURIComponent(id)}`);
-  }
-
-  async mcpSetEnabled(): Promise<void> {
-    // not supported server-side yet
-  }
-
-  async mcpProbe(server: Record<string, unknown>): Promise<Array<{ name: string; description: string }>> {
-    try {
-      const res = await this.http.post<{ tools?: Array<{ name: string; description: string }> }>(
-        "/api/mcp/connect",
-        server,
-      );
-      return res.tools ?? [];
-    } catch {
-      return [];
-    }
-  }
-
-  // ── Skills (list from server; import opens a native picker on desktop) ──
-
-  async listSkills(): Promise<unknown[]> {
-    return listOf<unknown>(await this.http.get("/api/skills"), "skills", "items");
-  }
-
-  async saveSkill(): Promise<void> {
-    // not supported server-side yet
-  }
-
-  async deleteSkill(): Promise<void> {
-    // not supported server-side yet
-  }
-
-  async setSkillEnabled(): Promise<void> {
-    // not supported server-side yet
-  }
-
-  async importSkill(): Promise<null> {
-    return null;
-  }
-
-  // ── Agent definitions / LSP / uploads (local-only fallbacks) ──────────
-
-  listAgentDefs(): Promise<AgentDefinition[]> {
-    return Promise.resolve(this.agentDefs.list());
-  }
-
-  getAgentDef(id: string): Promise<AgentDefinition | null> {
-    return Promise.resolve(this.agentDefs.list().find((def) => def.id === id) ?? null);
-  }
-
-  createAgentDef(data: Partial<AgentDefinition>): Promise<AgentDefinition> {
-    const now = new Date().toISOString();
-    const definition: AgentDefinition = {
-      id: crypto.randomUUID(),
-      name: data.name ?? "新智能体",
-      description: data.description ?? "",
-      systemPrompt: data.systemPrompt ?? "",
-      contextPlaceholders: data.contextPlaceholders ?? [],
-      capabilities: data.capabilities ?? { profileId: "", enabledTools: [], enabledSkills: [], enabledMCPServers: [] },
-      maxIterations: data.maxIterations ?? 10,
-      isDefault: data.isDefault ?? false,
-      created: now,
-      updated: now,
-      ...data,
+    const settings = await this.getSettings();
+    // Preserve old browser records. Import missing IDs once per server data
+    // space; conflicts keep the server value and local source keys stay intact.
+    const marker = `webapp.sharedMigration.${settings.settingsSpaceId}`;
+    if (!settings.settingsSpaceId || localStorage.getItem(marker)) return;
+    const read = (key: string, fallback: unknown) => {
+      try { return JSON.parse(localStorage.getItem(key) || "null") ?? fallback; } catch { return fallback; }
     };
-    this.agentDefs.upsert(definition);
-    return Promise.resolve(definition);
+    const legacy = read("webapp.settings.v1", {}) as { profiles?: unknown[] };
+    await this.business("importLegacy", [{ profiles: legacy.profiles || [], agents: read("webapp.agentDefs", []), lsp: read("webapp.lspServers", []) }]);
+    localStorage.setItem(marker, "1");
   }
+  private business(method: string, args: unknown[]): Promise<any> { return this.http.post("/api/business", { method, args }); }
+  async listMemories(): Promise<any> { return this.business("listMemories", []); }
+  async searchMemories(query: string): Promise<any> { return this.business("searchMemories", [query]); }
+  async getMemory(name: string): Promise<any> { return this.business("getMemory", [name]); }
+  async setMemory(entry: Record<string, unknown>): Promise<any> { return this.business("setMemory", [entry]); }
+  async deleteMemory(name: string): Promise<any> { return this.business("deleteMemory", [name]); }
+  async mcpList(): Promise<any> { return this.business("mcpList", []); }
+  async mcpSave(server: Record<string, unknown>): Promise<any> { return this.business("mcpSave", [server]); }
+  async mcpDelete(id: string): Promise<any> { return this.business("mcpDelete", [id]); }
+  async mcpSetEnabled(id: string, enabled: boolean): Promise<any> { return this.business("mcpSetEnabled", [id, enabled]); }
+  async mcpProbe(server: Record<string, unknown>): Promise<any> { return this.business("mcpProbe", [server]); }
+  async listSkills(): Promise<any> { return this.business("listSkills", []); }
+  async saveSkill(skill: Record<string, unknown>): Promise<any> { return this.business("saveSkill", [skill]); }
+  async deleteSkill(name: string): Promise<any> { return this.business("deleteSkill", [name]); }
+  async setSkillEnabled(name: string, enabled: boolean): Promise<any> { return this.business("setSkillEnabled", [name, enabled]); }
+  async listAgentDefs(): Promise<any> { return this.business("listAgentDefs", []); }
+  async getAgentDef(id: string): Promise<any> { return this.business("getAgentDef", [id]); }
+  async createAgentDef(data: Partial<AgentDefinition>): Promise<any> { return this.business("createAgentDef", [data]); }
+  async updateAgentDef(id: string, update: Partial<AgentDefinition>): Promise<any> { return this.business("updateAgentDef", [id, update]); }
+  async deleteAgentDef(id: string): Promise<any> { return this.business("deleteAgentDef", [id]); }
+  async setActiveAgentDef(id: string): Promise<any> { return this.business("setActiveAgentDef", [id]); }
+  async lspList(): Promise<any> { return this.business("lspList", []); }
+  async lspSave(config: Partial<LSPServerConfig> & { name: string }): Promise<any> { return this.business("lspSave", [config]); }
+  async lspDelete(id: string): Promise<any> { return this.business("lspDelete", [id]); }
+  async lspSetEnabled(id: string, enabled: boolean): Promise<any> { return this.business("lspSetEnabled", [id, enabled]); }
+  async listUploads(): Promise<any> { return this.business("listUploads", []); }
+  async getUpload(id: string): Promise<any> { return this.business("getUpload", [id]); }
+  async saveUpload(entry: Record<string, unknown>): Promise<any> { return this.business("saveUpload", [entry]); }
+  async deleteUpload(id: string): Promise<any> { return this.business("deleteUpload", [id]); }
+  async importSkill(): Promise<null> { return null; }
 
-  updateAgentDef(id: string, update: Partial<AgentDefinition>): Promise<AgentDefinition> {
-    const updated = {
-      ...this.agentDefs.list().find((def) => def.id === id),
-      ...update,
-      id,
-      updated: new Date().toISOString(),
-    } as AgentDefinition;
-    this.agentDefs.upsert(updated);
-    return Promise.resolve(updated);
-  }
-
-  async deleteAgentDef(id: string): Promise<void> {
-    this.agentDefs.remove(id);
-  }
-
-  async setActiveAgentDef(id: string): Promise<{ activeAgentId?: string }> {
-    this.agentDefs.list().forEach((def) => {
-      this.agentDefs.upsert({ ...def, isDefault: def.id === id });
-    });
-    return { activeAgentId: id };
-  }
-
-  lspList(): Promise<LSPServerConfig[]> {
-    return Promise.resolve(this.lspServers.list());
-  }
-
-  lspSave(config: Partial<LSPServerConfig> & { name: string }): Promise<void> {
-    const entry = {
-      id: config.id ?? crypto.randomUUID(),
-      enabled: true,
-      ...config,
-    } as LSPServerConfig;
-    this.lspServers.upsert(entry);
-    return Promise.resolve();
-  }
-
-  async lspDelete(id: string): Promise<void> {
-    this.lspServers.remove(id);
-  }
-
-  lspSetEnabled(id: string, enabled: boolean): Promise<void> {
-    const found = this.lspServers.list().find((server) => server.id === id);
-    if (found) this.lspServers.upsert({ ...found, enabled });
-    return Promise.resolve();
-  }
-
-  listUploads(): Promise<unknown[]> {
-    return Promise.resolve([...this.uploads.values()]);
-  }
-
-  getUpload(id: string): Promise<unknown> {
-    return Promise.resolve(this.uploads.get(id) ?? null);
-  }
-
-  async saveUpload(entry: Record<string, unknown>): Promise<void> {
-    const id = (entry.id as string) ?? crypto.randomUUID();
-    this.uploads.set(id, { ...entry, id });
-  }
-
-  async deleteUpload(id: string): Promise<void> {
-    this.uploads.delete(id);
-  }
-
-  // ── Cron (server scheduler not wired yet — placeholder tasks) ─────────
-
-  async cronCreate(cron: string, prompt: string): Promise<CronTask> {
-    return {
-      id: crypto.randomUUID(),
-      cron,
-      prompt,
-      createdAt: Date.now(),
-      recurring: true,
-      enabled: false,
-      label: "Web 端暂不执行",
-    };
-  }
-
-  async cronPause(): Promise<null> {
-    return null;
-  }
-
-  async cronResume(): Promise<null> {
-    return null;
-  }
-
-  async cronDelete(): Promise<boolean> {
-    return true;
-  }
-
-  async cronDeleteAll(): Promise<{ ok: boolean }> {
-    return { ok: true };
-  }
-
-  async cronList(): Promise<CronTask[]> {
-    return [];
-  }
+  async cronCreate(cron: string, prompt: string, options?: Record<string, unknown>): Promise<CronTask> { return this.business("cronCreate", [cron, prompt, options]); }
+  async cronPause(id: string): Promise<CronTask | null> { return this.business("cronPause", [id]); }
+  async cronResume(id: string): Promise<CronTask | null> { return this.business("cronResume", [id]); }
+  async cronDelete(id: string): Promise<boolean> { return this.business("cronDelete", [id]); }
+  async cronDeleteAll(): Promise<{ ok: boolean }> { return this.business("cronDeleteAll", []); }
+  async cronList(): Promise<CronTask[]> { return this.business("cronList", []); }
 
   // ── Files / window / voice ─────────────────────────────────────────────
 
@@ -1027,7 +851,7 @@ export class AgentHttpGateway {
       query.set(sessionId.startsWith("runtime:") ? "afterSequence" : "afterEventId", String(cursor!.sequence));
     }
     if (sessionId.startsWith("runtime:") && cursor?.runId) query.set("afterRunId", cursor.runId);
-    const source = new EventSource(`/api/agent/stream?${query.toString()}`);
+    const source = this.createEventSource(`/api/agent/stream?${query.toString()}`);
     let sawTerminal = false;
     this.streams.set(sessionId, source);
 

@@ -5,6 +5,28 @@ import type { ServiceController } from "./service-controller.js";
 import { buildServiceEnvironmentPath, runServiceCommand } from "./service-command.js";
 
 describe("runServiceCommand", () => {
+  it.each(["22.22.0", "24.0.0", "25.8.0", "26.0.0"])("keeps the selected Node %s when installing a service", async (nodeVersion) => {
+    const install = vi.fn(async () => ({ definition: "/test/service.plist" }));
+    const nodePath = `/runtimes/node-${nodeVersion}/bin/node`;
+    const codexResolver = vi.fn(async () => ({ executable: "/tools/codex", version: "test", source: "global" as const }));
+    await runServiceCommand(options("install"), {
+      platform: "darwin", arch: "arm64", nodeVersion, nodePath,
+      cliPath: "/agentroam.mjs", version: "test", environment: { PATH: "/usr/bin" },
+      codexResolver, controller: controller({ install }), log: vi.fn(),
+    });
+    expect(install).toHaveBeenCalledWith(expect.objectContaining({ nodePath }));
+    expect(codexResolver).toHaveBeenCalledWith(expect.objectContaining({ nodeExecutable: nodePath }));
+  });
+
+  it("rejects a below-minimum service runtime before installation", async () => {
+    const install = vi.fn();
+    await expect(runServiceCommand(options("install"), {
+      platform: "darwin", nodePath: "/node", nodeVersion: "22.21.9", cliPath: "/agentroam.mjs",
+      version: "test", controller: controller({ install }),
+    })).rejects.toThrow("Node.js >=22.22.0");
+    expect(install).not.toHaveBeenCalled();
+  });
+
   it("installs the service using absolute runtime context and parsed start options", async () => {
     const install = vi.fn(async (config) => ({
       paths: { plistPath: "/Users/test/Library/LaunchAgents/com.agentroam.service.plist" },

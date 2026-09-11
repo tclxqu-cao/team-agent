@@ -1012,7 +1012,6 @@ export default function App() {
     if (
       !selectedProjectId
       || !selectedSessionId
-      || selectedSession?.agentType === "customer-agent"
       || !window.agentApi
     ) return;
     let cancelled = false;

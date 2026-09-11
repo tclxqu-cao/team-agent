@@ -1,6 +1,6 @@
 # AgentRoam bootstrap installers
 
-These versioned installers support macOS Apple Silicon and Windows x64. They reuse a visible Node.js 22 installation when available. Otherwise they install the verified private Node.js `22.22.0` runtime under the AgentRoam data directory. They then register and start the current-user AgentRoam background service. They never modify, replace, or uninstall system Node.js or global power settings.
+These versioned installers support macOS Apple Silicon and Windows x64. They reuse the active Node.js installation when it meets `>=22.22.0`, with no upper version bound. Otherwise they search NVM for the highest compatible version, then fall back to the verified private Node.js `22.22.0` runtime under the AgentRoam data directory. They then register and start the current-user AgentRoam background service. They never modify, replace, or uninstall system Node.js or global power settings.
 
 ## macOS Apple Silicon
 

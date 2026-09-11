@@ -2,6 +2,7 @@
 set -eu
 
 NODE_VERSION="22.22.0"
+MINIMUM_NODE_VERSION="22.22.0"
 AGENTROAM_VERSION="0.2.0-preview.16"
 NODE_ARCHIVE="node-v22.22.0-darwin-arm64.tar.xz"
 NODE_SHA256="2bd596bbfc4a275ceb8721a5954ee97daea5ebe673e96a185ebd732f6fb023ac"
@@ -56,25 +57,40 @@ SERVICE_ROOT="$service_root_physical"
 
 mkdir -p "$NODE_PARENT" "$LAUNCHER_PARENT" "$WRAPPER_DIR"
 
-node_is_22() {
-  [ -x "$1" ] && [ "$("$1" -p 'process.versions.node.split(".")[0]' 2>/dev/null || true)" = "22" ]
+version_is_supported() {
+  awk -v version="$1" -v minimum="$MINIMUM_NODE_VERSION" 'BEGIN {
+    if (version !~ /^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$/) exit 1;
+    sub(/\+.*/, "", version);
+    split(version, actual, "."); split(minimum, required, ".");
+    for (component = 1; component <= 3; component++) {
+      if (actual[component] + 0 > required[component] + 0) exit 0;
+      if (actual[component] + 0 < required[component] + 0) exit 1;
+    }
+    exit 0;
+  }'
 }
 
-find_nvm_node_22() {
+node_is_supported() {
+  [ -x "$1" ] && version_is_supported "$("$1" -p 'process.versions.node' 2>/dev/null || true)"
+}
+
+find_nvm_node() {
   best_bin=""
+  best_major=-1
   best_minor=-1
   best_patch=-1
   for nvm_root in "${NVM_DIR:-}" "$HOME/.nvm"; do
     [ -n "$nvm_root" ] || continue
-    for candidate in "$nvm_root"/versions/node/v22*/bin/node; do
+    for candidate in "$nvm_root"/versions/node/v*/bin/node; do
       [ -x "$candidate" ] || continue
       version=$("$candidate" -p 'process.versions.node' 2>/dev/null || true)
+      version_is_supported "$version" || continue
       major=$(printf '%s\n' "$version" | awk -F. '{ print $1 + 0 }')
       minor=$(printf '%s\n' "$version" | awk -F. '{ print $2 + 0 }')
       patch=$(printf '%s\n' "$version" | awk -F. '{ sub(/[^0-9].*$/, "", $3); print $3 + 0 }')
-      [ "$major" -eq 22 ] 2>/dev/null || continue
-      if [ "$minor" -gt "$best_minor" ] || { [ "$minor" -eq "$best_minor" ] && [ "$patch" -gt "$best_patch" ]; }; then
+      if [ "$major" -gt "$best_major" ] || { [ "$major" -eq "$best_major" ] && { [ "$minor" -gt "$best_minor" ] || { [ "$minor" -eq "$best_minor" ] && [ "$patch" -gt "$best_patch" ]; }; }; }; then
         best_bin="$candidate"
+        best_major=$major
         best_minor=$minor
         best_patch=$patch
       fi
@@ -112,13 +128,13 @@ SYSTEM_NODE=$(command -v node 2>/dev/null || true)
 if [ "${AGENTROAM_BOOTSTRAP_TEST:-}" = "1" ] && [ "${AGENTROAM_FORCE_PRIVATE_NODE:-}" = "1" ]; then
   SYSTEM_NODE=""
 fi
-if [ -n "$SYSTEM_NODE" ] && node_is_22 "$SYSTEM_NODE"; then
+if [ -n "$SYSTEM_NODE" ] && node_is_supported "$SYSTEM_NODE"; then
   NODE_BIN="$SYSTEM_NODE"
 else
   if [ "${AGENTROAM_BOOTSTRAP_TEST:-}" = "1" ] && [ "${AGENTROAM_FORCE_PRIVATE_NODE:-}" = "1" ]; then
     NVM_NODE=""
   else
-    NVM_NODE=$(find_nvm_node_22 || true)
+    NVM_NODE=$(find_nvm_node || true)
   fi
   if [ -n "$NVM_NODE" ]; then
     NODE_BIN="$NVM_NODE"

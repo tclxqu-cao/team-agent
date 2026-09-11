@@ -77,6 +77,7 @@ const AGENT_EXACT = {
     "packages/cli/src/runtime-manager.test.ts",
     "packages/desktop/main/agent-runtime/opencode-runtime-adapter.ts",
     "packages/desktop/main/agent-runtime/opencode-runtime-adapter.test.ts",
+    "packages/desktop/main/agent-runtime/opencode-runtime-health.test.ts",
     "packages/desktop/main/agent-runtime/opencode-server-client.ts",
     "packages/desktop/main/agent-runtime/opencode-server-client.test.ts",
     "packages/desktop/package.json",

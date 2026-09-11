@@ -685,7 +685,7 @@ describe("AgentHttpGateway", () => {
     });
   });
 
-  it("forwards configured model and run limits to ordinary Customer Agent runs", async () => {
+  it("uses server settings instead of sending stale browser model overrides", async () => {
     globalThis.EventSource = ObservableEventSource as unknown as typeof EventSource;
     const model = {
       provider: "openai",
@@ -709,10 +709,7 @@ describe("AgentHttpGateway", () => {
     expect(http.post).toHaveBeenCalledWith("/api/agent/run", {
       input: "configured run",
       sessionId: "session-settings",
-      model,
-      reasoningEffort: "high",
-      maxIterations: 24,
-      maxTokens: 256_000,
+
     });
 
     source.onmessage?.(new MessageEvent("message", { data: JSON.stringify({ type: "done", finalText: "done" }) }));

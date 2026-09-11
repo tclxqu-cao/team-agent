@@ -2,6 +2,7 @@
   "name": "customer-agent",
   "version": "0.1.0",
   "private": true,
+  "engines": { "node": ">=22.22.0" },
   "workspaces": [
     "packages/core",
     "packages/server",
@@ -19,6 +20,8 @@
     "packages/tui-win32-x64"
   ],
   "scripts": {
+    "check:node-runtime-policy": "node scripts/generate-node-runtime-policy.mjs --check",
+    "test:node-runtime-policy": "node --test scripts/runtime-policy.test.mjs scripts/runtime-native-files.test.mjs",
     "dev": "bunx concurrently --kill-others -n core,server,desktop -c blue,green,yellow 'bun run dev:core' 'bun run dev:server' 'bun run dev:desktop'",
     "dev:core": "bun run --cwd packages/core dev",
     "dev:server": "bun run --cwd packages/server dev",

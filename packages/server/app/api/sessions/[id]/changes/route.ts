@@ -1,3 +1,4 @@
+import { customerSessionChanges } from "../../../../../lib/customer-session-changes";
 import {
   getNativeRuntimeService,
   isNativeSessionId,
@@ -15,7 +16,7 @@ export async function GET(
   { params }: { params: { id: string } },
 ): Promise<Response> {
   if (!isNativeSessionId(params.id)) {
-    return Response.json({ error: "Native session not found" }, { status: 404 });
+    return customerSessionChanges(request, params.id);
   }
 
   try {

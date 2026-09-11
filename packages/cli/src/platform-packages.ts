@@ -2,14 +2,15 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname } from "node:path";
 import type { PlatformTarget } from "./platform.js";
+import { MINIMUM_NODE_VERSION, assertSupportedNodeVersion } from "../bin/runtime-policy.mjs";
 
 export const AGENTROAM_VERSION = "0.2.0-preview.16";
 
 export interface RuntimePackageManifest {
   packageVersion: string;
   target: PlatformTarget;
-  nodeMajor: number;
-  nodeModuleAbi: number;
+  schemaVersion: 2;
+  minimumNodeVersion: string;
   nativeFiles: Record<string, string>;
 }
 
@@ -66,13 +67,15 @@ export function resolvePlatformRuntime(
   if (
     manifest.packageVersion !== AGENTROAM_VERSION
     || manifest.target !== target
-    || manifest.nodeMajor !== 22
-    || manifest.nodeModuleAbi !== 127
+    || manifest.schemaVersion !== 2
+    || manifest.minimumNodeVersion !== MINIMUM_NODE_VERSION
     || !manifest.nativeFiles
     || typeof manifest.nativeFiles !== "object"
+    || Array.isArray(manifest.nativeFiles)
   ) {
     throw new Error(`invalid AgentRoam runtime manifest: ${manifestPath}`);
   }
+  assertSupportedNodeVersion();
 
   return {
     packageName,

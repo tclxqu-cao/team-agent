@@ -33,7 +33,7 @@ describe("existing Chrome bridge", () => {
     await vi.waitFor(() => expect(bridge.status().connected).toBe(true));
     socket.send(JSON.stringify({ type: "auto-connect-status", paused: true }));
     await vi.waitFor(() => expect(bridge.status().paused).toBe(true));
-    await expect(bridge.request("chatgpt", "send-message", { text: "hi" })).rejects.toThrow();
+    await expect(bridge.request("chatgpt", "send-message", { text: "hi" })).rejects.toThrow("Chrome 连接已暂停，请点击恢复连接");
     socket.on("message", (data) => {
       const message = JSON.parse(data.toString());
       if (message.type !== "command") return;

@@ -14,6 +14,12 @@ export function movePinnedCommand(
   return next;
 }
 
-export function createPinnedCommand(command: string, id = crypto.randomUUID()): PinnedCommand {
+function createPinnedCommandId(): string {
+  if (typeof crypto.randomUUID === "function") return crypto.randomUUID();
+  // getRandomValues is also available on LAN HTTP pages, unlike randomUUID.
+  return Array.from(crypto.getRandomValues(new Uint8Array(16)), (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+export function createPinnedCommand(command: string, id = createPinnedCommandId()): PinnedCommand {
   return { id, command: command.trim() };
 }
