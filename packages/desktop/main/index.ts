@@ -967,6 +967,10 @@ function getDesktopScreenLive(): DesktopScreenLive {
     getDisplayOptions: () => getLiveDisplayOptions(),
     onSetDisplay: async (displayId: string | null) => {
       setLiveDisplay(displayId);
+      // Show the new screen instantly on the JPEG fallback and re-capture the
+      // real-time video from the freshly selected display.
+      screencast.wake();
+      webrtcLive?.restart();
       return getLiveDisplayOptions();
     },
   });
@@ -1080,8 +1084,10 @@ app.whenReady().then(async () => {
   // LAN/Tailscale peers connect without mDNS resolution.
   session.defaultSession.setDisplayMediaRequestHandler((_request, callback) => {
     void desktopCapturer.getSources({ types: ["screen"] }).then((sources) => {
-      const primaryId = String(screen.getPrimaryDisplay().id);
-      const source = sources.find((item) => item.display_id === primaryId) ?? sources[0];
+      // Follow the live display selection so a switched capture stream
+      // re-negotiates onto the screen the viewer chose.
+      const pickedId = pickLiveDisplay().id;
+      const source = sources.find((item) => item.display_id === pickedId) ?? sources[0];
       if (!source) {
         callback({});
         return;

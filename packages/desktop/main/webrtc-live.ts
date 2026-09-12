@@ -68,6 +68,21 @@ export class WebrtcLive {
     this.#scheduleClose(0);
   }
 
+  /** Re-captures with the current display choice. No-op when no stream is
+   *  running — the next start already picks the fresh display. The viewer
+   *  answers the new offer on its existing peer connection (renegotiation). */
+  restart(): void {
+    if (!this.window || this.window.isDestroyed()) return;
+    this.options.setStandby(false);
+    this.connected = false;
+    this.#post({ kind: "stop" });
+    this.#closeWindow();
+    this.startAt = this.options.now?.() ?? Date.now();
+    this.#ensureWindow((window) => {
+      window.webContents.send("webrtc-live:signal", { kind: "start" });
+    });
+  }
+
   async #handleRendererSignal(data: WebrtcSignal): Promise<void> {
     const kind = String(data.kind);
     if (kind === "state") {

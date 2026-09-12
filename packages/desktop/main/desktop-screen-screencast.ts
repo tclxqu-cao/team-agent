@@ -163,6 +163,13 @@ export class DesktopScreenScreencast implements LiveScreencastPort {
     }
   }
 
+  /** Interrupts the capture sleep — used after a display switch so the next
+   *  frame reflects the new screen immediately instead of after the current
+   *  frame interval (up to a second at low pacer rates). */
+  wake(): void {
+    this.wakeCapture?.();
+  }
+
   async stop(): Promise<void> {
     this.running = false;
     this.pointerDown = false;
