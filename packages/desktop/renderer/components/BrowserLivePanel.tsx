@@ -430,6 +430,11 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
     });
   }, [api, selected]);
 
+  /** Sends a bare key event to the remote (Escape, F-keys, …). */
+  const sendKey = useCallback((key: string, code: string) => {
+    sendInput({ kind: "key", action: "down", key, code, text: "", modifiers: [] });
+  }, [sendInput]);
+
   /** Sends input and resolves with the desktop hit-test reply (null otherwise). */
   const dispatchInputForResult = useCallback((input: Record<string, unknown>): Promise<Record<string, unknown> | null> => {
     if (!api || !selected?.isController || selected.state !== "user-controlled") return Promise.resolve(null);
@@ -460,6 +465,7 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
   }, [sendInput]);
 
   const liveDisplays = selected?.displays ?? null;
+  const windowControlAtRef = useRef(0);
   const cycleDisplay = useCallback(() => {
     if (!api || !selectedId || !liveDisplays || liveDisplays.length < 2) return;
     const currentIndex = liveDisplays.findIndex((item) => item.selected);
@@ -566,6 +572,22 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
               <button type="button" disabled={!frame} onClick={() => { setZoom(1); setPanMode(false); viewportRef.current?.scrollTo(0, 0); }}>适应窗口</button>
               <button type="button" aria-label="移动桌面画面" aria-pressed={panMode} title="拖动或滚动画面，不发送远程输入" disabled={!frame} onClick={() => setPanMode((value) => !value)}><Hand size={15} />移动画面</button>
               <button type="button" aria-label="唤起键盘" aria-pressed={imeOn} title="轻点画面会自动弹起键盘；点此手动开关（输入完请点此收起）" disabled={!frame || !hasControl} onClick={toggleIme}><Keyboard size={15} />键盘</button>
+              <button type="button" aria-label="窗口控制" title="全屏看不到左上角按钮时用：第 1 次点=退出全屏（ESC + Ctrl+Cmd+F），第 2 次点=关闭窗口（Cmd+W）" disabled={!frame || !hasControl} onClick={() => {
+                const now = Date.now();
+                if (now - windowControlAtRef.current < 2500) {
+                  // Second tap within 2.5s closes the (now un-fullscreened) window.
+                  sendInput({ kind: "key", action: "down", key: "w", code: "KeyW", text: "", modifiers: ["Meta"] });
+                  windowControlAtRef.current = 0;
+                  return;
+                }
+                windowControlAtRef.current = now;
+                // Exit fullscreen: Escape covers Chromium-style, Ctrl+Cmd+F
+                // covers native macOS fullscreen (either may apply, both are safe).
+                sendKey("Escape", "Escape");
+                window.setTimeout(() => {
+                  sendInput({ kind: "key", action: "down", key: "f", code: "KeyF", text: "", modifiers: ["Control", "Meta"] });
+                }, 150);
+              }}><Keyboard size={15} />窗口</button>
               {isDesktop && liveDisplays && liveDisplays.length > 1 && (() => {
                 const current = liveDisplays.find((item) => item.selected) ?? liveDisplays[0];
                 const label = current.primary ? "主屏" : current.label.split(" ").slice(0, 2).join(" ");
