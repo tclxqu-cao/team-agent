@@ -213,6 +213,14 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
       ? result.input as Record<string, unknown>
       : result;
     if (typeof payload?.editable !== "boolean") return; // backend without hit-test: keep state
+    // The tap optimistically raised the keyboard inside the gesture (iOS
+    // requirement). When the hit-test says the finger landed on an interactive
+    // control (close button, menu…), lower it again — end state: no keyboard.
+    if (!payload.editable && payload.kind === "control" && imeOnRef.current) {
+      textInputRef.current?.blur();
+      setImeOn(false);
+      return;
+    }
     if (payload.editable) {
       const bounds = payload.bounds as Record<string, unknown> | undefined;
       const field: RemoteEditableField | null = bounds && ["x", "y", "w", "h"].every((key) => typeof bounds[key] === "number")

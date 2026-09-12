@@ -201,10 +201,21 @@ let editableRoles: Set<String> = [
     "AXPasswordField", "AXSecureText",
 ]
 
-// Hit-tests the element under a click via the system-wide AX tree and, when it
-// is a text field, returns its bounds in logical screen coordinates (same
-// top-left origin space the mouse events use). Never throws: a missing AX tree
-// just means "not editable" and the viewer keeps its current keyboard state.
+// Interactive controls a tap should NOT re-raise the keyboard over.
+let controlRoles: Set<String> = [
+    "AXButton", "AXPopUpButton", "AXMenuButton", "AXCheckBox", "AXRadioButton",
+    "AXTabGroup", "AXTab", "AXToolbar", "AXMenuBar", "AXMenuBarItem", "AXMenu",
+    "AXMenuItem", "AXSlider", "AXIncrementor", "AXDisclosureTriangle",
+    "AXLink", "AXImage", "AXSplitGroup", "AXScrollArea", "AXDockItem",
+    "AXApplicationDockItem", "AXToggle", "AXStaticText", "AXHeading", "AXGroup",
+]
+
+// Hit-tests the element under a click via the system-wide AX tree and reports
+// what kind of thing it is, so the viewer can decide whether a tap should
+// raise the soft keyboard:
+//   editable:true  — text entry → raise
+//   kind:"control" — buttons/menus/etc → leave the keyboard alone
+//   editable:false — blank/background → raise (tap-to-type)
 func hitTestEditable(x: CGFloat, y: CGFloat) -> [String: Any] {
     guard AXIsProcessTrusted() else { return ["editable": false] }
     let systemWide = AXUIElementCreateSystemWide()
@@ -215,7 +226,13 @@ func hitTestEditable(x: CGFloat, y: CGFloat) -> [String: Any] {
     }
     var roleRef: CFTypeRef?
     guard AXUIElementCopyAttributeValue(element, kAXRoleAttribute as CFString, &roleRef) == .success,
-          let role = roleRef as? String, editableRoles.contains(role) else {
+          let role = roleRef as? String else {
+        return ["editable": false]
+    }
+    if !editableRoles.contains(role) {
+        if controlRoles.contains(role) {
+            return ["editable": false, "kind": "control", "role": role]
+        }
         return ["editable": false]
     }
     var bounds: [String: Double] = ["x": 0, "y": 0, "w": 0, "h": 0]
