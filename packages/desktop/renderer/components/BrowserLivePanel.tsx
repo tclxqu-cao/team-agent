@@ -132,6 +132,13 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
   const imeOnRef = useRef(false);
   // Last tap the desktop hit-test marked as a text field (logical screen coords).
   const editableField = useRef<RemoteEditableField | null>(null);
+  // Long-press (drag / right-click) and double-tap tracking for touch.
+  const touchStartRef = useRef<{ x: number; y: number } | null>(null);
+  const longPressRef = useRef<"none" | "armed" | "drag">("none");
+  const longPressTimer = useRef<number | null>(null);
+  const lastTapRef = useRef<{ at: number; x: number; y: number } | null>(null);
+  const [pingMs, setPingMs] = useState<number | null>(null);
+  const wakeLockRef = useRef<{ release(): Promise<void> } | null>(null);
   // Last tap the hit-test marked as an interactive control (button, dock…).
   // Re-tapping a known control skips the optimistic keyboard raise entirely —
   // no flash. First tap on an unseen control still flashes briefly (iOS only
@@ -145,12 +152,46 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
     imeOnRef.current = imeOn;
   }, [imeOn]);
 
+
+
   const selected = useMemo(
     () => sessions.find((session) => session.id === selectedId) ?? null,
     [selectedId, sessions],
   );
   const isDesktop = selected?.backend === "desktop";
   const hasControl = selected?.isController && selected.state === "user-controlled";
+  // Rough network latency readout while a stream is open.
+  useEffect(() => {
+    if (!open || !api || !selectedId) { setPingMs(null); return; }
+    let alive = true;
+    const tick = () => {
+      const t0 = performance.now();
+      void api.request("browser:ping", { t: t0 }).then(() => {
+        if (alive) setPingMs(Math.round(performance.now() - t0));
+      }).catch(() => { if (alive) setPingMs(null); });
+    };
+    tick();
+    const timer = window.setInterval(tick, 3000);
+    return () => { alive = false; window.clearInterval(timer); setPingMs(null); };
+  }, [api, open, selectedId]);
+
+  // Keep the phone screen awake while controlling (ToDesk-style).
+  useEffect(() => {
+    const nav = navigator as Navigator & { wakeLock?: { request(type: "screen"): Promise<{ release(): Promise<void> }> } };
+    if (!hasControl || !nav.wakeLock) return;
+    let cancelled = false;
+    let lock: { release(): Promise<void> } | null = null;
+    void nav.wakeLock.request("screen").then((acquired) => {
+      if (cancelled) { void acquired.release(); return; }
+      lock = acquired;
+      wakeLockRef.current = acquired;
+    }).catch(() => undefined);
+    return () => {
+      cancelled = true;
+      void lock?.release().catch(() => undefined);
+      wakeLockRef.current = null;
+    };
+  }, [hasControl]);
   const viewport = frame?.viewport ?? selected?.viewport;
   const fitScale = viewport && surfaceSize.width && surfaceSize.height
     ? Math.min(surfaceSize.width / viewport.width, surfaceSize.height / viewport.height)
@@ -472,10 +513,16 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
     });
   }, [api, selected]);
 
-  /** Sends a bare key event to the remote (Escape, F-keys, …). */
-  const sendKey = useCallback((key: string, code: string) => {
-    sendInput({ kind: "key", action: "down", key, code, text: "", modifiers: [] });
+  /** Sends a bare key press to the remote (down+up). */
+  const sendKey = useCallback((key: string, code: string, modifiers: string[] = []) => {
+    sendInput({ kind: "key", action: "down", key, code, text: "", modifiers });
+    sendInput({ kind: "key", action: "up", key, code, text: "", modifiers });
   }, [sendInput]);
+
+  /** Sends a Ctrl+<letter> combo (copy/paste/select/…). */
+  const sendCombo = useCallback((letter: string) => {
+    sendKey(letter, `Key${letter.toUpperCase()}`, ["Control"]);
+  }, [sendKey]);
 
   /** Sends input and resolves with the desktop hit-test reply (null otherwise). */
   const dispatchInputForResult = useCallback((input: Record<string, unknown>): Promise<Record<string, unknown> | null> => {
@@ -485,8 +532,8 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
       .catch(() => null);
   }, [api, selected]);
 
-  const sendTapUp = useCallback((point: { x: number; y: number }) => {
-    void dispatchInputForResult({ kind: "pointer", action: "up", ...point, button: "left" }).then(applyHitTest);
+  const sendTapUp = useCallback((point: { x: number; y: number }, click?: number) => {
+    void dispatchInputForResult({ kind: "pointer", action: "up", ...point, button: "left", ...(click && click > 1 ? { click } : {}) }).then(applyHitTest);
   }, [applyHitTest, dispatchInputForResult]);
 
   // Soft-keyboard typing: the hidden input accumulates, so only the delta is
@@ -605,7 +652,7 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
           </div>
         )}
 
-        <div className={`browser-live-surface ${hasControl ? "is-controlling" : ""} has-zoom`}>
+        <div className={`browser-live-surface ${hasControl ? "is-controlling" : ""} has-zoom ${hasControl && !panMode ? "has-quickkeys" : ""}`}>
           {(
             <div className="browser-live-zoom" role="group" aria-label="桌面画面缩放">
               <button type="button" aria-label="缩小桌面画面" title="缩小" disabled={!frame || zoom <= 0.5} onClick={() => setZoom((value) => Math.max(0.5, value - 0.25))}><ZoomOut size={16} /></button>
@@ -618,7 +665,7 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
                 const now = Date.now();
                 if (now - windowControlAtRef.current < 2500) {
                   // Second tap within 2.5s closes the (now un-fullscreened) window.
-                  sendInput({ kind: "key", action: "down", key: "w", code: "KeyW", text: "", modifiers: ["Meta"] });
+                  sendKey("w", "KeyW", ["Meta"]);
                   windowControlAtRef.current = 0;
                   return;
                 }
@@ -627,7 +674,7 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
                 // covers native macOS fullscreen (either may apply, both are safe).
                 sendKey("Escape", "Escape");
                 window.setTimeout(() => {
-                  sendInput({ kind: "key", action: "down", key: "f", code: "KeyF", text: "", modifiers: ["Control", "Meta"] });
+                  sendKey("f", "KeyF", ["Control", "Meta"]);
                 }, 150);
               }}><Keyboard size={15} />窗口</button>
               {isDesktop && liveDisplays && liveDisplays.length > 1 && (() => {
@@ -647,7 +694,23 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
               })()}
             </div>
           )}
-          <div className="browser-live-touch-hint">控制中滑动可滚动画面 · 双指缩放 · 轻点点击 · 放大后单指平移</div>
+          {hasControl && !panMode && (
+            <div className="browser-live-quickkeys" role="group" aria-label="快捷键">
+              <button type="button" disabled={!frame} onClick={() => sendKey("Escape", "Escape")}>Esc</button>
+              <button type="button" disabled={!frame} onClick={() => sendKey("Tab", "Tab")}>Tab</button>
+              <button type="button" disabled={!frame} onClick={() => sendCombo("c")}>复制</button>
+              <button type="button" disabled={!frame} onClick={() => sendCombo("v")}>粘贴</button>
+              <button type="button" disabled={!frame} onClick={() => sendCombo("a")}>全选</button>
+              <button type="button" disabled={!frame} onClick={() => sendCombo("z")}>撤销</button>
+              <button type="button" disabled={!frame} onClick={() => sendCombo("s")}>保存</button>
+              <button type="button" disabled={!frame} onClick={() => sendCombo("f")}>查找</button>
+              <button type="button" disabled={!frame} onClick={() => sendKey("ArrowLeft", "ArrowLeft")}>←</button>
+              <button type="button" disabled={!frame} onClick={() => sendKey("ArrowUp", "ArrowUp")}>↑</button>
+              <button type="button" disabled={!frame} onClick={() => sendKey("ArrowDown", "ArrowDown")}>↓</button>
+              <button type="button" disabled={!frame} onClick={() => sendKey("ArrowRight", "ArrowRight")}>→</button>
+            </div>
+          )}
+          <div className="browser-live-touch-hint">滑动滚动 · 轻点点击 · 双击打开 · 长按拖动/右键 · 双指缩放</div>
           <div ref={viewportRef} className="browser-live-viewport">
             {frame && frameSrc ? (
               <div
@@ -664,6 +727,13 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
                     touch.current.down(event.pointerId, { x: event.clientX, y: event.clientY });
                     touchGesturePoint.current = hasControl && !panMode ? pointerCoordinates(event) : null;
                     event.currentTarget.setPointerCapture(event.pointerId);
+                    // Arm long-press (drag / right-click) while controlling.
+                    if (longPressTimer.current) window.clearTimeout(longPressTimer.current);
+                    longPressRef.current = "none";
+                    touchStartRef.current = hasControl && !panMode ? { x: event.clientX, y: event.clientY } : null;
+                    if (touchStartRef.current) {
+                      longPressTimer.current = window.setTimeout(() => { longPressRef.current = "armed"; }, 550);
+                    }
                     return;
                   }
                   if (panMode && viewportRef.current) {
@@ -702,6 +772,22 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
                       flushSync(() => setZoom(nextZoom));
                       return;
                     }
+                    // A swipe cancels the pending long-press.
+                    if (longPressTimer.current) {
+                      window.clearTimeout(longPressTimer.current);
+                      longPressTimer.current = null;
+                    }
+                    // Armed long-press + movement = remote drag.
+                    if (longPressRef.current === "armed" && touchStartRef.current) {
+                      longPressRef.current = "drag";
+                      const dragPoint = pointerCoordinates(event);
+                      if (dragPoint) sendInput({ kind: "pointer", action: "down", ...dragPoint, button: "left" });
+                    }
+                    if (longPressRef.current === "drag") {
+                      const dragPoint = pointerCoordinates(event);
+                      if (dragPoint) sendInput({ kind: "pointer", action: "move", ...dragPoint, button: "left" });
+                      return;
+                    }
                     // While controlling, finger drags scroll the remote content —
                     // one or two fingers at fit zoom (a fit canvas has nothing to
                     // pan, so "pan" would silently do nothing), two fingers when
@@ -732,9 +818,27 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
                 onPointerUp={(event) => {
                   if (event.pointerType === "touch") {
                     event.preventDefault();
-                    const tap = touch.current.up(event.pointerId, { x: event.clientX, y: event.clientY });
+                    if (longPressTimer.current) { window.clearTimeout(longPressTimer.current); longPressTimer.current = null; }
                     const point = pointerCoordinates(event);
                     touchGesturePoint.current = null;
+                    // Stationary long-press release = right-click.
+                    if (longPressRef.current === "armed") {
+                      longPressRef.current = "none";
+                      touch.current.reset();
+                      if (point && hasControl && !panMode) {
+                        sendInput({ kind: "pointer", action: "down", ...point, button: "right" });
+                        sendInput({ kind: "pointer", action: "up", ...point, button: "right" });
+                      }
+                      return;
+                    }
+                    // Long-press drag release = left button up.
+                    if (longPressRef.current === "drag") {
+                      longPressRef.current = "none";
+                      touch.current.reset();
+                      if (point && hasControl) sendInput({ kind: "pointer", action: "up", ...point, button: "left" });
+                      return;
+                    }
+                    const tap = touch.current.up(event.pointerId, { x: event.clientX, y: event.clientY });
                     if (tap && point && hasControl && !panMode) {
                       // Every remote tap raises the soft keyboard (RD-style) —
                       // iOS only allows focus() inside the gesture itself —
@@ -748,8 +852,20 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
                         textInputRef.current?.focus({ preventScroll: true });
                         setImeOn(true);
                       }
-                      sendInput({ kind: "pointer", action: "down", ...point, button: "left" });
-                      sendTapUp(point);
+                      const vp = frame?.viewport ?? selected?.viewport;
+                      const last = lastTapRef.current;
+                      const isDouble = last !== null && Date.now() - last.at < 400 && vp !== undefined
+                        && Math.hypot((point.x - last.x) * vp.width, (point.y - last.y) * vp.height) < vp.width * 0.03;
+                      if (isDouble) {
+                        // Second tap of a double: replay as a real double-click.
+                        sendInput({ kind: "pointer", action: "down", ...point, button: "left", click: 2 });
+                        sendTapUp(point, 2);
+                        lastTapRef.current = null;
+                      } else {
+                        sendInput({ kind: "pointer", action: "down", ...point, button: "left" });
+                        sendTapUp(point);
+                        lastTapRef.current = { at: Date.now(), x: point.x, y: point.y };
+                      }
                     }
                     return;
                   }
@@ -762,6 +878,8 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
                 onPointerCancel={(event) => {
                   touch.current.up(event.pointerId, { x: event.clientX, y: event.clientY }, true);
                   panStart.current = null; pointerDown.current = false; touchGesturePoint.current = null;
+                  if (longPressTimer.current) { window.clearTimeout(longPressTimer.current); longPressTimer.current = null; }
+                  longPressRef.current = "none";
                 }}
                 onLostPointerCapture={(event) => {
                   touch.current.up(event.pointerId, { x: event.clientX, y: event.clientY }, true);
@@ -829,7 +947,7 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
             )}
           </div>
           {hasControl && !panMode && (
-            <div className="browser-live-control-cue"><MousePointer2 size={13} aria-hidden="true" /> {isDesktop ? "当前输入会发送到本机" : "当前输入会发送到浏览器"}{isDesktop && webrtcState === "live" ? " · 实时视频流" : isDesktop && webrtcState === "connecting" ? " · 正在连接实时流" : ""}</div>
+            <div className="browser-live-control-cue"><MousePointer2 size={13} aria-hidden="true" /> {isDesktop ? "当前输入会发送到本机" : "当前输入会发送到浏览器"}{isDesktop && webrtcState === "live" ? " · 实时视频流" : isDesktop && webrtcState === "connecting" ? " · 正在连接实时流" : ""}{pingMs != null ? ` · ${pingMs}ms` : ""}</div>
           )}
         </div>
 

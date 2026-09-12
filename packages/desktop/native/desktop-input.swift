@@ -56,7 +56,8 @@ func postMouse(_ command: [String: Any]) throws {
 
     let type: CGEventType
     let eventButton: CGMouseButton
-    let clickState: Int64 = (op == "down" || op == "up") ? 1 : 0
+    // Double-click semantics ride in as click:2/3 from the viewer.
+    let clickState: Int64 = (op == "down" || op == "up") ? Int64((command["click"] as? NSNumber)?.intValue ?? 1) : 0
     switch op {
     case "move":
         type = .mouseMoved

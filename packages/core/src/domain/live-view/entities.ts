@@ -54,6 +54,8 @@ export type LiveViewInput =
       button: "left" | "right" | "middle";
       deltaX: number;
       deltaY: number;
+      /** Mouse click count for double-click semantics (2 = double-click). */
+      click?: number;
     }
   | {
       kind: "key";

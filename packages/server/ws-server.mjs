@@ -784,6 +784,8 @@ const requestHandlers = {
   },
   "browser:input-result": async (msg, conn) => liveViewRegistry.inputResult(conn.browserPeer, msg.sessionId, msg.token, msg.result),
   "browser:set-display": async (msg, conn) => ({ session: liveViewRegistry.setDisplay(conn.browserPeer, msg.sessionId, msg.displayId) }),
+  // Latency probe for the live panel's readout.
+  "browser:ping": async (msg) => ({ t: typeof msg.t === "number" ? msg.t : 0 }),
   // WebRTC signaling viewer→producer (offer request, answer, ICE, stop)
   "browser:webrtc": async (msg, conn) => liveViewRegistry.webrtcFromViewer(conn.browserPeer, msg.sessionId, msg.data),
   // WebRTC signaling producer→controller (offer, ICE, state)

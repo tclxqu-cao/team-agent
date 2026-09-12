@@ -1,7 +1,7 @@
 import { spawn, type ChildProcess } from "node:child_process";
 
 export type DesktopInputCommand =
-  | { op: "move" | "down" | "up" | "drag"; x: number; y: number; button?: "left" | "right" | "middle" }
+  | { op: "move" | "down" | "up" | "drag"; x: number; y: number; button?: "left" | "right" | "middle"; click?: number }
   | { op: "wheel"; deltaX: number; deltaY: number }
   | { op: "key"; action: "down" | "up"; code: string; modifiers?: string[] }
   | { op: "text"; text: string };

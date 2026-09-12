@@ -130,9 +130,9 @@ describe("DesktopScreenScreencast", () => {
 
     expect(dispatched).toEqual([
       { op: "move", x: 720, y: 225 },
-      { op: "down", x: 720, y: 225, button: "left" },
+      { op: "down", x: 720, y: 225, button: "left", click: 1 },
       { op: "drag", x: 864, y: 270 },
-      { op: "up", x: 864, y: 270, button: "left" },
+      { op: "up", x: 864, y: 270, button: "left", click: 1 },
       // Wheel first parks the cursor at the pointer position so the scroll
       // lands on the window the viewer is actually looking at.
       { op: "move", x: 864, y: 270 },

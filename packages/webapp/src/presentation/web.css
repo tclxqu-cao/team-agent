@@ -261,6 +261,51 @@ body[data-web-shell="1"] .chat-header-action--appearance {
   display: none;
 }
 
+/* Quick-key strip (shown while controlling): Esc/Tab/Ctrl-combos/arrows. */
+.browser-live-quickkeys {
+  position: absolute;
+  inset: 44px 0 auto;
+  height: 38px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  padding: 0 8px;
+  box-sizing: border-box;
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.browser-live-quickkeys::-webkit-scrollbar {
+  display: none;
+}
+
+.browser-live-quickkeys button {
+  flex: none;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 5px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.browser-live-surface.has-quickkeys .browser-live-viewport {
+  top: 82px;
+}
+
+.browser-live-surface.has-quickkeys .browser-live-control-cue {
+  top: 92px;
+}
+
 .browser-live-zoom button {
   display: inline-flex;
   align-items: center;

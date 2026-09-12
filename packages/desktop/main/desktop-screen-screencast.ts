@@ -194,9 +194,10 @@ export class DesktopScreenScreencast implements LiveScreencastPort {
       const y = Math.min(display.height - 1, Math.round(input.y * display.height));
       const globalX = display.originX + x;
       const globalY = display.originY + y;
+      const clickCount = input.click && input.click >= 2 ? Math.min(3, Math.round(input.click)) : 1;
       if (input.action === "down") {
         this.pointerDown = true;
-        await this.#send({ op: "down", x: globalX, y: globalY, button: input.button });
+        await this.#send({ op: "down", x: globalX, y: globalY, button: input.button, click: clickCount });
         return null;
       }
       if (input.action === "up") {
@@ -204,7 +205,7 @@ export class DesktopScreenScreencast implements LiveScreencastPort {
         // The helper annotates the release with an accessibility hit-test of
         // the tapped element ("editable" + bounds); the viewer uses it to
         // raise/lower the soft keyboard.
-        return this.#send({ op: "up", x: globalX, y: globalY, button: input.button });
+        return this.#send({ op: "up", x: globalX, y: globalY, button: input.button, click: clickCount });
       }
       await this.#send(this.pointerDown ? { op: "drag", x: globalX, y: globalY } : { op: "move", x: globalX, y: globalY });
       return null;

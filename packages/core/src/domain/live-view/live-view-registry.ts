@@ -456,7 +456,8 @@ function normalizeInput(value: unknown): LiveViewInput {
       ? input.action as "down" | "up" | "move" | "wheel"
       : null;
     if (!Number.isFinite(x) || !Number.isFinite(y) || x < 0 || x > 1 || y < 0 || y > 1 || !action) throw domainError("invalid pointer input", "EINVAL");
-    return { kind: "pointer", action, x, y, button: ["left", "right", "middle"].includes(String(input.button)) ? input.button as "left" | "right" | "middle" : "left", deltaX: Math.max(-2_000, Math.min(2_000, Number(input.deltaX) || 0)), deltaY: Math.max(-2_000, Math.min(2_000, Number(input.deltaY) || 0)) };
+    const clickCount = Number(input.click);
+    return { kind: "pointer", action, x, y, button: ["left", "right", "middle"].includes(String(input.button)) ? input.button as "left" | "right" | "middle" : "left", deltaX: Math.max(-2_000, Math.min(2_000, Number(input.deltaX) || 0)), deltaY: Math.max(-2_000, Math.min(2_000, Number(input.deltaY) || 0)), ...(Number.isSafeInteger(clickCount) && clickCount >= 2 && clickCount <= 3 ? { click: clickCount } : {}) };
   }
   if (input.kind === "key") {
     const allowedModifiers = new Set(["Alt", "Control", "Meta", "Shift"] as const);
