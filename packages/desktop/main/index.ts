@@ -890,9 +890,30 @@ const desktopInputHelperPath = app.isPackaged
 const desktopLiveEndpoint = process.env.AGENT_LIVE_ENDPOINT?.trim() || "http://127.0.0.1:3000";
 
 let desktopScreenLive: DesktopScreenLive | null = null;
+/** Persisted capture display choice; null = primary. Multi-display Macs can stream either screen. */
+let liveDisplayId: string | null = null;
 
 function probeScreenPermission(): ScreenPermission {
   return systemPreferences.getMediaAccessStatus("screen") as ScreenPermission;
+}
+
+function pickLiveDisplay(): { display: Electron.Display; id: string; originX: number; originY: number; width: number; height: number; scaleFactor: number } {
+  const all = screen.getAllDisplays();
+  const chosen = (liveDisplayId && all.find((item) => String(item.id) === liveDisplayId)) || screen.getPrimaryDisplay();
+  return {
+    display: chosen,
+    id: String(chosen.id),
+    originX: chosen.bounds.x,
+    originY: chosen.bounds.y,
+    width: chosen.size.width,
+    height: chosen.size.height,
+    scaleFactor: chosen.scaleFactor,
+  };
+}
+
+async function persistDesktopLiveEnabled(enabled: boolean): Promise<void> {
+  const state = await readDesktopLiveState(desktopLiveStatePath);
+  await writeDesktopLiveState(desktopLiveStatePath, { enabled, displayId: state.displayId });
 }
 
 function getDesktopScreenLive(): DesktopScreenLive {
@@ -907,8 +928,8 @@ function getDesktopScreenLive(): DesktopScreenLive {
   const screencast = new DesktopScreenScreencast({
     input: gateway,
     displayInfo: () => {
-      const display = screen.getPrimaryDisplay();
-      return { width: display.size.width, height: display.size.height, scaleFactor: display.scaleFactor };
+      const picked = pickLiveDisplay();
+      return { originX: picked.originX, originY: picked.originY, width: picked.width, height: picked.height, scaleFactor: picked.scaleFactor, id: picked.id };
     },
     captureSources: async (thumbnailSize) => {
       const sources = await desktopCapturer.getSources({ types: ["screen"], thumbnailSize });
@@ -923,7 +944,7 @@ function getDesktopScreenLive(): DesktopScreenLive {
         };
       });
     },
-    primaryDisplayId: () => String(screen.getPrimaryDisplay().id),
+    primaryDisplayId: () => pickLiveDisplay().id,
   });
   const keepAwake = new DisplayKeepAwake({
     // `caffeinate -u` declares user activity, which lights up an asleep
@@ -963,10 +984,34 @@ function getDesktopScreenLive(): DesktopScreenLive {
 
 ipcMain.handle("desktop-live:get-status", async () => getDesktopScreenLive().getStatus());
 
+// Multi-display: the capture display is selectable; input coordinates follow
+// the streamed display's global origin so taps land on the right screen.
+ipcMain.handle("desktop-live:get-displays", () => {
+  const primary = screen.getPrimaryDisplay();
+  return {
+    displays: screen.getAllDisplays().map((item, index) => ({
+      id: String(item.id),
+      label: item.id === primary.id ? `主屏 ${item.size.width}×${item.size.height}` : `屏幕 ${index + 1} ${item.size.width}×${item.size.height}`,
+      primary: item.id === primary.id,
+      selected: String(item.id) === pickLiveDisplay().id,
+    })),
+  };
+});
+
+ipcMain.handle("desktop-live:set-display", async (_event, displayId: unknown) => {
+  liveDisplayId = typeof displayId === "string" && displayId ? displayId : null;
+  const state = await readDesktopLiveState(desktopLiveStatePath);
+  await writeDesktopLiveState(desktopLiveStatePath, { enabled: state.enabled, displayId: liveDisplayId });
+  const picked = pickLiveDisplay();
+  // The capture loop re-reads displayInfo every frame, so this takes effect
+  // on the next frame without restarting the stream.
+  return { displayId: picked.id };
+});
+
 ipcMain.handle("desktop-live:set-enabled", async (_event, enabled: unknown) => {
   const live = getDesktopScreenLive();
   const status = enabled === true ? await live.enable() : await live.disable();
-  await writeDesktopLiveState(desktopLiveStatePath, { enabled: status.enabled }).catch(() => undefined);
+  await persistDesktopLiveEnabled(status.enabled);
   return status;
 });
 
@@ -1046,6 +1091,7 @@ app.whenReady().then(async () => {
   });
   // Restore desktop live view if the user left it enabled.
   const desktopLivePersisted = await readDesktopLiveState(desktopLiveStatePath);
+  liveDisplayId = desktopLivePersisted.displayId;
   if (desktopLivePersisted.enabled) {
     await getDesktopScreenLive().enable().catch((error) => {
       console.warn("[desktop-live] auto-start failed:", error);

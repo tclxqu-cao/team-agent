@@ -260,6 +260,8 @@ contextBridge.exposeInMainWorld("desktopDeviceApi", {
   // Desktop live view (screen capture + remote control)
   desktopLiveGetStatus: () => ipcRenderer.invoke("desktop-live:get-status"),
   desktopLiveSetEnabled: (enabled: boolean) => ipcRenderer.invoke("desktop-live:set-enabled", enabled),
+  desktopLiveGetDisplays: () => ipcRenderer.invoke("desktop-live:get-displays"),
+  desktopLiveSetDisplay: (displayId: string | null) => ipcRenderer.invoke("desktop-live:set-display", displayId),
   onDesktopLiveStatus: (callback: (status: unknown) => void): (() => void) => {
     const handler = (_event: unknown, status: unknown) => callback(status);
     ipcRenderer.on("desktop-live:status", handler);

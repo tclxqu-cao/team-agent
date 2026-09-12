@@ -30,7 +30,7 @@ describe("DesktopScreenScreencast", () => {
     ]);
     const screencast = new DesktopScreenScreencast({
       input: { dispatch: async () => undefined },
-      displayInfo: () => ({ width: 1440, height: 900, scaleFactor: 2 }),
+      displayInfo: () => ({ originX: 0, originY: 0, width: 1440, height: 900, scaleFactor: 2, id: "screen:0" }),
       captureSources,
       primaryDisplayId: () => "screen:1",
       now: clock.now,
@@ -54,7 +54,7 @@ describe("DesktopScreenScreencast", () => {
     ]);
     const screencast = new DesktopScreenScreencast({
       input: { dispatch: async () => undefined },
-      displayInfo: () => ({ width: 1440, height: 900, scaleFactor: 1 }),
+      displayInfo: () => ({ originX: 0, originY: 0, width: 1440, height: 900, scaleFactor: 1, id: "screen:0" }),
       captureSources,
       now: clock.now,
       sleep: async (ms) => { clock.advance(ms); },
@@ -75,7 +75,7 @@ describe("DesktopScreenScreencast", () => {
     });
     const screencast = new DesktopScreenScreencast({
       input: { dispatch: async () => undefined },
-      displayInfo: () => ({ width: 1440, height: 900, scaleFactor: 1 }),
+      displayInfo: () => ({ originX: 0, originY: 0, width: 1440, height: 900, scaleFactor: 1, id: "screen:0" }),
       captureSources,
       fps: 4,
       now: clock.now,
@@ -97,7 +97,7 @@ describe("DesktopScreenScreencast", () => {
     const clock = fakeClock();
     const screencast = new DesktopScreenScreencast({
       input: { dispatch: async () => undefined },
-      displayInfo: () => ({ width: 1440, height: 900, scaleFactor: 1 }),
+      displayInfo: () => ({ originX: 0, originY: 0, width: 1440, height: 900, scaleFactor: 1, id: "screen:0" }),
       captureSources: async () => [],
       firstFrameTimeoutMs: 4_000,
       now: clock.now,
@@ -112,7 +112,7 @@ describe("DesktopScreenScreencast", () => {
     const dispatched: unknown[] = [];
     const screencast = new DesktopScreenScreencast({
       input: { dispatch: async (command: unknown) => { dispatched.push(command); } },
-      displayInfo: () => ({ width: 1440, height: 900, scaleFactor: 2 }),
+      displayInfo: () => ({ originX: 0, originY: 0, width: 1440, height: 900, scaleFactor: 2, id: "screen:0" }),
       captureSources: async () => [{ id: "screen:0", thumbnail: makeThumbnail(32, 1440, 900) }],
       now: () => 1,
       sleep: async () => undefined,
@@ -142,11 +142,53 @@ describe("DesktopScreenScreencast", () => {
     ]);
   });
 
+  it("offsets injected coordinates by the streamed display's global origin", async () => {
+    const dispatched: unknown[] = [];
+    const screencast = new DesktopScreenScreencast({
+      input: { dispatch: async (command: unknown) => { dispatched.push(command); } },
+      // A second display sitting right of the primary one.
+      displayInfo: () => ({ originX: 2560, originY: 495, width: 1352, height: 878, scaleFactor: 2, id: "screen:1" }),
+      captureSources: async () => [{ id: "screen:1", thumbnail: makeThumbnail(32, 1352, 878) }],
+      now: () => 1,
+      sleep: async () => undefined,
+    });
+    await screencast.start(async () => { await screencast.stop(); });
+    await screencast.dispatchInput({ kind: "pointer", action: "down", x: 0.25, y: 0.5, button: "left", deltaX: 0, deltaY: 0 });
+    await screencast.dispatchInput({ kind: "pointer", action: "wheel", x: 0.25, y: 0.5, button: "left", deltaX: 0, deltaY: 60 });
+    expect(dispatched).toEqual([
+      // Screen-global coordinates: display origin + normalized position.
+      { op: "down", x: 2560 + 338, y: 495 + 439, button: "left" },
+      { op: "move", x: 2560 + 338, y: 495 + 439 },
+      { op: "wheel", deltaX: 0, deltaY: 60 },
+    ]);
+  });
+
+  it("picks the capture source matching the streamed display id", async () => {
+    const captureSources = vi.fn(async () => [
+      { id: "screen:0", thumbnail: makeThumbnail(32, 100, 100) },
+      { id: "screen:1", thumbnail: makeThumbnail(64, 1352, 878) },
+    ]);
+    const screencast = new DesktopScreenScreencast({
+      input: { dispatch: async () => undefined },
+      displayInfo: () => ({ originX: 2560, originY: 495, width: 1352, height: 878, scaleFactor: 2, id: "screen:1" }),
+      captureSources,
+      primaryDisplayId: () => "screen:1",
+      now: () => 1,
+      sleep: async () => undefined,
+    });
+    let jpegBytes = 0;
+    await screencast.start(async (frame) => {
+      jpegBytes = (frame.data as Uint8Array).byteLength;
+      await screencast.stop();
+    });
+    expect(jpegBytes).toBe(64);
+  });
+
   it("returns the helper hit-test reply for pointer releases only", async () => {
     const hitTest = { ok: true, editable: true, bounds: { x: 100, y: 200, w: 300, h: 40 } };
     const screencast = new DesktopScreenScreencast({
       input: { dispatch: async (command: unknown) => ((command as { op: string }).op === "up" ? hitTest : { ok: true }) },
-      displayInfo: () => ({ width: 1440, height: 900, scaleFactor: 1 }),
+      displayInfo: () => ({ originX: 0, originY: 0, width: 1440, height: 900, scaleFactor: 1, id: "screen:0" }),
       captureSources: async () => [{ id: "screen:0", thumbnail: makeThumbnail(32, 1440, 900) }],
       now: () => 1,
       sleep: async () => undefined,
@@ -171,7 +213,7 @@ describe("webrtc standby capture", () => {
     });
     const screencast = new DesktopScreenScreencast({
       input: { dispatch: async () => undefined },
-      displayInfo: () => ({ width: 1440, height: 900, scaleFactor: 2 }),
+      displayInfo: () => ({ originX: 0, originY: 0, width: 1440, height: 900, scaleFactor: 2, id: "screen:0" }),
       captureSources,
       now: clock.now,
       sleep: async (ms) => { clock.advance(ms); },
@@ -196,7 +238,7 @@ describe("desktop capture quality budget", () => {
     const captureSources = vi.fn(async () => [{ id: "screen:0", thumbnail: { toJPEG, getSize: () => ({ width: 3840, height: 2160 }) } }]);
     const screencast = new DesktopScreenScreencast({
       input: { dispatch: async () => undefined },
-      displayInfo: () => ({ width: 2560, height: 1440, scaleFactor: 2 }),
+      displayInfo: () => ({ originX: 0, originY: 0, width: 2560, height: 1440, scaleFactor: 2, id: "screen:0" }),
       captureSources,
     });
     await screencast.start(async (frame) => {
@@ -217,7 +259,7 @@ describe("input driven screen refresh", () => {
     let count = 0;
     const screencast = new DesktopScreenScreencast({
       input: { dispatch: async () => undefined },
-      displayInfo: () => ({ width: 1440, height: 900, scaleFactor: 1 }),
+      displayInfo: () => ({ originX: 0, originY: 0, width: 1440, height: 900, scaleFactor: 1, id: "screen:0" }),
       captureSources: async () => [{ id: "screen:0", thumbnail: makeThumbnail(32, 1440, 900) }],
       sleep: () => { sleeping(); return new Promise(() => {}); },
     });
@@ -236,7 +278,7 @@ describe("input driven screen refresh", () => {
     let frames = 0;
     const screencast = new DesktopScreenScreencast({
       input: { dispatch: async () => undefined },
-      displayInfo: () => ({ width: 1440, height: 900, scaleFactor: 2 }),
+      displayInfo: () => ({ originX: 0, originY: 0, width: 1440, height: 900, scaleFactor: 2, id: "screen:0" }),
       captureSources: async () => [{ id: "screen:0", thumbnail: { toJPEG, getSize: () => ({ width: 2880, height: 1800 }) } }],
       now: () => 100,
       sleep: async () => undefined,

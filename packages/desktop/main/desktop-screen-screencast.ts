@@ -4,9 +4,13 @@ import { LiveViewCapabilityError, LiveViewFramePacer } from "@agent/core";
 import type { DesktopInputCommand } from "./desktop-input-gateway";
 
 export interface DesktopDisplayInfo {
+  /** Screen-global origin — CGEvent mouse coordinates need it on non-primary displays. */
+  originX: number;
+  originY: number;
   width: number;
   height: number;
   scaleFactor: number;
+  id: string;
 }
 
 export interface DesktopCapturedSource {
@@ -175,15 +179,17 @@ export class DesktopScreenScreencast implements LiveScreencastPort {
         // that took over without tapping scrolls the wrong window.
         const x = Math.min(display.width - 1, Math.round(input.x * display.width));
         const y = Math.min(display.height - 1, Math.round(input.y * display.height));
-        await this.#send({ op: "move", x, y });
+        await this.#send({ op: "move", x: display.originX + x, y: display.originY + y });
         await this.#send({ op: "wheel", deltaX: Math.round(input.deltaX), deltaY: Math.round(input.deltaY) });
         return null;
       }
       const x = Math.min(display.width - 1, Math.round(input.x * display.width));
       const y = Math.min(display.height - 1, Math.round(input.y * display.height));
+      const globalX = display.originX + x;
+      const globalY = display.originY + y;
       if (input.action === "down") {
         this.pointerDown = true;
-        await this.#send({ op: "down", x, y, button: input.button });
+        await this.#send({ op: "down", x: globalX, y: globalY, button: input.button });
         return null;
       }
       if (input.action === "up") {
@@ -191,9 +197,9 @@ export class DesktopScreenScreencast implements LiveScreencastPort {
         // The helper annotates the release with an accessibility hit-test of
         // the tapped element ("editable" + bounds); the viewer uses it to
         // raise/lower the soft keyboard.
-        return this.#send({ op: "up", x, y, button: input.button });
+        return this.#send({ op: "up", x: globalX, y: globalY, button: input.button });
       }
-      await this.#send(this.pointerDown ? { op: "drag", x, y } : { op: "move", x, y });
+      await this.#send(this.pointerDown ? { op: "drag", x: globalX, y: globalY } : { op: "move", x: globalX, y: globalY });
       return null;
     }
     if (input.text && !input.key && !input.code) {

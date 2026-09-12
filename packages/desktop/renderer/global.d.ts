@@ -406,6 +406,8 @@ export interface AgentApi {
   // Desktop live view (screen capture + remote control)
   desktopLiveGetStatus(): Promise<DesktopLiveStatus>;
   desktopLiveSetEnabled(enabled: boolean): Promise<DesktopLiveStatus>;
+  desktopLiveGetDisplays?(): Promise<{ displays: DesktopLiveDisplayOption[] }>;
+  desktopLiveSetDisplay?(displayId: string | null): Promise<{ displayId: string }>;
   onDesktopLiveStatus(callback: (status: DesktopLiveStatus) => void): () => void;
 
   // Global wake shortcut: fired after main has shown/focused the window
@@ -519,6 +521,13 @@ export interface DesktopLiveStatus {
   sessionOnline: boolean;
   controlState: LiveViewOwnershipState | null;
   error?: string;
+}
+
+export interface DesktopLiveDisplayOption {
+  id: string;
+  label: string;
+  primary: boolean;
+  selected: boolean;
 }
 
 export interface BrowserLiveApi {
