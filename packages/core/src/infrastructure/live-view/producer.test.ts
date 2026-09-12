@@ -107,6 +107,51 @@ describe("LiveViewProducer", () => {
     await running;
   });
 
+  it("switches the capture display through the hook and republishes options", async () => {
+    const events: Array<(event: Record<string, unknown>) => void> = [];
+    const started = deferred();
+    const options = [
+      { id: "3", label: "主屏", primary: true, selected: false },
+      { id: "1", label: "屏幕 2", primary: false, selected: true },
+    ];
+    const client = {
+      connect: vi.fn(),
+      publish: vi.fn(async (metadata: Record<string, unknown>) => ({ ...metadata, channelId: 4 })),
+      onEvent: vi.fn((listener: (event: Record<string, unknown>) => void) => { events.push(listener); return () => undefined; }),
+      frame: vi.fn(),
+      state: vi.fn().mockResolvedValue(undefined),
+      inputResult: vi.fn(async () => undefined),
+      webrtcRelay: vi.fn(async () => undefined),
+      unavailable: vi.fn(),
+      waitForDisconnect: vi.fn(() => new Promise<void>(() => {})),
+      close: vi.fn().mockResolvedValue(undefined),
+      disconnect: vi.fn(),
+    };
+    const producer = new LiveViewProducer({
+      client,
+      screencast: { start: vi.fn(() => started.promise), stop: vi.fn().mockResolvedValue(undefined), dispatchInput: vi.fn() },
+      metadata: { sessionId: "desktop:primary", backend: "desktop" },
+      pauseAgent: vi.fn(),
+      resyncAgent: vi.fn(),
+      onSetDisplay: vi.fn(async () => options),
+    });
+    const running = producer.run();
+    await flush();
+    events[0]({ type: "browser:takeover-requested", sessionId: "desktop:primary" });
+    await flush();
+    events[0]({ type: "browser:set-display", sessionId: "desktop:primary", displayId: "1" });
+    await flush();
+    expect(producer["onSetDisplay"]).toHaveBeenCalledWith("1");
+    const publishPayload = client.publish.mock.calls.at(-1)?.[0] as Record<string, unknown>;
+    expect(publishPayload.displays).toEqual(options);
+    // Null displayId (back to primary) also routes through the hook.
+    client.publish.mockClear();
+    events[0]({ type: "browser:set-display", sessionId: "desktop:primary", displayId: null });
+    await flush();
+    started.resolve();
+    await running;
+  });
+
   it("reports a screencast capability failure without an unhandled rejection", async () => {
     const disconnected = deferred();
     const error = Object.assign(new Error("no frames"), { code: "BROWSER_LIVE_STREAM_UNAVAILABLE" });

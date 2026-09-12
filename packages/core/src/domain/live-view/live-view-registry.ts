@@ -1,5 +1,6 @@
 import type {
   LiveViewAvailability,
+  LiveViewDisplayOption,
   LiveViewInput,
   LiveViewPeer,
   LiveViewSessionView,
@@ -63,6 +64,7 @@ interface LiveSession {
   state: LiveViewOwnershipState;
   online: boolean;
   updatedAt: number;
+  displays: LiveViewDisplayOption[] | null;
 }
 
 export interface PublishLiveSession {
@@ -78,6 +80,7 @@ export interface PublishLiveSession {
   availability?: unknown;
   capabilityError?: unknown;
   capabilityErrorCode?: unknown;
+  displays?: unknown;
 }
 
 function domainError(message: string, code: string): Error & { code: string } {
@@ -120,6 +123,7 @@ function view(session: LiveSession, peer?: LiveViewPeer): LiveViewSessionView {
     viewerCount: session.watchers.size,
     isController: session.controllerId === peer?.id,
     controlledByAnotherViewer: Boolean(session.controllerId && session.controllerId !== peer?.id),
+    displays: session.displays,
   };
 }
 
@@ -169,6 +173,7 @@ export class LiveViewRegistry {
       state: "agent-controlled",
       online: true,
       updatedAt: timestamp,
+      displays: null,
     };
     session.backend = backend;
     session.browserSessionId = optionalString(input.browserSessionId, 160);
@@ -177,6 +182,7 @@ export class LiveViewRegistry {
     session.url = optionalString(input.url, 2_048) ?? session.url;
     session.viewport = normalizeViewport(input.viewport) ?? session.viewport;
     session.transport = input.transport === "webrtc" ? "webrtc" : "cdp-jpeg-ws";
+    session.displays = normalizeDisplays(input.displays);
     session.availability = AVAILABILITY_STATES.has(input.availability as LiveViewAvailability)
       ? input.availability as LiveViewAvailability
       : session.availability;
@@ -308,6 +314,15 @@ export class LiveViewRegistry {
     return reply;
   }
 
+  /** Asks the producer to switch its capture display (multi-display Macs). */
+  setDisplay(peer: LiveViewPeer, sessionId: unknown, displayId: unknown): LiveViewSessionView {
+    const session = this.requireVisible(peer, sessionId);
+    if (session.controllerId !== peer.id) throw domainError("browser is read-only", "EWRITELOCK");
+    if (!session.displays?.some((item) => item.id === displayId)) throw domainError("unknown display", "EINVAL");
+    session.producer.send({ type: "browser:set-display", sessionId: session.id, displayId });
+    return view(session, peer);
+  }
+
   /** Resolves a pending input() reply with the producer's dispatch result. */
   inputResult(peer: LiveViewPeer, sessionId: unknown, token: unknown, result: unknown): { delivered: boolean } {
     const session = this.requireProducer(peer, sessionId);
@@ -414,6 +429,21 @@ function normalizeViewport(value: unknown): LiveViewViewport | null {
   const height = Math.floor(Number(candidate.height));
   if (!Number.isFinite(width) || !Number.isFinite(height) || width < 1 || height < 1 || width > 10_000 || height > 10_000) return null;
   return { width, height, deviceScaleFactor: Math.max(0.1, Math.min(8, Number(candidate.deviceScaleFactor) || 1)) };
+}
+
+const MAX_PUBLISHED_DISPLAYS = 4;
+
+function normalizeDisplays(value: unknown): LiveViewDisplayOption[] | null {
+  if (!Array.isArray(value)) return null;
+  const list = value.slice(0, MAX_PUBLISHED_DISPLAYS).map((item) => {
+    if (!item || typeof item !== "object") return null;
+    const candidate = item as Record<string, unknown>;
+    if (typeof candidate.id !== "string" || !candidate.id || candidate.id.length > 40) return null;
+    if (typeof candidate.label !== "string" || !candidate.label || candidate.label.length > 60) return null;
+    return { id: candidate.id, label: candidate.label, primary: candidate.primary === true, selected: candidate.selected === true };
+  }).filter((item): item is LiveViewDisplayOption => item !== null);
+  // A choice is only worth exposing when there is something to switch between.
+  return list.length > 1 ? list : null;
 }
 
 function normalizeInput(value: unknown): LiveViewInput {

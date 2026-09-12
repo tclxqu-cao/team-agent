@@ -964,6 +964,11 @@ function getDesktopScreenLive(): DesktopScreenLive {
     probeAccessibility: () => gateway.checkAccessibility(),
     keepAwake,
     onWebrtcFromViewer: (data: WebrtcSignal) => webrtcLive?.handleViewerSignal(data),
+    getDisplayOptions: () => getLiveDisplayOptions(),
+    onSetDisplay: async (displayId: string | null) => {
+      setLiveDisplay(displayId);
+      return getLiveDisplayOptions();
+    },
   });
   webrtcLive = new WebrtcLive({
     capturePagePath: () => defaultWebrtcCapturePagePath(__dirname, app.isPackaged, process.resourcesPath),
@@ -986,26 +991,31 @@ ipcMain.handle("desktop-live:get-status", async () => getDesktopScreenLive().get
 
 // Multi-display: the capture display is selectable; input coordinates follow
 // the streamed display's global origin so taps land on the right screen.
-ipcMain.handle("desktop-live:get-displays", () => {
+function getLiveDisplayOptions() {
   const primary = screen.getPrimaryDisplay();
-  return {
-    displays: screen.getAllDisplays().map((item, index) => ({
-      id: String(item.id),
-      label: item.id === primary.id ? `主屏 ${item.size.width}×${item.size.height}` : `屏幕 ${index + 1} ${item.size.width}×${item.size.height}`,
-      primary: item.id === primary.id,
-      selected: String(item.id) === pickLiveDisplay().id,
-    })),
-  };
-});
+  return screen.getAllDisplays().map((item, index) => ({
+    id: String(item.id),
+    label: item.id === primary.id ? `主屏 ${item.size.width}×${item.size.height}` : `屏幕 ${index + 1} ${item.size.width}×${item.size.height}`,
+    primary: item.id === primary.id,
+    selected: String(item.id) === pickLiveDisplay().id,
+  }));
+}
+
+function setLiveDisplay(displayId: string | null): void {
+  liveDisplayId = typeof displayId === "string" && displayId ? displayId : null;
+  void (async () => {
+    const state = await readDesktopLiveState(desktopLiveStatePath);
+    await writeDesktopLiveState(desktopLiveStatePath, { enabled: state.enabled, displayId: liveDisplayId }).catch(() => undefined);
+  })();
+}
+
+ipcMain.handle("desktop-live:get-displays", () => ({ displays: getLiveDisplayOptions() }));
 
 ipcMain.handle("desktop-live:set-display", async (_event, displayId: unknown) => {
-  liveDisplayId = typeof displayId === "string" && displayId ? displayId : null;
-  const state = await readDesktopLiveState(desktopLiveStatePath);
-  await writeDesktopLiveState(desktopLiveStatePath, { enabled: state.enabled, displayId: liveDisplayId });
-  const picked = pickLiveDisplay();
+  setLiveDisplay(typeof displayId === "string" && displayId ? displayId : null);
   // The capture loop re-reads displayInfo every frame, so this takes effect
   // on the next frame without restarting the stream.
-  return { displayId: picked.id };
+  return { displayId: pickLiveDisplay().id };
 });
 
 ipcMain.handle("desktop-live:set-enabled", async (_event, enabled: unknown) => {

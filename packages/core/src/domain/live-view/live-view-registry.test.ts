@@ -91,6 +91,31 @@ describe("LiveViewRegistry", () => {
     await expect(reply).resolves.toBeNull();
   });
 
+  it("publishes display options only when there is a choice and forwards switches from the controller", () => {
+    const registry = new LiveViewRegistry();
+    const producer = peer("producer");
+    const controller = peer("controller");
+    const observer = peer("observer");
+    // Single-display metadata is not exposed to viewers.
+    registry.publish(producer, { sessionId: "browser-1", backend: "desktop", displays: [{ id: "1", label: "主屏", primary: true, selected: true }] });
+    expect(publish(registry, producer).displays ?? null).toBeNull();
+    // Multi-display metadata flows through and the controller can switch.
+    const view = registry.publish(producer, {
+      sessionId: "browser-1", backend: "desktop",
+      displays: [
+        { id: "3", label: "主屏", primary: true, selected: true },
+        { id: "1", label: "屏幕 2", primary: false, selected: false },
+      ],
+    });
+    expect(view.displays).toHaveLength(2);
+    registry.takeOver(controller, "browser-1");
+    registry.producerState(producer, "browser-1", "user-controlled");
+    expect(registry.setDisplay(controller, "browser-1", "1").displays).toHaveLength(2);
+    expect(producer.messages.at(-1)).toMatchObject({ type: "browser:set-display", sessionId: "browser-1", displayId: "1" });
+    expect(() => registry.setDisplay(observer, "browser-1", "1")).toThrow("read-only");
+    expect(() => registry.setDisplay(controller, "browser-1", "999")).toThrow("unknown display");
+  });
+
   it("routes webrtc signaling between the controller and the producer only", () => {
     const registry = new LiveViewRegistry();
     const producer = peer("producer");

@@ -1,4 +1,5 @@
 export type {
+  LiveViewDisplayOption,
   LiveViewSource,
   LiveViewAvailability,
   LiveViewOwnershipState,

@@ -14,6 +14,14 @@ export interface LiveViewViewport {
   deviceScaleFactor: number;
 }
 
+/** A capture display the producer offers for desktop live sessions. */
+export interface LiveViewDisplayOption {
+  id: string;
+  label: string;
+  primary: boolean;
+  selected: boolean;
+}
+
 export interface LiveViewSessionView {
   id: string;
   backend: LiveViewSource;
@@ -33,6 +41,8 @@ export interface LiveViewSessionView {
   viewerCount: number;
   isController: boolean;
   controlledByAnotherViewer: boolean;
+  /** Multi-display Macs publish the selectable capture screens; null = single display. */
+  displays?: LiveViewDisplayOption[] | null;
 }
 
 export type LiveViewInput =

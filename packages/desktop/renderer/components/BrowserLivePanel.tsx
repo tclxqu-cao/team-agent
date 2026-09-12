@@ -468,6 +468,17 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
     setImeOn(true);
   }, [frame?.viewport, selected?.viewport]);
 
+  const liveDisplays = selected?.displays ?? null;
+  const cycleDisplay = useCallback(() => {
+    if (!api || !selectedId || !liveDisplays || liveDisplays.length < 2) return;
+    const currentIndex = liveDisplays.findIndex((item) => item.selected);
+    const next = liveDisplays[(currentIndex + 1) % liveDisplays.length];
+    if (!next || next.selected) return;
+    void api.request("browser:set-display", { sessionId: selectedId, displayId: next.id }).catch((requestError) => {
+      setError(requestError instanceof Error ? requestError.message : "切换屏幕失败");
+    });
+  }, [api, liveDisplays, selectedId]);
+
   const pointerCoordinates = useCallback((event: React.PointerEvent<HTMLElement> | React.WheelEvent<HTMLElement>) => {
     const rect = event.currentTarget.getBoundingClientRect();
     const viewport = frame?.viewport ?? selected?.viewport;
@@ -564,6 +575,21 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
               <button type="button" disabled={!frame} onClick={() => { setZoom(1); setPanMode(false); viewportRef.current?.scrollTo(0, 0); }}>适应窗口</button>
               <button type="button" aria-label="移动桌面画面" aria-pressed={panMode} title="拖动或滚动画面，不发送远程输入" disabled={!frame} onClick={() => setPanMode((value) => !value)}><Hand size={15} />移动画面</button>
               <button type="button" aria-label="唤起键盘" aria-pressed={imeOn} title="轻点画面中的输入框会自动弹起键盘；也可点此手动开关" disabled={!frame || !hasControl} onClick={toggleIme}><Keyboard size={15} />键盘</button>
+              {isDesktop && liveDisplays && liveDisplays.length > 1 && (() => {
+                const current = liveDisplays.find((item) => item.selected) ?? liveDisplays[0];
+                const label = current.primary ? "主屏" : current.label.split(" ").slice(0, 2).join(" ");
+                return (
+                  <button
+                    type="button"
+                    aria-label={`切换直播屏幕（当前：${current.label}）`}
+                    title={`切换直播屏幕（当前：${current.label}）`}
+                    disabled={!frame}
+                    onClick={cycleDisplay}
+                  >
+                    <MonitorUp size={15} />{label}
+                  </button>
+                );
+              })()}
             </div>
           )}
           <div className="browser-live-touch-hint">控制中滑动可滚动画面 · 双指缩放 · 轻点点击 · 放大后单指平移</div>

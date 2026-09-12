@@ -532,7 +532,7 @@ export interface DesktopLiveDisplayOption {
 
 export interface BrowserLiveApi {
   request<T = unknown>(
-    method: "browser:list" | "browser:watch" | "browser:unwatch" | "browser:takeover" | "browser:return" | "browser:input",
+    method: "browser:list" | "browser:watch" | "browser:unwatch" | "browser:takeover" | "browser:return" | "browser:input" | "browser:set-display" | "browser:webrtc",
     payload?: Record<string, unknown>,
   ): Promise<T>;
   onEvent(listener: (event: Record<string, unknown> & { type: string }) => void): () => void;

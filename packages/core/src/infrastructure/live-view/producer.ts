@@ -1,4 +1,4 @@
-import type { LiveViewInput, LiveViewOwnershipState, LiveViewSource } from "../../domain/live-view/entities.js";
+import type { LiveViewDisplayOption, LiveViewInput, LiveViewOwnershipState, LiveViewSource } from "../../domain/live-view/entities.js";
 
 /** Port implemented per runtime: continuous frames plus normalized input dispatch. */
 export interface LiveScreencastPort {
@@ -26,6 +26,8 @@ export interface LiveViewProducerClientPort {
   inputResult(sessionId: string, token: number, result: unknown): Promise<unknown>;
   /** Relays WebRTC signaling from the producer to the active viewer. */
   webrtcRelay(sessionId: string, data: Record<string, unknown>): Promise<unknown>;
+  /** Re-publishes session metadata (e.g. after the capture display changed). */
+  publish(metadata: PublishLiveSessionMetadata): Promise<unknown>;
   unavailable(sessionId: string, error: unknown): Promise<unknown>;
   waitForDisconnect(): Promise<void>;
   close(sessionId: string): Promise<unknown>;
@@ -50,14 +52,16 @@ export class LiveViewProducer {
   private controlState: LiveViewOwnershipState = "agent-controlled";
   private eventQueue: Promise<void> = Promise.resolve();
   private readonly onError: (error: unknown) => void;
+  private readonly onSetDisplay: ((displayId: string | null) => Promise<LiveViewDisplayOption[] | null>) | null;
 
-  constructor({ client, screencast, metadata, pauseAgent, resyncAgent, onError = () => undefined }: {
+  constructor({ client, screencast, metadata, pauseAgent, resyncAgent, onError = () => undefined, onSetDisplay = null }: {
     client: LiveViewProducerClientPort;
     screencast: LiveScreencastPort;
     metadata: ProducerMetadata;
     pauseAgent: () => Promise<void>;
     resyncAgent: () => Promise<void>;
     onError?: (error: unknown) => void;
+    onSetDisplay?: ((displayId: string | null) => Promise<LiveViewDisplayOption[] | null>) | null;
   }) {
     this.client = client;
     this.screencast = screencast;
@@ -65,6 +69,7 @@ export class LiveViewProducer {
     this.pauseAgent = pauseAgent;
     this.resyncAgent = resyncAgent;
     this.onError = onError;
+    this.onSetDisplay = onSetDisplay;
   }
 
   #reportError(error: unknown): void {
@@ -114,6 +119,14 @@ export class LiveViewProducer {
       const token = event.token;
       if (typeof token === "number" && Number.isSafeInteger(token)) {
         await this.client.inputResult(this.metadata.sessionId, token, result ?? null).catch(() => undefined);
+      }
+      return;
+    }
+    if (event.type === "browser:set-display") {
+      if (this.controlState !== "user-controlled" || !this.onSetDisplay) return;
+      const displays = await this.onSetDisplay(typeof event.displayId === "string" ? event.displayId : null);
+      if (Array.isArray(displays)) {
+        await this.client.publish({ ...this.metadata, displays }).catch(() => undefined);
       }
       return;
     }

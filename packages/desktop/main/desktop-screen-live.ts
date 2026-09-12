@@ -1,4 +1,4 @@
-import type { LiveViewOwnershipState, LiveViewSource } from "@agent/core";
+import type { LiveViewDisplayOption, LiveViewOwnershipState, LiveViewSource } from "@agent/core";
 import { LiveViewProducer, type LiveViewProducerClientPort } from "@agent/core";
 import type { LiveScreencastPort } from "@agent/core";
 import type { DesktopInputGateway } from "./desktop-input-gateway";
@@ -18,6 +18,8 @@ export const DESKTOP_LIVE_SESSION_ID = "desktop:primary";
 
 /** WebRTC signaling payload exchanged between the controller and this producer. */
 export type WebrtcSignal = Record<string, unknown>;
+/** Capture display choices published with the session metadata. */
+export type LiveDisplayOptions = LiveViewDisplayOption[];
 
 /** Holds the display awake while the live session is enabled (see DisplayKeepAwake). */
 export type DisplayWakeControl = { start(): void; stop(): void };
@@ -44,6 +46,8 @@ export class DesktopScreenLive {
   private currentClient: LiveViewProducerClientPort | null = null;
   private unsubscribeState: (() => void) | null = null;
   private readonly onWebrtcFromViewer: (data: WebrtcSignal) => void;
+  private readonly getDisplayOptions: (() => LiveDisplayOptions | null) | null;
+  private readonly onSetDisplay: ((displayId: string | null) => Promise<LiveDisplayOptions | null>) | null;
   private status: DesktopLiveStatus = {
     enabled: false,
     permissionScreen: "unknown",
@@ -53,7 +57,9 @@ export class DesktopScreenLive {
   };
   private readonly listeners = new Set<(status: DesktopLiveStatus) => void>();
 
-  constructor({ clientFactory, screencast, input, probeScreen = () => "unknown", probeAccessibility = async () => null, keepAwake = null, sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)), onWebrtcFromViewer = () => undefined }: {
+  constructor({ clientFactory, screencast, input, probeScreen = () => "unknown", probeAccessibility = async () => null, keepAwake = null, sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)), onWebrtcFromViewer = () => undefined,
+    getDisplayOptions,
+    onSetDisplay = null }: {
     clientFactory: ClientFactory;
     screencast: LiveScreencastPort;
     input: DesktopInputGateway;
@@ -63,6 +69,10 @@ export class DesktopScreenLive {
     sleep?: (ms: number) => Promise<void>;
     /** Viewer→producer WebRTC signaling (start/answer/ICE/stop). */
     onWebrtcFromViewer?: (data: WebrtcSignal) => void;
+    /** Capture display choices published with the session metadata. */
+    getDisplayOptions?: () => LiveDisplayOptions | null;
+    /** Applies a viewer's display switch and returns the refreshed options. */
+    onSetDisplay?: ((displayId: string | null) => Promise<LiveDisplayOptions | null>) | null;
   }) {
     this.clientFactory = clientFactory;
     this.screencast = screencast;
@@ -73,6 +83,8 @@ export class DesktopScreenLive {
     this.keepAwake = keepAwake;
     this.sleep = sleep;
     this.onWebrtcFromViewer = onWebrtcFromViewer;
+    this.getDisplayOptions = getDisplayOptions ?? null;
+    this.onSetDisplay = onSetDisplay ?? null;
   }
 
   onStatus(listener: (status: DesktopLiveStatus) => void): () => void {
@@ -144,6 +156,10 @@ export class DesktopScreenLive {
           if (data && typeof data === "object") this.onWebrtcFromViewer(data as WebrtcSignal);
           return;
         }
+        if (event.type === "browser:set-display" && event.sessionId === this.metadata.sessionId) {
+          void this.#handleSetDisplay(typeof event.displayId === "string" ? event.displayId : null);
+          return;
+        }
         this.#handleRelayEvent(event);
       });
       this.status = { ...this.status, sessionOnline: true, error: this.status.accessibilityTrusted === false ? ACCESSIBILITY_HINT : undefined };
@@ -152,7 +168,7 @@ export class DesktopScreenLive {
         const producer = new LiveViewProducer({
           client,
           screencast: this.screencast,
-          metadata: { ...this.metadata },
+          metadata: { ...this.metadata, displays: this.getDisplayOptions?.() ?? null },
           // The desktop source has no agent gate to pause; ownership still flows through the shared state machine.
           pauseAgent: async () => undefined,
           resyncAgent: async () => undefined,
@@ -160,6 +176,7 @@ export class DesktopScreenLive {
             this.status = { ...this.status, error: error instanceof Error ? error.message : String(error) };
             this.#emit();
           },
+          onSetDisplay: this.onSetDisplay,
         });
         await producer.run();
       } catch (error) {
@@ -186,6 +203,15 @@ export class DesktopScreenLive {
     const client = this.currentClient;
     if (!client) return { delivered: false };
     return client.webrtcRelay(this.metadata.sessionId, data).catch(() => ({ delivered: false }));
+  }
+
+  /** Applies a viewer's display switch, then republishes the refreshed options. */
+  async #handleSetDisplay(displayId: string | null): Promise<void> {
+    if (!this.onSetDisplay) return;
+    const options = await this.onSetDisplay(displayId).catch(() => null);
+    const client = this.currentClient;
+    if (!client || !Array.isArray(options)) return;
+    await client.publish({ ...this.metadata, displays: options }).catch(() => undefined);
   }
 
   async #probeAccessibility(): Promise<boolean | null> {

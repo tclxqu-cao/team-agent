@@ -783,6 +783,7 @@ const requestHandlers = {
     return result ? { input: result } : { accepted: true };
   },
   "browser:input-result": async (msg, conn) => liveViewRegistry.inputResult(conn.browserPeer, msg.sessionId, msg.token, msg.result),
+  "browser:set-display": async (msg, conn) => ({ session: liveViewRegistry.setDisplay(conn.browserPeer, msg.sessionId, msg.displayId) }),
   // WebRTC signaling viewer→producer (offer request, answer, ICE, stop)
   "browser:webrtc": async (msg, conn) => liveViewRegistry.webrtcFromViewer(conn.browserPeer, msg.sessionId, msg.data),
   // WebRTC signaling producer→controller (offer, ICE, state)

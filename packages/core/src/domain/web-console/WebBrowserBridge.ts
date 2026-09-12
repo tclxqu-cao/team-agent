@@ -10,6 +10,7 @@ export const WEB_BROWSER_METHODS = [
   "browser:takeover",
   "browser:return",
   "browser:input",
+  "browser:set-display",
   "browser:webrtc",
 ] as const;
 
