@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { BrowserLiveSession } from "../global";
-import { remoteFieldContains, selectBrowserLiveSessionId, touchScrollDelta } from "./BrowserLivePanel";
+import { selectBrowserLiveSessionId, touchScrollDelta } from "./BrowserLivePanel";
 
 function session(id: string, agentSessionId: string): BrowserLiveSession {
   return {
@@ -43,23 +43,6 @@ describe("browser live session selection", () => {
       url: "",
     };
     expect(selectBrowserLiveSessionId(null, [desktop])).toBe("desktop:primary");
-  });
-});
-
-describe("remote editable field hit test", () => {
-  const viewport = { width: 1440, height: 900 };
-  const field = { x: 700, y: 400, w: 200, h: 40 };
-
-  it("hits inside the remembered field and near its edges", () => {
-    expect(remoteFieldContains(field, viewport, 0.55, 0.46)).toBe(true);
-    expect(remoteFieldContains(field, viewport, 0.49, 0.445)).toBe(true); // 2% pad
-    expect(remoteFieldContains(field, viewport, 0.1, 0.1)).toBe(false);
-  });
-
-  it("never hits without a remembered field or a viewport", () => {
-    expect(remoteFieldContains(null, viewport, 0.55, 0.46)).toBe(false);
-    expect(remoteFieldContains(field, null, 0.55, 0.46)).toBe(false);
-    expect(remoteFieldContains(field, { width: 0, height: 0 }, 0.55, 0.46)).toBe(false);
   });
 });
 

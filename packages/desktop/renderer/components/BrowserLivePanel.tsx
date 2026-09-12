@@ -63,22 +63,6 @@ export interface RemoteEditableField {
   h: number;
 }
 
-/** Whether a viewport-fraction point lands inside (or near) the remembered field. */
-export function remoteFieldContains(
-  field: RemoteEditableField | null,
-  viewport: { width: number; height: number } | null | undefined,
-  x: number,
-  y: number,
-  pad = 0.02,
-): boolean {
-  if (!field || !viewport || !viewport.width || !viewport.height) return false;
-  const left = field.x / viewport.width - pad;
-  const top = field.y / viewport.height - pad;
-  const right = (field.x + field.w) / viewport.width + pad;
-  const bottom = (field.y + field.h) / viewport.height + pad;
-  return x >= left && x <= right && y >= top && y <= bottom;
-}
-
 const TOUCH_SCROLL_MIN_PX = 2;
 
 /** Maps a two-finger drag to a remote wheel delta. Swiping up (to.y < from.y)
@@ -241,11 +225,9 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
       }
       scrollRemoteFieldIntoView(field ?? editableField.current);
     } else {
+      // Tapped something that is not a text field — keep the keyboard up
+      // (RD-style); the toolbar keyboard button is what lowers it.
       editableField.current = null;
-      if (imeOnRef.current) {
-        textInputRef.current?.blur();
-        setImeOn(false);
-      }
     }
   }, [scrollRemoteFieldIntoView]);
   const webrtcIceServers: RTCIceServer[] = useMemo(() => [{ urls: "stun:stun.l.google.com:19302" }], []);
@@ -460,13 +442,22 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
     void dispatchInputForResult({ kind: "pointer", action: "up", ...point, button: "left" }).then(applyHitTest);
   }, [applyHitTest, dispatchInputForResult]);
 
-  /** Raising the keyboard must happen inside the user gesture on iOS; the
-   *  remembered hit-test lets a tap on a known text field open it instantly. */
-  const raiseImeForTap = useCallback((point: { x: number; y: number }) => {
-    if (!remoteFieldContains(editableField.current, frame?.viewport ?? selected?.viewport, point.x, point.y)) return;
-    textInputRef.current?.focus({ preventScroll: true });
-    setImeOn(true);
-  }, [frame?.viewport, selected?.viewport]);
+  // Soft-keyboard typing: the hidden input accumulates, so only the delta is
+  // sent (delimited by the last sent value). IME composition (pinyin) emits
+  // intermediate values — suppress those and send only the committed text on
+  // compositionend, otherwise the remote receives every pinyin letter.
+  const composingRef = useRef(false);
+  const lastTypedRef = useRef("");
+  const sendTypedText = useCallback((value: string) => {
+    const last = lastTypedRef.current;
+    if (value === last) return;
+    if (value.startsWith(last)) {
+      const added = value.slice(last.length);
+      if (added) sendInput({ kind: "key", action: "down", text: added, key: "", code: "", modifiers: [] });
+    }
+    // A shrinking value means a deletion — already delivered as Backspace.
+    lastTypedRef.current = value;
+  }, [sendInput]);
 
   const liveDisplays = selected?.displays ?? null;
   const cycleDisplay = useCallback(() => {
@@ -574,7 +565,7 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
               <button type="button" aria-label="放大桌面画面" title="放大" disabled={!frame || zoom >= 5} onClick={() => setZoom((value) => Math.min(5, value + 0.25))}><ZoomIn size={16} /></button>
               <button type="button" disabled={!frame} onClick={() => { setZoom(1); setPanMode(false); viewportRef.current?.scrollTo(0, 0); }}>适应窗口</button>
               <button type="button" aria-label="移动桌面画面" aria-pressed={panMode} title="拖动或滚动画面，不发送远程输入" disabled={!frame} onClick={() => setPanMode((value) => !value)}><Hand size={15} />移动画面</button>
-              <button type="button" aria-label="唤起键盘" aria-pressed={imeOn} title="轻点画面中的输入框会自动弹起键盘；也可点此手动开关" disabled={!frame || !hasControl} onClick={toggleIme}><Keyboard size={15} />键盘</button>
+              <button type="button" aria-label="唤起键盘" aria-pressed={imeOn} title="轻点画面会自动弹起键盘；点此手动开关（输入完请点此收起）" disabled={!frame || !hasControl} onClick={toggleIme}><Keyboard size={15} />键盘</button>
               {isDesktop && liveDisplays && liveDisplays.length > 1 && (() => {
                 const current = liveDisplays.find((item) => item.selected) ?? liveDisplays[0];
                 const label = current.primary ? "主屏" : current.label.split(" ").slice(0, 2).join(" ");
@@ -622,7 +613,6 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
                   if (!point) return;
                   pointerDown.current = true;
                   event.currentTarget.setPointerCapture(event.pointerId);
-                  raiseImeForTap(point);
                   sendInput({ kind: "pointer", action: "down", ...point, button: "left" });
                 }}
                 onPointerMove={(event) => {
@@ -682,7 +672,10 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
                     const point = pointerCoordinates(event);
                     touchGesturePoint.current = null;
                     if (tap && point && hasControl && !panMode) {
-                      raiseImeForTap(point);
+                      // Every remote tap raises the soft keyboard (RD-style) —
+                      // iOS only allows focus() inside the gesture itself.
+                      textInputRef.current?.focus({ preventScroll: true });
+                      setImeOn(true);
                       sendInput({ kind: "pointer", action: "down", ...point, button: "left" });
                       sendTapUp(point);
                     }
@@ -733,15 +726,25 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
                   ref={textInputRef}
                   className="browser-live-mobile-input"
                   aria-label="浏览器键盘输入"
-                  value=""
+                  defaultValue=""
                   inputMode="text"
                   autoCapitalize="none"
                   autoCorrect="off"
                   autoComplete="off"
                   spellCheck={false}
-                  onBlur={() => setImeOn(false)}
+                  onCompositionStart={() => { composingRef.current = true; }}
+                  onCompositionEnd={(event) => {
+                    composingRef.current = false;
+                    if (!panMode) sendTypedText((event.target as HTMLInputElement).value);
+                  }}
+                  onBlur={(event) => {
+                    composingRef.current = false;
+                    lastTypedRef.current = "";
+                    event.target.value = "";
+                    setImeOn(false);
+                  }}
                   onChange={(event) => {
-                    if (!panMode && event.target.value) sendInput({ kind: "key", action: "down", text: event.target.value, key: "", code: "", modifiers: [] });
+                    if (!panMode && !composingRef.current) sendTypedText(event.target.value);
                   }}
                 />
               </div>
