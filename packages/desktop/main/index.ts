@@ -12,7 +12,8 @@ import { existsSync, statSync } from "node:fs";
 import { LiveViewProducerClient } from "@agent/core";
 import { DesktopInputGateway } from "./desktop-input-gateway.js";
 import { DesktopScreenScreencast } from "./desktop-screen-screencast.js";
-import { DesktopScreenLive, type ScreenPermission } from "./desktop-screen-live.js";
+import { DesktopScreenLive, type ScreenPermission, type WebrtcSignal } from "./desktop-screen-live.js";
+import { defaultWebrtcCapturePagePath, WebrtcLive } from "./webrtc-live.js";
 import { DisplayKeepAwake } from "./display-keep-awake.js";
 import { readDesktopLiveState, writeDesktopLiveState } from "./desktop-live-state.js";
 import { SharedServiceConnection } from "./shared-service.js";
@@ -896,6 +897,9 @@ function probeScreenPermission(): ScreenPermission {
 
 function getDesktopScreenLive(): DesktopScreenLive {
   if (desktopScreenLive) return desktopScreenLive;
+  // Real host IPs must survive ICE candidate gathering for LAN/Tailscale
+  // WebRTC (mDNS .local names do not resolve across those links).
+  app.commandLine.appendSwitch("disable-features", "WebRtcHideLocalIpsWithMdns");
   const gateway = new DesktopInputGateway({
     helperPath: desktopInputHelperPath,
     onStderr: (line) => console.log("[desktop-input]", line),
@@ -930,6 +934,7 @@ function getDesktopScreenLive(): DesktopScreenLive {
     acquire: () => powerSaveBlocker.start("prevent-display-sleep"),
     release: (blockerId) => powerSaveBlocker.stop(blockerId),
   });
+  let webrtcLive: WebrtcLive | null = null;
   desktopScreenLive = new DesktopScreenLive({
     clientFactory: () => new LiveViewProducerClient({ endpoint: desktopLiveEndpoint }),
     screencast,
@@ -937,11 +942,21 @@ function getDesktopScreenLive(): DesktopScreenLive {
     probeScreen: probeScreenPermission,
     probeAccessibility: () => gateway.checkAccessibility(),
     keepAwake,
+    onWebrtcFromViewer: (data: WebrtcSignal) => webrtcLive?.handleViewerSignal(data),
+  });
+  webrtcLive = new WebrtcLive({
+    capturePagePath: () => defaultWebrtcCapturePagePath(__dirname, app.isPackaged, process.resourcesPath),
+    preloadPath: () => join(__dirname, "preload.cjs"),
+    sendToViewer: (data) => (desktopScreenLive ? desktopScreenLive.relayWebrtcToViewer(data) : Promise.resolve({ delivered: false })),
+    setStandby: (standby) => screencast.setStandby(standby),
+    log: (line) => console.log(line),
   });
   desktopScreenLive.onStatus((status) => {
     mainWindow?.webContents.send("desktop-live:status", status);
     const controlled = status.enabled && status.controlState !== null && status.controlState !== "agent-controlled";
     if (process.platform === "darwin") app.dock?.setBadge(controlled ? "●" : "");
+    // Control returned to the agent (or live disabled) → release the capture.
+    if (!status.enabled || status.controlState === "agent-controlled") webrtcLive?.stop();
   });
   return desktopScreenLive;
 }
@@ -1005,6 +1020,20 @@ app.whenReady().then(async () => {
   session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
     callback(permission === "media");
   });
+  // Desktop live WebRTC: answer getDisplayMedia from the hidden capture page
+  // with the primary display, and keep real host IPs in ICE candidates so
+  // LAN/Tailscale peers connect without mDNS resolution.
+  session.defaultSession.setDisplayMediaRequestHandler((_request, callback) => {
+    void desktopCapturer.getSources({ types: ["screen"] }).then((sources) => {
+      const primaryId = String(screen.getPrimaryDisplay().id);
+      const source = sources.find((item) => item.display_id === primaryId) ?? sources[0];
+      if (!source) {
+        callback({});
+        return;
+      }
+      callback({ video: source });
+    });
+  }, { useSystemPicker: false });
   createWindow();
   registerAiHubWakeShortcut();
   aiHubRelay = await startAiHubRelay(aiHubManager).catch((error) => {

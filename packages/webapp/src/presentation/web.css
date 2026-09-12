@@ -297,6 +297,23 @@ body[data-web-shell="1"] .chat-header-action--appearance {
   -webkit-user-drag: none;
 }
 
+/* Real-time WebRTC video overlays the JPEG fallback; pointer events stay on
+   the hit area so pan/zoom/tap gestures keep working on top of the video. */
+.browser-live-video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity .25s ease;
+}
+
+.browser-live-video.is-live {
+  opacity: 1;
+}
+
 .browser-live-surface.is-controlling {
   box-shadow: inset 0 0 0 2px var(--accent);
 }

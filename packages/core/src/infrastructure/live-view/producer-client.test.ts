@@ -147,6 +147,20 @@ describe("LiveViewProducerClient", () => {
     value.disconnect();
   });
 
+  it("relays webrtc signaling as a producer rpc", async () => {
+    const { value } = client();
+    await value.connect();
+    const socket = FakeWebSocket.instances[0];
+    const relayed = value.webrtcRelay("live-1", { kind: "offer", sdp: { type: "offer", sdp: "v=0" } });
+    await Promise.resolve();
+    const request = JSON.parse(socket.sent[0] as string);
+    expect(request).toMatchObject({ type: "browser:webrtc-relay", sessionId: "live-1" });
+    expect(request.data).toMatchObject({ kind: "offer" });
+    reply(socket, request, { delivered: true });
+    await expect(relayed).resolves.toMatchObject({ delivered: true });
+    value.disconnect();
+  });
+
   it("rejects pending RPC calls when the socket disconnects", async () => {
     const { value } = client();
     await value.connect();

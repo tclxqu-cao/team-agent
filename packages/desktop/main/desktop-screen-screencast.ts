@@ -45,8 +45,13 @@ export class DesktopScreenScreencast implements LiveScreencastPort {
   private refreshUntil = 0;
   private encodingQuality: number;
   private nextQualityProbe = 0;
+  private standby = false;
 
-  constructor({ input, displayInfo, captureSources, primaryDisplayId = () => null, fps = 4, quality = 90, maxWidth = 3840, maxHeight = 2160, firstFrameTimeoutMs = 4_000, now = () => Date.now(), sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)) }: {
+  // JPEG stays at the native Retina cap for full-clarity fallback and agent
+  // frames. While a WebRTC viewer carries the live video, setStandby(true)
+  // drops this loop to a cheap 1 FPS watchdog so encoding stops competing for
+  // CPU.
+  constructor({ input, displayInfo, captureSources, primaryDisplayId = () => null, fps = 8, quality = 90, maxWidth = 3840, maxHeight = 2160, firstFrameTimeoutMs = 4_000, now = () => Date.now(), sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)) }: {
     input: DesktopInputSink;
     displayInfo: () => DesktopDisplayInfo;
     captureSources: CaptureDesktopSources;
@@ -85,7 +90,7 @@ export class DesktopScreenScreencast implements LiveScreencastPort {
       let jpeg: Buffer | null = null;
       const display = this.displayInfo();
       try {
-        const sources = await this.captureSources(this.#thumbnailSize(display));
+        const sources = await this.captureSources(this.#thumbnailSize(display, this.standby ? 0.5 : 1));
         const source = this.#pickPrimary(sources);
         if (source?.thumbnail) {
           // Preserve text resolution first; lower JPEG quality only when the
@@ -133,8 +138,24 @@ export class DesktopScreenScreencast implements LiveScreencastPort {
       const elapsed = this.now() - frameStartedAt;
       // Input briefly accelerates capture; idle viewing retains the normal
       // adaptive rate. The viewer ACK still bounds downstream image traffic.
-      const interval = this.now() < this.refreshUntil ? 80 : 1_000 / this.pacer.targetFps;
+      // Standby (WebRTC carrying the video) drops to a 1 FPS watchdog.
+      const interval = this.now() < this.refreshUntil
+        ? 70
+        : this.standby
+          ? 1_000
+          : 1_000 / this.pacer.targetFps;
       await this.#waitForCapture(Math.max(0, interval - elapsed));
+    }
+  }
+
+  /** While a WebRTC viewer carries the live video, JPEG capture is a cheap watchdog. */
+  setStandby(standby: boolean): void {
+    if (this.standby === standby) return;
+    this.standby = standby;
+    if (!standby) {
+      // Leave standby with an immediate full-quality frame.
+      this.nextQualityProbe = 0;
+      this.wakeCapture?.();
     }
   }
 
@@ -145,41 +166,51 @@ export class DesktopScreenScreencast implements LiveScreencastPort {
     this.wakeCapture?.();
   }
 
-  async dispatchInput(input: LiveViewInput): Promise<void> {
+  async dispatchInput(input: LiveViewInput): Promise<unknown> {
     const display = this.displayInfo();
     if (input.kind === "pointer") {
       if (input.action === "wheel") {
+        // Wheel events land on whatever window is under the real cursor, so
+        // park the cursor at the finger position first — otherwise a viewer
+        // that took over without tapping scrolls the wrong window.
+        const x = Math.min(display.width - 1, Math.round(input.x * display.width));
+        const y = Math.min(display.height - 1, Math.round(input.y * display.height));
+        await this.#send({ op: "move", x, y });
         await this.#send({ op: "wheel", deltaX: Math.round(input.deltaX), deltaY: Math.round(input.deltaY) });
-        return;
+        return null;
       }
       const x = Math.min(display.width - 1, Math.round(input.x * display.width));
       const y = Math.min(display.height - 1, Math.round(input.y * display.height));
       if (input.action === "down") {
         this.pointerDown = true;
         await this.#send({ op: "down", x, y, button: input.button });
-        return;
+        return null;
       }
       if (input.action === "up") {
         this.pointerDown = false;
-        await this.#send({ op: "up", x, y, button: input.button });
-        return;
+        // The helper annotates the release with an accessibility hit-test of
+        // the tapped element ("editable" + bounds); the viewer uses it to
+        // raise/lower the soft keyboard.
+        return this.#send({ op: "up", x, y, button: input.button });
       }
       await this.#send(this.pointerDown ? { op: "drag", x, y } : { op: "move", x, y });
-      return;
+      return null;
     }
     if (input.text && !input.key && !input.code) {
       await this.#send({ op: "text", text: input.text });
-      return;
+      return null;
     }
     await this.#send({ op: "key", action: input.action, code: input.code || input.key, modifiers: input.modifiers });
+    return null;
   }
 
-  async #send(command: DesktopInputCommand): Promise<void> {
-    await this.input.dispatch(command);
+  async #send(command: DesktopInputCommand): Promise<Record<string, unknown> | null> {
+    const result = await this.input.dispatch(command) as Record<string, unknown> | undefined;
     if (this.running && command.op !== "move") {
-      this.refreshUntil = this.now() + 400;
+      this.refreshUntil = this.now() + 700;
       this.wakeCapture?.();
     }
+    return result && typeof result === "object" ? result : null;
   }
 
   async #waitForCapture(delay: number): Promise<void> {
@@ -193,13 +224,14 @@ export class DesktopScreenScreencast implements LiveScreencastPort {
     }
   }
 
-  #thumbnailSize(display: DesktopDisplayInfo): { width: number; height: number } {
+  #thumbnailSize(display: DesktopDisplayInfo, scale = 1): { width: number; height: number } {
     const pixelWidth = display.width * (display.scaleFactor || 1);
     const pixelHeight = display.height * (display.scaleFactor || 1);
-    const scale = Math.min(1, this.maxWidth / pixelWidth, this.maxHeight / pixelHeight);
+    const fit = Math.min(1, this.maxWidth / pixelWidth, this.maxHeight / pixelHeight);
+    const effective = Math.max(0.1, Math.min(fit, fit * scale));
     return {
-      width: Math.max(1, Math.round(pixelWidth * scale)),
-      height: Math.max(1, Math.round(pixelHeight * scale)),
+      width: Math.max(1, Math.round(pixelWidth * effective)),
+      height: Math.max(1, Math.round(pixelHeight * effective)),
     };
   }
 

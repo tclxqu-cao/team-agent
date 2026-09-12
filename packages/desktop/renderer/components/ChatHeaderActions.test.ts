@@ -23,16 +23,11 @@ describe("ChatHeaderActions", () => {
     );
   });
 
-  it("renders the browser live action only when the Web bridge is available", () => {
-    const hidden = renderToStaticMarkup(createElement(ChatHeaderActions, baseProps));
-    const visible = renderToStaticMarkup(createElement(ChatHeaderActions, {
-      ...baseProps,
-      onOpenBrowserLive: () => {},
-    }));
+  it("never renders the browser live action (it lives in the web shell tab bar)", () => {
+    const html = renderToStaticMarkup(createElement(ChatHeaderActions, baseProps));
 
-    expect(hidden).not.toContain('aria-label="打开浏览器直播"');
-    expect(visible).toContain('aria-label="打开浏览器直播"');
-    expect(visible).not.toContain(">浏览器直播<");
+    expect(html).not.toContain('aria-label="打开浏览器直播"');
+    expect(html).not.toContain("chat-header-action--browser-live");
   });
 
   it("renders the AI Hub action only when the desktop hub bridge is available", () => {
@@ -40,7 +35,6 @@ describe("ChatHeaderActions", () => {
     const visible = renderToStaticMarkup(createElement(ChatHeaderActions, {
       ...baseProps,
       onOpenHub: () => {},
-      onOpenBrowserLive: () => {},
     }));
 
     expect(hidden).not.toContain('aria-label="打开 AI Hub"');
@@ -48,7 +42,7 @@ describe("ChatHeaderActions", () => {
     expect(visible).toContain("chat-header-action--ai-hub");
     expect(visible).not.toContain(">AI Hub · 多模型网页对比<");
     expect(visible.indexOf('aria-label="打开 AI Hub"')).toBeLessThan(
-      visible.indexOf('aria-label="打开浏览器直播"'),
+      visible.indexOf('aria-label="隐藏后台"'),
     );
   });
 

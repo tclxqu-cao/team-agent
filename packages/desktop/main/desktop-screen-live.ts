@@ -16,6 +16,9 @@ export interface DesktopLiveStatus {
 
 export const DESKTOP_LIVE_SESSION_ID = "desktop:primary";
 
+/** WebRTC signaling payload exchanged between the controller and this producer. */
+export type WebrtcSignal = Record<string, unknown>;
+
 /** Holds the display awake while the live session is enabled (see DisplayKeepAwake). */
 export type DisplayWakeControl = { start(): void; stop(): void };
 
@@ -40,6 +43,7 @@ export class DesktopScreenLive {
   private loopPromise: Promise<void> | null = null;
   private currentClient: LiveViewProducerClientPort | null = null;
   private unsubscribeState: (() => void) | null = null;
+  private readonly onWebrtcFromViewer: (data: WebrtcSignal) => void;
   private status: DesktopLiveStatus = {
     enabled: false,
     permissionScreen: "unknown",
@@ -49,7 +53,7 @@ export class DesktopScreenLive {
   };
   private readonly listeners = new Set<(status: DesktopLiveStatus) => void>();
 
-  constructor({ clientFactory, screencast, input, probeScreen = () => "unknown", probeAccessibility = async () => null, keepAwake = null, sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)) }: {
+  constructor({ clientFactory, screencast, input, probeScreen = () => "unknown", probeAccessibility = async () => null, keepAwake = null, sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)), onWebrtcFromViewer = () => undefined }: {
     clientFactory: ClientFactory;
     screencast: LiveScreencastPort;
     input: DesktopInputGateway;
@@ -57,6 +61,8 @@ export class DesktopScreenLive {
     probeAccessibility?: ProbeAccessibility;
     keepAwake?: DisplayWakeControl | null;
     sleep?: (ms: number) => Promise<void>;
+    /** Viewer→producer WebRTC signaling (start/answer/ICE/stop). */
+    onWebrtcFromViewer?: (data: WebrtcSignal) => void;
   }) {
     this.clientFactory = clientFactory;
     this.screencast = screencast;
@@ -66,6 +72,7 @@ export class DesktopScreenLive {
     this.probeAccessibility = probeAccessibility;
     this.keepAwake = keepAwake;
     this.sleep = sleep;
+    this.onWebrtcFromViewer = onWebrtcFromViewer;
   }
 
   onStatus(listener: (status: DesktopLiveStatus) => void): () => void {
@@ -131,7 +138,14 @@ export class DesktopScreenLive {
       const client = this.clientFactory();
       this.currentClient = client;
       this.unsubscribeState?.();
-      this.unsubscribeState = client.onEvent((event) => this.#handleRelayEvent(event));
+      this.unsubscribeState = client.onEvent((event) => {
+        if (event.type === "browser:webrtc" && event.sessionId === this.metadata.sessionId) {
+          const data = event.data;
+          if (data && typeof data === "object") this.onWebrtcFromViewer(data as WebrtcSignal);
+          return;
+        }
+        this.#handleRelayEvent(event);
+      });
       this.status = { ...this.status, sessionOnline: true, error: this.status.accessibilityTrusted === false ? ACCESSIBILITY_HINT : undefined };
       this.#emit();
       try {
@@ -165,6 +179,13 @@ export class DesktopScreenLive {
     if (!session || session.id !== this.metadata.sessionId || !session.state) return;
     this.status = { ...this.status, controlState: session.state };
     this.#emit();
+  }
+
+  /** Sends producer→controller WebRTC signaling over the current client. */
+  async relayWebrtcToViewer(data: WebrtcSignal): Promise<unknown> {
+    const client = this.currentClient;
+    if (!client) return { delivered: false };
+    return client.webrtcRelay(this.metadata.sessionId, data).catch(() => ({ delivered: false }));
   }
 
   async #probeAccessibility(): Promise<boolean | null> {

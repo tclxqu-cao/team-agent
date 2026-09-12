@@ -10,6 +10,7 @@ export const WEB_BROWSER_METHODS = [
   "browser:takeover",
   "browser:return",
   "browser:input",
+  "browser:webrtc",
 ] as const;
 
 export type WebBrowserMethod = typeof WEB_BROWSER_METHODS[number];

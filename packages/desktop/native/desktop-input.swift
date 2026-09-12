@@ -92,6 +92,10 @@ func postMouse(_ command: [String: Any]) throws {
     event.post(tap: .cghidEventTap)
 }
 
+// Plain discrete wheel events. Verified against macOS 26 apps: AppKit
+// (TextEdit) AND SwiftUI (System Settings) scroll with phase-less pixel wheel
+// events. Trackpad-style phase framing (Began/Changed/Ended) must NOT be used:
+// SwiftUI panes ignore it entirely, so keep these events mouse-wheel shaped.
 func postWheel(_ command: [String: Any]) throws {
     let deltaX = (command["deltaX"] as? NSNumber)?.doubleValue ?? 0
     let deltaY = (command["deltaY"] as? NSNumber)?.doubleValue ?? 0
@@ -190,6 +194,50 @@ func postText(_ command: [String: Any]) throws {
     }
 }
 
+// Roles that accept text entry. Remote viewers use this to decide whether a
+// tap should raise the soft keyboard.
+let editableRoles: Set<String> = [
+    "AXTextField", "AXTextArea", "AXComboBox", "AXSearchField",
+    "AXPasswordField", "AXSecureText",
+]
+
+// Hit-tests the element under a click via the system-wide AX tree and, when it
+// is a text field, returns its bounds in logical screen coordinates (same
+// top-left origin space the mouse events use). Never throws: a missing AX tree
+// just means "not editable" and the viewer keeps its current keyboard state.
+func hitTestEditable(x: CGFloat, y: CGFloat) -> [String: Any] {
+    guard AXIsProcessTrusted() else { return ["editable": false] }
+    let systemWide = AXUIElementCreateSystemWide()
+    var elementRef: AXUIElement?
+    guard AXUIElementCopyElementAtPosition(systemWide, Float(x), Float(y), &elementRef) == .success,
+          let element = elementRef else {
+        return ["editable": false]
+    }
+    var roleRef: CFTypeRef?
+    guard AXUIElementCopyAttributeValue(element, kAXRoleAttribute as CFString, &roleRef) == .success,
+          let role = roleRef as? String, editableRoles.contains(role) else {
+        return ["editable": false]
+    }
+    var bounds: [String: Double] = ["x": 0, "y": 0, "w": 0, "h": 0]
+    var positionRef: CFTypeRef?
+    if AXUIElementCopyAttributeValue(element, kAXPositionAttribute as CFString, &positionRef) == .success,
+       let value = positionRef, CFGetTypeID(value) == AXValueGetTypeID() {
+        var point: CGPoint = .zero
+        AXValueGetValue(value as! AXValue, .cgPoint, &point)
+        bounds["x"] = Double(point.x)
+        bounds["y"] = Double(point.y)
+    }
+    var sizeRef: CFTypeRef?
+    if AXUIElementCopyAttributeValue(element, kAXSizeAttribute as CFString, &sizeRef) == .success,
+       let value = sizeRef, CFGetTypeID(value) == AXValueGetTypeID() {
+        var size: CGSize = .zero
+        AXValueGetValue(value as! AXValue, .cgSize, &size)
+        bounds["w"] = Double(size.width)
+        bounds["h"] = Double(size.height)
+    }
+    return ["editable": true, "role": role, "bounds": bounds]
+}
+
 struct HelperError: Error, CustomStringConvertible {
     let description: String
     init(_ description: String) { self.description = description }
@@ -209,6 +257,13 @@ func handle(_ line: String) -> String? {
             return reply(id, ["ok": true, "trusted": trusted])
         case "move", "down", "up", "drag":
             try postMouse(command)
+            // The click release also reports what the user tapped on so the
+            // remote viewer can raise/lower the soft keyboard accordingly.
+            if op == "up", let xNumber = command["x"] as? NSNumber, let yNumber = command["y"] as? NSNumber {
+                var payload = hitTestEditable(x: CGFloat(xNumber.doubleValue), y: CGFloat(yNumber.doubleValue))
+                payload["ok"] = true
+                return reply(id, payload)
+            }
             return reply(id, ["ok": true])
         case "wheel":
             try postWheel(command)
@@ -240,10 +295,34 @@ func replyError(_ id: Int?, _ message: String) -> String {
     return String(data: data, encoding: .utf8) ?? "{\"ok\":false,\"error\":\"\(message)\"}"
 }
 
-while let line = readLine(strippingNewline: true) {
-    let trimmed = line.trimmingCharacters(in: .whitespaces)
-    if trimmed.isEmpty { continue }
-    if let response = handle(trimmed) {
+// Dispatch-driven stdin loop so the process exits cleanly on EOF (a blocking
+// readLine() loop would linger after the gateway closes the pipe).
+let stdinSource = DispatchSource.makeReadSource(fileDescriptor: STDIN_FILENO, queue: .main)
+var inputBuffer = Data()
+
+func processInputData() {
+    while let newline = inputBuffer.firstIndex(of: UInt8(ascii: "\n")) {
+        let line = Data(inputBuffer[inputBuffer.startIndex..<newline])
+        inputBuffer.removeSubrange(inputBuffer.startIndex...newline)
+        guard let text = String(data: line, encoding: .utf8)?.trimmingCharacters(in: .whitespaces),
+              !text.isEmpty,
+              let response = handle(text) else { continue }
         FileHandle.standardOutput.write(Data((response + "\n").utf8))
     }
 }
+
+stdinSource.setEventHandler { [weak stdinSource] in
+    let chunk = FileHandle.standardInput.availableData
+    if chunk.isEmpty {
+        stdinSource?.cancel()
+        return
+    }
+    inputBuffer.append(chunk)
+    processInputData()
+}
+stdinSource.setCancelHandler {
+    // dispatchMain() never returns; exit explicitly once stdin closes.
+    exit(0)
+}
+stdinSource.resume()
+dispatchMain()

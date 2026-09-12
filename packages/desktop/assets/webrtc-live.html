@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <title>desktop-live-webrtc</title>
+</head>
+<body>
+<script>
+  // Hidden capture page: publishes the primary display as a WebRTC track at
+  // native resolution. Signaling rides ipcRenderer through the shared preload.
+  (function () {
+    const api = window.webrtcLiveApi;
+    if (!api) return;
+    let pc = null;
+    let stream = null;
+
+    function report(state, error) {
+      api.send(Object.assign({ kind: "state", state }, error ? { error } : {}));
+    }
+
+    function teardown() {
+      if (pc) { try { pc.close(); } catch {} pc = null; }
+      if (stream) { for (const track of stream.getTracks()) track.stop(); stream = null; }
+    }
+
+    async function start() {
+      teardown();
+      stream = await navigator.mediaDevices.getDisplayMedia({
+        video: { frameRate: { ideal: 30, max: 60 } },
+        audio: false,
+      });
+      for (const track of stream.getTracks()) track.contentHint = "motion";
+      pc = new RTCPeerConnection({
+        iceServers: [{ urls: ["stun:stun.l.google.com:19302"] }],
+      });
+      for (const track of stream.getTracks()) pc.addTrack(track, stream);
+      const sender = pc.getSenders().find((item) => item.track && item.track.kind === "video");
+      if (sender && typeof sender.setParameters === "function") {
+        const params = sender.getParameters();
+        if (!params.encodings || !params.encodings.length) params.encodings = [{}];
+        // Bandwidth pressure must degrade frame rate, never resolution.
+        params.degradationPreference = "maintain-resolution";
+        params.encodings[0].maxBitrate = 20_000_000;
+        params.encodings[0].scaleResolutionDownBy = 1;
+        try { await sender.setParameters(params); } catch {}
+      }
+      pc.onicecandidate = (event) => {
+        if (event.candidate) api.send({ kind: "ice", candidate: event.candidate.toJSON() });
+      };
+      pc.onconnectionstatechange = () => report(pc ? pc.connectionState : "closed");
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      api.send({ kind: "offer", sdp: pc.localDescription.toJSON() });
+    }
+
+    api.onSignal(async (message) => {
+      try {
+        const kind = message && message.kind;
+        if (kind === "start") await start();
+        else if (kind === "stop") teardown();
+        else if (kind === "answer" && pc && message.sdp) await pc.setRemoteDescription(message.sdp);
+        else if (kind === "ice" && pc && message.candidate) {
+          await pc.addIceCandidate(message.candidate).catch(() => undefined);
+        }
+      } catch (error) {
+        teardown();
+        report("failed", String(error));
+      }
+    });
+  })();
+</script>
+</body>
+</html>

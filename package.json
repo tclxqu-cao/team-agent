@@ -8,6 +8,7 @@
     "packages/server",
     "packages/desktop",
     "packages/webapp",
+    "packages/mobile",
     "packages/sdk",
     "packages/tui",
     "packages/voice-service",

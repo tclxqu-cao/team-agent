@@ -56,6 +56,7 @@ import {
   reconcileDurableQueuedMessages,
 } from "../lib/queued-message-order";
 import { isWebShell } from "../web/webLayout";
+import { OPEN_BROWSER_LIVE_EVENT } from "../web/shellEvents";
 import {
   latestGlobalRuntimeProgress,
   reduceRuntimeProgressEvents,
@@ -536,6 +537,16 @@ export default function ChatView({
   const [isForkingSession, setIsForkingSession] = useState(false);
   const [codexReleaseState, setCodexReleaseState] = useState<"idle" | "releasing" | "released">("idle");
   const [browserLiveOpen, setBrowserLiveOpen] = useState(false);
+
+  // Web Shell：外壳页签栏的「远程桌面」按钮经 postMessage → web-shell-live 桥
+  // 转成 window CustomEvent，这里收到后打开浏览器直播面板。
+  useEffect(() => {
+    if (!isWebShell() || !window.browserLiveApi) return;
+    const open = () => setBrowserLiveOpen(true);
+    window.addEventListener(OPEN_BROWSER_LIVE_EVENT, open);
+    return () => window.removeEventListener(OPEN_BROWSER_LIVE_EVENT, open);
+  }, []);
+
   const [directCompatibilitySessionId, setDirectCompatibilitySessionId] = useState<string | null>(null);
   const [compatibilityFailure, setCompatibilityFailure] = useState<string | null>(null);
   const isNativeRuntime = isNativeRuntimeSelection(sessionSummary, activeAgentType);
@@ -2526,16 +2537,6 @@ export default function ChatView({
     }
   };
 
-  const handleDesktopHandoff = async () => {
-    if (!viewSessionId || !window.agentApi?.handoffSession) return;
-    try {
-      await window.agentApi.handoffSession(viewSessionId);
-      setError(null);
-    } catch (error) {
-      setError(error instanceof Error ? error.message : "交接到 Desktop 失败");
-    }
-  };
-
   const handleCodexRelease = async () => {
     if (
       !viewSessionId
@@ -3302,9 +3303,6 @@ export default function ChatView({
             onHideToBackground={onHideToBackground}
             onReleaseCodex={sessionSummary?.agentType === "codex" && sessionSummary.occupancy !== "owned-externally"
               ? () => { void handleCodexRelease(); }
-              : undefined}
-            onOpenBrowserLive={isWebShell() && window.browserLiveApi
-              ? () => setBrowserLiveOpen(true)
               : undefined}
             onOpenHub={onOpenHub}
             onToggleAppearance={onToggleAppearance}
@@ -4814,17 +4812,6 @@ export default function ChatView({
                     </div>
                   )}
               </div>
-
-              {isNativeRuntime && sessionSummary?.controller === "web" && typeof window.agentApi?.handoffSession === "function" && (
-                <button
-                  type="button"
-                  className="web-native-runtime-status"
-                  onClick={() => { void handleDesktopHandoff(); }}
-                  title="交接到 Desktop"
-                >
-                  交接到 Desktop
-                </button>
-              )}
 
               <div className="web-native-context-control">
                 <ContextUsageBar

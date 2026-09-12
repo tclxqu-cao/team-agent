@@ -8,8 +8,10 @@ export async function POST(request: Request) {
   return NextResponse.json(getUpdateService().requestCheck(), { status: 202, headers: { "cache-control": "no-store" } });
 }
 
+const NATIVE_SHELL_ORIGINS = new Set(["capacitor://localhost", "ionic://localhost"]);
 function isCrossSite(request: Request): boolean {
-  if (request.headers.get("sec-fetch-site") === "cross-site") return true;
   const origin = request.headers.get("origin");
+  if (origin && NATIVE_SHELL_ORIGINS.has(origin)) return false;
+  if (request.headers.get("sec-fetch-site") === "cross-site") return true;
   return Boolean(origin && origin !== new URL(request.url).origin);
 }

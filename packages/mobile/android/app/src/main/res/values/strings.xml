@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">AgentRoam</string>
+    <string name="title_activity_main">AgentRoam</string>
+    <string name="package_name">com.agentroam.mobile</string>
+    <string name="custom_url_scheme">com.agentroam.mobile</string>
+</resources>

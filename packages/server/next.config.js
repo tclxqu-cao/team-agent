@@ -41,7 +41,8 @@ const nextConfig = {
         source: "/api/:path*",
         headers: [
           { key: "Access-Control-Allow-Origin", value: "*" },
-          { key: "Access-Control-Allow-Methods", value: "GET, POST, OPTIONS" },
+          // PATCH/DELETE 供移动原生壳（capacitor://localhost 等跨源源）预检使用
+          { key: "Access-Control-Allow-Methods", value: "GET, POST, PATCH, DELETE, OPTIONS" },
           { key: "Access-Control-Allow-Headers", value: "Authorization, Content-Type" },
         ],
       },

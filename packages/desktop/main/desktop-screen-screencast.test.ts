@@ -42,6 +42,7 @@ describe("DesktopScreenScreencast", () => {
       await screencast.stop();
     });
     await running;
+    // Native Retina pixels are preserved for full-clarity fallback frames.
     expect(captureSources).toHaveBeenCalledWith({ width: 2880, height: 1800 });
     expect(viewports).toEqual([{ width: 1440, height: 900, deviceScaleFactor: 2 }]);
   });
@@ -132,10 +133,59 @@ describe("DesktopScreenScreencast", () => {
       { op: "down", x: 720, y: 225, button: "left" },
       { op: "drag", x: 864, y: 270 },
       { op: "up", x: 864, y: 270, button: "left" },
+      // Wheel first parks the cursor at the pointer position so the scroll
+      // lands on the window the viewer is actually looking at.
+      { op: "move", x: 864, y: 270 },
       { op: "wheel", deltaX: 0, deltaY: 120 },
       { op: "key", action: "down", code: "KeyA", modifiers: ["Shift"] },
       { op: "text", text: "你好" },
     ]);
+  });
+
+  it("returns the helper hit-test reply for pointer releases only", async () => {
+    const hitTest = { ok: true, editable: true, bounds: { x: 100, y: 200, w: 300, h: 40 } };
+    const screencast = new DesktopScreenScreencast({
+      input: { dispatch: async (command: unknown) => ((command as { op: string }).op === "up" ? hitTest : { ok: true }) },
+      displayInfo: () => ({ width: 1440, height: 900, scaleFactor: 1 }),
+      captureSources: async () => [{ id: "screen:0", thumbnail: makeThumbnail(32, 1440, 900) }],
+      now: () => 1,
+      sleep: async () => undefined,
+    });
+    await screencast.start(async () => { await screencast.stop(); });
+    await expect(screencast.dispatchInput({ kind: "pointer", action: "up", x: 0.5, y: 0.5, button: "left", deltaX: 0, deltaY: 0 }))
+      .resolves.toEqual(hitTest);
+    await expect(screencast.dispatchInput({ kind: "pointer", action: "down", x: 0.5, y: 0.5, button: "left", deltaX: 0, deltaY: 0 }))
+      .resolves.toBeNull();
+  });
+});
+
+describe("webrtc standby capture", () => {
+  it("stands down to a 1 FPS half-scale watchdog while WebRTC carries the video", async () => {
+    const clock = fakeClock();
+    let captures = 0;
+    const sizes: Array<{ width: number; height: number }> = [];
+    const captureSources = vi.fn(async (size: { width: number; height: number }) => {
+      captures += 1;
+      sizes.push(size);
+      return [{ id: "screen:0", thumbnail: makeThumbnail(32, 1440, 900) }];
+    });
+    const screencast = new DesktopScreenScreencast({
+      input: { dispatch: async () => undefined },
+      displayInfo: () => ({ width: 1440, height: 900, scaleFactor: 2 }),
+      captureSources,
+      now: clock.now,
+      sleep: async (ms) => { clock.advance(ms); },
+    });
+    const running = screencast.start(async () => {
+      if (captures === 2) screencast.setStandby(true);
+      if (captures >= 4) await screencast.stop();
+    });
+    await running;
+    // Native Retina budget while active…
+    expect(sizes[0]).toEqual({ width: 2880, height: 1800 });
+    // …and a half-scale watchdog once WebRTC takes over the real stream.
+    expect(sizes[2]).toEqual({ width: 1440, height: 900 });
+    expect(clock.now() - 1_000_000).toBeGreaterThanOrEqual(2_000); // 1s standby gaps
   });
 });
 

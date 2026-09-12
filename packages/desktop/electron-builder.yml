@@ -17,6 +17,7 @@ extraResources:
     to: assets
     filter:
       - app-icon.png
+      - webrtc-live.html
   - from: assets/bin
     to: bin
 mac:

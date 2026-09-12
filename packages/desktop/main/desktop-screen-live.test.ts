@@ -8,6 +8,8 @@ interface FakeClient {
   onEvent: ReturnType<typeof vi.fn>;
   frame: ReturnType<typeof vi.fn>;
   state: ReturnType<typeof vi.fn>;
+  inputResult: ReturnType<typeof vi.fn>;
+  webrtcRelay: ReturnType<typeof vi.fn>;
   unavailable: ReturnType<typeof vi.fn>;
   waitForDisconnect: ReturnType<typeof vi.fn>;
   close: ReturnType<typeof vi.fn>;
@@ -21,6 +23,8 @@ function fakeClient(overrides: Partial<FakeClient> = {}): FakeClient {
     onEvent: vi.fn(() => () => undefined),
     frame: vi.fn().mockResolvedValue({ accepted: true }),
     state: vi.fn().mockResolvedValue(undefined),
+    inputResult: vi.fn().mockResolvedValue(undefined),
+    webrtcRelay: vi.fn().mockResolvedValue({ delivered: true }),
     unavailable: vi.fn().mockResolvedValue(undefined),
     waitForDisconnect: vi.fn(() => new Promise<void>(() => {})),
     close: vi.fn().mockResolvedValue(undefined),
@@ -175,5 +179,38 @@ describe("DesktopScreenLive", () => {
     expect(live.getStatus().error).toContain("no capture source");
     await live.disable();
     expect(live.getStatus().error).toBeUndefined();
+  });
+
+  it("routes viewer webrtc signaling to the hook and back through the client", async () => {
+    const gateway = fakeGateway();
+    const client = fakeClient();
+    const listeners: Array<(event: Record<string, unknown>) => void> = [];
+    client.onEvent.mockImplementation((listener: (event: Record<string, unknown>) => void) => {
+      listeners.push(listener);
+      return () => undefined;
+    });
+    const received: Array<Record<string, unknown>> = [];
+    const live = new DesktopScreenLive({
+      clientFactory: () => client,
+      screencast: runningScreencast,
+      input: gateway as never,
+      probeScreen: () => "granted",
+      probeAccessibility: async () => true,
+      onWebrtcFromViewer: (data) => received.push(data),
+    });
+    await live.enable();
+    await tick();
+    expect(listeners.length).toBeGreaterThanOrEqual(1);
+
+    listeners[0]({ type: "browser:webrtc", sessionId: DESKTOP_LIVE_SESSION_ID, data: { kind: "start" } });
+    listeners[0]({ type: "browser:webrtc", sessionId: "other-session", data: { kind: "start" } });
+    listeners[0]({ type: "browser:webrtc", sessionId: DESKTOP_LIVE_SESSION_ID, data: { kind: "answer", sdp: { type: "answer" } } });
+    await tick();
+    expect(received).toEqual([{ kind: "start" }, { kind: "answer", sdp: { type: "answer" } }]);
+
+    const offer = { kind: "offer", sdp: { type: "offer", sdp: "v=0" } };
+    await live.relayWebrtcToViewer(offer);
+    expect(client.webrtcRelay).toHaveBeenCalledWith(DESKTOP_LIVE_SESSION_ID, offer);
+    await live.disable();
   });
 });

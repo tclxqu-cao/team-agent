@@ -4,8 +4,8 @@
  * One shared policy backs every frame source (desktop capture, CDP pull,
  * ego push): a rejected frame or a send that overshoots the 500 ms budget
  * steps the target rate down (floor 2 FPS), and a streak of fast frames
- * steps it back up toward the adapter's cap. Adapters keep their capture
- * mechanics; the pacing decision must not drift between them.
+ * steps it back up toward the adapter's cap (≤10 FPS). Adapters keep their
+ * capture mechanics; the pacing decision must not drift between them.
  */
 export class LiveViewFramePacer {
   readonly maxFps: number;
@@ -13,7 +13,7 @@ export class LiveViewFramePacer {
   #fastFrameStreak = 0;
 
   constructor({ fps = 5 }: { fps?: number } = {}) {
-    this.maxFps = Math.max(2, Math.min(5, fps));
+    this.maxFps = Math.max(2, Math.min(10, fps));
     this.targetFps = this.maxFps;
   }
 

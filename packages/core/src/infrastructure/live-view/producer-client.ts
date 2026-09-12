@@ -157,6 +157,14 @@ export class LiveViewProducerClient {
     return this.rpc("browser:producer-state", { sessionId, state });
   }
 
+  inputResult(sessionId: string, token: number, result: unknown): Promise<unknown> {
+    return this.rpc("browser:input-result", { sessionId, token, result });
+  }
+
+  webrtcRelay(sessionId: string, data: Record<string, unknown>): Promise<unknown> {
+    return this.rpc("browser:webrtc-relay", { sessionId, data });
+  }
+
   unavailable(sessionId: string, error: unknown): Promise<unknown> {
     const previous = this.metadata.get(sessionId);
     if (!previous) return Promise.reject(new Error("browser session is not published"));

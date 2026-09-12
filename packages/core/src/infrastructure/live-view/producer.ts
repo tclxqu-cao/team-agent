@@ -4,7 +4,8 @@ import type { LiveViewInput, LiveViewOwnershipState, LiveViewSource } from "../.
 export interface LiveScreencastPort {
   start(onFrame: (frame: LiveScreencastFrame) => Promise<{ accepted?: boolean } | void>): Promise<void>;
   stop(): Promise<void>;
-  dispatchInput(input: LiveViewInput): Promise<void>;
+  /** Returns an adapter-defined result (e.g. a hit-test of a tapped element) when available. */
+  dispatchInput(input: LiveViewInput): Promise<unknown>;
 }
 
 export interface LiveScreencastFrame {
@@ -21,6 +22,10 @@ export interface LiveViewProducerClientPort {
   publish(metadata: Record<string, unknown>): Promise<unknown>;
   frame(sessionId: string, frame: LiveScreencastFrame & { sequence: number }): Promise<{ accepted?: boolean }>;
   state(sessionId: string, state: LiveViewOwnershipState): Promise<unknown>;
+  /** Relays the adapter's input dispatch result back to the requesting viewer. */
+  inputResult(sessionId: string, token: number, result: unknown): Promise<unknown>;
+  /** Relays WebRTC signaling from the producer to the active viewer. */
+  webrtcRelay(sessionId: string, data: Record<string, unknown>): Promise<unknown>;
   unavailable(sessionId: string, error: unknown): Promise<unknown>;
   waitForDisconnect(): Promise<void>;
   close(sessionId: string): Promise<unknown>;
@@ -105,7 +110,11 @@ export class LiveViewProducer {
     }
     if (event.type === "browser:input") {
       if (this.controlState !== "user-controlled" || !event.input) return;
-      await this.screencast.dispatchInput(event.input as LiveViewInput);
+      const result = await this.screencast.dispatchInput(event.input as LiveViewInput);
+      const token = event.token;
+      if (typeof token === "number" && Number.isSafeInteger(token)) {
+        await this.client.inputResult(this.metadata.sessionId, token, result ?? null).catch(() => undefined);
+      }
       return;
     }
     if (event.type === "browser:return-requested") {

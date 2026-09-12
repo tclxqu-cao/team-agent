@@ -15,6 +15,16 @@ const OWNERSHIP_STATES = new Set<LiveViewOwnershipState>([
 const SOURCES = new Set<LiveViewSource>(["ego-browser", "codex-browser", "desktop"]);
 const AVAILABILITY_STATES = new Set<LiveViewAvailability>(["starting", "ready", "unavailable"]);
 const MAX_FRAME_BYTES = 640 * 1024;
+// SDP offers/answers are a few KB; ICE candidates are bytes. Anything larger
+// is not signaling.
+const MAX_WEBRTC_SIGNAL_CHARS = 64_000;
+
+function isWebrtcSignal(data: unknown): data is Record<string, unknown> {
+  if (!data || typeof data !== "object" || Array.isArray(data)) return false;
+  const kind = (data as Record<string, unknown>).kind;
+  if (!["start", "stop", "offer", "answer", "ice", "state"].includes(String(kind))) return false;
+  return JSON.stringify(data).length <= MAX_WEBRTC_SIGNAL_CHARS;
+}
 
 interface LiveFrame {
   [key: string]: unknown;
@@ -36,6 +46,7 @@ interface LiveSession {
   producer: LiveViewPeer;
   watchers: Set<LiveViewPeer>;
   controllerId: string | null;
+  controller: LiveViewPeer | null;
   latestFrame: LiveFrame | null;
   frameSequence: number;
   createdAt: number;
@@ -115,8 +126,10 @@ function view(session: LiveSession, peer?: LiveViewPeer): LiveViewSessionView {
 export class LiveViewRegistry {
   private readonly sessions = new Map<string, LiveSession>();
   private readonly peers = new Set<LiveViewPeer>();
+  private inputTokenSequence = 0;
+  private readonly pendingInputResults = new Map<number, { sessionId: string; resolve: (value: Record<string, unknown> | null) => void }>();
 
-  constructor(private readonly now: () => number = () => Date.now()) {}
+  constructor(private readonly now: () => number = () => Date.now(), private readonly inputResultTimeoutMs = 400) {}
 
   connect(peer: LiveViewPeer): void {
     this.peers.add(peer);
@@ -143,6 +156,7 @@ export class LiveViewRegistry {
       producer: peer,
       watchers: new Set(),
       controllerId: null,
+      controller: null,
       latestFrame: null,
       frameSequence: 0,
       createdAt: timestamp,
@@ -211,6 +225,13 @@ export class LiveViewRegistry {
 
   watch(peer: LiveViewPeer, sessionId: unknown): LiveViewSessionView {
     const session = this.requireVisible(peer, sessionId);
+    // Re-watching the session this peer already watches (e.g. a viewer's
+    // refresh button) just re-delivers the latest frame; the full unwatch path
+    // would surrender the controller role mid-session.
+    if (peer.watchedSessionId === session.id && session.watchers.has(peer)) {
+      if (session.latestFrame) queueMicrotask(() => peer.send(session.latestFrame!));
+      return view(session, peer);
+    }
     this.unwatch(peer);
     session.watchers.add(peer);
     peer.watchedSessionId = session.id;
@@ -242,6 +263,7 @@ export class LiveViewRegistry {
     session.watchers.add(peer);
     peer.watchedSessionId = session.id;
     session.controllerId = peer.id;
+    session.controller = peer;
     session.state = "handoff-requested";
     session.updatedAt = this.now();
     session.producer.send({ type: "browser:takeover-requested", sessionId: session.id });
@@ -260,10 +282,59 @@ export class LiveViewRegistry {
     return view(session, peer);
   }
 
-  input(peer: LiveViewPeer, sessionId: unknown, rawInput: unknown): void {
+  /** Forwards input to the producer. A pointer release additionally waits
+   *  briefly for the producer's dispatch result (the desktop hit-test of the
+   *  tapped element); every other input stays on the fire-and-forget path. */
+  input(peer: LiveViewPeer, sessionId: unknown, rawInput: unknown): Promise<Record<string, unknown> | null> {
     const session = this.requireVisible(peer, sessionId);
     if (session.controllerId !== peer.id || session.state !== "user-controlled") throw domainError("browser is read-only", "EWRITELOCK");
-    session.producer.send({ type: "browser:input", sessionId: session.id, input: normalizeInput(rawInput) });
+    const input = normalizeInput(rawInput);
+    if (input.kind !== "pointer" || input.action !== "up") {
+      session.producer.send({ type: "browser:input", sessionId: session.id, input });
+      return Promise.resolve(null);
+    }
+    const token = ++this.inputTokenSequence;
+    const reply = new Promise<Record<string, unknown> | null>((resolve) => {
+      const timer = setTimeout(() => {
+        this.pendingInputResults.delete(token);
+        resolve(null);
+      }, this.inputResultTimeoutMs);
+      this.pendingInputResults.set(token, { sessionId: session.id, resolve: (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      } });
+    });
+    session.producer.send({ type: "browser:input", sessionId: session.id, input, token });
+    return reply;
+  }
+
+  /** Resolves a pending input() reply with the producer's dispatch result. */
+  inputResult(peer: LiveViewPeer, sessionId: unknown, token: unknown, result: unknown): { delivered: boolean } {
+    const session = this.requireProducer(peer, sessionId);
+    if (!Number.isSafeInteger(token)) return { delivered: false };
+    const pending = this.pendingInputResults.get(Number(token));
+    this.pendingInputResults.delete(Number(token));
+    if (!pending || pending.sessionId !== session.id) return { delivered: false };
+    pending.resolve(result && typeof result === "object" ? result as Record<string, unknown> : null);
+    return { delivered: true };
+  }
+
+  /** Relays WebRTC signaling (offer/answer/ICE) from the controller to the producer. */
+  webrtcFromViewer(peer: LiveViewPeer, sessionId: unknown, data: unknown): { accepted: boolean } {
+    const session = this.requireVisible(peer, sessionId);
+    if (session.controllerId !== peer.id) throw domainError("browser is read-only", "EWRITELOCK");
+    if (!isWebrtcSignal(data)) throw domainError("invalid webrtc signal", "EINVAL");
+    session.producer.send({ type: "browser:webrtc", sessionId: session.id, data });
+    return { accepted: true };
+  }
+
+  /** Relays WebRTC signaling from the producer back to the active controller. */
+  webrtcFromProducer(peer: LiveViewPeer, sessionId: unknown, data: unknown): { delivered: boolean } {
+    const session = this.requireProducer(peer, sessionId);
+    if (!isWebrtcSignal(data)) throw domainError("invalid webrtc signal", "EINVAL");
+    if (!session.controller) return { delivered: false };
+    session.controller.send({ type: "browser:webrtc", sessionId: session.id, data });
+    return { delivered: true };
   }
 
   producerState(peer: LiveViewPeer, sessionId: unknown, state: unknown): LiveViewSessionView {
@@ -271,7 +342,10 @@ export class LiveViewRegistry {
     if (!OWNERSHIP_STATES.has(state as LiveViewOwnershipState)) throw domainError("invalid browser ownership state", "EINVAL");
     if (state === "user-controlled" && !session.controllerId) throw domainError("no viewer requested control", "EINVAL");
     session.state = state as LiveViewOwnershipState;
-    if (state === "agent-controlled") session.controllerId = null;
+    if (state === "agent-controlled") {
+      session.controllerId = null;
+      session.controller = null;
+    }
     session.updatedAt = this.now();
     this.announce(session, "browser:state");
     return view(session, peer);
@@ -313,6 +387,7 @@ export class LiveViewRegistry {
   private releaseController(session: LiveSession, reason: string): void {
     if (!session.controllerId) return;
     session.controllerId = null;
+    session.controller = null;
     session.state = "return-requested";
     session.updatedAt = this.now();
     session.producer.send({ type: "browser:return-requested", sessionId: session.id, reason });

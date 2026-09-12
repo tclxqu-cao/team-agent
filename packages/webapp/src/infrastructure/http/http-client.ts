@@ -26,9 +26,25 @@ export interface HttpOptions {
  * Thin JSON fetch wrapper: same-origin cookies, unified error mapping,
  * and a global "webapp:unauthorized" event on 401 so the composition root
  * can swap to the login screen without every adapter caring.
+ *
+ * baseUrl is empty in the browser (same-origin relative paths) and set to the
+ * remote AgentRoam server when running inside the mobile native shell, where
+ * relative paths would hit the bundled capacitor://localhost document.
  */
 export class HttpClient {
-  constructor(private readonly transport: typeof fetch = (...args) => fetch(...args)) {}
+  constructor(
+    private readonly transport: typeof fetch = (...args) => fetch(...args),
+    private baseUrl = "",
+  ) {}
+
+  setBaseUrl(url: string): void {
+    this.baseUrl = url.replace(/\/+$/, "");
+  }
+
+  private resolve(path: string): string {
+    return this.baseUrl + path;
+  }
+
   async get<T>(path: string, options?: HttpOptions): Promise<T> {
     return this.request<T>(path, { method: "GET", headers: options?.headers });
   }
@@ -54,7 +70,7 @@ export class HttpClient {
   }
 
   private async request<T>(path: string, init: RequestInit): Promise<T> {
-    const response = await this.transport(path, {
+    const response = await this.transport(this.resolve(path), {
       credentials: "same-origin",
       cache: "no-store",
       ...init,

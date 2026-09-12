@@ -160,4 +160,12 @@ describe("AiHubPane", () => {
     expect(aiHubButton).toBeGreaterThan(-1);
     expect(aiHubButton).toBeLessThan(drawerToggle);
   });
+
+  it("places the remote desktop button to the left of the AI Hub button", () => {
+    const liveButton = page.indexOf('aria-label="打开远程桌面"');
+    const aiHubButton = page.indexOf('aria-label="打开 AI Hub"');
+    expect(liveButton).toBeGreaterThan(-1);
+    expect(aiHubButton).toBeGreaterThan(liveButton);
+    expect(page).toContain("WEB_SHELL_OPEN_BROWSER_LIVE_TYPE");
+  });
 });

@@ -5,7 +5,7 @@
 
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { PanelRight, X, LayoutGrid } from "lucide-react";
+import { PanelRight, X, LayoutGrid, MonitorUp } from "lucide-react";
 import type { PinnedCommand } from "../../../core/src/domain/web-console/entities";
 import { defaultPinnedCommands } from "../../../core/src/domain/web-console/pinned-commands";
 import {
@@ -19,6 +19,7 @@ import {
   readWebBrowserRequest,
 } from "../../../core/src/domain/web-console/WebBrowserBridge";
 import { readWebArtifactOpenRequest } from "../../../core/src/domain/web-console/WebArtifactBridge";
+import { WEB_SHELL_OPEN_BROWSER_LIVE_TYPE } from "../../../core/src/domain/web-console/WebShellLiveBridge";
 import { readLiveFramePacket, LIVE_FRAME_PACKET_TYPE } from "../../../core/src/infrastructure/live-view/frame-packet";
 import type { FileTreeRevealRequest } from "./fileTreeReveal";
 import { useGateway } from "./useGateway";
@@ -215,7 +216,7 @@ function AuthenticatedConsole({ auth }: { auth: WebAuthController }) {
         event,
       }, window.location.origin);
     };
-    const eventTypes = ["browser:session", "browser:frame", "browser:state", "browser:closed"];
+    const eventTypes = ["browser:session", "browser:frame", "browser:state", "browser:closed", "browser:webrtc"];
     const unsubscribers = eventTypes.map((type) => onEvent(type, forward));
     return () => unsubscribers.forEach((unsubscribe) => unsubscribe());
   }, [onEvent]);
@@ -349,6 +350,15 @@ function AuthenticatedConsole({ auth }: { auth: WebAuthController }) {
     });
   }, []);
 
+  // 远程桌面（浏览器直播）面板由内嵌 webapp 承载；切回智能助手页签后通知它打开。
+  const openWebappBrowserLive = useCallback(() => {
+    setActiveTerminalId(WEBAPP_TAB.id);
+    webappFrameRef.current?.contentWindow?.postMessage(
+      { type: WEB_SHELL_OPEN_BROWSER_LIVE_TYPE },
+      window.location.origin,
+    );
+  }, []);
+
   useEffect(() => {
     const off = onEvent("term:exited", (msg: any) => {
       const id = msg?.id;
@@ -465,6 +475,15 @@ function AuthenticatedConsole({ auth }: { auth: WebAuthController }) {
         ))}
         <button className="terminal-add" disabled={tabs.length >= 8} onClick={addTerminal}>＋</button>
         <div className="terminal-connection">
+          <button
+            type="button"
+            className="file-drawer-toggle"
+            aria-label="打开远程桌面"
+            title="远程桌面 · 浏览器直播"
+            onClick={openWebappBrowserLive}
+          >
+            <MonitorUp size={17} aria-hidden="true" />
+          </button>
           <button
             type="button"
             className="file-drawer-toggle"

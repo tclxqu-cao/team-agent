@@ -776,9 +776,17 @@ const requestHandlers = {
   "browser:takeover": async (msg, conn) => ({ session: liveViewRegistry.takeOver(conn.browserPeer, msg.sessionId) }),
   "browser:return": async (msg, conn) => ({ session: liveViewRegistry.returnControl(conn.browserPeer, msg.sessionId) }),
   "browser:input": async (msg, conn) => {
-    liveViewRegistry.input(conn.browserPeer, msg.sessionId, msg.input);
-    return { accepted: true };
+    // Waits (briefly) for the producer's dispatch result — e.g. the desktop
+    // helper's hit-test of a tapped element — so the viewer gets it in the
+    // rpc reply. Producers that never reply resolve to null.
+    const result = await liveViewRegistry.input(conn.browserPeer, msg.sessionId, msg.input);
+    return result ? { input: result } : { accepted: true };
   },
+  "browser:input-result": async (msg, conn) => liveViewRegistry.inputResult(conn.browserPeer, msg.sessionId, msg.token, msg.result),
+  // WebRTC signaling viewer→producer (offer request, answer, ICE, stop)
+  "browser:webrtc": async (msg, conn) => liveViewRegistry.webrtcFromViewer(conn.browserPeer, msg.sessionId, msg.data),
+  // WebRTC signaling producer→controller (offer, ICE, state)
+  "browser:webrtc-relay": async (msg, conn) => liveViewRegistry.webrtcFromProducer(conn.browserPeer, msg.sessionId, msg.data),
   "browser:producer-state": async (msg, conn) => ({ session: liveViewRegistry.producerState(conn.browserPeer, msg.sessionId, msg.state) }),
   "browser:close": async (msg, conn) => { liveViewRegistry.close(conn.browserPeer, msg.sessionId); return { closed: true, sessionId: msg.sessionId }; },
 

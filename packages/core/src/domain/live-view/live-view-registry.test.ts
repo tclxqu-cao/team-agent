@@ -63,6 +63,55 @@ describe("LiveViewRegistry", () => {
     expect(() => registry.input(observer, "browser-1", { kind: "pointer", action: "down", x: 0.2, y: 0.2 })).toThrow("read-only");
   });
 
+  it("resolves input with the producer dispatch result under a token", async () => {
+    const registry = new LiveViewRegistry();
+    const producer = peer("producer");
+    const controller = peer("controller");
+    publish(registry, producer);
+    registry.takeOver(controller, "browser-1");
+    registry.producerState(producer, "browser-1", "user-controlled");
+
+    const reply = registry.input(controller, "browser-1", { kind: "pointer", action: "up", x: 0.5, y: 0.5 });
+    const forwarded = producer.messages.at(-1) as { token?: number };
+    expect(typeof forwarded.token).toBe("number");
+    expect(registry.inputResult(producer, "browser-1", forwarded.token, { editable: true, bounds: { x: 10, y: 20, w: 30, h: 40 } }))
+      .toEqual({ delivered: true });
+    await expect(reply).resolves.toEqual({ editable: true, bounds: { x: 10, y: 20, w: 30, h: 40 } });
+  });
+
+  it("resolves input with null when the producer never replies", async () => {
+    const registry = new LiveViewRegistry(() => 100, 5);
+    const producer = peer("producer");
+    const controller = peer("controller");
+    publish(registry, producer);
+    registry.takeOver(controller, "browser-1");
+    registry.producerState(producer, "browser-1", "user-controlled");
+
+    const reply = registry.input(controller, "browser-1", { kind: "pointer", action: "up", x: 0.5, y: 0.5 });
+    await expect(reply).resolves.toBeNull();
+  });
+
+  it("routes webrtc signaling between the controller and the producer only", () => {
+    const registry = new LiveViewRegistry();
+    const producer = peer("producer");
+    const controller = peer("controller");
+    const observer = peer("observer");
+    publish(registry, producer);
+    registry.takeOver(controller, "browser-1");
+    registry.producerState(producer, "browser-1", "user-controlled");
+
+    const offer = { kind: "offer", sdp: { type: "offer", sdp: "v=0" } };
+    expect(registry.webrtcFromViewer(controller, "browser-1", offer)).toEqual({ accepted: true });
+    expect(producer.messages.at(-1)).toMatchObject({ type: "browser:webrtc", sessionId: "browser-1", data: offer });
+    expect(() => registry.webrtcFromViewer(observer, "browser-1", offer)).toThrow("read-only");
+    expect(() => registry.webrtcFromViewer(controller, "browser-1", { kind: "bogus" })).toThrow("invalid webrtc signal");
+
+    const ice = { kind: "ice", candidate: { candidate: "candidate:1" } };
+    expect(registry.webrtcFromProducer(producer, "browser-1", ice)).toEqual({ delivered: true });
+    expect(controller.messages.at(-1)).toMatchObject({ type: "browser:webrtc", sessionId: "browser-1", data: ice });
+    expect(observer.messages).toEqual([]);
+  });
+
   it("waits for producer resynchronization before releasing control", () => {
     const registry = new LiveViewRegistry();
     const producer = peer("producer");

@@ -1,4 +1,4 @@
-import { Check, LayoutGrid, LoaderCircle, MonitorUp, Unplug } from "lucide-react";
+import { Check, LayoutGrid, LoaderCircle, Unplug } from "lucide-react";
 
 interface ChatHeaderActionsProps {
   appearanceOpen: boolean;
@@ -7,7 +7,6 @@ interface ChatHeaderActionsProps {
   codexReleaseState?: "idle" | "releasing" | "released";
   onHideToBackground: () => void;
   onReleaseCodex?: () => void;
-  onOpenBrowserLive?: () => void;
   onOpenHub?: () => void;
   onToggleAppearance: (anchor: DOMRect) => void;
   onOpenSettings: () => void;
@@ -20,7 +19,6 @@ export default function ChatHeaderActions({
   codexReleaseState = "idle",
   onHideToBackground,
   onReleaseCodex,
-  onOpenBrowserLive,
   onOpenHub,
   onToggleAppearance,
   onOpenSettings,
@@ -41,17 +39,6 @@ export default function ChatHeaderActions({
           className="ui-icon-button chat-header-action chat-header-action--ai-hub"
         >
           <LayoutGrid size={15} aria-hidden="true" />
-        </button>
-      )}
-      {onOpenBrowserLive && (
-        <button
-          type="button"
-          onClick={onOpenBrowserLive}
-          title="浏览器直播"
-          aria-label="打开浏览器直播"
-          className="ui-icon-button chat-header-action chat-header-action--browser-live"
-        >
-          <MonitorUp size={15} aria-hidden="true" />
         </button>
       )}
       {onReleaseCodex && (

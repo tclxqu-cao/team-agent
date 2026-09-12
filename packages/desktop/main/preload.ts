@@ -1,5 +1,15 @@
 import { contextBridge, ipcRenderer } from "electron";
 
+// Hidden WebRTC capture page signaling (desktop live real-time stream).
+contextBridge.exposeInMainWorld("webrtcLiveApi", {
+  send: (message: unknown) => ipcRenderer.send("webrtc-live:signal", message),
+  onSignal: (callback: (message: unknown) => void): (() => void) => {
+    const handler = (_event: unknown, message: unknown) => callback(message);
+    ipcRenderer.on("webrtc-live:signal", handler);
+    return () => ipcRenderer.removeListener("webrtc-live:signal", handler);
+  },
+});
+
 // Persistent pub/sub for agent events — registered once at module load so
 // listeners survive across user sends and receive cron-fired events too.
 const agentEventBus = new Set<(event: unknown) => void>();

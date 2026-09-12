@@ -55,12 +55,53 @@ function modifierNames(event: React.KeyboardEvent): string[] {
   ].filter(Boolean);
 }
 
+/** A tapped text field on the remote screen, in logical screen coordinates. */
+export interface RemoteEditableField {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/** Whether a viewport-fraction point lands inside (or near) the remembered field. */
+export function remoteFieldContains(
+  field: RemoteEditableField | null,
+  viewport: { width: number; height: number } | null | undefined,
+  x: number,
+  y: number,
+  pad = 0.02,
+): boolean {
+  if (!field || !viewport || !viewport.width || !viewport.height) return false;
+  const left = field.x / viewport.width - pad;
+  const top = field.y / viewport.height - pad;
+  const right = (field.x + field.w) / viewport.width + pad;
+  const bottom = (field.y + field.h) / viewport.height + pad;
+  return x >= left && x <= right && y >= top && y <= bottom;
+}
+
+const TOUCH_SCROLL_MIN_PX = 2;
+
+/** Maps a two-finger drag to a remote wheel delta. Swiping up (to.y < from.y)
+ *  scrolls the remote content down, matching how a phone page scrolls. */
+export function touchScrollDelta(
+  from: { x: number; y: number },
+  to: { x: number; y: number },
+  min = TOUCH_SCROLL_MIN_PX,
+): { deltaX: number; deltaY: number } | null {
+  const delta = { deltaX: Math.round(from.x - to.x), deltaY: Math.round(from.y - to.y) };
+  if (Math.abs(delta.deltaX) < min && Math.abs(delta.deltaY) < min) return null;
+  return delta;
+}
+
 export default function BrowserLivePanel({ open, agentSessionId, onClose }: BrowserLivePanelProps) {
   const api = typeof window === "undefined" ? undefined : window.browserLiveApi;
   const [sessions, setSessions] = useState<BrowserLiveSession[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [frame, setFrame] = useState<BrowserFrame | null>(null);
   const [loading, setLoading] = useState(false);
+  // Bumped by refresh() to force the watch + WebRTC effects to tear down and
+  // re-establish, so a frozen picture recovers without closing the panel.
+  const [viewNonce, setViewNonce] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [controlPending, setControlPending] = useState(false);
   const [zoom, setZoom] = useState(1);
@@ -69,6 +110,9 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
   const viewportRef = useRef<HTMLDivElement>(null);
   const panStart = useRef<{ x: number; y: number; left: number; top: number } | null>(null);
   const pointerDown = useRef(false);
+  // A swipe keeps routing its wheel events to the window under where the
+  // gesture BEGAN, even as the finger travels across other windows.
+  const touchGesturePoint = useRef<{ x: number; y: number } | null>(null);
   const touch = useRef(new BrowserLiveTouch());
   const zoomRef = useRef(zoom);
   const zoomAnchor = useRef<{ x: number; y: number; clientX: number; clientY: number } | null>(null);
@@ -85,6 +129,16 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
   }, [zoom]);
   const textInputRef = useRef<HTMLInputElement>(null);
   const [imeOn, setImeOn] = useState(false);
+  const imeOnRef = useRef(false);
+  // Last tap the desktop hit-test marked as a text field (logical screen coords).
+  const editableField = useRef<RemoteEditableField | null>(null);
+  // Real-time WebRTC video (desktop source); JPEG frames remain the fallback.
+  const [webrtcState, setWebrtcState] = useState<"off" | "connecting" | "live" | "failed">("off");
+  const webrtcPeerRef = useRef<RTCPeerConnection | null>(null);
+  const webrtcVideoRef = useRef<HTMLVideoElement>(null);
+  useLayoutEffect(() => {
+    imeOnRef.current = imeOn;
+  }, [imeOn]);
 
   const selected = useMemo(
     () => sessions.find((session) => session.id === selectedId) ?? null,
@@ -103,6 +157,7 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
     panStart.current = null;
     touch.current.reset();
     zoomAnchor.current = null;
+    editableField.current = null;
     viewportRef.current?.scrollTo(0, 0);
   }, [open, selectedId]);
 
@@ -144,6 +199,110 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
       setImeOn(false);
     }
   }, [hasControl, panMode, imeOn]);
+
+  const scrollRemoteFieldIntoView = useCallback((field: RemoteEditableField | null) => {
+    const viewport = frame?.viewport ?? selected?.viewport;
+    const element = viewportRef.current;
+    const image = element?.querySelector<HTMLElement>(".browser-live-image-hit-area");
+    if (!field || !viewport || !element || !image) return;
+    const rect = image.getBoundingClientRect();
+    const host = element.getBoundingClientRect();
+    const top = rect.top + (field.y / viewport.height) * rect.height;
+    const bottom = top + (field.h / viewport.height) * rect.height;
+    const pad = 16;
+    if (top >= host.top + pad && bottom <= host.bottom - pad) return;
+    // Park the field in the top third so the phone keyboard (which overlays
+    // the bottom of the shrunken viewport) cannot cover it.
+    element.scrollTop += top - (host.top + Math.max(pad, host.height * 0.3));
+  }, [frame?.viewport, selected?.viewport]);
+  // The keyboard animates the visual viewport over several frames; re-anchor
+  // the remembered field once it (and the panel resize it causes) settles.
+  useEffect(() => {
+    if (!imeOn || !editableField.current) return;
+    const timer = window.setTimeout(() => scrollRemoteFieldIntoView(editableField.current), 420);
+    return () => window.clearTimeout(timer);
+  }, [imeOn, surfaceSize.width, surfaceSize.height, scrollRemoteFieldIntoView]);
+
+  const applyHitTest = useCallback((result: Record<string, unknown> | null) => {
+    // The relay wraps the helper reply as { input: … }; unwrap when present.
+    const payload = result && typeof result.input === "object" && result.input !== null
+      ? result.input as Record<string, unknown>
+      : result;
+    if (typeof payload?.editable !== "boolean") return; // backend without hit-test: keep state
+    if (payload.editable) {
+      const bounds = payload.bounds as Record<string, unknown> | undefined;
+      const field: RemoteEditableField | null = bounds && ["x", "y", "w", "h"].every((key) => typeof bounds[key] === "number")
+        ? { x: bounds.x as number, y: bounds.y as number, w: bounds.w as number, h: bounds.h as number }
+        : null;
+      if (field) editableField.current = field;
+      if (!imeOnRef.current) {
+        textInputRef.current?.focus({ preventScroll: true });
+        setImeOn(true);
+      }
+      scrollRemoteFieldIntoView(field ?? editableField.current);
+    } else {
+      editableField.current = null;
+      if (imeOnRef.current) {
+        textInputRef.current?.blur();
+        setImeOn(false);
+      }
+    }
+  }, [scrollRemoteFieldIntoView]);
+  const webrtcIceServers: RTCIceServer[] = useMemo(() => [{ urls: "stun:stun.l.google.com:19302" }], []);
+
+  const answerWebrtcOffer = useCallback(async (sessionId: string, sdp: RTCSessionDescriptionInit | undefined) => {
+    if (!api || !sessionId || !sdp) return;
+    try {
+      let peer = webrtcPeerRef.current;
+      if (!peer) {
+        peer = new RTCPeerConnection({ iceServers: webrtcIceServers });
+        peer.onicecandidate = (event) => {
+          if (!event.candidate) return;
+          void api.request("browser:webrtc", { sessionId, data: { kind: "ice", candidate: event.candidate.toJSON() } }).catch(() => undefined);
+        };
+        peer.ontrack = (event) => {
+          const video = webrtcVideoRef.current;
+          if (video && event.streams[0]) {
+            video.srcObject = event.streams[0];
+            void video.play().catch(() => undefined);
+          }
+        };
+        peer.onconnectionstatechange = () => {
+          const state = peer?.connectionState;
+          if (state === "connected") setWebrtcState("live");
+          else if (state === "failed" || state === "disconnected" || state === "closed") setWebrtcState("failed");
+        };
+        webrtcPeerRef.current = peer;
+      }
+      await peer.setRemoteDescription(sdp);
+      const answer = await peer.createAnswer();
+      await peer.setLocalDescription(answer);
+      setWebrtcState("connecting");
+      await api.request("browser:webrtc", { sessionId, data: { kind: "answer", sdp: peer.localDescription.toJSON() } });
+    } catch {
+      setWebrtcState("failed");
+    }
+  }, [api, webrtcIceServers]);
+
+  const handleWebrtcSignal = useCallback((sessionId: string, data: Record<string, unknown> | undefined) => {
+    if (!data) return;
+    if (data.kind === "offer") {
+      void answerWebrtcOffer(sessionId, data.sdp as RTCSessionDescriptionInit | undefined);
+      return;
+    }
+    if (data.kind === "ice") {
+      const candidate = data.candidate as RTCIceCandidateInit | null | undefined;
+      const peer = webrtcPeerRef.current;
+      if (peer && candidate) void peer.addIceCandidate(candidate).catch(() => undefined);
+      return;
+    }
+    if (data.kind === "state") {
+      const state = String(data.state);
+      if (state === "connected") setWebrtcState("live");
+      else if (state === "failed" || state === "disconnected" || state === "closed") setWebrtcState("failed");
+    }
+  }, [answerWebrtcOffer]);
+
   const frameSrc = useMemo(() => {
     if (!frame) return null;
     if (typeof frame.data === "string") return `data:${frame.mime};base64,${frame.data}`;
@@ -178,12 +337,21 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
           : null;
         return selectBrowserLiveSessionId(validCurrent, result.sessions, agentSessionId);
       });
+      // Refresh means the PICTURE, not just the list: re-deliver the latest
+      // JPEG frame (same-session watch keeps the controller role) and
+      // renegotiate the real-time video stream.
+      if (selectedId) {
+        await api.request<{ session: BrowserLiveSession }>("browser:watch", { sessionId: selectedId })
+          .then((watched) => mergeSession(watched.session))
+          .catch(() => undefined);
+      }
+      setViewNonce((nonce) => nonce + 1);
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "无法读取浏览器会话");
     } finally {
       setLoading(false);
     }
-  }, [agentSessionId, api, open]);
+  }, [agentSessionId, api, mergeSession, open, selectedId]);
 
   useEffect(() => {
     if (!open || !api) return;
@@ -192,6 +360,11 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
       if (event.type === "browser:frame") {
         const nextFrame = event as unknown as BrowserFrame & { type: string };
         if (nextFrame.sessionId === selectedId) setFrame(nextFrame);
+        return;
+      }
+      if (event.type === "browser:webrtc") {
+        const data = (event as unknown as { data?: Record<string, unknown> }).data;
+        if (event.sessionId === selectedId) handleWebrtcSignal(selectedId, data);
         return;
       }
       if (event.session && typeof event.session === "object") {
@@ -208,7 +381,7 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
         }
       }
     });
-  }, [api, mergeSession, open, refresh, selectedId]);
+  }, [api, handleWebrtcSignal, mergeSession, open, refresh, selectedId]);
 
   useEffect(() => {
     if (!open || !api || !selectedId) return;
@@ -219,6 +392,28 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
       .catch((requestError) => setError(requestError instanceof Error ? requestError.message : "无法观看浏览器"));
     return () => { void api.request("browser:unwatch").catch(() => undefined); };
   }, [api, mergeSession, open, selectedId]);
+
+  // Real-time WebRTC video runs while this viewer controls the desktop source;
+  // the JPEG stream keeps flowing as fallback and reconnect preview.
+  useEffect(() => {
+    if (!open || !api || !hasControl || !isDesktop || !selectedId) {
+      webrtcPeerRef.current?.close();
+      webrtcPeerRef.current = null;
+      if (webrtcVideoRef.current) webrtcVideoRef.current.srcObject = null;
+      setWebrtcState("off");
+      return;
+    }
+    webrtcPeerRef.current?.close();
+    webrtcPeerRef.current = null;
+    setWebrtcState("connecting");
+    void api.request("browser:webrtc", { sessionId: selectedId, data: { kind: "start" } }).catch(() => setWebrtcState("failed"));
+    return () => {
+      webrtcPeerRef.current?.close();
+      webrtcPeerRef.current = null;
+      if (webrtcVideoRef.current) webrtcVideoRef.current.srcObject = null;
+      void api.request("browser:webrtc", { sessionId: selectedId, data: { kind: "stop" } }).catch(() => undefined);
+    };
+  }, [api, hasControl, isDesktop, open, selectedId, viewNonce]);
 
   const requestControl = useCallback(async () => {
     if (!api || !selected) return;
@@ -252,6 +447,26 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
       setError(requestError instanceof Error ? requestError.message : "浏览器输入失败");
     });
   }, [api, selected]);
+
+  /** Sends input and resolves with the desktop hit-test reply (null otherwise). */
+  const dispatchInputForResult = useCallback((input: Record<string, unknown>): Promise<Record<string, unknown> | null> => {
+    if (!api || !selected?.isController || selected.state !== "user-controlled") return Promise.resolve(null);
+    return api.request<Record<string, unknown> | null>("browser:input", { sessionId: selected.id, input })
+      .then((result) => (result && typeof result === "object" ? result : null))
+      .catch(() => null);
+  }, [api, selected]);
+
+  const sendTapUp = useCallback((point: { x: number; y: number }) => {
+    void dispatchInputForResult({ kind: "pointer", action: "up", ...point, button: "left" }).then(applyHitTest);
+  }, [applyHitTest, dispatchInputForResult]);
+
+  /** Raising the keyboard must happen inside the user gesture on iOS; the
+   *  remembered hit-test lets a tap on a known text field open it instantly. */
+  const raiseImeForTap = useCallback((point: { x: number; y: number }) => {
+    if (!remoteFieldContains(editableField.current, frame?.viewport ?? selected?.viewport, point.x, point.y)) return;
+    textInputRef.current?.focus({ preventScroll: true });
+    setImeOn(true);
+  }, [frame?.viewport, selected?.viewport]);
 
   const pointerCoordinates = useCallback((event: React.PointerEvent<HTMLElement> | React.WheelEvent<HTMLElement>) => {
     const rect = event.currentTarget.getBoundingClientRect();
@@ -313,8 +528,8 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
             </div>
           </div>
           <div className="browser-live-header-actions">
-            <button type="button" className="ui-icon-button" onClick={() => void refresh()} title="刷新会话" aria-label="刷新浏览器会话">
-              <RotateCcw size={15} aria-hidden="true" />
+            <button type="button" className="ui-icon-button" onClick={() => void refresh()} title="刷新画面与会话" aria-label="刷新直播画面与会话">
+              <RotateCcw size={15} className={loading ? "spin" : undefined} aria-hidden="true" />
             </button>
             <button type="button" className="ui-icon-button" onClick={onClose} title="关闭" aria-label="关闭浏览器直播">
               <X size={17} aria-hidden="true" />
@@ -348,10 +563,10 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
               <button type="button" aria-label="放大桌面画面" title="放大" disabled={!frame || zoom >= 5} onClick={() => setZoom((value) => Math.min(5, value + 0.25))}><ZoomIn size={16} /></button>
               <button type="button" disabled={!frame} onClick={() => { setZoom(1); setPanMode(false); viewportRef.current?.scrollTo(0, 0); }}>适应窗口</button>
               <button type="button" aria-label="移动桌面画面" aria-pressed={panMode} title="拖动或滚动画面，不发送远程输入" disabled={!frame} onClick={() => setPanMode((value) => !value)}><Hand size={15} />移动画面</button>
-              <button type="button" aria-label="唤起键盘" aria-pressed={imeOn} title="唤起手机键盘输入文字" disabled={!frame || !hasControl} onClick={toggleIme}><Keyboard size={15} />键盘</button>
+              <button type="button" aria-label="唤起键盘" aria-pressed={imeOn} title="轻点画面中的输入框会自动弹起键盘；也可点此手动开关" disabled={!frame || !hasControl} onClick={toggleIme}><Keyboard size={15} />键盘</button>
             </div>
           )}
-          <div className="browser-live-touch-hint">双指缩放 · 单指移动画面 · 开始控制后轻点操作</div>
+          <div className="browser-live-touch-hint">控制中滑动可滚动画面 · 双指缩放 · 轻点点击 · 放大后单指平移</div>
           <div ref={viewportRef} className="browser-live-viewport">
             {frame && frameSrc ? (
               <div
@@ -366,6 +581,7 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
                   if (event.pointerType === "touch") {
                     event.preventDefault();
                     touch.current.down(event.pointerId, { x: event.clientX, y: event.clientY });
+                    touchGesturePoint.current = hasControl && !panMode ? pointerCoordinates(event) : null;
                     event.currentTarget.setPointerCapture(event.pointerId);
                     return;
                   }
@@ -380,7 +596,7 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
                   if (!point) return;
                   pointerDown.current = true;
                   event.currentTarget.setPointerCapture(event.pointerId);
-                  textInputRef.current?.focus({ preventScroll: true });
+                  raiseImeForTap(point);
                   sendInput({ kind: "pointer", action: "down", ...point, button: "left" });
                 }}
                 onPointerMove={(event) => {
@@ -389,8 +605,12 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
                     const movement = touch.current.move(event.pointerId, { x: event.clientX, y: event.clientY });
                     const element = viewportRef.current;
                     if (!movement || !element) return;
+                    // A real pinch moves the finger distance ≥5% from where the
+                    // gesture began; parallel translation with sub-percent
+                    // jitter must fall through to scrolling/panning instead.
+                    const isPinch = movement.pointers >= 2 && Math.abs(movement.distanceRatio - 1) > 0.05;
                     const nextZoom = Math.max(0.5, Math.min(5, zoomRef.current * movement.scale));
-                    if (nextZoom !== zoomRef.current) {
+                    if (isPinch && nextZoom !== zoomRef.current) {
                       const rect = event.currentTarget.getBoundingClientRect();
                       zoomAnchor.current = {
                         x: (movement.from.x - rect.left) / rect.width,
@@ -400,10 +620,24 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
                       zoomRef.current = nextZoom;
                       // Commit geometry before the next finger move reads its anchor.
                       flushSync(() => setZoom(nextZoom));
-                    } else {
-                      element.scrollLeft += movement.from.x - movement.to.x;
-                      element.scrollTop += movement.from.y - movement.to.y;
+                      return;
                     }
+                    // While controlling, finger drags scroll the remote content —
+                    // one or two fingers at fit zoom (a fit canvas has nothing to
+                    // pan, so "pan" would silently do nothing), two fingers when
+                    // zoomed in. One finger only pans the local canvas when
+                    // zoomed or in explicit pan mode.
+                    const atFitZoom = zoomRef.current <= 1.001;
+                    if (hasControl && !panMode && (movement.pointers >= 2 || atFitZoom)) {
+                      const delta = touchScrollDelta(movement.from, movement.to);
+                      if (delta) {
+                        const point = touchGesturePoint.current ?? pointerCoordinates(event);
+                        if (point) sendInput({ kind: "pointer", action: "wheel", ...point, ...delta });
+                      }
+                      return;
+                    }
+                    element.scrollLeft += movement.from.x - movement.to.x;
+                    element.scrollTop += movement.from.y - movement.to.y;
                     return;
                   }
                   if (panMode && panStart.current && viewportRef.current) {
@@ -420,9 +654,11 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
                     event.preventDefault();
                     const tap = touch.current.up(event.pointerId, { x: event.clientX, y: event.clientY });
                     const point = pointerCoordinates(event);
+                    touchGesturePoint.current = null;
                     if (tap && point && hasControl && !panMode) {
+                      raiseImeForTap(point);
                       sendInput({ kind: "pointer", action: "down", ...point, button: "left" });
-                      sendInput({ kind: "pointer", action: "up", ...point, button: "left" });
+                      sendTapUp(point);
                     }
                     return;
                   }
@@ -430,11 +666,11 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
                   if (!hasControl) return;
                   const point = pointerCoordinates(event);
                   pointerDown.current = false;
-                  if (point) sendInput({ kind: "pointer", action: "up", ...point, button: "left" });
+                  if (point) sendTapUp(point);
                 }}
                 onPointerCancel={(event) => {
                   touch.current.up(event.pointerId, { x: event.clientX, y: event.clientY }, true);
-                  panStart.current = null; pointerDown.current = false;
+                  panStart.current = null; pointerDown.current = false; touchGesturePoint.current = null;
                 }}
                 onLostPointerCapture={(event) => {
                   touch.current.up(event.pointerId, { x: event.clientX, y: event.clientY }, true);
@@ -458,7 +694,15 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
                   if (hasControl) sendInput({ kind: "key", action: "up", key: event.key, code: event.code, modifiers: modifierNames(event) });
                 }}
               >
-                <img src={frameSrc} alt={selected?.title || "浏览器实时画面"} draggable={false} />
+                <img src={frameSrc} alt={selected?.title || "浏览器实时画面"} draggable={false} decoding="async" />
+                <video
+                  ref={webrtcVideoRef}
+                  className={`browser-live-video ${webrtcState === "live" ? "is-live" : ""}`}
+                  aria-label={isDesktop ? "桌面实时视频流" : "浏览器实时视频流"}
+                  autoPlay
+                  playsInline
+                  muted
+                />
                 <input
                   ref={textInputRef}
                   className="browser-live-mobile-input"
@@ -484,7 +728,7 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
             )}
           </div>
           {hasControl && !panMode && (
-            <div className="browser-live-control-cue"><MousePointer2 size={13} aria-hidden="true" /> {isDesktop ? "当前输入会发送到本机" : "当前输入会发送到浏览器"}</div>
+            <div className="browser-live-control-cue"><MousePointer2 size={13} aria-hidden="true" /> {isDesktop ? "当前输入会发送到本机" : "当前输入会发送到浏览器"}{isDesktop && webrtcState === "live" ? " · 实时视频流" : isDesktop && webrtcState === "connecting" ? " · 正在连接实时流" : ""}</div>
           )}
         </div>
 
