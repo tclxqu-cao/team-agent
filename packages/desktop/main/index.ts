@@ -10,6 +10,9 @@ import { fileURLToPath } from "node:url";
 import { readFile, writeFile } from "node:fs/promises";
 import { existsSync, statSync } from "node:fs";
 import { LiveViewProducerClient } from "@agent/core";
+// Must be set before app ready: real host IPs must survive ICE gathering for
+// LAN/Tailscale WebRTC (mDNS .local candidates do not resolve on phones).
+app.commandLine.appendSwitch("disable-features", "WebRtcHideLocalIpsWithMdns");
 import { DesktopInputGateway } from "./desktop-input-gateway.js";
 import { DesktopScreenScreencast } from "./desktop-screen-screencast.js";
 import { DesktopScreenLive, type ScreenPermission, type WebrtcSignal } from "./desktop-screen-live.js";
@@ -918,9 +921,6 @@ async function persistDesktopLiveEnabled(enabled: boolean): Promise<void> {
 
 function getDesktopScreenLive(): DesktopScreenLive {
   if (desktopScreenLive) return desktopScreenLive;
-  // Real host IPs must survive ICE candidate gathering for LAN/Tailscale
-  // WebRTC (mDNS .local names do not resolve across those links).
-  app.commandLine.appendSwitch("disable-features", "WebRtcHideLocalIpsWithMdns");
   const gateway = new DesktopInputGateway({
     helperPath: desktopInputHelperPath,
     onStderr: (line) => console.log("[desktop-input]", line),

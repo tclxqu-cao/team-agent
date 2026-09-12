@@ -43,6 +43,7 @@ export class WebrtcLive {
   handleViewerSignal(data: WebrtcSignal): void {
     const kind = String(data.kind);
     if (kind === "start") {
+      this.options.log?.("[webrtc-live] viewer start requested");
       this.#cancelClose();
       this.startAt = this.options.now?.() ?? Date.now();
       this.#ensureWindow((window) => {
@@ -57,7 +58,10 @@ export class WebrtcLive {
       this.#scheduleClose(0);
       return;
     }
-    if (kind === "answer" || kind === "ice") this.#post(data);
+    if (kind === "answer" || kind === "ice") {
+      if (kind === "ice") this.options.log?.(`[webrtc-live] viewer candidate ${String((data.candidate as { candidate?: string })?.candidate ?? "").slice(0, 80)}`);
+      this.#post(data);
+    }
   }
 
   /** Stops capture unconditionally (control released, live disabled, app quit). */
@@ -85,6 +89,7 @@ export class WebrtcLive {
 
   async #handleRendererSignal(data: WebrtcSignal): Promise<void> {
     const kind = String(data.kind);
+    this.options.log?.(`[webrtc-live] renderer signal: ${kind}${kind === "state" ? ` ${String(data.state)}` : ""}${kind === "error" ? ` ${String(data.error)}` : ""}${kind === "ice" ? ` ${String((data.candidate as { candidate?: string })?.candidate ?? "").slice(0, 80)}` : ""}`);
     if (kind === "state") {
       const state = String(data.state);
       if (state === "connected") {
