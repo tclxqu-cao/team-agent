@@ -243,10 +243,22 @@ body[data-web-shell="1"] .chat-header-action--appearance {
   height: 44px;
   display: flex;
   align-items: center;
-  justify-content: center;
   gap: 4px;
+  /* Phones: one row per button; overflow scrolls sideways instead of
+     wrapping labels into vertical columns. */
+  justify-content: flex-start;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  padding: 0 8px;
+  box-sizing: border-box;
   background: var(--bg-elevated);
   color: var(--text-primary);
+}
+
+.browser-live-zoom::-webkit-scrollbar {
+  display: none;
 }
 
 .browser-live-zoom button {
@@ -254,7 +266,7 @@ body[data-web-shell="1"] .chat-header-action--appearance {
   align-items: center;
   justify-content: center;
   gap: 4px;
-  min-width: 36px;
+  flex: none;
   height: 36px;
   padding: 0 8px;
   border: 1px solid transparent;
@@ -263,6 +275,7 @@ body[data-web-shell="1"] .chat-header-action--appearance {
   color: inherit;
   font: inherit;
   font-size: 12px;
+  white-space: nowrap;
   cursor: pointer;
 }
 
@@ -279,6 +292,7 @@ body[data-web-shell="1"] .chat-header-action--appearance {
 
 .browser-live-zoom output {
   min-width: 42px;
+  flex: none;
   text-align: center;
   font-size: 12px;
   font-variant-numeric: tabular-nums;
