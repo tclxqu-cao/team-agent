@@ -4,7 +4,8 @@
   "private": true,
   "description": "AgentRoam Android/iOS 壳：Capacitor 打包 packages/webapp 构建产物，通过可配置的远端服务器地址使用 Agent 能力",
   "scripts": {
-    "sync": "cd ../webapp && bun run build && cd ../mobile && cap sync",
+    "sync": "cd ../webapp && bun run build && cd ../mobile && cap sync && node scripts/patch-safe-area.mjs",
+    "patch": "node scripts/patch-safe-area.mjs",
     "sync:web": "cap copy",
     "update": "cap update android && cap update ios",
     "open:android": "cap open android",
