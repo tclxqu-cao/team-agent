@@ -65,6 +65,22 @@ export interface RemoteEditableField {
 
 const TOUCH_SCROLL_MIN_PX = 2;
 
+/** Whether a viewport-fraction point lands inside (or near) a remembered region. */
+export function remoteFieldContains(
+  field: RemoteEditableField | null,
+  viewport: { width: number; height: number } | null | undefined,
+  x: number,
+  y: number,
+  pad = 0.02,
+): boolean {
+  if (!field || !viewport || !viewport.width || !viewport.height) return false;
+  const left = field.x / viewport.width - pad;
+  const top = field.y / viewport.height - pad;
+  const right = (field.x + field.w) / viewport.width + pad;
+  const bottom = (field.y + field.h) / viewport.height + pad;
+  return x >= left && x <= right && y >= top && y <= bottom;
+}
+
 /** Maps a two-finger drag to a remote wheel delta. Swiping up (to.y < from.y)
  *  scrolls the remote content down, matching how a phone page scrolls. */
 export function touchScrollDelta(
@@ -116,6 +132,11 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
   const imeOnRef = useRef(false);
   // Last tap the desktop hit-test marked as a text field (logical screen coords).
   const editableField = useRef<RemoteEditableField | null>(null);
+  // Last tap the hit-test marked as an interactive control (button, dock…).
+  // Re-tapping a known control skips the optimistic keyboard raise entirely —
+  // no flash. First tap on an unseen control still flashes briefly (iOS only
+  // allows focus() inside the gesture; the hit-test comes back later).
+  const controlFieldRef = useRef<{ rect: RemoteEditableField; at: number } | null>(null);
   // Real-time WebRTC video (desktop source); JPEG frames remain the fallback.
   const [webrtcState, setWebrtcState] = useState<"off" | "connecting" | "live" | "failed">("off");
   const webrtcPeerRef = useRef<RTCPeerConnection | null>(null);
@@ -142,6 +163,7 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
     touch.current.reset();
     zoomAnchor.current = null;
     editableField.current = null;
+    controlFieldRef.current = null;
     viewportRef.current?.scrollTo(0, 0);
   }, [open, selectedId]);
 
@@ -216,11 +238,23 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
     // The tap optimistically raised the keyboard inside the gesture (iOS
     // requirement). When the hit-test says the finger landed on an interactive
     // control (close button, menu…), lower it again — end state: no keyboard.
-    if (!payload.editable && payload.kind === "control" && imeOnRef.current) {
-      textInputRef.current?.blur();
-      setImeOn(false);
+    if (!payload.editable && payload.kind === "control") {
+      const bounds = payload.bounds as Record<string, unknown> | undefined;
+      if (bounds && ["x", "y", "w", "h"].every((key) => typeof bounds[key] === "number")) {
+        controlFieldRef.current = {
+          rect: { x: bounds.x as number, y: bounds.y as number, w: bounds.w as number, h: bounds.h as number },
+          at: Date.now(),
+        };
+      }
+      if (imeOnRef.current) {
+        textInputRef.current?.blur();
+        setImeOn(false);
+      }
       return;
     }
+    // Anything the hit-test confirms as typeable (or blank) retires the
+    // control cache so taps there raise the keyboard again.
+    controlFieldRef.current = null;
     if (payload.editable) {
       const bounds = payload.bounds as Record<string, unknown> | undefined;
       const field: RemoteEditableField | null = bounds && ["x", "y", "w", "h"].every((key) => typeof bounds[key] === "number")
@@ -703,9 +737,17 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
                     touchGesturePoint.current = null;
                     if (tap && point && hasControl && !panMode) {
                       // Every remote tap raises the soft keyboard (RD-style) —
-                      // iOS only allows focus() inside the gesture itself.
-                      textInputRef.current?.focus({ preventScroll: true });
-                      setImeOn(true);
+                      // iOS only allows focus() inside the gesture itself —
+                      // except re-taps on a known control, which would only
+                      // flash the keyboard before the hit-test lowers it.
+                      const cachedControl = controlFieldRef.current;
+                      const onKnownControl = cachedControl !== null
+                        && Date.now() - cachedControl.at < 60_000
+                        && remoteFieldContains(cachedControl.rect, frame?.viewport ?? selected?.viewport, point.x, point.y, 0.03);
+                      if (!onKnownControl) {
+                        textInputRef.current?.focus({ preventScroll: true });
+                        setImeOn(true);
+                      }
                       sendInput({ kind: "pointer", action: "down", ...point, button: "left" });
                       sendTapUp(point);
                     }
