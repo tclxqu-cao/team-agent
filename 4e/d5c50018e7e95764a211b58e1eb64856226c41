@@ -1,0 +1,14 @@
+packages/desktop/renderer/components/BrowserLivePanel.tsx
+  h_b0bf4228a0b7ec 433-437,468,575-590
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "4ed5c50018e7e95764a211b58e1eb64856226c41",
+  "prompts": {},
+  "humans": {
+    "h_b0bf4228a0b7ec": {
+      "author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
