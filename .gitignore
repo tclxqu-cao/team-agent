@@ -47,3 +47,8 @@ packages/webapp/dist-shared-verify/
 outputs/release-*/
 outputs/_cover-backup-*/
 outputs/shots/
+
+# mobile build artifacts (2026-09-13)
+outputs/agentroam-mobile/
+*.apk
+*.ipa

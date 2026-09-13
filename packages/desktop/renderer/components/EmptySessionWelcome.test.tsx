@@ -2,7 +2,10 @@ import { readFileSync } from "node:fs";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import EmptySessionWelcome, { EMPTY_SESSION_STARTERS } from "./EmptySessionWelcome";
+import EmptySessionWelcome, {
+  EMPTY_SESSION_STARTERS,
+  welcomeGreetingForHour,
+} from "./EmptySessionWelcome";
 
 const source = readFileSync(new URL("./EmptySessionWelcome.tsx", import.meta.url), "utf8");
 const chatView = readFileSync(new URL("./ChatView.tsx", import.meta.url), "utf8");
@@ -14,15 +17,47 @@ describe("EmptySessionWelcome", () => {
     const html = renderToStaticMarkup(createElement(EmptySessionWelcome, {
       agentType: "codex",
       ready: true,
+      now: new Date(2026, 8, 12, 10, 0, 0),
       onSelectPrompt: vi.fn(),
     }));
 
-    expect(html).toContain("嗨，我在。");
+    expect(html).toContain("上午好。");
     expect(html).toContain("今天想一起做点什么？");
     expect(html).toContain("Codex · 已准备好");
     for (const starter of EMPTY_SESSION_STARTERS) expect(html).toContain(starter.prompt);
     expect(html.match(/data-prompt=/g)).toHaveLength(3);
     expect(html).not.toContain("disabled");
+  });
+
+  it("greets by time of day, including a late-night nudge", () => {
+    const renderAt = (hour: number, ready = true) => renderToStaticMarkup(
+      createElement(EmptySessionWelcome, {
+        agentType: "codex",
+        ready,
+        now: new Date(2026, 8, 12, hour, 0, 0),
+        onSelectPrompt: vi.fn(),
+      }),
+    );
+
+    expect(renderAt(1)).toContain("夜深了。");
+    expect(renderAt(1)).toContain("注意休息，重要的事可以先留给我。");
+    expect(renderAt(6)).toContain("早啊。");
+    expect(renderAt(13)).toContain("中午好。");
+    expect(renderAt(15)).toContain("下午好。");
+    expect(renderAt(21)).toContain("晚上好。");
+    // 未就绪时时段问候退位给配置引导，但标题仍跟时间走。
+    expect(renderAt(1, false)).toContain("夜深了。");
+    expect(renderAt(1, false)).toContain("配置好 API Key 后，我就能开始。");
+  });
+
+  it("keeps every hour bucket covered with distinct titles", () => {
+    const titles = new Set(
+      Array.from({ length: 24 }, (_, hour) => welcomeGreetingForHour(hour).title),
+    );
+    expect(titles.size).toBeGreaterThanOrEqual(5);
+    for (const hour of [0, 2, 4, 23]) {
+      expect(welcomeGreetingForHour(hour).title).toBe("夜深了。");
+    }
   });
 
   it("shows configuration guidance and disables starters when unavailable", () => {

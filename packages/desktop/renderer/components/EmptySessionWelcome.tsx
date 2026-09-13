@@ -7,6 +7,16 @@ export const EMPTY_SESSION_STARTERS = [
   { prompt: "一起实现一个新想法", Icon: Lightbulb },
 ] as const;
 
+// 空会话首屏问候按钟点分段，语气跟着时段走（深夜关心休息，午后轻快）。
+export function welcomeGreetingForHour(hour: number): { title: string; prompt: string } {
+  if (hour >= 5 && hour < 9) return { title: "早啊。", prompt: "新的一天，想做点什么？" };
+  if (hour >= 9 && hour < 12) return { title: "上午好。", prompt: "今天想一起做点什么？" };
+  if (hour >= 12 && hour < 14) return { title: "中午好。", prompt: "想趁午休推进点什么？" };
+  if (hour >= 14 && hour < 18) return { title: "下午好。", prompt: "这个下午，想做点什么？" };
+  if (hour >= 18 && hour < 23) return { title: "晚上好。", prompt: "今晚想一起做点什么？" };
+  return { title: "夜深了。", prompt: "注意休息，重要的事可以先留给我。" };
+}
+
 const AGENT_LABELS: Record<AgentType, string> = {
   "customer-agent": "Customer Agent",
   codex: "Codex",
@@ -17,15 +27,19 @@ const AGENT_LABELS: Record<AgentType, string> = {
 interface EmptySessionWelcomeProps {
   agentType: AgentType;
   ready: boolean;
+  /** 测试注入用；生产渲染取当前时间。 */
+  now?: Date;
   onSelectPrompt(prompt: string): void;
 }
 
 export default function EmptySessionWelcome({
   agentType,
   ready,
+  now,
   onSelectPrompt,
 }: EmptySessionWelcomeProps) {
   const agentLabel = AGENT_LABELS[agentType];
+  const greeting = welcomeGreetingForHour((now ?? new Date()).getHours());
 
   return (
     <section className="empty-session-welcome" aria-labelledby="empty-session-welcome-title">
@@ -43,9 +57,9 @@ export default function EmptySessionWelcome({
         <p className="empty-session-welcome__status">
           {ready ? `${agentLabel} · 已准备好` : `${agentLabel} · 等待配置`}
         </p>
-        <h2 id="empty-session-welcome-title">嗨，我在。</h2>
+        <h2 id="empty-session-welcome-title">{greeting.title}</h2>
         <p className="empty-session-welcome__prompt">
-          {ready ? "今天想一起做点什么？" : "配置好 API Key 后，我就能开始。"}
+          {ready ? greeting.prompt : "配置好 API Key 后，我就能开始。"}
         </p>
       </div>
 
