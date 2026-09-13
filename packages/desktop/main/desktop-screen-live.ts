@@ -156,10 +156,6 @@ export class DesktopScreenLive {
           if (data && typeof data === "object") this.onWebrtcFromViewer(data as WebrtcSignal);
           return;
         }
-        if (event.type === "browser:set-display" && event.sessionId === this.metadata.sessionId) {
-          void this.#handleSetDisplay(typeof event.displayId === "string" ? event.displayId : null);
-          return;
-        }
         this.#handleRelayEvent(event);
       });
       this.status = { ...this.status, sessionOnline: true, error: this.status.accessibilityTrusted === false ? ACCESSIBILITY_HINT : undefined };
@@ -203,15 +199,6 @@ export class DesktopScreenLive {
     const client = this.currentClient;
     if (!client) return { delivered: false };
     return client.webrtcRelay(this.metadata.sessionId, data).catch(() => ({ delivered: false }));
-  }
-
-  /** Applies a viewer's display switch, then republishes the refreshed options. */
-  async #handleSetDisplay(displayId: string | null): Promise<void> {
-    if (!this.onSetDisplay) return;
-    const options = await this.onSetDisplay(displayId).catch(() => null);
-    const client = this.currentClient;
-    if (!client || !Array.isArray(options)) return;
-    await client.publish({ ...this.metadata, displays: options }).catch(() => undefined);
   }
 
   async #probeAccessibility(): Promise<boolean | null> {
