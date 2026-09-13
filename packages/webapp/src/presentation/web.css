@@ -324,6 +324,15 @@ body[data-web-shell="1"] .chat-header-action--appearance {
   cursor: pointer;
 }
 
+.browser-live-zoom button.is-hint {
+  animation: browser-live-keyboard-hint 1.2s ease-in-out infinite;
+}
+
+@keyframes browser-live-keyboard-hint {
+  0%, 100% { background: transparent; }
+  50% { background: color-mix(in srgb, var(--accent) 30%, transparent); border-color: var(--accent); }
+}
+
 .browser-live-zoom button:hover:not(:disabled),
 .browser-live-zoom button[aria-pressed="true"] {
   background: var(--bg-surface);

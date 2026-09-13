@@ -132,12 +132,15 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
   const imeOnRef = useRef(false);
   // Last tap the desktop hit-test marked as a text field (logical screen coords).
   const editableField = useRef<RemoteEditableField | null>(null);
+  const editableAtRef = useRef(0);
+  const [fieldHint, setFieldHint] = useState(false);
   // Long-press (drag / right-click) and double-tap tracking for touch.
   const touchStartRef = useRef<{ x: number; y: number } | null>(null);
   const longPressRef = useRef<"none" | "armed" | "drag">("none");
   const longPressTimer = useRef<number | null>(null);
   const lastTapRef = useRef<{ at: number; x: number; y: number } | null>(null);
   const [pingMs, setPingMs] = useState<number | null>(null);
+  const [quickKeysOpen, setQuickKeysOpen] = useState(false);
   const wakeLockRef = useRef<{ release(): Promise<void> } | null>(null);
   // Last tap the hit-test marked as an interactive control (button, dock…).
   // Re-tapping a known control skips the optimistic keyboard raise entirely —
@@ -150,6 +153,7 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
   const webrtcVideoRef = useRef<HTMLVideoElement>(null);
   useLayoutEffect(() => {
     imeOnRef.current = imeOn;
+    if (imeOn) setFieldHint(false);
   }, [imeOn]);
 
 
@@ -287,30 +291,28 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
           at: Date.now(),
         };
       }
-      if (imeOnRef.current) {
-        textInputRef.current?.blur();
-        setImeOn(false);
-      }
       return;
     }
-    // Anything the hit-test confirms as typeable (or blank) retires the
-    // control cache so taps there raise the keyboard again.
-    controlFieldRef.current = null;
     if (payload.editable) {
+      // Text field tapped: remember it — the next tap raises the keyboard
+      // inside the gesture (iOS requirement), and a raise scrolls it into view.
       const bounds = payload.bounds as Record<string, unknown> | undefined;
       const field: RemoteEditableField | null = bounds && ["x", "y", "w", "h"].every((key) => typeof bounds[key] === "number")
         ? { x: bounds.x as number, y: bounds.y as number, w: bounds.w as number, h: bounds.h as number }
         : null;
-      if (field) editableField.current = field;
-      if (!imeOnRef.current) {
-        textInputRef.current?.focus({ preventScroll: true });
-        setImeOn(true);
+      if (field) {
+        editableField.current = field;
+        editableAtRef.current = Date.now();
       }
-      scrollRemoteFieldIntoView(field ?? editableField.current);
+      if (imeOnRef.current) scrollRemoteFieldIntoView(field ?? editableField.current);
+      else setFieldHint(true);
     } else {
-      // Tapped something that is not a text field — keep the keyboard up
-      // (RD-style); the toolbar keyboard button is what lowers it.
+      // Tapped a control or blank area — collapse an open keyboard.
       editableField.current = null;
+      if (imeOnRef.current) {
+        textInputRef.current?.blur();
+        setImeOn(false);
+      }
     }
   }, [scrollRemoteFieldIntoView]);
   const webrtcIceServers: RTCIceServer[] = useMemo(() => [{ urls: "stun:stun.l.google.com:19302" }], []);
@@ -652,7 +654,7 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
           </div>
         )}
 
-        <div className={`browser-live-surface ${hasControl ? "is-controlling" : ""} has-zoom ${hasControl && !panMode ? "has-quickkeys" : ""}`}>
+        <div className={`browser-live-surface ${hasControl ? "is-controlling" : ""} has-zoom ${hasControl && !panMode && quickKeysOpen ? "has-quickkeys" : ""}`}>
           {(
             <div className="browser-live-zoom" role="group" aria-label="桌面画面缩放">
               <button type="button" aria-label="缩小桌面画面" title="缩小" disabled={!frame || zoom <= 0.5} onClick={() => setZoom((value) => Math.max(0.5, value - 0.25))}><ZoomOut size={16} /></button>
@@ -660,7 +662,8 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
               <button type="button" aria-label="放大桌面画面" title="放大" disabled={!frame || zoom >= 5} onClick={() => setZoom((value) => Math.min(5, value + 0.25))}><ZoomIn size={16} /></button>
               <button type="button" disabled={!frame} onClick={() => { setZoom(1); setPanMode(false); viewportRef.current?.scrollTo(0, 0); }}>适应窗口</button>
               <button type="button" aria-label="移动桌面画面" aria-pressed={panMode} title="拖动或滚动画面，不发送远程输入" disabled={!frame} onClick={() => setPanMode((value) => !value)}><Hand size={15} />移动画面</button>
-              <button type="button" aria-label="唤起键盘" aria-pressed={imeOn} title="轻点画面会自动弹起键盘；点此手动开关（输入完请点此收起）" disabled={!frame || !hasControl} onClick={toggleIme}><Keyboard size={15} />键盘</button>
+              <button type="button" aria-label="唤起键盘" aria-pressed={imeOn} title="唤起/收起键盘（轻点输入框也会自动弹起）" className={fieldHint && !imeOn ? "is-hint" : undefined} disabled={!frame || !hasControl} onClick={() => { setFieldHint(false); toggleIme(); }}><Keyboard size={15} />键盘</button>
+              <button type="button" aria-label="快捷键条" aria-pressed={quickKeysOpen} title="展开/收起快捷键（Esc/Tab/复制/粘贴/方向键）" disabled={!frame || !hasControl} onClick={() => setQuickKeysOpen((open) => !open)}><Keyboard size={15} />{quickKeysOpen ? "收起" : "快捷键"}</button>
               <button type="button" aria-label="窗口控制" title="全屏看不到左上角按钮时用：第 1 次点=退出全屏（ESC + Ctrl+Cmd+F），第 2 次点=关闭窗口（Cmd+W）" disabled={!frame || !hasControl} onClick={() => {
                 const now = Date.now();
                 if (now - windowControlAtRef.current < 2500) {
@@ -694,7 +697,7 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
               })()}
             </div>
           )}
-          {hasControl && !panMode && (
+          {hasControl && !panMode && quickKeysOpen && (
             <div className="browser-live-quickkeys" role="group" aria-label="快捷键">
               <button type="button" disabled={!frame} onClick={() => sendKey("Escape", "Escape")}>Esc</button>
               <button type="button" disabled={!frame} onClick={() => sendKey("Tab", "Tab")}>Tab</button>
@@ -840,17 +843,19 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
                     }
                     const tap = touch.current.up(event.pointerId, { x: event.clientX, y: event.clientY });
                     if (tap && point && hasControl && !panMode) {
-                      // Every remote tap raises the soft keyboard (RD-style) —
-                      // iOS only allows focus() inside the gesture itself —
-                      // except re-taps on a known control, which would only
-                      // flash the keyboard before the hit-test lowers it.
-                      const cachedControl = controlFieldRef.current;
-                      const onKnownControl = cachedControl !== null
-                        && Date.now() - cachedControl.at < 60_000
-                        && remoteFieldContains(cachedControl.rect, frame?.viewport ?? selected?.viewport, point.x, point.y, 0.03);
-                      if (!onKnownControl) {
+                      // Auto-raise only when the finger lands on a learned text
+                      // field; every other tap collapses the keyboard.
+                      const cachedEditable = editableField.current;
+                      const onKnownField = cachedEditable !== null
+                        && Date.now() - editableAtRef.current < 60_000
+                        && remoteFieldContains(cachedEditable, frame?.viewport ?? selected?.viewport, point.x, point.y, 0.03);
+                      if (onKnownField && !imeOnRef.current) {
                         textInputRef.current?.focus({ preventScroll: true });
                         setImeOn(true);
+                        setFieldHint(false);
+                      } else if (!onKnownField && imeOnRef.current) {
+                        textInputRef.current?.blur();
+                        setImeOn(false);
                       }
                       const vp = frame?.viewport ?? selected?.viewport;
                       const last = lastTapRef.current;
