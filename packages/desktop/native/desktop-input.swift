@@ -73,6 +73,9 @@ func postMouse(_ command: [String: Any]) throws {
         @unknown default: type = .leftMouseDown
         }
         eventButton = button
+        if button == .left {
+            activateAppUnder(x: x, y: y)
+        }
     case "up":
         switch button {
         case .left: type = .leftMouseUp
@@ -210,6 +213,30 @@ let controlRoles: Set<String> = [
     "AXLink", "AXImage", "AXSplitGroup", "AXScrollArea", "AXDockItem",
     "AXApplicationDockItem", "AXToggle", "AXStaticText", "AXHeading", "AXGroup",
 ]
+
+// Clicking a background app's window via posted CGEvents lands the click but
+// does not bring that app/window forward the way a physical click does. After
+// a left press, activate the app under the cursor and raise its window so the
+// click behaves like a physical one (ToDesk-style focus follows tap).
+func activateAppUnder(x: CGFloat, y: CGFloat) {
+    guard AXIsProcessTrusted() else { return }
+    let systemWide = AXUIElementCreateSystemWide()
+    var elementRef: AXUIElement?
+    guard AXUIElementCopyElementAtPosition(systemWide, Float(x), Float(y), &elementRef) == .success,
+          let element = elementRef else { return }
+    var pid: pid_t = 0
+    AXUIElementGetPid(element, &pid)
+    guard pid != 0, let app = NSRunningApplication(processIdentifier: pid) else { return }
+    guard !app.isActive else { return }
+    app.activate(options: [.activateIgnoringOtherApps])
+    var windowRef: CFTypeRef?
+    if AXUIElementCopyAttributeValue(element, kAXWindowAttribute as CFString, &windowRef) == .success,
+       let window = windowRef {
+        AXUIElementPerformAction(window as! AXUIElement, kAXRaiseAction as CFString)
+    }
+    // Give the window server a beat to reorder before the click lands.
+    usleep(80_000)
+}
 
 // Hit-tests the element under a click via the system-wide AX tree and reports
 // what kind of thing it is, so the viewer can decide whether a tap should
