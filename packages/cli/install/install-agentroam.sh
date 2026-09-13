@@ -3,7 +3,7 @@ set -eu
 
 NODE_VERSION="22.22.0"
 MINIMUM_NODE_VERSION="22.22.0"
-AGENTROAM_VERSION="0.2.0-preview.16"
+AGENTROAM_VERSION="0.2.0-preview.17"
 NODE_ARCHIVE="node-v22.22.0-darwin-arm64.tar.xz"
 NODE_SHA256="2bd596bbfc4a275ceb8721a5954ee97daea5ebe673e96a185ebd732f6fb023ac"
 NODE_URL="https://nodejs.org/dist/v22.22.0/$NODE_ARCHIVE"

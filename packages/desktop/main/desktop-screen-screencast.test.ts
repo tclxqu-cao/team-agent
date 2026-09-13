@@ -157,7 +157,7 @@ describe("DesktopScreenScreencast", () => {
     await screencast.dispatchInput({ kind: "pointer", action: "wheel", x: 0.25, y: 0.5, button: "left", deltaX: 0, deltaY: 60 });
     expect(dispatched).toEqual([
       // Screen-global coordinates: display origin + normalized position.
-      { op: "down", x: 2560 + 338, y: 495 + 439, button: "left" },
+      { op: "down", x: 2560 + 338, y: 495 + 439, button: "left", click: 1 },
       { op: "move", x: 2560 + 338, y: 495 + 439 },
       { op: "wheel", deltaX: 0, deltaY: 60 },
     ]);
