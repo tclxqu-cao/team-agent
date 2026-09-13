@@ -84,6 +84,15 @@ function startCycle() {
 
 // JXA may hand back the enum as a string — coerce before comparing
 var status = Number($.SFSpeechRecognizer.authorizationStatus);
+if (status === 0) {
+  // notDetermined → trigger the system prompt, then wait for the user's decision
+  $.SFSpeechRecognizer.requestAuthorization(function () {});
+  var authDeadline = Date.now() + 120000;
+  while (Number($.SFSpeechRecognizer.authorizationStatus) === 0 && Date.now() < authDeadline) {
+    $.NSRunLoop.currentRunLoop.runUntilDate($.NSDate.dateWithTimeIntervalSinceNow(0.2));
+  }
+  status = Number($.SFSpeechRecognizer.authorizationStatus);
+}
 if (status === 3 || status === 4) {
   // 3 = authorized; 4 = provisional (also usable)
   emit('READY');

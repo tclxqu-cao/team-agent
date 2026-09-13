@@ -1,3 +1,4 @@
+import type { PublishLiveSessionMetadata } from "./producer-client.js";
 import type { LiveViewDisplayOption, LiveViewInput, LiveViewOwnershipState, LiveViewSource } from "../../domain/live-view/entities.js";
 
 /** Port implemented per runtime: continuous frames plus normalized input dispatch. */

@@ -1306,11 +1306,18 @@ export class NativeRuntimeBrokerHost {
   }
 
   async create(options: CreateRuntimeSessionOptions & { agentType: NativeAgentType }): Promise<UnifiedSessionSummary> {
-    const created = await this.runtime.create(options);
-    this.pendingCreations.set(created.id, created);
-    if (created.agentType === "claude-code") this.state.savePendingSession(created);
-    this.state.trackPendingAutoTitle(created.id, options.title);
-    return this.state.applySummary(created);
+    console.log(`[broker-host ${new Date().toISOString().slice(11,23)}] create enter: agentType=${options.agentType} cwd=${options.cwd}`);
+    try {
+      const created = await this.runtime.create(options);
+      console.log(`[broker-host ${new Date().toISOString().slice(11,23)}] create exit: ${created.id}`);
+      this.pendingCreations.set(created.id, created);
+      if (created.agentType === "claude-code") this.state.savePendingSession(created);
+      this.state.trackPendingAutoTitle(created.id, options.title);
+      return this.state.applySummary(created);
+    } catch (error) {
+      console.log(`[broker-host] create failed:`, error instanceof Error ? error.message : String(error));
+      throw error;
+    }
   }
 
   async fork(id: string): Promise<UnifiedSessionSummary> {

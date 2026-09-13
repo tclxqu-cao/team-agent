@@ -91,6 +91,7 @@ export class CodexAppServerClient {
   }
 
   private async start(): Promise<void> {
+    console.log(`[codex-app-server-client] spawning: ${this.executable} app-server --stdio`);
     const child = this.spawnProcess(this.executable, ["app-server", "--stdio"], {
       stdio: ["pipe", "pipe", "pipe"],
     }) as ChildProcessWithoutNullStreams;
@@ -103,8 +104,9 @@ export class CodexAppServerClient {
       const message = chunk.trim();
       if (message) console.warn(`[codex-app-server] ${message}`);
     });
-    child.once("error", (error) => this.handleExit(error));
+    child.once("error", (error) => { console.log("[codex-app-server-client] child error:", error.message); this.handleExit(error); });
     child.once("exit", (code, signal) => {
+      console.log(`[codex-app-server-client] child exit: code=${code} signal=${signal}`);
       this.handleExit(new Error(`Codex App Server exited (${code ?? signal ?? "unknown"})`));
     });
 
@@ -112,19 +114,30 @@ export class CodexAppServerClient {
       clientInfo: { name: "customer-agent", title: "Customer Agent", version: "0.1.0" },
       capabilities: { experimentalApi: true },
     });
+    console.log(`[codex-app-server-client ${new Date().toISOString().slice(11,23)}] initialize completed`);
     this.write({ method: "initialized", params: {} });
   }
 
   private sendRequest<T>(method: string, params: unknown): Promise<T> {
     const id = this.nextId++;
+    console.log(`[codex-app-server-client ${new Date().toISOString().slice(11,23)}] -> ${method} (id=${id})`);
     return new Promise<T>((resolve, reject) => {
       const timer = setTimeout(() => {
+        console.log(`[codex-app-server-client] TIMEOUT ${method} (id=${id})`);
         this.pending.delete(id);
         reject(new RuntimeSessionError(`Codex request timed out: ${method}`, "NATIVE_PROTOCOL_ERROR"));
       }, this.requestTimeoutMs);
       this.pending.set(id, {
-        resolve: resolve as (value: unknown) => void,
-        reject,
+        resolve: (value: unknown) => {
+          console.log(`[codex-app-server-client ${new Date().toISOString().slice(11,23)}] <- ${method} resolved (id=${id})`);
+          clearTimeout(timer);
+          resolve(value as T);
+        },
+        reject: (reason: Error) => {
+          console.log(`[codex-app-server-client] <- ${method} rejected (id=${id}):`, reason.message);
+          clearTimeout(timer);
+          reject(reason);
+        },
         timer,
       });
       try {
