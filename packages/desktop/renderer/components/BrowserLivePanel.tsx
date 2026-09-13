@@ -136,6 +136,7 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
   const [fieldHint, setFieldHint] = useState(false);
   // Long-press (drag / right-click) and double-tap tracking for touch.
   const touchStartRef = useRef<{ x: number; y: number } | null>(null);
+  const touchDownAtRef = useRef(0);
   const longPressRef = useRef<"none" | "armed" | "drag">("none");
   const longPressTimer = useRef<number | null>(null);
   const lastTapRef = useRef<{ at: number; x: number; y: number } | null>(null);
@@ -713,7 +714,7 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
               <button type="button" disabled={!frame} onClick={() => sendKey("ArrowRight", "ArrowRight")}>→</button>
             </div>
           )}
-          <div className="browser-live-touch-hint">滑动滚动 · 轻点点击 · 双击打开 · 长按拖动/右键 · 双指缩放</div>
+          <div className="browser-live-touch-hint">滑动滚动 · 轻点点击 · 双击打开 · 长按拖动 · 按住1秒右键 · 双指缩放</div>
           <div ref={viewportRef} className="browser-live-viewport">
             {frame && frameSrc ? (
               <div
@@ -734,6 +735,7 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
                     if (longPressTimer.current) window.clearTimeout(longPressTimer.current);
                     longPressRef.current = "none";
                     touchStartRef.current = hasControl && !panMode ? { x: event.clientX, y: event.clientY } : null;
+                    touchDownAtRef.current = Date.now();
                     if (touchStartRef.current) {
                       longPressTimer.current = window.setTimeout(() => { longPressRef.current = "armed"; }, 550);
                     }
@@ -824,15 +826,19 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
                     if (longPressTimer.current) { window.clearTimeout(longPressTimer.current); longPressTimer.current = null; }
                     const point = pointerCoordinates(event);
                     touchGesturePoint.current = null;
-                    // Stationary long-press release = right-click.
+                    // Stationary long-press release: a deliberate ≥800ms hold
+                    // is a right-click; shorter "slow taps" stay a left click —
+                    // otherwise every careful tap would pop a context menu.
                     if (longPressRef.current === "armed") {
                       longPressRef.current = "none";
-                      touch.current.reset();
-                      if (point && hasControl && !panMode) {
+                      const holdMs = touchDownAtRef.current ? Date.now() - touchDownAtRef.current : 0;
+                      if (holdMs >= 800 && point && hasControl && !panMode) {
+                        touch.current.reset();
                         sendInput({ kind: "pointer", action: "down", ...point, button: "right" });
                         sendInput({ kind: "pointer", action: "up", ...point, button: "right" });
+                        return;
                       }
-                      return;
+                      // Fall through: handle as a normal left tap below.
                     }
                     // Long-press drag release = left button up.
                     if (longPressRef.current === "drag") {
