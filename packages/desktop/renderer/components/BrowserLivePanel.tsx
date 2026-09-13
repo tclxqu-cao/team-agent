@@ -708,6 +708,7 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
               <button type="button" disabled={!frame} onClick={() => sendCombo("z")}>撤销</button>
               <button type="button" disabled={!frame} onClick={() => sendCombo("s")}>保存</button>
               <button type="button" disabled={!frame} onClick={() => sendCombo("f")}>查找</button>
+              <button type="button" disabled={!frame} title="退出当前前台应用（Cmd+Q）" onClick={() => sendKey("q", "KeyQ", ["Meta"])}>⌘Q</button>
               <button type="button" disabled={!frame} onClick={() => sendKey("ArrowLeft", "ArrowLeft")}>←</button>
               <button type="button" disabled={!frame} onClick={() => sendKey("ArrowUp", "ArrowUp")}>↑</button>
               <button type="button" disabled={!frame} onClick={() => sendKey("ArrowDown", "ArrowDown")}>↓</button>
