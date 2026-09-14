@@ -1,0 +1,273 @@
+.gitignore
+  s_d2928306bbdd2b::t_2d4b05fc74ccd8 4,56-61
+bun.lock
+  s_d2928306bbdd2b::t_43e50247ac11a9 17,43,47,60,86,89,97,101,125,132,161-164,168-171,189-192,299-300,371-374,413-414,447-450,457-480,535-536,623-626,733-734,775,803-804,989-990,1109-1110,1147-1148,1203-1204,1207-1208,1219-1220,1245-1246,1303-1304,1341-1342,1449-1452,1479-1480,1621-1622,1651-1654,1699-1700,1811-1812,1843-1844,1949-1950,1955-1956
+packages/cli/README.md
+  s_d2928306bbdd2b::t_45f54bd72f8eac 23-26,33-36,62
+packages/cli/RELEASE.md
+  s_d2928306bbdd2b::t_f1421586baa632 1,23,128-134
+packages/cli/bin/desktop-download.mjs
+  s_d2928306bbdd2b::t_c0ab6c78b100d0 1-62
+packages/cli/bin/node-preflight.mjs
+  s_d2928306bbdd2b::t_aeaab98f57f7ed 10
+packages/cli/install/README.md
+  s_d2928306bbdd2b::t_d18be27bd30a01 8,16,23,43,48-55
+packages/cli/install/install-agentroam.ps1
+  s_d2928306bbdd2b::t_7de662f8b9caba 238-255
+packages/cli/install/install-agentroam.sh
+  s_d2928306bbdd2b::t_423f7441bf076c 7,267-289
+packages/cli/package.json
+  s_d2928306bbdd2b::t_0ae2363c037228 3,29-34
+packages/cli/src/args.test.ts
+  s_d2928306bbdd2b::t_f4ecfb7e718d63 68-85
+packages/cli/src/args.ts
+  s_d2928306bbdd2b::t_293712ee61bbd9 5,16,19-23,31,45-57,76-77,89-90,103,105,111-112,117-118
+packages/cli/src/cli.ts
+  s_d2928306bbdd2b::t_259e85b1e8a31d 8,23-40,42-66,120-121,123,135,151,162
+packages/cli/src/desktop-download.test.ts
+  s_d2928306bbdd2b::t_f5ea5c541de64e 1-73
+packages/cli/src/device-pairing.test.ts
+  s_d2928306bbdd2b::t_655b62077f188e 1-31
+packages/cli/src/device-pairing.ts
+  s_d2928306bbdd2b::t_1de013e14aa16a 1-124
+packages/cli/src/install-script-contract.test.ts
+  s_d2928306bbdd2b::t_24f40930b7f536 11,22,37,46,57,66
+packages/cli/src/platform-packages.ts
+  s_d2928306bbdd2b::t_e7d44e554117b7 7
+packages/cli/src/runtime-manager.ts
+  s_d2928306bbdd2b::t_e69ec36bc0fe31 67,74
+packages/cli/src/service/service-command.test.ts
+  s_d2928306bbdd2b::t_abc31cd2b81d8b 49
+packages/cli/src/service/service-command.ts
+  s_d2928306bbdd2b::t_7dfcdeefc442f7 5,26,85-89
+packages/cli/src/tunnel/public-readiness.ts
+  s_d2928306bbdd2b::t_5393fae765b2c8 47
+packages/cloudflared-darwin-arm64/manifest.json
+  s_d2928306bbdd2b::t_ca613fe802c04f 2
+packages/cloudflared-darwin-arm64/package.json
+  s_d2928306bbdd2b::t_591565ff542f74 3
+packages/cloudflared-win32-x64/manifest.json
+  s_d2928306bbdd2b::t_a82b30c07c6d61 2
+packages/cloudflared-win32-x64/package.json
+  s_d2928306bbdd2b::t_d25d148069364b 3
+packages/core/src/infrastructure/live-view/producer-client.test.ts
+  s_d2928306bbdd2b::t_1e33814471911c 1-3,65-114
+packages/core/src/infrastructure/live-view/producer-client.ts
+  s_d2928306bbdd2b::t_d40539a62b4281 1-3,32,36,48,53,55,73,88,100-101,106,244-268
+packages/core/src/infrastructure/live-view/producer.ts
+  s_d2928306bbdd2b::t_54215dbb5eadf1 55,59,66,75,92
+packages/desktop/assets/app-icon.svg
+  s_d2928306bbdd2b::t_5697b6c772cdc7 1-5
+packages/desktop/electron-builder.yml
+  s_d2928306bbdd2b::t_4e1b24d2d2f98a 27,36
+packages/desktop/main/ai-hub/chrome-extension-install.test.ts
+  s_d2928306bbdd2b::t_9665c56fc6b415 5-6,30-54
+packages/desktop/main/ai-hub/chrome-extension-install.ts
+  s_d2928306bbdd2b::t_19138da94d8e91 19-36
+packages/desktop/main/ai-hub/existing-chrome.ts
+  s_d2928306bbdd2b::t_8f5011d51eb1aa 11-16
+packages/desktop/main/desktop-screen-live.test.ts
+  s_d2928306bbdd2b::t_4c7da8031e4534 133,158,217-260
+packages/desktop/main/desktop-screen-live.ts
+  s_d2928306bbdd2b::t_37c83c0b3d285f 27,45,100-115,119,134,139,169-180,188-192,204-207
+packages/desktop/main/index.ts
+  s_d2928306bbdd2b::t_21d92aea734a7b 1,18,31,131-139,211,291-299,910-914,981,985-988,1009,1018-1064,1095-1097,1191
+packages/desktop/main/preload.ts
+  s_d2928306bbdd2b::t_b1bc63ca71f5e6 252,262-265
+packages/desktop/package.json
+  s_d2928306bbdd2b::t_eea7a78eea0766 3,8,12-13
+packages/desktop/renderer/App.tsx
+  s_d2928306bbdd2b::t_bdc5fd6b1d12df 31,227,1921-1922,1991-1992
+packages/desktop/renderer/SharedServiceRoot.tsx
+  s_d2928306bbdd2b::t_9d99ade4c83db4 1,9-16,38
+packages/desktop/renderer/components/AIHubView.tsx
+  s_d2928306bbdd2b::t_c1e428cc54b8df 80-89
+packages/desktop/renderer/components/AgentBrandIcon.tsx
+  s_d2928306bbdd2b::t_dcce7157c7aaea 16-19
+packages/desktop/renderer/components/BrowserLivePanel.tsx
+  s_d2928306bbdd2b::t_d952320fe46944 1-2,4,98,100-133,410-431,675,683,686-688
+packages/desktop/renderer/components/ChatHeaderActions.tsx
+  s_d2928306bbdd2b::t_af4f8ac60c4f74 1,6,12-13,21,27-28,39-50,106,118
+packages/desktop/renderer/components/ChatView.tsx
+  s_d2928306bbdd2b::t_417092ed3bec42 390-391,473-474,3305-3307
+packages/desktop/renderer/components/ChromeHubSetup.tsx
+  s_d2928306bbdd2b::t_1bde062bc5387f 6-7,10-13,15-24,27,29-30,34-35,38
+packages/desktop/renderer/components/DesktopLiveDialog.tsx
+  s_d2928306bbdd2b::t_4eeb85fbc1cb49 1-42
+packages/desktop/renderer/components/DesktopLiveSettings.tsx
+  s_d2928306bbdd2b::t_19ee80bcd51ea2 26,31-32,38-39,51-84,101-103,110-111,113-114,120,132,136,141-142,144,149,151,154,156,186-193
+packages/desktop/renderer/components/DesktopPermissionDialog.tsx
+  s_d2928306bbdd2b::t_d1250c653b1307 1-26
+packages/desktop/renderer/components/browser-live-header-context.ts
+  s_d2928306bbdd2b::t_fa929f446431b3 1-3
+packages/desktop/renderer/global.d.ts
+  s_d2928306bbdd2b::t_9f61d3f41d4c09 402,408-411
+packages/desktop/renderer/index.html
+  s_d2928306bbdd2b::t_6689b4f20524cf 6,18-19
+packages/desktop/renderer/public/agentroam-icon.svg
+  s_d2928306bbdd2b::t_2f2bfd6654164a 1-6
+packages/desktop/renderer/styles/global.css
+  s_d2928306bbdd2b::t_2115b07be762a8 1102-1116,3372-3380
+packages/desktop/scripts/configure-dev-app-name.mjs
+  s_d2928306bbdd2b::t_1ab9857c0b8411 1-44
+packages/desktop/scripts/run-dev-app.mjs
+  s_d2928306bbdd2b::t_7f06ddc074b1df 1-17
+packages/mobile/android/app/capacitor.build.gradle
+  s_d2928306bbdd2b::t_6e455cf55b22cc 12-13
+packages/mobile/android/app/src/main/AndroidManifest.xml
+  s_d2928306bbdd2b::t_2764139c64921d 42-43
+packages/mobile/android/app/src/main/res/values/ic_launcher_background.xml
+  s_d2928306bbdd2b::t_bb9a8790d800cf 3
+packages/mobile/android/capacitor.settings.gradle
+  s_d2928306bbdd2b::t_b7e17afbfa3de5 4-9
+packages/mobile/android/variables.gradle
+  s_d2928306bbdd2b::t_c4235983386815 2,16
+packages/mobile/capacitor.config.ts
+  s_d2928306bbdd2b::t_fac99548e23534 15-16
+packages/mobile/ios/App/App.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
+  s_d2928306bbdd2b::t_7c8cf43ad906a1 12-29
+packages/mobile/ios/App/App/Info.plist
+  s_d2928306bbdd2b::t_6bece2b3795e40 27-28
+packages/mobile/ios/App/CapApp-SPM/Package.swift
+  s_d2928306bbdd2b::t_8a28652c04310e 14-16,23-25
+packages/mobile/package.json
+  s_d2928306bbdd2b::t_8de9036eba5e8b 5,19-21
+packages/runtime-darwin-arm64/manifest.json
+  s_d2928306bbdd2b::t_ff4ff54c8bfff9 2,7
+packages/runtime-darwin-arm64/package.json
+  s_d2928306bbdd2b::t_285908691e4fe9 3
+packages/runtime-win32-x64/manifest.json
+  s_d2928306bbdd2b::t_efac12ca351132 2
+packages/runtime-win32-x64/package.json
+  s_d2928306bbdd2b::t_c2e9c688ba8acb 3
+packages/server/app/api/web-console/bootstrap/route.ts
+  s_d2928306bbdd2b::t_a82c4f384c040b 3-4,6
+packages/server/app/api/web-console/device-state/route.ts
+  s_d2928306bbdd2b::t_bb67acd790e46b 20-23,30-32
+packages/server/app/layout.tsx
+  s_d2928306bbdd2b::t_3a353f21dfdf9c 3-5,12
+packages/server/app/web/AuthGate.tsx
+  s_d2928306bbdd2b::t_44fee26674ff87 12
+packages/server/app/web/useWebAuth.ts
+  s_d2928306bbdd2b::t_bebe6ce347867f 7,11-12,23,41,49-54,60-62
+packages/server/lib/desktop-discovery.d.mts
+  s_d2928306bbdd2b::t_b1a51dc1f33ca9 3-4
+packages/server/lib/desktop-discovery.mjs
+  s_d2928306bbdd2b::t_2670dd44b6b362 22-23
+packages/server/lib/device-pairing-gateway.mjs
+  s_d2928306bbdd2b::t_0cf6b9cab96d79 1-225
+packages/server/lib/device-pairing-store.mjs
+  s_d2928306bbdd2b::t_67545f06449ae6 1-239
+packages/server/lib/device-pairing.test.ts
+  s_d2928306bbdd2b::t_067fc09c21c57a 1-352
+packages/server/lib/pairing-page.mjs
+  s_d2928306bbdd2b::t_d061400e41a568 1-51
+packages/server/lib/pwa-assets.mjs
+  s_d2928306bbdd2b::t_8c3c11696da008 1-27
+packages/server/lib/pwa-assets.test.ts
+  s_d2928306bbdd2b::t_6b800b8ba4c1e6 1-49
+packages/server/lib/remote-control/helper-manager.mjs
+  s_d2928306bbdd2b::t_1bde85521c22c9 1-92
+packages/server/lib/remote-control/helper-manager.test.ts
+  s_d2928306bbdd2b::t_13de15db7ada36 1-12
+packages/server/lib/remote-control/remote-authorization.mjs
+  s_d2928306bbdd2b::t_1c3b5832e0147a 1-139
+packages/server/lib/remote-control/remote-authorization.test.ts
+  s_d2928306bbdd2b::t_919d622e3657c9 1-108
+packages/server/lib/remote-control/webrtc-video.mjs
+  s_d2928306bbdd2b::t_62a02a6c917efc 1-70
+packages/server/lib/remote-control/webrtc-video.test.ts
+  s_d2928306bbdd2b::t_e905e91e7d80fd 1-29
+packages/server/lib/web-auth/anonymous-contract.test.ts
+  s_d2928306bbdd2b::t_78217cd56f841c 2,4-8
+packages/server/lib/web-auth/anonymous.ts
+  s_d2928306bbdd2b::t_c75146a06c25dc 15
+packages/server/native/remote-helper/main.swift
+  s_d2928306bbdd2b::t_06494ba935b224 1-148
+packages/server/native/remote-helper/service/Capture.swift
+  s_d2928306bbdd2b::t_d59bc2760a3e6f 1-68
+packages/server/native/remote-helper/service/Input.swift
+  s_d2928306bbdd2b::t_6a3394567fd587 1-88
+packages/server/native/remote-helper/service/QuartzBridge.h
+  s_d2928306bbdd2b::t_ec523dba8d7735 1-9
+packages/server/native/remote-helper/service/QuartzBridge.m
+  s_d2928306bbdd2b::t_d2bbe1359dac66 1-65
+packages/server/native/remote-helper/service/Service.swift
+  s_d2928306bbdd2b::t_ae9c7db87268b6 1-208
+packages/server/native/remote-helper/service/VideoEncoder.swift
+  s_d2928306bbdd2b::t_598a05604baf92 1-56
+packages/server/package.json
+  s_d2928306bbdd2b::t_8fedf08cd364c3 5-7,23,30
+packages/server/public/agentroam-icon.svg
+  s_d2928306bbdd2b::t_ac691197c5b904 1-6
+packages/server/public/pwa/install.js
+  s_d2928306bbdd2b::t_ad3f77696d7075 1-29
+packages/server/public/pwa/manifest.webmanifest
+  s_d2928306bbdd2b::t_14df086dc7b31d 1-16
+packages/server/public/pwa/offline.html
+  s_d2928306bbdd2b::t_e1a5ed0a6db182 1
+packages/server/public/pwa/pairing-scan.js
+  s_d2928306bbdd2b::t_4cef6034b06abf 1-70
+packages/server/public/pwa/service-worker.js
+  s_d2928306bbdd2b::t_1a1ea96d5b5377 1-14
+packages/server/ws-server.mjs
+  s_d2928306bbdd2b::t_134fdcc5653c28 2-3,963,967,969,971,977,1151-1157,1159,1161-1163,1175-1180,1204,1229-1232,1242-1246,1262-1272,1277,1289-1290
+packages/tui-darwin-arm64/package.json
+  s_d2928306bbdd2b::t_40c246c2a1aeff 3,27-29
+packages/tui-win32-x64/package.json
+  s_d2928306bbdd2b::t_c4e93a253e5a23 3,7-16,20-22,27-29
+packages/webapp/index.html
+  s_d2928306bbdd2b::t_7763a602110a0e 10-12
+packages/webapp/package.json
+  s_d2928306bbdd2b::t_db17f5fffaff15 13-17
+packages/webapp/src/infrastructure/http/http-client.ts
+  s_d2928306bbdd2b::t_9631e627191ea6 78
+packages/webapp/src/main.tsx
+  s_d2928306bbdd2b::t_4f4b4d4e994c0e 1-2,27-28,32,41-48,57,73,76,78-82,91-97,109,118,122,125-128,169
+packages/webapp/src/mobile/domain/pairing-qr.ts
+  s_d2928306bbdd2b::t_7e5eb98fd0fdd1 1-22
+packages/webapp/src/mobile/infrastructure/http-connectivity-probe.ts
+  s_d2928306bbdd2b::t_26405575f0627d 19
+packages/webapp/src/mobile/infrastructure/native-pairing.test.ts
+  s_d2928306bbdd2b::t_f7d98e4d0ce8ce 1-39
+packages/webapp/src/mobile/infrastructure/native-pairing.ts
+  s_d2928306bbdd2b::t_bf0475b61baaed 1-94
+packages/webapp/src/mobile/presentation/connection-screen.tsx
+  s_d2928306bbdd2b::t_17e89b70c87441 10,17,21-27,37,47-52,54
+packages/webapp/src/presentation/RemoteAuthorizationControl.tsx
+  s_d2928306bbdd2b::t_2df0d13dcdfa61 1-61
+packages/webapp/src/presentation/web.css
+  s_d2928306bbdd2b::t_68a2ed704a5cbe 975-1014
+packages/webapp/src/types.d.ts
+  s_d2928306bbdd2b::t_9d3cee4944247f 27-30
+scripts/audit-cli-tarball.mjs
+  s_d2928306bbdd2b::t_6918dccd8010cc 53
+scripts/audit-runtime-tarball.mjs
+  s_d2928306bbdd2b::t_495755a4f5c521 41-53
+scripts/build-cli-remote-helper.mjs
+  s_d2928306bbdd2b::t_030f0d7f097723 1-22
+scripts/generate-brand-icons.py
+  s_d2928306bbdd2b::t_8fb5b60141dcca 1-46
+scripts/runtime-native-files.mjs
+  s_d2928306bbdd2b::t_fe3a11c60c43a6 8
+scripts/stage-cli-runtime.mjs
+  s_d2928306bbdd2b::t_58dcaba29c3391 36-40,42-45
+scripts/verify-cli-install.mjs
+  s_d2928306bbdd2b::t_dcc80b1f4cb1d4 105
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "c6a6cf1b5969090152158c222d761d987d462dc0",
+  "prompts": {},
+  "sessions": {
+    "s_d2928306bbdd2b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a09e71-1874-7ba0-ab95-7a112477aa83",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
