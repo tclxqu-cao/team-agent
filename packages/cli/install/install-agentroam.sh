@@ -253,7 +253,9 @@ wrapper_temp=$(mktemp "$WRAPPER_DIR/.agentroam.XXXXXX")
 chmod 755 "$wrapper_temp"
 mv "$wrapper_temp" "$WRAPPER_PATH"
 
-"$NODE_BIN" "$entry" doctor --data-dir "$DATA_DIR"
+if ! "$NODE_BIN" "$entry" doctor --data-dir "$DATA_DIR"; then
+  printf 'Warning: some component checks failed; continuing background service installation. Affected features may be unavailable. Run agentroam doctor to retry.\n' >&2
+fi
 if [ "${AGENTROAM_INSTALL_SKIP_SERVICE:-}" = "1" ]; then
   printf 'AgentRoam service registration skipped for isolated verification.\n'
 else

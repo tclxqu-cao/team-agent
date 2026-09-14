@@ -1,6 +1,6 @@
 import { chmod, copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
 import { MANAGED_NODE_VERSION, NODE_RUNTIME_ASSETS } from "./node-runtime-manager.js";
 import { MINIMUM_NODE_VERSION, isSupportedNodeVersion } from "../bin/runtime-policy.mjs";
@@ -8,6 +8,37 @@ import { MINIMUM_NODE_VERSION, isSupportedNodeVersion } from "../bin/runtime-pol
 const installRoot = resolve(import.meta.dirname, "../install");
 
 describe("standalone installer contracts", () => {
+  it.skipIf(process.platform === "win32")("continues after failed diagnostics but stops when service registration fails", async () => {
+    const root = await mkdtemp(resolve(process.env.TMPDIR || "/tmp", "agentroam-install-diagnostics-"));
+    try {
+      const script = await readFile(resolve(installRoot, "install-agentroam.sh"), "utf8");
+      // Execute the actual post-install flow with a fake CLI, without touching launchd.
+      const start = script.indexOf('if ! "$NODE_BIN" "$entry" doctor');
+      expect(start).toBeGreaterThan(0);
+      const node = resolve(root, "node");
+      const calls = resolve(root, "calls");
+      await writeFile(node, `#!/bin/sh\nprintf '%s\\n' "$2" >> "$TEST_CALLS"\ncase "$2" in\n doctor) exit 1 ;;\n service) exit "$TEST_SERVICE_EXIT" ;;\nesac\n`);
+      await chmod(node, 0o755);
+      for (const serviceExit of [0, 1]) {
+        await writeFile(calls, "");
+        const result = spawnSync("/bin/sh", ["-c", `set -eu\n${script.slice(start)}`], {
+          encoding: "utf8",
+          env: { ...process.env, NODE_BIN: node, entry: "fake-cli", DATA_DIR: root, SERVICE_ROOT: root,
+            WRAPPER_PATH: "agentroam", WRAPPER_DIR: root, AGENTROAM_VERSION: "test",
+            AGENTROAM_INSTALL_SKIP_SERVICE: "0", AGENTROAM_INSTALL_DESKTOP: "no",
+            TEST_CALLS: calls, TEST_SERVICE_EXIT: String(serviceExit) },
+        });
+        expect(await readFile(calls, "utf8")).toBe("doctor\nservice\n");
+        expect(result.stderr).toContain("some component checks failed");
+        expect(result.status).toBe(serviceExit);
+        if (serviceExit === 0) expect(result.stdout).toContain("installed:");
+        else expect(result.stdout).not.toContain("installed:");
+      }
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it.skipIf(process.platform !== "darwin" || process.arch !== "arm64")("allows installation from home and keeps a compatible active Node", async () => {
     const root = await mkdtemp(resolve(process.env.TMPDIR || "/tmp", "agentroam-active-node-"));
     try {

@@ -226,7 +226,7 @@ if ($PathParts -notcontains $WrapperDir) {
 }
 
 & $NodeBin $Entry doctor --data-dir $DataDir
-if ($LASTEXITCODE -ne 0) { throw "AgentRoam doctor failed with exit code $LASTEXITCODE" }
+if ($LASTEXITCODE -ne 0) { Write-Warning "Some component checks failed; continuing background service installation. Affected features may be unavailable. Run agentroam doctor to retry." }
 if ($env:AGENTROAM_INSTALL_SKIP_SERVICE -eq "1") {
   Write-Host "AgentRoam service registration skipped for isolated verification."
 } else {
