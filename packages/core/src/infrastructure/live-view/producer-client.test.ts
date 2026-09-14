@@ -1,3 +1,6 @@
+import { mkdtemp, writeFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { EventEmitter } from "node:events";
 import { createServer } from "node:http";
 import { describe, expect, it, vi } from "vitest";
@@ -59,6 +62,56 @@ function reply(socket: FakeWebSocket, request: Record<string, unknown>, result: 
 }
 
 describe("LiveViewProducerClient", () => {
+  it("skips stale and identity-mismatched records before bootstrapping with the active credential", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "live-discovery-"));
+    const stale = "a".repeat(64), active = "b".repeat(64);
+    const probes: string[] = [];
+    const server = createServer((req, res) => {
+      const token = String(req.headers["x-agentroam-desktop-token"]);
+      if (req.url === "/api/desktop/identity") {
+        probes.push(token);
+        res.writeHead(token === active ? 200 : 401, { "content-type": "application/json" });
+        res.end(JSON.stringify({ protocol: 1, instanceId: "active", dataDir: "/project" }));
+      } else {
+        res.writeHead(token === active ? 200 : 401, { "content-type": "application/json" });
+        res.end(JSON.stringify({ wsNonce: "verified-nonce" }));
+      }
+    });
+    await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+    const endpoint = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+    const value = new LiveViewProducerClient({ endpoint, WebSocketImpl: FakeWebSocket });
+    vi.stubEnv("AGENTROAM_DISCOVERY_DIR", directory);
+    vi.stubEnv("AGENTROAM_LOCAL_SERVICE_URL", "");
+    try {
+      for (const [file, token, instanceId] of [["00-old", stale, "old"], ["01-mismatch", active, "wrong"], ["02-active", active, "active"]]) {
+        await writeFile(join(directory, `${file}.json`), JSON.stringify({ protocol: 1, url: endpoint, token, instanceId, dataDir: "/project" }));
+      }
+      await value.connect();
+      expect(probes).toEqual([stale, active, active]);
+      expect(FakeWebSocket.instances.at(-1)?.options.headers?.["x-agentroam-desktop-token"]).toBe(active);
+      expect(FakeWebSocket.instances.at(-1)?.url).toContain("verified-nonce");
+    } finally {
+      value.disconnect(); vi.unstubAllEnvs(); server.closeAllConnections();
+      await new Promise<void>(resolve => server.close(() => resolve()));
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+  it("authenticates local producers without leaking the credential to remote endpoints or redirects", async () => {
+    vi.stubEnv("AGENTROAM_LOCAL_SERVICE_URL", "http://127.0.0.1:39991");
+    vi.stubEnv("AGENTROAM_LOCAL_SERVICE_TOKEN", "local-credential");
+    const fetchImpl = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ wsNonce: "nonce" }) });
+    const value = new LiveViewProducerClient({ endpoint: "http://127.0.0.1:39991", fetchImpl, WebSocketImpl: FakeWebSocket });
+    try {
+      await value.connect();
+      expect(fetchImpl).toHaveBeenCalledWith(expect.any(URL), { cache: "no-store", headers: { "x-agentroam-desktop-token": "local-credential" }, redirect: "error" });
+      expect(FakeWebSocket.instances.at(-1)?.options.headers).toMatchObject({ "x-agentroam-desktop-token": "local-credential" });
+      value.disconnect();
+      const remote = client(); await remote.value.connect();
+      expect(remote.fetchImpl).toHaveBeenCalledWith(expect.any(URL), { cache: "no-store" });
+      expect(FakeWebSocket.instances.at(-1)?.options.headers).not.toHaveProperty("x-agentroam-desktop-token");
+      remote.value.disconnect();
+    } finally { value.disconnect(); vi.unstubAllEnvs(); }
+  });
   it("bootstraps an authenticated socket with the endpoint Origin", async () => {
     const { value, fetchImpl } = client();
     await value.connect();

@@ -50,6 +50,7 @@ if (hits.length) throw new Error(`forbidden launcher files:\n${hits.join("\n")}`
 
 for (const required of [
   "package/bin/agentroam.mjs",
+  "package/bin/desktop-download.mjs",
   "package/bin/agent-tui.mjs",
   "package/bin/node-preflight.mjs",
   "package/bin/runtime-policy.mjs",

@@ -14,7 +14,6 @@ import {
   type OpenCodeRuntimeResolution,
   type ResolveOpenCodeRuntimeOptions,
 } from "./opencode-runtime-manager.js";
-import type { PairingSecret } from "./pairing.js";
 import type { PlatformTarget } from "./platform.js";
 import { resolvePlatformRuntime } from "./platform-packages.js";
 import { findAvailablePort } from "./port.js";
@@ -44,7 +43,6 @@ export class RuntimeManager {
 
   async start(
     options: CliOptions,
-    pairing: PairingSecret | undefined,
     target: PlatformTarget,
   ): Promise<RuntimeHandle> {
     const port = await findAvailablePort(options.port);
@@ -66,19 +64,17 @@ export class RuntimeManager {
     const { runtimeRoot } = resolvePlatformRuntime(target);
     await repairNativeRuntimePermissions(runtimeRoot);
     const gateway = resolve(runtimeRoot, "ws-server.mjs");
-    const child = this.supervisor.spawn(process.execPath, [gateway], {
+    const child = this.supervisor.spawn(process.execPath, [gateway, ...(options.testNoPairing ? ["--test-no-pairing"] : [])], {
       cwd: runtimeRoot,
       env: {
         ...childEnvironment,
         NODE_ENV: "production",
         NEXT_DIST_DIR: ".next",
         PORT: String(port),
-        HOST: "127.0.0.1",
+        HOST: options.localOnly ? "0.0.0.0" : "127.0.0.1",
         AGENT_DATA_DIR: resolve(dataDir, "data"),
         AGENT_WEB_ROOTS: options.roots.join(delimiter),
         AGENT_TRUST_TUNNEL_PROXY: "1",
-        AGENT_PAIRING_HASH: pairing?.hashHex || "",
-        AGENT_PAIRING_EXPIRES_AT: pairing?.expiresAt || "",
         AGENTROAM_VERSION: resolvePlatformRuntime(target).manifest.packageVersion,
         AGENTROAM_DATA_DIR: dataDir,
         AGENTROAM_CLI_PATH: fileURLToPath(new URL("../bin/agentroam.mjs", import.meta.url)),

@@ -9,7 +9,7 @@ export function connectionElapsedSeconds(startedAt: number, now: number): number
   return Math.max(0, Math.floor((now - startedAt) / 1_000));
 }
 
-/** Passwordless gate: only waits for the anonymous console bootstrap. */
+/** Pairing is enforced by the gateway; wait for the authorized console bootstrap. */
 export default function AuthGate({ children }: { children: (auth: WebAuthController) => ReactNode }) {
   const auth = useWebAuth();
   const [startedAt, setStartedAt] = useState(() => Date.now());

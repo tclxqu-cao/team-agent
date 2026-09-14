@@ -1,19 +1,7 @@
-import { NextResponse } from "next/server";
-import { issueAnonymousWsNonce, webConsoleStore } from "../../../../lib/web-auth/anonymous";
-
 export const dynamic = "force-dynamic";
 
-/** Passwordless bootstrap for the private/LAN web console. */
+/** The custom gateway issues device-bound nonces before requests reach Next.
+ * A direct Next entry must fail closed instead of reviving anonymous access. */
 export async function GET() {
-  const result = issueAnonymousWsNonce();
-  const { userId, username, deviceId } = result.principal;
-  return NextResponse.json({
-    user: { id: userId, username },
-    deviceId,
-    wsNonce: result.nonce,
-    wsNonceExpiresAt: result.expiresAt,
-    tabs: webConsoleStore.listTabs(userId),
-    preferences: webConsoleStore.getPreferences(userId),
-    deviceState: webConsoleStore.getDeviceState(userId, deviceId),
-  });
+  return Response.json({ error: "Device pairing gateway required" }, { status: 401 });
 }

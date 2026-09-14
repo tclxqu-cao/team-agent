@@ -1,3 +1,5 @@
+import { BrowserLiveHeaderContext } from "@desktop/renderer/components/browser-live-header-context";
+import RemoteAuthorizationControl from "./presentation/RemoteAuthorizationControl";
 import { StrictMode, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { HttpClient } from "./infrastructure/http/http-client";
@@ -22,11 +24,12 @@ import { CapacitorNativeEnvironment } from "./mobile/infrastructure/capacitor-na
 import { LocalEndpointStorage } from "./mobile/infrastructure/local-endpoint-storage";
 import { HttpConnectivityProbe } from "./mobile/infrastructure/http-connectivity-probe";
 import { ConnectionScreen } from "./mobile/presentation/connection-screen";
+import { NativePairingClient, NativeCredentialStorage, scanPairingQr } from "./mobile/infrastructure/native-pairing";
+import { EventSource as AuthenticatedEventSource } from "eventsource";
 
 /**
  * Composition root: wire infrastructure adapters to the AgentApi port and
- * mount the shared desktop renderer UI. No login gate — the shell talks to
- * the server's open LAN APIs (same posture as the SDK preview).
+ * mount the shared desktop renderer UI behind the gateway device-pairing gate.
  * Order matters — window.agentApi must exist before App evaluates.
  */
 installBrowserCryptoCompatibility();
@@ -35,7 +38,14 @@ installWebShellSkinBridge();
 installWebShellLiveBridge();
 document.body.dataset.webShell = "1";
 
-const http = new HttpClient();
+const nativeEnvironment = new CapacitorNativeEnvironment();
+if (!nativeEnvironment.isNativeApp() && window.parent === window) {
+  const manifest = document.createElement("link"); manifest.rel = "manifest"; manifest.href = "/manifest.webmanifest"; document.head.append(manifest);
+  const icon = document.querySelector<HTMLLinkElement>('link[rel="apple-touch-icon"]'); if (icon) icon.href = "/pwa/icon-192.png";
+  const install = document.createElement("script"); install.src = "/pwa/install.js"; document.head.append(install);
+}
+const nativePairing = nativeEnvironment.isNativeApp() ? new NativePairingClient(new NativeCredentialStorage()) : null;
+const http = new HttpClient(nativePairing?.fetch);
 const projectBridge = window.parent === window ? undefined : new WebShellProjectBridge();
 const browserBridge = window.parent === window ? undefined : new WebShellBrowserBridge();
 // SSE 也要指向远端服务器：基址在 boot() 里按连接方案填充（web 模式保持空）。
@@ -44,7 +54,7 @@ const gateway = new AgentHttpGateway(
   http,
   new LocalSettingsRepository(),
   projectBridge,
-  (url) => new EventSource(sseBase + url),
+  (url) => nativePairing ? new AuthenticatedEventSource(sseBase + url, { fetch: nativePairing.fetch }) as unknown as EventSource : new EventSource(sseBase + url),
 );
 window.browserLiveApi = browserBridge;
 
@@ -60,11 +70,16 @@ function WebappReadySignal() {
 }
 
 void (async () => {
+  if (nativePairing) window.addEventListener("webapp:unauthorized", () => location.reload());
   // 移动端「服务器连接」上下文：浏览器走同源，原生壳必须解析出远端基址。
   const connection = new MobileConnectionService(
-    new CapacitorNativeEnvironment(),
+    nativeEnvironment,
     new LocalEndpointStorage(),
-    new HttpConnectivityProbe(),
+    new HttpConnectivityProbe(nativePairing ? async (input, init) => {
+      const endpoint = ServerEndpoint.parse(String(input));
+      if (endpoint) await nativePairing.resume(endpoint);
+      return nativePairing.fetch(input, init);
+    } : undefined),
   );
   const plan = await connection.planStartup();
   if (plan.mode === "setup") {
@@ -73,6 +88,13 @@ void (async () => {
         service={connection}
         savedEndpoint={plan.endpoint}
         initialFailure={plan.failure}
+        onScan={nativePairing ? async () => {
+          const raw = await scanPairingQr();
+          if (!raw) return null;
+          const endpoint = await nativePairing.pair(raw);
+          new LocalEndpointStorage().save(endpoint);
+          return endpoint;
+        } : undefined}
         onConnected={(endpoint) => void boot(endpoint)}
       />,
     );
@@ -84,6 +106,7 @@ void (async () => {
 async function boot(endpoint: ServerEndpoint | null): Promise<void> {
   try {
     if (endpoint) {
+      await nativePairing?.resume(endpoint);
       http.setBaseUrl(endpoint.url);
       sseBase = endpoint.url;
     }
@@ -92,13 +115,17 @@ async function boot(endpoint: ServerEndpoint | null): Promise<void> {
     const { default: App } = await import("@desktop/renderer/App");
     root.render(
       <StrictMode>
-        <App />
+        <BrowserLiveHeaderContext.Provider value={<RemoteAuthorizationControl />}><App /></BrowserLiveHeaderContext.Provider>
         <WebappReadySignal />
       </StrictMode>,
     );
+    if (nativePairing) setInterval(() => { void nativePairing.checkAuthorization().catch(() => {}); }, 10_000);
     // 构建看门狗轮询相对路径的 /api/agent/model，只在同源 web 模式有意义；
     // 原生壳是打包进 App 的静态资源，没有"换构建要自愈"的问题。
-    if (!endpoint) startBuildWatchdog();
+    if (!endpoint) {
+      window.addEventListener("webapp:unauthorized", () => location.reload());
+      startBuildWatchdog();
+    }
   } catch (error) {
     // 原生壳里启动失败绝不能静默白屏：把错误直接画到屏幕上，用户才能反馈。
     root.render(
@@ -139,6 +166,7 @@ function startBuildWatchdog(): void {
         credentials: "same-origin",
         cache: "no-store",
       });
+      if (res.status === 401 || res.status === 423) { location.reload(); return; }
       const info = (await res.json()) as { buildId?: string };
       const server = (info.buildId || "").replace(/^index-|\.js$/g, "");
       if (server && server !== own) location.reload();

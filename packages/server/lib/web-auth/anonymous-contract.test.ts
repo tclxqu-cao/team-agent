@@ -1,19 +1,10 @@
-import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { GET } from "../../app/api/web-console/bootstrap/route";
 
-const anonymousAuth = readFileSync(new URL("./anonymous.ts", import.meta.url), "utf8");
-const bootstrapRoute = readFileSync(
-  new URL("../../app/api/web-console/bootstrap/route.ts", import.meta.url),
-  "utf8",
-);
-const gateway = readFileSync(new URL("../../ws-server.mjs", import.meta.url), "utf8");
-
-describe("passwordless web nonce contract", () => {
-  it("keeps bootstrap dynamic and shares nonce state through SQLite", () => {
-    expect(bootstrapRoute).toContain('export const dynamic = "force-dynamic"');
-    expect(anonymousAuth).toContain("new SQLiteAnonymousWebStore(getServerBaseDir())");
-    expect(gateway).toContain("new SQLiteAnonymousWebStore(serverBaseDir)");
-    expect(anonymousAuth).not.toContain("__webAnonNonces");
-    expect(gateway).not.toContain("__webAnonNonces");
+describe("console bootstrap entry", () => {
+  it("fails closed when accessed without the authenticated gateway", async () => {
+    const response = await GET();
+    expect(response.status).toBe(401);
+    expect(await response.json()).not.toHaveProperty("wsNonce");
   });
 });

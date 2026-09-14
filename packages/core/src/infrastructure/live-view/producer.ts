@@ -52,16 +52,18 @@ export class LiveViewProducer {
   private unsubscribe: (() => void) | null = null;
   private controlState: LiveViewOwnershipState = "agent-controlled";
   private eventQueue: Promise<void> = Promise.resolve();
+  private readonly onPublished: () => void;
   private readonly onError: (error: unknown) => void;
   private readonly onSetDisplay: ((displayId: string | null) => Promise<LiveViewDisplayOption[] | null>) | null;
 
-  constructor({ client, screencast, metadata, pauseAgent, resyncAgent, onError = () => undefined, onSetDisplay = null }: {
+  constructor({ client, screencast, metadata, pauseAgent, resyncAgent, onError = () => undefined, onPublished = () => undefined, onSetDisplay = null }: {
     client: LiveViewProducerClientPort;
     screencast: LiveScreencastPort;
     metadata: ProducerMetadata;
     pauseAgent: () => Promise<void>;
     resyncAgent: () => Promise<void>;
     onError?: (error: unknown) => void;
+    onPublished?: () => void;
     onSetDisplay?: ((displayId: string | null) => Promise<LiveViewDisplayOption[] | null>) | null;
   }) {
     this.client = client;
@@ -70,6 +72,7 @@ export class LiveViewProducer {
     this.pauseAgent = pauseAgent;
     this.resyncAgent = resyncAgent;
     this.onError = onError;
+    this.onPublished = onPublished;
     this.onSetDisplay = onSetDisplay;
   }
 
@@ -86,6 +89,7 @@ export class LiveViewProducer {
     });
     await this.client.publish({ ...this.metadata, state: "agent-controlled", availability: "starting", transport: "cdp-jpeg-ws" });
     try {
+      this.onPublished();
       await this.screencast.start((frame) => this.client.frame(this.metadata.sessionId, { ...frame, sequence: ++this.frameSequence }));
     } catch (error) {
       await this.client.unavailable(this.metadata.sessionId, error).catch(() => undefined);

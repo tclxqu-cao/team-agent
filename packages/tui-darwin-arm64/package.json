@@ -1,6 +1,6 @@
 {
   "name": "agentroam-tui-darwin-arm64",
-  "version": "0.2.0-preview.17",
+  "version": "0.2.0-preview.18",
   "description": "Bundled AgentRoam terminal UI for macOS arm64",
   "license": "MIT",
   "type": "module",
@@ -24,5 +24,8 @@
     "access": "public",
     "provenance": true,
     "tag": "preview"
+  },
+  "dependencies": {
+    "better-sqlite3": "13.0.3"
   }
 }

@@ -24,7 +24,7 @@ export type LiveDisplayOptions = LiveViewDisplayOption[];
 /** Holds the display awake while the live session is enabled (see DisplayKeepAwake). */
 export type DisplayWakeControl = { start(): void; stop(): void };
 
-type ClientFactory = () => LiveViewProducerClientPort;
+type ClientFactory = () => LiveViewProducerClientPort | Promise<LiveViewProducerClientPort>;
 type ProbeScreen = () => Promise<ScreenPermission> | ScreenPermission;
 type ProbeAccessibility = () => Promise<boolean | null> | boolean | null;
 
@@ -42,6 +42,7 @@ export class DesktopScreenLive {
   private readonly keepAwake: DisplayWakeControl | null;
   private readonly sleep: (ms: number) => Promise<void>;
   private enabled = false;
+  private enablePromise: Promise<DesktopLiveStatus> | null = null;
   private loopPromise: Promise<void> | null = null;
   private currentClient: LiveViewProducerClientPort | null = null;
   private unsubscribeState: (() => void) | null = null;
@@ -96,10 +97,26 @@ export class DesktopScreenLive {
     return { ...this.status };
   }
 
-  async enable(): Promise<DesktopLiveStatus> {
+  async refreshPermissions(): Promise<DesktopLiveStatus> {
+    this.status.permissionScreen = await this.probeScreen();
+    this.status.accessibilityTrusted = await this.#probeAccessibility();
+    if ((this.status.error === ACCESSIBILITY_HINT && this.status.accessibilityTrusted === true) ||
+        (this.status.error === SCREEN_PERMISSION_HINT && this.status.permissionScreen === "granted")) this.status.error = undefined;
+    this.#emit();
+    return this.getStatus();
+  }
+
+  enable(): Promise<DesktopLiveStatus> {
+    if (!this.enablePromise) this.enablePromise = this.#enable().finally(() => { this.enablePromise = null; });
+    return this.enablePromise;
+  }
+
+  async #enable(): Promise<DesktopLiveStatus> {
+    if (this.enabled && this.loopPromise) return this.refreshPermissions();
     this.enabled = true;
     this.status = { ...this.status, enabled: true, error: undefined };
     const screen = await this.probeScreen();
+    if (!this.enabled) return this.getStatus();
     this.status.permissionScreen = screen;
     if (screen !== "granted") {
       this.status.error = SCREEN_PERMISSION_HINT;
@@ -114,11 +131,12 @@ export class DesktopScreenLive {
       return this.getStatus();
     }
     this.status.accessibilityTrusted = await this.#probeAccessibility();
+    if (!this.enabled) { await this.input.stop(); return this.getStatus(); }
     if (this.status.accessibilityTrusted === false) this.status.error = ACCESSIBILITY_HINT;
     // Wake the display and hold it awake so a locked or dimmed Mac keeps
     // streaming frames (remote unlock works from the lock screen).
     this.keepAwake?.start();
-    this.status.sessionOnline = true;
+    // Registration, not merely starting the capture helper, establishes connectivity.
     this.#emit();
     if (!this.loopPromise) {
       this.loopPromise = this.#runLoop().finally(() => {
@@ -147,20 +165,19 @@ export class DesktopScreenLive {
   async #runLoop(): Promise<void> {
     let backoffMs = 1_000;
     while (this.enabled) {
-      const client = this.clientFactory();
-      this.currentClient = client;
-      this.unsubscribeState?.();
-      this.unsubscribeState = client.onEvent((event) => {
-        if (event.type === "browser:webrtc" && event.sessionId === this.metadata.sessionId) {
-          const data = event.data;
-          if (data && typeof data === "object") this.onWebrtcFromViewer(data as WebrtcSignal);
-          return;
-        }
-        this.#handleRelayEvent(event);
-      });
-      this.status = { ...this.status, sessionOnline: true, error: this.status.accessibilityTrusted === false ? ACCESSIBILITY_HINT : undefined };
-      this.#emit();
       try {
+        const client = await this.clientFactory();
+        if (!this.enabled) { await client.disconnect(); return; }
+        this.currentClient = client;
+        this.unsubscribeState?.();
+        this.unsubscribeState = client.onEvent((event) => {
+          if (event.type === "browser:webrtc" && event.sessionId === this.metadata.sessionId) {
+            const data = event.data;
+            if (data && typeof data === "object") this.onWebrtcFromViewer(data as WebrtcSignal);
+            return;
+          }
+          this.#handleRelayEvent(event);
+        });
         const producer = new LiveViewProducer({
           client,
           screencast: this.screencast,
@@ -168,6 +185,11 @@ export class DesktopScreenLive {
           // The desktop source has no agent gate to pause; ownership still flows through the shared state machine.
           pauseAgent: async () => undefined,
           resyncAgent: async () => undefined,
+          onPublished: () => {
+            if (!this.enabled) return;
+            this.status = { ...this.status, sessionOnline: true, error: this.status.accessibilityTrusted === false ? ACCESSIBILITY_HINT : undefined };
+            this.#emit();
+          },
           onError: (error) => {
             this.status = { ...this.status, error: error instanceof Error ? error.message : String(error) };
             this.#emit();
@@ -179,6 +201,10 @@ export class DesktopScreenLive {
         this.status = { ...this.status, error: error instanceof Error ? error.message : String(error) };
         this.#emit();
       }
+      this.unsubscribeState?.();
+      this.unsubscribeState = null;
+      this.currentClient?.disconnect();
+      this.currentClient = null;
       this.status = { ...this.status, sessionOnline: false };
       this.#emit();
       if (!this.enabled) return;

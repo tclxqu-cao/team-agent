@@ -7,16 +7,24 @@ interface ConnectionScreenProps {
   savedEndpoint: ServerEndpoint | null;
   initialFailure?: string;
   onConnected: (endpoint: ServerEndpoint) => void;
+  onScan?: () => Promise<ServerEndpoint | null>;
 }
 
 /**
  * 移动端连接页：原生壳首次启动或上次服务器失联时出现。
  * 输入 AgentRoam 服务端地址（如 http://192.168.1.10:3000），探活通过后进入主界面。
  */
-export function ConnectionScreen({ service, savedEndpoint, initialFailure, onConnected }: ConnectionScreenProps) {
+export function ConnectionScreen({ service, savedEndpoint, initialFailure, onConnected, onScan }: ConnectionScreenProps) {
   const [input, setInput] = useState(savedEndpoint?.toString() ?? "");
   const [error, setError] = useState(initialFailure ?? "");
   const [busy, setBusy] = useState(false);
+  async function handleScan() {
+    if (busy || !onScan) return;
+    setBusy(true); setError("");
+    try { const endpoint = await onScan(); if (endpoint) onConnected(endpoint); }
+    catch (cause) { setError(cause instanceof Error ? cause.message : "扫码连接失败，请重试。"); }
+    finally { setBusy(false); }
+  }
 
   async function handleConnect() {
     if (busy) return;
@@ -26,7 +34,7 @@ export function ConnectionScreen({ service, savedEndpoint, initialFailure, onCon
       const result = await service.connect(input);
       if (result.ok) onConnected(result.endpoint);
       else setError(result.reason);
-    } finally {
+    } catch { setError("连接失败，请检查网络或重新扫码授权。"); } finally {
       setBusy(false);
     }
   }
@@ -36,9 +44,14 @@ export function ConnectionScreen({ service, savedEndpoint, initialFailure, onCon
       <div style={styles.card}>
         <div style={styles.icon}>🛰️</div>
         <h1 style={styles.title}>连接服务器</h1>
+        {onScan ? <>
+          <p style={styles.hint}>扫描电脑终端上的授权二维码，直接连接，无需再次确认。</p>
+          <button type="button" style={{ ...styles.button, marginBottom: 20 }} disabled={busy} onClick={() => void handleScan()}>
+            {busy ? "正在连接…" : "扫码连接"}
+          </button>
+        </> : null}
         <p style={styles.hint}>
-          输入运行 AgentRoam 服务端的机器地址（含端口），
-          手机需与本机处于同一网络。
+          也可以输入已授权的服务器地址。使用局域网地址时，手机与电脑需在同一网络。
         </p>
         <input
           style={styles.input}

@@ -77,8 +77,16 @@ export default function AIHubView({ onExit }: AIHubViewProps) {
   useEffect(() => {
     if (!api?.hubChromeStatus) return;
     let disposed = false;
-    const apply = (status: { compatible?: boolean; tabs: Array<{ siteId: string }> }) => { if (!disposed) setChromeConnectedSites(status.compatible === false ? [] : status.tabs.map((tab) => tab.siteId)); };
-    void api.hubChromeStatus().then(apply);
+    let checked = false;
+    const apply = (status: { connected: boolean; compatible?: boolean; tabs: Array<{ siteId: string }> }) => {
+      if (disposed) return;
+      const ready = status.connected && status.compatible !== false;
+      setChromeConnectedSites(ready ? status.tabs.map((tab) => tab.siteId) : []);
+      if (ready) setChromeSetupOpen(false);
+      else if (!checked) setChromeSetupOpen(true);
+      checked = true;
+    };
+    void api.hubChromeStatus().then(apply).catch(() => { if (!disposed && !checked) { checked = true; setChromeSetupOpen(true); } });
     const unsubscribe = api.onHubChromeEvent((event) => { if (event.type === "chrome-status") apply(event.status); });
     return () => { disposed = true; unsubscribe(); };
   }, [api]);

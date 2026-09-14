@@ -5,6 +5,7 @@ export const RUNTIME_TARGETS = {
     npmArch: "arm64",
     nodePtyDir: "darwin-arm64",
     nativeFiles: [
+      "native/AgentRoam Remote Desktop.app/Contents/MacOS/agentroam-remote-desktop",
       "node_modules/better-sqlite3/prebuilds/darwin-arm64.node",
       "node_modules/node-pty/prebuilds/darwin-arm64/pty.node",
       "node_modules/node-pty/prebuilds/darwin-arm64/spawn-helper",

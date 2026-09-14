@@ -24,6 +24,7 @@ extraResources:
   - from: assets/bin
     to: bin
 mac:
+  icon: assets/app-icon.icns
   target:
     - target: dmg
       arch: arm64
@@ -32,6 +33,7 @@ mac:
   gatekeeperAssess: false
   artifactName: AgentRoam-${version}-arm64.dmg
 win:
+  icon: assets/app-icon.ico
   target:
     - target: nsis
       arch: x64

@@ -13,10 +13,10 @@ const OPENAI_PATH = "M75.91 73.628V62.232c0-.96.36-1.68 1.199-2.16l22.912-13.194
 export default function AgentBrandIcon({ agentType, size = 16, className }: AgentBrandIconProps) {
   if (agentType === "customer-agent") {
     return (
-      <svg className={className} data-agent-icon={agentType} width={size} height={size} viewBox="0 0 1024 1024" fill="none" aria-hidden="true">
-        <path d="M248 430 512 294l264 136-264 136-264-136Z" stroke="currentColor" strokeWidth="64" strokeLinejoin="round" />
-        <path d="m248 594 264 136 264-136" stroke="currentColor" strokeWidth="64" strokeLinecap="round" strokeLinejoin="round" />
-        <path d="M512 350c10 38 30 58 68 68-38 10-58 30-68 68-10-38-30-58-68-68 38-10 58-30 68-68Z" fill="currentColor" />
+      <svg className={className} data-agent-icon={agentType} width={size} height={size} viewBox="50 48 180 180" fill="none" aria-hidden="true">
+        <path d="M76 187V90Q76 74 92 74H188Q204 74 204 90V187" stroke="currentColor" strokeWidth="18" strokeLinecap="round" />
+        <path d="m108 116 26 24-26 24m47 0h22M100 207h80" stroke="currentColor" strokeWidth="14" strokeLinecap="round" strokeLinejoin="round" />
+        <circle cx="204" cy="207" r="11" fill="currentColor" />
       </svg>
     );
   }

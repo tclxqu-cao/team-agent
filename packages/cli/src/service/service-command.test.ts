@@ -46,6 +46,7 @@ describe("runServiceCommand", () => {
       now: () => new Date("2026-09-03T00:00:00.000Z"),
       log,
       controller: controller({ install }),
+      pairingPrinter: vi.fn(async () => {}),
     });
 
     expect(install).toHaveBeenCalledWith(expect.objectContaining({

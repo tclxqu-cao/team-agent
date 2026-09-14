@@ -20,20 +20,20 @@ npx agentroam@preview
 Or install from tarball:
 
 ```bash
-npm install ./agentroam-cloudflared-darwin-arm64-0.2.0-preview.17.tgz \
-  ./agentroam-runtime-darwin-arm64-0.2.0-preview.17.tgz \
-  ./agentroam-tui-darwin-arm64-0.2.0-preview.17.tgz \
-  ./agentroam-0.2.0-preview.17.tgz
+npm install ./agentroam-cloudflared-darwin-arm64-0.2.0-preview.18.tgz \
+  ./agentroam-runtime-darwin-arm64-0.2.0-preview.18.tgz \
+  ./agentroam-tui-darwin-arm64-0.2.0-preview.18.tgz \
+  ./agentroam-0.2.0-preview.18.tgz
 npx agentroam
 ```
 
 Windows PowerShell:
 
 ```powershell
-npm install ./agentroam-cloudflared-win32-x64-0.2.0-preview.17.tgz `
-  ./agentroam-runtime-win32-x64-0.2.0-preview.17.tgz `
-  ./caoqu-agentroam-tui-win32-x64-0.2.0-preview.17.tgz `
-  ./agentroam-0.2.0-preview.17.tgz
+npm install ./agentroam-cloudflared-win32-x64-0.2.0-preview.18.tgz `
+  ./agentroam-runtime-win32-x64-0.2.0-preview.18.tgz `
+  ./caoqu-agentroam-tui-win32-x64-0.2.0-preview.18.tgz `
+  ./agentroam-0.2.0-preview.18.tgz
 npx agentroam
 ```
 
@@ -59,8 +59,7 @@ Run the versioned Shell installer on macOS or PowerShell installer on Windows
 from the project directory AgentRoam should expose. The installer verifies or
 installs a compatible Node and the matching CLI, registers the current-user service, starts
 it, checks readiness, and prints the access URL. Set `AGENTROAM_ROOT` to select a
-different root explicitly. An implicit root equal to the home directory is
-rejected.
+different root explicitly. The current directory, including the home directory, is accepted.
 
 The installer reuses the active Node when it meets the minimum version. Otherwise
 it checks nvm-sh on macOS and nvm-windows on Windows and uses the highest

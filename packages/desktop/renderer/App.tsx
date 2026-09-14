@@ -28,6 +28,7 @@ import {
   sessionDeletionConfirmation,
 } from "./lib/session-deletion";
 import SettingsPanel from "./components/SettingsPanel";
+import DesktopLiveDialog from "./components/DesktopLiveDialog";
 import MCPServerList from "./components/MCPServerList";
 import MemoryViewer from "./components/MemoryViewer";
 import SkillManager from "./components/SkillManager";
@@ -223,6 +224,7 @@ export default function App() {
   const [invalidProjectIds, setInvalidProjectIds] = useState<Set<string>>(new Set());
 
   const [showSettings, setShowSettings] = useState(false);
+  const [showDesktopLive, setShowDesktopLive] = useState(false);
   // AI Hub（多 AI 网页聚合）：打开时内容区切换为 AIHubView，ChatView 保持挂载仅隐藏
   const [hubOpen, setHubOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState<SettingsTab>("settings");
@@ -1916,6 +1918,8 @@ export default function App() {
             voiceCommand={voiceCommand}
             onOpenSettings={toggleSettings}
             settingsOpen={showSettings}
+            desktopLiveOpen={showDesktopLive}
+            onOpenDesktopLive={!webShell && window.agentApi?.desktopLiveGetStatus ? () => setShowDesktopLive(true) : undefined}
             onHideToBackground={() => void hideToBackground()}
             onOpenHub={window.agentApi?.hubGetConfig ? () => setHubOpen(true) : undefined}
             onToggleAppearance={toggleAppearance}
@@ -1983,6 +1987,8 @@ export default function App() {
 
         {/* modal moved to portal below */}
       </main>
+
+      {showDesktopLive && <DesktopLiveDialog onClose={() => setShowDesktopLive(false)} />}
 
       {showSettings && createPortal(
           <div

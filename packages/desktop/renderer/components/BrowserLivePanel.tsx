@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { BrowserLiveHeaderContext } from "./browser-live-header-context";
+import { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal, flushSync } from "react-dom";
-import { ExternalLink, Hand, Keyboard, LoaderCircle, MonitorUp, MousePointer2, RotateCcw, X, ZoomIn, ZoomOut } from "lucide-react";
+import { ExternalLink, Hand, Keyboard, LoaderCircle, MonitorUp, Maximize, Minimize, MousePointer2, RotateCcw, X, ZoomIn, ZoomOut } from "lucide-react";
 import type { BrowserLiveSession } from "../global";
 
 import { BrowserLiveTouch } from "./browser-live-touch";
@@ -94,7 +95,42 @@ export function touchScrollDelta(
 }
 
 export default function BrowserLivePanel({ open, agentSessionId, onClose }: BrowserLivePanelProps) {
+  const headerControl = useContext(BrowserLiveHeaderContext);
   const api = typeof window === "undefined" ? undefined : window.browserLiveApi;
+  const panelRef = useRef<HTMLElement>(null);
+  const [fullscreen, setFullscreen] = useState(false);
+  const toggleFullscreen = async () => {
+    const panel = panelRef.current;
+    if (!panel) return;
+    if (fullscreen) {
+      if (document.fullscreenElement === panel) await document.exitFullscreen().catch(() => undefined);
+      setFullscreen(false);
+      return;
+    }
+    // iPhone Safari and embedded webviews may only support in-page fullscreen.
+    setFullscreen(true);
+    if (panel.requestFullscreen) await panel.requestFullscreen().catch(() => undefined);
+  };
+  useEffect(() => {
+    if (!open) { setFullscreen(false); return; }
+    const panel = panelRef.current;
+    const syncFullscreen = () => setFullscreen(document.fullscreenElement === panel);
+    const escapeFullscreen = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && (document.fullscreenElement === panel || panel?.classList.contains("is-fullscreen"))) {
+        event.preventDefault();
+        event.stopPropagation();
+        if (document.fullscreenElement === panel) void document.exitFullscreen().catch(() => undefined);
+        setFullscreen(false);
+      }
+    };
+    document.addEventListener("fullscreenchange", syncFullscreen);
+    document.addEventListener("keydown", escapeFullscreen, true);
+    return () => {
+      document.removeEventListener("fullscreenchange", syncFullscreen);
+      document.removeEventListener("keydown", escapeFullscreen, true);
+      if (panel && document.fullscreenElement === panel) void document.exitFullscreen().catch(() => undefined);
+    };
+  }, [open]);
   const [sessions, setSessions] = useState<BrowserLiveSession[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [frame, setFrame] = useState<BrowserFrame | null>(null);
@@ -371,10 +407,28 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
     }
   }, [answerWebrtcOffer]);
 
-  const frameSrc = useMemo(() => {
-    if (!frame) return null;
-    if (typeof frame.data === "string") return `data:${frame.mime};base64,${frame.data}`;
-    return URL.createObjectURL(new Blob([frame.data], { type: frame.mime }));
+  const [frameSrc, setFrameSrc] = useState<string | null>(null);
+  useEffect(() => {
+    if (!frame) { setFrameSrc(null); return; }
+    const next = typeof frame.data === "string"
+      ? `data:${frame.mime};base64,${frame.data}`
+      : URL.createObjectURL(new Blob([frame.data], { type: frame.mime }));
+    let cancelled = false;
+    let committed = false;
+    const image = new Image();
+    image.src = next;
+    // Keep the currently decoded frame visible until its replacement is ready.
+    // Assigning each incoming blob immediately can expose the black background
+    // while the browser asynchronously decodes it.
+    void image.decode().then(() => {
+      if (cancelled) return;
+      committed = true;
+      setFrameSrc(next);
+    }).catch(() => { /* Keep the last good frame if a frame cannot decode. */ });
+    return () => {
+      cancelled = true;
+      if (!committed && next.startsWith("blob:")) URL.revokeObjectURL(next);
+    };
   }, [frame]);
   useEffect(() => () => {
     if (frameSrc?.startsWith("blob:")) URL.revokeObjectURL(frameSrc);
@@ -618,7 +672,7 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
     <div className="browser-live-backdrop" data-tab-swipe-ignore role="presentation" onMouseDown={(event) => {
       if (event.target === event.currentTarget) onClose();
     }}>
-      <section className={`browser-live-panel ${sessions.length > 1 ? "has-session-tabs" : ""}`} role="dialog" aria-modal="true" aria-label="浏览器直播">
+      <section ref={panelRef} className={`browser-live-panel ${fullscreen ? "is-fullscreen" : ""} ${sessions.length > 1 ? "has-session-tabs" : ""}`} role="dialog" aria-modal="true" aria-label="浏览器直播">
         <header className="browser-live-header">
           <div className="browser-live-heading">
             <MonitorUp size={17} aria-hidden="true" />
@@ -626,8 +680,12 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
               <strong>浏览器直播</strong>
               <span>{selected ? backendLabel(selected.backend) : "实时观看与接管"}</span>
             </div>
+            {headerControl}
           </div>
           <div className="browser-live-header-actions">
+            <button type="button" className="ui-icon-button" onClick={() => void toggleFullscreen()} title={fullscreen ? "退出全屏" : "全屏"} aria-label={fullscreen ? "退出全屏" : "全屏"} aria-pressed={fullscreen}>
+              {fullscreen ? <Minimize size={17} /> : <Maximize size={17} />}
+            </button>
             <button type="button" className="ui-icon-button" onClick={() => void refresh()} title="刷新画面与会话" aria-label="刷新直播画面与会话">
               <RotateCcw size={15} className={loading ? "spin" : undefined} aria-hidden="true" />
             </button>

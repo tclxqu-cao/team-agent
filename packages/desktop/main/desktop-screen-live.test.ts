@@ -130,7 +130,7 @@ describe("DesktopScreenLive", () => {
       state: "agent-controlled",
     }));
     expect(status.accessibilityTrusted).toBe(true);
-    expect(status.sessionOnline).toBe(true);
+    expect(live.getStatus().sessionOnline).toBe(true);
     expect(status.controlState).toBeNull();
 
     listenerRef.current?.({ type: "browser:state", session: { id: DESKTOP_LIVE_SESSION_ID, state: "user-controlled" as LiveViewOwnershipState } });
@@ -155,7 +155,7 @@ describe("DesktopScreenLive", () => {
     await tick();
     expect(status.accessibilityTrusted).toBe(false);
     expect(status.error).toContain("辅助功能");
-    expect(status.sessionOnline).toBe(true);
+    expect(live.getStatus().sessionOnline).toBe(true);
     await live.disable();
   });
 
@@ -213,4 +213,48 @@ describe("DesktopScreenLive", () => {
     expect(client.webrtcRelay).toHaveBeenCalledWith(DESKTOP_LIVE_SESSION_ID, offer);
     await live.disable();
   });
+});
+
+it('resumes after permission is granted and waits for server publication before reporting connected', async () => {
+  let granted = false;
+  let published!: () => void;
+  const client = fakeClient({ publish: vi.fn(() => new Promise<void>((resolve) => { published = resolve; })) });
+  const live = new DesktopScreenLive({ clientFactory: async () => client, screencast: runningScreencast, input: fakeGateway() as never, probeScreen: () => granted ? 'granted' : 'denied', probeAccessibility: () => true });
+  await live.enable();
+  expect(client.connect).not.toHaveBeenCalled();
+  granted = true;
+  await live.refreshPermissions();
+  await live.enable();
+  await tick();
+  expect(live.getStatus().sessionOnline).toBe(false);
+  published();
+  await tick();
+  expect(live.getStatus().sessionOnline).toBe(true);
+  await live.disable();
+});
+
+it('retries discovery after an offline service and does not enable a disabled session during discovery', async () => {
+  let retry!: () => void;
+  const client = fakeClient();
+  const factory = vi.fn().mockRejectedValueOnce(new Error('CLI offline')).mockResolvedValue(client);
+  const live = new DesktopScreenLive({ clientFactory: factory, screencast: runningScreencast, input: fakeGateway() as never, probeScreen: () => 'granted', probeAccessibility: () => true, sleep: () => new Promise<void>((resolve) => { retry = resolve; }) });
+  await live.enable();
+  await tick();
+  expect(live.getStatus()).toMatchObject({ sessionOnline: false, error: 'CLI offline' });
+  retry();
+  await tick();
+  expect(live.getStatus().sessionOnline).toBe(true);
+  await live.disable();
+});
+
+it('does not publish if disabled while discovering the service', async () => {
+  let discovered!: (client: FakeClient) => void;
+  const client = fakeClient();
+  const live = new DesktopScreenLive({ clientFactory: () => new Promise((resolve) => { discovered = resolve; }), screencast: runningScreencast, input: fakeGateway() as never, probeScreen: () => 'granted', probeAccessibility: () => true });
+  await live.enable();
+  await live.disable();
+  discovered(client);
+  await tick();
+  expect(client.connect).not.toHaveBeenCalled();
+  expect(client.disconnect).toHaveBeenCalled();
 });

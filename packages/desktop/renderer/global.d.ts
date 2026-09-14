@@ -399,11 +399,16 @@ export interface AgentApi {
   hubChromeConversation(siteId: string): Promise<import("../main/ai-hub/chrome-bridge-protocol").ChromeHubConversation | null>;
   hubChromeFrame(siteId: string): Promise<import("../main/ai-hub/chrome-bridge-protocol").ChromeHubFrame | null>;
   hubChromeCopyPairing(): Promise<void>;
+  hubChromeInstallExtension(): Promise<{ path: string; browserOpened: boolean }>;
   hubChromeRevealExtension(): Promise<void>;
   hubChromeInput(siteId: string, input: import("../main/ai-hub/chrome-bridge-protocol").ChromeHubInput): Promise<void>;
   onHubChromeEvent(callback: (event: import("../main/ai-hub/chrome-bridge").ChromeBridgeEvent) => void): () => void;
 
   // Desktop live view (screen capture + remote control)
+  desktopLiveSetup(): Promise<{ supported: boolean; needsSetup: boolean; status: DesktopLiveStatus }>;
+  desktopLiveRecheck(): Promise<DesktopLiveStatus>;
+  desktopLiveOpenPermission(permission: "screen" | "accessibility"): Promise<void>;
+  desktopLiveRestart(): Promise<void>;
   desktopLiveGetStatus(): Promise<DesktopLiveStatus>;
   desktopLiveSetEnabled(enabled: boolean): Promise<DesktopLiveStatus>;
   desktopLiveGetDisplays?(): Promise<{ displays: DesktopLiveDisplayOption[] }>;

@@ -24,3 +24,7 @@ declare module "@desktop/renderer/stores/uiStore" {
     getState: () => UIStateSlice;
   };
 }
+
+declare module "@desktop/renderer/components/browser-live-header-context" {
+  export const BrowserLiveHeaderContext: import("react").Context<import("react").ReactNode>;
+}

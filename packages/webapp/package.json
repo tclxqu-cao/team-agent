@@ -10,7 +10,11 @@
   },
   "dependencies": {
     "@agent/core": "*",
-    "zustand": "^4.5.0"
+    "zustand": "^4.5.0",
+    "@capacitor/barcode-scanner": "2.2.0",
+    "@capacitor/core": "^7.0.0",
+    "eventsource": "3.0.7",
+    "capacitor-secure-storage-plugin": "0.12.0"
   },
   "devDependencies": {
     "@types/react": "^18.3.0",

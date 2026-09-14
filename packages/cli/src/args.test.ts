@@ -65,3 +65,21 @@ describe("parseArgs", () => {
     expect(() => parseArgs(["update", "1.2.3-preview.1"])).toThrow("exact stable");
   });
 });
+
+describe("device authorization commands", () => {
+  it("parses pairing, listing and individual/all revocation", () => {
+    expect(parseArgs(["pair"]).command).toBe("pair");
+    expect(parseArgs(["devices"]).command).toBe("devices");
+    expect(parseArgs(["revoke", "--all"]).revokeAll).toBe(true);
+    expect(parseArgs(["revoke", "12345678-1234-1234-1234-123456789abc"]).revokeDeviceId).toBe("12345678-1234-1234-1234-123456789abc");
+    expect(() => parseArgs(["revoke"])).toThrow();
+    expect(parseArgs(["pair", "--data-dir", "/tmp/device-test"]).dataDir).toBe("/tmp/device-test");
+  });
+});
+
+
+it("restricts no-pairing test mode to explicit local foreground starts", () => {
+  expect(parseArgs(["start", "--local-only", "--test-no-pairing"]).testNoPairing).toBe(true);
+  expect(parseArgs([]).testNoPairing).toBeUndefined();
+  for (const args of [["--test-no-pairing"], ["service", "install", "--local-only", "--test-no-pairing"], ["start", "--local-only", "--test-no-pairing", "--relay", "pinggy"]]) expect(() => parseArgs(args)).toThrow();
+});

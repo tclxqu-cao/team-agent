@@ -4,7 +4,7 @@ import { dirname } from "node:path";
 import type { PlatformTarget } from "./platform.js";
 import { MINIMUM_NODE_VERSION, assertSupportedNodeVersion } from "../bin/runtime-policy.mjs";
 
-export const AGENTROAM_VERSION = "0.2.0-preview.17";
+export const AGENTROAM_VERSION = "0.2.0-preview.18";
 
 export interface RuntimePackageManifest {
   packageVersion: string;

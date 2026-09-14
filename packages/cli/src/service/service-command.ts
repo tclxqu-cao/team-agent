@@ -2,6 +2,7 @@ import { delimiter, dirname, isAbsolute, resolve, win32 } from "node:path";
 import type { CliOptions } from "../args.js";
 import { resolveCodexRuntime, type CodexRuntimeResolution, type ResolveCodexRuntimeOptions } from "../codex-runtime-manager.js";
 import { detectPlatform } from "../platform.js";
+import { printPairingCode } from "../device-pairing.js";
 import { renderQr } from "../qr.js";
 import { MacLaunchAgent } from "./macos-launch-agent.js";
 import type { ServiceConfig } from "./service-files.js";
@@ -22,6 +23,7 @@ interface ServiceCommandContext {
   now?: () => Date;
   log?: (line: string) => void;
   isTTY?: boolean;
+  pairingPrinter?: typeof printPairingCode;
   controller?: ServiceController;
   launchAgent?: MacLaunchAgent;
 }
@@ -80,8 +82,11 @@ export async function runServiceCommand(options: CliOptions, context: ServiceCom
       };
       const { definition, state } = await controller.install(config);
       log(`✓ AgentRoam service installed: ${definition}`);
-      if (state?.status === "ready" && state.accessUrl) await logAccessUrl(state.accessUrl);
-      else log("Service is starting. Run `agentroam service url` shortly.");
+      if (state?.status === "ready" && state.accessUrl) {
+        log(`Open: ${state.accessUrl}`);
+        if (state.localUrl) log(`电脑本机：${state.localUrl.replace(/\/$/, "")}/web（配对后可进行远程授权）`);
+        await (context.pairingPrinter ?? printPairingCode)(options.dataDir, log, { accessUrl: state.accessUrl, qr: options.qr, interactive: stdoutIsTTY });
+      } else log("Service is starting. Run `agentroam service url` and `agentroam pair` shortly.");
       return;
     }
     case "start": {

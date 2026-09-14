@@ -19,6 +19,8 @@ export function createDesktopDiscovery({ dataDir, directory = process.env.AGENTR
   };
   const onExit = () => { try { unlinkSync(file); } catch {} };
   return {
+    authenticate,
+    headers: () => ({ "x-agentroam-desktop-token": token }),
     async publish(port) {
       descriptor = { protocol: 1, instanceId, pid: process.pid, url: `http://127.0.0.1:${port}`, dataDir: resolve(dataDir), token };
       await mkdir(directory, { recursive: true, mode: 0o700 });

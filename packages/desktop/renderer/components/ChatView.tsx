@@ -387,6 +387,8 @@ interface ChatViewProps {
   settingsOpen?: boolean;
   onHideToBackground?: () => void;
   onOpenHub?: () => void;
+  onOpenDesktopLive?: () => void;
+  desktopLiveOpen?: boolean;
   onToggleAppearance?: (anchor: DOMRect) => void;
   appearanceOpen?: boolean;
   hideToBackgroundTitle?: string;
@@ -468,6 +470,8 @@ export default function ChatView({
   settingsOpen = false,
   onHideToBackground,
   onOpenHub,
+  onOpenDesktopLive,
+  desktopLiveOpen = false,
   onToggleAppearance,
   appearanceOpen = false,
   hideToBackgroundTitle,
@@ -3298,6 +3302,9 @@ export default function ChatView({
           <ChatHeaderActions
             appearanceOpen={appearanceOpen}
             settingsOpen={settingsOpen}
+            showSettings={composerAgentType === "customer-agent"}
+            onOpenDesktopLive={onOpenDesktopLive}
+            desktopLiveOpen={desktopLiveOpen}
             hideToBackgroundTitle={hideToBackgroundTitle}
             codexReleaseState={codexReleaseState}
             onHideToBackground={onHideToBackground}

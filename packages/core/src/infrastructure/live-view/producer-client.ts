@@ -1,3 +1,6 @@
+import { readFile, readdir } from "node:fs/promises";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { createRequire } from "node:module";
 import http from "node:http";
 import https from "node:https";
@@ -26,11 +29,11 @@ function defaultWebSocketImplementation(): WebSocketFactory {
   return createRequire(import.meta.url)("ws");
 }
 
-function nodeFetch(url: string | URL): Promise<FetchResponse> {
+function nodeFetch(url: string | URL, headers?: Record<string, string>, timeoutMs?: number): Promise<FetchResponse> {
   return new Promise((resolve, reject) => {
     const target = new URL(url);
     const transport = target.protocol === "https:" ? https : http;
-    const request = transport.get(target, (response) => {
+    const request = transport.get(target, { headers }, (response) => {
       const chunks: Buffer[] = [];
       response.on("data", (chunk: Buffer) => chunks.push(Buffer.from(chunk)));
       response.on("end", () => {
@@ -42,13 +45,14 @@ function nodeFetch(url: string | URL): Promise<FetchResponse> {
         });
       });
     });
+    if (timeoutMs) request.setTimeout(timeoutMs, () => request.destroy(new Error("Local service identity check timed out")));
     request.on("error", reject);
   });
 }
 
-function defaultFetchImplementation(url: string | URL, init?: { cache?: string }): Promise<FetchResponse> {
+function defaultFetchImplementation(url: string | URL, init?: { cache?: string; headers?: Record<string, string>; redirect?: "error" }): Promise<FetchResponse> {
   if (typeof globalThis.fetch === "function") return globalThis.fetch(url, init as RequestInit) as Promise<FetchResponse>;
-  return nodeFetch(url);
+  return nodeFetch(url, init?.headers);
 }
 
 function toWsUrl(endpoint: string, nonce: string): string {
@@ -66,7 +70,7 @@ export interface PublishLiveSessionMetadata {
 /** Infrastructure client used inside producer runtimes to publish live frames over the authenticated `/ws`. */
 export class LiveViewProducerClient {
   private readonly endpoint: string;
-  private readonly fetchImpl: (url: string | URL, init?: { cache?: string }) => Promise<FetchResponse>;
+  private readonly fetchImpl: (url: string | URL, init?: { cache?: string; headers?: Record<string, string>; redirect?: "error" }) => Promise<FetchResponse>;
   private readonly WebSocketImpl: WebSocketFactory;
   private readonly timeoutMs: number;
   private socket: LiveSocket | null = null;
@@ -81,7 +85,7 @@ export class LiveViewProducerClient {
 
   constructor({ endpoint, fetchImpl = defaultFetchImplementation, WebSocketImpl = defaultWebSocketImplementation(), timeoutMs = 15_000 }: {
     endpoint: string;
-    fetchImpl?: (url: string | URL, init?: { cache?: string }) => Promise<FetchResponse>;
+    fetchImpl?: (url: string | URL, init?: { cache?: string; headers?: Record<string, string>; redirect?: "error" }) => Promise<FetchResponse>;
     WebSocketImpl?: WebSocketFactory;
     timeoutMs?: number;
   }) {
@@ -93,12 +97,13 @@ export class LiveViewProducerClient {
 
   async connect(): Promise<void> {
     const bootstrapUrl = new URL("/api/web-console/bootstrap", this.endpoint);
-    const response = await this.fetchImpl(bootstrapUrl, { cache: "no-store" });
+    const headers = await localServiceHeaders(this.endpoint);
+    const response = await this.fetchImpl(bootstrapUrl, { cache: "no-store", ...(Object.keys(headers).length ? { headers, redirect: "error" as const } : {}) });
     if (!response.ok) throw new Error(`browser bridge bootstrap failed (${response.status})`);
     const { wsNonce } = await response.json();
     if (typeof wsNonce !== "string" || !wsNonce) throw new Error("browser bridge bootstrap returned no nonce");
     const origin = new URL(this.endpoint).origin;
-    const socket = new this.WebSocketImpl(toWsUrl(this.endpoint, wsNonce), { headers: { Origin: origin } });
+    const socket = new this.WebSocketImpl(toWsUrl(this.endpoint, wsNonce), { headers: { Origin: origin, ...headers } });
     this.socket = socket;
     this.sessionClosePromises.clear();
     this.closePromise = new Promise((resolve) => { this.resolveClose = resolve; });
@@ -235,4 +240,29 @@ export class LiveViewProducerClient {
     }
     this.pending.clear();
   }
+}
+
+/** Never forward a local service credential to a remote producer endpoint. */
+async function localServiceHeaders(endpoint: string): Promise<Record<string, string>> {
+  const url = new URL(endpoint);
+  if (url.protocol !== "http:" || url.hostname !== "127.0.0.1") return {};
+  if (url.origin === process.env.AGENTROAM_LOCAL_SERVICE_URL && process.env.AGENTROAM_LOCAL_SERVICE_TOKEN) {
+    return { "x-agentroam-desktop-token": process.env.AGENTROAM_LOCAL_SERVICE_TOKEN };
+  }
+  const registry = process.env.AGENTROAM_DISCOVERY_DIR || join(homedir(), ".agentroam", "services");
+  const files = await readdir(registry).catch(() => []);
+  for (const file of files.filter((name) => name.endsWith(".json"))) {
+    try {
+      const d = JSON.parse(await readFile(join(registry, file), "utf8"));
+      if (d.protocol !== 1 || d.url !== url.origin || typeof d.instanceId !== "string" || typeof d.dataDir !== "string" || !/^[a-f0-9]{64}$/.test(d.token)) continue;
+      // Ports survive service restarts; credentials and instance identities do not.
+      // Node HTTP does not follow redirects, so this credential stays on loopback.
+      const headers = { "x-agentroam-desktop-token": d.token };
+      const response = await nodeFetch(new URL("/api/desktop/identity", url), headers, 1500);
+      if (!response.ok) continue;
+      const identity = await response.json();
+      if (identity.protocol === 1 && identity.instanceId === d.instanceId && identity.dataDir === d.dataDir) return headers;
+    } catch { /* stale descriptor */ }
+  }
+  return {};
 }

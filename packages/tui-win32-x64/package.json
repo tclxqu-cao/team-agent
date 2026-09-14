@@ -1,19 +1,31 @@
 {
   "name": "@caoqu/agentroam-tui-win32-x64",
-  "version": "0.2.0-preview.17",
+  "version": "0.2.0-preview.18",
   "description": "Bundled AgentRoam terminal UI for Windows x64",
   "license": "MIT",
   "type": "module",
-  "os": ["win32"],
-  "cpu": ["x64"],
-  "files": ["README.md", "dist"],
+  "os": [
+    "win32"
+  ],
+  "cpu": [
+    "x64"
+  ],
+  "files": [
+    "README.md",
+    "dist"
+  ],
   "exports": {
     "./entry": "./dist/agent-tui.js"
   },
-  "engines": { "node": ">=22 <23" },
+  "engines": {
+    "node": ">=22 <23"
+  },
   "publishConfig": {
     "access": "public",
     "provenance": true,
     "tag": "preview"
+  },
+  "dependencies": {
+    "better-sqlite3": "13.0.3"
   }
 }

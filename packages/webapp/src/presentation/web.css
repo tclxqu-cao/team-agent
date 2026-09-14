@@ -972,3 +972,43 @@ body[data-web-shell="1"] {
   text-align: center;
   padding: 4px 8px;
 }
+
+/* Match phone landscape by input capability as well as width. */
+.browser-live-panel.is-fullscreen,
+.browser-live-panel:fullscreen {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100dvh;
+  min-height: 0;
+  border: 0;
+  border-radius: 0;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  box-sizing: border-box;
+}
+
+@media (orientation: landscape) and (max-height: 600px) and (pointer: coarse) {
+  .browser-live-backdrop { padding: 0; }
+  .browser-live-panel,
+  .browser-live-panel.is-fullscreen {
+    width: 100vw;
+    height: var(--vv-height, 100dvh);
+    min-height: 0;
+    border: 0;
+    border-radius: 0;
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+    box-sizing: border-box;
+    grid-template-rows: 40px minmax(0, 1fr) 44px;
+  }
+  .browser-live-panel.has-session-tabs { grid-template-rows: 40px auto minmax(0, 1fr) 44px; }
+  .browser-live-footer {
+    min-height: 0;
+    flex-direction: row;
+    align-items: center;
+    padding: 4px 10px;
+    gap: 8px;
+  }
+  .browser-live-control-button { width: auto; min-height: 32px; }
+  .browser-live-touch-hint { display: none; }
+}

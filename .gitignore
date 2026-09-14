@@ -1,6 +1,7 @@
 node_modules/
 dist/
 .agent-data/
+.agentroam-auth/
 !packages/desktop/.agent-data/
 packages/desktop/.agent-data/*
 !packages/desktop/.agent-data/asr-models/
@@ -52,3 +53,9 @@ outputs/shots/
 outputs/agentroam-mobile/
 *.apk
 *.ipa
+
+packages/desktop/.runtime/
+
+# CLI native remote authorization build outputs
+packages/server/native/.build-remote/
+packages/server/native/*.app/

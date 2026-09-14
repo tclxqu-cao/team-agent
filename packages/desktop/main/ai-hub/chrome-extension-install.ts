@@ -16,3 +16,21 @@ export function prepareChromeExtension(source: string, destination: string, pair
   renameSync(temporary, join(destination, "bootstrap.json"));
   return destination;
 }
+
+export async function showChromeExtensionSetup(actions: {
+  prepare(): string;
+  copyPath(path: string): void;
+  reveal(path: string): void;
+  openManager(): Promise<void>;
+}): Promise<{ path: string; browserOpened: boolean }> {
+  const path = actions.prepare();
+  actions.copyPath(path);
+  actions.reveal(join(path, "manifest.json"));
+  try {
+    await actions.openManager();
+    return { path, browserOpened: true };
+  } catch {
+    // Chrome may not be installed. Keep the copied path and folder usable.
+    return { path, browserOpened: false };
+  }
+}

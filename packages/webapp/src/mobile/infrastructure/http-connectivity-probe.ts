@@ -16,7 +16,7 @@ export class HttpConnectivityProbe implements ConnectivityProbePort {
         cache: "no-store",
         signal: controller.signal,
       });
-      if (!response.ok) return { ok: false, reason: `HTTP ${response.status}` };
+      if (!response.ok) return { ok: false, reason: response.status === 401 ? "此 App 尚未授权，请扫描电脑上的授权二维码。" : response.status === 423 ? "电脑已锁定远程访问，请先在电脑上解锁。" : `HTTP ${response.status}` };
       const body = (await response.json()) as { modelId?: string };
       return { ok: true, modelId: body.modelId ?? null };
     } catch (error) {

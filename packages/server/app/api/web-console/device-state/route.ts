@@ -17,15 +17,19 @@ const defaults = (userId: string, deviceId: string) => ({
   updatedAt: new Date().toISOString(),
 });
 
-export async function GET() {
-  const { userId, deviceId } = anonymousPrincipal();
+export async function GET(request: Request) {
+  const { userId } = anonymousPrincipal();
+  const deviceId = request.headers.get("x-agentroam-device-id");
+  if (!deviceId) return NextResponse.json({ error: "Device authorization required" }, { status: 401 });
   return NextResponse.json({
     deviceState: webConsoleStore.getDeviceState(userId, deviceId) ?? defaults(userId, deviceId),
   });
 }
 
 export async function PUT(request: Request) {
-  const { userId, deviceId } = anonymousPrincipal();
+  const { userId } = anonymousPrincipal();
+  const deviceId = request.headers.get("x-agentroam-device-id");
+  if (!deviceId) return NextResponse.json({ error: "Device authorization required" }, { status: 401 });
   const current = webConsoleStore.getDeviceState(userId, deviceId) ?? defaults(userId, deviceId);
   const body = await request.json();
   const next = {

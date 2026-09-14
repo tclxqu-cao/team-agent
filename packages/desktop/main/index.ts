@@ -1,4 +1,4 @@
-import { prepareChromeExtension } from "./ai-hub/chrome-extension-install.js";
+import { prepareChromeExtension, showChromeExtensionSetup } from "./ai-hub/chrome-extension-install.js";
 // Load electron via createRequire (CJS) instead of ESM `import`, which crashes
 // on electron 32 / Node 20.18 (cjsPreparseModuleExports: "exports" undefined).
 import { createRequire } from "module";
@@ -15,7 +15,7 @@ import { LiveViewProducerClient } from "@agent/core";
 app.commandLine.appendSwitch("disable-features", "WebRtcHideLocalIpsWithMdns");
 import { DesktopInputGateway } from "./desktop-input-gateway.js";
 import { DesktopScreenScreencast } from "./desktop-screen-screencast.js";
-import { DesktopScreenLive, type ScreenPermission, type WebrtcSignal } from "./desktop-screen-live.js";
+import { DesktopScreenLive, type ScreenPermission, type DesktopLiveStatus, type WebrtcSignal } from "./desktop-screen-live.js";
 import { defaultWebrtcCapturePagePath, WebrtcLive } from "./webrtc-live.js";
 import { DisplayKeepAwake } from "./display-keep-awake.js";
 import { readDesktopLiveState, writeDesktopLiveState } from "./desktop-live-state.js";
@@ -28,7 +28,7 @@ import { ProfileImportStateStore } from "./ai-hub/import-state.js";
 import { isBrowserProfileSourceId, isProcessNameRunning, listBrowserProfileSources, toSourceView } from "./ai-hub/browser-profile-source.js";
 import { ChromeHubBridge } from "./ai-hub/chrome-bridge.js";
 import { isChromeHubSite, validChromeHubInput } from "./ai-hub/chrome-bridge-protocol.js";
-import { openExistingChrome } from "./ai-hub/existing-chrome.js";
+import { openExistingChrome, openChromeExtensions } from "./ai-hub/existing-chrome.js";
 import {
   getTtsListeningMode,
   getVoiceCaptureSilenceTimeout,
@@ -128,7 +128,15 @@ const trustedServiceSender = (event: import("electron").IpcMainInvokeEvent) => {
   if (event.sender !== mainWindow?.webContents || event.senderFrame !== event.sender.mainFrame) throw new Error("Untrusted desktop sender");
 };
 ipcMain.handle("service:status", (event) => { trustedServiceSender(event); return sharedService.status(); });
-ipcMain.handle("service:select", (event, id: string) => { trustedServiceSender(event); return sharedService.select(id); });
+ipcMain.handle("service:select", async (event, id: string) => {
+  trustedServiceSender(event);
+  const selected = await sharedService.select(id);
+  if (desktopScreenLive?.getStatus().enabled) {
+    await desktopScreenLive.disable();
+    await desktopScreenLive.enable();
+  }
+  return selected;
+});
 ipcMain.handle("service:request", (event, path: string, method: string, body?: string) => { trustedServiceSender(event); return sharedService.json(path, method, body); });
 ipcMain.handle("service:stream", (event, id: string, path: string, lastEventId: string) => {
   trustedServiceSender(event);
@@ -200,7 +208,7 @@ function createWindow(): void {
       sandbox: false,
     },
     titleBarStyle: "hiddenInset",
-    title: "Customer Agent",
+    title: "agentroam",
   });
   const window = mainWindow;
   window.on("closed", () => {
@@ -280,6 +288,15 @@ ipcMain.handle("hub:chrome-conversation", (_event, siteId: string) => chromeHubB
 ipcMain.handle("hub:chrome-frame", (_event, siteId: string) => chromeHubBridge.frame(siteId));
 ipcMain.handle("hub:chrome-copy-pairing", async () => { await clipboard.writeText(chromeHubBridge.pairingCode()); });
 ipcMain.handle("hub:chrome-reveal-extension", () => { shell.showItemInFolder(join(chromeExtensionPath(), "manifest.json")); });
+ipcMain.handle("hub:chrome-install-extension", (event) => {
+  trustedServiceSender(event);
+  return showChromeExtensionSetup({
+    prepare: chromeExtensionPath,
+    copyPath: (path) => clipboard.writeText(path),
+    reveal: (path) => shell.showItemInFolder(path),
+    openManager: () => openChromeExtensions(),
+  });
+});
 ipcMain.handle("hub:chrome-input", (_event, siteId: unknown, input: unknown) => {
   if (typeof siteId !== "string" || !isChromeHubSite(siteId) || !validChromeHubInput(input)) throw new Error("无效的 Chrome 操作");
   return chromeHubBridge.request(siteId, "input", { input });
@@ -890,7 +907,11 @@ const desktopLiveStatePath = join(app.getPath("userData"), "desktop-live.json");
 const desktopInputHelperPath = app.isPackaged
   ? join(process.resourcesPath, "bin", "desktop-input")
   : join(__dirname, "../../assets/bin/desktop-input");
-const desktopLiveEndpoint = process.env.AGENT_LIVE_ENDPOINT?.trim() || "http://127.0.0.1:3000";
+async function desktopLiveEndpoint(): Promise<string> {
+  const selected = (await sharedService.status()).selected;
+  if (!selected) throw new Error("未连接 CLI 服务，请先启动 agentroam 并在桌面端选择服务");
+  return selected.url;
+}
 
 let desktopScreenLive: DesktopScreenLive | null = null;
 /** Persisted capture display choice; null = primary. Multi-display Macs can stream either screen. */
@@ -957,11 +978,14 @@ function getDesktopScreenLive(): DesktopScreenLive {
   });
   let webrtcLive: WebrtcLive | null = null;
   desktopScreenLive = new DesktopScreenLive({
-    clientFactory: () => new LiveViewProducerClient({ endpoint: desktopLiveEndpoint }),
+    clientFactory: async () => new LiveViewProducerClient({ endpoint: await desktopLiveEndpoint() }),
     screencast,
     input: gateway,
     probeScreen: probeScreenPermission,
-    probeAccessibility: () => gateway.checkAccessibility(),
+    probeAccessibility: async () => {
+      await gateway.start();
+      return gateway.checkAccessibility();
+    },
     keepAwake,
     onWebrtcFromViewer: (data: WebrtcSignal) => webrtcLive?.handleViewerSignal(data),
     getDisplayOptions: () => getLiveDisplayOptions(),
@@ -982,7 +1006,7 @@ function getDesktopScreenLive(): DesktopScreenLive {
     log: (line) => console.log(line),
   });
   desktopScreenLive.onStatus((status) => {
-    mainWindow?.webContents.send("desktop-live:status", status);
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("desktop-live:status", status);
     const controlled = status.enabled && status.controlState !== null && status.controlState !== "agent-controlled";
     if (process.platform === "darwin") app.dock?.setBadge(controlled ? "●" : "");
     // Control returned to the agent (or live disabled) → release the capture.
@@ -991,7 +1015,53 @@ function getDesktopScreenLive(): DesktopScreenLive {
   return desktopScreenLive;
 }
 
-ipcMain.handle("desktop-live:get-status", async () => getDesktopScreenLive().getStatus());
+ipcMain.handle("desktop-live:get-status", async (event) => { trustedServiceSender(event); return getDesktopScreenLive().getStatus(); });
+ipcMain.handle("desktop-live:setup", async (event) => {
+  trustedServiceSender(event);
+  const supported = process.platform === "darwin";
+  const live = getDesktopScreenLive();
+  if (supported && (await readDesktopLiveState(desktopLiveStatePath)).enabled) await live.enable();
+  return { supported, needsSetup: !existsSync(desktopLiveStatePath), status: supported ? await live.refreshPermissions() : live.getStatus() };
+});
+let desktopPermissionCheck: Promise<DesktopLiveStatus> | null = null;
+function recheckDesktopPermissions(): Promise<DesktopLiveStatus> {
+  if (!desktopPermissionCheck) desktopPermissionCheck = (async () => {
+    const live = getDesktopScreenLive();
+    const status = await live.refreshPermissions();
+    return status.enabled ? live.enable() : status;
+  })().finally(() => { desktopPermissionCheck = null; });
+  return desktopPermissionCheck;
+}
+ipcMain.handle("desktop-live:recheck", (event) => {
+  trustedServiceSender(event);
+  return recheckDesktopPermissions();
+});
+// Continue permission recovery even when the user closes the setup dialog.
+const desktopPermissionTimer = setInterval(() => {
+  const status = desktopScreenLive?.getStatus();
+  if (process.platform === "darwin" && status?.enabled && (status.permissionScreen !== "granted" || status.accessibilityTrusted !== true)) {
+    void recheckDesktopPermissions().catch((error) => console.warn("[desktop-permissions]", error));
+  }
+}, 3000);
+desktopPermissionTimer.unref();
+ipcMain.handle("desktop-live:open-permission", async (event, permission: unknown) => {
+  trustedServiceSender(event);
+  if (process.platform !== "darwin") return;
+  if (permission === "screen") {
+    // macOS can report denied before this bundle has appeared in Settings.
+    // An explicit user request must attempt capture for every non-granted state.
+    if (probeScreenPermission() !== "granted") await desktopCapturer.getSources({ types: ["screen"], thumbnailSize: { width: 1, height: 1 } }).catch(() => undefined);
+    await shell.openExternal("x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture");
+  } else if (permission === "accessibility") {
+    systemPreferences.isTrustedAccessibilityClient(true);
+    await shell.openExternal("x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility");
+  } else throw new Error("Unknown permission");
+});
+ipcMain.handle("desktop-live:restart", (event) => {
+  trustedServiceSender(event);
+  app.relaunch();
+  app.quit();
+});
 
 // Multi-display: the capture display is selectable; input coordinates follow
 // the streamed display's global origin so taps land on the right screen.
@@ -1022,7 +1092,9 @@ ipcMain.handle("desktop-live:set-display", async (_event, displayId: unknown) =>
   return { displayId: pickLiveDisplay().id };
 });
 
-ipcMain.handle("desktop-live:set-enabled", async (_event, enabled: unknown) => {
+ipcMain.handle("desktop-live:set-enabled", async (event, enabled: unknown) => {
+  trustedServiceSender(event);
+  if (process.platform !== "darwin" && enabled === true) throw new Error("当前桌面直播仅支持 macOS");
   const live = getDesktopScreenLive();
   const status = enabled === true ? await live.enable() : await live.disable();
   await persistDesktopLiveEnabled(status.enabled);
@@ -1116,6 +1188,7 @@ app.whenReady().then(async () => {
 });
 
 app.on("before-quit", () => {
+  clearInterval(desktopPermissionTimer);
   sharedService.closeStreams();
   globalShortcut.unregisterAll();
   wakeDesired = false;

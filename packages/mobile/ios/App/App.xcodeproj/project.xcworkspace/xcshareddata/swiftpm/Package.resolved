@@ -9,6 +9,24 @@
         "revision" : "ac5dacb8f1f5abf4b8297b34cfc3860d3f9202df",
         "version" : "7.6.9"
       }
+    },
+    {
+      "identity" : "osbarcodelib-ios",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/OutSystems/OSBarcodeLib-iOS.git",
+      "state" : {
+        "revision" : "fa51b49cf43ee227b02b371db83c8cb2e2cf8b55",
+        "version" : "2.1.0"
+      }
+    },
+    {
+      "identity" : "swiftkeychainwrapper",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/jrendel/SwiftKeychainWrapper.git",
+      "state" : {
+        "revision" : "185a3165346a03767101c4f62e9a545a0fe0530f",
+        "version" : "4.0.1"
+      }
     }
   ],
   "version" : 3

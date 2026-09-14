@@ -5,11 +5,10 @@ import { ensureCloudflared } from "./cloudflared/installer.js";
 import { resolveCodexRuntime } from "./codex-runtime-manager.js";
 import { probeSQLiteRuntime, probeTerminalRuntime, repairNativeRuntimePermissions } from "./native-runtime.js";
 import { findLanUrl } from "./network.js";
-import { createPairingSecret } from "./pairing.js";
+import { installedDataDir, pairingAdmin, printPairingCode, type PairedDevice, type PendingPairing, terminalText } from "./device-pairing.js";
 import { detectPlatform, type PlatformTarget } from "./platform.js";
 import { AGENTROAM_VERSION, resolvePlatformRuntime, resolvePlatformTui } from "./platform-packages.js";
 import { acquireSleepInhibitor } from "./power/sleep-inhibitor.js";
-import { renderQr } from "./qr.js";
 import { RuntimeManager, type RuntimeHandle } from "./runtime-manager.js";
 import { ServiceRuntimeReporter } from "./service/runtime-state.js";
 import { runServiceCommand } from "./service/service-command.js";
@@ -21,7 +20,50 @@ import { runUpdateWorker } from "./update/update-worker.js";
 const VERSION = AGENTROAM_VERSION;
 
 export async function main(argv: string[]): Promise<void> {
+  if (argv.includes("--help") || argv.includes("-h")) {
+    console.log(`AgentRoam
+  agentroam [start] [--local-only] [--test-no-pairing] [--data-dir PATH]
+  agentroam pair                    生成一次性设备配对码
+  agentroam pair --url <服务器地址>   生成 App 扫码直连授权（终端显示）
+  agentroam approvals               查看待批准请求和核对短语
+  agentroam approve <请求ID> --phrase <核对短语>
+  agentroam deny <请求ID>             拒绝请求
+  agentroam lock                    紧急锁定全部远程访问
+  agentroam unlock                  本机解锁（需要重新配对）
+  agentroam audit                   查看安全审计记录
+  agentroam devices                 查看已授权设备
+  agentroam revoke <设备ID>          移除一台设备
+  agentroam revoke --all            全部退出并取消待用配对码
+  agentroam service install|start|stop|restart|status|url|logs|uninstall
+设备命令支持 --data-dir PATH；配对码有效期 5 分钟，设备授权有效期 30 天。`);
+    return;
+  }
   const options = parseArgs(argv);
+  if (["pair", "devices", "revoke", "approvals", "approve", "deny", "lock", "unlock", "audit"].includes(options.command)) {
+    const dataDir = argv.includes("--data-dir") ? options.dataDir : await installedDataDir(options.dataDir);
+    if (options.command === "pair") await printPairingCode(dataDir, console.log, { accessUrl: options.pairingUrl, qr: options.qr });
+    else if (options.command === "approvals") {
+      const { requests, locked } = await pairingAdmin<{ requests: PendingPairing[]; locked: boolean }>(dataDir, "requests");
+      console.log(locked ? "远程访问已锁定" : requests.length ? requests.map((r) => `${r.id}  ${terminalText(r.name)}  核对短语：${r.phrase}  到期 ${new Date(r.expires).toLocaleString()}`).join("\n") : "暂无待授权请求");
+    } else if (options.command === "approve" || options.command === "deny") {
+      await pairingAdmin(dataDir, options.command, { id: options.approvalRequestId, phrase: options.approvalPhrase });
+      console.log(options.command === "approve" ? "已批准，手机将自动进入。" : "已拒绝此设备。");
+    } else if (options.command === "lock" || options.command === "unlock") {
+      await pairingAdmin(dataDir, options.command);
+      console.log(options.command === "lock" ? "远程访问已锁定，设备授权和待用配对已取消。已提交的本机任务不会自动终止。" : "远程访问已解锁。旧设备不会恢复授权，请执行 agentroam pair 重新配对。");
+    } else if (options.command === "audit") {
+      const { events } = await pairingAdmin<{ events: { at: number; action: string; actor: string | null; target: string | null; outcome: string; count: number }[] }>(dataDir, "audit");
+      console.log(events.length ? events.map((e) => `${new Date(e.at).toISOString()} ${e.action} ${e.outcome} actor=${e.actor ?? "-"} target=${e.target ?? "-"} count=${e.count}`).join("\n") : "暂无审计记录");
+    } else if (options.command === "devices") {
+      const { devices } = await pairingAdmin<{ devices: PairedDevice[] }>(dataDir, "devices");
+      console.log(devices.length ? devices.map((d) => `${d.id}  ${d.name.replace(/[\x00-\x1f\x7f-\x9f]/g, "")}  最近使用 ${new Date(d.seen).toLocaleString()}  到期 ${new Date(d.expires).toLocaleString()}`).join("\n") : "暂无已授权设备");
+      console.log("移除设备：agentroam revoke <设备ID>；全部退出：agentroam revoke --all");
+    } else {
+      const result = await pairingAdmin<{ revoked: number }>(dataDir, "revoke", options.revokeAll ? { all: true } : { id: options.revokeDeviceId });
+      console.log(`已撤销 ${result.revoked} 台设备的授权`);
+    }
+    return;
+  }
   if (options.command === "update-worker") {
     await runUpdateWorker(options.updateStateFile!);
     return;
@@ -54,7 +96,6 @@ export async function main(argv: string[]): Promise<void> {
 
   console.log(`AgentRoam ${VERSION}\n✓ Node ${process.versions.node} · ${target}`);
   const sleepInhibitor = await acquireSleepInhibitor();
-  const pairing = createPairingSecret();
   const controller = new AbortController();
   let runtime: RuntimeHandle | null = null;
   let relay: RelaySelection | null = null;
@@ -76,9 +117,10 @@ export async function main(argv: string[]): Promise<void> {
 
   try {
     await serviceReporter?.starting();
-    runtime = await new RuntimeManager().start(options, pairing, target);
+    runtime = await new RuntimeManager().start(options, target);
+    void runtime.exited.then(() => controller.abort());
     console.log(`✓ Local server: ${runtime.localUrl}/web`);
-    const lanUrl = findLanUrl(runtime.port) ?? runtime.localUrl;
+    const lanUrl = options.localOnly ? findLanUrl(runtime.port) ?? runtime.localUrl : runtime.localUrl;
 
     relay = await selectRelay({
       cli: options,
@@ -90,7 +132,7 @@ export async function main(argv: string[]): Promise<void> {
       log: (line) => process.stderr.write(`${line}\n`),
       onAttempt: (provider) => console.log(`▲ Trying ${providerDisplayName(provider)} relay...`),
       onFailure: (provider, message) => console.error(`⚠ ${providerDisplayName(provider)} unavailable: ${message}`),
-      allowLanFallback: serviceReporter === null,
+      allowLanFallback: options.localOnly,
     });
 
     if (controller.signal.aborted) return;
@@ -106,7 +148,7 @@ export async function main(argv: string[]): Promise<void> {
       console.log("  The phone browser may show a one-time Pinggy security confirmation before pairing.");
     }
 
-    const accessUrl = `${relay.publicUrl}/web${runtime.needsSetup ? `?pair=${encodeURIComponent(pairing.token)}` : ""}`;
+    const accessUrl = `${relay.publicUrl}/web`;
     await serviceReporter?.ready({
       localUrl: runtime.localUrl,
       publicUrl: relay.publicUrl,
@@ -117,8 +159,7 @@ export async function main(argv: string[]): Promise<void> {
       console.log("✓ Background service URL written to the private state file.");
     } else {
       console.log(`\nOpen: ${accessUrl}`);
-      if (options.qr) console.log(`\n${await renderQr(accessUrl)}`);
-      if (runtime.needsSetup) console.log("First pairing link expires in 5 minutes.");
+      if (!options.testNoPairing) await printPairingCode(options.dataDir, console.log, { signal: controller.signal, accessUrl, qr: options.qr });
       console.log("Ctrl+C stops the tunnel and local server.");
     }
 

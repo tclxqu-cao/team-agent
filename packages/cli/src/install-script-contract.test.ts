@@ -3,13 +3,12 @@ import { resolve } from "node:path";
 import { execFileSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
 import { MANAGED_NODE_VERSION, NODE_RUNTIME_ASSETS } from "./node-runtime-manager.js";
-import { AGENTROAM_VERSION } from "./platform-packages.js";
 import { MINIMUM_NODE_VERSION, isSupportedNodeVersion } from "../bin/runtime-policy.mjs";
 
 const installRoot = resolve(import.meta.dirname, "../install");
 
 describe("standalone installer contracts", () => {
-  it.skipIf(process.platform !== "darwin" || process.arch !== "arm64")("keeps a compatible active Node instead of selecting a different NVM version", async () => {
+  it.skipIf(process.platform !== "darwin" || process.arch !== "arm64")("allows installation from home and keeps a compatible active Node", async () => {
     const root = await mkdtemp(resolve(process.env.TMPDIR || "/tmp", "agentroam-active-node-"));
     try {
       const homeDir = resolve(root, "home");
@@ -20,7 +19,7 @@ describe("standalone installer contracts", () => {
       const expected = await fakeNode(resolve(activeBin, "node"), "24.13.0");
       await fakeNode(resolve(nvmRoot, "versions/node/v26.0.0/bin/node"), "26.0.0");
       const output = execFileSync("/bin/sh", [resolve(installRoot, "install-agentroam.sh")], {
-        cwd: workspace, encoding: "utf8",
+        cwd: homeDir, encoding: "utf8",
         env: { ...process.env, HOME: homeDir, NVM_DIR: nvmRoot, PATH: `${activeBin}:/usr/bin:/bin`,
           AGENTROAM_BOOTSTRAP_TEST: "1", AGENTROAM_BOOTSTRAP_NODE_DISCOVERY_ONLY: "1" },
       });
@@ -35,7 +34,7 @@ describe("standalone installer contracts", () => {
     const script = await readFile(scriptPath, "utf8");
     expect(script).toContain(`NODE_VERSION="${MANAGED_NODE_VERSION}"`);
     expect(script).toContain(`MINIMUM_NODE_VERSION="${MINIMUM_NODE_VERSION}"`);
-    expect(script).toContain(`AGENTROAM_VERSION="${AGENTROAM_VERSION}"`);
+    expect(script).toContain('AGENTROAM_VERSION_REQUEST="${AGENTROAM_VERSION:-preview}"');
     expect(script).toContain(NODE_RUNTIME_ASSETS["darwin-arm64"].archive);
     expect(script).toContain(NODE_RUNTIME_ASSETS["darwin-arm64"].sha256);
     expect(script).toContain("https://registry.npmjs.org");
@@ -44,7 +43,7 @@ describe("standalone installer contracts", () => {
     expect(script).toContain('AGENTROAM_ROOT');
     expect(script).toContain('AGENTROAM_INSTALL_SKIP_SERVICE');
     expect(script).toContain('service install --root "$SERVICE_ROOT" --data-dir "$DATA_DIR"');
-    expect(script).toContain("refusing to expose the entire home directory implicitly");
+    expect(script).toContain('SERVICE_ROOT="$PWD"');
     expect(script).toContain("find_nvm_node");
     expect(script).toContain('${NVM_DIR:-}');
     expect(script).not.toMatch(/\b(?:brew|sudo|fnm|volta)\b/);
@@ -55,7 +54,7 @@ describe("standalone installer contracts", () => {
     const script = await readFile(resolve(installRoot, "install-agentroam.ps1"), "utf8");
     expect(script).toContain(`$NodeVersion = "${MANAGED_NODE_VERSION}"`);
     expect(script).toContain(`$MinimumNodeVersion = "${MINIMUM_NODE_VERSION}"`);
-    expect(script).toContain(`$AgentRoamVersion = "${AGENTROAM_VERSION}"`);
+    expect(script).toContain('$AgentRoamVersionRequest = if ($env:AGENTROAM_VERSION) { $env:AGENTROAM_VERSION } else { "preview" }');
     expect(script).toContain(NODE_RUNTIME_ASSETS["windows-amd64"].archive);
     expect(script).toContain(NODE_RUNTIME_ASSETS["windows-amd64"].sha256);
     expect(script).toContain("https://registry.npmjs.org");
@@ -64,7 +63,7 @@ describe("standalone installer contracts", () => {
     expect(script).toContain("$env:AGENTROAM_ROOT");
     expect(script).toContain("$env:AGENTROAM_INSTALL_SKIP_SERVICE");
     expect(script).toContain("service install --root $ServiceRoot --data-dir $DataDir");
-    expect(script).toContain("Refusing to expose the entire home directory implicitly");
+    expect(script).toContain("(Get-Location).Path");
     expect(script).toContain("Find-NvmNode");
     expect(script).toContain("$env:NVM_HOME");
     expect(script).not.toMatch(/\b(?:winget|choco|scoop|Start-Process\s+.*RunAs)\b/i);

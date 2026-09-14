@@ -4,7 +4,7 @@ set -eu
 NODE_VERSION="22.22.0"
 MINIMUM_NODE_VERSION="22.22.0"
 # Default to the newest published preview; pin an exact version via
-# AGENTROAM_VERSION=0.2.0-preview.17 sh install-agentroam.sh
+# AGENTROAM_VERSION=0.2.0-preview.18 sh install-agentroam.sh
 AGENTROAM_VERSION_REQUEST="${AGENTROAM_VERSION:-preview}"
 AGENTROAM_VERSION=""
 NODE_ARCHIVE="node-v22.22.0-darwin-arm64.tar.xz"
@@ -20,10 +20,8 @@ LAUNCHER_ROOT="$LAUNCHER_PARENT/pending-version"
 LAUNCHER_LOCK="$LAUNCHER_ROOT.lock"
 WRAPPER_DIR="$HOME/.local/bin"
 WRAPPER_PATH="$WRAPPER_DIR/agentroam"
-SERVICE_ROOT_EXPLICIT=0
 if [ "${AGENTROAM_ROOT+x}" = "x" ]; then
   SERVICE_ROOT="$AGENTROAM_ROOT"
-  SERVICE_ROOT_EXPLICIT=1
 else
   SERVICE_ROOT="$PWD"
 fi
@@ -52,10 +50,6 @@ command -v shasum >/dev/null 2>&1 || fail "shasum is required"
 [ -x /usr/bin/tar ] || fail "/usr/bin/tar is required"
 [ -d "$SERVICE_ROOT" ] || fail "AgentRoam root is not a directory: $SERVICE_ROOT"
 service_root_physical=$(cd "$SERVICE_ROOT" && pwd -P)
-home_physical=$(cd "$HOME" && pwd -P)
-if [ "$SERVICE_ROOT_EXPLICIT" -eq 0 ] && [ "$service_root_physical" = "$home_physical" ]; then
-  fail "refusing to expose the entire home directory implicitly; run from a project directory or set AGENTROAM_ROOT explicitly"
-fi
 SERVICE_ROOT="$service_root_physical"
 
 mkdir -p "$NODE_PARENT" "$LAUNCHER_PARENT" "$WRAPPER_DIR"
@@ -269,4 +263,27 @@ printf '\nAgentRoam %s installed: %s\n' "$AGENTROAM_VERSION" "$WRAPPER_PATH"
 case ":${PATH:-}:" in
   *":$WRAPPER_DIR:"*) ;;
   *) printf 'Add this directory to PATH: export PATH="%s:$PATH"\n' "$WRAPPER_DIR" ;;
+esac
+
+# stdin is the script itself when launched with curl | sh. Read the choice
+# from the controlling terminal instead; unattended installs never block.
+desktop_choice="${AGENTROAM_INSTALL_DESKTOP:-ask}"
+if [ "${AGENTROAM_INSTALL_SKIP_SERVICE:-}" = "1" ] && [ "$desktop_choice" = "ask" ]; then desktop_choice=no; fi
+if [ "$desktop_choice" = "ask" ]; then
+  desktop_choice=no
+  if ( : </dev/tty ) 2>/dev/null; then
+    printf '\n是否下载桌面端？用于手机查看和控制电脑桌面 [y/N]：' >/dev/tty
+    IFS= read -r desktop_choice </dev/tty || desktop_choice=no
+  fi
+fi
+case "$desktop_choice" in
+  y|Y|yes|YES|是)
+    desktop_helper="$LAUNCHER_ROOT/node_modules/agentroam/bin/desktop-download.mjs"
+    if [ -f "$desktop_helper" ]; then
+      "$NODE_BIN" "$desktop_helper" "$AGENTROAM_VERSION" || printf 'CLI 安装已完成，桌面端可稍后重新下载。\n'
+    else
+      printf '当前发布的 CLI 尚未包含桌面下载功能，请在新版发布后重试。CLI 安装已完成。\n'
+    fi
+    ;;
+  *) printf '已跳过桌面端下载，CLI 可正常使用。\n' ;;
 esac

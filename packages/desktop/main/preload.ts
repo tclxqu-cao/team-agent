@@ -249,6 +249,7 @@ contextBridge.exposeInMainWorld("desktopDeviceApi", {
   hubChromeConversation: (siteId: string) => ipcRenderer.invoke("hub:chrome-conversation", siteId),
   hubChromeFrame: (siteId: string) => ipcRenderer.invoke("hub:chrome-frame", siteId),
   hubChromeCopyPairing: () => ipcRenderer.invoke("hub:chrome-copy-pairing"),
+  hubChromeInstallExtension: () => ipcRenderer.invoke("hub:chrome-install-extension"),
   hubChromeRevealExtension: () => ipcRenderer.invoke("hub:chrome-reveal-extension"),
   hubChromeInput: (siteId: string, input: unknown) => ipcRenderer.invoke("hub:chrome-input", siteId, input),
   onHubChromeEvent: (callback: (event: unknown) => void) => {
@@ -258,6 +259,10 @@ contextBridge.exposeInMainWorld("desktopDeviceApi", {
   },
 
   // Desktop live view (screen capture + remote control)
+  desktopLiveSetup: () => ipcRenderer.invoke("desktop-live:setup"),
+  desktopLiveRecheck: () => ipcRenderer.invoke("desktop-live:recheck"),
+  desktopLiveOpenPermission: (permission: "screen" | "accessibility") => ipcRenderer.invoke("desktop-live:open-permission", permission),
+  desktopLiveRestart: () => ipcRenderer.invoke("desktop-live:restart"),
   desktopLiveGetStatus: () => ipcRenderer.invoke("desktop-live:get-status"),
   desktopLiveSetEnabled: (enabled: boolean) => ipcRenderer.invoke("desktop-live:set-enabled", enabled),
   desktopLiveGetDisplays: () => ipcRenderer.invoke("desktop-live:get-displays"),

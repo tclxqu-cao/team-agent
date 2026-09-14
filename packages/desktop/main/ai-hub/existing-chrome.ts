@@ -8,3 +8,9 @@ export async function openExistingChrome(url: string, run = execFileAsync): Prom
   if (process.platform !== "darwin") throw new Error("此连接入口目前支持 macOS Google Chrome");
   await run("/usr/bin/open", ["-a", "Google Chrome", parsed.href]);
 }
+
+/** Fixed internal page, separate from the HTTPS-only site navigation entry. */
+export async function openChromeExtensions(run = execFileAsync): Promise<void> {
+  if (process.platform !== "darwin") throw new Error("此连接入口目前支持 macOS Google Chrome");
+  await run("/usr/bin/open", ["-a", "Google Chrome", "chrome://extensions/"]);
+}

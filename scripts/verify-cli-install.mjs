@@ -102,7 +102,7 @@ try {
 
   const urlMatch = await waitFor(/Local server: (http:\/\/127\.0\.0\.1:\d+\/web)/, () => output, 210_000);
   const localUrl = urlMatch[1].replace(/\/web$/, "");
-  const openMatch = await waitFor(/Open: (http:\/\/[^\s]+\/web\?pair=[^\s]+)/, () => output, 10_000);
+  const openMatch = await waitFor(/Open: (http:\/\/[^\s]+)/, () => output, 10_000);
   console.log(`✓ pairing URL: ${new URL(openMatch[1]).origin}`);
   const status = await fetch(`${localUrl}/api/web-auth/status`);
   if (!status.ok) throw new Error(`health check failed: ${status.status}`);

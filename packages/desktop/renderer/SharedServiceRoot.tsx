@@ -1,3 +1,4 @@
+import DesktopPermissionDialog from "./components/DesktopPermissionDialog";
 import React, { useEffect, useState } from "react";
 import { createSharedAgentApi, type SharedServiceStatus } from "./lib/shared-service";
 
@@ -5,6 +6,14 @@ window.agentApi = createSharedAgentApi(window.sharedServiceApi, window.desktopDe
 
 export function SharedServiceRoot() {
   const [status, setStatus] = useState<SharedServiceStatus | null>(null);
+  const [showPermissions, setShowPermissions] = useState(false);
+  useEffect(() => {
+    let active = true;
+    void window.agentApi.desktopLiveSetup().then(({ supported, needsSetup, status }) => {
+      if (active && supported && (needsSetup || (status.enabled && (status.permissionScreen !== "granted" || status.accessibilityTrusted !== true)))) setShowPermissions(true);
+    }).catch(() => undefined);
+    return () => { active = false; };
+  }, []);
   const [failure, setFailure] = useState("");
   const [App, setApp] = useState<React.ComponentType | null>(null);
   useEffect(() => {
@@ -26,6 +35,7 @@ export function SharedServiceRoot() {
   };
   const connected = status?.connected && !failure;
   return <>
+    {showPermissions && <DesktopPermissionDialog onClose={() => setShowPermissions(false)} />}
     {App && <App />}
     {!connected && <div style={{ position: "fixed", inset: 0, zIndex: 10000, display: "grid", placeItems: "center", background: "var(--bg-primary, #17191d)", color: "var(--text-primary, #eee)" }}>
       <section style={{ width: 560, maxWidth: "85vw", padding: 32 }}>

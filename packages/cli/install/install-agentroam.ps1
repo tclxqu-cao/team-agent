@@ -23,11 +23,6 @@ $ServiceRootExplicit = -not [string]::IsNullOrWhiteSpace($env:AGENTROAM_ROOT)
 $ServiceRoot = if ($ServiceRootExplicit) { $env:AGENTROAM_ROOT } else { (Get-Location).Path }
 if (-not (Test-Path -LiteralPath $ServiceRoot -PathType Container)) { throw "AgentRoam root is not a directory: $ServiceRoot" }
 $ServiceRoot = [System.IO.Path]::GetFullPath($ServiceRoot).TrimEnd([System.IO.Path]::DirectorySeparatorChar)
-$HomeRoot = [System.IO.Path]::GetFullPath($HOME).TrimEnd([System.IO.Path]::DirectorySeparatorChar)
-if (-not $ServiceRootExplicit -and $ServiceRoot -eq $HomeRoot) {
-  throw "Refusing to expose the entire home directory implicitly; run from a project directory or set AGENTROAM_ROOT explicitly"
-}
-
 New-Item -ItemType Directory -Force -Path $NodeParent, $LauncherParent, $WrapperDir | Out-Null
 
 function Test-NodeVersion([string]$VersionText) {
@@ -240,3 +235,21 @@ if ($env:AGENTROAM_INSTALL_SKIP_SERVICE -eq "1") {
 }
 Write-Host "`nAgentRoam $AgentRoamVersion installed: $WrapperPath"
 Write-Host "Open a new terminal, then run: agentroam service status"
+
+$DesktopChoice = if ($env:AGENTROAM_INSTALL_DESKTOP) { $env:AGENTROAM_INSTALL_DESKTOP } else { "ask" }
+if ($env:AGENTROAM_INSTALL_SKIP_SERVICE -eq "1" -and $DesktopChoice -eq "ask") { $DesktopChoice = "no" }
+if ($DesktopChoice -eq "ask") {
+  $DesktopChoice = "no"
+  if ([Environment]::UserInteractive -and -not [Console]::IsInputRedirected) {
+    try { $DesktopChoice = Read-Host "是否下载桌面端？用于手机查看和控制电脑桌面 [y/N]" } catch { $DesktopChoice = "no" }
+  }
+}
+if ($DesktopChoice -match '^(y|yes|是)$') {
+  $DesktopHelper = Join-Path $LauncherRoot "node_modules\agentroam\bin\desktop-download.mjs"
+  if (Test-Path -LiteralPath $DesktopHelper -PathType Leaf) {
+    & $NodeBin $DesktopHelper $AgentRoamVersion
+    if ($LASTEXITCODE -ne 0) { Write-Warning "CLI 安装已完成，桌面端可稍后重新下载。" }
+  } else {
+    Write-Warning "当前发布的 CLI 尚未包含桌面下载功能，请在新版发布后重试。CLI 安装已完成。"
+  }
+} else { Write-Host "已跳过桌面端下载，CLI 可正常使用。" }

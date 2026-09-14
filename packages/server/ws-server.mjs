@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+import { RemoteAuthorization } from "./lib/remote-control/remote-authorization.mjs";
+import { createDevicePairingGateway } from "./lib/device-pairing-gateway.mjs";
 import { createDesktopDiscovery } from "./lib/desktop-discovery.mjs";
 // ws-server.mjs — custom server for @agent/server.
 // Serves the Next.js app (API + /web console) and multiplexes a WebSocket
@@ -958,17 +960,21 @@ async function handleMessage(conn, raw) {
   if (!msg || typeof msg.type !== "string") {
     return conn.sendJson({ type: "error", error: "missing type" });
   }
-  const handler = requestHandlers[msg.type];
+  const handler = Object.hasOwn(requestHandlers, msg.type) ? requestHandlers[msg.type] : null;
   if (!handler) {
     return conn.sendJson({ type: "error", error: `unknown type: ${msg.type}` });
   }
+  const sensitive = /^(?:term:(?:start|input|close|kill|focus|request-write|set-cwd)|fs:|file:|browser:(?:input|takeover)|aihub:|project:(?:create|rename|delete))/.test(msg.type);
   try {
+    if (sensitive) pairingGateway.auditOperation(conn.principal, `ws.${msg.type}`, "started");
     const result = await handler(msg, conn);
+    if (sensitive) pairingGateway.auditOperation(conn.principal, `ws.${msg.type}`, "success");
     if (result === null) return; // fire-and-forget commands
     // NOTE: correlation id must win — spread result FIRST so a business
     // payload field named `id` can never clobber the request's numeric id.
     conn.sendJson({ ...(result ?? {}), type: `${msg.type}:result`, id: msg._req ?? ++reqSeq });
   } catch (err) {
+    if (sensitive) pairingGateway.auditOperation(conn.principal, `ws.${msg.type}`, "failed");
     conn.sendJson({
       type: "error",
       id: msg._req,
@@ -1142,9 +1148,19 @@ async function serveTicketedFilePreview(req, res) {
 }
 
 const desktopDiscovery = createDesktopDiscovery({ dataDir: serverBaseDir });
+const pairingGateway = createDevicePairingGateway({ dataDir: serverBaseDir, desktop: desktopDiscovery, owner: anonymousWebStore.getOrCreatePrincipal(), consoleStore, testNoPairing: process.argv.includes("--test-no-pairing") });
+if (process.argv.includes("--test-no-pairing")) console.warn("[TEST MODE] 配对已跳过：能访问此端口的用户可直接操作。仅用于受控测试，移除 --test-no-pairing 后恢复认证。");
+// Child runtimes may publish live frames only using this process's local credential.
+process.env.AGENTROAM_LOCAL_SERVICE_TOKEN = desktopDiscovery.headers()["x-agentroam-desktop-token"];
+const remoteAuthorization = new RemoteAuthorization({ registry: liveViewRegistry, userId: anonymousWebStore.getOrCreatePrincipal().userId, dataDir: serverBaseDir });
+await remoteAuthorization.initialize();
+let serviceReady = false;
 const server = createServer((req, res) => {
+  if (!serviceReady) { res.writeHead(503, { "content-type": "application/json" }).end(JSON.stringify({ error: "Service starting" })); return; }
   if (desktopDiscovery.handle(req, res)) return;
-  void serveTicketedFilePreview(req, res)
+  void pairingGateway.handle(req, res)
+    .then((handled) => handled || remoteAuthorization.handle(req, res))
+    .then((handled) => handled || serveTicketedFilePreview(req, res))
     .then((handled) => handled || serveWebApp(req, res))
     .then((handled) => { if (!handled) handle(req, res); })
     .catch((error) => {
@@ -1154,29 +1170,14 @@ const server = createServer((req, res) => {
 });
 const wss = new WebSocketServer({ noServer: true, maxPayload: 1024 * 1024 });
 
-function originAllowed(req) {
-  const origin = req.headers.origin;
-  if (!origin) return false;
-  const trustedProxy=process.env.AGENT_TRUST_TUNNEL_PROXY==="1";
-  const proto=trustedProxy&&req.headers["x-forwarded-proto"]?String(req.headers["x-forwarded-proto"]).split(",")[0].trim():(req.socket.encrypted?"https":"http");
-  const host=trustedProxy&&(req.headers["x-forwarded-host"]||req.headers.host)?String(req.headers["x-forwarded-host"]||req.headers.host).split(",")[0].trim():req.headers.host;
-  const expected = `${proto}://${host}`;
-  const extra = (process.env.AGENT_WEB_ALLOWED_ORIGINS || "").split(",").map((value) => value.trim()).filter(Boolean);
-  return origin === expected || extra.includes(origin);
-}
-
 server.on("upgrade", (req, socket, head) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
-  if (url.pathname !== "/ws") return; // leave HMR etc. to Next's own listeners
-  if (!originAllowed(req)) { socket.write("HTTP/1.1 403 Forbidden\r\n\r\n"); socket.destroy(); return; }
-  const nonce = url.searchParams.get("nonce") || "";
-  const userId = anonymousWebStore.consumeWsNonce(nonce);
-  if (!userId) {
-    wss.handleUpgrade(req, socket, head, (ws) => ws.close(4003, "invalid nonce"));
-    return;
-  }
-  const principal = { userId, username: "local", deviceId: "browser" };
-  wss.handleUpgrade(req, socket, head, (ws) => wss.emit("connection", ws, req, principal));
+  const principal = url.pathname === "/ws" ? pairingGateway.authenticateUpgrade(req) : null;
+  if (!principal) { socket.write("HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n"); socket.destroy(); return; }
+  wss.handleUpgrade(req, socket, head, (ws) => {
+    pairingGateway.track(ws, principal);
+    wss.emit("connection", ws, req, principal);
+  });
 });
 
 wss.on("connection", (ws, _req, principal) => {
@@ -1200,6 +1201,7 @@ wss.on("connection", (ws, _req, principal) => {
   conn.sendJson({ type: "connection:hello", userId: principal.userId, deviceId: principal.deviceId });
 
   ws.on("message", (data, isBinary) => {
+    if (!pairingGateway.active(principal)) { ws.close(4003, "device authorization expired"); return; }
     if (isBinary) {
       const frame = Buffer.from(data);
       const livePacket = readLiveFramePacket(frame);
@@ -1224,7 +1226,10 @@ wss.on("connection", (ws, _req, principal) => {
       // the tab tears down) — drop them silently instead of throwing.
       const session = terminals.get(terminalId);
       if (!session || session.exited || session.userId !== conn.principal?.userId) return;
-      if (session.inputOwner && session.inputOwner !== conn.id) return;
+      try {
+        if (session.inputOwner && session.inputOwner !== conn.id) { pairingGateway.auditOperation(conn.principal, "ws.term:input", "denied"); return; }
+        pairingGateway.auditOperation(conn.principal, "ws.term:input", "started");
+      } catch { ws.close(1011, "Security audit unavailable"); return; }
       session.inputOwner = conn.id;
       session.pty.write(frame.subarray(6).toString("utf8"));
       return;
@@ -1234,6 +1239,11 @@ wss.on("connection", (ws, _req, principal) => {
 
   ws.on("close", () => {
     conn.browserFrameFlow.reset(false);
+    // Close an established peer-to-peer media path as well as the relay socket.
+    // Signaling must be sent before disconnect releases the controller identity.
+    if (conn.browserPeer.watchedSessionId) {
+      try { liveViewRegistry.webrtcFromViewer(conn.browserPeer, conn.browserPeer.watchedSessionId, { kind: "stop" }); } catch { /* read-only viewer */ }
+    }
     liveViewRegistry.disconnect(conn.browserPeer);
     connections.delete(conn);
     for (const id of [...conn.attachedTo]) {
@@ -1249,13 +1259,22 @@ wss.on("connection", (ws, _req, principal) => {
   });
 });
 
-server.on("close", () => { void desktopDiscovery.close(); });
-server.listen(port, () => {
-  void desktopDiscovery.publish(server.address().port).catch(() => console.error("Desktop service discovery could not be published"));
+server.on("close", () => { void remoteAuthorization.close(); pairingGateway.close(); void desktopDiscovery.close(); });
+server.listen(port, process.env.HOST || "127.0.0.1", async () => {
+  process.env.AGENTROAM_LOCAL_SERVICE_URL = `http://127.0.0.1:${server.address().port}`;
+  try {
+    await desktopDiscovery.publish(server.address().port);
+    serviceReady = true;
+  } catch {
+    console.error("Desktop service discovery could not be published");
+    server.close();
+    return;
+  }
   // Load the server-owned Customer runtime (including persisted schedules)
   // without requiring a desktop/browser visit after a service restart.
   void fetch(`http://127.0.0.1:${server.address().port}/api/agent/model`, {
     signal: AbortSignal.timeout(60_000),
+    headers: desktopDiscovery.headers(),
   }).then((response) => {
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
   }).catch((error) => console.error("Customer runtime initialization failed", error));
@@ -1267,7 +1286,7 @@ server.listen(port, () => {
   }
   console.log(`▲ AgentRoam web gateway`);
   console.log(`   local    http://localhost:${port}/web`);
-  for (const u of urls) console.log(`   network  ${u}`);
-  console.log(`   auth     passwordless local console`);
+  for (const u of (process.env.HOST === "0.0.0.0" ? urls : [])) console.log(`   network  ${u}`);
+  console.log(`   auth     device pairing required (agentroam pair)`);
   console.log(`   roots    ${roots.join(" : ")}`);
 });

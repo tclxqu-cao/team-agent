@@ -33,7 +33,16 @@ await cp(resolve(standaloneServer, "server.js"), resolve(target, "server.js"));
 await cp(resolve(buildRoot, "static"), resolve(target, ".next/static"), { recursive: true });
 await cp(resolve(server, "ws-server.mjs"), resolve(target, "ws-server.mjs"));
 await mkdir(resolve(target, "lib"), { recursive: true });
+await cp(resolve(server, "lib/remote-control"), resolve(target, "lib/remote-control"), { recursive: true, filter: (source) => !source.endsWith(".test.ts") });
+if (targetName === "darwin-arm64") {
+  execFileSync(process.execPath, [resolve(root, "scripts/build-cli-remote-helper.mjs")], { stdio: "inherit" });
+  await cp(resolve(server, "native/AgentRoam Remote Desktop.app"), resolve(target, "native/AgentRoam Remote Desktop.app"), { recursive: true });
+}
 await cp(resolve(server, "lib/desktop-discovery.mjs"), resolve(target, "lib/desktop-discovery.mjs"));
+for (const name of ["device-pairing-store.mjs", "device-pairing-gateway.mjs", "pairing-page.mjs", "pwa-assets.mjs"]) {
+  await cp(resolve(server, "lib", name), resolve(target, "lib", name));
+}
+await cp(resolve(server, "public/pwa"), resolve(target, "public/pwa"), { recursive: true });
 await cp(resolve(server, "shell-integration.mjs"), resolve(target, "shell-integration.mjs"));
 await cp(resolve(server, "shell-platform.mjs"), resolve(target, "shell-platform.mjs"));
 await mkdir(resolve(target, "lib"), { recursive: true });
