@@ -1,6 +1,6 @@
 {
   "name": "@agent/desktop",
-  "version": "0.2.0-preview.16",
+  "version": "0.2.0-preview.17",
   "private": true,
   "type": "module",
   "main": "./dist/main/index.js",
@@ -11,8 +11,8 @@
     "compile": "bun run --cwd ../voice-service build && bunx tsc && bunx tsc -p tsconfig.preload.json && mv dist/main/preload.js dist/main/preload.cjs",
     "electron": "bun run compile && NODE_ENV=production electron .",
     "start": "bunx --bun vite build && bun run compile && NODE_ENV=production electron .",
-    "package:mac": "bun run build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --config electron-builder.yml --mac dmg --arm64",
-    "package:win": "bun run build && electron-builder --config electron-builder.yml --win nsis --x64"
+    "package:mac": "bun run build && node ../../scripts/stage-core-for-packaging.mjs && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --config electron-builder.yml --mac dmg --arm64",
+    "package:win": "bun run build && node ../../scripts/stage-core-for-packaging.mjs && electron-builder --config electron-builder.yml --win nsis --x64"
   },
   "dependencies": {
     "@agent/core": "*",

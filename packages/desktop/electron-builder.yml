@@ -10,6 +10,9 @@ files:
   - renderer-dist/**/*
   - package.json
   - node_modules/**/*
+  # @agent/core 是软链到 packages/core 的声明映射，打包时不进 asar
+  - "!node_modules/@agent/core/dist/**/*.d.ts.map"
+  - "!node_modules/@agent/core/dist/**/*.js.map"
 extraResources:
   - from: chrome-extension
     to: chrome-extension
