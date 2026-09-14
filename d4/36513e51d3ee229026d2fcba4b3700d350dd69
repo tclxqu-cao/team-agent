@@ -1,0 +1,40 @@
+packages/cli/bin/node-preflight.mjs
+  h_b0bf4228a0b7ec 10
+packages/cli/install/install-agentroam.ps1
+  h_b0bf4228a0b7ec 7
+packages/cli/install/install-agentroam.sh
+  h_b0bf4228a0b7ec 7
+packages/cli/package.json
+  h_b0bf4228a0b7ec 3,29-30
+packages/cli/src/codex-runtime-manager.test.ts
+  h_b0bf4228a0b7ec 8,10,25,29-39,44,62-99,108,110,120,135-152,168,201
+packages/cli/src/codex-runtime-manager.ts
+  h_b0bf4228a0b7ec 20-21,212-225,404-407,409
+packages/cli/src/platform-packages.ts
+  h_b0bf4228a0b7ec 7
+packages/cli/src/tunnel/public-readiness.ts
+  h_b0bf4228a0b7ec 47
+packages/runtime-darwin-arm64/manifest.json
+  h_b0bf4228a0b7ec 2,7
+packages/runtime-darwin-arm64/package.json
+  h_b0bf4228a0b7ec 3
+packages/runtime-win32-x64/manifest.json
+  h_b0bf4228a0b7ec 2
+packages/runtime-win32-x64/package.json
+  h_b0bf4228a0b7ec 3
+scripts/agent-runtime-upgrade-lib.mjs
+  h_b0bf4228a0b7ec 42,48-52,55-56,58,61,186-197,272-278
+scripts/agent-runtime-upgrade.test.mjs
+  h_b0bf4228a0b7ec 111-157
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "d436513e51d3ee229026d2fcba4b3700d350dd69",
+  "prompts": {},
+  "humans": {
+    "h_b0bf4228a0b7ec": {
+      "author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
