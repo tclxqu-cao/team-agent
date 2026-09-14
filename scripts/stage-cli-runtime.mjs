@@ -32,7 +32,8 @@ await cp(standaloneBuild, resolve(target, ".next"), { recursive: true });
 await cp(resolve(standaloneServer, "server.js"), resolve(target, "server.js"));
 await cp(resolve(buildRoot, "static"), resolve(target, ".next/static"), { recursive: true });
 await cp(resolve(server, "ws-server.mjs"), resolve(target, "ws-server.mjs"));
-await mkdir(resolve(target, "lib"), { recursive: true });
+await mkdir(resolve(target, "lib/browser-live"), { recursive: true });
+await cp(resolve(server, "lib/browser-live/viewer-frame-flow.mjs"), resolve(target, "lib/browser-live/viewer-frame-flow.mjs"));
 await cp(resolve(server, "lib/remote-control"), resolve(target, "lib/remote-control"), { recursive: true, filter: (source) => !source.endsWith(".test.ts") });
 if (targetName === "darwin-arm64") {
   execFileSync(process.execPath, [resolve(root, "scripts/build-cli-remote-helper.mjs")], { stdio: "inherit" });
