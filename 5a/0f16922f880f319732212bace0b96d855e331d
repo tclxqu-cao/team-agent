@@ -1,0 +1,22 @@
+packages/cli/README.md
+  h_b0bf4228a0b7ec 23-26,33-36
+packages/cli/RELEASE.md
+  h_b0bf4228a0b7ec 1,23,128-134
+packages/cli/install/README.md
+  h_b0bf4228a0b7ec 43
+packages/desktop/package.json
+  h_b0bf4228a0b7ec 3
+scripts/verify-cli-install.mjs
+  h_b0bf4228a0b7ec 6,106,110-121
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "5a0f16922f880f319732212bace0b96d855e331d",
+  "prompts": {},
+  "humans": {
+    "h_b0bf4228a0b7ec": {
+      "author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
