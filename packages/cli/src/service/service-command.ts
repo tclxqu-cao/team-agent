@@ -9,6 +9,7 @@ import type { ServiceConfig } from "./service-files.js";
 import type { ServiceController } from "./service-controller.js";
 import { WindowsTaskService } from "./windows-task-service.js";
 import { assertSupportedNodeVersion } from "../../bin/runtime-policy.mjs";
+import { cleanupOldLaunchers } from "./launcher-cleanup.js";
 
 interface ServiceCommandContext {
   platform?: NodeJS.Platform;
@@ -82,9 +83,14 @@ export async function runServiceCommand(options: CliOptions, context: ServiceCom
       };
       const { definition, state } = await controller.install(config);
       log(`✓ AgentRoam service installed: ${definition}`);
+      if (state?.status === "ready" && state.version === config.version) await cleanupOldLaunchers(config, log);
       if (state?.status === "ready" && state.accessUrl) {
         log(`Open: ${state.accessUrl}`);
-        if (state.localUrl) log(`电脑本机：${state.localUrl.replace(/\/$/, "")}/web（配对后可进行远程授权）`);
+        if (state.localUrl) {
+          log(`远程桌面授权地址：${state.localUrl.replace(/\/$/, "")}/web`);
+          log('请在运行 CLI 的这台电脑上用浏览器打开此地址，配对后点击“远程授权”（盾牌图标）。');
+          log('按提示授予“屏幕录制”和“辅助功能”权限，然后点击“开启共享”。');
+        }
         await (context.pairingPrinter ?? printPairingCode)(options.dataDir, log, { accessUrl: state.accessUrl, qr: options.qr, interactive: stdoutIsTTY });
       } else log("Service is starting. Run `agentroam service url` and `agentroam pair` shortly.");
       return;

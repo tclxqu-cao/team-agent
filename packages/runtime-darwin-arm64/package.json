@@ -1,16 +1,26 @@
 {
   "name": "agentroam-runtime-darwin-arm64",
-  "version": "0.2.0-preview.18",
+  "version": "0.2.0-preview.20",
   "description": "AgentRoam server runtime for macOS arm64",
   "license": "MIT",
-  "os": ["darwin"],
-  "cpu": ["arm64"],
-  "files": ["README.md", "manifest.json", "runtime"],
+  "os": [
+    "darwin"
+  ],
+  "cpu": [
+    "arm64"
+  ],
+  "files": [
+    "README.md",
+    "manifest.json",
+    "runtime"
+  ],
   "exports": {
     "./manifest.json": "./manifest.json",
     "./runtime": "./runtime/package.json"
   },
-  "engines": { "node": ">=22.22.0" },
+  "engines": {
+    "node": ">=22.22.0"
+  },
   "publishConfig": {
     "access": "public",
     "provenance": true,

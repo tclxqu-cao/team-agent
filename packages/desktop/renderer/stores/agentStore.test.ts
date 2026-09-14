@@ -46,6 +46,39 @@ describe("agentStore session message cache", () => {
     ]);
   });
 
+  it("does not copy the previous history when a newly selected session receives text", () => {
+    const store = useAgentStore.getState();
+    store.setSessionId("old");
+    store.addMessage({ id: "old-question", role: "user", content: "push to Gitee", timestamp: 1 });
+    store.appendText("old answer", "old");
+    const oldMessages = store.getMessagesForSession("old");
+
+    store.setSessionId("new");
+    store.appendText("new answer", "new");
+
+    expect(useAgentStore.getState().messages).toMatchObject([
+      { role: "assistant", content: "new answer" },
+    ]);
+    expect(store.getMessagesForSession("new")).toEqual(useAgentStore.getState().messages);
+    expect(store.getMessagesForSession("old")).toEqual(oldMessages);
+  });
+
+  it("selects cached history atomically and preserves it when selecting the same session", () => {
+    const store = useAgentStore.getState();
+    store.setSessionId("old");
+    store.appendText("old answer");
+    store.addMessage({ id: "new-question", role: "user", content: "new question", timestamp: 2 }, "new");
+    store.setSessionId("new");
+    expect(useAgentStore.getState().currentText).toBe("");
+    expect(useAgentStore.getState().messages).toEqual(store.getMessagesForSession("new"));
+    store.appendText("streaming");
+    store.setSessionId("new");
+    expect(useAgentStore.getState().currentText).toBe("streaming");
+    store.setSessionId("");
+    expect(useAgentStore.getState().messages).toEqual([]);
+    expect(store.getMessagesForSession("old")[0].content).toBe("old answer");
+  });
+
   it.each(["visible", "background"])("keeps tool execution and final output outside cards in %s sessions", (sid) => {
     const store = useAgentStore.getState();
     store.setSessionId("visible");

@@ -101,8 +101,15 @@ it('uses the real pairing gateway: rejects spoofed, forwarded and revoked device
     const headers = {cookie:`agentroam_device_session=${paired.token}`};
     expect((await fetch(`${base}/api/remote-authorization`,{headers})).status).toBe(200);
     expect((await fetch(`${base}/api/remote-authorization`,{headers:{...headers,'x-forwarded-for':'127.0.0.1'}})).status).toBe(403);
+    const remoteHeaders = {...headers, 'x-forwarded-for':'192.168.1.10'};
+    const remoteStatus = await fetch(`${base}/api/remote-authorization/status`, {headers: remoteHeaders});
+    expect(remoteStatus.status).toBe(200);
+    expect(await remoteStatus.json()).toMatchObject({local:false, enabled:false, screen:false, online:false});
+    expect((await fetch(`${base}/api/remote-authorization/status`, {method:'POST', headers:{...remoteHeaders, origin:base}})).status).toBe(405);
+    expect((await fetch(`${base}/api/remote-authorization/status`, {headers:{'x-agentroam-device-id':'spoof'}})).status).toBe(401);
     expect(f.helper.start).not.toHaveBeenCalled();
     store.revoke(paired.device.id);
+    expect((await fetch(`${base}/api/remote-authorization/status`, {headers:remoteHeaders})).status).toBe(401);
     expect((await fetch(`${base}/api/remote-authorization`,{headers})).status).toBe(401);
   } finally { server.closeAllConnections(); await new Promise<void>(resolve=>server.close(()=>resolve())); gateway.close(); await f.close(); }
 });

@@ -16,6 +16,7 @@ import { resolveServicePaths } from "./service/service-files.js";
 import { selectRelay, type RelaySelection } from "./tunnel/relay-orchestrator.js";
 import { currentCliPath, startUpdate } from "./update/update-command.js";
 import { runUpdateWorker } from "./update/update-worker.js";
+import { lockInstanceStartup, stopPreviousInstances } from "./instance-takeover.js";
 
 const VERSION = AGENTROAM_VERSION;
 
@@ -100,24 +101,35 @@ export async function main(argv: string[]): Promise<void> {
   let runtime: RuntimeHandle | null = null;
   let relay: RelaySelection | null = null;
   let closing = false;
+  let releaseStartup: (() => Promise<void>) | undefined;
+  let closePromise: Promise<void> | undefined;
+  let reportedStarting = false;
   const serviceReporter = process.env.AGENTROAM_SERVICE === "1"
     ? new ServiceRuntimeReporter(resolveServicePaths(undefined, options.dataDir), VERSION)
     : null;
 
-  const close = async () => {
-    if (closing) return;
+  const close = () => {
+    if (closePromise) return closePromise;
     closing = true;
     controller.abort();
-    await relay?.tunnel?.close().catch(() => {});
-    await runtime?.close().catch(() => {});
+    closePromise = (async () => {
+      await relay?.tunnel?.close().catch(() => {});
+      await runtime?.close().catch(() => {});
+    })();
+    return closePromise;
   };
   const requestClose = () => void close();
   process.once("SIGINT", requestClose);
   process.once("SIGTERM", requestClose);
 
   try {
+    releaseStartup = await lockInstanceStartup(options.dataDir);
+    await stopPreviousInstances(options.dataDir, console.log);
+    if (controller.signal.aborted) return;
     await serviceReporter?.starting();
+    reportedStarting = Boolean(serviceReporter);
     runtime = await new RuntimeManager().start(options, target);
+    if (controller.signal.aborted) { await runtime.close(); return; }
     void runtime.exited.then(() => controller.abort());
     console.log(`✓ Local server: ${runtime.localUrl}/web`);
     const lanUrl = options.localOnly ? findLanUrl(runtime.port) ?? runtime.localUrl : runtime.localUrl;
@@ -135,7 +147,7 @@ export async function main(argv: string[]): Promise<void> {
       allowLanFallback: options.localOnly,
     });
 
-    if (controller.signal.aborted) return;
+    if (controller.signal.aborted) { await relay.tunnel?.close(); return; }
     if (relay.provider === "lan") {
       if (relay.failures.length > 0) console.error(`  Continuing with local network access: ${relay.publicUrl}/web`);
       else console.log(`✓ Local network: ${relay.publicUrl}/web`);
@@ -155,6 +167,7 @@ export async function main(argv: string[]): Promise<void> {
       accessUrl,
       provider: relay.provider,
     });
+    await releaseStartup();
     if (serviceReporter) {
       console.log("✓ Background service URL written to the private state file.");
     } else {
@@ -175,7 +188,8 @@ export async function main(argv: string[]): Promise<void> {
     process.removeListener("SIGINT", requestClose);
     process.removeListener("SIGTERM", requestClose);
     await close();
-    await serviceReporter?.stopped().catch(() => {});
+    await releaseStartup?.();
+    if (reportedStarting) await serviceReporter?.stopped().catch(() => {});
     await sleepInhibitor.release();
   }
 }

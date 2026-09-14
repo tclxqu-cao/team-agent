@@ -363,7 +363,16 @@ export const useAgentStore = create<AgentState>((set, get) => ({
 
   setRunningSession: (id) => set({ runningSessionId: id }),
 
-  setSessionId: (id) => set({ sessionId: id }),
+  setSessionId: (id) => set((state) => {
+    if (state.sessionId === id) return state;
+    // Events may arrive before ChatView restores history. Never leave the
+    // previous session's messages attached to the newly selected ID.
+    return {
+      sessionId: id,
+      messages: state.messagesBySession[id] ?? [],
+      currentText: "",
+    };
+  }),
 
   updateToolResult: (toolCallId, result, isError, sid) =>
     set((state) => {

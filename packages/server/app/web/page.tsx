@@ -6,6 +6,7 @@
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { PanelRight, X, LayoutGrid, MonitorUp } from "lucide-react";
+import PwaInstallButton from "./PwaInstallButton";
 import type { PinnedCommand } from "../../../core/src/domain/web-console/entities";
 import { defaultPinnedCommands } from "../../../core/src/domain/web-console/pinned-commands";
 import {
@@ -395,6 +396,7 @@ function AuthenticatedConsole({ auth }: { auth: WebAuthController }) {
     ...activeTheme.cssVars,
     "--ui-active-content-bg": activeContentBackground,
     "--ui-terminal-bg": activeTheme.termHostBg,
+    "--ui-primary-text": activeTheme.keybar.accentText,
     background: "var(--ui-root-bg)",
     color: "var(--ui-text)",
   } as React.CSSProperties;
@@ -475,6 +477,7 @@ function AuthenticatedConsole({ auth }: { auth: WebAuthController }) {
         ))}
         <button className="terminal-add" disabled={tabs.length >= 8} onClick={addTerminal}>＋</button>
         <div className="terminal-connection">
+          <PwaInstallButton />
           <button
             type="button"
             className="file-drawer-toggle"

@@ -30,7 +30,7 @@ describe("runServiceCommand", () => {
   it("installs the service using absolute runtime context and parsed start options", async () => {
     const install = vi.fn(async (config) => ({
       paths: { plistPath: "/Users/test/Library/LaunchAgents/com.agentroam.service.plist" },
-      state: { status: "ready", accessUrl: "https://ready.example/web" },
+      state: { status: "ready", accessUrl: "https://ready.example/web", localUrl: "http://127.0.0.1:4317/" },
       definition: "/Users/test/Library/LaunchAgents/com.agentroam.service.plist",
     }));
     const log = vi.fn();
@@ -60,6 +60,8 @@ describe("runServiceCommand", () => {
       installedAt: "2026-09-03T00:00:00.000Z",
     }));
     expect(log).toHaveBeenCalledWith("Open: https://ready.example/web");
+    expect(log).toHaveBeenCalledWith("远程桌面授权地址：http://127.0.0.1:4317/web");
+    expect(log).toHaveBeenCalledWith(expect.stringContaining("屏幕录制"));
   });
 
   it("prints a scannable QR code after the URL on interactive terminals", async () => {

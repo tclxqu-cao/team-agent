@@ -1,5 +1,5 @@
 {
-  "packageVersion": "0.2.0-preview.18",
+  "packageVersion": "0.2.0-preview.20",
   "target": "darwin-arm64",
   "schemaVersion": 2,
   "minimumNodeVersion": "22.22.0",

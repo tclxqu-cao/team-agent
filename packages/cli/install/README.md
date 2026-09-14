@@ -40,7 +40,7 @@ agentroam service uninstall
 
 ## Data and updates
 
-Set `AGENTROAM_DATA_DIR` before running either installer to override the default `~/.agentroam` data directory. Node is stored at `<data-dir>/runtimes/node/22.22.0`, and the launcher is stored at `<data-dir>/launcher/0.2.0-preview.18`.
+Set `AGENTROAM_DATA_DIR` before running either installer to override the default `~/.agentroam` data directory. Node is stored at `<data-dir>/runtimes/node/22.22.0`, and the launcher is stored at `<data-dir>/launcher/0.2.0-preview.20`.
 
 Each AgentRoam release pins its own Node patch and installer assets. Updates happen only by running a newer versioned installer or installing a newer AgentRoam release; startup never follows a moving Node.js release channel.
 

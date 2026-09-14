@@ -1,16 +1,26 @@
 {
   "name": "agentroam-runtime-win32-x64",
-  "version": "0.2.0-preview.18",
+  "version": "0.2.0-preview.20",
   "description": "AgentRoam server runtime for Windows x64",
   "license": "MIT",
-  "os": ["win32"],
-  "cpu": ["x64"],
-  "files": ["README.md", "manifest.json", "runtime"],
+  "os": [
+    "win32"
+  ],
+  "cpu": [
+    "x64"
+  ],
+  "files": [
+    "README.md",
+    "manifest.json",
+    "runtime"
+  ],
   "exports": {
     "./manifest.json": "./manifest.json",
     "./runtime": "./runtime/package.json"
   },
-  "engines": { "node": ">=22.22.0" },
+  "engines": {
+    "node": ">=22.22.0"
+  },
   "publishConfig": {
     "access": "public",
     "provenance": true,

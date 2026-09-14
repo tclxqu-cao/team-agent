@@ -4,7 +4,10 @@ import { dirname } from "node:path";
 import type { PlatformTarget } from "./platform.js";
 import { MINIMUM_NODE_VERSION, assertSupportedNodeVersion } from "../bin/runtime-policy.mjs";
 
-export const AGENTROAM_VERSION = "0.2.0-preview.18";
+export const AGENTROAM_VERSION = "0.2.0-preview.20";
+export const PLATFORM_DEPENDENCY_VERSIONS: Record<string, string> = JSON.parse(
+  readFileSync(new URL("../package.json", import.meta.url), "utf8"),
+).optionalDependencies;
 
 export interface RuntimePackageManifest {
   packageVersion: string;
@@ -65,7 +68,7 @@ export function resolvePlatformRuntime(
 
   const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as Partial<RuntimePackageManifest>;
   if (
-    manifest.packageVersion !== AGENTROAM_VERSION
+    manifest.packageVersion !== PLATFORM_DEPENDENCY_VERSIONS[packageName]
     || manifest.target !== target
     || manifest.schemaVersion !== 2
     || manifest.minimumNodeVersion !== MINIMUM_NODE_VERSION

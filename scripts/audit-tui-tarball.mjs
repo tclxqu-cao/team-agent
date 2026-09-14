@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { execFileSync } from "node:child_process";
 import { statSync } from "node:fs";
+import { MINIMUM_NODE_VERSION } from "../packages/cli/bin/runtime-policy.mjs";
 import { basename, resolve } from "node:path";
 
 if (!process.argv[2]) throw new Error("usage: audit-tui-tarball.mjs <package.tgz>");
@@ -13,6 +14,8 @@ const expected = {
   "@caoqu/agentroam-tui-win32-x64": { os: ["win32"], cpu: ["x64"] },
 }[packageJson.name];
 
+if (packageJson.engines?.node !== `>=${MINIMUM_NODE_VERSION}`) throw new Error("TUI Node.js engines mismatch");
+if (packageJson.dependencies?.["better-sqlite3"] !== "13.0.3") throw new Error("TUI SQLite runtime dependency missing");
 if (!expected) throw new Error(`unexpected TUI package name: ${packageJson.name}`);
 if (packageJson.bin) throw new Error("platform TUI package must not shadow the agentroam bin shim");
 if (packageJson.exports?.["./entry"] !== "./dist/agent-tui.js") throw new Error("TUI entry export missing");

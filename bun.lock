@@ -14,7 +14,7 @@
     },
     "packages/cli": {
       "name": "agentroam",
-      "version": "0.2.0-preview.18",
+      "version": "0.2.0-preview.20",
       "bin": {
         "agentroam": "./bin/agentroam.mjs",
         "agent-tui": "./bin/agent-tui.mjs",
@@ -40,11 +40,11 @@
     },
     "packages/cloudflared-darwin-arm64": {
       "name": "agentroam-cloudflared-darwin-arm64",
-      "version": "0.2.0-preview.18",
+      "version": "0.2.0-preview.20",
     },
     "packages/cloudflared-win32-x64": {
       "name": "agentroam-cloudflared-win32-x64",
-      "version": "0.2.0-preview.18",
+      "version": "0.2.0-preview.20",
     },
     "packages/core": {
       "name": "@agent/core",
@@ -57,7 +57,7 @@
     },
     "packages/desktop": {
       "name": "@agent/desktop",
-      "version": "0.2.0-preview.18",
+      "version": "0.2.0-preview.20",
       "dependencies": {
         "@agent/core": "*",
         "@anthropic-ai/claude-agent-sdk": "^0.3.259",
@@ -94,11 +94,11 @@
     },
     "packages/runtime-darwin-arm64": {
       "name": "agentroam-runtime-darwin-arm64",
-      "version": "0.2.0-preview.18",
+      "version": "0.2.0-preview.20",
     },
     "packages/runtime-win32-x64": {
       "name": "agentroam-runtime-win32-x64",
-      "version": "0.2.0-preview.18",
+      "version": "0.2.0-preview.20",
     },
     "packages/sdk": {
       "name": "@agent/sdk",
@@ -158,14 +158,14 @@
     },
     "packages/tui-darwin-arm64": {
       "name": "agentroam-tui-darwin-arm64",
-      "version": "0.2.0-preview.18",
+      "version": "0.2.0-preview.20",
       "dependencies": {
         "better-sqlite3": "13.0.3",
       },
     },
     "packages/tui-win32-x64": {
       "name": "@caoqu/agentroam-tui-win32-x64",
-      "version": "0.2.0-preview.18",
+      "version": "0.2.0-preview.20",
       "dependencies": {
         "better-sqlite3": "13.0.3",
       },

@@ -8,17 +8,32 @@ export default function RemoteAuthorizationControl() {
   const localHost = ['127.0.0.1', 'localhost', '[::1]'].includes(location.hostname);
   const eligible = !/Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
   useEffect(() => {
-    if (!eligible || !localHost) return;
+
     let active = true;
     const read = async () => {
-      try { const res = await fetch('/api/remote-authorization', { credentials: 'same-origin', cache: 'no-store' }); if (!res.ok) return;
+      try { const res = await fetch(eligible && localHost ? '/api/remote-authorization' : '/api/remote-authorization/status', { credentials: 'same-origin', cache: 'no-store' }); if (!res.ok) return;
         const next: Status = await res.json(); if (active) setStatus(next);
       } catch { /* Leave other live-view capabilities available while offline. */ }
     };
     void read(); const timer = setInterval(read, 2000);
     return () => { active = false; clearInterval(timer); };
   }, [eligible, localHost]);
-  if (!eligible) return null;
+  if (!eligible) {
+    if (!status || status.online && status.accessibility) return null;
+    const message = !status.supported ? '这台电脑暂不支持远程桌面。'
+      : !status.installed ? '电脑缺少远程桌面组件，请在电脑上升级 CLI。'
+      : !status.enabled ? '电脑尚未开启桌面共享，请在电脑上完成授权并开启共享。'
+      : !status.screen || !status.accessibility ? '电脑的远程桌面授权尚未完成。'
+      : '电脑桌面正在连接，请稍候。';
+    return <div className="remote-desktop-guidance" role="status" style={{ maxWidth: '100%', fontSize: 12, lineHeight: 1.6, overflowWrap: 'anywhere' }}>
+      <strong>{message}</strong>
+      {status.supported && status.installed && (!status.enabled || !status.screen || !status.accessibility) && <details>
+        <summary>如何在电脑上授权</summary>
+        <p>在运行 CLI 的电脑上，打开安装提示中的“远程桌面授权地址”，完成配对后点击“远程授权”（盾牌图标）。</p>
+        <p>在系统设置中为 AgentRoam Remote Desktop 授予“屏幕录制”和“辅助功能”权限，然后点击“开启共享”。完成后此处会自动更新。</p>
+      </details>}
+    </div>;
+  }
   if (!localHost) return <div style={{ position: 'relative', marginLeft: 12 }}>
     <button type="button" className="ui-icon-button" onClick={() => setExpanded(!expanded)} aria-expanded={expanded} aria-label="远程授权" title="远程授权"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-11V5l-8-3-8 3v6c0 7 8 11 8 11Z" /><path d="m9 12 2 2 4-4" /></svg></button>
     {expanded && <section aria-label="远程授权设置" style={{ position: 'absolute', top: 40, left: 0, width: 'min(370px, 70vw)', zIndex: 30, padding: 18, borderRadius: 12, background: 'var(--bg-surface, white)', border: '1px solid var(--border-default)', boxShadow: '0 10px 40px #0003', fontSize: 13 }}>

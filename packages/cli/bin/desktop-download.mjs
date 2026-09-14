@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { createWriteStream } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { mkdir, mkdtemp, rename, rm } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -23,6 +24,8 @@ export function desktopAsset(manifest, version, platform, arch) {
 }
 
 export async function downloadDesktop(version, { platform = process.platform, arch = process.arch, directory = join(homedir(), 'Downloads'), fetchImpl = fetch } = {}) {
+  const launcher = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+  if (version === launcher.version) version = launcher.optionalDependencies['agentroam-runtime-darwin-arm64'];
   // Validate coordinates before making any request.
   if (!/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-preview\.(0|[1-9]\d*))?$/.test(version)) throw new Error('Invalid AgentRoam version');
   const response = await fetchImpl(`${RELEASE_BASE}/v${version}/release-manifest.json`, { signal: AbortSignal.timeout(30_000) });

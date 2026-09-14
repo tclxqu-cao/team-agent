@@ -74,6 +74,9 @@ import {
 
 const SESSION_HISTORY_PAGE_SIZE = 50;
 const CODEX_LATEST_HISTORY_PAGE_SIZE = 1;
+// Codex pages carry inline image attachments. Load only the requested turn,
+// including its complete answer, instead of downloading unrelated screenshots.
+const CODEX_NAVIGATION_HISTORY_PAGE_SIZE = 1;
 const JUMP_TO_BOTTOM_THRESHOLD_PX = 160;
 
 function normalizeGoalMessageText(value: string): string {
@@ -902,7 +905,7 @@ export default function ChatView({
     void historyPrefetchRef.current!
       .prefetch(targetSid, cursor, () => agentApi.getSession(targetSid, {
         before: cursor,
-        limit: SESSION_HISTORY_PAGE_SIZE,
+        limit: historyAgentType(targetSid) === "codex" ? CODEX_NAVIGATION_HISTORY_PAGE_SIZE : SESSION_HISTORY_PAGE_SIZE,
         ...(historyAgentType(targetSid) === "codex" ? { view: "core" as const } : {}),
       }) as Promise<SessionHistoryDetail | null>)
       .catch((prefetchError) => {
@@ -1805,7 +1808,7 @@ export default function ChatView({
         agentApi,
         targetSid,
         historyAgentType(targetSid),
-        { before: cursor, limit: SESSION_HISTORY_PAGE_SIZE },
+        { before: cursor, limit: historyAgentType(targetSid) === "codex" ? CODEX_NAVIGATION_HISTORY_PAGE_SIZE : SESSION_HISTORY_PAGE_SIZE },
         (detail, phase) => {
           const olderMessages = restoreSessionHistoryPage(detail);
           const container = messagesScrollRef.current;
@@ -1830,7 +1833,7 @@ export default function ChatView({
           cursor,
           () => agentApi.getSession(targetSid, {
             before: cursor,
-            limit: SESSION_HISTORY_PAGE_SIZE,
+            limit: historyAgentType(targetSid) === "codex" ? CODEX_NAVIGATION_HISTORY_PAGE_SIZE : SESSION_HISTORY_PAGE_SIZE,
             ...(historyAgentType(targetSid) === "codex" ? { view: "core" as const } : {}),
           }) as Promise<SessionHistoryDetail | null>,
         ),
@@ -1870,7 +1873,7 @@ export default function ChatView({
         window.agentApi,
         targetSid,
         historyAgentType(targetSid),
-        { after: cursor, limit: SESSION_HISTORY_PAGE_SIZE },
+        { after: cursor, limit: historyAgentType(targetSid) === "codex" ? CODEX_NAVIGATION_HISTORY_PAGE_SIZE : SESSION_HISTORY_PAGE_SIZE },
         (detail) => {
           const newer = restoreSessionHistoryPage(detail).filter((message) => !existingIds.has(message.id));
           anchoredNewerCursorRef.current = detail?.history?.newerCursor ?? null;
@@ -1978,7 +1981,7 @@ export default function ChatView({
         window.agentApi,
         targetSid,
         historyAgentType(targetSid),
-        { anchor: entry.pageToken, limit: SESSION_HISTORY_PAGE_SIZE },
+        { anchor: entry.pageToken, limit: historyAgentType(targetSid) === "codex" ? CODEX_NAVIGATION_HISTORY_PAGE_SIZE : SESSION_HISTORY_PAGE_SIZE },
         (detail, phase) => {
           if (queryIndexRef.current?.revision !== detail?.history?.revision) return;
           const restored = restoreSessionHistoryPage(detail);
@@ -3425,7 +3428,7 @@ export default function ChatView({
                 refreshSignal={chatMsg.executionTrace.turnId === latestCodexExecutionTurnId
                   ? codexTraceRefreshSignal
                   : 0}
-                autoLoad={chatMsg.executionTrace.turnId === latestCodexExecutionTurnId}
+                autoLoad={historyWindowMode === "latest" && chatMsg.executionTrace.turnId === latestCodexExecutionTurnId}
               />
             );
           }

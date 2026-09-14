@@ -118,9 +118,18 @@ export class RemoteAuthorization {
     return this.helper.request({ op: 'key', action: input.action, code: input.code || input.key, modifiers: input.modifiers });
   }
   async handle(req, res) {
-    if (new URL(req.url, 'http://local').pathname !== '/api/remote-authorization') return false;
+    const pathname = new URL(req.url, 'http://local').pathname;
+    if (!['/api/remote-authorization', '/api/remote-authorization/status'].includes(pathname)) return false;
     const send = (code, body) => { res.writeHead(code, { 'content-type': 'application/json', 'cache-control': 'no-store' }); res.end(JSON.stringify(body)); };
     if (!req.headers['x-agentroam-device-id']) { send(401, { error: '请先完成设备配对' }); return true; }
+    if (pathname === '/api/remote-authorization/status') {
+      if (req.method !== 'GET') { send(405, { error: 'Method not allowed' }); return true; }
+      try {
+        const { supported, installed, enabled, screen, accessibility, online } = await this.status(false);
+        send(200, { local: false, supported, installed, enabled, screen, accessibility, online });
+      } catch { send(503, { error: '暂时无法读取远程桌面状态' }); }
+      return true;
+    }
     if (!isLocalAuthorizationRequest(req)) { send(403, { local: false, error: '请在运行 CLI 的电脑上打开本机 /web 进行远程授权' }); return true; }
     try {
       if (req.method === 'GET') send(200, await this.status());

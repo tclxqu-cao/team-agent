@@ -2310,6 +2310,28 @@ describe("Codex native paged history", () => {
     expect(detail.messages.some((m) => m.content === "q-t4")).toBe(true);
   });
 
+  it("navigates one complete core turn without hydrating unrelated history", async () => {
+    const requests: Array<{ method: string; params: any }> = [];
+    const adapter = new CodexRuntimeAdapter({ client: pagingClientFor(requests) as never });
+    const index = await adapter.getQueryIndex("cx-paged");
+    const page = await adapter.getSessionPaged("cx-paged", {
+      anchor: index!.entries[2].pageToken, limit: 1, view: "core",
+    });
+    expect(page.messages.filter((message) => message.role === "user").map((message) => message.content)).toEqual(["q-t3"]);
+    expect(page.messages.some((message) => message.role === "assistant")).toBe(true);
+    expect(page.history?.olderCursor).toBeTruthy();
+    expect(page.history?.newerCursor).toBeTruthy();
+    const older = await adapter.getSessionPaged("cx-paged", {
+      before: page.history!.olderCursor!, limit: 1, view: "core",
+    });
+    const newer = await adapter.getSessionPaged("cx-paged", {
+      after: page.history!.newerCursor!, limit: 1, view: "core",
+    });
+    expect(older.messages.filter((message) => message.role === "user").map((message) => message.content)).toEqual(["q-t2"]);
+    expect(newer.messages.filter((message) => message.role === "user").map((message) => message.content)).toEqual(["q-t4"]);
+    expect(requests.some(({ params }) => params.itemsView === "full" || params.includeTurns === true)).toBe(false);
+  });
+
   it("degrades permanently when the protocol method is missing", async () => {
     const requests: Array<{ method: string; params: any }> = [];
     const adapter = new CodexRuntimeAdapter({ client: pagingClientFor(requests, { failTurnsList: true }) as never });

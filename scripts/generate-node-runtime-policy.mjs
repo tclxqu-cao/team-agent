@@ -22,6 +22,7 @@ await sync("packages/cli/bin/node-runtime-policy.json", `${JSON.stringify(policy
 for (const relativePath of [
   "package.json", "packages/core/package.json", "packages/server/package.json", "packages/cli/package.json",
   "packages/runtime-darwin-arm64/package.json", "packages/runtime-win32-x64/package.json",
+  "packages/tui-darwin-arm64/package.json", "packages/tui-win32-x64/package.json",
 ]) {
   const source = await readFile(new URL(relativePath, root), "utf8");
   const manifest = JSON.parse(source);
