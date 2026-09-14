@@ -17,6 +17,8 @@ import type { PlatformTarget } from "./platform.js";
 const execFileAsync = promisify(execFile);
 
 export const CODEX_RUNTIME_VERSION = "0.153.0";
+// Managed install pin tracks releases; the compatibility floor for user installs is independent.
+export const CODEX_MINIMUM_VERSION = "0.153.0";
 const CODEX_PACKAGE = `@openai/codex@${CODEX_RUNTIME_VERSION}`;
 const NPM_REGISTRY = "https://registry.npmjs.org";
 export const CODEX_INSTALL_TIMEOUT_MS = 60 * 60_000;
@@ -207,6 +209,20 @@ export function parseCodexVersion(output: string): string | null {
   return match?.[1] ?? null;
 }
 
+// Compare numeric components, so 0.153.10 and 0.154.0 both exceed 0.153.2.
+export function isCodexVersionAtLeast(version: string, minimum: string): boolean {
+  const actual = version.split(".").map(BigInt);
+  const required = minimum.split(".").map(BigInt);
+  for (let index = 0; index < required.length; index += 1) {
+    if (actual[index] !== required[index]) return actual[index] > required[index];
+  }
+  return true;
+}
+
+function meetsCodexMinimum(version: string): boolean {
+  return isCodexVersionAtLeast(version, CODEX_MINIMUM_VERSION);
+}
+
 async function findCompatibleGlobalCodex(
   pathValue: string | undefined,
   platform: NodeJS.Platform,
@@ -385,10 +401,12 @@ async function validateCodex(
   }
   const versionResult = await dependencies.run(executable, ["--version"], 5_000);
   const version = parseCodexVersion(`${versionResult.stdout}\n${versionResult.stderr}`);
-  if (!version) throw new Error(`Unable to parse Codex version from ${executable}`);
-  if (version !== CODEX_RUNTIME_VERSION) {
+  if (!version) {
+    throw new Error(`Unable to parse a supported stable Codex version from ${executable}`);
+  }
+  if (!meetsCodexMinimum(version)) {
     throw new Error(
-      `Codex ${version} at ${executable} is incompatible; AgentRoam requires ${CODEX_RUNTIME_VERSION}`,
+      `Codex ${version} at ${executable} is incompatible; AgentRoam requires >=${CODEX_MINIMUM_VERSION}`,
     );
   }
   try {

@@ -5,7 +5,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   CODEX_INSTALL_STALE_LOCK_MS,
   CODEX_INSTALL_TIMEOUT_MS,
+  CODEX_MINIMUM_VERSION,
   CODEX_RUNTIME_VERSION,
+  isCodexVersionAtLeast,
   managedCodexBinaryCandidates,
   parseCodexVersion,
   resolveCodexRuntime,
@@ -20,15 +22,26 @@ afterEach(async () => {
 
 describe("managed Codex runtime", () => {
   it("parses the official version output", () => {
-    expect(parseCodexVersion("codex-cli 0.153.0")).toBe("0.153.0");
+    expect(parseCodexVersion("codex-cli 0.153.5")).toBe("0.153.5");
     expect(parseCodexVersion("codex-cli next")).toBeNull();
+  });
+
+  it("compares versions numerically instead of lexicographically", () => {
+    // Samples stay below the current pin: pins only move forward, so these
+    // literals can never collide with the upgrade script's version replacement.
+    expect(isCodexVersionAtLeast("0.140.12", "0.140.3")).toBe(true);
+    expect(isCodexVersionAtLeast("0.140.3", "0.140.12")).toBe(false);
+    expect(isCodexVersionAtLeast(CODEX_MINIMUM_VERSION, CODEX_MINIMUM_VERSION)).toBe(true);
+    expect(isCodexVersionAtLeast("0.139.9", CODEX_MINIMUM_VERSION)).toBe(false);
+    expect(isCodexVersionAtLeast("0.152.0", "0.140.0")).toBe(true);
+    expect(isCodexVersionAtLeast("1.0.0", "0.140.0")).toBe(true);
   });
 
   it("uses a compatible explicit absolute executable first", async () => {
     const root = await temporaryRoot();
     const executable = await fakeExecutable(resolve(root, "codex"));
     const run = vi.fn(async (_command: string, args: string[]) => ({
-      stdout: args[0] === "--version" ? "codex-cli 0.153.0\n" : "app-server help\n",
+      stdout: args[0] === "--version" ? `codex-cli ${CODEX_RUNTIME_VERSION}\n` : "app-server help\n",
       stderr: "",
     }));
 
@@ -46,7 +59,30 @@ describe("managed Codex runtime", () => {
     expect(run.mock.calls.map((call) => call[1])).toEqual([["--version"], ["app-server", "--help"]]);
   });
 
-  it("rejects an incompatible explicit executable instead of silently replacing it", async () => {
+  it("accepts explicit executables at or above the minimum stable version", async () => {
+    const outputs = [
+      `codex-cli ${CODEX_MINIMUM_VERSION}\n`,
+      `codex-cli ${CODEX_RUNTIME_VERSION}\n`,
+    ];
+    for (const output of outputs) {
+      const root = await temporaryRoot();
+      const executable = await fakeExecutable(resolve(root, "codex"));
+      await expect(resolveCodexRuntime({
+        dataDir: resolve(root, "data"),
+        target: "darwin-arm64",
+        environment: { AGENT_CODEX_BIN: executable, PATH: "" },
+        platform: "darwin",
+        dependencies: {
+          run: async (_command: string, args: string[]) => ({
+            stdout: args[0] === "--version" ? output : "app-server help\n",
+            stderr: "",
+          }),
+        },
+      })).resolves.toMatchObject({ executable, source: "explicit" });
+    }
+  });
+
+  it("rejects an explicit executable below the minimum instead of silently replacing it", async () => {
     const root = await temporaryRoot();
     const executable = await fakeExecutable(resolve(root, "codex"));
     await expect(resolveCodexRuntime({
@@ -55,9 +91,23 @@ describe("managed Codex runtime", () => {
       environment: { AGENT_CODEX_BIN: executable, PATH: "" },
       platform: "darwin",
       dependencies: {
-        run: async () => ({ stdout: "codex-cli 0.154.0\n", stderr: "" }),
+        run: async () => ({ stdout: "codex-cli 0.152.9\n", stderr: "" }),
       },
-    })).rejects.toThrow("requires 0.153.0");
+    })).rejects.toThrow(`requires >=${CODEX_MINIMUM_VERSION}`);
+  });
+
+  it("rejects prerelease or otherwise unparseable version output", async () => {
+    const root = await temporaryRoot();
+    const executable = await fakeExecutable(resolve(root, "codex"));
+    await expect(resolveCodexRuntime({
+      dataDir: resolve(root, "data"),
+      target: "darwin-arm64",
+      environment: { AGENT_CODEX_BIN: executable, PATH: "" },
+      platform: "darwin",
+      dependencies: {
+        run: async () => ({ stdout: "codex-cli 0.150.0-alpha.1\n", stderr: "" }),
+      },
+    })).rejects.toThrow("Unable to parse a supported stable Codex version");
   });
 
   it("skips an incompatible PATH executable and reuses the managed runtime", async () => {
@@ -67,7 +117,7 @@ describe("managed Codex runtime", () => {
     const managed = await fakeExecutable(managedCodexBinaryCandidates(managedRoot, "darwin-arm64")[0]);
     const run = vi.fn(async (command: string, args: string[]) => ({
       stdout: args[0] === "--version"
-        ? command === global ? "codex-cli 0.152.0\n" : "codex-cli 0.153.0\n"
+        ? command === global ? "codex-cli 0.152.0\n" : `codex-cli ${CODEX_RUNTIME_VERSION}\n`
         : "help\n",
       stderr: "",
     }));
@@ -79,6 +129,24 @@ describe("managed Codex runtime", () => {
       platform: "darwin",
       dependencies: { run },
     })).resolves.toEqual({ executable: managed, version: CODEX_RUNTIME_VERSION, source: "managed" });
+    expect(run.mock.calls.some((call) => call[1].includes("install"))).toBe(false);
+  });
+
+  it("reuses a qualified PATH executable without installing", async () => {
+    const root = await temporaryRoot();
+    const global = await fakeExecutable(resolve(root, "bin", "codex"));
+    const run = vi.fn(async (_command: string, args: string[]) => ({
+      stdout: args[0] === "--version" ? `codex-cli ${CODEX_RUNTIME_VERSION}\n` : "help\n",
+      stderr: "",
+    }));
+
+    await expect(resolveCodexRuntime({
+      dataDir: resolve(root, "data"),
+      target: "darwin-arm64",
+      environment: { PATH: resolve(root, "bin") },
+      platform: "darwin",
+      dependencies: { run },
+    })).resolves.toEqual({ executable: global, version: CODEX_RUNTIME_VERSION, source: "global" });
     expect(run.mock.calls.some((call) => call[1].includes("install"))).toBe(false);
   });
 
@@ -97,7 +165,7 @@ describe("managed Codex runtime", () => {
         return { stdout: "installed", stderr: "" };
       }
       return {
-        stdout: args[0] === "--version" ? "codex-cli 0.153.0\n" : "help\n",
+        stdout: args[0] === "--version" ? `codex-cli ${CODEX_RUNTIME_VERSION}\n` : "help\n",
         stderr: "",
       };
     });
@@ -130,7 +198,7 @@ describe("managed Codex runtime", () => {
         return { stdout: "installed", stderr: "" };
       }
       return {
-        stdout: args[0] === "--version" ? "codex-cli 0.153.0\n" : "help\n",
+        stdout: args[0] === "--version" ? `codex-cli ${CODEX_RUNTIME_VERSION}\n` : "help\n",
         stderr: "",
       };
     };

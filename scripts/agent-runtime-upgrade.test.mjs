@@ -108,6 +108,53 @@ test("drift check rejects mismatched minimums and a default below the minimum", 
   }
 });
 
+test("drift check rejects a Codex pin below the minimum or a missing minimum constant", async () => {
+  const fixture = await makeFixture();
+  try {
+    const managerPath = resolve(fixture, "packages/cli/src/codex-runtime-manager.ts");
+    const source = await readFile(managerPath, "utf8");
+    await writeFile(managerPath, source.replace('CODEX_MINIMUM_VERSION = "0.153.0"', 'CODEX_MINIMUM_VERSION = "0.154.0"'));
+    await assert.rejects(checkRuntimeVersionDrift(fixture), /Codex managed runtime must be >=0\.154\.0/);
+    await writeFile(managerPath, source.replace(/export const CODEX_MINIMUM_VERSION = "0\.153\.0";\n/, ""));
+    await assert.rejects(checkRuntimeVersionDrift(fixture), /missing the Codex minimum constant/);
+  } finally {
+    await rm(fixture, { recursive: true, force: true });
+  }
+});
+
+test("codex upgrades move only the managed pin and keep the minimum", async () => {
+  const fixture = await makeFixture();
+  try {
+    const managerPath = resolve(fixture, "packages/cli/src/codex-runtime-manager.ts");
+    let pin = "0.153.0";
+    for (const target of ["0.153.2", "0.153.3"]) {
+      const { nextReleaseVersion } = await fixtureReleaseVersions(fixture);
+      await applyAgentUpgrade(fixture, {
+        agent: "codex",
+        current: { cli: pin },
+        target: { cli: target },
+        changed: true,
+        agentroamVersion: nextReleaseVersion,
+      }, {
+        // Codex is not declared in bun.lock, so the lockfile stays untouched.
+        runCommand: async () => undefined,
+      });
+      pin = target;
+      const source = await readFile(managerPath, "utf8");
+      assert.match(source, new RegExp(`export const CODEX_RUNTIME_VERSION = "${target}";`));
+      assert.equal(source.match(/export const CODEX_MINIMUM_VERSION = "([^"]+)";/)?.[1], "0.153.0");
+      assert.deepEqual(await checkRuntimeVersionDrift(fixture), {
+        codex: target,
+        claude: "0.3.259",
+        opencode: "1.18.27",
+        agentroam: nextReleaseVersion,
+      });
+    }
+  } finally {
+    await rm(fixture, { recursive: true, force: true });
+  }
+});
+
 test("applies an upgrade only inside a temporary fixture", async () => {
   const fixture = await makeFixture();
   try {
