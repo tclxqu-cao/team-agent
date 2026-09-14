@@ -1,0 +1,103 @@
+bun.lock
+  s_6b9e80a52ca62d::t_6358654cdbf9c5 17,43,47,60,97,101,161,168
+packages/cli/README.md
+  s_6b9e80a52ca62d::t_56261c748b50f6 23-26,33-36
+packages/cli/bin/desktop-download.mjs
+  s_6b9e80a52ca62d::t_77f962ea57fd0f 3,27-28
+packages/cli/install/README.md
+  s_6b9e80a52ca62d::t_a7567ac00c4263 43
+packages/cli/install/install-agentroam.sh
+  s_6b9e80a52ca62d::t_a25cf6a887f84f 7
+packages/cli/package.json
+  s_6b9e80a52ca62d::t_baf599a0700070 3,29-34
+packages/cli/src/cli.ts
+  s_6b9e80a52ca62d::t_2216c135ddea40 19,104-106,111-112,115-119,126-128,130,132,150,170,191-192
+packages/cli/src/cloudflared/manifest.ts
+  s_6b9e80a52ca62d::t_9657dd52699494 2,5
+packages/cli/src/instance-takeover.test.ts
+  s_6b9e80a52ca62d::t_d43f78ec3764ae 1-94
+packages/cli/src/instance-takeover.ts
+  s_6b9e80a52ca62d::t_cfb3f9339ffdee 1-116
+packages/cli/src/platform-packages.ts
+  s_6b9e80a52ca62d::t_7fbcee3acab3aa 7-10,71
+packages/cli/src/service/launcher-cleanup.test.ts
+  s_6b9e80a52ca62d::t_2abbcb3462a0a0 1-63
+packages/cli/src/service/launcher-cleanup.ts
+  s_6b9e80a52ca62d::t_1eb74a50be911c 1-47
+packages/cli/src/service/service-command.test.ts
+  s_6b9e80a52ca62d::t_dfd23568ab68f9 33,63-64
+packages/cli/src/service/service-command.ts
+  s_6b9e80a52ca62d::t_fcd1601c902b59 12,86,89-93
+packages/cloudflared-darwin-arm64/manifest.json
+  s_6b9e80a52ca62d::t_c5ea94ce15bd82 2
+packages/cloudflared-darwin-arm64/package.json
+  s_6b9e80a52ca62d::t_43fbee5620797b 3
+packages/cloudflared-win32-x64/manifest.json
+  s_6b9e80a52ca62d::t_0859e99e6b131e 2
+packages/cloudflared-win32-x64/package.json
+  s_6b9e80a52ca62d::t_8603d4f7515626 3,6-16
+packages/desktop/main/agent-runtime/codex-runtime-adapter.test.ts
+  s_6b9e80a52ca62d::t_4f7148aec216c0 2313-2334
+packages/desktop/package.json
+  s_6b9e80a52ca62d::t_f9af04d6f9e1d5 3
+packages/desktop/renderer/components/ChatView.tsx
+  s_6b9e80a52ca62d::t_1d6fd03419f625 77-79,908,1811,1836,1876,1984,3431
+packages/desktop/renderer/stores/agentStore.test.ts
+  s_6b9e80a52ca62d::t_a969f4e8d328ad 49-81
+packages/desktop/renderer/stores/agentStore.ts
+  s_6b9e80a52ca62d::t_7b79934ce743e3 366-375
+packages/runtime-darwin-arm64/manifest.json
+  s_a85d76eed8a680::t_16b0c7fa8bb9b3 2
+packages/runtime-darwin-arm64/package.json
+  s_6b9e80a52ca62d::t_76141d4674cee3 3,6-16,21-23
+packages/runtime-win32-x64/manifest.json
+  s_a85d76eed8a680::t_e10d9b43018ad4 2
+packages/runtime-win32-x64/package.json
+  s_6b9e80a52ca62d::t_9292788625e8fa 3,6-16,21-23
+packages/server/app/web/PwaInstallButton.tsx
+  s_6b9e80a52ca62d::t_1e3662dc62f164 1-40
+packages/server/app/web/page.tsx
+  s_6b9e80a52ca62d::t_2cd106c248c139 9,399,480
+packages/server/lib/remote-control/remote-authorization.mjs
+  s_6b9e80a52ca62d::t_2dcc723b9ebb42 121-122,125-132
+packages/server/lib/remote-control/remote-authorization.test.ts
+  s_6b9e80a52ca62d::t_69076543da4ca3 104-109,112
+packages/server/public/pwa/install.js
+  s_6b9e80a52ca62d::t_674a350434cab3 2,5-12,14-15,17,19
+packages/tui-darwin-arm64/package.json
+  s_6b9e80a52ca62d::t_9db9688fcf0fae 3,21
+packages/tui-win32-x64/package.json
+  s_6b9e80a52ca62d::t_b3b3784150e91a 3,21
+packages/webapp/src/presentation/RemoteAuthorizationControl.tsx
+  s_6b9e80a52ca62d::t_8311e4c9654838 11,14,21-36
+scripts/audit-tui-tarball.mjs
+  s_6b9e80a52ca62d::t_72eaabe18ad6e5 4,17-18
+scripts/generate-node-runtime-policy.mjs
+  s_6b9e80a52ca62d::t_79d1109bf1f3cb 25
+scripts/stage-cli-runtime.mjs
+  s_6b9e80a52ca62d::t_073b47f58fcc75 35,51-52
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "e062865b0dce04089d54ed4a8654953b6d01710f",
+  "prompts": {},
+  "sessions": {
+    "s_6b9e80a52ca62d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a09f40-ec7f-74c0-a008-4264fcd09dc6",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_a85d76eed8a680": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a08e54-b7ba-7033-b3b2-98d17bc0bca9",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
