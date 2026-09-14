@@ -3,7 +3,10 @@ set -eu
 
 NODE_VERSION="22.22.0"
 MINIMUM_NODE_VERSION="22.22.0"
-AGENTROAM_VERSION="0.2.0-preview.17"
+# Default to the newest published preview; pin an exact version via
+# AGENTROAM_VERSION=0.2.0-preview.17 sh install-agentroam.sh
+AGENTROAM_VERSION_REQUEST="${AGENTROAM_VERSION:-preview}"
+AGENTROAM_VERSION=""
 NODE_ARCHIVE="node-v22.22.0-darwin-arm64.tar.xz"
 NODE_SHA256="2bd596bbfc4a275ceb8721a5954ee97daea5ebe673e96a185ebd732f6fb023ac"
 NODE_URL="https://nodejs.org/dist/v22.22.0/$NODE_ARCHIVE"
@@ -13,7 +16,7 @@ NODE_PARENT="$DATA_DIR/runtimes/node"
 NODE_ROOT="$NODE_PARENT/$NODE_VERSION"
 NODE_LOCK="$NODE_ROOT.lock"
 LAUNCHER_PARENT="$DATA_DIR/launcher"
-LAUNCHER_ROOT="$LAUNCHER_PARENT/$AGENTROAM_VERSION"
+LAUNCHER_ROOT="$LAUNCHER_PARENT/pending-version"
 LAUNCHER_LOCK="$LAUNCHER_ROOT.lock"
 WRAPPER_DIR="$HOME/.local/bin"
 WRAPPER_PATH="$WRAPPER_DIR/agentroam"
@@ -200,7 +203,23 @@ find_npm_cli() {
 }
 
 NPM_CLI=$(find_npm_cli)
+case "$AGENTROAM_VERSION_REQUEST" in
+  *[0-9])
+    # Looks like an exact version — honor the pin as-is.
+    AGENTROAM_VERSION="$AGENTROAM_VERSION_REQUEST"
+    ;;
+  *)
+    # A dist-tag (default "preview") — resolve to the newest published version
+    # so installs always pick up the latest release without touching this file.
+    resolved_version="$("$NODE_BIN" "$NPM_CLI" view "agentroam@$AGENTROAM_VERSION_REQUEST" version --registry "$NPM_REGISTRY" 2>/dev/null | tail -1 | tr -d '[:space:]')"
+    [ -n "$resolved_version" ] || fail "could not resolve agentroam@$AGENTROAM_VERSION_REQUEST from $NPM_REGISTRY"
+    AGENTROAM_VERSION="$resolved_version"
+    printf 'Installing AgentRoam %s (resolved from %s)\n' "$AGENTROAM_VERSION" "$AGENTROAM_VERSION_REQUEST"
+    ;;
+esac
 PACKAGE_SPEC="agentroam@$AGENTROAM_VERSION"
+LAUNCHER_ROOT="$LAUNCHER_PARENT/$AGENTROAM_VERSION"
+LAUNCHER_LOCK="$LAUNCHER_ROOT.lock"
 EXTRA_PACKAGE_SPECS=""
 if [ "${AGENTROAM_BOOTSTRAP_TEST:-}" = "1" ] && [ -n "${AGENTROAM_PACKAGE_SPEC:-}" ]; then
   PACKAGE_SPEC="$AGENTROAM_PACKAGE_SPEC"

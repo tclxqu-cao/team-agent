@@ -3,7 +3,9 @@ $ProgressPreference = "SilentlyContinue"
 
 $NodeVersion = "22.22.0"
 $MinimumNodeVersion = "22.22.0"
-$AgentRoamVersion = "0.2.0-preview.17"
+# 默认跟随 npm preview 最新标签；可用 $env:AGENTROAM_VERSION 钉精确版本
+$AgentRoamVersionRequest = if ($env:AGENTROAM_VERSION) { $env:AGENTROAM_VERSION } else { "preview" }
+$AgentRoamVersion = "pending-version"
 $NodeArchive = "node-v22.22.0-win-x64.zip"
 $NodeSha256 = "c97fa376d2becdc8863fcd3ca2dd9a83a9f3468ee7ccf7a6d076ec66a645c77a"
 $NodeUrl = "https://nodejs.org/dist/v22.22.0/$NodeArchive"
@@ -164,6 +166,17 @@ $NpmCandidates = @(
 $NpmCli = $NpmCandidates | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1
 if (-not $NpmCli) { throw "npm CLI was not found beside $NodeBin" }
 
+# 解析 dist-tag → 精确版本（安装最总是最新发布）
+if ($AgentRoamVersionRequest -notmatch '\d$') {
+    $Resolved = (& $NodeBin $NpmCli view "agentroam@$AgentRoamVersionRequest" version --registry $NpmRegistry 2>$null | Select-Object -Last 1)
+    if (-not $Resolved) { throw "could not resolve agentroam@$AgentRoamVersionRequest from $NpmRegistry" }
+    $AgentRoamVersion = ([string]$Resolved).Trim()
+    Write-Host "Installing AgentRoam $AgentRoamVersion (resolved from $AgentRoamVersionRequest)"
+} else {
+    $AgentRoamVersion = $AgentRoamVersionRequest
+}
+$LauncherRoot = Join-Path $LauncherParent $AgentRoamVersion
+$LauncherLock = Join-Path $LauncherRoot ".lock"
 $PackageSpec = "agentroam@$AgentRoamVersion"
 $ExtraPackageSpecs = @()
 if ($env:AGENTROAM_BOOTSTRAP_TEST -eq "1" -and $env:AGENTROAM_PACKAGE_SPEC) {
