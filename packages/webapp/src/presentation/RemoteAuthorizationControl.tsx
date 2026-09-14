@@ -1,4 +1,22 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+function MobileAuthorizationDialog({ message, showGuidance, onClose }: { message: string; showGuidance: boolean; onClose: () => void }) {
+  const dialog = useRef<HTMLDialogElement>(null);
+  useEffect(() => { dialog.current?.showModal(); }, []);
+  return createPortal(<dialog ref={dialog} aria-label="远程桌面提醒" onCancel={onClose}
+    onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}
+    style={{ margin: 'auto', inset: 0, width: 'min(370px, calc(100vw - 32px))', maxHeight: 'calc(100dvh - 32px)', overflowY: 'auto', padding: 0, borderRadius: 12, border: '1px solid var(--border-default)', background: 'var(--bg-surface, white)', color: 'var(--text-primary)', fontSize: 14, lineHeight: 1.7 }}>
+    <div style={{ padding: 20 }}>
+      <strong>远程桌面提醒</strong>
+      <p>{message}</p>
+      {showGuidance && <>
+        <p>请在电脑上打开远程桌面授权页面，点击“远程授权”（盾牌图标）。</p>
+        <p>在系统设置中为 AgentRoam Remote Desktop 开启“屏幕录制”和“辅助功能”权限，然后点击“开启共享”。完成后此处会自动更新。</p>
+      </>}
+      <button type="button" className="ui-quiet-button" onClick={onClose} autoFocus>知道了</button>
+    </div>
+  </dialog>, document.body);
+}
 interface Status { local: boolean; supported: boolean; installed: boolean; enabled: boolean; screen: boolean; accessibility: boolean; online: boolean; error?: string | null }
 export default function RemoteAuthorizationControl() {
   const [status, setStatus] = useState<Status | null>(null);
@@ -25,13 +43,11 @@ export default function RemoteAuthorizationControl() {
       : !status.enabled ? '电脑尚未开启桌面共享，请在电脑上完成授权并开启共享。'
       : !status.screen || !status.accessibility ? '电脑的远程桌面授权尚未完成。'
       : '电脑桌面正在连接，请稍候。';
-    return <div className="remote-desktop-guidance" role="status" style={{ maxWidth: '100%', fontSize: 12, lineHeight: 1.6, overflowWrap: 'anywhere' }}>
-      <strong>{message}</strong>
-      {status.supported && status.installed && (!status.enabled || !status.screen || !status.accessibility) && <details>
-        <summary>如何在电脑上授权</summary>
-        <p>在运行 CLI 的电脑上，打开安装提示中的“远程桌面授权地址”，完成配对后点击“远程授权”（盾牌图标）。</p>
-        <p>在系统设置中为 AgentRoam Remote Desktop 授予“屏幕录制”和“辅助功能”权限，然后点击“开启共享”。完成后此处会自动更新。</p>
-      </details>}
+    return <div className="remote-desktop-guidance">
+      <button type="button" className="ui-icon-button" aria-label="查看远程桌面提醒" aria-haspopup="dialog" aria-expanded={expanded} onClick={() => setExpanded(true)} style={{ color: 'var(--warning, #d97706)', minWidth: 44, minHeight: 44 }}>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 7v6m0 4h.01" /></svg>
+      </button>
+      {expanded && <MobileAuthorizationDialog message={message} showGuidance={status.supported && status.installed && (!status.enabled || !status.screen || !status.accessibility)} onClose={() => setExpanded(false)} />}
     </div>;
   }
   if (!localHost) return <div style={{ position: 'relative', marginLeft: 12 }}>

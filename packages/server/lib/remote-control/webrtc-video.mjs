@@ -25,7 +25,7 @@ export class RemoteWebrtcVideo {
     if (data.kind === 'start') {
       await this.stop();
       const generation = this.generation;
-      const peer = new RTCPeerConnection({ codecs: { video: [new RTCRtpCodecParameters({ mimeType: 'video/H264', clockRate: 90000, payloadType: 96, parameters: 'packetization-mode=1;profile-level-id=42e01f;level-asymmetry-allowed=1', rtcpFeedback: [{type:'nack'},{type:'nack',parameter:'pli'}] })] }, iceAdditionalHostAddresses: Object.values(networkInterfaces()).flat().filter(address => address && !address.internal && address.family === 'IPv4').map(address => address.address), iceServers: [{urls:'stun:stun.l.google.com:19302'}] });
+      const peer = new RTCPeerConnection({ codecs: { video: [new RTCRtpCodecParameters({ mimeType: 'video/H264', clockRate: 90000, payloadType: 96, parameters: 'packetization-mode=1;profile-level-id=42e034;level-asymmetry-allowed=1', rtcpFeedback: [{type:'nack'},{type:'nack',parameter:'pli'}] })] }, iceAdditionalHostAddresses: Object.values(networkInterfaces()).flat().filter(address => address && !address.internal && address.family === 'IPv4').map(address => address.address), iceServers: [{urls:'stun:stun.l.google.com:19302'}] });
       this.peer = peer;
       const track = new MediaStreamTrack({ kind: 'video' });
       this.track = track;
@@ -33,7 +33,7 @@ export class RemoteWebrtcVideo {
       sender.onRtcp.subscribe(packet => { if (packet.type === 206 && this.connected) void this.helper.request({op:'video',enabled:true}).catch(()=>{}); });
       const state = { sequence: randomBytes(2).readUInt16BE(), ssrc: randomBytes(4).readUInt32BE() };
       this.unsubscribe = this.helper.onVideo(frame => {
-        if (!this.connected || this.peer !== peer) return;
+        if (this.paused || !this.connected || this.peer !== peer) return;
         this.watchFrames(peer);
         const timestamp = Math.round(frame.timestamp * 90000) >>> 0;
         for (const packet of packetizeH264(frame.nals.map(n => Buffer.from(n, 'base64')), timestamp, state)) track.writeRtp(packet);
@@ -57,12 +57,21 @@ export class RemoteWebrtcVideo {
     } else if (data.kind === 'answer' && this.peer) await this.peer.setRemoteDescription(data.sdp);
     else if (data.kind === 'ice' && this.peer && data.candidate) await this.peer.addIceCandidate(data.candidate);
   }
+  pause() { this.paused = true; clearTimeout(this.frameTimer); }
+  async resume() {
+    this.paused = false;
+    if (this.connected && this.peer) {
+      this.watchFrames(this.peer);
+      await this.helper.request({op:'video',enabled:true});
+    }
+  }
   watchFrames(peer) {
+    if (this.paused) return;
     clearTimeout(this.frameTimer);
     this.frameTimer = setTimeout(() => { if (this.peer === peer) { this.signal({kind:'state',state:'failed'}); void this.stop(); } }, 5000);
   }
   async stop() {
-    this.generation++; this.connected = false; clearTimeout(this.timer); clearTimeout(this.frameTimer);
+    this.generation++; this.paused = false; this.connected = false; clearTimeout(this.timer); clearTimeout(this.frameTimer);
     this.unsubscribe?.(); this.unsubscribe = null;
     const peer = this.peer; this.peer = null; this.track?.stop(); this.track = null;
     if (peer) { await this.helper.request({op:'video',enabled:false}).catch(()=>{}); await peer.close(); }

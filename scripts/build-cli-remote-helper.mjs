@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
 if (process.platform !== 'darwin' || process.arch !== 'arm64') throw new Error('Build the macOS remote helper on Apple Silicon');
 const root = fileURLToPath(new URL('..', import.meta.url));
-const output = resolve(root, 'packages/server/native/AgentRoam Remote Desktop.app');
+const output = resolve(process.env.AGENT_REMOTE_HELPER_OUTPUT || resolve(root, 'packages/server/native/AgentRoam Remote Desktop.app'));
 const build = resolve(root, 'packages/server/native/.build-remote');
 await mkdir(build, { recursive: true });
 await mkdir(resolve(output, 'Contents/MacOS'), { recursive: true });

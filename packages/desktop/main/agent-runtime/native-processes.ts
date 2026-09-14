@@ -71,11 +71,13 @@ export async function listOpenSessionFiles(
   root: string,
   options: OpenSessionFileOptions = {},
 ): Promise<Set<string>> {
-  if ((options.platform ?? process.platform) === "win32") return new Set();
+  const platform = options.platform ?? process.platform;
+  if (platform === "win32") return new Set();
   try {
     const execute = options.execute ?? execFileAsync as OpenSessionFileExecutor;
     const { stdout } = await execute(
-      "lsof",
+      // launchd's PATH may omit /usr/sbin even when native CLIs are available.
+      platform === "darwin" ? "/usr/sbin/lsof" : "lsof",
       ["+c", "0", "-a", "-c", commandName, "-FpFn"],
       { encoding: "utf8", timeout: 5000, maxBuffer: 4 * 1024 * 1024 },
     );

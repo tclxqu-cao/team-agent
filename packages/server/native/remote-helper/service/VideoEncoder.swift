@@ -2,10 +2,27 @@ import Foundation
 import VideoToolbox
 import CoreMedia
 
+enum RemoteVideoQuality: String, CaseIterable {
+    case smooth, hd, original
+    var bitRate: Int { switch self { case .smooth: return 2_000_000; case .hd: return 8_000_000; case .original: return 20_000_000 } }
+    var maxEdge: Double? { switch self { case .smooth: return 1280; case .hd: return 2560; case .original: return nil } }
+    func dimensions(width: Int, height: Int) -> (Int, Int) {
+        let ratio = min(1, (maxEdge ?? Double(max(width, height))) / Double(max(1, max(width, height))))
+        // H264's 4:2:0 format requires even dimensions. Never upscale.
+        return (max(2, Int(Double(width) * ratio) / 2 * 2), max(2, Int(Double(height) * ratio) / 2 * 2))
+    }
+}
+
 final class RemoteVideoEncoder {
     var session: VTCompressionSession?
     var enabled = false
+    var bitRate = RemoteVideoQuality.hd.bitRate
     var forceKeyframe = true
+    func reset() {
+        if let session { VTCompressionSessionInvalidate(session) }
+        session = nil
+        forceKeyframe = true
+    }
     func stop() {
         enabled = false
         if let session { VTCompressionSessionInvalidate(session) }
@@ -41,8 +58,8 @@ final class RemoteVideoEncoder {
             guard result == noErr, let session else { return }
             VTSessionSetProperty(session, key: kVTCompressionPropertyKey_RealTime, value: kCFBooleanTrue)
             VTSessionSetProperty(session, key: kVTCompressionPropertyKey_AllowFrameReordering, value: kCFBooleanFalse)
-            VTSessionSetProperty(session, key: kVTCompressionPropertyKey_ProfileLevel, value: kVTProfileLevel_H264_Baseline_3_1)
-            VTSessionSetProperty(session, key: kVTCompressionPropertyKey_AverageBitRate, value: 2_000_000 as CFNumber)
+            VTSessionSetProperty(session, key: kVTCompressionPropertyKey_ProfileLevel, value: kVTProfileLevel_H264_Baseline_AutoLevel)
+            VTSessionSetProperty(session, key: kVTCompressionPropertyKey_AverageBitRate, value: bitRate as CFNumber)
             VTSessionSetProperty(session, key: kVTCompressionPropertyKey_MaxKeyFrameInterval, value: 20 as CFNumber)
             VTCompressionSessionPrepareToEncodeFrames(session)
             forceKeyframe = true

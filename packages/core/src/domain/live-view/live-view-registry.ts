@@ -23,7 +23,8 @@ const MAX_WEBRTC_SIGNAL_CHARS = 64_000;
 function isWebrtcSignal(data: unknown): data is Record<string, unknown> {
   if (!data || typeof data !== "object" || Array.isArray(data)) return false;
   const kind = (data as Record<string, unknown>).kind;
-  if (!["start", "stop", "offer", "answer", "ice", "state"].includes(String(kind))) return false;
+  if (!["start", "stop", "offer", "answer", "ice", "state", "quality", "quality-state"].includes(String(kind))) return false;
+  if ((kind === "quality" || kind === "quality-state") && !["smooth", "hd", "original"].includes(String((data as Record<string, unknown>).quality))) return false;
   return JSON.stringify(data).length <= MAX_WEBRTC_SIGNAL_CHARS;
 }
 

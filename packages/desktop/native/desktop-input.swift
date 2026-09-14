@@ -157,21 +157,20 @@ let charKeycodes: [String: (Int64, Bool)] = [
     ">": (0x2F, true), "?": (0x2C, true), "~": (0x32, true),
 ]
 
+// Secure text fields require physical key events for ASCII, including capitals.
+func textKeycode(_ ch: Character) -> (Int64, Bool)? {
+    if let direct = charKeycodes[String(ch)] { return direct }
+    if ch >= "A" && ch <= "Z", let lower = charKeycodes[String(ch).lowercased()] {
+        return (lower.0, true)
+    }
+    return nil
+}
+
 func postText(_ command: [String: Any]) throws {
     guard let text = command["text"] as? String, !text.isEmpty else { throw HelperError("text command missing text") }
     let flags = modifierFlags(command["modifiers"] as? [String] ?? [])
     for ch in text {
-        // Accented letters outside the ASCII table (é, ü, …) map through their
-        // uppercase base letter with shift; everything else keeps unicode injection.
-        let resolved: (Int64, Bool)?
-        if let direct = charKeycodes[String(ch)] {
-            resolved = direct
-        } else if ch.isLetter, String(ch) != String(ch).uppercased(),
-                  let upperKey = charKeycodes[String(ch).uppercased()] {
-            resolved = (upperKey.0, true)
-        } else {
-            resolved = nil
-        }
+        let resolved = textKeycode(ch)
         if let (virtualKey, requiresShift) = resolved {
             var eventFlags = flags
             if requiresShift { eventFlags.insert(.maskShift) }

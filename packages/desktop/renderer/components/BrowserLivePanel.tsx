@@ -133,6 +133,9 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
   }, [open]);
   const [sessions, setSessions] = useState<BrowserLiveSession[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [pendingDisplayId, setPendingDisplayId] = useState<string | null>(null);
+  const [videoQuality, setVideoQuality] = useState("hd");
+  const [pendingQuality, setPendingQuality] = useState(false);
   const [frame, setFrame] = useState<BrowserFrame | null>(null);
   const [loading, setLoading] = useState(false);
   // Bumped by refresh() to force the watch + WebRTC effects to tear down and
@@ -390,6 +393,11 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
 
   const handleWebrtcSignal = useCallback((sessionId: string, data: Record<string, unknown> | undefined) => {
     if (!data) return;
+    if (data.kind === "quality-state" && ["smooth", "hd", "original"].includes(String(data.quality))) {
+      setVideoQuality(String(data.quality)); setPendingQuality(false);
+      if (typeof data.error === "string") setError(data.error);
+      return;
+    }
     if (data.kind === "offer") {
       void answerWebrtcOffer(sessionId, data.sdp as RTCSessionDescriptionInit | undefined);
       return;
@@ -564,11 +572,11 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
   }, [api, mergeSession, selected]);
 
   const sendInput = useCallback((input: Record<string, unknown>) => {
-    if (!api || !selected?.isController || selected.state !== "user-controlled") return;
+    if (!api || pendingDisplayId || pendingQuality || !selected?.isController || selected.state !== "user-controlled") return;
     void api.request("browser:input", { sessionId: selected.id, input }).catch((requestError) => {
       setError(requestError instanceof Error ? requestError.message : "浏览器输入失败");
     });
-  }, [api, selected]);
+  }, [api, selected, pendingDisplayId, pendingQuality]);
 
   /** Sends a bare key press to the remote (down+up). */
   const sendKey = useCallback((key: string, code: string, modifiers: string[] = []) => {
@@ -583,11 +591,11 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
 
   /** Sends input and resolves with the desktop hit-test reply (null otherwise). */
   const dispatchInputForResult = useCallback((input: Record<string, unknown>): Promise<Record<string, unknown> | null> => {
-    if (!api || !selected?.isController || selected.state !== "user-controlled") return Promise.resolve(null);
+    if (!api || pendingDisplayId || pendingQuality || !selected?.isController || selected.state !== "user-controlled") return Promise.resolve(null);
     return api.request<Record<string, unknown> | null>("browser:input", { sessionId: selected.id, input })
       .then((result) => (result && typeof result === "object" ? result : null))
       .catch(() => null);
-  }, [api, selected]);
+  }, [api, selected, pendingDisplayId, pendingQuality]);
 
   const sendTapUp = useCallback((point: { x: number; y: number }, click?: number) => {
     void dispatchInputForResult({ kind: "pointer", action: "up", ...point, button: "left", ...(click && click > 1 ? { click } : {}) }).then(applyHitTest);
@@ -611,16 +619,37 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
   }, [sendInput]);
 
   const liveDisplays = selected?.displays ?? null;
+  useEffect(() => {
+    if (!pendingQuality) return;
+    const timer = window.setTimeout(() => { setPendingQuality(false); setError("画质切换未完成，请刷新画面后重试"); }, 14000);
+    return () => window.clearTimeout(timer);
+  }, [pendingQuality]);
+  useEffect(() => { setPendingQuality(false); setVideoQuality("hd"); }, [open, selectedId]);
+  const selectQuality = (quality: string) => {
+    if (!api || !hasControl || pendingDisplayId || pendingQuality || !selectedId) return;
+    setPendingQuality(true);
+    void api.request("browser:webrtc", { sessionId: selectedId, data: { kind: "quality", quality } }).catch(error => {
+      setPendingQuality(false); setError(error instanceof Error ? error.message : "画质切换失败");
+    });
+  };
+  useEffect(() => {
+    if (!pendingDisplayId) return;
+    if (liveDisplays?.some(display => display.id === pendingDisplayId && display.selected)) {
+      setPendingDisplayId(null); return;
+    }
+    const timer = window.setTimeout(() => { setPendingDisplayId(null); setError("切换屏幕未完成，请刷新画面后重试"); }, 14000);
+    return () => window.clearTimeout(timer);
+  }, [liveDisplays, pendingDisplayId]);
+  useEffect(() => { setPendingDisplayId(null); }, [open, selectedId]);
   const windowControlAtRef = useRef(0);
-  const cycleDisplay = useCallback(() => {
-    if (!api || !selectedId || !liveDisplays || liveDisplays.length < 2) return;
-    const currentIndex = liveDisplays.findIndex((item) => item.selected);
-    const next = liveDisplays[(currentIndex + 1) % liveDisplays.length];
-    if (!next || next.selected) return;
-    void api.request("browser:set-display", { sessionId: selectedId, displayId: next.id }).catch((requestError) => {
+  const selectDisplay = useCallback((displayId: string) => {
+    if (!api || pendingDisplayId || pendingQuality || !selectedId || !hasControl || !liveDisplays?.some(item => item.id === displayId && !item.selected)) return;
+    setPendingDisplayId(displayId);
+    void api.request("browser:set-display", { sessionId: selectedId, displayId }).catch((requestError) => {
+      setPendingDisplayId(null);
       setError(requestError instanceof Error ? requestError.message : "切换屏幕失败");
     });
-  }, [api, liveDisplays, selectedId]);
+  }, [api, liveDisplays, selectedId, hasControl, pendingDisplayId, pendingQuality]);
 
   const pointerCoordinates = useCallback((event: React.PointerEvent<HTMLElement> | React.WheelEvent<HTMLElement>) => {
     const rect = event.currentTarget.getBoundingClientRect();
@@ -716,6 +745,24 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
         <div className={`browser-live-surface ${hasControl ? "is-controlling" : ""} has-zoom ${hasControl && !panMode && quickKeysOpen ? "has-quickkeys" : ""}`}>
           {(
             <div className="browser-live-zoom" role="group" aria-label="桌面画面缩放">
+              {isDesktop && liveDisplays && liveDisplays.length > 0 && (
+                <select
+                  aria-label="选择直播屏幕"
+                  title={hasControl ? "选择直播屏幕" : "点击开始控制后可切换屏幕"}
+                  value={(liveDisplays.find(item => item.selected) ?? liveDisplays[0]).id}
+                  disabled={!frame || !hasControl || !!pendingDisplayId || pendingQuality || liveDisplays.length < 2}
+                  onChange={event => selectDisplay(event.target.value)}
+                  style={{ minHeight: 32, maxWidth: 180, flexShrink: 0, fontSize: 16, color: "inherit", background: "var(--bg-surface)", border: "1px solid var(--border-subtle)", borderRadius: 6 }}
+                >
+                  {liveDisplays.map((display, index) => <option key={display.id} value={display.id}>{`第 ${index + 1} 屏${display.primary ? "（主屏）" : ""}`}</option>)}
+                </select>
+              )}
+              {selectedId === "cli-desktop:primary" && (
+                <select aria-label="视频画质" title={hasControl ? "视频画质" : "点击开始控制后可调整画质"} value={videoQuality} disabled={!hasControl || !!pendingDisplayId || pendingQuality} onChange={event => selectQuality(event.target.value)} style={{ minHeight: 32, flexShrink: 0, fontSize: 16, color: "inherit", background: "var(--bg-surface)", border: "1px solid var(--border-subtle)", borderRadius: 6 }}>
+                  <option value="smooth">流畅</option><option value="hd">高清</option><option value="original">原画</option>
+                </select>
+              )}
+              {(pendingDisplayId || pendingQuality) && <span role="status">切换中…</span>}
               <button type="button" aria-label="缩小桌面画面" title="缩小" disabled={!frame || zoom <= 0.5} onClick={() => setZoom((value) => Math.max(0.5, value - 0.25))}><ZoomOut size={16} /></button>
               <output aria-label="桌面缩放比例">{Math.round(zoom * 100)}%</output>
               <button type="button" aria-label="放大桌面画面" title="放大" disabled={!frame || zoom >= 5} onClick={() => setZoom((value) => Math.min(5, value + 0.25))}><ZoomIn size={16} /></button>
@@ -739,21 +786,7 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
                   sendKey("f", "KeyF", ["Control", "Meta"]);
                 }, 150);
               }}><Keyboard size={15} />窗口</button>
-              {isDesktop && liveDisplays && liveDisplays.length > 1 && (() => {
-                const current = liveDisplays.find((item) => item.selected) ?? liveDisplays[0];
-                const label = current.primary ? "主屏" : current.label.split(" ").slice(0, 2).join(" ");
-                return (
-                  <button
-                    type="button"
-                    aria-label={`切换直播屏幕（当前：${current.label}）`}
-                    title={`切换直播屏幕（当前：${current.label}）`}
-                    disabled={!frame}
-                    onClick={cycleDisplay}
-                  >
-                    <MonitorUp size={15} />{label}
-                  </button>
-                );
-              })()}
+
             </div>
           )}
           {hasControl && !panMode && quickKeysOpen && (

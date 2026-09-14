@@ -134,6 +134,12 @@ describe("LiveViewRegistry", () => {
     const ice = { kind: "ice", candidate: { candidate: "candidate:1" } };
     expect(registry.webrtcFromProducer(producer, "browser-1", ice)).toEqual({ delivered: true });
     expect(controller.messages.at(-1)).toMatchObject({ type: "browser:webrtc", sessionId: "browser-1", data: ice });
+    for (const quality of ["smooth", "hd", "original"]) {
+      expect(registry.webrtcFromViewer(controller, "browser-1", {kind:"quality",quality})).toEqual({accepted:true});
+      expect(() => registry.webrtcFromViewer(observer, "browser-1", {kind:"quality",quality})).toThrow("read-only");
+      expect(registry.webrtcFromProducer(producer, "browser-1", {kind:"quality-state",quality})).toEqual({delivered:true});
+    }
+    expect(() => registry.webrtcFromViewer(controller, "browser-1", {kind:"quality",quality:"4k"})).toThrow("invalid webrtc signal");
     expect(observer.messages).toEqual([]);
   });
 

@@ -1,3 +1,4 @@
+import { HistoryPullGesture } from "../lib/history-pull-gesture";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { AgentEvent, RuntimeProgress, SessionHistoryQuery, SessionToolResultBody, SessionToolResultRef } from "@agent/core";
@@ -768,6 +769,7 @@ export default function ChatView({
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const historyScrollTimerRef = useRef<number | null>(null);
   const loadOlderHistoryRef = useRef<() => void>(() => undefined);
+  const historyPullGestureRef = useRef(new HistoryPullGesture());
   const loadNewerHistoryRef = useRef<() => void>(() => undefined);
   const historyCursorRef = useRef<string | null>(null);
   const latestHistoryCursorRef = useRef<string | null>(null);
@@ -3329,7 +3331,14 @@ export default function ChatView({
 
       {/* Messages area */}
       <div className="chat-messages-frame">
-        <div ref={messagesScrollRef} className="chat-messages" onScroll={handleHistoryScroll} style={{
+        <div ref={messagesScrollRef} className="chat-messages" onScroll={handleHistoryScroll}
+          onTouchStart={event => historyPullGestureRef.current.start(event.touches)}
+          onTouchMove={event => {
+            if (historyPullGestureRef.current.move(event.touches, event.currentTarget.scrollTop)) loadOlderHistoryRef.current();
+          }}
+          onTouchEnd={() => historyPullGestureRef.current.reset()}
+          onTouchCancel={() => historyPullGestureRef.current.reset()}
+          style={{
           overflow: "auto",
           position: "relative",
           padding: "var(--chat-messages-padding)",

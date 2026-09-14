@@ -113,3 +113,79 @@ it('uses the real pairing gateway: rejects spoofed, forwarded and revoked device
     expect((await fetch(`${base}/api/remote-authorization`,{headers})).status).toBe(401);
   } finally { server.closeAllConnections(); await new Promise<void>(resolve=>server.close(()=>resolve())); gateway.close(); await f.close(); }
 });
+
+it('switches the video source and maps input to the selected display without replacing the peer', async () => {
+  const f = await fixture();
+  let selected = '1';
+  const displays = () => [{id:'1',label:'第 1 屏',primary:true,selected:selected==='1'},{id:'2',label:'第 2 屏',primary:false,selected:selected==='2'}];
+  const frame = () => ({data:Buffer.alloc(30,1).toString('base64'),width:selected==='1'?1000:1600,height:900,originX:selected==='1'?0:-1600,originY:-100,displays:displays()});
+  f.helper.request.mockImplementation(async(cmd:any)=>{
+    if(cmd.op==='status') return {screen:true,accessibility:true};
+    if(cmd.op==='set-display') {selected=cmd.displayId;return frame();}
+    if(cmd.op==='capture') return frame();
+    return {ok:true};
+  });
+  const peer={};f.service.video.peer=peer;f.service.video.connected=true;
+  const pause=vi.spyOn(f.service.video,'pause');const resume=vi.spyOn(f.service.video,'resume');
+  try {
+    f.grant();await f.service.action('enable');
+    expect(f.registry.list(f.viewer)[0].displays?.[0].selected).toBe(true);
+    f.registry.takeOver(f.viewer,f.service.sessionId);await f.service.inputQueue;
+    f.registry.setDisplay(f.viewer,f.service.sessionId,'2');await f.service.inputQueue;
+    expect(f.registry.list(f.viewer)[0].displays?.[1].selected).toBe(true);
+    expect(f.registry.list(f.viewer)[0].state).toBe('user-controlled');
+    expect(f.service.video.peer).toBe(peer);expect(pause).toHaveBeenCalledOnce();expect(resume).toHaveBeenCalledOnce();
+    expect(f.helper.request).toHaveBeenCalledWith({op:'video',enabled:true});
+    await f.registry.input(f.viewer,f.service.sessionId,{kind:'pointer',action:'move',x:0.5,y:0.5});await f.service.inputQueue;
+    expect(f.helper.request).toHaveBeenCalledWith({op:'move',x:-800,y:350,button:'left',click:1});
+    expect(()=>f.registry.setDisplay(f.viewer,f.service.sessionId,'missing')).toThrow('unknown display');
+  } finally {f.service.video.peer=null;await f.close();}
+});
+
+it('discards a capture and input queued for the old screen while switching',async()=>{
+  const f=await fixture();let finish:any;let slow=false;
+  const displays=[{id:'1',label:'one',selected:true,primary:true},{id:'2',label:'two',selected:false,primary:false}];
+  const frame={data:Buffer.alloc(30).toString('base64'),width:100,height:100,originX:0,originY:0,displays};
+  f.helper.request.mockImplementation(async(cmd:any)=>{
+    if(cmd.op==='status')return{screen:true,accessibility:true};
+    if(cmd.op==='capture'&&slow)return new Promise(resolve=>{finish=resolve;});
+    if(cmd.op==='set-display')return{...frame,originX:100,displays:displays.map(d=>({...d,selected:d.id==='2'}))};
+    return frame;
+  });
+  try{
+    f.grant();await f.service.action('enable');f.registry.takeOver(f.viewer,f.service.sessionId);await f.service.inputQueue;
+    slow=true;const tick=f.service.tick();await vi.waitFor(()=>expect(finish).toBeTypeOf('function'));
+    f.registry.setDisplay(f.viewer,f.service.sessionId,'2');
+    const input=f.registry.input(f.viewer,f.service.sessionId,{kind:'pointer',action:'down',x:0,y:0});
+    const before=f.service.sequence;finish(frame);await tick;await f.service.inputQueue;
+    expect(f.service.sequence).toBe(before+1);
+    await input;expect(f.service.error).toContain('屏幕正在切换');
+    expect(f.helper.request.mock.calls.some(([cmd]:any)=>cmd.op==='down')).toBe(false);
+    expect(f.service.bounds.originX).toBe(100);
+  }finally{await f.close();}
+});
+
+it('changes quality on the selected display, acknowledges the applied profile, and preserves the stream',async()=>{
+  const f=await fixture();let quality='hd';let reject=false;
+  const displays=[{id:'1',label:'one',selected:false,primary:true},{id:'2',label:'two',selected:true,primary:false}];
+  f.helper.request.mockImplementation(async(cmd:any)=>{
+    if(cmd.op==='status')return{screen:true,accessibility:true};
+    if(cmd.op==='set-quality') {if(reject)throw new Error('编码器不可用');quality=cmd.quality;}
+    return{data:Buffer.alloc(30).toString('base64'),width:1440,height:900,originX:-1440,originY:0,displays,quality};
+  });
+  const peer={};f.service.video.peer=peer;f.service.video.connected=true;
+  try{
+    f.grant();await f.service.action('enable');expect(f.service.quality).toBe('hd');
+    f.registry.takeOver(f.viewer,f.service.sessionId);await f.service.inputQueue;
+    for(const next of ['smooth','original','hd']){
+      f.registry.webrtcFromViewer(f.viewer,f.service.sessionId,{kind:'quality',quality:next});await f.service.inputQueue;
+      expect(f.service.quality).toBe(next);expect(f.service.video.peer).toBe(peer);
+      expect(f.frames.at(-1)).toMatchObject({type:'browser:webrtc',data:{kind:'quality-state',quality:next}});
+      expect(f.service.bounds.originX).toBe(-1440);expect(f.service.displays[1].selected).toBe(true);
+    }
+    await expect(f.service.setQuality('invalid')).rejects.toThrow('未知画质');
+    reject=true;f.registry.webrtcFromViewer(f.viewer,f.service.sessionId,{kind:'quality',quality:'original'});await f.service.inputQueue;
+    expect(f.frames.at(-1).data).toMatchObject({quality:'hd',error:'编码器不可用'});
+    expect(f.service.switching).toBe(false);
+  }finally{f.service.video.peer=null;await f.close();}
+});

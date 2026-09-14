@@ -24,6 +24,13 @@ it('negotiates actual WebRTC, sends encrypted video RTP and stops the encoder on
   receiveVideo({timestamp:1,nals:[Buffer.from([0x65,1,2,3]).toString('base64')]});
   await vi.waitFor(()=>expect(frames.length).toBeGreaterThan(0));
   expect(frames[0].payload).toEqual(Buffer.from([0x65,1,2,3]));
+  const peer=video.peer;video.pause();
+  receiveVideo({timestamp:2,nals:[Buffer.from([0x65,9]).toString('base64')]});
+  await video.resume();expect(video.peer).toBe(peer);expect(video.connected).toBe(true);
+  receiveVideo({timestamp:3,nals:[Buffer.from([0x65,4,5,6]).toString('base64')]});
+  await vi.waitFor(()=>expect(frames.length).toBe(2));
+  expect(frames[1].payload).toEqual(Buffer.from([0x65,4,5,6]));
+
   await video.stop();expect(helper.request).toHaveBeenCalledWith({op:'video',enabled:false});expect(receiveVideo).toBeNull();
  }finally{await video.stop();await viewer.close();}
 },30000);

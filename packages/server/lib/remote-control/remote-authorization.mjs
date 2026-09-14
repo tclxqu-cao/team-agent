@@ -17,7 +17,8 @@ export class RemoteAuthorization {
     this.enabled = false; this.screen = false; this.accessibility = false; this.online = false; this.error = null; this.busy = false; this.sequence = 0; this.generation = 0;
     this.sessionId = 'cli-desktop:primary';
     this.peer = { id: `cli-remote:${randomUUID()}`, userId, producerSessionIds: new Set(), watchedSessionId: null, send: (event) => {
-      this.inputQueue = this.inputQueue.then(() => this.onEvent(event)).catch((error) => { this.error = error.message; });
+      const generation = this.switching ? -1 : this.generation;
+      this.inputQueue = this.inputQueue.then(() => this.onEvent(event, generation)).catch((error) => { this.error = error.message; });
     } };
     this.inputQueue = Promise.resolve();
     this.video = new RemoteWebrtcVideo({ helper, signal: data => { if (this.enabled && this.online) this.registry.webrtcFromProducer(this.peer, this.sessionId, data); } });
@@ -60,8 +61,13 @@ export class RemoteAuthorization {
     }
     return this.status();
   }
-  async tick() {
-    if (this.busy || !this.enabled || Date.now() < (this.retryAt || 0)) return;
+  tick() {
+    if (this.tickPromise) return this.tickPromise;
+    this.tickPromise = this.captureTick().finally(() => { this.tickPromise = null; });
+    return this.tickPromise;
+  }
+  async captureTick() {
+    if (this.switching || this.busy || !this.enabled || Date.now() < (this.retryAt || 0)) return;
     this.busy = true;
     const generation = this.generation;
     try {
@@ -77,12 +83,7 @@ export class RemoteAuthorization {
       const frame = await this.helper.request({ op: 'capture' });
       this.lastPreview = Date.now();
       if (!this.enabled || generation !== this.generation) return;
-      this.viewport = { width: frame.width, height: frame.height, deviceScaleFactor: 1 }; this.bounds = frame;
-      if (!this.online) {
-        this.registry.publish(this.peer, { sessionId: this.sessionId, backend: 'desktop', title: '本机桌面', url: '', viewport: this.viewport, state: 'agent-controlled', transport: 'cdp-jpeg-ws' });
-        this.online = true;
-      }
-      this.registry.updateFrame(this.peer, { sessionId: this.sessionId, sequence: ++this.sequence, data: Buffer.from(frame.data, 'base64'), mime: 'image/jpeg', viewport: this.viewport, title: '本机桌面', timestamp: Date.now() });
+      this.publishFrame(frame);
       this.error = null;
     } catch (error) {
       if (generation !== this.generation) return;
@@ -91,13 +92,64 @@ export class RemoteAuthorization {
       this.online = false;
     } finally { this.busy = false; }
   }
-  async onEvent(event) {
+  publishFrame(frame) {
+    this.viewport = { width: frame.width, height: frame.height, deviceScaleFactor: 1 }; this.bounds = frame;
+    this.quality = frame.quality ?? this.quality ?? 'hd';
+    const displays = frame.displays ?? this.displays ?? null;
+    if (!this.online || JSON.stringify(displays) !== JSON.stringify(this.displays)) {
+      this.displays = displays;
+      this.registry.publish(this.peer, { sessionId: this.sessionId, backend: 'desktop', title: '本机桌面', url: '', viewport: this.viewport, displays, transport: 'cdp-jpeg-ws' });
+      this.online = true;
+    }
+    this.registry.updateFrame(this.peer, { sessionId: this.sessionId, sequence: ++this.sequence, data: Buffer.from(frame.data, 'base64'), mime: 'image/jpeg', viewport: this.viewport, title: '本机桌面', timestamp: Date.now() });
+  }
+  async setDisplay(displayId) {
+    if (!this.displays?.some(display => display.id === displayId)) throw new Error('屏幕已断开，请刷新屏幕列表');
+    return this.reconfigureCapture({ op: 'set-display', displayId });
+  }
+  async setQuality(quality) {
+    if (!['smooth', 'hd', 'original'].includes(quality)) throw new Error('未知画质档位');
+    return this.reconfigureCapture({ op: 'set-quality', quality });
+  }
+  async reconfigureCapture(command) {
+    this.switching = true;
+    const generation = ++this.generation;
+    this.video.pause();
+    try {
+      await this.tickPromise;
+      if (!this.enabled || generation !== this.generation) return;
+      if (this.pointerDown) {
+        await this.helper.request({ op: 'up', ...this.lastPointer, button: this.pointerButton || 'left' });
+        this.pointerDown = false;
+      }
+      this.bounds = null;
+      const frame = await this.helper.request(command);
+      if (!this.enabled || generation !== this.generation) return;
+      this.publishFrame(frame);
+      this.lastPreview = Date.now(); this.error = null;
+    } finally {
+      this.switching = false;
+      if (this.enabled && generation === this.generation) await this.video.resume();
+    }
+  }
+  async onEvent(event, generation = this.generation) {
     if (!this.enabled || event.sessionId !== this.sessionId) return;
-    if (event.type === 'browser:webrtc') { await this.video.handle(event.data); return; }
+    if (event.type === 'browser:set-display') { await this.setDisplay(event.displayId); return; }
+    if (event.type === 'browser:webrtc') {
+      const signalQuality = (error) => this.registry.webrtcFromProducer(this.peer, this.sessionId, { kind: 'quality-state', quality: this.quality || 'hd', ...(error ? { error } : {}) });
+      if (event.data.kind === 'quality') {
+        try { await this.setQuality(event.data.quality); if (this.enabled && this.online) signalQuality(); }
+        catch (error) { this.error = error.message; if (this.enabled && this.online) signalQuality(error.message); }
+        return;
+      }
+      if (event.data.kind === 'start') signalQuality();
+      await this.video.handle(event.data); return;
+    }
     if (event.type === 'browser:takeover-requested') this.registry.producerState(this.peer, this.sessionId, 'user-controlled');
     else if (event.type === 'browser:return-requested') { await this.video.stop(); this.registry.producerState(this.peer, this.sessionId, 'agent-controlled'); }
     else if (event.type === 'browser:input') {
       try {
+        if (generation !== this.generation || !this.bounds) throw new Error('屏幕正在切换，请等待新画面');
         if (!this.accessibility) throw new Error('请在电脑的远程授权中授予辅助功能权限');
         const result = await this.dispatch(event.input);
         if (Number.isSafeInteger(event.token)) this.registry.inputResult(this.peer, this.sessionId, event.token, result);
@@ -110,7 +162,8 @@ export class RemoteAuthorization {
       const y = this.bounds.originY + Math.round(Math.max(0, Math.min(1, input.y)) * (this.bounds.height - 1));
       if (input.action === 'wheel') { await this.helper.request({ op: 'move', x, y }); return this.helper.request({ op: 'wheel', deltaX: input.deltaX, deltaY: input.deltaY }); }
       const op = input.action === 'move' && this.pointerDown ? 'drag' : input.action;
-      if (input.action === 'down') this.pointerDown = true;
+      this.lastPointer = { x, y };
+      if (input.action === 'down') { this.pointerDown = true; this.pointerButton = input.button; }
       if (input.action === 'up') this.pointerDown = false;
       return this.helper.request({ op, x, y, button: input.button, click: input.click || 1 });
     }
