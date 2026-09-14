@@ -3,6 +3,7 @@
 import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { accessSync, constants, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { pathToFileURL } from "node:url";
 import { delimiter, dirname, resolve } from "node:path";
 import { releasePackageNames, resolveReleaseArtifacts } from "./cli-release-artifacts.mjs";
 import { assertSupportedNodeVersion } from "../packages/cli/bin/runtime-policy.mjs";
@@ -106,7 +107,18 @@ try {
   console.log(`✓ pairing URL: ${new URL(openMatch[1]).origin}`);
   const status = await fetch(`${localUrl}/api/web-auth/status`);
   if (!status.ok) throw new Error(`health check failed: ${status.status}`);
-  const webapp = await fetch(`${localUrl}/app/`);
+  const unauthorized = await fetch(`${localUrl}/app/`);
+  if (unauthorized.status !== 401) throw new Error('unpaired app access must be rejected');
+  const { pairingAdmin } = await import(pathToFileURL(resolve(dirname(launcher), '../dist/device-pairing.js')).href);
+  const { grant } = await pairingAdmin(dataDir, 'qr');
+  const paired = await fetch(`${localUrl}/api/pairing/qr-exchange`, {
+    method: 'POST', headers: { 'content-type': 'application/json', origin: localUrl },
+    body: JSON.stringify({ grant, name: 'Fresh install smoke' }),
+  });
+  if (!paired.ok) throw new Error(`pairing failed: ${paired.status}`);
+  const cookie = paired.headers.get('set-cookie')?.split(';')[0];
+  if (!cookie) throw new Error('pairing did not issue a device session');
+  const webapp = await fetch(`${localUrl}/app/`, { headers: { cookie } });
   const html = webapp.ok ? await webapp.text() : "";
   if (!webapp.ok || !html.includes("<script")) throw new Error(`/app/ smoke failed: HTTP ${webapp.status}`);
   console.log(`✓ local server and webapp responded (${html.length} bytes)`);
