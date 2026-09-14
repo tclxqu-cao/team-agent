@@ -31,25 +31,26 @@ export const RELEASE_PACKAGE_NAMES = [
 export async function loadReleaseSet(root, options = {}) {
   const artifactDirectory = resolve(root, options.artifactDirectory ?? "dist/cli-release");
   const packages = [];
-  let version;
+  const cli = JSON.parse(await readFile(resolve(root, "packages/cli/package.json"), "utf8"));
+  const version = cli.version;
   for (const directory of RELEASE_PACKAGE_DIRECTORIES) {
     const packageJsonPath = resolve(root, directory, "package.json");
     const packageJson = JSON.parse(await readFile(packageJsonPath, "utf8"));
-    if (!version) version = packageJson.version;
-    if (packageJson.version !== version) {
-      throw new Error(`${directory} version ${packageJson.version} does not match ${version}`);
+    if (directory !== "packages/cli" && cli.optionalDependencies?.[packageJson.name] !== packageJson.version) {
+      throw new Error(`${directory} version does not match launcher dependency`);
     }
     if (!/^\d+\.\d+\.\d+(?:-preview\.\d+)?$/.test(packageJson.version)) {
       throw new Error(`release version must be X.Y.Z or X.Y.Z-preview.N: ${packageJson.version}`);
     }
-    const fileName = packageTarballName(packageJson.name, version);
+    const fileName = packageTarballName(packageJson.name, packageJson.version);
     packages.push({
       name: packageJson.name,
-      version,
+      version: packageJson.version,
       directory,
       fileName,
       path: resolve(artifactDirectory, fileName),
       launcher: directory === "packages/cli",
+      reused: directory !== "packages/cli" && packageJson.version !== version,
     });
   }
 
@@ -92,7 +93,7 @@ export async function writeReleaseManifest(releaseSet, path) {
     version: releaseSet.version,
     channel: releaseSet.version.includes("-preview.") ? "preview" : "latest",
     publishedAt: new Date().toISOString(),
-    packages: releaseSet.packages.map(({ name, fileName, sha256, launcher }) => ({ name, fileName, sha256, launcher })),
+    packages: releaseSet.packages.map(({ name, version, fileName, sha256, launcher, reused }) => ({ name, version, fileName, sha256, launcher, ...(reused ? { reused: true } : {}) })),
     installers: {
       cli: {
         "darwin-arm64": pickInstaller(releaseSet.installers, "install-agentroam.sh"),
@@ -134,11 +135,13 @@ export async function loadReleaseManifest(path) {
   const packages = [];
   for (let index = 0; index < manifest.packages.length; index += 1) {
     const item = manifest.packages[index];
-    const fileName = packageTarballName(item.name, manifest.version);
+    const version = item.version ?? manifest.version;
+    if (!/^\d+\.\d+\.\d+(?:-preview\.\d+)?$/.test(version) || (item.launcher && version !== manifest.version)) throw new Error(`invalid package version for ${item.name}`);
+    const fileName = packageTarballName(item.name, version);
     if (item.fileName !== fileName || Boolean(item.launcher) !== (index === manifest.packages.length - 1)) {
       throw new Error(`invalid release manifest package entry for ${item.name}`);
     }
-    const artifact = { ...item, version: manifest.version, path: resolve(artifactDirectory, fileName) };
+    const artifact = { ...item, version, reused: Boolean(item.reused) || version !== manifest.version, path: resolve(artifactDirectory, fileName) };
     const actual = await verifyArtifactChecksum(artifact.path, checksums.get(fileName), fileName);
     if (actual !== item.sha256) throw new Error(`release manifest checksum mismatch for ${fileName}`);
     packages.push(artifact);
@@ -217,7 +220,7 @@ export function parseChecksumFile(content) {
 export async function inspectPublication(releaseSet, npmClient) {
   const items = [];
   for (const item of releaseSet.packages) {
-    const metadata = await npmClient.getVersion(item.name, releaseSet.version);
+    const metadata = await npmClient.getVersion(item.name, item.version ?? releaseSet.version);
     items.push({ name: item.name, exists: Boolean(metadata), metadata });
   }
   const present = items.filter((item) => item.exists).length;
@@ -239,18 +242,20 @@ export async function publishPreviewRelease(releaseSet, options) {
       if (item.launcher && verified.length !== releaseSet.packages.length - 1) {
         throw new Error("launcher cannot publish before all six platform packages are verified");
       }
-      const existing = await npmClient.getVersion(item.name, releaseSet.version);
+      const existing = await npmClient.getVersion(item.name, item.version ?? releaseSet.version);
       if (!existing) {
+        if (item.reused) throw new Error(`reused package is unavailable: ${item.name}@${item.version}`);
         await npmClient.publish(item.path, "preview");
         published.push(item.name);
-        await waitForVersion(npmClient, item.name, releaseSet.version, options);
+        await waitForVersion(npmClient, item.name, item.version ?? releaseSet.version, options);
       }
       await verifyRemoteArtifact(npmClient, item, options);
       verified.push(item.name);
     }
     for (const item of releaseSet.packages) {
-      if (await npmClient.getTag(item.name, "preview") !== releaseSet.version) {
-        await npmClient.setTag(item.name, releaseSet.version, "preview");
+      if (item.reused) continue;
+      if (await npmClient.getTag(item.name, "preview") !== item.version) {
+        await npmClient.setTag(item.name, item.version, "preview");
       }
     }
     await verifyReleaseTag(releaseSet, npmClient, "preview", releaseSet.version);
@@ -265,7 +270,7 @@ export async function publishPreviewRelease(releaseSet, options) {
 export async function verifyRegistryArtifacts(releaseSet, npmClient, options = {}) {
   const verified = [];
   for (const item of releaseSet.packages) {
-    await waitForVersion(npmClient, item.name, releaseSet.version, options);
+    await waitForVersion(npmClient, item.name, item.version ?? releaseSet.version, options);
     await verifyRemoteArtifact(npmClient, item, options);
     verified.push(item.name);
   }
@@ -276,10 +281,11 @@ export async function verifyRegistryArtifacts(releaseSet, npmClient, options = {
 export async function verifyReleaseTag(releaseSet, npmClient, tag, expectedVersion) {
   const values = [];
   for (const item of releaseSet.packages) {
+    if (item.reused) continue;
     const actual = await npmClient.getTag(item.name, tag);
-    values.push([item.name, actual]);
+    values.push([item.name, actual, item.version ?? expectedVersion]);
   }
-  const wrong = values.filter(([, actual]) => actual !== expectedVersion);
+  const wrong = values.filter(([, actual, expected]) => actual !== expected);
   if (wrong.length) {
     throw new Error(`${tag} dist-tags are not aligned to ${expectedVersion}: ${wrong.map(([name, value]) => `${name}=${value ?? "missing"}`).join(", ")}`);
   }
@@ -294,12 +300,13 @@ export async function moveReleaseTag(releaseSet, options) {
   const moved = [];
   try {
     for (const item of releaseSet.packages) {
-      if (previous.get(item.name) === targetVersion) continue;
-      if (!await npmClient.getVersion(item.name, targetVersion)) throw new Error(`${item.name}@${targetVersion} is not published`);
-      await npmClient.setTag(item.name, targetVersion, tag);
+      const version = releaseSet.version === targetVersion ? item.version ?? targetVersion : targetVersion;
+      if (previous.get(item.name) === version) continue;
+      if (!await npmClient.getVersion(item.name, version)) throw new Error(`${item.name}@${version} is not published`);
+      await npmClient.setTag(item.name, version, tag);
       moved.push(item.name);
     }
-    await verifyReleaseTag(releaseSet, npmClient, tag, targetVersion);
+    await verifyReleaseTag({ ...releaseSet, packages: releaseSet.packages.map((item) => ({ ...item, reused: false, version: releaseSet.version === targetVersion ? item.version ?? targetVersion : targetVersion })) }, npmClient, tag, targetVersion);
     return { tag, targetVersion, previous: Object.fromEntries(previous), moved };
   } catch (error) {
     const compensationErrors = [];
@@ -324,7 +331,7 @@ async function restoreTags(releaseSet, npmClient, tag, previous) {
     try {
       const current = await npmClient.getTag(item.name, tag);
       const prior = previous.get(item.name);
-      if (current === prior) continue;
+      if (item.reused || current === prior) continue;
       if (prior) await npmClient.setTag(item.name, prior, tag);
       else if (npmClient.removeTag) await npmClient.removeTag(item.name, tag);
       else throw new Error("client cannot remove a newly created tag");
@@ -401,8 +408,8 @@ export function createNpmClient(options = {}) {
   return {
     async getVersion(name, version) {
       try {
-        const output = await run("npm", ["view", `${name}@${version}`, "version", "--json", "--registry", registry], {});
-        return JSON.parse(output.stdout || "null") ? { version } : null;
+        const output = await run("npm", ["view", `${name}@${version}`, "--json", "--registry", registry], {});
+        return JSON.parse(output.stdout || "null");
       } catch (error) {
         if (isNpmMissing(error)) return null;
         throw sanitizedError(error);

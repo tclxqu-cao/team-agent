@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { dirname, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
-  AGENTROAM_VERSION,
+  PLATFORM_DEPENDENCY_VERSIONS,
   requirePlatformPackages,
   resolvePlatformRuntime,
   resolvePlatformTui,
@@ -34,7 +34,7 @@ describe("platform packages", () => {
     mkdirSync(dirname(runtimePackageJson), { recursive: true });
     writeFileSync(runtimePackageJson, "{}");
     writeFileSync(manifestPath, JSON.stringify({
-      packageVersion: AGENTROAM_VERSION,
+      packageVersion: PLATFORM_DEPENDENCY_VERSIONS["agentroam-runtime-win32-x64"],
       target: "windows-amd64",
       schemaVersion: 2,
       minimumNodeVersion: "22.22.0",
@@ -77,7 +77,7 @@ describe("platform packages", () => {
     const root = mkdtempSync(resolve(tmpdir(), "agentroam-runtime-legacy-"));
     const manifestPath = resolve(root, "manifest.json");
     writeFileSync(manifestPath, JSON.stringify({
-      packageVersion: AGENTROAM_VERSION, target: "darwin-arm64",
+      packageVersion: PLATFORM_DEPENDENCY_VERSIONS["agentroam-runtime-darwin-arm64"], target: "darwin-arm64",
       nodeMajor: 22, nodeModuleAbi: 127, nativeFiles: {},
     }));
     expect(() => resolvePlatformRuntime("darwin-arm64", fakeRequire({

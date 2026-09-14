@@ -290,13 +290,11 @@ export async function applyAgentUpgrade(root, candidateValue, options = {}) {
   }
   for (const file of RELEASE_PACKAGE_FILES) {
     const value = file === "packages/cli/package.json" ? cliPackage : JSON.parse(await read(file));
-    if (value.version !== oldReleaseVersion) throw new Error(`${file} version is ${value.version}; expected ${oldReleaseVersion}`);
+    parsePreviewVersion(value.version);
     value.version = agentroamVersion;
     if (file === "packages/cli/package.json") {
       for (const packageName of AGENTROAM_PACKAGES.slice(0, -1)) {
-        if (value.optionalDependencies?.[packageName] !== oldReleaseVersion) {
-          throw new Error(`${file} optional dependency ${packageName} is not ${oldReleaseVersion}`);
-        }
+        parsePreviewVersion(value.optionalDependencies?.[packageName]);
         value.optionalDependencies[packageName] = agentroamVersion;
       }
     }
@@ -304,7 +302,7 @@ export async function applyAgentUpgrade(root, candidateValue, options = {}) {
   }
   for (const file of RELEASE_MANIFEST_FILES) {
     const value = JSON.parse(await read(file));
-    if (value.packageVersion !== oldReleaseVersion) throw new Error(`${file} packageVersion is not ${oldReleaseVersion}`);
+    parsePreviewVersion(value.packageVersion);
     value.packageVersion = agentroamVersion;
     stage(file, formatJson(value));
   }
@@ -451,19 +449,24 @@ async function checkReleaseVersionGroup(io, root, issues) {
   } catch (error) {
     issues.push(`packages/cli/package.json ${error.message}`);
   }
+  const packageVersions = new Map();
+  let launcher;
   for (const file of RELEASE_PACKAGE_FILES) {
     const value = await readJsonForDrift(io, root, file, issues);
     if (!value) continue;
-    checkEqual(`${file} version`, value.version, expected, issues);
-    if (file === "packages/cli/package.json") {
-      for (const packageName of AGENTROAM_PACKAGES.slice(0, -1)) {
-        checkEqual(`${file} optional dependency ${packageName}`, value.optionalDependencies?.[packageName], expected, issues);
-      }
-    }
+    packageVersions.set(file, value);
+    if (file === "packages/cli/package.json") launcher = value;
+    try { parsePreviewVersion(value.version); }
+    catch (error) { issues.push(`${file} ${error.message}`); }
+  }
+  for (const [file, value] of packageVersions) {
+    if (!AGENTROAM_PACKAGES.slice(0, -1).includes(value.name)) continue;
+    checkEqual(`packages/cli/package.json optional dependency ${value.name}`, launcher?.optionalDependencies?.[value.name], value.version, issues);
   }
   for (const file of RELEASE_MANIFEST_FILES) {
     const value = await readJsonForDrift(io, root, file, issues);
-    if (value) checkEqual(`${file} packageVersion`, value.packageVersion, expected, issues);
+    const packageVersion = packageVersions.get(file.replace("manifest.json", "package.json"))?.version;
+    if (value) checkEqual(`${file} packageVersion`, value.packageVersion, packageVersion, issues);
   }
   for (const [file] of RELEASE_TEXT_FILES.slice(0, 4)) {
     try {

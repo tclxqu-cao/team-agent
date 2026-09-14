@@ -44,6 +44,7 @@ test("blocks a stable release when either Desktop installer is absent", async ()
     const path = resolve(fixture.root, directory, "package.json");
     const value = JSON.parse(await (await import("node:fs/promises")).readFile(path, "utf8"));
     value.version = "0.2.0";
+    if (value.optionalDependencies) value.optionalDependencies = Object.fromEntries(Object.keys(value.optionalDependencies).map((name) => [name, "0.2.0"]));
     await writeFile(path, `${JSON.stringify(value)}\n`);
   }
   await assert.rejects(loadReleaseSet(fixture.root), /requires both Desktop installers/);
@@ -206,7 +207,7 @@ test("preserves retryable synchronization failures and redacts secrets", async (
   assert.equal(redactReleaseError(failure.message), "token=[REDACTED]");
 });
 
-async function releaseFixture() {
+async function releaseFixture(versionByName = {}) {
   const root = await mkdtemp(resolve(tmpdir(), "agentroam-release-"));
   const artifactDirectory = resolve(root, "dist/cli-release");
   await mkdir(artifactDirectory, { recursive: true });
@@ -225,8 +226,9 @@ async function releaseFixture() {
   for (let index = 0; index < RELEASE_PACKAGE_DIRECTORIES.length; index += 1) {
     const directory = RELEASE_PACKAGE_DIRECTORIES[index];
     await mkdir(resolve(root, directory), { recursive: true });
-    await writeFile(resolve(root, directory, "package.json"), `${JSON.stringify({ name: names[index], version })}\n`);
-    const fileName = `${names[index].replace(/^@/, "").replaceAll("/", "-")}-${version}.tgz`;
+    const itemVersion = versionByName[names[index]] ?? version;
+    await writeFile(resolve(root, directory, "package.json"), `${JSON.stringify({ name: names[index], version: itemVersion, ...(index === names.length - 1 ? { optionalDependencies: Object.fromEntries(names.slice(0, -1).map((name) => [name, versionByName[name] ?? version])) } : {}) })}\n`);
+    const fileName = `${names[index].replace(/^@/, "").replaceAll("/", "-")}-${itemVersion}.tgz`;
     const content = Buffer.from(`tarball:${names[index]}`);
     contents.set(names[index], content);
     await writeFile(resolve(artifactDirectory, fileName), content);
@@ -293,3 +295,49 @@ function basenameFor(name) {
 function hash(content) {
   return createHash("sha256").update(content).digest("hex");
 }
+
+test("mixed versions survive collection and artifact manifest round-trip", async () => {
+  const { releaseSet } = await releaseFixture({ "agentroam-runtime-win32-x64": "0.2.0-preview.10" });
+  assert.equal(releaseSet.version, "0.2.0-preview.11");
+  assert.equal(releaseSet.packages[1].version, "0.2.0-preview.10");
+  assert.equal(releaseSet.packages[1].reused, true);
+  const path = resolve(releaseSet.artifactDirectory, "release-manifest.json");
+  await writeReleaseManifest(releaseSet, path);
+  const loaded = await loadReleaseManifest(path);
+  assert.equal(loaded.packages[1].version, "0.2.0-preview.10");
+  assert.equal(loaded.packages[1].reused, true);
+});
+
+test("only launcher is uploaded; reused exact versions are verified without tag changes", async () => {
+  const versions = Object.fromEntries(RELEASE_PACKAGE_DIRECTORIES.slice(0, -1).map((directory) => [directory.replace("packages/", "agentroam-").replace("agentroam-tui-win32-x64", "@caoqu/agentroam-tui-win32-x64"), "0.2.0-preview.10"]));
+  const { releaseSet, contents } = await releaseFixture(versions);
+  const client = fakeNpm(contents);
+  const queried = [];
+  const getVersion = client.getVersion.bind(client);
+  client.getVersion = async (name, version) => { queried.push([name, version]); return getVersion(name, version); };
+  for (const item of releaseSet.packages.slice(0, -1)) {
+    client.present.add(item.name);
+    client.tags.preview[item.name] = "0.2.0-preview.12";
+  }
+  const result = await publishPreviewRelease(releaseSet, { npmClient: client });
+  assert.deepEqual(result.published, ["agentroam"]);
+  assert.ok(queried.some(([name, version]) => name === "agentroam-runtime-win32-x64" && version === "0.2.0-preview.10"));
+  assert.ok(releaseSet.packages.slice(0, -1).every((item) => client.tags.preview[item.name] === "0.2.0-preview.12"));
+  assert.equal(client.tags.preview.agentroam, "0.2.0-preview.11");
+});
+
+test("a missing reused dependency cannot be republished or allow launcher publication", async () => {
+  const { releaseSet, contents } = await releaseFixture({ "agentroam-runtime-darwin-arm64": "0.2.0-preview.10" });
+  const client = fakeNpm(contents);
+  await assert.rejects(publishPreviewRelease(releaseSet, { npmClient: client }), /reused package is unavailable/);
+  assert.equal(client.calls.filter((call) => call.startsWith("publish:")).length, 0);
+});
+
+test("rollback uses each dependency pin from the target launcher", async () => {
+  const { releaseSet, contents } = await releaseFixture({ "agentroam-runtime-win32-x64": "0.2.0-preview.10" });
+  const client = fakeNpm(contents);
+  for (const item of releaseSet.packages) client.present.add(item.name);
+  await moveReleaseTag(releaseSet, { npmClient: client, tag: "latest", targetVersion: releaseSet.version });
+  assert.equal(client.tags.latest["agentroam-runtime-win32-x64"], "0.2.0-preview.10");
+  assert.equal(client.tags.latest.agentroam, "0.2.0-preview.11");
+});

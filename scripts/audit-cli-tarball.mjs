@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { execFileSync } from "node:child_process";
-import { statSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import { basename, resolve } from "node:path";
 import { MINIMUM_NODE_VERSION } from "../packages/cli/bin/runtime-policy.mjs";
 
@@ -16,6 +16,7 @@ if (packageJson.os || packageJson.cpu) throw new Error("the agentroam launcher m
 if (packageJson.bin?.agentroam !== "./bin/agentroam.mjs" || packageJson.bin?.["agent-tui"] !== "./bin/agent-tui.mjs") {
   throw new Error(`unexpected package bin: ${JSON.stringify(packageJson.bin)}`);
 }
+const sourcePackage = JSON.parse(readFileSync(new URL("../packages/cli/package.json", import.meta.url), "utf8"));
 for (const dependency of [
   "agentroam-runtime-darwin-arm64",
   "agentroam-runtime-win32-x64",
@@ -24,7 +25,8 @@ for (const dependency of [
   "agentroam-tui-darwin-arm64",
   "@caoqu/agentroam-tui-win32-x64",
 ]) {
-  if (packageJson.optionalDependencies?.[dependency] !== packageJson.version) {
+  if (!/^\d+\.\d+\.\d+(?:-preview\.\d+)?$/.test(packageJson.optionalDependencies?.[dependency] ?? "")
+    || packageJson.optionalDependencies[dependency] !== sourcePackage.optionalDependencies?.[dependency]) {
     throw new Error(`unexpected optional dependency ${dependency}: ${packageJson.optionalDependencies?.[dependency]}`);
   }
 }

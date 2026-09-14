@@ -5,7 +5,7 @@
 
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { PanelRight, X, LayoutGrid, MonitorUp } from "lucide-react";
+import { PanelRight, X, LayoutGrid, MonitorUp, RefreshCw } from "lucide-react";
 import PwaInstallButton from "./PwaInstallButton";
 import type { PinnedCommand } from "../../../core/src/domain/web-console/entities";
 import { defaultPinnedCommands } from "../../../core/src/domain/web-console/pinned-commands";
@@ -477,6 +477,9 @@ function AuthenticatedConsole({ auth }: { auth: WebAuthController }) {
         ))}
         <button className="terminal-add" disabled={tabs.length >= 8} onClick={addTerminal}>＋</button>
         <div className="terminal-connection">
+          <button type="button" className="file-drawer-toggle" aria-label="刷新页面" title="刷新页面" onClick={() => window.location.reload()}>
+            <RefreshCw size={17} aria-hidden="true" />
+          </button>
           <PwaInstallButton />
           <button
             type="button"

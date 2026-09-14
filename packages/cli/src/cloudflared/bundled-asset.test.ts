@@ -2,7 +2,7 @@ import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { AGENTROAM_VERSION } from "../platform-packages.js";
+import { PLATFORM_DEPENDENCY_VERSIONS } from "../platform-packages.js";
 import { resolveBundledCloudflared } from "./bundled-asset.js";
 
 describe("resolveBundledCloudflared", () => {
@@ -12,7 +12,7 @@ describe("resolveBundledCloudflared", () => {
     const archivePath = resolve(root, "cloudflared.tgz");
     await writeFile(archivePath, "archive");
     await writeFile(manifestPath, JSON.stringify({
-      packageVersion: AGENTROAM_VERSION,
+      packageVersion: PLATFORM_DEPENDENCY_VERSIONS["agentroam-cloudflared-darwin-arm64"],
       upstreamVersion: "2026.8.2",
       target: "darwin-arm64",
       assetFormat: "tgz",
@@ -51,13 +51,27 @@ describe("resolveBundledCloudflared", () => {
       .rejects.toThrow("invalid cloudflared platform manifest");
   });
 
+  it("checks Windows against its own pin when platform versions differ", async () => {
+    const key = "agentroam-cloudflared-win32-x64";
+    const previous = PLATFORM_DEPENDENCY_VERSIONS[key];
+    const root = await mkdtemp(resolve(tmpdir(), "agentroam-mixed-cloudflared-"));
+    const manifestPath = resolve(root, "manifest.json");
+    try {
+      PLATFORM_DEPENDENCY_VERSIONS[key] = "0.2.0-preview.1";
+      await writeFile(manifestPath, JSON.stringify({ packageVersion: "0.2.0-preview.1", upstreamVersion: "2026.8.2", target: "windows-amd64", assetFormat: "executable", fileName: "cloudflared.exe", size: 6, sha256: "b".repeat(64) }));
+      await expect(resolveBundledCloudflared("windows-amd64", fakeRequire(manifestPath, "binary"))).resolves.toMatchObject({ assetPath: "binary" });
+    } finally {
+      PLATFORM_DEPENDENCY_VERSIONS[key] = previous;
+    }
+  });
+
   it("resolves a Windows executable asset", async () => {
     const root = await mkdtemp(resolve(tmpdir(), "agentroam-bundled-windows-"));
     const manifestPath = resolve(root, "manifest.json");
     const assetPath = resolve(root, "cloudflared.exe");
     await writeFile(assetPath, "binary");
     await writeFile(manifestPath, JSON.stringify({
-      packageVersion: AGENTROAM_VERSION,
+      packageVersion: PLATFORM_DEPENDENCY_VERSIONS["agentroam-cloudflared-win32-x64"],
       upstreamVersion: "2026.8.2",
       target: "windows-amd64",
       assetFormat: "executable",

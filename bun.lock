@@ -14,7 +14,7 @@
     },
     "packages/cli": {
       "name": "agentroam",
-      "version": "0.2.0-preview.20",
+      "version": "0.2.0-preview.21",
       "bin": {
         "agentroam": "./bin/agentroam.mjs",
         "agent-tui": "./bin/agent-tui.mjs",
@@ -30,12 +30,12 @@
         "vitest": "^2.1.0",
       },
       "optionalDependencies": {
-        "@caoqu/agentroam-tui-win32-x64": "0.2.0-preview.16",
-        "agentroam-cloudflared-darwin-arm64": "0.2.0-preview.16",
-        "agentroam-cloudflared-win32-x64": "0.2.0-preview.16",
-        "agentroam-runtime-darwin-arm64": "0.2.0-preview.16",
-        "agentroam-runtime-win32-x64": "0.2.0-preview.16",
-        "agentroam-tui-darwin-arm64": "0.2.0-preview.16",
+        "@caoqu/agentroam-tui-win32-x64": "0.2.0-preview.20",
+        "agentroam-cloudflared-darwin-arm64": "0.2.0-preview.20",
+        "agentroam-cloudflared-win32-x64": "0.2.0-preview.20",
+        "agentroam-runtime-darwin-arm64": "0.2.0-preview.21",
+        "agentroam-runtime-win32-x64": "0.2.0-preview.21",
+        "agentroam-tui-darwin-arm64": "0.2.0-preview.20",
       },
     },
     "packages/cloudflared-darwin-arm64": {
@@ -94,11 +94,11 @@
     },
     "packages/runtime-darwin-arm64": {
       "name": "agentroam-runtime-darwin-arm64",
-      "version": "0.2.0-preview.20",
+      "version": "0.2.0-preview.21",
     },
     "packages/runtime-win32-x64": {
       "name": "agentroam-runtime-win32-x64",
-      "version": "0.2.0-preview.20",
+      "version": "0.2.0-preview.21",
     },
     "packages/sdk": {
       "name": "@agent/sdk",

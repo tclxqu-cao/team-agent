@@ -7,7 +7,7 @@ import { promisify } from "node:util";
 import { MINIMUM_NODE_VERSION, compareNodeVersions, isSupportedNodeVersion, parseNodeVersion } from "./runtime-policy.mjs";
 
 const execFileAsync = promisify(execFile);
-const RELEASE_VERSION = "0.2.0-preview.18";
+const RELEASE_VERSION = "0.2.0-preview.21";
 const RELEASE_BASE_URL = `https://gitee.com/caoqu/team-agent/releases/download/v${RELEASE_VERSION}`;
 const FORWARDED_SIGNALS = ["SIGINT", "SIGTERM", "SIGHUP"];
 

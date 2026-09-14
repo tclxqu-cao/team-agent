@@ -243,3 +243,33 @@ async function makeFixture() {
   }
   return root;
 }
+
+test("release drift check accepts pinned independent platform versions", async () => {
+  const fixture = await makeFixture();
+  try {
+    const cliPath = resolve(fixture, "packages/cli/package.json");
+    const cli = JSON.parse(await readFile(cliPath, "utf8"));
+    const runtimePath = resolve(fixture, "packages/runtime-win32-x64/package.json");
+    const runtime = JSON.parse(await readFile(runtimePath, "utf8"));
+    runtime.version = "0.2.0-preview.1";
+    cli.optionalDependencies[runtime.name] = runtime.version;
+    await writeFile(cliPath, JSON.stringify(cli));
+    await writeFile(runtimePath, JSON.stringify(runtime));
+    const manifestPath = resolve(fixture, "packages/runtime-win32-x64/manifest.json");
+    const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+    manifest.packageVersion = runtime.version;
+    await writeFile(manifestPath, JSON.stringify(manifest));
+    // Installer examples in the mutable checkout are not the release snapshot.
+    // Normalize only these fixture examples so this test exercises version pins.
+    const io = { readFile: async (path, encoding) => {
+      const source = await readFile(path, encoding);
+      return path.endsWith("install-agentroam.ps1") ? `${source}\n# ${cli.version}\n` : source;
+    } };
+    assert.equal((await checkRuntimeVersionDrift(fixture, { io })).agentroam, cli.version);
+    cli.optionalDependencies[runtime.name] = cli.version;
+    await writeFile(cliPath, JSON.stringify(cli));
+    await assert.rejects(checkRuntimeVersionDrift(fixture, { io }), /optional dependency agentroam-runtime-win32-x64/);
+  } finally {
+    await rm(fixture, { recursive: true, force: true });
+  }
+});

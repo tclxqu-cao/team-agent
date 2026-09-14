@@ -1,7 +1,8 @@
 import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
+import { PLATFORM_DEPENDENCY_VERSIONS } from "../platform-packages.js";
 import type { PlatformTarget } from "../platform.js";
-import { CLOUDFLARED_PACKAGES, CLOUDFLARED_PACKAGE_VERSION } from "./manifest.js";
+import { CLOUDFLARED_PACKAGES } from "./manifest.js";
 
 export interface BundledCloudflaredAsset {
   assetPath: string;
@@ -41,7 +42,7 @@ export async function resolveBundledCloudflared(
 
   const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as PackageManifest;
   if (
-    manifest.packageVersion !== CLOUDFLARED_PACKAGE_VERSION ||
+    manifest.packageVersion !== PLATFORM_DEPENDENCY_VERSIONS[packageName] ||
     manifest.target !== target ||
     (manifest.assetFormat !== "tgz" && manifest.assetFormat !== "executable") ||
     typeof manifest.upstreamVersion !== "string" ||

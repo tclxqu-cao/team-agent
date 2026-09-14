@@ -4,7 +4,7 @@ import { dirname } from "node:path";
 import type { PlatformTarget } from "./platform.js";
 import { MINIMUM_NODE_VERSION, assertSupportedNodeVersion } from "../bin/runtime-policy.mjs";
 
-export const AGENTROAM_VERSION = "0.2.0-preview.20";
+export const AGENTROAM_VERSION = "0.2.0-preview.21";
 export const PLATFORM_DEPENDENCY_VERSIONS: Record<string, string> = JSON.parse(
   readFileSync(new URL("../package.json", import.meta.url), "utf8"),
 ).optionalDependencies;

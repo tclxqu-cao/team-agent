@@ -28,6 +28,13 @@ export async function main(args = process.argv.slice(2), dependencies = {}) {
     const targetVersion = command === "promote-latest" ? required(args, "--version") : required(args, "--to");
     const tag = command === "rollback-preview" ? "preview" : "latest";
     const releaseSet = releaseSetForVersion(targetVersion);
+    const launcher = await npmClient.getVersion("agentroam", targetVersion);
+    if (!launcher) throw new Error(`agentroam@${targetVersion} is not published`);
+    for (const item of releaseSet.packages.filter((item) => !item.launcher)) {
+      const version = launcher.optionalDependencies?.[item.name];
+      if (!/^\d+\.\d+\.\d+(?:-preview\.\d+)?$/.test(version ?? "")) throw new Error(`missing exact dependency ${item.name}`);
+      item.version = version;
+    }
     if (args.includes("--dry-run")) return print({ dryRun: true, command, tag, targetVersion });
     return print(await moveReleaseTag(releaseSet, { npmClient, tag, targetVersion }));
   }

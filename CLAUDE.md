@@ -51,3 +51,10 @@ bun test             # Run tests
 - Never store or commit the token. Put it in a permission-restricted temporary npm user config, clear that file when publishing exits, and leave the global `.npmrc` unchanged.
 - Always publish against `https://registry.npmjs.org` with public access. Local token-based publishes must pass `--provenance=false`; the dist-tag must match the release target (`preview` for prereleases).
 - Publish platform dependency packages before the `agentroam` launcher, then verify dist-tags and exact versions from the official registry.
+
+## Incremental CLI Releases
+
+- Default to incremental npm releases: `npm run plan:cli -- --base <last-published-source-commit> --version <new-version>`, then `npm run pack:cli -- --base <same-commit> --version <same-version>` in an isolated release checkout.
+- Review the plan's per-package reasons. Shared inputs conservatively rebuild dependent packages. Unchanged packages retain the baseline launcher's exact dependency versions and are downloaded from the official registry; an unavailable reused version blocks the release rather than falling back silently.
+- Run tarball audits and fresh-install verification, then use `publish-agentroam-release.mjs publish-preview` with the generated release manifest. Only changed packages are uploaded, platform dependencies before the launcher. Reused package tags are left untouched.
+- Do not bump all platform package versions merely to match the launcher. `pack:cli:all` remains an explicit full-build path, not the default release command.
