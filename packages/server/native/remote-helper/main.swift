@@ -189,7 +189,13 @@ final class RemoteCaptureStream: NSObject, SCStreamOutput, SCStreamDelegate {
         for id in requests { respond(id, ["ok": false, "error": message]) }
     }
     func encode(_ id: Int?, _ image: CGImage) {
-            let bitmap = NSBitmapImageRep(cgImage: image)
+            // JPEG is the lightweight viewing fallback; H264 keeps the selected resolution.
+            let scale = min(1, 1280.0 / Double(max(image.width, image.height)))
+            let preview = CIImage(cgImage: image).transformed(by: CGAffineTransform(scaleX: scale, y: scale))
+            guard let thumbnail = context.createCGImage(preview, from: preview.extent) else {
+                respond(id, ["ok": false, "error": "屏幕预览编码失败"]); return
+            }
+            let bitmap = NSBitmapImageRep(cgImage: thumbnail)
             for quality in [0.7, 0.5, 0.3, 0.15] {
                 if let jpeg = bitmap.representation(using: .jpeg, properties: [.compressionFactor: quality]), jpeg.count <= 640 * 1024 {
                     respond(id, ["ok": true, "data": jpeg.base64EncodedString(), "width": bounds.width, "height": bounds.height, "originX": bounds.minX, "originY": bounds.minY, "displayId": String(selectedDisplayID ?? CGMainDisplayID()), "displays": displays(), "quality": self.quality.rawValue]); return

@@ -26,6 +26,8 @@ test("shared Web change builds both runtimes and launcher but no TUI or cloudfla
 
 test("Darwin helper change leaves Windows untouched", () => {
   assert.deepEqual(changed(plan(["scripts/build-cli-remote-helper.mjs"])), [names[0], "agentroam"]);
+  assert.deepEqual(changed(plan(["packages/server/native/remote-helper-windows/capture.cpp"])), [names[1], "agentroam"]);
+  assert.deepEqual(changed(plan(["scripts/build-windows-remote-helper.mjs"])), [names[1], "agentroam"]);
 });
 
 test("Windows cloudflared metadata only updates Windows and launcher", () => {
