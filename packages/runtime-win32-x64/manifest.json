@@ -1,9 +1,10 @@
 {
-  "packageVersion": "0.2.0-preview.23",
+  "packageVersion": "0.2.0-preview.24",
   "target": "windows-amd64",
   "schemaVersion": 2,
   "minimumNodeVersion": "22.22.0",
   "nativeFiles": {
+    "native/agentroam-remote-desktop.exe": "cac0f96be0b0734e1660e33c3aef7172b28f1ea186eef80c05d346bf4452b473",
     "node_modules/better-sqlite3/prebuilds/win32-x64.node": "e21e5efd71fba66578e95b62554d9028064a80dafd7221bf8a8ef155de8d240a",
     "node_modules/node-pty/prebuilds/win32-x64/conpty.node": "ee8f4e6f4dad71939eecfda11de249400e34bfefe4c8b48af13f3b5476f4035b",
     "node_modules/node-pty/prebuilds/win32-x64/conpty_console_list.node": "879dd94cfc79f1e263a00077597ae9448a5394b7d193381aaa50d992a1f91090",

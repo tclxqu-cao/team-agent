@@ -1,10 +1,10 @@
 {
-  "packageVersion": "0.2.0-preview.23",
+  "packageVersion": "0.2.0-preview.24",
   "target": "darwin-arm64",
   "schemaVersion": 2,
   "minimumNodeVersion": "22.22.0",
   "nativeFiles": {
-    "native/AgentRoam Remote Desktop.app/Contents/MacOS/agentroam-remote-desktop": "c3786b3448a0c4d5a1b1b3aa4f23abb683ab5f66fec70b8b607d0d93b02bdbc8",
+    "native/AgentRoam Remote Desktop.app/Contents/MacOS/agentroam-remote-desktop": "8a8f308f11153eb7d945399931f898209caf3ab40d6d42588a68ff57add92260",
     "node_modules/better-sqlite3/prebuilds/darwin-arm64.node": "98e0e8acd01c632fe5615243e1296af0372826f8783b18fc31c506f73c47459c",
     "node_modules/node-pty/prebuilds/darwin-arm64/pty.node": "e6457d66f45af3facd02920a5b212164e80fe0bb758afe6e6eab1eceeba3fc9a",
     "node_modules/node-pty/prebuilds/darwin-arm64/spawn-helper": "21c589109bca43e287df884f3c34ab888033a83927ea7d273949ac5030583f26"

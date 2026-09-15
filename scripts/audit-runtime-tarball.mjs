@@ -29,7 +29,9 @@ if (manifest.schemaVersion !== 2 || manifest.minimumNodeVersion !== MINIMUM_NODE
 }
 if (packageJson.engines?.node !== `>=${MINIMUM_NODE_VERSION}`) throw new Error("runtime Node.js engines mismatch");
 if (basename(tarball) !== `${packageJson.name}-${packageJson.version}.tgz`) throw new Error("runtime tarball filename mismatch");
-if (statSync(tarball).size >= 30_000_000) throw new Error(`runtime package exceeds 30 MB release limit: ${statSync(tarball).size}`);
+// 32 MB：preview.24 起运行时内置 Windows 远程桌面 helper（agentroam-remote-desktop.exe ≈1.2 MB），
+// 原口 30 MB 是 WebAuthn 人工发布时代的上传窗口约束（preview.9 起已改 access token 发布）。
+if (statSync(tarball).size >= 32_000_000) throw new Error(`runtime package exceeds 32 MB release limit: ${statSync(tarball).size}`);
 
 const allowed = ["package/package.json", "package/README.md", "package/manifest.json", "package/runtime/"];
 const unexpected = list.filter((file) => !allowed.some((entry) => file === entry || (entry.endsWith("/") && file.startsWith(entry))));
@@ -61,6 +63,8 @@ for (const required of [
 ]) {
   if (!list.includes(required)) throw new Error(`missing runtime file: ${required}`);
 }
+
+if (manifest.target === "windows-amd64" && !list.includes("package/runtime/native/remote-helper-NOTICES.txt")) throw new Error("missing Windows helper license");
 
 const platformLeaks = list.filter((file) => {
   if (file.startsWith("package/runtime/node_modules/@next/swc-")) return true;
