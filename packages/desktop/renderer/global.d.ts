@@ -187,6 +187,19 @@ export interface SessionGoalState {
   history: SessionGoal[];
 }
 
+/** 目标模式（thread goal）：每会话至多一个持久化目标，由服务端空闲续跑推进。 */
+export interface ThreadGoalInfo {
+  sessionId: string;
+  objective: string;
+  status: "active" | "paused" | "blocked" | "usage_limited" | "budget_limited" | "complete";
+  tokenBudget: number | null;
+  tokensUsed: number;
+  timeUsedSeconds: number;
+  turnCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface UnifiedSessionSummary {
   id: string;
   agentType: AgentType;
@@ -331,6 +344,10 @@ export interface AgentApi {
   reorderSessionMessages(id: string, orderedIds: string[]): Promise<SessionGoalState>;
   cancelSessionMessage(id: string, messageId: string): Promise<SessionGoalState>;
   steerSessionMessage(id: string, messageId: string): Promise<SessionGoalState>;
+  getThreadGoal?(id: string): Promise<ThreadGoalInfo | null>;
+  setThreadGoal?(id: string, objective: string, tokenBudget?: number | null): Promise<ThreadGoalInfo>;
+  updateThreadGoal?(id: string, action: "pause" | "resume"): Promise<ThreadGoalInfo>;
+  clearThreadGoal?(id: string): Promise<boolean>;
   handoffSession?(id: string): Promise<unknown>;
   releaseCodexSession?(id: string): Promise<void>;
   createSession(title: string, projectId?: string, agentType?: AgentType, cwd?: string): Promise<UnifiedSessionSummary>;

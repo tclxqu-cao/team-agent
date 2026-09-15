@@ -3,6 +3,7 @@
 import type { Message, NativeSubagentActivity, ToolCall, ToolResult } from '../model/entities.js';
 
 import type { CronTask } from '../cron/entities.js';
+import type { ThreadGoal } from '../goal/ThreadGoal.js';
 
 export type AgentEventType =
   | "thinking"
@@ -25,7 +26,9 @@ export type AgentEventType =
   | "cron_update"
   | "ask_user"
   | "approval_resolved"
-  | "show_widget";
+  | "show_widget"
+  | "goal_updated"
+  | "goal_cleared";
 
 export interface TodoItem {
   id: string;
@@ -87,7 +90,9 @@ export type AgentEvent =
       multiSelect?: boolean;
     }
   | { type: "approval_resolved"; questionId: string }
-  | { type: "show_widget"; widgetType: string; data: Record<string, unknown>; widgetId: string };
+  | { type: "show_widget"; widgetType: string; data: Record<string, unknown>; widgetId: string }
+  | { type: "goal_updated"; goal: ThreadGoal }
+  | { type: "goal_cleared"; sessionId: string };
 
 export type ContextUsageCategory =
   | "systemBase"

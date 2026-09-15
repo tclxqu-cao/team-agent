@@ -226,6 +226,8 @@ export function TuiApp(props: TuiAppProps) {
   const [scrollback, setScrollback] = useState(0);
   const [pendingImages, setPendingImages] = useState<Array<{ name: string; dataUrl: string }>>([]);
   const queuedInputsRef = useRef<string[]>([]);
+  /** /goal 设置/恢复后暂存的续跑输入，由 submit 在 executeBuiltin 之后交给队列。 */
+  const kickoffGoalTurnRef = useRef<string | null>(null);
   const abortingRef = useRef(false);
   const wizardGenerationRef = useRef(0);
   const persistedHistoryRef = useRef<string[]>([...(props.initialHistory ?? [])]);
@@ -658,6 +660,42 @@ export function TuiApp(props: TuiAppProps) {
       case "/steer":
         await steerQueuedInput(args);
         break;
+      case "/goal": {
+        const raw = args.trim();
+        try {
+          if (!raw) {
+            append("notice", await props.runtime.goalStatus());
+            break;
+          }
+          const sub = raw.split(/\s+/)[0];
+          if (sub === "pause") {
+            append("notice", await props.runtime.goalPause());
+            break;
+          }
+          if (sub === "resume") {
+            append("notice", await props.runtime.goalResume());
+            const pending = props.runtime.takePendingGoalTurn();
+            if (pending && !state.running) kickoffGoalTurnRef.current = pending;
+            break;
+          }
+          if (sub === "clear") {
+            append("notice", await props.runtime.goalClear());
+            break;
+          }
+          const budgetMatch = raw.match(/--budget[= ](\d+)/i);
+          const objective = raw.replace(/--budget[= ]\d+/i, "").trim();
+          if (!objective) {
+            append("error", "目标文本不能为空（例：/goal 整理输出目录并生成周报 --budget 50000）");
+            break;
+          }
+          append("notice", await props.runtime.goalSet(objective, budgetMatch ? Number(budgetMatch[1]) : null));
+          const pending = props.runtime.takePendingGoalTurn();
+          if (pending && !state.running) kickoffGoalTurnRef.current = pending;
+        } catch (error) {
+          append("error", error instanceof Error ? error.message : String(error));
+        }
+        break;
+      }
       case "/unqueue": {
         const queueIndex = Number(args);
         if (!Number.isInteger(queueIndex) || queueIndex < 1 || queueIndex > queuedInputsRef.current.length) {
@@ -686,13 +724,19 @@ export function TuiApp(props: TuiAppProps) {
     }
   }, [append, attachImage, exit, openSecondary, openSessionById, props.env, props.runtime, snapshot.sessionId, snapshot.workingDirectory, state.running, state.usage, steerQueuedInput, switchModel, toggleVimMode, pendingImages.length]);
 
-  const runInputQueue = useCallback(async (firstInput: string, firstImages?: string[]) => {
+  const runInputQueue = useCallback(async (firstInput: string, firstImages?: string[], firstGoalTurn = false) => {
     abortingRef.current = false;
     let currentInput: string | undefined = firstInput;
     let currentImages: string[] | undefined = firstImages;
+    let currentIsGoalTurn = firstGoalTurn;
     while (currentInput) {
       const parsed = parseSlashCommand(currentInput);
-      dispatch({ type: "append", entry: entry("user", currentInput + (currentImages?.length ? `  🖼×${currentImages.length}` : "")) });
+      if (currentIsGoalTurn) {
+        // 目标续跑的 steering 文本不回显，只显示一条进度提示。
+        dispatch({ type: "append", entry: entry("notice", "▶ 目标模式续跑轮") });
+      } else {
+        dispatch({ type: "append", entry: entry("user", currentInput + (currentImages?.length ? `  🖼×${currentImages.length}` : "")) });
+      }
       dispatch({ type: "turn_start", now: Date.now() });
       const eventBuffer = new AgentEventBuffer((event) => {
         if (event.type === "done" || event.type === "error") {
@@ -704,15 +748,28 @@ export function TuiApp(props: TuiAppProps) {
       try {
         await props.runtime.run(parsed.type === "agent" ? parsed.input : currentInput, (event) => {
           eventBuffer.push(event);
-        }, currentImages);
+        }, currentImages, currentIsGoalTurn ? { goalTurn: true } : undefined);
       } catch (error) {
         eventBuffer.push({ type: "error", message: error instanceof Error ? error.message : String(error) });
       } finally {
         eventBuffer.dispose();
       }
       if (abortingRef.current) break;
+      // 目标模式：一轮结束后核算并决定是否自动续跑（仍为串行，不并发）。
+      let goalSettlement: { turn: number; message: string } | null = null;
+      try {
+        goalSettlement = await props.runtime.settleGoalTurn();
+      } catch { /* 目标核算失败不阻断消息队列 */ }
+      if (goalSettlement) {
+        dispatch({ type: "append", entry: entry("notice", `▶ 目标续跑（第 ${goalSettlement.turn} 轮）`) });
+        currentInput = goalSettlement.message;
+        currentImages = undefined;
+        currentIsGoalTurn = true;
+        continue;
+      }
       currentInput = queuedInputsRef.current.shift();
       currentImages = undefined;
+      currentIsGoalTurn = false;
       setQueuedInputs([...queuedInputsRef.current]);
     }
   }, [props.runtime]);
@@ -754,7 +811,7 @@ export function TuiApp(props: TuiAppProps) {
     setSecondary(null);
     const parsed = parseSlashCommand(input);
     if (parsed.type === "builtin") {
-      if (state.running && parsed.name !== "/steer" && parsed.name !== "/unqueue") {
+      if (state.running && parsed.name !== "/steer" && parsed.name !== "/unqueue" && parsed.name !== "/goal") {
         append("notice", `运行中未执行 ${parsed.name}；普通消息可以继续排队`);
         return;
       }
@@ -762,6 +819,11 @@ export function TuiApp(props: TuiAppProps) {
         await executeBuiltin(parsed.name, parsed.args);
       } catch (error) {
         append("error", error instanceof Error ? error.message : String(error));
+      }
+      const kickoff = kickoffGoalTurnRef.current;
+      kickoffGoalTurnRef.current = null;
+      if (kickoff && !state.running) {
+        await runInputQueue(kickoff, undefined, true);
       }
       return;
     }

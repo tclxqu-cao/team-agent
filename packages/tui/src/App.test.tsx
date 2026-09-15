@@ -411,27 +411,27 @@ describe("TuiApp palettes", () => {
     await tick();
     view.stdin.write("/");
     await tick();
-    expect(view.lastFrame()).toContain("1/21");
+    expect(view.lastFrame()).toContain("1/22");
     expect(view.lastFrame()).toContain("› /help");
 
     view.stdin.write("\u001b[B");
     await tick();
-    expect(view.lastFrame()).toContain("2/21");
+    expect(view.lastFrame()).toContain("2/22");
     expect(view.lastFrame()).toContain("› /new");
 
     view.stdin.write("\u001bOB");
     await tick();
-    expect(view.lastFrame()).toContain("3/21");
+    expect(view.lastFrame()).toContain("3/22");
     expect(view.lastFrame()).toContain("› /sessions");
 
     view.stdin.write("\u001bOA");
     await tick();
-    expect(view.lastFrame()).toContain("2/21");
+    expect(view.lastFrame()).toContain("2/22");
 
     view.stdin.write("\u001b");
     view.stdin.write("[B");
     await tick();
-    expect(view.lastFrame()).toContain("3/21");
+    expect(view.lastFrame()).toContain("3/22");
     expect(view.lastFrame()).toContain("› /sessions");
 
     view.stdin.write("\r");
@@ -451,7 +451,7 @@ describe("TuiApp palettes", () => {
 
     view.stdin.write("/\u001b[B");
     await tick();
-    expect(view.lastFrame()).toContain("2/21");
+    expect(view.lastFrame()).toContain("2/22");
     expect(view.lastFrame()).toContain("› /new");
     expect(view.lastFrame()).toContain("⌕ /");
 

@@ -56,6 +56,12 @@ export { SQLiteRemoteToolStore } from './infrastructure/SQLiteRemoteToolStore.js
 // Cron
 export * from './domain/cron/index.js';
 
+// Thread goal (目标模式)
+export * from './domain/goal/index.js';
+export * from './application/goal/ThreadGoalService.js';
+export * from './application/goal/ThreadGoalTools.js';
+
+
 // Infrastructure
 export * from './infrastructure/index.js';
 

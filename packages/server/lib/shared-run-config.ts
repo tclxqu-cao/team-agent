@@ -8,6 +8,8 @@ export interface SharedRunOptions {
   maxIterations?: number;
   maxTokens?: number;
   agentIds?: string[];
+  /** "goal" = 目标模式自动续跑：输入以隐藏 __goal__ 消息持久化，不参与自动标题。 */
+  source?: "user" | "goal";
 }
 
 /** Each admitted run receives its own builder/config snapshot and MCP clients. */

@@ -4,6 +4,7 @@ import {
   readSessionGoalState,
   normalizeToolPermissionMode,
   paginateSessionHistory,
+  isInternalGoalMessage,
   StaleSessionAnchorError,
   type Message,
   type SessionHistoryQuery,
@@ -63,9 +64,9 @@ export async function GET(
   }
 
   const recoverableRun = agentHost.getRecoverableRun(session);
-  const committedMessages = !session.messages?.length && !recoverableRun && Array.isArray(session.events) && session.events.length > 0
+  const committedMessages = (!session.messages?.length && !recoverableRun && Array.isArray(session.events) && session.events.length > 0
     ? rebuildMessagesFromEvents(session.events as Array<Record<string, unknown>>)
-    : session.messages;
+    : session.messages)?.filter((message) => !isInternalGoalMessage(message)) ?? [];
   const currentRunMessages = recoverableRun
     ? rebuildMessagesFromEvents(
         session.events.slice(recoverableRun.eventStart) as Array<Record<string, unknown>>,

@@ -22,6 +22,7 @@ import {
   type RemoteToolRegistration,
   type Message,
   type MessageAttachment,
+  type ITool,
   ToolPermissionGate,
   TOOL_APPROVAL_OPTIONS,
   toolApprovalDecisionFromAnswer,
@@ -29,6 +30,8 @@ import {
   createSessionPermissionGate,
   newSessionMetadata,
   setSessionPermissionMode as applySessionPermissionMode,
+  GOAL_MESSAGE_NAME,
+  estimateTextTokens,
 } from "@agent/core";
 import { homedir } from "node:os";
 import { getAgentWorkingDirectory, getServerBaseDir } from "../../lib/server-data-dir";
@@ -80,6 +83,26 @@ interface ActiveCustomerAgentRun {
   abortChildren?: () => void;
 }
 
+/** 一轮 run 的累计信息，run 结束后交给目标模式空闲钩子核算。 */
+interface RunStats {
+  failed: boolean;
+  usageLimited: boolean;
+  responseText: string;
+  toolResultText: string;
+}
+
+/** 目标模式空闲钩子：run 结束（无论成败）后触发，用于续跑决策与用量核算。 */
+export interface RunSettledInfo {
+  sessionId: string;
+  failed: boolean;
+  usageLimited: boolean;
+  durationMs: number;
+  /** 本轮新增 token 估算（输入 + 回复 + 工具结果）。 */
+  newTokens: number;
+}
+
+export type ThreadGoalToolsProvider = (sessionId: string) => ITool[];
+
 export class CustomerAgentRunConflictError extends Error {
   readonly code = "SESSION_ALREADY_RUNNING";
 
@@ -127,6 +150,10 @@ class AgentHost {
     }
   >();
   private readonly toolPermissionGate: ToolPermissionGate;
+  /** 目标模式空闲钩子，由 lib/thread-goal-service 注册（依赖倒置，避免循环导入）。 */
+  onRunSettled: ((info: RunSettledInfo) => void) | null = null;
+  /** 目标模式模型工具提供者，由 lib/thread-goal-service 注册。 */
+  threadGoalToolsProvider: ThreadGoalToolsProvider | null = null;
 
   constructor() {
     this.toolPermissionGate = createSessionPermissionGate({
@@ -435,9 +462,27 @@ class AgentHost {
 
     const runId = crypto.randomUUID();
     this.activeRuns.set(sessionId, { runId, agent: null });
-    const completion = this.executeRun(input, sessionId, runId, images, sharedSettings().read(), options).finally(() => {
+    const runStartedAt = performance.now();
+    const runStats: RunStats = { failed: false, usageLimited: false, responseText: "", toolResultText: "" };
+    const execution = this.executeRun(input, sessionId, runId, images, sharedSettings().read(), options, runStats);
+    // 先挂 catch（先于 finally 触发），让钩子能看到失败；completion 仍保持原有拒绝语义。
+    void execution.catch(() => { runStats.failed = true; });
+    const completion = execution.finally(() => {
       if (this.activeRuns.get(sessionId)?.runId === runId) {
         this.activeRuns.delete(sessionId);
+      }
+      // 空闲钩子：目标模式在这里决定是否自动续跑（activeRuns 已清理，续跑可准入）。
+      if (this.onRunSettled) {
+        const newTokens = estimateTextTokens(`${input}${runStats.responseText}${runStats.toolResultText}`);
+        try {
+          this.onRunSettled({
+            sessionId,
+            failed: runStats.failed,
+            usageLimited: runStats.usageLimited,
+            durationMs: Math.max(0, Math.round(performance.now() - runStartedAt)),
+            newTokens,
+          });
+        } catch { /* 目标续跑不能影响 run 收尾 */ }
       }
     });
     return { runId, completion };
@@ -454,7 +499,9 @@ class AgentHost {
     images: string[] | undefined,
     settings: SharedSettings,
     options: SharedRunOptions,
+    runStats: RunStats,
   ): Promise<void> {
+    const goalSource = options.source === "goal";
     const runStartedAt = performance.now();
     let session = await this.sessionStore.get(sessionId);
     if (!session) throw new Error(`Session not found: ${sessionId}`);
@@ -465,7 +512,7 @@ class AgentHost {
       if (!session) throw new Error(`Session not found: ${sessionId}`);
     }
     const runWorkingDirectory = await this.resolveProjectWorkingDirectory(session?.projectId, false, settings.workingDirectory || this.workingDirectory);
-    await this.sessionStore.consumePendingAutoTitle(sessionId, input);
+    if (!goalSource) await this.sessionStore.consumePendingAutoTitle(sessionId, input);
     session = await this.sessionStore.get(sessionId);
     if (!session) throw new Error(`Session not found: ${sessionId}`);
     let marker: CustomerAgentRunMarker = {
@@ -477,6 +524,7 @@ class AgentHost {
     await this.appendMessagesAndUpdate(sessionId, [{
       role: "user",
       content: input,
+      ...(goalSource ? { name: GOAL_MESSAGE_NAME } : {}),
       ...(presentation ? { presentation } : {}),
     }], {
       status: "active",
@@ -516,6 +564,10 @@ class AgentHost {
           .build();
         await resources.applySkills();
         this.registerCustomerTools(runBuilder, sessionId, emitChild, dispatcher);
+        // 目标模式工具只挂 owner run：子代理会话没有空闲钩子，挂了也无法续跑。
+        for (const tool of this.threadGoalToolsProvider?.(sessionId) ?? []) {
+          runBuilder.getToolRegistry().register(tool);
+        }
       } catch (err) {
         await resources?.close();
         // Emit error to SSE subscribers so the SDK can display it
@@ -560,10 +612,14 @@ class AgentHost {
                 durationMs: Math.max(0, Math.round(performance.now() - runStartedAt)),
               }
             : event;
+          // 目标模式用量采集：估算本轮新增 token 的原始文本（有上限，防长循环撑爆内存）。
+          if (runStats.responseText.length < 400_000 && event.type === "text_chunk") runStats.responseText += event.text;
+          if (runStats.toolResultText.length < 400_000 && event.type === "tool_result") runStats.toolResultText += event.result.content;
           await this.sessionStore.addEvent(sessionId, emittedEvent);
 
           if (emittedEvent.type === "error") {
             runFailed = true;
+            if (/rate\s*limit|quota|usage\s*limit|429|insufficient/i.test(emittedEvent.message)) runStats.usageLimited = true;
             if (!terminalCommitted) {
               await this.commitRun(sessionId, marker, "failed");
               terminalCommitted = true;
@@ -584,6 +640,8 @@ class AgentHost {
         // The loop itself threw (not an in-band error event) — without this the
         // subscriber would wait forever with no feedback.
         runFailed = true;
+        const msg = err instanceof Error ? err.message : String(err);
+        if (/rate\s*limit|quota|usage\s*limit|429|insufficient/i.test(msg)) runStats.usageLimited = true;
         const errorEvent = {
           type: "error",
           message: err instanceof Error ? err.message : "Agent run failed",
@@ -749,11 +807,11 @@ class AgentHost {
    * Returns false when no run is active for this session — the caller
    * should start a new run instead.
    */
-  async steer(input: string, sessionId: string): Promise<boolean> {
+  async steer(input: string, sessionId: string, name: string = "__steer__"): Promise<boolean> {
     await this.sessionStore.addMessage(sessionId, {
       role: "user",
       content: input,
-      name: "__steer__",
+      name,
     } as Message);
     if (this.activeRuns.get(sessionId)?.agent) {
       this.emit(sessionId, { type: "thinking", message: `User added: ${input.slice(0, 60)}` } as AgentEvent);

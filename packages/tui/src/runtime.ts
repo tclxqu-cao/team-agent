@@ -8,6 +8,11 @@ import type { SessionCompaction } from "../../core/src/domain/agent/entities.js"
 import { FileSystemSessionStore } from "../../core/src/domain/session/SessionStore.js";
 import type { ISessionStore, Session } from "../../core/src/domain/session/entities.js";
 import type { SkillMeta } from "../../core/src/domain/skill/entities.js";
+import { estimateTextTokens } from "../../core/src/domain/model/tokenBudget.js";
+import { FileThreadGoalStore } from "../../core/src/infrastructure/FileThreadGoalStore.js";
+import { ThreadGoalService, type RunSettledInfo } from "../../core/src/application/goal/ThreadGoalService.js";
+import { createThreadGoalTools } from "../../core/src/application/goal/ThreadGoalTools.js";
+import type { ITool } from "../../core/src/domain/tool/entities.js";
 import {
   AskUserTool,
   DispatchAgentTool,
@@ -66,6 +71,8 @@ export interface TuiRuntimeHost {
   registerMcp(state: McpRuntimeState): void;
   dispatchSubagent(agentName: string, task: string, parentSessionId: string): Promise<DispatchResult>;
   reportSubagentActivity(activity: SubagentActivity): void;
+  /** 目标模式模型工具（owner agent 用；子代理不注册）。 */
+  getThreadGoalTools(): ITool[];
 }
 
 export interface RuntimeSnapshot {
@@ -123,6 +130,13 @@ export class TuiRuntime implements TuiRuntimeHost {
   private mcpState: McpRuntimeState | null = null;
   private dispatchReporter: SubagentReporter = () => {};
   private readonly agentFactory: AgentFactory;
+  /** 是否有一轮 run 正在前台执行（目标模式的并发判定）。 */
+  private runActive = false;
+  /** 目标续跑输入：TUI 不后台起轮，交回 UI 的输入队列串行执行。 */
+  private pendingGoalTurn: string | null = null;
+  private readonly goalService: ThreadGoalService;
+  /** 最近一轮 run 的结算信息（目标用量核算用），由 App 在轮末消费。 */
+  private lastRunStats: RunSettledInfo | null = null;
 
   constructor(
     private workingDirectory: string,
@@ -132,6 +146,23 @@ export class TuiRuntime implements TuiRuntimeHost {
     agentFactory?: AgentFactory,
   ) {
     this.agentFactory = agentFactory ?? TuiRuntime.defaultAgentFactory(this.harness);
+    this.goalService = new ThreadGoalService(
+      new FileThreadGoalStore(storeDir),
+      {
+        isSessionRunning: () => this.runActive,
+        // TUI 是单线程 UI：不起后台轮，把续跑输入暂存，由 App 的队列循环串行执行。
+        startTurn: async (_sessionId, input) => {
+          this.pendingGoalTurn = input;
+          return true;
+        },
+        steerHidden: async (sessionId, content) => {
+          await this.sessionStore.addMessage(sessionId, { role: "user", content, name: "__goal__" });
+          return this.runActive;
+        },
+        sessionExists: async (sessionId) => Boolean(await this.sessionStore.get(sessionId)),
+      },
+      { onUpdated: () => {}, onCleared: () => {} },
+    );
   }
 
   private static defaultAgentFactory(harness: HarnessServiceClient): AgentFactory {
@@ -151,6 +182,10 @@ export class TuiRuntime implements TuiRuntimeHost {
         .withTool(new AskUserTool(question))
         .withTool(new DispatchAgentTool((agentName, task, sessionId) => host.dispatchSubagent(agentName, task, sessionId)))
         .withToolPermissionGate(gate);
+      // 目标模式工具按 ctx.sessionId 解析会话，一次注册跨会话有效。
+      for (const tool of host.getThreadGoalTools()) {
+        builder.withTool(tool);
+      }
       const journal = host.getCheckpointJournal();
       if (journal) {
         builder.withToolExecutorDecorator((executor) => new CheckpointAwareToolExecutor(executor, journal));
@@ -188,6 +223,10 @@ export class TuiRuntime implements TuiRuntimeHost {
 
   getCheckpointJournal(): IFileCheckpointJournal | null {
     return this.checkpointJournal;
+  }
+
+  getThreadGoalTools(): ITool[] {
+    return createThreadGoalTools(this.goalService, this.currentSessionId);
   }
 
   registerMcp(state: McpRuntimeState): void {
@@ -418,34 +457,99 @@ export class TuiRuntime implements TuiRuntimeHost {
       .map((message) => ({ role: message.role, content: message.content }));
   }
 
-  async run(input: string, onEvent: (event: AgentEvent) => void, images?: string[]): Promise<void> {
+  async run(input: string, onEvent: (event: AgentEvent) => void, images?: string[], options: { goalTurn?: boolean } = {}): Promise<void> {
     if (!this.agent) throw new Error("Agent 尚未初始化");
     onEvent({ type: "thinking", message: "Preparing context..." });
     await this.sessionStore.addMessage(this.currentSessionId, {
       role: "user",
       content: input,
+      ...(options.goalTurn ? { name: "__goal__" } : {}),
       ...(images && images.length > 0 ? { images } : {}),
     });
-    if (!this.sessionTitled) {
+    if (!this.sessionTitled && !options.goalTurn) {
       this.sessionTitled = true;
       const firstLine = input.trim().split("\n")[0]?.slice(0, 24).trim();
       if (firstLine) await this.sessionStore.update(this.currentSessionId, { title: firstLine });
     }
     // Files written from this point on belong to one undo batch.
     this.checkpointJournal.beginBatch();
+    const runStartedAt = performance.now();
     let assistantText = "";
-    for await (const event of this.harness.monitor(this.agent.run(input, this.currentSessionId, images), {
-      input, sessionId: this.currentSessionId, workingDirectory: this.workingDirectory,
-    })) {
-      if (event.type === "text_chunk") assistantText += event.text;
-      onEvent(event);
-      if (event.type === "done") {
-        const finalText = (event.finalText || assistantText).trim();
-        if (finalText) {
-          await this.sessionStore.addMessage(this.currentSessionId, { role: "assistant", content: finalText });
+    let toolResultText = "";
+    let failed = false;
+    this.runActive = true;
+    try {
+      for await (const event of this.harness.monitor(this.agent.run(input, this.currentSessionId, images), {
+        input, sessionId: this.currentSessionId, workingDirectory: this.workingDirectory,
+      })) {
+        if (event.type === "text_chunk") assistantText += event.text;
+        if (event.type === "tool_result") toolResultText += event.result.content;
+        if (event.type === "error") failed = true;
+        onEvent(event);
+        if (event.type === "done") {
+          const finalText = (event.finalText || assistantText).trim();
+          if (finalText) {
+            await this.sessionStore.addMessage(this.currentSessionId, { role: "assistant", content: finalText });
+          }
         }
       }
+    } finally {
+      this.runActive = false;
     }
+    this.lastRunStats = {
+      sessionId: this.currentSessionId,
+      failed,
+      usageLimited: false,
+      tokens: estimateTextTokens(`${input}${assistantText}${toolResultText}`),
+      seconds: (performance.now() - runStartedAt) / 1000,
+    };
+  }
+
+  /**
+   * 一轮结束后的目标续跑决策：核算用量并判断是否继续。
+   * shouldContinue 时返回下一条续跑输入（App 队列串行执行），否则为 null。
+   */
+  async settleGoalTurn(): Promise<{ turn: number; message: string } | null> {
+    if (!this.lastRunStats) return null;
+    const stats = this.lastRunStats;
+    this.lastRunStats = null;
+    const settlement = await this.goalService.settleTurn(stats);
+    if (!settlement.shouldContinue || !settlement.continuationMessage || !settlement.goal) return null;
+    return { turn: settlement.goal.turnCount + 1, message: settlement.continuationMessage };
+  }
+
+  async goalStatus(): Promise<string> {
+    const goal = await this.goalService.getGoal(this.currentSessionId);
+    if (!goal) return "当前会话没有目标。/goal <目标文本> 设定；/goal pause|resume|clear 控制。";
+    const budget = goal.tokenBudget === null ? "不限" : `${goal.tokensUsed}/${goal.tokenBudget} tokens`;
+    return `目标（${goal.status}，第 ${goal.turnCount} 轮，用量 ${budget}）：${goal.objective}`;
+  }
+
+  async goalSet(objective: string, tokenBudget: number | null): Promise<string> {
+    const goal = await this.goalService.setGoal(this.currentSessionId, objective, { tokenBudget });
+    return `目标已设定（${goal.status}${goal.tokenBudget !== null ? `，预算 ${goal.tokenBudget} tokens` : ""}）：${goal.objective}`;
+  }
+
+  async goalPause(): Promise<string> {
+    const goal = await this.goalService.pauseGoal(this.currentSessionId);
+    return `目标已暂停：${goal.objective}`;
+  }
+
+  async goalResume(): Promise<string> {
+    const goal = await this.goalService.resumeGoal(this.currentSessionId);
+    return `目标已恢复（${goal.status}）：${goal.objective}`;
+  }
+
+  async goalClear(): Promise<string> {
+    const cleared = await this.goalService.clearGoal(this.currentSessionId);
+    return cleared ? "目标已清除，自动续跑停止。" : "当前会话没有目标。";
+  }
+
+  /** 取走暂存的目标续跑输入（由 setGoal/resume 经 driver.startTurn 暂存）。 */
+  takePendingGoalTurn(): string | null {
+    const pending = this.pendingGoalTurn;
+    this.pendingGoalTurn = null;
+    return pending;
   }
 
   abort(): void {

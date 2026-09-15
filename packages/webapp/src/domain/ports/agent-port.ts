@@ -20,6 +20,7 @@ export type {
   SessionGoalState,
   SessionQueryIndex,
   SessionQueryIndexEntry,
+  ThreadGoalInfo,
   TtsStreamMetadata,
 } from "../../../../desktop/renderer/global";
 

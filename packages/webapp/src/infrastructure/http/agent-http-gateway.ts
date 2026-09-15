@@ -6,6 +6,7 @@ import type {
   MCPServer,
   SessionGoalState,
   SessionQueryIndex,
+  ThreadGoalInfo,
 } from "../../domain/ports/agent-port";
 import { HttpClient, listOf } from "./http-client";
 
@@ -465,6 +466,37 @@ export class AgentHttpGateway {
 
   async cancelSessionGoal(id: string, goalId: string): Promise<SessionGoalState> {
     return this.http.delete(`/api/sessions/${encodeURIComponent(id)}/goals?goalId=${encodeURIComponent(goalId)}`);
+  }
+
+  async getThreadGoal(id: string): Promise<ThreadGoalInfo | null> {
+    const result = await this.http.get<{ goal: ThreadGoalInfo | null }>(
+      `/api/sessions/${encodeURIComponent(id)}/thread-goal`,
+    );
+    return result.goal ?? null;
+  }
+
+  async setThreadGoal(id: string, objective: string, tokenBudget?: number | null): Promise<ThreadGoalInfo> {
+    const result = await this.http.put<{ goal: ThreadGoalInfo }>(
+      `/api/sessions/${encodeURIComponent(id)}/thread-goal`,
+      { objective, tokenBudget: tokenBudget ?? null },
+    );
+    void this.openStream(id, this.nativeStreamCursors.get(id)).catch(() => undefined);
+    return result.goal;
+  }
+
+  async updateThreadGoal(id: string, action: "pause" | "resume"): Promise<ThreadGoalInfo> {
+    const result = await this.http.patch<{ goal: ThreadGoalInfo }>(
+      `/api/sessions/${encodeURIComponent(id)}/thread-goal`,
+      { action },
+    );
+    return result.goal;
+  }
+
+  async clearThreadGoal(id: string): Promise<boolean> {
+    const result = await this.http.delete<{ cleared: boolean }>(
+      `/api/sessions/${encodeURIComponent(id)}/thread-goal`,
+    );
+    return result.cleared;
   }
 
   async enqueueSessionMessage(

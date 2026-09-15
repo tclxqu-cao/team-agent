@@ -25,6 +25,7 @@ export const BUILTIN_COMMANDS: readonly BuiltinCommand[] = [
   { name: "/undo", description: "撤销最近一轮文件修改" },
   { name: "/steer", description: "将排队消息插入当前轮" },
   { name: "/unqueue", description: "移除一条排队消息" },
+  { name: "/goal", description: "目标模式：/goal 目标文本 设定，无参数查看，pause|resume|clear 控制" },
   { name: "/cost", description: "查看本会话 token 统计" },
   { name: "/clear", description: "清空当前屏幕消息" },
   { name: "/exit", description: "退出 TUI" },

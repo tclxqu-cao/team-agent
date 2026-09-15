@@ -14,6 +14,7 @@ import {
 } from './ContextCompactor.js';
 import { estimateContextUsage } from './ContextUsageEstimator.js';
 import { estimateRequestTokens } from '../model/tokenBudget.js';
+import { GOAL_MESSAGE_NAME } from '../goal/ThreadGoal.js';
 import { validateRunCheckpoint, type RunCheckpoint } from './run-checkpoint.js';
 
 export class AgentLoop implements IAgentLoop {
@@ -221,7 +222,7 @@ export class AgentLoop implements IAgentLoop {
             const newMsgs = session!.messages.slice(msgCheckpoint);
             msgCheckpoint = totalCount;
             for (const m of newMsgs) {
-              if (m.name === "__steer__" || m.name === "__mailbox__") {
+              if (m.name === "__steer__" || m.name === "__mailbox__" || m.name === GOAL_MESSAGE_NAME) {
                 messages.push(m);
               }
             }

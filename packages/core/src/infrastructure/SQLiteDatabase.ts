@@ -65,6 +65,18 @@ export class SQLiteDatabase {
         timestamp INTEGER NOT NULL
       );
 
+      CREATE TABLE IF NOT EXISTS thread_goals (
+        session_id TEXT PRIMARY KEY REFERENCES sessions(id) ON DELETE CASCADE,
+        objective TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'active',
+        token_budget INTEGER,
+        tokens_used INTEGER NOT NULL DEFAULT 0,
+        time_used_seconds REAL NOT NULL DEFAULT 0,
+        turn_count INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
       CREATE TABLE IF NOT EXISTS memories (
         name TEXT PRIMARY KEY,
         description TEXT NOT NULL DEFAULT '',

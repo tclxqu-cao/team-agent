@@ -65,6 +65,14 @@ export class HttpClient {
     });
   }
 
+  async put<T = unknown>(path: string, body?: unknown, options?: HttpOptions): Promise<T> {
+    return this.request<T>(path, {
+      method: "PUT",
+      headers: { "content-type": "application/json", ...options?.headers },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+  }
+
   async delete<T = unknown>(path: string, options?: HttpOptions): Promise<T> {
     return this.request<T>(path, { method: "DELETE", headers: options?.headers });
   }

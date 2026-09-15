@@ -11,3 +11,4 @@ export {
   type IModelProvider,
   type ModelProviderConfig,
 } from './entities.js';
+export { estimateTextTokens, estimateRequestTokens, truncateToTokenBudget } from './tokenBudget.js';

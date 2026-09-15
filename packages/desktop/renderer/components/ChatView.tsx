@@ -2,7 +2,7 @@ import { HistoryPullGesture } from "../lib/history-pull-gesture";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { AgentEvent, RuntimeProgress, SessionHistoryQuery, SessionToolResultBody, SessionToolResultRef } from "@agent/core";
-import { ArrowDownToLine, Check, Copy, CornerUpRight, FileText, GripVertical, LoaderCircle, Pencil, RefreshCw, Square, Target, Trash2, Volume2 } from "lucide-react";
+import { ArrowDownToLine, Check, Copy, CornerUpRight, FileText, GripVertical, LoaderCircle, Pencil, Play, RefreshCw, Square, Target, Trash2, Volume2 } from "lucide-react";
 import AgentBrandIcon from "./AgentBrandIcon";
 import MermaidBlock from "./MermaidBlock";
 import {
@@ -366,7 +366,7 @@ import {
   type OccupiedSendPayload,
   type OccupiedSessionRecovery,
 } from "../lib/occupied-session-fork";
-import type { AgentType, NativeReasoningEffort, RuntimeModelInfo, RuntimeModelSelection, SessionGoalState, ToolPermissionMode, UnifiedSessionSummary } from "../global";
+import type { AgentType, NativeReasoningEffort, RuntimeModelInfo, RuntimeModelSelection, SessionGoalState, ThreadGoalInfo, ToolPermissionMode, UnifiedSessionSummary } from "../global";
 
 interface ChatViewProps {
   activeAgentType?: AgentType;
@@ -513,6 +513,9 @@ export default function ChatView({
     setCronTasks,
   } = useAgentStore();
   const [goalState, setGoalState] = useState<SessionGoalState>({ active: null, queued: [], history: [] });
+  const [threadGoal, setThreadGoal] = useState<ThreadGoalInfo | null>(null);
+  const [threadGoalDraft, setThreadGoalDraft] = useState("");
+  const [threadGoalBudgetDraft, setThreadGoalBudgetDraft] = useState("");
   const [codexTraceRefreshSignal, setCodexTraceRefreshSignal] = useState(0);
   const renderedMessages = useMemo(
     () => coalesceAdjacentToolCallMessages(hideQueuedGoalMessages(
@@ -1134,6 +1137,44 @@ export default function ChatView({
   useEffect(() => {
     void loadGoalState(viewSessionId);
   }, [viewSessionId, loadGoalState]);
+  const loadThreadGoal = useCallback(async (targetSessionId?: string | null) => {
+    const id = targetSessionId || selectedSessionIdRef.current || sessionIdRef.current;
+    if (!id || typeof window.agentApi?.getThreadGoal !== "function") {
+      setThreadGoal(null);
+      return;
+    }
+    try {
+      setThreadGoal(await window.agentApi.getThreadGoal(id));
+    } catch {
+      setThreadGoal(null);
+    }
+  }, []);
+  useEffect(() => {
+    void loadThreadGoal(viewSessionId);
+  }, [viewSessionId, loadThreadGoal]);
+  const handleThreadGoalAction = useCallback(async (action: "pause" | "resume" | "clear") => {
+    const id = selectedSessionIdRef.current || sessionIdRef.current;
+    if (!id || typeof window.agentApi?.clearThreadGoal !== "function") return;
+    try {
+      if (action === "clear") {
+        await window.agentApi.clearThreadGoal(id);
+        setThreadGoal(null);
+      } else if (typeof window.agentApi.updateThreadGoal === "function") {
+        setThreadGoal(await window.agentApi.updateThreadGoal(id, action));
+      }
+    } catch (goalError) {
+      setError(goalError instanceof Error ? goalError.message : "目标模式操作失败");
+    }
+  }, [setError]);
+  const handleThreadGoalSubmit = useCallback(() => {
+    const id = selectedSessionIdRef.current || sessionIdRef.current;
+    const objective = threadGoalDraft.trim();
+    if (!id || !objective || typeof window.agentApi?.setThreadGoal !== "function") return;
+    const budget = Number.parseInt(threadGoalBudgetDraft, 10);
+    void window.agentApi.setThreadGoal(id, objective, Number.isFinite(budget) && budget > 0 ? budget : null)
+      .then((goal) => { setThreadGoal(goal); setThreadGoalDraft(""); setThreadGoalBudgetDraft(""); })
+      .catch((goalError: unknown) => setError(goalError instanceof Error ? goalError.message : "目标设置失败"));
+  }, [threadGoalDraft, threadGoalBudgetDraft, setError]);
   const updateAgentActivity = useCallback((next: "idle" | "thinking" | "tools") => {
     const activitySessionId = selectedSessionIdRef.current || sessionIdRef.current;
     if (
@@ -2412,6 +2453,7 @@ export default function ChatView({
           } else {
             scheduleQueuedMessageAfterTerminal(eventSid);
           }
+          void loadThreadGoal(eventSid);
         }
         break;
       case "error":
@@ -2518,6 +2560,7 @@ export default function ChatView({
           } else {
             scheduleQueuedMessageAfterTerminal(eventSid);
           }
+          void loadThreadGoal(eventSid);
         }
         break;
       case "turn_aborted":
@@ -2525,6 +2568,17 @@ export default function ChatView({
         if (isViewed) {
           setRunningSession(null);
           updateAgentActivity("idle");
+        }
+        void loadThreadGoal(eventSid);
+        break;
+      case "goal_updated":
+        if (eventSid === (selectedSessionIdRef.current || sessionIdRef.current)) {
+          setThreadGoal((event as { goal?: ThreadGoalInfo }).goal ?? null);
+        }
+        break;
+      case "goal_cleared":
+        if (eventSid === (selectedSessionIdRef.current || sessionIdRef.current)) {
+          setThreadGoal(null);
         }
         break;
     }
@@ -4487,6 +4541,92 @@ export default function ChatView({
             </div>
           );
         })()}
+
+        {threadGoal && (() => {
+          const statusLabel: Record<ThreadGoalInfo["status"], string> = {
+            active: "推进中",
+            paused: "已暂停",
+            blocked: "已受阻",
+            usage_limited: "用量受限",
+            budget_limited: "预算耗尽",
+            complete: "已完成",
+          };
+          const canResume = threadGoal.status !== "active" && threadGoal.status !== "complete";
+          return (
+            <div className={`goal-queue thread-goal is-${threadGoal.status}`} aria-label="目标模式">
+              <div className="goal-queue__header">
+                <Target size={14} strokeWidth={1.9} aria-hidden="true" />
+                <span>目标模式</span>
+                <span className="goal-queue__count">{statusLabel[threadGoal.status]}</span>
+                <span className="thread-goal__usage">
+                  {threadGoal.tokenBudget !== null
+                    ? `${threadGoal.tokensUsed}/${threadGoal.tokenBudget} tokens · ${threadGoal.turnCount} 轮`
+                    : `${threadGoal.tokensUsed} tokens · ${threadGoal.turnCount} 轮`}
+                </span>
+              </div>
+              <div className="goal-queue__row is-active">
+                <span className="goal-queue__objective" title={threadGoal.objective}>{threadGoal.objective}</span>
+                {threadGoal.status === "active" && (
+                  <button
+                    type="button"
+                    className="goal-queue__action"
+                    onClick={() => { void handleThreadGoalAction("pause"); }}
+                    title="暂停目标续跑"
+                    aria-label="暂停目标续跑"
+                  >⏸</button>
+                )}
+                {canResume && (
+                  <button
+                    type="button"
+                    className="goal-queue__action"
+                    onClick={() => { void handleThreadGoalAction("resume"); }}
+                    title="恢复目标续跑"
+                    aria-label="恢复目标续跑"
+                  ><Play size={12} strokeWidth={2} aria-hidden="true" /></button>
+                )}
+                <button
+                  type="button"
+                  className="goal-queue__action"
+                  onClick={() => { void handleThreadGoalAction("clear"); }}
+                  title="清除目标，停止续跑"
+                  aria-label="清除目标，停止续跑"
+                ><Trash2 size={12} strokeWidth={2} aria-hidden="true" /></button>
+              </div>
+            </div>
+          );
+        })()}
+        {!isWebShell() && composerAgentType !== "customer-agent" && !threadGoal && typeof window.agentApi?.setThreadGoal === "function" && (
+          <div className="goal-queue thread-goal-setup" aria-label="设定目标">
+            <div className="thread-goal-setup__row">
+              <Target size={14} strokeWidth={1.9} aria-hidden="true" />
+              <input
+                className="thread-goal-setup__input"
+                value={threadGoalDraft}
+                onChange={(event) => setThreadGoalDraft(event.target.value)}
+                onKeyDown={(event) => { if (event.key === "Enter" && threadGoalDraft.trim()) handleThreadGoalSubmit(); }}
+                placeholder="设定目标，完成后每轮空闲自动续跑推进（回车确认）"
+                maxLength={4000}
+              />
+              <input
+                className="thread-goal-setup__budget"
+                value={threadGoalBudgetDraft}
+                onChange={(event) => setThreadGoalBudgetDraft(event.target.value.replace(/[^\d]/g, ""))}
+                onKeyDown={(event) => { if (event.key === "Enter" && threadGoalDraft.trim()) handleThreadGoalSubmit(); }}
+                placeholder="预算"
+                title="可选 token 预算上限"
+                aria-label="token 预算"
+              />
+              <button
+                type="button"
+                className="goal-queue__action"
+                disabled={!threadGoalDraft.trim()}
+                onClick={() => handleThreadGoalSubmit()}
+                title="启动目标模式"
+                aria-label="启动目标模式"
+              >▶</button>
+            </div>
+          </div>
+        )}
 
         {(goalState.active || goalState.queued.length > 0) && (
           <div className="goal-queue" aria-label="目标队列">
