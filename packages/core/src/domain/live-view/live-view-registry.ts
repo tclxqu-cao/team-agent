@@ -66,6 +66,7 @@ interface LiveSession {
   online: boolean;
   updatedAt: number;
   displays: LiveViewDisplayOption[] | null;
+  qualityState?: Record<string, unknown>;
 }
 
 export interface PublishLiveSession {
@@ -237,6 +238,7 @@ export class LiveViewRegistry {
     // would surrender the controller role mid-session.
     if (peer.watchedSessionId === session.id && session.watchers.has(peer)) {
       if (session.latestFrame) queueMicrotask(() => peer.send(session.latestFrame!));
+      if (session.qualityState) peer.send({ type: "browser:webrtc", sessionId: session.id, data: session.qualityState });
       return view(session, peer);
     }
     this.unwatch(peer);
@@ -245,6 +247,7 @@ export class LiveViewRegistry {
     session.updatedAt = this.now();
     if (session.latestFrame) queueMicrotask(() => peer.send(session.latestFrame!));
     this.announce(session, "browser:state");
+    if (session.qualityState) peer.send({ type: "browser:webrtc", sessionId: session.id, data: session.qualityState });
     return view(session, peer);
   }
 
@@ -318,7 +321,7 @@ export class LiveViewRegistry {
   /** Asks the producer to switch its capture display (multi-display Macs). */
   setDisplay(peer: LiveViewPeer, sessionId: unknown, displayId: unknown): LiveViewSessionView {
     const session = this.requireVisible(peer, sessionId);
-    if (session.controllerId !== peer.id) throw domainError("browser is read-only", "EWRITELOCK");
+    this.requireCaptureAdjustment(session, peer);
     if (!session.displays?.some((item) => item.id === displayId)) throw domainError("unknown display", "EINVAL");
     session.producer.send({ type: "browser:set-display", sessionId: session.id, displayId });
     return view(session, peer);
@@ -338,8 +341,9 @@ export class LiveViewRegistry {
   /** Relays WebRTC signaling (offer/answer/ICE) from the controller to the producer. */
   webrtcFromViewer(peer: LiveViewPeer, sessionId: unknown, data: unknown): { accepted: boolean } {
     const session = this.requireVisible(peer, sessionId);
-    if (session.controllerId !== peer.id) throw domainError("browser is read-only", "EWRITELOCK");
     if (!isWebrtcSignal(data)) throw domainError("invalid webrtc signal", "EINVAL");
+    if (data.kind === "quality") this.requireCaptureAdjustment(session, peer);
+    else if (session.controllerId !== peer.id) throw domainError("browser is read-only", "EWRITELOCK");
     session.producer.send({ type: "browser:webrtc", sessionId: session.id, data });
     return { accepted: true };
   }
@@ -348,6 +352,11 @@ export class LiveViewRegistry {
   webrtcFromProducer(peer: LiveViewPeer, sessionId: unknown, data: unknown): { delivered: boolean } {
     const session = this.requireProducer(peer, sessionId);
     if (!isWebrtcSignal(data)) throw domainError("invalid webrtc signal", "EINVAL");
+    if (data.kind === "quality-state") {
+      session.qualityState = data;
+      for (const watcher of session.watchers) watcher.send({ type: "browser:webrtc", sessionId: session.id, data });
+      return { delivered: session.watchers.size > 0 };
+    }
     if (!session.controller) return { delivered: false };
     session.controller.send({ type: "browser:webrtc", sessionId: session.id, data });
     return { delivered: true };
@@ -414,6 +423,12 @@ export class LiveViewRegistry {
     const session = this.sessions.get(id);
     if (!session || session.userId !== peer.userId) throw domainError("browser session not found", "ENOENT");
     return session;
+  }
+
+  private requireCaptureAdjustment(session: LiveSession, peer: LiveViewPeer): void {
+    if (!session.online || (session.controllerId !== null && session.controllerId !== peer.id) || !session.watchers.has(peer)) {
+      throw domainError("browser is read-only", "EWRITELOCK");
+    }
   }
 
   private requireProducer(peer: LiveViewPeer, rawId: unknown): LiveSession {

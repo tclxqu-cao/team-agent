@@ -1,3 +1,4 @@
+import { printLocalDesktopUrl } from '../local-desktop-url.js';
 import { delimiter, dirname, isAbsolute, resolve, win32 } from "node:path";
 import type { CliOptions } from "../args.js";
 import { resolveCodexRuntime, type CodexRuntimeResolution, type ResolveCodexRuntimeOptions } from "../codex-runtime-manager.js";
@@ -84,13 +85,9 @@ export async function runServiceCommand(options: CliOptions, context: ServiceCom
       const { definition, state } = await controller.install(config);
       log(`✓ AgentRoam service installed: ${definition}`);
       if (state?.status === "ready" && state.version === config.version) await cleanupOldLaunchers(config, log);
+      if (state?.localUrl && state.status !== "stopped") printLocalDesktopUrl(state.localUrl, log, platform);
       if (state?.status === "ready" && state.accessUrl) {
         log(`Open: ${state.accessUrl}`);
-        if (state.localUrl) {
-          log(`远程桌面授权地址：${state.localUrl.replace(/\/$/, "")}/web`);
-          log('请在运行 CLI 的这台电脑上用浏览器打开此地址，配对后点击“远程授权”（盾牌图标）。');
-          log('按提示授予“屏幕录制”和“辅助功能”权限，然后点击“开启共享”。');
-        }
         await (context.pairingPrinter ?? printPairingCode)(options.dataDir, log, { accessUrl: state.accessUrl, qr: options.qr, interactive: stdoutIsTTY });
       } else log("Service is starting. Run `agentroam service url` and `agentroam pair` shortly.");
       return;
@@ -99,6 +96,7 @@ export async function runServiceCommand(options: CliOptions, context: ServiceCom
       const state = await controller.start();
       log("✓ AgentRoam service started");
       if (state?.status === "ready" && state.accessUrl) await logAccessUrl(state.accessUrl);
+      if (state?.localUrl && state.status !== "stopped") printLocalDesktopUrl(state.localUrl, log, platform);
       return;
     }
     case "stop":
@@ -116,6 +114,7 @@ export async function runServiceCommand(options: CliOptions, context: ServiceCom
         log(`Version: ${status.config.version}`);
         log(`Root: ${status.config.roots.join(", ")}`);
       }
+      if (status.running && status.state?.localUrl) printLocalDesktopUrl(status.state.localUrl, log, platform);
       if (status.running && status.state?.status === "ready" && status.state.accessUrl) {
         await logAccessUrl(status.state.accessUrl);
       }
@@ -136,6 +135,7 @@ export async function runServiceCommand(options: CliOptions, context: ServiceCom
       const state = await controller.restart();
       log("✓ AgentRoam service restarted");
       if (state?.status === "ready" && state.accessUrl) await logAccessUrl(state.accessUrl);
+      if (state?.localUrl && state.status !== "stopped") printLocalDesktopUrl(state.localUrl, log, platform);
       return;
     }
     case "uninstall": {

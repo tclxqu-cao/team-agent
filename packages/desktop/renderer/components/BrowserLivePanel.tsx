@@ -1,3 +1,4 @@
+import LiveViewSelect from "./LiveViewSelect";
 import { BrowserLiveHeaderContext } from "./browser-live-header-context";
 import { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal, flushSync } from "react-dom";
@@ -204,6 +205,7 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
   );
   const isDesktop = selected?.backend === "desktop";
   const hasControl = selected?.isController && selected.state === "user-controlled";
+  const canAdjustCapture = Boolean(selected?.online && selected.availability === "ready" && !selected.controlledByAnotherViewer);
   // Rough network latency readout while a stream is open.
   useEffect(() => {
     if (!open || !api || !selectedId) { setPingMs(null); return; }
@@ -626,7 +628,7 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
   }, [pendingQuality]);
   useEffect(() => { setPendingQuality(false); setVideoQuality("hd"); }, [open, selectedId]);
   const selectQuality = (quality: string) => {
-    if (!api || !hasControl || pendingDisplayId || pendingQuality || !selectedId) return;
+    if (!api || !canAdjustCapture || pendingDisplayId || pendingQuality || !selectedId) return;
     setPendingQuality(true);
     void api.request("browser:webrtc", { sessionId: selectedId, data: { kind: "quality", quality } }).catch(error => {
       setPendingQuality(false); setError(error instanceof Error ? error.message : "画质切换失败");
@@ -643,13 +645,13 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
   useEffect(() => { setPendingDisplayId(null); }, [open, selectedId]);
   const windowControlAtRef = useRef(0);
   const selectDisplay = useCallback((displayId: string) => {
-    if (!api || pendingDisplayId || pendingQuality || !selectedId || !hasControl || !liveDisplays?.some(item => item.id === displayId && !item.selected)) return;
+    if (!api || pendingDisplayId || pendingQuality || !selectedId || !canAdjustCapture || !liveDisplays?.some(item => item.id === displayId && !item.selected)) return;
     setPendingDisplayId(displayId);
     void api.request("browser:set-display", { sessionId: selectedId, displayId }).catch((requestError) => {
       setPendingDisplayId(null);
       setError(requestError instanceof Error ? requestError.message : "切换屏幕失败");
     });
-  }, [api, liveDisplays, selectedId, hasControl, pendingDisplayId, pendingQuality]);
+  }, [api, liveDisplays, selectedId, canAdjustCapture, pendingDisplayId, pendingQuality]);
 
   const pointerCoordinates = useCallback((event: React.PointerEvent<HTMLElement> | React.WheelEvent<HTMLElement>) => {
     const rect = event.currentTarget.getBoundingClientRect();
@@ -746,23 +748,22 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
           {(
             <div className="browser-live-zoom" role="group" aria-label="桌面画面缩放">
               {isDesktop && liveDisplays && liveDisplays.length > 0 && (
-                <select
-                  aria-label="选择直播屏幕"
-                  title={hasControl ? "选择直播屏幕" : "点击开始控制后可切换屏幕"}
+                <LiveViewSelect
+                  label="选择直播屏幕"
+                  title={canAdjustCapture ? "选择直播屏幕" : "其他设备控制中或画面暂不可用"}
                   value={(liveDisplays.find(item => item.selected) ?? liveDisplays[0]).id}
-                  disabled={!frame || !hasControl || !!pendingDisplayId || pendingQuality || liveDisplays.length < 2}
-                  onChange={event => selectDisplay(event.target.value)}
-                  style={{ minHeight: 32, maxWidth: 180, flexShrink: 0, fontSize: 16, color: "inherit", background: "var(--bg-surface)", border: "1px solid var(--border-subtle)", borderRadius: 6 }}
+                  busy={!!pendingDisplayId}
+                  disabled={!frame || !canAdjustCapture || pendingQuality || liveDisplays.length < 2}
+                  onChange={selectDisplay}
                 >
                   {liveDisplays.map((display, index) => <option key={display.id} value={display.id}>{`第 ${index + 1} 屏${display.primary ? "（主屏）" : ""}`}</option>)}
-                </select>
+                </LiveViewSelect>
               )}
               {selectedId === "cli-desktop:primary" && (
-                <select aria-label="视频画质" title={hasControl ? "视频画质" : "点击开始控制后可调整画质"} value={videoQuality} disabled={!hasControl || !!pendingDisplayId || pendingQuality} onChange={event => selectQuality(event.target.value)} style={{ minHeight: 32, flexShrink: 0, fontSize: 16, color: "inherit", background: "var(--bg-surface)", border: "1px solid var(--border-subtle)", borderRadius: 6 }}>
+                <LiveViewSelect label="视频画质" title={canAdjustCapture ? "视频画质" : "其他设备控制中或画面暂不可用"} value={videoQuality} busy={pendingQuality} disabled={!canAdjustCapture || !!pendingDisplayId} compact onChange={selectQuality}>
                   <option value="smooth">流畅</option><option value="hd">高清</option><option value="original">原画</option>
-                </select>
+                </LiveViewSelect>
               )}
-              {(pendingDisplayId || pendingQuality) && <span role="status">切换中…</span>}
               <button type="button" aria-label="缩小桌面画面" title="缩小" disabled={!frame || zoom <= 0.5} onClick={() => setZoom((value) => Math.max(0.5, value - 0.25))}><ZoomOut size={16} /></button>
               <output aria-label="桌面缩放比例">{Math.round(zoom * 100)}%</output>
               <button type="button" aria-label="放大桌面画面" title="放大" disabled={!frame || zoom >= 5} onClick={() => setZoom((value) => Math.min(5, value + 0.25))}><ZoomIn size={16} /></button>

@@ -1,4 +1,5 @@
 import { BrowserLiveHeaderContext } from "@desktop/renderer/components/browser-live-header-context";
+import { SKINS, useUIStore } from "@desktop/renderer/stores/uiStore";
 import RemoteAuthorizationControl from "./presentation/RemoteAuthorizationControl";
 import { StrictMode, useEffect } from "react";
 import { createRoot } from "react-dom/client";
@@ -43,6 +44,24 @@ if (!nativeEnvironment.isNativeApp() && window.parent === window) {
   const manifest = document.createElement("link"); manifest.rel = "manifest"; manifest.href = "/manifest.webmanifest"; document.head.append(manifest);
   const icon = document.querySelector<HTMLLinkElement>('link[rel="apple-touch-icon"]'); if (icon) icon.href = "/pwa/icon-192.png";
   const install = document.createElement("script"); install.src = "/pwa/install.js"; document.head.append(install);
+}
+// Standalone document (home-screen PWA opened directly, not in the /web
+// shell): keep the OS chrome on the active skin, mirroring the shell's own
+// document-chrome sync. In iframes there is no status bar, so skip it.
+if (window.parent === window) {
+  const syncStandaloneChrome = () => {
+    const skin = SKINS.find((entry) => entry.id === useUIStore.getState().skin) ?? SKINS[0];
+    document.body.style.background = skin.preview[0];
+    let meta = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
+    if (!meta) {
+      meta = document.createElement("meta");
+      meta.name = "theme-color";
+      document.head.append(meta);
+    }
+    meta.content = skin.preview[0];
+  };
+  syncStandaloneChrome();
+  useUIStore.subscribe(syncStandaloneChrome);
 }
 const nativePairing = nativeEnvironment.isNativeApp() ? new NativePairingClient(new NativeCredentialStorage()) : null;
 const http = new HttpClient(nativePairing?.fetch);

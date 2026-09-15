@@ -1,0 +1,35 @@
+name: windows-remote-helper
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'packages/server/native/remote-helper-windows/**'
+      - 'scripts/build-windows-remote-helper.mjs'
+      - 'scripts/verify-windows-remote-helper.mjs'
+      - '.github/workflows/windows-remote-helper.yml'
+  pull_request:
+    paths:
+      - 'packages/server/native/remote-helper-windows/**'
+      - 'scripts/build-windows-remote-helper.mjs'
+      - 'scripts/verify-windows-remote-helper.mjs'
+      - '.github/workflows/windows-remote-helper.yml'
+jobs:
+  native:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.22.0'
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - run: node scripts/build-windows-remote-helper.mjs
+      - run: node scripts/verify-windows-remote-helper.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-remote-helper-${{ github.sha }}
+          path: |
+            packages/server/native/.build-remote/windows/agentroam-remote-desktop.exe
+            packages/server/native/.build-remote/windows/remote-helper-NOTICES.txt
+          if-no-files-found: error

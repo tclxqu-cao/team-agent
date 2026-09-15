@@ -1,3 +1,4 @@
+import { printLocalDesktopUrl } from './local-desktop-url.js';
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "./args.js";
@@ -132,6 +133,8 @@ export async function main(argv: string[]): Promise<void> {
     if (controller.signal.aborted) { await runtime.close(); return; }
     void runtime.exited.then(() => controller.abort());
     console.log(`✓ Local server: ${runtime.localUrl}/web`);
+    await serviceReporter?.localReady(runtime.localUrl);
+    if (!serviceReporter) printLocalDesktopUrl(runtime.localUrl);
     const lanUrl = options.localOnly ? findLanUrl(runtime.port) ?? runtime.localUrl : runtime.localUrl;
 
     relay = await selectRelay({

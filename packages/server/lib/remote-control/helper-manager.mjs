@@ -7,6 +7,8 @@ import { fileURLToPath } from 'node:url';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 const run = promisify(execFile);
+// A high-resolution H264 keyframe can exceed the old 2 MB JSON limit.
+export const MAX_HELPER_MESSAGE_CHARS = 8 * 1024 * 1024;
 
 function defaultAppPath() {
   const installed = join(homedir(), 'Library/Application Support/AgentRoamRemoteDesktop/Services.noindex/AgentRoam Remote Desktop.app');
@@ -53,17 +55,18 @@ export class RemoteHelper {
           socket.setEncoding('utf8');
           socket.on('data', (chunk) => {
             buffer += chunk;
-            if (buffer.length > 2_000_000) { socket.destroy(); return; }
             let newline;
             while ((newline = buffer.indexOf('\n')) >= 0) {
+              if (newline > MAX_HELPER_MESSAGE_CHARS) { socket.destroy(); return; }
               const line = buffer.slice(0, newline); buffer = buffer.slice(newline + 1);
               try {
                 const result = JSON.parse(line);
                 if (result.event === 'video') { for (const listener of this.videoListeners) listener(result); continue; }
                 const pending = this.pending.get(result.id);
                 if (pending) { clearTimeout(pending.timer); this.pending.delete(result.id); result.ok ? pending.resolve(result) : pending.reject(new Error(result.error || '本机组件请求失败')); }
-              } catch { socket.destroy(); }
+              } catch { socket.destroy(); return; }
             }
+            if (buffer.length > MAX_HELPER_MESSAGE_CHARS) socket.destroy();
           });
           socket.on('error', () => undefined);
           socket.on('close', () => { if (this.socket === socket) this.socket = null; this.rejectPending(); });

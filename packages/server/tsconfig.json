@@ -33,6 +33,9 @@
     ".next-e2e/types/**/*.ts",
     ".next-shared-verify/types/**/*.ts",
     ".next-shared-dev/types/**/*.ts",
-    ".next-release-20260911-184156/types/**/*.ts"
+    ".next-release-20260911-184156/types/**/*.ts",
+    ".next-full-20260914/types/**/*.ts",
+    ".next-8af62fd/types/**/*.ts",
+    ".next-goaltest/types/**/*.ts"
   ]
 }

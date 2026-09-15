@@ -16,6 +16,10 @@ describe("ServiceRuntimeReporter", () => {
     expect(await readServiceState(paths)).toMatchObject({ status: "starting", pid: 123, version: "0.2.0-preview.9" });
     await expect(access(paths.urlPath)).rejects.toMatchObject({ code: "ENOENT" });
 
+    await reporter.localReady("http://127.0.0.1:49157");
+    expect(await readServiceState(paths)).toMatchObject({status:"starting",localUrl:"http://127.0.0.1:49157",pid:123});
+    await expect(access(paths.urlPath)).rejects.toMatchObject({code:"ENOENT"});
+
     await reporter.ready({
       localUrl: "http://127.0.0.1:3000",
       publicUrl: "https://example.trycloudflare.com",

@@ -128,6 +128,22 @@ function AuthenticatedConsole({ auth }: { auth: WebAuthController }) {
   useEffect(() => {
     postSkinToWebapp(themeId);
   }, [themeId, postSkinToWebapp]);
+  // Keep the OS chrome on the active skin: iOS home-screen apps paint the
+  // status-bar strip with the page background, Android tints it from the
+  // theme-color meta. The tint follows the top tab bar so the strip reads as
+  // one surface with it.
+  useEffect(() => {
+    const rootBg = activeTheme.cssVars["--ui-root-bg"];
+    document.documentElement.style.background = rootBg;
+    document.body.style.background = rootBg;
+    let meta = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
+    if (!meta) {
+      meta = document.createElement("meta");
+      meta.name = "theme-color";
+      document.head.append(meta);
+    }
+    meta.content = activeTheme.cssVars["--ui-tabbar-bg"];
+  }, [activeTheme]);
   useEffect(() => {
     const onMessage = (event: MessageEvent) => {
       const readyMessage = readWebappReadyMessage(

@@ -227,3 +227,21 @@ describe("LiveViewRegistry", () => {
     expect(() => registry.publish(producer, { sessionId: "x", backend: "tv" })).toThrow(/unsupported/);
   });
 });
+
+it('lets a watching device change capture settings without taking input control, but respects another controller',()=>{
+ const registry=new LiveViewRegistry();const producer=peer('producer'),viewer=peer('viewer'),other=peer('other');
+ for(const p of [producer,viewer,other])registry.connect(p);
+ registry.publish(producer,{sessionId:'desktop',backend:'desktop',availability:'ready',displays:[{id:'1',label:'one',primary:true,selected:true},{id:'2',label:'two',primary:false,selected:false}]});
+ expect(()=>registry.setDisplay(viewer,'desktop','2')).toThrow('read-only');
+ registry.watch(viewer,'desktop');
+ expect(registry.setDisplay(viewer,'desktop','2').isController).toBe(false);
+ expect(registry.webrtcFromViewer(viewer,'desktop',{kind:'quality',quality:'original'})).toEqual({accepted:true});
+ expect(()=>registry.webrtcFromViewer(viewer,'desktop',{kind:'start'})).toThrow('read-only');
+ expect(()=>registry.input(viewer,'desktop',{kind:'pointer',action:'move',x:0,y:0})).toThrow('read-only');
+ registry.webrtcFromProducer(producer,'desktop',{kind:'quality-state',quality:'original'});
+ expect(viewer.messages.at(-1)).toMatchObject({data:{quality:'original'}});
+ registry.watch(other,'desktop');expect(other.messages.at(-1)).toMatchObject({data:{quality:'original'}});
+ registry.takeOver(other,'desktop');
+ expect(()=>registry.setDisplay(viewer,'desktop','1')).toThrow('read-only');
+ expect(()=>registry.webrtcFromViewer(viewer,'desktop',{kind:'quality',quality:'hd'})).toThrow('read-only');
+});

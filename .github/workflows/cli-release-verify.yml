@@ -32,6 +32,7 @@ jobs:
       - run: npm run test:node-runtime-policy
       - run: npm run check:agent-runtime-versions
       - run: npm run test:agent-runtime-upgrade
+      - run: brew install mingw-w64
       - run: npm run pack:cli:all
       - run: node scripts/verify-cli-install.mjs --artifacts dist/cli-release --bootstrap-script
       - run: node scripts/verify-cli-tunnel.mjs --artifacts dist/cli-release --provider auto

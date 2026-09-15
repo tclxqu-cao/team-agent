@@ -35,6 +35,7 @@ jobs:
       - run: npm run test:agent-runtime-upgrade
       - run: bunx vitest run packages/cli/src packages/core/src/domain/web-console/WebArtifactBridge.test.ts
       - run: node --test packages/server/shell-platform.test.mjs
+      - run: brew install mingw-w64
       - run: npm run pack:cli:all
       - run: node scripts/verify-cli-install.mjs --artifacts dist/cli-release --bootstrap-script
       - uses: actions/upload-artifact@v4

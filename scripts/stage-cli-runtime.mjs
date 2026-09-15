@@ -40,6 +40,13 @@ if (targetName === "darwin-arm64") {
   execFileSync(process.execPath, [resolve(root, "scripts/build-cli-remote-helper.mjs")], { stdio: "inherit" });
   await cp(resolve(server, "native/AgentRoam Remote Desktop.app"), resolve(target, "native/AgentRoam Remote Desktop.app"), { recursive: true });
 }
+if (targetName === "windows-amd64") {
+  execFileSync(process.execPath, [resolve(root, "scripts/build-windows-remote-helper.mjs")], { stdio: "inherit" });
+  await mkdir(resolve(target, "native"), { recursive: true });
+  const helper = resolve(process.env.AGENT_WINDOWS_REMOTE_HELPER_OUTPUT || resolve(server, "native/.build-remote/windows/agentroam-remote-desktop.exe"));
+  await cp(helper, resolve(target, "native/agentroam-remote-desktop.exe"));
+  await cp(resolve(server, "native/remote-helper-windows/THIRD-PARTY-NOTICES.txt"), resolve(target, "native/remote-helper-NOTICES.txt"));
+}
 await cp(resolve(server, "lib/desktop-discovery.mjs"), resolve(target, "lib/desktop-discovery.mjs"));
 for (const name of ["device-pairing-store.mjs", "device-pairing-gateway.mjs", "pairing-page.mjs", "pwa-assets.mjs"]) {
   await cp(resolve(server, "lib", name), resolve(target, "lib", name));

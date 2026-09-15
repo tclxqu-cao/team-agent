@@ -33,7 +33,9 @@ export class RemoteWebrtcVideo {
       sender.onRtcp.subscribe(packet => { if (packet.type === 206 && this.connected) void this.helper.request({op:'video',enabled:true}).catch(()=>{}); });
       const state = { sequence: randomBytes(2).readUInt16BE(), ssrc: randomBytes(4).readUInt32BE() };
       this.unsubscribe = this.helper.onVideo(frame => {
-        if (this.paused || !this.connected || this.peer !== peer) return;
+        if (this.peer !== peer) return;
+        if (frame.error) { this.signal({kind:'state',state:'failed'}); void this.stop(); return; }
+        if (this.paused || !this.connected) return;
         this.watchFrames(peer);
         const timestamp = Math.round(frame.timestamp * 90000) >>> 0;
         for (const packet of packetizeH264(frame.nals.map(n => Buffer.from(n, 'base64')), timestamp, state)) track.writeRtp(packet);
@@ -68,7 +70,17 @@ export class RemoteWebrtcVideo {
   watchFrames(peer) {
     if (this.paused) return;
     clearTimeout(this.frameTimer);
-    this.frameTimer = setTimeout(() => { if (this.peer === peer) { this.signal({kind:'state',state:'failed'}); void this.stop(); } }, 5000);
+    this.frameTimer = setTimeout(async () => {
+      if (this.peer !== peer || this.paused) return;
+      // ScreenCaptureKit may emit no new complete frames for a static desktop.
+      // Probe the helper and request a keyframe instead of dropping a healthy peer.
+      try {
+        await this.helper.request({op:'video',enabled:true});
+        if (this.peer === peer && !this.paused) this.watchFrames(peer);
+      } catch {
+        if (this.peer === peer) { this.signal({kind:'state',state:'failed'}); await this.stop(); }
+      }
+    }, 5000);
   }
   async stop() {
     this.generation++; this.paused = false; this.connected = false; clearTimeout(this.timer); clearTimeout(this.frameTimer);

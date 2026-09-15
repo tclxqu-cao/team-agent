@@ -32,6 +32,10 @@ export class ServiceRuntimeReporter {
     await this.write({ status: "starting" });
   }
 
+  async localReady(localUrl: string): Promise<void> {
+    await this.write({ status: "starting", localUrl });
+  }
+
   async ready(ready: ReadyState): Promise<void> {
     await this.write({ status: "ready", ...ready });
     await writePrivateText(this.paths.urlPath, `${ready.accessUrl}\n`);

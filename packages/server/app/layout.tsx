@@ -6,6 +6,10 @@ export const metadata = {
   description: "General-purpose AI agent API server",
 };
 
+// Initial chrome tint (pearl root bg); the web shell keeps this meta and the
+// page background in sync with the active skin at runtime.
+export const viewport = { themeColor: "#f5f6fa" };
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">

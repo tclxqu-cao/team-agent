@@ -1,3 +1,4 @@
+import { WindowsRemoteHelper } from './windows-helper.mjs';
 import { RemoteWebrtcVideo } from './webrtc-video.mjs';
 import { randomUUID } from 'node:crypto';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
@@ -11,9 +12,15 @@ export function isLocalAuthorizationRequest(req) {
   try { return ['localhost', '127.0.0.1', '[::1]'].includes(new URL(`http://${req.headers.host}`).hostname); } catch { return false; }
 }
 
+export function supportsRemoteDesktop(platform = process.platform, arch = process.arch, release = os.release()) {
+  const major = Number(release.split('.')[0]);
+  return (platform === 'darwin' && arch === 'arm64' && major >= 23)
+    || (platform === 'win32' && arch === 'x64' && major >= 10);
+}
+
 export class RemoteAuthorization {
-  constructor({ registry, userId, dataDir, helper = new RemoteHelper(), supported = process.platform === 'darwin' && process.arch === 'arm64' && Number(os.release().split('.')[0]) >= 23, intervalMs = 150 }) {
-    Object.assign(this, { registry, dataDir, helper, supported, intervalMs });
+  constructor({ registry, userId, dataDir, platform = process.platform, helper = platform === 'win32' ? new WindowsRemoteHelper() : new RemoteHelper(), supported = supportsRemoteDesktop(platform), intervalMs = 150 }) {
+    Object.assign(this, { registry, dataDir, helper, supported, intervalMs, platform });
     this.enabled = false; this.screen = false; this.accessibility = false; this.online = false; this.error = null; this.busy = false; this.sequence = 0; this.generation = 0;
     this.sessionId = 'cli-desktop:primary';
     this.peer = { id: `cli-remote:${randomUUID()}`, userId, producerSessionIds: new Set(), watchedSessionId: null, send: (event) => {
@@ -31,12 +38,13 @@ export class RemoteAuthorization {
     this.timer = setInterval(() => { if (this.enabled) void this.tick(); }, this.intervalMs); this.timer.unref();
   }
   async status(local = true) {
-    return { local, supported: this.supported, installed: this.supported && await this.helper.available(), enabled: this.enabled, screen: this.screen, accessibility: this.accessibility, online: this.online, error: this.error };
+    return { local, platform: this.platform, supported: this.supported, installed: this.supported && await this.helper.available(), enabled: this.enabled, screen: this.screen, accessibility: this.accessibility, online: this.online, error: this.error };
   }
   async save() { await mkdir(this.dataDir, { recursive: true }); await writeFile(this.stateFile, JSON.stringify({ enabled: this.enabled }), { mode: 0o600 }); }
   async action(action, permission) {
-    if (!this.supported) throw new Error('远程授权目前支持 macOS 14 及以上的 Apple Silicon 电脑');
+    if (!this.supported) throw new Error('远程桌面支持 Windows 10/11 x64 和 macOS 14 及以上的 Apple Silicon 电脑');
     if (!['authorize', 'enable', 'disable', 'recheck', 'restart'].includes(action)) throw new Error('未知远程授权操作');
+    if (action === 'authorize' && this.platform === 'win32') throw new Error('Windows 请直接点击开启共享');
     if (action === 'authorize' && !['screen', 'accessibility'].includes(permission)) throw new Error('未知权限');
     if (action === 'recheck') {
       await this.helper.start();
@@ -77,8 +85,9 @@ export class RemoteAuthorization {
       if (!this.lastPermissionCheck || Date.now() - this.lastPermissionCheck > 2000) {
         const permissions = await this.helper.request({ op: 'status' });
         this.screen = permissions.screen === true; this.accessibility = permissions.accessibility === true; this.lastPermissionCheck = Date.now();
+        if (!this.screen) this.error = permissions.error || (this.platform === 'win32' ? '请在 Windows 上恢复已登录的普通桌面' : '请先授予屏幕录制权限');
       }
-      if (!this.screen) { await this.video.stop(); if (this.online) this.registry.close(this.peer, this.sessionId); this.online = false; return; }
+      if (!this.screen) { this.bounds = null; await this.releaseInput(); await this.video.stop(); if (this.online) this.registry.close(this.peer, this.sessionId); this.online = false; return; }
       if (this.video.connected && Date.now() - (this.lastPreview || 0) < 2000) return;
       const frame = await this.helper.request({ op: 'capture' });
       this.lastPreview = Date.now();
@@ -87,6 +96,7 @@ export class RemoteAuthorization {
       this.error = null;
     } catch (error) {
       if (generation !== this.generation) return;
+      this.bounds = null; await this.releaseInput();
       this.error = error.message; this.retryAt = Date.now() + 3000;
       if (this.online) this.registry.close(this.peer, this.sessionId);
       this.online = false;
@@ -94,6 +104,7 @@ export class RemoteAuthorization {
   }
   publishFrame(frame) {
     this.viewport = { width: frame.width, height: frame.height, deviceScaleFactor: 1 }; this.bounds = frame;
+    const previousQuality = this.quality;
     this.quality = frame.quality ?? this.quality ?? 'hd';
     const displays = frame.displays ?? this.displays ?? null;
     if (!this.online || JSON.stringify(displays) !== JSON.stringify(this.displays)) {
@@ -102,6 +113,7 @@ export class RemoteAuthorization {
       this.online = true;
     }
     this.registry.updateFrame(this.peer, { sessionId: this.sessionId, sequence: ++this.sequence, data: Buffer.from(frame.data, 'base64'), mime: 'image/jpeg', viewport: this.viewport, title: '本机桌面', timestamp: Date.now() });
+    if (previousQuality !== this.quality) this.registry.webrtcFromProducer(this.peer, this.sessionId, {kind:'quality-state',quality:this.quality});
   }
   async setDisplay(displayId) {
     if (!this.displays?.some(display => display.id === displayId)) throw new Error('屏幕已断开，请刷新屏幕列表');
@@ -146,14 +158,20 @@ export class RemoteAuthorization {
       await this.video.handle(event.data); return;
     }
     if (event.type === 'browser:takeover-requested') this.registry.producerState(this.peer, this.sessionId, 'user-controlled');
-    else if (event.type === 'browser:return-requested') { await this.video.stop(); this.registry.producerState(this.peer, this.sessionId, 'agent-controlled'); }
+    else if (event.type === 'browser:return-requested') { await this.releaseInput(); await this.video.stop(); this.registry.producerState(this.peer, this.sessionId, 'agent-controlled'); }
     else if (event.type === 'browser:input') {
       try {
         if (generation !== this.generation || !this.bounds) throw new Error('屏幕正在切换，请等待新画面');
-        if (!this.accessibility) throw new Error('请在电脑的远程授权中授予辅助功能权限');
+        if (!this.accessibility) throw new Error(this.platform === 'win32' ? 'Windows 桌面输入暂不可用，请恢复普通桌面' : '请在电脑的远程授权中授予辅助功能权限');
         const result = await this.dispatch(event.input);
         if (Number.isSafeInteger(event.token)) this.registry.inputResult(this.peer, this.sessionId, event.token, result);
       } catch (error) { this.error = error.message; if (Number.isSafeInteger(event.token)) this.registry.inputResult(this.peer, this.sessionId, event.token, { error: error.message }); }
+    }
+  }
+  async releaseInput() {
+    if (this.platform === 'win32') {
+      await this.helper.request({ op: 'release' }).catch(() => {});
+      this.pointerDown = false;
     }
   }
   async dispatch(input) {
@@ -178,8 +196,8 @@ export class RemoteAuthorization {
     if (pathname === '/api/remote-authorization/status') {
       if (req.method !== 'GET') { send(405, { error: 'Method not allowed' }); return true; }
       try {
-        const { supported, installed, enabled, screen, accessibility, online } = await this.status(false);
-        send(200, { local: false, supported, installed, enabled, screen, accessibility, online });
+        const { platform, supported, installed, enabled, screen, accessibility, online } = await this.status(false);
+        send(200, { local: false, platform, supported, installed, enabled, screen, accessibility, online });
       } catch { send(503, { error: '暂时无法读取远程桌面状态' }); }
       return true;
     }

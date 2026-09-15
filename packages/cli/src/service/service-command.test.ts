@@ -194,3 +194,17 @@ function options(serviceAction: ServiceAction): CliOptions {
     dataDir: resolve("data"),
   };
 }
+
+it.each(['install', 'start', 'restart', 'status'] as const)('prints the actual Windows local address for %s before tunnel readiness', async (action) => {
+  const state = {status:'starting',localUrl:'http://127.0.0.1:49157',pid:123};
+  const log=vi.fn();
+  const control=controller({
+    install:vi.fn(async()=>({state,definition:'task'})),start:vi.fn(async()=>state),restart:vi.fn(async()=>state),
+    status:vi.fn(async()=>({installed:true,running:true,state,config:null})),
+  });
+  await runServiceCommand(options(action),{platform:'win32',arch:'x64',nodePath:'C:\\node.exe',cliPath:'C:\\agentroam.mjs',version:'test',nodeVersion:'22.22.0',controller:control,log,
+    codexResolver:vi.fn(async()=>({executable:'C:\\codex.exe',version:'test',source:'global' as const}))});
+  expect(log).toHaveBeenCalledWith('远程桌面授权地址：http://127.0.0.1:49157/web');
+  expect(log).toHaveBeenCalledWith(expect.stringContaining('保持 Windows 已登录'));
+  expect(log.mock.calls.some(([line])=>line.includes('屏幕录制')||line.includes('辅助功能'))).toBe(false);
+});

@@ -17,6 +17,7 @@ export const RUNTIME_TARGETS = {
     npmArch: "x64",
     nodePtyDir: "win32-x64",
     nativeFiles: [
+      "native/agentroam-remote-desktop.exe",
       "node_modules/better-sqlite3/prebuilds/win32-x64.node",
       "node_modules/node-pty/prebuilds/win32-x64/conpty.node",
       "node_modules/node-pty/prebuilds/win32-x64/conpty_console_list.node",

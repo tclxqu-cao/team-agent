@@ -34,3 +34,31 @@ it('negotiates actual WebRTC, sends encrypted video RTP and stops the encoder on
   await video.stop();expect(helper.request).toHaveBeenCalledWith({op:'video',enabled:false});expect(receiveVideo).toBeNull();
  }finally{await video.stop();await viewer.close();}
 },30000);
+
+it('keeps a static desktop connected and only fails when the helper probe fails',async()=>{
+ vi.useFakeTimers();
+ const helper={request:vi.fn(async()=>({ok:true}))};const signal=vi.fn();
+ const video=new RemoteWebrtcVideo({helper,signal});const peer={close:vi.fn(async()=>{})};video.peer=peer;video.connected=true;
+ try{
+  video.watchFrames(peer);await vi.advanceTimersByTimeAsync(16000);
+  expect(video.peer).toBe(peer);expect(video.connected).toBe(true);expect(peer.close).not.toHaveBeenCalled();
+  expect(helper.request).toHaveBeenCalledTimes(3);
+  helper.request.mockRejectedValueOnce(new Error('helper disconnected'));
+  await vi.advanceTimersByTimeAsync(5000);
+  expect(signal).toHaveBeenCalledWith({kind:'state',state:'failed'});expect(peer.close).toHaveBeenCalledOnce();
+ }finally{await video.stop();vi.useRealTimers();}
+});
+
+it('closes video transport on a Windows encoder failure so JPEG viewing can resume', async () => {
+  let receive:any;
+  const helper={onVideo:(callback:any)=>{receive=callback;return()=>{};},request:vi.fn(async()=>({ok:true}))};
+  const signal=vi.fn();const video=new RemoteWebrtcVideo({helper,signal});
+  try {
+    await video.handle({kind:'start'});
+    receive({error:'Media Foundation encoder unavailable'});
+    await vi.waitFor(()=>expect(video.peer).toBeNull());
+    expect(video.connected).toBe(false);
+    expect(signal).toHaveBeenCalledWith({kind:'state',state:'failed'});
+    expect(helper.request).toHaveBeenCalledWith({op:'video',enabled:false});
+  } finally {await video.stop();}
+});

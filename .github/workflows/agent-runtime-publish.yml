@@ -235,6 +235,7 @@ jobs:
         with:
           bun-version: "1.3.10"
       - run: bun install --frozen-lockfile
+      - run: brew install mingw-w64
       - run: npm run pack:cli:all
       - uses: actions/download-artifact@v4
         with:

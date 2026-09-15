@@ -189,3 +189,43 @@ it('changes quality on the selected display, acknowledges the applied profile, a
     expect(f.service.switching).toBe(false);
   }finally{f.service.video.peer=null;await f.close();}
 });
+
+it('supports only the shipped Windows x64 and macOS arm64 versions', async () => {
+  const { supportsRemoteDesktop } = await import('./remote-authorization.mjs');
+  expect(supportsRemoteDesktop('win32','x64','10.0.22631')).toBe(true);
+  expect(supportsRemoteDesktop('win32','x64','6.3.9600')).toBe(false);
+  expect(supportsRemoteDesktop('win32','arm64','10.0.22631')).toBe(false);
+  expect(supportsRemoteDesktop('darwin','arm64','23.0.0')).toBe(true);
+  expect(supportsRemoteDesktop('darwin','x64','23.0.0')).toBe(false);
+  expect(supportsRemoteDesktop('linux','x64','6.10.0')).toBe(false);
+});
+
+it('uses explicit Windows sharing and releases input when a viewer disconnects or the desktop locks', async () => {
+  const f = await fixture(); f.service.platform = 'win32';
+  try {
+    await expect(f.service.action('authorize','screen')).rejects.toThrow('直接点击开启共享');
+    expect(f.helper.start).not.toHaveBeenCalled();
+    f.grant(); await f.service.action('enable');
+    expect(await f.service.status()).toMatchObject({platform:'win32',enabled:true,online:true});
+    f.registry.watch(f.viewer,f.service.sessionId); f.registry.takeOver(f.viewer,f.service.sessionId); await f.service.inputQueue;
+    f.registry.disconnect(f.viewer); await f.service.inputQueue;
+    expect(f.helper.request).toHaveBeenCalledWith({op:'release'});
+    f.service.lastPermissionCheck=0;
+    f.helper.request.mockImplementation(async (cmd:any) => cmd.op==='status' ? {screen:false,accessibility:false,error:'Windows locked'} : {ok:true});
+    await f.service.tick();
+    expect(await f.service.status()).toMatchObject({screen:false,online:false,error:'Windows locked'});
+    expect(f.service.bounds).toBeNull();
+  } finally {await f.close();}
+});
+
+it('invalidates Windows input coordinates and releases held input when capture fails', async () => {
+  const f=await fixture();f.service.platform='win32';
+  try {
+    f.grant();await f.service.action('enable');expect(f.service.bounds).not.toBeNull();
+    f.helper.request.mockImplementation(async(cmd:any)=>{if(cmd.op==='capture')throw new Error('DXGI access lost');return {ok:true,screen:true,accessibility:true};});
+    await f.service.tick();
+    expect(f.service.bounds).toBeNull();
+    expect(f.helper.request).toHaveBeenCalledWith({op:'release'});
+    expect(await f.service.status()).toMatchObject({online:false,error:'DXGI access lost'});
+  } finally {await f.close();}
+});
