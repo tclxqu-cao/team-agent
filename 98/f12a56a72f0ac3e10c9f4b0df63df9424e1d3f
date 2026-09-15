@@ -1,0 +1,25 @@
+packages/desktop/renderer/components/ChatView.tsx
+  s_31cfcf1fa62567::t_94f2bb92e8ae3e 4598
+  s_31cfcf1fa62567::t_fd75b56bd85b25 4599-4601
+  s_31cfcf1fa62567::t_d6140958e92efc 4595-4597
+  s_31cfcf1fa62567::t_75ae9e1e6c4b1f 5,369,516-518,1140-1177,2456,2563,2572-2582,4545-4594,4602-4630
+packages/desktop/renderer/styles/global.css
+  s_31cfcf1fa62567::t_7cf29c0c92a269 3423-3431
+  s_31cfcf1fa62567::t_9f5a7474aacfbb 1591-1632
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "98f12a56a72f0ac3e10c9f4b0df63df9424e1d3f",
+  "prompts": {},
+  "sessions": {
+    "s_31cfcf1fa62567": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a09fc4-b1f2-72e1-a9d4-eb6f40c45b76",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
