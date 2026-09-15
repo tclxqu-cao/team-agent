@@ -1,0 +1,33 @@
+packages/webapp/src/presentation/RemoteAuthorizationControl.tsx
+  s_b8f62304bbb3df::t_487a7feafbe2f7 3,14,20,39,45,51,58-59,76-78,87-88
+scripts/incremental-cli-release.mjs
+  s_b8f62304bbb3df::t_10af5710441bc6 21
+scripts/incremental-cli-release.test.mjs
+  s_b8f62304bbb3df::t_6881e549661ec2 29-30
+packages/server/native/remote-helper/main.swift
+  s_31cfcf1fa62567::t_042d9cacdc342d 192-198
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "ca23515c5c8ccdb13391aab6cfe261301c8f1caa",
+  "prompts": {},
+  "sessions": {
+    "s_31cfcf1fa62567": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a09fc4-b1f2-72e1-a9d4-eb6f40c45b76",
+        "model": "unknown"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_b8f62304bbb3df": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0a334-079c-7621-8063-15b888a17b6a",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
