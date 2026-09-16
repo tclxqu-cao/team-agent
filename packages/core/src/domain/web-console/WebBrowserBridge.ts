@@ -13,6 +13,7 @@ export const WEB_BROWSER_METHODS = [
   "browser:set-display",
   "browser:ping",
   "browser:webrtc",
+  "browser:system",
 ] as const;
 
 export type WebBrowserMethod = typeof WEB_BROWSER_METHODS[number];

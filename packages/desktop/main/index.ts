@@ -251,11 +251,11 @@ ipcMain.handle("update:install", () => desktopUpdateService.install());
 
 ipcMain.handle("hub:get-config", () => aiHubManager.getConfig());
 ipcMain.handle("hub:set-config", (_event, raw: unknown) => aiHubManager.setConfig(raw));
-ipcMain.handle("hub:open", (_event, siteId: string) => aiHubManager.openSite(siteId));
-ipcMain.handle("hub:close", (_event, siteId: string) => aiHubManager.closeSite(siteId));
+ipcMain.handle("hub:open", (_event, siteId: string, conversationId?: string) => aiHubManager.openSite(siteId, { conversationId }));
+ipcMain.handle("hub:close", (_event, siteId: string, conversationId?: string) => aiHubManager.closeSite(siteId, conversationId));
 ipcMain.handle("hub:hide-all", () => aiHubManager.setBounds([]));
 ipcMain.handle("hub:set-bounds", (_event, panes: HubPaneRect[]) => aiHubManager.setBounds(panes));
-ipcMain.handle("hub:reload", (_event, siteId: string) => aiHubManager.reloadSite(siteId));
+ipcMain.handle("hub:reload", (_event, siteId: string, conversationId?: string) => aiHubManager.reloadSite(siteId, conversationId));
 ipcMain.handle("hub:broadcast", (_event, text: string, siteIds: string[], images: unknown = []) => aiHubManager.broadcast(text, siteIds, normalizeRelayImages(images)));
 
 // ── IPC: AI Hub 浏览器 Profile 导入 / 共享身份 / 托管重登录 ───────────────

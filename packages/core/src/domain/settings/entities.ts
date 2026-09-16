@@ -6,7 +6,7 @@ export interface ModelProfile {
   id: string;
   /** Human-readable nickname, e.g. "GPT-4o" */
   name: string;
-  provider: string;      // "anthropic" | "openai" | "deepseek"
+  provider: string;      // "anthropic" | "openai" | "deepseek" | "aihub"
   modelId: string;
   apiKey: string;
   baseUrl: string;

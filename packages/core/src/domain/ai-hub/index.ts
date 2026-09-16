@@ -7,3 +7,10 @@ export {
   resolveAiHubRelayDirectory,
   resolveAiHubRelaySocketPath,
 } from "./relay-protocol.js";
+export type {
+  AiHubTransport,
+  AiHubSiteInfo,
+  AiHubRelayResult,
+  AiHubCaptureResult,
+  AiHubCaptureMessage,
+} from "./transport.js";

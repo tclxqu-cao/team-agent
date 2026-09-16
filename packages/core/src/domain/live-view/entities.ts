@@ -43,6 +43,8 @@ export interface LiveViewSessionView {
   controlledByAnotherViewer: boolean;
   /** Multi-display Macs publish the selectable capture screens; null = single display. */
   displays?: LiveViewDisplayOption[] | null;
+  /** Producer OS (process.platform), lets clients tailor system actions. */
+  platform?: string;
 }
 
 export type LiveViewInput =

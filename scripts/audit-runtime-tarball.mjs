@@ -64,7 +64,11 @@ for (const required of [
   if (!list.includes(required)) throw new Error(`missing runtime file: ${required}`);
 }
 
-if (manifest.target === "windows-amd64" && !list.includes("package/runtime/native/remote-helper-NOTICES.txt")) throw new Error("missing Windows helper license");
+if (manifest.target === "windows-amd64") {
+  for (const required of ["agentroam-remote-desktop.exe", "agentroam-remote-unlock.exe", "remote-helper-NOTICES.txt"]) {
+    if (!list.includes(`package/runtime/native/${required}`)) throw new Error(`missing Windows helper artifact: ${required}`);
+  }
+}
 
 const platformLeaks = list.filter((file) => {
   if (file.startsWith("package/runtime/node_modules/@next/swc-")) return true;

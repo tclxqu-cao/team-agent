@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseRelayMessage, relaySocketPath } from "./relay";
+import { MAX_RELAY_TEXT_LENGTH, parseRelayMessage, relaySocketPath } from "./relay";
 
 describe("parseRelayMessage", () => {
   it("接受 status 请求", () => {
@@ -8,13 +8,29 @@ describe("parseRelayMessage", () => {
 
   it("接受合法 broadcast 请求", () => {
     const request = parseRelayMessage(JSON.stringify({ id: "r2", type: "broadcast", text: "你好", siteIds: ["deepseek", "chatgpt"] }));
-    expect(request).toEqual({ kind: "broadcast", text: "你好", siteIds: ["deepseek", "chatgpt"], images: [] });
+    expect(request).toEqual({ kind: "broadcast", text: "你好", siteIds: ["deepseek", "chatgpt"], images: [], background: false });
   });
 
   it("接受文本 + 图片的 broadcast，图片以 data URL 透传", () => {
     const image = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUg==";
     const request = parseRelayMessage(JSON.stringify({ type: "broadcast", text: "看这张图", siteIds: ["chatgpt"], images: [image] }));
-    expect(request).toEqual({ kind: "broadcast", text: "看这张图", siteIds: ["chatgpt"], images: [image] });
+    expect(request).toEqual({ kind: "broadcast", text: "看这张图", siteIds: ["chatgpt"], images: [image], background: false });
+  });
+
+  it("保留模型调用的后台转发标记", () => {
+    const request = parseRelayMessage(JSON.stringify({
+      type: "broadcast",
+      text: "hello",
+      siteIds: ["deepseek"],
+      background: true,
+    }));
+    expect(request).toEqual({
+      kind: "broadcast",
+      text: "hello",
+      siteIds: ["deepseek"],
+      images: [],
+      background: true,
+    });
   });
 
   it("接受纯图片 broadcast（空文本 + 合法图片）", () => {
@@ -47,7 +63,7 @@ describe("parseRelayMessage", () => {
     const build = (text: string, siteIds: unknown) => JSON.stringify({ type: "broadcast", text, siteIds });
     expect(parseRelayMessage(build("", ["deepseek"]))).toBeNull();
     expect(parseRelayMessage(build("   ", ["deepseek"]))).toBeNull();
-    expect(parseRelayMessage(build("x".repeat(20_001), ["deepseek"]))).toBeNull();
+    expect(parseRelayMessage(build("x".repeat(MAX_RELAY_TEXT_LENGTH + 1), ["deepseek"]))).toBeNull();
     expect(parseRelayMessage(build("hi", "deepseek"))).toBeNull();
     expect(parseRelayMessage(build("hi", []))).toBeNull();
   });
@@ -57,6 +73,16 @@ describe("parseRelayMessage", () => {
     expect(request).toEqual({ kind: "capture", siteIds: ["chatgpt", "grok"] });
     expect(parseRelayMessage(JSON.stringify({ type: "capture", siteIds: [] }))).toBeNull();
     expect(parseRelayMessage(JSON.stringify({ type: "capture" }))).toBeNull();
+  });
+
+  it("接受 continue 请求（继续生成），校验规则与 capture 一致", () => {
+    expect(parseRelayMessage(JSON.stringify({ type: "continue", siteIds: ["deepseek"] })))
+      .toEqual({ kind: "continue", siteIds: ["deepseek"] });
+    expect(parseRelayMessage(JSON.stringify({ type: "continue", siteIds: ["deepseek"], conversationId: "s1" })))
+      .toEqual({ kind: "continue", siteIds: ["deepseek"], conversationId: "s1" });
+    expect(parseRelayMessage(JSON.stringify({ type: "continue", siteIds: [] }))).toBeNull();
+    expect(parseRelayMessage(JSON.stringify({ type: "continue", siteIds: "deepseek" }))).toBeNull();
+    expect(parseRelayMessage(JSON.stringify({ type: "continue" }))).toBeNull();
   });
 
   it("siteIds 过滤非字符串并截断到 8 个", () => {

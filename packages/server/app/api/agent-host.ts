@@ -145,7 +145,6 @@ class AgentHost {
     {
       resolve: (response: AskUserResponse) => void;
       reject: (err: Error) => void;
-      timer: ReturnType<typeof setTimeout>;
       sessionId: string;
     }
   >();
@@ -170,7 +169,7 @@ class AgentHost {
     // Configure model from environment variables
     const apiKey = process.env.AGENT_API_KEY;
     const provider = (process.env.AGENT_MODEL_PROVIDER || "openai") as
-      | "anthropic" | "openai" | "deepseek";
+      | "anthropic" | "openai" | "deepseek" | "aihub";
     const modelId = process.env.AGENT_MODEL_ID || "gpt-4o";
     const baseUrl = process.env.AGENT_BASE_URL || undefined;
 
@@ -179,8 +178,9 @@ class AgentHost {
       .withWorkingDirectory(this.workingDirectory)
       .withToolPermissionGate(this.toolPermissionGate);
     builder.withRemoteToolStore(this.remoteToolStore, this.defaultRemoteToolsProjectId);
-    if (apiKey) {
-      builder.withModel(provider, { apiKey, modelId, baseUrl });
+    // aihub 模型来源（桌面 AI Hub 网页模型）不需要 apiKey
+    if (apiKey || provider === "aihub") {
+      builder.withModel(provider, { apiKey: apiKey ?? "", modelId, baseUrl });
     }
     this.builder = builder;
     this.harness.setModel({ provider, modelId, apiKey: apiKey ?? "", baseUrl });
@@ -383,6 +383,12 @@ class AgentHost {
   private projectMessagesFromEvents(events: AgentEvent[]): Message[] {
     const messages: Message[] = [];
     let streamingAssistant: Message | null = null;
+    const toolCallNames = new Map<string, string>();
+    const ephemeralSkillCallIds = new Set(events.flatMap((event) =>
+      event.type === "tool_result" && event.result.metadata?.ephemeralSkillContext === true
+        ? [event.result.toolCallId]
+        : [],
+    ));
 
     for (const event of events) {
       if (event.type === "text_chunk") {
@@ -395,6 +401,8 @@ class AgentHost {
       }
 
       if (event.type === "tool_call") {
+        toolCallNames.set(event.toolCall.id, event.toolCall.name);
+        if (ephemeralSkillCallIds.has(event.toolCall.id)) continue;
         if (streamingAssistant && !streamingAssistant.toolCalls) {
           streamingAssistant.toolCalls = [event.toolCall];
         } else {
@@ -405,10 +413,13 @@ class AgentHost {
       }
 
       if (event.type === "tool_result") {
+        if (event.result.metadata?.ephemeralSkillContext === true) continue;
         messages.push({
           role: "tool",
           content: event.result.content,
           toolCallId: event.result.toolCallId,
+          name: toolCallNames.get(event.result.toolCallId),
+          ...(event.result.isError ? { isError: true } : {}),
         });
         continue;
       }
@@ -722,7 +733,7 @@ class AgentHost {
   ): Promise<void> {
     const database = getDatabase(this.baseDir).db;
     const insert = database.prepare(
-      "INSERT INTO messages (session_id, role, content, tool_calls, tool_call_id, name, presentation, timestamp) VALUES (?,?,?,?,?,?,?,?)",
+      "INSERT INTO messages (session_id, role, content, tool_calls, tool_call_id, name, is_error, presentation, timestamp) VALUES (?,?,?,?,?,?,?,?,?)",
     );
     const transaction = database.transaction(() => {
       const row = database.prepare("SELECT status, metadata FROM sessions WHERE id = ?").get(sessionId) as
@@ -739,6 +750,7 @@ class AgentHost {
           JSON.stringify(message.toolCalls ?? []),
           message.toolCallId ?? null,
           message.name ?? null,
+          message.isError === true ? 1 : 0,
           message.presentation ? JSON.stringify(message.presentation) : null,
           timestamp + index,
         );
@@ -770,17 +782,12 @@ class AgentHost {
         questionId,
         question: request.question,
         options: request.options,
+        fields: request.fields,
         multiSelect: request.multiSelect,
       } as any),
     } as AgentEvent;
     const response = new Promise<AskUserResponse>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        if (this.pendingQuestions.has(questionId)) {
-          this.pendingQuestions.delete(questionId);
-          reject(new Error("Question timed out after 5 minutes"));
-        }
-      }, 5 * 60 * 1000);
-      this.pendingQuestions.set(questionId, { resolve, reject, timer, sessionId });
+      this.pendingQuestions.set(questionId, { resolve, reject, sessionId });
     });
     await this.sessionStore.addEvent(sessionId, event);
     this.emit(sessionId, event);
@@ -795,7 +802,6 @@ class AgentHost {
   ): boolean {
     const pending = this.pendingQuestions.get(questionId);
     if (!pending) return false;
-    clearTimeout(pending.timer);
     this.pendingQuestions.delete(questionId);
     pending.resolve({ answer, selectedIndices });
     return true;
@@ -825,7 +831,6 @@ class AgentHost {
     for (const run of runs) if (run) { run.aborted = true; run.agent?.abort(); run.abortChildren?.(); }
     for (const [questionId, pending] of this.pendingQuestions) {
       if (sessionId && pending.sessionId !== sessionId) continue;
-      clearTimeout(pending.timer);
       pending.reject(new Error("Agent aborted"));
       this.pendingQuestions.delete(questionId);
     }

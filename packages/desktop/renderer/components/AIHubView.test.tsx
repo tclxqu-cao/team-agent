@@ -28,10 +28,17 @@ describe("AIHubView", () => {
     expect(source).toContain("requestAnimationFrame");
   });
 
+  it("keeps an icon button above provider panes for returning to sessions", () => {
+    expect(source).toContain('aria-label="返回会话列表"');
+    expect(source).toContain("<ArrowLeft");
+    expect(source.indexOf("aihub-topbar")).toBeLessThan(source.indexOf("data-aihub-pane"));
+  });
+
   it("opens visible sites and falls back to an error layer with retry", () => {
-    expect(source).toContain("api?.hubOpenSite(siteId)");
+    expect(source).toContain("api?.hubOpenSite(siteId, conversationId ?? undefined)");
+    expect(source).toContain("conversationId ? { conversationId } : {}");
     expect(source).toContain("页面加载失败");
-    expect(source).toContain("api?.hubReload(siteId)");
+    expect(source).toContain("api?.hubReload(siteId, conversationId ?? undefined)");
   });
 
   it("broadcasts to visible sites and surfaces per-site result chips", () => {

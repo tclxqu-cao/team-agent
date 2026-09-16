@@ -1982,7 +1982,7 @@ export default function App() {
 
         {/* AI Hub（多 AI 网页聚合）：与 ChatView 互斥显示 */}
         {hubOpen && (
-          <AIHubView onExit={() => setHubOpen(false)} />
+          <AIHubView conversationId={selectedSessionId} onExit={() => setHubOpen(false)} />
         )}
 
         {/* modal moved to portal below */}

@@ -2027,6 +2027,40 @@ describe("Codex native paged history", () => {
     }
   });
 
+  it("inlines newest images within the byte budget and marks older ones as omitted", async () => {
+    const root = await mkdtemp(join(tmpdir(), "codex-core-image-budget-"));
+    temporaryDirectories.push(root);
+    const newestPath = join(root, "newest.png");
+    const olderPath = join(root, "older.png");
+    await writeFile(newestPath, Buffer.alloc(1200, 1));
+    await writeFile(olderPath, Buffer.alloc(900, 2));
+    const sourceTurns = [turn("old", 1), turn("new", 2, true)];
+    sourceTurns[0].items[0].content!.push({ type: "localImage", path: olderPath } as any);
+    sourceTurns[1].items[0].content!.push({ type: "localImage", path: newestPath } as any);
+    const requests: Array<{ method: string; params: any }> = [];
+
+    // 预算 1.5KB 只够最新一张；更早的降级为 omitted 占位。
+    const budgetAdapter = new CodexRuntimeAdapter({
+      client: pagingClientFor(requests, { sourceTurns }) as never,
+      coreInlineImageBudgetBytes: 1500,
+    });
+    const budgeted = await budgetAdapter.getSessionPaged("cx-paged", { limit: 5, view: "core" });
+    const byTurn = new Map(budgeted.messages.map((message) => [message.presentation?.executionTrace?.turnId, message]));
+    expect(byTurn.get("new")?.presentation?.attachments?.[0]).toMatchObject({ name: "newest.png", dataUrl: expect.any(String) });
+    expect(byTurn.get("new")?.presentation?.attachments?.[0].omitted).toBeUndefined();
+    expect(byTurn.get("old")?.presentation?.attachments?.[0]).toEqual({ type: "image", name: "older.png", omitted: true });
+
+    // 无图可内联时，允许最新一张突破总预算（单张上限内）以保证可见。
+    const tinyBudgetAdapter = new CodexRuntimeAdapter({
+      client: pagingClientFor(requests, { sourceTurns }) as never,
+      coreInlineImageBudgetBytes: 10,
+    });
+    const tiny = await tinyBudgetAdapter.getSessionPaged("cx-paged", { limit: 5, view: "core" });
+    const tinyByTurn = new Map(tiny.messages.map((message) => [message.presentation?.executionTrace?.turnId, message]));
+    expect(tinyByTurn.get("new")?.presentation?.attachments?.[0]).toMatchObject({ name: "newest.png", dataUrl: expect.any(String) });
+    expect(tinyByTurn.get("old")?.presentation?.attachments?.[0]).toEqual({ type: "image", name: "older.png", omitted: true });
+  });
+
   it("loads core without hydration, then exposes trace results through lazy locators", async () => {
     const requests: Array<{ method: string; params: any }> = [];
     const adapter = new CodexRuntimeAdapter({ client: pagingClientFor(requests) as never });

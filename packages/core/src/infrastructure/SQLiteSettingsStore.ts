@@ -76,7 +76,9 @@ export class SQLiteSettingsStore implements ISettingsStore {
       maxIterations: parseInt(data["maxIterations"] ?? "10", 10),
       contextWindow: Number(data["contextWindow"] ?? "100"),
       workingDirectory: data["workingDirectory"] ?? this.baseDir,
-      isConfigured: Boolean(apiKey),
+      isConfigured: modelProvider === "aihub"
+        ? Boolean(modelId)
+        : Boolean(apiKey && modelId),
       profiles,
       activeProfileId,
       reasoningEffort: (["off", "low", "medium", "high"].includes(data["reasoningEffort"] ?? "")

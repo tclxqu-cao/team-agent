@@ -516,6 +516,64 @@ body[data-web-shell="1"] .chat-header-action--appearance {
   font-size: 11px;
 }
 
+.browser-live-unlock-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1410;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgba(8, 10, 14, 0.56);
+}
+
+.browser-live-unlock-dialog {
+  width: min(360px, calc(100vw - 32px));
+  display: grid;
+  gap: 12px;
+  padding: 20px;
+  border: 1px solid var(--border-default);
+  border-radius: 8px;
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-lg);
+}
+
+.browser-live-unlock-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+}
+
+.browser-live-unlock-dialog label {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.browser-live-unlock-dialog input {
+  width: 100%;
+  min-height: 40px;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  border: 1px solid var(--border-default);
+  border-radius: 6px;
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  font: inherit;
+}
+
+.browser-live-unlock-dialog p {
+  margin: 0;
+  color: var(--danger);
+  font-size: 12px;
+}
+
+.browser-live-unlock-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 @media (max-width: 699px) {
   .browser-live-backdrop {
     padding: 0;
@@ -545,6 +603,10 @@ body[data-web-shell="1"] .chat-header-action--appearance {
   .browser-live-control-button {
     width: 100%;
     min-height: 38px;
+  }
+
+  .browser-live-unlock-actions .browser-live-control-button {
+    width: auto;
   }
 
   .browser-live-session-tabs button {

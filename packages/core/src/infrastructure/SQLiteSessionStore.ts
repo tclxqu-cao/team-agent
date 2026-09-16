@@ -114,11 +114,12 @@ export class SQLiteSessionStore implements ISessionStore {
   async addMessage(sessionId: string, message: Message): Promise<void> {
     const db = getDatabase(this.baseDir);
     db.db.prepare(
-      "INSERT INTO messages (session_id, role, content, tool_calls, tool_call_id, name, presentation, timestamp) VALUES (?,?,?,?,?,?,?,?)"
+      "INSERT INTO messages (session_id, role, content, tool_calls, tool_call_id, name, is_error, presentation, timestamp) VALUES (?,?,?,?,?,?,?,?,?)"
     ).run(
       sessionId, message.role, message.content ?? "",
       JSON.stringify(message.toolCalls ?? []),
       message.toolCallId ?? null, message.name ?? null,
+      message.isError === true ? 1 : 0,
       message.presentation ? JSON.stringify(message.presentation) : null,
       Date.now()
     );
@@ -134,7 +135,7 @@ export class SQLiteSessionStore implements ISessionStore {
   async replaceMessages(sessionId: string, messages: Message[]): Promise<void> {
     const db = getDatabase(this.baseDir);
     const insert = db.db.prepare(
-      "INSERT INTO messages (session_id, role, content, tool_calls, tool_call_id, name, presentation, timestamp) VALUES (?,?,?,?,?,?,?,?)"
+      "INSERT INTO messages (session_id, role, content, tool_calls, tool_call_id, name, is_error, presentation, timestamp) VALUES (?,?,?,?,?,?,?,?,?)"
     );
     const tx = db.db.transaction(() => {
       db.db.prepare("DELETE FROM messages WHERE session_id = ?").run(sessionId);
@@ -144,6 +145,7 @@ export class SQLiteSessionStore implements ISessionStore {
           sessionId, m.role, m.content ?? "",
           JSON.stringify(m.toolCalls ?? []),
           m.toolCallId ?? null, m.name ?? null,
+          m.isError === true ? 1 : 0,
           m.presentation ? JSON.stringify(m.presentation) : null,
           Date.now() + i, // preserve ordering
         );
@@ -167,6 +169,7 @@ export class SQLiteSessionStore implements ISessionStore {
         const toolCalls = JSON.parse(m.tool_calls as string) as Message["toolCalls"];
         const toolCallId = (m.tool_call_id as string | null) ?? undefined;
         const name = (m.name as string | null) ?? undefined;
+        const isError = m.is_error === 1;
         const presentation = m.presentation
           ? JSON.parse(m.presentation as string) as Message["presentation"]
           : undefined;
@@ -176,6 +179,7 @@ export class SQLiteSessionStore implements ISessionStore {
           ...(toolCalls?.length ? { toolCalls } : {}),
           ...(toolCallId !== undefined ? { toolCallId } : {}),
           ...(name !== undefined ? { name } : {}),
+          ...(isError ? { isError: true } : {}),
           ...(presentation !== undefined ? { presentation } : {}),
         };
       }),

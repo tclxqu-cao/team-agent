@@ -233,6 +233,27 @@ describe("restoreSessionHistoryPage", () => {
     ]);
   });
 
+  it("replaces a persisted ask_user tool call with a question-only card", () => {
+    const restored = restoreSessionHistoryPage({
+      messages: [
+        { role: "user", content: "release" },
+        {
+          role: "assistant",
+          content: "",
+          toolCalls: [{ id: "call-ask", name: "ask_user", arguments: { question: "Version?" } }],
+        },
+      ],
+      events: [{ type: "ask_user", questionId: "question-1", question: "Version?" }],
+    });
+
+    expect(restored.some((message) => message.toolCalls?.some((toolCall) => toolCall.name === "ask_user"))).toBe(false);
+    expect(restored.filter((message) => message.askUser)).toEqual([
+      expect.objectContaining({
+        askUser: expect.objectContaining({ questionId: "question-1", question: "Version?" }),
+      }),
+    ]);
+  });
+
   it("restores an async question on a core page without adding it to the execution trace", () => {
     const question = {
       type: "ask_user" as const, questionId: "native:run:async:item:0",

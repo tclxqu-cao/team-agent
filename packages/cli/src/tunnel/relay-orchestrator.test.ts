@@ -78,6 +78,7 @@ function cli(relay: RelayMode, localOnly = false): CliOptions {
   return {
     command: "start",
     serviceAction: null,
+    unlockServiceAction: null,
     roots: [process.cwd()],
     port: null,
     relay,

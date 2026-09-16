@@ -75,6 +75,11 @@ export function pageAction(siteId, action, payload = {}) {
   const enabled = el => !el.disabled && el.getAttribute("aria-disabled") !== "true";
   const stopButtons = [...document.querySelectorAll(spec.stop)].filter(visible);
   const generating = stopButtons.some(enabled);
+  // 站点把长回复截断后挂出的「继续生成」控件：只按可见按钮精确文案匹配，
+  // 裸「继续」不匹配，避免误点点击后会变成用户消息的推荐 chip。
+  const continueLabels = ['继续生成', '继续回答', 'continue', 'continue generation', 'continue generating', 'continue response'];
+  const isContinueLabel = (el) => continueLabels.includes((text(el) || el.getAttribute("aria-label") || "").toLowerCase());
+  const continueButtons = [...document.querySelectorAll("button,[role='button']")].filter((el) => visible(el) && isContinueLabel(el));
   const recent = messages.slice(-100);
   let total = recent.reduce((sum, message) => sum + message.content.length, 0);
   while (total > 1_000_000 && recent.length) total -= recent.shift().content.length;
@@ -91,13 +96,22 @@ export function pageAction(siteId, action, payload = {}) {
     conversationId: location.pathname.slice(0, 512), messages: recent,
     userCount: messages.filter((message) => message.role === 'user').length,
     generating, composerAvailable: !!input, draft: draft(), websiteError,
+    pendingContinue: continueButtons.some(enabled),
     debug: { visible: document.visibilityState === "visible", focused: document.hasFocus(),
       turnCount: turns.length, userCount: messages.filter(m => m.role === "user").length,
       assistantCount: messages.filter(m => m.role === "assistant").length,
       stopButtons: stopButtons.map(el => ({ enabled: enabled(el), testId: el.getAttribute("data-testid"), label: el.getAttribute("aria-label") })),
+      continueButtons: continueButtons.map(el => ({ enabled: enabled(el), label: text(el).slice(0, 20) })),
       composerTag: input?.tagName ?? null, draftLength: draft().length },
   };
   if (action === 'snapshot') return snapshot;
+  if (action === 'continue') {
+    const button = continueButtons.find(enabled);
+    if (generating || !button) return { clicked: false };
+    button.scrollIntoView({ block: 'nearest' });
+    button.click();
+    return { clicked: true };
+  }
   if (!input) throw new Error('chrome-input-not-found');
   if (generating) throw new Error('chrome-generating');
   if (action === 'prepare') {

@@ -1,4 +1,4 @@
-import type { BrowserLiveSessionView } from "../../core/src/domain/browser-live/entities";
+import type { BrowserLiveSessionView } from "../../core/src/domain/browser-live/index";
 import type { LiveViewOwnershipState } from "../../core/src/domain/live-view/entities";
 
 export interface LSPServerConfig {
@@ -126,6 +126,8 @@ export interface RuntimeModelInfo {
 export interface NativeRunOptions {
   model?: RuntimeModelSelection;
   reasoningEffort?: NativeReasoningEffort;
+  /** Customer Agent only: pin this persisted model profile to the run. */
+  profileId?: string;
 }
 
 export interface AgentWorkspace {
@@ -398,11 +400,11 @@ export interface AgentApi {
   // AI Hub (embedded multi-AI web aggregation)
   hubGetConfig(): Promise<HubConfig>;
   hubSetConfig(raw: unknown): Promise<HubConfig>;
-  hubOpenSite(siteId: string): Promise<void>;
-  hubCloseSite(siteId: string): Promise<void>;
+  hubOpenSite(siteId: string, conversationId?: string): Promise<void>;
+  hubCloseSite(siteId: string, conversationId?: string): Promise<void>;
   hubHideAll(): Promise<void>;
   hubSetBounds(panes: HubPaneRect[]): Promise<void>;
-  hubReload(siteId: string): Promise<void>;
+  hubReload(siteId: string, conversationId?: string): Promise<void>;
   hubBroadcast(text: string, siteIds: string[], images?: string[]): Promise<HubBroadcastResult[]>;
   onHubEvent(callback: (event: HubEvent) => void): () => void;
   // AI Hub 浏览器 Profile 导入 + 托管 Google 重登录
@@ -554,7 +556,7 @@ export interface DesktopLiveDisplayOption {
 
 export interface BrowserLiveApi {
   request<T = unknown>(
-    method: "browser:list" | "browser:watch" | "browser:unwatch" | "browser:takeover" | "browser:return" | "browser:input" | "browser:set-display" | "browser:ping" | "browser:webrtc",
+    method: "browser:list" | "browser:watch" | "browser:unwatch" | "browser:takeover" | "browser:return" | "browser:input" | "browser:set-display" | "browser:ping" | "browser:webrtc" | "browser:system",
     payload?: Record<string, unknown>,
   ): Promise<T>;
   onEvent(listener: (event: Record<string, unknown> & { type: string }) => void): () => void;

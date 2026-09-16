@@ -4,6 +4,8 @@ import type { SharedSettings } from "./shared-settings";
 
 export interface SharedRunOptions {
   model?: { provider: string; apiKey: string; modelId: string; baseUrl?: string };
+  /** Persisted profile selected in the conversation composer for this run. */
+  profileId?: string;
   reasoningEffort?: SettingsData["reasoningEffort"];
   maxIterations?: number;
   maxTokens?: number;
@@ -12,15 +14,33 @@ export interface SharedRunOptions {
   source?: "user" | "goal";
 }
 
+export function resolveSharedRunModel(
+  settings: SharedSettings,
+  definition: { capabilities: { profileId: string } } | null,
+  options: SharedRunOptions,
+): SharedRunOptions["model"] {
+  if (options.model) return options.model;
+  const selectedProfile = options.profileId
+    ? settings.profiles.find((profile) => profile.id === options.profileId)
+    : null;
+  if (options.profileId && !selectedProfile) throw new Error("所选模型配置不存在，请重新选择");
+  const profile = selectedProfile ?? (definition?.capabilities.profileId
+    ? settings.profiles.find((candidate) => candidate.id === definition.capabilities.profileId)
+    : null);
+  return profile
+    ? { provider: profile.provider, apiKey: profile.apiKey, modelId: profile.modelId, baseUrl: profile.baseUrl }
+    : { provider: settings.modelProvider, apiKey: settings.apiKey, modelId: settings.modelId, baseUrl: settings.baseUrl };
+}
+
 /** Each admitted run receives its own builder/config snapshot and MCP clients. */
 export async function configureSharedRun(builder: AgentBuilder, settings: SharedSettings, options: SharedRunOptions) {
   const catalog = businessCatalog();
   const definitionId = options.agentIds?.[0] || settings.activeAgentIds[0];
   const definition = definitionId ? await catalog.agents.get(definitionId) : null;
   if (definitionId && !definition) throw new Error("所选智能体不存在，请重新选择");
-  const profile = definition?.capabilities.profileId ? settings.profiles.find((p) => p.id === definition.capabilities.profileId) : null;
-  const model = options.model || (profile ? { provider: profile.provider, apiKey: profile.apiKey, modelId: profile.modelId, baseUrl: profile.baseUrl } : { provider: settings.modelProvider, apiKey: settings.apiKey, modelId: settings.modelId, baseUrl: settings.baseUrl });
-  if (model.apiKey) builder.withModel(model.provider, { ...model, baseUrl: model.baseUrl || undefined });
+  const model = resolveSharedRunModel(settings, definition, options)!;
+  // aihub 模型来源（桌面 AI Hub 网页模型）不需要 apiKey
+  if (model.apiKey || model.provider === "aihub") builder.withModel(model.provider, { ...model, baseUrl: model.baseUrl || undefined });
   builder.withMemoryStore(catalog.memory)
     .withMaxIterations(options.maxIterations ?? (definition?.maxIterations || settings.maxIterations))
     .withMaxTokens(options.maxTokens ?? settings.contextWindow * 1000)

@@ -268,7 +268,11 @@ function renderCodeFence(lang: string, code: string, complete: boolean): React.R
 
 /** Render assistant message text: supports Markdown tables, links, fenced code blocks, `code`, **bold**, *italic*, and newlines. */
 export function renderAssistantText(text: string): React.ReactNode {
-  const lines = text.split('\n');
+  const visibleText = text.replace(
+    /(^|\n)(?:[a-z][\w+#.-]{0,20}\n)?(?:复制|copy)\n(?:下载|download)(?:\n|$)/gi,
+    "$1",
+  );
+  const lines = visibleText.split('\n');
   const segments: React.ReactNode[] = [];
   let i = 0;
   let segKey = 0;
@@ -514,8 +518,6 @@ export default function ChatView({
   } = useAgentStore();
   const [goalState, setGoalState] = useState<SessionGoalState>({ active: null, queued: [], history: [] });
   const [threadGoal, setThreadGoal] = useState<ThreadGoalInfo | null>(null);
-  const [threadGoalDraft, setThreadGoalDraft] = useState("");
-  const [threadGoalBudgetDraft, setThreadGoalBudgetDraft] = useState("");
   const [codexTraceRefreshSignal, setCodexTraceRefreshSignal] = useState(0);
   const renderedMessages = useMemo(
     () => coalesceAdjacentToolCallMessages(hideQueuedGoalMessages(
@@ -1166,15 +1168,6 @@ export default function ChatView({
       setError(goalError instanceof Error ? goalError.message : "目标模式操作失败");
     }
   }, [setError]);
-  const handleThreadGoalSubmit = useCallback(() => {
-    const id = selectedSessionIdRef.current || sessionIdRef.current;
-    const objective = threadGoalDraft.trim();
-    if (!id || !objective || typeof window.agentApi?.setThreadGoal !== "function") return;
-    const budget = Number.parseInt(threadGoalBudgetDraft, 10);
-    void window.agentApi.setThreadGoal(id, objective, Number.isFinite(budget) && budget > 0 ? budget : null)
-      .then((goal) => { setThreadGoal(goal); setThreadGoalDraft(""); setThreadGoalBudgetDraft(""); })
-      .catch((goalError: unknown) => setError(goalError instanceof Error ? goalError.message : "目标设置失败"));
-  }, [threadGoalDraft, threadGoalBudgetDraft, setError]);
   const updateAgentActivity = useCallback((next: "idle" | "thinking" | "tools") => {
     const activitySessionId = selectedSessionIdRef.current || sessionIdRef.current;
     if (
@@ -2907,7 +2900,7 @@ export default function ChatView({
         const runNativeOptions = isNativeRuntime && isNativeAgentType(composerAgentType) ? {
           ...(nativePref.model?.id ? { model: nativePref.model } : {}),
           ...(activeNativeEffort ? { reasoningEffort: activeNativeEffort } : {}),
-        } : undefined;
+        } : activeProfileId ? { profileId: activeProfileId } : undefined;
         await window.agentApi.run(
           message.content,
           targetSessionId,
@@ -3342,7 +3335,7 @@ export default function ChatView({
         height: "var(--chat-header-height)",
         flexShrink: 0,
         borderBottom: "1px solid var(--border-subtle)",
-        WebkitAppRegion: "no-drag",
+        WebkitAppRegion: "drag",
       } as React.CSSProperties}>
         <span style={{
           flex: 1,
@@ -3807,10 +3800,10 @@ export default function ChatView({
                         <div
                           key={`${attachment.name}-${idx}`}
                           className="chat-message-attachment-unavailable"
-                          aria-label={`${attachment.name}，图片已失效`}
+                          aria-label={`${attachment.name}，${attachment.omitted && !attachment.unavailable ? "图片未随页面加载" : "图片已失效"}`}
                         >
                           <span className="chat-message-attachment-name">{attachment.name}</span>
-                          <span>图片已失效</span>
+                          <span>{attachment.omitted && !attachment.unavailable ? "图片未随页面加载" : "图片已失效"}</span>
                         </div>
                       )
                     ))}
@@ -4595,39 +4588,6 @@ export default function ChatView({
             </div>
           );
         })()}
-        {!isWebShell() && composerAgentType !== "customer-agent" && !threadGoal && typeof window.agentApi?.setThreadGoal === "function" && (
-          <div className="goal-queue thread-goal-setup" aria-label="设定目标">
-            <div className="thread-goal-setup__row">
-              <Target size={14} strokeWidth={1.9} aria-hidden="true" />
-              <input
-                className="thread-goal-setup__input"
-                value={threadGoalDraft}
-                onChange={(event) => setThreadGoalDraft(event.target.value)}
-                onKeyDown={(event) => { if (event.key === "Enter" && threadGoalDraft.trim()) handleThreadGoalSubmit(); }}
-                placeholder="设定目标，完成后每轮空闲自动续跑推进（回车确认）"
-                maxLength={4000}
-              />
-              <input
-                className="thread-goal-setup__budget"
-                value={threadGoalBudgetDraft}
-                onChange={(event) => setThreadGoalBudgetDraft(event.target.value.replace(/[^\d]/g, ""))}
-                onKeyDown={(event) => { if (event.key === "Enter" && threadGoalDraft.trim()) handleThreadGoalSubmit(); }}
-                placeholder="预算"
-                title="可选 token 预算上限"
-                aria-label="token 预算"
-              />
-              <button
-                type="button"
-                className="goal-queue__action"
-                disabled={!threadGoalDraft.trim()}
-                onClick={() => handleThreadGoalSubmit()}
-                title="启动目标模式"
-                aria-label="启动目标模式"
-              >▶</button>
-            </div>
-          </div>
-        )}
-
         {(goalState.active || goalState.queued.length > 0) && (
           <div className="goal-queue" aria-label="目标队列">
             <div className="goal-queue__header">

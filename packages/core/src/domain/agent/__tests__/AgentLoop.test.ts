@@ -168,6 +168,21 @@ describe("AgentLoop", () => {
     expect(doneEvent.type).toBe("done");
   });
 
+  it("does not preload skills or run hidden semantic matching", async () => {
+    const assembler = createMockContextAssembler();
+    const assemble = vi.spyOn(assembler, "assemble");
+    const getSkillPrompts = vi.fn(async () => "must not be injected");
+    const skillRegistry = {
+      register: () => {}, unregister: () => {}, get: () => undefined, getAll: () => [],
+      findMatching: () => [], getSkillPrompts, setModelProvider: () => {},
+    };
+
+    for await (const _ of new AgentLoop(createConfig({ contextAssembler: assembler, skillRegistry })).run("1M context", "s1")) { /* consume */ }
+
+    expect(getSkillPrompts).not.toHaveBeenCalled();
+    expect(assemble.mock.calls[0][0].skillPrompts).toBe("");
+  });
+
   it("emits complete context usage before model output", async () => {
     const loop = new AgentLoop(createConfig());
     const events: AgentEvent[] = [];
@@ -234,6 +249,49 @@ describe("AgentLoop", () => {
       expect(secondUsage.usage.segments.find((s) => s.category === "toolCalls")?.tokens).toBeGreaterThan(0);
       expect(secondUsage.usage.segments.find((s) => s.category === "toolResults")?.tokens).toBeGreaterThan(0);
     }
+  });
+
+  it("keeps twelve sequential tool rounds intact and exposes failures to the next model request", async () => {
+    let request = 0;
+    const seenMessages: Message[][] = [];
+    const model = {
+      ...createMockModel(),
+      streamChat: async function* (messages: Message[]): AsyncIterable<StreamEvent> {
+        seenMessages.push(messages.map((message) => ({ ...message })));
+        if (request < 12) {
+          request += 1;
+          yield { type: "tool_call", toolCall: { id: `round-${request}`, name: "echo", arguments: { message: `step-${request}` } } };
+          yield { type: "text_done" };
+          return;
+        }
+        yield { type: "text_chunk", text: "completed-12-rounds" };
+        yield { type: "text_done" };
+      },
+    };
+    let execution = 0;
+    const executor = createMockToolRegistry();
+    executor.execute = async (_name, args) => {
+      execution += 1;
+      return execution === 1
+        ? { toolCallId: "", content: "first attempt failed", isError: true }
+        : { toolCallId: "", content: `ok:${String(args.message)}` };
+    };
+    const events: AgentEvent[] = [];
+
+    for await (const event of new AgentLoop(createConfig({
+      modelProvider: model,
+      toolExecutor: executor,
+      maxIterations: 13,
+    })).run("run twelve steps", "twelve-rounds")) events.push(event);
+
+    expect(events.filter((event) => event.type === "tool_call")).toHaveLength(12);
+    expect(events.filter((event) => event.type === "tool_result")).toHaveLength(12);
+    expect(seenMessages[1].find((message) => message.toolCallId === "round-1")).toMatchObject({
+      role: "tool",
+      content: "first attempt failed",
+      isError: true,
+    });
+    expect(events.at(-1)).toMatchObject({ type: "done", finalText: "completed-12-rounds" });
   });
 
   it("emits one context snapshot when a request is retried", async () => {

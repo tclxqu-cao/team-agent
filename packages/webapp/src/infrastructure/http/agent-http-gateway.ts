@@ -29,6 +29,7 @@ interface BufferedStreamText {
 
 const TRANSPORT_FAILURE = /^(?:load failed|failed to fetch|network request failed|networkerror when attempting to fetch resource\.?|the network connection was lost\.?|fetch failed)$/i;
 const CODEX_COMMENTARY_FRAME_MS = 50;
+const ORDINARY_RUN_RECOVERY_INTERVAL_MS = 1_000;
 
 function isTransportFailure(error: unknown): boolean {
   return error instanceof Error
@@ -66,6 +67,8 @@ export class AgentHttpGateway {
   private readonly listeners = new Set<EventListener>();
   private readonly thinkFilters = new Map<string, StreamingThinkFilter>();
   private readonly bufferedStreamText = new Map<string, BufferedStreamText>();
+  private readonly ordinaryRunRecoveryTimers = new Map<string, ReturnType<typeof setInterval>>();
+  private readonly ordinaryRunStreamText = new Map<string, string>();
 
 
 
@@ -99,7 +102,7 @@ export class AgentHttpGateway {
     _agentIds?: string[],
     _agentName?: string,
     images?: string[],
-    nativeOptions?: { model?: { id: string; providerID?: string }; reasoningEffort?: string },
+    nativeOptions?: { model?: { id: string; providerID?: string }; reasoningEffort?: string; profileId?: string },
   ): Promise<unknown[]> {
     const isNativeSession = sessionId.startsWith("runtime:");
     const hadStream = this.streams.has(sessionId);
@@ -117,6 +120,7 @@ export class AgentHttpGateway {
             pendingResolve = resolve;
             this.pendingRuns.set(sessionId, resolve);
           });
+      if (!isNativeSession) this.ordinaryRunStreamText.set(sessionId, "");
       // A user-configured model profile travels with the run; without one the
       // server keeps using its own env configuration.
       const started = await this.http.post<{ runId?: string; snapshotRevision?: number }>("/api/agent/run", {
@@ -124,9 +128,11 @@ export class AgentHttpGateway {
         sessionId,
         ...(images?.length ? { images } : {}),
         ...(_agentIds?.length ? { agentIds: _agentIds } : {}),
+        ...(!isNativeSession && nativeOptions?.profileId ? { profileId: nativeOptions.profileId } : {}),
         ...(nativeOptions?.model?.id ? { nativeModel: nativeOptions.model } : {}),
         ...(nativeOptions?.reasoningEffort ? { nativeReasoningEffort: nativeOptions.reasoningEffort } : {}),
       });
+      if (!isNativeSession) this.startOrdinaryRunRecovery(sessionId);
       if (isNativeSession) {
         const streamCursor = typeof started.runId === "string"
           && nativeCursorBeforeRun?.runId !== started.runId
@@ -864,10 +870,69 @@ export class AgentHttpGateway {
   }
 
   private settle(sessionId: string): void {
+    this.stopOrdinaryRunRecovery(sessionId);
     const resolve = this.pendingRuns.get(sessionId);
     if (resolve) {
       this.pendingRuns.delete(sessionId);
       resolve();
+    }
+  }
+
+  private startOrdinaryRunRecovery(sessionId: string): void {
+    const previous = this.ordinaryRunRecoveryTimers.get(sessionId);
+    if (previous) clearInterval(previous);
+    const timer = setInterval(() => {
+      void this.recoverSettledOrdinaryRun(sessionId);
+    }, ORDINARY_RUN_RECOVERY_INTERVAL_MS);
+    this.ordinaryRunRecoveryTimers.set(sessionId, timer);
+  }
+
+  private stopOrdinaryRunRecovery(sessionId: string): void {
+    const timer = this.ordinaryRunRecoveryTimers.get(sessionId);
+    if (timer) clearInterval(timer);
+    this.ordinaryRunRecoveryTimers.delete(sessionId);
+    this.ordinaryRunStreamText.delete(sessionId);
+  }
+
+  private async recoverSettledOrdinaryRun(sessionId: string): Promise<void> {
+    if (!this.pendingRuns.has(sessionId)) {
+      this.stopOrdinaryRunRecovery(sessionId);
+      return;
+    }
+    try {
+      const session = await this.getSession(sessionId, { limit: 50 }) as {
+        status?: string;
+        messages?: Array<{ role: string; content?: string }>;
+        events?: Array<{ type?: string; message?: string }>;
+      } | null;
+      if (!session || session.status === "active" || session.status === "running") return;
+      if (session.status !== "completed" && session.status !== "failed" && session.status !== "aborted") return;
+
+      const messages = session.messages ?? [];
+      const lastUser = messages.map((message) => message.role).lastIndexOf("user");
+      const persisted = stripThinkBlocks(messages
+        .slice(lastUser + 1)
+        .filter((message) => message.role === "assistant" && (message.content ?? "").trim())
+        .map((message) => message.content!.trim())
+        .join("\n\n"));
+      const streamed = this.ordinaryRunStreamText.get(sessionId) ?? "";
+      const missing = persisted.startsWith(streamed) ? persisted.slice(streamed.length) : persisted;
+      if (missing) this.dispatch(sessionId, { type: "text_chunk", text: missing });
+      if (session.status === "completed") {
+        this.dispatch(sessionId, { type: "done", finalText: "" });
+      } else {
+        const persistedError = [...(session.events ?? [])]
+          .reverse()
+          .find((event) => event.type === "error" && event.message?.trim())?.message;
+        this.dispatch(sessionId, {
+          type: "error",
+          message: persistedError || (session.status === "aborted" ? "运行已中止" : "运行失败，但未记录具体错误"),
+        });
+      }
+      this.closeStream(sessionId);
+      this.settle(sessionId);
+    } catch {
+      // Keep polling while the run is pending; transient detail failures are recoverable.
     }
   }
 
@@ -926,6 +991,12 @@ export class AgentHttpGateway {
       // Otherwise a replayed partial tag can corrupt the next visible chunk.
       if (event.type === "text_chunk" && typeof event.text === "string") {
         event.text = this.thinkFilters.get(sessionId)!.push(event.text);
+        if (!sessionId.startsWith("runtime:") && event.text) {
+          this.ordinaryRunStreamText.set(
+            sessionId,
+            (this.ordinaryRunStreamText.get(sessionId) ?? "") + event.text,
+          );
+        }
       }
       if (event.type === "done" || event.type === "error" || event.type === "turn_aborted") {
         // Flush the filter's held-back tail into the terminal event before

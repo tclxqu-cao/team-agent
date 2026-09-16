@@ -1,4 +1,5 @@
 import { WindowsRemoteHelper } from './windows-helper.mjs';
+import { WindowsSystemBridge } from './windows-system-bridge.mjs';
 import { RemoteWebrtcVideo } from './webrtc-video.mjs';
 import { randomUUID } from 'node:crypto';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
@@ -19,9 +20,10 @@ export function supportsRemoteDesktop(platform = process.platform, arch = proces
 }
 
 export class RemoteAuthorization {
-  constructor({ registry, userId, dataDir, platform = process.platform, helper = platform === 'win32' ? new WindowsRemoteHelper() : new RemoteHelper(), supported = supportsRemoteDesktop(platform), intervalMs = 150 }) {
-    Object.assign(this, { registry, dataDir, helper, supported, intervalMs, platform });
+  constructor({ registry, userId, dataDir, platform = process.platform, helper = platform === 'win32' ? new WindowsRemoteHelper() : new RemoteHelper(), supported = supportsRemoteDesktop(platform), intervalMs = 150, system = platform === 'win32' ? new WindowsSystemBridge() : null }) {
+    Object.assign(this, { registry, dataDir, helper, supported, intervalMs, platform, system });
     this.enabled = false; this.screen = false; this.accessibility = false; this.online = false; this.error = null; this.busy = false; this.sequence = 0; this.generation = 0;
+    this.locked = null; this.unavailablePublished = null;
     this.sessionId = 'cli-desktop:primary';
     this.peer = { id: `cli-remote:${randomUUID()}`, userId, producerSessionIds: new Set(), watchedSessionId: null, send: (event) => {
       const generation = this.switching ? -1 : this.generation;
@@ -38,7 +40,33 @@ export class RemoteAuthorization {
     this.timer = setInterval(() => { if (this.enabled) void this.tick(); }, this.intervalMs); this.timer.unref();
   }
   async status(local = true) {
-    return { local, platform: this.platform, supported: this.supported, installed: this.supported && await this.helper.available(), enabled: this.enabled, screen: this.screen, accessibility: this.accessibility, online: this.online, error: this.error };
+    const unlock = this.platform === 'win32' && this.system ? await this.system.probe().then(p => p.available ? 'available' : 'missing').catch(() => 'missing') : 'unsupported';
+    return { local, platform: this.platform, supported: this.supported, installed: this.supported && await this.helper.available(), enabled: this.enabled, screen: this.screen, accessibility: this.accessibility, online: this.online, error: this.error, locked: this.locked, unlock };
+  }
+  /** Lock / wake / unlock entry point for paired remote viewers (`browser:system`). */
+  async systemAction(action, { password, sessionId } = {}) {
+    if (!['lock', 'wake', 'unlock'].includes(action)) throw new Error('未知系统操作');
+    if (this.platform !== 'win32' || !this.system) throw new Error('远程系统控制目前仅支持 Windows 10/11 x64');
+    if (!this.enabled) throw new Error('请先在电脑上开启远程桌面共享');
+    if (sessionId !== this.sessionId) throw new Error('远程桌面会话已失效，请刷新后重试');
+    if (action === 'lock') {
+      await this.helper.start();
+      return this.helper.request({ op: 'lock' });
+    }
+    // Wake goes through the user helper on an unlocked desktop; a locked
+    // session needs the unlock service to inject input on the secure desktop.
+    if (action === 'wake') {
+      await this.helper.start().catch(() => {});
+      const permissions = await this.helper.request({ op: 'status' }).catch(() => null);
+      if (permissions && permissions.locked !== true) return this.helper.request({ op: 'wake' });
+      const probe = await this.system.probe().catch(() => null);
+      if (!probe?.available) throw new Error('远程解锁服务不可用，请在 Windows 电脑上运行 agentroam unlock-service install');
+      return this.system.wake();
+    }
+    const result = await this.system.unlock(password);
+    // Resume video capture promptly once the desktop comes back.
+    this.lastPermissionCheck = 0; this.retryAt = 0;
+    return result;
   }
   async save() { await mkdir(this.dataDir, { recursive: true }); await writeFile(this.stateFile, JSON.stringify({ enabled: this.enabled }), { mode: 0o600 }); }
   async action(action, permission) {
@@ -84,10 +112,20 @@ export class RemoteAuthorization {
       // Permissions need not be polled at the frame rate.
       if (!this.lastPermissionCheck || Date.now() - this.lastPermissionCheck > 2000) {
         const permissions = await this.helper.request({ op: 'status' });
-        this.screen = permissions.screen === true; this.accessibility = permissions.accessibility === true; this.lastPermissionCheck = Date.now();
+        this.screen = permissions.screen === true; this.accessibility = permissions.accessibility === true;
+        this.locked = permissions.locked === true;
+        this.lastPermissionCheck = Date.now();
         if (!this.screen) this.error = permissions.error || (this.platform === 'win32' ? '请在 Windows 上恢复已登录的普通桌面' : '请先授予屏幕录制权限');
       }
-      if (!this.screen) { this.bounds = null; await this.releaseInput(); await this.video.stop(); if (this.online) this.registry.close(this.peer, this.sessionId); this.online = false; return; }
+      if (!this.screen) {
+        this.bounds = null; await this.releaseInput(); await this.video.stop();
+        // A locked Windows session keeps the CLI alive: keep the session card
+        // visible (as unavailable) so a paired viewer can still wake or unlock
+        // the machine instead of losing the entry point entirely.
+        if (this.platform === 'win32') this.publishUnavailable(this.error, this.locked === true);
+        else if (this.online) { this.registry.close(this.peer, this.sessionId); this.online = false; }
+        return;
+      }
       if (this.video.connected && Date.now() - (this.lastPreview || 0) < 2000) return;
       const frame = await this.helper.request({ op: 'capture' });
       this.lastPreview = Date.now();
@@ -102,14 +140,29 @@ export class RemoteAuthorization {
       this.online = false;
     } finally { this.busy = false; }
   }
+  /** Publishes the locked/unavailable state once per transition so viewers
+   *  keep a surface for wake/unlock actions (Windows keeps `online` true). */
+  publishUnavailable(error, locked) {
+    const signature = JSON.stringify([Boolean(locked), error]);
+    if (this.unavailablePublished === signature) return;
+    this.unavailablePublished = signature;
+    this.registry.publish(this.peer, {
+      sessionId: this.sessionId, backend: 'desktop', title: '本机桌面', url: '', viewport: this.viewport,
+      transport: 'cdp-jpeg-ws', availability: 'unavailable', platform: this.platform,
+      capabilityError: locked ? 'Windows 已锁屏' : (error || 'Windows 桌面暂不可用'),
+      capabilityErrorCode: locked ? 'desktop-locked' : 'desktop-unavailable',
+    });
+    this.online = true;
+  }
   publishFrame(frame) {
+    this.unavailablePublished = null;
     this.viewport = { width: frame.width, height: frame.height, deviceScaleFactor: 1 }; this.bounds = frame;
     const previousQuality = this.quality;
     this.quality = frame.quality ?? this.quality ?? 'hd';
     const displays = frame.displays ?? this.displays ?? null;
     if (!this.online || JSON.stringify(displays) !== JSON.stringify(this.displays)) {
       this.displays = displays;
-      this.registry.publish(this.peer, { sessionId: this.sessionId, backend: 'desktop', title: '本机桌面', url: '', viewport: this.viewport, displays, transport: 'cdp-jpeg-ws' });
+      this.registry.publish(this.peer, { sessionId: this.sessionId, backend: 'desktop', title: '本机桌面', url: '', viewport: this.viewport, displays, transport: 'cdp-jpeg-ws', platform: this.platform });
       this.online = true;
     }
     this.registry.updateFrame(this.peer, { sessionId: this.sessionId, sequence: ++this.sequence, data: Buffer.from(frame.data, 'base64'), mime: 'image/jpeg', viewport: this.viewport, title: '本机桌面', timestamp: Date.now() });
@@ -157,8 +210,14 @@ export class RemoteAuthorization {
       if (event.data.kind === 'start') signalQuality();
       await this.video.handle(event.data); return;
     }
-    if (event.type === 'browser:takeover-requested') this.registry.producerState(this.peer, this.sessionId, 'user-controlled');
-    else if (event.type === 'browser:return-requested') { await this.releaseInput(); await this.video.stop(); this.registry.producerState(this.peer, this.sessionId, 'agent-controlled'); }
+    if (event.type === 'browser:takeover-requested') {
+      if (this.platform === 'win32') void this.helper.request({ op: 'keep-display', on: true }).catch(() => {});
+      this.registry.producerState(this.peer, this.sessionId, 'user-controlled');
+    }
+    else if (event.type === 'browser:return-requested') {
+      if (this.platform === 'win32') void this.helper.request({ op: 'keep-display', on: false }).catch(() => {});
+      await this.releaseInput(); await this.video.stop(); this.registry.producerState(this.peer, this.sessionId, 'agent-controlled');
+    }
     else if (event.type === 'browser:input') {
       try {
         if (generation !== this.generation || !this.bounds) throw new Error('屏幕正在切换，请等待新画面');
@@ -196,8 +255,8 @@ export class RemoteAuthorization {
     if (pathname === '/api/remote-authorization/status') {
       if (req.method !== 'GET') { send(405, { error: 'Method not allowed' }); return true; }
       try {
-        const { platform, supported, installed, enabled, screen, accessibility, online } = await this.status(false);
-        send(200, { local: false, platform, supported, installed, enabled, screen, accessibility, online });
+        const { platform, supported, installed, enabled, screen, accessibility, online, locked, unlock } = await this.status(false);
+        send(200, { local: false, platform, supported, installed, enabled, screen, accessibility, online, locked, unlock });
       } catch { send(503, { error: '暂时无法读取远程桌面状态' }); }
       return true;
     }

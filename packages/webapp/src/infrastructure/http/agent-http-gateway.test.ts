@@ -28,6 +28,10 @@ class ObservableEventSource {
   }
 }
 
+function emit(source: ObservableEventSource, event: Record<string, unknown>): void {
+  source.onmessage?.(new MessageEvent("message", { data: JSON.stringify(event) }));
+}
+
 describe("AgentHttpGateway", () => {
   const originalEventSource = globalThis.EventSource;
 
@@ -116,6 +120,92 @@ describe("AgentHttpGateway", () => {
       type: "error",
       message: "事件流连接失败",
       _sid: "session-1",
+    });
+  });
+
+  it("recovers a completed ordinary run when SSE never delivers its terminal event", async () => {
+    vi.useFakeTimers();
+    globalThis.EventSource = ObservableEventSource as unknown as typeof EventSource;
+    const http = {
+      post: vi.fn().mockResolvedValue({ runId: "run-1" }),
+      get: vi.fn().mockResolvedValue({
+        status: "completed",
+        messages: [
+          { role: "user", content: "你是" },
+          { role: "assistant", content: "我是 AI 助手" },
+        ],
+      }),
+    };
+    const gateway = new AgentHttpGateway(http as never, {} as never);
+    const events: Array<Record<string, unknown>> = [];
+    gateway.onEvent((event) => events.push(event as Record<string, unknown>));
+
+    const run = gateway.run("你是", "ca-session-1");
+    const source = ObservableEventSource.instances[0];
+    source.onopen?.();
+    await vi.advanceTimersByTimeAsync(1_000);
+    await run;
+
+    expect(events).toContainEqual({ type: "text_chunk", text: "我是 AI 助手", _sid: "ca-session-1" });
+    expect(events).toContainEqual({ type: "done", finalText: "", _sid: "ca-session-1" });
+    expect(source.close).toHaveBeenCalledOnce();
+  });
+
+  it("only recovers the missing suffix after an ordinary SSE stream drops", async () => {
+    vi.useFakeTimers();
+    globalThis.EventSource = ObservableEventSource as unknown as typeof EventSource;
+    const http = {
+      post: vi.fn().mockResolvedValue({ runId: "run-1" }),
+      get: vi.fn().mockResolvedValue({
+        status: "completed",
+        messages: [
+          { role: "user", content: "你是" },
+          { role: "assistant", content: "我是 AI 助手" },
+        ],
+      }),
+    };
+    const gateway = new AgentHttpGateway(http as never, {} as never);
+    const events: Array<Record<string, unknown>> = [];
+    gateway.onEvent((event) => events.push(event as Record<string, unknown>));
+
+    const run = gateway.run("你是", "ca-session-1");
+    const source = ObservableEventSource.instances[0];
+    source.onopen?.();
+    await Promise.resolve();
+    emit(source, { type: "text_chunk", text: "我是 " });
+    await vi.advanceTimersByTimeAsync(1_000);
+    await run;
+
+    expect(events.filter((event) => event.type === "text_chunk").map((event) => event.text)).toEqual([
+      "我是 ",
+      "AI 助手",
+    ]);
+  });
+
+  it("recovers the persisted server error instead of a generic missing-terminal message", async () => {
+    vi.useFakeTimers();
+    globalThis.EventSource = ObservableEventSource as unknown as typeof EventSource;
+    const http = {
+      post: vi.fn().mockResolvedValue({ runId: "run-failed" }),
+      get: vi.fn().mockResolvedValue({
+        status: "failed",
+        messages: [{ role: "user", content: "执行" }],
+        events: [{ type: "error", message: "AI Hub 返回的工具调用 JSON 格式无效" }],
+      }),
+    };
+    const gateway = new AgentHttpGateway(http as never, {} as never);
+    const events: Array<Record<string, unknown>> = [];
+    gateway.onEvent((event) => events.push(event as Record<string, unknown>));
+
+    const run = gateway.run("执行", "ca-session-failed");
+    ObservableEventSource.instances[0].onopen?.();
+    await vi.advanceTimersByTimeAsync(1_000);
+    await run;
+
+    expect(events).toContainEqual({
+      type: "error",
+      message: "AI Hub 返回的工具调用 JSON 格式无效",
+      _sid: "ca-session-failed",
     });
   });
 
@@ -685,7 +775,7 @@ describe("AgentHttpGateway", () => {
     });
   });
 
-  it("uses server settings instead of sending stale browser model overrides", async () => {
+  it("sends only the selected profile id for a customer-agent run", async () => {
     globalThis.EventSource = ObservableEventSource as unknown as typeof EventSource;
     const model = {
       provider: "openai",
@@ -701,7 +791,9 @@ describe("AgentHttpGateway", () => {
     };
     const gateway = new AgentHttpGateway(http as never, settings as never);
 
-    const run = gateway.run("configured run", "session-settings");
+    const run = gateway.run("configured run", "session-settings", undefined, undefined, undefined, {
+      profileId: "aihub-deepseek",
+    });
     const source = ObservableEventSource.instances[0];
     source.onopen?.();
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -709,6 +801,7 @@ describe("AgentHttpGateway", () => {
     expect(http.post).toHaveBeenCalledWith("/api/agent/run", {
       input: "configured run",
       sessionId: "session-settings",
+      profileId: "aihub-deepseek",
 
     });
 

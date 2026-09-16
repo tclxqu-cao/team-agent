@@ -86,7 +86,11 @@ try {
   runSqliteSmoke(nodeBin, runtimeRoot, workdir);
   console.log("✓ better-sqlite3 created and read a database");
   runNodePtySmoke(nodeBin, runtimeRoot, workdir);
-  if (process.platform === "win32") execFileSync(resolve(runtimeRoot, "native/agentroam-remote-desktop.exe"), ["--self-test"], { cwd: workdir, stdio: "inherit", timeout: 30_000 });
+  if (process.platform === "win32") {
+    for (const executable of ["agentroam-remote-desktop.exe", "agentroam-remote-unlock.exe"]) {
+      execFileSync(resolve(runtimeRoot, "native", executable), ["--self-test"], { cwd: workdir, stdio: "inherit", timeout: 30_000 });
+    }
+  }
   console.log(`✓ node-pty spawned ${process.platform === "win32" ? "PowerShell through ConPTY" : "zsh"}`);
 
   child = spawn(

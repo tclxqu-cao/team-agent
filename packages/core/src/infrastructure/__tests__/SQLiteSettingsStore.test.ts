@@ -24,4 +24,10 @@ describe('context window persistence', () => {
     rows.set('contextWindow', '100');
     expect(new SQLiteSettingsStore('/tmp').getAll().contextWindow).toBe(100);
   });
+  it('treats an AI Hub site model as configured without an API key', () => {
+    rows.set('modelProvider', 'aihub');
+    rows.set('modelId', 'deepseek');
+    rows.set('apiKey', '');
+    expect(new SQLiteSettingsStore('/tmp').getAll().isConfigured).toBe(true);
+  });
 });

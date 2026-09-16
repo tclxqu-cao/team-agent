@@ -45,6 +45,7 @@ if (targetName === "windows-amd64") {
   await mkdir(resolve(target, "native"), { recursive: true });
   const helper = resolve(process.env.AGENT_WINDOWS_REMOTE_HELPER_OUTPUT || resolve(server, "native/.build-remote/windows/agentroam-remote-desktop.exe"));
   await cp(helper, resolve(target, "native/agentroam-remote-desktop.exe"));
+  await cp(resolve(helper, "../agentroam-remote-unlock.exe"), resolve(target, "native/agentroam-remote-unlock.exe"));
   await cp(resolve(server, "native/remote-helper-windows/THIRD-PARTY-NOTICES.txt"), resolve(target, "native/remote-helper-NOTICES.txt"));
 }
 await cp(resolve(server, "lib/desktop-discovery.mjs"), resolve(target, "lib/desktop-discovery.mjs"));

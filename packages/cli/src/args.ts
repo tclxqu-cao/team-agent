@@ -2,12 +2,14 @@ import { homedir } from "node:os";
 import { resolve } from "node:path";
 
 export type RelayMode = "auto" | "cloudflare" | "pinggy" | "custom";
-export type CliCommand = "start" | "doctor" | "version" | "service" | "update" | "update-worker" | "pair" | "devices" | "revoke" | "approvals" | "approve" | "deny" | "lock" | "unlock" | "audit";
+export type CliCommand = "start" | "doctor" | "version" | "service" | "unlock-service" | "update" | "update-worker" | "pair" | "devices" | "revoke" | "approvals" | "approve" | "deny" | "lock" | "unlock" | "audit";
 export type ServiceAction = "install" | "start" | "stop" | "status" | "url" | "logs" | "restart" | "uninstall";
+export type UnlockServiceAction = "install" | "uninstall" | "status";
 
 export interface CliOptions {
   command: CliCommand;
   serviceAction: ServiceAction | null;
+  unlockServiceAction: UnlockServiceAction | null;
   roots: string[];
   port: number | null;
   relay: RelayMode;
@@ -28,10 +30,11 @@ export interface CliOptions {
 export function parseArgs(argv: string[]): CliOptions {
   const values = [...argv];
   let command: CliOptions["command"] = "start";
-  if (values[0] && ["start", "doctor", "version", "service", "update", "update-worker", "pair", "devices", "revoke", "approvals", "approve", "deny", "lock", "unlock", "audit"].includes(values[0])) {
+  if (values[0] && ["start", "doctor", "version", "service", "unlock-service", "update", "update-worker", "pair", "devices", "revoke", "approvals", "approve", "deny", "lock", "unlock", "audit"].includes(values[0])) {
     command = values.shift() as CliOptions["command"];
   }
   let serviceAction: ServiceAction | null = null;
+  let unlockServiceAction: UnlockServiceAction | null = null;
   if (command === "service") {
     const action = values.shift();
     if (!action || !(["install", "start", "stop", "status", "url", "logs", "restart", "uninstall"] as string[]).includes(action)) {
@@ -41,6 +44,13 @@ export function parseArgs(argv: string[]): CliOptions {
     if (serviceAction !== "install" && values.length > 0) {
       throw cliError(`service ${serviceAction} does not accept options`);
     }
+  }
+  if (command === "unlock-service") {
+    const action = values.shift();
+    if (!action || !(["install", "uninstall", "status"] as string[]).includes(action) || values.length > 0) {
+      throw cliError("unlock-service requires install, uninstall, or status and accepts no options");
+    }
+    unlockServiceAction = action as UnlockServiceAction;
   }
   let revokeDeviceId: string | null = null;
   let revokeAll = false;
@@ -66,6 +76,7 @@ export function parseArgs(argv: string[]): CliOptions {
   const options: CliOptions = {
     command,
     serviceAction,
+    unlockServiceAction,
     roots: [],
     port: null,
     relay: "auto",

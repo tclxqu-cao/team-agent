@@ -794,6 +794,13 @@ const requestHandlers = {
   "browser:webrtc-relay": async (msg, conn) => liveViewRegistry.webrtcFromProducer(conn.browserPeer, msg.sessionId, msg.data),
   "browser:producer-state": async (msg, conn) => ({ session: liveViewRegistry.producerState(conn.browserPeer, msg.sessionId, msg.state) }),
   "browser:close": async (msg, conn) => { liveViewRegistry.close(conn.browserPeer, msg.sessionId); return { closed: true, sessionId: msg.sessionId }; },
+  // Lock / wake / remote unlock of this machine (Windows unlock service).
+  // The password lives only inside this RPC round-trip: audit logs record the
+  // operation type, never the payload.
+  "browser:system": async (msg) => ({ result: await remoteAuthorization.systemAction(String(msg.action || ""), {
+    sessionId: typeof msg.sessionId === "string" ? msg.sessionId : undefined,
+    password: typeof msg.password === "string" ? msg.password : undefined,
+  }) }),
 
   "project:list": async () => ({
     projects: (await projectStore.list()).map(toWebProject),
@@ -964,7 +971,7 @@ async function handleMessage(conn, raw) {
   if (!handler) {
     return conn.sendJson({ type: "error", error: `unknown type: ${msg.type}` });
   }
-  const sensitive = /^(?:term:(?:start|input|close|kill|focus|request-write|set-cwd)|fs:|file:|browser:(?:input|takeover)|aihub:|project:(?:create|rename|delete))/.test(msg.type);
+  const sensitive = /^(?:term:(?:start|input|close|kill|focus|request-write|set-cwd)|fs:|file:|browser:(?:input|takeover|system)|aihub:|project:(?:create|rename|delete))/.test(msg.type);
   try {
     if (sensitive) pairingGateway.auditOperation(conn.principal, `ws.${msg.type}`, "started");
     const result = await handler(msg, conn);

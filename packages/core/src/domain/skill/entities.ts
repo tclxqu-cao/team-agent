@@ -56,11 +56,18 @@ export interface ISkillRegistry {
   unregister(name: string): void;
   get(name: string): SkillMeta | undefined;
   getAll(): SkillMeta[];
+  /** Search lightweight skill metadata without loading SKILL.md bodies. */
+  discover?(query: string, enabledSkills?: string[] | null): SkillMeta[];
+  /** Load one exact skill body on demand. */
+  load?(name: string, enabledSkills?: string[] | null): Promise<SkillDefinition | null>;
   /** Find skills triggered by user input */
   findMatching(input: string): SkillMeta[];
   /** Get assembled prompt text for matched skills (lazy-loads prompt bodies).
    *  If enabledSkills is provided, only skills in that list can be activated. */
-  getSkillPrompts(input: string, enabledSkills?: string[] | null): Promise<string>;
+  getSkillPrompts(input: string, enabledSkills?: string[] | null, modelContext?: {
+    workingDirectory?: string;
+    tools?: import('../model/entities.js').ToolDefinition[];
+  }): Promise<string>;
   /** Inject a model provider to enable LLM-based semantic matching */
   setModelProvider(provider: import('../model/entities.js').IModelProvider | null): void;
 }

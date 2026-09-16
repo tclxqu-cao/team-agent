@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Check, ChevronDown, Paperclip, Plus, Send, Trash2, X } from "lucide-react";
+import { ArrowLeft, Check, ChevronDown, Paperclip, Plus, Send, Trash2, X } from "lucide-react";
 import { MAX_RELAY_IMAGES, MAX_RELAY_IMAGE_LENGTH } from "../../../core/src/domain/ai-hub/image-limits";
 import { computePaneRects, type HubRect } from "../lib/ai-hub-layout";
 import ChromeHubPane from "./ChromeHubPane";
@@ -18,6 +18,7 @@ const MAX_COMPARE = 4;
 
 interface AIHubViewProps {
   onExit: () => void;
+  conversationId?: string | null;
 }
 
 interface SendChip {
@@ -49,7 +50,7 @@ function isValidHttpUrl(value: string): boolean {
 
 // 桌面端专属：WebContentsView 承载各站点页面，本组件只画外壳并推送格子矩形。
 // web shell（无 agentApi.hub*）降级为提示文案。
-export default function AIHubView({ onExit }: AIHubViewProps) {
+export default function AIHubView({ onExit, conversationId }: AIHubViewProps) {
   const api = typeof window !== "undefined" ? window.agentApi : undefined;
   const hubAvailable = typeof api?.hubGetConfig === "function";
 
@@ -139,6 +140,7 @@ export default function AIHubView({ onExit }: AIHubViewProps) {
       const rect = paneRects[index];
       return {
         siteId,
+        ...(conversationId ? { conversationId } : {}),
         x: rect.x,
         y: rect.y + PANE_HEADER_HEIGHT,
         width: rect.width,
@@ -146,13 +148,13 @@ export default function AIHubView({ onExit }: AIHubViewProps) {
       };
     });
     void api?.hubSetBounds(panes);
-  }, [hubAvailable, api, paneRects, selectedIds]);
+  }, [hubAvailable, api, paneRects, selectedIds, conversationId]);
 
   // 打开当前布局中的站点（幂等；被移出的视图由 setBounds([]) 外的主进程逻辑隐藏）
   useEffect(() => {
     if (!hubAvailable) return;
-    for (const siteId of selectedIds) void api?.hubOpenSite(siteId);
-  }, [hubAvailable, api, selectedIds]);
+    for (const siteId of selectedIds) void api?.hubOpenSite(siteId, conversationId ?? undefined);
+  }, [hubAvailable, api, selectedIds, conversationId]);
 
   // 容器尺寸测量：ResizeObserver + rAF 节流
   useEffect(() => {
@@ -258,15 +260,15 @@ export default function AIHubView({ onExit }: AIHubViewProps) {
       delete next[siteId];
       return next;
     });
-    void api?.hubReload(siteId);
-    void api?.hubOpenSite(siteId);
-  }, [api]);
+    void api?.hubReload(siteId, conversationId ?? undefined);
+    void api?.hubOpenSite(siteId, conversationId ?? undefined);
+  }, [api, conversationId]);
 
   const closePane = useCallback((siteId: string) => {
     if (selectedIds.length <= 1) return;
-    void api?.hubCloseSite(siteId);
+    void api?.hubCloseSite(siteId, conversationId ?? undefined);
     setSelectedIds((current) => current.filter((id) => id !== siteId));
-  }, [api, selectedIds.length]);
+  }, [api, selectedIds.length, conversationId]);
 
   const send = useCallback(async () => {
     const text = draft.trim();
@@ -310,14 +312,14 @@ export default function AIHubView({ onExit }: AIHubViewProps) {
 
   const removeSite = useCallback(async (siteId: string) => {
     if (!api || sites.length <= 1) return;
-    void api.hubCloseSite(siteId);
+    void api.hubCloseSite(siteId, conversationId ?? undefined);
     const config = await api.hubSetConfig({ version: 1, sites: sites.filter((site) => site.id !== siteId) });
     setSites(config.sites);
     setSelectedIds((current) => {
       const next = current.filter((id) => id !== siteId);
       return next.length > 0 ? next : config.sites.slice(0, 1).map((site) => site.id);
     });
-  }, [api, sites]);
+  }, [api, sites, conversationId]);
 
   const startDividerDrag = useCallback((index: number, event: React.PointerEvent<HTMLDivElement>) => {    event.preventDefault();
     const paneCount = paneRects.length;
@@ -377,12 +379,12 @@ export default function AIHubView({ onExit }: AIHubViewProps) {
         <button
           type="button"
           onClick={onExit}
-          title="返回对话"
-          aria-label="返回对话"
-          className="ui-icon-button ui-icon-button--auto"
-          style={{ WebkitAppRegion: "no-drag", padding: "5px 10px", whiteSpace: "nowrap" } as React.CSSProperties}
+          title="返回会话列表"
+          aria-label="返回会话列表"
+          className="ui-icon-button"
+          style={{ WebkitAppRegion: "no-drag", width: 34, height: 34, flexShrink: 0 } as React.CSSProperties}
         >
-          ← 返回
+          <ArrowLeft size={18} aria-hidden="true" />
         </button>
         <strong style={{ fontSize: 14, color: "var(--text-secondary)" }}>AI Hub</strong>
         <button type="button" className="ui-icon-button ui-icon-button--auto" onClick={() => setChromeSetupOpen((open) => !open)}

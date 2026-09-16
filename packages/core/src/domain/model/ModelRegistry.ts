@@ -2,8 +2,9 @@ import type { IModelProvider, ModelProviderConfig } from './entities.js';
 import { AnthropicProvider } from './providers/AnthropicProvider.js';
 import { OpenAIProvider } from './providers/OpenAIProvider.js';
 import { DeepSeekProvider } from './providers/DeepSeekProvider.js';
+import { AiHubProvider } from './providers/AiHubProvider.js';
 
-export type ProviderType = "anthropic" | "openai" | "deepseek";
+export type ProviderType = "anthropic" | "openai" | "deepseek" | "aihub";
 
 export class ModelRegistry {
   private readonly providers = new Map<string, IModelProvider>();
@@ -27,6 +28,9 @@ export class ModelRegistry {
         break;
       case "deepseek":
         provider = new DeepSeekProvider(config);
+        break;
+      case "aihub":
+        provider = new AiHubProvider(config);
         break;
       default:
         throw new Error(`Unknown provider type: ${type}`);

@@ -44,4 +44,15 @@ describe("QuestionManager", () => {
 
     expect(manager.answerLatest("session-1", "hello")).toBe(false);
   });
+
+  it("keeps a question pending until it is answered", async () => {
+    vi.useFakeTimers();
+    const manager = new QuestionManager(vi.fn());
+    const pending = manager.create(request, "session-1");
+
+    await vi.advanceTimersByTimeAsync(30 * 60 * 1000);
+    expect(manager.answerLatest("session-1", "still here")).toBe(true);
+    await expect(pending).resolves.toEqual({ answer: "still here", selectedIndices: undefined });
+    vi.useRealTimers();
+  });
 });

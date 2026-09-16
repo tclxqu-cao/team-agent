@@ -225,12 +225,12 @@ contextBridge.exposeInMainWorld("desktopDeviceApi", {
   // AI Hub (embedded multi-AI web aggregation)
   hubGetConfig: () => ipcRenderer.invoke("hub:get-config"),
   hubSetConfig: (raw: unknown) => ipcRenderer.invoke("hub:set-config", raw),
-  hubOpenSite: (siteId: string) => ipcRenderer.invoke("hub:open", siteId),
-  hubCloseSite: (siteId: string) => ipcRenderer.invoke("hub:close", siteId),
+  hubOpenSite: (siteId: string, conversationId?: string) => ipcRenderer.invoke("hub:open", siteId, conversationId),
+  hubCloseSite: (siteId: string, conversationId?: string) => ipcRenderer.invoke("hub:close", siteId, conversationId),
   hubHideAll: () => ipcRenderer.invoke("hub:hide-all"),
-  hubSetBounds: (panes: Array<{ siteId: string; x: number; y: number; width: number; height: number }>) =>
+  hubSetBounds: (panes: Array<{ siteId: string; conversationId?: string; x: number; y: number; width: number; height: number }>) =>
     ipcRenderer.invoke("hub:set-bounds", panes),
-  hubReload: (siteId: string) => ipcRenderer.invoke("hub:reload", siteId),
+  hubReload: (siteId: string, conversationId?: string) => ipcRenderer.invoke("hub:reload", siteId, conversationId),
   hubBroadcast: (text: string, siteIds: string[], images: string[] = []) => ipcRenderer.invoke("hub:broadcast", text, siteIds, images),
   onHubEvent: (callback: (event: unknown) => void): (() => void) => {
     const handler = (_event: unknown, data: unknown) => callback(data);

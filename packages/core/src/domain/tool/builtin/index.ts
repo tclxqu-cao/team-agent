@@ -15,6 +15,7 @@ export { ApplyPatchTool } from './ApplyPatchTool.js';
 export { LspDiagnosticsTool, LspHoverTool, LspDefinitionTool, LspReferencesTool } from './LspTools.js';
 export { ShowWidgetTool } from './ShowWidgetTool.js';
 export { RemoteProjectActionTool } from './RemoteProjectActionTool.js';
+export { SkillDiscoverTool, SkillLoadTool } from './SkillTools.js';
 
 import { ApplyPatchTool } from './ApplyPatchTool.js';
 import { ReadFileTool } from './ReadFileTool.js';

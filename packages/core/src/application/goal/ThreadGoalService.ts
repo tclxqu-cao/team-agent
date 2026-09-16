@@ -36,11 +36,23 @@ export interface RunSettledInfo extends ThreadGoalUsage {
 }
 
 export class ThreadGoalService {
+  /** 用户中断（abort）后待消费的一次性续跑抑制；对齐 TUI abortingRef 语义。 */
+  private readonly userStopped = new Set<string>();
+
   constructor(
     private readonly store: IThreadGoalStore,
     private readonly driver: ThreadGoalDriver,
     private readonly notifier: ThreadGoalNotifier,
   ) {}
+
+  /**
+   * 用户主动中断当前 turn：抑制紧随其后的自动续跑（仅一轮）。
+   * turn_aborted 不是 failed，若不拦住，settleTurn 会立刻用目标消息重新起轮，
+   * 用户在 WebApp 上按“停止生成”就永远停不下来。重新设置/恢复目标时清除。
+   */
+  requestStop(sessionId: string): void {
+    this.userStopped.add(sessionId);
+  }
 
   async getGoal(sessionId: string): Promise<ThreadGoal | null> {
     return this.store.get(sessionId);
@@ -52,6 +64,7 @@ export class ThreadGoalService {
     objective: string,
     options: { tokenBudget?: number | null } = {},
   ): Promise<ThreadGoal> {
+    this.userStopped.delete(sessionId);
     const existing = await this.store.get(sessionId);
     // 借 createThreadGoal 做目标文本与预算的领域校验（trim、长度、预算为正）。
     const validated = createThreadGoal(sessionId, objective, {
@@ -95,6 +108,7 @@ export class ThreadGoalService {
 
   /** 恢复目标：从 paused/blocked/usage_limited/budget_limited 回到 active；空闲则立刻续跑。 */
   async resumeGoal(sessionId: string): Promise<ThreadGoal> {
+    this.userStopped.delete(sessionId);
     const goal = await this.transition(sessionId, "active", {
       allowedFrom: ["paused", "blocked", "usage_limited", "budget_limited"],
     });
@@ -121,6 +135,13 @@ export class ThreadGoalService {
   }> {
     const current = await this.store.get(info.sessionId);
     if (!current) return { goal: null, shouldContinue: false, continuationMessage: null, budgetExhausted: false };
+    // 用户刚中断过：本轮用量照记，但不自动续跑（一次性消费 stop 标记）。
+    if (this.userStopped.delete(info.sessionId)) {
+      const updated = recordThreadGoalUsage(current, { tokens: info.tokens, seconds: info.seconds });
+      await this.store.set(updated);
+      this.notifier.onUpdated(info.sessionId, updated);
+      return { goal: updated, shouldContinue: false, continuationMessage: null, budgetExhausted: false };
+    }
     if (current.status !== "active") {
       // 终轮（模型已标 complete/blocked 等）不再续跑，但本轮用量仍要记账。
       if (info.tokens > 0 || info.seconds > 0) {

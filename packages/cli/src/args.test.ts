@@ -7,8 +7,18 @@ describe("parseArgs", () => {
     const value = parseArgs([]);
     expect(value.command).toBe("start");
     expect(value.serviceAction).toBeNull();
+    expect(value.unlockServiceAction).toBeNull();
     expect(value.roots).toEqual([process.cwd()]);
     expect(value.relay).toBe("auto");
+  });
+
+  it("parses Windows unlock service actions", () => {
+    for (const action of ["install", "uninstall", "status"] as const) {
+      expect(parseArgs(["unlock-service", action])).toMatchObject({ command: "unlock-service", unlockServiceAction: action });
+    }
+    expect(() => parseArgs(["unlock-service"])).toThrow("requires install");
+    expect(() => parseArgs(["unlock-service", "restart"])).toThrow("requires install");
+    expect(() => parseArgs(["unlock-service", "status", "--data-dir", "/tmp/x"])).toThrow("accepts no options");
   });
 
   it("parses every supported relay", () => {

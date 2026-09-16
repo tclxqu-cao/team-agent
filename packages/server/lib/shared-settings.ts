@@ -67,7 +67,7 @@ export class SharedSettingsService {
           for (const key of ["id", "name", "provider", "modelId", "baseUrl"]) if (typeof raw[key] !== "string") throw new SettingsValidationError(`profile.${key} 无效`);
           if (!raw.id || ids.has(raw.id)) throw new SettingsValidationError("profile.id 重复或为空");
           ids.add(raw.id);
-          if (!["openai", "anthropic", "deepseek"].includes(raw.provider)) throw new SettingsValidationError("不支持的模型提供方");
+          if (!["openai", "anthropic", "deepseek", "aihub"].includes(raw.provider)) throw new SettingsValidationError("不支持的模型提供方");
           return { id: raw.id, name: raw.name, provider: raw.provider, modelId: raw.modelId, baseUrl: raw.baseUrl, apiKey: preserveSecret(raw.apiKey, current.profiles.find((p) => p.id === raw.id)?.apiKey || "") };
         });
       }
@@ -78,7 +78,9 @@ export class SharedSettingsService {
         if (!Array.isArray(input.activeAgentIds) || !input.activeAgentIds.every((id) => typeof id === "string")) throw new SettingsValidationError("activeAgentIds 无效");
         next.activeAgentIds = [...new Set(input.activeAgentIds)] as string[];
       }
-      next.isConfigured = Boolean(next.apiKey);
+      next.isConfigured = next.modelProvider === "aihub"
+        ? Boolean(next.modelId)
+        : Boolean(next.apiKey && next.modelId);
       this.store.saveAll(next);
       this.store.set("activeAgentIds", JSON.stringify(next.activeAgentIds));
       this.store.set("sharedSettingsRevision", String(current.revision + 1));

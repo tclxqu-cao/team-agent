@@ -31,4 +31,24 @@ describe("shared customer settings", () => {
     expect(() => service.save({ activeProfileId: "missing" })).toThrow();
     expect(service.read().revision).toBe(0);
   });
+  it("accepts an AI Hub profile without an API key", () => {
+    const service = new SharedSettingsService(temp(), {});
+    const profile = {
+      id: "aihub-deepseek",
+      name: "AI Hub DeepSeek",
+      provider: "aihub",
+      modelId: "deepseek",
+      apiKey: "",
+      baseUrl: "",
+    };
+
+    service.save({ profiles: [profile], activeProfileId: profile.id });
+
+    expect(service.read()).toMatchObject({
+      modelProvider: "aihub",
+      modelId: "deepseek",
+      apiKey: "",
+      isConfigured: true,
+    });
+  });
 });

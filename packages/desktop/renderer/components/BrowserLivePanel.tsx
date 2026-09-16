@@ -2,7 +2,7 @@ import LiveViewSelect from "./LiveViewSelect";
 import { BrowserLiveHeaderContext } from "./browser-live-header-context";
 import { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal, flushSync } from "react-dom";
-import { ExternalLink, Hand, Keyboard, LoaderCircle, MonitorUp, Maximize, Minimize, MousePointer2, RotateCcw, X, ZoomIn, ZoomOut } from "lucide-react";
+import { ExternalLink, Hand, Keyboard, LoaderCircle, Lock, LockOpen, MonitorUp, Maximize, Minimize, MousePointer2, Power, RotateCcw, X, ZoomIn, ZoomOut } from "lucide-react";
 import type { BrowserLiveSession } from "../global";
 
 import { BrowserLiveTouch } from "./browser-live-touch";
@@ -144,6 +144,11 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
   const [viewNonce, setViewNonce] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [controlPending, setControlPending] = useState(false);
+  const [systemBusy, setSystemBusy] = useState<null | "lock" | "wake" | "unlock">(null);
+  const [unlockOpen, setUnlockOpen] = useState(false);
+  const [unlockPassword, setUnlockPassword] = useState("");
+  const [unlockPending, setUnlockPending] = useState(false);
+  const [unlockError, setUnlockError] = useState<string | null>(null);
   const [zoom, setZoom] = useState(1);
   const [panMode, setPanMode] = useState(false);
   const [surfaceSize, setSurfaceSize] = useState({ width: 0, height: 0 });
@@ -173,6 +178,12 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
   // Last tap the desktop hit-test marked as a text field (logical screen coords).
   const editableField = useRef<RemoteEditableField | null>(null);
   const editableAtRef = useRef(0);
+  useEffect(() => {
+    if (open) return;
+    setUnlockOpen(false);
+    setUnlockPassword("");
+    setUnlockError(null);
+  }, [open]);
   const [fieldHint, setFieldHint] = useState(false);
   // Long-press (drag / right-click) and double-tap tracking for touch.
   const touchStartRef = useRef<{ x: number; y: number } | null>(null);
@@ -204,6 +215,8 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
     [selectedId, sessions],
   );
   const isDesktop = selected?.backend === "desktop";
+  const isWindowsDesktop = isDesktop && selected?.platform === "win32";
+  const desktopLocked = selected?.availability === "unavailable" && selected?.capabilityErrorCode === "desktop-locked";
   const hasControl = selected?.isController && selected.state === "user-controlled";
   const canAdjustCapture = Boolean(selected?.online && selected.availability === "ready" && !selected.controlledByAnotherViewer);
   // Rough network latency readout while a stream is open.
@@ -573,6 +586,42 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
     }
   }, [api, mergeSession, selected]);
 
+  // Remote system actions (Windows): lock / wake / unlock. The password only
+  // lives inside the unlock round-trip and is never kept in component state
+  // beyond the dialog field.
+  const sendSystem = useCallback(async (action: "lock" | "wake", password?: string) => {
+    if (!api || !selectedId) return;
+    setSystemBusy(action);
+    setError(null);
+    try {
+      await api.request("browser:system", { sessionId: selectedId, action, ...(password ? { password } : {}) });
+      // The producer republishes availability after a state change; re-watch
+      // so the panel follows the locked/unlocked transition immediately.
+      window.setTimeout(() => setViewNonce((nonce) => nonce + 1), 800);
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "系统操作失败");
+    } finally {
+      setSystemBusy(null);
+    }
+  }, [api, selectedId]);
+
+  const submitUnlock = useCallback(async () => {
+    if (!api || !selectedId || !unlockPassword) return;
+    setUnlockPending(true);
+    setUnlockError(null);
+    try {
+      await api.request("browser:system", { sessionId: selectedId, action: "unlock", password: unlockPassword });
+      setUnlockPassword("");
+      setUnlockOpen(false);
+      window.setTimeout(() => setViewNonce((nonce) => nonce + 1), 2500);
+    } catch (requestError) {
+      setUnlockError(requestError instanceof Error ? requestError.message : "解锁失败");
+    } finally {
+      setUnlockPassword("");
+      setUnlockPending(false);
+    }
+  }, [api, selectedId, unlockPassword]);
+
   const sendInput = useCallback((input: Record<string, unknown>) => {
     if (!api || pendingDisplayId || pendingQuality || !selected?.isController || selected.state !== "user-controlled") return;
     void api.request("browser:input", { sessionId: selected.id, input }).catch((requestError) => {
@@ -787,6 +836,16 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
                   sendKey("f", "KeyF", ["Control", "Meta"]);
                 }, 150);
               }}><Keyboard size={15} />窗口</button>
+              {isWindowsDesktop && (
+                <>
+                  <button type="button" aria-label="锁屏" title="锁屏（锁屏后仍可从空态区唤醒或远程解锁）" disabled={!frame || !!systemBusy} onClick={() => void sendSystem("lock")}>
+                    {systemBusy === "lock" ? <LoaderCircle size={15} className="spin" /> : <Lock size={15} />}锁屏
+                  </button>
+                  <button type="button" aria-label="唤醒屏幕" title="唤醒显示器或锁屏界面" disabled={!!systemBusy} onClick={() => void sendSystem("wake")}>
+                    {systemBusy === "wake" ? <LoaderCircle size={15} className="spin" /> : <Power size={15} />}唤醒
+                  </button>
+                </>
+              )}
 
             </div>
           )}
@@ -1047,6 +1106,16 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
                 {(loading || selected?.availability === "starting") ? <LoaderCircle size={22} className="spin" aria-hidden="true" /> : <MonitorUp size={24} aria-hidden="true" />}
                 <strong>{loading ? "正在连接浏览器" : emptyTitle}</strong>
                 <span>{emptyDetail}</span>
+                {desktopLocked && (
+                  <div role="group" aria-label="锁屏远程操作" style={{ display: "flex", gap: 8, marginTop: 12 }}>
+                    <button type="button" className="browser-live-control-button" disabled={!!systemBusy} onClick={() => void sendSystem("wake")}>
+                      {systemBusy === "wake" ? <LoaderCircle size={14} className="spin" aria-hidden="true" /> : <Power size={14} aria-hidden="true" />}唤醒屏幕
+                    </button>
+                    <button type="button" className="browser-live-control-button" disabled={unlockPending} onClick={() => { setUnlockError(null); setUnlockOpen(true); }}>
+                      <LockOpen size={14} aria-hidden="true" />远程解锁
+                    </button>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -1078,6 +1147,48 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
         </footer>
         {error && <div className="browser-live-error" role="alert">{error}</div>}
       </section>
+      {unlockOpen && (
+        <div className="browser-live-unlock-backdrop" role="presentation" onMouseDown={(event) => {
+          if (event.target === event.currentTarget && !unlockPending) {
+            setUnlockOpen(false);
+            setUnlockPassword("");
+            setUnlockError(null);
+          }
+        }}>
+          <form className="browser-live-unlock-dialog" role="dialog" aria-modal="true" aria-labelledby="browser-live-unlock-title" onSubmit={(event) => {
+            event.preventDefault();
+            void submitUnlock();
+          }}>
+            <div className="browser-live-unlock-heading">
+              <LockOpen size={18} aria-hidden="true" />
+              <strong id="browser-live-unlock-title">远程解锁 Windows</strong>
+            </div>
+            <label htmlFor="browser-live-unlock-password">Windows 密码或 PIN</label>
+            <input
+              id="browser-live-unlock-password"
+              type="password"
+              autoComplete="off"
+              autoFocus
+              maxLength={256}
+              value={unlockPassword}
+              disabled={unlockPending}
+              onChange={(event) => setUnlockPassword(event.target.value)}
+            />
+            {unlockError && <p role="alert">{unlockError}</p>}
+            <div className="browser-live-unlock-actions">
+              <button type="button" className="browser-live-control-button is-return" disabled={unlockPending} onClick={() => {
+                setUnlockOpen(false);
+                setUnlockPassword("");
+                setUnlockError(null);
+              }}>取消</button>
+              <button type="submit" className="browser-live-control-button" disabled={unlockPending || !unlockPassword}>
+                {unlockPending && <LoaderCircle size={14} className="spin" aria-hidden="true" />}
+                解锁
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
     </div>,
     document.body,
   );

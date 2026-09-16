@@ -18,6 +18,7 @@ import { selectRelay, type RelaySelection } from "./tunnel/relay-orchestrator.js
 import { currentCliPath, startUpdate } from "./update/update-command.js";
 import { runUpdateWorker } from "./update/update-worker.js";
 import { lockInstanceStartup, stopPreviousInstances } from "./instance-takeover.js";
+import { runUnlockServiceCommand } from "./unlock-service.js";
 
 const VERSION = AGENTROAM_VERSION;
 
@@ -37,6 +38,7 @@ export async function main(argv: string[]): Promise<void> {
   agentroam revoke <设备ID>          移除一台设备
   agentroam revoke --all            全部退出并取消待用配对码
   agentroam service install|start|stop|restart|status|url|logs|uninstall
+  agentroam unlock-service install|uninstall|status  管理 Windows 远程解锁服务（安装时弹出 UAC）
 设备命令支持 --data-dir PATH；配对码有效期 5 分钟，设备授权有效期 30 天。`);
     return;
   }
@@ -79,6 +81,12 @@ export async function main(argv: string[]): Promise<void> {
     return;
   }
   const target = detectPlatform();
+
+  if (options.command === "unlock-service") {
+    if (target !== "windows-amd64") throw new Error("远程解锁服务仅支持 Windows 10/11 x64");
+    runUnlockServiceCommand(options.unlockServiceAction!, resolvePlatformRuntime(target).runtimeRoot);
+    return;
+  }
 
   if (options.command === "update") {
     if (target !== "darwin-arm64" && target !== "windows-amd64") throw new Error(`updates are unavailable for ${target}`);

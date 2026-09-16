@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { SkillRegistry } from '../SkillRegistry.js';
 import type { SkillDefinition } from '../entities.js';
-import type { IModelProvider, StreamEvent } from '../../model/entities.js';
+import type { IModelProvider, StreamEvent, StreamOptions } from '../../model/entities.js';
 
 describe("SkillRegistry", () => {
   const makeSkill = (overrides?: Partial<SkillDefinition>): SkillDefinition => ({
@@ -97,6 +97,29 @@ describe("SkillRegistry", () => {
 
     expect(await registry.getSkillPrompts("an unmatched request", ["other-skill"])).toBe("");
     expect(streamChatCalls).toBe(0);
+  });
+
+  it("passes the project directory and full tool definitions to semantic skill matching", async () => {
+    let received: StreamOptions | undefined;
+    const registry = new SkillRegistry();
+    registry.register(makeSkill());
+    registry.setModelProvider({
+      ...makeSemanticModel("test-skill", () => {}),
+      streamChat: async function* (_messages, options): AsyncIterable<StreamEvent> {
+        received = options;
+        yield { type: "text_chunk", text: "test-skill" };
+        yield { type: "text_done" };
+      },
+    });
+    const tools = [{ name: "skill_discover", description: "发现并加载技能", parameters: { type: "object" } }];
+
+    await registry.getSkillPrompts("an unmatched request", null, {
+      workingDirectory: "/Users/demo/project",
+      tools,
+    });
+
+    expect(received?.workingDirectory).toBe("/Users/demo/project");
+    expect(received?.tools).toEqual(tools);
   });
 
   it("should unregister a skill", () => {

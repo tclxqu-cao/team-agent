@@ -14,6 +14,8 @@ export interface Message {
   presentation?: MessagePresentation;
   name?: string;
   toolCallId?: string;
+  /** tool 消息专用：该工具结果执行失败，模型应针对错误修正后重试或换方案。 */
+  isError?: boolean;
   toolCalls?: ToolCall[];
   /** Revision-scoped pointer to a native tool result loaded only on expansion. */
   toolResultRef?: SessionToolResultRef;
@@ -39,6 +41,8 @@ export interface MessageAttachment {
   name: string;
   dataUrl?: string;
   unavailable?: boolean;
+  /** Set when the payload was withheld by an inline-size budget, not lost. */
+  omitted?: boolean;
 }
 
 export interface MessagePresentation {
@@ -69,6 +73,10 @@ export interface ToolResult {
 export type ReasoningEffort = "off" | "low" | "medium" | "high";
 
 export interface StreamOptions {
+  /** Owning agent session, used by stateful transports such as AI Hub. */
+  sessionId?: string;
+  /** Active project directory. Stateful text transports must preserve it verbatim. */
+  workingDirectory?: string;
   temperature?: number;
   maxTokens?: number;
   tools?: ToolDefinition[];
@@ -116,4 +124,8 @@ export interface ModelProviderConfig {
   modelId: string;
   maxTokens?: number;
   temperature?: number;
+  /** aihub 专用：与桌面 AI Hub 收发消息的传输实现；缺省走 ai-hub-relay.sock */
+  transport?: import('../ai-hub/transport.js').AiHubTransport;
+  /** aihub 专用：等待站点回复的超时上限（毫秒） */
+  timeoutMs?: number;
 }

@@ -18,7 +18,7 @@ describe('remote authorization local boundary', () => {
   });
 });
 
-async function fixture() {
+async function fixture(options: Record<string, unknown> = {}) {
   const dataDir = await mkdtemp(join(tmpdir(), 'remote-auth-'));
   let screen = false;
   const helper = { available: vi.fn(async () => true), start: vi.fn(async () => {}), stop: vi.fn(async () => {}), request: vi.fn(async (cmd: any) => {
@@ -27,7 +27,7 @@ async function fixture() {
     return {ok:true};
   }) };
   const registry = new LiveViewRegistry();
-  const service = new RemoteAuthorization({dataDir, registry, userId:'owner', helper, supported:true, intervalMs:60000});
+  const service = new RemoteAuthorization({dataDir, registry, userId:'owner', helper, supported:true, intervalMs:60000, ...options});
   await service.initialize();
   const frames: any[] = [];
   const viewer = { id:'phone', userId:'owner', producerSessionIds:new Set<string>(), watchedSessionId:null, send:(event:any)=>frames.push(event) };
@@ -213,9 +213,37 @@ it('uses explicit Windows sharing and releases input when a viewer disconnects o
     f.service.lastPermissionCheck=0;
     f.helper.request.mockImplementation(async (cmd:any) => cmd.op==='status' ? {screen:false,accessibility:false,error:'Windows locked'} : {ok:true});
     await f.service.tick();
-    expect(await f.service.status()).toMatchObject({screen:false,online:false,error:'Windows locked'});
+    expect(await f.service.status()).toMatchObject({screen:false,online:true,error:'Windows locked'});
+    expect(f.registry.list(f.viewer)[0]).toMatchObject({availability:'unavailable',platform:'win32'});
     expect(f.service.bounds).toBeNull();
   } finally {await f.close();}
+});
+
+it('keeps a Windows session visible when sharing starts while locked and validates system action targets', async () => {
+  const system = {
+    probe: vi.fn(async () => ({available:true,locked:true})),
+    wake: vi.fn(async () => ({ok:true,woke:true})),
+    unlock: vi.fn(async () => ({ok:true})),
+  };
+  const f = await fixture({platform:'win32',system});
+  f.helper.request.mockImplementation(async (cmd:any) => {
+    if (cmd.op === 'status') return {ok:true,screen:false,accessibility:false,locked:true,error:'Windows 已锁屏'};
+    return {ok:true};
+  });
+  try {
+    await f.service.action('enable');
+    expect(f.registry.list(f.viewer)[0]).toMatchObject({
+      id:f.service.sessionId, platform:'win32', online:true, availability:'unavailable', capabilityErrorCode:'desktop-locked',
+    });
+    expect(await f.service.status()).toMatchObject({online:true,locked:true,unlock:'available'});
+    await expect(f.service.systemAction('wake',{sessionId:'stale'})).rejects.toThrow('会话已失效');
+    await expect(f.service.systemAction('wake',{sessionId:f.service.sessionId})).resolves.toMatchObject({ok:true});
+    expect(system.wake).toHaveBeenCalledOnce();
+    await f.service.systemAction('unlock',{sessionId:f.service.sessionId,password:'123456'});
+    expect(system.unlock).toHaveBeenCalledWith('123456');
+    await f.service.systemAction('lock',{sessionId:f.service.sessionId});
+    expect(f.helper.request).toHaveBeenCalledWith({op:'lock'});
+  } finally { await f.close(); }
 });
 
 it('invalidates Windows input coordinates and releases held input when capture fails', async () => {

@@ -1,5 +1,5 @@
 import type { ISkillLoader, ISkillRegistry, SkillDefinition, SkillMeta } from './entities.js';
-import type { IModelProvider, Message } from '../model/entities.js';
+import type { IModelProvider, Message, ToolDefinition } from '../model/entities.js';
 
 export class SkillRegistry implements ISkillRegistry {
   private readonly skills = new Map<string, SkillMeta>();
@@ -47,6 +47,36 @@ export class SkillRegistry implements ISkillRegistry {
     return Array.from(this.skills.values());
   }
 
+  discover(query: string, enabledSkills?: string[] | null): SkillMeta[] {
+    const allowed = enabledSkills && enabledSkills.length > 0 ? new Set(enabledSkills) : null;
+    const eligible = Array.from(this.skills.values()).filter((skill) => !allowed || allowed.has(skill.name));
+    const normalized = query.trim().toLowerCase();
+    if (!normalized) return eligible;
+
+    const direct = this.findMatchingFrom(normalized, eligible);
+    const terms = normalized.split(/\s+/).filter(Boolean);
+    const metadataMatches = eligible.filter((skill) => {
+      const searchable = `${skill.name}\n${skill.description}`.toLowerCase();
+      return terms.some((term) => searchable.includes(term));
+    });
+    return [...new Map([...direct, ...metadataMatches].map((skill) => [skill.name, skill])).values()];
+  }
+
+  async load(name: string, enabledSkills?: string[] | null): Promise<SkillDefinition | null> {
+    const allowed = enabledSkills && enabledSkills.length > 0 ? new Set(enabledSkills) : null;
+    if (allowed && !allowed.has(name)) return null;
+    const skill = this.skills.get(name);
+    if (!skill) return null;
+    let prompt = this.promptCache.get(name);
+    if (prompt === undefined && this.loader) {
+      const full = await this.loader.loadFromFile(skill.filePath);
+      prompt = full.prompt;
+      this.promptCache.set(name, prompt);
+    }
+    if (prompt === undefined) return null;
+    return { ...skill, prompt };
+  }
+
   findMatching(input: string): SkillMeta[] {
     return this.findMatchingFrom(input, this.skills.values());
   }
@@ -73,7 +103,10 @@ export class SkillRegistry implements ISkillRegistry {
    * semantically relevant to the user's input.
    * Returns matched skills or empty array on failure.
    */
-  private async findMatchingSemantic(input: string, candidates: SkillMeta[]): Promise<SkillMeta[]> {
+  private async findMatchingSemantic(input: string, candidates: SkillMeta[], modelContext?: {
+    workingDirectory?: string;
+    tools?: ToolDefinition[];
+  }): Promise<SkillMeta[]> {
     if (!this.modelProvider || candidates.length === 0) return [];
 
     // Check cache
@@ -107,6 +140,8 @@ Return ONLY the names of relevant skills, one per line. If none are relevant, re
         temperature: 0,
         maxTokens: 200,
         reasoningEffort: "off",
+        workingDirectory: modelContext?.workingDirectory,
+        tools: modelContext?.tools,
       })) {
         if (event.type === 'text_chunk') {
           responseText += event.text;
@@ -145,7 +180,10 @@ Return ONLY the names of relevant skills, one per line. If none are relevant, re
     }
   }
 
-  async getSkillPrompts(input: string, enabledSkills?: string[] | null): Promise<string> {
+  async getSkillPrompts(input: string, enabledSkills?: string[] | null, modelContext?: {
+    workingDirectory?: string;
+    tools?: ToolDefinition[];
+  }): Promise<string> {
     const allowed = enabledSkills && enabledSkills.length > 0
       ? new Set(enabledSkills)
       : null;
@@ -167,7 +205,7 @@ Return ONLY the names of relevant skills, one per line. If none are relevant, re
   
     // 3. If keyword matching found nothing, try LLM-based semantic matching
     if (matched.length === 0 && this.semanticMatchingEnabled && eligibleSkills.length > 0) {
-      const semanticMatches = await this.findMatchingSemantic(input, eligibleSkills);
+      const semanticMatches = await this.findMatchingSemantic(input, eligibleSkills, modelContext);
       if (semanticMatches.length > 0) {
         matched = semanticMatches;
       }
@@ -177,14 +215,9 @@ Return ONLY the names of relevant skills, one per line. If none are relevant, re
   
     const parts: string[] = [];
     for (const s of matched) {
-      let prompt = this.promptCache.get(s.name);
-      if (prompt === undefined && this.loader) {
-        const full = await this.loader.loadFromFile(s.filePath);
-        prompt = full.prompt;
-        this.promptCache.set(s.name, prompt);
-      }
-      if (prompt) {
-        parts.push(`## Skill: ${s.name}\n${prompt}`);
+      const full = await this.load(s.name, enabledSkills);
+      if (full?.prompt) {
+        parts.push(`## Skill: ${s.name}\n${full.prompt}`);
       }
     }
   

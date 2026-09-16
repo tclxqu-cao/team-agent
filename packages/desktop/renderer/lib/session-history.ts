@@ -289,9 +289,11 @@ function restoreSessionMessages(
     .map((message) => {
       if (message.isCompactionSummary) return message;
       if (message.role === "assistant" && message.toolCalls?.length) {
+        const visibleToolCalls = message.toolCalls.filter((toolCall) => toolCall.name !== "ask_user");
+        if (visibleToolCalls.length === 0 && !message.content.trim()) return null;
         return {
           ...message,
-          toolCalls: message.toolCalls.map((toolCall) => {
+          toolCalls: visibleToolCalls.map((toolCall) => {
             const resultMessage = messageToolResults.get(toolCall.id);
             if (resultMessage) return {
               ...toolCall,
@@ -318,7 +320,8 @@ function restoreSessionMessages(
         return { ...message, agentName: message.name };
       }
       return message;
-    });
+    })
+    .filter((message): message is ChatMessage => message !== null);
 
   const recovered = recoverEventOnlyAssistant(events, recoverEventTools);
   if (!restored.some((message) => message.role === "assistant" && !message.isCompactionSummary) && recovered) {
@@ -405,8 +408,9 @@ export function mergeRefreshedSessionHistory(
         ? toolCall
         : { ...toolCall, result: previousToolCall.result, isError: previousToolCall.isError };
     });
+    const carried = carryOverOmittedAttachmentImages(previous, message);
     return {
-      ...message,
+      ...carried,
       id: message.id.startsWith("history-message.v1.") ? message.id : previous.id,
       timestamp: previous.timestamp,
       images: hasPersistedImage ? undefined : message.images ?? previous.images,
@@ -421,6 +425,32 @@ export function mergeRefreshedSessionHistory(
     ...reconciledRefreshed,
     ...queued,
   ];
+}
+
+/**
+ * Core pages withhold image payloads beyond a server-side inline budget.
+ * When a refreshed message reports an omitted attachment that the current
+ * view already loaded, keep the loaded data URL instead of dropping the
+ * visible image.
+ */
+function carryOverOmittedAttachmentImages(
+  previous: ChatMessage | undefined,
+  refreshed: ChatMessage,
+): ChatMessage {
+  const refreshedAttachments = refreshed.presentation?.attachments;
+  const previousAttachments = previous?.presentation?.attachments;
+  if (!refreshedAttachments?.length || !previousAttachments?.length) return refreshed;
+  if (refreshedAttachments.every((attachment) => attachment.dataUrl || attachment.unavailable)) {
+    return refreshed;
+  }
+  const carried = refreshedAttachments.map((attachment) => {
+    if (attachment.dataUrl || attachment.unavailable || !attachment.omitted) return attachment;
+    const match = previousAttachments.find((candidate) => (
+      candidate.name === attachment.name && candidate.dataUrl
+    ));
+    return match ? { ...attachment, dataUrl: match.dataUrl, omitted: undefined } : attachment;
+  });
+  return { ...refreshed, presentation: { ...refreshed.presentation, attachments: carried } };
 }
 
 function preserveTrailingAssistantSuffix(

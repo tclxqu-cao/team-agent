@@ -135,6 +135,30 @@ describe("ThreadGoalService", () => {
     await expect(service.resumeGoal("s1")).rejects.toThrow(/Cannot transition/);
   });
 
+  it("requestStop suppresses exactly one continuation after a user abort; set/resume re-arm it", async () => {
+    const { store, service, driver } = makeService();
+    await service.setGoal("s1", "推进", { tokenBudget: 500 });
+    driver.startedTurns.length = 0;
+
+    // 模拟用户中断：turn_aborted 不算 failed，若无 stop 标记会立即续跑。
+    service.requestStop("s1");
+    await service.onRunSettled({ sessionId: "s1", failed: false, tokens: 10, seconds: 2 });
+    expect(store.rows.get("s1")!.status).toBe("active");
+    expect(store.rows.get("s1")!.tokensUsed).toBe(10);
+    expect(driver.startedTurns).toHaveLength(0);
+
+    // stop 只拦一轮：下一次正常收尾恢复续跑。
+    await service.onRunSettled({ sessionId: "s1", failed: false, tokens: 10, seconds: 2 });
+    expect(driver.startedTurns).toHaveLength(1);
+
+    // 重新设置目标会清除未消费的 stop 标记（setGoal 空闲时自身会起一轮）。
+    service.requestStop("s1");
+    await service.setGoal("s1", "推进", { tokenBudget: 500 });
+    const startedAfterSet = driver.startedTurns.length;
+    await service.onRunSettled({ sessionId: "s1", failed: false, tokens: 5, seconds: 1 });
+    expect(driver.startedTurns.length).toBe(startedAfterSet + 1);
+  });
+
   it("applyModelStatusUpdate allows only model statuses from active", async () => {
     const { store, service } = makeService();
     await service.setGoal("s1", "推进");

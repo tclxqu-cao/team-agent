@@ -53,6 +53,7 @@ export class SQLiteDatabase {
         tool_calls TEXT NOT NULL DEFAULT '[]',
         tool_call_id TEXT,
         name TEXT,
+        is_error INTEGER NOT NULL DEFAULT 0,
         presentation TEXT,
         timestamp INTEGER NOT NULL
       );
@@ -296,6 +297,7 @@ export class SQLiteDatabase {
     this.migrateMCPServerHeaders();
     this.migrateSessionsParentId();
     this.migrateMessagePresentation();
+    this.migrateMessageIsError();
     this.migrateLSPServers();
     this.migratePinnedCommands();
     this.migrateCommandHistoryExitCode();
@@ -437,6 +439,14 @@ export class SQLiteDatabase {
     const cols = this.db.prepare("PRAGMA table_info(messages)").all() as Array<{ name: string }>;
     if (!cols.some((column) => column.name === "presentation")) {
       this.db.exec("ALTER TABLE messages ADD COLUMN presentation TEXT");
+    }
+  }
+
+  /** Preserve failed tool results so a later model turn can diagnose and retry them. */
+  private migrateMessageIsError(): void {
+    const cols = this.db.prepare("PRAGMA table_info(messages)").all() as Array<{ name: string }>;
+    if (!cols.some((column) => column.name === "is_error")) {
+      this.db.exec("ALTER TABLE messages ADD COLUMN is_error INTEGER NOT NULL DEFAULT 0");
     }
   }
 

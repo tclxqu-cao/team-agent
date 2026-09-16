@@ -289,6 +289,7 @@ export class ChromeTabBridge {
       let result;
       if (command === "resume-auto-connect" && this.onResume) result = await this.onResume();
       else if (command === "send-message") result = await this.sendMessage(siteId, payload.text, payload.images ?? []);
+      else if (command === "continue") result = await this.readPage(siteId, "continue");
       else if (command === "snapshot") { result = await this.readPage(siteId); result.debug = { ...result.debug, sendConfirmation: this.tabs.get(siteId)?.sendConfirmation }; this.publishConversation(siteId, result); }
       else if (command === "detach") await this.detach(siteId);
       else if (command === "reload") { const tab = this.tabs.get(siteId); if (!tab) throw new Error("chrome-tab-disconnected"); await this.api.tabs.reload(tab.id); }

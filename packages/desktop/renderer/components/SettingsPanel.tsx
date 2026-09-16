@@ -6,12 +6,14 @@ const PROVIDERS = [
   { value: "anthropic", label: "Anthropic" },
   { value: "openai", label: "OpenAI" },
   { value: "deepseek", label: "DeepSeek" },
+  { value: "aihub", label: "AI Hub（网页版）" },
 ];
 
 const PROVIDER_DEFAULT_MODELS: Record<string, string> = {
   anthropic: "claude-sonnet-4-6",
   openai: "gpt-4o",
   deepseek: "deepseek-chat",
+  aihub: "deepseek",
 };
 
 function emptyProfile(): Omit<ModelProfile, "id"> {
@@ -59,8 +61,10 @@ export default function SettingsPanel() {
   const cancelEdit = () => { setEditingId(null); setIsNew(false); };
 
   const saveDraft = async () => {
-    if (!draft.name.trim() || !draft.apiKey.trim() || !draft.modelId.trim()) {
-      setNotice("名称、API Key 和模型 ID 为必填项");
+    // aihub 模型来源（桌面 AI Hub 网页模型）不需要 API Key
+    const apiKeyRequired = draft.provider !== "aihub";
+    if (!draft.name.trim() || (apiKeyRequired && !draft.apiKey.trim()) || !draft.modelId.trim()) {
+      setNotice(apiKeyRequired ? "名称、API Key 和模型 ID 为必填项" : "名称和模型 ID（AI Hub 站点 ID）为必填项");
       setNoticeType("error");
       return;
     }
@@ -335,14 +339,23 @@ function ProfileForm({ draft, setDraft, onSave, onCancel }: ProfileFormProps) {
         </Field>
       </div>
       <Field label="模型 ID">
-        <input value={draft.modelId} onChange={(e) => set("modelId", e.target.value)} placeholder="claude-sonnet-4-6" style={inputStyle} />
+        <input value={draft.modelId} onChange={(e) => set("modelId", e.target.value)} placeholder={draft.provider === "aihub" ? "deepseek" : "claude-sonnet-4-6"} style={inputStyle} />
       </Field>
-      <Field label="API 密钥">
-        <input type="password" value={draft.apiKey} onChange={(e) => set("apiKey", e.target.value)} placeholder="sk-..." style={inputStyle} />
-      </Field>
-      <Field label="接口地址（可选）">
-        <input value={draft.baseUrl} onChange={(e) => set("baseUrl", e.target.value)} placeholder="https://api.anthropic.com" style={inputStyle} />
-      </Field>
+      {draft.provider === "aihub" ? (
+        <div style={{ padding: "8px 10px", background: "rgba(96,165,250,0.08)", border: "1px solid rgba(96,165,250,0.2)", borderRadius: 8, fontSize: 12, lineHeight: 1.6 }}>
+          AI Hub 网页模型来源：模型 ID 填 AI Hub 站点 ID（deepseek / chatgpt / gemini / grok 或自定义站点），无需 API Key。
+          运行时由桌面端 AI Hub 把上下文模拟人为发送给该站点并抓取回复；支持通过受控 JSON 协议调用 Agent 工具。需要桌面 App 在线且站点已登录。
+        </div>
+      ) : (
+        <>
+          <Field label="API 密钥">
+            <input type="password" value={draft.apiKey} onChange={(e) => set("apiKey", e.target.value)} placeholder="sk-..." style={inputStyle} />
+          </Field>
+          <Field label="接口地址（可选）">
+            <input value={draft.baseUrl} onChange={(e) => set("baseUrl", e.target.value)} placeholder="https://api.anthropic.com" style={inputStyle} />
+          </Field>
+        </>
+      )}
       <div style={{ display: "flex", gap: 8, marginTop: 2 }}>
         <button onClick={onSave} style={btnPrimaryStyle}>保存</button>
         <button onClick={onCancel} style={btnSecondaryStyle}>取消</button>

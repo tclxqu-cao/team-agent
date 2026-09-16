@@ -17,7 +17,7 @@ function MobileAuthorizationDialog({ message, showGuidance, windows, onClose }: 
     </div>
   </dialog>, document.body);
 }
-interface Status { platform?: string; local: boolean; supported: boolean; installed: boolean; enabled: boolean; screen: boolean; accessibility: boolean; online: boolean; error?: string | null }
+interface Status { platform?: string; local: boolean; supported: boolean; installed: boolean; enabled: boolean; screen: boolean; accessibility: boolean; online: boolean; locked?: boolean | null; unlock?: 'available' | 'missing' | 'unsupported'; error?: string | null }
 export default function RemoteAuthorizationControl() {
   const [status, setStatus] = useState<Status | null>(null);
   const [expanded, setExpanded] = useState(false);
@@ -42,7 +42,9 @@ export default function RemoteAuthorizationControl() {
     const message = !status.supported ? '这台电脑暂不支持远程桌面。'
       : !status.installed ? '电脑缺少远程桌面组件，请在电脑上升级 CLI。'
       : !status.enabled ? '电脑尚未开启桌面共享，请在电脑上完成授权并开启共享。'
-      : !status.screen || !status.accessibility ? windows ? 'Windows 桌面暂不可用，请在电脑上解锁或关闭 UAC 提示。' : '电脑的远程桌面授权尚未完成。'
+      : status.locked && status.unlock === 'available' ? 'Windows 已锁屏。打开「远程桌面」并选择本机桌面，即可唤醒屏幕或输入密码/PIN 解锁。'
+      : status.locked ? 'Windows 已锁屏，但远程解锁服务尚未安装。请在电脑上运行 agentroam unlock-service install。'
+      : !status.screen || !status.accessibility ? windows ? 'Windows 桌面暂不可用，请检查 UAC 提示或登录状态。' : '电脑的远程桌面授权尚未完成。'
       : '电脑桌面正在连接，请稍候。';
     return <div className="remote-desktop-guidance">
       <button type="button" className="ui-icon-button" aria-label="查看远程桌面提醒" aria-haspopup="dialog" aria-expanded={expanded} onClick={() => setExpanded(true)} style={{ color: 'var(--warning, #d97706)', minWidth: 44, minHeight: 44 }}>
@@ -84,8 +86,9 @@ export default function RemoteAuthorizationControl() {
           <button type="button" className="ui-icon-button ui-icon-button--auto" disabled={pending} onClick={() => void act('recheck')}>重新检测</button>
           <button type="button" className="ui-icon-button ui-icon-button--auto" disabled={pending} onClick={() => void act('restart')}>重启授权组件</button>
         </div>
+        {windows && <p style={{ fontSize: 12, lineHeight: 1.6 }}>远程解锁服务：{status.unlock === 'available' ? '已安装，可在锁屏后远程唤醒和解锁。' : '未安装；在 Windows 终端运行 agentroam unlock-service install 后可启用。'}</p>}
         <p role="status" style={{ marginTop: 12 }}>{status.online ? '共享已开启，已配对手机可在直播列表选择本机桌面。' : status.enabled ? '等待桌面可用或首帧画面…' : '尚未开启共享。'}</p>
-        <p style={{ fontSize: 12, lineHeight: 1.6 }}>{windows ? '请保持 Windows 已登录且未锁屏。锁屏、UAC 安全桌面和管理员窗口暂不支持控制。恢复普通桌面后会自动重连。' : '授权后会自动继续。系统要求重新打开应用时，点击“重启授权组件”。'}</p>
+        <p style={{ fontSize: 12, lineHeight: 1.6 }}>{windows ? 'Windows 锁屏后直播入口会保留，可唤醒屏幕或远程解锁；UAC 安全桌面和未登录状态仍不支持控制。' : '授权后会自动继续。系统要求重新打开应用时，点击“重启授权组件”。'}</p>
       </>}
       {(error || status.error) && <p role="alert" style={{ color: 'var(--danger, #c33)' }}>{error || status.error}</p>}
     </section>}

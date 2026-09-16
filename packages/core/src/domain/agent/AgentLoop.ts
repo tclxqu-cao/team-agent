@@ -138,6 +138,7 @@ export class AgentLoop implements IAgentLoop {
       provider.countRequestTokens?.(msgs, tools) ?? Promise.resolve(estimateRequestTokens(msgs, tools));
     const toolOverhead = await countRequest([]);
     const memoryContext = await this.config.memoryStore.generateContext(input);
+    const initialToolDefs = this.getFilteredToolDefinitions();
     const assembled = await this.config.contextAssembler.assemble({
       rootDir: this.config.workingDirectory,
       userMessage: input,
@@ -145,7 +146,9 @@ export class AgentLoop implements IAgentLoop {
       // Providers already send the schemas via native tools. Do not duplicate them in system text.
       tools: "",
       memoryContext,
-      skillPrompts: await this.config.skillRegistry.getSkillPrompts(input, this.config.enabledSkills),
+      // Skills are discovered and loaded explicitly through ephemeral tools.
+      // Do not run a hidden model request or preload SKILL.md bodies every turn.
+      skillPrompts: "",
       maxTokens: Math.max(1, inputBudget - toolOverhead),
       systemPrompt: this.config.systemPrompt,
     });
@@ -336,6 +339,8 @@ export class AgentLoop implements IAgentLoop {
         let streamEnded = false;
         try {
           for await (const event of this.config.modelProvider.streamChat(messages, {
+            sessionId,
+            workingDirectory: this.config.workingDirectory,
             tools: toolDefs.length > 0 ? toolDefs : undefined,
             reasoningEffort: this.config.reasoningEffort,
             maxTokens: requestOutputTokens,
@@ -479,6 +484,7 @@ export class AgentLoop implements IAgentLoop {
           content: result.content,
           toolCallId: result.toolCallId,
           name: tc.name,
+          ...(result.isError ? { isError: true } : {}),
         });
       }
 
@@ -580,7 +586,10 @@ export class AgentLoop implements IAgentLoop {
     if (!this.config.enabledTools) return all;
     const allowed = new Set(this.config.enabledTools);
     return all.filter(
-      (t) => allowed.has(t.name) || !this.initialToolNames.has(t.name),
+      (t) => allowed.has(t.name)
+        || t.name === "skill_discover"
+        || t.name === "skill_load"
+        || !this.initialToolNames.has(t.name),
     );
   }
 }

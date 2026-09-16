@@ -1,5 +1,6 @@
 export interface HubPaneRect {
   siteId: string;
+  conversationId?: string;
   x: number;
   y: number;
   width: number;

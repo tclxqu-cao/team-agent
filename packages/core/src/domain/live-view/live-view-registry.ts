@@ -66,6 +66,7 @@ interface LiveSession {
   online: boolean;
   updatedAt: number;
   displays: LiveViewDisplayOption[] | null;
+  platform?: string;
   qualityState?: Record<string, unknown>;
 }
 
@@ -83,6 +84,7 @@ export interface PublishLiveSession {
   capabilityError?: unknown;
   capabilityErrorCode?: unknown;
   displays?: unknown;
+  platform?: unknown;
 }
 
 function domainError(message: string, code: string): Error & { code: string } {
@@ -126,6 +128,7 @@ function view(session: LiveSession, peer?: LiveViewPeer): LiveViewSessionView {
     isController: session.controllerId === peer?.id,
     controlledByAnotherViewer: Boolean(session.controllerId && session.controllerId !== peer?.id),
     displays: session.displays,
+    platform: session.platform,
   };
 }
 
@@ -185,6 +188,7 @@ export class LiveViewRegistry {
     session.viewport = normalizeViewport(input.viewport) ?? session.viewport;
     session.transport = input.transport === "webrtc" ? "webrtc" : "cdp-jpeg-ws";
     session.displays = normalizeDisplays(input.displays);
+    session.platform = optionalString(input.platform, 20) ?? session.platform;
     session.availability = AVAILABILITY_STATES.has(input.availability as LiveViewAvailability)
       ? input.availability as LiveViewAvailability
       : session.availability;

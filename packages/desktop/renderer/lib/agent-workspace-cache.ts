@@ -49,6 +49,14 @@ export function emptyAgentWorkspacePartition(): AgentWorkspacePartition {
   };
 }
 
+/**
+ * Cold-boot cache read. Workspaces, session lists, expansion state and scroll
+ * position persist across pages; the selected session deliberately does not —
+ * a freshly opened page must land on the empty welcome view instead of
+ * silently replaying the previous session's history without its sidebar
+ * context. In-app Agent switching keeps its selection because it reads the
+ * in-memory workspaceCacheRef, not this function.
+ */
 export function readAgentWorkspaceCache(storage: Pick<Storage, "getItem"> = localStorage): AgentWorkspaceCache {
   try {
     const value = JSON.parse(storage.getItem(AGENT_WORKSPACE_CACHE_KEY) ?? "null") as unknown;
@@ -58,7 +66,8 @@ export function readAgentWorkspaceCache(storage: Pick<Storage, "getItem"> = loca
     const agents: AgentWorkspaceCache["agents"] = {};
     for (const agentType of AGENT_TYPES) {
       const partition = parsePartition(rawAgents[agentType], agentType);
-      if (partition) agents[agentType] = partition;
+      if (!partition) continue;
+      agents[agentType] = { ...partition, selectedSessionId: null };
     }
     return { version: 2, activeAgent, agents };
   } catch {

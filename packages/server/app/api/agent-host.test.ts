@@ -69,6 +69,20 @@ class BlockingTool {
   }
 }
 
+class LookupTool {
+  readonly name = "lookup";
+  readonly description = "Return a deterministic lookup result";
+  readonly parameters = { type: "object", properties: {} };
+  readonly schema = {
+    safeParse: (value: unknown) => ({ success: true as const, data: value }),
+  } as never;
+  async execute() { return { toolCallId: "", content: "lookup result" }; }
+}
+
+class FailingLookupTool extends LookupTool {
+  override async execute() { return { toolCallId: "", content: "lookup failed", isError: true }; }
+}
+
 const kidEarthTool = {
   scheme: "create_kid_earth_course",
   purpose: "创建课程",
@@ -320,7 +334,7 @@ describe("agentHost singleton", () => {
         { type: "text_done" },
       ],
     ];
-    agentHost.setBuilder(new AgentBuilder().withModelProvider(provider));
+    agentHost.setBuilder(new AgentBuilder().withModelProvider(provider).withTool(new LookupTool()));
     const session = await agentHost.createSession("done ordering test");
     let sessionAtDone: Promise<{ messages?: Message[] } | null> | undefined;
     let completedEvent: { type?: string; durationMs?: number } | undefined;
@@ -341,6 +355,12 @@ describe("agentHost singleton", () => {
     await expect(sessionAtDone).resolves.toMatchObject({
       messages: [
         { role: "user", content: "persist before done" },
+        {
+          role: "assistant",
+          content: "",
+          toolCalls: [{ id: "ordering-call", name: "lookup", arguments: {} }],
+        },
+        { role: "tool", content: "lookup result", toolCallId: "ordering-call" },
         {
           role: "assistant",
           content: "Persisted first",
@@ -622,7 +642,7 @@ describe("agentHost singleton", () => {
         { type: "text_done" },
       ],
     ];
-    agentHost.setBuilder(new AgentBuilder().withModelProvider(provider));
+    agentHost.setBuilder(new AgentBuilder().withModelProvider(provider).withTool(new LookupTool()));
     const session = await agentHost.createSession("assistant history test");
 
     await agentHost.run("Please look it up", session.id);
@@ -632,7 +652,68 @@ describe("agentHost singleton", () => {
       { role: "user", content: "Please look it up" },
       {
         role: "assistant",
+        content: "",
+        toolCalls: [{ id: "call-1", name: "lookup", arguments: {} }],
+      },
+      { role: "tool", content: "lookup result", toolCallId: "call-1", name: "lookup" },
+      {
+        role: "assistant",
         content: "Final answer",
+        presentation: { completionDurationMs: expect.any(Number) },
+      },
+    ]);
+  });
+
+  it("persists failed tool identity so a later AI Hub turn can repair it", async () => {
+    const provider = new CapturingModelProvider();
+    provider.eventBatches = [
+      [
+        { type: "tool_call", toolCall: { id: "failed-call", name: "lookup", arguments: {} } },
+        { type: "text_done" },
+      ],
+      [
+        { type: "text_chunk", text: "Recovered" },
+        { type: "text_done" },
+      ],
+    ];
+    agentHost.setBuilder(new AgentBuilder().withModelProvider(provider).withTool(new FailingLookupTool()));
+    const session = await agentHost.createSession("failed tool persistence test");
+
+    await agentHost.run("Please recover", session.id);
+
+    const stored = await agentHost.getSessionStore().get(session.id);
+    expect(stored?.messages.find((message) => message.toolCallId === "failed-call")).toEqual({
+      role: "tool",
+      content: "lookup failed",
+      toolCallId: "failed-call",
+      name: "lookup",
+      isError: true,
+    });
+  });
+
+  it("does not persist ephemeral skill discovery exchanges into later history", async () => {
+    const provider = new CapturingModelProvider();
+    provider.eventBatches = [
+      [
+        { type: "tool_call", toolCall: { id: "skill-call", name: "skill_discover", arguments: { query: "missing capability" } } },
+        { type: "text_done" },
+      ],
+      [
+        { type: "text_chunk", text: "No skill was needed" },
+        { type: "text_done" },
+      ],
+    ];
+    agentHost.setBuilder(new AgentBuilder().withModelProvider(provider));
+    const session = await agentHost.createSession("ephemeral skill history test");
+
+    await agentHost.run("Answer normally", session.id);
+
+    const stored = await agentHost.getSessionStore().get(session.id);
+    expect(stored?.messages).toEqual([
+      { role: "user", content: "Answer normally" },
+      {
+        role: "assistant",
+        content: "No skill was needed",
         presentation: { completionDurationMs: expect.any(Number) },
       },
     ]);

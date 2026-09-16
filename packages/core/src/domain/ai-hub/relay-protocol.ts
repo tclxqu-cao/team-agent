@@ -10,7 +10,7 @@ import { join } from "node:path";
  * align without extra configuration.
  */
 export const AI_HUB_RELAY_SOCKET_NAME = "ai-hub-relay.sock";
-export const MAX_RELAY_TEXT_LENGTH = 20_000;
+export const MAX_RELAY_TEXT_LENGTH = 100_000;
 export const MAX_RELAY_SITES = 8;
 export { MAX_RELAY_IMAGES, MAX_RELAY_IMAGE_LENGTH } from "./image-limits";
 

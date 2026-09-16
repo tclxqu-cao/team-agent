@@ -195,7 +195,8 @@ export class AgentHost {
       modelId: profile.modelId,
       apiKey: profile.apiKey,
       baseUrl: profile.baseUrl,
-      isConfigured: Boolean(profile.apiKey),
+      // aihub 模型来源（桌面 AI Hub 网页模型）不需要 apiKey
+      isConfigured: Boolean(profile.apiKey) || profile.provider === "aihub",
     };
     this.settingsStore.saveAll(updated);
     this.harness.setModel({ provider: updated.modelProvider, modelId: updated.modelId, apiKey: updated.apiKey, baseUrl: updated.baseUrl });
@@ -785,6 +786,7 @@ export class AgentHost {
             content: emittedEvent.result.content,
             toolCallId: emittedEvent.result.toolCallId,
             name: toolCallNameMap.get(emittedEvent.result.toolCallId),
+            ...(emittedEvent.result.isError ? { isError: true } : {}),
           } as Message);
         }
 
@@ -979,7 +981,7 @@ export class AgentHost {
     }
 
     const provider = this.builder.getModelRegistry().createAndRegister(
-      latestSettings.modelProvider as "anthropic" | "openai" | "deepseek",
+      latestSettings.modelProvider as "anthropic" | "openai" | "deepseek" | "aihub",
       {
         apiKey: latestSettings.apiKey,
         baseUrl: latestSettings.baseUrl || undefined,

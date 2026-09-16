@@ -216,8 +216,8 @@ describe("LiveViewRegistry", () => {
     const viewer = peer("viewer");
     registry.connect(producer);
     registry.connect(viewer);
-    registry.publish(producer, { sessionId: "desktop:primary", backend: "desktop" });
-    expect(registry.list(viewer)[0]).toMatchObject({ backend: "desktop", title: "桌面屏幕" });
+    registry.publish(producer, { sessionId: "desktop:primary", backend: "desktop", platform: "win32" });
+    expect(registry.list(viewer)[0]).toMatchObject({ backend: "desktop", title: "桌面屏幕", platform: "win32" });
   });
 
   it("rejects unknown sources", () => {

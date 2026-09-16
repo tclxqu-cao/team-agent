@@ -4,7 +4,16 @@ import { analyze, type QualityRun, type Observation } from './quality-analysis.j
 import { QualityStore, sourceVersion } from './quality-store.js';
 import { type HarnessConfig, type HarnessResult, type HarnessTask } from './supervisor.js';
 
-interface WatchedTask { task: HarnessTask; lastProgress: number; waiting: boolean; trace: string[]; reported: boolean; quality?: QualityRun; savedAt: number }
+interface WatchedTask {
+  task: HarnessTask;
+  lastProgress: number;
+  waiting: boolean;
+  modelRequestProvider?: string;
+  trace: string[];
+  reported: boolean;
+  quality?: QualityRun;
+  savedAt: number;
+}
 export interface CompanionStatus { state: 'waiting-model' | 'ready' | 'repairing' | 'stopped'; modelId?: string; detail?: string; quality?: unknown }
 export class HarnessCompanion {
   private readonly runs = new Map<string, WatchedTask>();
@@ -62,9 +71,11 @@ export class HarnessCompanion {
     if (message.type === 'begin') this.persist(run);
     if (message.type === 'progress') {
       run.lastProgress = Date.now();
+      const eventType = String(message.eventType);
+      if (!['context_usage', 'thinking'].includes(eventType)) run.modelRequestProvider = undefined;
       if (message.waiting === true) run.waiting = true;
-      if (['tool_result', 'approval_resolved'].includes(String(message.eventType))) run.waiting = false;
-      run.trace.push(`${String(message.eventType)}${message.tool ? `: ${String(message.tool)}` : ''}`);
+      if (['tool_result', 'approval_resolved'].includes(eventType)) run.waiting = false;
+      run.trace.push(`${eventType}${message.tool ? `: ${String(message.tool)}` : ''}`);
       run.trace = run.trace.slice(-30);
       this.observe(run, message.data ?? { type: message.eventType });
     } else if (message.type === 'fault') {
@@ -91,7 +102,12 @@ export class HarnessCompanion {
     }
     if (!this.busy && this.queue.length) this.draining = this.drain();
     for (const run of this.runs.values()) {
-      if (!run.waiting && now - run.lastProgress > this.config.idleTimeoutMs && !run.reported) {
+      // AI Hub polls a browser-backed model for up to 240 seconds. Its request is
+      // still making expected progress after the generic 180-second idle limit.
+      const idleLimit = run.modelRequestProvider === 'aihub'
+        ? this.config.idleTimeoutMs * 2
+        : this.config.idleTimeoutMs;
+      if (!run.waiting && now - run.lastProgress > idleLimit && !run.reported) {
         if (run.quality) { this.observe(run, { type: 'watchdog' }); run.reported = true; }
         else this.report(run, 'Harness made no observable progress before the watchdog deadline');
       }
@@ -103,10 +119,12 @@ export class HarnessCompanion {
   }
 
   private observe(run: WatchedTask, value: unknown): void {
-    const q = run.quality;
-    if (!q || !value || typeof value !== 'object') return;
+    if (!value || typeof value !== 'object') return;
     const event = { ...value, at: Date.now() } as Observation;
     if (typeof event.type !== 'string') return;
+    if (event.type === 'request_context') run.modelRequestProvider = String(event.providerId ?? '');
+    const q = run.quality;
+    if (!q) return;
     // Text chunks only maintain heartbeat; retain structural steps and bounded previews.
     if (['text_chunk', 'text_done', 'thinking', 'reasoning_summary_delta'].includes(event.type)) return;
     q.observations.push(event);

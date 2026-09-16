@@ -15,6 +15,7 @@ import { FileSystemMemoryStore } from '../memory/FileSystemMemoryStore.js';
 import { ModelRegistry } from '../model/ModelRegistry.js';
 import type { RemoteToolStore } from '../remote-tools/RemoteToolStore.js';
 import { describeRemoteTool, RemoteProjectActionTool } from '../tool/builtin/RemoteProjectActionTool.js';
+import { SkillDiscoverTool, SkillLoadTool } from '../tool/builtin/SkillTools.js';
 
 export class AgentBuilder {
   private workingDirectory = process.cwd();
@@ -77,7 +78,7 @@ export class AgentBuilder {
     modelId: string;
   }): this {
     this.modelProvider = this.modelRegistry.createAndRegister(
-      providerId as "anthropic" | "openai" | "deepseek",
+      providerId as "anthropic" | "openai" | "deepseek" | "aihub",
       config,
     );
     return this;
@@ -250,6 +251,8 @@ export class AgentBuilder {
         this.skillRegistry.register({ ...skill, source: "custom" });
       }
     }
+    toolRegistry.register(new SkillDiscoverTool(this.skillRegistry, this.enabledSkills));
+    toolRegistry.register(new SkillLoadTool(this.skillRegistry, this.enabledSkills));
 
     const contextAssembler = new ContextAssembler(this.contextLoader);
 
@@ -314,6 +317,8 @@ export class AgentBuilder {
         this.skillRegistry.register({ ...skill, source: "custom" });
       }
     }
+    toolRegistry.register(new SkillDiscoverTool(this.skillRegistry, this.enabledSkills));
+    toolRegistry.register(new SkillLoadTool(this.skillRegistry, this.enabledSkills));
 
     const contextAssembler = new ContextAssembler(this.contextLoader);
 

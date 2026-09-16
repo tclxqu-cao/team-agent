@@ -38,6 +38,12 @@ function resolveActive(profiles: ModelProfile[], id: string): ModelProfile | nul
   return profiles.find((p) => p.id === id) ?? null;
 }
 
+function profileIsConfigured(profile: Pick<ModelProfile, "provider" | "modelId" | "apiKey">): boolean {
+  return profile.provider === "aihub"
+    ? Boolean(profile.modelId)
+    : Boolean(profile.apiKey && profile.modelId);
+}
+
 export const useSettingsStore = create<SettingsState>((set, get) => ({
   modelProvider: "anthropic",
   modelId: "claude-sonnet-4-6",
@@ -54,7 +60,10 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   setField: (key, value) =>
     set((state) => {
       const updated = { ...state, [key]: value } as SettingsState;
-      updated.isConfigured = Boolean(updated.apiKey && updated.modelId);
+      // aihub 模型来源（桌面 AI Hub 网页模型）不需要 apiKey
+      updated.isConfigured = updated.modelProvider === "aihub"
+        ? Boolean(updated.modelId)
+        : Boolean(updated.apiKey && updated.modelId);
       return updated;
     }),
 
@@ -74,7 +83,9 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
         maxIterations: s.maxIterations ?? 10,
         contextWindow: s.contextWindow ?? 100,
         workingDirectory: s.workingDirectory ?? "/",
-        isConfigured: Boolean((active?.apiKey ?? s.apiKey) && (active?.modelId ?? s.modelId)),
+        isConfigured: (active?.provider ?? s.modelProvider) === "aihub"
+          ? Boolean(active?.modelId ?? s.modelId)
+          : Boolean((active?.apiKey ?? s.apiKey) && (active?.modelId ?? s.modelId)),
         profiles,
         activeProfileId,
         reasoningEffort: (["off", "low", "medium", "high"].includes(s.reasoningEffort ?? "")
@@ -125,7 +136,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
           modelId: updated.modelId,
           apiKey: updated.apiKey,
           baseUrl: updated.baseUrl,
-          isConfigured: Boolean(updated.apiKey && updated.modelId),
+          isConfigured: profileIsConfigured(updated),
         });
       }
     }
@@ -145,7 +156,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
               modelId: active.modelId,
               apiKey: active.apiKey,
               baseUrl: active.baseUrl,
-              isConfigured: Boolean(active.apiKey && active.modelId),
+              isConfigured: profileIsConfigured(active),
             }
           : {}),
         ...(!active
@@ -171,7 +182,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       modelId: active.modelId,
       apiKey: active.apiKey,
       baseUrl: active.baseUrl,
-      isConfigured: Boolean(active.apiKey && active.modelId),
+      isConfigured: profileIsConfigured(active),
     });
   },
 

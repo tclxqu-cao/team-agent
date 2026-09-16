@@ -68,6 +68,30 @@ describe("agent workspace cache", () => {
     expect(restored.agents["claude-code"]?.workspaces[0]?.workspaceId).toBe("claude-repo");
   });
 
+  it("drops the selected session on cold read so a new page opens empty", () => {
+    const cache = emptyAgentWorkspaceCache();
+    cache.activeAgent = "codex";
+    cache.agents.codex = {
+      workspaces: [workspace("codex", "codex-repo")],
+      nextCursor: null,
+      watermark: null,
+      expandedWorkspaceIds: ["codex-repo"],
+      selectedWorkspaceId: "codex-repo",
+      selectedSessionId: "codex-session",
+      sidebarScrollTop: 0,
+      sessions: {},
+    };
+    let stored = "";
+    writeAgentWorkspaceCache(cache, { setItem: (_key, value) => { stored = value; } });
+
+    const restored = readAgentWorkspaceCache({ getItem: () => stored });
+
+    // 会话选中不跨页面恢复，避免新页面静默重放上一会话历史。
+    expect(restored.agents.codex?.selectedSessionId).toBeNull();
+    expect(restored.agents.codex?.selectedWorkspaceId).toBe("codex-repo");
+    expect(stored).toContain("codex-session");
+  });
+
   it("reconciles rename and order from the authoritative first page", () => {
     const current = [workspace("codex", "one", "Old"), workspace("codex", "two")];
     const result = reconcileWorkspacePage(current, {

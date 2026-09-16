@@ -15,6 +15,7 @@ export async function POST(request: Request) {
       agentIds?: string[];
       sessionId?: string;
       images?: string[];
+      profileId?: string;
       model?: { provider: string; apiKey: string; modelId: string; baseUrl?: string };
       reasoningEffort?: "off" | "low" | "medium" | "high";
       maxIterations?: number;
@@ -28,6 +29,9 @@ export async function POST(request: Request) {
     }
     if (body.agentIds !== undefined && (!Array.isArray(body.agentIds) || body.agentIds.length > 20 || body.agentIds.some((id) => typeof id !== "string" || !id.trim()))) {
       return NextResponse.json({ error: "agentIds must contain at most 20 non-empty IDs" }, { status: 400 });
+    }
+    if (body.profileId !== undefined && (typeof body.profileId !== "string" || !body.profileId.trim() || body.profileId.length > 200)) {
+      return NextResponse.json({ error: "profileId must be a non-empty string" }, { status: 400 });
     }
 
     if (body.sessionId && isNativeSessionId(body.sessionId)) {
@@ -95,6 +99,7 @@ export async function POST(request: Request) {
     // scoped to this run instead of mutating a shared builder.
     const started = agentHost.startRun(body.input, sessionId, body.images, {
       ...(body.model ? { model: body.model } : {}),
+      ...(body.profileId ? { profileId: body.profileId } : {}),
       ...(body.reasoningEffort ? { reasoningEffort: body.reasoningEffort } : {}),
       ...(body.maxIterations === undefined ? {} : { maxIterations: limits.maxIterations }),
       ...(body.maxTokens === undefined ? {} : { maxTokens: limits.maxTokens }),

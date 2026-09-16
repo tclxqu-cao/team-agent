@@ -35,7 +35,7 @@ export default function ChatHeaderActions({
       ? "已停止在 AgentRoam 中使用；Codex Desktop 最长约 30 分钟后可用"
       : "停止在 AgentRoam 中使用（Codex Desktop 最长约 30 分钟后可用）";
   return (
-    <div className="chat-header-actions">
+    <div className="chat-header-actions" style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}>
       {onOpenDesktopLive && (
         <button
           type="button"

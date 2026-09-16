@@ -59,6 +59,7 @@ export function rebuildMessagesFromEvents(
           questionId: event.questionId,
           question: event.question ?? "",
           options: event.options,
+          fields: event.fields,
           multiSelect: event.multiSelect,
         },
         timestamp: Date.now(),

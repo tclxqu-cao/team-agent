@@ -23,8 +23,9 @@ const RELAY_IMAGE_PATTERN = /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+
 
 export type AiHubRelayRequest =
   | { kind: "status" }
-  | { kind: "broadcast"; text: string; siteIds: string[]; images: string[] }
-  | { kind: "capture"; siteIds: string[] };
+  | { kind: "broadcast"; text: string; siteIds: string[]; images: string[]; background: boolean; conversationId?: string }
+  | { kind: "capture"; siteIds: string[]; conversationId?: string }
+  | { kind: "continue"; siteIds: string[]; conversationId?: string };
 
 // 图片校验（纯函数，便于单测）：非字符串/格式不符/超长的条目直接丢弃，最多保留 MAX_RELAY_IMAGES 张
 export function normalizeRelayImages(raw: unknown): string[] {
@@ -47,13 +48,16 @@ export function parseRelayMessage(line: string): AiHubRelayRequest | null {
   if (!raw || typeof raw !== "object") return null;
   const message = raw as Record<string, unknown>;
   if (message.type === "status") return { kind: "status" };
-  if (message.type === "capture") {
+  if (message.type === "capture" || message.type === "continue") {
     if (!Array.isArray(message.siteIds)) return null;
     const siteIds = message.siteIds
       .filter((id): id is string => typeof id === "string" && id.length > 0)
       .slice(0, MAX_RELAY_SITES);
     if (siteIds.length === 0) return null;
-    return { kind: "capture", siteIds };
+    const conversationId = typeof message.conversationId === "string" && message.conversationId ? { conversationId: message.conversationId } : {};
+    return message.type === "capture"
+      ? { kind: "capture", siteIds, ...conversationId }
+      : { kind: "continue", siteIds, ...conversationId };
   }
   if (message.type === "broadcast") {
     const text = typeof message.text === "string" ? message.text : "";
@@ -66,7 +70,7 @@ export function parseRelayMessage(line: string): AiHubRelayRequest | null {
       .filter((id): id is string => typeof id === "string" && id.length > 0)
       .slice(0, MAX_RELAY_SITES);
     if (siteIds.length === 0) return null;
-    return { kind: "broadcast", text, siteIds, images };
+    return { kind: "broadcast", text, siteIds, images, background: message.background === true, ...(typeof message.conversationId === "string" && message.conversationId ? { conversationId: message.conversationId } : {}) };
   }
   return null;
 }
@@ -139,11 +143,22 @@ async function handleLine(socket: Socket, manager: AIHubManager, line: string): 
       return;
     }
     if (request.kind === "capture") {
-      const results = await manager.captureConversations(request.siteIds);
+      const results = await manager.captureConversations(request.siteIds, request.conversationId);
       writeLine(socket, { id, ok: true, result: { results } });
       return;
     }
-    const results: HubBroadcastResult[] = await manager.relayBroadcast(request.text, request.siteIds, request.images);
+    if (request.kind === "continue") {
+      const results = await manager.continueGeneration(request.siteIds, request.conversationId);
+      writeLine(socket, { id, ok: true, result: { results } });
+      return;
+    }
+    const results: HubBroadcastResult[] = await manager.relayBroadcast(
+      request.text,
+      request.siteIds,
+      request.images,
+      { background: request.background },
+      request.conversationId,
+    );
     writeLine(socket, { id, ok: true, result: { results } });
   } catch (error) {
     writeLine(socket, {

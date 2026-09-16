@@ -185,6 +185,7 @@ function options(serviceAction: ServiceAction): CliOptions {
   return {
     command: "service",
     serviceAction,
+    unlockServiceAction: null,
     roots: [resolve("workspace")],
     port: null,
     relay: "auto",
