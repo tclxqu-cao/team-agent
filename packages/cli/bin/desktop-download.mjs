@@ -10,8 +10,8 @@ import { pipeline } from 'node:stream/promises';
 import { execFile } from 'node:child_process';
 
 // 桌面端安装包是构建产物（dmg / exe），进不了只放源码的仓库，只能走 Releases 资产。
-// ⚠️ 仓库目前尚未创建任何 release / tag，所以这里取不到包；要么在发布流程里上传
-// 资产，要么把桌面端改由 npm 承载。CLI 本体不受影响（走 raw 分支的安装脚本）。
+// 资产由 `node scripts/publish-agentroam-release.mjs sync-github --commit <sha>` 上传；
+// 仓库还没有对应版本的 release 时这里必然取不到包（CLI 本体不受影响，它走 raw 安装脚本）。
 const RELEASE_BASE = 'https://github.com/tclxqu-cao/team-agent/releases/download';
 
 export function desktopAsset(manifest, version, platform, arch) {

@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { appendFile, mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import test from "node:test";
@@ -8,6 +8,7 @@ import {
   RELEASE_PACKAGE_DIRECTORIES,
   compareAgentRoamVersions,
   createGitClient,
+  createGithubClient,
   inspectPublication,
   loadReleaseManifest,
   loadReleaseSet,
@@ -15,6 +16,7 @@ import {
   publishPreviewRelease,
   redactReleaseError,
   syncGiteeRelease,
+  syncGithubRelease,
   verifyRegistryArtifacts,
   writeReleaseManifest,
 } from "./agentroam-release-lib.mjs";
@@ -205,6 +207,134 @@ test("preserves retryable synchronization failures and redacts secrets", async (
     return true;
   });
   assert.equal(redactReleaseError(failure.message), "token=[REDACTED]");
+});
+
+test("drives the GitHub release API with bearer auth and repo-scoped asset paths", async () => {
+  const calls = [];
+  const json = (value) => new Response(JSON.stringify(value), { status: 200, headers: { "content-type": "application/json" } });
+  const client = createGithubClient({
+    owner: "tclxqu-cao",
+    repo: "team-agent",
+    token: "ghp_supersecret",
+    request: async (url, init = {}) => {
+      const target = String(url);
+      calls.push({ url: target, method: init.method ?? "GET", headers: init.headers ?? {}, body: init.body });
+      if (/\/releases\/tags\/v1$/.test(target)) return new Response(null, { status: 404 });
+      if (/\/releases\/assets\/9$/.test(target)) return new Response(null, { status: 204 });
+      return json({ id: 42, html_url: "https://github.com/tclxqu-cao/team-agent/releases/tag/v1" });
+    },
+  });
+
+  assert.equal(await client.getReleaseByTag("v1"), null);
+
+  const created = await client.createRelease({ tagName: "v1", name: "AgentRoam 1.0.0", body: "b", targetCommitish: "a".repeat(40), prerelease: true });
+  assert.equal(created.id, 42);
+  const createCall = calls.at(-1);
+  assert.equal(createCall.method, "POST");
+  assert.equal(createCall.url, "https://api.github.com/repos/tclxqu-cao/team-agent/releases");
+  assert.match(createCall.headers.Authorization, /^Bearer /);
+  assert.deepEqual(JSON.parse(createCall.body), {
+    tag_name: "v1",
+    name: "AgentRoam 1.0.0",
+    body: "b",
+    target_commitish: "a".repeat(40),
+    draft: false,
+    prerelease: true,
+  });
+
+  // 删除资产走 /releases/assets/<id>，不在 release 路径下。
+  await client.deleteAsset(42, 9);
+  assert.equal(calls.at(-1).url, "https://api.github.com/repos/tclxqu-cao/team-agent/releases/assets/9");
+  assert.equal(calls.at(-1).method, "DELETE");
+});
+
+test("rejects GitHub asset download URLs outside the configured repository", async () => {
+  const client = createGithubClient({ owner: "tclxqu-cao", repo: "team-agent", token: "t", request: async () => new Response(null, { status: 200 }) });
+  await assert.rejects(client.downloadAsset({ url: "https://evil.example.com/repos/tclxqu-cao/team-agent/releases/assets/1" }), /outside the configured repository/);
+  await assert.rejects(client.downloadAsset({ url: "https://api.github.com/repos/other/repo/releases/assets/1" }), /outside the configured repository/);
+  await assert.rejects(client.downloadAsset({}), /no download URL/);
+});
+
+test("creates a preview release on GitHub and uploads installers plus checksums", async () => {
+  const { releaseSet } = await releaseFixture();
+  const calls = [];
+  const created = [];
+  const result = await syncGithubRelease(releaseSet, {
+    sourceCommit: "a".repeat(40),
+    gitClient: {
+      pushBranch: async (...args) => calls.push(["branch", ...args]),
+      pushTag: async (...args) => calls.push(["tag", ...args]),
+    },
+    githubClient: {
+      getReleaseByTag: async () => null,
+      createRelease: async (value) => { created.push(value); return { id: 77, html_url: "https://github.com/tclxqu-cao/team-agent/releases/tag/v0.2.0-preview.11" }; },
+      updateRelease: async () => { throw new Error("unexpected update"); },
+      listAssets: async () => [],
+      deleteAsset: async () => undefined,
+      uploadAsset: async (_id, _path, name) => calls.push(["upload", name]),
+    },
+  });
+
+  assert.equal(result.branch, "main");
+  assert.equal(result.remote, "origin");
+  assert.equal(result.releaseId, 77);
+  assert.equal(result.htmlUrl, "https://github.com/tclxqu-cao/team-agent/releases/tag/v0.2.0-preview.11");
+  assert.deepEqual(result.uploaded, ["install-agentroam.sh", "install-agentroam.ps1", "SHA256SUMS"]);
+  assert.deepEqual(calls.slice(0, 2), [
+    ["branch", "origin", "a".repeat(40), "main"],
+    ["tag", "origin", "a".repeat(40), "v0.2.0-preview.11"],
+  ]);
+  // preview 线必须标成 prerelease。
+  assert.equal(created[0].prerelease, true);
+  assert.equal(created[0].targetCommitish, "a".repeat(40));
+  assert.equal(created[0].body, "AgentRoam 0.2.0-preview.11");
+});
+
+test("marks a stable GitHub release as non-prerelease and reuses an existing release", async () => {
+  const { releaseSet } = await releaseFixture();
+  const updated = [];
+  const artifactNames = ["install-agentroam.sh", "install-agentroam.ps1", "SHA256SUMS"];
+  // 稳定版必须走远端校验：假装资产已在远端，且字节与本地一致。
+  const descriptors = await Promise.all(artifactNames.map(async (name) => {
+    const bytes = await readFile(resolve(releaseSet.artifactDirectory, name));
+    return { id: name, name, size: bytes.length, url: `https://api.github.com/repos/tclxqu-cao/team-agent/releases/assets/${name}` };
+  }));
+  const result = await syncGithubRelease({ ...releaseSet, version: "0.2.0" }, {
+    sourceCommit: "b".repeat(40),
+    gitClient: { pushBranch: async () => undefined, pushTag: async () => undefined },
+    githubClient: {
+      getReleaseByTag: async () => ({ id: 5, body: "旧说明" }),
+      createRelease: async () => { throw new Error("unexpected create"); },
+      updateRelease: async (id, value) => { updated.push([id, value]); return { id, html_url: "https://github.com/tclxqu-cao/team-agent/releases/tag/v0.2.0" }; },
+      listAssets: async () => descriptors,
+      deleteAsset: async () => { throw new Error("unexpected delete"); },
+      uploadAsset: async () => { throw new Error("unexpected upload"); },
+      downloadAsset: async (asset) => readFile(resolve(releaseSet.artifactDirectory, asset.name)),
+    },
+  });
+  assert.equal(result.releaseId, 5);
+  assert.equal(result.tag, "v0.2.0");
+  assert.deepEqual(result.uploaded, []);
+  assert.equal(updated[0][0], 5);
+  assert.equal(updated[0][1].prerelease, false);
+  // 未显式给 body 时沿用远端已有的说明。
+  assert.equal(updated[0][1].body, "旧说明");
+});
+
+test("refuses to sync a stable release when remote asset verification is unavailable", async () => {
+  const { releaseSet } = await releaseFixture();
+  await assert.rejects(syncGithubRelease({ ...releaseSet, version: "0.2.0" }, {
+    sourceCommit: "b".repeat(40),
+    gitClient: { pushBranch: async () => undefined, pushTag: async () => undefined },
+    githubClient: {
+      getReleaseByTag: async () => ({ id: 5 }),
+      createRelease: async () => { throw new Error("unexpected create"); },
+      updateRelease: async (id) => ({ id }),
+      listAssets: async () => [],
+      deleteAsset: async () => undefined,
+      uploadAsset: async () => undefined,
+    },
+  }), /requires remote asset verification/);
 });
 
 async function releaseFixture(versionByName = {}) {

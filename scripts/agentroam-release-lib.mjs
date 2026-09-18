@@ -8,6 +8,10 @@ import { promisify } from "node:util";
 const execFileAsync = promisify(execFile);
 const NPM_REGISTRY = "https://registry.npmjs.org";
 
+// 唯一分发仓库（与 packages/core 的 update-release.ts 保持一致）。
+export const AGENTROAM_GITHUB_OWNER = "tclxqu-cao";
+export const AGENTROAM_GITHUB_REPO = "team-agent";
+
 export const RELEASE_PACKAGE_DIRECTORIES = [
   "packages/runtime-darwin-arm64",
   "packages/runtime-win32-x64",
@@ -351,25 +355,74 @@ export async function syncGiteeRelease(releaseSet, options) {
   await git.pushBranch(options.remote ?? "gitee", options.sourceCommit, branch);
   await git.pushTag(options.remote ?? "gitee", options.sourceCommit, tag);
 
-  let release = await api.getReleaseByTag(tag);
-  if (!release?.id) {
-    release = await api.createRelease({
-      tagName: tag,
-      name: `AgentRoam ${releaseSet.version}`,
-      body: options.body ?? `AgentRoam ${releaseSet.version}`,
-      targetCommitish: options.sourceCommit,
-    });
-  } else {
-    release = await api.updateRelease(release.id, {
-      name: `AgentRoam ${releaseSet.version}`,
-      body: options.body ?? release.body ?? `AgentRoam ${releaseSet.version}`,
-      targetCommitish: options.sourceCommit,
-    });
-  }
-  if (!release?.id) throw new Error("Gitee release response is missing id");
+  const release = await upsertRelease(api, releaseSet, { tag, body: options.body, targetCommitish: options.sourceCommit }, "Gitee");
+  const uploaded = await reconcileReleaseAssets(api, releaseSet, release, "Gitee");
+  return { branch, tag, releaseId: release.id, uploaded };
+}
 
-  const assets = await api.listAssets(release.id);
-  const desired = [
+// GitHub 是当前唯一分发仓库：CLI 走分支 raw，桌面端 dmg/exe 走 release 资产。
+// 与 gitee 版共用同一套「建/更新 release + 对齐资产 + 远端校验」逻辑。
+export async function syncGithubRelease(releaseSet, options) {
+  const tag = `v${releaseSet.version}`;
+  const branch = options.sourceBranch ?? "main";
+  const remote = options.remote ?? "origin";
+  const git = options.gitClient;
+  const api = options.githubClient;
+  if (!/^[0-9a-f]{40}$/i.test(options.sourceCommit)) throw new Error("sourceCommit must be a full 40-character SHA");
+  await git.pushBranch(remote, options.sourceCommit, branch);
+  await git.pushTag(remote, options.sourceCommit, tag);
+
+  const release = await upsertRelease(api, releaseSet, {
+    tag,
+    body: options.body,
+    targetCommitish: options.sourceCommit,
+    // preview 线在 GitHub 上标成 prerelease —— 客户端据此区分预览/正式。
+    prerelease: releaseSet.version.includes("-preview."),
+  }, "GitHub");
+  const uploaded = await reconcileReleaseAssets(api, releaseSet, release, "GitHub");
+  return { branch, remote, tag, releaseId: release.id, htmlUrl: release.html_url ?? null, uploaded };
+}
+
+async function upsertRelease(client, releaseSet, { tag, body, targetCommitish, prerelease }, label) {
+  const name = `AgentRoam ${releaseSet.version}`;
+  let release = await client.getReleaseByTag(tag);
+  if (!release?.id) {
+    release = await client.createRelease({ tagName: tag, name, body: body ?? name, targetCommitish, prerelease });
+  } else {
+    release = await client.updateRelease(release.id, { name, body: body ?? release.body ?? name, targetCommitish, prerelease });
+  }
+  if (!release?.id) throw new Error(`${label} release response is missing id`);
+  return release;
+}
+
+async function reconcileReleaseAssets(client, releaseSet, release, label) {
+  const assets = await client.listAssets(release.id);
+  const desired = await desiredReleaseAssets(releaseSet);
+  const uploaded = [];
+  for (const item of desired) {
+    const existing = assets.find((asset) => asset.name === item.fileName);
+    if (existing && Number(existing.size) === item.size) continue;
+    if (existing?.id) await client.deleteAsset(release.id, existing.id);
+    await client.uploadAsset(release.id, item.path, item.fileName);
+    uploaded.push(item.fileName);
+  }
+  if (client.downloadAsset) {
+    const currentAssets = await client.listAssets(release.id);
+    for (const item of desired) {
+      const remote = currentAssets.find((asset) => asset.name === item.fileName);
+      if (!remote || Number(remote.size) !== item.size) throw new Error(`${label} asset metadata mismatch for ${item.fileName}`);
+      const remoteBytes = await client.downloadAsset(remote);
+      const localHash = sha256(await readFile(item.path));
+      if (sha256(remoteBytes) !== localHash) throw new Error(`${label} asset checksum mismatch for ${item.fileName}`);
+    }
+  } else if (!releaseSet.version.includes("-preview.")) {
+    throw new Error(`stable ${label} synchronization requires remote asset verification`);
+  }
+  return uploaded;
+}
+
+async function desiredReleaseAssets(releaseSet) {
+  return [
     ...releaseSet.installers,
     ...(releaseSet.desktopInstallers ?? []),
     ...(releaseSet.manifestPath ? [{ fileName: "release-manifest.json", path: releaseSet.manifestPath, size: (await stat(releaseSet.manifestPath)).size }] : []),
@@ -379,27 +432,6 @@ export async function syncGiteeRelease(releaseSet, options) {
       size: (await stat(releaseSet.checksumPath)).size,
     },
   ];
-  const uploaded = [];
-  for (const item of desired) {
-    const existing = assets.find((asset) => asset.name === item.fileName);
-    if (existing && Number(existing.size) === item.size) continue;
-    if (existing?.id) await api.deleteAsset(release.id, existing.id);
-    await api.uploadAsset(release.id, item.path, item.fileName);
-    uploaded.push(item.fileName);
-  }
-  if (api.downloadAsset) {
-    const currentAssets = await api.listAssets(release.id);
-    for (const item of desired) {
-      const remote = currentAssets.find((asset) => asset.name === item.fileName);
-      if (!remote || Number(remote.size) !== item.size) throw new Error(`Gitee asset metadata mismatch for ${item.fileName}`);
-      const remoteBytes = await api.downloadAsset(remote);
-      const localHash = sha256(await readFile(item.path));
-      if (sha256(remoteBytes) !== localHash) throw new Error(`Gitee asset checksum mismatch for ${item.fileName}`);
-    }
-  } else if (!releaseSet.version.includes("-preview.")) {
-    throw new Error("stable Gitee synchronization requires remote asset verification");
-  }
-  return { branch, tag, releaseId: release.id, uploaded };
 }
 
 export function createNpmClient(options = {}) {
@@ -527,6 +559,77 @@ export function createGiteeClient(options) {
       }
       const response = await request(url, { headers });
       if (!response.ok) throw new Error(`Gitee asset download HTTP ${response.status}`);
+      return Buffer.from(await response.arrayBuffer());
+    },
+  };
+}
+
+export function createGithubClient(options) {
+  const owner = encodeURIComponent(options.owner);
+  const repo = encodeURIComponent(options.repo);
+  const base = `https://api.github.com/repos/${owner}/${repo}`;
+  const request = options.request ?? fetch;
+  const headers = {
+    Authorization: `Bearer ${options.token}`,
+    Accept: "application/vnd.github+json",
+    "X-GitHub-Api-Version": "2022-11-28",
+    "User-Agent": "agentroam-release",
+  };
+  const call = async (url, init = {}, allowMissing = false) => {
+    let response;
+    try {
+      response = await request(url, { ...init, headers: { ...headers, ...init.headers } });
+    } catch (error) {
+      const wrapped = sanitizedError(error);
+      wrapped.retryable = true;
+      throw wrapped;
+    }
+    if (allowMissing && response.status === 404) return null;
+    if (!response.ok) {
+      const error = new Error(`GitHub API HTTP ${response.status}`);
+      error.retryable = response.status >= 500 || response.status === 429;
+      throw error;
+    }
+    if (response.status === 204) return null;
+    return response.json();
+  };
+  return {
+    getReleaseByTag: (tag) => call(`${base}/releases/tags/${encodeURIComponent(tag)}`, {}, true),
+    createRelease: (value) => call(`${base}/releases`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        tag_name: value.tagName,
+        name: value.name,
+        body: value.body,
+        target_commitish: value.targetCommitish,
+        draft: false,
+        prerelease: value.prerelease === true,
+      }),
+    }),
+    updateRelease: (id, value) => call(`${base}/releases/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: value.name, body: value.body, prerelease: value.prerelease === true }),
+    }),
+    listAssets: (id) => call(`${base}/releases/${encodeURIComponent(id)}/assets`),
+    // 注意：GitHub 删除资产走 /releases/assets/<asset_id>，不在 release 路径下。
+    deleteAsset: (_id, assetId) => call(`${base}/releases/assets/${encodeURIComponent(assetId)}`, { method: "DELETE" }),
+    uploadAsset: async (id, path, fileName) => call(
+      `https://uploads.github.com/repos/${owner}/${repo}/releases/${encodeURIComponent(id)}/assets?name=${encodeURIComponent(fileName)}`,
+      { method: "POST", headers: { "content-type": "application/octet-stream" }, body: await readFile(path) },
+    ),
+    downloadAsset: async (asset) => {
+      // 用 API 资产地址（browser_download_url 会跳到 objects.githubusercontent.com，
+      // 无法用仓库路径做来源校验）。
+      const value = asset.url;
+      if (typeof value !== "string") throw new Error("GitHub asset has no download URL");
+      const url = new URL(value);
+      if (url.protocol !== "https:" || url.hostname !== "api.github.com" || !url.pathname.startsWith(`/repos/${options.owner}/${options.repo}/`)) {
+        throw new Error("GitHub asset download URL is outside the configured repository");
+      }
+      const response = await request(url, { headers: { ...headers, Accept: "application/octet-stream" } });
+      if (!response.ok) throw new Error(`GitHub asset download HTTP ${response.status}`);
       return Buffer.from(await response.arrayBuffer());
     },
   };

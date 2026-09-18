@@ -3,7 +3,10 @@ import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  AGENTROAM_GITHUB_OWNER,
+  AGENTROAM_GITHUB_REPO,
   createGitClient,
+  createGithubClient,
   createGiteeClient,
   createNpmClient,
   inspectPublication,
@@ -14,6 +17,7 @@ import {
   redactReleaseError,
   releaseSetForVersion,
   syncGiteeRelease,
+  syncGithubRelease,
   verifyRegistryArtifacts,
   writeReleaseManifest,
 } from "./agentroam-release-lib.mjs";
@@ -59,14 +63,7 @@ export async function main(args = process.argv.slice(2), dependencies = {}) {
   if (command === "sync-gitee") {
     const sourceCommit = required(args, "--commit");
     const sourceBranch = optional(args, "--branch") ?? "master";
-    // Prefer the client update manifest produced by collect-cli-artifacts when
-    // no explicit --manifest was given, so the release-manifest.json asset is
-    // published together with the installers and checksums.
-    let effectiveReleaseSet = releaseSet;
-    if (!manifestPath) {
-      const autoManifest = resolve(releaseSet.artifactDirectory, "release-manifest.json");
-      if (existsSync(autoManifest)) effectiveReleaseSet = await loadReleaseManifest(autoManifest);
-    }
+    const effectiveReleaseSet = await withAutoManifest(releaseSet, manifestPath);
     if (args.includes("--dry-run")) return print({ dryRun: true, command, sourceCommit, sourceBranch, version: effectiveReleaseSet.version });
     const owner = required(args, "--owner");
     const repo = required(args, "--repo");
@@ -80,7 +77,33 @@ export async function main(args = process.argv.slice(2), dependencies = {}) {
       giteeClient: dependencies.giteeClient ?? createGiteeClient({ owner, repo, token }),
     }));
   }
-  throw new Error("usage: publish-agentroam-release.mjs preflight|publish-preview|verify-preview|promote-latest|rollback-preview|rollback-latest|sync-gitee [options]");
+  if (command === "sync-github") {
+    const sourceCommit = required(args, "--commit");
+    const sourceBranch = optional(args, "--branch") ?? "main";
+    const owner = optional(args, "--owner") ?? AGENTROAM_GITHUB_OWNER;
+    const repo = optional(args, "--repo") ?? AGENTROAM_GITHUB_REPO;
+    const effectiveReleaseSet = await withAutoManifest(releaseSet, manifestPath);
+    if (args.includes("--dry-run")) return print({ dryRun: true, command, sourceCommit, sourceBranch, owner, repo, version: effectiveReleaseSet.version });
+    const token = process.env.GITHUB_TOKEN ?? process.env.GH_TOKEN;
+    if (!token) throw new Error("GITHUB_TOKEN (or GH_TOKEN) is required to publish a GitHub release");
+    return print(await syncGithubRelease(effectiveReleaseSet, {
+      sourceCommit,
+      sourceBranch,
+      remote: optional(args, "--remote") ?? "origin",
+      gitClient: dependencies.gitClient ?? createGitClient(),
+      githubClient: dependencies.githubClient ?? createGithubClient({ owner, repo, token }),
+    }));
+  }
+  throw new Error("usage: publish-agentroam-release.mjs preflight|publish-preview|verify-preview|promote-latest|rollback-preview|rollback-latest|sync-gitee|sync-github [options]");
+}
+
+// Prefer the client update manifest produced by collect-cli-artifacts when no
+// explicit --manifest was given, so the release-manifest.json asset is published
+// together with the installers and checksums.
+async function withAutoManifest(releaseSet, manifestPath) {
+  if (manifestPath) return releaseSet;
+  const autoManifest = resolve(releaseSet.artifactDirectory, "release-manifest.json");
+  return existsSync(autoManifest) ? loadReleaseManifest(autoManifest) : releaseSet;
 }
 
 function releaseSummary(releaseSet) {
