@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { BrowserLiveSession } from "../global";
-import { remoteFieldContains, selectBrowserLiveSessionId, touchScrollDelta } from "./BrowserLivePanel";
+import { isStaleControlReply, remoteFieldContains, selectBrowserLiveSessionId, touchScrollDelta } from "./BrowserLivePanel";
 
 function session(id: string, agentSessionId: string): BrowserLiveSession {
   return {
@@ -43,6 +43,40 @@ describe("browser live session selection", () => {
       url: "",
     };
     expect(selectBrowserLiveSessionId(null, [desktop])).toBe("desktop:primary");
+  });
+});
+
+describe("stale control reply guard", () => {
+  const controller = (state: BrowserLiveSession["state"]): BrowserLiveSession => ({
+    ...session("desktop:primary", ""),
+    backend: "desktop",
+    browserSessionId: undefined,
+    title: "桌面屏幕",
+    url: "",
+    state,
+    isController: true,
+  });
+
+  it("drops a pending-handoff reply that arrives after the confirm", () => {
+    expect(isStaleControlReply(controller("user-controlled"), controller("handoff-requested"))).toBe(true);
+  });
+
+  it("lets every other transition through", () => {
+    expect(isStaleControlReply(controller("agent-controlled"), controller("handoff-requested"))).toBe(false);
+    expect(isStaleControlReply(controller("return-requested"), controller("handoff-requested"))).toBe(false);
+    expect(isStaleControlReply(controller("user-controlled"), controller("agent-controlled"))).toBe(false);
+    expect(isStaleControlReply(controller("user-controlled"), controller("user-controlled"))).toBe(false);
+    expect(isStaleControlReply(null, controller("handoff-requested"))).toBe(false);
+  });
+
+  it("drops a pending-return reply that arrives after the release confirm", () => {
+    expect(isStaleControlReply(controller("agent-controlled"), controller("return-requested"))).toBe(true);
+  });
+
+  it("does not regress a viewer whose own view shows no control", () => {
+    // Another viewer holds control; our own view is not user-controlled.
+    const watching = { ...controller("user-controlled"), isController: false };
+    expect(isStaleControlReply(watching, controller("handoff-requested"))).toBe(false);
   });
 });
 

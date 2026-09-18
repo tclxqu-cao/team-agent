@@ -2,6 +2,7 @@ import type { CSSProperties, MouseEvent } from "react";
 import type { SidebarDeleteAnchor } from "./SidebarSessionRow";
 
 interface SidebarDeleteConfirmationProps {
+  title?: string;
   message: string;
   anchor: SidebarDeleteAnchor;
   mobile: boolean;
@@ -25,6 +26,7 @@ function getPopoverPosition(anchor: SidebarDeleteAnchor): CSSProperties {
 }
 
 export default function SidebarDeleteConfirmation({
+  title,
   message,
   anchor,
   mobile,
@@ -47,7 +49,7 @@ export default function SidebarDeleteConfirmation({
         style={mobile ? undefined : getPopoverPosition(anchor)}
         onClick={stopPropagation}
       >
-        <strong id="sidebar-delete-confirmation-title">删除会话</strong>
+        <strong id="sidebar-delete-confirmation-title">{title ?? "删除会话"}</strong>
         <p id="sidebar-delete-confirmation-message">{message}</p>
         <div className="sidebar-delete-confirmation-actions">
           <button type="button" onClick={onCancel} disabled={pending}>取消</button>

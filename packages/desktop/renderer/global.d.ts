@@ -574,5 +574,7 @@ declare global {
   interface Window {
     agentApi: AgentApi;
     browserLiveApi?: BrowserLiveApi;
+    /** Preload bridge for renderer error reporting (Electron only). */
+    clientLogApi?: { report: (payload: unknown) => Promise<{ ok: boolean }> };
   }
 }

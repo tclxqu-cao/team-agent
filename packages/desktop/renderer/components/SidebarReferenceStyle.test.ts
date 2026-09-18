@@ -200,7 +200,7 @@ describe("AgentRoam reference sidebar", () => {
     expect(app.match(/onPin=/g)).toHaveLength(2);
     expect(app).toContain("onPin={() => togglePinnedSession(session.id)}");
     expect(app).toContain("onPin={session.parentSessionId ? undefined : () => togglePinnedSession(session.id)}");
-    expect(app.indexOf('className="sidebar-pinned-section"')).toBeLessThan(app.indexOf("{projects.map((project) =>"));
+    expect(app.indexOf('className="sidebar-pinned-section"')).toBeLessThan(app.indexOf("{orderedSidebarProjects.map((project) =>"));
     expect(app).toContain("pinnedRootSessions.map(({ projectId, session }) => renderRootSession(session, projectId))");
     expect(app).toContain("(session) => !pinnedSessionIdSet.has(session.id)");
     expect(app).toContain("projSessions.map((session) => renderRootSession(session, project.id))");
@@ -226,8 +226,8 @@ describe("AgentRoam reference sidebar", () => {
     expect(css).not.toContain(".sidebar-session-row > .sidebar-runtime-mark");
   });
 
-  it("keeps project deletion on desktop only and uses the shared trash icon", () => {
-    const projectDeleteStart = app.indexOf('{activeAgent === "customer-agent" && !webShell && (');
+  it("keeps project deletion desktop-only for valid rows and offers invalid-workspace deletion everywhere", () => {
+    const projectDeleteStart = app.indexOf('{activeAgent === "customer-agent" && !webShell ? (');
     const projectDeleteEnd = app.indexOf('className="sidebar-runtime-create', projectDeleteStart);
     const projectDeleteButton = app.slice(projectDeleteStart, projectDeleteEnd);
 
@@ -236,9 +236,21 @@ describe("AgentRoam reference sidebar", () => {
     expect(projectDeleteButton).toContain('aria-label={`删除目录：${project.name}`}');
     expect(projectDeleteButton).toContain("sidebar-project-delete");
     expect(projectDeleteButton).toContain("<SidebarDeleteIcon />");
+    expect(projectDeleteButton).toContain("isInvalid ? (");
+    expect(projectDeleteButton).toContain("requestInvalidWorkspaceDelete(project, e.currentTarget)");
+    expect(projectDeleteButton).toContain('aria-label={`删除失效目录：${project.name}`}');
     expect(projectDeleteButton).not.toContain(">×</button>");
+    expect(app).toContain("const confirmInvalidWorkspaceDelete = async () =>");
     expect(css).toContain(".sidebar-project-row .sidebar-row-action {");
     expect(css).toContain(".sidebar-project-row .sidebar-project-delete svg {");
+  });
+
+  it("sinks invalid directories to the end of the sidebar list", () => {
+    expect(app).toContain("const orderedSidebarProjects = [");
+    expect(app).toContain("{orderedSidebarProjects.map((project) => {");
+    expect(app.indexOf("orderedSidebarProjects.map((project) => {")).toBeGreaterThan(
+      app.indexOf("const orderedSidebarProjects = ["),
+    );
   });
 
   it("shows external occupancy and semantic status markers in detail mode", () => {

@@ -186,6 +186,11 @@ export default function App() {
     anchor: SidebarDeleteAnchor;
   } | null>(null);
   const [sessionDeletePending, setSessionDeletePending] = useState(false);
+  const [invalidWorkspaceDeleteRequest, setInvalidWorkspaceDeleteRequest] = useState<{
+    project: Project;
+    anchor: SidebarDeleteAnchor;
+  } | null>(null);
+  const [invalidWorkspaceDeletePending, setInvalidWorkspaceDeletePending] = useState(false);
   const [sessionCreationPending, setSessionCreationPending] = useState<{
     projectId: string;
     agentType: AgentType;
@@ -584,6 +589,11 @@ export default function App() {
   const collapsibleProjectIds = projects
     .filter((project) => !invalidProjectIds.has(project.id))
     .map((project) => project.id);
+  // 失效（路径不存在、带感叹号）的目录沉到列表末尾，正常目录保持在前面。
+  const orderedSidebarProjects = [
+    ...projects.filter((project) => !invalidProjectIds.has(project.id)),
+    ...projects.filter((project) => invalidProjectIds.has(project.id)),
+  ];
   const allProjectsCollapsed = collapsibleProjectIds.length > 0
     && collapsibleProjectIds.every((projectId) => !expandedProjects.has(projectId));
 
@@ -1129,6 +1139,53 @@ export default function App() {
     setSessionDeleteRequest({ session, anchor });
   };
 
+  const requestInvalidWorkspaceDelete = (project: Project, anchorElement: HTMLElement) => {
+    const rect = anchorElement.getBoundingClientRect();
+    setInvalidWorkspaceDeleteRequest({
+      project,
+      anchor: { top: rect.top, left: rect.left, width: rect.width, height: rect.height },
+    });
+  };
+
+  // 失效目录（路径不存在）由其下会话推导而来，没有单独的存储条目可删：
+  // 删除 = 逐个归档其下全部会话，条目随之从工作区列表消失。
+  const confirmInvalidWorkspaceDelete = async () => {
+    if (!window.agentApi || !invalidWorkspaceDeleteRequest || invalidWorkspaceDeletePending) return;
+    const { project } = invalidWorkspaceDeleteRequest;
+    const agentType = activeAgentRef.current;
+    setInvalidWorkspaceDeletePending(true);
+    try {
+      let cursor: string | null = null;
+      let deleted = 0;
+      do {
+        const page = await window.agentApi.listAgentWorkspaceSessions(agentType, project.id, {
+          cursor,
+          limit: 50,
+          refresh: cursor === null,
+        }) as WorkspacePage<Session>;
+        for (const session of page.data) {
+          await window.agentApi.deleteSession(session.id);
+          deleted += 1;
+        }
+        cursor = page.data.length > 0 ? page.nextCursor : null;
+      } while (cursor);
+      if (selectedProjectIdRef.current === project.id) {
+        applySidebarSelection(EMPTY_SIDEBAR_SELECTION);
+      }
+      setNotice(deleted > 0 ? `已删除目录「${project.name}」及 ${deleted} 个会话` : `已删除目录「${project.name}」`);
+      setNoticeType("success");
+      setTimeout(() => setNotice(null), 2500);
+      await loadProjects(agentType, { refresh: true });
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : "目录删除失败");
+      setNoticeType("error");
+      setTimeout(() => setNotice(null), 4000);
+    } finally {
+      setInvalidWorkspaceDeletePending(false);
+      setInvalidWorkspaceDeleteRequest(null);
+    }
+  };
+
   const confirmDeleteSession = async () => {
     if (!window.agentApi || !sessionDeleteRequest || sessionDeletePending) return;
     const { session } = sessionDeleteRequest;
@@ -1490,7 +1547,7 @@ export default function App() {
                 {pinnedRootSessions.map(({ projectId, session }) => renderRootSession(session, projectId))}
               </section>
             )}
-            {projects.map((project) => {
+            {orderedSidebarProjects.map((project) => {
               const isSelected = selectedProjectId === project.id;
               const isExpanded = expandedProjects.has(project.id);
               const hasLoadedProject = loadedProjectIds.has(project.id);
@@ -1559,7 +1616,7 @@ export default function App() {
                         {project.name}
                       </span>
                     </button>
-                    {activeAgent === "customer-agent" && !webShell && (
+                    {activeAgent === "customer-agent" && !webShell ? (
                       <button
                         onClick={(e) => { e.stopPropagation(); void handleDeleteProject(project.id); }}
                         title="删除目录"
@@ -1571,7 +1628,19 @@ export default function App() {
                       >
                         <SidebarDeleteIcon />
                       </button>
-                    )}
+                    ) : isInvalid ? (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); requestInvalidWorkspaceDelete(project, e.currentTarget); }}
+                        title="删除失效目录"
+                        aria-label={`删除失效目录：${project.name}`}
+                        className="sidebar-project-delete sidebar-row-action ui-icon-button ui-icon-button--small ui-icon-button--danger"
+                        style={{
+                          flexShrink: 0,
+                        }}
+                      >
+                        <SidebarDeleteIcon />
+                      </button>
+                    ) : null}
                     {project.canCreateSession !== false && (
                       <button
                         type="button"
@@ -1723,6 +1792,18 @@ export default function App() {
           pending={sessionDeletePending}
           onCancel={() => setSessionDeleteRequest(null)}
           onConfirm={() => void confirmDeleteSession()}
+        />
+      )}
+
+      {invalidWorkspaceDeleteRequest && (
+        <SidebarDeleteConfirmation
+          title="删除失效目录"
+          message={`目录「${invalidWorkspaceDeleteRequest.project.name}」的路径（${invalidWorkspaceDeleteRequest.project.description || "未知"}）已不存在。删除将同时归档其下的全部会话记录，确定删除吗？`}
+          anchor={invalidWorkspaceDeleteRequest.anchor}
+          mobile={mobileDrawer}
+          pending={invalidWorkspaceDeletePending}
+          onCancel={() => setInvalidWorkspaceDeleteRequest(null)}
+          onConfirm={() => void confirmInvalidWorkspaceDelete()}
         />
       )}
 

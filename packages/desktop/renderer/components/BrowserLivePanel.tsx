@@ -32,6 +32,8 @@ const STATE_LABELS: Record<BrowserLiveSession["state"], string> = {
   resyncing: "Agent 正在同步页面",
 };
 
+const QUALITY_LABELS: Record<string, string> = { smooth: "流畅", hd: "高清", original: "原画" };
+
 function backendLabel(backend: BrowserLiveSession["backend"]): string {
   if (backend === "desktop") return "桌面屏幕";
   return backend === "ego-browser" ? "ego-browser" : "内置 Browser";
@@ -63,6 +65,24 @@ export interface RemoteEditableField {
   y: number;
   w: number;
   h: number;
+}
+
+/** True when an incoming session view would regress an established controller
+ *  state. Takeover/return RPC replies travel through the audit path and can
+ *  lose the race against the faster event-stream confirm; merging them would
+ *  flip the panel back to a transitional state that no further event will
+ *  ever correct. */
+export function isStaleControlReply(
+  existing: BrowserLiveSession | null | undefined,
+  incoming: BrowserLiveSession,
+): boolean {
+  if (!existing) return false;
+  // The takeover reply lost against its own user-controlled confirm.
+  if (existing.state === "user-controlled" && existing.isController === true && incoming.state === "handoff-requested") return true;
+  // The return reply lost against its own agent-controlled confirm; a fresh
+  // return-requested can only follow user-controlled, never agent-controlled.
+  if (existing.state === "agent-controlled" && incoming.state === "return-requested") return true;
+  return false;
 }
 
 const TOUCH_SCROLL_MIN_PX = 2;
@@ -136,7 +156,9 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [pendingDisplayId, setPendingDisplayId] = useState<string | null>(null);
   const [videoQuality, setVideoQuality] = useState("hd");
-  const [pendingQuality, setPendingQuality] = useState(false);
+  // Holds the quality being switched to (the helper applies it over several
+  // seconds); null once the quality-state confirmation lands.
+  const [pendingQuality, setPendingQuality] = useState<string | null>(null);
   const [frame, setFrame] = useState<BrowserFrame | null>(null);
   const [loading, setLoading] = useState(false);
   // Bumped by refresh() to force the watch + WebRTC effects to tear down and
@@ -409,7 +431,7 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
   const handleWebrtcSignal = useCallback((sessionId: string, data: Record<string, unknown> | undefined) => {
     if (!data) return;
     if (data.kind === "quality-state" && ["smooth", "hd", "original"].includes(String(data.quality))) {
-      setVideoQuality(String(data.quality)); setPendingQuality(false);
+      setVideoQuality(String(data.quality)); setPendingQuality(null);
       if (typeof data.error === "string") setError(data.error);
       return;
     }
@@ -460,6 +482,7 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
   const mergeSession = useCallback((session: BrowserLiveSession) => {
     setSessions((current) => {
       const index = current.findIndex((item) => item.id === session.id);
+      if (index >= 0 && isStaleControlReply(current[index], session)) return current;
       if (index < 0) return [session, ...current];
       const next = [...current];
       next[index] = session;
@@ -672,15 +695,15 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
   const liveDisplays = selected?.displays ?? null;
   useEffect(() => {
     if (!pendingQuality) return;
-    const timer = window.setTimeout(() => { setPendingQuality(false); setError("画质切换未完成，请刷新画面后重试"); }, 14000);
+    const timer = window.setTimeout(() => { setPendingQuality(null); setError("画质切换未完成，请刷新画面后重试"); }, 14000);
     return () => window.clearTimeout(timer);
   }, [pendingQuality]);
-  useEffect(() => { setPendingQuality(false); setVideoQuality("hd"); }, [open, selectedId]);
+  useEffect(() => { setPendingQuality(null); setVideoQuality("hd"); }, [open, selectedId]);
   const selectQuality = (quality: string) => {
     if (!api || !canAdjustCapture || pendingDisplayId || pendingQuality || !selectedId) return;
-    setPendingQuality(true);
+    setPendingQuality(quality);
     void api.request("browser:webrtc", { sessionId: selectedId, data: { kind: "quality", quality } }).catch(error => {
-      setPendingQuality(false); setError(error instanceof Error ? error.message : "画质切换失败");
+      setPendingQuality(null); setError(error instanceof Error ? error.message : "画质切换失败");
     });
   };
   useEffect(() => {
@@ -809,7 +832,7 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
                 </LiveViewSelect>
               )}
               {selectedId === "cli-desktop:primary" && (
-                <LiveViewSelect label="视频画质" title={canAdjustCapture ? "视频画质" : "其他设备控制中或画面暂不可用"} value={videoQuality} busy={pendingQuality} disabled={!canAdjustCapture || !!pendingDisplayId} compact onChange={selectQuality}>
+                <LiveViewSelect label="视频画质" title={canAdjustCapture ? "视频画质" : "其他设备控制中或画面暂不可用"} value={videoQuality} busy={pendingQuality !== null} disabled={!canAdjustCapture || !!pendingDisplayId} compact onChange={selectQuality}>
                   <option value="smooth">流畅</option><option value="hd">高清</option><option value="original">原画</option>
                 </LiveViewSelect>
               )}
@@ -1100,6 +1123,12 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
                     if (!panMode && !composingRef.current) sendTypedText(event.target.value);
                   }}
                 />
+                {pendingQuality && (
+                  <div className="browser-live-quality-pending" role="status">
+                    <LoaderCircle size={13} className="spin" aria-hidden="true" />
+                    正在切换至{QUALITY_LABELS[pendingQuality] ?? pendingQuality}画质…
+                  </div>
+                )}
               </div>
             ) : (
               <div className="browser-live-empty">
