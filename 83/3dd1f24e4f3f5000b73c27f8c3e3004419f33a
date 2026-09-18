@@ -1,0 +1,18 @@
+packages/core/src/infrastructure/index.ts
+  h_b0bf4228a0b7ec 28-42
+packages/core/src/infrastructure/logger/DailyFileLogger.test.ts
+  h_b0bf4228a0b7ec 1-287
+packages/core/src/infrastructure/logger/DailyFileLogger.ts
+  h_b0bf4228a0b7ec 1-471
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "833dd1f24e4f3f5000b73c27f8c3e3004419f33a",
+  "prompts": {},
+  "humans": {
+    "h_b0bf4228a0b7ec": {
+      "author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
