@@ -25,3 +25,18 @@ export {
   type HostDirectoryEntry,
   type HostPathErrorCode,
 } from './HostPathPolicy.js';
+export {
+  DailyFileLogger,
+  configureGlobalLogger,
+  flushGlobal,
+  getGlobalLogger,
+  installGlobalLogging,
+  logGlobal,
+  resetGlobalLoggerForTests,
+  type DailyFileLoggerOptions,
+  type GlobalErrorHandlersHandle,
+  type GlobalErrorHandlersOptions,
+  type InstallGlobalLoggingOptions,
+  type LogEntry,
+  type LogLevel,
+} from './logger/DailyFileLogger.js';
