@@ -66,3 +66,6 @@ outputs/
 packages/desktop/release/
 packages/server/.agents/
 packages/server/remote-authorization.json
+
+# 发布用二进制打包产物（2026-09-18）：vendor 下是 cloudflared 等预编译 tgz，不入库
+packages/*/vendor/
