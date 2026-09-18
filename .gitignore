@@ -59,3 +59,10 @@ packages/desktop/.runtime/
 # CLI native remote authorization build outputs
 packages/server/native/.build-remote/
 packages/server/native/*.app/
+
+# 本地产物与运行态（2026-09-17）
+outputs/
+.workbuddy/
+packages/desktop/release/
+packages/server/.agents/
+packages/server/remote-authorization.json
