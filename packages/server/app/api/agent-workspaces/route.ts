@@ -1,9 +1,5 @@
 import { NextResponse } from "next/server";
-import { paginateByOffset } from "../../../../desktop/main/agent-runtime/agent-workspace-index";
-import type {
-  AgentWorkspace,
-  WorkspaceQuery,
-} from "../../../../desktop/main/agent-runtime/types";
+import { paginateByOffset, type AgentWorkspace, type WorkspaceQuery } from "@agent/native-runtime";
 import { agentHost } from "../agent-host";
 import { getNativeRuntimeService, runtimeErrorStatus } from "../../../lib/native-runtime-service";
 import { projectErrorResponse, webProjectService } from "../projects/project-http";

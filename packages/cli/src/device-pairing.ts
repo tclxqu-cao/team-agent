@@ -1,5 +1,6 @@
 import { createInterface } from "node:readline/promises";
 import { setTimeout as delay } from "node:timers/promises";
+import { createReadStream, openSync } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
@@ -67,9 +68,40 @@ export async function printPairingCode(dataDir: string, log: (line: string) => v
       log(await renderQr(pairingQrPayload(accessUrl, grant)));
     } else log("生成 App 授权二维码：agentroam pair --url <手机可访问的服务器地址>");
   }
-  if (options.interactive ?? (process.stdin.isTTY && process.stdout.isTTY)) {
-    await watchPairingApproval(dataDir, result.expiresAt, { log, signal: options.signal });
+  const approvalInput = resolveApprovalInput(options);
+  if (approvalInput) {
+    await watchPairingApproval(dataDir, result.expiresAt, { log, signal: options.signal, input: approvalInput });
   } else log("查看请求：agentroam approvals；批准：agentroam approve <请求ID> --phrase <手机核对短语>");
+}
+
+/** Open the controlling terminal (`/dev/tty`) — the same source install-agentroam.sh reads from. */
+function openControllingTerminal(): NodeJS.ReadableStream | undefined {
+  if (process.platform === "win32") return undefined;
+  let fd: number;
+  try { fd = openSync("/dev/tty", "r"); } catch { return undefined; }
+  return createReadStream("/dev/tty", { fd, autoClose: true });
+}
+
+/**
+ * Pick the stream the approval phrase is read from.
+ *
+ * Never fall back to `process.stdin` when it is not a TTY: the installer runs as
+ * `curl … | sh`, so stdin is *the install script itself*. Reading it consumes
+ * the rest of the install, echoes it back to the terminal, and answers the
+ * prompt with the next script line instead of the user's "yes" — which silently
+ * rejects the device and swallows the remaining install steps.
+ */
+export function resolveApprovalInput(context: {
+  interactive?: boolean;
+  stdinIsTTY?: boolean;
+  stdoutIsTTY?: boolean;
+  openTerminal?: () => NodeJS.ReadableStream | undefined;
+} = {}): NodeJS.ReadableStream | undefined {
+  const stdinIsTTY = context.stdinIsTTY ?? process.stdin.isTTY === true;
+  const stdoutIsTTY = context.stdoutIsTTY ?? process.stdout.isTTY === true;
+  if (!(context.interactive ?? (stdinIsTTY && stdoutIsTTY))) return undefined;
+  if (stdinIsTTY) return process.stdin;
+  return (context.openTerminal ?? openControllingTerminal)();
 }
 
 /** Watch only while the printed code is usable; approval gets the request's own deadline. */
@@ -78,6 +110,8 @@ export async function watchPairingApproval(dataDir: string, codeExpiresAt: numbe
   signal?: AbortSignal;
   admin?: typeof pairingAdmin;
   confirm?: (request: PendingPairing, signal?: AbortSignal) => Promise<boolean>;
+  /** Terminal the phrase is read from; see {@link resolveApprovalInput}. */
+  input?: NodeJS.ReadableStream;
 } = {}): Promise<void> {
   const admin = options.admin ?? pairingAdmin;
   const log = options.log ?? console.log;
@@ -91,7 +125,8 @@ export async function watchPairingApproval(dataDir: string, codeExpiresAt: numbe
       log(`新设备请求连接：${terminalText(request.name)}`);
       log(`请求 ID：${request.id}`);
       log(`核对短语：${request.phrase}`);
-      const approved = await (options.confirm ?? confirmOnTerminal)(request, options.signal);
+      const confirm = options.confirm ?? ((request: PendingPairing, signal?: AbortSignal) => confirmOnTerminal(request, signal, options.input));
+      const approved = await confirm(request, options.signal);
       if (options.signal?.aborted) return;
       if (Date.now() >= request.expires) { log("授权请求已过期，请重新配对。"); return; }
       await admin(dataDir, approved ? "approve" : "deny", { id: request.id, ...(approved ? { phrase: request.phrase } : {}) });
@@ -103,10 +138,16 @@ export async function watchPairingApproval(dataDir: string, codeExpiresAt: numbe
   if (!options.signal?.aborted) log("配对码已过期，执行 agentroam pair 生成新码。");
 }
 
-async function confirmOnTerminal(request: PendingPairing, signal?: AbortSignal): Promise<boolean> {
+async function confirmOnTerminal(request: PendingPairing, signal?: AbortSignal, terminal = resolveApprovalInput()): Promise<boolean> {
+  // A piped stdin is the install script, and a closed one can never answer.
+  if (!terminal || (terminal === process.stdin && process.stdin.isTTY !== true)) return false;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), Math.max(0, request.expires - Date.now()));
-  const input = createInterface({ input: process.stdin, output: process.stdout });
+  // Read the terminal in canonical mode: the tty echoes the keystrokes itself,
+  // so letting readline echo them again would double every character.
+  const input = createInterface(terminal === process.stdin
+    ? { input: terminal, output: process.stdout }
+    : { input: terminal, output: process.stdout, terminal: false });
   input.once("SIGINT", () => controller.abort());
   try {
     const answer = await input.question("确认手机显示相同短语？输入 yes 批准，其他输入拒绝：", { signal: signal ? AbortSignal.any([signal, controller.signal]) : controller.signal });

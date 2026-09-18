@@ -11,7 +11,7 @@ import {
   runtimeErrorStatus,
 } from "../../../../../lib/native-runtime-service";
 import { rebuildMessagesFromEvents } from "../../../../../lib/session-history-source";
-import { RuntimeSessionError } from "../../../../../../desktop/main/agent-runtime/types";
+import { RuntimeSessionError } from "@agent/native-runtime";
 
 const localIndexCache = new SessionQueryIndexCache();
 

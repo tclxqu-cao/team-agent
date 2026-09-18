@@ -1,12 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type {
-  AgentType,
-  AgentWorkspace,
-  RuntimeHealth,
-  UnifiedSessionSummary,
-  WorkspacePage,
-} from "../../desktop/main/agent-runtime/types.js";
-import { encodeUnifiedSessionId } from "../../desktop/main/agent-runtime/session-id.js";
+import { encodeUnifiedSessionId, type AgentType, type AgentWorkspace, type RuntimeHealth, type UnifiedSessionSummary, type WorkspacePage } from "@agent/native-runtime";
 import type { NativeRuntimePort } from "./native-runtime-service";
 import { NativeRuntimeService, normalizeProjectPath } from "./native-runtime-service";
 

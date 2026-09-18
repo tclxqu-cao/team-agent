@@ -16,7 +16,7 @@ import {
   PATCH as patchQueuedMessage,
   POST as enqueueQueuedMessage,
 } from "./sessions/[id]/goals/route";
-import { RuntimeSessionError } from "../../../desktop/main/agent-runtime/types";
+import { RuntimeSessionError } from "@agent/native-runtime";
 
 const state = {
   health: [] as Array<Record<string, unknown>>,

@@ -16,7 +16,7 @@ import {
   isNativeSessionId,
   runtimeErrorStatus,
 } from "../../../../lib/native-runtime-service";
-import { RuntimeSessionError } from "../../../../../desktop/main/agent-runtime/types";
+import { RuntimeSessionError } from "@agent/native-runtime";
 import { rebuildMessagesFromEvents } from "../../../../lib/session-history-source";
 
 export async function GET(

@@ -2,7 +2,6 @@ export { ClaudeRuntimeAdapter } from "./claude-runtime-adapter.js";
 export { CodexRuntimeAdapter } from "./codex-runtime-adapter.js";
 export { OpenCodeRuntimeAdapter } from "./opencode-runtime-adapter.js";
 export { OpenCodeServerClient } from "./opencode-server-client.js";
-export { CustomerAgentRuntimeAdapter } from "./customer-agent-runtime-adapter.js";
 export {
   BrokerRuntimeAdapter,
   NativeRuntimeBrokerClient,

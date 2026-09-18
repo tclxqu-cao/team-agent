@@ -97,7 +97,7 @@ test("drift check reports every disagreement", async () => {
 test("drift check rejects mismatched minimums and a default below the minimum", async () => {
   const fixture = await makeFixture();
   try {
-    const adapterPath = resolve(fixture, "packages/desktop/main/agent-runtime/opencode-runtime-adapter.ts");
+    const adapterPath = resolve(fixture, "packages/native-runtime/src/agent-runtime/opencode-runtime-adapter.ts");
     await writeFile(adapterPath, (await readFile(adapterPath, "utf8")).replace('OPENCODE_MINIMUM_VERSION = "1.18.27"', 'OPENCODE_MINIMUM_VERSION = "1.18.28"'));
     await assert.rejects(checkRuntimeVersionDrift(fixture), /OpenCode minimum runtime/);
     const cliPath = resolve(fixture, "packages/cli/src/opencode-runtime-manager.ts");
@@ -174,7 +174,7 @@ test("applies an upgrade only inside a temporary fixture", async () => {
       },
     });
     assert.equal(result.agentroamVersion, nextReleaseVersion);
-    for (const file of ["packages/cli/src/opencode-runtime-manager.ts", "packages/desktop/main/agent-runtime/opencode-runtime-adapter.ts"]) {
+    for (const file of ["packages/cli/src/opencode-runtime-manager.ts", "packages/native-runtime/src/agent-runtime/opencode-runtime-adapter.ts"]) {
       assert.match(await readFile(resolve(fixture, file), "utf8"), /const OPENCODE_MINIMUM_VERSION = "1\.18\.27";/);
     }
     assert.deepEqual(await checkRuntimeVersionDrift(fixture), {
@@ -247,22 +247,23 @@ async function makeFixture() {
     ".github/agent-runtime-versions.json",
     "bun.lock",
     "packages/desktop/package.json",
+    "packages/native-runtime/package.json",
     "packages/server/package.json",
     "packages/cli/src/codex-runtime-manager.ts",
     "packages/cli/src/codex-runtime-manager.test.ts",
     "packages/cli/src/runtime-manager.test.ts",
     "packages/cli/src/service/service-command.test.ts",
-    "packages/desktop/main/agent-runtime/codex-session-compatibility.test.ts",
-    "packages/desktop/main/agent-runtime/codex-session-disk-catalog.test.ts",
-    "packages/desktop/main/agent-runtime/codex-session-disk-catalog.bench.test.ts",
-    "packages/desktop/main/agent-runtime/agent-workspace-index.test.ts",
-    "packages/desktop/main/agent-runtime/native-runtime-broker.ts",
-    "packages/desktop/main/agent-runtime/native-runtime-broker.test.ts",
-    "packages/desktop/main/agent-runtime/unified-session-service.test.ts",
+    "packages/native-runtime/src/agent-runtime/codex-session-compatibility.test.ts",
+    "packages/native-runtime/src/agent-runtime/codex-session-disk-catalog.test.ts",
+    "packages/native-runtime/src/agent-runtime/codex-session-disk-catalog.bench.test.ts",
+    "packages/native-runtime/src/agent-runtime/agent-workspace-index.test.ts",
+    "packages/native-runtime/src/agent-runtime/native-runtime-broker.ts",
+    "packages/native-runtime/src/agent-runtime/native-runtime-broker.test.ts",
+    "packages/native-runtime/src/agent-runtime/unified-session-service.test.ts",
     "packages/cli/src/opencode-runtime-manager.ts",
     "packages/cli/src/opencode-runtime-manager.test.ts",
-    "packages/desktop/main/agent-runtime/opencode-runtime-adapter.ts",
-    "packages/desktop/main/agent-runtime/opencode-runtime-adapter.test.ts",
+    "packages/native-runtime/src/agent-runtime/opencode-runtime-adapter.ts",
+    "packages/native-runtime/src/agent-runtime/opencode-runtime-adapter.test.ts",
     "packages/runtime-darwin-arm64/package.json",
     "packages/runtime-win32-x64/package.json",
     "packages/cloudflared-darwin-arm64/package.json",

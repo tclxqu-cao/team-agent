@@ -2,7 +2,7 @@ import { sharedCron } from "../../lib/shared-cron";
 import { sharedSettings, type SharedSettings } from "../../lib/shared-settings";
 import { configureSharedRun, type SharedRunOptions } from "../../lib/shared-run-config";
 import { businessCatalog } from "../../lib/business-catalog";
-import { SubAgentDispatcher } from "../../../desktop/main/sub-agent-dispatcher";
+import { SubAgentDispatcher } from "@agent/native-runtime";
 import {
   AgentBuilder,
   HarnessServiceClient,

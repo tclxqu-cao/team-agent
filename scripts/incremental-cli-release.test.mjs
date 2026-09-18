@@ -39,6 +39,19 @@ test("Core imported by runtime and TUI invalidates all four bundles", () => {
   assert.deepEqual(changed(plan(["packages/core/src/index.ts"])), [names[0], names[1], names[4], names[5], "agentroam"]);
 });
 
+test("native-runtime invalidates both platform runtimes but not TUI or cloudflared", () => {
+  const result = plan(["packages/native-runtime/src/agent-runtime/unified-session-service.ts"]);
+  assert.deepEqual(changed(result), [names[0], names[1], "agentroam"]);
+  const commands = buildCommands(result);
+  assert.equal(commands.filter(([, args]) => args[0] === "scripts/stage-cli-runtime.mjs").length, 2);
+  // native-runtime is type-checked against core's built declarations, and the
+  // standalone server bundle consumes its dist, so ordering is load-bearing.
+  const order = commands.map(([, args]) => args.join(" "));
+  const index = (value) => order.findIndex((item) => item === value);
+  assert.ok(index("run --cwd packages/core build") < index("run --cwd packages/native-runtime build"));
+  assert.ok(index("run --cwd packages/native-runtime build") < index("run --cwd packages/server build"));
+});
+
 test("no source change or only generated release numbers is a no-op", () => {
   const value = planRelease({ base: "baseline", version: "0.2.0-preview.21", baselinePackages, changes: [{ path: "packages/cli/package.json", before: JSON.stringify(baselinePackages.at(-1)), after: JSON.stringify({ ...baselinePackages.at(-1), version: "0.2.0-preview.21" }) }] });
   assert.equal(value.noop, true);

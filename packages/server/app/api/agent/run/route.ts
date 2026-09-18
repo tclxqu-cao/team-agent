@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import type { AgentEvent } from "@agent/core";
-import { RuntimeSessionError } from "../../../../../desktop/main/agent-runtime/types.js";
+import { RuntimeSessionError } from "@agent/native-runtime";
 import { agentHost, CustomerAgentRunConflictError } from "../../agent-host";
 import {
   getNativeRuntimeService,

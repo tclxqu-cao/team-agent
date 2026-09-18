@@ -10,9 +10,9 @@ test("parses ordinary and rename name-status output", () => {
 });
 
 for (const [agent, source, sourceTest] of [
-  ["codex", "packages/desktop/main/agent-runtime/codex-runtime-adapter.ts", "packages/desktop/main/agent-runtime/codex-runtime-adapter.test.ts"],
-  ["claude", "packages/desktop/main/agent-runtime/claude-runtime-adapter.ts", "packages/desktop/main/agent-runtime/claude-runtime-adapter.test.ts"],
-  ["opencode", "packages/desktop/main/agent-runtime/opencode-server-client.ts", "packages/desktop/main/agent-runtime/opencode-server-client.test.ts"],
+  ["codex", "packages/native-runtime/src/agent-runtime/codex-runtime-adapter.ts", "packages/native-runtime/src/agent-runtime/codex-runtime-adapter.test.ts"],
+  ["claude", "packages/native-runtime/src/agent-runtime/claude-runtime-adapter.ts", "packages/native-runtime/src/agent-runtime/claude-runtime-adapter.test.ts"],
+  ["opencode", "packages/native-runtime/src/agent-runtime/opencode-server-client.ts", "packages/native-runtime/src/agent-runtime/opencode-server-client.test.ts"],
 ]) {
   test(`accepts the ${agent} adapter allowlist with its test`, () => {
     assert.doesNotThrow(() => validateRuntimeDiff({ agent, changes: changed(source, sourceTest) }));
@@ -21,14 +21,14 @@ for (const [agent, source, sourceTest] of [
 
 test("accepts a shared broker change with its regression test", () => {
   assert.doesNotThrow(() => validateRuntimeDiff({ agent: "codex", changes: changed(
-    "packages/desktop/main/agent-runtime/native-runtime-broker.ts",
-    "packages/desktop/main/agent-runtime/native-runtime-broker.test.ts",
+    "packages/native-runtime/src/agent-runtime/native-runtime-broker.ts",
+    "packages/native-runtime/src/agent-runtime/native-runtime-broker.test.ts",
   ) }));
 });
 
 test("rejects a behavioral source change without a matching test", () => {
   assert.throws(() => validateRuntimeDiff({ agent: "opencode", changes: changed(
-    "packages/desktop/main/agent-runtime/opencode-runtime-adapter.ts",
+    "packages/native-runtime/src/agent-runtime/opencode-runtime-adapter.ts",
   ) }), /requires .*opencode-runtime-adapter\.test\.ts/);
 });
 
@@ -60,8 +60,8 @@ test("rejects package script injection", () => {
 
 test("rejects deletions, renames, and submodules", () => {
   assert.throws(() => validateRuntimeDiff({ agent: "codex", changes: [
-    { status: "D", path: "packages/desktop/main/agent-runtime/codex-runtime-adapter.test.ts" },
-    { status: "R100", oldPath: "old.ts", path: "packages/desktop/main/agent-runtime/codex-runtime-adapter.ts" },
+    { status: "D", path: "packages/native-runtime/src/agent-runtime/codex-runtime-adapter.test.ts" },
+    { status: "R100", oldPath: "old.ts", path: "packages/native-runtime/src/agent-runtime/codex-runtime-adapter.ts" },
     { status: "A", path: "bun.lock", mode: "160000" },
   ] }), /deletions.*renames.*submodules/s);
 });
@@ -88,6 +88,19 @@ test("accepts a representative Claude dependency and release repair diff", () =>
   }));
 });
 
+test("accepts a Claude SDK bump in the native-runtime manifest", () => {
+  // The adapters moved into @agent/native-runtime, so its manifest is now a
+  // legitimate place for the managed SDK pin to move.
+  const before = nativeRuntimePackage({ "@anthropic-ai/claude-agent-sdk": "^0.3.259", "@opencode-ai/sdk": "1.18.27" });
+  const after = structuredClone(before);
+  after.dependencies["@anthropic-ai/claude-agent-sdk"] = "^0.3.260";
+  assert.doesNotThrow(() => validateRuntimeDiff({
+    agent: "claude",
+    changes: changed("packages/native-runtime/package.json"),
+    packageDiffs: [{ path: "packages/native-runtime/package.json", before, after }],
+  }));
+});
+
 test("rejects unsynchronized AgentRoam optional package versions", () => {
   const before = launcherPackage("0.2.0-preview.11");
   const after = launcherPackage("0.2.0-preview.12");
@@ -105,6 +118,10 @@ function changed(...paths) {
 
 function desktopPackage(dependencies) {
   return { name: "@agent/desktop", version: "0.1.0", scripts: { build: "vite build" }, dependencies };
+}
+
+function nativeRuntimePackage(dependencies) {
+  return { name: "@agent/native-runtime", version: "0.1.0", scripts: { build: "tsc" }, dependencies };
 }
 
 const AGENTROAM_PLATFORM_NAMES = [

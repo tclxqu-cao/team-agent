@@ -9,6 +9,7 @@ import { RUNTIME_TARGETS } from "./runtime-native-files.mjs";
 const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const server = resolve(root, "packages/server");
 const core = resolve(root, "packages/core");
+const nativeRuntime = resolve(root, "packages/native-runtime");
 const targetName = readRequiredOption("--target");
 const nodeVersion = process.versions.node;
 assertSupportedNodeVersion(nodeVersion);
@@ -64,12 +65,16 @@ await cp(resolve(server, "lib/ai-hub-relay-client.mjs"), resolve(target, "lib/ai
 
 const serverPkg = JSON.parse(await readFile(resolve(server, "package.json"), "utf8"));
 const {
-  "@agent/core": _core,
   "@xterm/addon-fit": _xtermFit,
   "@xterm/xterm": _xterm,
   "lucide-react": _lucideReact,
   ...runtimeDeps
 } = serverPkg.dependencies;
+// Every @agent/* workspace package is copied from dist further down, so npm must
+// never try to resolve one from the registry (it does not exist there).
+for (const name of Object.keys(runtimeDeps)) {
+  if (name.startsWith("@agent/")) delete runtimeDeps[name];
+}
 const runtimePkg = {
   name: "@agent/server-runtime",
   private: true,
@@ -116,13 +121,22 @@ for (const platform of await readdir(nodePtyPrebuilds)) {
   if (platform !== targetConfig.nodePtyDir) await rm(resolve(nodePtyPrebuilds, platform), { recursive: true, force: true });
 }
 
-const coreTarget = resolve(target, "node_modules/@agent/core");
-await mkdir(coreTarget, { recursive: true });
-await cp(resolve(core, "dist"), resolve(coreTarget, "dist"), { recursive: true });
-await writeFile(
-  resolve(coreTarget, "package.json"),
-  `${JSON.stringify({ name: "@agent/core", version: "0.2.0", type: "module", main: "./dist/index.js", exports: "./dist/index.js" }, null, 2)}\n`,
-);
+// @agent/* are workspace symlinks; the packaged runtime needs real copies.
+// Next keeps them external, so anything the server imports at runtime must be
+// shipped here — missing one only shows up after release, never in dev.
+for (const { dir, dist } of [
+  { dir: core, dist: resolve(core, "dist") },
+  { dir: nativeRuntime, dist: resolve(nativeRuntime, "dist") },
+]) {
+  const name = JSON.parse(await readFile(resolve(dir, "package.json"), "utf8")).name;
+  const destination = resolve(target, "node_modules", name);
+  await mkdir(destination, { recursive: true });
+  await cp(dist, resolve(destination, "dist"), { recursive: true });
+  await writeFile(
+    resolve(destination, "package.json"),
+    `${JSON.stringify({ name, version: "0.2.0", type: "module", main: "./dist/index.js", exports: "./dist/index.js" }, null, 2)}\n`,
+  );
+}
 
 const webappDist = resolve(root, "packages/webapp/dist");
 await mustExist(resolve(webappDist, "index.html"));

@@ -28,13 +28,13 @@ const COMMON_EXACT = new Set([
 ]);
 
 const SHARED_EXACT = new Set([
-  "packages/desktop/main/agent-runtime/agent-workspace-index.ts",
-  "packages/desktop/main/agent-runtime/agent-workspace-index.test.ts",
-  "packages/desktop/main/agent-runtime/native-runtime-broker.ts",
-  "packages/desktop/main/agent-runtime/native-runtime-broker.test.ts",
-  "packages/desktop/main/agent-runtime/types.ts",
-  "packages/desktop/main/agent-runtime/unified-session-service.ts",
-  "packages/desktop/main/agent-runtime/unified-session-service.test.ts",
+  "packages/native-runtime/src/agent-runtime/agent-workspace-index.ts",
+  "packages/native-runtime/src/agent-runtime/agent-workspace-index.test.ts",
+  "packages/native-runtime/src/agent-runtime/native-runtime-broker.ts",
+  "packages/native-runtime/src/agent-runtime/native-runtime-broker.test.ts",
+  "packages/native-runtime/src/agent-runtime/types.ts",
+  "packages/native-runtime/src/agent-runtime/unified-session-service.ts",
+  "packages/native-runtime/src/agent-runtime/unified-session-service.test.ts",
   "packages/server/app/api/native-runtime.test.ts",
   "packages/server/app/api/agent-workspaces/agent-workspace-http.ts",
   "packages/server/app/api/agent-workspaces/route.ts",
@@ -65,9 +65,10 @@ const AGENT_EXACT = {
     "packages/cli/src/service/service-command.test.ts",
   ]),
   claude: new Set([
-    "packages/desktop/main/agent-runtime/claude-runtime-adapter.ts",
-    "packages/desktop/main/agent-runtime/claude-runtime-adapter.test.ts",
+    "packages/native-runtime/src/agent-runtime/claude-runtime-adapter.ts",
+    "packages/native-runtime/src/agent-runtime/claude-runtime-adapter.test.ts",
     "packages/desktop/package.json",
+    "packages/native-runtime/package.json",
     "packages/server/package.json",
   ]),
   opencode: new Set([
@@ -75,12 +76,13 @@ const AGENT_EXACT = {
     "packages/cli/src/opencode-runtime-manager.test.ts",
     "packages/cli/src/runtime-manager.ts",
     "packages/cli/src/runtime-manager.test.ts",
-    "packages/desktop/main/agent-runtime/opencode-runtime-adapter.ts",
-    "packages/desktop/main/agent-runtime/opencode-runtime-adapter.test.ts",
-    "packages/desktop/main/agent-runtime/opencode-runtime-health.test.ts",
-    "packages/desktop/main/agent-runtime/opencode-server-client.ts",
-    "packages/desktop/main/agent-runtime/opencode-server-client.test.ts",
+    "packages/native-runtime/src/agent-runtime/opencode-runtime-adapter.ts",
+    "packages/native-runtime/src/agent-runtime/opencode-runtime-adapter.test.ts",
+    "packages/native-runtime/src/agent-runtime/opencode-runtime-health.test.ts",
+    "packages/native-runtime/src/agent-runtime/opencode-server-client.ts",
+    "packages/native-runtime/src/agent-runtime/opencode-server-client.test.ts",
     "packages/desktop/package.json",
+    "packages/native-runtime/package.json",
     "packages/server/package.json",
   ]),
 };
@@ -99,9 +101,9 @@ const DENIED_PATHS = [
 
 const SOURCE_TEST_RULES = [
   [/^packages\/cli\/src\/([^/]+)\.ts$/, (match) => `packages/cli/src/${match[1]}.test.ts`],
-  [/^packages\/desktop\/main\/agent-runtime\/([^/]+)\.ts$/, (match) => {
-    if (match[1] === "types") return "packages/desktop/main/agent-runtime/native-runtime-broker.test.ts";
-    return `packages/desktop/main/agent-runtime/${match[1]}.test.ts`;
+  [/^packages\/native-runtime\/src\/agent-runtime\/([^/]+)\.ts$/, (match) => {
+    if (match[1] === "types") return "packages/native-runtime/src/agent-runtime/native-runtime-broker.test.ts";
+    return `packages/native-runtime/src/agent-runtime/${match[1]}.test.ts`;
   }],
 ];
 
@@ -176,7 +178,7 @@ export function validateRuntimeDiff({ agent, changes, packageDiffs = [] }) {
 
 function isAllowedPath(agent, path) {
   if (COMMON_EXACT.has(path) || SHARED_EXACT.has(path) || AGENT_EXACT[agent].has(path)) return true;
-  if (agent === "codex" && /^packages\/desktop\/main\/agent-runtime\/codex-[^/]+(?:\.test)?\.ts$/.test(path)) return true;
+  if (agent === "codex" && /^packages\/native-runtime\/src\/agent-runtime\/codex-[^/]+(?:\.test)?\.ts$/.test(path)) return true;
   return false;
 }
 
@@ -210,7 +212,7 @@ function validatePackageDiff(agent, diff, issues, releaseVersions) {
 
   const allowedPaths = new Set();
   const selectedDependency = AGENT_DEPENDENCY[agent];
-  if (selectedDependency && ["packages/desktop/package.json", "packages/server/package.json"].includes(diff.path)) {
+  if (selectedDependency && ["packages/desktop/package.json", "packages/native-runtime/package.json", "packages/server/package.json"].includes(diff.path)) {
     allowedPaths.add(`dependencies.${selectedDependency}`);
     const value = after.dependencies?.[selectedDependency];
     const normalized = agent === "claude" && typeof value === "string" && value.startsWith("^") ? value.slice(1) : value;

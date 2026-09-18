@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { RuntimeSessionError } from "../../../../../desktop/main/agent-runtime/types.js";
+import { RuntimeSessionError } from "@agent/native-runtime";
 import { getNativeRuntimeService, runtimeErrorStatus } from "../../../../lib/native-runtime-service";
 
 export const dynamic = "force-dynamic";

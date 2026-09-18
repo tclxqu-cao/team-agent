@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { AgentEvent } from "@agent/core";
-import type { AgentRuntimeAdapter, UnifiedSessionDetail } from "../packages/desktop/main/agent-runtime/types.js";
+import type { AgentRuntimeAdapter, UnifiedSessionDetail } from "../packages/native-runtime/src/agent-runtime/types.js";
 
 export type SmokeAgent = "codex" | "claude" | "opencode";
 export type SmokeFailureCategory = "compatibility" | "authentication" | "rate_limit" | "registry" | "runner" | "unknown";
@@ -361,7 +361,7 @@ export async function main(args = process.argv.slice(2)) {
 
 async function createAdapter(agent: SmokeAgent, runtimeHome: string, executable?: string): Promise<AgentRuntimeAdapter> {
   if (agent === "codex") {
-    const { CodexRuntimeAdapter } = await import("../packages/desktop/main/agent-runtime/codex-runtime-adapter.js");
+    const { CodexRuntimeAdapter } = await import("../packages/native-runtime/src/agent-runtime/codex-runtime-adapter.js");
     return new CodexRuntimeAdapter({
       codexExecutable: executable,
       environment: process.env,
@@ -371,10 +371,10 @@ async function createAdapter(agent: SmokeAgent, runtimeHome: string, executable?
     });
   }
   if (agent === "claude") {
-    const { ClaudeRuntimeAdapter } = await import("../packages/desktop/main/agent-runtime/claude-runtime-adapter.js");
+    const { ClaudeRuntimeAdapter } = await import("../packages/native-runtime/src/agent-runtime/claude-runtime-adapter.js");
     return new ClaudeRuntimeAdapter({ sessionRoot: resolve(runtimeHome, "projects") });
   }
-  const { OpenCodeRuntimeAdapter } = await import("../packages/desktop/main/agent-runtime/opencode-runtime-adapter.js");
+  const { OpenCodeRuntimeAdapter } = await import("../packages/native-runtime/src/agent-runtime/opencode-runtime-adapter.js");
   return new OpenCodeRuntimeAdapter({
     executable,
     environment: process.env,

@@ -1135,7 +1135,9 @@ describe("Claude session management", () => {
     state.sessions = [sdkSession("cc-run")];
     state.stream = [{ type: "result", subtype: "success", is_error: false, result: "ok" }];
     const adapter = new ClaudeRuntimeAdapter({ occupancyTtlMs: 0, sessionRoot: "/tmp/claude-projects" });
-    const running = adapter.run("cc-run", "hi");
+    // `run` is typed as AsyncIterable (the adapter contract), so drive it through
+    // the async iterator protocol rather than generator-only `.next()`.
+    const running = adapter.run("cc-run", "hi")[Symbol.asyncIterator]();
     await running.next();
 
     await expect(adapter.delete!("cc-run")).rejects.toMatchObject({ code: "SESSION_OCCUPIED" });

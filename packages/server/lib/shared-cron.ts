@@ -1,5 +1,5 @@
 import { CronTasks, type CronTask } from "@agent/core";
-import { CronScheduler } from "../../desktop/main/cron/cronScheduler";
+import { CronScheduler } from "@agent/native-runtime";
 import { getServerBaseDir } from "./server-data-dir";
 
 class SharedCronService {

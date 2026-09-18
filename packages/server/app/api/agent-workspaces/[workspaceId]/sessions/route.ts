@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { normalizeToolPermissionMode } from "@agent/core";
-import { paginateByOffset } from "../../../../../../desktop/main/agent-runtime/agent-workspace-index";
-import type { WorkspaceSessionQuery } from "../../../../../../desktop/main/agent-runtime/types";
+import { paginateByOffset, type WorkspaceSessionQuery } from "@agent/native-runtime";
 import { agentHost } from "../../../agent-host";
 import { getNativeRuntimeService, runtimeErrorStatus } from "../../../../../lib/native-runtime-service";
 import { readAgentType, readWorkspaceQuery } from "../../agent-workspace-http";

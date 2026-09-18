@@ -1,7 +1,7 @@
 import { createServer, type Server, type Socket } from "node:net";
 import { chmodSync, existsSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import { resolveNativeRuntimeDirectory } from "../agent-runtime/native-runtime-broker.js";
+import { resolveNativeRuntimeDirectory } from "@agent/native-runtime";
 import {
   AI_HUB_RELAY_SOCKET_NAME,
   MAX_RELAY_IMAGES,

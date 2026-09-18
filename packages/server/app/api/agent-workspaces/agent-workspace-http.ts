@@ -1,4 +1,4 @@
-import type { AgentType, WorkspaceQuery } from "../../../../desktop/main/agent-runtime/types";
+import type { AgentType, WorkspaceQuery } from "@agent/native-runtime";
 
 const AGENT_TYPES = new Set<AgentType>(["customer-agent", "codex", "claude-code", "opencode"]);
 

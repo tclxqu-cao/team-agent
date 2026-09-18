@@ -1,0 +1,17 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "baseUrl": ".",
+    // Unlike the other packages this one is a *consumer* of @agent/core: compiling
+    // against core's sources would drag them under this package's rootDir. Resolve
+    // the built declarations instead, the same way server/desktop do at runtime.
+    "paths": {
+      "@agent/core": ["../core/dist"],
+      "@agent/core/*": ["../core/dist/*"]
+    }
+  },
+  "include": ["src"],
+  "exclude": ["src/**/__tests__"]
+}

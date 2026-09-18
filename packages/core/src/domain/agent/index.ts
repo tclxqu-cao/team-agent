@@ -20,3 +20,12 @@ export {
   mergeReasoningSummaryDelta,
   reduceRuntimeProgress,
 } from './native-runtime-events.js';
+export {
+  CODEX_MINIMUM_VERSION,
+  isVersionAtLeast,
+  parseVersion,
+  selectExternalCli,
+  type ExternalCliCandidate,
+  type ExternalCliResolution,
+  type ExternalCliSource,
+} from './external-cli.js';

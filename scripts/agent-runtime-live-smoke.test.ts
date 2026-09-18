@@ -8,7 +8,7 @@ import type {
   RuntimeRunOptions,
   UnifiedSessionDetail,
   UnifiedSessionSummary,
-} from "../packages/desktop/main/agent-runtime/types.js";
+} from "../packages/native-runtime/src/agent-runtime/types.js";
 import {
   classifySmokeFailure,
   redactSensitive,

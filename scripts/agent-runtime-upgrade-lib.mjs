@@ -50,23 +50,26 @@ const AGENT_TEXT_FILES = {
     ["packages/cli/src/codex-runtime-manager.test.ts", 1],
     ["packages/cli/src/runtime-manager.test.ts", 1],
     ["packages/cli/src/service/service-command.test.ts", 1],
-    ["packages/desktop/main/agent-runtime/codex-session-compatibility.test.ts", 6],
-    ["packages/desktop/main/agent-runtime/codex-session-disk-catalog.test.ts", 13],
-    ["packages/desktop/main/agent-runtime/codex-session-disk-catalog.bench.test.ts", 1],
-    ["packages/desktop/main/agent-runtime/agent-workspace-index.test.ts", 2],
-    ["packages/desktop/main/agent-runtime/native-runtime-broker.ts", 1],
-    ["packages/desktop/main/agent-runtime/native-runtime-broker.test.ts", 8],
-    ["packages/desktop/main/agent-runtime/unified-session-service.test.ts", 3],
+    ["packages/native-runtime/src/agent-runtime/codex-session-compatibility.test.ts", 6],
+    ["packages/native-runtime/src/agent-runtime/codex-session-disk-catalog.test.ts", 13],
+    ["packages/native-runtime/src/agent-runtime/codex-session-disk-catalog.bench.test.ts", 1],
+    ["packages/native-runtime/src/agent-runtime/agent-workspace-index.test.ts", 2],
+    ["packages/native-runtime/src/agent-runtime/native-runtime-broker.ts", 1],
+    ["packages/native-runtime/src/agent-runtime/native-runtime-broker.test.ts", 8],
+    ["packages/native-runtime/src/agent-runtime/unified-session-service.test.ts", 3],
   ],
   claude: [],
   opencode: [
     ["packages/cli/src/runtime-manager.test.ts", 1],
-    ["packages/desktop/main/agent-runtime/opencode-runtime-adapter.test.ts", 1],
+    ["packages/native-runtime/src/agent-runtime/opencode-runtime-adapter.test.ts", 1],
   ],
 };
 
 const DEPENDENCY_FILES = [
   "packages/desktop/package.json",
+  // The Claude/OpenCode adapters moved to @agent/native-runtime, so the SDK pins
+  // live in its manifest too; keep this list aligned with the upgrade allowlist.
+  "packages/native-runtime/package.json",
   "packages/server/package.json",
 ];
 
@@ -201,7 +204,7 @@ export async function checkRuntimeVersionDrift(root, options = {}) {
     if (compareStableSemver(manifest.opencode.cliVersion, minimum) < 0) {
       issues.push(`OpenCode managed runtime must be >=${minimum}`);
     }
-    await checkTextValue(io, root, "packages/desktop/main/agent-runtime/opencode-runtime-adapter.ts", /const OPENCODE_MINIMUM_VERSION = "([^"]+)";/, minimum, "OpenCode minimum runtime", issues);
+    await checkTextValue(io, root, "packages/native-runtime/src/agent-runtime/opencode-runtime-adapter.ts", /const OPENCODE_MINIMUM_VERSION = "([^"]+)";/, minimum, "OpenCode minimum runtime", issues);
   } catch (error) {
     issues.push(`OpenCode minimum runtime: ${error.message}`);
   }

@@ -20,6 +20,8 @@
     "paths": {
       "@agent/core": ["./packages/core/src"],
       "@agent/core/*": ["./packages/core/src/*"],
+      "@agent/native-runtime": ["./packages/native-runtime/src"],
+      "@agent/native-runtime/*": ["./packages/native-runtime/src/*"],
       "@agent/sdk": ["./packages/sdk/src"]
     }
   },

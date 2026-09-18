@@ -1,7 +1,11 @@
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { delimiter, join, resolve, sep, win32 } from "node:path";
+import { resolveExternalCli } from "./external-cli-probe";
+import { serverLogger } from "./global-logger";
 import {
+  CODEX_MINIMUM_VERSION,
+  type ExternalCliResolution,
   SQLiteProjectStore,
   type AgentEvent,
   type SessionHistoryQuery,
@@ -12,31 +16,29 @@ import {
   type ToolPermissionMode,
 } from "@agent/core";
 import {
+  RuntimeSessionError,
   createNativeRuntimeBrokerClient,
   createNativeRuntimeBrokerHostRuntime,
+  decodeUnifiedSessionId,
+  type AgentType,
+  type AgentWorkspace,
   type BrokerRunEvent,
   type BrokerRunStart,
+  type CreateRuntimeSessionOptions,
+  type ImportAgentWorkspaceResult,
+  type NativeReasoningEffort,
   type NativeRuntimeBrokerSnapshot,
   type NativeRuntimeController,
-} from "../../desktop/main/agent-runtime/native-runtime-broker.js";
-import { decodeUnifiedSessionId } from "../../desktop/main/agent-runtime/session-id.js";
-import { RuntimeSessionError } from "../../desktop/main/agent-runtime/types.js";
-import type {
-  AgentType,
-  AgentWorkspace,
-  CreateRuntimeSessionOptions,
-  ImportAgentWorkspaceResult,
-  NativeReasoningEffort,
-  RuntimeHealth,
-  RuntimeModelInfo,
-  RuntimeModelSelection,
-  RuntimeQuestionAnswer,
-  UnifiedSessionDetail,
-  UnifiedSessionSummary,
-  WorkspacePage,
-  WorkspaceQuery,
-  WorkspaceSessionQuery,
-} from "../../desktop/main/agent-runtime/types.js";
+  type RuntimeHealth,
+  type RuntimeModelInfo,
+  type RuntimeModelSelection,
+  type RuntimeQuestionAnswer,
+  type UnifiedSessionDetail,
+  type UnifiedSessionSummary,
+  type WorkspacePage,
+  type WorkspaceQuery,
+  type WorkspaceSessionQuery,
+} from "@agent/native-runtime";
 import type { SessionGoalState } from "@agent/core";
 import { getServerBaseDir } from "./server-data-dir";
 
@@ -481,17 +483,65 @@ function mergePendingSessionContext(
  * The globalThis guard keeps dev HMR from spawning duplicate codex
  * app-server processes across module reloads.
  */
+export interface NativeRuntimeHostDiagnostics {
+  pid: number;
+  codex: ExternalCliResolution;
+  opencode: ExternalCliResolution;
+}
+
+let hostDiagnostics: NativeRuntimeHostDiagnostics | null = null;
+
+/**
+ * How the last runtime this process built resolved its CLIs, or `null` while it
+ * is only a broker client. Lets the UI say *which* process serves native agents
+ * and with which binary, instead of an unexplained `spawn … ENOENT`.
+ */
+export function getNativeRuntimeHostDiagnostics(): NativeRuntimeHostDiagnostics | null {
+  return hostDiagnostics;
+}
+
+/** Surface "unavailable" with the real reason instead of spawning a missing path. */
+function applyRuntimeError(variable: string, resolution: ExternalCliResolution): void {
+  if (resolution.executable) delete process.env[variable];
+  else process.env[variable] = resolution.detail;
+}
+
 export function getNativeRuntimeService(): NativeRuntimeService {
   if (!globalWithService.__nativeRuntimeService) {
     ensureNativeCliPath();
     const projectStore = new SQLiteProjectStore(getServerBaseDir());
     globalWithService.__nativeRuntimeService = new NativeRuntimeService(
       createNativeRuntimeBrokerClient({
-        runtimeFactory: (callbacks) => createNativeRuntimeBrokerHostRuntime(
-          process.env.AGENT_CODEX_BIN?.trim() || "codex",
-          callbacks,
-          process.env.AGENT_OPENCODE_BIN?.trim() || "opencode",
-        ),
+        // Only the process that wins the broker host race builds the real
+        // runtime, so CLIs are resolved here — against this process' own
+        // environment — rather than trusting whatever the supervisor injected.
+        runtimeFactory: (callbacks) => {
+          const codex = resolveExternalCli({
+            name: "codex",
+            environmentVariable: "AGENT_CODEX_BIN",
+            minimumVersion: CODEX_MINIMUM_VERSION,
+          });
+          const opencode = resolveExternalCli({
+            name: "opencode",
+            environmentVariable: "AGENT_OPENCODE_BIN",
+          });
+          hostDiagnostics = { pid: process.pid, codex, opencode };
+          applyRuntimeError("AGENT_CODEX_RUNTIME_ERROR", codex);
+          applyRuntimeError("AGENT_OPENCODE_RUNTIME_ERROR", opencode);
+          serverLogger().info("native runtime host elected", {
+            pid: process.pid,
+            codex: codex.executable ?? null,
+            codexSource: codex.source ?? null,
+            codexDetail: codex.detail,
+            opencode: opencode.executable ?? null,
+            opencodeDetail: opencode.detail,
+          });
+          return createNativeRuntimeBrokerHostRuntime(
+            codex.executable ?? "codex",
+            callbacks,
+            opencode.executable ?? "opencode",
+          );
+        },
       }),
       () => projectStore.list(),
     );

@@ -50,9 +50,8 @@ import {
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { mkdir, writeFile } from "node:fs/promises";
-import { CronScheduler } from "./cron/cronScheduler.js";
+import { CronScheduler, SubAgentDispatcher } from "@agent/native-runtime";
 import { MCPConnectionManager } from "./mcp-connection-manager.js";
-import { SubAgentDispatcher } from "./sub-agent-dispatcher.js";
 import { QuestionManager } from "./question-manager.js";
 
 export function shouldInterruptPreviousRun(runCountIncludingCurrent: number): boolean {
