@@ -1,5 +1,4 @@
 import { execFile } from "node:child_process";
-import { readFileSync } from "node:fs";
 import { access, readdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import { delimiter, dirname, resolve } from "node:path";
@@ -8,11 +7,9 @@ import { promisify } from "node:util";
 import { MINIMUM_NODE_VERSION, compareNodeVersions, isSupportedNodeVersion, parseNodeVersion } from "./runtime-policy.mjs";
 
 const execFileAsync = promisify(execFile);
-// 版本唯一源头：packages/cli/package.json 的 version（发版只改那一处）
-const RELEASE_VERSION = JSON.parse(
-  readFileSync(new URL("../package.json", import.meta.url), "utf8"),
-).version;
-const RELEASE_BASE_URL = `https://gitee.com/caoqu/team-agent/releases/download/v${RELEASE_VERSION}`;
+// 安装引导地址：指向仓库主分支上的安装脚本（raw 路径）。
+// 不走 release 产物 —— 避免依赖「发布流程是否产出 asset」，用户拿到的始终是最新安装器。
+const INSTALL_BASE_URL = "https://github.com/tclxqu-cao/team-agent/raw/main/packages/cli/install";
 const FORWARDED_SIGNALS = ["SIGINT", "SIGTERM", "SIGHUP"];
 
 export async function runNodePreflight(options = {}) {
@@ -164,9 +161,9 @@ function waitForChild(childPromise, processHost) {
 
 function standaloneInstallerMessage(platform) {
   if (platform === "win32") {
-    return `Node.js 18+ is required for automatic bootstrap. Run: irm ${RELEASE_BASE_URL}/install-agentroam.ps1 | iex`;
+    return `Node.js 18+ is required for automatic bootstrap. Run: irm ${INSTALL_BASE_URL}/install-agentroam.ps1 | iex`;
   }
-  return `Node.js 18+ is required for automatic bootstrap. Run: curl -fsSL ${RELEASE_BASE_URL}/install-agentroam.sh | sh`;
+  return `Node.js 18+ is required for automatic bootstrap. Run: curl -fsSL ${INSTALL_BASE_URL}/install-agentroam.sh | sh`;
 }
 
 function cliError(message) {
