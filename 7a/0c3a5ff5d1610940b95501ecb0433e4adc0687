@@ -1,0 +1,28 @@
+packages/desktop/main/desktop-live-state.test.ts
+  h_b0bf4228a0b7ec 9-11,15,18,24,28-35
+packages/desktop/main/desktop-live-state.ts
+  h_b0bf4228a0b7ec 5-6,10-15,23
+packages/desktop/main/desktop-screen-screencast.test.ts
+  h_b0bf4228a0b7ec 33,57,78,100,115,145-186,191,216,241,262,281
+packages/desktop/main/desktop-screen-screencast.ts
+  h_b0bf4228a0b7ec 7-9,13,182,188-189,192,200,202
+packages/desktop/main/index.ts
+  h_b0bf4228a0b7ec 893-894,900-918,931-932,947,987-1010,1014,1094
+packages/desktop/main/preload.ts
+  h_b0bf4228a0b7ec 263-264
+packages/desktop/renderer/components/DesktopLiveSettings.tsx
+  h_b0bf4228a0b7ec 2,31,39-41,49-57,119-144
+packages/desktop/renderer/global.d.ts
+  h_b0bf4228a0b7ec 409-410,526-532
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "7a0c3a5ff5d1610940b95501ecb0433e4adc0687",
+  "prompts": {},
+  "humans": {
+    "h_b0bf4228a0b7ec": {
+      "author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

@@ -1,0 +1,20 @@
+packages/cli/src/cli.ts
+  h_b0bf4228a0b7ec 4,23,48-52
+packages/cli/src/error-log.ts
+  h_b0bf4228a0b7ec 1-109
+packages/tui/src/main.tsx
+  h_b0bf4228a0b7ec 7,27-37
+scripts/build-windows-remote-helper.mjs
+  h_b0bf4228a0b7ec 1-43
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "18086cd8f9ca83cff3a78bd440575e5fe1a5c2b5",
+  "prompts": {},
+  "humans": {
+    "h_b0bf4228a0b7ec": {
+      "author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

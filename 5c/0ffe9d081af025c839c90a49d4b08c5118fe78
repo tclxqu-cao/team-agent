@@ -1,0 +1,32 @@
+packages/server/app/api/agent-host.ts
+  h_b0bf4228a0b7ec 38,141,357-366,378,597,643-654,680,700
+packages/server/app/api/agent/run/route.ts
+  h_b0bf4228a0b7ec 10-11,15,68,113,123
+packages/server/app/api/agent/stream/route.ts
+  h_b0bf4228a0b7ec 6,9
+packages/server/lib/device-pairing-gateway.mjs
+  h_b0bf4228a0b7ec 158-164
+packages/server/lib/remote-control/remote-authorization.mjs
+  h_b0bf4228a0b7ec 33-37,215-220,222-223,231-237
+packages/server/lib/remote-control/remote-authorization.test.ts
+  h_b0bf4228a0b7ec 84-110
+packages/server/next.config.js
+  h_b0bf4228a0b7ec 27
+packages/server/package.json
+  h_b0bf4228a0b7ec 31
+packages/server/public/pwa/service-worker.js
+  h_b0bf4228a0b7ec 15-41
+packages/server/ws-server.mjs
+  h_b0bf4228a0b7ec 34,68-77,488,1185,1256-1259,1262-1274,1315-1318
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "5c0ffe9d081af025c839c90a49d4b08c5118fe78",
+  "prompts": {},
+  "humans": {
+    "h_b0bf4228a0b7ec": {
+      "author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

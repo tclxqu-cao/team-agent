@@ -1,0 +1,16 @@
+packages/desktop/renderer/components/BrowserLivePanel.tsx
+  h_b0bf4228a0b7ec 135-136,143,156,297-298,303-305,307-308,310,312-315,657,665-666,700,846-852,855-858
+packages/webapp/src/presentation/web.css
+  h_b0bf4228a0b7ec 327-335
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "8e78f2eea146d73018d3509cd256b55736900bed",
+  "prompts": {},
+  "humans": {
+    "h_b0bf4228a0b7ec": {
+      "author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

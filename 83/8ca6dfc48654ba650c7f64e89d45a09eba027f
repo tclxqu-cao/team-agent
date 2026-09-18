@@ -1,0 +1,21 @@
+packages/server/tsconfig.json
+  s_598eb16b72d68c::t_6fa661a956584e 36-38
+packages/server/.agents/.scheduler.lock
+  s_598eb16b72d68c::t_503cb3a48dbc80 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "838ca6dfc48654ba650c7f64e89d45a09eba027f",
+  "prompts": {},
+  "sessions": {
+    "s_598eb16b72d68c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a09ff0-5e5f-76e0-aeb9-e76de04d28f0",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

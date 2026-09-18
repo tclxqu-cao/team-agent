@@ -1,0 +1,73 @@
+CLAUDE.md
+  s_6b9e80a52ca62d::t_7a0e0570e3e9e4 54-60
+bun.lock
+  s_6b9e80a52ca62d::t_29c0cc79acc1c4 17,33-38,97,101
+package.json
+  s_6b9e80a52ca62d::t_8715d35a8e07f3 53-54
+packages/cli/README.md
+  s_6b9e80a52ca62d::t_d57f86d22507ba 24,26,34,36
+packages/cli/bin/node-preflight.mjs
+  s_6b9e80a52ca62d::t_0957d269454420 10
+packages/cli/install/README.md
+  s_6b9e80a52ca62d::t_4c4d5d0ea72274 43
+packages/cli/install/install-agentroam.sh
+  s_6b9e80a52ca62d::t_26a01f89fe3514 7
+packages/cli/package.json
+  s_6b9e80a52ca62d::t_0c9cbf9c59c0c2 3,29-30
+packages/cli/src/cloudflared/bundled-asset.test.ts
+  s_6b9e80a52ca62d::t_369b6189347909 5,15,54-67,74
+packages/cli/src/cloudflared/bundled-asset.ts
+  s_6b9e80a52ca62d::t_0dc9a46b1173b6 3,5,45
+packages/cli/src/platform-packages.test.ts
+  s_6b9e80a52ca62d::t_6ed9e618c8f092 6,37,80
+packages/cli/src/platform-packages.ts
+  s_6b9e80a52ca62d::t_92c6491e2dc795 7
+packages/cli/src/tunnel/public-readiness.ts
+  s_6b9e80a52ca62d::t_a247eb72aa45f7 47
+packages/runtime-darwin-arm64/manifest.json
+  s_6b9e80a52ca62d::t_7db212aa39fbd7 2
+packages/runtime-darwin-arm64/package.json
+  s_6b9e80a52ca62d::t_4fe41baad9dc66 3
+packages/runtime-win32-x64/manifest.json
+  s_6b9e80a52ca62d::t_fc289ad911af08 2
+packages/runtime-win32-x64/package.json
+  s_6b9e80a52ca62d::t_0f09bced86cbb7 3
+packages/server/app/web/error.tsx
+  s_6b9e80a52ca62d::t_0a4ca635b9e0a4 1-12
+packages/server/app/web/page.tsx
+  s_6b9e80a52ca62d::t_e32c341f91e77e 8,480-482
+scripts/agent-runtime-upgrade-lib.mjs
+  s_6b9e80a52ca62d::t_3166878e8df4cd 293,297,305,452-453,457-464,468-469
+scripts/agent-runtime-upgrade.test.mjs
+  s_6b9e80a52ca62d::t_06889350190be2 246-275
+scripts/agentroam-release-lib.mjs
+  s_6b9e80a52ca62d::t_ff7ba1297f7e2e 34-35,39-40,45,48,53,96,138-140,144,223,245,247,250,256-258,273,284,286,288,303-306,309,334,411-412
+scripts/audit-cli-tarball.mjs
+  s_6b9e80a52ca62d::t_51878aefbbfc5a 3,19,28-29
+scripts/build-tui-package.mjs
+  s_6b9e80a52ca62d::t_f96cf36c308e02 6-8,11-12,16,42,44
+scripts/incremental-cli-release.mjs
+  s_6b9e80a52ca62d::t_b5f8c14afa0ccc 1-187
+scripts/incremental-cli-release.test.mjs
+  s_6b9e80a52ca62d::t_7d58ca1e387531 1-119
+scripts/publish-agentroam-release.mjs
+  s_6b9e80a52ca62d::t_8d43050a6ed0db 31-37
+scripts/publish-agentroam-release.test.mjs
+  s_6b9e80a52ca62d::t_44fe311d2477d1 47,210,229-231,298-343
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "c3bbc472878fc6a20a1d38ac8793d369fea201e8",
+  "prompts": {},
+  "sessions": {
+    "s_6b9e80a52ca62d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a09f40-ec7f-74c0-a008-4264fcd09dc6",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

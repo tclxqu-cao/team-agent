@@ -1,0 +1,16 @@
+packages/cli/README.md
+  h_b0bf4228a0b7ec 20-21,24-27,34-37,59,75,92
+packages/cli/install/README.md
+  h_b0bf4228a0b7ec 3,8,16,43,45
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "36f9fc2349fe93df65ecbbb8a4dfb367246426cb",
+  "prompts": {},
+  "humans": {
+    "h_b0bf4228a0b7ec": {
+      "author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

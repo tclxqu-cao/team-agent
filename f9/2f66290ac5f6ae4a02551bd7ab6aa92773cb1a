@@ -1,0 +1,46 @@
+packages/cli/bin/node-preflight.mjs
+  h_b0bf4228a0b7ec 10
+packages/cli/install/install-agentroam.ps1
+  h_b0bf4228a0b7ec 7
+packages/cli/install/install-agentroam.sh
+  h_b0bf4228a0b7ec 7
+packages/cli/package.json
+  h_b0bf4228a0b7ec 3,29-34
+packages/cli/src/platform-packages.ts
+  h_b0bf4228a0b7ec 7
+packages/cli/src/tunnel/public-readiness.ts
+  h_b0bf4228a0b7ec 47
+packages/cloudflared-darwin-arm64/manifest.json
+  h_b0bf4228a0b7ec 2
+packages/cloudflared-darwin-arm64/package.json
+  h_b0bf4228a0b7ec 3
+packages/cloudflared-win32-x64/manifest.json
+  h_b0bf4228a0b7ec 2
+packages/cloudflared-win32-x64/package.json
+  h_b0bf4228a0b7ec 3
+packages/runtime-darwin-arm64/manifest.json
+  h_b0bf4228a0b7ec 2,7
+packages/runtime-darwin-arm64/package.json
+  h_b0bf4228a0b7ec 3
+packages/runtime-win32-x64/manifest.json
+  h_b0bf4228a0b7ec 2,7
+packages/runtime-win32-x64/package.json
+  h_b0bf4228a0b7ec 3
+packages/tui-darwin-arm64/package.json
+  h_b0bf4228a0b7ec 3
+packages/tui-win32-x64/package.json
+  h_b0bf4228a0b7ec 3
+scripts/audit-runtime-tarball.mjs
+  h_b0bf4228a0b7ec 32-34,67-68
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "f92f66290ac5f6ae4a02551bd7ab6aa92773cb1a",
+  "prompts": {},
+  "humans": {
+    "h_b0bf4228a0b7ec": {
+      "author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

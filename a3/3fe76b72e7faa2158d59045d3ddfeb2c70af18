@@ -1,0 +1,26 @@
+packages/desktop/renderer/App.tsx
+  h_b0bf4228a0b7ec 189-193,592-596,1142-1188,1550,1619,1631-1643,1798-1809
+packages/desktop/renderer/components/BrowserLivePanel.test.ts
+  h_b0bf4228a0b7ec 3,49-82
+packages/desktop/renderer/components/BrowserLivePanel.tsx
+  h_b0bf4228a0b7ec 35-36,70-87,159-161,434,485,698,701,704,706,835,1126-1131
+packages/desktop/renderer/components/SidebarDeleteConfirmation.tsx
+  h_b0bf4228a0b7ec 5,29,52
+packages/desktop/renderer/components/SidebarReferenceStyle.test.ts
+  h_b0bf4228a0b7ec 203,229-230,239-241,243,248-255
+packages/desktop/renderer/global.d.ts
+  h_b0bf4228a0b7ec 577-578
+packages/desktop/renderer/main.tsx
+  h_b0bf4228a0b7ec 7-24
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "a33fe76b72e7faa2158d59045d3ddfeb2c70af18",
+  "prompts": {},
+  "humans": {
+    "h_b0bf4228a0b7ec": {
+      "author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

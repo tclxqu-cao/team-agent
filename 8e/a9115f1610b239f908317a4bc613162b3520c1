@@ -1,0 +1,96 @@
+packages/desktop/renderer/components/BrowserLivePanel.test.ts
+  s_0e2b3be5706ac6::t_1311c4de2acc94 1-47
+packages/desktop/renderer/components/BrowserLivePanel.tsx
+  s_0e2b3be5706ac6::t_1311c4de2acc94 35-45,87,89,99-102
+  s_0e2b3be5706ac6::t_23e6e353e92f8f 2,194,218,344-345
+  s_0e2b3be5706ac6::t_cbc6f18ffd8b35 9,70-77,260,298
+  s_0e2b3be5706ac6::t_e3e7bab3d43c74 1,3-8,10-34,46-55,57-69,78-86,88,90-98,103-193,195-197,217,219-221,223-259,261-297,299-310,314-325,327-335,337-343,346-347
+  s_0e2b3be5706ac6::t_59db3bf33bd297 198-216,311-313,326,336
+  s_0e2b3be5706ac6::t_380baca6d55734 56,222
+  s_0e2b3be5706ac6::t_c7aed6e9249a60 348-350
+packages/core/src/index.ts
+  s_0e2b3be5706ac6::t_2dbd7fefc2d6dd 20
+  s_0e2b3be5706ac6::t_38cca5f097c6e2 21-22
+packages/desktop/renderer/global.d.ts
+  s_0e2b3be5706ac6::t_0b75b0244e1cb9 1
+  s_0e2b3be5706ac6::t_e344672e876709 3
+  s_0e2b3be5706ac6::t_4583581ff8f5a5 433
+  s_0e2b3be5706ac6::t_e3e3fb607fcc05 389,399,404,412,418,425,435,443-449,463
+  s_0e2b3be5706ac6::t_d610033f6d7561 2
+  s_0e2b3be5706ac6::t_6845ff5709c386 386-388
+  s_0e2b3be5706ac6::t_3d16eca1fb2088 390-392,396-398
+  s_0e2b3be5706ac6::t_6570d98f34fe85 400-403
+  s_0e2b3be5706ac6::t_42e93d611be91b 405-407,409-411
+  s_0e2b3be5706ac6::t_c25fb828332507 413-417
+  s_0e2b3be5706ac6::t_a2a0780e8eb32a 419-424
+  s_0e2b3be5706ac6::t_5c6c082e41bee2 426-428,430-432
+  s_0e2b3be5706ac6::t_aad8435f4c0bd1 434
+  s_0e2b3be5706ac6::t_f9ec813eab5cb5 436-438,440-442
+packages/server/ws-server.mjs
+  s_0e2b3be5706ac6::t_4eef0dd765e18b 1153
+  s_0e2b3be5706ac6::t_6ca133e404ff74 56
+  s_0e2b3be5706ac6::t_2acaa66276cd97 752-755,848
+  s_0e2b3be5706ac6::t_65511510be84ea 30,523,736,749-751,756-757,1150-1152
+  s_0e2b3be5706ac6::t_fd6fdc3c5db5e6 524-525,542-553,566-571,737-748,1145-1149,1165-1173
+  s_0e2b3be5706ac6::t_4a0820454bb588 572-574
+  s_0e2b3be5706ac6::t_37e7aa0f8bd8ed 758
+  s_0e2b3be5706ac6::t_a713cf441d7ce7 845-847
+  s_0e2b3be5706ac6::t_f3a400f0759546 849-851
+  s_0e2b3be5706ac6::t_bc002bfb6ac8d3 1154-1156
+  s_0e2b3be5706ac6::t_f1e5f1676210a5 1174-1176
+packages/desktop/renderer/components/ChatHeaderActions.tsx
+  s_683b6a8a64ccfb::t_9eef6617e534c6 29,31-32
+  s_0e2b3be5706ac6::t_e3e7bab3d43c74 10-11,23,36-37,42,44-56
+  s_0e2b3be5706ac6::t_4310e4dc1530ca 24
+  s_0e2b3be5706ac6::t_00f758b731eb53 35
+  s_0e2b3be5706ac6::t_1ac58d35331322 38-41
+  s_0e2b3be5706ac6::t_b5163f715454f2 43
+packages/webapp/src/presentation/web.css
+  s_0e2b3be5706ac6::t_576c39db420b84 71
+  s_0e2b3be5706ac6::t_380baca6d55734 84,90-93,372,375-378
+  s_0e2b3be5706ac6::t_8f6b72270b8b3d 66-70,72-83,85-89,94-371,373-374,379-404
+packages/desktop/renderer/components/ChatView.tsx
+  s_683b6a8a64ccfb::t_9eef6617e534c6 2539,4725
+  s_0e2b3be5706ac6::t_e3e7bab3d43c74 331,383,464,533,3299-3302,3309-3313
+  s_0e2b3be5706ac6::t_fd9f026fb94e16 3314
+packages/desktop/renderer/components/ChatHeaderActions.test.ts
+  s_683b6a8a64ccfb::t_9eef6617e534c6 41,53,69,71,81-93
+  s_0e2b3be5706ac6::t_06d2642ee34fef 26-37,39-40,43-44
+  s_0e2b3be5706ac6::t_cdbc246b3b843b 38
+  s_683b6a8a64ccfb::t_69d061cfbfa6f4 54
+packages/webapp/src/main.tsx
+  s_0e2b3be5706ac6::t_e3e3fb607fcc05 17,32,34
+  s_2dcd7315b74448::t_f3656af862a100 74-77
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "8ea9115f1610b239f908317a4bc613162b3520c1",
+  "prompts": {},
+  "sessions": {
+    "s_0e2b3be5706ac6": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a084c8-e9a5-7be3-b0a6-91f5ebf9b23f",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_2dcd7315b74448": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0859a-4433-7202-a204-253dd948f545",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_683b6a8a64ccfb": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a085be-bc7c-75a1-954e-3f6e053a2325",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

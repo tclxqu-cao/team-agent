@@ -1,0 +1,19 @@
+docs/superpowers/specs/2026-09-08-sidebar-session-pinning-design.md
+  s_58776e8cedd594::t_047ec9fcfe0347 1-52
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "85d872a3f42b45ba29960f51f110b8ab24ad8ecb",
+  "prompts": {},
+  "sessions": {
+    "s_58776e8cedd594": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a07fb6-6aed-7861-bb56-e2ec6c12515e",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

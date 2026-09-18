@@ -1,0 +1,16 @@
+packages/mobile/package.json
+  h_b0bf4228a0b7ec 7-8
+packages/mobile/scripts/patch-safe-area.mjs
+  h_b0bf4228a0b7ec 1-52
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "42ad65a8618ec8d5e375aa635ed1e35f16d32cec",
+  "prompts": {},
+  "humans": {
+    "h_b0bf4228a0b7ec": {
+      "author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

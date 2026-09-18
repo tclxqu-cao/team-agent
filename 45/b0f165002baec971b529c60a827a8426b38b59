@@ -1,0 +1,77 @@
+.github/workflows/agent-runtime-candidate-check.yml
+  s_b8f62304bbb3df::t_bfd0f7dce3d13f 146
+.github/workflows/agent-runtime-publish.yml
+  s_b8f62304bbb3df::t_94a3b5631842c5 238
+.github/workflows/cli-release-verify.yml
+  s_b8f62304bbb3df::t_5b2518234ec4d2 35
+.github/workflows/cli-release.yml
+  s_b8f62304bbb3df::t_99d2cab89bd2e1 38
+.github/workflows/windows-remote-helper.yml
+  s_b8f62304bbb3df::t_081a4aa4d5f7a1 1-35
+packages/cli/src/cli.ts
+  s_b8f62304bbb3df::t_454f18f9df87dd 1,136-137
+packages/cli/src/local-desktop-url.ts
+  s_b8f62304bbb3df::t_60b261e5c7645e 1-6
+packages/cli/src/service/runtime-state.test.ts
+  s_b8f62304bbb3df::t_fec99e8638ab11 19-22
+packages/cli/src/service/runtime-state.ts
+  s_b8f62304bbb3df::t_8d3de15ce3736c 35-38
+packages/cli/src/service/service-command.test.ts
+  s_b8f62304bbb3df::t_2f4b0328cb4600 197-210
+packages/cli/src/service/service-command.ts
+  s_b8f62304bbb3df::t_cfaa2cd4fed6ab 1,88,99,117,138
+packages/core/src/domain/live-view/live-view-registry.test.ts
+  s_31cfcf1fa62567::t_24b8afbcdd19e4 230-247
+packages/core/src/domain/live-view/live-view-registry.ts
+  s_31cfcf1fa62567::t_813294ec44ddde 69,241,250,324,345-346,355-359,428-433
+packages/desktop/renderer/components/BrowserLivePanel.tsx
+  s_31cfcf1fa62567::t_4af0031d59d0af 1,208,631,648,654,751-753,755-757,760,763,765
+packages/server/lib/remote-control/helper-manager.mjs
+  s_31cfcf1fa62567::t_3b2550196c91f7 10-11,60,67,69
+packages/server/lib/remote-control/helper-manager.test.ts
+  s_31cfcf1fa62567::t_4441fd2d359f63 13-34
+packages/server/lib/remote-control/remote-authorization.mjs
+  s_b8f62304bbb3df::t_cda8697d7bde1e 1,15-20,22-23,41,45,47,88,90,99,107,116,161,165,171-176,199-200
+packages/server/lib/remote-control/remote-authorization.test.ts
+  s_b8f62304bbb3df::t_4a0bf25d0c46a3 192-231
+packages/server/lib/remote-control/webrtc-video.mjs
+  s_b8f62304bbb3df::t_bc6a39647b6d20 36-38,73-83
+packages/server/lib/remote-control/webrtc-video.test.ts
+  s_b8f62304bbb3df::t_0b3776ca9fda12 37-64
+packages/server/lib/remote-control/windows-helper.mjs
+  s_b8f62304bbb3df::t_d406e37545e304 1-103
+packages/server/lib/remote-control/windows-helper.test.ts
+  s_b8f62304bbb3df::t_c8bb1c46722064 1-57
+scripts/runtime-native-files.mjs
+  s_b8f62304bbb3df::t_8553c837213b81 20
+scripts/stage-cli-runtime.mjs
+  s_b8f62304bbb3df::t_46893b0d378ba3 43-49
+scripts/verify-cli-install.mjs
+  s_b8f62304bbb3df::t_870dca063a7664 89
+scripts/verify-windows-remote-helper.mjs
+  s_b8f62304bbb3df::t_781876b92b5e2a 1-45
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "45b0f165002baec971b529c60a827a8426b38b59",
+  "prompts": {},
+  "sessions": {
+    "s_31cfcf1fa62567": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a09fc4-b1f2-72e1-a9d4-eb6f40c45b76",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_b8f62304bbb3df": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0a334-079c-7621-8063-15b888a17b6a",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

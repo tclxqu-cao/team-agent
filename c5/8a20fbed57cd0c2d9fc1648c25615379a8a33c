@@ -1,0 +1,19 @@
+packages/desktop/.agent-data/asr-models/sherpa-onnx-streaming-zipformer-zh-int8-2025-06-30/tokens.txt
+  s_6dde0ae0856608::t_5bf0ea86ba33c3 1-2002
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "c58a20fbed57cd0c2d9fc1648c25615379a8a33c",
+  "prompts": {},
+  "sessions": {
+    "s_6dde0ae0856608": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a08aa7-fa06-7373-9602-e280da32184e",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
