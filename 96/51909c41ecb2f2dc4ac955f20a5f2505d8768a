@@ -1,0 +1,38 @@
+packages/cli/package.json
+  h_b0bf4228a0b7ec 3,20,29-34
+packages/cli/tsconfig.build.json
+  h_b0bf4228a0b7ec 1-4
+packages/cloudflared-darwin-arm64/manifest.json
+  h_b0bf4228a0b7ec 2
+packages/cloudflared-darwin-arm64/package.json
+  h_b0bf4228a0b7ec 3
+packages/cloudflared-win32-x64/manifest.json
+  h_b0bf4228a0b7ec 2
+packages/cloudflared-win32-x64/package.json
+  h_b0bf4228a0b7ec 3
+packages/runtime-darwin-arm64/manifest.json
+  h_b0bf4228a0b7ec 2
+packages/runtime-darwin-arm64/package.json
+  h_b0bf4228a0b7ec 3
+packages/runtime-win32-x64/manifest.json
+  h_b0bf4228a0b7ec 2
+packages/runtime-win32-x64/package.json
+  h_b0bf4228a0b7ec 3
+packages/tui-darwin-arm64/package.json
+  h_b0bf4228a0b7ec 3
+packages/tui-win32-x64/package.json
+  h_b0bf4228a0b7ec 3
+scripts/verify-cli-install.mjs
+  h_b0bf4228a0b7ec 7,182-185,189-190
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "9651909c41ecb2f2dc4ac955f20a5f2505d8768a",
+  "prompts": {},
+  "humans": {
+    "h_b0bf4228a0b7ec": {
+      "author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
