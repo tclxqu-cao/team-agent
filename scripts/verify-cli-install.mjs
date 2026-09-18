@@ -4,7 +4,7 @@ import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { accessSync, constants, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { pathToFileURL } from "node:url";
-import { delimiter, dirname, resolve } from "node:path";
+import { basename, delimiter, dirname, resolve } from "node:path";
 import { releasePackageNames, resolveReleaseArtifacts } from "./cli-release-artifacts.mjs";
 import { assertSupportedNodeVersion } from "../packages/cli/bin/runtime-policy.mjs";
 
@@ -179,11 +179,15 @@ function runBootstrapSmoke(artifacts, parentWorkdir, archivePath) {
   const wrapper = process.platform === "win32"
     ? resolve(bootstrapHome, ".agentroam", "bin", "agentroam.cmd")
     : resolve(bootstrapHome, ".local", "bin", "agentroam");
+  // Derive the expected version from the launcher tarball actually installed by the script
+  // (AGENTROAM_PACKAGE_SPEC), so this smoke never drifts from the release under test.
+  const launcherVersion = basename(artifacts.launcher).match(/-(\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?)\.tgz$/)?.[1];
+  if (!launcherVersion) throw new Error(`cannot derive launcher version from ${artifacts.launcher}`);
   const versionOutput = process.platform === "win32"
     ? execFileSync("cmd.exe", ["/d", "/s", "/c", `"${wrapper}" version`], { encoding: "utf8", env: bootstrapEnv })
     : execFileSync(wrapper, ["version"], { encoding: "utf8", env: bootstrapEnv });
-  if (!versionOutput.includes("0.2.0-preview.16")) throw new Error(`bootstrap wrapper mismatch: ${versionOutput}`);
-  console.log(`✓ standalone ${scriptName} installed private Node ${installedVersion} and the versioned wrapper`);
+  if (!versionOutput.includes(launcherVersion)) throw new Error(`bootstrap wrapper mismatch: expected ${launcherVersion}, got ${versionOutput}`);
+  console.log(`✓ standalone ${scriptName} installed private Node ${installedVersion} and the versioned wrapper (${launcherVersion})`);
 }
 
 function runSqliteSmoke(node, runtimeRoot, cwd) {
