@@ -30,6 +30,11 @@ export class RemoteAuthorization {
       this.inputQueue = this.inputQueue.then(() => this.onEvent(event, generation)).catch((error) => { this.error = error.message; });
     } };
     this.inputQueue = Promise.resolve();
+    // WebRTC signaling chain: a start waits for ICE gathering (a slow STUN
+    // round trip on constrained networks), so it must never occupy the
+    // serialized event queue — takeovers, returns and inputs would inherit
+    // that delay. Events here keep their relative order.
+    this.mediaChain = Promise.resolve();
     this.video = new RemoteWebrtcVideo({ helper, signal: data => { if (this.enabled && this.online) this.registry.webrtcFromProducer(this.peer, this.sessionId, data); } });
     this.stateFile = join(dataDir, 'remote-authorization.json');
   }
@@ -207,8 +212,15 @@ export class RemoteAuthorization {
         catch (error) { this.error = error.message; if (this.enabled && this.online) signalQuality(error.message); }
         return;
       }
+      // Viewer cleanup fires stop on every unwatch/reload; tearing down in the
+      // background keeps the queue free (a full werift close takes seconds).
+      if (event.data.kind === 'stop') { void this.mediaChain.then(() => this.video.stop()).catch(() => {}); return; }
+      // answer/ice handlers block inside werift until the offer's ICE gathering
+      // settles (a slow STUN round trip can take ~10s) — they must share the
+      // media chain with start instead of stalling the serialized event queue.
       if (event.data.kind === 'start') signalQuality();
-      await this.video.handle(event.data); return;
+      this.mediaChain = this.mediaChain.then(() => this.video.handle(event.data)).catch(() => {});
+      return;
     }
     if (event.type === 'browser:takeover-requested') {
       if (this.platform === 'win32') void this.helper.request({ op: 'keep-display', on: true }).catch(() => {});
@@ -216,7 +228,13 @@ export class RemoteAuthorization {
     }
     else if (event.type === 'browser:return-requested') {
       if (this.platform === 'win32') void this.helper.request({ op: 'keep-display', on: false }).catch(() => {});
-      await this.releaseInput(); await this.video.stop(); this.registry.producerState(this.peer, this.sessionId, 'agent-controlled');
+      // Media teardown (helper round trip + werift close) takes seconds; the
+      // serialized queue must not inherit that delay — a queued takeover
+      // confirm or input hit-test would otherwise stall behind it. Chaining
+      // behind pending signaling keeps the teardown ordered after any start.
+      void this.releaseInput().catch(() => {});
+      void this.mediaChain.then(() => this.video.stop()).catch(() => {});
+      this.registry.producerState(this.peer, this.sessionId, 'agent-controlled');
     }
     else if (event.type === 'browser:input') {
       try {

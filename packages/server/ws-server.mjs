@@ -31,7 +31,7 @@ import next from "next";
 import { WebSocketServer } from "ws";
 import pty from "node-pty";
 import chokidar from "chokidar";
-import { LiveViewRegistry, HostPathPolicy, SQLiteAnonymousWebStore, SQLiteProjectStore, SQLiteWebConsoleStore, encodeLiveFramePacket, readLiveFramePacket, LIVE_FRAME_PACKET_TYPE, MAX_RELAY_SITES, MAX_RELAY_TEXT_LENGTH, MAX_RELAY_IMAGES, MAX_RELAY_IMAGE_LENGTH } from "@agent/core";
+import { LiveViewRegistry, HostPathPolicy, SQLiteAnonymousWebStore, SQLiteProjectStore, SQLiteWebConsoleStore, installGlobalLogging, encodeLiveFramePacket, readLiveFramePacket, LIVE_FRAME_PACKET_TYPE, MAX_RELAY_SITES, MAX_RELAY_TEXT_LENGTH, MAX_RELAY_IMAGES, MAX_RELAY_IMAGE_LENGTH } from "@agent/core";
 import { decodeOsc7Path, selectDefaultShell } from "./shell-platform.mjs";
 import { consumeTerminalReadyMarker, createTerminalShellLaunch } from "./shell-integration.mjs";
 import {
@@ -65,6 +65,16 @@ try {
 } catch {}
 
 const serverBaseDir = path.resolve(process.env.AGENT_DATA_DIR?.trim() || dir);
+// 全局日志唯一装配点(core 的 installGlobalLogging):绑定按天日志文件
+// (<serverBaseDir>/.agent-data/logs/YYYY-MM-DD.log)、安装进程级错误
+// handler、镜像 console.error/warn。桌面壳是长驻网关,记录后不退出。
+const globalLogger = installGlobalLogging({
+  dir: path.join(serverBaseDir, ".agent-data", "logs"),
+  source: "server",
+  minLevel: "info",
+  handlers: { exitOnUncaughtException: false },
+});
+globalLogger.info("server booting", { port, dev, serverBaseDir, node: process.version });
 const anonymousWebStore = new SQLiteAnonymousWebStore(serverBaseDir);
 const consoleStore = new SQLiteWebConsoleStore(serverBaseDir);
 const projectStore = new SQLiteProjectStore(serverBaseDir);
@@ -475,6 +485,7 @@ function getSharedWatcher(abs) {
   });
   watcher.on("error", (err) => {
     // unreadable sockets/devices/etc. — non-fatal, keep the watcher alive
+    globalLogger.warn("[ws-gate] watch error (ignored)", err, { code: err.code });
     console.warn("[ws-gate] watch error (ignored):", err.code ?? err.message);
   });
   watcher.on("all", () => {}); // ensure handle stays warm; routing is done below
@@ -1171,6 +1182,7 @@ const server = createServer((req, res) => {
     .then((handled) => handled || serveWebApp(req, res))
     .then((handled) => { if (!handled) handle(req, res); })
     .catch((error) => {
+      globalLogger.error("http request handler failed", error, { url: req.url, method: req.method });
       if (!res.headersSent) res.writeHead(500).end("Internal server error");
       else res.destroy(error);
     });
@@ -1241,8 +1253,24 @@ wss.on("connection", (ws, _req, principal) => {
       session.pty.write(frame.subarray(6).toString("utf8"));
       return;
     }
-    handleMessage(conn, data).catch((err) => conn.sendJson({ type: "error", error: err.message }));
+    handleMessage(conn, data).catch((err) => {
+      globalLogger.error("ws message handler failed", err, { connId: conn.id, userId: conn.principal?.userId ?? null });
+      conn.sendJson({ type: "error", error: err.message });
+    });
   });
+
+  // Mobile browsers suspend pages and leave the socket half-open without a
+  // close frame: the peer lingers as a zombie controller/watcher until the TCP
+  // stack gives up. Browsers answer protocol pings while alive, so terminate
+  // after two missed rounds to release the controller identity promptly.
+  let wsAlive = true;
+  ws.on("pong", () => { wsAlive = true; });
+  const wsHeartbeat = setInterval(() => {
+    if (!wsAlive) { ws.terminate(); return; }
+    wsAlive = false;
+    try { ws.ping(); } catch { ws.terminate(); }
+  }, 30_000);
+  ws.once("close", () => clearInterval(wsHeartbeat));
 
   ws.on("close", () => {
     conn.browserFrameFlow.reset(false);
@@ -1284,7 +1312,10 @@ server.listen(port, process.env.HOST || "127.0.0.1", async () => {
     headers: desktopDiscovery.headers(),
   }).then((response) => {
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  }).catch((error) => console.error("Customer runtime initialization failed", error));
+  }).catch((error) => {
+    globalLogger.error("Customer runtime initialization failed", error);
+    console.error("Customer runtime initialization failed", error);
+  });
   const urls = [];
   for (const list of Object.values(os.networkInterfaces())) {
     for (const net of list || []) {

@@ -7,9 +7,12 @@ import {
   isNativeSessionId,
 } from "../../../../lib/native-runtime-service";
 import { normalizeCustomerAgentRunOptions } from "./run-options";
+import { serverLogger } from "../../../../lib/global-logger";
+import { ensurePushHook } from "../../../../lib/push-hook";
 
 export async function POST(request: Request) {
   try {
+    ensurePushHook();
     const body = await request.json() as {
       input: string;
       agentIds?: string[];
@@ -62,6 +65,7 @@ export async function POST(request: Request) {
         if (terminalSeen) stop();
       }).catch((err) => {
         const code = err instanceof RuntimeSessionError ? err.code : undefined;
+        serverLogger().error("native run subscription failed", err, { sessionId, code });
         agentHost.publishExternal(sessionId, {
           type: "error",
           message: err instanceof Error ? err.message : "Native run subscription failed",
@@ -106,6 +110,7 @@ export async function POST(request: Request) {
       ...(body.agentIds ? { agentIds: body.agentIds } : {}),
     });
     started.completion.catch((err) => {
+      serverLogger().error("agent run error", err, { sessionId: body.sessionId ?? session.id });
       console.error("Agent run error:", err);
     });
 
@@ -115,6 +120,7 @@ export async function POST(request: Request) {
       runId: started.runId,
     });
   } catch (err) {
+    serverLogger().error("agent run request failed", err, { status: err instanceof RuntimeSessionError ? err.code : undefined });
     const code = err instanceof RuntimeSessionError ? err.code : undefined;
     const customerAgentCode = err instanceof CustomerAgentRunConflictError ? err.code : undefined;
     const resolvedCode = code ?? customerAgentCode;

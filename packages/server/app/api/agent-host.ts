@@ -35,6 +35,7 @@ import {
 } from "@agent/core";
 import { homedir } from "node:os";
 import { getAgentWorkingDirectory, getServerBaseDir } from "../../lib/server-data-dir";
+import { serverLogger } from "../../lib/global-logger";
 
 const IMAGE_FILE_EXTENSIONS: Record<string, string> = {
   jpeg: "jpg",
@@ -137,6 +138,7 @@ class AgentHost {
   private readonly defaultRemoteToolsProjectId = process.env.AGENT_PROJECT_ID ?? "default";
   private readonly activeRuns = new Map<string, ActiveCustomerAgentRun>();
   private subscribers = new Map<string, Set<(event: AgentEvent, id: number) => void>>();
+  private globalEventObserver: ((sessionId: string, event: AgentEvent) => void) | null = null;
   /** events of the current run per session — replayed to late/reconnecting subscribers */
   private recentEvents = new Map<string, { id: number; event: AgentEvent }[]>();
   private eventCounters = new Map<string, number>();
@@ -352,6 +354,16 @@ class AgentHost {
     };
   }
 
+  /**
+   * Process-wide observer over every emitted event (customer-agent and native
+   * republishes alike) — used by cross-cutting services such as Web Push that
+   * must observe runs even when no SSE client is attached. Observer errors are
+   * swallowed: notification delivery must never break the event bus.
+   */
+  setGlobalEventObserver(observer: ((sessionId: string, event: AgentEvent) => void) | null): void {
+    this.globalEventObserver = observer;
+  }
+
   private emit(sessionId: string, event: AgentEvent): void {
     const id = (this.eventCounters.get(sessionId) ?? 0) + 1;
     this.eventCounters.set(sessionId, id);
@@ -363,6 +375,7 @@ class AgentHost {
     for (const fn of this.subscribers.get(sessionId) ?? []) {
       try { fn(event, id); } catch { /* ignore */ }
     }
+    try { this.globalEventObserver?.(sessionId, event); } catch { /* ignore */ }
   }
 
   /**
@@ -581,6 +594,7 @@ class AgentHost {
         }
       } catch (err) {
         await resources?.close();
+        serverLogger().error("agent build failed", err, { sessionId, runId });
         // Emit error to SSE subscribers so the SDK can display it
         const errorEvent = {
           type: "error",
@@ -626,6 +640,18 @@ class AgentHost {
           // 目标模式用量采集：估算本轮新增 token 的原始文本（有上限，防长循环撑爆内存）。
           if (runStats.responseText.length < 400_000 && event.type === "text_chunk") runStats.responseText += event.text;
           if (runStats.toolResultText.length < 400_000 && event.type === "tool_result") runStats.toolResultText += event.result.content;
+          if (event.type === "error") {
+            serverLogger().error("agent run error event", undefined, { sessionId, runId, message: event.message, code: event.code });
+          } else if (event.type === "tool_result" && (event.result as { isError?: boolean } | undefined)?.isError) {
+            serverLogger().warn("tool execution failed", undefined, {
+              sessionId,
+              runId,
+              toolCallId: event.result.toolCallId,
+              content: String(event.result.content ?? "").slice(0, 2000),
+            });
+          } else if (event.type === "agent_done" && event.status === "failed") {
+            serverLogger().error("sub-agent run failed", undefined, { sessionId, runId, agentName: event.agentName, error: event.error });
+          }
           await this.sessionStore.addEvent(sessionId, emittedEvent);
 
           if (emittedEvent.type === "error") {
@@ -651,6 +677,7 @@ class AgentHost {
         // The loop itself threw (not an in-band error event) — without this the
         // subscriber would wait forever with no feedback.
         runFailed = true;
+        serverLogger().error("agent loop threw", err, { sessionId, runId });
         const msg = err instanceof Error ? err.message : String(err);
         if (/rate\s*limit|quota|usage\s*limit|429|insufficient/i.test(msg)) runStats.usageLimited = true;
         const errorEvent = {
@@ -670,6 +697,7 @@ class AgentHost {
       }
 
       if (!terminalCommitted) {
+        serverLogger().error("agent run ended without a terminal event", undefined, { sessionId, runId });
         const errorEvent = { type: "error", message: "Agent run ended without a terminal event" } as AgentEvent;
         try {
           await this.sessionStore.addEvent(sessionId, errorEvent);

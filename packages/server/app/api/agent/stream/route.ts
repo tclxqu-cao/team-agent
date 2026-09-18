@@ -3,8 +3,10 @@ import {
   getNativeRuntimeService,
   isNativeSessionId,
 } from "../../../../lib/native-runtime-service";
+import { ensurePushHook } from "../../../../lib/push-hook";
 
 export async function GET(request: Request) {
+  ensurePushHook();
   const url = new URL(request.url);
   const sessionId = url.searchParams.get("sessionId");
 

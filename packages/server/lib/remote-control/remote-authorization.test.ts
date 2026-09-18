@@ -81,6 +81,33 @@ describe('CLI remote desktop', () => {
       expect(f.registry.list(f.viewer)).toEqual([]);
     } finally { await f.close(); }
   });
+  it('applies return/takeover states immediately while media teardown is still in flight', async () => {
+    const f = await fixture();
+    let releaseVideoOff: (() => void) | undefined;
+    try {
+      f.grant();
+      f.helper.request.mockImplementation(async (cmd:any) => {
+        if (cmd.op === 'status') return {ok:true,screen:true,accessibility:true};
+        if (cmd.op === 'video' && cmd.enabled === false) return new Promise<void>((resolve) => { releaseVideoOff = resolve; });
+        if (cmd.op === 'capture') return {ok:true,data:Buffer.alloc(30,1).toString('base64'),width:1000,height:800,originX:0,originY:0};
+        return {ok:true};
+      });
+      await f.service.action('enable');
+      const sessionId = f.service.sessionId;
+      f.registry.watch(f.viewer, sessionId);
+      f.registry.takeOver(f.viewer, sessionId); await f.service.inputQueue;
+      expect(f.registry.list(f.viewer)[0].state).toBe('user-controlled');
+      // The werift/helper teardown (video off) hangs below; neither the return
+      // nor a fast re-takeover may inherit that delay.
+      f.registry.returnControl(f.viewer, sessionId); await f.service.inputQueue;
+      expect(f.registry.list(f.viewer)[0].state).toBe('agent-controlled');
+      f.registry.takeOver(f.viewer, sessionId); await f.service.inputQueue;
+      expect(f.registry.list(f.viewer)[0].state).toBe('user-controlled');
+    } finally {
+      releaseVideoOff?.();
+      await f.close();
+    }
+  });
 });
 
 it('uses the real pairing gateway: rejects spoofed, forwarded and revoked devices', async () => {

@@ -155,6 +155,13 @@ export function createDevicePairingGateway({ dataDir, desktop, owner, consoleSto
         }
         // The old password/setup endpoints must not become an alternate bypass.
         if (path.startsWith("/api/web-auth/")) throw error("Use device pairing", 401);
+        // 客户端错误上报刻意豁免配对:无法完成配对的浏览器/移动端恰恰是最
+        // 需要记录报错的客户端。端点内有速率限制与体积上限,只写本地日志文件;
+        // 锁定状态下已被上方 423 分支拦截,不会成为绕过锁定的通道。
+        if (path === "/api/client-logs" && req.method === "POST") {
+          req.headers["x-agentroam-device-id"] = local ? "desktop" : "client-logs";
+          return false;
+        }
         if (path === "/pair" || (!local && !test && !device && (!sdk || store.isLocked()))) {
           const document = (path === "/pair" || path === "/" || path === "/web" || path.startsWith("/web/") || path === "/app" || path.startsWith("/app/")) && (req.headers.accept || "").includes("text/html");
           if (req.method === "GET" && document) {
