@@ -6,8 +6,7 @@ import { pipeline } from "node:stream/promises";
 import { Readable } from "node:stream";
 import { spawn } from "node:child_process";
 import { acquireUpdateLock, readUpdateState, sanitizeUpdateError, updatePaths, writeUpdateState, type DurableUpdateState } from "./update-state.js";
-
-const RELEASE_BASE = "https://gitee.com/caoqu/team-agent/releases/download";
+import { buildCliInstallScriptUrl } from "./update-install.js";
 
 export async function runUpdateWorker(stateFile: string, fetchImpl: typeof fetch = fetch): Promise<void> {
   const initial = await readUpdateState(stateFile);
@@ -22,7 +21,7 @@ export async function runUpdateWorker(stateFile: string, fetchImpl: typeof fetch
     await writeUpdateState(stateFile, state);
   };
   try {
-    const response = await fetchImpl(`${RELEASE_BASE}/v${state.targetVersion}/${encodeURIComponent(state.fileName)}`);
+    const response = await fetchImpl(buildCliInstallScriptUrl(state.fileName));
     if (!response.ok || !response.body) throw new Error("installer download failed");
     await pipeline(Readable.fromWeb(response.body as any), createWriteStream(partial, { mode: 0o700 }));
     const actual = createHash("sha256").update(await readFile(partial)).digest("hex");
@@ -31,7 +30,16 @@ export async function runUpdateWorker(stateFile: string, fetchImpl: typeof fetch
     await update({ phase: "installing" });
     const command = process.platform === "win32" ? "powershell.exe" : "/bin/sh";
     const args = process.platform === "win32" ? ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", partial] : [partial];
-    const code = await run(command, args, { ...process.env, AGENTROAM_DATA_DIR: state.dataDir, AGENTROAM_ROOT: state.roots[0], AGENTROAM_INSTALL_SKIP_SERVICE: "1" });
+    // 用 AGENTROAM_VERSION 钉住版本，而不是让安装脚本自己解析 dist-tag：
+    // 一是装的必须正是检查阶段向用户承诺的那一版，二是下一步要按
+    // launcher/<targetVersion> 定位入口，版本漂了就找不到。
+    const code = await run(command, args, {
+      ...process.env,
+      AGENTROAM_VERSION: state.targetVersion,
+      AGENTROAM_DATA_DIR: state.dataDir,
+      AGENTROAM_ROOT: state.roots[0],
+      AGENTROAM_INSTALL_SKIP_SERVICE: "1",
+    });
     if (code !== 0) throw new Error(`installer exited with code ${code}`);
     const nextEntry = resolve(state.dataDir, "launcher", state.targetVersion, "node_modules", "agentroam", "bin", "agentroam.mjs");
     const serviceArgs = [nextEntry, "service", "install"];

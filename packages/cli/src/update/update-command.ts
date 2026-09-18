@@ -7,14 +7,12 @@ import { updatePaths, writeUpdateState, type DurableUpdateState } from "./update
 import {
   parseChannelVersion,
   registryUrlsForChannel,
-  resolveReleaseChannel,
   resolveUpdateChannel,
   type UpdateChannel,
 } from "./update-channel.js";
+import { buildCliInstallManifestUrl, validateCliInstallManifest } from "./update-install.js";
 
 const REGISTRY_BASE = "https://registry.npmjs.org/agentroam";
-const RELEASE_BASE = "https://gitee.com/caoqu/team-agent/releases/download";
-const SHA = /^[a-f0-9]{64}$/;
 
 export interface StartUpdateOptions { currentVersion: string; requestedVersion: string | null; dataDir: string; target: "darwin-arm64" | "windows-amd64"; cliPath: string; }
 
@@ -24,15 +22,10 @@ export async function resolveUpdate(options: StartUpdateOptions, fetchImpl: type
   if (!target) throw new Error("unable to check the npm release channel");
   if (options.requestedVersion && options.requestedVersion !== target) throw new Error("requested version is not the current npm candidate");
   if (compare(target, options.currentVersion) <= 0) throw new Error("AgentRoam is already up to date");
-  const response = await fetchWithTimeout(fetchImpl, `${RELEASE_BASE}/v${target}/release-manifest.json`);
-  if (!response.ok) throw new Error("release manifest is unavailable");
-  const manifest = await response.json() as any;
-  const asset = manifest?.installers?.cli?.[options.target];
-  const fileName = options.target === "darwin-arm64" ? "install-agentroam.sh" : "install-agentroam.ps1";
-  if (manifest?.schemaVersion !== 2 || manifest.version !== target || manifest.channel !== resolveReleaseChannel(target) || asset?.fileName !== fileName || !SHA.test(asset?.sha256 ?? "")) {
-    throw new Error("release manifest is invalid for this platform");
-  }
-  return { targetVersion: target, fileName, sha256: asset.sha256 as string };
+  const response = await fetchWithTimeout(fetchImpl, buildCliInstallManifestUrl());
+  if (!response.ok) throw new Error("CLI install manifest is unavailable");
+  const asset = validateCliInstallManifest(await response.json(), options.target);
+  return { targetVersion: target, fileName: asset.fileName, sha256: asset.sha256 };
 }
 
 // Preview installations follow the higher of the preview and latest npm

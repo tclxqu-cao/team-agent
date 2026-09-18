@@ -1,12 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
-  buildGiteeAssetUrl,
-  buildGiteeManifestUrl,
+  buildCliInstallManifestUrl,
+  buildCliInstallScriptUrl,
+  buildDesktopAssetUrl,
+  buildDesktopManifestUrl,
   compareAgentRoamVersions,
   parseChannelVersion,
   parseStableVersion,
   resolveReleaseChannel,
   resolveUpdateChannel,
+  validateCliInstallManifest,
   validateReleaseManifest,
 } from "./update-release.js";
 
@@ -49,8 +52,35 @@ describe("update release", () => {
   });
 
   it("constructs only allowlisted release URLs", () => {
-    expect(buildGiteeAssetUrl("1.2.3", "install-agentroam.sh")).toContain("/v1.2.3/install-agentroam.sh");
-    expect(() => buildGiteeAssetUrl("1.2.3", "../payload")).toThrow();
+    expect(buildDesktopAssetUrl("1.2.3", "AgentRoam-1.2.3-arm64.dmg")).toContain("/v1.2.3/AgentRoam-1.2.3-arm64.dmg");
+    expect(() => buildDesktopAssetUrl("1.2.3", "../payload")).toThrow();
+  });
+
+  it("distributes the CLI installer from the branch raw path, not a release asset", () => {
+    expect(buildCliInstallManifestUrl()).toBe(
+      "https://github.com/tclxqu-cao/team-agent/raw/main/packages/cli/install/install-manifest.json",
+    );
+    expect(buildCliInstallScriptUrl("install-agentroam.sh")).toBe(
+      "https://github.com/tclxqu-cao/team-agent/raw/main/packages/cli/install/install-agentroam.sh",
+    );
+    // 只放行白名单文件名，避免被拿去拼任意路径。
+    expect(() => buildCliInstallScriptUrl("../payload")).toThrow();
+    expect(() => buildCliInstallScriptUrl("AgentRoam-1.2.3-arm64.dmg")).toThrow();
+  });
+
+  it("validates the CLI install manifest per platform", () => {
+    const manifest = {
+      schemaVersion: 1,
+      installers: {
+        "darwin-arm64": { fileName: "install-agentroam.sh", sha256, size: 11_625 },
+        "windows-amd64": { fileName: "install-agentroam.ps1", sha256, size: 13_155 },
+      },
+    };
+    expect(validateCliInstallManifest(manifest, "windows-amd64")).toEqual({ fileName: "install-agentroam.ps1", sha256, size: 13_155 });
+    expect(() => validateCliInstallManifest({ ...manifest, schemaVersion: 2 }, "darwin-arm64")).toThrow();
+    expect(() => validateCliInstallManifest(manifest, "linux-x64" as never)).toThrow();
+    expect(() => validateCliInstallManifest({ schemaVersion: 1, installers: { "darwin-arm64": { fileName: "wrong.sh", sha256 } } }, "darwin-arm64")).toThrow();
+    expect(() => validateCliInstallManifest({ schemaVersion: 1, installers: { "darwin-arm64": { fileName: "install-agentroam.sh", sha256: "short" } } }, "darwin-arm64")).toThrow();
   });
 
   it("routes prerelease installs to preview and stable to latest", () => {
@@ -76,6 +106,6 @@ describe("update release", () => {
   });
 
   it("builds preview manifest URLs", () => {
-    expect(buildGiteeManifestUrl("1.2.3-preview.4")).toContain("/v1.2.3-preview.4/release-manifest.json");
+    expect(buildDesktopManifestUrl("1.2.3-preview.4")).toContain("/v1.2.3-preview.4/release-manifest.json");
   });
 });

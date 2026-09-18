@@ -1,7 +1,13 @@
 export const AGENTROAM_REGISTRY_BASE = "https://registry.npmjs.org/agentroam";
 export const AGENTROAM_REGISTRY_LATEST_URL = `${AGENTROAM_REGISTRY_BASE}/latest`;
 export const AGENTROAM_REGISTRY_PREVIEW_URL = `${AGENTROAM_REGISTRY_BASE}/preview`;
-export const AGENTROAM_GITEE_RELEASE_BASE = "https://gitee.com/caoqu/team-agent/releases/download";
+// 唯一分发仓库。CLI 安装器是版本无关的脚本，直接走分支 raw 路径，不依赖发版产物；
+// 桌面端安装包是构建产物，只能走 Releases 资产。
+export const AGENTROAM_REPOSITORY_BASE = "https://github.com/tclxqu-cao/team-agent";
+export const AGENTROAM_REPOSITORY_BRANCH = "main";
+export const AGENTROAM_RAW_BASE = `${AGENTROAM_REPOSITORY_BASE}/raw/${AGENTROAM_REPOSITORY_BRANCH}`;
+export const AGENTROAM_CLI_INSTALL_BASE = `${AGENTROAM_RAW_BASE}/packages/cli/install`;
+export const AGENTROAM_RELEASE_BASE = `${AGENTROAM_REPOSITORY_BASE}/releases/download`;
 
 export type UpdateChannel = "latest" | "preview";
 export type UpdatePlatform = "darwin-arm64" | "windows-amd64";
@@ -24,6 +30,18 @@ export interface UpdateAsset {
   size?: number;
   signed?: boolean;
 }
+
+// CLI 安装器清单。刻意不含 version 字段：安装脚本与版本无关（运行时按 npm
+// dist-tag 解析，或被 AGENTROAM_VERSION 钉住），因此一份清单对所有版本都成立。
+export interface CliInstallManifest {
+  schemaVersion: 1;
+  installers: Record<UpdatePlatform, UpdateAsset>;
+}
+
+export const CLI_INSTALL_FILE_NAMES: Record<UpdatePlatform, string> = {
+  "darwin-arm64": "install-agentroam.sh",
+  "windows-amd64": "install-agentroam.ps1",
+};
 
 export interface UpdateReleaseManifest {
   schemaVersion: 2;
@@ -106,22 +124,47 @@ export function compareAgentRoamVersions(leftValue: string, rightValue: string):
 
 export function expectedUpdateFileName(client: UpdateClient, platform: UpdatePlatform, version: string): string {
   if (!parseAgentRoamVersion(version)) throw new Error("invalid update version");
-  if (client === "cli") return platform === "darwin-arm64" ? "install-agentroam.sh" : "install-agentroam.ps1";
+  if (client === "cli") return CLI_INSTALL_FILE_NAMES[platform];
   return platform === "darwin-arm64"
     ? `AgentRoam-${version}-arm64.dmg`
     : `AgentRoam-Setup-${version}-x64.exe`;
 }
 
-export function buildGiteeManifestUrl(version: string): string {
-  if (!parseAgentRoamVersion(version)) throw new Error("invalid update version");
-  return `${AGENTROAM_GITEE_RELEASE_BASE}/v${version}/release-manifest.json`;
+// ---- CLI 安装器：分支 raw 路径（不依赖发版产物）-------------------------------
+
+export function buildCliInstallManifestUrl(): string {
+  return `${AGENTROAM_CLI_INSTALL_BASE}/install-manifest.json`;
 }
 
-export function buildGiteeAssetUrl(version: string, fileName: string): string {
+export function buildCliInstallScriptUrl(fileName: string): string {
+  if (!Object.values(CLI_INSTALL_FILE_NAMES).includes(fileName)) throw new Error("invalid CLI installer file name");
+  return `${AGENTROAM_CLI_INSTALL_BASE}/${fileName}`;
+}
+
+export function validateCliInstallManifest(value: unknown, platform: UpdatePlatform): UpdateAsset {
+  const expected = CLI_INSTALL_FILE_NAMES[platform];
+  if (!expected) throw new Error("CLI install manifest does not support this platform");
+  if (!isRecord(value) || value.schemaVersion !== 1 || !isRecord(value.installers)) throw new Error("invalid CLI install manifest identity");
+  const asset = value.installers[platform];
+  if (!isRecord(asset) || asset.fileName !== expected || typeof asset.sha256 !== "string" || !/^[a-f0-9]{64}$/.test(asset.sha256)) {
+    throw new Error("invalid CLI installer metadata");
+  }
+  if (asset.size !== undefined && (!Number.isSafeInteger(asset.size) || asset.size <= 0)) throw new Error("invalid CLI installer size");
+  return { fileName: expected, sha256: asset.sha256, ...(asset.size === undefined ? {} : { size: asset.size as number }) };
+}
+
+// ---- 桌面端安装包：Releases 资产（dmg / exe 是构建产物，进不了源码仓库）--------
+
+export function buildDesktopManifestUrl(version: string): string {
+  if (!parseAgentRoamVersion(version)) throw new Error("invalid update version");
+  return `${AGENTROAM_RELEASE_BASE}/v${version}/release-manifest.json`;
+}
+
+export function buildDesktopAssetUrl(version: string, fileName: string): string {
   if (!parseAgentRoamVersion(version) || fileName.includes("/") || fileName.includes("\\")) {
     throw new Error("invalid update asset coordinates");
   }
-  return `${AGENTROAM_GITEE_RELEASE_BASE}/v${version}/${encodeURIComponent(fileName)}`;
+  return `${AGENTROAM_RELEASE_BASE}/v${version}/${encodeURIComponent(fileName)}`;
 }
 
 export function validateReleaseManifest(

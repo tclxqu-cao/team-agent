@@ -9,7 +9,10 @@ import { Transform, Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { execFile } from 'node:child_process';
 
-const RELEASE_BASE = 'https://gitee.com/caoqu/team-agent/releases/download';
+// 桌面端安装包是构建产物（dmg / exe），进不了只放源码的仓库，只能走 Releases 资产。
+// ⚠️ 仓库目前尚未创建任何 release / tag，所以这里取不到包；要么在发布流程里上传
+// 资产，要么把桌面端改由 npm 承载。CLI 本体不受影响（走 raw 分支的安装脚本）。
+const RELEASE_BASE = 'https://github.com/tclxqu-cao/team-agent/releases/download';
 
 export function desktopAsset(manifest, version, platform, arch) {
   if (!/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-preview\.(0|[1-9]\d*))?$/.test(version)) throw new Error('Invalid AgentRoam version');

@@ -1,11 +1,14 @@
 import {
-  buildGiteeManifestUrl,
+  buildCliInstallManifestUrl,
+  buildDesktopManifestUrl,
   compareAgentRoamVersions,
   parseAgentRoamVersion,
   parseChannelVersion,
   registryUrlsForChannel,
   resolveUpdateChannel,
+  validateCliInstallManifest,
   validateReleaseManifest,
+  type UpdateAsset,
   type UpdateChannel,
   type UpdateClient,
   type UpdatePlatform,
@@ -101,9 +104,7 @@ export class UpdateChecker {
       if (compareAgentRoamVersions(latest, this.options.currentVersion) <= 0) {
         return this.publish({ phase: "up-to-date", currentVersion: this.options.currentVersion, checkedAt: this.checkedAt });
       }
-      const manifestResponse = await this.fetchImpl(buildGiteeManifestUrl(latest), { headers: { accept: "application/json" }, signal: controller.signal });
-      if (!manifestResponse.ok) throw new Error("release manifest unavailable");
-      const { asset } = validateReleaseManifest(await manifestResponse.json(), latest, this.options.client, this.options.platform);
+      const asset = await this.readManifestAsset(latest, controller.signal);
       return this.publish({ phase: "available", currentVersion: this.options.currentVersion, targetVersion: latest, checkedAt: this.checkedAt, asset });
     } catch {
       this.checkedAt = this.now();
@@ -112,6 +113,19 @@ export class UpdateChecker {
     } finally {
       clearTimeout(timer);
     }
+  }
+
+  // CLI 安装器是版本无关脚本，读分支 raw 上的单份清单；桌面端安装包是构建产物，
+  // 只能按版本读 Releases 资产清单。
+  private async readManifestAsset(version: string, signal: AbortSignal): Promise<UpdateAsset> {
+    const isCli = this.options.client === "cli";
+    const url = isCli ? buildCliInstallManifestUrl() : buildDesktopManifestUrl(version);
+    const response = await this.fetchImpl(url, { headers: { accept: "application/json" }, signal });
+    if (!response.ok) throw new Error("release manifest unavailable");
+    const body = await response.json();
+    return isCli
+      ? validateCliInstallManifest(body, this.options.platform)
+      : validateReleaseManifest(body, version, "desktop", this.options.platform).asset;
   }
 
   // Preview installations watch both the preview and latest npm dist-tags and

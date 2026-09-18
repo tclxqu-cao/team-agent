@@ -1,3 +1,9 @@
 packages/desktop/.agent-data/asr-models/** -text
 packages/desktop/.agent-data/kws-models/** -text
 packages/desktop/.agent-data/asr-models/**/tokens.txt whitespace=cr-at-eol
+
+# CLI 安装器的 sha256 被 packages/cli/install/install-manifest.json 钉住，
+# 而客户端拿到的是 GitHub raw 上的索引字节。钉成 LF 防止检出侧换行漂移
+# 静默改变哈希（Windows 上尤其重要）。
+packages/cli/install/install-agentroam.sh text eol=lf
+packages/cli/install/install-agentroam.ps1 text eol=lf

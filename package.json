@@ -22,8 +22,10 @@
   ],
   "scripts": {
     "check:node-runtime-policy": "node scripts/generate-node-runtime-policy.mjs --check",
-  "release:version": "node scripts/bump-release-version.mjs",
-  "check:release-version": "node scripts/bump-release-version.mjs --check",
+    "release:version": "node scripts/bump-release-version.mjs",
+    "check:release-version": "node scripts/bump-release-version.mjs --check",
+    "release:install-manifest": "node scripts/update-install-manifest.mjs",
+    "check:install-manifest": "node scripts/update-install-manifest.mjs --check",
     "test:node-runtime-policy": "node --test scripts/runtime-policy.test.mjs scripts/runtime-native-files.test.mjs",
     "dev": "bunx concurrently --kill-others -n core,server,desktop -c blue,green,yellow 'bun run dev:core' 'bun run dev:server' 'bun run dev:desktop'",
     "dev:core": "bun run --cwd packages/core dev",

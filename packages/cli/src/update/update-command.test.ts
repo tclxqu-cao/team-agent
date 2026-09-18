@@ -7,12 +7,22 @@ import { acquireUpdateLock, readUpdateState, updatePaths, writeUpdateState, type
 
 const sha256 = "c".repeat(64);
 const response = (body: unknown) => new Response(JSON.stringify(body), { status: 200 });
+// CLI 安装器清单与版本无关，只按平台给出脚本文件名与哈希。
+const cliManifest = (platform: "darwin-arm64" | "windows-amd64" = "darwin-arm64") => response({
+  schemaVersion: 1,
+  installers: {
+    [platform]: {
+      fileName: platform === "darwin-arm64" ? "install-agentroam.sh" : "install-agentroam.ps1",
+      sha256,
+    },
+  },
+});
 
 describe("resolveUpdate", () => {
-  it("accepts only npm latest with an audited Gitee installer", async () => {
+  it("accepts only npm latest with an audited CLI installer", async () => {
     const fetcher = vi.fn()
       .mockResolvedValueOnce(response({ version: "1.2.3" }))
-      .mockResolvedValueOnce(response({ schemaVersion: 2, version: "1.2.3", channel: "latest", installers: { cli: { "windows-amd64": { fileName: "install-agentroam.ps1", sha256 } } } }));
+      .mockResolvedValueOnce(cliManifest("windows-amd64"));
     await expect(resolveUpdate({ currentVersion: "1.2.2", requestedVersion: null, dataDir: "data", target: "windows-amd64", cliPath: "cli" }, fetcher))
       .resolves.toEqual({ targetVersion: "1.2.3", fileName: "install-agentroam.ps1", sha256 });
   });
@@ -27,7 +37,7 @@ describe("resolveUpdate", () => {
       const u = String(url);
       if (u.endsWith("/preview")) return Promise.resolve(response({ version: "1.2.3-preview.4" }));
       if (u.endsWith("/latest")) return Promise.resolve(response({ version: "1.2.2" }));
-      return Promise.resolve(response({ schemaVersion: 2, version: "1.2.3-preview.4", channel: "preview", installers: { cli: { "darwin-arm64": { fileName: "install-agentroam.sh", sha256 } } } }));
+      return Promise.resolve(cliManifest());
     });
     await expect(resolveUpdate({ currentVersion: "1.2.3-preview.3", requestedVersion: null, dataDir: "data", target: "darwin-arm64", cliPath: "cli" }, fetcher))
       .resolves.toEqual({ targetVersion: "1.2.3-preview.4", fileName: "install-agentroam.sh", sha256 });
@@ -38,7 +48,7 @@ describe("resolveUpdate", () => {
       const u = String(url);
       if (u.endsWith("/preview")) return Promise.resolve(response({ version: "1.2.3-preview.4" }));
       if (u.endsWith("/latest")) return Promise.resolve(response({ version: "1.2.4" }));
-      return Promise.resolve(response({ schemaVersion: 2, version: "1.2.4", channel: "latest", installers: { cli: { "darwin-arm64": { fileName: "install-agentroam.sh", sha256 } } } }));
+      return Promise.resolve(cliManifest());
     });
     await expect(resolveUpdate({ currentVersion: "1.2.3-preview.4", requestedVersion: null, dataDir: "data", target: "darwin-arm64", cliPath: "cli" }, fetcher))
       .resolves.toEqual({ targetVersion: "1.2.4", fileName: "install-agentroam.sh", sha256 });
@@ -49,7 +59,7 @@ describe("resolveUpdate", () => {
       const u = String(url);
       expect(u).not.toContain("/preview");
       if (u.endsWith("/latest")) return Promise.resolve(response({ version: "1.2.4" }));
-      return Promise.resolve(response({ schemaVersion: 2, version: "1.2.4", channel: "latest", installers: { cli: { "darwin-arm64": { fileName: "install-agentroam.sh", sha256 } } } }));
+      return Promise.resolve(cliManifest());
     });
     await resolveUpdate({ currentVersion: "1.2.3", requestedVersion: null, dataDir: "data", target: "darwin-arm64", cliPath: "cli" }, fetcher);
     expect(fetcher.mock.calls.map((call) => String(call[0])).some((url) => url.includes("/preview"))).toBe(false);

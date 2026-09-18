@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "installers": {
+    "darwin-arm64": {
+      "fileName": "install-agentroam.sh",
+      "sha256": "db22342cd22272c739f6633deff65c4b54b9dc919778141b7d8d55c37be221a3",
+      "size": 11625
+    },
+    "windows-amd64": {
+      "fileName": "install-agentroam.ps1",
+      "sha256": "4a3683a3e6027e15356dab7a5c7d02a81ad1be3f4bad61a6119328ed2ab89298",
+      "size": 13155
+    }
+  }
+}

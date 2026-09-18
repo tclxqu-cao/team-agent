@@ -4,7 +4,7 @@ import { access, mkdir, readFile, rename, unlink } from "node:fs/promises";
 import { resolve } from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
-import { UpdateChecker, buildGiteeAssetUrl, type UpdatePlatform, type UpdateStatus } from "@agent/core";
+import { UpdateChecker, buildDesktopAssetUrl, type UpdatePlatform, type UpdateStatus } from "@agent/core";
 
 export interface DesktopUpdateDependencies {
   version: string;
@@ -47,7 +47,7 @@ export class DesktopUpdateService {
     const partial = `${destination}.download`;
     this.publish({ ...candidate, phase: "downloading", progress: 0 });
     try {
-      const response = await (this.dependencies.fetch ?? fetch)(buildGiteeAssetUrl(candidate.targetVersion, candidate.asset.fileName));
+      const response = await (this.dependencies.fetch ?? fetch)(buildDesktopAssetUrl(candidate.targetVersion, candidate.asset.fileName));
       if (!response.ok || !response.body) throw new Error("Desktop installer download failed");
       const expectedSize = Number(response.headers.get("content-length")) || candidate.asset.size || 0;
       let downloaded = 0;

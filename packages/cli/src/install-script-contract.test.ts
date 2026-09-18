@@ -66,6 +66,10 @@ describe("standalone installer contracts", () => {
     expect(script).toContain(`NODE_VERSION="${MANAGED_NODE_VERSION}"`);
     expect(script).toContain(`MINIMUM_NODE_VERSION="${MINIMUM_NODE_VERSION}"`);
     expect(script).toContain('AGENTROAM_VERSION_REQUEST="${AGENTROAM_VERSION:-preview}"');
+    // update-worker 用 AGENTROAM_VERSION 钉死目标版本，这里锁住「以数字结尾 = 精确版本」的分支：
+    // 一旦脚本改成别的判定方式，更新流程就可能装出与提示不符的版本。
+    expect(script).toContain('AGENTROAM_VERSION="$AGENTROAM_VERSION_REQUEST"');
+    expect(script).toContain("*[0-9])");
     expect(script).toContain(NODE_RUNTIME_ASSETS["darwin-arm64"].archive);
     expect(script).toContain(NODE_RUNTIME_ASSETS["darwin-arm64"].sha256);
     expect(script).toContain("https://registry.npmjs.org");
@@ -86,6 +90,9 @@ describe("standalone installer contracts", () => {
     expect(script).toContain(`$NodeVersion = "${MANAGED_NODE_VERSION}"`);
     expect(script).toContain(`$MinimumNodeVersion = "${MINIMUM_NODE_VERSION}"`);
     expect(script).toContain('$AgentRoamVersionRequest = if ($env:AGENTROAM_VERSION) { $env:AGENTROAM_VERSION } else { "preview" }');
+    // 与 .sh 同一条契约：以数字结尾即精确版本，原样采用。
+    expect(script).toContain("if ($AgentRoamVersionRequest -notmatch '\\d$')");
+    expect(script).toContain("$AgentRoamVersion = $AgentRoamVersionRequest");
     expect(script).toContain(NODE_RUNTIME_ASSETS["windows-amd64"].archive);
     expect(script).toContain(NODE_RUNTIME_ASSETS["windows-amd64"].sha256);
     expect(script).toContain("https://registry.npmjs.org");
