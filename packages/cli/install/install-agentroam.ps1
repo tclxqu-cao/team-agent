@@ -4,7 +4,7 @@ $ProgressPreference = "SilentlyContinue"
 $NodeVersion = "22.22.0"
 $MinimumNodeVersion = "22.22.0"
 # 默认跟随 npm preview 最新标签；可用 $env:AGENTROAM_VERSION 钉精确版本
-# 例如：$env:AGENTROAM_VERSION = "0.2.0-preview.25"; ./install-agentroam.ps1
+# 例如：$env:AGENTROAM_VERSION = "0.2.0-preview.26"; ./install-agentroam.ps1
 $AgentRoamVersionRequest = if ($env:AGENTROAM_VERSION) { $env:AGENTROAM_VERSION } else { "preview" }
 $AgentRoamVersion = "pending-version"
 $NodeArchive = "node-v22.22.0-win-x64.zip"

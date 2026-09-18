@@ -1,6 +1,6 @@
 {
   "name": "agentroam-cloudflared-darwin-arm64",
-  "version": "0.2.0-preview.25",
+  "version": "0.2.0-preview.26",
   "description": "Verified cloudflared binary archive for AgentRoam on macOS arm64",
   "license": "MIT",
   "os": [
