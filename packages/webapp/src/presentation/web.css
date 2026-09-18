@@ -395,6 +395,10 @@ body[data-web-shell="1"] .chat-header-action--appearance {
   padding: 0;
   border: 0;
   opacity: 0.01;
+  /* WebKit expands the hit area of form controls: without this, a tap near
+     the bottom-center of the picture natively focuses the hidden input and
+     pops the soft keyboard without any remote text field being tapped. */
+  pointer-events: none;
 }
 
 .browser-live-empty {
@@ -434,6 +438,27 @@ body[data-web-shell="1"] .chat-header-action--appearance {
   color: #f3f5f8;
   font-size: 11px;
   pointer-events: none;
+}
+
+/* Quality switch in flight: the helper pauses the stream for a few seconds,
+   so the chip explains the frozen picture instead of reading as a stall. */
+.browser-live-quality-pending {
+  position: absolute;
+  bottom: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border: 1px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, #101216 86%, transparent);
+  color: #f3f5f8;
+  font-size: 11px;
+  pointer-events: none;
+  white-space: nowrap;
 }
 
 .browser-live-footer {

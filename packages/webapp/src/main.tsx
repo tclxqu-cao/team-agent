@@ -4,6 +4,7 @@ import RemoteAuthorizationControl from "./presentation/RemoteAuthorizationContro
 import { StrictMode, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { HttpClient } from "./infrastructure/http/http-client";
+import { installClientErrorReporter } from "./infrastructure/client-error-reporter";
 import { AgentHttpGateway } from "./infrastructure/http/agent-http-gateway";
 import { LocalSettingsRepository } from "./infrastructure/local/local-settings-repository";
 import { installBrowserCryptoCompatibility } from "./infrastructure/browser-crypto";
@@ -26,6 +27,7 @@ import { LocalEndpointStorage } from "./mobile/infrastructure/local-endpoint-sto
 import { HttpConnectivityProbe } from "./mobile/infrastructure/http-connectivity-probe";
 import { ConnectionScreen } from "./mobile/presentation/connection-screen";
 import { NativePairingClient, NativeCredentialStorage, scanPairingQr } from "./mobile/infrastructure/native-pairing";
+import { startPushNotifications } from "./push/push-notifications";
 import { EventSource as AuthenticatedEventSource } from "eventsource";
 
 /**
@@ -37,6 +39,9 @@ installBrowserCryptoCompatibility();
 installParentTabSwipeBridge();
 installWebShellSkinBridge();
 installWebShellLiveBridge();
+// 全局错误采集：浏览器侧报错批量上报 /api/client-logs（server 落盘到按天日志）。
+// sseBase 在移动端 boot() 后才指向远端服务器，这里用 getter 延迟解析。
+const clientErrorReporter = installClientErrorReporter({ baseUrl: () => sseBase, source: "webapp" });
 document.body.dataset.webShell = "1";
 
 const nativeEnvironment = new CapacitorNativeEnvironment();
@@ -131,6 +136,9 @@ async function boot(endpoint: ServerEndpoint | null): Promise<void> {
     }
     window.agentApi = gateway as unknown as AgentApi;
     await gateway.refreshServerModel();
+    // 浏览器（同源、https/localhost）才启用 Web Push：原生壳 WebView 不支持
+    // Web Push，且订阅跟随已配对的设备凭证由 http 层自动携带。
+    if (!nativePairing && window.parent === window) startPushNotifications(http);
     const { default: App } = await import("@desktop/renderer/App");
     root.render(
       <StrictMode>
