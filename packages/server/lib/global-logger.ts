@@ -1,6 +1,5 @@
-import { join } from "node:path";
 import { getGlobalLogger, installGlobalLogging, type DailyFileLogger } from "@agent/core";
-import { resolveServerBaseDir } from "./server-data-dir";
+import { resolveServerLogDir } from "./server-data-dir";
 
 let bootLogged = false;
 
@@ -17,7 +16,7 @@ export function serverLogger(): DailyFileLogger {
   const existing = getGlobalLogger();
   if (existing) return existing;
   const logger = installGlobalLogging({
-    dir: join(resolveServerBaseDir(), ".agent-data", "logs"),
+    dir: resolveServerLogDir(),
     source: "server",
     minLevel: "info",
     handlers: { exitOnUncaughtException: false },

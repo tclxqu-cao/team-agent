@@ -15,7 +15,7 @@
 
 | 进程 | 装配点 | 日志目录 |
 | :--- | :--- | :--- |
-| server(ws-server / 纯 next) | `packages/server/ws-server.mjs` 启动;`packages/server/lib/global-logger.ts` 兜底 | `<AGENT_DATA_DIR>/.agent-data/logs/` |
+| server(ws-server / 纯 next) | `packages/server/ws-server.mjs` 启动;`packages/server/lib/global-logger.ts` 兜底 | **`$AGENT_LOG_DIR`**,未设置时回落 `<AGENT_DATA_DIR>/.agent-data/logs/` |
 | desktop(Electron 主进程) | `packages/desktop/main/index.ts` | `<userData>/logs/` |
 | tui | `packages/tui/src/main.tsx` startTui | `~/.customer-agent-tui/logs/` |
 | cli | `packages/cli/src/cli.ts`(`src/error-log.ts` 自包含实现,launcher 不依赖 @agent/core,格式与 core 一致) | `<dataDir>/logs/` |
@@ -38,13 +38,33 @@
 - 刻意**豁免设备配对**(无法完成配对的浏览器恰是最需要记录报错的客户端);锁定期仍被网关 423 拦截。
 - 限流 60 req/min/IP,单请求最多 20 条,message ≤4000 字符,data 序列化后 ≤2000 字符;level 只接受 warn/error/fatal(其余钳为 error)。
 
+### 安装形态:统一收口到 `~/.agentroam/logs/`
+
+CLI 拉起 server 子进程时注入 `AGENT_LOG_DIR=<dataDir>/logs`(`packages/cli/src/runtime-manager.ts`),
+server 侧由 `resolveServerLogDir()`(`packages/server/lib/server-data-dir.ts`)解析。于是安装形态下一个目录里就有全部日志,用户排障只需打包这一处:
+
+```
+~/.agentroam/logs/
+├── 2026-09-18.log          # server 应用日志(NDJSON,按天)
+├── service.stdout.log       # launchd 标准输出
+└── service.stderr.log       # launchd 标准错误
+```
+
+未注入 `AGENT_LOG_DIR` 时(仓库内 `bun run dev`、直接 `next start`、旧版本运行时)行为不变,仍写 `<serverBaseDir>/.agent-data/logs/`,向后兼容。
+
+> 桌面端(Electron)是 GUI 应用,日志仍在 `<userData>/logs/`(macOS:`~/Library/Application Support/AgentRoam/logs/`);远程桌面服务在 `~/Library/Application Support/AgentRoamRemoteDesktop/service.log`,两者不归 `~/.agentroam` 管辖。
+
 ## 排查入口
 
 ```bash
-# server(开发态)
+# 安装形态(推荐:一个目录全带走)
+ls ~/.agentroam/logs/
+grep '"level":"error"' ~/.agentroam/logs/$(date +%F).log
+
+# server(开发态,未注入 AGENT_LOG_DIR 时)
 ls packages/server/.agent-data/logs/
+grep '"level":"error"' packages/server/.agent-data/logs/$(date +%F).log
+
 # desktop
 ls "$HOME/Library/Application Support/AgentRoam/logs/"   # macOS
-# 按级别过滤当天错误
-grep '"level":"error"' packages/server/.agent-data/logs/$(date +%F).log
 ```

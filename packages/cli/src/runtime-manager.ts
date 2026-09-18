@@ -73,6 +73,9 @@ export class RuntimeManager {
         PORT: String(port),
         HOST: options.localOnly ? "0.0.0.0" : "127.0.0.1",
         AGENT_DATA_DIR: resolve(dataDir, "data"),
+        // 应用日志收口到 <dataDir>/logs,与 launchd 的 service.stdout/stderr.log
+        // 及 CLI 自身的错误日志同一个目录,用户排障时只需打包这一处。
+        AGENT_LOG_DIR: resolve(dataDir, "logs"),
         AGENT_WEB_ROOTS: options.roots.join(delimiter),
         AGENT_TRUST_TUNNEL_PROXY: "1",
         AGENTROAM_VERSION: resolvePlatformRuntime(target).manifest.packageVersion,

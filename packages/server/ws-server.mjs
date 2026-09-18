@@ -15,6 +15,7 @@ import { createDesktopDiscovery } from "./lib/desktop-discovery.mjs";
 // Env:
 //   PORT              HTTP/WS port           (default 3000)
 //   AGENT_DATA_DIR    stable base directory for .agent-data/agent.db
+//   AGENT_LOG_DIR     daily NDJSON log directory (default: <AGENT_DATA_DIR>/.agent-data/logs)
 //   AGENT_WEB_ALLOWED_ORIGINS comma-separated extra browser origins
 //   AGENT_WEB_ROOTS   ":"-separated dirs the file APIs may touch (default: $HOME)
 
@@ -66,15 +67,18 @@ try {
 
 const serverBaseDir = path.resolve(process.env.AGENT_DATA_DIR?.trim() || dir);
 // 全局日志唯一装配点(core 的 installGlobalLogging):绑定按天日志文件
-// (<serverBaseDir>/.agent-data/logs/YYYY-MM-DD.log)、安装进程级错误
-// handler、镜像 console.error/warn。桌面壳是长驻网关,记录后不退出。
+// (YYYY-MM-DD.log)、安装进程级错误 handler、镜像 console.error/warn。
+// 目录优先取 AGENT_LOG_DIR(安装形态下 CLI 注入为 ~/.agentroam/logs,与
+// launchd 的 service.stdout/stderr.log 同目录),未注入才回落到
+// <serverBaseDir>/.agent-data/logs。桌面壳是长驻网关,记录后不退出。
+const serverLogDir = path.resolve(process.env.AGENT_LOG_DIR?.trim() || path.join(serverBaseDir, ".agent-data", "logs"));
 const globalLogger = installGlobalLogging({
-  dir: path.join(serverBaseDir, ".agent-data", "logs"),
+  dir: serverLogDir,
   source: "server",
   minLevel: "info",
   handlers: { exitOnUncaughtException: false },
 });
-globalLogger.info("server booting", { port, dev, serverBaseDir, node: process.version });
+globalLogger.info("server booting", { port, dev, serverBaseDir, logDir: serverLogDir, node: process.version });
 const anonymousWebStore = new SQLiteAnonymousWebStore(serverBaseDir);
 const consoleStore = new SQLiteWebConsoleStore(serverBaseDir);
 const projectStore = new SQLiteProjectStore(serverBaseDir);
