@@ -24,18 +24,25 @@ export function getServerBaseDir(): string { return resolveServerBaseDir(); }
 /**
  * 按天日志目录。
  *
- * 安装形态下 CLI 会注入 AGENT_LOG_DIR=<dataDir>/logs(默认 ~/.agentroam/logs),
- * 与 launchd 的 service.stdout.log / service.stderr.log 以及 CLI 自身的
- * <dataDir>/logs/ 收口到同一个文件夹 —— 用户排障时只需打包这一个目录。
+ * 优先级:
+ *   1. `AGENT_LOG_DIR`             —— 显式覆盖,排障/容器化场景用。
+ *   2. `AGENTROAM_DATA_DIR/logs`   —— 安装形态(<dataDir>/logs,默认 ~/.agentroam/logs)。
+ *      走这一档是为了 CLI 与 runtime 版本错配(新 runtime + 没注入 AGENT_LOG_DIR 的
+ *      旧 CLI)时仍然落在正确位置。
+ *   3. `<baseDir>/.agent-data/logs` —— 历史位置(直接 next start、仓库内开发、旧版本)。
  *
- * 未注入时回落到历史位置 <baseDir>/.agent-data/logs(直接 `next start`、
- * 仓库内开发、旧版本行为),保证向后兼容。
+ * 安装形态下 2 与 launchd 的 service.stdout.log / service.stderr.log 以及 CLI 自身的
+ * <dataDir>/logs/ 同目录 —— 用户排障只需打包这一个文件夹。
  */
 export function resolveServerLogDir(
   env: NodeJS.ProcessEnv = process.env,
   baseDir: string = resolveServerBaseDir(env),
 ): string {
-  return resolve(env.AGENT_LOG_DIR?.trim() || join(baseDir, ".agent-data", "logs"));
+  const explicit = env.AGENT_LOG_DIR?.trim();
+  if (explicit) return resolve(explicit);
+  const dataDir = env.AGENTROAM_DATA_DIR?.trim();
+  if (dataDir) return resolve(dataDir, "logs");
+  return join(baseDir, ".agent-data", "logs");
 }
 
 export function getServerLogDir(): string { return resolveServerLogDir(); }

@@ -36,4 +36,11 @@ describe("resolveServerLogDir", () => {
       join("/opt/customer-agent/data", ".agent-data", "logs"),
     );
   });
+
+  it("falls back to <AGENTROAM_DATA_DIR>/logs when the CLI did not inject AGENT_LOG_DIR", () => {
+    expect(resolveServerLogDir(
+      { NODE_ENV: "test", AGENTROAM_DATA_DIR: "/Users/example/.agentroam" },
+      "/opt/customer-agent/data",
+    )).toBe(join("/Users/example/.agentroam", "logs"));
+  });
 });

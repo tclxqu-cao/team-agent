@@ -41,7 +41,13 @@
 ### 安装形态:统一收口到 `~/.agentroam/logs/`
 
 CLI 拉起 server 子进程时注入 `AGENT_LOG_DIR=<dataDir>/logs`(`packages/cli/src/runtime-manager.ts`),
-server 侧由 `resolveServerLogDir()`(`packages/server/lib/server-data-dir.ts`)解析。于是安装形态下一个目录里就有全部日志,用户排障只需打包这一处:
+server 侧由 `resolveServerLogDir()`(`packages/server/lib/server-data-dir.ts`)按三级优先级解析:
+
+1. `AGENT_LOG_DIR` —— 显式覆盖(排障、容器化)。
+2. `<AGENTROAM_DATA_DIR>/logs` —— 安装形态。这一档是**保险**:万一新 runtime 配了没注入 `AGENT_LOG_DIR` 的旧 CLI,日志仍然落在正确位置。
+3. `<serverBaseDir>/.agent-data/logs` —— 历史位置(直接 `next start`、仓库内开发、旧版本),向后兼容。
+
+于是安装形态下一个目录里就有全部日志,用户排障只需打包这一处。**`--data-dir` 换到别处时日志跟着走**(例如 `/opt/agentroam` → `/opt/agentroam/logs/`)。
 
 ```
 ~/.agentroam/logs/

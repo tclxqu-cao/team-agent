@@ -68,10 +68,14 @@ try {
 const serverBaseDir = path.resolve(process.env.AGENT_DATA_DIR?.trim() || dir);
 // 全局日志唯一装配点(core 的 installGlobalLogging):绑定按天日志文件
 // (YYYY-MM-DD.log)、安装进程级错误 handler、镜像 console.error/warn。
-// 目录优先取 AGENT_LOG_DIR(安装形态下 CLI 注入为 ~/.agentroam/logs,与
-// launchd 的 service.stdout/stderr.log 同目录),未注入才回落到
-// <serverBaseDir>/.agent-data/logs。桌面壳是长驻网关,记录后不退出。
-const serverLogDir = path.resolve(process.env.AGENT_LOG_DIR?.trim() || path.join(serverBaseDir, ".agent-data", "logs"));
+// 目录优先级:AGENT_LOG_DIR > <AGENTROAM_DATA_DIR>/logs(安装形态,默认
+// ~/.agentroam/logs) > <serverBaseDir>/.agent-data/logs(历史位置)。
+// 桌面壳是长驻网关,记录后不退出。
+const serverLogDir = path.resolve(
+  process.env.AGENT_LOG_DIR?.trim()
+  || (process.env.AGENTROAM_DATA_DIR?.trim() ? path.join(process.env.AGENTROAM_DATA_DIR.trim(), "logs") : "")
+  || path.join(serverBaseDir, ".agent-data", "logs"),
+);
 const globalLogger = installGlobalLogging({
   dir: serverLogDir,
   source: "server",
