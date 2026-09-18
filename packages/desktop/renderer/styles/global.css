@@ -3429,3 +3429,15 @@ input:focus, select:focus, textarea:focus {
 .live-view-select select[aria-busy="true"] { opacity: 1; }
 .live-view-select select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .live-view-select-icon { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); display: inline-flex; color: var(--text-secondary); pointer-events: none; }
+
+/* Shared-service connection gate: renders before App mounts, so it must carry its own skin-safe tokens. */
+.service-gate { position: fixed; inset: 0; z-index: 10000; display: grid; place-items: center; padding: 24px; background: var(--bg-deepest); color: var(--text-primary); }
+.service-gate-card { display: flex; flex-direction: column; gap: 10px; width: min(560px, calc(100vw - 48px)); padding: 28px; border: 1px solid var(--border-default); border-radius: var(--radius-md); background: var(--bg-surface); box-shadow: var(--shadow-md); }
+.service-gate-card h2 { font-size: 17px; font-weight: 650; }
+.service-gate-desc { color: var(--text-secondary); font-size: 12.5px; line-height: 1.5; }
+.service-gate-meta { color: var(--text-secondary); font-family: var(--font-mono); font-size: 11px; word-break: break-all; }
+.service-gate-choice { display: flex; flex-direction: column; gap: 3px; padding: 12px 14px; border: 1px solid var(--border-default); border-radius: var(--radius-sm); background: var(--bg-deep); color: var(--text-primary); font-family: var(--font-body); font-size: 13px; text-align: left; cursor: pointer; transition: border-color var(--duration-fast) var(--ease-out), background-color var(--duration-fast) var(--ease-out); }
+.service-gate-choice:hover { border-color: var(--accent); background: var(--control-hover); }
+.service-gate-choice:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+.service-gate-choice small { color: var(--text-secondary); font-family: var(--font-mono); font-size: 11px; word-break: break-all; }
+.service-gate-error { color: var(--danger); font-size: 12px; }

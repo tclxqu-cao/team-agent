@@ -37,15 +37,16 @@ export function SharedServiceRoot() {
   return <>
     {showPermissions && <DesktopPermissionDialog onClose={() => setShowPermissions(false)} />}
     {App && <App />}
-    {!connected && <div style={{ position: "fixed", inset: 0, zIndex: 10000, display: "grid", placeItems: "center", background: "var(--bg-primary, #17191d)", color: "var(--text-primary, #eee)" }}>
-      <section style={{ width: 560, maxWidth: "85vw", padding: 32 }}>
+    {!connected && <div className="service-gate">
+      <section className="service-gate-card">
         <h2>{App ? "统一服务连接已断开" : "连接 AgentRoam 服务"}</h2>
-        <p>{App ? "正在重连。后端任务继续由服务管理，当前输入保留。" : "请先启动 agentroam。桌面和网页连接同一服务后，共享项目、设置和会话。"}</p>
-        {status?.preferredDataDir && <p>上次使用：{status.preferredDataDir}</p>}
-        {status?.choices.map((choice) => <button key={choice.instanceId} onClick={() => void select(choice.instanceId)} style={{ display: "block", width: "100%", marginTop: 12, padding: 14, textAlign: "left" }}>
-          连接 {choice.url}<br /><small>{choice.dataDir}</small>
+        <p className="service-gate-desc">{App ? "正在重连。后端任务继续由服务管理，当前输入保留。" : "请先启动 agentroam。桌面和网页连接同一服务后，共享项目、设置和会话。"}</p>
+        {status?.preferredDataDir && <p className="service-gate-meta">上次使用：{status.preferredDataDir}</p>}
+        {status?.choices.map((choice) => <button key={choice.instanceId} type="button" className="service-gate-choice" onClick={() => void select(choice.instanceId)}>
+          <span>连接 {choice.url}</span>
+          <small>{choice.dataDir}</small>
         </button>)}
-        {failure && <p role="alert">{failure}</p>}
+        {failure && <p role="alert" className="service-gate-error">{failure}</p>}
       </section>
     </div>}
   </>;
