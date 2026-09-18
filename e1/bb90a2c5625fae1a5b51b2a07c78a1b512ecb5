@@ -1,0 +1,24 @@
+docs/global-logging.md
+  h_b0bf4228a0b7ec 18,41-56,60-64,66-67
+packages/cli/src/runtime-manager.ts
+  h_b0bf4228a0b7ec 76-78
+packages/server/lib/global-logger.ts
+  h_b0bf4228a0b7ec 2,19
+packages/server/lib/server-data-dir.test.ts
+  h_b0bf4228a0b7ec 1,3,19-39
+packages/server/lib/server-data-dir.ts
+  h_b0bf4228a0b7ec 1,24-42
+packages/server/ws-server.mjs
+  h_b0bf4228a0b7ec 18,70-74,76,81
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "e1bb90a2c5625fae1a5b51b2a07c78a1b512ecb5",
+  "prompts": {},
+  "humans": {
+    "h_b0bf4228a0b7ec": {
+      "author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
