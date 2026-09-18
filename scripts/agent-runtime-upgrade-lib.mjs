@@ -34,14 +34,12 @@ const RELEASE_MANIFEST_FILES = [
   "packages/cloudflared-win32-x64/manifest.json",
 ];
 
-const RELEASE_TEXT_FILES = [
-  ["packages/cli/bin/node-preflight.mjs", 1],
-  ["packages/cli/src/platform-packages.ts", 1],
-  ["packages/cli/install/install-agentroam.sh", 1],
-  ["packages/cli/install/install-agentroam.ps1", 1],
-  // README/RELEASE docs no longer embed the release version literal.
-  ["packages/cli/src/tunnel/public-readiness.ts", 1],
-];
+// 版本号已收敛到 `packages/cli/package.json` 单一源头：CLI 运行时代码
+// （node-preflight.mjs、platform-packages.ts、tunnel/public-readiness.ts）与两个
+// 安装脚本都改成运行时读取/由 npm dist-tag 解析，README/RELEASE 文档也早已去字面量。
+// 因此托管版本 pin 升级不再需要改写任何文本文件 —— 清单保持为空。
+// 新增「必须内嵌版本号」的文本文件时才往这里加，并同步 agent-runtime-upgrade.test.mjs 的 fixture 列表。
+const RELEASE_TEXT_FILES = [];
 
 const AGENT_TEXT_FILES = {
   codex: [
@@ -488,7 +486,8 @@ async function checkReleaseVersionGroup(io, root, issues) {
     const packageVersion = packageVersions.get(file.replace("manifest.json", "package.json"))?.version;
     if (value) checkEqual(`${file} packageVersion`, value.packageVersion, packageVersion, issues);
   }
-  for (const [file] of RELEASE_TEXT_FILES.slice(0, 4)) {
+  // 逐个校验清单里的文本文件都还带着当前版本号（清单为空时自然是空循环）。
+  for (const [file] of RELEASE_TEXT_FILES) {
     try {
       const content = await io.readFile(resolve(root, file), "utf8");
       if (!content.includes(expected)) issues.push(`${file} does not contain AgentRoam version ${expected}`);
