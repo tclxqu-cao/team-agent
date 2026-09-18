@@ -17,23 +17,24 @@ on a real Windows runner before release.
 npx agentroam@preview
 ```
 
-Or install from tarball:
+Or install from the release tarballs. `<version>` is per-file: platform packages
+may each reuse an older version, so use the actual file names from `dist/cli-release`.
 
 ```bash
-npm install ./agentroam-cloudflared-darwin-arm64-0.2.0-preview.20.tgz \
-  ./agentroam-runtime-darwin-arm64-0.2.0-preview.21.tgz \
-  ./agentroam-tui-darwin-arm64-0.2.0-preview.20.tgz \
-  ./agentroam-0.2.0-preview.21.tgz
+npm install ./agentroam-cloudflared-darwin-arm64-<version>.tgz \
+  ./agentroam-runtime-darwin-arm64-<version>.tgz \
+  ./agentroam-tui-darwin-arm64-<version>.tgz \
+  ./agentroam-<version>.tgz
 npx agentroam
 ```
 
 Windows PowerShell:
 
 ```powershell
-npm install ./agentroam-cloudflared-win32-x64-0.2.0-preview.20.tgz `
-  ./agentroam-runtime-win32-x64-0.2.0-preview.21.tgz `
-  ./caoqu-agentroam-tui-win32-x64-0.2.0-preview.20.tgz `
-  ./agentroam-0.2.0-preview.21.tgz
+npm install ./agentroam-cloudflared-win32-x64-<version>.tgz `
+  ./agentroam-runtime-win32-x64-<version>.tgz `
+  ./caoqu-agentroam-tui-win32-x64-<version>.tgz `
+  ./agentroam-<version>.tgz
 npx agentroam
 ```
 
@@ -55,7 +56,7 @@ agent-tui                 # start the bundled terminal Agent UI
 
 ## Install and run in the background
 
-Run the versioned Shell installer on macOS or PowerShell installer on Windows
+Run the Shell installer on macOS or the PowerShell installer on Windows
 from the project directory AgentRoam should expose. The installer verifies or
 installs a compatible Node and the matching CLI, registers the current-user service, starts
 it, checks readiness, and prints the access URL. Set `AGENTROAM_ROOT` to select a
@@ -71,7 +72,7 @@ versions are never rejected or downgraded solely because of their major version.
 The service keeps running after the terminal closes, restarts after failure, and
 starts again when the user logs in. macOS uses a user LaunchAgent; Windows uses a
 current-user Task Scheduler task. Neither requires administrator privileges.
-Running a newer versioned installer automatically stops and replaces an existing
+Re-running the installer automatically stops and replaces an existing
 AgentRoam user service before starting the new version. Session data, pairing
 state, managed runtimes, and service logs are preserved during the upgrade.
 
@@ -88,7 +89,7 @@ agentroam service uninstall
 The current phone URL is stored privately at `~/.agentroam/tunnel.url`.
 Cloudflared keeps the same Quick Tunnel hostname while its process reconnects;
 a full service or computer restart creates a new random hostname. Re-run the
-versioned installer after moving or replacing Node/npm so the service receives
+installer after moving or replacing Node/npm so the service receives
 the new absolute executable paths.
 
 Both foreground `agentroam start` and the background service prevent idle system

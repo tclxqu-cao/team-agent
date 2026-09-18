@@ -1,11 +1,11 @@
 # AgentRoam bootstrap installers
 
-These versioned installers support macOS Apple Silicon and Windows x64. They reuse the active Node.js installation when it meets `>=22.22.0`, with no upper version bound. Otherwise they search NVM for the highest compatible version, then fall back to the verified private Node.js `22.22.0` runtime under the AgentRoam data directory. They then register and start the current-user AgentRoam background service. They never modify, replace, or uninstall system Node.js or global power settings.
+These installers support macOS Apple Silicon and Windows x64. They install the newest published `preview` release by default (resolved from the npm dist-tag); pin an exact release with `AGENTROAM_VERSION=<x.y.z-preview.N>`. They reuse the active Node.js installation when it meets `>=22.22.0`, with no upper version bound. Otherwise they search NVM for the highest compatible version, then fall back to the verified private Node.js `22.22.0` runtime under the AgentRoam data directory. They then register and start the current-user AgentRoam background service. They never modify, replace, or uninstall system Node.js or global power settings.
 
 ## macOS Apple Silicon
 
 ```sh
-curl -fsSL https://gitee.com/caoqu/team-agent/raw/master/packages/cli/install/install-agentroam.sh | sh
+curl -fsSL https://github.com/tclxqu-cao/team-agent/raw/main/packages/cli/install/install-agentroam.sh | sh
 ```
 
 The command installs the wrapper at `~/.local/bin/agentroam`. If that directory is not already in `PATH`, the installer prints the required shell setting without editing shell profiles.
@@ -13,7 +13,7 @@ The command installs the wrapper at `~/.local/bin/agentroam`. If that directory 
 ## Windows x64
 
 ```powershell
-irm https://gitee.com/caoqu/team-agent/raw/master/packages/cli/install/install-agentroam.ps1 | iex
+irm https://github.com/tclxqu-cao/team-agent/raw/main/packages/cli/install/install-agentroam.ps1 | iex
 ```
 
 The command installs `%USERPROFILE%\.agentroam\bin\agentroam.cmd` and adds only that user directory to the user-level `PATH`. It does not require administrator access or change the machine-level `PATH`.
@@ -40,9 +40,9 @@ agentroam service uninstall
 
 ## Data and updates
 
-Set `AGENTROAM_DATA_DIR` before running either installer to override the default `~/.agentroam` data directory. Node is stored at `<data-dir>/runtimes/node/22.22.0`, and the launcher is stored at `<data-dir>/launcher/0.2.0-preview.21`.
+Set `AGENTROAM_DATA_DIR` before running either installer to override the default `~/.agentroam` data directory. Node is stored at `<data-dir>/runtimes/node/22.22.0`, and the launcher is stored at `<data-dir>/launcher/<version>`.
 
-Each AgentRoam release pins its own Node patch and installer assets. Updates happen only by running a newer versioned installer or installing a newer AgentRoam release; startup never follows a moving Node.js release channel.
+Each AgentRoam release pins its own Node patch. Updates happen by running the installer again (it resolves the newest published `preview`) or by installing a newer AgentRoam release; startup never follows a moving Node.js release channel.
 
 To uninstall the wrapper, remove `~/.local/bin/agentroam` on macOS or `%USERPROFILE%\.agentroam\bin\agentroam.cmd` on Windows. The private runtime, launcher, session data, and configuration under the data directory are preserved until explicitly removed by the user.
 
