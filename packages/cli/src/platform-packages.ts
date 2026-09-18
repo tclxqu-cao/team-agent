@@ -4,10 +4,19 @@ import { dirname } from "node:path";
 import type { PlatformTarget } from "./platform.js";
 import { MINIMUM_NODE_VERSION, assertSupportedNodeVersion } from "../bin/runtime-policy.mjs";
 
-export const AGENTROAM_VERSION = "0.2.0-preview.26";
-export const PLATFORM_DEPENDENCY_VERSIONS: Record<string, string> = JSON.parse(
+const CLI_PACKAGE_JSON: { version: string; optionalDependencies: Record<string, string> } = JSON.parse(
   readFileSync(new URL("../package.json", import.meta.url), "utf8"),
-).optionalDependencies;
+);
+
+/**
+ * CLI 自身版本。
+ *
+ * **唯一源头是 packages/cli/package.json 的 version** —— 发版时只改那一处，
+ * 本文件、bin/node-preflight.mjs、tunnel/public-readiness.ts 全部自动跟随。
+ */
+export const AGENTROAM_VERSION: string = CLI_PACKAGE_JSON.version;
+
+export const PLATFORM_DEPENDENCY_VERSIONS: Record<string, string> = CLI_PACKAGE_JSON.optionalDependencies;
 
 export interface RuntimePackageManifest {
   packageVersion: string;

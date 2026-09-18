@@ -1,6 +1,7 @@
 import { fetch as undiciFetch, ProxyAgent } from "undici";
 import type { RequestInit as UndiciRequestInit } from "undici";
 import { resolveProxyForUrl } from "./proxy-settings.js";
+import { AGENTROAM_VERSION } from "../platform-packages.js";
 
 type ReadinessFetch = (input: URL, init: RequestInit) => Promise<Response>;
 
@@ -44,7 +45,7 @@ export async function waitForPublicReadiness(
       try {
         const response = await fetchImpl(endpoint, {
           cache: "no-store",
-          headers: { "user-agent": "agentroam-readiness/0.2.0-preview.26" },
+          headers: { "user-agent": `agentroam-readiness/${AGENTROAM_VERSION}` },
           signal: options.signal,
         });
         if (response.ok) {

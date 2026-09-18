@@ -3,8 +3,8 @@ set -eu
 
 NODE_VERSION="22.22.0"
 MINIMUM_NODE_VERSION="22.22.0"
-# Default to the newest published preview; pin an exact version via
-# AGENTROAM_VERSION=0.2.0-preview.26 sh install-agentroam.sh
+# Default to the newest published preview (npm dist-tag); pin an exact version via
+# AGENTROAM_VERSION=<x.y.z-preview.N> sh install-agentroam.sh
 AGENTROAM_VERSION_REQUEST="${AGENTROAM_VERSION:-preview}"
 AGENTROAM_VERSION=""
 NODE_ARCHIVE="node-v22.22.0-darwin-arm64.tar.xz"

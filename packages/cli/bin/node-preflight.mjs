@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { access, readdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import { delimiter, dirname, resolve } from "node:path";
@@ -7,7 +8,10 @@ import { promisify } from "node:util";
 import { MINIMUM_NODE_VERSION, compareNodeVersions, isSupportedNodeVersion, parseNodeVersion } from "./runtime-policy.mjs";
 
 const execFileAsync = promisify(execFile);
-const RELEASE_VERSION = "0.2.0-preview.26";
+// 版本唯一源头：packages/cli/package.json 的 version（发版只改那一处）
+const RELEASE_VERSION = JSON.parse(
+  readFileSync(new URL("../package.json", import.meta.url), "utf8"),
+).version;
 const RELEASE_BASE_URL = `https://gitee.com/caoqu/team-agent/releases/download/v${RELEASE_VERSION}`;
 const FORWARDED_SIGNALS = ["SIGINT", "SIGTERM", "SIGHUP"];
 
