@@ -1,6 +1,7 @@
 import { printLocalDesktopUrl } from './local-desktop-url.js';
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import { parseArgs } from "./args.js";
 import { ensureCloudflared } from "./cloudflared/installer.js";
 import { resolveCodexRuntime } from "./codex-runtime-manager.js";
@@ -19,6 +20,7 @@ import { currentCliPath, startUpdate } from "./update/update-command.js";
 import { runUpdateWorker } from "./update/update-worker.js";
 import { lockInstanceStartup, stopPreviousInstances } from "./instance-takeover.js";
 import { runUnlockServiceCommand } from "./unlock-service.js";
+import { createCliErrorLog } from "./error-log.js";
 
 const VERSION = AGENTROAM_VERSION;
 
@@ -43,6 +45,11 @@ export async function main(argv: string[]): Promise<void> {
     return;
   }
   const options = parseArgs(argv);
+  // CLI 进程自身的按天错误日志:<dataDir>/logs/YYYY-MM-DD.log(NDJSON,与
+  // server/desktop 的 core logger 同格式)。uncaughtException 记录后按默认
+  // 语义退出(1),unhandledRejection 只记录。
+  const cliErrorLog = createCliErrorLog(join(options.dataDir, "logs"));
+  cliErrorLog.installGlobalErrorHandlers();
   if (["pair", "devices", "revoke", "approvals", "approve", "deny", "lock", "unlock", "audit"].includes(options.command)) {
     const dataDir = argv.includes("--data-dir") ? options.dataDir : await installedDataDir(options.dataDir);
     if (options.command === "pair") await printPairingCode(dataDir, console.log, { accessUrl: options.pairingUrl, qr: options.qr });

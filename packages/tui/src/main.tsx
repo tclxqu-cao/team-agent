@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { render, Text } from "ink";
+import { installGlobalLogging } from "@agent/core";
 import { TuiApp } from "./App.js";
 import { discoverDatabasePaths, readDesktopData } from "./desktop-data.js";
 import { loadInputHistory } from "./input-history.js";
@@ -22,6 +23,17 @@ export async function startTui(argv: string[], env: NodeJS.ProcessEnv): Promise<
     process.exitCode = 1;
     return;
   }
+
+  // TUI 进程内直接跑 AgentLoop,全局日志唯一装配点(core 的
+  // installGlobalLogging):按天错误日志落在自身存储目录
+  // (~/.customer-agent-tui/logs/YYYY-MM-DD.log)。uncaughtException 记录后
+  // 按默认语义退出(1);console.error/warn 镜像落盘,保留原有输出。
+  const tuiLogger = installGlobalLogging({
+    dir: path.join(os.homedir(), ".customer-agent-tui", "logs"),
+    source: "tui",
+    minLevel: "info",
+  });
+  tuiLogger.info("tui starting", { argv: argv.slice(0, 8), cwd: process.cwd() });
 
   // --continue / -c reopen the newest session; --resume <prefix> reopens a match.
   const resumeFlagIndex = argv.indexOf("--resume");
