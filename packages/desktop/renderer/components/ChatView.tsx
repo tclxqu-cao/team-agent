@@ -3096,7 +3096,12 @@ export default function ChatView({
       if (prompt && window.agentApi) {
         let targetSessionId = selectedSessionId || sessionId;
         if (!targetSessionId) {
-          const created = await window.agentApi.createSession(prompt.slice(0, 60) || "定时任务", selectedProjectId || undefined) as { id: string };
+          const created = await window.agentApi.createSession(
+            prompt.slice(0, 60) || "定时任务",
+            selectedProjectId || undefined,
+            composerAgentType,
+            composerAgentType !== "customer-agent" ? (workspacePath ?? undefined) : undefined,
+          ) as { id: string };
           targetSessionId = created.id;
           setSessionId(created.id);
           if (onSessionCreated) await onSessionCreated(created.id);
@@ -3152,7 +3157,12 @@ export default function ChatView({
           sessionId: selectedSessionId || sessionId,
           createSession: async (title, projectId) => {
             if (!window.agentApi) throw new Error("agentApi 未就绪");
-            return await window.agentApi.createSession(title, projectId) as { id: string };
+            return await window.agentApi.createSession(
+              title,
+              projectId,
+              composerAgentType,
+              composerAgentType !== "customer-agent" ? (workspacePath ?? undefined) : undefined,
+            ) as { id: string };
           },
           activateSession: (id) => {
             sessionIdRef.current = id;
@@ -3239,7 +3249,14 @@ export default function ChatView({
         sessionId: selectedSessionId || sessionId,
         createSession: async (title, projectId) => {
           if (!window.agentApi) throw new Error("agentApi 未就绪");
-          return await window.agentApi.createSession(title, projectId) as { id: string };
+          // 空白会话直接发送也必须带上当前选中的运行时（codex/claude-code/…），
+          // 否则会落回 customer-agent 并因未配模型报错。原生运行时还需要 cwd。
+          return await window.agentApi.createSession(
+            title,
+            projectId,
+            composerAgentType,
+            composerAgentType !== "customer-agent" ? (workspacePath ?? undefined) : undefined,
+          ) as { id: string };
         },
         activateSession: (id) => {
           sessionIdRef.current = id;
@@ -3291,7 +3308,12 @@ export default function ChatView({
           projectId,
           sessionId,
           createSession: async (title, targetProjectId) => (
-            await window.agentApi.createSession(title, targetProjectId)
+            await window.agentApi.createSession(
+              title,
+              targetProjectId,
+              composerAgentType,
+              composerAgentType !== "customer-agent" ? (workspacePath ?? undefined) : undefined,
+            )
           ) as { id: string },
           activateSession: (targetId) => {
             sessionIdRef.current = targetId;
