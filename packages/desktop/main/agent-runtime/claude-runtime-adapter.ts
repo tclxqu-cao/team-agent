@@ -1,3 +1,4 @@
+import { logGlobal } from "@agent/core";
 import { execFile } from "node:child_process";
 import { open, readFile, readdir, stat, type FileHandle } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -5,11 +6,15 @@ import { basename, dirname, join, resolve } from "node:path";
 import { StringDecoder } from "node:string_decoder";
 import { promisify } from "node:util";
 import {
+  deleteSession as deleteClaudeSession,
+  forkSession as forkClaudeSession,
+  getSessionInfo,
   getSessionMessages,
   getSubagentMessages,
   listSessions,
   listSubagents,
   query,
+  renameSession as renameClaudeSession,
   type CanUseTool,
   type PermissionResult,
   type Query,
@@ -20,17 +25,27 @@ import {
   type SessionMessage,
 } from "@anthropic-ai/claude-agent-sdk";
 import {
+  buildSessionQueryIndex,
   classifyToolPermission,
+  computeSessionHistoryRevision,
   normalizeToolPermissionMode,
   type AgentEvent,
   type Message,
   type MessageAttachment,
   type NativeSubagentActivity,
+  type SessionHistoryQuery,
+  type SessionQueryIndex,
   type ToolCall,
   type ToolPermissionMode,
 } from "@agent/core";
 import { AsyncEventQueue } from "./async-event-queue.js";
 import { parseImageDataUrls } from "./image-input.js";
+import {
+  buildNativeHistoryPage,
+  nativeHistorySkeleton,
+  nativeHistoryWindow,
+  selectNativeHistoryRange,
+} from "./native-history-paging.js";
 import { listOpenSessionFiles } from "./native-processes.js";
 import { encodeUnifiedSessionId } from "./session-id.js";
 import {
@@ -101,6 +116,24 @@ interface TrackedClaudeSubagent {
   ambient: boolean;
   settled: boolean;
   streamedText: boolean;
+}
+
+/**
+ * Stamp-validated transcript conversion used by native history paging. The
+ * transcript is append-only JSONL, so a growing file is continued from the
+ * last consumed byte instead of re-reading the whole conversation.
+ */
+interface ClaudePagerState {
+  path: string;
+  ino: number;
+  consumedBytes: number;
+  /** Undecoded remainder after the last complete line. */
+  tail: string;
+  fileStamp: string;
+  messages: Message[];
+  /** Subagent recovery is expensive; cache it until the transcript changes. */
+  events?: AgentEvent[];
+  eventsStamp?: string;
 }
 
 export class ClaudeSubagentTracker {
@@ -286,6 +319,7 @@ export class ClaudeRuntimeAdapter implements AgentRuntimeAdapter {
    */
   private occupancyCache: { at: number; raw: Set<string> } | null = null;
   private readonly occupancyTtlMs: number;
+  private readonly pagerStates = new Map<string, ClaudePagerState>();
 
   constructor(options: { sessionRoot?: string; occupancyTtlMs?: number } = {}) {
     this.sessionRoot = options.sessionRoot ?? join(homedir(), ".claude", "projects");
@@ -426,6 +460,142 @@ export class ClaudeRuntimeAdapter implements AgentRuntimeAdapter {
     return this.findSessionPath(nativeSessionId);
   }
 
+  /**
+   * Source-paginated history over the session transcript.
+   *
+   * The ordinal space counts visible user/assistant messages of the converted
+   * transcript — the same conversion the full read serves, so cursors,
+   * historyIds and anchors stay consistent across pages and with the query
+   * index. Tool results ride along with their assistant carrier and never
+   * consume an ordinal.
+   */
+  async getSessionPaged(nativeSessionId: string, query: SessionHistoryQuery): Promise<UnifiedSessionDetail> {
+    const draft = this.drafts.get(nativeSessionId);
+    const [session, occupiedIds] = await Promise.all([
+      this.findSession(nativeSessionId),
+      this.externalOccupancy(),
+    ]);
+    if (!session && !draft) {
+      throw new RuntimeSessionError(`Claude Code session not found: ${nativeSessionId}`, "SESSION_NOT_FOUND");
+    }
+    const summary = session
+      ? mergeClaudeDraftContext(await this.toSummary(session, occupiedIds), draft)
+      : draft!;
+    const messages = await this.loadTranscriptMessages(nativeSessionId) ?? [];
+    const revision = computeSessionHistoryRevision(messages);
+    if (query.view === "trace" && query.revision && query.revision !== revision) {
+      throw new RuntimeSessionError("Session history changed; reload the core page", "STALE_SESSION_ANCHOR");
+    }
+    const skeleton = nativeHistorySkeleton(messages);
+    const skeletonMessages = skeleton.map((index) => messages[index]);
+    const { start, end, kind } = selectNativeHistoryRange(skeletonMessages, query, revision);
+    const page = buildNativeHistoryPage(
+      messages,
+      skeleton,
+      start,
+      end,
+      await this.pagerEvents(nativeSessionId, summary.cwd, messages),
+    );
+    return {
+      ...summary,
+      messages: page.messages,
+      events: page.events,
+      history: nativeHistoryWindow(start, end, skeleton.length, kind, revision, query.view ?? "legacy-full"),
+    };
+  }
+
+  /** Query index over the transcript's visible messages (same ordinal space as getSessionPaged). */
+  async getQueryIndex(nativeSessionId: string): Promise<SessionQueryIndex | null> {
+    const messages = await this.loadTranscriptMessages(nativeSessionId).catch(() => null) ?? [];
+    return buildSessionQueryIndex(encodeUnifiedSessionId(this.agentType, nativeSessionId), messages);
+  }
+
+  async fork(nativeSessionId: string): Promise<UnifiedSessionSummary> {
+    if (this.activeQueries.has(nativeSessionId)) {
+      throw new RuntimeSessionError("Claude Code session is currently running", "SESSION_OCCUPIED");
+    }
+    const detail = await this.getSession(nativeSessionId);
+    if (detail.occupancy === "owned-externally") {
+      throw new RuntimeSessionError("Claude Code session is open in another client", "SESSION_OCCUPIED");
+    }
+    const draft = this.drafts.get(nativeSessionId);
+    const dirOptions = detail.cwd ? { dir: detail.cwd } : undefined;
+    if (draft && !(await this.findSessionPath(nativeSessionId))) {
+      // A draft has no transcript to fork yet; clone the draft locally.
+      return this.create({ title: `${detail.title}（副本）`, cwd: detail.cwd, projectId: detail.projectId });
+    }
+    let forkedSessionId: string;
+    try {
+      const result = await forkClaudeSession(nativeSessionId, {
+        ...dirOptions,
+        title: `${detail.title}（副本）`,
+      });
+      forkedSessionId = result.sessionId;
+    } catch (error) {
+      throw new RuntimeSessionError(
+        `Unable to fork Claude Code session: ${error instanceof Error ? error.message : String(error)}`,
+        "NATIVE_PROTOCOL_ERROR",
+      );
+    }
+    const now = new Date().toISOString();
+    return {
+      id: encodeUnifiedSessionId(this.agentType, forkedSessionId),
+      agentType: this.agentType,
+      nativeSessionId: forkedSessionId,
+      title: `${detail.title}（副本）`,
+      cwd: detail.cwd,
+      projectId: detail.projectId,
+      created: now,
+      updated: now,
+      status: "idle",
+      occupancy: "available",
+      sourceLabel: "Claude Code SDK",
+      canResume: true,
+      canDelete: true,
+    };
+  }
+
+  async renameSession(nativeSessionId: string, title: string): Promise<void> {
+    const trimmed = title.trim();
+    if (!trimmed) {
+      throw new RuntimeSessionError("Session title cannot be empty", "INVALID_SESSION_ID");
+    }
+    if (this.drafts.has(nativeSessionId)) {
+      const draft = this.drafts.get(nativeSessionId)!;
+      this.drafts.set(nativeSessionId, { ...draft, title: trimmed });
+      return;
+    }
+    const dirOptions = await this.sessionDirOptions(nativeSessionId);
+    try {
+      await renameClaudeSession(nativeSessionId, trimmed, dirOptions);
+    } catch (error) {
+      throw new RuntimeSessionError(
+        `Unable to rename Claude Code session: ${error instanceof Error ? error.message : String(error)}`,
+        "NATIVE_PROTOCOL_ERROR",
+      );
+    }
+    this.sessionInfoCache.delete(nativeSessionId);
+  }
+
+  async delete(nativeSessionId: string): Promise<void> {
+    if (this.activeQueries.has(nativeSessionId)) {
+      throw new RuntimeSessionError("Claude Code session is currently running", "SESSION_OCCUPIED");
+    }
+    const dirOptions = await this.sessionDirOptions(nativeSessionId);
+    try {
+      await deleteClaudeSession(nativeSessionId, dirOptions);
+    } catch (error) {
+      throw new RuntimeSessionError(
+        `Unable to delete Claude Code session: ${error instanceof Error ? error.message : String(error)}`,
+        "NATIVE_PROTOCOL_ERROR",
+      );
+    }
+    this.drafts.delete(nativeSessionId);
+    this.sessionPaths.delete(nativeSessionId);
+    this.sessionInfoCache.delete(nativeSessionId);
+    this.pagerStates.delete(nativeSessionId);
+  }
+
   async create(options: CreateRuntimeSessionOptions): Promise<UnifiedSessionSummary> {
     const nativeSessionId = crypto.randomUUID();
     const now = new Date().toISOString();
@@ -442,7 +612,7 @@ export class ClaudeRuntimeAdapter implements AgentRuntimeAdapter {
       occupancy: "available",
       sourceLabel: "Claude Code SDK",
       canResume: true,
-      canDelete: false,
+      canDelete: true,
     };
     this.drafts.set(nativeSessionId, summary);
     return summary;
@@ -579,11 +749,14 @@ export class ClaudeRuntimeAdapter implements AgentRuntimeAdapter {
       }
       this.drafts.delete(nativeSessionId);
     } catch (error) {
-      yield {
-        type: "error",
-        message: error instanceof Error ? error.message : String(error),
-        code: error instanceof RuntimeSessionError ? error.code : "NATIVE_PROTOCOL_ERROR",
-      };
+      const message = error instanceof Error ? error.message : String(error);
+      const code = error instanceof RuntimeSessionError ? error.code : "NATIVE_PROTOCOL_ERROR";
+      logGlobal("error", "claude-adapter", "claude run failed", error, {
+        nativeSessionId,
+        code,
+        message,
+      });
+      yield { type: "error", message, code };
     } finally {
       this.rejectPermissionsForSession(nativeSessionId, "Claude Code run ended");
       permissionQueue.close();
@@ -640,6 +813,7 @@ export class ClaudeRuntimeAdapter implements AgentRuntimeAdapter {
     for (const activeQuery of this.activeQueries.values()) activeQuery.close();
     this.activeQueries.clear();
     this.ownedSessions.clear();
+    this.pagerStates.clear();
     for (const [questionId, pending] of this.pendingPermissions) {
       pending.resolve({ behavior: "deny", message: "Customer Agent is shutting down", interrupt: true });
       this.pendingPermissions.delete(questionId);
@@ -653,6 +827,77 @@ export class ClaudeRuntimeAdapter implements AgentRuntimeAdapter {
       sessions.push(...page);
       if (page.length < PAGE_SIZE) return sessions;
     }
+  }
+
+  private async sessionDirOptions(nativeSessionId: string): Promise<{ dir: string } | undefined> {
+    const info = await getSessionInfo(nativeSessionId).catch(() => undefined);
+    const dir = info?.cwd?.trim();
+    return dir ? { dir } : undefined;
+  }
+
+  /**
+   * Converted transcript messages for native paging. Cached per session and
+   * validated against the transcript's mtime+size; an append-only growth is
+   * continued from the last consumed complete line instead of a full re-read.
+   */
+  private async loadTranscriptMessages(nativeSessionId: string): Promise<Message[] | null> {
+    const path = await this.findSessionPath(nativeSessionId);
+    if (!path) {
+      this.pagerStates.delete(nativeSessionId);
+      return null;
+    }
+    let size: number;
+    let ino: number;
+    let stamp: string;
+    try {
+      const entry = await stat(path);
+      size = entry.size;
+      ino = Number(entry.ino);
+      stamp = `${entry.mtimeMs}:${size}`;
+    } catch {
+      this.pagerStates.delete(nativeSessionId);
+      return null;
+    }
+    const state = this.pagerStates.get(nativeSessionId);
+    if (state && state.path === path && state.fileStamp === stamp) return state.messages;
+    if (state && state.path === path && state.ino === ino && size >= state.consumedBytes) {
+      const chunk = await readTranscriptChunk(path, state.consumedBytes, size, state.tail);
+      const appended = claudeHistoryToMessages(parseTranscriptEntries(chunk.text));
+      state.messages = [...state.messages, ...appended];
+      state.consumedBytes = chunk.consumed;
+      state.tail = chunk.tail;
+      state.fileStamp = stamp;
+      state.events = undefined;
+      return state.messages;
+    }
+    const whole = await readWholeTranscript(path);
+    const messages = claudeHistoryToMessages(parseTranscriptEntries(whole.text));
+    this.pagerStates.set(nativeSessionId, {
+      path,
+      ino,
+      consumedBytes: whole.consumed,
+      tail: whole.tail,
+      fileStamp: stamp,
+      messages,
+    });
+    while (this.pagerStates.size > 32) {
+      const oldest = this.pagerStates.keys().next().value as string | undefined;
+      if (!oldest) break;
+      this.pagerStates.delete(oldest);
+    }
+    return messages;
+  }
+
+  /** Subagent recovery for paged windows, cached until the transcript changes. */
+  private async pagerEvents(nativeSessionId: string, cwd: string, messages: Message[]): Promise<AgentEvent[]> {
+    const state = this.pagerStates.get(nativeSessionId);
+    if (state?.events && state.eventsStamp === state.fileStamp) return state.events;
+    const events = await this.recoverSubagentActivities(nativeSessionId, cwd, messages).catch(() => []);
+    if (state) {
+      state.events = events;
+      state.eventsStamp = state.fileStamp;
+    }
+    return events;
   }
 
   private async findSession(nativeSessionId: string): Promise<SDKSessionInfo | undefined> {
@@ -814,7 +1059,7 @@ export class ClaudeRuntimeAdapter implements AgentRuntimeAdapter {
       occupancy,
       sourceLabel: "Claude Code CLI",
       canResume: occupancy !== "owned-externally",
-      canDelete: false,
+      canDelete: true,
     };
   }
 
@@ -934,6 +1179,73 @@ function cwdFromTranscriptLine(line: string): string {
   } catch {
     return "";
   }
+}
+
+/**
+ * Mirrors the SDK's transcript filter (user/assistant entries only, dropping
+ * meta, sidechain and team records), so paged history matches the full read.
+ */
+function parseTranscriptEntries(text: string): SessionMessage[] {
+  const entries: SessionMessage[] = [];
+  for (const line of text.split("\n")) {
+    if (!line.trim()) continue;
+    let record: Record<string, unknown>;
+    try {
+      record = JSON.parse(line) as Record<string, unknown>;
+    } catch {
+      continue;
+    }
+    if (
+      (record.type !== "user" && record.type !== "assistant")
+      || record.isMeta
+      || record.isSidechain
+      || record.teamName
+    ) continue;
+    entries.push({ type: record.type, message: record.message } as unknown as SessionMessage);
+  }
+  return entries;
+}
+
+/**
+ * Decodes the byte range [start, end) appended to a transcript, carrying an
+ * incomplete trailing line over to the next read. Boundaries always sit right
+ * after a newline, so multi-byte characters never straddle a chunk.
+ */
+async function readTranscriptChunk(
+  path: string,
+  start: number,
+  end: number,
+  carry: string,
+): Promise<{ text: string; consumed: number; tail: string }> {
+  const handle = await open(path, "r");
+  try {
+    const buffer = Buffer.alloc(Math.max(0, end - start));
+    const { bytesRead } = await handle.read(buffer, 0, buffer.length, start);
+    const decoder = new StringDecoder("utf8");
+    const text = carry + decoder.write(buffer.subarray(0, bytesRead));
+    const lastNewline = text.lastIndexOf("\n");
+    if (lastNewline < 0) return { text: "", consumed: start, tail: text };
+    const complete = text.slice(0, lastNewline + 1);
+    return {
+      text: complete,
+      consumed: start + Buffer.byteLength(complete, "utf8"),
+      tail: text.slice(lastNewline + 1),
+    };
+  } finally {
+    await handle.close().catch(() => undefined);
+  }
+}
+
+async function readWholeTranscript(path: string): Promise<{ text: string; consumed: number; tail: string }> {
+  const text = await readFile(path, "utf8");
+  const lastNewline = text.lastIndexOf("\n");
+  if (lastNewline < 0) return { text: "", consumed: 0, tail: text };
+  const complete = text.slice(0, lastNewline + 1);
+  return {
+    text: complete,
+    consumed: Buffer.byteLength(complete, "utf8"),
+    tail: text.slice(lastNewline + 1),
+  };
 }
 
 export function claudeWorkspaceId(cwd: string): string {

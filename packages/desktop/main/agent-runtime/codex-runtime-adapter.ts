@@ -1,3 +1,4 @@
+import { logGlobal } from "@agent/core";
 import { execFile } from "node:child_process";
 import { mkdir, mkdtemp, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -251,11 +252,13 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
       const { stdout } = await execFileAsync(this.codexExecutable, ["--version"], { encoding: "utf8", timeout: 5000 });
       return { agentType: this.agentType, available: true, label: "Codex", version: stdout.trim() };
     } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      logGlobal("info", "codex-adapter", "Codex availability probe failed", error, { message });
       return {
         agentType: this.agentType,
         available: false,
         label: "Codex",
-        error: error instanceof Error ? error.message : String(error),
+        error: message,
       };
     }
   }
@@ -1157,6 +1160,11 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
       for await (const event of queue) yield event;
     } catch (error) {
       const normalized = normalizeCodexError(error);
+      logGlobal("error", "codex-adapter", "codex turn failed", error, {
+        nativeSessionId,
+        code: normalized.code,
+        message: normalized.message,
+      });
       yield { type: "error", message: normalized.message, code: normalized.code };
     } finally {
       this.clearAsyncInputs(nativeSessionId);

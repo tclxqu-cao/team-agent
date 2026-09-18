@@ -1,3 +1,4 @@
+import { logGlobal } from "@agent/core";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { RuntimeSessionError } from "./types.js";
 
@@ -104,8 +105,13 @@ export class CodexAppServerClient {
       const message = chunk.trim();
       if (message) console.warn(`[codex-app-server] ${message}`);
     });
-    child.once("error", (error) => { console.log("[codex-app-server-client] child error:", error.message); this.handleExit(error); });
+    child.once("error", (error) => {
+      logGlobal("error", "codex-app-server", "codex app-server process error", error);
+      console.log("[codex-app-server-client] child error:", error.message);
+      this.handleExit(error);
+    });
     child.once("exit", (code, signal) => {
+      logGlobal("error", "codex-app-server", "codex app-server process exited", undefined, { code, signal });
       console.log(`[codex-app-server-client] child exit: code=${code} signal=${signal}`);
       this.handleExit(new Error(`Codex App Server exited (${code ?? signal ?? "unknown"})`));
     });

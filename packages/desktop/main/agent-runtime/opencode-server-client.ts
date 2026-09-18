@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess } from "node:child_process";
+import { logGlobal } from "@agent/core";
 import { createServer } from "node:net";
 import {
   createOpencodeClient,
@@ -100,7 +101,10 @@ export class OpenCodeServerClient {
     };
     child.stdout?.on("data", collect);
     child.stderr?.on("data", collect);
-    child.once("error", (error) => { spawnError = error; });
+    child.once("error", (error) => {
+      logGlobal("error", "opencode-server", "opencode server process error", error);
+      spawnError = error;
+    });
 
     try {
       await waitForHealth(url, child, () => output, () => spawnError);

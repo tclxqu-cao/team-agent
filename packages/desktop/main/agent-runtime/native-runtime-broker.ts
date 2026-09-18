@@ -33,6 +33,7 @@ import {
   type SessionToolResultBody,
   type SessionToolResultRef,
   type ToolPermissionMode,
+  logGlobal,
 } from "@agent/core";
 import { AsyncEventQueue } from "./async-event-queue.js";
 import { normalizeAgentWorkspacePath, workspacePageSize } from "./agent-workspace-index.js";
@@ -1739,6 +1740,10 @@ export class NativeRuntimeBrokerHost {
         completed ||= event.type === "done";
       }
       if (!terminalSeen) {
+        logGlobal("error", "native-broker", "native run ended without a terminal event", undefined, {
+          sessionId: run.sessionId,
+          runId: run.runId,
+        });
         const recorded = this.state.appendTerminal(run.runId, {
           type: "error",
           code: "NATIVE_PROTOCOL_ERROR",
@@ -1751,6 +1756,11 @@ export class NativeRuntimeBrokerHost {
       }
     } catch (error) {
       const externallyOwned = error instanceof RuntimeSessionError && error.code === "SESSION_OCCUPIED";
+      logGlobal("error", "native-broker", "native run failed", error, {
+        sessionId: run.sessionId,
+        runId: run.runId,
+        externallyOwned,
+      });
       const recorded = this.state.appendTerminal(run.runId, {
         type: "error",
         code: error instanceof RuntimeSessionError ? error.code : "NATIVE_PROTOCOL_ERROR",
@@ -1808,6 +1818,10 @@ export class NativeRuntimeBrokerHost {
         item.messagePayload?.agentName,
       );
     } catch (error) {
+      logGlobal("error", "native-broker", "goal queue run failed", error, {
+        sessionId: item.sessionId,
+        goalId: item.id,
+      });
       const state = this.state.finishGoal(
         item.sessionId,
         item.id,

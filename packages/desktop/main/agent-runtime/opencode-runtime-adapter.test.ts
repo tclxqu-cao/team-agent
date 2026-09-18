@@ -240,3 +240,112 @@ describe("OpenCode model selection", () => {
     ]);
   });
 });
+
+describe("OpenCode native history paging", () => {
+  function pagingServer() {
+    const fixture = mockServer();
+    fixture.client.session.messages = vi.fn(async () => ({ data: [
+      {
+        info: {
+          id: "msg_1", sessionID: session.id, role: "user", parentID: null,
+          modelID: "gpt-5", providerID: "openai", mode: "build", path: { cwd: "/repo", root: "/repo" },
+          time: { created: 1 }, cost: 0, tokens: { input: 1, output: 1, reasoning: 0, cache: { read: 0, write: 0 } },
+        },
+        parts: [{ id: "t1", sessionID: session.id, messageID: "msg_1", type: "text", text: "q1" }],
+      },
+      {
+        info: {
+          id: "msg_2", sessionID: session.id, role: "assistant", parentID: null,
+          modelID: "gpt-5", providerID: "openai", mode: "build", path: { cwd: "/repo", root: "/repo" },
+          time: { created: 2 }, cost: 0, tokens: { input: 1, output: 1, reasoning: 0, cache: { read: 0, write: 0 } },
+        },
+        parts: [
+          { id: "t2", sessionID: session.id, messageID: "msg_2", type: "text", text: "a1" },
+          { id: "tool", sessionID: session.id, messageID: "msg_2", type: "tool", callID: "call_1", tool: "read", state: { status: "completed", input: { filePath: "a" }, output: "ok", title: "read", metadata: {}, time: { start: 1, end: 2 } } },
+        ],
+      },
+      {
+        info: {
+          id: "msg_3", sessionID: session.id, role: "user", parentID: null,
+          modelID: "gpt-5", providerID: "openai", mode: "build", path: { cwd: "/repo", root: "/repo" },
+          time: { created: 3 }, cost: 0, tokens: { input: 1, output: 1, reasoning: 0, cache: { read: 0, write: 0 } },
+        },
+        parts: [{ id: "t3", sessionID: session.id, messageID: "msg_3", type: "text", text: "q2" }],
+      },
+      {
+        info: {
+          id: "msg_4", sessionID: session.id, role: "assistant", parentID: null,
+          modelID: "gpt-5", providerID: "openai", mode: "build", path: { cwd: "/repo", root: "/repo" },
+          time: { created: 4 }, cost: 0, tokens: { input: 1, output: 1, reasoning: 0, cache: { read: 0, write: 0 } },
+        },
+        parts: [{ id: "t4", sessionID: session.id, messageID: "msg_4", type: "text", text: "a2" }],
+      },
+    ] }));
+    return fixture;
+  }
+
+  it("serves the latest window with shared cursor semantics", async () => {
+    const fixture = pagingServer();
+    const adapter = new OpenCodeRuntimeAdapter({ server: fixture.server });
+
+    const page = await adapter.getSessionPaged("ses_1", { limit: 2 });
+
+    expect(page.messages.map((message) => `${message.role}:${message.content}`)).toEqual([
+      "user:q2",
+      "assistant:a2",
+    ]);
+    expect(page.messages.every((message) => typeof message.historyId === "string" && message.historyId)).toBe(true);
+    expect(page.history).toMatchObject({
+      totalItems: 4,
+      hasMore: true,
+      nextCursor: "history.v1.2",
+      newerCursor: null,
+      kind: "latest",
+      delivery: "legacy-full",
+    });
+  });
+
+  it("serves older pages by cursor and keeps tool results beside their carrier", async () => {
+    const fixture = pagingServer();
+    const adapter = new OpenCodeRuntimeAdapter({ server: fixture.server });
+
+    const latest = await adapter.getSessionPaged("ses_1", { limit: 2 });
+    const older = await adapter.getSessionPaged("ses_1", { before: latest.history!.nextCursor! });
+
+    expect(older.messages.map((message) => message.role)).toEqual(["user", "assistant", "tool"]);
+    const toolResult = older.messages.find((message) => message.role === "tool");
+    expect(toolResult?.toolCallId).toBe("call_1");
+    expect(toolResult?.content).toBe("ok");
+    expect(older.history).toMatchObject({ totalItems: 4, hasMore: false, nextCursor: null });
+    expect(older.history?.revision).toBe(latest.history?.revision);
+  });
+
+  it("builds a query index over the same ordinal space", async () => {
+    const fixture = pagingServer();
+    const adapter = new OpenCodeRuntimeAdapter({ server: fixture.server });
+
+    const [page, index] = await Promise.all([
+      adapter.getSessionPaged("ses_1", { limit: 2 }),
+      adapter.getQueryIndex("ses_1"),
+    ]);
+
+    expect(index?.totalQueries).toBe(2);
+    expect(index?.entries.map((entry) => entry.preview)).toEqual(["q1", "q2"]);
+    expect(index?.revision).toBe(page.history?.revision);
+  });
+
+  it("reuses the converted history across requests until messages change", async () => {
+    const fixture = pagingServer();
+    const adapter = new OpenCodeRuntimeAdapter({ server: fixture.server });
+
+    const first = await adapter.getSession("ses_1");
+    const second = await adapter.getSession("ses_1");
+    expect(second.messages).toBe(first.messages);
+
+    const callsBefore = vi.mocked(fixture.client.session.messages).mock.calls.length;
+    const third = await adapter.getSession("ses_1");
+    // The server is still consulted (cheap local HTTP) but the conversion is cached.
+    expect(vi.mocked(fixture.client.session.messages).mock.calls.length).toBeGreaterThan(callsBefore);
+    expect(third.messages).toBe(first.messages);
+  });
+});

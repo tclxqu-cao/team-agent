@@ -294,3 +294,9 @@ contextBridge.exposeInMainWorld("sharedServiceApi", {
     return () => ipcRenderer.removeListener("service:stream-frame", listener);
   },
 });
+
+// Renderer-side global errors are reported into the main process's daily
+// log file (see client-log:report in main/index.ts).
+contextBridge.exposeInMainWorld("clientLogApi", {
+  report: (payload: unknown) => ipcRenderer.invoke("client-log:report", payload),
+});

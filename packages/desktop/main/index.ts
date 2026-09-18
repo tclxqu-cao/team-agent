@@ -9,7 +9,7 @@ import { basename, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { readFile, writeFile } from "node:fs/promises";
 import { existsSync, statSync } from "node:fs";
-import { LiveViewProducerClient } from "@agent/core";
+import { LiveViewProducerClient, installGlobalLogging } from "@agent/core";
 // Must be set before app ready: real host IPs must survive ICE gathering for
 // LAN/Tailscale WebRTC (mDNS .local candidates do not resolve on phones).
 app.commandLine.appendSwitch("disable-features", "WebRtcHideLocalIpsWithMdns");
@@ -67,6 +67,17 @@ process.stderr.on("error", (err: NodeJS.ErrnoException) => { if (err.code !== "E
 
 // ── Single-instance lock ──────────────────────────────────────────────────
 if (process.env.AGENTROAM_DESKTOP_USER_DATA?.trim()) app.setPath("userData", resolve(process.env.AGENTROAM_DESKTOP_USER_DATA));
+// 全局日志唯一装配点(core 的 installGlobalLogging):按天错误日志落在
+// <userData>/logs/YYYY-MM-DD.log。桌面壳是长驻 UI 进程,记录后不退出
+// (exitOnUncaughtException: false),保持 Electron 默认的「主进程不因单个
+// 异常退出」行为,只把报错严格落盘。
+const globalLogger = installGlobalLogging({
+  dir: join(app.getPath("userData"), "logs"),
+  source: "desktop",
+  minLevel: "info",
+  handlers: { exitOnUncaughtException: false },
+});
+globalLogger.info("desktop main booting", { version: app.getVersion(), platform: process.platform, userData: app.getPath("userData") });
 // Electron uses an OS-level lock tied to the app's userData directory.
 // If a second instance starts, it focuses the existing window and quits.
 const gotLock = app.requestSingleInstanceLock();
@@ -211,6 +222,16 @@ function createWindow(): void {
     title: "agentroam",
   });
   const window = mainWindow;
+  // 渲染进程崩溃与消失严格落盘(按天错误日志)。
+  window.webContents.on("render-process-gone", (_event, details) => {
+    globalLogger.error("renderer process gone", undefined, {
+      reason: details.reason,
+      exitCode: details.exitCode,
+    });
+  });
+  window.webContents.on("preload-error", (_event, preloadPath, error) => {
+    globalLogger.error("preload script failed", error, { preloadPath });
+  });
   window.on("closed", () => {
     if (mainWindow === window) mainWindow = null;
     sharedService.closeStreams();
@@ -227,6 +248,19 @@ function createWindow(): void {
 }
 
 // ── IPC: Window control (hide/restore for voice-wake background mode) ──
+
+// 渲染层全局错误经此落入主进程的按天日志文件(source=desktop-renderer)。
+ipcMain.handle("client-log:report", (_event, payload: unknown) => {
+  try {
+    const entry = (payload ?? {}) as { level?: unknown; message?: unknown; error?: unknown; data?: unknown };
+    const level = entry.level === "warn" ? "warn" : "error";
+    const message = typeof entry.message === "string" ? entry.message.slice(0, 4000) : "renderer error";
+    globalLogger.log(level, message, entry.error, { renderer: true, ...(typeof entry.data === "object" && entry.data !== null ? entry.data as Record<string, unknown> : {}) });
+    return { ok: true };
+  } catch {
+    return { ok: false };
+  }
+});
 
 ipcMain.handle("window:hide", () => {
   // Hide instead of close so the renderer keeps running (voice wake loop).

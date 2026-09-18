@@ -29,6 +29,9 @@ const state = vi.hoisted(() => ({
   signal: undefined as AbortSignal | undefined,
   subagentIds: [] as string[],
   subagentMessages: {} as Record<string, any[]>,
+  forkCalls: [] as any[],
+  renameCalls: [] as any[],
+  deleteCalls: [] as any[],
 }));
 
 const temporaryDirectories: string[] = [];
@@ -85,6 +88,17 @@ vi.mock("@anthropic-ai/claude-agent-sdk", () => ({
   getSessionMessages: async () => state.messages,
   listSubagents: async () => state.subagentIds,
   getSubagentMessages: async (_sessionId: string, agentId: string) => state.subagentMessages[agentId] ?? [],
+  getSessionInfo: async (sessionId: string) => state.sessions.find((session) => session.sessionId === sessionId),
+  forkSession: async (sessionId: string, options: any) => {
+    state.forkCalls.push({ sessionId, options });
+    return { sessionId: options?.forkedId ?? "fedcba98-7654-4321-89ab-fedcba987654" };
+  },
+  renameSession: async (sessionId: string, title: string, options: any) => {
+    state.renameCalls.push({ sessionId, title, options });
+  },
+  deleteSession: async (sessionId: string, options: any) => {
+    state.deleteCalls.push({ sessionId, options });
+  },
 }));
 
 vi.mock("./native-processes.js", () => ({
@@ -143,6 +157,9 @@ beforeEach(() => {
   state.signal = undefined;
   state.subagentIds = [];
   state.subagentMessages = {};
+  state.forkCalls = [];
+  state.renameCalls = [];
+  state.deleteCalls = [];
 });
 
 afterEach(async () => {
@@ -516,7 +533,7 @@ describe("ClaudeRuntimeAdapter", () => {
     expect(sessions.find((session) => session.nativeSessionId === "cc-1")?.occupancy).toBe("owned-externally");
     expect(sessions.find((session) => session.nativeSessionId === "cc-1")?.canResume).toBe(false);
     expect(sessions.find((session) => session.nativeSessionId === "cc-2")?.occupancy).toBe("owned-externally");
-    expect(sessions.every((session) => session.canDelete === false)).toBe(true);
+    expect(sessions.every((session) => session.canDelete === true)).toBe(true);
   });
 
   it("leaves finished agent records and untouched sessions available", async () => {
@@ -586,7 +603,7 @@ describe("ClaudeRuntimeAdapter", () => {
     const created = await adapter.create({ title: "新会话", cwd: "/repo" });
 
     expect(created.agentType).toBe("claude-code");
-    expect(created.canDelete).toBe(false);
+    expect(created.canDelete).toBe(true);
     expect(created.id).not.toBe(created.nativeSessionId);
 
     const detail = await adapter.getSession(created.nativeSessionId);
@@ -1063,3 +1080,177 @@ describe("Claude model & reasoning-effort overrides", () => {
     expect(models.find((model) => model.id === "opus")?.reasoningEfforts).toContain("max");
   });
 });
+
+describe("Claude session management", () => {
+  it("forks a session through the SDK fork API with a copy title", async () => {
+    state.sessions = [sdkSession("cc-fork")];
+    const adapter = new ClaudeRuntimeAdapter({ occupancyTtlMs: 0, sessionRoot: "/tmp/claude-projects" });
+
+    const forked = await adapter.fork!("cc-fork");
+
+    expect(state.forkCalls).toHaveLength(1);
+    expect(state.forkCalls[0].sessionId).toBe("cc-fork");
+    expect(state.forkCalls[0].options.dir).toBe("/repo");
+    expect(state.forkCalls[0].options.title).toBe("summary cc-fork（副本）");
+    expect(forked.nativeSessionId).toBe("fedcba98-7654-4321-89ab-fedcba987654");
+    expect(forked.title).toBe("summary cc-fork（副本）");
+    expect(forked.cwd).toBe("/repo");
+    expect(forked.canResume).toBe(true);
+    expect(forked.canDelete).toBe(true);
+  });
+
+  it("deletes a session through the SDK delete API", async () => {
+    state.sessions = [sdkSession("cc-del")];
+    const adapter = new ClaudeRuntimeAdapter({ occupancyTtlMs: 0, sessionRoot: "/tmp/claude-projects" });
+
+    await adapter.delete!("cc-del");
+
+    expect(state.deleteCalls).toHaveLength(1);
+    expect(state.deleteCalls[0].sessionId).toBe("cc-del");
+    expect(state.deleteCalls[0].options.dir).toBe("/repo");
+  });
+
+  it("renames a session through the SDK rename API", async () => {
+    state.sessions = [sdkSession("cc-rename")];
+    const adapter = new ClaudeRuntimeAdapter({ occupancyTtlMs: 0, sessionRoot: "/tmp/claude-projects" });
+
+    await adapter.renameSession!("cc-rename", "  新标题  ");
+
+    expect(state.renameCalls).toHaveLength(1);
+    expect(state.renameCalls[0].title).toBe("新标题");
+    expect(state.renameCalls[0].options.dir).toBe("/repo");
+  });
+
+  it("marks discovered sessions as deletable", async () => {
+    state.sessions = [sdkSession("cc-list")];
+    const adapter = new ClaudeRuntimeAdapter({ occupancyTtlMs: 0, sessionRoot: "/tmp/claude-projects" });
+
+    const sessions = await adapter.discoverSessions();
+
+    expect(sessions).toHaveLength(1);
+    expect(sessions[0].canDelete).toBe(true);
+  });
+
+  it("refuses to delete a session that is currently running", async () => {
+    state.sessions = [sdkSession("cc-run")];
+    state.stream = [{ type: "result", subtype: "success", is_error: false, result: "ok" }];
+    const adapter = new ClaudeRuntimeAdapter({ occupancyTtlMs: 0, sessionRoot: "/tmp/claude-projects" });
+    const running = adapter.run("cc-run", "hi");
+    await running.next();
+
+    await expect(adapter.delete!("cc-run")).rejects.toMatchObject({ code: "SESSION_OCCUPIED" });
+    expect(state.deleteCalls).toHaveLength(0);
+    await running.return?.(undefined);
+  });
+});
+
+describe("Claude native history paging", () => {
+  const SESSION_ID = "123e4567-e89b-42d3-a456-426614174000";
+
+  async function createTranscript(lines: string[]): Promise<{ root: string; path: string }> {
+    const root = await mkdtemp(join(tmpdir(), "claude-pager-"));
+    temporaryDirectories.push(root);
+    const projectDir = join(root, "-repo");
+    await mkdir(projectDir, { recursive: true });
+    const path = join(projectDir, `${SESSION_ID}.jsonl`);
+    await writeFile(path, lines.join("\n") + "\n");
+    return { root, path };
+  }
+
+  function transcriptLines(): string[] {
+    return [
+      JSON.stringify({ type: "user", message: { content: "first question" } }),
+      JSON.stringify({ type: "assistant", message: { content: [
+        { type: "text", text: "first answer" },
+        { type: "tool_use", id: "tool-1", name: "Read", input: { file_path: "/tmp/a" } },
+      ] } }),
+      JSON.stringify({ type: "user", message: { content: [
+        { type: "tool_result", tool_use_id: "tool-1", content: "contents" },
+      ] } }),
+      JSON.stringify({ type: "assistant", message: { content: [{ type: "text", text: "second answer" }] } }),
+      JSON.stringify({ type: "user", message: { content: "second question" } }),
+      JSON.stringify({ type: "assistant", message: { content: [{ type: "text", text: "second answer2" }] } }),
+      JSON.stringify({ type: "user", message: { content: "meta noise" }, isMeta: true }),
+      JSON.stringify({ type: "user", message: { content: "sidechain noise" }, isSidechain: true }),
+      JSON.stringify({ type: "system", message: { content: "hidden" } }),
+    ];
+  }
+
+  it("serves the latest window with history ids and metadata", async () => {
+    const { root } = await createTranscript(transcriptLines());
+    state.sessions = [sdkSession(SESSION_ID)];
+    const adapter = new ClaudeRuntimeAdapter({ occupancyTtlMs: 0, sessionRoot: root });
+
+    const page = await adapter.getSessionPaged!(SESSION_ID, { limit: 2 });
+
+    expect(page.messages.map((message) => `${message.role}:${message.content}`)).toEqual([
+      "user:second question",
+      "assistant:second answer2",
+    ]);
+    expect(page.messages.every((message) => typeof message.historyId === "string" && message.historyId)).toBe(true);
+    expect(page.history).toMatchObject({
+      totalItems: 5,
+      hasMore: true,
+      nextCursor: "history.v1.3",
+      olderCursor: "history.v1.3",
+      newerCursor: null,
+      kind: "latest",
+      delivery: "legacy-full",
+    });
+    expect(page.history?.revision).toBeTruthy();
+  });
+
+  it("serves older pages by cursor and keeps tool results beside their carrier", async () => {
+    const { root } = await createTranscript(transcriptLines());
+    state.sessions = [sdkSession(SESSION_ID)];
+    const adapter = new ClaudeRuntimeAdapter({ occupancyTtlMs: 0, sessionRoot: root });
+
+    const latest = await adapter.getSessionPaged!(SESSION_ID, { limit: 2 });
+    const older = await adapter.getSessionPaged!(SESSION_ID, { before: latest.history!.nextCursor! });
+
+    expect(older.messages.map((message) => message.role)).toEqual(["user", "assistant", "tool", "assistant"]);
+    const toolResult = older.messages.find((message) => message.role === "tool");
+    expect(toolResult?.toolCallId).toBe("tool-1");
+    expect(older.history).toMatchObject({ totalItems: 5, hasMore: false, nextCursor: null, kind: "latest" });
+    expect(older.history?.revision).toBe(latest.history?.revision);
+  });
+
+  it("builds a query index over the same ordinal space", async () => {
+    const { root } = await createTranscript(transcriptLines());
+    state.sessions = [sdkSession(SESSION_ID)];
+    const adapter = new ClaudeRuntimeAdapter({ occupancyTtlMs: 0, sessionRoot: root });
+
+    const [page, index] = await Promise.all([
+      adapter.getSessionPaged!(SESSION_ID, { limit: 2 }),
+      adapter.getQueryIndex!(SESSION_ID),
+    ]);
+
+    expect(index?.totalQueries).toBe(2);
+    expect(index?.entries.map((entry) => entry.preview)).toEqual(["first question", "second question"]);
+    expect(index?.revision).toBe(page.history?.revision);
+    expect(index?.entries[0].pageToken.startsWith("history-anchor.v1.")).toBe(true);
+  });
+
+  it("picks up appended transcript lines without a full rebuild", async () => {
+    const { root, path } = await createTranscript(transcriptLines());
+    state.sessions = [sdkSession(SESSION_ID)];
+    const adapter = new ClaudeRuntimeAdapter({ occupancyTtlMs: 0, sessionRoot: root });
+
+    const first = await adapter.getSessionPaged!(SESSION_ID, { limit: 2 });
+    expect(first.history?.totalItems).toBe(5);
+
+    const { appendFile } = await import("node:fs/promises");
+    await appendFile(path, [
+      JSON.stringify({ type: "user", message: { content: "third question" } }),
+      JSON.stringify({ type: "assistant", message: { content: [{ type: "text", text: "third answer" }] } }),
+    ].join("\n") + "\n");
+
+    const second = await adapter.getSessionPaged!(SESSION_ID, { limit: 2 });
+    expect(second.history?.totalItems).toBe(7);
+    expect(second.messages.map((message) => `${message.role}:${message.content}`)).toEqual([
+      "user:third question",
+      "assistant:third answer",
+    ]);
+  });
+});
+

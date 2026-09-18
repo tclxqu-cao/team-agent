@@ -1,3 +1,4 @@
+import { logGlobal } from "@agent/core";
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
@@ -5,11 +6,15 @@ import { homedir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import {
+  buildSessionQueryIndex,
   classifyToolPermission,
+  computeSessionHistoryRevision,
   normalizeToolPermissionMode,
   type AgentEvent,
   type Message,
   type MessageAttachment,
+  type SessionHistoryQuery,
+  type SessionQueryIndex,
   type ToolPermissionMode,
 } from "@agent/core";
 import type {
@@ -24,6 +29,12 @@ import type {
 } from "@opencode-ai/sdk";
 import { AsyncEventQueue } from "./async-event-queue.js";
 import { parseImageDataUrls } from "./image-input.js";
+import {
+  buildNativeHistoryPage,
+  nativeHistorySkeleton,
+  nativeHistoryWindow,
+  selectNativeHistoryRange,
+} from "./native-history-paging.js";
 import { OpenCodeServerClient, type OpenCodeServerEvent } from "./opencode-server-client.js";
 import { encodeUnifiedSessionId } from "./session-id.js";
 import { paginateByOffset } from "./agent-workspace-index.js";
@@ -65,6 +76,12 @@ interface PendingPermission {
   permissionId: string;
 }
 
+/** Conversion cache for native history paging, keyed by session id. */
+interface OpenCodePagerState {
+  fingerprint: string;
+  messages: Message[];
+}
+
 export interface OpenCodeServerPort {
   client(): Promise<OpencodeClient>;
   subscribe(
@@ -92,6 +109,7 @@ export class OpenCodeRuntimeAdapter implements AgentRuntimeAdapter {
   private readonly sessionDirectories = new Map<string, string>();
   private readonly pendingPermissions = new Map<string, PendingPermission>();
   private readonly workspaces = new Map<string, AgentWorkspace>();
+  private readonly pagerStates = new Map<string, OpenCodePagerState>();
   private unsubscribe: (() => void) | null = null;
   private availabilityPromise: Promise<void> | null = null;
 
@@ -249,12 +267,82 @@ export class OpenCodeRuntimeAdapter implements AgentRuntimeAdapter {
       this.sessionDirectories.set(session.id, session.directory);
       return {
         ...openCodeSessionToSummary(session, statuses[session.id], this.ownedSessions.has(session.id)),
-        messages: openCodeHistoryToMessages(messages),
+        messages: this.convertHistory(nativeSessionId, messages),
         events: [],
       };
     } catch (error) {
       throw normalizeOpenCodeError(error, nativeSessionId);
     }
+  }
+
+  /**
+   * Source-paginated history over the opencode message list.
+   *
+   * The ordinal space counts visible user/assistant messages of the converted
+   * history (tool results ride along and never consume an ordinal), with the
+   * same cursor semantics as the other native runtimes. Conversion is cached
+   * per message fingerprint so flipping pages skips re-mapping.
+   */
+  async getSessionPaged(nativeSessionId: string, query: SessionHistoryQuery): Promise<UnifiedSessionDetail> {
+    const client = await this.getClient();
+    const directory = await this.resolveDirectory(nativeSessionId);
+    let session: Session;
+    let history: Array<{ info: OpenCodeMessage; parts: Part[] }>;
+    let statuses: Record<string, SessionStatus>;
+    try {
+      [session, history, statuses] = await Promise.all([
+        client.session.get({ path: { id: nativeSessionId }, query: { directory }, throwOnError: true }).then((r) => r.data),
+        client.session.messages({ path: { id: nativeSessionId }, query: { directory }, throwOnError: true }).then((r) => r.data),
+        client.session.status({ query: { directory }, throwOnError: true }).then((r) => r.data),
+      ]);
+    } catch (error) {
+      throw normalizeOpenCodeError(error, nativeSessionId);
+    }
+    this.sessionDirectories.set(session.id, session.directory);
+    const summary = openCodeSessionToSummary(session, statuses[session.id], this.ownedSessions.has(session.id));
+    const messages = this.convertHistory(nativeSessionId, history);
+    const revision = computeSessionHistoryRevision(messages);
+    const skeleton = nativeHistorySkeleton(messages);
+    const skeletonMessages = skeleton.map((index) => messages[index]);
+    const { start, end, kind } = selectNativeHistoryRange(skeletonMessages, query, revision);
+    const page = buildNativeHistoryPage(messages, skeleton, start, end, []);
+    return {
+      ...summary,
+      messages: page.messages,
+      events: [],
+      history: nativeHistoryWindow(start, end, skeleton.length, kind, revision, query.view ?? "legacy-full"),
+    };
+  }
+
+  /** Query index over the converted history (same ordinal space as getSessionPaged). */
+  async getQueryIndex(nativeSessionId: string): Promise<SessionQueryIndex | null> {
+    const client = await this.getClient();
+    const directory = await this.resolveDirectory(nativeSessionId);
+    const history = await client.session
+      .messages({ path: { id: nativeSessionId }, query: { directory }, throwOnError: true })
+      .then((r) => r.data)
+      .catch((error: unknown) => {
+        throw normalizeOpenCodeError(error, nativeSessionId);
+      });
+    const messages = this.convertHistory(nativeSessionId, history);
+    return buildSessionQueryIndex(encodeUnifiedSessionId(this.agentType, nativeSessionId), messages);
+  }
+
+  private convertHistory(
+    nativeSessionId: string,
+    history: Array<{ info: OpenCodeMessage; parts: Part[] }>,
+  ): Message[] {
+    const fingerprint = `${history.length}:${history.at(-1)?.info.id ?? ""}`;
+    const cached = this.pagerStates.get(nativeSessionId);
+    if (cached && cached.fingerprint === fingerprint) return cached.messages;
+    const messages = openCodeHistoryToMessages(history);
+    this.pagerStates.set(nativeSessionId, { fingerprint, messages });
+    while (this.pagerStates.size > 32) {
+      const oldest = this.pagerStates.keys().next().value as string | undefined;
+      if (!oldest) break;
+      this.pagerStates.delete(oldest);
+    }
+    return messages;
   }
 
   async getSessionWatchPath(nativeSessionId: string): Promise<string | null> {
@@ -339,6 +427,10 @@ export class OpenCodeRuntimeAdapter implements AgentRuntimeAdapter {
       });
       for await (const event of queue) yield event;
     } catch (error) {
+      logGlobal("error", "opencode-adapter", "opencode run failed", error, {
+        nativeSessionId,
+        message: errorMessage(error),
+      });
       yield { type: "error", message: errorMessage(error), code: "NATIVE_PROTOCOL_ERROR" };
     } finally {
       this.activeRuns.delete(nativeSessionId);
