@@ -1,0 +1,36 @@
+packages/cli/package.json
+  h_86bb4e0e04237b 3,29-34
+packages/cloudflared-darwin-arm64/manifest.json
+  h_86bb4e0e04237b 2
+packages/cloudflared-darwin-arm64/package.json
+  h_86bb4e0e04237b 3
+packages/cloudflared-win32-x64/manifest.json
+  h_86bb4e0e04237b 2
+packages/cloudflared-win32-x64/package.json
+  h_86bb4e0e04237b 3
+packages/runtime-darwin-arm64/manifest.json
+  h_86bb4e0e04237b 2
+packages/runtime-darwin-arm64/package.json
+  h_86bb4e0e04237b 3
+packages/runtime-win32-x64/manifest.json
+  h_86bb4e0e04237b 2,7-8
+packages/runtime-win32-x64/package.json
+  h_86bb4e0e04237b 3
+packages/tui-darwin-arm64/package.json
+  h_86bb4e0e04237b 3
+packages/tui-win32-x64/package.json
+  h_86bb4e0e04237b 3
+scripts/stage-cli-runtime.mjs
+  h_86bb4e0e04237b 41-46
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "4aec63173f5ce592b812417b5c712d4271931f0a",
+  "prompts": {},
+  "humans": {
+    "h_86bb4e0e04237b": {
+      "author": "caoqu <qu.cao@ly.com>"
+    }
+  }
+}
