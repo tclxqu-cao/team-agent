@@ -1,0 +1,52 @@
+packages/sdk/src/store/ChatStore.ts
+  s_4bd46243283bd7::t_8c8e62396a4be7 140-143
+packages/server/app/api/agent/run/route.ts
+  s_4bd46243283bd7::t_730213de44f985 17-32
+packages/sdk/src/components/AgentChat.ts
+  s_4bd46243283bd7::t_19c49936761225 382
+  s_4bd46243283bd7::t_141da9e459960b 413-422
+  s_4bd46243283bd7::t_e4ce18c3f25a01 447-453
+packages/core/src/domain/tool/builtin/index.ts
+  s_4bd46243283bd7::t_16a2efa6cff8f0 44
+  s_4bd46243283bd7::t_f39d6b8ddea217 18
+  s_4bd46243283bd7::t_14a282cca6ce6f 17
+  s_4bd46243283bd7::t_08225389e97de0 30
+packages/core/src/domain/tool/builtin/KidEarthCourseTool.ts
+  s_4bd46243283bd7::t_52ec8200a17fec 1-39,41-42,68-151,154-159
+  s_4bd46243283bd7::t_9feb3da1c7e2b9 40,43-67
+  s_4bd46243283bd7::t_9bef156fdd4990 152-153
+packages/core/src/domain/tool/builtin/RemoteProjectActionTool.ts
+  s_4bd46243283bd7::t_43ad385b5c2273 1-73
+packages/core/src/domain/tool/builtin/__tests__/KidEarthCourseTool.test.ts
+  s_4bd46243283bd7::t_21e227bffe85d2 1-90
+packages/core/src/domain/model/providers/DeepSeekProvider.ts
+  s_4bd46243283bd7::t_848bcf07dc2123 180-189,191,197
+  s_4bd46243283bd7::t_5396637d2868c4 173
+packages/core/src/domain/model/providers/OpenAIProvider.ts
+  s_4bd46243283bd7::t_a5282e43d98df5 178-187,189
+  s_4bd46243283bd7::t_e833185a183a55 204
+  s_4bd46243283bd7::t_992952b74f6ee0 190-196,199
+  s_4bd46243283bd7::t_f0042e3eaaf150 171
+packages/core/src/index.ts
+  s_4bd46243283bd7::t_22b539f40c1427 30
+packages/core/src/domain/tool/builtin/__tests__/RemoteProjectActionTool.test.ts
+  s_4bd46243283bd7::t_1edb472ed301c5 1-52
+packages/sdk/src/store/ChatStore.test.ts
+  s_4bd46243283bd7::t_0ab1674e7d9fc2 1-16
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.7",
+  "base_commit_sha": "330cb750acb826dfae92ddd1c1e695cedd6e17fb",
+  "prompts": {},
+  "sessions": {
+    "s_4bd46243283bd7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5450b19f-0c20-4ea0-87f1-35373c728131",
+        "model": "gpt-5.5"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

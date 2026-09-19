@@ -1,0 +1,92 @@
+package.json
+  h_b0bf4228a0b7ec 8,44
+packages/cli/src/device-pairing.test.ts
+  h_b0bf4228a0b7ec 3,32-67
+packages/cli/src/device-pairing.ts
+  h_b0bf4228a0b7ec 3,71-73,77-106,113-114,128-129,141-143,146-150
+packages/core/src/domain/agent/external-cli.test.ts
+  h_b0bf4228a0b7ec 1-91
+packages/core/src/domain/agent/external-cli.ts
+  h_b0bf4228a0b7ec 1-91
+packages/core/src/domain/agent/index.ts
+  h_b0bf4228a0b7ec 23-31
+packages/desktop/electron-builder.yml
+  h_b0bf4228a0b7ec 13,16-17
+packages/desktop/main/agent-host.ts
+  h_b0bf4228a0b7ec 53
+packages/desktop/main/ai-hub/relay.ts
+  h_b0bf4228a0b7ec 4
+packages/desktop/package.json
+  h_b0bf4228a0b7ec 14-15,19
+packages/native-runtime/package.json
+  h_b0bf4228a0b7ec 1-19
+packages/native-runtime/src/agent-runtime/claude-runtime-adapter.test.ts
+  h_b0bf4228a0b7ec 1138-1140
+packages/native-runtime/src/index.ts
+  h_b0bf4228a0b7ec 1-14
+packages/native-runtime/tsconfig.json
+  h_b0bf4228a0b7ec 1-17
+packages/server/app/api/agent-host.ts
+  h_b0bf4228a0b7ec 5
+packages/server/app/api/agent-workspaces/[workspaceId]/sessions/route.ts
+  h_b0bf4228a0b7ec 3
+packages/server/app/api/agent-workspaces/agent-workspace-http.ts
+  h_b0bf4228a0b7ec 1
+packages/server/app/api/agent-workspaces/route.ts
+  h_b0bf4228a0b7ec 2
+packages/server/app/api/agent/models/route.ts
+  h_b0bf4228a0b7ec 2
+packages/server/app/api/agent/run/route.ts
+  h_b0bf4228a0b7ec 3
+packages/server/app/api/native-runtime.test.ts
+  h_b0bf4228a0b7ec 19
+packages/server/app/api/sessions/[id]/query-index/route.ts
+  h_b0bf4228a0b7ec 14
+packages/server/app/api/sessions/[id]/route.ts
+  h_b0bf4228a0b7ec 19
+packages/server/lib/external-cli-probe.test.ts
+  h_b0bf4228a0b7ec 1-45
+packages/server/lib/external-cli-probe.ts
+  h_b0bf4228a0b7ec 1-88
+packages/server/lib/native-runtime-service.test.ts
+  h_b0bf4228a0b7ec 2
+packages/server/lib/native-runtime-service.ts
+  h_b0bf4228a0b7ec 4-5,7-8,19,22-24,27-29,32-41,486-508,515-544
+packages/server/lib/shared-cron.ts
+  h_b0bf4228a0b7ec 2
+packages/server/package.json
+  h_b0bf4228a0b7ec 17
+scripts/agent-runtime-diff-policy.mjs
+  h_b0bf4228a0b7ec 31-37,68-69,71,79-83,85,104-106,181,215
+scripts/agent-runtime-live-smoke.test.ts
+  h_b0bf4228a0b7ec 11
+scripts/agent-runtime-live-smoke.ts
+  h_b0bf4228a0b7ec 7,364,374,377
+scripts/agent-runtime-upgrade-lib.mjs
+  h_b0bf4228a0b7ec 53-59,64,70-72,207
+scripts/agent-runtime-upgrade.test.mjs
+  h_b0bf4228a0b7ec 100,177,250,256-262,265-266
+scripts/check-agent-runtime-diff.test.mjs
+  h_b0bf4228a0b7ec 13-15,24-25,31,63-64,91-103,123-126
+scripts/incremental-cli-release.mjs
+  h_b0bf4228a0b7ec 17-19,34,118-124
+scripts/incremental-cli-release.test.mjs
+  h_b0bf4228a0b7ec 42-54
+scripts/stage-agent-packages-for-packaging.mjs
+  h_b0bf4228a0b7ec 3-6,10-11,13-30,32-48
+scripts/stage-cli-runtime.mjs
+  h_b0bf4228a0b7ec 12,73-77,124-139
+tsconfig.json
+  h_b0bf4228a0b7ec 23-24
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "835caeedd303a6d071a25a28a9be37d4dcafbe1f",
+  "prompts": {},
+  "humans": {
+    "h_b0bf4228a0b7ec": {
+      "author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

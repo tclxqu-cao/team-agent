@@ -1,0 +1,537 @@
+packages/server/lib/shared-run-config.test.ts
+  s_41cd3d9f8f7b50::t_90667d26d902af 1-47
+packages/server/lib/shared-settings.test.ts
+  s_41cd3d9f8f7b50::t_8a64f0f875b1ea 34-53
+packages/desktop/renderer/components/SettingsPanel.tsx
+  s_41cd3d9f8f7b50::t_dd33ac268da1ee 347
+  s_41cd3d9f8f7b50::t_036bb077e964be 344-346
+  s_41cd3d9f8f7b50::t_bbee2ffe23409a 348-350
+packages/core/src/domain/tool/builtin/SkillTools.ts
+  s_41cd3d9f8f7b50::t_99138f74624379 1,3-24,26-65,67-92
+  s_41cd3d9f8f7b50::t_bf7fbfb839e4b6 2,25,66
+packages/webapp/src/presentation/RemoteAuthorizationControl.tsx
+  s_047cd11d6c9132::t_5c6ad360dd4705 20,45-47,89,91
+packages/core/src/domain/agent/AgentLoop.ts
+  s_41cd3d9f8f7b50::t_8a37e4c3081321 141,343
+  s_0db8d86a446f93::t_89a7c7d935c9e8 487
+  s_41cd3d9f8f7b50::t_99138f74624379 149-151,589-592
+  s_41cd3d9f8f7b50::t_8fb53d45d4e4bc 342
+packages/cli/src/args.ts
+  s_047cd11d6c9132::t_f3aba6a372a80e 5,7,12,33,37,48-54,79
+packages/core/src/domain/web-console/WebBrowserBridge.ts
+  s_41cd3d9f8f7b50::t_70447b83c3a995 16
+packages/server/lib/remote-control/remote-authorization.test.ts
+  s_047cd11d6c9132::t_e05ee2dcf42df6 21,30,222-246
+  s_047cd11d6c9132::t_55e62deef31364 216-217
+  s_047cd11d6c9132::t_46c9919c6e81cd 247-248
+scripts/harness/daemon-service.ts
+  s_937324cedb29cf::t_abc1c8d5940514 7-10,12-16,74,77-78,110,122,126-127
+  s_37de9a1992b7f3::t_4f34b67fcc90ca 11,75,105-109,125
+packages/desktop/main/ai-hub/relay.test.ts
+  s_41cd3d9f8f7b50::t_c2ef3314631e47 11,17-33,86
+  s_41cd3d9f8f7b50::t_4b7a3c3917f7b5 2,66
+  s_41cd3d9f8f7b50::t_dec5013915183d 83-85
+  s_41cd3d9f8f7b50::t_21741da211aeaa 87
+packages/desktop/renderer/App.tsx
+  s_41cd3d9f8f7b50::t_363da89e5786d7 1985
+packages/core/src/infrastructure/SQLiteSettingsStore.ts
+  s_41cd3d9f8f7b50::t_7b502de89f561c 79-81
+packages/desktop/main/ai-hub/pane-layout-state.ts
+  s_41cd3d9f8f7b50::t_c26b018684e5c5 3
+packages/desktop/main/agent-host.ts
+  s_41cd3d9f8f7b50::t_7216dbb8bd493c 789
+packages/server/lib/remote-control/remote-authorization.mjs
+  s_047cd11d6c9132::t_d68eb99dda861a 47-69,115-117,120-128,143-155
+  s_047cd11d6c9132::t_54e2d67fda3cd2 44-46
+  s_047cd11d6c9132::t_35814bcdd18b9c 156
+packages/webapp/src/infrastructure/http/agent-http-gateway.ts
+  s_41cd3d9f8f7b50::t_adad916fcd1ada 123,882-883
+  s_41cd3d9f8f7b50::t_3fc9b92f52764e 32,70-71,135,873,881,884-905,907-923,931-938,994-999
+  s_41cd3d9f8f7b50::t_dd33ac268da1ee 105,131
+  s_41cd3d9f8f7b50::t_a6a18b5bd0c8e3 906,924-930
+scripts/stage-cli-runtime.mjs
+  s_047cd11d6c9132::t_d68eb99dda861a 48
+packages/desktop/main/ai-hub/manager.ts
+  s_41cd3d9f8f7b50::t_dce2a7b109479f 376-391,436,446-449,451-452,455,457,459,462,466
+  s_41cd3d9f8f7b50::t_d1b705a811f6e0 192,195,220-221
+  s_41cd3d9f8f7b50::t_e10a1af1b2aa8a 6
+  s_41cd3d9f8f7b50::t_2c022943535ee1 61,114,118-119,180,193,196,225,235,358,363-364,370,439,596-597,622
+  s_41cd3d9f8f7b50::t_4a291897b0cc2d 295,313,327
+  s_41cd3d9f8f7b50::t_b84634dbfa580e 264-266,465
+  s_41cd3d9f8f7b50::t_d4e55b5331bd1d 120,194,218,507
+  s_de7765efdb67f4::t_d120bf647d6d13 311,325
+  s_41cd3d9f8f7b50::t_95531104ec5ab6 133-135
+  s_41cd3d9f8f7b50::t_b42d4cd96eadec 57,261,395-398,403,408,491-506
+  s_41cd3d9f8f7b50::t_3d3559fbf430e3 392-394,399-402
+  s_41cd3d9f8f7b50::t_e8a07971768ed8 256-260,279-294,296,312,330-331
+  s_41cd3d9f8f7b50::t_dd6679b825e16c 268-273,469-471,473
+  s_41cd3d9f8f7b50::t_9316e5dd88b9b9 310,314-324,437,442
+  s_41cd3d9f8f7b50::t_c26b018684e5c5 155,157,161
+  s_41cd3d9f8f7b50::t_977836f1ba212f 297-309
+  s_41cd3d9f8f7b50::t_a3a4ba441a9002 141,143-144,146,166,168
+  s_41cd3d9f8f7b50::t_dfa83eb917581a 326
+  s_41cd3d9f8f7b50::t_b52e9059f1e5bf 328-329,438,443,475
+  s_41cd3d9f8f7b50::t_3e3d43cd0ea9d7 481,484,487,554
+  s_41cd3d9f8f7b50::t_fe1fcf0109a25b 489-490,512,516,520
+  s_41cd3d9f8f7b50::t_a9421f11b252e3 609-611
+  s_41cd3d9f8f7b50::t_2f57648b2a7096 212-217,219,482
+  s_41cd3d9f8f7b50::t_3b50d603c317d8 332,478,521-534,584
+  s_41cd3d9f8f7b50::t_f45dde112e9d81 2,55,73,162,346-347,476,483,485-486,488,508-511,513-515,517-519,546-550,552,563-566,569-573,576,579-583,621
+  s_41cd3d9f8f7b50::t_bec6cef270a7b4 121,175-179,181,183-184,199
+  s_41cd3d9f8f7b50::t_ffe4bae995dd1f 567-568,574-575,577-578
+  s_41cd3d9f8f7b50::t_101d76b445dad5 616-618
+  s_41cd3d9f8f7b50::t_e9218185a8a3cc 3
+  s_41cd3d9f8f7b50::t_68b93331a71b7b 333
+  s_41cd3d9f8f7b50::t_976f9fe3c31ca6 409
+  s_41cd3d9f8f7b50::t_d0bcd0abce9aff 433-435
+  s_41cd3d9f8f7b50::t_0083939b8ff737 440-441
+  s_41cd3d9f8f7b50::t_55abe8966e99b1 444-445
+  s_41cd3d9f8f7b50::t_2b10582ccaafab 450
+  s_41cd3d9f8f7b50::t_02028dfeb308d0 453-454
+  s_41cd3d9f8f7b50::t_5e9ca47ae5abad 456
+  s_41cd3d9f8f7b50::t_99886b972cd400 458
+  s_41cd3d9f8f7b50::t_13a3a5862bbbd2 460-461
+  s_41cd3d9f8f7b50::t_8bf130fec17cbc 463-464
+  s_41cd3d9f8f7b50::t_fe4a4f49ff0fc3 467-468
+  s_41cd3d9f8f7b50::t_04f5d81ac704f3 472
+  s_41cd3d9f8f7b50::t_764bb9117645dc 474
+  s_41cd3d9f8f7b50::t_dc3d887db0af49 477
+  s_41cd3d9f8f7b50::t_3b5cb467a7b10f 479
+  s_41cd3d9f8f7b50::t_8b4e9c6c4be084 585
+packages/desktop/main/ai-hub/adapters.test.ts
+  s_41cd3d9f8f7b50::t_5154ad59cb27d7 39
+  s_41cd3d9f8f7b50::t_c884e6084f624a 50-55
+  s_41cd3d9f8f7b50::t_e1d3690c471faa 70
+  s_41cd3d9f8f7b50::t_dce2a7b109479f 113-114
+  s_41cd3d9f8f7b50::t_aec5d8506db4ba 108,110-111
+  s_41cd3d9f8f7b50::t_bf780c6a52057e 109
+  s_41cd3d9f8f7b50::t_ade126849fda45 115-116
+  s_41cd3d9f8f7b50::t_83cca8696b301c 119-121
+  s_41cd3d9f8f7b50::t_13d55ab617dfeb 122-123
+  s_41cd3d9f8f7b50::t_7216dbb8bd493c 93,125,134,138,164-182
+  s_41cd3d9f8f7b50::t_9316e5dd88b9b9 83-84,118
+  s_41cd3d9f8f7b50::t_f27599cb0dd0ee 1
+  s_41cd3d9f8f7b50::t_e10a1af1b2aa8a 63-69,71-74,76,85
+  s_41cd3d9f8f7b50::t_2cf95b1d89488a 144-159
+  s_41cd3d9f8f7b50::t_49769d891a37c4 34,38
+  s_41cd3d9f8f7b50::t_04ffb8e8cfbd6e 94,106,124,126,163,183-184
+  s_41cd3d9f8f7b50::t_6b816d79df54ee 40
+  s_41cd3d9f8f7b50::t_75324b85c3c202 77
+  s_41cd3d9f8f7b50::t_db73fdb2525c5a 107
+  s_41cd3d9f8f7b50::t_94be23b2773aa1 117
+  s_41cd3d9f8f7b50::t_dfa83eb917581a 86-92
+  s_41cd3d9f8f7b50::t_4f784d7a12daa4 112
+  s_41cd3d9f8f7b50::t_b52e9059f1e5bf 78-79
+  s_41cd3d9f8f7b50::t_83546c0a775465 37
+  s_41cd3d9f8f7b50::t_4a291897b0cc2d 75,80-82
+  s_41cd3d9f8f7b50::t_16e1de2e38ff95 2
+  s_41cd3d9f8f7b50::t_7573a324e8b80f 95
+  s_41cd3d9f8f7b50::t_13762e76b4faad 127-129,131-133
+  s_41cd3d9f8f7b50::t_67ea2e87540ee1 135-137
+  s_41cd3d9f8f7b50::t_69756ed3e678e2 139-143
+  s_41cd3d9f8f7b50::t_db0cc249fab5ef 160-162
+scripts/runtime-native-files.mjs
+  s_047cd11d6c9132::t_d68eb99dda861a 21
+packages/server/app/api/agent-host.ts
+  s_41cd3d9f8f7b50::t_97e58f13988e18 736,753
+  s_41cd3d9f8f7b50::t_291b55acdb39aa 183
+  s_41cd3d9f8f7b50::t_fb70b593a58ae1 785
+  s_41cd3d9f8f7b50::t_72b853b1004dbb 790
+  s_41cd3d9f8f7b50::t_bb26e21ef09168 387-391,405,416
+  s_41cd3d9f8f7b50::t_7216dbb8bd493c 386,404,421-422
+  s_41cd3d9f8f7b50::t_f0c0e7226ed2c0 181-182
+packages/desktop/renderer/components/AIHubView.test.tsx
+  s_41cd3d9f8f7b50::t_2966358ca9a989 31-36
+  s_41cd3d9f8f7b50::t_5154ad59cb27d7 41
+  s_41cd3d9f8f7b50::t_363da89e5786d7 38-39
+packages/core/src/domain/live-view/live-view-registry.test.ts
+  s_047cd11d6c9132::t_e05ee2dcf42df6 219-220
+scripts/harness/daemon-service.test.ts
+  s_937324cedb29cf::t_abc1c8d5940514 42-51,63,77-94
+  s_37de9a1992b7f3::t_4f34b67fcc90ca 41,52-62,64-76
+packages/webapp/src/infrastructure/http/agent-http-gateway.test.ts
+  s_41cd3d9f8f7b50::t_a6a18b5bd0c8e3 183,185-211
+  s_41cd3d9f8f7b50::t_90667d26d902af 778,794-796,804
+  s_41cd3d9f8f7b50::t_3fc9b92f52764e 31-34,126-182
+  s_41cd3d9f8f7b50::t_e308a8325d7cf9 184
+packages/desktop/renderer/components/ChatView.tsx
+  s_41cd3d9f8f7b50::t_10fc626fa933f3 271,273-275
+  s_41cd3d9f8f7b50::t_dd33ac268da1ee 2903
+  s_41cd3d9f8f7b50::t_bbbbc24bfea341 3338
+  s_41cd3d9f8f7b50::t_871cc5f07d593b 272
+packages/server/lib/session-history-source.ts
+  s_41cd3d9f8f7b50::t_fb70b593a58ae1 62
+packages/cli/src/unlock-service.test.ts
+  s_047cd11d6c9132::t_f3aba6a372a80e 1-48
+packages/core/src/infrastructure/SQLiteDatabase.ts
+  s_41cd3d9f8f7b50::t_2cf95b1d89488a 56,300,445-449
+  s_41cd3d9f8f7b50::t_240df257908c1e 450-452
+packages/server/lib/remote-control/windows-system-bridge.mjs
+  s_047cd11d6c9132::t_d68eb99dda861a 42-106
+  s_047cd11d6c9132::t_e05ee2dcf42df6 18-25
+  s_047cd11d6c9132::t_fab45980ce63e8 15-17
+  s_047cd11d6c9132::t_02c485f91dcecd 26-28,39-41
+  s_047cd11d6c9132::t_ed8e866ad9b760 107-109
+  s_047cd11d6c9132::t_7746a4dbe85e55 1-14,29-38,110
+packages/desktop/renderer/lib/session-history.test.ts
+  s_41cd3d9f8f7b50::t_be0ee47ca43b28 236-256
+packages/core/src/domain/tool/builtin/SkillTools.test.ts
+  s_41cd3d9f8f7b50::t_3c0fe6588f615f 1-43
+packages/core/src/domain/ai-hub/relay-protocol.ts
+  s_41cd3d9f8f7b50::t_8a37e4c3081321 13
+packages/core/src/infrastructure/AiHubSocketTransport.ts
+  s_41cd3d9f8f7b50::t_8fb53d45d4e4bc 92-105
+  s_41cd3d9f8f7b50::t_36c20e5fbba414 89-91
+  s_41cd3d9f8f7b50::t_52428574bc562e 106-108
+packages/core/src/domain/agent/__tests__/AgentLoop.test.ts
+  s_41cd3d9f8f7b50::t_7216dbb8bd493c 254-296
+  s_41cd3d9f8f7b50::t_9423b9b9a3fbf5 171-185
+packages/desktop/renderer/lib/session-history.ts
+  s_41cd3d9f8f7b50::t_be0ee47ca43b28 292-293,296,323-324
+packages/cli/src/service/service-command.test.ts
+  s_047cd11d6c9132::t_babe1d175958a7 188
+packages/core/src/infrastructure/SQLiteSessionStore.test.ts
+  s_41cd3d9f8f7b50::t_2cf95b1d89488a 1-40
+packages/cli/src/unlock-service.ts
+  s_047cd11d6c9132::t_f3aba6a372a80e 1-112
+packages/server/lib/remote-control/windows-system-bridge.test.ts
+  s_047cd11d6c9132::t_e05ee2dcf42df6 1-55
+packages/core/src/domain/ai-hub/transport.ts
+  s_0db8d86a446f93::t_258c64df441ae7 30-31,46-47,49-55
+  s_41cd3d9f8f7b50::t_8fb53d45d4e4bc 39-45
+  s_0db8d86a446f93::t_0d631f37f94a98 1-29,32-38,48,56
+packages/core/src/infrastructure/__tests__/SQLiteSettingsStore.test.ts
+  s_41cd3d9f8f7b50::t_7b502de89f561c 27-32
+packages/desktop/main/ai-hub/adapters.ts
+  s_41cd3d9f8f7b50::t_ade126849fda45 326-329,332-336,338
+  s_41cd3d9f8f7b50::t_b84634dbfa580e 155,157,183,188-192,198-222
+  s_41cd3d9f8f7b50::t_dce2a7b109479f 337,339-345,347
+  s_41cd3d9f8f7b50::t_49769d891a37c4 194-197
+  s_41cd3d9f8f7b50::t_e8a07971768ed8 62-73,77-99,121-122,256
+  s_41cd3d9f8f7b50::t_83cca8696b301c 292,294-295,300
+  s_41cd3d9f8f7b50::t_c884e6084f624a 41
+  s_41cd3d9f8f7b50::t_1db235ca9041bd 293
+  s_41cd3d9f8f7b50::t_bf780c6a52057e 282-285
+  s_41cd3d9f8f7b50::t_e2af025de01963 60-61
+  s_41cd3d9f8f7b50::t_4a291897b0cc2d 75,100,106-108
+  s_41cd3d9f8f7b50::t_859cebd30c05b2 309
+  s_41cd3d9f8f7b50::t_94be23b2773aa1 301-302
+  s_41cd3d9f8f7b50::t_c219388d1ad883 144-145,264
+  s_41cd3d9f8f7b50::t_4f784d7a12daa4 74,105
+  s_41cd3d9f8f7b50::t_6b816d79df54ee 156
+  s_41cd3d9f8f7b50::t_b52e9059f1e5bf 101-104
+  s_41cd3d9f8f7b50::t_dfa83eb917581a 123-143,146-147,255,265
+  s_41cd3d9f8f7b50::t_7216dbb8bd493c 239-245
+  s_41cd3d9f8f7b50::t_c915efd804ac50 76
+  s_41cd3d9f8f7b50::t_9316e5dd88b9b9 109-120,311-312
+  s_41cd3d9f8f7b50::t_13d55ab617dfeb 272-275
+  s_41cd3d9f8f7b50::t_aec5d8506db4ba 280-281,286-288,330
+  s_41cd3d9f8f7b50::t_2e8bde91cdb088 303-308,310
+  s_41cd3d9f8f7b50::t_95a6513bebc289 236-238
+  s_41cd3d9f8f7b50::t_96ebd46536f787 246-248,252-254
+  s_41cd3d9f8f7b50::t_91684df7a251f0 257-259,261-263
+  s_41cd3d9f8f7b50::t_51dea8b4b8ca4d 266
+  s_41cd3d9f8f7b50::t_5c7ec6190e1c97 331
+packages/webapp/src/presentation/web.css
+  s_047cd11d6c9132::t_5c6ad360dd4705 519-576,608-609
+  s_047cd11d6c9132::t_b7a8cd0de80f34 610-611
+packages/desktop/renderer/components/BrowserLivePanel.tsx
+  s_047cd11d6c9132::t_5c6ad360dd4705 181-186,611,1150-1191
+  s_047cd11d6c9132::t_9cc14553a25e48 614,620
+  s_047cd11d6c9132::t_ceab4c1f14868c 608-610
+  s_047cd11d6c9132::t_7088cd99c36d5e 612-613
+  s_047cd11d6c9132::t_60150d974be75b 615-619
+  s_047cd11d6c9132::t_8d99abb519d7c7 621-623
+packages/core/src/infrastructure/SQLiteSessionStore.ts
+  s_41cd3d9f8f7b50::t_2cf95b1d89488a 117,122,138,148,172,182
+packages/desktop/main/ai-hub/manager-reauth.test.ts
+  s_de7765efdb67f4::t_d26037197aceca 190
+  s_de7765efdb67f4::t_488baba3ef1204 175,194
+  s_41cd3d9f8f7b50::t_38ef1e33d47ddc 33-40
+  s_41cd3d9f8f7b50::t_f45a95971ab4eb 243-248,250-265
+  s_de7765efdb67f4::t_d120bf647d6d13 158-174,176-189,191-193,195,197-198,200-203
+  s_41cd3d9f8f7b50::t_a8f3485733e612 41-42,50-51,58,114,117-127,129-130,143
+  s_41cd3d9f8f7b50::t_c4c38688c58784 9,11,52,56,67,116,128,134
+  s_41cd3d9f8f7b50::t_bf4cdb216404d0 249
+  s_41cd3d9f8f7b50::t_ffe4bae995dd1f 10,28-30,140-142
+  s_de7765efdb67f4::t_b02dfa35e8d54a 196,199
+  s_41cd3d9f8f7b50::t_9316e5dd88b9b9 204-242
+  s_41cd3d9f8f7b50::t_f45dde112e9d81 24-27,31,132,138-139
+  s_41cd3d9f8f7b50::t_3b50d603c317d8 43,45-46,53-55,131,135-137
+  s_41cd3d9f8f7b50::t_fe1fcf0109a25b 115,133
+  s_41cd3d9f8f7b50::t_d4e55b5331bd1d 144
+packages/core/src/domain/skill/SkillRegistry.ts
+  s_41cd3d9f8f7b50::t_8a37e4c3081321 2,106-109,143-144,183-186,208
+  s_41cd3d9f8f7b50::t_99138f74624379 50-79,218-220
+packages/desktop/main/preload.ts
+  s_41cd3d9f8f7b50::t_c26b018684e5c5 228,231
+  s_41cd3d9f8f7b50::t_a3a4ba441a9002 229,233
+packages/desktop/chrome-extension/page-actions.js
+  s_41cd3d9f8f7b50::t_7216dbb8bd493c 80-81
+  s_41cd3d9f8f7b50::t_9f13aecb748cf9 78-79
+  s_41cd3d9f8f7b50::t_bcd7db1ed89795 82
+packages/desktop/main/question-manager.test.ts
+  s_41cd3d9f8f7b50::t_be0ee47ca43b28 47-57
+packages/cli/src/cli.ts
+  s_047cd11d6c9132::t_f3aba6a372a80e 21,41,85-89
+  s_047cd11d6c9132::t_71d25aada26465 90
+packages/server/app/api/agent/run/route.ts
+  s_41cd3d9f8f7b50::t_dd33ac268da1ee 18,33-35,102
+packages/server/app/api/agent-host.test.ts
+  s_41cd3d9f8f7b50::t_2cf95b1d89488a 658
+  s_41cd3d9f8f7b50::t_b5efb667bfd7b4 72-81,358-363,645,653-657
+  s_41cd3d9f8f7b50::t_7216dbb8bd493c 82-85,667-691
+  s_41cd3d9f8f7b50::t_da8cb47872fb50 692,694-721
+  s_41cd3d9f8f7b50::t_9f7002a8c7eeb2 337
+  s_41cd3d9f8f7b50::t_23f3d3bc82f308 693
+scripts/verify-cli-install.mjs
+  s_047cd11d6c9132::t_d68eb99dda861a 89-93
+packages/cli/src/tunnel/relay-orchestrator.test.ts
+  s_047cd11d6c9132::t_babe1d175958a7 81
+packages/desktop/renderer/components/AIHubView.tsx
+  s_41cd3d9f8f7b50::t_a3a4ba441a9002 263,269,315
+  s_41cd3d9f8f7b50::t_2966358ca9a989 2,382-385,387
+  s_41cd3d9f8f7b50::t_81da0540863486 264-265,271,322
+  s_41cd3d9f8f7b50::t_363da89e5786d7 21,53,143,151,156-157
+packages/desktop/renderer/stores/settingsStore.ts
+  s_41cd3d9f8f7b50::t_dd33ac268da1ee 41-46,63-66,86-88,139,159,185
+packages/core/src/index.ts
+  s_41cd3d9f8f7b50::t_04ffb8e8cfbd6e 38
+packages/server/lib/shared-run-config.ts
+  s_41cd3d9f8f7b50::t_90667d26d902af 17-22,28,30-34,41
+  s_41cd3d9f8f7b50::t_dd33ac268da1ee 7-8,23-27,29
+  s_41cd3d9f8f7b50::t_4dd72cbb316870 42-43
+packages/desktop/renderer/components/ChatView.goal-mode.test.ts
+  s_41cd3d9f8f7b50::t_9804c3f565db98 1-6,8-10,12-13
+  s_41cd3d9f8f7b50::t_1eef444d171110 7,11
+packages/core/src/domain/agent/AgentBuilder.ts
+  s_41cd3d9f8f7b50::t_99138f74624379 18,81,254-255,320-321
+packages/desktop/main/ai-hub/relay.ts
+  s_41cd3d9f8f7b50::t_bec6cef270a7b4 155-159,161
+  s_41cd3d9f8f7b50::t_8fb53d45d4e4bc 26-28,51,57-60,73,146,160
+  s_41cd3d9f8f7b50::t_b29e6350bed7f0 152-154
+packages/core/src/domain/model/providers/__tests__/AiHubProvider.test.ts
+  s_41cd3d9f8f7b50::t_8a64f0f875b1ea 1-2,4-7,12-13,24-34,42-56,287-296,307-330,334-349,354,356-357,365-368,402,417-421,423-424,426-428,436,439,441-443,486-487
+  s_41cd3d9f8f7b50::t_db622a68fc155c 71
+  s_41cd3d9f8f7b50::t_3c0fe6588f615f 10,72-129
+  s_41cd3d9f8f7b50::t_59acf9be8c4dc0 261,263
+  s_41cd3d9f8f7b50::t_a6a18b5bd0c8e3 202-216
+  s_41cd3d9f8f7b50::t_7459932f189747 241,251
+  s_41cd3d9f8f7b50::t_8bd5867898537c 230-239
+  s_41cd3d9f8f7b50::t_04ffb8e8cfbd6e 8,297-306,331-333
+  s_41cd3d9f8f7b50::t_39cef524ff27b2 217-229
+  s_41cd3d9f8f7b50::t_23ee2bc6ea6da1 3,9,14-23,57-70,130-131,149-159,274-286,369-401,405,408-409,411-415,429,431-432
+  s_41cd3d9f8f7b50::t_db73fdb2525c5a 355
+  s_41cd3d9f8f7b50::t_9c11a19abc2307 240,242-250,252-259
+  s_41cd3d9f8f7b50::t_48a986707623a4 350-351,353,358,360-364
+  s_41cd3d9f8f7b50::t_b297830e890d29 132-148,352,359
+  s_41cd3d9f8f7b50::t_7216dbb8bd493c 445-485
+  s_41cd3d9f8f7b50::t_10fc626fa933f3 11,35-41
+  s_41cd3d9f8f7b50::t_6063aa2affb7aa 177,181
+  s_41cd3d9f8f7b50::t_b3e16eb835e78f 260,262,264-273
+  s_41cd3d9f8f7b50::t_7a054b574b131c 160-176,178-180,182-201
+  s_41cd3d9f8f7b50::t_306311f5ab5d06 403-404
+  s_41cd3d9f8f7b50::t_42d98838fe62c4 406-407
+  s_41cd3d9f8f7b50::t_9e7f85cd1016ef 410
+  s_41cd3d9f8f7b50::t_08343440425332 416
+  s_41cd3d9f8f7b50::t_a477d3b04a7f81 422
+  s_41cd3d9f8f7b50::t_84487672e02918 425
+  s_41cd3d9f8f7b50::t_5a31d09d4da43c 430
+  s_41cd3d9f8f7b50::t_93b34922d7d102 433-435
+  s_41cd3d9f8f7b50::t_71f92091ad1001 437-438
+  s_41cd3d9f8f7b50::t_4dcf252a42d169 440
+  s_41cd3d9f8f7b50::t_8d2a38f94aa8a7 444
+packages/cli/src/args.test.ts
+  s_047cd11d6c9132::t_f3aba6a372a80e 10,15-21
+  s_047cd11d6c9132::t_7642fee5a5fdfa 22-23
+packages/core/src/domain/skill/entities.ts
+  s_41cd3d9f8f7b50::t_8a37e4c3081321 67-70
+  s_41cd3d9f8f7b50::t_99138f74624379 59,61
+  s_41cd3d9f8f7b50::t_bf7fbfb839e4b6 60,62
+packages/core/src/domain/skill/__tests__/SkillRegistry.test.ts
+  s_41cd3d9f8f7b50::t_b297830e890d29 4,102-122
+  s_41cd3d9f8f7b50::t_55530d0bb7bb3f 123-124
+packages/core/src/domain/tool/builtin/index.ts
+  s_41cd3d9f8f7b50::t_99138f74624379 18
+packages/server/lib/shared-settings.ts
+  s_41cd3d9f8f7b50::t_8a64f0f875b1ea 81-83
+packages/desktop/main/index.ts
+  s_41cd3d9f8f7b50::t_c26b018684e5c5 254
+  s_41cd3d9f8f7b50::t_a3a4ba441a9002 255,258
+scripts/audit-runtime-tarball.mjs
+  s_047cd11d6c9132::t_d68eb99dda861a 67-71
+packages/desktop/renderer/global.d.ts
+  s_047cd11d6c9132::t_52c21e582eeeab 1
+  s_41cd3d9f8f7b50::t_c26b018684e5c5 403
+  s_41cd3d9f8f7b50::t_a3a4ba441a9002 404,407
+  s_41cd3d9f8f7b50::t_dd33ac268da1ee 129-130
+packages/server/ws-server.mjs
+  s_047cd11d6c9132::t_d68eb99dda861a 800-803
+  s_047cd11d6c9132::t_5bf5e56f2c7a03 797-799
+packages/desktop/renderer/components/ChatHeaderActions.tsx
+  s_41cd3d9f8f7b50::t_bbbbc24bfea341 38
+packages/desktop/main/question-manager.ts
+  s_41cd3d9f8f7b50::t_72b853b1004dbb 41
+packages/core/src/domain/model/entities.ts
+  s_41cd3d9f8f7b50::t_8fb53d45d4e4bc 76-77
+  s_41cd3d9f8f7b50::t_8a37e4c3081321 78-79
+packages/runtime-win32-x64/manifest.json
+  s_047cd11d6c9132::t_1df02db124212e 8
+  s_047cd11d6c9132::t_52c21e582eeeab 7
+  s_5cb83c19a0fb79::t_a05a9027ae8c9f 2
+packages/core/src/domain/model/providers/AiHubProvider.ts
+  s_41cd3d9f8f7b50::t_44da2d5af89090 88-90
+  s_41cd3d9f8f7b50::t_a6a18b5bd0c8e3 181-182,206,311,401-411,433-450,452-460,603
+  s_41cd3d9f8f7b50::t_04ffb8e8cfbd6e 93,115-117,121-123,560,571-581,589,596,606,613,617
+  s_41cd3d9f8f7b50::t_5981aeb101bb32 86
+  s_41cd3d9f8f7b50::t_39cef524ff27b2 114,145,211,220,247,250,252,422-426,428-432,492-496,498,500-503,510-526,529-530,532-536
+  s_41cd3d9f8f7b50::t_9c11a19abc2307 427,461-463,465-479,484-491
+  s_41cd3d9f8f7b50::t_8bd5867898537c 183,210,497,499,504-509,528,531
+  s_41cd3d9f8f7b50::t_13d55ab617dfeb 19
+  s_41cd3d9f8f7b50::t_db622a68fc155c 302
+  s_41cd3d9f8f7b50::t_b63c1477fc29ad 527
+  s_41cd3d9f8f7b50::t_8a37e4c3081321 25-29,31,57-61,63-65,69-84,87,91-92,113,131-132,134-137,144,219
+  s_41cd3d9f8f7b50::t_bf7fbfb839e4b6 23,127,146
+  s_41cd3d9f8f7b50::t_4a481f71e70e72 5-6,42-47,53-54,106,108,125,204,218,222,226,230,257,287-300,303-308,318-331,537-559,569,587,594,601,605,611
+  s_41cd3d9f8f7b50::t_2cf95b1d89488a 171-173,187-189
+  s_41cd3d9f8f7b50::t_b3e16eb835e78f 412-421,451,464,480-483
+  s_41cd3d9f8f7b50::t_23ee2bc6ea6da1 38-39,312-314
+  s_0db8d86a446f93::t_604d56c8fe0089 16-18
+  s_41cd3d9f8f7b50::t_db73fdb2525c5a 14,151,186
+  s_41cd3d9f8f7b50::t_8fb53d45d4e4bc 118,139,159,233
+  s_41cd3d9f8f7b50::t_bb26e21ef09168 30,62,66-68,126,128-130,133,258-278
+  s_41cd3d9f8f7b50::t_7216dbb8bd493c 156,161,174-180,190-203,205,213-216,253-256
+  s_41cd3d9f8f7b50::t_871cc5f07d593b 284
+  s_41cd3d9f8f7b50::t_7a054b574b131c 309-310,315-317,332-400
+  s_8967b35e8f15a5::t_56899330567292 35,48-52
+  s_41cd3d9f8f7b50::t_10fc626fa933f3 238-243,279-283,285-286
+  s_41cd3d9f8f7b50::t_b297830e890d29 36-37,41,85
+  s_41cd3d9f8f7b50::t_906c218f8fe7f9 2-4
+  s_41cd3d9f8f7b50::t_ddab370c6551b2 7-9,11-13
+  s_41cd3d9f8f7b50::t_d9a0460254f1f4 20-22
+  s_41cd3d9f8f7b50::t_a6b74f11053af6 24
+  s_41cd3d9f8f7b50::t_8743036a889e81 40
+  s_41cd3d9f8f7b50::t_2cecae549a11ca 55-56
+  s_41cd3d9f8f7b50::t_f2a74a841fdd63 94-96,103-105
+  s_41cd3d9f8f7b50::t_70ebfc7ff05458 107
+  s_41cd3d9f8f7b50::t_6868a1903fbaa6 109-112
+  s_41cd3d9f8f7b50::t_9b444041a0c185 119-120
+  s_41cd3d9f8f7b50::t_6082d732c6fbfd 124
+  s_41cd3d9f8f7b50::t_2acd8b109083f8 138
+  s_41cd3d9f8f7b50::t_afc5bedf8a83fe 140-143
+  s_41cd3d9f8f7b50::t_d45cc63695c27d 147-150
+  s_41cd3d9f8f7b50::t_6f97237f7c4f9f 152-155
+  s_41cd3d9f8f7b50::t_677cba4defef6e 157-158
+  s_41cd3d9f8f7b50::t_e7fc6aed7b501e 160
+  s_41cd3d9f8f7b50::t_26bbee349d8ad4 162-164,168-170
+  s_41cd3d9f8f7b50::t_fdfc5e6c2af125 184-185
+  s_41cd3d9f8f7b50::t_f925b450238967 207-209
+  s_41cd3d9f8f7b50::t_4e8ca118e84073 212
+  s_41cd3d9f8f7b50::t_232c6c9ab5f508 217
+  s_41cd3d9f8f7b50::t_4b5facc2daacbc 221
+  s_41cd3d9f8f7b50::t_ef30e124e1a85d 223-225
+  s_41cd3d9f8f7b50::t_2689ff9b0d2d5f 227-229
+  s_41cd3d9f8f7b50::t_4614ccbc6e35b4 231-232
+  s_41cd3d9f8f7b50::t_e4a9e16eb87dd3 234-237
+  s_41cd3d9f8f7b50::t_8bc595264db672 244-246
+  s_41cd3d9f8f7b50::t_65921a75a4a903 248-249
+  s_41cd3d9f8f7b50::t_b285d30e9ec726 251
+  s_41cd3d9f8f7b50::t_fb70728c32ded8 301
+  s_41cd3d9f8f7b50::t_e7ffacff76f9c1 561-563,566-568
+  s_41cd3d9f8f7b50::t_68852c9bc52be5 570
+  s_41cd3d9f8f7b50::t_7e155e0e4eec13 582-586
+  s_41cd3d9f8f7b50::t_263a9ff7e84ed8 588
+  s_41cd3d9f8f7b50::t_853ed62f98d4ea 590-593
+  s_41cd3d9f8f7b50::t_47f2c78cfbb5ff 595
+  s_41cd3d9f8f7b50::t_99678d21f9fdb0 597-600
+  s_41cd3d9f8f7b50::t_4eaf4a898c1fc0 602
+  s_41cd3d9f8f7b50::t_d729f077daff87 604
+  s_41cd3d9f8f7b50::t_4a00130be97374 607-610
+  s_41cd3d9f8f7b50::t_8e1e83a6be2cee 612
+  s_41cd3d9f8f7b50::t_4dafbf11ab6e70 614-616
+  s_41cd3d9f8f7b50::t_0560b49f9b322e 1,10,15,32-34,97-102,165-167,564-565
+packages/desktop/renderer/components/LiveViewSelect.tsx
+  s_31cfcf1fa62567::t_ef9ea65cabe2e7 1-24
+packages/runtime-darwin-arm64/manifest.json
+  s_5cb83c19a0fb79::t_1afcb79c0bd90f 2
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "9fbc8a59d0ad260901e6e0ebfd8068db0a9200e4",
+  "prompts": {},
+  "sessions": {
+    "s_047cd11d6c9132": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0aa3f-7734-76e1-8b22-d95c1aa1042b",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": null
+    },
+    "s_0db8d86a446f93": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a09fa1-2802-72a3-b069-6f75c1ed66ff",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": null
+    },
+    "s_31cfcf1fa62567": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a09fc4-b1f2-72e1-a9d4-eb6f40c45b76",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_37de9a1992b7f3": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0a8dd-eb81-75e3-b3e1-229c5292ccb8",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": null
+    },
+    "s_41cd3d9f8f7b50": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0a830-5275-7a32-9ed0-60edec3af552",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": null
+    },
+    "s_5cb83c19a0fb79": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a08fda-964e-7830-84d6-f83c454ed163",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_8967b35e8f15a5": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a08efc-1c50-7431-8f07-05e1ce2e9b1e",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": null
+    },
+    "s_937324cedb29cf": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0a8c7-5778-7e10-ba75-8b9b7b1dfcda",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": null
+    },
+    "s_de7765efdb67f4": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0a925-4d8b-7c91-8504-a23e1a52fdd6",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": null
+    }
+  }
+}

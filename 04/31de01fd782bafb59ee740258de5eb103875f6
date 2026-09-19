@@ -1,0 +1,54 @@
+packages/cli/README.md
+  h_b0bf4228a0b7ec 23-26,33-36
+packages/cli/RELEASE.md
+  h_b0bf4228a0b7ec 1,23,128-134
+packages/cli/bin/node-preflight.mjs
+  h_b0bf4228a0b7ec 10
+packages/cli/install/README.md
+  h_b0bf4228a0b7ec 8,16,43
+packages/cli/install/install-agentroam.ps1
+  h_b0bf4228a0b7ec 6
+packages/cli/install/install-agentroam.sh
+  h_b0bf4228a0b7ec 6
+packages/cli/package.json
+  h_b0bf4228a0b7ec 3,29-34
+packages/cli/src/platform-packages.ts
+  h_b0bf4228a0b7ec 7
+packages/cli/src/tunnel/public-readiness.ts
+  h_b0bf4228a0b7ec 47
+packages/cloudflared-darwin-arm64/manifest.json
+  h_b0bf4228a0b7ec 2
+packages/cloudflared-darwin-arm64/package.json
+  h_b0bf4228a0b7ec 3
+packages/cloudflared-win32-x64/manifest.json
+  h_b0bf4228a0b7ec 2
+packages/cloudflared-win32-x64/package.json
+  h_b0bf4228a0b7ec 3
+packages/core/src/infrastructure/live-view/producer.ts
+  h_b0bf4228a0b7ec 2
+packages/desktop/main/desktop-screen-screencast.test.ts
+  h_b0bf4228a0b7ec 160
+packages/runtime-darwin-arm64/manifest.json
+  h_b0bf4228a0b7ec 2
+packages/runtime-darwin-arm64/package.json
+  h_b0bf4228a0b7ec 3
+packages/runtime-win32-x64/manifest.json
+  h_b0bf4228a0b7ec 2
+packages/runtime-win32-x64/package.json
+  h_b0bf4228a0b7ec 3
+packages/tui-darwin-arm64/package.json
+  h_b0bf4228a0b7ec 3
+packages/tui-win32-x64/package.json
+  h_b0bf4228a0b7ec 3
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "0431de01fd782bafb59ee740258de5eb103875f6",
+  "prompts": {},
+  "humans": {
+    "h_b0bf4228a0b7ec": {
+      "author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

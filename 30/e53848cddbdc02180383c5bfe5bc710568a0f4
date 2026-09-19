@@ -1,0 +1,24 @@
+scripts/agent-runtime-live-smoke.ts
+  s_c2f221873f144e::t_8cc818af839055 1-2,4-275,278-348,350,357-392,407-440
+  s_c2f221873f144e::t_36aef1616c89cc 276-277
+  s_c2f221873f144e::t_b51a85e53adb02 3,349,351-356,393-406
+scripts/tsconfig.agent-runtime.json
+  s_c2f221873f144e::t_a63ad808839688 5-9
+  s_c2f221873f144e::t_1aa3611c66ba73 1-4,10-15
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "30e53848cddbdc02180383c5bfe5bc710568a0f4",
+  "prompts": {},
+  "sessions": {
+    "s_c2f221873f144e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06d49-5ce1-7c11-8feb-44d455eb6627",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

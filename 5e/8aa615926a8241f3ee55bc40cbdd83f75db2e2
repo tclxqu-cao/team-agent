@@ -1,0 +1,20 @@
+docs/superpowers/specs/2026-09-01-web-host-project-picker-design.md
+  s_7f31078f8af1ca::t_fff341effd87b0 48,81,83,85,88-94,101-103,106,117,119-120,140,170,202-203
+  s_7f31078f8af1ca::t_168e6af09c0f47 1-47,49-80,82,84,86-87,95-100,104-105,107-116,118,121-139,141-169,171-201,204-225
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "5e8aa615926a8241f3ee55bc40cbdd83f75db2e2",
+  "prompts": {},
+  "sessions": {
+    "s_7f31078f8af1ca": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a05c54-3ec9-7c00-a92f-e9387f03da2b",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

@@ -1,0 +1,23 @@
+packages/core/src/domain/agent/AgentBuilder.test.ts
+  s_784e8fbaa7f611::t_ec7dfda49a138f 1-2,4,6-8,10-18,20-21,23,27,30-31
+  s_784e8fbaa7f611::t_bde70619695fca 3,5,9,19,22,24-26,28-29
+packages/core/src/domain/agent/AgentBuilder.ts
+  s_784e8fbaa7f611::t_fd1fab5ec28de7 242
+  s_784e8fbaa7f611::t_66c759034636df 182
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.7",
+  "base_commit_sha": "b1ce0e854d23c4a92cfbc7ea47dd88ede1a6404e",
+  "prompts": {},
+  "sessions": {
+    "s_784e8fbaa7f611": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "129f9c70-8db2-48de-a411-2ff025d7eacb",
+        "model": "gpt-5.5"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

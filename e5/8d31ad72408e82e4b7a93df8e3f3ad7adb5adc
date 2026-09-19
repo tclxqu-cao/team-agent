@@ -1,0 +1,19 @@
+docs/superpowers/specs/2026-09-03-session-history-prefetch-design.md
+  s_ff2b2d7ac93b28::t_4f9b1d904c4a88 1-45
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "e58d31ad72408e82e4b7a93df8e3f3ad7adb5adc",
+  "prompts": {},
+  "sessions": {
+    "s_ff2b2d7ac93b28": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a066c2-13c8-7031-9522-1b95914c6543",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

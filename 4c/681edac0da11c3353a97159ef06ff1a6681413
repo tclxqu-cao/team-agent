@@ -1,0 +1,19 @@
+docs/superpowers/specs/2026-09-04-native-turn-boundary-history-dedup-design.md
+  s_b4f9e580e74429::t_be054a0201100d 1-101
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "4c681edac0da11c3353a97159ef06ff1a6681413",
+  "prompts": {},
+  "sessions": {
+    "s_b4f9e580e74429": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06ca3-0bbe-72c3-a0b9-31867236d091",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

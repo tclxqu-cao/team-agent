@@ -1,0 +1,19 @@
+docs/superpowers/specs/2026-09-03-queued-message-actions-design.md
+  s_faba9ad8310d46::t_c569164c2d7e1e 1-32
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "76bb94e53ffbbee4efdc5da2688813393a6d457d",
+  "prompts": {},
+  "sessions": {
+    "s_faba9ad8310d46": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0628f-ad5d-70d2-9992-bc7ee65f3108",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

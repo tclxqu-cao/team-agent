@@ -1,0 +1,64 @@
+packages/desktop/renderer/stores/agentStore.ts
+  s_a5c8a00176e4f4::t_808379c9ca27a6 84
+  s_a5c8a00176e4f4::t_e3363c6baddcd2 2
+  s_a5c8a00176e4f4::t_e7990a74b7ab08 31
+packages/core/src/domain/agent/entities.ts
+  s_a5c8a00176e4f4::t_0cd189db845a93 51-58
+  s_a5c8a00176e4f4::t_bf532f4c66295f 23
+packages/desktop/main/question-manager.ts
+  s_a5c8a00176e4f4::t_74f086d5ae00f6 32,36,38
+packages/desktop/renderer/components/ChatView.tsx
+  s_a5c8a00176e4f4::t_93da7e21ce3bd6 747
+  s_a5c8a00176e4f4::t_2312b275bc4bd8 1308
+packages/desktop/renderer/components/AskUserCard.tsx
+  s_a5c8a00176e4f4::t_101a500bf41398 18
+  s_a5c8a00176e4f4::t_cda0d74e8de555 242-263
+  s_a5c8a00176e4f4::t_88eede643dc586 267-297,299,301,304-306,313,319
+  s_a5c8a00176e4f4::t_efb35dbcc24eb4 2,8
+  s_a5c8a00176e4f4::t_2c1ae5f1e6cbd2 26,28-29
+  s_a5c8a00176e4f4::t_1a5724d2f39bb5 164
+  s_a5c8a00176e4f4::t_71c0151c5b261b 52-61
+  s_53a2beb34ba763::t_741d74e73a1548 264-266
+packages/core/src/domain/model/providers/AnthropicProvider.test.ts
+  s_a5c8a00176e4f4::t_d5e2bbabd18d66 43
+packages/core/src/index.ts
+  s_a5c8a00176e4f4::t_b0045fe185004e 30
+packages/core/src/domain/tool/builtin/AskUserTool.ts
+  s_a5c8a00176e4f4::t_e66027cb726854 38
+  s_a5c8a00176e4f4::t_4373a269009f0c 74-87
+  s_a5c8a00176e4f4::t_82ed5b33c019c1 4-10,14
+  s_a5c8a00176e4f4::t_a3e6c353acbe8a 48-55
+  s_a5c8a00176e4f4::t_428e55f9ffc129 117
+packages/core/src/domain/tool/builtin/index.ts
+  s_a5c8a00176e4f4::t_26515c1d05c8bc 12
+packages/desktop/main/question-manager.test.ts
+  s_a5c8a00176e4f4::t_c3277e6294a89a 19,23
+  s_a5c8a00176e4f4::t_11322a5f5c76d1 38-39
+  s_a5c8a00176e4f4::t_5ccbac40cb8d32 20-22,24-37,40-41
+.agent/skills/storyboard/SKILL.md
+  s_a5c8a00176e4f4::t_520e1ad6895e94 139-140
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.14",
+  "base_commit_sha": "bf7585b791810418505c2df7c2d9baba59b9044f",
+  "prompts": {},
+  "sessions": {
+    "s_53a2beb34ba763": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f5e95-607e-7a40-a776-14ce2e77d8e9",
+        "model": "cx/gpt-5.6-sol-xhigh"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_a5c8a00176e4f4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "36d00f7a-e2d2-4fd3-88c1-a33b69e2217a",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

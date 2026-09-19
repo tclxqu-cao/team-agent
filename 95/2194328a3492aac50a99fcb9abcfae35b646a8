@@ -1,0 +1,229 @@
+packages/core/src/infrastructure/SQLiteSessionStore.ts
+  s_0c9810ca6cf0aa::t_27cd9f9063f5c0 17-22,29-48,62
+docs/superpowers/plans/2026-08-12-sherpa-kws-wake-word.md
+  s_0c9810ca6cf0aa::t_27cd9f9063f5c0 1-150
+packages/voice-service/scripts/download-kws-model.sh
+  s_0c9810ca6cf0aa::t_27cd9f9063f5c0 1-64
+packages/voice-service/src/sherpa-runtime.test.ts
+  s_0c9810ca6cf0aa::t_27cd9f9063f5c0 1-116
+packages/voice-service/src/tts-engine.test.ts
+  s_0c9810ca6cf0aa::t_27cd9f9063f5c0 1-171
+packages/voice-service/src/asr-engine.test.ts
+  s_0c9810ca6cf0aa::t_27cd9f9063f5c0 1-98
+packages/desktop/renderer/lib/voice-command.ts
+  s_0c9810ca6cf0aa::t_27cd9f9063f5c0 1-55
+packages/voice-service/src/tts-engine.ts
+  s_0c9810ca6cf0aa::t_27cd9f9063f5c0 1-68
+docs/superpowers/specs/2026-08-06-voice-barge-in-design.md
+  s_0c9810ca6cf0aa::t_27cd9f9063f5c0 1-34
+packages/voice-service/src/kws-engine.ts
+  s_0c9810ca6cf0aa::t_27cd9f9063f5c0 1-71
+docs/superpowers/plans/2026-08-21-project-context-instruction-whitelist.md
+  s_0c9810ca6cf0aa::t_27cd9f9063f5c0 1-122
+packages/voice-service/src/sherpa-runtime.ts
+  s_0c9810ca6cf0aa::t_27cd9f9063f5c0 1-81
+docs/superpowers/plans/2026-08-11-local-remote-voice-service.md
+  s_0c9810ca6cf0aa::t_27cd9f9063f5c0 1-316
+packages/desktop/asr-poc/lib.test.mjs
+  s_0c9810ca6cf0aa::t_27cd9f9063f5c0 1-96
+packages/voice-service/src/server.test.ts
+  s_0c9810ca6cf0aa::t_27cd9f9063f5c0 1-679
+packages/voice-service/src/wav.ts
+  s_0c9810ca6cf0aa::t_27cd9f9063f5c0 1-47
+docs/superpowers/specs/2026-08-11-local-remote-voice-service-design.md
+  s_0c9810ca6cf0aa::t_27cd9f9063f5c0 1-166
+packages/voice-service/src/config.ts
+  s_0c9810ca6cf0aa::t_27cd9f9063f5c0 1-58
+packages/desktop/main/voice-service-client.test.ts
+  s_0c9810ca6cf0aa::t_27cd9f9063f5c0 1-344
+packages/desktop/asr-poc/README.md
+  s_0c9810ca6cf0aa::t_27cd9f9063f5c0 1-79
+packages/voice-service/src/protocol.ts
+  s_0c9810ca6cf0aa::t_27cd9f9063f5c0 1-130
+packages/desktop/main/agent-host-run-state.test.ts
+  s_0c9810ca6cf0aa::t_27cd9f9063f5c0 1-17
+packages/desktop/asr-poc/evaluate.mjs
+  s_0c9810ca6cf0aa::t_27cd9f9063f5c0 1-50
+package.json
+  s_0c9810ca6cf0aa::t_e9b19281427497 10
+  s_0c9810ca6cf0aa::t_27cd9f9063f5c0 11,26-27
+  s_0c9810ca6cf0aa::t_7edef567948ca5 28
+packages/desktop/renderer/lib/pcm-stream-player.ts
+  s_0c9810ca6cf0aa::t_27cd9f9063f5c0 1-194
+packages/desktop/renderer/components/ChatView.tsx
+  s_0c9810ca6cf0aa::t_27cd9f9063f5c0 10-18,190-191,193,206,210-218,233-237,297-370,537,853,865-881,955,960,968-969,1222-1265,1267,1271,1275,1278-1279,1297-1305,1310,1313,1476-1481,1485,1487,1492,1497,1503-1505,1521-1523,1546-1547,1549-1551,1555-1558,1741-1783,1879,1903-1904,2345,2437,2441,2457,2464-2481,2487,2706,2774
+packages/core/src/domain/tool/builtin/WebSearchTool.ts
+  s_0c9810ca6cf0aa::t_27cd9f9063f5c0 4-50,53-54,79-94,96,98,101,105-133,136-137,144,153,159-181
+packages/desktop/assets/app-icon.svg
+  s_0c9810ca6cf0aa::t_27cd9f9063f5c0 1-24
+packages/voice-service/src/model-files.ts
+  s_0c9810ca6cf0aa::t_27cd9f9063f5c0 1-118
+packages/desktop/main/desktop-base-dir.test.ts
+  s_0c9810ca6cf0aa::t_27cd9f9063f5c0 1-33
+packages/desktop/main/voice-capture-state.test.ts
+  s_0c9810ca6cf0aa::t_27cd9f9063f5c0 1-315
+packages/voice-service/python/test_mlx_tts_worker.py
+  s_0c9810ca6cf0aa::t_27cd9f9063f5c0 1-108
+docs/superpowers/plans/2026-08-11-sherpa-onnx-asr-poc.md
+  s_0c9810ca6cf0aa::t_27cd9f9063f5c0 1-78
+packages/desktop/main/voice-service-client.ts
+  s_0c9810ca6cf0aa::t_27cd9f9063f5c0 1-297
+packages/voice-service/scripts/download-tts-model.sh
+  s_0c9810ca6cf0aa::t_27cd9f9063f5c0 1-60
+packages/desktop/main/index.ts
+  s_0c9810ca6cf0aa::t_27cd9f9063f5c0 1-6,12-42,59-114,128,149-736,1087-1108,1115-1121
+docs/superpowers/specs/2026-08-21-thinking-status-display-design.md
+  s_0c9810ca6cf0aa::t_27cd9f9063f5c0 1-88
+packages/voice-service/src/config.test.ts
+  s_0c9810ca6cf0aa::t_27cd9f9063f5c0 1-73
+packages/desktop/native/wakelistener.swift
+  s_0c9810ca6cf0aa::t_27cd9f9063f5c0 1-423
+packages/voice-service/python/mlx_tts_worker.py
+  s_0c9810ca6cf0aa::t_27cd9f9063f5c0 1-241
+packages/desktop/renderer/styles/global.css
+  s_0c9810ca6cf0aa::t_27cd9f9063f5c0 1,4,56-140,197-526,599-700
+packages/voice-service/src/model-files.test.ts
+  s_0c9810ca6cf0aa::t_27cd9f9063f5c0 1-108
+packages/desktop/renderer/lib/pcm-audio-worklet.test.ts
+  s_0c9810ca6cf0aa::t_27cd9f9063f5c0 1-69
+packages/core/src/domain/tool/__tests__/WebSearchTool.test.ts
+  s_0c9810ca6cf0aa::t_27cd9f9063f5c0 1-80
+packages/desktop/asr-poc/download-model.sh
+  s_0c9810ca6cf0aa::t_27cd9f9063f5c0 1-40
+packages/voice-service/src/framed-process.test.ts
+  s_0c9810ca6cf0aa::t_27cd9f9063f5c0 1-62
+packages/voice-service/src/wav.test.ts
+  s_0c9810ca6cf0aa::t_27cd9f9063f5c0 1-32
+packages/voice-service/src/main.ts
+  s_0c9810ca6cf0aa::t_27cd9f9063f5c0 1-88
+packages/desktop/asr-poc/run.sh
+  s_0c9810ca6cf0aa::t_27cd9f9063f5c0 1-13
+.gitignore
+  s_0c9810ca6cf0aa::t_27cd9f9063f5c0 10-11
+packages/desktop/main/voice-service-manager.test.ts
+  s_0c9810ca6cf0aa::t_27cd9f9063f5c0 1-134
+packages/desktop/renderer/global.d.ts
+  s_0c9810ca6cf0aa::t_27cd9f9063f5c0 83-108,184-189
+  s_0c9810ca6cf0aa::t_e44594ba83cf13 190-191
+packages/voice-service/README.md
+  s_0c9810ca6cf0aa::t_27cd9f9063f5c0 1-68
+docs/superpowers/specs/2026-08-17-mlx-qwen-streaming-tts-design.md
+  s_0c9810ca6cf0aa::t_27cd9f9063f5c0 1-218
+packages/core/src/domain/context/ContextLoader.ts
+  s_0c9810ca6cf0aa::t_27cd9f9063f5c0 2-4,6-7,14-16,21,23-24,26,31,33,37,39-42,44,46,48,63,71-106,113,115,120,130
+packages/voice-service/tsconfig.json
+  s_0c9810ca6cf0aa::t_27cd9f9063f5c0 1-10
+packages/desktop/renderer/App.tsx
+  s_0c9810ca6cf0aa::t_27cd9f9063f5c0 4,11,14-15,56-262,561-562,629-638,653-656,698,705,716,738,777,789,791,806,840,842,888-889,898-913,919-920,922-925,928-933,965-971,1025,1034,1056-1158
+  s_0c9810ca6cf0aa::t_a596a495e7dc53 1159
+packages/desktop/asr-poc/evaluate.test.mjs
+  s_0c9810ca6cf0aa::t_27cd9f9063f5c0 1-28
+packages/voice-service/src/mlx-tts-engine.test.ts
+  s_0c9810ca6cf0aa::t_27cd9f9063f5c0 1-90
+packages/desktop/asr-poc/cli.test.mjs
+  s_0c9810ca6cf0aa::t_27cd9f9063f5c0 1-19
+packages/desktop/package.json
+  s_0c9810ca6cf0aa::t_27cd9f9063f5c0 10,16,20
+packages/desktop/renderer/components/AgentActivityIndicator.test.ts
+  s_0c9810ca6cf0aa::t_27cd9f9063f5c0 1-20
+docs/superpowers/specs/2026-08-11-sherpa-onnx-asr-poc-design.md
+  s_0c9810ca6cf0aa::t_27cd9f9063f5c0 1-63
+packages/desktop/renderer/components/WakeOverlay.tsx
+  s_0c9810ca6cf0aa::t_27cd9f9063f5c0 1-105
+packages/desktop/asr-poc/index.mjs
+  s_0c9810ca6cf0aa::t_27cd9f9063f5c0 1-201
+packages/desktop/renderer/lib/voice-command.test.ts
+  s_0c9810ca6cf0aa::t_27cd9f9063f5c0 1-108
+packages/desktop/renderer/components/ChatHeaderActions.test.ts
+  s_0c9810ca6cf0aa::t_27cd9f9063f5c0 1-33
+packages/desktop/native/wakelistener-contract.test.ts
+  s_0c9810ca6cf0aa::t_27cd9f9063f5c0 1-34
+packages/desktop/main/desktop-base-dir.ts
+  s_0c9810ca6cf0aa::t_27cd9f9063f5c0 1-7
+packages/voice-service/package.json
+  s_0c9810ca6cf0aa::t_27cd9f9063f5c0 1-20
+packages/desktop/main/preload.ts
+  s_0c9810ca6cf0aa::t_27cd9f9063f5c0 11-77
+docs/superpowers/plans/2026-08-21-desktop-ui-detail-polish.md
+  s_0c9810ca6cf0aa::t_27cd9f9063f5c0 1-150
+packages/voice-service/src/asr-engine.ts
+  s_0c9810ca6cf0aa::t_27cd9f9063f5c0 1-110
+packages/voice-service/src/mlx-tts-engine.ts
+  s_0c9810ca6cf0aa::t_27cd9f9063f5c0 1-264
+packages/desktop/renderer/lib/speech.test.ts
+  s_0c9810ca6cf0aa::t_27cd9f9063f5c0 1-42
+packages/voice-service/scripts/setup-mlx-tts.sh
+  s_0c9810ca6cf0aa::t_27cd9f9063f5c0 1-32
+packages/voice-service/src/framed-process.ts
+  s_0c9810ca6cf0aa::t_27cd9f9063f5c0 1-124
+packages/desktop/native/wakelistener.js
+  s_0c9810ca6cf0aa::t_27cd9f9063f5c0 1-104
+packages/desktop/renderer/lib/pcm-stream-player.test.ts
+  s_0c9810ca6cf0aa::t_27cd9f9063f5c0 1-111
+packages/core/src/domain/context/__tests__/ContextLoader.test.ts
+  s_0c9810ca6cf0aa::t_27cd9f9063f5c0 1-115
+docs/superpowers/plans/2026-08-21-thinking-status-and-header-controls.md
+  s_0c9810ca6cf0aa::t_27cd9f9063f5c0 1-254
+packages/desktop/main/voice-capture-state.ts
+  s_0c9810ca6cf0aa::t_27cd9f9063f5c0 1-152
+packages/desktop/renderer/lib/speech.ts
+  s_0c9810ca6cf0aa::t_27cd9f9063f5c0 1-235
+docs/superpowers/plans/2026-08-17-mlx-qwen-streaming-tts.md
+  s_0c9810ca6cf0aa::t_27cd9f9063f5c0 1-443
+packages/desktop/asr-poc/lib.mjs
+  s_0c9810ca6cf0aa::t_27cd9f9063f5c0 1-109
+packages/desktop/asr-poc/package.json
+  s_0c9810ca6cf0aa::t_27cd9f9063f5c0 1-12
+packages/voice-service/src/protocol.test.ts
+  s_0c9810ca6cf0aa::t_27cd9f9063f5c0 1-93
+docs/superpowers/specs/2026-08-21-desktop-ui-detail-polish-design.md
+  s_0c9810ca6cf0aa::t_27cd9f9063f5c0 1-100
+packages/desktop/renderer/components/AgentActivityIndicator.tsx
+  s_0c9810ca6cf0aa::t_27cd9f9063f5c0 1-20
+packages/core/src/infrastructure/SQLiteProjectStore.ts
+  s_0c9810ca6cf0aa::t_27cd9f9063f5c0 40-41
+packages/desktop/renderer/public/pcm-audio-worklet.js
+  s_0c9810ca6cf0aa::t_27cd9f9063f5c0 1-126
+docs/superpowers/specs/2026-08-21-project-context-instruction-whitelist-design.md
+  s_0c9810ca6cf0aa::t_27cd9f9063f5c0 1-81
+packages/voice-service/src/server.ts
+  s_0c9810ca6cf0aa::t_27cd9f9063f5c0 1-482
+packages/desktop/main/agent-host.ts
+  s_0c9810ca6cf0aa::t_27cd9f9063f5c0 50-53,496
+packages/desktop/renderer/lib/voice-interruption.test.ts
+  s_0c9810ca6cf0aa::t_27cd9f9063f5c0 1-38
+docs/superpowers/specs/2026-08-12-sherpa-kws-wake-word-design.md
+  s_0c9810ca6cf0aa::t_27cd9f9063f5c0 1-111
+packages/desktop/renderer/lib/voice-interruption.ts
+  s_0c9810ca6cf0aa::t_27cd9f9063f5c0 1-13
+packages/voice-service/src/kws-engine.test.ts
+  s_0c9810ca6cf0aa::t_27cd9f9063f5c0 1-70
+packages/desktop/renderer/stores/uiStore.ts
+  s_0c9810ca6cf0aa::t_27cd9f9063f5c0 1-65
+packages/desktop/renderer/components/ChatHeaderActions.tsx
+  s_0c9810ca6cf0aa::t_27cd9f9063f5c0 1-63
+packages/voice-service/scripts/measure-mlx-tts.mjs
+  s_0c9810ca6cf0aa::t_27cd9f9063f5c0 1-198
+docs/superpowers/plans/2026-08-06-voice-barge-in.md
+  s_0c9810ca6cf0aa::t_27cd9f9063f5c0 1-88
+packages/desktop/main/voice-service-manager.ts
+  s_0c9810ca6cf0aa::t_27cd9f9063f5c0 1-206
+bun.lock
+  s_0c9810ca6cf0aa::t_ca5dc91bb4e3d9 27,31,81-94,107-108,621-634
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "952194328a3492aac50a99fcb9abcfae35b646a8",
+  "prompts": {},
+  "sessions": {
+    "s_0c9810ca6cf0aa": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0467f-4946-7e63-a50b-da3a8638b430",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

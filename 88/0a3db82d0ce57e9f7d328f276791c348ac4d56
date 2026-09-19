@@ -1,0 +1,35 @@
+packages/tui/src/App.tsx
+  s_0c9810ca6cf0aa::t_2027bb07597888 329-339,370
+  s_0c9810ca6cf0aa::t_92971e2facdc74 363-367
+  s_0c9810ca6cf0aa::t_d2d23f02643f28 369
+packages/tui/src/terminal-input.ts
+  s_0c9810ca6cf0aa::t_2027bb07597888 1-43,45-78,80-101
+  s_0c9810ca6cf0aa::t_935e3b62a0388f 44,79
+packages/tui/src/App.test.tsx
+  s_0c9810ca6cf0aa::t_27cc6693605e2a 58-59,63,197-213
+  s_0c9810ca6cf0aa::t_c701cda784801f 214
+packages/tui/src/terminal-input.test.ts
+  s_0c9810ca6cf0aa::t_2027bb07597888 1-26,36
+  s_0c9810ca6cf0aa::t_935e3b62a0388f 27-35
+packages/tui/src/components/Composer.tsx
+  s_0c9810ca6cf0aa::t_0e60558e8baf37 42,55,58,64-65,67-68,70-71
+  s_0c9810ca6cf0aa::t_92971e2facdc74 59-60,63,76
+  s_0c9810ca6cf0aa::t_2027bb07597888 2,4-5,38-41,43,45-47,54,66,69,73-75,77-84,87,89-93,96-98,101-104,107-110,113-114,117-120,123-127,129-158,163-164,168,173-180
+  s_0c9810ca6cf0aa::t_60ae69c8696d9c 72
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "880a3db82d0ce57e9f7d328f276791c348ac4d56",
+  "prompts": {},
+  "sessions": {
+    "s_0c9810ca6cf0aa": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0467f-4946-7e63-a50b-da3a8638b430",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

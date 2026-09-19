@@ -1,0 +1,19 @@
+docs/superpowers/specs/2026-09-08-codex-native-session-title-sync-design.md
+  s_58776e8cedd594::t_645fa1c0ca7baf 1-47
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "7a1da412432d2dd72833730d89a6f44107f5deae",
+  "prompts": {},
+  "sessions": {
+    "s_58776e8cedd594": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a07fb6-6aed-7861-bb56-e2ec6c12515e",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

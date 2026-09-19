@@ -1,0 +1,21 @@
+packages/desktop/package.json
+  s_d7e9139632be58::t_05c93b4c0c726f 19-20,23
+bun.lock
+  s_d7e9139632be58::t_14e7484df5943b 31
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "945a40143c426f5dc379bcc1afc5ea7155b9de3f",
+  "prompts": {},
+  "sessions": {
+    "s_d7e9139632be58": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e7cab54f-91c4-4e38-85e4-9c8664b8318e",
+        "model": "gpt-5.5"
+      },
+      "human_author": "caoqu <qu.cao@ly.com>"
+    }
+  }
+}

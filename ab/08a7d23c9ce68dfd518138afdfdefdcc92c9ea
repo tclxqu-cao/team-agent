@@ -1,0 +1,114 @@
+.gitignore
+  h_86bb4e0e04237b 20-23
+bun.lock
+  h_86bb4e0e04237b 124-140,158-159
+package.json
+  h_86bb4e0e04237b 9,21,24,26,28-29
+packages/cli/package.json
+  h_86bb4e0e04237b 3,6-23,34,43-47
+packages/cli/src/cli.ts
+  h_86bb4e0e04237b 13
+packages/cli/src/cloudflared/bundled-asset.test.ts
+  h_86bb4e0e04237b 14
+packages/cli/src/cloudflared/manifest.ts
+  h_86bb4e0e04237b 4
+packages/cli/src/tunnel/public-readiness.ts
+  h_86bb4e0e04237b 47
+packages/cloudflared-darwin-arm64/manifest.json
+  h_86bb4e0e04237b 2
+packages/cloudflared-darwin-arm64/package.json
+  h_86bb4e0e04237b 3,6-16
+packages/core/src/infrastructure/SQLiteDatabase.ts
+  h_86bb4e0e04237b 4-24,33-34
+packages/core/src/infrastructure/SQLiteSessionStore.ts
+  h_86bb4e0e04237b 140-151
+packages/core/src/types/better-sqlite3.d.ts
+  h_86bb4e0e04237b 19
+packages/desktop/renderer/App.tsx
+  h_86bb4e0e04237b 16,69-75,382,541,547-580,617-628,796,931,945
+packages/desktop/renderer/web/webLayout.ts
+  h_86bb4e0e04237b 1-28
+packages/server/app/api/agent-host.test.ts
+  h_86bb4e0e04237b 77,90,95,99-101
+packages/server/app/api/agent-host.ts
+  h_86bb4e0e04237b 27-32,74-86,124-137,147-153,155,214,217-219,231,234-236,242-244,247-249,251-258,261-281,338-356,358
+packages/server/app/api/agent/model/route.ts
+  h_86bb4e0e04237b 1-10
+packages/server/app/api/agent/run/route.ts
+  h_86bb4e0e04237b 9,45
+packages/server/app/api/agent/steer/route.ts
+  h_86bb4e0e04237b 1-18
+packages/server/app/api/agent/stream/route.test.ts
+  h_86bb4e0e04237b 8-10
+packages/server/app/api/agent/stream/route.ts
+  h_86bb4e0e04237b 12-13,17-18,20-33,35-66
+packages/server/app/web/TerminalPane.tsx
+  h_86bb4e0e04237b 37,53,65,390,449-450,477-482,639-641,662,674-676,716-719
+packages/server/app/web/page.tsx
+  h_86bb4e0e04237b 23-26,28-30,70-71,77-79,84-89,96-97,103-105,139-149,151-153,159,162-182,235-236,241,275-279
+packages/server/app/web/useGateway.ts
+  h_86bb4e0e04237b 22,25,47-53,80,102-114,123-127,147,161,164
+packages/server/sync-codex-model.sh
+  h_86bb4e0e04237b 1-47
+packages/server/tsconfig.json
+  h_86bb4e0e04237b 31-32
+packages/server/ws-server.mjs
+  h_86bb4e0e04237b 24,44-55,234-238,465-471,542-545,616-617,626-628,705-809,858-861
+packages/tui/src/App.tsx
+  h_86bb4e0e04237b 580-590,603
+packages/tui/src/better-sqlite3.d.ts
+  h_86bb4e0e04237b 19
+packages/tui/src/resources.ts
+  h_86bb4e0e04237b 62-75,80,83,86,90-95,192
+packages/webapp/README.md
+  h_86bb4e0e04237b 1-49
+packages/webapp/index.html
+  h_86bb4e0e04237b 1-16
+packages/webapp/package.json
+  h_86bb4e0e04237b 1-24
+packages/webapp/src/domain/ports/agent-port.ts
+  h_86bb4e0e04237b 1-23
+packages/webapp/src/infrastructure/http/agent-http-gateway.ts
+  h_86bb4e0e04237b 1-635
+packages/webapp/src/infrastructure/http/http-client.ts
+  h_86bb4e0e04237b 1-75
+packages/webapp/src/infrastructure/http/think-filter.ts
+  h_86bb4e0e04237b 1-75
+packages/webapp/src/infrastructure/local/local-collection.ts
+  h_86bb4e0e04237b 1-27
+packages/webapp/src/infrastructure/local/local-settings-repository.ts
+  h_86bb4e0e04237b 1-123
+packages/webapp/src/main.tsx
+  h_86bb4e0e04237b 1-61
+packages/webapp/src/presentation/mobile-composer.ts
+  h_86bb4e0e04237b 1-164
+packages/webapp/src/presentation/web.css
+  h_86bb4e0e04237b 1-297
+packages/webapp/src/types.d.ts
+  h_86bb4e0e04237b 1-15
+packages/webapp/tsconfig.json
+  h_86bb4e0e04237b 1-11
+packages/webapp/vite.config.ts
+  h_86bb4e0e04237b 1-31
+scripts/audit-cli-tarball.mjs
+  h_86bb4e0e04237b 17,29
+scripts/audit-cloudflared-tarball.mjs
+  h_86bb4e0e04237b 17,24
+scripts/stage-cli-runtime.mjs
+  h_86bb4e0e04237b 59-63
+scripts/verify-cli-install.mjs
+  h_86bb4e0e04237b 18-21,76-80
+tsconfig.json
+  h_86bb4e0e04237b 26
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "ab08a7d23c9ce68dfd518138afdfdefdcc92c9ea",
+  "prompts": {},
+  "humans": {
+    "h_86bb4e0e04237b": {
+      "author": "caoqu <qu.cao@ly.com>"
+    }
+  }
+}

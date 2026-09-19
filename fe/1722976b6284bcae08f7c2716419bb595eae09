@@ -1,0 +1,19 @@
+docs/superpowers/specs/2026-09-04-file-preview-native-share-design.md
+  s_43fef1d9f083d8::t_0039f57198b8d6 1-33
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "fe1722976b6284bcae08f7c2716419bb595eae09",
+  "prompts": {},
+  "sessions": {
+    "s_43fef1d9f083d8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06b79-d97f-7062-b64e-2f07b589ff49",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

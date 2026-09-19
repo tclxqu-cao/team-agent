@@ -1,0 +1,24 @@
+scripts/agentroam-release-lib.mjs
+  s_c2f221873f144e::t_4495c7dd107706 145-162
+  s_c2f221873f144e::t_c10a6754379ef4 192-206,208-211,213,215-218,275-290,292
+  s_c2f221873f144e::t_a5fc6aee6e7961 3,21-30,75-99,108-142
+  s_c2f221873f144e::t_bfee15e4a256cb 100-107
+  s_c2f221873f144e::t_72eb9a3b50a08c 214
+  s_c2f221873f144e::t_b8b79d60159b3b 1-2,4-20,31-74,143-144,163-191,207,212,219-274,291,293-507
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "d5f5496ce6de4dc5f8b29fa6cfee43dcf8c7a2be",
+  "prompts": {},
+  "sessions": {
+    "s_c2f221873f144e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06d49-5ce1-7c11-8feb-44d455eb6627",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

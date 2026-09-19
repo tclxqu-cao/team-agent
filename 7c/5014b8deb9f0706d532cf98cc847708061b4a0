@@ -1,0 +1,20 @@
+packages/core/src/domain/agent/entities.ts
+  h_86bb4e0e04237b 65
+packages/desktop/main/agent-runtime/codex-runtime-adapter.test.ts
+  h_86bb4e0e04237b 1441,1448-1451
+packages/desktop/main/agent-runtime/native-runtime-broker.test.ts
+  h_86bb4e0e04237b 108,1544-1545,1572,1578,1582,1586-1587
+packages/desktop/main/agent-runtime/native-runtime-broker.ts
+  h_86bb4e0e04237b 1642,1656
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "7c5014b8deb9f0706d532cf98cc847708061b4a0",
+  "prompts": {},
+  "humans": {
+    "h_86bb4e0e04237b": {
+      "author": "caoqu <qu.cao@ly.com>"
+    }
+  }
+}

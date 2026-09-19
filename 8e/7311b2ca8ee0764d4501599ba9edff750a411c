@@ -1,0 +1,19 @@
+docs/superpowers/specs/2026-09-04-webapp-background-session-refresh-design.md
+  s_e6bf15340ec809::t_5473c40e70ee08 1-63
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "8e7311b2ca8ee0764d4501599ba9edff750a411c",
+  "prompts": {},
+  "sessions": {
+    "s_e6bf15340ec809": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06c24-6666-79b1-b196-d5e3212cffa5",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

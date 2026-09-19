@@ -1,0 +1,21 @@
+docs/superpowers/specs/2026-09-04-completed-turn-footer-design.md
+  s_500b68242d4da4::t_d992a7aaf49fdf 1-7,9-18,21-93,97-150,153-166
+  s_500b68242d4da4::t_53181c3c9847c6 94-95
+  s_500b68242d4da4::t_60ae2da29806dd 8,19-20,96,151-152
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "3356d0002ef6ff16657b520d4e0a678999c0b0c9",
+  "prompts": {},
+  "sessions": {
+    "s_500b68242d4da4": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06c41-e089-7020-87a0-7e55a984118b",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

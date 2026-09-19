@@ -1,0 +1,20 @@
+docs/superpowers/specs/2026-09-07-codex-direct-send-and-fast-history-design.md
+  s_ad41bc9c79af91::t_2f63ee1ab71511 1-41,43-44,47,49-68,72-77,79-81,83-109,111-121
+  s_ad41bc9c79af91::t_c623af47485e1a 42,45-46,48,69-71,78,82,110
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "f4f852985a2b8336593d038e739026d534d5a1b7",
+  "prompts": {},
+  "sessions": {
+    "s_ad41bc9c79af91": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a075b4-0e30-7be3-9587-8ddf9e656676",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

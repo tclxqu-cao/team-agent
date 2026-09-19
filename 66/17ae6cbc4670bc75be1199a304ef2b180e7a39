@@ -1,0 +1,19 @@
+docs/superpowers/specs/2026-09-01-codex-user-attachment-history-display-design.md
+  s_6ab712e37f1e13::t_4171d8b426ea72 1-52
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "6617ae6cbc4670bc75be1199a304ef2b180e7a39",
+  "prompts": {},
+  "sessions": {
+    "s_6ab712e37f1e13": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a05c50-e26b-7e62-8e2c-402c2a05af9b",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

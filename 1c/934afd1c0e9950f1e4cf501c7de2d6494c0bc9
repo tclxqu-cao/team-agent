@@ -1,0 +1,19 @@
+packages/desktop/main/agent-host.ts
+  s_8e02c75ff612dc::t_4b9f20eeccc32d 916
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.7",
+  "base_commit_sha": "1c934afd1c0e9950f1e4cf501c7de2d6494c0bc9",
+  "prompts": {},
+  "sessions": {
+    "s_8e02c75ff612dc": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "eba6d427-57d5-4269-b60f-2e61e0a678a6",
+        "model": "gpt-5.5"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

@@ -1,0 +1,31 @@
+packages/server/.next/server/server-reference-manifest.json
+  s_2bf2443dc5cf02::t_90e0b8728bee62 4
+docs/superpowers/specs/2026-06-25-wiki-person-capture-design.md
+  s_2bf2443dc5cf02::t_90e0b8728bee62 1-140
+packages/server/.env.local
+  s_2bf2443dc5cf02::t_90e0b8728bee62 1-8
+packages/server/.next/server/app-paths-manifest.json
+  s_2bf2443dc5cf02::t_90e0b8728bee62 1-5
+.superpowers/sdd/task-2-report.md
+  s_2bf2443dc5cf02::t_90e0b8728bee62 1-32
+packages/server/.next/trace
+  s_2bf2443dc5cf02::t_90e0b8728bee62 1-9
+AGENTS.md
+  s_2bf2443dc5cf02::t_90e0b8728bee62 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.7",
+  "base_commit_sha": "03b9d5101ead971d326ccadc158a1fd541a82d6b",
+  "prompts": {},
+  "sessions": {
+    "s_2bf2443dc5cf02": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f190e-68fe-7e50-968b-86e9a489cdea",
+        "model": "gpt-5.5"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

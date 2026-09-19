@@ -1,0 +1,254 @@
+packages/webapp/src/infrastructure/http/agent-http-gateway.ts
+  s_3d7f9a31ff380c::t_c245623a504c29 63,107,112,210,364-371,378,449,454,480,1050-1051,1124-1130,1132-1133,1135-1141,1143-1146
+  s_575d7cecc7374b::t_bc2b9600838dc0 24-28,30,67,957-992,1068,1150
+  s_3d7f9a31ff380c::t_968d661605ebb2 155-157,159,163,209,213,227,230,232
+  s_3d7f9a31ff380c::t_5f36d722454b42 1052-1054,1131,1134
+  s_3d7f9a31ff380c::t_9ee9457c0e9316 373-377,1142
+  s_3d7f9a31ff380c::t_f2d1392a69f300 136-142,145
+  s_575d7cecc7374b::t_ff19c76c199954 993
+  s_3d7f9a31ff380c::t_bd08745f9839d8 1049
+packages/webapp/src/infrastructure/http/agent-http-gateway.test.ts
+  s_3d7f9a31ff380c::t_c245623a504c29 240-290
+  s_3d7f9a31ff380c::t_968d661605ebb2 428-430
+  s_3d7f9a31ff380c::t_5f36d722454b42 143,150-157,162,165-171,291-292,345-383
+  s_575d7cecc7374b::t_bc2b9600838dc0 35,41-101
+  s_3d7f9a31ff380c::t_0f35d4675b594c 136-137,432-438,448-453
+  s_3d7f9a31ff380c::t_f2d1392a69f300 146-148
+  s_3d7f9a31ff380c::t_9ee9457c0e9316 102,293-344,384
+  s_3d7f9a31ff380c::t_d4501bc160b45d 103
+  s_3d7f9a31ff380c::t_2021f66f17e346 385
+packages/webapp/dist.rollback-20260907-233206/index.html
+  s_e47dc121b5d328::t_7883b971afd353 1-17
+packages/webapp/dist.rollback-20260907-233206/assets/App-BP-QIY-0.js
+  s_e47dc121b5d328::t_7883b971afd353 1-285
+packages/webapp/dist.rollback-20260907-233206/assets/index-Dwg0ASRZ.css
+  s_e47dc121b5d328::t_7883b971afd353 1
+packages/webapp/dist.rollback-20260906-125138/assets/App-D9KcvH0u.js
+  s_5652acd19c5653::t_aa7991dfbce77b 1-275
+packages/webapp/dist.rollback-20260906-125138/index.html
+  s_5652acd19c5653::t_aa7991dfbce77b 1-17
+packages/webapp/dist.rollback-20260906-125138/assets/index-CBw6NOEO.js
+  s_5652acd19c5653::t_aa7991dfbce77b 1-58
+docs/superpowers/specs/2026-09-07-codex-independent-execution-rows-design.md
+  s_7f4f2182442c79::t_196f6bb1ebad2f 9-10,31-34,48-50,77-78,80-82,98-101
+  s_7f4f2182442c79::t_1b343ad6734051 79
+  s_7f4f2182442c79::t_2b8707c17aec9a 43
+packages/webapp/dist.rollback-20260907-233206/pcm-audio-worklet.js
+  s_e47dc121b5d328::t_7883b971afd353 1-126
+docs/superpowers/plans/2026-09-07-codex-independent-execution-rows.md
+  s_7f4f2182442c79::t_1363069f7e9b83 27,44,54,57
+  s_7f4f2182442c79::t_52633ff5b37326 114
+  s_7f4f2182442c79::t_196f6bb1ebad2f 7,18,71,80,82,84,102,106
+  s_7f4f2182442c79::t_5b0a4e4eaed2d4 1-6,8-17,19-26,28-34,36-43,45,47-53,55-56,58-62,64-66,68-70,72-79,81,83,85-101,103,105,107,109-113,115-137
+  s_7f4f2182442c79::t_2e13afe80fc682 35,46,63,67,104,108
+packages/webapp/dist.rollback-20260906-125138/pcm-audio-worklet.js
+  s_5652acd19c5653::t_aa7991dfbce77b 1-126
+packages/webapp/dist.rollback-20260907-233206/assets/index-GPLqaIhJ.js
+  s_e47dc121b5d328::t_7883b971afd353 1-58
+packages/webapp/dist.rollback-20260906-125138/assets/index-B0MkUAtD.css
+  s_5652acd19c5653::t_aa7991dfbce77b 1
+packages/webapp/dist.rollback-20260904-184919-session-pagination/assets/App-Dsc43zLR.js
+  s_49364759a260e5::t_704dcceb9bfcf2 1-250
+packages/webapp/dist.rollback-20260904-184919-session-pagination/assets/index-BeCLRggD.js
+  s_49364759a260e5::t_0ff00c992f8879 1-58
+packages/webapp/dist.rollback-20260904-184919-session-pagination/assets/index-BrbRsI2j.css
+  s_49364759a260e5::t_2413b0153c6ed3 1
+packages/webapp/dist.rollback-20260904-184919-session-pagination/index.html
+  s_49364759a260e5::t_af315c8021e85e 1-17
+packages/webapp/dist.rollback-20260904-184919-session-pagination/pcm-audio-worklet.js
+  s_49364759a260e5::t_754376cc2a269a 1-126
+packages/webapp/dist.rollback-20260904-231021/assets/App-CjkKVdqt.js
+  s_b4f9e580e74429::t_64ea925b2e84dc 1-270
+packages/webapp/dist.rollback-20260904-231021/assets/index-8vuD14aR.css
+  s_b4f9e580e74429::t_8faceed3dcb5f1 1
+packages/webapp/dist.rollback-20260904-231021/assets/index-BD6BxVj1.js
+  s_b4f9e580e74429::t_d94b1fad01eea2 1-58
+packages/webapp/dist.rollback-20260904-231021/index.html
+  s_b4f9e580e74429::t_4c75d592e9a00a 1-17
+packages/webapp/dist.rollback-20260904-231021/pcm-audio-worklet.js
+  s_b4f9e580e74429::t_f26069a0511ff6 1-126
+packages/webapp/dist.rollback-20260905-132120/assets/App-B13GP2OF.js
+  s_d34aca02d06cfb::t_4bbb7d3e141f4c 1-270
+packages/webapp/dist.rollback-20260905-132120/assets/index-8vuD14aR.css
+  s_d34aca02d06cfb::t_b2c8919f0848d8 1
+packages/webapp/dist.rollback-20260905-132120/assets/index-CMg2JqFN.js
+  s_d34aca02d06cfb::t_7a402315cebdbb 1-58
+packages/webapp/dist.rollback-20260905-132120/index.html
+  s_d34aca02d06cfb::t_7f315f0b92aadd 1-17
+packages/webapp/dist.rollback-20260905-132120/pcm-audio-worklet.js
+  s_d34aca02d06cfb::t_15d49ac42472a4 1-126
+packages/webapp/dist.rollback-20260907-181354-lazy-turn-trace/assets/App-DJ1hTeJc.js
+  s_02602191d5774d::t_3162c32b6a474a 1-280
+packages/webapp/dist.rollback-20260907-181354-lazy-turn-trace/assets/index-BQ_qZUoK.css
+  s_02602191d5774d::t_8278d9fb6efc41 1
+packages/webapp/dist.rollback-20260907-181354-lazy-turn-trace/assets/index-D3imjN4g.js
+  s_02602191d5774d::t_950534f3001d15 1-58
+packages/webapp/dist.rollback-20260907-181354-lazy-turn-trace/index.html
+  s_02602191d5774d::t_f8bbbaa397a533 1-17
+packages/webapp/dist.rollback-20260907-181354-lazy-turn-trace/pcm-audio-worklet.js
+  s_02602191d5774d::t_028d0a869bcaa8 1-126
+packages/webapp/dist.rollback-20260907-185630-fork-history-merge/assets/App-B7Zc4XqP.js
+  s_1c9b36aefdf184::t_89ca73777ce564 1-280
+packages/webapp/dist.rollback-20260907-185630-fork-history-merge/assets/index-BQ_qZUoK.css
+  s_1c9b36aefdf184::t_d066c4018eff1f 1
+packages/webapp/dist.rollback-20260907-185630-fork-history-merge/assets/index-pk37GZwb.js
+  s_1c9b36aefdf184::t_1687649fb24f8d 1-58
+packages/webapp/dist.rollback-20260907-185630-fork-history-merge/index.html
+  s_1c9b36aefdf184::t_e73d551c781fce 1-17
+packages/webapp/dist.rollback-20260907-185630-fork-history-merge/pcm-audio-worklet.js
+  s_1c9b36aefdf184::t_37d8874c6137f4 1-126
+packages/webapp/dist.rollback-20260907-1922-trace-left-align/assets/App-wrtGNNk4.js
+  s_5c59148423a7e6::t_7419358c39ab90 1-280
+packages/webapp/dist.rollback-20260907-1922-trace-left-align/assets/index-BQ_qZUoK.css
+  s_5c59148423a7e6::t_ba2b5b6ebc828b 1
+packages/webapp/dist.rollback-20260907-1922-trace-left-align/assets/index-D8EolUkP.js
+  s_5c59148423a7e6::t_c117e95ece58fc 1-58
+packages/webapp/dist.rollback-20260907-1922-trace-left-align/index.html
+  s_5c59148423a7e6::t_4a8909cd164fab 1-17
+packages/webapp/dist.rollback-20260907-1922-trace-left-align/pcm-audio-worklet.js
+  s_5c59148423a7e6::t_5e2799a6933c26 1-126
+packages/webapp/dist.rollback-20260907-231647-independent-rows/assets/App-B6MkHh2B.js
+  s_7745a701d20870::t_96556eaa86b5e5 1-285
+packages/webapp/dist.rollback-20260907-231647-independent-rows/assets/index-ZGr33BQS.css
+  s_7745a701d20870::t_84f6e089bbf66f 1
+packages/webapp/dist.rollback-20260907-231647-independent-rows/assets/index-rATanMaj.js
+  s_7745a701d20870::t_36114b23012bff 1-58
+packages/webapp/dist.rollback-20260907-231647-independent-rows/index.html
+  s_7745a701d20870::t_611794a64cebcb 1-17
+packages/webapp/dist.rollback-20260907-231647-independent-rows/pcm-audio-worklet.js
+  s_7745a701d20870::t_284b28fb80887b 1-126
+packages/webapp/dist.rollback-20260907-233535/assets/App-BP-QIY-0.js
+  s_e47dc121b5d328::t_18ba699606bbfa 1-285
+packages/webapp/dist.rollback-20260907-233535/assets/index-Dwg0ASRZ.css
+  s_e47dc121b5d328::t_f1bfa0b16a6273 1
+packages/webapp/dist.rollback-20260907-233535/assets/index-GPLqaIhJ.js
+  s_e47dc121b5d328::t_6847b139092f06 1-58
+packages/webapp/dist.rollback-20260907-233535/index.html
+  s_e47dc121b5d328::t_54318bf6b7631d 1-17
+packages/webapp/dist.rollback-20260907-233535/pcm-audio-worklet.js
+  s_e47dc121b5d328::t_0d7728ef9a0eb6 1-126
+packages/webapp/dist.rollback-20260907-234103/assets/App-C8159BDr.js
+  s_e47dc121b5d328::t_d7f049e3a3c646 1-285
+packages/webapp/dist.rollback-20260907-234103/assets/index-Dwg0ASRZ.css
+  s_e47dc121b5d328::t_23f63dbddce37a 1
+packages/webapp/dist.rollback-20260907-234103/assets/index-hOd43e8c.js
+  s_e47dc121b5d328::t_c7f9cd7e3535ed 1-58
+packages/webapp/dist.rollback-20260907-234103/index.html
+  s_e47dc121b5d328::t_71f5f852306f99 1-17
+packages/webapp/dist.rollback-20260907-234103/pcm-audio-worklet.js
+  s_e47dc121b5d328::t_0d1d5bf14cad99 1-126
+packages/webapp/dist.rollback-20260908-0809-paging-capability/assets/App-vBrT9FVO.js
+  s_3d7f9a31ff380c::t_9e333c07acb82b 1-285
+packages/webapp/dist.rollback-20260908-0809-paging-capability/assets/index-Dwg0ASRZ.css
+  s_3d7f9a31ff380c::t_60e49d972fbc81 1
+packages/webapp/dist.rollback-20260908-0809-paging-capability/assets/index-FrRcZFqT.js
+  s_3d7f9a31ff380c::t_61b0b8a6cc14d9 1-58
+packages/webapp/dist.rollback-20260908-0809-paging-capability/index.html
+  s_3d7f9a31ff380c::t_8422b6bea84931 1-17
+packages/webapp/dist.rollback-20260908-0809-paging-capability/pcm-audio-worklet.js
+  s_3d7f9a31ff380c::t_29690606c67c8c 1-126
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "3d8e7fad55f06a8e304699edb90a288914fdd03e",
+  "prompts": {},
+  "sessions": {
+    "s_02602191d5774d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a07b30-af9a-7711-bdc1-1aa855cb7d8a",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_1c9b36aefdf184": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a07b47-e4a7-7b21-a7f7-fa20a239dcd3",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_3d7f9a31ff380c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a07c88-e3dc-73d3-937c-a80b5980e3ea",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_49364759a260e5": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06ba6-9de4-74c1-83fa-29cbc762cdad",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_5652acd19c5653": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a07267-e7f0-7c11-9172-28de9e062b00",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_575d7cecc7374b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a07e4e-2a1d-7bb2-8e99-9a2d5df2672f",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_5c59148423a7e6": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a07b4c-49c7-7743-9fcc-6cd02080b2fa",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_7745a701d20870": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a07c2d-9496-7c62-bbdd-2e426ba5bcfc",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_7f4f2182442c79": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a07c2f-f795-7540-b481-6f784158530e",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_b4f9e580e74429": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06ca3-0bbe-72c3-a0b9-31867236d091",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_d34aca02d06cfb": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06d09-c183-7112-9578-3e427f5f2064",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_e47dc121b5d328": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a07c72-bf92-7903-81ae-afcacffd84aa",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

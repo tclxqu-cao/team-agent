@@ -1,0 +1,29 @@
+docs/superpowers/plans/2026-08-27-web-console-auth-foundation.md
+  s_30f0086b29e6d2::t_4d3e07a96cd35d 397,451-452,507,560-561,567
+  s_30f0086b29e6d2::t_3b2c869a6bf207 1-31,34-41,43-127,130-137,141-146,148-151,154-186,188-189,191-234,236-244,251-262,266-267,269-271,274-275,277-279,281-298,301-304,306-309,311,313-333,335,337-340,344-357,359-396,398-450,453-462,464-506,508-521,523-530,532-559,562-566,568-576,578,580-629
+  s_30f0086b29e6d2::t_3245a1aeca01ab 128-129,138-140,245-250
+  s_30f0086b29e6d2::t_8e3cd262261c33 463,577,579
+  s_30f0086b29e6d2::t_bafc7431f87540 187,190,235,263-265,268,272-273,276
+  s_30f0086b29e6d2::t_d1251d8fa8ca24 522,531
+  s_30f0086b29e6d2::t_432bb5f4eb3afa 280,305,310,312,334,336,341-343,358
+  s_30f0086b29e6d2::t_e12f37dee2211e 147,152-153,299-300
+  s_30f0086b29e6d2::t_bb812c7cbb790e 32-33,42
+docs/superpowers/specs/2026-08-27-multi-terminal-user-persistence-design.md
+  s_30f0086b29e6d2::t_e12f37dee2211e 134-136
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "966217d11a85a45a1a83a367604df289d862ba14",
+  "prompts": {},
+  "sessions": {
+    "s_30f0086b29e6d2": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_fbf4cc4b8ffeN7CnUjmxQ9RFm9",
+        "model": "glm-5.3-flash"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

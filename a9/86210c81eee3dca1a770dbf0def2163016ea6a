@@ -1,0 +1,22 @@
+packages/desktop/main/agent-runtime/native-runtime-broker.test.ts
+  s_17ce746c48b257::t_be29c3ab81fec1 518-531,535,537-549
+  s_17ce746c48b257::t_943883a448dcdf 532-534,536
+packages/desktop/main/agent-runtime/native-runtime-broker.ts
+  s_17ce746c48b257::t_be29c3ab81fec1 1682-1683,1687-1690,2628
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "a986210c81eee3dca1a770dbf0def2163016ea6a",
+  "prompts": {},
+  "sessions": {
+    "s_17ce746c48b257": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06d37-88f5-7481-926f-74d89e6ee10b",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

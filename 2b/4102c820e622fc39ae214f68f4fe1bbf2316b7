@@ -1,0 +1,29 @@
+.github/codex/prompts/repair-agent-runtime.md
+  s_c3d5b1753265d1::t_f55cf3a6d76dd8 1-26
+.github/workflows/agent-runtime-repair.yml
+  s_c2f221873f144e::t_f6875ca3dd54c6 1-364
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "2b4102c820e622fc39ae214f68f4fe1bbf2316b7",
+  "prompts": {},
+  "sessions": {
+    "s_c2f221873f144e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06d49-5ce1-7c11-8feb-44d455eb6627",
+        "model": "unknown"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_c3d5b1753265d1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06bb1-1112-7a71-bc86-5f4332503821",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

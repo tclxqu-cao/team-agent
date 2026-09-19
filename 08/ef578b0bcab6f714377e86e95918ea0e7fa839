@@ -1,0 +1,22 @@
+packages/desktop/main/index.ts
+  s_6edcb9d9cd7ad6::t_c45111720628bd 5,60-64,128,1088-1091
+packages/desktop/assets/app-icon.svg
+  s_6edcb9d9cd7ad6::t_51112912320651 1,24
+  s_6edcb9d9cd7ad6::t_8a54fcb80cdc98 2-23
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "08ef578b0bcab6f714377e86e95918ea0e7fa839",
+  "prompts": {},
+  "sessions": {
+    "s_6edcb9d9cd7ad6": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fd1c1-3a3e-7f32-9ee5-c7add0c1d7e1",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

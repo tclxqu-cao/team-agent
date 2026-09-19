@@ -1,0 +1,71 @@
+packages/voice-service/src/sherpa-runtime.ts
+  s_6edcb9d9cd7ad6::t_a508ba8206ceb6 1-2,4,9,16-37,82,84-90,95-104,109,113-114
+packages/voice-service/src/sherpa-runtime.test.ts
+  s_6edcb9d9cd7ad6::t_ac766f53ce5a5c 7,13,16,19,25-31,33,65-92,116,134-136,141,144-145
+packages/voice-service/src/kws-engine.test.ts
+  s_6edcb9d9cd7ad6::t_13ff02271cd9c5 1-70
+packages/voice-service/src/server.ts
+  s_6edcb9d9cd7ad6::t_ceadc1d61b91d2 3,145-150,255,260
+  s_6edcb9d9cd7ad6::t_b092c3d38ecdf5 257-259
+  s_6edcb9d9cd7ad6::t_34e5253ab8d74b 6,17-24,43,130-135,167-168,171,174-180,189,199,202-220,223,226,228,234,241
+  s_6edcb9d9cd7ad6::t_35626d49933e64 256,261
+packages/voice-service/src/config.test.ts
+  s_6edcb9d9cd7ad6::t_4e26b3b57f2614 15-18,32,39
+packages/desktop/main/voice-service-client.test.ts
+  s_6edcb9d9cd7ad6::t_86c7fe8c4e88f0 26,73,76-77,98,103,107,114-121,123,136-137
+  s_6edcb9d9cd7ad6::t_d78bed4406bc74 16-23,111
+packages/voice-service/scripts/download-kws-model.sh
+  s_6edcb9d9cd7ad6::t_bdff12e73c2152 1-64
+packages/voice-service/src/protocol.test.ts
+  s_6edcb9d9cd7ad6::t_79d8d9ed83bab1 12,19,36
+packages/voice-service/src/main.ts
+  s_6edcb9d9cd7ad6::t_34e5253ab8d74b 10-15,21,28,31
+packages/desktop/main/index.ts
+  s_6edcb9d9cd7ad6::t_8da03ea5dada08 249-254,322,338-348
+  s_6edcb9d9cd7ad6::t_d78bed4406bc74 337,349
+packages/voice-service/src/protocol.ts
+  s_6edcb9d9cd7ad6::t_34e5253ab8d74b 9,68-70,77
+packages/voice-service/src/model-files.test.ts
+  s_6edcb9d9cd7ad6::t_4e26b3b57f2614 5,29-51,87-90
+  s_6edcb9d9cd7ad6::t_81182241f36ef5 52-72
+  s_6edcb9d9cd7ad6::t_a12c2c017fa4a1 73-86,91
+  s_6edcb9d9cd7ad6::t_59ae9e19a5e350 92-93
+packages/voice-service/README.md
+  s_6edcb9d9cd7ad6::t_bdff12e73c2152 7,9,12,16,25,41,58-60
+packages/voice-service/src/server.test.ts
+  s_6edcb9d9cd7ad6::t_79d8d9ed83bab1 4-10,51-71,93,106-111,127-252
+  s_6edcb9d9cd7ad6::t_6cfffbbb61b0a7 253
+packages/desktop/main/voice-service-client.ts
+  s_6edcb9d9cd7ad6::t_9588037691e71d 4,17,71
+packages/voice-service/src/model-files.ts
+  s_6edcb9d9cd7ad6::t_eb70b292a58b80 59-69
+  s_6edcb9d9cd7ad6::t_b731d7cc3d0319 58,70-87,89-91
+  s_6edcb9d9cd7ad6::t_4297067e0d4299 11-14,45-57,88,92-100
+  s_6edcb9d9cd7ad6::t_9a9e702d703a0d 101
+packages/desktop/main/voice-capture-state.test.ts
+  s_6edcb9d9cd7ad6::t_86c7fe8c4e88f0 232-233,261-269
+  s_6edcb9d9cd7ad6::t_f8222ac4da308d 270
+packages/desktop/main/voice-capture-state.ts
+  s_6edcb9d9cd7ad6::t_9588037691e71d 110,115,122-123
+  s_6edcb9d9cd7ad6::t_f7bd57220d4134 124
+packages/voice-service/src/kws-engine.ts
+  s_6edcb9d9cd7ad6::t_052abfadade4f6 1-71
+packages/voice-service/src/config.ts
+  s_6edcb9d9cd7ad6::t_4297067e0d4299 4,12,37-39
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "3784a27558ac7d11c65df3a912d3442654c0fd54",
+  "prompts": {},
+  "sessions": {
+    "s_6edcb9d9cd7ad6": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fd1c1-3a3e-7f32-9ee5-c7add0c1d7e1",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

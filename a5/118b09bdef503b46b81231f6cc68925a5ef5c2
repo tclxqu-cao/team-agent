@@ -1,0 +1,21 @@
+docs/superpowers/specs/2026-08-27-multi-terminal-user-persistence-design.md
+  s_30f0086b29e6d2::t_982852ff4fad4c 183-184,194,197,291
+  s_30f0086b29e6d2::t_041840c6567501 1-2,5-182,185-193,195-196,198-290,292-366
+  s_30f0086b29e6d2::t_4fe8b0bf27ff9a 3-4
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "a5118b09bdef503b46b81231f6cc68925a5ef5c2",
+  "prompts": {},
+  "sessions": {
+    "s_30f0086b29e6d2": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_fbf4cc4b8ffeN7CnUjmxQ9RFm9",
+        "model": "glm-5.3-flash"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

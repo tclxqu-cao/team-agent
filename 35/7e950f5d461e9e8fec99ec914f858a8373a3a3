@@ -1,0 +1,67 @@
+bun.lock
+  s_575d7cecc7374b::t_370b6ed585e91b 16,32-37,42,46,79,83,141,145
+packages/cli/README.md
+  s_18d02180f7ddcf::t_7af9a40e27ad4e 23-26,33-36
+packages/cli/RELEASE.md
+  s_18d02180f7ddcf::t_f73874f64447d8 1,15,119-125
+packages/cli/bin/node-preflight.mjs
+  s_18d02180f7ddcf::t_225f8a17db5efe 10
+packages/cli/install/README.md
+  s_18d02180f7ddcf::t_116e4bc9c55e38 8,16,43
+packages/cli/install/install-agentroam.ps1
+  s_18d02180f7ddcf::t_0aee8ed741c127 5
+packages/cli/install/install-agentroam.sh
+  s_18d02180f7ddcf::t_0cee525e03361a 5
+packages/cli/package.json
+  s_18d02180f7ddcf::t_c556d7482088e5 3,29-34
+packages/cli/src/platform-packages.ts
+  s_18d02180f7ddcf::t_604d202a736393 6
+packages/cli/src/tunnel/public-readiness.ts
+  s_18d02180f7ddcf::t_3f4b2116e7a6ae 47
+packages/cloudflared-darwin-arm64/manifest.json
+  s_18d02180f7ddcf::t_884ac3b610b00e 2
+packages/cloudflared-darwin-arm64/package.json
+  s_18d02180f7ddcf::t_297aa994f2d2aa 3
+packages/cloudflared-win32-x64/manifest.json
+  s_18d02180f7ddcf::t_a37bec1d52286a 2
+packages/cloudflared-win32-x64/package.json
+  s_18d02180f7ddcf::t_2d5f1b8be510c6 3
+packages/runtime-darwin-arm64/manifest.json
+  s_18d02180f7ddcf::t_830f1e8ff7a84f 2
+packages/runtime-darwin-arm64/package.json
+  s_18d02180f7ddcf::t_0b3443008e3c54 3
+packages/runtime-win32-x64/manifest.json
+  s_18d02180f7ddcf::t_2cec5c40e895a5 2
+packages/runtime-win32-x64/package.json
+  s_18d02180f7ddcf::t_3fbc6c656b55ff 3
+packages/tui-darwin-arm64/package.json
+  s_18d02180f7ddcf::t_e9bb8eefeecafc 3
+packages/tui-win32-x64/package.json
+  s_18d02180f7ddcf::t_1f3661119aa986 3
+scripts/verify-cli-install.mjs
+  s_575d7cecc7374b::t_b5049ecf0884cf 167
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "357e950f5d461e9e8fec99ec914f858a8373a3a3",
+  "prompts": {},
+  "sessions": {
+    "s_18d02180f7ddcf": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a07c00-888b-7d63-8f0f-98fbe5b95ea7",
+        "model": "unknown"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_575d7cecc7374b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a07e4e-2a1d-7bb2-8e99-9a2d5df2672f",
+        "model": "unknown"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

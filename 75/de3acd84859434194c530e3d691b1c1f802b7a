@@ -1,0 +1,19 @@
+docs/superpowers/specs/2026-09-06-markdown-artifact-rendered-preview-design.md
+  s_0f29a5d8f1185e::t_76d2fd5e339bc0 1-47
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "75de3acd84859434194c530e3d691b1c1f802b7a",
+  "prompts": {},
+  "sessions": {
+    "s_0f29a5d8f1185e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a07437-b956-77a1-b4ab-f1974fd1e7b0",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

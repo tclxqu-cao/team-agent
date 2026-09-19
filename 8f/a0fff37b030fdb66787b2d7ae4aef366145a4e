@@ -1,0 +1,19 @@
+docs/superpowers/specs/2026-09-03-managed-node-runtime-design.md
+  s_6ec2baf296ab2e::t_5a3e4607c2f1ae 1-171
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "8fa0fff37b030fdb66787b2d7ae4aef366145a4e",
+  "prompts": {},
+  "sessions": {
+    "s_6ec2baf296ab2e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a066f1-bd4c-7f12-b529-e015daf9d336",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

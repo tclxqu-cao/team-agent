@@ -1,0 +1,143 @@
+scripts/collect-cli-artifacts.mjs
+  s_6ec2baf296ab2e::t_456e980a447f76 2,33-40,42
+packages/desktop/main/agent-runtime/codex-runtime-adapter.test.ts
+  s_6ec2baf296ab2e::t_63121f1fc76e8c 50-71,118
+  s_6ec2baf296ab2e::t_d70ddec3a6b908 14,43-49,72-117
+  s_6ec2baf296ab2e::t_4dc9d713188b67 1
+  s_6ec2baf296ab2e::t_f5a24513f498af 119-120
+scripts/cli-release-artifacts.mjs
+  s_6ec2baf296ab2e::t_1d99006e837150 64
+packages/server/lib/native-runtime-service.ts
+  s_6ec2baf296ab2e::t_96dfac5e0afa0e 3,110,123,134,143,159,179,313,316,320-321,324-325,330-339
+  s_6ec2baf296ab2e::t_9219a3816524a1 340
+  s_6ec2baf296ab2e::t_3efc2e5a44d997 341-342
+packages/cli/bin/node-preflight.mjs
+  s_6ec2baf296ab2e::t_4cc98ab55b84b7 1-4,6-18,20-138
+  s_6ec2baf296ab2e::t_90f0fc9f857a99 5,19
+packages/server/lib/native-runtime-service.test.ts
+  s_6ec2baf296ab2e::t_d70ddec3a6b908 8,162-195
+  s_6ec2baf296ab2e::t_e89e249d1bd16a 196
+packages/cli/src/codex-runtime-manager.test.ts
+  s_6ec2baf296ab2e::t_bb5d73a970d052 178-179
+  s_6ec2baf296ab2e::t_2f863c4c4cd3da 1-2,4-177,180,182-186,207-221,223-226
+  s_6ec2baf296ab2e::t_1726783a83ba8e 187-206
+  s_6ec2baf296ab2e::t_28e28be6615c21 3,181,222
+docs/superpowers/plans/2026-09-03-managed-codex-runtime.md
+  s_6ec2baf296ab2e::t_041a977af6ed40 1-34,36-38,40-42,44-52,54-56,58-71,73-75,77-79,81-83,85-99,101-103,105-107,109-111,113-115,117-128,130-132,134-136,138-142,144-155
+  s_6ec2baf296ab2e::t_c36788cb8183a9 35,39,43,53,57,72,76,80,84,100,104,108,112,116,129,133,137,143
+packages/cli/src/runtime-manager.test.ts
+  s_6ec2baf296ab2e::t_2f863c4c4cd3da 1-18,20-32,34-37
+  s_6ec2baf296ab2e::t_63121f1fc76e8c 19,33
+packages/cli/src/runtime-manager.ts
+  s_6ec2baf296ab2e::t_63121f1fc76e8c 105,109-110,112
+  s_6ec2baf296ab2e::t_12d017e655f49d 5-9,27-29,31-35,45-50,58,90-104,106-108,111,113-115
+  s_6ec2baf296ab2e::t_a5af0a94928109 116-117
+packages/cli/src/platform.ts
+  s_6ec2baf296ab2e::t_3f6cd734dfe605 1-22
+packages/cli/src/install-script-contract.test.ts
+  s_6ec2baf296ab2e::t_a47fef0078df33 1-36
+packages/desktop/main/agent-runtime/codex-runtime-adapter.ts
+  s_6ec2baf296ab2e::t_96dfac5e0afa0e 134-135,138-139
+  s_6ec2baf296ab2e::t_d7e0f25787c441 99-103,111,145-147,173,424
+  s_6ec2baf296ab2e::t_63121f1fc76e8c 110,131,140-144,169-171,214,231,426
+  s_6ec2baf296ab2e::t_8d417fe47fa46d 104-105
+  s_6ec2baf296ab2e::t_fde4f43128cf23 112-113
+  s_6ec2baf296ab2e::t_5f1659a42dfa5b 132-133
+  s_6ec2baf296ab2e::t_26a18a5bea5393 148-150
+  s_6ec2baf296ab2e::t_e491511bc82cfc 172
+  s_6ec2baf296ab2e::t_4e105345b81d31 174-176
+  s_6ec2baf296ab2e::t_5dcdd363e8dc37 212-213
+  s_6ec2baf296ab2e::t_7de1a62bd79047 229-230
+  s_6ec2baf296ab2e::t_f0c9cb4a40129c 423
+  s_6ec2baf296ab2e::t_5a9f48bad76b10 425
+  s_6ec2baf296ab2e::t_a835638f3fc5f3 427-428
+  s_ff2b2d7ac93b28::t_c04e27dce840bd 4,151,154,178,191,195,219,227,240,264,281,431,465-468,471,488,707-714
+packages/cli/install/README.md
+  s_6ec2baf296ab2e::t_a47fef0078df33 1-27
+docs/superpowers/plans/2026-09-03-managed-node-runtime.md
+  s_6ec2baf296ab2e::t_434aa55b0183fe 1-34,36-54,56-58,60-62,64-80,82-84,86-98,100-102,104-118,120-122,124-126,128-130,132-147,149-151,153-155,157-159,161-165,167-179
+  s_6ec2baf296ab2e::t_93fef08e3af7dc 35,55,59,63,81,85,99,103,119,123,127,131,148,152,156,160,166
+packages/cli/bin/agentroam.mjs
+  s_6ec2baf296ab2e::t_4cc98ab55b84b7 2-11
+packages/cli/package.json
+  s_6ec2baf296ab2e::t_4cc98ab55b84b7 16
+packages/cli/src/platform.test.ts
+  s_6ec2baf296ab2e::t_3f6cd734dfe605 1-22
+packages/cli/src/node-preflight.test.ts
+  s_6ec2baf296ab2e::t_3da0d298783bcb 19,50,99,117
+  s_6ec2baf296ab2e::t_4cc98ab55b84b7 1-18,20-49,51-98,100-116,118-125
+scripts/audit-cli-tarball.mjs
+  s_6ec2baf296ab2e::t_456e980a447f76 32,36-45,52,54,64-66
+packages/cli/install/install-agentroam.sh
+  s_6ec2baf296ab2e::t_a47fef0078df33 1-58,60-61,63-74,78-92,99-135,137-138,140-151,155-180
+  s_6ec2baf296ab2e::t_456e980a447f76 75-77,136,139,152-154
+  s_6ec2baf296ab2e::t_bfdea20967a16a 59,62
+  s_6ec2baf296ab2e::t_7885ade890c56f 93-98
+packages/desktop/main/agent-runtime/native-processes.test.ts
+  s_6ec2baf296ab2e::t_28e28be6615c21 1-2,57-76,78-83
+  s_6ec2baf296ab2e::t_d70ddec3a6b908 77
+  s_6ec2baf296ab2e::t_76e17e913dcd7d 84
+.github/workflows/cli-release.yml
+  s_6ec2baf296ab2e::t_80691626c28b0f 34,54
+docs/superpowers/specs/2026-09-03-managed-node-runtime-design.md
+  s_6ec2baf296ab2e::t_73d91dbdd4dbe3 4
+packages/cli/src/codex-runtime-manager.ts
+  s_6ec2baf296ab2e::t_28e28be6615c21 13,140-141,143,197-198,200
+  s_6ec2baf296ab2e::t_1b7cb8743e6925 1-12,14-21,24-56,58-98,101-112,114-129,133-139,142,161-195,199,201-427
+  s_6ec2baf296ab2e::t_1726783a83ba8e 23,144-157,159-160,196
+  s_6ec2baf296ab2e::t_bb5d73a970d052 158
+  s_6ec2baf296ab2e::t_12d017e655f49d 57,113
+  s_6ec2baf296ab2e::t_9219a3816524a1 22,99-100,130-132
+.github/workflows/cli-release-verify.yml
+  s_6ec2baf296ab2e::t_80691626c28b0f 31,53
+scripts/verify-cli-install.mjs
+  s_6ec2baf296ab2e::t_a1ed17298a91b2 11-12,116,126-129,131-165
+  s_6ec2baf296ab2e::t_1d99006e837150 130
+  s_6ec2baf296ab2e::t_880094dc496553 166-167
+packages/desktop/main/agent-runtime/native-processes.ts
+  s_6ec2baf296ab2e::t_d7e0f25787c441 18-23,27-28,74,76-77
+  s_6ec2baf296ab2e::t_d70ddec3a6b908 33
+  s_6ec2baf296ab2e::t_1222357109ec5b 34
+packages/cli/src/cli.ts
+  s_6ec2baf296ab2e::t_12d017e655f49d 5,148-156
+  s_6ec2baf296ab2e::t_2cc0ec32c8f1ee 157-158
+packages/cli/src/node-runtime-manager.ts
+  s_6ec2baf296ab2e::t_90f0fc9f857a99 238,303-308
+  s_6ec2baf296ab2e::t_0b28edae604e36 65,85,160,291
+  s_6ec2baf296ab2e::t_3f6cd734dfe605 1-22,26-64,66-84,86-159,161-237,239-290,292-302,309-343
+  s_6ec2baf296ab2e::t_bfdea20967a16a 23-25
+packages/cli/src/node-runtime-manager.test.ts
+  s_6ec2baf296ab2e::t_0b28edae604e36 1-68,70-211
+  s_6ec2baf296ab2e::t_bfdea20967a16a 69
+packages/cli/install/install-agentroam.ps1
+  s_6ec2baf296ab2e::t_7885ade890c56f 71
+  s_6ec2baf296ab2e::t_456e980a447f76 54,106-110,127
+  s_6ec2baf296ab2e::t_bfdea20967a16a 35,45
+  s_6ec2baf296ab2e::t_a47fef0078df33 1-34,36-44,46-53,55-70,72-105,111-126,128-161
+packages/desktop/main/agent-runtime/native-runtime-broker.ts
+  s_6ec2baf296ab2e::t_d7e0f25787c441 1524
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "dc714aacadaf21d3b5620ee38460547a677ea8ae",
+  "prompts": {},
+  "sessions": {
+    "s_6ec2baf296ab2e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a066f1-bd4c-7f12-b529-e015daf9d336",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_ff2b2d7ac93b28": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a066c2-13c8-7031-9522-1b95914c6543",
+        "model": "unknown"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

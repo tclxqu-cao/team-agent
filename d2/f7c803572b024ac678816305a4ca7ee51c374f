@@ -1,0 +1,19 @@
+docs/superpowers/specs/2026-09-04-empty-session-welcome-animation-design.md
+  s_49364759a260e5::t_ddeb2fa0c5181b 1-69
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "d2f7c803572b024ac678816305a4ca7ee51c374f",
+  "prompts": {},
+  "sessions": {
+    "s_49364759a260e5": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06ba6-9de4-74c1-83fa-29cbc762cdad",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

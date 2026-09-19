@@ -1,0 +1,2423 @@
+outputs/mobile-warning-webapp-rollback/assets/katex-C5jXJg4s.js
+  s_598eb16b72d68c::t_6cd2b719da580b 1-257
+packages/cli/src/desktop-download.test.ts
+  s_a5265ecbd4421e::t_fee1c1ddb9cce9 50-52,54-64,66-73
+  s_a5265ecbd4421e::t_e3990075692af2 65
+  s_a5265ecbd4421e::t_d37e6b14a3aad7 1-49
+  s_a5265ecbd4421e::t_03a26860a48c03 53
+outputs/webapp-rollback-20260914-135124/assets/chunk-F27PBJKO-Dg9vQFH4.js
+  s_d2928306bbdd2b::t_b7e953c5f0901e 1
+outputs/2026-09-14-web-remote-authorization-plan.md
+  s_a5265ecbd4421e::t_877dfbbb4fcda4 1-4
+  s_a5265ecbd4421e::t_45ac4f2834de26 5-9
+outputs/full-release-20260914/webapp-rollback/assets/web-CHfe-Fq8.js
+  s_0443adb846fd5c::t_a84a433c985cc0 1
+outputs/full-release-20260914/core-rollback/domain/auth/AuthStore.d.ts
+  s_598eb16b72d68c::t_70f5696e3e7b1a 1-18
+outputs/2026-09-14-device-pairing-verification.md
+  s_f9106f99ce82cb::t_5284f0aee923a4 1-43
+outputs/quality-webapp-dist/assets/railroadDiagram-O6MQD6OU-CyDESDyC.js
+  s_31cfcf1fa62567::t_ff57c6ad525efa 1
+outputs/full-release-20260914/core-rollback/domain/live-view/live-view-registry.test.d.ts.map
+  s_598eb16b72d68c::t_6bd0fb3a9eceb9 1
+outputs/history-release-20260914/webapp-dist-rollback/assets/diagram-VX7I27RA-ClwQvx5m.js
+  s_4f6f31c5c94ec9::t_24221e5d182ca4 1-24
+outputs/full-release-20260914/core-rollback/domain/file/file-types.test.d.ts.map
+  s_598eb16b72d68c::t_fd13ab48de998b 1
+packages/cli/bin/desktop-download.mjs
+  s_a5265ecbd4421e::t_c7340d0154d050 3,27-28
+  s_a5265ecbd4421e::t_89d51e997ad692 1-2,4-26,29-65
+outputs/full-release-20260914/core-rollback/domain/auth/WebAuthService.d.ts
+  s_598eb16b72d68c::t_d1fe3c09c8bc03 1-61
+outputs/2026-09-14-cli-webrtc-verification.md
+  s_a5265ecbd4421e::t_88076bfe564fb7 1-11
+outputs/full-release-20260914/core-rollback/domain/agent/ContextCompactor.d.ts
+  s_598eb16b72d68c::t_886f47d87481eb 1-41
+outputs/quality-webapp-dist/assets/channel-BxJs8SOP.js
+  s_31cfcf1fa62567::t_3bc1ebfd57e587 1
+outputs/full-release-20260914/core-rollback/domain/update/update-checker.d.ts.map
+  s_598eb16b72d68c::t_f023633faa5e9e 1
+outputs/full-release-20260914/core-rollback/domain/browser-live/BrowserLiveRegistry.test.d.ts
+  s_598eb16b72d68c::t_f6b6461be3156f 1-2
+outputs/multiscreen-webapp-dist/assets/index-DfaNSuJg.js
+  s_31cfcf1fa62567::t_c44bde937b485f 1-87
+outputs/webapp-rollback-20260914-135124/assets/chunk-TICWLB2K-dY8x71ik.js
+  s_d2928306bbdd2b::t_21827df5561ca1 1-206
+outputs/quality-webapp-dist/assets/defaultLocale-DX6XiGOO.js
+  s_31cfcf1fa62567::t_f29fee02ed3bc0 1
+outputs/mobile-warning-webapp-rollback/assets/xychartDiagram-S5SC5T6Z-DJmzVvSf.js
+  s_598eb16b72d68c::t_7a116cfd46229b 1-7
+outputs/history-release-20260914/webapp-dist-rollback/assets/diagram-UQ7AKVKN-wjm8SGpf.js
+  s_4f6f31c5c94ec9::t_8cc6cc0f072e77 1-41
+outputs/2026-09-14-app-qr-pairing-verification.md
+  s_f9106f99ce82cb::t_545f95c8e7d972 1-29
+outputs/full-release-20260914/webapp-rollback/assets/channel-CGB6BEY4.js
+  s_0443adb846fd5c::t_25e920011fcd1d 1
+packages/webapp/src/mobile/infrastructure/native-pairing.ts
+  s_f9106f99ce82cb::t_d538f5fd86c328 60-65
+  s_f9106f99ce82cb::t_eb34d123020c24 1-2,4-13,15-16,28-59,66-69,82-87,89-94
+  s_f9106f99ce82cb::t_d04dfe96ef233d 3,14,17-27,88
+  s_f9106f99ce82cb::t_1ec3abab6200dd 70-81
+outputs/history-release-20260914/webapp-dist-rollback/assets/quadrantDiagram-AXDQQJYC-Uoy-iP5j.js
+  s_4f6f31c5c94ec9::t_ac01e4563d57bb 1-7
+outputs/full-release-20260914/webapp-rollback/assets/c4Diagram-7LVT6UL2-DVSLnPTV.js
+  s_0443adb846fd5c::t_6a97530fd8cb47 1-38
+outputs/mobile-warning-webapp-rollback/assets/quadrantDiagram-AXDQQJYC-4bua4SzS.js
+  s_598eb16b72d68c::t_d7b7fcd3de2352 1-7
+outputs/webapp-rollback-20260914-135124/assets/stateDiagram-D77RDMKH-G-_qfkFj.js
+  s_d2928306bbdd2b::t_f29d70a732d082 1
+outputs/full-release-20260914/core-rollback/domain/session/SessionPermission.test.d.ts.map
+  s_598eb16b72d68c::t_1669136cbe35fe 1
+outputs/full-release-20260914/core-rollback/domain/tool/builtin/BashTool.d.ts
+  s_598eb16b72d68c::t_e5cadb2ba9848f 1-32
+outputs/history-release-20260914/webapp-dist-rollback/assets/pieDiagram-E7YTZNPT-DB5hvWc4.js
+  s_4f6f31c5c94ec9::t_72eb766c8d2130 1-39
+outputs/history-release-20260914/webapp-dist-rollback/assets/diagram-Z3DM3KII-D0w23tWA.js
+  s_4f6f31c5c94ec9::t_c07426d12e93db 1-24
+outputs/full-release-20260914/core-rollback/domain/model/providers/AnthropicProvider.test.d.ts
+  s_598eb16b72d68c::t_24464a7279577f 1-2
+outputs/quality-core-dist/index.js.map
+  s_31cfcf1fa62567::t_dfe62e91d327ad 1-109
+outputs/full-release-20260914/core-rollback/domain/update/update-release.test.d.ts
+  s_598eb16b72d68c::t_e892e22b2ffbf1 1-2
+outputs/封面-形态篇.html
+  s_a85d76eed8a680::t_0a2c8dd377749c 1-41
+outputs/full-release-20260914/webapp-rollback/assets/vennDiagram-4TSXK5OY-Dxf67mKg.js
+  s_0443adb846fd5c::t_b8ca48d0dedb30 1-34
+"outputs/quality-helper/AgentRoam Remote Desktop.app/Contents/_CodeSignature/CodeResources"
+  s_31cfcf1fa62567::t_165d3c2e4cf37a 1-128
+outputs/full-release-20260914/core-rollback/infrastructure/SQLiteWebConsoleStore.test.d.ts
+  s_598eb16b72d68c::t_cca77e03a86cca 1-2
+outputs/full-release-20260914/core-rollback/domain/tool/entities.d.ts
+  s_598eb16b72d68c::t_ac5f633a1b94fc 1-28
+outputs/history-release-20260914/webapp-dist-rollback/assets/chunk-IMKFNOWR-C2nlrSd6.js
+  s_4f6f31c5c94ec9::t_97a8fe0020c8b1 1-231
+outputs/full-release-20260914/core-rollback/domain/auth/entities.d.ts
+  s_598eb16b72d68c::t_ca1099842667e9 1-28
+outputs/quality-webapp-dist/assets/sizeCapture-INFHLROL-Bz7rbrz4.js
+  s_31cfcf1fa62567::t_67126e222bda0c 1
+outputs/history-release-20260914/webapp-dist-rollback/assets/web-Bco3fxtw.js
+  s_4f6f31c5c94ec9::t_16b975844e4cd1 1
+outputs/quality-webapp-dist/assets/xychartDiagram-S5SC5T6Z-CVDh3cK5.js
+  s_31cfcf1fa62567::t_fda2e2a3c96ae8 1-7
+outputs/full-release-20260914/core-rollback/domain/skill/SkillLoader.d.ts.map
+  s_598eb16b72d68c::t_123fd09e544fbc 1
+packages/server/lib/device-pairing.test.ts
+  s_f9106f99ce82cb::t_885bbf91fdcdc8 1-22,29-32,38,40-55,58-67,69-75,77-80,82-84,89-104,113-158,181-183,186-193,256,288,290-291,300,314,316
+  s_f9106f99ce82cb::t_8dad53b8ba21c3 159-162,166-174
+  s_f9106f99ce82cb::t_077ec8d63109eb 196-211
+  s_f9106f99ce82cb::t_8c077479baa297 184-185,194-195,255,257-261,263,265-268,270-281,283,285-287,289,292-299,302-305,307-308,311-313,315,318-322,324-329
+  s_f9106f99ce82cb::t_180075468c1228 212-245,309
+  s_f9106f99ce82cb::t_ee617742cb00cf 76,81,269,282,301,306,310,317,330-352
+  s_f9106f99ce82cb::t_9637bd83a8e839 23-28,33-37,39,56-57,68,105-112,175-180,262,264,284
+  s_f9106f99ce82cb::t_3647c7c6b27ba7 85-88,163-165,246-254,323
+outputs/remote-authorization-preview.html
+  s_a5265ecbd4421e::t_5a7cce195d1202 1
+outputs/mobile-warning-webapp-rollback/assets/diagram-Z3DM3KII-ByDkjray.js
+  s_598eb16b72d68c::t_13e2e2954e5781 1-24
+outputs/mobile-warning-webapp-rollback/assets/flowDiagram-HODETNUW-CRNORW9n.js
+  s_598eb16b72d68c::t_82722b8930e5d7 1-168
+outputs/pwa-install-preview.html
+  s_a5265ecbd4421e::t_c6f2c23cce6518 1
+outputs/full-release-20260914/core-rollback/infrastructure/live-view/frame-packet.d.ts
+  s_598eb16b72d68c::t_9a970c819b306c 1-41
+packages/webapp/src/presentation/RemoteAuthorizationControl.tsx
+  s_598eb16b72d68c::t_e259dec64a5c12 1-19,46-50
+  s_a5265ecbd4421e::t_7a0b22c0707d19 58
+  s_a5265ecbd4421e::t_eb79c06964acc1 26-27,38,53,55-57,59-62
+  s_a5265ecbd4421e::t_78fbbd4eae740c 54,72
+  s_a5265ecbd4421e::t_4fc74fb8d02516 20-25,28,30-31,33-37,63-71,73-74,76-92
+  s_a5265ecbd4421e::t_a16a0b85f5068e 75
+  s_6b9e80a52ca62d::t_c6431311f8ab00 29,32,39-45,51-52
+packages/server/app/web/AuthGate.tsx
+  s_f9106f99ce82cb::t_fff602fbb75186 12
+outputs/webapp-rollback-20260914-135124/assets/swimlanesDiagram-VR7AAH4N-Dqe7Yz0r.js
+  s_d2928306bbdd2b::t_bd733300f6a2af 1-8
+outputs/video-quality-encoder-test/main.swift
+  s_31cfcf1fa62567::t_59b6c51450625f 1-31
+outputs/quality-webapp-dist/assets/diagram-VSXAHHWV-BiI-LUrz.js
+  s_31cfcf1fa62567::t_0549abde9706c6 1-3
+outputs/webapp-rollback-20260914-135124/assets/cynefinDiagram-5FMLGOSQ-Bwma8pyu.js
+  s_d2928306bbdd2b::t_69c095e8e924a2 1-62
+outputs/full-release-20260914/core-rollback/domain/session/SessionStore.d.ts.map
+  s_598eb16b72d68c::t_36b9b313297ef6 1
+outputs/full-release-20260914/webapp-rollback/assets/sizeCapture-INFHLROL-DoUCBOuq.js
+  s_0443adb846fd5c::t_c85cd1ca851288 1
+outputs/quality-webapp-dist/assets/chunk-POPQ4Y6H-CqsLaR2w.js
+  s_31cfcf1fa62567::t_4adbad6eec04c6 1
+packages/desktop/renderer/components/AgentBrandIcon.tsx
+  s_6ebcb2987963b9::t_31f4d673d64b63 16-19
+outputs/paste-v4/统一会话篇/parts/a1.json
+  s_a5265ecbd4421e::t_1f532d0765254c 1
+outputs/multiscreen-webapp-dist/assets/stateDiagram-v2-MP3YSRHH-Bxr8F7n5.js
+  s_31cfcf1fa62567::t_8014687c78fd45 1
+outputs/full-release-20260914/core-rollback/domain/tool/checkpoints.test.d.ts.map
+  s_598eb16b72d68c::t_772bf363217e62 1
+outputs/full-release-20260914/webapp-rollback/assets/timeline-definition-24CTP7MA-CnTs33SC.js
+  s_0443adb846fd5c::t_03534969b6eb1a 1-120
+outputs/full-release-20260914/core-rollback/domain/model/index.d.ts
+  s_598eb16b72d68c::t_33dc8ec3f7a588 1-2
+outputs/mobile-warning-webapp-rollback/assets/cynefin-OW5HDTMX-BCB0RyU8.js
+  s_598eb16b72d68c::t_9610788aa02dc4 1-178
+packages/server/public/pwa/pairing-scan.js
+  s_f9106f99ce82cb::t_077ec8d63109eb 67
+  s_f9106f99ce82cb::t_f2928502ef0eb5 1-21,25-35,40-66,68-70
+  s_f9106f99ce82cb::t_3fbb1e43d6ef57 22-24,36-39
+outputs/multiscreen-webapp-dist/assets/cytoscape.esm-C5JX3QLV.js
+  s_31cfcf1fa62567::t_38546dc52a22be 1-331
+outputs/multiscreen-preview.html
+  s_31cfcf1fa62567::t_55a2c50b22338e 1
+outputs/full-release-20260914/core-rollback/domain/auth/password.d.ts
+  s_598eb16b72d68c::t_0d52fb859e97c6 1-9
+outputs/webapp-rollback-20260914-135124/assets/diagram-VSXAHHWV-BjR5CU76.js
+  s_d2928306bbdd2b::t_e1a52ff5a50aba 1-3
+outputs/full-release-20260914/webapp-rollback/assets/swimlanesDiagram-VR7AAH4N-BqZbthAL.js
+  s_0443adb846fd5c::t_bfc348a25943a7 1-8
+outputs/history-release-20260914/webapp-dist-rollback/assets/App-Cw8L8wC7.js
+  s_4f6f31c5c94ec9::t_af4bfd8c67f2c9 1-381
+outputs/multiscreen-preview.tsx
+  s_31cfcf1fa62567::t_6fcb701c3f17cf 1-17
+outputs/mobile-warning-webapp-rollback/assets/blockDiagram-I7D4REHJ-DNXeeXn_.js
+  s_598eb16b72d68c::t_b305d52741e847 1-129
+outputs/full-release-20260914/core-rollback/domain/tool/builtin/AskUserTool.d.ts
+  s_598eb16b72d68c::t_b9d9691187bb79 1-152
+outputs/full-release-20260914/core-rollback/domain/web-console/WebBrowserBridge.d.ts
+  s_598eb16b72d68c::t_feb6d9c8ff78a1 1-38
+outputs/history-release-20260914/webapp-dist-rollback/assets/blockDiagram-I7D4REHJ-CWvJsOF0.js
+  s_4f6f31c5c94ec9::t_24f8765fed188f 1-129
+packages/desktop/main/ai-hub/chrome-extension-install.ts
+  s_a5265ecbd4421e::t_45a1fa63e3d6d9 19-36
+outputs/2026-09-14-pwa-verification.md
+  s_f9106f99ce82cb::t_d36756d7908edb 1-29
+outputs/full-release-20260914/core-rollback/domain/mcp/entities.d.ts
+  s_598eb16b72d68c::t_909cdbe1df21df 1-40
+outputs/tui-preview19-release/agentroam/package/install/install-agentroam.sh
+  s_a5265ecbd4421e::t_7dc09a73796aef 1-289
+outputs/full-release-20260914/core-rollback/infrastructure/SQLitePluginStore.d.ts
+  s_598eb16b72d68c::t_086e3348f59d9d 1-21
+outputs/mobile-warning-webapp-rollback/assets/classDiagram-v2-VYDZK3BY-HcDI_1ll.js
+  s_598eb16b72d68c::t_ab86f24687e3d7 1
+.workbuddy/memory/automations/6d18d5c9-acd9-4472-ab66-a52160883fd1/memory.md
+  s_a85d76eed8a680::t_dfac7d1e609ef9 155-276
+outputs/quality-webapp-dist/assets/vennDiagram-4TSXK5OY-CzUuLNFr.js
+  s_31cfcf1fa62567::t_4dbdcb5e18f778 1-34
+outputs/agentroam-brand/logo-directions.svg
+  s_6ebcb2987963b9::t_7bfdddcd052328 1-10
+outputs/full-release-20260914/webapp-rollback/assets/layout-DRLO1MyE.js
+  s_0443adb846fd5c::t_44b2941eb77ce3 1
+outputs/history-release-20260914/webapp-dist-rollback/assets/katex-C5jXJg4s.js
+  s_4f6f31c5c94ec9::t_14325c8bc064e3 1-257
+outputs/paste-v4/统一会话篇/parts/a2.json
+  s_a5265ecbd4421e::t_b5ce563da35b0a 1
+outputs/full-release-20260914/core-rollback/domain/remote-tools/entities.d.ts.map
+  s_598eb16b72d68c::t_68f5773d3fec80 1
+outputs/quality-preview.html
+  s_31cfcf1fa62567::t_3af268b7f8403f 1
+outputs/aihub-setup-preview.tsx
+  s_d2928306bbdd2b::t_06656d19787e4e 1-16
+outputs/quality-webapp-dist/assets/diagram-UQ7AKVKN-DQteIKKw.js
+  s_31cfcf1fa62567::t_4bd3a440b78e29 1-41
+outputs/tui-preview19-release/agentroam/package/bin/runtime-policy.d.mts
+  s_a5265ecbd4421e::t_dddecd2875ab10 1-5
+outputs/mobile-warning-webapp-rollback/assets/gitGraphDiagram-WWUBYQGX-D1CdN7dn.js
+  s_598eb16b72d68c::t_7cc9e4d6b0acf2 1-106
+outputs/history-release-20260914/webapp-dist-rollback/assets/flowDiagram-HODETNUW-DO2Qz6ib.js
+  s_4f6f31c5c94ec9::t_5f1722e07aa05f 1-168
+packages/server/app/web/page.tsx
+  s_a5265ecbd4421e::t_b4b03dd3b030a0 9,399,483
+  s_31cfcf1fa62567::t_de345e9cc20ceb 8,480-482
+outputs/multiscreen-webapp-dist/assets/mermaid.core-Cqil48Xr.js
+  s_31cfcf1fa62567::t_04f916b3d640d9 1-312
+outputs/history-release-20260914/webapp-dist-rollback/assets/sankeyDiagram-P5KCCOFB-CGP4i5_d.js
+  s_4f6f31c5c94ec9::t_3b40d9236f8aaf 1-40
+outputs/full-release-20260914/core-rollback/infrastructure/SQLiteMemoryStore.d.ts
+  s_598eb16b72d68c::t_4f918da2974e5c 1-14
+outputs/history-release-20260914/webapp-dist-rollback/assets/index-DwNgokHq.css
+  s_4f6f31c5c94ec9::t_a024bfbd7952b3 1
+packages/server/lib/device-pairing-store.mjs
+  s_f9106f99ce82cb::t_8d9b51d9b7ecb4 27,40,76-103,148
+  s_f9106f99ce82cb::t_634865717d24b3 1,26,28-29,52-53,58,62-66,69-70,72,105,111,138-139,141-142,149,151-191,193-218,220-225,230-234
+  s_f9106f99ce82cb::t_3956b88d265914 2-25,31-32,35-37,47-51,54-57,59-61,67,71,73-75,104,106-110,112-136,143-147,150,219,236-239
+  s_f9106f99ce82cb::t_bc5f46b21ee526 30,33-34,137,140,226-229,235
+  s_f9106f99ce82cb::t_9637bd83a8e839 38-39,41-46,192
+  s_f9106f99ce82cb::t_1ec3abab6200dd 68
+outputs/full-release-20260914/core-rollback/domain/agent/native-runtime-events.d.ts.map
+  s_598eb16b72d68c::t_8ba144d65c4a1e 1
+outputs/mobile-warning-webapp-rollback/assets/linear-C2z3FSzv.js
+  s_598eb16b72d68c::t_f04a4da675d495 1
+outputs/quality-webapp-dist/assets/classDiagram-ZZMXUADV-tXCKbCXk.js
+  s_31cfcf1fa62567::t_17e9127a786a05 1
+outputs/mobile-warning-webapp-rollback/assets/cytoscape.esm-C5JX3QLV.js
+  s_598eb16b72d68c::t_8c1bddd9a10b01 1-331
+outputs/full-release-20260914/webapp-rollback/assets/defaultLocale-DX6XiGOO.js
+  s_0443adb846fd5c::t_1dfed9e7cbbd1f 1
+outputs/multiscreen-webapp-dist/assets/requirementDiagram-BXWQKSXE-ClXCY4NM.js
+  s_31cfcf1fa62567::t_5b2bd5fbdcb7ed 1-84
+outputs/full-release-20260914/webapp-rollback/assets/chunk-SVP7TREG-DRCEFQrJ.js
+  s_0443adb846fd5c::t_f9a0613fc9b6c3 1-88
+outputs/tui-preview19-release/agentroam/package/package.json
+  s_a5265ecbd4421e::t_7be0b1df7b0009 1-48
+outputs/full-release-20260914/core-rollback/infrastructure/HarnessServiceClient.test.d.ts.map
+  s_598eb16b72d68c::t_c6e7ee7ff3c9fd 1
+outputs/full-release-20260914/core-rollback/domain/session/SessionGoals.d.ts.map
+  s_598eb16b72d68c::t_27017466e78f89 1
+outputs/history-release-20260914/webapp-dist-rollback/assets/cynefinDiagram-5FMLGOSQ-DWPfEH4m.js
+  s_4f6f31c5c94ec9::t_d8fd6e645829be 1-62
+outputs/full-release-20260914/core-rollback/domain/agent/AgentLoop.d.ts
+  s_598eb16b72d68c::t_09af278a203e80 1-33
+outputs/mp-template-v4/articles/agentroam-形态篇.json
+  s_a85d76eed8a680::t_aa5e9a5a9f0069 1-271
+outputs/full-release-20260914/core-rollback/domain/file/file-types.d.ts
+  s_598eb16b72d68c::t_fd0bfd576bebe5 1-3
+outputs/full-release-20260914/core-rollback/domain/tool/builtin/ReadFileTool.d.ts
+  s_598eb16b72d68c::t_12b9b168d2f01b 1-23
+outputs/full-release-20260914/core-rollback/domain/browser-live/index.d.ts
+  s_598eb16b72d68c::t_38ffaaa637f400 1-13
+outputs/full-release-20260914/core-rollback/domain/skill/entities.d.ts
+  s_598eb16b72d68c::t_2af912d8724af8 1-53
+outputs/full-release-20260914/core-rollback/domain/session/SessionPermission.test.d.ts
+  s_598eb16b72d68c::t_5c9fc37a699564 1-2
+outputs/full-release-20260914/core-rollback/domain/live-view/live-view-registry.d.ts
+  s_598eb16b72d68c::t_e7dccc3ac7a6e7 1-64
+outputs/webapp-rollback-20260914-135124/assets/classDiagram-ZZMXUADV-CPkWgK-k.js
+  s_d2928306bbdd2b::t_52b2995d2539c1 1
+outputs/multiscreen-webapp-dist/assets/classDiagram-ZZMXUADV-CDjj-6Tn.js
+  s_31cfcf1fa62567::t_1d184bcb120445 1
+outputs/full-release-20260914/core-rollback/domain/remote-tools/RemoteToolStore.d.ts
+  s_598eb16b72d68c::t_6fcb859ecbc733 1-12
+outputs/history-release-20260914/webapp-dist-rollback/assets/dagre-GXQ25YYZ-BnOO9dS8.js
+  s_4f6f31c5c94ec9::t_a04e3162cb8589 1-4
+outputs/full-release-20260914/core-rollback/infrastructure/HostPathPolicy.d.ts
+  s_598eb16b72d68c::t_3a358c733602dc 1-22
+packages/desktop/scripts/configure-dev-app-name.mjs
+  s_6ebcb2987963b9::t_61ecef875eff00 1,4,6-9,16-17,41,44
+  s_d2928306bbdd2b::t_450266235465af 2,23-33
+  s_6ebcb2987963b9::t_666ee4f035be25 20,43
+  s_6ebcb2987963b9::t_2e05a1b478c95c 18,21-22
+  s_6ebcb2987963b9::t_94f0a1b8c33628 3
+  s_d2928306bbdd2b::t_70d7339510b277 42
+  s_d2928306bbdd2b::t_8c553b17fe75ef 36,39
+  s_6ebcb2987963b9::t_dff8a4ac202130 5,19,34-35,37-38,40
+  s_6ebcb2987963b9::t_69430887415168 10-15
+outputs/multiscreen-webapp-dist/assets/classDiagram-v2-VYDZK3BY-CDjj-6Tn.js
+  s_31cfcf1fa62567::t_5dcd390ea1c7cf 1
+packages/cli/src/device-pairing.ts
+  s_f9106f99ce82cb::t_e0dbd105a46b27 1-2,10,15,34,36,38,41-44,48-49,59,70-85,87,89-95,97-115
+  s_f9106f99ce82cb::t_75cc8a8d7a6cc2 53,66
+  s_f9106f99ce82cb::t_d825221485b2c8 24
+  s_f9106f99ce82cb::t_a7ca073600915e 3-5,7-9,12-14,16-23,25-33,35,37,39-40,45-47,57-58,116-124
+  s_f9106f99ce82cb::t_27b5859f754070 6,11,50-52,54-56,60-65,67-69,86,88
+  s_f9106f99ce82cb::t_1550e4a0b7f017 96
+outputs/multiscreen-webapp-dist/assets/cose-bilkent-JH36ORCC-BLE7CcYK.js
+  s_31cfcf1fa62567::t_b5053ee64f9024 1
+outputs/full-release-20260914/core-rollback/domain/lsp/index.d.ts.map
+  s_598eb16b72d68c::t_efadf0fe5bbfb1 1
+outputs/quality-webapp-dist/assets/gitGraphDiagram-WWUBYQGX-E4vaWJpA.js
+  s_31cfcf1fa62567::t_f267dfe6ef17e6 1-106
+outputs/full-release-20260914/webapp-rollback/assets/ishikawaDiagram-5VMMS53U-5DV0hxpe.js
+  s_0443adb846fd5c::t_fd81e7a33fee0c 1-70
+outputs/full-release-20260914/core-rollback/infrastructure/SQLiteSessionStore.d.ts
+  s_598eb16b72d68c::t_069f18ed0f1123 1-23
+packages/cli/src/install-script-contract.test.ts
+  s_6b9e80a52ca62d::t_97b502349950c1 3,11-41
+  s_a5265ecbd4421e::t_4f3a84057b1ee1 42,53,68,77,88,97
+outputs/full-release-20260914/core-rollback/domain/model/providers/DeepSeekProvider.d.ts
+  s_598eb16b72d68c::t_378667db8322f0 1-16
+outputs/quality-webapp-dist/assets/katex-C5jXJg4s.js
+  s_31cfcf1fa62567::t_0ffb4dc4048c66 1-257
+outputs/mobile-warning-webapp-rollback/assets/swimlanesDiagram-VR7AAH4N-Bi3qdcO2.js
+  s_598eb16b72d68c::t_e67e281ba9b08b 1-8
+outputs/full-release-20260914/webapp-rollback/assets/diagram-UQ7AKVKN-zMvflma3.js
+  s_0443adb846fd5c::t_ccb86a6bd189f7 1-41
+outputs/2026-09-14-cli-desktop-onboarding-verification.md
+  s_a5265ecbd4421e::t_03a26860a48c03 1-13
+outputs/full-release-20260914/core-rollback/index.js.map
+  s_598eb16b72d68c::t_fe281a65133c2e 1-109
+outputs/mobile-warning-webapp-rollback/assets/cynefinDiagram-5FMLGOSQ-B3Zin9ZD.js
+  s_598eb16b72d68c::t_736e25a89ff20a 1-62
+outputs/full-release-20260914/core-rollback/domain/auth/WebAuthService.test.d.ts.map
+  s_598eb16b72d68c::t_4e238a12bbfaeb 1
+outputs/mobile-warning-webapp-rollback/assets/stateDiagram-D77RDMKH-BHq5ORst.js
+  s_598eb16b72d68c::t_4c0056bfef9467 1
+outputs/full-release-20260914/core-rollback/domain/web-console/index.d.ts
+  s_598eb16b72d68c::t_bb5c4599f0e197 1-7
+outputs/full-release-20260914/core-rollback/domain/agent/entities.d.ts.map
+  s_598eb16b72d68c::t_8bd1127ce327c9 1
+outputs/multiscreen-webapp-dist/assets/stateDiagram-D77RDMKH-7pR3WxOd.js
+  s_31cfcf1fa62567::t_2b4ed5b5a726fa 1
+outputs/webapp-rollback-20260914-135124/assets/ebnfDiagram-PWID7BFC-DJxNTNgm.js
+  s_d2928306bbdd2b::t_62ac5392f7995b 1
+outputs/history-release-20260914/webapp-dist-rollback/assets/swimlanes-42K2YHIH-B1INdUc5.js
+  s_4f6f31c5c94ec9::t_0da3180ae4d89a 1
+outputs/mobile-warning-webapp-rollback/assets/mermaid.core-C3XUcKY5.js
+  s_598eb16b72d68c::t_78fd42d1db700b 1-312
+outputs/multiscreen-webapp-dist/assets/katex-C5jXJg4s.js
+  s_31cfcf1fa62567::t_cb7ce0399d525b 1-257
+outputs/history-release-20260914/webapp-dist-rollback/assets/diagram-S7CK7UJ4-IZGwV0zi.js
+  s_4f6f31c5c94ec9::t_e0c68e4f88a2cb 1-30
+outputs/full-release-20260914/core-rollback/domain/agent/AgentBuilder.test.d.ts
+  s_598eb16b72d68c::t_cf99141a28db41 1-2
+outputs/full-release-20260914/core-rollback/domain/lsp/LSPManager.d.ts
+  s_598eb16b72d68c::t_bcc080cd29e7a4 1-16
+outputs/history-release-20260914/webapp-dist-rollback/assets/pegDiagram-XKGWAZYB-BdcgW_1f.js
+  s_4f6f31c5c94ec9::t_409b309ed08640 1
+packages/server/native/remote-helper/service/Service.swift
+  s_a5265ecbd4421e::t_a8af387b66dd8b 184
+  s_a5265ecbd4421e::t_a16a0b85f5068e 1-183,185-208
+outputs/full-release-20260914/core-rollback/domain/tool/builtin/GrepTool.d.ts.map
+  s_598eb16b72d68c::t_959bbbb19c2993 1
+outputs/full-release-20260914/core-rollback/infrastructure/SQLiteMemoryStore.d.ts.map
+  s_598eb16b72d68c::t_e11ee583ef57df 1
+outputs/full-release-20260914/core-rollback/domain/update/index.d.ts.map
+  s_598eb16b72d68c::t_1524497043f9fc 1
+outputs/full-release-20260914/core-rollback/infrastructure/HarnessObservation.test.d.ts.map
+  s_598eb16b72d68c::t_02a28f50856d9b 1
+outputs/full-release-20260914/core-rollback/domain/agent/AgentBuilder.d.ts.map
+  s_598eb16b72d68c::t_d495df486c6482 1
+outputs/multiscreen-webapp-dist/pcm-audio-worklet.js
+  s_31cfcf1fa62567::t_e558b7f96b7be9 1-126
+outputs/full-release-20260914/core-rollback/domain/skill/SkillLoader.d.ts
+  s_598eb16b72d68c::t_c54f9dfd962a98 1-46
+outputs/webapp-rollback-20260914-135124/assets/architectureDiagram-5GKGNRK7-CQ-3SDEO.js
+  s_d2928306bbdd2b::t_a0729d008bb57a 1-36
+outputs/quality-webapp-dist/assets/chunk-F27PBJKO-Orf38Mn2.js
+  s_31cfcf1fa62567::t_fff551247a7eec 1
+outputs/full-release-20260914/core-rollback/domain/cron/CronTasks.d.ts
+  s_598eb16b72d68c::t_8484bc16963920 1-33
+outputs/full-release-20260914/core-rollback/application/ManageSessionUseCase.d.ts
+  s_598eb16b72d68c::t_8f62ad47ce4542 1-12
+outputs/full-release-20260914/core-rollback/infrastructure/SQLiteRemoteToolStore.d.ts
+  s_598eb16b72d68c::t_fc09945fc9992a 1-19
+outputs/quality-webapp-dist/assets/chunk-5VM5RSS4-5FReMApR.js
+  s_31cfcf1fa62567::t_0caf7a47c6a2a4 1-15
+outputs/full-release-20260914/core-rollback/infrastructure/SQLiteAnonymousWebStore.test.d.ts
+  s_598eb16b72d68c::t_ec6d0cd346f3d6 1-2
+packages/server/public/pwa/install.js
+  s_f9106f99ce82cb::t_0b145156372ddd 1,3-4,18,20
+  s_a5265ecbd4421e::t_fabd206ff07563 2,5-12,14-15,17,19
+  s_f9106f99ce82cb::t_394282ddcf9bbb 13,16
+outputs/full-release-20260914/core-rollback/domain/skill/entities.d.ts.map
+  s_598eb16b72d68c::t_af27f6011c2d37 1
+outputs/webapp-rollback-20260914-135124/assets/abnfDiagram-VCTEODGH-C1qm8ZiI.js
+  s_d2928306bbdd2b::t_fed400b5f1540c 1
+packages/tui-win32-x64/package.json
+  s_a5265ecbd4421e::t_675f38f44b3dc8 20-22,27
+  s_a5265ecbd4421e::t_5137831d4bc00e 28-29
+outputs/cover-gen.py
+  s_a85d76eed8a680::t_d54c0e5b84d018 43-46,114
+outputs/full-release-20260914/core-rollback/domain/mcp/MCPManager.d.ts
+  s_598eb16b72d68c::t_43574b43344a24 1-14
+outputs/full-release-20260914/core-rollback/infrastructure/HostPathPolicy.test.d.ts
+  s_598eb16b72d68c::t_af51935838c756 1-2
+outputs/full-release-20260914/core-rollback/domain/update/update-release.d.ts
+  s_598eb16b72d68c::t_79107d419ec343 1-55
+outputs/full-release-20260914/core-rollback/infrastructure/live-view/producer-client.d.ts.map
+  s_598eb16b72d68c::t_f5897a4d3e1d79 1
+outputs/full-release-20260914/core-rollback/infrastructure/HarnessServiceClient.d.ts.map
+  s_598eb16b72d68c::t_088f2a192dae6b 1
+outputs/quality-webapp-dist/assets/chunk-TICWLB2K-BmS96q0U.js
+  s_31cfcf1fa62567::t_815ffc1d3597c4 1-206
+outputs/full-release-20260914/core-rollback/domain/project/index.d.ts.map
+  s_598eb16b72d68c::t_2be350c246d6bd 1
+outputs/full-release-20260914/core-rollback/domain/web-console/WebArtifactBridge.test.d.ts
+  s_598eb16b72d68c::t_c6e8df61c28b41 1-2
+outputs/full-release-20260914/webapp-rollback/assets/katex-C5jXJg4s.js
+  s_0443adb846fd5c::t_280792b6a05728 1-257
+outputs/history-release-20260914/webapp-dist-rollback/assets/init-Gi6I4Gst.js
+  s_4f6f31c5c94ec9::t_61cfca90e86a3f 1
+outputs/history-release-20260914/webapp-dist-rollback/assets/stateDiagram-D77RDMKH-DdYExWyT.js
+  s_4f6f31c5c94ec9::t_44f2dea89c411e 1
+outputs/full-release-20260914/core-rollback/infrastructure/HarnessObservation.d.ts
+  s_598eb16b72d68c::t_8c98eb588cc85a 1-5
+outputs/run-land.sh
+  s_a5265ecbd4421e::t_4d6748a96c1eb6 1-64
+outputs/mobile-warning-webapp-rollback/assets/wardleyDiagram-VM6X3IG4-ZEj41WCZ.js
+  s_598eb16b72d68c::t_42ffaec8220a44 1-78
+packages/server/native/remote-helper/service/QuartzBridge.m
+  s_a5265ecbd4421e::t_a16a0b85f5068e 1-65
+packages/desktop/scripts/run-dev-app.mjs
+  s_6ebcb2987963b9::t_69430887415168 1-8,16-17
+  s_d2928306bbdd2b::t_8c553b17fe75ef 9-15
+outputs/full-release-20260914/core-rollback/infrastructure/SQLiteRemoteToolStore.test.d.ts.map
+  s_598eb16b72d68c::t_5c6cee7f904b87 1
+outputs/封面-生态篇-1x1.html
+  s_2e0fbeef5a43e4::t_ded8cc047753e7 1-41
+packages/server/native/remote-helper/service/Input.swift
+  s_a5265ecbd4421e::t_a16a0b85f5068e 1-88
+outputs/full-release-20260914/core-rollback/domain/cron/cronParser.d.ts.map
+  s_598eb16b72d68c::t_39cd442ae4adb1 1
+outputs/mobile-warning-webapp-rollback/assets/arc-DSzOWKeK.js
+  s_598eb16b72d68c::t_8e87b66983b222 1
+outputs/multiscreen-webapp-dist/assets/sizeCapture-INFHLROL-HzxDI1I_.js
+  s_31cfcf1fa62567::t_76ca6251bffbb4 1
+outputs/webapp-rollback-20260914-135124/assets/layout-BHmWF1BN.js
+  s_d2928306bbdd2b::t_ba10e8083fd134 1
+outputs/quality-webapp-dist/assets/architectureDiagram-5GKGNRK7-CTz8hoMY.js
+  s_31cfcf1fa62567::t_22b946b2e754e9 1-36
+outputs/full-release-20260914/core-rollback/domain/memory/index.d.ts.map
+  s_598eb16b72d68c::t_334bc61d0d3e30 1
+outputs/full-release-20260914/core-rollback/domain/web-console/WebShellLiveBridge.test.d.ts
+  s_598eb16b72d68c::t_b0fafec5f18f91 1-2
+packages/cli/src/platform-packages.ts
+  s_a5265ecbd4421e::t_d5d0bd03ef6787 8-10,71
+  s_a5265ecbd4421e::t_1c77034ea42d98 7
+outputs/full-release-20260914/core-rollback/domain/cron/CronTaskLock.d.ts
+  s_598eb16b72d68c::t_a4bc41768497bd 1-49
+outputs/full-release-20260914/core-rollback/domain/tool/builtin/WebSearchTool.d.ts.map
+  s_598eb16b72d68c::t_fb21042f39dea1 1
+outputs/agentroam-brand/implementation-plan.md
+  s_6ebcb2987963b9::t_ff5247a2e25fe0 1-5
+  s_6ebcb2987963b9::t_02b9cf89fdba20 6-9
+outputs/full-release-20260914/core-rollback/domain/auth/password.d.ts.map
+  s_598eb16b72d68c::t_254cfe7c305eea 1
+outputs/full-release-20260914/core-rollback/domain/session/SessionGoalCoordinator.test.d.ts
+  s_598eb16b72d68c::t_1c048fe8a4c18a 1-2
+outputs/full-release-20260914/core-rollback/domain/session/SessionStore.d.ts
+  s_598eb16b72d68c::t_9d4b52aaf21a26 1-32
+packages/desktop/renderer/lib/history-pull-gesture.test.ts
+  s_598eb16b72d68c::t_26c81a0ae5a784 1-28
+outputs/quality-webapp-dist/assets/journeyDiagram-3NMN7TZE-CqzOQ7ox.js
+  s_31cfcf1fa62567::t_b4d9b1de69e6f8 1-139
+outputs/full-release-20260914/core-rollback/domain/cron/index.d.ts.map
+  s_598eb16b72d68c::t_014ea925b838ee 1
+outputs/quality-webapp-dist/assets/diagram-S7CK7UJ4-DJVezVnN.js
+  s_31cfcf1fa62567::t_2acdec6ca4a208 1-30
+packages/cli/src/cli.ts
+  s_a5265ecbd4421e::t_5443b63c0535af 150
+  s_f9106f99ce82cb::t_7cf98efb26f802 26,175
+  s_f9106f99ce82cb::t_3391a8168dc45c 24-25,27,35-41,44
+  s_f9106f99ce82cb::t_27b5859f754070 45
+  s_a5265ecbd4421e::t_29e3f6791a0808 19,104-105,111-112,115-119,126-128,132,170,191
+  s_f9106f99ce82cb::t_606f1818c62c7b 28
+  s_f9106f99ce82cb::t_e0dbd105a46b27 8,29-34,43,46-55,58,133
+  s_f9106f99ce82cb::t_a7ca073600915e 59-67,131,135,147,163
+  s_f9106f99ce82cb::t_b644e9bd02e646 56-57
+  s_a5265ecbd4421e::t_bac1779ab354d9 106,130,192
+outputs/full-release-20260914/core-rollback/domain/agent/AgentBuilder.d.ts
+  s_598eb16b72d68c::t_7921c221d26714 1-102
+outputs/full-release-20260914/core-rollback/domain/skill/SkillRegistry.d.ts
+  s_598eb16b72d68c::t_7dbf2c29e8e4aa 1-33
+outputs/full-release-20260914/core-rollback/domain/live-view/frame-pacing.d.ts.map
+  s_598eb16b72d68c::t_bdb54e8036dc26 1
+outputs/webapp-rollback-20260914-135124/assets/chunk-XXDRQBXY-MTQm-3fH.js
+  s_d2928306bbdd2b::t_1053fa8742a7b9 1
+outputs/mobile-warning-webapp-rollback/assets/web-DG1i1WtC.js
+  s_598eb16b72d68c::t_bb508478ca8b4b 1
+outputs/full-release-20260914/core-rollback/domain/ai-hub/index.d.ts.map
+  s_598eb16b72d68c::t_ef5329d267bf5c 1
+outputs/full-release-20260914/core-rollback/infrastructure/live-view/producer.test.d.ts
+  s_598eb16b72d68c::t_8041b1091adcac 1-2
+outputs/full-release-20260914/webapp-rollback/assets/mermaid.core-CBJH9FD0.js
+  s_0443adb846fd5c::t_9196ed25123e98 1-312
+outputs/tui-preview19-release/agentroam/package/README.md
+  s_a5265ecbd4421e::t_4533a824de24e0 1-136
+outputs/multiscreen-webapp-dist/assets/quadrantDiagram-AXDQQJYC-BsvtKqvO.js
+  s_31cfcf1fa62567::t_56bbdb064c4496 1-7
+outputs/mp-template-v4/generated/agentroam-形态篇/body.html
+  s_6b9e80a52ca62d::t_2e7c5c08730d73 1-98
+"outputs/quality-helper/AgentRoam Remote Desktop.app/Contents/Info.plist"
+  s_31cfcf1fa62567::t_165d3c2e4cf37a 1
+outputs/full-release-20260914/core-rollback/domain/tool/builtin/WaitAgentTool.d.ts.map
+  s_598eb16b72d68c::t_f63e9325952966 1
+outputs/full-release-20260914/core-rollback/domain/project/entities.d.ts.map
+  s_598eb16b72d68c::t_ff96a8abdde8ed 1
+packages/desktop/renderer/components/browser-live-header-context.ts
+  s_a5265ecbd4421e::t_4fc74fb8d02516 1-3
+outputs/quality-webapp-dist/assets/ishikawaDiagram-5VMMS53U-5y_ZUYI7.js
+  s_31cfcf1fa62567::t_74a30bca033aab 1-70
+outputs/multiscreen-webapp-dist/assets/linear-CjH5nn4P.js
+  s_31cfcf1fa62567::t_6afa04ca3e4e65 1
+outputs/quality-webapp-dist/assets/web-BN6ASMzt.js
+  s_31cfcf1fa62567::t_9346cf82bf0ce3 1
+outputs/full-release-20260914/core-rollback/domain/session/SessionGoalCoordinator.test.d.ts.map
+  s_598eb16b72d68c::t_4d4eacb2ac5390 1
+packages/tui-darwin-arm64/package.json
+  s_a5265ecbd4421e::t_675f38f44b3dc8 21
+outputs/mobile-warning-webapp-rollback/assets/init-Gi6I4Gst.js
+  s_598eb16b72d68c::t_6299b8d93e4945 1
+outputs/multiscreen-webapp-dist/assets/gitGraphDiagram-WWUBYQGX-DgcSzQJw.js
+  s_31cfcf1fa62567::t_4ab41d71cdeb9b 1-106
+outputs/full-release-20260914/core-rollback/infrastructure/HostPathPolicy.test.d.ts.map
+  s_598eb16b72d68c::t_bf4242dc493417 1
+outputs/mp-template-v4/articles/agentroam-生态篇.json
+  s_2e0fbeef5a43e4::t_30bd53ec5bf495 1-221
+outputs/quality-webapp-dist/assets/App-56eZccIH.js
+  s_31cfcf1fa62567::t_477c56d91cf567 1-381
+outputs/multiscreen-webapp-dist/assets/kanban-definition-UXKFOSKX-CyUEt8BJ.js
+  s_31cfcf1fa62567::t_aab15fce3dac2a 1-89
+outputs/mobile-warning-webapp-rollback/assets/chunk-F27PBJKO-BJAqQr5T.js
+  s_598eb16b72d68c::t_b5c6faffad57ef 1
+outputs/2026-09-14-live-video-display-plan.md
+  s_31cfcf1fa62567::t_34c367dfdcdae3 1-6,11-12
+  s_31cfcf1fa62567::t_bccf49c686732f 7-10
+outputs/history-release-20260914/webapp-dist-rollback/assets/ganttDiagram-EL5Y4UJY-B7HvpfYu.js
+  s_4f6f31c5c94ec9::t_65a747fb5a89f0 1-292
+outputs/full-release-20260914/core-rollback/domain/tool/checkpoints.test.d.ts
+  s_598eb16b72d68c::t_6f296b0db46841 1-2
+outputs/mp-template-v4/generated/agentroam-形态篇/preview.html
+  s_6b9e80a52ca62d::t_2e7c5c08730d73 1-98
+outputs/full-release-20260914/core-rollback/domain/update/update-release.d.ts.map
+  s_598eb16b72d68c::t_8dd535c5f99e58 1
+outputs/2026-09-14-pairing-approval-lock-verification.md
+  s_f9106f99ce82cb::t_64c14bb9573079 1-26
+outputs/history-release-20260914/webapp-dist-rollback/assets/requirementDiagram-BXWQKSXE-GNATcJFG.js
+  s_4f6f31c5c94ec9::t_9f136175fced14 1-84
+scripts/agent-runtime-upgrade.test.mjs
+  s_6b9e80a52ca62d::t_729e948bf12ee1 246-275
+outputs/full-release-20260914/core-rollback/domain/tool/builtin/StrReplaceTool.d.ts.map
+  s_598eb16b72d68c::t_aa75285c78dc97 1
+outputs/mobile-warning-webapp-rollback/assets/c4Diagram-7LVT6UL2-CcnKu9XT.js
+  s_598eb16b72d68c::t_b0d74b7e950a0b 1-38
+outputs/公众号系列大纲.md
+  s_6b9e80a52ca62d::t_119e81431071b8 219,242,245,268,296,299,303-337
+  s_6b9e80a52ca62d::t_72ffb22cdd5fbe 6-10,46-74,87-89,100,106-107,117-121,139,142-144,147,183-196,198-218,220-241,243-244,246-267,269-295,297-298,300-302
+outputs/full-release-20260914/webapp-rollback/assets/linear-BoErh_7S.js
+  s_0443adb846fd5c::t_4b790428b94aeb 1
+outputs/full-release-20260914/core-rollback/infrastructure/SQLiteDatabase.d.ts.map
+  s_598eb16b72d68c::t_95ef38d22ceca3 1
+outputs/multiscreen-webapp-dist/assets/chunk-SVP7TREG-BWLrnqTl.js
+  s_31cfcf1fa62567::t_93378c68693e76 1-88
+outputs/full-release-20260914/core-rollback/domain/agent/AgentFactory.d.ts
+  s_598eb16b72d68c::t_162c7cab0103f9 1-5
+outputs/mobile-warning-webapp-rollback/assets/dagre-GXQ25YYZ-CbVCCDHU.js
+  s_598eb16b72d68c::t_73f01dbb0f8d57 1-4
+outputs/history-release-20260914/webapp-dist-rollback/assets/erDiagram-RLTQ6QDP-BC_WrTjy.js
+  s_4f6f31c5c94ec9::t_481d2d662a7063 1-99
+outputs/mobile-warning-webapp-rollback/assets/infoDiagram-27XIBGKW-DRZ0EL07.js
+  s_598eb16b72d68c::t_32b39585f3d8d4 1-2
+docs/agentroam-quick-commands.md
+  s_0db8d86a446f93::t_68ad70f5782358 1-33
+outputs/webapp-rollback-20260914-135124/agentroam-icon.svg
+  s_d2928306bbdd2b::t_0045b6b9cec2ef 1-6
+outputs/multiscreen-webapp-dist/assets/ordinal-BENe2yWM.js
+  s_31cfcf1fa62567::t_50e588bfff9c3e 1
+outputs/full-release-20260914/core-rollback/domain/web-console/pinned-commands.test.d.ts.map
+  s_598eb16b72d68c::t_fa9c328feb4774 1
+outputs/full-release-20260914/webapp-rollback/assets/cytoscape.esm-C5JX3QLV.js
+  s_0443adb846fd5c::t_d4ffee512ad391 1-331
+outputs/quality-webapp-dist/assets/wardleyDiagram-VM6X3IG4-CMGvEM6-.js
+  s_31cfcf1fa62567::t_7870b3bb71c909 1-78
+outputs/full-release-20260914/webapp-rollback/assets/chunk-XXDRQBXY-CgtKmkGO.js
+  s_0443adb846fd5c::t_148c31e723ec95 1
+outputs/full-release-20260914/webapp-rollback/assets/chunk-JWPE2WC7-BhtALrIl.js
+  s_0443adb846fd5c::t_f9e3cbed4e6e9b 1
+outputs/full-release-20260914/core-rollback/domain/tool/builtin/GlobTool.d.ts
+  s_598eb16b72d68c::t_b1e4c920e598aa 1-26
+packages/mobile/android/capacitor.settings.gradle
+  s_f9106f99ce82cb::t_02309136975c8e 4-9
+packages/desktop/renderer/global.d.ts
+  s_a5265ecbd4421e::t_45a1fa63e3d6d9 402
+  s_a5265ecbd4421e::t_6856a83068feb7 408-411
+outputs/webapp-rollback-20260914-135124/assets/cose-bilkent-JH36ORCC-DP9cfOcI.js
+  s_d2928306bbdd2b::t_609d78c7d94b48 1
+outputs/full-release-20260914/core-rollback/domain/agent/AgentLoop.d.ts.map
+  s_598eb16b72d68c::t_a675cfafa7905b 1
+packages/core/src/infrastructure/live-view/producer-client.test.ts
+  s_a5265ecbd4421e::t_d63b146d248f82 1-3,65-98
+  s_f9106f99ce82cb::t_14d064e65c78ea 99-114
+outputs/multiscreen-webapp-dist/assets/layout-D9Or0fGz.js
+  s_31cfcf1fa62567::t_47ed9ae046ce32 1
+outputs/full-release-20260914/core-rollback/domain/web-console/WebProjectBridge.d.ts
+  s_598eb16b72d68c::t_79f51eb138a31d 1-22
+packages/server/app/layout.tsx
+  s_f9106f99ce82cb::t_75cc8a8d7a6cc2 3-4,12
+  s_f9106f99ce82cb::t_077ec8d63109eb 5
+outputs/quality-webapp-dist/assets/cose-bilkent-JH36ORCC-uEJmLjX9.js
+  s_31cfcf1fa62567::t_74ac1d20b0a97d 1
+outputs/full-release-20260914/core-rollback/domain/web-console/WebArtifactBridge.d.ts.map
+  s_598eb16b72d68c::t_f3b601d7babfe7 1
+outputs/quality-webapp-dist/assets/ganttDiagram-EL5Y4UJY-Cv3L-hvv.js
+  s_31cfcf1fa62567::t_8067f3dee31302 1-292
+outputs/2026-09-14-device-pairing-plan.md
+  s_f9106f99ce82cb::t_9487264a92759f 1-9
+  s_f9106f99ce82cb::t_5284f0aee923a4 10-16
+outputs/full-release-20260914/core-rollback/domain/agent/ContextCompactor.d.ts.map
+  s_598eb16b72d68c::t_ba07148aa0d0ff 1
+outputs/tui-preview19-release/agentroam/package/bin/desktop-download.mjs
+  s_a5265ecbd4421e::t_7be0b1df7b0009 1-65
+outputs/full-release-20260914/core-rollback/domain/session/SessionGoals.test.d.ts.map
+  s_598eb16b72d68c::t_00962b322cbf6c 1
+outputs/full-release-20260914/core-rollback/infrastructure/SQLiteSkillStore.d.ts
+  s_598eb16b72d68c::t_51133cd3920067 1-13
+outputs/webapp-rollback-20260914-135124/assets/diagram-UQ7AKVKN-CF8BVWu1.js
+  s_d2928306bbdd2b::t_da8b96cb50f982 1-41
+packages/server/public/agentroam-icon.svg
+  s_6ebcb2987963b9::t_5c689a64abf955 1-6
+outputs/full-release-20260914/core-rollback/domain/tool/builtin/WebFetchTool.d.ts
+  s_598eb16b72d68c::t_8262864de815e4 1-33
+outputs/history-release-20260914/webapp-dist-rollback/assets/chunk-2Q5K7J3B-CQMSdvan.js
+  s_4f6f31c5c94ec9::t_1cb7a86e59c28d 1
+outputs/multiscreen-webapp-dist/assets/architectureDiagram-5GKGNRK7-D44S-Xjm.js
+  s_31cfcf1fa62567::t_63b58c6ab92745 1-36
+outputs/full-release-20260914/core-rollback/domain/model/providers/AnthropicProvider.test.d.ts.map
+  s_598eb16b72d68c::t_c6e435cbfdfea6 1
+outputs/full-release-20260914/core-rollback/domain/web-console/WebArtifactBridge.test.d.ts.map
+  s_598eb16b72d68c::t_a39b37368fa94a 1
+outputs/2026-09-14-cli-desktop-onboarding-plan.md
+  s_a5265ecbd4421e::t_d0cb41270c7f6f 1-10
+  s_a5265ecbd4421e::t_03a26860a48c03 11-18
+outputs/history-release-20260914/webapp-dist-rollback/assets/cose-bilkent-JH36ORCC-CmSWdE8s.js
+  s_4f6f31c5c94ec9::t_a055f3d736e036 1
+packages/desktop/main/agent-runtime/native-processes.ts
+  s_31cfcf1fa62567::t_6b2e930fa52c60 74-75,79-80
+outputs/full-release-20260914/core-rollback/domain/web-console/index.d.ts.map
+  s_598eb16b72d68c::t_59608040d263da 1
+outputs/full-release-20260914/core-rollback/domain/agent/native-runtime-events.test.d.ts.map
+  s_598eb16b72d68c::t_8158f1bd1cec71 1
+outputs/history-release-20260914/webapp-dist-rollback/assets/index-L45sK1jq.js
+  s_4f6f31c5c94ec9::t_bcc8bad3476570 1-87
+outputs/full-release-20260914/core-rollback/domain/tool/index.d.ts.map
+  s_598eb16b72d68c::t_e0af3b6e9c4819 1
+outputs/full-release-20260914/core-rollback/infrastructure/live-view/producer-client.test.d.ts.map
+  s_598eb16b72d68c::t_4102ffb80938b5 1
+packages/server/public/pwa/offline.html
+  s_f9106f99ce82cb::t_0b145156372ddd 1
+packages/core/src/infrastructure/live-view/producer.ts
+  s_a5265ecbd4421e::t_6588b46d43cb81 55,59,66,75,92
+outputs/full-release-20260914/core-rollback/domain/update/update-release.test.d.ts.map
+  s_598eb16b72d68c::t_0a5fe36264a54e 1
+outputs/multiscreen-webapp-dist/assets/diagram-VSXAHHWV-YvdvrWR4.js
+  s_31cfcf1fa62567::t_94b043f591f786 1-3
+outputs/mobile-warning-webapp-rollback/assets/timeline-definition-24CTP7MA-BUzfLyD9.js
+  s_598eb16b72d68c::t_b15a66a8057b79 1-120
+outputs/webapp-rollback-20260914-135124/assets/quadrantDiagram-AXDQQJYC-B3c09tB0.js
+  s_d2928306bbdd2b::t_655a1d60e88e84 1-7
+outputs/multiscreen-webapp-dist/agentroam-icon.svg
+  s_31cfcf1fa62567::t_9fef0150603fae 1-6
+packages/webapp/src/mobile/infrastructure/native-pairing.test.ts
+  s_f9106f99ce82cb::t_180075468c1228 1-11,13-32,39
+  s_f9106f99ce82cb::t_077ec8d63109eb 12
+  s_f9106f99ce82cb::t_d538f5fd86c328 33-38
+outputs/full-release-20260914/core-rollback/domain/cron/index.d.ts
+  s_598eb16b72d68c::t_c3a3c0937467d6 1-6
+outputs/full-release-20260914/webapp-rollback/assets/ordinal-BENe2yWM.js
+  s_0443adb846fd5c::t_ce117cd8cc9990 1
+outputs/full-release-20260914/core-rollback/domain/browser-live/entities.d.ts
+  s_598eb16b72d68c::t_6ac49c1b38d1bd 1-57
+outputs/mobile-warning-webapp-rollback/assets/erDiagram-RLTQ6QDP-Bp-AwyyZ.js
+  s_598eb16b72d68c::t_f3d4d45a397b09 1-99
+outputs/full-release-20260914/core-rollback/domain/session/SessionQueryIndexCache.d.ts
+  s_598eb16b72d68c::t_f1d62faafbd25c 1-11
+outputs/multiscreen-webapp-dist/assets/web-DTbdT8L8.js
+  s_31cfcf1fa62567::t_e64a5a78bcf5ed 1
+outputs/webapp-rollback-20260914-135124/assets/xychartDiagram-S5SC5T6Z-CCRjCLme.js
+  s_d2928306bbdd2b::t_d90827eb0bf9ca 1-7
+outputs/full-release-20260914/webapp-rollback/assets/classDiagram-ZZMXUADV-BErRHbNt.js
+  s_0443adb846fd5c::t_6e85bf1d3c0508 1
+outputs/webapp-rollback-20260914-135124/assets/katex-C5jXJg4s.js
+  s_d2928306bbdd2b::t_165e1f63cb1b7c 1-257
+outputs/mobile-warning-webapp-rollback/assets/stateDiagram-v2-MP3YSRHH-z2ZAhnY4.js
+  s_598eb16b72d68c::t_bb833cb4147c89 1
+outputs/full-release-20260914/webapp-rollback/assets/diagram-Z3DM3KII-BjJ7PMVg.js
+  s_0443adb846fd5c::t_a4a004cccce47b 1-24
+outputs/mobile-warning-webapp-rollback/assets/mindmap-definition-YA3MSWOX-BsPlNjKs.js
+  s_598eb16b72d68c::t_f86348259c88d7 1-96
+packages/desktop/renderer/components/ChatHeaderActions.tsx
+  s_6ebcb2987963b9::t_0358efb51ae909 1,12-13,27-28,39-50
+  s_6ebcb2987963b9::t_7860087e98b2ab 6,21,106,118
+packages/mobile/ios/App/App/Info.plist
+  s_f9106f99ce82cb::t_5d56c68e52e06d 27-28
+outputs/history-release-20260914/webapp-dist-rollback/assets/xychartDiagram-S5SC5T6Z-DSMuNEjI.js
+  s_4f6f31c5c94ec9::t_2250f3f1851efb 1-7
+packages/cli/src/service/service-command.test.ts
+  s_6b9e80a52ca62d::t_f97470ff41221f 33,63-64
+  s_f9106f99ce82cb::t_fff602fbb75186 49
+outputs/full-release-20260914/core-rollback/infrastructure/SQLiteAuthStore.d.ts
+  s_598eb16b72d68c::t_bd60a6baa38e66 1-22
+outputs/mobile-warning-webapp-rollback/assets/diagram-VX7I27RA-BUShVxSs.js
+  s_598eb16b72d68c::t_61365a8749f8ce 1-24
+packages/server/lib/web-auth/anonymous-contract.test.ts
+  s_f9106f99ce82cb::t_dd1d5b258611a5 2,4-8
+outputs/quality-webapp-dist/assets/blockDiagram-I7D4REHJ-C6jlhsOe.js
+  s_31cfcf1fa62567::t_c3931f20dd61f2 1-129
+outputs/multiscreen-webapp-dist/assets/c4Diagram-7LVT6UL2-DpCWs7QP.js
+  s_31cfcf1fa62567::t_fa6475e2a3f5f8 1-38
+packages/desktop/main/desktop-screen-live.ts
+  s_a5265ecbd4421e::t_fee1c1ddb9cce9 45,109-114,119,134,169-180,204-207
+  s_a5265ecbd4421e::t_6856a83068feb7 27,100-102,105-108,139
+  s_a5265ecbd4421e::t_e9169558f05302 115
+  s_a5265ecbd4421e::t_6588b46d43cb81 188-192
+  s_a5265ecbd4421e::t_c3cc6f4eb02df2 103-104
+outputs/full-release-20260914/core-rollback/domain/cron/cronParser.d.ts
+  s_598eb16b72d68c::t_45a49c7c4b5c0f 1-16
+outputs/mobile-warning-webapp-rollback/assets/chunk-SVP7TREG-D3cN23zc.js
+  s_598eb16b72d68c::t_434e8442f21909 1-88
+outputs/full-release-20260914/webapp-rollback/assets/chunk-TICWLB2K-CJIHapPq.js
+  s_0443adb846fd5c::t_42d0b60d5b4817 1-206
+outputs/tui-preview19-release/agentroam-tui-darwin-arm64/package/package.json
+  s_a5265ecbd4421e::t_7be0b1df7b0009 1-31
+outputs/full-release-20260914/core-rollback/domain/memory/entities.d.ts
+  s_598eb16b72d68c::t_27b04144a9cdd4 1-31
+outputs/full-release-20260914/core-rollback/infrastructure/SQLiteSkillStore.d.ts.map
+  s_598eb16b72d68c::t_24386cef461e90 1
+outputs/multiscreen-webapp-dist/assets/swimlanes-42K2YHIH-CZkqohsT.js
+  s_31cfcf1fa62567::t_57c43cfc42fc69 1
+outputs/full-release-20260914/webapp-rollback/assets/classDiagram-v2-VYDZK3BY-BErRHbNt.js
+  s_0443adb846fd5c::t_b3c95346bf84d7 1
+outputs/full-release-20260914/core-rollback/domain/live-view/entities.d.ts
+  s_598eb16b72d68c::t_3cae70d0c2ade1 1-68
+outputs/multiscreen-webapp-dist/assets/xychartDiagram-S5SC5T6Z-CZ5rbOQv.js
+  s_31cfcf1fa62567::t_df0256c4e89ea4 1-7
+outputs/history-release-20260914/webapp-dist-rollback/assets/diagram-VSXAHHWV-A736veTs.js
+  s_4f6f31c5c94ec9::t_8c2044457ab05d 1-3
+outputs/full-release-20260914/core-rollback/domain/tool/builtin/LspTools.d.ts.map
+  s_598eb16b72d68c::t_2b6a6dd60e1482 1
+outputs/full-release-20260914/core-rollback/domain/session/SessionTitle.test.d.ts
+  s_598eb16b72d68c::t_ef182f48bee805 1-2
+outputs/full-release-20260914/core-rollback/infrastructure/SQLiteUploadStore.d.ts.map
+  s_598eb16b72d68c::t_9023e804fd003d 1
+packages/server/lib/remote-control/remote-authorization.mjs
+  s_31cfcf1fa62567::t_57d6eea25133ac 1,21,52,57,82,84,122,125,135,149,152,155-156,165-166,200
+  s_a5265ecbd4421e::t_1f0c96d2f18278 56,90
+  s_31cfcf1fa62567::t_960d9372241028 64-70,86,94-96,98-107,115-121,123-124,127-133,137
+  s_6b9e80a52ca62d::t_c6431311f8ab00 174-175,178-185
+  s_a5265ecbd4421e::t_f72054d4622c2c 17,41-50,72,75,85,89
+  s_a5265ecbd4421e::t_8f29567037eca9 24,81
+  s_a5265ecbd4421e::t_8d25aea7868ab6 2-16,18-19,22-23,25-40,51,53-55,58-63,71,73-74,76-80,83,87-88,91-93,134,136,148,150-151,153-154,157-164,167-173,176,186-199,201
+  s_31cfcf1fa62567::t_7353b87fe9a011 20
+  s_31cfcf1fa62567::t_1f178baa343662 97,108-114,126,138-147
+  s_a5265ecbd4421e::t_d6f32e3a6fc364 177
+outputs/paste-v4/统一会话篇/parts/a0.json
+  s_a5265ecbd4421e::t_9cfd5f72c3e840 1
+outputs/full-release-20260914/core-rollback/domain/tool/builtin/BashTool.d.ts.map
+  s_598eb16b72d68c::t_8c7e8d904bc847 1
+outputs/quality-webapp-dist/assets/chunk-IMKFNOWR-ya-GDyX_.js
+  s_31cfcf1fa62567::t_f6951d0287d839 1-231
+packages/server/native/remote-helper/main.swift
+  s_31cfcf1fa62567::t_960d9372241028 57-58,60-77,89-102,112,115-117,131,136,147,184,186
+  s_31cfcf1fa62567::t_43ed37324f2b63 45-46,105-106
+  s_31cfcf1fa62567::t_1f178baa343662 12,18-20,59,78-88,120-123,185
+  s_31cfcf1fa62567::t_18bd15a916f3d1 13-17,157
+  s_a5265ecbd4421e::t_c2ccc1b2a07b1b 125,140,179-182
+  s_a5265ecbd4421e::t_98cd0a22b8d0b7 4-5,49-56,103-104,108-111,113-114,118-119,124,126-130,132,134-135,137-139,141-146,148-153,163-164
+  s_a5265ecbd4421e::t_a16a0b85f5068e 7-11
+  s_a5265ecbd4421e::t_877dfbbb4fcda4 1-3,6,21-44,47-48,107,133,154-156,158-162,165-178,183,187-213
+outputs/full-release-20260914/core-rollback/domain/session/entities.d.ts.map
+  s_598eb16b72d68c::t_04d5a01055bde9 1
+outputs/full-release-20260914/core-rollback/domain/tool/builtin/DispatchAgentTool.d.ts.map
+  s_598eb16b72d68c::t_f38a0fce4a20fa 1
+outputs/full-release-20260914/core-rollback/domain/tool/builtin/RemoteProjectActionTool.test.d.ts.map
+  s_598eb16b72d68c::t_1c267e1f53515c 1
+outputs/multiscreen-webapp-dist/assets/App-C13xBVoN.js
+  s_31cfcf1fa62567::t_23cbd3eef3a6b4 1-381
+outputs/multiscreen-webapp-dist/assets/index-DwNgokHq.css
+  s_31cfcf1fa62567::t_82735d69380e33 1
+packages/cli/src/service/launcher-cleanup.ts
+  s_a5265ecbd4421e::t_6a6dc5ce504b85 2
+  s_a5265ecbd4421e::t_9c6030ebc98c1d 1,3-47
+outputs/full-release-20260914/core-rollback/domain/skill/index.d.ts.map
+  s_598eb16b72d68c::t_de03346c430906 1
+outputs/full-release-20260914/core-rollback/domain/session/SessionGoalCoordinator.d.ts
+  s_598eb16b72d68c::t_2c17ad5805785f 1-26
+outputs/full-release-20260914/core-rollback/infrastructure/live-view/frame-packet.d.ts.map
+  s_598eb16b72d68c::t_32efd2470c29cd 1
+packages/desktop/assets/app-icon.svg
+  s_6ebcb2987963b9::t_31f4d673d64b63 1-5
+outputs/full-release-20260914/core-rollback/domain/web-console/WebArtifactBridge.d.ts
+  s_598eb16b72d68c::t_ac837a331f5262 1-9
+outputs/full-release-20260914/core-rollback/domain/auth/password.test.d.ts.map
+  s_598eb16b72d68c::t_330f5b1628beba 1
+outputs/full-release-20260914/core-rollback/infrastructure/live-view/index.d.ts.map
+  s_598eb16b72d68c::t_68bfeac3c27c61 1
+outputs/full-release-20260914/core-rollback/domain/agent/ContextUsageEstimator.d.ts.map
+  s_598eb16b72d68c::t_59c73f985df47b 1
+outputs/history-release-20260914/webapp-dist-rollback/assets/App-CMOzoP5A.css
+  s_4f6f31c5c94ec9::t_f1a037d7994ae5 1
+packages/cli/src/service/service-command.ts
+  s_f9106f99ce82cb::t_a7ca073600915e 5,27,87,95
+  s_6b9e80a52ca62d::t_f97470ff41221f 89-93
+  s_f9106f99ce82cb::t_27b5859f754070 94
+  s_f9106f99ce82cb::t_1ec3abab6200dd 88
+  s_a5265ecbd4421e::t_6a6dc5ce504b85 12,86
+outputs/full-release-20260914/core-rollback/domain/browser-live/BrowserLiveRegistry.d.ts
+  s_598eb16b72d68c::t_b9c766b1a3d4dd 1-43
+outputs/webapp-rollback-20260914-135124/assets/init-Gi6I4Gst.js
+  s_d2928306bbdd2b::t_89594815181664 1
+outputs/full-release-20260914/core-rollback/domain/ai-hub/image-limits.d.ts.map
+  s_598eb16b72d68c::t_48ada4b604249d 1
+.workbuddy/memory/MEMORY.md
+  s_6b9e80a52ca62d::t_34e13e1da01333 3-6,41-66
+  s_6b9e80a52ca62d::t_119e81431071b8 7-40
+outputs/full-release-20260914/core-rollback/infrastructure/SQLiteAnonymousWebStore.d.ts
+  s_598eb16b72d68c::t_8e06fab3514d5a 1-13
+outputs/tui-preview19-release/agentroam/package/bin/node-preflight.mjs
+  s_a5265ecbd4421e::t_67200fb2db5881 1-170
+"outputs/multiscreen-helper/AgentRoam Remote Desktop.app/Contents/_CodeSignature/CodeResources"
+  s_31cfcf1fa62567::t_9f7a5d3acdc10d 1-128
+outputs/full-release-20260914/core-rollback/domain/web-console/WebBrowserBridge.test.d.ts.map
+  s_598eb16b72d68c::t_d3cf0a91f31fce 1
+outputs/pwa-release-20260914-200001/launchd-before.txt
+  s_6b9e80a52ca62d::t_acad03a98e3bb1 1-95
+outputs/multiscreen-webapp-dist/assets/chunk-TICWLB2K-D-yRzTVS.js
+  s_31cfcf1fa62567::t_4cac6d7b6c3fd5 1-206
+outputs/full-release-20260914/core-rollback/domain/tool/builtin/RemoteProjectActionTool.test.d.ts
+  s_598eb16b72d68c::t_b59d5f1e773afd 1-2
+outputs/full-release-20260914/core-rollback/infrastructure/SQLiteProjectStore.test.d.ts
+  s_598eb16b72d68c::t_62dd9b5f56f648 1-2
+packages/webapp/package.json
+  s_f9106f99ce82cb::t_981b451da0fb95 16-17
+  s_f9106f99ce82cb::t_6d93ecd760a209 13-15
+outputs/full-release-20260914/core-rollback/domain/file/index.d.ts
+  s_598eb16b72d68c::t_e935ebb5de33d8 1-2
+outputs/full-release-20260914/webapp-rollback/assets/App-Dwtob2FL.js
+  s_0443adb846fd5c::t_8a01158aae1ec7 1-381
+outputs/full-release-20260914/core-rollback/domain/model/entities.d.ts.map
+  s_598eb16b72d68c::t_021b13516836b2 1
+outputs/full-release-20260914/core-rollback/domain/context/ContextLoader.d.ts
+  s_598eb16b72d68c::t_d0352123548d2f 1-10
+outputs/full-release-20260914/core-rollback/domain/auth/AuthStore.d.ts.map
+  s_598eb16b72d68c::t_216fffee344539 1
+outputs/tui-preview19-release/publish.mjs
+  s_a5265ecbd4421e::t_637160dd326353 23
+  s_a5265ecbd4421e::t_0045ade2f05fdd 1,3,16-17
+  s_a5265ecbd4421e::t_a906044e8fdb16 2,4-15,18-22
+outputs/quality-webapp-dist/assets/infoDiagram-27XIBGKW-CFPC-CM1.js
+  s_31cfcf1fa62567::t_7c90046e807d22 1-2
+outputs/full-release-20260914/webapp-rollback/assets/init-Gi6I4Gst.js
+  s_0443adb846fd5c::t_92b4461d22bc73 1
+outputs/full-release-20260914/webapp-rollback/index.html
+  s_0443adb846fd5c::t_cd2fcf57428270 1-19
+packages/desktop/main/preload.ts
+  s_a5265ecbd4421e::t_45a1fa63e3d6d9 252
+  s_a5265ecbd4421e::t_6856a83068feb7 262-265
+outputs/quality-webapp-dist/assets/ebnfDiagram-PWID7BFC-Bgkx7uJi.js
+  s_31cfcf1fa62567::t_20cb2c6fd32e80 1
+outputs/history-release-20260914/webapp-dist-rollback/assets/ordinal-BENe2yWM.js
+  s_4f6f31c5c94ec9::t_fecfedefb22d94 1
+outputs/full-release-20260914/core-rollback/domain/session/SessionQueryIndex.test.d.ts
+  s_598eb16b72d68c::t_ca574139e21ae8 1-2
+outputs/full-release-20260914/core-rollback/domain/cron/CronTasks.d.ts.map
+  s_598eb16b72d68c::t_9ab1c551539532 1
+outputs/full-release-20260914/core-rollback/infrastructure/index.d.ts
+  s_598eb16b72d68c::t_5168de294ddb56 1-17
+outputs/quality-webapp-dist/assets/cynefinDiagram-5FMLGOSQ-C35y0uPI.js
+  s_31cfcf1fa62567::t_c07cc090094709 1-62
+outputs/full-release-20260914/core-rollback/domain/file/file-types.d.ts.map
+  s_598eb16b72d68c::t_ab2bf3e85e7015 1
+packages/desktop/renderer/components/DesktopLiveDialog.tsx
+  s_d2928306bbdd2b::t_caa7169c06ad74 5,33,37
+  s_d2928306bbdd2b::t_20e0f0b761f04d 22-24
+  s_6ebcb2987963b9::t_7278836b44bfb9 1-4,6-21,25-32,34-36,38-42
+packages/desktop/renderer/stores/agentStore.test.ts
+  s_4f6f31c5c94ec9::t_ed45d7a2d384f4 49-81
+"outputs/multiscreen-helper/AgentRoam Remote Desktop.app/Contents/Info.plist"
+  s_31cfcf1fa62567::t_f8d6a4c0db9cc7 1
+packages/server/lib/pwa-assets.mjs
+  s_f9106f99ce82cb::t_0b145156372ddd 1-27
+outputs/history-release-20260914/webapp-dist-rollback/assets/sizeCapture-INFHLROL-Dq6l7UUp.js
+  s_4f6f31c5c94ec9::t_92ea55090976cf 1
+outputs/webapp-rollback-20260914-135124/assets/chunk-2Q5K7J3B-Ds6csUHE.js
+  s_d2928306bbdd2b::t_dc46e65f8a7ec4 1
+outputs/full-release-20260914/core-rollback/domain/model/providers/openAIEndpoint.d.ts.map
+  s_598eb16b72d68c::t_54ff662c255694 1
+outputs/full-release-20260914/core-rollback/infrastructure/live-view/producer-client.test.d.ts
+  s_598eb16b72d68c::t_7ba58a831f4e55 1-2
+packages/desktop/renderer/lib/history-pull-gesture.ts
+  s_598eb16b72d68c::t_26c81a0ae5a784 1-22
+outputs/full-release-20260914/core-rollback/domain/tool/permissions.d.ts
+  s_598eb16b72d68c::t_1d861befc4e11d 1-58
+packages/server/.agents/.scheduler.lock
+  s_598eb16b72d68c::t_593968c4a9e6b3 1
+outputs/full-release-20260914/core-rollback/domain/tool/index.d.ts
+  s_598eb16b72d68c::t_77b2ec556e6154 1-3
+outputs/paste-v4/统一会话篇/parts/a5.json
+  s_a5265ecbd4421e::t_7bd7828f0c0006 1
+outputs/full-release-20260914/core-rollback/domain/tool/builtin/ShowWidgetTool.d.ts
+  s_598eb16b72d68c::t_cb36edb85cd57f 1-23
+outputs/multiscreen-webapp-dist/assets/pieDiagram-E7YTZNPT-Cd4z38km.js
+  s_31cfcf1fa62567::t_38c85bb5173244 1-39
+packages/cli/install/README.md
+  s_a5265ecbd4421e::t_e3990075692af2 48-55
+  s_a5265ecbd4421e::t_42b5d6c0a74c73 8,16,23
+outputs/mobile-warning-webapp-rollback/assets/diagram-S7CK7UJ4-CGmEhKhY.js
+  s_598eb16b72d68c::t_28d0a0a46eb0c5 1-30
+outputs/webapp-rollback-20260914-135124/assets/web-B46aOyVR.js
+  s_d2928306bbdd2b::t_03a338819a0830 1
+outputs/full-release-20260914/core-rollback/domain/tool/builtin/index.d.ts.map
+  s_598eb16b72d68c::t_fc94c0fc25c2a3 1
+outputs/full-release-20260914/core-rollback/domain/web-console/entities.d.ts
+  s_598eb16b72d68c::t_f7c381871bfba0 1-59
+outputs/multiscreen-webapp-dist/assets/ganttDiagram-EL5Y4UJY-C6zzNSfA.js
+  s_31cfcf1fa62567::t_80daf9fd724ea0 1-292
+outputs/full-release-20260914/core-rollback/domain/file/file-types.test.d.ts
+  s_598eb16b72d68c::t_c36ebb2c85000b 1-2
+outputs/full-release-20260914/webapp-rollback/assets/mindmap-definition-YA3MSWOX-NPry7sk8.js
+  s_0443adb846fd5c::t_393369fc18936b 1-96
+packages/cli/src/instance-takeover.ts
+  s_a5265ecbd4421e::t_4ad017b15e563f 1-2,4-44,57-74,76-80,82-84,87-90,95,97-116
+  s_a5265ecbd4421e::t_e96409a9b245ac 3,45-56,85-86,91-94,96
+  s_a5265ecbd4421e::t_5443b63c0535af 75,81
+outputs/mobile-warning-webapp-rollback/assets/sizeCapture-INFHLROL-B9rr8Pg1.js
+  s_598eb16b72d68c::t_83bb7886c48259 1
+outputs/webapp-rollback-20260914-135124/assets/stateDiagram-v2-MP3YSRHH-AV-sPIQs.js
+  s_d2928306bbdd2b::t_b0367fb8d9fcc5 1
+outputs/full-release-20260914/core-rollback/infrastructure/SQLiteDatabase.test.d.ts
+  s_598eb16b72d68c::t_af17ec0809415a 1-2
+outputs/full-release-20260914/core-rollback/domain/plugin/index.d.ts
+  s_598eb16b72d68c::t_bf43a606081aa6 1-2
+outputs/full-release-20260914/core-rollback/domain/tool/builtin/CronTools.d.ts.map
+  s_598eb16b72d68c::t_ebb664addfe78c 1
+outputs/full-release-20260914/core-rollback/domain/tool/builtin/ShowWidgetTool.d.ts.map
+  s_598eb16b72d68c::t_f918d4cb7a9ef6 1
+outputs/mobile-warning-webapp-rollback/assets/channel-MF0a8nF9.js
+  s_598eb16b72d68c::t_b867f6832c035a 1
+packages/cli/src/service/launcher-cleanup.test.ts
+  s_a5265ecbd4421e::t_f0d5e722003ad0 1-63
+packages/server/lib/remote-control/webrtc-video.mjs
+  s_31cfcf1fa62567::t_314fb839380473 1-13,15,17-27,29-35,50-58,73,75-77,79
+  s_31cfcf1fa62567::t_960d9372241028 14,36,60-67,74
+  s_a5265ecbd4421e::t_f0d66745500d07 16,37-49,59,68,70-72,78
+  s_31cfcf1fa62567::t_1f178baa343662 28,69
+outputs/webapp-rollback-20260914-135124/assets/chunk-SVP7TREG-BLjG3K3-.js
+  s_d2928306bbdd2b::t_c871f38a5476e1 1-88
+outputs/quality-webapp-dist/assets/layout-CfUF_8c6.js
+  s_31cfcf1fa62567::t_2d7ec8da1f282a 1
+outputs/full-release-20260914/verification.md
+  s_598eb16b72d68c::t_0f8a48306d33c4 1-7
+outputs/mobile-warning-webapp-rollback/assets/vennDiagram-4TSXK5OY-InNTCcn6.js
+  s_598eb16b72d68c::t_f8265b99b36751 1-34
+outputs/multiscreen-webapp-dist/assets/chunk-XXDRQBXY-Bmj8_BXy.js
+  s_31cfcf1fa62567::t_f93e9ec33a53fd 1
+packages/mobile/android/app/capacitor.build.gradle
+  s_f9106f99ce82cb::t_02309136975c8e 12-13
+outputs/full-release-20260914/core-rollback/domain/context/ContextAssembler.d.ts
+  s_598eb16b72d68c::t_3a0f120679d620 1-21
+packages/desktop/electron-builder.yml
+  s_6ebcb2987963b9::t_31f4d673d64b63 27,36
+outputs/full-release-20260914/core-rollback/domain/model/tokenBudget.d.ts
+  s_598eb16b72d68c::t_63a95ad25bd654 1-6
+outputs/2026-09-14-pairing-approval-lock-plan.md
+  s_f9106f99ce82cb::t_0cfffd10ba8050 5-11
+  s_f9106f99ce82cb::t_634865717d24b3 1-4
+scripts/generate-node-runtime-policy.mjs
+  s_a5265ecbd4421e::t_675f38f44b3dc8 25
+outputs/webapp-rollback-20260914-135124/assets/index-C5S5EX46.js
+  s_d2928306bbdd2b::t_47e4a0071d8276 1-87
+outputs/full-release-20260914/webapp-rollback/assets/cynefinDiagram-5FMLGOSQ-BgYo3dQl.js
+  s_0443adb846fd5c::t_cb4c6210f14e00 1-62
+packages/server/app/api/web-console/device-state/route.ts
+  s_f9106f99ce82cb::t_48fad51bdf5744 20-23,30-32
+outputs/history-release-20260914/webapp-dist-rollback/assets/classDiagram-v2-VYDZK3BY-BZN1BdvJ.js
+  s_4f6f31c5c94ec9::t_ab6470f4c502fd 1
+outputs/quality-webapp-dist/assets/sequenceDiagram-WJ2MYXX4-Bx4SZao3.js
+  s_31cfcf1fa62567::t_0562fb73e25392 1-162
+outputs/full-release-20260914/core-rollback/domain/session/SessionHistory.test.d.ts.map
+  s_598eb16b72d68c::t_8c27f248c938c6 1
+outputs/full-release-20260914/core-rollback/domain/auth/index.d.ts.map
+  s_598eb16b72d68c::t_d18fe8a818141f 1
+outputs/full-release-20260914/webapp-rollback/assets/stateDiagram-v2-MP3YSRHH-B0bjxyhd.js
+  s_0443adb846fd5c::t_de47f4cba4ec00 1
+outputs/quality-webapp-dist/assets/index-DwNgokHq.css
+  s_31cfcf1fa62567::t_ba788be6f21bce 1
+outputs/webapp-rollback-20260914-135124/assets/chunk-5VM5RSS4-BL0xR61m.js
+  s_d2928306bbdd2b::t_fe6de9777c687e 1-15
+outputs/full-release-20260914/core-rollback/domain/mcp/MCPClient.d.ts.map
+  s_598eb16b72d68c::t_9b7ddb2ebbb278 1
+outputs/v4-paste.py
+  s_a5265ecbd4421e::t_b22c9904a558c0 1-15,19-20,22-63,71-72,82-90,92-143,145-146
+  s_a5265ecbd4421e::t_a29609deb5c5e8 16-18,21,64-70,73-81,91,144
+outputs/full-release-20260914/webapp-rollback/assets/dagre-GXQ25YYZ-BRbPx9JN.js
+  s_0443adb846fd5c::t_002763ba6215b9 1-4
+outputs/full-release-20260914/core-rollback/domain/terminal/TerminalSession.test.d.ts
+  s_598eb16b72d68c::t_3616a99633b379 1-2
+outputs/history-release-20260914/webapp-dist-rollback/assets/journeyDiagram-3NMN7TZE-BTT5ioCW.js
+  s_4f6f31c5c94ec9::t_04191f0b3054e9 1-139
+outputs/history-release-20260914/webapp-dist-rollback/pcm-audio-worklet.js
+  s_4f6f31c5c94ec9::t_28129ac7e5fe2d 1-126
+outputs/full-release-20260914/launchd-before.txt
+  s_598eb16b72d68c::t_167637343f1d7c 1-95
+outputs/history-release-20260914/webapp-dist-rollback/assets/classDiagram-ZZMXUADV-BZN1BdvJ.js
+  s_4f6f31c5c94ec9::t_81b6315d38b4e7 1
+outputs/webapp-rollback-20260914-135124/assets/channel-WX15dodV.js
+  s_d2928306bbdd2b::t_b7d1b9993455f2 1
+outputs/full-release-20260914/webapp-rollback/assets/chunk-POPQ4Y6H-Bst7fra7.js
+  s_0443adb846fd5c::t_7e0ad8eca9fad7 1
+outputs/pwa-install-preview.tsx
+  s_a5265ecbd4421e::t_91df73e9296756 3
+  s_a5265ecbd4421e::t_6b68a2cdd0acc7 1-2,4-12
+outputs/webapp-rollback-20260914-135124/assets/classDiagram-v2-VYDZK3BY-CPkWgK-k.js
+  s_d2928306bbdd2b::t_5eba58e0f58874 1
+outputs/full-release-20260914/core-rollback/domain/tool/builtin/GlobTool.d.ts.map
+  s_598eb16b72d68c::t_9ec7d7585cadbd 1
+outputs/quality-webapp-dist/assets/flowDiagram-HODETNUW-BnI2SIcC.js
+  s_31cfcf1fa62567::t_b9d48db186fe1a 1-168
+packages/desktop/renderer/components/ChromeHubSetup.tsx
+  s_a5265ecbd4421e::t_45a1fa63e3d6d9 6-7,10-13,15-24,27,29-30,34-35,38
+outputs/full-release-20260914/core-rollback/domain/model/providers/AnthropicProvider.d.ts.map
+  s_598eb16b72d68c::t_988a849512e68f 1
+outputs/full-release-20260914/core-rollback/infrastructure/SQLiteWebConsoleStore.d.ts.map
+  s_598eb16b72d68c::t_e2eb90bc29965e 1
+outputs/full-release-20260914/core-rollback/domain/tool/builtin/ApplyPatchTool.d.ts.map
+  s_598eb16b72d68c::t_777d74e33ec903 1
+outputs/mp-template-v4/generated/agentroam-统一会话篇/preview.html
+  s_f9106f99ce82cb::t_94d12172ff1f03 1-82
+outputs/full-release-20260914/webapp-rollback/assets/wardleyDiagram-VM6X3IG4-BL4QxztP.js
+  s_0443adb846fd5c::t_c9a2069fbba908 1-78
+outputs/quality-webapp-dist/assets/chunk-SVP7TREG-DnwXLJmx.js
+  s_31cfcf1fa62567::t_ecf18d25b0456e 1-88
+outputs/full-release-20260914/core-rollback/domain/session/SessionTitle.test.d.ts.map
+  s_598eb16b72d68c::t_cfa23dd9bd1f03 1
+packages/cli/src/args.ts
+  s_f9106f99ce82cb::t_e0dbd105a46b27 5,21-22,31,53-57,77,103,111
+  s_f9106f99ce82cb::t_7cf98efb26f802 16,105,117
+  s_f9106f99ce82cb::t_27b5859f754070 23,89-90
+  s_f9106f99ce82cb::t_a89e9fa7ccb20f 112,118
+  s_f9106f99ce82cb::t_a7ca073600915e 19-20,45-52,76
+outputs/full-release-20260914/core-rollback/domain/terminal/TerminalSession.d.ts
+  s_598eb16b72d68c::t_2b8939a1111ccb 1-41
+outputs/full-release-20260914/core-rollback/infrastructure/SQLiteAgentStore.d.ts
+  s_598eb16b72d68c::t_e93645ebd80b66 1-11
+outputs/full-release-20260914/webapp-rollback/assets/web-DruG2p5v.js
+  s_0443adb846fd5c::t_b38e4694fa74b1 1
+outputs/full-release-20260914/core-rollback/domain/settings/index.d.ts.map
+  s_598eb16b72d68c::t_01eea3ad0e2e84 1
+outputs/full-release-20260914/webapp-rollback/assets/gitGraphDiagram-WWUBYQGX-DWZ6enWV.js
+  s_0443adb846fd5c::t_273787e4f4a0fc 1-106
+outputs/full-release-20260914/core-rollback/application/RunAgentUseCase.d.ts
+  s_598eb16b72d68c::t_68060236f4a441 1-8
+outputs/tui-preview19-release/prepare.py
+  s_a5265ecbd4421e::t_7be0b1df7b0009 1-16
+outputs/multiscreen-webapp-dist/assets/railroadDiagram-O6MQD6OU-CPriQRqZ.js
+  s_31cfcf1fa62567::t_d12631e84ba1fb 1
+outputs/quality-webapp-dist/assets/chunk-JWPE2WC7-pOegxaca.js
+  s_31cfcf1fa62567::t_4950cfbd8c7243 1
+outputs/quality-webapp-dist/assets/init-Gi6I4Gst.js
+  s_31cfcf1fa62567::t_2cbc3e8f6eb96d 1
+outputs/desktop-permissions-preview.tsx
+  s_a5265ecbd4421e::t_a6315799efcfe7 1-15
+  s_a5265ecbd4421e::t_077a5d48918ddb 16-19
+outputs/2026-09-14-app-qr-pairing-plan.md
+  s_f9106f99ce82cb::t_9596707f15a59a 1-4,10-11
+  s_f9106f99ce82cb::t_46dfc74fe933e9 5-9
+outputs/history-release-20260914/webapp-dist-rollback/assets/chunk-POPQ4Y6H-wV3SsdPC.js
+  s_4f6f31c5c94ec9::t_2487ebf5bb4cb7 1
+outputs/full-release-20260914/webapp-rollback/assets/chunk-F27PBJKO-D0ABzWdK.js
+  s_0443adb846fd5c::t_827e7759b4f237 1
+outputs/full-release-20260914/webapp-rollback/assets/infoDiagram-27XIBGKW-CmPonfiw.js
+  s_0443adb846fd5c::t_c53039585f40dc 1-2
+outputs/multiscreen-webapp-dist/assets/chunk-F27PBJKO-B104lSgR.js
+  s_31cfcf1fa62567::t_010e8ee1f2502d 1
+outputs/desktop-permissions-preview.html
+  s_a5265ecbd4421e::t_f3573119686781 1
+outputs/full-release-20260914/webapp-rollback/assets/index-DwNgokHq.css
+  s_0443adb846fd5c::t_cab0f45c78c8a8 1
+outputs/history-release-20260914/webapp-dist-rollback/assets/railroadDiagram-O6MQD6OU-B-NE_ork.js
+  s_4f6f31c5c94ec9::t_0e883512cba78b 1
+outputs/mobile-warning-webapp-rollback/assets/cose-bilkent-JH36ORCC-Ddzq84Yc.js
+  s_598eb16b72d68c::t_36b3dd5d426f9b 1
+outputs/history-release-20260914/webapp-dist-rollback/agentroam-icon.svg
+  s_4f6f31c5c94ec9::t_e754b368d6b16f 1-6
+.workbuddy/memory/2026-09-14.md
+  s_a85d76eed8a680::t_73bec4cddfee5d 1-133
+outputs/webapp-rollback-20260914-135124/index.html
+  s_d2928306bbdd2b::t_f39eb59324a169 1-19
+outputs/history-release-20260914/webapp-dist-rollback/assets/gitGraphDiagram-WWUBYQGX-BICChxf4.js
+  s_4f6f31c5c94ec9::t_0f3362977282f6 1-106
+outputs/tui-preview19-release/agentroam/package/bin/node-runtime-policy.json
+  s_a5265ecbd4421e::t_3e9903ab487506 1-4
+outputs/full-release-20260914/core-rollback/infrastructure/SQLiteAuthStore.test.d.ts
+  s_598eb16b72d68c::t_6b0d7fdc391e38 1-2
+outputs/multiscreen-webapp-dist/assets/diagram-S7CK7UJ4-DsxABsU2.js
+  s_31cfcf1fa62567::t_40a77aa51ba64e 1-30
+packages/desktop/renderer/index.html
+  s_6ebcb2987963b9::t_31f4d673d64b63 18-19
+  s_6ebcb2987963b9::t_2e05a1b478c95c 6
+outputs/history-release-20260914/webapp-dist-rollback/assets/infoDiagram-27XIBGKW-8l5101Lb.js
+  s_4f6f31c5c94ec9::t_7225e38ae6b21c 1-2
+outputs/full-release-20260914/core-rollback/domain/model/providers/OpenAIProvider.d.ts.map
+  s_598eb16b72d68c::t_9d5f160665c72d 1
+outputs/history-release-20260914/webapp-dist-rollback/assets/cynefin-OW5HDTMX-4UYNDbpH.js
+  s_4f6f31c5c94ec9::t_034aae25db21c5 1-178
+outputs/full-release-20260914/core-rollback/infrastructure/live-view/frame-packet.test.d.ts
+  s_598eb16b72d68c::t_cc8a99922224bd 1-2
+outputs/mobile-warning-webapp-rollback/assets/ishikawaDiagram-5VMMS53U-BIqysz-p.js
+  s_598eb16b72d68c::t_ae8cf512c75c19 1-70
+outputs/full-release-20260914/core-rollback/domain/model/ModelRegistry.d.ts
+  s_598eb16b72d68c::t_a7f050b038e639 1-11
+packages/desktop/renderer/public/agentroam-icon.svg
+  s_6ebcb2987963b9::t_5c689a64abf955 1-6
+outputs/full-release-20260914/core-rollback/domain/ai-hub/relay-protocol.d.ts
+  s_598eb16b72d68c::t_2ced79e743adbd 1-15
+outputs/full-release-20260914/core-rollback/domain/context/entities.d.ts.map
+  s_598eb16b72d68c::t_640e169d0fd982 1
+outputs/full-release-20260914/core-rollback/infrastructure/live-view/producer.d.ts
+  s_598eb16b72d68c::t_41ff24754504a5 1-73
+outputs/webapp-rollback-20260914-135124/assets/blockDiagram-I7D4REHJ-CbSmbfn1.js
+  s_d2928306bbdd2b::t_120320fcf7bf40 1-129
+outputs/full-release-20260914/core-rollback/domain/settings/entities.d.ts.map
+  s_598eb16b72d68c::t_e21ba538def6f9 1
+packages/server/lib/remote-control/webrtc-video.test.ts
+  s_31cfcf1fa62567::t_6fe9cfa4f96ab0 27-33
+  s_31cfcf1fa62567::t_fb8540b92cad88 1-26,34-36
+outputs/mobile-warning-webapp-rollback/assets/layout-jJrfOdwg.js
+  s_598eb16b72d68c::t_eb2521ff20ba82 1
+outputs/full-release-20260914/core-rollback/domain/context/ContextAssembler.d.ts.map
+  s_598eb16b72d68c::t_44b1c8bad5a03f 1
+outputs/封面-生态篇.html
+  s_2e0fbeef5a43e4::t_4d6cacec2aef6f 1-41
+scripts/generate-brand-icons.py
+  s_6ebcb2987963b9::t_02b9cf89fdba20 38-45
+  s_6ebcb2987963b9::t_31f4d673d64b63 1-37,46
+outputs/webapp-rollback-20260914-135124/assets/journeyDiagram-3NMN7TZE-BZx5Ea2N.js
+  s_d2928306bbdd2b::t_3e0db634d7710a 1-139
+outputs/full-release-20260914/core-rollback/domain/agent/index.d.ts
+  s_598eb16b72d68c::t_56a78bee5ac3dc 1-3
+outputs/full-release-20260914/core-rollback/domain/mcp/index.d.ts.map
+  s_598eb16b72d68c::t_d0e8e70a3d9c1e 1
+packages/cli/src/cloudflared/bundled-asset.test.ts
+  s_6b9e80a52ca62d::t_c38ce66c3ff0b9 5,15,54-67,74
+outputs/full-release-20260914/core-rollback/infrastructure/SQLiteProjectStore.d.ts
+  s_598eb16b72d68c::t_ebee2e1dd3bcf1 1-12
+outputs/quality-webapp-dist/assets/swimlanesDiagram-VR7AAH4N-CCJU8Apc.js
+  s_31cfcf1fa62567::t_98cd53c62247b8 1-8
+outputs/full-release-20260914/core-rollback/domain/plugin/index.d.ts.map
+  s_598eb16b72d68c::t_b70cc24eeef172 1
+outputs/quality-webapp-dist/assets/linear-1Qm7H7zh.js
+  s_31cfcf1fa62567::t_377b787b6f2c50 1
+scripts/build-tui-package.mjs
+  s_6b9e80a52ca62d::t_a794d9be39da88 6-8,11-12,16,42,44
+outputs/full-release-20260914/core-rollback/domain/live-view/live-view-registry.d.ts.map
+  s_598eb16b72d68c::t_dfa5090679fe57 1
+outputs/full-release-20260914/core-rollback/infrastructure/HarnessServiceClient.d.ts
+  s_598eb16b72d68c::t_c632349f579676 1-49
+outputs/multiscreen-webapp-dist/assets/journeyDiagram-3NMN7TZE-Cfzno4_W.js
+  s_31cfcf1fa62567::t_9287374149759d 1-139
+outputs/full-release-20260914/core-rollback/domain/upload/index.d.ts.map
+  s_598eb16b72d68c::t_785c907ceb8222 1
+outputs/full-release-20260914/core-rollback/domain/web-console/pinned-commands.d.ts
+  s_598eb16b72d68c::t_f4e59901b17449 1-7
+outputs/full-release-20260914/core-rollback/domain/tool/entities.d.ts.map
+  s_598eb16b72d68c::t_2a3e1c938156f7 1
+outputs/full-release-20260914/core-rollback/domain/project/index.d.ts
+  s_598eb16b72d68c::t_25dde4442f565c 1-2
+outputs/quality-webapp-dist/assets/erDiagram-RLTQ6QDP-CGj-Pi2g.js
+  s_31cfcf1fa62567::t_6f32d4031a3a06 1-99
+outputs/webapp-rollback-20260914-135124/assets/kanban-definition-UXKFOSKX-Ca6XpuJD.js
+  s_d2928306bbdd2b::t_18f08d0986af56 1-89
+outputs/full-release-20260914/core-rollback/domain/remote-tools/entities.d.ts
+  s_598eb16b72d68c::t_8ac61e588d1dda 1-38
+outputs/multiscreen-webapp-dist/assets/blockDiagram-I7D4REHJ-CHXS7F-t.js
+  s_31cfcf1fa62567::t_7e04bd6860b405 1-129
+outputs/webapp-rollback-20260914-135124/assets/requirementDiagram-BXWQKSXE-CUEI8j-b.js
+  s_d2928306bbdd2b::t_b60c5a067ab73a 1-84
+outputs/webapp-rollback-20260914-135124/assets/wardleyDiagram-VM6X3IG4-BYhZFYyB.js
+  s_d2928306bbdd2b::t_958f73e604a3a6 1-78
+outputs/mp-template-v4/generated/agentroam-形态篇/publish-fields.json
+  s_6b9e80a52ca62d::t_2e7c5c08730d73 1-8
+outputs/full-release-20260914/core-rollback/domain/update/update-checker.d.ts
+  s_598eb16b72d68c::t_4d2c6813ffec13 1-40
+outputs/quality-webapp-dist/assets/chunk-XXDRQBXY-tkspF9YT.js
+  s_31cfcf1fa62567::t_7954497bf2091e 1
+packages/webapp/src/mobile/domain/pairing-qr.ts
+  s_f9106f99ce82cb::t_eb34d123020c24 1-6,14-22
+  s_f9106f99ce82cb::t_75cc8a8d7a6cc2 7-13
+scripts/stage-cli-runtime.mjs
+  s_f9106f99ce82cb::t_48fad51bdf5744 45-46
+  s_a5265ecbd4421e::t_a16a0b85f5068e 41
+  s_a5265ecbd4421e::t_33283ad39bf45a 36-37,51-52
+  s_f9106f99ce82cb::t_75cc8a8d7a6cc2 44,47
+  s_a5265ecbd4421e::t_4fc74fb8d02516 38-40,42
+outputs/full-release-20260914/core-rollback/domain/session/SessionGoals.test.d.ts
+  s_598eb16b72d68c::t_2eccf074c6b914 1-2
+outputs/full-release-20260914/webapp-rollback/assets/diagram-VSXAHHWV-D-uf1zYw.js
+  s_0443adb846fd5c::t_fa4ee05815bd37 1-3
+outputs/webapp-rollback-20260914-135124/assets/dagre-GXQ25YYZ-CYvJRGI6.js
+  s_d2928306bbdd2b::t_45f0e925640c44 1-4
+outputs/desktop-permissions-vite.config.ts
+  s_a5265ecbd4421e::t_ca3e1111a77eb8 1
+outputs/multiscreen-webapp-dist/assets/channel-BszQ0yX_.js
+  s_31cfcf1fa62567::t_d8657fd4abb48e 1
+outputs/full-release-20260914/core-rollback/domain/session/SessionGoalCoordinator.d.ts.map
+  s_598eb16b72d68c::t_7b79ea574e7ca1 1
+outputs/history-release-20260914/webapp-dist-rollback/assets/arc-D7EZUTYf.js
+  s_4f6f31c5c94ec9::t_f9ff99519ba48c 1
+outputs/multiscreen-webapp-dist/assets/chunk-IMKFNOWR-CTIW7iCX.js
+  s_31cfcf1fa62567::t_1f75d0f6a829bf 1-231
+packages/desktop/main/agent-runtime/codex-runtime-adapter.test.ts
+  s_0443adb846fd5c::t_e56929daa210ea 2313-2334
+outputs/paste-v4/统一会话篇/meta.json
+  s_a5265ecbd4421e::t_e64579a2e6d2c3 1-16
+packages/desktop/main/ai-hub/chrome-extension-install.test.ts
+  s_a5265ecbd4421e::t_6bd516814e2641 54
+  s_a5265ecbd4421e::t_dbd865b81ce907 5-6,30-53
+outputs/history-release-20260914/webapp-dist-rollback/assets/chunk-F27PBJKO-BueUBSMW.js
+  s_4f6f31c5c94ec9::t_8d50bba95ffd3d 1
+outputs/multiscreen-webapp-dist/assets/diagram-Z3DM3KII-BoFhLZOa.js
+  s_31cfcf1fa62567::t_b3a7ad05e7f724 1-24
+outputs/full-release-20260914/core-rollback/domain/web-console/WebBrowserBridge.test.d.ts
+  s_598eb16b72d68c::t_90a3424a983afc 1-2
+outputs/full-release-20260914/core-rollback/domain/tool/builtin/ApplyPatchTool.d.ts
+  s_598eb16b72d68c::t_da239bd9504fbe 1-34
+outputs/full-release-20260914/webapp-rollback/assets/sankeyDiagram-P5KCCOFB-BrlWQmjU.js
+  s_0443adb846fd5c::t_7e0423ccdb4dc0 1-40
+.gitignore
+  s_6ebcb2987963b9::t_69430887415168 56-57
+  s_a5265ecbd4421e::t_410c7b28d0a3d4 4
+  s_a5265ecbd4421e::t_4fc74fb8d02516 58-61
+outputs/quality-webapp-dist/assets/c4Diagram-7LVT6UL2-CzUTZ8V2.js
+  s_31cfcf1fa62567::t_20524e06c6a05b 1-38
+outputs/webapp-rollback-20260914-135124/assets/App-CMOzoP5A.css
+  s_d2928306bbdd2b::t_5899be7c3e1160 1
+outputs/full-release-20260914/webapp-rollback/assets/chunk-2Q5K7J3B-CfdmIv71.js
+  s_0443adb846fd5c::t_a89bec1190f4a0 1
+outputs/history-release-20260914/webapp-dist-rollback/assets/chunk-TICWLB2K-BVyu_n-l.js
+  s_4f6f31c5c94ec9::t_3b910f8e24fea7 1-206
+packages/cli/src/cloudflared/manifest.ts
+  s_a5265ecbd4421e::t_d5d0bd03ef6787 2,5
+outputs/paste-v4/统一会话篇/parts/b1.json
+  s_a5265ecbd4421e::t_79e4f7e7c24397 1
+outputs/mobile-warning-webapp-rollback/assets/architectureDiagram-5GKGNRK7-DYl8jR8t.js
+  s_598eb16b72d68c::t_2a428804325ca8 1-36
+outputs/full-release-20260914/core-rollback/domain/session/SessionGoals.d.ts
+  s_598eb16b72d68c::t_102c946ed9a566 1-59
+packages/server/native/remote-helper/service/Capture.swift
+  s_a5265ecbd4421e::t_a16a0b85f5068e 1-68
+outputs/quality-webapp-dist/assets/dagre-GXQ25YYZ-BZbZkRIN.js
+  s_31cfcf1fa62567::t_8fb6a1aced30c3 1-4
+outputs/quality-webapp-dist/agentroam-icon.svg
+  s_31cfcf1fa62567::t_6fd8455cac19c0 1-6
+outputs/mobile-warning-webapp-rollback/assets/ordinal-BENe2yWM.js
+  s_598eb16b72d68c::t_abe840e88934db 1
+outputs/quality-webapp-dist/index.html
+  s_31cfcf1fa62567::t_5ee82035f4565d 1-19
+outputs/full-release-20260914/core-rollback/domain/agent/run-checkpoint.d.ts.map
+  s_598eb16b72d68c::t_98fa56c721b5c8 1
+outputs/quality-webapp-dist/assets/chunk-2Q5K7J3B-YcUuFTmt.js
+  s_31cfcf1fa62567::t_89d61dd9937b7a 1
+outputs/mobile-warning-webapp-rollback/assets/chunk-POPQ4Y6H-BXwCU9Nw.js
+  s_598eb16b72d68c::t_f3671d6644d5c9 1
+outputs/history-release-20260914/webapp-dist-rollback/assets/chunk-XXDRQBXY-BxBcrq_G.js
+  s_4f6f31c5c94ec9::t_03f535ed1d38c7 1
+outputs/mobile-warning-webapp-rollback/assets/swimlanes-42K2YHIH-D22QOcDR.js
+  s_598eb16b72d68c::t_72c53ccc60eb0d 1
+outputs/mp-template-v4/generated/agentroam-统一会话篇/publish-fields.json
+  s_f9106f99ce82cb::t_774bf5e7471c79 1-8
+outputs/multiscreen-webapp-dist/assets/pegDiagram-XKGWAZYB-BdUK5hWO.js
+  s_31cfcf1fa62567::t_cdbbd4c940c989 1
+packages/server/public/pwa/service-worker.js
+  s_f9106f99ce82cb::t_0b145156372ddd 1-11,13-14
+  s_f9106f99ce82cb::t_077ec8d63109eb 12
+outputs/full-release-20260914/core-rollback/domain/session/index.d.ts
+  s_598eb16b72d68c::t_5a3b32b7627db7 1-9
+outputs/tui-preview19-release/agentroam-tui-darwin-arm64/package/README.md
+  s_a5265ecbd4421e::t_92550a0c321d8a 1-4
+packages/cli/src/instance-takeover.test.ts
+  s_a5265ecbd4421e::t_ada7c2f65e461d 1
+  s_a5265ecbd4421e::t_1b0ead1835aba7 2-57
+  s_a5265ecbd4421e::t_f82bd9554c095f 58-78
+  s_a5265ecbd4421e::t_3e521b08c32712 79-94
+docs/agentroam-operation-guide.md
+  s_0db8d86a446f93::t_0dc59e07916931 1-119,126-255
+  s_0db8d86a446f93::t_73b660a93ece11 120-125
+outputs/video-encoder-check/browser-check.mjs
+  s_a5265ecbd4421e::t_c77a8c1463195b 1-21
+outputs/full-release-20260914/core-rollback/domain/live-view/entities.d.ts.map
+  s_598eb16b72d68c::t_a72f88b7d56b0d 1
+packages/server/lib/remote-control/helper-manager.test.ts
+  s_a5265ecbd4421e::t_5dd004e6ae4cb7 1-12
+outputs/full-release-20260914/core-rollback/domain/model/entities.d.ts
+  s_598eb16b72d68c::t_a3edec5bdf4ab3 1-108
+outputs/multiscreen-webapp-dist/assets/wardleyDiagram-VM6X3IG4-D3B8pquZ.js
+  s_31cfcf1fa62567::t_1f10bd31c23ace 1-78
+outputs/full-release-20260914/core-rollback/domain/settings/index.d.ts
+  s_598eb16b72d68c::t_02a0b604f0c73c 1-2
+outputs/full-release-20260914/core-rollback/domain/model/providers/AnthropicProvider.d.ts
+  s_598eb16b72d68c::t_c016416a54ee85 1-16
+outputs/full-release-20260914/webapp-rollback/assets/blockDiagram-I7D4REHJ-BIYYrFIr.js
+  s_0443adb846fd5c::t_b5e768f4c21535 1-129
+outputs/history-release-20260914/webapp-dist-rollback/assets/wardleyDiagram-VM6X3IG4-uLCXlSnY.js
+  s_4f6f31c5c94ec9::t_978df07db740a7 1-78
+outputs/quality-webapp-dist/assets/web-BZ2RafDp.js
+  s_31cfcf1fa62567::t_4d06c4bde88d65 1
+packages/server/app/web/useWebAuth.ts
+  s_f9106f99ce82cb::t_fff602fbb75186 7,11-12,49-51,53-54,60-62
+  s_f9106f99ce82cb::t_e10bfb872910d0 23,41,52
+outputs/full-release-20260914/webapp-rollback/assets/journeyDiagram-3NMN7TZE-Bgk6EsO-.js
+  s_0443adb846fd5c::t_73df4dcdb06a01 1-139
+outputs/mp-template-v4/generated/agentroam-生态篇/publish-fields.json
+  s_2e0fbeef5a43e4::t_c4fe242a233d69 1-8
+outputs/full-release-20260914/webapp-rollback/assets/chunk-5VM5RSS4-DbRZIwzs.js
+  s_0443adb846fd5c::t_44d434cbb0f971 1-15
+outputs/2026-09-14-incremental-cli-release-plan.md
+  s_6b9e80a52ca62d::t_6b06d532952db5 1-6
+  s_6b9e80a52ca62d::t_ae4f3a4f7eb25f 7-17
+packages/webapp/src/types.d.ts
+  s_a5265ecbd4421e::t_abc38ae993bbb5 27-30
+outputs/multiscreen-webapp-dist/assets/ebnfDiagram-PWID7BFC-B9Rn9lsE.js
+  s_31cfcf1fa62567::t_737dadcd7d1811 1
+outputs/mp-land.config.json
+  s_a5265ecbd4421e::t_fbea1df93f6294 1-12
+outputs/multiscreen-webapp-dist/assets/timeline-definition-24CTP7MA-DkYYn1AM.js
+  s_31cfcf1fa62567::t_b3b2bbd4b1a495 1-120
+outputs/full-release-20260914/core-rollback/infrastructure/RunCheckpointStore.test.d.ts.map
+  s_598eb16b72d68c::t_8c7fa746483178 1
+outputs/full-release-20260914/core-rollback/domain/plugin/entities.d.ts.map
+  s_598eb16b72d68c::t_72c88aaeaee000 1
+outputs/full-release-20260914/core-rollback/infrastructure/SQLiteProjectStore.test.d.ts.map
+  s_598eb16b72d68c::t_d8412751cafdea 1
+outputs/full-release-20260914/webapp-rollback/assets/App-CMOzoP5A.css
+  s_0443adb846fd5c::t_0fb4520dcadbfa 1
+outputs/full-release-20260914/core-rollback/domain/tool/builtin/LspTools.d.ts
+  s_598eb16b72d68c::t_adccaefa41f66e 1-91
+outputs/tui-preview19-release/caoqu-agentroam-tui-win32-x64/package/package.json
+  s_a5265ecbd4421e::t_7be0b1df7b0009 1-31
+outputs/full-release-20260914/core-rollback/infrastructure/SQLiteLSPServerStore.d.ts
+  s_598eb16b72d68c::t_9c720f44ad7208 1-15
+packages/mobile/capacitor.config.ts
+  s_f9106f99ce82cb::t_e9712ceef88969 15-16
+outputs/2026-09-14-history-pull-verification.md
+  s_598eb16b72d68c::t_584f3dd80b8963 1-11
+outputs/full-release-20260914/core-rollback/domain/cron/entities.d.ts
+  s_598eb16b72d68c::t_01b6ee0b8f40b6 1-27
+outputs/full-release-20260914/core-rollback/infrastructure/live-view/producer.test.d.ts.map
+  s_598eb16b72d68c::t_3ae3866557c5b6 1
+packages/desktop/renderer/components/DesktopPermissionDialog.tsx
+  s_d2928306bbdd2b::t_caa7169c06ad74 23
+  s_a5265ecbd4421e::t_e3990075692af2 1,8-18
+  s_d2928306bbdd2b::t_20e0f0b761f04d 21
+  s_a5265ecbd4421e::t_59b78775d9bef0 2-7,19-20,22,24-26
+outputs/history-release-20260914/webapp-dist-rollback/assets/defaultLocale-DX6XiGOO.js
+  s_4f6f31c5c94ec9::t_7fe2fa8ca0e2c1 1
+packages/cli/src/platform-packages.test.ts
+  s_6b9e80a52ca62d::t_cb3b9d712921f4 6,37,80
+outputs/quality-webapp-dist/assets/ordinal-BENe2yWM.js
+  s_31cfcf1fa62567::t_3b27724e16b2c8 1
+scripts/agentroam-release-lib.mjs
+  s_6b9e80a52ca62d::t_6b06d532952db5 34-35,39-40,45,48,96,138-140,223,245,247,250,256-258,273,284,286,288,304-306,334,411-412
+  s_6b9e80a52ca62d::t_665ae0ae0e0441 53,144,303,309
+packages/desktop/renderer/components/ChatView.tsx
+  s_0443adb846fd5c::t_5d33d0243092b5 3440
+  s_0443adb846fd5c::t_7620b4a47e9596 78-80,1813,1838,1878,1986
+  s_598eb16b72d68c::t_26c81a0ae5a784 1,772,3334-3341
+  s_6b9e80a52ca62d::t_e9d3d9e71ce4e4 910
+  s_6ebcb2987963b9::t_0358efb51ae909 394-395,477-478,3310-3312
+outputs/webapp-rollback-20260914-135124/assets/diagram-VX7I27RA-Kslu3ib-.js
+  s_d2928306bbdd2b::t_76812a6da91d65 1-24
+packages/desktop/main/desktop-screen-live.test.ts
+  s_a5265ecbd4421e::t_92d7b56cabe0ac 217-260
+  s_a5265ecbd4421e::t_6588b46d43cb81 133,158
+outputs/full-release-20260914/core-rollback/domain/cron/entities.d.ts.map
+  s_598eb16b72d68c::t_4d919da46b21a8 1
+outputs/full-release-20260914/core-rollback/domain/live-view/capability-error.d.ts
+  s_598eb16b72d68c::t_9beba3c2084b88 1-11
+packages/cli/install/install-agentroam.sh
+  s_a5265ecbd4421e::t_89d51e997ad692 269-291
+  s_6b9e80a52ca62d::t_7b7e0eca562bea 256-258
+outputs/mobile-warning-webapp-rollback/assets/pegDiagram-XKGWAZYB-Bw6ik5vr.js
+  s_598eb16b72d68c::t_f9d908532a0867 1
+outputs/full-release-20260914/core-rollback/infrastructure/SQLiteWebConsoleStore.test.d.ts.map
+  s_598eb16b72d68c::t_5c75c2b2cfc139 1
+outputs/quality-webapp-dist/pcm-audio-worklet.js
+  s_31cfcf1fa62567::t_819e01449facae 1-126
+outputs/full-release-20260914/webapp-rollback/assets/pegDiagram-XKGWAZYB-Bluwxhn9.js
+  s_0443adb846fd5c::t_3e446ff2dcf486 1
+outputs/full-release-20260914/core-rollback/domain/memory/FileSystemMemoryStore.d.ts.map
+  s_598eb16b72d68c::t_8963a2b51117d9 1
+outputs/full-release-20260914/webapp-rollback/assets/xychartDiagram-S5SC5T6Z-hwLqVQ-N.js
+  s_0443adb846fd5c::t_d35cb8bd0ef0f6 1-7
+outputs/full-release-20260914/core-rollback/domain/tool/builtin/WriteFileTool.d.ts.map
+  s_598eb16b72d68c::t_b0bd0522c102f7 1
+outputs/full-release-20260914/core-rollback/domain/live-view/capability-error.d.ts.map
+  s_598eb16b72d68c::t_335adeda3c8b5e 1
+outputs/full-release-20260914/core-rollback/infrastructure/live-view/index.d.ts
+  s_598eb16b72d68c::t_115fb69c570a04 1-6
+outputs/full-release-20260914/core-rollback/domain/context/index.d.ts.map
+  s_598eb16b72d68c::t_1c5da0cb57aee1 1
+outputs/mobile-warning-webapp-rollback/assets/App-D2oDGYsA.js
+  s_598eb16b72d68c::t_202c0078961cb3 1-381
+outputs/full-release-20260914/core-rollback/domain/tool/checkpoints.d.ts
+  s_598eb16b72d68c::t_6046f3862ddd41 1-47
+outputs/history-release-20260914/webapp-dist-rollback/assets/ishikawaDiagram-5VMMS53U-D3lFwKs2.js
+  s_4f6f31c5c94ec9::t_7a5b2cdccc253c 1-70
+packages/server/lib/pairing-page.mjs
+  s_f9106f99ce82cb::t_3956b88d265914 1-2,4,8
+  s_f9106f99ce82cb::t_c4e324273ea882 3,6-7,13-15,40-43,45-48,50-51
+  s_f9106f99ce82cb::t_e10bfb872910d0 5,9-12,16-39,49
+  s_a5265ecbd4421e::t_56edb1babf0d71 44
+outputs/full-release-20260914/core-rollback/domain/upload/entities.d.ts.map
+  s_598eb16b72d68c::t_e1dafae7632873 1
+outputs/quality-webapp-dist/assets/sankeyDiagram-P5KCCOFB-JuQbX9gm.js
+  s_31cfcf1fa62567::t_25f9bd3c00c763 1-40
+outputs/full-release-20260914/core-rollback/domain/web-console/WebProjectBridge.test.d.ts
+  s_598eb16b72d68c::t_6890678fc18474 1-2
+outputs/full-release-20260914/core-rollback/domain/auth/entities.d.ts.map
+  s_598eb16b72d68c::t_19dab63b8f5755 1
+outputs/full-release-20260914/core-rollback/infrastructure/SQLiteAuthStore.test.d.ts.map
+  s_598eb16b72d68c::t_6a90c8cd8e885b 1
+outputs/full-release-20260914/core-rollback/infrastructure/SQLiteMCPServerStore.d.ts.map
+  s_598eb16b72d68c::t_93840ea7a941c7 1
+outputs/history-release-20260914/webapp-dist-rollback/assets/layout-skaxD18E.js
+  s_4f6f31c5c94ec9::t_27a9c9cb7c0a8a 1
+outputs/full-release-20260914/core-rollback/domain/update/index.d.ts
+  s_598eb16b72d68c::t_4b62731b9284ec 1-3
+outputs/full-release-20260914/core-rollback/domain/tool/builtin/CronTools.d.ts
+  s_598eb16b72d68c::t_ca3e8282f56f5f 1-91
+outputs/full-release-20260914/core-rollback/domain/live-view/live-view-registry.test.d.ts
+  s_598eb16b72d68c::t_2bd42feaece0d4 1-2
+scripts/publish-agentroam-release.test.mjs
+  s_6b9e80a52ca62d::t_c38ce66c3ff0b9 47
+  s_6b9e80a52ca62d::t_a794d9be39da88 210,229-231,298-343
+outputs/multiscreen-webapp-dist/assets/diagram-UQ7AKVKN-Ed735Ezb.js
+  s_31cfcf1fa62567::t_59ec19ec9c75cd 1-41
+outputs/full-release-20260914/core-rollback/domain/web-console/WebShellLiveBridge.test.d.ts.map
+  s_598eb16b72d68c::t_61ad552a6127a7 1
+outputs/history-release-20260914/webapp-dist-rollback/assets/vennDiagram-4TSXK5OY-TUjGvs6U.js
+  s_4f6f31c5c94ec9::t_53bef9d5c80c86 1-34
+outputs/full-release-20260914/core-rollback/domain/memory/FileSystemMemoryStore.d.ts
+  s_598eb16b72d68c::t_f32fc6cd3074ec 1-18
+outputs/mobile-warning-webapp-rollback/assets/sequenceDiagram-WJ2MYXX4-Dz0x3M_D.js
+  s_598eb16b72d68c::t_cba2efc2f2040e 1-162
+outputs/full-release-20260914/core-rollback/domain/tool/builtin/DispatchAgentTool.d.ts
+  s_598eb16b72d68c::t_15dbde8e32fbda 1-41
+outputs/full-release-20260914/core-rollback/infrastructure/SQLiteAuthStore.d.ts.map
+  s_598eb16b72d68c::t_70d8be01487a71 1
+outputs/mobile-warning-webapp-rollback/assets/journeyDiagram-3NMN7TZE-ChyB9Yn7.js
+  s_598eb16b72d68c::t_8f029f724bad30 1-139
+outputs/mobile-warning-webapp-rollback/assets/ganttDiagram-EL5Y4UJY-6MzrN0rX.js
+  s_598eb16b72d68c::t_8a6bee98765dae 1-292
+packages/server/app/web/PwaInstallButton.tsx
+  s_a5265ecbd4421e::t_fabd206ff07563 1-40
+CLAUDE.md
+  s_6b9e80a52ca62d::t_b9d2155abe1b31 54-60
+outputs/full-release-20260914/core-rollback/domain/agent/entities.d.ts
+  s_598eb16b72d68c::t_4759a844a4aa17 1-234
+outputs/full-release-20260914/core-rollback/domain/plugin/entities.d.ts
+  s_598eb16b72d68c::t_c6fbc855215f62 1-44
+packages/cli/README.md
+  s_a5265ecbd4421e::t_42b5d6c0a74c73 62
+outputs/full-release-20260914/core-rollback/domain/agent/run-checkpoint.d.ts
+  s_598eb16b72d68c::t_fc508c50c74df2 1-19
+outputs/full-release-20260914/core-rollback/domain/model/index.d.ts.map
+  s_598eb16b72d68c::t_e5d41867e4274c 1
+outputs/quality-webapp-dist/assets/arc-LdOnbdwY.js
+  s_31cfcf1fa62567::t_bf98935bde0522 1
+outputs/full-release-20260914/core-rollback/domain/model/tokenBudget.d.ts.map
+  s_598eb16b72d68c::t_03e3f8566aa28d 1
+outputs/mobile-warning-webapp-rollback/assets/diagram-VSXAHHWV-XWlQ7Mma.js
+  s_598eb16b72d68c::t_34f7208ed37ba7 1-3
+outputs/full-release-20260914/core-rollback/domain/tool/builtin/TodoTool.d.ts.map
+  s_598eb16b72d68c::t_efdca3696aba3c 1
+outputs/mobile-warning-webapp-rollback/assets/chunk-5VM5RSS4-CkQdjPZK.js
+  s_598eb16b72d68c::t_62ea4ae49bd218 1-15
+outputs/full-release-20260914/core-rollback/domain/session/SessionQueryIndex.test.d.ts.map
+  s_598eb16b72d68c::t_45c25a37ef76ea 1
+outputs/full-release-20260914/core-rollback/domain/browser-live/index.d.ts.map
+  s_598eb16b72d68c::t_1e38c2a69398d5 1
+outputs/full-release-20260914/core-rollback/domain/session/SessionQueryIndexCache.test.d.ts
+  s_598eb16b72d68c::t_dfaba17814f8f3 1-2
+outputs/webapp-rollback-20260914-135124/assets/ordinal-BENe2yWM.js
+  s_d2928306bbdd2b::t_1637ea6d8c7e7d 1
+outputs/history-release-20260914/webapp-dist-rollback/assets/abnfDiagram-VCTEODGH-Bg_eN6Uv.js
+  s_4f6f31c5c94ec9::t_4659e71ad0a541 1
+packages/desktop/main/index.ts
+  s_a5265ecbd4421e::t_45a1fa63e3d6d9 1,31,291-299
+  s_a5265ecbd4421e::t_e3990075692af2 1056
+  s_d2928306bbdd2b::t_dd872f3c00d7d2 1051-1053
+  s_a5265ecbd4421e::t_6856a83068feb7 131-139,910-914,981,985-988,1018-1021,1025,1036,1047-1050,1054-1055,1057-1064,1095-1097
+  s_6ebcb2987963b9::t_2e05a1b478c95c 211
+  s_a5265ecbd4421e::t_fee1c1ddb9cce9 1022-1024
+  s_a5265ecbd4421e::t_c3cc6f4eb02df2 18,1009,1026-1035,1037-1046,1191
+outputs/full-release-20260914/core-rollback/domain/session/SessionQueryIndex.d.ts
+  s_598eb16b72d68c::t_dfceead6948104 1-16
+outputs/full-release-20260914/webapp-rollback/assets/diagram-VX7I27RA-BjW8nwVd.js
+  s_0443adb846fd5c::t_397658af85420a 1-24
+outputs/history-release-20260914/webapp-dist-rollback/assets/cytoscape.esm-C5JX3QLV.js
+  s_4f6f31c5c94ec9::t_fefb05a3bb621b 1-331
+outputs/full-release-20260914/core-rollback/index.js
+  s_598eb16b72d68c::t_e880cbf3515274 1-14397
+outputs/full-release-20260914/core-rollback/domain/update/update-checker.test.d.ts.map
+  s_598eb16b72d68c::t_8b53f494ace098 1
+outputs/full-release-20260914/webapp-rollback/assets/architectureDiagram-5GKGNRK7-FZnXsytH.js
+  s_0443adb846fd5c::t_5757a12cfb6dbb 1-36
+outputs/full-release-20260914/core-rollback/domain/model/providers/DeepSeekProvider.d.ts.map
+  s_598eb16b72d68c::t_995f7b4d495e78 1
+packages/webapp/src/infrastructure/http/http-client.ts
+  s_f9106f99ce82cb::t_e10bfb872910d0 78
+outputs/history-release-20260914/webapp-dist-rollback/assets/mindmap-definition-YA3MSWOX-BeCFHs0Q.js
+  s_4f6f31c5c94ec9::t_d62e2af2901a1c 1-96
+outputs/multiscreen-webapp-dist/assets/chunk-POPQ4Y6H-B9ZuO6Uh.js
+  s_31cfcf1fa62567::t_33a5e30228af69 1
+outputs/webapp-rollback-20260914-135124/assets/linear-jqSS-ld7.js
+  s_d2928306bbdd2b::t_4c028715e957a9 1
+outputs/history-release-20260914/webapp-dist-rollback/index.html
+  s_4f6f31c5c94ec9::t_28c76dd0227291 1-19
+outputs/mobile-warning-webapp-rollback/assets/kanban-definition-UXKFOSKX-CPgtgAdh.js
+  s_598eb16b72d68c::t_b00895b5506ea9 1-89
+packages/server/app/web/error.tsx
+  s_31cfcf1fa62567::t_de345e9cc20ceb 1-12
+outputs/full-release-20260914/core-rollback/infrastructure/RunCheckpointStore.test.d.ts
+  s_598eb16b72d68c::t_0f77dd96dc9af5 1-2
+outputs/multiscreen-webapp-dist/assets/web-BSBmMO35.js
+  s_31cfcf1fa62567::t_6aab086060a223 1
+outputs/full-release-20260914/core-rollback/infrastructure/SQLiteRemoteToolStore.test.d.ts
+  s_598eb16b72d68c::t_dca2192aef4b97 1-2
+outputs/quality-webapp-dist/assets/diagram-VX7I27RA-seltrptr.js
+  s_31cfcf1fa62567::t_208c298a60e128 1-24
+outputs/full-release-20260914/core-rollback/domain/model/ModelRegistry.d.ts.map
+  s_598eb16b72d68c::t_f92f6c950cd765 1
+outputs/mobile-warning-webapp-rollback/assets/chunk-XXDRQBXY-B5PWgbM9.js
+  s_598eb16b72d68c::t_2a9e2a85b3110b 1
+outputs/full-release-20260914/core-rollback/domain/upload/entities.d.ts
+  s_598eb16b72d68c::t_050e39a9568f07 1-21
+outputs/full-release-20260914/core-rollback/domain/terminal/TerminalSession.d.ts.map
+  s_598eb16b72d68c::t_6dfdbcc76b8bf4 1
+outputs/mp-land-draft.mjs
+  s_a5265ecbd4421e::t_5cca33e717ae94 44,92,125,127,129-198,205,246-247,251,265,278
+  s_a5265ecbd4421e::t_209501f0fe210f 1-43,45-91,93-124,126,128,199-204,206-245,248-250,252-264,266-277
+outputs/full-release-20260914/core-rollback/domain/session/entities.d.ts
+  s_598eb16b72d68c::t_894610bb3eebb0 1-80
+packages/cli/install/install-agentroam.ps1
+  s_a5265ecbd4421e::t_89d51e997ad692 238-255
+  s_6b9e80a52ca62d::t_7b7e0eca562bea 229
+scripts/incremental-cli-release.mjs
+  s_6b9e80a52ca62d::t_62bd95f48c9edb 80-84,96-97,102
+  s_6b9e80a52ca62d::t_a794d9be39da88 54,114-118
+  s_6b9e80a52ca62d::t_a00ff45aa1228b 1-2,4-17,25-39,41,46-53,55-79,85-95,103-113,119-187
+  s_6b9e80a52ca62d::t_6888aab6531b0e 22-24,40,42-45
+  s_6b9e80a52ca62d::t_cfac748c0e89c5 3,18-21,98-101
+outputs/full-release-20260914/webapp-rollback/assets/arc-DUm9PJ6I.js
+  s_0443adb846fd5c::t_4fcaa856ae06a6 1
+outputs/webapp-rollback-20260914-135124/assets/pieDiagram-E7YTZNPT-_OqJ1oPK.js
+  s_d2928306bbdd2b::t_2c241c487108e5 1-39
+outputs/full-release-20260914/core-rollback/application/index.d.ts.map
+  s_598eb16b72d68c::t_61fd72d7388061 1
+outputs/full-release-20260914/core-rollback/domain/agent/AgentBuilder.test.d.ts.map
+  s_598eb16b72d68c::t_3978e710e666ec 1
+outputs/full-release-20260914/core-rollback/domain/web-console/entities.d.ts.map
+  s_598eb16b72d68c::t_8e60b43bf76b12 1
+packages/mobile/android/app/src/main/res/values/ic_launcher_background.xml
+  s_6ebcb2987963b9::t_31f4d673d64b63 3
+outputs/multiscreen-webapp-dist/assets/chunk-5VM5RSS4-ejQDGT0l.js
+  s_31cfcf1fa62567::t_df36dd75582925 1-15
+outputs/full-release-20260914/webapp-rollback/assets/ebnfDiagram-PWID7BFC-CcdPy8TL.js
+  s_0443adb846fd5c::t_749d79c1b50bd1 1
+outputs/mobile-warning-webapp-rollback/assets/index-DRduMC6x.js
+  s_598eb16b72d68c::t_ab77df491cc8dd 1-87
+packages/server/lib/remote-control/remote-authorization.test.ts
+  s_6b9e80a52ca62d::t_1234b9e148c36a 104-107,109,112
+  s_a5265ecbd4421e::t_d6f32e3a6fc364 1-5,7-38,43-50,52-84,126
+  s_a5265ecbd4421e::t_5dd004e6ae4cb7 85-103,110-111,113-115,118,130
+  s_a5265ecbd4421e::t_82fa3553b1fcdd 6
+  s_a5265ecbd4421e::t_e0ee001c40007d 51
+  s_a5265ecbd4421e::t_45ac4f2834de26 39-42
+  s_31cfcf1fa62567::t_8058ce3bbae9a0 108,116-117,119-121,123-125,129,131-132,134-138,163-165
+  s_31cfcf1fa62567::t_18bd15a916f3d1 122,127-128,133,166-191
+  s_31cfcf1fa62567::t_c6803d02fdeac5 139-162
+outputs/full-release-20260914/core-rollback/domain/tool/ToolRegistry.d.ts
+  s_598eb16b72d68c::t_0863c77f309186 1-16
+outputs/full-release-20260914/core-rollback/domain/auth/password.test.d.ts
+  s_598eb16b72d68c::t_de4ac100138cdc 1-2
+outputs/full-release-20260914/core-rollback/domain/model/providers/OpenAIProvider.d.ts
+  s_598eb16b72d68c::t_92c1721437d8ce 1-21
+outputs/tui-preview19-release/pack.json
+  s_a5265ecbd4421e::t_7be0b1df7b0009 1-474
+outputs/quality-webapp-dist/assets/mindmap-definition-YA3MSWOX-BJHl9w9N.js
+  s_31cfcf1fa62567::t_84f86961e13dbc 1-96
+outputs/full-release-20260914/core-rollback/application/RunAgentUseCase.d.ts.map
+  s_598eb16b72d68c::t_a646c4ec5564a1 1
+outputs/webapp-rollback-20260914-135124/assets/mermaid.core-pc9HwpWK.js
+  s_d2928306bbdd2b::t_d99c73070612f7 1-312
+outputs/full-release-20260914/core-rollback/domain/settings/entities.d.ts
+  s_598eb16b72d68c::t_a5b9cd0306c516 1-36
+outputs/full-release-20260914/core-rollback/domain/ai-hub/index.d.ts
+  s_598eb16b72d68c::t_808b9e701a8439 1-2
+outputs/full-release-20260914/core-rollback/domain/session/SessionQueryIndexCache.d.ts.map
+  s_598eb16b72d68c::t_0cd877862487ff 1
+packages/desktop/renderer/stores/agentStore.ts
+  s_4f6f31c5c94ec9::t_90e9a840d0308d 366-375
+packages/desktop/package.json
+  s_6ebcb2987963b9::t_69430887415168 8,12-13
+outputs/full-release-20260914/webapp-rollback/assets/erDiagram-RLTQ6QDP-BE1hC9UF.js
+  s_0443adb846fd5c::t_7a340848e027e3 1-99
+outputs/webapp-rollback-20260914-135124/assets/web-BTPZbXp4.js
+  s_d2928306bbdd2b::t_0a000827aee7c1 1
+packages/desktop/main/ai-hub/existing-chrome.ts
+  s_a5265ecbd4421e::t_45a1fa63e3d6d9 11-16
+outputs/full-release-20260914/core-rollback/domain/model/providers/openAIEndpoint.d.ts
+  s_598eb16b72d68c::t_dc54629501d1ca 1-3
+outputs/multiscreen-webapp-dist/assets/sequenceDiagram-WJ2MYXX4-DOPIsR-5.js
+  s_31cfcf1fa62567::t_ccf1f2010e56ca 1-162
+outputs/full-release-20260914/core-rollback/domain/session/SessionQueryIndex.d.ts.map
+  s_598eb16b72d68c::t_32e8fe92a225b4 1
+outputs/mobile-warning-webapp-rollback/assets/chunk-TICWLB2K-Yv6l0ITL.js
+  s_598eb16b72d68c::t_bc926bb289d31e 1-206
+outputs/full-release-20260914/core-rollback/infrastructure/HarnessServiceClient.test.d.ts
+  s_598eb16b72d68c::t_65ec9444f7b46d 1-2
+outputs/paste-v4/统一会话篇/parts/a3.json
+  s_a5265ecbd4421e::t_091849b9c374d6 1
+packages/desktop/renderer/components/AIHubView.tsx
+  s_a5265ecbd4421e::t_45a1fa63e3d6d9 80-89
+outputs/full-release-20260914/core-rollback/domain/memory/entities.d.ts.map
+  s_598eb16b72d68c::t_ca33e23be2cbe0 1
+outputs/full-release-20260914/core-rollback/domain/tool/permissions.d.ts.map
+  s_598eb16b72d68c::t_48415aa364fb1e 1
+outputs/full-release-20260914/core-rollback/infrastructure/SQLiteProjectStore.d.ts.map
+  s_598eb16b72d68c::t_4a19953845e4f6 1
+packages/server/native/remote-helper/service/QuartzBridge.h
+  s_a5265ecbd4421e::t_a16a0b85f5068e 1-9
+outputs/tui-preview19-release/RELEASE.md
+  s_a5265ecbd4421e::t_fc84d6106d66b2 1-15
+outputs/history-release-20260914/webapp-dist-rollback/assets/sequenceDiagram-WJ2MYXX4-CPaA2NKl.js
+  s_4f6f31c5c94ec9::t_80c41cbb1e3004 1-162
+outputs/full-release-20260914/webapp-rollback/assets/cynefin-OW5HDTMX-kTJqidVv.js
+  s_0443adb846fd5c::t_e72e33024a54bd 1-178
+outputs/multiscreen-webapp-dist/assets/ishikawaDiagram-5VMMS53U-BoKikLBG.js
+  s_31cfcf1fa62567::t_1f44acbf710b7d 1-70
+outputs/full-release-20260914/core-rollback/domain/session/SessionStore.test.d.ts
+  s_598eb16b72d68c::t_aab3110b040056 1-2
+packages/desktop/renderer/components/DesktopLiveSettings.tsx
+  s_d2928306bbdd2b::t_caa7169c06ad74 110,114,144,151,187-191
+  s_a5265ecbd4421e::t_e9169558f05302 31-32,38-39,51-84,101-103,120,141-142,154,186,192-193
+  s_a5265ecbd4421e::t_6588b46d43cb81 136
+  s_a5265ecbd4421e::t_59b78775d9bef0 26,111,113,132
+  s_d2928306bbdd2b::t_5c8cd9803d6e8c 149,156
+packages/webapp/src/presentation/web.css
+  s_d2928306bbdd2b::t_6e8fe743799b5d 975-1014
+outputs/webapp-rollback-20260914-135124/assets/chunk-JWPE2WC7-CAO8fUTS.js
+  s_d2928306bbdd2b::t_661e1baaee89f9 1
+outputs/quality-webapp-dist/assets/stateDiagram-D77RDMKH-48Hcp0SJ.js
+  s_31cfcf1fa62567::t_b0883022c7c8cf 1
+outputs/multiscreen-webapp-dist/assets/App-CMOzoP5A.css
+  s_31cfcf1fa62567::t_5ec3f9b6afd581 1
+outputs/history-release-20260914/webapp-dist-rollback/assets/chunk-JWPE2WC7-DoizkjHx.js
+  s_4f6f31c5c94ec9::t_b9a6e548a400bd 1
+outputs/mp-template-v4/generated/agentroam-统一会话篇/body.html
+  s_f9106f99ce82cb::t_c11cfff017a371 1-82
+outputs/full-release-20260914/webapp-rollback/pcm-audio-worklet.js
+  s_0443adb846fd5c::t_c49ebb71894211 1-126
+outputs/multiscreen-webapp-dist/assets/init-Gi6I4Gst.js
+  s_31cfcf1fa62567::t_00f69fb4764a45 1
+outputs/full-release-20260914/core-rollback/domain/agent/native-runtime-events.d.ts
+  s_598eb16b72d68c::t_3860c4a54ed246 1-6
+packages/server/remote-authorization.json
+  s_598eb16b72d68c::t_1544af7b787a97 1
+outputs/mobile-warning-webapp-rollback/assets/defaultLocale-DX6XiGOO.js
+  s_598eb16b72d68c::t_530df23dc3df96 1
+packages/mobile/ios/App/App.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
+  s_f9106f99ce82cb::t_1acfac4e4a4f24 12-29
+outputs/full-release-20260914/core-rollback/domain/agent/index.d.ts.map
+  s_598eb16b72d68c::t_33aaa96a23705c 1
+outputs/webapp-rollback-20260914-135124/assets/vennDiagram-4TSXK5OY-DO6E5hWP.js
+  s_d2928306bbdd2b::t_1ed0f2076fe54b 1-34
+outputs/full-release-20260914/core-rollback/application/ManageSessionUseCase.d.ts.map
+  s_598eb16b72d68c::t_4eed4864c2f620 1
+outputs/full-release-20260914/core-rollback/domain/auth/WebAuthService.test.d.ts
+  s_598eb16b72d68c::t_8202740b01f5b5 1-2
+outputs/2026-09-14-codex-running-dot-verification.md
+  s_31cfcf1fa62567::t_db63b3c0ffb5c1 1-13
+outputs/full-release-20260914/core-rollback/domain/tool/builtin/RemoteProjectActionTool.d.ts
+  s_598eb16b72d68c::t_6e5a29b47fde12 1-55
+packages/server/lib/web-auth/anonymous.ts
+  s_f9106f99ce82cb::t_568379192a30cd 15
+outputs/mobile-warning-webapp-rollback/assets/index-DwNgokHq.css
+  s_598eb16b72d68c::t_bc9b1095f640fc 1
+outputs/full-release-20260914/core-rollback/domain/lsp/LSPClient.d.ts
+  s_598eb16b72d68c::t_51cfe7f0803b7a 1-30
+outputs/webapp-rollback-20260914-135124/assets/flowDiagram-HODETNUW-CMtxQ2vU.js
+  s_d2928306bbdd2b::t_45b96f648b1c7d 1-168
+outputs/full-release-20260914/core-rollback/domain/project/entities.d.ts
+  s_598eb16b72d68c::t_44427f0199c89b 1-15
+outputs/full-release-20260914/core-rollback/infrastructure/RunCheckpointStore.d.ts.map
+  s_598eb16b72d68c::t_8ec60319bbbde6 1
+outputs/full-release-20260914/core-rollback/domain/session/SessionTitle.d.ts.map
+  s_598eb16b72d68c::t_7051b24efabe25 1
+outputs/history-release-20260914/webapp-dist-rollback/assets/swimlanesDiagram-VR7AAH4N-IxMgdHeE.js
+  s_4f6f31c5c94ec9::t_064545c3bcfd62 1-8
+outputs/remote-authorization-preview.tsx
+  s_a5265ecbd4421e::t_33a624ab9f8cad 1-2,4-6,8-15
+  s_a5265ecbd4421e::t_ed9091a01a189d 3
+  s_a5265ecbd4421e::t_203112ef3a1786 7
+outputs/full-release-20260914/webapp-rollback/assets/index-DHwZanlK.js
+  s_0443adb846fd5c::t_5f66a60c06f3a1 1-87
+packages/desktop/renderer/App.tsx
+  s_d2928306bbdd2b::t_e95f5112bcc580 1992
+  s_6ebcb2987963b9::t_7278836b44bfb9 31,227,1921-1922
+  s_d2928306bbdd2b::t_caa7169c06ad74 1991
+outputs/full-release-20260914/helper-rollback.app/Contents/Info.plist
+  s_a5265ecbd4421e::t_5fb404b55f8dc4 1
+packages/server/app/api/web-console/bootstrap/route.ts
+  s_f9106f99ce82cb::t_d20f3ff0dae8ca 3-4,6
+outputs/full-release-20260914/core-rollback/domain/session/SessionHistory.d.ts
+  s_598eb16b72d68c::t_11bee1a88a3f1d 1-11
+scripts/publish-agentroam-release.mjs
+  s_6b9e80a52ca62d::t_6b06d532952db5 31-37
+outputs/mobile-warning-webapp-rollback/assets/railroadDiagram-O6MQD6OU-aQDtso8y.js
+  s_598eb16b72d68c::t_240606e4345ad5 1
+packages/webapp/index.html
+  s_6ebcb2987963b9::t_2e05a1b478c95c 10
+  s_6ebcb2987963b9::t_31f4d673d64b63 11
+  s_f9106f99ce82cb::t_665cd135fb5b99 12
+outputs/full-release-20260914/core-rollback/domain/tool/builtin/RemoteProjectActionTool.d.ts.map
+  s_598eb16b72d68c::t_3b3a9fafb85ec8 1
+outputs/full-release-20260914/core-rollback/domain/mcp/MCPClient.d.ts
+  s_598eb16b72d68c::t_5f63f0cfb503a8 1-45
+scripts/build-cli-remote-helper.mjs
+  s_a5265ecbd4421e::t_c2ccc1b2a07b1b 19
+  s_31cfcf1fa62567::t_ed1f04223877ee 7
+  s_a5265ecbd4421e::t_877dfbbb4fcda4 2-6,8-14,22
+  s_a5265ecbd4421e::t_a16a0b85f5068e 1,15-18,20-21
+outputs/full-release-20260914/helper-rollback.app/Contents/_CodeSignature/CodeResources
+  s_a5265ecbd4421e::t_c6b1c8cb61c267 1-128
+packages/core/src/domain/live-view/live-view-registry.test.ts
+  s_31cfcf1fa62567::t_18bd15a916f3d1 137-142
+outputs/full-release-20260914/core-rollback/domain/session/SessionPermission.d.ts.map
+  s_598eb16b72d68c::t_86752dea72ca93 1
+scripts/incremental-cli-release.test.mjs
+  s_6b9e80a52ca62d::t_729e948bf12ee1 105-111
+  s_6b9e80a52ca62d::t_c38ce66c3ff0b9 1-17,19-77
+  s_6b9e80a52ca62d::t_a794d9be39da88 18
+  s_6b9e80a52ca62d::t_6888aab6531b0e 112-119
+  s_6b9e80a52ca62d::t_62bd95f48c9edb 78-104
+outputs/mobile-warning-webapp-rollback/assets/App-CMOzoP5A.css
+  s_598eb16b72d68c::t_7cfa0cdcb50efa 1
+outputs/webapp-rollback-20260914-135124/assets/chunk-POPQ4Y6H-D_c_JgMO.js
+  s_d2928306bbdd2b::t_3d634332498380 1
+outputs/2026-09-14-live-video-display-verification.md
+  s_31cfcf1fa62567::t_bccf49c686732f 1-19
+outputs/tui-preview19-release/agentroam/package/install/README.md
+  s_a5265ecbd4421e::t_503026e56c2231 1-55
+outputs/mobile-warning-webapp-rollback/agentroam-icon.svg
+  s_598eb16b72d68c::t_cec0ef934be01f 1-6
+outputs/webapp-rollback-20260914-135124/assets/sankeyDiagram-P5KCCOFB-CNZ_aQsh.js
+  s_d2928306bbdd2b::t_461af601e2abfa 1-40
+outputs/full-release-20260914/core-rollback/domain/mcp/entities.d.ts.map
+  s_598eb16b72d68c::t_2c0de883f78457 1
+outputs/full-release-20260914/core-rollback/infrastructure/HarnessObservation.test.d.ts
+  s_598eb16b72d68c::t_8a519838da9f26 1-2
+outputs/full-release-20260914/core-rollback/domain/tool/builtin/WebSearchTool.d.ts
+  s_598eb16b72d68c::t_f4ef12e2096da4 1-29
+outputs/webapp-rollback-20260914-135124/assets/ganttDiagram-EL5Y4UJY-BjT4XKSD.js
+  s_d2928306bbdd2b::t_9235ef22ea0a3a 1-292
+packages/mobile/package.json
+  s_f9106f99ce82cb::t_94713c46d0f9ed 21
+  s_f9106f99ce82cb::t_6d93ecd760a209 5,19-20
+outputs/full-release-20260914/core-rollback/infrastructure/live-view/producer.d.ts.map
+  s_598eb16b72d68c::t_009c7d12c72f69 1
+outputs/full-release-20260914/webapp-rollback/assets/quadrantDiagram-AXDQQJYC-DEIHXii4.js
+  s_0443adb846fd5c::t_37bc37fd221e0d 1-7
+outputs/full-release-20260914/core-rollback/infrastructure/SQLiteUploadStore.d.ts
+  s_598eb16b72d68c::t_25674cd8dfca71 1-12
+outputs/mobile-warning-webapp-rollback/assets/ebnfDiagram-PWID7BFC-D6LqxyGA.js
+  s_598eb16b72d68c::t_1d63e8e3b0b463 1
+scripts/audit-runtime-tarball.mjs
+  s_f9106f99ce82cb::t_8dad53b8ba21c3 41-44
+  s_f9106f99ce82cb::t_75cc8a8d7a6cc2 45,47-53
+  s_f9106f99ce82cb::t_8aaba3e4cf45a4 46
+outputs/paste-v4/统一会话篇/parts/b0.json
+  s_a5265ecbd4421e::t_36600bf82d5b6c 1
+outputs/full-release-20260914/core-rollback/infrastructure/HostPathPolicy.d.ts.map
+  s_598eb16b72d68c::t_31ca41b53b3c1c 1
+outputs/quality-webapp-dist/assets/quadrantDiagram-AXDQQJYC-CR3L8GhL.js
+  s_31cfcf1fa62567::t_33fe13b72faee0 1-7
+outputs/multiscreen-webapp-dist/index.html
+  s_31cfcf1fa62567::t_43ea4435fcda19 1-19
+outputs/pwa-release-20260914-200001/verification.md
+  s_31cfcf1fa62567::t_24dd697b0c12a3 1-10
+outputs/full-release-20260914/core-rollback/index.d.ts
+  s_598eb16b72d68c::t_9cae506592807e 1-55
+outputs/quality-webapp-dist/assets/abnfDiagram-VCTEODGH-CdGbJkIJ.js
+  s_31cfcf1fa62567::t_5c8886cdfdee67 1
+packages/mobile/android/app/src/main/AndroidManifest.xml
+  s_f9106f99ce82cb::t_5d56c68e52e06d 42-43
+outputs/tui-preview19-release/caoqu-agentroam-tui-win32-x64/package/README.md
+  s_a5265ecbd4421e::t_161235dd78840a 1-3
+scripts/runtime-native-files.mjs
+  s_a5265ecbd4421e::t_a16a0b85f5068e 8
+outputs/full-release-20260914/webapp-rollback/assets/swimlanes-42K2YHIH-CTgn8V7f.js
+  s_0443adb846fd5c::t_2053baae139ebe 1
+outputs/quality-webapp-dist/assets/diagram-Z3DM3KII-BUQiTc7e.js
+  s_31cfcf1fa62567::t_4deabdfb9c5a0b 1-24
+outputs/full-release-20260914/core-rollback/domain/web-console/pinned-commands.test.d.ts
+  s_598eb16b72d68c::t_80ef90d4d3be9f 1-2
+outputs/multiscreen-webapp-dist/assets/flowDiagram-HODETNUW-CfcFDgYO.js
+  s_31cfcf1fa62567::t_06fbf57459d69f 1-168
+packages/server/native/remote-helper/service/VideoEncoder.swift
+  s_a5265ecbd4421e::t_c2ccc1b2a07b1b 1-4,16-18,20,26-60,63-73
+  s_31cfcf1fa62567::t_960d9372241028 21-25
+  s_31cfcf1fa62567::t_1f178baa343662 5-15,19,61-62
+outputs/full-release-20260914/core-rollback/infrastructure/SQLiteWebConsoleStore.d.ts
+  s_598eb16b72d68c::t_a820b67b623502 1-18
+outputs/mobile-warning-webapp-rollback/index.html
+  s_598eb16b72d68c::t_fad0c96b75c879 1-19
+outputs/mobile-warning-webapp-rollback/assets/classDiagram-ZZMXUADV-HcDI_1ll.js
+  s_598eb16b72d68c::t_56bf869afe7085 1
+outputs/quality-webapp-dist/assets/mermaid.core-CXI0jzAW.js
+  s_31cfcf1fa62567::t_a1b2e6db3f5572 1-312
+outputs/full-release-20260914/core-rollback/domain/context/entities.d.ts
+  s_598eb16b72d68c::t_cd6036a58ad4ab 1-44
+outputs/full-release-20260914/webapp-rollback/assets/railroadDiagram-O6MQD6OU-ONcIW5mF.js
+  s_0443adb846fd5c::t_d8e05e00baf269 1
+outputs/full-release-20260914/core-rollback/domain/web-console/WebShellLiveBridge.d.ts.map
+  s_598eb16b72d68c::t_f99e91aba001c4 1
+outputs/full-release-20260914/core-rollback/domain/tool/builtin/StrReplaceTool.d.ts
+  s_598eb16b72d68c::t_b45e947dfa31a0 1-39
+outputs/multiscreen-webapp-dist/assets/abnfDiagram-VCTEODGH-DyZX-2Aq.js
+  s_31cfcf1fa62567::t_cbb3418d7e5a4b 1
+outputs/mobile-warning-webapp-rollback/assets/requirementDiagram-BXWQKSXE-CLp_7HnO.js
+  s_598eb16b72d68c::t_f8c8ad5f36cfd8 1-84
+packages/server/lib/device-pairing-gateway.mjs
+  s_f9106f99ce82cb::t_8dad53b8ba21c3 171-174
+  s_f9106f99ce82cb::t_48fad51bdf5744 2-3,5,7-8,10-15,17,19-33,37-47,49-50,53,65-69,71,73-75,94-95,98,100,102-106,120-127,137-141,143,156-157,160,162-165,175,185,187-191,193-198,200-212,218-221,223-225
+  s_f9106f99ce82cb::t_7cf98efb26f802 34-36,51-52,99,101,158,170,176,181,192,199,214-217,222
+  s_f9106f99ce82cb::t_d538f5fd86c328 83
+  s_f9106f99ce82cb::t_0ad3712eb0ed5b 6,16,18,48,54-64,70,109-119,142,144-152,154-155,177-180,182-184,213
+  s_f9106f99ce82cb::t_f2928502ef0eb5 4,72,130-131,134-136,153,159,161
+  s_f9106f99ce82cb::t_40cb51276da0f8 9,78-82,84-86,96-97,107-108,128-129,132-133,166-169
+  s_f9106f99ce82cb::t_42ae07093ee0f4 1,76-77,87-89
+  s_f9106f99ce82cb::t_8baabc749707d4 90-93,186
+outputs/pwa-release-20260914-200001/state.json
+  s_6b9e80a52ca62d::t_acad03a98e3bb1 1-6
+outputs/multiscreen-webapp-dist/assets/mindmap-definition-YA3MSWOX-BNEGwrcJ.js
+  s_31cfcf1fa62567::t_a03527e2a4cf05 1-96
+outputs/full-release-20260914/core-rollback/domain/lsp/LSPManager.d.ts.map
+  s_598eb16b72d68c::t_79d65f5eb9c6d5 1
+outputs/multiscreen-webapp-dist/assets/dagre-GXQ25YYZ-B21_L84f.js
+  s_31cfcf1fa62567::t_6355c08c076982 1-4
+outputs/webapp-rollback-20260914-135124/assets/cynefin-OW5HDTMX-xaljAzy7.js
+  s_d2928306bbdd2b::t_5d31a574eae53a 1-178
+outputs/history-release-20260914/webapp-dist-rollback/assets/kanban-definition-UXKFOSKX-BX0zN23Y.js
+  s_4f6f31c5c94ec9::t_7f02ee7257b2c0 1-89
+outputs/full-release-20260914/core-rollback/infrastructure/SQLiteSessionStore.d.ts.map
+  s_598eb16b72d68c::t_bf5d0ea2854298 1
+outputs/quality-webapp-dist/assets/kanban-definition-UXKFOSKX-UprWBJhB.js
+  s_31cfcf1fa62567::t_5cbc16d0fce00f 1-89
+packages/webapp/src/mobile/infrastructure/http-connectivity-probe.ts
+  s_f9106f99ce82cb::t_606f1818c62c7b 19
+outputs/full-release-20260914/core-rollback/domain/web-console/pinned-commands.d.ts.map
+  s_598eb16b72d68c::t_c6299724efa072 1
+outputs/quality-webapp-dist/assets/swimlanes-42K2YHIH-BZK_x796.js
+  s_31cfcf1fa62567::t_a76f4a4e7e2b17 1
+outputs/full-release-20260914/core-rollback/domain/mcp/index.d.ts
+  s_598eb16b72d68c::t_071ff9fa2df3a3 1-2
+outputs/full-release-20260914/core-rollback/domain/tool/permissions.test.d.ts
+  s_598eb16b72d68c::t_aa8e6f3883c4f4 1-2
+outputs/full-release-20260914/core-rollback/domain/session/SessionStore.test.d.ts.map
+  s_598eb16b72d68c::t_65ef374afa0c94 1
+outputs/full-release-20260914/core-rollback/domain/plugin/PluginManager.d.ts
+  s_598eb16b72d68c::t_06a3fe76317cca 1-20
+outputs/quality-webapp-dist/assets/index-5Y_Iroha.js
+  s_31cfcf1fa62567::t_e6e3da01925bfa 1-87
+outputs/full-release-20260914/core-rollback/domain/skill/SkillRegistry.d.ts.map
+  s_598eb16b72d68c::t_473e8d4d8cbc76 1
+outputs/full-release-20260914/core-rollback/index.d.ts.map
+  s_598eb16b72d68c::t_92083e3d441ce6 1
+outputs/webapp-rollback-20260914-135124/assets/diagram-S7CK7UJ4-DzTpw1jy.js
+  s_d2928306bbdd2b::t_d0f1029fec77bd 1-30
+outputs/full-release-20260914/core-rollback/domain/tool/builtin/AskUserTool.d.ts.map
+  s_598eb16b72d68c::t_77cfa8d08fd0c3 1
+packages/server/lib/remote-control/helper-manager.mjs
+  s_a5265ecbd4421e::t_a16a0b85f5068e 26
+  s_a5265ecbd4421e::t_1f0c96d2f18278 34,38,45,47-49,87
+  s_a5265ecbd4421e::t_8d25aea7868ab6 3-10,19,21,24,27-33,35-37,39-44,46,50-86,88-92
+  s_a5265ecbd4421e::t_6f10530ca5a46b 2,11-12,20,22-23,25
+  s_a5265ecbd4421e::t_b43d15dfac1461 1,13-18
+outputs/quality-preview.tsx
+  s_31cfcf1fa62567::t_3af268b7f8403f 1-21
+packages/server/lib/desktop-discovery.d.mts
+  s_f9106f99ce82cb::t_fff602fbb75186 3-4
+outputs/full-release-20260914/core-rollback/domain/auth/WebAuthService.d.ts.map
+  s_598eb16b72d68c::t_91853e80ef6849 1
+outputs/paste-v4/统一会话篇/body.html
+  s_a5265ecbd4421e::t_11c89ac89987e0 1-51
+outputs/multiscreen-webapp-dist/assets/sankeyDiagram-P5KCCOFB-CMqQQCgV.js
+  s_31cfcf1fa62567::t_2f30206b0900e2 1-40
+outputs/2026-09-14-video-quality-plan.md
+  s_31cfcf1fa62567::t_02795ace8693a4 1-6,11-12
+  s_31cfcf1fa62567::t_a10d13229a3972 7-10
+packages/core/src/domain/live-view/live-view-registry.ts
+  s_31cfcf1fa62567::t_1f178baa343662 26-27
+outputs/webapp-rollback-20260914-135124/assets/index-Cc-RH-Fy.css
+  s_d2928306bbdd2b::t_64ea7f4f5207be 1
+outputs/full-release-20260914/webapp-rollback/assets/diagram-S7CK7UJ4-BpKF0eNs.js
+  s_0443adb846fd5c::t_cc17820b95f614 1-30
+packages/server/package.json
+  s_f9106f99ce82cb::t_a469847e5d4532 5-7
+  s_a5265ecbd4421e::t_2ead14902b13f5 23,30
+outputs/full-release-20260914/core-rollback/domain/session/SessionHistory.test.d.ts
+  s_598eb16b72d68c::t_828b130f6cf7fc 1-2
+scripts/agent-runtime-upgrade-lib.mjs
+  s_6b9e80a52ca62d::t_e38256b6a154c1 293,297,305,452-453,457-464,468-469
+outputs/full-release-20260914/core-rollback/domain/session/SessionHistory.d.ts.map
+  s_598eb16b72d68c::t_1542fac9e1adcf 1
+outputs/mobile-warning-webapp-rollback/assets/chunk-JWPE2WC7-BSrSGLnN.js
+  s_598eb16b72d68c::t_a6387ab29d767e 1
+outputs/webapp-rollback-20260914-135124/assets/pegDiagram-XKGWAZYB-CJxo-PA1.js
+  s_d2928306bbdd2b::t_58204bb589e70e 1
+outputs/history-release-20260914/webapp-dist-rollback/assets/ebnfDiagram-PWID7BFC-C8N7udLX.js
+  s_4f6f31c5c94ec9::t_73d637db29abbc 1
+outputs/full-release-20260914/core-rollback/domain/cron/CronTaskLock.d.ts.map
+  s_598eb16b72d68c::t_9ac8eb00ab8315 1
+outputs/history-release-20260914/webapp-dist-rollback/assets/web-D1VZM26_.js
+  s_4f6f31c5c94ec9::t_732bca55bee0f1 1
+outputs/history-release-20260914/webapp-dist-rollback/assets/mermaid.core-ObuekRdQ.js
+  s_4f6f31c5c94ec9::t_49b4806af919fc 1-312
+outputs/full-release-20260914/core-rollback/infrastructure/index.d.ts.map
+  s_598eb16b72d68c::t_67fb2e76d6cd27 1
+outputs/full-release-20260914/core-rollback/domain/web-console/WebProjectBridge.d.ts.map
+  s_598eb16b72d68c::t_b41a953fb5c368 1
+outputs/mobile-warning-webapp-rollback/assets/chunk-IMKFNOWR-B4kmV-Aw.js
+  s_598eb16b72d68c::t_ae854f42bd7c8d 1-231
+outputs/tui-preview19-release/agentroam/package/bin/agent-tui.mjs
+  s_a5265ecbd4421e::t_141407a24a99a8 1-24
+outputs/webapp-rollback-20260914-135124/assets/App-DyrMWjTc.js
+  s_d2928306bbdd2b::t_257e3b97726e98 1-371
+outputs/full-release-20260914/core-rollback/infrastructure/SQLiteRemoteToolStore.d.ts.map
+  s_598eb16b72d68c::t_364d07a349c22b 1
+outputs/webapp-rollback-20260914-135124/assets/diagram-Z3DM3KII-BJmuTyfN.js
+  s_d2928306bbdd2b::t_191ad850766d98 1-24
+outputs/multiscreen-webapp-dist/assets/diagram-VX7I27RA-0esvu6ay.js
+  s_31cfcf1fa62567::t_70bf7218f28708 1-24
+outputs/full-release-20260914/core-rollback/domain/web-console/WebShellLiveBridge.d.ts
+  s_598eb16b72d68c::t_5238124375a713 1-7
+outputs/full-release-20260914/core-rollback/domain/lsp/entities.d.ts
+  s_598eb16b72d68c::t_e15551fd2bac6c 1-60
+outputs/mobile-warning-webapp-rollback/assets/web-Bz1i8ylE.js
+  s_598eb16b72d68c::t_4be4ca4c82848e 1
+outputs/full-release-20260914/core-rollback/domain/terminal/TerminalSession.test.d.ts.map
+  s_598eb16b72d68c::t_1282e3232ed416 1
+outputs/full-release-20260914/core-rollback/domain/tool/builtin/WebFetchTool.d.ts.map
+  s_598eb16b72d68c::t_c34469f2fbe84a 1
+outputs/webapp-rollback-20260914-135124/assets/cytoscape.esm-C5JX3QLV.js
+  s_d2928306bbdd2b::t_76b4c318fee5a6 1-331
+package.json
+  s_6b9e80a52ca62d::t_665ae0ae0e0441 53-54
+outputs/full-release-20260914/core-rollback/domain/live-view/index.d.ts
+  s_598eb16b72d68c::t_cff38547c9a40d 1-6
+outputs/multiscreen-webapp-dist/assets/cynefinDiagram-5FMLGOSQ-D97CNqB5.js
+  s_31cfcf1fa62567::t_b6efecada2a809 1-62
+outputs/mobile-warning-webapp-rollback/assets/pieDiagram-E7YTZNPT-gYVxllp0.js
+  s_598eb16b72d68c::t_dece9b205df475 1-39
+outputs/history-release-20260914/webapp-dist-rollback/assets/c4Diagram-7LVT6UL2-nV-pwRr3.js
+  s_4f6f31c5c94ec9::t_05f209fbc96a1a 1-38
+packages/desktop/renderer/styles/global.css
+  s_d2928306bbdd2b::t_caa7169c06ad74 3372-3380
+  s_d2928306bbdd2b::t_02590d04bedc8f 1116
+  s_d2928306bbdd2b::t_6350242cf19f55 1102-1115
+outputs/full-release-20260914/core-rollback/domain/lsp/index.d.ts
+  s_598eb16b72d68c::t_4b555b46e800fc 1-4
+outputs/full-release-20260914/core-rollback/infrastructure/live-view/producer-client.d.ts
+  s_598eb16b72d68c::t_0c6b0372afe3bc 1-76
+outputs/webapp-rollback-20260914-135124/assets/arc-Z6fQ7xOi.js
+  s_d2928306bbdd2b::t_81de6887826a62 1
+outputs/mobile-warning-webapp-rollback/assets/chunk-2Q5K7J3B-iXgHp5VI.js
+  s_598eb16b72d68c::t_322eebc498d8ba 1
+packages/cli/src/runtime-manager.ts
+  s_f9106f99ce82cb::t_7cf98efb26f802 67
+  s_f9106f99ce82cb::t_a7ca073600915e 74
+outputs/full-release-20260914/core-rollback/domain/lsp/entities.d.ts.map
+  s_598eb16b72d68c::t_cf48d09ec0b7a6 1
+outputs/full-release-20260914/core-rollback/domain/ai-hub/image-limits.d.ts
+  s_598eb16b72d68c::t_6cd6b3fb3832b6 1-3
+outputs/quality-webapp-dist/assets/pieDiagram-E7YTZNPT-gdQeI_ZA.js
+  s_31cfcf1fa62567::t_c8d94eff0cb037 1-39
+outputs/full-release-20260914/webapp-rollback/assets/sequenceDiagram-WJ2MYXX4-C2mR7CTg.js
+  s_0443adb846fd5c::t_0fe4fda9745d76 1-162
+outputs/full-release-20260914/core-rollback/domain/ai-hub/relay-protocol.d.ts.map
+  s_598eb16b72d68c::t_bcb9c017fe7691 1
+outputs/封面-形态篇-1x1.html
+  s_a85d76eed8a680::t_c3339063f56465 1-41
+outputs/full-release-20260914/core-rollback/infrastructure/SQLiteDatabase.test.d.ts.map
+  s_598eb16b72d68c::t_df715d8ade4326 1
+packages/server/lib/desktop-discovery.mjs
+  s_f9106f99ce82cb::t_48fad51bdf5744 22-23
+outputs/full-release-20260914/core-rollback/infrastructure/SQLiteMCPServerStore.d.ts
+  s_598eb16b72d68c::t_37e0a27a378878 1-13
+outputs/2026-09-14-web-remote-authorization-verification.md
+  s_a5265ecbd4421e::t_3a08edb7a91b8a 1-11
+outputs/full-release-20260914/core-rollback/domain/agent/native-runtime-events.test.d.ts
+  s_598eb16b72d68c::t_f1d21bf8866c4d 1-2
+outputs/full-release-20260914/core-rollback/infrastructure/SQLiteAnonymousWebStore.test.d.ts.map
+  s_598eb16b72d68c::t_ad4e2659d7c377 1
+outputs/full-release-20260914/core-rollback/domain/memory/index.d.ts
+  s_598eb16b72d68c::t_de5968b6dbc7bb 1-2
+outputs/full-release-20260914/core-rollback/domain/file/index.d.ts.map
+  s_598eb16b72d68c::t_6322b2cd8f0e05 1
+packages/cli/src/cloudflared/bundled-asset.ts
+  s_6b9e80a52ca62d::t_6b06d532952db5 3,5,45
+packages/cli/src/args.test.ts
+  s_f9106f99ce82cb::t_885bbf91fdcdc8 68-78
+  s_f9106f99ce82cb::t_ee617742cb00cf 79-85
+outputs/full-release-20260914/core-rollback/domain/tool/builtin/WriteFileTool.d.ts
+  s_598eb16b72d68c::t_d3369235a2f7af 1-32
+outputs/history-pull-gesture.js
+  s_598eb16b72d68c::t_f21f3347fe4b1c 1-24
+outputs/quality-core-dist/index.js
+  s_31cfcf1fa62567::t_a9690bc0b334aa 1-14399
+outputs/multiscreen-webapp-dist/assets/chunk-JWPE2WC7-C8KvHuCC.js
+  s_31cfcf1fa62567::t_4dd1a1f7548192 1
+outputs/mobile-warning-webapp-rollback/assets/sankeyDiagram-P5KCCOFB-D6xaljDV.js
+  s_598eb16b72d68c::t_f170c436eb6fce 1-40
+outputs/full-release-20260914/core-rollback/infrastructure/SQLiteAnonymousWebStore.d.ts.map
+  s_598eb16b72d68c::t_e5098d4d9a53ea 1
+outputs/full-release-20260914/webapp-rollback/assets/chunk-IMKFNOWR-DMHDCycr.js
+  s_0443adb846fd5c::t_031a6aec4782d0 1-231
+outputs/full-release-20260914/core-rollback/domain/tool/permissions.test.d.ts.map
+  s_598eb16b72d68c::t_f8a974bfae0d43 1
+outputs/full-release-20260914/webapp-rollback/agentroam-icon.svg
+  s_0443adb846fd5c::t_bce9bc19cc7bd8 1-6
+packages/desktop/main/agent-runtime/native-processes.test.ts
+  s_31cfcf1fa62567::t_6b2e930fa52c60 69,79
+outputs/mp-template-v4/generated/agentroam-生态篇/preview.html
+  s_2e0fbeef5a43e4::t_e60748df9b427d 1-84
+scripts/audit-tui-tarball.mjs
+  s_a5265ecbd4421e::t_675f38f44b3dc8 4,17
+  s_6b9e80a52ca62d::t_b96fee60464eaa 18
+outputs/full-release-20260914/core-rollback/infrastructure/SQLiteSettingsStore.d.ts.map
+  s_598eb16b72d68c::t_eacfb1a3784823 1
+outputs/full-release-20260914/core-rollback/domain/tool/checkpoints.d.ts.map
+  s_598eb16b72d68c::t_e310f87afb5f64 1
+outputs/full-release-20260914/core-rollback/domain/web-console/WebProjectBridge.test.d.ts.map
+  s_598eb16b72d68c::t_2a62f241a8790e 1
+outputs/full-release-20260914/core-rollback/domain/update/update-checker.test.d.ts
+  s_598eb16b72d68c::t_ba5b7606e0decd 1-2
+outputs/pwa-release-20260914-200001/git-status-before.txt
+  s_6b9e80a52ca62d::t_acad03a98e3bb1 1-235
+outputs/webapp-rollback-20260914-135124/pcm-audio-worklet.js
+  s_d2928306bbdd2b::t_9ec488deef938c 1-126
+outputs/quality-webapp-dist/assets/cynefin-OW5HDTMX-Bdaw-oix.js
+  s_31cfcf1fa62567::t_fc3585ae8f81ea 1-178
+outputs/full-release-20260914/core-rollback/domain/remote-tools/RemoteToolStore.d.ts.map
+  s_598eb16b72d68c::t_affc6c7a26b52e 1
+outputs/webapp-rollback-20260914-135124/assets/timeline-definition-24CTP7MA-LuuvyONr.js
+  s_d2928306bbdd2b::t_efbe7d8bcff572 1-120
+outputs/full-release-20260914/core-rollback/domain/tool/builtin/GrepTool.d.ts
+  s_598eb16b72d68c::t_b1d5ef49c95b6b 1-32
+outputs/webapp-rollback-20260914-135124/assets/swimlanes-42K2YHIH-BSuzBQcW.js
+  s_d2928306bbdd2b::t_c5d87423f6838a 1
+packages/server/ws-server.mjs
+  s_f9106f99ce82cb::t_9637bd83a8e839 967
+  s_f9106f99ce82cb::t_3647c7c6b27ba7 1229-1232
+  s_a5265ecbd4421e::t_0c0ce6a98f9dc9 1242-1246
+  s_f9106f99ce82cb::t_fff602fbb75186 1264
+  s_f9106f99ce82cb::t_14d064e65c78ea 1157,1159,1263,1265-1272
+  s_a5265ecbd4421e::t_4fc74fb8d02516 2,1155-1156,1162,1262
+  s_f9106f99ce82cb::t_48fad51bdf5744 3,1153-1154,1161,1163,1175-1180,1204,1277,1289-1290
+  s_f9106f99ce82cb::t_0ad3712eb0ed5b 963,969,971,977
+  s_f9106f99ce82cb::t_7cf98efb26f802 1151-1152
+outputs/full-release-20260914/webapp-rollback/assets/flowDiagram-HODETNUW-2La-0y3G.js
+  s_0443adb846fd5c::t_25a06f7e714fa8 1-168
+outputs/2026-09-14-pwa-plan.md
+  s_f9106f99ce82cb::t_1b01dde12dcb8c 1-11
+outputs/full-release-20260914/webapp-rollback/assets/cose-bilkent-JH36ORCC-7zFDRzzz.js
+  s_0443adb846fd5c::t_a9e3e7cd1a1881 1
+outputs/history-release-20260914/webapp-dist-rollback/assets/linear-AqiGk0aW.js
+  s_4f6f31c5c94ec9::t_d7990138eb4b4a 1
+outputs/full-release-20260914/core-rollback/domain/session/SessionQueryIndexCache.test.d.ts.map
+  s_598eb16b72d68c::t_bcdc15ec259b56 1
+outputs/full-release-20260914/core-rollback/domain/plugin/PluginManager.d.ts.map
+  s_598eb16b72d68c::t_18a05c7c981c16 1
+outputs/multiscreen-webapp-dist/assets/erDiagram-RLTQ6QDP-B1NllKSC.js
+  s_31cfcf1fa62567::t_a4574c79d5754b 1-99
+outputs/multiscreen-webapp-dist/assets/vennDiagram-4TSXK5OY-Vklm1lEj.js
+  s_31cfcf1fa62567::t_57ffdc2cfd41ea 1-34
+outputs/full-release-20260914/webapp-rollback/assets/stateDiagram-D77RDMKH-C7boUJkF.js
+  s_0443adb846fd5c::t_6508f21fa3a800 1
+outputs/webapp-rollback-20260914-135124/assets/defaultLocale-DX6XiGOO.js
+  s_d2928306bbdd2b::t_d1f14163440475 1
+outputs/full-release-20260914/core-rollback/domain/live-view/frame-pacing.test.d.ts
+  s_598eb16b72d68c::t_ababf0e93256fc 1-2
+outputs/multiscreen-webapp-dist/assets/chunk-2Q5K7J3B-BwWwJxbc.js
+  s_31cfcf1fa62567::t_63b145a6feaf3f 1
+outputs/quality-webapp-dist/assets/classDiagram-v2-VYDZK3BY-tXCKbCXk.js
+  s_31cfcf1fa62567::t_6f54e540a0d8ce 1
+outputs/webapp-rollback-20260914-135124/assets/infoDiagram-27XIBGKW-C6xrD6h2.js
+  s_d2928306bbdd2b::t_2abb7d93786ee1 1-2
+outputs/quality-webapp-dist/assets/App-CMOzoP5A.css
+  s_31cfcf1fa62567::t_f1b5337afb1674 1
+outputs/video-encoder-check/main.swift
+  s_a5265ecbd4421e::t_8f29567037eca9 1-11,13-18
+  s_a5265ecbd4421e::t_51147b8cf1781a 12
+outputs/full-release-20260914/core-rollback/domain/lsp/LSPClient.d.ts.map
+  s_598eb16b72d68c::t_900960ca1490f9 1
+outputs/mobile-warning-webapp-rollback/assets/abnfDiagram-VCTEODGH-CLRan2OY.js
+  s_598eb16b72d68c::t_fa58c99828bc2c 1
+outputs/full-release-20260914/core-rollback/domain/tool/builtin/TodoTool.d.ts
+  s_598eb16b72d68c::t_c26ec905c3342e 1-131
+outputs/tui-preview19-release/agentroam/package/install/install-agentroam.ps1
+  s_a5265ecbd4421e::t_8abccf2c7a6bda 1-255
+outputs/paste-v4/统一会话篇/parts/a4.json
+  s_a5265ecbd4421e::t_9da9efe49ed531 1
+outputs/full-release-20260914/core-rollback/domain/agent/AgentFactory.d.ts.map
+  s_598eb16b72d68c::t_f04285d98154b1 1
+packages/core/src/infrastructure/live-view/producer-client.ts
+  s_a5265ecbd4421e::t_8abbc9a5a88048 268
+  s_a5265ecbd4421e::t_527d841025e7dc 32,48,257-264
+  s_f9106f99ce82cb::t_fff602fbb75186 1-3,36,55,100,106,244-256,265-267
+  s_f9106f99ce82cb::t_568379192a30cd 53,73,88,101
+outputs/full-release-20260914/core-rollback/domain/session/index.d.ts.map
+  s_598eb16b72d68c::t_d3dbfb12039f6b 1
+outputs/full-release-20260914/core-rollback/domain/mcp/MCPManager.d.ts.map
+  s_598eb16b72d68c::t_ca7bdea739044f 1
+outputs/multiscreen-webapp-dist/assets/swimlanesDiagram-VR7AAH4N-Cv6lzrS_.js
+  s_31cfcf1fa62567::t_8298448f4c484c 1-8
+outputs/history-release-20260914/webapp-dist-rollback/assets/channel-LcjIawtf.js
+  s_4f6f31c5c94ec9::t_66276cbb9f6067 1
+packages/server/tsconfig.json
+  s_598eb16b72d68c::t_61229092dcf498 36-37
+outputs/full-release-20260914/core-rollback/infrastructure/live-view/frame-packet.test.d.ts.map
+  s_598eb16b72d68c::t_3956710adbb731 1
+outputs/full-release-20260914/core-rollback/infrastructure/SQLitePluginStore.d.ts.map
+  s_598eb16b72d68c::t_5949a3121b1bd6 1
+outputs/full-release-20260914/webapp-rollback/assets/kanban-definition-UXKFOSKX-D8dt1cZe.js
+  s_0443adb846fd5c::t_cf0a2a964f1a9a 1-89
+outputs/2026-09-14-video-quality-verification.md
+  s_31cfcf1fa62567::t_a10d13229a3972 1-16
+outputs/history-release-20260914/webapp-dist-rollback/assets/chunk-5VM5RSS4-CyPwsJdN.js
+  s_4f6f31c5c94ec9::t_44ff9cb91d008b 1-15
+outputs/full-release-20260914/core-rollback/domain/skill/index.d.ts
+  s_598eb16b72d68c::t_f730b4b7886be6 1-2
+outputs/multiscreen-webapp-dist/assets/infoDiagram-27XIBGKW-B8pG8BRL.js
+  s_31cfcf1fa62567::t_5c9d09f8030326 1-2
+outputs/full-release-20260914/core-rollback/infrastructure/SQLiteDatabase.d.ts
+  s_598eb16b72d68c::t_5b5ed8060e4453 1-29
+outputs/full-release-20260914/core-rollback/domain/live-view/frame-pacing.test.d.ts.map
+  s_598eb16b72d68c::t_f32caa07b2b098 1
+packages/desktop/renderer/components/BrowserLivePanel.tsx
+  s_d2928306bbdd2b::t_6e8fe743799b5d 4,100-133,704,715-717
+  s_a5265ecbd4421e::t_4fc74fb8d02516 1-2,98,712
+  s_31cfcf1fa62567::t_7353b87fe9a011 136,635-643,647-649,748-752,754-757,763-764,789
+  s_31cfcf1fa62567::t_409a5e6afdae9e 137-138,396-400,575,579,594,598,622-634,646,652,753,758-762,765
+  s_a5265ecbd4421e::t_3794f7ac54358f 418-439
+  s_31cfcf1fa62567::t_1c1fefec872c88 645
+outputs/full-release-20260914/core-rollback/infrastructure/SQLiteSettingsStore.d.ts
+  s_598eb16b72d68c::t_d1aa743d9105d5 1-11
+outputs/mp-template-v4/articles/agentroam-统一会话篇.json
+  s_f9106f99ce82cb::t_fc9ba7689e8de1 1-266
+outputs/full-release-20260914/core-rollback/domain/web-console/WebBrowserBridge.d.ts.map
+  s_598eb16b72d68c::t_1558d91df0b815 1
+outputs/aihub-setup-preview.html
+  s_d2928306bbdd2b::t_06656d19787e4e 1
+outputs/history-release-20260914/webapp-dist-rollback/assets/stateDiagram-v2-MP3YSRHH-QqTtFkaB.js
+  s_4f6f31c5c94ec9::t_1da1c3d9f5cef1 1
+outputs/webapp-rollback-20260914-135124/assets/gitGraphDiagram-WWUBYQGX-2PUJpoBt.js
+  s_d2928306bbdd2b::t_8415d0a141da49 1-106
+packages/webapp/src/mobile/presentation/connection-screen.tsx
+  s_f9106f99ce82cb::t_5d56c68e52e06d 10,17,21-27,37,47-52,54
+packages/mobile/ios/App/CapApp-SPM/Package.swift
+  s_f9106f99ce82cb::t_02309136975c8e 14-16,23-25
+outputs/webapp-rollback-20260914-135124/assets/chunk-IMKFNOWR-WL7eWGCS.js
+  s_d2928306bbdd2b::t_80be4501babda2 1-231
+outputs/full-release-20260914/core-rollback/domain/auth/index.d.ts
+  s_598eb16b72d68c::t_a575749dbd4aa5 1-5
+outputs/full-release-20260914/core-rollback/domain/session/SessionPermission.d.ts
+  s_598eb16b72d68c::t_3e4035c4bcfa72 1-23
+outputs/multiscreen-webapp-dist/assets/arc-DtGDGshY.js
+  s_31cfcf1fa62567::t_27536e15300a19 1
+outputs/webapp-rollback-20260914-135124/assets/c4Diagram-7LVT6UL2-DWZknAcT.js
+  s_d2928306bbdd2b::t_1cfc98ac2e06b9 1-38
+outputs/full-release-20260914/core-rollback/application/index.d.ts
+  s_598eb16b72d68c::t_a779975ed1e5ee 1-3
+outputs/history-release-20260914/webapp-dist-rollback/assets/chunk-SVP7TREG-BTKM6mUi.js
+  s_4f6f31c5c94ec9::t_473c57bf985ca7 1-88
+outputs/full-release-20260914/core-rollback/infrastructure/RunCheckpointStore.d.ts
+  s_598eb16b72d68c::t_828cd61ef3f240 1-9
+outputs/history-release-20260914/webapp-dist-rollback/assets/timeline-definition-24CTP7MA-BSbIV3mK.js
+  s_4f6f31c5c94ec9::t_5351ed1edd6fc8 1-120
+outputs/restart-20260914/verification.md
+  s_f9106f99ce82cb::t_c761cbe5143dbe 1-11
+outputs/full-release-20260914/core-rollback/domain/upload/index.d.ts
+  s_598eb16b72d68c::t_39a55b000c6598 1-2
+outputs/quality-webapp-dist/assets/pegDiagram-XKGWAZYB-BClmeSlk.js
+  s_31cfcf1fa62567::t_c6a5e653d554b5 1
+outputs/full-release-20260914/webapp-rollback/assets/requirementDiagram-BXWQKSXE-CTk0HpL4.js
+  s_0443adb846fd5c::t_970d24d0106f96 1-84
+outputs/full-release-20260914/core-rollback/domain/agent/ContextUsageEstimator.d.ts
+  s_598eb16b72d68c::t_2ada981abb1d0f 1-15
+outputs/mobile-warning-webapp-rollback/pcm-audio-worklet.js
+  s_598eb16b72d68c::t_20f9a769c90ed5 1-126
+outputs/full-release-20260914/core-rollback/domain/live-view/frame-pacing.d.ts
+  s_598eb16b72d68c::t_8bd35a3ca596ec 1-24
+packages/mobile/android/variables.gradle
+  s_f9106f99ce82cb::t_606f1818c62c7b 2,16
+outputs/full-release-20260914/core-rollback/domain/tool/builtin/ReadFileTool.d.ts.map
+  s_598eb16b72d68c::t_866cab24eec434 1
+outputs/full-release-20260914/core-rollback/domain/tool/ToolRegistry.d.ts.map
+  s_598eb16b72d68c::t_41ade1bb05d989 1
+outputs/history-release-20260914/webapp-dist-rollback/assets/architectureDiagram-5GKGNRK7-CojKcKSu.js
+  s_4f6f31c5c94ec9::t_9e05461a3af8f9 1-36
+outputs/full-release-20260914/core-rollback/domain/session/SessionTitle.d.ts
+  s_598eb16b72d68c::t_1a395a0cab7780 1-9
+outputs/tui-preview19-release/agentroam/package/bin/runtime-policy.mjs
+  s_a5265ecbd4421e::t_aba86a360d2266 1-37
+outputs/mobile-warning-webapp-rollback/assets/diagram-UQ7AKVKN-Ne6fV1Za.js
+  s_598eb16b72d68c::t_2f669f9dfed2c7 1-41
+outputs/multiscreen-webapp-dist/assets/defaultLocale-DX6XiGOO.js
+  s_31cfcf1fa62567::t_ea21595a9a7816 1
+packages/server/lib/pwa-assets.test.ts
+  s_f9106f99ce82cb::t_7b1090595c9955 3-6,10-25
+  s_f9106f99ce82cb::t_077ec8d63109eb 1-2,7-9,26-27,33,35,38-46,48-49
+  s_f9106f99ce82cb::t_15ce9e771334e7 28-32,34,36-37,47
+outputs/full-release-20260914/webapp-rollback/assets/pieDiagram-E7YTZNPT-DTIU3bMC.js
+  s_0443adb846fd5c::t_ff486b182260c1 1-39
+outputs/full-release-20260914/core-rollback/domain/context/index.d.ts
+  s_598eb16b72d68c::t_3c0af14993f4b5 1-2
+outputs/quality-webapp-dist/assets/cytoscape.esm-C5JX3QLV.js
+  s_31cfcf1fa62567::t_93b36dc8c58b3e 1-331
+outputs/full-release-20260914/webapp-rollback/assets/ganttDiagram-EL5Y4UJY-CfyYuV6c.js
+  s_0443adb846fd5c::t_082b3e0b2c1a32 1-292
+outputs/full-release-20260914/webapp-rollback/assets/abnfDiagram-VCTEODGH-CmRmA2Ku.js
+  s_0443adb846fd5c::t_ec74d1821fe5bd 1
+packages/desktop/renderer/SharedServiceRoot.tsx
+  s_a5265ecbd4421e::t_92d7b56cabe0ac 1,9-16,38
+outputs/webapp-rollback-20260914-135124/assets/mindmap-definition-YA3MSWOX-LXoiaFDR.js
+  s_d2928306bbdd2b::t_10f03a38a49e45 1-96
+outputs/full-release-20260914/core-rollback/infrastructure/SQLiteLSPServerStore.d.ts.map
+  s_598eb16b72d68c::t_2c63404800a907 1
+outputs/webapp-rollback-20260914-135124/assets/ishikawaDiagram-5VMMS53U-DEj_UahS.js
+  s_d2928306bbdd2b::t_7d3653621ed58c 1-70
+outputs/full-release-20260914/core-rollback/domain/live-view/index.d.ts.map
+  s_598eb16b72d68c::t_c0667df77beee1 1
+packages/cli/src/device-pairing.test.ts
+  s_f9106f99ce82cb::t_077ec8d63109eb 8-10
+  s_f9106f99ce82cb::t_1843b0f9262b19 1-2,13-18,20-29,31
+  s_f9106f99ce82cb::t_180075468c1228 3-7,11-12,19,30
+packages/server/public/pwa/manifest.webmanifest
+  s_f9106f99ce82cb::t_0b145156372ddd 1-16
+outputs/2026-09-14-test-no-pairing-verification.md
+  s_f9106f99ce82cb::t_210227a8263eb4 1-9
+outputs/mp-template-v4/generated/agentroam-生态篇/body.html
+  s_2e0fbeef5a43e4::t_d6332eb3652328 1-84
+outputs/webapp-rollback-20260914-135124/assets/erDiagram-RLTQ6QDP-pcave3he.js
+  s_d2928306bbdd2b::t_4ac9592c7257df 1-99
+outputs/quality-webapp-dist/assets/timeline-definition-24CTP7MA-Bcxr4Nca.js
+  s_31cfcf1fa62567::t_40298f0c385cc1 1-120
+outputs/tui-preview19-release/agentroam/package/bin/agentroam.mjs
+  s_a5265ecbd4421e::t_49282211d39ccc 1-14
+outputs/webapp-rollback-20260914-135124/assets/sizeCapture-INFHLROL-BNnZbTDn.js
+  s_d2928306bbdd2b::t_12a09ea1a22e0a 1
+outputs/full-release-20260914/core-rollback/domain/tool/builtin/index.d.ts
+  s_598eb16b72d68c::t_4b4ee2b383b28b 1-20
+outputs/webapp-rollback-20260914-135124/assets/railroadDiagram-O6MQD6OU-XwN5jZ00.js
+  s_d2928306bbdd2b::t_b7d6e7d76454a6 1
+outputs/webapp-rollback-20260914-135124/assets/sequenceDiagram-WJ2MYXX4-CikPWYWu.js
+  s_d2928306bbdd2b::t_ed6bb93afaf4e5 1-162
+outputs/full-release-20260914/core-rollback/domain/tool/builtin/WaitAgentTool.d.ts
+  s_598eb16b72d68c::t_38f2e500f976cc 1-36
+scripts/audit-cli-tarball.mjs
+  s_a5265ecbd4421e::t_fee1c1ddb9cce9 55
+  s_6b9e80a52ca62d::t_62bd95f48c9edb 3,19,28-29
+outputs/quality-webapp-dist/assets/requirementDiagram-BXWQKSXE-D8ddnGOf.js
+  s_31cfcf1fa62567::t_b03138cf0ca478 1-84
+outputs/full-release-20260914/core-rollback/domain/context/ContextLoader.d.ts.map
+  s_598eb16b72d68c::t_fa69c15ba3936b 1
+packages/webapp/src/main.tsx
+  s_f9106f99ce82cb::t_5d56c68e52e06d 27-28,41,47-48,57,73,76,78-82,91-97,109
+  s_f9106f99ce82cb::t_e10bfb872910d0 169
+  s_a5265ecbd4421e::t_4fc74fb8d02516 2,118
+  s_f9106f99ce82cb::t_665cd135fb5b99 42-46
+  s_a5265ecbd4421e::t_abc38ae993bbb5 1
+  s_f9106f99ce82cb::t_fff602fbb75186 32,125-128
+  s_f9106f99ce82cb::t_1ec3abab6200dd 122
+outputs/multiscreen-webapp-dist/assets/cynefin-OW5HDTMX-DdebKgno.js
+  s_31cfcf1fa62567::t_b72e766c587de9 1-178
+outputs/quality-webapp-dist/assets/stateDiagram-v2-MP3YSRHH-_leUd3mO.js
+  s_31cfcf1fa62567::t_2de6dc93530269 1
+outputs/full-release-20260914/core-rollback/infrastructure/SQLiteAgentStore.d.ts.map
+  s_598eb16b72d68c::t_027b5ac09645a4 1
+outputs/full-release-20260914/core-rollback/infrastructure/HarnessObservation.d.ts.map
+  s_598eb16b72d68c::t_63f1bdacd705d0 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "ecdb3f320f9275efb870126d20f9930616b52c6f",
+  "prompts": {},
+  "sessions": {
+    "s_0443adb846fd5c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a09f6a-a2a8-76f0-bd6a-eb73c5d5f417",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_0db8d86a446f93": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a09fa1-2802-72a3-b069-6f75c1ed66ff",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_2e0fbeef5a43e4": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a09ec6-5f34-7340-95ba-480c414acac8",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_31cfcf1fa62567": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a09fc4-b1f2-72e1-a9d4-eb6f40c45b76",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_4f6f31c5c94ec9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a09f6d-4cca-7d33-92c9-149d3fd0239f",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_598eb16b72d68c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a09ff0-5e5f-76e0-aeb9-e76de04d28f0",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_6b9e80a52ca62d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a09f40-ec7f-74c0-a008-4264fcd09dc6",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_6ebcb2987963b9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a09da9-0e50-7451-962b-064e62724d4a",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_a5265ecbd4421e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a09e6c-d220-7272-8595-a1f1a940e878",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_a85d76eed8a680": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a08e54-b7ba-7033-b3b2-98d17bc0bca9",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_d2928306bbdd2b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a09e71-1874-7ba0-ab95-7a112477aa83",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_f9106f99ce82cb": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a09da2-c795-7822-b91c-39a71973225d",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

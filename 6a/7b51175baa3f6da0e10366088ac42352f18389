@@ -1,0 +1,19 @@
+docs/superpowers/specs/2026-09-01-codex-occupied-session-fork-design.md
+  s_699599e643fb87::t_62401dc026e55f 1-86
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "6a7b51175baa3f6da0e10366088ac42352f18389",
+  "prompts": {},
+  "sessions": {
+    "s_699599e643fb87": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a05c58-d318-7150-854f-ae72320bf0b5",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

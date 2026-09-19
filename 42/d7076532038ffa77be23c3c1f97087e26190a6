@@ -1,0 +1,53 @@
+packages/sdk/index.html
+  s_2bf2443dc5cf02::t_9c92163aba7541 1-23
+packages/sdk/src/store/ChatStore.ts
+  s_2bf2443dc5cf02::t_9c92163aba7541 1-170
+bun.lock
+  s_2bf2443dc5cf02::t_9c92163aba7541 37-47,68-69,172-175,284-285,458-462
+packages/sdk/src/styles/theme.ts
+  s_2bf2443dc5cf02::t_9c92163aba7541 1-56
+package.json
+  s_2bf2443dc5cf02::t_9c92163aba7541 8-9,16,18
+packages/sdk/src/components/AgentChat.ts
+  s_2bf2443dc5cf02::t_9c92163aba7541 1-589
+packages/server/app/api/agent-host.ts
+  s_2bf2443dc5cf02::t_9c92163aba7541 4,8-9,19-41,84-103,116-155
+packages/sdk/vite.config.ts
+  s_2bf2443dc5cf02::t_9c92163aba7541 1-15
+packages/server/app/api/auth/verify/route.ts
+  s_2bf2443dc5cf02::t_9c92163aba7541 1-31
+tsconfig.json
+  s_2bf2443dc5cf02::t_9c92163aba7541 19-20,23
+packages/server/app/api/agent/answer/route.ts
+  s_2bf2443dc5cf02::t_9c92163aba7541 1-39
+packages/sdk/src/components/AgentFab.ts
+  s_2bf2443dc5cf02::t_9c92163aba7541 1-60
+packages/sdk/package.json
+  s_2bf2443dc5cf02::t_9c92163aba7541 1-27
+packages/server/next.config.js
+  s_2bf2443dc5cf02::t_9c92163aba7541 12-23
+packages/sdk/src/index.ts
+  s_2bf2443dc5cf02::t_9c92163aba7541 1-35
+packages/sdk/src/client/AgentClient.ts
+  s_2bf2443dc5cf02::t_9c92163aba7541 1-152
+packages/sdk/tsconfig.json
+  s_2bf2443dc5cf02::t_9c92163aba7541 1-19
+packages/sdk/src/client/types.ts
+  s_2bf2443dc5cf02::t_9c92163aba7541 1-57
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.7",
+  "base_commit_sha": "42d7076532038ffa77be23c3c1f97087e26190a6",
+  "prompts": {},
+  "sessions": {
+    "s_2bf2443dc5cf02": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f190e-68fe-7e50-968b-86e9a489cdea",
+        "model": "gpt-5.5"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

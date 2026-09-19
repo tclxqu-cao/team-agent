@@ -1,0 +1,68 @@
+packages/core/src/domain/tool/builtin/StrReplaceTool.ts
+  s_e9c101e8dc5d00::t_85642d5bf49cec 1-79
+packages/core/src/domain/model/providers/OpenAIProvider.ts
+  s_e9c101e8dc5d00::t_85ca6b7ed15433 174-180
+packages/core/src/domain/lsp/LSPManager.ts
+  s_e9c101e8dc5d00::t_4e408f73ee354d 1-41
+packages/core/src/infrastructure/SQLiteDatabase.ts
+  s_e9c101e8dc5d00::t_8502d4c95aee4f 128-138
+  s_e9c101e8dc5d00::t_076d59a4fc1c87 148-164
+packages/core/src/domain/tool/builtin/GlobTool.ts
+  s_e9c101e8dc5d00::t_9009a1d91141c0 1-156
+packages/core/src/index.ts
+  s_e9c101e8dc5d00::t_51889ecffd57d5 30
+packages/core/src/domain/context/ContextAssembler.ts
+  s_e9c101e8dc5d00::t_92f65e5d8370b2 9,11,13-49
+packages/core/src/domain/lsp/index.ts
+  s_e9c101e8dc5d00::t_a5bd5def52484e 1-3
+packages/core/src/infrastructure/SQLiteLSPServerStore.ts
+  s_e9c101e8dc5d00::t_6380006e1dcc87 1-73
+packages/core/src/domain/lsp/entities.ts
+  s_e9c101e8dc5d00::t_2e1e42f803ef8f 1-55
+packages/core/src/domain/tool/builtin/LspTools.ts
+  s_e9c101e8dc5d00::t_c927ca94dc6698 1-245
+package.json
+  s_e9c101e8dc5d00::t_67d140d96d74e1 11
+packages/core/src/domain/lsp/LSPClient.ts
+  s_e9c101e8dc5d00::t_0612f1b6b3e01f 1-222
+packages/core/src/domain/skill/SkillLoader.ts
+  s_e9c101e8dc5d00::t_135d89c1cae426 143-158
+  s_e9c101e8dc5d00::t_5d65ba84ca0d0b 24-29,59
+  s_e9c101e8dc5d00::t_696facce9cc4e7 125-128
+  s_e9c101e8dc5d00::t_a9472985518205 141-142
+packages/core/src/infrastructure/index.ts
+  s_e9c101e8dc5d00::t_c62a2ea68eafca 14
+packages/core/src/domain/agent/entities.ts
+  s_e9c101e8dc5d00::t_a9fd444646d24c 69
+  s_e9c101e8dc5d00::t_64fa131cf87ca4 19
+  s_e9c101e8dc5d00::t_3b9c4ffe083858 43
+packages/core/src/domain/model/entities.ts
+  s_e9c101e8dc5d00::t_a9fd444646d24c 6-7
+packages/core/src/domain/tool/builtin/index.ts
+  s_e9c101e8dc5d00::t_a76646aaab6339 12
+  s_e9c101e8dc5d00::t_be1518c6e1fbc5 8,21,32
+  s_e9c101e8dc5d00::t_ecb8f64dad6c16 3,16,27
+packages/core/src/domain/agent/AgentLoop.ts
+  s_e9c101e8dc5d00::t_9b98fd8d3ba285 68-75
+  s_e9c101e8dc5d00::t_7bc45c5329c45f 76-96
+  s_e9c101e8dc5d00::t_6769d13e26a004 20
+  s_e9c101e8dc5d00::t_d7709c3e43b828 202-220,227-228
+packages/core/src/domain/model/providers/AnthropicProvider.ts
+  s_e9c101e8dc5d00::t_85ca6b7ed15433 182-191
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.9",
+  "base_commit_sha": "4748e929bfdd0e1f78751eb0f54dcdd525d6b5fb",
+  "prompts": {},
+  "sessions": {
+    "s_e9c101e8dc5d00": {
+      "agent_id": {
+        "tool": "github-copilot",
+        "id": "11d213b3-ae32-42cd-9cc4-62389d817223",
+        "model": "gpt-4.1"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

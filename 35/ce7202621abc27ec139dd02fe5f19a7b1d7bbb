@@ -1,0 +1,20 @@
+docs/superpowers/specs/2026-09-05-agentroam-idempotent-installer-upgrade-design.md
+  s_c3d5b1753265d1::t_443b89e2518f98 27,43
+  s_c3d5b1753265d1::t_438b1f06ed9a30 1-26,28-42,44-67
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "35ce7202621abc27ec139dd02fe5f19a7b1d7bbb",
+  "prompts": {},
+  "sessions": {
+    "s_c3d5b1753265d1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06bb1-1112-7a71-bc86-5f4332503821",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

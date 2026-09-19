@@ -1,0 +1,481 @@
+packages/desktop/renderer/lib/agent-workspace-cache.test.ts
+  s_e6bf15340ec809::t_6a90115bbdf399 6,121,125,127,131-139,171
+  s_43f20775d8fba6::t_d1273b7baa594b 5
+  s_43f20775d8fba6::t_53c7d7ba936281 99,108,144-170
+  s_6c6df0e80bfd76::t_971ed8d7b06124 122-124,126,128-130
+  s_e6bf15340ec809::t_0243a68b9fa341 140
+packages/core/src/domain/session/SessionGoals.ts
+  s_12e77c4e3d7afe::t_6f82e3c98c24a2 2-8,19-21,75-105,108-111,116-117,120,122,124-130,133-135,139-152,158,160-161,164-175,177-187,189-220,239-245,255-259,279-281,301-318
+  s_12e77c4e3d7afe::t_fa20067106d01e 261-269
+  s_12e77c4e3d7afe::t_67419981694067 176,188
+  s_12e77c4e3d7afe::t_7d0640ddf82454 260
+packages/desktop/main/agent-runtime/codex-session-compatibility.test.ts
+  s_7d67bb0a0da4f9::t_27d9daa65a5116 1-157,159-160,162-163
+  s_7d67bb0a0da4f9::t_6c195da628dd0d 158,161
+packages/webapp/src/infrastructure/http/http-client.ts
+  s_12e77c4e3d7afe::t_922935425382c5 12-13,16,67,69,72,74
+packages/webapp/src/infrastructure/http/agent-http-gateway.test.ts
+  s_12e77c4e3d7afe::t_a1115f37408310 58,60-63,94,142-167
+  s_12e77c4e3d7afe::t_82f4023b2d001a 358-367
+  s_12e77c4e3d7afe::t_c15985689241c0 100-141,169,199,369
+  s_12e77c4e3d7afe::t_2b4680759aeaa7 171-198,368
+  s_12e77c4e3d7afe::t_f477061aa50042 168
+  s_12e77c4e3d7afe::t_1fac0b1fbd1457 170
+  s_12e77c4e3d7afe::t_d9c650880e8723 200
+  s_12e77c4e3d7afe::t_e96f1381e026ba 370
+packages/desktop/renderer/components/ChatView.tsx
+  s_2b9c01178f1225::t_1e9d548807ad4e 117,119-120,122,127-172,319
+  s_12e77c4e3d7afe::t_0b995f810bb415 768,776,1362,1966,1977,2031,2278
+  s_12e77c4e3d7afe::t_abc73ce928ae98 1379,2043-2045
+  s_12e77c4e3d7afe::t_496baba296516f 1694,1702-1710
+  s_12e77c4e3d7afe::t_6a94663e09e134 36-38,41-42,522,527-533
+  s_12e77c4e3d7afe::t_3f31d55a0ab35f 454,1696-1701,2299
+  s_d34aca02d06cfb::t_05d167244c6b8f 1358,1367,1369-1371,1375
+  s_12e77c4e3d7afe::t_ba271e42db2b0c 1840,1844
+  s_6c6df0e80bfd76::t_028ac719963674 339-342,1800-1802
+  s_253276a7e80601::t_c5700ecc33f0db 3505-3522
+  s_12e77c4e3d7afe::t_d1c6a3f071895a 2289-2291,2298,2300-2319
+  s_12e77c4e3d7afe::t_6fd01186df1c67 1838-1839,1841-1843,1845-1846,1868,1872-1884,1898,1900-1914,1917,1922-1936,1944
+  s_12e77c4e3d7afe::t_922935425382c5 54,478,1688-1693,1695,1711-1715,2288,3980-3981,4001
+  s_08516d7e2ba3a3::t_bdc75fd7f06162 523-526
+  s_c7581724bdfb98::t_75a9e899f3c9a6 51,453
+  s_12e77c4e3d7afe::t_027a23a100a8a7 39-40
+  s_500b68242d4da4::t_e31ed524121226 4,321-325,1625-1644,2548,2939-2960,2963-2966,2968,2970-2975,2993
+  s_12e77c4e3d7afe::t_21cac52e85df8b 1093-1096,1175-1178,1184
+  s_d34aca02d06cfb::t_91fa19e3ddfebf 1368
+  s_7d67bb0a0da4f9::t_9f14cbb8598a81 450-451,456-462,1032-1033,1051-1052,1083,1128-1130,3133-3153,3803
+  s_d34aca02d06cfb::t_303b9f8e0fde6f 1376
+packages/desktop/main/agent-runtime/codex-runtime-adapter.test.ts
+  s_e6bf15340ec809::t_2c686f457abff5 1228-1246
+docs/superpowers/plans/2026-09-04-codex-cross-version-session-compatibility.md
+  s_7d67bb0a0da4f9::t_9ba4fdc054f73e 91,95
+  s_7d67bb0a0da4f9::t_acb65ccaaf4009 113,117
+  s_7d67bb0a0da4f9::t_e800009adaf182 168
+  s_7d67bb0a0da4f9::t_fb15429ce08a8c 63,67,71,75,158,162
+  s_7d67bb0a0da4f9::t_94bb3244897fea 121
+  s_7d67bb0a0da4f9::t_9f14cbb8598a81 137,141,145
+  s_7d67bb0a0da4f9::t_b495072a1e683b 99
+  s_7d67bb0a0da4f9::t_96d6824dd9f10c 1-33,35-48,50-62,64-66,68-70,72-74,76-90,92-94,96-98,100-112,114-116,118-120,122-136,138-140,142-144,146-157,159-161,163-167,169-176
+  s_7d67bb0a0da4f9::t_9c8e569ec08580 34,49
+packages/desktop/main/agent-host-run-state.test.ts
+  s_500b68242d4da4::t_009837801d3516 28,37-68
+packages/desktop/renderer/lib/markdown-links.ts
+  s_2b9c01178f1225::t_1e9d548807ad4e 6-9,14,41-44,49-51,61-65,81,103-110
+packages/desktop/main/agent-runtime/codex-session-disk-catalog.bench.test.ts
+  s_7d67bb0a0da4f9::t_fb15429ce08a8c 1-71
+packages/desktop/renderer/App.tsx
+  s_6c6df0e80bfd76::t_028ac719963674 766-771,799-801,803-808,810,1867-1869,1876
+  s_8ae583e6ee5ec3::t_f67f83f06e1f78 3,184-188,895-898,900-903,905-935,1376-1377,1449-1458,1461-1463,1627-1628,1631,1633-1634,1638-1640,1647-1657
+  s_8ae583e6ee5ec3::t_598795779507cc 899,904
+  s_6c6df0e80bfd76::t_971ed8d7b06124 802,815,825
+  s_7d67bb0a0da4f9::t_be3768521b0bcc 1510,1551,1777
+  s_43f20775d8fba6::t_6f1e5953d1655a 70,123,316,889-892,940-941
+  s_43f20775d8fba6::t_7bd97c136edeef 699,793
+  s_e6bf15340ec809::t_bd7272e84e0362 22,47,192-195,623-624,798,811,820,843-852,1103-1111,1113-1114,1118-1119,1122-1135
+  s_7d67bb0a0da4f9::t_9c8e569ec08580 88-89
+  s_43f20775d8fba6::t_395d2a82fa4fd2 1416-1417,1442-1448,1459-1460,1464-1465,1632,1635-1637,1641-1644
+  s_8ae583e6ee5ec3::t_ffdc98fc484b83 936
+docs/superpowers/plans/2026-09-04-native-turn-boundary-history-dedup.md
+  s_b4f9e580e74429::t_246e5afa3edf09 36,52,70,74
+  s_b4f9e580e74429::t_ab29497b0cbe9a 32,66,87,91
+  s_b4f9e580e74429::t_de9fa74bca0d52 1-31,33-35,37-51,53-65,67-69,71-73,75-86,88-90,92-96,98-113
+  s_b4f9e580e74429::t_49be7412d7c7ca 97
+packages/server/app/api/sessions/[id]/goals/route.ts
+  s_12e77c4e3d7afe::t_26758e83e3ab4d 2,29-34,39-56,59-61,78-98,103-105,118-119,122-124,132-145
+  s_12e77c4e3d7afe::t_7545e14e3f76f3 146-147
+packages/desktop/main/agent-runtime/native-runtime-broker.ts
+  s_7d67bb0a0da4f9::t_8f1fb88446e6fa 2685
+  s_12e77c4e3d7afe::t_fa20067106d01e 7,685-686,1430,1443
+  s_12e77c4e3d7afe::t_0cf1ecbfaa8753 10,16-17,20-21,23,28,98-103,645-657,662-678,697-702
+  s_12e77c4e3d7afe::t_3f31d55a0ab35f 982
+  s_7d67bb0a0da4f9::t_be3768521b0bcc 975-976
+  s_d34aca02d06cfb::t_7b1e76ae8b60a4 1371,1386,1406,1628-1639
+  s_12e77c4e3d7afe::t_922935425382c5 749
+  s_500b68242d4da4::t_60983b1854a514 202,451,679,687,703,1446,1640,2083,2486-2575,2728
+  s_e6bf15340ec809::t_6a90115bbdf399 578-583,586,1277-1281
+  s_12e77c4e3d7afe::t_dbec5ad451b1f1 1807-1815,1820-1830,1835-1837,2052-2059,2064-2078,2717-2727
+  s_12e77c4e3d7afe::t_a19d9d4e6339de 509-516,705-708,711-712,1159-1160
+  s_7d67bb0a0da4f9::t_04e83f9d6d7a22 410
+  s_7d67bb0a0da4f9::t_acb65ccaaf4009 369-409,411-450,2291-2309,2315,2323
+  s_12e77c4e3d7afe::t_ed6cbee611aabd 1318-1319,1347,1398-1405,1407-1429,1459,1461,1555-1560,1564,1568,1571,1575,1617,1619-1623,1642-1643,1646,1648-1656,1659-1660,1664
+  s_12e77c4e3d7afe::t_ad52a1af74658a 2681
+  s_43f20775d8fba6::t_b4f8330d9369ae 33,1203-1238,1241-1243,1245
+  s_7d67bb0a0da4f9::t_81ecb8009c3edb 36-41,57,115,220-234,245,343-361,1118
+  s_500b68242d4da4::t_e33aba6517d4f0 195-201,279-288,597-598,802-805,809,813,818-832,834-835,989-996,1030,1033,1037
+  s_12e77c4e3d7afe::t_ba271e42db2b0c 93-97,1431-1442,1444-1445,1831-1834,2079-2082
+  s_d34aca02d06cfb::t_cb18b451badba8 1366-1369
+  s_500b68242d4da4::t_40403bb413213b 203
+  s_500b68242d4da4::t_dcdb727c732469 452
+  s_500b68242d4da4::t_eea5306f89d15d 599
+  s_500b68242d4da4::t_e71bbeaf352207 680
+  s_500b68242d4da4::t_19415601c384ea 688
+  s_500b68242d4da4::t_a8fac3e805df94 1447
+  s_500b68242d4da4::t_1150c529b8975f 2084
+  s_500b68242d4da4::t_ba6521f0be0b80 2576
+  s_500b68242d4da4::t_5ef8ee5be695b8 2729
+  s_d34aca02d06cfb::t_3908c75effb387 704,1641
+packages/core/src/domain/session/SessionGoals.test.ts
+  s_12e77c4e3d7afe::t_6f82e3c98c24a2 7,9-11,14-15,61-124,147-162
+  s_12e77c4e3d7afe::t_fa20067106d01e 4,125-146
+packages/desktop/main/agent-runtime/agent-workspace-index.test.ts
+  s_7d67bb0a0da4f9::t_b495072a1e683b 331-349
+  s_43f20775d8fba6::t_dd6ac1a79d4731 314-328
+  s_43f20775d8fba6::t_f51befceeb70c0 2-7,49,95-100,137,139-141,180-183,191,196-197,203-278
+  s_43f20775d8fba6::t_dbffff5fd37abe 279-313,329-330,350
+  s_43f20775d8fba6::t_d1273b7baa594b 127-129
+packages/desktop/renderer/components/ChatComposerStyle.test.ts
+  s_12e77c4e3d7afe::t_82f4023b2d001a 59,98-99,101-102
+  s_d34aca02d06cfb::t_05d167244c6b8f 89-92,103-105
+  s_12e77c4e3d7afe::t_3f31d55a0ab35f 100
+packages/webapp/src/presentation/webapp-ready.test.ts
+  s_49364759a260e5::t_4fe0d2b0be8702 1-35
+packages/desktop/renderer/lib/native-session-view-state.ts
+  s_12e77c4e3d7afe::t_922935425382c5 28-34
+  s_c7581724bdfb98::t_75a9e899f3c9a6 7-13
+packages/webapp/src/presentation/web.css
+  s_500b68242d4da4::t_e31ed524121226 383-386
+packages/desktop/renderer/lib/session-load-recovery.ts
+  s_d34aca02d06cfb::t_c7ad5403ddd607 26-27,37
+packages/server/app/web/webappLoading.test.ts
+  s_49364759a260e5::t_4fe0d2b0be8702 1-25
+packages/core/src/domain/session/SessionHistory.test.ts
+  s_b4f9e580e74429::t_ab29497b0cbe9a 19-20,22,24,26,31,38,43,52-108
+packages/core/src/domain/model/entities.ts
+  s_500b68242d4da4::t_50671d2a5c11b6 43-44
+packages/desktop/main/agent-host.ts
+  s_500b68242d4da4::t_594eb08b59c8f2 530-531,744-751,753,755-756,759-761,764,776-778,782-783,788
+packages/desktop/renderer/lib/occupied-session-fork.test.ts
+  s_12e77c4e3d7afe::t_2b4680759aeaa7 112-115
+  s_6c6df0e80bfd76::t_028ac719963674 78-79,117
+packages/desktop/renderer/lib/queued-message-order.test.ts
+  s_12e77c4e3d7afe::t_32b0543d28155f 2-4,7-8,62-97
+  s_12e77c4e3d7afe::t_a1115f37408310 46-61
+  s_12e77c4e3d7afe::t_027a23a100a8a7 5-6,98-118
+packages/desktop/main/agent-runtime/claude-runtime-adapter.ts
+  s_12e77c4e3d7afe::t_1037479ca036d5 433
+packages/desktop/main/index.ts
+  s_12e77c4e3d7afe::t_ba271e42db2b0c 1149-1154
+  s_12e77c4e3d7afe::t_b48dd35507ed02 1116-1148
+packages/desktop/main/agent-runtime/types.ts
+  s_12e77c4e3d7afe::t_3f31d55a0ab35f 70
+  s_12e77c4e3d7afe::t_922935425382c5 208
+  s_7d67bb0a0da4f9::t_9c8e569ec08580 16-40,71-72,212
+  s_43f20775d8fba6::t_b50097fa849b41 93
+  s_e6bf15340ec809::t_2c686f457abff5 196
+packages/desktop/renderer/styles/global.css
+  s_500b68242d4da4::t_e31ed524121226 1804-1834
+  s_500b68242d4da4::t_5ce97a96cd8482 1835
+packages/desktop/renderer/global.d.ts
+  s_12e77c4e3d7afe::t_b48dd35507ed02 127-132,265-271
+  s_7d67bb0a0da4f9::t_9c8e569ec08580 107-116,163-164
+  s_43f20775d8fba6::t_6f1e5953d1655a 92
+  s_12e77c4e3d7afe::t_ba271e42db2b0c 272
+  s_12e77c4e3d7afe::t_3f31d55a0ab35f 162
+packages/webapp/src/infrastructure/http/agent-http-gateway.ts
+  s_12e77c4e3d7afe::t_ba271e42db2b0c 157-165
+  s_12e77c4e3d7afe::t_922935425382c5 120-126,130
+  s_12e77c4e3d7afe::t_b48dd35507ed02 346-394
+  s_12e77c4e3d7afe::t_336a79d3fa150b 395
+packages/desktop/renderer/stores/agentStore.ts
+  s_12e77c4e3d7afe::t_32b0543d28155f 118-119
+  s_08516d7e2ba3a3::t_bdc75fd7f06162 353,355,357
+  s_500b68242d4da4::t_e31ed524121226 30
+packages/desktop/renderer/lib/session-load-recovery.test.ts
+  s_d34aca02d06cfb::t_86d0a0c4cf5f49 30-38
+  s_d34aca02d06cfb::t_c7ad5403ddd607 21,26-27
+  s_d34aca02d06cfb::t_8b27477115799f 28-29
+packages/desktop/main/agent-runtime/codex-session-disk-catalog.test.ts
+  s_7d67bb0a0da4f9::t_27d9daa65a5116 1-168,201
+  s_7d67bb0a0da4f9::t_fb15429ce08a8c 169-200
+packages/desktop/renderer/lib/message-actions.ts
+  s_500b68242d4da4::t_50671d2a5c11b6 6,10-20,69,74,83
+packages/server/app/web/webappReady.test.ts
+  s_49364759a260e5::t_4fe0d2b0be8702 1-44
+packages/desktop/main/agent-runtime/codex-session-compatibility.ts
+  s_7d67bb0a0da4f9::t_10c532e70e8a52 1-2,7-82,84-94
+  s_7d67bb0a0da4f9::t_05aad591e6de1c 3-6,83
+packages/desktop/main/preload.ts
+  s_12e77c4e3d7afe::t_b48dd35507ed02 126-135
+  s_12e77c4e3d7afe::t_ba271e42db2b0c 136-137
+packages/server/app/api/agent-host.test.ts
+  s_500b68242d4da4::t_009837801d3516 263,266,270,281-285,288,371-375
+packages/server/app/api/agent/steer/route.ts
+  s_12e77c4e3d7afe::t_ba271e42db2b0c 11-13,16-18,25-26
+  s_12e77c4e3d7afe::t_763c8e5c9b60e2 19-21
+  s_12e77c4e3d7afe::t_cd4dc7703fe6a3 27
+packages/desktop/main/agent-runtime/agent-workspace-index.ts
+  s_43f20775d8fba6::t_b50097fa849b41 19,22-24,118-119,152,245-247,270,280,286-288,295,329-338,340-370,372-373,375-378,383-397,400,424-472
+  s_43f20775d8fba6::t_f51befceeb70c0 21
+  s_43f20775d8fba6::t_28b551045e7524 120,273,289-294,371,374,379-381
+  s_7d67bb0a0da4f9::t_9ba4fdc054f73e 126-128,398-399
+  s_43f20775d8fba6::t_dd6ac1a79d4731 281-285,382
+  s_e6bf15340ec809::t_b1754e82b821b2 20,296
+packages/desktop/renderer/lib/agent-workspace-cache.ts
+  s_e6bf15340ec809::t_6a90115bbdf399 118,120,122,125
+  s_43f20775d8fba6::t_53c7d7ba936281 115,139,149
+  s_6c6df0e80bfd76::t_971ed8d7b06124 119,121,123-124
+  s_e6bf15340ec809::t_e1de089d840329 116-117
+packages/desktop/renderer/lib/queued-message-order.ts
+  s_12e77c4e3d7afe::t_922935425382c5 6-9,36-37,83-84
+  s_12e77c4e3d7afe::t_32b0543d28155f 10-29,38-66
+  s_12e77c4e3d7afe::t_027a23a100a8a7 30-35,67-82
+packages/server/lib/native-runtime-service.ts
+  s_7d67bb0a0da4f9::t_8f1fb88446e6fa 514
+  s_12e77c4e3d7afe::t_ba271e42db2b0c 123-126,389-399
+  s_12e77c4e3d7afe::t_d25b53e8235192 8,110-122,354-388
+  s_12e77c4e3d7afe::t_ad52a1af74658a 507
+  s_12e77c4e3d7afe::t_96b5dabd5f3b9c 400
+packages/desktop/renderer/components/ChatHistoryStyle.test.ts
+  s_2b9c01178f1225::t_45ba2f50c6603c 215,221
+  s_500b68242d4da4::t_009837801d3516 8,229-233,241-243
+packages/desktop/main/agent-runtime/native-runtime-broker.test.ts
+  s_7d67bb0a0da4f9::t_04e83f9d6d7a22 321-373
+  s_7d67bb0a0da4f9::t_94bb3244897fea 7,278-320
+  s_b4f9e580e74429::t_ab29497b0cbe9a 1212-1213,1216,1218,1226-1227,1230,1232-1235,1237,1241
+  s_12e77c4e3d7afe::t_a1115f37408310 1280,1539
+  s_d34aca02d06cfb::t_b2c746fc962703 1351-1360,1376,1381-1386,1393-1394
+  s_12e77c4e3d7afe::t_c0292db4bc6783 965-1007,1009-1010
+  s_d34aca02d06cfb::t_a5c451131d2e23 1361-1367
+  s_e6bf15340ec809::t_6a90115bbdf399 74,76,109-112,696-697,715-752,812
+  s_b4f9e580e74429::t_aaf90d0c1fb0be 1207-1210,1215,1217,1220,1224
+  s_500b68242d4da4::t_009837801d3516 197-277
+  s_43f20775d8fba6::t_bacb719e09aca0 457
+  s_d34aca02d06cfb::t_e083cd5d2125ad 939-942,1008,1011-1012,1332-1350,1368-1375,1377-1380,1387-1392,1395-1400
+  s_12e77c4e3d7afe::t_0dd87069c1cf3c 53-58,129-132,141,847-890
+  s_12e77c4e3d7afe::t_1037479ca036d5 136
+  s_b4f9e580e74429::t_10bde19f39766e 1231
+  s_12e77c4e3d7afe::t_82f4023b2d001a 79-80,114-117,891-938
+  s_43f20775d8fba6::t_897358e58ed767 14
+  s_43f20775d8fba6::t_253d5d1dc2836d 21-22,77-78,85-100,374-414
+  s_d34aca02d06cfb::t_3ee868afaf2be7 943
+  s_d34aca02d06cfb::t_d754eac71f4d2b 1013
+packages/desktop/renderer/lib/message-actions.test.ts
+  s_500b68242d4da4::t_50671d2a5c11b6 3,19,37,52,66,72,88,103-118
+  s_500b68242d4da4::t_66b72f12259966 119
+packages/core/src/domain/session/SessionHistory.ts
+  s_b4f9e580e74429::t_246e5afa3edf09 34-35,60-67
+  s_b4f9e580e74429::t_e412fcf0372b74 68-69
+packages/desktop/main/agent-runtime/unified-session-service.ts
+  s_12e77c4e3d7afe::t_1037479ca036d5 224
+  s_7d67bb0a0da4f9::t_9ba4fdc054f73e 9,45,48-53,128-131,160-164,295
+  s_e6bf15340ec809::t_6a90115bbdf399 269-280
+packages/webapp/src/presentation/webapp-ready.ts
+  s_49364759a260e5::t_4fe0d2b0be8702 1-9
+packages/webapp/src/main.tsx
+  s_49364759a260e5::t_4fe0d2b0be8702 1,9,37-43,51
+packages/desktop/renderer/components/SidebarSessionRow.tsx
+  s_7d67bb0a0da4f9::t_be3768521b0bcc 1,3,16,57-74
+packages/desktop/renderer/lib/session-deletion.ts
+  s_e6bf15340ec809::t_6a90115bbdf399 17-19,23-37
+  s_e6bf15340ec809::t_9f172f6fa0ad94 1-2
+  s_e6bf15340ec809::t_c78843781b0bc1 38-39
+docs/superpowers/plans/2026-09-04-new-session-loading.md
+  s_8ae583e6ee5ec3::t_b990334f1dc3d8 34,48,71,105,126,153,157,170,176
+  s_8ae583e6ee5ec3::t_f52e4219b6bc30 1-33,35-47,49-70,72-104,106-125,127-152,154-156,158-169,171-175,177-187
+packages/desktop/main/agent-runtime/codex-session-disk-catalog.ts
+  s_7d67bb0a0da4f9::t_a18dd177323705 1-16,18-198,200,207-458
+  s_7d67bb0a0da4f9::t_05aad591e6de1c 17
+  s_7d67bb0a0da4f9::t_81ecb8009c3edb 199,201-206
+docs/superpowers/plans/2026-09-04-codex-complete-session-pagination.md
+  s_43f20775d8fba6::t_a8b01902bc5c59 1-27,29,31-35,37-46,48-64,66-68,70-79,84-96,98-104,106-108,110-112,114-125,127-129,131-135,137-142,146-153
+  s_43f20775d8fba6::t_59c89d658d5572 28,30,36,47,65,69,80-83,97,105,109,113,126,130,136,143-145
+packages/desktop/renderer/components/SidebarReferenceStyle.test.ts
+  s_e6bf15340ec809::t_9f172f6fa0ad94 9,145
+  s_e6bf15340ec809::t_bd7272e84e0362 201-205
+  s_43f20775d8fba6::t_d1273b7baa594b 300-301
+  s_8ae583e6ee5ec3::t_598795779507cc 305-306,319-321
+  s_43f20775d8fba6::t_53c7d7ba936281 160-163
+  s_43f20775d8fba6::t_e61a35327eeaf4 282,287-288
+  s_8ae583e6ee5ec3::t_0f70df74f3d875 318,322-360
+  s_7d67bb0a0da4f9::t_b495072a1e683b 91-98
+  s_8ae583e6ee5ec3::t_8fd986fed49983 361
+packages/desktop/main/agent-runtime/unified-session-service.test.ts
+  s_e6bf15340ec809::t_6a90115bbdf399 19,88,380-416
+  s_7d67bb0a0da4f9::t_b495072a1e683b 133-159
+  s_12e77c4e3d7afe::t_1037479ca036d5 334
+  s_e6bf15340ec809::t_820168921cb3ce 417
+packages/desktop/renderer/lib/session-deletion.test.ts
+  s_e6bf15340ec809::t_6a90115bbdf399 5,8,20,68-95
+  s_e6bf15340ec809::t_4fde74804b0d18 96
+packages/desktop/renderer/lib/session-history.ts
+  s_12e77c4e3d7afe::t_21cac52e85df8b 3,38
+  s_12e77c4e3d7afe::t_638ef64ea863cc 187-188
+  s_b4f9e580e74429::t_23c4a293968c8c 218-227
+  s_b4f9e580e74429::t_eb660a1d474994 178,196-198,200-204,207-217
+  s_b4f9e580e74429::t_246e5afa3edf09 148-152,175,189-195,199,205-206
+packages/desktop/renderer/lib/occupied-session-fork.ts
+  s_6c6df0e80bfd76::t_028ac719963674 34,38
+packages/server/app/web/page.tsx
+  s_49364759a260e5::t_4fe0d2b0be8702 24,86,106-114,416-427,523-534,539
+packages/server/app/api/agent/run/route.ts
+  s_12e77c4e3d7afe::t_922935425382c5 109-110,112-116
+packages/server/app/api/agent-host.ts
+  s_500b68242d4da4::t_594eb08b59c8f2 324-328,331-336,338-344,354,399-407,410-416,421
+packages/server/app/api/native-runtime.test.ts
+  s_12e77c4e3d7afe::t_a1115f37408310 502,506-519
+  s_12e77c4e3d7afe::t_19b04c60dd1928 13-17,43,122-157,254,520-556,635
+  s_12e77c4e3d7afe::t_82f4023b2d001a 158-161,619-634
+  s_12e77c4e3d7afe::t_e4759d27dc87cc 557
+  s_12e77c4e3d7afe::t_a71add72e7f3eb 636
+packages/desktop/main/agent-runtime/customer-agent-runtime-adapter.ts
+  s_12e77c4e3d7afe::t_1037479ca036d5 85
+docs/superpowers/plans/2026-09-04-completed-turn-footer.md
+  s_500b68242d4da4::t_094b66a8c7bf19 1-34,36-47,49-60,62-64,66-84,86-90,92-99,101-103,105-117,119-130,132-134,136-138,140-142,144-160,162-167,169-171,173-175,177-179,181-192,194-198,200-206,208-212,214-218,220-229
+  s_500b68242d4da4::t_50671d2a5c11b6 35,48,65
+  s_500b68242d4da4::t_e31ed524121226 61,161,168,172,176
+  s_500b68242d4da4::t_594eb08b59c8f2 85,91,100
+  s_500b68242d4da4::t_009837801d3516 104,143,180
+  s_500b68242d4da4::t_60983b1854a514 118,131,135,139
+  s_500b68242d4da4::t_8275e2d43650ff 193,199,207,213,219
+packages/desktop/renderer/lib/session-history.test.ts
+  s_b4f9e580e74429::t_ab29497b0cbe9a 78-81,120-131,133-149,151-172,174-175
+  s_b4f9e580e74429::t_eb660a1d474994 150
+  s_b4f9e580e74429::t_23c4a293968c8c 132,176-193
+  s_12e77c4e3d7afe::t_638ef64ea863cc 111-119,173,194-195
+packages/desktop/main/agent-runtime/opencode-runtime-adapter.ts
+  s_12e77c4e3d7afe::t_1037479ca036d5 271
+packages/webapp/src/presentation/browser-composer.test.ts
+  s_253276a7e80601::t_c5700ecc33f0db 74-81
+  s_12e77c4e3d7afe::t_4998ad9a6729f0 54,63
+packages/webapp/src/infrastructure/http/http-client.test.ts
+  s_12e77c4e3d7afe::t_a1115f37408310 1-27
+packages/core/src/domain/agent/entities.ts
+  s_500b68242d4da4::t_50671d2a5c11b6 66
+packages/desktop/renderer/stores/agentStore.test.ts
+  s_08516d7e2ba3a3::t_bdc75fd7f06162 60-84
+packages/desktop/renderer/lib/native-session-view-state.test.ts
+  s_c7581724bdfb98::t_75a9e899f3c9a6 4,18-29
+  s_12e77c4e3d7afe::t_a1115f37408310 5,58-71
+packages/server/app/api/sessions/[id]/route.ts
+  s_7d67bb0a0da4f9::t_8f1fb88446e6fa 14,114-117
+packages/desktop/renderer/lib/markdown-links.test.ts
+  s_2b9c01178f1225::t_45ba2f50c6603c 2,58-78
+  s_e6bf15340ec809::t_d7d3adc634c199 79
+packages/desktop/main/agent-runtime/codex-runtime-adapter.ts
+  s_12e77c4e3d7afe::t_922935425382c5 452
+  s_e6bf15340ec809::t_2c686f457abff5 438-442
+packages/server/app/web/webappReady.ts
+  s_49364759a260e5::t_4fe0d2b0be8702 1-21
+packages/desktop/main/agent-runtime/claude-runtime-adapter.test.ts
+  s_12e77c4e3d7afe::t_bf4e4c136c9ad9 676
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "fc9049cf454f7b04e16ed9a668b95841abe95ab1",
+  "prompts": {},
+  "sessions": {
+    "s_08516d7e2ba3a3": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06d06-1369-7a11-ae82-e88d4b3de8e8",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_12e77c4e3d7afe": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06c2a-0e6d-7dc2-b579-56cb989efb9e",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_253276a7e80601": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06cfe-2f4a-75c0-866b-d64932439868",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_2b9c01178f1225": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06c2e-3489-73d3-ba83-ec43968a89ed",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_43f20775d8fba6": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06be7-83e3-7063-940d-e307a96cf58f",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_49364759a260e5": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06ba6-9de4-74c1-83fa-29cbc762cdad",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_500b68242d4da4": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06c41-e089-7020-87a0-7e55a984118b",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_6c6df0e80bfd76": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06c16-ea7b-7430-a50b-1469d5bb7e50",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_7d67bb0a0da4f9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06c22-8c0e-7cd1-9a84-e343bd3a6718",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_8ae583e6ee5ec3": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06c4c-97fa-7c20-aaae-74bcea6ac0d2",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_b4f9e580e74429": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06ca3-0bbe-72c3-a0b9-31867236d091",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_c7581724bdfb98": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06cfc-7c7b-7041-8af9-d585d2d124e6",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_d34aca02d06cfb": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06d09-c183-7112-9578-3e427f5f2064",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_e6bf15340ec809": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06c24-6666-79b1-b196-d5e3212cffa5",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

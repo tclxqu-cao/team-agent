@@ -1,0 +1,107 @@
+packages/core/src/domain/model/entities.ts
+  s_18d02180f7ddcf::t_3e222992172490 48-49
+packages/desktop/main/agent-runtime/codex-runtime-adapter.test.ts
+  s_3d7f9a31ff380c::t_59dd2873172679 1690,1721-1722,2088-2105
+  s_18d02180f7ddcf::t_204903686b2e8e 1930-1932,1934
+  s_3d7f9a31ff380c::t_d289dfd7541b6b 1715-1720
+  s_18d02180f7ddcf::t_a10b9ef1fc5b9d 1910
+  s_18d02180f7ddcf::t_3a65abaf13944c 382
+  s_7745a701d20870::t_0ae6028b14f037 449-461,524-530,547
+  s_18d02180f7ddcf::t_029b1eac42e01c 404,410
+  s_18d02180f7ddcf::t_549c6daf4d18fb 2,1895-1909,1920,1929,1940-1941
+  s_efbf8b2a696de1::t_7018884a9afcbe 1747-1765
+  s_3d7f9a31ff380c::t_e1cff5a21143f0 1766-1786,1793-1796,1944,2106
+  s_18d02180f7ddcf::t_84d0ba2c0ffe05 389-403,405-409,411-414,1893-1894,1911-1912,1914-1916,1919,1922-1926,1928,1935-1939,1942
+  s_3d7f9a31ff380c::t_8cb125eada806e 16,1917-1918,1921,1927,1933,1943
+  s_e47dc121b5d328::t_ece983884c8aca 1913
+  s_7745a701d20870::t_b56ba92142005d 444-448,462-468,485-501,506-510,541-546
+  s_3d7f9a31ff380c::t_64385d95cb2a12 1945
+packages/desktop/main/agent-runtime/native-runtime-broker.test.ts
+  s_efbf8b2a696de1::t_a6a680942886c6 1986
+  s_efbf8b2a696de1::t_8fc63d7534919a 1934-1985,1987-1992
+packages/desktop/main/agent-runtime/codex-rollout-activity.test.ts
+  s_18d02180f7ddcf::t_549c6daf4d18fb 7,181-227
+  s_18d02180f7ddcf::t_ddd28e56879419 228
+packages/desktop/main/agent-runtime/codex-session-compatibility.test.ts
+  s_3d7f9a31ff380c::t_99eaf94c4bb7a5 94-116
+packages/desktop/main/agent-runtime/unified-session-service.test.ts
+  s_3d7f9a31ff380c::t_99eaf94c4bb7a5 261-278,537-552
+  s_3d7f9a31ff380c::t_98c4292a096848 553
+packages/desktop/main/agent-runtime/codex-rollout-activity.ts
+  s_18d02180f7ddcf::t_35f5278cf6ad79 11-36,142-152,160-197,201-297
+  s_18d02180f7ddcf::t_317930d4e80ef8 198-200
+packages/desktop/main/agent-runtime/native-runtime-broker.ts
+  s_efbf8b2a696de1::t_8fc63d7534919a 1317-1321
+packages/desktop/main/agent-runtime/codex-session-compatibility.ts
+  s_3d7f9a31ff380c::t_99eaf94c4bb7a5 31,38-39
+  s_3d7f9a31ff380c::t_144b63c33bec63 40-41
+packages/desktop/main/agent-runtime/unified-session-service.ts
+  s_3d7f9a31ff380c::t_99eaf94c4bb7a5 271-273,294-296
+packages/core/src/domain/agent/entities.ts
+  s_7745a701d20870::t_86393581ef84f8 60-66
+packages/desktop/main/agent-runtime/codex-runtime-adapter.ts
+  s_3d7f9a31ff380c::t_e85a873c0cebc3 492,495,1684,1712,1898-1901,1912-1918,1922-1924
+  s_3d7f9a31ff380c::t_59dd2873172679 152,890,897,901-909
+  s_18d02180f7ddcf::t_029b1eac42e01c 1816-1818,1834-1841,1848-1855,1861,1873-1881,1933,1938-1946
+  s_18d02180f7ddcf::t_3e222992172490 727,871-875,1717-1719,1721,1813-1815,1820,1892-1894,1925-1929,1947
+  s_3d7f9a31ff380c::t_d4648b2aeb2147 1902-1911
+  s_18d02180f7ddcf::t_317930d4e80ef8 36,1952
+  s_7745a701d20870::t_b56ba92142005d 1282-1284
+  s_7745a701d20870::t_86393581ef84f8 151,1236-1244,1253-1263,1272-1275,1930-1932,1934-1937
+  s_3d7f9a31ff380c::t_8cb125eada806e 150,180,205
+  s_3d7f9a31ff380c::t_e1cff5a21143f0 496-497,714-718,1711,1713-1715,1919-1921
+  s_18d02180f7ddcf::t_a10b9ef1fc5b9d 1716,1720,1812,1819
+  s_e47dc121b5d328::t_ece983884c8aca 1958-1969
+  s_3d7f9a31ff380c::t_828ea80280ef96 883-885
+  s_18d02180f7ddcf::t_35f5278cf6ad79 33,515-519,522,1948-1951,1953-1957,1970-1990
+  s_3d7f9a31ff380c::t_d289dfd7541b6b 887-889,898-900
+  s_18d02180f7ddcf::t_9ae312a216f781 1991
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "b4a61edbd2876733e691b3b1ac5d23abb42367b5",
+  "prompts": {},
+  "sessions": {
+    "s_18d02180f7ddcf": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a07c00-888b-7d63-8f0f-98fbe5b95ea7",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_3d7f9a31ff380c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a07c88-e3dc-73d3-937c-a80b5980e3ea",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_7745a701d20870": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a07c2d-9496-7c62-bbdd-2e426ba5bcfc",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_e47dc121b5d328": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a07c72-bf92-7903-81ae-afcacffd84aa",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_efbf8b2a696de1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a07c6e-1745-7d83-a594-73ca3c3d3c4b",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

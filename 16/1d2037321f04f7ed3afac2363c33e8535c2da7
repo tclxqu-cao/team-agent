@@ -1,0 +1,20 @@
+packages/desktop/renderer/components/ChatView.tsx
+  h_86bb4e0e04237b 194,279-280,2455-2480,2537-2538,2629-2651
+packages/desktop/renderer/web/webLayout.ts
+  h_86bb4e0e04237b 15-23
+packages/webapp/src/main.tsx
+  h_86bb4e0e04237b 10
+packages/webapp/src/presentation/browser-composer.css
+  h_86bb4e0e04237b 1-72
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "161d2037321f04f7ed3afac2363c33e8535c2da7",
+  "prompts": {},
+  "humans": {
+    "h_86bb4e0e04237b": {
+      "author": "caoqu <qu.cao@ly.com>"
+    }
+  }
+}

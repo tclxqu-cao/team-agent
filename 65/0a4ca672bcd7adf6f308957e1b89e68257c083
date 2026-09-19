@@ -1,0 +1,21 @@
+docs/superpowers/specs/2026-08-21-project-context-instruction-whitelist-design.md
+  s_6edcb9d9cd7ad6::t_c13be64e117c60 19,50-51,54,76-77
+docs/superpowers/plans/2026-08-21-project-context-instruction-whitelist.md
+  s_6edcb9d9cd7ad6::t_c13be64e117c60 13,15,34,71
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "650a4ca672bcd7adf6f308957e1b89e68257c083",
+  "prompts": {},
+  "sessions": {
+    "s_6edcb9d9cd7ad6": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fd1c1-3a3e-7f32-9ee5-c7add0c1d7e1",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

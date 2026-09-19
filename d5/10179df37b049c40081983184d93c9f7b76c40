@@ -1,0 +1,19 @@
+docs/superpowers/plans/2026-08-21-thinking-status-and-header-controls.md
+  s_6edcb9d9cd7ad6::t_a002780baab15f 1-228
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "d510179df37b049c40081983184d93c9f7b76c40",
+  "prompts": {},
+  "sessions": {
+    "s_6edcb9d9cd7ad6": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fd1c1-3a3e-7f32-9ee5-c7add0c1d7e1",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

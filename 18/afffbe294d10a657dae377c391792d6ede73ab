@@ -1,0 +1,44 @@
+.gitattributes
+  h_b0bf4228a0b7ec 4-9
+package.json
+  h_b0bf4228a0b7ec 25-28
+packages/cli/bin/desktop-download.mjs
+  h_b0bf4228a0b7ec 12-15
+packages/cli/install/install-manifest.json
+  h_b0bf4228a0b7ec 1-15
+packages/cli/src/install-script-contract.test.ts
+  h_b0bf4228a0b7ec 69-72,93-95
+packages/cli/src/update/update-command.test.ts
+  h_b0bf4228a0b7ec 10-19,22,25,40,51,62
+packages/cli/src/update/update-command.ts
+  h_b0bf4228a0b7ec 13,25-28
+packages/cli/src/update/update-install.test.ts
+  h_b0bf4228a0b7ec 1-63
+packages/cli/src/update/update-install.ts
+  h_b0bf4228a0b7ec 1-50
+packages/cli/src/update/update-worker.ts
+  h_b0bf4228a0b7ec 9,24,33-42
+packages/core/src/domain/update/update-checker.test.ts
+  h_b0bf4228a0b7ec 6-14,17,22,37,64,75,86,91-114
+packages/core/src/domain/update/update-checker.ts
+  h_b0bf4228a0b7ec 2-3,9,11,107,118-130
+packages/core/src/domain/update/update-release.test.ts
+  h_b0bf4228a0b7ec 3-6,12,55-83,109
+packages/core/src/domain/update/update-release.ts
+  h_b0bf4228a0b7ec 4-10,34-45,127,133-158,160,163,167
+packages/desktop/main/update-service.ts
+  h_b0bf4228a0b7ec 7,50
+scripts/update-install-manifest.mjs
+  h_b0bf4228a0b7ec 1-108
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "18afffbe294d10a657dae377c391792d6ede73ab",
+  "prompts": {},
+  "humans": {
+    "h_b0bf4228a0b7ec": {
+      "author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

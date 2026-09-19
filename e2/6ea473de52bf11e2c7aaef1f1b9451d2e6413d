@@ -1,0 +1,372 @@
+packages/server/app/web/mobileViewport.ts
+  s_ac188cea2946f6::t_7275bfb661f76e 1-27
+packages/server/app/web/FileTree.tsx
+  s_30f0086b29e6d2::t_eb706b0ae4acdf 18-20,51,55,100,103-108,127,132
+packages/core/src/domain/auth/AuthStore.ts
+  s_2edb7520e441f6::t_26d9c600881283 1-23
+packages/server/app/web/TerminalPane.tsx
+  s_d1f360e33d0bf5::t_eb0ff3bbc7bb35 83-90,684,702
+  s_d1f360e33d0bf5::t_31db162289d665 423-425,428,431-438
+  s_d1f360e33d0bf5::t_a8a4a4ec66ac19 75
+  s_d1f360e33d0bf5::t_e18594af0ed46f 72
+  s_d1f360e33d0bf5::t_2344dc5f0e0bc1 91-92
+  s_d1f360e33d0bf5::t_246134ce021154 701
+  s_d1f360e33d0bf5::t_83345b2b00f6a1 588,592-601
+  s_30f0086b29e6d2::t_074645fa4f5448 410-417,523,540-541,547-548,550-555,560-562,575
+  s_d1f360e33d0bf5::t_75039abeed89ff 476
+  s_d1f360e33d0bf5::t_738f8bf9b5d786 290,293-295,299-301,304-305,307,311-313,320-322,358-363,365-369,372
+  s_d1f360e33d0bf5::t_c7ffe60a0256b1 420-422,430
+  s_d1f360e33d0bf5::t_376f0d65b5c778 249-255
+  s_d1f360e33d0bf5::t_b4b4a9b769737b 604
+  s_d1f360e33d0bf5::t_c6de5391ecb75c 602
+  s_30f0086b29e6d2::t_33ba5cc92fb93d 28
+  s_30f0086b29e6d2::t_313ebd3f1bbede 613-614,617-618,625
+  s_ce18d43f8a9a03::t_7daab23e03c429 13,212
+  s_d1f360e33d0bf5::t_9e397cd35133e2 215
+  s_30f0086b29e6d2::t_9e49c3479acfe7 39,41,756
+  s_d1f360e33d0bf5::t_565eae038e5cef 82,94-116
+  s_d1f360e33d0bf5::t_58ef3baa36d5e0 73
+  s_ac188cea2946f6::t_5c38e9588abb04 57,448,453,484-487,735
+  s_ac188cea2946f6::t_7275bfb661f76e 580-586
+  s_30f0086b29e6d2::t_f9b0b4575ee29e 188-190
+  s_d1f360e33d0bf5::t_68510ab2a52eca 74
+  s_d1f360e33d0bf5::t_0a56dfd95e877a 739,743,748
+  s_d1f360e33d0bf5::t_97f1654466f82d 288-289
+  s_d1f360e33d0bf5::t_c8d50b72e71e33 49,52
+  s_ac188cea2946f6::t_3d125c59c1d4ca 12
+  s_30f0086b29e6d2::t_aab08ebca5694e 680
+  s_30f0086b29e6d2::t_e6745b3f34c239 646-651,666,675
+  s_30f0086b29e6d2::t_c4d85de7f57795 619,626,653,669,678
+  s_d1f360e33d0bf5::t_4fe8d1ad139052 371
+  s_30f0086b29e6d2::t_d4b4b071eb3490 202-203
+  s_30f0086b29e6d2::t_0e2de04f2c4c29 71,704-705,708
+  s_d1f360e33d0bf5::t_85e59c6ceeff12 396-401
+  s_d1f360e33d0bf5::t_7e946399e67800 117-121,124,133-134,143
+  s_d1f360e33d0bf5::t_a59f7173b626a8 726,730-732
+  s_d1f360e33d0bf5::t_7b8c00ff2a8ff3 442-447,450-451
+  s_d1f360e33d0bf5::t_48c2dfd6ac47c7 494
+  s_d1f360e33d0bf5::t_e4a0d7653e3d3f 699-700
+  s_d1f360e33d0bf5::t_a7bb52915db682 449
+  s_d1f360e33d0bf5::t_dfc431a3134ddf 426-427,429
+  s_d1f360e33d0bf5::t_96b9d46288627f 242-246,248,256-278,280-286
+  s_d1f360e33d0bf5::t_edcd3e21728b3d 727-729
+  s_30f0086b29e6d2::t_e1fdb0a8d3e693 58,710-717,721,736
+  s_d1f360e33d0bf5::t_4a90d948e0d288 502,510
+  s_d1f360e33d0bf5::t_fe5fb846e642a6 247,279
+  s_d1f360e33d0bf5::t_d1fef061ec512a 495
+  s_d1f360e33d0bf5::t_90bbbfaac2ff3f 80-81
+  s_30f0086b29e6d2::t_f150e4c1b1f2d6 698
+  s_30f0086b29e6d2::t_bd5e647996ba0b 297,329-333,335,339-343,345
+  s_d1f360e33d0bf5::t_5f9fc62d53ea0b 93,144-156
+  s_d1f360e33d0bf5::t_2e6544feb866a6 216
+  s_d1f360e33d0bf5::t_d228e84c0ecf45 496-499
+  s_d1f360e33d0bf5::t_0c4c7be613be01 44-48
+  s_d1f360e33d0bf5::t_6917f7a7093032 741,752
+  s_d1f360e33d0bf5::t_f5015fb2a7c6b0 26-27
+  s_30f0086b29e6d2::t_8eea2e553b09a5 30-32,36-37,61-65,76-79,197,207,226,233,387-388,461-463,471-473,492-493
+  s_d1f360e33d0bf5::t_ba78c354f9dafe 383-386
+  s_30f0086b29e6d2::t_1cac4d1b918d21 611,637,654-657,659-660,667-668,676-677
+  s_30f0086b29e6d2::t_bb44091e0a939d 21
+  s_d1f360e33d0bf5::t_8b3eb591d54844 503-504
+  s_d1f360e33d0bf5::t_ac89014ce80b96 308
+  s_30f0086b29e6d2::t_64861bec6f74bc 636
+  s_30f0086b29e6d2::t_9332ac56551ed8 662
+  s_d1f360e33d0bf5::t_40c0469ca02671 122-123,125-132,135-142
+  s_d1f360e33d0bf5::t_e2aab1f79c985d 15
+  s_d1f360e33d0bf5::t_5f608d797d6e90 199-201,204-205
+  s_d1f360e33d0bf5::t_4daf4feb501de7 357
+  s_d1f360e33d0bf5::t_bc5c7763548e22 237-241,287,380
+  s_d1f360e33d0bf5::t_6546716fc49e3c 168-170
+  s_d1f360e33d0bf5::t_cb6ebbac58851c 381-382
+  s_d1f360e33d0bf5::t_c77cd5265c9181 506-508
+  s_d1f360e33d0bf5::t_9e8caff45db218 69
+  s_d1f360e33d0bf5::t_51e2696fb00aff 171
+  s_30f0086b29e6d2::t_029ad1a6711016 524-539,543-546,559
+  s_30f0086b29e6d2::t_c94348e78533b6 738,740
+  s_d1f360e33d0bf5::t_eb43a2ffa9a473 477-482
+  s_30f0086b29e6d2::t_5199e762a2bd21 685-687,695-697
+  s_30f0086b29e6d2::t_b8577a9c9ed5fc 706
+  s_30f0086b29e6d2::t_69fd0fded81c08 291-292,296,302-303,306,309,314-319,323-328,334,336-338,344,346-351,370
+  s_30f0086b29e6d2::t_073ee979af4148 501
+  s_d1f360e33d0bf5::t_304fb044abf7b8 211
+  s_30f0086b29e6d2::t_bb46605da0cc38 38,40,68,70
+  s_d1f360e33d0bf5::t_26d31588fb0c48 505,509
+  s_d1f360e33d0bf5::t_c75633d1e0f84c 603,605-608,616,620-621,624,627-632,635,638,663-664,671-673
+  s_30f0086b29e6d2::t_bd094951b71314 688-694,707
+  s_d1f360e33d0bf5::t_d33524c820cf8e 298
+  s_d1f360e33d0bf5::t_ac72c8c422db55 11
+  s_d1f360e33d0bf5::t_d98000646ca6a9 725
+  s_30f0086b29e6d2::t_750dae31563e58 642-644,665,674
+  s_30f0086b29e6d2::t_baed582c378e2a 733
+  s_30f0086b29e6d2::t_b1b504585ccb6a 755
+  s_d1f360e33d0bf5::t_ef3d0b3b7e06c4 310,352-356,364,373-376
+  s_ac188cea2946f6::t_e9faae8e4d4151 377,402,439,500,558,587,612,703,709
+packages/server/app/web/HistoryPanel.tsx
+  s_30f0086b29e6d2::t_b5051f85dcffdc 1-9,12
+  s_d1f360e33d0bf5::t_64972451c59daa 10-11
+packages/server/app/api/agent-host.ts
+  s_30f0086b29e6d2::t_aad99d5604c547 16,20,23-25
+packages/server/app/api/web-console/preferences/route.ts
+  s_30f0086b29e6d2::t_dad2ae1c113799 1-3,5-6
+  s_d1f360e33d0bf5::t_99215067463d47 4
+packages/server/app/api/web-auth/login/route.ts
+  s_30f0086b29e6d2::t_34a69336456dd9 1-15
+packages/server/app/web/page.tsx
+  s_d1f360e33d0bf5::t_63047e8d7133b9 293-295,297-298
+  s_d1f360e33d0bf5::t_1380478568900d 299-301
+  s_ac188cea2946f6::t_3d125c59c1d4ca 12,63-91
+  s_d1f360e33d0bf5::t_d573be584ecb60 139,144,146-148
+  s_30f0086b29e6d2::t_055b0acd39ec7e 59
+  s_30f0086b29e6d2::t_78a1930d36ba62 296
+  s_d1f360e33d0bf5::t_6b2eebad335b7c 518
+  s_30f0086b29e6d2::t_1dba94691c4677 57-58,145,227,229,233
+  s_30f0086b29e6d2::t_f77b3c0df0bfb6 53
+  s_30f0086b29e6d2::t_6f1d39e9972470 302-303,307,572
+  s_d1f360e33d0bf5::t_297e1a7e25b8d0 186
+  s_d1f360e33d0bf5::t_3099cf16122159 201-208
+  s_d1f360e33d0bf5::t_d7141733fb8d9d 219-222,224-226
+  s_30f0086b29e6d2::t_d531725b8f2aa4 9,20-23
+  s_d1f360e33d0bf5::t_b0ee0278e2b06c 266
+  s_d1f360e33d0bf5::t_4fc336067b523a 392-394,401,405-406,409,416-417,431-432
+  s_ac188cea2946f6::t_c3f3cfefb6c0ea 468
+  s_30f0086b29e6d2::t_00bf819202592e 50,94
+  s_30f0086b29e6d2::t_b5051f85dcffdc 10,46,49,55,241-242,252
+  s_d1f360e33d0bf5::t_0bb6184101aac1 96-98
+  s_30f0086b29e6d2::t_7f3b3f6717b83f 29
+  s_d1f360e33d0bf5::t_b3fab3f206e8d4 31-41
+  s_30f0086b29e6d2::t_04fa37611a7042 367,380
+  s_d1f360e33d0bf5::t_214e54a2e64e3d 550,552-553,561-562,570
+  s_d1f360e33d0bf5::t_a522bbfb965f17 334,340,344-345,349,354,356-357,361-363,365-366,368-373,376-378
+  s_d1f360e33d0bf5::t_7a56f554f07d55 52,54
+  s_d1f360e33d0bf5::t_958a3b8bfb7b55 582-584,589
+  s_d1f360e33d0bf5::t_6294594f5be57d 379
+  s_d1f360e33d0bf5::t_fed04bf5a50fc9 11,13
+  s_ac188cea2946f6::t_e93949fcd4d77b 440,446,450-451
+  s_d1f360e33d0bf5::t_c0306388dd05ac 56
+  s_30f0086b29e6d2::t_0debf6e8188b7c 51
+  s_30f0086b29e6d2::t_096f15da4f7c20 283
+  s_30f0086b29e6d2::t_446de4a3aa5013 191
+  s_d1f360e33d0bf5::t_aaf1624f727ef3 454
+  s_d1f360e33d0bf5::t_96a3b54c2fdc03 465
+  s_30f0086b29e6d2::t_eb706b0ae4acdf 47-48,260-262
+  s_30f0086b29e6d2::t_76ce57fa7ba805 200,209
+  s_d1f360e33d0bf5::t_5ab74efd75ab81 93
+  s_d1f360e33d0bf5::t_193bf610e59c77 374-375
+  s_d1f360e33d0bf5::t_188f7028dfb1d4 115-116,119-125,127
+  s_d1f360e33d0bf5::t_006a8ade75953c 189
+  s_ac188cea2946f6::t_7275bfb661f76e 154-157,178-183,291,311-312,576
+  s_d1f360e33d0bf5::t_8648bb2ed4ac5d 304-306
+  s_d1f360e33d0bf5::t_a8d9c9b2153969 95
+  s_d1f360e33d0bf5::t_c438e2665e6c53 7
+  s_d1f360e33d0bf5::t_ea2ae8be33a669 230
+  s_d1f360e33d0bf5::t_8991337dc0eeb9 105,108-109,111
+  s_d1f360e33d0bf5::t_d8210abb796f9b 381-382
+  s_30f0086b29e6d2::t_6e54cb19e39ffa 263-265,267
+  s_d1f360e33d0bf5::t_87a2eb3c2bb088 223
+  s_30f0086b29e6d2::t_760a882fdaae5e 24-27,62,104,106-107,110,114,117-118,126,128-137,141,184,190,192-196,198-199,211,228,231-232
+  s_d1f360e33d0bf5::t_a9c9cb500b2c29 60-61
+  s_d1f360e33d0bf5::t_c656b3a07cc0d9 140,142-143
+  s_d1f360e33d0bf5::t_ebfcc488e01692 28,30,42-43
+  s_d1f360e33d0bf5::t_1506c83ac8f824 149-153,158-177
+  s_ac188cea2946f6::t_3cebe486e297ba 92,138
+packages/core/src/domain/auth/index.ts
+  s_2edb7520e441f6::t_26d9c600881283 1-7
+  s_30f0086b29e6d2::t_aad99d5604c547 9
+  s_30f0086b29e6d2::t_2c34709c4251f3 8
+packages/server/lib/server-data-dir.ts
+  s_30f0086b29e6d2::t_aad99d5604c547 1-10
+packages/server/package.json
+  s_30f0086b29e6d2::t_08d84c36b9eef0 7-9
+packages/server/app/api/web-auth/status/route.ts
+  s_30f0086b29e6d2::t_34a69336456dd9 1-21
+packages/core/src/domain/auth/password.test.ts
+  s_30f0086b29e6d2::t_2c34709c4251f3 1-12
+packages/core/src/index.ts
+  s_30f0086b29e6d2::t_0dbbccc01c86f3 20
+  s_2edb7520e441f6::t_26d9c600881283 19
+packages/server/next.config.js
+  s_d1f360e33d0bf5::t_62ddf41292fc69 2-9,13
+  s_30f0086b29e6d2::t_1d73ff3af66e26 31-37
+  s_30f0086b29e6d2::t_1f54491409255e 11
+  s_30f0086b29e6d2::t_08d84c36b9eef0 12
+  s_30f0086b29e6d2::t_55a9bb7aa80c66 30
+packages/server/app/web/ThemePicker.tsx
+  s_30f0086b29e6d2::t_8827243f7cac94 65,80-81
+  s_d1f360e33d0bf5::t_0e22b99a3b3ebd 1-2,4-16,19-20,44-46,50-53,57-58,61-63,70-71,73,75-76,79,82,85-88,90-93,95-98,100-104,109-119,121-129,131-144,146-168
+  s_d1f360e33d0bf5::t_b2b03837f8fe10 3,17-18,21-43,47-49,54-56,59-60,64,66-69,72,74,77-78,83-84,89,94,99,105-108,120,130,145
+packages/server/ws-server.mjs
+  s_ac188cea2946f6::t_5f6e54f06ccca1 753
+  s_30f0086b29e6d2::t_e221707703bb5d 10,14-15
+  s_30f0086b29e6d2::t_79d9234054445e 270,276,283-284,316-317,384
+  s_30f0086b29e6d2::t_543f71fc577247 198,205
+  s_30f0086b29e6d2::t_f30e0177775ecf 687-690
+  s_30f0086b29e6d2::t_47655c9f76709b 718-725,733-738
+  s_30f0086b29e6d2::t_25c6dc5f1cc2ec 168,200,212,241-244,252-266
+  s_30f0086b29e6d2::t_7e6a707fbb3592 659
+  s_30f0086b29e6d2::t_d3ebfde9e24f66 199,220,592
+  s_30f0086b29e6d2::t_3c35b19f92f216 34-35,166,172,190
+  s_30f0086b29e6d2::t_5ce719d37d5547 491,496,544-545,564,573-574,583-584,590-591,599-602,610,614,618
+  s_30f0086b29e6d2::t_4eee1f3ef5a6fa 425,459-464
+  s_30f0086b29e6d2::t_9696fc3a7389b9 28,36-37
+  s_30f0086b29e6d2::t_fddd150d727f5d 39,176-178,245-248,550
+  s_30f0086b29e6d2::t_c32c3f760e8109 267,457,465,676-686,691-694,698-707,710,712,714,756
+  s_30f0086b29e6d2::t_f91bbe184420e2 423,435-437,439-446,450-456,476-478
+  s_30f0086b29e6d2::t_de708eef17cfef 492-495,499-504,519,527-541,553-555,557,560,565-566,594
+  s_30f0086b29e6d2::t_d6029b7042dc44 268
+  s_30f0086b29e6d2::t_ef0cce0a6dc854 458
+  s_30f0086b29e6d2::t_26d7c419ebfab3 466
+  s_30f0086b29e6d2::t_60b5b49f5253c6 551
+  s_30f0086b29e6d2::t_2e3c760808f031 561
+packages/server/app/web/mobileViewport.test.ts
+  s_ac188cea2946f6::t_7275bfb661f76e 1-35
+packages/server/app/web/useWebAuth.ts
+  s_d1f360e33d0bf5::t_5dad65b703322f 16,18-24,29-35
+  s_30f0086b29e6d2::t_f30e0177775ecf 42-43,46
+  s_d1f360e33d0bf5::t_2e88b408207401 28
+  s_30f0086b29e6d2::t_504471b4719937 2,12,38
+  s_30f0086b29e6d2::t_fe7623f4d51c66 1,3-11,13-15,17,25-27,36-37,39-41,44-45,47-62
+packages/server/app/api/web-console/device-state/route.ts
+  s_30f0086b29e6d2::t_dad2ae1c113799 1-5
+packages/server/app/api/web-auth/logout/route.ts
+  s_30f0086b29e6d2::t_34a69336456dd9 1-13
+packages/server/lib/web-auth/http.ts
+  s_30f0086b29e6d2::t_aad99d5604c547 2-8,10-26,28
+  s_30f0086b29e6d2::t_dad2ae1c113799 1,9
+  s_30f0086b29e6d2::t_f30e0177775ecf 27
+packages/server/app/api/web-auth/setup/route.ts
+  s_30f0086b29e6d2::t_34a69336456dd9 1,4-9,12-18
+  s_30f0086b29e6d2::t_ab36ac76641779 3,20
+  s_30f0086b29e6d2::t_f30e0177775ecf 2,10-11,19
+packages/core/src/domain/auth/WebAuthService.ts
+  s_30f0086b29e6d2::t_aad99d5604c547 1-121
+packages/server/app/web/terminalInputPolicy.ts
+  s_ce18d43f8a9a03::t_7daab23e03c429 1-5
+packages/server/app/layout.tsx
+  s_ac188cea2946f6::t_5f6e54f06ccca1 2
+packages/core/src/infrastructure/SQLiteDatabase.ts
+  s_30f0086b29e6d2::t_0dbbccc01c86f3 204-255,261-263
+  s_2edb7520e441f6::t_26d9c600881283 170-203,258-260
+packages/core/src/infrastructure/SQLiteWebConsoleStore.test.ts
+  s_30f0086b29e6d2::t_55e94ca3c8668c 1-32
+packages/core/src/infrastructure/index.ts
+  s_30f0086b29e6d2::t_0dbbccc01c86f3 17
+  s_30f0086b29e6d2::t_2c34709c4251f3 16
+packages/core/src/domain/auth/password.ts
+  s_30f0086b29e6d2::t_2c34709c4251f3 1-15
+packages/server/tsconfig.json
+  s_ce18d43f8a9a03::t_fbfcfc0c56f8e1 31
+  s_30f0086b29e6d2::t_cccb406147e601 30
+packages/core/src/domain/web-console/index.ts
+  s_30f0086b29e6d2::t_0dbbccc01c86f3 1
+package.json
+  s_0c9810ca6cf0aa::t_fd7af39dd696f8 11
+  s_ac188cea2946f6::t_c43f694294a62c 28-29
+  s_ac188cea2946f6::t_c97fc4fa1a8a5a 12-13,25-27
+  s_30f0086b29e6d2::t_1f54491409255e 24
+packages/core/src/domain/auth/WebAuthService.test.ts
+  s_30f0086b29e6d2::t_c2e8a5d7206bc8 1-48
+packages/server/app/api/web-auth/revoke-all/route.ts
+  s_30f0086b29e6d2::t_34a69336456dd9 1-13
+packages/server/app/web/terminalInputPolicy.test.ts
+  s_ce18d43f8a9a03::t_7daab23e03c429 1-11,13-19
+  s_ce18d43f8a9a03::t_95ddf02b3c8b45 12
+packages/core/src/domain/auth/entities.ts
+  s_2edb7520e441f6::t_26d9c600881283 1-31
+packages/core/src/domain/web-console/entities.ts
+  s_30f0086b29e6d2::t_0dbbccc01c86f3 1-6
+packages/server/app/web/AuthGate.tsx
+  s_30f0086b29e6d2::t_fe7623f4d51c66 1-47
+docs/superpowers/specs/2026-08-28-agentroam-public-readiness-system-proxy-design.md
+  s_ce18d43f8a9a03::t_a77ef82e687208 58,94
+  s_a5850225327266::t_24c7516552b615 95
+packages/server/app/api/web-console/bootstrap/route.ts
+  s_30f0086b29e6d2::t_34a69336456dd9 1,3-8,10-11
+  s_30f0086b29e6d2::t_dad2ae1c113799 2,9
+packages/core/src/infrastructure/SQLiteWebConsoleStore.ts
+  s_30f0086b29e6d2::t_0dbbccc01c86f3 1-34
+packages/core/src/infrastructure/SQLiteAuthStore.ts
+  s_30f0086b29e6d2::t_33342eb2e3ff8e 9
+  s_30f0086b29e6d2::t_0a104902959e57 15,18-21
+  s_30f0086b29e6d2::t_2c34709c4251f3 1-8,10-14,16-17,22-66
+packages/server/app/api/web-console/history/route.ts
+  s_30f0086b29e6d2::t_dad2ae1c113799 1-4
+packages/server/app/web/useGateway.ts
+  s_30f0086b29e6d2::t_5caa4df219e423 21,36,38-42,45-53,95-101,135
+  s_30f0086b29e6d2::t_7e6a707fbb3592 105-107
+  s_30f0086b29e6d2::t_0d40cc0d5ff5e1 4-6,8,10,12-14,16-20,23-35,57-58,61-72,74-77,80-81,86,88-91,93-94,103-104,110-122,125,132-133
+.gitignore
+  s_30f0086b29e6d2::t_6cea92f0e14600 17-19
+  s_30f0086b29e6d2::t_08d84c36b9eef0 16
+packages/core/src/infrastructure/SQLiteAuthStore.test.ts
+  s_2edb7520e441f6::t_aee9c9a565cebb 1-5,7-24,53-54
+  s_30f0086b29e6d2::t_c2e8a5d7206bc8 6,25-52
+packages/server/app/web/themes.ts
+  s_d1f360e33d0bf5::t_5ee561da42e038 472-473
+  s_d1f360e33d0bf5::t_054014888afe94 1-471,474-475
+bun.lock
+  s_ce18d43f8a9a03::t_eae272cb89828d 14-37,349-350,385-388,669-670
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "e26ea473de52bf11e2c7aaef1f1b9451d2e6413d",
+  "prompts": {},
+  "sessions": {
+    "s_0c9810ca6cf0aa": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0467f-4946-7e63-a50b-da3a8638b430",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_2edb7520e441f6": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_fbd769d42ffey3wa21lCn1M2C5",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_30f0086b29e6d2": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_fbf4cc4b8ffeN7CnUjmxQ9RFm9",
+        "model": "glm-5.3-flash"
+      },
+      "human_author": null
+    },
+    "s_a5850225327266": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a04368-2bec-7bf3-bbb0-400f99b25f41",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_ac188cea2946f6": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a04637-d2a1-7d61-93d4-acea29111f70",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_ce18d43f8a9a03": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a04732-2417-7fe3-b582-f86fb900e538",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_d1f360e33d0bf5": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "87274c0d-7dd4-43f5-b0a6-af0ce66e3907",
+        "model": "composer-2.5"
+      },
+      "human_author": null
+    }
+  }
+}

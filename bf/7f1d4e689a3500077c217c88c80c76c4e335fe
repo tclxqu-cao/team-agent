@@ -1,0 +1,26 @@
+package.json
+  h_b0bf4228a0b7ec 25-26
+packages/cli/bin/node-preflight.mjs
+  h_b0bf4228a0b7ec 2,11-14
+packages/cli/install/install-agentroam.ps1
+  h_b0bf4228a0b7ec 7
+packages/cli/install/install-agentroam.sh
+  h_b0bf4228a0b7ec 6-7
+packages/cli/src/platform-packages.ts
+  h_b0bf4228a0b7ec 7,9-19
+packages/cli/src/tunnel/public-readiness.ts
+  h_b0bf4228a0b7ec 4,48
+scripts/bump-release-version.mjs
+  h_b0bf4228a0b7ec 1-123
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "bf7f1d4e689a3500077c217c88c80c76c4e335fe",
+  "prompts": {},
+  "humans": {
+    "h_b0bf4228a0b7ec": {
+      "author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

@@ -1,0 +1,35 @@
+scripts/publish-agentroam-release.mjs
+  s_c2f221873f144e::t_32c5e48b910e7a 53-54,61
+scripts/agent-runtime-workflow-contract.test.mjs
+  s_c2f221873f144e::t_32c5e48b910e7a 38
+scripts/agentroam-release-lib.mjs
+  s_c2f221873f144e::t_32c5e48b910e7a 297,301,338,391-395,397,404-414
+  s_c2f221873f144e::t_50e7926bf843d9 415
+.github/workflows/agent-runtime-publish.yml
+  s_c2f221873f144e::t_32c5e48b910e7a 292
+scripts/publish-agentroam-release.test.mjs
+  s_c2f221873f144e::t_54040ca4f2805c 10,150-158
+  s_c2f221873f144e::t_32c5e48b910e7a 129-133,144,146-149,167
+.github/agent-runtime-upgrade.md
+  s_c2f221873f144e::t_12b4123e2f3d4e 54-56
+packages/cli/RELEASE.md
+  s_c2f221873f144e::t_12b4123e2f3d4e 83-85
+.github/workflows/agent-runtime-gitee-retry.yml
+  s_c2f221873f144e::t_32c5e48b910e7a 135
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "73800419a0b7e3e3b2585e61fe9189198bd57b16",
+  "prompts": {},
+  "sessions": {
+    "s_c2f221873f144e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06d49-5ce1-7c11-8feb-44d455eb6627",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

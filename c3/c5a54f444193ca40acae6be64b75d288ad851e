@@ -1,0 +1,23 @@
+packages/cli/install/install-agentroam.ps1
+  s_6b9e80a52ca62d::t_995b737b43cb85 229
+packages/cli/install/install-agentroam.sh
+  s_6b9e80a52ca62d::t_13fa84b3da0935 256-258
+packages/cli/src/install-script-contract.test.ts
+  s_6b9e80a52ca62d::t_7418e97ebcdacf 3,11-41
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "c3c5a54f444193ca40acae6be64b75d288ad851e",
+  "prompts": {},
+  "sessions": {
+    "s_6b9e80a52ca62d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a09f40-ec7f-74c0-a008-4264fcd09dc6",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

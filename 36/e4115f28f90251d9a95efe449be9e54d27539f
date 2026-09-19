@@ -1,0 +1,19 @@
+docs/superpowers/specs/2026-09-02-native-runtime-client-project-projection-design.md
+  s_b6c4b214800d85::t_af99fe1f4aa656 1-79
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "36e4115f28f90251d9a95efe449be9e54d27539f",
+  "prompts": {},
+  "sessions": {
+    "s_b6c4b214800d85": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06137-93c2-7840-8f83-7bbaf5402129",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

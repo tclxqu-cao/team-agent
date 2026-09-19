@@ -1,0 +1,67 @@
+packages/runtime-darwin-arm64/package.json
+  s_c3d5b1753265d1::t_1c8dcc9b863bd7 3
+packages/runtime-win32-x64/package.json
+  s_c3d5b1753265d1::t_1c8dcc9b863bd7 3
+packages/cloudflared-win32-x64/package.json
+  s_c3d5b1753265d1::t_1c8dcc9b863bd7 3
+packages/cli/src/tunnel/public-readiness.ts
+  s_c3d5b1753265d1::t_1c8dcc9b863bd7 47
+packages/server/app/web/webappLoading.test.ts
+  s_c3d5b1753265d1::t_749d64b5a3bfff 23
+packages/cli/bin/node-preflight.mjs
+  s_c3d5b1753265d1::t_1c8dcc9b863bd7 10
+packages/cli/install/install-agentroam.ps1
+  s_c3d5b1753265d1::t_1c8dcc9b863bd7 5
+packages/cli/install/README.md
+  s_c3d5b1753265d1::t_89bd5279733514 8,16,43
+packages/cli/package.json
+  s_c3d5b1753265d1::t_1c8dcc9b863bd7 3,29-34
+packages/cli/install/install-agentroam.sh
+  s_c3d5b1753265d1::t_1c8dcc9b863bd7 5
+scripts/verify-cli-install.mjs
+  s_c3d5b1753265d1::t_1c8dcc9b863bd7 167
+packages/cli/RELEASE.md
+  s_c3d5b1753265d1::t_89bd5279733514 1,15,119-125
+packages/runtime-darwin-arm64/manifest.json
+  s_c3d5b1753265d1::t_1c8dcc9b863bd7 2
+packages/cli/README.md
+  s_c3d5b1753265d1::t_89bd5279733514 23-26,33-36
+packages/cli/src/cloudflared/bundled-asset.test.ts
+  s_c3d5b1753265d1::t_749d64b5a3bfff 5,15,60
+scripts/agent-runtime-upgrade.test.mjs
+  s_c3d5b1753265d1::t_cff88ee89439c2 105,111,114,119,136
+packages/tui/src/App.test.tsx
+  s_c3d5b1753265d1::t_749d64b5a3bfff 26-28
+packages/cloudflared-darwin-arm64/manifest.json
+  s_c3d5b1753265d1::t_1c8dcc9b863bd7 2
+packages/cloudflared-win32-x64/manifest.json
+  s_c3d5b1753265d1::t_1c8dcc9b863bd7 2
+packages/cloudflared-darwin-arm64/package.json
+  s_c3d5b1753265d1::t_1c8dcc9b863bd7 3
+packages/tui-darwin-arm64/package.json
+  s_c3d5b1753265d1::t_1c8dcc9b863bd7 3
+packages/tui-win32-x64/package.json
+  s_c3d5b1753265d1::t_1c8dcc9b863bd7 3
+packages/cli/src/platform-packages.ts
+  s_c3d5b1753265d1::t_1c8dcc9b863bd7 6
+packages/runtime-win32-x64/manifest.json
+  s_c3d5b1753265d1::t_1c8dcc9b863bd7 2
+bun.lock
+  s_c3d5b1753265d1::t_ed3ae064bea45e 16,32-37,42,46,79,83,140,144
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "e96f80a5985a72863364e7f162af2b0c2a2dbf95",
+  "prompts": {},
+  "sessions": {
+    "s_c3d5b1753265d1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06bb1-1112-7a71-bc86-5f4332503821",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

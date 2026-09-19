@@ -1,0 +1,20 @@
+packages/cli/bin/desktop-download.mjs
+  h_b0bf4228a0b7ec 13-14
+scripts/agentroam-release-lib.mjs
+  h_b0bf4228a0b7ec 11-14,358-388,390,392,394-396,398-400,405-406,409-410,413-414,416,419,421-434,562-632
+scripts/publish-agentroam-release.mjs
+  h_b0bf4228a0b7ec 6-7,9,20,66,80-106
+scripts/publish-agentroam-release.test.mjs
+  h_b0bf4228a0b7ec 2,11,19,212-339
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "026a7a50ef7ac8849b1b0f35920c090602af2d81",
+  "prompts": {},
+  "humans": {
+    "h_b0bf4228a0b7ec": {
+      "author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

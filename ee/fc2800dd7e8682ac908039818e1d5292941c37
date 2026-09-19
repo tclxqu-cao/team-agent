@@ -1,0 +1,30 @@
+packages/server/app/api/client-logs/route.test.ts
+  h_b0bf4228a0b7ec 1-100
+packages/server/app/api/client-logs/route.ts
+  h_b0bf4228a0b7ec 1-103
+packages/server/app/api/push/subscribe/route.ts
+  h_b0bf4228a0b7ec 1-27
+packages/server/app/api/push/unsubscribe/route.ts
+  h_b0bf4228a0b7ec 1-15
+packages/server/app/api/push/vapid/route.ts
+  h_b0bf4228a0b7ec 1-15
+packages/server/lib/global-logger.ts
+  h_b0bf4228a0b7ec 1-30
+packages/server/lib/push-hook.ts
+  h_b0bf4228a0b7ec 1-56
+packages/server/lib/web-push-service.mjs
+  h_b0bf4228a0b7ec 1-129
+packages/server/lib/web-push-service.test.ts
+  h_b0bf4228a0b7ec 1-103
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "eefc2800dd7e8682ac908039818e1d5292941c37",
+  "prompts": {},
+  "humans": {
+    "h_b0bf4228a0b7ec": {
+      "author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

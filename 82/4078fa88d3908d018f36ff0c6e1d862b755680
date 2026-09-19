@@ -1,0 +1,24 @@
+packages/desktop/main/index.ts
+  h_b0bf4228a0b7ec 2,76-198
+packages/desktop/main/preload.ts
+  h_b0bf4228a0b7ec 16-24
+packages/desktop/native/wakelistener.js
+  h_b0bf4228a0b7ec 1-104
+packages/desktop/native/wakelistener.swift
+  h_b0bf4228a0b7ec 1-153
+packages/desktop/renderer/App.tsx
+  h_b0bf4228a0b7ec 71,81-128,132,134-143,150-153,161
+packages/desktop/renderer/global.d.ts
+  h_b0bf4228a0b7ec 83-90
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "824078fa88d3908d018f36ff0c6e1d862b755680",
+  "prompts": {},
+  "humans": {
+    "h_b0bf4228a0b7ec": {
+      "author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

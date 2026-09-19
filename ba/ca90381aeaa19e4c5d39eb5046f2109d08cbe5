@@ -1,0 +1,81 @@
+packages/cli/package.json
+  s_c3d5b1753265d1::t_d959bb0b24b1a1 3,29-34
+packages/cloudflared-darwin-arm64/package.json
+  s_c3d5b1753265d1::t_d959bb0b24b1a1 3
+packages/cli/src/service/macos-launch-agent.test.ts
+  s_c3d5b1753265d1::t_7feb9aac547963 73-196
+packages/cli/src/cloudflared/bundled-asset.test.ts
+  s_c3d5b1753265d1::t_d959bb0b24b1a1 14,59
+packages/runtime-win32-x64/manifest.json
+  s_c3d5b1753265d1::t_d959bb0b24b1a1 2
+packages/cli/src/service/windows-task-service.ts
+  s_c3d5b1753265d1::t_ca5d6f875b784f 61-62,69-73
+scripts/verify-cli-install.mjs
+  s_c3d5b1753265d1::t_d959bb0b24b1a1 167
+packages/cli/install/install-agentroam.ps1
+  s_c3d5b1753265d1::t_d959bb0b24b1a1 5
+packages/runtime-win32-x64/package.json
+  s_c3d5b1753265d1::t_d959bb0b24b1a1 3
+packages/cloudflared-darwin-arm64/manifest.json
+  s_c3d5b1753265d1::t_d959bb0b24b1a1 2
+packages/cli/src/platform-packages.ts
+  s_c3d5b1753265d1::t_d959bb0b24b1a1 6
+docs/superpowers/plans/2026-09-05-agentroam-idempotent-installer-upgrade.md
+  s_c3d5b1753265d1::t_f697f2052cd589 43,56,82,107,111
+  s_c3d5b1753265d1::t_ca5d6f875b784f 32,70
+  s_c3d5b1753265d1::t_d46613cbcf9e17 136
+  s_c3d5b1753265d1::t_ed2bd1be9668d6 115
+  s_c3d5b1753265d1::t_4f60767e8a32c5 1-31,33-42,44-55,57-69,71-81,83-106,108-110,112-114,116-135,137-144,146-171,173-178
+  s_c3d5b1753265d1::t_f6f20d8aca4b29 145
+  s_c3d5b1753265d1::t_117d51b40ca567 172
+packages/cli/RELEASE.md
+  s_c3d5b1753265d1::t_f697f2052cd589 28-29
+  s_c3d5b1753265d1::t_d959bb0b24b1a1 1,15,79-85
+packages/cli/src/tunnel/public-readiness.ts
+  s_c3d5b1753265d1::t_d959bb0b24b1a1 47
+packages/cli/install/install-agentroam.sh
+  s_c3d5b1753265d1::t_d959bb0b24b1a1 5
+packages/cli/bin/node-preflight.mjs
+  s_c3d5b1753265d1::t_d959bb0b24b1a1 10
+packages/tui-darwin-arm64/package.json
+  s_c3d5b1753265d1::t_d959bb0b24b1a1 3
+packages/runtime-darwin-arm64/manifest.json
+  s_c3d5b1753265d1::t_d959bb0b24b1a1 2
+packages/cloudflared-win32-x64/manifest.json
+  s_c3d5b1753265d1::t_d959bb0b24b1a1 2
+packages/cloudflared-win32-x64/package.json
+  s_c3d5b1753265d1::t_d959bb0b24b1a1 3
+packages/cli/README.md
+  s_c3d5b1753265d1::t_d959bb0b24b1a1 23-26,33-36
+  s_c3d5b1753265d1::t_f697f2052cd589 74-76
+packages/runtime-darwin-arm64/package.json
+  s_c3d5b1753265d1::t_d959bb0b24b1a1 3
+packages/cli/src/service/windows-task-service.test.ts
+  s_c3d5b1753265d1::t_7feb9aac547963 80-217
+packages/tui-win32-x64/package.json
+  s_c3d5b1753265d1::t_d959bb0b24b1a1 3
+packages/cli/install/README.md
+  s_c3d5b1753265d1::t_f697f2052cd589 25
+  s_c3d5b1753265d1::t_d959bb0b24b1a1 8,16,41
+packages/cli/src/service/macos-launch-agent.ts
+  s_c3d5b1753265d1::t_ca5d6f875b784f 64,80-83,241-253
+  s_c3d5b1753265d1::t_f800c8a8003b82 254
+bun.lock
+  s_c3d5b1753265d1::t_7fe666dbd11ea0 16,32-37,42,46,79,83,140,144
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "baca90381aeaa19e4c5d39eb5046f2109d08cbe5",
+  "prompts": {},
+  "sessions": {
+    "s_c3d5b1753265d1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06bb1-1112-7a71-bc86-5f4332503821",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

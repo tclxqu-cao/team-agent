@@ -1,0 +1,19 @@
+docs/superpowers/specs/2026-09-04-webapp-session-title-persistence-design.md
+  s_4447132b1cfd65::t_dbeaa293fdc2b3 1-109
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "15caab11221a89703caeedf54cdacfd4c597c416",
+  "prompts": {},
+  "sessions": {
+    "s_4447132b1cfd65": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a069ec-2612-7111-9ca7-b65d164205dd",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

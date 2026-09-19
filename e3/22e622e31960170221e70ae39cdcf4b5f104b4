@@ -1,0 +1,20 @@
+docs/superpowers/specs/2026-09-04-sidebar-reference-redesign.md
+  s_b95fa2e9b9b282::t_748ad7d2da1d59 1-39,41,43-124,126-129
+  s_b95fa2e9b9b282::t_6838476a0c4f10 40,42,125
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "e322e622e31960170221e70ae39cdcf4b5f104b4",
+  "prompts": {},
+  "sessions": {
+    "s_b95fa2e9b9b282": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06a27-5c57-7232-9522-e70895aadb95",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

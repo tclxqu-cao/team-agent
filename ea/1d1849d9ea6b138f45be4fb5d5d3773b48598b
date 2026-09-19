@@ -1,0 +1,31 @@
+docs/superpowers/plans/2026-09-05-codex-visualize-live-history-reconciliation.md
+  s_9921e31911a098::t_fe9d2f1553e932 1-30,32-36,38-62,64-91,93-107,109-121,123-125,127-131,133-136,138-143,145,147-148,150-151
+  s_9921e31911a098::t_5a08959c4dd209 31,37,63,92,108,122,126
+  s_9921e31911a098::t_675bdfd6466403 132,137,144,146,149
+packages/desktop/renderer/lib/native-session-view-state.ts
+  s_9921e31911a098::t_12e14e853020c8 38,40
+packages/desktop/renderer/lib/markdown-links.test.ts
+  s_9921e31911a098::t_12e14e853020c8 103-153
+packages/desktop/renderer/lib/markdown-links.ts
+  s_9921e31911a098::t_12e14e853020c8 12,15,42-59,68,95-98
+  s_9921e31911a098::t_a73954fea3b843 99-101
+packages/desktop/renderer/lib/native-session-view-state.test.ts
+  s_9921e31911a098::t_12e14e853020c8 48,57,61-79
+  s_9921e31911a098::t_d245416638b7a7 80-81
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "ea1d1849d9ea6b138f45be4fb5d5d3773b48598b",
+  "prompts": {},
+  "sessions": {
+    "s_9921e31911a098": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06fd4-dcc0-7df2-a9f2-9808ce6f6125",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

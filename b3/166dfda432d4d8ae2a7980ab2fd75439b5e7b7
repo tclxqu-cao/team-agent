@@ -1,0 +1,20 @@
+docs/superpowers/specs/2026-09-05-agent-runtime-continuous-upgrade-design.md
+  s_c2f221873f144e::t_1efe8ad85364f9 1-171,173-215,220-267
+  s_c2f221873f144e::t_da38acc1c246c2 172,216-219
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "b3166dfda432d4d8ae2a7980ab2fd75439b5e7b7",
+  "prompts": {},
+  "sessions": {
+    "s_c2f221873f144e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06d49-5ce1-7c11-8feb-44d455eb6627",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": null
+    }
+  }
+}

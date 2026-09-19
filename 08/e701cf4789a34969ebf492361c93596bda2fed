@@ -1,0 +1,429 @@
+docs/superpowers/plans/2026-09-07-codex-stable-execution-trace.md
+  s_02602191d5774d::t_db2663ede97b55 136-152,154-156,158-160,162-164,166-168,170-172
+  s_ad41bc9c79af91::t_7304c5a997a586 1-4,6,8-12,14,16-20,22-23,62-67,70,72-74,77-79,81-82,84-85,87,89,91,93,95,97-104,107,109-111,113-114,119,121-123,125,127,129,131,133,135,173-174,176,178-181
+  s_1c9b36aefdf184::t_c9e24c13bb11c7 5,7,13,15,21,24-38,40-42,44-46,48-50,52-54,56-61,68-69,75-76,83,90,94,96,105-106,112,115,117-118,126,130,134,177
+  s_1c9b36aefdf184::t_0fe9bf37888d2c 86
+  s_02602191d5774d::t_6b7e222625de03 153,157,161,165,169
+  s_1c9b36aefdf184::t_d07b2cc524936b 39,43,47,51,55,71,80,88,92,108,116,120,124,128,132,175
+packages/desktop/renderer/lib/session-history.test.ts
+  s_ad41bc9c79af91::t_42cb7e65c9536b 220,476-494,651
+  s_ad41bc9c79af91::t_04901e42f89b39 416-417,423-424,426-432,435,437,442-452,454-455,457-475,652
+  s_1c9b36aefdf184::t_d860a5271c9eeb 74
+  s_1c9b36aefdf184::t_a02a8bf36666e4 7,12-31,66-73,75-83,418-422,425,433-434,436,438-441,453,456
+  s_ad41bc9c79af91::t_8b19a5bee0e65d 1,3-4,6,8-9,110-127,198-219
+  s_1c9b36aefdf184::t_2907fec4c52ff0 499,506-510,512-528,531-533
+  s_02602191d5774d::t_3360a01c453a4e 500-505,511,529-530
+  s_1c9b36aefdf184::t_e822be59f51b53 588-623
+  s_02602191d5774d::t_683fdd90ccd3aa 32-65
+  s_ad41bc9c79af91::t_9cc0e93560e06f 5,495-498,535-546,548-551,586-587,624-650
+  s_ad41bc9c79af91::t_75a47f76f70f89 534,547,552-585
+  s_ad41bc9c79af91::t_8e984ab63f97f8 221
+packages/desktop/main/agent-runtime/unified-session-service.ts
+  s_ad41bc9c79af91::t_ee650b4af753f2 181,184-188
+  s_ad41bc9c79af91::t_a9f6ae56ccbcd1 8-9,224-232
+  s_ad41bc9c79af91::t_0865a341905688 233,340-351
+  s_02602191d5774d::t_39350df21c3a0b 234
+packages/tui-darwin-arm64/package.json
+  s_1893c5356f42de::t_372851e9e7f952 3
+packages/core/src/domain/model/entities.ts
+  s_ad41bc9c79af91::t_94edaf5dd2f29b 4,18-19
+  s_1c9b36aefdf184::t_b5e5efc1a692b3 48-49
+packages/desktop/renderer/lib/tool-call-status.ts
+  s_ad41bc9c79af91::t_6de6dad4863135 3,7
+packages/desktop/renderer/lib/native-session-view-state.test.ts
+  s_02602191d5774d::t_391c6a418f6bdb 7,69-72
+  s_02602191d5774d::t_022635224f19af 62-68
+  s_02602191d5774d::t_829ff81baddcbb 73-74
+docs/superpowers/plans/2026-09-07-codex-direct-send-and-fast-history.md
+  s_ad41bc9c79af91::t_38cf0c631a96d4 1-229
+packages/cloudflared-win32-x64/manifest.json
+  s_1893c5356f42de::t_372851e9e7f952 2
+packages/desktop/renderer/components/CodexExecutionTrace.test.tsx
+  s_02602191d5774d::t_8756d410e28155 28-30,34-58
+  s_1c9b36aefdf184::t_a02a8bf36666e4 1-27,31-33,59-60
+packages/desktop/renderer/components/ChatHeaderActions.tsx
+  s_ad41bc9c79af91::t_b80f150385fe1c 1-2,7,9,18,20,24-28,31-46
+scripts/verify-cli-install.mjs
+  s_1893c5356f42de::t_372851e9e7f952 167
+packages/cloudflared-win32-x64/package.json
+  s_1893c5356f42de::t_372851e9e7f952 3
+packages/desktop/main/agent-runtime/types.ts
+  s_ad41bc9c79af91::t_0865a341905688 236
+  s_ad41bc9c79af91::t_577d0a7b445670 8-9,216-219
+docs/superpowers/plans/2026-09-07-codex-workspace-session-fast-path.md
+  s_ad41bc9c79af91::t_8baa36d29f2c4a 31,35,39,53,57,61,65,79,83,87,100,104,108,114
+  s_ad41bc9c79af91::t_887a7c92d183fb 1-30,32-34,36-38,40-52,54-56,58-60,62-64,66-78,80-82,84-86,88-99,101-103,105-107,109-113,115-124
+packages/server/app/api/sessions/[id]/release/route.ts
+  s_ad41bc9c79af91::t_0bfa49545cf43d 1-24
+packages/cloudflared-darwin-arm64/package.json
+  s_1893c5356f42de::t_372851e9e7f952 3
+scripts/audit-runtime-tarball.mjs
+  s_1893c5356f42de::t_77f404f9eb1f7e 38
+packages/server/app/api/sessions/[id]/route.ts
+  s_02602191d5774d::t_296733980a068f 64-65,68-84,91,93,103,106
+  s_ad41bc9c79af91::t_c445aedfdb061d 8-9,32
+  s_1c9b36aefdf184::t_1af10b6318f985 31,33,41
+  s_ad41bc9c79af91::t_0d7c0e53e80b79 29-30,39-40
+  s_02602191d5774d::t_b6f096ca0de4f8 90,102
+packages/desktop/main/agent-runtime/codex-rollout-activity.ts
+  s_0bd02aab929906::t_d750a4f7e09797 5-10,22,45-62,65-111,115-139
+  s_0bd02aab929906::t_9c33f0ee3ee0f6 63-64
+  s_0bd02aab929906::t_f6b1de2f2b479b 112-114
+  s_0bd02aab929906::t_3feb26ab44eac5 140
+packages/desktop/renderer/lib/occupied-session-fork.test.ts
+  s_ad41bc9c79af91::t_fb0d9788379939 176-177
+  s_5c59148423a7e6::t_8940cad83178b1 7,9,14,68-93
+  s_ad41bc9c79af91::t_be73de3125f588 8,12-13,36,41-43,50-67,94-95,173-175,178
+packages/core/src/domain/session/index.ts
+  s_ad41bc9c79af91::t_94edaf5dd2f29b 5,8-9
+packages/desktop/main/agent-runtime/agent-workspace-index.test.ts
+  s_ad41bc9c79af91::t_c27601a6e16b6b 132-164,237-265,268-317,319-332,335-345,347-351,361,371-373,386,390,395-397,403,422-423,433,443,446,449,457,460,468
+  s_ad41bc9c79af91::t_8805435e99ef9e 417,426
+packages/cli/README.md
+  s_1893c5356f42de::t_372851e9e7f952 23-26,33-36
+packages/server/app/api/sessions/[id]/tool-result/route.ts
+  s_ad41bc9c79af91::t_0d7c0e53e80b79 1-31,43-44
+  s_ad41bc9c79af91::t_4426e00ff9004f 36-42
+  s_ad41bc9c79af91::t_7be1ef72ecf804 32-34
+  s_ad41bc9c79af91::t_859c6fbec7fb9e 35
+packages/server/app/api/sessions/[id]/tool-result/route.test.ts
+  s_ad41bc9c79af91::t_a55251008e3cee 1-59
+packages/cli/install/install-agentroam.ps1
+  s_1893c5356f42de::t_372851e9e7f952 5
+packages/desktop/renderer/components/ToolCallCard.test.tsx
+  s_ad41bc9c79af91::t_549291929e3f93 4,44-75,79-82,84-93
+  s_ad41bc9c79af91::t_fc77d0c0ba7c1e 76-78,83
+packages/desktop/renderer/styles/global.css
+  s_ad41bc9c79af91::t_865b8fe293d7c8 1377-1384
+  s_1c9b36aefdf184::t_9bd3cdd96617e5 2471
+  s_1c9b36aefdf184::t_7d38c2b248d518 2397-2470,2472-2497
+packages/desktop/renderer/global.d.ts
+  s_ad41bc9c79af91::t_03f06bc7de3acb 294-297
+  s_ad41bc9c79af91::t_d40e0f953aab38 318
+  s_1c9b36aefdf184::t_1af10b6318f985 292
+packages/desktop/renderer/lib/codex-execution-trace.ts
+  s_02602191d5774d::t_09daf19d1fa968 1,3,5-8,25,70-123,127-145,147-252
+  s_1c9b36aefdf184::t_64c07bddc2937d 13-16,20-24,26-29,35-38
+  s_02602191d5774d::t_a4ff435d95c6a5 146
+  s_1c9b36aefdf184::t_b22266710555e0 2,4,9-12,17-19,30-34,39-69,253
+  s_02602191d5774d::t_c30abd70f70158 124-126
+packages/desktop/main/index.ts
+  s_ad41bc9c79af91::t_03f06bc7de3acb 1078,1092-1096
+  s_ad41bc9c79af91::t_d40e0f953aab38 1197-1203
+  s_ad41bc9c79af91::t_8aad35ddfbfb54 1097
+packages/server/lib/native-runtime-service.test.ts
+  s_ad41bc9c79af91::t_1b5bfc100d3620 46,87-91
+  s_ad41bc9c79af91::t_f2a51c545bfcac 42,94,99-107
+packages/core/src/domain/session/entities.ts
+  s_ad41bc9c79af91::t_ee650b4af753f2 71
+  s_ad41bc9c79af91::t_94edaf5dd2f29b 23-24,30-31,34-45
+  s_1c9b36aefdf184::t_b5e5efc1a692b3 32-33
+packages/tui-win32-x64/package.json
+  s_1893c5356f42de::t_372851e9e7f952 3
+packages/desktop/main/agent-runtime/codex-runtime-adapter.ts
+  s_0bd02aab929906::t_3e91cdad86a667 703
+  s_ad41bc9c79af91::t_0865a341905688 1044-1048
+  s_ad41bc9c79af91::t_36e01412e2c811 719,798,1403,1610-1637,1645-1706,1742-1748,1756-1759,1761-1777,1789
+  s_0bd02aab929906::t_409e81e7c704da 31-36,156-157,464,472-481,679-702,704-718
+  s_1c9b36aefdf184::t_b5e5efc1a692b3 495-532,1638-1644,1784-1788
+  s_ad41bc9c79af91::t_2e3b996e89c1fc 19-20,492,536-542,544-545,547-548,553-559,574-579,590-606,608-626,644,651-667
+  s_ad41bc9c79af91::t_ee650b4af753f2 549-552,586-589
+  s_02602191d5774d::t_270b561ec7a920 1189-1193,1199,1210,1215
+  s_ad41bc9c79af91::t_3d2c69e0dcb272 562-563,769,788-790,792-794,814-820,1389-1402
+  s_ad41bc9c79af91::t_fb0d9788379939 543
+  s_ad41bc9c79af91::t_3b1231e7b56c8d 1791-1793
+  s_ad41bc9c79af91::t_75a47f76f70f89 546,561,564,583,791,795-797
+  s_0bd02aab929906::t_eb82719675e29a 607,643
+  s_ad41bc9c79af91::t_f1b4b1ba7ebf3b 720
+  s_ad41bc9c79af91::t_f61a6aaf4bea17 1404
+  s_ad41bc9c79af91::t_4e1ed128cfc3bf 1790
+packages/desktop/main/preload.ts
+  s_ad41bc9c79af91::t_d40e0f953aab38 143
+  s_1c9b36aefdf184::t_1af10b6318f985 116
+  s_ad41bc9c79af91::t_03f06bc7de3acb 118-119
+packages/desktop/main/agent-runtime/codex-runtime-adapter.test.ts
+  s_ad41bc9c79af91::t_7019f7a1584272 1540-1551
+  s_ad41bc9c79af91::t_75a47f76f70f89 1598-1599,1607,1616-1619,1622-1624,1627,1733,1763-1771,1773-1790,1856
+  s_ad41bc9c79af91::t_3d2c69e0dcb272 1600-1604,1606,1621,1791-1855
+  s_02602191d5774d::t_17f581ff5c5646 389-462
+  s_ad41bc9c79af91::t_6eaa18b9528da6 1688,1701-1707,1709-1732,1772,1857-1873
+  s_ad41bc9c79af91::t_4851fa5e3d7baa 615-639
+  s_1c9b36aefdf184::t_a02a8bf36666e4 1708,1734-1762
+  s_0bd02aab929906::t_0afb38d837dcce 1605,1620,1651-1687
+  s_69c8fdeaa8c1da::t_8b2628396204ea 1689
+packages/desktop/renderer/lib/tool-call-status.test.ts
+  s_ad41bc9c79af91::t_0912a45ea396ab 13-18
+packages/desktop/renderer/components/ChatView.tsx
+  s_ad41bc9c79af91::t_146ba619a92858 3192-3194
+  s_ad41bc9c79af91::t_56ec380a8c9b5e 1696-1698,1700-1729,1740
+  s_5c59148423a7e6::t_04373e3755d69e 2360
+  s_ad41bc9c79af91::t_803ac6dacff047 2456-2463,2465-2483,2486-2487,2498,2500-2511,2514
+  s_ad41bc9c79af91::t_937361d003681a 1762-1781,1791
+  s_1c9b36aefdf184::t_e822be59f51b53 1409-1414
+  s_02602191d5774d::t_8344355f4a0df4 485,2018,2023-2029,2068-2074,2089-2097
+  s_ad41bc9c79af91::t_9cc0e93560e06f 31,1389,1542,1545-1550
+  s_02602191d5774d::t_391c6a418f6bdb 68,1423
+  s_ad41bc9c79af91::t_bc1784a6de4eda 1866-1904,1920
+  s_ad41bc9c79af91::t_2a5b35fd029fbb 32,754-755,783-794,796-812,822,845-850,858,866
+  s_ad41bc9c79af91::t_50906137dd97c3 3943,3960-3962,3964,3982-3984
+  s_ad41bc9c79af91::t_ab8b46f33e9b20 344,347-348,351-352,620-624,1029-1030
+  s_ad41bc9c79af91::t_d59f50a5f24b55 1382,1384-1388,1390-1408,1415-1422,1424-1446,1470
+  s_5c59148423a7e6::t_a9d31001b3b96b 343,345,349-350,502-515,517,880-882,1991-1992,1996,1998,2288-2327,2362,2373-2379,2382
+  s_ad41bc9c79af91::t_32cfeb6171bbf4 1805-1836,1844
+  s_ad41bc9c79af91::t_824fc08973d138 3631,3643
+  s_ad41bc9c79af91::t_fb0d9788379939 516,1997,2464,2499
+  s_ad41bc9c79af91::t_e0308b1b7bd812 1989-1990,1999,2359
+  s_5c59148423a7e6::t_5182e3cd57cd0f 1993-1995
+  s_ad41bc9c79af91::t_cb4fd577620e69 1537-1538,1540-1541,1543-1544,1551-1585,1587-1598,1610
+  s_1c9b36aefdf184::t_94ca433a882c6a 3,33,325,795,813-821,823-844,3286-3301
+  s_ad41bc9c79af91::t_687cbdd5073717 2714-2721
+  s_ad41bc9c79af91::t_b80f150385fe1c 519,626,1084,2428-2454,3190
+packages/server/app/api/native-runtime.test.ts
+  s_1c9b36aefdf184::t_a02a8bf36666e4 386,395
+  s_ad41bc9c79af91::t_f2a51c545bfcac 9,40,124-126,255,397,493-518
+  s_ad41bc9c79af91::t_6583b575664be5 42,81,383-385,387-394,396
+  s_ad41bc9c79af91::t_5dd7002133ad08 398
+  s_ad41bc9c79af91::t_c05a8786a5c7e6 519
+packages/cli/bin/node-preflight.mjs
+  s_1893c5356f42de::t_372851e9e7f952 10
+packages/runtime-darwin-arm64/package.json
+  s_1893c5356f42de::t_372851e9e7f952 3
+packages/desktop/renderer/lib/codex-execution-trace.test.ts
+  s_1c9b36aefdf184::t_a02a8bf36666e4 1-3,5-8,10-58,141-142
+  s_02602191d5774d::t_8756d410e28155 4,9,59-140
+packages/desktop/main/agent-runtime/unified-session-service.test.ts
+  s_ad41bc9c79af91::t_7019f7a1584272 569-578
+  s_ad41bc9c79af91::t_d9a9204488e5f3 685,687-688
+  s_ad41bc9c79af91::t_8c4867a704329c 673-684,686,689-690
+packages/desktop/renderer/components/ToolCallCard.tsx
+  s_ad41bc9c79af91::t_cbc4755dab590e 161-185,187-215,309-310,353-354,373-374,414-415,425-427,463-464,624,626,710-711
+  s_ad41bc9c79af91::t_44f9c5e902f42e 311
+  s_ad41bc9c79af91::t_5691fb17b87db0 375,627
+  s_ad41bc9c79af91::t_6de6dad4863135 2,29,41
+  s_ad41bc9c79af91::t_313f7c2722766c 186,790,833,853,856,858,860-861
+packages/cli/install/README.md
+  s_1893c5356f42de::t_372851e9e7f952 8,16,43
+packages/desktop/renderer/lib/occupied-session-fork.ts
+  s_5c59148423a7e6::t_a9d31001b3b96b 23-36,41-57
+  s_ad41bc9c79af91::t_65d82d59a8ad0d 8-22,58-94,111
+  s_5c59148423a7e6::t_04373e3755d69e 37-40
+packages/server/lib/customer-goal-service.ts
+  s_02602191d5774d::t_2bbc03046b863e 29
+packages/cli/src/tunnel/public-readiness.ts
+  s_1893c5356f42de::t_372851e9e7f952 47
+packages/cloudflared-darwin-arm64/manifest.json
+  s_1893c5356f42de::t_372851e9e7f952 2
+docs/superpowers/specs/2026-09-07-codex-direct-send-and-fast-history-design.md
+  s_1c9b36aefdf184::t_c9e24c13bb11c7 66-68,74-76,78,113-115
+packages/desktop/renderer/components/ChatHeaderActions.test.ts
+  s_ad41bc9c79af91::t_865b8fe293d7c8 33-54
+packages/server/app/api/agent-host.test.ts
+  s_02602191d5774d::t_f200bcae2388e3 562-564
+  s_02602191d5774d::t_5b955a858ad90d 21,24,43-46,50-68
+  s_02602191d5774d::t_2e93cb1e3a0335 320-329,334-369,373-386,424-433,438-462,556-561,565-574
+  s_02602191d5774d::t_e71d3f99cedcd3 330-333,370-372,434-437,543-545
+  s_02602191d5774d::t_7bcbafcc55bf1a 47-49
+  s_02602191d5774d::t_0d573cca14d4dd 387-423
+  s_02602191d5774d::t_2d914382cf5958 463-494,575-576
+  s_02602191d5774d::t_ce491cf5c93bef 69-70
+  s_02602191d5774d::t_b0d39583d81438 577
+packages/webapp/src/presentation/browser-composer.test.ts
+  s_ad41bc9c79af91::t_549291929e3f93 67-72
+packages/desktop/main/agent-runtime/native-runtime-broker.ts
+  s_5c59148423a7e6::t_a9d31001b3b96b 2561-2563,2569-2571
+  s_1c9b36aefdf184::t_1af10b6318f985 2960-2962
+  s_ad41bc9c79af91::t_a9f6ae56ccbcd1 33-34,1357-1364,1897-1900,2073-2078,2250,2382-2387,2440,2958-2959,2966-2975
+  s_5c59148423a7e6::t_04373e3755d69e 2564-2568
+  s_ad41bc9c79af91::t_146ba619a92858 83,1612,1620
+  s_ad41bc9c79af91::t_ec032fbc9c686e 1594-1611,1621-1626,1966,2248-2249,2438-2439
+  s_ad41bc9c79af91::t_626c4f6089847e 1613-1619
+  s_ad41bc9c79af91::t_0f5d19df9ac250 2079
+  s_ad41bc9c79af91::t_d833f3e51e7670 2251
+  s_ad41bc9c79af91::t_d1f6bcab3cf829 2388
+  s_ad41bc9c79af91::t_3f1912baab03d4 2441
+  s_ad41bc9c79af91::t_e9c39a73439c84 2976-2977
+packages/server/lib/native-runtime-service.ts
+  s_ad41bc9c79af91::t_0bfa49545cf43d 104,319-323
+  s_ad41bc9c79af91::t_8d92c52b727c2b 10-11,95-98,296-300
+  s_ad41bc9c79af91::t_20ca7fe3ebf394 301-302
+  s_ad41bc9c79af91::t_d6170fa4d518ef 324-325
+packages/desktop/main/agent-runtime/codex-rollout-activity.test.ts
+  s_0bd02aab929906::t_ba7614553edf5d 8,121-178
+  s_0bd02aab929906::t_c941f5e749ae97 179
+packages/desktop/renderer/stores/agentStore.ts
+  s_ad41bc9c79af91::t_6de6dad4863135 9,113
+  s_1c9b36aefdf184::t_b22266710555e0 124-127,129
+  s_ad41bc9c79af91::t_7be1ef72ecf804 116
+  s_02602191d5774d::t_5ea4cc42fff192 12-15,128,190-194,461-476
+  s_02602191d5774d::t_8344355f4a0df4 50
+  s_02602191d5774d::t_1159df5f6f6937 477-479
+  s_ad41bc9c79af91::t_d0b245ec3e60a1 480
+packages/desktop/renderer/lib/native-session-view-state.ts
+  s_02602191d5774d::t_022635224f19af 3,30-31
+  s_02602191d5774d::t_391c6a418f6bdb 28-29
+packages/desktop/renderer/lib/session-history.ts
+  s_ad41bc9c79af91::t_9cc0e93560e06f 93-102,106,210-211
+  s_1c9b36aefdf184::t_b22266710555e0 9,11-12,14,91,205,215,221-226
+  s_ad41bc9c79af91::t_ee650b4af753f2 58
+  s_1c9b36aefdf184::t_2907fec4c52ff0 154-160
+  s_02602191d5774d::t_d96bbccbbe78d7 170,175-178
+  s_ad41bc9c79af91::t_75a47f76f70f89 103-105,107-115,117-123,125-134,142-153,181-204,206-209
+  s_02602191d5774d::t_b6f096ca0de4f8 36
+  s_02602191d5774d::t_ea3bf3148ae22e 10,13,22-25,213-214,216-220,227-230,298,559-601,607,616
+  s_1c9b36aefdf184::t_e822be59f51b53 116,124,135-141
+  s_ad41bc9c79af91::t_2d5d7d27a5fb19 377-382,388
+  s_1c9b36aefdf184::t_64c07bddc2937d 161-169,171-174,179-180
+  s_ad41bc9c79af91::t_654ae15ec62626 1-6,63-90
+  s_ad41bc9c79af91::t_6de6dad4863135 44,271-279,521
+  s_ad41bc9c79af91::t_7be1ef72ecf804 493-499,552
+  s_02602191d5774d::t_3c3968bb849412 92
+packages/desktop/renderer/stores/agentStore.test.ts
+  s_02602191d5774d::t_8756d410e28155 170-195
+packages/cli/install/install-agentroam.sh
+  s_1893c5356f42de::t_372851e9e7f952 5
+packages/runtime-darwin-arm64/manifest.json
+  s_1893c5356f42de::t_372851e9e7f952 2
+scripts/stage-cli-runtime.mjs
+  s_1893c5356f42de::t_77f404f9eb1f7e 70
+packages/server/app/api/agent/run/route.ts
+  s_02602191d5774d::t_36a5d8d6cb1d02 4,104-107,114,118-120,124
+packages/cli/package.json
+  s_1893c5356f42de::t_372851e9e7f952 3,29-34
+packages/webapp/src/infrastructure/http/agent-http-gateway.ts
+  s_1c9b36aefdf184::t_1af10b6318f985 327,337
+  s_ad41bc9c79af91::t_0d7c0e53e80b79 335-336,377-384
+  s_02602191d5774d::t_b2d91aeeb76710 364-368,961-964
+  s_ad41bc9c79af91::t_d40e0f953aab38 385,525-528
+  s_ad41bc9c79af91::t_e94c51e63d4d0a 386
+packages/webapp/src/infrastructure/http/agent-http-gateway.test.ts
+  s_ad41bc9c79af91::t_573f92cc8aee66 588-597,599-607,609-615
+  s_ad41bc9c79af91::t_2f3219a9355b02 548-559
+  s_02602191d5774d::t_328b6b4cb969d4 133-156
+  s_1c9b36aefdf184::t_a02a8bf36666e4 598,608
+packages/desktop/renderer/App.tsx
+  s_ad41bc9c79af91::t_2685e42bd994eb 1505-1506,1548-1549,1775-1776
+packages/desktop/main/agent-runtime/agent-workspace-index.ts
+  s_ad41bc9c79af91::t_a81606b043c8a7 19-20,54-87,104-149,202,233,236-242,385,450-477,482-497,516,533-541
+packages/cli/RELEASE.md
+  s_1893c5356f42de::t_372851e9e7f952 1,15,119-125
+packages/desktop/renderer/components/SidebarSessionRow.test.tsx
+  s_ad41bc9c79af91::t_2685e42bd994eb 1,7-8,67-70
+  s_300ad083baebde::t_786a27deb276e5 71
+packages/cli/src/platform-packages.ts
+  s_1893c5356f42de::t_372851e9e7f952 6
+packages/runtime-win32-x64/manifest.json
+  s_1893c5356f42de::t_372851e9e7f952 2
+packages/runtime-win32-x64/package.json
+  s_1893c5356f42de::t_372851e9e7f952 3
+packages/server/app/api/agent/abort/route.ts
+  s_02602191d5774d::t_2bbc03046b863e 28
+packages/core/src/domain/agent/entities.ts
+  s_02602191d5774d::t_270b561ec7a920 58-59,71
+packages/desktop/renderer/components/ChatHistoryStyle.test.ts
+  s_1c9b36aefdf184::t_d860a5271c9eeb 129
+  s_1c9b36aefdf184::t_8cbc928eadf3e0 130-131
+  s_1c9b36aefdf184::t_9bd3cdd96617e5 133-138
+packages/server/app/api/agent-host.ts
+  s_02602191d5774d::t_e40a348a4af322 470
+  s_02602191d5774d::t_d7f82968ef6976 419-436,438-446,448-449,458-464,471-472,493-496,505-508,510,513,524-531,533-535,550-553,558-564,568-580
+  s_02602191d5774d::t_c161a9b4f6de3f 466,581-620
+  s_02602191d5774d::t_4fc438dafc267f 623,628-637,644,646-648,677,684-686,688
+  s_02602191d5774d::t_45f5b68c21fa20 60-93,103,114,171,175-190,195-197
+  s_02602191d5774d::t_cf9ef8e9d49caa 191-194,295,297-301,303-309,311,314
+  s_02602191d5774d::t_0d573cca14d4dd 450-455
+  s_02602191d5774d::t_5181061fb3463f 621
+packages/server/app/api/agent/stream/route.test.ts
+  s_02602191d5774d::t_328b6b4cb969d4 54-76
+packages/desktop/main/agent-runtime/native-runtime-broker.test.ts
+  s_ad41bc9c79af91::t_0d54127b6614de 1702-1711
+  s_ad41bc9c79af91::t_7019f7a1584272 79,128,224-240
+  s_5c59148423a7e6::t_5182e3cd57cd0f 1731-1734,1845-1879
+  s_ad41bc9c79af91::t_e0eb91b2230f04 86,139-145,1700-1701,1712-1716,1718-1729
+  s_5c59148423a7e6::t_8940cad83178b1 1601-1604,1622-1624
+  s_1c9b36aefdf184::t_e4dceb04e3ae3d 1717,1730
+  s_5c59148423a7e6::t_de7430c884df60 1735
+packages/server/app/api/agent/stream/route.ts
+  s_02602191d5774d::t_ddc488967c7769 51-55,58-62
+packages/server/lib/session-history-source.ts
+  s_02602191d5774d::t_296733980a068f 1-4,7-8,14,17,26-38,45,55,74
+packages/desktop/renderer/components/CodexExecutionTrace.tsx
+  s_02602191d5774d::t_8c8b2dd7129a41 13,43,45,61-79,81-83,85,92,95,100,105,110,121,151,159,161
+  s_02602191d5774d::t_d8d295ed3154f7 122-126,170-171
+  s_1c9b36aefdf184::t_2616ed1a91d303 1-12,14,16-42,44,46-60,80,84,86-91,93-94,96-99,101-104,106-109,111-120,127-150,152-158,160,162-169,172-201,203-261,263-267
+  s_1c9b36aefdf184::t_7d38c2b248d518 15,202
+  s_1c9b36aefdf184::t_d860a5271c9eeb 262
+bun.lock
+  s_1893c5356f42de::t_6781ee51c9651a 16,32-37,42,46,79,83,141,145
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "08e701cf4789a34969ebf492361c93596bda2fed",
+  "prompts": {},
+  "sessions": {
+    "s_02602191d5774d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a07b30-af9a-7711-bdc1-1aa855cb7d8a",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_0bd02aab929906": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a07b72-c87e-7d51-acf9-65a9492b1697",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_1893c5356f42de": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06b6b-6f78-7df2-89b3-ef042b576aa3",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_1c9b36aefdf184": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a07b47-e4a7-7b21-a7f7-fa20a239dcd3",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_300ad083baebde": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06c1c-d88e-7070-9c5f-a385abe461af",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_5c59148423a7e6": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a07b4c-49c7-7743-9fcc-6cd02080b2fa",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_69c8fdeaa8c1da": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a07b8f-b993-7312-9f70-cbe3af276f16",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_ad41bc9c79af91": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a075b4-0e30-7be3-9587-8ddf9e656676",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

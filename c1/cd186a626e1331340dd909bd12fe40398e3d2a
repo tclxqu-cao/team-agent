@@ -1,0 +1,19 @@
+docs/superpowers/specs/2026-09-03-webapp-abort-button-state-design.md
+  s_3d307d3222f19d::t_f16aeb27045c44 1-55
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "c1cd186a626e1331340dd909bd12fe40398e3d2a",
+  "prompts": {},
+  "sessions": {
+    "s_3d307d3222f19d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06793-1067-7a00-8b74-740df9cfb8b3",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

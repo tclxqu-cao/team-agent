@@ -1,0 +1,16 @@
+packages/cli/install/install-agentroam.ps1
+  h_b0bf4228a0b7ec 6-8,169-179
+packages/cli/install/install-agentroam.sh
+  h_b0bf4228a0b7ec 6-9,19,206-219,221-222
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "6380a2ff965d8a4a1eb6fd129c47cc6e7b0c58b1",
+  "prompts": {},
+  "humans": {
+    "h_b0bf4228a0b7ec": {
+      "author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

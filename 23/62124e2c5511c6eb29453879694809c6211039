@@ -1,0 +1,22 @@
+packages/core/src/infrastructure/SQLiteSessionStore.test.ts
+  s_8c9d6812518700::t_ad65bea3439ec9 4,10-11,16,18,34-39,73,88,92,104,108-133
+  s_8c9d6812518700::t_3858f3bb7183ca 134-147
+packages/core/src/infrastructure/SQLiteSessionStore.ts
+  s_8c9d6812518700::t_345365061a5fb1 122
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.14",
+  "base_commit_sha": "2362124e2c5511c6eb29453879694809c6211039",
+  "prompts": {},
+  "sessions": {
+    "s_8c9d6812518700": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "53e7eb26-26ca-47bf-bb65-c2bfea1fb6f5",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "caoqu <qu.cao@ly.com>"
+    }
+  }
+}

@@ -1,0 +1,19 @@
+docs/superpowers/specs/2026-09-02-message-artifact-file-links-design.md
+  s_f2045157eeef9b::t_8a0acfc86c2bff 1-62
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "c20d7855826be992920e154e0126ca81928f51d2",
+  "prompts": {},
+  "sessions": {
+    "s_f2045157eeef9b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06153-ba26-7de2-b67a-97ad135d26ac",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

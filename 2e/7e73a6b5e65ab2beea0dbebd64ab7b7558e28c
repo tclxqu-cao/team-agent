@@ -1,0 +1,19 @@
+scripts/stage-cli-runtime.mjs
+  s_d2928306bbdd2b::t_b191ea5d1d134b 35-36
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "2e7e73a6b5e65ab2beea0dbebd64ab7b7558e28c",
+  "prompts": {},
+  "sessions": {
+    "s_d2928306bbdd2b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a09e71-1874-7ba0-ab95-7a112477aa83",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

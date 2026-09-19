@@ -1,0 +1,24 @@
+docs/superpowers/plans/2026-09-08-codex-session-consistency-streaming.md
+  s_3d7f9a31ff380c::t_fb3ad10b497379 1-55,57-63,66,68,72-73,79-80,82-84,87,89,95-232
+  s_3d7f9a31ff380c::t_4722082d832dff 56,64-65,67,69-71,74-78,81,85-86,88,90-94
+docs/superpowers/specs/2026-09-08-codex-session-consistency-streaming-design.md
+  s_3d7f9a31ff380c::t_4722082d832dff 28-30,34-41,122-124
+  s_3d7f9a31ff380c::t_fb3ad10b497379 1-27,31-33,42-66,68-121,125-134,136-155
+  s_3d7f9a31ff380c::t_e9692b098f1119 67,135
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "d5a8e236723b038eafa9b5ff4d472a9032515e4a",
+  "prompts": {},
+  "sessions": {
+    "s_3d7f9a31ff380c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a07c88-e3dc-73d3-937c-a80b5980e3ea",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

@@ -1,0 +1,22 @@
+docs/superpowers/specs/2026-09-05-web-terminal-clean-shell-startup-design.md
+  s_0d51ca33fa59ea::t_2a83ad87cf3f4b 11
+  s_0d51ca33fa59ea::t_76e0a73cac2ba6 1-6,8-10,12-36,40-43,46-57,59-80,84-88,90-97
+  s_0d51ca33fa59ea::t_7d48dc76a2e545 7,39,44-45,58,81-83,89
+  s_0d51ca33fa59ea::t_51a8a32f8347ea 37-38
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "954a0d02d85d64fac0291ff5ba47c0a853ae619f",
+  "prompts": {},
+  "sessions": {
+    "s_0d51ca33fa59ea": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a07055-b40e-7883-b432-fe5a564e974a",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": null
+    }
+  }
+}

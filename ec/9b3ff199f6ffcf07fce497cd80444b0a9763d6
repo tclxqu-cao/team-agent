@@ -1,0 +1,19 @@
+docs/superpowers/specs/2026-09-01-unified-codex-message-history-design.md
+  s_510afbc9531952::t_7e9061427ea8ca 1-36
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "ec9b3ff199f6ffcf07fce497cd80444b0a9763d6",
+  "prompts": {},
+  "sessions": {
+    "s_510afbc9531952": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a05597-d642-7211-84d8-9451f82d90ea",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

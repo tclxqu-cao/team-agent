@@ -1,0 +1,19 @@
+packages/desktop/renderer/components/ChatView.tsx
+  s_76be1438776059::t_cdc2c95e4c627b 59,540-549
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "76e0ab68113cd4be4d82ea8d798293c2131beb46",
+  "prompts": {},
+  "sessions": {
+    "s_76be1438776059": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0900d-0e52-7093-b792-03f590e6230b",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

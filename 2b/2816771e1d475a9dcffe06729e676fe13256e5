@@ -1,0 +1,19 @@
+docs/superpowers/specs/2026-09-04-codex-cross-version-session-compatibility-design.md
+  s_7d67bb0a0da4f9::t_e6cb8141bb51ab 9-10,75-86,242-244,339-341,391
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "2b2816771e1d475a9dcffe06729e676fe13256e5",
+  "prompts": {},
+  "sessions": {
+    "s_7d67bb0a0da4f9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06c22-8c0e-7cd1-9a84-e343bd3a6718",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

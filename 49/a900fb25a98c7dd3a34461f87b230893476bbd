@@ -1,0 +1,18 @@
+packages/desktop/electron-builder.yml
+  h_b0bf4228a0b7ec 13-15
+packages/desktop/package.json
+  h_b0bf4228a0b7ec 3,14-15
+scripts/stage-core-for-packaging.mjs
+  h_b0bf4228a0b7ec 1-37
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "49a900fb25a98c7dd3a34461f87b230893476bbd",
+  "prompts": {},
+  "humans": {
+    "h_b0bf4228a0b7ec": {
+      "author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

@@ -1,0 +1,19 @@
+docs/superpowers/specs/2026-09-07-codex-independent-execution-rows-design.md
+  s_7f4f2182442c79::t_35cc34dd64d67e 1-114
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "09faa17ecd47fb68ee3079647146a69e27dfd44e",
+  "prompts": {},
+  "sessions": {
+    "s_7f4f2182442c79": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a07c2f-f795-7540-b481-6f784158530e",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

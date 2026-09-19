@@ -1,0 +1,19 @@
+docs/superpowers/specs/2026-08-21-thinking-status-display-design.md
+  s_6edcb9d9cd7ad6::t_64698e69f18b2c 29-37,49-50,68-69,78
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "2b211d870f66307f19d542ad40a3de7ada8cfe76",
+  "prompts": {},
+  "sessions": {
+    "s_6edcb9d9cd7ad6": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fd1c1-3a3e-7f32-9ee5-c7add0c1d7e1",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

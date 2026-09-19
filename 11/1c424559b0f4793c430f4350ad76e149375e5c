@@ -1,0 +1,19 @@
+docs/superpowers/specs/2026-09-04-codex-native-session-archive-design.md
+  s_e6bf15340ec809::t_e4356084f22fef 1-82
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "111c424559b0f4793c430f4350ad76e149375e5c",
+  "prompts": {},
+  "sessions": {
+    "s_e6bf15340ec809": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06c24-6666-79b1-b196-d5e3212cffa5",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

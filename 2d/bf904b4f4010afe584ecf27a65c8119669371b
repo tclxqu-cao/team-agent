@@ -1,0 +1,19 @@
+docs/superpowers/specs/2026-09-06-queued-message-promotion-visibility-design.md
+  s_7fe2f3de1bbaa3::t_d947d83f40161a 1-42
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "2dbf904b4f4010afe584ecf27a65c8119669371b",
+  "prompts": {},
+  "sessions": {
+    "s_7fe2f3de1bbaa3": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0750e-099d-7ec1-9589-8960c1a6d291",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

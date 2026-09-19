@@ -1,0 +1,126 @@
+docs/superpowers/plans/2026-09-03-agentroam-cross-platform-service-bootstrap.md
+  s_bf3f720bfb0f08::t_b21d9d7a23ad6b 90,94,120,124,128,142,146,150,154,158,175,179,183,187,191
+  s_bf3f720bfb0f08::t_b7f7e7387d959f 208,212,222,226,230
+  s_bf3f720bfb0f08::t_3455741e563c8c 264
+  s_bf3f720bfb0f08::t_b4a83416e5698b 37,53,57,67,71
+  s_bf3f720bfb0f08::t_371b570cebedd3 246,250
+  s_bf3f720bfb0f08::t_c5d384635a40d5 254,258
+  s_bf3f720bfb0f08::t_ef5ffed384b488 1-36,38-52,54-56,58-66,68-70,72-89,91-93,95-119,121-123,125-127,129-141,143-145,147-149,151-153,155-157,159-174,176-178,180-182,184-186,188-190,192-207,209-211,213-221,223-225,227-229,231-245,247-249,251-253,255-257,259-263,265-277
+docs/superpowers/specs/2026-09-04-agent-workspace-index-design.md
+  s_b95fa2e9b9b282::t_a8fa7f3e5cdb77 56
+  s_b95fa2e9b9b282::t_1f4df4bf151dc7 55
+  s_b95fa2e9b9b282::t_05b92b98f012ae 209-215
+  s_b95fa2e9b9b282::t_2487cff326c29b 216
+docs/superpowers/plans/2026-09-04-webapp-session-title-persistence.md
+  s_4447132b1cfd65::t_8aef8cce90fcb9 1-31,33-47,49-61,63-77,79-81,83-85,87-99,101-103,105-107,109-111,113-125,127-129,131-135,137-156
+  s_4447132b1cfd65::t_c296f49a1e052b 32,48,62,78,82,86,100,104,108,112,126,130,136
+docs/superpowers/plans/2026-09-03-webapp-abort-button-state.md
+  s_3d307d3222f19d::t_4eb6552c1383e6 1-29,31-35,37-46,48-65,67-80,82-95
+  s_3d307d3222f19d::t_30b1888556bd15 30,36,47,66
+  s_3d307d3222f19d::t_22b0ced1ec4d91 81
+docs/superpowers/plans/2026-09-04-file-diff-preview-edit.md
+  s_354a423bcff6a4::t_95fe04463eac4f 32,36,40,44,60,64,68,72,76,93,97,101,105,111
+  s_354a423bcff6a4::t_4a953eb5e46fe2 1-31,33-35,37-39,41-43,45-59,61-63,65-67,69-71,73-75,77-92,94-96,98-100,102-104,106-110,112-119
+docs/superpowers/plans/2026-09-04-opencode-runtime-integration.md
+  s_cc09057576e79e::t_33fbaae22a7e41 1-184
+docs/superpowers/plans/2026-09-04-session-deletion-visibility.md
+  s_41b84bd2588fcb::t_ea84c267b2c2cb 31,43,57,61,81,85,95,99,115,131,135,139,143
+  s_41b84bd2588fcb::t_b61b50a592349d 71
+  s_41b84bd2588fcb::t_7bd7f1f4cf490d 149
+  s_41b84bd2588fcb::t_cbb62553eb055b 1-30,32-42,44-56,58-60,62-70,72-80,82-84,86-94,96-98,100-114,116-130,132-134,136-138,140-142,144-148,150-163
+docs/superpowers/plans/2026-09-03-webapp-sent-image-history.md
+  s_ff2b2d7ac93b28::t_b54f5e1a6e4cd5 161,177
+  s_ff2b2d7ac93b28::t_9ead64dd3b6c16 93-94,118,120
+  s_ff2b2d7ac93b28::t_9fce075cc4a342 1-6,8-20,48-58,60-71,73-85,87-92,95-101,103-117,119,121,123-135,137-139,141-143,145-147,149-160,162-164,166-168,170-171,174-176,178-181
+  s_ff2b2d7ac93b28::t_8c8d90dfe4c8b9 59,72,86,102,122,136,140,144,148
+  s_ff2b2d7ac93b28::t_72547eccb7c758 165,169,172-173
+  s_ff2b2d7ac93b28::t_d2807c0f129556 21-31,33-35,37-39,41-43,45-47
+  s_ff2b2d7ac93b28::t_156e5b771bdc99 7,32,36,40,44
+docs/superpowers/plans/2026-09-04-agent-workspace-index.md
+  s_b95fa2e9b9b282::t_05b92b98f012ae 267-307
+  s_b95fa2e9b9b282::t_fa35d3bb4b7d8a 1-16,18-266,308-331
+  s_b95fa2e9b9b282::t_1f4df4bf151dc7 17
+CLAUDE.md
+  s_b95fa2e9b9b282::t_b69078c63e2e25 47-53
+docs/superpowers/plans/2026-09-03-native-abort-restart-race.md
+  s_ff2b2d7ac93b28::t_9d222bac080018 30,36,50,63,69
+  s_ff2b2d7ac93b28::t_ddbea59c846e5d 1-29,31-35,37-49,51-62,64-68,70-75
+docs/superpowers/plans/2026-09-03-message-image-lightbox.md
+  s_ff2b2d7ac93b28::t_132b3a2ae804fa 1-25,27-31,33-35,37-39,41,43-53,55-57,59-61,63-67,69,71-74
+  s_ff2b2d7ac93b28::t_ebd8a900bfb6f6 26,32,36,40,42,54,58,62,68,70
+docs/superpowers/plans/2026-09-04-sidebar-reference-redesign.md
+  s_b95fa2e9b9b282::t_d30787aee40cca 21,242,334
+  s_b95fa2e9b9b282::t_5fa43fda7fb101 1-20,22-241,243-333,335-336
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "601c005e3167d9be92dace16dca742866a0d07ab",
+  "prompts": {},
+  "sessions": {
+    "s_354a423bcff6a4": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06804-25cc-7200-8de0-27f07a09e3cc",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_3d307d3222f19d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06793-1067-7a00-8b74-740df9cfb8b3",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_41b84bd2588fcb": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06a1a-6b44-7ad2-80ec-bd5bbb1ab941",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_4447132b1cfd65": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a069ec-2612-7111-9ca7-b65d164205dd",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_b95fa2e9b9b282": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06a27-5c57-7232-9522-e70895aadb95",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_bf3f720bfb0f08": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a067a3-c8a7-7de2-8176-3707ef48a42a",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_cc09057576e79e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a069a1-3af4-7f40-90db-37ad10a4b5fd",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_ff2b2d7ac93b28": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a066c2-13c8-7031-9522-1b95914c6543",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

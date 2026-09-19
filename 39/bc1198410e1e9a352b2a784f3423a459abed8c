@@ -1,0 +1,28 @@
+packages/desktop/renderer/components/ChatHeaderActions.test.ts
+  s_6edcb9d9cd7ad6::t_c0ec6b0c4af3d3 1-33
+packages/desktop/renderer/components/ChatHeaderActions.tsx
+  s_6edcb9d9cd7ad6::t_c7cddcec6dfb4e 1-63
+packages/desktop/renderer/App.tsx
+  s_6edcb9d9cd7ad6::t_3575039b199b60 69,189-199,898,900-903,1035,1045-1046,1048-1049
+packages/desktop/renderer/styles/global.css
+  s_6edcb9d9cd7ad6::t_3575039b199b60 476-485
+  s_6edcb9d9cd7ad6::t_93692c3958bee1 486
+packages/desktop/renderer/components/ChatView.tsx
+  s_6edcb9d9cd7ad6::t_c7cddcec6dfb4e 191,210-213,233-236,1297-1305
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "39bc1198410e1e9a352b2a784f3423a459abed8c",
+  "prompts": {},
+  "sessions": {
+    "s_6edcb9d9cd7ad6": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fd1c1-3a3e-7f32-9ee5-c7add0c1d7e1",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

@@ -1,0 +1,22 @@
+packages/core/src/infrastructure/live-view/producer.ts
+  h_86bb4e0e04237b 1
+packages/desktop/main/agent-runtime/codex-app-server-client.ts
+  h_86bb4e0e04237b 94,107,109,117,123,126,131-140
+packages/desktop/main/agent-runtime/native-runtime-broker.ts
+  h_86bb4e0e04237b 1309-1320
+packages/desktop/native/wakelistener.js
+  h_86bb4e0e04237b 87-95
+packages/server/.agents/.scheduler.lock
+  h_86bb4e0e04237b 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "002820631211e63c80161c1319c65dd7ebee3f7d",
+  "prompts": {},
+  "humans": {
+    "h_86bb4e0e04237b": {
+      "author": "caoqu <qu.cao@ly.com>"
+    }
+  }
+}

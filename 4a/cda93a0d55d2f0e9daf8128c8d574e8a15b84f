@@ -1,0 +1,34 @@
+packages/core/src/domain/live-view/entities.ts
+  h_b0bf4228a0b7ec 57-58
+packages/core/src/domain/live-view/live-view-registry.ts
+  h_b0bf4228a0b7ec 459-460
+packages/core/src/domain/web-console/WebBrowserBridge.ts
+  h_b0bf4228a0b7ec 14
+packages/desktop/main/desktop-input-gateway.ts
+  h_b0bf4228a0b7ec 4
+packages/desktop/main/desktop-screen-screencast.test.ts
+  h_b0bf4228a0b7ec 133,135
+packages/desktop/main/desktop-screen-screencast.ts
+  h_b0bf4228a0b7ec 197,200,208
+packages/desktop/native/desktop-input.swift
+  h_b0bf4228a0b7ec 59-60
+packages/desktop/renderer/components/BrowserLivePanel.tsx
+  h_b0bf4228a0b7ec 135-141,155-156,163-194,516-519,522-526,535-536,655,668,677,697-713,730-736,775-790,821,824-841,855-868,881-882,950
+packages/desktop/renderer/global.d.ts
+  h_b0bf4228a0b7ec 535
+packages/server/ws-server.mjs
+  h_b0bf4228a0b7ec 787-788
+packages/webapp/src/presentation/web.css
+  h_b0bf4228a0b7ec 264-308
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "4acda93a0d55d2f0e9daf8128c8d574e8a15b84f",
+  "prompts": {},
+  "humans": {
+    "h_b0bf4228a0b7ec": {
+      "author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
