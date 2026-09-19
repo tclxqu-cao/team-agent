@@ -1,6 +1,6 @@
 {
   "name": "@caoqu/agentroam-tui-win32-x64",
-  "version": "0.2.0-preview.27",
+  "version": "0.2.0-preview.28",
   "description": "Bundled AgentRoam terminal UI for Windows x64",
   "license": "MIT",
   "type": "module",

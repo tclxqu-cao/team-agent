@@ -38,7 +38,12 @@ await mkdir(resolve(target, "lib/browser-live"), { recursive: true });
 await cp(resolve(server, "lib/browser-live/viewer-frame-flow.mjs"), resolve(target, "lib/browser-live/viewer-frame-flow.mjs"));
 await cp(resolve(server, "lib/remote-control"), resolve(target, "lib/remote-control"), { recursive: true, filter: (source) => !source.endsWith(".test.ts") });
 if (targetName === "darwin-arm64") {
-  execFileSync(process.execPath, [resolve(root, "scripts/build-cli-remote-helper.mjs")], { stdio: "inherit" });
+  // Local builds on machines with a broken CLT Swift toolchain can reuse the
+  // helper from the previous published runtime (sources unchanged) by setting
+  // AGENT_REUSE_REMOTE_HELPER=1 with the .app pre-placed in server/native/.
+  if (!process.env.AGENT_REUSE_REMOTE_HELPER) {
+    execFileSync(process.execPath, [resolve(root, "scripts/build-cli-remote-helper.mjs")], { stdio: "inherit" });
+  }
   await cp(resolve(server, "native/AgentRoam Remote Desktop.app"), resolve(target, "native/AgentRoam Remote Desktop.app"), { recursive: true });
 }
 if (targetName === "windows-amd64") {
