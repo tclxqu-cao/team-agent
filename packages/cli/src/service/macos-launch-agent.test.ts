@@ -65,7 +65,10 @@ describe("MacLaunchAgent", () => {
 
     expect(result.state).toMatchObject({ status: "ready", pid: 777 });
     expect(calls).toContainEqual(["launchctl", "bootout", "gui/501/com.agentroam.service"]);
+    expect(calls).toContainEqual(["launchctl", "enable", "gui/501/com.agentroam.service"]);
     expect(calls).toContainEqual(["launchctl", "bootstrap", "gui/501", paths.plistPath]);
+    expect(calls.findIndex((call) => call[1] === "enable"))
+      .toBeLessThan(calls.findIndex((call) => call[1] === "bootstrap"));
     expect((await stat(paths.plistPath)).mode & 0o777).toBe(0o600);
     expect(JSON.parse(await readFile(paths.configPath, "utf8"))).toMatchObject({ roots: value.roots });
   });
@@ -94,6 +97,7 @@ describe("MacLaunchAgent", () => {
         return { code: loaded ? 0 : 1, stdout: loaded ? "state = running" : "", stderr: "" };
       }
       if (command === "launchctl" && args[0] === "bootout") lifecycle.push("bootout");
+      if (command === "launchctl" && args[0] === "enable") lifecycle.push("enable");
       if (command === "launchctl" && args[0] === "bootstrap") {
         lifecycle.push("bootstrap");
         await writePrivateJson(paths.statePath, {
@@ -122,7 +126,7 @@ describe("MacLaunchAgent", () => {
     }).install(value);
 
     expect(result.state).toMatchObject({ status: "ready", pid: 701 });
-    expect(lifecycle).toEqual(["bootout", "process-exit", "bootstrap"]);
+    expect(lifecycle).toEqual(["bootout", "process-exit", "enable", "bootstrap"]);
     expect(processExists).toHaveBeenCalledWith(700);
     expect(await readFile(resolve(paths.dataDir, "data/keep.txt"), "utf8")).toBe("keep");
     expect(await readFile(paths.stdoutPath, "utf8")).toBe("keep logs");
@@ -263,9 +267,50 @@ describe("MacLaunchAgent", () => {
     await launchAgent.stop();
 
     expect(calls).toContainEqual(["launchctl", "bootstrap", "gui/501", paths.plistPath]);
+    expect(calls).toContainEqual(["launchctl", "enable", "gui/501/com.agentroam.service"]);
     expect(calls).toContainEqual(["launchctl", "bootout", "gui/501/com.agentroam.service"]);
     expect(await readFile(paths.plistPath, "utf8")).toBe("plist");
     expect(JSON.parse(await readFile(paths.configPath, "utf8"))).toMatchObject({ version: value.version });
+  });
+
+  it("re-enables an unloaded service before restarting it", async () => {
+    const home = await mkdtemp(resolve(tmpdir(), "agentroam-launch-agent-restart-disabled-"));
+    const paths = resolveServicePaths(home);
+    const value = config(home, paths.dataDir);
+    await mkdir(paths.launchAgentsDir, { recursive: true });
+    await writeFile(paths.plistPath, "plist");
+    await writePrivateJson(paths.configPath, value);
+    await writePrivateJson(paths.statePath, {
+      status: "stopped", pid: 700, version: value.version, startedAt: "x", updatedAt: "x",
+    });
+    const calls: string[][] = [];
+    const runner: CommandRunner = async (command, args) => {
+      calls.push([command, ...args]);
+      if (command === "launchctl" && args[0] === "print") {
+        return { code: 1, stdout: "", stderr: "" };
+      }
+      if (command === "launchctl" && args[0] === "bootstrap") {
+        await writePrivateJson(paths.statePath, {
+          status: "ready", pid: 701, version: value.version, startedAt: "y", updatedAt: "y",
+          accessUrl: "https://ready.example/web",
+        });
+      }
+      return { code: 0, stdout: "", stderr: "" };
+    };
+
+    const state = await new MacLaunchAgent({
+      homeDir: home,
+      uid: 501,
+      runner,
+      readyTimeoutMs: 50,
+      pollIntervalMs: 1,
+    }).restart();
+
+    expect(state).toMatchObject({ status: "ready", pid: 701 });
+    expect(calls).toContainEqual(["launchctl", "enable", "gui/501/com.agentroam.service"]);
+    expect(calls).toContainEqual(["launchctl", "bootstrap", "gui/501", paths.plistPath]);
+    expect(calls.findIndex((call) => call[1] === "enable"))
+      .toBeLessThan(calls.findIndex((call) => call[1] === "bootstrap"));
   });
 
   it("uninstalls service control files but preserves application data and logs", async () => {

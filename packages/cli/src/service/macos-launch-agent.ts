@@ -85,7 +85,7 @@ export class MacLaunchAgent implements ServiceController {
       await chmod(paths.plistPath, 0o600);
       await writePrivateJson(paths.configPath, config);
       await Promise.all([removeIfExists(paths.statePath), removeIfExists(paths.urlPath)]);
-      await this.runRequired("launchctl", ["bootstrap", this.domainTarget, paths.plistPath]);
+      await this.bootstrap(paths.plistPath);
     } finally {
       await Promise.all([removeIfExists(jsonPath), removeIfExists(plistTempPath)]);
     }
@@ -98,7 +98,7 @@ export class MacLaunchAgent implements ServiceController {
     if (!status.installed) throw new Error("AgentRoam service is not installed");
     if (status.running) return status.state;
     if (status.loaded) await this.runRequired("launchctl", ["kickstart", this.serviceTarget]);
-    else await this.runRequired("launchctl", ["bootstrap", this.domainTarget, status.definition]);
+    else await this.bootstrap(status.definition);
     const paths = resolveServicePaths(this.homeDir, status.config?.dataDir);
     return this.waitForReady(paths, status.state?.pid);
   }
@@ -155,7 +155,7 @@ export class MacLaunchAgent implements ServiceController {
     const status = await this.status();
     if (!status.installed) throw new Error("AgentRoam service is not installed");
     if (status.loaded) await this.runRequired("launchctl", ["kickstart", "-k", this.serviceTarget]);
-    else await this.runRequired("launchctl", ["bootstrap", this.domainTarget, status.definition]);
+    else await this.bootstrap(status.definition);
     const paths = resolveServicePaths(this.homeDir, status.config?.dataDir);
     return this.waitForReady(paths, status.state?.pid);
   }
@@ -193,6 +193,11 @@ export class MacLaunchAgent implements ServiceController {
       loaded: result.code === 0,
       running: result.code === 0 && /\bstate\s*=\s*running\b/.test(result.stdout),
     };
+  }
+
+  private async bootstrap(definition: string): Promise<void> {
+    await this.runRequired("launchctl", ["enable", this.serviceTarget]);
+    await this.runRequired("launchctl", ["bootstrap", this.domainTarget, definition]);
   }
 
   private async runRequired(command: string, args: string[]): Promise<CommandResult> {
