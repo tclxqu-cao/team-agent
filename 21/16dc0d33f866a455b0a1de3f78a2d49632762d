@@ -1,0 +1,21 @@
+packages/phone-agent/package.json
+  s_a23bf94233d4f1::t_20b04709a022b9 1-17
+packages/phone-agent/vitest.config.ts
+  s_a23bf94233d4f1::t_20b04709a022b9 1-8
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "2116dc0d33f866a455b0a1de3f78a2d49632762d",
+  "prompts": {},
+  "sessions": {
+    "s_a23bf94233d4f1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0bee4-8ce8-7280-8e57-382c121318d4",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
