@@ -365,7 +365,7 @@ export class AgentLoop implements IAgentLoop {
                 streamProducedOutput = true;
                 streamHadError = true;
                 hasError = true;
-                yield { type: "error", message: event.message, code: "strea-err" };
+                yield { type: "error", message: event.message, ...(event.code ? { code: event.code } : {}) };
                 break;
             }
           }

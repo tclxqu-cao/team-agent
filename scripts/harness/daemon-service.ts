@@ -157,7 +157,8 @@ export class HarnessCompanion {
     const records = this.store.runs();
     const q = run.quality;
     const candidates = immediate ? q.findings.filter(item => item.severe || item.kind === 'agent-error').map(item => item.key)
-      : this.store.summarize(records).issues.filter(issue => issue.cohorts.some(cohort => cohort.runtimeVersion === q.runtimeVersion && cohort.model === q.model && cohort.sessions >= 3)).map(issue => issue.key);
+      : this.store.summarize(records).issues.filter(issue => issue.kind !== 'environment-error'
+        && issue.cohorts.some(cohort => cohort.runtimeVersion === q.runtimeVersion && cohort.model === q.model && cohort.sessions >= 3)).map(issue => issue.key);
     const completeSessions = this.store.completedSessions(q.runtimeVersion, q.model);
     if (!immediate && completeSessions >= 20) candidates.push(`periodic-review:${Math.floor(completeSessions / 20)}`);
     let key: string | undefined, claim: string | undefined;

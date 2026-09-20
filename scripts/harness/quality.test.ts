@@ -28,6 +28,15 @@ describe('cross-session quality evidence', () => {
     q.observations.push({ at: 9, type: 'error', code: 'context_limit', message: 'context exceeded' });
     expect(analyze(q).map(f => f.kind)).toEqual(expect.arrayContaining(['step-cycle', 'reread-after-compaction', 'agent-error']));
   });
+  it('separates a structured environment prerequisite from repairable agent errors', () => {
+    const offline = run('offline');
+    offline.observations.push({ at: 1, type: 'error', code: 'desktop_offline', message: 'AI Hub desktop offline' });
+    const contextLimit = run('context-limit');
+    contextLimit.observations.push({ at: 1, type: 'error', code: 'context_limit', message: 'context exceeded' });
+
+    expect(analyze(offline)).toMatchObject([{ kind: 'environment-error', severe: false }]);
+    expect(analyze(contextLimit)).toMatchObject([{ kind: 'agent-error', severe: false }]);
+  });
   it('persists across owners/restarts, counts sessions rather than turns, and separates runtime cohorts', () => {
     const dir = mkdtempSync(join(tmpdir(), 'quality-store-'));
     try {
@@ -88,6 +97,25 @@ it('sends an emitted error for immediate diagnosis without waiting for another s
     service.receive({ type: 'progress', id: 'one', eventType: 'error', data: { type: 'error', code: 'context_limit', message: 'exceeded' } });
     expect(repair).toHaveBeenCalledTimes(1);
     expect(JSON.parse(repair.mock.calls[0][1]).summary.sessions).toBe(1);
+  } finally { await service.close(); rmSync(dir, { recursive: true, force: true }); }
+});
+it('records repeated desktop-offline runs without dispatching a source repair', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'quality-environment-error-'));
+  const repair = vi.fn(async () => ({ status: 'blocked' as const, runDirectory: dir, attempts: [], detail: 'review required' }));
+  const store = new QualityStore(dir);
+  const service = new HarnessCompanion({ sourceRoot: process.cwd(), idleTimeoutMs: 1000 } as HarnessConfig, () => {}, repair, store);
+  try {
+    for (let index = 0; index < 3; index++) {
+      const id = `offline-${index}`;
+      service.receive({ type: 'begin', id, sessionId: id, input: 'test', workingDirectory: '/tmp', runtimeVersion: 'v1' });
+      service.receive({ type: 'progress', id, eventType: 'error', data: {
+        type: 'error', code: 'desktop_offline', message: 'AI Hub desktop offline',
+      } });
+      service.receive({ type: 'end', id });
+    }
+
+    expect(repair).not.toHaveBeenCalled();
+    expect(store.summarize().issues.find(issue => issue.kind === 'environment-error')?.sessions).toBe(3);
   } finally { await service.close(); rmSync(dir, { recursive: true, force: true }); }
 });
 it('reviews a batch of healthy sessions and defers when another Codex writer owns the checkout', async () => {

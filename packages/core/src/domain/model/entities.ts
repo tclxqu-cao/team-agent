@@ -94,7 +94,7 @@ export type StreamEvent =
   | { type: "text_chunk"; text: string }
   | { type: "tool_call"; toolCall: ToolCall }
   | { type: "text_done" }
-  | { type: "error"; message: string };
+  | { type: "error"; message: string; code?: string };
 
 export interface IModelProvider {
   readonly providerId: string;

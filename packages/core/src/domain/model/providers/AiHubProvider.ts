@@ -109,7 +109,11 @@ export class AiHubProvider implements IModelProvider {
     const siteId = this.modelId;
     const status = await this.transport.status();
     if (!status.available) {
-      yield { type: 'error', message: 'AI Hub 桌面端离线：请启动 AgentRoam 桌面 App 后重试' };
+      yield {
+        type: 'error',
+        code: 'desktop_offline',
+        message: 'AI Hub 桌面端离线：请启动 AgentRoam 桌面 App 后重试',
+      };
       return;
     }
     // Some sites do not expose the injected user bubble to DOM extraction.

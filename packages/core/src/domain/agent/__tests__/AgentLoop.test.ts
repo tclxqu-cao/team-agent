@@ -379,6 +379,22 @@ describe("AgentLoop", () => {
     expect(errorEvents.length).toBeGreaterThan(0);
   });
 
+  it("preserves structured provider error codes for Harness classification", async () => {
+    const errorModel = {
+      ...createMockModel(),
+      streamChat: async function* (): AsyncIterable<StreamEvent> {
+        yield { type: "error", code: "desktop_offline", message: "desktop unavailable" };
+      },
+    };
+    const events: AgentEvent[] = [];
+
+    for await (const event of new AgentLoop(createConfig({ modelProvider: errorModel })).run("test", "test-session")) {
+      events.push(event);
+    }
+
+    expect(events).toContainEqual({ type: "error", code: "desktop_offline", message: "desktop unavailable" });
+  });
+
   it("should retry an empty model stream once and recover", async () => {
     let calls = 0;
     const recoveringModel = {

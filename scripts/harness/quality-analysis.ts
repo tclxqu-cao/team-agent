@@ -15,6 +15,8 @@ export function normalizeError(text: string): string {
     .replace(/\b\d{3,}\b/g, '<n>').slice(0, 500);
 }
 
+const ENVIRONMENT_ERROR_CODES = new Set(['desktop_offline']);
+
 /** Rules generate hypotheses, never correctness judgments. Only completed calls count as repeats. */
 export function analyze(run: QualityRun): Finding[] {
   const findings = new Map<string, Finding>();
@@ -40,7 +42,9 @@ export function analyze(run: QualityRun): Finding[] {
     }
     if (event.type === 'error' || event.type === 'fault') {
       const message = normalizeError(String(event.message ?? event.code ?? 'unknown'));
-      add(event.type === 'fault' ? 'exception' : 'agent-error', String(event.code ?? '') + message, message, event.type === 'fault');
+      const environmentError = event.type === 'error' && ENVIRONMENT_ERROR_CODES.has(String(event.code ?? ''));
+      const kind = event.type === 'fault' ? 'exception' : environmentError ? 'environment-error' : 'agent-error';
+      add(kind, String(event.code ?? '') + message, message, event.type === 'fault');
     }
     if (event.type === 'watchdog') add('no-progress', 'idle', 'No observable progress outside user waits', true);
     if (event.type === 'iteration_limit') add('iteration-limit', 'limit', 'Configured iteration budget exhausted; inspect exit conditions', true);

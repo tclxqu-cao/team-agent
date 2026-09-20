@@ -315,7 +315,11 @@ if [ -z "$TOKEN" ]; then echo 'TOKEN_EMPTY'; else echo "TOKEN_LEN=${tokenLength}
 
     const events = await collect(provider.streamChat([{ role: "user", content: "你好" }]));
 
-    expect(events).toEqual([{ type: "error", message: expect.stringContaining("桌面端离线") }]);
+    expect(events).toEqual([{
+      type: "error",
+      code: "desktop_offline",
+      message: expect.stringContaining("桌面端离线"),
+    }]);
     expect(transport.broadcast).not.toHaveBeenCalled();
   });
 
