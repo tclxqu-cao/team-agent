@@ -1,0 +1,31 @@
+packages/cli/src/service/macos-launch-agent.ts
+  s_cf903200b7e8f8::t_777f81b9dd7f78 88,101,158,198-200
+  s_a23bf94233d4f1::t_90dc00d9e3b355 201-202
+packages/cli/src/service/macos-launch-agent.test.ts
+  s_cf903200b7e8f8::t_777f81b9dd7f78 68,70-71,100,129,270,276-313
+  s_a23bf94233d4f1::t_de2f22592361a5 314-315
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "5419aa5414335204fd2829bdb5e819991e762a63",
+  "prompts": {},
+  "sessions": {
+    "s_a23bf94233d4f1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0bee4-8ce8-7280-8e57-382c121318d4",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_cf903200b7e8f8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0bec6-64dd-73d0-ba06-16d6ca12fb7f",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
