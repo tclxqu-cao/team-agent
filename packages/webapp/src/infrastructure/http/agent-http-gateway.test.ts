@@ -380,6 +380,89 @@ describe("AgentHttpGateway", () => {
     expect(events.filter((event) => event.progressId === "new-run-progress")).toHaveLength(1);
   });
 
+  it("suppresses final-answer chunks already covered by the core snapshot", async () => {
+    vi.useFakeTimers();
+    globalThis.EventSource = ObservableEventSource as unknown as typeof EventSource;
+    const sessionId = "runtime:codex:c291cmNl";
+    const http = {
+      get: vi.fn().mockResolvedValue({
+        agentType: "codex",
+        status: "running",
+        snapshotRevision: 7,
+        snapshotRunId: "run-current",
+        messages: [
+          { role: "user", content: "inspect" },
+          {
+            role: "assistant",
+            content: "persisted answer",
+            presentation: { agentMessagePhase: "final_answer" },
+          },
+        ],
+        events: [],
+        history: { delivery: "core", revision: "rev-1" },
+      }),
+      post: vi.fn().mockResolvedValue({}),
+    };
+    const gateway = new AgentHttpGateway(http as never, {} as never);
+    const events: Array<Record<string, unknown>> = [];
+    gateway.onEvent((event) => events.push(event as Record<string, unknown>));
+
+    await gateway.getSession(sessionId, { view: "core", limit: 50 });
+    const source = ObservableEventSource.instances[0];
+    emit(source, {
+      type: "text_chunk",
+      text: "commentary stays visible",
+      messagePhase: "commentary",
+      turnId: "turn-1",
+      itemId: "commentary-1",
+      _nativeRunId: "run-current",
+      _nativeSequence: 1,
+    });
+    emit(source, {
+      type: "tool_call",
+      toolCall: { id: "call-1", name: "read_file", arguments: {} },
+      turnId: "turn-1",
+      _nativeRunId: "run-current",
+      _nativeSequence: 2,
+    });
+    emit(source, {
+      type: "text_chunk",
+      text: "persisted answer",
+      messagePhase: "final_answer",
+      turnId: "turn-1",
+      itemId: "answer-1",
+      _nativeRunId: "run-current",
+      _nativeSequence: 7,
+    });
+    emit(source, {
+      type: "text_chunk",
+      text: "new suffix",
+      messagePhase: "final_answer",
+      turnId: "turn-1",
+      itemId: "answer-1",
+      _nativeRunId: "run-current",
+      _nativeSequence: 8,
+    });
+    emit(source, {
+      type: "text_chunk",
+      text: "next run",
+      messagePhase: "final_answer",
+      turnId: "turn-2",
+      itemId: "answer-2",
+      _nativeRunId: "run-next",
+      _nativeSequence: 1,
+    });
+
+    expect(events.filter((event) => event.type === "text_chunk").map((event) => event.text)).toEqual([
+      "commentary stays visible",
+      "new suffix",
+      "next run",
+    ]);
+    expect(events.filter((event) => event.type === "tool_call")).toHaveLength(1);
+
+    await gateway.abort(sessionId);
+  });
+
   it("does not carry an ambiguous legacy cursor into a known progressive run", async () => {
     globalThis.EventSource = ObservableEventSource as unknown as typeof EventSource;
     const sessionId = "runtime:codex:c291cmNl";

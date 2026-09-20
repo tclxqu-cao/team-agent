@@ -22,6 +22,11 @@ interface NativeStreamCursor {
   sequence: number;
 }
 
+interface NativeFinalAnswerSnapshot {
+  runId: string;
+  sequence: number;
+}
+
 interface BufferedStreamText {
   event: Record<string, unknown>;
   timer: ReturnType<typeof setTimeout>;
@@ -63,6 +68,7 @@ type BrowserHandled = "wakeStart" | "dictationStart" | "dictationStop" | "onDict
 export class AgentHttpGateway {
   private readonly streams = new Map<string, EventSource>();
   private readonly nativeStreamCursors = new Map<string, NativeStreamCursor>();
+  private readonly nativeFinalAnswerSnapshots = new Map<string, NativeFinalAnswerSnapshot>();
   private readonly pendingRuns = new Map<string, () => void>();
   private readonly listeners = new Set<EventListener>();
   private readonly thinkFilters = new Map<string, StreamingThinkFilter>();
@@ -367,6 +373,13 @@ export class AgentHttpGateway {
           : undefined;
         const history = session.history as { delivery?: unknown } | undefined;
         const progressive = history?.delivery === "core" || history?.delivery === "trace";
+        if (
+          history?.delivery === "core"
+          && snapshotRunId
+          && this.coreSnapshotContainsTailFinalAnswer(session.messages)
+        ) {
+          this.rememberNativeFinalAnswerSnapshot(id, session.snapshotRevision, snapshotRunId);
+        }
         if (!progressive) {
           this.rememberNativeStreamCursor(id, session.snapshotRevision, snapshotRunId);
         }
@@ -986,6 +999,7 @@ export class AgentHttpGateway {
       if (typeof event._nativeSequence === "number") {
         const runId = typeof event._nativeRunId === "string" ? event._nativeRunId : undefined;
         if (!this.acceptNativeStreamEvent(sessionId, event._nativeSequence, runId)) return;
+        if (this.isNativeFinalAnswerCoveredBySnapshot(sessionId, event, event._nativeSequence, runId)) return;
       }
       // Deduplicate transport delivery before mutating the stateful filter.
       // Otherwise a replayed partial tag can corrupt the next visible chunk.
@@ -1087,6 +1101,51 @@ export class AgentHttpGateway {
     if (sameRun && sequence <= previous.sequence) return false;
     this.rememberNativeStreamCursor(sessionId, sequence, runId);
     return true;
+  }
+
+  private coreSnapshotContainsTailFinalAnswer(messages: unknown): boolean {
+    if (!Array.isArray(messages)) return false;
+    let lastUserIndex = -1;
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      const message = messages[index];
+      if (
+        typeof message === "object"
+        && message !== null
+        && (message as { role?: unknown }).role === "user"
+      ) {
+        lastUserIndex = index;
+        break;
+      }
+    }
+    return messages.slice(lastUserIndex + 1).some((message) => {
+      if (typeof message !== "object" || message === null) return false;
+      const candidate = message as {
+        role?: unknown;
+        presentation?: { agentMessagePhase?: unknown };
+      };
+      return candidate.role === "assistant"
+        && candidate.presentation?.agentMessagePhase === "final_answer";
+    });
+  }
+
+  private rememberNativeFinalAnswerSnapshot(sessionId: string, sequence: number, runId: string): void {
+    const previous = this.nativeFinalAnswerSnapshots.get(sessionId);
+    if (previous?.runId === runId && previous.sequence >= sequence) return;
+    this.nativeFinalAnswerSnapshots.set(sessionId, { runId, sequence });
+  }
+
+  private isNativeFinalAnswerCoveredBySnapshot(
+    sessionId: string,
+    event: Record<string, unknown>,
+    sequence: number,
+    runId?: string,
+  ): boolean {
+    const snapshot = this.nativeFinalAnswerSnapshots.get(sessionId);
+    if (!snapshot || !runId) return false;
+    return event.type === "text_chunk"
+      && event.messagePhase === "final_answer"
+      && snapshot.runId === runId
+      && sequence <= snapshot.sequence;
   }
 
   private closeStream(sessionId: string): void {

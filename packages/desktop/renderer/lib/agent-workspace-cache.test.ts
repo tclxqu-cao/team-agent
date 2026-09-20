@@ -68,7 +68,7 @@ describe("agent workspace cache", () => {
     expect(restored.agents["claude-code"]?.workspaces[0]?.workspaceId).toBe("claude-repo");
   });
 
-  it("drops the selected session on cold read so a new page opens empty", () => {
+  it("restores each Agent's selected session and sidebar state on cold read", () => {
     const cache = emptyAgentWorkspaceCache();
     cache.activeAgent = "codex";
     cache.agents.codex = {
@@ -78,7 +78,17 @@ describe("agent workspace cache", () => {
       expandedWorkspaceIds: ["codex-repo"],
       selectedWorkspaceId: "codex-repo",
       selectedSessionId: "codex-session",
-      sidebarScrollTop: 0,
+      sidebarScrollTop: 128,
+      sessions: {},
+    };
+    cache.agents["claude-code"] = {
+      workspaces: [workspace("claude-code", "claude-repo")],
+      nextCursor: null,
+      watermark: null,
+      expandedWorkspaceIds: ["claude-repo"],
+      selectedWorkspaceId: "claude-repo",
+      selectedSessionId: "claude-session",
+      sidebarScrollTop: 64,
       sessions: {},
     };
     let stored = "";
@@ -86,10 +96,15 @@ describe("agent workspace cache", () => {
 
     const restored = readAgentWorkspaceCache({ getItem: () => stored });
 
-    // 会话选中不跨页面恢复，避免新页面静默重放上一会话历史。
-    expect(restored.agents.codex?.selectedSessionId).toBeNull();
+    expect(restored.activeAgent).toBe("codex");
     expect(restored.agents.codex?.selectedWorkspaceId).toBe("codex-repo");
-    expect(stored).toContain("codex-session");
+    expect(restored.agents.codex?.selectedSessionId).toBe("codex-session");
+    expect(restored.agents.codex?.expandedWorkspaceIds).toEqual(["codex-repo"]);
+    expect(restored.agents.codex?.sidebarScrollTop).toBe(128);
+    expect(restored.agents["claude-code"]?.selectedWorkspaceId).toBe("claude-repo");
+    expect(restored.agents["claude-code"]?.selectedSessionId).toBe("claude-session");
+    expect(restored.agents["claude-code"]?.expandedWorkspaceIds).toEqual(["claude-repo"]);
+    expect(restored.agents["claude-code"]?.sidebarScrollTop).toBe(64);
   });
 
   it("reconciles rename and order from the authoritative first page", () => {
