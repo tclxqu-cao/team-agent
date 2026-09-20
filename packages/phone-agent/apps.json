@@ -1,0 +1,14 @@
+{
+  "淘宝": { "android": "com.taobao.taobao", "ios": "com.taobao.taobao4iphone" },
+  "京东": { "android": "com.jingdong.app.mall", "ios": "com.360buy.jdmall3" },
+  "拼多多": { "android": "com.xunmeng.pinduoduo", "ios": "com.xunmeng.pinduoduo" },
+  "天猫": { "android": "com.tmall.wireless", "ios": "com.tmall.tmall" },
+  "支付宝": { "android": "com.eg.android.AlipayGphone", "ios": "com.alipay.iphoneclient" },
+  "微信": { "android": "com.tencent.mm", "ios": "com.tencent.xin" },
+  "抖音": { "android": "com.ss.android.ugc.aweme", "ios": "com.ss.iphone.ugc.Aweme" },
+  "小红书": { "android": "com.xingin.xhs", "ios": "com.xingin.discover" },
+  "美团": { "android": "com.sankuai.meituan", "ios": "com.sankuai.meituan" },
+  "饿了么": { "android": "me.ele", "ios": "me.ele" },
+  "设置": { "android": "com.android.settings", "ios": "com.apple.Preferences" },
+  "Safari": { "ios": "com.apple.mobilesafari" }
+}

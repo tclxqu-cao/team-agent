@@ -1,0 +1,17 @@
+{
+  "name": "@agent/phone-agent",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "手机操作 agent：ADB / WebDriverAgent 驱动 + UI 树感知 + MCP 工具 + 语音唤醒网关",
+  "bin": {
+    "phone-agent": "./dist/cli.js",
+    "phone-agent-mcp": "./dist/mcp/server.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "mcp": "node dist/mcp/server.js",
+    "voice": "bun dist/voice/gateway.js",
+    "test": "vitest run"
+  }
+}
