@@ -1,0 +1,19 @@
+docs/superpowers/specs/2026-09-20-codex-directory-refresh-immediate-send-design.md
+  s_cf903200b7e8f8::t_4eb33f7bae1452 1-71
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "d2c2196974bcd4c7d42207669791451c0366827a",
+  "prompts": {},
+  "sessions": {
+    "s_cf903200b7e8f8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0bec6-64dd-73d0-ba06-16d6ca12fb7f",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
