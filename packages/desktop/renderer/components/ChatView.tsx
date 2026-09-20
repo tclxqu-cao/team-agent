@@ -348,6 +348,7 @@ import MessageImageLightbox, { type MessageImagePreview } from "./MessageImageLi
 import { widgetRegistry } from "./widgets/index.js";
 import { prepareVoiceCommand, shouldSkipVoiceSessionReload } from "../lib/voice-command";
 import { prepareChatCommand } from "../lib/chat-command";
+import { waitForNextPaint } from "../lib/browser-paint";
 import { areToolCallsComplete } from "../lib/tool-call-status";
 import { parseRichInlineTokens } from "../lib/markdown-links";
 import { coalesceAdjacentToolCallMessages, groupAdjacentToolCallEntries } from "../lib/tool-call-groups";
@@ -3261,10 +3262,9 @@ export default function ChatView({
         activateSession: (id) => {
           sessionIdRef.current = id;
           setSessionId(id);
-          // Mark running before selection changes so history loading preserves
-          // the optimistic message for this session.
+          // Keep the non-reactive guard armed before selection changes so
+          // history loading preserves this session's optimistic message.
           runningSessionRef.current = id;
-          setRunningSession(id);
         },
         showUserMessage: (text, id) => addMessage({
           id: crypto.randomUUID(),
@@ -3274,6 +3274,7 @@ export default function ChatView({
           agentName: agentNamesLabel,
           images: imagesToSend,
         }, id),
+        afterUserMessageShown: waitForNextPaint,
         onSessionCreated,
       });
 

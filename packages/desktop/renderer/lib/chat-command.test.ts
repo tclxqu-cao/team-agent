@@ -184,6 +184,34 @@ describe("prepareChatCommand", () => {
     expect(order).toEqual(["onSessionCreated", "returned"]);
   });
 
+  it("waits for the optimistic message paint before session follow-up work", async () => {
+    const order: string[] = [];
+    let releasePaint!: () => void;
+    const paint = new Promise<void>((resolve) => { releasePaint = resolve; });
+
+    const pending = prepareChatCommand({
+      text: "paint first",
+      projectId: "project-a",
+      sessionId: null,
+      createSession: async () => ({ id: "session-new" }),
+      activateSession: () => order.push("activate"),
+      showUserMessage: () => order.push("message"),
+      afterUserMessageShown: async () => {
+        order.push("paint-start");
+        await paint;
+        order.push("paint-end");
+      },
+      onSessionCreated: () => order.push("selected"),
+    });
+
+    await Promise.resolve();
+    expect(order).toEqual(["activate", "message", "paint-start"]);
+
+    releasePaint();
+    await pending;
+    expect(order).toEqual(["activate", "message", "paint-start", "paint-end", "selected"]);
+  });
+
   it("propagates failures from onSessionCreated", async () => {
     await expect(prepareChatCommand({
       text: "hi",

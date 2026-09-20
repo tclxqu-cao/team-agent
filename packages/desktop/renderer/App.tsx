@@ -12,6 +12,7 @@ import {
   SIDEBAR_SESSION_STATUS_LABELS,
 } from "./lib/sidebar-session-status";
 import {
+  orderSessionsForAgent,
   sortNewestSessionsFirst,
   sortPinnedSessionsFirst,
   sortRunningSessionsFirst,
@@ -94,13 +95,17 @@ interface Session {
   migratedFrom?: string;
 }
 
-function buildCachedSessionState(cache: Record<string, { data: Session[]; loaded: boolean }>) {
+function buildCachedSessionState(
+  cache: Record<string, { data: Session[]; loaded: boolean }>,
+  agentType: AgentType,
+) {
   const roots: Record<string, Session[]> = {};
   const children: Record<string, Session[]> = {};
   for (const [projectId, entry] of Object.entries(cache)) {
     const sessions = entry.data;
-    roots[projectId] = sortNewestSessionsFirst(
+    roots[projectId] = orderSessionsForAgent(
       sessions.filter((session) => !session.parentSessionId),
+      agentType,
     );
     for (const child of sessions.filter((session) => session.parentSessionId)) {
       (children[child.parentSessionId!] ??= []).push(child);
@@ -114,6 +119,14 @@ function buildCachedSessionState(cache: Record<string, { data: Session[]; loaded
     children,
     projectIds: new Set(Object.entries(cache).filter(([, entry]) => entry.loaded).map(([id]) => id)),
   };
+}
+
+function shouldRefreshWorkspaceSessions(
+  agentType: AgentType,
+  project: Pick<Project, "canCreateSession"> | undefined,
+  hasCache: boolean,
+): boolean {
+  return agentType === "codex" && project?.canCreateSession !== false ? true : hasCache;
 }
 
 function workspaceToProject(workspace: AgentWorkspace): Project {
@@ -163,6 +176,7 @@ export default function App() {
   const initialPartition = initialWorkspaceCache.agents[initialAgent] ?? emptyAgentWorkspacePartition();
   const [initialSessionState] = useState(() => buildCachedSessionState(
     initialPartition.sessions as Record<string, { data: Session[]; loaded: boolean }>,
+    initialAgent,
   ));
   const workspaceCacheRef = useRef<AgentWorkspaceCache>(initialWorkspaceCache);
   const [activeAgent, setActiveAgent] = useState<AgentType>(initialAgent);
@@ -272,15 +286,20 @@ export default function App() {
   };
   /** Expand every valid project and nested session group in the sidebar. */
   const handleExpandAllSessions = () => {
-    const projectIds = projects
-      .filter((project) => !invalidProjectIds.has(project.id))
-      .map((project) => project.id);
+    const expandableProjects = projects.filter((project) => !invalidProjectIds.has(project.id));
+    const projectIds = expandableProjects.map((project) => project.id);
     setExpandedProjects(new Set(projectIds));
     setCollapsedParents(new Set());
-    for (const projectId of projectIds) {
+    for (const project of expandableProjects) {
+      const projectId = project.id;
       if (loadingProjectIdsRef.current.has(projectId)) continue;
       const hasCache = loadedProjectIdsRef.current.has(projectId);
-      void loadSessions(projectId, { refresh: hasCache, background: hasCache });
+      const shouldRefresh = shouldRefreshWorkspaceSessions(
+        activeAgentRef.current,
+        project,
+        hasCache,
+      );
+      void loadSessions(projectId, { refresh: shouldRefresh, background: hasCache });
     }
   };
   // ── Web shell (packages/webapp): drawer sidebar on phone-width screens ──
@@ -566,12 +585,13 @@ export default function App() {
       .filter((session) => pinnedSessionIdSet.has(session.id))
       .map((session) => ({ projectId, session, created: session.created })),
   );
+  const orderedPinnedRootSessions = orderSessionsForAgent(collectedPinnedRootSessions, activeAgent);
   const pinnedRootSessions = runningFirst
     ? sortRunningSessionsFirst(
-        collectedPinnedRootSessions,
+        orderedPinnedRootSessions,
         ({ session }) => isSessionRunning(session),
       )
-    : sortNewestSessionsFirst(collectedPinnedRootSessions);
+    : orderedPinnedRootSessions;
   const allKnownSessions = allVisibleSessions;
   const sessionQueryTrim = sessionQuery.trim().toLowerCase();
   const searchResults = sessionQueryTrim
@@ -655,6 +675,7 @@ export default function App() {
     const partition = workspaceCacheRef.current.agents[agentType] ?? emptyAgentWorkspacePartition();
     const cachedSessions = buildCachedSessionState(
       partition.sessions as Record<string, { data: Session[]; loaded: boolean }>,
+      agentType,
     );
     const nextProjects = partition.workspaces.map(workspaceToProject);
     activeAgentRef.current = agentType;
@@ -858,8 +879,9 @@ export default function App() {
       ];
       const list = (reconcileSessionPage(current, page, !options.cursor) as Session[])
         .map((session) => ({ ...session, projectId: session.projectId ?? projectId }));
-      const refreshedRoots = sortNewestSessionsFirst(
+      const refreshedRoots = orderSessionsForAgent(
         list.filter((session) => !session.parentSessionId),
+        agentType,
       );
       const activeProjectId = selectedProjectIdRef.current;
       const activeSessionId = selectedSessionIdRef.current;
@@ -1063,7 +1085,13 @@ export default function App() {
     });
     if (opening && !loadingProjectIdsRef.current.has(projectId)) {
       const hasCache = loadedProjectIdsRef.current.has(projectId);
-      void loadSessions(projectId, { refresh: hasCache, background: hasCache });
+      const project = projectsRef.current.find((candidate) => candidate.id === projectId);
+      const shouldRefresh = shouldRefreshWorkspaceSessions(
+        activeAgentRef.current,
+        project,
+        hasCache,
+      );
+      void loadSessions(projectId, { refresh: shouldRefresh, background: hasCache });
     }
   };
 

@@ -24,6 +24,10 @@ const startRun = chatView.slice(
   chatView.indexOf("async function startRun("),
   chatView.indexOf("const handleSend = async"),
 );
+const ordinarySend = chatView.slice(
+  chatView.indexOf("// ── Normal send flow"),
+  chatView.indexOf("// ── Voice command from wake word"),
+);
 
 describe("shared Codex-style message history", () => {
   it("applies one presentation path to every runtime", () => {
@@ -49,6 +53,14 @@ describe("shared Codex-style message history", () => {
     expect(startRun).toContain("beginAgentRunActivity(targetSessionId);");
     expect(startRun.indexOf("beginAgentRunActivity(targetSessionId);"))
       .toBeLessThan(startRun.indexOf("setRunningSession(targetSessionId);"));
+  });
+
+  it("paints an optimistic ordinary message before starting the run", () => {
+    expect(chatView).toContain('import { waitForNextPaint } from "../lib/browser-paint"');
+    expect(ordinarySend).toContain("afterUserMessageShown: waitForNextPaint");
+    expect(ordinarySend.indexOf("afterUserMessageShown: waitForNextPaint"))
+      .toBeLessThan(ordinarySend.indexOf("await startRun("));
+    expect(ordinarySend).not.toContain("setRunningSession(id);");
   });
 
   it("keeps tool execution status inside the tool row", () => {

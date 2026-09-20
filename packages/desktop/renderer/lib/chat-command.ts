@@ -5,6 +5,7 @@ export interface PrepareChatCommandOptions {
   createSession: (title: string, projectId?: string) => Promise<{ id: string }>;
   activateSession: (sessionId: string) => void;
   showUserMessage: (text: string, sessionId: string) => void;
+  afterUserMessageShown?: () => void | Promise<void>;
   onSessionCreated?: (sessionId: string) => void | Promise<void>;
 }
 
@@ -23,6 +24,7 @@ export async function prepareChatCommand(options: PrepareChatCommandOptions): Pr
 
   options.activateSession(targetSessionId);
   options.showUserMessage(options.text, targetSessionId);
+  await options.afterUserMessageShown?.();
   if (isNewSession) await options.onSessionCreated?.(targetSessionId);
   return targetSessionId;
 }

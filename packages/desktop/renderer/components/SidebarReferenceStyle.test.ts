@@ -151,7 +151,10 @@ describe("AgentRoam reference sidebar", () => {
     expect(app).toContain("cachedProjectIds.add(restoredProjectId)");
     expect(app).toContain("invalid.has(projectId) || loadingProjectIdsRef.current.has(projectId)");
     expect(app).toContain("void loadSessions(projectId, { refresh: true, background: true })");
-    expect(app).toContain("void loadSessions(projectId, { refresh: hasCache, background: hasCache })");
+    expect(app).toContain('agentType === "codex"');
+    expect(app).toContain("project?.canCreateSession !== false");
+    expect(app).toContain("const shouldRefresh = shouldRefreshWorkspaceSessions(");
+    expect(app).toContain("refresh: shouldRefresh, background: hasCache");
     expect(app).toContain("loadSessions(selectedProjectId, { refresh: true, background: true })");
     expect(app).toContain("正在加载会话...");
     expect(app).toContain("会话加载失败");

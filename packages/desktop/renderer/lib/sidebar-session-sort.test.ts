@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  orderSessionsForAgent,
   sortNewestSessionsFirst,
   sortPinnedSessionsFirst,
   sortRunningSessionsFirst,
@@ -29,12 +30,27 @@ describe("sidebar session sorting", () => {
     ]);
   });
 
-  it("puts running sessions first while keeping each group newest-first", () => {
+  it("puts running sessions first while preserving source order inside each group", () => {
     expect(sortRunningSessionsFirst(sessions, (session) => session.running).map((session) => session.id)).toEqual([
-      "new-running",
       "old-running",
+      "new-running",
       "new-completed",
       "old-completed",
+    ]);
+  });
+
+  it("preserves runtime source order for Codex and creation order for other agents", () => {
+    expect(orderSessionsForAgent(sessions, "codex").map((session) => session.id)).toEqual([
+      "old-running",
+      "new-completed",
+      "new-running",
+      "old-completed",
+    ]);
+    expect(orderSessionsForAgent(sessions, "customer-agent").map((session) => session.id)).toEqual([
+      "new-completed",
+      "new-running",
+      "old-completed",
+      "old-running",
     ]);
   });
 
@@ -49,7 +65,10 @@ describe("sidebar session sorting", () => {
       ...session,
       pinned: session.id === "new-completed" || session.id === "old-running",
     }));
-    const runningFirst = sortRunningSessionsFirst(withPinned, (session) => session.running);
+    const runningFirst = sortRunningSessionsFirst(
+      sortNewestSessionsFirst(withPinned),
+      (session) => session.running,
+    );
 
     expect(sortPinnedSessionsFirst(runningFirst, (session) => session.pinned).map((session) => session.id)).toEqual([
       "old-running",

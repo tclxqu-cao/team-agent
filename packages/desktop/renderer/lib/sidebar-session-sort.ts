@@ -1,3 +1,5 @@
+import type { AgentType } from "../global";
+
 export interface SortableSidebarSession {
   created: string;
 }
@@ -19,13 +21,21 @@ export function sortNewestSessionsFirst<T extends SortableSidebarSession>(
   return stableSort(sessions, (left, right) => right.created.localeCompare(left.created));
 }
 
-/** Float running sessions while preserving newest-first order inside each partition. */
+/** Preserve native Codex order; other runtimes keep their creation-time order. */
+export function orderSessionsForAgent<T extends SortableSidebarSession>(
+  sessions: readonly T[],
+  agentType: AgentType,
+): T[] {
+  return agentType === "codex" ? [...sessions] : sortNewestSessionsFirst(sessions);
+}
+
+/** Float running sessions without changing the input order inside either partition. */
 export function sortRunningSessionsFirst<T extends SortableSidebarSession>(
   sessions: readonly T[],
   isRunning: (session: T) => boolean,
 ): T[] {
   return stableSort(
-    sortNewestSessionsFirst(sessions),
+    sessions,
     (left, right) => Number(isRunning(right)) - Number(isRunning(left)),
   );
 }
