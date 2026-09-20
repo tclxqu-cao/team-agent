@@ -1,0 +1,48 @@
+packages/desktop/renderer/components/ChatHistoryStyle.test.ts
+  s_cf903200b7e8f8::t_1037abfe8d6aed 27-30,58-63
+  s_a23bf94233d4f1::t_23ec09baa87d63 64-65
+packages/desktop/renderer/lib/sidebar-session-sort.ts
+  s_cf903200b7e8f8::t_579a32c5aae7b3 1-2,24-32,38
+packages/desktop/renderer/lib/chat-command.test.ts
+  s_cf903200b7e8f8::t_1037abfe8d6aed 187-214
+packages/desktop/renderer/components/SidebarReferenceStyle.test.ts
+  s_cf903200b7e8f8::t_9ce2aa414ba6d5 154-155
+  s_cf903200b7e8f8::t_579a32c5aae7b3 156-157
+packages/desktop/renderer/components/ChatView.tsx
+  s_cf903200b7e8f8::t_579a32c5aae7b3 351,3265-3266,3277
+packages/desktop/renderer/App.tsx
+  s_cf903200b7e8f8::t_579a32c5aae7b3 15,98-101,106,108,124-131,179,289-290,293-294,297-302,588,591,594,678,882,884,1088-1094
+packages/desktop/renderer/lib/sidebar-session-sort.test.ts
+  s_cf903200b7e8f8::t_1037abfe8d6aed 3,33,35,37,39-43,46-51,53,68-71
+  s_cf903200b7e8f8::t_9ce2aa414ba6d5 38
+packages/desktop/renderer/lib/chat-command.ts
+  s_cf903200b7e8f8::t_579a32c5aae7b3 8,27
+packages/desktop/renderer/lib/browser-paint.test.ts
+  s_cf903200b7e8f8::t_7450d53b691959 1-55
+packages/desktop/renderer/lib/browser-paint.ts
+  s_cf903200b7e8f8::t_01255acca1ce1a 1-24
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "0c13b2f435f9491b8b9258eefb8abe4113336681",
+  "prompts": {},
+  "sessions": {
+    "s_a23bf94233d4f1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0bee4-8ce8-7280-8e57-382c121318d4",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_cf903200b7e8f8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0bec6-64dd-73d0-ba06-16d6ca12fb7f",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
