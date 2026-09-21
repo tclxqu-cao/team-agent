@@ -16,12 +16,14 @@ export interface CodexAppServerClientOptions {
   executable?: string;
   requestTimeoutMs?: number;
   spawnProcess?: typeof spawn;
+  environment?: NodeJS.ProcessEnv;
 }
 
 export class CodexAppServerClient {
   private readonly executable: string;
   private readonly requestTimeoutMs: number;
   private readonly spawnProcess: typeof spawn;
+  private readonly environment: NodeJS.ProcessEnv;
   private process: ChildProcessWithoutNullStreams | null = null;
   private startPromise: Promise<void> | null = null;
   private buffer = "";
@@ -36,6 +38,7 @@ export class CodexAppServerClient {
     this.executable = options.executable ?? "codex";
     this.requestTimeoutMs = options.requestTimeoutMs ?? 120_000;
     this.spawnProcess = options.spawnProcess ?? spawn;
+    this.environment = options.environment ?? process.env;
   }
 
   get pid(): number | undefined {
@@ -94,6 +97,7 @@ export class CodexAppServerClient {
   private async start(): Promise<void> {
     console.log(`[codex-app-server-client] spawning: ${this.executable} app-server --stdio`);
     const child = this.spawnProcess(this.executable, ["app-server", "--stdio"], {
+      env: normalizeCodexEnvironment(this.environment),
       stdio: ["pipe", "pipe", "pipe"],
     }) as ChildProcessWithoutNullStreams;
     this.process = child;
@@ -236,4 +240,40 @@ export class CodexAppServerClient {
       child.once("exit", () => { clearTimeout(timer); resolve(); });
     });
   }
+}
+
+
+/**
+ * Codex uses Rust's proxy implementation, whose NO_PROXY parser does not
+ * consistently treat shell-style host globs such as `*.example.com` as a
+ * domain suffix. Keep the original rules for other consumers, but add the
+ * equivalent bare and dot-prefixed host rules for the Codex child process.
+ */
+export function normalizeCodexEnvironment(environment: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const normalized = { ...environment };
+  const values = [normalized.NO_PROXY, normalized.no_proxy].filter(
+    (value): value is string => typeof value === "string" && value.trim() !== "",
+  );
+  if (values.length === 0) return normalized;
+
+  const merged = new Set<string>();
+  for (const value of values) {
+    for (const entry of value.split(",")) {
+      const trimmed = entry.trim();
+      if (!trimmed) continue;
+      merged.add(trimmed);
+      const match = /^(\*+)([^:]+)(:\d+)?$/.exec(trimmed);
+      if (!match || match[2] === "") continue;
+      const host = match[2].replace(/^\.+/, "");
+      if (!host || host === "*") continue;
+      const port = match[3] ?? "";
+      merged.add(`${host}${port}`);
+      merged.add(`.${host}${port}`);
+    }
+  }
+
+  const result = [...merged].join(",");
+  normalized.NO_PROXY = result;
+  normalized.no_proxy = result;
+  return normalized;
 }
