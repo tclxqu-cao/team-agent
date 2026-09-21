@@ -149,6 +149,11 @@ function runBootstrapSmoke(artifacts, parentWorkdir, archivePath) {
   const scriptPath = resolve(artifacts.artifactDirectory, scriptName);
   accessSync(scriptPath, constants.F_OK);
   const extraSeparator = process.platform === "win32" ? ";" : " ";
+  // Pin the exact version under test: otherwise the installer resolves the
+  // "preview" dist-tag, which still points at the previous release until this
+  // release is published, and the version validation below fails.
+  const bootstrapVersion = basename(artifacts.launcher).match(/-(\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?)\.tgz$/)?.[1];
+  if (!bootstrapVersion) throw new Error(`cannot derive bootstrap version from ${artifacts.launcher}`);
   const bootstrapEnv = {
     ...process.env,
     HOME: bootstrapHome,
@@ -158,6 +163,7 @@ function runBootstrapSmoke(artifacts, parentWorkdir, archivePath) {
     AGENTROAM_INSTALL_SKIP_SERVICE: "1",
     AGENTROAM_BOOTSTRAP_TEST: "1",
     AGENTROAM_FORCE_PRIVATE_NODE: "1",
+    AGENTROAM_VERSION: bootstrapVersion,
     AGENTROAM_PACKAGE_SPEC: artifacts.launcher,
     AGENTROAM_BOOTSTRAP_EXTRA_SPECS: [artifacts.runtime, artifacts.cloudflared, artifacts.tui].join(extraSeparator),
     ...(archivePath ? { AGENTROAM_NODE_ARCHIVE_FILE: archivePath } : {}),
