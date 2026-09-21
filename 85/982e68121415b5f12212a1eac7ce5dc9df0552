@@ -1,0 +1,42 @@
+scripts/harness/daemon-service.ts
+  s_24ac4c4363d931::t_e5d34f04372704 160-161
+packages/core/src/domain/agent/AgentLoop.ts
+  s_24ac4c4363d931::t_04738742fb3fca 368
+packages/core/src/domain/agent/__tests__/AgentLoop.test.ts
+  s_24ac4c4363d931::t_04738742fb3fca 382-397
+scripts/harness/quality.test.ts
+  s_24ac4c4363d931::t_04738742fb3fca 31-39,102-118
+  s_a23bf94233d4f1::t_a9356b62eb29a5 119-120
+packages/core/src/domain/model/providers/AiHubProvider.ts
+  s_24ac4c4363d931::t_04738742fb3fca 112-116
+scripts/harness/quality-analysis.ts
+  s_24ac4c4363d931::t_04738742fb3fca 18-19,45-47
+packages/core/src/domain/model/entities.ts
+  s_24ac4c4363d931::t_04738742fb3fca 97
+packages/core/src/domain/model/providers/__tests__/AiHubProvider.test.ts
+  s_24ac4c4363d931::t_04738742fb3fca 318-322
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "85982e68121415b5f12212a1eac7ce5dc9df0552",
+  "prompts": {},
+  "sessions": {
+    "s_24ac4c4363d931": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0b59c-c7a8-77a2-b5dd-2ec088c2421a",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_a23bf94233d4f1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0bee4-8ce8-7280-8e57-382c121318d4",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
