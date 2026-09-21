@@ -67,6 +67,7 @@ import {
   isActiveNativeSession,
   isNativeRuntimeSelection,
   isObservedNativeRun,
+  shouldDeferAnchoredSessionEvent,
   shouldFollowNativeHistory,
   shouldQueueMessageForActiveRun,
   shouldRestoreCustomerAgentRun,
@@ -727,6 +728,9 @@ export default function ChatView({
     const viewedSessionId = selectedSessionIdRef.current || sessionIdRef.current;
     if (targetSessionId === viewedSessionId) {
       setGoalState(projectSessionGoals(state) as SessionGoalState);
+      // A terminal event may arrive while browsing an older turn. Keep that
+      // transcript and scroll anchor intact until the user returns to latest.
+      if (historyWindowModeRef.current === "anchored") return;
     }
 
     const current = getMessagesForSession(targetSessionId);
@@ -1112,9 +1116,13 @@ export default function ChatView({
   // Always-current refs for selectedSessionId and sessionId — used inside event
   // handlers that are captured in closures and may outlive React renders.
   const selectedSessionIdRef = useRef<string | null>(selectedSessionId ?? null);
+  const runCompleteContextRef = useRef({ onRunComplete, selectedProjectId });
   const sessionIdRef = useRef<string | null>(null);
   const sessionLoadGenerationRef = useRef(0);
   useEffect(() => { selectedSessionIdRef.current = selectedSessionId ?? null; }, [selectedSessionId]);
+  useEffect(() => {
+    runCompleteContextRef.current = { onRunComplete, selectedProjectId };
+  }, [onRunComplete, selectedProjectId]);
   useEffect(() => { sessionIdRef.current = sessionId; }, [sessionId]);
   useEffect(() => () => {
     for (const timer of queuedRunDrainTimersRef.current.values()) window.clearTimeout(timer);
@@ -2082,6 +2090,7 @@ export default function ChatView({
         if (managedRunSessionsRef.current.has(targetSessionId)) return;
         try {
           const state = await window.agentApi?.getSessionGoals(targetSessionId);
+          if (managedRunSessionsRef.current.has(targetSessionId)) return;
           const viewedSid = selectedSessionIdRef.current || sessionIdRef.current;
           if (state && targetSessionId === viewedSid) applySessionQueueState(state, targetSessionId);
           // The native goal coordinator may already have promoted and started
@@ -2102,10 +2111,8 @@ export default function ChatView({
             .getMessagesForSession(targetSessionId)
             .find((message) => message.isQueued && !message.queueItemId);
           if (!nextQueued) {
-            if (targetSessionId === viewedSid) {
-              runningSessionRef.current = null;
-              setRunningSession(null);
-            }
+            if (runningSessionRef.current === targetSessionId) runningSessionRef.current = null;
+            if (useAgentStore.getState().runningSessionId === targetSessionId) setRunningSession(null);
             return;
           }
           updateMessage(nextQueued.id, (message) => ({ ...message, isQueued: false }), targetSessionId);
@@ -2131,9 +2138,23 @@ export default function ChatView({
       }
     }
     const isViewed = !eventSid || eventSid === viewedSid;
-    if (isViewed && historyWindowModeRef.current === "anchored") {
+    const isAnchoredView = isViewed && historyWindowModeRef.current === "anchored";
+    if (event._nativeRecoveredFromSnapshot && eventSid && isViewed) {
+      void refreshLatestHistory(eventSid);
+    }
+    if (isAnchoredView) {
       setHasLatestHistoryUpdates(true);
-      return;
+      if (shouldDeferAnchoredSessionEvent(event.type)) return;
+    }
+    if (
+      eventSid && isViewed && !event._preserveActiveRun
+      && ["done", "error", "turn_aborted"].includes(event.type)
+      && !managedRunSessionsRef.current.has(eventSid)
+    ) {
+      // Recovered/goal runs have no startRun finally block to refresh the
+      // sidebar summary. Its stale running status also controls the composer.
+      const context = runCompleteContextRef.current;
+      void context.onRunComplete?.(context.selectedProjectId ?? null, eventSid);
     }
     switch (event.type) {
       case "run_admitted":
@@ -2395,7 +2416,7 @@ export default function ChatView({
         }
         break;
       case "done":
-        if (eventSid) {
+        if (eventSid && !isAnchoredView) {
           const durationMs = validCompletionDurationMs(event.durationMs);
           if (durationMs !== undefined) {
             const completedMessage = [...getMessagesForSession(eventSid)].reverse().find((message) => (
@@ -2418,13 +2439,14 @@ export default function ChatView({
         clearRuntimeProgress(eventSid);
         // Only clear running state here if no queued messages — otherwise
         // startRun's finally block will chain the next run seamlessly.
-        if (isViewed && !useAgentStore.getState().messages.some(m => m.isQueued)) {
-          setRunningSession(null);
+        if (eventSid && !getMessagesForSession(eventSid).some(m => m.isQueued)) {
+          if (runningSessionRef.current === eventSid) runningSessionRef.current = null;
+          if (useAgentStore.getState().runningSessionId === eventSid) setRunningSession(null);
         }
         if (isViewed) {
           updateAgentActivity("idle");
           // Auto voice output uses the configured local/remote TTS model only.
-          if (useUIStore.getState().autoSpeak) {
+          if (!isAnchoredView && useUIStore.getState().autoSpeak) {
             const msgs = useAgentStore.getState().messages;
             const lastAssistant = [...msgs].reverse().find(
               (m) => m.role === "assistant" && m.content && !m.isCompactionSummary,
@@ -2452,7 +2474,7 @@ export default function ChatView({
         break;
       case "error":
         if (!event._preserveActiveRun) clearRuntimeProgress(eventSid);
-        if (eventSid && event.code === "SESSION_OCCUPIED") {
+        if (eventSid && event.code === "SESSION_OCCUPIED" && !isAnchoredView) {
           const failedMessages = useAgentStore.getState().getMessagesForSession(eventSid);
           const capturedPayload = pendingNativeSendPayloadRef.current.get(eventSid);
           const existingRecovery = findOccupiedRecovery(occupiedRecoveriesRef.current, eventSid);
@@ -2499,7 +2521,7 @@ export default function ChatView({
             setRunningSession(eventSid);
             updateAgentActivity("thinking");
           }
-          if (event.code === "SESSION_ALREADY_RUNNING") {
+          if (event.code === "SESSION_ALREADY_RUNNING" && !isAnchoredView) {
             const conflictMessages = eventSid
               ? useAgentStore.getState().getMessagesForSession(eventSid)
               : useAgentStore.getState().messages;
@@ -2532,7 +2554,7 @@ export default function ChatView({
               ? useAgentStore.getState().getMessagesForSession(eventSid)
               : useAgentStore.getState().messages;
             const failedUserMessage = [...failedMessages].reverse().find((message) => message.role === "user" && !message.isQueued);
-            if (isNativeRuntime && failedUserMessage?.content) {
+            if (isNativeRuntime && !isAnchoredView && failedUserMessage?.content) {
               setInput(failedUserMessage.content);
               if (eventSid) writeSessionDraft(eventSid, failedUserMessage.content);
             }
@@ -2559,8 +2581,9 @@ export default function ChatView({
         break;
       case "turn_aborted":
         clearRuntimeProgress(eventSid);
+        if (runningSessionRef.current === eventSid) runningSessionRef.current = null;
+        if (useAgentStore.getState().runningSessionId === eventSid) setRunningSession(null);
         if (isViewed) {
-          setRunningSession(null);
           updateAgentActivity("idle");
         }
         void loadThreadGoal(eventSid);
@@ -2924,6 +2947,7 @@ export default function ChatView({
       const pendingGoals = window.agentApi?.getSessionGoals
         ? await window.agentApi.getSessionGoals(targetSessionId).catch(() => undefined)
         : undefined;
+      if (managedRunSessionsRef.current.has(targetSessionId)) return;
       if (pendingGoals && targetSessionId === (selectedSessionIdRef.current || sessionIdRef.current)) {
         applySessionQueueState(pendingGoals, targetSessionId);
       }
@@ -2946,8 +2970,8 @@ export default function ChatView({
         if (onRunComplete) void onRunComplete(selectedProjectId, targetSessionId);
         void startRun(nextQueued, targetSessionId);
       } else {
-        runningSessionRef.current = null;
-        setRunningSession(null);
+        if (runningSessionRef.current === targetSessionId) runningSessionRef.current = null;
+        if (useAgentStore.getState().runningSessionId === targetSessionId) setRunningSession(null);
         if (onRunComplete) void onRunComplete(selectedProjectId, targetSessionId);
       }
     }

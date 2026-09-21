@@ -32,9 +32,17 @@ interface BufferedStreamText {
   timer: ReturnType<typeof setTimeout>;
 }
 
+interface NativeRunRecovery {
+  runId?: string;
+  awaitingAdmission: boolean;
+  inFlight: boolean;
+  timer?: ReturnType<typeof setInterval>;
+}
+
 const TRANSPORT_FAILURE = /^(?:load failed|failed to fetch|network request failed|networkerror when attempting to fetch resource\.?|the network connection was lost\.?|fetch failed)$/i;
 const CODEX_COMMENTARY_FRAME_MS = 50;
 const ORDINARY_RUN_RECOVERY_INTERVAL_MS = 1_000;
+const NATIVE_RUN_RECOVERY_INTERVAL_MS = 2_000;
 
 function isTransportFailure(error: unknown): boolean {
   return error instanceof Error
@@ -75,6 +83,8 @@ export class AgentHttpGateway {
   private readonly bufferedStreamText = new Map<string, BufferedStreamText>();
   private readonly ordinaryRunRecoveryTimers = new Map<string, ReturnType<typeof setInterval>>();
   private readonly ordinaryRunStreamText = new Map<string, string>();
+  private readonly nativeRunRecoveries = new Map<string, NativeRunRecovery>();
+  private readonly nativeRunIdentities = new Map<string, { current: string; retired: Set<string> }>();
 
 
 
@@ -114,6 +124,7 @@ export class AgentHttpGateway {
     const hadStream = this.streams.has(sessionId);
     const hadPendingRun = this.pendingRuns.has(sessionId);
     const nativeCursorBeforeRun = this.nativeStreamCursors.get(sessionId);
+    if (isNativeSession && !hadPendingRun) this.beginNativeRunRecovery(sessionId, undefined, true);
     let pendingResolve: (() => void) | null = null;
     let finished: Promise<void> | null = null;
     try {
@@ -140,6 +151,11 @@ export class AgentHttpGateway {
       });
       if (!isNativeSession) this.startOrdinaryRunRecovery(sessionId);
       if (isNativeSession) {
+        const recovery = this.nativeRunRecoveries.get(sessionId);
+        if (recovery) {
+          recovery.awaitingAdmission = false;
+          recovery.runId = typeof started.runId === "string" ? started.runId : undefined;
+        }
         const streamCursor = typeof started.runId === "string"
           && nativeCursorBeforeRun?.runId !== started.runId
           ? { sequence: 0, runId: started.runId }
@@ -165,6 +181,11 @@ export class AgentHttpGateway {
       if (
         recoveredCursor
       ) {
+        const recovery = this.nativeRunRecoveries.get(sessionId);
+        if (recovery) {
+          recovery.awaitingAdmission = false;
+          recovery.runId = recoveredCursor.runId;
+        }
         await this.openStream(
           sessionId,
           recoveredCursor,
@@ -187,6 +208,11 @@ export class AgentHttpGateway {
         );
       }
       const preserveActiveRun = hadStream || hadPendingRun || code === "SESSION_ALREADY_RUNNING";
+      if (isNativeSession && preserveActiveRun) {
+        const recovery = this.nativeRunRecoveries.get(sessionId);
+        if (recovery) recovery.awaitingAdmission = false;
+        this.startNativeRunRecovery(sessionId, this.nativeStreamCursors.get(sessionId)?.runId);
+      }
       this.dispatch(sessionId, {
         type: "error",
         message: isTransportFailure(err)
@@ -273,6 +299,7 @@ export class AgentHttpGateway {
       // the renderer never stays stuck in "running".
       for (const sessionId of [...this.pendingRuns.keys()]) this.settle(sessionId);
       for (const sessionId of [...this.streams.keys()]) this.closeStream(sessionId);
+      for (const sessionId of [...this.nativeRunRecoveries.keys()]) this.stopNativeRunRecovery(sessionId);
     }
   }
 
@@ -341,6 +368,8 @@ export class AgentHttpGateway {
     id: string,
     query?: { before?: string; after?: string; anchor?: string; limit?: number; view?: "core" | "trace"; revision?: string; turnId?: string },
   ): Promise<unknown> {
+    const nativeRecovery = this.nativeRunRecoveries.get(id);
+    const requestedRunId = nativeRecovery?.runId;
     try {
       const params = new URLSearchParams();
       if (query?.before) params.set("before", query.before);
@@ -367,10 +396,13 @@ export class AgentHttpGateway {
           return e;
         });
       }
-      if (id.startsWith("runtime:") && typeof session.snapshotRevision === "number") {
+      const currentNativeResponse = nativeRecovery === this.nativeRunRecoveries.get(id)
+        && requestedRunId === nativeRecovery?.runId;
+      if (id.startsWith("runtime:") && currentNativeResponse && typeof session.snapshotRevision === "number") {
         const snapshotRunId = typeof session.snapshotRunId === "string"
           ? session.snapshotRunId
           : undefined;
+        if (snapshotRunId && this.nativeRunIdentities.get(id)?.retired.has(snapshotRunId)) return session;
         const history = session.history as { delivery?: unknown } | undefined;
         const progressive = history?.delivery === "core" || history?.delivery === "trace";
         if (
@@ -390,6 +422,9 @@ export class AgentHttpGateway {
             : rememberedCursor
               ?? (progressive ? { sequence: 0, ...(snapshotRunId ? { runId: snapshotRunId } : {}) } : undefined);
           void this.openStream(id, cursor).catch(() => undefined);
+        }
+        if (nativeRecovery && !query?.before && !query?.after && !query?.anchor && query?.view !== "trace") {
+          await this.reconcileNativeRun(id, nativeRecovery, requestedRunId, session);
         }
       } else if (!id.startsWith("runtime:") && session.status === "active") {
         const activeRun = session.activeRun as { eventId?: unknown; running?: unknown } | undefined;
@@ -884,11 +919,143 @@ export class AgentHttpGateway {
 
   private settle(sessionId: string): void {
     this.stopOrdinaryRunRecovery(sessionId);
+    this.stopNativeRunRecovery(sessionId);
     const resolve = this.pendingRuns.get(sessionId);
     if (resolve) {
       this.pendingRuns.delete(sessionId);
       resolve();
     }
+  }
+
+  private beginNativeRunRecovery(
+    sessionId: string,
+    runId?: string,
+    awaitingAdmission = false,
+  ): NativeRunRecovery {
+    this.stopNativeRunRecovery(sessionId);
+    const recovery: NativeRunRecovery = { runId, awaitingAdmission, inFlight: false };
+    this.nativeRunRecoveries.set(sessionId, recovery);
+    return recovery;
+  }
+
+  private startNativeRunRecovery(sessionId: string, runId?: string): void {
+    let recovery = this.nativeRunRecoveries.get(sessionId);
+    if (recovery?.awaitingAdmission) return;
+    if (runId) {
+      const identity = this.nativeRunIdentities.get(sessionId);
+      if (identity?.retired.has(runId)) return;
+      if (identity && identity.current !== runId) {
+        identity.retired.add(identity.current);
+        identity.current = runId;
+      } else if (!identity) {
+        this.nativeRunIdentities.set(sessionId, { current: runId, retired: new Set() });
+      }
+    }
+    if (!recovery || (runId && recovery.runId !== runId)) {
+      recovery = this.beginNativeRunRecovery(sessionId, runId);
+    }
+    if (recovery.timer) return;
+    const tracked = recovery;
+    recovery.timer = setInterval(() => {
+      void this.recoverNativeRun(sessionId, tracked);
+    }, NATIVE_RUN_RECOVERY_INTERVAL_MS);
+  }
+
+  private stopNativeRunRecovery(sessionId: string): void {
+    const recovery = this.nativeRunRecoveries.get(sessionId);
+    if (recovery?.timer) clearInterval(recovery.timer);
+    this.nativeRunRecoveries.delete(sessionId);
+  }
+
+  private async recoverNativeRun(sessionId: string, recovery: NativeRunRecovery): Promise<void> {
+    if (recovery.inFlight || recovery.awaitingAdmission || this.nativeRunRecoveries.get(sessionId) !== recovery) return;
+    recovery.inFlight = true;
+    try {
+      // History remains the source of reply text. Replaying its whole answer
+      // as text_chunk here would duplicate text already delivered over SSE.
+      await this.getSession(sessionId, { limit: 1, view: "core" });
+    } catch {
+      // A mobile reconnect can fail several detail requests; keep observing.
+    } finally {
+      recovery.inFlight = false;
+    }
+  }
+
+  private async reconcileNativeRun(
+    sessionId: string,
+    recovery: NativeRunRecovery,
+    requestedRunId: string | undefined,
+    session: Record<string, unknown>,
+  ): Promise<void> {
+    if (
+      recovery.awaitingAdmission
+      || this.nativeRunRecoveries.get(sessionId) !== recovery
+      || recovery.runId !== requestedRunId
+      || (!requestedRunId && this.pendingRuns.has(sessionId))
+      || (requestedRunId && typeof session.snapshotRunId !== "string" && session.snapshotRunId !== null)
+      || !["idle", "completed", "failed", "aborted"].includes(String(session.status))
+    ) return;
+
+    let terminalRecovery = recovery;
+    let terminalRunId = requestedRunId;
+    if (typeof session.snapshotRunId === "string" && session.snapshotRunId !== requestedRunId) {
+      // A server-queued successor can start and finish between two polls.
+      // This response still belongs to the captured lifecycle, so its latest
+      // retained run is authoritative even if we never observed it running.
+      if (this.nativeRunIdentities.get(sessionId)?.retired.has(session.snapshotRunId)) return;
+      this.startNativeRunRecovery(sessionId, session.snapshotRunId);
+      const successor = this.nativeRunRecoveries.get(sessionId);
+      if (!successor || successor.runId !== session.snapshotRunId) return;
+      terminalRecovery = successor;
+      terminalRunId = session.snapshotRunId;
+    }
+
+    let events = Array.isArray(session.events) ? session.events as Array<Record<string, unknown>> : [];
+    let settledStatus = session.status;
+    let terminal = [...events].reverse().find((event) => (
+      event.type === "done" || event.type === "error" || event.type === "turn_aborted"
+    ));
+    if (!terminal && typeof session.snapshotRunId === "string") {
+      // Core history omits retained events. An idle native thread can have
+      // failed its last turn, so read that turn's actual terminal event before
+      // choosing done versus error. Do not recurse through getSession.
+      try {
+        const retained = await this.http.get<Record<string, unknown>>(
+          `/api/sessions/${encodeURIComponent(sessionId)}?limit=1`,
+        );
+        if (
+          retained.snapshotRunId !== session.snapshotRunId
+          || !["idle", "completed", "failed", "aborted"].includes(String(retained.status))
+        ) return;
+        settledStatus = retained.status;
+        events = Array.isArray(retained.events) ? retained.events as Array<Record<string, unknown>> : [];
+        terminal = [...events].reverse().find((event) => (
+          event.type === "done" || event.type === "error" || event.type === "turn_aborted"
+        ));
+      } catch {
+        return;
+      }
+    }
+    if (
+      this.nativeRunRecoveries.get(sessionId) !== terminalRecovery
+      || terminalRecovery.runId !== terminalRunId
+      || terminalRecovery.awaitingAdmission
+    ) return;
+    const type = terminal?.type
+      ?? (settledStatus === "failed" ? "error" : settledStatus === "aborted" ? "turn_aborted" : "done");
+    const { _nativeSequence: _sequence, _nativeRunId: _runId, ...terminalEvent } = terminal ?? {};
+    // Remove the lifecycle before dispatch; terminal listeners may start the
+    // next run synchronously. Old detail requests must never settle that run.
+    this.closeStream(sessionId);
+    this.settle(sessionId);
+    this.dispatch(sessionId, {
+      ...terminalEvent,
+      type,
+      ...(type === "error" ? { message: terminal?.message || "运行失败，但未记录具体错误" } : {}),
+      ...(type === "done" ? { finalText: "", ...(terminal?.durationMs === undefined ? {} : { durationMs: terminal.durationMs }) } : {}),
+      ...((terminalRunId ?? session.snapshotRunId) ? { _nativeRunId: terminalRunId ?? session.snapshotRunId } : {}),
+      _nativeRecoveredFromSnapshot: true,
+    });
   }
 
   private startOrdinaryRunRecovery(sessionId: string): void {
@@ -954,6 +1121,7 @@ export class AgentHttpGateway {
     cursor?: NativeStreamCursor,
     options: { waitForOpen?: boolean } = {},
   ): Promise<void> {
+    if (sessionId.startsWith("runtime:")) this.startNativeRunRecovery(sessionId, cursor?.runId);
     if (this.streams.has(sessionId)) return Promise.resolve();
     this.thinkFilters.set(sessionId, new StreamingThinkFilter());
     const query = new URLSearchParams({ sessionId });
@@ -989,6 +1157,7 @@ export class AgentHttpGateway {
     };
 
     source.onmessage = (message) => {
+      if (this.streams.get(sessionId) !== source) return;
       if (!message.data) return;
       let event: Record<string, unknown>;
       try {
@@ -998,7 +1167,21 @@ export class AgentHttpGateway {
       }
       if (typeof event._nativeSequence === "number") {
         const runId = typeof event._nativeRunId === "string" ? event._nativeRunId : undefined;
+        const recovery = this.nativeRunRecoveries.get(sessionId);
+        const terminal = event.type === "done" || event.type === "error" || event.type === "turn_aborted";
+        if (runId && this.nativeRunIdentities.get(sessionId)?.retired.has(runId)) return;
+        // A locally admitted run owns its promise. Another run may start from
+        // the server queue, but only a fresh running detail may transfer that
+        // ownership; a delayed old text/tool event is not authoritative.
+        if (runId && recovery?.runId && recovery.runId !== runId && this.pendingRuns.has(sessionId)) return;
+        if (terminal && runId && recovery?.runId && recovery.runId !== runId) return;
         if (!this.acceptNativeStreamEvent(sessionId, event._nativeSequence, runId)) return;
+        // An already-open stream can finish the previous run while a new
+        // POST is still admitting. Confirm its run identity before settling
+        // the promise created for that POST; polling will recover an early
+        // terminal belonging to the newly admitted run as well.
+        if (terminal && recovery?.awaitingAdmission) return;
+        this.startNativeRunRecovery(sessionId, runId);
         if (this.isNativeFinalAnswerCoveredBySnapshot(sessionId, event, event._nativeSequence, runId)) return;
       }
       // Deduplicate transport delivery before mutating the stateful filter.
@@ -1029,6 +1212,20 @@ export class AgentHttpGateway {
       }
     };
     source.onerror = () => {
+      if (this.streams.get(sessionId) !== source) return;
+      if (sessionId.startsWith("runtime:")) {
+        const recovery = this.nativeRunRecoveries.get(sessionId);
+        if (source.readyState === EventSource.CLOSED) {
+          if (gatePending) {
+            gatePending = false;
+            if (gateTimer) clearTimeout(gateTimer);
+            rejectGate?.(new Error("事件流连接失败"));
+          }
+          this.closeStream(sessionId);
+        }
+        if (recovery) void this.recoverNativeRun(sessionId, recovery);
+        return;
+      }
       if (gatePending && source.readyState === EventSource.CLOSED) {
         gatePending = false;
         if (gateTimer) clearTimeout(gateTimer);

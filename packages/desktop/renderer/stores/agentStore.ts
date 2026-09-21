@@ -24,6 +24,8 @@ export interface StreamEvent {
   /** Durable broker event identity used to ignore snapshot/SSE replay duplicates. */
   _nativeRunId?: string;
   _nativeSequence?: number;
+  /** The stream missed its terminal event; reload the persisted history. */
+  _nativeRecoveredFromSnapshot?: boolean;
   /** An admission conflict occurred while an existing native turn remains live. */
   _preserveActiveRun?: boolean;
   text?: string;

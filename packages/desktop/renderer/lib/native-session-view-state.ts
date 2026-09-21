@@ -4,6 +4,11 @@ export interface NativeSessionViewState {
   occupancy?: "available" | "owned-by-customer-agent" | "owned-externally";
 }
 
+/** History navigation defers transcript updates, never run lifecycle updates. */
+export function shouldDeferAnchoredSessionEvent(type: string): boolean {
+  return !["run_admitted", "done", "error", "turn_aborted", "goal_updated", "goal_cleared"].includes(type);
+}
+
 export function isNativeRuntimeSelection(
   session: NativeSessionViewState | null | undefined,
   activeAgentType: NonNullable<NativeSessionViewState["agentType"]>,

@@ -6,6 +6,7 @@ import {
   shouldFollowNativeHistory,
   shouldRestoreCustomerAgentRun,
   shouldRestoreLocalNativeRun,
+  shouldDeferAnchoredSessionEvent,
   type NativeSessionViewState,
 } from "./native-session-view-state";
 
@@ -16,6 +17,11 @@ const externalRunning = (agentType: "codex" | "claude-code"): NativeSessionViewS
 });
 
 describe("native session view state", () => {
+  it("settles runs while viewing older history without applying live transcript events", () => {
+    const events = ["text_chunk", "tool_call", "thinking", "run_admitted", "done", "error", "turn_aborted"];
+    expect(events.filter((type) => !shouldDeferAnchoredSessionEvent(type)))
+      .toEqual(["run_admitted", "done", "error", "turn_aborted"]);
+  });
   it("keeps a newly selected native runtime ready while its summary is still loading", () => {
     expect(isNativeRuntimeSelection(undefined, "codex")).toBe(true);
     expect(isNativeRuntimeSelection(undefined, "claude-code")).toBe(true);

@@ -16,8 +16,9 @@ class FailedEventSource {
 }
 
 class ObservableEventSource {
+  static readonly CLOSED = 2;
   static instances: ObservableEventSource[] = [];
-  readonly readyState = 1;
+  readyState = 1;
   onopen: (() => void) | null = null;
   onerror: ((event: Event) => void) | null = null;
   onmessage: ((event: MessageEvent) => void) | null = null;
@@ -259,6 +260,356 @@ describe("AgentHttpGateway", () => {
       _nativeRunId: "run-new",
       _sid: "runtime:codex:c291cmNl",
     });
+  });
+
+  it("settles a native run whose terminal SSE event was lost without replaying its answer", async () => {
+    vi.useFakeTimers();
+    globalThis.EventSource = ObservableEventSource as unknown as typeof EventSource;
+    const sessionId = "runtime:codex:missed-terminal";
+    const http = {
+      post: vi.fn().mockResolvedValue({ runId: "run-1" }),
+      get: vi.fn().mockResolvedValue({
+        status: "idle", snapshotRunId: "run-1", snapshotRevision: 3,
+        messages: [{ role: "assistant", content: "Final answer" }],
+        events: [{ type: "done", finalText: "Final answer" }],
+        history: { delivery: "core" },
+      }),
+    };
+    const gateway = new AgentHttpGateway(http as never, {} as never);
+    const events: Array<Record<string, unknown>> = [];
+    gateway.onEvent((event) => events.push(event as Record<string, unknown>));
+    const run = gateway.run("inspect", sessionId);
+    await vi.advanceTimersByTimeAsync(0);
+    const source = ObservableEventSource.instances[0];
+    emit(source, { type: "text_chunk", text: "Final answer", _nativeRunId: "run-1", _nativeSequence: 2 });
+
+    await vi.advanceTimersByTimeAsync(2_000);
+    await run;
+
+    expect(events.filter((event) => event.type === "text_chunk")).toHaveLength(1);
+    expect(events).toContainEqual(expect.objectContaining({
+      type: "done", _nativeRunId: "run-1", _nativeRecoveredFromSnapshot: true,
+    }));
+    expect(source.close).toHaveBeenCalledOnce();
+    await vi.advanceTimersByTimeAsync(4_000);
+    expect(http.get).toHaveBeenCalledOnce();
+  });
+
+  it.each(["run-restored", null])("settles a restored native stream from idle history with snapshot run %s", async (snapshotRunId) => {
+    vi.useFakeTimers();
+    globalThis.EventSource = ObservableEventSource as unknown as typeof EventSource;
+    const sessionId = "runtime:codex:restored";
+    const http = {
+      get: vi.fn()
+        .mockResolvedValueOnce({ status: "running", snapshotRunId: "run-restored", snapshotRevision: 1, history: { delivery: "core" } })
+        .mockResolvedValue({ status: "idle", snapshotRunId, snapshotRevision: snapshotRunId ? 2 : 0, history: { delivery: "core" } }),
+    };
+    const gateway = new AgentHttpGateway(http as never, {} as never);
+    const events: Array<Record<string, unknown>> = [];
+    gateway.onEvent((event) => events.push(event as Record<string, unknown>));
+    await gateway.getSession(sessionId, { view: "core" });
+    const source = ObservableEventSource.instances[0];
+    source.onopen?.();
+
+    await vi.advanceTimersByTimeAsync(2_000);
+
+    expect(events).toEqual([expect.objectContaining({ type: "done", _nativeRunId: "run-restored", _nativeRecoveredFromSnapshot: true })]);
+    expect(source.close).toHaveBeenCalledOnce();
+  });
+
+  it("does not let an old idle request or retired stream finish a new native run", async () => {
+    vi.useFakeTimers();
+    globalThis.EventSource = ObservableEventSource as unknown as typeof EventSource;
+    const sessionId = "runtime:codex:generation";
+    let resolveOld!: (detail: Record<string, unknown>) => void;
+    const http = {
+      post: vi.fn().mockResolvedValueOnce({ runId: "run-old" }).mockResolvedValueOnce({ runId: "run-new" }),
+      get: vi.fn(() => new Promise<Record<string, unknown>>((resolve) => { resolveOld = resolve; })),
+    };
+    const gateway = new AgentHttpGateway(http as never, {} as never);
+    const events: Array<Record<string, unknown>> = [];
+    gateway.onEvent((event) => events.push(event as Record<string, unknown>));
+    const first = gateway.run("first", sessionId);
+    await vi.advanceTimersByTimeAsync(0);
+    const oldSource = ObservableEventSource.instances[0];
+    const staleDetail = gateway.getSession(sessionId, { view: "core" });
+    emit(oldSource, { type: "done", _nativeRunId: "run-old", _nativeSequence: 1 });
+    await first;
+    const second = gateway.run("second", sessionId);
+    await vi.advanceTimersByTimeAsync(0);
+    const currentSource = ObservableEventSource.instances[1];
+    resolveOld({ status: "idle", snapshotRunId: null, snapshotRevision: 0, history: { delivery: "core" } });
+    await staleDetail;
+    emit(oldSource, { type: "done", _nativeRunId: "run-old", _nativeSequence: 2 });
+
+    expect(currentSource.close).not.toHaveBeenCalled();
+    expect(events.filter((event) => event.type === "done")).toHaveLength(1);
+    emit(currentSource, { type: "done", _nativeRunId: "run-new", _nativeSequence: 1 });
+    await second;
+  });
+
+  it("does not settle native admission from an idle detail requested before the POST completed", async () => {
+    vi.useFakeTimers();
+    globalThis.EventSource = ObservableEventSource as unknown as typeof EventSource;
+    const sessionId = "runtime:codex:admitting";
+    let resolvePost!: (detail: { runId: string }) => void;
+    let resolveDetail!: (detail: Record<string, unknown>) => void;
+    const http = {
+      post: vi.fn(() => new Promise<{ runId: string }>((resolve) => { resolvePost = resolve; })),
+      get: vi.fn(() => new Promise<Record<string, unknown>>((resolve) => { resolveDetail = resolve; })),
+    };
+    const gateway = new AgentHttpGateway(http as never, {} as never);
+    const events: Array<Record<string, unknown>> = [];
+    gateway.onEvent((event) => events.push(event as Record<string, unknown>));
+    const run = gateway.run("start", sessionId);
+    const detail = gateway.getSession(sessionId, { view: "core" });
+    resolvePost({ runId: "run-new" });
+    await vi.advanceTimersByTimeAsync(0);
+    resolveDetail({ status: "idle", snapshotRunId: null, snapshotRevision: 0 });
+    await detail;
+
+    expect(events.some((event) => event.type === "done")).toBe(false);
+    const source = ObservableEventSource.instances[0];
+    expect(source.close).not.toHaveBeenCalled();
+    emit(source, { type: "done", _nativeRunId: "run-new", _nativeSequence: 1 });
+    await run;
+  });
+
+  it("keeps a native run pending after a closed stream while the server still reports running", async () => {
+    vi.useFakeTimers();
+    globalThis.EventSource = ObservableEventSource as unknown as typeof EventSource;
+    const sessionId = "runtime:codex:closed-stream";
+    const http = {
+      post: vi.fn().mockResolvedValue({ runId: "run-live" }),
+      get: vi.fn().mockResolvedValue({
+        status: "running", snapshotRunId: "run-live", snapshotRevision: 2,
+        messages: [{ role: "assistant", content: "Intermediate commentary" }],
+        history: { delivery: "core" },
+      }),
+    };
+    const gateway = new AgentHttpGateway(http as never, {} as never);
+    const events: Array<Record<string, unknown>> = [];
+    gateway.onEvent((event) => events.push(event as Record<string, unknown>));
+    const run = gateway.run("continue", sessionId);
+    await vi.advanceTimersByTimeAsync(0);
+    const source = ObservableEventSource.instances[0];
+    source.readyState = ObservableEventSource.CLOSED;
+    source.onerror?.(new Event("error"));
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(events.some((event) => event.type === "done" || event.type === "text_chunk")).toBe(false);
+    expect(ObservableEventSource.instances).toHaveLength(2);
+    const recoveredSource = ObservableEventSource.instances[1];
+    recoveredSource.onopen?.();
+    emit(recoveredSource, { type: "done", _nativeRunId: "run-live", _nativeSequence: 3 });
+    await run;
+  });
+
+  it("does not settle a new admission when its already-open stream finishes the previous run", async () => {
+    vi.useFakeTimers();
+    globalThis.EventSource = ObservableEventSource as unknown as typeof EventSource;
+    const sessionId = "runtime:codex:overlapping-admission";
+    let resolvePost!: (detail: { runId: string }) => void;
+    const http = {
+      get: vi.fn().mockResolvedValue({ status: "running", snapshotRunId: "run-old", snapshotRevision: 1 }),
+      post: vi.fn(() => new Promise<{ runId: string }>((resolve) => { resolvePost = resolve; })),
+    };
+    const gateway = new AgentHttpGateway(http as never, {} as never);
+    const events: Array<Record<string, unknown>> = [];
+    gateway.onEvent((event) => events.push(event as Record<string, unknown>));
+    await gateway.getSession(sessionId);
+    const source = ObservableEventSource.instances[0];
+    source.onopen?.();
+    let finished = false;
+    const run = gateway.run("new question", sessionId).then(() => { finished = true; });
+    emit(source, { type: "done", _nativeRunId: "run-old", _nativeSequence: 2 });
+    resolvePost({ runId: "run-new" });
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(finished).toBe(false);
+    expect(events.some((event) => event.type === "done")).toBe(false);
+    expect(source.close).not.toHaveBeenCalled();
+    emit(source, { type: "done", _nativeRunId: "run-new", _nativeSequence: 1 });
+    await run;
+  });
+
+  it("ignores late old text, tools, and completion after a new run is admitted on the same stream", async () => {
+    vi.useFakeTimers();
+    globalThis.EventSource = ObservableEventSource as unknown as typeof EventSource;
+    const sessionId = "runtime:codex:late-old-events";
+    const http = {
+      get: vi.fn().mockResolvedValue({ status: "running", snapshotRunId: "run-old", snapshotRevision: 1 }),
+      post: vi.fn().mockResolvedValue({ runId: "run-new" }),
+    };
+    const gateway = new AgentHttpGateway(http as never, {} as never);
+    const events: Array<Record<string, unknown>> = [];
+    gateway.onEvent((event) => events.push(event as Record<string, unknown>));
+    await gateway.getSession(sessionId);
+    const source = ObservableEventSource.instances[0];
+    source.onopen?.();
+    let finished = false;
+    const run = gateway.run("new question", sessionId).then(() => { finished = true; });
+    await vi.advanceTimersByTimeAsync(0);
+    emit(source, { type: "text_chunk", text: "old text", _nativeRunId: "run-old", _nativeSequence: 2 });
+    emit(source, { type: "tool_call", toolCall: { id: "old-tool", name: "read_file", arguments: {} }, _nativeRunId: "run-old", _nativeSequence: 3 });
+    emit(source, { type: "done", _nativeRunId: "run-old", _nativeSequence: 4 });
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(finished).toBe(false);
+    expect(events).toEqual([expect.objectContaining({ type: "run_admitted", _nativeRunId: "run-new" })]);
+    expect(source.close).not.toHaveBeenCalled();
+    emit(source, { type: "done", _nativeRunId: "run-new", _nativeSequence: 1 });
+    await run;
+  });
+
+  it("accepts a server queued run after fresh history confirms its identity", async () => {
+    vi.useFakeTimers();
+    globalThis.EventSource = ObservableEventSource as unknown as typeof EventSource;
+    const sessionId = "runtime:codex:server-queue";
+    const http = {
+      post: vi.fn().mockResolvedValue({ runId: "run-first" }),
+      get: vi.fn().mockResolvedValue({
+        status: "running", snapshotRunId: "run-queued", snapshotRevision: 1,
+        history: { delivery: "core" },
+      }),
+    };
+    const gateway = new AgentHttpGateway(http as never, {} as never);
+    const events: Array<Record<string, unknown>> = [];
+    gateway.onEvent((event) => events.push(event as Record<string, unknown>));
+    const run = gateway.run("first", sessionId);
+    await vi.advanceTimersByTimeAsync(0);
+    const source = ObservableEventSource.instances[0];
+    await gateway.getSession(sessionId, { view: "core" });
+    emit(source, { type: "text_chunk", text: "queued answer", _nativeRunId: "run-queued", _nativeSequence: 1 });
+    emit(source, { type: "text_chunk", text: "late first answer", _nativeRunId: "run-first", _nativeSequence: 4 });
+    emit(source, { type: "done", _nativeRunId: "run-first", _nativeSequence: 5 });
+
+    expect(events.filter((event) => event.type === "text_chunk").map((event) => event.text)).toEqual(["queued answer"]);
+    expect(source.close).not.toHaveBeenCalled();
+    emit(source, { type: "done", _nativeRunId: "run-queued", _nativeSequence: 2 });
+    await run;
+  });
+
+  it.each(["idle", "failed"])("settles a pending native run when its queued successor is first observed as %s", async (status) => {
+    vi.useFakeTimers();
+    globalThis.EventSource = ObservableEventSource as unknown as typeof EventSource;
+    const sessionId = "runtime:codex:finished-successor";
+    const terminal = status === "failed"
+      ? { type: "error", message: "Queued run failed", code: "MODEL_FAILED" }
+      : { type: "done", finalText: "Queued answer" };
+    const http = {
+      post: vi.fn().mockResolvedValue({ runId: "run-first" }),
+      get: vi.fn().mockImplementation((url: string) => Promise.resolve({
+        status, snapshotRunId: "run-queued", snapshotRevision: 3,
+        events: url.includes("view=core") ? [] : [terminal],
+        history: { delivery: url.includes("view=core") ? "core" : "legacy-full" },
+      })),
+    };
+    const gateway = new AgentHttpGateway(http as never, {} as never);
+    const events: Array<Record<string, unknown>> = [];
+    gateway.onEvent((event) => events.push(event as Record<string, unknown>));
+    let finished = false;
+    const run = gateway.run("first", sessionId).then(() => { finished = true; });
+    await vi.advanceTimersByTimeAsync(0);
+    const source = ObservableEventSource.instances[0];
+    // The first turn and its server-queued successor both finish while SSE
+    // is reconnecting, before the next recovery poll observes either end.
+    source.readyState = 0;
+    await vi.advanceTimersByTimeAsync(2_000);
+
+    expect(finished).toBe(true);
+    await run;
+    expect(events).toContainEqual(expect.objectContaining({
+      type: terminal.type, _nativeRunId: "run-queued", _nativeRecoveredFromSnapshot: true,
+      ...(status === "failed" ? { code: "MODEL_FAILED", message: "Queued run failed" } : {}),
+    }));
+    expect(source.close).toHaveBeenCalledOnce();
+    expect(events.some((event) => event.type === "text_chunk")).toBe(false);
+    await vi.advanceTimersByTimeAsync(4_000);
+    expect(http.get).toHaveBeenCalledTimes(2);
+  });
+
+  it.each(["run-finished", null])("settles an unknown native conflict stream from idle history with run %s", async (snapshotRunId) => {
+    vi.useFakeTimers();
+    globalThis.EventSource = ObservableEventSource as unknown as typeof EventSource;
+    const sessionId = "runtime:codex:unknown-conflict";
+    const http = {
+      post: vi.fn().mockRejectedValue(Object.assign(new Error("already running"), { code: "SESSION_ALREADY_RUNNING" })),
+      get: vi.fn().mockResolvedValue({
+        status: "idle", snapshotRunId, snapshotRevision: snapshotRunId ? 3 : 0,
+        events: snapshotRunId ? [{ type: "done" }] : [],
+        history: { delivery: "core" },
+      }),
+    };
+    const gateway = new AgentHttpGateway(http as never, {} as never);
+    const events: Array<Record<string, unknown>> = [];
+    gateway.onEvent((event) => events.push(event as Record<string, unknown>));
+    await gateway.run("follow up", sessionId);
+    const source = ObservableEventSource.instances[0];
+    await vi.advanceTimersByTimeAsync(2_000);
+
+    expect(events).toContainEqual(expect.objectContaining({ type: "done", _nativeRecoveredFromSnapshot: true }));
+    expect(source.close).toHaveBeenCalledOnce();
+    await vi.advanceTimersByTimeAsync(4_000);
+    expect(http.get).toHaveBeenCalledOnce();
+  });
+
+  it("reads retained terminal events before classifying an idle native core snapshot as successful", async () => {
+    vi.useFakeTimers();
+    globalThis.EventSource = ObservableEventSource as unknown as typeof EventSource;
+    const sessionId = "runtime:codex:failed-idle";
+    const http = {
+      post: vi.fn().mockResolvedValue({ runId: "run-failed" }),
+      get: vi.fn().mockImplementation((url: string) => Promise.resolve({
+        status: "idle", snapshotRunId: "run-failed", snapshotRevision: 3,
+        events: url.includes("view=core") ? [] : [{ type: "error", message: "Session was acquired by another client", code: "SESSION_OCCUPIED" }],
+        history: { delivery: url.includes("view=core") ? "core" : "legacy-full" },
+      })),
+    };
+    const gateway = new AgentHttpGateway(http as never, {} as never);
+    const events: Array<Record<string, unknown>> = [];
+    gateway.onEvent((event) => events.push(event as Record<string, unknown>));
+    const run = gateway.run("inspect", sessionId);
+    await vi.advanceTimersByTimeAsync(2_000);
+    await run;
+
+    expect(http.get).toHaveBeenCalledTimes(2);
+    expect(events).toContainEqual(expect.objectContaining({
+      type: "error", message: "Session was acquired by another client", code: "SESSION_OCCUPIED", _nativeRecoveredFromSnapshot: true,
+    }));
+    expect(events.some((event) => event.type === "done")).toBe(false);
+  });
+
+  it("does not apply a retained terminal lookup after its native lifecycle has been replaced", async () => {
+    vi.useFakeTimers();
+    globalThis.EventSource = ObservableEventSource as unknown as typeof EventSource;
+    const sessionId = "runtime:codex:retained-race";
+    let resolveRetained!: (detail: Record<string, unknown>) => void;
+    const http = {
+      post: vi.fn().mockResolvedValueOnce({ runId: "run-old" }).mockResolvedValueOnce({ runId: "run-new" }),
+      get: vi.fn().mockImplementation((url: string) => url.includes("view=core")
+        ? Promise.resolve({ status: "idle", snapshotRunId: "run-old", snapshotRevision: 2, events: [], history: { delivery: "core" } })
+        : new Promise<Record<string, unknown>>((resolve) => { resolveRetained = resolve; })),
+    };
+    const gateway = new AgentHttpGateway(http as never, {} as never);
+    const events: Array<Record<string, unknown>> = [];
+    gateway.onEvent((event) => events.push(event as Record<string, unknown>));
+    const oldRun = gateway.run("old", sessionId);
+    await vi.advanceTimersByTimeAsync(0);
+    const lookup = gateway.getSession(sessionId, { view: "core" });
+    await vi.advanceTimersByTimeAsync(0);
+    emit(ObservableEventSource.instances[0], { type: "done", _nativeRunId: "run-old", _nativeSequence: 2 });
+    await oldRun;
+    const newRun = gateway.run("new", sessionId);
+    await vi.advanceTimersByTimeAsync(0);
+    const newSource = ObservableEventSource.instances[1];
+    resolveRetained({ status: "idle", snapshotRunId: "run-old", events: [{ type: "error", message: "Old failure" }] });
+    await lookup;
+
+    expect(events.some((event) => event.type === "error")).toBe(false);
+    expect(newSource.close).not.toHaveBeenCalled();
+    emit(newSource, { type: "done", _nativeRunId: "run-new", _nativeSequence: 1 });
+    await newRun;
   });
 
   it("keeps an existing native stream open when a refreshed page retries its running session", async () => {
