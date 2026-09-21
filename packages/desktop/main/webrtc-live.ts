@@ -1,5 +1,7 @@
 import { BrowserWindow, ipcMain } from "electron";
 import { join } from "node:path";
+import { BrowserRemoteVideoPolicy } from "./remote-video-browser-policy.js";
+import type { RemoteVideoDecision, RemoteVideoH264Profile, RemoteVideoObservation, RemoteVideoQuality } from "@agent/core";
 
 export type WebrtcSignal = Record<string, unknown>;
 
@@ -18,6 +20,7 @@ export interface WebrtcLiveOptions {
 }
 
 const START_TIMEOUT_MS = 20_000;
+const FIRST_MEDIA_TIMEOUT_MS = 5_000;
 const RECONNECT_GRACE_MS = 15_000;
 
 /**
@@ -29,12 +32,18 @@ export class WebrtcLive {
   private readonly options: WebrtcLiveOptions;
   private window: BrowserWindow | null = null;
   private closeTimer: NodeJS.Timeout | null = null;
+  private mediaTimer: NodeJS.Timeout | null = null;
   private startAt = 0;
   private connected = false;
+  private readonly mediaPolicy = new BrowserRemoteVideoPolicy("original");
+  private requestedProfile: RemoteVideoH264Profile = "baseline";
+  private receiverProfiles: RemoteVideoH264Profile[] = ["baseline"];
+  private lastDecisionKey = "";
 
   constructor(options: WebrtcLiveOptions) {
     this.options = options;
-    ipcMain.on("webrtc-live:signal", (_event, data: unknown) => {
+    ipcMain.on("webrtc-live:signal", (event, data: unknown) => {
+      if (event?.sender && event.sender !== this.window?.webContents) return;
       if (data && typeof data === "object") void this.#handleRendererSignal(data as WebrtcSignal);
     });
   }
@@ -46,9 +55,21 @@ export class WebrtcLive {
       this.options.log?.("[webrtc-live] viewer start requested");
       this.#cancelClose();
       this.startAt = this.options.now?.() ?? Date.now();
+      this.receiverProfiles = Array.isArray(data.receiverProfiles)
+        ? data.receiverProfiles.filter((profile): profile is RemoteVideoH264Profile => profile === "high" || profile === "baseline")
+        : ["baseline"];
+      this.mediaPolicy.begin(this.receiverProfiles);
+      this.requestedProfile = "baseline";
+      this.lastDecisionKey = "";
       this.#ensureWindow((window) => {
         window.webContents.send("webrtc-live:signal", { kind: "start" });
       });
+      return;
+    }
+    if (kind === "quality" && ["smooth", "hd", "original"].includes(String(data.quality))) {
+      const decision = this.mediaPolicy.setQuality(String(data.quality) as RemoteVideoQuality);
+      this.#postDecision("tuning", decision);
+      void this.options.sendToViewer({ kind: "quality-state", quality: data.quality, selectedProfile: decision.preferredCodec });
       return;
     }
     if (kind === "stop") {
@@ -90,13 +111,42 @@ export class WebrtcLive {
   async #handleRendererSignal(data: WebrtcSignal): Promise<void> {
     const kind = String(data.kind);
     this.options.log?.(`[webrtc-live] renderer signal: ${kind}${kind === "state" ? ` ${String(data.state)}` : ""}${kind === "error" ? ` ${String(data.error)}` : ""}${kind === "ice" ? ` ${String((data.candidate as { candidate?: string })?.candidate ?? "").slice(0, 80)}` : ""}`);
+    if (kind === "sender-capabilities") {
+      const profiles: RemoteVideoH264Profile[] = Array.isArray(data.profiles)
+        ? data.profiles.filter((profile): profile is RemoteVideoH264Profile => profile === "high" || profile === "baseline")
+        : ["baseline"];
+      const decision = this.mediaPolicy.configureSender(profiles);
+      this.requestedProfile = decision.preferredCodec;
+      this.#postDecision("configure", decision);
+      return;
+    }
+    if (kind === "sender-stats") {
+      const decision = this.mediaPolicy.observe((data.observation ?? {}) as RemoteVideoObservation);
+      this.#postDecision("tuning", decision);
+      return;
+    }
+    if (kind === "sender-media") {
+      this.#cancelMediaTimeout();
+      return;
+    }
+    if (kind === "profile-failed") {
+      const failed = data.profile === "high" ? "high" : "baseline";
+      if (failed !== this.requestedProfile) return;
+      await this.#handleAttemptFailure(`${failed} H.264 encoder unavailable`);
+      return;
+    }
     if (kind === "state") {
       const state = String(data.state);
       if (state === "connected") {
         this.connected = true;
         this.#cancelClose();
         this.options.setStandby(true);
-      } else if (state === "failed" || state === "disconnected" || state === "closed") {
+        this.#scheduleMediaTimeout(this.window);
+      } else if ((state === "failed" || state === "disconnected") && this.requestedProfile === "high") {
+        await this.#handleAttemptFailure(`H.264 ${state}`);
+        return;
+      }
+      if (state === "failed" || state === "disconnected" || state === "closed") {
         // Fallback to the JPEG stream; tear the capture down if it stays dead.
         this.connected = false;
         this.options.setStandby(false);
@@ -105,6 +155,13 @@ export class WebrtcLive {
     }
     if (kind === "error") this.options.log?.(`[webrtc-live] ${String(data.error ?? "renderer error")}`);
     await this.options.sendToViewer(data);
+  }
+
+  #postDecision(kind: "configure" | "tuning", decision: RemoteVideoDecision): void {
+    const key = JSON.stringify([kind, decision.bitRate, decision.maxFps, decision.preferredCodec]);
+    if (kind === "tuning" && key === this.lastDecisionKey) return;
+    this.lastDecisionKey = key;
+    this.#post({ kind, decision });
   }
 
   #post(data: WebrtcSignal): void {
@@ -136,9 +193,51 @@ export class WebrtcLive {
       this.connected = false;
     });
     this.window = window;
-    // A capture page that never reaches "connected" must not leak the window.
-    this.#scheduleClose(START_TIMEOUT_MS);
+    // A High attempt that never connects receives one Baseline retry. A
+    // Baseline timeout reports failure and lets the JPEG fallback remain live.
+    this.#scheduleStartTimeout(window);
     void window.loadFile(this.options.capturePagePath()).then(() => onReady(window));
+  }
+
+  async #handleAttemptFailure(reason: string, window = this.window): Promise<void> {
+    if (!window || this.window !== window) return;
+    this.#cancelMediaTimeout();
+    const decision = this.mediaPolicy.fallback(this.requestedProfile);
+    if (decision) {
+      this.requestedProfile = decision.preferredCodec;
+      this.options.log?.(`[webrtc-live] retrying with H264 Baseline: ${reason}`);
+      void this.options.sendToViewer({ kind: "state", state: "connecting", fallbackReason: reason.slice(0, 500) });
+      this.restart();
+      return;
+    }
+    this.connected = false;
+    this.options.setStandby(false);
+    this.#scheduleClose(RECONNECT_GRACE_MS);
+    await this.options.sendToViewer({ kind: "state", state: "failed", error: reason.slice(0, 500) });
+  }
+
+  #scheduleStartTimeout(window: BrowserWindow): void {
+    this.#cancelClose();
+    this.closeTimer = setTimeout(() => {
+      this.closeTimer = null;
+      if (this.window === window && !this.connected) void this.#handleAttemptFailure("WebRTC connection timeout", window);
+    }, START_TIMEOUT_MS);
+  }
+
+  #scheduleMediaTimeout(window: BrowserWindow | null): void {
+    this.#cancelMediaTimeout();
+    if (!window) return;
+    this.mediaTimer = setTimeout(() => {
+      this.mediaTimer = null;
+      if (this.window === window && this.connected) void this.#handleAttemptFailure("H.264 first frame timeout", window);
+    }, FIRST_MEDIA_TIMEOUT_MS);
+  }
+
+  #cancelMediaTimeout(): void {
+    if (this.mediaTimer) {
+      clearTimeout(this.mediaTimer);
+      this.mediaTimer = null;
+    }
   }
 
   #scheduleClose(delayMs: number): void {
@@ -161,6 +260,7 @@ export class WebrtcLive {
   }
 
   #closeWindow(): void {
+    this.#cancelMediaTimeout();
     const window = this.window;
     this.window = null;
     if (window && !window.isDestroyed()) window.close();

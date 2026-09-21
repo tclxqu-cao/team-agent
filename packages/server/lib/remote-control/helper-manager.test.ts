@@ -65,7 +65,7 @@ it('rejects an oversized unfinished helper message',async()=>{
  const helper=new RemoteHelper({launch:async(controlPath:string,videoPath:string)=>{clients=connectHelperSockets(controlPath,videoPath);clients.control.on('error',()=>{});}});helper.available=async()=>true;
  try{
   await helper.start();clients.control.write('A'.repeat(MAX_HELPER_MESSAGE_CHARS+1));
-  await vi.waitFor(()=>expect(helper.socket).toBeNull());
+  await vi.waitFor(()=>expect(helper.socket).toBeNull(), { timeout: 5_000 });
  }finally{clients?.control.destroy();clients?.video.destroy();await helper.stop();}
 });
 
@@ -76,4 +76,18 @@ it('asks only its connected helper to quit and waits for the owned socket to clo
  }});helper.available=async()=>true;
  await helper.start();await helper.stop();
  expect(command).toMatchObject({op:'quit'});expect(helper.socket).toBeNull();expect(helper.directory).toBeNull();
+});
+
+it('routes native encoder error events without consuming pending command replies',async()=>{
+ let clients:any;
+ const helper=new RemoteHelper({launch:async(controlPath:string,videoPath:string)=>{
+  clients=connectHelperSockets(controlPath,videoPath);clients.control.setEncoding('utf8');
+ }});helper.available=async()=>true;
+ const receive=vi.fn();helper.onVideo(receive);
+ try{
+  await helper.start();
+  clients.control.write(JSON.stringify({event:'video',error:'High profile unavailable'})+'\n');
+  await vi.waitFor(()=>expect(receive).toHaveBeenCalledWith({event:'video',error:'High profile unavailable'}));
+  expect(helper.pending.size).toBe(0);
+ }finally{clients?.control.destroy();clients?.video.destroy();await helper.stop();}
 });

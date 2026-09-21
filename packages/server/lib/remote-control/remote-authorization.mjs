@@ -35,7 +35,11 @@ export class RemoteAuthorization {
     // serialized event queue — takeovers, returns and inputs would inherit
     // that delay. Events here keep their relative order.
     this.mediaChain = Promise.resolve();
-    this.video = new RemoteWebrtcVideo({ helper, signal: data => { if (this.enabled && this.online) this.registry.webrtcFromProducer(this.peer, this.sessionId, data); } });
+    this.video = new RemoteWebrtcVideo({
+      helper,
+      highProfile: platform === 'darwin',
+      signal: data => { if (this.enabled && this.online) this.registry.webrtcFromProducer(this.peer, this.sessionId, data); },
+    });
     this.stateFile = join(dataDir, 'remote-authorization.json');
   }
   async initialize() {

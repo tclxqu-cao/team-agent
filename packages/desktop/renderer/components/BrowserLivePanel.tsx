@@ -8,6 +8,8 @@ import type { BrowserLiveSession } from "../global";
 import { BrowserLiveTouch } from "./browser-live-touch";
 import {
   formatRemoteVideoStats,
+  formatRemoteVideoDecoder,
+  readReceiverH264Profiles,
   readRemoteVideoStats,
   type RemoteVideoStatsCursor,
   type RemoteVideoStatsSample,
@@ -591,7 +593,10 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
     remoteVideoStatsCursorRef.current = null;
     setRemoteVideoStats(null);
     setWebrtcState("connecting");
-    void api.request("browser:webrtc", { sessionId: selectedId, data: { kind: "start" } }).catch(() => setWebrtcState("failed"));
+    void api.request("browser:webrtc", {
+      sessionId: selectedId,
+      data: { kind: "start", receiverProfiles: readReceiverH264Profiles() },
+    }).catch(() => setWebrtcState("failed"));
     return () => {
       webrtcPeerRef.current?.close();
       webrtcPeerRef.current = null;
@@ -823,6 +828,7 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
         ? "在桌面 App 设置中开启「桌面直播与远程控制」后，画面会出现在这里"
         : "Agent 开始浏览网页后，会话会出现在这里";
   const remoteVideoStatsLabel = formatRemoteVideoStats(remoteVideoStats);
+  const remoteVideoDecoderLabel = formatRemoteVideoDecoder(remoteVideoStats);
   const desktopStreamLabel = webrtcState === "live"
     ? remoteVideoStatsLabel || "WebRTC 实时流"
     : webrtcState === "connecting"
@@ -1209,7 +1215,7 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
             )}
           </div>
           {hasControl && !panMode && (
-            <div className="browser-live-control-cue"><MousePointer2 size={13} aria-hidden="true" /> {isDesktop ? "当前输入会发送到本机" : "当前输入会发送到浏览器"}{isDesktop && desktopStreamLabel ? ` · ${desktopStreamLabel}` : ""}{pingMs != null ? ` · 控制 ${pingMs}ms` : ""}</div>
+            <div className="browser-live-control-cue"><MousePointer2 size={13} aria-hidden="true" /> {isDesktop ? "当前输入会发送到本机" : "当前输入会发送到浏览器"}{isDesktop && desktopStreamLabel ? ` · ${desktopStreamLabel}` : ""}{isDesktop && remoteVideoDecoderLabel ? ` · ${remoteVideoDecoderLabel}` : ""}{pingMs != null ? ` · 控制 ${pingMs}ms` : ""}</div>
           )}
         </div>
 

@@ -183,9 +183,10 @@ The VideoToolbox adapter records:
 
 - pending encode submissions;
 - encode completion latency using the submission timestamp carried in the callback context;
-- frames rejected before submission by FPS pacing;
 - frames dropped or failed by `VTCompressionSessionEncodeFrame` and the output callback;
 - a monotonic snapshot sequence so consumers can calculate deltas safely.
+
+Frames intentionally skipped by the FPS pacer are not encoder drops. Counting them as pressure would make a healthy 15 or 5 FPS decision continuously lower itself again.
 
 Pending count increments immediately before a successful submission and decrements exactly once on callback or synchronous submission failure. Reset and stop clear the counters associated with the old compression-session generation so late callbacks cannot corrupt a new session.
 

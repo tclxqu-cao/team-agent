@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { RemoteAuthorization } from "./lib/remote-control/remote-authorization.mjs";
+import { parseProducerRemoteVideoSignal, parseViewerRemoteVideoSignal } from "./lib/remote-control/remote-video-signal.mjs";
 import { createDevicePairingGateway } from "./lib/device-pairing-gateway.mjs";
 import { createDesktopDiscovery } from "./lib/desktop-discovery.mjs";
 // ws-server.mjs — custom server for @agent/server.
@@ -808,9 +809,9 @@ const requestHandlers = {
   // Latency probe for the live panel's readout.
   "browser:ping": async (msg) => ({ t: typeof msg.t === "number" ? msg.t : 0 }),
   // WebRTC signaling viewer→producer (offer request, answer, ICE, stop)
-  "browser:webrtc": async (msg, conn) => liveViewRegistry.webrtcFromViewer(conn.browserPeer, msg.sessionId, msg.data),
+  "browser:webrtc": async (msg, conn) => liveViewRegistry.webrtcFromViewer(conn.browserPeer, msg.sessionId, parseViewerRemoteVideoSignal(msg.data)),
   // WebRTC signaling producer→controller (offer, ICE, state)
-  "browser:webrtc-relay": async (msg, conn) => liveViewRegistry.webrtcFromProducer(conn.browserPeer, msg.sessionId, msg.data),
+  "browser:webrtc-relay": async (msg, conn) => liveViewRegistry.webrtcFromProducer(conn.browserPeer, msg.sessionId, parseProducerRemoteVideoSignal(msg.data)),
   "browser:producer-state": async (msg, conn) => ({ session: liveViewRegistry.producerState(conn.browserPeer, msg.sessionId, msg.state) }),
   "browser:close": async (msg, conn) => { liveViewRegistry.close(conn.browserPeer, msg.sessionId); return { closed: true, sessionId: msg.sessionId }; },
   // Lock / wake / remote unlock of this machine (Windows unlock service).

@@ -6,21 +6,87 @@
 </head>
 <body>
 <script>
-  // Hidden capture page: publishes the primary display as a WebRTC track at
-  // native resolution. Signaling rides ipcRenderer through the shared preload.
   (function () {
     const api = window.webrtcLiveApi;
     if (!api) return;
     let pc = null;
     let stream = null;
+    let sender = null;
+    let transceiver = null;
+    let offerCreated = false;
+    let selectedProfile = "baseline";
+    let statsTimer = null;
+    let statsCursor = null;
 
     function report(state, error) {
       api.send(Object.assign({ kind: "state", state }, error ? { error } : {}));
     }
 
     function teardown() {
+      if (statsTimer) { clearInterval(statsTimer); statsTimer = null; }
       if (pc) { try { pc.close(); } catch {} pc = null; }
       if (stream) { for (const track of stream.getTracks()) track.stop(); stream = null; }
+      sender = null;
+      transceiver = null;
+      offerCreated = false;
+      statsCursor = null;
+    }
+
+    function profileOf(codec) {
+      if (!codec || String(codec.mimeType).toLowerCase() !== "video/h264") return null;
+      const id = /(?:^|;)\s*profile-level-id=([0-9a-f]{6})/i.exec(codec.sdpFmtpLine || "")?.[1]?.toLowerCase();
+      if (id && id.startsWith("64")) return "high";
+      return !id || id.startsWith("42") ? "baseline" : null;
+    }
+
+    function senderCodecs() {
+      const codecs = typeof RTCRtpSender.getCapabilities === "function"
+        ? RTCRtpSender.getCapabilities("video")?.codecs || []
+        : [];
+      return codecs.filter((codec) => profileOf(codec));
+    }
+
+    async function readSenderStats() {
+      if (!sender || !pc || pc.connectionState !== "connected") return;
+      const report = await sender.getStats();
+      const values = [...report.values()];
+      const outbound = values.find((item) => item.type === "outbound-rtp" && (item.kind === "video" || item.mediaType === "video"));
+      if (!outbound) return;
+      if ((Number(outbound.framesEncoded) || 0) > 0) api.send({ kind: "sender-media" });
+      const pair = values.find((item) => item.type === "candidate-pair" && item.state === "succeeded" && (item.nominated === true || item.selected === true));
+      const now = Date.now();
+      const cursor = {
+        at: now,
+        bytes: Number(outbound.bytesSent) || 0,
+        frames: Number(outbound.framesEncoded) || 0,
+        encodeTime: Number(outbound.totalEncodeTime) || 0,
+        dropped: Number(outbound.framesDiscardedOnSend) || 0,
+      };
+      if (statsCursor) {
+        const elapsed = Math.max(1, now - statsCursor.at);
+        const bytes = Math.max(0, cursor.bytes - statsCursor.bytes);
+        const frames = Math.max(0, cursor.frames - statsCursor.frames);
+        const bitRate = bytes * 8000 / elapsed;
+        const fps = frames * 1000 / elapsed;
+        const activity = frames <= 2 || bitRate < 80_000 ? "idle" : (fps >= 24 && bitRate >= 1_000_000 ? "motion" : "interactive");
+        const encodeDelta = Math.max(0, cursor.encodeTime - statsCursor.encodeTime);
+        api.send({
+          kind: "sender-stats",
+          observation: {
+            now,
+            content: { activity, confidence: activity === "idle" ? 0.75 : 0.7, observedAt: now },
+            network: {
+              availableOutgoingBitrate: Number.isFinite(pair?.availableOutgoingBitrate) ? pair.availableOutgoingBitrate : undefined,
+            },
+            encoder: {
+              encodeLatencyMs: frames > 0 ? encodeDelta * 1000 / frames : undefined,
+              droppedFrames: Math.max(0, cursor.dropped - statsCursor.dropped),
+              sampledAt: now,
+            },
+          },
+        });
+      }
+      statsCursor = cursor;
     }
 
     async function start() {
@@ -33,24 +99,55 @@
       pc = new RTCPeerConnection({
         iceServers: [{ urls: ["stun:stun.l.google.com:19302"] }],
       });
-      for (const track of stream.getTracks()) pc.addTrack(track, stream);
-      const sender = pc.getSenders().find((item) => item.track && item.track.kind === "video");
-      if (sender && typeof sender.setParameters === "function") {
-        const params = sender.getParameters();
-        if (!params.encodings || !params.encodings.length) params.encodings = [{}];
-        // Bandwidth pressure must degrade frame rate, never resolution.
-        params.degradationPreference = "maintain-resolution";
-        params.encodings[0].maxBitrate = 20_000_000;
-        params.encodings[0].scaleResolutionDownBy = 1;
-        try { await sender.setParameters(params); } catch {}
-      }
+      const videoTrack = stream.getVideoTracks()[0];
+      sender = pc.addTrack(videoTrack, stream);
+      transceiver = pc.getTransceivers().find((item) => item.sender === sender) || null;
       pc.onicecandidate = (event) => {
         if (event.candidate) api.send({ kind: "ice", candidate: event.candidate.toJSON() });
       };
-      pc.onconnectionstatechange = () => report(pc ? pc.connectionState : "closed");
+      pc.onconnectionstatechange = () => {
+        const state = pc ? pc.connectionState : "closed";
+        report(state);
+        if (state === "connected" && !statsTimer) {
+          void readSenderStats();
+          statsTimer = setInterval(() => { void readSenderStats().catch(() => undefined); }, 2000);
+        }
+      };
+      api.send({ kind: "sender-capabilities", profiles: [...new Set(senderCodecs().map(profileOf).filter(Boolean))] });
+    }
+
+    async function applyDecision(decision, configure) {
+      if (!sender || !stream || !decision) return;
+      const track = sender.track;
+      if (track && typeof track.applyConstraints === "function") {
+        try { await track.applyConstraints({ frameRate: { ideal: decision.maxFps, max: decision.maxFps } }); } catch {}
+      }
+      if (sender && typeof sender.setParameters === "function") {
+        const params = sender.getParameters();
+        if (!params.encodings || !params.encodings.length) params.encodings = [{}];
+        params.degradationPreference = "maintain-resolution";
+        params.encodings[0].maxBitrate = decision.bitRate;
+        params.encodings[0].maxFramerate = decision.maxFps;
+        params.encodings[0].scaleResolutionDownBy = 1;
+        try { await sender.setParameters(params); } catch {}
+      }
+      if (!configure || offerCreated || !pc) return;
+      const codecs = senderCodecs().filter((codec) => profileOf(codec) === decision.preferredCodec);
+      if (!codecs.length) {
+        api.send({ kind: "profile-failed", profile: decision.preferredCodec });
+        return;
+      }
+      selectedProfile = decision.preferredCodec;
+      if (transceiver && typeof transceiver.setCodecPreferences === "function") {
+        try { transceiver.setCodecPreferences(codecs); } catch {
+          api.send({ kind: "profile-failed", profile: selectedProfile });
+          return;
+        }
+      }
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
-      api.send({ kind: "offer", sdp: pc.localDescription.toJSON() });
+      offerCreated = true;
+      api.send({ kind: "offer", sdp: pc.localDescription.toJSON(), selectedProfile });
     }
 
     api.onSignal(async (message) => {
@@ -58,6 +155,8 @@
         const kind = message && message.kind;
         if (kind === "start") await start();
         else if (kind === "stop") teardown();
+        else if (kind === "configure") await applyDecision(message.decision, true);
+        else if (kind === "tuning") await applyDecision(message.decision, false);
         else if (kind === "answer" && pc && message.sdp) await pc.setRemoteDescription(message.sdp);
         else if (kind === "ice" && pc && message.candidate) {
           await pc.addIceCandidate(message.candidate).catch(() => undefined);

@@ -21,7 +21,7 @@ describe('remote authorization local boundary', () => {
 async function fixture(options: Record<string, unknown> = {}) {
   const dataDir = await mkdtemp(join(tmpdir(), 'remote-auth-'));
   let screen = false;
-  const helper = { available: vi.fn(async () => true), start: vi.fn(async () => {}), stop: vi.fn(async () => {}), request: vi.fn(async (cmd: any) => {
+  const helper: any = { available: vi.fn(async () => true), start: vi.fn(async () => {}), stop: vi.fn(async () => {}), request: vi.fn(async (cmd: any) => {
     if (cmd.op === 'status') return {ok:true,screen,accessibility:true};
     if (cmd.op === 'capture') return {ok:true,data:Buffer.alloc(30,1).toString('base64'),width:1000,height:800,originX:0,originY:0};
     return {ok:true};

@@ -16,54 +16,6 @@ const OWNERSHIP_STATES = new Set<LiveViewOwnershipState>([
 const SOURCES = new Set<LiveViewSource>(["ego-browser", "codex-browser", "desktop"]);
 const AVAILABILITY_STATES = new Set<LiveViewAvailability>(["starting", "ready", "unavailable"]);
 const MAX_FRAME_BYTES = 640 * 1024;
-// SDP offers/answers are a few KB; ICE candidates are bytes. Anything larger
-// is not signaling.
-const MAX_WEBRTC_SIGNAL_CHARS = 64_000;
-
-function isWebrtcSignal(data: unknown): data is Record<string, unknown> {
-  if (!data || typeof data !== "object" || Array.isArray(data)) return false;
-  const kind = (data as Record<string, unknown>).kind;
-  if (!["start", "stop", "offer", "answer", "ice", "state", "quality", "quality-state", "stats"].includes(String(kind))) return false;
-  if ((kind === "quality" || kind === "quality-state") && !["smooth", "hd", "original"].includes(String((data as Record<string, unknown>).quality))) return false;
-  if (kind === "stats" && !isWebrtcStats(data as Record<string, unknown>)) return false;
-  if (kind === "offer" && !isIceServers((data as Record<string, unknown>).iceServers)) return false;
-  return JSON.stringify(data).length <= MAX_WEBRTC_SIGNAL_CHARS;
-}
-
-function isBoundedNumber(value: unknown, min: number, max: number): boolean {
-  return value === undefined || (typeof value === "number" && Number.isFinite(value) && value >= min && value <= max);
-}
-
-function isWebrtcStats(data: Record<string, unknown>): boolean {
-  if (data.codec !== undefined && (typeof data.codec !== "string" || data.codec.length > 40)) return false;
-  if (data.decoder !== undefined && (typeof data.decoder !== "string" || data.decoder.length > 120)) return false;
-  if (data.candidateType !== undefined && !["host", "srflx", "prflx", "relay"].includes(String(data.candidateType))) return false;
-  if (data.protocol !== undefined && !["udp", "tcp"].includes(String(data.protocol))) return false;
-  return isBoundedNumber(data.width, 0, 16_384)
-    && isBoundedNumber(data.height, 0, 16_384)
-    && isBoundedNumber(data.fps, 0, 240)
-    && isBoundedNumber(data.rttMs, 0, 60_000)
-    && isBoundedNumber(data.jitterMs, 0, 60_000)
-    && isBoundedNumber(data.lossRate, 0, 1)
-    && isBoundedNumber(data.droppedFrames, 0, 1_000_000_000)
-    && isBoundedNumber(data.receiveBitrate, 0, 1_000_000_000)
-    && isBoundedNumber(data.availableBitrate, 0, 1_000_000_000);
-}
-
-function isIceServers(value: unknown): boolean {
-  if (value === undefined) return true;
-  if (!Array.isArray(value) || value.length > 4) return false;
-  return value.every((server) => {
-    if (!server || typeof server !== "object" || Array.isArray(server)) return false;
-    const input = server as Record<string, unknown>;
-    const urls = Array.isArray(input.urls) ? input.urls : [input.urls];
-    if (!urls.length || urls.length > 4 || urls.some(url => typeof url !== "string" || url.length > 500 || !/^(stuns?|turns?):[^\s]+$/i.test(url))) return false;
-    const hasTurn = urls.some(url => /^turns?:/i.test(String(url)));
-    if (!hasTurn) return input.username === undefined && input.credential === undefined;
-    return typeof input.username === "string" && input.username.length <= 256
-      && typeof input.credential === "string" && input.credential.length <= 512;
-  });
-}
 
 interface LiveFrame {
   [key: string]: unknown;
@@ -407,9 +359,8 @@ export class LiveViewRegistry {
   }
 
   /** Relays WebRTC signaling (offer/answer/ICE) from the controller to the producer. */
-  webrtcFromViewer(peer: LiveViewPeer, sessionId: unknown, data: unknown): { accepted: boolean } {
+  webrtcFromViewer(peer: LiveViewPeer, sessionId: unknown, data: Record<string, unknown>): { accepted: boolean } {
     const session = this.requireVisible(peer, sessionId);
-    if (!isWebrtcSignal(data)) throw domainError("invalid webrtc signal", "EINVAL");
     if (data.kind === "quality") this.requireCaptureAdjustment(session, peer);
     else if (session.controllerId !== peer.id) throw domainError("browser is read-only", "EWRITELOCK");
     session.producer.send({ type: "browser:webrtc", sessionId: session.id, data });
@@ -417,9 +368,8 @@ export class LiveViewRegistry {
   }
 
   /** Relays WebRTC signaling from the producer back to the active controller. */
-  webrtcFromProducer(peer: LiveViewPeer, sessionId: unknown, data: unknown): { delivered: boolean } {
+  webrtcFromProducer(peer: LiveViewPeer, sessionId: unknown, data: Record<string, unknown>): { delivered: boolean } {
     const session = this.requireProducer(peer, sessionId);
-    if (!isWebrtcSignal(data)) throw domainError("invalid webrtc signal", "EINVAL");
     if (data.kind === "quality-state") {
       session.qualityState = data;
       for (const watcher of session.watchers) watcher.send({ type: "browser:webrtc", sessionId: session.id, data });
