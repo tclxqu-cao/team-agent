@@ -1,7 +1,7 @@
 import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
 import { describe, expect, it, vi } from "vitest";
-import { CodexAppServerClient } from "./codex-app-server-client.js";
+import { CodexAppServerClient, normalizeCodexEnvironment } from "./codex-app-server-client.js";
 
 function fakeProcess() {
   const emitter = new EventEmitter() as EventEmitter & {
@@ -45,14 +45,37 @@ describe("CodexAppServerClient", () => {
         newline = input.indexOf("\n");
       }
     });
+    let spawnOptions: { env?: NodeJS.ProcessEnv } | undefined;
     const client = new CodexAppServerClient({
-      spawnProcess: vi.fn(() => child) as never,
+      spawnProcess: vi.fn((_command, _args, options) => {
+        spawnOptions = options;
+        return child;
+      }) as never,
+      environment: { NO_PROXY: "*.gptdy.17usoft.com", HTTPS_PROXY: "http://127.0.0.1:7897" },
       requestTimeoutMs: 1000,
     });
 
     await expect(client.request("thread/list", {})).resolves.toEqual({ data: ["ok"], nextCursor: null });
+    expect(spawnOptions?.env?.NO_PROXY).toContain(".gptdy.17usoft.com");
+    expect(spawnOptions?.env?.NO_PROXY).toContain("gptdy.17usoft.com");
     expect(client.pid).toBe(4242);
     await client.dispose();
+  });
+
+  it("normalizes wildcard NO_PROXY rules for the Rust Codex process", () => {
+    const environment = normalizeCodexEnvironment({
+      HTTP_PROXY: "http://127.0.0.1:7897",
+      NO_PROXY: "localhost,*.gptdy.17usoft.com,*17usoft.com:8443",
+      no_proxy: "*.example.com",
+    });
+
+    expect(environment.NO_PROXY).toContain(".gptdy.17usoft.com");
+    expect(environment.NO_PROXY).toContain("gptdy.17usoft.com");
+    expect(environment.NO_PROXY).toContain("17usoft.com:8443");
+    expect(environment.NO_PROXY).toContain(".17usoft.com:8443");
+    expect(environment.no_proxy).toBe(environment.NO_PROXY);
+    expect(environment.no_proxy).toContain(".example.com");
+    expect(environment.no_proxy).toContain("example.com");
   });
 
   it("delivers notifications and rejects pending calls after exit", async () => {
