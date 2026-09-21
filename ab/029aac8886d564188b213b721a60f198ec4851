@@ -1,0 +1,416 @@
+scripts/agent-runtime-diff-policy.mjs
+  s_95994cf22b2dee::t_a04ae5d3d49bf8 18-21
+packages/webapp/src/main.tsx
+  s_95994cf22b2dee::t_94ccc74ffd6c68 30
+packages/cli/src/node-runtime-spec.ts
+  s_95994cf22b2dee::t_ce8f38845e7b12 1-30
+scripts/publish-agentroam-release.test.mjs
+  s_95994cf22b2dee::t_fa335a7b1c3123 22
+  s_95994cf22b2dee::t_76186bbaa8497f 25-28,235-236
+  s_95994cf22b2dee::t_103df31fb46658 106-140
+packages/server/lib/server-data-dir.test.ts
+  s_95994cf22b2dee::t_aeeded20d9f3f4 6-7,14
+packages/webapp/src/presentation/browser-composer.test.ts
+  s_95994cf22b2dee::t_3ccfbcd15fcd91 54,70
+packages/desktop/main/agent-runtime/agent-workspace-index.test.ts
+  s_95994cf22b2dee::t_f631b94f0b5db4 68,73
+packages/server/app/api/sessions/[id]/route.ts
+  s_95994cf22b2dee::t_d4ca9c8eee1a36 2,4,6-7,29,31-34,38-39,41-45,47-50,52-53,55,62,65-66
+packages/node-win32-x64/manifest.json
+  s_95994cf22b2dee::t_171da6564dc0b5 1-17
+packages/sdk/src/client/types.ts
+  s_95994cf22b2dee::t_f631b94f0b5db4 6-7
+packages/desktop/renderer/lib/runtime-capabilities.ts
+  s_95994cf22b2dee::t_f631b94f0b5db4 4
+packages/server/lib/native-runtime-service.ts
+  s_95994cf22b2dee::t_2bdb8e907b5004 101,307-308
+  s_95994cf22b2dee::t_f631b94f0b5db4 77-78,80,85,172,177,184,195,477-478,540-541
+  s_95994cf22b2dee::t_ee4083dbb0eaca 254
+packages/voice-service/README.md
+  s_95994cf22b2dee::t_aeeded20d9f3f4 3
+packages/cli/RELEASE.md
+  s_95994cf22b2dee::t_bec18d7671cce9 24
+  s_95994cf22b2dee::t_988ae17d2c3d34 127-128
+packages/sdk/src/client/AgentClient.ts
+  s_95994cf22b2dee::t_f76444d78e471f 1
+packages/server/app/api/agent/steer/route.ts
+  s_95994cf22b2dee::t_26441d24025976 2,10-11,13-14,16-17
+packages/core/src/domain/web-console/pinned-commands.test.ts
+  s_95994cf22b2dee::t_ad483e69c5b475 5
+package.json
+  s_95994cf22b2dee::t_171da6564dc0b5 13-14,53-58
+  s_95994cf22b2dee::t_ad483e69c5b475 2,18,33,45
+packages/cli/src/platform-packages.test.ts
+  s_95994cf22b2dee::t_8fea1b087cd005 8,15,20,30-62
+  s_95994cf22b2dee::t_ad483e69c5b475 105
+  s_95994cf22b2dee::t_cc662f651e9db6 63
+packages/runtime-darwin-arm64/package.json
+  s_95994cf22b2dee::t_988ae17d2c3d34 13
+packages/server/app/api/agent-workspaces/route.test.ts
+  s_95994cf22b2dee::t_50524a1c03a66d 71-75
+  s_95994cf22b2dee::t_a8c58f8b8a6b6d 69
+  s_95994cf22b2dee::t_671b82fb8c282e 58
+packages/runtime-win32-x64/package.json
+  s_95994cf22b2dee::t_988ae17d2c3d34 13
+packages/desktop/renderer/lib/occupied-session-fork.test.ts
+  s_95994cf22b2dee::t_a7c36a54fce455 54,64
+  s_95994cf22b2dee::t_f631b94f0b5db4 122
+packages/core/src/infrastructure/SQLiteDatabase.ts
+  s_95994cf22b2dee::t_4fd0c9a1d647f4 26-27,44-46,173,178-204
+  s_95994cf22b2dee::t_028d0524ee0264 205-206
+packages/desktop/renderer/components/ChatHeaderActions.test.ts
+  s_95994cf22b2dee::t_3ccfbcd15fcd91 19
+packages/desktop/renderer/App.tsx
+  s_95994cf22b2dee::t_4f15eba8b713ab 912,1335,1520
+  s_95994cf22b2dee::t_f631b94f0b5db4 74
+packages/cli/src/service/windows-service-host.ts
+  s_95994cf22b2dee::t_6b5f4ce4f0181c 7,11,19,23-24,30,36
+  s_95994cf22b2dee::t_de04ef24c68bf4 3,29,31
+packages/desktop/renderer/components/SidebarReferenceStyle.test.ts
+  s_95994cf22b2dee::t_aeeded20d9f3f4 252,281
+packages/desktop/main/agent-runtime/claude-runtime-adapter.ts
+  s_95994cf22b2dee::t_4f15eba8b713ab 642
+  s_95994cf22b2dee::t_f631b94f0b5db4 797
+packages/core/src/domain/agent/entities.ts
+  s_95994cf22b2dee::t_0897fec061d9e5 28-35,91
+packages/cli/src/service/service-files.ts
+  s_95994cf22b2dee::t_6b5f4ce4f0181c 26,28-29
+packages/server/app/api/agent/abort/route.ts
+  s_95994cf22b2dee::t_26441d24025976 2,6-8,10-11,13-14
+packages/cli/src/cli.ts
+  s_95994cf22b2dee::t_77ee3af365fbb7 10
+scripts/verify-cli-install.mjs
+  s_95994cf22b2dee::t_687c75f7de404e 24-27,71-79,89,91
+  s_95994cf22b2dee::t_a04ae5d3d49bf8 41,149
+  s_95994cf22b2dee::t_18604d20dab14a 13
+packages/cli/src/platform.test.ts
+  s_95994cf22b2dee::t_8fea1b087cd005 5-11,18-19
+packages/desktop/main/agent-runtime/codex-runtime-adapter.test.ts
+  s_95994cf22b2dee::t_2bdb8e907b5004 1329,1448,1621
+  s_95994cf22b2dee::t_aeeded20d9f3f4 270,308,430,836,921,991,1034,1070,1155,1227,1296,1411,1579,1784
+packages/desktop/renderer/components/AgentWorkspaceSwitcher.test.tsx
+  s_95994cf22b2dee::t_671b82fb8c282e 7,14,19-20,28
+packages/desktop/renderer/lib/session-deletion.test.ts
+  s_95994cf22b2dee::t_aeeded20d9f3f4 16,19-20
+scripts/agent-runtime-workflow-contract.test.mjs
+  s_95994cf22b2dee::t_66cef6d5268ddd 69-77
+packages/cli/src/service/service-node.ts
+  s_95994cf22b2dee::t_9ffddcfc2dece1 12-13,21,26-31,40,47-53
+  s_95994cf22b2dee::t_6b5f4ce4f0181c 1-11,14-20,22-25,32-39,41-46,54-58
+packages/cli/src/service/service-node.test.ts
+  s_95994cf22b2dee::t_db97e5b002d827 12,19,26-28
+  s_95994cf22b2dee::t_22fcb7aea361ae 1-11,13-18,20-21,30-36
+  s_95994cf22b2dee::t_9ace3b2f3849f0 22-25,29
+packages/cli/src/platform.ts
+  s_95994cf22b2dee::t_ce8f38845e7b12 19-20
+packages/node-darwin-arm64/package.json
+  s_95994cf22b2dee::t_171da6564dc0b5 2,4,6-8,10-11
+packages/desktop/renderer/lib/agent-workspace-cache.test.ts
+  s_95994cf22b2dee::t_671b82fb8c282e 3,37-67
+packages/core/src/domain/web-console/pinned-commands.ts
+  s_95994cf22b2dee::t_ad483e69c5b475 6
+scripts/agent-runtime-upgrade.test.mjs
+  s_95994cf22b2dee::t_171da6564dc0b5 207-208,214-215
+  s_95994cf22b2dee::t_fa335a7b1c3123 146,151
+  s_95994cf22b2dee::t_76186bbaa8497f 147-150
+packages/cli/src/service/macos-service-host.test.ts
+  s_95994cf22b2dee::t_6b5f4ce4f0181c 1-50
+scripts/agentroam-release-lib.mjs
+  s_95994cf22b2dee::t_a04ae5d3d49bf8 240
+  s_95994cf22b2dee::t_c0e5d0a21f1eca 248,269,546-560,566
+  s_95994cf22b2dee::t_171da6564dc0b5 12-13,22-23
+packages/desktop/main/agent-runtime/claude-runtime-adapter.test.ts
+  s_95994cf22b2dee::t_2bdb8e907b5004 643,872,904,931,962,974,1009,1039
+  s_95994cf22b2dee::t_aeeded20d9f3f4 1020
+.github/workflows/cli-release-verify.yml
+  s_95994cf22b2dee::t_5bd4c5309b429b 8,43-56,59-62,68
+packages/desktop/native/wakelistener.swift
+  s_95994cf22b2dee::t_aeeded20d9f3f4 27,287
+packages/cli/README.md
+  s_95994cf22b2dee::t_2693e8d1011eec 64-69
+  s_95994cf22b2dee::t_988ae17d2c3d34 7,23-24,33-34,58-59,90-92,119
+packages/cli/src/service/windows-task-service.test.ts
+  s_95994cf22b2dee::t_22fcb7aea361ae 226,236
+packages/desktop/renderer/components/ChatComposerStyle.test.ts
+  s_95994cf22b2dee::t_aeeded20d9f3f4 147
+  s_95994cf22b2dee::t_5268832f5cfee5 43-44,153
+  s_95994cf22b2dee::t_611522aec178e5 30-35
+packages/cli/src/node-preflight.test.ts
+  s_95994cf22b2dee::t_8fea1b087cd005 40,111,113,129
+  s_95994cf22b2dee::t_256a6afb6f6991 18,22-39,98
+  s_95994cf22b2dee::t_a100e0d9fb15e1 173,175
+  s_95994cf22b2dee::t_9ace3b2f3849f0 97,100,165-171,174
+packages/desktop/main/agent-runtime/session-id.ts
+  s_95994cf22b2dee::t_f631b94f0b5db4 30
+packages/desktop/renderer/components/ChatHeaderActions.tsx
+  s_95994cf22b2dee::t_e3ac1eec25fea5 71
+scripts/collect-cli-artifacts.mjs
+  s_95994cf22b2dee::t_171da6564dc0b5 10-11
+packages/cli/src/service/windows-service-host.test.ts
+  s_95994cf22b2dee::t_22fcb7aea361ae 19,40-44,53-54
+  s_95994cf22b2dee::t_de04ef24c68bf4 61
+packages/sdk/src/components/AgentChat.test.ts
+  s_95994cf22b2dee::t_f76444d78e471f 35,53,68
+packages/cli/src/update/update-command.test.ts
+  s_95994cf22b2dee::t_c16ea10e8e395d 55
+  s_95994cf22b2dee::t_fe245386a6d4ab 26-27,37-38,48-49
+packages/cli/src/service/macos-launch-agent.test.ts
+  s_95994cf22b2dee::t_22fcb7aea361ae 9,27,332,350-351,357
+packages/core/src/domain/auth/WebAuthService.test.ts
+  s_95994cf22b2dee::t_aeeded20d9f3f4 9
+packages/core/src/domain/tool/permissions.ts
+  s_95994cf22b2dee::t_70971ec9ef6723 66,226-227
+packages/desktop/renderer/lib/markdown-links.test.ts
+  s_95994cf22b2dee::t_aeeded20d9f3f4 59,66
+docs/superpowers/specs/2026-09-09-remove-customer-agent-design.md
+  s_95994cf22b2dee::t_bec18d7671cce9 4
+scripts/cli-release-artifacts.test.mjs
+  s_95994cf22b2dee::t_e8806385e10880 1-4,6-16
+  s_95994cf22b2dee::t_fa335a7b1c3123 5
+packages/core/src/index.ts
+  s_95994cf22b2dee::t_0897fec061d9e5 1
+packages/server/app/api/agent/stream/route.ts
+  s_95994cf22b2dee::t_26441d24025976 7-13,15
+packages/desktop/renderer/stores/agentStore.ts
+  s_95994cf22b2dee::t_b63919a8524332 17
+packages/core/src/infrastructure/SQLiteProjectStore.test.ts
+  s_95994cf22b2dee::t_aeeded20d9f3f4 10
+packages/server/app/api/agent-workspaces/agent-workspace-http.ts
+  s_95994cf22b2dee::t_a8c58f8b8a6b6d 3
+packages/desktop/renderer/components/EmptySessionWelcome.test.tsx
+  s_95994cf22b2dee::t_aeeded20d9f3f4 28,30,35-36,58
+packages/desktop/renderer/lib/native-session-view-state.ts
+  s_95994cf22b2dee::t_f631b94f0b5db4 2,4,8-9,11,15,38
+packages/desktop/main/agent-runtime/codex-runtime-adapter.ts
+  s_95994cf22b2dee::t_4f15eba8b713ab 940,1581,1600
+  s_95994cf22b2dee::t_f631b94f0b5db4 1165
+packages/cli/src/node-runtime-manager.ts
+  s_95994cf22b2dee::t_ce8f38845e7b12 7,19-25,36-37,39-41,73,148-178,210-214
+  s_95994cf22b2dee::t_ba55a062f2d592 215-216
+packages/desktop/main/agent-runtime/unified-session-service.test.ts
+  s_95994cf22b2dee::t_c879634d0ef2a9 216
+  s_95994cf22b2dee::t_e941a5cdc60008 34,45
+packages/desktop/renderer/index.html
+  s_95994cf22b2dee::t_4f15eba8b713ab 6
+packages/cli/src/platform-packages.ts
+  s_95994cf22b2dee::t_ce8f38845e7b12 1,4-11,24-40,42,49,54,67-74,81-123,145-146
+packages/desktop/renderer/lib/agent-workspace-cache.ts
+  s_95994cf22b2dee::t_a8c58f8b8a6b6d 8-10,30,36,56,63
+packages/desktop/renderer/lib/native-agent-run-prefs.ts
+  s_95994cf22b2dee::t_f631b94f0b5db4 27-28
+packages/cli/src/service/macos-launch-agent.ts
+  s_95994cf22b2dee::t_6b5f4ce4f0181c 208,216-217,259-262,272
+scripts/audit-node-runtime-tarball.mjs
+  s_95994cf22b2dee::t_171da6564dc0b5 1-40
+packages/desktop/main/agent-runtime/unified-session-service.ts
+  s_95994cf22b2dee::t_2bdb8e907b5004 335
+  s_95994cf22b2dee::t_f631b94f0b5db4 267
+packages/sdk/src/components/AgentChat.ts
+  s_95994cf22b2dee::t_f76444d78e471f 7
+  s_95994cf22b2dee::t_f631b94f0b5db4 12,918,972,994
+packages/core/src/infrastructure/index.ts
+  s_95994cf22b2dee::t_0897fec061d9e5 1
+packages/desktop/main/agent-runtime/native-runtime-broker.test.ts
+  s_95994cf22b2dee::t_f631b94f0b5db4 1451,1803
+  s_95994cf22b2dee::t_2bdb8e907b5004 1838
+  s_95994cf22b2dee::t_e36b5a12961317 166
+packages/server/app/api/agent/model/route.ts
+  s_95994cf22b2dee::t_26441d24025976 3,6-9
+scripts/cli-release-artifacts.mjs
+  s_95994cf22b2dee::t_a04ae5d3d49bf8 9-10,29,35,42
+packages/node-darwin-arm64/manifest.json
+  s_95994cf22b2dee::t_171da6564dc0b5 1-17
+.gitignore
+  s_95994cf22b2dee::t_2693e8d1011eec 20-21
+packages/desktop/main/agent-runtime/codex-app-server-client.ts
+  s_95994cf22b2dee::t_4f15eba8b713ab 112
+packages/server/tsconfig.json
+  s_95994cf22b2dee::t_f65c84bdaa02b0 29
+packages/server/app/api/agent/runtime-health/route.ts
+  s_95994cf22b2dee::t_ee4083dbb0eaca 7
+packages/server/lib/web-project-service.test.ts
+  s_95994cf22b2dee::t_aeeded20d9f3f4 12,19
+scripts/check-agent-runtime-diff.test.mjs
+  s_95994cf22b2dee::t_a04ae5d3d49bf8 111-112
+packages/server/app/api/sessions/[id]/goals/route.ts
+  s_95994cf22b2dee::t_d4ca9c8eee1a36 3,5-8,11-12,14,18-31,34-35,37,39-40,45-48,51-52,57-60,66,72-75,77
+packages/core/src/domain/agent/index.ts
+  s_95994cf22b2dee::t_0897fec061d9e5 9,13
+packages/core/src/infrastructure/SQLiteAnonymousWebStore.test.ts
+  s_95994cf22b2dee::t_aeeded20d9f3f4 11,34
+packages/desktop/main/agent-runtime/session-id.test.ts
+  s_95994cf22b2dee::t_37bfc47317cb9c 5,16-18,24
+scripts/agent-runtime-upgrade-lib.mjs
+  s_95994cf22b2dee::t_171da6564dc0b5 10-11,20-21,31-32
+.github/workflows/cli-release.yml
+  s_95994cf22b2dee::t_5bd4c5309b429b 7,44-57,60-63,69
+packages/desktop/renderer/components/ChatView.tsx
+  s_95994cf22b2dee::t_3ccfbcd15fcd91 72
+  s_95994cf22b2dee::t_05f49ebb25eaad 336-357
+  s_95994cf22b2dee::t_e3ac1eec25fea5 2875
+  s_95994cf22b2dee::t_aeeded20d9f3f4 1239
+  s_95994cf22b2dee::t_f631b94f0b5db4 405,1252,2660
+  s_95994cf22b2dee::t_7235958547f3af 557,572,1019,1024,1101,1110,2400,2794,3811-3813,3848-3849,4050,4082,4084,4179,4184,4192,4217,4270,4306
+  s_95994cf22b2dee::t_f77cc0c22410e0 2347,2375,2414,2576,3098,3218
+packages/server/app/api/agent-workspaces/route.ts
+  s_95994cf22b2dee::t_26441d24025976 2,9,11,13-16,21-23,25,28,31-32,35-37
+  s_95994cf22b2dee::t_17ad78dc1ae463 38
+docs/superpowers/specs/2026-09-08-agentroam-bundled-node-fallback-design.md
+  s_95994cf22b2dee::t_72466792ffd79d 445
+  s_95994cf22b2dee::t_2693e8d1011eec 4
+  s_95994cf22b2dee::t_bec18d7671cce9 14,295,320,328,332,334
+packages/sdk/src/index.ts
+  s_95994cf22b2dee::t_f76444d78e471f 20
+packages/server/app/api/agent/stream/route.test.ts
+  s_95994cf22b2dee::t_ee4083dbb0eaca 36-38
+scripts/fetch-node-runtime-package.mjs
+  s_95994cf22b2dee::t_171da6564dc0b5 2-6,8-15,17-31,34-42
+  s_95994cf22b2dee::t_33d81045fc1185 1,16,32
+packages/core/src/infrastructure/SQLiteAuthStore.test.ts
+  s_95994cf22b2dee::t_aeeded20d9f3f4 10,30
+packages/server/app/api/sessions/[id]/query-index/route.test.ts
+  s_95994cf22b2dee::t_ee4083dbb0eaca 29-31,33-34
+packages/node-win32-x64/package.json
+  s_95994cf22b2dee::t_171da6564dc0b5 2,4,8,10-11
+packages/sdk/src/client/AgentClient.test.ts
+  s_95994cf22b2dee::t_f76444d78e471f 4
+packages/server/app/api/agent-workspaces/[workspaceId]/sessions/route.ts
+  s_95994cf22b2dee::t_26441d24025976 6,8-9,11-12,21,23
+packages/server/app/api/native-runtime.test.ts
+  s_95994cf22b2dee::t_ee4083dbb0eaca 1,20-32,255,264,268-270,465,469-474,556
+  s_95994cf22b2dee::t_50524a1c03a66d 196
+packages/cli/src/node-runtime-manager.test.ts
+  s_95994cf22b2dee::t_8fea1b087cd005 120-172
+  s_95994cf22b2dee::t_652ce20c7c1157 28-29
+  s_95994cf22b2dee::t_b29c7c540459e1 173
+packages/node-darwin-arm64/README.md
+  s_95994cf22b2dee::t_171da6564dc0b5 1-4
+packages/webapp/src/infrastructure/http/agent-http-gateway.ts
+  s_95994cf22b2dee::t_a7c36a54fce455 223,458
+  s_95994cf22b2dee::t_f631b94f0b5db4 506
+  s_95994cf22b2dee::t_94ccc74ffd6c68 633
+packages/cli/src/service/service-command.test.ts
+  s_95994cf22b2dee::t_fe245386a6d4ab 37
+  s_95994cf22b2dee::t_22fcb7aea361ae 23-28
+packages/desktop/renderer/global.d.ts
+  s_95994cf22b2dee::t_a7c36a54fce455 174,176,234
+  s_95994cf22b2dee::t_f631b94f0b5db4 8,122
+packages/desktop/renderer/lib/native-session-view-state.test.ts
+  s_95994cf22b2dee::t_aeeded20d9f3f4 11,18-21,23,29,33,45-47,50-53,57
+  s_95994cf22b2dee::t_f631b94f0b5db4 37
+scripts/customer-agent-removal-contract.test.mjs
+  s_95994cf22b2dee::t_fa335a7b1c3123 1-4,6-7,9-17,19
+  s_95994cf22b2dee::t_0370cd7aa30ebd 99-102,107-111
+  s_95994cf22b2dee::t_e4db1719847ab7 114-124,126
+  s_95994cf22b2dee::t_cb3b4ea19b869e 36,53
+  s_95994cf22b2dee::t_e4d4857b9ba83a 40-50
+  s_95994cf22b2dee::t_6f2ac7edf34dbc 60,78-79
+  s_95994cf22b2dee::t_c64026703fdcd4 58-59,61-76,81,83-98,103-104,112
+  s_95994cf22b2dee::t_3594ca2819d246 21-35,37-38,52,54,56
+packages/desktop/main/preload.ts
+  s_95994cf22b2dee::t_4f15eba8b713ab 146
+  s_95994cf22b2dee::t_94ccc74ffd6c68 3
+  s_95994cf22b2dee::t_a7c36a54fce455 86-87,89-90,134
+packages/desktop/main/voice-service-manager.test.ts
+  s_95994cf22b2dee::t_aeeded20d9f3f4 99,113-114,122
+packages/desktop/main/agent-runtime/opencode-runtime-adapter.test.ts
+  s_95994cf22b2dee::t_2bdb8e907b5004 173,202
+packages/core/src/infrastructure/SQLiteDatabase.customer-agent-removal.test.ts
+  s_95994cf22b2dee::t_fcaa9da5579852 138-139,141-142
+  s_95994cf22b2dee::t_f1d950c888fe21 1-40,48-50,54-57,65-67,69-88,91,94-137,140,143
+  s_95994cf22b2dee::t_3c82c37ad10b4c 41-47,51-53,58-64,68
+  s_95994cf22b2dee::t_4fec718f558ed5 89-90,92-93
+packages/server/app/api/sessions/route.ts
+  s_95994cf22b2dee::t_26441d24025976 3-5,12-15,20-29,31-39
+  s_95994cf22b2dee::t_02f21c68904e0b 2
+packages/node-darwin-arm64/LICENSE
+  s_95994cf22b2dee::t_171da6564dc0b5 1-2666
+packages/desktop/main/index.ts
+  s_95994cf22b2dee::t_ef7b983f283baf 11,83-84,98,891,895,900,910,914,1070,1075,1098,1102,1106,1110,1124
+  s_95994cf22b2dee::t_e941a5cdc60008 832,837,879,882,943,967-968,985,1008,1012,1067
+  s_95994cf22b2dee::t_4f15eba8b713ab 223
+  s_95994cf22b2dee::t_a7c36a54fce455 830,836,875,878,881,1018
+docs/superpowers/specs/2026-09-10-upstream-release-reliability-backport-design.md
+  s_95994cf22b2dee::t_5a37795a821918 4
+  s_95994cf22b2dee::t_1d62ee721d89ae 1-3,5-55
+packages/desktop/main/agent-runtime/agent-workspace-index.ts
+  s_95994cf22b2dee::t_f631b94f0b5db4 326-327,414
+packages/server/app/api/agent/answer/route.ts
+  s_95994cf22b2dee::t_26441d24025976 2,6,8,10-14,16-17
+packages/server/app/api/agent/run/route.ts
+  s_95994cf22b2dee::t_26441d24025976 6,12,18-20,22-27,30-31,33-36,38-39,41-42,46-51
+  s_95994cf22b2dee::t_b55777108bd23b 52
+packages/server/lib/native-runtime-service.test.ts
+  s_95994cf22b2dee::t_ee4083dbb0eaca 201
+  s_95994cf22b2dee::t_f631b94f0b5db4 47
+packages/server/app/api/sessions/[id]/query-index/route.ts
+  s_95994cf22b2dee::t_d4ca9c8eee1a36 2,4-11
+packages/cli/bin/node-preflight.mjs
+  s_95994cf22b2dee::t_9175bc1e4297da 17,25,28,88,112,125,129,134-136
+  s_95994cf22b2dee::t_9ffddcfc2dece1 38,81,89,91,94,113-118,128,137-149
+  s_95994cf22b2dee::t_ce8f38845e7b12 31,191,193
+README.md
+  s_95994cf22b2dee::t_bec18d7671cce9 1,3,5,9-44,46,48-54,57,59-61,63,65,67,73,76-77,79,81-85,88-90,93,96-97,99-100,102-104,106,108-110,112,114,117-123,125,127,129,131-134,136-141,143,145
+packages/cli/package.json
+  s_95994cf22b2dee::t_171da6564dc0b5 10,28-29
+  s_95994cf22b2dee::t_9831be1efbb4a1 7,33
+packages/cli/src/service/service-command.ts
+  s_95994cf22b2dee::t_6b5f4ce4f0181c 27,50-51,56-57,59-60,72,85
+  s_95994cf22b2dee::t_fe245386a6d4ab 4-9,53-55,58
+scripts/audit-cli-tarball.mjs
+  s_95994cf22b2dee::t_a04ae5d3d49bf8 18-19,54,61,66
+  s_95994cf22b2dee::t_8d4bdeb317e101 14
+packages/node-win32-x64/LICENSE
+  s_95994cf22b2dee::t_171da6564dc0b5 1-2666
+packages/cli/src/service/macos-service-host.ts
+  s_95994cf22b2dee::t_6b5f4ce4f0181c 1-68
+packages/desktop/main/agent-runtime/opencode-runtime-adapter.ts
+  s_95994cf22b2dee::t_f631b94f0b5db4 604
+packages/desktop/renderer/lib/session-history.ts
+  s_95994cf22b2dee::t_4f15eba8b713ab 36
+  s_95994cf22b2dee::t_f631b94f0b5db4 38
+packages/server/app/web/TerminalPane.tsx
+  s_95994cf22b2dee::t_ad483e69c5b475 290
+packages/core/src/domain/session/SessionGoals.test.ts
+  s_95994cf22b2dee::t_a7c36a54fce455 77,116
+packages/desktop/renderer/lib/queued-message-order.test.ts
+  s_95994cf22b2dee::t_a7c36a54fce455 121
+packages/node-win32-x64/README.md
+  s_95994cf22b2dee::t_171da6564dc0b5 1-4
+packages/cli/src/service/windows-task-service.ts
+  s_95994cf22b2dee::t_6b5f4ce4f0181c 245,282,290
+packages/desktop/main/agent-runtime/native-runtime-broker.ts
+  s_95994cf22b2dee::t_f631b94f0b5db4 85,812,967,989,1657,2822
+  s_95994cf22b2dee::t_2bdb8e907b5004 1425,1691
+packages/core/src/infrastructure/SQLiteWebConsoleStore.test.ts
+  s_95994cf22b2dee::t_aeeded20d9f3f4 10,35
+packages/desktop/renderer/components/EmptySessionWelcome.tsx
+  s_95994cf22b2dee::t_aeeded20d9f3f4 43,47
+packages/desktop/main/agent-runtime/types.ts
+  s_95994cf22b2dee::t_f631b94f0b5db4 13,17,103,116,118,155
+packages/cli/src/service/service-files.test.ts
+  s_95994cf22b2dee::t_6b5f4ce4f0181c 52
+packages/webapp/src/infrastructure/http/agent-http-gateway.test.ts
+  s_95994cf22b2dee::t_94ccc74ffd6c68 56,108,135,195,231,294,335,385,450,498,532,564,592,618,663,696,708,735,748,761,774,787,802,829,852,872,882,904,918,933,972
+  s_95994cf22b2dee::t_9ef509f1018aff 660,662,664,667-669,674-676,679-685
+  s_95994cf22b2dee::t_bec18d7671cce9 831-832,836,840,846,854-855,915-916,920,922,928,936-937,943,946-947,954-955,980,983
+  s_95994cf22b2dee::t_c879634d0ef2a9 666
+bun.lock
+  s_95994cf22b2dee::t_9af385613b9056 6,33-34,77-84,496-499,512,514,612,616,724,754,878,894,1152,1216,1224,1254,1260,1306,1352,1410-1411,1460,1506-1507,1536-1539
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "ab029aac8886d564188b213b721a60f198ec4851",
+  "prompts": {},
+  "sessions": {
+    "s_95994cf22b2dee": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a080ed-c127-7d63-8ce1-fb6238f81fb0",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "zhangfan <fan13.zhang@ly.com>"
+    }
+  }
+}

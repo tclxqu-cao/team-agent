@@ -1,0 +1,19 @@
+docs/superpowers/specs/2026-09-09-remove-customer-agent-design.md
+  s_95994cf22b2dee::t_d99f4488ad921f 1-613
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "4e6ada45a8980c01c83cf537ae9de63f5bd8cb5c",
+  "prompts": {},
+  "sessions": {
+    "s_95994cf22b2dee": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a080ed-c127-7d63-8ce1-fb6238f81fb0",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "zhangfan <fan13.zhang@ly.com>"
+    }
+  }
+}
