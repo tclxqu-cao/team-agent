@@ -1,0 +1,24 @@
+packages/native-runtime/src/agent-runtime/codex-app-server-client.ts
+  s_14f2c5ef42582e::t_c1b8674c5fe4f9 19,26,41,100,244-278
+  s_14f2c5ef42582e::t_7f9a775bcecd76 279
+packages/native-runtime/src/agent-runtime/codex-app-server-client.test.ts
+  s_14f2c5ef42582e::t_a74ba1812877fc 4,65-78
+  s_14f2c5ef42582e::t_6c7506046dc857 48,50-54,59-60
+  s_14f2c5ef42582e::t_307c9aadaf8e57 79-80
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "f9f44ec9ddac7d158914c5d6fb48e0f7974e6b32",
+  "prompts": {},
+  "sessions": {
+    "s_14f2c5ef42582e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0be8f-a7dc-79c1-8e87-79e105967240",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "zhangfan <fan13.zhang@ly.com>"
+    }
+  }
+}
