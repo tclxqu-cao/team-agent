@@ -1,5 +1,5 @@
 {
-  "packageVersion": "0.2.0-preview.28",
+  "packageVersion": "0.2.0-preview.29",
   "target": "windows-amd64",
   "schemaVersion": 2,
   "minimumNodeVersion": "22.22.0",

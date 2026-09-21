@@ -1,6 +1,6 @@
 {
   "name": "agentroam-runtime-win32-x64",
-  "version": "0.2.0-preview.28",
+  "version": "0.2.0-preview.29",
   "description": "AgentRoam server runtime for Windows x64",
   "license": "MIT",
   "os": [
