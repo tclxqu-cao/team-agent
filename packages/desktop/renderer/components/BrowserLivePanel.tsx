@@ -6,6 +6,12 @@ import { ExternalLink, Hand, Keyboard, LoaderCircle, Lock, LockOpen, MonitorUp, 
 import type { BrowserLiveSession } from "../global";
 
 import { BrowserLiveTouch } from "./browser-live-touch";
+import {
+  formatRemoteVideoStats,
+  readRemoteVideoStats,
+  type RemoteVideoStatsCursor,
+  type RemoteVideoStatsSample,
+} from "./remote-video-stats";
 
 interface BrowserFrame {
   sessionId: string;
@@ -223,6 +229,8 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
   const controlFieldRef = useRef<{ rect: RemoteEditableField; at: number } | null>(null);
   // Real-time WebRTC video (desktop source); JPEG frames remain the fallback.
   const [webrtcState, setWebrtcState] = useState<"off" | "connecting" | "live" | "failed">("off");
+  const [remoteVideoStats, setRemoteVideoStats] = useState<RemoteVideoStatsSample | null>(null);
+  const remoteVideoStatsCursorRef = useRef<RemoteVideoStatsCursor | null>(null);
   const webrtcPeerRef = useRef<RTCPeerConnection | null>(null);
   const webrtcVideoRef = useRef<HTMLVideoElement>(null);
   useLayoutEffect(() => {
@@ -392,14 +400,14 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
       }
     }
   }, [scrollRemoteFieldIntoView]);
-  const webrtcIceServers: RTCIceServer[] = useMemo(() => [{ urls: "stun:stun.l.google.com:19302" }], []);
+  const fallbackWebrtcIceServers: RTCIceServer[] = useMemo(() => [{ urls: "stun:stun.l.google.com:19302" }], []);
 
-  const answerWebrtcOffer = useCallback(async (sessionId: string, sdp: RTCSessionDescriptionInit | undefined) => {
+  const answerWebrtcOffer = useCallback(async (sessionId: string, sdp: RTCSessionDescriptionInit | undefined, iceServers?: RTCIceServer[]) => {
     if (!api || !sessionId || !sdp) return;
     try {
       let peer = webrtcPeerRef.current;
       if (!peer) {
-        peer = new RTCPeerConnection({ iceServers: webrtcIceServers });
+        peer = new RTCPeerConnection({ iceServers: iceServers?.length ? iceServers : fallbackWebrtcIceServers });
         peer.onicecandidate = (event) => {
           if (!event.candidate) return;
           void api.request("browser:webrtc", { sessionId, data: { kind: "ice", candidate: event.candidate.toJSON() } }).catch(() => undefined);
@@ -426,7 +434,7 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
     } catch {
       setWebrtcState("failed");
     }
-  }, [api, webrtcIceServers]);
+  }, [api, fallbackWebrtcIceServers]);
 
   const handleWebrtcSignal = useCallback((sessionId: string, data: Record<string, unknown> | undefined) => {
     if (!data) return;
@@ -436,7 +444,12 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
       return;
     }
     if (data.kind === "offer") {
-      void answerWebrtcOffer(sessionId, data.sdp as RTCSessionDescriptionInit | undefined);
+      if (typeof data.warning === "string") setError(data.warning);
+      void answerWebrtcOffer(
+        sessionId,
+        data.sdp as RTCSessionDescriptionInit | undefined,
+        Array.isArray(data.iceServers) ? data.iceServers as RTCIceServer[] : undefined,
+      );
       return;
     }
     if (data.kind === "ice") {
@@ -568,20 +581,59 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
       webrtcPeerRef.current?.close();
       webrtcPeerRef.current = null;
       if (webrtcVideoRef.current) webrtcVideoRef.current.srcObject = null;
+      remoteVideoStatsCursorRef.current = null;
+      setRemoteVideoStats(null);
       setWebrtcState("off");
       return;
     }
     webrtcPeerRef.current?.close();
     webrtcPeerRef.current = null;
+    remoteVideoStatsCursorRef.current = null;
+    setRemoteVideoStats(null);
     setWebrtcState("connecting");
     void api.request("browser:webrtc", { sessionId: selectedId, data: { kind: "start" } }).catch(() => setWebrtcState("failed"));
     return () => {
       webrtcPeerRef.current?.close();
       webrtcPeerRef.current = null;
       if (webrtcVideoRef.current) webrtcVideoRef.current.srcObject = null;
+      remoteVideoStatsCursorRef.current = null;
+      setRemoteVideoStats(null);
       void api.request("browser:webrtc", { sessionId: selectedId, data: { kind: "stop" } }).catch(() => undefined);
     };
   }, [api, hasControl, isDesktop, open, selectedId, viewNonce]);
+
+  useEffect(() => {
+    if (!api || !selectedId || webrtcState !== "live") {
+      remoteVideoStatsCursorRef.current = null;
+      setRemoteVideoStats(null);
+      return;
+    }
+    let alive = true;
+    const tick = async () => {
+      const peer = webrtcPeerRef.current;
+      if (!peer) return;
+      try {
+        const report = await peer.getStats();
+        if (!alive || peer !== webrtcPeerRef.current) return;
+        const result = readRemoteVideoStats(
+          report as unknown as Iterable<Record<string, unknown>>,
+          remoteVideoStatsCursorRef.current,
+        );
+        if (!result) return;
+        remoteVideoStatsCursorRef.current = result.cursor;
+        setRemoteVideoStats(result.sample);
+        void api.request("browser:webrtc", {
+          sessionId: selectedId,
+          data: { kind: "stats", ...result.sample },
+        }).catch(() => undefined);
+      } catch {
+        // Browser stats are diagnostic feedback; playback remains usable without them.
+      }
+    };
+    void tick();
+    const timer = window.setInterval(() => void tick(), 1000);
+    return () => { alive = false; window.clearInterval(timer); };
+  }, [api, selectedId, webrtcState]);
 
   const requestControl = useCallback(async () => {
     if (!api || !selected) return;
@@ -770,6 +822,14 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
       : isDesktop
         ? "在桌面 App 设置中开启「桌面直播与远程控制」后，画面会出现在这里"
         : "Agent 开始浏览网页后，会话会出现在这里";
+  const remoteVideoStatsLabel = formatRemoteVideoStats(remoteVideoStats);
+  const desktopStreamLabel = webrtcState === "live"
+    ? remoteVideoStatsLabel || "WebRTC 实时流"
+    : webrtcState === "connecting"
+      ? "正在连接 WebRTC"
+      : frameSrc
+        ? "JPEG 兜底"
+        : null;
 
   return createPortal(
     <div className="browser-live-backdrop" data-tab-swipe-ignore role="presentation" onMouseDown={(event) => {
@@ -1149,7 +1209,7 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
             )}
           </div>
           {hasControl && !panMode && (
-            <div className="browser-live-control-cue"><MousePointer2 size={13} aria-hidden="true" /> {isDesktop ? "当前输入会发送到本机" : "当前输入会发送到浏览器"}{isDesktop && webrtcState === "live" ? " · 实时视频流" : isDesktop && webrtcState === "connecting" ? " · 正在连接实时流" : ""}{pingMs != null ? ` · ${pingMs}ms` : ""}</div>
+            <div className="browser-live-control-cue"><MousePointer2 size={13} aria-hidden="true" /> {isDesktop ? "当前输入会发送到本机" : "当前输入会发送到浏览器"}{isDesktop && desktopStreamLabel ? ` · ${desktopStreamLabel}` : ""}{pingMs != null ? ` · 控制 ${pingMs}ms` : ""}</div>
           )}
         </div>
 

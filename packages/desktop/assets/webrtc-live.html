@@ -29,7 +29,7 @@
         video: { frameRate: { ideal: 30, max: 60 } },
         audio: false,
       });
-      for (const track of stream.getTracks()) track.contentHint = "motion";
+      for (const track of stream.getTracks()) track.contentHint = "detail";
       pc = new RTCPeerConnection({
         iceServers: [{ urls: ["stun:stun.l.google.com:19302"] }],
       });

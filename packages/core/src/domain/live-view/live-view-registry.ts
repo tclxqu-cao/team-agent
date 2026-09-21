@@ -23,9 +23,46 @@ const MAX_WEBRTC_SIGNAL_CHARS = 64_000;
 function isWebrtcSignal(data: unknown): data is Record<string, unknown> {
   if (!data || typeof data !== "object" || Array.isArray(data)) return false;
   const kind = (data as Record<string, unknown>).kind;
-  if (!["start", "stop", "offer", "answer", "ice", "state", "quality", "quality-state"].includes(String(kind))) return false;
+  if (!["start", "stop", "offer", "answer", "ice", "state", "quality", "quality-state", "stats"].includes(String(kind))) return false;
   if ((kind === "quality" || kind === "quality-state") && !["smooth", "hd", "original"].includes(String((data as Record<string, unknown>).quality))) return false;
+  if (kind === "stats" && !isWebrtcStats(data as Record<string, unknown>)) return false;
+  if (kind === "offer" && !isIceServers((data as Record<string, unknown>).iceServers)) return false;
   return JSON.stringify(data).length <= MAX_WEBRTC_SIGNAL_CHARS;
+}
+
+function isBoundedNumber(value: unknown, min: number, max: number): boolean {
+  return value === undefined || (typeof value === "number" && Number.isFinite(value) && value >= min && value <= max);
+}
+
+function isWebrtcStats(data: Record<string, unknown>): boolean {
+  if (data.codec !== undefined && (typeof data.codec !== "string" || data.codec.length > 40)) return false;
+  if (data.decoder !== undefined && (typeof data.decoder !== "string" || data.decoder.length > 120)) return false;
+  if (data.candidateType !== undefined && !["host", "srflx", "prflx", "relay"].includes(String(data.candidateType))) return false;
+  if (data.protocol !== undefined && !["udp", "tcp"].includes(String(data.protocol))) return false;
+  return isBoundedNumber(data.width, 0, 16_384)
+    && isBoundedNumber(data.height, 0, 16_384)
+    && isBoundedNumber(data.fps, 0, 240)
+    && isBoundedNumber(data.rttMs, 0, 60_000)
+    && isBoundedNumber(data.jitterMs, 0, 60_000)
+    && isBoundedNumber(data.lossRate, 0, 1)
+    && isBoundedNumber(data.droppedFrames, 0, 1_000_000_000)
+    && isBoundedNumber(data.receiveBitrate, 0, 1_000_000_000)
+    && isBoundedNumber(data.availableBitrate, 0, 1_000_000_000);
+}
+
+function isIceServers(value: unknown): boolean {
+  if (value === undefined) return true;
+  if (!Array.isArray(value) || value.length > 4) return false;
+  return value.every((server) => {
+    if (!server || typeof server !== "object" || Array.isArray(server)) return false;
+    const input = server as Record<string, unknown>;
+    const urls = Array.isArray(input.urls) ? input.urls : [input.urls];
+    if (!urls.length || urls.length > 4 || urls.some(url => typeof url !== "string" || url.length > 500 || !/^(stuns?|turns?):[^\s]+$/i.test(url))) return false;
+    const hasTurn = urls.some(url => /^turns?:/i.test(String(url)));
+    if (!hasTurn) return input.username === undefined && input.credential === undefined;
+    return typeof input.username === "string" && input.username.length <= 256
+      && typeof input.credential === "string" && input.credential.length <= 512;
+  });
 }
 
 interface LiveFrame {
@@ -85,6 +122,13 @@ export interface PublishLiveSession {
   capabilityErrorCode?: unknown;
   displays?: unknown;
   platform?: unknown;
+}
+
+export interface UpdateLiveSessionAvailability {
+  availability: LiveViewAvailability;
+  capabilityError?: string;
+  capabilityErrorCode?: string;
+  clearFrame?: boolean;
 }
 
 function domainError(message: string, code: string): Error & { code: string } {
@@ -233,6 +277,26 @@ export class LiveViewRegistry {
     if (becameReady) this.announce(session, "browser:state");
     for (const watcher of session.watchers) watcher.send(session.latestFrame);
     return { accepted: true, sequence };
+  }
+
+  updateAvailability(
+    peer: LiveViewPeer,
+    sessionId: unknown,
+    input: UpdateLiveSessionAvailability,
+  ): LiveViewSessionView {
+    const session = this.requireProducer(peer, sessionId);
+    if (!AVAILABILITY_STATES.has(input.availability)) throw domainError("invalid live availability", "EINVAL");
+    session.availability = input.availability;
+    session.capabilityError = optionalString(input.capabilityError, 500);
+    session.capabilityErrorCode = optionalString(input.capabilityErrorCode, 80);
+    if (input.availability !== "unavailable") {
+      session.capabilityError = undefined;
+      session.capabilityErrorCode = undefined;
+    }
+    if (input.clearFrame) session.latestFrame = null;
+    session.updatedAt = this.now();
+    this.announce(session, "browser:state");
+    return view(session, peer);
   }
 
   watch(peer: LiveViewPeer, sessionId: unknown): LiveViewSessionView {

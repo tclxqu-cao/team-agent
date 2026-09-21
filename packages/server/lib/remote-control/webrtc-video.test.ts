@@ -62,3 +62,24 @@ it('closes video transport on a Windows encoder failure so JPEG viewing can resu
     expect(helper.request).toHaveBeenCalledWith({op:'video',enabled:false});
   } finally {await video.stop();}
 });
+
+it('signals configured ICE servers and only applies viewer stats after connection', async () => {
+ const helper={request:vi.fn(async()=>({ok:true})),onVideo:()=>()=>{}};
+ const adaptation={
+  update:vi.fn(()=>({quality:'hd',bitRate:4_000_000,maxFps:30,reason:'steady'})),
+  setQuality:vi.fn(),current:vi.fn(),
+ };
+ const signal=vi.fn();
+ const iceConfig={iceServers:[{urls:'stun:relay.example.test:3478'}],warning:null};
+ const video=new RemoteWebrtcVideo({helper,signal,adaptation,iceConfig});
+ try {
+  await video.handle({kind:'start'});
+  expect(signal).toHaveBeenCalledWith(expect.objectContaining({kind:'offer',iceServers:iceConfig.iceServers}));
+  await video.handle({kind:'stats',lossRate:0.1,rttMs:300});
+  expect(adaptation.update).not.toHaveBeenCalled();
+  video.connected=true;
+  await video.handle({kind:'stats',lossRate:0.1,rttMs:300});
+  expect(adaptation.update).toHaveBeenCalledWith(expect.objectContaining({lossRate:0.1,rttMs:300}));
+  await vi.waitFor(()=>expect(helper.request).toHaveBeenCalledWith({op:'video-tuning',bitRate:4_000_000,maxFps:30}));
+ } finally {await video.stop();}
+});

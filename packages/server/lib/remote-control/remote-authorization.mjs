@@ -20,10 +20,10 @@ export function supportsRemoteDesktop(platform = process.platform, arch = proces
 }
 
 export class RemoteAuthorization {
-  constructor({ registry, userId, dataDir, platform = process.platform, helper = platform === 'win32' ? new WindowsRemoteHelper() : new RemoteHelper(), supported = supportsRemoteDesktop(platform), intervalMs = 150, system = platform === 'win32' ? new WindowsSystemBridge() : null }) {
-    Object.assign(this, { registry, dataDir, helper, supported, intervalMs, platform, system });
+  constructor({ registry, userId, dataDir, platform = process.platform, helper = platform === 'win32' ? new WindowsRemoteHelper() : new RemoteHelper(), supported = supportsRemoteDesktop(platform), intervalMs = 150, idleDelayMs = 3000, system = platform === 'win32' ? new WindowsSystemBridge() : null }) {
+    Object.assign(this, { registry, dataDir, helper, supported, intervalMs, idleDelayMs, platform, system });
     this.enabled = false; this.screen = false; this.accessibility = false; this.online = false; this.error = null; this.busy = false; this.sequence = 0; this.generation = 0;
-    this.locked = null; this.unavailablePublished = null;
+    this.locked = null; this.unavailablePublished = null; this.viewerCount = 0; this.captureActive = false; this.idleTimer = null;
     this.sessionId = 'cli-desktop:primary';
     this.peer = { id: `cli-remote:${randomUUID()}`, userId, producerSessionIds: new Set(), watchedSessionId: null, send: (event) => {
       const generation = this.switching ? -1 : this.generation;
@@ -42,7 +42,8 @@ export class RemoteAuthorization {
     if (!this.supported) return;
     try { this.enabled = JSON.parse(await readFile(this.stateFile, 'utf8')).enabled === true; } catch {}
     this.registry.connect(this.peer);
-    this.timer = setInterval(() => { if (this.enabled) void this.tick(); }, this.intervalMs); this.timer.unref();
+    if (this.enabled) this.publishDormant();
+    this.timer = setInterval(() => { if (this.enabled && this.captureActive && this.viewerCount > 0) void this.tick(); }, this.intervalMs); this.timer.unref();
   }
   async status(local = true) {
     const unlock = this.platform === 'win32' && this.system ? await this.system.probe().then(p => p.available ? 'available' : 'missing').catch(() => 'missing') : 'unsupported';
@@ -82,15 +83,16 @@ export class RemoteAuthorization {
     if (action === 'recheck') {
       await this.helper.start();
       const permissions = await this.helper.request({ op: 'status' });
-      this.screen = permissions.screen === true; this.accessibility = permissions.accessibility === true;
+      this.applyPermissions(permissions);
       this.lastPermissionCheck = Date.now();
-      if (!this.enabled) await this.helper.stop();
+      if (!this.captureActive) await this.helper.stop();
+      if (this.enabled && !this.captureActive) this.publishDormant();
       return this.status();
     }
     this.generation += 1;
     this.lastPermissionCheck = 0;
     if (action === 'disable') {
-      this.enabled = false; await this.video.stop(); await this.save();
+      this.enabled = false; this.captureActive = false; this.viewerCount = 0; this.clearIdleTimer(); await this.video.stop(); await this.save();
       if (this.online) this.registry.close(this.peer, this.sessionId);
       this.online = false; await this.helper.stop();
     } else {
@@ -98,7 +100,16 @@ export class RemoteAuthorization {
       if (action === 'restart') { await this.video.stop(); await this.helper.stop(); }
       await this.helper.start();
       if (action === 'authorize') await this.helper.request({ op: 'authorize', permission });
-      await this.tick();
+      const permissions = await this.helper.request({ op: 'status' });
+      this.applyPermissions(permissions); this.lastPermissionCheck = Date.now();
+      this.error = this.screen ? null : (permissions.error || (this.platform === 'win32' ? 'Windows 桌面暂不可用' : '请先授予屏幕录制权限'));
+      if (this.viewerCount > 0) {
+        this.captureActive = true;
+        await this.tick();
+      } else {
+        await this.helper.stop();
+        this.publishDormant();
+      }
     }
     return this.status();
   }
@@ -108,7 +119,7 @@ export class RemoteAuthorization {
     return this.tickPromise;
   }
   async captureTick() {
-    if (this.switching || this.busy || !this.enabled || Date.now() < (this.retryAt || 0)) return;
+    if (this.switching || this.busy || !this.enabled || !this.captureActive || this.viewerCount < 1 || Date.now() < (this.retryAt || 0)) return;
     this.busy = true;
     const generation = this.generation;
     try {
@@ -117,8 +128,7 @@ export class RemoteAuthorization {
       // Permissions need not be polled at the frame rate.
       if (!this.lastPermissionCheck || Date.now() - this.lastPermissionCheck > 2000) {
         const permissions = await this.helper.request({ op: 'status' });
-        this.screen = permissions.screen === true; this.accessibility = permissions.accessibility === true;
-        this.locked = permissions.locked === true;
+        this.applyPermissions(permissions);
         this.lastPermissionCheck = Date.now();
         if (!this.screen) this.error = permissions.error || (this.platform === 'win32' ? '请在 Windows 上恢复已登录的普通桌面' : '请先授予屏幕录制权限');
       }
@@ -127,8 +137,7 @@ export class RemoteAuthorization {
         // A locked Windows session keeps the CLI alive: keep the session card
         // visible (as unavailable) so a paired viewer can still wake or unlock
         // the machine instead of losing the entry point entirely.
-        if (this.platform === 'win32') this.publishUnavailable(this.error, this.locked === true);
-        else if (this.online) { this.registry.close(this.peer, this.sessionId); this.online = false; }
+        this.publishUnavailable(this.error, this.locked === true);
         return;
       }
       if (this.video.connected && Date.now() - (this.lastPreview || 0) < 2000) return;
@@ -141,8 +150,7 @@ export class RemoteAuthorization {
       if (generation !== this.generation) return;
       this.bounds = null; await this.releaseInput();
       this.error = error.message; this.retryAt = Date.now() + 3000;
-      if (this.online) this.registry.close(this.peer, this.sessionId);
-      this.online = false;
+      this.publishUnavailable(this.error, this.locked === true);
     } finally { this.busy = false; }
   }
   /** Publishes the locked/unavailable state once per transition so viewers
@@ -151,13 +159,78 @@ export class RemoteAuthorization {
     const signature = JSON.stringify([Boolean(locked), error]);
     if (this.unavailablePublished === signature) return;
     this.unavailablePublished = signature;
-    this.registry.publish(this.peer, {
+    const capabilityError = locked ? 'Windows 已锁屏' : (error || '桌面暂不可用');
+    const capabilityErrorCode = locked ? 'desktop-locked' : 'desktop-unavailable';
+    if (!this.online) {
+      this.registry.publish(this.peer, {
+        sessionId: this.sessionId, backend: 'desktop', title: '本机桌面', url: '', viewport: this.viewport,
+        transport: 'cdp-jpeg-ws', availability: 'unavailable', platform: this.platform,
+        capabilityError, capabilityErrorCode,
+      });
+      this.online = true;
+    } else {
+      this.registry.updateAvailability(this.peer, this.sessionId, {
+        availability: 'unavailable', capabilityError, capabilityErrorCode, clearFrame: true,
+      });
+    }
+  }
+  applyPermissions(permissions) {
+    this.screen = permissions.screen === true; this.accessibility = permissions.accessibility === true;
+    this.locked = permissions.locked === true;
+  }
+  publishDormant() {
+    if (!this.enabled) return;
+    this.unavailablePublished = null;
+    const unavailable = Boolean(this.lastPermissionCheck && !this.screen);
+    const input = {
       sessionId: this.sessionId, backend: 'desktop', title: '本机桌面', url: '', viewport: this.viewport,
-      transport: 'cdp-jpeg-ws', availability: 'unavailable', platform: this.platform,
-      capabilityError: locked ? 'Windows 已锁屏' : (error || 'Windows 桌面暂不可用'),
-      capabilityErrorCode: locked ? 'desktop-locked' : 'desktop-unavailable',
-    });
+      displays: this.displays, transport: 'cdp-jpeg-ws', platform: this.platform,
+      availability: unavailable ? 'unavailable' : 'starting',
+      ...(unavailable ? {
+        capabilityError: this.error || (this.platform === 'win32' ? 'Windows 桌面暂不可用' : '请先授予屏幕录制权限'),
+        capabilityErrorCode: this.locked ? 'desktop-locked' : 'desktop-unavailable',
+      } : {}),
+    };
+    this.registry.publish(this.peer, input);
     this.online = true;
+    this.registry.updateAvailability(this.peer, this.sessionId, {
+      availability: input.availability,
+      capabilityError: input.capabilityError,
+      capabilityErrorCode: input.capabilityErrorCode,
+      clearFrame: true,
+    });
+  }
+  clearIdleTimer() {
+    if (this.idleTimer) clearTimeout(this.idleTimer);
+    this.idleTimer = null;
+  }
+  async updateViewerCount(value) {
+    const count = Number.isSafeInteger(value) && value > 0 ? value : 0;
+    this.viewerCount = count;
+    if (count > 0) {
+      this.clearIdleTimer();
+      if (!this.captureActive) {
+        this.captureActive = true; this.retryAt = 0;
+        await this.tick();
+      }
+      return;
+    }
+    if (!this.captureActive || this.idleTimer) return;
+    this.idleTimer = setTimeout(() => {
+      this.idleTimer = null;
+      this.inputQueue = this.inputQueue.then(() => this.stopIdleCapture()).catch((error) => { this.error = error.message; });
+    }, this.idleDelayMs);
+    this.idleTimer.unref?.();
+  }
+  async stopIdleCapture() {
+    if (!this.enabled || this.viewerCount > 0 || !this.captureActive) return;
+    this.captureActive = false; this.generation += 1; this.bounds = null;
+    await this.releaseInput();
+    await this.video.stop();
+    await this.helper.request({ op: 'stop-capture' }).catch(() => {});
+    await this.helper.stop();
+    await this.tickPromise?.catch(() => {});
+    this.publishDormant();
   }
   publishFrame(frame) {
     this.unavailablePublished = null;
@@ -179,7 +252,9 @@ export class RemoteAuthorization {
   }
   async setQuality(quality) {
     if (!['smooth', 'hd', 'original'].includes(quality)) throw new Error('未知画质档位');
-    return this.reconfigureCapture({ op: 'set-quality', quality });
+    const result = await this.reconfigureCapture({ op: 'set-quality', quality });
+    this.video.setQuality(quality);
+    return result;
   }
   async reconfigureCapture(command) {
     this.switching = true;
@@ -203,7 +278,9 @@ export class RemoteAuthorization {
     }
   }
   async onEvent(event, generation = this.generation) {
-    if (!this.enabled || event.sessionId !== this.sessionId) return;
+    const eventSessionId = event.sessionId ?? event.session?.id;
+    if (!this.enabled || eventSessionId !== this.sessionId) return;
+    if (event.type === 'browser:state') { await this.updateViewerCount(event.session?.viewerCount); return; }
     if (event.type === 'browser:set-display') { await this.setDisplay(event.displayId); return; }
     if (event.type === 'browser:webrtc') {
       const signalQuality = (error) => this.registry.webrtcFromProducer(this.peer, this.sessionId, { kind: 'quality-state', quality: this.quality || 'hd', ...(error ? { error } : {}) });
@@ -292,5 +369,16 @@ export class RemoteAuthorization {
     } catch (error) { send(400, { error: error.message }); }
     return true;
   }
-  async close() { clearInterval(this.timer); this.enabled = false; await this.video.stop(); this.registry.disconnect(this.peer); await this.helper.stop(); }
+  async close() {
+    clearInterval(this.timer); this.clearIdleTimer(); this.enabled = false; this.captureActive = false; this.generation += 1;
+    const cleanup = Promise.allSettled([
+      this.releaseInput(),
+      this.video.stop(),
+      this.helper.request({ op: 'stop-capture' }),
+    ]);
+    // Closing the owned helper socket rejects any native requests that are
+    // stuck in flight, so service shutdown cannot wait behind media teardown.
+    await this.helper.stop();
+    await cleanup; await this.tickPromise?.catch(() => {}); this.registry.disconnect(this.peer);
+  }
 }

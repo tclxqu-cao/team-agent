@@ -1302,7 +1302,38 @@ wss.on("connection", (ws, _req, principal) => {
   });
 });
 
-server.on("close", () => { void remoteAuthorization.close(); pairingGateway.close(); void desktopDiscovery.close(); });
+let ownedServicesClosePromise = null;
+function closeOwnedServices() {
+  if (!ownedServicesClosePromise) ownedServicesClosePromise = (async () => {
+    await remoteAuthorization.close();
+    pairingGateway.close();
+    await desktopDiscovery.close();
+  })();
+  return ownedServicesClosePromise;
+}
+
+let processShutdownStarted = false;
+function shutdownProcess(signal) {
+  if (processShutdownStarted) return;
+  processShutdownStarted = true;
+  const forceExit = setTimeout(() => {
+    globalLogger.error("service shutdown timed out", new Error("shutdown timeout"), { signal });
+    process.exit(1);
+  }, 5_000);
+  forceExit.unref();
+  void closeOwnedServices().then(() => {
+    clearTimeout(forceExit);
+    process.exit(0);
+  }).catch((error) => {
+    clearTimeout(forceExit);
+    globalLogger.error("service shutdown failed", error, { signal });
+    process.exit(1);
+  });
+}
+
+process.once("SIGINT", () => shutdownProcess("SIGINT"));
+process.once("SIGTERM", () => shutdownProcess("SIGTERM"));
+server.on("close", () => { void closeOwnedServices(); });
 server.listen(port, process.env.HOST || "127.0.0.1", async () => {
   process.env.AGENTROAM_LOCAL_SERVICE_URL = `http://127.0.0.1:${server.address().port}`;
   try {

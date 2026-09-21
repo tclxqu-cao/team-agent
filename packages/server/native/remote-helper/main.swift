@@ -24,6 +24,12 @@ func holdRemoteDisplay() {
         IOPMAssertionLevel(kIOPMAssertionLevelOn), "AgentRoam desktop sharing" as CFString,
         &displayAssertion) == kIOReturnSuccess
 }
+func releaseRemoteDisplay() {
+    guard displayHeld else { return }
+    _ = IOPMAssertionRelease(displayAssertion)
+    displayAssertion = IOPMAssertionID(0)
+    displayHeld = false
+}
 if CommandLine.arguments.contains("--wake-self-test") {
     holdRemoteDisplay()
     precondition(displayHeld, "Unable to hold display awake")
@@ -60,27 +66,58 @@ if CommandLine.arguments.contains("--self-test") {
     print("remote-helper self-test passed")
     exit(0)
 }
-guard CommandLine.arguments.count == 3 else { exit(2) }
+guard CommandLine.arguments.count == 4 else { exit(2) }
 let socketPath = CommandLine.arguments[1]
-guard socketPath.utf8.count < 104, let parent = Int32(CommandLine.arguments[2]) else { exit(2) }
-let connection = socket(AF_UNIX, SOCK_STREAM, 0)
-var address = sockaddr_un()
-address.sun_family = sa_family_t(AF_UNIX)
-withUnsafeMutablePointer(to: &address.sun_path) { pointer in
-    pointer.withMemoryRebound(to: CChar.self, capacity: 104) { dest in
-        socketPath.withCString { source in _ = strcpy(dest, source) }
+let videoSocketPath = CommandLine.arguments[2]
+guard socketPath.utf8.count < 104, videoSocketPath.utf8.count < 104, let parent = Int32(CommandLine.arguments[3]) else { exit(2) }
+func connectUnixSocket(_ path: String) -> Int32 {
+    let descriptor = socket(AF_UNIX, SOCK_STREAM, 0)
+    guard descriptor >= 0 else { return -1 }
+    var address = sockaddr_un()
+    address.sun_family = sa_family_t(AF_UNIX)
+    withUnsafeMutablePointer(to: &address.sun_path) { pointer in
+        pointer.withMemoryRebound(to: CChar.self, capacity: 104) { dest in
+            path.withCString { source in _ = strcpy(dest, source) }
+        }
     }
+    let result = withUnsafePointer(to: &address) { pointer in
+        pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) { connect(descriptor, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) }
+    }
+    if result != 0 { close(descriptor); return -1 }
+    var noSignal: Int32 = 1
+    setsockopt(descriptor, SOL_SOCKET, SO_NOSIGPIPE, &noSignal, socklen_t(MemoryLayout<Int32>.size))
+    return descriptor
 }
-let connected = withUnsafePointer(to: &address) { pointer in
-    pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) { connect(connection, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) }
-}
-guard connected == 0 else { exit(3) }
-var noSignal: Int32 = 1
-setsockopt(connection, SOL_SOCKET, SO_NOSIGPIPE, &noSignal, socklen_t(MemoryLayout<Int32>.size))
+let connection = connectUnixSocket(socketPath)
+let videoConnection = connectUnixSocket(videoSocketPath)
+guard connection >= 0, videoConnection >= 0 else { exit(3) }
 let channel = FileHandle(fileDescriptor: connection, closeOnDealloc: true)
+let videoChannel = FileHandle(fileDescriptor: videoConnection, closeOnDealloc: true)
 func respond(_ id: Int?, _ payload: [String: Any]) {
     DispatchQueue.main.async {
         do { try channel.write(contentsOf: Data((reply(id, payload) + "\n").utf8)) } catch { exit(0) }
+    }
+}
+func appendBigEndian<T: FixedWidthInteger>(_ value: T, to data: inout Data) {
+    var bigEndian = value.bigEndian
+    withUnsafeBytes(of: &bigEndian) { data.append(contentsOf: $0) }
+}
+func sendVideo(timestamp: Double, nals: [Data], key: Bool) {
+    DispatchQueue.main.async {
+        var body = Data()
+        body.append(1)
+        body.append(key ? 1 : 0)
+        appendBigEndian(UInt16(nals.count), to: &body)
+        appendBigEndian(timestamp.bitPattern, to: &body)
+        for nal in nals {
+            appendBigEndian(UInt32(nal.count), to: &body)
+            body.append(nal)
+        }
+        guard body.count <= 8 * 1024 * 1024 else { return }
+        var frame = Data()
+        appendBigEndian(UInt32(body.count), to: &frame)
+        frame.append(body)
+        do { try videoChannel.write(contentsOf: frame) } catch { remoteVideoEncoder.stop() }
     }
 }
 // Keep one capture stream alive; per-frame screenshots repeatedly start/stop capture.
@@ -137,6 +174,16 @@ final class RemoteCaptureStream: NSObject, SCStreamOutput, SCStreamDelegate {
         if let old { old.stopCapture { _ in DispatchQueue.main.async(execute: restart) } }
         else { restart() }
     }
+    func stop(_ id: Int?) {
+        epoch += 1
+        let old = stream; stream = nil; latest = nil; starting = false
+        let pending = waiting; waiting.removeAll()
+        for request in pending { respond(request, ["ok": false, "error": "屏幕采集已停止"]) }
+        remoteVideoEncoder.stop()
+        let finish = { releaseRemoteDisplay(); respond(id, ["ok": true]) }
+        if let old { old.stopCapture { _ in DispatchQueue.main.async(execute: finish) } }
+        else { finish() }
+    }
     func frame(_ id: Int?) {
         guard CGPreflightScreenCaptureAccess() else { respond(id, ["ok": false, "error": "请先授予屏幕录制权限"]); return }
         if let selectedDisplayID, !displays().contains(where: { $0["id"] as? String == String(selectedDisplayID) }) {
@@ -160,7 +207,7 @@ final class RemoteCaptureStream: NSObject, SCStreamOutput, SCStreamDelegate {
                 config.width = dimensions.0
                 config.height = dimensions.1
                 config.showsCursor = true
-                config.minimumFrameInterval = CMTime(value: 1, timescale: 20)
+                config.minimumFrameInterval = CMTime(value: 1, timescale: 30)
                 config.queueDepth = 3
                 let stream = SCStream(filter: SCContentFilter(display: display, excludingWindows: []), configuration: config, delegate: self)
                 do { try stream.addStreamOutput(self, type: .screen, sampleHandlerQueue: .main) }
@@ -225,11 +272,20 @@ func remoteCommand(_ line: String) {
         if cmd["enabled"] as? Bool == true { remoteVideoEncoder.enabled = true; remoteVideoEncoder.forceKeyframe = true }
         else { remoteVideoEncoder.stop() }
         respond(id, ["ok": true])
+    case "video-tuning":
+        guard let bitRate = (cmd["bitRate"] as? NSNumber)?.intValue,
+              let maxFps = (cmd["maxFps"] as? NSNumber)?.intValue,
+              (250_000...20_000_000).contains(bitRate), (5...30).contains(maxFps) else {
+            respond(id, ["ok": false, "error": "无效的视频调优参数"]); return
+        }
+        remoteVideoEncoder.setTuning(bitRate: bitRate, maxFps: maxFps)
+        respond(id, ["ok": true, "bitRate": bitRate, "maxFps": maxFps])
     case "displays": respond(id, ["ok": true, "displays": remoteCapture.displays()])
     case "set-quality": remoteCapture.setQuality(id, value: cmd["quality"] as? String)
     case "set-display": remoteCapture.select(id, displayID: cmd["displayId"] as? String)
     case "capture": capture(id)
-    case "quit": exit(0)
+    case "stop-capture": remoteCapture.stop(id)
+    case "quit": remoteCapture.stop(nil); exit(0)
     default:
         guard AXIsProcessTrusted() else { respond(id, ["ok": false, "error": "请先授予辅助功能权限"]); return }
         wakeRemoteDisplay()

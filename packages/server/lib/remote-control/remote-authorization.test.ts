@@ -32,7 +32,12 @@ async function fixture(options: Record<string, unknown> = {}) {
   const frames: any[] = [];
   const viewer = { id:'phone', userId:'owner', producerSessionIds:new Set<string>(), watchedSessionId:null, send:(event:any)=>frames.push(event) };
   registry.connect(viewer);
-  return {service,registry,viewer,frames,helper,grant:()=>{screen=true;service.lastPermissionCheck=0;},close:async()=>{await service.close();await rm(dataDir,{recursive:true,force:true});}};
+  const watch = async (target = viewer) => {
+    registry.watch(target, service.sessionId);
+    await service.inputQueue;
+    return registry.list(target)[0];
+  };
+  return {service,registry,viewer,frames,helper,watch,grant:()=>{screen=true;service.lastPermissionCheck=0;},close:async()=>{await service.close();await rm(dataDir,{recursive:true,force:true});}};
 }
 
 describe('CLI remote desktop', () => {
@@ -45,10 +50,9 @@ describe('CLI remote desktop', () => {
     try {
       expect((await f.service.status()).enabled).toBe(false); expect(f.helper.start).not.toHaveBeenCalled();
       await f.service.action('authorize','screen');
-      expect(f.registry.list(f.viewer)).toEqual([]);
-      f.grant(); await f.service.tick();
-      const session = f.registry.list(f.viewer)[0]; expect(session.availability).toBe('ready');
-      f.registry.watch(f.viewer,session.id); await f.service.tick();
+      expect(f.registry.list(f.viewer)[0]).toMatchObject({availability:'unavailable',viewerCount:0});
+      expect(f.helper.request.mock.calls.some(([command]:any[])=>command.op==='capture')).toBe(false);
+      f.grant(); const session = await f.watch(); expect(session.availability).toBe('ready');
       expect(f.frames.some(e=>e.type==='browser:frame')).toBe(true);
       f.registry.takeOver(f.viewer,session.id); await f.service.inputQueue;
       await f.registry.input(f.viewer,session.id,{kind:'pointer',action:'down',x:0.5,y:0.5,button:'left'}); await f.service.inputQueue;
@@ -73,8 +77,13 @@ describe('CLI remote desktop', () => {
     const f = await fixture();
     try {
       let finish!: (value:any)=>void; f.grant();
-      f.helper.request.mockImplementation(async (cmd:any)=>cmd.op==='status'?{ok:true,screen:true,accessibility:true}:new Promise(resolve=>{finish=resolve;}));
-      const start = f.service.action('enable');
+      f.helper.request.mockImplementation(async (cmd:any) => {
+        if (cmd.op === 'status') return {ok:true,screen:true,accessibility:true};
+        if (cmd.op === 'capture') return new Promise(resolve => { finish=resolve; });
+        return {ok:true};
+      });
+      await f.service.action('enable');
+      const start = f.watch();
       await vi.waitFor(()=>expect(finish).toBeTypeOf('function'));
       await f.service.action('disable');
       finish({data:Buffer.alloc(30).toString('base64'),width:100,height:100}); await start;
@@ -94,7 +103,7 @@ describe('CLI remote desktop', () => {
       });
       await f.service.action('enable');
       const sessionId = f.service.sessionId;
-      f.registry.watch(f.viewer, sessionId);
+      await f.watch();
       f.registry.takeOver(f.viewer, sessionId); await f.service.inputQueue;
       expect(f.registry.list(f.viewer)[0].state).toBe('user-controlled');
       // The werift/helper teardown (video off) hangs below; neither the return
@@ -156,6 +165,7 @@ it('switches the video source and maps input to the selected display without rep
   const pause=vi.spyOn(f.service.video,'pause');const resume=vi.spyOn(f.service.video,'resume');
   try {
     f.grant();await f.service.action('enable');
+    await f.watch();
     expect(f.registry.list(f.viewer)[0].displays?.[0].selected).toBe(true);
     f.registry.takeOver(f.viewer,f.service.sessionId);await f.service.inputQueue;
     f.registry.setDisplay(f.viewer,f.service.sessionId,'2');await f.service.inputQueue;
@@ -180,7 +190,7 @@ it('discards a capture and input queued for the old screen while switching',asyn
     return frame;
   });
   try{
-    f.grant();await f.service.action('enable');f.registry.takeOver(f.viewer,f.service.sessionId);await f.service.inputQueue;
+    f.grant();await f.service.action('enable');await f.watch();f.registry.takeOver(f.viewer,f.service.sessionId);await f.service.inputQueue;
     slow=true;const tick=f.service.tick();await vi.waitFor(()=>expect(finish).toBeTypeOf('function'));
     f.registry.setDisplay(f.viewer,f.service.sessionId,'2');
     const input=f.registry.input(f.viewer,f.service.sessionId,{kind:'pointer',action:'down',x:0,y:0});
@@ -202,7 +212,7 @@ it('changes quality on the selected display, acknowledges the applied profile, a
   });
   const peer={};f.service.video.peer=peer;f.service.video.connected=true;
   try{
-    f.grant();await f.service.action('enable');expect(f.service.quality).toBe('hd');
+    f.grant();await f.service.action('enable');await f.watch();expect(f.service.quality).toBe('hd');
     f.registry.takeOver(f.viewer,f.service.sessionId);await f.service.inputQueue;
     for(const next of ['smooth','original','hd']){
       f.registry.webrtcFromViewer(f.viewer,f.service.sessionId,{kind:'quality',quality:next});await f.service.inputQueue;
@@ -234,9 +244,11 @@ it('uses explicit Windows sharing and releases input when a viewer disconnects o
     expect(f.helper.start).not.toHaveBeenCalled();
     f.grant(); await f.service.action('enable');
     expect(await f.service.status()).toMatchObject({platform:'win32',enabled:true,online:true});
-    f.registry.watch(f.viewer,f.service.sessionId); f.registry.takeOver(f.viewer,f.service.sessionId); await f.service.inputQueue;
+    await f.watch(); f.registry.takeOver(f.viewer,f.service.sessionId); await f.service.inputQueue;
     f.registry.disconnect(f.viewer); await f.service.inputQueue;
     expect(f.helper.request).toHaveBeenCalledWith({op:'release'});
+    const secondViewer = { id:'phone-2', userId:'owner', producerSessionIds:new Set<string>(), watchedSessionId:null, send:vi.fn() };
+    f.registry.connect(secondViewer); await f.watch(secondViewer);
     f.service.lastPermissionCheck=0;
     f.helper.request.mockImplementation(async (cmd:any) => cmd.op==='status' ? {screen:false,accessibility:false,error:'Windows locked'} : {ok:true});
     await f.service.tick();
@@ -276,11 +288,68 @@ it('keeps a Windows session visible when sharing starts while locked and validat
 it('invalidates Windows input coordinates and releases held input when capture fails', async () => {
   const f=await fixture();f.service.platform='win32';
   try {
-    f.grant();await f.service.action('enable');expect(f.service.bounds).not.toBeNull();
+    f.grant();await f.service.action('enable');await f.watch();expect(f.service.bounds).not.toBeNull();
     f.helper.request.mockImplementation(async(cmd:any)=>{if(cmd.op==='capture')throw new Error('DXGI access lost');return {ok:true,screen:true,accessibility:true};});
     await f.service.tick();
     expect(f.service.bounds).toBeNull();
     expect(f.helper.request).toHaveBeenCalledWith({op:'release'});
-    expect(await f.service.status()).toMatchObject({online:false,error:'DXGI access lost'});
+    expect(await f.service.status()).toMatchObject({online:true,error:'DXGI access lost'});
   } finally {await f.close();}
+});
+
+it('stops capture three seconds after the last viewer leaves and cancels the stop on reconnect', async () => {
+  const f = await fixture({idleDelayMs:20});
+  try {
+    f.grant(); await f.service.action('enable'); await f.watch();
+    const captureCalls = () => f.helper.request.mock.calls.filter(([command]:any[]) => command.op === 'capture').length;
+    expect(captureCalls()).toBeGreaterThan(0);
+
+    f.registry.unwatch(f.viewer); await f.service.inputQueue;
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    await f.watch();
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    expect(f.helper.request.mock.calls.some(([command]:any[]) => command.op === 'stop-capture')).toBe(false);
+
+    f.registry.unwatch(f.viewer); await f.service.inputQueue;
+    await vi.waitFor(() => expect(f.helper.request.mock.calls.some(([command]:any[]) => command.op === 'stop-capture')).toBe(true));
+    expect(f.helper.stop).toHaveBeenCalled();
+    expect(f.registry.list(f.viewer)[0]).toMatchObject({availability:'starting',viewerCount:0});
+  } finally { await f.close(); }
+});
+
+it('keeps capture active until the final phone stops watching', async () => {
+  const f = await fixture({idleDelayMs:10});
+  const secondViewer = { id:'phone-2', userId:'owner', producerSessionIds:new Set<string>(), watchedSessionId:null, send:vi.fn() };
+  f.registry.connect(secondViewer);
+  try {
+    f.grant(); await f.service.action('enable'); await f.watch(); await f.watch(secondViewer);
+    f.helper.request.mockClear(); f.helper.stop.mockClear();
+    f.registry.unwatch(f.viewer); await f.service.inputQueue;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(f.helper.stop).not.toHaveBeenCalled();
+
+    f.registry.unwatch(secondViewer); await f.service.inputQueue;
+    await vi.waitFor(() => expect(f.helper.stop).toHaveBeenCalled());
+    expect(f.helper.request).toHaveBeenCalledWith({op:'stop-capture'});
+  } finally { await f.close(); }
+});
+
+it('waits for owned capture and helper shutdown when the service closes', async () => {
+  const f = await fixture();
+  f.grant(); await f.service.action('enable'); await f.watch();
+  f.helper.request.mockClear(); f.helper.stop.mockClear();
+  await f.close();
+  expect(f.helper.request).toHaveBeenCalledWith({op:'stop-capture'});
+  expect(f.helper.stop).toHaveBeenCalledOnce();
+});
+
+it('closes the owned helper before waiting for stalled media teardown', async () => {
+  const f = await fixture();
+  f.grant(); await f.service.action('enable'); await f.watch();
+  let releaseVideo!: () => void;
+  vi.spyOn(f.service.video, 'stop').mockImplementation(() => new Promise<void>((resolve) => { releaseVideo = resolve; }));
+  f.helper.stop.mockClear();
+  f.helper.stop.mockImplementation(async () => { releaseVideo(); });
+  await f.close();
+  expect(f.helper.stop).toHaveBeenCalledOnce();
 });

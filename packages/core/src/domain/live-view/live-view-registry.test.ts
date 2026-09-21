@@ -49,6 +49,24 @@ describe("LiveViewRegistry", () => {
     expect(bystander.messages).toEqual([]);
   });
 
+  it("clears a dormant producer frame without dropping its watchers", () => {
+    const registry = new LiveViewRegistry(() => 100);
+    const producer = peer("producer");
+    const viewer = peer("viewer");
+    publish(registry, producer, "starting");
+    registry.watch(viewer, "browser-1");
+    registry.updateFrame(producer, { sessionId: "browser-1", sequence: 1, data: new Uint8Array(32).fill(7) });
+
+    expect(registry.updateAvailability(producer, "browser-1", {
+      availability: "starting",
+      clearFrame: true,
+    })).toMatchObject({ availability: "starting", viewerCount: 1 });
+
+    const framesBeforeRewatch = viewer.messages.filter((message) => message.type === "browser:frame").length;
+    registry.watch(viewer, "browser-1");
+    expect(viewer.messages.filter((message) => message.type === "browser:frame")).toHaveLength(framesBeforeRewatch);
+  });
+
   it("allows one controller and rejects a competing takeover", () => {
     const registry = new LiveViewRegistry();
     const producer = peer("producer");
@@ -141,6 +159,19 @@ describe("LiveViewRegistry", () => {
     }
     expect(() => registry.webrtcFromViewer(controller, "browser-1", {kind:"quality",quality:"4k"})).toThrow("invalid webrtc signal");
     expect(observer.messages).toEqual([]);
+  });
+
+  it("accepts bounded WebRTC stats and credentialed TURN offers while rejecting invalid telemetry", () => {
+    const registry = new LiveViewRegistry();
+    const producer = peer("producer");
+    const viewer = peer("viewer");
+    publish(registry, producer);
+    registry.takeOver(viewer, "browser-1");
+    registry.producerState(producer, "browser-1", "user-controlled");
+    expect(registry.webrtcFromViewer(viewer, "browser-1", { kind: "stats", codec: "H264", width: 2560, height: 1440, fps: 30, rttMs: 42, lossRate: 0.01, receiveBitrate: 4_000_000, availableBitrate: 6_000_000, candidateType: "relay", protocol: "udp" })).toEqual({ accepted: true });
+    expect(() => registry.webrtcFromViewer(viewer, "browser-1", { kind: "stats", lossRate: 2 })).toThrow("invalid webrtc signal");
+    expect(registry.webrtcFromProducer(producer, "browser-1", { kind: "offer", sdp: { type: "offer", sdp: "v=0" }, iceServers: [{ urls: ["turn:relay.example:3478"], username: "u", credential: "p" }] })).toEqual({ delivered: true });
+    expect(() => registry.webrtcFromProducer(producer, "browser-1", { kind: "offer", sdp: {}, iceServers: [{ urls: "turn:relay.example:3478" }] })).toThrow("invalid webrtc signal");
   });
 
   it("waits for producer resynchronization before releasing control", () => {
