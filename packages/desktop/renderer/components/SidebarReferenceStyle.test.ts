@@ -96,9 +96,11 @@ describe("AgentRoam reference sidebar", () => {
     expect(sessionRow).toContain('aria-label="Codex 版本不兼容"');
   });
 
-  it("keeps the active project highlighted while viewing one of its sessions", () => {
-    expect(app).toContain("const isSelected = selectedProjectId === project.id;");
-    expect(app).not.toContain("selectedProjectId === project.id && !selectedSessionId");
+  it("only highlights the active session while viewing a project session", () => {
+    expect(app).toContain(
+      "const isSelected = selectedProjectId === project.id && selectedSessionId === null;",
+    );
+    expect(app).not.toContain("const isSelected = selectedProjectId === project.id;");
   });
 
   it("uses a flat search affordance and avoids sticky touch hover states", () => {
@@ -338,11 +340,12 @@ describe("AgentRoam reference sidebar", () => {
     expect(app).toContain('workspace?.source === "imported" ? undefined : projectId');
     expect(css).toContain(".sidebar-bottom-action");
     expect(css).toContain(".sidebar-new-session-primary:disabled");
-    const buttonCssStart = css.indexOf(".sidebar-new-session-primary {");
-    const buttonCssEnd = css.indexOf(".sidebar-delete-confirmation-layer", buttonCssStart);
-    const buttonCss = css.slice(buttonCssStart, buttonCssEnd);
-    expect(buttonCss.match(/background: color-mix\(in srgb, var\(--accent\) 88%, var\(--text-primary\)\);/g))
-      .toHaveLength(2);
+    for (const selector of [".sidebar-new-session-primary {", ".sidebar-new-session-primary:disabled {"]) {
+      const buttonCssStart = css.indexOf(selector);
+      expect(buttonCssStart).toBeGreaterThanOrEqual(0);
+      const buttonCss = css.slice(buttonCssStart, css.indexOf("}", buttonCssStart));
+      expect(buttonCss).toContain("background: color-mix(in srgb, var(--accent) 88%, var(--text-primary));");
+    }
   });
 
   it("shows stable loading feedback while a new session is being created", () => {

@@ -48,6 +48,13 @@ it('delivers large IDR frames and encoder failure separately from request replie
   expect(receive.mock.calls[1][0]).toEqual({error:'encoder unavailable'});
 });
 
+it('delivers validated audio frames independently from request replies', async () => {
+  const { helper } = fixture(`require('readline').createInterface({input:process.stdin}).on('line',line=>{const c=JSON.parse(line);console.log(JSON.stringify({id:c.id,ok:true}));if(c.op==='audio-start')console.log(JSON.stringify({event:'audio',sequence:4,sampleRate:48000,channels:2,data:'AAE='}));}).on('close',()=>process.exit(0));`);
+  const receive = vi.fn(); helper.onAudio(receive);
+  await helper.start(); await helper.request({op:'audio-start'});
+  await vi.waitFor(() => expect(receive).toHaveBeenCalledWith({event:'audio',sequence:4,sampleRate:48000,channels:2,data:'AAE='}));
+});
+
 it('bounds both outgoing commands and unterminated incoming messages', async () => {
   const { helper } = fixture(`require('readline').createInterface({input:process.stdin}).on('line',line=>{const c=JSON.parse(line);if(c.op==='status')console.log(JSON.stringify({id:c.id,ok:true}));else process.stdout.write('x'.repeat(8*1024*1024+1));});`);
   await helper.start();

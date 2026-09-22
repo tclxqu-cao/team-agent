@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { RemoteAuthorization } from "./lib/remote-control/remote-authorization.mjs";
-import { parseProducerRemoteVideoSignal, parseViewerRemoteVideoSignal } from "./lib/remote-control/remote-video-signal.mjs";
+import { parseProducerRemoteVideoSignal, parseViewerRemoteVideoSignal, shouldDropRemoteAudioEvent } from "./lib/remote-control/remote-video-signal.mjs";
 import { createDevicePairingGateway } from "./lib/device-pairing-gateway.mjs";
 import { createDesktopDiscovery } from "./lib/desktop-discovery.mjs";
 // ws-server.mjs — custom server for @agent/server.
@@ -1217,6 +1217,8 @@ wss.on("connection", (ws, _req, principal) => {
     send: (event) => {
       if (event.type === "browser:frame" && event.data instanceof Uint8Array) {
         conn.sendBrowserFrame(event.sessionId, event.sequence, event.data);
+      } else if (shouldDropRemoteAudioEvent(event, ws.bufferedAmount)) {
+        return;
       } else {
         conn.sendJson(event);
       }

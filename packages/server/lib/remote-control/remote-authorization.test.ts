@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { Readable } from 'node:stream';
 import { LiveViewRegistry } from '../../../core/src/domain/live-view/live-view-registry';
 // @ts-expect-error gateway ESM
-import { RemoteAuthorization, isLocalAuthorizationRequest } from './remote-authorization.mjs';
+import { RemoteAuthorization, isLocalAuthorizationRequest, remoteAudioCapabilities } from './remote-authorization.mjs';
 
 function request(address = '127.0.0.1', headers = {}) { return { socket: { remoteAddress: address }, headers: { host: '127.0.0.1:3009', ...headers } }; }
 describe('remote authorization local boundary', () => {
@@ -21,7 +21,8 @@ describe('remote authorization local boundary', () => {
 async function fixture(options: Record<string, unknown> = {}) {
   const dataDir = await mkdtemp(join(tmpdir(), 'remote-auth-'));
   let screen = false;
-  const helper: any = { available: vi.fn(async () => true), start: vi.fn(async () => {}), stop: vi.fn(async () => {}), request: vi.fn(async (cmd: any) => {
+  let audioListener: ((frame: any) => void) | null = null;
+  const helper: any = { available: vi.fn(async () => true), start: vi.fn(async () => {}), stop: vi.fn(async () => {}), onAudio: vi.fn((listener: (frame: any) => void) => { audioListener = listener; return () => { audioListener = null; }; }), request: vi.fn(async (cmd: any) => {
     if (cmd.op === 'status') return {ok:true,screen,accessibility:true};
     if (cmd.op === 'capture') return {ok:true,data:Buffer.alloc(30,1).toString('base64'),width:1000,height:800,originX:0,originY:0};
     return {ok:true};
@@ -37,10 +38,60 @@ async function fixture(options: Record<string, unknown> = {}) {
     await service.inputQueue;
     return registry.list(target)[0];
   };
-  return {service,registry,viewer,frames,helper,watch,grant:()=>{screen=true;service.lastPermissionCheck=0;},close:async()=>{await service.close();await rm(dataDir,{recursive:true,force:true});}};
+  return {service,registry,viewer,frames,helper,watch,emitAudio:(frame:any)=>audioListener?.(frame),grant:()=>{screen=true;service.lastPermissionCheck=0;},close:async()=>{await service.close();await rm(dataDir,{recursive:true,force:true});}};
 }
 
 describe('CLI remote desktop', () => {
+  it('publishes full-duplex capability and gates microphone frames behind explicit start', async () => {
+    const f = await fixture();
+    try {
+      f.grant(); await f.service.action('enable'); const session = await f.watch();
+      expect(session.audioCapabilities).toEqual({fullDuplex:true,systemAudio:true,microphonePlayback:true,selfPlaybackExclusion:true});
+      f.registry.takeOver(f.viewer, session.id); await f.service.inputQueue;
+
+      f.registry.webrtcFromViewer(f.viewer, session.id, {kind:'audio-microphone',sequence:1,sampleRate:48000,channels:1,data:'AAE='});
+      await f.service.inputQueue;
+      expect(f.helper.request).not.toHaveBeenCalledWith(expect.objectContaining({op:'audio-play'}));
+
+      f.registry.webrtcFromViewer(f.viewer, session.id, {kind:'audio-start'}); await f.service.inputQueue;
+      expect(f.helper.request).toHaveBeenCalledWith({op:'audio-start'});
+      expect(f.frames.at(-1)).toMatchObject({type:'browser:webrtc',data:{kind:'audio-state',state:'live'}});
+
+      f.registry.webrtcFromViewer(f.viewer, session.id, {kind:'audio-microphone',sequence:2,sampleRate:48000,channels:1,data:'AAE='});
+      await f.service.inputQueue;
+      expect(f.helper.request).toHaveBeenCalledWith({op:'audio-play',sequence:2,sampleRate:48000,channels:1,data:'AAE='});
+      f.emitAudio({event:'audio',sequence:3,sampleRate:48000,channels:2,data:'AAECAw=='});
+      expect(f.frames.at(-1)).toMatchObject({type:'browser:webrtc',data:{kind:'audio-system',sequence:3}});
+      const deliveredFrames = f.frames.length;
+      f.emitAudio({event:'audio',sequence:4,sampleRate:48000,channels:2,data:'AAE='});
+      expect(f.frames).toHaveLength(deliveredFrames);
+
+      f.registry.webrtcFromViewer(f.viewer, session.id, {kind:'audio-stop'}); await f.service.inputQueue;
+      expect(f.helper.request).toHaveBeenCalledWith({op:'audio-stop'});
+      expect(f.frames.at(-1)).toMatchObject({data:{kind:'audio-state',state:'idle'}});
+    } finally { await f.close(); }
+  });
+  it('bounds microphone work at the native playback queue', async () => {
+    const f = await fixture();
+    try {
+      f.grant(); await f.service.action('enable'); const session = await f.watch();
+      f.registry.takeOver(f.viewer, session.id); await f.service.inputQueue;
+      f.registry.webrtcFromViewer(f.viewer, session.id, {kind:'audio-start'}); await f.service.inputQueue;
+      let releaseFirst!: () => void;
+      f.helper.request.mockImplementation((command:any) => command.op === 'audio-play'
+        ? new Promise((resolve) => { if (!releaseFirst) releaseFirst = () => resolve({ok:true}); else resolve({ok:true}); })
+        : Promise.resolve({ok:true}));
+      f.helper.request.mockClear();
+      for (let sequence = 1; sequence <= 10; sequence += 1) {
+        f.registry.webrtcFromViewer(f.viewer, session.id, {kind:'audio-microphone',sequence,sampleRate:48000,channels:1,data:'AAE='});
+      }
+      await vi.waitFor(() => expect(releaseFirst).toBeTypeOf('function'));
+      expect(f.service.microphoneFramesQueued).toBe(4);
+      releaseFirst(); await f.service.inputQueue;
+      expect(f.helper.request.mock.calls.filter(([command]:any[]) => command.op === 'audio-play')).toHaveLength(4);
+      expect(f.service.microphoneFramesQueued).toBe(0);
+    } finally { await f.close(); }
+  });
   it('rechecks permissions without enabling stopped sharing', async () => {
     const f = await fixture();
     try { f.grant(); const status = await f.service.action('recheck'); expect(status.screen).toBe(true); expect(status.enabled).toBe(false); expect(f.registry.list(f.viewer)).toEqual([]); expect(f.helper.stop).toHaveBeenCalled(); } finally { await f.close(); }
@@ -237,6 +288,14 @@ it('supports only the shipped Windows x64 and macOS arm64 versions', async () =>
   expect(supportsRemoteDesktop('linux','x64','6.10.0')).toBe(false);
 });
 
+it('publishes voice only where self-excluding system loopback exists', () => {
+  expect(remoteAudioCapabilities('darwin','23.0.0')).toMatchObject({fullDuplex:true,selfPlaybackExclusion:true});
+  expect(remoteAudioCapabilities('win32','10.0.20348')).toMatchObject({fullDuplex:true,selfPlaybackExclusion:true});
+  expect(remoteAudioCapabilities('win32','10.0.22631')).toMatchObject({fullDuplex:true,selfPlaybackExclusion:true});
+  expect(remoteAudioCapabilities('win32','10.0.19045')).toBeUndefined();
+  expect(remoteAudioCapabilities('linux','6.10.0')).toBeUndefined();
+});
+
 it('uses explicit Windows sharing and releases input when a viewer disconnects or the desktop locks', async () => {
   const f = await fixture(); f.service.platform = 'win32';
   try {
@@ -249,12 +308,16 @@ it('uses explicit Windows sharing and releases input when a viewer disconnects o
     expect(f.helper.request).toHaveBeenCalledWith({op:'release'});
     const secondViewer = { id:'phone-2', userId:'owner', producerSessionIds:new Set<string>(), watchedSessionId:null, send:vi.fn() };
     f.registry.connect(secondViewer); await f.watch(secondViewer);
+    f.registry.takeOver(secondViewer,f.service.sessionId); await f.service.inputQueue;
+    f.registry.webrtcFromViewer(secondViewer,f.service.sessionId,{kind:'audio-start'}); await f.service.inputQueue;
+    f.helper.request.mockClear();
     f.service.lastPermissionCheck=0;
     f.helper.request.mockImplementation(async (cmd:any) => cmd.op==='status' ? {screen:false,accessibility:false,error:'Windows locked'} : {ok:true});
     await f.service.tick();
     expect(await f.service.status()).toMatchObject({screen:false,online:true,error:'Windows locked'});
     expect(f.registry.list(f.viewer)[0]).toMatchObject({availability:'unavailable',platform:'win32'});
     expect(f.service.bounds).toBeNull();
+    expect(f.helper.request).toHaveBeenCalledWith({op:'audio-stop'});
   } finally {await f.close();}
 });
 
@@ -300,11 +363,15 @@ it('invalidates Windows input coordinates and releases held input when capture f
 it('stops capture three seconds after the last viewer leaves and cancels the stop on reconnect', async () => {
   const f = await fixture({idleDelayMs:20});
   try {
-    f.grant(); await f.service.action('enable'); await f.watch();
+    f.grant(); await f.service.action('enable'); const session = await f.watch();
     const captureCalls = () => f.helper.request.mock.calls.filter(([command]:any[]) => command.op === 'capture').length;
     expect(captureCalls()).toBeGreaterThan(0);
+    f.registry.takeOver(f.viewer,session.id); await f.service.inputQueue;
+    f.registry.webrtcFromViewer(f.viewer,session.id,{kind:'audio-start'}); await f.service.inputQueue;
+    f.helper.request.mockClear();
 
     f.registry.unwatch(f.viewer); await f.service.inputQueue;
+    expect(f.helper.request).toHaveBeenCalledWith({op:'audio-stop'});
     await new Promise((resolve) => setTimeout(resolve, 5));
     await f.watch();
     await new Promise((resolve) => setTimeout(resolve, 25));

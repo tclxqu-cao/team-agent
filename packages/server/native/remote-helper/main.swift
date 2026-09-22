@@ -135,6 +135,8 @@ final class RemoteCaptureStream: NSObject, SCStreamOutput, SCStreamDelegate {
     var selectedDisplayID: CGDirectDisplayID?
     var epoch = 0
     var quality = RemoteVideoQuality.hd
+    var audioEnabled = false
+    var audioSequence = 0
     func displays() -> [[String: Any]] {
         let primary = CGMainDisplayID()
         let screens = NSScreen.screens.sorted { a, b in
@@ -161,6 +163,11 @@ final class RemoteCaptureStream: NSObject, SCStreamOutput, SCStreamDelegate {
         if quality == next { frame(id); return }
         quality = next
         remoteVideoEncoder.bitRate = next.bitRate
+        restart(id)
+    }
+    func setAudioEnabled(_ id: Int?, enabled: Bool) {
+        if audioEnabled == enabled { respond(id, ["ok": true]); return }
+        audioEnabled = enabled
         restart(id)
     }
     func restart(_ id: Int?) {
@@ -213,16 +220,30 @@ final class RemoteCaptureStream: NSObject, SCStreamOutput, SCStreamDelegate {
                 config.showsCursor = true
                 config.minimumFrameInterval = CMTime(value: 1, timescale: 30)
                 config.queueDepth = 3
+                config.capturesAudio = self.audioEnabled
+                config.excludesCurrentProcessAudio = true
+                config.sampleRate = 48_000
+                config.channelCount = 2
                 let stream = SCStream(filter: SCContentFilter(display: display, excludingWindows: []), configuration: config, delegate: self)
                 do { try stream.addStreamOutput(self, type: .screen, sampleHandlerQueue: .main) }
                 catch { self.fail(error.localizedDescription); return }
+                if self.audioEnabled {
+                    do { try stream.addStreamOutput(self, type: .audio, sampleHandlerQueue: .main) }
+                    catch { self.fail(error.localizedDescription); return }
+                }
                 self.stream = stream
                 stream.startCapture { error in DispatchQueue.main.async { guard self.stream === stream else { return }; self.starting = false; if let error { self.fail(error.localizedDescription) } } }
             }
         }
     }
     func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
-        guard self.stream === stream, type == .screen, sampleBuffer.isValid,
+        guard self.stream === stream else { return }
+        if type == .audio {
+            audioSequence += 1
+            if let event = systemAudioEvent(sampleBuffer, sequence: audioSequence) { respond(nil, event) }
+            return
+        }
+        guard type == .screen, sampleBuffer.isValid,
               let attachments = CMSampleBufferGetSampleAttachmentsArray(sampleBuffer, createIfNecessary: false) as? [[SCStreamFrameInfo: Any]],
               let frameInfo = attachments.first,
               let status = frameInfo[.status] as? Int else { return }
@@ -272,6 +293,7 @@ final class RemoteCaptureStream: NSObject, SCStreamOutput, SCStreamDelegate {
     }
 }
 let remoteCapture = RemoteCaptureStream()
+let remoteAudioPlayback = RemoteAudioPlayback()
 func capture(_ id: Int?) { remoteCapture.frame(id) }
 func remoteCommand(_ line: String) {
     guard let data = line.data(using: .utf8), let cmd = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return }
@@ -319,12 +341,23 @@ func remoteCommand(_ line: String) {
         }
         remoteVideoEncoder.setTuning(bitRate: bitRate, maxFps: maxFps)
         respond(id, ["ok": true, "bitRate": bitRate, "maxFps": maxFps])
+    case "audio-start": remoteCapture.setAudioEnabled(id, enabled: true)
+    case "audio-stop":
+        remoteAudioPlayback.stop()
+        remoteCapture.setAudioEnabled(id, enabled: false)
+    case "audio-play":
+        do {
+            try remoteAudioPlayback.play(base64: cmd["data"] as? String,
+                sampleRate: (cmd["sampleRate"] as? NSNumber)?.doubleValue,
+                channels: (cmd["channels"] as? NSNumber)?.uint32Value)
+            respond(id, ["ok": true])
+        } catch { respond(id, ["ok": false, "error": error.localizedDescription]) }
     case "displays": respond(id, ["ok": true, "displays": remoteCapture.displays()])
     case "set-quality": remoteCapture.setQuality(id, value: cmd["quality"] as? String)
     case "set-display": remoteCapture.select(id, displayID: cmd["displayId"] as? String)
     case "capture": capture(id)
     case "stop-capture": remoteCapture.stop(id)
-    case "quit": remoteCapture.stop(nil); exit(0)
+    case "quit": remoteAudioPlayback.stop(); remoteCapture.stop(nil); exit(0)
     default:
         guard AXIsProcessTrusted() else { respond(id, ["ok": false, "error": "请先授予辅助功能权限"]); return }
         wakeRemoteDisplay()

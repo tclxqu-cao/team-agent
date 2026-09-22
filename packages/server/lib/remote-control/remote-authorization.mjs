@@ -6,6 +6,30 @@ import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import os from 'node:os';
 import { RemoteHelper } from './helper-manager.mjs';
+import { RemoteAudioSession } from '@agent/core';
+import { parseProducerRemoteVideoSignal } from './remote-video-signal.mjs';
+
+const FULL_DUPLEX_AUDIO = Object.freeze({
+  fullDuplex: true,
+  systemAudio: true,
+  microphonePlayback: true,
+  selfPlaybackExclusion: true,
+});
+const NO_REMOTE_AUDIO = Object.freeze({
+  fullDuplex: false,
+  systemAudio: false,
+  microphonePlayback: false,
+  selfPlaybackExclusion: false,
+});
+
+export function remoteAudioCapabilities(platform = process.platform, release = os.release()) {
+  if (platform === 'darwin') return Number(release.split('.')[0]) >= 23 ? FULL_DUPLEX_AUDIO : undefined;
+  if (platform === 'win32') {
+    const [, , build] = release.split('.').map(Number);
+    return Number.isFinite(build) && build >= 20348 ? FULL_DUPLEX_AUDIO : undefined;
+  }
+  return undefined;
+}
 
 export function isLocalAuthorizationRequest(req) {
   if (!['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.socket.remoteAddress)) return false;
@@ -20,14 +44,21 @@ export function supportsRemoteDesktop(platform = process.platform, arch = proces
 }
 
 export class RemoteAuthorization {
-  constructor({ registry, userId, dataDir, platform = process.platform, helper = platform === 'win32' ? new WindowsRemoteHelper() : new RemoteHelper(), supported = supportsRemoteDesktop(platform), intervalMs = 150, idleDelayMs = 3000, system = platform === 'win32' ? new WindowsSystemBridge() : null }) {
-    Object.assign(this, { registry, dataDir, helper, supported, intervalMs, idleDelayMs, platform, system });
+  constructor({ registry, userId, dataDir, platform = process.platform, helper = platform === 'win32' ? new WindowsRemoteHelper() : new RemoteHelper(), supported = supportsRemoteDesktop(platform), audioCapabilities = remoteAudioCapabilities(platform), intervalMs = 150, idleDelayMs = 3000, system = platform === 'win32' ? new WindowsSystemBridge() : null }) {
+    Object.assign(this, { registry, dataDir, helper, supported, audioCapabilities, intervalMs, idleDelayMs, platform, system });
     this.enabled = false; this.screen = false; this.accessibility = false; this.online = false; this.error = null; this.busy = false; this.sequence = 0; this.generation = 0;
     this.locked = null; this.unavailablePublished = null; this.viewerCount = 0; this.captureActive = false; this.idleTimer = null;
+    this.microphoneFramesQueued = 0;
     this.sessionId = 'cli-desktop:primary';
     this.peer = { id: `cli-remote:${randomUUID()}`, userId, producerSessionIds: new Set(), watchedSessionId: null, send: (event) => {
+      const microphoneFrame = event.type === 'browser:webrtc' && event.data?.kind === 'audio-microphone';
+      if (microphoneFrame && this.microphoneFramesQueued >= 4) return;
+      if (microphoneFrame) this.microphoneFramesQueued += 1;
       const generation = this.switching ? -1 : this.generation;
-      this.inputQueue = this.inputQueue.then(() => this.onEvent(event, generation)).catch((error) => { this.error = error.message; });
+      this.inputQueue = this.inputQueue
+        .then(() => this.onEvent(event, generation))
+        .catch((error) => { this.error = error.message; })
+        .finally(() => { if (microphoneFrame) this.microphoneFramesQueued = Math.max(0, this.microphoneFramesQueued - 1); });
     } };
     this.inputQueue = Promise.resolve();
     // WebRTC signaling chain: a start waits for ICE gathering (a slow STUN
@@ -40,6 +71,21 @@ export class RemoteAuthorization {
       highProfile: platform === 'darwin',
       signal: data => { if (this.enabled && this.online) this.registry.webrtcFromProducer(this.peer, this.sessionId, data); },
     });
+    this.audioSequence = 0;
+    this.audioSession = new RemoteAudioSession(audioCapabilities ?? NO_REMOTE_AUDIO, { foreground: true, controller: false });
+    this.unsubscribeAudio = this.helper.onAudio?.((frame) => {
+      if (!this.enabled || !this.online || this.audioSession.getSnapshot().state !== 'live' || typeof frame?.data !== 'string') return;
+      try {
+        const signal = parseProducerRemoteVideoSignal({
+          kind: 'audio-system',
+          sequence: Number.isSafeInteger(frame.sequence) ? frame.sequence : ++this.audioSequence,
+          sampleRate: frame.sampleRate,
+          channels: frame.channels,
+          data: frame.data,
+        });
+        this.registry.webrtcFromProducer(this.peer, this.sessionId, signal);
+      } catch { /* Drop malformed native media without terminating the session. */ }
+    }) ?? (() => {});
     this.stateFile = join(dataDir, 'remote-authorization.json');
   }
   async initialize() {
@@ -96,7 +142,7 @@ export class RemoteAuthorization {
     this.generation += 1;
     this.lastPermissionCheck = 0;
     if (action === 'disable') {
-      this.enabled = false; this.captureActive = false; this.viewerCount = 0; this.clearIdleTimer(); await this.video.stop(); await this.save();
+      this.enabled = false; this.captureActive = false; this.viewerCount = 0; this.clearIdleTimer(); await this.video.stop(); await this.stopAudio(); await this.save();
       if (this.online) this.registry.close(this.peer, this.sessionId);
       this.online = false; await this.helper.stop();
     } else {
@@ -138,6 +184,7 @@ export class RemoteAuthorization {
       }
       if (!this.screen) {
         this.bounds = null; await this.releaseInput(); await this.video.stop();
+        if (this.audioSession.getSnapshot().state !== 'idle') await this.stopAudio();
         // A locked Windows session keeps the CLI alive: keep the session card
         // visible (as unavailable) so a paired viewer can still wake or unlock
         // the machine instead of losing the entry point entirely.
@@ -168,7 +215,7 @@ export class RemoteAuthorization {
     if (!this.online) {
       this.registry.publish(this.peer, {
         sessionId: this.sessionId, backend: 'desktop', title: '本机桌面', url: '', viewport: this.viewport,
-        transport: 'cdp-jpeg-ws', availability: 'unavailable', platform: this.platform,
+        transport: 'cdp-jpeg-ws', availability: 'unavailable', platform: this.platform, audioCapabilities: this.audioCapabilities,
         capabilityError, capabilityErrorCode,
       });
       this.online = true;
@@ -188,7 +235,7 @@ export class RemoteAuthorization {
     const unavailable = Boolean(this.lastPermissionCheck && !this.screen);
     const input = {
       sessionId: this.sessionId, backend: 'desktop', title: '本机桌面', url: '', viewport: this.viewport,
-      displays: this.displays, transport: 'cdp-jpeg-ws', platform: this.platform,
+      displays: this.displays, transport: 'cdp-jpeg-ws', platform: this.platform, audioCapabilities: this.audioCapabilities,
       availability: unavailable ? 'unavailable' : 'starting',
       ...(unavailable ? {
         capabilityError: this.error || (this.platform === 'win32' ? 'Windows 桌面暂不可用' : '请先授予屏幕录制权限'),
@@ -219,6 +266,7 @@ export class RemoteAuthorization {
       }
       return;
     }
+    if (this.audioSession.getSnapshot().state !== 'idle') await this.stopAudio();
     if (!this.captureActive || this.idleTimer) return;
     this.idleTimer = setTimeout(() => {
       this.idleTimer = null;
@@ -231,6 +279,7 @@ export class RemoteAuthorization {
     this.captureActive = false; this.generation += 1; this.bounds = null;
     await this.releaseInput();
     await this.video.stop();
+    await this.stopAudio();
     await this.helper.request({ op: 'stop-capture' }).catch(() => {});
     await this.helper.stop();
     await this.tickPromise?.catch(() => {});
@@ -244,7 +293,7 @@ export class RemoteAuthorization {
     const displays = frame.displays ?? this.displays ?? null;
     if (!this.online || JSON.stringify(displays) !== JSON.stringify(this.displays)) {
       this.displays = displays;
-      this.registry.publish(this.peer, { sessionId: this.sessionId, backend: 'desktop', title: '本机桌面', url: '', viewport: this.viewport, displays, transport: 'cdp-jpeg-ws', platform: this.platform });
+      this.registry.publish(this.peer, { sessionId: this.sessionId, backend: 'desktop', title: '本机桌面', url: '', viewport: this.viewport, displays, transport: 'cdp-jpeg-ws', platform: this.platform, audioCapabilities: this.audioCapabilities });
       this.online = true;
     }
     this.registry.updateFrame(this.peer, { sessionId: this.sessionId, sequence: ++this.sequence, data: Buffer.from(frame.data, 'base64'), mime: 'image/jpeg', viewport: this.viewport, title: '本机桌面', timestamp: Date.now() });
@@ -293,6 +342,31 @@ export class RemoteAuthorization {
         catch (error) { this.error = error.message; if (this.enabled && this.online) signalQuality(error.message); }
         return;
       }
+      if (event.data.kind === 'audio-start') {
+        const transition = this.audioSession.dispatch({ type: 'start' });
+        if (!transition.accepted) throw new Error(transition.reason === 'not-controller' ? '只有当前控制者可以开始语音' : '当前会话无法开始语音');
+        this.registry.webrtcFromProducer(this.peer, this.sessionId, { kind: 'audio-state', state: 'starting' });
+        try {
+          await this.helper.start();
+          await this.helper.request({ op: 'audio-start' });
+          this.audioSession.dispatch({ type: 'connected' });
+          if (this.enabled && this.online) this.registry.webrtcFromProducer(this.peer, this.sessionId, { kind: 'audio-state', state: 'live' });
+        } catch (error) {
+          await this.helper.request({ op: 'audio-stop' }).catch(() => {});
+          this.audioSession.dispatch({ type: 'failed', error: String(error?.message ?? error) });
+          if (this.enabled && this.online) this.registry.webrtcFromProducer(this.peer, this.sessionId, { kind: 'audio-state', state: 'failed', error: String(error?.message ?? error).slice(0, 500) });
+        }
+        return;
+      }
+      if (event.data.kind === 'audio-stop') { await this.stopAudio(); return; }
+      if (event.data.kind === 'audio-microphone') {
+        if (this.audioSession.getSnapshot().state !== 'live') throw new Error('语音尚未开始');
+        await this.helper.request({
+          op: 'audio-play', sequence: event.data.sequence, sampleRate: event.data.sampleRate,
+          channels: event.data.channels, data: event.data.data,
+        });
+        return;
+      }
       // Viewer cleanup fires stop on every unwatch/reload; tearing down in the
       // background keeps the queue free (a full werift close takes seconds).
       if (event.data.kind === 'stop') { void this.mediaChain.then(() => this.video.stop()).catch(() => {}); return; }
@@ -304,10 +378,12 @@ export class RemoteAuthorization {
       return;
     }
     if (event.type === 'browser:takeover-requested') {
+      this.audioSession.dispatch({ type: 'set-controller', controller: true });
       if (this.platform === 'win32') void this.helper.request({ op: 'keep-display', on: true }).catch(() => {});
       this.registry.producerState(this.peer, this.sessionId, 'user-controlled');
     }
     else if (event.type === 'browser:return-requested') {
+      this.audioSession.dispatch({ type: 'set-controller', controller: false });
       if (this.platform === 'win32') void this.helper.request({ op: 'keep-display', on: false }).catch(() => {});
       // Media teardown (helper round trip + werift close) takes seconds; the
       // serialized queue must not inherit that delay — a queued takeover
@@ -315,6 +391,7 @@ export class RemoteAuthorization {
       // behind pending signaling keeps the teardown ordered after any start.
       void this.releaseInput().catch(() => {});
       void this.mediaChain.then(() => this.video.stop()).catch(() => {});
+      void this.stopAudio();
       this.registry.producerState(this.peer, this.sessionId, 'agent-controlled');
     }
     else if (event.type === 'browser:input') {
@@ -331,6 +408,11 @@ export class RemoteAuthorization {
       await this.helper.request({ op: 'release' }).catch(() => {});
       this.pointerDown = false;
     }
+  }
+  async stopAudio() {
+    this.audioSession.dispatch({ type: 'stop' });
+    await this.helper.request({ op: 'audio-stop' }).catch(() => {});
+    if (this.enabled && this.online) this.registry.webrtcFromProducer(this.peer, this.sessionId, { kind: 'audio-state', state: 'idle' });
   }
   async dispatch(input) {
     if (input.kind === 'pointer') {
@@ -378,11 +460,12 @@ export class RemoteAuthorization {
     const cleanup = Promise.allSettled([
       this.releaseInput(),
       this.video.stop(),
+      this.stopAudio(),
       this.helper.request({ op: 'stop-capture' }),
     ]);
     // Closing the owned helper socket rejects any native requests that are
     // stuck in flight, so service shutdown cannot wait behind media teardown.
     await this.helper.stop();
-    await cleanup; await this.tickPromise?.catch(() => {}); this.registry.disconnect(this.peer);
+    await cleanup; await this.tickPromise?.catch(() => {}); this.unsubscribeAudio(); this.registry.disconnect(this.peer);
   }
 }

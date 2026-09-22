@@ -236,6 +236,29 @@ describe("LiveViewRegistry", () => {
     expect(registry.list(viewer)[0]).toMatchObject({ backend: "desktop", title: "桌面屏幕", platform: "win32" });
   });
 
+  it("validates audio capabilities and keeps audio signaling controller-only", () => {
+    const registry = new LiveViewRegistry();
+    const producer = peer("producer");
+    const controller = peer("controller");
+    const observer = peer("observer");
+    const audioCapabilities = { fullDuplex: true, systemAudio: true, microphonePlayback: true, selfPlaybackExclusion: true };
+    registry.publish(producer, { sessionId: "desktop", backend: "desktop", availability: "ready", audioCapabilities });
+    expect(registry.list(observer)[0].audioCapabilities).toEqual(audioCapabilities);
+    registry.takeOver(controller, "desktop");
+    registry.producerState(producer, "desktop", "user-controlled");
+    expect(registry.webrtcFromViewer(controller, "desktop", { kind: "audio-start" })).toEqual({ accepted: true });
+    expect(() => registry.webrtcFromViewer(observer, "desktop", { kind: "audio-start" })).toThrow("read-only");
+    expect(registry.webrtcFromProducer(producer, "desktop", { kind: "audio-state", state: "live" })).toEqual({ delivered: true });
+    expect(controller.messages.at(-1)).toMatchObject({ data: { kind: "audio-state", state: "live" } });
+  });
+
+  it("omits malformed audio capabilities for backward compatibility", () => {
+    const registry = new LiveViewRegistry();
+    const producer = peer("producer");
+    registry.publish(producer, { sessionId: "desktop", backend: "desktop", audioCapabilities: { fullDuplex: true } });
+    expect(registry.list(peer("viewer"))[0].audioCapabilities).toBeUndefined();
+  });
+
   it("rejects unknown sources", () => {
     const registry = new LiveViewRegistry();
     const producer = peer("producer");

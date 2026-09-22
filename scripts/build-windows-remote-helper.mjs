@@ -25,7 +25,7 @@ if (!bytes || createHash('sha256').update(bytes).digest('hex') !== expected) {
   await writeFile(header, bytes);
 }
 const targets = [
-  { files: ['main.cpp', 'capture.cpp', 'video.cpp', 'input.cpp', 'power.cpp'], output: desktopOutput, libraries: ['d3d11', 'dxgi', 'windowscodecs', 'mfplat', 'mf', 'mfuuid', 'wmcodecdspuuid', 'ole32', 'oleaut32', 'uuid', 'user32', 'gdi32', 'wtsapi32', 'strmiids'] },
+  { files: ['main.cpp', 'capture.cpp', 'video.cpp', 'input.cpp', 'power.cpp', 'audio.cpp'], output: desktopOutput, libraries: ['d3d11', 'dxgi', 'windowscodecs', 'mfplat', 'mf', 'mfuuid', 'wmcodecdspuuid', 'ole32', 'oleaut32', 'uuid', 'user32', 'gdi32', 'wtsapi32', 'strmiids', 'winmm', 'mmdevapi', 'propsys'] },
   { files: ['unlock-service.cpp'], output: unlockOutput, libraries: ['user32', 'advapi32', 'wtsapi32'] },
 ];
 const compiler = process.env.AGENT_WINDOWS_CXX || (process.platform === 'win32' ? 'cl.exe' : 'x86_64-w64-mingw32-g++');

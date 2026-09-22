@@ -13,10 +13,11 @@ function defaultExecutable() {
 export class WindowsRemoteHelper {
   constructor({ executable = defaultExecutable(), launch = spawn } = {}) {
     this.executable = executable; this.launch = launch; this.sequence = 0;
-    this.pending = new Map(); this.listeners = new Set(); this.generation = 0;
+    this.pending = new Map(); this.listeners = new Set(); this.audioListeners = new Set(); this.generation = 0;
   }
   async available() { try { await access(this.executable); return true; } catch { return false; } }
   onVideo(listener) { this.listeners.add(listener); return () => this.listeners.delete(listener); }
+  onAudio(listener) { this.audioListeners.add(listener); return () => this.audioListeners.delete(listener); }
   start() {
     if (this.starting) return this.starting;
     if (this.child && this.child.exitCode === null && !this.child.killed) return Promise.resolve();
@@ -53,6 +54,9 @@ export class WindowsRemoteHelper {
           if (result.event === 'video') {
             if (!Number.isFinite(result.timestamp) || !Array.isArray(result.nals) || !result.nals.every(nal => typeof nal === 'string')) throw new Error('Invalid video event');
             for (const listener of this.listeners) listener(result);
+          } else if (result.event === 'audio') {
+            if (!Number.isSafeInteger(result.sequence) || !Number.isSafeInteger(result.sampleRate) || !Number.isSafeInteger(result.channels) || typeof result.data !== 'string') throw new Error('Invalid audio event');
+            for (const listener of this.audioListeners) listener(result);
           } else if (result.event === 'video-error') {
             for (const listener of this.listeners) listener({ error: String(result.error || 'Windows 视频编码失败') });
           } else {

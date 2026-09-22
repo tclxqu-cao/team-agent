@@ -45,6 +45,8 @@ export interface LiveViewSessionView {
   displays?: LiveViewDisplayOption[] | null;
   /** Producer OS (process.platform), lets clients tailor system actions. */
   platform?: string;
+  /** Full-duplex voice features implemented by this producer. */
+  audioCapabilities?: import("./remote-audio.js").RemoteAudioCapabilities;
 }
 
 export type LiveViewInput =

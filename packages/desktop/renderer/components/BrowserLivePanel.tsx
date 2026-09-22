@@ -2,7 +2,7 @@ import LiveViewSelect from "./LiveViewSelect";
 import { BrowserLiveHeaderContext } from "./browser-live-header-context";
 import { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal, flushSync } from "react-dom";
-import { ExternalLink, Hand, Keyboard, LoaderCircle, Lock, LockOpen, MonitorUp, Maximize, Minimize, MousePointer2, Power, RotateCcw, X, ZoomIn, ZoomOut } from "lucide-react";
+import { ExternalLink, Hand, Keyboard, LoaderCircle, Lock, LockOpen, Mic, MicOff, MonitorUp, Maximize, Minimize, MousePointer2, PhoneOff, Power, RotateCcw, Volume2, VolumeX, X, ZoomIn, ZoomOut } from "lucide-react";
 import type { BrowserLiveSession } from "../global";
 
 import { BrowserLiveTouch } from "./browser-live-touch";
@@ -65,6 +65,72 @@ function modifierNames(event: React.KeyboardEvent): string[] {
     event.metaKey ? "Meta" : "",
     event.shiftKey ? "Shift" : "",
   ].filter(Boolean);
+}
+
+export function encodePcm16Base64(samples: Float32Array): string {
+  const bytes = new Uint8Array(samples.length * 2);
+  const view = new DataView(bytes.buffer);
+  for (let index = 0; index < samples.length; index += 1) {
+    const value = Math.max(-1, Math.min(1, samples[index]));
+    view.setInt16(index * 2, value < 0 ? value * 0x8000 : value * 0x7fff, true);
+  }
+  let binary = "";
+  for (let offset = 0; offset < bytes.length; offset += 0x2000) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x2000));
+  }
+  return btoa(binary);
+}
+
+export function decodePcm16Base64(data: string, channels: number): Float32Array[] {
+  const binary = atob(data);
+  const frameCount = Math.floor(binary.length / 2 / channels);
+  const output = Array.from({ length: channels }, () => new Float32Array(frameCount));
+  for (let frame = 0; frame < frameCount; frame += 1) {
+    for (let channel = 0; channel < channels; channel += 1) {
+      const offset = (frame * channels + channel) * 2;
+      const value = binary.charCodeAt(offset) | (binary.charCodeAt(offset + 1) << 8);
+      output[channel][frame] = (value & 0x8000 ? value - 0x10000 : value) / 0x8000;
+    }
+  }
+  return output;
+}
+
+/** Own pending media locally until the caller can adopt an uncancelled start. */
+export async function prepareVoiceAudio(signal: AbortSignal) {
+  const cleanups: Array<() => void> = [];
+  const dispose = () => { for (const cleanup of cleanups.splice(0)) cleanup(); };
+  let prepared = false;
+  signal.addEventListener("abort", dispose);
+  try {
+    if (signal.aborted) return null;
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+      video: false,
+    });
+    cleanups.push(() => { for (const track of stream.getTracks()) track.stop(); });
+    if (signal.aborted) return null;
+    const AudioContextClass = window.AudioContext;
+    const microphoneContext = new AudioContextClass({ latencyHint: "interactive" });
+    cleanups.push(() => { void microphoneContext.close().catch(() => undefined); });
+    const remoteContext = new AudioContextClass({ latencyHint: "interactive" });
+    cleanups.push(() => { void remoteContext.close().catch(() => undefined); });
+    await Promise.all([microphoneContext.resume(), remoteContext.resume()]);
+    if (signal.aborted) return null;
+    const remoteGain = remoteContext.createGain();
+    remoteGain.connect(remoteContext.destination);
+    const source = microphoneContext.createMediaStreamSource(stream);
+    const processor = microphoneContext.createScriptProcessor(2048, 1, 1);
+    const sink = microphoneContext.createGain();
+    sink.gain.value = 0;
+    source.connect(processor);
+    processor.connect(sink);
+    sink.connect(microphoneContext.destination);
+    prepared = true;
+    return { stream, microphoneContext, remoteContext, remoteGain, source, processor, sink, dispose };
+  } finally {
+    signal.removeEventListener("abort", dispose);
+    if (!prepared) dispose();
+  }
 }
 
 /** A tapped text field on the remote screen, in logical screen coordinates. */
@@ -235,6 +301,22 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
   const remoteVideoStatsCursorRef = useRef<RemoteVideoStatsCursor | null>(null);
   const webrtcPeerRef = useRef<RTCPeerConnection | null>(null);
   const webrtcVideoRef = useRef<HTMLVideoElement>(null);
+  const [audioState, setAudioState] = useState<"idle" | "starting" | "live" | "failed">("idle");
+  const [microphoneMuted, setMicrophoneMuted] = useState(false);
+  const [speakerMuted, setSpeakerMuted] = useState(false);
+  const microphoneMutedRef = useRef(false);
+  const speakerMutedRef = useRef(false);
+  const microphoneStreamRef = useRef<MediaStream | null>(null);
+  const microphoneContextRef = useRef<AudioContext | null>(null);
+  const microphoneSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
+  const microphoneProcessorRef = useRef<ScriptProcessorNode | null>(null);
+  const microphoneSinkRef = useRef<GainNode | null>(null);
+  const remoteAudioContextRef = useRef<AudioContext | null>(null);
+  const remoteAudioGainRef = useRef<GainNode | null>(null);
+  const remoteAudioNextTimeRef = useRef(0);
+  const microphoneSequenceRef = useRef(0);
+  const microphoneInFlightRef = useRef(0);
+  const voiceStartRef = useRef<AbortController | null>(null);
   useLayoutEffect(() => {
     imeOnRef.current = imeOn;
     if (imeOn) setFieldHint(false);
@@ -250,6 +332,11 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
   const isWindowsDesktop = isDesktop && selected?.platform === "win32";
   const desktopLocked = selected?.availability === "unavailable" && selected?.capabilityErrorCode === "desktop-locked";
   const hasControl = selected?.isController && selected.state === "user-controlled";
+  const audioCapabilities = selected?.audioCapabilities;
+  const supportsFullDuplexAudio = Boolean(audioCapabilities?.fullDuplex
+    && audioCapabilities.systemAudio
+    && audioCapabilities.microphonePlayback
+    && audioCapabilities.selfPlaybackExclusion);
   const canAdjustCapture = Boolean(selected?.online && selected.availability === "ready" && !selected.controlledByAnotherViewer);
   // Rough network latency readout while a stream is open.
   useEffect(() => {
@@ -402,6 +489,122 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
       }
     }
   }, [scrollRemoteFieldIntoView]);
+
+  const stopVoice = useCallback((notify = true) => {
+    voiceStartRef.current?.abort();
+    voiceStartRef.current = null;
+    const stream = microphoneStreamRef.current;
+    microphoneStreamRef.current = null;
+    for (const track of stream?.getTracks() ?? []) track.stop();
+    microphoneSourceRef.current?.disconnect();
+    microphoneProcessorRef.current?.disconnect();
+    microphoneSinkRef.current?.disconnect();
+    microphoneSourceRef.current = null;
+    microphoneProcessorRef.current = null;
+    microphoneSinkRef.current = null;
+    const microphoneContext = microphoneContextRef.current;
+    microphoneContextRef.current = null;
+    if (microphoneContext) void microphoneContext.close().catch(() => undefined);
+    const remoteContext = remoteAudioContextRef.current;
+    remoteAudioContextRef.current = null;
+    remoteAudioGainRef.current?.disconnect();
+    remoteAudioGainRef.current = null;
+    remoteAudioNextTimeRef.current = 0;
+    microphoneInFlightRef.current = 0;
+    if (remoteContext) void remoteContext.close().catch(() => undefined);
+    microphoneMutedRef.current = false;
+    speakerMutedRef.current = false;
+    setMicrophoneMuted(false);
+    setSpeakerMuted(false);
+    setAudioState("idle");
+    if (notify && api && selectedId) {
+      void api.request("browser:webrtc", { sessionId: selectedId, data: { kind: "audio-stop" } }).catch(() => undefined);
+    }
+  }, [api, selectedId]);
+
+  const playRemotePcm = useCallback((data: Record<string, unknown>) => {
+    if (speakerMutedRef.current || typeof data.data !== "string") return;
+    const context = remoteAudioContextRef.current;
+    const sampleRate = Number(data.sampleRate);
+    const channels = Number(data.channels);
+    if (!context || !Number.isSafeInteger(sampleRate) || !Number.isSafeInteger(channels) || channels < 1 || channels > 2) return;
+    const decoded = decodePcm16Base64(data.data, channels);
+    if (!decoded[0]?.length) return;
+    const buffer = context.createBuffer(channels, decoded[0].length, sampleRate);
+    for (let channel = 0; channel < channels; channel += 1) buffer.copyToChannel(decoded[channel], channel);
+    const source = context.createBufferSource();
+    source.buffer = buffer;
+    const gain = remoteAudioGainRef.current;
+    if (!gain) return;
+    source.connect(gain);
+    const now = context.currentTime;
+    const startAt = Math.max(now + 0.02, remoteAudioNextTimeRef.current);
+    // Drop accumulated latency after a suspension or network stall.
+    remoteAudioNextTimeRef.current = startAt - now > 0.35 ? now + 0.02 : startAt;
+    source.start(remoteAudioNextTimeRef.current);
+    remoteAudioNextTimeRef.current += buffer.duration;
+  }, []);
+
+  const startVoice = useCallback(async () => {
+    if (!api || !selectedId || !hasControl || !supportsFullDuplexAudio || document.visibilityState !== "visible") return;
+    const start = new AbortController();
+    voiceStartRef.current?.abort();
+    voiceStartRef.current = start;
+    setError(null);
+    setAudioState("starting");
+    try {
+      const resources = await prepareVoiceAudio(start.signal);
+      if (!resources || start.signal.aborted || document.visibilityState !== "visible") {
+        resources?.dispose();
+        return;
+      }
+      const { stream, microphoneContext, remoteContext, remoteGain, source, processor, sink } = resources;
+      microphoneStreamRef.current = stream;
+      microphoneContextRef.current = microphoneContext;
+      microphoneSourceRef.current = source;
+      microphoneProcessorRef.current = processor;
+      microphoneSinkRef.current = sink;
+      remoteAudioContextRef.current = remoteContext;
+      remoteAudioGainRef.current = remoteGain;
+      microphoneSequenceRef.current = 0;
+      processor.onaudioprocess = (event) => {
+        if (start.signal.aborted || microphoneMutedRef.current || !microphoneStreamRef.current || !api || !selectedId || microphoneInFlightRef.current >= 4) return;
+        const samples = new Float32Array(event.inputBuffer.getChannelData(0));
+        microphoneInFlightRef.current += 1;
+        void api.request("browser:webrtc", {
+          sessionId: selectedId,
+          data: {
+            kind: "audio-microphone",
+            sequence: ++microphoneSequenceRef.current,
+            sampleRate: microphoneContext.sampleRate,
+            channels: 1,
+            data: encodePcm16Base64(samples),
+          },
+        }).catch(() => undefined).finally(() => { microphoneInFlightRef.current = Math.max(0, microphoneInFlightRef.current - 1); });
+      };
+      await api.request("browser:webrtc", { sessionId: selectedId, data: { kind: "audio-start" } });
+    } catch (requestError) {
+      if (start.signal.aborted) return;
+      stopVoice(false);
+      setAudioState("failed");
+      setError(requestError instanceof Error ? requestError.message : "无法开始语音");
+    }
+  }, [api, hasControl, selectedId, stopVoice, supportsFullDuplexAudio]);
+
+  useEffect(() => {
+    if (open && hasControl && supportsFullDuplexAudio) return;
+    if (audioState !== "idle") stopVoice(true);
+  }, [audioState, hasControl, open, stopVoice, supportsFullDuplexAudio]);
+
+  useEffect(() => {
+    const stopWhenHidden = () => {
+      if (document.visibilityState !== "visible" && audioState !== "idle") stopVoice(true);
+    };
+    document.addEventListener("visibilitychange", stopWhenHidden);
+    return () => document.removeEventListener("visibilitychange", stopWhenHidden);
+  }, [audioState, stopVoice]);
+
+  useEffect(() => () => stopVoice(true), [stopVoice]);
   const fallbackWebrtcIceServers: RTCIceServer[] = useMemo(() => [{ urls: "stun:stun.l.google.com:19302" }], []);
 
   const answerWebrtcOffer = useCallback(async (sessionId: string, sdp: RTCSessionDescriptionInit | undefined, iceServers?: RTCIceServer[]) => {
@@ -445,6 +648,20 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
       if (typeof data.error === "string") setError(data.error);
       return;
     }
+    if (data.kind === "audio-system") {
+      playRemotePcm(data);
+      return;
+    }
+    if (data.kind === "audio-state") {
+      const state = String(data.state);
+      if (["idle", "starting", "live", "failed"].includes(state)) setAudioState(state as "idle" | "starting" | "live" | "failed");
+      if (typeof data.error === "string") {
+        setError(data.error);
+        stopVoice(false);
+        setAudioState("failed");
+      }
+      return;
+    }
     if (data.kind === "offer") {
       if (typeof data.warning === "string") setError(data.warning);
       void answerWebrtcOffer(
@@ -465,7 +682,7 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
       if (state === "connected") setWebrtcState("live");
       else if (state === "failed" || state === "disconnected" || state === "closed") setWebrtcState("failed");
     }
-  }, [answerWebrtcOffer]);
+  }, [answerWebrtcOffer, playRemotePcm, stopVoice]);
 
   const [frameSrc, setFrameSrc] = useState<string | null>(null);
   useEffect(() => {
@@ -901,6 +1118,54 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
                 <LiveViewSelect label="视频画质" title={canAdjustCapture ? "视频画质" : "其他设备控制中或画面暂不可用"} value={videoQuality} busy={pendingQuality !== null} disabled={!canAdjustCapture || !!pendingDisplayId} compact onChange={selectQuality}>
                   <option value="smooth">流畅</option><option value="hd">高清</option><option value="original">原画</option>
                 </LiveViewSelect>
+              )}
+              {isDesktop && hasControl && supportsFullDuplexAudio && audioState !== "live" && (
+                <button
+                  type="button"
+                  aria-label="开始语音"
+                  title="开始双向语音"
+                  disabled={audioState === "starting"}
+                  onClick={() => void startVoice()}
+                >
+                  {audioState === "starting" ? <LoaderCircle size={15} className="spin" aria-hidden="true" /> : <Mic size={15} aria-hidden="true" />}
+                  {audioState === "starting" ? "正在连接" : "开始语音"}
+                </button>
+              )}
+              {isDesktop && hasControl && supportsFullDuplexAudio && audioState === "live" && (
+                <>
+                  <button
+                    type="button"
+                    aria-label={microphoneMuted ? "取消麦克风静音" : "麦克风静音"}
+                    aria-pressed={microphoneMuted}
+                    title={microphoneMuted ? "打开麦克风" : "关闭麦克风"}
+                    onClick={() => {
+                      const muted = !microphoneMutedRef.current;
+                      microphoneMutedRef.current = muted;
+                      for (const track of microphoneStreamRef.current?.getAudioTracks() ?? []) track.enabled = !muted;
+                      setMicrophoneMuted(muted);
+                    }}
+                  >
+                    {microphoneMuted ? <MicOff size={15} aria-hidden="true" /> : <Mic size={15} aria-hidden="true" />}
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={speakerMuted ? "取消扬声器静音" : "扬声器静音"}
+                    aria-pressed={speakerMuted}
+                    title={speakerMuted ? "打开电脑声音" : "关闭电脑声音"}
+                    onClick={() => {
+                      const muted = !speakerMutedRef.current;
+                      speakerMutedRef.current = muted;
+                      if (remoteAudioGainRef.current) remoteAudioGainRef.current.gain.value = muted ? 0 : 1;
+                      setSpeakerMuted(muted);
+                      if (muted) remoteAudioNextTimeRef.current = 0;
+                    }}
+                  >
+                    {speakerMuted ? <VolumeX size={15} aria-hidden="true" /> : <Volume2 size={15} aria-hidden="true" />}
+                  </button>
+                  <button type="button" aria-label="结束语音" title="结束双向语音" onClick={() => stopVoice(true)}>
+                    <PhoneOff size={15} aria-hidden="true" />
+                  </button>
+                </>
               )}
               <button type="button" aria-label="缩小桌面画面" title="缩小" disabled={!frame || zoom <= 0.5} onClick={() => setZoom((value) => Math.max(0.5, value - 0.25))}><ZoomOut size={16} /></button>
               <output aria-label="桌面缩放比例">{Math.round(zoom * 100)}%</output>

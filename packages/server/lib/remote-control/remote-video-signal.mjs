@@ -1,8 +1,9 @@
 const MAX_SIGNAL_CHARS = 64_000;
+export const MAX_REMOTE_AUDIO_BUFFERED_BYTES = 256 * 1024;
 const QUALITY = new Set(['smooth', 'hd', 'original']);
 const PROFILES = new Set(['high', 'baseline']);
-const VIEWER_KINDS = new Set(['start', 'stop', 'answer', 'ice', 'quality', 'stats']);
-const PRODUCER_KINDS = new Set(['offer', 'ice', 'state', 'quality-state']);
+const VIEWER_KINDS = new Set(['start', 'stop', 'answer', 'ice', 'quality', 'stats', 'audio-start', 'audio-stop', 'audio-microphone']);
+const PRODUCER_KINDS = new Set(['offer', 'ice', 'state', 'quality-state', 'audio-state', 'audio-system']);
 
 function invalid(message = 'invalid remote video signal') {
   throw Object.assign(new Error(message), { code: 'EINVAL' });
@@ -86,6 +87,24 @@ function validStats(data) {
     && boundedNumber(data.availableBitrate, 0, 1_000_000_000);
 }
 
+function validPcmFrame(data) {
+  if (!Number.isSafeInteger(data.channels) || data.channels < 1 || data.channels > 2
+      || typeof data.data !== 'string' || data.data.length < 4 || data.data.length % 4 !== 0
+      || data.data.length > 48_000 || !/^[A-Za-z0-9+/]*={0,2}$/.test(data.data)) return false;
+  const padding = data.data.endsWith('==') ? 2 : data.data.endsWith('=') ? 1 : 0;
+  const decodedBytes = data.data.length / 4 * 3 - padding;
+  return decodedBytes > 0 && decodedBytes % (data.channels * 2) === 0
+    && Number.isSafeInteger(data.sequence) && data.sequence >= 0
+    && Number.isSafeInteger(data.sampleRate) && data.sampleRate >= 8_000 && data.sampleRate <= 48_000
+    && decodedBytes <= 36_000;
+}
+
+export function shouldDropRemoteAudioEvent(event, bufferedAmount) {
+  return event?.type === 'browser:webrtc'
+    && event.data?.kind === 'audio-system'
+    && Number(bufferedAmount) > MAX_REMOTE_AUDIO_BUFFERED_BYTES;
+}
+
 function boundedSignal(value, allowedKinds) {
   const data = record(value);
   if (!data || !allowedKinds.has(String(data.kind))) invalid();
@@ -113,6 +132,9 @@ export function parseViewerRemoteVideoSignal(value) {
     case 'stats':
       if (!validStats(data)) invalid();
       break;
+    case 'audio-microphone':
+      if (!validPcmFrame(data)) invalid();
+      break;
   }
   return data;
 }
@@ -135,6 +157,12 @@ export function parseProducerRemoteVideoSignal(value) {
       if (!QUALITY.has(String(data.quality))) invalid();
       if (data.selectedProfile !== undefined && !PROFILES.has(String(data.selectedProfile))) invalid();
       if (!boundedString(data.error, 500) || !boundedString(data.fallbackReason, 500)) invalid();
+      break;
+    case 'audio-state':
+      if (!['idle', 'starting', 'live', 'failed'].includes(String(data.state)) || !boundedString(data.error, 500)) invalid();
+      break;
+    case 'audio-system':
+      if (!validPcmFrame(data)) invalid();
       break;
   }
   return data;

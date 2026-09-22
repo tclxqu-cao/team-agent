@@ -1576,7 +1576,7 @@ export default function App() {
               </section>
             )}
             {orderedSidebarProjects.map((project) => {
-              const isSelected = selectedProjectId === project.id;
+              const isSelected = selectedProjectId === project.id && selectedSessionId === null;
               const isExpanded = expandedProjects.has(project.id);
               const hasLoadedProject = loadedProjectIds.has(project.id);
               const isProjectLoading = loadingProjectIds.has(project.id);

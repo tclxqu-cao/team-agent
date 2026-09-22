@@ -1,6 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
 import type { BrowserLiveSession } from "../global";
-import { isStaleControlReply, remoteFieldContains, selectBrowserLiveSessionId, touchScrollDelta } from "./BrowserLivePanel";
+import { decodePcm16Base64, encodePcm16Base64, isStaleControlReply, prepareVoiceAudio, remoteFieldContains, selectBrowserLiveSessionId, touchScrollDelta } from "./BrowserLivePanel";
 
 function session(id: string, agentSessionId: string): BrowserLiveSession {
   return {
@@ -108,5 +109,110 @@ describe("two-finger remote scroll", () => {
   it("drops sub-pixel jitter below the threshold", () => {
     expect(touchScrollDelta({ x: 100, y: 100 }, { x: 101, y: 101 })).toBeNull();
     expect(touchScrollDelta({ x: 100, y: 100 }, { x: 99.6, y: 97.4 })).toEqual({ deltaX: 0, deltaY: 3 });
+  });
+});
+
+describe("remote full-duplex audio", () => {
+  it("round-trips bounded signed 16-bit PCM", () => {
+    const source = new Float32Array([-1, -0.5, 0, 0.5, 0.999]);
+    const decoded = decodePcm16Base64(encodePcm16Base64(source), 1)[0];
+    expect(decoded).toHaveLength(source.length);
+    source.forEach((value, index) => expect(decoded[index]).toBeCloseTo(value, 3));
+  });
+
+  it("requires an explicit gesture and stops on backgrounding", () => {
+    const source = readFileSync(new URL("./BrowserLivePanel.tsx", import.meta.url), "utf8");
+    expect(source).toContain('aria-label="开始语音"');
+    expect(source).toContain('echoCancellation: true');
+    expect(source).toContain('noiseSuppression: true');
+    expect(source).toContain('autoGainControl: true');
+    expect(source).toContain('document.addEventListener("visibilitychange"');
+    expect(source).toContain('kind: "audio-stop"');
+    expect(source).toContain('audioCapabilities?.fullDuplex');
+  });
+});
+
+describe("remote voice resource lifecycle", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  function deferred<T>() {
+    let resolve!: (value: T) => void;
+    const promise = new Promise<T>((accept) => { resolve = accept; });
+    return { promise, resolve };
+  }
+
+  function mediaFixture(resume: () => Promise<void> = () => Promise.resolve()) {
+    const stop = vi.fn();
+    const stream = { getTracks: () => [{ stop }] } as unknown as MediaStream;
+    const contexts: FakeAudioContext[] = [];
+    const audioNode = () => ({ connect: vi.fn(), gain: { value: 1 } });
+    class FakeAudioContext {
+      destination = {};
+      close = vi.fn(async () => {});
+      resume = vi.fn(resume);
+      createGain = vi.fn(audioNode);
+      createMediaStreamSource = vi.fn(audioNode);
+      createScriptProcessor = vi.fn(audioNode);
+      constructor() { contexts.push(this); }
+    }
+    vi.stubGlobal("navigator", { mediaDevices: { getUserMedia: vi.fn(async () => stream) } });
+    vi.stubGlobal("window", { AudioContext: FakeAudioContext });
+    return { stop, stream, contexts, FakeAudioContext };
+  }
+
+  it("releases a late microphone grant after the start was cancelled", async () => {
+    const media = mediaFixture();
+    const permission = deferred<MediaStream>();
+    vi.mocked(navigator.mediaDevices.getUserMedia).mockReturnValue(permission.promise);
+    const start = new AbortController();
+    const pending = prepareVoiceAudio(start.signal);
+    start.abort();
+    permission.resolve(media.stream);
+
+    expect(await pending).toBeNull();
+    expect(media.stop).toHaveBeenCalledOnce();
+    expect(media.contexts).toHaveLength(0);
+  });
+
+  it("stops capture immediately while AudioContext resume is pending", async () => {
+    const resumed = deferred<void>();
+    const media = mediaFixture(() => resumed.promise);
+    const start = new AbortController();
+    const pending = prepareVoiceAudio(start.signal);
+    await vi.waitFor(() => expect(media.contexts).toHaveLength(2));
+    start.abort();
+
+    expect(media.stop).toHaveBeenCalledOnce();
+    for (const context of media.contexts) expect(context.close).toHaveBeenCalledOnce();
+    resumed.resolve();
+    expect(await pending).toBeNull();
+    for (const context of media.contexts) expect(context.createMediaStreamSource).not.toHaveBeenCalled();
+  });
+
+  it("cleans up the microphone and first context if later initialization fails", async () => {
+    const media = mediaFixture();
+    let created = 0;
+    vi.stubGlobal("window", { AudioContext: class extends media.FakeAudioContext {
+      constructor() {
+        if (created++ === 1) throw new Error("audio context unavailable");
+        super();
+      }
+    } });
+
+    await expect(prepareVoiceAudio(new AbortController().signal)).rejects.toThrow("audio context unavailable");
+    expect(media.stop).toHaveBeenCalledOnce();
+    expect(media.contexts[0].close).toHaveBeenCalledOnce();
+  });
+
+  it("keeps successfully prepared audio alive until it is disposed", async () => {
+    const media = mediaFixture();
+    const resources = await prepareVoiceAudio(new AbortController().signal);
+
+    expect(resources?.stream).toBe(media.stream);
+    expect(media.stop).not.toHaveBeenCalled();
+    resources?.dispose();
+    resources?.dispose();
+    expect(media.stop).toHaveBeenCalledOnce();
+    for (const context of media.contexts) expect(context.close).toHaveBeenCalledOnce();
   });
 });

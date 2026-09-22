@@ -91,3 +91,14 @@ it('routes native encoder error events without consuming pending command replies
   expect(helper.pending.size).toBe(0);
  }finally{clients?.control.destroy();clients?.video.destroy();await helper.stop();}
 });
+
+it('routes native audio frames independently from command replies',async()=>{
+ let clients:any;
+ const helper=new RemoteHelper({launch:async(controlPath:string,videoPath:string)=>{clients=connectHelperSockets(controlPath,videoPath);}});helper.available=async()=>true;
+ const receive=vi.fn();helper.onAudio(receive);
+ try{
+  await helper.start();clients.control.write(JSON.stringify({event:'audio',sequence:1,sampleRate:48000,channels:2,data:'AAE='})+'\n');
+  await vi.waitFor(()=>expect(receive).toHaveBeenCalledWith({event:'audio',sequence:1,sampleRate:48000,channels:2,data:'AAE='}));
+  expect(helper.pending.size).toBe(0);
+ }finally{clients?.control.destroy();clients?.video.destroy();await helper.stop();}
+});

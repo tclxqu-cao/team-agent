@@ -16,3 +16,4 @@ export { LiveViewFramePacer } from "./frame-pacing.js";
 export { LiveViewCapabilityError } from "./capability-error.js";
 export * from "./remote-video-types.js";
 export { REMOTE_VIDEO_PROFILES, RemoteVideoPolicy } from "./remote-video-policy.js";
+export * from "./remote-audio.js";

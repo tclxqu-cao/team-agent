@@ -9,6 +9,7 @@ import type {
   LiveViewTransport,
   LiveViewViewport,
 } from "./entities.js";
+import type { RemoteAudioCapabilities } from "./remote-audio.js";
 
 const OWNERSHIP_STATES = new Set<LiveViewOwnershipState>([
   "agent-controlled", "handoff-requested", "user-controlled", "return-requested", "resyncing",
@@ -56,6 +57,7 @@ interface LiveSession {
   updatedAt: number;
   displays: LiveViewDisplayOption[] | null;
   platform?: string;
+  audioCapabilities?: RemoteAudioCapabilities;
   qualityState?: Record<string, unknown>;
 }
 
@@ -74,6 +76,7 @@ export interface PublishLiveSession {
   capabilityErrorCode?: unknown;
   displays?: unknown;
   platform?: unknown;
+  audioCapabilities?: unknown;
 }
 
 export interface UpdateLiveSessionAvailability {
@@ -125,6 +128,7 @@ function view(session: LiveSession, peer?: LiveViewPeer): LiveViewSessionView {
     controlledByAnotherViewer: Boolean(session.controllerId && session.controllerId !== peer?.id),
     displays: session.displays,
     platform: session.platform,
+    audioCapabilities: session.audioCapabilities,
   };
 }
 
@@ -185,6 +189,7 @@ export class LiveViewRegistry {
     session.transport = input.transport === "webrtc" ? "webrtc" : "cdp-jpeg-ws";
     session.displays = normalizeDisplays(input.displays);
     session.platform = optionalString(input.platform, 20) ?? session.platform;
+    session.audioCapabilities = normalizeAudioCapabilities(input.audioCapabilities);
     session.availability = AVAILABILITY_STATES.has(input.availability as LiveViewAvailability)
       ? input.availability as LiveViewAvailability
       : session.availability;
@@ -478,6 +483,21 @@ function normalizeDisplays(value: unknown): LiveViewDisplayOption[] | null {
   }).filter((item): item is LiveViewDisplayOption => item !== null);
   // A choice is only worth exposing when there is something to switch between.
   return list.length > 1 ? list : null;
+}
+
+function normalizeAudioCapabilities(value: unknown): RemoteAudioCapabilities | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const candidate = value as Record<string, unknown>;
+  const keys: Array<keyof RemoteAudioCapabilities> = [
+    "fullDuplex", "systemAudio", "microphonePlayback", "selfPlaybackExclusion",
+  ];
+  if (!keys.every((key) => typeof candidate[key] === "boolean")) return undefined;
+  return {
+    fullDuplex: candidate.fullDuplex as boolean,
+    systemAudio: candidate.systemAudio as boolean,
+    microphonePlayback: candidate.microphonePlayback as boolean,
+    selfPlaybackExclusion: candidate.selfPlaybackExclusion as boolean,
+  };
 }
 
 function normalizeInput(value: unknown): LiveViewInput {

@@ -73,9 +73,10 @@ function defaultAppPath() {
 
 export class RemoteHelper {
   constructor({ appPath = defaultAppPath(), launch = (socket, videoSocket) => run('/usr/bin/open', ['-n', appPath, '--args', socket, videoSocket, String(process.pid)]), stopTimeoutMs = 1000 } = {}) {
-    this.appPath = appPath; this.launch = launch; this.stopTimeoutMs = stopTimeoutMs; this.pending = new Map(); this.videoListeners = new Set(); this.sequence = 0; this.generation = 0;
+    this.appPath = appPath; this.launch = launch; this.stopTimeoutMs = stopTimeoutMs; this.pending = new Map(); this.videoListeners = new Set(); this.audioListeners = new Set(); this.sequence = 0; this.generation = 0;
   }
   onVideo(listener) { this.videoListeners.add(listener); return () => this.videoListeners.delete(listener); }
+  onAudio(listener) { this.audioListeners.add(listener); return () => this.audioListeners.delete(listener); }
   async available() { try { await access(join(this.appPath, 'Contents/MacOS/agentroam-remote-desktop')); return true; } catch { return false; } }
   start() {
     if (this.socket && !this.socket.destroyed && this.videoSocket && !this.videoSocket.destroyed) return Promise.resolve();
@@ -119,6 +120,7 @@ export class RemoteHelper {
               try {
                 const result = JSON.parse(line);
                 if (result.event === 'video') { for (const listener of this.videoListeners) listener(result); continue; }
+                if (result.event === 'audio') { for (const listener of this.audioListeners) listener(result); continue; }
                 const pending = this.pending.get(result.id);
                 if (pending) { clearTimeout(pending.timer); this.pending.delete(result.id); result.ok ? pending.resolve(result) : pending.reject(new Error(result.error || '本机组件请求失败')); }
               } catch { socket.destroy(); return; }
