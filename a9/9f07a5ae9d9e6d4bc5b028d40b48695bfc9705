@@ -1,0 +1,121 @@
+packages/desktop/renderer/App.tsx
+  s_13ee46f21447b6::t_e277035066974b 1579
+packages/server/lib/remote-control/helper-manager.test.ts
+  s_0da14fea15247e::t_e46c9169d1b8aa 94-104
+packages/server/native/remote-helper-windows/main.cpp
+  s_0da14fea15247e::t_78b17614fecf83 50,75-77,95,99
+  s_0da14fea15247e::t_bb5eb75b69894a 78
+packages/desktop/renderer/components/BrowserLivePanel.test.ts
+  s_0da14fea15247e::t_bd47309601bd94 119-120
+  s_d9ab72b10f80ec::t_9750192189988b 1,4,132-218
+  s_0da14fea15247e::t_e46c9169d1b8aa 2,114-118,121-131
+scripts/build-windows-remote-helper.mjs
+  s_0da14fea15247e::t_78b17614fecf83 28
+packages/server/lib/remote-control/remote-video-signal.mjs
+  s_0da14fea15247e::t_5646341635606f 2,91-97,99-105
+  s_0da14fea15247e::t_66a4d117657a55 5-6,90,98,106-107,135-137,161-166
+packages/core/src/domain/live-view/remote-audio.ts
+  s_0da14fea15247e::t_e415021c8d9564 1-118
+packages/desktop/renderer/components/BrowserLivePanel.tsx
+  s_0da14fea15247e::t_7ef175ea9f3621 315,318,510-511,513,537-539,568,573,583,1158
+  s_0da14fea15247e::t_ec1173db3134e5 1122-1157,1159-1169
+  s_0da14fea15247e::t_3c4b46f7676bff 5,70-97,304-314,316-317,335-339,492-493,496-509,512,514-536,540-549,553-555,562-567,569-570,572,574-582,584-586,588-607,651-664,685
+  s_d9ab72b10f80ec::t_c5eea9cba43214 98,102,104,107-109,112,117,119-128,130,133-135,561
+  s_d9ab72b10f80ec::t_4403b885c412ff 99-101,103,105-106,110-111,113-116,118,129,131-132,319,494-495,550-552,556-560,571,587
+packages/server/lib/remote-control/remote-video-signal.test.ts
+  s_0da14fea15247e::t_5646341635606f 3,29-30,42,44-50
+  s_0da14fea15247e::t_66a4d117657a55 9-11,28,41,43
+packages/server/lib/remote-control/remote-authorization.test.ts
+  s_0da14fea15247e::t_e0e83896dab47a 63,65-67
+  s_0da14fea15247e::t_7ffad4fed58dfd 311-313,320,366,369-371,374
+  s_0da14fea15247e::t_e0f54d64c97d5a 8,291-296
+  s_0da14fea15247e::t_5646341635606f 74-94
+  s_0da14fea15247e::t_e46c9169d1b8aa 24-25,41,45-62,64,68-73
+  s_0da14fea15247e::t_55ed30cfeb29e9 297-298
+scripts/build-cli-remote-helper.mjs
+  s_0da14fea15247e::t_3e52c78f61aa7a 60
+packages/server/lib/remote-control/helper-manager.mjs
+  s_0da14fea15247e::t_e7f8af7f7a50bc 76,79,123
+packages/core/src/domain/live-view/index.ts
+  s_0da14fea15247e::t_e415021c8d9564 19
+packages/server/ws-server.mjs
+  s_0da14fea15247e::t_5646341635606f 3,1220-1221
+packages/server/lib/remote-control/windows-helper.test.ts
+  s_0da14fea15247e::t_e46c9169d1b8aa 51-57
+packages/desktop/renderer/components/SidebarReferenceStyle.test.ts
+  s_d9ab72b10f80ec::t_3285722a1215a1 343-348
+  s_13ee46f21447b6::t_e277035066974b 99-103
+packages/server/lib/remote-control/remote-authorization.mjs
+  s_0da14fea15247e::t_573298a198554e 282
+  s_0da14fea15247e::t_5646341635606f 51,54-56,58-61
+  s_0da14fea15247e::t_e7f8af7f7a50bc 12-17,24,76,88,145,345,348-351,353-354,357-362,364-369,394,412,414-416,463,469
+  s_0da14fea15247e::t_e0f54d64c97d5a 18-23,25-32,47-48,75,218,238,296
+  s_0da14fea15247e::t_e0e83896dab47a 10,78-87
+  s_0da14fea15247e::t_7ef175ea9f3621 9,74,77,346-347,352,355-356,363,381,386,413
+  s_0da14fea15247e::t_7ffad4fed58dfd 187,269
+  s_0da14fea15247e::t_2e2530373358c8 11
+packages/core/src/domain/live-view/live-view-registry.test.ts
+  s_0da14fea15247e::t_66a4d117657a55 239-261
+packages/server/native/remote-helper-windows/remote.hpp
+  s_0da14fea15247e::t_78b17614fecf83 17-19,97-112
+  s_0da14fea15247e::t_4bfdeacea43e0b 24-25
+  s_104dd1168f0f37::t_20f7bade708a50 113
+packages/server/native/remote-helper/main.swift
+  s_0da14fea15247e::t_3e52c78f61aa7a 138-139,168-172,223-226,230-233,240-246,296,344-354,360
+packages/server/native/remote-helper-windows/audio.cpp
+  s_0da14fea15247e::t_bb5eb75b69894a 22-23,35,47,82
+  s_0da14fea15247e::t_4bfdeacea43e0b 3-4,34,36
+  s_0da14fea15247e::t_78b17614fecf83 1-2,5-21,24-33,37-46,48-81,83-155
+packages/server/native/remote-helper/service/Audio.swift
+  s_0da14fea15247e::t_65df191d6cc307 9-10,20,25-38,40-41,45-46,54,57-58
+  s_0da14fea15247e::t_3e52c78f61aa7a 1-8,11-19,21-24,39,42-44,47-53,55-56,59-105
+packages/core/src/domain/live-view/live-view-registry.ts
+  s_0da14fea15247e::t_e415021c8d9564 12,60,79,131,192,488-500
+  s_0da14fea15247e::t_14c4c4a9da5413 501-502
+packages/server/lib/remote-control/windows-helper.mjs
+  s_0da14fea15247e::t_e7f8af7f7a50bc 16,20,57-59
+packages/core/src/domain/live-view/remote-audio.test.ts
+  s_0da14fea15247e::t_e415021c8d9564 1-61
+packages/core/src/domain/live-view/entities.ts
+  s_0da14fea15247e::t_e415021c8d9564 48-49
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "a99f07a5ae9d9e6d4bc5b028d40b48695bfc9705",
+  "prompts": {},
+  "sessions": {
+    "s_0da14fea15247e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0c353-2204-7af1-a028-f6cb0a9912d0",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_104dd1168f0f37": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0c281-736e-7f82-b08a-f3c081598183",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_13ee46f21447b6": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0c1a6-8a56-7901-ad33-55921ba2a1f1",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_d9ab72b10f80ec": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0c815-1477-7f50-ab25-fd13e188f9ca",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
