@@ -2,8 +2,10 @@ import type { IModelProvider, Message, StreamEvent, StreamOptions, ModelProvider
 import type { ToolDefinition } from '../entities.js';
 import { openAIEndpoint } from './openAIEndpoint.js';
 import { estimateRequestTokens } from '../tokenBudget.js';
+import { isModelRequestTimeout, modelRequestTimeoutEvent } from './requestTimeout.js';
 
 const DEFAULT_BASE_URL = "https://api.openai.com";
+const DEFAULT_TIMEOUT_MS = 300_000;
 
 export class OpenAIProvider implements IModelProvider {
   readonly providerId = "openai";
@@ -12,6 +14,7 @@ export class OpenAIProvider implements IModelProvider {
   private readonly baseUrl: string;
   private readonly defaultMaxTokens: number;
   private readonly defaultTemperature: number;
+  private readonly timeoutMs: number;
   private localContext?: Promise<number | undefined>;
 
   constructor(config: ModelProviderConfig) {
@@ -20,6 +23,7 @@ export class OpenAIProvider implements IModelProvider {
     this.modelId = config.modelId;
     this.defaultMaxTokens = config.maxTokens ?? 16384;
     this.defaultTemperature = config.temperature ?? 0.7;
+    this.timeoutMs = config.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   }
 
   async *streamChat(
@@ -55,15 +59,25 @@ export class OpenAIProvider implements IModelProvider {
       }));
     }
 
-    const response = await fetch(this.baseUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${this.apiKey}`,
-      },
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(300000),
-    });
+    const requestSignal = AbortSignal.timeout(this.timeoutMs);
+    let response: Response;
+    try {
+      response = await fetch(this.baseUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${this.apiKey}`,
+        },
+        body: JSON.stringify(body),
+        signal: requestSignal,
+      });
+    } catch (error) {
+      if (isModelRequestTimeout(error, requestSignal)) {
+        yield modelRequestTimeoutEvent("OpenAI", this.timeoutMs);
+        return;
+      }
+      throw error;
+    }
 
     if (!response.ok) {
       const errText = await response.text().catch(() => "unknown error");
@@ -79,7 +93,47 @@ export class OpenAIProvider implements IModelProvider {
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let buffer = "";
+    let reasoningBuffer = "";
+    let reasoningLastFlushedAt = Date.now();
+    let terminatedWithError = false;
     const toolCalls = new Map<number, { id: string; name: string; arguments: string }>();
+    const parseBufferedToolCalls = (incomplete: boolean): { events?: StreamEvent[]; error?: StreamEvent } => {
+      const events: StreamEvent[] = [];
+      for (const [, tc] of toolCalls) {
+        try {
+          events.push({
+            type: "tool_call",
+            toolCall: {
+              id: tc.id,
+              name: tc.name,
+              arguments: JSON.parse(tc.arguments.trim()),
+            },
+          });
+        } catch {
+          return {
+            error: incomplete
+              ? {
+                  type: "error",
+                  code: "tool_arguments_incomplete",
+                  message: `模型输出在工具 ${tc.name} 的参数生成完成前中断，参数 JSON 不完整，已拒绝执行。请重试，或提高该模型配置的单轮最大输出。`,
+                }
+              : {
+                  type: "error",
+                  code: "tool_arguments_invalid",
+                  message: `工具 ${tc.name} 的参数不是有效 JSON，已拒绝执行。请让模型重新生成工具调用。`,
+                },
+          };
+        }
+      }
+      return { events };
+    };
+    const takeReasoningBuffer = (): StreamEvent | undefined => {
+      if (!reasoningBuffer) return undefined;
+      const event: StreamEvent = { type: "reasoning_delta", text: reasoningBuffer };
+      reasoningBuffer = "";
+      reasoningLastFlushedAt = Date.now();
+      return event;
+    };
 
     // Chunk-level timeout: if no data arrives for 60s, abort the stream
     const CHUNK_TIMEOUT_MS = 60_000;
@@ -110,15 +164,28 @@ export class OpenAIProvider implements IModelProvider {
 
           try {
             const parsed = JSON.parse(data);
-            const delta = parsed.choices?.[0]?.delta;
+            const choice = parsed.choices?.[0];
+            const delta = choice?.delta;
 
-            if (!delta) continue;
+            if (!choice || terminatedWithError) continue;
 
-            if (delta.content) {
+            if (typeof delta?.reasoning_content === "string" && delta.reasoning_content) {
+              reasoningBuffer += delta.reasoning_content;
+              if (reasoningBuffer.length >= 256 || Date.now() - reasoningLastFlushedAt >= 150) {
+                const reasoningEvent = takeReasoningBuffer();
+                if (reasoningEvent) yield reasoningEvent;
+              }
+            }
+
+            if (typeof delta?.content === "string" && delta.content) {
+              const reasoningEvent = takeReasoningBuffer();
+              if (reasoningEvent) yield reasoningEvent;
               yield { type: "text_chunk", text: delta.content };
             }
 
-            if (delta.tool_calls) {
+            if (delta?.tool_calls) {
+              const reasoningEvent = takeReasoningBuffer();
+              if (reasoningEvent) yield reasoningEvent;
               for (const tc of delta.tool_calls) {
                 const idx = tc.index as number;
                 if (!toolCalls.has(idx)) {
@@ -131,25 +198,25 @@ export class OpenAIProvider implements IModelProvider {
               }
             }
 
-            const finishReason = parsed.choices?.[0]?.finish_reason;
-            if (finishReason === "length" && toolCalls.size > 0) {
-              const names = [...toolCalls.values()].map((tc) => tc.name).join(", ");
-              yield { type: "error", message: `输出被截断（max_tokens 限制），工具 ${names} 的参数 JSON 不完整。请拆分成更小的步骤，或在设置中提高模型输出 token 上限。` };
+            const finishReason = choice.finish_reason;
+            if (finishReason) {
+              const reasoningEvent = takeReasoningBuffer();
+              if (reasoningEvent) yield reasoningEvent;
+            }
+            if (finishReason === "length") {
+              const message = toolCalls.size > 0
+                ? `输出被截断（max_tokens 限制），工具 ${[...toolCalls.values()].map((tc) => tc.name).join(", ")} 的参数 JSON 不完整。请拆分成更小的步骤，或在设置中提高模型输出 token 上限。`
+                : "输出被截断（max_tokens 限制），模型在生成完整回答前已用完输出 token。请缩小任务范围，或在设置中提高模型输出 token 上限。";
+              yield { type: "error", message };
               toolCalls.clear();
+              terminatedWithError = true;
             } else if (finishReason === "tool_calls" || (finishReason && toolCalls.size > 0)) {
-              for (const [, tc] of toolCalls) {
-                try {
-                  yield {
-                    type: "tool_call",
-                    toolCall: {
-                      id: tc.id,
-                      name: tc.name,
-                      arguments: JSON.parse(tc.arguments.trim()),
-                    },
-                  };
-                } catch {
-                  yield { type: "error", message: `Failed to parse tool arguments for ${tc.name}` };
-                }
+              const parsedToolCalls = parseBufferedToolCalls(false);
+              if (parsedToolCalls.error) {
+                yield parsedToolCalls.error;
+                terminatedWithError = true;
+              } else {
+                for (const event of parsedToolCalls.events ?? []) yield event;
               }
               toolCalls.clear();
             }
@@ -158,20 +225,26 @@ export class OpenAIProvider implements IModelProvider {
           }
         }
       }
-      // Flush any tool calls that weren't emitted (stream ended without finish_reason)
-      for (const [, tc] of toolCalls) {
-        try {
-          yield {
-            type: "tool_call",
-            toolCall: { id: tc.id, name: tc.name, arguments: JSON.parse(tc.arguments.trim()) },
-          };
-        } catch {
-          yield { type: "error", message: `Failed to parse tool arguments for ${tc.name}` };
+      if (!terminatedWithError) {
+        const reasoningEvent = takeReasoningBuffer();
+        if (reasoningEvent) yield reasoningEvent;
+        // Flush any tool calls that weren't emitted (stream ended without finish_reason)
+        const parsedToolCalls = parseBufferedToolCalls(true);
+        if (parsedToolCalls.error) {
+          yield parsedToolCalls.error;
+          return;
         }
+        for (const event of parsedToolCalls.events ?? []) yield event;
+        yield { type: "text_done" };
       }
-      yield { type: "text_done" };
     } catch (err) {
-      if (err instanceof Error && err.name !== "AbortError") {
+      if (isModelRequestTimeout(err, requestSignal)) {
+        const reasoningEvent = takeReasoningBuffer();
+        if (reasoningEvent) yield reasoningEvent;
+        yield modelRequestTimeoutEvent("OpenAI", this.timeoutMs);
+      } else if (err instanceof Error && err.name !== "AbortError") {
+        const reasoningEvent = takeReasoningBuffer();
+        if (reasoningEvent) yield reasoningEvent;
         yield { type: "error", message: err.message };
       }
     } finally {

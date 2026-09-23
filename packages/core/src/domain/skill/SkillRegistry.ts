@@ -48,7 +48,9 @@ export class SkillRegistry implements ISkillRegistry {
   }
 
   discover(query: string, enabledSkills?: string[] | null): SkillMeta[] {
-    const allowed = enabledSkills && enabledSkills.length > 0 ? new Set(enabledSkills) : null;
+    const allowed = enabledSkills === undefined || enabledSkills === null
+      ? null
+      : new Set(enabledSkills);
     const eligible = Array.from(this.skills.values()).filter((skill) => !allowed || allowed.has(skill.name));
     const normalized = query.trim().toLowerCase();
     if (!normalized) return eligible;
@@ -63,7 +65,9 @@ export class SkillRegistry implements ISkillRegistry {
   }
 
   async load(name: string, enabledSkills?: string[] | null): Promise<SkillDefinition | null> {
-    const allowed = enabledSkills && enabledSkills.length > 0 ? new Set(enabledSkills) : null;
+    const allowed = enabledSkills === undefined || enabledSkills === null
+      ? null
+      : new Set(enabledSkills);
     if (allowed && !allowed.has(name)) return null;
     const skill = this.skills.get(name);
     if (!skill) return null;
@@ -184,9 +188,9 @@ Return ONLY the names of relevant skills, one per line. If none are relevant, re
     workingDirectory?: string;
     tools?: ToolDefinition[];
   }): Promise<string> {
-    const allowed = enabledSkills && enabledSkills.length > 0
-      ? new Set(enabledSkills)
-      : null;
+    const allowed = enabledSkills === undefined || enabledSkills === null
+      ? null
+      : new Set(enabledSkills);
     const eligibleSkills = Array.from(this.skills.values()).filter(
       (skill) => !allowed || allowed.has(skill.name),
     );

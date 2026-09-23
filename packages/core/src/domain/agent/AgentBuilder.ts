@@ -1,6 +1,7 @@
 import type { AgentConfig, IAgentLoop } from './entities.js';
 import type { IModelProvider } from '../model/entities.js';
 import type { IMemoryStore } from '../memory/entities.js';
+import type { IContextLoader } from '../context/entities.js';
 import type { ITool, IToolExecutor } from '../tool/entities.js';
 import { PermissionAwareToolExecutor, type ToolPermissionGate } from '../tool/permissions.js';
 import type { ISessionStore } from '../session/entities.js';
@@ -37,10 +38,11 @@ export class AgentBuilder {
   private customTools: ITool[] = [];
   private skillLoader = new SkillLoader();
   private skillRegistry = new SkillRegistry(this.skillLoader);
-  private contextLoader = new ContextLoader();
+  private contextLoader: IContextLoader = new ContextLoader();
   private memoryStore: IMemoryStore | null = null;
   private maxIterations = 10;
   private maxTokens = 100_000;
+  private maxOutputTokens: number | undefined;
   private systemPrompt: string | undefined;
   private skillsDir: string | undefined;
   private skillFiles: string[] = [];
@@ -51,10 +53,15 @@ export class AgentBuilder {
   private compactThreshold: number | undefined;
   /** If set, only these tool names are registered (others are skipped). Empty = all tools. */
   private enabledTools: string[] | null = null;
+  /** Legacy sessions admit tools registered after build; exact policies do not. */
+  private allowUnlistedDynamicTools = true;
   /** If set, only these skill names are registered (others are skipped). Empty = all skills. */
   private enabledSkills: string[] | null = null;
+  /** Skills that must be active in the next built loop. */
+  private activatedSkills: string[] = [];
   /** Use the model to find a skill when local triggers do not match. */
   private semanticSkillMatching = true;
+  private skillDiscoveryEnabled = true;
   /** Reasoning intensity for main-loop requests. undefined/"off" = provider default. */
   private reasoningEffort: import("../model/entities.js").ReasoningEffort | undefined;
   private toolPermissionGate: ToolPermissionGate | undefined;
@@ -76,6 +83,7 @@ export class AgentBuilder {
     apiKey: string;
     baseUrl?: string;
     modelId: string;
+    timeoutMs?: number;
   }): this {
     this.modelProvider = this.modelRegistry.createAndRegister(
       providerId as "anthropic" | "openai" | "deepseek" | "aihub",
@@ -91,6 +99,11 @@ export class AgentBuilder {
 
   withMaxTokens(n: number): this {
     this.maxTokens = n;
+    return this;
+  }
+
+  withMaxOutputTokens(n: number | undefined): this {
+    this.maxOutputTokens = n;
     return this;
   }
 
@@ -121,6 +134,11 @@ export class AgentBuilder {
 
   withMemoryStore(store: IMemoryStore): this {
     this.memoryStore = store;
+    return this;
+  }
+
+  withContextLoader(loader: IContextLoader): this {
+    this.contextLoader = loader;
     return this;
   }
 
@@ -159,7 +177,7 @@ export class AgentBuilder {
   }
 
   /**
-   * Set the AutoCompact threshold as a fraction of maxTokens (default 0.8).
+   * Set the AutoCompact threshold as a fraction of maxTokens (default 0.6).
    * When estimated token usage exceeds this fraction, history is summarized.
    */
   withCompactThreshold(fraction: number): this {
@@ -173,6 +191,16 @@ export class AgentBuilder {
    */
   withEnabledTools(toolNames: string[]): this {
     this.enabledTools = toolNames.length > 0 ? toolNames : null;
+    this.allowUnlistedDynamicTools = true;
+    return this;
+  }
+
+  /** Apply an exact per-run allowlist. null means all; [] means none. */
+  withExactEnabledTools(toolNames: string[] | null): this {
+    this.enabledTools = toolNames === null
+      ? null
+      : [...new Set(toolNames.map((name) => name.trim()).filter(Boolean))];
+    this.allowUnlistedDynamicTools = false;
     return this;
   }
 
@@ -185,8 +213,27 @@ export class AgentBuilder {
     return this;
   }
 
+  /** Apply an exact per-run allowlist. null means all; [] means none. */
+  withExactEnabledSkills(skillNames: string[] | null): this {
+    this.enabledSkills = skillNames === null
+      ? null
+      : [...new Set(skillNames.map((name) => name.trim()).filter(Boolean))];
+    return this;
+  }
+
+  withActivatedSkills(skillNames: string[]): this {
+    this.activatedSkills = [...new Set(skillNames.map((name) => name.trim()).filter(Boolean))];
+    return this;
+  }
+
   withSemanticSkillMatching(enabled: boolean): this {
     this.semanticSkillMatching = enabled;
+    return this;
+  }
+
+  /** Disable the broad skill search tool while keeping exact-name skill_load. */
+  withSkillDiscovery(enabled: boolean): this {
+    this.skillDiscoveryEnabled = enabled;
     return this;
   }
 
@@ -251,7 +298,9 @@ export class AgentBuilder {
         this.skillRegistry.register({ ...skill, source: "custom" });
       }
     }
-    toolRegistry.register(new SkillDiscoverTool(this.skillRegistry, this.enabledSkills));
+    if (this.skillDiscoveryEnabled) {
+      toolRegistry.register(new SkillDiscoverTool(this.skillRegistry, this.enabledSkills));
+    }
     toolRegistry.register(new SkillLoadTool(this.skillRegistry, this.enabledSkills));
 
     const contextAssembler = new ContextAssembler(this.contextLoader);
@@ -271,10 +320,13 @@ export class AgentBuilder {
       workingDirectory: this.workingDirectory,
       maxIterations: this.maxIterations,
       maxTokens: this.maxTokens,
+      maxOutputTokens: this.maxOutputTokens,
       systemPrompt: this.systemPromptWithRemoteTools(remoteToolStore, projectId),
       compactThreshold: this.compactThreshold,
       enabledTools: this.enabledTools,
+      allowUnlistedDynamicTools: this.allowUnlistedDynamicTools,
       enabledSkills: this.enabledSkills,
+      activatedSkills: [...this.activatedSkills],
       reasoningEffort: this.reasoningEffort,
     };
 
@@ -317,7 +369,9 @@ export class AgentBuilder {
         this.skillRegistry.register({ ...skill, source: "custom" });
       }
     }
-    toolRegistry.register(new SkillDiscoverTool(this.skillRegistry, this.enabledSkills));
+    if (this.skillDiscoveryEnabled) {
+      toolRegistry.register(new SkillDiscoverTool(this.skillRegistry, this.enabledSkills));
+    }
     toolRegistry.register(new SkillLoadTool(this.skillRegistry, this.enabledSkills));
 
     const contextAssembler = new ContextAssembler(this.contextLoader);
@@ -337,10 +391,13 @@ export class AgentBuilder {
       workingDirectory: this.workingDirectory,
       maxIterations: this.maxIterations,
       maxTokens: this.maxTokens,
+      maxOutputTokens: this.maxOutputTokens,
       systemPrompt: this.systemPromptWithRemoteTools(remoteToolStore, projectId),
       compactThreshold: this.compactThreshold,
       enabledTools: this.enabledTools,
+      allowUnlistedDynamicTools: this.allowUnlistedDynamicTools,
       enabledSkills: this.enabledSkills,
+      activatedSkills: [...this.activatedSkills],
       reasoningEffort: this.reasoningEffort,
     };
 

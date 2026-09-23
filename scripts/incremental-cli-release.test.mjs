@@ -52,6 +52,15 @@ test("native-runtime invalidates both platform runtimes but not TUI or cloudflar
   assert.ok(index("run --cwd packages/native-runtime build") < index("run --cwd packages/server build"));
 });
 
+test("computer-use invalidates both platform runtimes and builds before server", () => {
+  const result = plan(["packages/computer-use/src/interface/computer-tool.ts"]);
+  assert.deepEqual(changed(result), ["agentroam-runtime-darwin-arm64", "agentroam-runtime-win32-x64", "agentroam"]);
+  const order = buildCommands(result).map(([, args]) => args.join(" "));
+  const index = (value) => order.indexOf(value);
+  assert.ok(index("run --cwd packages/core build") < index("run --cwd packages/computer-use build"));
+  assert.ok(index("run --cwd packages/computer-use build") < index("run --cwd packages/server build"));
+});
+
 test("no source change or only generated release numbers is a no-op", () => {
   const value = planRelease({ base: "baseline", version: "0.2.0-preview.21", baselinePackages, changes: [{ path: "packages/cli/package.json", before: JSON.stringify(baselinePackages.at(-1)), after: JSON.stringify({ ...baselinePackages.at(-1), version: "0.2.0-preview.21" }) }] });
   assert.equal(value.noop, true);

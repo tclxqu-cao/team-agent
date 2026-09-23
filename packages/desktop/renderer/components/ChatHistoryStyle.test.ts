@@ -79,6 +79,13 @@ describe("shared Codex-style message history", () => {
     expect(globalCss).toContain("margin-right: auto");
   });
 
+  it("clears only the completed context-compaction progress before model streaming", () => {
+    expect(chatView).toContain("CONTEXT_COMPACTION_PROGRESS_ID");
+    expect(chatView).toContain('if (eventSid && !eventSid.startsWith("runtime:"))');
+    expect(chatView).toContain("progress.progressId !== CONTEXT_COMPACTION_PROGRESS_ID");
+    expect(chatView).toContain("setRuntimeProgress(remaining, eventSid);");
+  });
+
   it("keeps stable hooks for expandable tool details", () => {
     expect(toolCallCard).toContain('className="tool-call-shell"');
     expect(toolCallCard).toContain('className="tool-call-shell__header"');
@@ -149,7 +156,7 @@ describe("shared Codex-style message history", () => {
     expect(globalCss).toContain("padding: 5px 0 !important");
     expect(globalCss).not.toContain(".codex-execution-trace__body");
     expect(globalCss).toContain(".chat-view--codex-history .codex-execution-trace__timeline");
-    expect(globalCss).toMatch(/\.chat-view--codex-history \.codex-execution-trace__commentary\s*\{[^}]*padding: 6px 0 7px;[^}]*color: var\(--text-primary\);[^}]*font-size: var\(--chat-bubble-font-size\);[^}]*line-height: var\(--chat-bubble-line-height\);/s);
+    expect(globalCss).toMatch(/\.chat-view--codex-history \.codex-execution-trace__commentary\s*\{[^}]*padding: 6px 0 7px;[^}]*color: var\(--chat-history-text\);[^}]*font-size: var\(--chat-bubble-font-size\);[^}]*line-height: var\(--chat-bubble-line-height\);/s);
     expect(globalCss).toContain(".reasoning-summary__label");
     expect(globalCss).toContain(".chat-view--codex-history .tool-call-shell__label");
     expect(globalCss).not.toMatch(/\.reasoning-summary__label\s*\{[^}]*transform:/s);
@@ -161,14 +168,24 @@ describe("shared Codex-style message history", () => {
     expect(chatView).toContain("CODEX_TRACE_REFRESH_MIN_INTERVAL_MS = 750");
     expect(chatView).toContain("scheduleCodexTraceRefresh(targetSid)");
     expect(chatView).toContain("refreshSignal={chatMsg.executionTrace.turnId === latestCodexExecutionTurnId");
-    expect(chatView).toContain("autoLoad={chatMsg.executionTrace.turnId === latestCodexExecutionTurnId}");
+    expect(chatView).toContain('autoLoad={historyWindowMode === "latest" && chatMsg.executionTrace.turnId === latestCodexExecutionTurnId}');
   });
 
   it("keeps the workspace close to the sidebar surface across skins", () => {
     expect(globalCss).toContain("--bg-workspace: color-mix(in srgb, var(--bg-surface) 64%, var(--bg-deepest))");
-    expect(globalCss).toContain("--chat-assistant-fade-end: var(--bg-workspace)");
+    expect(globalCss).toContain("--chat-assistant-fade-end: var(--chat-history-bg)");
     expect(app).toContain('background: "var(--bg-workspace)"');
     expect(chatView).toContain('background: "var(--bg-workspace)"');
+  });
+
+  it("slightly lifts pearl history while keeping other skins on their theme tokens", () => {
+    expect(globalCss).toContain("--chat-history-bg: var(--bg-workspace)");
+    expect(globalCss).toContain("--chat-history-text: var(--text-primary)");
+    expect(globalCss).toMatch(/:root:not\(\[data-skin\]\),\s*\[data-skin="pearl"\]\s*\{[^}]*--chat-history-bg: #fdfdff;[^}]*--chat-history-text: #0b1220;/s);
+    expect(globalCss).toContain("color: var(--chat-history-text)");
+    expect(app).toContain('className="app-chat-surface"');
+    expect(app).toContain('background: "var(--chat-history-bg)"');
+    expect(chatView).toContain('color: "var(--chat-history-text)"');
   });
 
   it("shows the history scrollbar only while messages are moving", () => {
@@ -181,12 +198,21 @@ describe("shared Codex-style message history", () => {
     expect(globalCss).toContain(".chat-messages.is-scrolling::-webkit-scrollbar-thumb");
   });
 
+  it("stops streaming auto-follow after manual upward scrolling and resumes from the arrow", () => {
+    expect(chatView).toContain("autoFollowRef.current.onScroll(distanceFromBottom)");
+    expect(chatView).toContain("autoFollowRef.current.requestReturn()");
+    expect(chatView).toContain("autoFollowRef.current.shouldFollow(mode)");
+    expect(chatView).toContain("autoFollowRef.current.reset()");
+    expect(chatView).toContain('messagesEndRef.current?.scrollIntoView({ behavior: "auto" })');
+  });
+
   it("loads older history near the top without flashing a fast-request spinner", () => {
     expect(chatView).toContain("container.scrollTop <= 240");
     expect(chatView).toContain('import { SinglePageHistoryPrefetch } from "../lib/session-history-prefetch"');
     expect(chatView).toContain(".prefetch(targetSid, cursor");
     expect(chatView).toContain("historyPrefetchRef.current!.consume(");
     expect(chatView).toContain("prefetchOlderHistory(targetSid, nextCursor)");
+    expect(chatView).toContain("resolveOlderHistoryCursor(cursor, detail, olderMessages.length)");
     expect(chatView).toContain("before: cursor");
     expect(chatView).toContain("scrollTop: container.scrollTop");
     expect(chatView).toContain("container.scrollHeight - anchor.scrollHeight");
@@ -212,7 +238,9 @@ describe("shared Codex-style message history", () => {
     expect(chatView).toContain("shouldRestoreLocalNativeRun(detail)");
     expect(chatView).toContain("isLocallyRunning || isObservedNativeRun(sessionSummary)");
     expect(chatView).not.toContain('sessionSummary?.occupancy === "owned-externally"\n      && sessionSummary.status === "running"');
-    expect(chatView).toContain('const shouldPollFallback = sessionSummary?.occupancy === "owned-externally"');
+    expect(chatView).toContain('const shouldPollFallback = sessionSummary?.agentType === "customer-agent"');
+    expect(chatView).toContain('|| sessionSummary?.occupancy === "owned-externally"');
+    expect(chatView).toContain('|| sessionSummary?.status === "running";');
     expect(chatView).toContain("if (shouldPollFallback) startPolling()");
     expect(chatView).toContain("window.setInterval(refresh, 2_000)");
   });

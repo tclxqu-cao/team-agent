@@ -195,7 +195,7 @@ describe("Claude history mapping", () => {
     ]);
   });
 
-  it("skips assistant entries that carry neither text nor tool calls", () => {
+  it("restores thinking-only assistant entries into reasoning presentation", () => {
     const history = [
       { type: "assistant", message: { content: [] } },
       { type: "assistant", message: { content: [{ type: "thinking", thinking: "..." }] } },
@@ -203,6 +203,13 @@ describe("Claude history mapping", () => {
     ] as SessionMessage[];
 
     expect(claudeHistoryToMessages(history)).toEqual([
+      {
+        role: "assistant",
+        content: "",
+        presentation: {
+          reasoning: [{ itemId: "claude:thinking", sectionIndex: 0, text: "..." }],
+        },
+      },
       { role: "tool", content: "", toolCallId: "tool-9" },
     ]);
   });
@@ -261,7 +268,7 @@ describe("Claude history mapping", () => {
 });
 
 describe("Claude SDK event mapping", () => {
-  it("maps allowlisted public progress without exposing private thinking", () => {
+  it("maps public progress and Claude thinking into separate reasoning events", () => {
     expect(claudeSdkMessageToEvents({
       type: "system", subtype: "thinking_tokens", estimated_tokens: 1234,
     } as SDKMessage, false)).toEqual([{
@@ -292,12 +299,28 @@ describe("Claude SDK event mapping", () => {
       type: "runtime_progress", phase: "status", label: "正在读取项目",
     })]);
 
-    expect(claudeSdkMessageToEvents({
+    const completedThinking = {
       type: "assistant", message: { content: [{ type: "thinking", thinking: "private reasoning" }] },
-    } as SDKMessage, false)).toEqual([]);
+    } as SDKMessage;
+    expect(claudeSdkMessageToEvents(completedThinking, false)).toEqual([{
+      type: "reasoning_summary_delta",
+      itemId: "claude:thinking",
+      sectionIndex: 0,
+      delta: "private reasoning",
+    }]);
+    expect(claudeSdkMessageToEvents(completedThinking, false, true)).toEqual([]);
     expect(claudeSdkMessageToEvents({
       type: "stream_event",
-      event: { type: "content_block_delta", delta: { type: "thinking_delta", thinking: "private delta" } },
+      event: { type: "content_block_delta", index: 2, delta: { type: "thinking_delta", thinking: "private delta" } },
+    } as SDKMessage, false)).toEqual([{
+      type: "reasoning_summary_delta",
+      itemId: "claude:thinking",
+      sectionIndex: 2,
+      delta: "private delta",
+    }]);
+    expect(claudeSdkMessageToEvents({
+      type: "stream_event",
+      event: { type: "content_block_delta", index: 2, delta: { type: "signature_delta", signature: "hidden" } },
     } as SDKMessage, false)).toEqual([]);
   });
 
@@ -711,6 +734,25 @@ describe("ClaudeRuntimeAdapter", () => {
       { type: "text_chunk", text: "hel" },
       { type: "text_chunk", text: "lo" },
       { type: "done", finalText: "hello" },
+    ]);
+  });
+
+  it("streams Claude thinking before text without duplicating completed blocks", async () => {
+    state.sessions = [sdkSession("cc-1")];
+    state.stream = [
+      { type: "stream_event", event: { type: "content_block_delta", index: 0, delta: { type: "thinking_delta", thinking: "inspect" } } },
+      { type: "stream_event", event: { type: "content_block_delta", index: 1, delta: { type: "text_delta", text: "answer" } } },
+      { type: "assistant", message: { content: [{ type: "thinking", thinking: "inspect" }, { type: "text", text: "answer" }] } },
+      { type: "result", subtype: "success", is_error: false, result: "" },
+    ];
+    const adapter = new ClaudeRuntimeAdapter({ occupancyTtlMs: 0, sessionRoot: "/tmp/claude-projects" });
+
+    const events = await drain(adapter.run("cc-1", "hi"));
+
+    expect(events).toEqual([
+      { type: "reasoning_summary_delta", itemId: "claude:thinking", sectionIndex: 0, delta: "inspect" },
+      { type: "text_chunk", text: "answer" },
+      { type: "done", finalText: "answer" },
     ]);
   });
 
@@ -1255,4 +1297,3 @@ describe("Claude native history paging", () => {
     ]);
   });
 });
-

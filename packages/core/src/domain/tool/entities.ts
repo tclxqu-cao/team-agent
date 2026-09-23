@@ -9,11 +9,15 @@ export interface ToolContext {
   signal?: AbortSignal;
 }
 
+export type ToolAuthorizationPolicy = "default" | "direct";
+
 export interface ITool {
   readonly name: string;
   readonly description: string;
   readonly parameters: Record<string, unknown>;
   readonly schema: ZodType;
+  /** Generic execution policy. direct tools bypass the CA approval queue. */
+  readonly authorization?: ToolAuthorizationPolicy;
 
   execute(params: Record<string, unknown>, ctx: ToolContext): Promise<ToolResult>;
 }
@@ -28,6 +32,7 @@ export interface IToolRegistry {
   get(name: string): ITool | undefined;
   getAll(): ITool[];
   getDefinitions(): ToolDefinition[];
+  getAuthorizationPolicy?(name: string): ToolAuthorizationPolicy;
 }
 
 export interface IToolExecutor {
@@ -37,4 +42,5 @@ export interface IToolExecutor {
     ctx: ToolContext,
   ): Promise<ToolResult>;
   validate(name: string, args: Record<string, unknown>): boolean;
+  getAuthorizationPolicy?(name: string): ToolAuthorizationPolicy;
 }

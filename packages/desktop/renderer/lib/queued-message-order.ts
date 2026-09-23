@@ -5,6 +5,7 @@ export interface QueuedMessageLike {
 
 export interface UserMessageLike extends QueuedMessageLike {
   role: string;
+  sendState?: "pending" | "failed";
 }
 
 export interface DurableQueueItemLike {
@@ -35,6 +36,12 @@ export interface MixedQueueStateLike<T extends DurableQueueItemLike> {
 
 export function findLatestUnqueuedUserMessageId<T extends UserMessageLike>(messages: T[]): string | null {
   return [...messages].reverse().find((message) => message.role === "user" && !message.isQueued)?.id ?? null;
+}
+
+export function findLatestPendingUserMessageId<T extends UserMessageLike>(messages: T[]): string | null {
+  return [...messages].reverse().find(
+    (message) => message.role === "user" && !message.isQueued && message.sendState === "pending",
+  )?.id ?? null;
 }
 
 export function hideQueuedGoalMessages<T extends { id: string }>(

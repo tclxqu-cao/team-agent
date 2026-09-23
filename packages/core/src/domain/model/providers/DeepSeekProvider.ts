@@ -1,7 +1,9 @@
 import type { IModelProvider, Message, StreamEvent, StreamOptions, ModelProviderConfig } from '../entities.js';
 import { openAIEndpoint } from './openAIEndpoint.js';
+import { isModelRequestTimeout, modelRequestTimeoutEvent } from './requestTimeout.js';
 
 const DEFAULT_BASE_URL = "https://api.deepseek.com";
+const DEFAULT_TIMEOUT_MS = 300_000;
 
 export class DeepSeekProvider implements IModelProvider {
   readonly providerId = "deepseek";
@@ -10,6 +12,7 @@ export class DeepSeekProvider implements IModelProvider {
   private readonly baseUrl: string;
   private readonly defaultMaxTokens: number;
   private readonly defaultTemperature: number;
+  private readonly timeoutMs: number;
 
   constructor(config: ModelProviderConfig) {
     this.apiKey = config.apiKey;
@@ -17,12 +20,21 @@ export class DeepSeekProvider implements IModelProvider {
     this.modelId = config.modelId;
     this.defaultMaxTokens = config.maxTokens ?? 16384;
     this.defaultTemperature = config.temperature ?? 0.7;
+    this.timeoutMs = config.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   }
 
   async *streamChat(
     messages: Message[],
     options?: StreamOptions,
   ): AsyncIterable<StreamEvent> {
+    if (messages.some((message) => message.images?.length)) {
+      yield {
+        type: "error",
+        code: "vision_unavailable",
+        message: "This model provider cannot inspect the screenshot. Continue with Accessibility data or use a vision-capable model.",
+      };
+      return;
+    }
     const adaptedMessages = messages.map((m) => this.adaptMessage(m));
 
     const body: Record<string, unknown> = {
@@ -48,15 +60,25 @@ export class DeepSeekProvider implements IModelProvider {
       }));
     }
 
-    const response = await fetch(this.baseUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${this.apiKey}`,
-      },
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(300000),
-    });
+    const requestSignal = AbortSignal.timeout(this.timeoutMs);
+    let response: Response;
+    try {
+      response = await fetch(this.baseUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${this.apiKey}`,
+        },
+        body: JSON.stringify(body),
+        signal: requestSignal,
+      });
+    } catch (error) {
+      if (isModelRequestTimeout(error, requestSignal)) {
+        yield modelRequestTimeoutEvent("DeepSeek", this.timeoutMs);
+        return;
+      }
+      throw error;
+    }
 
     if (!response.ok) {
       const errText = await response.text().catch(() => "unknown error");
@@ -166,7 +188,9 @@ export class DeepSeekProvider implements IModelProvider {
       }
       yield { type: "text_done" };
     } catch (err) {
-      if (err instanceof Error && err.name !== "AbortError") {
+      if (isModelRequestTimeout(err, requestSignal)) {
+        yield modelRequestTimeoutEvent("DeepSeek", this.timeoutMs);
+      } else if (err instanceof Error && err.name !== "AbortError") {
         yield { type: "error", message: err.message };
       }
     } finally {

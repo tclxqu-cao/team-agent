@@ -1,6 +1,6 @@
 import { createRequire } from "node:module";
 import type { BaseWindow, BrowserWindow, WebContents, WebContentsView } from "electron";
-import { CONVERSATION_EXTRACT_SCRIPT, CONTINUE_BUTTON_SCRIPT, ENTER_DISPATCH_SCRIPT, SEND_TARGET_SCRIPT, buildAdapterScript, buildFillInputScript, buildFocusInputScript, buildSubmissionProbeScript } from "./adapters.js";
+import { CONVERSATION_EXTRACT_SCRIPT, CONTINUE_BUTTON_SCRIPT, CONTINUE_TARGET_SCRIPT, ENTER_DISPATCH_SCRIPT, SEND_TARGET_SCRIPT, buildAdapterScript, buildFillInputScript, buildFocusInputScript, buildSubmissionProbeScript } from "./adapters.js";
 import type { ChromeHubBridge } from "./chrome-bridge.js";
 import { isChromeHubSite, chromeHubErrorMessage } from "./chrome-bridge-protocol.js";
 import { HubConfigStore, normalizeHubConfig, type HubAdapterId, type HubConfig } from "./config.js";
@@ -35,6 +35,8 @@ export interface HubCaptureResult {
   reason?: string;
   strategy?: string;
   messages?: Array<{ role: string; text: string }>;
+  /** 页面仍在生成当前回复，文本稳定不代表完成。 */
+  generating?: boolean;
   /** 页面挂着「继续生成」控件：上一条回复被站点截断，等待续跑。 */
   pendingContinue?: boolean;
   debug?: Record<string, unknown>;
@@ -59,6 +61,27 @@ interface PoolEntry {
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const poolKey = (siteId: string, conversationId?: string) => conversationId ? `${siteId}::${conversationId}` : siteId;
+const CONTINUE_CONFIRM_POLLS = 12;
+const CONTINUE_CONFIRM_INTERVAL_MS = 500;
+
+interface ContinuePageState {
+  generating: boolean;
+  pendingContinue: boolean;
+  tail: string;
+}
+
+function continuePageState(extract: any): ContinuePageState {
+  const messages = Array.isArray(extract?.messages) ? extract.messages : [];
+  return {
+    generating: extract?.generating === true,
+    pendingContinue: extract?.pendingContinue === true,
+    tail: String(messages.at(-1)?.text || messages.at(-1)?.content || ""),
+  };
+}
+
+function continuationAdvanced(before: ContinuePageState, after: ContinuePageState): boolean {
+  return after.generating || after.tail !== before.tail;
+}
 
 // 主进程视图池：每站点一个 WebContentsView，惰性创建，隐藏只 detach 不销毁，
 // 保留页面状态与登录态。可见性完全由 setBounds 驱动（列表内 attach，列表外 detach）。
@@ -360,8 +383,8 @@ export class AIHubManager {
     for (const siteId of siteIds) {
       if (this.usesChrome(siteId)) {
         try {
-          const extract = await this.chromeBridge!.request(siteId, "snapshot") as { messages?: Array<{ role: string; content: string }>; pendingContinue?: boolean; debug?: Record<string, unknown> };
-          results.push({ siteId, ok: true, strategy: siteId, pendingContinue: extract?.pendingContinue === true, debug: extract?.debug, messages: (extract?.messages ?? []).map((message) => ({ role: message.role, text: message.content })) });
+          const extract = await this.chromeBridge!.request(siteId, "snapshot") as { messages?: Array<{ role: string; content: string }>; generating?: boolean; pendingContinue?: boolean; debug?: Record<string, unknown> };
+          results.push({ siteId, ok: true, strategy: siteId, generating: extract?.generating === true, pendingContinue: extract?.pendingContinue === true, debug: extract?.debug, messages: (extract?.messages ?? []).map((message) => ({ role: message.role, text: message.content })) });
         } catch (error) {
           results.push({ siteId, ok: false, reason: error instanceof Error ? error.message : "Chrome 页面读取失败" });
         }
@@ -406,6 +429,7 @@ export class AIHubManager {
           ok: true,
           strategy: typeof extract?.strategy === "string" ? extract.strategy : "none",
           messages,
+          generating: extract?.generating === true,
           pendingContinue: extract?.pendingContinue === true,
           debug: extract?.debug && typeof extract.debug === "object" ? extract.debug : undefined,
         });
@@ -420,8 +444,9 @@ export class AIHubManager {
     return results;
   }
 
-  // 「继续生成」：provider 检测到站点把回复截断并挂出继续按钮时，由中继触发
-  // 真实控件点击续跑。内嵌视图走 CDP Runtime click；Chrome 站点走扩展命令。
+  // 「继续生成」：provider 检测到站点把回复截断并挂出继续按钮时，由中继触发。
+  // 内嵌视图优先走 CDP 可信鼠标事件，并确认页面真的恢复生成；不能再把一次
+  // 无效的 element.click() 当成成功。无 debugger 的旧运行时仍保留 DOM click 回退。
   async continueGeneration(siteIds: string[], conversationId?: string): Promise<HubBroadcastResult[]> {
     const results: HubBroadcastResult[] = [];
     for (const siteId of siteIds) {
@@ -442,27 +467,71 @@ export class AIHubManager {
         continue;
       }
       try {
-        let clicked = false;
         const cdp = entry.view.webContents.debugger;
         if (cdp) {
           if (!cdp.isAttached()) cdp.attach("1.3");
-          const response = await cdp.sendCommand("Runtime.evaluate", {
-            expression: CONTINUE_BUTTON_SCRIPT,
-            awaitPromise: true,
-            returnByValue: true,
-            userGesture: true,
-          }) as { result?: { value?: { clicked?: boolean } }; exceptionDetails?: { text?: string; exception?: { description?: string } } };
-          if (response.exceptionDetails) {
-            throw new Error(response.exceptionDetails.exception?.description || response.exceptionDetails.text || "cdp-continue-failed");
+          const evaluate = async <T>(expression: string, userGesture = false): Promise<T> => {
+            const response = await cdp.sendCommand("Runtime.evaluate", {
+              expression,
+              awaitPromise: true,
+              returnByValue: true,
+              userGesture,
+            }) as { result?: { value?: T }; exceptionDetails?: { text?: string; exception?: { description?: string } } };
+            if (response.exceptionDetails) {
+              throw new Error(response.exceptionDetails.exception?.description || response.exceptionDetails.text || "cdp-continue-failed");
+            }
+            return response.result?.value as T;
+          };
+          const before = continuePageState(await evaluate<any>(CONVERSATION_EXTRACT_SCRIPT));
+          if (before.generating) {
+            results.push({ siteId, ok: true });
+            continue;
           }
-          clicked = response.result?.value?.clicked === true;
+          const target = await evaluate<{ found?: boolean; clickable?: boolean; x?: number; y?: number }>(CONTINUE_TARGET_SCRIPT, true);
+          if (!target?.found) {
+            results.push({ siteId, ok: false, reason: "continue-button-not-found" });
+            continue;
+          }
+          if (!target.clickable || !Number.isFinite(target.x) || !Number.isFinite(target.y)) {
+            results.push({ siteId, ok: false, reason: "continue-button-obscured" });
+            continue;
+          }
+          const point = { x: target.x as number, y: target.y as number };
+          await cdp.sendCommand("Input.dispatchMouseEvent", { type: "mouseMoved", ...point });
+          await cdp.sendCommand("Input.dispatchMouseEvent", { type: "mousePressed", ...point, button: "left", clickCount: 1 });
+          await cdp.sendCommand("Input.dispatchMouseEvent", { type: "mouseReleased", ...point, button: "left", clickCount: 1 });
+          let missingPolls = 0;
+          let confirmed = false;
+          for (let poll = 0; poll < CONTINUE_CONFIRM_POLLS; poll += 1) {
+            await sleep(CONTINUE_CONFIRM_INTERVAL_MS);
+            const after = continuePageState(await evaluate<any>(CONVERSATION_EXTRACT_SCRIPT));
+            if (continuationAdvanced(before, after)) {
+              confirmed = true;
+              break;
+            }
+            missingPolls = after.pendingContinue ? 0 : missingPolls + 1;
+            if (missingPolls >= 3) {
+              confirmed = true;
+              break;
+            }
+          }
+          if (!confirmed) {
+            results.push({ siteId, ok: false, reason: "continue-click-unconfirmed" });
+            continue;
+          }
         } else {
+          const before = continuePageState(await entry.view.webContents.executeJavaScript(CONVERSATION_EXTRACT_SCRIPT, true));
           const value = await entry.view.webContents.executeJavaScript(CONTINUE_BUTTON_SCRIPT, true) as { clicked?: boolean } | undefined;
-          clicked = value?.clicked === true;
-        }
-        if (!clicked) {
-          results.push({ siteId, ok: false, reason: "continue-button-not-found" });
-          continue;
+          if (value?.clicked !== true) {
+            results.push({ siteId, ok: false, reason: "continue-button-not-found" });
+            continue;
+          }
+          await sleep(500);
+          const after = continuePageState(await entry.view.webContents.executeJavaScript(CONVERSATION_EXTRACT_SCRIPT, true));
+          if (!continuationAdvanced(before, after) && after.pendingContinue) {
+            results.push({ siteId, ok: false, reason: "continue-click-unconfirmed" });
+            continue;
+          }
         }
         results.push({ siteId, ok: true });
       } catch (error) {

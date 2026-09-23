@@ -61,6 +61,17 @@ export interface AgentClientConfig {
   token: string;
 }
 
+export interface AgentRunOptions {
+  agentId?: string;
+  skillName?: string;
+  profileId?: string;
+  projectId?: string;
+  title?: string;
+  metadata?: Record<string, unknown>;
+  context?: Record<string, unknown>;
+  source?: 'sdk' | 'portfolio' | 'flow-studio';
+}
+
 export interface RemoteToolRegistration {
   scheme: string;
   purpose: string;

@@ -239,14 +239,25 @@ export const ENTER_DISPATCH_SCRIPT = `(() => {
 const CONTINUE_LABELS = ['继续生成', '继续回答', 'continue', 'continue generation', 'continue generating', 'continue response'];
 const CONTINUE_FINDER_SNIPPET = `
   const continueLabels = ${JSON.stringify(CONTINUE_LABELS)};
-  const findContinueButton = () => [...document.querySelectorAll("button, [role='button']")].find((el) => {
-    const label = String(el.innerText || el.getAttribute("aria-label") || "").trim().toLowerCase();
-    if (!continueLabels.includes(label)) return false;
-    if (el.disabled || el.getAttribute("aria-disabled") === "true") return false;
-    const rect = el.getBoundingClientRect();
-    return rect.width > 0 && rect.height > 0
-      && getComputedStyle(el).visibility !== "hidden" && getComputedStyle(el).display !== "none";
-  });`;
+  const findContinueButton = () => {
+    const candidates = [...document.querySelectorAll("button, [role='button']")].filter((el) => {
+      const label = String(el.innerText || el.getAttribute("aria-label") || "").trim().toLowerCase();
+      if (!continueLabels.includes(label)) return false;
+      if (el.disabled || el.getAttribute("aria-disabled") === "true") return false;
+      const rect = el.getBoundingClientRect();
+      const style = getComputedStyle(el);
+      return rect.width > 0 && rect.height > 0
+        && style.visibility !== "hidden" && style.display !== "none"
+        && style.opacity !== "0" && style.pointerEvents !== "none";
+    });
+    const inViewport = candidates.filter((el) => {
+      const rect = el.getBoundingClientRect();
+      return rect.bottom > 0 && rect.right > 0
+        && rect.top < document.documentElement.clientHeight
+        && rect.left < document.documentElement.clientWidth;
+    });
+    return (inViewport.length ? inViewport : candidates).at(-1);
+  };`;
 
 // 只探测不点击：随会话抽取一起返回 pendingContinue，供 Provider 判断生成被截断。
 export function buildContinueProbeScript(): string {
@@ -255,13 +266,26 @@ export function buildContinueProbeScript(): string {
 })()`;
 }
 
-// 点击「继续生成」恢复被截断的输出；Runtime click 与发送按钮同一姿势，
-// 后台 WebContentsView 被裁剪出视口时依然有效。
+// 无 CDP 的旧运行时回退：触发 DOM click 后由主进程继续确认页面状态变化。
 export const CONTINUE_BUTTON_SCRIPT = `(() => {${CONTINUE_FINDER_SNIPPET}
   const button = findContinueButton();
   if (!button) return { clicked: false };
   button.click();
   return { clicked: true };
+})()`;
+
+// CDP 可信鼠标事件需要视口坐标。这里只定位并校验命中目标，不先触发 DOM click，
+// 避免同一次续写被合成 click 与真实鼠标事件重复提交。
+export const CONTINUE_TARGET_SCRIPT = `(() => {${CONTINUE_FINDER_SNIPPET}
+  const button = findContinueButton();
+  if (!button) return { found: false };
+  button.scrollIntoView({ block: "nearest", inline: "nearest" });
+  const rect = button.getBoundingClientRect();
+  const x = rect.left + rect.width / 2;
+  const y = rect.top + rect.height / 2;
+  const hit = document.elementFromPoint(x, y);
+  const clickable = !hit || hit === button || button.contains(hit);
+  return { found: true, clickable, x, y };
 })()`;
 
 // 会话抽取：站点专属选择器优先（ChatGPT 角色属性 / Gemini 自定义元素 / DeepSeek markdown 组），
@@ -273,9 +297,22 @@ export const CONVERSATION_EXTRACT_SCRIPT = `(() => {
   // A small prefix cap makes a long response look stable while the page is
   // still generating, so the provider can return reasoning or a partial answer.
   const LIMIT_CHARS = 100000;
-  const clean = (t) => String(t || "").replace(/\\n{3,}/g, "\\n\\n").trim().slice(0, LIMIT_CHARS);
+  const clean = (t) => String(t || "")
+    .replace(/\\r\\n/g, "\\n")
+    .replace(/[ \\t]+\\n/g, "\\n")
+    .replace(/\\n{3,}/g, "\\n\\n")
+    .trim()
+    .slice(0, LIMIT_CHARS);
   const out = [];${CONTINUE_FINDER_SNIPPET}
   const pendingContinue = Boolean(findContinueButton());
+  const stopLabels = ["停止生成", "停止回答", "stop", "stop generating", "stop response"];
+  const generating = [...document.querySelectorAll("button,[role='button']")].some((el) => {
+    if (el.disabled || el.getAttribute("aria-disabled") === "true") return false;
+    const rect = el.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0 || getComputedStyle(el).visibility === "hidden" || getComputedStyle(el).display === "none") return false;
+    const label = String(el.innerText || el.getAttribute("aria-label") || "").trim().toLowerCase();
+    return stopLabels.some((candidate) => label === candidate || label.includes(candidate));
+  });
   const push = (role, el) => { const text = clean(el.innerText); if (text) out.push({ role, text }); };
   const deepSeekText = (el) => {
     const clone = el.cloneNode(true);
@@ -284,7 +321,53 @@ export const CONVERSATION_EXTRACT_SCRIPT = `(() => {
       const rendered = annotation.closest(".katex, math, mjx-container") || annotation.parentElement;
       if (source != null && rendered) rendered.replaceWith(document.createTextNode("$" + source + "$"));
     });
-    return clean(clone.textContent);
+    const protocolText = clean(clone.textContent);
+    if (/"type"\\s*:\\s*"tool_call"/.test(protocolText)) return protocolText;
+    const markdown = (node) => {
+      if (node.nodeType === 3) return node.textContent || "";
+      if (node.nodeType !== 1 || node.matches("button,script,style,svg")) return "";
+      if (node.tagName === "PRE") {
+        const code = node.querySelector("code") || node;
+        const languageClass = [...code.classList].find((name) => name.startsWith("language-"));
+        const language = languageClass ? languageClass.slice(9) : "";
+        const body = code.textContent || "";
+        const tick = String.fromCharCode(96);
+        const runs = [...body.matchAll(new RegExp(tick + "+", "g"))].map((match) => match[0].length + 1);
+        const fence = tick.repeat(Math.max(3, ...runs));
+        return "\\n" + fence + language + "\\n" + body + "\\n" + fence + "\\n";
+      }
+      if (node.tagName === "TABLE") {
+        const rows = [...node.querySelectorAll("tr")].map((row) => [...row.querySelectorAll("th,td")]
+          .map((cell) => String(cell.innerText || cell.textContent || "").trim().replace(/\\|/g, "\\\\|")));
+        if (!rows.length) return "";
+        return "\\n" + rows.map((row, index) => "| " + row.join(" | ") + " |"
+          + (index === 0 ? "\\n| " + row.map(() => "---").join(" | ") + " |" : "")).join("\\n") + "\\n";
+      }
+      const children = [...node.childNodes].map(markdown).join("");
+      if (node.tagName === "CODE") return String.fromCharCode(96) + children + String.fromCharCode(96);
+      if (["STRONG", "B"].includes(node.tagName)) return "**" + children + "**";
+      if (["EM", "I"].includes(node.tagName)) return "*" + children + "*";
+      if (node.tagName === "A") {
+        const href = node.getAttribute("href") || "";
+        try {
+          const url = new URL(href, location.href);
+          if (["http:", "https:"].includes(url.protocol)) return "[" + children + "](" + url.href + ")";
+        } catch {}
+        return children;
+      }
+      if (node.tagName === "IMG") return node.alt ? "[图片：" + node.alt + "]" : "[图片]";
+      if (node.tagName === "BR") return "\\n";
+      if (node.tagName === "LI") {
+        const ordered = node.parentElement?.tagName === "OL";
+        const index = ordered ? [...node.parentElement.children].indexOf(node) + 1 : 0;
+        return "\\n" + (ordered ? index + ". " : "- ") + children.trim();
+      }
+      if (/^H[1-6]$/.test(node.tagName)) return "\\n" + "#".repeat(Number(node.tagName.slice(1))) + " " + children.trim() + "\\n";
+      if (node.tagName === "BLOCKQUOTE") return "\\n" + children.trim().split("\\n").map((line) => "> " + line).join("\\n") + "\\n";
+      if (/^(P|DIV|UL|OL)$/.test(node.tagName)) return "\\n" + children + "\\n";
+      return children;
+    };
+    return clean(markdown(clone));
   };
   const debug = {
     url: location.href.slice(0, 200),
@@ -314,12 +397,12 @@ export const CONVERSATION_EXTRACT_SCRIPT = `(() => {
   const gpt = document.querySelectorAll('[data-message-author-role="user"],[data-message-author-role="assistant"]');
   if (gpt.length > 0) {
     gpt.forEach((el) => push(el.getAttribute("data-message-author-role") === "user" ? "user" : "assistant", el));
-    return { strategy: "chatgpt", messages: out.slice(-LIMIT_TURNS), pendingContinue, debug };
+    return { strategy: "chatgpt", messages: out.slice(-LIMIT_TURNS), generating, pendingContinue, debug };
   }
   const gem = document.querySelectorAll("user-query, model-response");
   if (gem.length > 0) {
     gem.forEach((el) => push(el.tagName.toLowerCase() === "user-query" ? "user" : "assistant", el));
-    return { strategy: "gemini", messages: out.slice(-LIMIT_TURNS), pendingContinue, debug };
+    return { strategy: "gemini", messages: out.slice(-LIMIT_TURNS), generating, pendingContinue, debug };
   }
   const ds = document.querySelectorAll(".ds-markdown");
   if (ds.length > 0) {
@@ -328,7 +411,7 @@ export const CONVERSATION_EXTRACT_SCRIPT = `(() => {
     // order; injected user bubbles are intentionally recovered by the
     // provider's pre-send baseline rather than guessed from obfuscated classes.
     ds.forEach((el) => { const text = deepSeekText(el); if (text) out.push({ role: "assistant", text }); });
-    return { strategy: "deepseek", messages: out.slice(-LIMIT_TURNS), pendingContinue, debug };
+    return { strategy: "deepseek", messages: out.slice(-LIMIT_TURNS), generating, pendingContinue, debug };
   }
   // Providers without stable message classes still need protocol recovery.
   // Only use this fallback when no ordered provider messages were found;
@@ -342,9 +425,9 @@ export const CONVERSATION_EXTRACT_SCRIPT = `(() => {
     try {
       const parsed = JSON.parse(candidate.text);
       if (parsed && parsed.type === "tool_call" && typeof parsed.name === "string") {
-        return { strategy: "tool-protocol", messages: [{ role: "assistant", text: candidate.text }], pendingContinue, debug };
+        return { strategy: "tool-protocol", messages: [{ role: "assistant", text: candidate.text }], generating, pendingContinue, debug };
       }
     } catch {}
   }
-  return { strategy: "none", messages: [], pendingContinue, debug };
+  return { strategy: "none", messages: [], generating, pendingContinue, debug };
 })()`;

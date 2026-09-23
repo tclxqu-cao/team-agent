@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { CONVERSATION_EXTRACT_SCRIPT, CONTINUE_BUTTON_SCRIPT, ENTER_DISPATCH_SCRIPT, SEND_TARGET_SCRIPT, buildAdapterScript, buildContinueProbeScript, buildFillInputScript, buildFocusInputScript, buildSubmissionProbeScript } from "./adapters";
+import { CONVERSATION_EXTRACT_SCRIPT, CONTINUE_BUTTON_SCRIPT, CONTINUE_TARGET_SCRIPT, ENTER_DISPATCH_SCRIPT, SEND_TARGET_SCRIPT, buildAdapterScript, buildContinueProbeScript, buildFillInputScript, buildFocusInputScript, buildSubmissionProbeScript } from "./adapters";
 import { runInNewContext } from "node:vm";
 
 // 脚本语法校验：new Function 不执行代码，只解析；IIFE 是表达式，包一层 return 即可
@@ -109,6 +109,17 @@ describe("CONVERSATION_EXTRACT_SCRIPT", () => {
     expect(CONVERSATION_EXTRACT_SCRIPT).toContain('annotation.closest(".katex, math, mjx-container")');
     expect(CONVERSATION_EXTRACT_SCRIPT).toContain('document.createTextNode("$" + source + "$")');
     expect(CONVERSATION_EXTRACT_SCRIPT).toContain("const text = deepSeekText(el)");
+    expect(CONVERSATION_EXTRACT_SCRIPT).toContain("const markdown = (node)");
+    expect(CONVERSATION_EXTRACT_SCRIPT).toContain('node.tagName === "BR"');
+    expect(CONVERSATION_EXTRACT_SCRIPT).toContain('/^(P|DIV|UL|OL)$/');
+    expect(CONVERSATION_EXTRACT_SCRIPT).toContain('node.tagName === "LI"');
+    expect(CONVERSATION_EXTRACT_SCRIPT).toContain('node.tagName === "PRE"');
+    expect(CONVERSATION_EXTRACT_SCRIPT).toContain("const protocolText = clean(clone.textContent)");
+    expect(CONVERSATION_EXTRACT_SCRIPT).toContain('/"type"\\s*:\\s*"tool_call"/.test(protocolText)');
+    expect(CONVERSATION_EXTRACT_SCRIPT.indexOf("const protocolText = clean(clone.textContent)"))
+      .toBeLessThan(CONVERSATION_EXTRACT_SCRIPT.indexOf("return clean(markdown(clone))"));
+    expect(CONVERSATION_EXTRACT_SCRIPT).toContain("return clean(markdown(clone))");
+    expect(CONVERSATION_EXTRACT_SCRIPT).not.toContain("return clean(clone.textContent)");
     expect(CONVERSATION_EXTRACT_SCRIPT).not.toContain(".d00ed9c9");
     expect(CONVERSATION_EXTRACT_SCRIPT).toContain("tool-protocol");
     expect(CONVERSATION_EXTRACT_SCRIPT).toContain("JSON.parse(candidate.text)");
@@ -121,6 +132,9 @@ describe("CONVERSATION_EXTRACT_SCRIPT", () => {
     expect(CONVERSATION_EXTRACT_SCRIPT).toContain("viewport");
     expect(CONVERSATION_EXTRACT_SCRIPT).toContain("const LIMIT_CHARS = 100000");
     expect(CONVERSATION_EXTRACT_SCRIPT).not.toContain("const LIMIT_CHARS = 6000");
+    expect(CONVERSATION_EXTRACT_SCRIPT).toContain("const generating =");
+    expect(CONVERSATION_EXTRACT_SCRIPT).toContain('"停止生成"');
+    expect(CONVERSATION_EXTRACT_SCRIPT).toContain("messages: out.slice(-LIMIT_TURNS), generating, pendingContinue");
     assertParses(CONVERSATION_EXTRACT_SCRIPT);
   });
 });
@@ -147,17 +161,49 @@ describe("CONTINUE_BUTTON_SCRIPT", () => {
     };
     const otherButton = { innerText: "开启新对话", getAttribute: () => null, getBoundingClientRect: () => ({ width: 80, height: 32 }), click: () => clicks.push("new-chat") };
     const scope = {
-      document: { querySelectorAll: () => [otherButton, continueButton] },
+      document: { documentElement: { clientWidth: 900, clientHeight: 650 }, querySelectorAll: () => [otherButton, continueButton] },
       getComputedStyle: () => ({ visibility: "visible", display: "block" }),
     };
     expect(runInNewContext(CONTINUE_BUTTON_SCRIPT, scope)).toEqual({ clicked: true });
     expect(clicks).toEqual(["continue"]);
   });
 
+  it("坐标脚本只定位可点击目标，不提前触发合成 click", () => {
+    const click = vi.fn();
+    const continueButton = {
+      innerText: "继续生成",
+      getAttribute: () => null,
+      getBoundingClientRect: () => ({ left: 40, top: 60, width: 80, height: 32 }),
+      scrollIntoView: vi.fn(),
+      contains: () => false,
+      click,
+    };
+    const scope = {
+      document: {
+        documentElement: { clientWidth: 900, clientHeight: 650 },
+        querySelectorAll: () => [continueButton],
+        elementFromPoint: () => continueButton,
+      },
+      getComputedStyle: () => ({ visibility: "visible", display: "block" }),
+    };
+
+    expect(runInNewContext(CONTINUE_TARGET_SCRIPT, scope)).toEqual({
+      found: true,
+      clickable: true,
+      x: 80,
+      y: 76,
+    });
+    expect(continueButton.scrollIntoView).toHaveBeenCalledOnce();
+    expect(click).not.toHaveBeenCalled();
+  });
+
   it("探测脚本忽略无关按钮，未命中时 pendingContinue 为 false", () => {
     const scope = {
-      document: { querySelectorAll: () => [{ innerText: "继续写一篇", getAttribute: () => null, getBoundingClientRect: () => ({ width: 80, height: 32 }) }] },
-      getComputedStyle: () => ({ visibility: "visible", display: "block" }),
+      document: {
+        documentElement: { clientWidth: 900, clientHeight: 650 },
+        querySelectorAll: () => [{ innerText: "继续写一篇", getAttribute: () => null, getBoundingClientRect: () => ({ width: 80, height: 32 }) }],
+      },
+      getComputedStyle: () => ({ visibility: "visible", display: "block", opacity: "1", pointerEvents: "auto" }),
     };
     expect(runInNewContext(buildContinueProbeScript(), scope)).toEqual({ pendingContinue: false });
   });

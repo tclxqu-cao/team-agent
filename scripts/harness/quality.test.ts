@@ -1,9 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { execFileSync } from 'node:child_process';
 import { analyze, type QualityRun } from './quality-analysis.js';
-import { QualityStore } from './quality-store.js';
+import { QualityStore, sourceVersion } from './quality-store.js';
 
 function run(id: string, sessionId = id, runtimeVersion = 'v1'): QualityRun {
   return { id, sessionId, runtimeVersion, sourceVersion: 'source1', owner: 'test', startedAt: Date.now(), updatedAt: Date.now(),
@@ -15,6 +16,36 @@ function call(q: QualityRun, index: number, result: string, tool = 'read') {
     { at: index, type: 'tool_result', callId: String(index), resultHash: result, preview: result }); q.steps++;
 }
 describe('cross-session quality evidence', () => {
+  it('versions the desktop AI Hub relay and Chrome bridge used by observed model runs', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'quality-source-version-'));
+    const write = (path: string, content: string) => {
+      const target = join(dir, path);
+      mkdirSync(join(target, '..'), { recursive: true });
+      writeFileSync(target, content);
+    };
+    try {
+      execFileSync('git', ['init', '-q'], { cwd: dir });
+      write('packages/core/src/index.ts', 'export const core = 1;\n');
+      write('packages/desktop/main/ai-hub/manager.ts', 'export const relay = 1;\n');
+      write('packages/desktop/chrome-extension/page-actions.js', 'const bridge = 1;\n');
+      write('unrelated.txt', 'first\n');
+
+      const initial = sourceVersion(dir);
+      write('packages/desktop/main/ai-hub/manager.ts', 'export const relay = 2;\n');
+      const afterDesktopRelay = sourceVersion(dir);
+      write('packages/desktop/chrome-extension/page-actions.js', 'const bridge = 2;\n');
+      const afterChromeBridge = sourceVersion(dir);
+      write('unrelated.txt', 'second\n');
+
+      expect(initial).not.toBe('unknown');
+      expect(afterDesktopRelay).not.toBe(initial);
+      expect(afterChromeBridge).not.toBe(afterDesktopRelay);
+      expect(sourceVersion(dir)).toBe(afterChromeBridge);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('flags identical completed calls, but not polling whose result changes', () => {
     const a = run('a'), b = run('b');
     for (let i = 0; i < 3; i++) { call(a, i, 'same'); call(b, i, `progress-${i}`); }
@@ -28,14 +59,20 @@ describe('cross-session quality evidence', () => {
     q.observations.push({ at: 9, type: 'error', code: 'context_limit', message: 'context exceeded' });
     expect(analyze(q).map(f => f.kind)).toEqual(expect.arrayContaining(['step-cycle', 'reread-after-compaction', 'agent-error']));
   });
-  it('separates a structured environment prerequisite from repairable agent errors', () => {
+  it('separates structured environment failures from repairable agent errors', () => {
     const offline = run('offline');
     offline.observations.push({ at: 1, type: 'error', code: 'desktop_offline', message: 'AI Hub desktop offline' });
+    const timeout = run('timeout');
+    timeout.observations.push({ at: 1, type: 'error', code: 'model_transport_timeout', message: 'The operation was aborted due to timeout' });
     const contextLimit = run('context-limit');
     contextLimit.observations.push({ at: 1, type: 'error', code: 'context_limit', message: 'context exceeded' });
+    const generic = run('generic');
+    generic.observations.push({ at: 1, type: 'error', message: 'application invariant failed' });
 
     expect(analyze(offline)).toMatchObject([{ kind: 'environment-error', severe: false }]);
+    expect(analyze(timeout)).toMatchObject([{ kind: 'environment-error', severe: false }]);
     expect(analyze(contextLimit)).toMatchObject([{ kind: 'agent-error', severe: false }]);
+    expect(analyze(generic)).toMatchObject([{ kind: 'agent-error', severe: false }]);
   });
   it('persists across owners/restarts, counts sessions rather than turns, and separates runtime cohorts', () => {
     const dir = mkdtempSync(join(tmpdir(), 'quality-store-'));
@@ -99,7 +136,10 @@ it('sends an emitted error for immediate diagnosis without waiting for another s
     expect(JSON.parse(repair.mock.calls[0][1]).summary.sessions).toBe(1);
   } finally { await service.close(); rmSync(dir, { recursive: true, force: true }); }
 });
-it('records repeated desktop-offline runs without dispatching a source repair', async () => {
+it.each([
+  ['desktop offline', 'desktop_offline', 'AI Hub desktop offline'],
+  ['model transport timeout', 'model_transport_timeout', 'The operation was aborted due to timeout'],
+])('records repeated %s runs without dispatching a source repair', async (_label, code, message) => {
   const dir = mkdtempSync(join(tmpdir(), 'quality-environment-error-'));
   const repair = vi.fn(async () => ({ status: 'blocked' as const, runDirectory: dir, attempts: [], detail: 'review required' }));
   const store = new QualityStore(dir);
@@ -109,7 +149,7 @@ it('records repeated desktop-offline runs without dispatching a source repair', 
       const id = `offline-${index}`;
       service.receive({ type: 'begin', id, sessionId: id, input: 'test', workingDirectory: '/tmp', runtimeVersion: 'v1' });
       service.receive({ type: 'progress', id, eventType: 'error', data: {
-        type: 'error', code: 'desktop_offline', message: 'AI Hub desktop offline',
+        type: 'error', code, message,
       } });
       service.receive({ type: 'end', id });
     }

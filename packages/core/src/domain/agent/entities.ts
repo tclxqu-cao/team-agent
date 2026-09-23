@@ -5,6 +5,8 @@ import type { Message, NativeSubagentActivity, ToolCall, ToolResult } from '../m
 import type { CronTask } from '../cron/entities.js';
 import type { ThreadGoal } from '../goal/ThreadGoal.js';
 
+export const CONTEXT_COMPACTION_PROGRESS_ID = "context-compaction";
+
 export type AgentEventType =
   | "thinking"
   | "tool_call"
@@ -146,10 +148,13 @@ export interface AgentConfig {
   memoryStore: import("../memory/entities.js").IMemoryStore;
   sessionStore?: import("../session/entities.js").ISessionStore;
   workingDirectory: string;
+  /** Max tool-enabled ReAct iterations. One bounded tool-disabled finalization request may follow. */
   maxIterations: number;
   maxTokens: number;
+  /** Optional per-request output ceiling. Undefined keeps the legacy 1/8, max-16K heuristic. */
+  maxOutputTokens?: number;
   systemPrompt?: string;
-  /** Token count threshold (0–1 fraction of maxTokens) that triggers AutoCompact. Default 0.8 */
+  /** Token count threshold (0–1 fraction of maxTokens) that triggers AutoCompact. Default 0.6 */
   compactThreshold?: number;
   /** Max retries for retryable stream errors (timeout, rate limit, network). Default 0 */
   streamMaxRetries?: number;
@@ -157,9 +162,14 @@ export interface AgentConfig {
    *  null = all tools visible. Tools registered AFTER construction (session tools,
    *  MCP tools) are always visible regardless of this filter. */
   enabledTools?: string[] | null;
+  /** Whether tools registered after loop construction bypass enabledTools. Default true. */
+  allowUnlistedDynamicTools?: boolean;
   /** Skill name allowlist. Only these skills can be activated.
    *  null = all skills available. */
   enabledSkills?: string[] | null;
+  /** Skills explicitly selected by the caller for this run. Their prompts are
+   *  loaded before the first model request, after enabledSkills authorization. */
+  activatedSkills?: string[];
   /** Reasoning intensity forwarded to the provider. "off"/undefined = provider default. */
   reasoningEffort?: import("../model/entities.js").ReasoningEffort;
 }

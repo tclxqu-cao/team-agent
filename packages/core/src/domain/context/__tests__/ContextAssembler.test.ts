@@ -53,6 +53,30 @@ describe("ContextAssembler", () => {
     expect(ctx.systemPrompt).toContain("Docker expert prompt");
   });
 
+  it("keeps explicit Skill instructions ahead of oversized project context", async () => {
+    const projectFile = {
+      path: "/tmp/test/README.md",
+      content: "项目上下文".repeat(5_000),
+      type: "other" as const,
+    };
+    const tightAssembler = new ContextAssembler({
+      loadProjectContext: async () => [projectFile],
+      loadFile: async () => projectFile,
+      findClaudeMdFiles: async () => [],
+    });
+
+    const ctx = await tightAssembler.assemble({
+      ...baseInput,
+      systemPrompt: "Base instructions",
+      skillPrompts: "## Skill: computer-use\nObserve before every action.",
+      maxTokens: 1_000,
+    });
+
+    expect(ctx.systemSections.skills).toContain("## Skill: computer-use");
+    expect(ctx.systemPrompt).toContain("Observe before every action.");
+    expect(ctx.tokenUsed).toBeLessThanOrEqual(1_000);
+  });
+
   it("should include tool definitions", async () => {
     const tools = JSON.stringify([{ name: "read_file", description: "Read a file" }]);
     const ctx = await assembler.assemble({ ...baseInput, tools });

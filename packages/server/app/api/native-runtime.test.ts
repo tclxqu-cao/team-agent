@@ -1,5 +1,13 @@
+import { rmSync } from "node:fs";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
-import type { AgentEvent } from "@agent/core";
+import { flushGlobal, getDatabase, type AgentEvent } from "@agent/core";
+
+const isolatedAgentData = vi.hoisted(() => {
+  const previous = process.env.AGENT_DATA_DIR;
+  const directory = `${process.env.TMPDIR || "/tmp"}/agentroam-native-runtime-test-${process.pid}-${crypto.randomUUID()}`;
+  process.env.AGENT_DATA_DIR = directory;
+  return { directory, previous };
+});
 import { agentHost } from "./agent-host";
 import { GET as runtimeHealth } from "./agent/runtime-health/route";
 import { GET as listSessions, POST as createSession } from "./sessions/route";
@@ -231,6 +239,11 @@ describe("native runtime routing", () => {
     if (previousWebRoots === undefined) delete process.env.AGENT_WEB_ROOTS;
     else process.env.AGENT_WEB_ROOTS = previousWebRoots;
     await agentHost.getProjectStore().delete("native-runtime-test-project");
+    await flushGlobal();
+    getDatabase(isolatedAgentData.directory).close();
+    rmSync(isolatedAgentData.directory, { recursive: true, force: true });
+    if (isolatedAgentData.previous === undefined) delete process.env.AGENT_DATA_DIR;
+    else process.env.AGENT_DATA_DIR = isolatedAgentData.previous;
   });
 
   beforeEach(async () => {

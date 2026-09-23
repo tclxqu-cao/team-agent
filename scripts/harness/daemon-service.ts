@@ -14,6 +14,8 @@ interface WatchedTask {
   quality?: QualityRun;
   savedAt: number;
 }
+const EXTENDED_MODEL_REQUEST_PROVIDERS = new Set(['aihub', 'openai', 'deepseek']);
+
 export interface CompanionStatus { state: 'waiting-model' | 'ready' | 'repairing' | 'stopped'; modelId?: string; detail?: string; quality?: unknown }
 export class HarnessCompanion {
   private readonly runs = new Map<string, WatchedTask>();
@@ -102,9 +104,9 @@ export class HarnessCompanion {
     }
     if (!this.busy && this.queue.length) this.draining = this.drain();
     for (const run of this.runs.values()) {
-      // AI Hub polls a browser-backed model for up to 240 seconds. Its request is
-      // still making expected progress after the generic 180-second idle limit.
-      const idleLimit = run.modelRequestProvider === 'aihub'
+      // These providers can legitimately spend longer than the generic idle limit
+      // waiting for their first response (AI Hub: 240s; OpenAI/DeepSeek: 300s).
+      const idleLimit = EXTENDED_MODEL_REQUEST_PROVIDERS.has(run.modelRequestProvider ?? '')
         ? this.config.idleTimeoutMs * 2
         : this.config.idleTimeoutMs;
       if (!run.waiting && now - run.lastProgress > idleLimit && !run.reported) {

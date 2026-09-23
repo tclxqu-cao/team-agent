@@ -5,9 +5,36 @@ import {
   loadProgressiveSessionHistoryPage,
   mergeProgressiveSessionHistoryPage,
   mergeRefreshedSessionHistory,
+  resolveOlderHistoryCursor,
   restoreCodexExecutionTrace,
   restoreSessionHistoryPage,
 } from "./session-history";
+
+describe("resolveOlderHistoryCursor", () => {
+  it("stops when the response explicitly has no more history", () => {
+    expect(resolveOlderHistoryCursor("history.v1.1", {
+      history: { hasMore: false, nextCursor: "history.v1.1" },
+    }, 1)).toBeNull();
+  });
+
+  it("stops an empty page that repeats the requested cursor", () => {
+    expect(resolveOlderHistoryCursor("history.v1.1", {
+      history: { hasMore: true, nextCursor: "history.v1.1" },
+    }, 0)).toBeNull();
+  });
+
+  it("preserves an advanced cursor for an empty compatibility page", () => {
+    expect(resolveOlderHistoryCursor("history.v1.2", {
+      history: { hasMore: true, nextCursor: "history.v1.1" },
+    }, 0)).toBe("history.v1.1");
+  });
+
+  it("preserves normal populated-page pagination", () => {
+    expect(resolveOlderHistoryCursor("history.v1.2", {
+      history: { hasMore: true, nextCursor: "history.v1.1" },
+    }, 2)).toBe("history.v1.1");
+  });
+});
 
 describe("loadCodexExecutionTracePage", () => {
   it("refreshes the core revision and retries one stale trace request", async () => {

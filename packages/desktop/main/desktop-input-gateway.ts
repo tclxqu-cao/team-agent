@@ -1,10 +1,14 @@
 import { spawn, type ChildProcess } from "node:child_process";
+import type { AccessibilityObservation, AccessibilitySnapshotResult } from "@agent/computer-use";
 
 export type DesktopInputCommand =
   | { op: "move" | "down" | "up" | "drag"; x: number; y: number; button?: "left" | "right" | "middle"; click?: number }
   | { op: "wheel"; deltaX: number; deltaY: number }
   | { op: "key"; action: "down" | "up"; code: string; modifiers?: string[] }
-  | { op: "text"; text: string };
+  | { op: "text" | "unicode_text"; text: string }
+  | { op: "ax_snapshot" }
+  | { op: "ax_action"; revision: string; nodeId: string; action: "press" | "focus" }
+  | { op: "ax_text"; revision: string; nodeId: string; text: string; replace: boolean };
 
 interface PendingRequest {
   resolve: (value: Record<string, unknown>) => void;
@@ -103,6 +107,34 @@ export class DesktopInputGateway {
     return response.trusted === true;
   }
 
+  async snapshotAccessibility(): Promise<AccessibilitySnapshotResult> {
+    const response = await this.request({ op: "ax_snapshot" });
+    if (response.status === "ok" && response.observation && typeof response.observation === "object") {
+      return { status: "ok", observation: response.observation as AccessibilityObservation };
+    }
+    const status = response.status === "denied" || response.status === "timeout"
+      ? response.status
+      : "unavailable";
+    return { status, ...(typeof response.message === "string" ? { message: response.message } : {}) };
+  }
+
+  async performAccessibilityAction(
+    revision: string,
+    nodeId: string,
+    action: "press" | "focus",
+  ): Promise<void> {
+    await this.request({ op: "ax_action", revision, nodeId, action });
+  }
+
+  async setAccessibilityText(
+    revision: string,
+    nodeId: string,
+    text: string,
+    replace: boolean,
+  ): Promise<void> {
+    await this.request({ op: "ax_text", revision, nodeId, text, replace });
+  }
+
   async dispatch(command: DesktopInputCommand): Promise<Record<string, unknown>> {
     return this.request(command as unknown as Record<string, unknown> & { op: string });
   }
@@ -141,7 +173,10 @@ export class DesktopInputGateway {
     this.pending.delete(id);
     clearTimeout(request.timer);
     if (message.ok === true) request.resolve(message);
-    else request.reject(new Error(String(message.error || "desktop input helper error")));
+    else request.reject(Object.assign(
+      new Error(String(message.error || "desktop input helper error")),
+      typeof message.code === "string" ? { code: message.code } : {},
+    ));
   }
 
   #handleExit(): void {

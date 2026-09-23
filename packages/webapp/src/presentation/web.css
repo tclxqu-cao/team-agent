@@ -89,10 +89,6 @@ body[data-web-shell="1"] .chat-header-action--appearance {
   box-shadow: var(--shadow-lg);
 }
 
-.browser-live-panel.has-session-tabs {
-  grid-template-rows: 54px auto minmax(0, 1fr) 62px;
-}
-
 .browser-live-header,
 .browser-live-footer {
   min-width: 0;
@@ -149,26 +145,16 @@ body[data-web-shell="1"] .chat-header-action--appearance {
 }
 
 .browser-live-session-tabs {
-  min-height: 46px;
-  display: flex;
-  gap: 1px;
-  overflow-x: auto;
-  border-bottom: 1px solid var(--border-subtle);
-  background: var(--bg-surface);
+  display: inline-flex;
+  flex: none;
+  gap: 4px;
 }
 
 .browser-live-session-tabs button {
-  min-width: 150px;
-  max-width: 220px;
-  padding: 7px 12px;
-  display: grid;
-  gap: 2px;
-  border: 0;
-  border-bottom: 2px solid transparent;
-  background: transparent;
-  color: var(--text-muted);
-  cursor: pointer;
-  text-align: left;
+  max-width: 148px;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .browser-live-session-tabs button:hover {
@@ -176,26 +162,9 @@ body[data-web-shell="1"] .chat-header-action--appearance {
 }
 
 .browser-live-session-tabs button.is-active {
-  border-bottom-color: var(--accent);
+  border-color: var(--border-default);
   color: var(--text-primary);
-  background: var(--control-active);
-}
-
-.browser-live-session-tabs span,
-.browser-live-session-tabs small {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.browser-live-session-tabs span {
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.browser-live-session-tabs small {
-  font-size: 10px;
-  color: var(--text-muted);
+  background: var(--bg-surface);
 }
 
 .browser-live-surface {
@@ -350,6 +319,24 @@ body[data-web-shell="1"] .chat-header-action--appearance {
   text-align: center;
   font-size: 12px;
   font-variant-numeric: tabular-nums;
+}
+
+.browser-live-zoom .live-view-select {
+  height: 32px;
+}
+
+.browser-live-zoom .live-view-select select {
+  font-size: 14px;
+}
+
+.browser-live-zoom .browser-live-session-tabs button {
+  height: 32px;
+  font-size: 14px;
+}
+
+.browser-live-zoom .browser-live-session-tabs button.is-active {
+  border-color: var(--border-default);
+  background: var(--bg-surface);
 }
 
 .browser-live-surface.has-zoom .browser-live-control-cue {
@@ -613,10 +600,6 @@ body[data-web-shell="1"] .chat-header-action--appearance {
     border-radius: 0;
   }
 
-  .browser-live-panel.has-session-tabs {
-    grid-template-rows: 50px auto minmax(0, 1fr) auto;
-  }
-
   .browser-live-footer {
     min-height: 92px;
     align-items: stretch;
@@ -634,8 +617,10 @@ body[data-web-shell="1"] .chat-header-action--appearance {
     width: auto;
   }
 
-  .browser-live-session-tabs button {
-    min-width: 132px;
+  .browser-live-session-tabs button,
+  .browser-live-zoom button {
+    height: 32px;
+    font-size: 14px;
   }
 }
 
@@ -1088,7 +1073,6 @@ body[data-web-shell="1"] {
     box-sizing: border-box;
     grid-template-rows: 40px minmax(0, 1fr) 44px;
   }
-  .browser-live-panel.has-session-tabs { grid-template-rows: 40px auto minmax(0, 1fr) 44px; }
   .browser-live-footer {
     min-height: 0;
     flex-direction: row;

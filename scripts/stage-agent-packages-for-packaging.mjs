@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
 const repoRoot = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const desktopRoot = join(repoRoot, "packages", "desktop");
 
-const packages = await Promise.all(["core", "native-runtime"].map(async (directory) => {
+const packages = await Promise.all(["core", "computer-use", "native-runtime"].map(async (directory) => {
   const source = join(repoRoot, "packages", directory);
   const { name } = JSON.parse(await readFile(join(source, "package.json"), "utf8"));
   const link = join(desktopRoot, "node_modules", ...name.split("/"));

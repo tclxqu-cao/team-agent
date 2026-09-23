@@ -1,5 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { readAgentType, readWorkspaceQuery } from "./agent-workspace-http";
+import {
+  CUSTOMER_AGENT_RECENT_WORKSPACE_ID,
+  readAgentType,
+  readWorkspaceQuery,
+} from "./agent-workspace-http";
 import { GET as listWorkspaces, POST as importWorkspace } from "./route";
 import { GET as listWorkspaceSessions } from "./[workspaceId]/sessions/route";
 
@@ -7,6 +11,17 @@ const state = {
   nativeWorkspaceCalls: [] as unknown[][],
   nativeSessionCalls: [] as unknown[][],
   nativeImportCalls: [] as unknown[][],
+  customerSessions: [] as Array<{
+    id: string;
+    projectId: string;
+    title: string;
+    status: "completed";
+    messages: unknown[];
+    events: unknown[];
+    created: string;
+    updated: string;
+    metadata: Record<string, unknown>;
+  }>,
 };
 
 vi.mock("../agent-host", () => ({
@@ -14,14 +29,19 @@ vi.mock("../agent-host", () => ({
     getProjectStore: () => ({
       list: async () => [
         { id: "second", name: "Second", description: "/second", created: "1", updated: "2" },
+        { id: "rootless", name: "Rootless", description: "", created: "1", updated: "2" },
         { id: "first", name: "First", description: "/first", created: "1", updated: "1" },
       ],
-      get: async (id: string) => id === "second"
-        ? { id, name: "Second", description: "/second", created: "1", updated: "2" }
-        : null,
+      get: async (id: string) => {
+        if (id === "second") return { id, name: "Second", description: "/second", created: "1", updated: "2" };
+        if (id === "rootless") return { id, name: "Rootless", description: "", created: "1", updated: "2" };
+        return null;
+      },
     }),
     getSessionStore: () => ({
-      list: async () => [],
+      list: async (projectId?: string) => projectId
+        ? state.customerSessions.filter((session) => session.projectId === projectId)
+        : state.customerSessions,
     }),
     isSessionRunning: () => false,
   },
@@ -69,6 +89,7 @@ describe("agent workspace routes", () => {
     state.nativeWorkspaceCalls = [];
     state.nativeSessionCalls = [];
     state.nativeImportCalls = [];
+    state.customerSessions = [];
   });
 
   it("validates Agent type and pagination query", () => {
@@ -83,12 +104,68 @@ describe("agent workspace routes", () => {
     expect(() => readWorkspaceQuery(new URL("http://test?limit=0"))).toThrow("limit must be an integer");
   });
 
-  it("preserves Customer Agent project-store order", async () => {
+  it("preserves Customer Agent project-store order and hides projects without a directory", async () => {
     const response = await listWorkspaces(new Request("http://test/api/agent-workspaces?agentType=customer-agent"));
     const page = await response.json();
 
     expect(response.status).toBe(200);
-    expect(page.data.map((workspace: { workspaceId: string }) => workspace.workspaceId)).toEqual(["second", "first"]);
+    expect(page.data.map((workspace: { workspaceId: string }) => workspace.workspaceId)).toEqual([
+      CUSTOMER_AGENT_RECENT_WORKSPACE_ID,
+      "second",
+      "first",
+    ]);
+    expect(page.data[0]).toMatchObject({
+      name: "最近",
+      roots: [],
+      order: -1,
+      source: "derived",
+      canCreateSession: false,
+    });
+  });
+
+  it("lists unassigned, rootless, and stale Customer Agent sessions in recent", async () => {
+    state.customerSessions = [
+      customerSession("unassigned", "", "2026-09-23T04:00:00.000Z"),
+      customerSession("rootless-session", "rootless", "2026-09-23T03:00:00.000Z"),
+      customerSession("stale-session", "missing", "2026-09-23T02:00:00.000Z"),
+      customerSession("assigned", "second", "2026-09-23T01:00:00.000Z"),
+    ];
+
+    const response = await listWorkspaceSessions(
+      new Request(`http://test/api/agent-workspaces/${CUSTOMER_AGENT_RECENT_WORKSPACE_ID}/sessions?agentType=customer-agent`),
+      { params: { workspaceId: CUSTOMER_AGENT_RECENT_WORKSPACE_ID } },
+    );
+    const page = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(page.data.map((session: { id: string }) => session.id)).toEqual([
+      "unassigned",
+      "rootless-session",
+      "stale-session",
+    ]);
+    expect(page.data).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: "unassigned",
+        projectId: CUSTOMER_AGENT_RECENT_WORKSPACE_ID,
+        cwd: "",
+        agentType: "customer-agent",
+        canResume: true,
+      }),
+    ]));
+    expect(page.watermark).toBe("2026-09-23T04:00:00.000Z");
+  });
+
+  it("rejects a cached Customer Agent workspace that has no directory", async () => {
+    const response = await listWorkspaceSessions(
+      new Request("http://test/api/agent-workspaces/rootless/sessions?agentType=customer-agent"),
+      { params: { workspaceId: "rootless" } },
+    );
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({
+      error: "该项目没有宿主机目录",
+      code: "PROJECT_PATH_REQUIRED",
+    });
   });
 
   it("delegates only the requested native Agent with cursor fields", async () => {
@@ -134,3 +211,17 @@ describe("agent workspace routes", () => {
     expect(state.nativeImportCalls).toEqual([["opencode", "/repo/app", "App"]]);
   });
 });
+
+function customerSession(id: string, projectId: string, updated: string) {
+  return {
+    id,
+    projectId,
+    title: id,
+    status: "completed" as const,
+    messages: [],
+    events: [],
+    created: updated,
+    updated,
+    metadata: {},
+  };
+}

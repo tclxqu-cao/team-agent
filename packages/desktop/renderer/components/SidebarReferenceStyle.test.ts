@@ -103,6 +103,19 @@ describe("AgentRoam reference sidebar", () => {
     expect(app).not.toContain("const isSelected = selectedProjectId === project.id;");
   });
 
+  it("uses fill-only selected rows across every skin", () => {
+    const activeRowsStart = css.indexOf(".sidebar-session-row.sidebar-row-active,");
+    const activeRowsEnd = css.indexOf(
+      ".sidebar-session-row.sidebar-row-active .sidebar-session-button,",
+      activeRowsStart,
+    );
+    const activeRowsCss = css.slice(activeRowsStart, activeRowsEnd);
+
+    expect(activeRowsStart).toBeGreaterThan(-1);
+    expect(activeRowsCss).toContain("background: var(--control-active)");
+    expect(activeRowsCss).not.toContain("border-color");
+  });
+
   it("uses a flat search affordance and avoids sticky touch hover states", () => {
     const searchStart = css.indexOf(".sidebar-search-field {");
     const searchEnd = css.indexOf(".sidebar-project-toolbar", searchStart);
@@ -232,12 +245,13 @@ describe("AgentRoam reference sidebar", () => {
   });
 
   it("keeps project deletion desktop-only for valid rows and offers invalid-workspace deletion everywhere", () => {
-    const projectDeleteStart = app.indexOf('{activeAgent === "customer-agent" && !webShell ? (');
+    const projectDeleteStart = app.indexOf('{activeAgent === "customer-agent" && !webShell && project.canCreateSession !== false ? (');
     const projectDeleteEnd = app.indexOf('className="sidebar-runtime-create', projectDeleteStart);
     const projectDeleteButton = app.slice(projectDeleteStart, projectDeleteEnd);
 
     expect(projectDeleteStart).toBeGreaterThan(-1);
     expect(projectDeleteButton).toContain('activeAgent === "customer-agent"');
+    expect(projectDeleteButton).toContain("project.canCreateSession !== false");
     expect(projectDeleteButton).toContain('aria-label={`删除目录：${project.name}`}');
     expect(projectDeleteButton).toContain("sidebar-project-delete");
     expect(projectDeleteButton).toContain("<SidebarDeleteIcon />");

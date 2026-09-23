@@ -62,6 +62,7 @@ export * from './domain/cron/index.js';
 export * from './domain/goal/index.js';
 export * from './application/goal/ThreadGoalService.js';
 export * from './application/goal/ThreadGoalTools.js';
+export * from './application/agent-run/index.js';
 
 
 // Infrastructure

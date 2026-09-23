@@ -80,7 +80,7 @@ export function createSharedAgentApi(api: SharedServiceApi, device: AgentApi): A
     } catch (error) { window.dispatchEvent(new Event("shared-service:offline")); throw error; }
   };
   const gateway = new AgentHttpGateway(new HttpClient(transport), new LocalSettingsRepository(), undefined, (url) => new ServiceEventSource(url, api) as unknown as EventSource);
-  const localNames = new Set(["openFileDialog", "readFile", "writeFile", "importSkill", "hideWindow", "showWindow", "isWindowVisible", "getUpdateStatus", "checkForUpdate", "installUpdate", "onUpdateStatus"]);
+  const localNames = new Set(["openFileDialog", "showDirectoryContextMenu", "readFile", "writeFile", "importSkill", "hideWindow", "showWindow", "isWindowVisible", "getUpdateStatus", "checkForUpdate", "installUpdate", "onUpdateStatus"]);
   return new Proxy(gateway, {
     get(target, key) {
       if (typeof key !== "string") return Reflect.get(target, key);

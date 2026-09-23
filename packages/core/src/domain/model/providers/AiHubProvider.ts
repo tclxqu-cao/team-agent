@@ -7,6 +7,7 @@ import type { IModelProvider, Message, StreamEvent, StreamOptions, ModelProvider
 import { MAX_RELAY_TEXT_LENGTH } from '../../ai-hub/relay-protocol.js';
 import type { AiHubCaptureMessage, AiHubTransport } from '../../ai-hub/transport.js';
 import { AiHubSocketTransport } from '../../../infrastructure/AiHubSocketTransport.js';
+import { modelRequestTimeoutEvent } from './requestTimeout.js';
 
 // 连续 N 次轮询抓到相同文本视为网页生成结束（站点回复是渐进渲染的）
 const STABLE_POLLS = 2;
@@ -59,13 +60,15 @@ export function composeAiHubTranscript(
     '以下是一段完整对话的背景与历史。请理解上下文后，以「助手」的身份直接回答最后的用户消息。',
   ];
   if (workingDirectory) prefixSections.push(`【当前项目目录】\n${workingDirectory}`);
-  if (tools.length > 0 && includeToolProtocol) prefixSections.push(composeToolProtocol(tools));
+  if (tools.length > 0) {
+    prefixSections.push(includeToolProtocol ? composeToolProtocol(tools) : composeToolReminder(tools));
+  }
   const suffixSections = [
     ...(latest ? [`【用户最新消息】\n${latest}`] : []),
     tools.length > 0
     ? includeToolProtocol
       ? '（需要工具时只输出工具调用 JSON；不需要工具时直接输出最终回复。不要复述以上设定。）'
-      : '（可继续使用本网页会话此前提供的工具协议。需要工具时只输出工具调用 JSON；否则直接回复。）'
+      : '（需要工具时回看前文协议并只输出工具调用 JSON；否则直接回复。不要把计划执行工具的思考当成最终回答。）'
     : '（请直接输出对最新用户消息的回复内容，不要复述以上设定。）',
     ...(hasFailedToolResult
       ? ['【工具执行失败】上面的工具结果中存在「状态=失败」的条目。请先阅读其中的错误信息，修正调用参数或改用其他工具/方案后重新调用；不要无视失败结果直接给出最终回复。']
@@ -158,11 +161,13 @@ export class AiHubProvider implements IModelProvider {
     let continueAttempts = 0;
     let lastContinueAt = 0;
     let pendingContinue = false;
+    let generating = false;
     while (Date.now() < deadline) {
       await sleep(POLL_INTERVAL_MS);
       const entry = await this.captureSite(siteId, conversationId);
       if (!entry) continue;
       pendingContinue = entry.pendingContinue;
+      generating = entry.generating;
       // 站点可能把长回复截断并挂出「继续生成」按钮：此时文本稳定不代表生成结束，
       // 必须先点击续跑，否则半截回复会被当成最终答案结束本轮。
       const shouldResume = entry.pendingContinue
@@ -188,6 +193,10 @@ export class AiHubProvider implements IModelProvider {
       if (candidate === reply) {
         stableCount += 1;
         if (stableCount >= STABLE_POLLS && Date.now() >= notBefore) {
+          // DeepSeek may keep a reasoning block unchanged while it prepares the
+          // final answer or tool envelope. Text stability is not completion
+          // while the page still exposes an active generation control.
+          if (entry.generating) continue;
           if (entry.pendingContinue
             && continueAttempts >= MAX_CONTINUE_ATTEMPTS
             && Date.now() - lastContinueAt >= CONTINUE_RETRY_MS) {
@@ -214,15 +223,28 @@ export class AiHubProvider implements IModelProvider {
       }
     }
     if (reply) {
+      if (generating) {
+        yield {
+          ...modelRequestTimeoutEvent(`AI Hub（${siteId}）`, this.timeoutMs),
+          message: `AI Hub 抓取回复超过 ${Math.round(this.timeoutMs / 1000)} 秒（${siteId}）：网页仍在生成，未提交可能不完整的内容`,
+        };
+        return;
+      }
       if (pendingContinue) {
         yield { type: 'error', message: this.continueLimitError(siteId) };
         return;
       }
-      // 超时兜底：宁可回吐已抓到的部分，也不让这一轮凭空失败
-      yield* emitReply(reply, tools);
+      // The site reported idle, but the reply never stabilized before the
+      // deadline. Preserve it as visible text without executing a possibly
+      // incomplete tool envelope, then mark the turn as failed.
+      yield* emitText(reply);
+      yield modelRequestTimeoutEvent(`AI Hub（${siteId}）`, this.timeoutMs);
       return;
     }
-    yield { type: 'error', message: `AI Hub 抓取回复超时（${Math.round(this.timeoutMs / 1000)}s，${siteId}）：站点可能未登录、被限流或选择器漂移，请打开桌面 App AI Hub 面板确认` };
+    yield {
+      ...modelRequestTimeoutEvent(`AI Hub（${siteId}）`, this.timeoutMs),
+      message: `AI Hub 抓取回复超过 ${Math.round(this.timeoutMs / 1000)} 秒（${siteId}）：站点可能未登录、被限流或选择器漂移，请打开桌面 App AI Hub 面板确认`,
+    };
   }
 
   async countTokens(messages: Message[]): Promise<number> {
@@ -233,7 +255,7 @@ export class AiHubProvider implements IModelProvider {
     return true; // modelId 即 AI Hub 站点 ID，接受任意已配置站点
   }
 
-  private async captureSite(siteId: string, conversationId?: string): Promise<{ messages: AiHubCaptureMessage[]; pendingContinue: boolean } | null> {
+  private async captureSite(siteId: string, conversationId?: string): Promise<{ messages: AiHubCaptureMessage[]; generating: boolean; pendingContinue: boolean } | null> {
     const capture = await this.transport.capture([siteId], conversationId);
     const entry = capture.results.find((candidate) => candidate.siteId === siteId);
     if (!entry?.ok || !entry.messages || entry.messages.length === 0) return null;
@@ -242,6 +264,7 @@ export class AiHubProvider implements IModelProvider {
         ...message,
         text: stripCapturedCodeToolbar(message.text),
       })),
+      generating: entry.generating === true,
       pendingContinue: entry.pendingContinue === true,
     };
   }
@@ -285,7 +308,7 @@ export function selectAiHubRelayMessages(
 /** Remove code-block chrome exposed by webpage innerText (language / copy / download). */
 export function stripCapturedCodeToolbar(text: string): string {
   return text.replace(
-    /(^|\n)(?:[a-z][\w+#.-]{0,20}\n)?(?:复制|copy)\n(?:下载|download)(?:\n|$)/gi,
+    /(^|\n)(?:[a-z][\w+#.-]{0,20}\n{1,2})?(?:复制|copy)\n{1,2}(?:下载|download)(?:\n{1,2}|$)/gi,
     "$1",
   );
 }
@@ -302,8 +325,35 @@ ${JSON.stringify(definitions, null, 2)}
 
 需要调用工具时，只能输出一个 JSON 对象，不要使用 Markdown 代码块，也不要附加解释：
 {"type":"tool_call","id":"call_<唯一标识>","name":"工具名","arguments":{"参数名":"参数值"}}
+${composeToolCallJsonRules(tools)}
 arguments 必须是 JSON 对象并符合该工具的 parameters。每次只能调用一个工具。工具执行结果会在下一轮对话中提供，并标注「状态=成功/失败」；收到「状态=失败」的结果时，必须阅读其中的错误信息，修正参数后重新调用或改用其他工具，不要无视失败直接作答。
-如果对话历史中已经有能回答当前问题的成功工具结果，必须直接基于该结果回答，不要重复调用同一个工具；只有结果报错或确实缺少必要信息时才能再次调用。`;
+如果对话历史中已经有能回答当前问题的成功工具结果，必须直接基于该结果回答，不要重复调用同一个工具；只有结果报错或确实缺少必要信息时才能再次调用。
+这里列出的 Agent 工具才是本轮工具能力的权威来源。网页站点自身展示的搜索、打开网页等内置工具不能替代或否定这些 Agent 工具。`;
+}
+
+function composeToolReminder(tools: ToolDefinition[]): string {
+  const names = tools.map((tool) => tool.name).join('、');
+  return `【本轮 Agent 工具提醒】
+当前仍可调用的 Agent 工具名称：${names}
+这些工具的完整说明和 parameters 已在本网页会话前文的【可用工具与调用协议】中提供。需要执行实际操作时，先回看并沿用前文协议，再只输出一个标准 tool_call JSON；不要只描述“应该调用工具”，也不要让用户手工执行已有 Agent 工具能完成的操作。
+${composeToolCallJsonRules(tools)}
+必须以这里列出的 Agent 工具为准。网页站点自身的 search、open、find、image_search 等内置工具不是 Agent 工具，不能据此声称 bash 或其他已列出的工具不可用。`;
+}
+
+function composeToolCallJsonRules(tools: ToolDefinition[]): string {
+  const rules = [
+    '工具调用 JSON 硬性要求：',
+    '1. 整段输出必须能被 JSON.parse 直接解析；只能有一个 JSON 对象，前后不能有解释、思考、注释或代码围栏。',
+    '2. JSON 的键和字符串边界只能使用英文双引号，不能使用中文引号或单引号代替。',
+    String.raw`3. JSON 字符串内部必须转义：双引号写成 \"，反斜杠写成 \\，换行写成 \n；不能把真实换行直接放进字符串。`,
+    '4. URL 必须保持原始文本，禁止改写成 Markdown 链接 [url](url)。',
+    '5. type 必须严格等于 tool_call；id、name 必须是字符串；arguments 必须是 JSON 对象，不能把 arguments 再序列化成字符串。',
+    '输出前请自行检查：整个输出可被 JSON.parse 解析，且解析结果的 arguments 是对象。',
+  ];
+  if (tools.some((tool) => tool.name === 'bash')) {
+    rules.push(String.raw`bash 命令中嵌套 JSON 的正确示例：{"type":"tool_call","id":"call_example","name":"bash","arguments":{"command":"curl http://example.invalid -d '{\"Serialid\":\"ABC\"}'","timeout":40000}}`);
+  }
+  return rules.join('\n');
 }
 
 export function parseAiHubToolCall(reply: string, tools: ToolDefinition[]): ToolCall | null {
@@ -325,14 +375,42 @@ export function parseAiHubToolCall(reply: string, tools: ToolDefinition[]): Tool
   if (typeof value.name !== 'string' || !tools.some((tool) => tool.name === value.name)) {
     throw new Error(`AI Hub 返回了未注册的工具调用：${String(value.name ?? '')}`);
   }
-  if (!isRecord(value.arguments)) {
+  const parsedArguments = parseToolArguments(value.arguments);
+  if (!parsedArguments) {
     throw new Error(`AI Hub 工具 ${value.name} 的 arguments 必须是 JSON 对象`);
   }
   return {
     id: typeof value.id === 'string' && value.id.trim() ? value.id : createToolCallId(),
     name: value.name,
-    arguments: value.arguments,
+    arguments: normalizeToolArguments(value.name, parsedArguments),
   };
+}
+
+function parseToolArguments(value: unknown): Record<string, unknown> | null {
+  if (isRecord(value)) return value;
+  if (typeof value !== 'string' || !value.trim()) return null;
+  for (const candidate of [value, repairMalformedToolCallJson(value)]) {
+    try {
+      const parsed = JSON.parse(candidate);
+      if (isRecord(parsed)) return parsed;
+    } catch {
+      // Try the repaired form before rejecting a stringified arguments object.
+    }
+  }
+  return null;
+}
+
+function normalizeToolArguments(name: string, args: Record<string, unknown>): Record<string, unknown> {
+  if (name !== 'bash' || typeof args.command !== 'string') return args;
+  const command = args.command.replace(
+    /\[(https?:\/\/[^\]\s]+)\]\((https?:\/\/[^)\s]+)\)/g,
+    (match, label: string, href: string) => comparableUrl(label) === comparableUrl(href) ? label : match,
+  );
+  return command === args.command ? args : { ...args, command };
+}
+
+function comparableUrl(value: string): string {
+  return value.endsWith('/') ? value.slice(0, -1) : value;
 }
 
 const DSML_MARKER = '｜｜DSML｜｜';
@@ -413,16 +491,6 @@ function parseToolCallEnvelope(text: string): unknown | null {
     // protocol. Scan complete JSON objects without treating braces in strings
     // as structure, then accept the first actual tool_call envelope.
   }
-  const broadStart = text.indexOf('{');
-  const broadEnd = text.lastIndexOf('}');
-  if (broadStart >= 0 && broadEnd > broadStart && text.slice(broadStart, broadEnd + 1).includes('"tool_call"')) {
-    try {
-      const repaired = JSON.parse(repairMalformedToolCallJson(text.slice(broadStart, broadEnd + 1)));
-      if (isRecord(repaired) && repaired.type === 'tool_call') return repaired;
-    } catch {
-      // Continue with narrower candidates when surrounding prose has braces.
-    }
-  }
   for (const line of text.split('\n')) {
     const start = line.indexOf('{');
     const end = line.lastIndexOf('}');
@@ -432,6 +500,16 @@ function parseToolCallEnvelope(text: string): unknown | null {
       if (isRecord(repaired) && repaired.type === 'tool_call') return repaired;
     } catch {
       // Fall through to strict balanced-object recovery.
+    }
+  }
+  const broadStart = text.indexOf('{');
+  const broadEnd = text.lastIndexOf('}');
+  if (broadStart >= 0 && broadEnd > broadStart && text.slice(broadStart, broadEnd + 1).includes('"tool_call"')) {
+    try {
+      const repaired = JSON.parse(repairMalformedToolCallJson(text.slice(broadStart, broadEnd + 1)));
+      if (isRecord(repaired) && repaired.type === 'tool_call') return repaired;
+    } catch {
+      // Continue with balanced-object recovery when a multiline envelope is incomplete.
     }
   }
   for (let start = text.indexOf('{'); start >= 0; start = text.indexOf('{', start + 1)) {
@@ -465,7 +543,45 @@ function parseToolCallEnvelope(text: string): unknown | null {
 }
 
 function repairMalformedToolCallJson(text: string): string {
-  return repairInvalidJsonStringEscapes(repairUnescapedJsonStringQuotes(text));
+  const variants = repairUnescapedJsonStringQuoteVariants(text);
+  for (const variant of variants) {
+    const repaired = removeTrailingJsonCommas(repairInvalidJsonStringEscapes(variant));
+    try {
+      JSON.parse(repaired);
+      return repaired;
+    } catch {
+      // Try the next ambiguous quote boundary.
+    }
+  }
+  return removeTrailingJsonCommas(repairInvalidJsonStringEscapes(variants[0] ?? text));
+}
+
+function removeTrailingJsonCommas(text: string): string {
+  let result = '';
+  let inString = false;
+  let escaped = false;
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index];
+    if (inString) {
+      result += char;
+      if (escaped) escaped = false;
+      else if (char === '\\') escaped = true;
+      else if (char === '"') inString = false;
+      continue;
+    }
+    if (char === '"') {
+      inString = true;
+      result += char;
+      continue;
+    }
+    if (char === ',') {
+      let cursor = index + 1;
+      while (/\s/.test(text[cursor] ?? '')) cursor += 1;
+      if (text[cursor] === '}' || text[cursor] === ']') continue;
+    }
+    result += char;
+  }
+  return result;
 }
 
 function repairInvalidJsonStringEscapes(text: string): string {
@@ -495,49 +611,107 @@ function repairInvalidJsonStringEscapes(text: string): string {
   return result;
 }
 
-function repairUnescapedJsonStringQuotes(text: string): string {
-  let result = '';
-  let inString = false;
-  let stringIsKey = false;
-  let escaped = false;
-  let previousSignificant = '';
-  for (let index = 0; index < text.length; index += 1) {
-    const char = text[index];
-    if (!inString) {
-      result += char;
-      if (char === '"') {
-        inString = true;
-        stringIsKey = previousSignificant === '{' || previousSignificant === ',';
-      } else if (!/\s/.test(char)) {
-        previousSignificant = char;
-      }
+function hasValidJsonContainerContinuation(text: string, start: number): boolean {
+  let cursor = start;
+  while (cursor < text.length) {
+    while (/\s/.test(text[cursor] ?? '')) cursor += 1;
+    const char = text[cursor];
+    if (char === '}' || char === ']') {
+      cursor += 1;
       continue;
     }
-    if (escaped) {
-      result += char;
-      escaped = false;
-      continue;
-    }
-    if (char === '\\') {
-      result += char;
-      escaped = true;
-      continue;
-    }
-    if (char !== '"') {
-      result += char;
-      continue;
-    }
-    const next = text.slice(index + 1).match(/^\s*([,:}\]])/)?.[1];
-    const closesString = stringIsKey ? next === ':' : next === ',' || next === '}';
-    if (closesString) {
-      result += char;
-      inString = false;
-      previousSignificant = '"';
-    } else {
-      result += '\\"';
-    }
+    if (char !== ',') return false;
+    cursor += 1;
+    while (/\s/.test(text[cursor] ?? '')) cursor += 1;
+    return /["{\[\-0-9tfn]/.test(text[cursor] ?? '');
   }
-  return result;
+  return true;
+}
+
+interface JsonQuoteRepairState {
+  index: number;
+  result: string;
+  inString: boolean;
+  stringIsKey: boolean;
+  repairedInString: boolean;
+  escaped: boolean;
+  previousSignificant: string;
+}
+
+function repairUnescapedJsonStringQuoteVariants(text: string): string[] {
+  const maxVariants = 128;
+  const pending: JsonQuoteRepairState[] = [{
+    index: 0,
+    result: '',
+    inString: false,
+    stringIsKey: false,
+    repairedInString: false,
+    escaped: false,
+    previousSignificant: '',
+  }];
+  const variants: string[] = [];
+  while (pending.length > 0 && variants.length < maxVariants) {
+    const state = pending.pop()!;
+    let { index, result, inString, stringIsKey, repairedInString, escaped, previousSignificant } = state;
+    for (; index < text.length; index += 1) {
+      const char = text[index];
+      if (!inString) {
+        result += char;
+        if (char === '"') {
+          inString = true;
+          stringIsKey = previousSignificant === '{' || previousSignificant === ',';
+          repairedInString = false;
+        } else if (!/\s/.test(char)) {
+          previousSignificant = char;
+        }
+        continue;
+      }
+      if (escaped) {
+        result += char;
+        escaped = false;
+        continue;
+      }
+      if (char === '\\') {
+        result += char;
+        escaped = true;
+        continue;
+      }
+      if (char !== '"') {
+        result += char;
+        continue;
+      }
+      const next = text.slice(index + 1).match(/^\s*([,:}\]])/)?.[1];
+      const closesContainer = next === '}' || next === ']';
+      if (!stringIsKey && next === ',' && repairedInString) {
+        if (pending.length + variants.length < maxVariants - 1) {
+          pending.push({
+            index: index + 1,
+            result: result + char,
+            inString: false,
+            stringIsKey,
+            repairedInString: false,
+            escaped: false,
+            previousSignificant: '"',
+          });
+        }
+        result += '\\"';
+        continue;
+      }
+      const closesString = stringIsKey
+        ? next === ':'
+        : next === ',' || (closesContainer && hasValidJsonContainerContinuation(text, index + 1));
+      if (closesString) {
+        result += char;
+        inString = false;
+        previousSignificant = '"';
+      } else {
+        result += '\\"';
+        repairedInString = true;
+      }
+    }
+    variants.push(result);
+  }
+  return variants;
 }
 
 function emitReply(reply: string, tools: ToolDefinition[]): StreamEvent[] {

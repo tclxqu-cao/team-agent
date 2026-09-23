@@ -47,6 +47,7 @@ import {
   type Message,
   type TodoItem,
 } from "@agent/core";
+import { COMPUTER_USE_SKILL } from "@agent/computer-use";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { mkdir, writeFile } from "node:fs/promises";
@@ -156,6 +157,9 @@ export class AgentHost {
   /** Try to build the model provider from stored settings */
   private tryConfigureFromStore(): void {
     const settings = this.settingsStore.getAll();
+    const activeProfile = settings.profiles.find(
+      (profile) => profile.id === settings.activeProfileId,
+    );
     this.harness.setModel({ provider: settings.modelProvider, modelId: settings.modelId, apiKey: settings.apiKey, baseUrl: settings.baseUrl });
     // Restore working directory from persisted settings (overrides process.cwd())
     if (settings.workingDirectory) {
@@ -168,9 +172,15 @@ export class AgentHost {
           apiKey: settings.apiKey,
           baseUrl: settings.baseUrl || undefined,
           modelId: settings.modelId,
+          timeoutMs: activeProfile?.requestTimeoutSeconds === undefined
+            ? undefined
+            : activeProfile.requestTimeoutSeconds * 1_000,
         });
         this.builder.withMaxIterations(settings.maxIterations);
         this.builder.withMaxTokens((settings.contextWindow ?? 100) * 1000);
+        this.builder.withMaxOutputTokens(
+          activeProfile?.maxOutputTokens,
+        );
       } catch (err) {
         console.error("Failed to configure model from stored settings:", err);
       }
@@ -203,6 +213,9 @@ export class AgentHost {
 
   /** Save settings and reconfigure the builder */
   configure(settings: SettingsData): void {
+    const activeProfile = settings.profiles.find(
+      (profile) => profile.id === settings.activeProfileId,
+    );
     this.settingsStore.saveAll(settings);
     this.harness.setModel({ provider: settings.modelProvider, modelId: settings.modelId, apiKey: settings.apiKey, baseUrl: settings.baseUrl });
     this.workingDirectory = settings.workingDirectory || this.workingDirectory;
@@ -216,10 +229,16 @@ export class AgentHost {
         apiKey: settings.apiKey,
         baseUrl: settings.baseUrl || undefined,
         modelId: settings.modelId,
+        timeoutMs: activeProfile?.requestTimeoutSeconds === undefined
+          ? undefined
+          : activeProfile.requestTimeoutSeconds * 1_000,
       });
     }
     this.builder.withMaxIterations(settings.maxIterations);
     this.builder.withMaxTokens((settings.contextWindow ?? 100) * 1000);
+    this.builder.withMaxOutputTokens(
+      activeProfile?.maxOutputTokens,
+    );
   }
 
   getSettings(): SettingsData & { activeAgentIds?: string[] } {
@@ -435,7 +454,15 @@ export class AgentHost {
         result.push({ name: db.name, description: db.description, filePath: (db as any).filePath ?? "", source: (db as any).source ?? "custom", enabled: (db as any).enabled !== false });
       }
     }
-    return result;
+    const withoutBuiltIn = result.filter((skill) => skill.name !== COMPUTER_USE_SKILL.name);
+    withoutBuiltIn.push({
+      name: COMPUTER_USE_SKILL.name,
+      description: COMPUTER_USE_SKILL.description,
+      filePath: COMPUTER_USE_SKILL.filePath,
+      source: COMPUTER_USE_SKILL.source,
+      enabled: true,
+    });
+    return withoutBuiltIn;
   }
 
   /**
@@ -566,15 +593,22 @@ export class AgentHost {
 
     // ── 2. Re-read latest model settings ─────────────────────────────────
     const latestSettings = this.settingsStore.getAll();
+    const activeProfile = latestSettings.profiles.find(
+      (profile) => profile.id === latestSettings.activeProfileId,
+    );
     if (latestSettings.isConfigured) {
       this.builder.withModel(latestSettings.modelProvider, {
         apiKey: latestSettings.apiKey,
         baseUrl: latestSettings.baseUrl || undefined,
         modelId: latestSettings.modelId,
+        timeoutMs: activeProfile?.requestTimeoutSeconds === undefined
+          ? undefined
+          : activeProfile.requestTimeoutSeconds * 1_000,
       });
       this.builder.withMaxIterations(latestSettings.maxIterations);
       this.builder.withMaxTokens((latestSettings.contextWindow ?? 100) * 1000);
     }
+    this.builder.withMaxOutputTokens(activeProfile?.maxOutputTokens);
     this.builder.withReasoningEffort(latestSettings.reasoningEffort ?? "off");
 
     // ── 3. Determine agents to run ────────────────────────────────────────
@@ -630,7 +664,11 @@ export class AgentHost {
       const agentId = resolvedIds[idx];
 
       // Reset per-run overrides before applying agent def
-      this.builder.withSystemPrompt(undefined).withEnabledTools([]).withEnabledSkills([]);
+      this.builder
+        .withSystemPrompt(undefined)
+        .withEnabledTools([])
+        .withEnabledSkills([])
+        .withMaxOutputTokens(activeProfile?.maxOutputTokens);
 
       if (agentId !== null) {
         // Apply a specific agent def
@@ -646,7 +684,11 @@ export class AgentHost {
                 apiKey: profile.apiKey,
                 baseUrl: profile.baseUrl || undefined,
                 modelId: profile.modelId,
+                timeoutMs: profile.requestTimeoutSeconds === undefined
+                  ? undefined
+                  : profile.requestTimeoutSeconds * 1_000,
               });
+              this.builder.withMaxOutputTokens(profile.maxOutputTokens);
             }
           }
           if (agentDef.systemPrompt || agentDef.name) {
@@ -698,7 +740,11 @@ export class AgentHost {
                   apiKey: profile.apiKey,
                   baseUrl: profile.baseUrl || undefined,
                   modelId: profile.modelId,
+                  timeoutMs: profile.requestTimeoutSeconds === undefined
+                    ? undefined
+                    : profile.requestTimeoutSeconds * 1_000,
                 });
+                this.builder.withMaxOutputTokens(profile.maxOutputTokens);
               }
             }
             if (agentDef.systemPrompt || agentDef.name) {
@@ -728,6 +774,7 @@ export class AgentHost {
 
       // Build the agent loop
       this.agent = this.builder.buildSync();
+      this.builder.getSkillRegistry().register(COMPUTER_USE_SKILL);
       // Register session tools (todo, dispatch, cron, ask_user, lsp) after build
       this.registerSessionTools(this.builder, sessionId);
       // Connect enabled MCP servers and register their tools

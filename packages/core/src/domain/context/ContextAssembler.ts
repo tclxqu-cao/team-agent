@@ -130,7 +130,8 @@ export class ContextAssembler implements IContextAssembler {
     projectBudget += Math.max(0, toolSurplus) + Math.max(0, skillSurplus) + Math.max(0, memorySurplus);
     const truncatedProject = this.truncateProjectSection(projectSection, projectBudget);
 
-    // ── Assemble final system prompt (priority order: base → env → project → skills → tools → memory) ──
+    // Fit essential instructions before supplementary context. joinSections()
+    // preserves the established presentation order after budgeting.
     // Preserve the exact post-truncation sections so request usage can attribute
     // every character that is actually sent to the model.
     const promptBudget = Math.max(0, maxTokens - userMsgTokens - historyTokens);
@@ -259,10 +260,10 @@ export class ContextAssembler implements IContextAssembler {
     const keys: Array<keyof SystemPromptSections> = [
       "systemBase",
       "environment",
-      "projectContext",
       "skills",
       "embeddedTools",
       "memory",
+      "projectContext",
     ];
 
     for (const key of keys) {

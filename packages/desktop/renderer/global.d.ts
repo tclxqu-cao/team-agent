@@ -47,6 +47,8 @@ export interface ModelProfile {
   modelId: string;
   apiKey: string;
   baseUrl: string;
+  maxOutputTokens?: number;
+  requestTimeoutSeconds?: number;
 }
 
 export interface ContextPlaceholder {
@@ -288,6 +290,7 @@ export interface AgentApi {
   saveSettings(settings: Record<string, unknown>): Promise<void>;
   setActiveProfile(profileId: string): Promise<void>;
   openFileDialog(): Promise<string | null>;
+  showDirectoryContextMenu?(path: string): Promise<{ shown: true }>;
   readFile(path: string): Promise<string>;
   writeFile(path: string, content: string): Promise<boolean>;
   listProjects(): Promise<unknown[]>;

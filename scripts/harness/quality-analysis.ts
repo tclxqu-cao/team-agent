@@ -15,7 +15,7 @@ export function normalizeError(text: string): string {
     .replace(/\b\d{3,}\b/g, '<n>').slice(0, 500);
 }
 
-const ENVIRONMENT_ERROR_CODES = new Set(['desktop_offline']);
+const ENVIRONMENT_ERROR_CODES = new Set(['desktop_offline', 'model_transport_timeout']);
 
 /** Rules generate hypotheses, never correctness judgments. Only completed calls count as repeats. */
 export function analyze(run: QualityRun): Finding[] {

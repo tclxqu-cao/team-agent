@@ -31,6 +31,13 @@ describe("shared customer settings", () => {
     expect(() => service.save({ activeProfileId: "missing" })).toThrow();
     expect(service.read().revision).toBe(0);
   });
+  it("accepts zero and large positive maximum iteration values", () => {
+    const service = new SharedSettingsService(temp(), {});
+    expect(service.save({ maxIterations: 0 }).maxIterations).toBe(0);
+    expect(service.save({ maxIterations: 5_000 }).maxIterations).toBe(5_000);
+    expect(() => service.save({ maxIterations: -1 })).toThrow("非负整数");
+    expect(() => service.save({ maxIterations: 1.5 })).toThrow("非负整数");
+  });
   it("accepts an AI Hub profile without an API key", () => {
     const service = new SharedSettingsService(temp(), {});
     const profile = {
@@ -50,5 +57,26 @@ describe("shared customer settings", () => {
       apiKey: "",
       isConfigured: true,
     });
+  });
+
+  it("persists a bounded per-profile output token budget", () => {
+    const service = new SharedSettingsService(temp(), {});
+    const profile = {
+      id: "step-5-preview",
+      name: "Step 5 Preview",
+      provider: "openai",
+      modelId: "step-5-preview",
+      apiKey: "secret",
+      baseUrl: "https://example.com/v1",
+      maxOutputTokens: 32_768,
+      requestTimeoutSeconds: 600,
+    };
+
+    service.save({ profiles: [profile], activeProfileId: profile.id });
+    expect(service.read().profiles[0]?.maxOutputTokens).toBe(32_768);
+    expect(service.read().profiles[0]?.requestTimeoutSeconds).toBe(600);
+    expect(() => service.save({ profiles: [{ ...profile, maxOutputTokens: 131_073 }] })).toThrow("profile.maxOutputTokens");
+    expect(() => service.save({ profiles: [{ ...profile, requestTimeoutSeconds: 29 }] })).toThrow("profile.requestTimeoutSeconds");
+    expect(() => service.save({ profiles: [{ ...profile, requestTimeoutSeconds: 1_801 }] })).toThrow("profile.requestTimeoutSeconds");
   });
 });

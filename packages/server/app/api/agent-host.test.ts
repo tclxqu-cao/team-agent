@@ -1,5 +1,13 @@
-import { AgentBuilder, type IModelProvider, type Message, type StreamEvent, type StreamOptions } from "@agent/core";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { realpathSync, rmSync } from "node:fs";
+import { AgentBuilder, getDatabase, type IModelProvider, type Message, type StreamEvent, type StreamOptions } from "@agent/core";
+import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
+
+const isolatedAgentData = vi.hoisted(() => {
+  const previous = process.env.AGENT_DATA_DIR;
+  const directory = `${process.env.TMPDIR || "/tmp"}/agentroam-agent-host-test-${process.pid}-${crypto.randomUUID()}`;
+  process.env.AGENT_DATA_DIR = directory;
+  return { directory, previous };
+});
 
 // Keep these route tests independent of real Codex/Claude discovery on disk.
 vi.mock("../../lib/native-runtime-service", () => ({
@@ -17,8 +25,14 @@ vi.mock("../../lib/native-runtime-service", () => ({
   runtimeErrorStatus: () => 500,
 }));
 
+vi.mock("../../lib/computer-use", () => ({
+  registerCustomerComputerSkill: () => {},
+  registerCustomerComputerTool: async () => ({ registered: false, status: { available: false } }),
+}));
+
 import { agentHost } from "./agent-host";
 import { businessCatalog } from "../../lib/business-catalog";
+import { PORTFOLIO_CONTENT_PROJECT_ID } from "../../lib/portfolio-content-agent";
 import { POST as runAgent } from "./agent/run/route";
 import { POST as registerRemoteTools } from "./remote-tools/register/route";
 import { GET as listSessions, POST as createSession } from "./sessions/route";
@@ -79,6 +93,16 @@ class LookupTool {
   async execute() { return { toolCallId: "", content: "lookup result" }; }
 }
 
+class PrivateObservationTool extends LookupTool {
+  override async execute() {
+    return {
+      toolCallId: "",
+      content: "private observation available",
+      modelContent: "AX_SECRET_TREE",
+    };
+  }
+}
+
 class FailingLookupTool extends LookupTool {
   override async execute() { return { toolCallId: "", content: "lookup failed", isError: true }; }
 }
@@ -99,6 +123,13 @@ const projectBTool = {
 
 describe("agentHost singleton", () => {
   const originalEnv = { ...process.env };
+
+  afterAll(() => {
+    getDatabase(isolatedAgentData.directory).close();
+    rmSync(isolatedAgentData.directory, { recursive: true, force: true });
+    if (isolatedAgentData.previous === undefined) delete process.env.AGENT_DATA_DIR;
+    else process.env.AGENT_DATA_DIR = isolatedAgentData.previous;
+  });
 
   it("runs all selected agents in order and emits one terminal completion", async () => {
     const provider = new CapturingModelProvider();
@@ -124,9 +155,83 @@ describe("agentHost singleton", () => {
     } finally { stop(); await catalog.agents.delete(first.id); await catalog.agents.delete(second.id); }
   });
 
+  it("starts an explicit Portfolio Skill through the persistent shared run contract", async () => {
+    process.env.PORTFOLIO_PUBLIC_WIKI_ROOT = isolatedAgentData.directory;
+    process.env.AGENT_WEB_ROOTS = realpathSync(isolatedAgentData.directory);
+    const catalog = businessCatalog();
+    const timestamp = new Date().toISOString();
+    await catalog.agents.create({
+      id: "portfolio-content-agent",
+      name: "Portfolio Content Agent",
+      description: "Public portfolio content",
+      systemPrompt: "Use public content only",
+      contextPlaceholders: [],
+      capabilities: {
+        profileId: "",
+        enabledTools: ["public_wiki_query"],
+        enabledSkills: ["portfolio-works"],
+        enabledMCPServers: [],
+      },
+      maxIterations: 6,
+      isDefault: false,
+      created: timestamp,
+      updated: timestamp,
+    });
+    const provider = new CapturingModelProvider();
+    provider.eventBatches = [[
+      { type: "text_chunk", text: '{"schemaVersion":1,"skill":"portfolio-works","title":"Works","blocks":[{"type":"text","text":"ok"}]}' },
+      { type: "text_done" },
+    ]];
+    agentHost.setBuilder(new AgentBuilder().withModelProvider(provider).withSemanticSkillMatching(false));
+
+    const response = await runAgent(new Request("http://test/api/agent/run", {
+      method: "POST",
+      body: JSON.stringify({
+        input: "show projects",
+        agentId: "portfolio-content-agent",
+        skillName: "portfolio-works",
+        title: "Portfolio: works",
+        metadata: { flowId: "homepage-main" },
+        context: { intent: "works" },
+        source: "flow-studio",
+      }),
+    }));
+
+    expect(response.status).toBe(200);
+    const started = await response.json() as { sessionId: string; runId: string; streamUrl: string };
+    expect(started).toMatchObject({ runId: expect.any(String), streamUrl: `/api/agent/stream?sessionId=${started.sessionId}` });
+    for (let attempt = 0; attempt < 200 && agentHost.isSessionRunning(started.sessionId); attempt++) {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+    expect(agentHost.isSessionRunning(started.sessionId)).toBe(false);
+    await expect(agentHost.getSessionStore().get(started.sessionId)).resolves.toMatchObject({
+      projectId: PORTFOLIO_CONTENT_PROJECT_ID,
+      title: "Portfolio: works",
+      status: "completed",
+      metadata: {
+        source: "flow-studio",
+        flowId: "homepage-main",
+        agentId: "portfolio-content-agent",
+        skillName: "portfolio-works",
+      },
+      messages: [
+        { role: "user", content: "show projects" },
+        { role: "assistant", content: expect.stringContaining("portfolio-works") },
+      ],
+    });
+    await expect(agentHost.getProjectStore().get(PORTFOLIO_CONTENT_PROJECT_ID)).resolves.toMatchObject({
+      name: "portfolio-public",
+      description: realpathSync(isolatedAgentData.directory),
+    });
+    expect(provider.messages.find((message) => message.role === "system")?.content)
+      .toContain("## Skill: portfolio-works");
+  });
+
   afterEach(async () => {
     process.env = { ...originalEnv };
+    await businessCatalog().agents.delete("portfolio-content-agent");
     await agentHost.getProjectStore().delete("agent-host-cwd-test");
+    await agentHost.getProjectStore().delete(PORTFOLIO_CONTENT_PROJECT_ID);
   });
 
   it("stores the shared AgentHost on globalThis so answer routes can see pending questions from run routes", () => {
@@ -629,6 +734,67 @@ describe("agentHost singleton", () => {
     });
   });
 
+  it("persists Step reasoning and answer text on one assistant message", async () => {
+    const provider = new CapturingModelProvider();
+    provider.eventBatches = [[
+      { type: "reasoning_delta", text: "Inspect " },
+      { type: "reasoning_delta", text: "the request" },
+      { type: "text_chunk", text: "Final answer" },
+      { type: "text_done" },
+    ]];
+    agentHost.setBuilder(new AgentBuilder()
+      .withModelProvider(provider)
+      .withSemanticSkillMatching(false));
+    const session = await agentHost.createSession("reasoning history test");
+
+    await agentHost.run("Please reason", session.id);
+
+    const stored = await agentHost.getSessionStore().get(session.id);
+    expect(stored).toMatchObject({
+      status: "completed",
+      messages: [
+        { role: "user", content: "Please reason" },
+        {
+          role: "assistant",
+          content: "Final answer",
+          presentation: {
+            reasoning: [{ sectionIndex: 0, text: "Inspect the request" }],
+            completionDurationMs: expect.any(Number),
+          },
+        },
+      ],
+    });
+  });
+
+  it("persists visible reasoning when a reasoning-only run fails", async () => {
+    const provider = new CapturingModelProvider();
+    provider.eventBatches = [[
+      { type: "reasoning_delta", text: "Unfinished reasoning" },
+      { type: "error", message: "输出被截断" },
+    ]];
+    agentHost.setBuilder(new AgentBuilder()
+      .withModelProvider(provider)
+      .withSemanticSkillMatching(false));
+    const session = await agentHost.createSession("reasoning failure history test");
+
+    await agentHost.run("Please reason", session.id);
+
+    const stored = await agentHost.getSessionStore().get(session.id);
+    expect(stored).toMatchObject({
+      status: "failed",
+      messages: [
+        { role: "user", content: "Please reason" },
+        {
+          role: "assistant",
+          content: "",
+          presentation: {
+            reasoning: [{ sectionIndex: 0, text: "Unfinished reasoning" }],
+          },
+        },
+      ],
+    });
+  });
+
   it("appends the final assistant text exactly once after a tool-call run", async () => {
     const provider = new CapturingModelProvider();
     provider.eventBatches = [
@@ -662,6 +828,42 @@ describe("agentHost singleton", () => {
         presentation: { completionDurationMs: expect.any(Number) },
       },
     ]);
+  });
+
+  it("persists only public tool content while the next model request receives private content", async () => {
+    const provider = new CapturingModelProvider();
+    provider.eventBatches = [
+      [
+        { type: "tool_call", toolCall: { id: "private-call", name: "lookup", arguments: {} } },
+        { type: "text_done" },
+      ],
+      [{ type: "text_chunk", text: "Handled private observation" }, { type: "text_done" }],
+    ];
+    agentHost.setBuilder(new AgentBuilder()
+      .withModelProvider(provider)
+      .withSemanticSkillMatching(false)
+      .withTool(new PrivateObservationTool()));
+    const session = await agentHost.createSession("private tool result persistence test");
+    const streamedEvents: unknown[] = [];
+    const stop = agentHost.subscribe(session.id, (event) => streamedEvents.push(event));
+
+    try {
+      await agentHost.run("inspect private UI", session.id);
+    } finally {
+      stop();
+    }
+
+    expect(JSON.stringify(provider.messages)).toContain("AX_SECRET_TREE");
+    expect(JSON.stringify(streamedEvents)).not.toContain("AX_SECRET_TREE");
+    const stored = await agentHost.getSessionStore().get(session.id);
+    expect(JSON.stringify(stored)).not.toContain("AX_SECRET_TREE");
+    expect(stored?.messages).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        role: "tool",
+        toolCallId: "private-call",
+        content: "private observation available",
+      }),
+    ]));
   });
 
   it("persists failed tool identity so a later AI Hub turn can repair it", async () => {

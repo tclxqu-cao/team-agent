@@ -23,6 +23,81 @@ export interface DesktopCapturedSource {
 
 export type CaptureDesktopSources = (thumbnailSize: { width: number; height: number }) => Promise<ArrayLike<DesktopCapturedSource>>;
 
+export interface DesktopCapturedFrame {
+  data: Buffer;
+  width: number;
+  height: number;
+  logicalWidth: number;
+  logicalHeight: number;
+  originX: number;
+  originY: number;
+  scaleFactor: number;
+  displayId: string;
+  quality: number;
+}
+
+export interface CaptureDesktopFrameOptions {
+  display: DesktopDisplayInfo;
+  captureSources: CaptureDesktopSources;
+  sourceId?: string | null;
+  quality?: number;
+  maxWidth?: number;
+  maxHeight?: number;
+  maxBytes?: number;
+  scale?: number;
+}
+
+export function desktopThumbnailSize(
+  display: DesktopDisplayInfo,
+  maxWidth = 3840,
+  maxHeight = 2160,
+  scale = 1,
+): { width: number; height: number } {
+  const pixelWidth = display.width * (display.scaleFactor || 1);
+  const pixelHeight = display.height * (display.scaleFactor || 1);
+  const fit = Math.min(1, maxWidth / pixelWidth, maxHeight / pixelHeight);
+  const effective = Math.max(0.1, Math.min(fit, fit * scale));
+  return {
+    width: Math.max(1, Math.round(pixelWidth * effective)),
+    height: Math.max(1, Math.round(pixelHeight * effective)),
+  };
+}
+
+/** Captures one bounded JPEG while preserving the selected display's logical coordinate space. */
+export async function captureDesktopFrame({
+  display,
+  captureSources,
+  sourceId = display.id,
+  quality = 90,
+  maxWidth = 3840,
+  maxHeight = 2160,
+  maxBytes = 4 * 1024 * 1024,
+  scale = 1,
+}: CaptureDesktopFrameOptions): Promise<DesktopCapturedFrame | null> {
+  const sources = Array.from(await captureSources(desktopThumbnailSize(display, maxWidth, maxHeight, scale)));
+  const source = (sourceId ? sources.find((candidate) => candidate.id === sourceId) : null) ?? sources[0];
+  if (!source?.thumbnail) return null;
+
+  for (let candidateQuality = Math.max(10, Math.min(100, Math.round(quality))); candidateQuality >= 10; candidateQuality -= 10) {
+    const data = source.thumbnail.toJPEG(candidateQuality);
+    if (data.byteLength < 16 || data.byteLength > maxBytes) continue;
+    const size = source.thumbnail.getSize();
+    return {
+      data,
+      width: size.width,
+      height: size.height,
+      logicalWidth: display.width,
+      logicalHeight: display.height,
+      originX: display.originX,
+      originY: display.originY,
+      scaleFactor: display.scaleFactor || 1,
+      displayId: display.id,
+      quality: candidateQuality,
+    };
+  }
+  return null;
+}
+
 /** Legacy name for the shared live-view capability error; kept for existing imports. */
 export const DesktopLiveCapabilityError = LiveViewCapabilityError;
 
@@ -94,25 +169,27 @@ export class DesktopScreenScreencast implements LiveScreencastPort {
       let jpeg: Buffer | null = null;
       const display = this.displayInfo();
       try {
-        const sources = await this.captureSources(this.#thumbnailSize(display, this.standby ? 0.5 : 1));
-        const source = this.#pickPrimary(sources);
-        if (source?.thumbnail) {
-          // Preserve text resolution first; lower JPEG quality only when the
-          // shared live-view transport's 640 KiB frame limit requires it.
-          // Reuse the last fitting quality instead of recompressing an entire
-          // 4K frame at several rejected qualities on every capture.
-          if (this.now() >= this.nextQualityProbe) {
-            this.encodingQuality = Math.min(this.quality, this.encodingQuality + 10);
-            this.nextQualityProbe = this.now() + 2_000;
-          }
-          for (let quality = this.encodingQuality; quality >= 10; quality -= 10) {
-            const candidate = source.thumbnail.toJPEG(quality);
-            if (candidate.byteLength >= 16 && candidate.byteLength <= 640 * 1024) {
-              jpeg = candidate;
-              this.encodingQuality = quality;
-              break;
-            }
-          }
+        // Preserve text resolution first; lower JPEG quality only when the
+        // shared live-view transport's 640 KiB frame limit requires it.
+        // Reuse the last fitting quality instead of recompressing an entire
+        // 4K frame at several rejected qualities on every capture.
+        if (this.now() >= this.nextQualityProbe) {
+          this.encodingQuality = Math.min(this.quality, this.encodingQuality + 10);
+          this.nextQualityProbe = this.now() + 2_000;
+        }
+        const captured = await captureDesktopFrame({
+          display,
+          captureSources: this.captureSources,
+          sourceId: this.primaryDisplayId(),
+          quality: this.encodingQuality,
+          maxWidth: this.maxWidth,
+          maxHeight: this.maxHeight,
+          maxBytes: 640 * 1024,
+          scale: this.standby ? 0.5 : 1,
+        });
+        if (captured) {
+          jpeg = captured.data;
+          this.encodingQuality = captured.quality;
         }
       } catch {
         // Capture can transiently fail (e.g. permission prompts); keep retrying until the deadline.
@@ -236,28 +313,6 @@ export class DesktopScreenScreencast implements LiveScreencastPort {
     } finally {
       if (this.wakeCapture === wake) this.wakeCapture = null;
     }
-  }
-
-  #thumbnailSize(display: DesktopDisplayInfo, scale = 1): { width: number; height: number } {
-    const pixelWidth = display.width * (display.scaleFactor || 1);
-    const pixelHeight = display.height * (display.scaleFactor || 1);
-    const fit = Math.min(1, this.maxWidth / pixelWidth, this.maxHeight / pixelHeight);
-    const effective = Math.max(0.1, Math.min(fit, fit * scale));
-    return {
-      width: Math.max(1, Math.round(pixelWidth * effective)),
-      height: Math.max(1, Math.round(pixelHeight * effective)),
-    };
-  }
-
-  #pickPrimary(sources: ArrayLike<DesktopCapturedSource>): DesktopCapturedSource | null {
-    const list = Array.from(sources);
-    if (!list.length) return null;
-    const primaryId = this.primaryDisplayId();
-    if (primaryId) {
-      const match = list.find((source) => source.id === primaryId);
-      if (match) return match;
-    }
-    return list[0];
   }
 
   /** Current adaptive target rate (kept as a property for tests and diagnostics). */

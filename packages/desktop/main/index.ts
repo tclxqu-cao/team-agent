@@ -3,7 +3,7 @@ import { prepareChromeExtension, showChromeExtensionSetup } from "./ai-hub/chrom
 // on electron 32 / Node 20.18 (cjsPreparseModuleExports: "exports" undefined).
 import { createRequire } from "module";
 const require = createRequire(import.meta.url);
-const { app, BrowserWindow, ipcMain, dialog, nativeImage, session, shell, desktopCapturer, systemPreferences, screen, globalShortcut, clipboard, powerSaveBlocker } = require("electron") as typeof import("electron");
+const { app, BrowserWindow, ipcMain, dialog, Menu, nativeImage, session, shell, desktopCapturer, systemPreferences, screen, globalShortcut, clipboard, powerMonitor, powerSaveBlocker } = require("electron") as typeof import("electron");
 import { execFile, spawn, type ChildProcess } from "node:child_process";
 import { basename, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -16,11 +16,17 @@ app.commandLine.appendSwitch("disable-features", "WebRtcHideLocalIpsWithMdns");
 import { DesktopInputGateway } from "./desktop-input-gateway.js";
 import { DesktopScreenScreencast } from "./desktop-screen-screencast.js";
 import { DesktopScreenLive, type ScreenPermission, type DesktopLiveStatus, type WebrtcSignal } from "./desktop-screen-live.js";
+import { ComputerRelayServer } from "./computer-use/computer-relay-server.js";
+import { DesktopComputerRuntime } from "./computer-use/desktop-computer-runtime.js";
+import { DesktopInputAdapter } from "./computer-use/desktop-input-adapter.js";
+import { ElectronScreenCaptureAdapter } from "./computer-use/electron-screen-capture-adapter.js";
+import { MacAccessibilityAdapter } from "./computer-use/mac-accessibility-adapter.js";
 import { defaultWebrtcCapturePagePath, WebrtcLive } from "./webrtc-live.js";
 import { DisplayKeepAwake } from "./display-keep-awake.js";
 import { readDesktopLiveState, writeDesktopLiveState } from "./desktop-live-state.js";
 import { SharedServiceConnection } from "./shared-service.js";
 import { DesktopUpdateService } from "./update-service.js";
+import { directoryOpenMenuLabel, revealDirectoryWithShell, resolveDirectoryForOpen } from "./directory-context-menu.js";
 import { AIHubManager, type HubPaneRect } from "./ai-hub/manager.js";
 import { normalizeRelayImages, startAiHubRelay, type AiHubRelay } from "./ai-hub/relay.js";
 import { BrowserProfileImporter, HUB_PROFILE_DIR_NAME } from "./ai-hub/browser-profile-importer.js";
@@ -914,6 +920,23 @@ ipcMain.handle("file:dialog:open", async () => {
   const result = await dialog.showOpenDialog(mainWindow!, { properties: ["openDirectory", "createDirectory"], title: "选择项目文件夹", buttonLabel: "选择此文件夹" });
   return result.canceled ? null : result.filePaths[0];
 });
+ipcMain.handle("directory:show-context-menu", async (event, path: unknown) => {
+  trustedServiceSender(event);
+  const directory = await resolveDirectoryForOpen(path);
+  const owner = BrowserWindow.fromWebContents(event.sender) ?? mainWindow ?? undefined;
+  const menu = Menu.buildFromTemplate([{
+    label: directoryOpenMenuLabel(),
+    click: () => {
+      try {
+        revealDirectoryWithShell(directory, (target) => shell.showItemInFolder(target));
+      } catch (error) {
+        globalLogger.error("failed to open project directory", error instanceof Error ? error : new Error(String(error)), { directory });
+      }
+    },
+  }]);
+  menu.popup(owner ? { window: owner } : undefined);
+  return { shown: true };
+});
 ipcMain.handle("file:read", (_event, path: string) => readFile(path, "utf-8"));
 ipcMain.handle("file:write", async (_event, path: string, content: string) => { await writeFile(path, content, "utf-8"); return true; });
 ipcMain.handle("skills:import", async () => {
@@ -948,6 +971,8 @@ async function desktopLiveEndpoint(): Promise<string> {
 }
 
 let desktopScreenLive: DesktopScreenLive | null = null;
+let desktopInputGateway: DesktopInputGateway | null = null;
+let computerRelay: ComputerRelayServer | null = null;
 /** Persisted capture display choice; null = primary. Multi-display Macs can stream either screen. */
 let liveDisplayId: string | null = null;
 
@@ -969,6 +994,60 @@ function pickLiveDisplay(): { display: Electron.Display; id: string; originX: nu
   };
 }
 
+function getDesktopInputGateway(): DesktopInputGateway {
+  if (!desktopInputGateway) {
+    desktopInputGateway = new DesktopInputGateway({
+      helperPath: desktopInputHelperPath,
+      onStderr: (line) => console.log("[desktop-input]", line),
+    });
+  }
+  return desktopInputGateway;
+}
+
+async function captureDesktopSources(thumbnailSize: { width: number; height: number }) {
+  const sources = await desktopCapturer.getSources({ types: ["screen"], thumbnailSize });
+  return sources.map((source) => {
+    const thumbnail = source.thumbnail;
+    return {
+      id: source.display_id || source.id,
+      thumbnail: thumbnail ? {
+        toJPEG: (quality: number) => thumbnail.toJPEG(quality),
+        getSize: () => thumbnail.getSize(),
+      } : null,
+    };
+  });
+}
+
+async function startComputerRelay(): Promise<ComputerRelayServer | null> {
+  if (process.platform !== "darwin") return null;
+  const gateway = getDesktopInputGateway();
+  const capture = new ElectronScreenCaptureAdapter({
+    displayInfo: () => {
+      const picked = pickLiveDisplay();
+      return {
+        id: picked.id,
+        originX: picked.originX,
+        originY: picked.originY,
+        width: picked.width,
+        height: picked.height,
+        scaleFactor: picked.scaleFactor,
+      };
+    },
+    captureSources: captureDesktopSources,
+    screenPermission: probeScreenPermission,
+  });
+  const runtime = new DesktopComputerRuntime({
+    accessibility: new MacAccessibilityAdapter(gateway),
+    screenCapture: capture,
+    input: new DesktopInputAdapter(gateway),
+    ownership: () => desktopScreenLive?.getStatus().controlState ?? null,
+    locked: () => powerMonitor.getSystemIdleState(1) === "locked",
+  });
+  const relay = new ComputerRelayServer({ runtime });
+  await relay.start();
+  return relay;
+}
+
 async function persistDesktopLiveEnabled(enabled: boolean): Promise<void> {
   const state = await readDesktopLiveState(desktopLiveStatePath);
   await writeDesktopLiveState(desktopLiveStatePath, { enabled, displayId: state.displayId });
@@ -976,29 +1055,14 @@ async function persistDesktopLiveEnabled(enabled: boolean): Promise<void> {
 
 function getDesktopScreenLive(): DesktopScreenLive {
   if (desktopScreenLive) return desktopScreenLive;
-  const gateway = new DesktopInputGateway({
-    helperPath: desktopInputHelperPath,
-    onStderr: (line) => console.log("[desktop-input]", line),
-  });
+  const gateway = getDesktopInputGateway();
   const screencast = new DesktopScreenScreencast({
     input: gateway,
     displayInfo: () => {
       const picked = pickLiveDisplay();
       return { originX: picked.originX, originY: picked.originY, width: picked.width, height: picked.height, scaleFactor: picked.scaleFactor, id: picked.id };
     },
-    captureSources: async (thumbnailSize) => {
-      const sources = await desktopCapturer.getSources({ types: ["screen"], thumbnailSize });
-      return sources.map((source) => {
-        const thumbnail = source.thumbnail;
-        return {
-          id: source.display_id || source.id,
-          thumbnail: thumbnail ? {
-            toJPEG: (quality: number) => thumbnail.toJPEG(quality),
-            getSize: () => thumbnail.getSize(),
-          } : null,
-        };
-      });
-    },
+    captureSources: captureDesktopSources,
     primaryDisplayId: () => pickLiveDisplay().id,
   });
   const keepAwake = new DisplayKeepAwake({
@@ -1203,6 +1267,10 @@ app.whenReady().then(async () => {
   }, { useSystemPicker: false });
   createWindow();
   registerAiHubWakeShortcut();
+  computerRelay = await startComputerRelay().catch((error) => {
+    console.warn("[computer-use] relay unavailable:", error);
+    return null;
+  });
   aiHubRelay = await startAiHubRelay(aiHubManager).catch((error) => {
     console.warn("[ai-hub] relay unavailable:", error);
     return null;
@@ -1221,7 +1289,14 @@ app.whenReady().then(async () => {
   }
 });
 
-app.on("before-quit", () => {
+let quitCleanupStarted = false;
+let quitCleanupFinished = false;
+
+app.on("before-quit", (event) => {
+  if (quitCleanupFinished) return;
+  event.preventDefault();
+  if (quitCleanupStarted) return;
+  quitCleanupStarted = true;
   clearInterval(desktopPermissionTimer);
   sharedService.closeStreams();
   globalShortcut.unregisterAll();
@@ -1234,9 +1309,18 @@ app.on("before-quit", () => {
   stopWakeProc();
   voiceServiceManager.close();
   aiHubRelay?.close();
+  const relayToClose = computerRelay;
+  computerRelay = null;
   chromeHubBridge.close();
   aiHubManager.destroyAll();
-  void desktopScreenLive?.disable();
+  void Promise.allSettled([
+    relayToClose?.close() ?? Promise.resolve(),
+    desktopScreenLive?.disable() ?? Promise.resolve(),
+    desktopInputGateway?.stop() ?? Promise.resolve(),
+  ]).finally(() => {
+    quitCleanupFinished = true;
+    app.quit();
+  });
 });
 
 app.on("window-all-closed", () => {

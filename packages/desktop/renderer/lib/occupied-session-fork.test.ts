@@ -181,21 +181,29 @@ describe("occupied Codex session fork recovery", () => {
     expect(source).toContain("if (messages.some((message) => message.id === messageId)) return");
     expect(source).toContain('sessionSummary.agentType !== "codex"');
     expect(source).toContain("loadSessionWithRetry");
-    expect(source).toContain("limit: SESSION_HISTORY_PAGE_SIZE");
+    expect(source).toContain("CODEX_LATEST_HISTORY_PAGE_SIZE = 1");
+    expect(source).toContain('? CODEX_LATEST_HISTORY_PAGE_SIZE\n                : SESSION_HISTORY_PAGE_SIZE');
     expect(source).toContain("setSessionReloadGeneration((generation) => generation + 1)");
     expect(source).toContain("重新加载会话");
   });
 
-  it("keeps the Electron fork transport contract", () => {
-    const main = readFileSync(resolve(process.cwd(), "packages/desktop/main/index.ts"), "utf8");
-    const preload = readFileSync(resolve(process.cwd(), "packages/desktop/main/preload.ts"), "utf8");
+  it("keeps the shared-service fork transport contract", () => {
+    const sharedService = readFileSync(resolve(
+      process.cwd(),
+      "packages/desktop/renderer/lib/shared-service.ts",
+    ), "utf8");
+    const gateway = readFileSync(resolve(
+      process.cwd(),
+      "packages/webapp/src/infrastructure/http/agent-http-gateway.ts",
+    ), "utf8");
     const globalTypes = readFileSync(resolve(
       process.cwd(),
       "packages/desktop/renderer/global.d.ts",
     ), "utf8");
 
-    expect(main).toContain('ipcMain.handle("sessions:fork"');
-    expect(preload).toContain('forkSession: (id: string) => ipcRenderer.invoke("sessions:fork", id)');
+    expect(sharedService).toContain("const gateway = new AgentHttpGateway");
+    expect(gateway).toContain("async forkSession(id: string)");
+    expect(gateway).toContain("`/api/sessions/${encodeURIComponent(id)}/fork`");
     expect(globalTypes).toContain("forkSession(id: string): Promise<UnifiedSessionSummary>");
   });
 });

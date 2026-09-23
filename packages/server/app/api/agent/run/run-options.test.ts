@@ -13,13 +13,13 @@ describe("normalizeCustomerAgentRunOptions", () => {
     });
   });
 
-  it("clamps untrusted run limits to supported ranges", () => {
+  it("preserves unlimited and large iteration limits while bounding tokens", () => {
     expect(normalizeCustomerAgentRunOptions({ maxIterations: 99, maxTokens: 3_000_000 })).toEqual({
-      maxIterations: 50,
+      maxIterations: 99,
       maxTokens: 2_000_000,
     });
     expect(normalizeCustomerAgentRunOptions({ maxIterations: 0, maxTokens: 1 })).toEqual({
-      maxIterations: 1,
+      maxIterations: 0,
       maxTokens: 8_000,
     });
   });

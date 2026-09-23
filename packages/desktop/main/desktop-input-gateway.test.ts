@@ -44,6 +44,21 @@ describe("DesktopInputGateway", () => {
     expect(child.killed).toBe(true);
   });
 
+  it("keeps literal Unicode typing distinct from physical-key text input", async () => {
+    const child = new FakeHelperProcess();
+    const gateway = new DesktopInputGateway({ helperPath: "/tmp/desktop-input", spawnImpl: () => child });
+    await gateway.start();
+    const dispatching = gateway.dispatch({ op: "unicode_text", text: "AgentRoam 你好" });
+    expect(JSON.parse(child.written[0])).toMatchObject({
+      id: 1,
+      op: "unicode_text",
+      text: "AgentRoam 你好",
+    });
+    child.emitLine(JSON.stringify({ id: 1, ok: true }));
+    await expect(dispatching).resolves.toMatchObject({ ok: true });
+    await gateway.stop();
+  });
+
   it("reports accessibility trust from the check command", async () => {
     const child = new FakeHelperProcess();
     const gateway = new DesktopInputGateway({ helperPath: "/tmp/desktop-input", spawnImpl: () => child });
@@ -51,6 +66,61 @@ describe("DesktopInputGateway", () => {
     const checking = gateway.checkAccessibility();
     child.emitLine(JSON.stringify({ id: 1, ok: true, trusted: false }));
     await expect(checking).resolves.toBe(false);
+    await gateway.stop();
+  });
+
+  it("shares the persistent helper with AX snapshots and revision-bound actions", async () => {
+    const child = new FakeHelperProcess();
+    const gateway = new DesktopInputGateway({ helperPath: "/tmp/desktop-input", spawnImpl: () => child });
+    await gateway.start();
+    const snapshot = gateway.snapshotAccessibility();
+    expect(JSON.parse(child.written[0])).toMatchObject({ id: 1, op: "ax_snapshot" });
+    child.emitLine(JSON.stringify({
+      id: 1,
+      ok: true,
+      status: "ok",
+      observation: {
+        source: "accessibility",
+        revision: "ax_1",
+        coverage: "complete",
+        app: { name: "Fixture", bundleId: "dev.fixture", pid: 1 },
+        nodes: [],
+      },
+    }));
+    await expect(snapshot).resolves.toMatchObject({ status: "ok", observation: { revision: "ax_1" } });
+
+    const pressing = gateway.performAccessibilityAction("ax_1", "ax_1:1", "press");
+    expect(JSON.parse(child.written[1])).toMatchObject({
+      id: 2,
+      op: "ax_action",
+      revision: "ax_1",
+      nodeId: "ax_1:1",
+      action: "press",
+    });
+    child.emitLine(JSON.stringify({ id: 2, ok: true }));
+    await expect(pressing).resolves.toBeUndefined();
+
+    const typing = gateway.setAccessibilityText("ax_1", "ax_1:2", "AgentRoam 你好", true);
+    expect(JSON.parse(child.written[2])).toMatchObject({
+      id: 3,
+      op: "ax_text",
+      revision: "ax_1",
+      nodeId: "ax_1:2",
+      text: "AgentRoam 你好",
+      replace: true,
+    });
+    child.emitLine(JSON.stringify({ id: 3, ok: true }));
+    await expect(typing).resolves.toBeUndefined();
+    await gateway.stop();
+  });
+
+  it("preserves structured helper errors", async () => {
+    const child = new FakeHelperProcess();
+    const gateway = new DesktopInputGateway({ helperPath: "/tmp/desktop-input", spawnImpl: () => child });
+    await gateway.start();
+    const pressing = gateway.performAccessibilityAction("old", "old:1", "press");
+    child.emitLine(JSON.stringify({ id: 1, ok: false, code: "stale_observation", error: "observe again" }));
+    await expect(pressing).rejects.toMatchObject({ code: "stale_observation" });
     await gateway.stop();
   });
 

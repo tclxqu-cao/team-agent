@@ -27,6 +27,8 @@ export interface AiHubCaptureResult {
   ok: boolean;
   strategy?: string;
   messages?: AiHubCaptureMessage[];
+  /** 页面仍在生成当前回复；此时文本短暂稳定也不能视为完成。 */
+  generating?: boolean;
   /** 页面当前挂着「继续生成」类控件，说明上一条回复被站点截断、等待续跑。 */
   pendingContinue?: boolean;
   reason?: string;

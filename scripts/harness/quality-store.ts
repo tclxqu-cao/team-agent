@@ -7,7 +7,8 @@ import { digest, type QualityRun } from './quality-analysis.js';
 export function sourceVersion(root: string): string {
   try {
     const paths = execFileSync('git', ['ls-files', '-co', '--exclude-standard', '--', 'packages/core/src',
-      'packages/desktop/main/agent-host.ts', 'packages/server/app/api/agent-host.ts', 'packages/tui/src/runtime.ts', 'scripts/harness'],
+      'packages/desktop/main/agent-host.ts', 'packages/desktop/main/ai-hub', 'packages/desktop/chrome-extension',
+      'packages/server/app/api/agent-host.ts', 'packages/tui/src/runtime.ts', 'scripts/harness'],
     { cwd: root, encoding: 'utf8', maxBuffer: 2_000_000 }).split('\n').filter(Boolean);
     return digest([...new Set(paths)].sort().filter(path => !path.includes('.test.')).map(path => [path, readFileSync(join(root, path), 'utf8')]));
   } catch { return 'unknown'; }

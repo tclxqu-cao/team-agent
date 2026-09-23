@@ -118,6 +118,10 @@ export class CheckpointAwareToolExecutor implements IToolExecutor {
     return this.delegate.validate(name, args);
   }
 
+  getAuthorizationPolicy(name: string) {
+    return this.delegate.getAuthorizationPolicy?.(name) ?? "default";
+  }
+
   async execute(name: string, args: Record<string, unknown>, ctx: ToolContext): Promise<ToolResult> {
     if (!CHECKPOINTED_TOOLS.has(name)) {
       return this.delegate.execute(name, args, ctx);

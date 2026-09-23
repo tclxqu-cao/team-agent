@@ -21,6 +21,19 @@ const tools: ToolDefinition[] = [{
   },
 }];
 
+const bashTools: ToolDefinition[] = [{
+  name: "bash",
+  description: "执行 shell 命令",
+  parameters: {
+    type: "object",
+    properties: {
+      command: { type: "string" },
+      timeout: { type: "number" },
+    },
+    required: ["command"],
+  },
+}];
+
 async function collect(events: AsyncIterable<StreamEvent>): Promise<StreamEvent[]> {
   const result: StreamEvent[] = [];
   for await (const event of events) result.push(event);
@@ -35,6 +48,9 @@ describe("AiHubProvider", () => {
   it("removes webpage code-block toolbar labels from captured replies", () => {
     expect(stripCapturedCodeToolbar("当前目录是：\n\ntext\n复制\n下载\n/Users/demo")).toBe(
       "当前目录是：\n\n/Users/demo",
+    );
+    expect(stripCapturedCodeToolbar("回答：\n\ntext\n\n复制\n\n下载\n\n```\nline-1\nline-2\n```")).toBe(
+      "回答：\n\n```\nline-1\nline-2\n```",
     );
     expect(stripCapturedCodeToolbar("Copy is ordinary prose")).toBe("Copy is ordinary prose");
   });
@@ -71,6 +87,34 @@ describe("AiHubProvider", () => {
     expect(transcript).toContain("不要重复调用同一个工具");
   });
 
+  it("strictly specifies JSON escaping and raw URLs on initial and reminder turns", () => {
+    const initial = composeAiHubTranscript(
+      [{ role: "user", content: "调用接口" }],
+      "anchor-strict-initial",
+      bashTools,
+    );
+    const reminder = composeAiHubTranscript(
+      [{ role: "user", content: "重试" }],
+      "anchor-strict-reminder",
+      bashTools,
+      "/Users/demo/project",
+      false,
+    );
+
+    for (const transcript of [initial, reminder]) {
+      expect(transcript).toContain("整段输出必须能被 JSON.parse 直接解析");
+      expect(transcript).toContain(String.raw`双引号写成 \"`);
+      expect(transcript).toContain(String.raw`反斜杠写成 \\`);
+      expect(transcript).toContain(String.raw`换行写成 \n`);
+      expect(transcript).toContain("URL 必须保持原始文本");
+      expect(transcript).toContain("[url](url)");
+      expect(transcript).toContain(String.raw`-d '{\"Serialid\":\"ABC\"}'`);
+      const example = transcript.match(/bash 命令中嵌套 JSON 的正确示例：(\{[^\n]+\})/)?.[1];
+      expect(example).toBeTruthy();
+      expect(() => JSON.parse(example!)).not.toThrow();
+    }
+  });
+
   it("marks failed tool results and instructs the webpage model to repair them", () => {
     const transcript = composeAiHubTranscript([
       { role: "user", content: "查看打包日志" },
@@ -94,7 +138,7 @@ describe("AiHubProvider", () => {
     expect(transcript).not.toContain("【工具执行失败】");
   });
 
-  it("reuses the webpage tool protocol without serializing schemas again", () => {
+  it("reminds later turns of current Agent tools without serializing schemas again", () => {
     const transcript = composeAiHubTranscript(
       [{ role: "user", content: "继续" }],
       "anchor-reuse",
@@ -104,7 +148,12 @@ describe("AiHubProvider", () => {
     );
 
     expect(transcript).not.toContain('"name": "read_file"');
-    expect(transcript).toContain("可继续使用本网页会话此前提供的工具协议");
+    expect(transcript).not.toContain('"required": [');
+    expect(transcript).toContain("【本轮 Agent 工具提醒】");
+    expect(transcript).toContain("当前仍可调用的 Agent 工具名称：read_file");
+    expect(transcript).toContain("回看并沿用前文协议");
+    expect(transcript).toContain("网页站点自身的 search、open、find、image_search 等内置工具不是 Agent 工具");
+    expect(transcript).toContain("不要把计划执行工具的思考当成最终回答");
   });
 
   it("sends full context only when bootstrapping an empty webpage conversation", () => {
@@ -158,11 +207,6 @@ describe("AiHubProvider", () => {
   });
 
   it("parses DeepSeek DSML tool calls without changing the command body", () => {
-    const bashTools: ToolDefinition[] = [{
-      name: "bash",
-      description: "执行 shell 命令",
-      parameters: { type: "object", properties: { command: { type: "string" } } },
-    }];
     const command = "ls -t outputs/ | head -30; echo '---MANIFESTS---'; find outputs -maxdepth 2 -name 'manifest' -newermt '2026-09-10' 2>/dev/null | head -20; echo '---RECENT---'; ls -t outputs/republish-3000-20260915-105830/ 2>/dev/null | head; ls -t outputs/full-release-20260914/ 2>/dev/null | head";
     const reply = `<｜｜DSML｜｜ calls>\n<｜｜DSML｜｜ invoke name="bash">\n<｜｜DSML｜｜ parameter name="command" string="true">${command}\\</｜｜DSML｜｜ parameter>\n\\</｜｜DSML｜｜ invoke>\n\\</｜｜DSML｜｜ calls>`;
 
@@ -271,6 +315,75 @@ if [ -z "$TOKEN" ]; then echo 'TOKEN_EMPTY'; else echo "TOKEN_LEN=${tokenLength}
     });
   });
 
+  it("repairs the captured curl tool call with a single-quoted JSON body", () => {
+    const reply = String.raw`{"type":"tool_call","id":"call_curl_query1","name":"bash","arguments":{"command":"curl -s -X POST 'http://finance.fly.17usoft.com/clear/api/PaymentOrder/QueryListBySerialId' -H 'Content-Type: application/json' -d '{"Serialid":"OHR3D5ARJ1062P006513"}'","timeout":30000}}`;
+
+    expect(parseAiHubToolCall(reply, bashTools)).toEqual({
+      id: "call_curl_query1",
+      name: "bash",
+      arguments: {
+        command: "curl -s -X POST 'http://finance.fly.17usoft.com/clear/api/PaymentOrder/QueryListBySerialId' -H 'Content-Type: application/json' -d '{\"Serialid\":\"OHR3D5ARJ1062P006513\"}'",
+        timeout: 30000,
+      },
+    });
+  });
+
+  it("repairs the latest captured curl call with JSON data and write-out newlines", () => {
+    const reply = String.raw`{"type":"tool_call","id":"call_curl_payquery1","name":"bash","arguments":{"command":"curl -sS -X POST 'http://finance.fly.17usoft.com/clear/api/PaymentOrder/QueryListBySerialId' -H 'Content-Type: application/json' -d '{"Serialid":"OHR3D5ARJ1062P006513"}' -w '\n---HTTP_CODE:%{http_code}---\n' --max-time 30","timeout":40000}}`;
+
+    expect(parseAiHubToolCall(reply, bashTools)).toEqual({
+      id: "call_curl_payquery1",
+      name: "bash",
+      arguments: {
+        command: "curl -sS -X POST 'http://finance.fly.17usoft.com/clear/api/PaymentOrder/QueryListBySerialId' -H 'Content-Type: application/json' -d '{\"Serialid\":\"OHR3D5ARJ1062P006513\"}' -w '\n---HTTP_CODE:%{http_code}---\n' --max-time 30",
+        timeout: 40000,
+      },
+    });
+  });
+
+  it("repairs a shell JSON body containing multiple comma-separated fields", () => {
+    const reply = String.raw`{"type":"tool_call","id":"call-curl-multi","name":"bash","arguments":{"command":"curl http://example.invalid -d '{"Serialid":"ABC","Status":"READY","Items":[{"id":1},{"id":2}]}'","timeout":40000}}`;
+
+    expect(parseAiHubToolCall(reply, bashTools)).toEqual({
+      id: "call-curl-multi",
+      name: "bash",
+      arguments: {
+        command: `curl http://example.invalid -d '{"Serialid":"ABC","Status":"READY","Items":[{"id":1},{"id":2}]}'`,
+        timeout: 40000,
+      },
+    });
+  });
+
+  it("accepts stringified arguments after validating they decode to an object", () => {
+    const reply = String.raw`{"type":"tool_call","id":"call-stringified","name":"bash","arguments":"{\"command\":\"printf ok\",\"timeout\":1000}"}`;
+
+    expect(parseAiHubToolCall(reply, bashTools)).toEqual({
+      id: "call-stringified",
+      name: "bash",
+      arguments: { command: "printf ok", timeout: 1000 },
+    });
+  });
+
+  it("repairs trailing commas outside JSON strings", () => {
+    const reply = '{"type":"tool_call","id":"call-trailing","name":"read_file","arguments":{"path":"README.md",},}';
+
+    expect(parseAiHubToolCall(reply, tools)).toEqual({
+      id: "call-trailing",
+      name: "read_file",
+      arguments: { path: "README.md" },
+    });
+  });
+
+  it("restores legacy Markdown auto-links only inside bash command arguments", () => {
+    const reply = '{"type":"tool_call","id":"call-link","name":"bash","arguments":{"command":"curl [http://example.invalid/path](http://example.invalid/path)"}}';
+
+    expect(parseAiHubToolCall(reply, bashTools)).toEqual({
+      id: "call-link",
+      name: "bash",
+      arguments: { command: "curl http://example.invalid/path" },
+    });
+  });
+
   it("rejects unknown tools and invalid arguments", () => {
     expect(() => parseAiHubToolCall(
       '{"type":"tool_call","name":"delete_everything","arguments":{}}',
@@ -372,6 +485,43 @@ if [ -z "$TOKEN" ]; then echo 'TOKEN_EMPTY'; else echo "TOKEN_LEN=${tokenLength}
     ]);
   });
 
+  it("broadcasts the latest transient tool observation images", async () => {
+    vi.useFakeTimers();
+    const transport: AiHubTransport = {
+      status: vi.fn().mockResolvedValue({ available: true }),
+      broadcast: vi.fn().mockResolvedValue({
+        available: true,
+        results: [{ siteId: "deepseek", ok: true }],
+      }),
+      capture: vi.fn().mockImplementation(async () => {
+        if (vi.mocked(transport.broadcast).mock.calls.length === 0) {
+          return { available: true, results: [{ siteId: "deepseek", ok: true, messages: [] }] };
+        }
+        return {
+          available: true,
+          results: [{ siteId: "deepseek", ok: true, messages: [{ role: "assistant", text: "看到了" }] }],
+        };
+      }),
+      continueGeneration: vi.fn(),
+    };
+    const provider = new AiHubProvider({ apiKey: "", modelId: "deepseek", transport });
+    const pending = collect(provider.streamChat([
+      { role: "user", content: "旧问题", images: ["data:image/png;base64,b2xk"] },
+      { role: "tool", content: "captured", toolCallId: "call-1", name: "computer" },
+      { role: "user", name: "__tool_observation__", content: "Visual observations from tool calls: call-1", images: ["data:image/jpeg;base64,bmV3"] },
+    ], { sessionId: "visual-tool" }));
+
+    await vi.advanceTimersByTimeAsync(8_100);
+    await pending;
+
+    expect(transport.broadcast).toHaveBeenCalledWith(
+      expect.any(String),
+      ["deepseek"],
+      ["data:image/jpeg;base64,bmV3"],
+      "visual-tool",
+    );
+  });
+
   it("emits a standard tool call without text events", async () => {
     vi.useFakeTimers();
     const toolReply = '{"type":"tool_call","id":"call-3","name":"read_file","arguments":{"path":"README.md"}}';
@@ -403,6 +553,80 @@ if [ -z "$TOKEN" ]; then echo 'TOKEN_EMPTY'; else echo "TOKEN_LEN=${tokenLength}
       toolCall: { id: "call-3", name: "read_file", arguments: { path: "README.md" } },
     }]);
     expect(vi.mocked(transport.broadcast).mock.calls[0][0]).toContain('"name": "read_file"');
+  });
+
+  it("waits for webpage generation to finish before accepting a stable tool call", async () => {
+    vi.useFakeTimers();
+    const reasoning = "我应该先调用工具。";
+    const toolReply = '{"type":"tool_call","id":"call-late","name":"read_file","arguments":{"path":"README.md"}}';
+    let postSendCaptures = 0;
+    const transport: AiHubTransport = {
+      status: vi.fn().mockResolvedValue({ available: true }),
+      broadcast: vi.fn().mockResolvedValue({ available: true, results: [{ siteId: "deepseek", ok: true }] }),
+      capture: vi.fn().mockImplementation(async () => {
+        if (vi.mocked(transport.broadcast).mock.calls.length === 0) {
+          return { available: true, results: [{ siteId: "deepseek", ok: true, messages: [] }] };
+        }
+        postSendCaptures += 1;
+        const transcript = vi.mocked(transport.broadcast).mock.calls[0][0];
+        const stillGenerating = postSendCaptures <= 4;
+        return { available: true, results: [{
+          siteId: "deepseek",
+          ok: true,
+          generating: stillGenerating,
+          messages: [
+            { role: "user", text: transcript },
+            { role: "assistant", text: stillGenerating ? reasoning : toolReply },
+          ],
+        }] };
+      }),
+      continueGeneration: vi.fn(),
+    };
+    const provider = new AiHubProvider({ apiKey: "", modelId: "deepseek", transport });
+    const pending = collect(provider.streamChat([{ role: "user", content: "读取 README" }], { tools }));
+
+    await vi.advanceTimersByTimeAsync(12_100);
+
+    expect(await pending).toEqual([{
+      type: "tool_call",
+      toolCall: { id: "call-late", name: "read_file", arguments: { path: "README.md" } },
+    }]);
+    expect(postSendCaptures).toBeGreaterThan(4);
+  });
+
+  it("returns an error instead of stable partial text when the page is still generating at timeout", async () => {
+    vi.useFakeTimers();
+    const reasoning = "我应该先调用工具。";
+    const transport: AiHubTransport = {
+      status: vi.fn().mockResolvedValue({ available: true }),
+      broadcast: vi.fn().mockResolvedValue({ available: true, results: [{ siteId: "deepseek", ok: true }] }),
+      capture: vi.fn().mockImplementation(async () => {
+        if (vi.mocked(transport.broadcast).mock.calls.length === 0) {
+          return { available: true, results: [{ siteId: "deepseek", ok: true, messages: [] }] };
+        }
+        const transcript = vi.mocked(transport.broadcast).mock.calls[0][0];
+        return { available: true, results: [{
+          siteId: "deepseek",
+          ok: true,
+          generating: true,
+          messages: [
+            { role: "user", text: transcript },
+            { role: "assistant", text: reasoning },
+          ],
+        }] };
+      }),
+      continueGeneration: vi.fn(),
+    };
+    const provider = new AiHubProvider({ apiKey: "", modelId: "deepseek", timeoutMs: 10_000, transport });
+    const pending = collect(provider.streamChat([{ role: "user", content: "读取 README" }], { tools }));
+
+    await vi.advanceTimersByTimeAsync(10_100);
+
+    expect(await pending).toEqual([{
+      type: "error",
+      code: "model_request_timeout",
+      message: "AI Hub 抓取回复超过 10 秒（deepseek）：网页仍在生成，未提交可能不完整的内容",
+    }]);
   });
 
   it("clicks 继续生成 when the site truncates its reply, then finishes with the extended reply", async () => {

@@ -197,6 +197,24 @@ func postText(_ command: [String: Any]) throws {
     }
 }
 
+// Model-driven GUI typing must be independent of the user's active input
+// source. Keep `text` above for physical-key secure-entry compatibility, but
+// send this path as literal Unicode so a Chinese IME cannot reinterpret ASCII
+// as pinyin composition.
+func postUnicodeText(_ command: [String: Any]) throws {
+    guard let text = command["text"] as? String, !text.isEmpty else {
+        throw HelperError("unicode text command missing text")
+    }
+    let utf16 = Array(text.utf16)
+    guard let down = CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: true),
+          let up = CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: false) else {
+        throw HelperError("failed to create unicode text event")
+    }
+    down.keyboardSetUnicodeString(stringLength: utf16.count, unicodeString: utf16)
+    down.post(tap: .cghidEventTap)
+    up.post(tap: .cghidEventTap)
+}
+
 // Roles that accept text entry. Remote viewers use this to decide whether a
 // tap should raise the soft keyboard.
 let editableRoles: Set<String> = [
@@ -282,6 +300,265 @@ func hitTestEditable(x: CGFloat, y: CGFloat) -> [String: Any] {
     return ["editable": true, "role": role, "bounds": bounds]
 }
 
+let axNodeLimit = 500
+let axDepthLimit = 20
+let axTextLimit = 40_000
+let axSnapshotTimeout: TimeInterval = 1.5
+var axRevisionSequence = 0
+var currentAXRevision = ""
+var currentAXRegistry: [String: AXUIElement] = [:]
+
+struct AXCommandError: Error, CustomStringConvertible {
+    let code: String
+    let description: String
+    init(_ code: String, _ description: String) {
+        self.code = code
+        self.description = description
+    }
+}
+
+func axAttribute(_ element: AXUIElement, _ name: String) -> CFTypeRef? {
+    var value: CFTypeRef?
+    guard AXUIElementCopyAttributeValue(element, name as CFString, &value) == .success else { return nil }
+    return value
+}
+
+func axString(_ element: AXUIElement, _ name: String) -> String? {
+    guard let value = axAttribute(element, name) else { return nil }
+    if let string = value as? String { return string }
+    if let number = value as? NSNumber { return number.stringValue }
+    return nil
+}
+
+func axBool(_ element: AXUIElement, _ name: String) -> Bool? {
+    guard let value = axAttribute(element, name) else { return nil }
+    return (value as? NSNumber)?.boolValue
+}
+
+func axBounds(_ element: AXUIElement) -> [String: Double]? {
+    var point = CGPoint.zero
+    var size = CGSize.zero
+    guard let position = axAttribute(element, kAXPositionAttribute),
+          CFGetTypeID(position) == AXValueGetTypeID(),
+          AXValueGetValue(position as! AXValue, .cgPoint, &point),
+          let sizeValue = axAttribute(element, kAXSizeAttribute),
+          CFGetTypeID(sizeValue) == AXValueGetTypeID(),
+          AXValueGetValue(sizeValue as! AXValue, .cgSize, &size) else { return nil }
+    return ["x": Double(point.x), "y": Double(point.y), "width": Double(size.width), "height": Double(size.height)]
+}
+
+func axActionNames(_ element: AXUIElement) -> [String] {
+    var names: CFArray?
+    guard AXUIElementCopyActionNames(element, &names) == .success,
+          let values = names as? [String] else { return [] }
+    return values
+}
+
+func boundedAXText(_ value: String?, remaining: inout Int) -> String? {
+    guard remaining > 0, let value, !value.isEmpty else { return nil }
+    let bounded = String(value.prefix(remaining))
+    remaining -= bounded.count
+    return bounded
+}
+
+func axChildren(_ element: AXUIElement) -> [AXUIElement] {
+    guard let value = axAttribute(element, kAXChildrenAttribute),
+          let children = value as? [AXUIElement] else { return [] }
+    return children
+}
+
+func frontmostWindowOwnerPID() -> pid_t? {
+    guard let windows = CGWindowListCopyWindowInfo(
+        [.optionOnScreenOnly, .excludeDesktopElements],
+        kCGNullWindowID
+    ) as? [[String: Any]] else { return nil }
+    for window in windows {
+        let layer = (window[kCGWindowLayer as String] as? NSNumber)?.intValue ?? -1
+        let alpha = (window[kCGWindowAlpha as String] as? NSNumber)?.doubleValue ?? 0
+        let pid = (window[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value ?? 0
+        if layer == 0, alpha > 0, pid > 0 { return pid_t(pid) }
+    }
+    return nil
+}
+
+func selectedAXRoot() throws -> (NSRunningApplication, AXUIElement, AXUIElement?) {
+    // This helper blocks its main thread on stdin, so NSWorkspace's cached
+    // frontmostApplication can go stale after the helper starts. WindowServer
+    // ordering is process-global and stays current without an AppKit run loop.
+    guard let pid = frontmostWindowOwnerPID() else {
+        throw AXCommandError("action_not_supported", "no frontmost application window")
+    }
+    guard pid != 0, let application = NSRunningApplication(processIdentifier: pid) else {
+        throw AXCommandError("action_not_supported", "frontmost application process is unavailable")
+    }
+    let appElement = AXUIElementCreateApplication(pid)
+    let focusedWindow = axAttribute(appElement, kAXFocusedWindowAttribute) as! AXUIElement?
+    let focusedElement = axAttribute(appElement, kAXFocusedUIElementAttribute) as! AXUIElement?
+    let overlayRoles: Set<String> = ["AXSheet", "AXDialog", "AXMenu", "AXPopover"]
+    let focusedRole = focusedElement.flatMap { axString($0, kAXRoleAttribute) }
+    let root = focusedRole.map(overlayRoles.contains) == true
+        ? focusedElement!
+        : (focusedWindow ?? appElement)
+    return (application, root, focusedWindow)
+}
+
+func accessibilitySnapshot() -> [String: Any] {
+    axRevisionSequence += 1
+    currentAXRevision = "ax_\(axRevisionSequence)"
+    currentAXRegistry.removeAll(keepingCapacity: true)
+    guard AXIsProcessTrusted() else {
+        return ["ok": true, "status": "denied", "message": "macOS Accessibility permission is required"]
+    }
+
+    let startedAt = Date()
+    do {
+        let (application, root, focusedWindow) = try selectedAXRoot()
+        var queue: [(element: AXUIElement, parentId: String?, depth: Int)] = [(root, nil, 0)]
+        var visited = Set<CFHashCode>()
+        var nodes: [[String: Any]] = []
+        var remainingText = axTextLimit
+        var partial = false
+
+        while !queue.isEmpty {
+            if Date().timeIntervalSince(startedAt) > axSnapshotTimeout {
+                partial = true
+                break
+            }
+            if nodes.count >= axNodeLimit {
+                partial = true
+                break
+            }
+            let entry = queue.removeFirst()
+            let identity = CFHash(entry.element)
+            if visited.contains(identity) { continue }
+            visited.insert(identity)
+            let id = "\(currentAXRevision):\(nodes.count + 1)"
+            currentAXRegistry[id] = entry.element
+
+            let role = axString(entry.element, kAXRoleAttribute) ?? "AXUnknown"
+            let subrole = axString(entry.element, kAXSubroleAttribute)
+            let secure = role.localizedCaseInsensitiveContains("secure")
+                || (subrole?.localizedCaseInsensitiveContains("secure") ?? false)
+            var node: [String: Any] = [
+                "id": id,
+                "role": role,
+                "actions": axActionNames(entry.element),
+            ]
+            if let parentId = entry.parentId { node["parentId"] = parentId }
+            if let value = boundedAXText(subrole, remaining: &remainingText) { node["subrole"] = value }
+            if let value = boundedAXText(axString(entry.element, kAXTitleAttribute), remaining: &remainingText) { node["name"] = value }
+            if !secure, let value = boundedAXText(axString(entry.element, kAXValueAttribute), remaining: &remainingText) { node["value"] = value }
+            if let value = boundedAXText(axString(entry.element, kAXDescriptionAttribute), remaining: &remainingText) { node["description"] = value }
+            if let value = boundedAXText(axString(entry.element, kAXIdentifierAttribute), remaining: &remainingText) { node["identifier"] = value }
+            if let value = axBool(entry.element, kAXEnabledAttribute) { node["enabled"] = value }
+            if let value = axBool(entry.element, kAXFocusedAttribute) { node["focused"] = value }
+            if let value = axBool(entry.element, kAXSelectedAttribute) { node["selected"] = value }
+            if let value = axBounds(entry.element) { node["bounds"] = value }
+            nodes.append(node)
+
+            let children = axChildren(entry.element)
+            if entry.depth >= axDepthLimit {
+                if !children.isEmpty { partial = true }
+                continue
+            }
+            for child in children {
+                queue.append((child, id, entry.depth + 1))
+            }
+            if remainingText <= 0 { partial = true }
+        }
+
+        var observation: [String: Any] = [
+            "source": "accessibility",
+            "revision": currentAXRevision,
+            "coverage": partial ? "partial" : "complete",
+            "app": [
+                "name": application.localizedName ?? "",
+                "bundleId": application.bundleIdentifier ?? "",
+                "pid": Int(application.processIdentifier),
+            ],
+            "nodes": nodes,
+            "truncated": partial,
+            "elapsedMs": Int(Date().timeIntervalSince(startedAt) * 1000),
+        ]
+        if let focusedWindow {
+            var window: [String: Any] = [:]
+            if let title = axString(focusedWindow, kAXTitleAttribute) { window["title"] = title }
+            if let bounds = axBounds(focusedWindow) { window["bounds"] = bounds }
+            if !window.isEmpty { observation["window"] = window }
+        }
+        return ["ok": true, "status": "ok", "observation": observation]
+    } catch let error as AXCommandError {
+        return ["ok": true, "status": "unavailable", "message": error.description]
+    } catch {
+        return ["ok": true, "status": "unavailable", "message": String(describing: error)]
+    }
+}
+
+func performAccessibilityAction(_ command: [String: Any]) throws {
+    guard AXIsProcessTrusted() else {
+        throw AXCommandError("accessibility_denied", "macOS Accessibility permission is required")
+    }
+    guard let revision = command["revision"] as? String,
+          revision == currentAXRevision else {
+        throw AXCommandError("stale_observation", "Accessibility observation is stale; observe again")
+    }
+    guard let nodeId = command["nodeId"] as? String,
+          let element = currentAXRegistry[nodeId] else {
+        throw AXCommandError("node_not_found", "Accessibility node no longer exists; observe again")
+    }
+    let action = command["action"] as? String ?? ""
+    switch action {
+    case "press":
+        guard axActionNames(element).contains(kAXPressAction) else {
+            throw AXCommandError("action_not_supported", "Accessibility node does not support press")
+        }
+        let result = AXUIElementPerformAction(element, kAXPressAction as CFString)
+        guard result == .success else {
+            throw AXCommandError("action_not_supported", "AXPress failed with code \(result.rawValue)")
+        }
+    case "focus":
+        var pid: pid_t = 0
+        AXUIElementGetPid(element, &pid)
+        if let app = NSRunningApplication(processIdentifier: pid) {
+            app.activate(options: [.activateIgnoringOtherApps])
+        }
+        let result = AXUIElementSetAttributeValue(element, kAXFocusedAttribute as CFString, kCFBooleanTrue)
+        guard result == .success else {
+            throw AXCommandError("action_not_supported", "AX focus failed with code \(result.rawValue)")
+        }
+    default:
+        throw AXCommandError("action_not_supported", "unsupported Accessibility action \(action)")
+    }
+}
+
+func setAccessibilityText(_ command: [String: Any]) throws {
+    guard AXIsProcessTrusted() else {
+        throw AXCommandError("accessibility_denied", "macOS Accessibility permission is required")
+    }
+    guard let revision = command["revision"] as? String,
+          revision == currentAXRevision else {
+        throw AXCommandError("stale_observation", "Accessibility observation is stale; observe again")
+    }
+    guard let nodeId = command["nodeId"] as? String,
+          let element = currentAXRegistry[nodeId] else {
+        throw AXCommandError("node_not_found", "Accessibility node no longer exists; observe again")
+    }
+    guard let text = command["text"] as? String else {
+        throw AXCommandError("invalid_request", "Accessibility text action is missing text")
+    }
+    let replace = (command["replace"] as? Bool) == true
+    let attribute = replace ? kAXValueAttribute : kAXSelectedTextAttribute
+    var settable = DarwinBoolean(false)
+    let settableResult = AXUIElementIsAttributeSettable(element, attribute as CFString, &settable)
+    guard settableResult == .success, settable.boolValue else {
+        throw AXCommandError("action_not_supported", "Accessibility node does not support exact text input")
+    }
+    let result = AXUIElementSetAttributeValue(element, attribute as CFString, text as CFString)
+    guard result == .success else {
+        throw AXCommandError("action_not_supported", "AX text input failed with code \(result.rawValue)")
+    }
+}
+
 struct HelperError: Error, CustomStringConvertible {
     let description: String
     init(_ description: String) { self.description = description }
@@ -299,6 +576,14 @@ func handle(_ line: String) -> String? {
         case "check":
             let trusted = AXIsProcessTrusted()
             return reply(id, ["ok": true, "trusted": trusted])
+        case "ax_snapshot":
+            return reply(id, accessibilitySnapshot())
+        case "ax_action":
+            try performAccessibilityAction(command)
+            return reply(id, ["ok": true])
+        case "ax_text":
+            try setAccessibilityText(command)
+            return reply(id, ["ok": true])
         case "move", "down", "up", "drag":
             try postMouse(command)
             // The click release also reports what the user tapped on so the
@@ -318,9 +603,14 @@ func handle(_ line: String) -> String? {
         case "text":
             try postText(command)
             return reply(id, ["ok": true])
+        case "unicode_text":
+            try postUnicodeText(command)
+            return reply(id, ["ok": true])
         default:
             return replyError(id, "unsupported op \(op)")
         }
+    } catch let error as AXCommandError {
+        return replyError(id, error.description, code: error.code)
     } catch {
         return replyError(id, String(describing: error))
     }
@@ -334,7 +624,12 @@ func reply(_ id: Int?, _ payload: [String: Any]) -> String {
 }
 
 func replyError(_ id: Int?, _ message: String) -> String {
-    let payload: [String: Any] = ["id": id as Any, "ok": false, "error": message]
+    replyError(id, message, code: nil)
+}
+
+func replyError(_ id: Int?, _ message: String, code: String?) -> String {
+    var payload: [String: Any] = ["id": id as Any, "ok": false, "error": message]
+    if let code { payload["code"] = code }
     guard let data = try? JSONSerialization.data(withJSONObject: payload) else { return "{\"ok\":false,\"error\":\"\(message)\"}" }
     return String(data: data, encoding: .utf8) ?? "{\"ok\":false,\"error\":\"\(message)\"}"
 }

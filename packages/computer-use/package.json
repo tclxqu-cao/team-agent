@@ -1,0 +1,16 @@
+{
+  "name": "@agent/computer-use",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "bun build ./src/index.ts --outdir ./dist --target node --format esm --sourcemap=external --external @agent/core && bunx tsc --emitDeclarationOnly",
+    "test": "bunx vitest run"
+  },
+  "dependencies": {
+    "@agent/core": "*",
+    "zod": "^3.23.0"
+  }
+}

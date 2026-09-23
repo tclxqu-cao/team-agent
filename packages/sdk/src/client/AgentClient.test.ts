@@ -9,6 +9,47 @@ describe("AgentClient remote tools", () => {
     vi.restoreAllMocks();
   });
 
+  it("serializes shared Agent, Skill, profile and Session metadata on a run", async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ runId: "run-1" }), { status: 200 }));
+    globalThis.fetch = fetchMock as typeof fetch;
+    const originalEventSource = globalThis.EventSource;
+    globalThis.EventSource = class {
+      onmessage = null;
+      onerror = null;
+      close() {}
+    } as unknown as typeof EventSource;
+    try {
+      const client = new AgentClient({ server: "http://agent", token: "sdk-token" });
+      await client.run("show works", "session-1", {
+        agentId: "portfolio-content-agent",
+        skillName: "portfolio-works",
+        profileId: "aihub-deepseek",
+        projectId: "portfolio",
+        title: "Portfolio: works",
+        metadata: { flowId: "homepage-main" },
+        context: { intent: "works" },
+        source: "flow-studio",
+      });
+
+      const calls = fetchMock.mock.calls as unknown as Array<[string, RequestInit]>;
+      const runCall = calls.find(([url]) => String(url).endsWith("/api/agent/run"));
+      expect(JSON.parse(String(runCall?.[1].body))).toEqual({
+        input: "show works",
+        sessionId: "session-1",
+        source: "flow-studio",
+        agentId: "portfolio-content-agent",
+        skillName: "portfolio-works",
+        profileId: "aihub-deepseek",
+        projectId: "portfolio",
+        title: "Portfolio: works",
+        metadata: { flowId: "homepage-main" },
+        context: { intent: "works" },
+      });
+    } finally {
+      globalThis.EventSource = originalEventSource;
+    }
+  });
+
   it("registers remote tools with the normal SDK token", async () => {
     const fetchMock = vi.fn(async () => new Response(JSON.stringify({ ok: true }), { status: 200 }));
     globalThis.fetch = fetchMock as typeof fetch;

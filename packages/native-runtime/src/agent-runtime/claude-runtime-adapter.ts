@@ -33,6 +33,7 @@ import {
   type Message,
   type MessageAttachment,
   type NativeSubagentActivity,
+  type ReasoningSummarySection,
   type SessionHistoryQuery,
   type SessionQueryIndex,
   type ToolCall,
@@ -688,6 +689,7 @@ export class ClaudeRuntimeAdapter implements AgentRuntimeAdapter {
     this.permissionEvents.set(nativeSessionId, (event) => permissionQueue.push(event));
 
     let streamedText = "";
+    let streamedReasoning = false;
     const subagents = new ClaudeSubagentTracker();
     let mainResult: Extract<SDKMessage, { type: "result" }> | null = null;
     try {
@@ -725,9 +727,10 @@ export class ClaudeRuntimeAdapter implements AgentRuntimeAdapter {
         const message = next.result.value;
         sdkNext = sdkIterator.next();
         for (const event of subagents.consume(message)) yield event;
-        const events = claudeSdkMessageToEvents(message, streamedText.length > 0);
+        const events = claudeSdkMessageToEvents(message, streamedText.length > 0, streamedReasoning);
         for (const event of events) {
           if (event.type === "text_chunk") streamedText += event.text;
+          if (event.type === "reasoning_summary_delta") streamedReasoning = true;
           yield event;
         }
         if (message.type === "system" && message.subtype === "init" && message.session_id !== nativeSessionId) {
@@ -983,7 +986,7 @@ export class ClaudeRuntimeAdapter implements AgentRuntimeAdapter {
           agentId,
           cwd ? { dir: cwd } : undefined,
         );
-        const childMessages = claudeHistoryToMessages(transcript);
+        const childMessages = claudeHistoryToMessages(transcript, false);
         if (childMessages.length === 0) return null;
         const summary = [...childMessages].reverse().find(
           (message) => message.role === "assistant" && message.content.trim(),
@@ -1345,7 +1348,7 @@ async function listClaudeAgentRecords(): Promise<ClaudeAgentRecord[]> {
   }
 }
 
-export function claudeHistoryToMessages(history: SessionMessage[]): Message[] {
+export function claudeHistoryToMessages(history: SessionMessage[], includeReasoning = true): Message[] {
   const result: Message[] = [];
   for (const entry of history) {
     if (entry.type !== "user" && entry.type !== "assistant") continue;
@@ -1354,9 +1357,15 @@ export function claudeHistoryToMessages(history: SessionMessage[]): Message[] {
     if (entry.type === "assistant") {
       const blocks = Array.isArray(content) ? content : [];
       const text = textFromContent(content);
+      const reasoning = includeReasoning ? claudeReasoningFromBlocks(blocks) : [];
       const toolCalls = blocks.map(claudeBlockToToolCall).filter((call): call is ToolCall => call !== null);
-      if (text || toolCalls.length) {
-        result.push({ role: "assistant", content: text, ...(toolCalls.length ? { toolCalls } : {}) });
+      if (text || toolCalls.length || reasoning.length) {
+        result.push({
+          role: "assistant",
+          content: text,
+          ...(toolCalls.length ? { toolCalls } : {}),
+          ...(reasoning.length ? { presentation: { reasoning } } : {}),
+        });
       }
       continue;
     }
@@ -1415,6 +1424,7 @@ function claudeImageAttachments(blocks: unknown[]): MessageAttachment[] {
 export function claudeSdkMessageToEvents(
   message: SDKMessage | SDKActiveGoalMessage,
   hasStreamedText: boolean,
+  hasStreamedReasoning = false,
 ): AgentEvent[] {
   if (message.type === "active_goal") {
     if (!message.value) return [];
@@ -1434,6 +1444,17 @@ export function claudeSdkMessageToEvents(
       const delta = asRecord(event.delta);
       if (delta.type === "text_delta" && typeof delta.text === "string") {
         return [{ type: "text_chunk", text: delta.text }];
+      }
+      if (delta.type === "thinking_delta" && typeof delta.thinking === "string" && delta.thinking) {
+        const sectionIndex = typeof event.index === "number" && Number.isSafeInteger(event.index) && event.index >= 0
+          ? event.index
+          : 0;
+        return [{
+          type: "reasoning_summary_delta",
+          itemId: "claude:thinking",
+          sectionIndex,
+          delta: delta.thinking,
+        }];
       }
     }
     return [];
@@ -1535,6 +1556,16 @@ export function claudeSdkMessageToEvents(
   if (message.type === "assistant") {
     const events: AgentEvent[] = [];
     const blocks = Array.isArray(message.message.content) ? message.message.content : [];
+    if (!hasStreamedReasoning) {
+      for (const section of claudeReasoningFromBlocks(blocks)) {
+        events.push({
+          type: "reasoning_summary_delta",
+          itemId: section.itemId,
+          sectionIndex: section.sectionIndex,
+          delta: section.text,
+        });
+      }
+    }
     if (!hasStreamedText) {
       const text = textFromContent(blocks);
       if (text) events.push({ type: "text_chunk", text });
@@ -1694,6 +1725,15 @@ function textFromContent(content: unknown): string {
     })
     .join("\n")
     .trim();
+}
+
+function claudeReasoningFromBlocks(blocks: unknown[]): ReasoningSummarySection[] {
+  return blocks.flatMap((block, sectionIndex) => {
+    const record = asRecord(block);
+    return record.type === "thinking" && typeof record.thinking === "string" && record.thinking
+      ? [{ itemId: "claude:thinking", sectionIndex, text: record.thinking }]
+      : [];
+  });
 }
 
 function asRecord(value: unknown): Record<string, unknown> {

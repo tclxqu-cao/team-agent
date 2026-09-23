@@ -13,9 +13,17 @@ const ctx = (sessionId = "session-a"): ToolContext => ({
   workingDirectory: "/workspace/project",
 });
 
-function setup(mode: ToolPermissionMode, decisions: Array<"allow-once" | "allow-session" | "deny" | "cancel"> = ["allow-once"]) {
+function setup(
+  mode: ToolPermissionMode,
+  decisions: Array<"allow-once" | "allow-session" | "deny" | "cancel"> = ["allow-once"],
+  directTools: string[] = [],
+) {
   const execute = vi.fn(async () => ({ toolCallId: "", content: "executed" }));
-  const delegate: IToolExecutor = { execute, validate: vi.fn(() => true) };
+  const delegate: IToolExecutor = {
+    execute,
+    validate: vi.fn(() => true),
+    getAuthorizationPolicy: (name) => directTools.includes(name) ? "direct" : "default",
+  };
   const requestApproval = vi.fn(async () => decisions.shift() ?? "allow-once");
   const gate = new ToolPermissionGate({ resolveMode: () => mode, requestApproval });
   return { executor: new PermissionAwareToolExecutor(delegate, gate), gate, execute, requestApproval };
@@ -39,6 +47,14 @@ describe("tool permissions", () => {
     await executor.execute("bash", { command: "bun test" }, ctx());
     await executor.execute("web_fetch", { url: "https://example.com" }, ctx());
     expect(requestApproval).toHaveBeenCalledTimes(2);
+  });
+
+  it("executes generic direct tools without an approval request", async () => {
+    const { executor, execute, requestApproval } = setup("request-approval", ["deny"], ["desktop_capability"]);
+    const result = await executor.execute("desktop_capability", { action: "press" }, ctx());
+    expect(result.content).toBe("executed");
+    expect(execute).toHaveBeenCalledOnce();
+    expect(requestApproval).not.toHaveBeenCalled();
   });
 
   it("allows safe reads, workspace edits, tests and builds in auto approval mode", async () => {

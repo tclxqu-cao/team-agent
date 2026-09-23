@@ -9,6 +9,7 @@ import { RUNTIME_TARGETS } from "./runtime-native-files.mjs";
 const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const server = resolve(root, "packages/server");
 const core = resolve(root, "packages/core");
+const computerUse = resolve(root, "packages/computer-use");
 const nativeRuntime = resolve(root, "packages/native-runtime");
 const targetName = readRequiredOption("--target");
 const nodeVersion = process.versions.node;
@@ -131,6 +132,7 @@ for (const platform of await readdir(nodePtyPrebuilds)) {
 // shipped here — missing one only shows up after release, never in dev.
 for (const { dir, dist } of [
   { dir: core, dist: resolve(core, "dist") },
+  { dir: computerUse, dist: resolve(computerUse, "dist") },
   { dir: nativeRuntime, dist: resolve(nativeRuntime, "dist") },
 ]) {
   const name = JSON.parse(await readFile(resolve(dir, "package.json"), "utf8")).name;

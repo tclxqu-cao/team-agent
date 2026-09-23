@@ -2,6 +2,7 @@ import { sharedCron } from "../../lib/shared-cron";
 import { sharedSettings, type SharedSettings } from "../../lib/shared-settings";
 import { configureSharedRun, type SharedRunOptions } from "../../lib/shared-run-config";
 import { businessCatalog } from "../../lib/business-catalog";
+import { registerCustomerComputerSkill, registerCustomerComputerTool } from "../../lib/computer-use";
 import { SubAgentDispatcher } from "@agent/native-runtime";
 import {
   AgentBuilder,
@@ -32,6 +33,7 @@ import {
   setSessionPermissionMode as applySessionPermissionMode,
   GOAL_MESSAGE_NAME,
   estimateTextTokens,
+  mergeReasoningSummaryDelta,
 } from "@agent/core";
 import { homedir } from "node:os";
 import { getAgentWorkingDirectory, getServerBaseDir } from "../../lib/server-data-dir";
@@ -404,6 +406,18 @@ class AgentHost {
     ));
 
     for (const event of events) {
+      if (event.type === "reasoning_summary_delta") {
+        if (!streamingAssistant) {
+          streamingAssistant = { role: "assistant", content: "" };
+          messages.push(streamingAssistant);
+        }
+        streamingAssistant.presentation = {
+          ...streamingAssistant.presentation,
+          reasoning: mergeReasoningSummaryDelta(streamingAssistant.presentation?.reasoning, event),
+        };
+        continue;
+      }
+
       if (event.type === "text_chunk") {
         if (!streamingAssistant) {
           streamingAssistant = { role: "assistant", content: "" };
@@ -587,7 +601,9 @@ class AgentHost {
           }))
           .build();
         await resources.applySkills();
+        registerCustomerComputerSkill(runBuilder);
         this.registerCustomerTools(runBuilder, sessionId, emitChild, dispatcher);
+        await registerCustomerComputerTool(runBuilder);
         // 目标模式工具只挂 owner run：子代理会话没有空闲钩子，挂了也无法续跑。
         for (const tool of this.threadGoalToolsProvider?.(sessionId) ?? []) {
           runBuilder.getToolRegistry().register(tool);

@@ -1,4 +1,13 @@
-import { describe, expect, it, vi } from "vitest";
+import { rmSync } from "node:fs";
+import { getDatabase } from "@agent/core";
+import { afterAll, describe, expect, it, vi } from "vitest";
+
+const isolatedAgentData = vi.hoisted(() => {
+  const previous = process.env.AGENT_DATA_DIR;
+  const directory = `${process.env.TMPDIR || "/tmp"}/agentroam-agent-stream-test-${process.pid}-${crypto.randomUUID()}`;
+  process.env.AGENT_DATA_DIR = directory;
+  return { directory, previous };
+});
 import { agentHost } from "../../agent-host";
 import { GET } from "./route";
 
@@ -10,6 +19,13 @@ const nativeState = vi.hoisted(() => ({
     event: { type: string; [key: string]: unknown };
   }>,
 }));
+
+afterAll(() => {
+  getDatabase(isolatedAgentData.directory).close();
+  rmSync(isolatedAgentData.directory, { recursive: true, force: true });
+  if (isolatedAgentData.previous === undefined) delete process.env.AGENT_DATA_DIR;
+  else process.env.AGENT_DATA_DIR = isolatedAgentData.previous;
+});
 
 vi.mock("../../../../lib/native-runtime-service", () => ({
   isNativeSessionId: (id: string) => id.startsWith("runtime:"),

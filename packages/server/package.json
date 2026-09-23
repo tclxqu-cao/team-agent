@@ -13,6 +13,7 @@
     "gateway": "node ws-server.mjs"
   },
   "dependencies": {
+    "@agent/computer-use": "*",
     "@agent/core": "*",
     "@agent/native-runtime": "*",
     "@anthropic-ai/claude-agent-sdk": "^0.3.259",
@@ -28,13 +29,16 @@
     "node-pty": "^1.1.0",
     "react": "^18.3.0",
     "react-dom": "^18.3.0",
-    "werift": "^0.24.4",
+    "sanitize-html": "^2.17.7",
     "web-push": "^3.6.7",
-    "ws": "^8.21.3"
+    "werift": "^0.24.4",
+    "ws": "^8.21.3",
+    "zod": "^3.23.0"
   },
   "devDependencies": {
     "@types/react": "^18.3.0",
     "@types/react-dom": "^18.3.0",
+    "@types/sanitize-html": "^2.16.1",
     "@types/ws": "^8.18.1"
   }
 }

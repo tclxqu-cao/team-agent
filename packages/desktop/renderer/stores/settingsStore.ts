@@ -34,6 +34,30 @@ interface SettingsState {
   switchActiveProfile: (id: string) => Promise<void>;
 }
 
+const PERSISTED_SETTING_KEYS = [
+  "modelProvider", "modelId", "apiKey", "baseUrl", "maxIterations", "contextWindow",
+  "workingDirectory", "isConfigured", "profiles", "activeProfileId", "reasoningEffort",
+] as const;
+
+type PersistedSettingKey = typeof PERSISTED_SETTING_KEYS[number];
+type PersistedSettings = Pick<SettingsState, PersistedSettingKey>;
+
+let loadedSettingsSnapshot: PersistedSettings | null = null;
+
+function persistedSettings(value: Partial<SettingsState> & Record<string, unknown>): PersistedSettings {
+  return Object.fromEntries(PERSISTED_SETTING_KEYS.map((key) => [key, value[key]])) as PersistedSettings;
+}
+
+export function changedSettingsPatch(
+  baseline: PersistedSettings | null,
+  current: PersistedSettings,
+): Partial<PersistedSettings> {
+  if (!baseline) return current;
+  return Object.fromEntries(PERSISTED_SETTING_KEYS
+    .filter((key) => JSON.stringify(baseline[key]) !== JSON.stringify(current[key]))
+    .map((key) => [key, current[key]])) as Partial<PersistedSettings>;
+}
+
 function resolveActive(profiles: ModelProfile[], id: string): ModelProfile | null {
   return profiles.find((p) => p.id === id) ?? null;
 }
@@ -74,7 +98,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       const profiles = (s.profiles ?? []) as ModelProfile[];
       const activeProfileId = s.activeProfileId ?? "";
       const active = resolveActive(profiles, activeProfileId);
-      set({
+      const loaded = {
         revision: s.revision,
         modelProvider: active?.provider ?? s.modelProvider ?? "anthropic",
         modelId: active?.modelId ?? s.modelId ?? "claude-sonnet-4-6",
@@ -91,7 +115,9 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
         reasoningEffort: (["off", "low", "medium", "high"].includes(s.reasoningEffort ?? "")
           ? (s.reasoningEffort as "off" | "low" | "medium" | "high")
           : "off"),
-      });
+      };
+      loadedSettingsSnapshot = persistedSettings(loaded);
+      set(loaded);
     } catch (err) {
       console.error("Failed to load settings:", err);
     }
@@ -100,20 +126,15 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   saveToSystem: async () => {
     if (!window.agentApi) return;
     const state = get();
-    await window.agentApi.saveSettings({
-      revision: state.revision,
-      modelProvider: state.modelProvider,
-      modelId: state.modelId,
-      apiKey: state.apiKey,
-      baseUrl: state.baseUrl,
-      maxIterations: state.maxIterations,
-      contextWindow: state.contextWindow,
-      workingDirectory: state.workingDirectory,
-      isConfigured: state.isConfigured,
-      profiles: state.profiles,
-      activeProfileId: state.activeProfileId,
-      reasoningEffort: state.reasoningEffort,
-    });
+    const current = persistedSettings(state);
+    const patch = changedSettingsPatch(loadedSettingsSnapshot, current);
+    try {
+      await window.agentApi.saveSettings({ ...patch, revision: state.revision });
+    } catch (error) {
+      if ((error as { status?: number })?.status !== 409) throw error;
+      const latest = await window.agentApi.getSettings();
+      await window.agentApi.saveSettings({ ...patch, revision: latest.revision });
+    }
     await get().loadFromSystem();
   },
 

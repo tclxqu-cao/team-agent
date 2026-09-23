@@ -2,15 +2,17 @@
 
 ## Goal
 
-Make reasoning from OpenAI-compatible models such as Step 5 Preview visible in Customer Agent's existing collapsible reasoning area, while preventing reasoning-only or token-truncated responses from being recorded as successful empty answers.
+Make reasoning from OpenAI-compatible models such as Step 5 Preview and Anthropic models visible in the existing collapsible reasoning area across Customer Agent and native Claude sessions, while preventing reasoning-only or token-truncated responses from being recorded as successful empty answers.
 
 ## Scope
 
-This change applies to the OpenAI-compatible streaming provider, the shared AgentLoop event bridge, and Customer Agent session projection. It reuses the existing desktop `reasoning_summary_delta` rendering and does not add a new desktop component or mix reasoning into assistant answer text.
+This change applies to the OpenAI-compatible and Anthropic streaming providers, the shared AgentLoop event bridge, Customer Agent session projection, and the native Claude runtime adapter. It reuses the existing desktop `reasoning_summary_delta` rendering and does not add a new desktop component or mix reasoning into assistant answer text.
 
 ## Stream Contract
 
 `StreamEvent` gains a `reasoning_delta` variant containing a text delta. `OpenAIProvider` reads the compatible API field `choices[0].delta.reasoning_content` and emits it separately from `delta.content`.
+
+`AnthropicProvider` reads `content_block_delta` events whose delta type is `thinking_delta`, emits their `thinking` text through the same `reasoning_delta` contract, and ignores signature deltas. Anthropic `max_tokens` and `model_context_window_exceeded` stop reasons are terminal truncation errors rather than normal completion.
 
 Reasoning fragments are buffered inside the provider and flushed when either condition is met:
 
@@ -53,6 +55,8 @@ If reasoning arrives before answer text, projection creates an assistant message
 The desktop renderer already consumes `reasoning_summary_delta`, merges sections, and renders them through `ReasoningSummary`. The completed implementation therefore uses the existing collapsed "思考中/思考" interaction and requires no new visible control.
 
 During a Step response, the user sees incremental reasoning progress. When answer text begins, it appears in the normal assistant body. Refreshing the session preserves both the reasoning presentation and answer text.
+
+Native Claude SDK `thinking_delta` events map directly to `reasoning_summary_delta`. Completed Claude transcript thinking blocks are restored into assistant `presentation.reasoning`, so reasoning remains visible after history refresh without entering answer content.
 
 ## Testing
 

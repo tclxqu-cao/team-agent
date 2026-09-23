@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { useSettingsStore } from "../stores/settingsStore";
 import type { ModelProfile } from "../global.d.ts";
+import { parseMaxIterationsDraft } from "../lib/settings-validation";
+import AppActionNotice, { type AppActionNoticeType } from "./AppActionNotice";
 
 const PROVIDERS = [
   { value: "anthropic", label: "Anthropic" },
@@ -16,8 +18,23 @@ const PROVIDER_DEFAULT_MODELS: Record<string, string> = {
   aihub: "deepseek",
 };
 
+const PROVIDER_DEFAULT_REQUEST_TIMEOUT_SECONDS: Record<string, number> = {
+  anthropic: 120,
+  openai: 300,
+  deepseek: 300,
+  aihub: 240,
+};
+
 function emptyProfile(): Omit<ModelProfile, "id"> {
-  return { name: "", provider: "anthropic", modelId: "claude-sonnet-4-6", apiKey: "", baseUrl: "" };
+  return {
+    name: "",
+    provider: "anthropic",
+    modelId: "claude-sonnet-4-6",
+    apiKey: "",
+    baseUrl: "",
+    maxOutputTokens: 16_384,
+    requestTimeoutSeconds: PROVIDER_DEFAULT_REQUEST_TIMEOUT_SECONDS.anthropic,
+  };
 }
 
 export default function SettingsPanel() {
@@ -30,7 +47,10 @@ export default function SettingsPanel() {
 
   const [notice, setNotice] = useState<string | null>(null);
   const [noticeType, setNoticeType] = useState<"success" | "error">("success");
+  const [actionNotice, setActionNotice] = useState<{ message: string; type: AppActionNoticeType } | null>(null);
+  const [maxIterationsDraft, setMaxIterationsDraft] = useState(String(maxIterations));
   const [contextTokensDraft, setContextTokensDraft] = useState(String(Math.round((contextWindow ?? 100) * 1000)));
+  useEffect(() => { setMaxIterationsDraft(String(maxIterations)); }, [maxIterations]);
   useEffect(() => { setContextTokensDraft(String(Math.round((contextWindow ?? 100) * 1000))); }, [contextWindow]);
 
   // Profile editor state
@@ -39,6 +59,11 @@ export default function SettingsPanel() {
   const [draft, setDraft] = useState<Omit<ModelProfile, "id">>(emptyProfile());
 
   useEffect(() => { loadFromSystem(); }, []);
+  useEffect(() => {
+    if (!actionNotice) return;
+    const timer = window.setTimeout(() => setActionNotice(null), actionNotice.type === "error" ? 4000 : 2500);
+    return () => window.clearTimeout(timer);
+  }, [actionNotice]);
 
   const startNew = () => {
     setIsNew(true);
@@ -55,6 +80,10 @@ export default function SettingsPanel() {
       modelId: p.modelId,
       apiKey: ["managed", "__agentroam_stored_secret__"].includes(p.apiKey) ? "" : p.apiKey,
       baseUrl: p.baseUrl,
+      maxOutputTokens: p.maxOutputTokens ?? 16_384,
+      requestTimeoutSeconds: p.requestTimeoutSeconds
+        ?? PROVIDER_DEFAULT_REQUEST_TIMEOUT_SECONDS[p.provider]
+        ?? 300,
     });
   };
 
@@ -63,21 +92,44 @@ export default function SettingsPanel() {
   const saveDraft = async () => {
     // aihub 模型来源（桌面 AI Hub 网页模型）不需要 API Key
     const apiKeyRequired = draft.provider !== "aihub";
-    if (!draft.name.trim() || (apiKeyRequired && !draft.apiKey.trim()) || !draft.modelId.trim()) {
+    const editingProfile = editingId ? profiles.find((profile) => profile.id === editingId) : undefined;
+    const hasStoredApiKey = editingProfile
+      ? ["managed", "__agentroam_stored_secret__"].includes(editingProfile.apiKey)
+      : false;
+    if (!draft.name.trim() || (apiKeyRequired && !draft.apiKey.trim() && !hasStoredApiKey) || !draft.modelId.trim()) {
       setNotice(apiKeyRequired ? "名称、API Key 和模型 ID 为必填项" : "名称和模型 ID（AI Hub 站点 ID）为必填项");
       setNoticeType("error");
       return;
     }
-    if (isNew) {
-      addProfile(draft);
-    } else if (editingId) {
-      updateProfile(editingId, draft);
+    if (
+      draft.maxOutputTokens !== undefined
+      && (!Number.isInteger(draft.maxOutputTokens) || draft.maxOutputTokens < 256 || draft.maxOutputTokens > 131_072)
+    ) {
+      setNotice("单轮最大输出请输入 256 到 131072 之间的整数 tokens");
+      setNoticeType("error");
+      return;
     }
-    setEditingId(null);
-    setIsNew(false);
-    setNotice(null);
-    // Auto-save profiles
-    setTimeout(() => saveToSystem(), 0);
+    if (
+      draft.requestTimeoutSeconds !== undefined
+      && (!Number.isInteger(draft.requestTimeoutSeconds)
+        || draft.requestTimeoutSeconds < 30
+        || draft.requestTimeoutSeconds > 1_800)
+    ) {
+      setNotice("单次请求超时请输入 30 到 1800 之间的整数秒");
+      setNoticeType("error");
+      return;
+    }
+    try {
+      if (isNew) addProfile(draft);
+      else if (editingId) updateProfile(editingId, draft);
+      await saveToSystem();
+      setEditingId(null);
+      setIsNew(false);
+      setNotice(null);
+      setActionNotice({ message: "模型配置保存成功", type: "success" });
+    } catch (error) {
+      setActionNotice({ message: error instanceof Error ? error.message : "模型配置保存失败", type: "error" });
+    }
   };
 
   const handleDelete = async (id: string) => {
@@ -94,21 +146,27 @@ export default function SettingsPanel() {
 
   const handleSaveGeneral = async () => {
     setNotice(null);
+    const parsedMaxIterations = parseMaxIterationsDraft(maxIterationsDraft);
+    if (parsedMaxIterations === null) {
+      setNotice("最大迭代次数不能为空，请输入非负整数；0 表示无限制。");
+      setNoticeType("error");
+      return;
+    }
     const tokens = Number(contextTokensDraft);
     if (!Number.isInteger(tokens) || tokens < 1024 || tokens > 2_000_000) {
       setNotice("上下文窗口请输入 1024 到 2000000 之间的整数 tokens，例如 8192。");
       setNoticeType("error");
       return;
     }
+    setField("maxIterations", parsedMaxIterations);
     // Persist K tokens for compatibility with existing settings and consumers.
     setField("contextWindow", tokens / 1000);
     try {
       await saveToSystem();
-      setNotice("设置保存成功");
-      setNoticeType("success");
+      setNotice(null);
+      setActionNotice({ message: "设置保存成功", type: "success" });
     } catch (err) {
-      setNotice(err instanceof Error ? err.message : "保存失败");
-      setNoticeType("error");
+      setActionNotice({ message: err instanceof Error ? err.message : "设置保存失败", type: "error" });
     }
   };
 
@@ -159,6 +217,7 @@ export default function SettingsPanel() {
           {profiles.map((p) => {
             const isActive = p.id === activeProfileId;
             const isEditing = p.id === editingId;
+            const hasStoredApiKey = ["managed", "__agentroam_stored_secret__"].includes(p.apiKey);
             return (
               <div key={p.id} style={{
                 borderRadius: "var(--radius-sm)",
@@ -188,8 +247,8 @@ export default function SettingsPanel() {
                     <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                       {p.name || p.modelId}
                     </div>
-                    <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 1 }}>
-                      {p.modelId} {p.baseUrl ? `· ${p.baseUrl}` : ""}
+                    <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {p.modelId}
                     </div>
                   </div>
 
@@ -215,7 +274,7 @@ export default function SettingsPanel() {
 
                 {/* Inline edit form */}
                 {isEditing && (
-                  <ProfileForm draft={draft} setDraft={setDraft} onSave={saveDraft} onCancel={cancelEdit} />
+                  <ProfileForm draft={draft} setDraft={setDraft} hasStoredApiKey={hasStoredApiKey} onSave={saveDraft} onCancel={cancelEdit} />
                 )}
               </div>
             );
@@ -231,7 +290,7 @@ export default function SettingsPanel() {
               <div style={{ padding: "10px 14px 0", fontSize: 13, fontWeight: 600, color: "var(--accent)" }}>
                 新建提供商
               </div>
-              <ProfileForm draft={draft} setDraft={setDraft} onSave={saveDraft} onCancel={cancelEdit} />
+              <ProfileForm draft={draft} setDraft={setDraft} hasStoredApiKey={false} onSave={saveDraft} onCancel={cancelEdit} />
             </div>
           )}
         </div>
@@ -246,11 +305,12 @@ export default function SettingsPanel() {
           <Field label="最大迭代次数">
             <input
               type="number"
-              value={maxIterations}
-              onChange={(e) => setField("maxIterations", parseInt(e.target.value) || 10)}
-              min={1} max={50}
+              value={maxIterationsDraft}
+              onChange={(e) => setMaxIterationsDraft(e.target.value)}
+              min={0} step={1}
               style={inputStyle}
             />
+            <div style={{ fontSize: 12, opacity: 0.65 }}>输入 0 表示不限制迭代次数。</div>
           </Field>
           <Field label="上下文窗口（tokens，输入与输出合计）">
             <input
@@ -296,6 +356,7 @@ export default function SettingsPanel() {
           {notice}
         </div>
       )}
+      <AppActionNotice message={actionNotice?.message ?? null} type={actionNotice?.type ?? "success"} />
     </div>
   );
 }
@@ -305,11 +366,12 @@ export default function SettingsPanel() {
 interface ProfileFormProps {
   draft: Omit<ModelProfile, "id">;
   setDraft: React.Dispatch<React.SetStateAction<Omit<ModelProfile, "id">>>;
+  hasStoredApiKey: boolean;
   onSave: () => void;
   onCancel: () => void;
 }
 
-function ProfileForm({ draft, setDraft, onSave, onCancel }: ProfileFormProps) {
+function ProfileForm({ draft, setDraft, hasStoredApiKey, onSave, onCancel }: ProfileFormProps) {
   const set = (key: keyof typeof draft, val: string) =>
     setDraft((d) => {
       const next = { ...d, [key]: val };
@@ -329,8 +391,13 @@ function ProfileForm({ draft, setDraft, onSave, onCancel }: ProfileFormProps) {
           <select
             value={draft.provider}
             onChange={(e) => {
-              set("provider", e.target.value);
-              set("modelId", PROVIDER_DEFAULT_MODELS[e.target.value] ?? "");
+              const provider = e.target.value;
+              setDraft((current) => ({
+                ...current,
+                provider,
+                modelId: PROVIDER_DEFAULT_MODELS[provider] ?? "",
+                requestTimeoutSeconds: PROVIDER_DEFAULT_REQUEST_TIMEOUT_SECONDS[provider] ?? 300,
+              }));
             }}
             style={inputStyle}
           >
@@ -341,6 +408,28 @@ function ProfileForm({ draft, setDraft, onSave, onCancel }: ProfileFormProps) {
       <Field label="模型 ID">
         <input value={draft.modelId} onChange={(e) => set("modelId", e.target.value)} placeholder={draft.provider === "aihub" ? "deepseek" : "claude-sonnet-4-6"} style={inputStyle} />
       </Field>
+      <Field label="单轮最大输出（tokens）">
+        <input
+          type="number"
+          value={draft.maxOutputTokens ?? 16_384}
+          onChange={(e) => setDraft((current) => ({ ...current, maxOutputTokens: Number(e.target.value) }))}
+          min={256}
+          max={131072}
+          step={1024}
+          style={inputStyle}
+        />
+      </Field>
+      <Field label="单次请求超时（秒）">
+        <input
+          type="number"
+          value={draft.requestTimeoutSeconds ?? PROVIDER_DEFAULT_REQUEST_TIMEOUT_SECONDS[draft.provider] ?? 300}
+          onChange={(e) => setDraft((current) => ({ ...current, requestTimeoutSeconds: Number(e.target.value) }))}
+          min={30}
+          max={1800}
+          step={30}
+          style={inputStyle}
+        />
+      </Field>
       {draft.provider === "aihub" ? (
         <div style={{ padding: "8px 10px", background: "rgba(96,165,250,0.08)", border: "1px solid rgba(96,165,250,0.2)", borderRadius: 8, fontSize: 12, lineHeight: 1.6 }}>
           AI Hub 网页模型来源：模型 ID 填 AI Hub 站点 ID（deepseek / chatgpt / gemini / grok 或自定义站点），无需 API Key。
@@ -349,7 +438,14 @@ function ProfileForm({ draft, setDraft, onSave, onCancel }: ProfileFormProps) {
       ) : (
         <>
           <Field label="API 密钥">
-            <input type="password" value={draft.apiKey} onChange={(e) => set("apiKey", e.target.value)} placeholder="sk-..." style={inputStyle} />
+            <input
+              type="password"
+              value={draft.apiKey}
+              onChange={(e) => set("apiKey", e.target.value)}
+              placeholder={hasStoredApiKey ? "••••••••••••" : "sk-..."}
+              aria-label={hasStoredApiKey ? "API 密钥（已保存）" : "API 密钥"}
+              style={inputStyle}
+            />
           </Field>
           <Field label="接口地址（可选）">
             <input value={draft.baseUrl} onChange={(e) => set("baseUrl", e.target.value)} placeholder="https://api.anthropic.com" style={inputStyle} />

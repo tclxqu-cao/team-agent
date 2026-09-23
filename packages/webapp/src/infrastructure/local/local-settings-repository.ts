@@ -97,7 +97,13 @@ export class LocalSettingsRepository {
    * "managed" profile keeps the renderer's isConfigured gate satisfied while
    * the server uses its own env model).
    */
-  getModelOverride(): { provider: string; apiKey: string; modelId: string; baseUrl?: string } | null {
+  getModelOverride(): {
+    provider: string;
+    apiKey: string;
+    modelId: string;
+    baseUrl?: string;
+    requestTimeoutSeconds?: number;
+  } | null {
     const settings = this.get();
     const active = settings.profiles.find((p) => p.id === settings.activeProfileId) ?? null;
     const provider = active?.provider ?? settings.modelProvider;
@@ -105,7 +111,15 @@ export class LocalSettingsRepository {
     const modelId = active?.modelId ?? settings.modelId;
     const baseUrl = active?.baseUrl ?? settings.baseUrl;
     if (!apiKey || apiKey === "managed" || !modelId || modelId === "server") return null;
-    return { provider, apiKey, modelId, ...(baseUrl ? { baseUrl } : {}) };
+    return {
+      provider,
+      apiKey,
+      modelId,
+      ...(baseUrl ? { baseUrl } : {}),
+      ...(active?.requestTimeoutSeconds === undefined
+        ? {}
+        : { requestTimeoutSeconds: active.requestTimeoutSeconds }),
+    };
   }
 
   /** Persisted reasoning intensity, defaulting to "off" (provider default behavior). */
@@ -116,7 +130,10 @@ export class LocalSettingsRepository {
 
   getRunLimits(): { maxIterations: number; maxTokens: number } {
     const settings = this.get();
-    const maxIterations = Math.min(50, Math.max(1, Math.trunc(Number(settings.maxIterations) || 10)));
+    const rawMaxIterations = Number(settings.maxIterations);
+    const maxIterations = Number.isFinite(rawMaxIterations) && rawMaxIterations >= 0
+      ? Math.trunc(rawMaxIterations)
+      : 10;
     const contextWindowK = Math.min(2_000, Math.max(8, Math.trunc(Number(settings.contextWindow) || 100)));
     return { maxIterations, maxTokens: contextWindowK * 1_000 };
   }

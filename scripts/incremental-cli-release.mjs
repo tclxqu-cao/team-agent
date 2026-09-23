@@ -14,9 +14,9 @@ const shared = ["package.json", "bun.lock", "package-lock.json", "tsconfig.json"
 
 // Include source imported from Desktop by Server/WebApp and TUI. Unknown build
 // helpers conservatively invalidate bundles; generated output is git-ignored.
-// packages/native-runtime is bundled into the standalone runtime artifacts by
-// stage-cli-runtime.mjs, so it invalidates the two platform runtimes (the
-// launcher follows automatically in planRelease).
+// packages/computer-use and packages/native-runtime are bundled into the
+// standalone runtime artifacts by stage-cli-runtime.mjs, so either invalidates
+// both platform runtimes (the launcher follows automatically in planRelease).
 export function affectedPackages(path) {
   if (/(?:^|\/)(?:node_modules|dist|release|\.next|\.build-remote)(?:\/|$)/.test(path)
     || /\.(?:tgz|app)(?:\/|$)/.test(path)
@@ -31,6 +31,7 @@ export function affectedPackages(path) {
   if (shared.some((prefix) => path === prefix || (prefix.endsWith("/") && path.startsWith(prefix)))) return names.slice();
   if (path.startsWith("packages/tui/")) return names.slice(4, 6);
   if (["packages/core/", "packages/desktop/", "packages/sdk/"].some((prefix) => path.startsWith(prefix))) return [names[0], names[1], names[4], names[5]];
+  if (path.startsWith("packages/computer-use/")) return [names[0], names[1]];
   if (path.startsWith("packages/native-runtime/")) return [names[0], names[1]];
   if (["packages/server/", "packages/webapp/"].some((prefix) => path.startsWith(prefix))) return names.slice(0, 2);
   if (path === "scripts/build-cli-remote-helper.mjs") return [names[0]];
@@ -117,8 +118,9 @@ export function buildCommands(plan) {
   const tui = names.slice(4, 6).some((name) => changed.has(name));
   if (runtime) commands.push(
     ["bun", ["run", "--cwd", "packages/webapp", "build"]],
-    // native-runtime type-checks against core's built declarations, so core first.
+    // Workspace packages type-check against built declarations in dependency order.
     ["bun", ["run", "--cwd", "packages/core", "build"]],
+    ["bun", ["run", "--cwd", "packages/computer-use", "build"]],
     ["bun", ["run", "--cwd", "packages/native-runtime", "build"]],
     ["bun", ["run", "--cwd", "packages/server", "build"], { NEXT_STANDALONE: "1" }],
   );

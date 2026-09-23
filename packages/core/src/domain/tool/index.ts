@@ -4,6 +4,7 @@ export {
   type ToolResult,
   type IToolRegistry,
   type IToolExecutor,
+  type ToolAuthorizationPolicy,
 } from './entities.js';
 export {
   TOOL_PERMISSION_MODES,

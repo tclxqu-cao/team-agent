@@ -204,6 +204,50 @@ describe("AgentWorkspaceIndexService", () => {
     expect(repository.rows).toEqual([]);
   });
 
+  it("merges duplicate native Codex projects by normalized roots and keeps every session", async () => {
+    const older = workspace("codex", "older", 3);
+    older.name = "agent-free";
+    older.roots = ["/repo/agent-free/."];
+    older.updatedAt = "2026-09-11T02:25:10.000Z";
+    const newer = workspace("codex", "newer", 0);
+    newer.name = "agent-free";
+    newer.roots = ["/repo/agent-free"];
+    newer.updatedAt = "2026-09-20T09:19:15.000Z";
+    const sameNameElsewhere = workspace("codex", "elsewhere", 4);
+    sameNameElsewhere.name = "agent-free";
+    sameNameElsewhere.roots = ["/other/agent-free"];
+    const codex = adapter("codex", [newer, older, sameNameElsewhere]);
+    codex.listWorkspaceSessionsByPath = vi.fn(async () => ({
+      data: [
+        { ...session("codex", "new-session"), cwd: "/repo/agent-free", projectId: "newer" },
+        { ...session("codex", "old-session"), cwd: "/repo/agent-free", projectId: "older" },
+      ],
+      nextCursor: null,
+      watermark: "2",
+    }));
+    codex.discoverSessions = vi.fn(async () => [
+      { ...session("codex", "old-session"), cwd: "", projectId: "older" },
+    ]);
+    const service = new AgentWorkspaceIndexService([codex], undefined, "darwin");
+
+    const workspaces = await service.listWorkspaces("codex");
+    const sessions = await service.listWorkspaceSessions("codex", "newer");
+    const recent = await service.listWorkspaceSessions("codex", CODEX_RECENT_WORKSPACE_ID);
+
+    expect(workspaces.data.map((item) => item.workspaceId)).toEqual([
+      CODEX_RECENT_WORKSPACE_ID,
+      "newer",
+      "elsewhere",
+    ]);
+    expect(sessions.data.map((item) => item.id)).toEqual(["new-session", "old-session"]);
+    expect(sessions.data.every((item) => item.projectId === "newer")).toBe(true);
+    expect(codex.listWorkspaceSessionsByPath).toHaveBeenCalledWith(
+      "/repo/agent-free",
+      expect.objectContaining({ cursor: null }),
+    );
+    expect(recent.data).toEqual([]);
+  });
+
   it("appends imports after native order and queries imported sessions by cwd", async () => {
     const repository = new MemoryImportedWorkspaceRepository();
     const codex = adapter("codex", [

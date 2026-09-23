@@ -115,6 +115,17 @@ export async function loadProgressiveSessionHistoryPage(
   onPage(core, "core");
 }
 
+export function resolveOlderHistoryCursor(
+  requestedCursor: string,
+  detail: SessionHistoryDetail | null,
+  restoredMessageCount: number,
+): string | null {
+  const nextCursor = detail?.history?.nextCursor ?? null;
+  if (detail?.history?.hasMore === false || !nextCursor) return null;
+  if (restoredMessageCount === 0 && nextCursor === requestedCursor) return null;
+  return nextCursor;
+}
+
 export function mergeProgressiveSessionHistoryPage(
   current: ChatMessage[],
   refreshed: ChatMessage[],

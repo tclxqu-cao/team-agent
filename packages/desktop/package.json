@@ -8,6 +8,7 @@
     "dev": "node scripts/configure-dev-app-name.mjs && lsof -ti:5173 | xargs kill -9 2>/dev/null; bun run compile && bunx concurrently --kill-others -n vite,electron 'VITE_PORT=5173 bunx --bun vite --port 5173' 'sleep 2 && VITE_PORT=5173 node scripts/run-dev-app.mjs'",
     "build": "bun run build:helper && bunx --bun vite build && bun run compile",
     "build:helper": "bash scripts/build-desktop-input.sh",
+    "smoke:computer-use": "bun ../../scripts/computer-use-smoke.mjs",
     "compile": "bun run --cwd ../voice-service build && bunx tsc && bunx tsc -p tsconfig.preload.json && mv dist/main/preload.js dist/main/preload.cjs",
     "electron": "node scripts/configure-dev-app-name.mjs && bun run compile && NODE_ENV=production node scripts/run-dev-app.mjs",
     "start": "node scripts/configure-dev-app-name.mjs && bunx --bun vite build && bun run compile && NODE_ENV=production node scripts/run-dev-app.mjs",
@@ -15,6 +16,7 @@
     "package:win": "bun run build && node ../../scripts/stage-agent-packages-for-packaging.mjs && electron-builder --config electron-builder.yml --win nsis --x64"
   },
   "dependencies": {
+    "@agent/computer-use": "*",
     "@agent/core": "*",
     "@agent/native-runtime": "*",
     "@anthropic-ai/claude-agent-sdk": "^0.3.259",

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { createPortal } from "react-dom";
 import { History, LoaderCircle, Plus, Search } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
@@ -41,6 +41,7 @@ import AgentBrandIcon from "./components/AgentBrandIcon";
 import SidebarDeleteConfirmation from "./components/SidebarDeleteConfirmation";
 import SidebarSessionRow, { type SidebarDeleteAnchor } from "./components/SidebarSessionRow";
 import HostProjectPicker from "./components/HostProjectPicker";
+import AppActionNotice from "./components/AppActionNotice";
 import type {
   AgentType,
   AgentWorkspace,
@@ -61,6 +62,7 @@ import { useSettingsStore } from "./stores/settingsStore";
 import { useAgentStore } from "./stores/agentStore";
 import { useUIStore, SKINS, LAYOUTS } from "./stores/uiStore";
 import { startWakeListener, isASRSupported, type WakeListenerHandle } from "./lib/speech";
+import { getDesktopDirectoryContextMenuPath } from "./lib/sidebar-directory-context-menu";
 import { isWebShell, useNarrowViewport } from "./web/webLayout";
 
 type SettingsTab = "settings" | "mcp" | "memory" | "skill" | "agent" | "lsp";
@@ -1163,6 +1165,26 @@ export default function App() {
     }
   };
 
+  const handleProjectContextMenu = (
+    event: ReactMouseEvent<HTMLElement>,
+    project: Project,
+    isInvalid: boolean,
+  ) => {
+    const showMenu = window.agentApi?.showDirectoryContextMenu;
+    const path = getDesktopDirectoryContextMenuPath(project, {
+      isInvalid,
+      supported: typeof showMenu === "function",
+      webShell,
+    });
+    if (!path || !showMenu) return;
+    event.preventDefault();
+    void showMenu(path).catch((error) => {
+      setNotice(error instanceof Error ? error.message : "无法打开当前文件夹");
+      setNoticeType("error");
+      setTimeout(() => setNotice(null), 4000);
+    });
+  };
+
   const requestDeleteSession = (session: Session, anchor: SidebarDeleteAnchor) => {
     setSessionDeleteRequest({ session, anchor });
   };
@@ -1598,6 +1620,7 @@ export default function App() {
                   {/* Project row */}
                   <div
                     className={`sidebar-row sidebar-project-row ${isSelected && !isInvalid ? "sidebar-row-active" : ""}`}
+                    onContextMenu={(event) => handleProjectContextMenu(event, project, isInvalid)}
                     style={{ paddingRight: 4, opacity: isInvalid ? 0.45 : 1 }}
                   >
                     <button
@@ -1644,7 +1667,7 @@ export default function App() {
                         {project.name}
                       </span>
                     </button>
-                    {activeAgent === "customer-agent" && !webShell ? (
+                    {activeAgent === "customer-agent" && !webShell && project.canCreateSession !== false ? (
                       <button
                         onClick={(e) => { e.stopPropagation(); void handleDeleteProject(project.id); }}
                         title="删除目录"
@@ -1979,19 +2002,7 @@ export default function App() {
       </>
       )}
 
-      {notice && createPortal(
-        <div
-          className={`app-action-notice is-${noticeType}`}
-          role={noticeType === "error" ? "alert" : "status"}
-          aria-live={noticeType === "error" ? "assertive" : "polite"}
-        >
-          <span className="app-action-notice-mark" aria-hidden="true">
-            {noticeType === "success" ? "✓" : noticeType === "info" ? "i" : "!"}
-          </span>
-          <span>{notice}</span>
-        </div>,
-        document.body,
-      )}
+      <AppActionNotice message={notice} type={noticeType} />
 
       <main className="app-main" style={{
         flex: 1,
@@ -2016,7 +2027,12 @@ export default function App() {
             } as React.CSSProperties}
           >← 侧边栏</button>
         )}
-        <div style={{ height: "100%", paddingTop: 0, display: hubOpen ? "none" : undefined }}>
+        <div className="app-chat-surface" style={{
+          height: "100%",
+          paddingTop: 0,
+          display: hubOpen ? "none" : undefined,
+          background: "var(--chat-history-bg)",
+        }}>
           <ChatView
             activeAgentType={activeAgent}
             selectedProjectId={selectedProjectId}

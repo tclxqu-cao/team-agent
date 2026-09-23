@@ -201,6 +201,7 @@ contextBridge.exposeInMainWorld("desktopDeviceApi", {
 
   // File operations
   openFileDialog: () => ipcRenderer.invoke("file:dialog:open"),
+  showDirectoryContextMenu: (path: string) => ipcRenderer.invoke("directory:show-context-menu", path),
   readFile: (path: string) => ipcRenderer.invoke("file:read", path),
   writeFile: (path: string, content: string) => ipcRenderer.invoke("file:write", path, content),
   setProjectWorkingDir: (path: string) => ipcRenderer.invoke("project:set-working-dir", path),

@@ -1,7 +1,13 @@
 import { HistoryPullGesture } from "../lib/history-pull-gesture";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import type { AgentEvent, RuntimeProgress, SessionHistoryQuery, SessionToolResultBody, SessionToolResultRef } from "@agent/core";
+import {
+  type AgentEvent,
+  type RuntimeProgress,
+  type SessionHistoryQuery,
+  type SessionToolResultBody,
+  type SessionToolResultRef,
+} from "@agent/core";
 import { ArrowDownToLine, Check, Copy, CornerUpRight, FileText, GripVertical, LoaderCircle, Pencil, Play, RefreshCw, Square, Target, Trash2, Volume2 } from "lucide-react";
 import AgentBrandIcon from "./AgentBrandIcon";
 import MermaidBlock from "./MermaidBlock";
@@ -33,6 +39,7 @@ import {
   mergeProgressiveSessionHistoryPage,
   loadCodexExecutionTracePage,
   loadProgressiveSessionHistoryPage,
+  resolveOlderHistoryCursor,
   restoreCodexExecutionTrace,
   restoreSessionHistoryPage,
   type SessionHistoryDetail,
@@ -50,6 +57,7 @@ import { copyTextToClipboard } from "../lib/clipboard";
 import { clearSessionDraft, readSessionDraft, writeSessionDraft } from "../lib/session-draft";
 import { postWebArtifactOpen, resolveWebArtifactPath } from "../lib/artifact-links";
 import {
+  findLatestPendingUserMessageId,
   findLatestUnqueuedUserMessageId,
   hideQueuedGoalMessages,
   moveQueuedMessage,
@@ -59,10 +67,12 @@ import {
 import { isWebShell } from "../web/webLayout";
 import { OPEN_BROWSER_LIVE_EVENT } from "../web/shellEvents";
 import {
+  CONTEXT_COMPACTION_PROGRESS_ID,
   latestGlobalRuntimeProgress,
   reduceRuntimeProgressEvents,
   toolRuntimeProgress,
 } from "../lib/native-runtime-progress";
+import { createChatAutoFollowController } from "../lib/chat-auto-follow";
 import {
   isActiveNativeSession,
   isNativeRuntimeSelection,
@@ -811,6 +821,7 @@ export default function ChatView({
   const isLoadingOlderHistoryRef = useRef(false);
   const prependScrollAnchorRef = useRef<{ scrollHeight: number; scrollTop: number } | null>(null);
   const nextAutoScrollRef = useRef<"instant" | "skip" | null>(null);
+  const autoFollowRef = useRef(createChatAutoFollowController(JUMP_TO_BOTTOM_THRESHOLD_PX));
   const [isLoadingOlderHistory, setIsLoadingOlderHistory] = useState(false);
   const [olderHistoryError, setOlderHistoryError] = useState<string | null>(null);
   const [queryIndex, setQueryIndex] = useState<SessionQueryIndex | null>(null);
@@ -955,16 +966,15 @@ export default function ChatView({
   const handleHistoryScroll = () => {
     const container = messagesScrollRef.current;
     if (!container) return;
+    const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
     if (container.scrollTop <= 240) loadOlderHistoryRef.current();
     if (
       historyWindowModeRef.current === "anchored"
-      && container.scrollHeight - container.scrollTop - container.clientHeight <= 240
+      && distanceFromBottom <= 240
     ) {
       loadNewerHistoryRef.current();
     }
-    setShowJumpToBottom(
-      container.scrollHeight - container.scrollTop - container.clientHeight > JUMP_TO_BOTTOM_THRESHOLD_PX,
-    );
+    setShowJumpToBottom(autoFollowRef.current.onScroll(distanceFromBottom));
     container.classList.add("is-scrolling");
     if (historyScrollTimerRef.current !== null) {
       window.clearTimeout(historyScrollTimerRef.current);
@@ -984,10 +994,16 @@ export default function ChatView({
   const scrollToLatestMessages = useCallback(() => {
     const container = messagesScrollRef.current;
     if (!container) return;
+    autoFollowRef.current.requestReturn();
     const reduceMotion = typeof window.matchMedia === "function"
       && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     container.scrollTo({ top: container.scrollHeight, behavior: reduceMotion ? "auto" : "smooth" });
   }, []);
+
+  useEffect(() => {
+    autoFollowRef.current.reset();
+    setShowJumpToBottom(false);
+  }, [selectedSessionId]);
 
   useLayoutEffect(() => {
     const anchor = prependScrollAnchorRef.current;
@@ -1405,8 +1421,10 @@ export default function ChatView({
   useEffect(() => {
     const mode = nextAutoScrollRef.current;
     nextAutoScrollRef.current = null;
-    if (mode === "skip") return;
-    messagesEndRef.current?.scrollIntoView({ behavior: mode === "instant" ? "auto" : "smooth" });
+    if (!autoFollowRef.current.shouldFollow(mode)) return;
+    // Streaming updates must not leave an in-flight smooth animation that can
+    // fight a reader who starts scrolling upward.
+    messagesEndRef.current?.scrollIntoView({ behavior: "auto" });
   }, [messages]);
 
   // Global event listener — receives both user-initiated and cron-fired events.
@@ -1864,7 +1882,7 @@ export default function ChatView({
             };
             nextAutoScrollRef.current = "skip";
           }
-          const nextCursor = detail?.history?.nextCursor ?? null;
+          const nextCursor = resolveOlderHistoryCursor(cursor, detail, olderMessages.length);
           historyCursorRef.current = nextCursor;
           syncToolResultScope(targetSid, detail?.history?.revision);
           if (olderMessages.length > 0) {
@@ -2125,6 +2143,13 @@ export default function ChatView({
     queuedRunDrainTimersRef.current.set(targetSessionId, timer);
   };
 
+  const updatePendingSendState = (targetSessionId: string, sendState?: "pending" | "failed") => {
+    const sessionMessages = useAgentStore.getState().getMessagesForSession(targetSessionId);
+    const pendingMessageId = findLatestPendingUserMessageId(sessionMessages);
+    if (!pendingMessageId) return;
+    updateMessage(pendingMessageId, (message) => ({ ...message, sendState }), targetSessionId);
+  };
+
   const handleEvent = (event: StreamEvent) => {
     // Route by _sid using always-current refs, not stale closure values.
     const viewedSid = selectedSessionIdRef.current || sessionIdRef.current;
@@ -2145,6 +2170,12 @@ export default function ChatView({
     if (isAnchoredView) {
       setHasLatestHistoryUpdates(true);
       if (shouldDeferAnchoredSessionEvent(event.type)) return;
+    }
+    if (
+      eventSid
+      && ["run_admitted", "thinking", "text_chunk", "reasoning_summary_delta", "runtime_progress", "tool_call", "todo_update", "done"].includes(event.type)
+    ) {
+      updatePendingSendState(eventSid);
     }
     if (
       eventSid && isViewed && !event._preserveActiveRun
@@ -2171,7 +2202,14 @@ export default function ChatView({
         }
         break;
       case "context_usage":
-        if (event.usage) setContextUsage(event.usage, eventSid);
+        if (event.usage) {
+          setContextUsage(event.usage, eventSid);
+          if (eventSid && !eventSid.startsWith("runtime:")) {
+            const remaining = (useAgentStore.getState().runtimeProgressBySession[eventSid] ?? [])
+              .filter((progress) => progress.progressId !== CONTEXT_COMPACTION_PROGRESS_ID);
+            setRuntimeProgress(remaining, eventSid);
+          }
+        }
         break;
       case "text_chunk":
         if (event.text) {
@@ -2528,7 +2566,7 @@ export default function ChatView({
             const rejectedMessageId = findLatestUnqueuedUserMessageId(conflictMessages);
             if (rejectedMessageId) {
               const rejectedMessage = conflictMessages.find((message) => message.id === rejectedMessageId);
-              updateMessage(rejectedMessageId, (message) => ({ ...message, isQueued: true }), eventSid);
+              updateMessage(rejectedMessageId, (message) => ({ ...message, isQueued: true, sendState: undefined }), eventSid);
               if (
                 hasDurableMessageQueue
                 && eventSid
@@ -2550,6 +2588,7 @@ export default function ChatView({
             setError(null);
           } else if (event.code !== "SESSION_OCCUPIED") {
             setError(event.message ?? "Unknown error");
+            if (eventSid) updatePendingSendState(eventSid, "failed");
             const failedMessages = eventSid
               ? useAgentStore.getState().getMessagesForSession(eventSid)
               : useAgentStore.getState().messages;
@@ -2935,6 +2974,7 @@ export default function ChatView({
         );
       }
     } catch (err) {
+      updatePendingSendState(targetSessionId, "failed");
       setError(err instanceof Error ? err.message : "Agent run failed");
     } finally {
       managedRunSessionsRef.current.delete(targetSessionId);
@@ -3244,6 +3284,7 @@ export default function ChatView({
         isQueued: true,
       } as const;
       if (hasDurableMessageQueue && viewSessionId && window.agentApi?.enqueueSessionMessage) {
+        addMessage(queuedMessage, viewSessionId);
         try {
           const state = await window.agentApi.enqueueSessionMessage(viewSessionId, {
             sourceMessageId,
@@ -3254,6 +3295,11 @@ export default function ChatView({
           });
           applySessionQueueState(state, viewSessionId);
         } catch (queueError) {
+          const currentMessages = useAgentStore.getState().getMessagesForSession(viewSessionId);
+          setMessages(
+            currentMessages.filter((message) => message.id !== sourceMessageId),
+            viewSessionId,
+          );
           setInput(finalMsg);
           setPendingImages(imagesToSend ?? []);
           setError(queueError instanceof Error ? queueError.message : "排队消息保存失败");
@@ -3266,6 +3312,7 @@ export default function ChatView({
 
     // ── Normal send flow ───────────────────────────────────────────────────
     setTodos([]);  // clear previous run's todos on new message
+    const sourceMessageId = crypto.randomUUID();
 
     try {
       const targetSessionId = await prepareChatCommand({
@@ -3291,12 +3338,13 @@ export default function ChatView({
           runningSessionRef.current = id;
         },
         showUserMessage: (text, id) => addMessage({
-          id: crypto.randomUUID(),
+          id: sourceMessageId,
           role: "user",
           content: text,
           timestamp: Date.now(),
           agentName: agentNamesLabel,
           images: imagesToSend,
+          sendState: "pending",
         }, id),
         afterUserMessageShown: waitForNextPaint,
         onSessionCreated,
@@ -3313,6 +3361,8 @@ export default function ChatView({
         agentIdsToSend.length > 0 ? agentIdsToSend : undefined,
       );
     } catch (err) {
+      const targetSessionId = selectedSessionId || sessionId;
+      if (targetSessionId) updatePendingSendState(targetSessionId, "failed");
       setError(err instanceof Error ? err.message : "Agent run failed");
     }
   };
@@ -3756,7 +3806,7 @@ export default function ChatView({
                 border: (msg.content || (isUser && chatMsg.images?.length)) ? (isUser ? "1px solid rgba(79, 110, 247, 0.18)" : undefined) : "none",
                 fontSize: "var(--chat-bubble-font-size)",
                 lineHeight: "var(--chat-bubble-line-height)",
-                color: "var(--text-primary)",
+                color: "var(--chat-history-text)",
                 letterSpacing: "0.01em",
               }}>
                 {msg.role === "assistant" && msg.presentation?.reasoning && (
@@ -3997,6 +4047,17 @@ export default function ChatView({
                   >
                     <Copy size={13} strokeWidth={1.8} aria-hidden="true" />
                   </button>}
+                </div>
+              )}
+              {isUser && chatMsg.sendState && (
+                <div
+                  className={`msg-send-status is-${chatMsg.sendState}`}
+                  role="status"
+                  aria-label={chatMsg.sendState === "pending" ? "正在发送" : "发送失败"}
+                >
+                  {chatMsg.sendState === "pending"
+                    ? <LoaderCircle className="msg-send-status__spinner" size={13} aria-hidden="true" />
+                    : <span>发送失败</span>}
                 </div>
               )}
               {/* Queue / Steer badge for queued user messages */}

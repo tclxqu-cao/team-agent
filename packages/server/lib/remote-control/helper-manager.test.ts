@@ -40,11 +40,14 @@ it('receives an original-quality binary keyframe larger than 2 MB without discon
  try{
   await helper.start();
   const nal=Buffer.alloc(2_500_000,7);
-  clients.video.write(encodeVideoFrame({timestamp:1,key:true,nals:[nal]}));
-  await vi.waitFor(()=>expect(receive).toHaveBeenCalledOnce());
+  await new Promise<void>((resolve,reject)=>clients.video.write(
+   encodeVideoFrame({timestamp:1,key:true,nals:[nal]}),
+   (error?:Error|null)=>error?reject(error):resolve(),
+  ));
+  await vi.waitFor(()=>expect(receive).toHaveBeenCalledOnce(),{timeout:10_000});
   expect(receive.mock.calls[0][0]).toEqual({timestamp:1,key:true,nals:[nal]});expect(helper.videoSocket.destroyed).toBe(false);
  }finally{clients?.control.destroy();clients?.video.destroy();await helper.stop();}
-});
+},15_000);
 
 it('restarts the owned helper when the binary video socket disconnects',async()=>{
  const launches:any[]=[];

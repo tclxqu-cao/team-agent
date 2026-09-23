@@ -1,14 +1,23 @@
 import { describe, expect, it } from "vitest";
 import type { SharedSettings } from "./shared-settings";
-import { resolveSharedRunModel } from "./shared-run-config";
+import { effectiveCapabilityPolicy, resolveSharedRunModel } from "./shared-run-config";
 
-const profile = (id: string, provider: string, modelId: string, apiKey = "") => ({
+const profile = (
+  id: string,
+  provider: string,
+  modelId: string,
+  apiKey = "",
+  maxOutputTokens?: number,
+  requestTimeoutSeconds?: number,
+) => ({
   id,
   name: id,
   provider,
   modelId,
   apiKey,
   baseUrl: "",
+  ...(maxOutputTokens === undefined ? {} : { maxOutputTokens }),
+  ...(requestTimeoutSeconds === undefined ? {} : { requestTimeoutSeconds }),
 });
 
 function settings(): SharedSettings {
@@ -23,7 +32,7 @@ function settings(): SharedSettings {
     isConfigured: true,
     profiles: [
       profile("server-default", "openai", "server-model", "server-key"),
-      profile("aihub-deepseek", "aihub", "deepseek"),
+      profile("aihub-deepseek", "aihub", "deepseek", "", 32_768, 600),
     ],
     activeProfileId: "server-default",
     activeAgentIds: [],
@@ -37,11 +46,40 @@ describe("resolveSharedRunModel", () => {
       settings(),
       { capabilities: { profileId: "server-default" } },
       { profileId: "aihub-deepseek" },
-    )).toEqual({ provider: "aihub", modelId: "deepseek", apiKey: "", baseUrl: "" });
+    )).toEqual({
+      provider: "aihub",
+      modelId: "deepseek",
+      apiKey: "",
+      baseUrl: "",
+      maxOutputTokens: 32_768,
+      requestTimeoutSeconds: 600,
+    });
   });
 
   it("rejects a profile id that is not persisted on the server", () => {
     expect(() => resolveSharedRunModel(settings(), null, { profileId: "missing" }))
       .toThrow("所选模型配置不存在");
+  });
+});
+
+describe("effectiveCapabilityPolicy", () => {
+  it("keeps persisted restrictions when the run omits a policy", () => {
+    expect(effectiveCapabilityPolicy(["read_file", "grep"], undefined))
+      .toEqual(["read_file", "grep"]);
+  });
+
+  it("treats a requested empty list as deny all", () => {
+    expect(effectiveCapabilityPolicy([], [])).toEqual([]);
+    expect(effectiveCapabilityPolicy(["read_file"], [])).toEqual([]);
+  });
+
+  it("intersects a requested policy with a persisted restriction", () => {
+    expect(effectiveCapabilityPolicy(["read_file", "grep"], ["grep", "bash"]))
+      .toEqual(["grep"]);
+  });
+
+  it("uses the request as the full policy when the persisted list is unrestricted", () => {
+    expect(effectiveCapabilityPolicy([], ["grep", "grep", " read_file "]))
+      .toEqual(["grep", "read_file"]);
   });
 });

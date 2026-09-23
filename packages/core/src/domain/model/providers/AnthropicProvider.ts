@@ -1,6 +1,8 @@
 import type { IModelProvider, Message, StreamEvent, StreamOptions, ModelProviderConfig } from '../entities.js';
+import { isModelRequestTimeout, modelRequestTimeoutEvent } from './requestTimeout.js';
 
 const DEFAULT_BASE_URL = "https://api.anthropic.com";
+const DEFAULT_TIMEOUT_MS = 120_000;
 
 export class AnthropicProvider implements IModelProvider {
   readonly providerId = "anthropic";
@@ -9,6 +11,7 @@ export class AnthropicProvider implements IModelProvider {
   private readonly baseUrl: string;
   private readonly defaultMaxTokens: number;
   private readonly defaultTemperature: number;
+  private readonly timeoutMs: number;
 
   constructor(config: ModelProviderConfig) {
     this.apiKey = config.apiKey;
@@ -16,6 +19,7 @@ export class AnthropicProvider implements IModelProvider {
     this.modelId = config.modelId;
     this.defaultMaxTokens = config.maxTokens ?? 16384;
     this.defaultTemperature = config.temperature ?? 0.7;
+    this.timeoutMs = config.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   }
 
   async *streamChat(
@@ -55,16 +59,26 @@ export class AnthropicProvider implements IModelProvider {
       }));
     }
 
-    const response = await fetch(`${this.baseUrl}/v1/messages`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": this.apiKey,
-        "anthropic-version": "2023-06-01",
-      },
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(120000),
-    });
+    const requestSignal = AbortSignal.timeout(this.timeoutMs);
+    let response: Response;
+    try {
+      response = await fetch(`${this.baseUrl}/v1/messages`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": this.apiKey,
+          "anthropic-version": "2023-06-01",
+        },
+        body: JSON.stringify(body),
+        signal: requestSignal,
+      });
+    } catch (error) {
+      if (isModelRequestTimeout(error, requestSignal)) {
+        yield modelRequestTimeoutEvent("Anthropic", this.timeoutMs);
+        return;
+      }
+      throw error;
+    }
 
     if (!response.ok) {
       const errText = await response.text().catch(() => "unknown error");
@@ -80,7 +94,17 @@ export class AnthropicProvider implements IModelProvider {
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let buffer = "";
+    let reasoningBuffer = "";
+    let reasoningLastFlushedAt = Date.now();
+    let terminatedWithError = false;
     let currentToolCall: { id: string; name: string; arguments: string } | null = null;
+    const takeReasoningBuffer = (): StreamEvent | undefined => {
+      if (!reasoningBuffer) return undefined;
+      const event: StreamEvent = { type: "reasoning_delta", text: reasoningBuffer };
+      reasoningBuffer = "";
+      reasoningLastFlushedAt = Date.now();
+      return event;
+    };
 
     // Chunk-level timeout: if no data arrives for 60s, abort the stream
     const CHUNK_TIMEOUT_MS = 60_000;
@@ -111,20 +135,33 @@ export class AnthropicProvider implements IModelProvider {
 
           try {
             const parsed = JSON.parse(data);
+            if (terminatedWithError) continue;
 
             if (parsed.type === "content_block_start" && parsed.content_block?.type === "tool_use") {
+              const reasoningEvent = takeReasoningBuffer();
+              if (reasoningEvent) yield reasoningEvent;
               currentToolCall = {
                 id: parsed.content_block.id,
                 name: parsed.content_block.name,
                 arguments: "",
               };
             } else if (parsed.type === "content_block_delta") {
-              if (parsed.delta?.type === "text_delta") {
+              if (parsed.delta?.type === "thinking_delta" && typeof parsed.delta.thinking === "string") {
+                reasoningBuffer += parsed.delta.thinking;
+                if (reasoningBuffer.length >= 256 || Date.now() - reasoningLastFlushedAt >= 150) {
+                  const reasoningEvent = takeReasoningBuffer();
+                  if (reasoningEvent) yield reasoningEvent;
+                }
+              } else if (parsed.delta?.type === "text_delta") {
+                const reasoningEvent = takeReasoningBuffer();
+                if (reasoningEvent) yield reasoningEvent;
                 yield { type: "text_chunk", text: parsed.delta.text };
               } else if (parsed.delta?.type === "input_json_delta" && currentToolCall) {
                 currentToolCall.arguments += parsed.delta.partial_json;
               }
             } else if (parsed.type === "content_block_stop" && currentToolCall) {
+              const reasoningEvent = takeReasoningBuffer();
+              if (reasoningEvent) yield reasoningEvent;
               try {
                 const parsedArgs = JSON.parse(currentToolCall.arguments);
                 yield {
@@ -139,7 +176,21 @@ export class AnthropicProvider implements IModelProvider {
                 yield { type: "error", message: "Failed to parse tool arguments" };
               }
               currentToolCall = null;
+            } else if (parsed.type === "message_delta" && (
+              parsed.delta?.stop_reason === "max_tokens"
+              || parsed.delta?.stop_reason === "model_context_window_exceeded"
+            )) {
+              const reasoningEvent = takeReasoningBuffer();
+              if (reasoningEvent) yield reasoningEvent;
+              yield {
+                type: "error",
+                message: "输出被截断（max_tokens 限制），Anthropic 模型在生成完整回答前已停止。请缩小任务范围，或在设置中提高模型输出 token 上限。",
+              };
+              currentToolCall = null;
+              terminatedWithError = true;
             } else if (parsed.type === "error") {
+              const reasoningEvent = takeReasoningBuffer();
+              if (reasoningEvent) yield reasoningEvent;
               yield { type: "error", message: parsed.error?.message ?? "Stream error" };
               return;
             }
@@ -148,9 +199,19 @@ export class AnthropicProvider implements IModelProvider {
           }
         }
       }
-      yield { type: "text_done" };
+      if (!terminatedWithError) {
+        const reasoningEvent = takeReasoningBuffer();
+        if (reasoningEvent) yield reasoningEvent;
+        yield { type: "text_done" };
+      }
     } catch (err) {
-      if (err instanceof Error && err.name !== "AbortError") {
+      if (isModelRequestTimeout(err, requestSignal)) {
+        const reasoningEvent = takeReasoningBuffer();
+        if (reasoningEvent) yield reasoningEvent;
+        yield modelRequestTimeoutEvent("Anthropic", this.timeoutMs);
+      } else if (err instanceof Error && err.name !== "AbortError") {
+        const reasoningEvent = takeReasoningBuffer();
+        if (reasoningEvent) yield reasoningEvent;
         yield { type: "error", message: err.message };
       }
     } finally {

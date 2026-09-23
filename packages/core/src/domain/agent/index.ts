@@ -1,4 +1,5 @@
 export {
+  CONTEXT_COMPACTION_PROGRESS_ID,
   type AgentEventType,
   type AgentEvent,
   type ContextUsageCategory,

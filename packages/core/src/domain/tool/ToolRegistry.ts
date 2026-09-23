@@ -27,6 +27,10 @@ export class ToolRegistry implements IToolRegistry, IToolExecutor {
     }));
   }
 
+  getAuthorizationPolicy(name: string) {
+    return this.tools.get(name)?.authorization ?? "default";
+  }
+
   async execute(
     name: string,
     args: Record<string, unknown>,

@@ -3,7 +3,11 @@ import { paginateByOffset, type AgentWorkspace, type WorkspaceQuery } from "@age
 import { agentHost } from "../agent-host";
 import { getNativeRuntimeService, runtimeErrorStatus } from "../../../lib/native-runtime-service";
 import { projectErrorResponse, webProjectService } from "../projects/project-http";
-import { readAgentType, readWorkspaceQuery } from "./agent-workspace-http";
+import {
+  CUSTOMER_AGENT_RECENT_WORKSPACE_ID,
+  readAgentType,
+  readWorkspaceQuery,
+} from "./agent-workspace-http";
 
 export async function GET(request: Request) {
   const url = new URL(request.url);
@@ -21,8 +25,17 @@ export async function GET(request: Request) {
     if (agentType !== "customer-agent") {
       return NextResponse.json(await getNativeRuntimeService().listWorkspaces(agentType, query));
     }
-    const projects = await agentHost.getProjectStore().list();
-    const workspaces = projects.map((project, order): AgentWorkspace => ({
+    const projects = (await agentHost.getProjectStore().list())
+      .filter((project) => project.description.trim().length > 0);
+    const workspaces: AgentWorkspace[] = [{
+      agentType,
+      workspaceId: CUSTOMER_AGENT_RECENT_WORKSPACE_ID,
+      name: "最近",
+      roots: [],
+      order: -1,
+      source: "derived",
+      canCreateSession: false,
+    }, ...projects.map((project, order): AgentWorkspace => ({
       agentType,
       workspaceId: project.id,
       name: project.name,
@@ -30,8 +43,8 @@ export async function GET(request: Request) {
       order,
       updatedAt: project.updated,
       source: "native",
-    }));
-    return NextResponse.json(paginateByOffset(workspaces, query, workspaces[0]?.updatedAt ?? null));
+    }))];
+    return NextResponse.json(paginateByOffset(workspaces, query, projects[0]?.updated ?? null));
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Workspace discovery failed" },

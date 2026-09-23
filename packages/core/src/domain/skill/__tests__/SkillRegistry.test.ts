@@ -99,6 +99,15 @@ describe("SkillRegistry", () => {
     expect(streamChatCalls).toBe(0);
   });
 
+  it("treats an explicit empty allowlist as disabling every skill", async () => {
+    const registry = new SkillRegistry();
+    registry.register(makeSkill());
+
+    expect(registry.discover("test", [])).toEqual([]);
+    await expect(registry.load("test-skill", [])).resolves.toBeNull();
+    await expect(registry.getSkillPrompts("test", [])).resolves.toBe("");
+  });
+
   it("passes the project directory and full tool definitions to semantic skill matching", async () => {
     let received: StreamOptions | undefined;
     const registry = new SkillRegistry();

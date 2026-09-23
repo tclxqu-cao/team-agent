@@ -60,6 +60,14 @@
   --control-active: var(--accent-dim);
   --focus-ring: 0 0 0 3px var(--accent);
   --active-edge: var(--accent);
+  --chat-history-bg: var(--bg-workspace);
+  --chat-history-text: var(--text-primary);
+}
+
+:root:not([data-skin]),
+[data-skin="pearl"] {
+  --chat-history-bg: #fdfdff;
+  --chat-history-text: #0b1220;
 }
 
 /* ── Host project picker ── */
@@ -912,7 +920,6 @@ select:focus {
 
 .sidebar-session-row.sidebar-row-active,
 .sidebar-project-row.sidebar-row-active {
-  border-color: color-mix(in srgb, var(--accent) 26%, transparent);
   background: var(--control-active);
 }
 
@@ -1933,9 +1940,28 @@ input:focus, select:focus, textarea:focus {
   color: var(--accent);
 }
 
+.msg-send-status {
+  min-height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  margin-top: 3px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.msg-send-status.is-failed {
+  color: var(--danger);
+}
+
+.msg-send-status__spinner {
+  animation: spin 0.8s linear infinite;
+}
+
 /* ── Shared Codex-style message history (Electron + Web) ── */
 .chat-view--codex-history {
-  --chat-assistant-fade-end: var(--bg-workspace);
+  --chat-assistant-fade-end: var(--chat-history-bg);
+  color: var(--chat-history-text);
 }
 
 .chat-view--codex-history .chat-message-group {
@@ -2563,7 +2589,7 @@ input:focus, select:focus, textarea:focus {
 .chat-view--codex-history .codex-execution-trace__commentary {
   min-width: 0;
   padding: 6px 0 7px;
-  color: var(--text-primary);
+  color: var(--chat-history-text);
   font-size: var(--chat-bubble-font-size);
   line-height: var(--chat-bubble-line-height);
   overflow-wrap: anywhere;

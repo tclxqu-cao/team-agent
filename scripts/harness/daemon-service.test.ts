@@ -38,20 +38,52 @@ describe('automatic Harness companion', () => {
     expect(repair).toHaveBeenCalledTimes(1);
     await service.close();
   });
-  it('does not report AI Hub while its browser-backed model request is within the extended idle window', async () => {
+  it.each(['aihub', 'openai', 'deepseek'])(
+    'does not report %s while its model request is within the extended idle window',
+    async (providerId) => {
+      const repair = vi.fn(async () => result);
+      const service = new HarnessCompanion(config, () => {}, repair);
+      const startedAt = Date.now();
+      service.receive(task);
+      service.receive({ type: 'observation', sessionId: 's', data: {
+        type: 'request_context', iteration: 1, providerId, modelId: 'test-model',
+      } });
+
+      service.tick(startedAt + 150);
+      expect(repair).not.toHaveBeenCalled();
+      await service.close();
+    },
+  );
+  it.each(['aihub', 'openai', 'deepseek'])(
+    'still detects %s requests that exceed the extended idle window',
+    async (providerId) => {
+      const repair = vi.fn(async () => result);
+      const service = new HarnessCompanion(config, () => {}, repair);
+      const startedAt = Date.now();
+      service.receive(task);
+      service.receive({ type: 'observation', sessionId: 's', data: {
+        type: 'request_context', iteration: 1, providerId, modelId: 'test-model',
+      } });
+
+      service.tick(startedAt + 250);
+      expect(repair).toHaveBeenCalledTimes(1);
+      await service.close();
+    },
+  );
+  it('keeps the original idle deadline for providers whose transport timeout is shorter', async () => {
     const repair = vi.fn(async () => result);
     const service = new HarnessCompanion(config, () => {}, repair);
     const startedAt = Date.now();
     service.receive(task);
     service.receive({ type: 'observation', sessionId: 's', data: {
-      type: 'request_context', iteration: 1, providerId: 'aihub', modelId: 'deepseek',
+      type: 'request_context', iteration: 1, providerId: 'anthropic', modelId: 'claude-test',
     } });
 
     service.tick(startedAt + 150);
-    expect(repair).not.toHaveBeenCalled();
+    expect(repair).toHaveBeenCalledTimes(1);
     await service.close();
   });
-  it('still detects an AI Hub request that exceeds the extended idle window', async () => {
+  it('restores the original idle deadline after the model starts responding', async () => {
     const repair = vi.fn(async () => result);
     const service = new HarnessCompanion(config, () => {}, repair);
     const startedAt = Date.now();
@@ -59,37 +91,10 @@ describe('automatic Harness companion', () => {
     service.receive({ type: 'observation', sessionId: 's', data: {
       type: 'request_context', iteration: 1, providerId: 'aihub', modelId: 'deepseek',
     } });
-
-    service.tick(startedAt + 250);
-    expect(repair).toHaveBeenCalledTimes(1);
-    await service.close();
-  });
-  it('keeps the original idle deadline for non-AI-Hub model requests', async () => {
-    const repair = vi.fn(async () => result);
-    const service = new HarnessCompanion(config, () => {}, repair);
-    const startedAt = Date.now();
-    service.receive(task);
-    service.receive({ type: 'observation', sessionId: 's', data: {
-      type: 'request_context', iteration: 1, providerId: 'openai', modelId: 'gpt-test',
-    } });
+    service.receive({ type: 'progress', id: 'run', eventType: 'text_chunk', data: { type: 'text_chunk' } });
 
     service.tick(startedAt + 150);
     expect(repair).toHaveBeenCalledTimes(1);
-    await service.close();
-  });
-  it('clears model-wait state on a normal response and removes a completed run', async () => {
-    const repair = vi.fn(async () => result);
-    const service = new HarnessCompanion(config, () => {}, repair);
-    const startedAt = Date.now();
-    service.receive(task);
-    service.receive({ type: 'observation', sessionId: 's', data: {
-      type: 'request_context', iteration: 1, providerId: 'aihub', modelId: 'deepseek',
-    } });
-    service.receive({ type: 'progress', id: 'run', eventType: 'text_done', data: { type: 'text_done' } });
-    service.receive({ type: 'end', id: 'run' });
-
-    service.tick(startedAt + 1000);
-    expect(repair).not.toHaveBeenCalled();
     await service.close();
   });
   it('removes finished runs and cancels an in-flight repair on shutdown', async () => {

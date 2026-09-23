@@ -35,7 +35,7 @@ describe("native runtime progress", () => {
     expect(latestGlobalRuntimeProgress(values)?.label).toBe("Retrying");
   });
 
-  it("merges summary deltas and clears restored progress on terminal events", () => {
+  it("merges summary deltas and clears restored progress after compaction or terminal events", () => {
     const sections = mergeReasoningSummaryDelta(undefined, {
       type: "reasoning_summary_delta",
       itemId: "reasoning-1",
@@ -43,6 +43,23 @@ describe("native runtime progress", () => {
       delta: "Inspect files",
     });
     expect(sections[0].text).toBe("Inspect files");
+    expect(reduceRuntimeProgressEvents([
+      { type: "runtime_progress", progressId: "context-compaction", phase: "status", label: "正在压缩上下文" },
+      { type: "runtime_progress", progressId: "thinking", phase: "thinking", label: "Thinking" },
+      {
+        type: "context_usage",
+        usage: {
+          providerId: "mock",
+          modelId: "mock",
+          maxTokens: 1,
+          requestIndex: 1,
+          totalTokens: 0,
+          ratio: 0,
+          estimationMode: "heuristic",
+          segments: [],
+        },
+      },
+    ])).toEqual([progress("thinking", "Thinking")]);
     expect(reduceRuntimeProgressEvents([
       { type: "runtime_progress", progressId: "thinking", phase: "thinking", label: "Thinking" },
       { type: "done", finalText: "Done" },

@@ -73,12 +73,12 @@ describe("device pairing storage", () => {
   });
 });
 
-async function serverFixture(sdkToken?: string, testNoPairing = false) {
+async function serverFixture(sdkToken?: string, testNoPairing = false, runServiceToken?: string) {
   const dir = mkdtempSync(join(tmpdir(), "agentroam-pair-http-"));
   const dataDir = join(dir, "data");
   const registry = join(dir, "services");
   const desktop = createDesktopDiscovery({ dataDir, directory: registry });
-  const auth = createDevicePairingGateway({ dataDir, desktop, owner: { userId: "existing-owner", username: "local" }, consoleStore: { listTabs: () => [{ id: "existing-tab" }], getPreferences: () => ({}), getDeviceState: (_user: string, device: string) => ({ deviceId: device }) }, trustProxy: true, sdkToken, testNoPairing });
+  const auth = createDevicePairingGateway({ dataDir, desktop, owner: { userId: "existing-owner", username: "local" }, consoleStore: { listTabs: () => [{ id: "existing-tab" }], getPreferences: () => ({}), getDeviceState: (_user: string, device: string) => ({ deviceId: device }) }, trustProxy: true, sdkToken, runServiceToken, testNoPairing });
   const http = createServer((req, res) => {
     if (desktop.handle(req, res)) return;
     void auth.handle(req, res).then((handled) => {
@@ -165,6 +165,22 @@ describe("gateway pairing integration", () => {
     expect((await stream.json()).url).toBe("/api/agent/stream");
     expect((await f.request("/api/sessions", { headers: { authorization: "Bearer wrong" } })).status).toBe(401);
     for (const path of ["/api/settings", "/api/web-console/bootstrap", "/api/pairing/admin/devices"]) expect((await f.request(path, { headers: { authorization: "Bearer configured-sdk-secret" } })).status).toBe(401);
+  });
+  it("limits the run service credential to shared run and Flow protocol endpoints", async () => {
+    const f = await serverFixture(undefined, false, "run-service-secret");
+    const headers = { authorization: "Bearer run-service-secret", "content-type": "application/json" };
+    expect((await f.request("/api/agent/run", { method: "POST", headers, body: "{}" })).status).toBe(200);
+    expect((await f.request("/api/agent/stream", { headers })).status).toBe(200);
+    expect((await f.request("/api/flow/v1/catalog", { headers })).status).toBe(200);
+    expect((await f.request("/api/flow/v1/runs", { method: "POST", headers, body: "{}" })).status).toBe(200);
+    expect((await f.request("/api/flow/v1/runs/run-1/events", { headers })).status).toBe(200);
+    expect((await f.request("/api/flow/v1/runs/run-1/cancel", { method: "POST", headers, body: "{}" })).status).toBe(200);
+    expect((await f.request("/api/sessions", { headers })).status).toBe(401);
+    expect((await f.request("/api/settings", { headers })).status).toBe(401);
+    expect((await f.request("/api/flow/v1/runs/run-1/unknown", { headers })).status).toBe(401);
+    expect((await f.request("/api/flow/v1/catalog", {
+      headers: { authorization: "Bearer wrong" },
+    })).status).toBe(401);
   });
   it("sets HttpOnly/SameSite and trusted HTTPS Secure cookies and rejects cross-origin pairing", async () => {
     const f = await serverFixture();

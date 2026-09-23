@@ -63,11 +63,23 @@ export interface ToolCall {
   arguments: Record<string, unknown>;
 }
 
+export interface ModelAttachment {
+  type: "image";
+  mimeType: "image/jpeg" | "image/png";
+  dataUrl: string;
+  width?: number;
+  height?: number;
+}
+
 export interface ToolResult {
   toolCallId: string;
   content: string;
   isError?: boolean;
   metadata?: Record<string, unknown>;
+  /** Text visible to exactly the next model request, never public or durable. */
+  modelContent?: string;
+  /** Model-only payload. AgentLoop removes it from events and durable state. */
+  modelAttachments?: ModelAttachment[];
 }
 
 export type ReasoningEffort = "off" | "low" | "medium" | "high";
@@ -91,6 +103,7 @@ export interface ToolDefinition {
 }
 
 export type StreamEvent =
+  | { type: "reasoning_delta"; text: string }
   | { type: "text_chunk"; text: string }
   | { type: "tool_call"; toolCall: ToolCall }
   | { type: "text_done" }
@@ -126,6 +139,6 @@ export interface ModelProviderConfig {
   temperature?: number;
   /** aihub 专用：与桌面 AI Hub 收发消息的传输实现；缺省走 ai-hub-relay.sock */
   transport?: import('../ai-hub/transport.js').AiHubTransport;
-  /** aihub 专用：等待站点回复的超时上限（毫秒） */
+  /** Whole-request deadline in milliseconds. Undefined preserves the provider default. */
   timeoutMs?: number;
 }

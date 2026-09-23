@@ -136,6 +136,8 @@ export interface ChatMessage {
   queueItemId?: string;
   /** True when this user message has been steered into the running loop */
   isSteered?: boolean;
+  /** Transient client-side state while the server accepts a newly sent message. */
+  sendState?: "pending" | "failed";
   /** Identifies a goal-mode user message and links it to the durable goal queue. */
   isGoal?: boolean;
   goalId?: string;

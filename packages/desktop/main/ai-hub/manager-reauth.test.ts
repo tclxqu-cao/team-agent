@@ -96,7 +96,7 @@ describe("AI Hub reauth session routing", () => {
     expect(await manager.broadcast("hello", ["chatgpt"])).toEqual([{ siteId: "chatgpt", ok: true }]);
     expect(request).toHaveBeenCalledWith("chatgpt", "send-message", { text: "hello", images: [] });
     const capture = await manager.captureConversations(["chatgpt"]);
-    expect(capture).toEqual([{ siteId: "chatgpt", ok: true, strategy: "chatgpt", messages: [], pendingContinue: false }]);
+    expect(capture).toEqual([{ siteId: "chatgpt", ok: true, strategy: "chatgpt", messages: [], generating: false, pendingContinue: false }]);
     manager.reloadSite("chatgpt");
     expect(request).toHaveBeenCalledWith("chatgpt", "reload");
     manager.closeSite("chatgpt");
@@ -248,6 +248,7 @@ describe("AI Hub reauth session routing", () => {
     expect(await manager.broadcast(sent, ["deepseek"], [], conversationId)).toEqual([{ siteId: "deepseek", ok: true }]);
     (mock.views[0] as any).webContents.executeJavaScript.mockResolvedValue({
       strategy: "tool-protocol",
+      generating: true,
       debug: { title: "发布npm gitee - DeepSeek" },
       messages: [
         { role: "assistant", text: "发布npm gitee" },
@@ -257,10 +258,69 @@ describe("AI Hub reauth session routing", () => {
     });
 
     const [capture] = await manager.captureConversations(["deepseek"], conversationId);
+    expect(capture.generating).toBe(true);
     expect(capture.messages).toEqual([
       { role: "user", text: sent },
       { role: "assistant", text: '{"type":"tool_call","name":"skill_discover","arguments":{}}' },
     ]);
+  });
+
+  it("uses a trusted CDP mouse click and confirms that continuation started", async () => {
+    vi.useFakeTimers();
+    mock.useDebugger = true;
+    const { manager } = makeManager();
+    const conversationId = "continue-confirmed";
+    await manager.openSite("deepseek", { applySavedLayout: false, conversationId });
+    let resumed = false;
+    const sendCommand = mock.views[0].webContents.debugger!.sendCommand;
+    sendCommand.mockImplementation(async (method: string, params?: { type?: string; expression?: string }) => {
+      if (method === "Input.dispatchMouseEvent" && params?.type === "mouseReleased") resumed = true;
+      if (method !== "Runtime.evaluate") return {};
+      if (params?.expression?.includes("return { found: true, clickable")) {
+        return { result: { value: { found: true, clickable: true, x: 718, y: 447 } } };
+      }
+      return { result: { value: {
+        generating: resumed,
+        pendingContinue: !resumed,
+        messages: [{ role: "assistant", text: "partial reply" }],
+      } } };
+    });
+
+    const pending = manager.continueGeneration(["deepseek"], conversationId);
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    await expect(pending).resolves.toEqual([{ siteId: "deepseek", ok: true }]);
+    expect(sendCommand).toHaveBeenCalledWith("Input.dispatchMouseEvent", {
+      type: "mouseReleased", x: 718, y: 447, button: "left", clickCount: 1,
+    });
+    vi.useRealTimers();
+  });
+
+  it("does not report success when a trusted continuation click is a no-op", async () => {
+    vi.useFakeTimers();
+    mock.useDebugger = true;
+    const { manager } = makeManager();
+    const conversationId = "continue-no-op";
+    await manager.openSite("deepseek", { applySavedLayout: false, conversationId });
+    const sendCommand = mock.views[0].webContents.debugger!.sendCommand;
+    sendCommand.mockImplementation(async (method: string, params?: { expression?: string }) => {
+      if (method !== "Runtime.evaluate") return {};
+      if (params?.expression?.includes("return { found: true, clickable")) {
+        return { result: { value: { found: true, clickable: true, x: 718, y: 447 } } };
+      }
+      return { result: { value: {
+        generating: false,
+        pendingContinue: true,
+        messages: [{ role: "assistant", text: "partial reply" }],
+      } } };
+    });
+
+    const pending = manager.continueGeneration(["deepseek"], conversationId);
+    await vi.advanceTimersByTimeAsync(7_000);
+
+    await expect(pending).resolves.toEqual([{ siteId: "deepseek", ok: false, reason: "continue-click-unconfirmed" }]);
+    expect(sendCommand.mock.calls.filter(([method, params]) => method === "Input.dispatchMouseEvent" && params?.type === "mouseReleased")).toHaveLength(1);
+    vi.useRealTimers();
   });
 
 });

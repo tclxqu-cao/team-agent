@@ -2,6 +2,8 @@ import type { AgentType, WorkspaceQuery } from "@agent/native-runtime";
 
 const AGENT_TYPES = new Set<AgentType>(["customer-agent", "codex", "claude-code", "opencode"]);
 
+export const CUSTOMER_AGENT_RECENT_WORKSPACE_ID = "customer-agent:recent";
+
 export function readAgentType(value: string | null): AgentType | null {
   return value && AGENT_TYPES.has(value as AgentType) ? value as AgentType : null;
 }

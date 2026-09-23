@@ -1058,7 +1058,7 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
     <div className="browser-live-backdrop" data-tab-swipe-ignore role="presentation" onMouseDown={(event) => {
       if (event.target === event.currentTarget) onClose();
     }}>
-      <section ref={panelRef} className={`browser-live-panel ${fullscreen ? "is-fullscreen" : ""} ${sessions.length > 1 ? "has-session-tabs" : ""}`} role="dialog" aria-modal="true" aria-label="浏览器直播">
+      <section ref={panelRef} className={`browser-live-panel ${fullscreen ? "is-fullscreen" : ""}`} role="dialog" aria-modal="true" aria-label="浏览器直播">
         <header className="browser-live-header">
           <div className="browser-live-heading">
             <MonitorUp size={17} aria-hidden="true" />
@@ -1081,28 +1081,27 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
           </div>
         </header>
 
-        {sessions.length > 1 && (
-          <div className="browser-live-session-tabs" role="tablist" aria-label="浏览器会话">
-            {sessions.map((session) => (
-              <button
-                key={session.id}
-                type="button"
-                role="tab"
-                aria-selected={session.id === selectedId}
-                className={session.id === selectedId ? "is-active" : ""}
-                onClick={() => setSelectedId(session.id)}
-              >
-                <span>{backendLabel(session.backend)}</span>
-                <small>{session.title || "浏览器"}</small>
-              </button>
-            ))}
-          </div>
-        )}
-
         <div className={`browser-live-surface ${hasControl ? "is-controlling" : ""} has-zoom ${hasControl && !panMode && quickKeysOpen ? "has-quickkeys" : ""}`}>
           {(
             <div className="browser-live-zoom" role="group" aria-label="桌面画面缩放">
-              {isDesktop && liveDisplays && liveDisplays.length > 0 && (
+              {sessions.length > 1 && (
+                <div className="browser-live-session-tabs" role="tablist" aria-label="切换直播屏幕">
+                  {sessions.map((session) => (
+                    <button
+                      key={session.id}
+                      type="button"
+                      role="tab"
+                      aria-selected={session.id === selectedId}
+                      className={session.id === selectedId ? "is-active" : ""}
+                      title={`${backendLabel(session.backend)} · ${session.title || "浏览器"}`}
+                      onClick={() => setSelectedId(session.id)}
+                    >
+                      {session.title || backendLabel(session.backend)}
+                    </button>
+                  ))}
+                </div>
+              )}
+              {isDesktop && liveDisplays && liveDisplays.length > 1 && (
                 <LiveViewSelect
                   label="选择直播屏幕"
                   title={canAdjustCapture ? "选择直播屏幕" : "其他设备控制中或画面暂不可用"}
@@ -1114,7 +1113,7 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
                   {liveDisplays.map((display, index) => <option key={display.id} value={display.id}>{`第 ${index + 1} 屏${display.primary ? "（主屏）" : ""}`}</option>)}
                 </LiveViewSelect>
               )}
-              {selectedId === "cli-desktop:primary" && (
+              {isDesktop && (
                 <LiveViewSelect label="视频画质" title={canAdjustCapture ? "视频画质" : "其他设备控制中或画面暂不可用"} value={videoQuality} busy={pendingQuality !== null} disabled={!canAdjustCapture || !!pendingDisplayId} compact onChange={selectQuality}>
                   <option value="smooth">流畅</option><option value="hd">高清</option><option value="original">原画</option>
                 </LiveViewSelect>

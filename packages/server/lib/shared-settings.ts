@@ -48,11 +48,17 @@ export class SharedSettingsService {
           next[key] = input[key];
         }
       }
-      for (const [key, min, max] of [["maxIterations", 1, 50], ["contextWindow", 8, 2000]] as const) {
-        if (input[key] !== undefined) {
-          if (typeof input[key] !== "number" || !Number.isFinite(input[key]) || input[key] < min || input[key] > max) throw new SettingsValidationError(`${key} 超出范围`);
-          next[key] = input[key];
+      if (input.maxIterations !== undefined) {
+        if (typeof input.maxIterations !== "number" || !Number.isSafeInteger(input.maxIterations) || input.maxIterations < 0) {
+          throw new SettingsValidationError("maxIterations 必须是非负整数");
         }
+        next.maxIterations = input.maxIterations;
+      }
+      if (input.contextWindow !== undefined) {
+        if (typeof input.contextWindow !== "number" || !Number.isFinite(input.contextWindow) || input.contextWindow < 8 || input.contextWindow > 2000) {
+          throw new SettingsValidationError("contextWindow 超出范围");
+        }
+        next.contextWindow = input.contextWindow;
       }
       if (input.reasoningEffort !== undefined) {
         if (!["off", "low", "medium", "high"].includes(String(input.reasoningEffort))) throw new SettingsValidationError("reasoningEffort 无效");
@@ -68,7 +74,30 @@ export class SharedSettingsService {
           if (!raw.id || ids.has(raw.id)) throw new SettingsValidationError("profile.id 重复或为空");
           ids.add(raw.id);
           if (!["openai", "anthropic", "deepseek", "aihub"].includes(raw.provider)) throw new SettingsValidationError("不支持的模型提供方");
-          return { id: raw.id, name: raw.name, provider: raw.provider, modelId: raw.modelId, baseUrl: raw.baseUrl, apiKey: preserveSecret(raw.apiKey, current.profiles.find((p) => p.id === raw.id)?.apiKey || "") };
+          if (
+            raw.maxOutputTokens !== undefined
+            && (typeof raw.maxOutputTokens !== "number"
+              || !Number.isInteger(raw.maxOutputTokens)
+              || raw.maxOutputTokens < 256
+              || raw.maxOutputTokens > 131_072)
+          ) throw new SettingsValidationError("profile.maxOutputTokens 超出范围");
+          if (
+            raw.requestTimeoutSeconds !== undefined
+            && (typeof raw.requestTimeoutSeconds !== "number"
+              || !Number.isInteger(raw.requestTimeoutSeconds)
+              || raw.requestTimeoutSeconds < 30
+              || raw.requestTimeoutSeconds > 1_800)
+          ) throw new SettingsValidationError("profile.requestTimeoutSeconds 超出范围");
+          return {
+            id: raw.id,
+            name: raw.name,
+            provider: raw.provider,
+            modelId: raw.modelId,
+            baseUrl: raw.baseUrl,
+            apiKey: preserveSecret(raw.apiKey, current.profiles.find((p) => p.id === raw.id)?.apiKey || ""),
+            ...(raw.maxOutputTokens === undefined ? {} : { maxOutputTokens: raw.maxOutputTokens }),
+            ...(raw.requestTimeoutSeconds === undefined ? {} : { requestTimeoutSeconds: raw.requestTimeoutSeconds }),
+          };
         });
       }
       const active = next.profiles.find((profile) => profile.id === next.activeProfileId);

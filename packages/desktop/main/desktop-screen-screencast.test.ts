@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { DesktopScreenScreencast, type DesktopCapturedSource } from "./desktop-screen-screencast";
+import { captureDesktopFrame, DesktopScreenScreencast, type DesktopCapturedSource } from "./desktop-screen-screencast";
 
 interface FakeClock {
   now(): number;
@@ -22,6 +22,23 @@ function makeThumbnail(bytes: number, width: number, height: number): NonNullabl
 }
 
 describe("DesktopScreenScreencast", () => {
+  it("captures one reusable bounded frame with pixel and logical geometry", async () => {
+    const frame = await captureDesktopFrame({
+      display: { originX: -1440, originY: 120, width: 1440, height: 900, scaleFactor: 2, id: "screen:2" },
+      captureSources: async () => [{ id: "screen:2", thumbnail: makeThumbnail(64, 2880, 1800) }],
+    });
+    expect(frame).toMatchObject({
+      width: 2880,
+      height: 1800,
+      logicalWidth: 1440,
+      logicalHeight: 900,
+      originX: -1440,
+      originY: 120,
+      displayId: "screen:2",
+    });
+    expect(frame?.data.byteLength).toBe(64);
+  });
+
   it("captures Retina pixels while keeping logical screen coordinates", async () => {
     const clock = fakeClock();
     const captureSources = vi.fn().mockResolvedValue([

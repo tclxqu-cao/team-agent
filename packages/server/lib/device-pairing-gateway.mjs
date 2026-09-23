@@ -31,7 +31,7 @@ async function readJson(req) {
 }
 
 /** The only public operations are readiness, the pairing page, and code exchange. */
-export function createDevicePairingGateway({ dataDir, desktop, owner, consoleStore, store = new DevicePairingStore(dataDir), trustProxy = process.env.AGENT_TRUST_TUNNEL_PROXY === "1", allowedOrigins = process.env.AGENT_WEB_ALLOWED_ORIGINS || "", sdkToken = process.env.AGENT_SDK_TOKEN, testNoPairing = false }) {
+export function createDevicePairingGateway({ dataDir, desktop, owner, consoleStore, store = new DevicePairingStore(dataDir), trustProxy = process.env.AGENT_TRUST_TUNNEL_PROXY === "1", allowedOrigins = process.env.AGENT_WEB_ALLOWED_ORIGINS || "", sdkToken = process.env.AGENT_SDK_TOKEN, runServiceToken = process.env.AGENT_RUN_TOKEN || process.env.PORTFOLIO_SKILL_TOKEN, testNoPairing = false }) {
   const testId = "test-browser";
   const activeDevice = (id) => id === testId ? testNoPairing && !store.isLocked() : store.active(id);
   const sockets = new Map();
@@ -49,7 +49,7 @@ export function createDevicePairingGateway({ dataDir, desktop, owner, consoleSto
   const principal = (device) => ({ ...owner, deviceId: device.id, sessionId: device.id });
   const sweep = () => {
     for (const [ws, id] of sockets) if (!activeDevice(id)) { sockets.delete(ws); ws.close(4003, "device authorization revoked or expired"); ws.terminate(); }
-    for (const [res, id] of streams) if (store.isLocked() || (id !== "sdk" && !activeDevice(id))) { streams.delete(res); res.destroy(); }
+    for (const [res, id] of streams) if (store.isLocked() || (!["sdk", "run-service"].includes(id) && !activeDevice(id))) { streams.delete(res); res.destroy(); }
   };
   const recentInput = new Map();
   const auditOperation = (auth, action, outcome) => {
@@ -87,6 +87,9 @@ export function createDevicePairingGateway({ dataDir, desktop, owner, consoleSto
         const sdkPath = /^(?:\/api\/auth\/verify|\/api\/sessions(?:\/[^/]+)?|\/api\/remote-tools\/register|\/api\/agent\/(?:run|stream|abort|answer))$/.test(path);
         const suppliedSdkToken = req.headers.authorization?.startsWith("Bearer ") ? req.headers.authorization.slice(7) : path === "/api/agent/stream" ? url.searchParams.get("token") : null;
         const sdk = !!sdkToken && sdkPath && typeof suppliedSdkToken === "string" && timingSafeEqual(createHash("sha256").update(sdkToken).digest(), createHash("sha256").update(suppliedSdkToken).digest());
+        const flowServicePath = /^\/api\/flow\/v1\/(?:catalog|runs(?:\/[^/]+\/(?:events|cancel))?)$/.test(path);
+        const runServicePath = /^(?:\/api\/agent\/(?:run|stream))$/.test(path) || flowServicePath;
+        const runService = !!runServiceToken && runServicePath && typeof suppliedSdkToken === "string" && timingSafeEqual(createHash("sha256").update(runServiceToken).digest(), createHash("sha256").update(suppliedSdkToken).digest());
         // Do not let legacy SDK query credentials reach framework access logs.
         if (path === "/api/agent/stream" && url.searchParams.has("token")) {
           url.searchParams.delete("token");
@@ -162,7 +165,7 @@ export function createDevicePairingGateway({ dataDir, desktop, owner, consoleSto
           req.headers["x-agentroam-device-id"] = local ? "desktop" : "client-logs";
           return false;
         }
-        if (path === "/pair" || (!local && !test && !device && (!sdk || store.isLocked()))) {
+        if (path === "/pair" || (!local && !test && !device && ((!sdk && !runService) || store.isLocked()))) {
           const document = (path === "/pair" || path === "/" || path === "/web" || path.startsWith("/web/") || path === "/app" || path.startsWith("/app/")) && (req.headers.accept || "").includes("text/html");
           if (req.method === "GET" && document) {
             res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "referrer-policy": "no-referrer", "x-frame-options": "DENY", "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self'; media-src 'self' blob:; img-src 'self'; manifest-src 'self'; worker-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'" });
@@ -170,22 +173,22 @@ export function createDevicePairingGateway({ dataDir, desktop, owner, consoleSto
           }
           throw error("请先使用电脑上的配对码授权此设备");
         }
-        if (!local && !sdk && !["GET", "HEAD"].includes(req.method) && !(native && bearer && device) && !originAllowed(req)) throw error("Cross-origin write denied", 403);
+        if (!local && !sdk && !runService && !["GET", "HEAD"].includes(req.method) && !(native && bearer && device) && !originAllowed(req)) throw error("Cross-origin write denied", 403);
         // The outer gateway has verified the explicit device credential. Inner
         // same-origin guards must not mistake this native request for cookie CSRF.
         if (native && bearer && device) delete req.headers.origin;
-        req.headers["x-agentroam-device-id"] = local ? "desktop" : test ? testId : sdk ? "sdk" : device.id;
+        req.headers["x-agentroam-device-id"] = local ? "desktop" : test ? testId : sdk ? "sdk" : runService ? "run-service" : device.id;
         if (device && !local && Date.now() - device.seen >= 60_000) {
           store.renew(device.id);
           res.setHeader("set-cookie", cookie(req, token));
         }
         // Long-lived streams must stop when a device is revoked, too.
-        if (!local) { streams.set(res, test ? testId : sdk ? "sdk" : device.id); res.once("close", () => streams.delete(res)); }
+        if (!local) { streams.set(res, test ? testId : sdk ? "sdk" : runService ? "run-service" : device.id); res.once("close", () => streams.delete(res)); }
         const sensitiveRead = path.startsWith("/api/web-console/file-preview/");
         if (sensitiveRead || !["GET", "HEAD", "OPTIONS"].includes(req.method)) {
           const category = sensitiveRead ? "file_preview" : ["settings", "agent", "sessions", "projects", "remote-tools", "web-console"].includes(path.split("/")[2]) ? path.split("/")[2] : "other";
           const action = `http.${category}`;
-          const auth = { deviceId: local ? "desktop" : test ? testId : sdk ? "sdk" : device.id };
+          const auth = { deviceId: local ? "desktop" : test ? testId : sdk ? "sdk" : runService ? "run-service" : device.id };
           auditOperation(auth, action, "started");
           res.once("finish", () => { try { auditOperation(auth, action, res.statusCode < 400 ? "success" : "failed"); } catch { console.error("Security audit completion could not be recorded"); } });
         }

@@ -5,6 +5,7 @@ export {
   type NativeSubagentActivity,
   type ToolCall,
   type ToolResult,
+  type ModelAttachment,
   type StreamOptions,
   type ToolDefinition,
   type StreamEvent,

@@ -193,6 +193,12 @@ export class SubAgentDispatcher {
     let apiKey = latestSettings.apiKey;
     let baseUrl = latestSettings.baseUrl;
     let modelId = latestSettings.modelId;
+    let maxOutputTokens = latestSettings.profiles.find(
+      (profile) => profile.id === latestSettings.activeProfileId,
+    )?.maxOutputTokens;
+    let requestTimeoutSeconds = latestSettings.profiles.find(
+      (profile) => profile.id === latestSettings.activeProfileId,
+    )?.requestTimeoutSeconds;
     if (agentDef.capabilities.profileId) {
       const profile = latestSettings.profiles.find(
         (p) => p.id === agentDef.capabilities.profileId,
@@ -202,13 +208,22 @@ export class SubAgentDispatcher {
         apiKey = profile.apiKey;
         baseUrl = profile.baseUrl;
         modelId = profile.modelId;
+        maxOutputTokens = profile.maxOutputTokens;
+        requestTimeoutSeconds = profile.requestTimeoutSeconds;
       }
     }
     subBuilder.withModel(provider, {
       apiKey,
       baseUrl: baseUrl || undefined,
       modelId,
+      timeoutMs: requestTimeoutSeconds === undefined
+        ? undefined
+        : requestTimeoutSeconds * 1_000,
     });
+    subBuilder
+      .withMaxTokens((latestSettings.contextWindow ?? 100) * 1000)
+      .withMaxOutputTokens(maxOutputTokens)
+      .withReasoningEffort(latestSettings.reasoningEffort ?? "off");
 
     // Apply system prompt (with identity header)
     let systemPrompt = agentDef.systemPrompt || "";

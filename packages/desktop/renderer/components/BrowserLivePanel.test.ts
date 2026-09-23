@@ -45,6 +45,26 @@ describe("browser live session selection", () => {
     };
     expect(selectBrowserLiveSessionId(null, [desktop])).toBe("desktop:primary");
   });
+
+  it("keeps screen switching in the resolution toolbar", () => {
+    const source = readFileSync(new URL("./BrowserLivePanel.tsx", import.meta.url), "utf8");
+    const toolbarStart = source.indexOf('className="browser-live-zoom"');
+    const tabsStart = source.indexOf('className="browser-live-session-tabs"');
+    const surfaceContentStart = source.indexOf('className="browser-live-viewport"');
+
+    expect(toolbarStart).toBeGreaterThan(-1);
+    expect(tabsStart).toBeGreaterThan(toolbarStart);
+    expect(tabsStart).toBeLessThan(surfaceContentStart);
+    expect(source).not.toContain("has-session-tabs");
+  });
+
+  it("shows desktop quality without duplicating a single physical display", () => {
+    const source = readFileSync(new URL("./BrowserLivePanel.tsx", import.meta.url), "utf8");
+
+    expect(source).toContain("liveDisplays.length > 1");
+    expect(source).not.toContain('selectedId === "cli-desktop:primary"');
+    expect(source).toContain("{isDesktop && (\n                <LiveViewSelect label=\"视频画质\"");
+  });
 });
 
 describe("stale control reply guard", () => {

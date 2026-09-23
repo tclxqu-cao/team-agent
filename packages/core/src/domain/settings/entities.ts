@@ -10,6 +10,10 @@ export interface ModelProfile {
   modelId: string;
   apiKey: string;
   baseUrl: string;
+  /** Per-request output ceiling. Undefined preserves the legacy context-based heuristic. */
+  maxOutputTokens?: number;
+  /** Whole-request deadline in seconds. Undefined preserves the provider default. */
+  requestTimeoutSeconds?: number;
 }
 
 export interface SettingsData {

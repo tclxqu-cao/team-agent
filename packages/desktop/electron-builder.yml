@@ -13,6 +13,8 @@ files:
   # @agent/* 是软链到 workspace 的包，打包时只带构建产物，不带 sourcemap
   - "!node_modules/@agent/core/dist/**/*.d.ts.map"
   - "!node_modules/@agent/core/dist/**/*.js.map"
+  - "!node_modules/@agent/computer-use/dist/**/*.d.ts.map"
+  - "!node_modules/@agent/computer-use/dist/**/*.js.map"
   - "!node_modules/@agent/native-runtime/dist/**/*.d.ts.map"
   - "!node_modules/@agent/native-runtime/dist/**/*.js.map"
 extraResources:

@@ -329,7 +329,14 @@ export class PermissionAwareToolExecutor implements IToolExecutor {
     return this.delegate.validate(name, args);
   }
 
+  getAuthorizationPolicy(name: string) {
+    return this.delegate.getAuthorizationPolicy?.(name) ?? "default";
+  }
+
   async execute(name: string, args: Record<string, unknown>, ctx: ToolContext): Promise<ToolResult> {
+    if (this.getAuthorizationPolicy(name) === "direct") {
+      return this.delegate.execute(name, args, ctx);
+    }
     const decision = await this.gate.authorize(name, args, ctx);
     if (decision === "cancel") throw new Error("turn_aborted");
     if (decision === "deny") {

@@ -12,6 +12,8 @@ The first release:
 
 - supports macOS only;
 - registers one `computer` tool only for `customer-agent` runs;
+- lets the model call the tool only when the user explicitly requests computer operation or the task cannot continue without GUI observation or interaction;
+- forbids using the tool speculatively or as a substitute for available file, Shell, API, or browser-specific tools;
 - leaves Codex, Claude Code, and OpenCode unchanged because they own their native Computer Use implementations;
 - prioritizes the frontmost application's focused Accessibility window and focused element;
 - falls back to a JPEG screenshot for inaccessible, empty, or semantically incomplete interfaces;
@@ -37,6 +39,15 @@ Desktop renderer
 ```
 
 Codex, Claude Code, and OpenCode take a separate path through `NativeRuntimeService`, the native runtime broker, `UnifiedSessionService`, and their own adapters. They do not use Customer Agent's `ToolRegistry`. The Computer Use extension must therefore be registered only in the Customer Agent composition root.
+
+## Invocation Policy
+
+Registration makes `computer` available to the Customer Agent model; it does not make it a default way to perform ordinary work. The model-facing tool description defines two allowed entry conditions:
+
+1. the user explicitly asks the agent to operate the computer; or
+2. the task cannot continue without observing or interacting with a GUI.
+
+When neither condition applies, the model must not call the tool. In particular, existing file, Shell, API, and browser-specific tools remain preferred and must be used when they can complete the task. This policy belongs to the tool contract sent with every model request, rather than to the macOS adapter or `AgentLoop`, because only the model has the current task context needed to decide whether GUI interaction is necessary.
 
 ## Dependency Direction
 
@@ -208,6 +219,7 @@ interface ToolResult {
   content: string;
   isError?: boolean;
   metadata?: Record<string, unknown>;
+  modelContent?: string;
   modelAttachments?: Array<{
     type: "image";
     mimeType: "image/jpeg" | "image/png";
@@ -216,14 +228,16 @@ interface ToolResult {
 }
 ```
 
-After all tool results for an assistant turn have been added, `AgentLoop` creates one transient tool-observation message containing the attachments and their call IDs. Providers adapt that generic message:
+`content` is the public, durable result. `modelContent` is optional text visible to exactly the next model request. Computer Use returns only revision, coverage, and node-count metadata in public `content`; the bounded AX tree is carried in `modelContent`.
+
+After all tool results for an assistant turn have been added, `AgentLoop` creates one transient tool-observation message containing model-only text, attachments, and their call IDs. Providers adapt that generic message:
 
 - OpenAI sends a user image-content observation after all required tool messages;
 - Anthropic sends image content blocks in the observation;
 - AIHub uploads the latest tool-observation images with the follow-up transcript;
 - providers without image input continue to use AX text observations, but screenshot fallback returns `vision_unavailable` rather than pretending that the model saw an image.
 
-Attachment payloads are not included in public `tool_result` events, SQLite messages, logs, diagnostics, compaction checkpoints, or later user turns. Public events may expose only attachment count, MIME type, and dimensions.
+Model-only text and attachment payloads are not included in public `tool_result` events, SQLite messages, logs, diagnostics, compaction inputs/checkpoints, or later user turns. Network retries for the same model request may reuse the transient observation; it is cleared immediately after that request finishes. Public events may expose only attachment count, MIME type, dimensions, and the concise public observation summary.
 
 This attachment support is generic and may be reused by other tools. No provider adapter contains Computer Use conditionals.
 
@@ -240,6 +254,8 @@ The tool is visible only when the Server can reach a compatible desktop relay du
 Observation is allowed while a phone remote viewer controls the desktop. Mutating actions are rejected while the live-view state is `handoff-requested`, `user-controlled`, `return-requested`, or `resyncing`, with `desktop_controlled_by_user`.
 
 The Electron runtime owns the global action queue and the authoritative ownership check. Server-side serialization is insufficient because multiple Server processes may connect to the same desktop relay.
+
+The Desktop composition root also injects the Electron session-lock probe. `status` exposes `desktopLocked`; every observation, screenshot, and mutation fails closed with `desktop_locked` while macOS is locked. `wait` may span an unlock, but it rechecks the lock before observing. This prevents the tool from inspecting or interacting with `loginwindow` and keeps Electron-specific power state outside the domain package.
 
 Cancellation closes or marks the in-flight request and prevents follow-up observation. A single CGEvent already posted before cancellation is reported as possibly executed; the system never labels it unexecuted. `wait` checks cancellation during the delay.
 
@@ -258,6 +274,7 @@ Limits:
 Structured error codes:
 
 - `desktop_offline`;
+- `desktop_locked`;
 - `accessibility_denied`;
 - `screen_recording_denied`;
 - `desktop_controlled_by_user`;
@@ -269,7 +286,7 @@ Structured error codes:
 - `vision_unavailable`;
 - `aborted`.
 
-Errors are returned as failed tool results with a concise recovery instruction. The model must re-observe after stale state, request a screenshot only after a partial AX result, or tell the user which macOS permission is missing.
+Errors are returned as failed tool results with a concise recovery instruction. The model must re-observe after stale state, request a screenshot only after a partial AX result, tell the user which macOS permission is missing, or stop computer actions until a locked Mac is unlocked.
 
 ## Verification
 

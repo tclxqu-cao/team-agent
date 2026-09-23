@@ -188,6 +188,61 @@ interface WorkspaceCatalog {
   data: AgentWorkspace[];
   watermark: string | null;
   stale?: boolean;
+  aliases?: ReadonlyMap<string, string>;
+  mergedNativePaths?: ReadonlyMap<string, string>;
+}
+
+function deduplicateNativeWorkspacesByRoots(
+  workspaces: readonly AgentWorkspace[],
+  platform: NodeJS.Platform,
+): {
+  data: AgentWorkspace[];
+  aliases: Map<string, string>;
+  mergedNativePaths: Map<string, string>;
+} {
+  const data: AgentWorkspace[] = [];
+  const groups = new Map<string, { index: number; members: AgentWorkspace[] }>();
+
+  for (const workspace of workspaces) {
+    const roots = workspace.roots.flatMap((root) => {
+      try {
+        return root.trim() ? [normalizeAgentWorkspacePath(root, platform)] : [];
+      } catch {
+        return [];
+      }
+    }).sort();
+    if (workspace.source !== "native" || roots.length === 0) {
+      data.push(workspace);
+      continue;
+    }
+    const key = JSON.stringify(roots);
+    const group = groups.get(key);
+    if (group) {
+      group.members.push(workspace);
+      continue;
+    }
+    groups.set(key, { index: data.length, members: [workspace] });
+    data.push(workspace);
+  }
+
+  const aliases = new Map<string, string>();
+  const mergedNativePaths = new Map<string, string>();
+  for (const group of groups.values()) {
+    if (group.members.length < 2) continue;
+    const canonical = [...group.members].sort((left, right) => (
+      (right.updatedAt ?? "").localeCompare(left.updatedAt ?? "")
+      || left.order - right.order
+      || left.workspaceId.localeCompare(right.workspaceId)
+    ))[0]!;
+    data[group.index] = canonical;
+    for (const member of group.members) {
+      if (member.workspaceId !== canonical.workspaceId) aliases.set(member.workspaceId, canonical.workspaceId);
+    }
+    if (canonical.roots.length === 1) {
+      mergedNativePaths.set(canonical.workspaceId, normalizeAgentWorkspacePath(canonical.roots[0]!, platform));
+    }
+  }
+  return { data, aliases, mergedNativePaths };
 }
 
 /** Application service that keeps workspace discovery isolated per Agent. */
@@ -417,16 +472,19 @@ export class AgentWorkspaceIndexService {
       cursor = page.nextCursor;
     } while (cursor);
 
-    let combined = data;
+    const deduplicated = adapter.agentType === "codex"
+      ? deduplicateNativeWorkspacesByRoots(data, this.platform)
+      : { data, aliases: new Map<string, string>(), mergedNativePaths: new Map<string, string>() };
+    let combined = deduplicated.data;
     if (this.importedWorkspaces && adapter.agentType !== "customer-agent") {
-      const nativeRoots = new Set(data.flatMap((workspace) => workspace.roots.map(
+      const nativeRoots = new Set(combined.flatMap((workspace) => workspace.roots.map(
         (root) => normalizeAgentWorkspacePath(root, this.platform),
       )));
       const imports = this.importedWorkspaces
         .list(adapter.agentType)
         .filter((workspace) => !nativeRoots.has(workspace.normalizedPath))
-        .map((workspace, index) => importedWorkspaceToDomain(workspace, data.length + index));
-      combined = [...data, ...imports];
+        .map((workspace, index) => importedWorkspaceToDomain(workspace, combined.length + index));
+      combined = [...combined, ...imports];
     }
     if (adapter.agentType === "codex") {
       combined = [{
@@ -439,7 +497,13 @@ export class AgentWorkspaceIndexService {
         canCreateSession: false,
       }, ...combined];
     }
-    return { data: combined, watermark, ...(stale ? { stale: true } : {}) };
+    return {
+      data: combined,
+      watermark,
+      ...(stale ? { stale: true } : {}),
+      ...(deduplicated.aliases.size ? { aliases: deduplicated.aliases } : {}),
+      ...(deduplicated.mergedNativePaths.size ? { mergedNativePaths: deduplicated.mergedNativePaths } : {}),
+    };
   }
 
   private async listCodexWorkspaceSessions(
@@ -459,18 +523,29 @@ export class AgentWorkspaceIndexService {
 
     const cursor = decodeCodexCursor(query.cursor);
     if (workspace.source === "native" && cursor?.kind !== "catalog") {
-      const direct = await adapter.listWorkspaceSessions!(workspaceId, {
-        ...query,
-        cursor: cursor?.value ?? null,
-        limit: workspacePageSize(query.limit),
-      });
-      this.rememberCodexDirectSessions(workspaceId, direct.data);
+      const mergedPath = this.workspaceCache.get("codex")?.mergedNativePaths?.get(workspaceId);
+      const direct = mergedPath && adapter.listWorkspaceSessionsByPath
+        ? await adapter.listWorkspaceSessionsByPath(mergedPath, {
+          ...query,
+          cursor: cursor?.value ?? null,
+          limit: workspacePageSize(query.limit),
+        })
+        : await adapter.listWorkspaceSessions!(workspaceId, {
+          ...query,
+          cursor: cursor?.value ?? null,
+          limit: workspacePageSize(query.limit),
+        });
+      const canonicalDirect = {
+        ...direct,
+        data: direct.data.map((session) => ({ ...session, projectId: workspaceId })),
+      };
+      this.rememberCodexDirectSessions(workspaceId, canonicalDirect.data);
       if (!query.cursor && this.codexSessionCatalog) {
         const sessions = this.codexSessionCatalog.byWorkspace.get(workspaceId) ?? [];
         return paginateCodexCatalog(sessions, query, this.codexSessionCatalog.watermark);
       }
       void this.getCodexSessionCatalog(adapter, false).catch(() => undefined);
-      return wrapCodexNativePage(direct);
+      return wrapCodexNativePage(canonicalDirect);
     }
 
     const refresh = query.refresh === true && !query.cursor;
@@ -530,7 +605,8 @@ export class AgentWorkspaceIndexService {
     }
     const primary = await adapter.discoverSessions();
     const discovered = this.supplementCodexSessions?.(primary) ?? primary;
-    const catalog = classifyCodexSessions(discovered, workspaces, this.platform);
+    const aliases = this.workspaceCache.get("codex")?.aliases;
+    const catalog = classifyCodexSessions(discovered, workspaces, this.platform, aliases);
     for (const [workspaceId, direct] of this.codexDirectSessions) {
       const existing = catalog.byWorkspace.get(workspaceId);
       if (!existing) continue;
@@ -567,6 +643,7 @@ export function classifyCodexSessions(
   sessions: readonly UnifiedSessionSummary[],
   workspaces: readonly AgentWorkspace[],
   platform: NodeJS.Platform = process.platform,
+  workspaceAliases: ReadonlyMap<string, string> = new Map(),
 ): SessionCatalog {
   const candidates = workspaces.filter((workspace) => workspace.workspaceId !== CODEX_RECENT_WORKSPACE_ID);
   const byId = new Map(candidates.map((workspace) => [workspace.workspaceId, workspace]));
@@ -587,7 +664,10 @@ export function classifyCodexSessions(
   for (const session of ordered) {
     if (seen.has(session.id)) continue;
     seen.add(session.id);
-    let workspaceId = session.projectId && byId.has(session.projectId) ? session.projectId : undefined;
+    const aliasedProjectId = session.projectId ? workspaceAliases.get(session.projectId) : undefined;
+    let workspaceId = aliasedProjectId && byId.has(aliasedProjectId)
+      ? aliasedProjectId
+      : session.projectId && byId.has(session.projectId) ? session.projectId : undefined;
     if (!workspaceId && session.cwd.trim()) {
       try {
         const cwd = normalizeAgentWorkspacePath(session.cwd, platform);

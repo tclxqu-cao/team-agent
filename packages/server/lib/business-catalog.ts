@@ -6,8 +6,10 @@ import {
   SQLiteUploadStore, SQLiteMemoryStore, SkillLoader, MCPManager,
   type AgentDefinition, type LSPServerConfig, type MCPServerConfig, type SkillDefinition, type UploadEntry, type MemoryEntry,
 } from "@agent/core";
+import { COMPUTER_USE_SKILL } from "@agent/computer-use";
 import { getServerBaseDir } from "./server-data-dir";
 import { sharedSettings } from "./shared-settings";
+import { portfolioSkillsDirectory, PORTFOLIO_SKILL_PREFIX } from "./portfolio-skill-catalog";
 
 /** Explicit method table: no arbitrary method/property invocation over HTTP. */
 export class BusinessCatalog {
@@ -61,9 +63,16 @@ export class BusinessCatalog {
       }
       case "listSkills": {
         const stored = await this.skills.listAll();
-        const discovered = await new SkillLoader().loadAll(sharedSettings().read().workingDirectory);
+        const loader = new SkillLoader();
+        const discovered = await loader.loadAll(sharedSettings().read().workingDirectory);
         const all = new Map(discovered.map((s) => [s.name, { ...s, enabled: true }]));
         for (const s of stored) all.set(s.name, { ...all.get(s.name), ...s, enabled: (s as SkillDefinition & { enabled?: boolean }).enabled !== false });
+        const portfolio = await loader.loadFromDirectory(portfolioSkillsDirectory(), "project");
+        for (const skill of portfolio.filter((item) => item.name.startsWith(PORTFOLIO_SKILL_PREFIX))) {
+          const current = all.get(skill.name);
+          all.set(skill.name, { ...current, ...skill, enabled: current?.enabled !== false });
+        }
+        all.set(COMPUTER_USE_SKILL.name, { ...COMPUTER_USE_SKILL, enabled: true });
         return [...all.values()];
       }
       case "saveSkill": { const value = item(); requiredString(value.name); await this.skills.save({ description: "", triggers: [], prompt: "", filePath: "", source: "custom", ...value } as unknown as SkillDefinition); return null; }
@@ -71,9 +80,14 @@ export class BusinessCatalog {
       case "setSkillEnabled": {
         const name = id(); const on = enabled();
         if (!await this.skills.get(name)) {
-          const meta = (await new SkillLoader().loadAll(sharedSettings().read().workingDirectory)).find((s) => s.name === name);
+          const loader = new SkillLoader();
+          const discovered = [
+            ...await loader.loadAll(sharedSettings().read().workingDirectory),
+            ...await loader.loadFromDirectory(portfolioSkillsDirectory(), "project"),
+          ];
+          const meta = discovered.find((s) => s.name === name);
           if (!meta) throw new Error("Skill not found");
-          await this.skills.save(await new SkillLoader().loadFromFile(meta.filePath));
+          await this.skills.save(await loader.loadFromFile(meta.filePath));
         }
         await this.skills.setEnabled(name, on); return null;
       }

@@ -24,12 +24,16 @@ describe("LocalSettingsRepository", () => {
     }
   });
 
-  it("normalizes saved iteration and context limits for an agent run", () => {
+  it("preserves unlimited and large iteration limits while bounding context", () => {
     Object.defineProperty(globalThis, "localStorage", { configurable: true, value: new MemoryStorage() });
     const settings = new LocalSettingsRepository();
-    settings.save({ maxIterations: 80, contextWindow: 4 });
+    settings.save({ maxIterations: 0, contextWindow: 4 });
 
-    expect(settings.getRunLimits()).toEqual({ maxIterations: 50, maxTokens: 8_000 });
+    expect(settings.getRunLimits()).toEqual({ maxIterations: 0, maxTokens: 8_000 });
+
+    settings.save({ maxIterations: 5_000 });
+
+    expect(settings.getRunLimits()).toEqual({ maxIterations: 5_000, maxTokens: 8_000 });
   });
 
   it("does not overwrite a server-managed entry after it becomes a local override", () => {

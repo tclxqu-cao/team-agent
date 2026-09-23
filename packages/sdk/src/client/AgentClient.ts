@@ -1,4 +1,4 @@
-import type { AgentClientConfig, AgentEvent, Session, RemoteToolRegistration } from './types';
+import type { AgentClientConfig, AgentEvent, Session, RemoteToolRegistration, AgentRunOptions } from './types';
 
 /**
  * HTTP + SSE client for communicating with the hosted Agent service.
@@ -91,14 +91,14 @@ export class AgentClient {
   /**
    * Send a message to the agent. Opens an SSE stream first, then POSTs the run.
    */
-  async run(input: string, sessionId: string): Promise<void> {
+  async run(input: string, sessionId: string, options: AgentRunOptions = {}): Promise<void> {
     this.currentSessionId = sessionId;
     this.connectStream(sessionId);
 
     const res = await fetch(`${this.server}/api/agent/run`, {
       method: 'POST',
       headers: this.headers,
-      body: JSON.stringify({ input, sessionId }),
+      body: JSON.stringify({ input, sessionId, source: "sdk", ...options }),
     });
     if (!res.ok) throw new Error(`Failed to run agent: ${res.statusText}`);
   }

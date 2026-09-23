@@ -1,13 +1,24 @@
 import type { Message, ToolDefinition } from './entities.js';
 
-/** Conservative fallback for mixed Chinese/English; includes serialized metadata. */
+/** Conservative fallback for mixed Chinese/English. */
 export function estimateTextTokens(text: string): number {
   return Math.ceil(new TextEncoder().encode(text).length / 3);
 }
 
+function modelFacingMessage(message: Message): Record<string, unknown> {
+  return {
+    role: message.role,
+    content: message.content,
+    name: message.name,
+    toolCallId: message.toolCallId,
+    isError: message.isError,
+    toolCalls: message.toolCalls,
+  };
+}
+
 export function estimateRequestTokens(messages: Message[], tools: ToolDefinition[] = []): number {
   return 32 + messages.reduce((sum, message) => sum + 8
-    + estimateTextTokens(JSON.stringify({ ...message, images: undefined }))
+    + estimateTextTokens(JSON.stringify(modelFacingMessage(message)))
     + (message.images?.length ?? 0) * 1000, 0)
     + (tools.length ? estimateTextTokens(JSON.stringify(tools)) + tools.length * 16 : 0);
 }

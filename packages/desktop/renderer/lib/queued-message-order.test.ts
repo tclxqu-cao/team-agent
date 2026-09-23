@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  findLatestPendingUserMessageId,
   findLatestUnqueuedUserMessageId,
   hideQueuedGoalMessages,
   moveQueuedMessage,
@@ -59,6 +60,24 @@ describe("findLatestUnqueuedUserMessageId", () => {
     expect(findLatestUnqueuedUserMessageId([
       { id: "assistant", role: "assistant" },
       { id: "queued", role: "user", isQueued: true },
+    ])).toBeNull();
+  });
+});
+
+describe("findLatestPendingUserMessageId", () => {
+  it("selects only the latest pending user message outside the queue", () => {
+    expect(findLatestPendingUserMessageId([
+      { id: "pending-earlier", role: "user", sendState: "pending" },
+      { id: "failed", role: "user", sendState: "failed" },
+      { id: "queued", role: "user", sendState: "pending", isQueued: true },
+      { id: "pending-latest", role: "user", sendState: "pending" },
+    ])).toBe("pending-latest");
+  });
+
+  it("returns null when no user message is awaiting admission", () => {
+    expect(findLatestPendingUserMessageId([
+      { id: "assistant", role: "assistant", sendState: "pending" },
+      { id: "failed", role: "user", sendState: "failed" },
     ])).toBeNull();
   });
 });

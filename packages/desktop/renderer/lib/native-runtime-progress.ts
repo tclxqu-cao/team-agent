@@ -1,4 +1,10 @@
-import type { AgentEvent, ReasoningSummarySection, RuntimeProgress } from "@agent/core";
+import {
+  type AgentEvent,
+  type ReasoningSummarySection,
+  type RuntimeProgress,
+} from "@agent/core";
+
+export const CONTEXT_COMPACTION_PROGRESS_ID = "context-compaction";
 
 export function mergeReasoningSummaryDelta(
   sections: ReasoningSummarySection[] | undefined,
@@ -22,6 +28,8 @@ export function reduceRuntimeProgressEvents(events: readonly AgentEvent[]): Runt
     if (event.type === "runtime_progress") {
       const { type: _type, ...value } = event;
       progress = upsertRuntimeProgress(progress, value);
+    } else if (event.type === "context_usage") {
+      progress = progress.filter((entry) => entry.progressId !== CONTEXT_COMPACTION_PROGRESS_ID);
     } else if (event.type === "done" || event.type === "turn_aborted" || event.type === "error") {
       progress = [];
     }
