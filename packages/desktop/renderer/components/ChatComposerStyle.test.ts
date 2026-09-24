@@ -130,6 +130,19 @@ describe("shared Electron and Web composer", () => {
     );
   });
 
+  it("promotes an accepted durable steer before reconciling the emptied queue", () => {
+    const steerStart = chatView.indexOf("const handleSteer = async");
+    const steerEnd = chatView.indexOf("const handleAbort", steerStart);
+    const steer = chatView.slice(steerStart, steerEnd);
+    const requestIndex = steer.indexOf("await window.agentApi.steerSessionMessage");
+    const promotionIndex = steer.indexOf("markDurableMessageSteered");
+    const reconciliationIndex = steer.indexOf("applySessionQueueState");
+
+    expect(requestIndex).toBeGreaterThanOrEqual(0);
+    expect(requestIndex).toBeLessThan(promotionIndex);
+    expect(promotionIndex).toBeLessThan(reconciliationIndex);
+  });
+
   it("keeps waiting goals out of chat history until they become active", () => {
     expect(chatView).toContain("hideQueuedGoalMessages(");
     expect(chatView).toContain("goalState.queued,");

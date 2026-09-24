@@ -1145,6 +1145,7 @@ export class NativeRuntimeBrokerHost {
   private readonly subscribers = new Map<Socket, BrokerSubscription>();
   private readonly localSubscribers = new Set<LocalBrokerSubscription>();
   private readonly pendingCreations = new Map<string, UnifiedSessionSummary>();
+  private readonly cancellationConfirmationTimeouts = new Set<string>();
   private readonly queryIndexCache = new SessionQueryIndexCache();
   private server: Server | null = null;
   private ownsSocket = false;
@@ -1431,6 +1432,12 @@ export class NativeRuntimeBrokerHost {
     const decoded = decodeNativeSessionId(sessionId);
     try {
       const detail = await this.runtime.get(sessionId);
+      if (this.cancellationConfirmationTimeouts.has(sessionId)) {
+        if (detail.status === "running") {
+          throw new RuntimeSessionError("Codex session is still stopping", "SESSION_ALREADY_RUNNING");
+        }
+        this.cancellationConfirmationTimeouts.delete(sessionId);
+      }
       // Codex occupancy is advisory; the attempted takeover either succeeds
       // (clearing the stale marker) or fails authoritatively inside the run,
       // where this broker can fork-and-forward the message. Compatibility and
@@ -1486,6 +1493,7 @@ export class NativeRuntimeBrokerHost {
       state = this.state.promoteNextItem(sessionId);
     }
     if (state.active && !this.state.activeRun(sessionId)) {
+      if (!await this.canResumeTimedOutQueue(sessionId)) return state;
       await this.startQueueItemAfterSettling(state.active, controller);
     }
     return this.state.getGoalState(sessionId);
@@ -1501,6 +1509,7 @@ export class NativeRuntimeBrokerHost {
     const hadActive = Boolean(this.state.getGoalState(sessionId).active);
     const state = this.state.enqueueGoal(sessionId, objective, sourceMessageId);
     if (hadActive || !state.active) return { state };
+    if (!await this.canResumeTimedOutQueue(sessionId)) return { state };
     const started = await this.startQueueItemAfterSettling(state.active, controller);
     return {
       state: this.state.getGoalState(sessionId),
@@ -1521,6 +1530,7 @@ export class NativeRuntimeBrokerHost {
     decodeNativeSessionId(sessionId);
     const state = this.state.enqueueMessage(sessionId, input);
     if (!state.active || this.state.activeRun(sessionId)) return { state };
+    if (!await this.canResumeTimedOutQueue(sessionId)) return { state };
     const started = await this.startQueueItemAfterSettling(state.active, controller);
     return {
       state: this.state.getGoalState(sessionId),
@@ -1633,7 +1643,10 @@ export class NativeRuntimeBrokerHost {
     if (!sessionId) return;
     const run = this.state.activeRun(sessionId);
     await this.runtime.abort(sessionId);
-    if (run) {
+    // Codex confirms cancellation through its turn lifecycle. Keeping that run
+    // authoritative also keeps immediate follow-ups durably queued while the
+    // native turn is still stopping instead of exposing a false idle window.
+    if (run && decodeNativeSessionId(sessionId).agentType !== "codex") {
       setTimeout(() => {
         const terminal = this.state.appendTerminal(run.runId, {
           type: "error",
@@ -1676,6 +1689,7 @@ export class NativeRuntimeBrokerHost {
       throw new RuntimeSessionError("Codex session is still stopping", "SESSION_ALREADY_RUNNING");
     }
     await this.runtime.release(sessionId);
+    this.cancellationConfirmationTimeouts.delete(sessionId);
   }
 
   steer(sessionId: string, input: string): Promise<boolean> {
@@ -1731,6 +1745,9 @@ export class NativeRuntimeBrokerHost {
         } : {}),
       };
       for await (const event of this.runtime.run(run.sessionId, run.input, images, agentIds, agentName, options)) {
+        if (event.type === "error" && event.code === "CANCEL_CONFIRMATION_TIMEOUT") {
+          this.cancellationConfirmationTimeouts.add(run.sessionId);
+        }
         const recorded = this.state.appendEvent(run.runId, event);
         if (recorded) this.broadcast(recorded);
         // Adapters surface many startup failures as terminal AgentEvents rather
@@ -1775,6 +1792,17 @@ export class NativeRuntimeBrokerHost {
       // app-server writer-lock failure become an authoritative external lock.
       if (externallyOwned) this.state.recordExplicitExternalOwnership(run.sessionId);
     } finally {
+      if (this.cancellationConfirmationTimeouts.has(run.sessionId)) {
+        if (run.goalId) {
+          this.state.finishGoal(
+            run.sessionId,
+            run.goalId,
+            "failed",
+            "Codex cancellation confirmation timed out.",
+          );
+        }
+        return;
+      }
       if (run.goalId) {
         const events = this.state.getSnapshot(run.sessionId).events;
         const terminal = [...events].reverse().find(({ event }) => isTerminalEvent(event))?.event;
@@ -1806,11 +1834,25 @@ export class NativeRuntimeBrokerHost {
     return this.startQueueItem(item, controller);
   }
 
+  private async canResumeTimedOutQueue(sessionId: string): Promise<boolean> {
+    if (!this.cancellationConfirmationTimeouts.has(sessionId)) return true;
+    try {
+      const detail = await this.runtime.get(sessionId);
+      if (detail.status === "running") return false;
+      this.cancellationConfirmationTimeouts.delete(sessionId);
+      return true;
+    } catch {
+      // A failed status read cannot prove that Codex released the old turn.
+      return false;
+    }
+  }
+
   private async startQueueItem(
     item: SessionGoal,
     controller: NativeRuntimeController,
   ): Promise<BrokerRunStart | undefined> {
     if (this.state.activeRun(item.sessionId)) return undefined;
+    if (!await this.canResumeTimedOutQueue(item.sessionId)) return undefined;
     const existing = this.queueAdmissions.get(item.sessionId);
     if (existing) {
       if (existing.itemId === item.id) return existing.promise;

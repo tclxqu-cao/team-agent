@@ -32,6 +32,10 @@ const queueStateProjection = chatView.slice(
   chatView.indexOf("const applySessionQueueState = useCallback"),
   chatView.indexOf("// Close the reasoning-effort menu"),
 );
+const runtimeErrorHandler = chatView.slice(
+  chatView.indexOf('case "error":'),
+  chatView.indexOf('case "turn_aborted":'),
+);
 
 describe("shared Codex-style message history", () => {
   it("applies one presentation path to every runtime", () => {
@@ -259,12 +263,24 @@ describe("shared Codex-style message history", () => {
     expect(chatView).toContain("window.setInterval(refresh, 2_000)");
   });
 
-  it("does not let a stale running snapshot restore the stop button after abort", () => {
+  it("keeps Codex follow-ups queued until abort reaches a terminal event", () => {
     expect(selectedSessionLoadDependencies).toContain("selectedSessionId");
     expect(selectedSessionLoadDependencies).not.toContain("runningSessionId");
     expect(abortHandler).toContain("sessionLoadGenerationRef.current += 1;");
-    expect(abortHandler.indexOf("sessionLoadGenerationRef.current += 1;"))
+    expect(abortHandler).toContain('if (composerAgentType !== "codex")');
+    expect(abortHandler.indexOf('if (composerAgentType !== "codex")'))
       .toBeLessThan(abortHandler.indexOf("setRunningSession(null);"));
+    expect(abortHandler).toContain("window.agentApi.abort(viewSessionId || undefined).catch");
+  });
+
+  it("does not restore or fail a sent message when Codex stop confirmation times out", () => {
+    expect(runtimeErrorHandler).toContain('event.code !== "CANCEL_CONFIRMATION_TIMEOUT"');
+    expect(runtimeErrorHandler).toContain('event.code !== "CANCEL_CONFIRMATION_TIMEOUT") {');
+    expect(runtimeErrorHandler).toContain('event.code === "CANCEL_CONFIRMATION_TIMEOUT"');
+    expect(runtimeErrorHandler).toContain("pendingNativeSendPayloadRef.current.delete(eventSid)");
+    expect(runtimeErrorHandler).toContain('setError(event.message ?? "Unknown error")');
+    expect(chatView).toContain('aria-label="再次停止"');
+    expect(chatView).toContain('aria-label="释放会话"');
   });
 
   it("renders normalized Codex attachments and keeps raw source collapsed", () => {

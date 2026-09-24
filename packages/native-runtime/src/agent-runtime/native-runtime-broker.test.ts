@@ -1,7 +1,7 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { reduceRuntimeProgress, type AgentEvent } from "@agent/core";
 import { encodeUnifiedSessionId } from "./session-id";
 import type { CodexDiskSessionCatalogEntry, CodexSessionCatalogRepository } from "./codex-session-disk-catalog";
@@ -67,6 +67,7 @@ class FakeNativeRuntime {
   answerResult = true;
   answerError: Error | null = null;
   completeOnAnswer = true;
+  completeOnAbort = true;
   eventsBeforeApproval: AgentEvent[] = [];
   messages: UnifiedSessionDetail["messages"] = [];
   terminalEvent: Extract<AgentEvent, { type: "error" | "done" }> = { type: "done", finalText: "completed" };
@@ -130,7 +131,9 @@ class FakeNativeRuntime {
     this.steeredInputs.push({ id, input });
     return this.steerResult;
   };
-  abort = async (): Promise<void> => { this.resolveRun?.(); };
+  abort = async (): Promise<void> => {
+    if (this.completeOnAbort) this.resolveRun?.();
+  };
   release = async (id: string): Promise<void> => { this.releasedSessionIds.push(id); };
   rename = async (id: string, title: string): Promise<void> => {
     this.renamedSessions.push({ id, title });
@@ -235,6 +238,7 @@ async function directory(): Promise<string> {
 }
 
 afterEach(async () => {
+  vi.useRealTimers();
   await Promise.all(cleanup.splice(0).map((path) => rm(path, { recursive: true, force: true })));
 });
 
@@ -256,6 +260,77 @@ describe("resolveNativeRuntimeSocketPath", () => {
 });
 
 describe("NativeRuntimeBrokerHost", () => {
+  it("keeps an interrupted Codex run active until the adapter confirms its terminal event", async () => {
+    const runtime = new FakeNativeRuntime();
+    runtime.completeOnAbort = false;
+    const host = new NativeRuntimeBrokerHost(await directory(), runtime as unknown as UnifiedSessionService);
+    try {
+      await host.startRun(sessionId, "wait for Codex cancellation");
+      await waitFor(() => expect(host.snapshot(sessionId).events).toHaveLength(1));
+
+      vi.useFakeTimers();
+      await host.abort(sessionId);
+      await vi.advanceTimersByTimeAsync(3_001);
+
+      expect(host.snapshot(sessionId)).toMatchObject({
+        controller: "web",
+        events: [expect.objectContaining({ event: expect.objectContaining({ type: "ask_user" }) })],
+      });
+      expect(host.snapshot(sessionId).events).not.toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          event: expect.objectContaining({
+            type: "error",
+            message: "Native turn was interrupted before the runtime confirmed completion.",
+          }),
+        }),
+      ]));
+
+      vi.useRealTimers();
+      runtime.completeOnAbort = true;
+      await host.abort(sessionId);
+      await waitFor(() => expect(host.snapshot(sessionId).controller).toBeNull());
+    } finally {
+      vi.useRealTimers();
+      runtime.completeOnAbort = true;
+      await runtime.abort();
+      await host.stop();
+    }
+  });
+
+  it("retains the generic abort fallback for non-Codex runtimes", async () => {
+    const claudeSessionId = encodeUnifiedSessionId("claude-code", "thread-1");
+    const runtime = new FakeNativeRuntime();
+    runtime.completeOnAbort = false;
+    const host = new NativeRuntimeBrokerHost(await directory(), runtime as unknown as UnifiedSessionService);
+    try {
+      await host.startRun(claudeSessionId, "wait for fallback cancellation");
+      await waitFor(() => expect(host.snapshot(claudeSessionId).events).toHaveLength(1));
+
+      vi.useFakeTimers();
+      await host.abort(claudeSessionId);
+      await vi.advanceTimersByTimeAsync(3_001);
+
+      expect(host.snapshot(claudeSessionId)).toMatchObject({
+        controller: null,
+        events: expect.arrayContaining([
+          expect.objectContaining({
+            event: {
+              type: "error",
+              code: "NATIVE_PROTOCOL_ERROR",
+              message: "Native turn was interrupted before the runtime confirmed completion.",
+            },
+          }),
+        ]),
+      });
+    } finally {
+      vi.useRealTimers();
+      runtime.completeOnAbort = true;
+      await runtime.abort();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      await host.stop();
+    }
+  });
+
   it("stops an active Codex turn before releasing it to the native client", async () => {
     const runtime = new FakeNativeRuntime();
     const host = new NativeRuntimeBrokerHost(await directory(), runtime as unknown as UnifiedSessionService);
@@ -1593,6 +1668,56 @@ describe("NativeRuntimeBrokerHost", () => {
       expect(runtime.runInputs).toHaveLength(2);
     } finally {
       releaseCleanup();
+      await host.stop();
+    }
+  });
+
+  it("keeps queued messages paused after Codex cancellation confirmation times out", async () => {
+    const runtime = new FakeNativeRuntime();
+    runtime.terminalEvent = {
+      type: "error",
+      code: "CANCEL_CONFIRMATION_TIMEOUT",
+      message: "停止确认超时；Codex 可能仍在结束当前任务。请重试停止或释放会话。",
+    };
+    const host = new NativeRuntimeBrokerHost(await directory(), runtime as unknown as UnifiedSessionService);
+    try {
+      await host.enqueueMessage(sessionId, {
+        sourceMessageId: "chat-first-timeout",
+        content: "first input",
+      });
+      await waitFor(() => expect(host.snapshot(sessionId).events).toHaveLength(1));
+      await host.enqueueMessage(sessionId, {
+        sourceMessageId: "chat-after-timeout",
+        content: "wait until Codex is idle",
+      });
+
+      runtime.status = "running";
+      await host.abort(sessionId);
+      await waitFor(() => expect(host.snapshot(sessionId).controller).toBeNull());
+      expect(runtime.runInputs).toHaveLength(1);
+      runtime.getFailuresRemaining = 1;
+      await expect(host.getGoals(sessionId)).resolves.toMatchObject({
+        active: expect.objectContaining({
+          kind: "message",
+          objective: "wait until Codex is idle",
+        }),
+      });
+      await host.enqueueMessage(sessionId, {
+        sourceMessageId: "chat-still-stopping",
+        content: "keep this queued too",
+      });
+      expect(runtime.runInputs).toHaveLength(1);
+
+      runtime.status = "idle";
+      runtime.immediateTerminal = true;
+      runtime.terminalEvent = { type: "done", finalText: "resumed" };
+      await host.enqueueMessage(sessionId, {
+        sourceMessageId: "chat-after-idle",
+        content: "resume queue",
+      });
+      await waitFor(() => expect(runtime.runInputs).toHaveLength(2));
+      expect(runtime.runInputs[1].input).toBe("wait until Codex is idle");
+    } finally {
       await host.stop();
     }
   });

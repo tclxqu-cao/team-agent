@@ -26,6 +26,7 @@ export interface DurableQueuedMessageLike extends UserMessageLike {
   agentName?: string;
   images?: string[];
   queueItemId?: string;
+  isSteered?: boolean;
 }
 
 export interface MixedQueueStateLike<T extends DurableQueueItemLike> {
@@ -53,6 +54,21 @@ export function hideQueuedGoalMessages<T extends { id: string }>(
   );
   if (queuedMessageIds.size === 0) return messages;
   return messages.filter((message) => !queuedMessageIds.has(message.id));
+}
+
+export function markDurableMessageSteered<T extends DurableQueuedMessageLike>(
+  messages: T[],
+  messageId: string,
+): T[] {
+  return messages.map((message) => message.id === messageId
+    ? {
+        ...message,
+        isQueued: false,
+        isSteered: true,
+        queueItemId: undefined,
+        sendState: undefined,
+      }
+    : message);
 }
 
 export function reconcileDurableQueuedMessages<T extends DurableQueuedMessageLike>(

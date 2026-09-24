@@ -8,7 +8,7 @@ import {
   type SessionToolResultBody,
   type SessionToolResultRef,
 } from "@agent/core";
-import { ArrowDownToLine, Check, Copy, CornerUpRight, FileText, GripVertical, LoaderCircle, Pencil, Play, RefreshCw, Square, Target, Trash2, Volume2 } from "lucide-react";
+import { ArrowDownToLine, Check, Copy, CornerUpRight, FileText, GripVertical, LoaderCircle, Pencil, Play, RefreshCw, Square, Target, Trash2, Unplug, Volume2 } from "lucide-react";
 import AgentBrandIcon from "./AgentBrandIcon";
 import MermaidBlock from "./MermaidBlock";
 import StructuredAgentMessage from "./StructuredAgentMessage";
@@ -75,6 +75,7 @@ import {
   findLatestPendingUserMessageId,
   findLatestUnqueuedUserMessageId,
   hideQueuedGoalMessages,
+  markDurableMessageSteered,
   moveQueuedMessage,
   projectSessionGoals,
   reconcileDurableQueuedMessages,
@@ -825,6 +826,7 @@ export default function ChatView({
     setPermissionMode(normalizePermissionMode(sessionSummary?.permissionMode));
   }, [isNativeRuntime, selectedSessionId, sessionSummary?.permissionMode]);
   const [error, setError] = useState<string | null>(null);
+  const [cancellationTimeoutSessionId, setCancellationTimeoutSessionId] = useState<string | null>(null);
   const [sessionLoadError, setSessionLoadError] = useState<string | null>(null);
   const [sessionReloadGeneration, setSessionReloadGeneration] = useState(0);
   const [attachedFiles, setAttachedFiles] = useState<File[]>([]);
@@ -1295,6 +1297,7 @@ export default function ChatView({
   useEffect(() => {
     setIsForkingSession(false);
     setCodexReleaseState("idle");
+    setCancellationTimeoutSessionId(null);
     setPreviewedMessageImage(null);
   }, [selectedSessionId]);
 
@@ -2292,6 +2295,10 @@ export default function ChatView({
     }
     switch (event.type) {
       case "run_admitted":
+        if (eventSid && cancellationTimeoutSessionId === eventSid) {
+          setCancellationTimeoutSessionId(null);
+          if (isViewed) setError(null);
+        }
         if (eventSid) {
           pendingNativeSendPayloadRef.current.delete(eventSid);
           const currentRecovery = findOccupiedRecovery(occupiedRecoveriesRef.current, eventSid);
@@ -2561,6 +2568,10 @@ export default function ChatView({
         }
         break;
       case "done":
+        if (eventSid && cancellationTimeoutSessionId === eventSid) {
+          setCancellationTimeoutSessionId(null);
+          if (isViewed) setError(null);
+        }
         if (eventSid && !isAnchoredView) {
           const durationMs = validCompletionDurationMs(event.durationMs);
           if (durationMs !== undefined) {
@@ -2675,6 +2686,7 @@ export default function ChatView({
           && eventSid.startsWith("runtime:")
           && event.code !== "SESSION_OCCUPIED"
           && event.code !== "SESSION_ALREADY_RUNNING"
+          && event.code !== "CANCEL_CONFIRMATION_TIMEOUT"
           && !isAnchoredView
         ) {
           const failedMessages = useAgentStore.getState().getMessagesForSession(eventSid);
@@ -2769,7 +2781,18 @@ export default function ChatView({
             setError(null);
           } else if (event.code !== "SESSION_OCCUPIED") {
             setError(event.message ?? "Unknown error");
-            if (eventSid) updatePendingSendState(eventSid, "failed");
+            setCancellationTimeoutSessionId(
+              event.code === "CANCEL_CONFIRMATION_TIMEOUT" ? eventSid ?? null : null,
+            );
+            if (eventSid && event.code === "CANCEL_CONFIRMATION_TIMEOUT") {
+              pendingNativeSendPayloadRef.current.delete(eventSid);
+              if (preserveNativeImageDraftSessionRef.current === eventSid) {
+                preserveNativeImageDraftSessionRef.current = null;
+              }
+            }
+            if (eventSid && event.code !== "CANCEL_CONFIRMATION_TIMEOUT") {
+              updatePendingSendState(eventSid, "failed");
+            }
           }
         }
         if (!event._preserveActiveRun) {
@@ -2792,6 +2815,10 @@ export default function ChatView({
         }
         break;
       case "turn_aborted":
+        if (eventSid && cancellationTimeoutSessionId === eventSid) {
+          setCancellationTimeoutSessionId(null);
+          if (isViewed) setError(null);
+        }
         clearRuntimeProgress(eventSid);
         if (runningSessionRef.current === eventSid) runningSessionRef.current = null;
         if (useAgentStore.getState().runningSessionId === eventSid) setRunningSession(null);
@@ -2849,6 +2876,7 @@ export default function ChatView({
       setGoalState((current) => ({ ...current, active: null, queued: [] }));
       setAgentActivity("idle");
       setError(null);
+      setCancellationTimeoutSessionId(null);
       setCodexReleaseState("released");
     } catch (error) {
       setCodexReleaseState("idle");
@@ -2936,11 +2964,15 @@ export default function ChatView({
     abortRef.current = true;
     sessionLoadGenerationRef.current += 1;
     if (window.agentApi) {
-      void window.agentApi.abort(viewSessionId || undefined);
+      void window.agentApi.abort(viewSessionId || undefined).catch((abortError) => {
+        setError(abortError instanceof Error ? abortError.message : "停止执行失败");
+      });
     }
-    runningSessionRef.current = null;
-    setRunningSession(null);
-    runningSubIdsRef.current.clear();
+    if (composerAgentType !== "codex") {
+      runningSessionRef.current = null;
+      setRunningSession(null);
+      runningSubIdsRef.current.clear();
+    }
   };
 
   /**
@@ -2955,8 +2987,14 @@ export default function ChatView({
     if (!msg || !msg.isQueued) return;
     try {
       if (msg.queueItemId) {
+        const state = await window.agentApi.steerSessionMessage(targetSessionId, msg.queueItemId);
+        updateMessage(
+          msgId,
+          (current) => markDurableMessageSteered([current], msgId)[0],
+          targetSessionId,
+        );
         applySessionQueueState(
-          await window.agentApi.steerSessionMessage(targetSessionId, msg.queueItemId),
+          state,
           targetSessionId,
         );
       } else {
@@ -3234,7 +3272,7 @@ export default function ChatView({
 
     void interruptSpeech(window.agentApi, stopSpeaking);
 
-    setError(null);
+    if (cancellationTimeoutSessionId !== viewSessionId) setError(null);
 
     const userMsg = submission.text;
     const clearSubmittedComposer = () => {
@@ -4441,9 +4479,35 @@ export default function ChatView({
             fontFamily: "var(--font-mono)",
             display: "flex",
             alignItems: "center",
+            flexWrap: "wrap",
             gap: 10,
           }}>
             <span style={{ flex: 1, minWidth: 0 }}>{sessionLoadError || error}</span>
+            {!sessionLoadError && cancellationTimeoutSessionId === viewSessionId && (
+              <div style={{ display: "inline-flex", gap: 6, flexShrink: 0 }}>
+                <button
+                  type="button"
+                  onClick={handleAbort}
+                  aria-label="再次停止"
+                  title="再次停止"
+                  className="ui-icon-button"
+                >
+                  <Square size={14} fill="currentColor" aria-hidden="true" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { void handleCodexRelease(); }}
+                  aria-label="释放会话"
+                  title="释放会话"
+                  className="ui-icon-button"
+                  disabled={codexReleaseState !== "idle"}
+                >
+                  {codexReleaseState === "releasing"
+                    ? <LoaderCircle size={14} className="spin" aria-hidden="true" />
+                    : <Unplug size={14} aria-hidden="true" />}
+                </button>
+              </div>
+            )}
             {sessionLoadError && (
               <button
                 type="button"

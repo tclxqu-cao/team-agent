@@ -3,6 +3,7 @@ import {
   findLatestPendingUserMessageId,
   findLatestUnqueuedUserMessageId,
   hideQueuedGoalMessages,
+  markDurableMessageSteered,
   moveQueuedMessage,
   projectSessionGoals,
   queuedSessionMessages,
@@ -98,6 +99,37 @@ describe("hideQueuedGoalMessages", () => {
 
     expect(hideQueuedGoalMessages(messages, [{}])).toBe(messages);
     expect(hideQueuedGoalMessages(messages, [{ sourceMessageId: "missing" }])).toEqual(messages);
+  });
+});
+
+describe("markDurableMessageSteered", () => {
+  it("keeps an accepted durable steer visible as ordinary chat history", () => {
+    const unrelated = { id: "history", role: "assistant", content: "working", timestamp: 1 };
+    const queued = {
+      id: "source-1",
+      role: "user",
+      content: "guide the active turn",
+      timestamp: 2,
+      isQueued: true,
+      queueItemId: "queue-1",
+      sendState: "pending" as const,
+    };
+
+    const result = markDurableMessageSteered([unrelated, queued], queued.id);
+
+    expect(result[0]).toBe(unrelated);
+    expect(result[1]).toEqual({
+      ...queued,
+      isQueued: false,
+      isSteered: true,
+      queueItemId: undefined,
+      sendState: undefined,
+    });
+    expect(reconcileDurableQueuedMessages(result, {
+      active: null,
+      queued: [],
+      history: [],
+    })).toEqual(result);
   });
 });
 
