@@ -14,6 +14,7 @@ interface PointerSample {
   isPrimary: boolean;
   clientX: number;
   clientY: number;
+  viewportWidth: number;
   interactive?: boolean;
 }
 
@@ -42,6 +43,8 @@ const INTERACTIVE_SELECTOR = [
   "[data-tab-swipe-ignore]",
 ].join(",");
 
+export const TAB_SWIPE_EDGE_WIDTH_PX = 24;
+
 export function isParentTabSwipeInteractiveTarget(target: EventTarget | null): boolean {
   if (!target || typeof (target as Element).closest !== "function") return false;
   return Boolean((target as Element).closest(INTERACTIVE_SELECTOR));
@@ -58,6 +61,9 @@ export function createParentTabSwipeGesture(
   return {
     pointerDown(sample) {
       if (sample.pointerType !== "touch" || !sample.isPrimary || sample.interactive) return;
+      const startsAtViewportEdge = sample.clientX <= TAB_SWIPE_EDGE_WIDTH_PX
+        || sample.clientX >= sample.viewportWidth - TAB_SWIPE_EDGE_WIDTH_PX;
+      if (!startsAtViewportEdge) return;
       active = {
         pointerId: sample.pointerId,
         startX: sample.clientX,
@@ -122,6 +128,7 @@ export function installParentTabSwipeBridge(): () => void {
     isPrimary: event.isPrimary,
     clientX: event.clientX,
     clientY: event.clientY,
+    viewportWidth: window.innerWidth,
   });
   const onPointerDown = (event: PointerEvent) => {
     gesture.pointerDown({
