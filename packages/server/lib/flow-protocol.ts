@@ -1,9 +1,10 @@
 import { timingSafeEqual } from "node:crypto";
-import { ToolRegistry, registerBuiltinTools, type AgentEvent } from "@agent/core";
+import type { AgentEvent } from "@agent/core";
 import { agentHost } from "../app/api/agent-host";
 import { businessCatalog } from "./business-catalog";
 import { sharedSettings } from "./shared-settings";
-import { PublicWikiQueryTool, assertPublicWikiRoot, publicWikiRoot } from "./portfolio-content-agent";
+import { toolExecutionPolicies } from "./tool-execution-policies";
+import { runtimeToolRegistry } from "./runtime-tool-catalog";
 
 export const FLOW_PROTOCOL_VERSION = "1";
 const MAX_IDS = 200;
@@ -20,6 +21,7 @@ export interface FlowRunSelection {
   toolIds?: string[];
   mcpServerIds?: string[];
   memoryEnabled?: boolean;
+  toolPolicyId?: string;
 }
 
 export interface FlowRunRequest {
@@ -81,6 +83,8 @@ export function flowErrorResponse(error: unknown): Response {
     SKILL_NOT_FOUND: 404,
     MODEL_PROFILE_NOT_FOUND: 404,
     SKILL_NOT_ALLOWED: 422,
+    TOOL_POLICY_NOT_FOUND: 404,
+    TOOL_POLICY_DISABLED: 422,
   };
   if (sourceCode in capabilityStatuses) {
     return Response.json({ error: message, code: "INVALID_CAPABILITY" }, {
@@ -101,11 +105,7 @@ export async function flowCatalog() {
     description?: string;
     enabled?: boolean;
   }>;
-  const toolRegistry = new ToolRegistry();
-  registerBuiltinTools(toolRegistry);
-  toolRegistry.register(new PublicWikiQueryTool(await assertPublicWikiRoot(publicWikiRoot())));
-  for (const tool of agentHost.getBuilder().getToolRegistry().getAll()) toolRegistry.register(tool);
-  const tools = toolRegistry.getAll();
+  const tools = runtimeToolRegistry().getAll();
   const mcpServers = await catalog.mcp.listAll();
   return {
     protocolVersion: FLOW_PROTOCOL_VERSION,
@@ -131,6 +131,7 @@ export async function flowCatalog() {
       name: server.name || server.id,
       status: "available",
     })),
+    toolPolicies: await toolExecutionPolicies().summaries(),
   };
 }
 
@@ -147,6 +148,7 @@ export function parseFlowRunRequest(value: unknown): FlowRunRequest {
   const rawSelection = body.selection === undefined ? {} : record(body.selection, "selection");
   const selection: FlowRunSelection = {};
   selection.modelId = optionalString(rawSelection.modelId, "selection.modelId");
+  selection.toolPolicyId = optionalString(rawSelection.toolPolicyId, "selection.toolPolicyId");
   for (const [wireName, targetName] of [
     ["skillIds", "skillIds"],
     ["activatedSkillIds", "activatedSkillIds"],
@@ -188,6 +190,7 @@ export async function validateFlowRunRequest(request: FlowRunRequest): Promise<v
   assertKnown(request.selection.activatedSkillIds, catalog.skills, "activated Skill");
   assertKnown(request.selection.toolIds, catalog.tools, "Tool");
   assertKnown(request.selection.mcpServerIds, catalog.mcpServers, "MCP server");
+  assertKnown(request.selection.toolPolicyId ? [request.selection.toolPolicyId] : undefined, catalog.toolPolicies, "tool policy");
 }
 
 export function registerFlowRun(runId: string, sessionId: string): void {

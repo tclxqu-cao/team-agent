@@ -11,8 +11,7 @@ import { serverLogger } from "../../../../lib/global-logger";
 import { ensurePushHook } from "../../../../lib/push-hook";
 import { businessCatalog } from "../../../../lib/business-catalog";
 import { sharedSettings } from "../../../../lib/shared-settings";
-import { ensurePortfolioContentProject } from "../../../../lib/portfolio-content-agent";
-import { loadPortfolioSkills } from "../../../../lib/portfolio-skill-catalog";
+import { toolExecutionPolicies } from "../../../../lib/tool-execution-policies";
 
 export async function POST(request: Request) {
   try {
@@ -34,6 +33,7 @@ export async function POST(request: Request) {
       reasoningEffort?: "off" | "low" | "medium" | "high";
       maxIterations?: number;
       maxTokens?: number;
+      toolPolicyId?: string;
       nativeModel?: { id: string; providerID?: string };
       nativeReasoningEffort?: "low" | "medium" | "high" | "xhigh" | "max";
     };
@@ -97,18 +97,14 @@ export async function POST(request: Request) {
     const sessionStore = agentHost.getSessionStore();
     const limits = normalizeCustomerAgentRunOptions(body);
     const selectedAgentId = body.agentId ?? (body.agentIds?.length === 1 ? body.agentIds[0] : undefined);
-    let defaultProjectId: string | undefined;
-    const portfolioSkills = new Map<string, SkillDefinition>();
-    if (body.skillName?.startsWith("portfolio-")) {
-      const discovered = await loadPortfolioSkills();
-      for (const skill of discovered) portfolioSkills.set(skill.name, skill);
-      defaultProjectId = (await ensurePortfolioContentProject(agentHost.getProjectStore())).id;
-    }
     const catalog = businessCatalog();
     const useCase = new StartAgentRunUseCase(sessionStore, {
       getAgent: (id) => catalog.agents.get(id),
-      getSkill: async (name) => portfolioSkills.get(name) ?? await catalog.skills.get(name),
+      getSkill: async (name) => catalog.skills.get(name)
+        ?? (await catalog.call("listSkills", []) as SkillDefinition[]).find((skill) => skill.name === name)
+        ?? null,
       hasModelProfile: (id) => sharedSettings().read().profiles.some((profile) => profile.id === id),
+      getToolExecutionPolicy: (id) => toolExecutionPolicies().get(id),
     }, {
       assertAvailable: (sessionId) => {
         if (agentHost.isSessionRunning(sessionId)) throw new CustomerAgentRunConflictError(sessionId);
@@ -125,6 +121,7 @@ export async function POST(request: Request) {
           ...(body.agentIds ? { agentIds: body.agentIds } : run.agent ? { agentIds: [run.agent.id] } : {}),
           ...(run.skill ? { activatedSkills: [run.skill.name] } : {}),
           ...(Object.keys(run.context).length ? { context: run.context } : {}),
+          toolExecutionPolicy: run.toolExecutionPolicy,
         });
         admitted.completion.catch((err) => {
           serverLogger().error("agent run error", err, { sessionId: run.sessionId });
@@ -145,8 +142,9 @@ export async function POST(request: Request) {
       ...(body.profileId ? { modelProfileId: body.profileId } : {}),
       ...(body.images?.length ? { images: body.images } : {}),
       ...(body.context ? { context: body.context } : {}),
+      ...(body.toolPolicyId ? { capabilities: { toolPolicyId: body.toolPolicyId } } : {}),
       session: {
-        ...(body.projectId || defaultProjectId ? { projectId: body.projectId ?? defaultProjectId } : {}),
+        ...(body.projectId ? { projectId: body.projectId } : {}),
         ...(body.title ? { title: body.title } : {}),
         ...(body.metadata ? { metadata: body.metadata } : {}),
       },
@@ -168,8 +166,9 @@ export async function POST(request: Request) {
     const applicationStatus = applicationCode === "AGENT_NOT_FOUND"
       || applicationCode === "SKILL_NOT_FOUND"
       || applicationCode === "MODEL_PROFILE_NOT_FOUND"
+      || applicationCode === "TOOL_POLICY_NOT_FOUND"
       ? 404
-      : applicationCode === "SKILL_NOT_ALLOWED"
+      : applicationCode === "SKILL_NOT_ALLOWED" || applicationCode === "TOOL_POLICY_DISABLED"
         ? 422
         : applicationCode
           ? 400

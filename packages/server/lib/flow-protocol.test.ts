@@ -55,6 +55,13 @@ describe("parseFlowRunRequest", () => {
     });
   });
 
+  it("preserves the selected server-owned tool policy ID", () => {
+    expect(parseFlowRunRequest({
+      input: "hello",
+      selection: { toolPolicyId: "local-readonly" },
+    }).selection.toolPolicyId).toBe("local-readonly");
+  });
+
   it("rejects duplicate IDs and activated Skills outside the allowlist", () => {
     expect(() => parseFlowRunRequest({ input: "x", selection: { toolIds: ["read_file", "read_file"] } }))
       .toThrow("duplicate");

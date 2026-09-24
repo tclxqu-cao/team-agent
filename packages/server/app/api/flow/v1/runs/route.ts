@@ -9,6 +9,7 @@ import {
   validateFlowRunRequest,
 } from "../../../../../lib/flow-protocol";
 import { sharedSettings } from "../../../../../lib/shared-settings";
+import { toolExecutionPolicies } from "../../../../../lib/tool-execution-policies";
 
 export async function POST(request: Request) {
   try {
@@ -20,6 +21,7 @@ export async function POST(request: Request) {
       getAgent: (id) => catalog.agents.get(id),
       getSkill: (name) => catalog.skills.get(name),
       hasModelProfile: (id) => sharedSettings().read().profiles.some((profile) => profile.id === id),
+      getToolExecutionPolicy: (id) => toolExecutionPolicies().get(id),
     }, {
       assertAvailable: (sessionId) => {
         if (agentHost.isSessionRunning(sessionId)) throw new CustomerAgentRunConflictError(sessionId);
@@ -33,6 +35,7 @@ export async function POST(request: Request) {
           activatedSkills: run.capabilities.activatedSkills,
           enabledMCPServers: run.capabilities.enabledMCPServers,
           memoryEnabled: run.capabilities.memoryEnabled,
+          toolExecutionPolicy: run.toolExecutionPolicy,
           instructions: body.instructions,
           ...(Object.keys(run.context).length ? { context: run.context } : {}),
         });
@@ -57,6 +60,7 @@ export async function POST(request: Request) {
         activatedSkills: selection.activatedSkillIds,
         enabledMCPServers: selection.mcpServerIds,
         memoryEnabled: selection.memoryEnabled,
+        toolPolicyId: selection.toolPolicyId,
       },
       session: {
         title: `Flow: ${body.input.slice(0, 48)}`,

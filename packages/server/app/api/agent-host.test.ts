@@ -32,7 +32,6 @@ vi.mock("../../lib/computer-use", () => ({
 
 import { agentHost } from "./agent-host";
 import { businessCatalog } from "../../lib/business-catalog";
-import { PORTFOLIO_CONTENT_PROJECT_ID } from "../../lib/portfolio-content-agent";
 import { POST as runAgent } from "./agent/run/route";
 import { POST as registerRemoteTools } from "./remote-tools/register/route";
 import { GET as listSessions, POST as createSession } from "./sessions/route";
@@ -155,21 +154,33 @@ describe("agentHost singleton", () => {
     } finally { stop(); await catalog.agents.delete(first.id); await catalog.agents.delete(second.id); }
   });
 
-  it("starts an explicit Portfolio Skill through the persistent shared run contract", async () => {
-    process.env.PORTFOLIO_PUBLIC_WIKI_ROOT = isolatedAgentData.directory;
+  it("starts an explicitly configured Skill through the persistent shared run contract", async () => {
     process.env.AGENT_WEB_ROOTS = realpathSync(isolatedAgentData.directory);
     const catalog = businessCatalog();
     const timestamp = new Date().toISOString();
+    await agentHost.getProjectStore().create({
+      id: "configured-project",
+      name: "Configured Project",
+      description: isolatedAgentData.directory,
+      created: timestamp,
+      updated: timestamp,
+    });
+    await catalog.call("saveSkill", [{
+      name: "configured-skill",
+      description: "Configured behavior",
+      triggers: ["/configured"],
+      prompt: "Return configured output",
+    }]);
     await catalog.agents.create({
-      id: "portfolio-content-agent",
-      name: "Portfolio Content Agent",
-      description: "Public portfolio content",
-      systemPrompt: "Use public content only",
+      id: "configured-agent",
+      name: "Configured Agent",
+      description: "Runtime-configured behavior",
+      systemPrompt: "Use the configured capabilities",
       contextPlaceholders: [],
       capabilities: {
         profileId: "",
-        enabledTools: ["public_wiki_query"],
-        enabledSkills: ["portfolio-works"],
+        enabledTools: ["skill_load"],
+        enabledSkills: ["configured-skill"],
         enabledMCPServers: [],
       },
       maxIterations: 6,
@@ -179,7 +190,7 @@ describe("agentHost singleton", () => {
     });
     const provider = new CapturingModelProvider();
     provider.eventBatches = [[
-      { type: "text_chunk", text: '{"schemaVersion":1,"skill":"portfolio-works","title":"Works","blocks":[{"type":"text","text":"ok"}]}' },
+      { type: "text_chunk", text: "configured response" },
       { type: "text_done" },
     ]];
     agentHost.setBuilder(new AgentBuilder().withModelProvider(provider).withSemanticSkillMatching(false));
@@ -187,12 +198,13 @@ describe("agentHost singleton", () => {
     const response = await runAgent(new Request("http://test/api/agent/run", {
       method: "POST",
       body: JSON.stringify({
-        input: "show projects",
-        agentId: "portfolio-content-agent",
-        skillName: "portfolio-works",
-        title: "Portfolio: works",
-        metadata: { flowId: "homepage-main" },
-        context: { intent: "works" },
+        input: "/configured",
+        agentId: "configured-agent",
+        skillName: "configured-skill",
+        projectId: "configured-project",
+        title: "Configured run",
+        metadata: { callerId: "test-flow" },
+        context: { intent: "configured" },
         source: "flow-studio",
       }),
     }));
@@ -205,33 +217,30 @@ describe("agentHost singleton", () => {
     }
     expect(agentHost.isSessionRunning(started.sessionId)).toBe(false);
     await expect(agentHost.getSessionStore().get(started.sessionId)).resolves.toMatchObject({
-      projectId: PORTFOLIO_CONTENT_PROJECT_ID,
-      title: "Portfolio: works",
+      projectId: "configured-project",
+      title: "Configured run",
       status: "completed",
       metadata: {
         source: "flow-studio",
-        flowId: "homepage-main",
-        agentId: "portfolio-content-agent",
-        skillName: "portfolio-works",
+        callerId: "test-flow",
+        agentId: "configured-agent",
+        skillName: "configured-skill",
       },
       messages: [
-        { role: "user", content: "show projects" },
-        { role: "assistant", content: expect.stringContaining("portfolio-works") },
+        { role: "user", content: "/configured" },
+        { role: "assistant", content: "configured response" },
       ],
     });
-    await expect(agentHost.getProjectStore().get(PORTFOLIO_CONTENT_PROJECT_ID)).resolves.toMatchObject({
-      name: "portfolio-public",
-      description: realpathSync(isolatedAgentData.directory),
-    });
     expect(provider.messages.find((message) => message.role === "system")?.content)
-      .toContain("## Skill: portfolio-works");
+      .toContain("## Skill: configured-skill");
   });
 
   afterEach(async () => {
     process.env = { ...originalEnv };
-    await businessCatalog().agents.delete("portfolio-content-agent");
+    await businessCatalog().agents.delete("configured-agent");
+    await businessCatalog().skills.delete("configured-skill");
+    await agentHost.getProjectStore().delete("configured-project");
     await agentHost.getProjectStore().delete("agent-host-cwd-test");
-    await agentHost.getProjectStore().delete(PORTFOLIO_CONTENT_PROJECT_ID);
   });
 
   it("stores the shared AgentHost on globalThis so answer routes can see pending questions from run routes", () => {

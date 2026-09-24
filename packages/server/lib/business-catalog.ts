@@ -9,7 +9,7 @@ import {
 import { COMPUTER_USE_SKILL } from "@agent/computer-use";
 import { getServerBaseDir } from "./server-data-dir";
 import { sharedSettings } from "./shared-settings";
-import { portfolioSkillsDirectory, PORTFOLIO_SKILL_PREFIX } from "./portfolio-skill-catalog";
+import { configuredSkillsDirectory } from "./configured-skill-catalog";
 
 /** Explicit method table: no arbitrary method/property invocation over HTTP. */
 export class BusinessCatalog {
@@ -67,8 +67,8 @@ export class BusinessCatalog {
         const discovered = await loader.loadAll(sharedSettings().read().workingDirectory);
         const all = new Map(discovered.map((s) => [s.name, { ...s, enabled: true }]));
         for (const s of stored) all.set(s.name, { ...all.get(s.name), ...s, enabled: (s as SkillDefinition & { enabled?: boolean }).enabled !== false });
-        const portfolio = await loader.loadFromDirectory(portfolioSkillsDirectory(), "project");
-        for (const skill of portfolio.filter((item) => item.name.startsWith(PORTFOLIO_SKILL_PREFIX))) {
+        const additional = await loader.loadFromDirectory(configuredSkillsDirectory(), "project");
+        for (const skill of additional) {
           const current = all.get(skill.name);
           all.set(skill.name, { ...current, ...skill, enabled: current?.enabled !== false });
         }
@@ -83,7 +83,7 @@ export class BusinessCatalog {
           const loader = new SkillLoader();
           const discovered = [
             ...await loader.loadAll(sharedSettings().read().workingDirectory),
-            ...await loader.loadFromDirectory(portfolioSkillsDirectory(), "project"),
+            ...await loader.loadFromDirectory(configuredSkillsDirectory(), "project"),
           ];
           const meta = discovered.find((s) => s.name === name);
           if (!meta) throw new Error("Skill not found");

@@ -1,8 +1,7 @@
-import { AgentBuilder, MCPManager, ToolRegistry, LSPManager, LspDiagnosticsTool, LspHoverTool, LspDefinitionTool, LspReferencesTool, type IMemoryStore, type SettingsData } from "@agent/core";
+import { AgentBuilder, MCPManager, SkillLoader, ToolRegistry, LSPManager, LspDiagnosticsTool, LspHoverTool, LspDefinitionTool, LspReferencesTool, type IMemoryStore, type SettingsData, type ToolExecutionPolicy } from "@agent/core";
 import { businessCatalog } from "./business-catalog";
 import type { SharedSettings } from "./shared-settings";
-import { PublicWikiQueryTool, assertPublicWikiRoot, publicWikiRoot } from "./portfolio-content-agent";
-import { portfolioSkillsDirectory, PORTFOLIO_SKILL_PREFIX } from "./portfolio-skill-catalog";
+import { configuredSkillsDirectory } from "./configured-skill-catalog";
 
 export interface SharedRunOptions {
   model?: {
@@ -31,6 +30,8 @@ export interface SharedRunOptions {
   context?: Record<string, unknown>;
   /** Trusted run instructions supplied by an authenticated Flow provider. */
   instructions?: string;
+  /** Immutable server-owned execution policy resolved before run admission. */
+  toolExecutionPolicy?: ToolExecutionPolicy;
   /** "goal" = 目标模式自动续跑：输入以隐藏 __goal__ 消息持久化，不参与自动标题。 */
   source?: "user" | "goal";
 }
@@ -111,15 +112,22 @@ export async function configureSharedRun(builder: AgentBuilder, settings: Shared
     .withMaxIterations(options.maxIterations ?? (definition?.maxIterations || settings.maxIterations))
     .withMaxTokens(options.maxTokens ?? settings.contextWindow * 1000)
     .withReasoningEffort(options.reasoningEffort ?? settings.reasoningEffort ?? "off");
+  builder.withToolExecutionPolicy(options.toolExecutionPolicy);
   builder.withMaxOutputTokens(model.maxOutputTokens);
   const effectiveTools = effectiveCapabilityPolicy(definition?.capabilities.enabledTools, options.enabledTools);
   const effectiveSkills = effectiveCapabilityPolicy(definition?.capabilities.enabledSkills, options.enabledSkills);
   const effectiveMCPServers = effectiveCapabilityPolicy(definition?.capabilities.enabledMCPServers, options.enabledMCPServers);
+  const additionalSkillsDirectory = configuredSkillsDirectory();
+  const additionalSkillNames = new Set(
+    (await new SkillLoader()
+      .loadFromDirectory(additionalSkillsDirectory, "project"))
+      .map((skill) => skill.name),
+  );
   const fileBackedSkillNames = new Set(
     (effectiveSkills ?? definition?.capabilities.enabledSkills ?? [])
-      .filter((name) => name.startsWith(PORTFOLIO_SKILL_PREFIX)),
+      .filter((name) => additionalSkillNames.has(name)),
   );
-  if (fileBackedSkillNames.size > 0) builder.withSkillsDirectory(portfolioSkillsDirectory());
+  if (fileBackedSkillNames.size > 0) builder.withSkillsDirectory(additionalSkillsDirectory);
   if (definition) {
     let prompt = definition.systemPrompt;
     for (const field of definition.contextPlaceholders) prompt = prompt.replaceAll(`{{${field.key}}}`, field.defaultValue);
@@ -142,9 +150,6 @@ export async function configureSharedRun(builder: AgentBuilder, settings: Shared
         : "",
     ].filter(Boolean).join("\n\n");
     if (prompt) builder.withSystemPrompt(prompt);
-  }
-  if ((effectiveTools ?? definition?.capabilities.enabledTools ?? []).includes("public_wiki_query")) {
-    builder.withTool(new PublicWikiQueryTool(await assertPublicWikiRoot(publicWikiRoot())));
   }
   builder.withActivatedSkills(options.activatedSkills ?? []);
   const tools = new ToolRegistry();
