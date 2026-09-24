@@ -1,0 +1,19 @@
+docs/superpowers/specs/2026-09-24-desktop-file-preview-toolbar-clickability-design.md
+  s_15246d8362847e::t_324b29148f42b5 1-41
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "295de6fa720e3d9c08cfbb228983dff41509fbdf",
+  "prompts": {},
+  "sessions": {
+    "s_15246d8362847e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0d1fa-6134-7642-8738-73aedba85c2f",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
