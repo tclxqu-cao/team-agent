@@ -1,0 +1,74 @@
+packages/desktop/renderer/components/ChatComposerStyle.test.ts
+  s_36ebecee77b584::t_dc991ebd4efbec 133-145
+packages/desktop/renderer/lib/queued-message-order.test.ts
+  s_36ebecee77b584::t_dc991ebd4efbec 6,105-132
+  s_36ebecee77b584::t_06a1073201909b 133-135
+packages/native-runtime/src/agent-runtime/native-runtime-broker.ts
+  s_254b19b8c50af0::t_39e1d8883a29d5 1435-1440,1692
+  s_254b19b8c50af0::t_74fb7a8bf548f7 1148
+  s_36ebecee77b584::t_b48a465cca35d1 1646-1649
+  s_254b19b8c50af0::t_e5b3d5d1c0eec8 1748-1750
+  s_254b19b8c50af0::t_dc6267820b7cc0 1496,1512,1533,1837-1838
+  s_36ebecee77b584::t_76c2eb76ef1df1 1795-1805,1839-1849,1855
+packages/desktop/renderer/lib/runtime-capabilities.ts
+  s_36ebecee77b584::t_b48a465cca35d1 4
+packages/desktop/renderer/lib/runtime-capabilities.test.ts
+  s_36ebecee77b584::t_b48a465cca35d1 8
+docs/superpowers/plans/2026-09-24-codex-steering-and-interruption.md
+  s_254b19b8c50af0::t_a9436de71a379e 109-112,114-115,117-122,124-126,128-139,141-153,155-157,159-160,165
+  s_36ebecee77b584::t_6a894bf7d7f53f 31,45,61,65,69,73,93,97,101,105,208
+  s_36ebecee77b584::t_6b8ae75858341f 1-4,6-30,32-44,46-52,54,56-60,62-64,66-68,70-72,74,83-84,86,88-92,94-96,98-99,108,206-207,209-212,214-221
+  s_36ebecee77b584::t_46370b3d3397d3 177
+  s_36ebecee77b584::t_753b6def92baff 198
+  s_36ebecee77b584::t_781efdf4e57b47 5,166-176,178-197,199-201,203-205,213
+  s_36ebecee77b584::t_ec2cffc6305de5 53,55,75-76,81-82,85,87,100,102-104,106-107
+  s_36ebecee77b584::t_4dcd61a361f3d4 78-80
+  s_36ebecee77b584::t_dc991ebd4efbec 202
+  s_254b19b8c50af0::t_e47beb6e93c390 113,116,161,163-164
+  s_36ebecee77b584::t_3c101f26ed044d 77
+  s_254b19b8c50af0::t_b1ee3b88f54aed 123,127,140,154,158,162
+packages/desktop/renderer/lib/queued-message-order.ts
+  s_36ebecee77b584::t_46370b3d3397d3 29,59-71
+  s_36ebecee77b584::t_8f9d563c0d03c1 72-73
+packages/native-runtime/src/agent-runtime/native-runtime-broker.test.ts
+  s_254b19b8c50af0::t_11c30a3c10789e 1694
+  s_36ebecee77b584::t_6c0a4fcbc8b5d7 4,70,134-136,241,263-333,1721-1723
+  s_36ebecee77b584::t_851b4c9486e48f 1684-1687,1698,1719
+  s_254b19b8c50af0::t_a0ad115a634578 1675-1683,1688-1693,1695-1697,1699-1718,1720
+  s_36ebecee77b584::t_903db401cdbf6f 1724
+packages/desktop/renderer/components/ChatView.tsx
+  s_36ebecee77b584::t_753b6def92baff 78,2990-2995,2997
+  s_36ebecee77b584::t_c72aa18e3c152d 11,829,1300,2784-2792,2879,4482,4486-4510
+  s_254b19b8c50af0::t_2a7405d92a39eb 2689,2793-2795
+  s_36ebecee77b584::t_1be9a35a78be79 2298-2301,2571-2574,2818-2821,3275
+  s_36ebecee77b584::t_b48a465cca35d1 2967-2974
+packages/desktop/renderer/components/ChatHistoryStyle.test.ts
+  s_254b19b8c50af0::t_b2e372678a830f 37
+  s_36ebecee77b584::t_a3c305c764cf12 279-280,282-283
+  s_36ebecee77b584::t_b48a465cca35d1 266,270-271,273
+  s_254b19b8c50af0::t_9dd80820ceab3a 35-36,38,274-278,281
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "93e17a90cbfdaccfc9e49b515ad98d6efc0af085",
+  "prompts": {},
+  "sessions": {
+    "s_254b19b8c50af0": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0d318-973a-75f3-8d56-a17cc9f383d5",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_36ebecee77b584": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0d3e3-5dfc-7a21-9727-07c25d14637f",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
