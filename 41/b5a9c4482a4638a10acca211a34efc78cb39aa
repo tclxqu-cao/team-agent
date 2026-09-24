@@ -1,0 +1,157 @@
+packages/desktop/main/file-workspace-service.ts
+  s_772a18ceda45ec::t_fbd707cc381471 1-468
+packages/desktop/renderer/lib/electron-file-workspace-gateway.test.ts
+  s_772a18ceda45ec::t_d1dd747e60c72b 1-23
+packages/server/app/web/page.tsx
+  s_772a18ceda45ec::t_7540104c616e32 877
+  s_772a18ceda45ec::t_3dab0558250942 7,10,71,77-78,613,637
+  s_772a18ceda45ec::t_2ef30e21553336 72-76
+packages/server/app/web/fileDiff.ts
+  s_772a18ceda45ec::t_b31a266fd9b2c3 1
+packages/core/src/application/index.ts
+  s_772a18ceda45ec::t_bf6e7e6b2941a8 6
+packages/desktop/renderer/components/ChatHeaderActions.test.ts
+  s_772a18ceda45ec::t_7baf71b4ee5952 57-70
+packages/desktop/package.json
+  s_772a18ceda45ec::t_2c3e3465562e75 25
+  s_772a18ceda45ec::t_ee3367f810e7ec 32-33
+packages/core/src/application/file-workspace/index.ts
+  s_772a18ceda45ec::t_bf6e7e6b2941a8 1
+packages/desktop/renderer/lib/electron-file-workspace-gateway.ts
+  s_772a18ceda45ec::t_6db7ac57354867 1,5
+  s_772a18ceda45ec::t_d1dd747e60c72b 2-4,6-27
+packages/desktop/renderer/components/file-workspace/FileWorkspaceDrawer.tsx
+  s_772a18ceda45ec::t_2f9261bff81644 1,3-55,57-89
+  s_772a18ceda45ec::t_755f98f33d20dd 56
+  s_772a18ceda45ec::t_6db7ac57354867 2
+packages/server/app/web/FilePreview.test.ts
+  s_772a18ceda45ec::t_3dab0558250942 16-19
+packages/desktop/main/file-workspace-service.test.ts
+  s_772a18ceda45ec::t_4b71b45265c060 1-136
+packages/desktop/renderer/components/file-workspace/FileWorkspaceDrawer.test.tsx
+  s_772a18ceda45ec::t_6db7ac57354867 4
+  s_772a18ceda45ec::t_755f98f33d20dd 33-35
+  s_772a18ceda45ec::t_19cf3a476886d0 29,32
+  s_772a18ceda45ec::t_2f9261bff81644 1-3,5-28,30-31,36-51
+packages/server/app/web/FileTree.tsx
+  s_772a18ceda45ec::t_b31a266fd9b2c3 1
+packages/core/src/domain/file-workspace/entities.ts
+  s_772a18ceda45ec::t_bf6e7e6b2941a8 1-14,19-61
+  s_772a18ceda45ec::t_b31a266fd9b2c3 15-18
+packages/desktop/renderer/components/file-workspace/FilePreview.tsx
+  s_772a18ceda45ec::t_6db7ac57354867 14
+  s_772a18ceda45ec::t_2c5435cf0f5f29 74
+  s_772a18ceda45ec::t_b31a266fd9b2c3 1-13,15-73,75-1013
+packages/core/src/application/file-workspace/FileWorkspaceGateway.ts
+  s_772a18ceda45ec::t_bf6e7e6b2941a8 1,3-13,15-16
+  s_772a18ceda45ec::t_b31a266fd9b2c3 2,14
+packages/core/src/domain/file-workspace/index.ts
+  s_772a18ceda45ec::t_bf6e7e6b2941a8 1
+packages/desktop/renderer/lib/shared-service.test.ts
+  s_772a18ceda45ec::t_75d778cf624987 2-3,24-43
+  s_772a18ceda45ec::t_48e024b011729d 44
+docs/superpowers/plans/2026-09-24-desktop-file-artifact-session-status-parity.md
+  s_772a18ceda45ec::t_4fb9d58d05f431 257,261,265,269,273,289,293,297,301,305,318
+  s_772a18ceda45ec::t_897e770def4e85 172,187,191,200,204,223,227,231,235,239
+  s_772a18ceda45ec::t_2fe93c5569cd97 322,330
+  s_772a18ceda45ec::t_49440ee0f4a434 40,64,73,93
+  s_772a18ceda45ec::t_3015b246be937c 326
+  s_772a18ceda45ec::t_19cf3a476886d0 373
+  s_772a18ceda45ec::t_9633ed276a365c 410
+  s_772a18ceda45ec::t_2e64ed0896656c 334-347,349-356,358-370,372,374,376-389,391-393
+  s_772a18ceda45ec::t_0d2db1a2e0c3b9 1-39,41-63,65-72,74-92,94-115,117-119,121-134,136-138,140-147,149-151,153-171,173-186,188-190,192-199,201-203,205-222,224-226,228-230,232-234,236-238,240-256,258-260,262-264,266-268,270-272,274-288,290-292,294-296,298-300,302-304,306-317,319-321,323-325,327-329,331-333,394-395,397-409,411-432
+  s_772a18ceda45ec::t_ab25c4c145fbff 116,120,135,139,148,152
+  s_772a18ceda45ec::t_76cddcfa3e986f 348,357,371,375,390,396
+packages/desktop/renderer/styles/global.css
+  s_772a18ceda45ec::t_85ce15faf105ab 3497,3500,3504-3507
+  s_772a18ceda45ec::t_056b3eb036c23f 3524
+  s_772a18ceda45ec::t_19cf3a476886d0 3528
+  s_772a18ceda45ec::t_221681c7b5dd22 3545
+  s_0c843d4c57cd87::t_54fa4241e8855e 2434-2446
+  s_772a18ceda45ec::t_755f98f33d20dd 3513,3515,3554-3561,3563-3564
+  s_772a18ceda45ec::t_9e976c1e7f21df 1026-1030
+  s_772a18ceda45ec::t_ddde2df0335332 2447,3490-3496,3498-3499,3501-3503,3508-3512,3514,3516-3523,3525-3527,3529-3544,3546-3553,3562,3565
+  s_772a18ceda45ec::t_a22f62d5458d79 2448
+packages/desktop/main/index.ts
+  s_772a18ceda45ec::t_2c3e3465562e75 6,8-9,17-20,35
+  s_772a18ceda45ec::t_27cef07ebaa6bb 150-158,938-941,1249,1322
+packages/desktop/main/preload.ts
+  s_772a18ceda45ec::t_d1dd747e60c72b 205-211
+packages/desktop/renderer/lib/shared-service.ts
+  s_772a18ceda45ec::t_75d778cf624987 83-98
+packages/desktop/renderer/components/ChatHeaderActions.tsx
+  s_772a18ceda45ec::t_7baf71b4ee5952 1,14-15,31-32,66-75
+  s_bd20ce99e6a8be::t_4020035d342797 76-77
+packages/desktop/renderer/components/file-workspace/index.ts
+  s_772a18ceda45ec::t_2f9261bff81644 3-4
+  s_772a18ceda45ec::t_b31a266fd9b2c3 1-2,5-7
+packages/server/app/web/FilePreview.tsx
+  s_772a18ceda45ec::t_b31a266fd9b2c3 1-2
+packages/desktop/renderer/App.tsx
+  s_772a18ceda45ec::t_cc2afd37d78b99 73-77
+  s_772a18ceda45ec::t_9e976c1e7f21df 78,291-299,301-305,981,1100,1102-1114,1117-1122,1126-1127,1129-1130,1132,1369,1412,2000
+  s_772a18ceda45ec::t_0f491588382825 72,346-359,2097
+  s_772a18ceda45ec::t_d5e46bdd079563 1,45-48,71,337-345,360-363,2096,2098-2101,2168-2179
+  s_772a18ceda45ec::t_755f98f33d20dd 2056
+  s_772a18ceda45ec::t_5934c03101a195 2180-2181
+packages/server/app/web/fileTreeReveal.ts
+  s_772a18ceda45ec::t_b31a266fd9b2c3 1
+packages/core/src/index.ts
+  s_772a18ceda45ec::t_bf6e7e6b2941a8 26,67
+docs/superpowers/specs/2026-09-24-desktop-file-artifact-session-status-parity-design.md
+  s_772a18ceda45ec::t_2e64ed0896656c 118,120-122,165-167,175-176
+  s_772a18ceda45ec::t_19cf3a476886d0 119
+packages/desktop/renderer/global.d.ts
+  s_772a18ceda45ec::t_d1dd747e60c72b 2-5,298-299
+packages/desktop/renderer/components/file-workspace/FileTree.tsx
+  s_772a18ceda45ec::t_b31a266fd9b2c3 1-9,16-270,272-278,280-296,302-394,398-404
+  s_772a18ceda45ec::t_ddde2df0335332 271,279
+  s_772a18ceda45ec::t_221681c7b5dd22 297-301,395-397
+  s_772a18ceda45ec::t_6db7ac57354867 10-15
+packages/desktop/renderer/components/file-workspace/DesktopFileWorkspaceLayout.test.ts
+  s_772a18ceda45ec::t_85ce15faf105ab 30-38
+  s_772a18ceda45ec::t_755f98f33d20dd 1-18,20-24,26-29,39-44
+  s_772a18ceda45ec::t_056b3eb036c23f 19,25
+packages/server/app/web/FileTree.test.ts
+  s_772a18ceda45ec::t_3dab0558250942 4-7
+  s_772a18ceda45ec::t_221681c7b5dd22 30-34
+  s_772a18ceda45ec::t_189a237f3342c4 35
+bun.lock
+  s_772a18ceda45ec::t_1ac68751c7cfda 76,83-84
+packages/desktop/renderer/components/file-workspace/fileDiff.ts
+  s_772a18ceda45ec::t_be538d1e149d8f 1-59
+packages/desktop/renderer/components/file-workspace/fileTreeReveal.ts
+  s_772a18ceda45ec::t_b908f75e0fb862 1-38
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "41b5a9c4482a4638a10acca211a34efc78cb39aa",
+  "prompts": {},
+  "sessions": {
+    "s_0c843d4c57cd87": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ce6c-e085-7c01-a177-4997c9aeeaf4",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_772a18ceda45ec": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0d103-925b-7e50-9a65-cb02ff597fe5",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_bd20ce99e6a8be": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ce6b-091e-7092-a41f-005b854af272",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
