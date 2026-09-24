@@ -95,14 +95,17 @@ describe("Codex home and Windows occupancy", () => {
       source: "desktop",
       turns: [],
     };
+    const request = vi.fn(async (method: string) => {
+      if (method === "thread/list") return { data: [thread], nextCursor: null };
+      throw new Error(`unexpected request: ${method}`);
+    });
     const client = {
       onNotification: () => () => undefined,
       onExit: () => () => undefined,
       setServerRequestHandler: () => undefined,
-      request: async (method: string) => {
-        if (method === "thread/list") return { data: [thread], nextCursor: null };
-        throw new Error(`unexpected request: ${method}`);
-      },
+      request,
+      restart: async () => undefined,
+      dispose: async () => undefined,
     };
     const readMany = vi.fn(async (paths: Iterable<string>) => {
       expect([...paths]).toEqual([path]);
@@ -110,6 +113,7 @@ describe("Codex home and Windows occupancy", () => {
     });
     const adapter = new CodexRuntimeAdapter({
       client: client as never,
+      discoveryClient: client as never,
       platform: "win32",
       sessionRoot: "C:\\Users\\test\\.codex\\sessions",
       rolloutActivityReader: { readMany },
@@ -123,6 +127,10 @@ describe("Codex home and Windows occupancy", () => {
         canResume: expected.canResume,
       }),
     ]);
+    expect(request).toHaveBeenCalledWith("thread/list", expect.objectContaining({
+      sortKey: "recency_at",
+      sortDirection: "desc",
+    }));
   });
 });
 
@@ -146,7 +154,12 @@ describe("Codex project workspace index", () => {
         onNotification: (handler: typeof notify) => { notify = handler; return () => undefined; },
         onExit: () => () => undefined,
         setServerRequestHandler: () => undefined,
+        request: vi.fn(),
+      } as never,
+      discoveryClient: {
         request,
+        restart: async () => undefined,
+        dispose: async () => undefined,
       } as never,
     });
 
@@ -180,20 +193,26 @@ describe("Codex project workspace index", () => {
       turns: [],
       projectId: "project-1",
     };
+    const discoveryClient = {
+      request: async (method: string, params: Record<string, unknown>) => {
+        requests.push({ method, params });
+        if (method === "project/list") {
+          return { data: [{ id: "project-1", name: "Repo", roots: [{ path: root }], position: 0, updatedAt: 1 }], nextCursor: null };
+        }
+        if (method === "thread/list") return { data: [thread], nextCursor: null };
+        throw new Error(`unexpected request: ${method}`);
+      },
+      restart: async () => undefined,
+      dispose: async () => undefined,
+    };
     const adapter = new CodexRuntimeAdapter({
       client: {
         onNotification: () => () => undefined,
         onExit: () => () => undefined,
         setServerRequestHandler: () => undefined,
-        request: async (method: string, params: Record<string, unknown>) => {
-          requests.push({ method, params });
-          if (method === "project/list") {
-            return { data: [{ id: "project-1", name: "Repo", roots: [{ path: root }], position: 0, updatedAt: 1 }], nextCursor: null };
-          }
-          if (method === "thread/list") return { data: [thread], nextCursor: null };
-          throw new Error(`unexpected request: ${method}`);
-        },
+        request: vi.fn(),
       } as never,
+      discoveryClient: discoveryClient as never,
       sessionRoot: root,
       rolloutActivityReader: { readMany: async () => new Map() },
     });
@@ -204,6 +223,8 @@ describe("Codex project workspace index", () => {
     });
     expect(requests.find((entry) => entry.method === "thread/list")?.params).toMatchObject({
       projectId: "project-1",
+      sortKey: "recency_at",
+      sortDirection: "desc",
     });
   });
 
@@ -211,17 +232,23 @@ describe("Codex project workspace index", () => {
     const root = await mkdtemp(join(tmpdir(), "codex-imported-index-"));
     temporaryDirectories.push(root);
     const requests: Array<{ method: string; params: Record<string, unknown> }> = [];
+    const discoveryClient = {
+      request: async (method: string, params: Record<string, unknown>) => {
+        requests.push({ method, params });
+        if (method === "thread/list") return { data: [], nextCursor: null };
+        throw new Error(`unexpected request: ${method}`);
+      },
+      restart: async () => undefined,
+      dispose: async () => undefined,
+    };
     const adapter = new CodexRuntimeAdapter({
       client: {
         onNotification: () => () => undefined,
         onExit: () => () => undefined,
         setServerRequestHandler: () => undefined,
-        request: async (method: string, params: Record<string, unknown>) => {
-          requests.push({ method, params });
-          if (method === "thread/list") return { data: [], nextCursor: null };
-          throw new Error(`unexpected request: ${method}`);
-        },
+        request: vi.fn(),
       } as never,
+      discoveryClient: discoveryClient as never,
       sessionRoot: root,
       rolloutActivityReader: { readMany: async () => new Map() },
     });
@@ -233,11 +260,181 @@ describe("Codex project workspace index", () => {
       params: {
         cursor: null,
         limit: 25,
-        sortKey: "updated_at",
+        sortKey: "recency_at",
         sortDirection: "desc",
         cwd: [root],
       },
     });
+  });
+
+  it("refreshes native titles through discovery without restarting execution", async () => {
+    const root = await mkdtemp(join(tmpdir(), "codex-discovery-refresh-"));
+    temporaryDirectories.push(root);
+    let refreshed = false;
+    const executionRestart = vi.fn(async () => undefined);
+    const discoveryRestart = vi.fn(async () => { refreshed = true; });
+    const thread = () => ({
+      id: "thread-refresh",
+      parentThreadId: null,
+      preview: "stale preview",
+      name: refreshed ? "current native title" : null,
+      createdAt: 1_788_220_800,
+      updatedAt: 1_788_220_800,
+      status: { type: "idle" },
+      path: null,
+      cwd: root,
+      source: "desktop",
+      turns: [],
+    });
+    const executionClient = {
+      onNotification: () => () => undefined,
+      onExit: () => () => undefined,
+      setServerRequestHandler: () => undefined,
+      request: vi.fn(),
+      restart: executionRestart,
+      dispose: vi.fn(async () => undefined),
+    };
+    const discoveryClient = {
+      request: vi.fn(async (method: string) => {
+        if (method === "thread/list") return { data: [thread()], nextCursor: null };
+        throw new Error(`unexpected request: ${method}`);
+      }),
+      restart: discoveryRestart,
+      dispose: vi.fn(async () => undefined),
+    };
+    const adapter = new CodexRuntimeAdapter({
+      client: executionClient as never,
+      discoveryClient: discoveryClient as never,
+      sessionRoot: root,
+      rolloutActivityReader: { readMany: async () => new Map() },
+    });
+
+    await expect(adapter.listWorkspaceSessionsByPath(root)).resolves.toMatchObject({
+      data: [expect.objectContaining({ title: "stale preview" })],
+    });
+    await expect(adapter.listWorkspaceSessionsByPath(root, { refresh: true })).resolves.toMatchObject({
+      data: [expect.objectContaining({ title: "current native title" })],
+    });
+
+    expect(discoveryRestart).toHaveBeenCalledTimes(1);
+    expect(executionRestart).not.toHaveBeenCalled();
+    expect(discoveryClient.request).toHaveBeenLastCalledWith("thread/list", expect.objectContaining({
+      sortKey: "recency_at",
+      sortDirection: "desc",
+    }));
+  });
+
+  it("does not restart discovery for cursor continuation pages", async () => {
+    const root = await mkdtemp(join(tmpdir(), "codex-discovery-cursor-"));
+    temporaryDirectories.push(root);
+    const discoveryRestart = vi.fn(async () => undefined);
+    const discoveryClient = {
+      request: vi.fn(async (method: string, params: Record<string, unknown>) => {
+        if (method !== "thread/list") throw new Error(`unexpected request: ${method}`);
+        return { data: [], nextCursor: params.cursor ? null : "page-2" };
+      }),
+      restart: discoveryRestart,
+      dispose: vi.fn(async () => undefined),
+    };
+    const adapter = new CodexRuntimeAdapter({
+      client: {
+        onNotification: () => () => undefined,
+        onExit: () => () => undefined,
+        setServerRequestHandler: () => undefined,
+        request: vi.fn(),
+      } as never,
+      discoveryClient: discoveryClient as never,
+      sessionRoot: root,
+      rolloutActivityReader: { readMany: async () => new Map() },
+    });
+
+    await adapter.listWorkspaceSessionsByPath(root, { refresh: true, limit: 1 });
+    await adapter.listWorkspaceSessionsByPath(root, { refresh: true, cursor: "page-2", limit: 1 });
+
+    expect(discoveryRestart).toHaveBeenCalledTimes(1);
+    expect(discoveryClient.request).toHaveBeenNthCalledWith(2, "thread/list", expect.objectContaining({
+      cursor: "page-2",
+      sortKey: "recency_at",
+    }));
+  });
+
+  it("shares one discovery restart across concurrent refreshes", async () => {
+    const root = await mkdtemp(join(tmpdir(), "codex-discovery-concurrent-"));
+    temporaryDirectories.push(root);
+    let finishRestart: (() => void) | undefined;
+    const restartGate = new Promise<void>((resolve) => { finishRestart = resolve; });
+    const discoveryRestart = vi.fn(() => restartGate);
+    const discoveryClient = {
+      request: vi.fn(async (method: string) => {
+        if (method === "thread/list") return { data: [], nextCursor: null };
+        throw new Error(`unexpected request: ${method}`);
+      }),
+      restart: discoveryRestart,
+      dispose: vi.fn(async () => undefined),
+    };
+    const adapter = new CodexRuntimeAdapter({
+      client: {
+        onNotification: () => () => undefined,
+        onExit: () => () => undefined,
+        setServerRequestHandler: () => undefined,
+        request: vi.fn(),
+      } as never,
+      discoveryClient: discoveryClient as never,
+      sessionRoot: root,
+      rolloutActivityReader: { readMany: async () => new Map() },
+    });
+
+    const first = adapter.listWorkspaceSessionsByPath(root, { refresh: true });
+    const second = adapter.listWorkspaceSessionsByPath(root, { refresh: true });
+    expect(discoveryRestart).toHaveBeenCalledTimes(1);
+    finishRestart?.();
+    await Promise.all([first, second]);
+
+    expect(discoveryClient.request).toHaveBeenCalledTimes(2);
+  });
+
+  it("disposes distinct discovery and execution clients exactly once", async () => {
+    const executionDispose = vi.fn(async () => undefined);
+    const discoveryDispose = vi.fn(async () => undefined);
+    const adapter = new CodexRuntimeAdapter({
+      client: {
+        onNotification: () => () => undefined,
+        onExit: () => () => undefined,
+        setServerRequestHandler: () => undefined,
+        request: vi.fn(),
+        dispose: executionDispose,
+      } as never,
+      discoveryClient: {
+        request: vi.fn(),
+        restart: vi.fn(async () => undefined),
+        dispose: discoveryDispose,
+      } as never,
+    });
+
+    await adapter.dispose();
+
+    expect(executionDispose).toHaveBeenCalledTimes(1);
+    expect(discoveryDispose).toHaveBeenCalledTimes(1);
+  });
+
+  it("disposes a shared injected client only once", async () => {
+    const dispose = vi.fn(async () => undefined);
+    const sharedClient = {
+      onNotification: () => () => undefined,
+      onExit: () => () => undefined,
+      setServerRequestHandler: () => undefined,
+      request: vi.fn(),
+      restart: vi.fn(async () => undefined),
+      dispose,
+    };
+    const adapter = new CodexRuntimeAdapter({
+      client: sharedClient as never,
+      discoveryClient: sharedClient as never,
+    });
+
+    await adapter.dispose();
+
+    expect(dispose).toHaveBeenCalledTimes(1);
   });
 
   it("assigns newly created threads to the selected native project", async () => {

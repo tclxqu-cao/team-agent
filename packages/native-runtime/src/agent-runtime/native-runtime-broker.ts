@@ -1138,6 +1138,10 @@ export class NativeRuntimeBrokerHost {
   private readonly state: NativeRuntimeBrokerState;
   private readonly runtime: UnifiedSessionService;
   private readonly activeExecutions = new Map<string, Promise<void>>();
+  private readonly queueAdmissions = new Map<
+    string,
+    { itemId: string; promise: Promise<BrokerRunStart | undefined> }
+  >();
   private readonly subscribers = new Map<Socket, BrokerSubscription>();
   private readonly localSubscribers = new Set<LocalBrokerSubscription>();
   private readonly pendingCreations = new Map<string, UnifiedSessionSummary>();
@@ -1807,30 +1811,48 @@ export class NativeRuntimeBrokerHost {
     controller: NativeRuntimeController,
   ): Promise<BrokerRunStart | undefined> {
     if (this.state.activeRun(item.sessionId)) return undefined;
-    try {
-      return await this.startRun(
-        item.sessionId,
-        item.objective,
-        item.messagePayload?.images,
-        controller,
-        item.id,
-        item.messagePayload?.agentIds,
-        item.messagePayload?.agentName,
-      );
-    } catch (error) {
-      logGlobal("error", "native-broker", "goal queue run failed", error, {
-        sessionId: item.sessionId,
-        goalId: item.id,
-      });
-      const state = this.state.finishGoal(
-        item.sessionId,
-        item.id,
-        "failed",
-        error instanceof Error ? error.message : String(error),
-      );
-      if (state.active) void this.startQueueItem(state.active, controller);
-      return undefined;
+    const existing = this.queueAdmissions.get(item.sessionId);
+    if (existing) {
+      if (existing.itemId === item.id) return existing.promise;
+      await existing.promise;
+      if (this.state.activeRun(item.sessionId)) return undefined;
+      return this.startQueueItem(item, controller);
     }
+
+    const admission = (async () => {
+      try {
+        return await this.startRun(
+          item.sessionId,
+          item.objective,
+          item.messagePayload?.images,
+          controller,
+          item.id,
+          item.messagePayload?.agentIds,
+          item.messagePayload?.agentName,
+        );
+      } catch (error) {
+        logGlobal("error", "native-broker", "goal queue run failed", error, {
+          sessionId: item.sessionId,
+          goalId: item.id,
+        });
+        const state = this.state.finishGoal(
+          item.sessionId,
+          item.id,
+          "failed",
+          error instanceof Error ? error.message : String(error),
+        );
+        if (state.active) void this.startQueueItem(state.active, controller);
+        return undefined;
+      }
+    })();
+    this.queueAdmissions.set(item.sessionId, { itemId: item.id, promise: admission });
+    const clearAdmission = () => {
+      if (this.queueAdmissions.get(item.sessionId)?.promise === admission) {
+        this.queueAdmissions.delete(item.sessionId);
+      }
+    };
+    void admission.then(clearAdmission, clearAdmission);
+    return admission;
   }
 
   private handleApprovalResolved(questionId: string): void {

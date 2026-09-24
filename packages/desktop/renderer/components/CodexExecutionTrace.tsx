@@ -25,7 +25,7 @@ interface CodexExecutionTraceProps {
   nativeSubagents: Record<string, NativeSubagentActivity>;
   onSelectSession?: (sessionId: string) => void;
   workspacePath?: string | null;
-  enableFilePreview?: boolean;
+  onOpenArtifact?: (path: string) => void;
   refreshSignal?: number;
   autoLoad?: boolean;
 }
@@ -39,7 +39,7 @@ export default function CodexExecutionTrace({
   nativeSubagents,
   onSelectSession,
   workspacePath,
-  enableFilePreview = false,
+  onOpenArtifact,
   refreshSignal = 0,
   autoLoad = false,
 }: CodexExecutionTraceProps) {
@@ -143,7 +143,7 @@ export default function CodexExecutionTrace({
           nativeSubagents={nativeSubagents}
           onSelectSession={onSelectSession}
           workspacePath={workspacePath}
-          enableFilePreview={enableFilePreview}
+          onOpenArtifact={onOpenArtifact}
           onLoadResult={loadLocalToolResult}
         />
       ) : autoLoad && !error ? (
@@ -188,7 +188,7 @@ interface CodexExecutionTraceContentProps {
   nativeSubagents: Record<string, NativeSubagentActivity>;
   onSelectSession?: (sessionId: string) => void;
   workspacePath?: string | null;
-  enableFilePreview: boolean;
+  onOpenArtifact?: (path: string) => void;
   onLoadResult: (ref: SessionToolResultRef) => Promise<void>;
 }
 
@@ -199,7 +199,7 @@ export function CodexExecutionTraceContent({
   nativeSubagents,
   onSelectSession,
   workspacePath,
-  enableFilePreview,
+  onOpenArtifact,
   onLoadResult,
 }: CodexExecutionTraceContentProps) {
   const rows = useMemo(() => {
@@ -254,7 +254,7 @@ export function CodexExecutionTraceContent({
               items={group.items}
               onSelectSession={onSelectSession}
               workspacePath={workspacePath}
-              enableFilePreview={enableFilePreview}
+              onOpenArtifact={onOpenArtifact}
               onLoadResult={onLoadResult}
             />
           ) : (
@@ -266,7 +266,7 @@ export function CodexExecutionTraceContent({
               nativeSubagent={group.items[0].nativeSubagent}
               onSelectSession={onSelectSession}
               workspacePath={workspacePath}
-              enableFilePreview={enableFilePreview}
+              onOpenArtifact={onOpenArtifact}
               onLoadResult={onLoadResult}
             />
           ))}

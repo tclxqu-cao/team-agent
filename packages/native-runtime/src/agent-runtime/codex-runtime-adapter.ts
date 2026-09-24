@@ -101,6 +101,13 @@ interface CodexThread {
   projectId?: string | null;
 }
 
+interface CodexDiscoveryClient {
+  readonly pid?: number;
+  request<T>(method: string, params: unknown): Promise<T>;
+  restart(): Promise<void>;
+  dispose(): Promise<void>;
+}
+
 interface CodexProject {
   id: string;
   name: string;
@@ -151,6 +158,8 @@ export function resolveCodexHome(
 export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
   readonly agentType = "codex" as const;
   private readonly client: CodexAppServerClient;
+  private readonly discoveryClient: CodexDiscoveryClient;
+  private discoveryRefreshPromise: Promise<void> | null = null;
   private readonly sessionRoot: string;
   private contextUsageRequestIndex = 0;
   private readonly codexHome: string;
@@ -193,6 +202,7 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
 
   constructor(options: {
     client?: CodexAppServerClient;
+    discoveryClient?: CodexDiscoveryClient;
     sessionRoot?: string;
     imageStorageRoot?: string;
     rolloutActivityReader?: Pick<CodexRolloutActivityReader, "readMany">;
@@ -217,6 +227,8 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
         ? process.env.AGENT_CODEX_RUNTIME_ERROR?.trim()
         : undefined);
     this.client = options.client ?? new CodexAppServerClient({ executable: this.codexExecutable });
+    this.discoveryClient = options.discoveryClient
+      ?? new CodexAppServerClient({ executable: this.codexExecutable });
     this.codexHome = resolveCodexHome(options.environment, options.homeDir);
     this.sessionRoot = options.sessionRoot ?? join(this.codexHome, "sessions");
     this.imageStorageRoot = options.imageStorageRoot ?? join(this.codexHome, "agentroam-images");
@@ -295,8 +307,9 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
 
   async discoverSessions(): Promise<UnifiedSessionSummary[]> {
     this.ensureAvailable();
+    await this.refreshDiscoveryConnection();
     const openFiles = await listOpenSessionFiles("codex", this.sessionRoot, {
-      excludePids: this.client.pid ? [this.client.pid] : [],
+      excludePids: this.ownedClientPids(),
       idleAfterMs: null,
       platform: this.platform,
     });
@@ -306,10 +319,10 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
       const response: {
         data: CodexThread[];
         nextCursor: string | null;
-      } = await this.client.request("thread/list", {
+      } = await this.discoveryClient.request("thread/list", {
         cursor,
         limit: 200,
-        sortKey: "updated_at",
+        sortKey: "recency_at",
         sortDirection: "desc",
       });
       threads.push(...response.data);
@@ -323,9 +336,10 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
 
   async listWorkspaces(query: WorkspaceQuery = {}): Promise<WorkspacePage<AgentWorkspace>> {
     this.ensureAvailable();
+    if (!query.cursor && query.refresh) await this.refreshDiscoveryConnection();
     if (!query.cursor && !query.refresh && this.workspaceSnapshot) return this.workspaceSnapshot;
     try {
-      const response = await this.client.request<{ data: CodexProject[]; nextCursor: string | null }>(
+      const response = await this.discoveryClient.request<{ data: CodexProject[]; nextCursor: string | null }>(
         "project/list",
         {
           cursor: query.cursor ?? null,
@@ -362,16 +376,20 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
     query: WorkspaceSessionQuery = {},
   ): Promise<WorkspacePage<UnifiedSessionSummary>> {
     this.ensureAvailable();
-    const workspace = await this.findWorkspace(workspaceId);
+    if (!query.cursor && query.refresh) await this.refreshDiscoveryConnection();
+    const workspace = await this.findWorkspace(
+      workspaceId,
+      query.refresh === true || Boolean(query.cursor),
+    );
     if (workspace.roots.length === 0) {
       return { data: [], nextCursor: null, watermark: workspace.updatedAt ?? null };
     }
-    let response = await this.client.request<{ data: CodexThread[]; nextCursor: string | null }>(
+    let response = await this.discoveryClient.request<{ data: CodexThread[]; nextCursor: string | null }>(
       "thread/list",
       {
         cursor: query.cursor ?? null,
         limit: workspacePageSize(query.limit),
-        sortKey: "updated_at",
+        sortKey: "recency_at",
         sortDirection: "desc",
         projectId: workspaceId,
       },
@@ -379,12 +397,12 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
     // Threads created before Codex introduced projects can be unassigned. If
     // the native project query has no rows, retain access through exact roots.
     if (!query.cursor && response.data.length === 0) {
-      const legacy = await this.client.request<{ data: CodexThread[]; nextCursor: string | null }>(
+      const legacy = await this.discoveryClient.request<{ data: CodexThread[]; nextCursor: string | null }>(
         "thread/list",
         {
           cursor: null,
           limit: workspacePageSize(query.limit),
-          sortKey: "updated_at",
+          sortKey: "recency_at",
           sortDirection: "desc",
           cwd: workspace.roots,
         },
@@ -395,7 +413,7 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
       };
     }
     const openFiles = await listOpenSessionFiles("codex", this.sessionRoot, {
-      excludePids: this.client.pid ? [this.client.pid] : [],
+      excludePids: this.ownedClientPids(),
       idleAfterMs: null,
       platform: this.platform,
     });
@@ -414,18 +432,19 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
     query: WorkspaceSessionQuery = {},
   ): Promise<WorkspacePage<UnifiedSessionSummary>> {
     this.ensureAvailable();
-    const response = await this.client.request<{ data: CodexThread[]; nextCursor: string | null }>(
+    if (!query.cursor && query.refresh) await this.refreshDiscoveryConnection();
+    const response = await this.discoveryClient.request<{ data: CodexThread[]; nextCursor: string | null }>(
       "thread/list",
       {
         cursor: query.cursor ?? null,
         limit: workspacePageSize(query.limit),
-        sortKey: "updated_at",
+        sortKey: "recency_at",
         sortDirection: "desc",
         cwd: [cwd],
       },
     );
     const openFiles = await listOpenSessionFiles("codex", this.sessionRoot, {
-      excludePids: this.client.pid ? [this.client.pid] : [],
+      excludePids: this.ownedClientPids(),
       idleAfterMs: null,
       platform: this.platform,
     });
@@ -446,7 +465,7 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
       includeTurns: true,
     });
     const openFiles = await listOpenSessionFiles("codex", this.sessionRoot, {
-      excludePids: this.client.pid ? [this.client.pid] : [],
+      excludePids: this.ownedClientPids(),
       idleAfterMs: null,
       platform: this.platform,
     });
@@ -485,7 +504,7 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
       throw this.normalizePagedError(error);
     }
     const openFiles = await listOpenSessionFiles("codex", this.sessionRoot, {
-      excludePids: this.client.pid ? [this.client.pid] : [],
+      excludePids: this.ownedClientPids(),
       idleAfterMs: null,
       platform: this.platform,
     });
@@ -1247,13 +1266,31 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
   }
 
   async dispose(): Promise<void> {
-    await this.client.dispose();
+    const clients = new Set<CodexDiscoveryClient>([this.client, this.discoveryClient]);
+    await Promise.all([...clients].map((client) => client.dispose()));
   }
 
   private ensureAvailable(): void {
     if (this.unavailableError) {
       throw new RuntimeSessionError(this.unavailableError, "RUNTIME_UNAVAILABLE");
     }
+  }
+
+  private async refreshDiscoveryConnection(): Promise<void> {
+    this.workspaceSnapshot = null;
+    this.workspaces.clear();
+    if (this.discoveryRefreshPromise) return this.discoveryRefreshPromise;
+    const refresh = this.discoveryClient.restart().finally(() => {
+      if (this.discoveryRefreshPromise === refresh) this.discoveryRefreshPromise = null;
+    });
+    this.discoveryRefreshPromise = refresh;
+    await refresh;
+  }
+
+  private ownedClientPids(): number[] {
+    return [...new Set([this.client.pid, this.discoveryClient.pid].filter(
+      (pid): pid is number => typeof pid === "number",
+    ))];
   }
 
   private async resolveSkillPath(cwd: string, name: string): Promise<string | null> {
@@ -1529,12 +1566,19 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
     }
   }
 
-  private async findWorkspace(workspaceId: string): Promise<AgentWorkspace> {
+  private async findWorkspace(
+    workspaceId: string,
+    discoveryConnectionReady = false,
+  ): Promise<AgentWorkspace> {
     const cached = this.workspaces.get(workspaceId);
     if (cached) return cached;
     let cursor: string | null = null;
     do {
-      const page = await this.listWorkspaces({ cursor, limit: 200, refresh: true });
+      const page = await this.listWorkspaces({
+        cursor,
+        limit: 200,
+        refresh: !discoveryConnectionReady && cursor === null,
+      });
       const found = page.data.find((workspace) => workspace.workspaceId === workspaceId);
       if (found) return found;
       cursor = page.nextCursor;

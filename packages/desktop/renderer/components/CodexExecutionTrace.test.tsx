@@ -94,7 +94,6 @@ describe("CodexExecutionTrace", () => {
       renderContent: (text: string) => text,
       runtimeProgress: [],
       nativeSubagents: {},
-      enableFilePreview: false,
       onLoadResult: vi.fn(),
     }));
 
@@ -117,7 +116,6 @@ describe("CodexExecutionTrace", () => {
       renderContent: (text: string) => text,
       runtimeProgress: [],
       nativeSubagents: {},
-      enableFilePreview: false,
       onLoadResult: vi.fn(),
     }));
 

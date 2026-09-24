@@ -87,6 +87,9 @@ class FakeNativeRuntime {
   readonly steeredInputs: Array<{ id: string; input: string }> = [];
   readonly getUnpaginatedCachePreferences: boolean[] = [];
   readonly toolResultRequests: Array<{ id: string; turnId: string; itemId: string; revision: string }> = [];
+  getBarrier: Promise<void> | null = null;
+  getCalls = 0;
+  getFailuresRemaining = 0;
 
   health = async (): Promise<RuntimeHealth[]> => [{ agentType: "codex", available: true, label: "Codex" }];
   list = async (): Promise<UnifiedSessionSummary[]> => this.listResult ?? [summary(this.occupancy, this.status)];
@@ -134,11 +137,19 @@ class FakeNativeRuntime {
     if (this.renameError) throw this.renameError;
   };
   dispose = async (): Promise<void> => { this.resolveRun?.(); };
-  get = async (): Promise<UnifiedSessionDetail> => ({
-    ...summary(this.occupancy, this.status),
-    messages: this.messages,
-    events: [],
-  });
+  get = async (): Promise<UnifiedSessionDetail> => {
+    this.getCalls += 1;
+    if (this.getBarrier) await this.getBarrier;
+    if (this.getFailuresRemaining > 0) {
+      this.getFailuresRemaining -= 1;
+      throw new Error("Native session detail is unavailable");
+    }
+    return {
+      ...summary(this.occupancy, this.status),
+      messages: this.messages,
+      events: [],
+    };
+  };
   getUnpaginated = async (_id: string, preferCache = false): Promise<UnifiedSessionDetail> => {
     this.getUnpaginatedCachePreferences.push(preferCache);
     return this.get();
@@ -1548,6 +1559,103 @@ describe("NativeRuntimeBrokerHost", () => {
       expect(runtime.runInputs).toHaveLength(2);
     } finally {
       releaseCleanup();
+      await host.stop();
+    }
+  });
+
+  it("shares admission when queue reconciliation starts the same message concurrently", async () => {
+    const runtime = new FakeNativeRuntime();
+    let releaseGet: () => void = () => undefined;
+    runtime.getBarrier = new Promise<void>((resolve) => { releaseGet = resolve; });
+    const host = new NativeRuntimeBrokerHost(await directory(), runtime as unknown as UnifiedSessionService);
+    try {
+      const queued = host.enqueueMessage(sessionId, {
+        sourceMessageId: "single-flight-message",
+        content: "start exactly once",
+      });
+      await waitFor(() => expect(runtime.getCalls).toBe(1));
+
+      const goals = host.getGoals(sessionId);
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      const getCallsBeforeRelease = runtime.getCalls;
+      releaseGet();
+      await expect(queued).resolves.toMatchObject({
+        state: {
+          active: expect.objectContaining({ objective: "start exactly once" }),
+          queued: [],
+          history: [],
+        },
+        started: expect.objectContaining({ runId: expect.any(String) }),
+      });
+      await expect(goals).resolves.toMatchObject({
+        active: expect.objectContaining({ objective: "start exactly once" }),
+        queued: [],
+        history: [],
+      });
+      expect(getCallsBeforeRelease).toBe(1);
+      expect(runtime.runInputs.map(({ input }) => input)).toEqual(["start exactly once"]);
+
+      await host.abort(sessionId);
+      await waitFor(() => {
+        expect(host.snapshot(sessionId).events).toEqual(expect.arrayContaining([
+          expect.objectContaining({ event: expect.objectContaining({ type: "done" }) }),
+        ]));
+      });
+      await expect(host.getGoals(sessionId)).resolves.toMatchObject({
+        active: null,
+        queued: [],
+        history: [],
+      });
+    } finally {
+      releaseGet();
+      await host.stop();
+    }
+  });
+
+  it("starts a newly promoted item after the prior admission genuinely fails", async () => {
+    const runtime = new FakeNativeRuntime();
+    runtime.getFailuresRemaining = 1;
+    let releaseGet: () => void = () => undefined;
+    runtime.getBarrier = new Promise<void>((resolve) => { releaseGet = resolve; });
+    const host = new NativeRuntimeBrokerHost(await directory(), runtime as unknown as UnifiedSessionService);
+    try {
+      const first = host.enqueueGoal(sessionId, "first admission fails");
+      await waitFor(() => expect(runtime.getCalls).toBe(1));
+      await expect(host.enqueueGoal(sessionId, "second admission starts")).resolves.toMatchObject({
+        state: {
+          active: expect.objectContaining({ objective: "first admission fails" }),
+          queued: [expect.objectContaining({ objective: "second admission starts" })],
+        },
+      });
+
+      releaseGet();
+      await first;
+      await waitFor(() => {
+        expect(runtime.getCalls).toBe(2);
+        expect(runtime.runInputs.map(({ input }) => input)).toEqual(["second admission starts"]);
+      });
+      await expect(host.getGoals(sessionId)).resolves.toMatchObject({
+        active: expect.objectContaining({ objective: "second admission starts" }),
+        queued: [],
+        history: [expect.objectContaining({ objective: "first admission fails", status: "failed" })],
+      });
+
+      await host.abort(sessionId);
+      let finalState = await host.getGoals(sessionId);
+      for (let attempt = 0; attempt < 80 && finalState.active; attempt++) {
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        finalState = await host.getGoals(sessionId);
+      }
+      expect(finalState).toMatchObject({
+        active: null,
+        queued: [],
+        history: [
+          expect.objectContaining({ objective: "first admission fails", status: "failed" }),
+          expect.objectContaining({ objective: "second admission starts", status: "completed" }),
+        ],
+      });
+    } finally {
+      releaseGet();
       await host.stop();
     }
   });
