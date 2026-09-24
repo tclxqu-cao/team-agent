@@ -1,0 +1,20 @@
+docs/superpowers/specs/2026-09-24-generic-tool-execution-policy-design.md
+  s_bd20ce99e6a8be::t_10c45bd61f6778 1-74,79,81-152,154-155,160-233
+  s_bd20ce99e6a8be::t_ece3599cabfe73 75-78,80,153,156-159
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "c2e507ef95c7b3b7021332d4857939a8a9219099",
+  "prompts": {},
+  "sessions": {
+    "s_bd20ce99e6a8be": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ce6b-091e-7092-a41f-005b854af272",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
