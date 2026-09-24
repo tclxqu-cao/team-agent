@@ -1,0 +1,20 @@
+docs/superpowers/specs/2026-09-24-shared-codex-app-server-fallback-design.md
+  s_15246d8362847e::t_a063050135fc33 70
+  s_15246d8362847e::t_2537f83c61f1f3 1-69,71-122
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "d7667e7316d7ef4f6cfcaa992804b6627e511b73",
+  "prompts": {},
+  "sessions": {
+    "s_15246d8362847e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0d1fa-6134-7642-8738-73aedba85c2f",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
