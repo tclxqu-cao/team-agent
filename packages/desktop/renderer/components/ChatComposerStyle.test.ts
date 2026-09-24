@@ -89,6 +89,21 @@ describe("shared Electron and Web composer", () => {
     expect(globalCss).toMatch(/\.queued-message-row\s*\{[\s\S]*?border:\s*0;/);
   });
 
+  it("moves accepted submissions into the queue and restores only failed persistence", () => {
+    const start = chatView.indexOf("// ── Queue message if agent is running");
+    const end = chatView.indexOf("// ── Normal send flow", start);
+    const queueBranch = chatView.slice(start, end);
+
+    expect(start).toBeGreaterThan(-1);
+    expect(queueBranch).toContain("clearSessionDraft(queuedSessionId)");
+    expect(queueBranch).toContain("imageDraftCoordinator.clear(queuedSessionId)");
+    expect(queueBranch).toContain("writeSessionDraft(queuedSessionId, finalMsg)");
+    expect(queueBranch).toContain("imageDraftCoordinator.save(queuedSessionId, imagesToSend ?? [])");
+    expect(queueBranch).toContain("(selectedSessionIdRef.current || sessionIdRef.current) === queuedSessionId");
+    expect(queueBranch.indexOf("clearSubmittedComposer()"))
+      .toBeLessThan(queueBranch.indexOf("enqueueSessionMessage(queuedSessionId"));
+  });
+
   it("drains queued chat after goal-managed or refresh-recovered runs finish", () => {
     const drainStart = chatView.indexOf("const scheduleQueuedMessageAfterTerminal");
     const drainEnd = chatView.indexOf("const handleEvent", drainStart);

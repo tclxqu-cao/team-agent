@@ -50,6 +50,7 @@ export interface ContextUsageView {
   maxTokens: number;
   ratio: number;
   percent: number;
+  percentLabel: string;
   groups: Array<{ key: ContextUsageGroupKey; label: string; color: string; tokens: number }>;
   details: Array<{ category: ContextUsageCategory; label: string; color: string; tokens: number }>;
   requestLabel?: string;
@@ -69,12 +70,21 @@ export function buildContextUsageView(
   }
 
   const ratio = Math.min(totalTokens / maxTokens, 1);
+  const rawPercent = ratio * 100;
+  const percentLabel = rawPercent === 0
+    ? "0%"
+    : rawPercent < 1
+      ? `${rawPercent.toFixed(2)}%`
+      : rawPercent < 10
+        ? `${rawPercent.toFixed(1)}%`
+        : `${Math.round(rawPercent)}%`;
   return {
     hasUsage: !!usage,
     totalTokens,
     maxTokens,
     ratio,
     percent: Math.round(ratio * 100),
+    percentLabel,
     groups: GROUP_ORDER.map((key) => ({
       key,
       label: GROUP_META[key].label,
@@ -101,9 +111,9 @@ function formatTokens(tokens: number): string {
 }
 
 export function formatContextUsageSummary(view: ContextUsageView, compact: boolean): string {
-  if (compact) return `${view.percent}%`;
+  if (compact) return view.percentLabel;
   if (!view.hasUsage) return "尚无模型请求";
-  return `${formatTokens(view.totalTokens)} / ${formatTokens(view.maxTokens)} · ${view.percent}%`;
+  return `${formatTokens(view.totalTokens)} / ${formatTokens(view.maxTokens)} · ${view.percentLabel}`;
 }
 
 export default function ContextUsageBar({
@@ -222,7 +232,7 @@ export default function ContextUsageBar({
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
               <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text-primary)" }}>完整请求上下文估算</div>
               <div style={{ fontSize: 11, color: view.hasUsage ? barColor : "var(--text-muted)", fontVariantNumeric: "tabular-nums" }}>
-                {view.hasUsage ? `${view.percent}%` : "暂无"}
+                {view.hasUsage ? view.percentLabel : "暂无"}
               </div>
             </div>
             {view.requestLabel && (
@@ -250,9 +260,6 @@ export default function ContextUsageBar({
                 发送第一条消息后，将显示最新一次模型请求的完整上下文组成。
               </div>
             )}
-            <div style={{ marginTop: 10, fontSize: 11, lineHeight: 1.5, color: "var(--text-muted)" }}>
-              基于最新一次实际发送前请求的完整组成估算，包含系统提示、环境、项目上下文、技能、memory、历史消息、工具定义/调用/结果、图片和压缩摘要。不同模型的 tokenizer 与协议存在差异，因此不是账单精确值。
-            </div>
           </div>
         </>
       )}

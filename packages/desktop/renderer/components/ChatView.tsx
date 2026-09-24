@@ -54,8 +54,17 @@ import {
 import { normalizeComposerImage } from "../lib/browser-image-normalization";
 import { supportsMidTurnSteering } from "../lib/runtime-capabilities";
 import { copyTextToClipboard } from "../lib/clipboard";
-import { clearSessionDraft, readSessionDraft, writeSessionDraft } from "../lib/session-draft";
-import { postWebArtifactOpen, resolveWebArtifactPath } from "../lib/artifact-links";
+import {
+  clearSessionDraft,
+  readSessionDraft,
+  resolveSessionDraftAction,
+  writeSessionDraft,
+} from "../lib/session-draft";
+import {
+  IndexedDbSessionImageDraftRepository,
+  SessionImageDraftCoordinator,
+} from "../lib/session-image-draft";
+import { resolveWebArtifactPath } from "../lib/artifact-links";
 import {
   findLatestPendingUserMessageId,
   findLatestUnqueuedUserMessageId,
@@ -73,6 +82,8 @@ import {
   toolRuntimeProgress,
 } from "../lib/native-runtime-progress";
 import { createChatAutoFollowController } from "../lib/chat-auto-follow";
+import { resolveSessionComposerRoute } from "../lib/session-composer-routing";
+import { resolveSessionEventTarget } from "../lib/session-event-routing";
 import {
   isActiveNativeSession,
   isNativeRuntimeSelection,
@@ -163,7 +174,7 @@ function renderInlineLabel(text: string, keyPrefix: string): React.ReactNode {
 }
 
 /** Render inline markdown: links, `code`, **bold**, *italic* within a single line. */
-function renderRichInline(text: string): React.ReactNode {
+function renderRichInline(text: string, onOpenArtifact?: (path: string) => void): React.ReactNode {
   return parseRichInlineTokens(text).map((token, index) => {
     if (token.type === "code") {
       return (
@@ -186,7 +197,7 @@ function renderRichInline(text: string): React.ReactNode {
       );
     }
     if (token.type === "artifact") {
-      if (!isWebShell()) return <span key={index}>{token.raw}</span>;
+      if (!onOpenArtifact) return <span key={index}>{token.raw}</span>;
       const locationLabel = token.line ? `${token.path}:${token.line}` : token.path;
       const accessibleLabel = token.label.replace(/^`([^`\n]+)`$/, "$1");
       return (
@@ -196,7 +207,7 @@ function renderRichInline(text: string): React.ReactNode {
           className="chat-message-artifact-link"
           title={locationLabel}
           aria-label={`打开交付物 ${accessibleLabel}`}
-          onClick={() => postWebArtifactOpen(token.path)}
+          onClick={() => onOpenArtifact(token.path)}
         >
           <FileText size={16} strokeWidth={1.8} aria-hidden="true" />
           <span>{renderInlineLabel(token.label, `${index}-label`)}</span>
@@ -221,7 +232,7 @@ function parseMarkdownTable(lines: string[]): { headers: string[]; rows: string[
 }
 
 /** Render a parsed Markdown table as a styled HTML table. */
-function renderMarkdownTable(headers: string[], rows: string[][]): React.ReactNode {
+function renderMarkdownTable(headers: string[], rows: string[][], onOpenArtifact?: (path: string) => void): React.ReactNode {
   const cellStyle = (isHeader: boolean): React.CSSProperties => ({
     padding: '6px 14px',
     textAlign: 'left',
@@ -244,7 +255,7 @@ function renderMarkdownTable(headers: string[], rows: string[][]): React.ReactNo
         <thead>
           <tr style={{ background: 'var(--bg-deep)' }}>
             {headers.map((h, i) => (
-              <th key={i} style={cellStyle(true)}>{renderRichInline(h)}</th>
+              <th key={i} style={cellStyle(true)}>{renderRichInline(h, onOpenArtifact)}</th>
             ))}
           </tr>
         </thead>
@@ -252,7 +263,7 @@ function renderMarkdownTable(headers: string[], rows: string[][]): React.ReactNo
           {rows.map((row, ri) => (
             <tr key={ri} style={{ background: ri % 2 === 0 ? 'transparent' : 'rgba(0,0,0,0.015)' }}>
               {row.map((cell, ci) => (
-                <td key={ci} style={cellStyle(false)}>{renderRichInline(cell)}</td>
+                <td key={ci} style={cellStyle(false)}>{renderRichInline(cell, onOpenArtifact)}</td>
               ))}
             </tr>
           ))}
@@ -278,7 +289,7 @@ function renderCodeFence(lang: string, code: string, complete: boolean): React.R
 }
 
 /** Render assistant message text: supports Markdown tables, links, fenced code blocks, `code`, **bold**, *italic*, and newlines. */
-export function renderAssistantText(text: string): React.ReactNode {
+export function renderAssistantText(text: string, onOpenArtifact?: (path: string) => void): React.ReactNode {
   const visibleText = text.replace(
     /(^|\n)(?:[a-z][\w+#.-]{0,20}\n)?(?:复制|copy)\n(?:下载|download)(?:\n|$)/gi,
     "$1",
@@ -315,7 +326,7 @@ export function renderAssistantText(text: string): React.ReactNode {
       }
       const parsed = parseMarkdownTable(tableLines);
       if (parsed) {
-        segments.push(<div key={`tbl-${segKey++}`}>{renderMarkdownTable(parsed.headers, parsed.rows)}</div>);
+        segments.push(<div key={`tbl-${segKey++}`}>{renderMarkdownTable(parsed.headers, parsed.rows, onOpenArtifact)}</div>);
       } else {
         // Fallback: render as plain text
         segments.push(<span key={`tbl-fb-${segKey++}`}>{tableLines.map((l, li) => (
@@ -333,7 +344,7 @@ export function renderAssistantText(text: string): React.ReactNode {
         segments.push(
           <span key={`txt-${segKey++}`}>
             {plainLines.map((line, li) => (
-              <span key={li}>{renderRichInline(line)}{li < plainLines.length - 1 ? '\n' : null}</span>
+              <span key={li}>{renderRichInline(line, onOpenArtifact)}{li < plainLines.length - 1 ? '\n' : null}</span>
             ))}
           </span>
         );
@@ -409,6 +420,9 @@ interface ChatViewProps {
   onOpenHub?: () => void;
   onOpenDesktopLive?: () => void;
   desktopLiveOpen?: boolean;
+  fileDrawerOpen?: boolean;
+  onToggleFiles?: () => void;
+  onOpenArtifact?: (path: string) => void;
   onToggleAppearance?: (anchor: DOMRect) => void;
   appearanceOpen?: boolean;
   hideToBackgroundTitle?: string;
@@ -492,11 +506,18 @@ export default function ChatView({
   onOpenHub,
   onOpenDesktopLive,
   desktopLiveOpen = false,
+  fileDrawerOpen = false,
+  onToggleFiles,
+  onOpenArtifact,
   onToggleAppearance,
   appearanceOpen = false,
   hideToBackgroundTitle,
   voiceCommand = null,
 }: ChatViewProps) {
+  const renderMessageContent = useCallback(
+    (text: string) => renderAssistantText(text, onOpenArtifact),
+    [onOpenArtifact],
+  );
   const {
     messages,
     runningSessionId,
@@ -574,8 +595,10 @@ export default function ChatView({
 
   const [directCompatibilitySessionId, setDirectCompatibilitySessionId] = useState<string | null>(null);
   const [compatibilityFailure, setCompatibilityFailure] = useState<string | null>(null);
-  const isNativeRuntime = isNativeRuntimeSelection(sessionSummary, activeAgentType);
-  const composerAgentType: AgentType = sessionSummary?.agentType ?? activeAgentType;
+  const composerRoute = resolveSessionComposerRoute(selectedSessionId, sessionSummary, activeAgentType);
+  const composerAgentType = composerRoute.agentType;
+  const isNativeRuntime = composerRoute.ready
+    && isNativeRuntimeSelection(sessionSummary, activeAgentType);
 
   // ── Native runtime model & reasoning-effort picker ──────────────────────
   // The choice is per agent type, lives in localStorage, and rides along with
@@ -678,13 +701,23 @@ export default function ChatView({
   );
   const isOccupiedRecovery = isOccupiedRecoveryVisible(occupiedRecovery, viewSessionId);
   const runtimeReady = isConfigured || isNativeRuntime;
-  const canCompose = runtimeReady && !isReadOnly && !isOccupiedRecovery && codexReleaseState !== "released";
+  const canCompose = composerRoute.ready
+    && runtimeReady
+    && !isReadOnly
+    && !isOccupiedRecovery
+    && codexReleaseState !== "released";
   const runningSubIdsRef = useRef<Set<string>>(new Set());
   /** Tracks what the agent is currently doing: thinking, waiting for tools, or idle */
   const [agentActivity, setAgentActivity] = useState<"idle" | "thinking" | "tools">("idle");
   const agentActivityRef = useRef<"idle" | "thinking" | "tools">("idle");
   const thinkingSessionIdRef = useRef<string | null>(null);
   const [thinkingStartedAt, setThinkingStartedAt] = useState(() => Date.now());
+  const beginAgentRunActivity = useCallback((targetSessionId: string) => {
+    thinkingSessionIdRef.current = targetSessionId;
+    agentActivityRef.current = "thinking";
+    setThinkingStartedAt(Date.now());
+    setAgentActivity("thinking");
+  }, []);
 
   // Local ownership controls actions; externally observed activity remains visible.
   const isLocallyRunning = !!(
@@ -738,6 +771,12 @@ export default function ChatView({
     const viewedSessionId = selectedSessionIdRef.current || sessionIdRef.current;
     if (targetSessionId === viewedSessionId) {
       setGoalState(projectSessionGoals(state) as SessionGoalState);
+      if (
+        state.active?.kind === "message"
+        && (agentActivityRef.current !== "thinking" || thinkingSessionIdRef.current !== targetSessionId)
+      ) {
+        beginAgentRunActivity(targetSessionId);
+      }
       // A terminal event may arrive while browsing an older turn. Keep that
       // transcript and scroll anchor intact until the user returns to latest.
       if (historyWindowModeRef.current === "anchored") return;
@@ -748,7 +787,7 @@ export default function ChatView({
       reconcileDurableQueuedMessages(current, state),
       targetSessionId,
     );
-  }, [getMessagesForSession, setMessages]);
+  }, [beginAgentRunActivity, getMessagesForSession, setMessages]);
 
   // Close the reasoning-effort menu on outside click
   useEffect(() => {
@@ -818,6 +857,15 @@ export default function ChatView({
   const seenNativeEventKeysRef = useRef<Set<string>>(new Set());
   const draftSessionRef = useRef<string | null>(null);
   const preserveNativeDraftRef = useRef(false);
+  const preserveNativeImageDraftSessionRef = useRef<string | null>(null);
+  const imageDraftRestoringSessionRef = useRef<string | null>(null);
+  const imageDraftCoordinatorRef = useRef<SessionImageDraftCoordinator | null>(null);
+  if (!imageDraftCoordinatorRef.current) {
+    imageDraftCoordinatorRef.current = new SessionImageDraftCoordinator(
+      new IndexedDbSessionImageDraftRepository(),
+    );
+  }
+  const imageDraftCoordinator = imageDraftCoordinatorRef.current;
   const isLoadingOlderHistoryRef = useRef(false);
   const prependScrollAnchorRef = useRef<{ scrollHeight: number; scrollTop: number } | null>(null);
   const nextAutoScrollRef = useRef<"instant" | "skip" | null>(null);
@@ -945,23 +993,52 @@ export default function ChatView({
   }, []);
 
   useEffect(() => {
-    if (!isNativeRuntime || !viewSessionId) {
-      draftSessionRef.current = null;
+    const action = resolveSessionDraftAction(draftSessionRef.current, viewSessionId, input);
+    draftSessionRef.current = action.ownerSessionId;
+    if (action.type === "inactive") {
+      imageDraftRestoringSessionRef.current = null;
+      void imageDraftCoordinator.restore(null);
+      setPendingImages([]);
       return;
     }
-    if (draftSessionRef.current !== viewSessionId) {
-      draftSessionRef.current = viewSessionId;
-      const recovery = findOccupiedRecovery(occupiedRecoveriesRef.current, viewSessionId);
-      setInput(recovery?.payload.content ?? readSessionDraft(viewSessionId));
-      setPendingImages(recovery?.payload.images ?? []);
+    if (action.type === "restore") {
+      const nativeDraftOwner = action.ownerSessionId.startsWith("runtime:");
+      const recovery = nativeDraftOwner
+        ? findOccupiedRecovery(occupiedRecoveriesRef.current, action.ownerSessionId)
+        : undefined;
+      setInput(recovery?.payload.content ?? readSessionDraft(action.ownerSessionId));
+      setPendingImages([]);
+      imageDraftRestoringSessionRef.current = action.ownerSessionId;
+      void imageDraftCoordinator.restore(action.ownerSessionId).then((restored) => {
+        if (!restored || draftSessionRef.current !== restored.sessionId) return;
+        if (imageDraftRestoringSessionRef.current === restored.sessionId) {
+          imageDraftRestoringSessionRef.current = null;
+        }
+        const images = recovery?.payload.images ?? restored.images;
+        setPendingImages(images);
+        if (recovery) void imageDraftCoordinator.save(restored.sessionId, images);
+      });
       return;
     }
     if (preserveNativeDraftRef.current && input === "") {
       preserveNativeDraftRef.current = false;
       return;
     }
-    writeSessionDraft(viewSessionId, input);
-  }, [input, isNativeRuntime, viewSessionId]);
+    writeSessionDraft(action.ownerSessionId, action.value);
+  }, [imageDraftCoordinator, input, viewSessionId]);
+
+  useEffect(() => {
+    if (!viewSessionId || draftSessionRef.current !== viewSessionId) return;
+    if (imageDraftRestoringSessionRef.current === viewSessionId) return;
+    if (
+      preserveNativeImageDraftSessionRef.current === viewSessionId
+      && pendingImages.length === 0
+    ) {
+      preserveNativeImageDraftSessionRef.current = null;
+      return;
+    }
+    void imageDraftCoordinator.saveSelected(viewSessionId, pendingImages);
+  }, [imageDraftCoordinator, pendingImages, viewSessionId]);
 
   const handleHistoryScroll = () => {
     const container = messagesScrollRef.current;
@@ -1206,12 +1283,6 @@ export default function ChatView({
     }
     agentActivityRef.current = next;
     setAgentActivity(next);
-  }, []);
-  const beginAgentRunActivity = useCallback((targetSessionId: string) => {
-    thinkingSessionIdRef.current = targetSessionId;
-    agentActivityRef.current = "thinking";
-    setThinkingStartedAt(Date.now());
-    setAgentActivity("thinking");
   }, []);
   useEffect(() => {
     setIsForkingSession(false);
@@ -2153,7 +2224,8 @@ export default function ChatView({
   const handleEvent = (event: StreamEvent) => {
     // Route by _sid using always-current refs, not stale closure values.
     const viewedSid = selectedSessionIdRef.current || sessionIdRef.current;
-    const eventSid = event._sid || viewedSid || undefined;
+    const eventSid = resolveSessionEventTarget(event._sid) ?? undefined;
+    if (!eventSid && event.type !== "cron_update") return;
     if (event._nativeRunId && Number.isSafeInteger(event._nativeSequence)) {
       const key = `${event._nativeRunId}:${event._nativeSequence}`;
       if (seenNativeEventKeysRef.current.has(key)) return;
@@ -2199,6 +2271,10 @@ export default function ChatView({
             commitOccupiedRecovery(undefined, eventSid);
           }
           clearSessionDraft(eventSid);
+          void imageDraftCoordinator.clear(eventSid);
+          if (preserveNativeImageDraftSessionRef.current === eventSid) {
+            preserveNativeImageDraftSessionRef.current = null;
+          }
         }
         break;
       case "context_usage":
@@ -2545,12 +2621,52 @@ export default function ChatView({
               existingRecovery ?? createOccupiedSessionRecovery(eventSid, recoveryPayload),
             );
             writeSessionDraft(eventSid, recoveryPayload.content);
+            void imageDraftCoordinator.save(eventSid, recoveryPayload.images ?? []);
             if (isViewed) {
               setInput(recoveryPayload.content);
               setPendingImages(recoveryPayload.images ?? []);
             }
           }
+          if (preserveNativeImageDraftSessionRef.current === eventSid) {
+            preserveNativeImageDraftSessionRef.current = null;
+          }
           if (isViewed) setError(null);
+        }
+        if (
+          eventSid
+          && eventSid.startsWith("runtime:")
+          && event.code !== "SESSION_OCCUPIED"
+          && event.code !== "SESSION_ALREADY_RUNNING"
+          && !isAnchoredView
+        ) {
+          const failedMessages = useAgentStore.getState().getMessagesForSession(eventSid);
+          const capturedPayload = pendingNativeSendPayloadRef.current.get(eventSid);
+          const failedUserMessage = capturedPayload
+            ? [...failedMessages].reverse().find(
+                (message) => message.role === "user"
+                  && !message.isQueued
+                  && message.content === capturedPayload.content,
+              )
+            : [...failedMessages].reverse().find(
+                (message) => message.role === "user" && !message.isQueued,
+              );
+          const recoveryPayload = capturedPayload ?? (failedUserMessage ? {
+            content: failedUserMessage.content,
+            images: failedUserMessage.images,
+            agentName: failedUserMessage.agentName,
+          } : undefined);
+          if (recoveryPayload?.content) {
+            writeSessionDraft(eventSid, recoveryPayload.content);
+            void imageDraftCoordinator.save(eventSid, recoveryPayload.images ?? []);
+            if (isViewed) {
+              setInput(recoveryPayload.content);
+              setPendingImages(recoveryPayload.images ?? []);
+            }
+          }
+          pendingNativeSendPayloadRef.current.delete(eventSid);
+          if (preserveNativeImageDraftSessionRef.current === eventSid) {
+            preserveNativeImageDraftSessionRef.current = null;
+          }
         }
         if (isViewed) {
           if (event._preserveActiveRun && eventSid) {
@@ -2560,6 +2676,9 @@ export default function ChatView({
             updateAgentActivity("thinking");
           }
           if (event.code === "SESSION_ALREADY_RUNNING" && !isAnchoredView) {
+            const capturedPayload = eventSid
+              ? pendingNativeSendPayloadRef.current.get(eventSid)
+              : undefined;
             const conflictMessages = eventSid
               ? useAgentStore.getState().getMessagesForSession(eventSid)
               : useAgentStore.getState().messages;
@@ -2578,25 +2697,35 @@ export default function ChatView({
                   content: rejectedMessage.content,
                   images: rejectedMessage.images,
                   agentName: rejectedMessage.agentName,
-                }).then((state) => applySessionQueueState(state, eventSid)).catch((queueError) => {
+                }).then((state) => {
+                  applySessionQueueState(state, eventSid);
+                  clearSessionDraft(eventSid);
+                  void imageDraftCoordinator.clear(eventSid);
+                }).catch((queueError) => {
+                  const failedContent = capturedPayload?.content ?? rejectedMessage.content;
+                  const failedImages = capturedPayload?.images ?? rejectedMessage.images ?? [];
+                  writeSessionDraft(eventSid, failedContent);
+                  void imageDraftCoordinator.save(eventSid, failedImages);
+                  if ((selectedSessionIdRef.current || sessionIdRef.current) === eventSid) {
+                    setInput(failedContent);
+                    setPendingImages(failedImages);
+                  }
                   setError(queueError instanceof Error ? queueError.message : "排队消息保存失败");
                 });
+              } else if (eventSid) {
+                clearSessionDraft(eventSid);
+                void imageDraftCoordinator.clear(eventSid);
               }
             }
             if (eventSid) pendingNativeSendPayloadRef.current.delete(eventSid);
+            if (eventSid && preserveNativeImageDraftSessionRef.current === eventSid) {
+              preserveNativeImageDraftSessionRef.current = null;
+            }
             if (eventSid) commitOccupiedRecovery(undefined, eventSid);
             setError(null);
           } else if (event.code !== "SESSION_OCCUPIED") {
             setError(event.message ?? "Unknown error");
             if (eventSid) updatePendingSendState(eventSid, "failed");
-            const failedMessages = eventSid
-              ? useAgentStore.getState().getMessagesForSession(eventSid)
-              : useAgentStore.getState().messages;
-            const failedUserMessage = [...failedMessages].reverse().find((message) => message.role === "user" && !message.isQueued);
-            if (isNativeRuntime && !isAnchoredView && failedUserMessage?.content) {
-              setInput(failedUserMessage.content);
-              if (eventSid) writeSessionDraft(eventSid, failedUserMessage.content);
-            }
           }
         }
         if (!event._preserveActiveRun) {
@@ -2975,6 +3104,19 @@ export default function ChatView({
       }
     } catch (err) {
       updatePendingSendState(targetSessionId, "failed");
+      const failedPayload = pendingNativeSendPayloadRef.current.get(targetSessionId);
+      if (targetSessionId.startsWith("runtime:") && failedPayload?.content) {
+        writeSessionDraft(targetSessionId, failedPayload.content);
+        void imageDraftCoordinator.save(targetSessionId, failedPayload.images ?? []);
+        if ((selectedSessionIdRef.current || sessionIdRef.current) === targetSessionId) {
+          setInput(failedPayload.content);
+          setPendingImages(failedPayload.images ?? []);
+        }
+        pendingNativeSendPayloadRef.current.delete(targetSessionId);
+        if (preserveNativeImageDraftSessionRef.current === targetSessionId) {
+          preserveNativeImageDraftSessionRef.current = null;
+        }
+      }
       setError(err instanceof Error ? err.message : "Agent run failed");
     } finally {
       managedRunSessionsRef.current.delete(targetSessionId);
@@ -3206,15 +3348,22 @@ export default function ChatView({
     const imagesToSend = pendingImages.length > 0 ? [...pendingImages] : undefined;
     const agentIdsToSend = pendingAgents.map(a => a.id);
     setPendingAgents([]);
-    if (isNativeRuntime && (selectedSessionId || sessionId)) preserveNativeDraftRef.current = true;
-    setInput("");
-    setAttachedFiles([]);
-    setPendingImages([]);
+    const clearSubmittedComposer = () => {
+      setInput("");
+      setAttachedFiles([]);
+      setPendingImages([]);
+    };
 
     if (goalObjective !== null) {
       const sourceMessageId = crypto.randomUUID();
       let optimisticSessionId: string | null = null;
+      let admittedSessionId: string | null = null;
       abortRef.current = false;
+      if (viewSessionId) {
+        clearSessionDraft(viewSessionId);
+        void imageDraftCoordinator.clear(viewSessionId);
+      }
+      clearSubmittedComposer();
       try {
         const targetSessionId = await prepareChatCommand({
           text: goalObjective,
@@ -3250,6 +3399,11 @@ export default function ChatView({
           },
           onSessionCreated,
         });
+        admittedSessionId = targetSessionId;
+        if (targetSessionId !== viewSessionId) {
+          clearSessionDraft(targetSessionId);
+          void imageDraftCoordinator.clear(targetSessionId);
+        }
         const state = await window.agentApi.enqueueSessionGoal(
           targetSessionId,
           goalObjective,
@@ -3265,6 +3419,19 @@ export default function ChatView({
             optimisticSessionId,
           );
         }
+        const failedSessionId = admittedSessionId ?? optimisticSessionId ?? viewSessionId;
+        if (failedSessionId) {
+          writeSessionDraft(failedSessionId, finalMsg);
+          void imageDraftCoordinator.save(failedSessionId, imagesToSend ?? []);
+        }
+        const currentlyViewedSessionId = selectedSessionIdRef.current || sessionIdRef.current;
+        if (
+          (failedSessionId && currentlyViewedSessionId === failedSessionId)
+          || (!failedSessionId && !currentlyViewedSessionId)
+        ) {
+          setInput(finalMsg);
+          setPendingImages(imagesToSend ?? []);
+        }
         setRunningSession(null);
         setError(goalError instanceof Error ? goalError.message : "目标创建失败");
       }
@@ -3273,6 +3440,7 @@ export default function ChatView({
 
     // ── Queue message if agent is running ──────────────────────────────────
     if (shouldQueueMessage) {
+      const queuedSessionId = viewSessionId;
       const sourceMessageId = crypto.randomUUID();
       const queuedMessage = {
         id: sourceMessageId,
@@ -3283,34 +3451,49 @@ export default function ChatView({
         images: imagesToSend,
         isQueued: true,
       } as const;
-      if (hasDurableMessageQueue && viewSessionId && window.agentApi?.enqueueSessionMessage) {
-        addMessage(queuedMessage, viewSessionId);
+      if (queuedSessionId) {
+        clearSessionDraft(queuedSessionId);
+        void imageDraftCoordinator.clear(queuedSessionId);
+      }
+      clearSubmittedComposer();
+      if (hasDurableMessageQueue && queuedSessionId && window.agentApi?.enqueueSessionMessage) {
+        addMessage(queuedMessage, queuedSessionId);
         try {
-          const state = await window.agentApi.enqueueSessionMessage(viewSessionId, {
+          const state = await window.agentApi.enqueueSessionMessage(queuedSessionId, {
             sourceMessageId,
             content: finalMsg,
             images: imagesToSend,
             agentIds: agentIdsToSend,
             agentName: agentNamesLabel,
           });
-          applySessionQueueState(state, viewSessionId);
+          applySessionQueueState(state, queuedSessionId);
         } catch (queueError) {
-          const currentMessages = useAgentStore.getState().getMessagesForSession(viewSessionId);
+          const currentMessages = useAgentStore.getState().getMessagesForSession(queuedSessionId);
           setMessages(
             currentMessages.filter((message) => message.id !== sourceMessageId),
-            viewSessionId,
+            queuedSessionId,
           );
-          setInput(finalMsg);
-          setPendingImages(imagesToSend ?? []);
+          writeSessionDraft(queuedSessionId, finalMsg);
+          void imageDraftCoordinator.save(queuedSessionId, imagesToSend ?? []);
+          if ((selectedSessionIdRef.current || sessionIdRef.current) === queuedSessionId) {
+            setInput(finalMsg);
+            setPendingImages(imagesToSend ?? []);
+          }
           setError(queueError instanceof Error ? queueError.message : "排队消息保存失败");
         }
       } else {
-        addMessage(queuedMessage);
+        addMessage(queuedMessage, queuedSessionId ?? undefined);
       }
       return;
     }
 
     // ── Normal send flow ───────────────────────────────────────────────────
+    const submittedSessionId = selectedSessionId || sessionId;
+    if (isNativeRuntime && submittedSessionId) {
+      preserveNativeDraftRef.current = true;
+      preserveNativeImageDraftSessionRef.current = submittedSessionId;
+    }
+    clearSubmittedComposer();
     setTodos([]);  // clear previous run's todos on new message
     const sourceMessageId = crypto.randomUUID();
 
@@ -3454,6 +3637,8 @@ export default function ChatView({
             showSettings={composerAgentType === "customer-agent"}
             onOpenDesktopLive={onOpenDesktopLive}
             desktopLiveOpen={desktopLiveOpen}
+            filesOpen={fileDrawerOpen}
+            onToggleFiles={onToggleFiles}
             hideToBackgroundTitle={hideToBackgroundTitle}
             codexReleaseState={codexReleaseState}
             onHideToBackground={onHideToBackground}
@@ -3572,12 +3757,12 @@ export default function ChatView({
                 trace={chatMsg.executionTrace}
                 loadTrace={loadCodexExecutionTrace}
                 loadToolResult={fetchToolResult}
-                renderContent={renderAssistantText}
+                renderContent={renderMessageContent}
                 runtimeProgress={runtimeProgress}
                 nativeSubagents={nativeSubagents}
                 onSelectSession={onSelectSession}
                 workspacePath={workspacePath}
-                enableFilePreview={isWebShell()}
+                onOpenArtifact={onOpenArtifact}
                 refreshSignal={chatMsg.executionTrace.turnId === latestCodexExecutionTurnId
                   ? codexTraceRefreshSignal
                   : 0}
@@ -3814,7 +3999,7 @@ export default function ChatView({
                     sections={msg.presentation.reasoning}
                     streaming={isRunning && isLastAssistant && agentActivity === "thinking"}
                     startedAt={thinkingStartedAt}
-                    renderContent={renderAssistantText}
+                    renderContent={renderMessageContent}
                   />
                 )}
                 {/* @agent chip + message */}
@@ -3846,12 +4031,12 @@ export default function ChatView({
                   </div>
                 ) : msg.role === "assistant" && msg.content ? (
                   <div style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
-                    {renderAssistantText(msg.content)}
+                    {renderMessageContent(msg.content)}
                   </div>
                 ) : (
                   msg.content && (
                     <div style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
-                      {isUser ? msg.content : renderAssistantText(msg.content)}
+                      {isUser ? msg.content : renderMessageContent(msg.content)}
                     </div>
                   )
                 )}
@@ -3918,7 +4103,7 @@ export default function ChatView({
                     items={group.items}
                     onSelectSession={onSelectSession}
                     workspacePath={workspacePath}
-                    enableFilePreview={isWebShell()}
+                    onOpenArtifact={onOpenArtifact}
                     onLoadResult={loadToolResult}
                   />
                 ) : (
@@ -3930,7 +4115,7 @@ export default function ChatView({
                     nativeSubagent={group.items[0].nativeSubagent}
                     onSelectSession={onSelectSession}
                     workspacePath={workspacePath}
-                    enableFilePreview={isWebShell()}
+                    onOpenArtifact={onOpenArtifact}
                     onLoadResult={loadToolResult}
                   />
                 ))}
@@ -3972,12 +4157,12 @@ export default function ChatView({
                           {e.removed > 0 && <span style={{ color: "var(--danger)", fontWeight: 600 }}>−{e.removed}</span>}
                           {e.added === 0 && e.removed === 0 && <span style={{ color: "var(--text-muted)" }}>{e.lines}行</span>}
                         </>;
-                        return isWebShell() && previewPath ? (
+                        return onOpenArtifact && previewPath ? (
                           <button
                             key={e.path}
                             type="button"
                             className="chat-file-change-link"
-                            onClick={() => postWebArtifactOpen(previewPath)}
+                            onClick={() => onOpenArtifact(previewPath)}
                             title={`预览 ${previewPath}`}
                             aria-label={`预览改动文件 ${e.path.replace(/\\/g, "/").split("/").pop()}`}
                           >

@@ -1,5 +1,10 @@
 const DRAFT_PREFIX = "agentroam:draft:";
 
+export type SessionDraftAction =
+  | { type: "inactive"; ownerSessionId: null }
+  | { type: "restore"; ownerSessionId: string }
+  | { type: "persist"; ownerSessionId: string; value: string };
+
 function key(sessionId: string): string {
   return `${DRAFT_PREFIX}${sessionId}`;
 }
@@ -30,4 +35,16 @@ export function clearSessionDraft(sessionId: string | null | undefined): void {
   } catch {
     // Keep the visible draft when storage cleanup is unavailable.
   }
+}
+
+export function resolveSessionDraftAction(
+  ownerSessionId: string | null,
+  viewedSessionId: string | null | undefined,
+  value: string,
+): SessionDraftAction {
+  if (!viewedSessionId) return { type: "inactive", ownerSessionId: null };
+  if (ownerSessionId !== viewedSessionId) {
+    return { type: "restore", ownerSessionId: viewedSessionId };
+  }
+  return { type: "persist", ownerSessionId: viewedSessionId, value };
 }

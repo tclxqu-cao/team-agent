@@ -56,6 +56,16 @@ describe("buildContextUsageView", () => {
 
     expect(view.ratio).toBe(1);
     expect(view.percent).toBe(100);
+    expect(view.percentLabel).toBe("100%");
+  });
+
+  it("keeps low usage changes visible for a large context window", () => {
+    const usage = { ...createUsage(), maxTokens: 1_000_000, totalTokens: 39_000 };
+    const view = buildContextUsageView(usage, 1000);
+
+    expect(view.percent).toBe(4);
+    expect(view.percentLabel).toBe("3.9%");
+    expect(formatContextUsageSummary(view, true)).toBe("3.9%");
   });
 });
 
