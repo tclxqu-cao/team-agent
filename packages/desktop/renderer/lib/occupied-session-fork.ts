@@ -10,6 +10,7 @@ export interface OccupiedSendPayload {
   images?: string[];
   agentIds?: string[];
   agentName?: string;
+  restoreDraftOnFailure?: boolean;
 }
 
 export interface OccupiedSessionRecovery {
@@ -67,6 +68,7 @@ export function createOccupiedSessionRecovery(
       ...payload,
       images: payload.images ? [...payload.images] : undefined,
       agentIds: payload.agentIds ? [...payload.agentIds] : undefined,
+      restoreDraftOnFailure: payload.restoreDraftOnFailure,
     },
     sendAttempted: false,
   };

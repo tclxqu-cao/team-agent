@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 
 const appSource = readFileSync(new URL("../../App.tsx", import.meta.url), "utf8");
 const desktopStyles = readFileSync(new URL("../../styles/global.css", import.meta.url), "utf8");
+const filePreviewSource = readFileSync(new URL("./FilePreview.tsx", import.meta.url), "utf8");
 
 describe("Electron file workspace layout", () => {
   it("enables the dock grid only when the Electron gateway exists", () => {
@@ -34,6 +35,14 @@ describe("Electron file workspace layout", () => {
     expect(workspaceStyles).toMatch(/--ui-muted-surface:\s*var\(--bg-deep\)/);
     expect(workspaceStyles).toMatch(/--ui-muted-text:\s*var\(--text-secondary\)/);
     expect(workspaceStyles).toMatch(/--ui-muted-border:\s*var\(--border-default\)/);
+  });
+
+  it("keeps file preview header buttons outside the Electron drag region", () => {
+    const headerButtonStyles = filePreviewSource.match(
+      /const HEADER_BUTTON_STYLES: React\.CSSProperties(?: & \{ WebkitAppRegion: string \})? = \{([\s\S]*?)\n\};/,
+    )?.[1] ?? "";
+
+    expect(headerButtonStyles).toMatch(/WebkitAppRegion:\s*"no-drag"/);
   });
 
   it("does not take ownership of the WebApp drawer selectors", () => {

@@ -293,6 +293,9 @@ export interface AgentApi {
   setSetting(key: string, value: string): Promise<void>;
   saveSettings(settings: Record<string, unknown>): Promise<void>;
   setActiveProfile(profileId: string): Promise<void>;
+  listToolPolicies(): Promise<{ policies: ToolExecutionPolicyView[]; tools: string[] }>;
+  saveToolPolicy(policy: Record<string, unknown>, exists: boolean): Promise<ToolExecutionPolicyView>;
+  deleteToolPolicy(policyId: string): Promise<{ deleted: boolean; policyId: string }>;
   openFileDialog(): Promise<string | null>;
   showDirectoryContextMenu?(path: string): Promise<{ shown: true }>;
   fileWorkspaceRequest<T = unknown>(method: FileWorkspaceMethod, params?: Record<string, unknown>): Promise<T>;
@@ -445,6 +448,28 @@ export interface AgentApi {
 
   // Global wake shortcut: fired after main has shown/focused the window
   onWakeAiHub(callback: () => void): () => void;
+}
+
+export interface ToolPolicyProgramRuleView {
+  executable: string;
+  subcommands?: string[];
+  allowedFlags?: string[];
+  deniedFlags?: string[];
+  pathFlags?: string[];
+  positionalPathIndexes?: number[];
+}
+
+export interface ToolExecutionPolicyView {
+  id: string;
+  name: string;
+  enabled: boolean;
+  allowedTools: string[];
+  filesystem: { readRoots: string[]; writeRoots: string[]; followSymlinks: boolean };
+  commands: { mode: "deny" | "allowlist" | "unrestricted"; programs: ToolPolicyProgramRuleView[]; inheritedEnvironment: string[] };
+  network: "deny" | "read-only" | "allow";
+  limits: { timeoutMs: number; maxOutputBytes: number };
+  created?: string;
+  updated?: string;
 }
 
 export type HubAdapterId = "deepseek" | "chatgpt" | "gemini" | "grok" | "generic";

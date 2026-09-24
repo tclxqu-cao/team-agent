@@ -11,6 +11,7 @@ import {
 import { ArrowDownToLine, Check, Copy, CornerUpRight, FileText, GripVertical, LoaderCircle, Pencil, Play, RefreshCw, Square, Target, Trash2, Volume2 } from "lucide-react";
 import AgentBrandIcon from "./AgentBrandIcon";
 import MermaidBlock from "./MermaidBlock";
+import StructuredAgentMessage from "./StructuredAgentMessage";
 import {
   isNativeAgentType,
   loadNativeRunPref,
@@ -54,6 +55,11 @@ import {
 import { normalizeComposerImage } from "../lib/browser-image-normalization";
 import { supportsMidTurnSteering } from "../lib/runtime-capabilities";
 import { copyTextToClipboard } from "../lib/clipboard";
+import {
+  createComposerSubmission,
+  createSuggestionSubmission,
+  type ChatSubmission,
+} from "../lib/chat-submission";
 import {
   clearSessionDraft,
   readSessionDraft,
@@ -3070,7 +3076,12 @@ export default function ChatView({
    * started as a new run.
    */
   async function startRun(
-    message: { content: string; agentName?: string; images?: string[] },
+    message: {
+      content: string;
+      agentName?: string;
+      images?: string[];
+      restoreDraftOnFailure?: boolean;
+    },
     targetSessionId: string,
     agentIds?: string[],
   ) {
@@ -3080,6 +3091,7 @@ export default function ChatView({
         images: message.images ? [...message.images] : undefined,
         agentIds: agentIds ? [...agentIds] : undefined,
         agentName: message.agentName,
+        restoreDraftOnFailure: message.restoreDraftOnFailure,
       });
     }
     abortRef.current = false;
@@ -3106,11 +3118,13 @@ export default function ChatView({
       updatePendingSendState(targetSessionId, "failed");
       const failedPayload = pendingNativeSendPayloadRef.current.get(targetSessionId);
       if (targetSessionId.startsWith("runtime:") && failedPayload?.content) {
-        writeSessionDraft(targetSessionId, failedPayload.content);
-        void imageDraftCoordinator.save(targetSessionId, failedPayload.images ?? []);
-        if ((selectedSessionIdRef.current || sessionIdRef.current) === targetSessionId) {
-          setInput(failedPayload.content);
-          setPendingImages(failedPayload.images ?? []);
+        if (failedPayload.restoreDraftOnFailure !== false) {
+          writeSessionDraft(targetSessionId, failedPayload.content);
+          void imageDraftCoordinator.save(targetSessionId, failedPayload.images ?? []);
+          if ((selectedSessionIdRef.current || sessionIdRef.current) === targetSessionId) {
+            setInput(failedPayload.content);
+            setPendingImages(failedPayload.images ?? []);
+          }
         }
         pendingNativeSendPayloadRef.current.delete(targetSessionId);
         if (preserveNativeImageDraftSessionRef.current === targetSessionId) {
@@ -3159,8 +3173,8 @@ export default function ChatView({
     }
   }
 
-  const handleSend = async () => {
-    if (!input.trim() || !canCompose || pendingImageReads > 0) return;
+  const submitChatMessage = async (submission: ChatSubmission) => {
+    if (!submission.text || !canCompose || pendingImageReads > 0) return;
 
     if (historyWindowModeRef.current === "anchored") {
       const restoredLatest = await returnToLatestHistory();
@@ -3171,12 +3185,18 @@ export default function ChatView({
 
     setError(null);
 
-    const userMsg = input.trim();
+    const userMsg = submission.text;
+    const clearSubmittedComposer = () => {
+      if (!submission.clearComposer) return;
+      setInput("");
+      setAttachedFiles([]);
+      setPendingImages([]);
+    };
 
     // ── /loop command handling ─────────────────────────────────────────────
     if (/^\/loop\b/i.test(userMsg)) {
       const rest = userMsg.slice(5).trim();
-      setInput("");
+      clearSubmittedComposer();
       addMessage({ id: crypto.randomUUID(), role: "user", content: userMsg, timestamp: Date.now() });
 
       // /loop stop — stop all
@@ -3317,7 +3337,7 @@ export default function ChatView({
           const result = await window.agentApi.cronCreate(intervalExpr, prompt, { sessionId: targetSessionId });
           const updated = await window.agentApi.cronList();
           setCronTasks(updated);
-          setInput("");
+          clearSubmittedComposer();
           addMessage({ id: crypto.randomUUID(), role: "user", content: userMsg, timestamp: Date.now() });
           addMessage({
             id: crypto.randomUUID(), role: "assistant",
@@ -3334,32 +3354,27 @@ export default function ChatView({
 
     // Preserve slash skill syntax. Each runtime adapter maps it to its native
     // invocation format (Customer Agent `/name`, Claude `/name`, Codex `$name`).
-    const finalMsg = input.trim();
+    const finalMsg = submission.text;
     const explicitGoal = finalMsg.match(/^\/goal(?:\s+([\s\S]+))?$/i);
-    const goalObjective = explicitGoal ? explicitGoal[1]?.trim() ?? "" : goalMode ? finalMsg : null;
+    const goalObjective = explicitGoal
+      ? explicitGoal[1]?.trim() ?? ""
+      : submission.applyGoalMode && goalMode ? finalMsg : null;
     if (goalObjective !== null && !goalObjective) {
       setError("请输入目标内容");
       return;
     }
 
-    const agentNamesLabel = pendingAgents.length > 0
-      ? pendingAgents.map(a => a.name).join(", ")
-      : undefined;
-    const imagesToSend = pendingImages.length > 0 ? [...pendingImages] : undefined;
-    const agentIdsToSend = pendingAgents.map(a => a.id);
-    setPendingAgents([]);
-    const clearSubmittedComposer = () => {
-      setInput("");
-      setAttachedFiles([]);
-      setPendingImages([]);
-    };
+    const agentNamesLabel = submission.agentName;
+    const imagesToSend = submission.images;
+    const agentIdsToSend = submission.agentIds ?? [];
+    if (submission.clearComposer) setPendingAgents([]);
 
     if (goalObjective !== null) {
       const sourceMessageId = crypto.randomUUID();
       let optimisticSessionId: string | null = null;
       let admittedSessionId: string | null = null;
       abortRef.current = false;
-      if (viewSessionId) {
+      if (submission.clearComposer && viewSessionId) {
         clearSessionDraft(viewSessionId);
         void imageDraftCoordinator.clear(viewSessionId);
       }
@@ -3400,7 +3415,7 @@ export default function ChatView({
           onSessionCreated,
         });
         admittedSessionId = targetSessionId;
-        if (targetSessionId !== viewSessionId) {
+        if (submission.clearComposer && targetSessionId !== viewSessionId) {
           clearSessionDraft(targetSessionId);
           void imageDraftCoordinator.clear(targetSessionId);
         }
@@ -3420,15 +3435,15 @@ export default function ChatView({
           );
         }
         const failedSessionId = admittedSessionId ?? optimisticSessionId ?? viewSessionId;
-        if (failedSessionId) {
+        if (submission.restoreDraftOnFailure && failedSessionId) {
           writeSessionDraft(failedSessionId, finalMsg);
           void imageDraftCoordinator.save(failedSessionId, imagesToSend ?? []);
         }
         const currentlyViewedSessionId = selectedSessionIdRef.current || sessionIdRef.current;
-        if (
+        if (submission.restoreDraftOnFailure && (
           (failedSessionId && currentlyViewedSessionId === failedSessionId)
           || (!failedSessionId && !currentlyViewedSessionId)
-        ) {
+        )) {
           setInput(finalMsg);
           setPendingImages(imagesToSend ?? []);
         }
@@ -3451,7 +3466,7 @@ export default function ChatView({
         images: imagesToSend,
         isQueued: true,
       } as const;
-      if (queuedSessionId) {
+      if (submission.clearComposer && queuedSessionId) {
         clearSessionDraft(queuedSessionId);
         void imageDraftCoordinator.clear(queuedSessionId);
       }
@@ -3473,11 +3488,13 @@ export default function ChatView({
             currentMessages.filter((message) => message.id !== sourceMessageId),
             queuedSessionId,
           );
-          writeSessionDraft(queuedSessionId, finalMsg);
-          void imageDraftCoordinator.save(queuedSessionId, imagesToSend ?? []);
-          if ((selectedSessionIdRef.current || sessionIdRef.current) === queuedSessionId) {
-            setInput(finalMsg);
-            setPendingImages(imagesToSend ?? []);
+          if (submission.restoreDraftOnFailure) {
+            writeSessionDraft(queuedSessionId, finalMsg);
+            void imageDraftCoordinator.save(queuedSessionId, imagesToSend ?? []);
+            if ((selectedSessionIdRef.current || sessionIdRef.current) === queuedSessionId) {
+              setInput(finalMsg);
+              setPendingImages(imagesToSend ?? []);
+            }
           }
           setError(queueError instanceof Error ? queueError.message : "排队消息保存失败");
         }
@@ -3489,7 +3506,7 @@ export default function ChatView({
 
     // ── Normal send flow ───────────────────────────────────────────────────
     const submittedSessionId = selectedSessionId || sessionId;
-    if (isNativeRuntime && submittedSessionId) {
+    if (submission.clearComposer && isNativeRuntime && submittedSessionId) {
       preserveNativeDraftRef.current = true;
       preserveNativeImageDraftSessionRef.current = submittedSessionId;
     }
@@ -3539,7 +3556,12 @@ export default function ChatView({
       }
 
       await startRun(
-        { content: finalMsg, agentName: agentNamesLabel, images: imagesToSend },
+        {
+          content: finalMsg,
+          agentName: agentNamesLabel,
+          images: imagesToSend,
+          restoreDraftOnFailure: submission.restoreDraftOnFailure,
+        },
         targetSessionId,
         agentIdsToSend.length > 0 ? agentIdsToSend : undefined,
       );
@@ -3548,6 +3570,19 @@ export default function ChatView({
       if (targetSessionId) updatePendingSendState(targetSessionId, "failed");
       setError(err instanceof Error ? err.message : "Agent run failed");
     }
+  };
+
+  const handleSend = async () => submitChatMessage(createComposerSubmission({
+    text: input,
+    agentIds: pendingAgents.map((agent) => agent.id),
+    agentName: pendingAgents.length > 0
+      ? pendingAgents.map((agent) => agent.name).join(", ")
+      : undefined,
+    images: pendingImages,
+  }));
+
+  const handleSuggestionSend = (command: string) => {
+    void submitChatMessage(createSuggestionSubmission(command));
   };
 
   // ── Voice command from wake word ───────────────────────────────────────
@@ -4031,7 +4066,14 @@ export default function ChatView({
                   </div>
                 ) : msg.role === "assistant" && msg.content ? (
                   <div style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
-                    {renderMessageContent(msg.content)}
+                    <StructuredAgentMessage
+                      text={msg.content}
+                      complete={!(isRunning && isLastAssistant)}
+                      renderText={renderMessageContent}
+                      suggestionsEnabled={canCompose && pendingImageReads === 0}
+                      onSuggestionSend={handleSuggestionSend}
+                      onCopyFailed={() => setError("复制失败，请选择文字后复制")}
+                    />
                   </div>
                 ) : (
                   msg.content && (

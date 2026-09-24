@@ -111,6 +111,9 @@ contextBridge.exposeInMainWorld("desktopDeviceApi", {
   getSettings: () => ipcRenderer.invoke("settings:get"),
   saveSettings: (settings: Record<string, unknown>) => ipcRenderer.invoke("settings:save", settings),
   setActiveProfile: (profileId: string) => ipcRenderer.invoke("settings:setActiveProfile", profileId),
+  listToolPolicies: () => ipcRenderer.invoke("tool-policies:list"),
+  saveToolPolicy: (policy: Record<string, unknown>, exists: boolean) => ipcRenderer.invoke("tool-policies:save", policy, exists),
+  deleteToolPolicy: (policyId: string) => ipcRenderer.invoke("tool-policies:delete", policyId),
 
   // Projects
   listProjects: () => ipcRenderer.invoke("projects:list"),

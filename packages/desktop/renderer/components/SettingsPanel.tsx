@@ -3,6 +3,7 @@ import { useSettingsStore } from "../stores/settingsStore";
 import type { ModelProfile } from "../global.d.ts";
 import { parseMaxIterationsDraft } from "../lib/settings-validation";
 import AppActionNotice, { type AppActionNoticeType } from "./AppActionNotice";
+import ToolPolicyManager from "./ToolPolicyManager";
 
 const PROVIDERS = [
   { value: "anthropic", label: "Anthropic" },
@@ -326,6 +327,8 @@ export default function SettingsPanel() {
 
         </div>
       </section>
+
+      <ToolPolicyManager onNotice={(message, type) => setActionNotice({ message, type })} />
 
 
       <div style={{ marginTop: 28, display: "flex", gap: 14, alignItems: "center" }}>

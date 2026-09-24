@@ -177,6 +177,26 @@ ipcMain.handle("service:stream", (event, id: string, path: string, lastEventId: 
   });
 });
 ipcMain.handle("service:stream-stop", (event, id: string) => { trustedServiceSender(event); sharedService.stop(id); });
+ipcMain.handle("tool-policies:list", async (event) => {
+  trustedServiceSender(event);
+  return parseServiceJson(await sharedService.json("/api/tool-policies", "GET"));
+});
+ipcMain.handle("tool-policies:save", async (event, policy: Record<string, unknown>, exists: boolean) => {
+  trustedServiceSender(event);
+  const id = typeof policy?.id === "string" ? encodeURIComponent(policy.id) : "";
+  const response = await sharedService.json(exists ? `/api/tool-policies/${id}` : "/api/tool-policies", exists ? "PUT" : "POST", JSON.stringify(policy));
+  return parseServiceJson(response);
+});
+ipcMain.handle("tool-policies:delete", async (event, policyId: string) => {
+  trustedServiceSender(event);
+  return parseServiceJson(await sharedService.json(`/api/tool-policies/${encodeURIComponent(policyId)}`, "DELETE"));
+});
+
+function parseServiceJson(response: { status: number; body: string }): unknown {
+  const body = JSON.parse(response.body || "{}");
+  if (response.status >= 400) throw new Error(body.error || `Service request failed: ${response.status}`);
+  return body;
+}
 const voiceServiceCwd = app.isPackaged
   ? process.resourcesPath
   : join(app.getAppPath(), "..", "..");

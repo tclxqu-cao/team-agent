@@ -915,10 +915,11 @@ function fmtSize(n: number): string {
   return `${(n / 1024 / 1024).toFixed(1)}M`;
 }
 
-const HEADER_BUTTON_STYLES: React.CSSProperties = {
+const HEADER_BUTTON_STYLES: React.CSSProperties & { WebkitAppRegion: string } = {
   width: 28, height: 28, borderRadius: 7, border: "1px solid var(--ui-panel-input-border, #333)",
   display: "inline-flex", alignItems: "center", justifyContent: "center",
   background: "var(--ui-muted-surface, #1b1b22)", color: "var(--ui-muted-text, #ccc)", flexShrink: 0, cursor: "pointer",
+  WebkitAppRegion: "no-drag",
 };
 
 const INLINE_ACTION_STYLES: React.CSSProperties = {

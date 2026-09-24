@@ -51,7 +51,12 @@ describe("occupied Codex session fork recovery", () => {
   it("preserves the send payload and reuses one fork for retries", () => {
     const recovery = createOccupiedSessionRecovery(
       summary().id,
-      { content: "continue", images: ["image"], agentIds: ["agent-1"] },
+      {
+        content: "continue",
+        images: ["image"],
+        agentIds: ["agent-1"],
+        restoreDraftOnFailure: false,
+      },
       "recovery-1",
     );
     const forked = markOccupiedRecoveryForked(recovery, "runtime:codex:Zm9yaw");
@@ -61,7 +66,12 @@ describe("occupied Codex session fork recovery", () => {
       sourceSessionId: summary().id,
       forkSessionId: "runtime:codex:Zm9yaw",
       sendAttempted: true,
-      payload: { content: "continue", images: ["image"], agentIds: ["agent-1"] },
+      payload: {
+        content: "continue",
+        images: ["image"],
+        agentIds: ["agent-1"],
+        restoreDraftOnFailure: false,
+      },
     });
     expect(markOccupiedRecoveryForked(forked, forked.forkSessionId!)).toBe(forked);
     expect(occupiedRecoveryMessageId(forked)).toBe("occupied-recovery:recovery-1");

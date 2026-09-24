@@ -160,6 +160,8 @@ describe("shared Codex-style message history", () => {
     expect(globalCss).not.toContain(".chat-message-group--trace::after");
     expect(globalCss).toContain(".chat-view--codex-history .agent-activity-indicator");
     expect(globalCss).toContain(".reasoning-summary__preview");
+    expect(globalCss).toMatch(/\.reasoning-summary\s*\{[^}]*width: 100%;/s);
+    expect(globalCss).not.toMatch(/\.reasoning-summary\s*\{[^}]*width: min\(720px, 100%\);/s);
     expect(globalCss).toContain(".tool-call-shell__preview");
     expect(globalCss.match(/place-items: center start/g)).toHaveLength(6);
     expect(globalCss.match(/padding: 5px 0;/g)).toHaveLength(4);
@@ -294,6 +296,24 @@ describe("shared Codex-style message history", () => {
     expect(chatView).toContain('rel="noopener noreferrer"');
     expect(globalCss).toContain(".chat-message-link:hover");
     expect(globalCss).toContain(".chat-message-link:focus-visible");
+  });
+
+  it("renders completed assistant JSON through the shared structured message boundary", () => {
+    expect(chatView).toContain('import StructuredAgentMessage from "./StructuredAgentMessage"');
+    expect(chatView).toContain("<StructuredAgentMessage");
+    expect(chatView).toContain("complete={!(isRunning && isLastAssistant)}");
+    expect(chatView).toContain("renderText={renderMessageContent}");
+    expect(chatView).toContain("suggestionsEnabled={canCompose && pendingImageReads === 0}");
+    expect(chatView).toContain("onSuggestionSend={handleSuggestionSend}");
+    expect(chatView).toContain("renderContent={renderMessageContent}");
+    expect(chatView).toContain("createSuggestionSubmission(command)");
+    expect(chatView).toContain("createComposerSubmission({");
+    expect(chatView).toContain("if (!submission.clearComposer) return;");
+    expect(globalCss).toContain(".structured-agent-message");
+    expect(globalCss).toContain(".structured-agent-suggestion:focus-visible");
+    expect(globalCss).toContain(".structured-agent-suggestion:disabled");
+    expect(globalCss).toContain("background: var(--accent-dim)");
+    expect(globalCss).toContain("color: var(--text-primary)");
   });
 
   it("renders local artifact links with a file icon when an opener is injected", () => {
