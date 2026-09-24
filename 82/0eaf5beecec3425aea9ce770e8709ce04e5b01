@@ -1,0 +1,71 @@
+.agent/skills/homepage-orchestrator/SKILL.md
+  s_bd20ce99e6a8be::t_978927bbf83fd0 11
+  s_bd20ce99e6a8be::t_9954b0384c2115 1-10,12-17
+packages/server/app/api/tool-policies/route.test.ts
+  s_bd20ce99e6a8be::t_ed32f626e598f0 2-6,8-83
+  s_bd20ce99e6a8be::t_51fe7341a66a5a 1,7
+packages/server/lib/shared-run-config.ts
+  s_bd20ce99e6a8be::t_7340d32a613996 4,120-121,123-125,128,130
+  s_bd20ce99e6a8be::t_c5296e511b272a 1,122
+  s_bd20ce99e6a8be::t_0efa183099d731 33-34,115
+packages/server/lib/tool-execution-policies.ts
+  s_bd20ce99e6a8be::t_fd7eaac81a38e1 8,11,46-57
+  s_bd20ce99e6a8be::t_0efa183099d731 1-7,9-10,12-45,58-60
+packages/server/app/api/flow/v1/runs/route.ts
+  s_bd20ce99e6a8be::t_0efa183099d731 12,24,38,63
+packages/server/app/api/agent/run/route.ts
+  s_bd20ce99e6a8be::t_0efa183099d731 14,36,107,124,145,169,171
+  s_bd20ce99e6a8be::t_7340d32a613996 103-105,147
+packages/server/lib/configured-skill-catalog.test.ts
+  s_bd20ce99e6a8be::t_c5296e511b272a 1-70
+packages/server/lib/configured-skill-catalog.ts
+  s_bd20ce99e6a8be::t_7340d32a613996 1-28
+.agent/skills/homepage-content-render/SKILL.md
+  s_bd20ce99e6a8be::t_9954b0384c2115 1-7,10-18,20,23,25-26
+  s_bd20ce99e6a8be::t_b2f4fda727ea73 8-9
+  s_bd20ce99e6a8be::t_926e8d1b87d558 22
+  s_bd20ce99e6a8be::t_7f9c3110f53c77 19,24
+  s_bd20ce99e6a8be::t_2539488945e701 21
+packages/server/lib/flow-protocol.test.ts
+  s_bd20ce99e6a8be::t_ed32f626e598f0 58-62
+  s_bd20ce99e6a8be::t_de9d1b8dc48933 56-57
+packages/server/app/api/tool-policies/route.ts
+  s_bd20ce99e6a8be::t_fd7eaac81a38e1 2-6,29
+  s_bd20ce99e6a8be::t_ce972b3fc51cd3 1,7-28,30-31
+.agent/skills/wiki-query/SKILL.md
+  s_bd20ce99e6a8be::t_9954b0384c2115 1-2,18-19,21,23,25
+  s_bd20ce99e6a8be::t_a11d2d1ef46ed7 3-17,20,22,24,26-345
+packages/server/app/api/agent-host.test.ts
+  s_bd20ce99e6a8be::t_3e47ef221656ee 157,168-173,175-178,182-183,193,201-207,220-221,225-227,230-231,235,240-241
+  s_bd20ce99e6a8be::t_868fe60ed15437 161-163,165-167,242
+  s_bd20ce99e6a8be::t_ed32f626e598f0 164
+packages/server/lib/business-catalog.ts
+  s_bd20ce99e6a8be::t_7340d32a613996 12,70-71,86
+packages/server/lib/runtime-tool-catalog.ts
+  s_bd20ce99e6a8be::t_077dfab0394f27 1-22
+packages/server/app/api/tool-policies/[policyId]/route.ts
+  s_bd20ce99e6a8be::t_ed32f626e598f0 24-27
+  s_bd20ce99e6a8be::t_ce972b3fc51cd3 1,7-23,28,30-40
+  s_bd20ce99e6a8be::t_fd7eaac81a38e1 2-6,29
+packages/server/lib/flow-protocol.ts
+  s_bd20ce99e6a8be::t_0efa183099d731 6,24,86-87,134,151,193
+  s_bd20ce99e6a8be::t_077dfab0394f27 2,7,108
+.agent/skills/homepage-content-polish/SKILL.md
+  s_bd20ce99e6a8be::t_9954b0384c2115 1-20
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "820eaf5beecec3425aea9ce770e8709ce04e5b01",
+  "prompts": {},
+  "sessions": {
+    "s_bd20ce99e6a8be": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ce6b-091e-7092-a41f-005b854af272",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
