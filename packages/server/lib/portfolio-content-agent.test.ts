@@ -78,6 +78,19 @@ describe("Portfolio content Agent catalog", () => {
     expect(jobs?.prompt).toContain("Do not return a Markdown table");
   });
 
+  it("keeps the works Skill as a clickable project index", async () => {
+    const skills = await loadPortfolioSkills(portfolioSkillsDirectory({}, process.cwd()));
+    const works = skills.find((skill) => skill.name === "portfolio-works");
+
+    expect(works?.prompt).toContain("editorial project index instead of a table");
+    expect(works?.prompt).toContain("exactly 10 `button.artifact-flow-step`");
+    expect(works?.prompt).toContain("single quotes for every HTML attribute");
+    expect(works?.prompt).toContain("data-command='/project PROJECT_ID'");
+    expect(works?.prompt).toContain("/project agentroam");
+    expect(works?.prompt).toContain("/project kid-earth");
+    expect(works?.prompt).toContain("each project's own Skill is responsible for its media");
+  });
+
   it("seeds one stable project so persistent Portfolio sessions are visible", async () => {
     const root = await tempRoot();
     const canonicalRoot = await realpath(root);

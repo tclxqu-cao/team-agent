@@ -4,9 +4,12 @@ import { parsePortfolioArtifact, sanitizePortfolioHtml } from "./portfolio-artif
 describe("portfolio artifacts", () => {
   it("sanitizes active content and keeps approved commands", () => {
     const html = sanitizePortfolioHtml(
-      '<section onclick="steal()"><script>alert(1)</script><button data-command="/project agentroam">Open</button><a href="javascript:alert(1)">bad</a></section>',
+      '<section class="artifact unknown" onclick="steal()"><script>alert(1)</script><button class="artifact-flow-step unknown" type="button" data-command="/project agentroam">Open</button><a href="javascript:alert(1)">bad</a></section>',
     );
+    expect(html).toContain('class="artifact"');
+    expect(html).toContain('class="artifact-flow-step"');
     expect(html).toContain('data-command="/project agentroam"');
+    expect(html).not.toContain("unknown");
     expect(html).not.toMatch(/script|onclick|javascript:/i);
   });
 
