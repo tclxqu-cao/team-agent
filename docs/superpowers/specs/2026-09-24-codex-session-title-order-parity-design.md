@@ -44,7 +44,7 @@ Every Codex `thread/list` request used for discovery will send:
 }
 ```
 
-The workspace index and renderer continue preserving the returned Codex order. The renderer's optional "running sessions first" partition will not reorder Codex sessions, because that would violate desktop parity. Other runtimes retain the existing behavior.
+The workspace index and renderer preserve the returned Codex order by default. The existing "running sessions first" button remains an explicit user override: while enabled, it stably moves running sessions to the top of each project without changing the order inside the running and non-running partitions; when disabled, the project immediately returns to the native Codex order. Other runtimes retain the existing behavior.
 
 Pinned sessions remain in AgentRoam's explicit pinned section. Pinning is a user-selected AgentRoam override rather than part of the native Codex list order.
 
@@ -55,7 +55,7 @@ Pinned sessions remain in AgentRoam's explicit pinned section. Pinning is a user
 3. `CodexRuntimeAdapter` restarts only the discovery app-server for an explicit first-page refresh.
 4. The discovery client requests `thread/list` with `recency_at desc` and the relevant `projectId` or exact `cwd` filter.
 5. The adapter maps each thread using current `thread.name`, falling back to `preview`, and preserves response order.
-6. The renderer displays that order without applying the running-first partition for Codex.
+6. The renderer displays that order directly when running-first is disabled, or applies its existing stable running-first partition when the user enables the button.
 
 Cursor pages do not restart the discovery client. This keeps one app-server snapshot and cursor sequence for the pagination walk.
 
@@ -77,7 +77,7 @@ Focused native-runtime tests will verify:
 - adapter disposal closes both distinct clients and closes a shared injected client only once;
 - both AgentRoam-owned app-server PIDs are excluded from occupancy detection where applicable.
 
-Focused renderer tests will verify that running-first remains effective for non-Codex runtimes but preserves native source order for Codex.
+Focused renderer tests will continue verifying both states: default Codex rendering preserves native source order, while the manually enabled running-first mode stably partitions sessions without changing order inside either partition.
 
 Verification will run under Node 22 and include the affected native-runtime and renderer unit tests, TypeScript builds for changed packages, and `git diff --check`. Runtime acceptance will compare a refreshed Webapp response and rendered sidebar against Codex Desktop without restarting the execution connection or interrupting active sessions.
 
