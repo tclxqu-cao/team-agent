@@ -112,6 +112,10 @@
         "@agent/core": "*",
         "@anthropic-ai/claude-agent-sdk": "^0.3.259",
         "@opencode-ai/sdk": "1.18.27",
+        "ws": "^8.21.3",
+      },
+      "devDependencies": {
+        "@types/ws": "^8.18.1",
       },
     },
     "packages/runtime-darwin-arm64": {

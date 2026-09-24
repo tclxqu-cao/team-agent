@@ -1,5 +1,14 @@
 import { logGlobal } from "@agent/core";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import WebSocket, { type RawData } from "ws";
+import {
+  FallbackCodexAppServerLauncher,
+  SharedCodexAppServerLauncher,
+  StandaloneCodexAppServerLauncher,
+  type CodexAppServerLauncher,
+  type CodexAppServerLaunchMode,
+} from "./codex-app-server-launcher.js";
+import { createCodexProxyWebSocket } from "./codex-app-server-websocket.js";
 import { RuntimeSessionError } from "./types.js";
 
 export type RpcId = number | string;
@@ -17,14 +26,18 @@ export interface CodexAppServerClientOptions {
   requestTimeoutMs?: number;
   spawnProcess?: typeof spawn;
   environment?: NodeJS.ProcessEnv;
+  launcher?: CodexAppServerLauncher;
+  startupTimeoutMs?: number;
 }
 
 export class CodexAppServerClient {
-  private readonly executable: string;
   private readonly requestTimeoutMs: number;
-  private readonly spawnProcess: typeof spawn;
-  private readonly environment: NodeJS.ProcessEnv;
+  private readonly proxyWebSocketHandshakeTimeoutMs: number;
+  private readonly launcher: CodexAppServerLauncher;
   private process: ChildProcessWithoutNullStreams | null = null;
+  private webSocket: WebSocket | null = null;
+  private activeMode: CodexAppServerLaunchMode | null = null;
+  private processReady = false;
   private startPromise: Promise<void> | null = null;
   private buffer = "";
   private nextId = 1;
@@ -35,14 +48,26 @@ export class CodexAppServerClient {
   private serverRequestHandler: ((message: RpcServerRequest) => void) | null = null;
 
   constructor(options: CodexAppServerClientOptions = {}) {
-    this.executable = options.executable ?? "codex";
     this.requestTimeoutMs = options.requestTimeoutMs ?? 120_000;
-    this.spawnProcess = options.spawnProcess ?? spawn;
-    this.environment = options.environment ?? process.env;
+    this.proxyWebSocketHandshakeTimeoutMs = options.startupTimeoutMs ?? 10_000;
+    const launchOptions = {
+      executable: options.executable ?? "codex",
+      environment: normalizeCodexEnvironment(options.environment ?? process.env),
+      spawnProcess: options.spawnProcess ?? spawn,
+      startupTimeoutMs: options.startupTimeoutMs,
+    };
+    this.launcher = options.launcher ?? new FallbackCodexAppServerLauncher(
+      new SharedCodexAppServerLauncher(launchOptions),
+      new StandaloneCodexAppServerLauncher(launchOptions),
+    );
   }
 
   get pid(): number | undefined {
     return this.process?.pid;
+  }
+
+  get mode(): CodexAppServerLaunchMode | null {
+    return this.activeMode;
   }
 
   onNotification(listener: (message: RpcNotification) => void): () => void {
@@ -84,7 +109,7 @@ export class CodexAppServerClient {
   }
 
   private async ensureStarted(): Promise<void> {
-    if (this.process && !this.process.killed) return;
+    if (this.process && !this.process.killed && this.processReady) return;
     if (this.disposed) {
       throw new RuntimeSessionError("Codex App Server is disposed", "RUNTIME_UNAVAILABLE");
     }
@@ -95,37 +120,138 @@ export class CodexAppServerClient {
   }
 
   private async start(): Promise<void> {
-    console.log(`[codex-app-server-client] spawning: ${this.executable} app-server --stdio`);
-    const child = this.spawnProcess(this.executable, ["app-server", "--stdio"], {
-      env: normalizeCodexEnvironment(this.environment),
-      stdio: ["pipe", "pipe", "pipe"],
-    }) as ChildProcessWithoutNullStreams;
+    const failures: Array<{ mode: CodexAppServerLaunchMode; error: Error }> = [];
+    for (const attempt of this.launcher.attempts()) {
+      try {
+        console.log(`[codex-app-server-client] starting ${attempt.mode} transport`);
+        const child = await attempt.launch();
+        await this.attachProcess(child, attempt.mode);
+        await this.sendRequest("initialize", {
+          clientInfo: { name: "customer-agent", title: "Customer Agent", version: "0.1.0" },
+          capabilities: { experimentalApi: true },
+        });
+        this.write({ method: "initialized", params: {} });
+        this.processReady = true;
+        this.activeMode = attempt.mode;
+        console.log(
+          `[codex-app-server-client ${new Date().toISOString().slice(11,23)}] initialize completed (${attempt.mode})`,
+        );
+        return;
+      } catch (error) {
+        const failure = toError(error);
+        failures.push({ mode: attempt.mode, error: failure });
+        console.warn(`[codex-app-server-client] ${attempt.mode} startup failed: ${failure.message}`);
+        await this.stop();
+      }
+    }
+
+    const finalFailure = failures.at(-1)?.error
+      ?? new Error("No Codex app-server launch attempts were configured");
+    if (failures.length > 1) {
+      console.warn(
+        `[codex-app-server-client] all startup attempts failed: ${failures
+          .map(({ mode, error }) => `${mode}: ${error.message}`)
+          .join("; ")}`,
+      );
+    }
+    if (finalFailure instanceof RuntimeSessionError) throw finalFailure;
+    throw new RuntimeSessionError(finalFailure.message, "RUNTIME_UNAVAILABLE");
+  }
+
+  private async attachProcess(
+    child: ChildProcessWithoutNullStreams,
+    mode: CodexAppServerLaunchMode,
+  ): Promise<void> {
     this.process = child;
+    this.processReady = false;
     this.buffer = "";
-    child.stdout.setEncoding("utf8");
-    child.stdout.on("data", (chunk: string) => this.handleStdout(chunk));
     child.stderr.setEncoding("utf8");
     child.stderr.on("data", (chunk: string) => {
       const message = chunk.trim();
-      if (message) console.warn(`[codex-app-server] ${message}`);
+      if (message) console.warn(`[codex-app-server ${mode}] ${message}`);
     });
     child.once("error", (error) => {
       logGlobal("error", "codex-app-server", "codex app-server process error", error);
       console.log("[codex-app-server-client] child error:", error.message);
-      this.handleExit(error);
+      this.handleExit(child, error);
     });
     child.once("exit", (code, signal) => {
       logGlobal("error", "codex-app-server", "codex app-server process exited", undefined, { code, signal });
       console.log(`[codex-app-server-client] child exit: code=${code} signal=${signal}`);
-      this.handleExit(new Error(`Codex App Server exited (${code ?? signal ?? "unknown"})`));
+      this.handleExit(child, new Error(`Codex App Server exited (${code ?? signal ?? "unknown"})`));
     });
 
-    await this.sendRequest("initialize", {
-      clientInfo: { name: "customer-agent", title: "Customer Agent", version: "0.1.0" },
-      capabilities: { experimentalApi: true },
+    if (mode === "shared") {
+      await this.attachSharedWebSocket(child);
+      return;
+    }
+    child.stdout.setEncoding("utf8");
+    child.stdout.on("data", (chunk: string) => this.handleStdout(child, chunk));
+  }
+
+  private attachSharedWebSocket(child: ChildProcessWithoutNullStreams): Promise<void> {
+    const socket = createCodexProxyWebSocket(child, this.proxyWebSocketHandshakeTimeoutMs);
+    this.webSocket = socket;
+
+    return new Promise<void>((resolve, reject) => {
+      let state: "connecting" | "open" | "failed" = "connecting";
+      const handshakeTimer = setTimeout(() => {
+        if (state !== "connecting") return;
+        state = "failed";
+        socket.terminate();
+        reject(new Error(
+          `Codex App Server WebSocket handshake timed out after ${this.proxyWebSocketHandshakeTimeoutMs}ms`,
+        ));
+      }, Math.max(1, this.proxyWebSocketHandshakeTimeoutMs));
+      socket.on("message", (data: RawData, isBinary: boolean) => {
+        if (this.webSocket !== socket) return;
+        if (isBinary) {
+          console.warn("[codex-app-server shared] Ignoring binary WebSocket message");
+          return;
+        }
+        const line = data.toString().trim();
+        if (line) this.handleLine(line);
+      });
+      socket.on("error", (error) => {
+        if (state === "connecting") {
+          state = "failed";
+          clearTimeout(handshakeTimer);
+          reject(error);
+          return;
+        }
+        if (state === "open" && this.webSocket === socket) {
+          this.handleExit(child, error);
+          if (!child.killed) child.kill("SIGTERM");
+        }
+      });
+      socket.on("close", (code, reason) => {
+        const detail = reason.toString().trim();
+        const error = new Error(
+          `Codex App Server WebSocket closed (${code}${detail ? `: ${detail}` : ""})`,
+        );
+        if (state === "connecting") {
+          state = "failed";
+          clearTimeout(handshakeTimer);
+          reject(error);
+          return;
+        }
+        if (state === "open" && this.webSocket === socket) {
+          this.handleExit(child, error);
+          if (!child.killed) child.kill("SIGTERM");
+        }
+      });
+      socket.once("open", () => {
+        clearTimeout(handshakeTimer);
+        if (state !== "connecting") return;
+        if (this.webSocket !== socket || this.process !== child) {
+          state = "failed";
+          reject(new Error("Codex App Server proxy closed during WebSocket handshake"));
+          return;
+        }
+        state = "open";
+        resolve();
+      });
     });
-    console.log(`[codex-app-server-client ${new Date().toISOString().slice(11,23)}] initialize completed`);
-    this.write({ method: "initialized", params: {} });
   }
 
   private sendRequest<T>(method: string, params: unknown): Promise<T> {
@@ -161,13 +287,24 @@ export class CodexAppServerClient {
   }
 
   private write(message: unknown): void {
-    if (!this.process || this.process.killed || !this.process.stdin.writable) {
+    if (!this.process || this.process.killed) {
+      throw new RuntimeSessionError("Codex App Server is unavailable", "RUNTIME_UNAVAILABLE");
+    }
+    if (this.webSocket) {
+      if (this.webSocket.readyState !== WebSocket.OPEN) {
+        throw new RuntimeSessionError("Codex App Server WebSocket is unavailable", "RUNTIME_UNAVAILABLE");
+      }
+      this.webSocket.send(JSON.stringify(message));
+      return;
+    }
+    if (!this.process.stdin.writable) {
       throw new RuntimeSessionError("Codex App Server is unavailable", "RUNTIME_UNAVAILABLE");
     }
     this.process.stdin.write(`${JSON.stringify(message)}\n`);
   }
 
-  private handleStdout(chunk: string): void {
+  private handleStdout(child: ChildProcessWithoutNullStreams, chunk: string): void {
+    if (this.process !== child) return;
     this.buffer += chunk;
     let newline = this.buffer.indexOf("\n");
     while (newline >= 0) {
@@ -219,20 +356,28 @@ export class CodexAppServerClient {
     }
   }
 
-  private handleExit(error: Error): void {
-    if (!this.process) return;
+  private handleExit(child: ChildProcessWithoutNullStreams, error: Error): void {
+    if (this.process !== child) return;
+    const wasReady = this.processReady;
     this.process = null;
-    for (const pending of this.pending.values()) {
-      clearTimeout(pending.timer);
-      pending.reject(new RuntimeSessionError(error.message, "RUNTIME_UNAVAILABLE"));
+    this.activeMode = null;
+    this.processReady = false;
+    this.buffer = "";
+    this.detachWebSocket();
+    this.rejectPending(new RuntimeSessionError(error.message, "RUNTIME_UNAVAILABLE"));
+    if (wasReady) {
+      for (const listener of this.exitListeners) listener(error);
     }
-    this.pending.clear();
-    for (const listener of this.exitListeners) listener(error);
   }
 
   private async stop(): Promise<void> {
     const child = this.process;
     this.process = null;
+    this.activeMode = null;
+    this.processReady = false;
+    this.buffer = "";
+    this.detachWebSocket();
+    this.rejectPending(new RuntimeSessionError("Codex App Server stopped", "RUNTIME_UNAVAILABLE"));
     if (!child || child.killed) return;
     child.kill("SIGTERM");
     await new Promise<void>((resolve) => {
@@ -240,6 +385,24 @@ export class CodexAppServerClient {
       child.once("exit", () => { clearTimeout(timer); resolve(); });
     });
   }
+
+  private rejectPending(error: RuntimeSessionError): void {
+    for (const pending of this.pending.values()) {
+      clearTimeout(pending.timer);
+      pending.reject(error);
+    }
+    this.pending.clear();
+  }
+
+  private detachWebSocket(): void {
+    const socket = this.webSocket;
+    this.webSocket = null;
+    if (socket && socket.readyState !== WebSocket.CLOSED) socket.terminate();
+  }
+}
+
+function toError(error: unknown): Error {
+  return error instanceof Error ? error : new Error(String(error));
 }
 
 

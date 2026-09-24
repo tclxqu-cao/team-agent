@@ -36,11 +36,11 @@ AgentRoam should prefer this shared path so its execution and discovery clients 
 
 Introduce a small launch-strategy boundary alongside `CodexAppServerClient`:
 
-- `SharedCodexAppServerLauncher` runs `codex app-server daemon start`, waits for that command to succeed, and then spawns `codex app-server proxy` as the JSON-RPC child process.
+- `SharedCodexAppServerLauncher` runs `codex app-server daemon start`, waits for that command to succeed, and then spawns `codex app-server proxy` as the byte-stream child process.
 - `StandaloneCodexAppServerLauncher` preserves the current `codex app-server --stdio` child process.
 - `FallbackCodexAppServerLauncher` supplies the ordered startup attempts: shared first, standalone second.
 
-The launcher boundary owns process creation and command-specific lifecycle details. `CodexAppServerClient` continues to own JSONL framing, requests, notifications, server requests, and JSON-RPC initialization.
+The launcher boundary owns process creation and command-specific lifecycle details. A focused proxy WebSocket adapter performs the standard HTTP Upgrade handshake over the proxy's stdin/stdout and maps each JSON-RPC message to one WebSocket text frame. `CodexAppServerClient` continues to own requests, notifications, server requests, and JSON-RPC initialization; standalone mode retains its existing JSONL framing.
 
 The existing injectable executable, environment, and process-spawn dependency remain available. Tests can therefore exercise both launch strategies without invoking a real Codex process.
 
@@ -52,10 +52,11 @@ For every fresh connection, including `restart()`, the client follows this seque
 2. Run `codex app-server daemon start` with the normalized Codex environment.
 3. Treat a zero exit as daemon readiness. The command is intentionally idempotent when the daemon is already running.
 4. Spawn `codex app-server proxy` with piped stdin, stdout, and stderr.
-5. Attach the existing JSON-RPC stream handling and send `initialize` followed by `initialized`.
-6. Mark shared mode established only after `initialize` succeeds.
+5. Establish a WebSocket connection through the proxy byte stream. The shared daemon's Unix control socket requires the standard HTTP Upgrade handshake and one JSON-RPC message per text frame.
+6. Attach JSON-RPC message handling and send `initialize` followed by `initialized`.
+7. Mark shared mode established only after `initialize` succeeds.
 
-The daemon-start command has a bounded startup wait. Spawn errors, a non-zero daemon exit, startup timeout, proxy exit/error before readiness, and JSON-RPC initialization failure all reject the shared attempt.
+The daemon-start command and proxy WebSocket handshake have bounded startup waits. Spawn errors, a non-zero daemon exit, startup timeout, WebSocket upgrade failure, proxy exit/error before readiness, and JSON-RPC initialization failure all reject the shared attempt.
 
 On a rejected shared attempt, the client fully detaches and terminates the attempted proxy, rejects or clears startup-only pending requests, resets its parser state, and starts the standalone attempt. The standalone process is also considered established only after its `initialize` request succeeds.
 
@@ -100,6 +101,7 @@ Logs must not include environment values or other credentials. Existing app-serv
 Add focused unit coverage for:
 
 - shared startup success and the exact command order: daemon start, then proxy, then JSON-RPC initialization;
+- the proxy transport sending JSON-RPC as WebSocket text frames rather than raw JSONL;
 - idempotent daemon-start success followed by proxy use;
 - unsupported daemon command falling back to `app-server --stdio`;
 - daemon spawn, non-zero exit, and timeout failures falling back to standalone mode;
