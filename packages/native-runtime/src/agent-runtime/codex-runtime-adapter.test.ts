@@ -884,6 +884,311 @@ describe("Codex live execution events", () => {
   });
 });
 
+describe("Codex steering and user interruption", () => {
+  const thread = {
+    id: "cx-steering",
+    parentThreadId: null,
+    preview: "steering",
+    name: "steering",
+    createdAt: 1_788_220_800,
+    updatedAt: 1_788_220_800,
+    status: { type: "idle" },
+    path: null,
+    cwd: "/repo",
+    source: { custom: "customer-agent" },
+    turns: [],
+  };
+
+  function setup(options: {
+    steerError?: Error;
+    interruptError?: Error;
+    turnIds?: string[];
+    reconciliationFailures?: number;
+    reconciliationTurns?: Array<{ id: string; status: string; items: any[]; error?: { message?: string } }>;
+  } = {}) {
+    let notify: (message: any) => void = () => undefined;
+    let turnStartIndex = 0;
+    let threadReadCount = 0;
+    const requests: Array<{ method: string; params: any }> = [];
+    const client = {
+      onNotification: (handler: typeof notify) => {
+        notify = handler;
+        return () => undefined;
+      },
+      onExit: () => () => undefined,
+      setServerRequestHandler: () => undefined,
+      request: async (method: string, params: any) => {
+        requests.push({ method, params });
+        if (method === "thread/read") {
+          threadReadCount += 1;
+          if (threadReadCount > 1 && threadReadCount <= 1 + (options.reconciliationFailures ?? 0)) {
+            throw new Error("temporary thread/read failure");
+          }
+          return threadReadCount === 1
+            ? { thread }
+            : { thread: { ...thread, turns: options.reconciliationTurns ?? [] } };
+        }
+        if (method === "thread/resume") return { thread };
+        if (method === "turn/start") {
+          return { turn: { id: options.turnIds?.[turnStartIndex++] ?? "turn-steering" } };
+        }
+        if (method === "turn/steer") {
+          if (options.steerError) throw options.steerError;
+          return {};
+        }
+        if (method === "turn/interrupt") {
+          if (options.interruptError) throw options.interruptError;
+          return {};
+        }
+        if (method === "thread/unsubscribe") return {};
+        throw new Error(`unexpected request: ${method}`);
+      },
+    };
+    return {
+      adapter: new CodexRuntimeAdapter({ client: client as never, sessionRoot: "/tmp" }),
+      notify,
+      requests,
+    };
+  }
+
+  async function waitForTurnStart(requests: Array<{ method: string }>, count = 1): Promise<void> {
+    for (let attempt = 0; attempt < 100; attempt++) {
+      if (requests.filter(({ method }) => method === "turn/start").length >= count) {
+        await Promise.resolve();
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 1));
+    }
+    throw new Error("Codex test turn did not start");
+  }
+
+  it("steers text into the exact active turn and rejects idle or blank input", async () => {
+    const { adapter, notify, requests } = setup();
+    await expect(adapter.steer(thread.id, "before start")).resolves.toBe(false);
+
+    const run = drain(adapter.run(thread.id, "start"));
+    await waitForTurnStart(requests);
+    await expect(adapter.steer(thread.id, "   ")).resolves.toBe(false);
+    await expect(adapter.steer(thread.id, "use this now")).resolves.toBe(true);
+
+    expect(requests.filter(({ method }) => method === "turn/steer")).toEqual([{
+      method: "turn/steer",
+      params: {
+        threadId: thread.id,
+        expectedTurnId: "turn-steering",
+        input: [{ type: "text", text: "use this now", text_elements: [] }],
+      },
+    }]);
+
+    notify({
+      method: "turn/completed",
+      params: { threadId: thread.id, turn: { id: "turn-steering", status: "completed", items: [] } },
+    });
+    await expect(run).resolves.toContainEqual({ type: "done", finalText: "" });
+  });
+
+  it("keeps the active run open when steering is rejected", async () => {
+    const { adapter, notify, requests } = setup({ steerError: new Error("stale turn") });
+    const run = drain(adapter.run(thread.id, "start"));
+    await waitForTurnStart(requests);
+
+    await expect(adapter.steer(thread.id, "retry later")).rejects.toThrow("stale turn");
+    notify({
+      method: "turn/completed",
+      params: { threadId: thread.id, turn: { id: "turn-steering", status: "completed", items: [] } },
+    });
+    const events = await run;
+    expect(events).toContainEqual({ type: "done", finalText: "" });
+    expect(events.some((event: any) => event.type === "error")).toBe(false);
+  });
+
+  it("turns a locally requested interruption into normal completion", async () => {
+    const { adapter, notify, requests } = setup();
+    const run = drain(adapter.run(thread.id, "start"));
+    await waitForTurnStart(requests);
+
+    await expect(adapter.abort(thread.id)).resolves.toBeUndefined();
+    notify({
+      method: "turn/completed",
+      params: {
+        threadId: thread.id,
+        turn: {
+          id: "turn-steering",
+          status: "interrupted",
+          items: [{ type: "agentMessage", text: "partial answer" }],
+        },
+      },
+    });
+
+    const events = await run;
+    expect(events.filter((event: any) => event.type === "done" || event.type === "error"))
+      .toEqual([{ type: "done", finalText: "partial answer" }]);
+    expect(requests).toContainEqual({
+      method: "turn/interrupt",
+      params: { threadId: thread.id, turnId: "turn-steering" },
+    });
+  });
+
+  it("turns a matching local interrupt notification into normal completion", async () => {
+    const { adapter, notify, requests } = setup();
+    const run = drain(adapter.run(thread.id, "start"));
+    await waitForTurnStart(requests);
+
+    await expect(adapter.abort(thread.id)).resolves.toBeUndefined();
+    notify({
+      method: "turn/interrupt",
+      params: { threadId: thread.id, turnId: "turn-steering" },
+    });
+
+    const events = await run;
+    expect(events.filter((event: any) => event.type === "done" || event.type === "error"))
+      .toEqual([{ type: "done", finalText: "" }]);
+  });
+
+  it("reconciles an already-terminal interruption after 30 seconds", async () => {
+    const { adapter, requests } = setup({
+      turnIds: ["turn-reconciled"],
+      reconciliationTurns: [{
+        id: "turn-reconciled",
+        status: "interrupted",
+        items: [{ type: "agentMessage", text: "late partial answer" }],
+      }],
+    });
+    const run = drain(adapter.run(thread.id, "first"));
+    await waitForTurnStart(requests);
+
+    vi.useFakeTimers();
+    try {
+      await expect(adapter.abort(thread.id)).resolves.toBeUndefined();
+      await vi.advanceTimersByTimeAsync(30_001);
+      await expect(run).resolves.toContainEqual({ type: "done", finalText: "late partial answer" });
+      expect(requests.filter(({ method }) => method === "turn/interrupt")).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("retries interruption once when reconciliation still reports the turn active", async () => {
+    const { adapter, notify, requests } = setup({
+      turnIds: ["turn-still-active"],
+      reconciliationTurns: [{ id: "turn-still-active", status: "inProgress", items: [] }],
+    });
+    const run = drain(adapter.run(thread.id, "first"));
+    await waitForTurnStart(requests);
+
+    vi.useFakeTimers();
+    try {
+      await expect(adapter.abort(thread.id)).resolves.toBeUndefined();
+      await vi.advanceTimersByTimeAsync(30_001);
+      expect(requests.filter(({ method }) => method === "turn/interrupt")).toHaveLength(2);
+      notify({
+        method: "turn/completed",
+        params: {
+          threadId: thread.id,
+          turn: { id: "turn-still-active", status: "interrupted", items: [] },
+        },
+      });
+      await expect(run).resolves.toContainEqual({ type: "done", finalText: "" });
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(requests.filter(({ method }) => method === "turn/interrupt")).toHaveLength(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("retries transient reconciliation failures within the confirmation deadline", async () => {
+    const { adapter, notify, requests } = setup({
+      turnIds: ["turn-retry-read"],
+      reconciliationFailures: 1,
+      reconciliationTurns: [{ id: "turn-retry-read", status: "inProgress", items: [] }],
+    });
+    const run = drain(adapter.run(thread.id, "first"));
+    await waitForTurnStart(requests);
+
+    vi.useFakeTimers();
+    try {
+      await expect(adapter.abort(thread.id)).resolves.toBeUndefined();
+      await vi.advanceTimersByTimeAsync(30_001);
+      expect(requests.filter(({ method }) => method === "turn/interrupt")).toHaveLength(1);
+      await vi.advanceTimersByTimeAsync(5_001);
+      expect(requests.filter(({ method }) => method === "turn/interrupt")).toHaveLength(2);
+      notify({
+        method: "turn/completed",
+        params: {
+          threadId: thread.id,
+          turn: { id: "turn-retry-read", status: "interrupted", items: [] },
+        },
+      });
+      await expect(run).resolves.toContainEqual({ type: "done", finalText: "" });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("reports a recoverable timeout after 60 seconds without an authoritative terminal state", async () => {
+    const { adapter, notify, requests } = setup({
+      turnIds: ["turn-timeout"],
+      reconciliationTurns: [{ id: "turn-timeout", status: "inProgress", items: [] }],
+    });
+    const run = drain(adapter.run(thread.id, "first"));
+    await waitForTurnStart(requests);
+
+    vi.useFakeTimers();
+    try {
+      await expect(adapter.abort(thread.id)).resolves.toBeUndefined();
+      await vi.advanceTimersByTimeAsync(60_001);
+      await expect(run).resolves.toContainEqual({
+        type: "error",
+        code: "CANCEL_CONFIRMATION_TIMEOUT",
+        message: "停止确认超时；Codex 可能仍在结束当前任务。请重试停止或释放会话。",
+      });
+      expect(requests.filter(({ method }) => method === "turn/interrupt")).toHaveLength(2);
+      await expect(adapter.abort(thread.id)).resolves.toBeUndefined();
+      expect(requests.filter(({ method }) => method === "turn/interrupt")).toHaveLength(3);
+      notify({
+        method: "turn/completed",
+        params: {
+          threadId: thread.id,
+          turn: { id: "turn-timeout", status: "interrupted", items: [] },
+        },
+      });
+      await expect(adapter.abort(thread.id)).resolves.toBeUndefined();
+      expect(requests.filter(({ method }) => method === "turn/interrupt")).toHaveLength(3);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps unexpected or rejected interruptions as protocol errors", async () => {
+    const unexpected = setup();
+    const unexpectedRun = drain(unexpected.adapter.run(thread.id, "start"));
+    await waitForTurnStart(unexpected.requests);
+    unexpected.notify({
+      method: "turn/completed",
+      params: { threadId: thread.id, turn: { id: "turn-steering", status: "interrupted", items: [] } },
+    });
+    await expect(unexpectedRun).resolves.toContainEqual({
+      type: "error",
+      code: "NATIVE_PROTOCOL_ERROR",
+      message: "Codex turn was interrupted.",
+    });
+
+    const rejected = setup({ interruptError: new Error("interrupt rejected") });
+    const rejectedRun = drain(rejected.adapter.run(thread.id, "start"));
+    await waitForTurnStart(rejected.requests);
+    await expect(rejected.adapter.abort(thread.id)).rejects.toThrow("interrupt rejected");
+    rejected.notify({
+      method: "turn/completed",
+      params: { threadId: thread.id, turn: { id: "turn-steering", status: "interrupted", items: [] } },
+    });
+    await expect(rejectedRun).resolves.toContainEqual({
+      type: "error",
+      code: "NATIVE_PROTOCOL_ERROR",
+      message: "Codex turn was interrupted.",
+    });
+  });
+});
+
 function attachmentEnvelope(request: string): string {
   return `
 # Files mentioned by the user:
