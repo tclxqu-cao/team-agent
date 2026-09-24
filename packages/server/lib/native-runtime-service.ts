@@ -456,10 +456,10 @@ export class NativeRuntimeService implements NativeRuntimePort {
       this.pendingCreations.delete(session.id);
       return pending ? mergePendingSessionContext(session, pending) : session;
     });
-    for (const pending of this.pendingCreations.values()) {
-      if (!discoveredIds.has(pending.id)) merged.push(pending);
-    }
-    return merged.sort((left, right) => right.updated.localeCompare(left.updated));
+    const pending = [...this.pendingCreations.values()]
+      .filter((session) => !discoveredIds.has(session.id))
+      .sort((left, right) => right.updated.localeCompare(left.updated));
+    return [...pending, ...merged];
   }
 }
 

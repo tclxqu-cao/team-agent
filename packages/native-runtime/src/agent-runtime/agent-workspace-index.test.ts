@@ -347,19 +347,40 @@ describe("AgentWorkspaceIndexService", () => {
     expect(new Set(reconciled.data.map((item) => item.id)).size).toBe(8);
     expect(reconciled.data.every((item) => item.projectId === "repo")).toBe(true);
     expect(reconciled.data.map((item) => item.id)).toEqual([
-      "project-4",
-      "project-3",
-      "project-2",
-      "project-1",
       "project-0",
-      "legacy-1",
+      "project-1",
+      "project-2",
+      "project-3",
+      "project-4",
       "legacy-0",
+      "legacy-1",
       "supplemental",
     ]);
     expect(supplement).toHaveBeenCalledWith([
       ...direct,
       ...legacy,
     ]);
+  });
+
+  it("preserves authoritative Codex recency order when timestamps imply another order", async () => {
+    const codex = adapter("codex", [workspace("codex", "repo", 0)]);
+    codex.discoverSessions = vi.fn(async () => [
+      {
+        ...session("codex", "recency-first"),
+        cwd: "/elsewhere",
+        updated: "2026-09-04T00:00:01.000Z",
+      },
+      {
+        ...session("codex", "recency-second"),
+        cwd: "/elsewhere",
+        updated: "2026-09-04T00:00:03.000Z",
+      },
+    ]);
+    const service = new AgentWorkspaceIndexService([codex]);
+
+    const page = await service.listWorkspaceSessions("codex", CODEX_RECENT_WORKSPACE_ID, { limit: 20 });
+
+    expect(page.data.map((item) => item.id)).toEqual(["recency-first", "recency-second"]);
   });
 
   it("continues a native Codex cursor after background catalog reconciliation", async () => {
@@ -393,6 +414,13 @@ describe("AgentWorkspaceIndexService", () => {
       cursor: "native-next",
       limit: 1,
     }));
+
+    const reconciled = await service.listWorkspaceSessions("codex", "repo", { limit: 3, refresh: true });
+    expect(reconciled.data.map((item) => item.id)).toEqual([
+      "first",
+      "second",
+      "catalog-first",
+    ]);
   });
 
   it("uses the most specific path and keeps sibling-prefix sessions in recent", async () => {

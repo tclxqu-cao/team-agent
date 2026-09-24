@@ -491,6 +491,40 @@ describe("NativeRuntimeBrokerHost", () => {
     }
   });
 
+  it("preserves authoritative workspace order when timestamps imply another order", async () => {
+    const runtime = new FakeNativeRuntime();
+    runtime.workspaceSessions = [
+      {
+        ...summary(),
+        id: encodeUnifiedSessionId("codex", "recency-first"),
+        nativeSessionId: "recency-first",
+        projectId: "workspace",
+        updated: "2026-09-04T00:00:01.000Z",
+      },
+      {
+        ...summary(),
+        id: encodeUnifiedSessionId("codex", "recency-second"),
+        nativeSessionId: "recency-second",
+        projectId: "workspace",
+        updated: "2026-09-04T00:00:03.000Z",
+      },
+    ];
+    const host = new NativeRuntimeBrokerHost(
+      await directory(),
+      runtime as unknown as UnifiedSessionService,
+    );
+    try {
+      const page = await host.listWorkspaceSessions("codex", "workspace");
+
+      expect(page.data.map((session) => session.nativeSessionId)).toEqual([
+        "recency-first",
+        "recency-second",
+      ]);
+    } finally {
+      await host.stop();
+    }
+  });
+
   it("persists imported workspaces and exposes same-Agent duplicates through the broker", async () => {
     const path = await directory();
     const runtimeFactory = (callbacks: import("./native-runtime-broker").NativeRuntimeBrokerCallbacks) => {

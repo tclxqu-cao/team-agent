@@ -1878,12 +1878,10 @@ export class NativeRuntimeBrokerHost {
         ? mergePendingSessionContext(session, pending)
         : mergePendingSessionContext(pending, session);
     });
-    const merged = [
-      ...reconciled,
-      ...[...this.pendingCreations.values()].filter((session) => (
+    const pending = [...this.pendingCreations.values()].filter((session) => (
         !seen.has(session.id) && pendingFilter(session)
-      )),
-    ].sort((left, right) => right.updated.localeCompare(left.updated));
+      )).sort((left, right) => right.updated.localeCompare(left.updated));
+    const merged = [...pending, ...reconciled];
     return projectId === undefined
       ? merged
       : merged.filter((session) => session.projectId === projectId);

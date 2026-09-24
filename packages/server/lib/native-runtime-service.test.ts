@@ -119,6 +119,19 @@ describe("NativeRuntimeService", () => {
     expect(listed.map((s) => s.id)).toEqual(["fresh", "old"]);
   });
 
+  it("preserves authoritative discovery order when timestamps imply another order", async () => {
+    const runtime = new FakeRuntime();
+    runtime.discovered = [
+      summary("recency-first", "2026-08-31T00:00:01.000Z"),
+      summary("recency-second", "2026-08-31T00:00:03.000Z"),
+    ];
+    const service = new NativeRuntimeService(runtime);
+
+    const listed = await service.list();
+
+    expect(listed.map((session) => session.id)).toEqual(["recency-first", "recency-second"]);
+  });
+
   it("keeps a pending native session in its stable workspace page", async () => {
     const runtime = new FakeRuntime();
     runtime.createResult = summary("fresh", "2026-08-31T12:00:00.000Z", "/repo");

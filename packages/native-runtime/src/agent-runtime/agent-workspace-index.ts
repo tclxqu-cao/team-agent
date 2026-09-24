@@ -128,12 +128,21 @@ function mergeSessionRows(
   fresh: readonly UnifiedSessionSummary[],
   existing: readonly UnifiedSessionSummary[],
   workspaceId: string,
+  append = false,
 ): UnifiedSessionSummary[] {
-  const freshIds = new Set(fresh.map((session) => session.id));
+  const normalizedFresh = fresh.map((session) => ({ ...session, projectId: workspaceId }));
+  const freshById = new Map(normalizedFresh.map((session) => [session.id, session]));
+  if (append) {
+    const existingIds = new Set(existing.map((session) => session.id));
+    return [
+      ...existing.map((session) => freshById.get(session.id) ?? session),
+      ...normalizedFresh.filter((session) => !existingIds.has(session.id)),
+    ];
+  }
   return [
-    ...fresh.map((session) => ({ ...session, projectId: workspaceId })),
-    ...existing.filter((session) => !freshIds.has(session.id)),
-  ].sort((left, right) => right.updated.localeCompare(left.updated) || left.id.localeCompare(right.id));
+    ...normalizedFresh,
+    ...existing.filter((session) => !freshById.has(session.id)),
+  ];
 }
 
 function codexWorkspaceClassificationKey(
@@ -539,7 +548,7 @@ export class AgentWorkspaceIndexService {
         ...direct,
         data: direct.data.map((session) => ({ ...session, projectId: workspaceId })),
       };
-      this.rememberCodexDirectSessions(workspaceId, canonicalDirect.data);
+      this.rememberCodexDirectSessions(workspaceId, canonicalDirect.data, Boolean(query.cursor));
       if (!query.cursor && this.codexSessionCatalog) {
         const sessions = this.codexSessionCatalog.byWorkspace.get(workspaceId) ?? [];
         return paginateCodexCatalog(sessions, query, this.codexSessionCatalog.watermark);
@@ -560,8 +569,14 @@ export class AgentWorkspaceIndexService {
   private rememberCodexDirectSessions(
     workspaceId: string,
     sessions: readonly UnifiedSessionSummary[],
+    append: boolean,
   ): void {
-    const merged = mergeSessionRows(sessions, this.codexDirectSessions.get(workspaceId) ?? [], workspaceId);
+    const merged = mergeSessionRows(
+      sessions,
+      this.codexDirectSessions.get(workspaceId) ?? [],
+      workspaceId,
+      append,
+    );
     this.codexDirectSessions.set(workspaceId, merged);
     if (!this.codexSessionCatalog?.byWorkspace.has(workspaceId)) return;
     const catalogRows = this.codexSessionCatalog.byWorkspace.get(workspaceId) ?? [];
@@ -658,10 +673,8 @@ export function classifyCodexSessions(
   const byWorkspace = new Map<string, UnifiedSessionSummary[]>(
     workspaces.map((workspace) => [workspace.workspaceId, []]),
   );
-  const ordered = [...sessions]
-    .sort((left, right) => right.updated.localeCompare(left.updated) || left.id.localeCompare(right.id));
   const seen = new Set<string>();
-  for (const session of ordered) {
+  for (const session of sessions) {
     if (seen.has(session.id)) continue;
     seen.add(session.id);
     const aliasedProjectId = session.projectId ? workspaceAliases.get(session.projectId) : undefined;
@@ -682,7 +695,7 @@ export function classifyCodexSessions(
   }
   return {
     byWorkspace,
-    watermark: ordered[0]?.updated ?? null,
+    watermark: sessions[0]?.updated ?? null,
   };
 }
 

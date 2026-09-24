@@ -175,7 +175,7 @@ describe("Codex project workspace index", () => {
     expect(request).toHaveBeenCalledTimes(2);
   });
 
-  it("queries sessions by stable project ID before using the legacy cwd fallback", async () => {
+  it("queries native project sessions by roots so unassigned Desktop threads remain visible", async () => {
     const root = await mkdtemp(join(tmpdir(), "codex-project-index-"));
     temporaryDirectories.push(root);
     const requests: Array<{ method: string; params: Record<string, unknown> }> = [];
@@ -193,13 +193,19 @@ describe("Codex project workspace index", () => {
       turns: [],
       projectId: "project-1",
     };
+    const unassignedThread = {
+      ...thread,
+      id: "thread-unassigned",
+      name: "unassigned Desktop thread",
+      projectId: null,
+    };
     const discoveryClient = {
       request: async (method: string, params: Record<string, unknown>) => {
         requests.push({ method, params });
         if (method === "project/list") {
           return { data: [{ id: "project-1", name: "Repo", roots: [{ path: root }], position: 0, updatedAt: 1 }], nextCursor: null };
         }
-        if (method === "thread/list") return { data: [thread], nextCursor: null };
+        if (method === "thread/list") return { data: [unassignedThread, thread], nextCursor: null };
         throw new Error(`unexpected request: ${method}`);
       },
       restart: async () => undefined,
@@ -219,13 +225,67 @@ describe("Codex project workspace index", () => {
 
     await adapter.listWorkspaces();
     await expect(adapter.listWorkspaceSessions("project-1")).resolves.toMatchObject({
-      data: [expect.objectContaining({ nativeSessionId: "thread-1" })],
+      data: [
+        expect.objectContaining({ nativeSessionId: "thread-unassigned" }),
+        expect.objectContaining({ nativeSessionId: "thread-1" }),
+      ],
     });
     expect(requests.find((entry) => entry.method === "thread/list")?.params).toMatchObject({
-      projectId: "project-1",
+      cwd: [root],
       sortKey: "recency_at",
       sortDirection: "desc",
     });
+    expect(requests.find((entry) => entry.method === "thread/list")?.params).not.toHaveProperty("projectId");
+  });
+
+  it("preserves authoritative recency order when updated timestamps imply another order", async () => {
+    const root = await mkdtemp(join(tmpdir(), "codex-recency-order-"));
+    temporaryDirectories.push(root);
+    const thread = (id: string, updatedAt: number) => ({
+      id,
+      parentThreadId: null,
+      preview: id,
+      name: id,
+      createdAt: 1_788_220_800,
+      updatedAt,
+      status: { type: "idle" },
+      path: null,
+      cwd: root,
+      source: "desktop",
+      turns: [],
+    });
+    const discoveryClient = {
+      mode: "shared" as const,
+      request: vi.fn(async (method: string, params: Record<string, unknown>) => {
+        if (method !== "thread/list") throw new Error(`unexpected request: ${method}`);
+        expect(params).toMatchObject({ sortKey: "recency_at", sortDirection: "desc" });
+        return {
+          data: [thread("recency-first", 100), thread("recency-second", 300)],
+          nextCursor: null,
+        };
+      }),
+      restart: vi.fn(async () => undefined),
+      dispose: vi.fn(async () => undefined),
+    };
+    const adapter = new CodexRuntimeAdapter({
+      client: {
+        onNotification: () => () => undefined,
+        onExit: () => () => undefined,
+        setServerRequestHandler: () => undefined,
+        request: vi.fn(),
+      } as never,
+      discoveryClient: discoveryClient as never,
+      sessionRoot: root,
+      rolloutActivityReader: { readMany: async () => new Map() },
+    });
+
+    const page = await adapter.listWorkspaceSessionsByPath(root, { refresh: true });
+
+    expect(page.data.map((session) => session.nativeSessionId)).toEqual([
+      "recency-first",
+      "recency-second",
+    ]);
+    expect(discoveryClient.restart).not.toHaveBeenCalled();
   });
 
   it("queries imported workspace sessions by cwd without a project ID", async () => {
@@ -270,10 +330,10 @@ describe("Codex project workspace index", () => {
   it("refreshes native titles through discovery without restarting execution", async () => {
     const root = await mkdtemp(join(tmpdir(), "codex-discovery-refresh-"));
     temporaryDirectories.push(root);
-    let refreshed = false;
+    let requestCount = 0;
     const executionRestart = vi.fn(async () => undefined);
-    const discoveryRestart = vi.fn(async () => { refreshed = true; });
-    const thread = () => ({
+    const discoveryRestart = vi.fn(async () => undefined);
+    const thread = (refreshed: boolean) => ({
       id: "thread-refresh",
       parentThreadId: null,
       preview: "stale preview",
@@ -295,8 +355,12 @@ describe("Codex project workspace index", () => {
       dispose: vi.fn(async () => undefined),
     };
     const discoveryClient = {
+      mode: "shared" as const,
       request: vi.fn(async (method: string) => {
-        if (method === "thread/list") return { data: [thread()], nextCursor: null };
+        if (method === "thread/list") {
+          requestCount += 1;
+          return { data: [thread(requestCount > 1)], nextCursor: null };
+        }
         throw new Error(`unexpected request: ${method}`);
       }),
       restart: discoveryRestart,
@@ -316,7 +380,7 @@ describe("Codex project workspace index", () => {
       data: [expect.objectContaining({ title: "current native title" })],
     });
 
-    expect(discoveryRestart).toHaveBeenCalledTimes(1);
+    expect(discoveryRestart).not.toHaveBeenCalled();
     expect(executionRestart).not.toHaveBeenCalled();
     expect(discoveryClient.request).toHaveBeenLastCalledWith("thread/list", expect.objectContaining({
       sortKey: "recency_at",
@@ -329,6 +393,7 @@ describe("Codex project workspace index", () => {
     temporaryDirectories.push(root);
     const discoveryRestart = vi.fn(async () => undefined);
     const discoveryClient = {
+      mode: "shared" as const,
       request: vi.fn(async (method: string, params: Record<string, unknown>) => {
         if (method !== "thread/list") throw new Error(`unexpected request: ${method}`);
         return { data: [], nextCursor: params.cursor ? null : "page-2" };
@@ -351,20 +416,19 @@ describe("Codex project workspace index", () => {
     await adapter.listWorkspaceSessionsByPath(root, { refresh: true, limit: 1 });
     await adapter.listWorkspaceSessionsByPath(root, { refresh: true, cursor: "page-2", limit: 1 });
 
-    expect(discoveryRestart).toHaveBeenCalledTimes(1);
+    expect(discoveryRestart).not.toHaveBeenCalled();
     expect(discoveryClient.request).toHaveBeenNthCalledWith(2, "thread/list", expect.objectContaining({
       cursor: "page-2",
       sortKey: "recency_at",
     }));
   });
 
-  it("shares one discovery restart across concurrent refreshes", async () => {
+  it("reuses one shared discovery transport across concurrent refreshes", async () => {
     const root = await mkdtemp(join(tmpdir(), "codex-discovery-concurrent-"));
     temporaryDirectories.push(root);
-    let finishRestart: (() => void) | undefined;
-    const restartGate = new Promise<void>((resolve) => { finishRestart = resolve; });
-    const discoveryRestart = vi.fn(() => restartGate);
+    const discoveryRestart = vi.fn(async () => undefined);
     const discoveryClient = {
+      mode: "shared" as const,
       request: vi.fn(async (method: string) => {
         if (method === "thread/list") return { data: [], nextCursor: null };
         throw new Error(`unexpected request: ${method}`);
@@ -386,11 +450,48 @@ describe("Codex project workspace index", () => {
 
     const first = adapter.listWorkspaceSessionsByPath(root, { refresh: true });
     const second = adapter.listWorkspaceSessionsByPath(root, { refresh: true });
-    expect(discoveryRestart).toHaveBeenCalledTimes(1);
-    finishRestart?.();
     await Promise.all([first, second]);
 
+    expect(discoveryRestart).not.toHaveBeenCalled();
     expect(discoveryClient.request).toHaveBeenCalledTimes(2);
+  });
+
+  it("rate-limits standalone discovery restarts while preserving refresh requests", async () => {
+    const root = await mkdtemp(join(tmpdir(), "codex-discovery-standalone-"));
+    temporaryDirectories.push(root);
+    let now = 1_000;
+    const discoveryRestart = vi.fn(async () => undefined);
+    const discoveryClient = {
+      mode: "standalone" as const,
+      request: vi.fn(async (method: string) => {
+        if (method === "thread/list") return { data: [], nextCursor: null };
+        throw new Error(`unexpected request: ${method}`);
+      }),
+      restart: discoveryRestart,
+      dispose: vi.fn(async () => undefined),
+    };
+    const adapter = new CodexRuntimeAdapter({
+      client: {
+        onNotification: () => () => undefined,
+        onExit: () => () => undefined,
+        setServerRequestHandler: () => undefined,
+        request: vi.fn(),
+      } as never,
+      discoveryClient: discoveryClient as never,
+      sessionRoot: root,
+      rolloutActivityReader: { readMany: async () => new Map() },
+      standaloneDiscoveryRestartIntervalMs: 30_000,
+      now: () => now,
+    });
+
+    await adapter.listWorkspaceSessionsByPath(root, { refresh: true });
+    now += 10_000;
+    await adapter.listWorkspaceSessionsByPath(root, { refresh: true });
+    now += 20_000;
+    await adapter.listWorkspaceSessionsByPath(root, { refresh: true });
+
+    expect(discoveryRestart).toHaveBeenCalledTimes(2);
+    expect(discoveryClient.request).toHaveBeenCalledTimes(3);
   });
 
   it("disposes distinct discovery and execution clients exactly once", async () => {

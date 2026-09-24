@@ -147,6 +147,24 @@ describe("agent workspace cache", () => {
     expect(result).toHaveLength(301);
   });
 
+  it("uses refreshed first-page order ahead of cached and later-page rows", () => {
+    const result = reconcileSessionPage([
+      session("cached-first"),
+      session("cached-second"),
+      session("later-page"),
+    ], {
+      data: [session("cached-second"), session("cached-first")],
+      nextCursor: "page-two",
+      watermark: "2",
+    }, true);
+
+    expect(result.map((item) => item.id)).toEqual([
+      "cached-second",
+      "cached-first",
+      "later-page",
+    ]);
+  });
+
   it("removes missing sessions when the refreshed first page is the complete list", () => {
     const result = reconcileSessionPage([session("removed"), session("kept")], {
       data: [session("kept")],
