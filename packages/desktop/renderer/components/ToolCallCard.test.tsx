@@ -124,11 +124,11 @@ describe("tool activity rows", () => {
     expect(html).toContain("tool-call-shell__chevron");
   });
 
-  it("opens Web-shell files from the file row and keeps details on a separate disclosure", () => {
+  it("opens files through the injected artifact callback and keeps details on a separate disclosure", () => {
     const html = renderToStaticMarkup(createElement(ToolCallCard, {
       toolCall: { id: "write", name: "write_file", arguments: { file_path: "src/app.ts", content: "source" }, result: "" },
       workspacePath: "/work/project",
-      enableFilePreview: true,
+      onOpenArtifact: vi.fn(),
     }));
 
     expect(html).toContain('class="tool-call-shell__header" aria-label="预览文件 app.ts"');
@@ -148,7 +148,7 @@ describe("tool activity rows", () => {
     }, "/work/project")).toEqual(["/work/project/src/a.ts", "/tmp/b.ts"]);
   });
 
-  it("keeps file preview actions out of the Electron tool row", () => {
+  it("keeps file preview actions out when no artifact callback is available", () => {
     const html = renderToStaticMarkup(createElement(ToolCallCard, {
       toolCall: { id: "write", name: "write_file", arguments: { file_path: "/tmp/a.ts", content: "source" }, result: "" },
     }));
@@ -167,7 +167,7 @@ describe("tool activity rows", () => {
         result: "done",
       },
       workspacePath: "/work/project",
-      enableFilePreview: true,
+      onOpenArtifact: vi.fn(),
     }));
 
     expect(html).toContain("a.ts");
@@ -190,6 +190,17 @@ describe("tool activity rows", () => {
 
     expect(disclosureRule).toContain("background: transparent");
     expect(disclosureRule).not.toContain("border-left");
+  });
+
+  it("aligns file disclosure chevrons without shrinking their touch target", () => {
+    const disclosureRule = globalCss.match(/\.chat-view--codex-history \.tool-call-shell__disclosure\s*\{([^}]+)\}/)?.[1] ?? "";
+    const hitAreaRule = globalCss.match(/\.chat-view--codex-history \.tool-call-shell__disclosure::before\s*\{([^}]+)\}/)?.[1] ?? "";
+
+    expect(disclosureRule).toContain("width: 11px");
+    expect(disclosureRule).toContain("flex: 0 0 11px");
+    expect(disclosureRule).toContain("justify-items: end");
+    expect(hitAreaRule).toContain("width: 34px");
+    expect(hitAreaRule).toContain("right: 0");
   });
 });
 

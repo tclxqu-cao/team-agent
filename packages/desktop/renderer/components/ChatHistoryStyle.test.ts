@@ -28,6 +28,10 @@ const ordinarySend = chatView.slice(
   chatView.indexOf("// ── Normal send flow"),
   chatView.indexOf("// ── Voice command from wake word"),
 );
+const queueStateProjection = chatView.slice(
+  chatView.indexOf("const applySessionQueueState = useCallback"),
+  chatView.indexOf("// Close the reasoning-effort menu"),
+);
 
 describe("shared Codex-style message history", () => {
   it("applies one presentation path to every runtime", () => {
@@ -53,6 +57,14 @@ describe("shared Codex-style message history", () => {
     expect(startRun).toContain("beginAgentRunActivity(targetSessionId);");
     expect(startRun.indexOf("beginAgentRunActivity(targetSessionId);"))
       .toBeLessThan(startRun.indexOf("setRunningSession(targetSessionId);"));
+  });
+
+  it("restores thinking when the viewed session has an active queued message", () => {
+    expect(queueStateProjection).toContain('state.active?.kind === "message"');
+    expect(queueStateProjection).toContain("targetSessionId === viewedSessionId");
+    expect(queueStateProjection).toContain("beginAgentRunActivity(targetSessionId);");
+    expect(queueStateProjection.indexOf("beginAgentRunActivity(targetSessionId);"))
+      .toBeLessThan(queueStateProjection.indexOf("reconcileDurableQueuedMessages(current, state)"));
   });
 
   it("paints an optimistic ordinary message before starting the run", () => {
@@ -284,13 +296,13 @@ describe("shared Codex-style message history", () => {
     expect(globalCss).toContain(".chat-message-link:focus-visible");
   });
 
-  it("renders local artifact links with a file icon in the Web shell", () => {
+  it("renders local artifact links with a file icon when an opener is injected", () => {
     expect(chatView).toContain("parseRichInlineTokens(text).map");
     expect(chatView).toContain('token.type === "artifact"');
-    expect(chatView).toContain("if (!isWebShell())");
+    expect(chatView).toContain("if (!onOpenArtifact)");
     expect(chatView).toContain('className="chat-message-artifact-link"');
     expect(chatView).toContain("<FileText");
-    expect(chatView).toContain("postWebArtifactOpen(token.path)");
+    expect(chatView).toContain("onOpenArtifact(token.path)");
     expect(chatView).toContain("renderInlineLabel(token.label");
     expect(chatView).toContain("打开交付物");
     expect(globalCss).toContain(".chat-message-artifact-link svg");

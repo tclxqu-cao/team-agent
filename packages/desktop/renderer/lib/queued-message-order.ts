@@ -91,6 +91,7 @@ export function reconcileDurableQueuedMessages<T extends DurableQueuedMessageLik
       images: previous?.images ?? activeItem.messagePayload?.images,
       isQueued: false,
       queueItemId: undefined,
+      sendState: "pending",
     } as T;
     if (historyIndex >= 0) history[historyIndex] = activeMessage;
     else history.push(activeMessage);

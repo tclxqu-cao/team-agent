@@ -120,6 +120,7 @@ describe("reconcileDurableQueuedMessages", () => {
       role: "user",
       content: "deploy",
       isQueued: false,
+      sendState: "pending",
     })]);
   });
 
@@ -129,7 +130,7 @@ describe("reconcileDurableQueuedMessages", () => {
       { id: "local", role: "user", content: "old", timestamp: 2, isQueued: true, queueItemId: "queue-1" },
     ];
 
-    expect(reconcileDurableQueuedMessages(current, {
+    const result = reconcileDurableQueuedMessages(current, {
       active: null,
       queued: [{
         id: "queue-1",
@@ -140,7 +141,9 @@ describe("reconcileDurableQueuedMessages", () => {
         messagePayload: { agentName: "reviewer", images: ["data:image/png;base64,AAAA"] },
       }],
       history: [],
-    })).toEqual([
+    });
+
+    expect(result).toEqual([
       current[0],
       expect.objectContaining({
         id: "source-1",
@@ -150,6 +153,7 @@ describe("reconcileDurableQueuedMessages", () => {
         queueItemId: "queue-1",
       }),
     ]);
+    expect(result[1]).not.toHaveProperty("sendState");
   });
 
   it("moves a durable queue item into chat history after the broker claims it", () => {
@@ -185,6 +189,7 @@ describe("reconcileDurableQueuedMessages", () => {
         images: ["data:image/png;base64,AAAA"],
         isQueued: false,
         queueItemId: undefined,
+        sendState: "pending",
       }),
     ]);
   });
@@ -219,6 +224,7 @@ describe("reconcileDurableQueuedMessages", () => {
       id: "persisted-active",
       content: "next",
       isQueued: false,
+      sendState: "pending",
     }));
   });
 
