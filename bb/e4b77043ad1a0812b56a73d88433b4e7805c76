@@ -1,0 +1,19 @@
+docs/superpowers/specs/2026-09-24-in-bubble-message-send-status-design.md
+  s_c8eee60a040adc::t_37f84370916cb1 1-46
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "bbe4b77043ad1a0812b56a73d88433b4e7805c76",
+  "prompts": {},
+  "sessions": {
+    "s_c8eee60a040adc": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0d31f-2967-7543-bc2d-ceb3fd9d7803",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
