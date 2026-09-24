@@ -706,6 +706,8 @@ export default function ChatView({
     && sessionSummary.agentType !== "codex"
   );
   const isOccupiedRecovery = isOccupiedRecoveryVisible(occupiedRecovery, viewSessionId);
+  const showOccupiedRecoveryBanner = isOccupiedRecovery
+    && occupiedRecovery?.forkSessionId !== viewSessionId;
   const runtimeReady = isConfigured || isNativeRuntime;
   const canCompose = composerRoute.ready
     && runtimeReady
@@ -2227,6 +2229,29 @@ export default function ChatView({
     updateMessage(pendingMessageId, (message) => ({ ...message, sendState }), targetSessionId);
   };
 
+  const restoreForkRecoveryToComposer = (
+    targetSessionId: string,
+    recovery: OccupiedSessionRecovery,
+  ) => {
+    const messageId = occupiedRecoveryMessageId(recovery);
+    const sessionMessages = useAgentStore.getState().getMessagesForSession(targetSessionId);
+    setMessages(
+      sessionMessages.filter((message) => message.id !== messageId),
+      targetSessionId,
+    );
+    writeSessionDraft(targetSessionId, recovery.payload.content);
+    void imageDraftCoordinator.save(targetSessionId, recovery.payload.images ?? []);
+    if ((selectedSessionIdRef.current || sessionIdRef.current) === targetSessionId) {
+      setInput(recovery.payload.content);
+      setPendingImages(recovery.payload.images ?? []);
+    }
+    pendingNativeSendPayloadRef.current.delete(targetSessionId);
+    if (preserveNativeImageDraftSessionRef.current === targetSessionId) {
+      preserveNativeImageDraftSessionRef.current = null;
+    }
+    commitOccupiedRecovery(undefined, targetSessionId);
+  };
+
   const handleEvent = (event: StreamEvent) => {
     // Route by _sid using always-current refs, not stale closure values.
     const viewedSid = selectedSessionIdRef.current || sessionIdRef.current;
@@ -2598,6 +2623,9 @@ export default function ChatView({
           const failedMessages = useAgentStore.getState().getMessagesForSession(eventSid);
           const capturedPayload = pendingNativeSendPayloadRef.current.get(eventSid);
           const existingRecovery = findOccupiedRecovery(occupiedRecoveriesRef.current, eventSid);
+          const forkRecovery = existingRecovery?.forkSessionId === eventSid
+            ? existingRecovery
+            : undefined;
           const expectedPayload = capturedPayload ?? existingRecovery?.payload;
           const failedUserMessage = expectedPayload
             ? [...failedMessages].reverse().find(
@@ -2615,26 +2643,30 @@ export default function ChatView({
             images: failedUserMessage.images,
             agentName: failedUserMessage.agentName,
           } : undefined);
-          if (failedUserMessage) {
-            setMessages(
-              failedMessages.filter((message) => message.id !== failedUserMessage.id),
-              eventSid,
-            );
-          }
-          pendingNativeSendPayloadRef.current.delete(eventSid);
-          if (recoveryPayload?.content) {
-            commitOccupiedRecovery(
-              existingRecovery ?? createOccupiedSessionRecovery(eventSid, recoveryPayload),
-            );
-            writeSessionDraft(eventSid, recoveryPayload.content);
-            void imageDraftCoordinator.save(eventSid, recoveryPayload.images ?? []);
-            if (isViewed) {
-              setInput(recoveryPayload.content);
-              setPendingImages(recoveryPayload.images ?? []);
+          if (forkRecovery) {
+            restoreForkRecoveryToComposer(eventSid, forkRecovery);
+          } else {
+            if (failedUserMessage) {
+              setMessages(
+                failedMessages.filter((message) => message.id !== failedUserMessage.id),
+                eventSid,
+              );
             }
-          }
-          if (preserveNativeImageDraftSessionRef.current === eventSid) {
-            preserveNativeImageDraftSessionRef.current = null;
+            pendingNativeSendPayloadRef.current.delete(eventSid);
+            if (recoveryPayload?.content) {
+              commitOccupiedRecovery(
+                existingRecovery ?? createOccupiedSessionRecovery(eventSid, recoveryPayload),
+              );
+              writeSessionDraft(eventSid, recoveryPayload.content);
+              void imageDraftCoordinator.save(eventSid, recoveryPayload.images ?? []);
+              if (isViewed) {
+                setInput(recoveryPayload.content);
+                setPendingImages(recoveryPayload.images ?? []);
+              }
+            }
+            if (preserveNativeImageDraftSessionRef.current === eventSid) {
+              preserveNativeImageDraftSessionRef.current = null;
+            }
           }
           if (isViewed) setError(null);
         }
@@ -2647,6 +2679,10 @@ export default function ChatView({
         ) {
           const failedMessages = useAgentStore.getState().getMessagesForSession(eventSid);
           const capturedPayload = pendingNativeSendPayloadRef.current.get(eventSid);
+          const existingRecovery = findOccupiedRecovery(occupiedRecoveriesRef.current, eventSid);
+          const forkRecovery = existingRecovery?.forkSessionId === eventSid
+            ? existingRecovery
+            : undefined;
           const failedUserMessage = capturedPayload
             ? [...failedMessages].reverse().find(
                 (message) => message.role === "user"
@@ -2661,7 +2697,9 @@ export default function ChatView({
             images: failedUserMessage.images,
             agentName: failedUserMessage.agentName,
           } : undefined);
-          if (recoveryPayload?.content) {
+          if (forkRecovery) {
+            restoreForkRecoveryToComposer(eventSid, forkRecovery);
+          } else if (recoveryPayload?.content) {
             writeSessionDraft(eventSid, recoveryPayload.content);
             void imageDraftCoordinator.save(eventSid, recoveryPayload.images ?? []);
             if (isViewed) {
@@ -2830,7 +2868,14 @@ export default function ChatView({
     ) => {
       const messageId = occupiedRecoveryMessageId(targetRecovery);
       const messages = getMessagesForSession(targetSessionId);
-      if (messages.some((message) => message.id === messageId)) return;
+      if (messages.some((message) => message.id === messageId)) {
+        updateMessage(
+          messageId,
+          (message) => ({ ...message, sendState: "pending" }),
+          targetSessionId,
+        );
+        return;
+      }
       addMessage({
         id: messageId,
         role: "user",
@@ -2838,6 +2883,7 @@ export default function ChatView({
         timestamp: Date.now(),
         agentName: targetRecovery.payload.agentName,
         images: targetRecovery.payload.images,
+        sendState: "pending",
       }, targetSessionId);
     };
 
@@ -3115,20 +3161,25 @@ export default function ChatView({
         );
       }
     } catch (err) {
-      updatePendingSendState(targetSessionId, "failed");
-      const failedPayload = pendingNativeSendPayloadRef.current.get(targetSessionId);
-      if (targetSessionId.startsWith("runtime:") && failedPayload?.content) {
-        if (failedPayload.restoreDraftOnFailure !== false) {
-          writeSessionDraft(targetSessionId, failedPayload.content);
-          void imageDraftCoordinator.save(targetSessionId, failedPayload.images ?? []);
-          if ((selectedSessionIdRef.current || sessionIdRef.current) === targetSessionId) {
-            setInput(failedPayload.content);
-            setPendingImages(failedPayload.images ?? []);
+      const recovery = findOccupiedRecovery(occupiedRecoveriesRef.current, targetSessionId);
+      if (recovery?.forkSessionId === targetSessionId) {
+        restoreForkRecoveryToComposer(targetSessionId, recovery);
+      } else {
+        updatePendingSendState(targetSessionId, "failed");
+        const failedPayload = pendingNativeSendPayloadRef.current.get(targetSessionId);
+        if (targetSessionId.startsWith("runtime:") && failedPayload?.content) {
+          if (failedPayload.restoreDraftOnFailure !== false) {
+            writeSessionDraft(targetSessionId, failedPayload.content);
+            void imageDraftCoordinator.save(targetSessionId, failedPayload.images ?? []);
+            if ((selectedSessionIdRef.current || sessionIdRef.current) === targetSessionId) {
+              setInput(failedPayload.content);
+              setPendingImages(failedPayload.images ?? []);
+            }
           }
-        }
-        pendingNativeSendPayloadRef.current.delete(targetSessionId);
-        if (preserveNativeImageDraftSessionRef.current === targetSessionId) {
-          preserveNativeImageDraftSessionRef.current = null;
+          pendingNativeSendPayloadRef.current.delete(targetSessionId);
+          if (preserveNativeImageDraftSessionRef.current === targetSessionId) {
+            preserveNativeImageDraftSessionRef.current = null;
+          }
         }
       }
       setError(err instanceof Error ? err.message : "Agent run failed");
@@ -4217,6 +4268,23 @@ export default function ChatView({
                     </div>
                   );
                 })()}
+                {isUser && chatMsg.sendState && (
+                  <div
+                    className={`msg-send-status is-${chatMsg.sendState}`}
+                    role="status"
+                    aria-label={chatMsg.sendState === "pending" ? "正在发送" : "发送失败"}
+                  >
+                    {chatMsg.sendState === "pending" ? (
+                      <span className="msg-send-status__dots" aria-hidden="true">
+                        <span />
+                        <span />
+                        <span />
+                      </span>
+                    ) : (
+                      <span>发送失败</span>
+                    )}
+                  </div>
+                )}
               </div>
               {/* Completed assistant footer remains visible after the live run disappears. */}
               {actionPolicy.showCompletion && (
@@ -4274,17 +4342,6 @@ export default function ChatView({
                   >
                     <Copy size={13} strokeWidth={1.8} aria-hidden="true" />
                   </button>}
-                </div>
-              )}
-              {isUser && chatMsg.sendState && (
-                <div
-                  className={`msg-send-status is-${chatMsg.sendState}`}
-                  role="status"
-                  aria-label={chatMsg.sendState === "pending" ? "正在发送" : "发送失败"}
-                >
-                  {chatMsg.sendState === "pending"
-                    ? <LoaderCircle className="msg-send-status__spinner" size={13} aria-hidden="true" />
-                    : <span>发送失败</span>}
                 </div>
               )}
               {/* Queue / Steer badge for queued user messages */}
@@ -4481,7 +4538,7 @@ export default function ChatView({
             </span>
           </div>
         )}
-        {isOccupiedRecovery && (
+        {showOccupiedRecoveryBanner && (
           <div style={{
             display: "flex",
             alignItems: "center",
@@ -4502,7 +4559,7 @@ export default function ChatView({
                 ? "副本已创建，但消息尚未发送成功。"
                 : "此会话仍由原客户端持有，可创建副本继续。"}
             </span>
-            {isOccupiedRecovery && (
+            {showOccupiedRecoveryBanner && (
               <button
                 type="button"
                 onClick={() => void handleForkOccupiedSession()}

@@ -172,6 +172,14 @@ describe("occupied Codex session fork recovery", () => {
       process.cwd(),
       "packages/desktop/renderer/components/ChatView.tsx",
     ), "utf8");
+    const forkHandler = source.slice(
+      source.indexOf("const handleForkOccupiedSession = async () =>"),
+      source.indexOf("const handleAbort = () =>"),
+    );
+    const restoreToComposer = source.slice(
+      source.indexOf("const restoreForkRecoveryToComposer = ("),
+      source.indexOf("const handleEvent = (event: StreamEvent)"),
+    );
 
     expect(source).toContain("SESSION_OCCUPIED");
     expect(source).toContain('event.code === "SESSION_ALREADY_RUNNING"');
@@ -188,7 +196,17 @@ describe("occupied Codex session fork recovery", () => {
     expect(source).toContain("existingRecovery ?? createOccupiedSessionRecovery");
     expect(source).toContain("commitOccupiedRecovery(nextRecovery)");
     expect(source).toContain("occupiedRecoveryMessageId(targetRecovery)");
-    expect(source).toContain("if (messages.some((message) => message.id === messageId)) return");
+    expect(forkHandler).toContain('sendState: "pending"');
+    expect(forkHandler).toContain('({ ...message, sendState: "pending" })');
+    expect(source).toContain("const showOccupiedRecoveryBanner = isOccupiedRecovery");
+    expect(source).toContain("occupiedRecovery?.forkSessionId !== viewSessionId");
+    expect(source).toContain("{showOccupiedRecoveryBanner && (");
+    expect(restoreToComposer).toContain("sessionMessages.filter((message) => message.id !== messageId)");
+    expect(restoreToComposer).toContain("setInput(recovery.payload.content)");
+    expect(restoreToComposer).toContain("setPendingImages(recovery.payload.images ?? [])");
+    expect(restoreToComposer).toContain("commitOccupiedRecovery(undefined, targetSessionId)");
+    expect(source.match(/restoreForkRecoveryToComposer\(eventSid, forkRecovery\)/g)).toHaveLength(2);
+    expect(source).toContain("restoreForkRecoveryToComposer(targetSessionId, recovery)");
     expect(source).toContain('sessionSummary.agentType !== "codex"');
     expect(source).toContain("loadSessionWithRetry");
     expect(source).toContain("CODEX_LATEST_HISTORY_PAGE_SIZE = 1");

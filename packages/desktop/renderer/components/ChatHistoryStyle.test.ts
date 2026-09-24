@@ -350,4 +350,32 @@ describe("shared Codex-style message history", () => {
     expect(globalCss).toContain(".chat-message-content:hover .msg-actions");
     expect(globalCss).toContain(".chat-message-content:focus-within .msg-actions");
   });
+
+  it("keeps user send feedback inside the bubble and copy actions outside", () => {
+    const bubbleStart = chatView.indexOf('className={`chat-message-bubble chat-message-bubble--');
+    const bubbleEnd = chatView.indexOf("{/* Completed assistant footer remains visible", bubbleStart);
+    const sendStatusStart = chatView.indexOf("{isUser && chatMsg.sendState && (", bubbleStart);
+
+    expect(bubbleStart).toBeGreaterThan(-1);
+    expect(sendStatusStart).toBeGreaterThan(bubbleStart);
+    expect(sendStatusStart).toBeLessThan(bubbleEnd);
+    expect(chatView).toContain('className="msg-send-status__dots"');
+    expect(chatView).toContain('aria-label={chatMsg.sendState === "pending" ? "正在发送" : "发送失败"}');
+    expect(chatView).not.toContain("msg-send-status__spinner");
+    expect(chatView).toContain("actionPolicy.showCopy && <button");
+    expect(chatView).toContain("copyTextToClipboard(msg.content)");
+    expect(chatView).toContain('aria-label="复制内容"');
+  });
+
+  it("animates send dots without motion for reduced-motion users", () => {
+    expect(globalCss).toContain(".msg-send-status__dots > span");
+    expect(globalCss).toContain("@keyframes msgSendDotPulse");
+    expect(globalCss).toContain("animation-delay: 0.14s");
+    expect(globalCss).toContain("animation-delay: 0.28s");
+    expect(globalCss).toMatch(/@media \(prefers-reduced-motion: reduce\)[\s\S]*\.msg-send-status__dots > span\s*\{[\s\S]*animation: none;/);
+  });
+
+  it("clears pending send feedback when the run is acknowledged or starts work", () => {
+    expect(chatView).toMatch(/\["run_admitted", "thinking", "text_chunk", "reasoning_summary_delta", "runtime_progress", "tool_call", "todo_update", "done"\]\.includes\(event\.type\)[\s\S]*updatePendingSendState\(eventSid\);/);
+  });
 });

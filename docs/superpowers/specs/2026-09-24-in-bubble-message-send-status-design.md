@@ -14,6 +14,13 @@ Make an optimistic user message feel like it is being sent without showing a sep
 - Queue and steer badges keep their existing behavior and remain outside the bubble.
 - Agent-side `思考中` remains unchanged because it describes processing rather than message transport.
 
+### Occupied-session fork exception
+
+- Before a fork exists, the source session keeps the `正在创建…` recovery banner because there is no destination message area yet.
+- After the fork is created and selected, its recovered user message uses `sendState: "pending"` and the same in-bubble three-dot indicator.
+- The fork session never shows the occupied-recovery banner above its composer while that message is being sent.
+- If the forked send fails, remove its optimistic message, restore the text and images directly to the fork session composer, and clear the occupied-recovery state. The ordinary-send failed-bubble behavior remains unchanged.
+
 ## Visual Behavior
 
 - The three dots animate through opacity and a small vertical offset in sequence.
@@ -35,6 +42,7 @@ Make an optimistic user message feel like it is being sent without showing a sep
 - The copy button remains outside the bubble and remains enabled.
 - `run_admitted` and first meaningful run events clear the pending state.
 - A failed send retains the message content and shows `发送失败` inside the bubble.
+- A failed occupied-session fork is the exception: its optimistic message is removed and its payload is restored to the composer without a recovery banner.
 - Reduced-motion mode disables dot movement.
 - Focused tests, renderer type checking, and relevant production build checks pass.
 
