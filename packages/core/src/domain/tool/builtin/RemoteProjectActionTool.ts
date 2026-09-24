@@ -20,6 +20,7 @@ export function describeRemoteTool(tool: { scheme: string; purpose: string; inpu
 
 export class RemoteProjectActionTool implements ITool {
   readonly name = "remote_project_action";
+  readonly networkAccess = "write" as const;
   readonly schema = schema;
   readonly parameters = { type: "object", properties: { action: { type: "string", description: "Registered remote action name, or remote_job_status to check a job." }, payload: { type: "object", description: "Small JSON payload for the registered remote action." } }, required: ["action", "payload"] };
   private readonly store?: RemoteToolStore;

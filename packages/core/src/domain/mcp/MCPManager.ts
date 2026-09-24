@@ -71,6 +71,7 @@ export class MCPManager implements IMCPManager {
         description: `[MCP:${client.serverId}] ${mcpTool.description}`,
         parameters: mcpTool.parameters,
         schema: z.object({}).passthrough(),
+        networkAccess: "unknown",
         execute: async (params) => {
           const result = await client.callTool(mcpTool.name, params);
           const content = typeof result === "string"

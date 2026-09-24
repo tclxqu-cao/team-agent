@@ -31,6 +31,10 @@ export class ToolRegistry implements IToolRegistry, IToolExecutor {
     return this.tools.get(name)?.authorization ?? "default";
   }
 
+  getNetworkAccess(name: string) {
+    return this.tools.get(name)?.networkAccess ?? "none";
+  }
+
   async execute(
     name: string,
     args: Record<string, unknown>,

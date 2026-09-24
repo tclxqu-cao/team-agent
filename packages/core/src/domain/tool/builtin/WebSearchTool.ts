@@ -50,6 +50,7 @@ function decodeBingRedirect(href: string): string {
 
 export class WebSearchTool implements ITool {
   readonly name = "web_search";
+  readonly networkAccess = "read" as const;
   readonly description =
     "Search the web for information using DuckDuckGo HTML, falling back to Bing";
   readonly schema = z.object({

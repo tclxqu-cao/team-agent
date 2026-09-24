@@ -3,6 +3,7 @@ import type { ITool, ToolContext, ToolResult } from '../entities.js';
 
 export class WebFetchTool implements ITool {
   readonly name = "web_fetch";
+  readonly networkAccess = "read" as const;
   readonly description = "Fetch content from a URL and process into markdown";
   readonly schema = z.object({
     url: z.string().url().describe("The URL to fetch content from"),

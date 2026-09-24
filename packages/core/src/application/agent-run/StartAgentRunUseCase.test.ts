@@ -10,22 +10,22 @@ import {
 } from "./StartAgentRunUseCase.js";
 
 const skill: SkillDefinition = {
-  name: "portfolio-works",
-  description: "Works",
-  triggers: ["/works"],
+  name: "configured-skill",
+  description: "Configured behavior",
+  triggers: ["/configured"],
   filePath: "",
   source: "custom",
-  prompt: "Return works",
+  prompt: "Return configured output",
 };
 const agent: AgentDefinition = {
-  id: "portfolio-content-agent",
-  name: "Portfolio Content Agent",
-  description: "Public portfolio content",
-  systemPrompt: "Use public content only",
+  id: "configured-agent",
+  name: "Configured Agent",
+  description: "Runtime-configured behavior",
+  systemPrompt: "Use configured capabilities",
   contextPlaceholders: [],
   capabilities: {
     profileId: "aihub-deepseek",
-    enabledTools: ["skill_load", "public_wiki_query"],
+    enabledTools: ["skill_load", "read_file"],
     enabledSkills: [skill.name],
     enabledMCPServers: [],
   },
@@ -33,6 +33,17 @@ const agent: AgentDefinition = {
   isDefault: false,
   created: "2026-09-23T00:00:00.000Z",
   updated: "2026-09-23T00:00:00.000Z",
+};
+
+const toolPolicy = {
+  id: "readonly",
+  name: "Read only",
+  enabled: true,
+  allowedTools: ["skill_load", "read_file"],
+  filesystem: { readRoots: ["/tmp"], writeRoots: [], followSymlinks: false },
+  commands: { mode: "deny" as const, programs: [], inheritedEnvironment: [] },
+  network: "deny" as const,
+  limits: { timeoutMs: 5_000, maxOutputBytes: 4_096 },
 };
 
 function fixture(overrides: Partial<AgentRunCatalog> = {}) {
@@ -56,37 +67,37 @@ describe("StartAgentRunUseCase", () => {
   it("validates then creates a persistent session and starts the selected run", async () => {
     const { sessions, start, useCase } = fixture();
     const result = await useCase.execute({
-      message: "/works",
+      message: "/configured",
       agentId: agent.id,
       skillName: skill.name,
       modelProfileId: "aihub-deepseek",
-      context: { intent: "works" },
-      session: { projectId: "portfolio", title: "Portfolio: works", metadata: { flowId: "homepage-main" } },
+      context: { intent: "configured" },
+      session: { projectId: "configured-project", title: "Configured run", metadata: { callerId: "test-flow" } },
       source: "flow-studio",
     });
 
     expect(result).toMatchObject({ sessionId: "session-1", runId: "run-1" });
     await expect(sessions.get("session-1")).resolves.toMatchObject({
-      projectId: "portfolio",
-      title: "Portfolio: works",
+      projectId: "configured-project",
+      title: "Configured run",
       metadata: {
         source: "flow-studio",
-        flowId: "homepage-main",
+        callerId: "test-flow",
         agentId: agent.id,
         skillName: skill.name,
         modelProfileId: "aihub-deepseek",
       },
     });
     expect(start).toHaveBeenCalledWith(expect.objectContaining({
-      message: "/works",
+      message: "/configured",
       agent,
       skill,
-      context: { intent: "works" },
+      context: { intent: "configured" },
     }));
   });
 
   it("rejects an unbound skill before creating a session", async () => {
-    const other = { ...skill, name: "portfolio-private" };
+    const other = { ...skill, name: "unconfigured-skill" };
     const { sessions, start, useCase } = fixture({ getSkill: async () => other });
     await expect(useCase.execute({
       message: "private",
@@ -100,7 +111,7 @@ describe("StartAgentRunUseCase", () => {
 
   it("requires an Agent for explicit Skill selection", async () => {
     const { sessions, useCase } = fixture();
-    await expect(useCase.execute({ message: "/works", skillName: skill.name, source: "sdk" }))
+    await expect(useCase.execute({ message: "/configured", skillName: skill.name, source: "sdk" }))
       .rejects.toMatchObject({ code: "INVALID_RUN_REQUEST" } satisfies Partial<AgentRunError>);
     await expect(sessions.list()).resolves.toEqual([]);
   });
@@ -120,5 +131,43 @@ describe("StartAgentRunUseCase", () => {
     await expect(useCase.execute({ message: "hello", modelProfileId: "missing", source: "sdk" }))
       .rejects.toMatchObject({ code: "MODEL_PROFILE_NOT_FOUND" } satisfies Partial<AgentRunError>);
     await expect(sessions.list()).resolves.toEqual([]);
+  });
+
+  it("resolves an enabled tool policy before creating the session", async () => {
+    const { sessions, start, useCase } = fixture({
+      getToolExecutionPolicy: async (id) => id === toolPolicy.id ? toolPolicy : null,
+    });
+
+    await useCase.execute({
+      message: "read configured data",
+      capabilities: { toolPolicyId: toolPolicy.id },
+      source: "flow-studio",
+    });
+
+    await expect(sessions.get("session-1")).resolves.toMatchObject({
+      metadata: { toolPolicyId: toolPolicy.id },
+    });
+    expect(start).toHaveBeenCalledWith(expect.objectContaining({
+      capabilities: { toolPolicyId: toolPolicy.id },
+      toolExecutionPolicy: toolPolicy,
+    }));
+    expect(start.mock.calls[0]?.[0].toolExecutionPolicy).not.toBe(toolPolicy);
+  });
+
+  it.each([
+    ["missing", null, "TOOL_POLICY_NOT_FOUND"],
+    ["disabled", { ...toolPolicy, enabled: false }, "TOOL_POLICY_DISABLED"],
+  ])("rejects a %s policy before creating a session", async (_label, resolved, code) => {
+    const { sessions, start, useCase } = fixture({
+      getToolExecutionPolicy: async () => resolved,
+    });
+
+    await expect(useCase.execute({
+      message: "read configured data",
+      capabilities: { toolPolicyId: "selected-policy" },
+      source: "flow-studio",
+    })).rejects.toMatchObject({ code });
+    await expect(sessions.list()).resolves.toEqual([]);
+    expect(start).not.toHaveBeenCalled();
   });
 });

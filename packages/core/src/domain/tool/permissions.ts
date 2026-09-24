@@ -333,6 +333,10 @@ export class PermissionAwareToolExecutor implements IToolExecutor {
     return this.delegate.getAuthorizationPolicy?.(name) ?? "default";
   }
 
+  getNetworkAccess(name: string) {
+    return this.delegate.getNetworkAccess?.(name) ?? "none";
+  }
+
   async execute(name: string, args: Record<string, unknown>, ctx: ToolContext): Promise<ToolResult> {
     if (this.getAuthorizationPolicy(name) === "direct") {
       return this.delegate.execute(name, args, ctx);

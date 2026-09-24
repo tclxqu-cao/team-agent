@@ -184,6 +184,15 @@ export class SQLiteDatabase {
         updated TEXT NOT NULL
       );
 
+      CREATE TABLE IF NOT EXISTS tool_execution_policies (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        enabled INTEGER NOT NULL DEFAULT 1,
+        definition TEXT NOT NULL,
+        created TEXT NOT NULL,
+        updated TEXT NOT NULL
+      );
+
       CREATE TABLE IF NOT EXISTS users (
         id TEXT PRIMARY KEY,
         username_normalized TEXT UNIQUE NOT NULL,

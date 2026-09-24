@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { ITool, ToolContext, ToolResult } from '../entities.js';
-import { readFile, readdir, stat } from "node:fs/promises";
+import { readFile, readdir, lstat } from "node:fs/promises";
 import { resolve, join, relative } from "node:path";
 
 export class GrepTool implements ITool {
@@ -79,8 +79,9 @@ export class GrepTool implements ITool {
         if (results.length >= max_results) break;
         if (entry.startsWith(".") || entry === "node_modules" || entry === "dist") continue;
         const full = join(dir, entry);
-        const s = await stat(full).catch(() => null);
+        const s = await lstat(full).catch(() => null);
         if (!s) continue;
+        if (s.isSymbolicLink()) continue;
         if (s.isDirectory()) {
           if (recursive) await walk(full);
         } else {
@@ -92,7 +93,8 @@ export class GrepTool implements ITool {
     };
 
     try {
-      const s = await stat(absPath);
+      const s = await lstat(absPath);
+      if (s.isSymbolicLink()) throw new Error("Symbolic link search roots are not supported");
       if (s.isFile()) {
         await searchFile(absPath);
       } else {

@@ -1,6 +1,7 @@
 import type { AgentDefinition } from "../../domain/agent/entities.js";
 import type { ISessionStore, Session } from "../../domain/session/entities.js";
 import type { SkillDefinition } from "../../domain/skill/entities.js";
+import type { ToolExecutionPolicy } from "../../domain/tool/execution-policy.js";
 
 export type AgentRunSource = "desktop" | "webapp" | "sdk" | "portfolio" | "flow-studio";
 
@@ -10,6 +11,7 @@ export interface AgentRunCapabilitySelection {
   activatedSkills?: string[];
   enabledMCPServers?: string[];
   memoryEnabled?: boolean;
+  toolPolicyId?: string;
 }
 
 export interface StartAgentRunCommand {
@@ -38,6 +40,7 @@ export interface ValidatedAgentRun {
   images?: string[];
   context: Record<string, unknown>;
   capabilities: AgentRunCapabilitySelection;
+  toolExecutionPolicy?: ToolExecutionPolicy;
   source: AgentRunSource;
 }
 
@@ -51,6 +54,7 @@ export interface AgentRunCatalog {
   getAgent(id: string): Promise<AgentDefinition | null>;
   getSkill(name: string): Promise<SkillDefinition | null>;
   hasModelProfile(id: string): Promise<boolean> | boolean;
+  getToolExecutionPolicy?(id: string): Promise<ToolExecutionPolicy | null> | ToolExecutionPolicy | null;
 }
 
 export interface AgentRunRuntime {
@@ -63,7 +67,9 @@ export type AgentRunErrorCode =
   | "AGENT_NOT_FOUND"
   | "SKILL_NOT_FOUND"
   | "MODEL_PROFILE_NOT_FOUND"
-  | "SKILL_NOT_ALLOWED";
+  | "SKILL_NOT_ALLOWED"
+  | "TOOL_POLICY_NOT_FOUND"
+  | "TOOL_POLICY_DISABLED";
 
 export class AgentRunError extends Error {
   constructor(readonly code: AgentRunErrorCode, message: string) {
@@ -108,6 +114,18 @@ export class StartAgentRunUseCase {
       throw new AgentRunError("MODEL_PROFILE_NOT_FOUND", `Model profile not found: ${command.modelProfileId}`);
     }
 
+    let toolExecutionPolicy: ToolExecutionPolicy | undefined;
+    const toolPolicyId = command.capabilities?.toolPolicyId;
+    if (toolPolicyId) {
+      toolExecutionPolicy = await this.catalog.getToolExecutionPolicy?.(toolPolicyId) ?? undefined;
+      if (!toolExecutionPolicy) {
+        throw new AgentRunError("TOOL_POLICY_NOT_FOUND", `Tool policy not found: ${toolPolicyId}`);
+      }
+      if (!toolExecutionPolicy.enabled) {
+        throw new AgentRunError("TOOL_POLICY_DISABLED", `Tool policy is disabled: ${toolPolicyId}`);
+      }
+    }
+
     const sessionId = command.sessionId ?? this.createId();
     await this.runtime.assertAvailable?.(sessionId);
     let session = await this.sessions.get(sessionId);
@@ -117,6 +135,7 @@ export class StartAgentRunUseCase {
       ...(command.agentId ? { agentId: command.agentId } : {}),
       ...(command.skillName ? { skillName: command.skillName } : {}),
       ...(command.modelProfileId ? { modelProfileId: command.modelProfileId } : {}),
+      ...(toolPolicyId ? { toolPolicyId } : {}),
     };
     if (!session) {
       const timestamp = this.now();
@@ -147,6 +166,7 @@ export class StartAgentRunUseCase {
       ...(command.images?.length ? { images: command.images } : {}),
       context: command.context ?? {},
       capabilities: command.capabilities ?? {},
+      ...(toolExecutionPolicy ? { toolExecutionPolicy: structuredClone(toolExecutionPolicy) } : {}),
       source: command.source,
     });
   }
@@ -202,6 +222,8 @@ function capabilitySelection(value: AgentRunCapabilitySelection | undefined): Ag
     if (typeof value.memoryEnabled !== "boolean") throw invalid("capabilities.memoryEnabled must be boolean");
     selected.memoryEnabled = value.memoryEnabled;
   }
+  const toolPolicyId = optionalString(value.toolPolicyId, "capabilities.toolPolicyId");
+  if (toolPolicyId) selected.toolPolicyId = toolPolicyId;
   if (selected.activatedSkills && selected.enabledSkills) {
     const allowed = new Set(selected.enabledSkills);
     if (selected.activatedSkills.some((skill) => !allowed.has(skill))) {

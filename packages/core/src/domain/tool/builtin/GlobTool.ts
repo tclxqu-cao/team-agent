@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { ITool, ToolContext, ToolResult } from '../entities.js';
-import { readdir, stat } from "node:fs/promises";
+import { readdir, lstat } from "node:fs/promises";
 import { resolve, join, relative } from "node:path";
 
 /** Convert a glob pattern to a RegExp. Supports **, *, ?, {a,b}, and [abc]. */
@@ -133,14 +133,16 @@ export class GlobTool implements ITool {
         const fullPath = join(dir, entry);
         let s;
         try {
-          s = await stat(fullPath);
+          s = await lstat(fullPath);
         } catch {
           continue;
         }
 
         const relPath = relative(root, fullPath);
 
-        if (s.isDirectory()) {
+        if (s.isSymbolicLink()) {
+          continue;
+        } else if (s.isDirectory()) {
           await walk(fullPath);
         } else {
           if (regex.test(relPath)) {

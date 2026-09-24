@@ -4,6 +4,8 @@ import type { IMemoryStore } from '../memory/entities.js';
 import type { IContextLoader } from '../context/entities.js';
 import type { ITool, IToolExecutor } from '../tool/entities.js';
 import { PermissionAwareToolExecutor, type ToolPermissionGate } from '../tool/permissions.js';
+import { PolicyAwareToolExecutor } from '../tool/policy-executor.js';
+import type { ToolExecutionPolicy } from '../tool/execution-policy.js';
 import type { ISessionStore } from '../session/entities.js';
 import { AgentFactory } from './AgentFactory.js';
 import { ToolRegistry } from '../tool/ToolRegistry.js';
@@ -65,6 +67,7 @@ export class AgentBuilder {
   /** Reasoning intensity for main-loop requests. undefined/"off" = provider default. */
   private reasoningEffort: import("../model/entities.js").ReasoningEffort | undefined;
   private toolPermissionGate: ToolPermissionGate | undefined;
+  private toolExecutionPolicy: ToolExecutionPolicy | undefined;
   /** Last-mile decorator applied to the composed executor (after the permission gate). */
   private toolExecutorDecorator: ((executor: IToolExecutor) => IToolExecutor) | undefined;
 
@@ -247,6 +250,11 @@ export class AgentBuilder {
     return this;
   }
 
+  withToolExecutionPolicy(policy: ToolExecutionPolicy | undefined): this {
+    this.toolExecutionPolicy = policy;
+    return this;
+  }
+
   /**
    * Register a decorator applied to the fully composed tool executor
    * (after the permission gate, e.g. for checkpointing or auditing).
@@ -310,9 +318,7 @@ export class AgentBuilder {
       runCheckpointStore: this.runCheckpointStore,
       modelProvider: this.modelProvider,
       toolRegistry,
-      toolExecutor: this.decorateExecutor(this.toolPermissionGate
-        ? new PermissionAwareToolExecutor(toolRegistry, this.toolPermissionGate)
-        : toolRegistry),
+      toolExecutor: this.composeToolExecutor(toolRegistry),
       contextAssembler,
       skillRegistry: this.skillRegistry,
       memoryStore,
@@ -381,9 +387,7 @@ export class AgentBuilder {
       runCheckpointStore: this.runCheckpointStore,
       modelProvider: this.modelProvider,
       toolRegistry,
-      toolExecutor: this.decorateExecutor(this.toolPermissionGate
-        ? new PermissionAwareToolExecutor(toolRegistry, this.toolPermissionGate)
-        : toolRegistry),
+      toolExecutor: this.composeToolExecutor(toolRegistry),
       contextAssembler,
       skillRegistry: this.skillRegistry,
       memoryStore,
@@ -406,6 +410,16 @@ export class AgentBuilder {
 
   private decorateExecutor(executor: IToolExecutor): IToolExecutor {
     return this.toolExecutorDecorator ? this.toolExecutorDecorator(executor) : executor;
+  }
+
+  private composeToolExecutor(registry: IToolExecutor): IToolExecutor {
+    const approved = this.toolPermissionGate
+      ? new PermissionAwareToolExecutor(registry, this.toolPermissionGate)
+      : registry;
+    const decorated = this.decorateExecutor(approved);
+    return this.toolExecutionPolicy
+      ? new PolicyAwareToolExecutor(decorated, this.toolExecutionPolicy)
+      : decorated;
   }
 
   getToolRegistry(): ToolRegistry {

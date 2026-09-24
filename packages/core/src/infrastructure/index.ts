@@ -18,6 +18,7 @@ export { SQLiteRemoteToolStore } from './SQLiteRemoteToolStore.js';
 export { SQLiteAuthStore } from './SQLiteAuthStore.js';
 export { SQLiteAnonymousWebStore, type AnonymousWebPrincipal } from './SQLiteAnonymousWebStore.js';
 export { SQLiteWebConsoleStore } from './SQLiteWebConsoleStore.js';
+export { SQLiteToolExecutionPolicyStore } from './SQLiteToolExecutionPolicyStore.js';
 export {
   HostPathError,
   HostPathPolicy,

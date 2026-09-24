@@ -10,6 +10,7 @@ export interface ToolContext {
 }
 
 export type ToolAuthorizationPolicy = "default" | "direct";
+export type ToolNetworkAccess = "none" | "read" | "write" | "unknown";
 
 export interface ITool {
   readonly name: string;
@@ -18,6 +19,7 @@ export interface ITool {
   readonly schema: ZodType;
   /** Generic execution policy. direct tools bypass the CA approval queue. */
   readonly authorization?: ToolAuthorizationPolicy;
+  readonly networkAccess?: ToolNetworkAccess;
 
   execute(params: Record<string, unknown>, ctx: ToolContext): Promise<ToolResult>;
 }
@@ -33,6 +35,7 @@ export interface IToolRegistry {
   getAll(): ITool[];
   getDefinitions(): ToolDefinition[];
   getAuthorizationPolicy?(name: string): ToolAuthorizationPolicy;
+  getNetworkAccess?(name: string): ToolNetworkAccess;
 }
 
 export interface IToolExecutor {
@@ -43,4 +46,5 @@ export interface IToolExecutor {
   ): Promise<ToolResult>;
   validate(name: string, args: Record<string, unknown>): boolean;
   getAuthorizationPolicy?(name: string): ToolAuthorizationPolicy;
+  getNetworkAccess?(name: string): ToolNetworkAccess;
 }
