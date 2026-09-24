@@ -1,0 +1,48 @@
+packages/desktop/renderer/components/ToolCallCard.test.tsx
+  s_0c843d4c57cd87::t_54fa4241e8855e 194-203
+  s_772a18ceda45ec::t_e737fa960b25d6 127,131,151,170
+  s_0c843d4c57cd87::t_7702f9e55b4c2b 204
+packages/desktop/renderer/components/ChatHistoryStyle.test.ts
+  s_0c843d4c57cd87::t_ae39a4501412f1 31-34,62-67
+  s_772a18ceda45ec::t_e737fa960b25d6 299,302,305
+  s_0c843d4c57cd87::t_e97f277caf974a 68-69
+packages/desktop/renderer/lib/queued-message-order.test.ts
+  s_0c843d4c57cd87::t_ae39a4501412f1 123,192,227
+  s_0c843d4c57cd87::t_81e36d0c608295 133,144-146,156
+docs/superpowers/plans/2026-09-24-queued-message-active-feedback.md
+  s_0c843d4c57cd87::t_a8a6efa6ef7c60 30,34,48,52,56,62
+  s_0c843d4c57cd87::t_67d350c6f23e4b 1-29,31-33,35-47,49-51,53-55,57-61,63-72
+packages/desktop/renderer/lib/queued-message-order.ts
+  s_0c843d4c57cd87::t_ae39a4501412f1 94
+packages/desktop/renderer/components/ToolCallCard.tsx
+  s_772a18ceda45ec::t_dad73cbbadb1c1 21,40,309,353,373,414,425,463,561,589,624,710,718,730,790,832,853-854,856,858,860-861
+docs/superpowers/specs/2026-09-24-tool-row-trailing-alignment-design.md
+  s_0c843d4c57cd87::t_54fa4241e8855e 1-13
+docs/superpowers/plans/2026-09-24-tool-row-trailing-alignment.md
+  s_0c843d4c57cd87::t_54fa4241e8855e 1-28,30-32,34-36,38-42,44-51
+  s_0c843d4c57cd87::t_4d9b0c80f84b24 29,33,37,43
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "b5d8657886e1cddc17f267c77f524ca770db6dbf",
+  "prompts": {},
+  "sessions": {
+    "s_0c843d4c57cd87": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ce6c-e085-7c01-a177-4997c9aeeaf4",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_772a18ceda45ec": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0d103-925b-7e50-9a65-cb02ff597fe5",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
