@@ -56,11 +56,17 @@ This keeps the renderer's existing failure recovery intact for real errors while
 
 ### Bounded Cancellation Confirmation
 
-After app-server accepts `turn/interrupt`, the adapter starts a three-second confirmation timer scoped to the exact thread and turn id. A matching terminal event clears the timer and remains authoritative.
+After app-server accepts `turn/interrupt`, the adapter starts a 30-second confirmation timer scoped to the exact thread and turn id. A matching terminal event clears the timer and remains authoritative.
 
-If no matching terminal event arrives before the deadline, the adapter consumes the local interruption marker, clears the matching active turn, emits a normal `done` event with an empty final text, and closes the run event queue. Normal run cleanup then releases the subscription and broker execution state. This timeout is cancellation recovery, not a runtime failure, so it must not emit an error or restore the submitted text into the composer.
+If no matching terminal event arrives within 30 seconds, the adapter reads the thread from app-server and reconciles the exact turn instead of assuming cancellation succeeded:
 
-The timeout callback rechecks both the active turn id and local interruption marker before settling. A late notification for the timed-out turn is therefore ignored and cannot terminate or alter a later turn in the same thread. Timer handles are cleared on matching terminal events, rejected interrupt requests, and run cleanup.
+- If the turn is terminal, normalize its real terminal state and finish the local run.
+- If the turn is still active, issue one more `turn/interrupt` for the same turn id and continue waiting.
+- If reconciliation fails transiently, keep the local run in its stopping state and retry within the overall deadline.
+
+At 60 seconds without an authoritative terminal state, emit a dedicated recoverable `CANCEL_CONFIRMATION_TIMEOUT` error and close the local run stream. The renderer excludes this code from failed-send draft restoration: the submitted user message remains in history, the composer stays empty, and queued follow-up messages remain durable. The UI tells the user that stop confirmation timed out and allows another stop attempt or explicit session release. Codex remains the transcript authority, so content that completes after the local stream closes is recovered by the existing native-history refresh rather than discarded.
+
+The timeout and reconciliation callbacks recheck both the active turn id and local interruption marker before acting. A terminal notification received at any point up to or after a reconciliation request remains authoritative for that turn. Timer handles are cleared on matching terminal events, rejected initial interrupt requests, and run cleanup.
 
 ### Event Semantics
 
@@ -73,7 +79,7 @@ An unexpected `turn/completed` status of `interrupted`, or a standalone interrup
 - No active Codex turn: `steer()` returns `false`; the queued message remains queued.
 - Stale `expectedTurnId` or app-server rejection: the request rejects; the queued message remains queued and the existing UI reports the failure.
 - Interrupt request rejection: cancellation state is rolled back and the error remains visible.
-- Accepted interrupt without a terminal event: settle as normal cancellation after three seconds.
+- Accepted interrupt without a terminal event: reconcile at 30 seconds, retry interruption when still active, and report a recoverable confirmation timeout at 60 seconds.
 - Unexpected interruption: emit the existing protocol error and retain draft recovery behavior.
 
 ## Verification
@@ -82,8 +88,10 @@ An unexpected `turn/completed` status of `interrupted`, or a standalone interrup
 - Adapter test: steering without an active turn returns `false` and sends no request.
 - Adapter test: a rejected steer propagates and does not terminate the active run.
 - Adapter test: user-requested abort followed by interrupted completion emits normal completion without an error.
-- Adapter test: an accepted abort without a terminal event settles normally after three seconds and releases the run.
-- Adapter test: a terminal event before the deadline cancels the timer, while a late event after timeout cannot affect a later turn.
+- Adapter test: an accepted abort without a terminal event triggers authoritative reconciliation after 30 seconds.
+- Adapter test: an active reconciled turn receives one repeated interrupt and can still complete normally before 60 seconds.
+- Adapter test: an authoritative terminal event received during reconciliation cancels timers and controls the final result.
+- Adapter and renderer tests: the 60-second confirmation timeout is recoverable, never invokes failed-send draft restoration, and does not suppress later native-history reconciliation.
 - Adapter test: unexpected interrupted completion still emits `NATIVE_PROTOCOL_ERROR`.
 - Capability test: Codex reports mid-turn steering support while existing runtime values remain unchanged.
 - Broker queue tests continue proving that durable queue rows are removed only after steering succeeds.
@@ -94,5 +102,5 @@ An unexpected `turn/completed` status of `interrupted`, or a standalone interrup
 - A Codex queued-message row shows the existing steer action during an active run.
 - Activating it sends the message to that exact active turn and removes the row only after acceptance.
 - Pressing stop during a Codex run does not show `Codex turn was interrupted.` and does not restore the sent text into the composer.
-- A stopped Codex run cannot remain active indefinitely when app-server omits its terminal notification.
+- A stopped Codex run cannot remain active indefinitely when app-server omits its terminal notification, and no fixed timeout can silently discard a late response.
 - An interruption not initiated by the current AgentRoam run remains visible as an error.
