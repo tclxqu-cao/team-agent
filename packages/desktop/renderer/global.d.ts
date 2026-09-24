@@ -1,4 +1,8 @@
 import type { BrowserLiveSessionView } from "../../core/src/domain/browser-live/index";
+import type {
+  FileWorkspaceEventMessage,
+  FileWorkspaceMethod,
+} from "../../core/src/domain/file-workspace/index";
 import type { LiveViewOwnershipState } from "../../core/src/domain/live-view/entities";
 
 export interface LSPServerConfig {
@@ -291,6 +295,8 @@ export interface AgentApi {
   setActiveProfile(profileId: string): Promise<void>;
   openFileDialog(): Promise<string | null>;
   showDirectoryContextMenu?(path: string): Promise<{ shown: true }>;
+  fileWorkspaceRequest<T = unknown>(method: FileWorkspaceMethod, params?: Record<string, unknown>): Promise<T>;
+  onFileWorkspaceEvent(callback: (event: FileWorkspaceEventMessage) => void): () => void;
   readFile(path: string): Promise<string>;
   writeFile(path: string, content: string): Promise<boolean>;
   listProjects(): Promise<unknown[]>;

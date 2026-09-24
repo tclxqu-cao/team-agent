@@ -54,6 +54,20 @@ describe("ChatHeaderActions", () => {
     expect(html).toContain("chat-header-action--appearance is-active");
   });
 
+  it("renders an active file-workspace action only when it is available", () => {
+    const hidden = renderToStaticMarkup(createElement(ChatHeaderActions, baseProps));
+    const visible = renderToStaticMarkup(createElement(ChatHeaderActions, {
+      ...baseProps,
+      filesOpen: true,
+      onToggleFiles: () => {},
+    }));
+
+    expect(hidden).not.toContain('aria-label="我的文件"');
+    expect(visible).toContain('aria-label="我的文件"');
+    expect(visible).toContain('aria-expanded="true"');
+    expect(visible).toContain("chat-header-action--files is-active");
+  });
+
   it("renders the Codex release action as an icon-only button", () => {
     const html = renderToStaticMarkup(createElement(ChatHeaderActions, {
       ...baseProps,

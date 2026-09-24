@@ -3,9 +3,10 @@ import { prepareChromeExtension, showChromeExtensionSetup } from "./ai-hub/chrom
 // on electron 32 / Node 20.18 (cjsPreparseModuleExports: "exports" undefined).
 import { createRequire } from "module";
 const require = createRequire(import.meta.url);
-const { app, BrowserWindow, ipcMain, dialog, Menu, nativeImage, session, shell, desktopCapturer, systemPreferences, screen, globalShortcut, clipboard, powerMonitor, powerSaveBlocker } = require("electron") as typeof import("electron");
+const { app, BrowserWindow, ipcMain, dialog, Menu, nativeImage, session, shell, desktopCapturer, systemPreferences, screen, globalShortcut, clipboard, powerMonitor, powerSaveBlocker, protocol } = require("electron") as typeof import("electron");
 import { execFile, spawn, type ChildProcess } from "node:child_process";
-import { basename, join, resolve } from "node:path";
+import { basename, delimiter, join, resolve } from "node:path";
+import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { readFile, writeFile } from "node:fs/promises";
 import { existsSync, statSync } from "node:fs";
@@ -13,6 +14,10 @@ import { LiveViewProducerClient, installGlobalLogging } from "@agent/core";
 // Must be set before app ready: real host IPs must survive ICE gathering for
 // LAN/Tailscale WebRTC (mDNS .local candidates do not resolve on phones).
 app.commandLine.appendSwitch("disable-features", "WebRtcHideLocalIpsWithMdns");
+protocol.registerSchemesAsPrivileged([{
+  scheme: "agentroam-preview",
+  privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true },
+}]);
 import { DesktopInputGateway } from "./desktop-input-gateway.js";
 import { DesktopScreenScreencast } from "./desktop-screen-screencast.js";
 import { DesktopScreenLive, type ScreenPermission, type DesktopLiveStatus, type WebrtcSignal } from "./desktop-screen-live.js";
@@ -27,6 +32,7 @@ import { readDesktopLiveState, writeDesktopLiveState } from "./desktop-live-stat
 import { SharedServiceConnection } from "./shared-service.js";
 import { DesktopUpdateService } from "./update-service.js";
 import { directoryOpenMenuLabel, revealDirectoryWithShell, resolveDirectoryForOpen } from "./directory-context-menu.js";
+import { createDesktopPreviewResponse, DesktopFileWorkspaceService } from "./file-workspace-service.js";
 import { AIHubManager, type HubPaneRect } from "./ai-hub/manager.js";
 import { normalizeRelayImages, startAiHubRelay, type AiHubRelay } from "./ai-hub/relay.js";
 import { BrowserProfileImporter, HUB_PROFILE_DIR_NAME } from "./ai-hub/browser-profile-importer.js";
@@ -141,6 +147,15 @@ const appIconPath = [
   join(process.resourcesPath, "app.asar.unpacked", "assets", "app-icon.png"),
 ].find((candidate) => existsSync(candidate));
 const sharedService = new SharedServiceConnection(join(app.getPath("userData"), "shared-service.json"));
+const fileWorkspaceService = new DesktopFileWorkspaceService({
+  roots: (process.env.AGENT_WEB_ROOTS?.trim() || homedir()).split(delimiter),
+  home: homedir(),
+  emit: (event) => {
+    if (mainWindow && !mainWindow.webContents.isDestroyed()) {
+      mainWindow.webContents.send("file-workspace:event", { events: [event] });
+    }
+  },
+});
 const trustedServiceSender = (event: import("electron").IpcMainInvokeEvent) => {
   if (event.sender !== mainWindow?.webContents || event.senderFrame !== event.sender.mainFrame) throw new Error("Untrusted desktop sender");
 };
@@ -920,6 +935,10 @@ ipcMain.handle("file:dialog:open", async () => {
   const result = await dialog.showOpenDialog(mainWindow!, { properties: ["openDirectory", "createDirectory"], title: "选择项目文件夹", buttonLabel: "选择此文件夹" });
   return result.canceled ? null : result.filePaths[0];
 });
+ipcMain.handle("file-workspace:request", (event, method, params) => {
+  trustedServiceSender(event);
+  return fileWorkspaceService.request(method, params);
+});
 ipcMain.handle("directory:show-context-menu", async (event, path: unknown) => {
   trustedServiceSender(event);
   const directory = await resolveDirectoryForOpen(path);
@@ -1227,6 +1246,7 @@ function registerAiHubWakeShortcut(): void {
 
 app.whenReady().then(async () => {
   await sharedService.initialize();
+  protocol.handle("agentroam-preview", (request) => createDesktopPreviewResponse(fileWorkspaceService, request));
   // 暴露完整辅助功能树（AX 驱动/自动化测试依赖）
   app.setAccessibilitySupportEnabled(true);
   if (process.platform === "darwin" && appIconPath) {
@@ -1299,6 +1319,7 @@ app.on("before-quit", (event) => {
   quitCleanupStarted = true;
   clearInterval(desktopPermissionTimer);
   sharedService.closeStreams();
+  fileWorkspaceService.close();
   globalShortcut.unregisterAll();
   wakeDesired = false;
   dictationActive = false;

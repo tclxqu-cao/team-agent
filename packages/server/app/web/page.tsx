@@ -4,10 +4,10 @@
 // - ≥900px: [terminal | tree | preview(only when open)] with resizable tree
 
 import dynamic from "next/dynamic";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { PanelRight, X, LayoutGrid, MonitorUp, RefreshCw } from "lucide-react";
 import PwaInstallButton from "./PwaInstallButton";
-import type { PinnedCommand } from "../../../core/src/domain/web-console/entities";
+import type { FileWorkspaceGateway, PinnedCommand } from "@agent/core";
 import { defaultPinnedCommands } from "../../../core/src/domain/web-console/pinned-commands";
 import {
   WEBAPP_PROJECT_RESPONSE_TYPE,
@@ -68,6 +68,14 @@ function AuthenticatedConsole({ auth }: { auth: WebAuthController }) {
     }, window.location.origin, [payload]);
   }, []);
   const { state, epoch, rpc, onEvent, onTerminalData, onTerminalReset, sendTerminalInput } = useGateway(forwardBrowserBinary, auth.getWsNonce, auth.refresh);
+  const fileWorkspaceGateway = useMemo<FileWorkspaceGateway>(() => ({
+    request: <T,>(
+      method: Parameters<FileWorkspaceGateway["request"]>[0],
+      params?: Record<string, unknown>,
+      timeoutMs?: number,
+    ) => rpc<T>(method, params, timeoutMs),
+    subscribe: (_type, listener) => onEvent("fs:event", listener),
+  }), [onEvent, rpc]);
   browserFrameAck.current = (channelId, sequence) => {
     void rpc("browser:frame-ack", { channelId, sequence }).catch(() => undefined);
   };
@@ -602,8 +610,7 @@ function AuthenticatedConsole({ auth }: { auth: WebAuthController }) {
             ready={epoch > 0}
             followCwd={true}
             cwd={cwdHint}
-            rpc={rpc}
-            onEvent={onEvent}
+            gateway={fileWorkspaceGateway}
             onOpenFile={openFile}
             selectedPath={previewPath}
             initialRoot={fileTreeRoot}
@@ -627,7 +634,7 @@ function AuthenticatedConsole({ auth }: { auth: WebAuthController }) {
         {/* preview — third column when a file is tapped */}
         {previewPath && (
           <section className="preview-col" style={S.previewCol}>
-            <FilePreview path={previewPath} rpc={rpc} onClose={() => setPreviewPath(null)} />
+            <FilePreview path={previewPath} gateway={fileWorkspaceGateway} onClose={() => setPreviewPath(null)} />
           </section>
         )}
       </main>
@@ -867,6 +874,7 @@ const GLOBAL_CSS = `
   @keyframes tree-spin { to { transform:rotate(360deg); } }
   @media (prefers-reduced-motion: reduce) { .tree-spin { animation:none; } }
   .tree-row[data-selected="1"] { background: color-mix(in srgb, var(--ui-tab-accent, #26304a) 24%, transparent); }
+  .tree-error { margin: 2px 8px 6px; padding: 7px 8px; border-left: 2px solid #f7768e; color: #f7768e; font-size: 11px; line-height: 1.45; overflow-wrap: anywhere; }
   .tree-size { margin-left: auto; color: var(--ui-history-meta, #555); font-size: 10px; flex-shrink: 0; }
 
   /* phone-first: terminal is THE screen */

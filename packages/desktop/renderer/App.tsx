@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { createPortal } from "react-dom";
 import { History, LoaderCircle, Plus, Search } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
@@ -42,6 +42,10 @@ import SidebarDeleteConfirmation from "./components/SidebarDeleteConfirmation";
 import SidebarSessionRow, { type SidebarDeleteAnchor } from "./components/SidebarSessionRow";
 import HostProjectPicker from "./components/HostProjectPicker";
 import AppActionNotice from "./components/AppActionNotice";
+import FileWorkspaceDrawer, {
+  type FileWorkspaceDrawerTab,
+} from "./components/file-workspace/FileWorkspaceDrawer";
+import type { FileTreeRevealRequest } from "./components/file-workspace/fileTreeReveal";
 import type {
   AgentType,
   AgentWorkspace,
@@ -64,6 +68,14 @@ import { useUIStore, SKINS, LAYOUTS } from "./stores/uiStore";
 import { startWakeListener, isASRSupported, type WakeListenerHandle } from "./lib/speech";
 import { getDesktopDirectoryContextMenuPath } from "./lib/sidebar-directory-context-menu";
 import { isWebShell, useNarrowViewport } from "./web/webLayout";
+import { createElectronFileWorkspaceGateway } from "./lib/electron-file-workspace-gateway";
+import { postWebArtifactOpen } from "./lib/artifact-links";
+import {
+  projectSessionActivity,
+  visibleWorkspaceIds,
+  type SessionActivity,
+} from "@agent/core/domain/session/SessionActivity";
+import { refreshableWorkspaceIds } from "./lib/visible-session-refresh";
 
 type SettingsTab = "settings" | "mcp" | "memory" | "skill" | "agent" | "lsp";
 
@@ -276,9 +288,21 @@ export default function App() {
       .map(([sessionId]) => sessionId),
   ));
 
+  const sessionActivity = useCallback((session: Session, projectId = session.projectId): SessionActivity => (
+    projectSessionActivity({
+      authoritativeStatus: session.status,
+      locallyRunning: runningSessionId === session.id,
+      needsInput: sessionsNeedingInput.includes(session.id),
+      stale: Boolean(projectId && (staleProjectIds.has(projectId) || projectSessionErrors[projectId])),
+    })
+  ), [projectSessionErrors, runningSessionId, sessionsNeedingInput, staleProjectIds]);
+
   const isSessionRunning = useCallback(
-    (session: Session) => session.status === "running" || runningSessionId === session.id,
-    [runningSessionId],
+    (session: Session) => {
+      const activity = sessionActivity(session);
+      return activity === "running" || activity === "needs-input";
+    },
+    [sessionActivity],
   );
 
   /** Collapse every project and nested session group in the sidebar. */
@@ -310,6 +334,33 @@ export default function App() {
   const narrowViewport = useNarrowViewport();
   const mobileDrawer = webShell && narrowViewport;
   const [sidebarDrawerOpen, setSidebarDrawerOpen] = useState(false);
+  const [fileDrawerOpen, setFileDrawerOpen] = useState(false);
+  const [fileDrawerTab, setFileDrawerTab] = useState<FileWorkspaceDrawerTab>("files");
+  const [filePreviewPath, setFilePreviewPath] = useState<string | null>(null);
+  const [fileRevealRequest, setFileRevealRequest] = useState<FileTreeRevealRequest | null>(null);
+  const fileWorkspaceGateway = useMemo(() => (
+    !webShell && typeof window.agentApi?.fileWorkspaceRequest === "function"
+      ? createElectronFileWorkspaceGateway(window.agentApi)
+      : null
+  ), [webShell]);
+  const openArtifact = useCallback((path: string) => {
+    if (webShell) {
+      postWebArtifactOpen(path);
+      return;
+    }
+    if (!fileWorkspaceGateway) return;
+    setFileDrawerTab("files");
+    setFileDrawerOpen(true);
+    setFilePreviewPath(path);
+    setFileRevealRequest((current) => ({
+      path,
+      requestId: (current?.requestId ?? 0) + 1,
+    }));
+  }, [fileWorkspaceGateway, webShell]);
+  useEffect(() => {
+    setFilePreviewPath(null);
+    setFileRevealRequest(null);
+  }, [selectedProjectId]);
 
   const [showAppearance, setShowAppearance] = useState(false);
   const [appearanceAnchor, setAppearanceAnchor] = useState<{ right: number; bottom: number } | null>(null);
@@ -927,6 +978,7 @@ export default function App() {
       });
     } catch (error) {
       if (projectSessionRequestIds.current.get(requestKey) !== requestId) return;
+      setStaleProjectIds((prev) => new Set(prev).add(projectId));
       setProjectSessionErrors((prev) => ({
         ...prev,
         [projectId]: error instanceof Error ? error.message : "会话加载失败",
@@ -1045,27 +1097,39 @@ export default function App() {
   }, [activeAgent, workspaceLoading, workspaceWatermark]);
 
   useEffect(() => {
-    if (
-      !selectedProjectId
-      || !selectedSessionId
-      || !window.agentApi
-    ) return;
+    if (!window.agentApi) return;
     let cancelled = false;
-    const refresh = async () => {
-      if (document.visibilityState !== "visible") return;
-      if (!cancelled) {
-        await loadSessions(selectedProjectId, { refresh: true, background: true });
+    const refresh = () => {
+      if (cancelled || document.visibilityState !== "visible") return;
+      const visibleProjectIds = visibleWorkspaceIds(selectedProjectId, expandedProjects);
+      const refreshProjectIds = refreshableWorkspaceIds(
+        visibleProjectIds,
+        invalidProjectsRef.current,
+        loadingProjectIdsRef.current,
+      );
+      for (const projectId of refreshProjectIds) {
+        void loadSessions(projectId, {
+          refresh: true,
+          background: loadedProjectIdsRef.current.has(projectId),
+        });
       }
     };
-    const timer = window.setInterval(() => void refresh(), 10_000);
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") refresh();
+    };
+    const timer = window.setInterval(refresh, 10_000);
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
     return () => {
       cancelled = true;
       window.clearInterval(timer);
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-    // Session identity and project registration are the only inputs relevant
-    // to native ownership polling.
+    // Visible workspaces are refreshed together so collapsed cached summaries
+    // cannot leave a completed native session appearing active indefinitely.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedProjectId, selectedSessionId, selectedSession?.agentType]);
+  }, [activeAgent, expandedProjects, selectedProjectId]);
 
   // Sync working directory whenever the selected project changes (covers startup,
   // session click, new session, and explicit project click).
@@ -1302,12 +1366,7 @@ export default function App() {
 
   const renderRootSession = (session: Session, projectId: string) => {
     const isActiveSession = selectedSessionId === session.id;
-    const running = isSessionRunning(session);
-    const visualState = getSidebarSessionVisualState({
-      status: session.status,
-      isRunning: running,
-      needsInput: running && sessionsNeedingInput.includes(session.id),
-    });
+    const visualState = getSidebarSessionVisualState(sessionActivity(session, projectId));
     const children = childSessionsByParent[session.id] ?? [];
     const expanded = !collapsedParents.has(session.id);
 
@@ -1350,12 +1409,7 @@ export default function App() {
           }}
         >
           {children.map((child) => {
-            const childRunning = isSessionRunning(child);
-            const childVisualState = getSidebarSessionVisualState({
-              status: child.status,
-              isRunning: childRunning,
-              needsInput: childRunning && sessionsNeedingInput.includes(child.id),
-            });
+            const childVisualState = getSidebarSessionVisualState(sessionActivity(child, projectId));
             return (
               <SidebarSessionRow
                 key={child.id}
@@ -1943,12 +1997,7 @@ export default function App() {
               )}
               {(searchResults ?? orderedVisibleSessions.slice(0, searchListLimit)).map((session) => {
                 const active = selectedSessionId === session.id;
-                const running = isSessionRunning(session);
-                const visualState = getSidebarSessionVisualState({
-                  status: session.status,
-                  isRunning: running,
-                  needsInput: running && sessionsNeedingInput.includes(session.id),
-                });
+                const visualState = getSidebarSessionVisualState(sessionActivity(session));
                 return (
                   <SidebarSessionRow
                     key={session.id}
@@ -2004,7 +2053,7 @@ export default function App() {
 
       <AppActionNotice message={notice} type={noticeType} />
 
-      <main className="app-main" style={{
+      <main className={`app-main${fileWorkspaceGateway ? " file-workspace-capable" : ""}${fileDrawerOpen && fileWorkspaceGateway ? " file-workspace-open" : ""}${fileDrawerOpen && fileWorkspaceGateway && filePreviewPath ? " file-workspace-preview-open" : ""}`} style={{
         flex: 1,
         overflow: "hidden",
         background: "var(--bg-workspace)",
@@ -2044,6 +2093,12 @@ export default function App() {
             onOpenSettings={toggleSettings}
             settingsOpen={showSettings}
             desktopLiveOpen={showDesktopLive}
+            fileDrawerOpen={fileDrawerOpen}
+            onOpenArtifact={openArtifact}
+            onToggleFiles={fileWorkspaceGateway ? () => {
+              setFileDrawerOpen((open) => !open);
+              setFileDrawerTab("files");
+            } : undefined}
             onOpenDesktopLive={!webShell && window.agentApi?.desktopLiveGetStatus ? () => setShowDesktopLive(true) : undefined}
             onHideToBackground={() => void hideToBackground()}
             onOpenHub={window.agentApi?.hubGetConfig ? () => setHubOpen(true) : undefined}
@@ -2108,6 +2163,20 @@ export default function App() {
         {/* AI Hub（多 AI 网页聚合）：与 ChatView 互斥显示 */}
         {hubOpen && (
           <AIHubView conversationId={selectedSessionId} onExit={() => setHubOpen(false)} />
+        )}
+
+        {fileWorkspaceGateway && (
+          <FileWorkspaceDrawer
+            open={fileDrawerOpen}
+            tab={fileDrawerTab}
+            gateway={fileWorkspaceGateway}
+            cwd={selectedWorkspacePath}
+            selectedPath={filePreviewPath}
+            revealRequest={fileRevealRequest}
+            onTabChange={setFileDrawerTab}
+            onSelectPath={setFilePreviewPath}
+            onClose={() => setFileDrawerOpen(false)}
+          />
         )}
 
         {/* modal moved to portal below */}

@@ -1,4 +1,4 @@
-import { Check, LayoutGrid, LoaderCircle, Monitor, Unplug } from "lucide-react";
+import { Check, LayoutGrid, LoaderCircle, Monitor, PanelRight, Unplug } from "lucide-react";
 
 interface ChatHeaderActionsProps {
   appearanceOpen: boolean;
@@ -11,6 +11,8 @@ interface ChatHeaderActionsProps {
   onOpenHub?: () => void;
   onOpenDesktopLive?: () => void;
   desktopLiveOpen?: boolean;
+  filesOpen?: boolean;
+  onToggleFiles?: () => void;
   onToggleAppearance: (anchor: DOMRect) => void;
   onOpenSettings: () => void;
 }
@@ -26,6 +28,8 @@ export default function ChatHeaderActions({
   onOpenHub,
   onOpenDesktopLive,
   desktopLiveOpen = false,
+  filesOpen = false,
+  onToggleFiles,
   onToggleAppearance,
   onOpenSettings,
 }: ChatHeaderActionsProps) {
@@ -57,6 +61,18 @@ export default function ChatHeaderActions({
           className="ui-icon-button chat-header-action chat-header-action--ai-hub"
         >
           <LayoutGrid size={15} aria-hidden="true" />
+        </button>
+      )}
+      {onToggleFiles && (
+        <button
+          type="button"
+          onClick={onToggleFiles}
+          title="我的文件"
+          aria-label="我的文件"
+          aria-expanded={filesOpen}
+          className={`ui-icon-button chat-header-action chat-header-action--files ${filesOpen ? "is-active" : ""}`}
+        >
+          <PanelRight size={15} aria-hidden="true" />
         </button>
       )}
       {onReleaseCodex && (

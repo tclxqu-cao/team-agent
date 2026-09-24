@@ -23,6 +23,7 @@ export * from './infrastructure/live-view/index.js';
 export * from './domain/web-console/index.js';
 export * from './domain/ai-hub/index.js';
 export * from './domain/file/index.js';
+export * from './domain/file-workspace/index.js';
 export * from './domain/update/index.js';
 
 // Implementations
@@ -63,6 +64,7 @@ export * from './domain/goal/index.js';
 export * from './application/goal/ThreadGoalService.js';
 export * from './application/goal/ThreadGoalTools.js';
 export * from './application/agent-run/index.js';
+export * from './application/file-workspace/index.js';
 
 
 // Infrastructure

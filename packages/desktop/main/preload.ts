@@ -202,6 +202,13 @@ contextBridge.exposeInMainWorld("desktopDeviceApi", {
   // File operations
   openFileDialog: () => ipcRenderer.invoke("file:dialog:open"),
   showDirectoryContextMenu: (path: string) => ipcRenderer.invoke("directory:show-context-menu", path),
+  fileWorkspaceRequest: (method: string, params?: Record<string, unknown>) =>
+    ipcRenderer.invoke("file-workspace:request", method, params),
+  onFileWorkspaceEvent: (callback: (event: unknown) => void): (() => void) => {
+    const handler = (_event: unknown, payload: unknown) => callback(payload);
+    ipcRenderer.on("file-workspace:event", handler);
+    return () => ipcRenderer.removeListener("file-workspace:event", handler);
+  },
   readFile: (path: string) => ipcRenderer.invoke("file:read", path),
   writeFile: (path: string, content: string) => ipcRenderer.invoke("file:write", path, content),
   setProjectWorkingDir: (path: string) => ipcRenderer.invoke("project:set-working-dir", path),

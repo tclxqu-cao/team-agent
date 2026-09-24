@@ -1,7 +1,10 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
-const tree = readFileSync(new URL("./FileTree.tsx", import.meta.url), "utf8");
+const tree = readFileSync(
+  new URL("../../../desktop/renderer/components/file-workspace/FileTree.tsx", import.meta.url),
+  "utf8",
+);
 
 describe("FileTree file type icons", () => {
   it("uses the shared classifier and Lucide icons for directories and files", () => {
@@ -23,5 +26,11 @@ describe("FileTree file type icons", () => {
     expect(tree).toContain("await openDirAtDepth(ancestors[depth], depth)");
     expect(tree).toContain("data-tree-path={full}");
     expect(tree).toContain('scrollIntoView({ block: "center", inline: "nearest" })');
+  });
+
+  it("surfaces directory access failures instead of rendering an empty tree", () => {
+    expect(tree).toContain('className="tree-error" role="alert"');
+    expect(tree).toContain("rootSt.error");
+    expect(tree).toContain("st!.error");
   });
 });

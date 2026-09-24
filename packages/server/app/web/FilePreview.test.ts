@@ -13,7 +13,10 @@ import {
 } from "./FilePreview";
 import { WEB_THEMES } from "./themes";
 
-const filePreviewSource = readFileSync(new URL("./FilePreview.tsx", import.meta.url), "utf8");
+const filePreviewSource = readFileSync(
+  new URL("../../../desktop/renderer/components/file-workspace/FilePreview.tsx", import.meta.url),
+  "utf8",
+);
 
 describe("FilePreview client download", () => {
   it("reads an allowed file in chunks and assembles one browser blob", async () => {
