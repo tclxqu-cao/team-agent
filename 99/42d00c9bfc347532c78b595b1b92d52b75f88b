@@ -1,0 +1,82 @@
+packages/desktop/renderer/lib/session-composer-routing.ts
+  s_0c843d4c57cd87::t_a745364a90c653 1-15
+packages/desktop/renderer/components/ChatComposerStyle.test.ts
+  s_a75b720bb20077::t_8ad71ed7b96b17 92-106
+packages/desktop/renderer/components/ContextUsageBar.tsx
+  s_0c843d4c57cd87::t_a3f261c54a4ac5 53,73,87,114,116,235
+  s_0c843d4c57cd87::t_e096a432de1f20 74-80
+packages/desktop/renderer/lib/session-event-routing.ts
+  s_0c843d4c57cd87::t_a745364a90c653 1-5
+packages/desktop/renderer/components/ContextUsageBar.test.ts
+  s_0c843d4c57cd87::t_a3f261c54a4ac5 59-68
+packages/desktop/renderer/lib/session-image-draft.test.ts
+  s_a75b720bb20077::t_c719468e465a10 1-86
+packages/desktop/renderer/lib/session-draft.test.ts
+  s_a75b720bb20077::t_86ea615a1c2e62 2-7,40-59
+docs/superpowers/specs/2026-09-24-session-isolation-design.md
+  s_0c843d4c57cd87::t_b23e381ec3ed8e 1-18
+packages/desktop/renderer/lib/session-image-draft.ts
+  s_a75b720bb20077::t_8ad71ed7b96b17 143,153,155-158
+  s_a75b720bb20077::t_c719468e465a10 1-142,144-152,154,159-160
+docs/superpowers/plans/2026-09-24-session-isolation.md
+  s_0c843d4c57cd87::t_878a0140b9c890 30,34,38,53,57,61,67
+  s_0c843d4c57cd87::t_b23e381ec3ed8e 1-29,31-33,35-37,39-52,54-56,58-60,62-66,68-75
+docs/superpowers/plans/2026-09-24-session-composer-drafts.md
+  s_a75b720bb20077::t_558edbb378612b 117,138,152,174,178,194,198,212,216,218,225,227,240,244,250
+  s_a75b720bb20077::t_0be86bcb8a0d0c 1-4,6,8-13,16-29,31-52,54-77,79-86,91,93-96,98-106,248-249,251,253-260
+  s_a75b720bb20077::t_86ea615a1c2e62 30,53,78,97
+  s_a75b720bb20077::t_4911ff340a19f3 87-90,92
+  s_a75b720bb20077::t_96de5959dcf188 5,7,14-15,107-116,118-137,139-151,153-173,175-177,179-193,195-197,199-211,213-215,217,219-224,226,228-239,241-243,245-247,252
+packages/desktop/renderer/lib/session-draft.ts
+  s_a75b720bb20077::t_86ea615a1c2e62 3-7,39-49
+  s_a75b720bb20077::t_09d0a868ba635a 50
+packages/desktop/renderer/lib/session-event-routing.test.ts
+  s_0c843d4c57cd87::t_a745364a90c653 1-16
+packages/desktop/renderer/lib/session-composer-routing.test.ts
+  s_0c843d4c57cd87::t_a745364a90c653 1-28
+packages/desktop/renderer/components/ChatView.tsx
+  s_a75b720bb20077::t_b5f0b275e80130 2274-2277
+  s_a75b720bb20077::t_4911ff340a19f3 1005-1008
+  s_a75b720bb20077::t_0689ea391c29f5 3362-3365,3403-3406,3454-3457
+  s_772a18ceda45ec::t_dad73cbbadb1c1 67,177,200,210,235,258,266,292,329,347,425,511,517-520,3760,3765,4002,4034,4039,4106,4118,4160,4165
+  s_a75b720bb20077::t_0b5a83efcfb8f8 57,63-66,860-868,998-1001,1010-1020,1028-1041
+  s_0c843d4c57cd87::t_a745364a90c653 85-86,598-601,704-708,2227-2228
+  s_a75b720bb20077::t_86ea615a1c2e62 58-62,996-997,1004,1009,1027
+  s_a75b720bb20077::t_0221df35c2e762 3107-3119
+  s_772a18ceda45ec::t_3f2ea6bfdd8f70 423-424,509-510,3640-3641
+  s_a75b720bb20077::t_027611e3fad1ca 3351-3355,3360,3366,3402,3422-3434,3443,3458-3460,3462,3469,3471,3474,3476-3481,3485,3491-3496
+  s_a75b720bb20077::t_04f00474648559 2624,2630-2632,2635-2670,2679-2681,2700-2712,2715-2717,2721-2723
+  s_0c843d4c57cd87::t_ae39a4501412f1 715-720,774-779,790
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "9942d00c9bfc347532c78b595b1b92d52b75f88b",
+  "prompts": {},
+  "sessions": {
+    "s_0c843d4c57cd87": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ce6c-e085-7c01-a177-4997c9aeeaf4",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_772a18ceda45ec": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0d103-925b-7e50-9a65-cb02ff597fe5",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_a75b720bb20077": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ce91-7f54-70e2-8749-f0c316b210d6",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
