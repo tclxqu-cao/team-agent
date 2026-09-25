@@ -1,0 +1,29 @@
+packages/desktop/assets/webrtc-live.html
+  s_438ba1ea8769fe::t_10fca4c4f01da6 94,102,104-105,107-111,179
+  s_438ba1ea8769fe::t_161bed5ebaa67b 20,34,101,103,106,112,137-146
+packages/desktop/main/webrtc-live.test.ts
+  s_438ba1ea8769fe::t_10fca4c4f01da6 35,40-42,111
+  s_438ba1ea8769fe::t_161bed5ebaa67b 2,108-110,112-114
+  s_438ba1ea8769fe::t_b5d32603bc554d 115
+packages/desktop/main/index.ts
+  s_438ba1ea8769fe::t_10fca4c4f01da6 1141-1144
+packages/desktop/main/webrtc-live.ts
+  s_438ba1ea8769fe::t_10fca4c4f01da6 18-19,67,109,175-180
+  s_438ba1ea8769fe::t_8cdb8b31e3eec2 181-182
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "0f57620aefe03c72cb2499a6eb8dc65fbcf415e1",
+  "prompts": {},
+  "sessions": {
+    "s_438ba1ea8769fe": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0d42b-4c5e-7dc0-a4d7-3d5001389422",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
