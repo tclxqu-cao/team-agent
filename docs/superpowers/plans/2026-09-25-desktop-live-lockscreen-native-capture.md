@@ -72,7 +72,7 @@ ScreenCaptureKit, VideoToolbox.
 - [x] Compile the CLI Swift helper and run its self-tests.
 - [x] Compile Desktop and build Server with Node 22.
 - [x] Run `git diff --check` and stage source/tests/docs only.
-- [ ] Commit and push with ordinary Git per project `CLAUDE.md`.
+- [x] Commit and push with ordinary Git per project `CLAUDE.md`.
 - [ ] Release the WebApp/Server to `:3000`, restart the repository-owned Desktop
   job, and record stable Build ID, PID, routes, session identity, WebRTC media,
   locked capture, unlock, and final-viewer teardown evidence.
