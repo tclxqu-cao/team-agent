@@ -1988,6 +1988,13 @@ input:focus, select:focus, textarea:focus {
   color: var(--danger);
 }
 
+.msg-steered-status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--success);
+}
+
 .msg-send-status__dots {
   display: inline-flex;
   width: 20px;
@@ -2039,7 +2046,7 @@ input:focus, select:focus, textarea:focus {
 }
 
 .chat-view--codex-history .chat-message-group {
-  width: min(100%, 860px);
+  width: 100%;
   margin-left: auto;
   margin-right: auto;
 }
@@ -2057,6 +2064,10 @@ input:focus, select:focus, textarea:focus {
 }
 
 .chat-view--codex-history .chat-message-activity {
+  width: 100%;
+  flex: none;
+  margin-right: auto;
+  margin-left: auto;
   padding-left: 0 !important;
 }
 
@@ -2895,7 +2906,7 @@ input:focus, select:focus, textarea:focus {
 }
 
 .chat-view--codex-history .codex-execution-trace {
-  width: min(100%, 860px);
+  width: 100%;
   margin: 0 auto 2px;
   color: var(--text-secondary);
 }
@@ -2993,7 +3004,8 @@ input:focus, select:focus, textarea:focus {
 
 /* ── Compact layout density ── */
 .chat-view {
-  --chat-max-width: 880px;
+  --chat-max-width: none;
+  --chat-lane-width: 92%;
   --chat-header-height: 52px;
   --chat-header-padding: 0 20px;
   --chat-messages-padding: 24px 40px 16px;
@@ -3011,7 +3023,23 @@ input:focus, select:focus, textarea:focus {
 }
 
 .chat-messages {
+  width: var(--chat-lane-width);
+  margin-right: auto;
+  margin-left: auto;
   scrollbar-color: transparent transparent;
+}
+
+.chat-input-area {
+  width: var(--chat-lane-width);
+  margin-right: auto;
+  margin-left: auto;
+  box-sizing: border-box;
+}
+
+@media (max-width: 899px) {
+  .chat-view {
+    --chat-lane-width: 100%;
+  }
 }
 
 .chat-messages::-webkit-scrollbar-thumb {
@@ -3672,8 +3700,8 @@ input:focus, select:focus, textarea:focus {
 }
 
 .chat-view--codex-history .runtime-progress-row:not(.runtime-progress-row--compact) {
-  width: min(100%, 860px);
-  max-width: 860px;
+  width: 100%;
+  max-width: none;
   margin-left: auto;
   margin-right: auto;
 }

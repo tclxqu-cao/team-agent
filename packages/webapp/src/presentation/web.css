@@ -26,7 +26,6 @@ body[data-web-shell="1"] {
   /* Mobile-tuned layout tokens (desktop keeps its own values). */
   --chat-content-max-width: 92%;
   --chat-header-height: 48px;
-  --web-chat-lane-width: 92%;
 }
 
 /* iOS Safari auto-zooms pages when an input's font-size is under 16px,
@@ -647,7 +646,6 @@ body[data-web-shell="1"] .chat-view {
 
 body[data-web-shell="1"] .chat-messages,
 body[data-web-shell="1"] .chat-input-area {
-  width: var(--web-chat-lane-width);
   margin-right: auto;
   margin-left: auto;
 }
@@ -826,7 +824,6 @@ body[data-web-shell="1"] {
 @media (max-width: 899px) {
   body[data-web-shell="1"] {
     font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Noto Sans SC", sans-serif;
-    --web-chat-lane-width: 100%;
   }
 
   /* These tokens must live on chat-view: its desktop defaults otherwise

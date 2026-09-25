@@ -90,7 +90,7 @@ describe("shared Codex-style message history", () => {
     expect(chatView).toContain("{isRunning && globalRuntimeProgress && (");
     expect(chatView).toContain("<RuntimeProgressRow progress={globalRuntimeProgress} startedAt={thinkingStartedAt} />");
     expect(globalCss).toContain(".chat-view--codex-history .runtime-progress-row:not(.runtime-progress-row--compact)");
-    expect(globalCss).toContain("width: min(100%, 860px)");
+    expect(globalCss).toMatch(/\.chat-view--codex-history \.runtime-progress-row:not\(\.runtime-progress-row--compact\)\s*\{[^}]*width: 100%;[^}]*max-width: none;/s);
     expect(globalCss).toContain("margin-left: auto");
     expect(globalCss).toContain("margin-right: auto");
   });
@@ -140,7 +140,11 @@ describe("shared Codex-style message history", () => {
 
   it("owns the shared document lane, bubbles, and compact tool rows", () => {
     expect(globalCss).toContain(".chat-view--codex-history .chat-message-group");
-    expect(globalCss).toContain("width: min(100%, 860px)");
+    expect(globalCss).toMatch(/\.chat-view--codex-history \.chat-message-group\s*\{[^}]*width: 100%;/s);
+    expect(globalCss).toContain("--chat-lane-width: 92%");
+    expect(globalCss).toMatch(/\.chat-messages\s*\{[^}]*width: var\(--chat-lane-width\);/s);
+    expect(globalCss).toMatch(/\.chat-input-area\s*\{[^}]*width: var\(--chat-lane-width\);/s);
+    expect(globalCss).toMatch(/@media \(max-width: 899px\)[\s\S]*?--chat-lane-width: 100%;/);
     expect(globalCss).toContain(".chat-view--codex-history .chat-message-avatar");
     expect(globalCss).toContain(".chat-view--codex-history .chat-message-content--assistant");
     expect(globalCss).toContain("max-width: min(78%, 680px) !important");
@@ -370,17 +374,27 @@ describe("shared Codex-style message history", () => {
   it("keeps user send feedback inside the bubble and copy actions outside", () => {
     const bubbleStart = chatView.indexOf('className={`chat-message-bubble chat-message-bubble--');
     const bubbleEnd = chatView.indexOf("{/* Completed assistant footer remains visible", bubbleStart);
-    const sendStatusStart = chatView.indexOf("{isUser && chatMsg.sendState && (", bubbleStart);
+    const sendStatusStart = chatView.indexOf("{isUser && (chatMsg.sendState || chatMsg.isSteered) && (", bubbleStart);
+    const messageBubble = chatView.slice(bubbleStart, bubbleEnd);
 
     expect(bubbleStart).toBeGreaterThan(-1);
     expect(sendStatusStart).toBeGreaterThan(bubbleStart);
     expect(sendStatusStart).toBeLessThan(bubbleEnd);
     expect(chatView).toContain('className="msg-send-status__dots"');
-    expect(chatView).toContain('aria-label={chatMsg.sendState === "pending" ? "正在发送" : "发送失败"}');
+    expect(messageBubble).toContain('chatMsg.sendState === "pending"');
+    expect(messageBubble).toContain('? "正在发送"');
+    expect(messageBubble).toContain('? "发送失败"');
+    expect(messageBubble).toContain(': "已引导"');
     expect(chatView).not.toContain("msg-send-status__spinner");
     expect(chatView).toContain("actionPolicy.showCopy && <button");
     expect(chatView).toContain("copyTextToClipboard(msg.content)");
     expect(chatView).toContain('aria-label="复制内容"');
+    expect(messageBubble).toContain('className="msg-steered-status"');
+    expect(messageBubble).toContain('<CornerUpRight size={13}');
+    expect(messageBubble).toContain('aria-label="已引导"');
+    expect(chatView).not.toContain("{isUser && (chatMsg.isQueued || chatMsg.isSteered) && (");
+    expect(chatView.match(/\{chatMsg\.isSteered && \(/g)).toHaveLength(1);
+    expect(globalCss).toMatch(/\.msg-steered-status\s*\{[\s\S]*?color:\s*var\(--success\);/);
   });
 
   it("animates send dots without motion for reduced-motion users", () => {

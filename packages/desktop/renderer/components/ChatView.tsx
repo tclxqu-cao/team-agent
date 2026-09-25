@@ -4333,20 +4333,33 @@ export default function ChatView({
                     </div>
                   );
                 })()}
-                {isUser && chatMsg.sendState && (
+                {isUser && (chatMsg.sendState || chatMsg.isSteered) && (
                   <div
-                    className={`msg-send-status is-${chatMsg.sendState}`}
+                    className={`msg-send-status${chatMsg.sendState ? ` is-${chatMsg.sendState}` : ""}`}
                     role="status"
-                    aria-label={chatMsg.sendState === "pending" ? "正在发送" : "发送失败"}
+                    aria-label={chatMsg.sendState === "pending"
+                      ? "正在发送"
+                      : chatMsg.sendState === "failed"
+                        ? "发送失败"
+                        : "已引导"}
                   >
-                    {chatMsg.sendState === "pending" ? (
+                    {chatMsg.sendState === "pending" && (
                       <span className="msg-send-status__dots" aria-hidden="true">
                         <span />
                         <span />
                         <span />
                       </span>
-                    ) : (
-                      <span>发送失败</span>
+                    )}
+                    {chatMsg.sendState === "failed" && <span>发送失败</span>}
+                    {chatMsg.isSteered && (
+                      <span
+                        className="msg-steered-status"
+                        title="已引导"
+                        aria-label="已引导"
+                        role="img"
+                      >
+                        <CornerUpRight size={13} strokeWidth={2} aria-hidden="true" />
+                      </span>
                     )}
                   </div>
                 )}
@@ -4409,66 +4422,49 @@ export default function ChatView({
                   </button>}
                 </div>
               )}
-              {/* Queue / Steer badge for queued user messages */}
-              {isUser && (chatMsg.isQueued || chatMsg.isSteered) && (
+              {/* Queue / Steer controls for queued user messages */}
+              {isUser && chatMsg.isQueued && (
                 <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4 }}>
-                  {chatMsg.isQueued && (
-                    <>
-                      <span style={{
-                        display: "inline-flex", alignItems: "center", gap: 4,
-                        fontSize: 11, color: "var(--text-muted)",
-                        padding: "2px 8px", borderRadius: 20,
-                        background: "var(--bg-deep)", border: "1px solid var(--border-subtle)",
-                      }}>
-                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
-                        </svg>
-                        排队中
-                      </span>
-                      {canSteerQueuedMessages && <button
-                        onClick={() => void handleSteer(msg.id)}
-                        title="将此消息引导到当前对话"
-                        style={{
-                          display: "inline-flex", alignItems: "center", gap: 4,
-                          fontSize: 11, fontWeight: 600,
-                          color: "var(--accent)",
-                          padding: "2px 10px", borderRadius: 20,
-                          border: "1px solid rgba(79,110,247,0.3)",
-                          background: "var(--accent-dim)",
-                          cursor: "pointer",
-                          transition: "all 0.15s",
-                          fontFamily: "var(--font-body)",
-                        }}
-                        onMouseEnter={e => {
-                          (e.currentTarget as HTMLButtonElement).style.background = "rgba(79,110,247,0.18)";
-                          (e.currentTarget as HTMLButtonElement).style.borderColor = "var(--accent)";
-                        }}
-                        onMouseLeave={e => {
-                          (e.currentTarget as HTMLButtonElement).style.background = "var(--accent-dim)";
-                          (e.currentTarget as HTMLButtonElement).style.borderColor = "rgba(79,110,247,0.3)";
-                        }}
-                      >
-                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                          <path d="M3 12h18M3 6h18M3 18h18"/>
-                          <path d="M12 3v18" opacity="0.3"/>
-                        </svg>
-                        引导
-                      </button>}
-                    </>
-                  )}
-                  {chatMsg.isSteered && (
-                    <span style={{
+                  <span style={{
+                    display: "inline-flex", alignItems: "center", gap: 4,
+                    fontSize: 11, color: "var(--text-muted)",
+                    padding: "2px 8px", borderRadius: 20,
+                    background: "var(--bg-deep)", border: "1px solid var(--border-subtle)",
+                  }}>
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+                    </svg>
+                    排队中
+                  </span>
+                  {canSteerQueuedMessages && <button
+                    onClick={() => void handleSteer(msg.id)}
+                    title="将此消息引导到当前对话"
+                    style={{
                       display: "inline-flex", alignItems: "center", gap: 4,
-                      fontSize: 11, color: "var(--success)",
-                      padding: "2px 8px", borderRadius: 20,
-                      background: "rgba(34,197,94,0.08)", border: "1px solid rgba(34,197,94,0.2)",
-                    }}>
-                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                        <polyline points="20 6 9 17 4 12"/>
-                      </svg>
-                      已引导
-                    </span>
-                  )}
+                      fontSize: 11, fontWeight: 600,
+                      color: "var(--accent)",
+                      padding: "2px 10px", borderRadius: 20,
+                      border: "1px solid rgba(79,110,247,0.3)",
+                      background: "var(--accent-dim)",
+                      cursor: "pointer",
+                      transition: "all 0.15s",
+                      fontFamily: "var(--font-body)",
+                    }}
+                    onMouseEnter={e => {
+                      (e.currentTarget as HTMLButtonElement).style.background = "rgba(79,110,247,0.18)";
+                      (e.currentTarget as HTMLButtonElement).style.borderColor = "var(--accent)";
+                    }}
+                    onMouseLeave={e => {
+                      (e.currentTarget as HTMLButtonElement).style.background = "var(--accent-dim)";
+                      (e.currentTarget as HTMLButtonElement).style.borderColor = "rgba(79,110,247,0.3)";
+                    }}
+                  >
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M3 12h18M3 6h18M3 18h18"/>
+                      <path d="M12 3v18" opacity="0.3"/>
+                    </svg>
+                    引导
+                  </button>}
                 </div>
               )}
             </div>
