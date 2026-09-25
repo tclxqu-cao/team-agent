@@ -1,0 +1,19 @@
+docs/superpowers/specs/2026-09-25-desktop-live-viewer-driven-display-wake-design.md
+  s_438ba1ea8769fe::t_9891f58c26bec5 1-102
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "ca7f4da425dda97740b5432ffefca61fa6f3ae2e",
+  "prompts": {},
+  "sessions": {
+    "s_438ba1ea8769fe": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0d42b-4c5e-7dc0-a4d7-3d5001389422",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
