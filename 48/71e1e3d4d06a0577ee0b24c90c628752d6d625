@@ -1,0 +1,58 @@
+packages/server/lib/remote-control/remote-authorization.mjs
+  s_438ba1ea8769fe::t_660b3868bd6ce3 3,48-49,109,131-144,166,290,312,496
+  s_438ba1ea8769fe::t_a598a2acccb52a 51,101,164,258,366-370,418,431,475-476,495
+  s_438ba1ea8769fe::t_1120b1eb4f6ffa 108,110-111,145,232,251-255,266,285,289,291
+packages/desktop/renderer/components/DesktopLiveSettings.tsx
+  s_438ba1ea8769fe::t_6401e2caf155d0 2
+packages/webapp/src/presentation/RemoteAuthorizationControl.tsx
+  s_438ba1ea8769fe::t_1120b1eb4f6ffa 45-47
+packages/server/lib/remote-control/macos-display-bridge.test.ts
+  s_438ba1ea8769fe::t_660b3868bd6ce3 1-33,35-49
+  s_438ba1ea8769fe::t_647774effb9cf6 34
+packages/desktop/main/desktop-live-cli-proxy.test.ts
+  s_438ba1ea8769fe::t_1d3e50fba2f2d6 1-62
+packages/server/native/remote-helper/main.swift
+  s_438ba1ea8769fe::t_1120b1eb4f6ffa 309
+  s_438ba1ea8769fe::t_a598a2acccb52a 308
+  s_438ba1ea8769fe::t_660b3868bd6ce3 19-25
+packages/desktop/main/desktop-live-cli-proxy.ts
+  s_438ba1ea8769fe::t_1d3e50fba2f2d6 1-122
+docs/superpowers/plans/2026-09-25-desktop-live-lockscreen-native-capture.md
+  s_438ba1ea8769fe::t_8d71d4d640ab40 34-37,47-48,50-51,61,63,65,67,71-74,79-85
+  s_438ba1ea8769fe::t_7cf4e53fa3eb2f 1,3-5,7-9,11-14,16-17,19,21-25,27,30-32,38,40,43-45,49,53,57-60,62,64,66,68-70,75-78
+packages/desktop/main/index.ts
+  s_438ba1ea8769fe::t_6401e2caf155d0 1153,1207-1208,1221
+  s_438ba1ea8769fe::t_d1ce94cbeb7908 7,13,29,148-155,172,1078
+  s_438ba1ea8769fe::t_4e5a7d1c0fc052 6,22,1091,1094-1098,1102,1106-1107,1111,1114-1116,1120
+docs/superpowers/specs/2026-09-25-desktop-live-lockscreen-native-capture-design.md
+  s_438ba1ea8769fe::t_8d71d4d640ab40 47-51,55
+  s_438ba1ea8769fe::t_7cf4e53fa3eb2f 1,4,10-46,52-54,56-87,91-98,102-111
+packages/server/lib/remote-control/remote-authorization.test.ts
+  s_438ba1ea8769fe::t_660b3868bd6ce3 31,354-355,369,372,375
+  s_438ba1ea8769fe::t_d15731ba4bab2b 353,356-368,370-371,373-374,376-379
+  s_438ba1ea8769fe::t_647774effb9cf6 393-394,409,414
+  s_438ba1ea8769fe::t_a598a2acccb52a 109,114
+packages/desktop/renderer/components/BrowserLivePanel.tsx
+  s_438ba1ea8769fe::t_1120b1eb4f6ffa 886-887,1472-1476
+packages/desktop/renderer/components/BrowserLivePanel.test.ts
+  s_438ba1ea8769fe::t_d15731ba4bab2b 68-76
+packages/server/lib/remote-control/macos-display-bridge.mjs
+  s_438ba1ea8769fe::t_647774effb9cf6 53
+  s_438ba1ea8769fe::t_660b3868bd6ce3 1-52,54-75
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "4871e1e3d4d06a0577ee0b24c90c628752d6d625",
+  "prompts": {},
+  "sessions": {
+    "s_438ba1ea8769fe": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0d42b-4c5e-7dc0-a4d7-3d5001389422",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
