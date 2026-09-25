@@ -71,11 +71,17 @@ describe("DesktopScreenLive", () => {
     await live.disable();
   });
 
-  it("wakes and holds the display while enabled, releasing on disable", async () => {
+  it("holds the display awake only while at least one viewer is watching", async () => {
     const gateway = fakeGateway();
     const keepAwake = { start: vi.fn(), stop: vi.fn() };
+    const client = fakeClient();
+    const listenerRef: { current: ((event: Record<string, unknown>) => void) | null } = { current: null };
+    client.onEvent.mockImplementation((listener: (event: Record<string, unknown>) => void) => {
+      if (!listenerRef.current) listenerRef.current = listener;
+      return () => undefined;
+    });
     const live = new DesktopScreenLive({
-      clientFactory: () => fakeClient(),
+      clientFactory: () => client,
       screencast: runningScreencast,
       input: gateway as never,
       probeScreen: () => "granted",
@@ -83,7 +89,111 @@ describe("DesktopScreenLive", () => {
       keepAwake,
     });
     await live.enable();
+    await tick();
+    expect(keepAwake.start).not.toHaveBeenCalled();
+
+    listenerRef.current?.({ type: "browser:state", session: { id: DESKTOP_LIVE_SESSION_ID, viewerCount: 1 } });
+    listenerRef.current?.({ type: "browser:state", session: { id: DESKTOP_LIVE_SESSION_ID, viewerCount: 2 } });
+    listenerRef.current?.({ type: "browser:state", session: { id: DESKTOP_LIVE_SESSION_ID, viewerCount: 1 } });
+    listenerRef.current?.({ type: "browser:state", session: { id: DESKTOP_LIVE_SESSION_ID, viewerCount: 0 } });
     expect(keepAwake.start).toHaveBeenCalledTimes(1);
+    expect(keepAwake.stop).toHaveBeenCalledTimes(1);
+    await live.disable();
+    expect(keepAwake.stop).toHaveBeenCalledTimes(1);
+  });
+
+  it("ignores invalid viewer counts and counts from other sessions", async () => {
+    const keepAwake = { start: vi.fn(), stop: vi.fn() };
+    const client = fakeClient();
+    const listenerRef: { current: ((event: Record<string, unknown>) => void) | null } = { current: null };
+    client.onEvent.mockImplementation((listener: (event: Record<string, unknown>) => void) => {
+      if (!listenerRef.current) listenerRef.current = listener;
+      return () => undefined;
+    });
+    const live = new DesktopScreenLive({
+      clientFactory: () => client,
+      screencast: runningScreencast,
+      input: fakeGateway() as never,
+      probeScreen: () => "granted",
+      probeAccessibility: async () => true,
+      keepAwake,
+    });
+    await live.enable();
+    await tick();
+
+    listenerRef.current?.({ type: "browser:state", session: { id: DESKTOP_LIVE_SESSION_ID, viewerCount: 1 } });
+    listenerRef.current?.({ type: "browser:state", session: { id: DESKTOP_LIVE_SESSION_ID } });
+    listenerRef.current?.({ type: "browser:state", session: { id: DESKTOP_LIVE_SESSION_ID, viewerCount: -1 } });
+    listenerRef.current?.({ type: "browser:state", session: { id: DESKTOP_LIVE_SESSION_ID, viewerCount: 0.5 } });
+    listenerRef.current?.({ type: "browser:state", session: { id: DESKTOP_LIVE_SESSION_ID, viewerCount: "0" } });
+    listenerRef.current?.({ type: "browser:state", session: { id: "desktop:other", viewerCount: 0 } });
+    expect(keepAwake.start).toHaveBeenCalledTimes(1);
+    expect(keepAwake.stop).not.toHaveBeenCalled();
+
+    listenerRef.current?.({ type: "browser:state", session: { id: DESKTOP_LIVE_SESSION_ID, viewerCount: 0 } });
+    expect(keepAwake.stop).toHaveBeenCalledTimes(1);
+    await live.disable();
+  });
+
+  it("releases the display assertion when disabled with an active viewer", async () => {
+    const keepAwake = { start: vi.fn(), stop: vi.fn() };
+    const client = fakeClient();
+    const listenerRef: { current: ((event: Record<string, unknown>) => void) | null } = { current: null };
+    client.onEvent.mockImplementation((listener: (event: Record<string, unknown>) => void) => {
+      if (!listenerRef.current) listenerRef.current = listener;
+      return () => undefined;
+    });
+    const live = new DesktopScreenLive({
+      clientFactory: () => client,
+      screencast: runningScreencast,
+      input: fakeGateway() as never,
+      probeScreen: () => "granted",
+      probeAccessibility: async () => true,
+      keepAwake,
+    });
+    await live.enable();
+    await tick();
+    listenerRef.current?.({ type: "browser:state", session: { id: DESKTOP_LIVE_SESSION_ID, viewerCount: 1 } });
+
+    await live.disable();
+    expect(keepAwake.start).toHaveBeenCalledTimes(1);
+    expect(keepAwake.stop).toHaveBeenCalledTimes(1);
+    expect(client.close).toHaveBeenCalledWith(DESKTOP_LIVE_SESSION_ID);
+  });
+
+  it("releases the display assertion when the producer ends", async () => {
+    let finishScreencast!: () => void;
+    const screencast = {
+      start: vi.fn(() => new Promise<void>((resolve) => { finishScreencast = resolve; })),
+      stop: vi.fn().mockResolvedValue(undefined),
+      dispatchInput: vi.fn().mockResolvedValue(undefined),
+    };
+    const keepAwake = { start: vi.fn(), stop: vi.fn() };
+    const client = fakeClient();
+    const listenerRef: { current: ((event: Record<string, unknown>) => void) | null } = { current: null };
+    client.onEvent.mockImplementation((listener: (event: Record<string, unknown>) => void) => {
+      if (!listenerRef.current) listenerRef.current = listener;
+      return () => undefined;
+    });
+    const sleep = vi.fn(() => new Promise<void>(() => {}));
+    const live = new DesktopScreenLive({
+      clientFactory: () => client,
+      screencast,
+      input: fakeGateway() as never,
+      probeScreen: () => "granted",
+      probeAccessibility: async () => true,
+      keepAwake,
+      sleep,
+    });
+    await live.enable();
+    await tick();
+    listenerRef.current?.({ type: "browser:state", session: { id: DESKTOP_LIVE_SESSION_ID, viewerCount: 1 } });
+    expect(keepAwake.start).toHaveBeenCalledTimes(1);
+
+    finishScreencast();
+    await tick();
+    expect(keepAwake.stop).toHaveBeenCalledTimes(1);
+    expect(sleep).toHaveBeenCalledTimes(1);
     await live.disable();
     expect(keepAwake.stop).toHaveBeenCalledTimes(1);
   });

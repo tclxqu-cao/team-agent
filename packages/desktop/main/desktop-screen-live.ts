@@ -21,7 +21,7 @@ export type WebrtcSignal = Record<string, unknown>;
 /** Capture display choices published with the session metadata. */
 export type LiveDisplayOptions = LiveViewDisplayOption[];
 
-/** Holds the display awake while the live session is enabled (see DisplayKeepAwake). */
+/** Holds the display awake while the live session has an active viewer (see DisplayKeepAwake). */
 export type DisplayWakeControl = { start(): void; stop(): void };
 
 type ClientFactory = () => LiveViewProducerClientPort | Promise<LiveViewProducerClientPort>;
@@ -46,6 +46,7 @@ export class DesktopScreenLive {
   private loopPromise: Promise<void> | null = null;
   private currentClient: LiveViewProducerClientPort | null = null;
   private unsubscribeState: (() => void) | null = null;
+  private viewerCount = 0;
   private readonly onWebrtcFromViewer: (data: WebrtcSignal) => void;
   private readonly getDisplayOptions: (() => LiveDisplayOptions | null) | null;
   private readonly onSetDisplay: ((displayId: string | null) => Promise<LiveDisplayOptions | null>) | null;
@@ -133,9 +134,6 @@ export class DesktopScreenLive {
     this.status.accessibilityTrusted = await this.#probeAccessibility();
     if (!this.enabled) { await this.input.stop(); return this.getStatus(); }
     if (this.status.accessibilityTrusted === false) this.status.error = ACCESSIBILITY_HINT;
-    // Wake the display and hold it awake so a locked or dimmed Mac keeps
-    // streaming frames (remote unlock works from the lock screen).
-    this.keepAwake?.start();
     // Registration, not merely starting the capture helper, establishes connectivity.
     this.#emit();
     if (!this.loopPromise) {
@@ -149,7 +147,7 @@ export class DesktopScreenLive {
   async disable(): Promise<DesktopLiveStatus> {
     this.enabled = false;
     this.status = { ...this.status, enabled: false, sessionOnline: false, controlState: null, error: undefined };
-    this.keepAwake?.stop();
+    this.#syncViewerCount(0);
     this.unsubscribeState?.();
     this.unsubscribeState = null;
     await this.input.stop().catch(() => undefined);
@@ -201,6 +199,7 @@ export class DesktopScreenLive {
         this.status = { ...this.status, error: error instanceof Error ? error.message : String(error) };
         this.#emit();
       }
+      this.#syncViewerCount(0);
       this.unsubscribeState?.();
       this.unsubscribeState = null;
       this.currentClient?.disconnect();
@@ -214,10 +213,24 @@ export class DesktopScreenLive {
   }
 
   #handleRelayEvent(event: Record<string, unknown>): void {
-    const session = event.session as { id?: string; state?: LiveViewOwnershipState } | undefined;
-    if (!session || session.id !== this.metadata.sessionId || !session.state) return;
+    const session = event.session as {
+      id?: string;
+      state?: LiveViewOwnershipState;
+      viewerCount?: unknown;
+    } | undefined;
+    if (!session || session.id !== this.metadata.sessionId) return;
+    this.#syncViewerCount(session.viewerCount);
+    if (!session.state) return;
     this.status = { ...this.status, controlState: session.state };
     this.#emit();
+  }
+
+  #syncViewerCount(value: unknown): void {
+    if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) return;
+    const previous = this.viewerCount;
+    this.viewerCount = value;
+    if (previous === 0 && value > 0) this.keepAwake?.start();
+    else if (previous > 0 && value === 0) this.keepAwake?.stop();
   }
 
   /** Sends producer→controller WebRTC signaling over the current client. */
