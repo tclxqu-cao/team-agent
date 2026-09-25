@@ -15,6 +15,8 @@ export interface WebrtcLiveOptions {
   sendToViewer: SendToViewer;
   /** While the peer connection carries the video, the JPEG loop stands by. */
   setStandby: (standby: boolean) => void;
+  /** Logical dimensions of the selected Electron display. */
+  captureSize?: () => { width: number; height: number } | null;
   log?: (line: string) => void;
   now?: () => number;
 }
@@ -62,7 +64,7 @@ export class WebrtcLive {
       this.requestedProfile = "baseline";
       this.lastDecisionKey = "";
       this.#ensureWindow((window) => {
-        window.webContents.send("webrtc-live:signal", { kind: "start" });
+        this.#startCapture(window);
       });
       return;
     }
@@ -104,7 +106,7 @@ export class WebrtcLive {
     this.#closeWindow();
     this.startAt = this.options.now?.() ?? Date.now();
     this.#ensureWindow((window) => {
-      window.webContents.send("webrtc-live:signal", { kind: "start" });
+      this.#startCapture(window);
     });
   }
 
@@ -168,6 +170,14 @@ export class WebrtcLive {
     const window = this.window;
     if (!window || window.isDestroyed()) return;
     window.webContents.send("webrtc-live:signal", data);
+  }
+
+  #startCapture(window: BrowserWindow): void {
+    const captureSize = this.options.captureSize?.() ?? null;
+    window.webContents.send("webrtc-live:signal", {
+      kind: "start",
+      ...(captureSize ? { captureSize } : {}),
+    });
   }
 
   #ensureWindow(onReady: (window: BrowserWindow) => void): void {

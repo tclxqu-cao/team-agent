@@ -17,6 +17,7 @@
     let selectedProfile = "baseline";
     let statsTimer = null;
     let statsCursor = null;
+    let captureSize = null;
 
     function report(state, error) {
       api.send(Object.assign({ kind: "state", state }, error ? { error } : {}));
@@ -30,6 +31,7 @@
       transceiver = null;
       offerCreated = false;
       statsCursor = null;
+      captureSize = null;
     }
 
     function profileOf(codec) {
@@ -89,13 +91,25 @@
       statsCursor = cursor;
     }
 
-    async function start() {
+    async function start(requestedCaptureSize) {
       teardown();
       stream = await navigator.mediaDevices.getDisplayMedia({
         video: { frameRate: { ideal: 30, max: 60 } },
         audio: false,
       });
       for (const track of stream.getTracks()) track.contentHint = "detail";
+      const initialSettings = stream.getVideoTracks()[0]?.getSettings() || {};
+      captureSize = Number(requestedCaptureSize?.width) > 0 && Number(requestedCaptureSize?.height) > 0
+        ? {
+            width: Math.round(Number(requestedCaptureSize.width)),
+            height: Math.round(Number(requestedCaptureSize.height)),
+          }
+        : Number(initialSettings.width) > 0 && Number(initialSettings.height) > 0
+        ? {
+            width: Math.round(Number(initialSettings.width)),
+            height: Math.round(Number(initialSettings.height)),
+          }
+        : null;
       pc = new RTCPeerConnection({
         iceServers: [{ urls: ["stun:stun.l.google.com:19302"] }],
       });
@@ -120,7 +134,16 @@
       if (!sender || !stream || !decision) return;
       const track = sender.track;
       if (track && typeof track.applyConstraints === "function") {
-        try { await track.applyConstraints({ frameRate: { ideal: decision.maxFps, max: decision.maxFps } }); } catch {}
+        try {
+          await track.applyConstraints({
+            ...(captureSize ? {
+              width: { ideal: captureSize.width, max: captureSize.width },
+              height: { ideal: captureSize.height, max: captureSize.height },
+              resizeMode: "crop-and-scale",
+            } : {}),
+            frameRate: { ideal: decision.maxFps, max: decision.maxFps },
+          });
+        } catch {}
       }
       if (sender && typeof sender.setParameters === "function") {
         const params = sender.getParameters();
@@ -153,7 +176,7 @@
     api.onSignal(async (message) => {
       try {
         const kind = message && message.kind;
-        if (kind === "start") await start();
+        if (kind === "start") await start(message.captureSize);
         else if (kind === "stop") teardown();
         else if (kind === "configure") await applyDecision(message.decision, true);
         else if (kind === "tuning") await applyDecision(message.decision, false);

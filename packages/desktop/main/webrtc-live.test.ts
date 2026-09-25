@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
 
 const electron = vi.hoisted(() => {
   const handlers = new Map<string, (_event: unknown, data: unknown) => void>();
@@ -31,12 +32,14 @@ describe("WebrtcLive browser policy bridge", () => {
     const sendToViewer = vi.fn(async () => undefined);
     const live = new WebrtcLive({
       capturePagePath: () => "/capture.html", preloadPath: () => "/preload.cjs",
-      sendToViewer, setStandby: vi.fn(),
+      captureSize: () => ({ width: 2560, height: 1440 }), sendToViewer, setStandby: vi.fn(),
     });
     live.handleViewerSignal({ kind: "start", receiverProfiles: ["high", "baseline"] });
     await vi.waitFor(() => expect(electron.windows).toHaveLength(1));
     const window = electron.windows[0];
-    await vi.waitFor(() => expect(window.webContents.send).toHaveBeenCalledWith("webrtc-live:signal", { kind: "start" }));
+    await vi.waitFor(() => expect(window.webContents.send).toHaveBeenCalledWith(
+      "webrtc-live:signal", { kind: "start", captureSize: { width: 2560, height: 1440 } },
+    ));
     const handler = electron.handlers.get("webrtc-live:signal")!;
     handler(null, { kind: "sender-capabilities", profiles: ["high", "baseline"] });
     await vi.waitFor(() => expect(window.webContents.send).toHaveBeenCalledWith(
@@ -101,5 +104,13 @@ describe("WebrtcLive browser policy bridge", () => {
   it("resolves packaged and development capture page paths", () => {
     expect(defaultWebrtcCapturePagePath("/repo/packages/desktop/dist/main", false, "/Resources")).toBe("/repo/packages/desktop/assets/webrtc-live.html");
     expect(defaultWebrtcCapturePagePath("/dist/main", true, "/Resources")).toBe("/Resources/assets/webrtc-live.html");
+  });
+
+  it("keeps Retina screen capture scaled to logical pixels while tuning frame rate", () => {
+    const capturePage = readFileSync(new URL("../assets/webrtc-live.html", import.meta.url), "utf8");
+    expect(capturePage).toContain("requestedCaptureSize?.width");
+    expect(capturePage).toContain('resizeMode: "crop-and-scale"');
+    expect(capturePage).toContain("width: { ideal: captureSize.width, max: captureSize.width }");
+    expect(capturePage).toContain("height: { ideal: captureSize.height, max: captureSize.height }");
   });
 });

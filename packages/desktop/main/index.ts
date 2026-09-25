@@ -1138,6 +1138,10 @@ function getDesktopScreenLive(): DesktopScreenLive {
   webrtcLive = new WebrtcLive({
     capturePagePath: () => defaultWebrtcCapturePagePath(__dirname, app.isPackaged, process.resourcesPath),
     preloadPath: () => join(__dirname, "preload.cjs"),
+    captureSize: () => {
+      const picked = pickLiveDisplay();
+      return { width: picked.width, height: picked.height };
+    },
     sendToViewer: (data) => (desktopScreenLive ? desktopScreenLive.relayWebrtcToViewer(data) : Promise.resolve({ delivered: false })),
     setStandby: (standby) => screencast.setStandby(standby),
     log: (line) => console.log(line),
