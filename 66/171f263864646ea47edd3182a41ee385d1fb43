@@ -1,0 +1,68 @@
+packages/native-runtime/src/agent-runtime/codex-runtime-adapter.test.ts
+  s_87da15a41ff588::t_cdd8c896ffe5bf 2575-2581,2587-2593,2621-2626,2629-2641,2835
+packages/desktop/renderer/lib/tool-call-groups.test.ts
+  s_87da15a41ff588::t_cdd8c896ffe5bf 38-53
+packages/desktop/renderer/stores/agentStore.ts
+  s_f8ce02c56674c5::t_e8912acd8988b3 209-214,217-220
+  s_438ba1ea8769fe::t_bfc8e94d6eaa48 215-216
+  s_87da15a41ff588::t_228a029be09310 131
+packages/desktop/renderer/lib/tool-call-groups.ts
+  s_87da15a41ff588::t_228a029be09310 12,19
+packages/desktop/renderer/components/CodexExecutionTrace.tsx
+  s_87da15a41ff588::t_228a029be09310 12,47-48,79-82,84-85
+packages/desktop/renderer/components/ChatHistoryStyle.test.ts
+  s_f8ce02c56674c5::t_0eeabcfed5b417 56,166,255
+packages/desktop/renderer/stores/agentStore.test.ts
+  s_f8ce02c56674c5::t_e8912acd8988b3 6,40-45,47
+  s_438ba1ea8769fe::t_bfc8e94d6eaa48 46,48
+  s_438ba1ea8769fe::t_11328328ad6a9b 49-50
+packages/desktop/renderer/lib/codex-execution-trace.ts
+  s_87da15a41ff588::t_228a029be09310 14,18-19,21,23-24,26-29,32,37,40,172-182,201,203-207,209,215,227-261
+  s_87da15a41ff588::t_42182318d21e87 262
+packages/desktop/renderer/lib/session-history.test.ts
+  s_87da15a41ff588::t_cdd8c896ffe5bf 92-96
+packages/native-runtime/src/agent-runtime/codex-runtime-adapter.ts
+  s_87da15a41ff588::t_cdd8c896ffe5bf 2314,2349-2351,2366-2369
+  s_87da15a41ff588::t_c88798f02f7d77 2184,2201,2210,2283,2286,2313,2315-2319,2347-2348,2352
+  s_87da15a41ff588::t_8fa70b3a093264 2370
+packages/core/src/domain/model/entities.ts
+  s_87da15a41ff588::t_228a029be09310 54-55
+packages/desktop/renderer/lib/codex-execution-trace.test.ts
+  s_87da15a41ff588::t_85f3ad7ed2b91a 165-167
+  s_87da15a41ff588::t_cdd8c896ffe5bf 7,34-38,132-164,168-227,475
+packages/desktop/renderer/components/ChatView.tsx
+  s_f8ce02c56674c5::t_fdb4eed8efdba2 1148,1155,1166,1545
+  s_f8ce02c56674c5::t_e8912acd8988b3 27,532,565-570,573,576,1136,3835,3882,3899
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "66171f263864646ea47edd3182a41ee385d1fb43",
+  "prompts": {},
+  "sessions": {
+    "s_438ba1ea8769fe": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0d42b-4c5e-7dc0-a4d7-3d5001389422",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_87da15a41ff588": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0d901-9d66-7e51-a34d-391e864bb47d",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_f8ce02c56674c5": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0d907-435a-7e00-96cd-5fb6ff3117c4",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
