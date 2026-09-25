@@ -1,0 +1,26 @@
+packages/desktop/main/desktop-screen-live.ts
+  s_438ba1ea8769fe::t_2ce110a3eb4b03 24,49,150,202,216-223,228-233
+  s_438ba1ea8769fe::t_443537d3208e02 234-235
+docs/superpowers/plans/2026-09-25-desktop-live-viewer-driven-display-wake.md
+  s_438ba1ea8769fe::t_cfea19f6484365 1-32,34-53,55-57,59-74,76-87,89-100,102-104,106-108,110,112-123,125-149,151-162
+  s_438ba1ea8769fe::t_2ce110a3eb4b03 33,54,58,75,88,101,105,109
+  s_438ba1ea8769fe::t_505916b180f39b 111,124,150
+packages/desktop/main/desktop-screen-live.test.ts
+  s_438ba1ea8769fe::t_2ce110a3eb4b03 74,77-82,84,92-158,160-196
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "dba16ee40c466053fc4ddbe3ab685a85d31da6a3",
+  "prompts": {},
+  "sessions": {
+    "s_438ba1ea8769fe": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0d42b-4c5e-7dc0-a4d7-3d5001389422",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
