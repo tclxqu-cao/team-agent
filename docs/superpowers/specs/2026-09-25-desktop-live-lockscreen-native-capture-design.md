@@ -1,122 +1,111 @@
-# Desktop Live Lockscreen Native Capture Design
+# Desktop Live CLI Reuse Design
 
 - Date: 2026-09-25
-- Status: approved
+- Status: approved, revised after locked-screen runtime evidence
 - Baseline: `0f57620`
 - Related: `2026-09-25-desktop-live-viewer-driven-display-wake-design.md`
 
 ## Problem
 
-The Desktop live source wakes and holds the Mac display only while a WebApp
-viewer is present. That power lifecycle works, but an already locked Mac still
-cannot be watched: Electron `desktopCapturer.getSources()` returns no displays
-while LoginWindow owns the screen.
+The Desktop app originally published `desktop:primary` with Electron
+`desktopCapturer`. Viewer-driven display wake works while the Mac is unlocked,
+but an already locked Mac still cannot be watched: after the display wakes,
+Electron returns no capture sources while LoginWindow owns the screen.
 
-The failure is specific to the capture backend. On the same locked and awakened
-Mac, an Electron probe returned zero sources for 15 seconds while the existing
-CLI ScreenCaptureKit helper captured a 2560x1440 lock-screen frame immediately.
-Repeating `caffeinate -u` or retrying Electron therefore cannot repair this path.
+The same locked Mac was tested with both backends. Electron returned zero
+sources for 15 seconds, while the existing CLI ScreenCaptureKit helper captured
+a 2560x1440 lock-screen frame immediately. Retrying Electron or adding more
+display assertions cannot repair the capture backend.
 
-## Goals
+## Decision
 
-- A WebApp viewer opening `desktop:primary` wakes an already locked Mac and
-  receives its lock-screen image.
-- Remote pointer and keyboard input continue through the existing
-  `desktop-input` gateway so the viewer can enter a password at LoginWindow.
-- After unlock, the source automatically returns to the existing Electron
-  WebRTC path instead of remaining on JPEG fallback.
-- No viewer means no display assertion, no ScreenCaptureKit stream, and no
-  Electron screenshot loop.
-- Existing unlocked capture, multi-display selection, input, and CLI behavior
-  remain unchanged.
+The Desktop app will reuse the CLI-owned native remote desktop service instead
+of adding a second ScreenCaptureKit helper.
 
-## Architecture
+- `cli-desktop:primary` is the only local desktop live session.
+- The CLI keeps ownership of ScreenCaptureKit, VideoToolbox/WebRTC, JPEG
+  fallback, remote input, multi-display selection, and viewer lifecycle.
+- Desktop settings proxy authorization actions and status through the selected
+  `SharedServiceConnection` and `/api/remote-authorization`.
+- Desktop no longer publishes `desktop:primary` or starts its Electron WebRTC
+  capture window.
+- Desktop's separate Computer Use relay remains unchanged; it is not a
+  user-facing remote desktop producer.
 
-### Viewer-gated capture
+This avoids two visible desktop sessions, duplicate TCC identities, competing
+capture streams, and two implementations of the same media and input protocol.
+Desktop already requires a selected shared CLI service for its application
+data, so the proxy adds no new operational dependency.
 
-`DesktopScreenLive` already receives the authoritative relay `viewerCount`.
-It will forward the zero/non-zero transition to `DesktopScreenScreencast` in
-addition to controlling `DisplayKeepAwake`.
+## Viewer And Power Lifecycle
 
-`DesktopScreenScreencast.start()` remains the producer's long-lived operation,
-but it waits without capturing while no viewer is present. The first viewer
-starts a fresh first-frame deadline. The last viewer stops the active capture
-backend before the display assertion is released.
+The CLI `RemoteAuthorization` remains the authority for viewer count:
 
-### Native lock-screen helper
+1. Enabling sharing publishes a dormant, discoverable `cli-desktop:primary`
+   session without starting native capture.
+2. WebApp watch changes `viewerCount` from zero to positive.
+3. The CLI runs `caffeinate -u` and starts a viewer-scoped `caffeinate -d`
+   process before capture, so display wake and hold do not depend on capture
+   permission or first-frame success. The native helper also declares user
+   activity and posts a no-op HID mouse-move event when Accessibility is
+   available.
+4. ScreenCaptureKit captures LoginWindow and continues into the unlocked
+   desktop without changing producer identity.
+5. Three seconds after the final viewer leaves, the CLI stops capture and the
+   helper exits, then terminates the viewer-scoped display assertion.
 
-A dedicated `desktop-capture` Swift helper will use ScreenCaptureKit and a
-JSON-lines stdin/stdout protocol. It accepts bounded capture requests for a
-display, maintains one `SCStream` while that viewer session is active, and
-returns JPEG bytes plus logical display coordinates. `stop` tears down the
-stream and clears pending requests.
+No viewer therefore means no ScreenCaptureKit stream and no display-sleep
+assertion. The persisted sharing switch only controls discoverability.
 
-The helper is a child of the Desktop app and is built beside the existing
-`desktop-input` helper. It is not the separately installed CLI helper and does
-not add a dependency on the CLI package or its runtime files.
+## Desktop Control Plane
 
-### Capture routing
+`DesktopLiveCliProxy` maps the CLI API to the existing renderer contract:
 
-`DesktopCaptureRouter` keeps the backend choice outside the screencast loop:
+- `enabled` -> `enabled`
+- `screen` -> `permissionScreen`
+- `accessibility` -> `accessibilityTrusted`
+- `online` -> `sessionOnline`
+- CLI `controlState` -> Desktop control banner state
 
-1. When Electron reports the session as locked, capture directly through the
-   native helper without first waiting for `desktopCapturer` to time out.
-2. When unlocked, use the existing Electron capture function.
-3. If Electron unexpectedly yields no source, use the native helper as a
-   bounded fallback for that viewer session.
-4. When a native-backed session becomes unlocked, stop its `SCStream`, switch
-   back to Electron, and request WebRTC renegotiation.
-5. When the last viewer leaves, stop the helper regardless of current backend.
+Enable, disable, permission authorization, recheck, and restart are POSTed to
+the CLI API. A lightweight GET poll keeps the Desktop permission page and local
+remote-control banner current without starting the helper.
 
-The normal unlocked WebRTC pipeline remains authoritative. Native capture is a
-lock-screen and source-unavailable JPEG bridge, not a replacement video stack.
+Display selection is not duplicated in Desktop settings. The CLI publishes its
+display list with the live session, and the WebApp viewer uses the existing
+`browser:set-display` path.
 
-## Data Flow
+## Locked State
 
-```text
-WebApp watches desktop:primary
-  -> viewerCount 0 -> 1
-  -> wake display + acquire display-sleep assertion
-  -> DesktopScreenScreencast becomes active
-  -> locked? yes
-  -> DesktopCaptureRouter -> desktop-capture (ScreenCaptureKit)
-  -> JPEG lock-screen frames -> WebApp
-  -> existing desktop-input helper injects password keys
-  -> locked? no
-  -> stop native SCStream
-  -> Electron capture resumes
-  -> WebrtcLive restarts negotiation
+The CLI helper's bridge `status` response includes the same
+`CGSSessionScreenIsLocked` result already used by its diagnostic mode. This
+keeps API status accurate while preserving the existing behavior: lock state
+does not make macOS capture unavailable because ScreenCaptureKit can capture
+LoginWindow.
 
-WebApp closes the panel
-  -> viewerCount 1 -> 0
-  -> screencast releases active backend
-  -> release display-sleep assertion
-```
+FileVault pre-boot remains unsupported because the helper and CGEvent do not
+run before LoginWindow.
 
 ## Failure Handling
 
-- Native helper startup, malformed responses, permission denial, and capture
-  timeouts surface through the existing live-view unavailable path.
-- A missing first frame is timed only while a viewer is active. Idle publication
-  can remain discoverable indefinitely without producing frames.
-- Backend teardown is idempotent and runs after viewer loss, producer failure,
-  feature disable, and app quit.
-- A lock-state race may cause one Electron attempt to return no source; the
-  router then falls back to native capture without closing the live session.
-- FileVault pre-boot remains unsupported because neither ScreenCaptureKit nor
-  CGEvent runs before LoginWindow.
+- No selected shared service: Desktop surfaces the existing service connection
+  gate; it does not start a fallback producer.
+- Missing or outdated CLI helper: the CLI API returns its existing actionable
+  error and Desktop displays it.
+- Permission denial: authorization is requested under the CLI helper's TCC
+  identity, which is the identity that performs capture and input.
+- Poll failure: the last known Desktop status remains visible while the shared
+  service reconnection UI handles transport recovery.
 
 ## Verification
 
-- Unit tests cover viewer gating, backend selection, native teardown, unlock
-  transition, helper protocol errors, and WebRTC restart after a closed failed
-  attempt.
-- The Swift helper must compile with the repository's existing macOS toolchain.
-- Desktop TypeScript compile and focused Vitest suites must pass.
-- End-to-end acceptance is: start Desktop unlocked, let macOS lock, open the
-  Desktop live source in WebApp, observe a lock-screen frame, take control,
-  enter the password, observe the unlocked desktop, and confirm WebRTC resumes.
-- After closing the final viewer, `pmset -g assertions` must show no
-  AgentRoam-owned `NoDisplaySleepAssertion`, and the native helper must not
-  remain running.
-
+- Unit test status mapping, action forwarding, poll coalescing, and server
+  viewer/control status.
+- Compile the CLI Swift helper, Desktop TypeScript, and Server production build.
+- Confirm the live session list contains `cli-desktop:primary` and no
+  `desktop:primary` after Desktop starts.
+- End-to-end: lock the Mac, open the live session from WebApp, observe the
+  LoginWindow frame over WebRTC, take control, enter the password, and observe
+  the unlocked desktop without switching to a second producer.
+- Close the final viewer and confirm the CLI helper exits after its idle delay
+  and no AgentRoam `NoDisplaySleepAssertion` remains.

@@ -16,7 +16,13 @@ var displayAssertion = IOPMAssertionID(0)
 var displayHeld = false
 func wakeRemoteDisplay() {
     var activity = IOPMAssertionID(0)
-    IOPMAssertionDeclareUserActivity("AgentRoam remote input" as CFString, kIOPMUserActiveLocal, &activity)
+    _ = IOPMAssertionDeclareUserActivity("AgentRoam remote input" as CFString, kIOPMUserActiveLocal, &activity)
+    // A real HID event wakes loginwindow on Macs where a power assertion alone
+    // only records UserIsActive without physically lighting the display.
+    if AXIsProcessTrusted(), let cursor = CGEvent(source: nil)?.location {
+        CGEvent(mouseEventSource: nil, mouseType: .mouseMoved,
+            mouseCursorPosition: cursor, mouseButton: .left)?.post(tap: .cghidEventTap)
+    }
 }
 func holdRemoteDisplay() {
     guard !displayHeld else { return }
@@ -299,7 +305,8 @@ func remoteCommand(_ line: String) {
     guard let data = line.data(using: .utf8), let cmd = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return }
     let id = (cmd["id"] as? NSNumber)?.intValue
     switch cmd["op"] as? String {
-    case "status": respond(id, ["ok": true, "screen": CGPreflightScreenCaptureAccess(), "accessibility": AXIsProcessTrusted()])
+    case "status": respond(id, ["ok": true, "screen": CGPreflightScreenCaptureAccess(), "accessibility": AXIsProcessTrusted(), "locked": lockedScreen() as Any? ?? NSNull()])
+    case "wake": wakeRemoteDisplay(); respond(id, ["ok": true])
     case "authorize":
         if cmd["permission"] as? String == "screen" {
             _ = CGRequestScreenCaptureAccess()

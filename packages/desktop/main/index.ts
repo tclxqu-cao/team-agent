@@ -3,14 +3,14 @@ import { prepareChromeExtension, showChromeExtensionSetup } from "./ai-hub/chrom
 // on electron 32 / Node 20.18 (cjsPreparseModuleExports: "exports" undefined).
 import { createRequire } from "module";
 const require = createRequire(import.meta.url);
-const { app, BrowserWindow, ipcMain, dialog, Menu, nativeImage, session, shell, desktopCapturer, systemPreferences, screen, globalShortcut, clipboard, powerMonitor, powerSaveBlocker, protocol } = require("electron") as typeof import("electron");
-import { execFile, spawn, type ChildProcess } from "node:child_process";
+const { app, BrowserWindow, ipcMain, dialog, Menu, nativeImage, session, shell, desktopCapturer, systemPreferences, screen, globalShortcut, clipboard, powerMonitor, protocol } = require("electron") as typeof import("electron");
+import { spawn, type ChildProcess } from "node:child_process";
 import { basename, delimiter, join, resolve } from "node:path";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { readFile, writeFile } from "node:fs/promises";
 import { existsSync, statSync } from "node:fs";
-import { LiveViewProducerClient, installGlobalLogging } from "@agent/core";
+import { installGlobalLogging } from "@agent/core";
 // Must be set before app ready: real host IPs must survive ICE gathering for
 // LAN/Tailscale WebRTC (mDNS .local candidates do not resolve on phones).
 app.commandLine.appendSwitch("disable-features", "WebRtcHideLocalIpsWithMdns");
@@ -19,16 +19,14 @@ protocol.registerSchemesAsPrivileged([{
   privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true },
 }]);
 import { DesktopInputGateway } from "./desktop-input-gateway.js";
-import { DesktopScreenScreencast } from "./desktop-screen-screencast.js";
-import { DesktopScreenLive, type ScreenPermission, type DesktopLiveStatus, type WebrtcSignal } from "./desktop-screen-live.js";
+import type { ScreenPermission } from "./desktop-screen-live.js";
 import { ComputerRelayServer } from "./computer-use/computer-relay-server.js";
 import { DesktopComputerRuntime } from "./computer-use/desktop-computer-runtime.js";
 import { DesktopInputAdapter } from "./computer-use/desktop-input-adapter.js";
 import { ElectronScreenCaptureAdapter } from "./computer-use/electron-screen-capture-adapter.js";
 import { MacAccessibilityAdapter } from "./computer-use/mac-accessibility-adapter.js";
-import { defaultWebrtcCapturePagePath, WebrtcLive } from "./webrtc-live.js";
-import { DisplayKeepAwake } from "./display-keep-awake.js";
 import { readDesktopLiveState, writeDesktopLiveState } from "./desktop-live-state.js";
+import { DesktopLiveCliProxy } from "./desktop-live-cli-proxy.js";
 import { SharedServiceConnection } from "./shared-service.js";
 import { DesktopUpdateService } from "./update-service.js";
 import { directoryOpenMenuLabel, revealDirectoryWithShell, resolveDirectoryForOpen } from "./directory-context-menu.js";
@@ -147,6 +145,14 @@ const appIconPath = [
   join(process.resourcesPath, "app.asar.unpacked", "assets", "app-icon.png"),
 ].find((candidate) => existsSync(candidate));
 const sharedService = new SharedServiceConnection(join(app.getPath("userData"), "shared-service.json"));
+const desktopLiveProxy = new DesktopLiveCliProxy({
+  request: (path, method, body) => sharedService.json(path, method, body),
+  onStatus: (status) => {
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("desktop-live:status", status);
+    const controlled = status.enabled && status.controlState !== null && status.controlState !== "agent-controlled";
+    if (process.platform === "darwin") app.dock?.setBadge(controlled ? "●" : "");
+  },
+});
 const fileWorkspaceService = new DesktopFileWorkspaceService({
   roots: (process.env.AGENT_WEB_ROOTS?.trim() || homedir()).split(delimiter),
   home: homedir(),
@@ -163,10 +169,7 @@ ipcMain.handle("service:status", (event) => { trustedServiceSender(event); retur
 ipcMain.handle("service:select", async (event, id: string) => {
   trustedServiceSender(event);
   const selected = await sharedService.select(id);
-  if (desktopScreenLive?.getStatus().enabled) {
-    await desktopScreenLive.disable();
-    await desktopScreenLive.enable();
-  }
+  await desktopLiveProxy.refresh().catch(() => undefined);
   return selected;
 });
 ipcMain.handle("service:request", (event, path: string, method: string, body?: string) => { trustedServiceSender(event); return sharedService.json(path, method, body); });
@@ -1003,13 +1006,6 @@ const desktopLiveStatePath = join(app.getPath("userData"), "desktop-live.json");
 const desktopInputHelperPath = app.isPackaged
   ? join(process.resourcesPath, "bin", "desktop-input")
   : join(__dirname, "../../assets/bin/desktop-input");
-async function desktopLiveEndpoint(): Promise<string> {
-  const selected = (await sharedService.status()).selected;
-  if (!selected) throw new Error("未连接 CLI 服务，请先启动 agentroam 并在桌面端选择服务");
-  return selected.url;
-}
-
-let desktopScreenLive: DesktopScreenLive | null = null;
 let desktopInputGateway: DesktopInputGateway | null = null;
 let computerRelay: ComputerRelayServer | null = null;
 /** Persisted capture display choice; null = primary. Multi-display Macs can stream either screen. */
@@ -1079,7 +1075,7 @@ async function startComputerRelay(): Promise<ComputerRelayServer | null> {
     accessibility: new MacAccessibilityAdapter(gateway),
     screenCapture: capture,
     input: new DesktopInputAdapter(gateway),
-    ownership: () => desktopScreenLive?.getStatus().controlState ?? null,
+    ownership: () => desktopLiveProxy.getCachedStatus().controlState,
     locked: () => powerMonitor.getSystemIdleState(1) === "locked",
   });
   const relay = new ComputerRelayServer({ runtime });
@@ -1092,152 +1088,36 @@ async function persistDesktopLiveEnabled(enabled: boolean): Promise<void> {
   await writeDesktopLiveState(desktopLiveStatePath, { enabled, displayId: state.displayId });
 }
 
-function getDesktopScreenLive(): DesktopScreenLive {
-  if (desktopScreenLive) return desktopScreenLive;
-  const gateway = getDesktopInputGateway();
-  const screencast = new DesktopScreenScreencast({
-    input: gateway,
-    displayInfo: () => {
-      const picked = pickLiveDisplay();
-      return { originX: picked.originX, originY: picked.originY, width: picked.width, height: picked.height, scaleFactor: picked.scaleFactor, id: picked.id };
-    },
-    captureSources: captureDesktopSources,
-    primaryDisplayId: () => pickLiveDisplay().id,
-  });
-  const keepAwake = new DisplayKeepAwake({
-    // `caffeinate -u` declares user activity, which lights up an asleep
-    // display; the powerSaveBlocker then holds it awake until disable().
-    wake: () => {
-      if (process.platform === "darwin") execFile("/usr/bin/caffeinate", ["-u", "-t", "3"], () => undefined);
-    },
-    acquire: () => powerSaveBlocker.start("prevent-display-sleep"),
-    release: (blockerId) => powerSaveBlocker.stop(blockerId),
-  });
-  let webrtcLive: WebrtcLive | null = null;
-  desktopScreenLive = new DesktopScreenLive({
-    clientFactory: async () => new LiveViewProducerClient({ endpoint: await desktopLiveEndpoint() }),
-    screencast,
-    input: gateway,
-    probeScreen: probeScreenPermission,
-    probeAccessibility: async () => {
-      await gateway.start();
-      return gateway.checkAccessibility();
-    },
-    keepAwake,
-    onWebrtcFromViewer: (data: WebrtcSignal) => webrtcLive?.handleViewerSignal(data),
-    getDisplayOptions: () => getLiveDisplayOptions(),
-    onSetDisplay: async (displayId: string | null) => {
-      setLiveDisplay(displayId);
-      // Show the new screen instantly on the JPEG fallback and re-capture the
-      // real-time video from the freshly selected display.
-      screencast.wake();
-      webrtcLive?.restart();
-      return getLiveDisplayOptions();
-    },
-  });
-  webrtcLive = new WebrtcLive({
-    capturePagePath: () => defaultWebrtcCapturePagePath(__dirname, app.isPackaged, process.resourcesPath),
-    preloadPath: () => join(__dirname, "preload.cjs"),
-    captureSize: () => {
-      const picked = pickLiveDisplay();
-      return { width: picked.width, height: picked.height };
-    },
-    sendToViewer: (data) => (desktopScreenLive ? desktopScreenLive.relayWebrtcToViewer(data) : Promise.resolve({ delivered: false })),
-    setStandby: (standby) => screencast.setStandby(standby),
-    log: (line) => console.log(line),
-  });
-  desktopScreenLive.onStatus((status) => {
-    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("desktop-live:status", status);
-    const controlled = status.enabled && status.controlState !== null && status.controlState !== "agent-controlled";
-    if (process.platform === "darwin") app.dock?.setBadge(controlled ? "●" : "");
-    // Control returned to the agent (or live disabled) → release the capture.
-    if (!status.enabled || status.controlState === "agent-controlled") webrtcLive?.stop();
-  });
-  return desktopScreenLive;
-}
-
-ipcMain.handle("desktop-live:get-status", async (event) => { trustedServiceSender(event); return getDesktopScreenLive().getStatus(); });
+ipcMain.handle("desktop-live:get-status", async (event) => { trustedServiceSender(event); return desktopLiveProxy.refresh(); });
 ipcMain.handle("desktop-live:setup", async (event) => {
   trustedServiceSender(event);
-  const supported = process.platform === "darwin";
-  const live = getDesktopScreenLive();
-  if (supported && (await readDesktopLiveState(desktopLiveStatePath)).enabled) await live.enable();
-  return { supported, needsSetup: !existsSync(desktopLiveStatePath), status: supported ? await live.refreshPermissions() : live.getStatus() };
+  const initial = await desktopLiveProxy.refresh();
+  const status = initial.enabled
+    ? await desktopLiveProxy.action("recheck").catch(() => initial)
+    : initial;
+  return { supported: status.supported, needsSetup: !existsSync(desktopLiveStatePath), status };
 });
-let desktopPermissionCheck: Promise<DesktopLiveStatus> | null = null;
-function recheckDesktopPermissions(): Promise<DesktopLiveStatus> {
-  if (!desktopPermissionCheck) desktopPermissionCheck = (async () => {
-    const live = getDesktopScreenLive();
-    const status = await live.refreshPermissions();
-    return status.enabled ? live.enable() : status;
-  })().finally(() => { desktopPermissionCheck = null; });
-  return desktopPermissionCheck;
-}
 ipcMain.handle("desktop-live:recheck", (event) => {
   trustedServiceSender(event);
-  return recheckDesktopPermissions();
+  return desktopLiveProxy.action("recheck");
 });
-// Continue permission recovery even when the user closes the setup dialog.
-const desktopPermissionTimer = setInterval(() => {
-  const status = desktopScreenLive?.getStatus();
-  if (process.platform === "darwin" && status?.enabled && (status.permissionScreen !== "granted" || status.accessibilityTrusted !== true)) {
-    void recheckDesktopPermissions().catch((error) => console.warn("[desktop-permissions]", error));
-  }
-}, 3000);
-desktopPermissionTimer.unref();
 ipcMain.handle("desktop-live:open-permission", async (event, permission: unknown) => {
   trustedServiceSender(event);
-  if (process.platform !== "darwin") return;
-  if (permission === "screen") {
-    // macOS can report denied before this bundle has appeared in Settings.
-    // An explicit user request must attempt capture for every non-granted state.
-    if (probeScreenPermission() !== "granted") await desktopCapturer.getSources({ types: ["screen"], thumbnailSize: { width: 1, height: 1 } }).catch(() => undefined);
-    await shell.openExternal("x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture");
-  } else if (permission === "accessibility") {
-    systemPreferences.isTrustedAccessibilityClient(true);
-    await shell.openExternal("x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility");
-  } else throw new Error("Unknown permission");
+  if (permission !== "screen" && permission !== "accessibility") throw new Error("Unknown permission");
+  return desktopLiveProxy.action("authorize", permission);
 });
 ipcMain.handle("desktop-live:restart", (event) => {
   trustedServiceSender(event);
-  app.relaunch();
-  app.quit();
+  return desktopLiveProxy.action("restart");
 });
 
-// Multi-display: the capture display is selectable; input coordinates follow
-// the streamed display's global origin so taps land on the right screen.
-function getLiveDisplayOptions() {
-  const primary = screen.getPrimaryDisplay();
-  return screen.getAllDisplays().map((item, index) => ({
-    id: String(item.id),
-    label: item.id === primary.id ? `主屏 ${item.size.width}×${item.size.height}` : `屏幕 ${index + 1} ${item.size.width}×${item.size.height}`,
-    primary: item.id === primary.id,
-    selected: String(item.id) === pickLiveDisplay().id,
-  }));
-}
-
-function setLiveDisplay(displayId: string | null): void {
-  liveDisplayId = typeof displayId === "string" && displayId ? displayId : null;
-  void (async () => {
-    const state = await readDesktopLiveState(desktopLiveStatePath);
-    await writeDesktopLiveState(desktopLiveStatePath, { enabled: state.enabled, displayId: liveDisplayId }).catch(() => undefined);
-  })();
-}
-
-ipcMain.handle("desktop-live:get-displays", () => ({ displays: getLiveDisplayOptions() }));
-
-ipcMain.handle("desktop-live:set-display", async (_event, displayId: unknown) => {
-  setLiveDisplay(typeof displayId === "string" && displayId ? displayId : null);
-  // The capture loop re-reads displayInfo every frame, so this takes effect
-  // on the next frame without restarting the stream.
-  return { displayId: pickLiveDisplay().id };
-});
+// Display selection belongs to the CLI live session and is exposed in the WebApp viewer.
+ipcMain.handle("desktop-live:get-displays", (event) => { trustedServiceSender(event); return { displays: [] }; });
+ipcMain.handle("desktop-live:set-display", (event) => { trustedServiceSender(event); return { displayId: "" }; });
 
 ipcMain.handle("desktop-live:set-enabled", async (event, enabled: unknown) => {
   trustedServiceSender(event);
-  if (process.platform !== "darwin" && enabled === true) throw new Error("当前桌面直播仅支持 macOS");
-  const live = getDesktopScreenLive();
-  const status = enabled === true ? await live.enable() : await live.disable();
+  const status = await desktopLiveProxy.action(enabled === true ? "enable" : "disable");
   await persistDesktopLiveEnabled(status.enabled);
   return status;
 });
@@ -1270,6 +1150,7 @@ function registerAiHubWakeShortcut(): void {
 
 app.whenReady().then(async () => {
   await sharedService.initialize();
+  desktopLiveProxy.start();
   protocol.handle("agentroam-preview", (request) => createDesktopPreviewResponse(fileWorkspaceService, request));
   // 暴露完整辅助功能树（AX 驱动/自动化测试依赖）
   app.setAccessibilitySupportEnabled(true);
@@ -1323,14 +1204,10 @@ app.whenReady().then(async () => {
   void connectVoiceProvider().then((provider) => {
     console.warn("[voice] provider ready:", provider.kind === "service" ? provider.source : "native");
   });
-  // Restore desktop live view if the user left it enabled.
+  // The CLI owns remote desktop publication and capture. This persisted value
+  // only keeps the local Computer Use display selection and onboarding marker.
   const desktopLivePersisted = await readDesktopLiveState(desktopLiveStatePath);
   liveDisplayId = desktopLivePersisted.displayId;
-  if (desktopLivePersisted.enabled) {
-    await getDesktopScreenLive().enable().catch((error) => {
-      console.warn("[desktop-live] auto-start failed:", error);
-    });
-  }
 });
 
 let quitCleanupStarted = false;
@@ -1341,7 +1218,7 @@ app.on("before-quit", (event) => {
   event.preventDefault();
   if (quitCleanupStarted) return;
   quitCleanupStarted = true;
-  clearInterval(desktopPermissionTimer);
+  desktopLiveProxy.close();
   sharedService.closeStreams();
   fileWorkspaceService.close();
   globalShortcut.unregisterAll();
@@ -1360,7 +1237,6 @@ app.on("before-quit", (event) => {
   aiHubManager.destroyAll();
   void Promise.allSettled([
     relayToClose?.close() ?? Promise.resolve(),
-    desktopScreenLive?.disable() ?? Promise.resolve(),
     desktopInputGateway?.stop() ?? Promise.resolve(),
   ]).finally(() => {
     quitCleanupFinished = true;

@@ -42,8 +42,9 @@ export default function RemoteAuthorizationControl() {
     const message = !status.supported ? '这台电脑暂不支持远程桌面。'
       : !status.installed ? '电脑缺少远程桌面组件，请在电脑上升级 CLI。'
       : !status.enabled ? '电脑尚未开启桌面共享，请在电脑上完成授权并开启共享。'
-      : status.locked && status.unlock === 'available' ? 'Windows 已锁屏。打开「远程桌面」并选择本机桌面，即可唤醒屏幕或输入密码/PIN 解锁。'
-      : status.locked ? 'Windows 已锁屏，但远程解锁服务尚未安装。请在电脑上运行 agentroam unlock-service install。'
+      : windows && status.locked && status.unlock === 'available' ? 'Windows 已锁屏。打开「远程桌面」并选择本机桌面，即可唤醒屏幕或输入密码/PIN 解锁。'
+      : windows && status.locked ? 'Windows 已锁屏，但远程解锁服务尚未安装。请在电脑上运行 agentroam unlock-service install。'
+      : status.locked ? 'macOS 已锁屏。打开「远程桌面」并选择本机桌面会自动唤醒屏幕，随后可在锁屏画面输入密码。'
       : !status.screen || !status.accessibility ? windows ? 'Windows 桌面暂不可用，请检查 UAC 提示或登录状态。' : '电脑的远程桌面授权尚未完成。'
       : '电脑桌面正在连接，请稍候。';
     return <div className="remote-desktop-guidance">

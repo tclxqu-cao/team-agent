@@ -28,7 +28,7 @@ async function fixture(options: Record<string, unknown> = {}) {
     return {ok:true};
   }) };
   const registry = new LiveViewRegistry();
-  const service = new RemoteAuthorization({dataDir, registry, userId:'owner', helper, supported:true, intervalMs:60000, ...options});
+  const service = new RemoteAuthorization({dataDir, registry, userId:'owner', helper, supported:true, intervalMs:60000, display:null, ...options});
   await service.initialize();
   const frames: any[] = [];
   const viewer = { id:'phone', userId:'owner', producerSessionIds:new Set<string>(), watchedSessionId:null, send:(event:any)=>frames.push(event) };
@@ -106,10 +106,12 @@ describe('CLI remote desktop', () => {
       f.grant(); const session = await f.watch(); expect(session.availability).toBe('ready');
       expect(f.frames.some(e=>e.type==='browser:frame')).toBe(true);
       f.registry.takeOver(f.viewer,session.id); await f.service.inputQueue;
+      expect(await f.service.status()).toMatchObject({ viewerCount: 1, controlState: 'user-controlled' });
       await f.registry.input(f.viewer,session.id,{kind:'pointer',action:'down',x:0.5,y:0.5,button:'left'}); await f.service.inputQueue;
       expect(f.helper.request).toHaveBeenCalledWith(expect.objectContaining({op:'down',x:500,y:400}));
       f.registry.returnControl(f.viewer,session.id); await f.service.inputQueue;
       expect(f.registry.list(f.viewer)[0].state).toBe('agent-controlled');
+      expect(await f.service.status()).toMatchObject({ viewerCount: 1, controlState: 'agent-controlled' });
       await f.service.action('disable'); expect(f.registry.list(f.viewer)).toEqual([]);
     } finally { await f.close(); }
   });
@@ -348,6 +350,33 @@ it('keeps a Windows session visible when sharing starts while locked and validat
   } finally { await f.close(); }
 });
 
+it('wakes macOS on the first viewer and reports a platform-correct locked state', async () => {
+  const display = { start:vi.fn(async()=>({ok:true,held:true})), wake:vi.fn(async()=>({ok:true,woke:true})), stop:vi.fn(async()=>({ok:true,held:false})) };
+  const f = await fixture({platform:'darwin',display});
+  f.helper.request.mockImplementation(async (cmd:any) => {
+    if (cmd.op === 'status') return {ok:true,screen:false,accessibility:true,locked:true};
+    return {ok:true};
+  });
+  const secondViewer = { id:'phone-2', userId:'owner', producerSessionIds:new Set<string>(), watchedSessionId:null, send:vi.fn() };
+  f.registry.connect(secondViewer);
+  try {
+    await f.service.action('enable');
+    expect(f.registry.list(f.viewer)[0]).toMatchObject({
+      platform:'darwin', availability:'unavailable', capabilityError:'macOS 已锁屏', capabilityErrorCode:'desktop-locked',
+    });
+    f.helper.request.mockClear();
+    await f.watch();
+    expect(display.start).toHaveBeenCalledOnce();
+    expect(f.helper.request.mock.calls.filter(([command]:any[]) => command.op === 'wake')).toHaveLength(1);
+    await f.watch(secondViewer);
+    expect(display.start).toHaveBeenCalledOnce();
+    expect(f.helper.request.mock.calls.filter(([command]:any[]) => command.op === 'wake')).toHaveLength(1);
+    await expect(f.service.systemAction('wake',{sessionId:f.service.sessionId})).resolves.toMatchObject({ok:true});
+    expect(display.wake).toHaveBeenCalledOnce();
+    await expect(f.service.systemAction('unlock',{sessionId:f.service.sessionId,password:'secret'})).rejects.toThrow('仅支持 Windows');
+  } finally { await f.close(); }
+});
+
 it('invalidates Windows input coordinates and releases held input when capture fails', async () => {
   const f=await fixture();f.service.platform='win32';
   try {
@@ -361,7 +390,8 @@ it('invalidates Windows input coordinates and releases held input when capture f
 });
 
 it('stops capture three seconds after the last viewer leaves and cancels the stop on reconnect', async () => {
-  const f = await fixture({idleDelayMs:20});
+  const display = { start:vi.fn(async()=>({ok:true,held:true})), wake:vi.fn(async()=>({ok:true,woke:true})), stop:vi.fn(async()=>({ok:true,held:false})) };
+  const f = await fixture({idleDelayMs:20,platform:'darwin',display});
   try {
     f.grant(); await f.service.action('enable'); const session = await f.watch();
     const captureCalls = () => f.helper.request.mock.calls.filter(([command]:any[]) => command.op === 'capture').length;
@@ -376,10 +406,12 @@ it('stops capture three seconds after the last viewer leaves and cancels the sto
     await f.watch();
     await new Promise((resolve) => setTimeout(resolve, 25));
     expect(f.helper.request.mock.calls.some(([command]:any[]) => command.op === 'stop-capture')).toBe(false);
+    expect(display.stop).not.toHaveBeenCalled();
 
     f.registry.unwatch(f.viewer); await f.service.inputQueue;
     await vi.waitFor(() => expect(f.helper.request.mock.calls.some(([command]:any[]) => command.op === 'stop-capture')).toBe(true));
     expect(f.helper.stop).toHaveBeenCalled();
+    expect(display.stop).toHaveBeenCalledOnce();
     expect(f.registry.list(f.viewer)[0]).toMatchObject({availability:'starting',viewerCount:0});
   } finally { await f.close(); }
 });

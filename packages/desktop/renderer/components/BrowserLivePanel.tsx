@@ -883,9 +883,8 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
     }
   }, [api, mergeSession, selected]);
 
-  // Remote system actions (Windows): lock / wake / unlock. The password only
-  // lives inside the unlock round-trip and is never kept in component state
-  // beyond the dialog field.
+  // Wake is available on macOS and Windows. Lock/direct unlock stay Windows-only;
+  // the password only lives inside that round-trip and is never persisted.
   const sendSystem = useCallback(async (action: "lock" | "wake", password?: string) => {
     if (!api || !selectedId) return;
     setSystemBusy(action);
@@ -1470,9 +1469,11 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
                     <button type="button" className="browser-live-control-button" disabled={!!systemBusy} onClick={() => void sendSystem("wake")}>
                       {systemBusy === "wake" ? <LoaderCircle size={14} className="spin" aria-hidden="true" /> : <Power size={14} aria-hidden="true" />}唤醒屏幕
                     </button>
-                    <button type="button" className="browser-live-control-button" disabled={unlockPending} onClick={() => { setUnlockError(null); setUnlockOpen(true); }}>
-                      <LockOpen size={14} aria-hidden="true" />远程解锁
-                    </button>
+                    {isWindowsDesktop && (
+                      <button type="button" className="browser-live-control-button" disabled={unlockPending} onClick={() => { setUnlockError(null); setUnlockOpen(true); }}>
+                        <LockOpen size={14} aria-hidden="true" />远程解锁
+                      </button>
+                    )}
                   </div>
                 )}
               </div>

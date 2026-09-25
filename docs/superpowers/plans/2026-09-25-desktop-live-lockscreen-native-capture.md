@@ -1,174 +1,85 @@
-# Desktop Live Lockscreen Native Capture Implementation Plan
+# Desktop Live CLI Reuse Implementation Plan
 
-> **For the main agent:** Implement this plan directly in the current session. Do not dispatch implementation or code-review subagents. After all development tasks are complete, run the affected unit tests and fix any failures before reporting completion. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For the main agent:** Implement directly in the current session. Do not
+> dispatch implementation or review subagents. Preserve unrelated worktree
+> changes and do not commit generated binaries or runtime data.
 
-**Goal:** Let the Desktop live source wake and capture an already locked Mac, then return automatically to the existing Electron WebRTC stream after unlock.
+**Goal:** Use the existing CLI ScreenCaptureKit remote desktop from Desktop so
+an already locked Mac can be awakened, viewed, and remotely unlocked without
+keeping the display awake while nobody is watching.
 
-**Architecture:** Gate all Desktop capture work on the relay's viewer count. Route locked or Electron-unavailable frames through a dedicated ScreenCaptureKit child helper, release that helper when viewing stops, and restart the existing WebRTC producer when capture returns to Electron.
+**Architecture:** `cli-desktop:primary` remains the sole user-facing desktop
+producer. Electron exposes its existing Desktop settings API as a proxy to the
+selected shared service's `/api/remote-authorization` endpoint. The CLI owns
+capture, WebRTC, input, display choice, and viewer-driven power lifecycle.
 
-**Tech Stack:** Swift 5, ScreenCaptureKit, CoreImage, Electron 44, TypeScript, Bun, Vitest, Node 22.
+**Tech Stack:** Electron 44, TypeScript, Bun, Vitest, Node 22, Swift 5,
+ScreenCaptureKit, VideoToolbox.
 
-## Global Constraints
+## Constraints
 
-- Preserve the existing `desktop:primary` protocol and WebApp UI.
-- Preserve unlocked Electron WebRTC as the normal high-frame-rate path.
-- Start no capture backend and hold no display assertion while `viewerCount` is zero.
-- Stop the native stream before releasing the final viewer's display assertion.
-- Do not depend on or modify an installed CLI runtime.
-- Do not commit generated helper binaries, Desktop runtime data, or packaging output.
+- Keep the CLI's existing viewer-count and three-second idle teardown contract.
+- Do not publish `desktop:primary` from Electron.
+- Do not add a second native capture helper or TCC identity.
+- Keep Desktop Computer Use behavior separate and unchanged.
+- Do not commit helper binaries, Desktop runtime data, or packaging output.
 
----
-
-### Task 1: Add the native lock-screen capture helper
-
-**Files:**
-- Create: `packages/desktop/native/desktop-capture.swift`
-- Modify: `packages/desktop/scripts/build-desktop-input.sh`
-- Create: `packages/desktop/main/desktop-capture-gateway.ts`
-- Unit tests: `packages/desktop/main/desktop-capture-gateway.test.ts`
-
-**Interfaces:**
-- Consumes: JSON-lines requests `{ id, op: "capture", displayId, width, height, quality, maxBytes }` and `{ id, op: "stop" }`.
-- Produces: `DesktopCaptureGateway.capture(request): Promise<DesktopNativeCapturedFrame>` and `stop(): Promise<void>`.
-
-- [ ] **Step 1: Implement the ScreenCaptureKit stream**
-
-Create a helper that selects the requested `SCDisplay`, starts one bounded
-`SCStream`, stores the latest complete frame, and responds to pending capture
-requests with base64 JPEG plus pixel and logical dimensions.
-
-- [ ] **Step 2: Implement stop and error semantics**
-
-`stop` must invalidate the stream epoch, fail pending requests, stop capture,
-and return an idempotent success response. EOF must terminate the process.
-
-- [ ] **Step 3: Build both Desktop helpers**
-
-Extend `build-desktop-input.sh` to compile `desktop-input` and
-`desktop-capture` into the already ignored `assets/bin` directory.
-
-- [ ] **Step 4: Add the TypeScript gateway and tests**
-
-Follow `DesktopInputGateway` JSON-lines conventions. Test request correlation,
-base64 decoding metadata, helper exit rejection, timeout, and idempotent stop.
-
-### Task 2: Route locked capture through the native helper
+## Task 1: Add The Desktop CLI Proxy
 
 **Files:**
-- Create: `packages/desktop/main/desktop-capture-router.ts`
-- Unit tests: `packages/desktop/main/desktop-capture-router.test.ts`
-- Modify: `packages/desktop/main/desktop-screen-screencast.ts`
-- Modify: `packages/desktop/main/desktop-screen-screencast.test.ts`
-
-**Interfaces:**
-- Consumes: `isLocked(): boolean`, the existing Electron frame capture function, and `DesktopCaptureGateway`.
-- Produces: `DesktopCaptureRouter.capture(options): Promise<DesktopCapturedFrame | null>` and `stop(): Promise<void>`.
-
-- [ ] **Step 1: Implement backend selection**
-
-Use native capture immediately when locked. Use Electron when unlocked, with
-native fallback only when Electron returns no frame or throws.
-
-- [ ] **Step 2: Implement unlock and stop transitions**
-
-Stop a native stream before the first unlocked Electron frame. Fire one
-`onElectronResume` callback for that transition and make `stop()` idempotent.
-
-- [ ] **Step 3: Gate the screencast by viewer presence**
-
-Add `setViewerActive(active)` to suspend the capture loop without ending the
-published producer. Reset first-frame timeout for each new viewing interval and
-release the router in the loop's inactive and terminal paths.
-
-- [ ] **Step 4: Add routing and lifecycle tests**
-
-Cover locked native selection, unlocked Electron selection, source-unavailable
-fallback, one-time resume callback, no capture before a viewer, and release
-after the final viewer.
-
-### Task 3: Wire viewer lifecycle and WebRTC recovery
-
-**Files:**
-- Modify: `packages/desktop/main/desktop-screen-live.ts`
-- Modify: `packages/desktop/main/desktop-screen-live.test.ts`
-- Modify: `packages/desktop/main/webrtc-live.ts`
-- Modify: `packages/desktop/main/webrtc-live.test.ts`
+- Create: `packages/desktop/main/desktop-live-cli-proxy.ts`
+- Create: `packages/desktop/main/desktop-live-cli-proxy.test.ts`
 - Modify: `packages/desktop/main/index.ts`
 
-**Interfaces:**
-- Consumes: authoritative `browser:state.session.viewerCount` and Electron `powerMonitor.getSystemIdleState(1)`.
-- Produces: viewer-gated `DesktopScreenScreencast`, packaged/dev helper path resolution, and resumable `WebrtcLive.restart()`.
+- [x] Map CLI authorization status to the existing `DesktopLiveStatus` shape.
+- [x] Forward enable, disable, authorize, recheck, and restart actions.
+- [x] Poll status without starting native capture and emit only changed state.
+- [x] Feed CLI ownership into the existing local control banner and Computer
+  Use ownership guard.
 
-- [ ] **Step 1: Forward viewer transitions to the screencast**
-
-On zero-to-positive, wake/hold the display before activating capture. On
-positive-to-zero, deactivate capture before releasing the display assertion.
-
-- [ ] **Step 2: Make WebRTC restartable after terminal capture failure**
-
-Remember whether a viewer requested video. Allow `restart()` to recreate a
-closed capture window only while that request remains active; clear the request
-on stop.
-
-- [ ] **Step 3: Compose the capture router in Electron main**
-
-Resolve `desktop-capture` beside `desktop-input`, use powerMonitor for lock
-state, inject the router as the screencast frame source, and restart WebRTC on
-native-to-Electron transition.
-
-- [ ] **Step 4: Extend coordinator and WebRTC tests**
-
-Assert viewer transitions reach both power and capture lifecycles, and that a
-failed closed WebRTC attempt can restart after unlock but not after viewer stop.
-
-### Task 4: Build, runtime verification, delivery, and knowledge capture
+## Task 2: Make CLI Status Complete
 
 **Files:**
-- Verify: all Task 1-3 files
-- Update: `projects/customer-agent/skills/desktop-live-lockscreen-remote-unlock.md` in the Obsidian wiki
+- Modify: `packages/server/lib/remote-control/remote-authorization.mjs`
+- Modify: `packages/server/lib/remote-control/remote-authorization.test.ts`
+- Modify: `packages/server/native/remote-helper/main.swift`
 
-**Interfaces:**
-- Consumes: Desktop build scripts, the running `:3000` service, launchd Desktop dev job, and ordinary Git project policy.
-- Produces: tested source commit, pushed branch, updated `:3000`, restarted Desktop app, and end-to-end runtime evidence.
+- [x] Return authoritative `viewerCount` and `controlState` from CLI status.
+- [x] Update control state from live-view registry events and clear it on
+  disable/close.
+- [x] Include macOS lock state in the native helper bridge status.
+- [x] Extend server tests for takeover and return status transitions.
 
-- [ ] **Step 1: Build the native helpers and Desktop TypeScript**
+## Task 3: Remove The Duplicate Desktop Producer
 
-Run `PATH=/opt/homebrew/opt/node@22/bin:$PATH bun run --cwd packages/desktop build:helper`
-and `PATH=/opt/homebrew/opt/node@22/bin:$PATH bun run --cwd packages/desktop compile`.
+**Files:**
+- Modify: `packages/desktop/main/index.ts`
+- Modify: `packages/desktop/renderer/components/DesktopLiveSettings.tsx`
+- Restore: `packages/desktop/scripts/build-desktop-input.sh`
+- Remove uncommitted standalone helper draft files.
 
-- [ ] **Step 2: Run focused unit tests and diff checks**
+- [x] Stop creating `DesktopScreenLive`, Electron `WebrtcLive`, and the
+  Desktop-owned display assertion from the composition root.
+- [x] Keep Desktop onboarding state only as a local UI marker; CLI state is the
+  source of truth for whether sharing is enabled.
+- [x] Remove Desktop settings display selection because the WebApp viewer
+  already uses the CLI session's display metadata.
+- [x] Preserve the Electron capture/input adapters used by Computer Use.
 
-Run the gateway, router, screencast, live coordinator, WebRTC, and display power
-tests, followed by `git diff --check`.
+## Task 4: Verify And Deliver
 
-- [ ] **Step 3: Restart runtime and verify the locked workflow**
+- [x] Run focused Desktop proxy and CLI remote authorization tests.
+- [x] Compile the CLI Swift helper and run its self-tests.
+- [x] Compile Desktop and build Server with Node 22.
+- [x] Run `git diff --check` and stage source/tests/docs only.
+- [ ] Commit and push with ordinary Git per project `CLAUDE.md`.
+- [ ] Release the WebApp/Server to `:3000`, restart the repository-owned Desktop
+  job, and record stable Build ID, PID, routes, session identity, WebRTC media,
+  locked capture, unlock, and final-viewer teardown evidence.
 
-Restart only the repository-owned Desktop launchd job, then verify lock-screen
-capture, remote unlock, WebRTC recovery, final-viewer assertion release, and
-native helper exit. Rebuild/restart `:3000` with the release skill and verify
-Build ID, PID stability, and key routes.
-
-- [ ] **Step 4: Commit and push source only**
-
-Stage only source, tests, specs, and plan files. Exclude `assets/bin`, release
-artifacts, `.agent-data`, `.superpowers`, and wiki query logs. Commit and push
-with ordinary Git as required by the project-level `CLAUDE.md`.
-
-## Final Unit Test Verification
-
-- [ ] **Main agent: run affected unit tests after development is complete**
-
-Run:
-
-```bash
-PATH=/opt/homebrew/opt/node@22/bin:$PATH bunx vitest run \
-  packages/desktop/main/desktop-capture-gateway.test.ts \
-  packages/desktop/main/desktop-capture-router.test.ts \
-  packages/desktop/main/desktop-screen-screencast.test.ts \
-  packages/desktop/main/desktop-screen-live.test.ts \
-  packages/desktop/main/webrtc-live.test.ts \
-  packages/desktop/main/display-keep-awake.test.ts
-```
-
-Expected: all tests pass. Fix implementation or tests and rerun until green.
-
+Runtime progress: `:3000` Build ID `UQ6i1FofkgKOXhFivyFG2`, PID `9290`, core
+routes, `cli-desktop:primary`, viewer-driven `caffeinate -u/-d`, physical
+display sleep-to-wake, and final-viewer assertion release are verified. Locked
+capture, WebRTC media, and password input remain open because the launched
+helper currently reports `screen=false` and `accessibility=false` until macOS
+permissions are granted to its app identity.

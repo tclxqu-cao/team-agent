@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { DesktopLiveDisplayOption, DesktopLiveStatus } from "../global";
+import type { DesktopLiveStatus } from "../global";
 
 const headingStyle: React.CSSProperties = {
   fontSize: 13,
@@ -30,16 +30,12 @@ export default function DesktopLiveSettings({ onboarding = false }: { onboarding
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [platformSupported, setPlatformSupported] = useState(true);
-  const [displays, setDisplays] = useState<DesktopLiveDisplayOption[] | null>(null);
 
   useEffect(() => {
     if (!api?.desktopLiveGetStatus || !api?.onDesktopLiveStatus) return;
     let active = true;
     void api.desktopLiveSetup()
       .then((next) => { if (active) { setStatus(next.status); setPlatformSupported(next.supported); } })
-      .catch(() => undefined);
-    void api.desktopLiveGetDisplays?.()
-      .then((result) => { if (active && result.displays.length > 1) setDisplays(result.displays); })
       .catch(() => undefined);
     const unsubscribe = api.onDesktopLiveStatus((next) => setStatus(next));
     return () => {
@@ -80,15 +76,6 @@ export default function DesktopLiveSettings({ onboarding = false }: { onboarding
       setError(null);
     } catch (error) { setError(error instanceof Error ? error.message : String(error)); }
     finally { setPending(false); }
-  };
-
-  const selectDisplay = async (displayId: string | null) => {
-    if (!api?.desktopLiveSetDisplay) return;
-    try {
-      await api.desktopLiveSetDisplay(displayId);
-      const result = await api.desktopLiveGetDisplays?.();
-      if (result) setDisplays(result.displays);
-    } catch { /* keep the previous selection on failure */ }
   };
 
   if (!supported) return null;
@@ -155,32 +142,6 @@ export default function DesktopLiveSettings({ onboarding = false }: { onboarding
             </span>
             {!accessibilityTrusted && <button type="button" className="ui-quiet-button desktop-permission-button" disabled={pending} onClick={() => void authorize("accessibility")}>去授权</button>}
           </div>
-          {displays && displays.length > 1 && (
-            <div style={permissionRowStyle}>
-              <span>直播画面来源</span>
-              <span style={{ display: "flex", gap: 6 }}>
-                {displays.map((item) => (
-                  <button
-                    key={item.id}
-                    type="button"
-                    onClick={() => void selectDisplay(item.selected ? null : item.id)}
-                    style={{
-                      padding: "4px 10px",
-                      borderRadius: "var(--radius-sm)",
-                      border: `1px solid ${item.selected ? "var(--accent)" : "var(--border-subtle)"}`,
-                      background: item.selected ? "var(--accent-dim)" : "transparent",
-                      color: item.selected ? "var(--accent)" : "var(--text-secondary)",
-                      fontSize: 12,
-                      fontWeight: 600,
-                      cursor: "pointer",
-                    }}
-                  >
-                    {item.label}
-                  </button>
-                ))}
-              </span>
-            </div>
-          )}
         </div>
       )}
       {platformSupported && <>
