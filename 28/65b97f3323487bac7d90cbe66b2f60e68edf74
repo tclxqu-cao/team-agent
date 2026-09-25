@@ -1,0 +1,19 @@
+docs/superpowers/specs/2026-09-25-web-chat-lane-alignment-design.md
+  s_caf996f096821a::t_38db5769afe6eb 1,7-9,13-14,30-31
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "2865b97f3323487bac7d90cbe66b2f60e68edf74",
+  "prompts": {},
+  "sessions": {
+    "s_caf996f096821a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0d60c-38e0-7ad1-9323-dd32dff5cab9",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
