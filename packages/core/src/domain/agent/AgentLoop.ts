@@ -6,7 +6,7 @@ import type {
 } from './entities.js';
 import { CONTEXT_COMPACTION_PROGRESS_ID } from './entities.js';
 import type { Message, ToolCall } from '../model/entities.js';
-import type { ToolContext } from '../tool/entities.js';
+import type { ToolContext, ToolResult } from '../tool/entities.js';
 import {
   COMPACTION_ACKNOWLEDGEMENT,
   COMPACTION_SUMMARY_PREFIX,
@@ -20,13 +20,29 @@ import { validateRunCheckpoint, type RunCheckpoint } from './run-checkpoint.js';
 
 const TOOL_OBSERVATION_MESSAGE = "__tool_observation__";
 const ITERATION_FINALIZATION_MESSAGE = "__iteration_finalization__";
+const TOOL_CYCLE_WARNING_MESSAGE = "__tool_cycle_warning__";
+const TOOL_CYCLE_FINALIZATION_MESSAGE = "__tool_cycle_finalization__";
+const TOOL_CYCLE_WARNING_REPEATS = 3;
+const TOOL_CYCLE_FINALIZATION_REPEATS = 4;
 const MODEL_TRANSPORT_TIMEOUT_CODE = "model_transport_timeout";
 const LEADING_SKILL_COMMAND = /^\/([-\w\u4e00-\u9fff]+)(?=\s|$)/u;
 
-const iterationFinalizationMessage = (): Message => ({
+type FinalizationReason = "iteration_limit" | "repeated_tool_cycle";
+
+const finalizationMessage = (reason: FinalizationReason): Message => ({
   role: "user",
-  name: ITERATION_FINALIZATION_MESSAGE,
-  content: "The tool-iteration budget is exhausted. Do not call tools. Using only the conversation and tool results already available, provide the best final answer now and state any remaining uncertainty or unverified work.",
+  name: reason === "iteration_limit"
+    ? ITERATION_FINALIZATION_MESSAGE
+    : TOOL_CYCLE_FINALIZATION_MESSAGE,
+  content: reason === "iteration_limit"
+    ? "The tool-iteration budget is exhausted. Do not call tools. Using only the conversation and tool results already available, provide the best final answer now and state any remaining uncertainty or unverified work."
+    : "The same tool batch produced the same result again after a cycle warning. Do not call tools. Using the results already available, provide the best final answer now and state what remains unverified.",
+});
+
+const toolCycleWarningMessage = (): Message => ({
+  role: "user",
+  name: TOOL_CYCLE_WARNING_MESSAGE,
+  content: "The same tool batch has produced the same result three consecutive times. If this is intentional polling or verification, briefly explain the expected state change before retrying. Otherwise use the existing result, change approach, or explain what remains unverified.",
 });
 
 function leadingSkillName(input: string): string | undefined {
@@ -62,7 +78,7 @@ function publicToolResult(result: import("../tool/entities.js").ToolResult): imp
 }
 
 function modelToolObservation(
-  results: Array<import("../tool/entities.js").ToolResult>,
+  results: ToolResult[],
 ): Message | undefined {
   const textObservations = results.flatMap((result) => result.modelContent === undefined
     ? []
@@ -95,6 +111,21 @@ function modelToolObservation(
       ? { images: attachments.map(({ attachment }) => attachment.dataUrl) }
       : {}),
   };
+}
+
+function toolBatchCycleSignature(toolCalls: ToolCall[], results: ToolResult[]): string | undefined {
+  if (toolCalls.length === 0 || toolCalls.length !== results.length) return undefined;
+  // Temporary model-only observations can change even when the public result does not.
+  // Exclude those batches rather than treating UI/screenshot polling as an exact cycle.
+  if (results.some((result) => result.modelContent !== undefined || result.modelAttachments?.length)) {
+    return undefined;
+  }
+  return JSON.stringify(toolCalls.map((toolCall, index) => ({
+    tool: toolCall.name,
+    arguments: toolCall.arguments,
+    result: results[index].content,
+    isError: results[index].isError === true,
+  })));
 }
 
 export class AgentLoop implements IAgentLoop {
@@ -293,15 +324,18 @@ export class AgentLoop implements IAgentLoop {
     let currentText = "";
     let iteration = restored?.iteration ?? 0;
     let pendingToolObservation: Message | undefined;
+    let pendingCycleWarning: Message | undefined;
+    let previousToolBatchSignature: string | undefined;
+    let identicalToolBatchCount = 0;
     if (restored) messages = restored.messages;
     const iterationLimitReached = () => (
       this.config.maxIterations > 0 && iteration >= this.config.maxIterations
     );
-    let finalizationPending = Boolean(
+    let finalizationReason: FinalizationReason | null = Boolean(
       restored?.phase === "ready"
       && iterationLimitReached()
       && messages.some((message) => message.role === "tool"),
-    );
+    ) ? "iteration_limit" : null;
     const checkpoint = async (phase: RunCheckpoint['phase'], pendingToolIds: string[] = [], finalText?: string) => {
       await this.config.runCheckpointStore?.save({
         schema: 1, sessionId, input, workingDirectory: this.config.workingDirectory,
@@ -314,15 +348,16 @@ export class AgentLoop implements IAgentLoop {
     let msgCheckpoint = (await this.config.sessionStore?.get(sessionId))?.messages?.length ?? 0;
 
     // 3. ReAct Loop
-    while (!iterationLimitReached() || finalizationPending) {
+    while (!iterationLimitReached() || finalizationReason !== null) {
       if (this.abortController.signal.aborted) {
         yield { type: "turn_aborted" };
         yield { type: "done", finalText: currentText || "Aborted" };
         return;
       }
 
-      const finalizationOnly = finalizationPending;
-      finalizationPending = false;
+      const activeFinalizationReason = finalizationReason;
+      const finalizationOnly = activeFinalizationReason !== null;
+      finalizationReason = null;
       if (!finalizationOnly) iteration++;
       const requestIndex = iteration + (finalizationOnly ? 1 : 0);
       yield {
@@ -359,11 +394,13 @@ export class AgentLoop implements IAgentLoop {
 
       // Step B: token check → AutoCompact if over threshold
       const messagesForRequest = () => {
-        const withObservation = pendingToolObservation
-          ? [...messages, pendingToolObservation]
+        const transientMessages = [pendingToolObservation, pendingCycleWarning]
+          .filter((message): message is Message => message !== undefined);
+        const withObservation = transientMessages.length > 0
+          ? [...messages, ...transientMessages]
           : messages;
         return finalizationOnly
-          ? [...withObservation, iterationFinalizationMessage()]
+          ? [...withObservation, finalizationMessage(activeFinalizationReason)]
           : withObservation;
       };
       const toolDefs = finalizationOnly ? [] : this.getFilteredToolDefinitions();
@@ -551,6 +588,7 @@ export class AgentLoop implements IAgentLoop {
       // Model-only observations are valid for one request iteration. Network
       // retries above share that request because delivery may not have occurred.
       pendingToolObservation = undefined;
+      pendingCycleWarning = undefined;
 
       // If no tool calls, we're done
       if (toolCalls.length === 0 || hasError) {
@@ -562,10 +600,14 @@ export class AgentLoop implements IAgentLoop {
       // The bounded finalization request never executes tools. A provider that
       // ignores the empty tool set still terminates without another side effect.
       if (finalizationOnly) {
-        try { this.config.diagnosticObserver?.(sessionId, { type: 'iteration_limit', iteration }); } catch { /* observational */ }
+        if (activeFinalizationReason === "iteration_limit") {
+          try { this.config.diagnosticObserver?.(sessionId, { type: 'iteration_limit', iteration }); } catch { /* observational */ }
+        }
         yield {
           type: "done",
-          finalText: currentText || `Reached max iterations (${this.config.maxIterations})`,
+          finalText: currentText || (activeFinalizationReason === "iteration_limit"
+            ? `Reached max iterations (${this.config.maxIterations})`
+            : "Stopped after repeated identical tool results"),
         };
         return;
       }
@@ -663,6 +705,34 @@ export class AgentLoop implements IAgentLoop {
       // and attached to exactly the next provider request.
       pendingToolObservation = modelToolObservation(toolResults);
 
+      // Visible assistant text is progress: it also gives intentional polling a
+      // way to state why another identical observation is still necessary.
+      const toolBatchSignature = currentText.trim()
+        ? undefined
+        : toolBatchCycleSignature(toolCalls, toolResults);
+      if (!toolBatchSignature) {
+        previousToolBatchSignature = undefined;
+        identicalToolBatchCount = 0;
+      } else if (toolBatchSignature === previousToolBatchSignature) {
+        identicalToolBatchCount++;
+      } else {
+        previousToolBatchSignature = toolBatchSignature;
+        identicalToolBatchCount = 1;
+      }
+      if (identicalToolBatchCount === TOOL_CYCLE_WARNING_REPEATS) {
+        pendingCycleWarning = toolCycleWarningMessage();
+      } else if (identicalToolBatchCount >= TOOL_CYCLE_FINALIZATION_REPEATS) {
+        finalizationReason = "repeated_tool_cycle";
+        try {
+          this.config.diagnosticObserver?.(sessionId, {
+            type: "repeated_tool_cycle",
+            iteration,
+            identicalBatches: identicalToolBatchCount,
+            tools: toolCalls.map((toolCall) => toolCall.name),
+          });
+        } catch { /* observational */ }
+      }
+
       // Save complete call/result pairs before compaction or another model request.
       await checkpoint('ready');
 
@@ -702,7 +772,9 @@ export class AgentLoop implements IAgentLoop {
 
       // Reset text for next iteration
       currentText = "";
-      if (iterationLimitReached()) finalizationPending = true;
+      if (finalizationReason === null && iterationLimitReached()) {
+        finalizationReason = "iteration_limit";
+      }
     }
 
     try { this.config.diagnosticObserver?.(sessionId, { type: 'iteration_limit', iteration }); } catch { /* observational */ }

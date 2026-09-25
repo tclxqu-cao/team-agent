@@ -817,6 +817,208 @@ describe("AgentLoop", () => {
     expect(events.at(-1)).toMatchObject({ type: "done", finalText: "completed without an iteration cap" });
   });
 
+  it.each([
+    ["successful", false],
+    ["failed", true],
+  ])("finalizes a repeated %s tool batch after one explicit cycle warning", async (_label, isError) => {
+    const requests: Array<{ messages: Message[]; options?: StreamOptions }> = [];
+    let request = 0;
+    const model = {
+      ...createMockModel(),
+      streamChat: async function* (messages: Message[], options?: StreamOptions): AsyncIterable<StreamEvent> {
+        requests.push({ messages, options });
+        request++;
+        if (!options?.tools?.length) {
+          yield { type: "text_chunk", text: "final answer from existing evidence" };
+          yield { type: "text_done" };
+          return;
+        }
+        yield {
+          type: "tool_call",
+          toolCall: { id: `repeat-${request}`, name: "echo", arguments: { message: "unchanged" } },
+        };
+        yield { type: "text_done" };
+      },
+    };
+    const executor = createMockToolRegistry();
+    const execute = vi.spyOn(executor, "execute").mockImplementation(async () => ({
+      toolCallId: "",
+      content: isError ? "command failed" : "no matches",
+      ...(isError ? { isError: true } : {}),
+    }));
+    const observations: Array<Record<string, unknown>> = [];
+    const events: AgentEvent[] = [];
+
+    for await (const event of new AgentLoop(createConfig({
+      modelProvider: model,
+      toolExecutor: executor,
+      maxIterations: 0,
+      diagnosticObserver: (_sessionId, observation) => observations.push(observation as Record<string, unknown>),
+    })).run("Inspect, then answer", `repeated-${isError ? "error" : "success"}`)) events.push(event);
+
+    expect(execute).toHaveBeenCalledTimes(4);
+    expect(requests).toHaveLength(5);
+    expect(requests[3].options?.tools?.map((tool) => tool.name)).toContain("echo");
+    expect(requests[3].messages).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: "__tool_cycle_warning__", content: expect.stringContaining("three consecutive times") }),
+    ]));
+    expect(requests[4].options?.tools).toBeUndefined();
+    expect(requests[4].messages).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: "__tool_cycle_finalization__", content: expect.stringContaining("Do not call tools") }),
+    ]));
+    expect(observations).toContainEqual(expect.objectContaining({
+      type: "repeated_tool_cycle",
+      iteration: 4,
+      identicalBatches: 4,
+      tools: ["echo"],
+    }));
+    expect(events.at(-1)).toMatchObject({ type: "done", finalText: "final answer from existing evidence" });
+  });
+
+  it("does not treat same-argument polling with changing results as a cycle", async () => {
+    const requests: Array<{ messages: Message[]; options?: StreamOptions }> = [];
+    let request = 0;
+    const model = {
+      ...createMockModel(),
+      streamChat: async function* (messages: Message[], options?: StreamOptions): AsyncIterable<StreamEvent> {
+        requests.push({ messages, options });
+        request++;
+        if (request <= 5) {
+          yield {
+            type: "tool_call",
+            toolCall: { id: `poll-${request}`, name: "echo", arguments: { message: "status" } },
+          };
+          yield { type: "text_done" };
+          return;
+        }
+        yield { type: "text_chunk", text: "polling completed" };
+        yield { type: "text_done" };
+      },
+    };
+    const executor = createMockToolRegistry();
+    let result = 0;
+    const execute = vi.spyOn(executor, "execute").mockImplementation(async () => ({
+      toolCallId: "",
+      content: `status-${++result}`,
+    }));
+    const observations: Array<Record<string, unknown>> = [];
+    const events: AgentEvent[] = [];
+
+    for await (const event of new AgentLoop(createConfig({
+      modelProvider: model,
+      toolExecutor: executor,
+      maxIterations: 0,
+      diagnosticObserver: (_sessionId, observation) => observations.push(observation as Record<string, unknown>),
+    })).run("Wait for completion", "changing-poll-results")) events.push(event);
+
+    expect(execute).toHaveBeenCalledTimes(5);
+    expect(requests).toHaveLength(6);
+    expect(requests.every(({ messages }) => messages.every((message) => message.name !== "__tool_cycle_warning__"))).toBe(true);
+    expect(observations.some((observation) => observation.type === "repeated_tool_cycle")).toBe(false);
+    expect(events.at(-1)).toMatchObject({ type: "done", finalText: "polling completed" });
+  });
+
+  it("allows stable-result polling when the model explains why another poll is necessary", async () => {
+    const requests: Array<{ messages: Message[]; options?: StreamOptions }> = [];
+    let request = 0;
+    const model = {
+      ...createMockModel(),
+      streamChat: async function* (messages: Message[], options?: StreamOptions): AsyncIterable<StreamEvent> {
+        requests.push({ messages, options });
+        request++;
+        if (request <= 5) {
+          if (request === 4) {
+            yield { type: "text_chunk", text: "The job is still running; polling again for completion." };
+          }
+          yield {
+            type: "tool_call",
+            toolCall: { id: `stable-poll-${request}`, name: "echo", arguments: { message: "status" } },
+          };
+          yield { type: "text_done" };
+          return;
+        }
+        yield { type: "text_chunk", text: "polling completed" };
+        yield { type: "text_done" };
+      },
+    };
+    const executor = createMockToolRegistry();
+    const execute = vi.spyOn(executor, "execute").mockResolvedValue({
+      toolCallId: "",
+      content: "still-running",
+    });
+    const observations: Array<Record<string, unknown>> = [];
+    const events: AgentEvent[] = [];
+
+    for await (const event of new AgentLoop(createConfig({
+      modelProvider: model,
+      toolExecutor: executor,
+      maxIterations: 0,
+      diagnosticObserver: (_sessionId, observation) => observations.push(observation as Record<string, unknown>),
+    })).run("Wait for completion", "explained-stable-polling")) events.push(event);
+
+    expect(execute).toHaveBeenCalledTimes(5);
+    expect(requests).toHaveLength(6);
+    expect(requests[3].messages).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        name: "__tool_cycle_warning__",
+        content: expect.stringContaining("intentional polling or verification"),
+      }),
+    ]));
+    expect(observations.some((observation) => observation.type === "repeated_tool_cycle")).toBe(false);
+    expect(events).toContainEqual(expect.objectContaining({
+      type: "text_chunk",
+      text: expect.stringContaining("still running"),
+    }));
+    expect(events.at(-1)).toMatchObject({ type: "done", finalText: expect.stringContaining("polling completed") });
+  });
+
+  it("does not treat repeated public results with model-only observations as a cycle", async () => {
+    const requests: Array<{ messages: Message[]; options?: StreamOptions }> = [];
+    let request = 0;
+    const model = {
+      ...createMockModel(),
+      streamChat: async function* (messages: Message[], options?: StreamOptions): AsyncIterable<StreamEvent> {
+        requests.push({ messages, options });
+        request++;
+        if (request <= 5) {
+          yield {
+            type: "tool_call",
+            toolCall: { id: `observe-${request}`, name: "echo", arguments: { message: "observe" } },
+          };
+          yield { type: "text_done" };
+          return;
+        }
+        yield { type: "text_chunk", text: "observation completed" };
+        yield { type: "text_done" };
+      },
+    };
+    const executor = createMockToolRegistry();
+    let observation = 0;
+    const execute = vi.spyOn(executor, "execute").mockImplementation(async () => ({
+      toolCallId: "",
+      content: "observation captured",
+      modelContent: `private-state-${++observation}`,
+    }));
+    const observations: Array<Record<string, unknown>> = [];
+    const events: AgentEvent[] = [];
+
+    for await (const event of new AgentLoop(createConfig({
+      modelProvider: model,
+      toolExecutor: executor,
+      maxIterations: 0,
+      diagnosticObserver: (_sessionId, value) => observations.push(value as Record<string, unknown>),
+    })).run("Observe until ready", "model-only-poll-results")) events.push(event);
+
+    expect(execute).toHaveBeenCalledTimes(5);
+    expect(requests).toHaveLength(6);
+    expect(requests[5].messages).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: "__tool_observation__", content: expect.stringContaining("private-state-5") }),
+    ]));
+    expect(requests.every(({ messages }) => messages.every((message) => message.name !== "__tool_cycle_warning__"))).toBe(true);
+    expect(observations.some((value) => value.type === "repeated_tool_cycle")).toBe(false);
+    expect(events.at(-1)).toMatchObject({ type: "done", finalText: "observation completed" });
+  });
+
   it("finalizes a restored ready checkpoint at the tool-iteration budget without replaying tools", async () => {
     const requests: Array<{ messages: Message[]; options?: StreamOptions }> = [];
     const model = {

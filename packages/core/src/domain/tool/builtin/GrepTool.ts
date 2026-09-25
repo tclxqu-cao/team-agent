@@ -3,6 +3,26 @@ import type { ITool, ToolContext, ToolResult } from '../entities.js';
 import { readFile, readdir, lstat } from "node:fs/promises";
 import { resolve, join, relative } from "node:path";
 
+function filenameGlob(pattern: string): RegExp {
+  let source = "^";
+  for (const character of pattern) {
+    if (character === "*") source += ".*";
+    else if (character === "?") source += ".";
+    else source += character.replace(/[\\^$.[\]{}()+|]/g, "\\$&");
+  }
+  return new RegExp(`${source}$`);
+}
+
+function includeMatches(filename: string, patterns: string[]): boolean {
+  return patterns.some((pattern) => {
+    if (pattern.includes("*") || pattern.includes("?")) {
+      return filenameGlob(pattern).test(filename);
+    }
+    const extension = pattern.startsWith(".") ? pattern : `.${pattern}`;
+    return filename.endsWith(extension);
+  });
+}
+
 export class GrepTool implements ITool {
   readonly name = "grep";
   readonly description = "Search for a keyword or regex pattern in files. Returns matching lines with file path and line number.";
@@ -11,7 +31,7 @@ export class GrepTool implements ITool {
     path: z.string().optional().describe("File or directory to search in (defaults to working directory)"),
     recursive: z.boolean().optional().describe("Search recursively in directories (default: true)"),
     case_sensitive: z.boolean().optional().describe("Case-sensitive search (default: false)"),
-    include: z.string().optional().describe("Glob-style file extension filter, e.g. '.ts' or '.ts,.js'"),
+    include: z.string().optional().describe("Comma-separated filename globs or extensions, e.g. '*.ts*' or '.ts,.js'"),
     max_results: z.number().optional().describe("Maximum number of matching lines to return (default: 50)"),
   });
   readonly parameters = this.schemaToParams();
@@ -43,8 +63,8 @@ export class GrepTool implements ITool {
       return { toolCallId: "", content: `Invalid regex pattern: ${pattern}`, isError: true };
     }
 
-    const extensions = include
-      ? include.split(",").map((e) => e.trim().replace(/^\*?\.?/, "."))
+    const includePatterns = include
+      ? include.split(",").map((entry) => entry.trim()).filter(Boolean)
       : null;
 
     const results: string[] = [];
@@ -85,7 +105,7 @@ export class GrepTool implements ITool {
         if (s.isDirectory()) {
           if (recursive) await walk(full);
         } else {
-          if (!extensions || extensions.some((ext) => entry.endsWith(ext))) {
+          if (!includePatterns || includeMatches(entry, includePatterns)) {
             await searchFile(full);
           }
         }
@@ -124,7 +144,7 @@ export class GrepTool implements ITool {
         path: { type: "string", description: "File or directory to search in (defaults to working directory)" },
         recursive: { type: "boolean", description: "Search recursively in directories (default: true)" },
         case_sensitive: { type: "boolean", description: "Case-sensitive search (default: false)" },
-        include: { type: "string", description: "File extension filter, e.g. '.ts' or '.ts,.js'" },
+        include: { type: "string", description: "Comma-separated filename globs or extensions, e.g. '*.ts*' or '.ts,.js'" },
         max_results: { type: "number", description: "Maximum number of matching lines to return (default: 50)" },
       },
       required: ["pattern"],
