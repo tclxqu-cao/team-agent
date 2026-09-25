@@ -64,13 +64,19 @@ describe('cross-session quality evidence', () => {
     offline.observations.push({ at: 1, type: 'error', code: 'desktop_offline', message: 'AI Hub desktop offline' });
     const timeout = run('timeout');
     timeout.observations.push({ at: 1, type: 'error', code: 'model_transport_timeout', message: 'The operation was aborted due to timeout' });
+    const openAiAuth = run('openai-auth');
+    openAiAuth.observations.push({ at: 1, type: 'error', message: 'OpenAI API error 401: {"error":{"message":"Incorrect API key provided","type":"invalid_api_key"}}' });
+    const anthropicAuth = run('anthropic-auth');
+    anthropicAuth.observations.push({ at: 1, type: 'error', message: 'Anthropic API error 401: authentication_error: invalid x-api-key' });
     const contextLimit = run('context-limit');
     contextLimit.observations.push({ at: 1, type: 'error', code: 'context_limit', message: 'context exceeded' });
     const generic = run('generic');
-    generic.observations.push({ at: 1, type: 'error', message: 'application invariant failed' });
+    generic.observations.push({ at: 1, type: 'error', message: 'application invariant failed after HTTP 401' });
 
     expect(analyze(offline)).toMatchObject([{ kind: 'environment-error', severe: false }]);
     expect(analyze(timeout)).toMatchObject([{ kind: 'environment-error', severe: false }]);
+    expect(analyze(openAiAuth)).toMatchObject([{ kind: 'environment-error', severe: false }]);
+    expect(analyze(anthropicAuth)).toMatchObject([{ kind: 'environment-error', severe: false }]);
     expect(analyze(contextLimit)).toMatchObject([{ kind: 'agent-error', severe: false }]);
     expect(analyze(generic)).toMatchObject([{ kind: 'agent-error', severe: false }]);
   });
@@ -134,6 +140,22 @@ it('sends an emitted error for immediate diagnosis without waiting for another s
     service.receive({ type: 'progress', id: 'one', eventType: 'error', data: { type: 'error', code: 'context_limit', message: 'exceeded' } });
     expect(repair).toHaveBeenCalledTimes(1);
     expect(JSON.parse(repair.mock.calls[0][1]).summary.sessions).toBe(1);
+  } finally { await service.close(); rmSync(dir, { recursive: true, force: true }); }
+});
+it('records invalid model credentials without dispatching a source repair', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'quality-model-auth-error-'));
+  const repair = vi.fn(async () => ({ status: 'blocked' as const, runDirectory: dir, attempts: [], detail: 'review required' }));
+  const store = new QualityStore(dir);
+  const service = new HarnessCompanion({ sourceRoot: process.cwd(), idleTimeoutMs: 1000 } as HarnessConfig, () => {}, repair, store);
+  try {
+    service.receive({ type: 'begin', id: 'auth', sessionId: 'auth-session', input: 'test', workingDirectory: '/tmp', runtimeVersion: 'v1' });
+    service.receive({ type: 'progress', id: 'auth', eventType: 'error', data: {
+      type: 'error',
+      message: 'OpenAI API error 401: {"error":{"message":"Incorrect API key provided","type":"invalid_api_key"}}',
+    } });
+
+    expect(repair).not.toHaveBeenCalled();
+    expect(store.summarize().issues).toMatchObject([{ kind: 'environment-error', sessions: 1 }]);
   } finally { await service.close(); rmSync(dir, { recursive: true, force: true }); }
 });
 it.each([

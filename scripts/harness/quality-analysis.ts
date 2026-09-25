@@ -16,6 +16,18 @@ export function normalizeError(text: string): string {
 }
 
 const ENVIRONMENT_ERROR_CODES = new Set(['desktop_offline', 'model_transport_timeout']);
+const ENVIRONMENT_ERROR_PATTERNS = [
+  /\binvalid_api_key\b/i,
+  /\bauthentication_error\b/i,
+  /\bincorrect api key\b/i,
+  /\binvalid (?:api key|x-api-key)\b/i,
+];
+
+function isEnvironmentError(event: Observation): boolean {
+  if (ENVIRONMENT_ERROR_CODES.has(String(event.code ?? ''))) return true;
+  const detail = String(event.message ?? event.code ?? '');
+  return ENVIRONMENT_ERROR_PATTERNS.some(pattern => pattern.test(detail));
+}
 
 /** Rules generate hypotheses, never correctness judgments. Only completed calls count as repeats. */
 export function analyze(run: QualityRun): Finding[] {
@@ -42,7 +54,7 @@ export function analyze(run: QualityRun): Finding[] {
     }
     if (event.type === 'error' || event.type === 'fault') {
       const message = normalizeError(String(event.message ?? event.code ?? 'unknown'));
-      const environmentError = event.type === 'error' && ENVIRONMENT_ERROR_CODES.has(String(event.code ?? ''));
+      const environmentError = event.type === 'error' && isEnvironmentError(event);
       const kind = event.type === 'fault' ? 'exception' : environmentError ? 'environment-error' : 'agent-error';
       add(kind, String(event.code ?? '') + message, message, event.type === 'fault');
     }
