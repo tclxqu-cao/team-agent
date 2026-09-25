@@ -41,9 +41,44 @@ function settings(): SharedSettings {
 }
 
 describe("resolveSharedRunModel", () => {
-  it("lets the conversation selection override an agent-bound profile", () => {
+  it("inherits output and timeout limits from the active profile for an ordinary run", () => {
+    const configured = settings();
+    configured.activeProfileId = "aihub-deepseek";
+
+    expect(resolveSharedRunModel(configured, null, {})).toEqual({
+      provider: "aihub",
+      modelId: "deepseek",
+      apiKey: "",
+      baseUrl: "",
+      maxOutputTokens: 32_768,
+      requestTimeoutSeconds: 600,
+    });
+  });
+
+  it("lets an agent-bound profile override the active profile", () => {
+    const configured = settings();
+    configured.activeProfileId = "aihub-deepseek";
+
     expect(resolveSharedRunModel(
-      settings(),
+      configured,
+      { capabilities: { profileId: "server-default" } },
+      {},
+    )).toEqual({
+      provider: "openai",
+      modelId: "server-model",
+      apiKey: "server-key",
+      baseUrl: "",
+      maxOutputTokens: undefined,
+      requestTimeoutSeconds: undefined,
+    });
+  });
+
+  it("lets the conversation selection override agent-bound and active profiles", () => {
+    const configured = settings();
+    configured.activeProfileId = "server-default";
+
+    expect(resolveSharedRunModel(
+      configured,
       { capabilities: { profileId: "server-default" } },
       { profileId: "aihub-deepseek" },
     )).toEqual({
@@ -53,6 +88,18 @@ describe("resolveSharedRunModel", () => {
       baseUrl: "",
       maxOutputTokens: 32_768,
       requestTimeoutSeconds: 600,
+    });
+  });
+
+  it("keeps the legacy flat settings fallback when no active profile is selected", () => {
+    const configured = settings();
+    configured.activeProfileId = "";
+
+    expect(resolveSharedRunModel(configured, null, {})).toEqual({
+      provider: "openai",
+      modelId: "server-model",
+      apiKey: "server-key",
+      baseUrl: "",
     });
   });
 

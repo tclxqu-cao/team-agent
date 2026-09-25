@@ -73,9 +73,13 @@ export function resolveSharedRunModel(
     ? settings.profiles.find((profile) => profile.id === options.profileId)
     : null;
   if (options.profileId && !selectedProfile) throw new Error("所选模型配置不存在，请重新选择");
-  const profile = selectedProfile ?? (definition?.capabilities.profileId
+  const agentBoundProfile = definition?.capabilities.profileId
     ? settings.profiles.find((candidate) => candidate.id === definition.capabilities.profileId)
-    : null);
+    : null;
+  const activeProfile = settings.activeProfileId
+    ? settings.profiles.find((candidate) => candidate.id === settings.activeProfileId)
+    : null;
+  const profile = selectedProfile ?? agentBoundProfile ?? activeProfile;
   return profile
     ? {
         provider: profile.provider,

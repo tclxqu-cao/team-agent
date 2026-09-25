@@ -97,6 +97,8 @@ export function reconcileDurableQueuedMessages<T extends DurableQueuedMessageLik
       )
     ));
     const previous = historyIndex >= 0 ? history[historyIndex] : current;
+    const hasSubsequentRuntimeActivity = historyIndex >= 0
+      && history.slice(historyIndex + 1).some((message) => message.role === "assistant");
     const activeMessage = {
       ...(previous ?? {}),
       id: previous?.id || activeMessageId,
@@ -107,7 +109,11 @@ export function reconcileDurableQueuedMessages<T extends DurableQueuedMessageLik
       images: previous?.images ?? activeItem.messagePayload?.images,
       isQueued: false,
       queueItemId: undefined,
-      sendState: "pending",
+      ...(previous && "sendState" in previous
+        ? { sendState: previous.sendState }
+        : hasSubsequentRuntimeActivity
+          ? {}
+          : { sendState: "pending" as const }),
     } as T;
     if (historyIndex >= 0) history[historyIndex] = activeMessage;
     else history.push(activeMessage);

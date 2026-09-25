@@ -2266,6 +2266,83 @@ describe("Codex model & reasoning-effort overrides", () => {
       { id: "plain-model", displayName: "plain-model" },
     ]);
   });
+
+  it("surfaces the nested app-server error and unwraps provider error JSON", async () => {
+    const client = clientForNotifications([
+      {
+        method: "error",
+        params: {
+          threadId: baseThread.id,
+          turnId: "turn-model",
+          error: {
+            message: JSON.stringify({
+              error: {
+                message: "The 'mimo-v2.5-free' model is not supported when using Codex with a ChatGPT account.",
+                type: "invalid_request_error",
+              },
+            }),
+          },
+          willRetry: false,
+        },
+      },
+    ]);
+    const adapter = new CodexRuntimeAdapter({ client: client as never });
+
+    await expect(drain(adapter.run(baseThread.id, "hi"))).resolves.toEqual([
+      {
+        type: "error",
+        message: "The 'mimo-v2.5-free' model is not supported when using Codex with a ChatGPT account.",
+      },
+    ]);
+  });
+
+  it("keeps the turn open for retriable app-server errors", async () => {
+    const client = clientForNotifications([
+      {
+        method: "error",
+        params: {
+          threadId: baseThread.id,
+          turnId: "turn-model",
+          error: { message: "temporary overload" },
+          willRetry: true,
+        },
+      },
+      {
+        method: "turn/completed",
+        params: {
+          threadId: baseThread.id,
+          turn: { id: "turn-model", status: "completed", items: [] },
+        },
+      },
+    ]);
+    const adapter = new CodexRuntimeAdapter({ client: client as never });
+
+    await expect(drain(adapter.run(baseThread.id, "hi"))).resolves.toEqual([
+      { type: "done", finalText: "" },
+    ]);
+  });
+
+  function clientForNotifications(notifications: Array<{ method: string; params: Record<string, unknown> }>) {
+    let notify: (message: any) => void = () => undefined;
+    return {
+      onNotification: (handler: typeof notify) => {
+        notify = handler;
+        return () => undefined;
+      },
+      onExit: () => () => undefined,
+      setServerRequestHandler: () => undefined,
+      request: async (method: string) => {
+        if (method === "thread/read") return { thread: baseThread };
+        if (method === "thread/resume") return { thread: baseThread };
+        if (method === "turn/start") {
+          queueMicrotask(() => notifications.forEach((notification) => notify(notification)));
+          return { turn: { id: "turn-model" } };
+        }
+        if (method === "thread/unsubscribe") return {};
+        throw new Error(`unexpected request: ${method}`);
+      },
+    };
+  }
 });
 
 describe("Codex occupied-session takeover", () => {

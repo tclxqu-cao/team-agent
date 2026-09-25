@@ -44,6 +44,18 @@ export function saveNativeRunPref(agentType: AgentType, pref: NativeAgentRunPref
   }
 }
 
+/** Drop a persisted model and its model-specific effort once both catalogs prove it unavailable. */
+export function resolveNativeRunPref(
+  pref: NativeAgentRunPref,
+  availableModelKeys: ReadonlySet<string>,
+  catalogReady: boolean,
+): NativeAgentRunPref {
+  if (!catalogReady || !pref.model?.id || availableModelKeys.has(nativeModelKey(pref.model))) {
+    return pref;
+  }
+  return {};
+}
+
 /** Select option value encoding for a model that may be provider-scoped (opencode). */
 export function nativeModelKey(model: RuntimeModelSelection): string {
   return model.providerID ? `${model.providerID}/${model.id}` : model.id;

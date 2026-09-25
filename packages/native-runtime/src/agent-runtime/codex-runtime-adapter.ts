@@ -1577,7 +1577,7 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
       }
       if (this.activeGoalThreads.has(threadId)) {
         if (turn?.status === "failed") {
-          queue.push({ type: "error", message: turn.error?.message ?? "Codex turn failed" });
+          queue.push({ type: "error", message: readCodexErrorMessage(turn.error) ?? "Codex turn failed" });
           queue.close();
         } else if (turn?.status === "interrupted") {
           queue.push({
@@ -1594,7 +1594,7 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
         return;
       }
       if (turn?.status === "failed") {
-        queue.push({ type: "error", message: turn.error?.message ?? "Codex turn failed" });
+        queue.push({ type: "error", message: readCodexErrorMessage(turn.error) ?? "Codex turn failed" });
       } else if (turn?.status === "interrupted") {
         queue.push({
           type: "error",
@@ -1626,7 +1626,13 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
       return;
     }
     if (message.method === "error") {
-      queue.push({ type: "error", message: String(params.message ?? "Codex runtime error") });
+      if (params.willRetry === true) return;
+      queue.push({
+        type: "error",
+        message: readCodexErrorMessage(params.error)
+          ?? readCodexErrorMessage(params.message)
+          ?? "Codex runtime error",
+      });
       queue.close();
     }
   }
@@ -1711,7 +1717,7 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
     const queue = this.activeQueues.get(threadId);
     if (!queue) return;
     if (turn.status === "failed") {
-      queue.push({ type: "error", message: turn.error?.message ?? "Codex turn failed" });
+      queue.push({ type: "error", message: readCodexErrorMessage(turn.error) ?? "Codex turn failed" });
     } else {
       queue.push({ type: "done", finalText: lastCodexAgentText(turn.items ?? []) });
     }
@@ -2601,6 +2607,23 @@ function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
     ? value as Record<string, unknown>
     : { value };
+}
+
+function readCodexErrorMessage(value: unknown): string | undefined {
+  const direct = typeof value === "string"
+    ? value.trim()
+    : typeof asRecord(value).message === "string"
+      ? String(asRecord(value).message).trim()
+      : "";
+  if (!direct) return undefined;
+  try {
+    const envelope = asRecord(JSON.parse(direct));
+    const nested = asRecord(envelope.error).message;
+    if (typeof nested === "string" && nested.trim()) return nested.trim();
+  } catch {
+    // Provider errors are sometimes JSON envelopes and sometimes plain text.
+  }
+  return direct;
 }
 
 function normalizeCodexError(error: unknown): RuntimeSessionError {

@@ -226,6 +226,41 @@ describe("reconcileDurableQueuedMessages", () => {
     ]);
   });
 
+  it("does not restore pending after runtime activity already acknowledged the active message", () => {
+    const acknowledged = {
+      id: "source-1",
+      role: "user",
+      content: "deploy",
+      timestamp: 2,
+      isQueued: false,
+    };
+    const reply = {
+      id: "assistant-1",
+      role: "assistant",
+      content: "working",
+      timestamp: 3,
+    };
+
+    const result = reconcileDurableQueuedMessages([acknowledged, reply], {
+      active: {
+        id: "queue-1",
+        sourceMessageId: "source-1",
+        objective: "deploy",
+        createdAt: 3,
+        kind: "message",
+      },
+      queued: [],
+      history: [],
+    });
+
+    expect(result[0]).toEqual(expect.objectContaining({
+      id: "source-1",
+      isQueued: false,
+    }));
+    expect(result[1]).toEqual(reply);
+    expect(result[0]).not.toHaveProperty("sendState");
+  });
+
   it("reuses the latest matching transcript user message for an active queue item", () => {
     const current = [
       { id: "earlier-same", role: "user", content: "next", timestamp: 1 },

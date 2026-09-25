@@ -17,6 +17,7 @@ import {
   loadNativeRunPref,
   nativeModelFromKey,
   nativeModelKey,
+  resolveNativeRunPref,
   saveNativeRunPref,
   type NativeAgentRunPref,
 } from "../lib/native-agent-run-prefs";
@@ -570,7 +571,7 @@ export default function ChatView({
     () => renderedMessages.findLast((message) => message.executionTrace)?.executionTrace?.turnId,
     [renderedMessages],
   );
-  const { isConfigured, profiles, activeProfileId, switchActiveProfile, loadFromSystem, contextWindow, reasoningEffort, setField, saveToSystem } = useSettingsStore();
+  const { revision: settingsRevision, isConfigured, profiles, activeProfileId, switchActiveProfile, loadFromSystem, contextWindow, reasoningEffort, setField, saveToSystem } = useSettingsStore();
   const viewSessionId = selectedSessionId || sessionId;
   const [occupiedRecoveries, setOccupiedRecoveries] = useState<OccupiedRecoveryRegistry>({});
   const occupiedRecoveriesRef = useRef<OccupiedRecoveryRegistry>({});
@@ -612,6 +613,7 @@ export default function ChatView({
   // every native run (see startRun); the model list comes from each runtime's
   // own connection via /api/agent/models.
   const [nativeModels, setNativeModels] = useState<RuntimeModelInfo[]>([]);
+  const [nativeModelsLoadedAgent, setNativeModelsLoadedAgent] = useState<AgentType | null>(null);
   const nativeModelsAgentRef = useRef<AgentType | null>(null);
   const [nativePref, setNativePref] = useState<NativeAgentRunPref>(() => loadNativeRunPref(composerAgentType));
   const [nativeEffortMenuOpen, setNativeEffortMenuOpen] = useState(false);
@@ -623,12 +625,20 @@ export default function ChatView({
   useEffect(() => {
     if (!isNativeRuntime || !window.agentApi?.listAgentModels) return;
     if (nativeModelsAgentRef.current === composerAgentType) return;
-    nativeModelsAgentRef.current = composerAgentType;
+    const requestedAgentType = composerAgentType;
+    nativeModelsAgentRef.current = requestedAgentType;
     setNativeModels([]);
-    void window.agentApi.listAgentModels(composerAgentType)
-      .then((result) => setNativeModels(result.models ?? []))
+    setNativeModelsLoadedAgent(null);
+    void window.agentApi.listAgentModels(requestedAgentType)
+      .then((result) => {
+        if (nativeModelsAgentRef.current !== requestedAgentType) return;
+        setNativeModels(result.models ?? []);
+        setNativeModelsLoadedAgent(requestedAgentType);
+      })
       .catch(() => {
+        if (nativeModelsAgentRef.current !== requestedAgentType) return;
         setNativeModels([]);
+        setNativeModelsLoadedAgent(null);
         // Allow a retry when the composer renders this agent type again.
         nativeModelsAgentRef.current = null;
       });
@@ -675,7 +685,24 @@ export default function ChatView({
         },
       }));
   }, [isNativeRuntime, profiles, composerAgentType]);
-  const selectedNativeModelKey = nativePref.model?.id ? nativeModelKey(nativePref.model) : "";
+  const availableNativeModelKeys = useMemo(() => new Set([
+    ...runtimeModelOptions.map((option) => option.key),
+    ...profileModelOptions.map((option) => option.key),
+  ]), [runtimeModelOptions, profileModelOptions]);
+  const nativeModelCatalogReady = nativeModelsLoadedAgent === composerAgentType
+    && settingsRevision !== undefined;
+  const effectiveNativePref = useMemo(
+    () => resolveNativeRunPref(nativePref, availableNativeModelKeys, nativeModelCatalogReady),
+    [availableNativeModelKeys, nativeModelCatalogReady, nativePref],
+  );
+  useEffect(() => {
+    if (effectiveNativePref === nativePref) return;
+    setNativePref(effectiveNativePref);
+    saveNativeRunPref(composerAgentType, effectiveNativePref);
+  }, [composerAgentType, effectiveNativePref, nativePref]);
+  const selectedNativeModelKey = effectiveNativePref.model?.id
+    ? nativeModelKey(effectiveNativePref.model)
+    : "";
   const selectedModelEfforts = useMemo<NativeReasoningEffort[] | undefined>(() => {
     const selected = runtimeModelOptions.find((option) => option.key === selectedNativeModelKey);
     if (selected?.reasoningEfforts?.length) return selected.reasoningEfforts;
@@ -688,9 +715,9 @@ export default function ChatView({
     if (composerAgentType === "claude-code") return selectedModelEfforts ?? ["low", "medium", "high", "xhigh"];
     return [];
   }, [isNativeRuntime, composerAgentType, selectedModelEfforts]);
-  const activeNativeEffort = nativePref.reasoningEffort
-    && nativeEffortOptions.includes(nativePref.reasoningEffort)
-    ? nativePref.reasoningEffort
+  const activeNativeEffort = effectiveNativePref.reasoningEffort
+    && nativeEffortOptions.includes(effectiveNativePref.reasoningEffort)
+    ? effectiveNativePref.reasoningEffort
     : undefined;
   const nativeModelPickerReady = runtimeModelOptions.length > 0 || profileModelOptions.length > 0;
 
@@ -3186,7 +3213,7 @@ export default function ChatView({
     try {
       if (window.agentApi) {
         const runNativeOptions = isNativeRuntime && isNativeAgentType(composerAgentType) ? {
-          ...(nativePref.model?.id ? { model: nativePref.model } : {}),
+          ...(effectiveNativePref.model?.id ? { model: effectiveNativePref.model } : {}),
           ...(activeNativeEffort ? { reasoningEffort: activeNativeEffort } : {}),
         } : activeProfileId ? { profileId: activeProfileId } : undefined;
         await window.agentApi.run(
