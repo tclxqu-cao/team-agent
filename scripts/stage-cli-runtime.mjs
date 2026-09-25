@@ -116,7 +116,6 @@ for (const prebuild of await readdir(sqlitePrebuilds)) {
   }
 }
 
-await removeMatchingFiles(resolve(target, "node_modules"), (name) => name.endsWith(".map") || name.endsWith(".d.ts") || name.endsWith(".pdb"));
 // node-pty ships source/build dirs we never need at runtime.
 await rm(resolve(target, "node_modules/node-pty/third_party"), { recursive: true, force: true });
 await rm(resolve(target, "node_modules/node-pty/deps"), { recursive: true, force: true });
@@ -144,6 +143,10 @@ for (const { dir, dist } of [
     `${JSON.stringify({ name, version: "0.2.0", type: "module", main: "./dist/index.js", exports: "./dist/index.js" }, null, 2)}\n`,
   );
 }
+
+// The @agent dist copies above land after the first cleanup pass, so their
+// emitted .map/.d.ts/.pdb files must be stripped here or they ship in the package.
+await removeMatchingFiles(resolve(target, "node_modules"), (name) => name.endsWith(".map") || name.endsWith(".d.ts") || name.endsWith(".pdb"));
 
 const webappDist = resolve(root, "packages/webapp/dist");
 await mustExist(resolve(webappDist, "index.html"));
