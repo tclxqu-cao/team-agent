@@ -1,0 +1,46 @@
+packages/native-runtime/src/agent-runtime/codex-runtime-adapter.ts
+  s_438ba1ea8769fe::t_0c40e1afa83133 36,41,183,230,261,530,741-744,749-760
+  s_438ba1ea8769fe::t_eef9130082a8d0 877,885-889,893-897,910
+  s_438ba1ea8769fe::t_3ae367c7212719 2148-2177
+packages/native-runtime/src/agent-runtime/native-runtime-broker.test.ts
+  s_438ba1ea8769fe::t_755e4ed5a11b7c 1929
+  s_438ba1ea8769fe::t_fbc1ec7238387e 1563-1589
+packages/native-runtime/src/agent-runtime/codex-runtime-adapter.test.ts
+  s_438ba1ea8769fe::t_3ae367c7212719 2519-2527,2568-2574,2581-2608
+  s_438ba1ea8769fe::t_78354424102c78 2575-2580
+  s_438ba1ea8769fe::t_04878f8e36fa15 2609-2610
+packages/native-runtime/src/agent-runtime/codex-rollout-activity.ts
+  s_438ba1ea8769fe::t_0c40e1afa83133 22-27,43-52,316-425,427-429
+  s_3f2565b4f84945::t_d9487bc71bfa55 426,430
+packages/native-runtime/src/agent-runtime/codex-rollout-activity.test.ts
+  s_438ba1ea8769fe::t_3ae367c7212719 8,230-261
+  s_3f2565b4f84945::t_926b6629489934 262
+.agent/skills/homepage-content-render/SKILL.md
+  s_3f2565b4f84945::t_4ed3b8a8920720 19
+packages/native-runtime/src/agent-runtime/native-runtime-broker.ts
+  s_438ba1ea8769fe::t_88b395120afab2 1426,1442-1448,1882-1883,1886-1891
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "11e1379a048edad3adadee05ec421cd2fba34e52",
+  "prompts": {},
+  "sessions": {
+    "s_3f2565b4f84945": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0c871-5134-7792-931a-669b4a91cd7c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_438ba1ea8769fe": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0d42b-4c5e-7dc0-a4d7-3d5001389422",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
