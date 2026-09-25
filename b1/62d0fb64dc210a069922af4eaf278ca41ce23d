@@ -1,0 +1,14 @@
+scripts/stage-cli-runtime.mjs
+  h_86bb4e0e04237b 147-150
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "b162d0fb64dc210a069922af4eaf278ca41ce23d",
+  "prompts": {},
+  "humans": {
+    "h_86bb4e0e04237b": {
+      "author": "caoqu <qu.cao@ly.com>"
+    }
+  }
+}
