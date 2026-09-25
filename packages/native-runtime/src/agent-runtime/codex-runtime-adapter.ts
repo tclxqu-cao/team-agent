@@ -33,10 +33,12 @@ import type { CodexAppServerLaunchMode } from "./codex-app-server-launcher.js";
 import {
   CodexRolloutActivityReader,
   CodexRolloutCommentaryReader,
+  CodexRolloutUserMessageReader,
   readCodexRolloutFinalizingAnswer,
   type CodexRolloutActivity,
   type CodexRolloutCommentarySnapshot,
   type CodexRolloutFinalAnswer,
+  type CodexRolloutUserMessage,
 } from "./codex-rollout-activity.js";
 import { parseImageDataUrls, type ParsedImageDataUrl } from "./image-input.js";
 import { listOpenSessionFiles } from "./native-processes.js";
@@ -178,6 +180,7 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
   private readonly imageStorageRoot: string;
   private readonly rolloutActivityReader: Pick<CodexRolloutActivityReader, "readMany">;
   private readonly rolloutCommentaryReader: Pick<CodexRolloutCommentaryReader, "read">;
+  private readonly rolloutUserMessageReader: Pick<CodexRolloutUserMessageReader, "read">;
   private readonly agentMessagePhases = new Map<string, "commentary" | "final_answer">();
   /** Flipped off permanently only when the app-server lacks the paginated turn protocol. */
   private nativePagingSupported = true;
@@ -224,6 +227,7 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
     imageStorageRoot?: string;
     rolloutActivityReader?: Pick<CodexRolloutActivityReader, "readMany">;
     rolloutCommentaryReader?: Pick<CodexRolloutCommentaryReader, "read">;
+    rolloutUserMessageReader?: Pick<CodexRolloutUserMessageReader, "read">;
     codexExecutable?: string;
     environment?: NodeJS.ProcessEnv;
     homeDir?: string;
@@ -254,6 +258,7 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
     this.platform = options.platform ?? process.platform;
     this.rolloutActivityReader = options.rolloutActivityReader ?? new CodexRolloutActivityReader();
     this.rolloutCommentaryReader = options.rolloutCommentaryReader ?? new CodexRolloutCommentaryReader();
+    this.rolloutUserMessageReader = options.rolloutUserMessageReader ?? new CodexRolloutUserMessageReader();
     this.standaloneDiscoveryRestartIntervalMs = Math.max(
       0,
       options.standaloneDiscoveryRestartIntervalMs ?? STANDALONE_DISCOVERY_RESTART_INTERVAL_MS,
@@ -522,7 +527,7 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
 
     let ascTurns: CodexTurn[];
     try {
-      ascTurns = await this.loadSummaryTurns(nativeSessionId);
+      ascTurns = await this.loadSummaryTurns(nativeSessionId, meta.thread.path);
     } catch (error) {
       throw this.normalizePagedError(error);
     }
@@ -733,12 +738,26 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
   }
 
   /** thread/turns/list answers newest-first; history needs rollout order. */
-  private async loadSummaryTurns(nativeSessionId: string): Promise<CodexTurn[]> {
+  private async loadSummaryTurns(
+    nativeSessionId: string,
+    knownRolloutPath?: string | null,
+  ): Promise<CodexTurn[]> {
     const response = await this.client.request<{ data?: CodexTurn[] }>("thread/turns/list", {
       threadId: nativeSessionId,
       itemsView: "summary",
     });
-    return (response.data ?? []).slice().reverse();
+    const turns = (response.data ?? []).slice().reverse();
+    let rolloutPath = knownRolloutPath;
+    if (rolloutPath === undefined) {
+      const detail = await this.client.request<{ thread: CodexThread }>("thread/read", {
+        threadId: nativeSessionId,
+        includeTurns: false,
+      });
+      rolloutPath = detail.thread.path;
+    }
+    if (!rolloutPath) return turns;
+    const userMessages = await this.rolloutUserMessageReader.read(rolloutPath);
+    return mergeCodexSummaryUserMessages(turns, userMessages);
   }
 
   /**
@@ -855,7 +874,7 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
   }
 
   private selectNativeRange(
-    skeleton: Array<{ role: "user" | "assistant" }>,
+    skeleton: Array<{ turnId: string; role: "user" | "assistant" }>,
     query: SessionHistoryQuery,
     revision: string,
   ): { start: number; end: number; kind: "latest" | "anchored" } {
@@ -863,15 +882,19 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
     const pageSize = normalizeNativePageSize(query.limit);
     const boundaryEnd = (start: number, size: number): number => {
       let end = Math.min(total, start + size);
-      while (end < total && skeleton[end]?.role !== "user") end += 1;
+      while (
+        end < total
+        && end > 0
+        && skeleton[end]?.turnId === skeleton[end - 1]?.turnId
+      ) end += 1;
       return end;
     };
     const boundaryStart = (nominal: number): number => {
-      if (nominal <= 0 || skeleton[nominal]?.role === "user") return Math.max(0, nominal);
-      for (let index = nominal - 1; index >= 0; index -= 1) {
-        if (skeleton[index].role === "user") return index;
-      }
-      return 0;
+      if (nominal <= 0 || nominal >= total) return Math.max(0, nominal);
+      const turnId = skeleton[nominal]?.turnId;
+      let start = nominal;
+      while (start > 0 && skeleton[start - 1]?.turnId === turnId) start -= 1;
+      return start;
     };
     if (query.anchor) {
       const target = decodeSessionHistoryAnchor(query.anchor, revision);
@@ -884,7 +907,7 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
       return { start, end: boundaryEnd(start, requiredPageSize), kind: "anchored" };
     }
     if (query.after) {
-      const start = decodeNativeHistoryCursor(query.after, total);
+      const start = boundaryStart(decodeNativeHistoryCursor(query.after, total));
       return { start, end: boundaryEnd(start, pageSize), kind: "anchored" };
     }
     const end = decodeNativeHistoryCursor(query.before, total);
@@ -2120,6 +2143,36 @@ function codexUserImagePaths(entries: Array<Record<string, unknown>> | undefined
       ? [entry.path]
       : []
   ));
+}
+
+function mergeCodexSummaryUserMessages(
+  turns: CodexTurn[],
+  rolloutMessages: ReadonlyMap<string, CodexRolloutUserMessage[]>,
+): CodexTurn[] {
+  return turns.map((turn) => {
+    const durable = rolloutMessages.get(turn.id);
+    if (!durable?.length) return turn;
+    const summaryUsers = (turn.items ?? []).filter((item) => item.type === "userMessage");
+    const users: CodexItem[] = durable.map((message) => ({
+      type: "userMessage",
+      ...(message.itemId ? { id: message.itemId } : {}),
+      content: message.content,
+    }));
+    for (const summaryUser of summaryUsers) {
+      const duplicate = users.some((candidate) => (
+        Boolean(summaryUser.id && candidate.id === summaryUser.id)
+        || JSON.stringify(candidate.content) === JSON.stringify(summaryUser.content)
+      ));
+      if (!duplicate) users.unshift(summaryUser);
+    }
+    return {
+      ...turn,
+      items: [
+        ...users,
+        ...(turn.items ?? []).filter((item) => item.type !== "userMessage"),
+      ],
+    };
+  });
 }
 
 function codexSummaryTurnsToMessages(

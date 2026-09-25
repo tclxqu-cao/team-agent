@@ -1423,6 +1423,7 @@ export class NativeRuntimeBrokerHost {
     agentIds?: string[],
     agentName?: string,
     runOverrides?: Pick<RuntimeRunOptions, "model" | "reasoningEffort">,
+    admissionOptions: { deferIfCodexRunning?: boolean } = {},
   ): Promise<BrokerRunStart> {
     this.state.assertSessionVisible(sessionId);
     const settlingExecution = this.activeExecutions.get(sessionId);
@@ -1437,6 +1438,13 @@ export class NativeRuntimeBrokerHost {
           throw new RuntimeSessionError("Codex session is still stopping", "SESSION_ALREADY_RUNNING");
         }
         this.cancellationConfirmationTimeouts.delete(sessionId);
+      }
+      if (
+        admissionOptions.deferIfCodexRunning
+        && decoded.agentType === "codex"
+        && detail.status === "running"
+      ) {
+        throw new RuntimeSessionError("Codex session is already running", "SESSION_ALREADY_RUNNING");
       }
       // Codex occupancy is advisory; the attempted takeover either succeeds
       // (clearing the stale marker) or fails authoritatively inside the run,
@@ -1871,8 +1879,16 @@ export class NativeRuntimeBrokerHost {
           item.id,
           item.messagePayload?.agentIds,
           item.messagePayload?.agentName,
+          undefined,
+          { deferIfCodexRunning: true },
         );
       } catch (error) {
+        if (error instanceof RuntimeSessionError && error.code === "SESSION_ALREADY_RUNNING") {
+          // A shared Codex app-server can keep the native turn alive across a
+          // broker restart. Retain this durable queue item until the next
+          // reconciliation observes the native turn as idle.
+          return undefined;
+        }
         logGlobal("error", "native-broker", "goal queue run failed", error, {
           sessionId: item.sessionId,
           goalId: item.id,

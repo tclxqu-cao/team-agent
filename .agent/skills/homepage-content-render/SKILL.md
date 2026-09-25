@@ -16,6 +16,7 @@ Contract:
 
 - `skill` is the canonical content kind: `portfolio-help`, `portfolio-whoami`, `portfolio-works`, `portfolio-jobs`, `portfolio-timeline`, `portfolio-contact`, `portfolio-project-<id>`, or `portfolio-chat`.
 - `blocks` contains 1 to 24 `text`, `html`, `image`, or `video` blocks.
+- An HTML block puts its markup in `html`, never `text`. Example: `{"type":"html","html":"<div class='artifact-panel'>...</div>"}`.
 - Every `image` or `video` block must put its media path in `src`, never `url`. A video poster stays in `poster`. Example: `{"type":"video","src":"/assets/demo.mp4","poster":"/assets/demo.jpg"}`.
 - Use `html` only for meaningful structured layouts. Allowed reusable classes include `artifact-grid`, `artifact-flow-step`, `artifact-panel`, `artifact-meta`, and `artifact-actions`.
 - Because `html` is inside a double-quoted JSON string, use single quotes for every HTML attribute. Never place an unescaped double quote inside the `html` value.

@@ -2516,7 +2516,15 @@ describe("Codex native paged history", () => {
           if (turnsListError) throw turnsListError;
           const desc = [...(opts.sourceTurns ?? turns)].reverse();
           if (params.itemsView === "summary") {
-            return { data: desc.map((t) => ({ ...t, items: t.items.filter((i: any) => i.type === "userMessage" || i.type === "agentMessage") })) };
+            return {
+              data: desc.map((t) => ({
+                ...t,
+                items: [
+                  t.items.find((i: any) => i.type === "userMessage"),
+                  [...t.items].reverse().find((i: any) => i.type === "agentMessage"),
+                ].filter(Boolean),
+              })),
+            };
           }
           const start = params.cursor ? Number(params.cursor.replace("c", "")) : 0;
           const slice = desc.slice(start, start + (params.limit ?? 5));
@@ -2555,6 +2563,49 @@ describe("Codex native paged history", () => {
     expect(requests.some((request) => (
       request.method === "thread/read" && request.params.includeTurns === true
     ))).toBe(false);
+  });
+
+  it("restores every durable user message when Codex steers input into one turn", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "codex-steered-core-history-"));
+    temporaryDirectories.push(directory);
+    const path = join(directory, "rollout.jsonl");
+    const steeredTurn = turn("steered", 1);
+    steeredTurn.items = [
+      steeredTurn.items[0],
+      {
+        type: "userMessage",
+        id: "user-follow-up",
+        content: [{ type: "text", text: "follow-up", text_elements: [] }],
+      },
+      steeredTurn.items.at(-1)!,
+    ];
+    const durableUser = (id: string, text: string) => JSON.stringify({
+      type: "event_msg",
+      payload: {
+        type: "item_completed",
+        turn_id: "steered",
+        item: { type: "UserMessage", id, content: [{ type: "text", text, text_elements: [] }] },
+      },
+    });
+    await writeFile(path, [
+      durableUser(String(steeredTurn.items[0].id), "q-steered"),
+      durableUser("user-follow-up", "follow-up"),
+      "",
+    ].join("\n"));
+    const requests: Array<{ method: string; params: any }> = [];
+    const adapter = new CodexRuntimeAdapter({
+      client: pagingClientFor(requests, { sourceTurns: [steeredTurn], threadPath: path }) as never,
+    });
+
+    const detail = await adapter.getSessionPaged("cx-paged", { limit: 1, view: "core" });
+
+    expect(detail.messages.map((message) => message.content)).toEqual([
+      "q-steered",
+      "follow-up",
+      "s-steered",
+    ]);
+    expect(detail.history).toMatchObject({ totalItems: 3, pageSize: 3, hasMore: false });
+    expect(requests.filter((request) => request.params.itemsView === "full")).toHaveLength(0);
   });
 
   it("does not expose an unphased running agent summary as a final answer", async () => {

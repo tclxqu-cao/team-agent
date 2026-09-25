@@ -5,6 +5,7 @@ import { join } from "node:path";
 import {
   CodexRolloutActivityReader,
   CodexRolloutCommentaryReader,
+  CodexRolloutUserMessageReader,
   codexRolloutActivityFromLine,
   readCodexRolloutFinalizingAnswer,
 } from "./codex-rollout-activity.js";
@@ -224,5 +225,38 @@ describe("CodexRolloutCommentaryReader", () => {
         { itemId: "message-2", text: "正在运行测试" },
       ],
     });
+  });
+});
+
+describe("CodexRolloutUserMessageReader", () => {
+  const userMessage = (turnId: string, itemId: string, text: string) => JSON.stringify({
+    type: "event_msg",
+    payload: {
+      type: "item_completed",
+      turn_id: turnId,
+      item: {
+        type: "UserMessage",
+        id: itemId,
+        content: [{ type: "text", text, text_elements: [] }],
+      },
+    },
+  });
+
+  it("keeps every user message in one turn and incrementally reads appended input", async () => {
+    const path = await temporaryRollout(`${userMessage("turn-1", "user-1", "first")}\n`);
+    const reader = new CodexRolloutUserMessageReader(31);
+
+    await expect(reader.read(path)).resolves.toEqual(new Map([
+      ["turn-1", [{
+        turnId: "turn-1",
+        itemId: "user-1",
+        content: [{ type: "text", text: "first", text_elements: [] }],
+      }]],
+    ]));
+
+    await appendFile(path, `${userMessage("turn-1", "user-2", "follow-up")}\n`);
+    const messages = await reader.read(path);
+    expect(messages.get("turn-1")?.map((message) => message.content[0].text))
+      .toEqual(["first", "follow-up"]);
   });
 });

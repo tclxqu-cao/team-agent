@@ -1560,6 +1560,33 @@ describe("NativeRuntimeBrokerHost", () => {
     }
   });
 
+  it("keeps a queued message pending while a restarted Codex turn is still running", async () => {
+    const runtime = new FakeNativeRuntime();
+    runtime.status = "running";
+    const host = new NativeRuntimeBrokerHost(await directory(), runtime as unknown as UnifiedSessionService);
+    try {
+      const queued = await host.enqueueMessage(sessionId, {
+        sourceMessageId: "chat-after-restart",
+        content: "start after native idle",
+      });
+
+      expect(queued.started).toBeUndefined();
+      expect(queued.state.active).toMatchObject({
+        kind: "message",
+        objective: "start after native idle",
+      });
+      expect(runtime.runInputs).toEqual([]);
+
+      runtime.status = "idle";
+      runtime.immediateTerminal = true;
+      await host.getGoals(sessionId);
+      await waitFor(() => expect(runtime.runInputs).toHaveLength(1));
+      expect(runtime.runInputs[0].input).toBe("start after native idle");
+    } finally {
+      await host.stop();
+    }
+  });
+
   it("waits for interrupted adapter cleanup before admitting the next run", async () => {
     const runtime = new FakeNativeRuntime();
     runtime.rejectOverlappingRuns = true;
@@ -1899,6 +1926,7 @@ describe("NativeRuntimeBrokerHost", () => {
   it("attempts takeover of an occupied codex session and clears the lock when it succeeds", async () => {
     const runtime = new FakeNativeRuntime();
     runtime.occupancy = "owned-externally";
+    runtime.status = "running";
     runtime.immediateTerminal = true;
     const host = new NativeRuntimeBrokerHost(await directory(), runtime as unknown as UnifiedSessionService);
     try {

@@ -19,6 +19,12 @@ export interface CodexRolloutCommentarySnapshot {
   itemOrder: string[];
 }
 
+export interface CodexRolloutUserMessage {
+  turnId: string;
+  itemId?: string;
+  content: Array<Record<string, unknown>>;
+}
+
 interface CommentaryTurnCache {
   commentary: Map<string, CodexRolloutCommentary>;
   itemOrder: string[];
@@ -32,6 +38,16 @@ interface CommentaryCacheEntry {
   trailing: Buffer;
   trailingOverflow: boolean;
   turns: Map<string, CommentaryTurnCache>;
+}
+
+interface UserMessageCacheEntry {
+  identity: string;
+  size: number;
+  mtimeMs: number;
+  trailing: Buffer;
+  trailingOverflow: boolean;
+  turns: Map<string, CodexRolloutUserMessage[]>;
+  itemIds: Set<string>;
 }
 
 interface ActivityCacheEntry {
@@ -291,6 +307,121 @@ export class CodexRolloutCommentaryReader {
         ...(itemId ? { itemId } : {}),
         text,
       });
+    } catch {
+      // Writers can leave an incomplete final JSONL record between file events.
+    }
+  }
+}
+
+/**
+ * Incrementally reads only durable user-message items from a rollout. Codex
+ * turn summaries expose the first user message per turn, so steered inputs
+ * need this lightweight source to remain visible in core history.
+ */
+export class CodexRolloutUserMessageReader {
+  private readonly cache = new Map<string, UserMessageCacheEntry>();
+
+  constructor(private readonly chunkSize = DEFAULT_CHUNK_SIZE) {
+    if (!Number.isInteger(chunkSize) || chunkSize <= 0) {
+      throw new Error("Codex rollout user-message chunk size must be a positive integer");
+    }
+  }
+
+  async read(path: string): Promise<Map<string, CodexRolloutUserMessage[]>> {
+    let handle: FileHandle | null = null;
+    try {
+      handle = await open(path, "r");
+      const metadata = await handle.stat();
+      if (!metadata.isFile()) return new Map();
+      const identity = `${metadata.dev}:${metadata.ino}`;
+      const previous = this.cache.get(path);
+      const canContinue = previous
+        && previous.identity === identity
+        && metadata.size >= previous.size
+        && (metadata.size > previous.size || metadata.mtimeMs === previous.mtimeMs);
+      const entry: UserMessageCacheEntry = canContinue
+        ? previous
+        : {
+            identity,
+            size: 0,
+            mtimeMs: metadata.mtimeMs,
+            trailing: Buffer.alloc(0),
+            trailingOverflow: false,
+            turns: new Map(),
+            itemIds: new Set(),
+          };
+      await this.readAppended(handle, entry, metadata.size);
+      entry.size = metadata.size;
+      entry.mtimeMs = metadata.mtimeMs;
+      this.cache.set(path, entry);
+      if (this.cache.size > 64) this.cache.delete(this.cache.keys().next().value!);
+      return new Map([...entry.turns].map(([turnId, messages]) => [turnId, [...messages]]));
+    } catch {
+      this.cache.delete(path);
+      return new Map();
+    } finally {
+      await handle?.close().catch(() => undefined);
+    }
+  }
+
+  private async readAppended(
+    handle: FileHandle,
+    entry: UserMessageCacheEntry,
+    targetSize: number,
+  ): Promise<void> {
+    let offset = entry.size;
+    while (offset < targetSize) {
+      const length = Math.min(this.chunkSize, targetSize - offset);
+      const chunk = Buffer.allocUnsafe(length);
+      const { bytesRead } = await handle.read(chunk, 0, length, offset);
+      if (bytesRead <= 0) break;
+      offset += bytesRead;
+      let content = chunk.subarray(0, bytesRead);
+      if (entry.trailingOverflow) {
+        const newline = content.indexOf(0x0a);
+        if (newline < 0) continue;
+        content = content.subarray(newline + 1);
+        entry.trailingOverflow = false;
+      } else if (entry.trailing.length > 0) {
+        content = Buffer.concat([entry.trailing, content]);
+      }
+
+      const lastNewline = content.lastIndexOf(0x0a);
+      if (lastNewline < 0) {
+        entry.trailing = content.length <= MAX_BUFFERED_LINE_BYTES ? Buffer.from(content) : Buffer.alloc(0);
+        entry.trailingOverflow = content.length > MAX_BUFFERED_LINE_BYTES;
+        continue;
+      }
+      const complete = content.subarray(0, lastNewline).toString("utf8").split("\n");
+      for (const line of complete) this.consumeLine(entry, line);
+      const trailing = content.subarray(lastNewline + 1);
+      entry.trailing = trailing.length <= MAX_BUFFERED_LINE_BYTES ? Buffer.from(trailing) : Buffer.alloc(0);
+      entry.trailingOverflow = trailing.length > MAX_BUFFERED_LINE_BYTES;
+    }
+  }
+
+  private consumeLine(entry: UserMessageCacheEntry, line: string): void {
+    if (!line.trim()) return;
+    try {
+      const record = JSON.parse(line) as Record<string, unknown>;
+      const payload = asRecord(record.payload);
+      if (record.type !== "event_msg" || payload.type !== "item_completed") return;
+      const item = asRecord(payload.item);
+      if (asString(item.type).toLowerCase() !== "usermessage" || !Array.isArray(item.content)) return;
+      const turnId = asString(payload.turn_id)
+        || asString(item.turn_id)
+        || asString(asRecord(item.internal_chat_message_metadata_passthrough).turn_id);
+      if (!turnId) return;
+      const itemId = asString(item.id);
+      if (itemId && entry.itemIds.has(itemId)) return;
+      if (itemId) entry.itemIds.add(itemId);
+      const messages = entry.turns.get(turnId) ?? [];
+      messages.push({
+        turnId,
+        ...(itemId ? { itemId } : {}),
+        content: item.content.map(asRecord),
+      });
+      entry.turns.set(turnId, messages);
     } catch {
       // Writers can leave an incomplete final JSONL record between file events.
     }
