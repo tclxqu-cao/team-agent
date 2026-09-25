@@ -2181,6 +2181,7 @@ function codexSummaryTurnsToMessages(
 ): Message[] {
   const messages: Message[] = [];
   for (const turn of turns) {
+    let segmentIndex = 0;
     const legacyFinalAgentMessage = codexLegacyFinalAgentMessage(turn);
     for (const item of turn.items ?? []) {
       if (item.type === "userMessage") {
@@ -2197,7 +2198,7 @@ function codexSummaryTurnsToMessages(
           role: "user",
           content: normalized.content,
           presentation: {
-            executionTrace: { turnId: turn.id },
+            executionTrace: { turnId: turn.id, segmentIndex },
             ...(normalized.rawContent ? { rawContent: normalized.rawContent } : {}),
             ...(imagePaths.length > 0 ? {
               attachments: imagePaths.map((path) => imageAttachments?.get(path) ?? {
@@ -2206,6 +2207,7 @@ function codexSummaryTurnsToMessages(
             } : {}),
           },
         });
+        segmentIndex += 1;
       } else if (
         isCodexCoreAgentMessage(item, turn.status, legacyFinalAgentMessage)
         && typeof item.text === "string"
@@ -2278,8 +2280,10 @@ export async function codexTurnsToMessages(
 ): Promise<Message[]> {
   const messages: Message[] = [];
   for (const turn of turns) {
+    let segmentIndex = -1;
     for (const item of turn.items ?? []) {
       if (item.type === "userMessage") {
+        segmentIndex += 1;
         const entries = item.content as Array<Record<string, unknown>> | undefined;
         const sourceText = entries
           ?.filter((entry) => entry.type === "text" && typeof entry.text === "string")
@@ -2306,7 +2310,13 @@ export async function codexTurnsToMessages(
         // Pending async questions are replayed as broker ask_user events.
         // Keep their text only in completed history, without a duplicate live card.
         if (item.delivery === "async" && turn.status === "inProgress") continue;
-        const presentation = codexAgentMessagePresentation(item);
+        const nativePresentation = codexAgentMessagePresentation(item);
+        const presentation = nativePresentation?.agentMessagePhase === "commentary" && options.toolResultMode
+          ? {
+              ...nativePresentation,
+              executionTrace: { turnId: turn.id, segmentIndex: Math.max(0, segmentIndex) },
+            }
+          : nativePresentation;
         messages.push({
           role: "assistant",
           content: item.text,
@@ -2334,7 +2344,12 @@ export async function codexTurnsToMessages(
             ...(codexTraceHistoryId(turn.id, "reasoning", item.id) ? {
               historyId: codexTraceHistoryId(turn.id, "reasoning", item.id),
             } : {}),
-            presentation: { reasoning },
+            presentation: {
+              reasoning,
+              ...(options.toolResultMode ? {
+                executionTrace: { turnId: turn.id, segmentIndex: Math.max(0, segmentIndex) },
+              } : {}),
+            },
           });
         }
       } else {
@@ -2347,6 +2362,11 @@ export async function codexTurnsToMessages(
           content: "",
           ...(codexTraceHistoryId(turn.id, "tool-call", item.id) ? {
             historyId: codexTraceHistoryId(turn.id, "tool-call", item.id),
+          } : {}),
+          ...(options.toolResultMode ? {
+            presentation: {
+              executionTrace: { turnId: turn.id, segmentIndex: Math.max(0, segmentIndex) },
+            },
           } : {}),
           toolCalls: [convertedToolCall],
         });

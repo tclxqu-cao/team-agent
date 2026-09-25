@@ -35,6 +35,22 @@ describe("tool call grouping", () => {
     expect(result[0].toolCalls?.map((call) => call.id)).toEqual(["call-1", "call-2"]);
   });
 
+  it("coalesces trace-scoped tool carriers", () => {
+    const messages = [
+      {
+        ...toolMessage("message-1", toolCall("call-1", "shell")),
+        presentation: { executionTrace: { turnId: "turn-1", segmentIndex: 0 } },
+      },
+      {
+        ...toolMessage("message-2", toolCall("call-2", "bash")),
+        presentation: { executionTrace: { turnId: "turn-1", segmentIndex: 0 } },
+      },
+    ];
+
+    expect(coalesceAdjacentToolCallMessages(messages)[0].toolCalls?.map((call) => call.id))
+      .toEqual(["call-1", "call-2"]);
+  });
+
   it("appends pure tool messages to a preceding assistant message that already has content and tools", () => {
     const first: ChatMessage = {
       ...toolMessage("message-1", toolCall("call-1", "shell")),

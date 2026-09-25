@@ -24,6 +24,7 @@ import {
 import {
   findLatestContextUsage,
   reduceNativeSubagentActivities,
+  resolveVisibleSessionMessages,
   useAgentStore,
   type StreamEvent,
   type CronTask,
@@ -528,6 +529,7 @@ export default function ChatView({
   );
   const {
     messages,
+    messagesBySession,
     runningSessionId,
     appendText,
     addMessage,
@@ -560,12 +562,18 @@ export default function ChatView({
   const [goalState, setGoalState] = useState<SessionGoalState>({ active: null, queued: [], history: [] });
   const [threadGoal, setThreadGoal] = useState<ThreadGoalInfo | null>(null);
   const [codexTraceRefreshSignal, setCodexTraceRefreshSignal] = useState(0);
+  const visibleMessages = resolveVisibleSessionMessages(
+    messages,
+    messagesBySession,
+    sessionId,
+    selectedSessionId,
+  );
   const renderedMessages = useMemo(
     () => coalesceAdjacentToolCallMessages(hideQueuedGoalMessages(
-      messages.filter((message) => !message.isQueued),
+      visibleMessages.filter((message) => !message.isQueued),
       goalState.queued,
     )),
-    [goalState.queued, messages],
+    [goalState.queued, visibleMessages],
   );
   const latestCodexExecutionTurnId = useMemo(
     () => renderedMessages.findLast((message) => message.executionTrace)?.executionTrace?.turnId,
@@ -1125,7 +1133,7 @@ export default function ChatView({
     if (!anchor || !container) return;
     container.scrollTop = anchor.scrollTop + (container.scrollHeight - anchor.scrollHeight);
     prependScrollAnchorRef.current = null;
-  }, [messages]);
+  }, [visibleMessages]);
 
   useLayoutEffect(() => {
     const messageId = pendingQueryScrollRef.current;
@@ -1137,14 +1145,14 @@ export default function ChatView({
     scrollMessageToCenter(container, target);
     pendingQueryScrollRef.current = null;
     setActiveQueryMessageId(messageId);
-  }, [messages]);
+  }, [visibleMessages]);
 
   useLayoutEffect(() => {
     const container = messagesScrollRef.current;
     if (!pendingLatestScrollRef.current || !container || historyWindowMode !== "latest") return;
     pendingLatestScrollRef.current = false;
     container.scrollTop = container.scrollHeight;
-  }, [historyWindowMode, messages]);
+  }, [historyWindowMode, visibleMessages]);
 
   // Auto-follow mode scrolls to the bottom right after this effect, so the
   // arrow only needs recomputing when auto-scroll is suppressed ("skip").
@@ -1155,7 +1163,7 @@ export default function ChatView({
     setShowJumpToBottom(
       container.scrollHeight - container.scrollTop - container.clientHeight > JUMP_TO_BOTTOM_THRESHOLD_PX,
     );
-  }, [messages]);
+  }, [visibleMessages]);
 
   // ── Voice: dictation (input) + per-message TTS (output) ────────────────
   const [isRecording, setIsRecording] = useState(false);
@@ -1534,7 +1542,7 @@ export default function ChatView({
     // Streaming updates must not leave an in-flight smooth animation that can
     // fight a reader who starts scrolling upward.
     messagesEndRef.current?.scrollIntoView({ behavior: "auto" });
-  }, [messages]);
+  }, [visibleMessages]);
 
   // Global event listener — receives both user-initiated and cron-fired events.
   // handleEvent filters by _sid so only events for the current session are shown.
@@ -3824,7 +3832,7 @@ export default function ChatView({
           padding: "var(--chat-messages-padding)",
         }}>
 
-        {messages.length > 0 && (isLoadingOlderHistory || olderHistoryError) && (
+        {visibleMessages.length > 0 && (isLoadingOlderHistory || olderHistoryError) && (
           <div
             className="chat-history-page-status"
             role={olderHistoryError ? "alert" : "status"}
@@ -3871,7 +3879,7 @@ export default function ChatView({
           </div>
         )}
 
-        {messages.length === 0 && isInitialHistoryLoading && showInitialHistoryLoading && (
+        {visibleMessages.length === 0 && isInitialHistoryLoading && showInitialHistoryLoading && (
           <div className="chat-history-initial-loading" role="status" style={{
             height: "100%",
             display: "flex",
@@ -3888,7 +3896,7 @@ export default function ChatView({
           </div>
         )}
 
-        {messages.length === 0 && !isRunning && !isInitialHistoryLoading && !error && (
+        {visibleMessages.length === 0 && !isRunning && !isInitialHistoryLoading && !error && (
           <EmptySessionWelcome
             key={viewSessionId ?? "initial-empty-session"}
             agentType={sessionSummary?.agentType ?? activeAgentType}

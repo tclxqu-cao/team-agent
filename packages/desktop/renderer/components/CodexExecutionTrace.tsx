@@ -9,6 +9,7 @@ import { CircleAlert, LoaderCircle, Workflow } from "lucide-react";
 import type { ChatMessage } from "../stores/agentStore";
 import {
   applyCodexExecutionToolResult,
+  codexExecutionSegmentMessages,
   mergeCodexExecutionMessages,
 } from "../lib/codex-execution-trace";
 import { coalesceAdjacentToolCallMessages, groupAdjacentToolCallEntries } from "../lib/tool-call-groups";
@@ -43,7 +44,8 @@ export default function CodexExecutionTrace({
   refreshSignal = 0,
   autoLoad = false,
 }: CodexExecutionTraceProps) {
-  const scope = trace.turnId;
+  const segmentIndex = trace.segmentIndex ?? 0;
+  const scope = `${trace.turnId}:${segmentIndex}`;
   const scopeRef = useRef(scope);
   const revisionRef = useRef(trace.revision);
   const handledRefreshSignalRef = useRef(refreshSignal);
@@ -74,9 +76,13 @@ export default function CodexExecutionTrace({
   }, [trace.revision]);
 
   const liveMessages = trace.liveMessages ?? [];
+  const persistedMessages = useMemo(
+    () => codexExecutionSegmentMessages(messages ?? [], segmentIndex),
+    [messages, segmentIndex],
+  );
   const displayMessages = useMemo(
-    () => mergeCodexExecutionMessages(messages ?? [], liveMessages),
-    [liveMessages, messages],
+    () => mergeCodexExecutionMessages(persistedMessages, liveMessages),
+    [liveMessages, persistedMessages],
   );
   const hasMessages = messages !== null || liveMessages.length > 0;
 

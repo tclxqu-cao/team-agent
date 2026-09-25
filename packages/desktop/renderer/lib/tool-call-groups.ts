@@ -9,13 +9,14 @@ export interface ToolCallRenderGroup<T> {
 }
 
 function isAssistantWithToolCalls(message: ChatMessage): boolean {
+  const presentationKeys = Object.keys(message.presentation ?? {});
   return message.role === "assistant"
     && Boolean(message.toolCalls?.length)
     && !message.isCompactionSummary
     && !message.widget
     && !message.askUser
     && !message.images?.length
-    && !message.presentation;
+    && presentationKeys.every((key) => key === "executionTrace");
 }
 
 function isToolOnlyAssistant(message: ChatMessage): boolean {

@@ -3,6 +3,7 @@ import { messageActionPolicy } from "../lib/message-actions";
 import {
   findLatestContextUsage,
   reduceNativeSubagentActivities,
+  resolveVisibleSessionMessages,
   useAgentStore,
   type ContextUsageSnapshot,
 } from "./agentStore";
@@ -34,6 +35,17 @@ describe("agentStore session message cache", () => {
       todos: [],
       cronTasks: [],
     });
+  });
+
+  it("hides the previous session while a newly selected session takes over the store", () => {
+    const previous = [{ id: "old", role: "assistant" as const, content: "old history", timestamp: 1 }];
+    const next = [{ id: "new", role: "user" as const, content: "new question", timestamp: 2 }];
+
+    expect(resolveVisibleSessionMessages(previous, { new: next }, "old", "new")).toEqual(next);
+    expect(resolveVisibleSessionMessages(previous, {}, "old", "empty")).toEqual([]);
+    expect(resolveVisibleSessionMessages(previous, { old: previous }, "old", null)).toEqual([]);
+    expect(resolveVisibleSessionMessages(previous, { old: previous }, "old", "old")).toBe(previous);
+    expect(resolveVisibleSessionMessages(previous, { old: previous }, "old", undefined)).toBe(previous);
   });
 
   it("keeps background session text out of the visible message list", () => {

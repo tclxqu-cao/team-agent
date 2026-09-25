@@ -2573,9 +2573,23 @@ describe("Codex native paged history", () => {
     steeredTurn.items = [
       steeredTurn.items[0],
       {
+        type: "commandExecution",
+        id: "call-before-steer",
+        command: "pwd",
+        cwd: "/repo",
+        aggregatedOutput: "/repo",
+      },
+      {
         type: "userMessage",
         id: "user-follow-up",
         content: [{ type: "text", text: "follow-up", text_elements: [] }],
+      },
+      {
+        type: "commandExecution",
+        id: "call-after-steer",
+        command: "bun test",
+        cwd: "/repo",
+        aggregatedOutput: "passed",
       },
       steeredTurn.items.at(-1)!,
     ];
@@ -2604,8 +2618,27 @@ describe("Codex native paged history", () => {
       "follow-up",
       "s-steered",
     ]);
+    expect(detail.messages.filter((message) => message.role === "user").map((message) => (
+      message.presentation?.executionTrace
+    ))).toEqual([
+      { turnId: "steered", segmentIndex: 0 },
+      { turnId: "steered", segmentIndex: 1 },
+    ]);
     expect(detail.history).toMatchObject({ totalItems: 3, pageSize: 3, hasMore: false });
     expect(requests.filter((request) => request.params.itemsView === "full")).toHaveLength(0);
+
+    const trace = await adapter.getSessionPaged("cx-paged", {
+      view: "trace",
+      revision: detail.history?.revision,
+      turnId: "steered",
+    });
+    expect(trace.messages.filter((message) => message.toolCalls?.length).map((message) => ({
+      id: message.toolCalls?.[0].id,
+      trace: message.presentation?.executionTrace,
+    }))).toEqual([
+      { id: "call-before-steer", trace: { turnId: "steered", segmentIndex: 0 } },
+      { id: "call-after-steer", trace: { turnId: "steered", segmentIndex: 1 } },
+    ]);
   });
 
   it("does not expose an unphased running agent summary as a final answer", async () => {
@@ -2799,7 +2832,7 @@ describe("Codex native paged history", () => {
 
     const core = await adapter.getSessionPaged("cx-paged", { ...query, view: "core" });
     expect(core.messages.map((message) => message.content)).toEqual(["q-t4", "s-t4"]);
-    expect(core.messages[0].presentation?.executionTrace).toEqual({ turnId: "t4" });
+    expect(core.messages[0].presentation?.executionTrace).toEqual({ turnId: "t4", segmentIndex: 0 });
     expect(requests.filter((request) => request.params.itemsView === "full")).toHaveLength(0);
 
     const trace = await adapter.getSessionPaged("cx-paged", {

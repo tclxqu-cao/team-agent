@@ -53,7 +53,7 @@ describe("shared Codex-style message history", () => {
     expect(chatView).toContain("const showThinkingFallback = isRunning");
     expect(chatView).toContain("&& !hasStreamingReasoning");
     expect(chatView).toContain("&& !hasVisibleRunningTool;");
-    expect(chatView).toContain("messages.length === 0 && !isRunning");
+    expect(chatView).toContain("visibleMessages.length === 0 && !isRunning");
   });
 
   it("starts every run with a fresh thinking timer before exposing the running state", () => {
@@ -163,7 +163,7 @@ describe("shared Codex-style message history", () => {
     expect(chatView).not.toContain("isExecutionTraceMessage");
     expect(chatView).not.toContain("chat-message-group--trace");
     expect(chatView).toContain('streaming={isRunning && isLastAssistant && agentActivity === "thinking"}');
-    expect(chatView).toContain("messages.filter((message) => !message.isQueued)");
+    expect(chatView).toContain("visibleMessages.filter((message) => !message.isQueued)");
     expect(globalCss).not.toContain(".chat-message-group--trace::before");
     expect(globalCss).not.toContain(".chat-message-group--trace::after");
     expect(globalCss).toContain(".chat-view--codex-history .agent-activity-indicator");
@@ -252,7 +252,7 @@ describe("shared Codex-style message history", () => {
     expect(selectedSessionLoad).toContain("const cachedMessages = getMessagesForSession(targetSid);");
     expect(selectedSessionLoad).toContain("setMessages(cachedMessages, targetSid);");
     expect(selectedSessionLoad).not.toContain("slowLoadingTimer");
-    expect(chatView).toContain("messages.length === 0 && isInitialHistoryLoading && showInitialHistoryLoading");
+    expect(chatView).toContain("visibleMessages.length === 0 && isInitialHistoryLoading && showInitialHistoryLoading");
   });
 
   it("follows selected native history immediately and limits fallback polling", () => {

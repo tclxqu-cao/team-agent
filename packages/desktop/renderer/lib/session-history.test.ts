@@ -89,7 +89,11 @@ describe("restoreSessionHistoryPage", () => {
       "codex-execution-trace:turn-1",
       "history-message.v1.1.answer",
     ]);
-    expect(restored[1].executionTrace).toEqual({ turnId: "turn-1", revision: "rev-1" });
+    expect(restored[1].executionTrace).toEqual({
+      turnId: "turn-1",
+      revision: "rev-1",
+      segmentIndex: 0,
+    });
   });
 
   it("restores already-streamed Codex tools into the disclosure after a refresh", () => {

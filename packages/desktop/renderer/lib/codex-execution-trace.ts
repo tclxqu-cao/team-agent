@@ -11,26 +11,33 @@ export function groupCodexExecutionTrace(
   revision: string,
 ): ChatMessage[] {
   const grouped: ChatMessage[] = [];
+  const nextSegmentByTurn = new Map<string, number>();
   for (let index = 0; index < messages.length; index += 1) {
     const message = messages[index];
     grouped.push(message);
-    const turnId = message.role === "user"
-      ? message.presentation?.executionTrace?.turnId
+    const tracePresentation = message.role === "user"
+      ? message.presentation?.executionTrace
       : undefined;
+    const turnId = tracePresentation?.turnId;
     if (!turnId) continue;
+    const segmentIndex = tracePresentation.segmentIndex ?? nextSegmentByTurn.get(turnId) ?? 0;
+    nextSegmentByTurn.set(turnId, Math.max(nextSegmentByTurn.get(turnId) ?? 0, segmentIndex + 1));
     const existing = messages[index + 1];
-    if (existing?.executionTrace?.turnId === turnId) {
+    if (
+      existing?.executionTrace?.turnId === turnId
+      && (existing.executionTrace.segmentIndex ?? 0) === segmentIndex
+    ) {
       grouped.push({
         ...existing,
-        executionTrace: { ...existing.executionTrace, turnId, revision },
+        executionTrace: { ...existing.executionTrace, turnId, revision, segmentIndex },
       });
       index += 1;
     } else {
       grouped.push({
-        id: `codex-execution-trace:${turnId}`,
+        id: codexExecutionTraceId(turnId, segmentIndex),
         role: "assistant" as const,
         content: "",
-        executionTrace: { turnId, revision },
+        executionTrace: { turnId, revision, segmentIndex },
         timestamp: message.timestamp,
       });
     }
@@ -162,7 +169,17 @@ export function applyCodexLiveExecutionEvent(
   event: CodexLiveExecutionEvent,
   timestamp = Date.now(),
 ): ChatMessage[] {
-  const traceIndex = messages.findIndex((message) => message.executionTrace?.turnId === turnId);
+  const matchingEventTraceIndex = messages.findLastIndex((message) => (
+    message.executionTrace?.turnId === turnId
+    && traceContainsEvent(message.executionTrace.liveMessages ?? [], event)
+  ));
+  const latestTraceIndex = messages.findLastIndex((message) => message.executionTrace?.turnId === turnId);
+  const latestUserIndex = messages.findLastIndex((message) => message.role === "user" && !message.isQueued);
+  const traceIndex = matchingEventTraceIndex >= 0
+    ? matchingEventTraceIndex
+    : latestTraceIndex > latestUserIndex || (latestTraceIndex >= 0 && !messages[latestUserIndex]?.isSteered)
+      ? latestTraceIndex
+      : -1;
   const currentLive = traceIndex >= 0
     ? messages[traceIndex].executionTrace?.liveMessages ?? []
     : [];
@@ -181,15 +198,21 @@ export function applyCodexLiveExecutionEvent(
   }
 
   if (nextLive === currentLive) return [...messages];
-  const userIndex = messages.findLastIndex((message) => message.role === "user" && !message.isQueued);
+  const userIndex = latestUserIndex;
   if (userIndex < 0) return [...messages];
+  const segmentIndex = messages.reduce((latest, message) => (
+    message.executionTrace?.turnId === turnId
+      ? Math.max(latest, message.executionTrace.segmentIndex ?? 0)
+      : latest
+  ), -1) + 1;
   const trace: ChatMessage = {
-    id: `codex-execution-trace:${turnId}`,
+    id: codexExecutionTraceId(turnId, segmentIndex),
     role: "assistant",
     content: "",
     executionTrace: {
       turnId,
       revision: `live:${turnId}`,
+      segmentIndex,
       liveMessages: nextLive,
     },
     timestamp,
@@ -199,6 +222,42 @@ export function applyCodexLiveExecutionEvent(
     trace,
     ...messages.slice(userIndex + 1),
   ];
+}
+
+function codexExecutionTraceId(turnId: string, segmentIndex: number): string {
+  return segmentIndex === 0
+    ? `codex-execution-trace:${turnId}`
+    : `codex-execution-trace:${turnId}:${segmentIndex}`;
+}
+
+function traceContainsEvent(
+  messages: readonly ChatMessage[],
+  event: CodexLiveExecutionEvent,
+): boolean {
+  if (event.type === "text_chunk") {
+    if (!event.itemId) return false;
+    return messages.some((message) => message.id === `codex-trace:${event.turnId}:agent:${event.itemId}`);
+  }
+  if (event.type === "reasoning_summary_delta") {
+    return messages.some((message) => message.presentation?.reasoning?.some(
+      (section) => section.itemId === event.itemId,
+    ));
+  }
+  const toolCallId = event.type === "tool_call" ? event.toolCall.id : event.result.toolCallId;
+  return messages.some((message) => message.toolCalls?.some((toolCall) => toolCall.id === toolCallId));
+}
+
+export function codexExecutionSegmentMessages(
+  messages: readonly ChatMessage[],
+  segmentIndex: number,
+): ChatMessage[] {
+  const hasSegmentMetadata = messages.some(
+    (message) => message.presentation?.executionTrace?.segmentIndex !== undefined,
+  );
+  if (!hasSegmentMetadata) return segmentIndex === 0 ? [...messages] : [];
+  return messages.filter(
+    (message) => message.presentation?.executionTrace?.segmentIndex === segmentIndex,
+  );
 }
 
 function mergeReasoningSections(

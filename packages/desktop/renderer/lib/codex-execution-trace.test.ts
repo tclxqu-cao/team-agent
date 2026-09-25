@@ -4,6 +4,7 @@ import {
   applyCodexLiveExecutionEvent,
   applyCodexExecutionToolResult,
   codexExecutionItemCount,
+  codexExecutionSegmentMessages,
   groupCodexExecutionTrace,
   isCodexExecutionCarrier,
   mergeCodexExecutionMessages,
@@ -30,7 +31,11 @@ describe("Codex execution trace projection", () => {
       ["codex-execution-trace:turn-1", ""],
       ["answer-1", "done"],
     ]);
-    expect(projected[1].executionTrace).toEqual({ turnId: "turn-1", revision: "rev-1" });
+    expect(projected[1].executionTrace).toEqual({
+      turnId: "turn-1",
+      revision: "rev-1",
+      segmentIndex: 0,
+    });
     expect(groupCodexExecutionTrace(projected, "rev-1")).toEqual(projected);
   });
 
@@ -122,6 +127,102 @@ describe("Codex execution trace projection", () => {
         toolCalls: [expect.objectContaining({ id: "call-1", result: "/repo" })],
       })],
     });
+  });
+
+  it("splits live execution around a steered message and routes late results to their owning segment", () => {
+    const initial = [message({ id: "user-1", role: "user", content: "run" })];
+    const withFirstCall = applyCodexLiveExecutionEvent(initial, "turn-1", {
+      type: "tool_call",
+      turnId: "turn-1",
+      toolCall: { id: "call-1", name: "shell", arguments: { command: "pwd" } },
+    }, 2);
+    const withSteer = [
+      ...withFirstCall,
+      message({ id: "user-2", role: "user", content: "also inspect tests", isSteered: true }),
+    ];
+    const withSecondCall = applyCodexLiveExecutionEvent(withSteer, "turn-1", {
+      type: "tool_call",
+      turnId: "turn-1",
+      toolCall: { id: "call-2", name: "shell", arguments: { command: "bun test" } },
+    }, 3);
+    const withLateFirstResult = applyCodexLiveExecutionEvent(withSecondCall, "turn-1", {
+      type: "tool_result",
+      turnId: "turn-1",
+      result: { toolCallId: "call-1", content: "/repo" },
+    }, 4);
+
+    expect(withLateFirstResult.map((entry) => entry.id)).toEqual([
+      "user-1",
+      "codex-execution-trace:turn-1",
+      "user-2",
+      "codex-execution-trace:turn-1:1",
+    ]);
+    expect(withLateFirstResult.filter((entry) => entry.executionTrace).map((entry) => (
+      entry.executionTrace?.segmentIndex
+    ))).toEqual([0, 1]);
+    expect(withLateFirstResult[1].executionTrace?.liveMessages?.[0].toolCalls?.[0])
+      .toMatchObject({ id: "call-1", result: "/repo" });
+    const secondCall = withLateFirstResult[3].executionTrace?.liveMessages?.[0].toolCalls?.[0];
+    expect(secondCall).toMatchObject({ id: "call-2" });
+    expect(secondCall).not.toHaveProperty("result");
+  });
+
+  it("projects one stable execution trace for each same-turn user segment", () => {
+    const projected = groupCodexExecutionTrace([
+      message({
+        id: "user-1",
+        role: "user",
+        content: "run",
+        presentation: { executionTrace: { turnId: "turn-1", segmentIndex: 0 } },
+      }),
+      message({
+        id: "user-2",
+        role: "user",
+        content: "also inspect tests",
+        presentation: { executionTrace: { turnId: "turn-1", segmentIndex: 1 } },
+      }),
+      message({ id: "answer-1", role: "assistant", content: "done" }),
+    ], "rev-1");
+
+    expect(projected.map((entry) => entry.id)).toEqual([
+      "user-1",
+      "codex-execution-trace:turn-1",
+      "user-2",
+      "codex-execution-trace:turn-1:1",
+      "answer-1",
+    ]);
+    expect(projected.filter((entry) => entry.executionTrace).map((entry) => entry.executionTrace))
+      .toEqual([
+        { turnId: "turn-1", revision: "rev-1", segmentIndex: 0 },
+        { turnId: "turn-1", revision: "rev-1", segmentIndex: 1 },
+      ]);
+  });
+
+  it("selects persisted execution carriers by segment while preserving legacy traces", () => {
+    const segmented = [
+      message({
+        id: "tool-1",
+        role: "assistant",
+        presentation: { executionTrace: { turnId: "turn-1", segmentIndex: 0 } },
+        toolCalls: [{ id: "call-1", name: "shell", arguments: {} }],
+      }),
+      message({
+        id: "tool-2",
+        role: "assistant",
+        presentation: { executionTrace: { turnId: "turn-1", segmentIndex: 1 } },
+        toolCalls: [{ id: "call-2", name: "shell", arguments: {} }],
+      }),
+    ];
+    const legacy = [message({
+      id: "legacy-tool",
+      role: "assistant",
+      toolCalls: [{ id: "legacy-call", name: "shell", arguments: {} }],
+    })];
+
+    expect(codexExecutionSegmentMessages(segmented, 0).map((entry) => entry.id)).toEqual(["tool-1"]);
+    expect(codexExecutionSegmentMessages(segmented, 1).map((entry) => entry.id)).toEqual(["tool-2"]);
+    expect(codexExecutionSegmentMessages(legacy, 0)).toEqual(legacy);
+    expect(codexExecutionSegmentMessages(legacy, 1)).toEqual([]);
   });
 
   it("merges repeated live items with a trace snapshot by stable item IDs", () => {
@@ -371,6 +472,7 @@ describe("Codex execution trace projection", () => {
     expect(projected[1].executionTrace).toEqual({
       turnId: "turn-1",
       revision: "rev-2",
+      segmentIndex: 0,
       liveMessages,
     });
   });

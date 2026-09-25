@@ -128,6 +128,7 @@ export interface ChatMessage {
   executionTrace?: {
     turnId: string;
     revision: string;
+    segmentIndex?: number;
     liveMessages?: ChatMessage[];
   };
   /** True when this user message is queued and waiting for the current run to finish */
@@ -203,6 +204,18 @@ interface AgentState {
   clearMessages: (sessionId?: string) => void;
   setTodos: (todos: TodoItem[]) => void;
   setCronTasks: (tasks: CronTask[]) => void;
+}
+
+export function resolveVisibleSessionMessages(
+  messages: ChatMessage[],
+  messagesBySession: Record<string, ChatMessage[]>,
+  storeSessionId: string | null,
+  selectedSessionId: string | null | undefined,
+): ChatMessage[] {
+  if (selectedSessionId !== undefined && selectedSessionId !== storeSessionId) {
+    return selectedSessionId ? messagesBySession[selectedSessionId] ?? [] : [];
+  }
+  return messages;
 }
 
 function canAppendAssistantOutput(message: ChatMessage | undefined): message is ChatMessage {
