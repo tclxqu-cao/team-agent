@@ -1,16 +1,17 @@
-# Web Chat Lane Alignment
+# Desktop And Web Chat Lane Alignment
 
 ## Problem
 
 The shared Codex history styles cap message groups at 860px, while the Web shell
 uses a 92% lane for the message viewport and composer. On wide Web viewports this
-leaves a large empty strip beside the conversation. The fallback activity row is
-also outside the centered message group, so `思考中` can appear left of the
-conversation.
+leaves a large empty strip beside the conversation. In both Desktop and Web, the
+fallback activity row is outside the centered message group, so `思考中` can
+appear left of the conversation.
 
 ## Design
 
-- Keep the existing 860px reading lane for Electron.
+- Keep the existing 860px reading lane for Electron, but apply that lane's width
+  and centering to its fallback activity row.
 - In the Web shell, let message groups, execution traces, non-compact runtime
   progress rows, and fallback activity rows use the full width of the existing
   Web chat lane.
@@ -26,7 +27,8 @@ conversation.
 - On a wide Web viewport, assistant text, tool rows, reasoning rows, execution
   traces, and `思考中` share the same left and right content boundaries as the
   composer lane.
-- `思考中` no longer drifts to the left and does not create a growing blank row.
+- In both Desktop and Web, `思考中` no longer drifts to the left and does not
+  create a growing blank row.
 - Electron retains its current centered 860px message lane.
 - Narrow Web viewports remain free of horizontal overflow.
 
