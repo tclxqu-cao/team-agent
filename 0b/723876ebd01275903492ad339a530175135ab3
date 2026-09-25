@@ -1,0 +1,26 @@
+packages/webapp/src/presentation/parent-tab-swipe.ts
+  s_0c843d4c57cd87::t_5d61232c8355db 17,46-47,64-66,131
+packages/webapp/src/presentation/parent-tab-swipe.test.ts
+  s_0c843d4c57cd87::t_5d61232c8355db 14,23-25,39-63,68-70,78,87-89
+docs/superpowers/specs/2026-09-24-webapp-edge-tab-swipe-design.md
+  s_0c843d4c57cd87::t_5d61232c8355db 1-16
+docs/superpowers/plans/2026-09-24-webapp-edge-tab-swipe.md
+  s_0c843d4c57cd87::t_8ab25b5f18541a 29,33,37,43
+  s_0c843d4c57cd87::t_5d61232c8355db 1-28,30-32,34-36,38-42,44-51
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "0b723876ebd01275903492ad339a530175135ab3",
+  "prompts": {},
+  "sessions": {
+    "s_0c843d4c57cd87": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ce6c-e085-7c01-a177-4997c9aeeaf4",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

@@ -1,0 +1,31 @@
+packages/cli/package.json
+  s_0d2645ce1b1bef::t_c06d8e4940d791 3,29-30,33-34
+packages/runtime-darwin-arm64/manifest.json
+  s_0d2645ce1b1bef::t_f8ffd43560b22e 2,7
+packages/runtime-darwin-arm64/package.json
+  s_0d2645ce1b1bef::t_e3893abbbf504b 3
+packages/runtime-win32-x64/manifest.json
+  s_0d2645ce1b1bef::t_eb47a1d4ddcd80 2,7-8
+packages/runtime-win32-x64/package.json
+  s_0d2645ce1b1bef::t_d8c18b8b7cd12e 3
+packages/tui-darwin-arm64/package.json
+  s_0d2645ce1b1bef::t_fd24e378829225 3
+packages/tui-win32-x64/package.json
+  s_0d2645ce1b1bef::t_8f0886c1d18600 3
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "2f97dee6103cc8faeb2a2d18eb843b318064145b",
+  "prompts": {},
+  "sessions": {
+    "s_0d2645ce1b1bef": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0c445-5c36-7030-b47e-3caa1a40aa37",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

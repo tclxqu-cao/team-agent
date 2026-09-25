@@ -1,0 +1,19 @@
+docs/superpowers/specs/2026-09-24-native-queue-admission-singleflight-design.md
+  s_397fbdbb852926::t_8419115dadf0bc 1-95
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "1901fd2781453aaa7d645cd9c14e8b1ef3557964",
+  "prompts": {},
+  "sessions": {
+    "s_397fbdbb852926": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0d0ba-1b63-7161-882b-86607438447d",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

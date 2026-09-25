@@ -1,0 +1,56 @@
+.agent/skills/homepage-orchestrator/SKILL.md
+  s_0b7ae78449458f::t_c6d50ee0e0fb4e 12
+  s_0b7ae78449458f::t_5add31ea62243b 11,13
+packages/core/src/domain/agent/AgentLoop.ts
+  s_9b092980b8cb75::t_f8b7ca2a36dc3a 9,23-26,30-42,44,81,116-130,327-329,334,338,351,358-360,397-400,403,591,603-605,608-610,710-735,775-777
+  s_6d3d8918a94f58::t_9e533ed83c57a6 45,708-709
+packages/core/src/domain/tool/builtin/GrepTool.test.ts
+  s_978c156a2244fb::t_ad808ff2f7ac6f 1-45,47-50,52-70
+  s_978c156a2244fb::t_1fdbf4f928d083 46,51
+packages/core/src/domain/tool/builtin/GrepTool.ts
+  s_978c156a2244fb::t_ad808ff2f7ac6f 6-25,34,66-67,108,147
+packages/core/src/domain/agent/__tests__/AgentLoop.test.ts
+  s_6d3d8918a94f58::t_9e533ed83c57a6 921-974
+  s_9b092980b8cb75::t_f8b7ca2a36dc3a 820-920
+  s_9b092980b8cb75::t_7df944706c06ce 975-1021
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "1109a105e7c43ac4a0bd5e20f6d48cfca886ab1e",
+  "prompts": {},
+  "sessions": {
+    "s_0b7ae78449458f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0c83e-853b-7bb0-9e86-8c1ea79b5d36",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_6d3d8918a94f58": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0d649-13c0-7230-bf56-bdd0d21f039c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_978c156a2244fb": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0d60d-a4e3-7eb2-ad36-bbcca9e2473d",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_9b092980b8cb75": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0d623-aac5-7640-9e38-4a1b4c172334",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

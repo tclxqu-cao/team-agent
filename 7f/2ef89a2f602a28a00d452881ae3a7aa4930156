@@ -1,0 +1,56 @@
+packages/native-runtime/src/agent-runtime/codex-app-server-launcher.ts
+  s_15246d8362847e::t_d4b6d43d688bad 108-112,114-119,122-126,130-131
+  s_15246d8362847e::t_2adb0d977c8e83 46,68,98-107,113,120-121,127-129,132
+  s_15246d8362847e::t_7c813f2a94f75f 1-45,47-67,69-97,133-183
+packages/native-runtime/package.json
+  s_15246d8362847e::t_d7573d8005f074 17-21
+packages/native-runtime/src/agent-runtime/codex-app-server-client.test.ts
+  s_15246d8362847e::t_2adb0d977c8e83 13,24,478
+  s_15246d8362847e::t_603cc70538fdac 45
+  s_15246d8362847e::t_289deca589ef6b 186,188,229,260,263,298,461,471
+  s_15246d8362847e::t_9bc5786b47ef01 1,66-68,71-132,135-157,235,403,444
+  s_15246d8362847e::t_0286687e7c111f 332-398
+  s_15246d8362847e::t_d449b9a2dd6a75 5,8-12,14-18,25,32-35,43-44,46-65,69-70,133-134,180,217,230-234,236-259,261-262,264-297,299-331,399-402,404-443,445-460,462-470,472-477,479-499
+  s_bd20ce99e6a8be::t_c494f5f7e40cb7 158
+docs/superpowers/specs/2026-09-24-shared-codex-app-server-fallback-design.md
+  s_15246d8362847e::t_5c56ce1c992012 39,43,55-57,59,104
+docs/superpowers/plans/2026-09-24-shared-codex-app-server-fallback.md
+  s_15246d8362847e::t_9cc4d6297067f8 1-6,8,10-14,16-31,33-46,48-75,77-93,95,98-99,102,104-120,122-128,130-134,136-142,144,160-163,165-176,178,180,182-192,194-205,207-209,211-215,217-226
+  s_15246d8362847e::t_5c56ce1c992012 7,9,15,94,96-97,100-101,145-157,159,179
+  s_15246d8362847e::t_218af693e13946 32,47,76,103,121,129,135,143,158,164,177,181,193,206,210,216
+packages/native-runtime/src/agent-runtime/codex-app-server-websocket.ts
+  s_15246d8362847e::t_d4b6d43d688bad 20,24-26,28-31,34-36
+  s_15246d8362847e::t_d7573d8005f074 1-19,21-23,27,32-33,37-43
+packages/native-runtime/src/agent-runtime/codex-app-server-client.ts
+  s_15246d8362847e::t_7f93872783c8de 198-205,218,234,244
+  s_15246d8362847e::t_a1c8fcca72fe90 245
+  s_15246d8362847e::t_7e94660ef7929b 3,11,35,38,52,128,161,164,184-197,206-217,219-233,235-243,246-253,290-300,366,379,395-401
+  s_15246d8362847e::t_a6200d44ebcd02 4-10,29-30,36,40,53-62,112,123-127,129-134,136-160,162-163,166,171,176,181,306-307,359-361,364-365,367-369,377-378,380,388-394,402-405
+  s_15246d8362847e::t_d995e5e92bae45 39,69-72,135,363,376
+bun.lock
+  s_15246d8362847e::t_1ec17a142028fc 115-118
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "7f2ef89a2f602a28a00d452881ae3a7aa4930156",
+  "prompts": {},
+  "sessions": {
+    "s_15246d8362847e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0d1fa-6134-7642-8738-73aedba85c2f",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_bd20ce99e6a8be": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ce6b-091e-7092-a41f-005b854af272",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

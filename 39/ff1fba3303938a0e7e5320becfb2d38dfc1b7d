@@ -1,0 +1,34 @@
+docs/superpowers/specs/2026-09-24-in-bubble-message-send-status-design.md
+  s_c8eee60a040adc::t_742defa091c81b 17-23,45
+packages/desktop/renderer/components/ChatHistoryStyle.test.ts
+  s_c8eee60a040adc::t_19a55bb21de5cd 353-380
+packages/desktop/renderer/components/ChatView.tsx
+  s_c8eee60a040adc::t_76ea31a7baf19d 709-710,2232-2254,2626-2628,2646-2668,2682-2685,2700-2702,2871-2878,2886,3164-3181,4541,4562
+  s_c8eee60a040adc::t_19a55bb21de5cd 4271-4287
+packages/desktop/renderer/styles/global.css
+  s_c8eee60a040adc::t_19a55bb21de5cd 1976-1977,1981,1984,1991-2032
+docs/superpowers/plans/2026-09-24-in-bubble-message-send-status.md
+  s_c8eee60a040adc::t_742defa091c81b 113-122,124-126,128-130,132-134,136-138,144-145
+  s_c8eee60a040adc::t_d5edde98f6e7f7 141
+  s_c8eee60a040adc::t_290c4e36651d15 29,53,66,70,101,105,109
+  s_c8eee60a040adc::t_0f65f56b310b6f 123,127,131,135
+  s_c8eee60a040adc::t_d897fcd73b0925 1-28,30-52,54-65,67-69,71-100,102-104,106-108,110-112,139-140,142-143,146-153
+packages/desktop/renderer/lib/occupied-session-fork.test.ts
+  s_c8eee60a040adc::t_76ea31a7baf19d 175-182,199-209
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "39ff1fba3303938a0e7e5320becfb2d38dfc1b7d",
+  "prompts": {},
+  "sessions": {
+    "s_c8eee60a040adc": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0d31f-2967-7543-bc2d-ceb3fd9d7803",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

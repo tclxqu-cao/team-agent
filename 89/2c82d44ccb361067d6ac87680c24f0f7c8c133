@@ -1,0 +1,21 @@
+docs/superpowers/specs/2026-09-24-codex-steering-and-interruption-design.md
+  s_254b19b8c50af0::t_4bf7011bd2253e 67,94
+  s_254b19b8c50af0::t_7a635fbd66d307 59,61,63-65,68-69,82,91-93,105
+  s_254b19b8c50af0::t_0d0390351a8777 66
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "892c82d44ccb361067d6ac87680c24f0f7c8c133",
+  "prompts": {},
+  "sessions": {
+    "s_254b19b8c50af0": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0d318-973a-75f3-8d56-a17cc9f383d5",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

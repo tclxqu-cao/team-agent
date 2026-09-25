@@ -1,0 +1,19 @@
+docs/superpowers/specs/2026-09-24-desktop-file-artifact-session-status-parity-design.md
+  s_772a18ceda45ec::t_35eecf872ec911 1-190
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "a5f61651068b0d267ba653bf7cbe763f7597cd79",
+  "prompts": {},
+  "sessions": {
+    "s_772a18ceda45ec": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0d103-925b-7e50-9a65-cb02ff597fe5",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

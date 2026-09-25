@@ -1,0 +1,54 @@
+packages/desktop/renderer/components/ChatView.tsx
+  s_438ba1ea8769fe::t_59eb131480e86f 20,574,616,628-629,631-637,639,641,688-705,718-720,3216
+packages/server/lib/shared-run-config.test.ts
+  s_d7b666630cc87c::t_22c64e2709ff70 44-79,81,94-104
+  s_d7b666630cc87c::t_3256647a793b94 105
+packages/desktop/renderer/lib/native-agent-run-prefs.ts
+  s_438ba1ea8769fe::t_59eb131480e86f 47-58
+packages/desktop/renderer/lib/queued-message-order.test.ts
+  s_254b19b8c50af0::t_948fedffadec82 237-242,244,256,259-260
+  s_254b19b8c50af0::t_6e7c5c6a4fa575 229-236,243,245-255,257-258,261-263
+packages/native-runtime/src/agent-runtime/codex-runtime-adapter.ts
+  s_438ba1ea8769fe::t_59eb131480e86f 1580,1597,1629-1635,1720,2612-2626
+  s_438ba1ea8769fe::t_906b76fef72296 2627-2628
+packages/desktop/renderer/lib/native-agent-run-prefs.test.ts
+  s_438ba1ea8769fe::t_59eb131480e86f 1-25
+packages/native-runtime/src/agent-runtime/codex-runtime-adapter.test.ts
+  s_438ba1ea8769fe::t_59eb131480e86f 2269-2345
+packages/server/lib/shared-run-config.ts
+  s_d7b666630cc87c::t_22c64e2709ff70 76,78-82
+packages/desktop/renderer/lib/queued-message-order.ts
+  s_254b19b8c50af0::t_948fedffadec82 100-101,112-116
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "5cbf7d18e0fe4db6da4f7f586544f5f6ae0282c2",
+  "prompts": {},
+  "sessions": {
+    "s_254b19b8c50af0": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0d318-973a-75f3-8d56-a17cc9f383d5",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_438ba1ea8769fe": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0d42b-4c5e-7dc0-a4d7-3d5001389422",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_d7b666630cc87c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0d63c-ed43-7ab0-a9c6-069a02a906e7",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

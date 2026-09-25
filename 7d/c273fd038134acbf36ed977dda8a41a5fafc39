@@ -1,0 +1,102 @@
+docs/superpowers/specs/2026-09-21-remote-desktop-media-optimization-design.md
+  s_13ee46f21447b6::t_6c358e2443e61a 1-74
+docs/superpowers/plans/2026-09-21-remote-desktop-media-optimization.md
+  s_13ee46f21447b6::t_6c358e2443e61a 1-147
+packages/core/src/domain/live-view/live-view-registry.test.ts
+  s_13ee46f21447b6::t_463d3975a723ad 171
+  s_cf903200b7e8f8::t_bdd1010fe6d4e1 52-69
+  s_13ee46f21447b6::t_dc07d4d8e1dee3 164-170,172-176
+packages/server/lib/remote-control/video-adaptation.test.ts
+  s_13ee46f21447b6::t_38959d97a16c30 1-13,15-16,18-31
+  s_13ee46f21447b6::t_463d3975a723ad 14,17,32-37
+packages/server/lib/remote-control/helper-manager.test.ts
+  s_13ee46f21447b6::t_3af06215eb4afe 49-60
+  s_cf903200b7e8f8::t_5f98b7b2b2294e 71-72,76-78
+  s_13ee46f21447b6::t_b5b6315afe06b4 2-24,36-38,42-43,45-47,64-65,67,69-70,73-75
+  s_13ee46f21447b6::t_9851a53be2c432 48
+packages/server/native/remote-helper/main.swift
+  s_cf903200b7e8f8::t_5f98b7b2b2294e 27-32,177-185,287-288
+  s_13ee46f21447b6::t_38959d97a16c30 210,275-282
+  s_13ee46f21447b6::t_5299f558d4c335 69,71-81,83-89,91-93,95,101-122,186
+packages/server/lib/remote-control/video-adaptation.mjs
+  s_13ee46f21447b6::t_38959d97a16c30 1-35,37,41-45,47-66
+  s_13ee46f21447b6::t_463d3975a723ad 36,38-40,46
+packages/server/ws-server.mjs
+  s_cf903200b7e8f8::t_264e02eaf9969f 1305-1319,1321-1336
+  s_cf903200b7e8f8::t_497beb6b8d7a0b 1320
+packages/server/native/remote-helper/service/VideoEncoder.swift
+  s_13ee46f21447b6::t_5299f558d4c335 51,58,69,71
+  s_13ee46f21447b6::t_38959d97a16c30 20-21,23-29,33,40,44-47,78,86
+packages/desktop/renderer/components/remote-video-stats.test.ts
+  s_13ee46f21447b6::t_463d3975a723ad 9,17
+  s_13ee46f21447b6::t_137039109b1a4c 1-8,10-14,18-20
+  s_13ee46f21447b6::t_5143742adbbe3f 15-16
+packages/desktop/assets/webrtc-live.html
+  s_13ee46f21447b6::t_137039109b1a4c 32
+packages/desktop/renderer/components/BrowserLivePanel.tsx
+  s_13ee46f21447b6::t_21ee6b63cb9b4e 9-14,232-233,403,405,410,437,447-452,584-585,591-592,599-600,605-636
+  s_13ee46f21447b6::t_7480e3642c673a 825-832,1212
+  s_13ee46f21447b6::t_7369c18fa04b17 637
+packages/server/lib/remote-control/remote-authorization.test.ts
+  s_cf903200b7e8f8::t_07494ea93f4e53 351
+  s_cf903200b7e8f8::t_60e323115273c0 345-350,352-354
+  s_cf903200b7e8f8::t_56ca2b816c649e 35-40,53-55,85-86,106,168,193,215,247,250-251,291,296,299-344,355
+  s_cf903200b7e8f8::t_02d27c9656fc89 80-84
+packages/server/lib/remote-control/webrtc-video.test.ts
+  s_13ee46f21447b6::t_cae86bcc10ed0d 65-85
+packages/core/src/domain/live-view/live-view-registry.ts
+  s_cf903200b7e8f8::t_bdd1010fe6d4e1 66,127-133,282-299
+  s_13ee46f21447b6::t_959e09341c4490 26,28-29,33-48,51-65
+  s_13ee46f21447b6::t_463d3975a723ad 49-50
+  s_cf903200b7e8f8::t_eec7613ff50c2c 67
+  s_cf903200b7e8f8::t_2c9a03a81fbf00 300-301
+packages/server/lib/remote-control/webrtc-video.mjs
+  s_13ee46f21447b6::t_38959d97a16c30 4,26-34,54,64-65,84-94,96-101,118
+  s_13ee46f21447b6::t_441a301179d704 5,24-25,41,72
+  s_13ee46f21447b6::t_463d3975a723ad 95
+  s_13ee46f21447b6::t_cae86bcc10ed0d 37
+packages/server/lib/remote-control/ice-config.mjs
+  s_13ee46f21447b6::t_441a301179d704 1-24
+packages/server/lib/remote-control/helper-manager.mjs
+  s_cf903200b7e8f8::t_5f98b7b2b2294e 76,176-181
+  s_13ee46f21447b6::t_463d3975a723ad 81,152-156
+  s_13ee46f21447b6::t_5299f558d4c335 12-62,75,96-98,102,133-134,136,138-151,182,184
+  s_13ee46f21447b6::t_b5b6315afe06b4 99-101,104,106,135,137,160-161
+  s_13ee46f21447b6::t_e7c5217971fe32 157-159
+packages/server/lib/remote-control/remote-authorization.mjs
+  s_cf903200b7e8f8::t_dcd23e8fe95820 105,153,183
+  s_cf903200b7e8f8::t_02d27c9656fc89 281-282
+  s_13ee46f21447b6::t_38959d97a16c30 255-257
+  s_cf903200b7e8f8::t_f43a591543d5e8 23-24,26,45-46,86,88-89,95,103-104,106-112,122,131,140,162-182,184-185,187-194,196-233,283,372-373,383
+  s_cf903200b7e8f8::t_264e02eaf9969f 374-382
+packages/desktop/renderer/components/remote-video-stats.ts
+  s_13ee46f21447b6::t_5143742adbbe3f 25-27,31-34
+  s_13ee46f21447b6::t_137039109b1a4c 1-11,13-24,28-30,35-61,63-78
+  s_13ee46f21447b6::t_463d3975a723ad 12,62
+packages/server/lib/remote-control/ice-config.test.ts
+  s_13ee46f21447b6::t_441a301179d704 1-20
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "7dc273fd038134acbf36ed977dda8a41a5fafc39",
+  "prompts": {},
+  "sessions": {
+    "s_13ee46f21447b6": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0c1a6-8a56-7901-ad33-55921ba2a1f1",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_cf903200b7e8f8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0bec6-64dd-73d0-ba06-16d6ca12fb7f",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

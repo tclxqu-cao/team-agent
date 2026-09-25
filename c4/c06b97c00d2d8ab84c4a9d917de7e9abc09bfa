@@ -1,0 +1,129 @@
+packages/core/src/domain/live-view/remote-video-policy.test.ts
+  s_13ee46f21447b6::t_10da6d1be3eb3d 1-29,32-34,37-56,59-62,65-72
+packages/server/lib/remote-control/remote-video-signal.test.ts
+  s_13ee46f21447b6::t_5471f3d2ca4748 2
+  s_13ee46f21447b6::t_b6e4ce92ed25c3 1,3-9,13-36
+  s_13ee46f21447b6::t_2b72f75ab45544 10-12
+packages/desktop/main/webrtc-live.test.ts
+  s_13ee46f21447b6::t_2120556744ca07 102
+  s_13ee46f21447b6::t_45090942d2af4b 30,46-49,52-82
+  s_13ee46f21447b6::t_3c8d3cba4d5998 1-29,31-45,50-51,83-101,103-105
+packages/server/native/remote-helper/main.swift
+  s_13ee46f21447b6::t_54160ee9fd00f7 134,169,183,240,249-252,254,292-296,308
+  s_13ee46f21447b6::t_2d8add914ed103 62-63,103,227-233,235-239,299-307,309-313
+  s_13ee46f21447b6::t_611d796b7993b0 7
+packages/server/native/remote-helper/service/VideoEncoder.swift
+  s_13ee46f21447b6::t_357b15ed225f15 74-75,78-81,218,258-259
+  s_13ee46f21447b6::t_49ce4c7a7cbc62 15-33,39,42-61,69,71-73,76-77,86,89-126,128,135-142,144-157,160-217,219-257,260,263-269
+docs/superpowers/plans/2026-09-21-remote-video-ddd-adaptation.md
+  s_13ee46f21447b6::t_be1786e3d97c87 1-34,36-38,40-42,44-46,48-63,65-67,69-71,73-75,77-98,100-102,104-106,108-110,112-114,116-130,132-134,136-138,140-142,144-159,161-163,165-167,169-171,173-186,188-190,192-194,196-198,200-212,214-216,218-222,224-253
+  s_13ee46f21447b6::t_cec808146c99d1 213,217,223,254-262
+  s_13ee46f21447b6::t_b6e4ce92ed25c3 64,68,72,76
+  s_13ee46f21447b6::t_5f607589154c1d 187,191,195,199
+  s_13ee46f21447b6::t_9bd99f9f346259 115
+  s_13ee46f21447b6::t_3c8d3cba4d5998 172
+  s_13ee46f21447b6::t_f766caa02d6af3 160
+  s_13ee46f21447b6::t_2d8add914ed103 131,135,139,143
+  s_13ee46f21447b6::t_9f8e01741ca834 99,103,107,111
+  s_13ee46f21447b6::t_10da6d1be3eb3d 35,39,43,47
+  s_13ee46f21447b6::t_657ba129353faa 164,168
+packages/desktop/assets/webrtc-live.html
+  s_13ee46f21447b6::t_657ba129353faa 14-19,26,29-54,56-89,102-124,129-130,134-146,149-150,158-159
+  s_13ee46f21447b6::t_45090942d2af4b 55
+packages/desktop/renderer/components/remote-video-stats.test.ts
+  s_13ee46f21447b6::t_5f607589154c1d 28-53
+  s_13ee46f21447b6::t_95fa73c51bd0df 1-8,11-12,54-62
+packages/desktop/main/webrtc-live.ts
+  s_13ee46f21447b6::t_0a9ea7fe533405 209
+  s_13ee46f21447b6::t_106e587e00b5f2 115
+  s_13ee46f21447b6::t_45090942d2af4b 23,35,45-46,128-131,134-136,144,146-147,165,196-198,202-208,210-242,263
+  s_13ee46f21447b6::t_f766caa02d6af3 3-4,38-41,58-63,69-74,114,116-127,132-133,137,145,148-149,160-164
+  s_13ee46f21447b6::t_de028ea1ecfc9e 166
+packages/server/lib/remote-control/infrastructure/werift-video-transport.test.ts
+  s_13ee46f21447b6::t_b8c2ddc3274270 1-2,4-43
+  s_13ee46f21447b6::t_5471f3d2ca4748 3
+packages/server/lib/remote-control/infrastructure/native-video-encoder.test.ts
+  s_13ee46f21447b6::t_b8c2ddc3274270 1,3-35
+  s_13ee46f21447b6::t_5471f3d2ca4748 2
+packages/server/lib/remote-control/application/remote-video-session.test.ts
+  s_13ee46f21447b6::t_5471f3d2ca4748 3
+  s_13ee46f21447b6::t_b8c2ddc3274270 1-2,4-5,7-8,10,16-23,27-34,36-50,55-65,76-84,86-93
+  s_13ee46f21447b6::t_2b72f75ab45544 6,24-26,66-75
+  s_13ee46f21447b6::t_357b15ed225f15 9,12-15,35,51-54
+  s_13ee46f21447b6::t_ae152b16c9c564 11
+  s_13ee46f21447b6::t_0a9ea7fe533405 85
+packages/core/src/domain/live-view/index.ts
+  s_13ee46f21447b6::t_10da6d1be3eb3d 17-18
+packages/server/lib/remote-control/remote-authorization.test.ts
+  s_13ee46f21447b6::t_5cc79a4014affb 24
+packages/server/ws-server.mjs
+  s_13ee46f21447b6::t_b6e4ce92ed25c3 3,812,814
+docs/superpowers/specs/2026-09-21-remote-video-ddd-adaptation-design.md
+  s_13ee46f21447b6::t_cec808146c99d1 189
+  s_104dd1168f0f37::t_ec565feb4311f3 190
+packages/server/lib/remote-control/infrastructure/native-video-encoder.mjs
+  s_13ee46f21447b6::t_9f8e01741ca834 1-62
+packages/server/lib/remote-control/remote-authorization.mjs
+  s_13ee46f21447b6::t_9f8e01741ca834 38-42
+packages/core/src/domain/live-view/remote-video-policy.ts
+  s_13ee46f21447b6::t_10da6d1be3eb3d 1-7,9-13,15-38,41-69,72-76,79-81,84-91,94-122,124-131,133,136-143,146,153-177
+packages/server/lib/remote-control/webrtc-video.test.ts
+  s_13ee46f21447b6::t_9bd99f9f346259 1,3,5-6,9
+  s_13ee46f21447b6::t_5471f3d2ca4748 2,4
+  s_13ee46f21447b6::t_0a9ea7fe533405 7-8
+packages/server/lib/remote-control/webrtc-video.mjs
+  s_13ee46f21447b6::t_391678cc656dde 24
+  s_13ee46f21447b6::t_0a9ea7fe533405 1,3-4,6-20
+packages/desktop/renderer/components/remote-video-stats.ts
+  s_13ee46f21447b6::t_95fa73c51bd0df 31-32
+  s_13ee46f21447b6::t_5f607589154c1d 1-3,18-30,33-41,65-71,74-75,99-105
+packages/desktop/main/remote-video-browser-policy.ts
+  s_13ee46f21447b6::t_f766caa02d6af3 1-69
+packages/server/lib/remote-control/remote-video-signal.mjs
+  s_13ee46f21447b6::t_b6e4ce92ed25c3 1-22,31-39,43-141
+  s_13ee46f21447b6::t_2b72f75ab45544 23-30,40-42
+packages/desktop/renderer/components/BrowserLivePanel.tsx
+  s_13ee46f21447b6::t_5f607589154c1d 11-12,596-599,831,1218
+packages/server/lib/remote-control/helper-manager.test.ts
+  s_13ee46f21447b6::t_2d8add914ed103 80-93
+  s_13ee46f21447b6::t_6392781cf1ad10 68
+packages/desktop/main/remote-video-browser-policy.test.ts
+  s_13ee46f21447b6::t_27da19055414ba 27
+  s_13ee46f21447b6::t_f766caa02d6af3 1-26,28-29
+packages/core/src/domain/live-view/live-view-registry.ts
+  s_13ee46f21447b6::t_b6e4ce92ed25c3 362,371
+packages/core/src/domain/live-view/remote-video-types.ts
+  s_13ee46f21447b6::t_10da6d1be3eb3d 1-72
+packages/server/lib/remote-control/application/remote-video-session.mjs
+  s_13ee46f21447b6::t_2b72f75ab45544 58,120
+  s_13ee46f21447b6::t_faf50383d3db07 83-86
+  s_13ee46f21447b6::t_e2515ce8759376 87,154-158,163,168-169
+  s_13ee46f21447b6::t_0a9ea7fe533405 4,6,8,67,103-104
+  s_13ee46f21447b6::t_9f8e01741ca834 1-3,5,7,9-57,59-66,68-82,88-102,105-119,121-153,159-162,164-167,170-178
+packages/server/lib/remote-control/infrastructure/werift-video-transport.mjs
+  s_13ee46f21447b6::t_9f8e01741ca834 1-128
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "c4c06b97c00d2d8ab84c4a9d917de7e9abc09bfa",
+  "prompts": {},
+  "sessions": {
+    "s_104dd1168f0f37": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0c281-736e-7f82-b08a-f3c081598183",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_13ee46f21447b6": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0c1a6-8a56-7901-ad33-55921ba2a1f1",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

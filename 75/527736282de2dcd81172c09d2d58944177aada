@@ -1,0 +1,19 @@
+docs/superpowers/specs/2026-09-24-queued-message-active-feedback-design.md
+  s_0c843d4c57cd87::t_f8f157f04e4f1d 1-31
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "75527736282de2dcd81172c09d2d58944177aada",
+  "prompts": {},
+  "sessions": {
+    "s_0c843d4c57cd87": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ce6c-e085-7c01-a177-4997c9aeeaf4",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

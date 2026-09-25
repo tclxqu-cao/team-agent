@@ -1,0 +1,98 @@
+docs/superpowers/plans/2026-09-24-structured-agent-json-rendering.md
+  s_772a18ceda45ec::t_cacf93acef145b 103,125,131,135,141
+  s_772a18ceda45ec::t_a1517261dbb912 1-32,34-51,53-70,72-87,89-102,104-124,126-130,132-134,136-140,142-156,158-173,175-177,179-191,193-207,209-222,224-228,230-245,247-251,253-271
+  s_772a18ceda45ec::t_fe818098c36ccb 192,208,223,229,246,252
+  s_772a18ceda45ec::t_df1a7c950deabf 33,52,71,88,157,174,178
+packages/desktop/main/index.ts
+  s_bd20ce99e6a8be::t_ce972b3fc51cd3 180-199
+packages/desktop/renderer/styles/global.css
+  s_772a18ceda45ec::t_4443091380e110 2384-2680
+  s_bd20ce99e6a8be::t_ce972b3fc51cd3 1307-1333
+  s_772a18ceda45ec::t_1e4c21eea0b63e 3534
+  s_772a18ceda45ec::t_93abe0ff1ad4c5 2681
+packages/desktop/main/preload.ts
+  s_bd20ce99e6a8be::t_ce972b3fc51cd3 114-116
+packages/desktop/renderer/components/StructuredAgentMessage.test.tsx
+  s_772a18ceda45ec::t_4443091380e110 1-107
+packages/desktop/renderer/lib/structured-agent-message.test.ts
+  s_772a18ceda45ec::t_a6cd09f8fcc136 1-92
+packages/desktop/renderer/global.d.ts
+  s_bd20ce99e6a8be::t_47b820b77ddc64 453,462
+  s_bd20ce99e6a8be::t_ce972b3fc51cd3 296-298,454-461,463-473
+  s_bd20ce99e6a8be::t_e0b870c374fc9c 474
+docs/superpowers/plans/2026-09-24-desktop-file-preview-toolbar-clickability.md
+  s_15246d8362847e::t_bcf2dc3c26c719 52
+  s_15246d8362847e::t_ad77f40583bd30 73
+  s_15246d8362847e::t_a1502be93f90d9 67
+  s_15246d8362847e::t_2c88f1c03b9f1b 1-29,31-37,39-51,53-57,61-66,68-72,74-83
+  s_15246d8362847e::t_96c16c7fe6eba5 58-60
+  s_15246d8362847e::t_bd726b8f0600ed 30,38
+packages/desktop/renderer/components/file-workspace/FilePreview.tsx
+  s_15246d8362847e::t_d9aa26858c34cc 922
+  s_bd20ce99e6a8be::t_ac241bb1d03e8f 918
+packages/desktop/renderer/lib/chat-submission.test.ts
+  s_772a18ceda45ec::t_a6cd09f8fcc136 1-38
+packages/desktop/renderer/lib/chat-submission.ts
+  s_772a18ceda45ec::t_a6cd09f8fcc136 1-46
+packages/desktop/renderer/components/file-workspace/DesktopFileWorkspaceLayout.test.ts
+  s_15246d8362847e::t_4372e31f7ca1cb 6,40-41,43-45
+  s_15246d8362847e::t_9a0b9fedfd3275 42
+  s_15246d8362847e::t_e84e14d8f133bb 46-47
+packages/desktop/renderer/components/SettingsPanel.tsx
+  s_bd20ce99e6a8be::t_ce972b3fc51cd3 6,331
+  s_bd20ce99e6a8be::t_54398aa9537129 332
+packages/desktop/renderer/lib/occupied-session-fork.test.ts
+  s_772a18ceda45ec::t_57b1790f48f167 54-59,69-74
+packages/desktop/renderer/components/ChatView.tsx
+  s_772a18ceda45ec::t_d92e9ea57cc86c 14,58-62,3079-3084,3094,3121-3127
+  s_772a18ceda45ec::t_205e5b63c6e478 4069-4076
+  s_772a18ceda45ec::t_689e74e4a61890 3176-3177,3188-3194,3199,3340,3357,3359-3361,3367-3370
+  s_772a18ceda45ec::t_9abcf44ba81e9b 3575-3585
+  s_772a18ceda45ec::t_31a70ec7a8c2c7 3377,3418,3438,3443,3446,3469,3491-3497,3509,3559-3564
+  s_772a18ceda45ec::t_3af09a6b9868d6 3586-3587
+packages/desktop/renderer/components/ToolPolicyManager.tsx
+  s_bd20ce99e6a8be::t_47b820b77ddc64 2
+  s_bd20ce99e6a8be::t_ce972b3fc51cd3 1,3-129
+packages/desktop/renderer/lib/occupied-session-fork.ts
+  s_772a18ceda45ec::t_57b1790f48f167 13,71
+packages/desktop/renderer/components/StructuredAgentMessage.tsx
+  s_772a18ceda45ec::t_4443091380e110 1-256
+packages/desktop/renderer/components/ChatHistoryStyle.test.ts
+  s_772a18ceda45ec::t_1e4c21eea0b63e 163-164
+  s_772a18ceda45ec::t_894d8066215cd0 301-316
+  s_772a18ceda45ec::t_4a3d7f6e94cc24 317-318
+packages/desktop/renderer/lib/structured-agent-message.ts
+  s_772a18ceda45ec::t_a6cd09f8fcc136 1-137
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "83668a01af99484d9a2bec79010ebebb70aef2bb",
+  "prompts": {},
+  "sessions": {
+    "s_15246d8362847e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0d1fa-6134-7642-8738-73aedba85c2f",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_772a18ceda45ec": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0d103-925b-7e50-9a65-cb02ff597fe5",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_bd20ce99e6a8be": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ce6b-091e-7092-a41f-005b854af272",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

@@ -1,0 +1,19 @@
+docs/superpowers/specs/2026-09-24-session-composer-drafts-design.md
+  s_a75b720bb20077::t_24c6143e068e73 1-25
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "d4b067a4cb59b848061a3dbc22627c8071c7b75f",
+  "prompts": {},
+  "sessions": {
+    "s_a75b720bb20077": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ce91-7f54-70e2-8749-f0c316b210d6",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

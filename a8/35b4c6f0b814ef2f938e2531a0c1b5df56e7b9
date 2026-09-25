@@ -1,0 +1,19 @@
+docs/superpowers/specs/2026-09-24-codex-session-title-order-parity-design.md
+  s_01373348b4b89e::t_554a1824cc81d3 1-96
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "a835b4c6f0b814ef2f938e2531a0c1b5df56e7b9",
+  "prompts": {},
+  "sessions": {
+    "s_01373348b4b89e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0d11a-df66-7d02-b472-80f86237c915",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

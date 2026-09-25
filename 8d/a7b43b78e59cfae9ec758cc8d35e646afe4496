@@ -1,0 +1,20 @@
+docs/superpowers/specs/2026-09-24-structured-agent-json-rendering-design.md
+  s_772a18ceda45ec::t_a6a4bfa2fb40d4 1-63,65-186
+  s_772a18ceda45ec::t_63bf1450b1d2df 64
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "8da7b43b78e59cfae9ec758cc8d35e646afe4496",
+  "prompts": {},
+  "sessions": {
+    "s_772a18ceda45ec": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0d103-925b-7e50-9a65-cb02ff597fe5",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

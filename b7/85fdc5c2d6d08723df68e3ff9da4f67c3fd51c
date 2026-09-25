@@ -1,0 +1,21 @@
+docs/superpowers/specs/2026-09-21-remote-desktop-media-optimization-design.md
+  s_13ee46f21447b6::t_6c358e2443e61a 1-75
+docs/superpowers/plans/2026-09-21-remote-desktop-media-optimization.md
+  s_13ee46f21447b6::t_6c358e2443e61a 1-147
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "b785fdc5c2d6d08723df68e3ff9da4f67c3fd51c",
+  "prompts": {},
+  "sessions": {
+    "s_13ee46f21447b6": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0c1a6-8a56-7901-ad33-55921ba2a1f1",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

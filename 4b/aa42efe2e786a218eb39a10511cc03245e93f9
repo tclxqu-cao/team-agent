@@ -1,0 +1,27 @@
+packages/server/lib/portfolio-artifact.test.ts
+  s_bd20ce99e6a8be::t_f0e32414506f41 7,9-10,12
+packages/server/lib/portfolio-content-agent.test.ts
+  s_bd20ce99e6a8be::t_abb2506feebdc6 82-84,92-93
+  s_bd20ce99e6a8be::t_f0e32414506f41 81,85-86,89-91
+  s_bd20ce99e6a8be::t_20b78a74fcb84e 87-88
+.agent/skills/portfolio-works/SKILL.md
+  s_bd20ce99e6a8be::t_20b78a74fcb84e 10,12,17
+  s_bd20ce99e6a8be::t_f0e32414506f41 14-16,18-21,25
+  s_bd20ce99e6a8be::t_abb2506feebdc6 24
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "4baa42efe2e786a218eb39a10511cc03245e93f9",
+  "prompts": {},
+  "sessions": {
+    "s_bd20ce99e6a8be": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ce6b-091e-7092-a41f-005b854af272",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
