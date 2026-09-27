@@ -1,0 +1,34 @@
+packages/cli/package.json
+  h_86bb4e0e04237b 3,29-34
+packages/cloudflared-darwin-arm64/manifest.json
+  h_86bb4e0e04237b 2
+packages/cloudflared-darwin-arm64/package.json
+  h_86bb4e0e04237b 3
+packages/cloudflared-win32-x64/manifest.json
+  h_86bb4e0e04237b 2
+packages/cloudflared-win32-x64/package.json
+  h_86bb4e0e04237b 3
+packages/runtime-darwin-arm64/manifest.json
+  h_86bb4e0e04237b 2,7
+packages/runtime-darwin-arm64/package.json
+  h_86bb4e0e04237b 3
+packages/runtime-win32-x64/manifest.json
+  h_86bb4e0e04237b 2
+packages/runtime-win32-x64/package.json
+  h_86bb4e0e04237b 3
+packages/tui-darwin-arm64/package.json
+  h_86bb4e0e04237b 3
+packages/tui-win32-x64/package.json
+  h_86bb4e0e04237b 3
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "f0a659dfb0053692e5b3ed85693dc706f1afb0e1",
+  "prompts": {},
+  "humans": {
+    "h_86bb4e0e04237b": {
+      "author": "caoqu <qu.cao@ly.com>"
+    }
+  }
+}

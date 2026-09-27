@@ -1,0 +1,21 @@
+scripts/harness/quality-analysis.ts
+  s_3ba75ebe29e800::t_129c9c3cab87ab 19-30,57
+scripts/harness/quality.test.ts
+  s_3ba75ebe29e800::t_0caa9adba04f25 67-70,74,78-79,145-160
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "ba2409d582df12f60aa3fe429ddc496a1615e9b2",
+  "prompts": {},
+  "sessions": {
+    "s_3ba75ebe29e800": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0d919-2b0f-78f3-bc79-b21cc0e94823",
+        "model": "unknown"
+      },
+      "human_author": "caoqu <qu.cao@ly.com>"
+    }
+  }
+}

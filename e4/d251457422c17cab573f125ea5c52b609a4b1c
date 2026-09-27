@@ -1,0 +1,14 @@
+packages/server/lib/runtime-tool-catalog.ts
+  h_86bb4e0e04237b 2,7,19-36
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "e4d251457422c17cab573f125ea5c52b609a4b1c",
+  "prompts": {},
+  "humans": {
+    "h_86bb4e0e04237b": {
+      "author": "caoqu <qu.cao@ly.com>"
+    }
+  }
+}
