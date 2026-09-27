@@ -1,0 +1,19 @@
+docs/superpowers/specs/2026-09-27-remote-desktop-interaction-fps-recovery-design.md
+  s_152737f7405ef2::t_692c8a379b920d 1-95
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "5083694f92988d925a7a8370f34cbe6989c336ed",
+  "prompts": {},
+  "sessions": {
+    "s_152737f7405ef2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0e19c-85fe-7bc3-bbd2-25f82a79514c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
