@@ -70,6 +70,33 @@ describe("parseFlowRunRequest", () => {
       selection: { skillIds: ["one"], activatedSkillIds: ["two"] },
     })).toThrow("subset");
   });
+
+  it("accepts bounded dynamic-team orchestration", () => {
+    expect(parseFlowRunRequest({
+      input: "coordinate this",
+      orchestration: {
+        mode: "dynamic_team",
+        maxWorkers: 6,
+        maxParallel: 3,
+        workerTimeoutSeconds: 900,
+      },
+    }).orchestration).toEqual({
+      mode: "dynamic_team",
+      maxWorkers: 6,
+      maxParallel: 3,
+      workerTimeoutSeconds: 900,
+    });
+  });
+
+  it.each([
+    [{ mode: "flow", maxWorkers: 2, maxParallel: 1, workerTimeoutSeconds: 30 }, "mode"],
+    [{ mode: "dynamic_team", maxWorkers: 0, maxParallel: 1, workerTimeoutSeconds: 30 }, "maxWorkers"],
+    [{ mode: "dynamic_team", maxWorkers: 2, maxParallel: 3, workerTimeoutSeconds: 30 }, "maxParallel"],
+    [{ mode: "dynamic_team", maxWorkers: 2, maxParallel: 1, workerTimeoutSeconds: 29 }, "workerTimeoutSeconds"],
+  ])("rejects invalid dynamic-team orchestration %#", (orchestration, field) => {
+    expect(() => parseFlowRunRequest({ input: "x", orchestration }))
+      .toThrow(field);
+  });
 });
 
 describe("Flow protocol authentication", () => {
@@ -133,5 +160,61 @@ describe("mapFlowEvent", () => {
   it("ignores non-public internal progress events", () => {
     expect(mapFlowEvent("run", "session", 1, { type: "thinking", message: "private" }))
       .toBeNull();
+  });
+
+  it("maps the complete temporary Agent lifecycle", () => {
+    const spawned = mapFlowEvent("run", "parent", 10, {
+      type: "agent_dispatch",
+      agentName: "API designer",
+      role: "Designs interfaces",
+      task: "Draft the contract",
+      subSessionId: "child-session",
+      agentId: "child-agent",
+      parentSessionId: "parent",
+    });
+    expect(spawned).toMatchObject({
+      id: 10,
+      event: "agent.spawned",
+      data: {
+        agentId: "child-agent",
+        sessionId: "child-session",
+        parentSessionId: "parent",
+        role: "Designs interfaces",
+        task: "Draft the contract",
+      },
+    });
+    expect(mapFlowEvent("run", "parent", 11, {
+      type: "agent_started",
+      agentName: "API designer",
+      subSessionId: "child-session",
+      agentId: "child-agent",
+    })).toMatchObject({ event: "agent.started", data: { agentId: "child-agent" } });
+    expect(mapFlowEvent("run", "parent", 12, {
+      type: "agent_progress",
+      agentName: "API designer",
+      subSessionId: "child-session",
+      agentId: "child-agent",
+      phase: "tool",
+      toolName: "read_file",
+      text: "Reading",
+    })).toMatchObject({ event: "agent.progress", data: { phase: "tool", toolName: "read_file" } });
+    expect(mapFlowEvent("run", "parent", 13, {
+      type: "agent_done",
+      agentName: "API designer",
+      subSessionId: "child-session",
+      agentId: "child-agent",
+      status: "completed",
+      summary: "done",
+      durationMs: 42,
+    })).toMatchObject({ event: "agent.completed", data: { summary: "done", durationMs: 42 } });
+    expect(mapFlowEvent("run", "parent", 14, {
+      type: "agent_done",
+      agentName: "API designer",
+      subSessionId: "child-session",
+      agentId: "child-agent",
+      status: "failed",
+      code: "AGENT_TIMEOUT",
+      error: "late",
+    })).toMatchObject({ event: "agent.failed", data: { code: "AGENT_TIMEOUT", message: "late" } });
   });
 });

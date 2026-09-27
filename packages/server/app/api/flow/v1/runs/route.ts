@@ -30,12 +30,19 @@ export async function POST(request: Request) {
         const admitted = agentHost.startRun(run.message, run.sessionId, run.images, {
           ...(run.modelProfileId ? { profileId: run.modelProfileId } : {}),
           agentIds: run.agent ? [run.agent.id] : [],
-          enabledTools: run.capabilities.enabledTools,
+          enabledTools: body.orchestration
+            ? [...new Set([...(run.capabilities.enabledTools ?? []), "spawn_agent", "wait_agent"])]
+            : run.capabilities.enabledTools,
           enabledSkills: run.capabilities.enabledSkills,
           activatedSkills: run.capabilities.activatedSkills,
           enabledMCPServers: run.capabilities.enabledMCPServers,
           memoryEnabled: run.capabilities.memoryEnabled,
           toolExecutionPolicy: run.toolExecutionPolicy,
+          ...(body.orchestration ? { dynamicTeam: {
+            maxWorkers: body.orchestration.maxWorkers,
+            maxParallel: body.orchestration.maxParallel,
+            workerTimeoutSeconds: body.orchestration.workerTimeoutSeconds,
+          } } : {}),
           instructions: body.instructions,
           ...(Object.keys(run.context).length ? { context: run.context } : {}),
         });

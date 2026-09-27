@@ -4,7 +4,6 @@ import { History, LoaderCircle, Plus, Search } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
 import ChatView from "./components/ChatView";
 import AIHubView from "./components/AIHubView";
-import { openFlowStudioEntry } from "./lib/flow-studio-entry";
 import UpdateNotice from "./components/UpdateNotice";
 import DesktopLiveControlBanner from "./components/DesktopLiveControlBanner";
 import { renewVoiceConversation } from "./lib/voice-command";
@@ -2103,7 +2102,6 @@ export default function App() {
             onOpenDesktopLive={!webShell && window.agentApi?.desktopLiveGetStatus ? () => setShowDesktopLive(true) : undefined}
             onHideToBackground={() => void hideToBackground()}
             onOpenHub={window.agentApi?.hubGetConfig ? () => setHubOpen(true) : undefined}
-            onOpenFlowStudio={() => void openFlowStudioEntry()}
             onToggleAppearance={toggleAppearance}
             appearanceOpen={showAppearance}
             hideToBackgroundTitle={wakeEnabled ? `隐藏到后台（说“${wakeWord}”唤醒）` : "隐藏到后台"}

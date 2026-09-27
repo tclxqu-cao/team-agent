@@ -1,11 +1,13 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import AiHubPane from "./AiHubPane";
+import { resolveFlowStudioFrameUrl } from "./FlowStudioPane";
 
 const source = readFileSync(new URL("./AiHubPane.tsx", import.meta.url), "utf8");
 const sitesSource = readFileSync(new URL("./aiHubSites.ts", import.meta.url), "utf8");
 const page = readFileSync(new URL("./page.tsx", import.meta.url), "utf8");
 const fileTree = readFileSync(new URL("./FileTree.tsx", import.meta.url), "utf8");
+const flowStudioPane = readFileSync(new URL("./FlowStudioPane.tsx", import.meta.url), "utf8");
 
 describe("AiHubPane", () => {
   it("hydrates to nothing during SSR render (localStorage gate)", () => {
@@ -152,7 +154,7 @@ describe("AiHubPane", () => {
     expect(page).toContain('kind: "aihub"');
     expect(page).toContain("const AI_HUB_TAB = { id: \"ai-hub\", title: \"AI Hub\", kind: \"aihub\" } as const;");
     expect(page).toContain("<AiHubPane visible={tab.id === activeTerminalId} rpc={rpc} />");
-    expect(page).toContain('closingKind !== "aihub"');
+    expect(page).toContain("if (!closingKind && !window.confirm");
     // 文件树抽屉内部不放入口；图标在外面紧挨文件树开关（PanelRight）
     expect(fileTree).not.toContain("onOpenAiHub");
     const aiHubButton = page.indexOf('aria-label="打开 AI Hub"');
@@ -161,14 +163,43 @@ describe("AiHubPane", () => {
     expect(aiHubButton).toBeLessThan(drawerToggle);
   });
 
-  it("opens Flow Studio from the icon button right of the AI Hub button", () => {
-    const aiHubButton = page.indexOf('aria-label="打开 Flow Studio"');
-    const hubButton = page.indexOf('aria-label="打开 AI Hub"');
-    expect(aiHubButton).toBeGreaterThan(hubButton);
-    // 跳转链接方案：只读服务端下发的免登入口地址，页签/会话逻辑都在 flow 侧处理
-    expect(page).toContain('fetch("/api/flow-studio/config"');
-    expect(page).toContain('window.open("", "_blank")');
-    expect(page).toContain("win.location.href = body.entryUrl");
+  it("opens Flow Studio in a single internal console tab", () => {
+    const flowStudioButton = page.indexOf('aria-label="打开数字人"');
+    const aiHubButton = page.indexOf('aria-label="打开 AI Hub"');
+    expect(flowStudioButton).toBeGreaterThan(aiHubButton);
+    expect(page).toContain('title="数字人 · Flow Studio"');
+    expect(page).toContain('<Bot size={17} aria-hidden="true" />');
+    expect(page).not.toContain('<Workflow size={17} aria-hidden="true" />');
+    expect(page).toContain('kind: "flowstudio"');
+    expect(page).toContain('const FLOW_STUDIO_TAB = { id: "flow-studio", title: "Flow Studio", kind: "flowstudio" } as const;');
+    expect(page).toContain('current.find((tab) => tab.kind === "flowstudio")');
+    expect(page).toContain('const selectedUtility = tabsRef.current.find((tab) => tab.id === value && (tab.kind === "aihub" || tab.kind === "flowstudio"));');
+    expect(page).toContain("if (selectedUtility) return selectedUtility.id;");
+    expect(page).toContain('<FlowStudioPane visible={tab.id === activeTerminalId} />');
+    expect(page).not.toContain('window.open("", "_blank")');
+    expect(page).toContain('if (activeTab?.kind && activeTab.kind !== "webapp") return;');
+    expect(page).toContain('next.filter(item=>!item.kind).map(item=>item.id)');
+    expect(page).toContain('if (!closingKind) void rpc("term:kill", { id }).catch(() => {});');
+    expect(flowStudioPane).toContain('fetch("/api/flow-studio/config", { credentials: "same-origin" })');
+    expect(flowStudioPane).toContain('referrerPolicy="no-referrer"');
+    expect(flowStudioPane).toContain("正在打开 Flow Studio");
+    expect(flowStudioPane).toContain("无法打开 Flow Studio");
+    expect(flowStudioPane).toContain("const retry = () =>");
+  });
+
+  it("keeps the Flow Studio iframe same-site when the configured entry uses loopback", () => {
+    expect(resolveFlowStudioFrameUrl(
+      "http://127.0.0.1:8788/auth/entry?token=t&view=dh",
+      "http://localhost:3000/web",
+    )).toBe("http://localhost:8788/auth/entry?token=t&view=dh");
+    expect(resolveFlowStudioFrameUrl(
+      "http://127.0.0.1:8788/auth/entry?token=t&view=dh",
+      "http://agentroam.local:3000/web",
+    )).toBe("http://agentroam.local:8788/auth/entry?token=t&view=dh");
+    expect(resolveFlowStudioFrameUrl(
+      "https://flow.example.com/auth/entry?token=t&view=dh",
+      "https://agentroam.example.com/web",
+    )).toBe("https://flow.example.com/auth/entry?token=t&view=dh");
   });
 
   it("places the remote desktop button to the left of the AI Hub button", () => {

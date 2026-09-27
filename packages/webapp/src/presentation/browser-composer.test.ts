@@ -67,7 +67,8 @@ describe("shared composer panel layout", () => {
   it("keeps Codex writable when external occupancy is only advisory", () => {
     expect(chatView).toContain('sessionSummary?.occupancy === "owned-externally"');
     expect(chatView).toContain('&& sessionSummary.agentType !== "codex"');
-    expect(chatView).toContain("const canCompose = runtimeReady && !isReadOnly && !isOccupiedRecovery");
+    expect(chatView).toContain("const canCompose = composerRoute.ready");
+    expect(chatView).toContain('&& codexReleaseState !== "released"');
   });
 
   it("routes picker images into the sent payload before enabling send", () => {
@@ -114,7 +115,7 @@ describe("Codex-style Web message history", () => {
   it("loads the shared document history while keeping Web shell rules scoped", () => {
     expect(globalCss).toContain(".chat-view--codex-history .chat-message-avatar");
     expect(globalCss).toContain(".chat-view--codex-history .tool-call-shell__header");
-    expect(globalCss).toContain("width: min(100%, 860px)");
+    expect(globalCss).toContain("max-width: var(--chat-content-max-width)");
     expect(webCss).toContain('body[data-web-shell="1"] .chat-messages');
     expect(webCss).not.toContain('body[data-web-shell="1"] .chat-message-avatar');
   });
@@ -128,11 +129,11 @@ describe("Codex-style Web message history", () => {
     expect(webCss).toMatch(
       /body\[data-web-shell="1"\] \.chat-view \{[\s\S]*max-width: none !important;/,
     );
-    expect(webCss).toContain("--web-chat-lane-width: 92%");
+    expect(webCss).toContain("--chat-content-max-width: 92%");
     expect(webCss).toContain('body[data-web-shell="1"] .chat-messages,');
     expect(webCss).toContain('body[data-web-shell="1"] .chat-input-area {');
-    expect(webCss).toContain("width: var(--web-chat-lane-width)");
-    expect(webCss).toContain("--web-chat-lane-width: 100%");
+    expect(webCss).toContain("margin-right: auto");
+    expect(webCss).toContain("--chat-content-max-width: 100%");
   });
 
   it("anchors the Web query rail at the bottom of the message viewport", () => {

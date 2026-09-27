@@ -5,7 +5,7 @@
 
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { PanelRight, X, LayoutGrid, MonitorUp, RefreshCw, Workflow } from "lucide-react";
+import { Bot, PanelRight, X, LayoutGrid, MonitorUp, RefreshCw } from "lucide-react";
 import PwaInstallButton from "./PwaInstallButton";
 import type { FileWorkspaceGateway, PinnedCommand } from "@agent/core";
 import { defaultPinnedCommands } from "../../../core/src/domain/web-console/pinned-commands";
@@ -36,9 +36,16 @@ const TerminalPane = dynamic(() => import("./TerminalPane"), { ssr: false });
 const FileTree = dynamic(() => import("./FileTree"), { ssr: false });
 const FilePreview = dynamic(() => import("./FilePreview"), { ssr: false });
 const AiHubPane = dynamic(() => import("./AiHubPane"), { ssr: false });
+const FlowStudioPane = dynamic(() => import("./FlowStudioPane"), { ssr: false });
 
 export default function WebConsolePage() {
-  return <AuthGate>{(auth) => <AuthenticatedConsole auth={auth} />}</AuthGate>;
+  return (
+    <AuthGate>
+      {(auth, onWorkspaceReady) => (
+        <AuthenticatedConsole auth={auth} onWorkspaceReady={onWorkspaceReady} />
+      )}
+    </AuthGate>
+  );
 }
 
 // Built-in webapp agent tab (@agent/webapp at /app) — always present, never
@@ -47,12 +54,24 @@ const WEBAPP_TAB = { id: "webapp-agent", title: "智能助手", kind: "webapp" }
 // AI Hub tab (multi-AI comparison workbench) — opened from the tab-bar icon;
 // reusable, never duplicated.
 const AI_HUB_TAB = { id: "ai-hub", title: "AI Hub", kind: "aihub" } as const;
-interface ConsoleTab { id: string; title: string; kind?: "webapp" | "aihub"; initialCommand?: string }
+const FLOW_STUDIO_TAB = { id: "flow-studio", title: "Flow Studio", kind: "flowstudio" } as const;
+interface ConsoleTab { id: string; title: string; kind?: "webapp" | "aihub" | "flowstudio"; initialCommand?: string }
+
+function readInitialWebThemeId(): WebThemeId {
+  if (typeof document === "undefined") return DEFAULT_THEME_ID;
+  return resolveWebTheme(document.getElementById("web-theme-root")?.dataset.webTheme).id;
+}
 
 // Shell → webapp iframe skin sync; the webapp bridge listens for this type.
 const WEBAPP_SKIN_MESSAGE_TYPE = "agent-web-shell:skin:v1";
 
-function AuthenticatedConsole({ auth }: { auth: WebAuthController }) {
+function AuthenticatedConsole({
+  auth,
+  onWorkspaceReady,
+}: {
+  auth: WebAuthController;
+  onWorkspaceReady: () => void;
+}) {
   const webappFrameRef = useRef<HTMLIFrameElement>(null);
   const browserFrameAck = useRef<(channelId: number, sequence: number) => void>(() => {});
   const forwardBrowserBinary = useCallback((frame: Uint8Array) => {
@@ -80,6 +99,8 @@ function AuthenticatedConsole({ auth }: { auth: WebAuthController }) {
     void rpc("browser:frame-ack", { channelId, sequence }).catch(() => undefined);
   };
   const [tabs, setTabs] = useState<ConsoleTab[]>([{ ...WEBAPP_TAB }]);
+  const tabsRef = useRef(tabs);
+  tabsRef.current = tabs;
   const [activeTerminalId, setActiveTerminalId] = useState<string | null>(WEBAPP_TAB.id);
   const [cwdByTerminal, setCwdByTerminal] = useState<Record<string, string>>({});
   const tabsHydrated = useRef(false);
@@ -101,7 +122,7 @@ function AuthenticatedConsole({ auth }: { auth: WebAuthController }) {
     };
   }, []);
   const fillActiveCommand = useCallback((command: string) => {
-    if (!activeTerminalId || tabs.find((tab) => tab.id === activeTerminalId)?.kind === "webapp") return;
+    if (!activeTerminalId || tabs.find((tab) => tab.id === activeTerminalId)?.kind) return;
     const fill = fillByTerminal.current.get(activeTerminalId);
     if (fill) fill(command);
     else rpc("term:input", { id: activeTerminalId, data: `\x15${command}` }).catch(() => {});
@@ -118,7 +139,7 @@ function AuthenticatedConsole({ auth }: { auth: WebAuthController }) {
   const [keybarHidden,setKeybarHidden]=useState(false);
   const [keyOrder,setKeyOrder]=useState<string[]>([]);
   const [pinnedCommands,setPinnedCommands]=useState<PinnedCommand[]>(defaultPinnedCommands());
-  const [themeId,setThemeId]=useState<WebThemeId>(DEFAULT_THEME_ID);
+  const [themeId,setThemeId]=useState<WebThemeId>(readInitialWebThemeId);
   const [preferencesLoaded,setPreferencesLoaded]=useState(false);
   const [webappReady, setWebappReady] = useState(false);
   const activeTheme = resolveWebTheme(themeId);
@@ -142,8 +163,16 @@ function AuthenticatedConsole({ auth }: { auth: WebAuthController }) {
   // one surface with it.
   useEffect(() => {
     const rootBg = activeTheme.cssVars["--ui-root-bg"];
+    const colorScheme = activeTheme.cssVars["--ui-color-scheme"];
+    const themeRoot = document.getElementById("web-theme-root");
+    for (const [name, value] of Object.entries(activeTheme.cssVars)) {
+      themeRoot?.style.setProperty(name, value);
+    }
+    if (themeRoot) themeRoot.dataset.webTheme = activeTheme.id;
     document.documentElement.style.background = rootBg;
+    document.documentElement.style.colorScheme = colorScheme;
     document.body.style.background = rootBg;
+    document.body.style.colorScheme = colorScheme;
     let meta = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
     if (!meta) {
       meta = document.createElement("meta");
@@ -161,6 +190,7 @@ function AuthenticatedConsole({ auth }: { auth: WebAuthController }) {
       );
       if (readyMessage) {
         setWebappReady(true);
+        onWorkspaceReady();
         return;
       }
       const artifactRequest = readWebArtifactOpenRequest(
@@ -233,7 +263,7 @@ function AuthenticatedConsole({ auth }: { auth: WebAuthController }) {
     };
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
-  }, [rpc]);
+  }, [onWorkspaceReady, rpc]);
   useEffect(() => {
     const forward = (event: Record<string, unknown>) => {
       webappFrameRef.current?.contentWindow?.postMessage({
@@ -245,6 +275,13 @@ function AuthenticatedConsole({ auth }: { auth: WebAuthController }) {
     const unsubscribers = eventTypes.map((type) => onEvent(type, forward));
     return () => unsubscribers.forEach((unsubscribe) => unsubscribe());
   }, [onEvent]);
+  useEffect(() => {
+    if (!webappReady) return;
+    webappFrameRef.current?.contentWindow?.postMessage({
+      type: WEBAPP_BROWSER_EVENT_TYPE,
+      event: { type: "browser:connection", connected: state.connected, epoch },
+    }, window.location.origin);
+  }, [state.connected, epoch, webappReady]);
   const prevTabCount = useRef(0);
   const cwdHint = activeTerminalId ? cwdByTerminal[activeTerminalId] ?? null : null;
 
@@ -316,7 +353,8 @@ function AuthenticatedConsole({ auth }: { auth: WebAuthController }) {
 
   const executeCommand = useCallback((command: string) => {
     const activeTab = tabs.find((tab) => tab.id === activeTerminalId);
-    if (activeTab && activeTab.kind !== "webapp") {
+    if (activeTab?.kind && activeTab.kind !== "webapp") return;
+    if (activeTab && !activeTab.kind) {
       const fill = fillByTerminal.current.get(activeTab.id);
       if (fill) fill(command, true);
       else pendingCommandByTerminal.current.set(activeTab.id, command);
@@ -324,7 +362,7 @@ function AuthenticatedConsole({ auth }: { auth: WebAuthController }) {
       return;
     }
 
-    const reusable = tabs.length >= 8 ? tabs.find((tab) => tab.kind !== "webapp") : null;
+    const reusable = tabs.length >= 8 ? tabs.find((tab) => !tab.kind) : null;
     const terminalId = reusable?.id ?? `t-web-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
     if (reusable) pendingCommandByTerminal.current.set(terminalId, command);
     else setTabs((current) => [...current, { id: terminalId, title: `Terminal ${current.length + 1}`, initialCommand: command }]);
@@ -337,8 +375,10 @@ function AuthenticatedConsole({ auth }: { auth: WebAuthController }) {
     tabsHydrated.current = true;
     rpc<{ tabs: Array<{ id: string; title: string; status: string }> }>("term:list").then((result) => {
       const restorable = result.tabs.filter((tab) => tab.status === "active" || tab.status === "detached").map(({ id, title }) => ({ id, title }));
-      setTabs([WEBAPP_TAB, ...restorable]);
+      setTabs((current) => [WEBAPP_TAB, ...restorable, ...current.filter((tab) => tab.kind === "aihub" || tab.kind === "flowstudio")]);
       setActiveTerminalId((value) => {
+        const selectedUtility = tabsRef.current.find((tab) => tab.id === value && (tab.kind === "aihub" || tab.kind === "flowstudio"));
+        if (selectedUtility) return selectedUtility.id;
         const preferred = restoredActiveId.current || value || WEBAPP_TAB.id;
         if (preferred === WEBAPP_TAB.id) return WEBAPP_TAB.id;
         return restorable.some((tab) => tab.id === preferred) ? preferred : WEBAPP_TAB.id;
@@ -349,8 +389,8 @@ function AuthenticatedConsole({ auth }: { auth: WebAuthController }) {
   const closeTerminal = (id: string) => {
     if (id === WEBAPP_TAB.id) return;
     const closingKind = tabs.find((tab) => tab.id === id)?.kind;
-    // AI Hub tab has no terminal process behind it — no confirm, no kill RPC.
-    if (closingKind !== "aihub" && !window.confirm("关闭页签会终止该终端进程，确认关闭？")) return;
+    // Utility tabs have no terminal process behind them.
+    if (!closingKind && !window.confirm("关闭页签会终止该终端进程，确认关闭？")) return;
     // Drop the tab immediately — the kill RPC rides in the background because
     // its reply queues behind any terminal output on the same socket, and
     // waiting on it made close feel stuck (or hung until timeout).
@@ -359,7 +399,7 @@ function AuthenticatedConsole({ auth }: { auth: WebAuthController }) {
       if (activeTerminalId === id) setActiveTerminalId(next[0]?.id ?? null);
       return next;
     });
-    if (closingKind !== "aihub") void rpc("term:kill", { id }).catch(() => {});
+    if (!closingKind) void rpc("term:kill", { id }).catch(() => {});
   };
 
   // 打开（或聚焦已有的）AI Hub 页签
@@ -375,18 +415,17 @@ function AuthenticatedConsole({ auth }: { auth: WebAuthController }) {
     });
   }, []);
 
-  // 打开 Flow Studio：跳转服务端配置的免登入口链接（新浏览器页签），逻辑都在 flow 侧。
-  // 同步先开新页签保住用户手势（拦截器会拦异步 window.open），再异步取地址填入。
-  const openFlowStudio = useCallback(() => {
-    const win = window.open("", "_blank");
-    void (async () => {
-      try {
-        const res = await fetch("/api/flow-studio/config", { credentials: "same-origin" });
-        const body = await res.json() as { entryUrl?: string | null };
-        if (body.entryUrl && win) win.location.href = body.entryUrl;
-        else win?.close();
-      } catch { win?.close(); }
-    })();
+  // Flow Studio shares the console workspace but never creates a terminal process.
+  const openFlowStudioTab = useCallback(() => {
+    setTabs((current) => {
+      const existing = current.find((tab) => tab.kind === "flowstudio");
+      if (existing) {
+        setActiveTerminalId(existing.id);
+        return current;
+      }
+      setActiveTerminalId(FLOW_STUDIO_TAB.id);
+      return [...current, { ...FLOW_STUDIO_TAB }];
+    });
   }, []);
 
   // 远程桌面（浏览器直播）面板由内嵌 webapp 承载；切回智能助手页签后通知它打开。
@@ -504,8 +543,8 @@ function AuthenticatedConsole({ auth }: { auth: WebAuthController }) {
 
       <div className="terminal-tabs" ref={tabBarRef}>
         {tabs.map((tab) => (
-          <div key={tab.id} data-terminal-id={tab.id} draggable className={`terminal-tab ${tab.id === activeTerminalId ? "active" : ""}`} onDragStart={()=>{draggedTab.current=tab.id;}} onDragOver={(event)=>event.preventDefault()} onDrop={(event)=>{event.preventDefault();const source=draggedTab.current;draggedTab.current=null;if(!source||source===tab.id)return;setTabs((current)=>{const from=current.findIndex(item=>item.id===source),to=current.findIndex(item=>item.id===tab.id);if(from<0||to<0)return current;const next=[...current];const [moved]=next.splice(from,1);next.splice(to,0,moved);rpc("term:reorder",{ids:next.map(item=>item.id).filter(itemId=>itemId!==WEBAPP_TAB.id)}).catch(()=>{});return next;});}} onClick={() => setActiveTerminalId(tab.id)} onDoubleClick={() => {
-            if (tab.kind === "webapp" || tab.kind === "aihub") return;
+          <div key={tab.id} data-terminal-id={tab.id} draggable className={`terminal-tab ${tab.id === activeTerminalId ? "active" : ""}`} onDragStart={()=>{draggedTab.current=tab.id;}} onDragOver={(event)=>event.preventDefault()} onDrop={(event)=>{event.preventDefault();const source=draggedTab.current;draggedTab.current=null;if(!source||source===tab.id)return;setTabs((current)=>{const from=current.findIndex(item=>item.id===source),to=current.findIndex(item=>item.id===tab.id);if(from<0||to<0)return current;const next=[...current];const [moved]=next.splice(from,1);next.splice(to,0,moved);rpc("term:reorder",{ids:next.filter(item=>!item.kind).map(item=>item.id)}).catch(()=>{});return next;});}} onClick={() => setActiveTerminalId(tab.id)} onDoubleClick={() => {
+            if (tab.kind) return;
             const title = window.prompt("页签名称", tab.title)?.trim();
             if (!title) return;
             rpc("term:rename", { id: tab.id, title }).then(() => setTabs((items) => items.map((item) => item.id === tab.id ? { ...item, title } : item))).catch(() => {});
@@ -540,11 +579,11 @@ function AuthenticatedConsole({ auth }: { auth: WebAuthController }) {
           <button
             type="button"
             className="file-drawer-toggle"
-            aria-label="打开 Flow Studio"
-            title="Flow Studio · 智能体平台"
-            onClick={openFlowStudio}
+            aria-label="打开数字人"
+            title="数字人 · Flow Studio"
+            onClick={openFlowStudioTab}
           >
-            <Workflow size={17} aria-hidden="true" />
+            <Bot size={17} aria-hidden="true" />
           </button>
           <button
             type="button"
@@ -591,20 +630,11 @@ function AuthenticatedConsole({ auth }: { auth: WebAuthController }) {
           {tabs.map((tab) => (
             <div className="terminal-slide" key={tab.id} style={{ position: "relative" }}>
               {tab.kind === "webapp" ? (
-                <>
-                  <iframe ref={webappFrameRef} className="webapp-frame" src="/app/" title={tab.title} onLoad={() => postSkinToWebapp(themeId)} />
-                  <div className={`webapp-boot${webappReady ? " is-ready" : ""}`} role="status" aria-live="polite" aria-hidden={webappReady}>
-                    <div className="webapp-boot-mark" aria-hidden="true">
-                      <span className="webapp-boot-orbit" />
-                      <span className="webapp-boot-diamond" />
-                      <span className="webapp-boot-core" />
-                    </div>
-                    <strong>AgentRoam</strong>
-                    <span>正在唤醒工作区</span>
-                  </div>
-                </>
+                <iframe ref={webappFrameRef} className="webapp-frame" src="/app/" title={tab.title} onLoad={() => postSkinToWebapp(themeId)} />
               ) : tab.kind === "aihub" ? (
                 <AiHubPane visible={tab.id === activeTerminalId} rpc={rpc} />
+              ) : tab.kind === "flowstudio" ? (
+                <FlowStudioPane visible={tab.id === activeTerminalId} />
               ) : (
                 <TerminalPane terminalId={tab.id} title={tab.title} initialCommand={tab.initialCommand} visible={tab.id === activeTerminalId} state={state} rpc={rpc} onEvent={onEvent} onTerminalData={onTerminalData} onTerminalReset={onTerminalReset} sendTerminalInput={sendTerminalInput} keyOrder={keyOrder} keybarHidden={keybarHidden} onKeyOrderChange={setKeyOrder} onKeybarHiddenChange={setKeybarHidden} terminalTheme={activeTheme} initialScrollLine={terminalScroll[tab.id] ?? null} onScrollLineChange={(line) => setTerminalScroll((current) => (current[tab.id] === line ? current : { ...current, [tab.id]: line }))} onRegisterFill={(fill) => registerTerminalFill(tab.id, fill)} onCwdChange={(cwd) => cwd && setCwdByTerminal((current) => ({ ...current, [tab.id]: cwd }))} />
               )}
@@ -701,16 +731,6 @@ const GLOBAL_CSS = `
   .terminal-track { display:flex; width:100%; height:100%; will-change:transform; }
   .terminal-slide { position:relative; flex:0 0 100%; width:100%; height:100%; min-width:0; overflow:hidden; }
   .webapp-frame { display:block; width:100%; height:100%; border:0; background:var(--ui-term-col-bg, #101014); }
-  .webapp-boot { position:absolute; inset:0; z-index:2; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:6px; padding:24px; box-sizing:border-box; background:var(--ui-term-col-bg, #101014); color:var(--ui-text, #e8e8ee); opacity:1; visibility:visible; pointer-events:none; transition:opacity .28s ease,visibility 0s linear 0s; }
-  .webapp-boot.is-ready { opacity:0; visibility:hidden; transition:opacity .28s ease,visibility 0s linear .28s; }
-  .webapp-boot strong { margin-top:15px; font-size:16px; line-height:1.25; font-weight:650; letter-spacing:0; }
-  .webapp-boot > span { color:var(--ui-muted-text, #8f93a4); font-size:12px; line-height:1.5; letter-spacing:0; }
-  .webapp-boot-mark { position:relative; width:66px; height:66px; color:var(--ui-tab-accent, #7aa2f7); }
-  .webapp-boot-orbit { position:absolute; inset:3px; border:1px solid color-mix(in srgb,currentColor 34%,transparent); border-top-color:currentColor; border-right-color:transparent; border-radius:50%; animation:webapp-boot-spin 1.65s linear infinite; }
-  .webapp-boot-diamond { position:absolute; top:19px; left:19px; width:26px; height:26px; border:2px solid currentColor; border-radius:4px; transform:rotate(45deg); animation:webapp-boot-breathe 1.35s ease-in-out infinite; }
-  .webapp-boot-core { position:absolute; top:30px; left:30px; width:6px; height:6px; border-radius:50%; background:currentColor; box-shadow:0 0 0 6px color-mix(in srgb,currentColor 12%,transparent); }
-  @keyframes webapp-boot-spin { to { transform:rotate(360deg); } }
-  @keyframes webapp-boot-breathe { 0%,100% { opacity:.58; transform:rotate(45deg) scale(.9); } 50% { opacity:1; transform:rotate(45deg) scale(1); } }
   .terminal-surface { position:relative; flex:1; min-height:90px; overflow:hidden; }
   .terminal-screen { display:flex; flex-direction:column; width:100%; min-height:0; overflow:hidden; box-sizing:border-box; }
   .terminal-screen .xterm { flex:1; height:100%; background:var(--ui-terminal-bg, #101014); }
@@ -720,7 +740,7 @@ const GLOBAL_CSS = `
   .terminal-boot-spinner { width:16px; height:16px; box-sizing:border-box; border:2px solid color-mix(in srgb,currentColor 24%,transparent); border-top-color:currentColor; border-radius:50%; animation:terminal-boot-spin .8s linear infinite; }
   .terminal-boot-warning { position:absolute; top:9px; left:50%; z-index:45; transform:translateX(-50%); max-width:calc(100% - 24px); padding:5px 8px; border:1px solid; border-radius:6px; pointer-events:none; font-size:11px; line-height:1.35; letter-spacing:0; white-space:normal; text-align:center; }
   @keyframes terminal-boot-spin { to { transform:rotate(360deg); } }
-  @media (prefers-reduced-motion: reduce) { .terminal-track,.terminal-tab,.webapp-boot { transition:none !important; } .webapp-boot-orbit,.webapp-boot-diamond,.terminal-boot-spinner { animation:none !important; } }
+  @media (prefers-reduced-motion: reduce) { .terminal-track,.terminal-tab { transition:none !important; } .terminal-boot-spinner { animation:none !important; } }
   .web-root {
     position: fixed;
     top: var(--vv-top, 0px);

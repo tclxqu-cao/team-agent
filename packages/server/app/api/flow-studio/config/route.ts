@@ -3,6 +3,8 @@
 // 免登录、默认页签等逻辑都在 Flow Studio 侧（/auth/entry）处理。
 // 未配置时返回 null，前端按钮保持静默。
 
+export const dynamic = "force-dynamic";
+
 export async function GET(): Promise<Response> {
   const raw = (process.env.AGENT_FLOW_STUDIO_ENTRY_URL || "").trim();
   let entryUrl: string | null = null;

@@ -15,6 +15,24 @@ function fixture() {
 }
 
 describe("WebShellBrowserBridge", () => {
+  it("rejects stale control requests and discards channel mappings on reconnect", async () => {
+    const { context, parent, emit } = fixture();
+    const bridge = new WebShellBrowserBridge(context as never);
+    const observer = vi.fn();
+    bridge.onEvent(observer);
+    const watching = bridge.request("browser:watch", { sessionId: "old" });
+    const sent = parent.postMessage.mock.calls[0][0];
+    emit({ type: WEBAPP_BROWSER_RESPONSE_TYPE, id: sent.id, ok: true, result: { channelId: 8, session: { id: "old" } } });
+    await watching;
+    const input = bridge.request("browser:input", { sessionId: "old" });
+    const rejected = expect(input).rejects.toMatchObject({ code: "EOFFLINE" });
+    emit({ type: WEBAPP_BROWSER_EVENT_TYPE, event: { type: "browser:connection", connected: false } });
+    await rejected;
+    observer.mockClear();
+    emit({ type: WEBAPP_BROWSER_BINARY_FRAME_TYPE, channelId: 8, sequence: 1, data: new ArrayBuffer(1) });
+    expect(observer).not.toHaveBeenCalled();
+    bridge.dispose();
+  });
   it("correlates browser requests with shell responses", async () => {
     const { context, parent, emit } = fixture();
     const bridge = new WebShellBrowserBridge(context as never);

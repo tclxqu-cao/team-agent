@@ -46,34 +46,14 @@ describe("ChatHeaderActions", () => {
     );
   });
 
-  it("renders the Flow Studio action right of the AI Hub action", () => {
-    const hidden = renderToStaticMarkup(createElement(ChatHeaderActions, baseProps));
-    const visible = renderToStaticMarkup(createElement(ChatHeaderActions, {
-      ...baseProps,
-      onOpenHub: () => {},
-      onOpenFlowStudio: () => {},
-      onToggleFiles: () => {},
-    }));
-
-    expect(hidden).not.toContain('aria-label="打开 Flow Studio"');
-    expect(visible).toContain('aria-label="打开 Flow Studio"');
-    expect(visible).toContain("chat-header-action--flow-studio");
-    expect(visible).not.toContain(">Flow Studio · 智能体平台<");
-    // AI Hub 图标的右边就是 Flow Studio 图标
-    expect(visible.indexOf('aria-label="打开 AI Hub"')).toBeLessThan(
-      visible.indexOf('aria-label="打开 Flow Studio"'),
-    );
-    expect(visible.indexOf('aria-label="打开 Flow Studio"')).toBeLessThan(
-      visible.indexOf('aria-label="我的文件"'),
-    );
-  });
-
-  it("keeps the Flow Studio action hidden when no handler is wired", () => {
+  it("does not render the Flow Studio action in the conversation title bar", () => {
     const html = renderToStaticMarkup(createElement(ChatHeaderActions, {
       ...baseProps,
       onOpenHub: () => {},
+      onToggleFiles: () => {},
     }));
 
+    expect(html).not.toContain('aria-label="打开 Flow Studio"');
     expect(html).not.toContain("chat-header-action--flow-studio");
   });
 

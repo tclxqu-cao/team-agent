@@ -46,6 +46,15 @@ export class WebShellBrowserBridge implements BrowserLiveApi {
       }
       const browserEvent = parseWebBrowserEvent(event.data);
       if (browserEvent) {
+        if (browserEvent.event.type === "browser:connection") {
+          this.sessionsByChannel.clear();
+          this.pendingFramesByChannel.clear();
+          for (const request of this.pending.values()) {
+            clearTimeout(request.timer);
+            request.reject(Object.assign(new Error("远程连接已变化，请重新接管"), { code: "EOFFLINE" }));
+          }
+          this.pending.clear();
+        }
         for (const listener of this.listeners) listener(browserEvent.event);
         return;
       }

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Check, LayoutGrid, LoaderCircle, Monitor, PanelRight, Unplug, Workflow } from "lucide-react";
+import { Check, LayoutGrid, LoaderCircle, Monitor, PanelRight, Unplug } from "lucide-react";
 import { isDesktopLiveSetupPending } from "../lib/desktop-live-setup";
 import type { DesktopLiveStatus } from "../global";
 
@@ -46,7 +46,6 @@ interface ChatHeaderActionsProps {
   onHideToBackground: () => void;
   onReleaseCodex?: () => void;
   onOpenHub?: () => void;
-  onOpenFlowStudio?: () => void;
   onOpenDesktopLive?: () => void;
   desktopLiveOpen?: boolean;
   filesOpen?: boolean;
@@ -64,7 +63,6 @@ export default function ChatHeaderActions({
   onHideToBackground,
   onReleaseCodex,
   onOpenHub,
-  onOpenFlowStudio,
   onOpenDesktopLive,
   desktopLiveOpen = false,
   filesOpen = false,
@@ -116,17 +114,6 @@ export default function ChatHeaderActions({
           className="ui-icon-button chat-header-action chat-header-action--ai-hub"
         >
           <LayoutGrid size={15} aria-hidden="true" />
-        </button>
-      )}
-      {onOpenFlowStudio && (
-        <button
-          type="button"
-          onClick={onOpenFlowStudio}
-          title="Flow Studio · 智能体平台"
-          aria-label="打开 Flow Studio"
-          className="ui-icon-button chat-header-action chat-header-action--flow-studio"
-        >
-          <Workflow size={15} aria-hidden="true" />
         </button>
       )}
       {onToggleFiles && (

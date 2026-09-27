@@ -1,0 +1,333 @@
+.web-theme-root {
+  min-height: 100dvh;
+  background: var(--ui-root-bg, #f5f6fa);
+  color: var(--ui-text, #111827);
+}
+
+.neural-boot {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  min-height: 100dvh;
+  overflow: hidden;
+  box-sizing: border-box;
+  padding: 28px;
+  background: var(--ui-root-bg, #f5f6fa);
+  color: var(--ui-text, #111827);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  opacity: 1;
+  visibility: visible;
+  transition: opacity 440ms cubic-bezier(.22,.8,.32,1), visibility 0s linear 0s;
+}
+
+.neural-boot::before,
+.neural-boot::after {
+  content: "";
+  position: absolute;
+  pointer-events: none;
+}
+
+.neural-boot::before {
+  inset: 0;
+  background:
+    linear-gradient(116deg, transparent 0 46%, color-mix(in srgb, var(--ui-tab-accent, #4f6ef7) 7%, transparent) 46.1% 46.3%, transparent 46.4% 100%),
+    linear-gradient(244deg, transparent 0 62%, color-mix(in srgb, var(--ui-text, #111827) 4%, transparent) 62.1% 62.3%, transparent 62.4% 100%);
+}
+
+.neural-boot::after {
+  left: 8%;
+  right: 8%;
+  top: 50%;
+  height: 1px;
+  background: color-mix(in srgb, var(--ui-tab-accent, #4f6ef7) 16%, transparent);
+}
+
+.neural-boot.is-ready {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 440ms cubic-bezier(.22,.8,.32,1), visibility 0s linear 440ms;
+}
+
+.neural-grid {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(color-mix(in srgb, var(--ui-text, #111827) 7%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--ui-text, #111827) 7%, transparent) 1px, transparent 1px);
+  background-size: 48px 48px;
+  mask-image: linear-gradient(to bottom, transparent 2%, #000 32%, #000 68%, transparent 98%);
+}
+
+.neural-rail {
+  position: absolute;
+  top: 50%;
+  width: min(23vw, 280px);
+  height: 1px;
+  background: color-mix(in srgb, var(--ui-tab-accent, #4f6ef7) 26%, transparent);
+}
+
+.neural-rail::before,
+.neural-rail::after {
+  content: "";
+  position: absolute;
+  top: -2px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--ui-tab-accent, #4f6ef7);
+  box-shadow: 0 0 12px color-mix(in srgb, var(--ui-tab-accent, #4f6ef7) 66%, transparent);
+}
+
+.neural-rail::before { left: 0; }
+.neural-rail::after { right: 0; }
+.neural-rail-left { right: calc(50% + 144px); }
+.neural-rail-right { left: calc(50% + 144px); }
+
+.neural-content {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: min(100%, 420px);
+}
+
+.neural-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 20px;
+  color: var(--ui-text, #111827);
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0;
+}
+
+.neural-brand small {
+  padding-left: 8px;
+  border-left: 1px solid var(--ui-tabbar-border, #dfe3ee);
+  color: var(--ui-muted-text, #6b7280);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+
+.neural-brand-signal {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--ui-tab-accent, #4f6ef7);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--ui-tab-accent, #4f6ef7) 10%, transparent), 0 0 14px color-mix(in srgb, var(--ui-tab-accent, #4f6ef7) 62%, transparent);
+  animation: neural-signal 1.8s ease-in-out infinite;
+}
+
+.neural-portrait {
+  position: relative;
+  width: 232px;
+  height: 232px;
+  margin: 26px 0 22px;
+}
+
+.neural-ring,
+.neural-axis,
+.neural-node,
+.neural-avatar-frame,
+.neural-avatar {
+  position: absolute;
+}
+
+.neural-ring {
+  border-radius: 50%;
+  box-sizing: border-box;
+}
+
+.neural-ring-outer {
+  inset: 0;
+  border: 1px solid color-mix(in srgb, var(--ui-tab-accent, #4f6ef7) 28%, transparent);
+  border-top-color: var(--ui-tab-accent, #4f6ef7);
+  border-bottom-color: color-mix(in srgb, var(--ui-tab-accent, #4f6ef7) 56%, transparent);
+  animation: neural-orbit 12s linear infinite;
+}
+
+.neural-ring-inner {
+  inset: 24px;
+  border: 1px dashed color-mix(in srgb, var(--ui-muted-text, #6b7280) 28%, transparent);
+  animation: neural-orbit-reverse 18s linear infinite;
+}
+
+.neural-axis-x {
+  left: 6px;
+  right: 6px;
+  top: 50%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--ui-tab-accent, #4f6ef7) 44%, transparent), transparent);
+}
+
+.neural-axis-y {
+  top: 6px;
+  bottom: 6px;
+  left: 50%;
+  width: 1px;
+  background: linear-gradient(180deg, transparent, color-mix(in srgb, var(--ui-tab-accent, #4f6ef7) 28%, transparent), transparent);
+}
+
+.neural-node {
+  width: 7px;
+  height: 7px;
+  border: 1px solid var(--ui-tab-accent, #4f6ef7);
+  border-radius: 50%;
+  background: var(--ui-root-bg, #f5f6fa);
+  box-shadow: 0 0 12px color-mix(in srgb, var(--ui-tab-accent, #4f6ef7) 42%, transparent);
+}
+
+.neural-node-one { left: 21px; top: 61px; }
+.neural-node-two { right: 18px; top: 78px; border-color: var(--ui-tab-accent, #4f6ef7); }
+.neural-node-three { left: 42px; bottom: 24px; }
+.neural-node-four { right: 33px; bottom: 35px; }
+
+.neural-avatar-frame {
+  inset: 47px 58px 39px;
+  display: grid;
+  place-items: center;
+  background: var(--ui-tab-accent, #4f6ef7);
+  clip-path: polygon(28% 0, 72% 0, 100% 24%, 91% 79%, 68% 100%, 32% 100%, 9% 79%, 0 24%);
+  animation: neural-breathe 2.8s ease-in-out infinite;
+}
+
+.neural-avatar {
+  inset: 1px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  background: var(--ui-tabbar-bg, #eef0f6);
+  color: var(--ui-text, #111827);
+  clip-path: inherit;
+}
+
+.neural-avatar .neural-avatar-icon {
+  filter: drop-shadow(0 0 12px color-mix(in srgb, var(--ui-tab-accent, #4f6ef7) 34%, transparent));
+}
+
+.neural-visor {
+  position: absolute;
+  left: 20px;
+  right: 20px;
+  top: 64px;
+  height: 1px;
+  background: var(--ui-tab-accent, #4f6ef7);
+  box-shadow: 0 0 9px color-mix(in srgb, var(--ui-tab-accent, #4f6ef7) 80%, transparent);
+  animation: neural-scan 2.4s ease-in-out infinite;
+}
+
+.neural-copy {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  min-height: 55px;
+  text-align: center;
+}
+
+.neural-copy strong {
+  color: var(--ui-text, #111827);
+  font-size: 19px;
+  line-height: 1.35;
+  font-weight: 650;
+  letter-spacing: 0;
+}
+
+.neural-copy span {
+  color: var(--ui-muted-text, #6b7280);
+  font-size: 12px;
+  line-height: 1.5;
+  letter-spacing: 0;
+}
+
+.neural-progress {
+  width: 224px;
+  height: 1px;
+  margin-top: 17px;
+  overflow: hidden;
+  background: var(--ui-muted-border, #d8dcea);
+}
+
+.neural-progress span {
+  display: block;
+  width: 42%;
+  height: 100%;
+  background: var(--ui-tab-accent, #4f6ef7);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--ui-tab-accent, #4f6ef7) 72%, transparent);
+  animation: neural-progress 2.1s cubic-bezier(.45,0,.25,1) infinite;
+}
+
+.neural-meta {
+  display: flex;
+  justify-content: space-between;
+  width: 224px;
+  margin-top: 9px;
+  color: var(--ui-muted-text, #6b7280);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 9px;
+  line-height: 1.4;
+  letter-spacing: 0;
+}
+
+.neural-meta-time { color: var(--ui-tab-accent, #4f6ef7); }
+
+.neural-retry {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  margin-top: 18px;
+  padding: 0;
+  border: 1px solid var(--ui-error, #dc2626);
+  border-radius: 6px;
+  background: var(--ui-muted-surface, #eef0f6);
+  color: var(--ui-error, #dc2626);
+  cursor: pointer;
+}
+
+.neural-retry:focus-visible {
+  outline: 2px solid var(--ui-error, #dc2626);
+  outline-offset: 3px;
+}
+
+.is-error .neural-brand-signal,
+.is-error .neural-progress span,
+.is-error .neural-visor { background: var(--ui-error, #dc2626); }
+.is-error .neural-brand-signal { box-shadow: 0 0 0 4px color-mix(in srgb, var(--ui-error, #dc2626) 10%, transparent), 0 0 14px color-mix(in srgb, var(--ui-error, #dc2626) 50%, transparent); }
+.is-error .neural-ring-outer { border-top-color: var(--ui-error, #dc2626); }
+.is-error .neural-copy span { color: var(--ui-error, #dc2626); }
+
+@keyframes neural-orbit { to { transform: rotate(360deg); } }
+@keyframes neural-orbit-reverse { to { transform: rotate(-360deg); } }
+@keyframes neural-signal { 0%, 100% { opacity: .52; } 50% { opacity: 1; } }
+@keyframes neural-breathe { 0%, 100% { transform: scale(.97); } 50% { transform: scale(1.02); } }
+@keyframes neural-scan { 0%, 100% { transform: translateY(-23px); opacity: .28; } 50% { transform: translateY(23px); opacity: 1; } }
+@keyframes neural-progress { 0% { transform: translateX(-112%); } 65%, 100% { transform: translateX(238%); } }
+
+@media (max-width: 520px) {
+  .neural-boot { padding: 22px 18px; }
+  .neural-portrait { width: 196px; height: 196px; margin: 22px 0 20px; }
+  .neural-avatar-frame { inset: 39px 48px 32px; }
+  .neural-avatar .neural-avatar-icon { width: 58px; height: 58px; }
+  .neural-visor { left: 17px; right: 17px; top: 54px; }
+  .neural-node-one { left: 18px; top: 52px; }
+  .neural-node-two { right: 15px; top: 66px; }
+  .neural-node-three { left: 36px; bottom: 20px; }
+  .neural-node-four { right: 28px; bottom: 30px; }
+  .neural-rail-left { right: calc(50% + 122px); }
+  .neural-rail-right { left: calc(50% + 122px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .neural-boot { transition: none; }
+  .neural-boot *,
+  .neural-boot *::before,
+  .neural-boot *::after { animation: none !important; }
+}

@@ -14,6 +14,13 @@ const MAX_CONTEXT_LENGTH = 120_000;
 const RUN_TTL_MS = 60 * 60 * 1000;
 const MAX_RUNS = 500;
 
+export interface FlowDynamicTeamOrchestration {
+  mode: "dynamic_team";
+  maxWorkers: number;
+  maxParallel: number;
+  workerTimeoutSeconds: number;
+}
+
 export interface FlowRunSelection {
   modelId?: string;
   skillIds?: string[];
@@ -31,11 +38,22 @@ export interface FlowRunRequest {
   sessionId?: string;
   context: Record<string, unknown>;
   selection: FlowRunSelection;
+  orchestration?: FlowDynamicTeamOrchestration;
 }
 
 export interface NormalizedFlowEvent {
   id: number;
-  event: "assistant.delta" | "tool.started" | "tool.completed" | "run.completed" | "run.failed";
+  event:
+    | "assistant.delta"
+    | "tool.started"
+    | "tool.completed"
+    | "agent.spawned"
+    | "agent.started"
+    | "agent.progress"
+    | "agent.completed"
+    | "agent.failed"
+    | "run.completed"
+    | "run.failed";
   data: Record<string, unknown>;
 }
 
@@ -110,7 +128,13 @@ export async function flowCatalog() {
   return {
     protocolVersion: FLOW_PROTOCOL_VERSION,
     provider: { id: "customer-agent", name: "Customer Agent" },
-    features: { streaming: true, memory: true, cancellation: true },
+    features: {
+      streaming: true,
+      memory: true,
+      cancellation: true,
+      dynamicAgentOrchestration: true,
+      maxSpawnDepth: 1,
+    },
     models: settings.profiles.map((profile) => ({
       id: profile.id,
       name: profile.name,
@@ -170,6 +194,7 @@ export function parseFlowRunRequest(value: unknown): FlowRunRequest {
       throw new FlowProtocolError("INVALID_REQUEST", "activatedSkillIds must be a subset of skillIds");
     }
   }
+  const orchestration = parseDynamicTeamOrchestration(body.orchestration);
   return {
     input,
     ...(instructions ? { instructions } : {}),
@@ -177,6 +202,7 @@ export function parseFlowRunRequest(value: unknown): FlowRunRequest {
     ...(sessionId ? { sessionId } : {}),
     context,
     selection,
+    ...(orchestration ? { orchestration } : {}),
   };
 }
 
@@ -230,6 +256,52 @@ export function mapFlowEvent(
       callId: event.result.toolCallId,
       content: event.result.content,
       isError: event.result.isError === true,
+    } };
+  }
+  if (event.type === "agent_dispatch") {
+    return { id, event: "agent.spawned", data: {
+      ...common,
+      agentId: event.agentId || event.subSessionId || `${event.agentName}:${id}`,
+      sessionId: event.subSessionId || "",
+      parentSessionId: event.parentSessionId || sessionId,
+      name: event.agentName,
+      role: event.role || "",
+      task: event.task,
+    } };
+  }
+  if (event.type === "agent_started") {
+    return { id, event: "agent.started", data: {
+      ...common,
+      agentId: event.agentId || event.subSessionId,
+      sessionId: event.subSessionId,
+      parentSessionId: event.parentSessionId || sessionId,
+      name: event.agentName,
+      startedAt: event.startedAt,
+    } };
+  }
+  if (event.type === "agent_progress") {
+    return { id, event: "agent.progress", data: {
+      ...common,
+      agentId: event.agentId || event.subSessionId,
+      sessionId: event.subSessionId,
+      parentSessionId: event.parentSessionId || sessionId,
+      name: event.agentName,
+      text: event.text,
+      phase: event.phase || "assistant",
+      toolName: event.toolName,
+    } };
+  }
+  if (event.type === "agent_done") {
+    const completed = event.status === "completed";
+    return { id, event: completed ? "agent.completed" : "agent.failed", data: {
+      ...common,
+      agentId: event.agentId || event.subSessionId,
+      sessionId: event.subSessionId,
+      parentSessionId: event.parentSessionId || sessionId,
+      name: event.agentName,
+      ...(completed
+        ? { summary: event.summary || "", durationMs: event.durationMs }
+        : { code: event.code || "AGENT_FAILED", message: event.error || "Temporary Agent failed" }),
     } };
   }
   if (event.type === "done") {
@@ -307,4 +379,37 @@ function optionalIds(value: unknown, field: string): string[] | undefined {
     throw new FlowProtocolError("INVALID_REQUEST", `${field} contains duplicate identifiers`);
   }
   return values;
+}
+
+function parseDynamicTeamOrchestration(value: unknown): FlowDynamicTeamOrchestration | undefined {
+  if (value === undefined) return undefined;
+  const input = record(value, "orchestration");
+  if (input.mode !== "dynamic_team") {
+    throw new FlowProtocolError("INVALID_REQUEST", "orchestration.mode must be dynamic_team");
+  }
+  const maxWorkers = boundedInteger(input.maxWorkers, "orchestration.maxWorkers", 1, 12);
+  const maxParallel = boundedInteger(input.maxParallel, "orchestration.maxParallel", 1, 6);
+  const workerTimeoutSeconds = boundedInteger(
+    input.workerTimeoutSeconds,
+    "orchestration.workerTimeoutSeconds",
+    30,
+    3_600,
+  );
+  if (maxParallel > maxWorkers) {
+    throw new FlowProtocolError(
+      "INVALID_REQUEST",
+      "orchestration.maxParallel must not exceed orchestration.maxWorkers",
+    );
+  }
+  return { mode: "dynamic_team", maxWorkers, maxParallel, workerTimeoutSeconds };
+}
+
+function boundedInteger(value: unknown, field: string, min: number, max: number): number {
+  if (!Number.isSafeInteger(value) || Number(value) < min || Number(value) > max) {
+    throw new FlowProtocolError(
+      "INVALID_REQUEST",
+      `${field} must be an integer between ${min} and ${max}`,
+    );
+  }
+  return Number(value);
 }

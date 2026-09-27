@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 export interface FsEntry { name: string; dir: boolean; symlink: boolean; size: number; mtime: number }
 export interface FsEvent { path: string; [key: string]: unknown }
-type Pending = { resolve: (value: any) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> };
+type Pending = { resolve: (value: any) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout>; type: string };
 
 export interface GatewayState { connected: boolean; error: string | null }
 
@@ -68,9 +68,15 @@ export function useGateway(onBinary: (data: Uint8Array) => void, getWsNonce: () 
   }, []);
 
   const rpc = useCallback(<T = any,>(type: string, params: Record<string, unknown> = {}, timeoutMs = 15000): Promise<T> => new Promise((resolve, reject) => {
+    // Remote input and ownership belong to this socket's peer. Never replay
+    // clicks, keys or signaling after reconnect under a different identity.
+    if (type.startsWith("browser:") && wsRef.current?.readyState !== WebSocket.OPEN) {
+      reject(Object.assign(new Error("远程连接已断开，请等待重新连接"), { code: "EOFFLINE" }));
+      return;
+    }
     const id = ++requestId.current;
     const timer = setTimeout(() => { pending.current.delete(id); reject(new Error(`${type} timeout`)); }, timeoutMs);
-    pending.current.set(id, { resolve, reject, timer });
+    pending.current.set(id, { resolve, reject, timer, type });
     sendOrQueue(JSON.stringify({ type, _req: id, ...params }));
   }), [sendOrQueue]);
 
@@ -147,6 +153,12 @@ export function useGateway(onBinary: (data: Uint8Array) => void, getWsNonce: () 
       if (currentGeneration !== generation.current || wsRef.current !== ws) return;
       if (heartbeat.current) { clearInterval(heartbeat.current); heartbeat.current = null; }
       wsRef.current = null;
+      for (const [id, request] of pending.current) {
+        if (!request.type.startsWith("browser:")) continue;
+        clearTimeout(request.timer);
+        pending.current.delete(id);
+        request.reject(Object.assign(new Error("远程连接已断开，请重新接管"), { code: "EOFFLINE" }));
+      }
       setState({ connected: false, error: null });
       if (event.code === 4001 || event.code === 4003) { authLostHandler.current(); return; }
       if (stopped.current) return;
