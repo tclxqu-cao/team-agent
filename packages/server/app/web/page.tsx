@@ -5,7 +5,7 @@
 
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { PanelRight, X, LayoutGrid, MonitorUp, RefreshCw } from "lucide-react";
+import { PanelRight, X, LayoutGrid, MonitorUp, RefreshCw, Workflow } from "lucide-react";
 import PwaInstallButton from "./PwaInstallButton";
 import type { FileWorkspaceGateway, PinnedCommand } from "@agent/core";
 import { defaultPinnedCommands } from "../../../core/src/domain/web-console/pinned-commands";
@@ -44,8 +44,8 @@ export default function WebConsolePage() {
 // Built-in webapp agent tab (@agent/webapp at /app) — always present, never
 // deletable; "+" adds regular terminal tabs.
 const WEBAPP_TAB = { id: "webapp-agent", title: "智能助手", kind: "webapp" } as const;
-// AI Hub tab (multi-AI comparison workbench) — opened from the file-tree
-// toolbar icon; reusable, never duplicated.
+// AI Hub tab (multi-AI comparison workbench) — opened from the tab-bar icon;
+// reusable, never duplicated.
 const AI_HUB_TAB = { id: "ai-hub", title: "AI Hub", kind: "aihub" } as const;
 interface ConsoleTab { id: string; title: string; kind?: "webapp" | "aihub"; initialCommand?: string }
 
@@ -375,6 +375,20 @@ function AuthenticatedConsole({ auth }: { auth: WebAuthController }) {
     });
   }, []);
 
+  // 打开 Flow Studio：跳转服务端配置的免登入口链接（新浏览器页签），逻辑都在 flow 侧。
+  // 同步先开新页签保住用户手势（拦截器会拦异步 window.open），再异步取地址填入。
+  const openFlowStudio = useCallback(() => {
+    const win = window.open("", "_blank");
+    void (async () => {
+      try {
+        const res = await fetch("/api/flow-studio/config", { credentials: "same-origin" });
+        const body = await res.json() as { entryUrl?: string | null };
+        if (body.entryUrl && win) win.location.href = body.entryUrl;
+        else win?.close();
+      } catch { win?.close(); }
+    })();
+  }, []);
+
   // 远程桌面（浏览器直播）面板由内嵌 webapp 承载；切回智能助手页签后通知它打开。
   const openWebappBrowserLive = useCallback(() => {
     setActiveTerminalId(WEBAPP_TAB.id);
@@ -522,6 +536,15 @@ function AuthenticatedConsole({ auth }: { auth: WebAuthController }) {
             onClick={openAiHubTab}
           >
             <LayoutGrid size={17} aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            className="file-drawer-toggle"
+            aria-label="打开 Flow Studio"
+            title="Flow Studio · 智能体平台"
+            onClick={openFlowStudio}
+          >
+            <Workflow size={17} aria-hidden="true" />
           </button>
           <button
             type="button"

@@ -42,4 +42,15 @@ describe("desktop SSE transport", () => {
     stop();
     expect(unsubscribe).toHaveBeenCalledOnce();
   });
+
+  it("routes openExternal to the desktop device bridge, not the http gateway", async () => {
+    const openExternal = vi.fn(async () => ({ ok: true }));
+    const service = {} as SharedServiceApi;
+    const device = { openExternal } as unknown as AgentApi;
+
+    const agentApi = createSharedAgentApi(service, device);
+    await agentApi.openExternal!("https://flow.example/auth/entry?token=t&view=dh");
+
+    expect(openExternal).toHaveBeenCalledWith("https://flow.example/auth/entry?token=t&view=dh");
+  });
 });

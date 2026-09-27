@@ -427,6 +427,7 @@ interface ChatViewProps {
   settingsOpen?: boolean;
   onHideToBackground?: () => void;
   onOpenHub?: () => void;
+  onOpenFlowStudio?: () => void;
   onOpenDesktopLive?: () => void;
   desktopLiveOpen?: boolean;
   fileDrawerOpen?: boolean;
@@ -513,6 +514,7 @@ export default function ChatView({
   settingsOpen = false,
   onHideToBackground,
   onOpenHub,
+  onOpenFlowStudio,
   onOpenDesktopLive,
   desktopLiveOpen = false,
   fileDrawerOpen = false,
@@ -3805,6 +3807,7 @@ export default function ChatView({
               ? () => { void handleCodexRelease(); }
               : undefined}
             onOpenHub={onOpenHub}
+            onOpenFlowStudio={onOpenFlowStudio}
             onToggleAppearance={onToggleAppearance}
             onOpenSettings={onOpenSettings}
           />

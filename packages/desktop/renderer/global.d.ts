@@ -249,6 +249,8 @@ export interface AgentApi {
   hideWindow(): Promise<void>;
   showWindow(): Promise<void>;
   isWindowVisible(): Promise<boolean>;
+  // Open an http(s) link in the system browser (e.g. Flow Studio entry)
+  openExternal(url: string): Promise<{ ok: boolean }>;
   // Native wake-word listener (macOS Speech framework)
   wakeStart(wakeWord: string): Promise<{ ok: boolean; reason?: string }>;
   wakeStop(): Promise<{ ok: boolean }>;

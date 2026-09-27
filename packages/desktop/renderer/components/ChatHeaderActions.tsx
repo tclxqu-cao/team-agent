@@ -1,4 +1,41 @@
-import { Check, LayoutGrid, LoaderCircle, Monitor, PanelRight, Unplug } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Check, LayoutGrid, LoaderCircle, Monitor, PanelRight, Unplug, Workflow } from "lucide-react";
+import { isDesktopLiveSetupPending } from "../lib/desktop-live-setup";
+import type { DesktopLiveStatus } from "../global";
+
+/**
+ * Tracks whether remote authorization still needs user action, so the header
+ * monitor action can point back to the authorization dialog after dismissal.
+ */
+function useDesktopLiveSetupPending(active: boolean): boolean {
+  const [pending, setPending] = useState(false);
+  useEffect(() => {
+    if (!active) return;
+    const api = window.agentApi;
+    if (!api?.desktopLiveSetup || !api?.onDesktopLiveStatus) return;
+    let mounted = true;
+    let info: { supported: boolean; needsSetup: boolean } | null = null;
+    let status: DesktopLiveStatus | null = null;
+    const evaluate = () => {
+      if (mounted && info && status) setPending(isDesktopLiveSetupPending({ ...info, status }));
+    };
+    const refreshInfo = () => void api.desktopLiveSetup().then((next) => {
+      if (!mounted) return;
+      info = { supported: next.supported, needsSetup: next.needsSetup };
+      evaluate();
+    }).catch(() => undefined);
+    refreshInfo();
+    const unsubscribe = api.onDesktopLiveStatus((next) => {
+      status = next;
+      // Setup may have completed elsewhere (web page / CLI); refresh the stale
+      // needsSetup snapshot once the status reports everything authorized.
+      if (info?.needsSetup && next.enabled && next.permissionScreen === "granted" && next.accessibilityTrusted === true) refreshInfo();
+      evaluate();
+    });
+    return () => { mounted = false; unsubscribe(); };
+  }, [active]);
+  return pending;
+}
 
 interface ChatHeaderActionsProps {
   appearanceOpen: boolean;
@@ -9,6 +46,7 @@ interface ChatHeaderActionsProps {
   onHideToBackground: () => void;
   onReleaseCodex?: () => void;
   onOpenHub?: () => void;
+  onOpenFlowStudio?: () => void;
   onOpenDesktopLive?: () => void;
   desktopLiveOpen?: boolean;
   filesOpen?: boolean;
@@ -26,6 +64,7 @@ export default function ChatHeaderActions({
   onHideToBackground,
   onReleaseCodex,
   onOpenHub,
+  onOpenFlowStudio,
   onOpenDesktopLive,
   desktopLiveOpen = false,
   filesOpen = false,
@@ -33,6 +72,7 @@ export default function ChatHeaderActions({
   onToggleAppearance,
   onOpenSettings,
 }: ChatHeaderActionsProps) {
+  const desktopLivePending = useDesktopLiveSetupPending(Boolean(onOpenDesktopLive));
   const releaseTitle = codexReleaseState === "releasing"
     ? "正在停止 AgentRoam 使用此会话"
     : codexReleaseState === "released"
@@ -44,12 +84,27 @@ export default function ChatHeaderActions({
         <button
           type="button"
           onClick={onOpenDesktopLive}
-          title="桌面直播与远程控制"
+          title={desktopLivePending ? "桌面直播与远程控制（待授权）" : "桌面直播与远程控制"}
           aria-label="桌面直播与远程控制"
           aria-expanded={desktopLiveOpen}
           className={`ui-icon-button chat-header-action ${desktopLiveOpen ? "is-active" : ""}`}
+          style={{ position: "relative" }}
         >
           <Monitor size={15} aria-hidden="true" />
+          {desktopLivePending && <span
+            data-desktop-live-pending=""
+            aria-hidden="true"
+            style={{
+              position: "absolute",
+              top: 5,
+              right: 5,
+              width: 7,
+              height: 7,
+              borderRadius: "50%",
+              background: "var(--warning, #f59e0b)",
+              border: "1px solid var(--bg-surface, #fff)",
+            }}
+          />}
         </button>
       )}
       {onOpenHub && (
@@ -61,6 +116,17 @@ export default function ChatHeaderActions({
           className="ui-icon-button chat-header-action chat-header-action--ai-hub"
         >
           <LayoutGrid size={15} aria-hidden="true" />
+        </button>
+      )}
+      {onOpenFlowStudio && (
+        <button
+          type="button"
+          onClick={onOpenFlowStudio}
+          title="Flow Studio · 智能体平台"
+          aria-label="打开 Flow Studio"
+          className="ui-icon-button chat-header-action chat-header-action--flow-studio"
+        >
+          <Workflow size={15} aria-hidden="true" />
         </button>
       )}
       {onToggleFiles && (

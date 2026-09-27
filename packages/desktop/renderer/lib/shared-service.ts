@@ -91,6 +91,7 @@ export function createSharedAgentApi(api: SharedServiceApi, device: AgentApi): A
     "hideWindow",
     "showWindow",
     "isWindowVisible",
+    "openExternal",
     "getUpdateStatus",
     "checkForUpdate",
     "installUpdate",

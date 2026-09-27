@@ -161,6 +161,16 @@ describe("AiHubPane", () => {
     expect(aiHubButton).toBeLessThan(drawerToggle);
   });
 
+  it("opens Flow Studio from the icon button right of the AI Hub button", () => {
+    const aiHubButton = page.indexOf('aria-label="打开 Flow Studio"');
+    const hubButton = page.indexOf('aria-label="打开 AI Hub"');
+    expect(aiHubButton).toBeGreaterThan(hubButton);
+    // 跳转链接方案：只读服务端下发的免登入口地址，页签/会话逻辑都在 flow 侧处理
+    expect(page).toContain('fetch("/api/flow-studio/config"');
+    expect(page).toContain('window.open("", "_blank")');
+    expect(page).toContain("win.location.href = body.entryUrl");
+  });
+
   it("places the remote desktop button to the left of the AI Hub button", () => {
     const liveButton = page.indexOf('aria-label="打开远程桌面"');
     const aiHubButton = page.indexOf('aria-label="打开 AI Hub"');

@@ -321,6 +321,18 @@ ipcMain.handle("window:show", () => {
   return { ok: true };
 });
 
+// 外链交给系统浏览器：只放行 http(s)，避免任意 scheme 经渲染层触发
+ipcMain.handle("shell:open-external", (_event, raw: unknown) => {
+  try {
+    const url = new URL(String(raw));
+    if (url.protocol !== "http:" && url.protocol !== "https:") return { ok: false };
+    void shell.openExternal(url.toString()).catch(() => {});
+    return { ok: true };
+  } catch {
+    return { ok: false };
+  }
+});
+
 ipcMain.handle("update:get-status", () => desktopUpdateService.getStatus());
 ipcMain.handle("update:check", () => desktopUpdateService.check());
 ipcMain.handle("update:install", () => desktopUpdateService.install());
