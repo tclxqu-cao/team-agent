@@ -13,11 +13,12 @@ export class RemoteWebrtcVideo extends RemoteVideoSession {
     highProfile = process.platform === 'darwin',
     transportFactory,
     encoder,
+    logger,
   }) {
     const resolvedEncoder = encoder ?? new NativeVideoEncoder({ helper, highProfile });
     const resolvedTransportFactory = transportFactory
       ?? ((options) => new WeriftVideoTransport({ ...options, iceConfig }));
-    super({ signal, policy, adaptation, encoder: resolvedEncoder, transportFactory: resolvedTransportFactory });
+    super({ signal, policy, adaptation, encoder: resolvedEncoder, transportFactory: resolvedTransportFactory, logger });
   }
 }
 

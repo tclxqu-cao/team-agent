@@ -23,10 +23,21 @@ describe("RemoteVideoPolicy", () => {
     const policy = new RemoteVideoPolicy("hd", nativeCapabilities);
     policy.update({ now: 0, content: { activity: "idle", confidence: 1, observedAt: 0 } });
     expect(policy.update({ now: 2_999, content: { activity: "idle", confidence: 1, observedAt: 2_999 } }).maxFps).toBe(30);
-    expect(policy.update({ now: 3_000, content: { activity: "idle", confidence: 1, observedAt: 3_000 } }).maxFps).toBe(5);
+    expect(policy.update({ now: 3_000, content: { activity: "idle", confidence: 1, observedAt: 3_000 } }).maxFps).toBe(15);
     expect(policy.update({ now: 3_100, content: { activity: "interactive", confidence: 1, observedAt: 3_100 } }).maxFps).toBe(15);
     expect(policy.update({ now: 3_200, content: { activity: "motion", confidence: 1, observedAt: 3_200 } }).maxFps).toBe(15);
     expect(policy.update({ now: 3_300, content: { activity: "motion", confidence: 1, observedAt: 3_300 } }).maxFps).toBe(30);
+  });
+
+  it("restores the activity target immediately on remote interaction without clearing pressure", () => {
+    const healthy = new RemoteVideoPolicy("hd", nativeCapabilities);
+    healthy.update({ now: 0, content: { activity: "idle", confidence: 1, observedAt: 0 } });
+    healthy.update({ now: 3_000, content: { activity: "idle", confidence: 1, observedAt: 3_000 } });
+    expect(healthy.noteInteraction()).toMatchObject({ maxFps: 30, reason: "interaction" });
+
+    const pressured = new RemoteVideoPolicy("hd", nativeCapabilities);
+    pressured.update({ encoder: { pendingFrames: 3, encodeLatencyMs: 70, droppedFrames: 0, sampledAt: 1 } });
+    expect(pressured.noteInteraction()).toMatchObject({ maxFps: 15, reason: "interaction" });
   });
 
   it("reduces bitrate for network congestion and fps for sustained pressure", () => {
@@ -50,9 +61,11 @@ describe("RemoteVideoPolicy", () => {
     const policy = new RemoteVideoPolicy("original", nativeCapabilities);
     for (let index = 0; index < 12; index += 1) policy.update({ network: { lossRate: 0.3, rttMs: 600 } });
     expect(policy.current().maxFps).toBe(5);
-    policy.update({});
-    policy.update({});
-    expect(policy.update({}).reason).toBe("recovery");
+    for (let index = 0; index < 6; index += 1) policy.update({});
+    expect(policy.current().maxFps).toBe(5);
+    policy.update({ network: { lossRate: 0, rttMs: 20 } });
+    policy.update({ network: { lossRate: 0, rttMs: 20 } });
+    expect(policy.update({ network: { lossRate: 0, rttMs: 20 } }).reason).toBe("recovery");
     expect(policy.current().maxFps).toBe(15);
   });
 
@@ -70,5 +83,27 @@ describe("RemoteVideoPolicy", () => {
     expect(policy.selectCodec(["high", "baseline"])).toBe("baseline");
     policy.resetSession();
     expect(policy.selectCodec(["baseline"])).toBe("baseline");
+  });
+
+  it("does not collapse FPS on the measured sparse-stream REMB and still reacts to real pressure", () => {
+    const policy = new RemoteVideoPolicy("hd", nativeCapabilities);
+    for (let index = 0; index < 20; index += 1) {
+      policy.update({ network: { lossRate: 0, rttMs: 2, availableOutgoingBitrate: 7_000 },
+        encoder: { pendingFrames: 0, encodeLatencyMs: 12, sampledAt: index } });
+    }
+    expect(policy.noteInteraction()).toMatchObject({ maxFps: 30, bitRate: 8_000_000 });
+    for (let index = 0; index < 4; index += 1) policy.update({ network: { lossRate: 0.08, rttMs: 280, availableOutgoingBitrate: 7_000 } });
+    expect(policy.current().maxFps).toBe(5);
+    for (let index = 0; index < 6; index += 1) policy.update({ network: { lossRate: 0, rttMs: 2, availableOutgoingBitrate: 7_000 } });
+    expect(policy.current().maxFps).toBe(30);
+    expect(policy.resetSession().bitRate).toBe(8_000_000);
+  });
+
+  it("distinguishes stable cellular RTT from queue growth", () => {
+    const policy = new RemoteVideoPolicy("hd", nativeCapabilities);
+    for (let n = 0; n < 8; n++) policy.update({network:{lossRate:0,rttMs:120,availableOutgoingBitrate:7000}});
+    expect(policy.current().maxFps).toBe(30);
+    for (let n = 0; n < 2; n++) policy.update({network:{lossRate:0,rttMs:230,availableOutgoingBitrate:7000}});
+    expect(policy.current().maxFps).toBe(15);
   });
 });

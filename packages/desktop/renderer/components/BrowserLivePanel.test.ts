@@ -58,6 +58,16 @@ describe("browser live session selection", () => {
     expect(source).not.toContain("has-session-tabs");
   });
 
+  it("keeps a local exit control in the toolbar when the header is hidden", () => {
+    const source = readFileSync(new URL("./BrowserLivePanel.tsx", import.meta.url), "utf8");
+    const toolbarStart = source.indexOf('className="browser-live-zoom"');
+    const exitStart = source.indexOf('aria-label="退出全屏"', toolbarStart);
+
+    expect(exitStart).toBeGreaterThan(toolbarStart);
+    expect(source.slice(toolbarStart, exitStart)).toContain("{fullscreen && (");
+    expect(source.slice(exitStart, exitStart + 240)).toContain("toggleFullscreen");
+  });
+
   it("shows desktop quality without duplicating a single physical display", () => {
     const source = readFileSync(new URL("./BrowserLivePanel.tsx", import.meta.url), "utf8");
 

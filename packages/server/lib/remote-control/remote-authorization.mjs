@@ -45,7 +45,7 @@ export function supportsRemoteDesktop(platform = process.platform, arch = proces
 }
 
 export class RemoteAuthorization {
-  constructor({ registry, userId, dataDir, platform = process.platform, helper = platform === 'win32' ? new WindowsRemoteHelper() : new RemoteHelper(), supported = supportsRemoteDesktop(platform), audioCapabilities = remoteAudioCapabilities(platform), intervalMs = 150, idleDelayMs = 3000, system = platform === 'win32' ? new WindowsSystemBridge() : null, display = platform === 'darwin' ? new MacOSDisplayBridge() : null }) {
+  constructor({ registry, userId, dataDir, platform = process.platform, helper = platform === 'win32' ? new WindowsRemoteHelper() : new RemoteHelper(), supported = supportsRemoteDesktop(platform), audioCapabilities = remoteAudioCapabilities(platform), intervalMs = 67, idleDelayMs = 3000, system = platform === 'win32' ? new WindowsSystemBridge() : null, display = platform === 'darwin' ? new MacOSDisplayBridge() : null, logger = null }) {
     Object.assign(this, { registry, dataDir, helper, supported, audioCapabilities, intervalMs, idleDelayMs, platform, system, display });
     this.enabled = false; this.screen = false; this.accessibility = false; this.online = false; this.error = null; this.busy = false; this.sequence = 0; this.generation = 0;
     this.locked = null; this.unavailablePublished = null; this.viewerCount = 0; this.captureActive = false; this.idleTimer = null; this.controlState = null;
@@ -70,6 +70,7 @@ export class RemoteAuthorization {
     this.video = new RemoteWebrtcVideo({
       helper,
       highProfile: platform === 'darwin',
+      logger,
       signal: data => { if (this.enabled && this.online) this.registry.webrtcFromProducer(this.peer, this.sessionId, data); },
     });
     this.audioSequence = 0;
@@ -94,7 +95,11 @@ export class RemoteAuthorization {
     try { this.enabled = JSON.parse(await readFile(this.stateFile, 'utf8')).enabled === true; } catch {}
     this.registry.connect(this.peer);
     if (this.enabled) this.publishDormant();
-    this.timer = setInterval(() => { if (this.enabled && this.captureActive && this.viewerCount > 0) void this.tick(); }, this.intervalMs); this.timer.unref();
+    this.timer = setInterval(() => {
+      const interactive = Date.now() - (this.lastInteractionAt || 0) < 4000;
+      if (this.enabled && this.captureActive && this.viewerCount > 0
+        && (interactive || Date.now() - (this.lastPreview || 0) >= 200)) void this.tick();
+    }, this.intervalMs); this.timer.unref();
   }
   async status(local = true) {
     const unlock = this.platform === 'win32' && this.system ? await this.system.probe().then(p => p.available ? 'available' : 'missing').catch(() => 'missing') : 'unsupported';
@@ -211,7 +216,8 @@ export class RemoteAuthorization {
         return;
       }
       if (this.video.connected && Date.now() - (this.lastPreview || 0) < 2000) return;
-      const frame = await this.helper.request({ op: 'capture' });
+      const interactive = Date.now() - (this.lastInteractionAt || 0) < 4000;
+      const frame = await this.helper.request({ op: 'capture', maxEdge: interactive ? 960 : 1280, maxBytes: interactive ? 64 * 1024 : 128 * 1024 });
       this.lastPreview = Date.now();
       if (!this.enabled || generation !== this.generation) return;
       this.publishFrame(frame);
@@ -326,7 +332,15 @@ export class RemoteAuthorization {
       this.registry.publish(this.peer, { sessionId: this.sessionId, backend: 'desktop', title: '本机桌面', url: '', viewport: this.viewport, displays, transport: 'cdp-jpeg-ws', platform: this.platform, audioCapabilities: this.audioCapabilities });
       this.online = true;
     }
-    this.registry.updateFrame(this.peer, { sessionId: this.sessionId, sequence: ++this.sequence, data: Buffer.from(frame.data, 'base64'), mime: 'image/jpeg', viewport: this.viewport, title: '本机桌面', timestamp: Date.now() });
+    const data = Buffer.from(frame.data, 'base64');
+    const signature = JSON.stringify([frame.width, frame.height, frame.originX, frame.originY, frame.displayId, displays, this.quality]);
+    const duplicate = signature === this.lastFrameSignature && this.lastFrameBytes?.equals(data);
+    if (!duplicate || Date.now() - (this.lastFramePublishedAt || 0) >= 2000) {
+      this.lastFrameBytes = data;
+      this.lastFrameSignature = signature;
+      this.lastFramePublishedAt = Date.now();
+      this.registry.updateFrame(this.peer, { sessionId: this.sessionId, sequence: ++this.sequence, data, mime: 'image/jpeg', viewport: this.viewport, title: '本机桌面', timestamp: Date.now() });
+    }
     if (previousQuality !== this.quality) this.registry.webrtcFromProducer(this.peer, this.sessionId, {kind:'quality-state',quality:this.quality});
   }
   async setDisplay(displayId) {
@@ -370,6 +384,13 @@ export class RemoteAuthorization {
     }
     if (event.type === 'browser:set-display') { await this.setDisplay(event.displayId); return; }
     if (event.type === 'browser:webrtc') {
+      // Feedback is current telemetry, not ordered SDP signaling. Waiting for
+      // ICE/teardown replays stale samples in a burst and repeatedly throttles
+      // an already recovered stream.
+      if (event.data.kind === 'stats') {
+        if (this.video.connected) this.video.applyStats(event.data);
+        return;
+      }
       const signalQuality = (error) => this.registry.webrtcFromProducer(this.peer, this.sessionId, { kind: 'quality-state', quality: this.quality || 'hd', ...(error ? { error } : {}) });
       if (event.data.kind === 'quality') {
         try { await this.setQuality(event.data.quality); if (this.enabled && this.online) signalQuality(); }
@@ -434,6 +455,13 @@ export class RemoteAuthorization {
       try {
         if (generation !== this.generation || !this.bounds) throw new Error('屏幕正在切换，请等待新画面');
         if (!this.accessibility) throw new Error(this.platform === 'win32' ? 'Windows 桌面输入暂不可用，请恢复普通桌面' : '请在电脑的远程授权中授予辅助功能权限');
+        this.video.noteInteraction();
+        this.lastInteractionAt = Date.now();
+        if (this.platform === 'darwin' && event.input?.mobile === true
+          && Date.now() - (this.lastMobileInteractionAt || 0) >= 500) {
+          this.lastMobileInteractionAt = Date.now();
+          void this.helper.request({ op: 'interaction' }).catch(() => {});
+        }
         const result = await this.dispatch(event.input);
         if (Number.isSafeInteger(event.token)) this.registry.inputResult(this.peer, this.sessionId, event.token, result);
       } catch (error) { this.error = error.message; if (Number.isSafeInteger(event.token)) this.registry.inputResult(this.peer, this.sessionId, event.token, { error: error.message }); }

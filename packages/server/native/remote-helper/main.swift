@@ -143,6 +143,40 @@ final class RemoteCaptureStream: NSObject, SCStreamOutput, SCStreamDelegate {
     var quality = RemoteVideoQuality.hd
     var audioEnabled = false
     var audioSequence = 0
+    var jpegMaxEdge = 1280.0
+    var jpegBudget = 128 * 1024
+    var configuration: SCStreamConfiguration?
+    var sourceDimensions = (0, 0)
+    var interactiveUntil = Date.distantPast
+    var resolutionUpdating = false
+    var idleResolutionWork: DispatchWorkItem?
+
+    func noteMobileInteraction() {
+        interactiveUntil = Date().addingTimeInterval(4)
+        updateInteractiveResolution()
+        idleResolutionWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in self?.updateInteractiveResolution() }
+        idleResolutionWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 4.1, execute: work)
+    }
+
+    func updateInteractiveResolution() {
+        guard quality == .hd, !resolutionUpdating, let stream, let config = configuration else { return }
+        let target = Date() < interactiveUntil ? RemoteVideoQuality.smooth : quality
+        let dimensions = target.dimensions(width: sourceDimensions.0, height: sourceDimensions.1)
+        guard config.width != dimensions.0 || config.height != dimensions.1 else { return }
+        let oldWidth = config.width, oldHeight = config.height
+        config.width = dimensions.0; config.height = dimensions.1
+        resolutionUpdating = true
+        stream.updateConfiguration(config) { error in
+            DispatchQueue.main.async {
+                self.resolutionUpdating = false
+                guard self.stream === stream else { return }
+                if error != nil { config.width = oldWidth; config.height = oldHeight }
+                else { self.updateInteractiveResolution() }
+            }
+        }
+    }
     func displays() -> [[String: Any]] {
         let primary = CGMainDisplayID()
         let screens = NSScreen.screens.sorted { a, b in
@@ -194,6 +228,9 @@ final class RemoteCaptureStream: NSObject, SCStreamOutput, SCStreamDelegate {
     func stop(_ id: Int?) {
         epoch += 1
         let old = stream; stream = nil; latest = nil; latestVideoFrame = nil; starting = false
+        configuration = nil
+        idleResolutionWork?.cancel()
+        interactiveUntil = .distantPast
         let pending = waiting; waiting.removeAll()
         for request in pending { respond(request, ["ok": false, "error": "屏幕采集已停止"]) }
         remoteVideoEncoder.stop()
@@ -208,6 +245,12 @@ final class RemoteCaptureStream: NSObject, SCStreamOutput, SCStreamDelegate {
         }
         holdRemoteDisplay()
         if let latest { encode(id, latest); return }
+        if let pixel = latestVideoFrame {
+            let image = CIImage(cvPixelBuffer: pixel)
+            if let cg = context.createCGImage(image, from: image.extent) {
+                latest = cg; encode(id, cg); return
+            }
+        }
         waiting.append(id)
         if starting || stream != nil { return }
         starting = true
@@ -221,6 +264,7 @@ final class RemoteCaptureStream: NSObject, SCStreamOutput, SCStreamDelegate {
                 let config = SCStreamConfiguration()
                 let mode = CGDisplayCopyDisplayMode(display.displayID)
                 let dimensions = self.quality.dimensions(width: mode?.pixelWidth ?? display.width, height: mode?.pixelHeight ?? display.height)
+                self.sourceDimensions = (mode?.pixelWidth ?? display.width, mode?.pixelHeight ?? display.height)
                 config.width = dimensions.0
                 config.height = dimensions.1
                 config.showsCursor = true
@@ -238,6 +282,7 @@ final class RemoteCaptureStream: NSObject, SCStreamOutput, SCStreamDelegate {
                     catch { self.fail(error.localizedDescription); return }
                 }
                 self.stream = stream
+                self.configuration = config
                 stream.startCapture { error in DispatchQueue.main.async { guard self.stream === stream else { return }; self.starting = false; if let error { self.fail(error.localizedDescription) } } }
             }
         }
@@ -266,6 +311,8 @@ final class RemoteCaptureStream: NSObject, SCStreamOutput, SCStreamDelegate {
         remoteVideoEncoder.noteActivity(dirtyRatio: dirtyArea.map { min(1, $0 / frameArea) })
         latestVideoFrame = pixel
         remoteVideoEncoder.encode(pixel, timestamp: CMSampleBufferGetPresentationTimeStamp(sampleBuffer))
+        latest = nil
+        guard !waiting.isEmpty else { return }
         let image = CIImage(cvPixelBuffer: pixel)
         guard let cg = context.createCGImage(image, from: image.extent) else { return }
         latest = cg
@@ -284,16 +331,18 @@ final class RemoteCaptureStream: NSObject, SCStreamOutput, SCStreamDelegate {
     }
     func encode(_ id: Int?, _ image: CGImage) {
             // JPEG is the lightweight viewing fallback; H264 keeps the selected resolution.
-            let scale = min(1, 1280.0 / Double(max(image.width, image.height)))
+            for maxEdge in [jpegMaxEdge, 640.0, 320.0] {
+            let scale = min(1, maxEdge / Double(max(image.width, image.height)))
             let preview = CIImage(cgImage: image).transformed(by: CGAffineTransform(scaleX: scale, y: scale))
             guard let thumbnail = context.createCGImage(preview, from: preview.extent) else {
                 respond(id, ["ok": false, "error": "屏幕预览编码失败"]); return
             }
             let bitmap = NSBitmapImageRep(cgImage: thumbnail)
             for quality in [0.7, 0.5, 0.3, 0.15] {
-                if let jpeg = bitmap.representation(using: .jpeg, properties: [.compressionFactor: quality]), jpeg.count <= 640 * 1024 {
+                if let jpeg = bitmap.representation(using: .jpeg, properties: [.compressionFactor: quality]), jpeg.count <= jpegBudget {
                     respond(id, ["ok": true, "data": jpeg.base64EncodedString(), "width": bounds.width, "height": bounds.height, "originX": bounds.minX, "originY": bounds.minY, "displayId": String(selectedDisplayID ?? CGMainDisplayID()), "displays": displays(), "quality": self.quality.rawValue]); return
                 }
+            }
             }
             respond(id, ["ok": false, "error": "屏幕帧过大"])
     }
@@ -362,7 +411,11 @@ func remoteCommand(_ line: String) {
     case "displays": respond(id, ["ok": true, "displays": remoteCapture.displays()])
     case "set-quality": remoteCapture.setQuality(id, value: cmd["quality"] as? String)
     case "set-display": remoteCapture.select(id, displayID: cmd["displayId"] as? String)
-    case "capture": capture(id)
+    case "interaction": remoteCapture.noteMobileInteraction(); respond(id, ["ok": true])
+    case "capture":
+        remoteCapture.jpegMaxEdge = min(1280, max(640, (cmd["maxEdge"] as? NSNumber)?.doubleValue ?? 1280))
+        remoteCapture.jpegBudget = min(256 * 1024, max(32 * 1024, (cmd["maxBytes"] as? NSNumber)?.intValue ?? 128 * 1024))
+        capture(id)
     case "stop-capture": remoteCapture.stop(id)
     case "quit": remoteAudioPlayback.stop(); remoteCapture.stop(nil); exit(0)
     default:

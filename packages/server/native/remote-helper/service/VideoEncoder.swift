@@ -39,6 +39,8 @@ final class RemoteVideoEncoder {
     var profile = RemoteH264Profile.baseline
     var lastEncodedTimestamp = CMTime.invalid
     var forceKeyframe = true
+    private var encodedWidth = 0
+    private var encodedHeight = 0
     var onError: ((String) -> Void)?
 
     private let metricsLock = NSLock()
@@ -160,7 +162,10 @@ final class RemoteVideoEncoder {
     }
 
     private func ensureSession(_ pixel: CVPixelBuffer) -> Bool {
+        let width = CVPixelBufferGetWidth(pixel), height = CVPixelBufferGetHeight(pixel)
+        if session != nil && (encodedWidth != width || encodedHeight != height) { reset() }
         if session != nil { return true }
+        encodedWidth = width; encodedHeight = height
         var created: VTCompressionSession?
         let result = VTCompressionSessionCreate(
             allocator: nil,

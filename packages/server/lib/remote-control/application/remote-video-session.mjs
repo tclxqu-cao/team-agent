@@ -1,14 +1,16 @@
 import { RemoteVideoPolicy } from '@agent/core';
 
 export class RemoteVideoSession {
-  constructor({ signal, policy, adaptation, transportFactory, encoder }) {
+  constructor({ signal, policy, adaptation, transportFactory, encoder, logger = null }) {
     this.signal = signal;
     this.encoder = encoder;
+    this.logger = logger;
     this.policy = policy ?? adaptation ?? new RemoteVideoPolicy('hd', this.encoder.capabilities());
     this.transportFactory = transportFactory;
     this.generation = 0;
     this.paused = false;
     this.tuningChain = Promise.resolve();
+    this.lastMediaLogKey = '';
   }
 
   get connected() { return Boolean(this.transport?.connected ?? this._connectedOverride); }
@@ -17,6 +19,16 @@ export class RemoteVideoSession {
   set peer(value) { this._peerOverride = value; }
 
   setQuality(quality) { return this.applyTuning(this.policy.setQuality(quality)); }
+  noteInteraction() {
+    const decision = this.policy.noteInteraction();
+    const previous = this.latestDecision;
+    if (!previous
+      || previous.bitRate !== decision.bitRate
+      || previous.maxFps !== decision.maxFps
+      || previous.preferredCodec !== decision.preferredCodec) this.applyTuning(decision);
+    this.logMediaDecision('interaction', decision);
+    return decision;
+  }
   applyTuning(decision) {
     this.latestDecision = decision;
     this.pendingDecision = decision;
@@ -30,10 +42,53 @@ export class RemoteVideoSession {
     return decision;
   }
   applyStats(sample) {
-    return this.applyTuning(this.policy.update({ network: {
+    const observation = { network: {
       lossRate: sample.lossRate, rttMs: sample.rttMs, droppedFrames: sample.droppedFrames,
       availableOutgoingBitrate: sample.availableBitrate ?? sample.availableOutgoingBitrate,
-    } }));
+    } };
+    this.receiverObservation = { ...observation, sampledAt: Date.now() };
+    const decision = this.policy.current();
+    this.logMediaDecision('receiver-stats', decision, observation);
+    return decision;
+  }
+
+  logMediaDecision(trigger, decision, observation = {}) {
+    if (!this.logger?.info) return;
+    const network = observation.network ?? {};
+    const encoder = observation.encoder ?? {};
+    const content = observation.content ?? {};
+    const payload = {
+      trigger,
+      reason: decision.reason,
+      quality: decision.quality,
+      targetBitRate: decision.bitRate,
+      targetFps: decision.maxFps,
+      codecProfile: decision.preferredCodec,
+      activity: content.activity,
+      activityConfidence: content.confidence,
+      rttMs: network.rttMs,
+      lossRate: network.lossRate,
+      availableBitrate: network.availableOutgoingBitrate,
+      transportDroppedFrames: network.droppedFrames,
+      encoderPendingFrames: encoder.pendingFrames,
+      encoderLatencyMs: encoder.encodeLatencyMs,
+      encoderDroppedFrames: encoder.droppedFrames,
+      encoderSequence: encoder.sequence,
+    };
+    const bucket = (value, size) => Number.isFinite(value) ? Math.round(value / size) * size : undefined;
+    const material = {
+      ...payload,
+      reason: undefined,
+      rttMs: bucket(payload.rttMs, 5),
+      lossRate: bucket(payload.lossRate, 0.01),
+      availableBitrate: bucket(payload.availableBitrate, 250_000),
+      encoderLatencyMs: bucket(payload.encoderLatencyMs, 5),
+      encoderSequence: undefined,
+    };
+    const key = JSON.stringify(material);
+    if (key === this.lastMediaLogKey) return;
+    this.lastMediaLogKey = key;
+    this.logger.info('remote video decision', payload);
   }
 
   async handle(data) {
@@ -128,11 +183,25 @@ export class RemoteVideoSession {
 
   watchStats(transport, generation) {
     clearInterval(this.statsTimer);
+    let sampling = false;
     this.statsTimer = setInterval(async () => {
-      if (generation !== this.generation || this.transport !== transport || this.paused || !transport.connected) return;
+      if (sampling || generation !== this.generation || this.transport !== transport || this.paused || !transport.connected) return;
+      sampling = true;
+      try {
       const [network, encoder] = await Promise.all([transport.snapshot().catch(() => null), this.encoder.snapshot().catch(() => null)]);
-      if (generation !== this.generation || this.transport !== transport) return;
-      if (network || encoder) this.applyTuning(this.policy.update({ network: network ?? undefined, encoder: encoder?.telemetry, content: encoder?.content }));
+      if (generation !== this.generation || this.transport !== transport || this.paused) return;
+      const receiver = this.receiverObservation;
+      this.receiverObservation = null;
+      const freshReceiver = receiver && Date.now() - receiver.sampledAt <= 3_000 ? receiver.network : null;
+      if (network || encoder || freshReceiver) {
+        // Receiver stats can omit RTT/available bitrate. Do not erase fresh
+        // sender feedback with those undefined fields.
+        const receiverFields = Object.fromEntries(Object.entries(freshReceiver ?? {}).filter(([, value]) => Number.isFinite(value)));
+        const observation = { network: { ...network, ...receiverFields }, encoder: encoder?.telemetry, content: encoder?.content };
+        const decision = this.applyTuning(this.policy.update(observation));
+        this.logMediaDecision('adaptive-sample', decision, observation);
+      }
+      } finally { sampling = false; }
     }, 2_000);
     this.statsTimer.unref?.();
   }
@@ -160,6 +229,7 @@ export class RemoteVideoSession {
     }
   }
   async stopAttempt() {
+    this.receiverObservation = null;
     const hadAttempt = Boolean(this.transport || this.unsubscribe || this.encoderActive);
     clearTimeout(this.connectTimer); clearTimeout(this.firstFrameTimer); clearTimeout(this.frameTimer); clearInterval(this.statsTimer);
     this.firstFrameSeen = false;

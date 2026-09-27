@@ -64,7 +64,7 @@ export class WeriftVideoTransport {
     this.track = track;
     this.sender = peer.addTrack(track, new MediaStream([track]));
     this.sender.onRtcp.subscribe(packet => {
-      if (packet.type === 206 && this.connected) this.onKeyframe();
+      this.handleFeedback(packet);
     });
     peer.onIceCandidate.subscribe(candidate => {
       if (candidate && this.peer === peer) this.signal({ kind: 'ice', candidate: candidate.toJSON() });
@@ -90,6 +90,17 @@ export class WeriftVideoTransport {
     if (this.peer) await this.peer.setRemoteDescription(sdp);
   }
 
+  handleFeedback(packet, now = performance.now()) {
+    if (this.connected && packet.type === 201) this.lastReportAt = now;
+    if (this.connected && packet.type === 206 && packet.feedback?.count === 15) this.lastEstimateAt = now;
+    // PSFB also carries REMB (FMT=15): bandwidth reports must never force
+    // an IDR. Coalesce repeated PLI/FIR while a lost keyframe is in flight.
+    if (!this.connected || packet.type !== 206 || ![1, 4].includes(packet.feedback?.count)) return;
+    if (this.lastKeyframeRequest !== undefined && now - this.lastKeyframeRequest < 1000) return;
+    this.lastKeyframeRequest = now;
+    this.onKeyframe();
+  }
+
   async addIceCandidate(candidate) {
     if (this.peer && candidate) await this.peer.addIceCandidate(candidate);
   }
@@ -108,16 +119,19 @@ export class WeriftVideoTransport {
     const values = typeof report.values === 'function' ? [...report.values()] : [];
     const remote = values.find(item => item.type === 'remote-inbound-rtp');
     const availableOutgoingBitrate = Number(this.sender.receiverEstimatedMaxBitrate);
+    const freshReport = performance.now() - (this.lastReportAt ?? -Infinity) <= 3000;
+    const freshEstimate = performance.now() - (this.lastEstimateAt ?? -Infinity) <= 3000;
     const sample = {
-      lossRate: Number.isFinite(remote?.fractionLost) ? remote.fractionLost : undefined,
-      rttMs: Number.isFinite(remote?.roundTripTime) ? remote.roundTripTime * 1000 : undefined,
-      availableOutgoingBitrate: Number.isFinite(availableOutgoingBitrate) && availableOutgoingBitrate > 0 ? availableOutgoingBitrate : undefined,
+      lossRate: freshReport && Number.isFinite(remote?.fractionLost) ? remote.fractionLost : undefined,
+      rttMs: freshReport && Number.isFinite(remote?.roundTripTime) ? remote.roundTripTime * 1000 : undefined,
+      availableOutgoingBitrate: freshEstimate && Number.isFinite(availableOutgoingBitrate) && availableOutgoingBitrate > 0 ? availableOutgoingBitrate : undefined,
     };
     return Object.values(sample).some(Number.isFinite) ? sample : null;
   }
 
   async stop() {
     this.connected = false;
+    this.lastKeyframeRequest = undefined;
     const peer = this.peer;
     this.peer = null;
     this.sender = null;

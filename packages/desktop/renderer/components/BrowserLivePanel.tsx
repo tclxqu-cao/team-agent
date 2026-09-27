@@ -300,6 +300,7 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
   const [remoteVideoStats, setRemoteVideoStats] = useState<RemoteVideoStatsSample | null>(null);
   const remoteVideoStatsCursorRef = useRef<RemoteVideoStatsCursor | null>(null);
   const webrtcPeerRef = useRef<RTCPeerConnection | null>(null);
+  const webrtcRetryRef = useRef(0);
   const webrtcVideoRef = useRef<HTMLVideoElement>(null);
   const [audioState, setAudioState] = useState<"idle" | "starting" | "live" | "failed">("idle");
   const [microphoneMuted, setMicrophoneMuted] = useState(false);
@@ -610,6 +611,11 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
   const answerWebrtcOffer = useCallback(async (sessionId: string, sdp: RTCSessionDescriptionInit | undefined, iceServers?: RTCIceServer[]) => {
     if (!api || !sessionId || !sdp) return;
     try {
+      // A fallback offer is a new sender transport (new ICE credentials/SSRC).
+      // Discard the old peer so late state callbacks cannot kill the retry.
+      const previousPeer = webrtcPeerRef.current;
+      webrtcPeerRef.current = null;
+      previousPeer?.close();
       let peer = webrtcPeerRef.current;
       if (!peer) {
         peer = new RTCPeerConnection({ iceServers: iceServers?.length ? iceServers : fallbackWebrtcIceServers });
@@ -625,6 +631,7 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
           }
         };
         peer.onconnectionstatechange = () => {
+          if (webrtcPeerRef.current !== peer) return;
           const state = peer?.connectionState;
           if (state === "connected") setWebrtcState("live");
           else if (state === "failed" || state === "disconnected" || state === "closed") setWebrtcState("failed");
@@ -632,8 +639,10 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
         webrtcPeerRef.current = peer;
       }
       await peer.setRemoteDescription(sdp);
+      if (webrtcPeerRef.current !== peer) return;
       const answer = await peer.createAnswer();
       await peer.setLocalDescription(answer);
+      if (webrtcPeerRef.current !== peer) return;
       setWebrtcState("connecting");
       await api.request("browser:webrtc", { sessionId, data: { kind: "answer", sdp: peer.localDescription.toJSON() } });
     } catch {
@@ -757,6 +766,17 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
     if (!open || !api) return;
     void refresh();
     return api.onEvent((event) => {
+      if (event.type === "browser:connection") {
+        webrtcPeerRef.current?.close();
+        webrtcPeerRef.current = null;
+        setWebrtcState("off");
+        setControlPending(false);
+        setSessions([]);
+        setFrame(null);
+        if (event.connected === true) void refresh();
+        else setError("远程连接已断开，正在重新连接");
+        return;
+      }
       if (event.type === "browser:frame") {
         const nextFrame = event as unknown as BrowserFrame & { type: string };
         if (nextFrame.sessionId === selectedId) setFrame(nextFrame);
@@ -797,6 +817,7 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
   // the JPEG stream keeps flowing as fallback and reconnect preview.
   useEffect(() => {
     if (!open || !api || !hasControl || !isDesktop || !selectedId) {
+      webrtcRetryRef.current = 0;
       webrtcPeerRef.current?.close();
       webrtcPeerRef.current = null;
       if (webrtcVideoRef.current) webrtcVideoRef.current.srcObject = null;
@@ -825,15 +846,26 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
   }, [api, hasControl, isDesktop, open, selectedId, viewNonce]);
 
   useEffect(() => {
+    if (!open || !hasControl || !isDesktop || webrtcState !== "failed" || webrtcRetryRef.current >= 2) return;
+    const timer = window.setTimeout(() => {
+      webrtcRetryRef.current += 1;
+      setViewNonce(value => value + 1);
+    }, 2000 * (webrtcRetryRef.current + 1));
+    return () => window.clearTimeout(timer);
+  }, [open, hasControl, isDesktop, webrtcState]);
+
+  useEffect(() => {
     if (!api || !selectedId || webrtcState !== "live") {
       remoteVideoStatsCursorRef.current = null;
       setRemoteVideoStats(null);
       return;
     }
     let alive = true;
+    let statsPending = false;
     const tick = async () => {
       const peer = webrtcPeerRef.current;
-      if (!peer) return;
+      if (!peer || statsPending) return;
+      statsPending = true;
       try {
         const report = await peer.getStats();
         if (!alive || peer !== webrtcPeerRef.current) return;
@@ -844,12 +876,14 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
         if (!result) return;
         remoteVideoStatsCursorRef.current = result.cursor;
         setRemoteVideoStats(result.sample);
-        void api.request("browser:webrtc", {
+        await api.request("browser:webrtc", {
           sessionId: selectedId,
           data: { kind: "stats", ...result.sample },
         }).catch(() => undefined);
       } catch {
         // Browser stats are diagnostic feedback; playback remains usable without them.
+      } finally {
+        statsPending = false;
       }
     };
     void tick();
@@ -920,7 +954,7 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
 
   const sendInput = useCallback((input: Record<string, unknown>) => {
     if (!api || pendingDisplayId || pendingQuality || !selected?.isController || selected.state !== "user-controlled") return;
-    void api.request("browser:input", { sessionId: selected.id, input }).catch((requestError) => {
+    void api.request("browser:input", { sessionId: selected.id, input: { ...input, mobile: window.matchMedia("(pointer: coarse)").matches } }).catch((requestError) => {
       setError(requestError instanceof Error ? requestError.message : "浏览器输入失败");
     });
   }, [api, selected, pendingDisplayId, pendingQuality]);
@@ -939,7 +973,7 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
   /** Sends input and resolves with the desktop hit-test reply (null otherwise). */
   const dispatchInputForResult = useCallback((input: Record<string, unknown>): Promise<Record<string, unknown> | null> => {
     if (!api || pendingDisplayId || pendingQuality || !selected?.isController || selected.state !== "user-controlled") return Promise.resolve(null);
-    return api.request<Record<string, unknown> | null>("browser:input", { sessionId: selected.id, input })
+    return api.request<Record<string, unknown> | null>("browser:input", { sessionId: selected.id, input: { ...input, mobile: window.matchMedia("(pointer: coarse)").matches } })
       .then((result) => (result && typeof result === "object" ? result : null))
       .catch(() => null);
   }, [api, selected, pendingDisplayId, pendingQuality]);
@@ -1083,6 +1117,11 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
         <div className={`browser-live-surface ${hasControl ? "is-controlling" : ""} has-zoom ${hasControl && !panMode && quickKeysOpen ? "has-quickkeys" : ""}`}>
           {(
             <div className="browser-live-zoom" role="group" aria-label="桌面画面缩放">
+              {fullscreen && (
+                <button type="button" aria-label="退出全屏" title="退出全屏" onClick={() => void toggleFullscreen()}>
+                  <Minimize size={15} aria-hidden="true" />退出全屏
+                </button>
+              )}
               {sessions.length > 1 && (
                 <div className="browser-live-session-tabs" role="tablist" aria-label="切换直播屏幕">
                   {sessions.map((session) => (

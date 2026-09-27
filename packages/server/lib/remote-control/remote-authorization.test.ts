@@ -42,6 +42,40 @@ async function fixture(options: Record<string, unknown> = {}) {
 }
 
 describe('CLI remote desktop', () => {
+  it('deduplicates identical JPEGs and forwards mobile interaction without a capture restart', async () => {
+    const f = await fixture();
+    try {
+      f.grant(); await f.service.action('enable'); await f.watch();
+      const before = f.service.sequence;
+      await f.service.tick(); await f.service.tick();
+      expect(f.service.sequence).toBe(before);
+      f.service.lastFramePublishedAt = Date.now() - 2100;
+      await f.service.tick();
+      expect(f.service.sequence).toBe(before + 1);
+      f.registry.takeOver(f.viewer, f.service.sessionId); await f.service.inputQueue;
+      const generation = f.service.generation;
+      await f.registry.input(f.viewer, f.service.sessionId, {kind:'pointer',action:'move',x:0.5,y:0.5,mobile:true});
+      await f.service.inputQueue;
+      expect(f.helper.request).toHaveBeenCalledWith({op:'interaction'});
+      expect(f.service.generation).toBe(generation);
+      await f.service.tick();
+      expect(f.helper.request).toHaveBeenCalledWith({op:'capture',maxEdge:960,maxBytes:65536});
+    } finally { await f.close(); }
+  });
+  it('applies current receiver feedback without waiting for pending signaling', async () => {
+    const f = await fixture();
+    let finish!: () => void;
+    try {
+      f.grant(); await f.service.action('enable'); await f.watch();
+      f.registry.takeOver(f.viewer, f.service.sessionId); await f.service.inputQueue;
+      f.service.mediaChain = new Promise<void>(resolve => { finish = resolve; });
+      f.service.video.connected = true;
+      const apply = vi.spyOn(f.service.video, 'applyStats');
+      f.registry.webrtcFromViewer(f.viewer, f.service.sessionId, { kind: 'stats', lossRate: 0.1, rttMs: 200 });
+      await f.service.inputQueue;
+      expect(apply).toHaveBeenCalledWith(expect.objectContaining({ lossRate: 0.1, rttMs: 200 }));
+    } finally { finish?.(); await f.close(); }
+  });
   it('publishes full-duplex capability and gates microphone frames behind explicit start', async () => {
     const f = await fixture();
     try {
@@ -113,6 +147,30 @@ describe('CLI remote desktop', () => {
       expect(f.registry.list(f.viewer)[0].state).toBe('agent-controlled');
       expect(await f.service.status()).toMatchObject({ viewerCount: 1, controlState: 'agent-controlled' });
       await f.service.action('disable'); expect(f.registry.list(f.viewer)).toEqual([]);
+    } finally { await f.close(); }
+  });
+  it('wakes video for accepted pointer, wheel, key, and text input only', async () => {
+    const f = await fixture();
+    const noteInteraction = vi.spyOn(f.service.video, 'noteInteraction');
+    try {
+      f.grant(); await f.service.action('enable'); const session = await f.watch();
+      f.registry.takeOver(f.viewer, session.id); await f.service.inputQueue;
+      const inputs = [
+        {kind:'pointer',action:'move',x:0.2,y:0.3},
+        {kind:'pointer',action:'wheel',x:0.2,y:0.3,deltaX:0,deltaY:120},
+        {kind:'key',action:'down',key:'a',code:'KeyA',modifiers:[]},
+        {kind:'key',action:'down',text:'中文',key:'',code:'',modifiers:[]},
+      ];
+      for (const input of inputs) {
+        await f.registry.input(f.viewer, session.id, input as any);
+        await f.service.inputQueue;
+      }
+      expect(noteInteraction).toHaveBeenCalledTimes(inputs.length);
+
+      f.service.bounds = null;
+      await f.registry.input(f.viewer, session.id, {kind:'pointer',action:'down',x:0,y:0} as any);
+      await f.service.inputQueue;
+      expect(noteInteraction).toHaveBeenCalledTimes(inputs.length);
     } finally { await f.close(); }
   });
   it('rejects unauthenticated and non-local authorization before launching native code', async () => {

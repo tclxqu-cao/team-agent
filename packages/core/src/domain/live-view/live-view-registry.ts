@@ -323,7 +323,8 @@ export class LiveViewRegistry {
   input(peer: LiveViewPeer, sessionId: unknown, rawInput: unknown): Promise<Record<string, unknown> | null> {
     const session = this.requireVisible(peer, sessionId);
     if (session.controllerId !== peer.id || session.state !== "user-controlled") throw domainError("browser is read-only", "EWRITELOCK");
-    const input = normalizeInput(rawInput);
+    const input = { ...normalizeInput(rawInput),
+      ...((rawInput as Record<string, unknown>).mobile === true ? { mobile: true } : {}) };
     if (input.kind !== "pointer" || input.action !== "up") {
       session.producer.send({ type: "browser:input", sessionId: session.id, input });
       return Promise.resolve(null);

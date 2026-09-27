@@ -30,12 +30,31 @@ function fixture({ failHigh = false, failBaselineTransport = false } = {}) {
     return transport;
   });
   const signal = vi.fn();
+  const logger = { info: vi.fn() };
   const policy = new RemoteVideoPolicy('hd', encoder.capabilities());
-  const session = new RemoteVideoSession({ encoder, signal, policy, transportFactory, iceConfig: { iceServers: [], warning: null } });
-  return { session, encoder, signal, transports, frameListeners, transportFactory, state: (value: string) => options.onState(value) };
+  const session = new RemoteVideoSession({ encoder, signal, policy, transportFactory, logger, iceConfig: { iceServers: [], warning: null } });
+  return { session, encoder, signal, logger, transports, frameListeners, transportFactory, state: (value: string) => options.onState(value) };
 }
 
 describe('RemoteVideoSession', () => {
+  it('counts feedback once per sampling interval, then expires it', async () => {
+    vi.useFakeTimers();
+    const f = fixture();
+    try {
+      await f.session.handle({ kind: 'start' });
+      f.transports[0].connected = true;
+      await f.state('connected');
+      for (let n = 0; n < 10; n++) f.session.applyStats({lossRate:0.08,rttMs:280});
+      expect(f.session.policy.current().maxFps).toBe(30);
+      await vi.advanceTimersByTimeAsync(2000);
+      expect(f.session.policy.current().maxFps).toBe(30);
+      f.session.applyStats({lossRate:0.08,rttMs:280});
+      await vi.advanceTimersByTimeAsync(2000);
+      expect(f.session.policy.current().maxFps).toBe(15);
+      await vi.advanceTimersByTimeAsync(6000);
+      expect(f.session.policy.current().maxFps).toBe(15);
+    } finally { await f.session.stop(); vi.useRealTimers(); }
+  });
   it('uses receiver capabilities and falls back from High exactly once', async () => {
     const f = fixture({ failHigh: true });
     await f.session.handle({ kind: 'start', receiverProfiles: ['high', 'baseline'] });
@@ -63,6 +82,38 @@ describe('RemoteVideoSession', () => {
     f.session.applyTuning({ ...f.session.policy.current('two'), bitRate: 4_000_000 });
     await f.session.tuningChain;
     expect(f.encoder.apply).toHaveBeenLastCalledWith(expect.objectContaining({ bitRate: 4_000_000 }));
+  });
+
+  it('wakes video tuning without blocking input and deduplicates sanitized logs', async () => {
+    const f = fixture();
+    let releaseApply!: () => void;
+    f.encoder.apply.mockImplementationOnce(() => new Promise<void>((resolve) => { releaseApply = resolve; }));
+
+    expect(f.session.noteInteraction()).toMatchObject({ maxFps: 30, reason: 'interaction' });
+    expect(f.session.noteInteraction()).toMatchObject({ maxFps: 30, reason: 'interaction' });
+    await vi.waitFor(() => expect(releaseApply).toBeTypeOf('function'));
+    expect(f.encoder.apply).toHaveBeenCalledTimes(1);
+    expect(f.logger.info).toHaveBeenCalledTimes(1);
+    expect(f.logger.info).toHaveBeenCalledWith('remote video decision', expect.objectContaining({
+      trigger: 'interaction', targetFps: 30, reason: 'interaction',
+    }));
+    expect(JSON.stringify(f.logger.info.mock.calls)).not.toContain('sdp');
+    expect(JSON.stringify(f.logger.info.mock.calls)).not.toContain('candidate');
+
+    releaseApply();
+    await f.session.tuningChain;
+  });
+
+  it('logs adaptive telemetry only when material values change', () => {
+    const f = fixture();
+    f.session.applyStats({ lossRate: 0, rttMs: 2, droppedFrames: 0, availableBitrate: 20_000_000 });
+    f.session.applyStats({ lossRate: 0, rttMs: 2, droppedFrames: 0, availableBitrate: 20_000_000 });
+    expect(f.logger.info).toHaveBeenCalledTimes(1);
+    expect(f.logger.info).toHaveBeenCalledWith('remote video decision', expect.objectContaining({
+      trigger: 'receiver-stats', rttMs: 2, lossRate: 0, availableBitrate: 20_000_000,
+    }));
+    f.session.applyStats({ lossRate: 0.06, rttMs: 280, droppedFrames: 1, availableBitrate: 4_000_000 });
+    expect(f.logger.info).toHaveBeenCalledTimes(2);
   });
 
   it('reports a Baseline startup failure reached through the High fallback', async () => {

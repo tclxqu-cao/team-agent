@@ -4,6 +4,22 @@ import { RTCPeerConnection, RTCRtpCodecParameters } from 'werift';
 import { packetizeH264, WeriftVideoTransport } from './werift-video-transport.mjs';
 
 describe('WeriftVideoTransport', () => {
+  it('ignores bandwidth feedback and coalesces PLI/FIR keyframe requests', () => {
+    const onKeyframe = vi.fn();
+    const transport = new WeriftVideoTransport({ signal: vi.fn(), iceConfig: { iceServers: [] }, onKeyframe });
+    transport.connected = true;
+    for (let now = 0; now < 3000; now += 50) transport.handleFeedback({ type: 206, feedback: { count: 15 } }, now);
+    expect(onKeyframe).not.toHaveBeenCalled();
+    transport.handleFeedback({ type: 206, feedback: { count: 1 } }, 3000);
+    transport.handleFeedback({ type: 206, feedback: { count: 4 } }, 3100);
+    transport.handleFeedback({ type: 205, feedback: { count: 1 } }, 4100);
+    expect(onKeyframe).toHaveBeenCalledTimes(1);
+    transport.handleFeedback({ type: 206, feedback: { count: 4 } }, 4200);
+    expect(onKeyframe).toHaveBeenCalledTimes(2);
+    transport.connected = false;
+    transport.handleFeedback({ type: 206, feedback: { count: 1 } }, 6000);
+    expect(onKeyframe).toHaveBeenCalledTimes(2);
+  });
   it('fragments H264 NALs without dropping bytes and wraps sequence numbers', () => {
     const nal = Buffer.alloc(3500, 42); nal[0] = 0x65;
     const packets = packetizeH264([Buffer.from([0x67, 1, 2]), nal], 123, { sequence: 65535, ssrc: 7 });

@@ -1,14 +1,16 @@
-/** At most one unacknowledged image per viewer; queued images replace stale ones. */
+/** Byte-bounded acknowledgement window; unsent images replace stale ones. */
 export class ViewerFrameFlow {
-  constructor(send, canSend = () => true) {
+  constructor(send, canSend = () => true, { maxFrames = 1, maxBytes = 256 * 1024 } = {}) {
     this.send = send;
     this.canSend = canSend;
+    this.maxFrames = maxFrames;
+    this.maxBytes = maxBytes;
     this.reset(false);
   }
 
   reset(requireAck) {
     this.requireAck = requireAck;
-    this.inFlight = null;
+    this.inFlight = [];
     this.latest = null;
   }
 
@@ -18,16 +20,21 @@ export class ViewerFrameFlow {
   }
 
   ack(channelId, sequence) {
-    if (!this.inFlight || this.inFlight.channelId !== channelId || this.inFlight.sequence !== sequence) return;
-    this.inFlight = null;
+    const index = this.inFlight.findIndex(frame => frame.channelId === channelId && frame.sequence === sequence);
+    if (index < 0) return;
+    this.inFlight.splice(index, 1);
     this.flush();
   }
 
   flush() {
-    if (this.inFlight || !this.latest || !this.canSend()) return;
+    if (!this.latest || !this.canSend() || this.inFlight.length >= this.maxFrames) return;
+    const bytes = this.latest.bytes.byteLength;
+    const outstanding = this.inFlight.reduce((sum, frame) => sum + frame.bytes, 0);
+    // A single oversized legacy frame may pass, but cannot build a backlog.
+    if (this.inFlight.length && outstanding + bytes > this.maxBytes) return;
     const frame = this.latest;
     this.latest = null;
-    if (this.requireAck) this.inFlight = { channelId: frame.channelId, sequence: frame.sequence };
+    if (this.requireAck) this.inFlight.push({ channelId: frame.channelId, sequence: frame.sequence, bytes });
     this.send(frame);
   }
 }

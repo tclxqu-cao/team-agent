@@ -23,7 +23,7 @@ describe("BrowserRemoteVideoPolicy", () => {
     policy.begin(["baseline"]);
     policy.configureSender(["baseline"]);
     policy.observe({ now: 0, content: { activity: "idle", confidence: 1, observedAt: 0 } });
-    expect(policy.observe({ now: 3_000, content: { activity: "idle", confidence: 1, observedAt: 3_000 } }).maxFps).toBe(5);
+    expect(policy.observe({ now: 3_000, content: { activity: "idle", confidence: 1, observedAt: 3_000 } }).maxFps).toBe(15);
     expect(policy.observe({ encoder: { encodeLatencyMs: 500, sampledAt: 3_100 } }).reason).toBe("encoder-pressure");
   });
 });
