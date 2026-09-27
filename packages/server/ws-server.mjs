@@ -544,8 +544,9 @@ function makeConn(ws) {
   const browserFrameFlow = new ViewerFrameFlow(
     ({ channelId, sequence, bytes }) => ws.send(encodeLiveFramePacket({
       type: LIVE_FRAME_PACKET_TYPE.watcherFrame, channelId, sequence, payload: bytes,
-    })),
+    }), () => browserFrameFlow.flush()),
     () => ws.readyState === ws.OPEN && ws.bufferedAmount === 0,
+    { maxFrames: 3, maxBytes: 256 * 1024 },
   );
   return {
     id: randomBytes(8).toString("hex"),
@@ -1179,7 +1180,7 @@ const pairingGateway = createDevicePairingGateway({ dataDir: serverBaseDir, desk
 if (process.argv.includes("--test-no-pairing")) console.warn("[TEST MODE] 配对已跳过：能访问此端口的用户可直接操作。仅用于受控测试，移除 --test-no-pairing 后恢复认证。");
 // Child runtimes may publish live frames only using this process's local credential.
 process.env.AGENTROAM_LOCAL_SERVICE_TOKEN = desktopDiscovery.headers()["x-agentroam-desktop-token"];
-const remoteAuthorization = new RemoteAuthorization({ registry: liveViewRegistry, userId: anonymousWebStore.getOrCreatePrincipal().userId, dataDir: serverBaseDir });
+const remoteAuthorization = new RemoteAuthorization({ registry: liveViewRegistry, userId: anonymousWebStore.getOrCreatePrincipal().userId, dataDir: serverBaseDir, logger: globalLogger });
 await remoteAuthorization.initialize();
 let serviceReady = false;
 const server = createServer((req, res) => {

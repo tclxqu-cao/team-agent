@@ -3,7 +3,7 @@ import { prepareChromeExtension, showChromeExtensionSetup } from "./ai-hub/chrom
 // on electron 32 / Node 20.18 (cjsPreparseModuleExports: "exports" undefined).
 import { createRequire } from "module";
 const require = createRequire(import.meta.url);
-const { app, BrowserWindow, ipcMain, dialog, Menu, nativeImage, session, shell, desktopCapturer, systemPreferences, screen, globalShortcut, clipboard, powerMonitor, protocol } = require("electron") as typeof import("electron");
+const { app, BrowserWindow, ipcMain, dialog, Menu, nativeImage, session, shell, desktopCapturer, systemPreferences, screen, globalShortcut, clipboard, powerMonitor, protocol, Notification } = require("electron") as typeof import("electron");
 import { spawn, type ChildProcess } from "node:child_process";
 import { basename, delimiter, join, resolve } from "node:path";
 import { homedir } from "node:os";
@@ -29,6 +29,8 @@ import { readDesktopLiveState, writeDesktopLiveState } from "./desktop-live-stat
 import { DesktopLiveCliProxy } from "./desktop-live-cli-proxy.js";
 import { SharedServiceConnection } from "./shared-service.js";
 import { DesktopUpdateService } from "./update-service.js";
+import { DesktopTaskCompletionNotifier } from "./task-completion-notifier.js";
+import { resolveTaskNotificationPreferences, type TaskCompletionNotification } from "@agent/core";
 import { directoryOpenMenuLabel, revealDirectoryWithShell, resolveDirectoryForOpen } from "./directory-context-menu.js";
 import { createDesktopPreviewResponse, DesktopFileWorkspaceService } from "./file-workspace-service.js";
 import { AIHubManager, type HubPaneRect } from "./ai-hub/manager.js";
@@ -98,6 +100,11 @@ if (!gotLock) {
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 let mainWindow: import("electron").BrowserWindow | null = null;
+const taskCompletionNotifier = new DesktopTaskCompletionNotifier(
+  Notification,
+  () => mainWindow,
+  (message, error) => globalLogger.warn(message, error),
+);
 const desktopUpdateService = new DesktopUpdateService({
   version: app.getVersion(),
   platform: process.platform,
@@ -794,6 +801,25 @@ ipcMain.handle("dictation:stop", () => {
 
 ipcMain.handle("window:isVisible", () => {
   return mainWindow?.isVisible() ?? false;
+});
+
+ipcMain.handle("task-notification:show", (_event, rawNotification: unknown, rawPreferences: unknown) => {
+  if (!rawNotification || typeof rawNotification !== "object") return { shown: false };
+  const value = rawNotification as Record<string, unknown>;
+  if (!["notificationId", "sessionId", "runId", "title", "body"].every((key) => typeof value[key] === "string")) {
+    return { shown: false };
+  }
+  const notification: TaskCompletionNotification = {
+    notificationId: String(value.notificationId).slice(0, 500),
+    sessionId: String(value.sessionId).slice(0, 300),
+    runId: String(value.runId).slice(0, 300),
+    title: String(value.title).slice(0, 120),
+    body: String(value.body).slice(0, 500),
+  };
+  const preferences = resolveTaskNotificationPreferences(
+    rawPreferences && typeof rawPreferences === "object" ? rawPreferences as Record<string, boolean> : undefined,
+  );
+  return taskCompletionNotifier.notify(notification, preferences);
 });
 
 // ── Service TTS + two-way voice conversation ────────────────────────────

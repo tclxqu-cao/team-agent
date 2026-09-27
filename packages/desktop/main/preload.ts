@@ -32,6 +32,8 @@ contextBridge.exposeInMainWorld("desktopDeviceApi", {
   isWindowVisible: () => ipcRenderer.invoke("window:isVisible"),
   // 用系统浏览器打开 http(s) 链接（如 Flow Studio 免登入口）
   openExternal: (url: string) => ipcRenderer.invoke("shell:open-external", url),
+  notifyTaskCompletion: (notification: unknown, preferences: unknown) =>
+    ipcRenderer.invoke("task-notification:show", notification, preferences),
 
   // Native wake-word listener (macOS Speech framework; works without Google services)
   wakeStart: (wakeWord: string) => ipcRenderer.invoke("wake:start", wakeWord),

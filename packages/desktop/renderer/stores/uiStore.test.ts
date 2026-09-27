@@ -1,4 +1,5 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { createJSONStorage } from "zustand/middleware";
 import {
   getDefaultWakeEnabled,
   migrateUIPreferences,
@@ -7,6 +8,17 @@ import {
 } from "./uiStore";
 
 beforeEach(() => {
+  const values = new Map<string, string>();
+  const localStorageMock = {
+    getItem: (key: string) => values.get(key) ?? null,
+    setItem: (key: string, value: string) => values.set(key, value),
+    removeItem: (key: string) => values.delete(key),
+    clear: () => values.clear(),
+    key: (index: number) => [...values.keys()][index] ?? null,
+    get length() { return values.size; },
+  };
+  vi.stubGlobal("localStorage", localStorageMock);
+  useUIStore.persist.setOptions({ storage: createJSONStorage(() => localStorageMock) });
   useUIStore.setState({ pinnedSessionIds: [] });
 });
 

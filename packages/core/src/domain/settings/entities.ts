@@ -2,6 +2,12 @@
 
 import type { ReasoningEffort } from "../model/entities.js";
 
+export interface TaskNotificationPreferences {
+  completionEnabled: boolean;
+  soundEnabled: boolean;
+  notifyWhileForeground: boolean;
+}
+
 export interface ModelProfile {
   id: string;
   /** Human-readable nickname, e.g. "GPT-4o" */
@@ -33,6 +39,8 @@ export interface SettingsData {
   activeProfileId: string;
   /** Reasoning intensity for main-loop requests. Default "off" = provider default behavior. */
   reasoningEffort?: ReasoningEffort;
+  /** Host-level completion notification preferences. */
+  taskNotifications?: TaskNotificationPreferences;
 }
 
 export interface ISettingsStore {

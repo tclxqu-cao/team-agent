@@ -1,8 +1,15 @@
 import { agentHost } from "../app/api/agent-host";
 import { getWebPushService } from "./web-push-service.mjs";
 import { serverLogger } from "./global-logger";
+import {
+  NotificationDeduper,
+  createTaskCompletionNotification,
+  resolveTaskNotificationPreferences,
+} from "@agent/core";
+import { sharedSettings } from "./shared-settings";
 
 let hooked = false;
+const completionDeduper = new NotificationDeduper();
 
 /**
  * Idempotently routes session events (customer-agent and native) into Web
@@ -12,10 +19,11 @@ let hooked = false;
 export function ensurePushHook(): void {
   if (hooked) return;
   hooked = true;
-  agentHost.setGlobalEventObserver((sessionId, event) => {
+  agentHost.setGlobalEventObserver((sessionId, event, context) => {
     try {
       if (event.type === "ask_user") {
         getWebPushService().notifySession({
+          notificationId: `${sessionId}:${event.questionId}:approval`,
           sessionId,
           kind: "approval",
           title: "需要你的审批",
@@ -27,19 +35,46 @@ export function ensurePushHook(): void {
         return;
       }
       if (event.type === "done") {
-        getWebPushService().notifySession({
+        if (context.source === "goal") return;
+        const preferences = resolveTaskNotificationPreferences(sharedSettings().read().taskNotifications);
+        const notification = context.runId ? createTaskCompletionNotification({
           sessionId,
-          kind: "done",
-          title: "会话已完成",
-          body: typeof event.finalText === "string" && event.finalText.trim()
-            ? event.finalText.trim().slice(0, 160)
-            : "运行已结束",
-          url: "/app/",
-        });
+          runId: context.runId,
+          title: "任务已完成",
+          finalText: event.finalText,
+          outcome: "completed",
+          source: "user",
+        }, preferences) : null;
+        if (notification && completionDeduper.accept(notification.notificationId)) {
+          getWebPushService().notifySession({
+            ...notification,
+            url: `/app/?session=${encodeURIComponent(sessionId)}`,
+          });
+        }
+        return;
+      }
+      if (event.type === "goal_updated" && event.goal.status === "complete") {
+        const preferences = resolveTaskNotificationPreferences(sharedSettings().read().taskNotifications);
+        const notification = createTaskCompletionNotification({
+          sessionId,
+          runId: `goal:${event.goal.createdAt}`,
+          title: "目标已完成",
+          finalText: event.goal.objective,
+          outcome: "completed",
+          source: "goal",
+          goalFinished: true,
+        }, preferences);
+        if (notification && completionDeduper.accept(notification.notificationId)) {
+          getWebPushService().notifySession({
+            ...notification,
+            url: `/app/?session=${encodeURIComponent(sessionId)}`,
+          });
+        }
         return;
       }
       if (event.type === "error") {
         getWebPushService().notifySession({
+          notificationId: `${sessionId}:${context.runId ?? "unknown"}:error`,
           sessionId,
           kind: "error",
           title: "会话出错",

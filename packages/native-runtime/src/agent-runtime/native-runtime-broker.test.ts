@@ -1161,6 +1161,12 @@ describe("NativeRuntimeBrokerHost", () => {
       });
       expect(runtime.steeredInputs).toEqual([{ id: sessionId, input: "use this now" }]);
       expect((await host.getGoals(sessionId)).queued).toEqual([]);
+
+      await expect(host.steerMessage(sessionId, queueItemId)).resolves.toEqual({
+        steered: true,
+        state: expect.objectContaining({ queued: [] }),
+      });
+      expect(runtime.steeredInputs).toEqual([{ id: sessionId, input: "use this now" }]);
     } finally {
       await host.stop();
     }

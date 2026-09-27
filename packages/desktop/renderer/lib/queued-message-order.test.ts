@@ -103,8 +103,9 @@ describe("hideQueuedGoalMessages", () => {
 });
 
 describe("markDurableMessageSteered", () => {
-  it("keeps an accepted durable steer visible as ordinary chat history", () => {
+  it("moves an accepted durable steer to the current history tail", () => {
     const unrelated = { id: "history", role: "assistant", content: "working", timestamp: 1 };
+    const later = { id: "later", role: "assistant", content: "still working", timestamp: 3 };
     const queued = {
       id: "source-1",
       role: "user",
@@ -115,11 +116,13 @@ describe("markDurableMessageSteered", () => {
       sendState: "pending" as const,
     };
 
-    const result = markDurableMessageSteered([unrelated, queued], queued.id);
+    const result = markDurableMessageSteered([unrelated, queued, later], queued.id, 4);
 
     expect(result[0]).toBe(unrelated);
-    expect(result[1]).toEqual({
+    expect(result[1]).toBe(later);
+    expect(result[2]).toEqual({
       ...queued,
+      timestamp: 4,
       isQueued: false,
       isSteered: true,
       queueItemId: undefined,
@@ -130,6 +133,11 @@ describe("markDurableMessageSteered", () => {
       queued: [],
       history: [],
     })).toEqual(result);
+  });
+
+  it("keeps the original collection when the queued message is already gone", () => {
+    const messages = [{ id: "history", role: "assistant", content: "working", timestamp: 1 }];
+    expect(markDurableMessageSteered(messages, "missing", 2)).toBe(messages);
   });
 });
 

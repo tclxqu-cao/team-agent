@@ -200,9 +200,11 @@ describe("TuiApp palettes", () => {
     expect(view.lastFrame()).toContain("命令与技能");
     expect(view.lastFrame()).toContain("命令");
     expect(view.lastFrame()).toContain("技能");
-    expect(view.lastFrame()).toContain("/wiki-query");
     expect(view.lastFrame()).toContain("筛选");
     expect(view.lastFrame()).toContain("⌕ /");
+    view.stdin.write("wiki");
+    await tick();
+    expect(view.lastFrame()).toContain("/wiki-query");
     view.stdin.write("\u001b");
     await tick(120);
     expect(view.lastFrame()).not.toContain("↑↓ 移动");
@@ -411,27 +413,27 @@ describe("TuiApp palettes", () => {
     await tick();
     view.stdin.write("/");
     await tick();
-    expect(view.lastFrame()).toContain("1/22");
+    expect(view.lastFrame()).toContain("1/25");
     expect(view.lastFrame()).toContain("› /help");
 
     view.stdin.write("\u001b[B");
     await tick();
-    expect(view.lastFrame()).toContain("2/22");
+    expect(view.lastFrame()).toContain("2/25");
     expect(view.lastFrame()).toContain("› /new");
 
     view.stdin.write("\u001bOB");
     await tick();
-    expect(view.lastFrame()).toContain("3/22");
+    expect(view.lastFrame()).toContain("3/25");
     expect(view.lastFrame()).toContain("› /sessions");
 
     view.stdin.write("\u001bOA");
     await tick();
-    expect(view.lastFrame()).toContain("2/22");
+    expect(view.lastFrame()).toContain("2/25");
 
     view.stdin.write("\u001b");
     view.stdin.write("[B");
     await tick();
-    expect(view.lastFrame()).toContain("3/22");
+    expect(view.lastFrame()).toContain("3/25");
     expect(view.lastFrame()).toContain("› /sessions");
 
     view.stdin.write("\r");
@@ -451,7 +453,7 @@ describe("TuiApp palettes", () => {
 
     view.stdin.write("/\u001b[B");
     await tick();
-    expect(view.lastFrame()).toContain("2/22");
+    expect(view.lastFrame()).toContain("2/25");
     expect(view.lastFrame()).toContain("› /new");
     expect(view.lastFrame()).toContain("⌕ /");
 

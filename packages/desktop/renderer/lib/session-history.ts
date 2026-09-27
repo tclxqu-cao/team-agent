@@ -431,9 +431,20 @@ export function mergeRefreshedSessionHistory(
   const queued = current.filter((message) => message.isQueued);
   const currentTail = current.slice(replacementStart).filter((message) => !message.isQueued);
   const reconciledRefreshed = preserveTrailingAssistantSuffix(currentTail, stableRefreshed);
+  const optimisticTurnStart = current.findLastIndex((message, index) => (
+    index >= replacementStart
+    && message.role === "user"
+    && message.sendState === "pending"
+    && !message.isQueued
+    && !stableRefreshed.some((candidate) => candidate.id === message.id)
+  ));
+  const optimisticTurn = optimisticTurnStart < 0
+    ? []
+    : current.slice(optimisticTurnStart).filter((message) => !message.isQueued);
   return [
     ...current.slice(0, replacementStart).filter((message) => !message.isQueued),
     ...reconciledRefreshed,
+    ...optimisticTurn,
     ...queued,
   ];
 }

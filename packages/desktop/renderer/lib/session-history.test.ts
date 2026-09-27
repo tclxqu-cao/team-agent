@@ -383,6 +383,54 @@ describe("mergeRefreshedSessionHistory", () => {
     expect(mergeRefreshedSessionHistory(current, [])).toBe(current);
   });
 
+  it("keeps a pending optimistic turn when a stale refresh ends before it", () => {
+    const current = [
+      message("old-user", "earlier"),
+      assistant("old-assistant", "earlier answer"),
+      { ...message("pending-user", "follow up"), sendState: "pending" as const },
+      {
+        ...assistant("live-reasoning", ""),
+        presentation: {
+          reasoning: [{ itemId: "reasoning-1", sectionIndex: 0, text: "Inspecting" }],
+        },
+      },
+    ];
+    const refreshed = [
+      message("refreshed-user", "earlier"),
+      assistant("refreshed-assistant", "earlier answer"),
+    ];
+
+    const merged = mergeRefreshedSessionHistory(current, refreshed);
+
+    expect(merged.map((entry) => entry.id)).toEqual([
+      "old-user",
+      "old-assistant",
+      "pending-user",
+      "live-reasoning",
+    ]);
+    expect(merged[2].sendState).toBe("pending");
+    expect(merged[3].presentation?.reasoning?.[0].text).toBe("Inspecting");
+  });
+
+  it("does not duplicate a pending message once refreshed history contains it", () => {
+    const current = [
+      message("old-user", "earlier"),
+      assistant("old-assistant", "earlier answer"),
+      { ...message("pending-user", "follow up"), sendState: "pending" as const },
+    ];
+    const refreshed = [
+      message("refreshed-user", "earlier"),
+      assistant("refreshed-assistant", "earlier answer"),
+      message("persisted-user", "follow up"),
+    ];
+
+    const merged = mergeRefreshedSessionHistory(current, refreshed);
+
+    expect(merged.filter((entry) => entry.content === "follow up")).toHaveLength(1);
+    expect(merged.at(-1)?.id).toBe("pending-user");
+    expect(merged.at(-1)?.sendState).toBeUndefined();
+  });
+
   it("keeps queued messages after a native history tail refresh", () => {
     const current = [
       message("history", "working"),

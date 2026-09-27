@@ -42,6 +42,7 @@ export default function SettingsPanel() {
   const {
     maxIterations, contextWindow, isConfigured,
     profiles, activeProfileId,
+    taskNotifications,
     setField, loadFromSystem, saveToSystem,
     addProfile, updateProfile, deleteProfile, switchActiveProfile,
   } = useSettingsStore();
@@ -325,6 +326,28 @@ export default function SettingsPanel() {
           </Field>
 
 
+        </div>
+      </section>
+
+      <section style={{ marginTop: 40 }}>
+        <h3 style={{ fontSize: 13, fontWeight: 600, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 14 }}>
+          任务完成提醒
+        </h3>
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          {([
+            ["completionEnabled", "任务完成通知"],
+            ["soundEnabled", "播放提示音"],
+            ["notifyWhileForeground", "前台运行时也通知"],
+          ] as const).map(([key, label]) => (
+            <label key={key} style={{ display: "flex", alignItems: "center", gap: 10, color: "var(--text-primary)", fontSize: 14 }}>
+              <input
+                type="checkbox"
+                checked={taskNotifications[key]}
+                onChange={(event) => setField("taskNotifications", { ...taskNotifications, [key]: event.target.checked })}
+              />
+              {label}
+            </label>
+          ))}
         </div>
       </section>
 

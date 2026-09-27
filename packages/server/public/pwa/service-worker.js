@@ -22,7 +22,10 @@ self.addEventListener("push", event => {
     body: typeof payload.body === "string" ? payload.body : "",
     tag: typeof payload.tag === "string" && payload.tag ? payload.tag : "agentroam",
     icon: "/pwa/icon-192.png",
-    data: { url: typeof payload.url === "string" && payload.url ? payload.url : "/app/" },
+    data: {
+      url: typeof payload.url === "string" && payload.url ? payload.url : "/app/",
+      sessionId: typeof payload.sessionId === "string" ? payload.sessionId : "",
+    },
   }));
 });
 

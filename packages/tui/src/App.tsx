@@ -11,6 +11,8 @@ import {
   type ToolApprovalDecision,
   type ToolPermissionMode,
   type ToolPermissionRequest,
+  createTaskCompletionNotification,
+  resolveTaskNotificationPreferences,
 } from "@agent/core";
 import { BUILTIN_COMMANDS, createSlashItems, helpText, parseSlashCommand } from "./commands.js";
 import { appendInputHistory } from "./input-history.js";
@@ -46,6 +48,7 @@ import { ModelWizard } from "./components/ModelWizard.js";
 import { ProgressLine } from "./components/ProgressLine.js";
 import { Transcript } from "./components/Transcript.js";
 import { Header } from "./components/Header.js";
+import { notifyTuiTaskCompletion } from "./task-completion-notifier.js";
 import { applyTheme, PALETTE_TITLES, TUI_THEME, THEME_LABELS, THEME_NAMES, type ThemeName } from "./theme.js";
 
 type SecondaryPalette = "models" | "wizard-models" | "sessions" | "projects" | "skills" | "permissions" | "themes" | "mcp";
@@ -222,6 +225,10 @@ export function TuiApp(props: TuiAppProps) {
   const [paletteDismissed, setPaletteDismissed] = useState(false);
   const [queuedInputs, setQueuedInputs] = useState<string[]>([]);
   const [tuiConfig, setTuiConfig] = useState<TuiConfig>(props.initialConfig ?? emptyTuiConfig());
+  const taskNotificationPreferences = useMemo(
+    () => resolveTaskNotificationPreferences(tuiConfig.taskNotifications),
+    [tuiConfig.taskNotifications],
+  );
   const [modelWizard, setModelWizard] = useState<ModelWizardState | null>(null);
   const [scrollback, setScrollback] = useState(0);
   const [pendingImages, setPendingImages] = useState<Array<{ name: string; dataUrl: string }>>([]);
@@ -615,6 +622,27 @@ export function TuiApp(props: TuiAppProps) {
       case "/vim":
         await toggleVimMode();
         break;
+      case "/notifications":
+      case "/notification-sound":
+      case "/notification-foreground": {
+        if (args !== "on" && args !== "off") {
+          append("notice", `用法: ${name} on|off`);
+          break;
+        }
+        const key = name === "/notifications"
+          ? "completionEnabled"
+          : name === "/notification-sound"
+            ? "soundEnabled"
+            : "notifyWhileForeground";
+        const nextConfig = {
+          ...tuiConfig,
+          taskNotifications: { ...taskNotificationPreferences, [key]: args === "on" },
+        };
+        await saveTuiConfig(props.configPath, nextConfig);
+        setTuiConfig(nextConfig);
+        append("notice", `${name} 已${args === "on" ? "开启" : "关闭"}`);
+        break;
+      }
       case "/compact": {
         if (state.running) {
           append("error", "运行中不能压缩上下文，请先 Ctrl+C 中断");
@@ -729,6 +757,9 @@ export function TuiApp(props: TuiAppProps) {
     let currentInput: string | undefined = firstInput;
     let currentImages: string[] | undefined = firstImages;
     let currentIsGoalTurn = firstGoalTurn;
+    let notificationRunId = randomUUID();
+    let sequenceFailed = false;
+    let finalText = "";
     while (currentInput) {
       const parsed = parseSlashCommand(currentInput);
       if (currentIsGoalTurn) {
@@ -739,10 +770,8 @@ export function TuiApp(props: TuiAppProps) {
       }
       dispatch({ type: "turn_start", now: Date.now() });
       const eventBuffer = new AgentEventBuffer((event) => {
-        if (event.type === "done" || event.type === "error") {
-          // Terminal bell so long turns are noticeable when the window is backgrounded.
-          process.stdout.write("\x07");
-        }
+        if (event.type === "done") finalText = event.finalText || finalText;
+        if (event.type === "error" || event.type === "turn_aborted") sequenceFailed = true;
         dispatch({ type: "agent_event", event, now: Date.now() });
       });
       try {
@@ -767,12 +796,25 @@ export function TuiApp(props: TuiAppProps) {
         currentIsGoalTurn = true;
         continue;
       }
+      const notification = createTaskCompletionNotification({
+        sessionId: props.runtime.snapshot().sessionId,
+        runId: notificationRunId,
+        title: "任务已完成",
+        finalText,
+        outcome: sequenceFailed ? "failed" : "completed",
+        source: currentIsGoalTurn || firstGoalTurn ? "goal" : "user",
+        goalFinished: currentIsGoalTurn || firstGoalTurn,
+      }, taskNotificationPreferences);
+      if (notification) void notifyTuiTaskCompletion(notification, taskNotificationPreferences);
       currentInput = queuedInputsRef.current.shift();
+      notificationRunId = randomUUID();
+      sequenceFailed = false;
+      finalText = "";
       currentImages = undefined;
       currentIsGoalTurn = false;
       setQueuedInputs([...queuedInputsRef.current]);
     }
-  }, [props.runtime]);
+  }, [props.runtime, taskNotificationPreferences]);
 
   const submit = useCallback(async () => {
     if (modelWizard) {

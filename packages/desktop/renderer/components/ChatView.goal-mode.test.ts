@@ -8,6 +8,6 @@ describe("ChatView goal mode visibility", () => {
     expect(chatView).not.toContain('className="goal-queue thread-goal-setup"');
     expect(chatView).not.toContain("设定目标，完成后每轮空闲自动续跑推进");
     expect(chatView).toContain('aria-label={goalMode ? "关闭目标模式" : "开启目标模式"}');
-    expect(chatView).toContain('const goalObjective = explicitGoal ? explicitGoal[1]?.trim() ?? "" : goalMode ? finalMsg : null');
+    expect(chatView).toContain("submission.applyGoalMode && goalMode ? finalMsg : null");
   });
 });

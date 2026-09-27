@@ -8,6 +8,7 @@ import {
   type SessionToolResultBody,
   type SessionToolResultRef,
 } from "@agent/core";
+import { createTaskCompletionNotification } from "../../../core/src/application/notification/task-completion";
 import { ArrowDownToLine, Check, Copy, CornerUpRight, FileText, GripVertical, LoaderCircle, Pencil, Play, RefreshCw, Square, Target, Trash2, Unplug, Volume2 } from "lucide-react";
 import AgentBrandIcon from "./AgentBrandIcon";
 import MermaidBlock from "./MermaidBlock";
@@ -427,7 +428,6 @@ interface ChatViewProps {
   settingsOpen?: boolean;
   onHideToBackground?: () => void;
   onOpenHub?: () => void;
-  onOpenFlowStudio?: () => void;
   onOpenDesktopLive?: () => void;
   desktopLiveOpen?: boolean;
   fileDrawerOpen?: boolean;
@@ -514,7 +514,6 @@ export default function ChatView({
   settingsOpen = false,
   onHideToBackground,
   onOpenHub,
-  onOpenFlowStudio,
   onOpenDesktopLive,
   desktopLiveOpen = false,
   fileDrawerOpen = false,
@@ -581,7 +580,7 @@ export default function ChatView({
     () => renderedMessages.findLast((message) => message.executionTrace)?.executionTrace?.turnId,
     [renderedMessages],
   );
-  const { revision: settingsRevision, isConfigured, profiles, activeProfileId, switchActiveProfile, loadFromSystem, contextWindow, reasoningEffort, setField, saveToSystem } = useSettingsStore();
+  const { revision: settingsRevision, isConfigured, profiles, activeProfileId, switchActiveProfile, loadFromSystem, contextWindow, reasoningEffort, taskNotifications, setField, saveToSystem } = useSettingsStore();
   const viewSessionId = selectedSessionId || sessionId;
   const [occupiedRecoveries, setOccupiedRecoveries] = useState<OccupiedRecoveryRegistry>({});
   const occupiedRecoveriesRef = useRef<OccupiedRecoveryRegistry>({});
@@ -802,6 +801,8 @@ export default function ChatView({
   const [editingQueuedId, setEditingQueuedId] = useState<string | null>(null);
   const [queuedEditDraft, setQueuedEditDraft] = useState("");
   const [copiedQueuedId, setCopiedQueuedId] = useState<string | null>(null);
+  const [steeringQueuedMessageIds, setSteeringQueuedMessageIds] = useState<Set<string>>(() => new Set());
+  const steeringQueuedMessageIdsRef = useRef<Set<string>>(new Set());
   const [draggedQueuedMessageId, setDraggedQueuedMessageId] = useState<string | null>(null);
   const queuedPointerDragRef = useRef<{ id: string; pointerId: number } | null>(null);
   const [addMenuOpen, setAddMenuOpen] = useState(false);
@@ -3020,14 +3021,20 @@ export default function ChatView({
   const handleSteer = async (msgId: string) => {
     const targetSessionId = selectedSessionId || sessionId;
     if (!targetSessionId || !window.agentApi) return;
-    const msg = useAgentStore.getState().messages.find(m => m.id === msgId);
+    if (steeringQueuedMessageIdsRef.current.has(msgId)) return;
+    const msg = getMessagesForSession(targetSessionId).find(m => m.id === msgId);
     if (!msg || !msg.isQueued) return;
+    steeringQueuedMessageIdsRef.current.add(msgId);
+    setSteeringQueuedMessageIds(new Set(steeringQueuedMessageIdsRef.current));
     try {
       if (msg.queueItemId) {
         const state = await window.agentApi.steerSessionMessage(targetSessionId, msg.queueItemId);
-        updateMessage(
-          msgId,
-          (current) => markDurableMessageSteered([current], msgId)[0],
+        setMessages(
+          markDurableMessageSteered(
+            getMessagesForSession(targetSessionId),
+            msgId,
+            Date.now(),
+          ),
           targetSessionId,
         );
         applySessionQueueState(
@@ -3036,7 +3043,14 @@ export default function ChatView({
         );
       } else {
         await window.agentApi.steer(msg.content, targetSessionId, msg.agentName);
-        updateMessage(msgId, (m) => ({ ...m, isQueued: false, isSteered: true }));
+        setMessages(
+          markDurableMessageSteered(
+            getMessagesForSession(targetSessionId),
+            msgId,
+            Date.now(),
+          ),
+          targetSessionId,
+        );
       }
       if (editingQueuedId === msgId) {
         setEditingQueuedId(null);
@@ -3044,6 +3058,9 @@ export default function ChatView({
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "引导失败");
+    } finally {
+      steeringQueuedMessageIdsRef.current.delete(msgId);
+      setSteeringQueuedMessageIds(new Set(steeringQueuedMessageIdsRef.current));
     }
   };
 
@@ -3206,6 +3223,8 @@ export default function ChatView({
     targetSessionId: string,
     agentIds?: string[],
   ) {
+    const notificationRunId = crypto.randomUUID();
+    let runCompleted = false;
     if (targetSessionId.startsWith("runtime:")) {
       pendingNativeSendPayloadRef.current.set(targetSessionId, {
         content: message.content,
@@ -3234,6 +3253,7 @@ export default function ChatView({
           message.images,
           runNativeOptions,
         );
+        runCompleted = true;
       }
     } catch (err) {
       const recovery = findOccupiedRecovery(occupiedRecoveriesRef.current, targetSessionId);
@@ -3292,6 +3312,21 @@ export default function ChatView({
         if (onRunComplete) void onRunComplete(selectedProjectId, targetSessionId);
         void startRun(nextQueued, targetSessionId);
       } else {
+        if (runCompleted && window.agentApi?.notifyTaskCompletion) {
+          const finalText = [...useAgentStore.getState().getMessagesForSession(targetSessionId)]
+            .reverse()
+            .find((item) => item.role === "assistant" && item.content.trim() && !item.isCompactionSummary)
+            ?.content;
+          const notification = createTaskCompletionNotification({
+            sessionId: targetSessionId,
+            runId: notificationRunId,
+            title: "任务已完成",
+            finalText,
+            outcome: "completed",
+            source: "user",
+          }, taskNotifications);
+          if (notification) void window.agentApi.notifyTaskCompletion(notification, taskNotifications);
+        }
         if (runningSessionRef.current === targetSessionId) runningSessionRef.current = null;
         if (useAgentStore.getState().runningSessionId === targetSessionId) setRunningSession(null);
         if (onRunComplete) void onRunComplete(selectedProjectId, targetSessionId);
@@ -3807,7 +3842,6 @@ export default function ChatView({
               ? () => { void handleCodexRelease(); }
               : undefined}
             onOpenHub={onOpenHub}
-            onOpenFlowStudio={onOpenFlowStudio}
             onToggleAppearance={onToggleAppearance}
             onOpenSettings={onOpenSettings}
           />
@@ -4449,7 +4483,8 @@ export default function ChatView({
                   </span>
                   {canSteerQueuedMessages && <button
                     onClick={() => void handleSteer(msg.id)}
-                    title="将此消息引导到当前对话"
+                    disabled={steeringQueuedMessageIds.has(msg.id)}
+                    title={steeringQueuedMessageIds.has(msg.id) ? "正在引导" : "将此消息引导到当前对话"}
                     style={{
                       display: "inline-flex", alignItems: "center", gap: 4,
                       fontSize: 11, fontWeight: 600,
@@ -4457,7 +4492,8 @@ export default function ChatView({
                       padding: "2px 10px", borderRadius: 20,
                       border: "1px solid rgba(79,110,247,0.3)",
                       background: "var(--accent-dim)",
-                      cursor: "pointer",
+                      cursor: steeringQueuedMessageIds.has(msg.id) ? "wait" : "pointer",
+                      opacity: steeringQueuedMessageIds.has(msg.id) ? 0.6 : 1,
                       transition: "all 0.15s",
                       fontFamily: "var(--font-body)",
                     }}
@@ -4474,7 +4510,7 @@ export default function ChatView({
                       <path d="M3 12h18M3 6h18M3 18h18"/>
                       <path d="M12 3v18" opacity="0.3"/>
                     </svg>
-                    引导
+                    {steeringQueuedMessageIds.has(msg.id) ? "引导中" : "引导"}
                   </button>}
                 </div>
               )}
@@ -5233,10 +5269,13 @@ export default function ChatView({
                           type="button"
                           className="queued-message-action queued-message-action--accent"
                           onClick={() => void handleSteer(msg.id)}
-                          title="引导到当前对话"
-                          aria-label="引导排队消息到当前对话"
+                          disabled={steeringQueuedMessageIds.has(msg.id)}
+                          title={steeringQueuedMessageIds.has(msg.id) ? "正在引导" : "引导到当前对话"}
+                          aria-label={steeringQueuedMessageIds.has(msg.id) ? "正在引导排队消息" : "引导排队消息到当前对话"}
                         >
-                          <CornerUpRight size={15} strokeWidth={1.8} aria-hidden="true" />
+                          {steeringQueuedMessageIds.has(msg.id)
+                            ? <LoaderCircle className="spin" size={15} strokeWidth={1.8} aria-hidden="true" />
+                            : <CornerUpRight size={15} strokeWidth={1.8} aria-hidden="true" />}
                         </button>
                       )}
                       <button

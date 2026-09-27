@@ -170,7 +170,7 @@ describe("AgentRoam reference sidebar", () => {
     expect(app).toContain("project?.canCreateSession !== false");
     expect(app).toContain("const shouldRefresh = shouldRefreshWorkspaceSessions(");
     expect(app).toContain("refresh: shouldRefresh, background: hasCache");
-    expect(app).toContain("loadSessions(selectedProjectId, { refresh: true, background: true })");
+    expect(app).toContain("loadSessions(projectId, { refresh: true, background: true })");
     expect(app).toContain("正在加载会话...");
     expect(app).toContain("会话加载失败");
     expect(app).toContain("workspaceNextCursor && !workspaceLoading");
@@ -406,14 +406,14 @@ describe("AgentRoam reference sidebar", () => {
     expect(handler).not.toContain("await loadSessions(projectId)");
   });
 
-  it("renders sidebar action feedback as a page-level portal without shifting the list", () => {
+  it("renders sidebar action feedback as a page-level toast portal without shifting the list", () => {
     const sidebarStart = app.indexOf('<aside\n        className="app-sidebar"');
     const sidebarEnd = app.indexOf("</aside>", sidebarStart);
-    const notice = app.indexOf("{notice && createPortal(");
+    const notice = app.indexOf("{toasts.length > 0 && createPortal(");
     expect(notice).toBeGreaterThan(sidebarEnd);
-    expect(app).toContain('className={`app-action-notice is-${noticeType}`}');
-    expect(css).toContain("position: fixed");
-    expect(css).toContain(".app-action-notice.is-success");
+    expect(app).toContain("position: \"fixed\"");
+    expect(app).toContain("{toasts.map((toast) => (");
+    expect(app).toContain("toast.type === 'success'");
     expect(css).toContain(".app-action-notice.is-error");
   });
 });

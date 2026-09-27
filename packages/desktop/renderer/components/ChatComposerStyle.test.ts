@@ -141,6 +141,9 @@ describe("shared Electron and Web composer", () => {
     expect(requestIndex).toBeGreaterThanOrEqual(0);
     expect(requestIndex).toBeLessThan(promotionIndex);
     expect(promotionIndex).toBeLessThan(reconciliationIndex);
+    expect(steer).toContain("steeringQueuedMessageIdsRef.current.has(msgId)");
+    expect(steer).toContain("getMessagesForSession(targetSessionId)");
+    expect(chatView).toContain("disabled={steeringQueuedMessageIds.has(msg.id)}");
   });
 
   it("keeps waiting goals out of chat history until they become active", () => {

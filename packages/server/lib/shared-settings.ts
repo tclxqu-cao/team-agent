@@ -1,4 +1,4 @@
-import { SQLiteSettingsStore, getDatabase, type SettingsData, type ModelProfile } from "@agent/core";
+import { SQLiteSettingsStore, getDatabase, resolveTaskNotificationPreferences, type SettingsData, type ModelProfile } from "@agent/core";
 import { getServerBaseDir } from "./server-data-dir";
 import { createHash } from "node:crypto";
 
@@ -63,6 +63,21 @@ export class SharedSettingsService {
       if (input.reasoningEffort !== undefined) {
         if (!["off", "low", "medium", "high"].includes(String(input.reasoningEffort))) throw new SettingsValidationError("reasoningEffort 无效");
         next.reasoningEffort = input.reasoningEffort as SettingsData["reasoningEffort"];
+      }
+      if (input.taskNotifications !== undefined) {
+        if (!input.taskNotifications || typeof input.taskNotifications !== "object" || Array.isArray(input.taskNotifications)) {
+          throw new SettingsValidationError("taskNotifications 必须是对象");
+        }
+        const raw = input.taskNotifications as Record<string, unknown>;
+        for (const key of ["completionEnabled", "soundEnabled", "notifyWhileForeground"] as const) {
+          if (raw[key] !== undefined && typeof raw[key] !== "boolean") {
+            throw new SettingsValidationError(`taskNotifications.${key} 必须是布尔值`);
+          }
+        }
+        next.taskNotifications = resolveTaskNotificationPreferences({
+          ...next.taskNotifications,
+          ...raw,
+        });
       }
       if (input.apiKey !== undefined) next.apiKey = preserveSecret(input.apiKey, current.apiKey);
       if (input.profiles !== undefined) {

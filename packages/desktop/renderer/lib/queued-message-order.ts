@@ -59,16 +59,20 @@ export function hideQueuedGoalMessages<T extends { id: string }>(
 export function markDurableMessageSteered<T extends DurableQueuedMessageLike>(
   messages: T[],
   messageId: string,
+  steeredAt: number = Date.now(),
 ): T[] {
-  return messages.map((message) => message.id === messageId
-    ? {
-        ...message,
-        isQueued: false,
-        isSteered: true,
-        queueItemId: undefined,
-        sendState: undefined,
-      }
-    : message);
+  const index = messages.findIndex((message) => message.id === messageId);
+  if (index < 0) return messages;
+  const message = messages[index];
+  const steered = {
+    ...message,
+    timestamp: steeredAt,
+    isQueued: false,
+    isSteered: true,
+    queueItemId: undefined,
+    sendState: undefined,
+  } as T;
+  return [...messages.slice(0, index), ...messages.slice(index + 1), steered];
 }
 
 export function reconcileDurableQueuedMessages<T extends DurableQueuedMessageLike>(

@@ -251,6 +251,10 @@ export interface AgentApi {
   isWindowVisible(): Promise<boolean>;
   // Open an http(s) link in the system browser (e.g. Flow Studio entry)
   openExternal(url: string): Promise<{ ok: boolean }>;
+  notifyTaskCompletion?(
+    notification: import("@agent/core").TaskCompletionNotification,
+    preferences: import("@agent/core").TaskNotificationPreferences,
+  ): Promise<{ shown: boolean }>;
   // Native wake-word listener (macOS Speech framework)
   wakeStart(wakeWord: string): Promise<{ ok: boolean; reason?: string }>;
   wakeStop(): Promise<{ ok: boolean }>;
@@ -291,6 +295,8 @@ export interface AgentApi {
     workingDirectory: string;
     profiles: ModelProfile[];
     activeProfileId: string;
+    reasoningEffort?: "off" | "low" | "medium" | "high";
+    taskNotifications?: import("@agent/core").TaskNotificationPreferences;
   }>;
   setSetting(key: string, value: string): Promise<void>;
   saveSettings(settings: Record<string, unknown>): Promise<void>;

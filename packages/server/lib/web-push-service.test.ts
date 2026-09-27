@@ -67,21 +67,21 @@ describe("WebPushService", () => {
     expect(service.listSubscriptions()).toHaveLength(0);
   });
 
-  it("deduplicates notifications per session+kind inside the window", async () => {
+  it("deduplicates notifications by stable notification ID", async () => {
     const service = await createService();
     const sent: Array<Record<string, unknown>> = [];
     service.sendToAll = async (payload: Record<string, unknown>) => {
       sent.push(payload);
     };
 
-    service.notifySession({ sessionId: "s1", kind: "approval", title: "t", body: "b", url: "/app/" });
-    service.notifySession({ sessionId: "s1", kind: "approval", title: "t", body: "b", url: "/app/" });
+    service.notifySession({ notificationId: "s1:q1:approval", sessionId: "s1", title: "t", body: "b", url: "/app/" });
+    service.notifySession({ notificationId: "s1:q1:approval", sessionId: "s1", title: "t", body: "b", url: "/app/" });
     expect(sent).toHaveLength(1);
 
     clocks.push(() => 1_000_000 + 5_000);
-    service.notifySession({ sessionId: "s1", kind: "approval", title: "t", body: "b", url: "/app/" });
-    service.notifySession({ sessionId: "s1", kind: "done", title: "t", body: "b", url: "/app/" });
-    expect(sent).toHaveLength(3);
+    service.notifySession({ notificationId: "s1:q1:approval", sessionId: "s1", title: "t", body: "b", url: "/app/" });
+    service.notifySession({ notificationId: "s1:run1:done", sessionId: "s1", title: "t", body: "b", url: "/app/" });
+    expect(sent).toHaveLength(2);
   });
 
   it("drops subscriptions the push endpoint reports as gone", async () => {

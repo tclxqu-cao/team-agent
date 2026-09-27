@@ -1,5 +1,10 @@
 import { create } from "zustand";
 import type { ModelProfile } from "../global.d.ts";
+import {
+  DEFAULT_TASK_NOTIFICATION_PREFERENCES,
+  resolveTaskNotificationPreferences,
+  type TaskNotificationPreferences,
+} from "../../../core/src/application/notification/task-completion";
 
 interface SettingsState {
   revision?: number;
@@ -20,9 +25,10 @@ interface SettingsState {
 
   /** Reasoning intensity for main-loop requests ("off" = provider default) */
   reasoningEffort: "off" | "low" | "medium" | "high";
+  taskNotifications: TaskNotificationPreferences;
 
   // Actions
-  setField: (key: string, value: string | number | boolean) => void;
+  setField: (key: string, value: unknown) => void;
   loadFromSystem: () => Promise<void>;
   saveToSystem: () => Promise<void>;
 
@@ -37,6 +43,7 @@ interface SettingsState {
 const PERSISTED_SETTING_KEYS = [
   "modelProvider", "modelId", "apiKey", "baseUrl", "maxIterations", "contextWindow",
   "workingDirectory", "isConfigured", "profiles", "activeProfileId", "reasoningEffort",
+  "taskNotifications",
 ] as const;
 
 type PersistedSettingKey = typeof PERSISTED_SETTING_KEYS[number];
@@ -80,6 +87,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   profiles: [],
   activeProfileId: "",
   reasoningEffort: "off",
+  taskNotifications: DEFAULT_TASK_NOTIFICATION_PREFERENCES,
 
   setField: (key, value) =>
     set((state) => {
@@ -115,6 +123,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
         reasoningEffort: (["off", "low", "medium", "high"].includes(s.reasoningEffort ?? "")
           ? (s.reasoningEffort as "off" | "low" | "medium" | "high")
           : "off"),
+        taskNotifications: resolveTaskNotificationPreferences(s.taskNotifications),
       };
       loadedSettingsSnapshot = persistedSettings(loaded);
       set(loaded);

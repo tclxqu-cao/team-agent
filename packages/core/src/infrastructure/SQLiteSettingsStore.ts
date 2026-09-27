@@ -2,6 +2,7 @@
 import type { ISettingsStore, SettingsData, ModelProfile } from '../domain/settings/entities.js';
 import type { ReasoningEffort } from '../domain/model/entities.js';
 import { getDatabase } from './SQLiteDatabase.js';
+import { resolveTaskNotificationPreferences } from '../application/notification/task-completion.js';
 
 export class SQLiteSettingsStore implements ISettingsStore {
   private readonly baseDir: string;
@@ -36,6 +37,12 @@ export class SQLiteSettingsStore implements ISettingsStore {
     } catch { profiles = []; }
 
     let activeProfileId = data["activeProfileId"] ?? "";
+    let taskNotifications = resolveTaskNotificationPreferences();
+    try {
+      taskNotifications = resolveTaskNotificationPreferences(
+        data["taskNotifications"] ? JSON.parse(data["taskNotifications"]) : undefined,
+      );
+    } catch { /* use defaults */ }
 
     // ── Auto-migrate legacy flat settings into a default profile ──────────
     const legacyApiKey = data["apiKey"] ?? "";
@@ -84,6 +91,7 @@ export class SQLiteSettingsStore implements ISettingsStore {
       reasoningEffort: (["off", "low", "medium", "high"].includes(data["reasoningEffort"] ?? "")
         ? (data["reasoningEffort"] as ReasoningEffort)
         : "off"),
+      taskNotifications,
     };
   }
 
@@ -101,6 +109,7 @@ export class SQLiteSettingsStore implements ISettingsStore {
       upsert.run("profiles", JSON.stringify(settings.profiles ?? []));
       upsert.run("activeProfileId", settings.activeProfileId ?? "");
       upsert.run("reasoningEffort", settings.reasoningEffort ?? "off");
+      upsert.run("taskNotifications", JSON.stringify(resolveTaskNotificationPreferences(settings.taskNotifications)));
     });
     tx();
   }

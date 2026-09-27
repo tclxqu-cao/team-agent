@@ -1570,7 +1570,7 @@ export class NativeRuntimeBrokerHost {
     decodeNativeSessionId(sessionId);
     const item = this.state.queuedMessages(sessionId).find((message) => message.id === messageId);
     if (!item) {
-      throw new RuntimeSessionError("Queued message not found", "SESSION_NOT_FOUND");
+      return { steered: true, state: this.state.getGoalState(sessionId) };
     }
     const steered = await this.runtime.steer(sessionId, item.objective);
     return {

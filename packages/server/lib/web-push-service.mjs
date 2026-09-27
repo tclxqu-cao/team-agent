@@ -36,7 +36,7 @@ export class WebPushService {
       );
     `);
     this.keys = this.loadKeys();
-    this.lastNotified = new Map();
+    this.delivered = new Set();
   }
 
   loadKeys() {
@@ -79,19 +79,13 @@ export class WebPushService {
       .map((row) => ({ endpoint: row.endpoint, keys: { p256dh: row.p256dh, auth: row.auth }, deviceId: row.device_id }));
   }
 
-  /**
-   * Fire-and-forget fan-out. Deduplicates per (session, kind) within a short
-   * window so replayed/reattached streams cannot burst notifications.
-   */
-  notifySession({ sessionId, kind, title, body, url }) {
-    const key = `${sessionId}\u001f${kind}`;
-    const last = this.lastNotified.get(key) || 0;
-    if (this.now() - last < 1_500) return;
-    this.lastNotified.set(key, this.now());
-    if (this.lastNotified.size > 500) {
-      for (const [old, at] of this.lastNotified) if (this.now() - at > 60_000) this.lastNotified.delete(old);
-    }
-    void this.sendToAll({ title, body, tag: sessionId, url });
+  /** Fire-and-forget fan-out, deduplicated by the stable run notification ID. */
+  notifySession({ notificationId, sessionId, title, body, url }) {
+    const key = notificationId || `${sessionId}:notification`;
+    if (this.delivered.has(key)) return;
+    this.delivered.add(key);
+    while (this.delivered.size > 500) this.delivered.delete(this.delivered.values().next().value);
+    void this.sendToAll({ notificationId: key, sessionId, title, body, tag: key, url });
   }
 
   async sendToAll(payload) {
