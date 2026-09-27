@@ -20,6 +20,7 @@ export type AgentEventType =
   | "done"
   | "todo_update"
   | "agent_dispatch"
+  | "agent_started"
   | "agent_done"
   | "agent_progress"
   | "reasoning_summary_delta"
@@ -76,9 +77,10 @@ export type AgentEvent =
   | { type: "error"; message: string; code?: string }
   | { type: "done"; finalText: string; usage?: TokenUsage; durationMs?: number }
   | { type: "todo_update"; todos: TodoItem[] }
-  | { type: "agent_dispatch"; agentName: string; task: string; subSessionId?: string }
-  | { type: "agent_done"; agentName: string; subSessionId: string; status: "completed" | "failed"; summary?: string; error?: string }
-  | { type: "agent_progress"; agentName: string; subSessionId: string; text: string }
+  | { type: "agent_dispatch"; agentName: string; task: string; subSessionId?: string; agentId?: string; role?: string; parentSessionId?: string }
+  | { type: "agent_started"; agentName: string; subSessionId: string; agentId?: string; parentSessionId?: string; startedAt?: string }
+  | { type: "agent_done"; agentName: string; subSessionId: string; status: "completed" | "failed"; summary?: string; error?: string; code?: string; agentId?: string; parentSessionId?: string; durationMs?: number }
+  | { type: "agent_progress"; agentName: string; subSessionId: string; text: string; agentId?: string; parentSessionId?: string; phase?: "thinking" | "assistant" | "tool"; toolName?: string }
   | { type: "reasoning_summary_delta"; itemId: string; sectionIndex: number; delta: string; turnId?: string }
   | ({ type: "runtime_progress" } & RuntimeProgress)
   | { type: "native_subagent_update"; activity: NativeSubagentActivity }

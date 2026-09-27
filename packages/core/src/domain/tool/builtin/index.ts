@@ -8,6 +8,7 @@ export { GrepTool } from './GrepTool.js';
 export { GlobTool } from './GlobTool.js';
 export { TodoAddTool, TodoUpdateTool, TodoListTool } from './TodoTool.js';
 export { DispatchAgentTool, type DispatchResult } from './DispatchAgentTool.js';
+export { SpawnAgentTool, type SpawnAgentInput } from './SpawnAgentTool.js';
 export { WaitAgentTool } from './WaitAgentTool.js';
 export { AskUserTool, type AskUserField, type AskUserRequest, type AskUserResponse, type AskUserCallback } from './AskUserTool.js';
 export { CronCreateTool, CronDeleteTool, CronListTool } from './CronTools.js';

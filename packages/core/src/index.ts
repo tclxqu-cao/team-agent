@@ -40,7 +40,7 @@ export { AiHubProvider, composeAiHubTranscript, extractReplyAfterAnchor, extract
 export { ModelRegistry } from './domain/model/ModelRegistry.js';
 export { AiHubSocketTransport, desktopOfflineError } from './infrastructure/AiHubSocketTransport.js';
 export { ToolRegistry } from './domain/tool/ToolRegistry.js';
-export { ReadFileTool, WriteFileTool, BashTool, WebFetchTool, WebSearchTool, GrepTool, GlobTool, TodoAddTool, TodoUpdateTool, TodoListTool, DispatchAgentTool, type DispatchResult, WaitAgentTool, AskUserTool, type AskUserField, type AskUserRequest, type AskUserResponse, type AskUserCallback, CronCreateTool, CronDeleteTool, CronListTool, LspDiagnosticsTool, LspHoverTool, LspDefinitionTool, LspReferencesTool, RemoteProjectActionTool, SkillDiscoverTool, SkillLoadTool, registerBuiltinTools } from './domain/tool/builtin/index.js';
+export { ReadFileTool, WriteFileTool, BashTool, WebFetchTool, WebSearchTool, GrepTool, GlobTool, TodoAddTool, TodoUpdateTool, TodoListTool, DispatchAgentTool, type DispatchResult, SpawnAgentTool, type SpawnAgentInput, WaitAgentTool, AskUserTool, type AskUserField, type AskUserRequest, type AskUserResponse, type AskUserCallback, CronCreateTool, CronDeleteTool, CronListTool, LspDiagnosticsTool, LspHoverTool, LspDefinitionTool, LspReferencesTool, RemoteProjectActionTool, SkillDiscoverTool, SkillLoadTool, registerBuiltinTools } from './domain/tool/builtin/index.js';
 export { ToolPermissionGate, PermissionAwareToolExecutor, classifyToolPermission, normalizeToolPermissionMode, isToolPermissionMode, toolApprovalDecisionFromAnswer, TOOL_PERMISSION_MODES, TOOL_APPROVAL_OPTIONS, type ToolPermissionMode, type ToolApprovalDecision, type ToolPermissionGateOptions, type ToolPermissionRequest, type ToolPermissionClassification } from './domain/tool/permissions.js';
 export { ToolExecutionPolicyError, toolExecutionPolicySummary, validateToolExecutionPolicy, type StoredToolExecutionPolicy, type ToolExecutionPolicy, type ToolExecutionPolicyErrorCode, type ToolExecutionPolicyStore, type ToolExecutionPolicySummary, type ToolPolicyCommandMode, type ToolPolicyNetworkMode, type ToolPolicyProgramRule } from './domain/tool/execution-policy.js';
 export { PolicyAwareToolExecutor, parseSimpleCommand, resolvePolicyPath } from './domain/tool/policy-executor.js';
@@ -67,6 +67,7 @@ export * from './application/goal/ThreadGoalService.js';
 export * from './application/goal/ThreadGoalTools.js';
 export * from './application/agent-run/index.js';
 export * from './application/file-workspace/index.js';
+export * from './application/notification/index.js';
 
 
 // Infrastructure

@@ -775,6 +775,50 @@ describe("agentHost singleton", () => {
     });
   });
 
+  it("keeps SSE ids monotonic for a subscriber spanning consecutive runs", async () => {
+    const provider = new CapturingModelProvider();
+    provider.eventBatches = [
+      [
+        { type: "text_chunk", text: "First answer" },
+        { type: "text_done" },
+      ],
+      [
+        { type: "reasoning_delta", text: "Inspecting the follow-up" },
+        { type: "text_chunk", text: "Second answer" },
+        { type: "text_done" },
+      ],
+    ];
+    agentHost.setBuilder(new AgentBuilder()
+      .withModelProvider(provider)
+      .withSemanticSkillMatching(false));
+    const session = await agentHost.createSession("cross-run SSE cursor test");
+
+    await agentHost.run("First request", session.id);
+    const previousRunCursor = agentHost.getLatestEventId(session.id);
+    const streamed: Array<{ id: number; type: string }> = [];
+    const stop = agentHost.subscribe(
+      session.id,
+      (event, id) => streamed.push({ id, type: event.type }),
+      previousRunCursor,
+    );
+
+    try {
+      await agentHost.run("Second request", session.id);
+    } finally {
+      stop();
+    }
+
+    expect(streamed.map((event) => event.type)).toEqual(expect.arrayContaining([
+      "reasoning_summary_delta",
+      "text_chunk",
+      "done",
+    ]));
+    expect(streamed.every((event) => event.id > previousRunCursor)).toBe(true);
+    expect(streamed.map((event) => event.id)).toEqual(
+      [...streamed.map((event) => event.id)].sort((left, right) => left - right),
+    );
+  });
+
   it("persists visible reasoning when a reasoning-only run fails", async () => {
     const provider = new CapturingModelProvider();
     provider.eventBatches = [[

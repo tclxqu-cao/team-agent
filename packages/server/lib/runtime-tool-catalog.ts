@@ -4,6 +4,7 @@ import {
   SkillLoadTool,
   SkillRegistry,
   ToolRegistry,
+  SpawnAgentTool,
   WaitAgentTool,
   registerBuiltinTools,
 } from "@agent/core";
@@ -24,6 +25,14 @@ export function runtimeToolRegistry(): ToolRegistry {
       agentName: "",
       subSessionId: "",
       error: "catalog listing only; dispatch runs inside a Customer Agent session",
+    })),
+  );
+  registry.register(
+    new SpawnAgentTool(async () => ({
+      status: "failed",
+      agentName: "",
+      subSessionId: "",
+      error: "catalog listing only; spawning runs inside a dynamic Customer Agent session",
     })),
   );
   registry.register(

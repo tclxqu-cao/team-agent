@@ -1,6 +1,7 @@
 import { promises as fsp } from "node:fs";
 import path from "node:path";
 import { isToolPermissionMode, type ToolPermissionMode } from "@agent/core";
+import { DEFAULT_TASK_NOTIFICATION_PREFERENCES, resolveTaskNotificationPreferences, type TaskNotificationPreferences } from "@agent/core";
 import { DEFAULT_THEME_NAME, isThemeName, type ThemeName } from "./theme.js";
 
 export interface DesktopModelProfile {
@@ -66,6 +67,7 @@ export interface TuiConfig {
   theme: ThemeName;
   vimMode: boolean;
   mcpServers: McpServerEntry[];
+  taskNotifications?: TaskNotificationPreferences;
 }
 
 export const DEFAULT_PERMISSION_MODE: ToolPermissionMode = "auto-approval";
@@ -79,6 +81,7 @@ export function emptyTuiConfig(): TuiConfig {
     theme: DEFAULT_THEME_NAME,
     vimMode: false,
     mcpServers: [],
+    taskNotifications: DEFAULT_TASK_NOTIFICATION_PREFERENCES,
   };
 }
 
@@ -162,6 +165,9 @@ export async function loadTuiConfig(configPath: string): Promise<TuiConfig> {
         theme: isThemeName(parsed.theme) ? parsed.theme : DEFAULT_THEME_NAME,
         vimMode: parsed.vimMode === true,
         mcpServers,
+        taskNotifications: resolveTaskNotificationPreferences(
+          isRecord(parsed.taskNotifications) ? parsed.taskNotifications : undefined,
+        ),
       };
     }
     return {
@@ -172,6 +178,7 @@ export async function loadTuiConfig(configPath: string): Promise<TuiConfig> {
       theme: DEFAULT_THEME_NAME,
       vimMode: false,
       mcpServers: [],
+      taskNotifications: DEFAULT_TASK_NOTIFICATION_PREFERENCES,
     };
   } catch {
     return emptyTuiConfig();

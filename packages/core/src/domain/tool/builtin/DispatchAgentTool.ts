@@ -5,7 +5,9 @@ export interface DispatchResult {
   status: "running" | "completed" | "failed";
   agentName: string;
   subSessionId: string;
+  agentId?: string;
   summary?: string;
+  code?: string;
   error?: string;
 }
 

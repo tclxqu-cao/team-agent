@@ -1,6 +1,6 @@
 import { sharedCron } from "../../lib/shared-cron";
 import { sharedSettings, type SharedSettings } from "../../lib/shared-settings";
-import { configureSharedRun, type SharedRunOptions } from "../../lib/shared-run-config";
+import { configureSharedRun, effectiveCapabilityPolicy, type SharedRunOptions } from "../../lib/shared-run-config";
 import { businessCatalog } from "../../lib/business-catalog";
 import { registerCustomerComputerSkill, registerCustomerComputerTool } from "../../lib/computer-use";
 import { SubAgentDispatcher } from "@agent/native-runtime";
@@ -10,7 +10,7 @@ import {
   HostPathPolicy,
   SQLiteSessionStore,
   AskUserTool,
-  TodoAddTool, TodoUpdateTool, TodoListTool, DispatchAgentTool, WaitAgentTool,
+  TodoAddTool, TodoUpdateTool, TodoListTool, DispatchAgentTool, SpawnAgentTool, WaitAgentTool,
   CronCreateTool, CronDeleteTool, CronListTool, type TodoItem, type CronTask,
   type IAgentLoop,
   type AgentEvent,
@@ -81,6 +81,7 @@ interface CustomerAgentRunMarker {
 
 interface ActiveCustomerAgentRun {
   runId: string;
+  source: "user" | "goal";
   agent: IAgentLoop | null;
   aborted?: boolean;
   abortChildren?: () => void;
@@ -140,7 +141,8 @@ class AgentHost {
   private readonly defaultRemoteToolsProjectId = process.env.AGENT_PROJECT_ID ?? "default";
   private readonly activeRuns = new Map<string, ActiveCustomerAgentRun>();
   private subscribers = new Map<string, Set<(event: AgentEvent, id: number) => void>>();
-  private globalEventObserver: ((sessionId: string, event: AgentEvent) => void) | null = null;
+  private globalEventObserver: ((sessionId: string, event: AgentEvent, context: { runId?: string; source: "user" | "goal" }) => void) | null = null;
+  private readonly externalRunIds = new Map<string, string>();
   /** events of the current run per session — replayed to late/reconnecting subscribers */
   private recentEvents = new Map<string, { id: number; event: AgentEvent }[]>();
   private eventCounters = new Map<string, number>();
@@ -362,7 +364,7 @@ class AgentHost {
    * must observe runs even when no SSE client is attached. Observer errors are
    * swallowed: notification delivery must never break the event bus.
    */
-  setGlobalEventObserver(observer: ((sessionId: string, event: AgentEvent) => void) | null): void {
+  setGlobalEventObserver(observer: ((sessionId: string, event: AgentEvent, context: { runId?: string; source: "user" | "goal" }) => void) | null): void {
     this.globalEventObserver = observer;
   }
 
@@ -377,7 +379,10 @@ class AgentHost {
     for (const fn of this.subscribers.get(sessionId) ?? []) {
       try { fn(event, id); } catch { /* ignore */ }
     }
-    try { this.globalEventObserver?.(sessionId, event); } catch { /* ignore */ }
+    const activeRun = this.activeRuns.get(sessionId);
+    const runId = activeRun?.runId
+      ?? ((event as AgentEvent & { _nativeRunId?: string })._nativeRunId || this.externalRunIds.get(sessionId));
+    try { this.globalEventObserver?.(sessionId, event, { runId, source: activeRun?.source ?? "user" }); } catch { /* ignore */ }
   }
 
   /**
@@ -386,7 +391,12 @@ class AgentHost {
    * is persisted to SQLite here.
    */
   publishExternal(sessionId: string, event: AgentEvent): void {
+    const externalRunId = (event as AgentEvent & { _nativeRunId?: string })._nativeRunId;
+    if (externalRunId) this.externalRunIds.set(sessionId, externalRunId);
     this.emit(sessionId, event);
+    if (event.type === "done" || event.type === "error" || event.type === "turn_aborted") {
+      this.externalRunIds.delete(sessionId);
+    }
   }
 
   /** Restart the event sequence for a native session before a new run. */
@@ -499,7 +509,7 @@ class AgentHost {
     }
 
     const runId = crypto.randomUUID();
-    this.activeRuns.set(sessionId, { runId, agent: null });
+    this.activeRuns.set(sessionId, { runId, source: options.source === "goal" ? "goal" : "user", agent: null });
     const runStartedAt = performance.now();
     const runStats: RunStats = { failed: false, usageLimited: false, responseText: "", toolResultText: "" };
     const execution = this.executeRun(input, sessionId, runId, images, sharedSettings().read(), options, runStats);
@@ -568,8 +578,8 @@ class AgentHost {
       status: "active",
       metadata: { ...session.metadata, [ACTIVE_RUN_METADATA_KEY]: marker },
     });
-    // a fresh run restarts the event sequence; late subscribers replay only it
-    this.eventCounters.set(sessionId, 0);
+    // Replace the replay window for this run, but keep SSE ids monotonic so a
+    // subscriber opened before admission does not reject the new run as stale.
     this.recentEvents.set(sessionId, []);
     const runProjectId = session?.projectId || this.defaultRemoteToolsProjectId;
     const catalog = businessCatalog();
@@ -577,8 +587,63 @@ class AgentHost {
       void this.sessionStore.addEvent(id, event).catch((error) => console.error("Child event persistence failed", error));
       this.emit(id, event);
     };
-    const dispatcher = new SubAgentDispatcher(catalog.agents, this.sessionStore, sharedSettings().store, catalog.memory,
-      (builder, id) => this.registerCustomerTools(builder, id, emitChild), emitChild, this.toolPermissionGate);
+    const parentDefinitionId = options.agentIds === undefined
+      ? settings.activeAgentIds[0]
+      : options.agentIds[0];
+    const parentDefinition = parentDefinitionId
+      ? await catalog.agents.get(parentDefinitionId)
+      : null;
+    const dynamicTeam = options.dynamicTeam ? {
+      maxWorkers: options.dynamicTeam.maxWorkers,
+      maxParallel: options.dynamicTeam.maxParallel,
+      workerTimeoutMs: options.dynamicTeam.workerTimeoutSeconds * 1_000,
+      runId,
+      profileId: options.profileId || parentDefinition?.capabilities.profileId || undefined,
+      enabledTools: effectiveCapabilityPolicy(
+        parentDefinition?.capabilities.enabledTools,
+        options.enabledTools,
+      )?.filter((name) => !["spawn_agent", "dispatch_agent", "wait_agent"].includes(name)),
+      enabledSkills: effectiveCapabilityPolicy(
+        parentDefinition?.capabilities.enabledSkills,
+        options.enabledSkills,
+      ),
+      enabledMCPServers: effectiveCapabilityPolicy(
+        parentDefinition?.capabilities.enabledMCPServers,
+        options.enabledMCPServers,
+      ),
+      memoryEnabled: options.memoryEnabled,
+      prepareBuilder: async (builder: AgentBuilder, capabilities: {
+        profileId?: string;
+        enabledTools: string[];
+        enabledSkills: string[];
+        enabledMCPServers: string[];
+        memoryEnabled?: boolean;
+      }) => {
+        builder
+          .withWorkingDirectory(runWorkingDirectory)
+          .withRemoteToolStore(this.remoteToolStore, runProjectId);
+        return configureSharedRun(builder, settings, {
+          ...(options.model ? { model: options.model } : {}),
+          ...(capabilities.profileId ? { profileId: capabilities.profileId } : {}),
+          agentIds: [],
+          enabledTools: capabilities.enabledTools,
+          enabledSkills: capabilities.enabledSkills,
+          enabledMCPServers: capabilities.enabledMCPServers,
+          memoryEnabled: capabilities.memoryEnabled,
+          toolExecutionPolicy: options.toolExecutionPolicy,
+        });
+      },
+    } : undefined;
+    const dispatcher = new SubAgentDispatcher(
+      catalog.agents,
+      this.sessionStore,
+      sharedSettings().store,
+      catalog.memory,
+      (builder, id) => this.registerCustomerTools(builder, id, emitChild),
+      emitChild,
+      this.toolPermissionGate,
+      dynamicTeam,
+    );
     const owner = this.activeRuns.get(sessionId);
     if (owner) owner.abortChildren = () => dispatcher.abortAll();
     const selectedIds = options.agentIds?.length ? options.agentIds : settings.activeAgentIds.slice(0, 1);
@@ -647,6 +712,9 @@ class AgentHost {
 
       try {
         for await (const event of activeRun) {
+          if (event.type === "done" && options.dynamicTeam) {
+            await dispatcher.waitForIdle(options.dynamicTeam.workerTimeoutSeconds * 1_000);
+          }
           const emittedEvent: AgentEvent = event.type === "done" && !runFailed
             ? {
                 ...event,
@@ -671,6 +739,7 @@ class AgentHost {
           await this.sessionStore.addEvent(sessionId, emittedEvent);
 
           if (emittedEvent.type === "error") {
+            dispatcher.abortAll();
             runFailed = true;
             if (/rate\s*limit|quota|usage\s*limit|429|insufficient/i.test(emittedEvent.message)) runStats.usageLimited = true;
             if (!terminalCommitted) {
@@ -678,6 +747,7 @@ class AgentHost {
               terminalCommitted = true;
             }
           } else if (emittedEvent.type === "turn_aborted") {
+            dispatcher.abortAll();
             if (!terminalCommitted) {
               await this.commitRun(sessionId, marker, "aborted");
               terminalCommitted = true;
@@ -693,6 +763,7 @@ class AgentHost {
         // The loop itself threw (not an in-band error event) — without this the
         // subscriber would wait forever with no feedback.
         runFailed = true;
+        dispatcher.abortAll();
         serverLogger().error("agent loop threw", err, { sessionId, runId });
         const msg = err instanceof Error ? err.message : String(err);
         if (/rate\s*limit|quota|usage\s*limit|429|insufficient/i.test(msg)) runStats.usageLimited = true;
@@ -745,6 +816,9 @@ class AgentHost {
     registry.register(new TodoListTool(() => todos));
     if (dispatcher) {
       registry.register(new DispatchAgentTool((name, task, id) => dispatcher.dispatch(name, task, id)));
+      if (dispatcher.dynamicTeamEnabled()) {
+        registry.register(new SpawnAgentTool((input, id) => dispatcher.spawn(input, id)));
+      }
       registry.register(new WaitAgentTool((id, timeout) => dispatcher.wait(id, timeout)));
     }
     const cron = sharedCron();

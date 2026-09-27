@@ -65,7 +65,7 @@ const SAFE_TOOLS = new Set([
 ]);
 
 const FILE_WRITE_TOOLS = new Set(["write_file", "str_replace", "apply_patch"]);
-const RISKY_LOCAL_TOOLS = new Set(["cron_create", "cron_delete", "dispatch_agent"]);
+const RISKY_LOCAL_TOOLS = new Set(["cron_create", "cron_delete", "dispatch_agent", "spawn_agent"]);
 const NETWORK_TOOLS = new Set(["web_fetch", "web_search"]);
 
 const RISKY_SHELL_PATTERNS: Array<{ pattern: RegExp; reason: string }> = [
@@ -237,7 +237,9 @@ export function classifyToolPermission(
       kind: "risky-local",
       risky: true,
       summary: `执行 ${toolName}`,
-      reason: toolName === "dispatch_agent" ? "子 Agent 会继续执行新的工具调用" : "该操作会改变定时任务状态",
+      reason: toolName === "dispatch_agent" || toolName === "spawn_agent"
+        ? "子 Agent 会继续执行新的工具调用"
+        : "该操作会改变定时任务状态",
       resourceKey: `${toolName}:${compact(args.agentName ?? args.cron ?? args.id, 100) || "default"}`,
     };
   }

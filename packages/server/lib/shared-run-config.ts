@@ -32,6 +32,12 @@ export interface SharedRunOptions {
   instructions?: string;
   /** Immutable server-owned execution policy resolved before run admission. */
   toolExecutionPolicy?: ToolExecutionPolicy;
+  /** Authenticated Flow-only limits for CA-owned temporary child Agents. */
+  dynamicTeam?: {
+    maxWorkers: number;
+    maxParallel: number;
+    workerTimeoutSeconds: number;
+  };
   /** "goal" = 目标模式自动续跑：输入以隐藏 __goal__ 消息持久化，不参与自动标题。 */
   source?: "user" | "goal";
 }
