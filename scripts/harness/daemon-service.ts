@@ -8,6 +8,7 @@ interface WatchedTask {
   task: HarnessTask;
   lastProgress: number;
   waiting: boolean;
+  blockingCallDeadlines: Map<string, number>;
   modelRequestProvider?: string;
   trace: string[];
   reported: boolean;
@@ -62,7 +63,8 @@ export class HarnessCompanion {
       if (this.runs.size >= 32 || typeof message.input !== 'string' || message.input.length > 100_000 ||
           typeof message.sessionId !== 'string' || typeof message.workingDirectory !== 'string') return;
       this.runs.set(id, { task: { input: message.input, sessionId: message.sessionId,
-        workingDirectory: message.workingDirectory, maxIterations: 30 }, lastProgress: Date.now(), waiting: false, trace: [], reported: false, savedAt: 0,
+        workingDirectory: message.workingDirectory, maxIterations: 30 }, lastProgress: Date.now(), waiting: false,
+        blockingCallDeadlines: new Map(), trace: [], reported: false, savedAt: 0,
         quality: this.store ? { daemonPid: process.pid, id, sessionId: message.sessionId, owner: String(message.owner ?? 'unknown'), startedAt: Date.now(), updatedAt: Date.now(),
           outcome: 'running', runtimeVersion: String(message.runtimeVersion ?? 'unknown'), sourceVersion: sourceVersion(this.config.sourceRoot),
           model: 'unknown', task: message.input.slice(0, 8000), observations: [], dropped: 0, findings: [],
@@ -74,9 +76,24 @@ export class HarnessCompanion {
     if (message.type === 'progress') {
       run.lastProgress = Date.now();
       const eventType = String(message.eventType);
+      const data = message.data && typeof message.data === 'object' ? message.data as Record<string, unknown> : undefined;
       if (!['context_usage', 'thinking'].includes(eventType)) run.modelRequestProvider = undefined;
       if (message.waiting === true) run.waiting = true;
       if (['tool_result', 'approval_resolved'].includes(eventType)) run.waiting = false;
+      if (eventType === 'tool_call' && message.tool === 'wait_agent') {
+        const callId = typeof data?.callId === 'string' ? data.callId : undefined;
+        const args = data?.arguments && typeof data.arguments === 'object' ? data.arguments as Record<string, unknown> : undefined;
+        const timeoutMs = args?.timeoutMs;
+        if (callId && typeof timeoutMs === 'number' && Number.isSafeInteger(timeoutMs) && timeoutMs > 0) {
+          const runTimeoutMs = this.config.runTimeoutMs;
+          const boundedTimeoutMs = Number.isSafeInteger(runTimeoutMs) && runTimeoutMs > 0
+            ? Math.min(timeoutMs, runTimeoutMs)
+            : timeoutMs;
+          run.blockingCallDeadlines.set(callId, Date.now() + boundedTimeoutMs + this.config.idleTimeoutMs);
+        }
+      } else if (eventType === 'tool_result' && typeof data?.callId === 'string') {
+        run.blockingCallDeadlines.delete(data.callId);
+      }
       run.trace.push(`${eventType}${message.tool ? `: ${String(message.tool)}` : ''}`);
       run.trace = run.trace.slice(-30);
       this.observe(run, message.data ?? { type: message.eventType });
@@ -109,7 +126,8 @@ export class HarnessCompanion {
       const idleLimit = EXTENDED_MODEL_REQUEST_PROVIDERS.has(run.modelRequestProvider ?? '')
         ? this.config.idleTimeoutMs * 2
         : this.config.idleTimeoutMs;
-      if (!run.waiting && now - run.lastProgress > idleLimit && !run.reported) {
+      const hasActiveBlockingCall = [...run.blockingCallDeadlines.values()].some(deadline => deadline > now);
+      if (!run.waiting && !hasActiveBlockingCall && now - run.lastProgress > idleLimit && !run.reported) {
         if (run.quality) { this.observe(run, { type: 'watchdog' }); run.reported = true; }
         else this.report(run, 'Harness made no observable progress before the watchdog deadline');
       }

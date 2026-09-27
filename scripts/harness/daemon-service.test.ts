@@ -97,6 +97,67 @@ describe('automatic Harness companion', () => {
     expect(repair).toHaveBeenCalledTimes(1);
     await service.close();
   });
+  it('allows an explicit wait_agent timeout to exceed the generic idle window', async () => {
+    const repair = vi.fn(async () => result);
+    const service = new HarnessCompanion(config, () => {}, repair);
+    const startedAt = Date.now();
+    service.receive(task);
+    service.receive({ type: 'progress', id: 'run', eventType: 'tool_call', tool: 'wait_agent', data: {
+      type: 'tool_call', tool: 'wait_agent', callId: 'wait-1', arguments: { subSessionId: 'child', timeoutMs: 600_000 },
+    } });
+
+    service.tick(startedAt + 200);
+    expect(repair).not.toHaveBeenCalled();
+
+    service.receive({ type: 'progress', id: 'run', eventType: 'tool_result', data: {
+      type: 'tool_result', callId: 'wait-1', isError: false,
+    } });
+    service.tick(startedAt + 400);
+    expect(repair).toHaveBeenCalledTimes(1);
+    await service.close();
+  });
+  it('keeps the generic watchdog deadline for ordinary long-running tools', async () => {
+    const repair = vi.fn(async () => result);
+    const service = new HarnessCompanion(config, () => {}, repair);
+    const startedAt = Date.now();
+    service.receive(task);
+    service.receive({ type: 'progress', id: 'run', eventType: 'tool_call', tool: 'read', data: {
+      type: 'tool_call', tool: 'read', callId: 'read-1', arguments: { path: '/tmp/example' },
+    } });
+
+    service.tick(startedAt + 200);
+    expect(repair).toHaveBeenCalledTimes(1);
+    await service.close();
+  });
+  it('reports wait_agent after its run-bounded timeout and idle grace expire', async () => {
+    const repair = vi.fn(async () => result);
+    const service = new HarnessCompanion({ ...config, runTimeoutMs: 50 }, () => {}, repair);
+    const startedAt = Date.now();
+    service.receive(task);
+    service.receive({ type: 'progress', id: 'run', eventType: 'tool_call', tool: 'wait_agent', data: {
+      type: 'tool_call', tool: 'wait_agent', callId: 'wait-1', arguments: { subSessionId: 'child', timeoutMs: 600_000 },
+    } });
+
+    service.tick(startedAt + 200);
+    expect(repair).toHaveBeenCalledTimes(1);
+    await service.close();
+  });
+  it('does not let an unrelated tool result clear an in-flight wait_agent deadline', async () => {
+    const repair = vi.fn(async () => result);
+    const service = new HarnessCompanion(config, () => {}, repair);
+    const startedAt = Date.now();
+    service.receive(task);
+    service.receive({ type: 'progress', id: 'run', eventType: 'tool_call', tool: 'wait_agent', data: {
+      type: 'tool_call', tool: 'wait_agent', callId: 'wait-1', arguments: { subSessionId: 'child', timeoutMs: 600_000 },
+    } });
+    service.receive({ type: 'progress', id: 'run', eventType: 'tool_result', data: {
+      type: 'tool_result', callId: 'read-1', isError: false,
+    } });
+
+    service.tick(startedAt + 200);
+    expect(repair).not.toHaveBeenCalled();
+    await service.close();
+  });
   it('removes finished runs and cancels an in-flight repair on shutdown', async () => {
     const repair = vi.fn((_task, _message, signal: AbortSignal) => new Promise<typeof result>(resolve => {
       signal.addEventListener('abort', () => resolve(result), { once: true });
