@@ -1,0 +1,71 @@
+packages/core/src/domain/tool/builtin/index.ts
+  s_868f6333240ed9::t_23f3fd04927e30 11
+packages/core/src/domain/tool/builtin/DispatchAgentTool.ts
+  s_868f6333240ed9::t_23f3fd04927e30 8,10
+packages/core/src/domain/tool/permissions.ts
+  s_868f6333240ed9::t_23f3fd04927e30 68,240-242
+packages/core/src/index.ts
+  s_d8a3af07fd35a8::t_f18d9654dfe6cd 70
+  s_868f6333240ed9::t_23f3fd04927e30 43
+packages/server/lib/shared-run-config.ts
+  s_868f6333240ed9::t_b1bc18557f67de 35-40
+packages/native-runtime/src/sub-agent-dispatcher.ts
+  s_868f6333240ed9::t_99101dbb9ccad5 88-91,141,149,155-159
+  s_868f6333240ed9::t_96cc4bcbe0b1d8 304-306
+  s_868f6333240ed9::t_0d0e74c5955624 54,153,259,349-357,382,384-442,445-447,449-450,452-459,462-470,472-475,477-480,572
+  s_868f6333240ed9::t_70efe9d780df48 7,27-53,55-63,72,74-75,85,151,154,160-161,167-258,260-269,277-278,316-336,340,344-348,358-363,377-379,381,383,448,460,482-489,496,502,507-516,546-547,552,557,560-562,566,570-571
+  s_868f6333240ed9::t_5da72080825a10 303,307-311
+packages/tui/src/model-config.ts
+  s_d8a3af07fd35a8::t_d7a30dfe4bbca4 70
+  s_d8a3af07fd35a8::t_cb57092d4cd7e4 4,84,168-170,181
+packages/server/app/api/agent-host.ts
+  s_868f6333240ed9::t_268a6154ef4eab 3,13,590-646,715-717,742,750,766
+  s_3b5e810458668d::t_8397acaad06b3d 581-582
+  s_d8a3af07fd35a8::t_36b0490bba732c 84,144,367,382-383,385,512
+  s_d8a3af07fd35a8::t_b20014e229442e 145,384,394-395,397-399
+  s_868f6333240ed9::t_99101dbb9ccad5 819-821
+packages/core/src/domain/agent/entities.ts
+  s_868f6333240ed9::t_23f3fd04927e30 23,80-83
+packages/server/app/api/agent-host.test.ts
+  s_3b5e810458668d::t_8397acaad06b3d 778-821
+packages/core/src/domain/tool/builtin/SpawnAgentTool.ts
+  s_868f6333240ed9::t_23f3fd04927e30 1-65
+packages/server/lib/runtime-tool-catalog.ts
+  s_868f6333240ed9::t_23f3fd04927e30 7,30-35
+  s_868f6333240ed9::t_0f112963d6b1d7 36-37
+packages/native-runtime/src/sub-agent-dispatcher.test.ts
+  s_868f6333240ed9::t_0d0e74c5955624 1-237,253-284
+  s_868f6333240ed9::t_5da72080825a10 238-252
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "251574eca5df9dbadb9007daa0c36c4c2bc16187",
+  "prompts": {},
+  "sessions": {
+    "s_3b5e810458668d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0e002-93f3-71e1-9b41-66d45ab2dd49",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_868f6333240ed9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0e087-505b-7022-a67d-d4d0dd676c61",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_d8a3af07fd35a8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0e02c-21fe-7671-85fc-0ddb654d929c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": null
+    }
+  }
+}
