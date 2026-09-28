@@ -1,0 +1,28 @@
+packages/desktop/main/ai-hub/manager-reauth.test.ts
+  s_3d8cb399d47d29::t_3169e9fdd718de 236,265
+packages/desktop/main/ai-hub/adapters.ts
+  s_3d8cb399d47d29::t_3169e9fdd718de 120-121
+  s_3d8cb399d47d29::t_2bf51770747189 3-12,119,122,294,382-383
+  s_3d8cb399d47d29::t_d2b49e69821630 70-71,126
+packages/desktop/main/ai-hub/manager.ts
+  s_3d8cb399d47d29::t_3169e9fdd718de 3,368,376-382,392-395
+packages/desktop/main/ai-hub/adapters.test.ts
+  s_3d8cb399d47d29::t_3169e9fdd718de 2,88-94,98-101,104-114
+  s_3d8cb399d47d29::t_2bf51770747189 95-97,102-103,115-137
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "ffa76ecabfe9bcd0a507c6d525958dd998531e89",
+  "prompts": {},
+  "sessions": {
+    "s_3d8cb399d47d29": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0e624-4280-7c10-be74-3f8e283b70c2",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
