@@ -436,7 +436,12 @@ export function mergeRefreshedSessionHistory(
     && message.role === "user"
     && message.sendState === "pending"
     && !message.isQueued
-    && !stableRefreshed.some((candidate) => candidate.id === message.id)
+    && !refreshedHistoryConfirmsPendingUser(
+      current,
+      stableRefreshed,
+      replacementStart,
+      index,
+    )
   ));
   const optimisticTurn = optimisticTurnStart < 0
     ? []
@@ -447,6 +452,31 @@ export function mergeRefreshedSessionHistory(
     ...optimisticTurn,
     ...queued,
   ];
+}
+
+function refreshedHistoryConfirmsPendingUser(
+  current: ChatMessage[],
+  refreshed: ChatMessage[],
+  replacementStart: number,
+  currentIndex: number,
+): boolean {
+  const pending = current[currentIndex];
+  if (!pending || pending.role !== "user") return false;
+  if (refreshed.some((candidate) => candidate.id === pending.id)) return true;
+
+  const boundaryKey = sessionHistoryUserBoundaryKey(pending);
+  const currentOccurrence = current
+    .slice(replacementStart, currentIndex + 1)
+    .filter((message) => (
+      message.role === "user"
+      && !message.isQueued
+      && sessionHistoryUserBoundaryKey(message) === boundaryKey
+    )).length;
+  const refreshedOccurrences = refreshed.filter((message) => (
+    message.role === "user"
+    && sessionHistoryUserBoundaryKey(message) === boundaryKey
+  )).length;
+  return refreshedOccurrences >= currentOccurrence;
 }
 
 /**

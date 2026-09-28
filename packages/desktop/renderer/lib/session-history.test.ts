@@ -421,14 +421,31 @@ describe("mergeRefreshedSessionHistory", () => {
     const refreshed = [
       message("refreshed-user", "earlier"),
       assistant("refreshed-assistant", "earlier answer"),
-      message("persisted-user", "follow up"),
+      message("history-message.v1.persisted-user", "follow up"),
     ];
 
     const merged = mergeRefreshedSessionHistory(current, refreshed);
 
     expect(merged.filter((entry) => entry.content === "follow up")).toHaveLength(1);
-    expect(merged.at(-1)?.id).toBe("pending-user");
+    expect(merged.at(-1)?.id).toBe("history-message.v1.persisted-user");
     expect(merged.at(-1)?.sendState).toBeUndefined();
+  });
+
+  it("keeps a repeated pending message when refreshed history only contains the earlier turn", () => {
+    const current = [
+      message("old-user", "repeat"),
+      assistant("old-assistant", "first answer"),
+      { ...message("pending-user", "repeat"), sendState: "pending" as const },
+    ];
+    const refreshed = [
+      message("history-message.v1.old-user", "repeat"),
+      assistant("history-message.v1.old-assistant", "first answer"),
+    ];
+
+    const merged = mergeRefreshedSessionHistory(current, refreshed);
+
+    expect(merged.filter((entry) => entry.role === "user" && entry.content === "repeat")).toHaveLength(2);
+    expect(merged.at(-1)).toMatchObject({ id: "pending-user", sendState: "pending" });
   });
 
   it("keeps queued messages after a native history tail refresh", () => {
