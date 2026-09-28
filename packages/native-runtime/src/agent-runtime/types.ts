@@ -165,6 +165,7 @@ export interface RuntimeModelSelection {
 export interface RuntimeModelInfo {
   id: string;
   providerID?: string;
+  providerDisplayName?: string;
   displayName?: string;
   description?: string;
   reasoningEfforts?: NativeReasoningEffort[];

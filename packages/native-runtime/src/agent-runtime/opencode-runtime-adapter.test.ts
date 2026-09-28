@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { Event, OpencodeClient, Session } from "@opencode-ai/sdk";
+import type { OpencodeClient, Session } from "@opencode-ai/sdk";
 import {
   OpenCodeRuntimeAdapter,
   openCodeHistoryToMessages,
@@ -7,6 +7,7 @@ import {
   resolveOpenCodeDataRoot,
   type OpenCodeServerPort,
 } from "./opencode-runtime-adapter.js";
+import type { OpenCodeServerEvent } from "./opencode-server-client.js";
 
 const session: Session = {
   id: "ses_1",
@@ -18,7 +19,7 @@ const session: Session = {
 };
 
 function mockServer() {
-  let listener: ((event: { directory: string; payload: Event }) => void) | undefined;
+  let listener: ((event: OpenCodeServerEvent) => void) | undefined;
   const client = {
     project: { list: vi.fn(async () => ({ data: [{ id: "project-1", worktree: "/repo", time: { created: 1 } }] })) },
     session: {
@@ -41,7 +42,7 @@ function mockServer() {
   return {
     client,
     server,
-    emit(payload: Event) { listener?.({ directory: "/repo", payload }); },
+    emit(payload: OpenCodeServerEvent["payload"]) { listener?.({ directory: "/repo", payload }); },
   };
 }
 
@@ -154,11 +155,11 @@ describe("OpenCodeRuntimeAdapter", () => {
     expect(() => fixture.emit({
       type: "message.updated",
       properties: {},
-    } as unknown as Event)).not.toThrow();
+    } as unknown as OpenCodeServerEvent["payload"])).not.toThrow();
     expect(() => fixture.emit({
       type: "message.part.updated",
       properties: {},
-    } as unknown as Event)).not.toThrow();
+    } as unknown as OpenCodeServerEvent["payload"])).not.toThrow();
     fixture.emit({ type: "session.idle", properties: { sessionID: "ses_1" } });
 
     await expect(result).resolves.toEqual([
@@ -183,6 +184,94 @@ describe("OpenCodeRuntimeAdapter", () => {
     const events = await result;
     expect(events).toContainEqual(expect.objectContaining({ type: "ask_user", questionId: "native:run_1:perm_1" }));
     expect(fixture.client.postSessionIdPermissionsPermissionId).toHaveBeenCalledWith(expect.objectContaining({ body: { response: "once" } }));
+  });
+
+  it("surfaces permission.asked as an approval card in request-approval mode", async () => {
+    const fixture = mockServer();
+    const adapter = new OpenCodeRuntimeAdapter({ server: fixture.server });
+    const result = drain(adapter.run("ses_1", "hello", undefined, undefined, undefined, {
+      permissionMode: "request-approval",
+      brokerRunId: "run_asked",
+    }));
+    await vi.waitFor(() => expect(fixture.client.session.promptAsync).toHaveBeenCalled());
+    fixture.emit({ id: "evt_asked", type: "permission.asked", properties: {
+      id: "perm_asked",
+      sessionID: "ses_1",
+      permission: "edit",
+      patterns: ["src/app.ts"],
+      metadata: { filepath: "/repo/src/app.ts", diff: "--- a/src/app.ts\n+++ b/src/app.ts\n" },
+      always: ["src/*"],
+    } });
+
+    await vi.waitFor(async () => {
+      expect(await adapter.answerQuestion("native:run_asked:perm_asked", { answer: "允许一次" })).toBe(true);
+    });
+    fixture.emit({ type: "session.idle", properties: { sessionID: "ses_1" } });
+
+    await expect(result).resolves.toContainEqual(expect.objectContaining({
+      type: "ask_user",
+      questionId: "native:run_asked:perm_asked",
+      question: expect.stringContaining("修改工作区文件"),
+    }));
+    expect(fixture.client.postSessionIdPermissionsPermissionId).toHaveBeenCalledWith(expect.objectContaining({
+      path: { id: "ses_1", permissionID: "perm_asked" },
+      body: { response: "once" },
+    }));
+  });
+
+  it.each(["auto-approval", "full-access"] as const)(
+    "auto-approves permission.asked workspace edits in %s mode",
+    async (permissionMode) => {
+      const fixture = mockServer();
+      const adapter = new OpenCodeRuntimeAdapter({ server: fixture.server });
+      const result = drain(adapter.run("ses_1", "hello", undefined, undefined, undefined, { permissionMode }));
+      await vi.waitFor(() => expect(fixture.client.session.promptAsync).toHaveBeenCalled());
+      fixture.emit({ id: `evt_${permissionMode}`, type: "permission.asked", properties: {
+        id: `perm_${permissionMode}`,
+        sessionID: "ses_1",
+        permission: "edit",
+        patterns: ["src/app.ts"],
+        metadata: { filepath: "/repo/src/app.ts", diff: "--- a/src/app.ts\n+++ b/src/app.ts\n" },
+        always: ["src/*"],
+      } });
+
+      await vi.waitFor(() => expect(fixture.client.postSessionIdPermissionsPermissionId).toHaveBeenCalledWith(
+        expect.objectContaining({ body: { response: "once" } }),
+      ));
+      fixture.emit({ type: "session.idle", properties: { sessionID: "ses_1" } });
+
+      const events = await result;
+      expect(events.some((event) => (event as { type?: string }).type === "ask_user")).toBe(false);
+    },
+  );
+
+  it("clears a pending approval when permission.replied uses the requestID field", async () => {
+    const fixture = mockServer();
+    const onApprovalResolved = vi.fn();
+    const adapter = new OpenCodeRuntimeAdapter({ server: fixture.server, onApprovalResolved });
+    const result = drain(adapter.run("ses_1", "hello", undefined, undefined, undefined, {
+      permissionMode: "request-approval",
+      brokerRunId: "run_reply",
+    }));
+    await vi.waitFor(() => expect(fixture.client.session.promptAsync).toHaveBeenCalled());
+    fixture.emit({ id: "evt_reply_asked", type: "permission.asked", properties: {
+      id: "perm_reply",
+      sessionID: "ses_1",
+      permission: "bash",
+      patterns: ["git status"],
+      metadata: {},
+      always: ["git status"],
+    } });
+    fixture.emit({ id: "evt_reply_replied", type: "permission.replied", properties: {
+      sessionID: "ses_1",
+      requestID: "perm_reply",
+      reply: "once",
+    } });
+    fixture.emit({ type: "session.idle", properties: { sessionID: "ses_1" } });
+
+    await result;
+    expect(onApprovalResolved).toHaveBeenCalledWith("native:run_reply:perm_reply");
+    await expect(adapter.answerQuestion("native:run_reply:perm_reply", { answer: "允许一次" })).resolves.toBe(false);
   });
 
   it("aborts the native session and closes the active stream", async () => {
@@ -234,9 +323,9 @@ describe("OpenCode model selection", () => {
     const adapter = new OpenCodeRuntimeAdapter({ server: fixture.server });
     const models = await adapter.listModels();
     expect(models).toEqual([
-      { id: "gpt-5.6-sol", providerID: "openai", displayName: "GPT-5.6-Sol" },
-      { id: "gpt-5-mini", providerID: "openai", displayName: "openai/gpt-5-mini" },
-      { id: "claude-opus-4-6", providerID: "anthropic", displayName: "Claude Opus 4.6" },
+      { id: "gpt-5.6-sol", providerID: "openai", providerDisplayName: "OpenAI", displayName: "GPT-5.6-Sol" },
+      { id: "gpt-5-mini", providerID: "openai", providerDisplayName: "OpenAI", displayName: "openai/gpt-5-mini" },
+      { id: "claude-opus-4-6", providerID: "anthropic", providerDisplayName: "Anthropic", displayName: "Claude Opus 4.6" },
     ]);
   });
 });

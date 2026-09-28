@@ -1,4 +1,4 @@
-import type { AgentType, NativeReasoningEffort, RuntimeModelSelection } from "../global";
+import type { AgentType, NativeReasoningEffort, RuntimeModelInfo, RuntimeModelSelection } from "../global";
 
 /**
  * Per-agent-type model/reasoning-effort choices made in the composer. Kept in
@@ -14,6 +14,16 @@ const STORAGE_KEY = "webapp.nativeAgentRunPrefs.v1";
 const NATIVE_AGENT_TYPES: readonly AgentType[] = ["codex", "claude-code", "opencode"];
 
 type PrefStore = Partial<Record<AgentType, NativeAgentRunPref>>;
+
+export interface OpenCodePickerModel extends RuntimeModelInfo {
+  optionLabel: string;
+}
+
+export interface OpenCodeModelGroup {
+  key: string;
+  label: string;
+  models: OpenCodePickerModel[];
+}
 
 function readStore(): PrefStore {
   try {
@@ -66,4 +76,25 @@ export function nativeModelFromKey(key: string): RuntimeModelSelection {
   return separator > 0
     ? { providerID: key.slice(0, separator), id: key.slice(separator + 1) }
     : { id: key };
+}
+
+/** Group provider-scoped OpenCode models for the native model picker. */
+export function groupOpenCodeModels(models: readonly RuntimeModelInfo[]): OpenCodeModelGroup[] {
+  const groups = new Map<string, OpenCodeModelGroup>();
+  for (const model of models) {
+    const providerID = model.providerID?.trim();
+    const providerName = model.providerDisplayName?.trim() || providerID || "其他供应商";
+    const key = providerID || "__other__";
+    const group = groups.get(key) ?? {
+      key,
+      label: providerID === "opencode-go" ? `${providerName}（需订阅）` : providerName,
+      models: [],
+    };
+    group.models.push({
+      ...model,
+      optionLabel: model.displayName || model.id,
+    });
+    groups.set(key, group);
+  }
+  return [...groups.values()];
 }

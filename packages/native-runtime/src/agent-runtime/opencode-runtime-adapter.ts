@@ -18,10 +18,8 @@ import {
   type ToolPermissionMode,
 } from "@agent/core";
 import type {
-  Event,
   Message as OpenCodeMessage,
   Part,
-  Permission,
   Session,
   SessionStatus,
   ToolPart,
@@ -74,6 +72,15 @@ interface PendingPermission {
   sessionId: string;
   directory: string;
   permissionId: string;
+}
+
+interface OpenCodePermissionRequest {
+  id: string;
+  sessionID: string;
+  type: string;
+  patterns: string[];
+  title?: string;
+  metadata: Record<string, unknown>;
 }
 
 /** Conversion cache for native history paging, keyed by session id. */
@@ -164,15 +171,17 @@ export class OpenCodeRuntimeAdapter implements AgentRuntimeAdapter {
   async listModels(): Promise<RuntimeModelInfo[]> {
     const client = await this.getClient();
     const response = await client.config.providers({ throwOnError: true });
-    const providers = (response.data as { providers?: Array<{ id?: string; models?: Record<string, { name?: string } > }> } | undefined)?.providers ?? [];
+    const providers = (response.data as { providers?: Array<{ id?: string; name?: string; models?: Record<string, { name?: string } > }> } | undefined)?.providers ?? [];
     const models: RuntimeModelInfo[] = [];
     for (const provider of providers) {
       if (!provider?.id) continue;
+      const providerDisplayName = provider.name?.trim();
       for (const [modelID, model] of Object.entries(provider.models ?? {})) {
         if (!modelID) continue;
         models.push({
           id: modelID,
           providerID: provider.id,
+          ...(providerDisplayName ? { providerDisplayName } : {}),
           displayName: model?.name || `${provider.id}/${modelID}`,
         });
       }
@@ -535,12 +544,14 @@ export class OpenCodeRuntimeAdapter implements AgentRuntimeAdapter {
       });
       return;
     }
-    if (payload.type === "permission.updated") {
-      void this.handlePermission(run, directory, payload.properties);
+    const permission = openCodePermissionRequest(payload);
+    if (permission) {
+      void this.handlePermission(run, directory, permission);
       return;
     }
-    if (payload.type === "permission.replied") {
-      const pending = [...this.pendingPermissions.values()].find((value) => value.permissionId === payload.properties.permissionID);
+    const repliedPermissionId = openCodePermissionReplyId(payload);
+    if (repliedPermissionId) {
+      const pending = [...this.pendingPermissions.values()].find((value) => value.permissionId === repliedPermissionId);
       if (pending) {
         this.pendingPermissions.delete(pending.questionId);
         this.onApprovalResolved?.(pending.questionId);
@@ -630,7 +641,11 @@ export class OpenCodeRuntimeAdapter implements AgentRuntimeAdapter {
     }
   }
 
-  private async handlePermission(run: ActiveRun, directory: string, permission: Permission): Promise<void> {
+  private async handlePermission(
+    run: ActiveRun,
+    directory: string,
+    permission: OpenCodePermissionRequest,
+  ): Promise<void> {
     const mapped = openCodePermissionTool(permission);
     const classification = classifyToolPermission(mapped.name, mapped.arguments, run.cwd);
     const shouldAutoApprove = run.permissionMode === "full-access"
@@ -789,7 +804,53 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
-function openCodePermissionTool(permission: Permission): { name: string; arguments: Record<string, unknown> } {
+function openCodePermissionRequest(event: unknown): OpenCodePermissionRequest | undefined {
+  if (!isRecord(event) || !isRecord(event.properties)) return undefined;
+  const properties = event.properties;
+  const id = typeof properties.id === "string" ? properties.id : undefined;
+  const sessionID = typeof properties.sessionID === "string" ? properties.sessionID : undefined;
+  if (!id || !sessionID) return undefined;
+
+  if (event.type === "permission.updated" && typeof properties.type === "string") {
+    return {
+      id,
+      sessionID,
+      type: properties.type,
+      patterns: permissionPatterns(properties.pattern),
+      ...(typeof properties.title === "string" ? { title: properties.title } : {}),
+      metadata: isRecord(properties.metadata) ? properties.metadata : {},
+    };
+  }
+  if (event.type === "permission.asked" && typeof properties.permission === "string") {
+    return {
+      id,
+      sessionID,
+      type: properties.permission,
+      patterns: permissionPatterns(properties.patterns),
+      metadata: isRecord(properties.metadata) ? properties.metadata : {},
+    };
+  }
+  return undefined;
+}
+
+function openCodePermissionReplyId(event: unknown): string | undefined {
+  if (!isRecord(event) || event.type !== "permission.replied" || !isRecord(event.properties)) {
+    return undefined;
+  }
+  const { permissionID, requestID } = event.properties;
+  return typeof permissionID === "string"
+    ? permissionID
+    : typeof requestID === "string" ? requestID : undefined;
+}
+
+function permissionPatterns(value: unknown): string[] {
+  if (typeof value === "string") return value ? [value] : [];
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+}
+
+function openCodePermissionTool(
+  permission: OpenCodePermissionRequest,
+): { name: string; arguments: Record<string, unknown> } {
   const aliases: Record<string, string> = {
     read: "read_file",
     list: "list_files",
@@ -804,12 +865,24 @@ function openCodePermissionTool(permission: Permission): { name: string; argumen
     task: "dispatch_agent",
     todowrite: "todo_write",
   };
-  const pattern = Array.isArray(permission.pattern) ? permission.pattern.join(" ") : permission.pattern;
+  const permissionType = permission.type.toLowerCase();
+  const pattern = permission.patterns.join(" ");
+  const filePath = typeof permission.metadata.file_path === "string"
+    ? permission.metadata.file_path
+    : typeof permission.metadata.filepath === "string"
+      ? permission.metadata.filepath
+      : permission.patterns[0];
+  const patch = typeof permission.metadata.patch === "string"
+    ? permission.metadata.patch
+    : typeof permission.metadata.diff === "string" ? permission.metadata.diff : undefined;
+  const name = aliases[permissionType] ?? permission.type;
   return {
-    name: aliases[permission.type.toLowerCase()] ?? permission.type,
+    name,
     arguments: {
       ...permission.metadata,
-      ...(permission.type.toLowerCase() === "bash" && pattern ? { command: pattern } : {}),
+      ...(permissionType === "bash" && pattern ? { command: pattern } : {}),
+      ...((name === "write_file" || name === "apply_patch") && filePath ? { file_path: filePath } : {}),
+      ...(name === "apply_patch" && patch ? { patch } : {}),
       ...(pattern ? { pattern } : {}),
     },
   };

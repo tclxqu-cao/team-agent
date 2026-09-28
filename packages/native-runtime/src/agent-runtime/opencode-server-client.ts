@@ -6,11 +6,15 @@ import {
   type GlobalEvent,
   type OpencodeClient,
 } from "@opencode-ai/sdk";
+import type {
+  EventPermissionAsked,
+  EventPermissionReplied,
+} from "@opencode-ai/sdk/v2/types";
 import { RuntimeSessionError } from "./types.js";
 
 export interface OpenCodeServerEvent {
   directory: string;
-  payload: GlobalEvent["payload"];
+  payload: GlobalEvent["payload"] | EventPermissionAsked | EventPermissionReplied;
 }
 
 type EventListener = (event: OpenCodeServerEvent) => void;

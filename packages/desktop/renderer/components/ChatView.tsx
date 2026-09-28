@@ -14,6 +14,7 @@ import AgentBrandIcon from "./AgentBrandIcon";
 import MermaidBlock from "./MermaidBlock";
 import StructuredAgentMessage from "./StructuredAgentMessage";
 import {
+  groupOpenCodeModels,
   isNativeAgentType,
   loadNativeRunPref,
   nativeModelFromKey,
@@ -694,6 +695,10 @@ export default function ChatView({
         },
       }));
   }, [isNativeRuntime, profiles, composerAgentType]);
+  const openCodeRuntimeModelGroups = useMemo(
+    () => composerAgentType === "opencode" ? groupOpenCodeModels(nativeModels) : [],
+    [composerAgentType, nativeModels],
+  );
   const availableNativeModelKeys = useMemo(() => new Set([
     ...runtimeModelOptions.map((option) => option.key),
     ...profileModelOptions.map((option) => option.key),
@@ -5491,7 +5496,14 @@ export default function ChatView({
                         }}
                       >
                         <option value="">默认模型</option>
-                        {runtimeModelOptions.map((option) => (
+                        {composerAgentType === "opencode" ? openCodeRuntimeModelGroups.map((group) => (
+                          <optgroup key={group.key} label={group.label}>
+                            {group.models.map((model) => {
+                              const key = nativeModelKey(model);
+                              return <option key={key} value={key}>{model.optionLabel}</option>;
+                            })}
+                          </optgroup>
+                        )) : runtimeModelOptions.map((option) => (
                           <option key={option.key} value={option.key}>{option.label}</option>
                         ))}
                         {profileModelOptions.length > 0 && (
