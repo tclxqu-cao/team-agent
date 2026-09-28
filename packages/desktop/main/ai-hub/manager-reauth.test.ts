@@ -233,9 +233,8 @@ describe("AI Hub reauth session routing", () => {
     vi.useRealTimers();
   });
 
-  it("submits a DeepSeek source attachment once after long text conversion", async () => {
+  it("submits a DeepSeek source attachment with exactly two trusted CDP Enters", async () => {
     vi.useFakeTimers();
-    let sendTargetCalls = 0;
     let probeCalls = 0;
     const sendCommand = vi.fn(async (method: string, params?: { expression?: string }) => {
       if (method !== "Runtime.evaluate") return {};
@@ -255,10 +254,6 @@ describe("AI Hub reauth session routing", () => {
           hasSourceAttachment: true,
         } } };
       }
-      if (expression.includes("const semantic =")) {
-        sendTargetCalls += 1;
-        return { result: { value: { clicked: true } } };
-      }
       return { result: { value: true } };
     });
     const webContents = { debugger: { isAttached: () => true, attach: vi.fn(), sendCommand } };
@@ -267,8 +262,7 @@ describe("AI Hub reauth session routing", () => {
 
     await vi.advanceTimersByTimeAsync(12_000);
     await expect(pending).resolves.toBeUndefined();
-    expect(sendTargetCalls).toBe(2);
-    expect(sendCommand.mock.calls.filter(([method]) => method === "Input.dispatchKeyEvent")).toHaveLength(0);
+    expect(sendCommand.mock.calls.filter(([method]) => method === "Input.dispatchKeyEvent")).toHaveLength(4);
     vi.useRealTimers();
   });
 

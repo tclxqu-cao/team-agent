@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { CONVERSATION_EXTRACT_SCRIPT, CONTINUE_BUTTON_SCRIPT, CONTINUE_TARGET_SCRIPT, ENTER_DISPATCH_SCRIPT, SEND_TARGET_SCRIPT, buildAdapterScript, buildContinueProbeScript, buildFillInputScript, buildFocusInputScript, buildSubmissionProbeScript } from "./adapters";
+import { CONVERSATION_EXTRACT_SCRIPT, CONTINUE_BUTTON_SCRIPT, CONTINUE_TARGET_SCRIPT, ENTER_DISPATCH_SCRIPT, buildAdapterScript, buildContinueProbeScript, buildFillInputScript, buildFocusInputScript, buildSubmissionProbeScript } from "./adapters";
 import { runInNewContext } from "node:vm";
 
 // 脚本语法校验：new Function 不执行代码，只解析；IIFE 是表达式，包一层 return 即可
@@ -85,11 +85,56 @@ describe("CDP send scripts", () => {
     assertParses(script);
   });
 
-  it("finds a semantic send control without hashed classes", () => {
-    expect(SEND_TARGET_SCRIPT).toContain("ds-button--primary.ds-button--filled.ds-button--circle");
-    expect(SEND_TARGET_SCRIPT).toContain("button[type='submit']");
-    expect(SEND_TARGET_SCRIPT).not.toMatch(/_[0-9a-f]{6,}/);
-    assertParses(SEND_TARGET_SCRIPT);
+  it("detects a pending source attachment without assuming its tag or style", () => {
+    const script = buildSubmissionProbeScript({
+      url: "https://chat.deepseek.com/",
+      userCount: 0,
+      outputCount: 0,
+      inputLength: 20_000,
+    });
+    const body = { innerText: "", parentElement: null };
+    const composer = { innerText: "【Agent 转发】.txt\n粘贴原文至输入框", parentElement: body };
+    const input = { value: "", textContent: "", innerText: "", parentElement: composer };
+    const result = runInNewContext(script, {
+      URL,
+      location: { href: "https://chat.deepseek.com/a/chat/s-1" },
+      document: {
+        body,
+        querySelector: () => input,
+        querySelectorAll: () => [],
+      },
+    });
+
+    expect(result).toMatchObject({
+      submitted: false,
+      navigated: true,
+      hasSourceAttachment: true,
+    });
+    expect(script).not.toContain('querySelectorAll("button")');
+    expect(script).not.toContain("ds-button");
+  });
+
+  it("ignores source attachment text that only exists in conversation history", () => {
+    const script = buildSubmissionProbeScript({
+      url: "https://chat.deepseek.com/a/chat/s-1",
+      userCount: 0,
+      outputCount: 0,
+      inputLength: 20_000,
+    });
+    const body = { innerText: "历史附件\n粘贴原文至输入框", parentElement: null };
+    const composer = { innerText: "", parentElement: body };
+    const input = { value: "", textContent: "", innerText: "", parentElement: composer };
+    const result = runInNewContext(script, {
+      URL,
+      location: { href: "https://chat.deepseek.com/a/chat/s-1" },
+      document: {
+        body,
+        querySelector: () => input,
+        querySelectorAll: () => [],
+      },
+    });
+
+    expect(result).toMatchObject({ submitted: true, hasSourceAttachment: false });
   });
 });
 

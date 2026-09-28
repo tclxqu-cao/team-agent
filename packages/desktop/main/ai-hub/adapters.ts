@@ -1,5 +1,15 @@
 import type { HubAdapterId } from "./config";
 
+const SOURCE_ATTACHMENT_LABEL = "粘贴原文至输入框";
+const SOURCE_ATTACHMENT_PROBE_SNIPPET = `
+  const hasSourceAttachmentNear = (input) => {
+    let node = input;
+    for (let depth = 0; node && node !== document.body && depth < 8; depth += 1, node = node.parentElement) {
+      if (String(node.innerText || "").includes(${JSON.stringify(SOURCE_ATTACHMENT_LABEL)})) return true;
+    }
+    return false;
+  };`;
+
 // 站点 DOM 会随改版漂移：选择器是尽力而为，主进程侧有剪贴板粘贴回退兜底。
 const ADAPTER_SELECTORS: Record<HubAdapterId, { inputs: string[]; sends: string[] }> = {
   deepseek: { inputs: ["#chat-input", "textarea"], sends: [] },
@@ -57,8 +67,8 @@ ${inputLocatorScript(spec.inputs.length > 0, JSON.stringify(spec.inputs))}
 })()`;
 }
 
-// CDP 主路径先写入并聚焦；提交阶段再按稳定语义定位真实发送控件，
-// 找不到时由主进程通过 Input.dispatchKeyEvent 发送受信任的 Enter 键。
+// CDP 主路径只负责写入并聚焦；提交阶段由主进程通过
+// Input.dispatchKeyEvent 发送受信任的 Enter 键。
 export function buildFillInputScript(adapter: HubAdapterId | undefined, text: string): string {
   const spec = ADAPTER_SELECTORS[adapter ?? "generic"];
   return `(() => {
@@ -106,12 +116,14 @@ export function buildSubmissionProbeScript(baseline: { url: string; userCount: n
     const outputCount = document.querySelectorAll('[data-message-author-role="assistant"], .ds-markdown, model-response').length;
     const input = document.querySelector("#chat-input, textarea, [contenteditable='true'], [contenteditable='']");
     const inputLength = String(input?.value || input?.textContent || "").length;
-  const hasSourceAttachment = [...document.querySelectorAll("button")]
-    .some((button) => String(button.innerText || "").includes("粘贴原文至输入框"));
+${SOURCE_ATTACHMENT_PROBE_SNIPPET}
+  // Source attachments are composer state, not a particular control type.
+  // DeepSeek has rendered this affordance as both BUTTON and DIV elements.
+  const hasSourceAttachment = Boolean(input && hasSourceAttachmentNear(input));
   const composerSubmitted = ${baseline.inputLength} > 0 && inputLength === 0 && !hasSourceAttachment;
   const conversationAdvanced = userCount > ${baseline.userCount} || outputCount > ${baseline.outputCount} || composerSubmitted;
   // DeepSeek may turn a long prompt into a source attachment on the first
-  // click. Navigation alone only means the conversation shell was created;
+  // Enter. Navigation alone only means the conversation shell was created;
   // the attachment still needs a second submit before the model can answer.
   const attachmentPending = hasSourceAttachment
     && userCount <= ${baseline.userCount}
@@ -119,31 +131,6 @@ export function buildSubmissionProbeScript(baseline: { url: string; userCount: n
   return { submitted: !attachmentPending && (navigated || (!startedFromHome && conversationAdvanced)), navigated, userCount, outputCount, inputLength, hasSourceAttachment };
 })()`;
 }
-
-export const SEND_TARGET_SCRIPT = `(() => {
-  const input = document.querySelector("#chat-input, textarea, [contenteditable='true'], [contenteditable='']");
-  if (!input) return null;
-  const inputRect = input.getBoundingClientRect();
-  const semantic = [
-    "button[type='submit']:not([disabled])",
-    "button[data-testid='send-button']:not([disabled])",
-    "button[aria-label*='发送']:not([disabled])",
-    "button[aria-label*='Send']:not([disabled])",
-    "[role='button'].ds-button--primary.ds-button--filled.ds-button--circle:not(.ds-button--disabled)",
-  ];
-  const candidates = semantic.flatMap((selector) => [...document.querySelectorAll(selector)]);
-  const target = candidates
-    .filter((el, index) => candidates.indexOf(el) === index)
-    .map((el) => ({ el, rect: el.getBoundingClientRect() }))
-    .filter(({ rect }) => rect.width > 0 && rect.height > 0
-      && rect.left >= inputRect.left
-      && rect.top >= inputRect.top - 180
-      && rect.top <= inputRect.bottom + 180)
-    .sort((a, b) => b.rect.right - a.rect.right)[0];
-  if (!target) return null;
-  target.el.click();
-  return { clicked: true };
-})()`;
 
 // executeJavaScript(script, true) 执行异步 IIFE；失败时由主进程走剪贴板回退。
 export function buildAdapterScript(adapter: HubAdapterId | undefined, text: string): string {
@@ -304,6 +291,7 @@ export const CONVERSATION_EXTRACT_SCRIPT = `(() => {
     .trim()
     .slice(0, LIMIT_CHARS);
   const out = [];${CONTINUE_FINDER_SNIPPET}
+${SOURCE_ATTACHMENT_PROBE_SNIPPET}
   const pendingContinue = Boolean(findContinueButton());
   const stopLabels = ["停止生成", "停止回答", "stop", "stop generating", "stop response"];
   const generating = [...document.querySelectorAll("button,[role='button']")].some((el) => {
@@ -391,8 +379,8 @@ export const CONVERSATION_EXTRACT_SCRIPT = `(() => {
       const rect = el.getBoundingClientRect();
       return { tag: el.tagName, type: el.getAttribute("type"), aria: el.getAttribute("aria-label"), disabled: Boolean(el.disabled), left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom, width: rect.width, height: rect.height };
     }).filter((item) => item.width > 0 && item.height > 0).slice(-30),
-    hasSourceAttachment: [...document.querySelectorAll("button")]
-      .some((button) => String(button.innerText || "").includes("粘贴原文至输入框")),
+    hasSourceAttachment: [...document.querySelectorAll("textarea, [contenteditable='true'],[contenteditable='']")]
+      .some((input) => hasSourceAttachmentNear(input)),
   };
   const gpt = document.querySelectorAll('[data-message-author-role="user"],[data-message-author-role="assistant"]');
   if (gpt.length > 0) {

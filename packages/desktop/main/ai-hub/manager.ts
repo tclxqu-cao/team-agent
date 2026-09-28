@@ -1,6 +1,6 @@
 import { createRequire } from "node:module";
 import type { BaseWindow, BrowserWindow, WebContents, WebContentsView } from "electron";
-import { CONVERSATION_EXTRACT_SCRIPT, CONTINUE_BUTTON_SCRIPT, CONTINUE_TARGET_SCRIPT, ENTER_DISPATCH_SCRIPT, SEND_TARGET_SCRIPT, buildAdapterScript, buildFillInputScript, buildFocusInputScript, buildSubmissionProbeScript } from "./adapters.js";
+import { CONVERSATION_EXTRACT_SCRIPT, CONTINUE_BUTTON_SCRIPT, CONTINUE_TARGET_SCRIPT, ENTER_DISPATCH_SCRIPT, buildAdapterScript, buildFillInputScript, buildFocusInputScript, buildSubmissionProbeScript } from "./adapters.js";
 import type { ChromeHubBridge } from "./chrome-bridge.js";
 import { isChromeHubSite, chromeHubErrorMessage } from "./chrome-bridge-protocol.js";
 import { HubConfigStore, normalizeHubConfig, type HubAdapterId, type HubConfig } from "./config.js";
@@ -365,14 +365,7 @@ export class AIHubManager {
       }
       return response.result?.value as T;
     };
-
-    const baseline = await evaluate<{ url: string; userCount: number; outputCount: number; inputLength: number }>(buildFillInputScript(adapter, text));
-    await sleep(900);
-    // Submit exactly once. Runtime click is intentional here: a background
-    // WebContentsView can clip the real button outside its viewport, causing
-    // coordinate-based CDP mouse events and Enter to be ignored by DeepSeek.
-    const target = await evaluate<{ clicked: true } | null>(SEND_TARGET_SCRIPT);
-    if (!target?.clicked) {
+    const dispatchTrustedEnter = async (): Promise<void> => {
       await evaluate<boolean>(buildFocusInputScript(adapter));
       await cdp.sendCommand("Input.dispatchKeyEvent", {
         type: "rawKeyDown", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 13,
@@ -380,7 +373,13 @@ export class AIHubManager {
       await cdp.sendCommand("Input.dispatchKeyEvent", {
         type: "keyUp", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 13,
       });
-    }
+    };
+
+    const baseline = await evaluate<{ url: string; userCount: number; outputCount: number; inputLength: number }>(buildFillInputScript(adapter, text));
+    await sleep(900);
+    // Submit through CDP trusted input so provider DOM tags and styles never
+    // become part of the send contract.
+    await dispatchTrustedEnter();
     let attachmentSubmitAttempted = false;
     for (let poll = 0; poll < 8; poll += 1) {
       await sleep(900);
@@ -390,10 +389,10 @@ export class AIHubManager {
         && probe.outputCount <= baseline.outputCount;
       if (attachmentPending && !attachmentSubmitAttempted) {
         attachmentSubmitAttempted = true;
-        // First click converted the oversized prompt into DeepSeek's source
-        // attachment. Submit that attachment exactly once; later polls only
-        // observe, so a delayed page update cannot duplicate the user turn.
-        await evaluate<{ clicked: true } | null>(SEND_TARGET_SCRIPT);
+        // The first Enter converted the oversized prompt into a source
+        // attachment. Submit it once more through the same trusted CDP path;
+        // later polls only observe so a delayed update cannot duplicate it.
+        await dispatchTrustedEnter();
         continue;
       }
       if (probe.submitted) {
