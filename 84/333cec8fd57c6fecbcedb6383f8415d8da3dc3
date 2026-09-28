@@ -1,0 +1,91 @@
+packages/desktop/renderer/lib/desktop-flow-studio-entry.ts
+  s_28127d44e54401::t_60e49107c6f8ff 1-4,17-22,26-29
+  s_28127d44e54401::t_7baae2793e59d5 5,25
+  s_28127d44e54401::t_39347356880f1f 6-16,23-24
+packages/desktop/renderer/lib/desktop-flow-studio-entry.test.ts
+  s_28127d44e54401::t_39347356880f1f 27,29
+  s_28127d44e54401::t_60e49107c6f8ff 1-2,4-24,30,34-42,44-45
+  s_28127d44e54401::t_df2650555a9cbb 43
+  s_28127d44e54401::t_7baae2793e59d5 3,25-26,28,31-33
+packages/desktop/renderer/lib/agent-workspace-cache.ts
+  s_43501834bde265::t_035bb9be60cdfe 112-113,119-120
+  s_43501834bde265::t_a2fd66d9d2b000 106-108,110,118,121,130-178
+  s_43501834bde265::t_9d00114cf6e2ce 179-180
+packages/desktop/renderer/components/DesktopFlowStudioView.test.tsx
+  s_28127d44e54401::t_39347356880f1f 1-2,4-6,10,12-18,29-30
+  s_28127d44e54401::t_7baae2793e59d5 3,7-9,11,19-28
+packages/desktop/renderer/global.d.ts
+  s_28127d44e54401::t_196f1db7dae480 430-434,511-523
+  s_28127d44e54401::t_c6af17b596437d 524
+packages/desktop/renderer/App.tsx
+  s_28127d44e54401::t_60e49107c6f8ff 41,710,1590,1595
+  s_6d7bf9974bab85::t_5f81d0143fa4fb 1690-1703,1705,1733-1738,1843,1857
+  s_28127d44e54401::t_7baae2793e59d5 716
+  s_43501834bde265::t_a2fd66d9d2b000 62,937,959-973
+  s_28127d44e54401::t_39347356880f1f 42,75,707-708,711-715,717-727,1494,1501,1553,1591-1594,2129,2247-2250
+  s_43501834bde265::t_035bb9be60cdfe 918-919
+  s_28127d44e54401::t_d7f832cef0815e 709
+  s_28127d44e54401::t_333f069fe5eda4 2251-2253
+packages/desktop/main/preload.ts
+  s_28127d44e54401::t_196f1db7dae480 256-266
+packages/desktop/renderer/components/SidebarReferenceStyle.test.ts
+  s_6d7bf9974bab85::t_5f81d0143fa4fb 182-186
+packages/desktop/renderer/lib/shared-service.ts
+  s_28127d44e54401::t_196f1db7dae480 103
+packages/desktop/renderer/components/DesktopAppActions.tsx
+  s_28127d44e54401::t_39347356880f1f 1,5,8-11,18,21,23-25
+  s_28127d44e54401::t_60e49107c6f8ff 2-4,6-7,12-17,19-20,22,26-29
+packages/desktop/renderer/components/DesktopFlowStudioView.tsx
+  s_28127d44e54401::t_39347356880f1f 1,4,6-15,21,40,60,89-92,94,102,131-133
+  s_28127d44e54401::t_3b3ce1a90610f4 2-3,5,16-20,22-39,41-59,61-88,93,95-101,103-130
+packages/desktop/main/ai-hub/manager.ts
+  s_28127d44e54401::t_196f1db7dae480 227
+  s_28127d44e54401::t_8d47b6f1295b0a 57-59,65-73,142-143,154,197,208-226,228-246,716-721,725-727,747-756,767-773,793,795,800,807-811,816-817
+packages/desktop/renderer/lib/agent-workspace-cache.test.ts
+  s_43501834bde265::t_a2fd66d9d2b000 1,8,19-22,36,155-171,200-313
+  s_43501834bde265::t_67830d86630096 314
+packages/desktop/main/ai-hub/manager-reauth.test.ts
+  s_28127d44e54401::t_e05352de8ad869 50,80-110
+packages/desktop/renderer/components/DesktopAppActions.test.tsx
+  s_28127d44e54401::t_60e49107c6f8ff 1-22,36-37
+  s_28127d44e54401::t_39347356880f1f 23-35
+packages/desktop/renderer/styles/global.css
+  s_28127d44e54401::t_39347356880f1f 688-696,699-702,712-723,732-767
+  s_28127d44e54401::t_60e49107c6f8ff 675-687
+  s_28127d44e54401::t_3b3ce1a90610f4 697-698,703-711,724-731
+packages/desktop/main/index.ts
+  s_28127d44e54401::t_196f1db7dae480 133-139,364-395
+  s_28127d44e54401::t_68234aa2ffe0a7 396
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "84333cec8fd57c6fecbcedb6383f8415d8da3dc3",
+  "prompts": {},
+  "sessions": {
+    "s_28127d44e54401": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0e5a5-8da3-7421-9f12-8fe5bfb86cfb",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_43501834bde265": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0e5ad-5be6-77e0-9152-1eda6e58a451",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_6d7bf9974bab85": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0e273-3764-7f22-a1a0-160203012ad0",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
