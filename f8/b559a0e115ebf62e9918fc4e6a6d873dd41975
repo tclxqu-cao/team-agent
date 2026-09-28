@@ -1,0 +1,24 @@
+scripts/harness/daemon-service.ts
+  s_e4f15ac9740419::t_411d7e13419d8b 180
+scripts/harness/quality.test.ts
+  s_e4f15ac9740419::t_411d7e13419d8b 14,16,83-101,202-230
+  s_e4f15ac9740419::t_eadaf8b59ddfda 231-232
+scripts/harness/quality-analysis.ts
+  s_e4f15ac9740419::t_411d7e13419d8b 32-40,62-65
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "f8b559a0e115ebf62e9918fc4e6a6d873dd41975",
+  "prompts": {},
+  "sessions": {
+    "s_e4f15ac9740419": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0e365-ba1a-77b0-8df9-8ca23301ce04",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
