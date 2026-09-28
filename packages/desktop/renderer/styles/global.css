@@ -672,6 +672,99 @@ select:focus {
   letter-spacing: 0;
 }
 
+.desktop-app-actions {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+  -webkit-app-region: no-drag;
+}
+
+.desktop-app-action {
+  color: var(--text-muted);
+}
+
+.desktop-app-action-spinner,
+.desktop-flow-studio-spinner {
+  animation: spin 0.9s linear infinite;
+}
+
+.desktop-flow-studio-view {
+  position: absolute;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--bg-workspace);
+}
+
+.desktop-flow-studio-topbar {
+  height: 52px;
+  flex: 0 0 52px;
+  display: flex;
+  align-items: center;
+  padding: 0 14px 0 78px;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-surface);
+  -webkit-app-region: drag;
+}
+
+.desktop-flow-studio-back {
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--border-default);
+  border-radius: 7px;
+  background: var(--bg-glass);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-sm);
+  backdrop-filter: blur(10px);
+  -webkit-app-region: no-drag;
+}
+
+.desktop-flow-studio-content {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--bg-workspace);
+}
+
+.desktop-flow-studio-status {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: var(--text-secondary);
+  background: var(--bg-workspace);
+  letter-spacing: 0;
+}
+
+.desktop-flow-studio-status strong {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.desktop-flow-studio-retry {
+  min-height: 32px;
+  padding: 0 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px solid var(--border-default);
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  letter-spacing: 0;
+}
+
 .agent-workspace-switcher {
   min-height: 38px;
   margin: 2px 14px 8px;

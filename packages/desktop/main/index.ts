@@ -130,7 +130,13 @@ const aiHubManager = new AIHubManager({
   chromeBridge: chromeHubBridge,
   requestBrowserLogin: (siteId) => { void openAiHubInChrome(siteId).catch(() => {}); },
 });
-aiHubManager.subscribe((event) => mainWindow?.webContents.send("hub:event", event));
+const FLOW_STUDIO_PAGE_ID = "flow-studio";
+aiHubManager.subscribe((event) => {
+  mainWindow?.webContents.send("hub:event", event);
+  if (event.siteId === FLOW_STUDIO_PAGE_ID) {
+    mainWindow?.webContents.send("flow-studio:event", event);
+  }
+});
 // AI Hub 中继：供 :3000 server（web 控制台）转发发送请求，由桌面端注入已登录页面
 let aiHubRelay: AiHubRelay | null = null;
 
@@ -354,6 +360,39 @@ ipcMain.handle("hub:hide-all", () => aiHubManager.setBounds([]));
 ipcMain.handle("hub:set-bounds", (_event, panes: HubPaneRect[]) => aiHubManager.setBounds(panes));
 ipcMain.handle("hub:reload", (_event, siteId: string, conversationId?: string) => aiHubManager.reloadSite(siteId, conversationId));
 ipcMain.handle("hub:broadcast", (_event, text: string, siteIds: string[], images: unknown = []) => aiHubManager.broadcast(text, siteIds, normalizeRelayImages(images)));
+
+// Flow Studio 与 AI Hub 共用 WebContentsView 池，但不进入 AI Hub 配置、布局和广播。
+ipcMain.handle("flow-studio:open", async (_event, rawUrl: unknown) => {
+  if (typeof rawUrl !== "string") return { ok: false };
+  try {
+    await aiHubManager.openEmbeddedPage(FLOW_STUDIO_PAGE_ID, rawUrl);
+    return { ok: true };
+  } catch {
+    return { ok: false };
+  }
+});
+ipcMain.handle("flow-studio:set-bounds", (_event, rawRect: unknown) => {
+  if (rawRect === null) {
+    aiHubManager.setEmbeddedPageBounds(FLOW_STUDIO_PAGE_ID, null);
+    return { ok: true };
+  }
+  if (!rawRect || typeof rawRect !== "object") return { ok: false };
+  const rect = rawRect as Record<string, unknown>;
+  if (![rect.x, rect.y, rect.width, rect.height].every((value) => typeof value === "number" && Number.isFinite(value))) {
+    return { ok: false };
+  }
+  aiHubManager.setEmbeddedPageBounds(FLOW_STUDIO_PAGE_ID, {
+    x: rect.x as number,
+    y: rect.y as number,
+    width: rect.width as number,
+    height: rect.height as number,
+  });
+  return { ok: true };
+});
+ipcMain.handle("flow-studio:reload", () => {
+  aiHubManager.reloadEmbeddedPage(FLOW_STUDIO_PAGE_ID);
+  return { ok: true };
+});
 
 // ── IPC: AI Hub 浏览器 Profile 导入 / 共享身份 / 托管重登录 ───────────────
 // 边界：渲染层只允许提交固定来源 id；主进程校验后自行解析路径与 Keychain。

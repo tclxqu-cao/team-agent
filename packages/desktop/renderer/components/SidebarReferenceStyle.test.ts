@@ -179,6 +179,11 @@ describe("AgentRoam reference sidebar", () => {
     expect(app).toContain("project.canCreateSession === false");
     expect(app).toContain("<History size={13}");
     expect(app).toContain("project.canCreateSession !== false && (");
+    expect(app).toContain("mobileDrawer ? 100_000 : manySession ? 300 : 800");
+    expect(app).toContain("manySession && !mobileDrawer");
+    expect(app).toContain('data-sidebar-project-id={project.id}');
+    expect(app).toContain("if (mobileDrawer) {");
+    expect(app).toContain("loadSessions(projectId, { cursor: nextCursor })");
   });
 
   it("collapses and expands the complete project and session hierarchy", () => {

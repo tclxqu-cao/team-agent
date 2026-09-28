@@ -54,10 +54,22 @@ interface AIHubManagerDeps {
 
 interface PoolEntry {
   view: WebContentsView;
+  scope: "hub" | "embedded";
+  siteId: string;
+  url: string;
   host: "none" | "main" | "background";
   loaded: boolean;
   sentTexts: string[];
 }
+
+interface EmbeddedPageRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+const embeddedPageKey = (pageId: string) => `embedded-page::${pageId}`;
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const poolKey = (siteId: string, conversationId?: string) => conversationId ? `${siteId}::${conversationId}` : siteId;
@@ -127,8 +139,8 @@ export class AIHubManager {
     this.config = normalizeHubConfig(raw);
     this.store.saveSync(this.config);
     const validIds = new Set(this.config.sites.map((site) => site.id));
-    for (const [siteId, entry] of this.pool) {
-      if (!validIds.has(siteId)) this.destroyEntry(siteId, entry);
+    for (const [key, entry] of this.pool) {
+      if (entry.scope === "hub" && !validIds.has(entry.siteId)) this.destroyEntry(key, entry);
     }
     return this.config;
   }
@@ -139,7 +151,7 @@ export class AIHubManager {
     if (!site) return;
     if (this.usesChrome(siteId)) return;
     const key = poolKey(site.id, options.conversationId);
-    const entry = this.ensureView(key, site.id, site.url);
+    const entry = this.ensureView(key, site.id, site.url, { scope: "hub" });
     if (options.applySavedLayout === false) await this.parkInBackground(entry);
     const pane = options.applySavedLayout === false ? undefined : this.layout.get(siteId);
     if (pane) this.applyBounds(entry, pane);
@@ -182,13 +194,52 @@ export class AIHubManager {
     }
     // 不在本次布局中的已 attach 视图 → detach（隐藏不销毁）
     for (const [key, entry] of this.pool) {
-      if (entry.host === "main" && !listed.has(key)) this.detach(entry);
+      if (entry.scope === "hub" && entry.host === "main" && !listed.has(key)) this.detach(entry);
     }
   }
 
   reloadSite(siteId: string, conversationId?: string): void {
     if (this.usesChrome(siteId)) { void this.chromeBridge!.request(siteId, "reload").catch(() => {}); return; }
     const entry = this.pool.get(poolKey(siteId, conversationId));
+    if (!entry) return;
+    entry.view.webContents.reload();
+  }
+
+  // AI Hub 外的桌面内嵌页复用同一个 WebContentsView 池，但不进入站点配置、布局或广播。
+  async openEmbeddedPage(pageId: string, rawUrl: string): Promise<void> {
+    const url = new URL(rawUrl);
+    if (url.protocol !== "http:" && url.protocol !== "https:") throw new Error("invalid-embedded-page-url");
+    const normalizedUrl = url.toString();
+    const key = embeddedPageKey(pageId);
+    const entry = this.ensureView(key, pageId, normalizedUrl, {
+      scope: "embedded",
+      partition: `persist:embedded-${pageId}`,
+    });
+    const shouldLoad = !entry.loaded || entry.url !== normalizedUrl;
+    entry.url = normalizedUrl;
+    if (!shouldLoad) return;
+    entry.loaded = true;
+    try {
+      await entry.view.webContents.loadURL(normalizedUrl);
+    } catch (error) {
+      entry.loaded = false;
+      console.warn("[embedded-page] loadURL failed:", pageId, error);
+      throw error;
+    }
+  }
+
+  setEmbeddedPageBounds(pageId: string, rect: EmbeddedPageRect | null): void {
+    const entry = this.pool.get(embeddedPageKey(pageId));
+    if (!entry) return;
+    if (!rect) {
+      this.detach(entry);
+      return;
+    }
+    this.applyBounds(entry, { siteId: pageId, ...rect });
+  }
+
+  reloadEmbeddedPage(pageId: string): void {
+    const entry = this.pool.get(embeddedPageKey(pageId));
     if (!entry) return;
     entry.view.webContents.reload();
   }
@@ -662,11 +713,18 @@ export class AIHubManager {
     }
   }
 
-  private ensureView(key: string, siteId: string, url: string): PoolEntry {
+  private ensureView(
+    key: string,
+    siteId: string,
+    url: string,
+    options: { scope: "hub" | "embedded"; partition?: string },
+  ): PoolEntry {
     const existing = this.pool.get(key);
     if (existing) return existing;
     // 已导入 Profile：全部窗格共享同一 Session（一个浏览器身份）；否则保持每站点持久分区
-    const plan = resolveHubSessionPlan(siteId, this.getImportedProfilePath?.() ?? null);
+    const plan = options.partition
+      ? { kind: "partition" as const, partition: options.partition }
+      : resolveHubSessionPlan(siteId, this.getImportedProfilePath?.() ?? null);
     const view = new electron.WebContentsView({
       webPreferences: {
         ...(plan.kind === "shared-imported"
@@ -686,8 +744,16 @@ export class AIHubManager {
     // hidden until an explicit AI Hub layout attaches and reveals them.
     view.setVisible(false);
     this.hardenSession(view);
-    this.wireEvents(siteId, url, view);
-    const entry: PoolEntry = { view, host: "none", loaded: false, sentTexts: [] };
+    this.wireEvents(key, siteId, url, view, options.scope);
+    const entry: PoolEntry = {
+      view,
+      scope: options.scope,
+      siteId,
+      url,
+      host: "none",
+      loaded: false,
+      sentTexts: [],
+    };
     this.pool.set(key, entry);
     return entry;
   }
@@ -698,7 +764,13 @@ export class AIHubManager {
     });
   }
 
-  private wireEvents(siteId: string, siteUrl: string, view: WebContentsView): void {
+  private wireEvents(
+    key: string,
+    siteId: string,
+    siteUrl: string,
+    view: WebContentsView,
+    scope: "hub" | "embedded",
+  ): void {
     const webContents = view.webContents;
     const openGoogleAuthExternally = () => {
       // 认证转交日常浏览器，不尝试从调试 Chrome 迁移 Cookie。
@@ -718,28 +790,31 @@ export class AIHubManager {
       target.on("will-navigate", handleNavigation);
       target.on("will-redirect", handleNavigation);
     };
-    protectNavigation(webContents);
+    if (scope === "hub") protectNavigation(webContents);
     webContents.setWindowOpenHandler(({ url }) => {
-      if (!isGoogleAuthUrl(url)) return { action: "allow" };
+      if (scope !== "hub" || !isGoogleAuthUrl(url)) return { action: "allow" };
       openGoogleAuthExternally();
       return { action: "deny" };
     });
     webContents.on("did-create-window", (window) => {
-      protectNavigation(window.webContents, () => window.close());
+      if (scope === "hub") protectNavigation(window.webContents, () => window.close());
     });
     webContents.on("did-start-loading", () => this.emit({ type: "loading", siteId }));
     webContents.on("did-finish-load", () => this.emit({ type: "loaded", siteId }));
     webContents.on("did-fail-load", (_event, errorCode, _description, _url, isMainFrame) => {
       if (!isMainFrame || errorCode === -3) return; // -3 = 导航被取消（重复导航）
       // 失败时 detach，让渲染层的错误覆盖层可见
-      const entry = this.pool.get(siteId);
-      if (entry) this.detach(entry);
+      const entry = this.pool.get(key);
+      if (entry) {
+        entry.loaded = false;
+        this.detach(entry);
+      }
       this.emit({ type: "load-failed", siteId, errorCode });
     });
     webContents.on("page-title-updated", (_event, title) => this.emit({ type: "title", siteId, title }));
     webContents.on("render-process-gone", () => {
-      const entry = this.pool.get(siteId);
-      if (entry) this.destroyEntry(siteId, entry);
+      const entry = this.pool.get(key);
+      if (entry) this.destroyEntry(key, entry);
       this.emit({ type: "load-failed", siteId, errorCode: -1 });
     });
   }

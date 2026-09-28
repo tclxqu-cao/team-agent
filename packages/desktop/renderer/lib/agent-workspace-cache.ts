@@ -103,23 +103,79 @@ export function reconcileWorkspacePage(
   });
 }
 
-export function reconcileSessionPage(
-  current: readonly UnifiedSessionSummary[],
-  page: WorkspacePage<UnifiedSessionSummary>,
+export function reconcileSessionPage<T extends UnifiedSessionSummary>(
+  current: readonly T[],
+  page: WorkspacePage<T>,
   replace: boolean,
-): UnifiedSessionSummary[] {
+): T[] {
   const freshIds = new Set(page.data.map((session) => session.id));
+  const freshById = new Map(page.data.map((session) => [session.id, session]));
+  const currentIds = new Set(current.map((session) => session.id));
   const source = replace
     ? page.nextCursor
       ? [...page.data, ...current.filter((session) => !freshIds.has(session.id))]
       : page.data
-    : [...current, ...page.data];
+    : [
+        ...current.map((session) => freshById.get(session.id) ?? session),
+        ...page.data.filter((session) => !currentIds.has(session.id)),
+      ];
   const seen = new Set<string>();
   return source.filter((session) => {
     if (seen.has(session.id)) return false;
     seen.add(session.id);
     return true;
   });
+}
+
+/**
+ * A first-page refresh cannot update running rows already loaded from later
+ * pages. Follow only as far as needed to resolve those cached rows, while
+ * retaining an incomplete cache when pagination becomes stale or cycles.
+ */
+export async function refreshCachedRunningSessionPages<T extends UnifiedSessionSummary>(
+  current: readonly T[],
+  firstPage: WorkspacePage<T>,
+  loadPage: (cursor: string) => Promise<WorkspacePage<T>>,
+  pendingSessionId?: string,
+): Promise<WorkspacePage<T>> {
+  if (firstPage.stale) return firstPage;
+
+  const refreshedIds = new Set(firstPage.data.map((session) => session.id));
+  const unresolvedIds = new Set(
+    current
+      .filter((session) => (
+        session.status === "running"
+        && session.id !== pendingSessionId
+        && !refreshedIds.has(session.id)
+      ))
+      .map((session) => session.id),
+  );
+  if (unresolvedIds.size === 0 || !firstPage.nextCursor) return firstPage;
+
+  let data = [...firstPage.data];
+  let nextCursor = firstPage.nextCursor;
+  let watermark = firstPage.watermark;
+  const seenCursors = new Set<string>();
+
+  while (nextCursor && unresolvedIds.size > 0) {
+    const cursor = nextCursor;
+    if (seenCursors.has(cursor)) {
+      return { data, nextCursor: cursor, watermark, stale: true };
+    }
+    seenCursors.add(cursor);
+
+    const page = await loadPage(cursor);
+    if (page.stale) {
+      return { data, nextCursor: cursor, watermark, stale: true };
+    }
+
+    data = reconcileSessionPage(data, page, false);
+    for (const session of page.data) unresolvedIds.delete(session.id);
+    nextCursor = page.nextCursor;
+    watermark = page.watermark ?? watermark;
+  }
+
+  return { data, nextCursor, watermark };
 }
 
 export function preservePendingNativeSession(

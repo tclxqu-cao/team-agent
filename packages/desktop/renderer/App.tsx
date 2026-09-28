@@ -38,6 +38,8 @@ import LSPServerList from "./components/LSPServerList";
 import WakeOverlay from "./components/WakeOverlay";
 import AgentWorkspaceSwitcher from "./components/AgentWorkspaceSwitcher";
 import AgentBrandIcon from "./components/AgentBrandIcon";
+import DesktopAppActions from "./components/DesktopAppActions";
+import DesktopFlowStudioView from "./components/DesktopFlowStudioView";
 import SidebarDeleteConfirmation from "./components/SidebarDeleteConfirmation";
 import SidebarSessionRow, { type SidebarDeleteAnchor } from "./components/SidebarSessionRow";
 import HostProjectPicker from "./components/HostProjectPicker";
@@ -57,6 +59,7 @@ import {
   emptyAgentWorkspacePartition,
   preservePendingNativeSession,
   readAgentWorkspaceCache,
+  refreshCachedRunningSessionPages,
   reconcileSessionPage,
   reconcileWorkspacePage,
   writeAgentWorkspaceCache,
@@ -69,6 +72,7 @@ import { startWakeListener, isASRSupported, type WakeListenerHandle } from "./li
 import { getDesktopDirectoryContextMenuPath } from "./lib/sidebar-directory-context-menu";
 import { isWebShell, useNarrowViewport } from "./web/webLayout";
 import { createElectronFileWorkspaceGateway } from "./lib/electron-file-workspace-gateway";
+import { resolveDesktopFlowStudioEntryUrl } from "./lib/desktop-flow-studio-entry";
 import { postWebArtifactOpen } from "./lib/artifact-links";
 import {
   projectSessionActivity,
@@ -700,6 +704,27 @@ export default function App() {
 
   const [notice, setNotice] = useState<string | null>(null);
   const [noticeType, setNoticeType] = useState<"success" | "info" | "error">("success");
+  const [flowStudioEntryUrl, setFlowStudioEntryUrl] = useState<string | null>(null);
+  const [flowStudioOpening, setFlowStudioOpening] = useState(false);
+
+  const handleOpenFlowStudio = useCallback(async () => {
+    if (flowStudioOpening) return;
+    setFlowStudioOpening(true);
+    try {
+      const entryUrl = await resolveDesktopFlowStudioEntryUrl();
+      if (entryUrl) {
+        setHubOpen(false);
+        setSidebarDrawerOpen(false);
+        setFlowStudioEntryUrl(entryUrl);
+        return;
+      }
+      setNotice("Flow Studio 入口不可用，请检查服务配置");
+      setNoticeType("error");
+      setTimeout(() => setNotice(null), 4000);
+    } finally {
+      setFlowStudioOpening(false);
+    }
+  }, [flowStudioOpening]);
 
   const applySidebarSelection = (selection: SidebarSelection) => {
     selectedProjectIdRef.current = selection.projectId;
@@ -890,7 +915,8 @@ export default function App() {
       pendingSession?: Session;
     } = {},
   ) {
-    if (!window.agentApi) return;
+    const agentApi = window.agentApi;
+    if (!agentApi) return;
     const agentType = activeAgentRef.current;
     const requestKey = `${agentType}:${projectId}`;
     const requestId = (projectSessionRequestIds.current.get(requestKey) ?? 0) + 1;
@@ -908,7 +934,7 @@ export default function App() {
     });
 
     try {
-      const page = await window.agentApi.listAgentWorkspaceSessions(agentType, projectId, {
+      const firstPage = await agentApi.listAgentWorkspaceSessions(agentType, projectId, {
         cursor: options.cursor,
         limit: 20,
         refresh: options.refresh,
@@ -930,7 +956,21 @@ export default function App() {
         ...currentRoots,
         ...[...previousRootIds].flatMap((rootId) => childSessionsByParentRef.current[rootId] ?? []),
       ];
-      const list = (reconcileSessionPage(current, page, !options.cursor) as Session[])
+      const page = options.refresh && !options.cursor
+        ? await refreshCachedRunningSessionPages(
+            current,
+            firstPage,
+            (cursor) => agentApi.listAgentWorkspaceSessions(agentType, projectId, {
+              cursor,
+              limit: 200,
+              refresh: false,
+            }) as Promise<WorkspacePage<Session>>,
+            pendingSession?.id,
+          )
+        : firstPage;
+      if (activeAgentRef.current !== agentType || projectSessionRequestIds.current.get(requestKey) !== requestId) return;
+
+      const list = reconcileSessionPage(current, page, !options.cursor)
         .map((session) => ({ ...session, projectId: session.projectId ?? projectId }));
       const refreshedRoots = orderSessionsForAgent(
         list.filter((session) => !session.parentSessionId),
@@ -1451,14 +1491,14 @@ export default function App() {
       <UpdateNotice />
       <DesktopLiveControlBanner />
       {/* Web mobile: drawer mask + hamburger */}
-      {mobileDrawer && sidebarDrawerOpen && (
+      {!flowStudioEntryUrl && mobileDrawer && sidebarDrawerOpen && (
         <div
           className="mobile-drawer-scrim"
           onClick={() => setSidebarDrawerOpen(false)}
           style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.45)", zIndex: 1150 }}
         />
       )}
-      {mobileDrawer && !sidebarDrawerOpen && (
+      {!flowStudioEntryUrl && mobileDrawer && !sidebarDrawerOpen && (
         <button
           className="mobile-drawer-toggle"
           onClick={() => setSidebarDrawerOpen(true)}
@@ -1510,7 +1550,7 @@ export default function App() {
         zIndex: 0,
       }} />
 
-      {layout !== "focus" && (
+      {layout !== "focus" && !flowStudioEntryUrl && (
       <>
       <aside
         className="app-sidebar"
@@ -1547,6 +1587,12 @@ export default function App() {
               <AgentBrandIcon agentType="customer-agent" size={24} />
             </div>
             <span className="sidebar-brand-name">AgentRoam</span>
+            {!webShell && (
+              <DesktopAppActions
+                onOpenFlowStudio={handleOpenFlowStudio}
+                openingFlowStudio={flowStudioOpening}
+              />
+            )}
           </div>
         </div>
 
@@ -1641,8 +1687,22 @@ export default function App() {
             if (nearBottom && workspaceNextCursor && !workspaceLoading) {
               void loadProjects(activeAgent, { cursor: workspaceNextCursor });
             }
+            if (mobileDrawer) {
+              const viewport = element.getBoundingClientRect();
+              const projectBlocks = element.querySelectorAll<HTMLElement>("[data-sidebar-project-id]");
+              for (const block of projectBlocks) {
+                const projectId = block.dataset.sidebarProjectId;
+                if (!projectId || !expandedProjects.has(projectId)) continue;
+                const bounds = block.getBoundingClientRect();
+                if (bounds.bottom < viewport.top || bounds.bottom > viewport.bottom + 120) continue;
+                const nextCursor = sessionNextCursors[projectId];
+                if (nextCursor && !loadingProjectIdsRef.current.has(projectId)) {
+                  void loadSessions(projectId, { cursor: nextCursor });
+                }
+              }
+            }
           }}
-          style={{ flex: 1, overflow: "auto", padding: "0 10px" }}
+          style={{ minHeight: 0, flex: 1, overflow: "auto", padding: "0 10px" }}
         >
           <div style={{ display: "flex", flexDirection: "column", gap: 2, marginBottom: 12 }}>
             {pinnedRootSessions.length > 0 && (
@@ -1670,7 +1730,12 @@ export default function App() {
               const isCreatingSession = sessionCreationPending?.agentType === activeAgent
                 && sessionCreationPending.projectId === project.id;
               return (
-                <div key={project.id} className="sidebar-project-block" aria-busy={isProjectLoading}>
+                <div
+                  key={project.id}
+                  className="sidebar-project-block"
+                  data-sidebar-project-id={project.id}
+                  aria-busy={isProjectLoading}
+                >
                   {/* Project row */}
                   <div
                     className={`sidebar-row sidebar-project-row ${isSelected && !isInvalid ? "sidebar-row-active" : ""}`}
@@ -1775,7 +1840,7 @@ export default function App() {
                   {/* Sessions under this project — collapsible, scrollable when > 10 */}
                   <div style={{
                     overflow: "hidden",
-                    maxHeight: isExpanded ? (manySession ? 300 : 800) : 0,
+                    maxHeight: isExpanded ? (mobileDrawer ? 100_000 : manySession ? 300 : 800) : 0,
                     opacity: isExpanded ? 1 : 0,
                     transition: "max-height 0.45s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease",
                   }}>
@@ -1789,7 +1854,7 @@ export default function App() {
                           void loadSessions(project.id, { cursor: nextCursor });
                         }
                       }}
-                      style={{ display: "flex", flexDirection: "column", gap: 1, marginTop: 2, paddingLeft: 10, paddingBottom: 4, ...(manySession ? { maxHeight: 280, overflowY: "auto" as const } : {}) }}
+                      style={{ display: "flex", flexDirection: "column", gap: 1, marginTop: 2, paddingLeft: 10, paddingBottom: 4, ...(manySession && !mobileDrawer ? { maxHeight: 280, overflowY: "auto" as const } : {}) }}
                     >
                       {projSessions.map((session) => renderRootSession(session, project.id))}
                       {isProjectLoading && !hasLoadedProject && (
@@ -2061,7 +2126,7 @@ export default function App() {
         zIndex: 5,
       }}>
         {/* Focus layout: floating restore-sidebar chip */}
-        {layout === "focus" && (
+        {layout === "focus" && !flowStudioEntryUrl && (
           <button
             onClick={() => setLayout("standard")}
             title="返回标准布局"
@@ -2176,6 +2241,13 @@ export default function App() {
             onTabChange={setFileDrawerTab}
             onSelectPath={setFilePreviewPath}
             onClose={() => setFileDrawerOpen(false)}
+          />
+        )}
+
+        {flowStudioEntryUrl && (
+          <DesktopFlowStudioView
+            entryUrl={flowStudioEntryUrl}
+            onBack={() => setFlowStudioEntryUrl(null)}
           />
         )}
 

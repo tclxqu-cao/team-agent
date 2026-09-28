@@ -47,6 +47,7 @@ vi.mock("node:module", () => ({
           this.webContents = Object.assign(new EventEmitter(), {
             session: webPreferences.session ?? getSession(webPreferences.partition!),
             setWindowOpenHandler: () => {}, close: () => {},
+            reload: vi.fn(),
             loadURL: vi.fn().mockResolvedValue(undefined),
             executeJavaScript: vi.fn().mockResolvedValue(true),
             ...(mock.useDebugger ? { debugger: {
@@ -76,6 +77,37 @@ function makeManager(profile: string | null = null) {
 const cookie = { url: "https://gemini.google.com/", name: "test", value: "test-only" };
 
 describe("AI Hub reauth session routing", () => {
+  it("reuses the native view pool for an isolated embedded page without joining Hub layout", async () => {
+    const root = mkdtempSync(join(tmpdir(), "hub-manager-embedded-"));
+    roots.push(root);
+    const addChildView = vi.fn();
+    const removeChildView = vi.fn();
+    const manager = new AIHubManager({
+      configPath: join(root, "config.json"),
+      getWindow: () => ({ contentView: { addChildView, removeChildView } }) as never,
+    });
+
+    await manager.openEmbeddedPage("flow-studio", "http://127.0.0.1:8788/auth/entry?token=test");
+    manager.setEmbeddedPageBounds("flow-studio", { x: 0, y: 52, width: 1200, height: 748 });
+
+    expect(mock.views).toHaveLength(1);
+    expect(mock.views[0].webPreferences).toMatchObject({ partition: "persist:embedded-flow-studio" });
+    expect((mock.views[0] as any).webContents.loadURL).toHaveBeenCalledWith(
+      "http://127.0.0.1:8788/auth/entry?token=test",
+    );
+    expect(addChildView).toHaveBeenCalledWith(mock.views[0]);
+    expect(mock.views[0].setBounds).toHaveBeenLastCalledWith({ x: 0, y: 52, width: 1200, height: 748 });
+
+    await manager.openSite("deepseek");
+    manager.setBounds([{ siteId: "deepseek", x: 0, y: 0, width: 600, height: 600 }]);
+    manager.setBounds([]);
+    expect(removeChildView).toHaveBeenCalledWith(mock.views[1]);
+    expect(removeChildView).not.toHaveBeenCalledWith(mock.views[0]);
+
+    manager.setEmbeddedPageBounds("flow-studio", null);
+    expect(removeChildView).toHaveBeenCalledWith(mock.views[0]);
+  });
+
   it("starts managed login without importing browser history or a profile", () => {
     const { manager, requestBrowserLogin } = makeManager();
     expect(manager.requestExistingBrowserLogin("gemini")).toBe(true);

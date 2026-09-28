@@ -427,6 +427,11 @@ export interface AgentApi {
   hubReload(siteId: string, conversationId?: string): Promise<void>;
   hubBroadcast(text: string, siteIds: string[], images?: string[]): Promise<HubBroadcastResult[]>;
   onHubEvent(callback: (event: HubEvent) => void): () => void;
+  // Flow Studio native embedded page (same WebContentsView path as AI Hub)
+  flowStudioOpen(url: string): Promise<{ ok: boolean }>;
+  flowStudioSetBounds(rect: EmbeddedPageRect | null): Promise<{ ok: boolean }>;
+  flowStudioReload(): Promise<{ ok: boolean }>;
+  onFlowStudioEvent(callback: (event: FlowStudioEvent) => void): () => void;
   // AI Hub 浏览器 Profile 导入 + 托管 Google 重登录
   hubListProfileSources(): Promise<BrowserProfileSourceView[]>;
   hubImportProfile(sourceId: BrowserProfileSourceId): Promise<BrowserProfileImportResult>;
@@ -501,6 +506,20 @@ export interface HubPaneRect {
   y: number;
   width: number;
   height: number;
+}
+
+export interface EmbeddedPageRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface FlowStudioEvent {
+  type: "loading" | "loaded" | "load-failed" | "title";
+  siteId: "flow-studio";
+  errorCode?: number;
+  title?: string;
 }
 
 export interface HubBroadcastResult {

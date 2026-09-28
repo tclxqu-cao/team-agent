@@ -253,6 +253,17 @@ contextBridge.exposeInMainWorld("desktopDeviceApi", {
     return () => ipcRenderer.removeListener("hub:event", handler);
   },
 
+  // Flow Studio reuses the native AI Hub embedding path without becoming a Hub site.
+  flowStudioOpen: (url: string) => ipcRenderer.invoke("flow-studio:open", url),
+  flowStudioSetBounds: (rect: { x: number; y: number; width: number; height: number } | null) =>
+    ipcRenderer.invoke("flow-studio:set-bounds", rect),
+  flowStudioReload: () => ipcRenderer.invoke("flow-studio:reload"),
+  onFlowStudioEvent: (callback: (event: unknown) => void): (() => void) => {
+    const handler = (_event: unknown, data: unknown) => callback(data);
+    ipcRenderer.on("flow-studio:event", handler);
+    return () => ipcRenderer.removeListener("flow-studio:event", handler);
+  },
+
   // AI Hub 浏览器 Profile 导入 + 托管 Google 重登录（只传固定来源 id，不传路径）
   hubListProfileSources: () => ipcRenderer.invoke("hub:list-profile-sources"),
   hubImportProfile: (sourceId: string) => ipcRenderer.invoke("hub:import-profile", sourceId),
