@@ -15,7 +15,13 @@ export function normalizeError(text: string): string {
     .replace(/\b\d{3,}\b/g, '<n>').slice(0, 500);
 }
 
-const ENVIRONMENT_ERROR_CODES = new Set(['desktop_offline', 'model_transport_timeout']);
+const ENVIRONMENT_ERROR_CODES = new Set([
+  'desktop_offline',
+  // Providers emit model_request_timeout as a terminal StreamEvent, while
+  // AgentLoop uses model_transport_timeout for retry-exhausted exceptions.
+  'model_request_timeout',
+  'model_transport_timeout',
+]);
 const ENVIRONMENT_ERROR_PATTERNS = [
   /\binvalid_api_key\b/i,
   /\bauthentication_error\b/i,
@@ -38,6 +44,12 @@ function isPolicyDenial(event: Observation): boolean {
   }
 }
 
+function isExpectedWaitTimeout(call: Observation, result: Observation): boolean {
+  return call.tool === 'wait_agent'
+    && result.isError === true
+    && String(result.preview ?? '').trim() === 'Error: wait_agent timed out';
+}
+
 /** Rules generate hypotheses, never correctness judgments. Only completed calls count as repeats. */
 export function analyze(run: QualityRun): Finding[] {
   const findings = new Map<string, Finding>();
@@ -54,6 +66,9 @@ export function analyze(run: QualityRun): Finding[] {
     if (event.type === 'compacted') { compacted = true; for (const key of counts.keys()) beforeCompact.add(key); }
     if (event.type === 'tool_result') {
       const call = calls.get(String(event.callId)); if (!call) continue;
+      // wait_agent uses a bounded wait as polling. Expiry leaves the child running,
+      // so it is neither a failed tool call nor evidence of a repeated work cycle.
+      if (isExpectedWaitTimeout(call, event)) continue;
       const signature = digest([call.tool, call.argumentsHash, event.resultHash, event.isError]);
       const count = (counts.get(signature) ?? 0) + 1; counts.set(signature, count);
       completed.push(signature);

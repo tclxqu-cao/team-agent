@@ -116,6 +116,38 @@ describe('automatic Harness companion', () => {
     expect(repair).toHaveBeenCalledTimes(1);
     await service.close();
   });
+  it('allows an explicit bash timeout to exceed the generic idle window', async () => {
+    const repair = vi.fn(async () => result);
+    const service = new HarnessCompanion(config, () => {}, repair);
+    const startedAt = Date.now();
+    service.receive(task);
+    service.receive({ type: 'progress', id: 'run', eventType: 'tool_call', tool: 'bash', data: {
+      type: 'tool_call', tool: 'bash', callId: 'bash-1', arguments: { command: 'generate images', timeout: 3_000_000 },
+    } });
+
+    service.tick(startedAt + 200);
+    expect(repair).not.toHaveBeenCalled();
+
+    service.receive({ type: 'progress', id: 'run', eventType: 'tool_result', data: {
+      type: 'tool_result', callId: 'bash-1', isError: false,
+    } });
+    service.tick(startedAt + 400);
+    expect(repair).toHaveBeenCalledTimes(1);
+    await service.close();
+  });
+  it('keeps the generic watchdog deadline for bash without an explicit timeout', async () => {
+    const repair = vi.fn(async () => result);
+    const service = new HarnessCompanion(config, () => {}, repair);
+    const startedAt = Date.now();
+    service.receive(task);
+    service.receive({ type: 'progress', id: 'run', eventType: 'tool_call', tool: 'bash', data: {
+      type: 'tool_call', tool: 'bash', callId: 'bash-1', arguments: { command: 'unknown duration' },
+    } });
+
+    service.tick(startedAt + 200);
+    expect(repair).toHaveBeenCalledTimes(1);
+    await service.close();
+  });
   it('keeps the generic watchdog deadline for ordinary long-running tools', async () => {
     const repair = vi.fn(async () => result);
     const service = new HarnessCompanion(config, () => {}, repair);
@@ -136,6 +168,19 @@ describe('automatic Harness companion', () => {
     service.receive(task);
     service.receive({ type: 'progress', id: 'run', eventType: 'tool_call', tool: 'wait_agent', data: {
       type: 'tool_call', tool: 'wait_agent', callId: 'wait-1', arguments: { subSessionId: 'child', timeoutMs: 600_000 },
+    } });
+
+    service.tick(startedAt + 200);
+    expect(repair).toHaveBeenCalledTimes(1);
+    await service.close();
+  });
+  it('reports bash after its run-bounded timeout and idle grace expire', async () => {
+    const repair = vi.fn(async () => result);
+    const service = new HarnessCompanion({ ...config, runTimeoutMs: 50 }, () => {}, repair);
+    const startedAt = Date.now();
+    service.receive(task);
+    service.receive({ type: 'progress', id: 'run', eventType: 'tool_call', tool: 'bash', data: {
+      type: 'tool_call', tool: 'bash', callId: 'bash-1', arguments: { command: 'long task', timeout: 600_000 },
     } });
 
     service.tick(startedAt + 200);

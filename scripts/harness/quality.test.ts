@@ -52,6 +52,31 @@ describe('cross-session quality evidence', () => {
     expect(analyze(a).some(f => f.kind === 'repeated-tool')).toBe(true);
     expect(analyze(b)).toEqual([]);
   });
+  it('ignores a bounded wait_agent timeout when a later poll completes', () => {
+    const q = run('wait-timeout-then-complete');
+    call(q, 1, 'Error: wait_agent timed out', 'wait_agent', true);
+    call(q, 2, JSON.stringify({ status: 'completed', summary: 'done' }), 'wait_agent');
+
+    expect(analyze(q)).toEqual([]);
+  });
+  it('does not treat repeated bounded wait_agent timeouts as wasted work or a step cycle', () => {
+    const q = run('repeated-wait-timeouts');
+    for (let i = 0; i < 6; i++) call(q, i, 'Error: wait_agent timed out', 'wait_agent', true);
+    call(q, 7, JSON.stringify({ status: 'completed', summary: 'done' }), 'wait_agent');
+
+    expect(analyze(q)).toEqual([]);
+  });
+  it('retains genuine wait_agent and non-wait timeout failures as counterexamples', () => {
+    const childFailure = run('child-failure');
+    call(childFailure, 1, JSON.stringify({
+      status: 'failed', code: 'AGENT_TIMEOUT', error: 'Sub-agent exceeded its execution budget',
+    }), 'wait_agent', true);
+    const bashFailure = run('bash-timeout');
+    call(bashFailure, 1, 'Error: wait_agent timed out', 'bash', true);
+
+    expect(analyze(childFailure)).toMatchObject([{ kind: 'tool-error', severe: false }]);
+    expect(analyze(bashFailure)).toMatchObject([{ kind: 'tool-error', severe: false }]);
+  });
   it('detects cycles while events continue, errors and compaction rereads', () => {
     const q = run('a');
     for (let i = 0; i < 6; i++) call(q, i, 'same', i % 2 ? 'search' : 'read');
@@ -64,6 +89,12 @@ describe('cross-session quality evidence', () => {
     offline.observations.push({ at: 1, type: 'error', code: 'desktop_offline', message: 'AI Hub desktop offline' });
     const timeout = run('timeout');
     timeout.observations.push({ at: 1, type: 'error', code: 'model_transport_timeout', message: 'The operation was aborted due to timeout' });
+    const aiHubTimeout = run('aihub-timeout');
+    aiHubTimeout.observations.push({ at: 1, type: 'error', code: 'model_request_timeout',
+      message: 'AI Hub 抓取回复超过 240 秒（deepseek）：站点可能未登录、被限流或选择器漂移' });
+    const apiProviderTimeout = run('api-provider-timeout');
+    apiProviderTimeout.observations.push({ at: 1, type: 'error', code: 'model_request_timeout',
+      message: 'OpenAI 单次请求超过 120 秒，已停止等待' });
     const openAiAuth = run('openai-auth');
     openAiAuth.observations.push({ at: 1, type: 'error', message: 'OpenAI API error 401: {"error":{"message":"Incorrect API key provided","type":"invalid_api_key"}}' });
     const anthropicAuth = run('anthropic-auth');
@@ -75,6 +106,8 @@ describe('cross-session quality evidence', () => {
 
     expect(analyze(offline)).toMatchObject([{ kind: 'environment-error', severe: false }]);
     expect(analyze(timeout)).toMatchObject([{ kind: 'environment-error', severe: false }]);
+    expect(analyze(aiHubTimeout)).toMatchObject([{ kind: 'environment-error', severe: false }]);
+    expect(analyze(apiProviderTimeout)).toMatchObject([{ kind: 'environment-error', severe: false }]);
     expect(analyze(openAiAuth)).toMatchObject([{ kind: 'environment-error', severe: false }]);
     expect(analyze(anthropicAuth)).toMatchObject([{ kind: 'environment-error', severe: false }]);
     expect(analyze(contextLimit)).toMatchObject([{ kind: 'agent-error', severe: false }]);
@@ -179,6 +212,7 @@ it('records invalid model credentials without dispatching a source repair', asyn
 });
 it.each([
   ['desktop offline', 'desktop_offline', 'AI Hub desktop offline'],
+  ['provider request timeout', 'model_request_timeout', 'AI Hub capture timed out'],
   ['model transport timeout', 'model_transport_timeout', 'The operation was aborted due to timeout'],
 ])('records repeated %s runs without dispatching a source repair', async (_label, code, message) => {
   const dir = mkdtempSync(join(tmpdir(), 'quality-environment-error-'));

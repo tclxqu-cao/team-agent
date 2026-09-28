@@ -16,6 +16,10 @@ interface WatchedTask {
   savedAt: number;
 }
 const EXTENDED_MODEL_REQUEST_PROVIDERS = new Set(['aihub', 'openai', 'deepseek']);
+const BLOCKING_TOOL_TIMEOUT_FIELDS = new Map([
+  ['bash', 'timeout'],
+  ['wait_agent', 'timeoutMs'],
+]);
 
 export interface CompanionStatus { state: 'waiting-model' | 'ready' | 'repairing' | 'stopped'; modelId?: string; detail?: string; quality?: unknown }
 export class HarnessCompanion {
@@ -80,10 +84,11 @@ export class HarnessCompanion {
       if (!['context_usage', 'thinking'].includes(eventType)) run.modelRequestProvider = undefined;
       if (message.waiting === true) run.waiting = true;
       if (['tool_result', 'approval_resolved'].includes(eventType)) run.waiting = false;
-      if (eventType === 'tool_call' && message.tool === 'wait_agent') {
+      if (eventType === 'tool_call') {
         const callId = typeof data?.callId === 'string' ? data.callId : undefined;
         const args = data?.arguments && typeof data.arguments === 'object' ? data.arguments as Record<string, unknown> : undefined;
-        const timeoutMs = args?.timeoutMs;
+        const timeoutField = BLOCKING_TOOL_TIMEOUT_FIELDS.get(String(message.tool ?? ''));
+        const timeoutMs = timeoutField ? args?.[timeoutField] : undefined;
         if (callId && typeof timeoutMs === 'number' && Number.isSafeInteger(timeoutMs) && timeoutMs > 0) {
           const runTimeoutMs = this.config.runTimeoutMs;
           const boundedTimeoutMs = Number.isSafeInteger(runTimeoutMs) && runTimeoutMs > 0
