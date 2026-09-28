@@ -29,6 +29,15 @@ function isEnvironmentError(event: Observation): boolean {
   return ENVIRONMENT_ERROR_PATTERNS.some(pattern => pattern.test(detail));
 }
 
+function isPolicyDenial(event: Observation): boolean {
+  try {
+    const payload = JSON.parse(String(event.preview ?? '')) as { code?: unknown };
+    return payload?.code === 'TOOL_POLICY_DENIED';
+  } catch {
+    return false;
+  }
+}
+
 /** Rules generate hypotheses, never correctness judgments. Only completed calls count as repeats. */
 export function analyze(run: QualityRun): Finding[] {
   const findings = new Map<string, Finding>();
@@ -50,7 +59,10 @@ export function analyze(run: QualityRun): Finding[] {
       completed.push(signature);
       if (count >= 3) add('repeated-tool', String(call.tool), `${call.tool}: identical arguments AND result observed ${count} times; verify whether polling/revalidation was necessary`);
       if (compacted && beforeCompact.has(signature)) add('reread-after-compaction', String(call.tool), `${call.tool}: same request and result before/after compaction; investigate lost context`);
-      if (event.isError) add('tool-error', `${call.tool}:${normalizeError(String(event.preview))}`, `${call.tool}: ${String(event.preview).slice(0, 500)}`);
+      if (event.isError) {
+        const kind = isPolicyDenial(event) ? 'policy-denial' : 'tool-error';
+        add(kind, `${call.tool}:${normalizeError(String(event.preview))}`, `${call.tool}: ${String(event.preview).slice(0, 500)}`);
+      }
     }
     if (event.type === 'error' || event.type === 'fault') {
       const message = normalizeError(String(event.message ?? event.code ?? 'unknown'));

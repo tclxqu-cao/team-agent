@@ -11,9 +11,9 @@ function run(id: string, sessionId = id, runtimeVersion = 'v1'): QualityRun {
     outcome: 'completed', endedAt: Date.now(), model: 'model1', task: 'test', observations: [], dropped: 0, findings: [],
     steps: 0, iterations: 1, compactions: 0, peakContextRatio: 0.1 };
 }
-function call(q: QualityRun, index: number, result: string, tool = 'read') {
+function call(q: QualityRun, index: number, result: string, tool = 'read', isError = false) {
   q.observations.push({ at: index, type: 'tool_call', tool, callId: String(index), argumentsHash: tool },
-    { at: index, type: 'tool_result', callId: String(index), resultHash: result, preview: result }); q.steps++;
+    { at: index, type: 'tool_result', callId: String(index), resultHash: result, preview: result, ...(isError ? { isError: true } : {}) }); q.steps++;
 }
 describe('cross-session quality evidence', () => {
   it('versions the desktop AI Hub relay and Chrome bridge used by observed model runs', () => {
@@ -79,6 +79,25 @@ describe('cross-session quality evidence', () => {
     expect(analyze(anthropicAuth)).toMatchObject([{ kind: 'environment-error', severe: false }]);
     expect(analyze(contextLimit)).toMatchObject([{ kind: 'agent-error', severe: false }]);
     expect(analyze(generic)).toMatchObject([{ kind: 'agent-error', severe: false }]);
+  });
+  it.each([
+    ['bash', 'shell operators are denied by the selected policy'],
+    ['bash', 'executable is not allowed by the selected policy'],
+    ['glob', 'read path is outside the allowed roots'],
+    ['read_file', 'requested read path does not exist'],
+  ])('records %s policy enforcement separately from repairable tool failures', (tool, message) => {
+    const q = run(`policy-${tool}-${message}`);
+    call(q, 1, JSON.stringify({ code: 'TOOL_POLICY_DENIED', message }), tool, true);
+    expect(analyze(q)).toMatchObject([{ kind: 'policy-denial', severe: false }]);
+  });
+  it('keeps genuine and unstructured tool failures repairable', () => {
+    const structured = run('structured-tool-error');
+    call(structured, 1, JSON.stringify({ code: 'EIO', message: 'disk read failed' }), 'read_file', true);
+    const unstructured = run('unstructured-tool-error');
+    call(unstructured, 1, 'Error: TOOL_POLICY_DENIED was mentioned by the command', 'bash', true);
+
+    expect(analyze(structured)).toMatchObject([{ kind: 'tool-error', severe: false }]);
+    expect(analyze(unstructured)).toMatchObject([{ kind: 'tool-error', severe: false }]);
   });
   it('persists across owners/restarts, counts sessions rather than turns, and separates runtime cohorts', () => {
     const dir = mkdtempSync(join(tmpdir(), 'quality-store-'));
@@ -178,6 +197,37 @@ it.each([
 
     expect(repair).not.toHaveBeenCalled();
     expect(store.summarize().issues.find(issue => issue.kind === 'environment-error')?.sessions).toBe(3);
+  } finally { await service.close(); rmSync(dir, { recursive: true, force: true }); }
+});
+it('does not dispatch recurring policy denials but still dispatches recurring genuine tool errors', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'quality-policy-denial-'));
+  const repair = vi.fn(async () => ({ status: 'blocked' as const, runDirectory: dir, attempts: [], detail: 'review required' }));
+  const store = new QualityStore(dir);
+  const service = new HarnessCompanion({ sourceRoot: process.cwd(), idleTimeoutMs: 1000 } as HarnessConfig, () => {}, repair, store);
+  const finish = (id: string, preview: string) => {
+    service.receive({ type: 'begin', id, sessionId: id, input: 'test', workingDirectory: '/tmp', runtimeVersion: 'v1' });
+    service.receive({ type: 'progress', id, eventType: 'tool_call', data: {
+      type: 'tool_call', tool: 'bash', callId: id, argumentsHash: 'same',
+    } });
+    service.receive({ type: 'progress', id, eventType: 'tool_result', data: {
+      type: 'tool_result', callId: id, resultHash: preview, preview, isError: true,
+    } });
+    service.receive({ type: 'progress', id, eventType: 'done', data: { type: 'done' } });
+    service.receive({ type: 'end', id });
+  };
+  try {
+    const denial = JSON.stringify({ code: 'TOOL_POLICY_DENIED', message: 'shell operators are denied by the selected policy' });
+    for (let index = 0; index < 3; index++) finish(`denial-${index}`, denial);
+    await new Promise(resolve => setTimeout(resolve, 0));
+
+    expect(repair).not.toHaveBeenCalled();
+    expect(store.summarize().issues.find(issue => issue.kind === 'policy-denial')?.sessions).toBe(3);
+
+    for (let index = 0; index < 3; index++) finish(`failure-${index}`, 'command exited with status 2');
+    await new Promise(resolve => setTimeout(resolve, 0));
+
+    expect(repair).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(repair.mock.calls[0][1]).hypothesis).toMatch(/^tool-error:/);
   } finally { await service.close(); rmSync(dir, { recursive: true, force: true }); }
 });
 it('reviews a batch of healthy sessions and defers when another Codex writer owns the checkout', async () => {
