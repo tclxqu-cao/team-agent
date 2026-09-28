@@ -1,0 +1,46 @@
+packages/native-runtime/src/agent-runtime/opencode-server-client.ts
+  s_28127d44e54401::t_e6be9569407a89 9-12,17
+packages/desktop/renderer/components/ChatView.tsx
+  s_28127d44e54401::t_931ccc38af3bfa 17,698-701,5499-5506
+docs/superpowers/plans/2026-09-28-opencode-provider-grouped-model-picker.md
+  s_28127d44e54401::t_af805140d832db 1-4,6-30,32-40,42-44,46-58,60,62,64,66-75,77-79,81,83-85,87-92
+  s_28127d44e54401::t_084cf15b3fafb9 31,41,45,59,63,76,80,86
+  s_28127d44e54401::t_638a630ec8cec1 5,61,65,82
+docs/superpowers/specs/2026-09-28-opencode-provider-grouped-model-picker-design.md
+  s_28127d44e54401::t_638a630ec8cec1 5,11,19,29
+  s_28127d44e54401::t_af805140d832db 1-4,6-10,12-18,20-28,30-31
+packages/desktop/renderer/global.d.ts
+  s_28127d44e54401::t_931ccc38af3bfa 126
+packages/native-runtime/src/agent-runtime/opencode-runtime-adapter.ts
+  s_28127d44e54401::t_88d8ab599b8ed8 77-85,547-549,552-554,644-648,807-853,868-878,880,883-885
+  s_28127d44e54401::t_931ccc38af3bfa 174,178,184
+packages/desktop/renderer/lib/native-agent-run-prefs.test.ts
+  s_28127d44e54401::t_638a630ec8cec1 27,51,56,61,74,79
+  s_28127d44e54401::t_931ccc38af3bfa 3,26,28-50,52-55,57-60,62-73,75-78,80-82
+packages/desktop/renderer/lib/native-agent-run-prefs.ts
+  s_28127d44e54401::t_931ccc38af3bfa 1,18-27,80,82-94,96-100
+  s_28127d44e54401::t_638a630ec8cec1 81,95
+packages/native-runtime/src/agent-runtime/opencode-runtime-adapter.test.ts
+  s_28127d44e54401::t_e6be9569407a89 197,229,257,265
+  s_28127d44e54401::t_88d8ab599b8ed8 189-196,198-203,205-228,230-235,237-256,258-263,266-268,270-276
+  s_28127d44e54401::t_3da4baba9eea48 2,10,22,45,158,162,204,236,264,269
+  s_28127d44e54401::t_931ccc38af3bfa 326-328
+packages/native-runtime/src/agent-runtime/types.ts
+  s_28127d44e54401::t_931ccc38af3bfa 168
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "0bd21821b28aa2cca68fccdc4748a037be690bda",
+  "prompts": {},
+  "sessions": {
+    "s_28127d44e54401": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0e5a5-8da3-7421-9f12-8fe5bfb86cfb",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
