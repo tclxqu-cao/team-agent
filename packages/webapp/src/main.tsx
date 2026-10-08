@@ -1,3 +1,4 @@
+import { installBrowserCompatibility } from "./infrastructure/browser-compatibility";
 import { BrowserLiveHeaderContext } from "@desktop/renderer/components/browser-live-header-context";
 import { SKINS, useUIStore } from "@desktop/renderer/stores/uiStore";
 import RemoteAuthorizationControl from "./presentation/RemoteAuthorizationControl";
@@ -27,6 +28,7 @@ import { LocalEndpointStorage } from "./mobile/infrastructure/local-endpoint-sto
 import { HttpConnectivityProbe } from "./mobile/infrastructure/http-connectivity-probe";
 import { ConnectionScreen } from "./mobile/presentation/connection-screen";
 import { NativePairingClient, NativeCredentialStorage, scanPairingQr } from "./mobile/infrastructure/native-pairing";
+import { installNativeStatusBarBridge } from "./mobile/infrastructure/native-status-bar";
 import { startPushNotifications } from "./push/push-notifications";
 import { EventSource as AuthenticatedEventSource } from "eventsource";
 
@@ -35,6 +37,7 @@ import { EventSource as AuthenticatedEventSource } from "eventsource";
  * mount the shared desktop renderer UI behind the gateway device-pairing gate.
  * Order matters — window.agentApi must exist before App evaluates.
  */
+installBrowserCompatibility();
 installBrowserCryptoCompatibility();
 installParentTabSwipeBridge();
 installWebShellSkinBridge();
@@ -45,6 +48,8 @@ const clientErrorReporter = installClientErrorReporter({ baseUrl: () => sseBase,
 document.body.dataset.webShell = "1";
 
 const nativeEnvironment = new CapacitorNativeEnvironment();
+if (nativeEnvironment.isNativeApp()) document.body.dataset.nativeApp = "1";
+installNativeStatusBarBridge();
 if (!nativeEnvironment.isNativeApp() && window.parent === window) {
   const manifest = document.createElement("link"); manifest.rel = "manifest"; manifest.href = "/manifest.webmanifest"; document.head.append(manifest);
   const icon = document.querySelector<HTMLLinkElement>('link[rel="apple-touch-icon"]'); if (icon) icon.href = "/pwa/icon-192.png";

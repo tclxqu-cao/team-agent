@@ -14,6 +14,11 @@ const config: CapacitorConfig = {
   webDir: "../webapp/dist",
   // Native bridge debug output can contain scanner results and secure-store values.
   loggingBehavior: "none",
+  plugins: {
+    StatusBar: {
+      overlaysWebView: false,
+    },
+  },
   android: {
     // WebView 允许混合内容：服务端地址是 LAN 明文 http
     allowMixedContent: true,

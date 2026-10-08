@@ -20,8 +20,10 @@ declare module "@desktop/renderer/stores/uiStore" {
     skin: SkinId;
     setSkin: (skin: SkinId) => void;
   }
+  export const SKINS: Array<{ id: SkinId; label: string; preview: [string, string] }>;
   export const useUIStore: {
     getState: () => UIStateSlice;
+    subscribe: (listener: (state: UIStateSlice, previous: UIStateSlice) => void) => () => void;
   };
 }
 

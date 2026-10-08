@@ -61,6 +61,10 @@ body[data-web-shell="1"] .chat-header-action--background {
 body[data-web-shell="1"] .chat-header-action--appearance {
   display: none !important;
 }
+/* The standalone native shell has no parent tab-bar skin picker. */
+body[data-web-shell="1"][data-native-app="1"] .chat-header-action--appearance {
+  display: inline-flex !important;
+}
 
 /* Browser live view: the captured page is the primary surface. Chrome stays
    compact so pointer coordinates remain stable on desktop and mobile. */

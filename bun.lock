@@ -14,7 +14,7 @@
     },
     "packages/cli": {
       "name": "agentroam",
-      "version": "0.2.0-preview.31",
+      "version": "0.2.0-preview.34",
       "bin": {
         "agentroam": "./bin/agentroam.mjs",
         "agent-tui": "./bin/agent-tui.mjs",
@@ -40,11 +40,11 @@
     },
     "packages/cloudflared-darwin-arm64": {
       "name": "agentroam-cloudflared-darwin-arm64",
-      "version": "0.2.0-preview.29",
+      "version": "0.2.0-preview.34",
     },
     "packages/cloudflared-win32-x64": {
       "name": "agentroam-cloudflared-win32-x64",
-      "version": "0.2.0-preview.29",
+      "version": "0.2.0-preview.34",
     },
     "packages/computer-use": {
       "name": "@agent/computer-use",
@@ -99,6 +99,7 @@
         "@capacitor/barcode-scanner": "2.2.0",
         "@capacitor/core": "^7.0.0",
         "@capacitor/ios": "^7.0.0",
+        "@capacitor/status-bar": "7.0.6",
         "capacitor-secure-storage-plugin": "0.12.0",
       },
       "devDependencies": {
@@ -120,11 +121,11 @@
     },
     "packages/runtime-darwin-arm64": {
       "name": "agentroam-runtime-darwin-arm64",
-      "version": "0.2.0-preview.31",
+      "version": "0.2.0-preview.34",
     },
     "packages/runtime-win32-x64": {
       "name": "agentroam-runtime-win32-x64",
-      "version": "0.2.0-preview.31",
+      "version": "0.2.0-preview.34",
     },
     "packages/sdk": {
       "name": "@agent/sdk",
@@ -190,14 +191,14 @@
     },
     "packages/tui-darwin-arm64": {
       "name": "agentroam-tui-darwin-arm64",
-      "version": "0.2.0-preview.31",
+      "version": "0.2.0-preview.34",
       "dependencies": {
         "better-sqlite3": "13.0.3",
       },
     },
     "packages/tui-win32-x64": {
       "name": "@caoqu/agentroam-tui-win32-x64",
-      "version": "0.2.0-preview.31",
+      "version": "0.2.0-preview.34",
       "dependencies": {
         "better-sqlite3": "13.0.3",
       },
@@ -220,7 +221,9 @@
         "@agent/core": "*",
         "@capacitor/barcode-scanner": "2.2.0",
         "@capacitor/core": "^7.0.0",
+        "@capacitor/status-bar": "7.0.6",
         "capacitor-secure-storage-plugin": "0.12.0",
+        "core-js": "3.50.0",
         "eventsource": "3.0.7",
         "zustand": "^4.5.0",
       },
@@ -339,6 +342,8 @@
     "@capacitor/core": ["@capacitor/core@7.6.9", "https://registry.npmmirror.com/@capacitor/core/-/core-7.6.9.tgz", { "dependencies": { "tslib": "^2.1.0" } }, "sha512-4DOh/xySC9S5ryhUIqpOppasIyi2WiTdF0JuZ/2DEs+vf5eunRzHDdNYBp1snA3faHciTw/3SVGXfR+WkYxsMA=="],
 
     "@capacitor/ios": ["@capacitor/ios@7.6.9", "https://registry.npmmirror.com/@capacitor/ios/-/ios-7.6.9.tgz", { "peerDependencies": { "@capacitor/core": "^7.6.0" } }, "sha512-LANP81TfwuJk1zq9EuF+J5AJK71rKDgXB5XD+VFJQHC7BxSH4Dsma6DSMyrjFT03jtqc/0JTMEfSMBE7go3ZjA=="],
+
+    "@capacitor/status-bar": ["@capacitor/status-bar@7.0.6", "https://registry.npmjs.org/@capacitor/status-bar/-/status-bar-7.0.6.tgz", { "peerDependencies": { "@capacitor/core": ">=7.0.0" } }, "sha512-7AVqj46b26QikImQzWfsJmzG8NUJZBGkrVSuoeTo+SX/YH3hXH0MqwwFgMqMGHfa/BICDgSvTjM9miVFlq0+RQ=="],
 
     "@chevrotain/types": ["@chevrotain/types@11.1.2", "https://registry.npmmirror.com/@chevrotain/types/-/types-11.1.2.tgz", {}, "sha512-U+HFai5+zmJCkK86QsaJtoITlboZHBqrVketcO2ROv865xfCMSFpELQoz1GkX5GzME8pTa+3kbKrZHQtI0gdbw=="],
 
@@ -911,6 +916,8 @@
     "cookie": ["cookie@0.7.2", "https://registry.npmmirror.com/cookie/-/cookie-0.7.2.tgz", {}, "sha512-yki5XnKuf750l50uGTllt6kKILY4nQ1eNIQatoXEByZ5dWgnKqbnqmTrBE5B4N7lrMJKQ2ytWMiTO2o0v6Ew/w=="],
 
     "cookie-signature": ["cookie-signature@1.2.2", "https://registry.npmmirror.com/cookie-signature/-/cookie-signature-1.2.2.tgz", {}, "sha512-D76uU73ulSXrD1UXF4KE2TMxVVwhsnCgfAyTg9k8P6KGZjlXKrOLe4dJQKI3Bxi5wjesZoFXJWElNWBjPZMbhg=="],
+
+    "core-js": ["core-js@3.50.0", "https://registry.npmjs.org/core-js/-/core-js-3.50.0.tgz", {}, "sha512-BRWgOLKkFeCgRudR6zrs8p9XJZcE14grzKMMssoYrk6krtuEZ7MTKPIY5RzOnqsEKIR9kst7wNzphttraT+Yqw=="],
 
     "core-util-is": ["core-util-is@1.0.2", "https://registry.npmmirror.com/core-util-is/-/core-util-is-1.0.2.tgz", {}, "sha512-3lqz5YjWTYnW6dlDa5TLaTCcShfar1e40rmcJVwCBJC6mWlFuj0eCHIElmG1g5kyuJ/GD+8Wn4FFCcz4gJPfaQ=="],
 
