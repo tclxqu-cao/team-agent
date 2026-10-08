@@ -1,0 +1,32 @@
+scripts/harness/quality-analysis.ts
+  s_70df2947915ed6::t_58d8d6a13be222 58
+  s_64f050dd14ce07::t_05d439d62ed4fd 24-29,36-37
+scripts/harness/quality.test.ts
+  s_70df2947915ed6::t_58d8d6a13be222 281-305
+  s_64f050dd14ce07::t_05d439d62ed4fd 141-146,151-154,162-164,167-168,267-276,311
+  s_70df2947915ed6::t_549ff0931e3b20 306
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6550192c6e17076a3e5d3619cb403717f65f4cf7",
+  "prompts": {},
+  "sessions": {
+    "s_64f050dd14ce07": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0d95b-815c-7da2-a962-74b52f579c88",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "caoqu <qu.cao@ly.com>"
+    },
+    "s_70df2947915ed6": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0d966-99ca-7281-b6c5-6256430deba5",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "caoqu <qu.cao@ly.com>"
+    }
+  }
+}
