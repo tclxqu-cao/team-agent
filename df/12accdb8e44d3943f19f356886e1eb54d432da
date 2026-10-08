@@ -1,0 +1,86 @@
+packages/server/native/remote-helper/main.swift
+  s_152737f7405ef2::t_906089afdca3a1 248-253,314-315,334-335
+  s_152737f7405ef2::t_d7b8b6b9dd95fb 146-175,177-179,231-233,267,285,342,346,414-418
+  s_152737f7405ef2::t_443e7b4b75dcc5 176
+docs/superpowers/plans/2026-09-27-remote-desktop-interaction-fps-recovery.md
+  s_152737f7405ef2::t_3536b82e59bcf1 31,35,39,53,57,61,65,81,85,89,95
+  s_152737f7405ef2::t_2e1e1373a08d84 1-30,32-34,36-38,40-52,54-56,58-60,62-64,66-80,82-84,86-88,90-94,96-113
+packages/server/lib/remote-control/infrastructure/werift-video-transport.mjs
+  s_152737f7405ef2::t_7fdf118d19d110 94-95,122-123,125-127
+  s_152737f7405ef2::t_ffa2c45aee0829 67,93,96-103,134
+packages/core/src/domain/live-view/live-view-registry.ts
+  s_152737f7405ef2::t_7f40c5e4f1c5c1 326-327
+packages/server/native/remote-helper/service/VideoEncoder.swift
+  s_152737f7405ef2::t_d7b8b6b9dd95fb 42-43,165-166,168
+packages/core/src/domain/live-view/remote-video-policy.ts
+  s_152737f7405ef2::t_492f0457d0f470 51,74,132-133,138
+  s_152737f7405ef2::t_6091115db13a59 115-121,194
+  s_152737f7405ef2::t_5db32584d8d40a 75,135-137,164-165
+packages/server/lib/remote-control/remote-authorization.mjs
+  s_152737f7405ef2::t_1fc7af8997fd55 48
+  s_152737f7405ef2::t_7f40c5e4f1c5c1 98-102,336
+  s_152737f7405ef2::t_906089afdca3a1 219-220,459-464
+  s_152737f7405ef2::t_37ed518125eeb4 73,458
+  s_152737f7405ef2::t_9f088dacdf0f39 335,337-343
+  s_152737f7405ef2::t_3653799b5c7367 387-393
+packages/server/lib/remote-control/application/remote-video-session.mjs
+  s_152737f7405ef2::t_29c1e30b14e087 4,7,13,22,29-31,45,48,51-77,88-91,201-203
+  s_152737f7405ef2::t_3d4dc7153c9ef1 23-28,78-87
+  s_152737f7405ef2::t_85fb8015167915 197-200
+  s_152737f7405ef2::t_5db32584d8d40a 49-50,186,188-190,192-196,204,232
+packages/server/lib/browser-live/viewer-frame-flow.test.ts
+  s_152737f7405ef2::t_1fc7af8997fd55 5-18
+packages/server/lib/remote-control/webrtc-video.mjs
+  s_152737f7405ef2::t_29c1e30b14e087 16,21
+packages/desktop/main/remote-video-browser-policy.test.ts
+  s_6d7bf9974bab85::t_6d34959c9894e2 26
+packages/desktop/renderer/components/BrowserLivePanel.tsx
+  s_152737f7405ef2::t_75e262a65de6e1 303,614-618,634,642,645,820,848-856,864,867-868,879,885-886
+  s_152737f7405ef2::t_94c9568a1dc713 1120-1124
+  s_152737f7405ef2::t_ae5e0eb0aa3f3b 769-779
+  s_152737f7405ef2::t_906089afdca3a1 957,976
+packages/core/src/domain/live-view/remote-video-policy.test.ts
+  s_152737f7405ef2::t_1fc7af8997fd55 64-68,87-99
+  s_152737f7405ef2::t_492f0457d0f470 41,100-108
+  s_152737f7405ef2::t_6091115db13a59 26,32-40
+  s_152737f7405ef2::t_b210bb73017a93 42
+packages/server/lib/remote-control/infrastructure/werift-video-transport.test.ts
+  s_152737f7405ef2::t_ffa2c45aee0829 7-22
+packages/server/lib/browser-live/viewer-frame-flow.mjs
+  s_152737f7405ef2::t_9f088dacdf0f39 1,3,6-7,13,23-25,30-34,37
+packages/server/lib/remote-control/remote-authorization.test.ts
+  s_152737f7405ef2::t_3653799b5c7367 65-78
+  s_152737f7405ef2::t_7fdf118d19d110 45-64
+  s_152737f7405ef2::t_37ed518125eeb4 152-175
+packages/desktop/renderer/components/BrowserLivePanel.test.ts
+  s_152737f7405ef2::t_94c9568a1dc713 61-70
+packages/server/lib/remote-control/application/remote-video-session.test.ts
+  s_152737f7405ef2::t_7fdf118d19d110 40-57
+  s_152737f7405ef2::t_042f11ffe5f95d 33,35-36,87-94,96-117
+  s_152737f7405ef2::t_3d4dc7153c9ef1 95
+  s_152737f7405ef2::t_c7262427fc7bf7 118
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "df12accdb8e44d3943f19f356886e1eb54d432da",
+  "prompts": {},
+  "sessions": {
+    "s_152737f7405ef2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0e19c-85fe-7bc3-bbd2-25f82a79514c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_6d7bf9974bab85": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0e273-3764-7f22-a1a0-160203012ad0",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

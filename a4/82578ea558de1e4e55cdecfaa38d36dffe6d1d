@@ -1,0 +1,21 @@
+scripts/harness/daemon-service.ts
+  s_358b39fb06d3eb::t_c07fb60027c9bf 11,66-67,79,83-96,129-130
+scripts/harness/daemon-service.test.ts
+  s_358b39fb06d3eb::t_3336b72a92e875 100-160
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "a482578ea558de1e4e55cdecfaa38d36dffe6d1d",
+  "prompts": {},
+  "sessions": {
+    "s_358b39fb06d3eb": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0e1e4-4b25-7691-b0cb-c3914df5deaf",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

@@ -1,0 +1,20 @@
+.agent/skills/homepage-content-render/SKILL.md
+  s_0b7ae78449458f::t_d19d2e88a91afc 12,19,21-32,34-35,39,41-42,45,47-48
+  s_0b7ae78449458f::t_ccb154e8ec9198 38,40,43-44,46,49
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "1fa392149592d7b2d21f7ff9e3a4ac0b5d093803",
+  "prompts": {},
+  "sessions": {
+    "s_0b7ae78449458f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0c83e-853b-7bb0-9e86-8c1ea79b5d36",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

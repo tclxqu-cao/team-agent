@@ -1,0 +1,125 @@
+packages/desktop/renderer/lib/queued-message-order.ts
+  s_6d7bf9974bab85::t_f5deb81df7f523 62,64-75
+packages/tui/src/commands.ts
+  s_d8a3af07fd35a8::t_cb57092d4cd7e4 23-25
+packages/desktop/renderer/lib/session-history.ts
+  s_3b5e810458668d::t_8397acaad06b3d 434-443,447
+packages/server/public/pwa/service-worker.js
+  s_d8a3af07fd35a8::t_d8de0283382e79 25-28
+packages/desktop/renderer/components/SidebarReferenceStyle.test.ts
+  s_6d7bf9974bab85::t_6730ecfa255889 409,414-416
+  s_6d7bf9974bab85::t_6d34959c9894e2 173,412
+packages/core/src/domain/settings/entities.ts
+  s_d8a3af07fd35a8::t_f18d9654dfe6cd 42-43
+  s_d8a3af07fd35a8::t_0b456ad3520cb7 5-9
+  s_3b5e810458668d::t_c779b586189809 10
+packages/desktop/renderer/components/SettingsPanel.tsx
+  s_d8a3af07fd35a8::t_aa230b24f737c5 45,332-345,347-350
+  s_d8a3af07fd35a8::t_e3eb5edc76b373 346
+  s_3b5e810458668d::t_7093da4a450142 351-353
+packages/desktop/main/index.ts
+  s_d8a3af07fd35a8::t_e3eb5edc76b373 6,32-33,103-107,806-822
+  s_3b5e810458668d::t_3cd2c2998baf43 823-824
+packages/server/lib/push-hook.ts
+  s_d8a3af07fd35a8::t_d8de0283382e79 4-9,12,22,26,39-40,42-47,67-72,77
+  s_d8a3af07fd35a8::t_36b0490bba732c 38,48-55,57-59,61-66
+  s_d8a3af07fd35a8::t_51f09633943c7f 56,60
+packages/native-runtime/src/agent-runtime/native-runtime-broker.ts
+  s_6d7bf9974bab85::t_f5deb81df7f523 1573
+packages/desktop/renderer/components/ChatComposerStyle.test.ts
+  s_6d7bf9974bab85::t_b846318082c618 144-146
+packages/tui/src/App.test.tsx
+  s_6d7bf9974bab85::t_6d34959c9894e2 205-207,416,421,426,431,436,456
+packages/server/ws-server.mjs
+  s_152737f7405ef2::t_37ed518125eeb4 1183
+  s_152737f7405ef2::t_9f088dacdf0f39 547,549
+packages/server/lib/web-push-service.mjs
+  s_d8a3af07fd35a8::t_0b456ad3520cb7 82
+  s_d8a3af07fd35a8::t_d8de0283382e79 39,83-88
+packages/desktop/renderer/global.d.ts
+  s_d8a3af07fd35a8::t_8feaf3c48b66c1 254
+  s_d8a3af07fd35a8::t_aa230b24f737c5 255-257,298-299
+packages/server/lib/shared-settings.ts
+  s_d8a3af07fd35a8::t_aa230b24f737c5 1,67-80
+  s_3b5e810458668d::t_2e0993cec991ba 81
+packages/desktop/renderer/lib/queued-message-order.test.ts
+  s_6d7bf9974bab85::t_f5deb81df7f523 106,108,119,122-123,125,137-140
+  s_6d7bf9974bab85::t_d1ba7053fd99a3 141
+packages/tui/src/App.tsx
+  s_d8a3af07fd35a8::t_cb57092d4cd7e4 14,51,625-638,640-645,760-762,773-774,799-806,810-812
+  s_d8a3af07fd35a8::t_3f2eb0a97baee3 228-231,639,807-808,817
+  s_d8a3af07fd35a8::t_d7a30dfe4bbca4 15
+packages/desktop/renderer/lib/session-history.test.ts
+  s_3b5e810458668d::t_55c4ec6ad1afba 430-431
+  s_3b5e810458668d::t_8397acaad06b3d 386-429,432-433
+packages/desktop/renderer/components/ChatView.tsx
+  s_d8a3af07fd35a8::t_d7a30dfe4bbca4 11
+  s_6d7bf9974bab85::t_b846318082c618 3025,5272-5274,5276-5278
+  s_d8a3af07fd35a8::t_fc9ad1f86e3dd5 583,3226-3227,3256,3315-3329
+  s_6d7bf9974bab85::t_f5deb81df7f523 804-805,3024,3027-3028,3032-3037,3046-3053,3061-3063,4486-4487,4495-4496,4513
+packages/desktop/renderer/stores/settingsStore.ts
+  s_d8a3af07fd35a8::t_e3eb5edc76b373 31
+  s_d8a3af07fd35a8::t_d7a30dfe4bbca4 7
+  s_d8a3af07fd35a8::t_aa230b24f737c5 3-6,28,46,90,126
+packages/desktop/renderer/components/ChatView.goal-mode.test.ts
+  s_6d7bf9974bab85::t_6d34959c9894e2 11
+packages/server/lib/web-push-service.test.ts
+  s_6d7bf9974bab85::t_6d34959c9894e2 70,77-78,82-84
+packages/native-runtime/src/agent-runtime/native-runtime-broker.test.ts
+  s_6d7bf9974bab85::t_f5deb81df7f523 1164-1169
+packages/core/src/infrastructure/SQLiteSettingsStore.ts
+  s_d8a3af07fd35a8::t_f18d9654dfe6cd 5,40-45,94,112
+packages/desktop/renderer/stores/uiStore.test.ts
+  s_6d7bf9974bab85::t_6d34959c9894e2 1,11,13-18
+  s_6d7bf9974bab85::t_6730ecfa255889 2,12,19-21
+packages/desktop/main/preload.ts
+  s_d8a3af07fd35a8::t_e3eb5edc76b373 35-36
+packages/core/src/application/notification/index.ts
+  s_d8a3af07fd35a8::t_0eaf7a695743bd 1
+packages/core/src/application/notification/task-completion.ts
+  s_d8a3af07fd35a8::t_48b57cd985ba9a 1-77
+packages/desktop/main/task-completion-notifier.ts
+  s_3b5e810458668d::t_5971f6838f61e0 1-58
+packages/tui/src/task-completion-notifier.ts
+  s_d8a3af07fd35a8::t_bfcc3da3c16223 1-43
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "7864aed01b16d4fe04d433108d3c79e6909509f4",
+  "prompts": {},
+  "sessions": {
+    "s_152737f7405ef2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0e19c-85fe-7bc3-bbd2-25f82a79514c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_3b5e810458668d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0e002-93f3-71e1-9b41-66d45ab2dd49",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_6d7bf9974bab85": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0e273-3764-7f22-a1a0-160203012ad0",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_d8a3af07fd35a8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0e02c-21fe-7671-85fc-0ddb654d929c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": null
+    }
+  }
+}
