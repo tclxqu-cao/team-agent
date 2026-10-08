@@ -1,12 +1,22 @@
 import { RemoteVideoPolicy } from '@agent/core';
 
+/** Per-frame trace is opt-in: ~30-60 lines/s while a stream is live. */
+const FRAME_TRACE = process.env.AGENT_REMOTE_VIDEO_TRACE === '1';
+const VIEWER_SAMPLE_LOG_INTERVAL_MS = 5_000;
+
 export class RemoteVideoSession {
-  constructor({ signal, policy, adaptation, transportFactory, encoder, logger = null }) {
+  constructor({ signal, policy, adaptation, transportFactory, encoder, log }) {
     this.signal = signal;
     this.encoder = encoder;
-    this.logger = logger;
     this.policy = policy ?? adaptation ?? new RemoteVideoPolicy('hd', this.encoder.capabilities());
     this.transportFactory = transportFactory;
+    // Injected log port: (level, message, data). Defaults to silent so the
+    // domain/application layer never imports logging infrastructure directly.
+    this.log = typeof log === 'function' ? log : () => {};
+    // Wire accounting for stop summaries and gap diagnostics.
+    this.framesSent = 0; this.frameBytesSent = 0; this.firstFrameAt = null; this.lastFrameAt = null;
+    this.probeStreak = 0; this.sessionStartedAt = null; this.statsLoggedAt = 0;
+    this.lastTuningKey = null;
     this.generation = 0;
     this.paused = false;
     this.tuningChain = Promise.resolve();
@@ -37,6 +47,11 @@ export class RemoteVideoSession {
         const next = this.pendingDecision;
         this.pendingDecision = null;
         await this.encoder.apply(next).catch(() => undefined);
+        const key = `${next.bitRate}/${next.maxFps}/${next.preferredCodec}`;
+        if (key !== this.lastTuningKey) {
+          this.lastTuningKey = key;
+          this.log('info', 'encoder tuning applied', { bitRate: next.bitRate, maxFps: next.maxFps, preferredCodec: next.preferredCodec, reason: next.reason });
+        }
       }
     });
     return decision;
@@ -47,13 +62,31 @@ export class RemoteVideoSession {
       availableOutgoingBitrate: sample.availableBitrate ?? sample.availableOutgoingBitrate,
     } };
     this.receiverObservation = { ...observation, sampledAt: Date.now() };
+    this.logViewerSample(sample);
     const decision = this.policy.current();
     this.logMediaDecision('receiver-stats', decision, observation);
     return decision;
   }
 
+  /** Logs the viewer-reported network sample: throttled, plus always on degradation. */
+  logViewerSample(sample) {
+    const now = Date.now();
+    const degraded = (sample.lossRate ?? 0) >= 0.05
+      || (sample.rttMs ?? 0) >= 300
+      || (sample.droppedFrames ?? 0) >= 30;
+    if (!degraded && now - this.statsLoggedAt < VIEWER_SAMPLE_LOG_INTERVAL_MS) return;
+    this.statsLoggedAt = now;
+    this.log(degraded ? 'warn' : 'info', 'viewer network sample', {
+      lossRate: sample.lossRate ?? 0, rttMs: sample.rttMs ?? null,
+      receiveBitrate: sample.receiveBitrate ?? null, droppedFrames: sample.droppedFrames ?? 0,
+      width: sample.width ?? null, height: sample.height ?? null, fps: sample.fps ?? null,
+      codec: sample.codec ?? null, codecProfile: sample.codecProfile ?? null,
+      candidateType: sample.candidateType ?? null, protocol: sample.protocol ?? null,
+      degraded,
+    });
+  }
+
   logMediaDecision(trigger, decision, observation = {}) {
-    if (!this.logger?.info) return;
     const network = observation.network ?? {};
     const encoder = observation.encoder ?? {};
     const content = observation.content ?? {};
@@ -88,17 +121,23 @@ export class RemoteVideoSession {
     const key = JSON.stringify(material);
     if (key === this.lastMediaLogKey) return;
     this.lastMediaLogKey = key;
-    this.logger.info('remote video decision', payload);
+    this.log('info', 'remote video decision', payload);
   }
 
   async handle(data) {
     if (data.kind === 'stop') return this.stop();
-    if (data.kind === 'quality') return this.setQuality(data.quality);
+    if (data.kind === 'quality') { this.log('info', 'viewer quality change', { quality: data.quality }); return this.setQuality(data.quality); }
     if (data.kind === 'stats') return this.connected ? this.applyStats(data) : undefined;
+    if (data.kind === 'viewer-trace') {
+      this.log('info', `viewer event: ${String(data.event ?? 'unknown')}`, { ...data });
+      return undefined;
+    }
     if (data.kind === 'start') {
+      this.log('info', 'session start requested', { receiverProfiles: Array.isArray(data.receiverProfiles) ? data.receiverProfiles : null });
       await this.stop();
       const generation = this.generation;
       this.policy.resetSession?.();
+      this.sessionStartedAt = Date.now();
       const receiverProfiles = Array.isArray(data.receiverProfiles) ? data.receiverProfiles : ['baseline'];
       const profile = this.policy.selectCodec?.(receiverProfiles) ?? 'baseline';
       return this.startAttempt(profile, generation);
@@ -112,6 +151,7 @@ export class RemoteVideoSession {
     await this.stopAttempt();
     if (generation !== this.generation) return;
     this.profile = profile;
+    this.log('info', 'webrtc attempt starting', { profile, generation, fallbackReason: fallbackReason ?? null });
     let transport;
     transport = this.transportFactory({
       signal: this.signal,
@@ -141,6 +181,9 @@ export class RemoteVideoSession {
         }
         this.encoderActive = true;
         this.applyTuning(decision);
+        this.log('info', 'webrtc connected; encoder started', {
+          profile: this.profile, bitRate: decision.bitRate, maxFps: decision.maxFps, preferredCodec: decision.preferredCodec,
+        });
         this.signal({ kind: 'state', state: 'connected' });
         this.watchFrames(transport, generation);
         this.watchStats(transport, generation);
@@ -152,14 +195,32 @@ export class RemoteVideoSession {
       return;
     }
     if (['failed', 'closed', 'disconnected'].includes(state)) await this.failAttempt(new Error(`WebRTC ${state}`), generation);
-    else this.signal({ kind: 'state', state });
+    else {
+      this.log('info', 'webrtc transport state', { state });
+      this.signal({ kind: 'state', state });
+    }
   }
 
   onFrame(frame, generation, transport = this.transport) {
     if (generation !== this.generation || this.transport !== transport || this.paused || !this.connected) return;
     if (frame.error) { void this.failAttempt(new Error(frame.error), generation); return; }
     if (!this.transport?.send(frame)) return;
+    const now = Date.now();
+    const frameBytes = Array.isArray(frame.nals)
+      ? frame.nals.reduce((size, nal) => size + (nal?.length ?? nal?.byteLength ?? 0), 0)
+      : null;
+    this.framesSent += 1;
+    if (frameBytes) this.frameBytesSent += frameBytes;
+    if (FRAME_TRACE) {
+      this.log('info', 'video frame sent', {
+        seq: this.framesSent, timestampUs: frame.timestamp ?? null, bytes: frameBytes,
+        gapMs: this.lastFrameAt ? now - this.lastFrameAt : null, key: frame.key === true,
+      });
+    }
+    this.lastFrameAt = now;
+    this.firstFrameAt ??= now;
     this.firstFrameSeen = true;
+    this.probeStreak = 0;
     clearTimeout(this.firstFrameTimer);
     this.watchFrames(this.transport, generation);
   }
@@ -169,6 +230,7 @@ export class RemoteVideoSession {
     this.failing = true;
     try {
       const fallback = this.policy.fallbackCodec?.(this.profile);
+      this.log('warn', 'webrtc attempt failed', { error: String(error?.message ?? error), profile: this.profile, fallback: fallback ?? null });
       if (fallback) {
         const reason = String(error?.message ?? error).slice(0, 500);
         await this.stopAttempt();
@@ -176,6 +238,7 @@ export class RemoteVideoSession {
         await this.startAttempt(fallback, generation, reason);
         return;
       }
+      this.log('error', 'webrtc session failed', { error: String(error?.message ?? error) });
       this.signal({ kind: 'state', state: 'failed', error: String(error?.message ?? error).slice(0, 500) });
       await this.stop();
     } finally { this.failing = false; }
@@ -211,6 +274,13 @@ export class RemoteVideoSession {
     clearTimeout(this.frameTimer);
     this.frameTimer = setTimeout(async () => {
       if (generation !== this.generation || this.transport !== transport || this.paused) return;
+      // Escalating streak = frames are genuinely missing (a healthy helper
+      // answers every probe with a keyframe, which resets the streak).
+      this.probeStreak += 1;
+      this.log(this.probeStreak >= 2 ? 'warn' : 'info', 'no frames in window; requesting keyframe', {
+        streak: this.probeStreak, windowMs: 5_000,
+        silentMs: this.lastFrameAt ? Date.now() - this.lastFrameAt : (this.sessionStartedAt ? Date.now() - this.sessionStartedAt : null),
+      });
       try { await this.encoder.requestKeyframe(); this.watchFrames(transport, generation); }
       catch (error) { await this.failAttempt(error, generation); }
     }, 5_000);
@@ -244,5 +314,16 @@ export class RemoteVideoSession {
     await this.stopAttempt();
     const peer = this._peerOverride; this._peerOverride = null; this._connectedOverride = false;
     if (peer?.close) await peer.close();
+    // Skip the summary when nothing was running (e.g. stop-before-start).
+    if (this.sessionStartedAt !== null) {
+      this.log('info', 'webrtc session stopped', {
+        framesSent: this.framesSent, frameBytesSent: this.frameBytesSent,
+        durationMs: Date.now() - this.sessionStartedAt,
+        lastFrameGapMs: this.lastFrameAt ? Date.now() - this.lastFrameAt : null,
+        probeStreak: this.probeStreak,
+      });
+    }
+    this.framesSent = 0; this.frameBytesSent = 0; this.firstFrameAt = null; this.lastFrameAt = null;
+    this.sessionStartedAt = null; this.probeStreak = 0; this.statsLoggedAt = 0;
   }
 }

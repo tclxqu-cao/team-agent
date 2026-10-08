@@ -3,7 +3,7 @@ import { RemoteVideoPolicy } from '@agent/core';
 // @ts-expect-error gateway ESM
 import { RemoteVideoSession } from './remote-video-session.mjs';
 
-function fixture({ failHigh = false, failBaselineTransport = false } = {}) {
+function fixture({ failHigh = false, failBaselineTransport = false, log = vi.fn() } = {}) {
   let options: any;
   const transports: any[] = [];
   const frameListeners: Array<(frame: any) => void> = [];
@@ -30,10 +30,9 @@ function fixture({ failHigh = false, failBaselineTransport = false } = {}) {
     return transport;
   });
   const signal = vi.fn();
-  const logger = { info: vi.fn() };
   const policy = new RemoteVideoPolicy('hd', encoder.capabilities());
-  const session = new RemoteVideoSession({ encoder, signal, policy, transportFactory, logger, iceConfig: { iceServers: [], warning: null } });
-  return { session, encoder, signal, logger, transports, frameListeners, transportFactory, state: (value: string) => options.onState(value) };
+  const session = new RemoteVideoSession({ encoder, signal, policy, transportFactory, iceConfig: { iceServers: [], warning: null }, log });
+  return { session, encoder, signal, log, transports, frameListeners, transportFactory, state: (value: string) => options.onState(value) };
 }
 
 describe('RemoteVideoSession', () => {
@@ -93,12 +92,13 @@ describe('RemoteVideoSession', () => {
     expect(f.session.noteInteraction()).toMatchObject({ maxFps: 30, reason: 'interaction' });
     await vi.waitFor(() => expect(releaseApply).toBeTypeOf('function'));
     expect(f.encoder.apply).toHaveBeenCalledTimes(1);
-    expect(f.logger.info).toHaveBeenCalledTimes(1);
-    expect(f.logger.info).toHaveBeenCalledWith('remote video decision', expect.objectContaining({
+    const decisions = () => f.log.mock.calls.filter(([, message]) => message === 'remote video decision');
+    expect(decisions()).toHaveLength(1);
+    expect(decisions()[0]).toEqual(['info', 'remote video decision', expect.objectContaining({
       trigger: 'interaction', targetFps: 30, reason: 'interaction',
-    }));
-    expect(JSON.stringify(f.logger.info.mock.calls)).not.toContain('sdp');
-    expect(JSON.stringify(f.logger.info.mock.calls)).not.toContain('candidate');
+    })]);
+    expect(JSON.stringify(f.log.mock.calls)).not.toContain('sdp');
+    expect(JSON.stringify(f.log.mock.calls)).not.toContain('candidate');
 
     releaseApply();
     await f.session.tuningChain;
@@ -108,12 +108,13 @@ describe('RemoteVideoSession', () => {
     const f = fixture();
     f.session.applyStats({ lossRate: 0, rttMs: 2, droppedFrames: 0, availableBitrate: 20_000_000 });
     f.session.applyStats({ lossRate: 0, rttMs: 2, droppedFrames: 0, availableBitrate: 20_000_000 });
-    expect(f.logger.info).toHaveBeenCalledTimes(1);
-    expect(f.logger.info).toHaveBeenCalledWith('remote video decision', expect.objectContaining({
+    const decisions = () => f.log.mock.calls.filter(([, message]) => message === 'remote video decision');
+    expect(decisions()).toHaveLength(1);
+    expect(decisions()[0]).toEqual(['info', 'remote video decision', expect.objectContaining({
       trigger: 'receiver-stats', rttMs: 2, lossRate: 0, availableBitrate: 20_000_000,
-    }));
+    })]);
     f.session.applyStats({ lossRate: 0.06, rttMs: 280, droppedFrames: 1, availableBitrate: 4_000_000 });
-    expect(f.logger.info).toHaveBeenCalledTimes(2);
+    expect(decisions()).toHaveLength(2);
   });
 
   it('reports a Baseline startup failure reached through the High fallback', async () => {
@@ -137,6 +138,52 @@ describe('RemoteVideoSession', () => {
       await vi.advanceTimersByTimeAsync(15_000);
       expect(f.encoder.requestKeyframe).toHaveBeenCalledTimes(3);
       expect(f.signal).not.toHaveBeenCalledWith(expect.objectContaining({ state: 'failed' }));
+    } finally {
+      await f.session.stop(); vi.useRealTimers();
+    }
+  });
+
+  it('logs the connection timeline, viewer samples and stop summary through the log port', async () => {
+    const log = vi.fn();
+    const f = fixture({ log });
+    await f.session.handle({ kind: 'start', receiverProfiles: ['high', 'baseline'] });
+    expect(log).toHaveBeenCalledWith('info', 'session start requested', { receiverProfiles: ['high', 'baseline'] });
+    expect(log).toHaveBeenCalledWith('info', 'webrtc attempt starting', expect.objectContaining({ profile: 'high', fallbackReason: null }));
+    f.transports[0].connected = true;
+    await f.state('connected');
+    expect(log).toHaveBeenCalledWith('info', 'webrtc connected; encoder started', expect.objectContaining({ profile: 'high' }));
+    // First viewer sample always logs; a second immediate sample is throttled.
+    await f.session.handle({ kind: 'stats', lossRate: 0.01, rttMs: 40, receiveBitrate: 4_000_000 });
+    await f.session.handle({ kind: 'stats', lossRate: 0.01, rttMs: 41 });
+    expect(log).toHaveBeenCalledWith('info', 'viewer network sample', expect.objectContaining({ lossRate: 0.01 }));
+    const samples = log.mock.calls.filter(([level, message]) => message === 'viewer network sample');
+    expect(samples).toHaveLength(1);
+    // Degraded samples break through the throttle at warn level.
+    await f.session.handle({ kind: 'stats', lossRate: 0.2, rttMs: 40 });
+    expect(log).toHaveBeenCalledWith('warn', 'viewer network sample', expect.objectContaining({ degraded: true }));
+    // Viewer-reported stall/fallback events reach the log verbatim.
+    await f.session.handle({ kind: 'viewer-trace', event: 'jpeg-fallback', silentForMs: 10_000 });
+    expect(log).toHaveBeenCalledWith('info', 'viewer event: jpeg-fallback', expect.objectContaining({ event: 'jpeg-fallback' }));
+    f.frameListeners[0]({ nals: [Buffer.from([0x65])], timestamp: 1 });
+    await f.session.stop();
+    expect(log).toHaveBeenCalledWith('info', 'webrtc session stopped', expect.objectContaining({ framesSent: 1 }));
+  });
+
+  it('escalates the keyframe probe streak to warn while frames are missing', async () => {
+    vi.useFakeTimers();
+    const log = vi.fn();
+    const f = fixture({ log });
+    try {
+      await f.session.handle({ kind: 'start', receiverProfiles: ['baseline'] });
+      const transport = f.transports[0]; transport.connected = true;
+      await f.state('connected');
+      // One frame must flow first: a session that never reaches its first
+      // frame dies via the first-frame timeout, not the probe streak.
+      f.session.onFrame({ nalUnits: [Buffer.from([0x65])], timestampUs: 1 }, f.session.generation, transport);
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(log).toHaveBeenCalledWith('info', 'no frames in window; requesting keyframe', expect.objectContaining({ streak: 1 }));
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(log).toHaveBeenCalledWith('warn', 'no frames in window; requesting keyframe', expect.objectContaining({ streak: 2 }));
     } finally {
       await f.session.stop(); vi.useRealTimers();
     }

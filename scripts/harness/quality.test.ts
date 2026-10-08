@@ -77,6 +77,45 @@ describe('cross-session quality evidence', () => {
     expect(analyze(childFailure)).toMatchObject([{ kind: 'tool-error', severe: false }]);
     expect(analyze(bashFailure)).toMatchObject([{ kind: 'tool-error', severe: false }]);
   });
+  it.each([
+    ['one bounded wait', [
+      { at: 1, type: 'tool_call', tool: 'wait_agent', callId: 'wait-a', argumentsHash: 'agent-a' },
+      { at: 2, type: 'tool_result', callId: 'wait-a', resultHash: 'timeout', isError: true, preview: 'Error: wait_agent timed out' },
+    ]],
+    ['parallel bounded waits', [
+      { at: 1, type: 'tool_call', tool: 'wait_agent', callId: 'wait-a', argumentsHash: 'agent-a' },
+      { at: 1, type: 'tool_call', tool: 'wait_agent', callId: 'wait-b', argumentsHash: 'agent-b' },
+      { at: 2, type: 'tool_result', callId: 'wait-a', resultHash: 'timeout', isError: true, preview: 'Error: wait_agent timed out' },
+      { at: 2, type: 'tool_result', callId: 'wait-b', resultHash: 'timeout', isError: true, preview: 'Error: wait_agent timed out' },
+    ]],
+    ['a bounded wait followed by completion', [
+      { at: 1, type: 'tool_call', tool: 'wait_agent', callId: 'wait-a-1', argumentsHash: 'agent-a' },
+      { at: 2, type: 'tool_result', callId: 'wait-a-1', resultHash: 'timeout', isError: true, preview: 'Error: wait_agent timed out' },
+      { at: 3, type: 'tool_call', tool: 'wait_agent', callId: 'wait-a-2', argumentsHash: 'agent-a' },
+      { at: 4, type: 'tool_result', callId: 'wait-a-2', resultHash: 'completed', isError: false, preview: '{"status":"completed"}' },
+    ]],
+  ])('does not classify %s as a tool error', (_label, observations) => {
+    const q = run('polling');
+    q.observations.push(...observations);
+    expect(analyze(q)).toEqual([]);
+  });
+  it('keeps genuine wait_agent and other tool failures as tool errors', () => {
+    const missingAgent = run('missing-agent');
+    missingAgent.observations.push(
+      { at: 1, type: 'tool_call', tool: 'wait_agent', callId: 'wait', argumentsHash: 'missing' },
+      { at: 2, type: 'tool_result', callId: 'wait', resultHash: 'missing', isError: true,
+        preview: 'Error: No running sub-agent found' },
+    );
+    const bashTimeout = run('bash-timeout');
+    bashTimeout.observations.push(
+      { at: 1, type: 'tool_call', tool: 'bash', callId: 'bash', argumentsHash: 'sleep' },
+      { at: 2, type: 'tool_result', callId: 'bash', resultHash: 'timeout', isError: true,
+        preview: 'Error: wait_agent timed out' },
+    );
+
+    expect(analyze(missingAgent)).toMatchObject([{ kind: 'tool-error' }]);
+    expect(analyze(bashTimeout)).toMatchObject([{ kind: 'tool-error' }]);
+  });
   it('detects cycles while events continue, errors and compaction rereads', () => {
     const q = run('a');
     for (let i = 0; i < 6; i++) call(q, i, 'same', i % 2 ? 'search' : 'read');
@@ -99,10 +138,20 @@ describe('cross-session quality evidence', () => {
     openAiAuth.observations.push({ at: 1, type: 'error', message: 'OpenAI API error 401: {"error":{"message":"Incorrect API key provided","type":"invalid_api_key"}}' });
     const anthropicAuth = run('anthropic-auth');
     anthropicAuth.observations.push({ at: 1, type: 'error', message: 'Anthropic API error 401: authentication_error: invalid x-api-key' });
+    const openAiCapacity = run('openai-capacity');
+    openAiCapacity.observations.push({ at: 1, type: 'error', message: 'OpenAI API error 429: {"error":{"message":"concurrency reached, current: 6, limit: 5","type":"rate_limited"}}' });
+    const anthropicCapacity = run('anthropic-capacity');
+    anthropicCapacity.observations.push({ at: 1, type: 'error', message: 'Anthropic API error 529: {"error":{"type":"overloaded_error","message":"Overloaded"}}' });
+    const structuredCapacity = run('structured-capacity');
+    structuredCapacity.observations.push({ at: 1, type: 'error', code: 'rate_limit_error', message: 'request throttled' });
     const contextLimit = run('context-limit');
     contextLimit.observations.push({ at: 1, type: 'error', code: 'context_limit', message: 'context exceeded' });
     const generic = run('generic');
     generic.observations.push({ at: 1, type: 'error', message: 'application invariant failed after HTTP 401' });
+    const generic429 = run('generic-429');
+    generic429.observations.push({ at: 1, type: 'error', message: 'application invariant failed after HTTP 429' });
+    const internalConcurrency = run('internal-concurrency');
+    internalConcurrency.observations.push({ at: 1, type: 'error', message: 'internal semaphore: concurrency reached unexpectedly' });
 
     expect(analyze(offline)).toMatchObject([{ kind: 'environment-error', severe: false }]);
     expect(analyze(timeout)).toMatchObject([{ kind: 'environment-error', severe: false }]);
@@ -110,8 +159,13 @@ describe('cross-session quality evidence', () => {
     expect(analyze(apiProviderTimeout)).toMatchObject([{ kind: 'environment-error', severe: false }]);
     expect(analyze(openAiAuth)).toMatchObject([{ kind: 'environment-error', severe: false }]);
     expect(analyze(anthropicAuth)).toMatchObject([{ kind: 'environment-error', severe: false }]);
+    expect(analyze(openAiCapacity)).toMatchObject([{ kind: 'environment-error', severe: false }]);
+    expect(analyze(anthropicCapacity)).toMatchObject([{ kind: 'environment-error', severe: false }]);
+    expect(analyze(structuredCapacity)).toMatchObject([{ kind: 'environment-error', severe: false }]);
     expect(analyze(contextLimit)).toMatchObject([{ kind: 'agent-error', severe: false }]);
     expect(analyze(generic)).toMatchObject([{ kind: 'agent-error', severe: false }]);
+    expect(analyze(generic429)).toMatchObject([{ kind: 'agent-error', severe: false }]);
+    expect(analyze(internalConcurrency)).toMatchObject([{ kind: 'agent-error', severe: false }]);
   });
   it.each([
     ['bash', 'shell operators are denied by the selected policy'],
@@ -210,10 +264,51 @@ it('records invalid model credentials without dispatching a source repair', asyn
     expect(store.summarize().issues).toMatchObject([{ kind: 'environment-error', sessions: 1 }]);
   } finally { await service.close(); rmSync(dir, { recursive: true, force: true }); }
 });
+it('records provider capacity exhaustion without dispatching a source repair', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'quality-model-capacity-error-'));
+  const repair = vi.fn(async () => ({ status: 'blocked' as const, runDirectory: dir, attempts: [], detail: 'review required' }));
+  const store = new QualityStore(dir);
+  const service = new HarnessCompanion({ sourceRoot: process.cwd(), idleTimeoutMs: 1000 } as HarnessConfig, () => {}, repair, store);
+  try {
+    service.receive({ type: 'begin', id: 'capacity', sessionId: 'capacity-session', input: 'test', workingDirectory: '/tmp', runtimeVersion: 'v1' });
+    service.receive({ type: 'progress', id: 'capacity', eventType: 'error', data: {
+      type: 'error',
+      message: 'OpenAI API error 429: {"error":{"message":"concurrency reached, current: 6, limit: 5","type":"rate_limited"}}',
+    } });
+
+    expect(repair).not.toHaveBeenCalled();
+    expect(store.summarize().issues).toMatchObject([{ kind: 'environment-error', sessions: 1 }]);
+  } finally { await service.close(); rmSync(dir, { recursive: true, force: true }); }
+});
+it('does not dispatch a repair for bounded wait_agent polling across sessions', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'quality-wait-agent-polling-'));
+  const repair = vi.fn(async () => ({ status: 'blocked' as const, runDirectory: dir, attempts: [], detail: 'review required' }));
+  const store = new QualityStore(dir);
+  const service = new HarnessCompanion({ sourceRoot: process.cwd(), idleTimeoutMs: 1000 } as HarnessConfig, () => {}, repair, store);
+  try {
+    for (let index = 0; index < 3; index++) {
+      const id = `poll-${index}`;
+      service.receive({ type: 'begin', id, sessionId: id, input: 'test', workingDirectory: '/tmp', runtimeVersion: 'v1' });
+      service.receive({ type: 'progress', id, eventType: 'tool_call', data: {
+        type: 'tool_call', tool: 'wait_agent', callId: `wait-${index}`, argumentsHash: `agent-${index}`,
+      } });
+      service.receive({ type: 'progress', id, eventType: 'tool_result', data: {
+        type: 'tool_result', callId: `wait-${index}`, resultHash: 'timeout', isError: true,
+        preview: 'Error: wait_agent timed out',
+      } });
+      service.receive({ type: 'progress', id, eventType: 'done', data: { type: 'done' } });
+      service.receive({ type: 'end', id });
+    }
+
+    expect(repair).not.toHaveBeenCalled();
+    expect(store.summarize().issues).toEqual([]);
+  } finally { await service.close(); rmSync(dir, { recursive: true, force: true }); }
+});
 it.each([
   ['desktop offline', 'desktop_offline', 'AI Hub desktop offline'],
   ['provider request timeout', 'model_request_timeout', 'AI Hub capture timed out'],
   ['model transport timeout', 'model_transport_timeout', 'The operation was aborted due to timeout'],
+  ['model rate limit', 'rate_limited', 'request throttled'],
 ])('records repeated %s runs without dispatching a source repair', async (_label, code, message) => {
   const dir = mkdtempSync(join(tmpdir(), 'quality-environment-error-'));
   const repair = vi.fn(async () => ({ status: 'blocked' as const, runDirectory: dir, attempts: [], detail: 'review required' }));

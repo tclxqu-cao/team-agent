@@ -8,6 +8,8 @@ export interface RemoteVideoStatsCursor {
   packetsReceived: number;
   packetsLost: number;
   framesDropped: number;
+  /** Receiver's monotonic decoded-frame counter; feeds the stall watchdog. */
+  framesDecoded?: number;
 }
 
 type StatsLike = Iterable<Record<string, unknown>> | {
@@ -84,7 +86,14 @@ export function readRemoteVideoStats(report: StatsLike, previous: RemoteVideoSta
     protocol: local?.protocol === "tcp" || remote?.protocol === "tcp" ? "tcp" : (pair ? "udp" : undefined),
   };
   for (const key of Object.keys(sample) as Array<keyof RemoteVideoStatsSample>) if (sample[key] === undefined) delete sample[key];
-  return { sample, cursor: { at: now, bytesReceived, packetsReceived, packetsLost, framesDropped } };
+  const framesDecoded = finite(inbound.framesDecoded);
+  return {
+    sample,
+    cursor: {
+      at: now, bytesReceived, packetsReceived, packetsLost, framesDropped,
+      ...(framesDecoded !== undefined ? { framesDecoded } : {}),
+    },
+  };
 }
 
 export function formatRemoteVideoStats(sample: RemoteVideoStatsSample | null): string | null {

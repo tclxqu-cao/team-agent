@@ -18,12 +18,19 @@ describe("remote video stats", () => {
   ];
 
   it("derives bitrate, loss, dropped frames and relay diagnostics from browser stats", () => {
-    const firstValues = [...base, { id: "in", type: "inbound-rtp", kind: "video", codecId: "codec", bytesReceived: 1000, packetsReceived: 100, packetsLost: 2, framesDropped: 1 }];
-    const secondValues = [...base, { id: "in", type: "inbound-rtp", kind: "video", codecId: "codec", bytesReceived: 501000, packetsReceived: 190, packetsLost: 12, framesDropped: 3, frameWidth: 2560, frameHeight: 1440, framesPerSecond: 30 }];
+    const firstValues = [...base, { id: "in", type: "inbound-rtp", kind: "video", codecId: "codec", bytesReceived: 1000, packetsReceived: 100, packetsLost: 2, framesDropped: 1, framesDecoded: 7 }];
+    const secondValues = [...base, { id: "in", type: "inbound-rtp", kind: "video", codecId: "codec", bytesReceived: 501000, packetsReceived: 190, packetsLost: 12, framesDropped: 3, frameWidth: 2560, frameHeight: 1440, framesPerSecond: 30, framesDecoded: 37 }];
     const first = readRemoteVideoStats(new Map(firstValues.map(item => [item.id, item])), null, 1000)!;
     const second = readRemoteVideoStats(new Map(secondValues.map(item => [item.id, item])), first.cursor, 2000)!;
     expect(second.sample).toMatchObject({ codec: "H264", candidateType: "relay", protocol: "udp", receiveBitrate: 4_000_000, availableBitrate: 6_000_000, lossRate: 0.1, droppedFrames: 2, rttMs: 42 });
     expect(formatRemoteVideoStats(second.sample)).toBe("TURN 中继 · H264 · 2560x1440@30 · 4.0Mbps · 42ms");
+    expect(first.cursor.framesDecoded).toBe(7);
+    expect(second.cursor.framesDecoded).toBe(37);
+  });
+
+  it("omits the decoded-frame counter when the browser does not report it", () => {
+    const values = [...base, { id: "in", type: "inbound-rtp", kind: "video", codecId: "codec", bytesReceived: 1, packetsReceived: 1, packetsLost: 0, framesDropped: 0 }];
+    expect(readRemoteVideoStats(values, null, 1_000)!.cursor.framesDecoded).toBeUndefined();
   });
 
   it("classifies decoder acceleration only from explicit browser evidence", () => {

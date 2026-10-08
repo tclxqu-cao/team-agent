@@ -7,7 +7,7 @@ import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import os from 'node:os';
 import { RemoteHelper } from './helper-manager.mjs';
-import { RemoteAudioSession } from '@agent/core';
+import { RemoteAudioSession, logGlobal } from '@agent/core';
 import { parseProducerRemoteVideoSignal } from './remote-video-signal.mjs';
 
 const FULL_DUPLEX_AUDIO = Object.freeze({
@@ -45,7 +45,7 @@ export function supportsRemoteDesktop(platform = process.platform, arch = proces
 }
 
 export class RemoteAuthorization {
-  constructor({ registry, userId, dataDir, platform = process.platform, helper = platform === 'win32' ? new WindowsRemoteHelper() : new RemoteHelper(), supported = supportsRemoteDesktop(platform), audioCapabilities = remoteAudioCapabilities(platform), intervalMs = 67, idleDelayMs = 3000, system = platform === 'win32' ? new WindowsSystemBridge() : null, display = platform === 'darwin' ? new MacOSDisplayBridge() : null, logger = null }) {
+  constructor({ registry, userId, dataDir, platform = process.platform, helper = platform === 'win32' ? new WindowsRemoteHelper() : new RemoteHelper(), supported = supportsRemoteDesktop(platform), audioCapabilities = remoteAudioCapabilities(platform), intervalMs = 67, idleDelayMs = 3000, system = platform === 'win32' ? new WindowsSystemBridge() : null, display = platform === 'darwin' ? new MacOSDisplayBridge() : null, log = null }) {
     Object.assign(this, { registry, dataDir, helper, supported, audioCapabilities, intervalMs, idleDelayMs, platform, system, display });
     this.enabled = false; this.screen = false; this.accessibility = false; this.online = false; this.error = null; this.busy = false; this.sequence = 0; this.generation = 0;
     this.locked = null; this.unavailablePublished = null; this.viewerCount = 0; this.captureActive = false; this.idleTimer = null; this.controlState = null;
@@ -70,7 +70,7 @@ export class RemoteAuthorization {
     this.video = new RemoteWebrtcVideo({
       helper,
       highProfile: platform === 'darwin',
-      logger,
+      log,
       signal: data => { if (this.enabled && this.online) this.registry.webrtcFromProducer(this.peer, this.sessionId, data); },
     });
     this.audioSequence = 0;
@@ -169,6 +169,7 @@ export class RemoteAuthorization {
       this.enabled = false; this.captureActive = false; this.viewerCount = 0; this.controlState = null; this.clearIdleTimer(); await this.video.stop(); await this.stopAudio(); await this.save();
       if (this.online) this.registry.close(this.peer, this.sessionId);
       this.online = false; await this.display?.stop?.(); await this.helper.stop();
+      logGlobal('info', 'remote desktop sharing disabled', undefined, undefined, { action, sessionId: this.sessionId });
     } else {
       this.enabled = true; this.retryAt = 0; await this.save();
       if (action === 'restart') { await this.video.stop(); await this.helper.stop(); }
@@ -176,6 +177,9 @@ export class RemoteAuthorization {
       if (action === 'authorize') await this.helper.request({ op: 'authorize', permission });
       const permissions = await this.helper.request({ op: 'status' });
       this.applyPermissions(permissions); this.lastPermissionCheck = Date.now();
+      logGlobal('info', 'remote desktop sharing enabled', undefined, undefined, {
+        action, platform: this.platform, screen: this.screen, accessibility: this.accessibility, locked: this.locked, sessionId: this.sessionId,
+      });
       this.error = this.screen ? null : (permissions.error || (this.platform === 'win32' ? 'Windows 桌面暂不可用' : '请先授予屏幕录制权限'));
       if (this.viewerCount > 0) {
         this.captureActive = true;
@@ -226,6 +230,11 @@ export class RemoteAuthorization {
       if (generation !== this.generation) return;
       this.bounds = null; await this.releaseInput();
       this.error = error.message; this.retryAt = Date.now() + 3000;
+      // Log once per distinct failure, not once per retry tick.
+      if (this.lastCaptureErrorLogged !== error.message) {
+        this.lastCaptureErrorLogged = error.message;
+        logGlobal('warn', 'desktop capture failed', error, undefined, { sessionId: this.sessionId, retryInMs: 3000 });
+      }
       this.publishUnavailable(this.error, this.locked === true);
     } finally { this.busy = false; }
   }
@@ -251,8 +260,15 @@ export class RemoteAuthorization {
     }
   }
   applyPermissions(permissions) {
+    const before = `${this.screen}/${this.accessibility}/${this.locked}`;
     this.screen = permissions.screen === true; this.accessibility = permissions.accessibility === true;
     this.locked = permissions.locked === true;
+    const after = `${this.screen}/${this.accessibility}/${this.locked}`;
+    if (before !== after) {
+      logGlobal('info', 'desktop permissions changed', undefined, undefined, {
+        sessionId: this.sessionId, screen: this.screen, accessibility: this.accessibility, locked: this.locked,
+      });
+    }
   }
   lockedCapabilityError() {
     if (this.platform === 'win32') return 'Windows 已锁屏';

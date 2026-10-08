@@ -21,12 +21,20 @@ const ENVIRONMENT_ERROR_CODES = new Set([
   // AgentLoop uses model_transport_timeout for retry-exhausted exceptions.
   'model_request_timeout',
   'model_transport_timeout',
+  'rate_limit',
+  'rate_limited',
+  'rate_limit_error',
+  'overloaded_error',
+  'insufficient_quota',
+  'quota_exceeded',
 ]);
 const ENVIRONMENT_ERROR_PATTERNS = [
   /\binvalid_api_key\b/i,
   /\bauthentication_error\b/i,
   /\bincorrect api key\b/i,
   /\binvalid (?:api key|x-api-key)\b/i,
+  /\b(?:rate_limited|rate_limit_error|overloaded_error|insufficient_quota|quota_exceeded)\b/i,
+  /\b(?:OpenAI|Anthropic|DeepSeek) API error (?:429|529)\b/i,
 ];
 
 function isEnvironmentError(event: Observation): boolean {
@@ -47,7 +55,7 @@ function isPolicyDenial(event: Observation): boolean {
 function isExpectedWaitTimeout(call: Observation, result: Observation): boolean {
   return call.tool === 'wait_agent'
     && result.isError === true
-    && String(result.preview ?? '').trim() === 'Error: wait_agent timed out';
+    && /^Error: wait_agent timed out$/i.test(String(result.preview ?? '').trim());
 }
 
 /** Rules generate hypotheses, never correctness judgments. Only completed calls count as repeats. */
@@ -74,7 +82,7 @@ export function analyze(run: QualityRun): Finding[] {
       completed.push(signature);
       if (count >= 3) add('repeated-tool', String(call.tool), `${call.tool}: identical arguments AND result observed ${count} times; verify whether polling/revalidation was necessary`);
       if (compacted && beforeCompact.has(signature)) add('reread-after-compaction', String(call.tool), `${call.tool}: same request and result before/after compaction; investigate lost context`);
-      if (event.isError) {
+      if (event.isError && !isExpectedWaitTimeout(call, event)) {
         const kind = isPolicyDenial(event) ? 'policy-denial' : 'tool-error';
         add(kind, `${call.tool}:${normalizeError(String(event.preview))}`, `${call.tool}: ${String(event.preview).slice(0, 500)}`);
       }

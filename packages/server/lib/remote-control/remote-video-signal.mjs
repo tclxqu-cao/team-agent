@@ -2,7 +2,7 @@ const MAX_SIGNAL_CHARS = 64_000;
 export const MAX_REMOTE_AUDIO_BUFFERED_BYTES = 256 * 1024;
 const QUALITY = new Set(['smooth', 'hd', 'original']);
 const PROFILES = new Set(['high', 'baseline']);
-const VIEWER_KINDS = new Set(['start', 'stop', 'answer', 'ice', 'quality', 'stats', 'audio-start', 'audio-stop', 'audio-microphone']);
+const VIEWER_KINDS = new Set(['start', 'stop', 'answer', 'ice', 'quality', 'stats', 'viewer-trace', 'audio-start', 'audio-stop', 'audio-microphone']);
 const PRODUCER_KINDS = new Set(['offer', 'ice', 'state', 'quality-state', 'audio-state', 'audio-system']);
 
 function invalid(message = 'invalid remote video signal') {
@@ -131,6 +131,11 @@ export function parseViewerRemoteVideoSignal(value) {
       break;
     case 'stats':
       if (!validStats(data)) invalid();
+      break;
+    case 'viewer-trace':
+      if (!boundedString(data.event, 60, false)) invalid();
+      if (!boundedNumber(data.silentForMs, 0, 3_600_000)) invalid();
+      if (data.sample !== undefined && !(record(data.sample) && validStats(data.sample))) invalid();
       break;
     case 'audio-microphone':
       if (!validPcmFrame(data)) invalid();

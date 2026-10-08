@@ -1,18 +1,31 @@
 import DesktopPermissionDialog from "./components/DesktopPermissionDialog";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { createSharedAgentApi, type SharedServiceStatus } from "./lib/shared-service";
+import { isDesktopLiveSetupPending } from "./lib/desktop-live-setup";
 
 window.agentApi = createSharedAgentApi(window.sharedServiceApi, window.desktopDeviceApi);
 
 export function SharedServiceRoot() {
   const [status, setStatus] = useState<SharedServiceStatus | null>(null);
   const [showPermissions, setShowPermissions] = useState(false);
+  const permissionsDismissedRef = useRef(false);
   useEffect(() => {
+    if (permissionsDismissedRef.current) return;
     let active = true;
-    void window.agentApi.desktopLiveSetup().then(({ supported, needsSetup, status }) => {
-      if (active && supported && (needsSetup || (status.enabled && (status.permissionScreen !== "granted" || status.accessibilityTrusted !== true)))) setShowPermissions(true);
-    }).catch(() => undefined);
-    return () => { active = false; };
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    // The CLI service may still be starting when the desktop launches; retry
+    // until it answers so the authorization dialog can pop at startup.
+    const check = async () => {
+      try {
+        const info = await window.agentApi.desktopLiveSetup();
+        if (!active || permissionsDismissedRef.current) return;
+        if (isDesktopLiveSetupPending(info)) setShowPermissions(true);
+      } catch {
+        if (active && !permissionsDismissedRef.current) timer = setTimeout(() => void check(), 3000);
+      }
+    };
+    void check();
+    return () => { active = false; if (timer) clearTimeout(timer); };
   }, []);
   const [failure, setFailure] = useState("");
   const [App, setApp] = useState<React.ComponentType | null>(null);
@@ -35,7 +48,7 @@ export function SharedServiceRoot() {
   };
   const connected = status?.connected && !failure;
   return <>
-    {showPermissions && <DesktopPermissionDialog onClose={() => setShowPermissions(false)} />}
+    {showPermissions && <DesktopPermissionDialog onClose={() => { permissionsDismissedRef.current = true; setShowPermissions(false); }} />}
     {App && <App />}
     {!connected && <div className="service-gate">
       <section className="service-gate-card">

@@ -1,5 +1,8 @@
 import LiveViewSelect from "./LiveViewSelect";
 import { BrowserLiveHeaderContext } from "./browser-live-header-context";
+// Direct source import: the @agent/core package root drags Node-only modules
+// into the browser bundle; this domain policy is dependency-free.
+import { RemoteVideoStallPolicy } from "../../../core/src/domain/live-view/remote-video-stall.js";
 import { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal, flushSync } from "react-dom";
 import { ExternalLink, Hand, Keyboard, LoaderCircle, Lock, LockOpen, Mic, MicOff, MonitorUp, Maximize, Minimize, MousePointer2, PhoneOff, Power, RotateCcw, Volume2, VolumeX, X, ZoomIn, ZoomOut } from "lucide-react";
@@ -302,6 +305,9 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
   const webrtcPeerRef = useRef<RTCPeerConnection | null>(null);
   const webrtcRetryRef = useRef(0);
   const webrtcVideoRef = useRef<HTMLVideoElement>(null);
+  // Watchdog for a connected transport that stops delivering frames; on stall
+  // the flowing JPEG fallback is revealed instead of a black <video> surface.
+  const videoStallRef = useRef(new RemoteVideoStallPolicy());
   const [audioState, setAudioState] = useState<"idle" | "starting" | "live" | "failed">("idle");
   const [microphoneMuted, setMicrophoneMuted] = useState(false);
   const [speakerMuted, setSpeakerMuted] = useState(false);
@@ -831,6 +837,7 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
     remoteVideoStatsCursorRef.current = null;
     setRemoteVideoStats(null);
     setWebrtcState("connecting");
+    videoStallRef.current.begin(Date.now());
     void api.request("browser:webrtc", {
       sessionId: selectedId,
       data: { kind: "start", receiverProfiles: readReceiverH264Profiles() },
@@ -869,17 +876,36 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
       try {
         const report = await peer.getStats();
         if (!alive || peer !== webrtcPeerRef.current) return;
+        const now = Date.now();
         const result = readRemoteVideoStats(
           report as unknown as Iterable<Record<string, unknown>>,
           remoteVideoStatsCursorRef.current,
         );
-        if (!result) return;
-        remoteVideoStatsCursorRef.current = result.cursor;
-        setRemoteVideoStats(result.sample);
-        await api.request("browser:webrtc", {
-          sessionId: selectedId,
-          data: { kind: "stats", ...result.sample },
-        }).catch(() => undefined);
+        if (result) {
+          remoteVideoStatsCursorRef.current = result.cursor;
+          videoStallRef.current.observe(result.cursor.framesDecoded, now);
+          setRemoteVideoStats(result.sample);
+          void api.request("browser:webrtc", {
+            sessionId: selectedId,
+            data: { kind: "stats", ...result.sample },
+          }).catch(() => undefined);
+        }
+        if (videoStallRef.current.evaluate(now).state === "stalled") {
+          const stallDecision = videoStallRef.current.evaluate(now);
+          videoStallRef.current.begin(now);
+          setWebrtcState((prev) => (prev === "live" ? "failed" : prev));
+          setError((prev) => prev ?? "实时画面超时，已切换为 JPEG 兜底画面");
+          // Feed the server-side remote-video timeline so a black-screen/
+          // stutter incident can be correlated with producer and relay logs.
+          void api.request("browser:webrtc", {
+            sessionId: selectedId,
+            data: {
+              kind: "viewer-trace", event: "jpeg-fallback",
+              silentForMs: stallDecision.silentForMs,
+              ...(remoteVideoStats ? { sample: remoteVideoStats } : {}),
+            },
+          }).catch(() => undefined);
+        }
       } catch {
         // Browser stats are diagnostic feedback; playback remains usable without them.
       } finally {
@@ -1518,6 +1544,11 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
               </div>
             )}
           </div>
+          {fullscreen && (
+            <button type="button" className="browser-live-exit-fullscreen" onClick={() => void toggleFullscreen()}>
+              <Minimize size={14} aria-hidden="true" />退出全屏
+            </button>
+          )}
           {hasControl && !panMode && (
             <div className="browser-live-control-cue"><MousePointer2 size={13} aria-hidden="true" /> {isDesktop ? "当前输入会发送到本机" : "当前输入会发送到浏览器"}{isDesktop && desktopStreamLabel ? ` · ${desktopStreamLabel}` : ""}{isDesktop && remoteVideoDecoderLabel ? ` · ${remoteVideoDecoderLabel}` : ""}{pingMs != null ? ` · 控制 ${pingMs}ms` : ""}</div>
           )}

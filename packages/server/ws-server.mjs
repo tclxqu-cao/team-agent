@@ -33,7 +33,7 @@ import next from "next";
 import { WebSocketServer } from "ws";
 import pty from "node-pty";
 import chokidar from "chokidar";
-import { LiveViewRegistry, HostPathPolicy, SQLiteAnonymousWebStore, SQLiteProjectStore, SQLiteWebConsoleStore, installGlobalLogging, encodeLiveFramePacket, readLiveFramePacket, LIVE_FRAME_PACKET_TYPE, MAX_RELAY_SITES, MAX_RELAY_TEXT_LENGTH, MAX_RELAY_IMAGES, MAX_RELAY_IMAGE_LENGTH } from "@agent/core";
+import { LiveViewRegistry, HostPathPolicy, SQLiteAnonymousWebStore, SQLiteProjectStore, SQLiteWebConsoleStore, installGlobalLogging, encodeLiveFramePacket, readLiveFramePacket, LIVE_FRAME_PACKET_TYPE, MAX_RELAY_SITES, MAX_RELAY_TEXT_LENGTH, MAX_RELAY_IMAGES, MAX_RELAY_IMAGE_LENGTH, logGlobal } from "@agent/core";
 import { decodeOsc7Path, selectDefaultShell } from "./shell-platform.mjs";
 import { consumeTerminalReadyMarker, createTerminalShellLaunch } from "./shell-integration.mjs";
 import {
@@ -540,11 +540,49 @@ async function unwatchPath(conn, target) {
 /** @type {Set<any>} */
 const connections = new Set();
 
+// ── Live-frame intake diagnostics (network vs implementation post-analysis) ──
+// Producer side: frames arriving from a capture source per live session.
+// Gaps here mean capture/encoding problems; healthy intake with relay drops
+// or rising ack latency means the network or the viewer is the bottleneck.
+const REMOTE_VIDEO_TRACE = process.env.AGENT_REMOTE_VIDEO_TRACE === "1";
+const REMOTE_FRAME_GAP_WARN_MS = 5_000;
+const liveFrameIntake = new Map();
+function recordLiveFrameIntake(sessionId, sequence, byteLength) {
+  const now = Date.now();
+  const stats = liveFrameIntake.get(sessionId) ?? { frames: 0, bytes: 0, firstAt: now, lastAt: 0, lastSeq: null, maxGapMs: 0 };
+  const gapMs = stats.lastAt ? now - stats.lastAt : 0;
+  stats.frames += 1; stats.bytes += byteLength;
+  stats.maxGapMs = Math.max(stats.maxGapMs, stats.lastAt ? gapMs : 0);
+  stats.lastAt = now; stats.lastSeq = sequence;
+  liveFrameIntake.set(sessionId, stats);
+  if (REMOTE_VIDEO_TRACE) {
+    logGlobal("info", "live frame intake", undefined, undefined, { sessionId, sequence, bytes: byteLength, gapMs: gapMs || null });
+  }
+  if (stats.lastAt && gapMs >= REMOTE_FRAME_GAP_WARN_MS) {
+    logGlobal("warn", "live frame gap", undefined, undefined, { sessionId, gapMs, sequence, totalFrames: stats.frames });
+  }
+}
+setInterval(() => {
+  const now = Date.now();
+  for (const [sessionId, stats] of liveFrameIntake) {
+    if (now - stats.lastAt > 120_000) { liveFrameIntake.delete(sessionId); continue; }
+    if (now - stats.lastAt < 60_000) continue;
+    logGlobal("info", "live frame intake stalled", undefined, undefined, { sessionId, ...stats });
+  }
+}, 60_000).unref();
+
 function makeConn(ws) {
+  /** Per-connection JPEG relay accounting for post-hoc network analysis. */
+  const browserFrameRelay = { offered: 0, sent: 0, dropped: 0, acked: 0, bytes: 0, lastAckMs: null, maxAckMs: null, sentAt: null };
   const browserFrameFlow = new ViewerFrameFlow(
-    ({ channelId, sequence, bytes }) => ws.send(encodeLiveFramePacket({
-      type: LIVE_FRAME_PACKET_TYPE.watcherFrame, channelId, sequence, payload: bytes,
-    }), () => browserFrameFlow.flush()),
+    ({ channelId, sequence, bytes }) => {
+      browserFrameRelay.sent += 1;
+      browserFrameRelay.bytes += bytes.byteLength;
+      browserFrameRelay.sentAt = { channelId, sequence, at: Date.now() };
+      ws.send(encodeLiveFramePacket({
+        type: LIVE_FRAME_PACKET_TYPE.watcherFrame, channelId, sequence, payload: bytes,
+      }), () => browserFrameFlow.flush());
+    },
     () => ws.readyState === ws.OPEN && ws.bufferedAmount === 0,
     { maxFrames: 3, maxBytes: 256 * 1024 },
   );
@@ -568,6 +606,7 @@ function makeConn(ws) {
     channelToTerminal: new Map(),
     browserPeer: null,
     browserFrameFlow,
+    browserFrameRelay,
     browserSessionToChannel: new Map(),
     browserChannelToSession: new Map(),
     sendJson(obj) { if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(obj)); },
@@ -588,9 +627,14 @@ function makeConn(ws) {
     },
     sendBrowserFrame(browserSessionId, sequence, bytes) {
       if (ws.readyState !== ws.OPEN) return;
-      browserFrameFlow.offer({
+      const relay = this.browserFrameRelay;
+      relay.offered += 1;
+      const outcome = browserFrameFlow.offer({
         channelId: assignBrowserChannel(this, browserSessionId), sequence, bytes,
       });
+      // "dropped" = the viewer outran the producer: a newer frame replaced this
+      // one before it went out — downstream bandwidth or slow viewer decode.
+      if (outcome === "dropped") relay.dropped += 1;
     },
   };
 }
@@ -779,16 +823,29 @@ const requestHandlers = {
     const session = liveViewRegistry.publish(conn.browserPeer, msg);
     return { session, channelId: assignBrowserChannel(conn, session.id) };
   },
-  "browser:frame": async (msg, conn) => liveViewRegistry.updateFrame(conn.browserPeer, {
-    ...msg,
-    data: typeof msg.data === "string" ? Buffer.from(msg.data, "base64") : msg.data,
-  }),
+  "browser:frame": async (msg, conn) => {
+    const data = typeof msg.data === "string" ? Buffer.from(msg.data, "base64") : msg.data;
+    recordLiveFrameIntake(msg.sessionId, msg.sequence, data.byteLength);
+    return liveViewRegistry.updateFrame(conn.browserPeer, {
+      ...msg,
+      data,
+    });
+  },
   "browser:watch": async (msg, conn) => {
     conn.browserFrameFlow.reset(msg.frameAck === true);
     const session = liveViewRegistry.watch(conn.browserPeer, msg.sessionId);
+    logGlobal("info", "live viewer watching", undefined, undefined, { sessionId: msg.sessionId, userId: conn.principal?.userId ?? null, requireAck: msg.frameAck === true });
     return { session, channelId: assignBrowserChannel(conn, session.id) };
   },
   "browser:frame-ack": async (msg, conn) => {
+    const relay = conn.browserFrameRelay;
+    if (relay.sentAt && relay.sentAt.channelId === msg.channelId && relay.sentAt.sequence === msg.sequence) {
+      const ackMs = Date.now() - relay.sentAt.at;
+      relay.lastAckMs = ackMs;
+      relay.maxAckMs = Math.max(relay.maxAckMs ?? 0, ackMs);
+      relay.acked += 1;
+      relay.sentAt = null;
+    }
     conn.browserFrameFlow.ack(msg.channelId, msg.sequence);
     return { accepted: true };
   },
@@ -1180,7 +1237,7 @@ const pairingGateway = createDevicePairingGateway({ dataDir: serverBaseDir, desk
 if (process.argv.includes("--test-no-pairing")) console.warn("[TEST MODE] 配对已跳过：能访问此端口的用户可直接操作。仅用于受控测试，移除 --test-no-pairing 后恢复认证。");
 // Child runtimes may publish live frames only using this process's local credential.
 process.env.AGENTROAM_LOCAL_SERVICE_TOKEN = desktopDiscovery.headers()["x-agentroam-desktop-token"];
-const remoteAuthorization = new RemoteAuthorization({ registry: liveViewRegistry, userId: anonymousWebStore.getOrCreatePrincipal().userId, dataDir: serverBaseDir, logger: globalLogger });
+const remoteAuthorization = new RemoteAuthorization({ registry: liveViewRegistry, userId: anonymousWebStore.getOrCreatePrincipal().userId, dataDir: serverBaseDir });
 await remoteAuthorization.initialize();
 let serviceReady = false;
 const server = createServer((req, res) => {
@@ -1239,6 +1296,7 @@ wss.on("connection", (ws, _req, principal) => {
       if (livePacket && livePacket.type === LIVE_FRAME_PACKET_TYPE.producerFrame) {
         const browserSessionId = conn.browserChannelToSession.get(livePacket.channelId);
         if (!browserSessionId) return;
+        recordLiveFrameIntake(browserSessionId, livePacket.sequence, livePacket.payload.byteLength);
         try {
           liveViewRegistry.updateFrame(conn.browserPeer, {
             sessionId: browserSessionId,
@@ -1286,6 +1344,15 @@ wss.on("connection", (ws, _req, principal) => {
 
   ws.on("close", () => {
     conn.browserFrameFlow.reset(false);
+    const relay = conn.browserFrameRelay;
+    if (relay.offered > 0) {
+      logGlobal("info", "live relay closed for viewer", undefined, undefined, {
+        connId: conn.id, userId: conn.principal?.userId ?? null,
+        offered: relay.offered, sent: relay.sent, dropped: relay.dropped, acked: relay.acked,
+        bytes: relay.bytes, lastAckMs: relay.lastAckMs, maxAckMs: relay.maxAckMs,
+        unackedOnClose: relay.sentAt ? 1 : 0,
+      });
+    }
     // Close an established peer-to-peer media path as well as the relay socket.
     // Signaling must be sent before disconnect releases the controller identity.
     if (conn.browserPeer.watchedSessionId) {

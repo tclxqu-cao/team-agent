@@ -30,6 +30,18 @@ describe('remote video signal boundary', () => {
     expect(() => parseViewerRemoteVideoSignal({ kind: 'audio-microphone', sequence: 1, sampleRate: 48000, channels: 2, data: 'AAE=' })).toThrow();
   });
 
+  it('accepts bounded viewer trace events and rejects malformed ones', () => {
+    expect(parseViewerRemoteVideoSignal({
+      kind: 'viewer-trace', event: 'jpeg-fallback', silentForMs: 10_000,
+      sample: { lossRate: 0.01, rttMs: 42, codec: 'H264', fps: 0 },
+    })).toMatchObject({ kind: 'viewer-trace', event: 'jpeg-fallback' });
+    expect(parseViewerRemoteVideoSignal({ kind: 'viewer-trace', event: 'stall-recovered' })).toMatchObject({ event: 'stall-recovered' });
+    expect(() => parseViewerRemoteVideoSignal({ kind: 'viewer-trace' })).toThrow();
+    expect(() => parseViewerRemoteVideoSignal({ kind: 'viewer-trace', event: 'x'.repeat(80) })).toThrow();
+    expect(() => parseViewerRemoteVideoSignal({ kind: 'viewer-trace', event: 'jpeg-fallback', silentForMs: -5 })).toThrow();
+    expect(() => parseViewerRemoteVideoSignal({ kind: 'viewer-trace', event: 'jpeg-fallback', sample: { lossRate: 9 } })).toThrow();
+  });
+
   it('accepts credentialed TURN offers and rejects transport DTO errors', () => {
     expect(parseProducerRemoteVideoSignal({
       kind: 'offer', sdp: { type: 'offer', sdp: 'v=0' }, selectedProfile: 'high',

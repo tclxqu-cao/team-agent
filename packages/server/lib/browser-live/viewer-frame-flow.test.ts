@@ -45,4 +45,22 @@ describe("viewer frame flow", () => {
     flow.reset(true); flow.ack(1, 1); expect(send).toHaveBeenCalledTimes(1);
     flow.offer(frame(3)); expect(send.mock.calls.at(-1)?.[0].sequence).toBe(3);
   });
+  it("reports each offer outcome so relay logging can tell drops from sends", () => {
+    const send = vi.fn(); let writable = true;
+    const flow = new ViewerFrameFlow(send, () => writable);
+    flow.reset(true);
+    expect(flow.offer(frame(1))).toBe("sent");
+    // In-flight: the next frame queues, and a third replaces it before it ever
+    // went out — that replacement is the "dropped" outcome.
+    expect(flow.offer(frame(2))).toBe("queued");
+    expect(flow.offer(frame(3))).toBe("dropped");
+    expect(send).toHaveBeenCalledTimes(1);
+    // An unsent frame still pending when the socket turns unwritable is
+    // likewise replaced (dropped), while a first frame only queues.
+    writable = false;
+    expect(flow.offer(frame(4))).toBe("dropped");
+    const blocked = new ViewerFrameFlow(send, () => false);
+    blocked.reset(true);
+    expect(blocked.offer(frame(1))).toBe("queued");
+  });
 });
