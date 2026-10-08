@@ -1,0 +1,60 @@
+packages/webapp/package.json
+  s_3d8cb399d47d29::t_d481a5dc41747e 17
+  s_3d8cb399d47d29::t_52db1054077e51 16
+packages/mobile/capacitor.config.ts
+  s_3d8cb399d47d29::t_52db1054077e51 17-21
+packages/mobile/android/app/capacitor.build.gradle
+  s_3d8cb399d47d29::t_f4cf85ce391321 12
+packages/webapp/src/presentation/web.css
+  s_3d8cb399d47d29::t_e2a2ffb50170d6 64-67
+packages/webapp/src/mobile/infrastructure/native-status-bar.test.ts
+  s_3d8cb399d47d29::t_656da489e198d3 32,68-69,82,114
+  s_3d8cb399d47d29::t_e2a2ffb50170d6 1-31,33-67,70-81,83-113,115-135
+packages/webapp/src/main.tsx
+  s_3d8cb399d47d29::t_d481a5dc41747e 1,40
+  s_3d8cb399d47d29::t_e2a2ffb50170d6 31,51-52
+packages/mobile/package.json
+  s_3d8cb399d47d29::t_52db1054077e51 20
+packages/webapp/src/types.d.ts
+  s_3d8cb399d47d29::t_d17ca494d64343 23,26
+packages/mobile/android/app/src/main/res/values-v35/styles.xml
+  s_3d8cb399d47d29::t_e2a2ffb50170d6 1-16
+packages/mobile/android/capacitor.settings.gradle
+  s_3d8cb399d47d29::t_f4cf85ce391321 5-7
+packages/webapp/src/infrastructure/browser-compatibility.ts
+  s_3d8cb399d47d29::t_d481a5dc41747e 1-22
+packages/webapp/src/mobile/infrastructure/native-status-bar.ts
+  s_3d8cb399d47d29::t_e2a2ffb50170d6 1-16,18-25,27-47
+  s_3d8cb399d47d29::t_656da489e198d3 17,26
+packages/mobile/android/app/src/main/res/values/styles.xml
+  s_3d8cb399d47d29::t_e2a2ffb50170d6 21,23
+packages/webapp/src/infrastructure/browser-compatibility.test.ts
+  s_3d8cb399d47d29::t_17950499a129ea 30,37
+  s_3d8cb399d47d29::t_d481a5dc41747e 1-29,31-36,38-70
+bun.lock
+  s_3b383df44f958c::t_db8265b2085413 17,43,47,102,124,128,194,201,224,226,346-347,920-921
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "be4ffd81f0de26b5bc299484961ffe55b7e119b7",
+  "prompts": {},
+  "sessions": {
+    "s_3b383df44f958c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a11b39-9f83-7833-bbc8-f75dc4933eb4",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_3d8cb399d47d29": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0e624-4280-7c10-be74-3f8e283b70c2",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
