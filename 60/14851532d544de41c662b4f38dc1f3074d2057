@@ -1,0 +1,46 @@
+packages/desktop/main/index.ts
+  h_86bb4e0e04237b 324-335
+packages/desktop/main/preload.ts
+  h_86bb4e0e04237b 33-34
+packages/desktop/renderer/App.tsx
+  h_86bb4e0e04237b 7,2106
+packages/desktop/renderer/components/ChatHeaderActions.test.ts
+  h_86bb4e0e04237b 49-79
+packages/desktop/renderer/components/ChatHeaderActions.tsx
+  h_86bb4e0e04237b 1-38,49,67,75,87,91,94-107,121-131
+packages/desktop/renderer/components/ChatView.tsx
+  h_86bb4e0e04237b 430,517,3810
+packages/desktop/renderer/global.d.ts
+  h_86bb4e0e04237b 252-253
+packages/desktop/renderer/lib/desktop-live-setup.test.ts
+  h_86bb4e0e04237b 1-49
+packages/desktop/renderer/lib/desktop-live-setup.ts
+  h_86bb4e0e04237b 1-19
+packages/desktop/renderer/lib/flow-studio-entry.test.ts
+  h_86bb4e0e04237b 1-23
+packages/desktop/renderer/lib/flow-studio-entry.ts
+  h_86bb4e0e04237b 1-50
+packages/desktop/renderer/lib/shared-service.test.ts
+  h_86bb4e0e04237b 45-55
+packages/desktop/renderer/lib/shared-service.ts
+  h_86bb4e0e04237b 94
+packages/server/app/api/flow-studio/config/route.test.ts
+  h_86bb4e0e04237b 1-28
+packages/server/app/api/flow-studio/config/route.ts
+  h_86bb4e0e04237b 1-16
+packages/server/app/web/AiHubPane.test.tsx
+  h_86bb4e0e04237b 164-173
+packages/server/app/web/page.tsx
+  h_86bb4e0e04237b 8,47-48,378-391,540-548
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "6014851532d544de41c662b4f38dc1f3074d2057",
+  "prompts": {},
+  "humans": {
+    "h_86bb4e0e04237b": {
+      "author": "caoqu <qu.cao@ly.com>"
+    }
+  }
+}
