@@ -82,6 +82,20 @@ describe("runServiceCommand", () => {
     expect(qr).toContain("\n");
   });
 
+  it("finishes installer Desktop setup before creating a fresh pairing code", async () => {
+    const order: string[] = [];
+    const desktopSetup = vi.fn(async () => { order.push("desktop"); });
+    const pairingPrinter = vi.fn(async () => { order.push("pairing"); });
+    await runServiceCommand({ ...options("install"), desktopSetup: true }, {
+      platform: "darwin", nodePath: "/node", nodeVersion: "22.22.0", cliPath: "/agentroam.mjs", version: "test",
+      environment: {}, log: vi.fn(), desktopSetup, pairingPrinter,
+      controller: controller({ install: vi.fn(async () => ({ definition: "service", state: { status: "ready", accessUrl: "https://ready.example/web" } })) }),
+      codexResolver: vi.fn(async () => ({ executable: "/managed/codex", version: "test", source: "global" as const })),
+    });
+    expect(order).toEqual(["desktop", "pairing"]);
+    expect(desktopSetup).toHaveBeenCalledWith(expect.objectContaining({ desktopSetup: true }), expect.objectContaining({ service: expect.objectContaining({ codexPath: "/managed/codex" }) }));
+  });
+
   it("keeps service output QR-free when piped or when --no-qr is set", async () => {
     const log = vi.fn();
     const start = vi.fn(async () => ({ status: "ready", accessUrl: "https://ready.example/web" }));

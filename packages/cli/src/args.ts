@@ -2,7 +2,7 @@ import { homedir } from "node:os";
 import { resolve } from "node:path";
 
 export type RelayMode = "auto" | "cloudflare" | "pinggy" | "custom";
-export type CliCommand = "start" | "doctor" | "version" | "service" | "unlock-service" | "update" | "update-worker" | "pair" | "devices" | "revoke" | "approvals" | "approve" | "deny" | "lock" | "unlock" | "audit";
+export type CliCommand = "start" | "doctor" | "version" | "service" | "unlock-service" | "update" | "update-worker" | "pair" | "devices" | "revoke" | "approvals" | "approve" | "deny" | "lock" | "unlock" | "audit" | "codex-desktop";
 export type ServiceAction = "install" | "start" | "stop" | "status" | "url" | "logs" | "restart" | "uninstall";
 export type UnlockServiceAction = "install" | "uninstall" | "status";
 
@@ -25,12 +25,15 @@ export interface CliOptions {
   pairingUrl?: string;
   updateVersion?: string | null;
   updateStateFile?: string | null;
+  desktopDryRun?: boolean;
+  desktopRestart?: boolean;
+  desktopSetup?: boolean;
 }
 
 export function parseArgs(argv: string[]): CliOptions {
   const values = [...argv];
   let command: CliOptions["command"] = "start";
-  if (values[0] && ["start", "doctor", "version", "service", "unlock-service", "update", "update-worker", "pair", "devices", "revoke", "approvals", "approve", "deny", "lock", "unlock", "audit"].includes(values[0])) {
+  if (values[0] && ["start", "doctor", "version", "service", "unlock-service", "update", "update-worker", "pair", "devices", "revoke", "approvals", "approve", "deny", "lock", "unlock", "audit", "codex-desktop"].includes(values[0])) {
     command = values.shift() as CliOptions["command"];
   }
   let serviceAction: ServiceAction | null = null;
@@ -92,12 +95,19 @@ export function parseArgs(argv: string[]): CliOptions {
 
   for (let index = 0; index < values.length && command !== "update-worker"; index++) {
     const arg = values[index];
+    if (command === "codex-desktop" && !["--restart", "--dry-run", "--setup", "--data-dir", "--help", "-h"].includes(arg!)) {
+      throw cliError("codex-desktop accepts only --setup, --restart, --dry-run and --data-dir");
+    }
     const next = () => {
       const value = values[++index];
       if (!value) throw cliError(`missing value for ${arg}`);
       return value;
     };
-    if (arg === "--url" && command === "pair") options.pairingUrl = next();
+    if (arg === "--restart" && command === "codex-desktop") options.desktopRestart = true;
+    else if (arg === "--dry-run" && command === "codex-desktop") options.desktopDryRun = true;
+    else if (arg === "--setup" && command === "codex-desktop") options.desktopSetup = true;
+    else if (arg === "--setup-codex-desktop" && command === "service" && serviceAction === "install") options.desktopSetup = true;
+    else if (arg === "--url" && command === "pair") options.pairingUrl = next();
     else if (arg === "--root") options.roots.push(resolve(next()));
     else if (arg === "--port") {
       const port = Number(next());
@@ -120,6 +130,9 @@ export function parseArgs(argv: string[]): CliOptions {
   }
 
   if (command === "approve" && !options.approvalPhrase) throw cliError("approve requires --phrase matching the phone");
+  if (command === "codex-desktop" && options.desktopSetup && (options.desktopRestart || options.desktopDryRun)) {
+    throw cliError("--setup cannot be combined with --restart or --dry-run");
+  }
 
   if (command === "update" && updateVersion && !/^\d+\.\d+\.\d+$/.test(updateVersion)) {
     throw cliError("update version must be an exact stable X.Y.Z version");

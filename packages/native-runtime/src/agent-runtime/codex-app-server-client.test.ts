@@ -229,7 +229,7 @@ describe("CodexAppServerClient", () => {
     expect(client.mode).toBeNull();
   });
 
-  it("starts the shared daemon before proxying JSON-RPC by default", async () => {
+  it.each(["unavailable", "handshake failure"])("starts shared when Desktop is %s", async (desktopFailure) => {
     const daemon = fakeProcess(1001);
     const proxy = fakeProcess(1002);
     handleWebSocketJsonRpc(proxy, {
@@ -246,6 +246,9 @@ describe("CodexAppServerClient", () => {
     });
     const client = new CodexAppServerClient({
       spawnProcess: spawnProcess as never,
+      resolveDesktopEndpoint: async () => desktopFailure === "unavailable" ? null : {
+        webSocketUrl: "ws+unix://localhost/nonexistent-agentroam-desktop.sock:/rpc",
+      },
       environment: { NO_PROXY: "*.gptdy.17usoft.com" },
       requestTimeoutMs: 1000,
     });
@@ -285,6 +288,7 @@ describe("CodexAppServerClient", () => {
     });
     const client = new CodexAppServerClient({
       spawnProcess: spawnProcess as never,
+      resolveDesktopEndpoint: async () => null,
       requestTimeoutMs: 1000,
     });
     const onExit = vi.fn();
@@ -313,6 +317,7 @@ describe("CodexAppServerClient", () => {
     });
     const client = new CodexAppServerClient({
       spawnProcess: spawnProcess as never,
+      resolveDesktopEndpoint: async () => null,
       requestTimeoutMs: 1000,
       startupTimeoutMs: 5,
     });
@@ -352,6 +357,7 @@ describe("CodexAppServerClient", () => {
     });
     const client = new CodexAppServerClient({
       spawnProcess: spawnProcess as never,
+      resolveDesktopEndpoint: async () => null,
       requestTimeoutMs: 1000,
     });
 
@@ -384,6 +390,7 @@ describe("CodexAppServerClient", () => {
     });
     const client = new CodexAppServerClient({
       spawnProcess: spawnProcess as never,
+      resolveDesktopEndpoint: async () => null,
       requestTimeoutMs: 1000,
       startupTimeoutMs: 5,
     });
@@ -417,6 +424,7 @@ describe("CodexAppServerClient", () => {
     });
     const client = new CodexAppServerClient({
       spawnProcess: spawnProcess as never,
+      resolveDesktopEndpoint: async () => null,
       requestTimeoutMs: 1000,
     });
     const onExit = vi.fn();
@@ -454,6 +462,7 @@ describe("CodexAppServerClient", () => {
     });
     const client = new CodexAppServerClient({
       spawnProcess: spawnProcess as never,
+      resolveDesktopEndpoint: async () => null,
       requestTimeoutMs: 1000,
     });
 
@@ -486,6 +495,7 @@ describe("CodexAppServerClient", () => {
     });
     const client = new CodexAppServerClient({
       spawnProcess: spawnProcess as never,
+      resolveDesktopEndpoint: async () => null,
       requestTimeoutMs: 1000,
     });
     const onExit = vi.fn();
@@ -497,5 +507,26 @@ describe("CodexAppServerClient", () => {
     });
     expect(onExit).not.toHaveBeenCalled();
     await client.dispose();
+  });
+
+  it("cleans up an owned child returned after startup was cancelled", async () => {
+    const child = fakeProcess(7001);
+    let release!: (child: FakeProcess) => void;
+    const launch = vi.fn(() => new Promise<FakeProcess>((resolve) => { release = resolve; }));
+    const fallback = vi.fn();
+    const client = new CodexAppServerClient({ launcher: {
+      attempts: () => [
+        { mode: "shared", launch: launch as never },
+        { mode: "standalone", launch: fallback },
+      ],
+    } });
+    const request = client.request("thread/list", {});
+    const rejected = expect(request).rejects.toMatchObject({ code: "RUNTIME_UNAVAILABLE" });
+    await client.dispose();
+    release(child);
+    await rejected;
+    expect(child.killSignals).toEqual(["SIGTERM"]);
+    expect(fallback).not.toHaveBeenCalled();
+    expect(client.mode).toBeNull();
   });
 });

@@ -259,7 +259,13 @@ fi
 if [ "${AGENTROAM_INSTALL_SKIP_SERVICE:-}" = "1" ]; then
   printf 'AgentRoam service registration skipped for isolated verification.\n'
 else
-  "$NODE_BIN" "$entry" service install --root "$SERVICE_ROOT" --data-dir "$DATA_DIR"
+  codex_setup_module="$(dirname "$entry")/../dist/codex-desktop-setup.js"
+  if [ -f "$codex_setup_module" ]; then
+    "$NODE_BIN" "$entry" service install --root "$SERVICE_ROOT" --data-dir "$DATA_DIR" --setup-codex-desktop
+  else
+    printf '当前发布的 CLI 尚未包含官方 Codex 桌面共享配置；扫码可连接 AgentRoam，原桌面会话暂未共享，请升级 CLI 后重试。\n'
+    "$NODE_BIN" "$entry" service install --root "$SERVICE_ROOT" --data-dir "$DATA_DIR"
+  fi
 fi
 printf '\nAgentRoam %s installed: %s\n' "$AGENTROAM_VERSION" "$WRAPPER_PATH"
 case ":${PATH:-}:" in

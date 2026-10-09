@@ -12,6 +12,23 @@ describe("parseArgs", () => {
     expect(value.relay).toBe("auto");
   });
 
+  it("makes Desktop restart explicit and limits its command options", () => {
+    expect(parseArgs(["codex-desktop"])).toMatchObject({ command: "codex-desktop" });
+    expect(parseArgs(["codex-desktop"]).desktopRestart).toBeUndefined();
+    expect(parseArgs(["codex-desktop", "--restart", "--dry-run", "--data-dir", "/tmp/agentroam"]))
+      .toMatchObject({ desktopRestart: true, desktopDryRun: true, dataDir: "/tmp/agentroam" });
+    expect(() => parseArgs(["start", "--restart"])).toThrow("unknown argument");
+    expect(() => parseArgs(["codex-desktop", "--local-only"])).toThrow("accepts only");
+  });
+
+  it("limits installation setup flags to their intended commands", () => {
+    expect(parseArgs(["codex-desktop", "--setup"]).desktopSetup).toBe(true);
+    expect(parseArgs(["service", "install", "--setup-codex-desktop"]).desktopSetup).toBe(true);
+    expect(() => parseArgs(["start", "--setup-codex-desktop"])).toThrow("unknown argument");
+    expect(() => parseArgs(["codex-desktop", "--setup", "--dry-run"])).toThrow("cannot be combined");
+    expect(() => parseArgs(["codex-desktop", "--setup", "--restart"])).toThrow("cannot be combined");
+  });
+
   it("parses Windows unlock service actions", () => {
     for (const action of ["install", "uninstall", "status"] as const) {
       expect(parseArgs(["unlock-service", action])).toMatchObject({ command: "unlock-service", unlockServiceAction: action });

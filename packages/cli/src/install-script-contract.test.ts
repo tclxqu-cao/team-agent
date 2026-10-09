@@ -60,6 +60,37 @@ describe("standalone installer contracts", () => {
     }
   });
 
+  it.skipIf(process.platform === "win32")("opts into Desktop setup only when the installed launcher ships it", async () => {
+    const root = await mkdtemp("/tmp/agentroam-install-desktop-");
+    try {
+      const script = await readFile(resolve(installRoot, "install-agentroam.sh"), "utf8");
+      const start = script.indexOf('if ! "$NODE_BIN" "$entry" doctor');
+      const node = resolve(root, "node");
+      const calls = resolve(root, "calls");
+      const entry = resolve(root, "bin/agentroam.mjs");
+      const setupModule = resolve(root, "dist/codex-desktop-setup.js");
+      await mkdir(resolve(root, "bin"));
+      await mkdir(resolve(root, "dist"));
+      await writeFile(node, '#!/bin/sh\nprintf "%s\\n" "$*" >> "$TEST_CALLS"\n');
+      await chmod(node, 0o755);
+      for (const supported of [false, true]) {
+        if (supported) await writeFile(setupModule, "packaged module");
+        await writeFile(calls, "");
+        const result = spawnSync("/bin/sh", ["-c", `set -eu\n${script.slice(start)}`], {
+          encoding: "utf8", input: "not-a-restart-confirmation\n",
+          env: { ...process.env, NODE_BIN: node, entry, DATA_DIR: root, SERVICE_ROOT: root,
+            WRAPPER_PATH: "agentroam", WRAPPER_DIR: root, AGENTROAM_VERSION: "test",
+            AGENTROAM_INSTALL_SKIP_SERVICE: "0", AGENTROAM_INSTALL_DESKTOP: "no", TEST_CALLS: calls },
+        });
+        expect(result.status).toBe(0);
+        const recorded = await readFile(calls, "utf8");
+        expect(recorded.includes("--setup-codex-desktop")).toBe(supported);
+        expect(recorded).toContain(`service install --root ${root} --data-dir ${root}`);
+        expect(result.stdout.includes("原桌面会话暂未共享")).toBe(!supported);
+      }
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
   it("keeps the macOS installer aligned with the runtime manifest", async () => {
     const scriptPath = resolve(installRoot, "install-agentroam.sh");
     const script = await readFile(scriptPath, "utf8");

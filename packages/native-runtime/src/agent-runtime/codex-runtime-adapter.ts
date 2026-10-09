@@ -249,9 +249,11 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
       || (options.environment === undefined
         ? process.env.AGENT_CODEX_RUNTIME_ERROR?.trim()
         : undefined);
-    this.client = options.client ?? new CodexAppServerClient({ executable: this.codexExecutable });
+    this.client = options.client ?? new CodexAppServerClient({
+      executable: this.codexExecutable, environment: options.environment,
+    });
     this.discoveryClient = options.discoveryClient
-      ?? new CodexAppServerClient({ executable: this.codexExecutable });
+      ?? new CodexAppServerClient({ executable: this.codexExecutable, environment: options.environment });
     this.codexHome = resolveCodexHome(options.environment, options.homeDir);
     this.sessionRoot = options.sessionRoot ?? join(this.codexHome, "sessions");
     this.imageStorageRoot = options.imageStorageRoot ?? join(this.codexHome, "agentroam-images");

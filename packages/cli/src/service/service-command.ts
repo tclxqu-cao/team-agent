@@ -11,6 +11,7 @@ import type { ServiceController } from "./service-controller.js";
 import { WindowsTaskService } from "./windows-task-service.js";
 import { assertSupportedNodeVersion } from "../../bin/runtime-policy.mjs";
 import { cleanupOldLaunchers } from "./launcher-cleanup.js";
+import { setupCodexDesktop } from "../codex-desktop-setup.js";
 
 interface ServiceCommandContext {
   platform?: NodeJS.Platform;
@@ -28,6 +29,7 @@ interface ServiceCommandContext {
   pairingPrinter?: typeof printPairingCode;
   controller?: ServiceController;
   launchAgent?: MacLaunchAgent;
+  desktopSetup?: typeof setupCodexDesktop;
 }
 
 export async function runServiceCommand(options: CliOptions, context: ServiceCommandContext): Promise<void> {
@@ -84,8 +86,12 @@ export async function runServiceCommand(options: CliOptions, context: ServiceCom
       };
       const { definition, state } = await controller.install(config);
       log(`✓ AgentRoam service installed: ${definition}`);
+      if (platform === "darwin" && !options.desktopSetup) log("官方 Codex 桌面共享后端：agentroam codex-desktop --setup；预演：agentroam codex-desktop --dry-run。");
       if (state?.status === "ready" && state.version === config.version) await cleanupOldLaunchers(config, log);
       if (state?.localUrl && state.status !== "stopped") printLocalDesktopUrl(state.localUrl, log, platform);
+      if (options.desktopSetup && platform === "darwin") {
+        await (context.desktopSetup ?? setupCodexDesktop)(options, { platform, environment, service: config, log });
+      }
       if (state?.status === "ready" && state.accessUrl) {
         log(`Open: ${state.accessUrl}`);
         await (context.pairingPrinter ?? printPairingCode)(options.dataDir, log, { accessUrl: state.accessUrl, qr: options.qr, interactive: stdoutIsTTY });

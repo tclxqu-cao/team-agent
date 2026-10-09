@@ -1,4 +1,5 @@
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
+import { createConnection } from "node:net";
 import { Duplex } from "node:stream";
 import WebSocket from "ws";
 
@@ -8,6 +9,18 @@ type ProxySocket = Duplex & {
   setNoDelay(noDelay?: boolean): ProxySocket;
   setTimeout(timeout: number, callback?: () => void): ProxySocket;
 };
+
+export function createCodexDesktopWebSocket(url: string, handshakeTimeoutMs: number): WebSocket {
+  const address = new URL(url);
+  const socketPath = address.protocol === "ws+unix:"
+    ? decodeURIComponent(address.pathname.split(":")[0]!)
+    : null;
+  return new WebSocket(url, {
+    ...(socketPath ? { createConnection: (() => createConnection({ path: socketPath })) as never } : {}),
+    handshakeTimeout: handshakeTimeoutMs,
+    perMessageDeflate: false,
+  });
+}
 
 export function createCodexProxyWebSocket(
   child: ChildProcessWithoutNullStreams,

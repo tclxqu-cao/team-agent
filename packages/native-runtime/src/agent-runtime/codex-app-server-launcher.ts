@@ -1,10 +1,16 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import {
+  discoverCodexDesktopEndpoint,
+  type CodexDesktopEndpoint,
+  type CodexDesktopEndpointResolver,
+} from "./codex-desktop-endpoint.js";
 
-export type CodexAppServerLaunchMode = "shared" | "standalone";
+export type CodexAppServerLaunchMode = "desktop" | "shared" | "standalone";
+export type CodexAppServerConnection = ChildProcessWithoutNullStreams | CodexDesktopEndpoint;
 
 export interface CodexAppServerLaunchAttempt {
   readonly mode: CodexAppServerLaunchMode;
-  launch(): Promise<ChildProcessWithoutNullStreams>;
+  launch(): Promise<CodexAppServerConnection>;
 }
 
 export interface CodexAppServerLauncher {
@@ -20,6 +26,18 @@ export interface CodexAppServerLauncherOptions {
 
 const DEFAULT_DAEMON_START_TIMEOUT_MS = 10_000;
 const MAX_STDERR_LENGTH = 4_096;
+
+export class DesktopCodexAppServerLauncher implements CodexAppServerLaunchAttempt {
+  readonly mode = "desktop" as const;
+
+  constructor(private readonly resolveEndpoint: CodexDesktopEndpointResolver = discoverCodexDesktopEndpoint) {}
+
+  async launch(): Promise<CodexDesktopEndpoint> {
+    const endpoint = await this.resolveEndpoint();
+    if (!endpoint) throw new Error("Codex Desktop has no connectable app-server endpoint");
+    return endpoint;
+  }
+}
 
 export class SharedCodexAppServerLauncher implements CodexAppServerLaunchAttempt {
   readonly mode = "shared" as const;
@@ -75,13 +93,14 @@ export class StandaloneCodexAppServerLauncher implements CodexAppServerLaunchAtt
 }
 
 export class FallbackCodexAppServerLauncher implements CodexAppServerLauncher {
-  constructor(
-    private readonly shared: CodexAppServerLaunchAttempt,
-    private readonly standalone: CodexAppServerLaunchAttempt,
-  ) {}
+  constructor(...attempts: CodexAppServerLaunchAttempt[]) {
+    this.launchAttempts = attempts;
+  }
+
+  private readonly launchAttempts: readonly CodexAppServerLaunchAttempt[];
 
   attempts(): readonly CodexAppServerLaunchAttempt[] {
-    return [this.shared, this.standalone];
+    return this.launchAttempts;
   }
 }
 

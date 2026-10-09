@@ -2,13 +2,15 @@ import { logGlobal } from "@agent/core";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import WebSocket, { type RawData } from "ws";
 import {
+  DesktopCodexAppServerLauncher,
   FallbackCodexAppServerLauncher,
   SharedCodexAppServerLauncher,
   StandaloneCodexAppServerLauncher,
   type CodexAppServerLauncher,
   type CodexAppServerLaunchMode,
 } from "./codex-app-server-launcher.js";
-import { createCodexProxyWebSocket } from "./codex-app-server-websocket.js";
+import { createCodexDesktopWebSocket, createCodexProxyWebSocket } from "./codex-app-server-websocket.js";
+import { discoverCodexDesktopEndpoint, type CodexDesktopEndpointResolver } from "./codex-desktop-endpoint.js";
 import { RuntimeSessionError } from "./types.js";
 
 export type RpcId = number | string;
@@ -28,6 +30,7 @@ export interface CodexAppServerClientOptions {
   environment?: NodeJS.ProcessEnv;
   launcher?: CodexAppServerLauncher;
   startupTimeoutMs?: number;
+  resolveDesktopEndpoint?: CodexDesktopEndpointResolver;
 }
 
 export class CodexAppServerClient {
@@ -42,6 +45,7 @@ export class CodexAppServerClient {
   private buffer = "";
   private nextId = 1;
   private disposed = false;
+  private startGeneration = 0;
   private readonly pending = new Map<RpcId, PendingRequest>();
   private readonly notificationListeners = new Set<(message: RpcNotification) => void>();
   private readonly exitListeners = new Set<(error: Error) => void>();
@@ -57,6 +61,8 @@ export class CodexAppServerClient {
       startupTimeoutMs: options.startupTimeoutMs,
     };
     this.launcher = options.launcher ?? new FallbackCodexAppServerLauncher(
+      new DesktopCodexAppServerLauncher(options.resolveDesktopEndpoint
+        ?? (() => discoverCodexDesktopEndpoint({ environment: launchOptions.environment }))),
       new SharedCodexAppServerLauncher(launchOptions),
       new StandaloneCodexAppServerLauncher(launchOptions),
     );
@@ -99,6 +105,7 @@ export class CodexAppServerClient {
 
   async restart(): Promise<void> {
     await this.stop();
+    await this.startPromise?.catch(() => undefined);
     this.disposed = false;
     await this.ensureStarted();
   }
@@ -109,10 +116,11 @@ export class CodexAppServerClient {
   }
 
   private async ensureStarted(): Promise<void> {
-    if (this.process && !this.process.killed && this.processReady) return;
     if (this.disposed) {
       throw new RuntimeSessionError("Codex App Server is disposed", "RUNTIME_UNAVAILABLE");
     }
+    if (this.processReady && (this.webSocket?.readyState === WebSocket.OPEN
+      || (this.process && !this.process.killed))) return;
     if (!this.startPromise) {
       this.startPromise = this.start().finally(() => { this.startPromise = null; });
     }
@@ -120,16 +128,30 @@ export class CodexAppServerClient {
   }
 
   private async start(): Promise<void> {
+    const generation = this.startGeneration;
     const failures: Array<{ mode: CodexAppServerLaunchMode; error: Error }> = [];
     for (const attempt of this.launcher.attempts()) {
       try {
         console.log(`[codex-app-server-client] starting ${attempt.mode} transport`);
-        const child = await attempt.launch();
-        await this.attachProcess(child, attempt.mode);
+        this.assertStartCurrent(generation);
+        const connection = await attempt.launch();
+        if (generation !== this.startGeneration || this.disposed) {
+          if (!("webSocketUrl" in connection) && !connection.killed) connection.kill("SIGTERM");
+          this.assertStartCurrent(generation);
+        }
+        if ("webSocketUrl" in connection) {
+          await this.attachWebSocket(createCodexDesktopWebSocket(
+            connection.webSocketUrl, this.proxyWebSocketHandshakeTimeoutMs,
+          ));
+        } else {
+          await this.attachProcess(connection, attempt.mode);
+        }
+        this.assertStartCurrent(generation);
         await this.sendRequest("initialize", {
           clientInfo: { name: "customer-agent", title: "Customer Agent", version: "0.1.0" },
           capabilities: { experimentalApi: true },
-        });
+        }, this.proxyWebSocketHandshakeTimeoutMs);
+        this.assertStartCurrent(generation);
         this.write({ method: "initialized", params: {} });
         this.processReady = true;
         this.activeMode = attempt.mode;
@@ -141,7 +163,8 @@ export class CodexAppServerClient {
         const failure = toError(error);
         failures.push({ mode: attempt.mode, error: failure });
         console.warn(`[codex-app-server-client] ${attempt.mode} startup failed: ${failure.message}`);
-        await this.stop();
+        await this.stopTransport();
+        this.assertStartCurrent(generation);
       }
     }
 
@@ -156,6 +179,12 @@ export class CodexAppServerClient {
     }
     if (finalFailure instanceof RuntimeSessionError) throw finalFailure;
     throw new RuntimeSessionError(finalFailure.message, "RUNTIME_UNAVAILABLE");
+  }
+
+  private assertStartCurrent(generation: number): void {
+    if (this.disposed || generation !== this.startGeneration) {
+      throw new RuntimeSessionError("Codex App Server startup cancelled", "RUNTIME_UNAVAILABLE");
+    }
   }
 
   private async attachProcess(
@@ -182,15 +211,16 @@ export class CodexAppServerClient {
     });
 
     if (mode === "shared") {
-      await this.attachSharedWebSocket(child);
+      await this.attachWebSocket(
+        createCodexProxyWebSocket(child, this.proxyWebSocketHandshakeTimeoutMs), child,
+      );
       return;
     }
     child.stdout.setEncoding("utf8");
     child.stdout.on("data", (chunk: string) => this.handleStdout(child, chunk));
   }
 
-  private attachSharedWebSocket(child: ChildProcessWithoutNullStreams): Promise<void> {
-    const socket = createCodexProxyWebSocket(child, this.proxyWebSocketHandshakeTimeoutMs);
+  private attachWebSocket(socket: WebSocket, child?: ChildProcessWithoutNullStreams): Promise<void> {
     this.webSocket = socket;
 
     return new Promise<void>((resolve, reject) => {
@@ -206,7 +236,7 @@ export class CodexAppServerClient {
       socket.on("message", (data: RawData, isBinary: boolean) => {
         if (this.webSocket !== socket) return;
         if (isBinary) {
-          console.warn("[codex-app-server shared] Ignoring binary WebSocket message");
+          console.warn("[codex-app-server] Ignoring binary WebSocket message");
           return;
         }
         const line = data.toString().trim();
@@ -220,8 +250,8 @@ export class CodexAppServerClient {
           return;
         }
         if (state === "open" && this.webSocket === socket) {
-          this.handleExit(child, error);
-          if (!child.killed) child.kill("SIGTERM");
+          this.handleTransportExit(error);
+          if (child && !child.killed) child.kill("SIGTERM");
         }
       });
       socket.on("close", (code, reason) => {
@@ -236,16 +266,16 @@ export class CodexAppServerClient {
           return;
         }
         if (state === "open" && this.webSocket === socket) {
-          this.handleExit(child, error);
-          if (!child.killed) child.kill("SIGTERM");
+          this.handleTransportExit(error);
+          if (child && !child.killed) child.kill("SIGTERM");
         }
       });
       socket.once("open", () => {
         clearTimeout(handshakeTimer);
         if (state !== "connecting") return;
-        if (this.webSocket !== socket || this.process !== child) {
+        if (this.webSocket !== socket || (child && this.process !== child)) {
           state = "failed";
-          reject(new Error("Codex App Server proxy closed during WebSocket handshake"));
+          reject(new Error("Codex App Server connection closed during WebSocket handshake"));
           return;
         }
         state = "open";
@@ -254,7 +284,7 @@ export class CodexAppServerClient {
     });
   }
 
-  private sendRequest<T>(method: string, params: unknown): Promise<T> {
+  private sendRequest<T>(method: string, params: unknown, timeoutMs = this.requestTimeoutMs): Promise<T> {
     const id = this.nextId++;
     console.log(`[codex-app-server-client ${new Date().toISOString().slice(11,23)}] -> ${method} (id=${id})`);
     return new Promise<T>((resolve, reject) => {
@@ -262,7 +292,7 @@ export class CodexAppServerClient {
         console.log(`[codex-app-server-client] TIMEOUT ${method} (id=${id})`);
         this.pending.delete(id);
         reject(new RuntimeSessionError(`Codex request timed out: ${method}`, "NATIVE_PROTOCOL_ERROR"));
-      }, this.requestTimeoutMs);
+      }, timeoutMs);
       this.pending.set(id, {
         resolve: (value: unknown) => {
           console.log(`[codex-app-server-client ${new Date().toISOString().slice(11,23)}] <- ${method} resolved (id=${id})`);
@@ -287,9 +317,6 @@ export class CodexAppServerClient {
   }
 
   private write(message: unknown): void {
-    if (!this.process || this.process.killed) {
-      throw new RuntimeSessionError("Codex App Server is unavailable", "RUNTIME_UNAVAILABLE");
-    }
     if (this.webSocket) {
       if (this.webSocket.readyState !== WebSocket.OPEN) {
         throw new RuntimeSessionError("Codex App Server WebSocket is unavailable", "RUNTIME_UNAVAILABLE");
@@ -297,7 +324,7 @@ export class CodexAppServerClient {
       this.webSocket.send(JSON.stringify(message));
       return;
     }
-    if (!this.process.stdin.writable) {
+    if (!this.process || this.process.killed || !this.process.stdin.writable) {
       throw new RuntimeSessionError("Codex App Server is unavailable", "RUNTIME_UNAVAILABLE");
     }
     this.process.stdin.write(`${JSON.stringify(message)}\n`);
@@ -358,6 +385,10 @@ export class CodexAppServerClient {
 
   private handleExit(child: ChildProcessWithoutNullStreams, error: Error): void {
     if (this.process !== child) return;
+    this.handleTransportExit(error);
+  }
+
+  private handleTransportExit(error: Error): void {
     const wasReady = this.processReady;
     this.process = null;
     this.activeMode = null;
@@ -371,6 +402,11 @@ export class CodexAppServerClient {
   }
 
   private async stop(): Promise<void> {
+    this.startGeneration += 1;
+    await this.stopTransport();
+  }
+
+  private async stopTransport(): Promise<void> {
     const child = this.process;
     this.process = null;
     this.activeMode = null;
