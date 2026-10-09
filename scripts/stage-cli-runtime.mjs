@@ -116,6 +116,10 @@ for (const prebuild of await readdir(sqlitePrebuilds)) {
   }
 }
 
+// SQLite runs through the target prebuilt addon; omit its C/C++ build sources.
+await rm(resolve(target, "node_modules/better-sqlite3/deps"), { recursive: true, force: true });
+await rm(resolve(target, "node_modules/better-sqlite3/src"), { recursive: true, force: true });
+
 // node-pty ships source/build dirs we never need at runtime.
 await rm(resolve(target, "node_modules/node-pty/third_party"), { recursive: true, force: true });
 await rm(resolve(target, "node_modules/node-pty/deps"), { recursive: true, force: true });
