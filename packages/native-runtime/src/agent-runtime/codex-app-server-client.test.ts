@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
+import { homedir } from "node:os";
 import { describe, expect, it, vi } from "vitest";
 import type { CodexAppServerLauncher } from "./codex-app-server-launcher.js";
 import { CodexAppServerClient, normalizeCodexEnvironment } from "./codex-app-server-client.js";
@@ -51,6 +52,7 @@ function handleJsonRpc(
   options: {
     initializeError?: string;
     responses?: Record<string, unknown>;
+    errors?: Record<string, string>;
   } = {},
 ): void {
   let input = "";
@@ -77,6 +79,7 @@ function handleWebSocketJsonRpc(
   options: {
     initializeError?: string;
     responses?: Record<string, unknown>;
+    errors?: Record<string, string>;
   } = {},
 ): void {
   let input = Buffer.alloc(0);
@@ -136,13 +139,17 @@ function handleWebSocketJsonRpc(
 
 function respondToRpc(
   request: { id?: number; method: string },
-  options: { initializeError?: string; responses?: Record<string, unknown> },
+  options: { initializeError?: string; responses?: Record<string, unknown>; errors?: Record<string, string> },
   write: (response: unknown) => void,
 ): void {
   if (request.id !== undefined && request.method === "initialize") {
     write(options.initializeError
       ? { id: request.id, error: { code: -32_000, message: options.initializeError } }
       : { id: request.id, result: {} });
+  } else if (request.id !== undefined && request.method in (options.errors ?? {})) {
+    write({ id: request.id, error: { code: -32603, message: options.errors?.[request.method] } });
+  } else if (request.id !== undefined && request.method === "config/read" && !(request.method in (options.responses ?? {}))) {
+    write({ id: request.id, result: {} });
   } else if (request.id !== undefined && request.method in (options.responses ?? {})) {
     write({ id: request.id, result: options.responses?.[request.method] });
   }
@@ -235,9 +242,9 @@ describe("CodexAppServerClient", () => {
     handleWebSocketJsonRpc(proxy, {
       responses: { "thread/list": { data: ["shared"], nextCursor: null } },
     });
-    const calls: Array<{ args: string[]; env?: NodeJS.ProcessEnv }> = [];
-    const spawnProcess = vi.fn((_command: string, args: readonly string[], options: { env?: NodeJS.ProcessEnv }) => {
-      calls.push({ args: [...args], env: options.env });
+    const calls: Array<{ args: string[]; env?: NodeJS.ProcessEnv; cwd?: string }> = [];
+    const spawnProcess = vi.fn((_command: string, args: readonly string[], options: { env?: NodeJS.ProcessEnv; cwd?: string }) => {
+      calls.push({ args: [...args], env: options.env, cwd: options.cwd });
       if (args.join(" ") === "app-server daemon start") {
         queueMicrotask(() => daemon.emit("exit", 0, null));
         return daemon;
@@ -259,6 +266,8 @@ describe("CodexAppServerClient", () => {
       ["app-server", "proxy"],
     ]);
     expect(calls[0]?.env?.NO_PROXY).toContain(".gptdy.17usoft.com");
+    expect(calls[0]?.cwd).toBe(homedir());
+    expect(calls[1]?.cwd).toBe(homedir());
     expect(client.pid).toBe(1002);
     expect(client.mode).toBe("shared");
 
@@ -266,6 +275,25 @@ describe("CodexAppServerClient", () => {
     expect(client.mode).toBeNull();
     expect(proxy.killSignals).toEqual(["SIGTERM"]);
     expect(calls).toHaveLength(2);
+  });
+
+  it("rejects a shared daemon whose initialize works but deleted cwd breaks configuration", async () => {
+    const daemon = fakeProcess(1901), proxy = fakeProcess(1902), standalone = fakeProcess(1903);
+    handleWebSocketJsonRpc(proxy, { errors: { "config/read": "No such file or directory (os error 2)" } });
+    handleJsonRpc(standalone, { responses: { "thread/list": { data: ["standalone"], nextCursor: null } } });
+    const spawnProcess = vi.fn((_command: string, args: readonly string[]) => {
+      if (args.join(" ") === "app-server daemon start") { queueMicrotask(() => daemon.emit("exit", 0, null)); return daemon; }
+      return args.join(" ") === "app-server proxy" ? proxy : standalone;
+    });
+    const client = new CodexAppServerClient({ spawnProcess: spawnProcess as never, resolveDesktopEndpoint: async () => null, requestTimeoutMs: 1000 });
+    try {
+      await expect(client.request("thread/list", {})).resolves.toEqual({ data: ["standalone"], nextCursor: null });
+      expect(client.mode).toBe("standalone");
+      expect(proxy.killSignals).toEqual(["SIGTERM"]);
+      expect(spawnProcess.mock.calls.map(([, args]) => args)).toEqual([
+        ["app-server", "daemon", "start"], ["app-server", "proxy"], ["app-server", "--stdio"],
+      ]);
+    } finally { await client.dispose(); }
   });
 
   it("falls back to standalone when daemon startup is unsupported", async () => {

@@ -6,9 +6,24 @@ export type DesktopActivity =
   | { state: "unknown"; reason: string };
 
 type Request = (method: string, params: Record<string, unknown>) => Promise<unknown>;
+export class DesktopProbeRpcError extends Error {
+  constructor(readonly code: number, message: string) { super(message); }
+}
 
 /** Read live state only. Never resume, subscribe, interrupt or unload a thread. */
 export async function probeDesktopActivity(endpoint: string, timeoutMs = 5_000): Promise<DesktopActivity> {
+  try {
+    return await withDesktopRpc(endpoint, async (request, becameActive) => {
+      const activity = await readDesktopActivity(request);
+      return becameActive() && activity.state === "idle" ? { state: "busy", activeCount: 1 } : activity;
+    }, timeoutMs);
+  } catch {
+    return { state: "unknown", reason: "无法完整查询桌面端的实时任务状态" };
+  }
+}
+
+export async function withDesktopRpc<T>(endpoint: string,
+  operation: (request: Request, becameActive: () => boolean) => Promise<T>, timeoutMs = 5_000): Promise<T> {
   let dispatcher: Agent | undefined;
   let socket: InstanceType<typeof WebSocket> | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -50,7 +65,7 @@ export async function probeDesktopActivity(endpoint: string, timeoutMs = 5_000):
         const item = pending.get(message.id);
         if (!item) return;
         pending.delete(message.id);
-        if (message.error) item.reject(new Error("Desktop probe RPC failed"));
+        if (message.error) item.reject(new DesktopProbeRpcError(message.error.code, String(message.error.message ?? "Desktop probe RPC failed")));
         else item.resolve(message.result);
       } catch {
         fail();
@@ -62,19 +77,16 @@ export async function probeDesktopActivity(endpoint: string, timeoutMs = 5_000):
       try { connection.send(JSON.stringify({ id, method, params })); }
       catch (error) { pending.delete(id); reject(error); }
     });
-    const operation = async (): Promise<DesktopActivity> => {
+    const run = async (): Promise<T> => {
       await opened;
-      await request("initialize", { clientInfo: { name: "agentroam_desktop_setup", version: "1" } });
+      await request("initialize", { clientInfo: { name: "agentroam_desktop_setup", version: "1" }, capabilities: { experimentalApi: true } });
       connection.send(JSON.stringify({ method: "initialized", params: {} }));
-      const activity = await readDesktopActivity(request);
-      return changedToActive && activity.state === "idle" ? { state: "busy", activeCount: 1 } : activity;
+      return operation(request, () => changedToActive);
     };
     return await Promise.race([
-      operation(),
+      run(),
       new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error("Desktop probe timed out")), timeoutMs); }),
     ]);
-  } catch {
-    return { state: "unknown", reason: "无法完整查询桌面端的实时任务状态" };
   } finally {
     if (timer) clearTimeout(timer);
     rejectPending?.();

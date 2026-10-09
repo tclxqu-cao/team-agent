@@ -33,7 +33,7 @@ export async function runCodexDesktopCommand(options: CliOptions, context: Deskt
     const codex = await (context.codexResolver ?? resolveCodexRuntime)({
       dataDir: options.dataDir,
       target: detectPlatform(platform, process.arch, process.versions.node),
-      environment,
+      environment: { ...environment },
       platform,
       nodeExecutable: process.execPath,
       onProgress: (message) => log(`… ${message}`),
@@ -41,11 +41,15 @@ export async function runCodexDesktopCommand(options: CliOptions, context: Deskt
     environment.AGENT_CODEX_BIN = codex.executable;
   }
   const args = [scriptPath];
+  if (!options.desktopDryRun) {
+    environment.AGENTROAM_CODEX_DESKTOP_PREFLIGHT_NODE = process.execPath;
+    environment.AGENTROAM_CODEX_DESKTOP_PREFLIGHT = fileURLToPath(new URL("./codex-desktop-preflight.js", import.meta.url));
+  }
   if (options.desktopRestart) args.push("--restart");
   if (options.desktopDryRun) args.push("--dry-run");
   try {
     const { stdout, stderr } = await (context.execute ?? execFileAsync)("/bin/bash", args, {
-      env: environment, encoding: "utf8", timeout: 30_000, maxBuffer: 1024 * 1024,
+      env: environment, encoding: "utf8", timeout: 60_000, maxBuffer: 1024 * 1024,
     });
     if (stdout.trim()) log(stdout.trimEnd());
     if (stderr.trim()) log(stderr.trimEnd());

@@ -1,4 +1,5 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { homedir } from "node:os";
 import {
   discoverCodexDesktopEndpoint,
   type CodexDesktopEndpoint,
@@ -60,12 +61,14 @@ export class SharedCodexAppServerLauncher implements CodexAppServerLaunchAttempt
       environment: this.environment,
       spawnProcess: this.spawnProcess,
       timeoutMs: this.startupTimeoutMs,
+      cwd: homedir(),
     });
     return spawnLongRunningProcess(
       this.spawnProcess,
       this.executable,
       ["app-server", "proxy"],
       this.environment,
+      homedir(),
     );
   }
 }
@@ -109,10 +112,12 @@ function spawnWithPipedStdio(
   executable: string,
   args: string[],
   environment: NodeJS.ProcessEnv,
+  cwd?: string,
 ): ChildProcessWithoutNullStreams {
   return spawnProcess(executable, args, {
     env: environment,
     stdio: ["pipe", "pipe", "pipe"],
+    ...(cwd ? { cwd } : {}),
   }) as ChildProcessWithoutNullStreams;
 }
 
@@ -121,8 +126,9 @@ function spawnLongRunningProcess(
   executable: string,
   args: string[],
   environment: NodeJS.ProcessEnv,
+  cwd?: string,
 ): Promise<ChildProcessWithoutNullStreams> {
-  const child = spawnWithPipedStdio(spawnProcess, executable, args, environment);
+  const child = spawnWithPipedStdio(spawnProcess, executable, args, environment, cwd);
   return new Promise<ChildProcessWithoutNullStreams>((resolve, reject) => {
     let settled = false;
     const finish = (error?: Error) => {
@@ -157,12 +163,14 @@ async function runCommandToCompletion(options: {
   environment: NodeJS.ProcessEnv;
   spawnProcess: typeof spawn;
   timeoutMs: number;
+  cwd?: string;
 }): Promise<void> {
   const child = spawnWithPipedStdio(
     options.spawnProcess,
     options.executable,
     options.args,
     options.environment,
+    options.cwd,
   );
   child.stdin.end();
 

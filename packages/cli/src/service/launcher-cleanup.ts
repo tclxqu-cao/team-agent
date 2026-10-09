@@ -1,6 +1,21 @@
 import { lstat, readFile, readdir, realpath, rm } from "node:fs/promises";
 import { relative, resolve, sep } from "node:path";
 import type { ServiceConfig } from "./service-files.js";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+
+const execFileAsync = promisify(execFile);
+interface CleanupContext { pathsInUse?: () => Promise<string[]> }
+
+async function processPathsInUse(): Promise<string[]> {
+  // Windows has no reliable cwd inventory here: retain old installs instead.
+  if (process.platform === "win32") throw new Error("Process paths unavailable");
+  const { stdout } = await execFileAsync(process.platform === "darwin" ? "/usr/sbin/lsof" : "lsof",
+    ["-nP", "-d", "cwd,txt", "-Fn"], { timeout: 5_000, maxBuffer: 16 * 1024 * 1024 });
+  const paths = stdout.split("\n").filter(line => line.startsWith("n/")).map(line => line.slice(1));
+  if (!paths.length) throw new Error("Incomplete process paths");
+  return [process.cwd(), ...paths];
+}
 
 function versionParts(version: string): number[] | null {
   const match = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-preview\.(0|[1-9]\d*))?$/.exec(version);
@@ -18,7 +33,7 @@ function contains(parent: string, child: string): boolean {
 }
 
 /** Remove only recognized managed launcher versions after the replacement service is ready. */
-export async function cleanupOldLaunchers(config: ServiceConfig, log: (line: string) => void): Promise<void> {
+export async function cleanupOldLaunchers(config: ServiceConfig, log: (line: string) => void, context: CleanupContext = {}): Promise<void> {
   try {
     const dataDir = await realpath(config.dataDir);
     const launcherDir = resolve(dataDir, "launcher");
@@ -39,6 +54,11 @@ export async function cleanupOldLaunchers(config: ServiceConfig, log: (line: str
         if (await realpath(manifestPath) !== manifestPath) continue;
         const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
         if (manifest.name !== "agentroam" || manifest.version !== entry.name) continue;
+        const usedPaths = await (context.pathsInUse ?? processPathsInUse)();
+        if (usedPaths.some(path => contains(candidate, path))) {
+          log(`旧版 CLI ${entry.name} 仍被进程使用，已保留。`);
+          continue;
+        }
         await rm(candidate, { recursive: true });
         log(`✓ 已清理旧版 CLI ${entry.name}，配置和数据已保留`);
       } catch { log(`旧版 CLI ${entry.name} 暂未清理，将在下次安装时重试。`); }

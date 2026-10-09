@@ -42,7 +42,8 @@ describe("packaged official Desktop command", () => {
       environment: { AGENT_CODEX_BIN: "/explicit/codex", CODEX_HOME: "/explicit/home" },
     }));
     expect(execute).toHaveBeenCalledWith("/bin/bash", [expect.any(String), "--restart"], expect.objectContaining({
-      env: { AGENT_CODEX_BIN: "/explicit/codex", CODEX_HOME: "/explicit/home" },
+      env: expect.objectContaining({ AGENT_CODEX_BIN: "/explicit/codex", CODEX_HOME: "/explicit/home",
+        AGENTROAM_CODEX_DESKTOP_PREFLIGHT_NODE: process.execPath, AGENTROAM_CODEX_DESKTOP_PREFLIGHT: expect.stringContaining("codex-desktop-preflight.js") }),
     }));
   });
 
@@ -103,6 +104,7 @@ describe.skipIf(process.platform !== "darwin")("Desktop launcher lifecycle with 
       osascript: 'echo quit >> "$TEST_CALLS"; [ "${TEST_REFUSE_QUIT:-0}" = 1 ] || rm -f "$TEST_STATE"',
       kill: '[ -f "$TEST_STATE" ]',
       open: 'printf "open %s\\n" "$*" >> "$TEST_CALLS"',
+      preflight: 'echo config-check >> "$TEST_CALLS"; exit "${TEST_PREFLIGHT_EXIT:-0}"',
     };
     for (const [name, body] of Object.entries(tools)) {
       await writeFile(resolve(root, name), `#!/bin/sh\n${body}\n`);
@@ -120,7 +122,8 @@ describe.skipIf(process.platform !== "darwin")("Desktop launcher lifecycle with 
     await new Promise<void>((done) => socket.listen(resolve(controlDir, "app-server-control.sock"), done));
     const run = (args: string[], environment: NodeJS.ProcessEnv = {}) => spawnSync("/bin/bash", [scriptPath, ...args], {
       encoding: "utf8", env: { ...process.env, CODEX_DESKTOP_APP: resolve(root, "Codex.app"),
-        CODEX_HOME: root, AGENT_CODEX_BIN: resolve(root, "codex"), TEST_STATE: state, TEST_CALLS: calls, TEST_BINARY: binary, ...environment },
+        CODEX_HOME: root, AGENT_CODEX_BIN: resolve(root, "codex"), TEST_STATE: state, TEST_CALLS: calls, TEST_BINARY: binary,
+        AGENTROAM_CODEX_DESKTOP_PREFLIGHT_NODE: resolve(root, "preflight"), AGENTROAM_CODEX_DESKTOP_PREFLIGHT: resolve(root, "preflight"), ...environment },
     });
     return { run, calls, state, archive };
   }
@@ -147,9 +150,9 @@ describe.skipIf(process.platform !== "darwin")("Desktop launcher lifecycle with 
     const result = fixtureValue.run(["--restart"]);
     expect(result.status).toBe(0);
     const calls = (await readFile(fixtureValue.calls, "utf8")).trim().split("\n");
-    expect(calls.slice(0, 3)).toEqual(["codex app-server daemon start", "codex app-server daemon version", "quit"]);
-    expect(calls[3]).toContain("CODEX_APP_SERVER_WS_URL=ws+unix://localhost");
-    expect(calls[3]).toContain("CODEX_APP_SERVER_FORCE_CLI=0");
+    expect(calls.slice(0, 4)).toEqual(["codex app-server daemon start", "codex app-server daemon version", "config-check", "quit"]);
+    expect(calls[4]).toContain("CODEX_APP_SERVER_WS_URL=ws+unix://localhost");
+    expect(calls[4]).toContain("CODEX_APP_SERVER_FORCE_CLI=0");
   });
 
   it("does not quit Desktop after a failed daemon preflight", async () => {
@@ -157,6 +160,16 @@ describe.skipIf(process.platform !== "darwin")("Desktop launcher lifecycle with 
     const result = fixtureValue.run(["--restart"], { TEST_DAEMON_EXIT: "2" });
     expect(result.status).toBe(2);
     expect(await readFile(fixtureValue.calls, "utf8")).not.toContain("quit");
+  });
+
+  it("preserves Desktop when initialize/version work but default configuration is broken", async () => {
+    const f = await fixture();
+    expect(f.run(["--restart"], { TEST_PREFLIGHT_EXIT: "1" }).status).toBe(1);
+    const calls = await readFile(f.calls, "utf8");
+    expect(calls).toContain("config-check");
+    expect(calls).not.toContain("quit");
+    expect(calls).not.toContain("open ");
+    expect(await readFile(f.state, "utf8")).toBe("running");
   });
 
   it("refuses to quit a Desktop different from the inspected PID", async () => {

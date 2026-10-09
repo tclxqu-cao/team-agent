@@ -153,6 +153,12 @@ export class CodexAppServerClient {
         }, this.proxyWebSocketHandshakeTimeoutMs);
         this.assertStartCurrent(generation);
         this.write({ method: "initialized", params: {} });
+        // An existing daemon can answer initialize even after its cwd was deleted.
+        // Reject that backend before admitting any business request.
+        if (attempt.mode === "shared") {
+          await this.sendRequest("config/read", {}, this.proxyWebSocketHandshakeTimeoutMs);
+          this.assertStartCurrent(generation);
+        }
         this.processReady = true;
         this.activeMode = attempt.mode;
         console.log(

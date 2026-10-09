@@ -1,4 +1,5 @@
 import { afterEach, expect, it } from "vitest";
+import { spawn } from "node:child_process";
 import { mkdtemp, mkdir, writeFile, readFile, rm, symlink, realpath } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
@@ -40,6 +41,32 @@ it("does not clean when the active CLI is outside the managed installation", asy
   const f = await fixture(); const old = await f.install("0.2.0-preview.18"); f.config.cliPath = resolve(f.dataDir, "npx/agentroam.mjs");
   await cleanupOldLaunchers(f.config, () => {});
   expect(await readFile(resolve(old, "node_modules/agentroam/package.json"), "utf8")).toContain("agentroam");
+});
+
+it("retains an old runtime referenced by a daemon cwd or executable", async () => {
+  const f = await fixture(); const old = await f.install("0.2.0-preview.18");
+  await cleanupOldLaunchers(f.config, () => {}, { pathsInUse: async () => [resolve(old, "node_modules/runtime")] });
+  expect(await readFile(resolve(old, "node_modules/agentroam/package.json"), "utf8")).toContain("agentroam");
+});
+
+it("preserves old installs when the process inventory cannot be verified", async () => {
+  const f = await fixture(); const old = await f.install("0.2.0-preview.18");
+  await cleanupOldLaunchers(f.config, () => {}, { pathsInUse: async () => { throw new Error("unavailable"); } });
+  expect(await readFile(resolve(old, "node_modules/agentroam/package.json"), "utf8")).toContain("agentroam");
+});
+
+it.skipIf(process.platform !== "darwin")("protects a real live process cwd and cleans after it exits", async () => {
+  const f = await fixture(); const old = await f.install("0.2.0-preview.18");
+  const child = spawn(process.execPath, ["-e", "setInterval(()=>{},1000)"], { cwd: old, stdio: "ignore" });
+  await new Promise<void>((done, reject) => { child.once("spawn", done); child.once("error", reject); });
+  try {
+    await cleanupOldLaunchers(f.config, () => {});
+    expect(await readFile(resolve(old, "node_modules/agentroam/package.json"), "utf8")).toContain("agentroam");
+  } finally {
+    await new Promise<void>(done => { child.once("exit", () => done()); child.kill(); });
+  }
+  await cleanupOldLaunchers(f.config, () => {});
+  await expect(readFile(resolve(old, "node_modules/agentroam/package.json"))).rejects.toMatchObject({ code: "ENOENT" });
 });
 
 it.each(["starting", "failed", "ready"])("cleans only after a replacement service is ready (%s)", async (status) => {

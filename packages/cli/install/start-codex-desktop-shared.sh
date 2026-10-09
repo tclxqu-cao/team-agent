@@ -99,12 +99,19 @@ if [[ -n "$codex_desktop_running_pid" && "$codex_desktop_restart" != true ]]; th
 fi
 
 # Check daemon availability before asking the existing Desktop to quit.
-"$codex_shared_cli" app-server daemon start
+(cd "$HOME" && "$codex_shared_cli" app-server daemon start)
 if [[ ! -S "$codex_shared_socket" ]]; then
   echo "Shared app-server socket not found: $codex_shared_socket" >&2
   exit 1
 fi
 "$codex_shared_cli" app-server daemon version >/dev/null
+codex_desktop_preflight_node="${AGENTROAM_CODEX_DESKTOP_PREFLIGHT_NODE:-$(command -v node || true)}"
+codex_desktop_preflight="${AGENTROAM_CODEX_DESKTOP_PREFLIGHT:-$(dirname "$0")/../dist/codex-desktop-preflight.js}"
+if [[ -z "$codex_desktop_preflight_node" || ! -f "$codex_desktop_preflight" ]]; then
+  echo "Shared backend configuration check unavailable; Desktop was preserved." >&2
+  exit 1
+fi
+"$codex_desktop_preflight_node" "$codex_desktop_preflight" "$codex_shared_url" "$codex_shared_cli"
 
 # Recheck after daemon preflight; never quit a different Desktop instance.
 codex_desktop_preflight_pid="$codex_desktop_running_pid"
