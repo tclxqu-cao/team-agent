@@ -1,0 +1,19 @@
+scripts/stage-cli-runtime.mjs
+  s_7ff3c6561924d1::t_07d5eeebe01665 119-122
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2235f4610b02b5e254e8d2103e7a2f3c820c9181",
+  "prompts": {},
+  "sessions": {
+    "s_7ff3c6561924d1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a11c03-ec5e-7130-9543-91d420db074f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
