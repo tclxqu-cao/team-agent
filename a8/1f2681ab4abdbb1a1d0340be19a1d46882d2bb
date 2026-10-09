@@ -1,0 +1,54 @@
+packages/cli/install/start-codex-desktop-shared.sh
+  s_7ff3c6561924d1::t_28d4a1321ce93f 102,108-114
+packages/cli/src/service/launcher-cleanup.test.ts
+  s_7ff3c6561924d1::t_c02bb810db0fe2 2,46-70
+  s_7ff3c6561924d1::t_f9f1d542e0d4e0 71
+packages/cli/src/codex-desktop-preflight.test.ts
+  s_7ff3c6561924d1::t_d3417dbdc62231 1-81
+packages/native-runtime/src/agent-runtime/codex-app-server-client.test.ts
+  s_7ff3c6561924d1::t_c02bb810db0fe2 245-247
+  s_7ff3c6561924d1::t_d3417dbdc62231 4,269-270
+  s_7ff3c6561924d1::t_8f7d577b99b078 55,82,142,149-152,280-296
+  s_3a8d4e286373ba::t_d7d3f71cb2f4b1 297-298
+packages/native-runtime/src/agent-runtime/codex-app-server-launcher.ts
+  s_7ff3c6561924d1::t_28d4a1321ce93f 2,64,71,115,120,129,131,166,173
+packages/cli/src/codex-desktop-probe.ts
+  s_7ff3c6561924d1::t_28d4a1321ce93f 9-11,15-26,68,80,82,84,87
+packages/cli/src/codex-desktop-command.test.ts
+  s_7ff3c6561924d1::t_c02bb810db0fe2 45-46,107,125-126,153-155,165-172
+  s_7ff3c6561924d1::t_867d1f25fc138d 173-174
+packages/native-runtime/src/agent-runtime/codex-app-server-client.ts
+  s_7ff3c6561924d1::t_28d4a1321ce93f 156-161
+packages/cli/src/service/launcher-cleanup.ts
+  s_7ff3c6561924d1::t_28d4a1321ce93f 4-18,36,57-61
+packages/cli/src/codex-desktop-preflight.ts
+  s_7ff3c6561924d1::t_28d4a1321ce93f 1-49
+packages/cli/src/codex-desktop-command.ts
+  s_7ff3c6561924d1::t_c02bb810db0fe2 52
+  s_7ff3c6561924d1::t_e2ebd6660f16ea 36
+  s_7ff3c6561924d1::t_28d4a1321ce93f 44-47
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a81f2681ab4abdbb1a1d0340be19a1d46882d2bb",
+  "prompts": {},
+  "sessions": {
+    "s_3a8d4e286373ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a11a82-108e-72e3-b84e-10929e9e1a49",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_7ff3c6561924d1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a11c03-ec5e-7130-9543-91d420db074f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
