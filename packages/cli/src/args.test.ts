@@ -3,6 +3,16 @@ import { describe, expect, it } from "vitest";
 import { parseArgs } from "./args.js";
 
 describe("parseArgs", () => {
+  it("limits local desktop authorization commands to explicit actions and data directories", () => {
+    for (const action of ["authorize", "status", "disable"]) {
+      expect(parseArgs(["desktop", action, "--data-dir", "/tmp/desktop"]))
+        .toMatchObject({ command: "desktop", desktopAction: action, dataDir: "/tmp/desktop" });
+    }
+    expect(() => parseArgs(["desktop"])).toThrow("requires");
+    expect(() => parseArgs(["desktop", "enable"])).toThrow("requires");
+    expect(() => parseArgs(["desktop", "authorize", "--local-only"])).toThrow("accepts only");
+    expect(() => parseArgs(["desktop", "authorize", "--url", "https://remote.example"])).toThrow("accepts only");
+  });
   it("uses auto relay and the current directory by default", () => {
     const value = parseArgs([]);
     expect(value.command).toBe("start");

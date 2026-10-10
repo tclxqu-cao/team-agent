@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { parseArgs } from "./args.js";
 import { pairingQrPayload, resolveApprovalInput, watchPairingApproval, type pairingAdmin } from "./device-pairing.js";
+import { withCliProgress } from "../bin/cli-progress.mjs";
 
 describe("local approval commands", () => {
   it("encodes a separate QR invitation and validates the server URL", () => {
@@ -11,6 +12,24 @@ describe("local approval commands", () => {
     expect(() => pairingQrPayload("https://user:password@phone.example", "a".repeat(43))).toThrow();
   });
   const id = "12345678-1234-1234-1234-123456789abc";
+  it("suspends the outer heartbeat while the user checks the approval phrase", async () => {
+    vi.useFakeTimers();
+    try {
+      const now = Date.now();
+      const request = { id, name: "Phone", phrase: "松林·月光·1234", created: now, expires: now + 300_000, status: "waiting" };
+      const admin = vi.fn().mockResolvedValue({ requests: [request], locked: false });
+      const progress = vi.fn();
+      const pending = withCliProgress("等待手机", () => watchPairingApproval("/tmp/unused", now + 300_000, {
+        admin: admin as typeof pairingAdmin, log: vi.fn(),
+        confirm: async () => { await new Promise((resolve) => setTimeout(resolve, 6000)); return true; },
+      }), { log: progress });
+      await vi.advanceTimersByTimeAsync(6000);
+      await pending;
+      expect(progress).not.toHaveBeenCalled();
+      expect(admin).toHaveBeenLastCalledWith("/tmp/unused", "approve", { id, phrase: request.phrase });
+      expect(vi.getTimerCount()).toBe(0);
+    } finally { vi.useRealTimers(); }
+  });
   it("requires a request ID and matching phrase for explicit approval", () => {
     expect(() => parseArgs(["approve", id])).toThrow(/phrase/);
     expect(parseArgs(["approve", id, "--phrase", "松林·月光·1234"])).toMatchObject({ approvalRequestId: id, approvalPhrase: "松林·月光·1234" });

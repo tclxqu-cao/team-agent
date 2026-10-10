@@ -114,11 +114,13 @@ describe("WindowsTaskService", () => {
         running = true;
         await writePrivateText(paths.statePath, JSON.stringify({
           status: "ready", pid: 801, version: value.version, startedAt: "y", updatedAt: "y",
+          accessUrl: "https://ready.example/web",
         }));
       }
       return { code: 0, stdout: "", stderr: "" };
     };
-    const processExists = vi.fn(() => {
+    const processExists = vi.fn((pid: number) => {
+      if (pid === 801) return true;
       processChecks++;
       if (processChecks === 1) return true;
       lifecycle.push("process-exit");
@@ -149,10 +151,11 @@ describe("WindowsTaskService", () => {
     await mkdir(value.roots[0], { recursive: true });
     const lifecycle: string[] = [];
     let installed = true;
+    let running = false;
     const runner: CommandRunner = async (_command, args) => {
       const script = Buffer.from(args.at(-1)!, "base64").toString("utf16le");
       if (script.includes("Get-ScheduledTask")) {
-        return { code: 0, stdout: JSON.stringify({ installed, running: false }), stderr: "" };
+        return { code: 0, stdout: JSON.stringify({ installed, running }), stderr: "" };
       }
       if (script.includes("Stop-ScheduledTask")) lifecycle.push("stop");
       if (script.includes("Unregister-ScheduledTask")) {
@@ -165,8 +168,10 @@ describe("WindowsTaskService", () => {
       }
       if (script.includes("Start-ScheduledTask")) {
         lifecycle.push("start");
+        running = true;
         await writePrivateText(paths.statePath, JSON.stringify({
           status: "ready", pid: 801, version: value.version, startedAt: "y", updatedAt: "y",
+          accessUrl: "https://ready.example/web",
         }));
       }
       return { code: 0, stdout: "", stderr: "" };
@@ -175,7 +180,7 @@ describe("WindowsTaskService", () => {
     await new WindowsTaskService({
       homeDir: home,
       runner,
-      processExists: vi.fn(() => false),
+      processExists: vi.fn((pid: number) => pid === 801),
       validateConfig: async () => undefined,
       readyTimeoutMs: 20,
       pollIntervalMs: 1,
@@ -213,6 +218,49 @@ describe("WindowsTaskService", () => {
       pollIntervalMs: 1,
     }).install(value)).rejects.toThrow("did not stop after task termination");
     expect(lifecycle).toEqual(["stop"]);
+  });
+
+  it("waits for a running task to become ready without starting another instance", async () => {
+    const home = await mkdtemp(resolve(tmpdir(), "agentroam-windows-task-wait-"));
+    const paths = resolveServicePaths(home);
+    const value = config(home, paths.dataDir);
+    await writePrivateText(paths.configPath, JSON.stringify(value));
+    await writePrivateText(paths.statePath, JSON.stringify({
+      status: "starting", pid: 801, version: value.version, startedAt: "x", updatedAt: "x",
+    }));
+    const scripts: string[] = [];
+    const runner: CommandRunner = async (_command, args) => {
+      scripts.push(Buffer.from(args.at(-1)!, "base64").toString("utf16le"));
+      return { code: 0, stdout: JSON.stringify({ installed: true, running: true }), stderr: "" };
+    };
+    const service = new WindowsTaskService({ homeDir: home, runner, processExists: () => true, readyTimeoutMs: 50, pollIntervalMs: 1 });
+    const readStatus = service.status.bind(service);
+    vi.spyOn(service, "status").mockImplementationOnce(async () => {
+      const status = await readStatus();
+      await writePrivateText(paths.statePath, JSON.stringify({
+        status: "ready", pid: 801, version: value.version, startedAt: "x", updatedAt: "y",
+        accessUrl: "https://ready.example/web",
+      }));
+      return status;
+    });
+    expect(await service.start()).toMatchObject({ status: "ready", pid: 801 });
+    expect(scripts).toHaveLength(2);
+    expect(scripts.some(script => script.includes("Start-ScheduledTask"))).toBe(false);
+  });
+
+  it("rejects a ready state whose process has exited even if the task still reports running", async () => {
+    const home = await mkdtemp(resolve(tmpdir(), "agentroam-windows-task-stale-ready-"));
+    const paths = resolveServicePaths(home);
+    const value = config(home, paths.dataDir);
+    await writePrivateText(paths.configPath, JSON.stringify(value));
+    await writePrivateText(paths.statePath, JSON.stringify({
+      status: "ready", pid: 801, version: value.version, startedAt: "x", updatedAt: "x",
+      accessUrl: "https://stale.example/web",
+    }));
+    const runner: CommandRunner = async () => ({ code: 0, stdout: JSON.stringify({ installed: true, running: true }), stderr: "" });
+    const service = new WindowsTaskService({ homeDir: home, runner, processExists: () => false, readyTimeoutMs: 0 });
+    expect(await service.start()).toBeNull();
+    await expect(service.url()).rejects.toThrow("still starting");
   });
 
   it("builds a safely quoted task action for paths with spaces and apostrophes", () => {

@@ -13,7 +13,7 @@ describe("standalone installer contracts", () => {
     try {
       const script = await readFile(resolve(installRoot, "install-agentroam.sh"), "utf8");
       // Execute the actual post-install flow with a fake CLI, without touching launchd.
-      const start = script.indexOf('if ! "$NODE_BIN" "$entry" doctor');
+      const start = script.indexOf('if ! run_with_progress "正在检查运行组件"');
       expect(start).toBeGreaterThan(0);
       const node = resolve(root, "node");
       const calls = resolve(root, "calls");
@@ -21,7 +21,7 @@ describe("standalone installer contracts", () => {
       await chmod(node, 0o755);
       for (const serviceExit of [0, 1]) {
         await writeFile(calls, "");
-        const result = spawnSync("/bin/sh", ["-c", `set -eu\n${script.slice(start)}`], {
+        const result = spawnSync("/bin/sh", ["-c", `set -eu\nPROGRESS_PID=""\n${script.slice(script.indexOf("stop_progress()"), script.indexOf("fail()"))}\n${script.slice(start)}`], {
           encoding: "utf8",
           env: { ...process.env, NODE_BIN: node, entry: "fake-cli", DATA_DIR: root, SERVICE_ROOT: root,
             WRAPPER_PATH: "agentroam", WRAPPER_DIR: root, AGENTROAM_VERSION: "test",
@@ -32,7 +32,12 @@ describe("standalone installer contracts", () => {
         expect(result.stderr).toContain("some component checks failed");
         expect(result.status).toBe(serviceExit);
         if (serviceExit === 0) expect(result.stdout).toContain("installed:");
-        else expect(result.stdout).not.toContain("installed:");
+        else {
+          expect(result.stdout).not.toContain("installed:");
+          expect(result.stderr).toContain("CLI 已安装，但后台服务安装或启动失败");
+          expect(result.stderr).toContain("agentroam service logs");
+          expect(result.stdout).not.toContain("已跳过桌面端下载");
+        }
       }
     } finally {
       await rm(root, { recursive: true, force: true });
@@ -64,29 +69,33 @@ describe("standalone installer contracts", () => {
     const root = await mkdtemp("/tmp/agentroam-install-desktop-");
     try {
       const script = await readFile(resolve(installRoot, "install-agentroam.sh"), "utf8");
-      const start = script.indexOf('if ! "$NODE_BIN" "$entry" doctor');
+      const start = script.indexOf('if ! run_with_progress "正在检查运行组件"');
       const node = resolve(root, "node");
       const calls = resolve(root, "calls");
       const entry = resolve(root, "bin/agentroam.mjs");
       const setupModule = resolve(root, "dist/codex-desktop-setup.js");
       await mkdir(resolve(root, "bin"));
       await mkdir(resolve(root, "dist"));
-      await writeFile(node, '#!/bin/sh\nprintf "%s\\n" "$*" >> "$TEST_CALLS"\n');
+      await writeFile(node, '#!/bin/sh\nprintf "%s\\n" "$*" >> "$TEST_CALLS"\nif [ "$2" = service ]; then exit "$TEST_SERVICE_EXIT"; fi\n');
       await chmod(node, 0o755);
       for (const supported of [false, true]) {
         if (supported) await writeFile(setupModule, "packaged module");
-        await writeFile(calls, "");
-        const result = spawnSync("/bin/sh", ["-c", `set -eu\n${script.slice(start)}`], {
-          encoding: "utf8", input: "not-a-restart-confirmation\n",
-          env: { ...process.env, NODE_BIN: node, entry, DATA_DIR: root, SERVICE_ROOT: root,
-            WRAPPER_PATH: "agentroam", WRAPPER_DIR: root, AGENTROAM_VERSION: "test",
-            AGENTROAM_INSTALL_SKIP_SERVICE: "0", AGENTROAM_INSTALL_DESKTOP: "no", TEST_CALLS: calls },
-        });
-        expect(result.status).toBe(0);
-        const recorded = await readFile(calls, "utf8");
-        expect(recorded.includes("--setup-codex-desktop")).toBe(supported);
-        expect(recorded).toContain(`service install --root ${root} --data-dir ${root}`);
-        expect(result.stdout.includes("原桌面会话暂未共享")).toBe(!supported);
+        for (const serviceExit of [0, 1]) {
+          await writeFile(calls, "");
+          const result = spawnSync("/bin/sh", ["-c", `set -eu\nPROGRESS_PID=""\n${script.slice(script.indexOf("stop_progress()"), script.indexOf("fail()"))}\n${script.slice(start)}`], {
+            encoding: "utf8", input: "not-a-restart-confirmation\n",
+            env: { ...process.env, NODE_BIN: node, entry, DATA_DIR: root, SERVICE_ROOT: root,
+              WRAPPER_PATH: "agentroam", WRAPPER_DIR: root, AGENTROAM_VERSION: "test",
+              AGENTROAM_INSTALL_SKIP_SERVICE: "0", AGENTROAM_INSTALL_DESKTOP: "no", TEST_CALLS: calls, TEST_SERVICE_EXIT: String(serviceExit) },
+          });
+          expect(result.status).toBe(serviceExit);
+          const recorded = await readFile(calls, "utf8");
+          expect(recorded.includes("--setup-codex-desktop")).toBe(supported);
+          expect(recorded).toContain(`service install --root ${root} --data-dir ${root}`);
+          expect(result.stdout.includes("原桌面会话暂未共享")).toBe(!supported);
+          expect(result.stdout.includes("installed:")).toBe(serviceExit === 0);
+          if (serviceExit !== 0) expect(result.stderr).toContain("agentroam service logs");
+        }
       }
     } finally { await rm(root, { recursive: true, force: true }); }
   });

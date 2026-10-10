@@ -28,6 +28,47 @@ fi
 TEMP_ROOT=""
 OWN_NODE_LOCK=0
 OWN_LAUNCHER_LOCK=0
+PROGRESS_PID=""
+
+# Works before Node exists and never reads stdin (curl | sh owns it).
+stop_progress() {
+  if [ -n "$PROGRESS_PID" ]; then
+    kill "$PROGRESS_PID" 2>/dev/null || true
+    wait "$PROGRESS_PID" 2>/dev/null || true
+    PROGRESS_PID=""
+  fi
+}
+
+start_progress() {
+  stop_progress
+  [ "${AGENTROAM_NO_PROGRESS:-}" != "1" ] || return 0
+  printf '… %s（已等待 0 秒）\n' "$1" >&2
+  (
+    progress_label=$1
+    progress_started=$(date +%s)
+    progress_sleep_pid=""
+    trap 'if [ -n "$progress_sleep_pid" ]; then kill "$progress_sleep_pid" 2>/dev/null || true; wait "$progress_sleep_pid" 2>/dev/null || true; fi' EXIT
+    trap 'exit 0' HUP INT TERM
+    while :; do
+      sleep 5 &
+      progress_sleep_pid=$!
+      wait "$progress_sleep_pid" || exit 0
+      progress_sleep_pid=""
+      progress_now=$(date +%s)
+      printf '… %s（已等待 %s 秒）\n' "$progress_label" "$((progress_now - progress_started))" >&2
+    done
+  ) </dev/null &
+  PROGRESS_PID=$!
+}
+
+run_with_progress() {
+  progress_command_label=$1
+  shift
+  start_progress "$progress_command_label"
+  if "$@"; then progress_command_status=0; else progress_command_status=$?; fi
+  stop_progress
+  return "$progress_command_status"
+}
 
 fail() {
   printf 'agentroam installer: %s\n' "$*" >&2
@@ -35,6 +76,7 @@ fail() {
 }
 
 cleanup() {
+  stop_progress
   if [ -n "$TEMP_ROOT" ] && [ -d "$TEMP_ROOT" ]; then
     rm -rf "$TEMP_ROOT"
   fi
@@ -121,6 +163,7 @@ acquire_directory_lock() {
   done
 }
 
+start_progress "正在检查可用的 Node.js"
 SYSTEM_NODE=$(command -v node 2>/dev/null || true)
 if [ "${AGENTROAM_BOOTSTRAP_TEST:-}" = "1" ] && [ "${AGENTROAM_FORCE_PRIVATE_NODE:-}" = "1" ]; then
   SYSTEM_NODE=""
@@ -138,7 +181,9 @@ else
     printf 'Using Node.js %s from NVM: %s\n' "$("$NODE_BIN" --version)" "$NODE_BIN"
   else
     if ! runtime_is_valid; then
+      start_progress "正在等待 Node.js 安装锁"
       acquire_directory_lock "$NODE_LOCK"
+      stop_progress
       OWN_NODE_LOCK=1
       if ! runtime_is_valid; then
         TEMP_ROOT=$(mktemp -d "$NODE_PARENT/.node-$NODE_VERSION.XXXXXX")
@@ -146,6 +191,7 @@ else
         extract_path="$TEMP_ROOT/extract"
         mkdir "$extract_path"
         printf 'Downloading Node.js %s...\n' "$NODE_VERSION"
+        start_progress "正在下载 Node.js $NODE_VERSION"
         if [ -n "${AGENTROAM_NODE_ARCHIVE_FILE:-}" ]; then
           cp "$AGENTROAM_NODE_ARCHIVE_FILE" "$archive_path"
         else
@@ -156,8 +202,10 @@ else
             sleep "$download_attempt"
           done
         fi
+        start_progress "正在校验 Node.js 安装包"
         actual_sha=$(shasum -a 256 "$archive_path" | awk '{print $1}')
         [ "$actual_sha" = "$NODE_SHA256" ] || fail "Node.js archive checksum mismatch"
+        start_progress "正在解压并验证 Node.js"
         /usr/bin/tar -xJf "$archive_path" -C "$extract_path"
         entry_count=$(find "$extract_path" -mindepth 1 -maxdepth 1 | wc -l | tr -d ' ')
         [ "$entry_count" = "1" ] || fail "unexpected Node.js archive layout"
@@ -177,6 +225,7 @@ else
     NODE_BIN="$NODE_ROOT/bin/node"
   fi
 fi
+stop_progress
 
 if [ "${AGENTROAM_BOOTSTRAP_TEST:-}" = "1" ] && [ "${AGENTROAM_BOOTSTRAP_NODE_DISCOVERY_ONLY:-}" = "1" ]; then
   printf '%s\n' "$NODE_BIN"
@@ -205,7 +254,9 @@ case "$AGENTROAM_VERSION_REQUEST" in
   *)
     # A dist-tag (default "preview") — resolve to the newest published version
     # so installs always pick up the latest release without touching this file.
+    start_progress "正在查询 AgentRoam $AGENTROAM_VERSION_REQUEST 最新版本"
     resolved_version="$("$NODE_BIN" "$NPM_CLI" view "agentroam@$AGENTROAM_VERSION_REQUEST" version --registry "$NPM_REGISTRY" 2>/dev/null | tail -1 | tr -d '[:space:]')"
+    stop_progress
     [ -n "$resolved_version" ] || fail "could not resolve agentroam@$AGENTROAM_VERSION_REQUEST from $NPM_REGISTRY"
     AGENTROAM_VERSION="$resolved_version"
     printf 'Installing AgentRoam %s (resolved from %s)\n' "$AGENTROAM_VERSION" "$AGENTROAM_VERSION_REQUEST"
@@ -225,14 +276,18 @@ launcher_is_valid() {
     && [ "$("$NODE_BIN" "$LAUNCHER_ROOT/node_modules/agentroam/bin/agentroam.mjs" version 2>/dev/null | awk '{print $2}' || true)" = "$AGENTROAM_VERSION" ]
 }
 
+start_progress "正在检查已安装的 CLI"
 if ! launcher_is_valid; then
+  start_progress "正在等待 CLI 安装锁"
   acquire_directory_lock "$LAUNCHER_LOCK"
+  stop_progress
   OWN_LAUNCHER_LOCK=1
   if ! launcher_is_valid; then
     TEMP_ROOT=$(mktemp -d "$LAUNCHER_PARENT/.launcher-$AGENTROAM_VERSION.XXXXXX")
     # Test-only extra specs are whitespace-delimited artifact paths in isolated CI directories.
     # shellcheck disable=SC2086
-    "$NODE_BIN" "$NPM_CLI" install --no-audit --no-fund --registry "$NPM_REGISTRY" --prefix "$TEMP_ROOT" $EXTRA_PACKAGE_SPECS "$PACKAGE_SPEC"
+    run_with_progress "正在下载和安装 CLI 及平台组件" "$NODE_BIN" "$NPM_CLI" install --no-audit --no-fund --registry "$NPM_REGISTRY" --prefix "$TEMP_ROOT" $EXTRA_PACKAGE_SPECS "$PACKAGE_SPEC"
+    start_progress "正在验证并启用 CLI"
     entry="$TEMP_ROOT/node_modules/agentroam/bin/agentroam.mjs"
     [ -f "$entry" ] || fail "AgentRoam launcher is missing after npm install"
     [ "$("$NODE_BIN" "$entry" version | awk '{print $2}')" = "$AGENTROAM_VERSION" ] || fail "AgentRoam version validation failed"
@@ -243,6 +298,7 @@ if ! launcher_is_valid; then
   rmdir "$LAUNCHER_LOCK" 2>/dev/null || true
   OWN_LAUNCHER_LOCK=0
 fi
+stop_progress
 
 entry="$LAUNCHER_ROOT/node_modules/agentroam/bin/agentroam.mjs"
 wrapper_temp=$(mktemp "$WRAPPER_DIR/.agentroam.XXXXXX")
@@ -253,18 +309,26 @@ wrapper_temp=$(mktemp "$WRAPPER_DIR/.agentroam.XXXXXX")
 chmod 755 "$wrapper_temp"
 mv "$wrapper_temp" "$WRAPPER_PATH"
 
-if ! "$NODE_BIN" "$entry" doctor --data-dir "$DATA_DIR"; then
+if ! run_with_progress "正在检查运行组件" env AGENTROAM_NO_PROGRESS=1 "$NODE_BIN" "$entry" doctor --data-dir "$DATA_DIR"; then
   printf 'Warning: some component checks failed; continuing background service installation. Affected features may be unavailable. Run agentroam doctor to retry.\n' >&2
 fi
 if [ "${AGENTROAM_INSTALL_SKIP_SERVICE:-}" = "1" ]; then
   printf 'AgentRoam service registration skipped for isolated verification.\n'
 else
+  # The CLI owns progress here so it can pause for confirmations and print QR intact.
+  printf '… 正在安装后台服务；随后检查远程桌面授权并生成手机连接二维码\n' >&2
   codex_setup_module="$(dirname "$entry")/../dist/codex-desktop-setup.js"
-  if [ -f "$codex_setup_module" ]; then
-    "$NODE_BIN" "$entry" service install --root "$SERVICE_ROOT" --data-dir "$DATA_DIR" --setup-codex-desktop
-  else
-    printf '当前发布的 CLI 尚未包含官方 Codex 桌面共享配置；扫码可连接 AgentRoam，原桌面会话暂未共享，请升级 CLI 后重试。\n'
-    "$NODE_BIN" "$entry" service install --root "$SERVICE_ROOT" --data-dir "$DATA_DIR"
+  install_background_service() {
+    if [ -f "$codex_setup_module" ]; then
+      "$NODE_BIN" "$entry" service install --root "$SERVICE_ROOT" --data-dir "$DATA_DIR" --setup-codex-desktop
+    else
+      printf '当前发布的 CLI 尚未包含官方 Codex 桌面共享配置；扫码可连接 AgentRoam，原桌面会话暂未共享，请升级 CLI 后重试。\n'
+      "$NODE_BIN" "$entry" service install --root "$SERVICE_ROOT" --data-dir "$DATA_DIR"
+    fi
+  }
+  if ! install_background_service; then
+    printf 'CLI 已安装，但后台服务安装或启动失败，尚不能扫码连接。请运行 agentroam service logs 查看原因，修复后运行 agentroam service start，再执行 agentroam pair。\n' >&2
+    exit 1
   fi
 fi
 printf '\nAgentRoam %s installed: %s\n' "$AGENTROAM_VERSION" "$WRAPPER_PATH"
@@ -288,7 +352,7 @@ case "$desktop_choice" in
   y|Y|yes|YES|是)
     desktop_helper="$LAUNCHER_ROOT/node_modules/agentroam/bin/desktop-download.mjs"
     if [ -f "$desktop_helper" ]; then
-      "$NODE_BIN" "$desktop_helper" "$AGENTROAM_VERSION" || printf 'CLI 安装已完成，桌面端可稍后重新下载。\n'
+      run_with_progress "正在下载并校验桌面端安装包" env AGENTROAM_NO_PROGRESS=1 "$NODE_BIN" "$desktop_helper" "$AGENTROAM_VERSION" || printf 'CLI 安装已完成，桌面端可稍后重新下载。\n'
     else
       printf '当前发布的 CLI 尚未包含桌面下载功能，请在新版发布后重试。CLI 安装已完成。\n'
     fi

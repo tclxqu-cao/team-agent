@@ -75,15 +75,18 @@ it.each(["starting", "failed", "ready"])("cleans only after a replacement servic
   const f = await fixture(); const old = await f.install("0.2.0-preview.18");
   const install = async () => {
     if (status === "failed") throw new Error("activation failed");
-    return { definition: "test", state: { status, version: f.config.version } };
+    return { definition: "test", state: { status, version: f.config.version, accessUrl: "https://ready.example/web" } };
   };
   const action = runServiceCommand(parseArgs(["service", "install", "--data-dir", f.dataDir]), {
     platform: "darwin", arch: "arm64", nodeVersion: "25.8.0", nodePath: process.execPath,
     cliPath: f.config.cliPath, version: f.config.version, log: () => {},
+    pairingPrinter: async () => {},
     codexResolver: async () => ({ executable: "/test/codex", version: "test", source: "global" }),
     controller: { install } as any,
   });
-  if (status === "failed") await expect(action).rejects.toThrow("activation failed"); else await action;
+  if (status === "failed") await expect(action).rejects.toThrow("activation failed");
+  else if (status === "starting") await expect(action).rejects.toThrow("后台服务未就绪");
+  else await action;
   const manifest = readFile(resolve(old, "node_modules/agentroam/package.json"), "utf8");
   if (status === "ready") await expect(manifest).rejects.toMatchObject({ code: "ENOENT" });
   else expect(await manifest).toContain("agentroam");

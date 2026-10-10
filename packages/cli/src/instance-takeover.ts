@@ -1,4 +1,5 @@
-import { readdir, readFile, mkdir, writeFile, rm, realpath } from "node:fs/promises";
+import { readdir, readFile, mkdir, writeFile, rm, realpath, rename } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
@@ -61,8 +62,11 @@ export async function stopPreviousInstances(dataDir: string, log: (line: string)
   const names = await readdir(registry).catch((error) => { if (error.code === "ENOENT") return []; throw error; });
   for (const name of names.filter(name => name.endsWith(".json"))) {
     let d: Descriptor;
+    let source: string;
+    const recordPath = join(registry, name);
     try {
-      d = JSON.parse(await readFile(join(registry, name), "utf8"));
+      source = await readFile(recordPath, "utf8");
+      d = JSON.parse(source);
       if (d.protocol !== 1 || !Number.isSafeInteger(d.pid) || d.pid <= 1 || typeof d.instanceId !== "string" || !/^[a-f0-9]{64}$/.test(d.token)) continue;
       const actual = await realpath(d.dataDir);
       if (actual !== canonical && actual !== join(canonical, "data")) continue;
@@ -75,7 +79,24 @@ export async function stopPreviousInstances(dataDir: string, log: (line: string)
       if (!response.ok) throw new Error("实例认证失败");
       identity = await response.json() as Partial<Descriptor>;
     } catch {
-      if ((dependencies.alive ?? alive)(d.pid)) throw new Error("同一数据目录的旧实例无法核验，请先停止旧实例再重试");
+      if ((dependencies.alive ?? alive)(d.pid)) {
+        const processes = dependencies.processes ?? processList;
+        const owner = (await processes()).find(p => p.pid === d.pid);
+        // An unavailable gateway may still own live sessions. Only quarantine
+        // when the PID demonstrably belongs to a different kind of process.
+        if (!owner?.command.trim() || /[\\/]ws-server\.mjs(?:["\s]|$)|[\\/]agentroam[\\/]bin[\\/]agentroam\.mjs(?:["\s]|$)/.test(owner.command)) {
+          throw new Error("同一数据目录的旧实例无法核验，请先停止旧实例再重试");
+        }
+        const current = (await processes()).find(p => p.pid === d.pid);
+        if (!current || current.ppid !== owner.ppid || current.command !== owner.command) {
+          throw new Error("旧实例身份已变化，请重试");
+        }
+        if (await readFile(recordPath, "utf8") !== source) throw new Error("旧实例记录已变化，请重试");
+        const backupDir = join(registry, "stale");
+        await mkdir(backupDir, { recursive: true, mode: 0o700 });
+        await rename(recordPath, join(backupDir, `${randomUUID()}-${name}`));
+        log("检测到旧服务记录的 PID 已被其他进程复用，已备份失效记录，继续启动。");
+      }
       continue;
     }
     if (identity.protocol !== 1 || identity.instanceId !== d.instanceId || identity.dataDir !== d.dataDir) throw new Error("旧实例身份不匹配，已取消启动");

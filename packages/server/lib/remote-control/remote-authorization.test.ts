@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Readable } from 'node:stream';
@@ -42,6 +42,31 @@ async function fixture(options: Record<string, unknown> = {}) {
 }
 
 describe('CLI remote desktop', () => {
+  it('requests OS permissions without enabling sharing or replacing its saved choice', async () => {
+    const f = await fixture();
+    try {
+      const status = await f.service.action('request-permission', 'screen');
+      expect(status.enabled).toBe(false);
+      expect(f.helper.request).toHaveBeenCalledWith({op:'authorize',permission:'screen'});
+      expect(f.helper.stop).toHaveBeenCalled();
+      await expect(readFile(join(f.service.dataDir,'remote-authorization.json'),'utf8')).rejects.toMatchObject({code:'ENOENT'});
+      f.grant();
+      await f.service.action('enable');
+      await f.service.action('request-permission','accessibility');
+      expect((await f.service.status()).enabled).toBe(true);
+      expect(JSON.parse(await readFile(join(f.service.dataDir,'remote-authorization.json'),'utf8'))).toEqual({enabled:true});
+    } finally { await f.close(); }
+  });
+
+  it('stops the permission helper after a failed request without enabling sharing', async () => {
+    const f = await fixture();
+    try {
+      f.helper.request.mockRejectedValueOnce(new Error('permission request failed'));
+      await expect(f.service.action('request-permission','screen')).rejects.toThrow('permission request failed');
+      expect(f.helper.stop).toHaveBeenCalled();
+      expect((await f.service.status()).enabled).toBe(false);
+    } finally { await f.close(); }
+  });
   it('deduplicates identical JPEGs and forwards mobile interaction without a capture restart', async () => {
     const f = await fixture();
     try {
@@ -228,6 +253,64 @@ describe('CLI remote desktop', () => {
       await f.close();
     }
   });
+});
+
+it('authorizes through the actual private CLI discovery and pairing gateway without browser pairing', async () => {
+  const { createServer } = await import('node:http');
+  const { createDesktopDiscovery } = await import('../desktop-discovery.mjs');
+  const { createDevicePairingGateway } = await import('../device-pairing-gateway.mjs');
+  const { localServiceRequest } = await import('../../../cli/src/local-service-request.js');
+  const { authorizeRemoteDesktop } = await import('../../../cli/src/desktop-authorization.js');
+  const f = await fixture();
+  const registry = join(f.service.dataDir,'discovery');
+  const desktop = createDesktopDiscovery({dataDir:f.service.dataDir,directory:registry});
+  const gateway = createDevicePairingGateway({dataDir:f.service.dataDir,desktop,owner:{userId:'owner',username:'local'},consoleStore:{}});
+  const server = createServer((req,res)=>{
+    if (desktop.handle(req,res)) return;
+    void gateway.handle(req,res).then(async handled=>{ if(!handled) await f.service.handle(req,res); });
+  });
+  await new Promise<void>(resolve=>server.listen(0,'127.0.0.1',resolve));
+  const base = `http://127.0.0.1:${(server.address() as any).port}`;
+  await desktop.publish((server.address() as any).port);
+  const original = f.helper.request.getMockImplementation();
+  f.helper.request.mockImplementation(async (cmd:any)=>{ if(cmd.op==='authorize') f.grant(); return original(cmd); });
+  const phases:any[] = [];
+  try {
+    const success = await authorizeRemoteDesktop(f.service.dataDir, {
+      platform:'darwin',isTTY:true,confirm:async()=>true,log:vi.fn(),wait:async()=>{},
+      request:async(dataDir,body)=>{
+        const status:any = await localServiceRequest(dataDir,'/api/remote-authorization',{
+          registry,method:body?'POST':'GET',body,
+        });
+        phases.push({body,status}); return status;
+      },
+    });
+    expect(success).toBe(true);
+    expect(gateway.store.list()).toEqual([]);
+    expect(phases.find(p=>p.body?.action==='request-permission').status.enabled).toBe(false);
+    expect(phases.at(-1).status).toMatchObject({enabled:true,screen:true,accessibility:true,error:null});
+    expect(JSON.parse(await readFile(join(f.service.dataDir,'remote-authorization.json'),'utf8'))).toEqual({enabled:true});
+    const auth = desktop.headers();
+    const body = JSON.stringify({action:'request-permission',permission:'screen'});
+    for (const headers of [ {'x-agentroam-device-id':'desktop'}, {'x-agentroam-desktop-token':'b'.repeat(64)} ]) {
+      expect((await fetch(`${base}/api/remote-authorization`,{method:'POST',headers:{...headers,'content-type':'application/json'},body})).status).toBe(401);
+    }
+    expect((await fetch(`${base}/api/remote-authorization`,{method:'POST',headers:{...auth,'content-type':'application/json','x-forwarded-for':'127.0.0.1'},body})).status).toBe(403);
+    await f.service.action('disable');
+    // Existing browser authorize requests still implicitly enable sharing.
+    const pending = gateway.store.exchange(gateway.store.createCode().code,'Local browser');
+    gateway.store.decide(pending.request.id,pending.request.phrase,true);
+    const paired = gateway.store.poll(pending.claimToken);
+    const response = await fetch(`${base}/api/remote-authorization`,{method:'POST',
+      headers:{cookie:`agentroam_device_session=${paired.token}`,origin:base,'content-type':'application/json'},
+      body:JSON.stringify({action:'authorize',permission:'screen'}),
+    });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({enabled:true});
+  } finally {
+    server.closeAllConnections(); await new Promise<void>(resolve=>server.close(()=>resolve()));
+    gateway.close(); await desktop.close(); await f.close();
+  }
 });
 
 it('uses the real pairing gateway: rejects spoofed, forwarded and revoked devices', async () => {

@@ -151,9 +151,23 @@ export class RemoteAuthorization {
   async save() { await mkdir(this.dataDir, { recursive: true }); await writeFile(this.stateFile, JSON.stringify({ enabled: this.enabled }), { mode: 0o600 }); }
   async action(action, permission) {
     if (!this.supported) throw new Error('远程桌面支持 Windows 10/11 x64 和 macOS 14 及以上的 Apple Silicon 电脑');
-    if (!['authorize', 'enable', 'disable', 'recheck', 'restart'].includes(action)) throw new Error('未知远程授权操作');
-    if (action === 'authorize' && this.platform === 'win32') throw new Error('Windows 请直接点击开启共享');
-    if (action === 'authorize' && !['screen', 'accessibility'].includes(permission)) throw new Error('未知权限');
+    if (!['authorize', 'request-permission', 'enable', 'disable', 'recheck', 'restart'].includes(action)) throw new Error('未知远程授权操作');
+    if (['authorize', 'request-permission'].includes(action) && this.platform === 'win32') throw new Error('Windows 请直接点击开启共享');
+    if (['authorize', 'request-permission'].includes(action) && !['screen', 'accessibility'].includes(permission)) throw new Error('未知权限');
+    // The CLI installation wizard requests OS permissions first. Browser
+    // authorize calls retain their existing implicit-enable behavior.
+    if (action === 'request-permission') {
+      await this.helper.start();
+      try {
+        await this.helper.request({ op: 'authorize', permission });
+        this.applyPermissions(await this.helper.request({ op: 'status' }));
+        this.lastPermissionCheck = Date.now();
+        if (this.enabled && !this.captureActive) this.publishDormant();
+        return await this.status();
+      } finally {
+        if (!this.captureActive) await this.helper.stop();
+      }
+    }
     if (action === 'recheck') {
       await this.helper.start();
       const permissions = await this.helper.request({ op: 'status' });

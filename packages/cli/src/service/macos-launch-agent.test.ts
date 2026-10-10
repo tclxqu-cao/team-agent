@@ -43,6 +43,7 @@ describe("MacLaunchAgent", () => {
     await createConfigFiles(value);
     const calls: string[][] = [];
     let printCount = 0;
+    let bootstrapped = false;
     const runner: CommandRunner = async (command, args) => {
       calls.push([command, ...args]);
       if (command === "plutil" && args[0] === "-convert") {
@@ -50,9 +51,11 @@ describe("MacLaunchAgent", () => {
       }
       if (command === "launchctl" && args[0] === "print") {
         printCount++;
+        if (bootstrapped) return { code: 0, stdout: "state = running\npid = 777", stderr: "" };
         return { code: printCount === 1 ? 0 : 1, stdout: "state = exited", stderr: "" };
       }
       if (command === "launchctl" && args[0] === "bootstrap") {
+        bootstrapped = true;
         await writePrivateJson(paths.statePath, {
           status: "ready", pid: 777, version: value.version, startedAt: value.installedAt,
           updatedAt: value.installedAt, accessUrl: "https://ready.example/web",
@@ -94,12 +97,13 @@ describe("MacLaunchAgent", () => {
         await writeFile(args[3], "<?xml version=\"1.0\"?><plist version=\"1.0\"><dict/></plist>");
       }
       if (command === "launchctl" && args[0] === "print") {
-        return { code: loaded ? 0 : 1, stdout: loaded ? "state = running" : "", stderr: "" };
+        return { code: loaded ? 0 : 1, stdout: loaded ? "state = running\npid = 701" : "", stderr: "" };
       }
       if (command === "launchctl" && args[0] === "bootout") lifecycle.push("bootout");
       if (command === "launchctl" && args[0] === "enable") lifecycle.push("enable");
       if (command === "launchctl" && args[0] === "bootstrap") {
         lifecycle.push("bootstrap");
+        loaded = true;
         await writePrivateJson(paths.statePath, {
           status: "ready", pid: 701, version: value.version, startedAt: "y", updatedAt: "y",
           accessUrl: "https://ready.example/web",
@@ -140,20 +144,24 @@ describe("MacLaunchAgent", () => {
     let printCount = 0;
     let bootedOut = false;
     let bootstrapPrintCount = 0;
+    let bootstrapped = false;
     const runner: CommandRunner = async (command, args) => {
       if (command === "plutil" && args[0] === "-convert") {
         await writeFile(args[3], "<?xml version=\"1.0\"?><plist version=\"1.0\"><dict/></plist>");
       }
       if (command === "launchctl" && args[0] === "print") {
         printCount++;
+        if (bootstrapped) return { code: 0, stdout: "state = running\npid = 701", stderr: "" };
         const loaded = !bootedOut || printCount < 3;
         return { code: loaded ? 0 : 1, stdout: loaded ? "state = exited" : "", stderr: "" };
       }
       if (command === "launchctl" && args[0] === "bootout") bootedOut = true;
       if (command === "launchctl" && args[0] === "bootstrap") {
         bootstrapPrintCount = printCount;
+        bootstrapped = true;
         await writePrivateJson(paths.statePath, {
           status: "ready", pid: 701, version: value.version, startedAt: "y", updatedAt: "y",
+          accessUrl: "https://ready.example/web",
         });
       }
       return { code: 0, stdout: "", stderr: "" };
@@ -210,7 +218,7 @@ describe("MacLaunchAgent", () => {
       updatedAt: value.installedAt, accessUrl: "https://ready.example/web",
     });
     await writePrivateText(paths.urlPath, "https://ready.example/web\n");
-    const running: CommandRunner = async () => ({ code: 0, stdout: "state = running", stderr: "" });
+    const running: CommandRunner = async () => ({ code: 0, stdout: "state = running\npid = 777", stderr: "" });
 
     expect(await new MacLaunchAgent({ homeDir: home, uid: 501, runner: running }).url())
       .toBe("https://ready.example/web");
@@ -235,7 +243,7 @@ describe("MacLaunchAgent", () => {
     const runner: CommandRunner = async (command, args) => {
       calls.push([command, ...args]);
       if (command === "launchctl" && args[0] === "print") {
-        return { code: loaded ? 0 : 1, stdout: loaded ? "state = running" : "", stderr: "" };
+        return { code: loaded ? 0 : 1, stdout: loaded ? "state = running\npid = 701" : "", stderr: "" };
       }
       if (command === "launchctl" && args[0] === "bootstrap") {
         loaded = true;
@@ -284,12 +292,14 @@ describe("MacLaunchAgent", () => {
       status: "stopped", pid: 700, version: value.version, startedAt: "x", updatedAt: "x",
     });
     const calls: string[][] = [];
+    let loaded = false;
     const runner: CommandRunner = async (command, args) => {
       calls.push([command, ...args]);
       if (command === "launchctl" && args[0] === "print") {
-        return { code: 1, stdout: "", stderr: "" };
+        return { code: loaded ? 0 : 1, stdout: loaded ? "state = running\npid = 701" : "", stderr: "" };
       }
       if (command === "launchctl" && args[0] === "bootstrap") {
+        loaded = true;
         await writePrivateJson(paths.statePath, {
           status: "ready", pid: 701, version: value.version, startedAt: "y", updatedAt: "y",
           accessUrl: "https://ready.example/web",
@@ -311,6 +321,69 @@ describe("MacLaunchAgent", () => {
     expect(calls).toContainEqual(["launchctl", "bootstrap", "gui/501", paths.plistPath]);
     expect(calls.findIndex((call) => call[1] === "enable"))
       .toBeLessThan(calls.findIndex((call) => call[1] === "bootstrap"));
+  });
+
+  it("waits for a running launchd process to become ready without restarting it", async () => {
+    const home = await mkdtemp(resolve(tmpdir(), "agentroam-launch-agent-wait-"));
+    const paths = resolveServicePaths(home);
+    const value = config(home, paths.dataDir);
+    await mkdir(paths.launchAgentsDir, { recursive: true });
+    await writeFile(paths.plistPath, "plist");
+    await writePrivateJson(paths.configPath, value);
+    await writePrivateJson(paths.statePath, {
+      status: "starting", pid: 701, version: value.version, startedAt: "x", updatedAt: "x",
+    });
+    const calls: string[] = [];
+    const runner: CommandRunner = async (_command, args) => {
+      calls.push(args[0]);
+      return { code: 0, stdout: "state = running\npid = 701", stderr: "" };
+    };
+    const service = new MacLaunchAgent({ homeDir: home, runner, readyTimeoutMs: 50, pollIntervalMs: 1 });
+    const readStatus = service.status.bind(service);
+    vi.spyOn(service, "status").mockImplementationOnce(async () => {
+      const status = await readStatus();
+      await writePrivateJson(paths.statePath, {
+        status: "ready", pid: 701, version: value.version, startedAt: "x", updatedAt: "y",
+        accessUrl: "https://ready.example/web",
+      });
+      return status;
+    });
+    const result = await service.start();
+    expect(result).toMatchObject({ status: "ready", pid: 701 });
+    expect(calls).toEqual(["print", "print"]);
+  });
+
+  it.each(["state = running\npid = 702", "state = exited\npid = 701"])("does not accept stale ready state when launchd reports %s", async (stdout) => {
+    const home = await mkdtemp(resolve(tmpdir(), "agentroam-launch-agent-stale-ready-"));
+    const paths = resolveServicePaths(home);
+    const value = config(home, paths.dataDir);
+    await mkdir(paths.launchAgentsDir, { recursive: true });
+    await writeFile(paths.plistPath, "plist");
+    await writePrivateJson(paths.configPath, value);
+    await writePrivateJson(paths.statePath, {
+      status: "ready", pid: 701, version: value.version, startedAt: "x", updatedAt: "x",
+      accessUrl: "https://stale.example/web",
+    });
+    await writePrivateText(paths.urlPath, "https://stale.example/web\n");
+    const runner: CommandRunner = async () => ({ code: 0, stdout, stderr: "" });
+    const service = new MacLaunchAgent({ homeDir: home, runner, readyTimeoutMs: 0 });
+    expect(await service.start()).toBeNull();
+    await expect(service.url()).rejects.toThrow();
+  });
+
+  it("does not return previous ready state after a restart request times out", async () => {
+    const home = await mkdtemp(resolve(tmpdir(), "agentroam-launch-agent-restart-stale-"));
+    const paths = resolveServicePaths(home);
+    const value = config(home, paths.dataDir);
+    await mkdir(paths.launchAgentsDir, { recursive: true });
+    await writeFile(paths.plistPath, "plist");
+    await writePrivateJson(paths.configPath, value);
+    await writePrivateJson(paths.statePath, {
+      status: "ready", pid: 701, version: value.version, startedAt: "x", updatedAt: "x",
+      accessUrl: "https://stale.example/web",
+    });
+    const runner: CommandRunner = async () => ({ code: 0, stdout: "state = running\npid = 701", stderr: "" });
+    expect(await new MacLaunchAgent({ homeDir: home, runner, readyTimeoutMs: 0 }).restart()).toBeNull();
   });
 
   it("uninstalls service control files but preserves application data and logs", async () => {

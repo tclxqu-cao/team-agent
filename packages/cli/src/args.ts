@@ -2,7 +2,8 @@ import { homedir } from "node:os";
 import { resolve } from "node:path";
 
 export type RelayMode = "auto" | "cloudflare" | "pinggy" | "custom";
-export type CliCommand = "start" | "doctor" | "version" | "service" | "unlock-service" | "update" | "update-worker" | "pair" | "devices" | "revoke" | "approvals" | "approve" | "deny" | "lock" | "unlock" | "audit" | "codex-desktop";
+export type CliCommand = "start" | "doctor" | "version" | "service" | "unlock-service" | "update" | "update-worker" | "pair" | "devices" | "revoke" | "approvals" | "approve" | "deny" | "lock" | "unlock" | "audit" | "codex-desktop" | "desktop";
+export type DesktopAction = "authorize" | "status" | "disable";
 export type ServiceAction = "install" | "start" | "stop" | "status" | "url" | "logs" | "restart" | "uninstall";
 export type UnlockServiceAction = "install" | "uninstall" | "status";
 
@@ -28,16 +29,23 @@ export interface CliOptions {
   desktopDryRun?: boolean;
   desktopRestart?: boolean;
   desktopSetup?: boolean;
+  desktopAction?: DesktopAction;
 }
 
 export function parseArgs(argv: string[]): CliOptions {
   const values = [...argv];
   let command: CliOptions["command"] = "start";
-  if (values[0] && ["start", "doctor", "version", "service", "unlock-service", "update", "update-worker", "pair", "devices", "revoke", "approvals", "approve", "deny", "lock", "unlock", "audit", "codex-desktop"].includes(values[0])) {
+  if (values[0] && ["start", "doctor", "version", "service", "unlock-service", "update", "update-worker", "pair", "devices", "revoke", "approvals", "approve", "deny", "lock", "unlock", "audit", "codex-desktop", "desktop"].includes(values[0])) {
     command = values.shift() as CliOptions["command"];
   }
   let serviceAction: ServiceAction | null = null;
   let unlockServiceAction: UnlockServiceAction | null = null;
+  let desktopAction: DesktopAction | undefined;
+  if (command === "desktop") {
+    const action = values.shift();
+    if (!action || !["authorize", "status", "disable"].includes(action)) throw cliError("desktop requires authorize, status, or disable");
+    desktopAction = action as DesktopAction;
+  }
   if (command === "service") {
     const action = values.shift();
     if (!action || !(["install", "start", "stop", "status", "url", "logs", "restart", "uninstall"] as string[]).includes(action)) {
@@ -91,10 +99,14 @@ export function parseArgs(argv: string[]): CliOptions {
     ...(approvalRequestId ? { approvalRequestId } : {}),
     updateVersion,
     updateStateFile,
+    ...(desktopAction ? { desktopAction } : {}),
   };
 
   for (let index = 0; index < values.length && command !== "update-worker"; index++) {
     const arg = values[index];
+    if (command === "desktop" && !["--data-dir", "--help", "-h"].includes(arg!)) {
+      throw cliError("desktop accepts only --data-dir");
+    }
     if (command === "codex-desktop" && !["--restart", "--dry-run", "--setup", "--data-dir", "--help", "-h"].includes(arg!)) {
       throw cliError("codex-desktop accepts only --setup, --restart, --dry-run and --data-dir");
     }

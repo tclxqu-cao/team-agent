@@ -1,12 +1,13 @@
 import { createInterface } from "node:readline/promises";
 import { setTimeout as delay } from "node:timers/promises";
 import { createReadStream, openSync } from "node:fs";
-import { readdir, readFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { renderQr } from "./qr.js";
+import { localServiceRequest, LocalServiceHttpError } from "./local-service-request.js";
+import { withCliProgress, withoutCliProgress } from "../bin/cli-progress.mjs";
 
-interface Descriptor { protocol: number; instanceId: string; pid: number; url: string; dataDir: string; token: string }
 export interface PairedDevice { id: string; name: string; created: number; seen: number; expires: number }
 export interface PendingPairing { id: string; name: string; phrase: string; created: number; expires: number; status: string }
 export type PairingAction = "code" | "qr" | "devices" | "revoke" | "requests" | "approve" | "deny" | "lock" | "unlock" | "audit";
@@ -14,36 +15,16 @@ export interface PairingCode { code: string; expiresAt: number }
 
 /** Resolve a private local descriptor; never send the administrative token to a tunnel URL. */
 export async function pairingAdmin<T>(dataDir: string, action: PairingAction, body?: unknown, options: { registry?: string; request?: typeof fetch } = {}): Promise<T> {
-  const request = options.request ?? fetch;
-  const directory = options.registry ?? process.env.AGENTROAM_DISCOVERY_DIR ?? join(homedir(), ".agentroam", "services");
-  const names = await readdir(directory).catch((error) => { if (error.code === "ENOENT") return []; throw error; });
-  const candidates: Descriptor[] = [];
-  for (const name of names.filter((name) => name.endsWith(".json"))) {
-    try {
-      const d = JSON.parse(await readFile(join(directory, name), "utf8")) as Descriptor;
-      const url = new URL(d.url);
-      if (d.protocol !== 1 || typeof d.instanceId !== "string" || !Number.isSafeInteger(d.pid) || d.pid <= 0 || ![resolve(dataDir), resolve(dataDir, "data")].includes(d.dataDir) || !/^[a-f0-9]{64}$/.test(d.token)) continue;
-      if (url.protocol !== "http:" || url.hostname !== "127.0.0.1" || !url.port || url.pathname !== "/" || url.username || url.password || url.search || url.hash) continue;
-      const response = await request(new URL("/api/desktop/identity", url), { headers: { "x-agentroam-desktop-token": d.token }, redirect: "error", signal: AbortSignal.timeout(1500) });
-      if (!response.ok) continue;
-      const identity = await response.json() as Partial<Descriptor>;
-      if (identity.protocol === 1 && identity.instanceId === d.instanceId && identity.dataDir === d.dataDir) candidates.push(d);
-    } catch { /* Stale descriptors are expected after a process crash. */ }
-  }
-  if (candidates.length !== 1) throw new Error(candidates.length ? "多个服务使用此数据目录，请先停止多余实例" : "未找到运行中的 AgentRoam 服务，请先启动服务或指定 --data-dir");
-  const d = candidates[0];
   const readOnly = ["devices", "requests", "audit"].includes(action);
-  const response = await request(new URL(`/api/pairing/admin/${action}`, d.url), {
-    method: readOnly ? "GET" : "POST",
-    headers: { "x-agentroam-desktop-token": d.token, "content-type": "application/json" },
-    ...(readOnly ? {} : { body: JSON.stringify(body ?? {}) }),
-    redirect: "error", signal: AbortSignal.timeout(5000),
-  });
-  if (!response.ok) {
-    const message = response.status === 423 ? "远程访问已锁定，请先执行 agentroam unlock" : response.status === 410 ? "请求已过期或已处理" : response.status === 409 ? "核对短语不匹配" : `设备授权操作失败 (HTTP ${response.status})`;
+  try {
+    return await localServiceRequest<T>(dataDir, `/api/pairing/admin/${action}`, {
+      ...options, method: readOnly ? "GET" : "POST", ...(readOnly ? {} : { body: body ?? {} }),
+    });
+  } catch (error) {
+    if (!(error instanceof LocalServiceHttpError)) throw error;
+    const message = error.status === 423 ? "远程访问已锁定，请先执行 agentroam unlock" : error.status === 410 ? "请求已过期或已处理" : error.status === 409 ? "核对短语不匹配" : `设备授权操作失败 (HTTP ${error.status})`;
     throw new Error(message);
   }
-  return response.json() as Promise<T>;
 }
 
 export function terminalText(value: string): string { return value.replace(/[\x00-\x1f\x7f-\x9f\u202a-\u202e\u2066-\u2069]/g, ""); }
@@ -55,7 +36,7 @@ export function pairingQrPayload(accessUrl: string, grant: string): string {
 }
 
 export async function printPairingCode(dataDir: string, log: (line: string) => void = console.log, options: { interactive?: boolean; signal?: AbortSignal; accessUrl?: string; qr?: boolean } = {}): Promise<void> {
-  const result = await pairingAdmin<PairingCode>(dataDir, "code");
+  const result = await withCliProgress("正在生成设备配对码", () => pairingAdmin<PairingCode>(dataDir, "code"));
   log(`配对码：${result.code.slice(0, 4)} ${result.code.slice(4)}`);
   log("5 分钟内有效，仅可使用一次。手机输入后仍需在电脑上确认核对短语。");
   if ((options.qr ?? true) && (options.interactive ?? process.stdout.isTTY)) {
@@ -63,14 +44,17 @@ export async function printPairingCode(dataDir: string, log: (line: string) => v
     if (accessUrl) {
       // Validate the public address before minting an invitation. Never persist the grant.
       pairingQrPayload(accessUrl, "a".repeat(43));
-      const { grant } = await pairingAdmin<{ grant: string }>(dataDir, "qr");
+      const qr = await withCliProgress("正在生成手机连接二维码", async () => {
+        const { grant } = await pairingAdmin<{ grant: string }>(dataDir, "qr");
+        return renderQr(pairingQrPayload(accessUrl, grant));
+      });
       log("手机扫码直接连接（5 分钟、一次有效，请勿分享截图）：");
-      log(await renderQr(pairingQrPayload(accessUrl, grant)));
+      log(qr);
     } else log("生成 App 授权二维码：agentroam pair --url <手机可访问的服务器地址>");
   }
   const approvalInput = resolveApprovalInput(options);
   if (approvalInput) {
-    await watchPairingApproval(dataDir, result.expiresAt, { log, signal: options.signal, input: approvalInput });
+    await withCliProgress("正在等待手机扫码或输入配对码", () => watchPairingApproval(dataDir, result.expiresAt, { log, signal: options.signal, input: approvalInput }));
   } else log("查看请求：agentroam approvals；批准：agentroam approve <请求ID> --phrase <手机核对短语>");
 }
 
@@ -126,7 +110,7 @@ export async function watchPairingApproval(dataDir: string, codeExpiresAt: numbe
       log(`请求 ID：${request.id}`);
       log(`核对短语：${request.phrase}`);
       const confirm = options.confirm ?? ((request: PendingPairing, signal?: AbortSignal) => confirmOnTerminal(request, signal, options.input));
-      const approved = await confirm(request, options.signal);
+      const approved = await withoutCliProgress(() => confirm(request, options.signal));
       if (options.signal?.aborted) return;
       if (Date.now() >= request.expires) { log("授权请求已过期，请重新配对。"); return; }
       await admin(dataDir, approved ? "approve" : "deny", { id: request.id, ...(approved ? { phrase: request.phrase } : {}) });

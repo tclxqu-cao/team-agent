@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { Transform, Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { execFile } from 'node:child_process';
+import { withCliProgress } from './cli-progress.mjs';
 
 // 桌面端安装包是构建产物（dmg / exe），进不了只放源码的仓库，只能走 Releases 资产。
 // 资产由 `node scripts/publish-agentroam-release.mjs sync-github --commit <sha>` 上传；
@@ -57,7 +58,7 @@ export async function downloadDesktop(version, { platform = process.platform, ar
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try {
-    const destination = await downloadDesktop(process.argv[2]);
+    const destination = await withCliProgress('正在下载并校验桌面端安装包', () => downloadDesktop(process.argv[2]));
     console.log(`桌面端安装包已下载：${destination}\n请打开安装包完成安装。首次打开 AgentRoam 后，按提示授权远程桌面。`);
     if (process.platform === 'darwin') execFile('/usr/bin/open', ['-R', destination], () => undefined);
     else if (process.platform === 'win32') execFile('explorer.exe', [`/select,${destination}`], () => undefined);

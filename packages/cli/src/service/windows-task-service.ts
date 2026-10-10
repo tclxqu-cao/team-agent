@@ -85,8 +85,8 @@ export class WindowsTaskService implements ServiceController {
   async start(): Promise<ServiceRuntimeState | null> {
     const status = await this.status();
     if (!status.installed) throw new Error("AgentRoam service is not installed");
-    if (status.running) return status.state;
     const paths = resolveServicePaths(this.homeDir, status.config?.dataDir);
+    if (status.running) return this.waitForReady(paths);
     await Promise.all([removeIfExists(paths.statePath), removeIfExists(paths.urlPath)]);
     await this.runRequired(buildStartTaskScript());
     return this.waitForReady(paths, status.state?.pid);
@@ -117,12 +117,13 @@ export class WindowsTaskService implements ServiceController {
     const config = await readServiceConfig(basePaths);
     const paths = resolveServicePaths(this.homeDir, config?.dataDir);
     const task = await this.inspectTask();
+    const state = await readServiceState(paths);
     return {
       installed: task.installed,
       loaded: task.installed,
       running: task.running,
       config,
-      state: await readServiceState(paths),
+      state: task.running && state && !this.processExists(state.pid) ? null : state,
       definition: WINDOWS_SERVICE_NAME,
     };
   }
@@ -214,8 +215,11 @@ export class WindowsTaskService implements ServiceController {
     const deadline = Date.now() + this.readyTimeoutMs;
     do {
       const state = await readServiceState(paths);
-      if (state?.status === "ready" && (!previousPid || state.pid !== previousPid)) return state;
-      if (Date.now() >= deadline) return state;
+      if (state?.status === "ready" && state.accessUrl && (!previousPid || state.pid !== previousPid)) {
+        const task = await this.inspectTask();
+        if (task.running && this.processExists(state.pid)) return state;
+      }
+      if (Date.now() >= deadline) return state?.status === "ready" ? null : state;
       await delay(this.pollIntervalMs);
     } while (true);
   }

@@ -167,7 +167,10 @@ export class RemoteHelper {
     if (!this.socket || this.socket.destroyed) return Promise.reject(new Error('远程授权组件未连接'));
     const id = ++this.sequence;
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => { this.pending.delete(id); reject(new Error('远程授权组件响应超时')); }, 12000);
+      // macOS permission dialogs wait for the user's decision. Keep ordinary
+      // helper commands bounded without expiring authorization after 12s.
+      const timeoutMs = command.op === 'authorize' ? 120000 : 12000;
+      const timer = setTimeout(() => { this.pending.delete(id); reject(new Error('远程授权组件响应超时')); }, timeoutMs);
       this.pending.set(id, { resolve, reject, timer });
       this.socket.write(JSON.stringify({ ...command, id }) + '\n');
     });

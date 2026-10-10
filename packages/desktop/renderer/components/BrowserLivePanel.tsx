@@ -9,6 +9,7 @@ import { ExternalLink, Hand, Keyboard, LoaderCircle, Lock, LockOpen, Mic, MicOff
 import type { BrowserLiveSession } from "../global";
 
 import { BrowserLiveTouch } from "./browser-live-touch";
+import { trackBrowserLiveViewport } from "./browser-live-viewport";
 import {
   formatRemoteVideoStats,
   formatRemoteVideoDecoder,
@@ -195,7 +196,12 @@ export function touchScrollDelta(
 export default function BrowserLivePanel({ open, agentSessionId, onClose }: BrowserLivePanelProps) {
   const headerControl = useContext(BrowserLiveHeaderContext);
   const api = typeof window === "undefined" ? undefined : window.browserLiveApi;
+  const backdropRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLElement>(null);
+  useLayoutEffect(() => {
+    if (!open || !backdropRef.current) return;
+    return trackBrowserLiveViewport(backdropRef.current);
+  }, [open]);
   const [fullscreen, setFullscreen] = useState(false);
   const toggleFullscreen = async () => {
     const panel = panelRef.current;
@@ -1114,7 +1120,7 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
         : null;
 
   return createPortal(
-    <div className="browser-live-backdrop" data-tab-swipe-ignore role="presentation" onMouseDown={(event) => {
+    <div ref={backdropRef} className="browser-live-backdrop" data-tab-swipe-ignore role="presentation" onMouseDown={(event) => {
       if (event.target === event.currentTarget) onClose();
     }}>
       <section ref={panelRef} className={`browser-live-panel ${fullscreen ? "is-fullscreen" : ""}`} role="dialog" aria-modal="true" aria-label="浏览器直播">
@@ -1294,6 +1300,7 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
                   cursor: panMode ? "grab" : undefined,
                 } : undefined}
                 tabIndex={hasControl && !panMode ? 0 : -1}
+                onContextMenu={(event) => event.preventDefault()}
                 onPointerDown={(event) => {
                   if (event.pointerType === "touch") {
                     event.preventDefault();

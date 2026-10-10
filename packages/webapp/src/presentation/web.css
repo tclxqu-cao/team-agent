@@ -70,7 +70,11 @@ body[data-web-shell="1"][data-native-app="1"] .chat-header-action--appearance {
    compact so pointer coordinates remain stable on desktop and mobile. */
 .browser-live-backdrop {
   position: fixed;
-  inset: 0;
+  top: var(--browser-live-top, 0px);
+  left: var(--browser-live-left, 0px);
+  width: var(--browser-live-width, 100vw);
+  height: var(--browser-live-height, 100dvh);
+  box-sizing: border-box;
   z-index: 1400;
   display: grid;
   place-items: center;
@@ -80,9 +84,10 @@ body[data-web-shell="1"][data-native-app="1"] .chat-header-action--appearance {
 }
 
 .browser-live-panel {
-  width: min(1120px, calc(100vw - 40px));
-  height: min(780px, calc(var(--vv-height, 100vh) - 40px));
-  min-height: 420px;
+  width: min(1120px, 100%);
+  height: min(780px, 100%);
+  min-height: min(420px, 100%);
+  box-sizing: border-box;
   display: grid;
   grid-template-rows: 54px minmax(0, 1fr) 62px;
   overflow: hidden;
@@ -189,6 +194,7 @@ body[data-web-shell="1"][data-native-app="1"] .chat-header-action--appearance {
   touch-action: none;
   user-select: none;
   -webkit-user-select: none;
+  -webkit-touch-callout: none;
   flex: none;
   margin: auto;
 }
@@ -353,6 +359,9 @@ body[data-web-shell="1"][data-native-app="1"] .chat-header-action--appearance {
   object-fit: contain;
   user-select: none;
   -webkit-user-drag: none;
+  -webkit-touch-callout: none;
+  /* The capture is a display surface; gestures belong to its hit area. */
+  pointer-events: none;
 }
 
 /* Real-time WebRTC video overlays the JPEG fallback; pointer events stay on
@@ -618,8 +627,8 @@ body[data-web-shell="1"][data-native-app="1"] .chat-header-action--appearance {
   }
 
   .browser-live-panel {
-    width: 100vw;
-    height: var(--vv-height, 100vh);
+    width: 100%;
+    height: 100%;
     min-height: 0;
     grid-template-rows: 50px minmax(0, 1fr) auto;
     border: 0;
@@ -1079,16 +1088,16 @@ body[data-web-shell="1"] {
 /* Match phone landscape by input capability as well as width. */
 .browser-live-panel.is-fullscreen,
 .browser-live-panel:fullscreen {
-  position: fixed;
+  position: absolute;
   inset: 0;
   width: 100%;
-  height: 100dvh;
+  height: 100%;
   min-height: 0;
   border: 0;
   border-radius: 0;
   padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
   box-sizing: border-box;
-  grid-template-rows: minmax(0, 1fr) 62px;
+  grid-template-rows: minmax(0, 1fr) auto;
 }
 
 .browser-live-panel.is-fullscreen .browser-live-header,
@@ -1100,14 +1109,22 @@ body[data-web-shell="1"] {
   .browser-live-backdrop { padding: 0; }
   .browser-live-panel,
   .browser-live-panel.is-fullscreen {
-    width: 100vw;
-    height: var(--vv-height, 100dvh);
+    width: 100%;
+    height: 100%;
     min-height: 0;
     border: 0;
     border-radius: 0;
     padding-left: env(safe-area-inset-left);
     padding-right: env(safe-area-inset-right);
     box-sizing: border-box;
+  }
+  /* A portrait phone also matches landscape when its keyboard shrinks the
+     iframe below its width. Keep a row for every visible child. */
+  .browser-live-panel {
+    grid-template-rows: 40px minmax(0, 1fr) 44px;
+  }
+  .browser-live-panel.is-fullscreen,
+  .browser-live-panel:fullscreen {
     grid-template-rows: minmax(0, 1fr) 44px;
   }
   .browser-live-footer {

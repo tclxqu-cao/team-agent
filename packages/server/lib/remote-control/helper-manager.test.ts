@@ -6,6 +6,25 @@ function connectHelperSockets(controlPath:string, videoPath:string) {
   return { control: connect(controlPath), video: connect(videoPath) };
 }
 
+it('gives permission dialogs two minutes while ordinary commands still time out after twelve seconds', async () => {
+  const helper = new RemoteHelper();
+  helper.socket = {destroyed:false,write:vi.fn()};
+  vi.useFakeTimers();
+  try {
+    const authorization = helper.request({op:'authorize',permission:'screen'});
+    const rejected = expect(authorization).rejects.toThrow('响应超时');
+    await vi.advanceTimersByTimeAsync(12001);
+    expect(helper.pending.size).toBe(1);
+    await vi.advanceTimersByTimeAsync(108000);
+    await rejected;
+    expect(helper.pending.size).toBe(0);
+    const status = helper.request({op:'status'});
+    const statusRejected = expect(status).rejects.toThrow('响应超时');
+    await vi.advanceTimersByTimeAsync(12000);
+    await statusRejected;
+  } finally { helper.rejectPending(); vi.useRealTimers(); }
+});
+
 it('round-trips fragmented binary video frames without Base64 expansion',()=>{
  const first=encodeVideoFrame({timestamp:1.25,key:true,nals:[Buffer.from([0x67,1]),Buffer.from([0x65,2,3])]});
  const second=encodeVideoFrame({timestamp:2,key:false,nals:[Buffer.from([0x41,4])]});

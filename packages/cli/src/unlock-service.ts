@@ -1,4 +1,4 @@
-import { spawnSync, type SpawnSyncReturns } from "node:child_process";
+import { execFile } from "node:child_process";
 import { resolve } from "node:path";
 
 export type UnlockServiceAction = "install" | "uninstall" | "status";
@@ -10,7 +10,23 @@ type Runner = (
   file: string,
   args: readonly string[],
   options: { encoding: "utf8"; windowsHide: true },
-) => SpawnSyncReturns<string>;
+) => CommandResult | Promise<CommandResult>;
+
+interface CommandResult {
+  stdout: string;
+  stderr: string;
+  status: number | null;
+  error?: Error;
+}
+
+// Keep the event loop free while PowerShell waits for UAC or service control.
+const runFile: Runner = (file, args, options) => new Promise((resolveResult) => {
+  execFile(file, [...args], options, (error, stdout, stderr) => {
+    resolveResult({ stdout, stderr, status: error ? 1 : 0,
+      ...(error && typeof error.code !== "number" ? { error } : {}),
+    });
+  });
+});
 
 function psQuote(value: string): string {
   return `'${value.replaceAll("'", "''")}'`;
@@ -68,44 +84,44 @@ export function parseUnlockServiceStatus(output: string): "running" | "stopped" 
   throw new Error("无法读取远程解锁服务状态");
 }
 
-function runPowerShell(script: string, runner: Runner): SpawnSyncReturns<string> {
+function runPowerShell(script: string, runner: Runner): CommandResult | Promise<CommandResult> {
   return runner("powershell.exe", [
     "-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
     "-EncodedCommand", encodePowerShell(script),
   ], { encoding: "utf8", windowsHide: true });
 }
 
-export function queryUnlockServiceStatus(runner: Runner = spawnSync): "running" | "stopped" | "missing" {
+export async function queryUnlockServiceStatus(runner: Runner = runFile): Promise<"running" | "stopped" | "missing"> {
   const script = `$service = Get-Service -Name '${SERVICE_NAME}' -ErrorAction SilentlyContinue
 if (-not $service) { Write-Output 'missing' } elseif ($service.Status -eq 'Running') { Write-Output 'running' } else { Write-Output 'stopped' }
 `;
-  const result = runPowerShell(script, runner);
+  const result = await runPowerShell(script, runner);
   if (result.error) throw result.error;
   if (result.status !== 0) throw new Error((result.stderr || "远程解锁服务状态查询失败").trim());
   return parseUnlockServiceStatus(result.stdout || "");
 }
 
-export function runUnlockServiceCommand(
+export async function runUnlockServiceCommand(
   action: UnlockServiceAction,
   runtimeRoot: string,
   options: { platform?: NodeJS.Platform; runner?: Runner; log?: (message: string) => void } = {},
-): void {
+): Promise<void> {
   const platform = options.platform ?? process.platform;
-  const runner = options.runner ?? spawnSync;
+  const runner = options.runner ?? runFile;
   const log = options.log ?? console.log;
   if (platform !== "win32") throw new Error("远程解锁服务仅支持 Windows 10/11 x64");
   if (action === "status") {
-    const status = queryUnlockServiceStatus(runner);
+    const status = await queryUnlockServiceStatus(runner);
     log(status === "running" ? "远程解锁服务正在运行" : status === "stopped" ? "远程解锁服务已安装但未运行" : "远程解锁服务未安装");
     return;
   }
   const executable = unlockServiceExecutable(runtimeRoot);
-  const result = runPowerShell(buildElevatedPowerShell(buildUnlockServiceAdminScript(action, executable)), runner);
+  const result = await runPowerShell(buildElevatedPowerShell(buildUnlockServiceAdminScript(action, executable)), runner);
   if (result.error) throw result.error;
   if (result.status !== 0) {
     throw new Error((result.stderr || (action === "install" ? "远程解锁服务安装失败或已取消管理员授权" : "远程解锁服务卸载失败或已取消管理员授权")).trim());
   }
-  const status = queryUnlockServiceStatus(runner);
+  const status = await queryUnlockServiceStatus(runner);
   if (action === "install" && status !== "running") throw new Error("远程解锁服务安装后未能启动");
   if (action === "uninstall" && status !== "missing") throw new Error("远程解锁服务卸载后仍然存在");
   log(action === "install" ? "远程解锁服务已安装并启动" : "远程解锁服务已卸载");

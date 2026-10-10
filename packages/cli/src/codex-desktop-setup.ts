@@ -6,6 +6,7 @@ import type { CliOptions } from "./args.js";
 import { runCodexDesktopCommand } from "./codex-desktop-command.js";
 import { inspectCodexDesktop, type DesktopSnapshot } from "./codex-desktop-status.js";
 import type { ServiceConfig } from "./service/service-files.js";
+import { withoutCliProgress } from "../bin/cli-progress.mjs";
 
 interface DesktopSetupContext {
   platform?: NodeJS.Platform;
@@ -45,7 +46,7 @@ export async function setupCodexDesktop(options: CliOptions, context: DesktopSet
         ? `官方 Codex 桌面端当前有 ${snapshot.activity.activeCount} 个运行中的会话。`
         : "无法可靠确认官方 Codex 桌面端的全部任务已结束。";
       log(reason);
-      const answer = await (context.confirm ?? confirmDesktopRestart)("现在重启桌面端以共享会话？重启可能中断桌面端的所有运行任务；选择保留则暂不能共享原桌面会话 [y/N]：");
+      const answer = await withoutCliProgress(() => (context.confirm ?? confirmDesktopRestart)("现在重启桌面端以共享会话？重启可能中断桌面端的所有运行任务；选择保留则暂不能共享原桌面会话 [y/N]："));
       if (!answer || !/^(?:y|yes)$/i.test(answer.trim())) { deferred(); return; }
       restartConfirmed = true;
       const checked = await inspect(environment);

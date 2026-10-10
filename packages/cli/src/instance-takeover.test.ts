@@ -1,6 +1,6 @@
 import { once } from "node:events";
 import { afterEach, expect, it, vi } from "vitest";
-import { mkdtemp, mkdir, writeFile, rm, realpath } from "node:fs/promises";
+import { mkdtemp, mkdir, writeFile, rm, realpath, readdir, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { lockInstanceStartup, stopPreviousInstances } from "./instance-takeover.js";
@@ -50,6 +50,69 @@ it("ignores stale dead descriptors but blocks unreachable live instances", async
   f.deps.alive = () => true;
   await expect(stopPreviousInstances(f.dataDir, () => {}, f.deps)).rejects.toThrow("无法核验");
 });
+it("quarantines an unreachable descriptor whose PID belongs to a system process without signaling it", async () => {
+  const f = await fixture();
+  const record = join(f.deps.registry, "test.json");
+  const original = await readFile(record, "utf8");
+  f.deps.request = vi.fn(async () => { throw new Error("connection refused"); }) as unknown as typeof fetch;
+  f.deps.alive = () => true;
+  f.rows.splice(0, f.rows.length, { pid: 200, ppid: 1, command: "/System/Library/DriverExtensions/AppleUserHIDDrivers" });
+  const log = vi.fn();
+
+  await stopPreviousInstances(f.dataDir, log, f.deps);
+
+  expect(f.stop).not.toHaveBeenCalled();
+  expect(f.deps.processes).toHaveBeenCalledTimes(2);
+  await expect(readFile(record)).rejects.toMatchObject({ code: "ENOENT" });
+  const backups = await readdir(join(f.deps.registry, "stale"));
+  expect(backups).toHaveLength(1);
+  expect(await readFile(join(f.deps.registry, "stale", backups[0]), "utf8")).toBe(original);
+  expect(log).toHaveBeenCalledWith(expect.stringContaining("已备份"));
+  // A later startup skips the backup subdirectory and cannot repeat the block.
+  await stopPreviousInstances(f.dataDir, log, f.deps);
+  expect(f.deps.request).toHaveBeenCalledTimes(1);
+});
+it.each(["", "/node /cache/node_modules/agentroam/bin/agentroam.mjs start", "/node /runtime/ws-server.mjs"])("preserves an unreachable record when process ownership is inconclusive: %s", async (command) => {
+  const f = await fixture();
+  f.deps.request = vi.fn(async () => { throw new Error("offline"); }) as unknown as typeof fetch;
+  f.deps.alive = () => true;
+  f.rows.splice(0, f.rows.length, { pid: 200, ppid: 1, command });
+  await expect(stopPreviousInstances(f.dataDir, () => {}, f.deps)).rejects.toThrow("无法核验");
+  expect(f.stop).not.toHaveBeenCalled();
+  expect(JSON.parse(await readFile(join(f.deps.registry, "test.json"), "utf8"))).toEqual(f.descriptor);
+});
+it("preserves the record when process enumeration fails", async () => {
+  const f = await fixture();
+  f.deps.request = vi.fn(async () => { throw new Error("offline"); }) as unknown as typeof fetch;
+  f.deps.alive = () => true;
+  f.deps.processes.mockRejectedValue(new Error("cannot enumerate processes"));
+  await expect(stopPreviousInstances(f.dataDir, () => {}, f.deps)).rejects.toThrow("cannot enumerate");
+  expect(f.stop).not.toHaveBeenCalled();
+  expect(await readdir(f.deps.registry)).toEqual(["test.json"]);
+});
+it("preserves the descriptor if the apparent unrelated process changes before quarantine", async () => {
+  const f = await fixture();
+  f.deps.request = vi.fn(async () => { throw new Error("offline"); }) as unknown as typeof fetch;
+  f.deps.alive = () => true;
+  f.deps.processes.mockResolvedValueOnce([{ pid: 200, ppid: 1, command: "/system/driver" }]).mockResolvedValueOnce(f.rows);
+  await expect(stopPreviousInstances(f.dataDir, () => {}, f.deps)).rejects.toThrow("身份已变化");
+  expect(f.stop).not.toHaveBeenCalled();
+  expect(await readdir(f.deps.registry)).toEqual(["test.json"]);
+});
+it("preserves a descriptor replaced concurrently instead of moving the new record", async () => {
+  const f = await fixture();
+  f.deps.request = vi.fn(async () => { throw new Error("offline"); }) as unknown as typeof fetch;
+  f.deps.alive = () => true;
+  f.rows.splice(0, f.rows.length, { pid: 200, ppid: 1, command: "/system/driver" });
+  f.deps.processes.mockResolvedValueOnce(f.rows).mockImplementationOnce(async () => {
+    f.descriptor.instanceId = "new-instance";
+    await f.save();
+    return f.rows;
+  });
+  await expect(stopPreviousInstances(f.dataDir, () => {}, f.deps)).rejects.toThrow("记录已变化");
+  expect(f.stop).not.toHaveBeenCalled();
+  expect(JSON.parse(await readFile(join(f.deps.registry, "test.json"), "utf8"))).toEqual(f.descriptor);
+});
 it("serializes startup and releases the lock for the next launch", async () => {
   const f = await fixture(); const release = await lockInstanceStartup(f.dataDir);
   await expect(lockInstanceStartup(f.dataDir)).rejects.toThrow("正在启动");
@@ -86,6 +149,32 @@ it("stops an authenticated orphan only when its executable belongs to a runtime 
   f.rows.splice(0, f.rows.length, { pid: 200, ppid: 1, command: `/node ${join(pkg, "runtime/ws-server.mjs")}` });
   await stopPreviousInstances(f.dataDir, () => {}, f.deps);
   expect(f.stop).toHaveBeenCalledWith(200);
+});
+it.skipIf(process.platform === "win32")("recovers with a real unrelated live PID and an unreachable loopback endpoint without stopping that process", async () => {
+  const { spawn } = await import("node:child_process");
+  const { createServer } = await import("node:net");
+  const f = await fixture();
+  const listener = createServer();
+  listener.listen(0, "127.0.0.1");
+  await once(listener, "listening");
+  const port = (listener.address() as { port: number }).port;
+  await new Promise<void>((resolve, reject) => listener.close(error => error ? reject(error) : resolve()));
+  const child = spawn(process.execPath, ["-e", "console.log('ready'); setInterval(() => {}, 1000)"], { stdio: ["ignore", "pipe", "pipe"] });
+  const exited = once(child, "exit");
+  try {
+    await once(child.stdout!, "data");
+    f.descriptor.pid = child.pid!;
+    f.descriptor.url = `http://127.0.0.1:${port}`;
+    await f.save();
+    const stop = vi.fn();
+    await stopPreviousInstances(f.dataDir, () => {}, { registry: f.deps.registry, stop });
+    expect(stop).not.toHaveBeenCalled();
+    expect(child.exitCode).toBeNull();
+    expect(process.kill(child.pid!, 0)).toBe(true);
+    expect(await readdir(f.deps.registry)).toEqual(["stale"]);
+  } finally {
+    if (child.exitCode === null) { child.kill("SIGTERM"); await exited; }
+  }
 });
 it("does not stop an orphan merely because its script is named ws-server.mjs", async () => {
   const f = await fixture(); f.rows.splice(0, f.rows.length, { pid: 200, ppid: 1, command: "/node /unrelated/ws-server.mjs" });

@@ -61,7 +61,8 @@ describe.skipIf(process.platform === 'win32')('Shell desktop choice after CLI in
       const marker = join(root, 'selected');
       await writeFile(join(bin, 'desktop-download.mjs'), `import { writeFileSync } from 'node:fs'; writeFileSync(process.env.CHOICE_MARKER, process.argv[2]);`);
       const installer = await readFile(new URL('../install/install-agentroam.sh', import.meta.url), 'utf8');
-      const section = installer.slice(installer.indexOf('# stdin is the script itself'));
+      const helpers = installer.slice(installer.indexOf('stop_progress()'), installer.indexOf('fail()'));
+      const section = `PROGRESS_PID=""\n${helpers}\n${installer.slice(installer.indexOf('# stdin is the script itself'))}`;
       const env: NodeJS.ProcessEnv = { ...process.env, LAUNCHER_ROOT: root, NODE_BIN: process.execPath, AGENTROAM_VERSION: version, CHOICE_MARKER: marker };
       delete env.AGENTROAM_INSTALL_DESKTOP;
       if (choice) Object.assign(env, { AGENTROAM_INSTALL_DESKTOP: choice });

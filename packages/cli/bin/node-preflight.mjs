@@ -5,6 +5,7 @@ import { delimiter, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { MINIMUM_NODE_VERSION, compareNodeVersions, isSupportedNodeVersion, parseNodeVersion } from "./runtime-policy.mjs";
+import { withCliProgress } from "./cli-progress.mjs";
 
 const execFileAsync = promisify(execFile);
 // 安装引导地址：指向仓库主分支上的安装脚本（raw 路径）。
@@ -35,10 +36,9 @@ export async function runNodePreflight(options = {}) {
   const target = detectManagedTarget(platform, arch);
   const dataDir = parsePreflightDataDir(argv, environment, options.homeDir ?? homedir());
   const findSystemNode = options.findSystemNode ?? defaultFindSystemNode;
-  const systemNode = await findSystemNode(environment, platform, options.currentExecutable ?? process.execPath);
-  let executable = systemNode;
-
-  if (!executable) {
+  const executable = await withCliProgress("正在查找或安装兼容的 Node.js", async () => {
+    const systemNode = await findSystemNode(environment, platform, options.currentExecutable ?? process.execPath);
+    if (systemNode) return systemNode;
     const ensureNode = options.ensureNode ?? (async (installOptions) => {
       const { ensureManagedNode } = await import("../dist/node-runtime-manager.js");
       return ensureManagedNode(installOptions);
@@ -50,8 +50,8 @@ export async function runNodePreflight(options = {}) {
       arch,
       onProgress: options.onProgress ?? ((message) => processHost.stderr.write(`${message}\n`)),
     });
-    executable = resolution.executable;
-  }
+    return resolution.executable;
+  }, { environment, log: (line) => processHost.stderr.write(`${line}\n`) });
 
   const spawnChild = options.spawnChild ?? defaultSpawnChild;
   const child = spawnChild(executable, [launcherPath, ...argv], {

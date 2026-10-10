@@ -3,16 +3,65 @@ import { describe, expect, it, vi } from "vitest";
 import type { CliOptions, ServiceAction } from "../args.js";
 import type { ServiceController } from "./service-controller.js";
 import { buildServiceEnvironmentPath, runServiceCommand } from "./service-command.js";
+import { withCliProgress } from "../../bin/cli-progress.mjs";
 
 describe("runServiceCommand", () => {
+  it("shows progress while start waits for readiness and stops after failure", async () => {
+    vi.useFakeTimers();
+    try {
+      const progress = vi.fn();
+      const pending = withCliProgress("服务命令", () => runServiceCommand(options("start"), {
+        platform: "darwin", nodePath: "/node", cliPath: "/cli", version: "test", log: vi.fn(),
+        controller: controller({ start: vi.fn(async () => {
+          await new Promise((resolve) => setTimeout(resolve, 6000));
+          return null;
+        }) }),
+      }), { log: progress });
+      const failed = expect(pending).rejects.toThrow("后台服务未就绪");
+      await vi.advanceTimersByTimeAsync(5800);
+      expect(progress).toHaveBeenCalledTimes(2);
+      expect(progress).toHaveBeenLastCalledWith(expect.stringContaining("正在启动后台服务，等待服务和手机访问连接就绪（已等待 5 秒）"));
+      await vi.advanceTimersByTimeAsync(200);
+      await failed;
+      expect(vi.getTimerCount()).toBe(0);
+    } finally { vi.useRealTimers(); }
+  });
+  it.each([false, true])("runs native authorization before Desktop setup and pairing, retaining installation after failure=%s", async (fails) => {
+    const order: string[] = [];
+    const log = vi.fn();
+    const desktopAuthorization = vi.fn(async () => { order.push("authorization"); if (fails) throw new Error("cancelled permission"); return true; });
+    await runServiceCommand({ ...options("install"), desktopSetup: true }, {
+      platform: "darwin", nodePath: "/node", nodeVersion: "22.22.0", cliPath: "/agentroam.mjs", version: "test", isTTY: true,
+      environment: {}, log, desktopAuthorization,
+      desktopSetup: vi.fn(async () => { order.push("desktop"); }), pairingPrinter: vi.fn(async () => { order.push("pairing"); }),
+      controller: controller({ install: vi.fn(async () => ({ definition: "service", state: { status: "ready", accessUrl: "https://ready.example/web", localUrl: "http://127.0.0.1:4317" } })) }),
+      codexResolver: vi.fn(async () => ({ executable: "/managed/codex", version: "test", source: "global" as const })),
+    });
+    expect(order).toEqual(["authorization", "desktop", "pairing"]);
+    expect(desktopAuthorization).toHaveBeenCalledWith(options("install").dataDir, expect.objectContaining({ isTTY: true, platform: "darwin" }));
+    if (fails) expect(log).toHaveBeenCalledWith(expect.stringContaining("AgentRoam 安装继续"));
+  });
+
+  it("allows unattended installs to skip desktop authorization without losing pairing", async () => {
+    const desktopAuthorization = vi.fn();
+    const pairingPrinter = vi.fn();
+    await runServiceCommand(options("install"), {
+      platform: "darwin", nodePath: "/node", nodeVersion: "22.22.0", cliPath: "/agentroam.mjs", version: "test",
+      environment: { AGENTROAM_INSTALL_REMOTE_DESKTOP: "skip" }, log: vi.fn(), desktopAuthorization, pairingPrinter,
+      controller: controller({ install: vi.fn(async () => ({ definition: "service", state: { status: "ready", accessUrl: "https://ready.example/web", localUrl: "http://127.0.0.1:4317" } })) }),
+      codexResolver: vi.fn(async () => ({ executable: "/managed/codex", version: "test", source: "global" as const })),
+    });
+    expect(desktopAuthorization).not.toHaveBeenCalled();
+    expect(pairingPrinter).toHaveBeenCalledOnce();
+  });
   it.each(["22.22.0", "24.0.0", "25.8.0", "26.0.0"])("keeps the selected Node %s when installing a service", async (nodeVersion) => {
-    const install = vi.fn(async () => ({ definition: "/test/service.plist" }));
+    const install = vi.fn(async () => ({ definition: "/test/service.plist", state: { status: "ready", accessUrl: "https://ready.example/web" } }));
     const nodePath = `/runtimes/node-${nodeVersion}/bin/node`;
     const codexResolver = vi.fn(async () => ({ executable: "/tools/codex", version: "test", source: "global" as const }));
     await runServiceCommand(options("install"), {
       platform: "darwin", arch: "arm64", nodeVersion, nodePath,
       cliPath: "/agentroam.mjs", version: "test", environment: { PATH: "/usr/bin" },
-      codexResolver, controller: controller({ install }), log: vi.fn(),
+      codexResolver, controller: controller({ install }), log: vi.fn(), pairingPrinter: vi.fn(),
     });
     expect(install).toHaveBeenCalledWith(expect.objectContaining({ nodePath }));
     expect(codexResolver).toHaveBeenCalledWith(expect.objectContaining({ nodeExecutable: nodePath }));
@@ -94,6 +143,28 @@ describe("runServiceCommand", () => {
     });
     expect(order).toEqual(["desktop", "pairing"]);
     expect(desktopSetup).toHaveBeenCalledWith(expect.objectContaining({ desktopSetup: true }), expect.objectContaining({ service: expect.objectContaining({ codexPath: "/managed/codex" }) }));
+  });
+
+  it.each(["install", "start", "restart"] as const)("returns a failure for %s when service readiness was not reached", async (action) => {
+    for (const platform of ["darwin", "win32"] as const) {
+      for (const state of [null, { status: "starting" }, { status: "stopped" }, { status: "ready" }]) {
+        const log = vi.fn();
+        const desktopSetup = vi.fn();
+        const pairingPrinter = vi.fn();
+        const control = controller({
+          install: vi.fn(async () => ({ definition: "service", state })),
+          start: vi.fn(async () => state), restart: vi.fn(async () => state),
+        });
+        await expect(runServiceCommand({ ...options(action), desktopSetup: true }, {
+          platform, nodePath: "/node", nodeVersion: "22.22.0", cliPath: "/agentroam.mjs", version: "test",
+          controller: control, log, desktopSetup, pairingPrinter, environment: {},
+          codexResolver: vi.fn(async () => ({ executable: "/codex", version: "test", source: "global" as const })),
+        })).rejects.toMatchObject({ exitCode: 1, message: expect.stringContaining("agentroam service logs") });
+        expect(log.mock.calls.some(([line]) => /service (?:started|restarted)|Open:/.test(line))).toBe(false);
+        expect(desktopSetup).not.toHaveBeenCalled();
+        expect(pairingPrinter).not.toHaveBeenCalled();
+      }
+    }
   });
 
   it("keeps service output QR-free when piped or when --no-qr is set", async () => {
@@ -217,8 +288,10 @@ it.each(['install', 'start', 'restart', 'status'] as const)('prints the actual W
     install:vi.fn(async()=>({state,definition:'task'})),start:vi.fn(async()=>state),restart:vi.fn(async()=>state),
     status:vi.fn(async()=>({installed:true,running:true,state,config:null})),
   });
-  await runServiceCommand(options(action),{platform:'win32',arch:'x64',nodePath:'C:\\node.exe',cliPath:'C:\\agentroam.mjs',version:'test',nodeVersion:'22.22.0',controller:control,log,
+  const command = runServiceCommand(options(action),{platform:'win32',arch:'x64',nodePath:'C:\\node.exe',cliPath:'C:\\agentroam.mjs',version:'test',nodeVersion:'22.22.0',controller:control,log,
     codexResolver:vi.fn(async()=>({executable:'C:\\codex.exe',version:'test',source:'global' as const}))});
+  if (action === 'status') await command;
+  else await expect(command).rejects.toThrow('后台服务未就绪');
   expect(log).toHaveBeenCalledWith('远程桌面授权地址：http://127.0.0.1:49157/web');
   expect(log).toHaveBeenCalledWith(expect.stringContaining('保持 Windows 已登录'));
   expect(log.mock.calls.some(([line])=>line.includes('屏幕录制')||line.includes('辅助功能'))).toBe(false);

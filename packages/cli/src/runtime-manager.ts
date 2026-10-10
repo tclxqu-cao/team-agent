@@ -18,6 +18,7 @@ import type { PlatformTarget } from "./platform.js";
 import { resolvePlatformRuntime } from "./platform-packages.js";
 import { findAvailablePort } from "./port.js";
 import { ProcessSupervisor } from "./process-supervisor.js";
+import { withCliProgress } from "../bin/cli-progress.mjs";
 
 export interface RuntimeHandle {
   port: number;
@@ -48,18 +49,18 @@ export class RuntimeManager {
     const port = await findAvailablePort(options.port);
     const dataDir = resolve(options.dataDir);
     await Promise.all(["data", "bin", "cache", "logs"].map((name) => mkdir(resolve(dataDir, name), { recursive: true })));
-    const codexEnvironment = await prepareCodexRuntimeEnvironment(
+    const codexEnvironment = await withCliProgress("正在准备 Codex 组件", () => prepareCodexRuntimeEnvironment(
       process.env,
       { dataDir, target },
       this.codexResolver,
       this.report,
-    );
-    const childEnvironment = await prepareOpenCodeRuntimeEnvironment(
+    ));
+    const childEnvironment = await withCliProgress("正在准备 OpenCode 组件", () => prepareOpenCodeRuntimeEnvironment(
       codexEnvironment,
       { dataDir, target },
       this.opencodeResolver,
       this.report,
-    );
+    ));
 
     const { runtimeRoot } = resolvePlatformRuntime(target);
     await repairNativeRuntimePermissions(runtimeRoot);
@@ -90,7 +91,7 @@ export class RuntimeManager {
       child.once("exit", (code, signal) => resolveExit({ code, signal }));
     });
     const localUrl = `http://127.0.0.1:${port}`;
-    const status = await waitForHealth(`${localUrl}/api/web-auth/status`, child, 20_000);
+    const status = await withCliProgress("正在等待本机服务就绪", () => waitForHealth(`${localUrl}/api/web-auth/status`, child, 20_000));
     return {
       port,
       localUrl,

@@ -23,6 +23,8 @@ import { runUnlockServiceCommand } from "./unlock-service.js";
 import { createCliErrorLog } from "./error-log.js";
 import { runCodexDesktopCommand } from "./codex-desktop-command.js";
 import { setupCodexDesktop } from "./codex-desktop-setup.js";
+import { runDesktopCommand } from "./desktop-authorization.js";
+import { withCliProgress } from "../bin/cli-progress.mjs";
 
 const VERSION = AGENTROAM_VERSION;
 
@@ -42,6 +44,9 @@ export async function main(argv: string[]): Promise<void> {
   agentroam revoke <设备ID>          移除一台设备
   agentroam revoke --all            全部退出并取消待用配对码
   agentroam service install|start|stop|restart|status|url|logs|uninstall
+  agentroam desktop authorize       本机弹窗授权远程桌面，无需浏览器；可重复执行
+  agentroam desktop status          重新检查远程桌面权限和共享状态
+  agentroam desktop disable         关闭远程桌面共享，保留系统权限
   agentroam unlock-service install|uninstall|status  管理 Windows 远程解锁服务（安装时弹出 UAC）
   agentroam codex-desktop [--dry-run]  通过共享后端启动官方 Codex 桌面端（macOS）
   agentroam codex-desktop --restart   退出并重新连接官方桌面端，会中断它的全部运行会话
@@ -51,6 +56,19 @@ export async function main(argv: string[]): Promise<void> {
     return;
   }
   const options = parseArgs(argv);
+  // Foreground start remains alive after readiness; only its startup stages load.
+  if (options.command === "start" || options.command === "update-worker") return executeCommand(options, argv);
+  const label = options.command === "service" ? `正在处理后台服务：${options.serviceAction}`
+    : options.command === "desktop" ? "正在检查远程桌面授权"
+    : options.command === "codex-desktop" ? "正在配置官方 Codex 桌面连接"
+    : options.command === "doctor" ? "正在检查运行组件"
+    : options.command === "update" ? "正在检查并准备更新"
+    : options.command === "unlock-service" ? "正在处理 Windows 解锁服务，请留意管理员授权弹窗"
+    : "正在处理设备授权命令";
+  await withCliProgress(label, () => executeCommand(options, argv));
+}
+
+async function executeCommand(options: ReturnType<typeof parseArgs>, argv: string[]): Promise<void> {
   // CLI 进程自身的按天错误日志:<dataDir>/logs/YYYY-MM-DD.log(NDJSON,与
   // server/desktop 的 core logger 同格式)。uncaughtException 记录后按默认
   // 语义退出(1),unhandledRejection 只记录。
@@ -94,6 +112,11 @@ export async function main(argv: string[]): Promise<void> {
     return;
   }
   const target = detectPlatform();
+  if (options.command === "desktop") {
+    if (!argv.includes("--data-dir")) options.dataDir = await installedDataDir(options.dataDir);
+    await runDesktopCommand(options);
+    return;
+  }
 
   if (options.command === "codex-desktop") {
     if (!argv.includes("--data-dir")) options.dataDir = await installedDataDir(options.dataDir);
@@ -104,7 +127,7 @@ export async function main(argv: string[]): Promise<void> {
 
   if (options.command === "unlock-service") {
     if (target !== "windows-amd64") throw new Error("远程解锁服务仅支持 Windows 10/11 x64");
-    runUnlockServiceCommand(options.unlockServiceAction!, resolvePlatformRuntime(target).runtimeRoot);
+    await runUnlockServiceCommand(options.unlockServiceAction!, resolvePlatformRuntime(target).runtimeRoot);
     return;
   }
 
@@ -125,7 +148,7 @@ export async function main(argv: string[]): Promise<void> {
   }
 
   console.log(`AgentRoam ${VERSION}\n✓ Node ${process.versions.node} · ${target}`);
-  const sleepInhibitor = await acquireSleepInhibitor();
+  const sleepInhibitor = await withCliProgress("正在准备启动环境", () => acquireSleepInhibitor());
   const controller = new AbortController();
   let runtime: RuntimeHandle | null = null;
   let relay: RelaySelection | null = null;
@@ -141,10 +164,10 @@ export async function main(argv: string[]): Promise<void> {
     if (closePromise) return closePromise;
     closing = true;
     controller.abort();
-    closePromise = (async () => {
+    closePromise = withCliProgress("正在停止本机服务和访问连接", async () => {
       await relay?.tunnel?.close().catch(() => {});
       await runtime?.close().catch(() => {});
-    })();
+    });
     return closePromise;
   };
   const requestClose = () => void close();
@@ -152,31 +175,32 @@ export async function main(argv: string[]): Promise<void> {
   process.once("SIGTERM", requestClose);
 
   try {
-    releaseStartup = await lockInstanceStartup(options.dataDir);
-    await stopPreviousInstances(options.dataDir, console.log);
+    releaseStartup = await withCliProgress("正在等待启动锁", () => lockInstanceStartup(options.dataDir));
+    await withCliProgress("正在接管旧实例", () => stopPreviousInstances(options.dataDir, console.log));
     if (controller.signal.aborted) return;
     await serviceReporter?.starting();
     reportedStarting = Boolean(serviceReporter);
-    runtime = await new RuntimeManager().start(options, target);
+    runtime = await withCliProgress("正在启动本机服务", () => new RuntimeManager().start(options, target));
     if (controller.signal.aborted) { await runtime.close(); return; }
     void runtime.exited.then(() => controller.abort());
     console.log(`✓ Local server: ${runtime.localUrl}/web`);
     await serviceReporter?.localReady(runtime.localUrl);
     if (!serviceReporter) printLocalDesktopUrl(runtime.localUrl);
     const lanUrl = options.localOnly ? findLanUrl(runtime.port) ?? runtime.localUrl : runtime.localUrl;
+    const relayRuntime = runtime;
 
-    relay = await selectRelay({
+    relay = await withCliProgress("正在建立手机访问连接", () => selectRelay({
       cli: options,
       target,
-      localUrl: runtime.localUrl,
+      localUrl: relayRuntime.localUrl,
       lanUrl,
-      port: runtime.port,
+      port: relayRuntime.port,
       signal: controller.signal,
       log: (line) => process.stderr.write(`${line}\n`),
       onAttempt: (provider) => console.log(`▲ Trying ${providerDisplayName(provider)} relay...`),
       onFailure: (provider, message) => console.error(`⚠ ${providerDisplayName(provider)} unavailable: ${message}`),
       allowLanFallback: options.localOnly,
-    });
+    }));
 
     if (controller.signal.aborted) { await relay.tunnel?.close(); return; }
     if (relay.provider === "lan") {
@@ -243,7 +267,7 @@ async function doctor(target: PlatformTarget, dataDir: string): Promise<void> {
     ["better-sqlite3", probeSQLiteRuntime],
   ] as const) {
     try {
-      await probe(runtimeRequire);
+      await withCliProgress(`正在检查 ${module}`, () => probe(runtimeRequire));
       console.log(`✓ ${module}`);
     } catch (error) {
       reportDoctorFailure(error, `${module}: `);
@@ -258,18 +282,18 @@ async function doctor(target: PlatformTarget, dataDir: string): Promise<void> {
   }
 
   try {
-    const codex = await resolveCodexRuntime({
+    const codex = await withCliProgress("正在检查和准备 Codex", () => resolveCodexRuntime({
       dataDir,
       target,
       onProgress: (message) => console.log(`… ${message}`),
-    });
+    }));
     console.log(`✓ Codex ${codex.version} (${codex.source}) ${codex.executable}`);
   } catch (error) {
     reportDoctorFailure(error, "Codex: ");
   }
 
   try {
-    const executable = await ensureCloudflared(target, dataDir);
+    const executable = await withCliProgress("正在检查和准备 Cloudflare 组件", () => ensureCloudflared(target, dataDir));
     console.log(`✓ cloudflared ${executable}`);
   } catch (error) {
     reportDoctorFailure(error, "cloudflared: ");

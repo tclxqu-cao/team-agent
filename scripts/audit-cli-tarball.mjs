@@ -55,6 +55,7 @@ for (const required of [
   "package/bin/desktop-download.mjs",
   "package/bin/agent-tui.mjs",
   "package/bin/node-preflight.mjs",
+  "package/bin/cli-progress.mjs",
   "package/bin/runtime-policy.mjs",
   "package/bin/node-runtime-policy.json",
   "package/dist/cli.js",

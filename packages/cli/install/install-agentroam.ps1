@@ -232,7 +232,7 @@ if ($env:AGENTROAM_INSTALL_SKIP_SERVICE -eq "1") {
   Write-Host "AgentRoam service registration skipped for isolated verification."
 } else {
   & $NodeBin $Entry service install --root $ServiceRoot --data-dir $DataDir
-  if ($LASTEXITCODE -ne 0) { throw "AgentRoam service installation failed with exit code $LASTEXITCODE" }
+  if ($LASTEXITCODE -ne 0) { throw "CLI 已安装，但后台服务安装或启动失败（exit $LASTEXITCODE），尚不能扫码连接。请运行 agentroam service logs 查看原因，修复后运行 agentroam service start，再执行 agentroam pair。" }
 }
 Write-Host "`nAgentRoam $AgentRoamVersion installed: $WrapperPath"
 Write-Host "Open a new terminal, then run: agentroam service status"

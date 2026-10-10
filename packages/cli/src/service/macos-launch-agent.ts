@@ -96,10 +96,10 @@ export class MacLaunchAgent implements ServiceController {
   async start(): Promise<ServiceRuntimeState | null> {
     const status = await this.status();
     if (!status.installed) throw new Error("AgentRoam service is not installed");
-    if (status.running) return status.state;
+    const paths = resolveServicePaths(this.homeDir, status.config?.dataDir);
+    if (status.running) return this.waitForReady(paths);
     if (status.loaded) await this.runRequired("launchctl", ["kickstart", this.serviceTarget]);
     else await this.bootstrap(status.definition);
-    const paths = resolveServicePaths(this.homeDir, status.config?.dataDir);
     return this.waitForReady(paths, status.state?.pid);
   }
 
@@ -116,13 +116,14 @@ export class MacLaunchAgent implements ServiceController {
     const config = await readServiceConfig(basePaths);
     const paths = resolveServicePaths(this.homeDir, config?.dataDir);
     const installed = await pathExists(paths.plistPath);
-    const job = installed ? await this.inspectJob() : { loaded: false, running: false };
+    const job = installed ? await this.inspectJob() : { loaded: false, running: false, pid: undefined };
+    const state = await readServiceState(paths);
     return {
       installed,
       loaded: job.loaded,
       running: job.running,
       config,
-      state: await readServiceState(paths),
+      state: job.running && state?.pid !== job.pid ? null : state,
       definition: paths.plistPath,
     };
   }
@@ -187,11 +188,13 @@ export class MacLaunchAgent implements ServiceController {
     return `${this.domainTarget}/${SERVICE_LABEL}`;
   }
 
-  private async inspectJob(): Promise<{ loaded: boolean; running: boolean }> {
+  private async inspectJob(): Promise<{ loaded: boolean; running: boolean; pid?: number }> {
     const result = await this.runner("launchctl", ["print", this.serviceTarget]);
+    const pid = /\bpid\s*=\s*(\d+)\b/.exec(result.stdout);
     return {
       loaded: result.code === 0,
       running: result.code === 0 && /\bstate\s*=\s*running\b/.test(result.stdout),
+      pid: pid ? Number(pid[1]) : undefined,
     };
   }
 
@@ -230,8 +233,11 @@ export class MacLaunchAgent implements ServiceController {
     const deadline = Date.now() + this.readyTimeoutMs;
     do {
       const state = await readServiceState(paths);
-      if (state?.status === "ready" && (!previousPid || state.pid !== previousPid)) return state;
-      if (Date.now() >= deadline) return state;
+      if (state?.status === "ready" && state.accessUrl && (!previousPid || state.pid !== previousPid)) {
+        const job = await this.inspectJob();
+        if (job.running && job.pid === state.pid) return state;
+      }
+      if (Date.now() >= deadline) return state?.status === "ready" ? null : state;
       await delay(this.pollIntervalMs);
     } while (true);
   }
