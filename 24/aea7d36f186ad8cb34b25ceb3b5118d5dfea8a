@@ -1,0 +1,171 @@
+packages/server/lib/remote-control/helper-manager.mjs
+  s_ec16d6b00f32aa::t_dcc0b2a47fa24f 170-173
+packages/cli/src/install-script-contract.test.ts
+  s_43ab57647a6005::t_61abe86711a1f5 84,86-97
+  s_43ab57647a6005::t_3edd509f5ae7de 79,83,98
+  s_ec16d6b00f32aa::t_6b6c9d50cce947 16,24,72,85
+  s_43ab57647a6005::t_a8843e6e3680fd 35-40
+packages/cli/src/service/launcher-cleanup.test.ts
+  s_43ab57647a6005::t_61abe86711a1f5 78,83,87-89
+packages/cli/src/instance-takeover.ts
+  s_43ab57647a6005::t_3ee2769f100977 1-2,65-66,68-69,82-99
+packages/cli/src/device-pairing.test.ts
+  s_ec16d6b00f32aa::t_315f75c4747aa1 4,15-32
+packages/server/lib/remote-control/remote-authorization.test.ts
+  s_ec16d6b00f32aa::t_cd81edfadcf096 2,45-69,258-313
+  s_43ab57647a6005::t_0d719a15ba38e9 314-315
+packages/desktop/renderer/components/browser-live-viewport.ts
+  s_6bc7b45da28223::t_f42073476df469 1-86
+packages/cli/src/unlock-service.ts
+  s_ec16d6b00f32aa::t_be06e30be6609d 1,13-29,87,94,98,104,108,110,114,119,124
+packages/cli/src/service/macos-launch-agent.ts
+  s_43ab57647a6005::t_3ee2769f100977 99-100,119-120,126,191,193,197,236-240
+packages/cli/src/installer-progress.test.ts
+  s_ec16d6b00f32aa::t_be20204f584793 1-19,21-37,39-57
+  s_ec16d6b00f32aa::t_14109d307f3cd7 20,38
+packages/desktop/renderer/components/BrowserLivePanel.tsx
+  s_6bc7b45da28223::t_f42073476df469 12,199,201-204,1123
+  s_6bc7b45da28223::t_5675fbc4c864f0 1303
+packages/cli/src/desktop-authorization.ts
+  s_ec16d6b00f32aa::t_e238bff4d281ab 1-2,4-8,10-25,27-40,42-43,47-64,66-68,70-89,91-97,102-113,122-133,135-143,150-153,156-163
+  s_ec16d6b00f32aa::t_d55b9a9dd84db3 9,65,90,98-101,114-121,134
+  s_ec16d6b00f32aa::t_dcc0b2a47fa24f 41
+  s_ec16d6b00f32aa::t_43da5ef3a7bf53 26
+  s_ec16d6b00f32aa::t_48f4858c4c482b 3,44-46,69,144-149,154-155
+packages/cli/src/instance-takeover.test.ts
+  s_43ab57647a6005::t_b85b4e40bd73f7 3,53-114
+  s_43ab57647a6005::t_3edd509f5ae7de 115,153-178
+packages/cli/src/service/service-command.ts
+  s_43ab57647a6005::t_3edd509f5ae7de 107
+  s_43ab57647a6005::t_85113eeb2a8abf 93
+  s_ec16d6b00f32aa::t_e238bff4d281ab 15,35,94-105
+  s_43ab57647a6005::t_3ee2769f100977 9,111-112,118-120,158-160,174-176
+  s_ec16d6b00f32aa::t_963b73229be53f 16,63,70,90,109,116,124,156
+  s_43ab57647a6005::t_bac2190e6c3251 177-179
+  s_ec16d6b00f32aa::t_25bc19ea4a33b1 106
+packages/desktop/renderer/components/browser-live-viewport.test.ts
+  s_6bc7b45da28223::t_f4a70414c330ea 1-117
+packages/cli/src/args.ts
+  s_ec16d6b00f32aa::t_e238bff4d281ab 5-6,32,38,43-48,102,107-109
+packages/webapp/src/presentation/web.css
+  s_6bc7b45da28223::t_f42073476df469 73-77,87-89,630-631,1091,1094,1112-1113
+  s_6bc7b45da28223::t_103e146aa84cab 90,1100,1120-1127
+  s_6bc7b45da28223::t_5675fbc4c864f0 197,362-364
+packages/cli/bin/cli-progress.d.mts
+  s_ec16d6b00f32aa::t_f407467d142212 1-9
+packages/cli/src/codex-desktop-setup.ts
+  s_ec16d6b00f32aa::t_d55b9a9dd84db3 9,49
+packages/cli/src/args.test.ts
+  s_ec16d6b00f32aa::t_8fad68618926ab 6-15
+packages/cli/bin/cli-progress.mjs
+  s_ec16d6b00f32aa::t_f407467d142212 1-65
+packages/cli/src/device-pairing.ts
+  s_ec16d6b00f32aa::t_d55b9a9dd84db3 9,19-25,39,47-50,52,57,113
+  s_2d89f8852a9dfe::t_e82b7d930093f4 4,8
+packages/cli/install/install-manifest.json
+  s_ec16d6b00f32aa::t_ad111c818c3f58 6-7,11-12
+packages/cli/src/desktop-download.test.ts
+  s_ec16d6b00f32aa::t_634688b1706c42 64-65
+packages/cli/src/service/windows-task-service.ts
+  s_43ab57647a6005::t_3ee2769f100977 89,218-222
+  s_43ab57647a6005::t_3edd509f5ae7de 120,126
+packages/cli/src/service/service-command.test.ts
+  s_43ab57647a6005::t_a8843e6e3680fd 58,64,148-169,291,293-294
+  s_ec16d6b00f32aa::t_be20204f584793 6,9-28
+  s_ec16d6b00f32aa::t_8fad68618926ab 29-56
+packages/cli/src/desktop-authorization.test.ts
+  s_ec16d6b00f32aa::t_8fad68618926ab 1-127
+packages/server/lib/remote-control/helper-manager.test.ts
+  s_ec16d6b00f32aa::t_dcc0b2a47fa24f 9-27
+packages/cli/src/runtime-manager.ts
+  s_ec16d6b00f32aa::t_963b73229be53f 21,52,57-58,63,94
+packages/cli/bin/node-preflight.mjs
+  s_ec16d6b00f32aa::t_c44bff51387ed0 40-41,53
+  s_ec16d6b00f32aa::t_be06e30be6609d 8,39,54
+packages/cli/install/install-agentroam.ps1
+  s_43ab57647a6005::t_b85b4e40bd73f7 235
+scripts/audit-cli-tarball.mjs
+  s_ec16d6b00f32aa::t_634688b1706c42 58
+packages/cli/install/install-agentroam.sh
+  s_ec16d6b00f32aa::t_2a19bc754fa487 31-71,79,166,184,186,194,205,208,228,257,259,279,281,283,289-290,301,318-319
+  s_ec16d6b00f32aa::t_6b6c9d50cce947 312,355
+  s_43ab57647a6005::t_b85b4e40bd73f7 321-331
+packages/cli/bin/desktop-download.mjs
+  s_ec16d6b00f32aa::t_be06e30be6609d 11,61
+packages/cli/src/progress.test.ts
+  s_ec16d6b00f32aa::t_f407467d142212 1-68
+packages/cli/src/cli.ts
+  s_ec16d6b00f32aa::t_e238bff4d281ab 26,47-49,115-119
+  s_ec16d6b00f32aa::t_c44bff51387ed0 190,195,197
+  s_ec16d6b00f32aa::t_c4f3424fed500a 167,170
+  s_ec16d6b00f32aa::t_963b73229be53f 27,59-71,130,151,178-179,183,192,203,270,285,289,296
+packages/server/lib/remote-control/remote-authorization.mjs
+  s_ec16d6b00f32aa::t_29582258ac812d 157-158,160-170
+  s_ec16d6b00f32aa::t_43da5ef3a7bf53 154-156,159
+packages/cli/src/service/macos-launch-agent.test.ts
+  s_43ab57647a6005::t_a8843e6e3680fd 341-351
+  s_43ab57647a6005::t_0658aa6f02676e 46,54,58,100,106,147,154,161,164,221,246,295,299,302,326-340,352-387
+  s_78b1f6b1cbeaa7::t_c00eb33ff1000a 388
+packages/cli/src/service/windows-task-service.test.ts
+  s_43ab57647a6005::t_0658aa6f02676e 117,122-123,154,158,171,174,183,223-236,246-262,264
+  s_43ab57647a6005::t_a8843e6e3680fd 237-245
+  s_43ab57647a6005::t_3edd509f5ae7de 263
+  s_2d89f8852a9dfe::t_2298f72f2fc9ea 265
+packages/cli/src/local-desktop-url.ts
+  s_ec16d6b00f32aa::t_43da5ef3a7bf53 3
+packages/cli/src/local-service-request.test.ts
+  s_ec16d6b00f32aa::t_8fad68618926ab 1-58
+packages/cli/src/unlock-service.test.ts
+  s_ec16d6b00f32aa::t_315f75c4747aa1 2,17-36
+  s_ec16d6b00f32aa::t_be06e30be6609d 50,55,61-63,66
+packages/cli/src/local-service-request.ts
+  s_78b1f6b1cbeaa7::t_83783c0d835b07 1-49
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "24aea7d36f186ad8cb34b25ceb3b5118d5dfea8a",
+  "prompts": {},
+  "sessions": {
+    "s_2d89f8852a9dfe": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1245b-b156-7d13-ac9c-80db4e39e590",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_43ab57647a6005": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1252d-b6a0-7261-abca-af3a7180b300",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_6bc7b45da28223": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12114-1577-7932-a54f-b6ebd8237877",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_78b1f6b1cbeaa7": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1211b-dd5e-7451-9c7c-f8835111546d",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_ec16d6b00f32aa": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12530-b114-7931-84e1-e43b0c42f774",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
