@@ -2,6 +2,7 @@ export {
   type Message,
   type MessageAttachment,
   type MessagePresentation,
+  type SessionForkPoint,
   type NativeSubagentActivity,
   type ToolCall,
   type ToolResult,

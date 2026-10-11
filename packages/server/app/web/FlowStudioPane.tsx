@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import FlowStudioLoading from "./FlowStudioLoading";
 import { RotateCw } from "lucide-react";
 
 type PaneState = "loading" | "ready" | "error";
@@ -68,10 +69,12 @@ export default function FlowStudioPane({ visible }: { visible: boolean }) {
           allowFullScreen
           onLoad={() => setState("ready")}
           onError={() => setState("error")}
+          className={state === "ready" ? "flow-frame flow-frame-ready" : "flow-frame"}
           style={{ display: "block", width: "100%", height: "100%", border: 0, background: "var(--ui-term-col-bg, #101014)" }}
         />
       )}
-      {state !== "ready" && (
+      {state === "loading" && <FlowStudioLoading />}
+      {state === "error" && (
         <div
           role={state === "error" ? "alert" : "status"}
           aria-live="polite"
@@ -92,6 +95,11 @@ export default function FlowStudioPane({ visible }: { visible: boolean }) {
           )}
         </div>
       )}
+      <style jsx>{`
+        .flow-frame { opacity: 0; transform: translateY(8px) scale(.995); transition: opacity 420ms ease, transform 520ms cubic-bezier(.2,.8,.2,1); }
+        .flow-frame-ready { opacity: 1; transform: none; }
+        @media (prefers-reduced-motion: reduce) { .flow-frame { transform: none; transition: none; } }
+      `}</style>
     </div>
   );
 }

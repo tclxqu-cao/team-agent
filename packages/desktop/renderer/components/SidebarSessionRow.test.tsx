@@ -8,6 +8,18 @@ const appSource = readFileSync(new URL("../App.tsx", import.meta.url), "utf8");
 const rowSource = readFileSync(new URL("./SidebarSessionRow.tsx", import.meta.url), "utf8");
 
 describe("SidebarSessionRow", () => {
+  it("shows completed unverified history without a running animation", () => {
+    const html = renderToStaticMarkup(createElement(SidebarSessionRow, {
+      session: { id: "old", title: "Old history", visualState: "completed", statusLabel: "已完成", occupiedExternally: false, canDelete: true, active: false,
+        compatibility: { status: "checking", producerVersion: "0.120.0", readerVersion: "0.162.1" } },
+      onSelect: () => undefined,
+    }));
+    expect(html).toContain("sidebar-status-dot is-completed");
+    expect(html).toContain("会话兼容性待验证，打开会话时检查");
+    expect(html).toContain("lucide-circle-help");
+    expect(html).not.toContain("lucide-loader-circle");
+    expect(html).not.toContain("animation:spin");
+  });
   it("renders one compact line with the status before the title and an accessible lock", () => {
     const html = renderToStaticMarkup(createElement(SidebarSessionRow, {
       session: {

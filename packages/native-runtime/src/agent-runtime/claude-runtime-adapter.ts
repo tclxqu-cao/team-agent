@@ -1,3 +1,5 @@
+import type { SessionForkPoint } from "@agent/core";
+import { completedForkMessageIndex } from "./session-fork-point.js";
 import { logGlobal } from "@agent/core";
 import { execFile } from "node:child_process";
 import { open, readFile, readdir, stat, type FileHandle } from "node:fs/promises";
@@ -511,13 +513,17 @@ export class ClaudeRuntimeAdapter implements AgentRuntimeAdapter {
     return buildSessionQueryIndex(encodeUnifiedSessionId(this.agentType, nativeSessionId), messages);
   }
 
-  async fork(nativeSessionId: string): Promise<UnifiedSessionSummary> {
-    if (this.activeQueries.has(nativeSessionId)) {
+  async fork(nativeSessionId: string, point?: SessionForkPoint): Promise<UnifiedSessionSummary> {
+    if (!point && this.activeQueries.has(nativeSessionId)) {
       throw new RuntimeSessionError("Claude Code session is currently running", "SESSION_OCCUPIED");
     }
     const detail = await this.getSession(nativeSessionId);
-    if (detail.occupancy === "owned-externally") {
+    if (!point && detail.occupancy === "owned-externally") {
       throw new RuntimeSessionError("Claude Code session is open in another client", "SESSION_OCCUPIED");
+    }
+    if (point) {
+      if (!point.messageId) throw new RuntimeSessionError("Claude Fork 需要消息 ID", "INVALID_SESSION_ID");
+      completedForkMessageIndex(detail.messages, point.messageId, detail.status === "running");
     }
     const draft = this.drafts.get(nativeSessionId);
     const dirOptions = detail.cwd ? { dir: detail.cwd } : undefined;
@@ -529,6 +535,7 @@ export class ClaudeRuntimeAdapter implements AgentRuntimeAdapter {
     try {
       const result = await forkClaudeSession(nativeSessionId, {
         ...dirOptions,
+        ...(point ? { upToMessageId: point.messageId } : {}),
         title: `${detail.title}（副本）`,
       });
       forkedSessionId = result.sessionId;
@@ -689,6 +696,7 @@ export class ClaudeRuntimeAdapter implements AgentRuntimeAdapter {
     this.permissionEvents.set(nativeSessionId, (event) => permissionQueue.push(event));
 
     let streamedText = "";
+    let finalMessageId: string | undefined;
     let streamedReasoning = false;
     const subagents = new ClaudeSubagentTracker();
     let mainResult: Extract<SDKMessage, { type: "result" }> | null = null;
@@ -725,6 +733,7 @@ export class ClaudeRuntimeAdapter implements AgentRuntimeAdapter {
           break;
         }
         const message = next.result.value;
+        if (message.type === "assistant" && !parentToolUseId(message)) finalMessageId = message.uuid;
         sdkNext = sdkIterator.next();
         for (const event of subagents.consume(message)) yield event;
         const events = claudeSdkMessageToEvents(message, streamedText.length > 0, streamedReasoning);
@@ -745,7 +754,10 @@ export class ClaudeRuntimeAdapter implements AgentRuntimeAdapter {
           if (contextUsage) yield contextUsage;
         }
         if (mainResult && !subagents.hasActiveBackgroundTasks()) {
-          yield claudeResultToEvent(mainResult, streamedText);
+          const terminal = claudeResultToEvent(mainResult, streamedText);
+          yield terminal.type === "done" && finalMessageId
+            ? { ...terminal, forkPoint: { messageId: finalMessageId } }
+            : terminal;
           mainResult = null;
           break;
         }
@@ -1364,7 +1376,10 @@ export function claudeHistoryToMessages(history: SessionMessage[], includeReason
           role: "assistant",
           content: text,
           ...(toolCalls.length ? { toolCalls } : {}),
-          ...(reasoning.length ? { presentation: { reasoning } } : {}),
+          ...(reasoning.length || entry.uuid ? { presentation: {
+            ...(reasoning.length ? { reasoning } : {}),
+            ...(entry.uuid ? { forkPoint: { messageId: entry.uuid } } : {}),
+          } } : {}),
         });
       }
       continue;

@@ -26,6 +26,7 @@ describe("agentStore session message cache", () => {
     useAgentStore.setState({
       messages: [],
       messagesBySession: {},
+      historyWindowsBySession: {},
       contextUsageBySession: {},
       runtimeProgressBySession: {},
       nativeSubagentsBySession: {},
@@ -35,6 +36,27 @@ describe("agentStore session message cache", () => {
       todos: [],
       cronTasks: [],
     });
+  });
+
+  it("keeps each history cursor paired with its cached messages across session switches", () => {
+    const store = useAgentStore.getState();
+    const first = [{ id: "first", role: "user" as const, content: "first", timestamp: 1 }];
+    const second = [{ id: "second", role: "user" as const, content: "second", timestamp: 2 }];
+    store.setSessionId("first-session");
+    store.setMessages(first, "first-session", { kind: "latest", olderCursor: "before-first" });
+    store.setSessionId("second-session");
+    store.setMessages(second, "second-session", { kind: "latest", olderCursor: null });
+    store.setSessionId("first-session");
+
+    expect(store.getMessagesForSession("first-session")).toEqual(first);
+    expect(store.getSessionHistoryWindow("first-session")?.olderCursor).toBe("before-first");
+    expect(store.getSessionHistoryWindow("second-session")?.olderCursor).toBeNull();
+    store.setMessages([...first, { ...first[0], id: "live", content: "live" }], "first-session");
+    expect(store.getSessionHistoryWindow("first-session")?.olderCursor).toBe("before-first");
+    store.clearMessages("first-session");
+    expect(store.getMessagesForSession("first-session")).toEqual([]);
+    expect(store.getSessionHistoryWindow("first-session")).toBeUndefined();
+    expect(store.getSessionHistoryWindow("second-session")?.olderCursor).toBeNull();
   });
 
   it("hides the previous session while a newly selected session takes over the store", () => {

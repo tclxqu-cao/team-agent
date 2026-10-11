@@ -137,7 +137,7 @@ describe("FilePreview client download", () => {
     expect(filePreviewSource).toContain("new IntersectionObserver");
     expect(filePreviewSource).toContain("chunkInFlightRef.current");
     expect(filePreviewSource).toContain("generation !== generationRef.current");
-    expect(filePreviewSource).toContain("textChunks.map");
+    expect(filePreviewSource).toContain("<HighlightedCode path={path} chunks={textChunks} fileSize={meta?.size} />");
   });
 
   it("preserves UTF-8 characters split across preview chunks", () => {

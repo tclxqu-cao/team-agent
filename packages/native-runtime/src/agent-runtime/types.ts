@@ -1,3 +1,4 @@
+import type { SessionForkPoint } from "@agent/core";
 import type {
   AgentEvent,
   Message,
@@ -223,7 +224,7 @@ export interface AgentRuntimeAdapter {
   getSessionWatchPath?(nativeSessionId: string): Promise<string | null>;
   create(options: CreateRuntimeSessionOptions): Promise<UnifiedSessionSummary>;
   restoreDraft?(summary: UnifiedSessionSummary): void;
-  fork?(nativeSessionId: string): Promise<UnifiedSessionSummary>;
+  fork?(nativeSessionId: string, point?: SessionForkPoint): Promise<UnifiedSessionSummary>;
   renameSession?(nativeSessionId: string, title: string): Promise<void>;
   run(
     nativeSessionId: string,

@@ -36,8 +36,28 @@ describe("RemoteVideoStallPolicy", () => {
     const policy = new RemoteVideoStallPolicy();
     policy.begin(0);
     policy.observe(500, 1_000);
-    policy.observe(0, 6_000);
+    policy.observe(1, 6_000);
     expect(policy.evaluate(6_000 + REMOTE_VIDEO_STALL_TIMEOUT_MS - 1).state).toBe("streaming");
+  });
+
+  it("does not treat an undecoded zero counter as a first frame", () => {
+    const policy = new RemoteVideoStallPolicy();
+    policy.begin(0);
+    expect(policy.observe(0, 1_000)).toBe(false);
+    expect(policy.observe(0, 4_000)).toBe(false);
+    expect(policy.evaluate(REMOTE_VIDEO_FIRST_FRAME_TIMEOUT_MS).state).toBe("stalled");
+    expect(policy.observe(1, 6_000)).toBe(true);
+    expect(policy.evaluate(6_000).state).toBe("streaming");
+  });
+
+  it("reports progress only for valid new frames", () => {
+    const policy = new RemoteVideoStallPolicy();
+    policy.begin(0);
+    expect(policy.observe(undefined, 1_000)).toBe(false);
+    expect(policy.observe(-1, 1_000)).toBe(false);
+    expect(policy.observe(3, 2_000)).toBe(true);
+    expect(policy.observe(3, 8_000)).toBe(false);
+    expect(policy.evaluate(12_000).state).toBe("stalled");
   });
 
   it("ignores undefined or non-finite counters", () => {
@@ -61,5 +81,15 @@ describe("RemoteVideoStallPolicy", () => {
     policy.begin(20_000);
     expect(policy.evaluate(20_000 + REMOTE_VIDEO_FIRST_FRAME_TIMEOUT_MS - 1).state).toBe("streaming");
     expect(policy.evaluate(20_000 + REMOTE_VIDEO_FIRST_FRAME_TIMEOUT_MS).state).toBe("stalled");
+  });
+
+  it("preserves the steady-stream deadline after returning from the background", () => {
+    const policy = new RemoteVideoStallPolicy();
+    policy.begin(0);
+    policy.observe(10, 1_000);
+    policy.resume(20_000);
+    expect(policy.observe(10, 21_000)).toBe(false);
+    expect(policy.evaluate(20_000 + REMOTE_VIDEO_STALL_TIMEOUT_MS - 1).state).toBe("streaming");
+    expect(policy.evaluate(20_000 + REMOTE_VIDEO_STALL_TIMEOUT_MS).state).toBe("stalled");
   });
 });

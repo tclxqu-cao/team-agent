@@ -5,10 +5,91 @@ import {
   loadProgressiveSessionHistoryPage,
   mergeProgressiveSessionHistoryPage,
   mergeRefreshedSessionHistory,
+  mergePaginatedSessionHistory,
   resolveOlderHistoryCursor,
   restoreCodexExecutionTrace,
   restoreSessionHistoryPage,
+  restoreLatestSessionHistoryWindow,
 } from "./session-history";
+
+describe("cached session history windows", () => {
+  const history = { delivery: "core" as const, revision: "rev-2", nextCursor: "history.v1.4" };
+  const turns = [
+    message("history-message.v1.0.user", "Flow animation"),
+    assistant("history-message.v1.1.answer", "Flow updated"),
+    message("history-message.v1.2.user", "History loading style"),
+    assistant("history-message.v1.3.answer", "Style updated"),
+    message("history-message.v1.4.user", "Restart 3000?"),
+    assistant("history-message.v1.5.answer", "Development hot reloads"),
+  ];
+
+  it("reopens a cached window without re-fetching its retained latest turns as older pages", () => {
+    const cached = turns.slice(2);
+    const restored = restoreLatestSessionHistoryWindow(cached, turns.slice(4), "core", history, {
+      kind: "latest", olderCursor: "history.v1.2",
+    });
+    expect(restored.window.olderCursor).toBe("history.v1.2");
+    const merged = mergePaginatedSessionHistory(restored.messages, turns.slice(0, 4), "older");
+    expect(merged.map((entry) => entry.content)).toEqual(turns.map((entry) => entry.content));
+    expect(new Set(merged.map((entry) => entry.id)).size).toBe(6);
+  });
+
+  it("keeps the oldest boundary when a new turn advances the latest page", () => {
+    const restored = restoreLatestSessionHistoryWindow(turns.slice(2, 4), turns.slice(4), "core", history, {
+      kind: "latest", olderCursor: "history.v1.2",
+    });
+    expect(restored.window.olderCursor).toBe("history.v1.2");
+    expect(restored.messages.map((entry) => entry.id)).toEqual(turns.slice(2).map((entry) => entry.id));
+  });
+
+  it("keeps an exhausted history window exhausted after new messages arrive", () => {
+    const restored = restoreLatestSessionHistoryWindow(turns.slice(0, 4), turns.slice(4), "core", history, {
+      kind: "latest", olderCursor: null,
+    });
+    expect(restored.window.olderCursor).toBeNull();
+    expect(restored.messages).toHaveLength(6);
+  });
+
+  it("uses the fetched boundary when the cache contains no historical messages", () => {
+    const restored = restoreLatestSessionHistoryWindow([], turns.slice(4), "core", history, {
+      kind: "latest", olderCursor: null,
+    });
+    expect(restored.window.olderCursor).toBe("history.v1.4");
+  });
+
+  it("starts a contiguous latest window when leaving an anchored window with a gap", () => {
+    const queued = { ...message("queued", "next"), isQueued: true };
+    const restored = restoreLatestSessionHistoryWindow([...turns.slice(0, 2), queued], turns.slice(4), "core", history, {
+      kind: "anchored", olderCursor: null,
+    });
+    expect(restored.messages.map((entry) => entry.id)).toEqual([...turns.slice(4).map((entry) => entry.id), "queued"]);
+    expect(restored.window).toEqual({ kind: "latest", olderCursor: "history.v1.4" });
+  });
+
+  it("removes already-prepended duplicates while recovering the original turn order", () => {
+    const polluted = [...turns.slice(4), ...turns];
+    const merged = mergePaginatedSessionHistory(polluted, turns.slice(2, 4), "older");
+    expect(merged.map((entry) => entry.id)).toEqual(turns.map((entry) => entry.id));
+  });
+
+  it("retains live updates and loaded results when an overlapping old page arrives", () => {
+    const updated = { ...turns[3], content: "Style updated with live text", toolCalls: [{
+      id: "call-1", name: "shell", arguments: {}, result: "loaded result",
+    }] };
+    const current = [...turns.slice(2, 3), updated, ...turns.slice(4)];
+    const merged = mergePaginatedSessionHistory(current, turns.slice(0, 4), "older");
+    expect(merged.map((entry) => entry.id)).toEqual(turns.map((entry) => entry.id));
+    expect(merged[3]).toBe(updated);
+    expect(merged[5]).toBe(turns[5]);
+  });
+
+  it("appends only missing newer messages without deleting legitimate repeated text", () => {
+    const repeated = { ...turns[0], id: "different-turn-same-text" };
+    const merged = mergePaginatedSessionHistory(turns.slice(0, 4), [...turns.slice(2), repeated], "newer");
+    expect(merged.map((entry) => entry.id)).toEqual([...turns.map((entry) => entry.id), repeated.id]);
+    expect(merged.filter((entry) => entry.content === repeated.content)).toHaveLength(2);
+  });
+});
 
 describe("resolveOlderHistoryCursor", () => {
   it("stops when the response explicitly has no more history", () => {
@@ -383,11 +464,11 @@ describe("mergeRefreshedSessionHistory", () => {
     expect(mergeRefreshedSessionHistory(current, [])).toBe(current);
   });
 
-  it("keeps a pending optimistic turn when a stale refresh ends before it", () => {
+  it.each(["pending", "failed"] as const)("keeps a %s optimistic turn when a stale refresh ends before it", (sendState) => {
     const current = [
       message("old-user", "earlier"),
       assistant("old-assistant", "earlier answer"),
-      { ...message("pending-user", "follow up"), sendState: "pending" as const },
+      { ...message("pending-user", "follow up"), sendState },
       {
         ...assistant("live-reasoning", ""),
         presentation: {
@@ -408,34 +489,37 @@ describe("mergeRefreshedSessionHistory", () => {
       "pending-user",
       "live-reasoning",
     ]);
-    expect(merged[2].sendState).toBe("pending");
+    expect(merged[2].sendState).toBe(sendState);
     expect(merged[3].presentation?.reasoning?.[0].text).toBe("Inspecting");
   });
 
-  it("does not duplicate a pending message once refreshed history contains it", () => {
+  it.each(["pending", "failed"] as const)("confirms a %s message once persisted history contains the input and reply", (sendState) => {
     const current = [
       message("old-user", "earlier"),
       assistant("old-assistant", "earlier answer"),
-      { ...message("pending-user", "follow up"), sendState: "pending" as const },
+      { ...message("pending-user", "follow up"), sendState, images: ["data:image/png;base64,attachment"] },
     ];
     const refreshed = [
       message("refreshed-user", "earlier"),
       assistant("refreshed-assistant", "earlier answer"),
       message("history-message.v1.persisted-user", "follow up"),
+      assistant("history-message.v1.persisted-answer", "completed"),
     ];
 
     const merged = mergeRefreshedSessionHistory(current, refreshed);
 
     expect(merged.filter((entry) => entry.content === "follow up")).toHaveLength(1);
-    expect(merged.at(-1)?.id).toBe("history-message.v1.persisted-user");
-    expect(merged.at(-1)?.sendState).toBeUndefined();
+    const confirmed = merged.find((entry) => entry.id === "history-message.v1.persisted-user");
+    expect(confirmed?.sendState).toBeUndefined();
+    expect(confirmed?.images).toEqual(["data:image/png;base64,attachment"]);
+    expect(merged.at(-1)?.content).toBe("completed");
   });
 
-  it("keeps a repeated pending message when refreshed history only contains the earlier turn", () => {
+  it.each(["pending", "failed"] as const)("keeps a repeated %s message when history only confirms the earlier input", (sendState) => {
     const current = [
       message("old-user", "repeat"),
       assistant("old-assistant", "first answer"),
-      { ...message("pending-user", "repeat"), sendState: "pending" as const },
+      { ...message("pending-user", "repeat"), sendState },
     ];
     const refreshed = [
       message("history-message.v1.old-user", "repeat"),
@@ -445,7 +529,7 @@ describe("mergeRefreshedSessionHistory", () => {
     const merged = mergeRefreshedSessionHistory(current, refreshed);
 
     expect(merged.filter((entry) => entry.role === "user" && entry.content === "repeat")).toHaveLength(2);
-    expect(merged.at(-1)).toMatchObject({ id: "pending-user", sendState: "pending" });
+    expect(merged.at(-1)).toMatchObject({ id: "pending-user", sendState });
   });
 
   it("keeps queued messages after a native history tail refresh", () => {
@@ -707,6 +791,35 @@ describe("loadProgressiveSessionHistoryPage", () => {
 });
 
 describe("mergeProgressiveSessionHistoryPage", () => {
+  it.each(["pending", "failed"] as const)("clears a confirmed %s send during a Codex core refresh and retains live tools", (sendState) => {
+    const user = { ...message("live-user", "completed?"), sendState, images: ["data:image/png;base64,attachment"] };
+    const tool = assistant("live-tool", "", [{ id: "call-1", name: "shell", arguments: {}, result: "ok" }]);
+    const merged = mergeProgressiveSessionHistoryPage(
+      [user, tool],
+      [message("history-message.v1.user", "completed?"), assistant("history-message.v1.answer", "completed")],
+      "core",
+      { delivery: "core", revision: "rev-2" },
+    );
+    expect(merged[0]).toMatchObject({ id: "history-message.v1.user", images: user.images });
+    expect(merged[0].sendState).toBeUndefined();
+    expect(merged[1]).toBe(tool);
+    expect(merged.at(-1)?.content).toBe("completed");
+    expect(merged.filter((entry) => entry.role === "user")).toHaveLength(1);
+  });
+
+  it("keeps a genuinely failed repeated input when core history confirms only the previous turn", () => {
+    const previous = message("history-message.v1.user", "repeat");
+    const answer = assistant("history-message.v1.answer", "previous reply");
+    const failed = { ...message("failed-user", "repeat"), sendState: "failed" as const };
+    const merged = mergeProgressiveSessionHistoryPage(
+      [previous, answer, failed],
+      [previous, answer],
+      "core",
+      { delivery: "core", revision: "rev-2" },
+    );
+    expect(merged).toEqual([previous, answer, failed]);
+  });
+
   it("updates every loaded execution disclosure to the latest session revision", () => {
     const liveMessages = [assistant("live-tool", "", [{
       id: "call-live",

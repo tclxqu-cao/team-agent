@@ -1,3 +1,5 @@
+import { parseSessionForkPoint } from "./session-fork-point.js";
+import type { SessionForkPoint } from "@agent/core";
 import { createHash, randomUUID } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync, rmSync } from "node:fs";
 import { createConnection, createServer, type Server, type Socket } from "node:net";
@@ -1326,9 +1328,9 @@ export class NativeRuntimeBrokerHost {
     }
   }
 
-  async fork(id: string): Promise<UnifiedSessionSummary> {
+  async fork(id: string, point?: SessionForkPoint): Promise<UnifiedSessionSummary> {
     this.state.assertSessionVisible(id);
-    const forked = await this.runtime.fork(id);
+    const forked = point ? await this.runtime.fork(id, point) : await this.runtime.fork(id);
     this.pendingCreations.set(forked.id, forked);
     return this.state.applySummary(forked);
   }
@@ -2033,6 +2035,7 @@ export class NativeRuntimeBrokerHost {
         ...(stringParam(request.params, "projectId") ? { projectId: stringParam(request.params, "projectId")! } : {}),
       });
       case "fork": return this.fork(requireSessionId(sessionId));
+      case "forkAt": return this.fork(requireSessionId(sessionId), parseSessionForkPoint(request.params.point));
       case "delete": return this.delete(requireSessionId(sessionId));
       case "get": return this.get(requireSessionId(sessionId), queryParam(request.params));
       case "getToolResult": return this.getSessionToolResult(
@@ -2195,8 +2198,11 @@ export class NativeRuntimeBrokerClient {
     return this.request("create", { ...options });
   }
 
-  async fork(id: string): Promise<UnifiedSessionSummary> {
-    return this.request("fork", { sessionId: id });
+  async fork(id: string, point?: SessionForkPoint): Promise<UnifiedSessionSummary> {
+    // A separate RPC verb makes old hosts reject a point instead of ignoring it.
+    return point
+      ? this.request("forkAt", { sessionId: id, point })
+      : this.request("fork", { sessionId: id });
   }
 
   async delete(id: string): Promise<void> {
@@ -2535,8 +2541,8 @@ export class BrokerRuntimeAdapter implements AgentRuntimeAdapter {
     return this.client.create({ ...options, agentType: this.agentType });
   }
 
-  fork(nativeSessionId: string): Promise<UnifiedSessionSummary> {
-    return this.client.fork(encodeUnifiedSessionId(this.agentType, nativeSessionId));
+  fork(nativeSessionId: string, point?: SessionForkPoint): Promise<UnifiedSessionSummary> {
+    return this.client.fork(encodeUnifiedSessionId(this.agentType, nativeSessionId), point);
   }
 
   delete(nativeSessionId: string): Promise<void> {

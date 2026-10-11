@@ -13,6 +13,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Check, Download, Eye, LoaderCircle, Pencil, RefreshCw, RotateCcw, Save, Share2, X } from "lucide-react";
 import type { FileWorkspaceGateway } from "../../../../core/src/application/file-workspace/FileWorkspaceGateway";
 import { parseUnifiedDiff, type FileDiffRow } from "./fileDiff";
+import HighlightedCode from "./HighlightedCode";
 
 const TEXT_EXTS = new Set([
   "ts", "tsx", "js", "jsx", "mjs", "cjs", "json", "md", "markdown", "mdown", "mkdn", "mdx", "css", "scss",
@@ -869,7 +870,7 @@ export default function FilePreview({ path, gateway, onClose }: Props) {
             >
               {kind === "hex"
                 ? hexDump
-                : textChunks.map((chunk, index) => <span key={index}>{chunk}</span>)}
+                : <HighlightedCode path={path} chunks={textChunks} fileSize={meta?.size} />}
             </pre>
             {kind === "text" && !eof && (
               <div

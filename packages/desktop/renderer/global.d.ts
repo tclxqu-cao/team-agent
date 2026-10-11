@@ -1,3 +1,4 @@
+import type { SessionForkPoint } from "@agent/core";
 import type { BrowserLiveSessionView } from "../../core/src/domain/browser-live/index";
 import type {
   FileWorkspaceEventMessage,
@@ -374,7 +375,7 @@ export interface AgentApi {
   handoffSession?(id: string): Promise<unknown>;
   releaseCodexSession?(id: string): Promise<void>;
   createSession(title: string, projectId?: string, agentType?: AgentType, cwd?: string): Promise<UnifiedSessionSummary>;
-  forkSession(id: string): Promise<UnifiedSessionSummary>;
+  forkSession(id: string, point?: SessionForkPoint): Promise<UnifiedSessionSummary>;
   deleteSession(id: string): Promise<void>;
   refreshSessions(projectId?: string): Promise<UnifiedSessionSummary[]>;
   getRuntimeHealth(): Promise<RuntimeHealth[]>;

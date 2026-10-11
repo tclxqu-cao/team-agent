@@ -1141,6 +1141,21 @@ describe("Claude session management", () => {
     expect(forked.canDelete).toBe(true);
   });
 
+  it("forks inclusively through the selected assistant UUID and rejects stale points", async () => {
+    state.sessions = [sdkSession("cc-fork")];
+    state.messages = [
+      { type: "user", uuid: "u1", message: { content: "q1" } },
+      { type: "assistant", uuid: "a1", message: { content: "a1" } },
+      { type: "user", uuid: "u2", message: { content: "q2" } },
+      { type: "assistant", uuid: "a2", message: { content: "a2" } },
+    ] as SessionMessage[];
+    const adapter = new ClaudeRuntimeAdapter({ occupancyTtlMs: 0, sessionRoot: "/tmp/claude-projects" });
+    await adapter.fork("cc-fork", { messageId: "a1" });
+    expect(state.forkCalls[0].options.upToMessageId).toBe("a1");
+    await expect(adapter.fork("cc-fork", { messageId: "missing" })).rejects.toThrow();
+    expect(state.forkCalls).toHaveLength(1);
+  });
+
   it("deletes a session through the SDK delete API", async () => {
     state.sessions = [sdkSession("cc-del")];
     const adapter = new ClaudeRuntimeAdapter({ occupancyTtlMs: 0, sessionRoot: "/tmp/claude-projects" });

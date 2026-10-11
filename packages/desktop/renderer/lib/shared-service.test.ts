@@ -53,4 +53,15 @@ describe("desktop SSE transport", () => {
 
     expect(openExternal).toHaveBeenCalledWith("https://flow.example/auth/entry?token=t&view=dh");
   });
+
+  it("carries the selected fork point through the shared server transport", async () => {
+    const request = vi.fn(async () => ({ status: 201, body: JSON.stringify({ id: "runtime:codex:fork" }) }));
+    const localFork = vi.fn();
+    const agentApi = createSharedAgentApi({ request } as unknown as SharedServiceApi, { forkSession: localFork } as unknown as AgentApi);
+
+    await expect(agentApi.forkSession("runtime:codex:source", { turnId: "turn-2" })).resolves.toMatchObject({ id: "runtime:codex:fork" });
+
+    expect(request).toHaveBeenCalledWith("/api/sessions/runtime%3Acodex%3Asource/fork-at", "POST", JSON.stringify({ point: { turnId: "turn-2" } }));
+    expect(localFork).not.toHaveBeenCalled();
+  });
 });

@@ -712,7 +712,7 @@ describe("Codex reasoning mapping", () => {
         role: "assistant",
         content: "检查完成",
         historyId: "codex-trace:turn-1:agent:answer-1",
-        presentation: { agentMessagePhase: "final_answer" },
+        presentation: { agentMessagePhase: "final_answer", forkPoint: { turnId: "turn-1" } },
       },
     ]);
   });
@@ -1391,8 +1391,25 @@ describe("Codex history mapping", () => {
 
     expect(messages).toEqual([
       { role: "user", content: "first\nsecond" },
-      { role: "assistant", content: "answer" },
+      { role: "assistant", content: "answer", presentation: { forkPoint: { turnId: "turn-1" } } },
     ]);
+  });
+
+  it("preserves file line counts when large diffs and long path lists are bounded", async () => {
+    const changes = Array.from({ length: 32 }, (_, i) => ({
+      path: `/work/${"directory/".repeat(30)}${i}.ts`,
+      kind: { type: "add" },
+      diff: "source\n".repeat(301),
+    }));
+    const messages = await codexTurnsToMessages([{ id: "turn", status: "completed", items: [{ type: "fileChange", id: "patch", status: "completed", changes }] }], {
+      toolResultMode: "lazy", revision: "rev", toolArgumentsMaxBytes: 2048,
+    });
+    const args = messages.find((message) => message.toolCalls)?.toolCalls?.[0].arguments;
+    expect(args?.fileChangeSummary).toEqual({ operation: "add", fileCount: 32, lineStats: { added: 32 * 301, removed: 0 } });
+    expect(Buffer.byteLength(JSON.stringify(args))).toBeLessThanOrEqual(2048);
+    expect(args?.changes).toEqual(expect.arrayContaining([expect.objectContaining({ lineStats: { added: 301, removed: 0 } })]));
+    expect(JSON.stringify(args)).not.toContain("source\\n");
+    expect(messages.find((message) => message.role === "tool")?.toolResultRef).toBeDefined();
   });
 
   it("bounds trace reasoning and arguments while omitting large tool bodies", async () => {

@@ -5,6 +5,8 @@ import { join } from "node:path";
 export type LogLevel = "debug" | "info" | "warn" | "error" | "fatal";
 
 const LEVEL_RANK: Record<LogLevel, number> = { debug: 10, info: 20, warn: 30, error: 40, fatal: 50 };
+const DAILY_FILE_LOGGER_BRAND = Symbol.for("agentroam.DailyFileLogger.v1");
+const GLOBAL_CHILD_LOGGERS = Symbol.for("agentroam.globalLogger.children");
 
 /** One structured entry serialized as a single JSON line in the daily file. */
 export interface LogEntry {
@@ -106,6 +108,8 @@ function safeJsonStringify(value: unknown): string {
  *   unhandledRejection process errors. It is idempotent per process.
  */
 export class DailyFileLogger {
+  readonly [DAILY_FILE_LOGGER_BRAND] = true;
+  readonly [GLOBAL_CHILD_LOGGERS] = new Map<string, DailyFileLogger>();
   readonly dir: string;
   readonly source: string;
   private readonly minLevel: LogLevel;
@@ -169,6 +173,8 @@ export class DailyFileLogger {
       if (errorOrData instanceof Error || (errorOrData !== null && typeof errorOrData === "object" && !Array.isArray(errorOrData) && "message" in (errorOrData as Record<string, unknown>))) {
         entry.error = serializeError(errorOrData);
         if (data !== undefined) entry.data = data;
+      } else if (data !== undefined) {
+        entry.data = data;
       } else if (errorOrData !== undefined) {
         entry.data = errorOrData;
       }
@@ -395,10 +401,19 @@ const GLOBAL_HANDLERS_FLAG = Symbol.for("agentroam.globalLogger.errorHandlers");
 
 const GLOBAL_LOGGER_FLAG = Symbol.for("agentroam.globalLogger.instance");
 
+function isDailyFileLogger(value: unknown): value is DailyFileLogger {
+  if (value === null || typeof value !== "object") return false;
+  const candidate = value as DailyFileLogger;
+  return candidate[DAILY_FILE_LOGGER_BRAND] === true
+    && typeof candidate.log === "function"
+    && typeof candidate.child === "function"
+    && typeof candidate.flush === "function";
+}
+
 export function configureGlobalLogger(options: DailyFileLoggerOptions): DailyFileLogger {
   const record = globalThis as Record<symbol, unknown>;
   const existing = record[GLOBAL_LOGGER_FLAG];
-  if (existing instanceof DailyFileLogger) return existing;
+  if (isDailyFileLogger(existing)) return existing;
   const logger = new DailyFileLogger(options);
   record[GLOBAL_LOGGER_FLAG] = logger;
   return logger;
@@ -407,7 +422,7 @@ export function configureGlobalLogger(options: DailyFileLoggerOptions): DailyFil
 export function getGlobalLogger(): DailyFileLogger | null {
   const record = globalThis as Record<symbol, unknown>;
   const existing = record[GLOBAL_LOGGER_FLAG];
-  return existing instanceof DailyFileLogger ? existing : null;
+  return isDailyFileLogger(existing) ? existing : null;
 }
 
 /**
@@ -431,10 +446,6 @@ export function installGlobalLogging(options: InstallGlobalLoggingOptions): Dail
   return logger;
 }
 
-// Cached per-source views so hot paths (agent adapters, routes) reuse one
-// child logger per component instead of allocating on every entry.
-const globalChildCache = new Map<string, DailyFileLogger>();
-
 /**
  * Null-safe one-liner for call sites anywhere in the process. No-ops when the
  * process never installed global logging (e.g. unit tests); otherwise writes
@@ -449,6 +460,8 @@ export function logGlobal(
 ): void {
   const logger = getGlobalLogger();
   if (!logger) return;
+  // Cache on the shared instance so every module copy also flushes every view.
+  const globalChildCache = logger[GLOBAL_CHILD_LOGGERS];
   let child = globalChildCache.get(source);
   if (!child) {
     child = logger.child(source);
@@ -461,7 +474,7 @@ export function logGlobal(
 export async function flushGlobal(): Promise<void> {
   const logger = getGlobalLogger();
   if (!logger) return;
-  await Promise.all([logger.flush(), ...[...globalChildCache.values()].map((child) => child.flush())]);
+  await Promise.all([logger.flush(), ...[...logger[GLOBAL_CHILD_LOGGERS].values()].map((child) => child.flush())]);
 }
 
 /** Test helper: drop the singleton so a later configure() rebinds. */

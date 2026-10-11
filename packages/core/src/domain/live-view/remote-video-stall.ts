@@ -30,15 +30,23 @@ export class RemoteVideoStallPolicy {
     this.lastFrameCount = null;
   }
 
+  /** Excludes background suspension while preserving the steady-stream grace. */
+  resume(now: number): void {
+    if (this.startedAt !== null) this.startedAt = now;
+    if (this.lastFrameAt !== null) this.lastFrameAt = now;
+  }
+
   /**
-   * Feeds the receiver's monotonic decoded-frame counter. Any change counts as
-   * progress — a counter reset (codec renegotiation) is activity, not silence.
+   * Feeds a decoded/presented frame counter. A positive counter reset after
+   * renegotiation is progress; zero never proves that the first frame arrived.
    */
-  observe(frameCount: number | undefined, now: number): void {
-    if (typeof frameCount !== "number" || !Number.isFinite(frameCount)) return;
-    if (this.lastFrameCount !== null && frameCount === this.lastFrameCount) return;
+  observe(frameCount: number | undefined, now: number): boolean {
+    if (typeof frameCount !== "number" || !Number.isFinite(frameCount) || frameCount < 0) return false;
+    if (frameCount === this.lastFrameCount) return false;
     this.lastFrameCount = frameCount;
+    if (frameCount === 0) return false;
     this.lastFrameAt = now;
+    return true;
   }
 
   evaluate(now: number): RemoteVideoStallDecision {

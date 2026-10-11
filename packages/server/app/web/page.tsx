@@ -32,11 +32,13 @@ import { DEFAULT_THEME_ID, resolveWebTheme, type WebThemeId } from "./themes";
 import { readWebappTabSwipeMessage } from "./webappTabSwipe";
 import { readWebappReadyMessage } from "./webappReady";
 
+import FlowStudioLoading from "./FlowStudioLoading";
+
 const TerminalPane = dynamic(() => import("./TerminalPane"), { ssr: false });
 const FileTree = dynamic(() => import("./FileTree"), { ssr: false });
 const FilePreview = dynamic(() => import("./FilePreview"), { ssr: false });
 const AiHubPane = dynamic(() => import("./AiHubPane"), { ssr: false });
-const FlowStudioPane = dynamic(() => import("./FlowStudioPane"), { ssr: false });
+const FlowStudioPane = dynamic(() => import("./FlowStudioPane"), { ssr: false, loading: () => <FlowStudioLoading /> });
 
 export default function WebConsolePage() {
   return (

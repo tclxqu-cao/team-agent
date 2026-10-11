@@ -183,7 +183,7 @@ export class RemoteAuthorization {
       this.enabled = false; this.captureActive = false; this.viewerCount = 0; this.controlState = null; this.clearIdleTimer(); await this.video.stop(); await this.stopAudio(); await this.save();
       if (this.online) this.registry.close(this.peer, this.sessionId);
       this.online = false; await this.display?.stop?.(); await this.helper.stop();
-      logGlobal('info', 'remote desktop sharing disabled', undefined, undefined, { action, sessionId: this.sessionId });
+      logGlobal('info', 'remote-desktop', 'remote desktop sharing disabled', undefined, { action, sessionId: this.sessionId });
     } else {
       this.enabled = true; this.retryAt = 0; await this.save();
       if (action === 'restart') { await this.video.stop(); await this.helper.stop(); }
@@ -191,7 +191,7 @@ export class RemoteAuthorization {
       if (action === 'authorize') await this.helper.request({ op: 'authorize', permission });
       const permissions = await this.helper.request({ op: 'status' });
       this.applyPermissions(permissions); this.lastPermissionCheck = Date.now();
-      logGlobal('info', 'remote desktop sharing enabled', undefined, undefined, {
+      logGlobal('info', 'remote-desktop', 'remote desktop sharing enabled', undefined, {
         action, platform: this.platform, screen: this.screen, accessibility: this.accessibility, locked: this.locked, sessionId: this.sessionId,
       });
       this.error = this.screen ? null : (permissions.error || (this.platform === 'win32' ? 'Windows 桌面暂不可用' : '请先授予屏幕录制权限'));
@@ -247,7 +247,7 @@ export class RemoteAuthorization {
       // Log once per distinct failure, not once per retry tick.
       if (this.lastCaptureErrorLogged !== error.message) {
         this.lastCaptureErrorLogged = error.message;
-        logGlobal('warn', 'desktop capture failed', error, undefined, { sessionId: this.sessionId, retryInMs: 3000 });
+        logGlobal('warn', 'remote-desktop', 'desktop capture failed', error, { sessionId: this.sessionId, retryInMs: 3000 });
       }
       this.publishUnavailable(this.error, this.locked === true);
     } finally { this.busy = false; }
@@ -279,7 +279,7 @@ export class RemoteAuthorization {
     this.locked = permissions.locked === true;
     const after = `${this.screen}/${this.accessibility}/${this.locked}`;
     if (before !== after) {
-      logGlobal('info', 'desktop permissions changed', undefined, undefined, {
+      logGlobal('info', 'remote-desktop', 'desktop permissions changed', undefined, {
         sessionId: this.sessionId, screen: this.screen, accessibility: this.accessibility, locked: this.locked,
       });
     }

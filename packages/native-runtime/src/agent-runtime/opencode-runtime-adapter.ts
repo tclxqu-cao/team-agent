@@ -1,3 +1,5 @@
+import type { SessionForkPoint } from "@agent/core";
+import { completedForkMessageIndex } from "./session-fork-point.js";
 import { logGlobal } from "@agent/core";
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
@@ -62,6 +64,7 @@ interface ActiveRun {
   permissionMode: ToolPermissionMode;
   brokerRunId?: string;
   finalText: string;
+  finalMessageId?: string;
   messageRoles: Map<string, OpenCodeMessage["role"]>;
   partText: Map<string, string>;
   toolStates: Map<string, ToolPart["state"]["status"]>;
@@ -372,11 +375,22 @@ export class OpenCodeRuntimeAdapter implements AgentRuntimeAdapter {
     return openCodeSessionToSummary(session, { type: "idle" });
   }
 
-  async fork(nativeSessionId: string): Promise<UnifiedSessionSummary> {
+  async fork(nativeSessionId: string, point?: SessionForkPoint): Promise<UnifiedSessionSummary> {
     const client = await this.getClient();
     const directory = await this.resolveDirectory(nativeSessionId);
+    let beforeMessageId: string | undefined;
+    if (point) {
+      if (!point.messageId) throw new RuntimeSessionError("OpenCode Fork 需要消息 ID", "INVALID_SESSION_ID");
+      const detail = await this.getSession(nativeSessionId);
+      completedForkMessageIndex(detail.messages, point.messageId, detail.status === "running");
+      const history = (await client.session.messages({ path: { id: nativeSessionId }, query: { directory }, throwOnError: true })).data;
+      const index = history.findIndex((entry) => entry.info.id === point.messageId);
+      if (index < 0) throw new RuntimeSessionError("该轮次不存在，请刷新会话后重试", "INVALID_SESSION_ID");
+      beforeMessageId = history[index + 1]?.info.id;
+    }
     const session = (await client.session.fork({
       path: { id: nativeSessionId },
+      ...(beforeMessageId ? { body: { messageID: beforeMessageId } } : {}),
       query: { directory },
       throwOnError: true,
     })).data;
@@ -525,6 +539,7 @@ export class OpenCodeRuntimeAdapter implements AgentRuntimeAdapter {
 
     if (payload.type === "message.updated") {
       run.messageRoles.set(payload.properties.info.id, payload.properties.info.role);
+      if (payload.properties.info.role === "assistant") run.finalMessageId = payload.properties.info.id;
       const error = payload.properties.info.role === "assistant" ? payload.properties.info.error : undefined;
       if (error) this.failRun(sessionId, errorMessage(error));
       return;
@@ -571,7 +586,7 @@ export class OpenCodeRuntimeAdapter implements AgentRuntimeAdapter {
     if (payload.type === "session.idle"
       || (payload.type === "session.status" && payload.properties.status.type === "idle")) {
       run.queue.push({ type: "text_done" });
-      run.queue.push({ type: "done", finalText: run.finalText });
+      run.queue.push({ type: "done", finalText: run.finalText, ...(run.finalMessageId ? { forkPoint: { messageId: run.finalMessageId } } : {}) });
       run.queue.close();
       return;
     }
@@ -760,9 +775,11 @@ export function openCodeHistoryToMessages(
       ...(imageFiles.filter((part) => part.url.startsWith("data:" )).length > 0
         ? { images: imageFiles.filter((part) => part.url.startsWith("data:" )).map((part) => part.url) }
         : {}),
-      ...(attachments.length > 0 || reasoning.length > 0
-        ? { presentation: { attachments: attachments.length ? attachments : undefined, reasoning: reasoning.length ? reasoning : undefined } }
-        : {}),
+      ...(attachments.length || reasoning.length || (entry.info.role === "assistant" && entry.info.time.completed) ? { presentation: {
+        ...(attachments.length ? { attachments } : {}),
+        ...(reasoning.length ? { reasoning } : {}),
+        ...(entry.info.role === "assistant" && entry.info.time.completed ? { forkPoint: { messageId: entry.info.id } } : {}),
+      } } : {}),
       ...(tools.length > 0 ? {
         toolCalls: tools.map((part) => ({ id: part.callID, name: part.tool, arguments: part.state.input })),
       } : {}),

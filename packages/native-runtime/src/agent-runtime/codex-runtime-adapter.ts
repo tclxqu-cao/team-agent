@@ -1,3 +1,4 @@
+import type { SessionForkPoint } from "@agent/core";
 import { logGlobal } from "@agent/core";
 import { execFile } from "node:child_process";
 import { mkdir, mkdtemp, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
@@ -9,6 +10,8 @@ import {
   computeSessionHistoryRevision,
   decodeSessionHistoryAnchor,
   normalizeToolPermissionMode,
+  fileChangeLineStats,
+  summarizeFileChanges,
   sessionHistoryMessageId,
   StaleSessionAnchorError,
   type AgentEvent,
@@ -1114,15 +1117,31 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
     });
   }
 
-  async fork(nativeSessionId: string): Promise<UnifiedSessionSummary> {
+  async fork(nativeSessionId: string, point?: SessionForkPoint): Promise<UnifiedSessionSummary> {
     this.ensureAvailable();
     const sourceResponse = await this.client.request<{ thread: CodexThread }>("thread/read", {
       threadId: nativeSessionId,
-      includeTurns: false,
+      includeTurns: Boolean(point),
     });
+    if (point) {
+      if (!point.turnId) throw new RuntimeSessionError("Codex Fork 需要已完成轮次 ID", "INVALID_SESSION_ID");
+      const turn = sourceResponse.thread.turns.find((candidate) => candidate.id === point.turnId);
+      if (!turn || turn.status !== "completed") {
+        throw new RuntimeSessionError("该轮次不存在或尚未完成，请刷新会话后重试", "INVALID_SESSION_ID");
+      }
+    }
     const response = await this.client.request<{ thread: CodexThread }>("thread/fork", {
       threadId: nativeSessionId,
+      ...(point ? { lastTurnId: point.turnId } : {}),
     });
+    if (point) {
+      const index = sourceResponse.thread.turns.findIndex((turn) => turn.id === point.turnId);
+      const futureIds = new Set(sourceResponse.thread.turns.slice(index + 1).map((turn) => turn.id));
+      if (response.thread.turns.some((turn) => futureIds.has(turn.id))) {
+        await this.client.request("thread/archive", { threadId: response.thread.id });
+        throw new RuntimeSessionError("当前 Codex 不支持按轮次 Fork，请升级运行时", "OPERATION_NOT_SUPPORTED");
+      }
+    }
     const sourceTitle = (
       sourceResponse.thread.name
       || sourceResponse.thread.preview
@@ -1630,7 +1649,7 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
         const finalText = lastCodexAgentText(turn?.items ?? []);
         const contextUsage = codexContextUsageEvent(turn, ++this.contextUsageRequestIndex);
         if (contextUsage) queue.push(contextUsage);
-        queue.push({ type: "done", finalText });
+        queue.push({ type: "done", finalText, ...(turn?.status === "completed" && finalText.trim() ? { forkPoint: { turnId: turn.id } } : {}) });
       }
       queue.close();
       return;
@@ -2215,7 +2234,10 @@ function codexSummaryTurnsToMessages(
         && typeof item.text === "string"
         && item.text.trim()
       ) {
-        const presentation = codexAgentMessagePresentation(item);
+        const presentation = {
+          ...codexAgentMessagePresentation(item),
+          ...(turn.status === "completed" ? { forkPoint: { turnId: turn.id } } : {}),
+        };
         messages.push({
           role: "assistant",
           content: item.text,
@@ -2253,11 +2275,13 @@ function boundedToolArguments(
       bounded[key] = truncateUtf8(entry, 512);
     } else if (typeof entry === "number" || typeof entry === "boolean" || entry === null) {
       bounded[key] = entry;
+    } else if (key === "fileChangeSummary") {
+      bounded[key] = entry;
     } else if (key === "changes" && Array.isArray(entry)) {
       bounded[key] = entry.slice(0, 20).map((change) => {
         const record = asRecord(change);
         return Object.fromEntries(
-          ["path", "file_path", "kind", "status"].flatMap((field) => (
+          ["path", "file_path", "kind", "status", "lineStats"].flatMap((field) => (
             field in record ? [[field, record[field]]] : []
           )),
         );
@@ -2266,6 +2290,12 @@ function boundedToolArguments(
       bounded[key] = `[${entry.length} items omitted]`;
     } else {
       bounded[key] = "[object omitted]";
+    }
+  }
+  // Preserve compact counts even when many long paths exceed the trace budget.
+  if (bounded.fileChangeSummary && Array.isArray(bounded.changes)) {
+    while (bounded.changes.length && Buffer.byteLength(JSON.stringify(bounded), "utf8") > maxBytes) {
+      bounded.changes.pop();
     }
   }
   const boundedSerialized = JSON.stringify(bounded);
@@ -2325,7 +2355,10 @@ export async function codexTurnsToMessages(
           ...(codexTraceHistoryId(turn.id, "agent", item.id) ? {
             historyId: codexTraceHistoryId(turn.id, "agent", item.id),
           } : {}),
-          ...(presentation ? { presentation } : {}),
+          presentation: {
+            ...presentation,
+            ...(turn.status === "completed" && item.phase !== "commentary" ? { forkPoint: { turnId: turn.id } } : {}),
+          },
         });
       } else if (item.type === "reasoning" && Array.isArray(item.summary)) {
         const reasoning = item.summary.flatMap((entry, sectionIndex) => (
@@ -2575,7 +2608,12 @@ function codexItemToToolCall(item?: CodexItem): ToolCall | null {
     return { id: item.id, name: "shell", arguments: { command: item.command, cwd: item.cwd } };
   }
   if (item.type === "fileChange") {
-    return { id: item.id, name: "apply_patch", arguments: { changes: item.changes } };
+    const changes = Array.isArray(item.changes) ? item.changes.map((change) => {
+      const record = asRecord(change);
+      const lineStats = fileChangeLineStats(record);
+      return { ...record, ...(lineStats ? { lineStats } : {}) };
+    }) : [];
+    return { id: item.id, name: "apply_patch", arguments: { changes, fileChangeSummary: summarizeFileChanges(changes) } };
   }
   if (item.type === "mcpToolCall") {
     return { id: item.id, name: `${String(item.server)}:${String(item.tool)}`, arguments: asRecord(item.arguments) };

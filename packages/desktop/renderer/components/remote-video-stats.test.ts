@@ -5,6 +5,7 @@ import {
   h264ProfilesFromReceiverCodecs,
   readReceiverH264Profiles,
   readRemoteVideoStats,
+  readRemoteVideoPlaybackFrames,
 } from "./remote-video-stats";
 
 describe("remote video stats", () => {
@@ -31,6 +32,19 @@ describe("remote video stats", () => {
   it("omits the decoded-frame counter when the browser does not report it", () => {
     const values = [...base, { id: "in", type: "inbound-rtp", kind: "video", codecId: "codec", bytesReceived: 1, packetsReceived: 1, packetsLost: 0, framesDropped: 0 }];
     expect(readRemoteVideoStats(values, null, 1_000)!.cursor.framesDecoded).toBeUndefined();
+  });
+
+  it("observes played frames when WebRTC decoded-frame stats are unavailable", () => {
+    const video = { getVideoPlaybackQuality: () => ({ totalVideoFrames: 52, droppedVideoFrames: 2 }) };
+    expect(readRemoteVideoPlaybackFrames(video)).toBe(50);
+    expect(readRemoteVideoPlaybackFrames(video, 10)).toBe(50);
+  });
+
+  it("uses legacy playback or WebRTC counters when playback quality is unavailable", () => {
+    expect(readRemoteVideoPlaybackFrames({ webkitDecodedFrameCount: 15 }, 20)).toBe(15);
+    expect(readRemoteVideoPlaybackFrames({ getVideoPlaybackQuality: () => { throw new Error("unsupported"); } }, 20)).toBe(20);
+    expect(readRemoteVideoPlaybackFrames(null, 20)).toBe(20);
+    expect(readRemoteVideoPlaybackFrames({})).toBeUndefined();
   });
 
   it("classifies decoder acceleration only from explicit browser evidence", () => {

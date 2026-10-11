@@ -1,5 +1,16 @@
 interface TouchPoint { clientX: number; clientY: number }
 
+/** Wheel input still arrives when a short history cannot change scrollTop. */
+export function shouldLoadOlderHistoryFromWheel(
+  event: { deltaX: number; deltaY: number; ctrlKey: boolean },
+  scrollTop: number,
+): boolean {
+  return !event.ctrlKey
+    && event.deltaY < 0
+    && Math.abs(event.deltaX) < -event.deltaY
+    && scrollTop <= 240;
+}
+
 /** One older-page request per downward gesture near the history's top edge. */
 export class HistoryPullGesture {
   private origin: TouchPoint | null = null;

@@ -45,6 +45,9 @@ export interface MessageAttachment {
   omitted?: boolean;
 }
 
+/** Inclusive end of a persisted native turn or transcript message. */
+export type SessionForkPoint = { turnId: string; messageId?: never } | { messageId: string; turnId?: never };
+
 export interface MessagePresentation {
   rawContent?: string;
   attachments?: MessageAttachment[];
@@ -55,6 +58,7 @@ export interface MessagePresentation {
   executionTrace?: { turnId: string; segmentIndex?: number };
   /** Authoritative wall-clock duration for a successfully completed turn. */
   completionDurationMs?: number;
+  forkPoint?: SessionForkPoint;
 }
 
 export interface ToolCall {

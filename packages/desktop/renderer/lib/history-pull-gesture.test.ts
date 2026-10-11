@@ -1,6 +1,27 @@
 import { describe, expect, it } from 'vitest';
-import { HistoryPullGesture } from './history-pull-gesture';
+import { HistoryPullGesture, shouldLoadOlderHistoryFromWheel } from './history-pull-gesture';
 const point = (clientX: number, clientY: number) => ({ clientX, clientY });
+describe('history wheel input', () => {
+  const upward = { deltaX: 0, deltaY: -80, ctrlKey: false };
+
+  it('loads a previous page at a stationary top edge without a scroll event', () => {
+    expect(shouldLoadOlderHistoryFromWheel(upward, 0)).toBe(true);
+    expect(shouldLoadOlderHistoryFromWheel(upward, -12)).toBe(true);
+  });
+
+  it('does not treat downward scrolling, horizontal motion or pinch zoom as an older-page request', () => {
+    expect(shouldLoadOlderHistoryFromWheel({ ...upward, deltaY: 80 }, 0)).toBe(false);
+    expect(shouldLoadOlderHistoryFromWheel({ ...upward, deltaY: 0 }, 0)).toBe(false);
+    expect(shouldLoadOlderHistoryFromWheel({ ...upward, deltaX: 100 }, 0)).toBe(false);
+    expect(shouldLoadOlderHistoryFromWheel({ ...upward, ctrlKey: true }, 0)).toBe(false);
+  });
+
+  it('loads only near the top and leaves ordinary scrolling farther down alone', () => {
+    expect(shouldLoadOlderHistoryFromWheel(upward, 240)).toBe(true);
+    expect(shouldLoadOlderHistoryFromWheel(upward, 241)).toBe(false);
+  });
+});
+
 describe('history pull gesture', () => {
   it('loads at a stationary top edge once per gesture, including Safari overscroll', () => {
     const gesture = new HistoryPullGesture();

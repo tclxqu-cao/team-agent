@@ -2059,6 +2059,24 @@ describe("NativeRuntimeBrokerHost", () => {
     }
   });
 
+  it("carries the selected fork boundary across the socket and preserves ordinary forks", async () => {
+    const runtime = new FakeNativeRuntime();
+    const fork = vi.fn(async () => summary());
+    runtime.fork = fork;
+    const path = await directory();
+    const host = new NativeRuntimeBrokerHost(path, runtime as unknown as UnifiedSessionService);
+    await host.start();
+    try {
+      const client = new NativeRuntimeBrokerClient({ directory: path });
+      await client.fork(sessionId, { turnId: "turn-2" });
+      expect(fork).toHaveBeenLastCalledWith(sessionId, { turnId: "turn-2" });
+      await client.fork(sessionId);
+      expect(fork).toHaveBeenLastCalledWith(sessionId);
+    } finally {
+      await host.stop();
+    }
+  });
+
   it("uses one socket host for a second client instead of starting another runtime", async () => {
     const runtime = new FakeNativeRuntime();
     const path = await directory();

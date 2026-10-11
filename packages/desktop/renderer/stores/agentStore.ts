@@ -35,6 +35,7 @@ export interface StreamEvent {
   result?: { toolCallId: string; content: string; isError?: boolean };
   finalText?: string;
   durationMs?: number;
+  forkPoint?: import("@agent/core").SessionForkPoint;
   usage?: ContextUsageSnapshot;
   todos?: TodoItem[];
   tasks?: CronTask[];
@@ -157,9 +158,15 @@ export interface ChatMessage {
   timestamp: number;
 }
 
+export interface SessionHistoryWindow {
+  olderCursor: string | null;
+  kind: "latest" | "anchored";
+}
+
 interface AgentState {
   messages: ChatMessage[];
   messagesBySession: Record<string, ChatMessage[]>;
+  historyWindowsBySession: Record<string, SessionHistoryWindow>;
   contextUsageBySession: Record<string, ContextUsageSnapshot>;
   runtimeProgressBySession: Record<string, RuntimeProgress[]>;
   nativeSubagentsBySession: Record<string, Record<string, NativeSubagentActivity>>;
@@ -181,8 +188,9 @@ interface AgentState {
   updateSubAgentStatus: (subSessionId: string, status: "completed" | "failed", detail?: string, sessionId?: string) => void;
   /** Append streaming text to a running dispatch_agent toolCall's live progress */
   updateSubAgentProgress: (subSessionId: string, text: string, sessionId?: string) => void;
-  setMessages: (messages: ChatMessage[], sessionId?: string) => void;
+  setMessages: (messages: ChatMessage[], sessionId?: string, historyWindow?: SessionHistoryWindow) => void;
   getMessagesForSession: (sessionId: string) => ChatMessage[];
+  getSessionHistoryWindow: (sessionId: string) => SessionHistoryWindow | undefined;
   setContextUsage: (usage: ContextUsageSnapshot, sessionId?: string) => void;
   applyRuntimeProgress: (progress: RuntimeProgress, sessionId?: string) => void;
   setRuntimeProgress: (progress: RuntimeProgress[], sessionId?: string) => void;
@@ -328,6 +336,7 @@ function applyReasoningSummaryToList(
 export const useAgentStore = create<AgentState>((set, get) => ({
   messages: [],
   messagesBySession: {},
+  historyWindowsBySession: {},
   contextUsageBySession: {},
   runtimeProgressBySession: {},
   nativeSubagentsBySession: {},
@@ -406,17 +415,21 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       return { messages: visibleMessages, messagesBySession };
     }),
 
-  setMessages: (messages, sid) => set((state) => {
+  setMessages: (messages, sid, historyWindow) => set((state) => {
     const targetSid = sid ?? state.sessionId ?? undefined;
     const isVisibleSession = !targetSid || targetSid === state.sessionId;
     return {
       messages: isVisibleSession ? messages : state.messages,
       messagesBySession: targetSid ? { ...state.messagesBySession, [targetSid]: messages } : state.messagesBySession,
+      historyWindowsBySession: targetSid && historyWindow
+        ? { ...state.historyWindowsBySession, [targetSid]: historyWindow }
+        : state.historyWindowsBySession,
       currentText: isVisibleSession ? "" : state.currentText,
     };
   }),
 
   getMessagesForSession: (sid) => get().messagesBySession[sid] ?? [],
+  getSessionHistoryWindow: (sid) => get().historyWindowsBySession[sid],
 
   setContextUsage: (usage, sid) => set((state) => {
     const targetSid = sid ?? state.sessionId ?? undefined;
@@ -568,12 +581,14 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     const targetSid = sid ?? state.sessionId ?? undefined;
     if (!targetSid) return { messages: [], currentText: "" };
     const { [targetSid]: _removedMessages, ...messagesBySession } = state.messagesBySession;
+    const { [targetSid]: _removedWindow, ...historyWindowsBySession } = state.historyWindowsBySession;
     const { [targetSid]: _removedUsage, ...contextUsageBySession } = state.contextUsageBySession;
     const { [targetSid]: _removedProgress, ...runtimeProgressBySession } = state.runtimeProgressBySession;
     const { [targetSid]: _removedSubagents, ...nativeSubagentsBySession } = state.nativeSubagentsBySession;
     return {
       messages: targetSid === state.sessionId ? [] : state.messages,
       messagesBySession,
+      historyWindowsBySession,
       contextUsageBySession,
       runtimeProgressBySession,
       nativeSubagentsBySession,

@@ -556,10 +556,10 @@ function recordLiveFrameIntake(sessionId, sequence, byteLength) {
   stats.lastAt = now; stats.lastSeq = sequence;
   liveFrameIntake.set(sessionId, stats);
   if (REMOTE_VIDEO_TRACE) {
-    logGlobal("info", "live frame intake", undefined, undefined, { sessionId, sequence, bytes: byteLength, gapMs: gapMs || null });
+    logGlobal("info", "live-view", "live frame intake", undefined, { sessionId, sequence, bytes: byteLength, gapMs: gapMs || null });
   }
   if (stats.lastAt && gapMs >= REMOTE_FRAME_GAP_WARN_MS) {
-    logGlobal("warn", "live frame gap", undefined, undefined, { sessionId, gapMs, sequence, totalFrames: stats.frames });
+    logGlobal("warn", "live-view", "live frame gap", undefined, { sessionId, gapMs, sequence, totalFrames: stats.frames });
   }
 }
 setInterval(() => {
@@ -567,7 +567,7 @@ setInterval(() => {
   for (const [sessionId, stats] of liveFrameIntake) {
     if (now - stats.lastAt > 120_000) { liveFrameIntake.delete(sessionId); continue; }
     if (now - stats.lastAt < 60_000) continue;
-    logGlobal("info", "live frame intake stalled", undefined, undefined, { sessionId, ...stats });
+    logGlobal("info", "live-view", "live frame intake stalled", undefined, { sessionId, ...stats });
   }
 }, 60_000).unref();
 
@@ -834,7 +834,7 @@ const requestHandlers = {
   "browser:watch": async (msg, conn) => {
     conn.browserFrameFlow.reset(msg.frameAck === true);
     const session = liveViewRegistry.watch(conn.browserPeer, msg.sessionId);
-    logGlobal("info", "live viewer watching", undefined, undefined, { sessionId: msg.sessionId, userId: conn.principal?.userId ?? null, requireAck: msg.frameAck === true });
+    logGlobal("info", "live-view", "live viewer watching", undefined, { sessionId: msg.sessionId, userId: conn.principal?.userId ?? null, requireAck: msg.frameAck === true });
     return { session, channelId: assignBrowserChannel(conn, session.id) };
   },
   "browser:frame-ack": async (msg, conn) => {
@@ -1346,7 +1346,7 @@ wss.on("connection", (ws, _req, principal) => {
     conn.browserFrameFlow.reset(false);
     const relay = conn.browserFrameRelay;
     if (relay.offered > 0) {
-      logGlobal("info", "live relay closed for viewer", undefined, undefined, {
+      logGlobal("info", "live-view", "live relay closed for viewer", undefined, {
         connId: conn.id, userId: conn.principal?.userId ?? null,
         offered: relay.offered, sent: relay.sent, dropped: relay.dropped, acked: relay.acked,
         bytes: relay.bytes, lastAckMs: relay.lastAckMs, maxAckMs: relay.maxAckMs,

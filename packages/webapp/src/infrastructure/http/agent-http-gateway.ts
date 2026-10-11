@@ -1,3 +1,4 @@
+import type { SessionForkPoint } from "@agent/core";
 import type {
   AgentApi,
   AgentDefinition,
@@ -610,8 +611,8 @@ export class AgentHttpGateway {
     });
   }
 
-  async forkSession(id: string): Promise<unknown> {
-    return this.http.post(`/api/sessions/${encodeURIComponent(id)}/fork`, {});
+  async forkSession(id: string, point?: SessionForkPoint): Promise<unknown> {
+    return this.http.post(`/api/sessions/${encodeURIComponent(id)}/${point ? "fork-at" : "fork"}`, point ? { point } : {});
   }
 
   async releaseCodexSession(id: string): Promise<void> {

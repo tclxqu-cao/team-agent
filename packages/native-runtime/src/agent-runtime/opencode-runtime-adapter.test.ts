@@ -102,6 +102,21 @@ describe("OpenCodeRuntimeAdapter", () => {
     await expect(adapter.getSessionWatchPath("ses_1")).resolves.toMatch(/opencode\.db(?:-wal)?$/);
   });
 
+  it("keeps the selected final answer by using the following message as the exclusive fork boundary", async () => {
+    const fixture = mockServer();
+    const history = [
+      { info: { id: "msg_1", role: "user", time: { created: 1 } }, parts: [{ type: "text", text: "q1" }] },
+      { info: { id: "msg_2", role: "assistant", time: { created: 2, completed: 3 } }, parts: [{ type: "text", text: "a1" }] },
+      { info: { id: "msg_3", role: "user", time: { created: 4 } }, parts: [{ type: "text", text: "q2" }] },
+    ];
+    fixture.client.session.messages.mockResolvedValue({ data: history } as never);
+    const adapter = new OpenCodeRuntimeAdapter({ server: fixture.server });
+    await adapter.fork("ses_1", { messageId: "msg_2" });
+    expect(fixture.client.session.fork).toHaveBeenCalledWith(expect.objectContaining({ body: { messageID: "msg_3" } }));
+    await expect(adapter.fork("ses_1", { messageId: "missing" })).rejects.toThrow();
+    expect(fixture.client.session.fork).toHaveBeenCalledTimes(1);
+  });
+
   it("queries imported workspace sessions with the imported directory", async () => {
     const fixture = mockServer();
     const adapter = new OpenCodeRuntimeAdapter({ server: fixture.server });
@@ -142,7 +157,7 @@ describe("OpenCodeRuntimeAdapter", () => {
       { type: "text_chunk", text: "hello" },
       { type: "text_chunk", text: " world" },
       { type: "text_done" },
-      { type: "done", finalText: "hello world" },
+      { type: "done", finalText: "hello world", forkPoint: { messageId: "assistant_1" } },
     ]);
   });
 

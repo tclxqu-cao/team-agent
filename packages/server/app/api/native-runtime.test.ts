@@ -13,6 +13,7 @@ import { GET as runtimeHealth } from "./agent/runtime-health/route";
 import { GET as listSessions, POST as createSession } from "./sessions/route";
 import { DELETE as deleteSession, GET as getSession, PATCH as patchSession } from "./sessions/[id]/route";
 import { POST as forkSession } from "./sessions/[id]/fork/route";
+import { POST as forkAt } from "./sessions/[id]/fork-at/route";
 import { POST as handoffSession } from "./sessions/[id]/handoff/route";
 import { POST as releaseCodexSession } from "./sessions/[id]/release/route";
 import { POST as runRoute } from "./agent/run/route";
@@ -33,6 +34,7 @@ const state = {
   createOptions: null as Record<string, unknown> | null,
   forkResult: null as Record<string, unknown> | null,
   forkError: null as Error | null,
+  forkPoint: undefined as unknown,
   runEvents: [] as AgentEvent[],
   runError: null as Error | null,
   started: null as { id: string; input: string; images?: string[]; controller?: string } | null,
@@ -78,7 +80,8 @@ vi.mock("../../lib/native-runtime-service", () => ({
         canDelete: false,
       };
     },
-    fork: async () => {
+    fork: async (_id: string, point?: unknown) => {
+      state.forkPoint = point;
       if (state.forkError) throw state.forkError;
       return state.forkResult;
     },
@@ -188,6 +191,7 @@ vi.mock("../../lib/native-runtime-service", () => ({
   }),
   isNativeSessionId: (id: string) => /^runtime:(codex|claude-code|opencode):/.test(id),
   runtimeErrorStatus: (error: { code?: string; status?: number }) => {
+    if (error.code === "INVALID_SESSION_ID") return 400;
     if (error.code === "OPERATION_NOT_SUPPORTED") return 405;
     if (error.code === "SESSION_OCCUPIED") return 409;
     if (error.code === "APPROVAL_EXPIRED") return 409;
@@ -425,6 +429,35 @@ describe("native runtime routing", () => {
       id: "runtime:codex:Zm9yaw",
       nativeSessionId: "fork",
     });
+  });
+
+  it("passes the inclusive selected turn to the existing fork service", async () => {
+    const response = await forkAt(json("POST", "http://test/api/sessions/runtime:codex:bW9jaw/fork-at", { point: { turnId: "turn-2" } }), { params: { id: "runtime:codex:bW9jaw" } });
+    expect(response.status).toBe(201);
+    expect(state.forkPoint).toEqual({ turnId: "turn-2" });
+  });
+
+  it("preserves full fork requests without a JSON body", async () => {
+    const response = await forkSession(new Request("http://test/api/sessions/runtime:codex:bW9jaw/fork", { method: "POST" }), {
+      params: { id: "runtime:codex:bW9jaw" },
+    });
+    expect(response.status).toBe(201);
+    expect(state.forkPoint).toBeUndefined();
+  });
+
+  it("rejects fork-at requests without a selected point", async () => {
+    const response = await forkAt(new Request("http://test/api/sessions/runtime:codex:bW9jaw/fork-at", { method: "POST" }), {
+      params: { id: "runtime:codex:bW9jaw" },
+    });
+    expect(response.status).toBe(400);
+    expect(state.forkPoint).toBeUndefined();
+  });
+
+  it.each([{}, { point: { turnId: "a", messageId: "b" } }, { point: { turnId: "" } }])("rejects invalid fork-at input %j", async (body) => {
+    state.forkPoint = undefined;
+    const response = await forkAt(json("POST", "http://test/api/sessions/runtime:codex:bW9jaw/fork-at", body), { params: { id: "runtime:codex:bW9jaw" } });
+    expect(response.status).toBe(400);
+    expect(state.forkPoint).toBeUndefined();
   });
 
   it("maps unsupported fork errors to the runtime status", async () => {

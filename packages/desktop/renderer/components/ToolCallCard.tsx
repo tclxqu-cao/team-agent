@@ -1,5 +1,6 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import type { NativeSubagentActivity, RuntimeProgress, SessionToolResultRef } from "@agent/core";
+import { fileChangeLineStats, fileChangeOperation, textLines, textLineStats, type FileLineStats } from "../../../core/src/domain/tool/file-change-summary";
 import {
   Check,
   ChevronRight,
@@ -19,6 +20,7 @@ import { hasToolCallResult } from "../lib/tool-call-status";
 import { toolActivityLabel, toolFamily, toolPhrase, toolPreview } from "../lib/tool-call-presentation";
 import RuntimeProgressRow from "./RuntimeProgressRow";
 import { resolveWebArtifactPath } from "../lib/artifact-links";
+import { editLineStats, multiEditLineStats, patchActivityLabel, patchChanges, patchSummary, writeLineCount } from "../lib/file-tool-presentation";
 
 export interface ToolCallData {
   id: string;
@@ -75,6 +77,7 @@ function ToolActionIcon({ name, color, size = 14 }: { name: string; color: strin
 
 // ── Shared card shell: left gutter bar + header button + expandable body ──
 interface CardShellProps {
+  visibilityRef?: React.Ref<HTMLDivElement>;
   statusColor: string;
   isDone: boolean;
   expanded: boolean;
@@ -86,7 +89,7 @@ interface CardShellProps {
   primaryActionLabel?: string;
   primaryActionTitle?: string;
 }
-function CardShell({ statusColor, isDone, expanded, onToggle, header, children, maxBodyHeight = 600, primaryAction, primaryActionLabel, primaryActionTitle }: CardShellProps) {
+function CardShell({ visibilityRef, statusColor, isDone, expanded, onToggle, header, children, maxBodyHeight = 600, primaryAction, primaryActionLabel, primaryActionTitle }: CardShellProps) {
   const headerButton = (
     <button
       type="button"
@@ -106,7 +109,7 @@ function CardShell({ statusColor, isDone, expanded, onToggle, header, children, 
   );
 
   return (
-    <div className="tool-call-shell" style={{ marginTop: 4, borderRadius: 9, border: "1px solid var(--border-subtle)", overflow: "hidden", background: "var(--bg-deepest)", fontSize: 12, minWidth: 0 }}>
+    <div ref={visibilityRef} className="tool-call-shell" style={{ marginTop: 4, borderRadius: 9, border: "1px solid var(--border-subtle)", overflow: "hidden", background: "var(--bg-deepest)", fontSize: 12, minWidth: 0 }}>
       <div className="tool-call-shell__row" style={{ display: "flex", alignItems: "stretch" }}>
         {/* Left status gutter */}
         <div className="tool-call-shell__status" style={{
@@ -155,7 +158,17 @@ function basename(p: string): string {
 }
 
 function lineCount(s: string): number {
-  return s ? s.split("\n").length : 0;
+  return textLines(s).length;
+}
+
+function FileChangeStats({ stats, pending = false }: { stats: FileLineStats | null; pending?: boolean }) {
+  if (!stats) return null;
+  return (
+    <span className="tool-call-line-stats" aria-label={`${pending ? "预计" : ""}新增 ${stats.added} 行，删除 ${stats.removed} 行`} style={{ display: "inline-flex", gap: 5, fontSize: 11, fontFamily: "var(--font-mono)", flexShrink: 0, whiteSpace: "nowrap" }}>
+      {(stats.added > 0 || stats.removed === 0) && <span style={{ color: "var(--success)" }}>+{stats.added}</span>}
+      {stats.removed > 0 && <span style={{ color: "var(--danger)" }}>−{stats.removed}</span>}
+    </span>
+  );
 }
 
 function useToolExpansion(
@@ -216,8 +229,8 @@ function LazyToolResultState({
 type DiffLine = { type: "added" | "removed" | "same"; text: string; lineNo: number };
 
 function computeDiff(before: string, after: string): DiffLine[] {
-  const bl = before.split("\n");
-  const al = after.split("\n");
+  const bl = textLines(before);
+  const al = textLines(after);
   if (bl.length * al.length > 200_000) {
     return al.map((text, i) => ({ type: "added" as const, text, lineNo: i + 1 }));
   }
@@ -312,15 +325,12 @@ function WriteFileCard({ toolCall, beforeContent, previewPath, onOpenArtifact, o
   const [tab, setTab] = useState<"content"|"diff">("content");
   const filePath = (toolCall.arguments.file_path as string)??"";
   const content = (toolCall.arguments.content as string)??"";
-  const lines = lineCount(content);
+  const lines = writeLineCount(toolCall.arguments);
   const isError = toolCall.isError;
   const isDone = hasToolCallResult(toolCall);
   const statusColor = isDone ? (isError ? "var(--danger)" : "var(--success)") : "var(--accent)";
-  const diff = useMemo(() => beforeContent && content ? computeDiff(beforeContent, content) : null, [beforeContent, content]);
-  const diffStats = useMemo(() => {
-    if (!diff) return null;
-    return { added: diff.filter(d => d.type === "added").length, removed: diff.filter(d => d.type === "removed").length };
-  }, [diff]);
+  const diff = useMemo(() => beforeContent !== undefined && !toolCall.arguments.__truncated ? computeDiff(beforeContent, content) : null, [beforeContent, content, toolCall.arguments.__truncated]);
+  const diffStats = useMemo(() => beforeContent !== undefined && lines !== null ? textLineStats(beforeContent, content) : null, [beforeContent, content, lines]);
   const iconColor = isError ? "var(--danger)" : isDone ? "var(--text-muted)" : "var(--accent)";
 
   const header = (
@@ -328,18 +338,13 @@ function WriteFileCard({ toolCall, beforeContent, previewPath, onOpenArtifact, o
       <span className="tool-call-shell__icon">
         <ToolActionIcon name={toolCall.name} color={iconColor} />
       </span>
-      <span className="tool-call-shell__label">写入</span>
+      <span className="tool-call-shell__label">{beforeContent !== undefined ? "编辑" : "写入"}</span>
       <span className="tool-call-shell__preview" style={{ flex: 1 }} title={filePath}>
         {basename(filePath)}
       </span>
       {/* Meta */}
-      <Tag label={`${lines} 行`} color="var(--accent)" bg="var(--accent-dim)" />
-      {diffStats && (
-        <span style={{ display: "flex", gap: 3, fontSize: 10, flexShrink: 0 }}>
-          {diffStats.added > 0 && <span style={{ color: "var(--success)" }}>+{diffStats.added}</span>}
-          {diffStats.removed > 0 && <span style={{ color: "var(--danger)" }}>−{diffStats.removed}</span>}
-        </span>
-      )}
+      {lines !== null && <Tag label={`${lines} 行`} color="var(--accent)" bg="var(--accent-dim)" />}
+      {!isError && <FileChangeStats stats={diffStats} pending={!isDone} />}
       {(!isDone || isError) && (
         <span className="tool-call-shell__state" style={{ color: statusColor }}>
           <StatusIcon isDone={isDone} isError={isError} color={statusColor} />
@@ -432,24 +437,19 @@ function StrReplaceCard({ toolCall, previewPath, onOpenArtifact, onLoadResult }:
   const isDone = hasToolCallResult(toolCall);
   const statusColor = isDone ? (isError ? "var(--danger)" : "var(--success)") : "var(--accent)";
   const iconColor = isError ? "var(--danger)" : isDone ? "var(--text-muted)" : "var(--accent)";
-  const diff = useMemo(() => oldString && newString ? computeDiff(oldString, newString) : null, [oldString, newString]);
-  const diffStats = useMemo(() => diff ? { added: diff.filter(d => d.type === "added").length, removed: diff.filter(d => d.type === "removed").length } : null, [diff]);
+  const diff = useMemo(() => !toolCall.arguments.__truncated && typeof toolCall.arguments.old_string === "string" && typeof toolCall.arguments.new_string === "string" ? computeDiff(oldString, newString) : null, [oldString, newString, toolCall.arguments]);
+  const diffStats = useMemo(() => editLineStats(toolCall.arguments), [toolCall.arguments]);
 
   const header = (
     <>
       <span className="tool-call-shell__icon">
         <ToolActionIcon name={toolCall.name} color={iconColor} />
       </span>
-      <span className="tool-call-shell__label">写入</span>
+      <span className="tool-call-shell__label">编辑</span>
       <span className="tool-call-shell__preview" style={{ flex: 1 }} title={filePath}>
         {basename(filePath)}
       </span>
-      {diffStats && (
-        <span style={{ display: "flex", gap: 3, fontSize: 10, flexShrink: 0 }}>
-          {diffStats.added > 0 && <span style={{ color: "var(--success)" }}>+{diffStats.added}</span>}
-          {diffStats.removed > 0 && <span style={{ color: "var(--danger)" }}>−{diffStats.removed}</span>}
-        </span>
-      )}
+      {!isError && <FileChangeStats stats={diffStats} pending={!isDone} />}
       {(!isDone || isError) && (
         <span className="tool-call-shell__state" style={{ color: statusColor }}>
           <StatusIcon isDone={isDone} isError={isError} color={statusColor} />
@@ -670,10 +670,30 @@ function GenericToolCard({ toolCall, onSelectSession, nativeSubagent, previewPat
       })()
     : toolPreview(toolCall.name, toolCall.arguments);
 
+  const fileSummary = useMemo(() => toolCall.name === "apply_patch" ? patchSummary(toolCall.arguments, toolCall.result) : null, [toolCall.name, toolCall.arguments, toolCall.result]);
+  const fileChanges = useMemo(() => toolCall.name === "apply_patch" ? patchChanges(toolCall.arguments, toolCall.result) : [], [toolCall.name, toolCall.arguments, toolCall.result]);
+  const visibilityRef = useRef<HTMLDivElement>(null);
+  const needsLegacyPatchStats = toolCall.name === "apply_patch" && !fileSummary?.lineStats
+    && Boolean(toolCall.resultRef && toolCall.result === undefined && onLoadResult)
+    && !isError && !expansion.loadingResult && !expansion.resultError;
+  useEffect(() => {
+    if (!needsLegacyPatchStats || !visibilityRef.current) return;
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) {
+        observer.disconnect();
+        void expansion.loadResult();
+      }
+    });
+    observer.observe(visibilityRef.current);
+    return () => observer.disconnect();
+  }, [needsLegacyPatchStats, toolCall.id, toolCall.resultRef, onLoadResult]);
+  const fileStats = toolCall.name === "apply_patch" ? fileSummary?.lineStats ?? null
+    : toolCall.name === "MultiEdit" ? multiEditLineStats(toolCall.arguments) : null;
   const toolLabel = isNativeAgent
     ? `@${nativeSubagent!.agentName ?? "agent"}`
     : isDispatch
       ? `@${(toolCall.arguments.agentName as string) ?? "agent"}`
+      : toolCall.name === "apply_patch" ? patchActivityLabel(fileSummary)
       : toolActivityLabel(toolCall.name) ?? toolCall.name;
 
   const family = toolFamily(toolCall.name);
@@ -697,6 +717,8 @@ function GenericToolCard({ toolCall, onSelectSession, nativeSubagent, previewPat
         </span>
       )}
       {!previewLabel && <span style={{ flex: 1 }} />}
+      {!isError && <FileChangeStats stats={fileStats} pending={!isDone} />}
+      {toolCall.name === "apply_patch" && !fileStats && expansion.loadingResult && <span style={{ fontSize: 10, color: "var(--text-muted)", flexShrink: 0 }}>行数加载中</span>}
       {showStatus && (
         <span className="tool-call-shell__state" style={{ color: statusColor }}>
           <StatusIcon isDone={isDone} isError={!!isError} color={statusColor} />
@@ -707,7 +729,7 @@ function GenericToolCard({ toolCall, onSelectSession, nativeSubagent, previewPat
   );
 
   return (
-    <CardShell statusColor={statusColor} isDone={isDone} expanded={expanded} onToggle={expansion.toggle} header={header} maxBodyHeight={800} primaryAction={previewPaths.length === 1 && onOpenArtifact ? () => onOpenArtifact(previewPaths[0]) : undefined} primaryActionLabel={previewPaths.length === 1 ? `预览文件 ${basename(previewPaths[0])}` : undefined} primaryActionTitle={previewPaths.length === 1 ? `预览 ${previewPaths[0]}` : undefined}>
+    <CardShell visibilityRef={visibilityRef} statusColor={statusColor} isDone={isDone} expanded={expanded} onToggle={expansion.toggle} header={header} maxBodyHeight={800} primaryAction={previewPaths.length === 1 && onOpenArtifact ? () => onOpenArtifact(previewPaths[0]) : undefined} primaryActionLabel={previewPaths.length === 1 ? `预览文件 ${basename(previewPaths[0])}` : undefined} primaryActionTitle={previewPaths.length === 1 ? `预览 ${previewPaths[0]}` : undefined}>
       <LazyToolResultState toolCall={toolCall} loading={expansion.loadingResult} error={expansion.resultError} retry={expansion.loadResult} />
       {previewPaths.length > 1 && (
         <div className="tool-call-file-list" aria-label="改动文件">
@@ -720,7 +742,13 @@ function GenericToolCard({ toolCall, onSelectSession, nativeSubagent, previewPat
               title={`预览 ${previewPath}`}
             >
               <FileText size={12} strokeWidth={1.8} aria-hidden="true" />
-              <span>{basename(previewPath)}</span>
+              <span style={{ flex: 1 }}>{basename(previewPath)}</span>
+              {(() => {
+                const change = fileChanges.find((entry) => resolveWebArtifactPath(String(entry.path ?? ""), workspacePath) === previewPath);
+                if (!change) return null;
+                const operation = fileChangeOperation(change);
+                return <><span>{operation === "add" ? "写入" : operation === "delete" ? "删除" : "编辑"}</span>{!isError && <FileChangeStats stats={fileChangeLineStats(change)} pending={!isDone} />}</>;
+              })()}
             </button>
           ))}
         </div>
@@ -841,8 +869,8 @@ export function ToolCallGroup({ items, onSelectSession, workspacePath, onOpenArt
 
 export function resolveToolPreviewPaths(toolCall: ToolCallData, workspacePath?: string | null): string[] {
   if (toolFamily(toolCall.name) !== "file") return [];
-  const rawPaths = toolCall.name === "apply_patch" && Array.isArray(toolCall.arguments.changes)
-    ? (toolCall.arguments.changes as Array<Record<string, unknown>>).map((change) => change.path)
+  const rawPaths = toolCall.name === "apply_patch"
+    ? patchChanges(toolCall.arguments, toolCall.result).map((change) => change.path)
     : [toolCall.arguments.file_path ?? toolCall.arguments.path ?? toolCall.arguments.notebook_path];
   return [...new Set(rawPaths
     .filter((value): value is string => typeof value === "string")
@@ -852,11 +880,11 @@ export function resolveToolPreviewPaths(toolCall: ToolCallData, workspacePath?: 
 
 export default function ToolCallCard({ toolCall, onSelectSession, beforeContent, progress, nativeSubagent, workspacePath, onOpenArtifact, onLoadResult }: ToolCallProps) {
   const previewPaths = onOpenArtifact ? resolveToolPreviewPaths(toolCall, workspacePath) : [];
-  const card = toolCall.name === "write_file"
+  const card = toolCall.name === "write_file" || toolCall.name === "Write"
     ? <WriteFileCard toolCall={toolCall} beforeContent={beforeContent} previewPath={previewPaths[0]} onOpenArtifact={onOpenArtifact} onLoadResult={onLoadResult} />
     : toolCall.name === "read_file"
       ? <ReadFileCard toolCall={toolCall} previewPath={previewPaths[0]} onOpenArtifact={onOpenArtifact} onLoadResult={onLoadResult} />
-      : toolCall.name === "str_replace"
+      : toolCall.name === "str_replace" || toolCall.name === "Edit"
         ? <StrReplaceCard toolCall={toolCall} previewPath={previewPaths[0]} onOpenArtifact={onOpenArtifact} onLoadResult={onLoadResult} />
         : <GenericToolCard toolCall={toolCall} onSelectSession={onSelectSession} nativeSubagent={nativeSubagent} previewPaths={previewPaths} workspacePath={workspacePath} onOpenArtifact={onOpenArtifact} onLoadResult={onLoadResult} />;
   return (

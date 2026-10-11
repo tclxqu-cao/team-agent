@@ -4,7 +4,7 @@ import type {
   SessionHistoryQuery,
   SessionToolResultRef,
 } from "@agent/core";
-import type { ChatMessage, ContextUsageSnapshot } from "../stores/agentStore";
+import type { ChatMessage, ContextUsageSnapshot, SessionHistoryWindow } from "../stores/agentStore";
 import type { SessionGoalState } from "../global";
 import {
   applyCodexLiveExecutionEvent,
@@ -142,6 +142,57 @@ export function mergeProgressiveSessionHistoryPage(
   return mergeRefreshedSessionHistory(current, refreshed);
 }
 
+/** Keep a retained history window's oldest boundary when refreshing its tail. */
+export function restoreLatestSessionHistoryWindow(
+  current: ChatMessage[],
+  refreshed: ChatMessage[],
+  phase: ProgressiveHistoryPhase,
+  history: SessionHistoryDetail["history"],
+  cachedWindow?: SessionHistoryWindow,
+): { messages: ChatMessage[]; window: SessionHistoryWindow } {
+  // An anchored window can be separated from the latest page by unloaded turns.
+  // Returning to latest must start a contiguous window instead of joining them.
+  const retained = cachedWindow?.kind === "anchored"
+    ? current.filter((message) => message.isQueued)
+    : uniqueSessionMessages(current);
+  return {
+    messages: mergeProgressiveSessionHistoryPage(retained, refreshed, phase, history),
+    window: {
+      kind: "latest",
+      olderCursor: cachedWindow?.kind === "latest" && retained.some((message) => !message.isQueued)
+        ? cachedWindow.olderCursor
+        : history?.nextCursor ?? null,
+    },
+  };
+}
+
+/** A page may overlap the cache; existing rows carry newer text and loaded results. */
+export function mergePaginatedSessionHistory(
+  current: ChatMessage[],
+  page: ChatMessage[],
+  direction: "older" | "newer",
+): ChatMessage[] {
+  const retained = uniqueSessionMessages(current);
+  const existingIds = new Set(retained.map((message) => message.id));
+  const additions = uniqueSessionMessages(page).filter((message) => !existingIds.has(message.id));
+  if (additions.length === 0) return retained;
+  return direction === "older" ? [...additions, ...retained] : [...retained, ...additions];
+}
+
+function uniqueSessionMessages(messages: ChatMessage[]): ChatMessage[] {
+  const seen = new Set<string>();
+  // Old pagination prepended duplicates. Keep the last occurrence so a cache
+  // polluted by that path recovers its original chronological window.
+  const retained: ChatMessage[] = [];
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (seen.has(message.id)) continue;
+    seen.add(message.id);
+    retained.push(message);
+  }
+  return retained.length === messages.length ? messages : retained.reverse();
+}
+
 function mergeCoreSessionHistory(
   current: ChatMessage[],
   refreshed: ChatMessage[],
@@ -157,7 +208,10 @@ function mergeCoreSessionHistory(
   if (refreshedTurnStart < 0) return current;
 
   const refreshedUser = refreshed[refreshedTurnStart];
-  let currentTurnStart = currentHistory.findLastIndex((message) => (
+  const persistedUserIndex = currentHistory.findIndex((message) => (
+    message.role === "user" && message.id === refreshedUser.id
+  ));
+  let currentTurnStart = persistedUserIndex >= 0 ? persistedUserIndex : currentHistory.findLastIndex((message) => (
     message.role === "user"
     && !message.isCompactionSummary
     && sessionHistoryUserBoundaryKey(message) === sessionHistoryUserBoundaryKey(refreshedUser)
@@ -168,6 +222,14 @@ function mergeCoreSessionHistory(
     // turn's trace and append the new core-only turn until its trace arrives.
     return [...currentHistory, ...refreshed.slice(refreshedTurnStart), ...queued];
   }
+
+  const confirmsSend = currentHistory[currentTurnStart].sendState
+    && refreshedHistoryConfirmsOptimisticUser(
+      currentHistory,
+      refreshed,
+      findUserBoundaryMatch(currentHistory, refreshed, Math.max(0, currentHistory.length - refreshed.length)) ?? 0,
+      currentTurnStart,
+    );
 
   const mergedPrefix = mergeRefreshedSessionHistory(
     currentHistory.slice(0, currentTurnStart),
@@ -194,6 +256,15 @@ function mergeCoreSessionHistory(
         executionTrace: { ...message.executionTrace, revision: refreshedRevision },
       }
     : message);
+  if (confirmsSend) {
+    merged[currentTurnStart] = {
+      ...merged[currentTurnStart],
+      id: refreshedUser.id.startsWith("history-message.v1.")
+        ? refreshedUser.id
+        : merged[currentTurnStart].id,
+      sendState: undefined,
+    };
+  }
   const refreshedTrace = refreshed
     .slice(refreshedTurnStart + 1)
     .find((message) => message.executionTrace);
@@ -434,9 +505,9 @@ export function mergeRefreshedSessionHistory(
   const optimisticTurnStart = current.findLastIndex((message, index) => (
     index >= replacementStart
     && message.role === "user"
-    && message.sendState === "pending"
+    && (message.sendState === "pending" || message.sendState === "failed")
     && !message.isQueued
-    && !refreshedHistoryConfirmsPendingUser(
+    && !refreshedHistoryConfirmsOptimisticUser(
       current,
       stableRefreshed,
       replacementStart,
@@ -454,7 +525,7 @@ export function mergeRefreshedSessionHistory(
   ];
 }
 
-function refreshedHistoryConfirmsPendingUser(
+function refreshedHistoryConfirmsOptimisticUser(
   current: ChatMessage[],
   refreshed: ChatMessage[],
   replacementStart: number,

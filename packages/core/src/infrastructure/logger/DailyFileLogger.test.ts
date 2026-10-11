@@ -231,6 +231,29 @@ describe("DailyFileLogger", () => {
 });
 
 describe("global logger singleton", () => {
+  it("shares the singleton and flushes child entries across module copies", async () => {
+    const dir = makeTempDir("ca-logger-multiple-copies-");
+    try {
+      const first = configureGlobalLogger({ dir, source: "server", now: () => new Date("2026-10-11T10:00:00+08:00") });
+      vi.resetModules();
+      const secondCopy = await import("./DailyFileLogger.js");
+      expect(first instanceof secondCopy.DailyFileLogger).toBe(false);
+      expect(secondCopy.getGlobalLogger()).toBe(first);
+      expect(secondCopy.configureGlobalLogger({ dir: "/elsewhere", source: "next" })).toBe(first);
+      logGlobal("info", "remote-video", "viewer recovered", undefined, { framesDecoded: 16 });
+      secondCopy.logGlobal("info", "next", "second copy wrote", undefined, { ready: true });
+      await secondCopy.flushGlobal();
+      const entries = readLines(dir, "2026-10-11");
+      expect(entries).toHaveLength(2);
+      expect(entries).toEqual(expect.arrayContaining([
+        expect.objectContaining({ source: "remote-video", message: "viewer recovered", data: { framesDecoded: 16 } }),
+        expect.objectContaining({ source: "next", message: "second copy wrote", data: { ready: true } }),
+      ]));
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("configures once and returns the same instance", () => {
     const dir = makeTempDir("ca-logger-singleton-");
     try {

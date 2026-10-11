@@ -1,3 +1,4 @@
+import type { SessionForkPoint } from "@agent/core";
 import { resolve, sep } from "node:path";
 import {
   SessionQueryIndexCache,
@@ -282,7 +283,7 @@ export class UnifiedSessionService {
     this.discoveryPromise = null;
   }
 
-  async fork(id: string): Promise<UnifiedSessionSummary> {
+  async fork(id: string, point?: SessionForkPoint): Promise<UnifiedSessionSummary> {
     const { adapter, nativeSessionId } = this.resolveAdapter(id);
     if (!adapter.fork) {
       throw new RuntimeSessionError(
@@ -290,7 +291,7 @@ export class UnifiedSessionService {
         "OPERATION_NOT_SUPPORTED",
       );
     }
-    const forked = await adapter.fork(nativeSessionId);
+    const forked = point ? await adapter.fork(nativeSessionId, point) : await adapter.fork(nativeSessionId);
     if (forked.agentType === "codex") {
       this.codexCompatibility?.registerPrimary(forked.nativeSessionId);
     }

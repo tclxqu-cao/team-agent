@@ -41,6 +41,50 @@ describe("ToolCallGroup", () => {
 });
 
 describe("tool activity rows", () => {
+  it.each([
+    [{ kind: { type: "add" }, diff: "line\n".repeat(301) }, "写入", "新增 301 行，删除 0 行"],
+    [{ kind: { type: "update" }, diff: "@@ -1,6 +1,6 @@\n" + "-old\n".repeat(6) + "+new\n".repeat(6) }, "编辑", "新增 6 行，删除 6 行"],
+    [{ kind: { type: "delete" }, diff: "line\n".repeat(12) }, "删除", "新增 0 行，删除 12 行"],
+  ])("labels patch operations and counts their lines", (change, label, statsLabel) => {
+    const html = renderToStaticMarkup(createElement(ToolCallCard, {
+      toolCall: { id: "patch", name: "apply_patch", arguments: { changes: [{ path: "src/file.ts", ...change }] }, result: "done" },
+    }));
+    expect(html).toContain(`>${label}</span>`);
+    expect(html).toContain(`aria-label="${statsLabel}"`);
+  });
+
+  it("renders all-file counts from compact lazy trace metadata without loading the result", () => {
+    const onLoadResult = vi.fn();
+    const html = renderToStaticMarkup(createElement(ToolCallCard, {
+      toolCall: { id: "patch", name: "apply_patch", arguments: { __truncated: true, changes: [], fileChangeSummary: { operation: "update", fileCount: 32, lineStats: { added: 80, removed: 6 } } },
+        resultRef: { turnId: "turn", itemId: "patch", revision: "rev", byteSize: 100_000 } },
+      onLoadResult,
+    }));
+    expect(html).toContain("32 个文件");
+    expect(html).toContain('aria-label="新增 80 行，删除 6 行"');
+    expect(onLoadResult).not.toHaveBeenCalled();
+  });
+
+  it("labels replacement tools as edits and counts only the changed context", () => {
+    for (const name of ["Edit", "str_replace"]) {
+      const html = renderToStaticMarkup(createElement(ToolCallCard, {
+        toolCall: { id: "edit", name, arguments: { file_path: "a.ts", old_string: "same\nold\ntail\n", new_string: "same\nnew\ntail\n" }, result: "done" },
+      }));
+      expect(html).toContain(">编辑</span>");
+      expect(html).toContain('aria-label="新增 1 行，删除 1 行"');
+    }
+  });
+
+  it("does not invent counts from truncated writes or failed patches", () => {
+    const write = renderToStaticMarkup(createElement(ToolCallCard, {
+      toolCall: { id: "write", name: "Write", arguments: { content: "partial", __truncated: true }, result: "done" },
+    }));
+    const failed = renderToStaticMarkup(createElement(ToolCallCard, {
+      toolCall: { id: "patch", name: "apply_patch", arguments: { changes: [{ kind: { type: "add" }, diff: "a\n" }] }, result: "failed", isError: true },
+    }));
+    expect(write).not.toContain("1 行");
+    expect(failed).not.toContain("tool-call-line-stats");
+  });
   it("keeps lazy tool results unrequested and unmounted while collapsed", () => {
     const onLoadResult = vi.fn(async () => undefined);
     const html = renderToStaticMarkup(createElement(ToolCallCard, {

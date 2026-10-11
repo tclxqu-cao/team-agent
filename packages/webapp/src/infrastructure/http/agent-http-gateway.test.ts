@@ -1260,6 +1260,13 @@ describe("AgentHttpGateway", () => {
     );
   });
 
+  it("sends a completed-turn boundary through the guarded fork endpoint", async () => {
+    const http = { post: vi.fn().mockResolvedValue({ id: "fork" }) };
+    const gateway = new AgentHttpGateway(http as never, {} as never);
+    await gateway.forkSession("runtime:codex:source", { turnId: "turn-2" });
+    expect(http.post).toHaveBeenCalledWith("/api/sessions/runtime%3Acodex%3Asource/fork-at", { point: { turnId: "turn-2" } });
+  });
+
   it("builds Agent workspace and session pagination URLs", async () => {
     const http = { get: vi.fn().mockResolvedValue({ data: [], nextCursor: null, watermark: null }) };
     const gateway = new AgentHttpGateway(http as never, {} as never);

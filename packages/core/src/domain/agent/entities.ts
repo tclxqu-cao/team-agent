@@ -1,6 +1,6 @@
 // ── Agent Domain ──
 
-import type { Message, NativeSubagentActivity, ToolCall, ToolResult } from '../model/entities.js';
+import type { Message, NativeSubagentActivity, SessionForkPoint, ToolCall, ToolResult } from '../model/entities.js';
 
 import type { CronTask } from '../cron/entities.js';
 import type { ThreadGoal } from '../goal/ThreadGoal.js';
@@ -75,7 +75,7 @@ export type AgentEvent =
   | { type: "compacted"; summary: string; removedMessages: number }
   | { type: "turn_aborted" }
   | { type: "error"; message: string; code?: string }
-  | { type: "done"; finalText: string; usage?: TokenUsage; durationMs?: number }
+  | { type: "done"; finalText: string; usage?: TokenUsage; durationMs?: number; forkPoint?: SessionForkPoint }
   | { type: "todo_update"; todos: TodoItem[] }
   | { type: "agent_dispatch"; agentName: string; task: string; subSessionId?: string; agentId?: string; role?: string; parentSessionId?: string }
   | { type: "agent_started"; agentName: string; subSessionId: string; agentId?: string; parentSessionId?: string; startedAt?: string }

@@ -179,6 +179,8 @@ export default function AskUserCard({
               padding: "6px 14px 12px",
               fontSize: 12,
               color: "var(--text-secondary)",
+              whiteSpace: "pre-wrap",
+              overflowWrap: "anywhere",
             }}
           >
             <span style={{ fontWeight: 500 }}>回答：</span>

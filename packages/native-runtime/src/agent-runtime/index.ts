@@ -25,3 +25,4 @@ export {
   workspacePageSize,
 } from "./agent-workspace-index.js";
 export * from "./types.js";
+export { parseSessionForkPoint, completedForkMessageIndex } from "./session-fork-point.js";

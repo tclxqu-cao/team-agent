@@ -5,7 +5,8 @@ const SEARCH_TOOLS = new Set(["Glob", "glob_search", "Grep", "grep_search", "Web
 export type ToolFamily = "command" | "file" | "search" | "generic";
 
 const READ_TOOLS = new Set(["Read", "read_file"]);
-const WRITE_TOOLS = new Set(["Write", "write_file", "Edit", "MultiEdit", "str_replace", "apply_patch", "NotebookEdit"]);
+const WRITE_TOOLS = new Set(["Write", "write_file"]);
+const EDIT_TOOLS = new Set(["Edit", "MultiEdit", "str_replace", "apply_patch", "NotebookEdit"]);
 
 export function toolFamily(name: string): ToolFamily {
   if (COMMAND_TOOLS.has(name)) return "command";
@@ -56,6 +57,7 @@ export function toolActivityLabel(name: string): string | null {
   if (COMMAND_TOOLS.has(name)) return "终端";
   if (READ_TOOLS.has(name)) return "查阅";
   if (WRITE_TOOLS.has(name)) return "写入";
+  if (EDIT_TOOLS.has(name)) return "编辑";
   if (SEARCH_TOOLS.has(name)) return "查阅";
   if (name === "Skill") return "技能";
   if (name === "Task" || name === "dispatch_agent" || name === "Agent") return "子任务";
@@ -78,8 +80,9 @@ export function toolPreview(name: string, args: Record<string, unknown>): string
   if (name === "apply_patch") {
     const changes = Array.isArray(args.changes) ? args.changes as Array<Record<string, unknown>> : [];
     const paths = changes.map((change) => basename(String(change?.path ?? ""))).filter(Boolean);
-    if (!paths.length) return null;
-    return paths.length <= 3 ? paths.join("、") : `${paths.slice(0, 3).join("、")} 等 ${paths.length} 个文件`;
+    const fileCount = (args.fileChangeSummary as { fileCount?: number } | undefined)?.fileCount ?? paths.length;
+    if (!paths.length) return fileCount ? `${fileCount} 个文件` : null;
+    return fileCount <= 3 ? paths.join("、") : `${paths.slice(0, 3).join("、")} 等 ${fileCount} 个文件`;
   }
   if (FILE_TOOLS.has(name)) return args.file_path ? basename(String(args.file_path)) : null;
   if (name === "Glob" || name === "glob_search") return String(args.pattern ?? "") || null;

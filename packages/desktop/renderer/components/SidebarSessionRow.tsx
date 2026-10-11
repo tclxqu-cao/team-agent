@@ -1,4 +1,4 @@
-import { CircleAlert, ChevronRight, LoaderCircle, LockKeyhole, Pin, Trash2 } from "lucide-react";
+import { CircleAlert, CircleHelp, ChevronRight, LockKeyhole, Pin, Trash2 } from "lucide-react";
 import type { SidebarSessionVisualState } from "../lib/sidebar-session-status";
 import type { SessionCompatibility } from "../global";
 
@@ -60,10 +60,10 @@ export default function SidebarSessionRow({
         {session.compatibility?.status === "checking" && (
           <span
             className="sidebar-session-compatibility"
-            title={`正在验证 Codex ${session.compatibility.producerVersion ?? "未知版本"} 会话兼容性`}
-            aria-label="正在验证会话兼容性"
+            title={`Codex ${session.compatibility.producerVersion ?? "未知版本"} 会话兼容性待验证，打开会话时检查`}
+            aria-label="会话兼容性待验证，打开会话时检查"
           >
-            <LoaderCircle size={13} style={{ animation: "spin 1s linear infinite" }} aria-hidden="true" />
+            <CircleHelp size={13} aria-hidden="true" />
           </span>
         )}
         {session.compatibility?.status === "incompatible" && (

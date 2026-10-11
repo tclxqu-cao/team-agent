@@ -14,6 +14,7 @@ import {
   formatRemoteVideoStats,
   formatRemoteVideoDecoder,
   readReceiverH264Profiles,
+  readRemoteVideoPlaybackFrames,
   readRemoteVideoStats,
   type RemoteVideoStatsCursor,
   type RemoteVideoStatsSample,
@@ -314,6 +315,8 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
   // Watchdog for a connected transport that stops delivering frames; on stall
   // the flowing JPEG fallback is revealed instead of a black <video> surface.
   const videoStallRef = useRef(new RemoteVideoStallPolicy());
+  const videoStalledRef = useRef(false);
+  const [videoStallError, setVideoStallError] = useState<string | null>(null);
   const [audioState, setAudioState] = useState<"idle" | "starting" | "live" | "failed">("idle");
   const [microphoneMuted, setMicrophoneMuted] = useState(false);
   const [speakerMuted, setSpeakerMuted] = useState(false);
@@ -819,6 +822,8 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
     if (!open || !api || !selectedId) return;
     setFrame(null);
     setError(null);
+    videoStalledRef.current = false;
+    setVideoStallError(null);
     void api.request<{ session: BrowserLiveSession }>("browser:watch", { sessionId: selectedId })
       .then((result) => mergeSession(result.session))
       .catch((requestError) => setError(requestError instanceof Error ? requestError.message : "无法观看浏览器"));
@@ -829,6 +834,8 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
   // the JPEG stream keeps flowing as fallback and reconnect preview.
   useEffect(() => {
     if (!open || !api || !hasControl || !isDesktop || !selectedId) {
+      videoStalledRef.current = false;
+      setVideoStallError(null);
       webrtcRetryRef.current = 0;
       webrtcPeerRef.current?.close();
       webrtcPeerRef.current = null;
@@ -843,7 +850,7 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
     remoteVideoStatsCursorRef.current = null;
     setRemoteVideoStats(null);
     setWebrtcState("connecting");
-    videoStallRef.current.begin(Date.now());
+    videoStallRef.current.begin(performance.now());
     void api.request("browser:webrtc", {
       sessionId: selectedId,
       data: { kind: "start", receiverProfiles: readReceiverH264Profiles() },
@@ -875,32 +882,67 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
     }
     let alive = true;
     let statsPending = false;
+    const video = webrtcVideoRef.current;
+    const usesFrameCallback = typeof video?.requestVideoFrameCallback === "function";
+    let frameCallback: number | undefined;
+    let latestSample: RemoteVideoStatsSample | null = null;
+    videoStallRef.current.begin(performance.now());
+    const observePlayback = (frames: number | undefined) => {
+      if (!alive || document.visibilityState === "hidden") return;
+      if (videoStallRef.current.observe(frames, performance.now()) && videoStalledRef.current) {
+        videoStalledRef.current = false;
+        setVideoStallError(null);
+        void api.request("browser:webrtc", {
+          sessionId: selectedId,
+          data: { kind: "viewer-trace", event: "stall-recovered", ...(latestSample ? { sample: latestSample } : {}) },
+        }).catch(() => undefined);
+      }
+    };
+    if (usesFrameCallback && video) {
+      const onFrame: VideoFrameRequestCallback = (_now, metadata) => {
+        observePlayback(metadata.presentedFrames);
+        if (alive) frameCallback = video.requestVideoFrameCallback(onFrame);
+      };
+      frameCallback = video.requestVideoFrameCallback(onFrame);
+    }
+    const onVisibilityChange = () => {
+      // Background tabs may suspend decoding and timers. Start a fresh grace
+      // window on return instead of treating the suspension as a media stall.
+      if (document.visibilityState !== "hidden") videoStallRef.current.resume(performance.now());
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
     const tick = async () => {
       const peer = webrtcPeerRef.current;
       if (!peer || statsPending) return;
       statsPending = true;
       try {
-        const report = await peer.getStats();
+        const report = await peer.getStats().catch(() => null);
         if (!alive || peer !== webrtcPeerRef.current) return;
-        const now = Date.now();
-        const result = readRemoteVideoStats(
+        const now = performance.now();
+        const result = report && readRemoteVideoStats(
           report as unknown as Iterable<Record<string, unknown>>,
           remoteVideoStatsCursorRef.current,
         );
         if (result) {
           remoteVideoStatsCursorRef.current = result.cursor;
-          videoStallRef.current.observe(result.cursor.framesDecoded, now);
+          latestSample = result.sample;
           setRemoteVideoStats(result.sample);
           void api.request("browser:webrtc", {
             sessionId: selectedId,
             data: { kind: "stats", ...result.sample },
           }).catch(() => undefined);
         }
-        if (videoStallRef.current.evaluate(now).state === "stalled") {
+        const playbackFrames = readRemoteVideoPlaybackFrames(video, result?.cursor.framesDecoded);
+        if (!usesFrameCallback) observePlayback(playbackFrames);
+        // Missing counters are unknown, not proof of missing frames. A video
+        // with no playable first frame still retains its first-frame deadline.
+        const canWatchProgress = usesFrameCallback || playbackFrames !== undefined || !video?.videoWidth;
+        if (document.visibilityState !== "hidden" && canWatchProgress && videoStallRef.current.evaluate(now).state === "stalled") {
           const stallDecision = videoStallRef.current.evaluate(now);
           videoStallRef.current.begin(now);
           setWebrtcState((prev) => (prev === "live" ? "failed" : prev));
-          setError((prev) => prev ?? "实时画面超时，已切换为 JPEG 兜底画面");
+          videoStalledRef.current = true;
+          setVideoStallError("实时画面超时，已切换为 JPEG 兜底画面");
           // Feed the server-side remote-video timeline so a black-screen/
           // stutter incident can be correlated with producer and relay logs.
           void api.request("browser:webrtc", {
@@ -908,7 +950,7 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
             data: {
               kind: "viewer-trace", event: "jpeg-fallback",
               silentForMs: stallDecision.silentForMs,
-              ...(remoteVideoStats ? { sample: remoteVideoStats } : {}),
+              ...(latestSample ? { sample: latestSample } : {}),
             },
           }).catch(() => undefined);
         }
@@ -920,7 +962,12 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
     };
     void tick();
     const timer = window.setInterval(() => void tick(), 1000);
-    return () => { alive = false; window.clearInterval(timer); };
+    return () => {
+      alive = false;
+      window.clearInterval(timer);
+      if (frameCallback !== undefined) video?.cancelVideoFrameCallback(frameCallback);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
   }, [api, selectedId, webrtcState]);
 
   const requestControl = useCallback(async () => {
@@ -1582,7 +1629,7 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
             </button>
           ))}
         </footer>
-        {error && <div className="browser-live-error" role="alert">{error}</div>}
+        {(error ?? videoStallError) && <div className="browser-live-error" role="alert">{error ?? videoStallError}</div>}
       </section>
       {unlockOpen && (
         <div className="browser-live-unlock-backdrop" role="presentation" onMouseDown={(event) => {

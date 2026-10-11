@@ -1,4 +1,5 @@
-import { HistoryPullGesture } from "../lib/history-pull-gesture";
+import { completedTurnForkPoint } from "../lib/completed-turn-fork";
+import { HistoryPullGesture, shouldLoadOlderHistoryFromWheel } from "../lib/history-pull-gesture";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
@@ -9,7 +10,7 @@ import {
   type SessionToolResultRef,
 } from "@agent/core";
 import { createTaskCompletionNotification } from "../../../core/src/application/notification/task-completion";
-import { ArrowDownToLine, Check, Copy, CornerUpRight, FileText, GripVertical, LoaderCircle, Pencil, Play, RefreshCw, Square, Target, Trash2, Unplug, Volume2 } from "lucide-react";
+import { ArrowDownToLine, Check, Copy, CornerUpRight, FileText, GitFork, GripVertical, LoaderCircle, Pencil, Play, RefreshCw, Square, Target, Trash2, Unplug, Volume2 } from "lucide-react";
 import AgentBrandIcon from "./AgentBrandIcon";
 import MermaidBlock from "./MermaidBlock";
 import StructuredAgentMessage from "./StructuredAgentMessage";
@@ -41,15 +42,17 @@ import {
 import { interruptSpeech } from "../lib/voice-interruption";
 import { PcmStreamPlayer } from "../lib/pcm-stream-player";
 import {
-  mergeProgressiveSessionHistoryPage,
+  mergePaginatedSessionHistory,
   loadCodexExecutionTracePage,
   loadProgressiveSessionHistoryPage,
   resolveOlderHistoryCursor,
   restoreCodexExecutionTrace,
   restoreSessionHistoryPage,
+  restoreLatestSessionHistoryWindow,
   type SessionHistoryDetail,
 } from "../lib/session-history";
 import { SinglePageHistoryPrefetch } from "../lib/session-history-prefetch";
+import { presentQuestionAnswers } from "../lib/ask-user-answer-display";
 import { QueryNavigationRail } from "./QueryNavigationRail";
 import type { SessionQueryIndex, SessionQueryIndexEntry } from "../global";
 import {
@@ -543,6 +546,7 @@ export default function ChatView({
     updateMessage,
     setMessages,
     getMessagesForSession,
+    getSessionHistoryWindow,
     contextUsageBySession,
     runtimeProgressBySession,
     nativeSubagentsBySession,
@@ -571,11 +575,11 @@ export default function ChatView({
     selectedSessionId,
   );
   const renderedMessages = useMemo(
-    () => coalesceAdjacentToolCallMessages(hideQueuedGoalMessages(
+    () => coalesceAdjacentToolCallMessages(presentQuestionAnswers(hideQueuedGoalMessages(
       visibleMessages.filter((message) => !message.isQueued),
       goalState.queued,
-    )),
-    [goalState.queued, visibleMessages],
+    ), activeAgentType === "codex")),
+    [activeAgentType, goalState.queued, visibleMessages],
   );
   const latestCodexExecutionTurnId = useMemo(
     () => renderedMessages.findLast((message) => message.executionTrace)?.executionTrace?.turnId,
@@ -599,6 +603,8 @@ export default function ChatView({
   }, []);
   const occupiedRecovery = findOccupiedRecovery(occupiedRecoveries, viewSessionId);
   const [isForkingSession, setIsForkingSession] = useState(false);
+  const [forkingMessageId, setForkingMessageId] = useState<string | null>(null);
+  const completedForkInFlightRef = useRef(false);
   const [codexReleaseState, setCodexReleaseState] = useState<"idle" | "releasing" | "released">("idle");
   const [browserLiveOpen, setBrowserLiveOpen] = useState(false);
 
@@ -884,7 +890,6 @@ export default function ChatView({
   const historyPullGestureRef = useRef(new HistoryPullGesture());
   const loadNewerHistoryRef = useRef<() => void>(() => undefined);
   const historyCursorRef = useRef<string | null>(null);
-  const latestHistoryCursorRef = useRef<string | null>(null);
   const historyPrefetchRef = useRef<SinglePageHistoryPrefetch<SessionHistoryDetail | null> | null>(null);
   if (!historyPrefetchRef.current) {
     historyPrefetchRef.current = new SinglePageHistoryPrefetch<SessionHistoryDetail | null>();
@@ -1583,7 +1588,6 @@ export default function ChatView({
         setDirectCompatibilitySessionId(null);
         setCompatibilityFailure(null);
         historyCursorRef.current = null;
-        latestHistoryCursorRef.current = null;
         anchoredNewerCursorRef.current = null;
         queryIndexGenerationRef.current += 1;
         queryIndexRef.current = null;
@@ -1615,7 +1619,6 @@ export default function ChatView({
       historyPrefetchRef.current?.invalidate();
       anchorRequestGenerationRef.current += 1;
       historyCursorRef.current = null;
-      latestHistoryCursorRef.current = null;
       anchoredNewerCursorRef.current = null;
       setHistoryMode("latest");
       setHasLatestHistoryUpdates(false);
@@ -1662,23 +1665,22 @@ export default function ChatView({
               setPermissionMode(normalizePermissionMode(
                 permissionDetail?.permissionMode ?? permissionDetail?.metadata?.permissionMode,
               ));
-              const nextCursor = detail?.history?.nextCursor ?? null;
-              historyCursorRef.current = nextCursor;
-              latestHistoryCursorRef.current = nextCursor;
               anchoredNewerCursorRef.current = null;
               const liveMessages = getMessagesForSession(targetSid);
-              const baseMessages = mergeProgressiveSessionHistoryPage(
+              const restoredWindow = restoreLatestSessionHistoryWindow(
                 liveMessages,
                 restored,
                 phase,
                 detail?.history,
+                getSessionHistoryWindow(targetSid),
               );
               const nextMessages = detail?.goalState
-                ? reconcileDurableQueuedMessages(baseMessages, detail.goalState)
-                : baseMessages;
+                ? reconcileDurableQueuedMessages(restoredWindow.messages, detail.goalState)
+                : restoredWindow.messages;
+              historyCursorRef.current = restoredWindow.window.olderCursor;
               nextAutoScrollRef.current = "instant";
-              setMessages(nextMessages, targetSid);
-              prefetchOlderHistory(targetSid, nextCursor);
+              setMessages(nextMessages, targetSid, restoredWindow.window);
+              prefetchOlderHistory(targetSid, restoredWindow.window.olderCursor);
               setRuntimeProgress(restoredRuntimeProgress, targetSid);
               setNativeSubagentActivities(restoredNativeSubagents, targetSid);
               if (shouldRestoreLocalNativeRun(detail) || shouldRestoreCustomerAgentRun(detail)) {
@@ -1725,7 +1727,7 @@ export default function ChatView({
         sessionLoadGenerationRef.current += 1;
       }
     };
-  }, [clearMessages, getMessagesForSession, historyAgentType, prefetchOlderHistory, selectedSessionId, sessionReloadGeneration, setContextUsage, setHistoryMode, setMessages, setSessionId, syncToolResultScope, updateAgentActivity]);
+  }, [clearMessages, getMessagesForSession, getSessionHistoryWindow, historyAgentType, prefetchOlderHistory, selectedSessionId, sessionReloadGeneration, setContextUsage, setHistoryMode, setMessages, setSessionId, syncToolResultScope, updateAgentActivity]);
 
   const loadSessionQueryIndex = useCallback(async (targetSid: string) => {
     const agentApi = window.agentApi;
@@ -1811,6 +1813,8 @@ export default function ChatView({
       return;
     }
 
+    const loadGeneration = sessionLoadGenerationRef.current;
+    const windowGeneration = anchorRequestGenerationRef.current;
     historyRefreshInFlightRef.current = true;
     try {
       do {
@@ -1827,34 +1831,29 @@ export default function ChatView({
           (detail, phase) => {
             const refreshed = restoreSessionHistoryPage(detail);
             const current = getMessagesForSession(targetSid);
-            const mergedHistory = mergeProgressiveSessionHistoryPage(
+            const restoredWindow = restoreLatestSessionHistoryWindow(
               current,
               refreshed,
               phase,
               detail?.history,
+              getSessionHistoryWindow(targetSid),
             );
             const merged = detail?.goalState
-              ? reconcileDurableQueuedMessages(mergedHistory, detail.goalState)
-              : mergedHistory;
+              ? reconcileDurableQueuedMessages(restoredWindow.messages, detail.goalState)
+              : restoredWindow.messages;
             const container = messagesScrollRef.current;
             const isNearBottom = !container
               || container.scrollHeight - container.scrollTop - container.clientHeight < 80;
             nextAutoScrollRef.current = isNearBottom ? null : "skip";
-            setMessages(merged, targetSid);
+            setMessages(merged, targetSid, restoredWindow.window);
             syncToolResultScope(targetSid, detail?.history?.revision);
             if (detail?.goalState) setGoalState(projectSessionGoals(detail.goalState) as SessionGoalState);
 
-            const previousLatestCursor = latestHistoryCursorRef.current;
-            const nextLatestCursor = detail?.history?.nextCursor ?? null;
-            if (historyCursorRef.current === previousLatestCursor) {
-              const cursorChanged = historyCursorRef.current !== nextLatestCursor;
-              historyCursorRef.current = nextLatestCursor;
-              if (cursorChanged) {
-                historyPrefetchRef.current?.invalidate();
-                prefetchOlderHistory(targetSid, nextLatestCursor);
-              }
+            if (historyCursorRef.current !== restoredWindow.window.olderCursor) {
+              historyPrefetchRef.current?.invalidate();
+              historyCursorRef.current = restoredWindow.window.olderCursor;
+              prefetchOlderHistory(targetSid, restoredWindow.window.olderCursor);
             }
-            latestHistoryCursorRef.current = nextLatestCursor;
             if (
               detail?.history?.revision
               && detail.history.revision !== queryIndexRef.current?.revision
@@ -1879,6 +1878,9 @@ export default function ChatView({
           () => (
             selectedSessionIdRef.current === targetSid
             && historySessionIdRef.current === targetSid
+            && sessionLoadGenerationRef.current === loadGeneration
+            && anchorRequestGenerationRef.current === windowGeneration
+            && historyWindowModeRef.current === "latest"
           ),
         );
         if (historyAgentType(targetSid) === "codex") {
@@ -1895,7 +1897,7 @@ export default function ChatView({
         historyRefreshInFlightRef.current = false;
       }
     }
-  }, [getMessagesForSession, historyAgentType, loadSessionQueryIndex, prefetchOlderHistory, scheduleCodexTraceRefresh, setContextUsage, setMessages, syncToolResultScope, updateAgentActivity]);
+  }, [getMessagesForSession, getSessionHistoryWindow, historyAgentType, loadSessionQueryIndex, prefetchOlderHistory, scheduleCodexTraceRefresh, setContextUsage, setMessages, syncToolResultScope, updateAgentActivity]);
 
   useEffect(() => {
     const targetSid = selectedSessionId;
@@ -1981,17 +1983,26 @@ export default function ChatView({
     const targetSid = historySessionIdRef.current;
     const cursor = historyCursorRef.current;
     const agentApi = window.agentApi;
-    if (!agentApi || !targetSid || !cursor || isLoadingOlderHistoryRef.current) return;
+    if (!agentApi || !targetSid || !cursor || isInitialHistoryLoading || isLoadingOlderHistoryRef.current) return;
+
+    const loadGeneration = sessionLoadGenerationRef.current;
+    const windowGeneration = anchorRequestGenerationRef.current;
+    const isCurrentPage = () => (
+      historySessionIdRef.current === targetSid
+      && selectedSessionIdRef.current === targetSid
+      && sessionLoadGenerationRef.current === loadGeneration
+      && anchorRequestGenerationRef.current === windowGeneration
+      && historyCursorRef.current === cursor
+    );
 
     isLoadingOlderHistoryRef.current = true;
     setOlderHistoryError(null);
     const slowLoadingTimer = window.setTimeout(() => {
-      if (historySessionIdRef.current === targetSid && isLoadingOlderHistoryRef.current) {
+      if (isCurrentPage() && isLoadingOlderHistoryRef.current) {
         setIsLoadingOlderHistory(true);
       }
     }, 500);
     try {
-      const currentMessages = getMessagesForSession(targetSid);
       await loadProgressiveSessionHistoryPage(
         agentApi,
         targetSid,
@@ -1999,23 +2010,25 @@ export default function ChatView({
         { before: cursor, limit: historyAgentType(targetSid) === "codex" ? CODEX_NAVIGATION_HISTORY_PAGE_SIZE : SESSION_HISTORY_PAGE_SIZE },
         (detail, phase) => {
           const olderMessages = restoreSessionHistoryPage(detail);
+          const currentMessages = getMessagesForSession(targetSid);
+          const currentIds = new Set(currentMessages.map((message) => message.id));
+          const addedCount = olderMessages.filter((message) => !currentIds.has(message.id)).length;
+          const merged = mergePaginatedSessionHistory(currentMessages, olderMessages, "older");
           const container = messagesScrollRef.current;
-          if (phase !== "trace" && container && olderMessages.length > 0) {
+          if (phase !== "trace" && container && addedCount > 0) {
             prependScrollAnchorRef.current = {
               scrollHeight: container.scrollHeight,
               scrollTop: container.scrollTop,
             };
             nextAutoScrollRef.current = "skip";
           }
-          const nextCursor = resolveOlderHistoryCursor(cursor, detail, olderMessages.length);
+          const nextCursor = resolveOlderHistoryCursor(cursor, detail, addedCount);
           historyCursorRef.current = nextCursor;
           syncToolResultScope(targetSid, detail?.history?.revision);
-          if (olderMessages.length > 0) {
-            setMessages([...olderMessages, ...currentMessages], targetSid);
-          }
+          setMessages(merged, targetSid, { kind: historyWindowModeRef.current, olderCursor: nextCursor });
           if (phase !== "trace") prefetchOlderHistory(targetSid, nextCursor);
         },
-        () => historySessionIdRef.current === targetSid && selectedSessionIdRef.current === targetSid,
+        isCurrentPage,
         () => historyPrefetchRef.current!.consume(
           targetSid,
           cursor,
@@ -2027,7 +2040,7 @@ export default function ChatView({
         ),
       );
     } catch (loadError) {
-      if (historySessionIdRef.current !== targetSid) return;
+      if (!isCurrentPage()) return;
       console.error("[chat] failed to load older history", { sessionId: targetSid, error: loadError });
       setOlderHistoryError(loadError instanceof Error ? loadError.message : "历史消息加载失败");
     } finally {
@@ -2035,7 +2048,7 @@ export default function ChatView({
       isLoadingOlderHistoryRef.current = false;
       if (historySessionIdRef.current === targetSid) setIsLoadingOlderHistory(false);
     }
-  }, [getMessagesForSession, historyAgentType, prefetchOlderHistory, setMessages, syncToolResultScope]);
+  }, [getMessagesForSession, historyAgentType, isInitialHistoryLoading, prefetchOlderHistory, setMessages, syncToolResultScope]);
 
   useEffect(() => {
     loadOlderHistoryRef.current = () => { void loadOlderHistory(); };
@@ -2052,32 +2065,38 @@ export default function ChatView({
       || isLoadingNewerHistoryRef.current
     ) return;
 
+    const loadGeneration = sessionLoadGenerationRef.current;
+    const windowGeneration = anchorRequestGenerationRef.current;
+    const isCurrentPage = () => (
+      selectedSessionIdRef.current === targetSid
+      && historySessionIdRef.current === targetSid
+      && historyWindowModeRef.current === "anchored"
+      && sessionLoadGenerationRef.current === loadGeneration
+      && anchorRequestGenerationRef.current === windowGeneration
+      && anchoredNewerCursorRef.current === cursor
+    );
     isLoadingNewerHistoryRef.current = true;
     setIsLoadingNewerHistory(true);
     try {
-      const current = getMessagesForSession(targetSid);
-      const existingIds = new Set(current.map((message) => message.id));
       await loadProgressiveSessionHistoryPage(
         window.agentApi,
         targetSid,
         historyAgentType(targetSid),
         { after: cursor, limit: historyAgentType(targetSid) === "codex" ? CODEX_NAVIGATION_HISTORY_PAGE_SIZE : SESSION_HISTORY_PAGE_SIZE },
         (detail) => {
-          const newer = restoreSessionHistoryPage(detail).filter((message) => !existingIds.has(message.id));
+          const current = getMessagesForSession(targetSid);
+          const merged = mergePaginatedSessionHistory(current, restoreSessionHistoryPage(detail), "newer");
           anchoredNewerCursorRef.current = detail?.history?.newerCursor ?? null;
           syncToolResultScope(targetSid, detail?.history?.revision);
-          if (newer.length > 0) {
+          if (merged !== current) {
             nextAutoScrollRef.current = "skip";
-            setMessages([...current, ...newer], targetSid);
+            setMessages(merged, targetSid, { kind: "anchored", olderCursor: historyCursorRef.current });
           }
         },
-        () => (
-          selectedSessionIdRef.current === targetSid
-          && historySessionIdRef.current === targetSid
-          && historyWindowModeRef.current === "anchored"
-        ),
+        isCurrentPage,
       );
     } catch (loadError) {
+      if (!isCurrentPage()) return;
       console.error("[chat] failed to load newer anchored history", {
         sessionId: targetSid,
         error: loadError,
@@ -2116,7 +2135,6 @@ export default function ChatView({
           const cursor = detail?.history?.nextCursor ?? null;
           if (phase !== "trace") historyPrefetchRef.current?.invalidate();
           historyCursorRef.current = cursor;
-          latestHistoryCursorRef.current = cursor;
           anchoredNewerCursorRef.current = null;
           syncToolResultScope(targetSid, detail?.history?.revision);
           setHistoryMode("latest");
@@ -2124,7 +2142,7 @@ export default function ChatView({
           setActiveQueryMessageId(queryIndexRef.current?.entries.at(-1)?.messageId ?? null);
           pendingLatestScrollRef.current = true;
           nextAutoScrollRef.current = "skip";
-          setMessages(restored, targetSid);
+          setMessages(restored, targetSid, { kind: "latest", olderCursor: cursor });
           if (phase !== "trace") prefetchOlderHistory(targetSid, cursor);
           if (detail?.history?.revision !== queryIndexRef.current?.revision) {
             void loadSessionQueryIndex(targetSid);
@@ -2181,7 +2199,7 @@ export default function ChatView({
           setHasLatestHistoryUpdates(false);
           pendingQueryScrollRef.current = entry.messageId;
           nextAutoScrollRef.current = "skip";
-          setMessages(restored, targetSid);
+          setMessages(restored, targetSid, { kind: "anchored", olderCursor });
           if (phase !== "trace") {
             window.requestAnimationFrame(() => {
               if (
@@ -2313,7 +2331,14 @@ export default function ChatView({
     }
     const isViewed = !eventSid || eventSid === viewedSid;
     const isAnchoredView = isViewed && historyWindowModeRef.current === "anchored";
-    if (event._nativeRecoveredFromSnapshot && eventSid && isViewed) {
+    const shouldReconcileFailedSend = eventSid?.startsWith("runtime:")
+      && (event.type === "run_admitted" || event.type === "done")
+      && getMessagesForSession(eventSid).some((message) => (
+        message.role === "user" && !message.isQueued && message.sendState === "failed"
+      ));
+    if (eventSid && isViewed && (event._nativeRecoveredFromSnapshot || shouldReconcileFailedSend)) {
+      // A lost admission response can mark an accepted input as failed.
+      // Confirm the specific input against persisted history before clearing it.
       void refreshLatestHistory(eventSid);
     }
     if (isAnchoredView) {
@@ -2598,7 +2623,7 @@ export default function ChatView({
           updateMessage(pending.id, (message) => ({
             ...message,
             askUser: message.askUser
-              ? { ...message.askUser, answered: true, answer: "已处理" }
+              ? { ...message.askUser, answered: true, answer: message.askUser.answer ?? "已处理" }
               : message.askUser,
           }), eventSid);
         }
@@ -2617,7 +2642,7 @@ export default function ChatView({
         }
         if (eventSid && !isAnchoredView) {
           const durationMs = validCompletionDurationMs(event.durationMs);
-          if (durationMs !== undefined) {
+          if (durationMs !== undefined || event.forkPoint) {
             const completedMessage = [...getMessagesForSession(eventSid)].reverse().find((message) => (
               message.role === "assistant"
               && Boolean(message.content.trim())
@@ -2629,7 +2654,8 @@ export default function ChatView({
                 ...message,
                 presentation: {
                   ...message.presentation,
-                  completionDurationMs: durationMs,
+                  ...(durationMs !== undefined ? { completionDurationMs: durationMs } : {}),
+                  ...(event.forkPoint ? { forkPoint: event.forkPoint } : {}),
                 },
               }), eventSid);
             }
@@ -2927,9 +2953,57 @@ export default function ChatView({
     }
   };
 
+  const handleForkCompletedTurn = useCallback(async (message: import("../stores/agentStore").ChatMessage) => {
+    const sourceSessionId = sessionIdRef.current;
+    if (!sourceSessionId || !window.agentApi?.forkSession || completedForkInFlightRef.current || isForkingSession) return;
+    let point = completedTurnForkPoint(message, sourceSessionId);
+    completedForkInFlightRef.current = true;
+    setForkingMessageId(message.id);
+    setError(null);
+    let activated = false;
+    const loadGeneration = sessionLoadGenerationRef.current;
+    try {
+      if (!point) {
+        const detail = await window.agentApi.getSession(sourceSessionId, { limit: 100, view: "core" });
+        const candidates = restoreSessionHistoryPage(detail).filter((candidate) => (
+          candidate.role === "assistant" && !candidate.toolCalls?.length
+          && candidate.content === message.content
+        ));
+        if (candidates.length === 1) point = completedTurnForkPoint(candidates[0], sourceSessionId);
+        if (!point) {
+          void refreshLatestHistory(sourceSessionId);
+          throw new Error("轮次正在同步，请刷新会话后重试 Fork");
+        }
+      }
+      const forkPoint = point;
+      await forkOccupiedCodexSession({
+        sourceSessionId,
+        forkSession: (id) => window.agentApi!.forkSession(id, forkPoint),
+        activateSession: (id) => {
+          if (sessionIdRef.current !== sourceSessionId || sessionLoadGenerationRef.current !== loadGeneration) return;
+          activated = true;
+          sessionIdRef.current = id;
+          setSessionId(id);
+        },
+        refreshAndSelect: async (forked) => {
+          if (!activated || sessionIdRef.current !== forked.id) return;
+          if (onSessionCreated) await onSessionCreated(forked.id, forked);
+          else onSelectSession?.(forked.id);
+        },
+      });
+    } catch (error) {
+      if (sessionIdRef.current === sourceSessionId || activated) {
+        setError(error instanceof Error ? error.message : "Fork 失败，请重试");
+      }
+    } finally {
+      completedForkInFlightRef.current = false;
+      setForkingMessageId(null);
+    }
+  }, [isForkingSession, onSessionCreated, onSelectSession, refreshLatestHistory, setSessionId]);
+
   const handleForkOccupiedSession = async () => {
     const recovery = occupiedRecovery;
-    if (!recovery || !viewSessionId || isForkingSession) return;
+    if (!recovery || !viewSessionId || isForkingSession || completedForkInFlightRef.current) return;
     if (occupiedRecoveryActionRef.current === recovery.token) return;
     occupiedRecoveryActionRef.current = recovery.token;
 
@@ -3862,6 +3936,9 @@ export default function ChatView({
       {/* Messages area */}
       <div className="chat-messages-frame">
         <div ref={messagesScrollRef} className="chat-messages" onScroll={handleHistoryScroll}
+          onWheel={event => {
+            if (shouldLoadOlderHistoryFromWheel(event, event.currentTarget.scrollTop)) loadOlderHistoryRef.current();
+          }}
           onTouchStart={event => historyPullGestureRef.current.start(event.touches)}
           onTouchMove={event => {
             if (historyPullGestureRef.current.move(event.touches, event.currentTarget.scrollTop)) loadOlderHistoryRef.current();
@@ -3878,27 +3955,14 @@ export default function ChatView({
           <div
             className="chat-history-page-status"
             role={olderHistoryError ? "alert" : "status"}
-            style={{
-              position: "absolute",
-              top: 8,
-              left: "50%",
-              transform: "translateX(-50%)",
-              zIndex: 2,
-              minHeight: 32,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: 7,
-              color: olderHistoryError ? "var(--danger)" : "var(--text-muted)",
-              fontSize: 12,
-            }}
+            aria-live="polite"
           >
             {isLoadingOlderHistory ? (
               <>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ animation: "spin 0.8s linear infinite" }} aria-hidden="true">
-                  <path d="M21 12a9 9 0 1 1-6.22-8.56" />
-                </svg>
-                <span>正在加载更早消息</span>
+                <span className="chat-history-loading-pill">
+                  <span className="chat-history-loading-dots" aria-hidden="true"><i /><i /><i /></span>
+                  <span>正在加载更早消息</span>
+                </span>
               </>
             ) : (
               <button
@@ -4423,6 +4487,20 @@ export default function ChatView({
                     {completionDuration && <span> · 总耗时 {completionDuration}</span>}
                   </span>
                   <span className="msg-completion-actions">
+                    {viewSessionId && (completedTurnForkPoint(msg, viewSessionId) || !viewSessionId.startsWith("runtime:")) && (
+                      <button
+                        type="button"
+                        onClick={() => { void handleForkCompletedTurn(msg); }}
+                        disabled={Boolean(forkingMessageId) || isForkingSession}
+                        title="从此轮 Fork 为新会话"
+                        aria-label="从此轮 Fork 为新会话"
+                        className="ui-icon-button ui-icon-button--small msg-action-button"
+                      >
+                        {forkingMessageId === msg.id
+                          ? <LoaderCircle size={13} className="animate-spin" aria-hidden="true" />
+                          : <GitFork size={13} strokeWidth={1.8} aria-hidden="true" />}
+                      </button>
+                    )}
                     {!isWebShell() && actionPolicy.showSpeak && typeof window.agentApi?.ttsSpeak === "function" && (
                       <button
                         type="button"

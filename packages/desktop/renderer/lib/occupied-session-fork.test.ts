@@ -230,8 +230,8 @@ describe("occupied Codex session fork recovery", () => {
     ), "utf8");
 
     expect(sharedService).toContain("const gateway = new AgentHttpGateway");
-    expect(gateway).toContain("async forkSession(id: string)");
-    expect(gateway).toContain("`/api/sessions/${encodeURIComponent(id)}/fork`");
-    expect(globalTypes).toContain("forkSession(id: string): Promise<UnifiedSessionSummary>");
+    expect(gateway).toContain("async forkSession(id: string, point?: SessionForkPoint)");
+    expect(gateway).toContain('point ? "fork-at" : "fork"');
+    expect(globalTypes).toContain("forkSession(id: string, point?: SessionForkPoint): Promise<UnifiedSessionSummary>");
   });
 });

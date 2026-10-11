@@ -17,6 +17,20 @@ type StatsLike = Iterable<Record<string, unknown>> | {
 };
 const finite = (value: unknown): number | undefined => typeof value === "number" && Number.isFinite(value) ? value : undefined;
 
+/** Playback counters are independent of optional WebRTC stats fields. */
+export function readRemoteVideoPlaybackFrames(video: {
+  getVideoPlaybackQuality?: () => Pick<VideoPlaybackQuality, "totalVideoFrames" | "droppedVideoFrames">;
+  webkitDecodedFrameCount?: number;
+} | null, decodedFrames?: number): number | undefined {
+  try {
+    const quality = video?.getVideoPlaybackQuality?.();
+    if (quality && Number.isFinite(quality.totalVideoFrames) && Number.isFinite(quality.droppedVideoFrames)) {
+      return Math.max(0, quality.totalVideoFrames - quality.droppedVideoFrames);
+    }
+  } catch { /* Older browsers can expose an unsupported playback-quality API. */ }
+  return finite(video?.webkitDecodedFrameCount) ?? finite(decodedFrames);
+}
+
 export function h264ProfilesFromReceiverCodecs(codecs: readonly { mimeType?: string; sdpFmtpLine?: string }[] | undefined): RemoteVideoH264Profile[] {
   const profiles = new Set<RemoteVideoH264Profile>();
   for (const codec of codecs ?? []) {

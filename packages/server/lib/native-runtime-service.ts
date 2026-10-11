@@ -1,3 +1,4 @@
+import type { SessionForkPoint } from "@agent/core";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { delimiter, join, resolve, sep, win32 } from "node:path";
@@ -91,7 +92,7 @@ export interface NativeRuntimePort {
   list(projectId?: string): Promise<UnifiedSessionSummary[]>;
   refresh(projectId?: string): Promise<UnifiedSessionSummary[]>;
   create(options: CreateRuntimeSessionOptions & { agentType: AgentType }): Promise<UnifiedSessionSummary>;
-  fork(id: string): Promise<UnifiedSessionSummary>;
+  fork(id: string, point?: SessionForkPoint): Promise<UnifiedSessionSummary>;
   delete(id: string): Promise<void>;
   get(id: string, query?: SessionHistoryQuery): Promise<UnifiedSessionDetail>;
   getSessionToolResult(
@@ -250,7 +251,7 @@ export class NativeRuntimeService implements NativeRuntimePort {
     return created;
   }
 
-  async fork(id: string): Promise<UnifiedSessionSummary> {
+  async fork(id: string, point?: SessionForkPoint): Promise<UnifiedSessionSummary> {
     if (!isNativeSessionId(id)) {
       throw new RuntimeSessionError(
         "Customer Agent sessions do not support native forks",
@@ -258,7 +259,7 @@ export class NativeRuntimeService implements NativeRuntimePort {
       );
     }
     const forked = associateLocalProject(
-      await this.runtime.fork(id),
+      point ? await this.runtime.fork(id, point) : await this.runtime.fork(id),
       await this.listProjects(),
       this.platform,
     );

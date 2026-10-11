@@ -1,0 +1,58 @@
+.file-code-preview {
+  --syntax-keyword: #8b3eb5;
+  --syntax-string: #24733b;
+  --syntax-number: #a34b12;
+  --syntax-type: #087e8b;
+  --syntax-function: #245cb5;
+  --syntax-comment: #6b7280;
+  --syntax-meta: #956113;
+  font: inherit;
+  color: inherit;
+  tab-size: 2;
+}
+
+[data-skin="scifi"] .file-code-preview,
+[data-skin="noir"] .file-code-preview,
+[data-web-theme="scifi"] .file-code-preview,
+[data-web-theme="noir"] .file-code-preview {
+  --syntax-keyword: #c792ea;
+  --syntax-string: #a3cf8b;
+  --syntax-number: #f0b27a;
+  --syntax-type: #7ed7dc;
+  --syntax-function: #82aaff;
+  --syntax-comment: #8b97a8;
+  --syntax-meta: #e3c47f;
+}
+
+.file-code-preview .hljs-keyword,
+.file-code-preview .hljs-selector-tag { color: var(--syntax-keyword); }
+
+.file-code-preview .hljs-string,
+.file-code-preview .hljs-regexp,
+.file-code-preview .hljs-meta .hljs-string { color: var(--syntax-string); }
+
+.file-code-preview .hljs-number,
+.file-code-preview .hljs-literal { color: var(--syntax-number); }
+
+.file-code-preview .hljs-type,
+.file-code-preview .hljs-built_in,
+.file-code-preview .hljs-title.class_ { color: var(--syntax-type); }
+
+.file-code-preview .hljs-title.function_,
+.file-code-preview .hljs-title,
+.file-code-preview .hljs-attr,
+.file-code-preview .hljs-attribute,
+.file-code-preview .hljs-selector-class { color: var(--syntax-function); }
+
+.file-code-preview .hljs-comment,
+.file-code-preview .hljs-quote { color: var(--syntax-comment); font-style: italic; }
+
+.file-code-preview .hljs-meta,
+.file-code-preview .hljs-meta .hljs-keyword { color: var(--syntax-meta); }
+
+.file-code-preview .hljs-tag { color: var(--syntax-type); }
+.file-code-preview .hljs-name { color: var(--syntax-keyword); }
+.file-code-preview .hljs-subst { color: var(--ui-history-item-text, var(--ui-text, #d6d6de)); }
+.file-code-preview .hljs-section { color: var(--syntax-function); font-weight: 600; }
+.file-code-preview .hljs-emphasis { font-style: italic; }
+.file-code-preview .hljs-strong { font-weight: 600; }
