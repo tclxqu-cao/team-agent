@@ -1,0 +1,59 @@
+packages/server/app/web/ComputerSwitcher.tsx
+  s_31ef0984ac7109::t_6adbc1a9f91955 1-213
+packages/server/app/web/PwaInstallButton.tsx
+  s_31ef0984ac7109::t_5561126ba1d002 3,15,18,28,33,41
+packages/server/app/web/ResponsiveToolbar.tsx
+  s_31ef0984ac7109::t_1197dc1eae65e3 1-123
+packages/server/app/web/ThemePicker.tsx
+  s_31ef0984ac7109::t_4b36bfbb429d36 5,13,19,25-30,32-35,39-40,42-43,45-47,50-70,73,76-93,95-117
+packages/server/app/web/computer-availability.test.ts
+  s_31ef0984ac7109::t_8a3ba9fd9cf5e2 1-38
+packages/server/app/web/computer-availability.ts
+  s_31ef0984ac7109::t_1734958f2a0ad6 1-17
+packages/server/app/web/drawerLayout.test.ts
+  s_31ef0984ac7109::t_3c0eb68a707c73 5,26-29,32
+packages/server/app/web/page.tsx
+  s_31ef0984ac7109::t_9f8eacf485bf3b 10-11,548-557,560-561,563-574,665-667,671-672,679-684,696-699
+packages/server/app/web/toolbar-layout.test.ts
+  s_31ef0984ac7109::t_e77925a8eaeda8 1-27
+packages/server/app/web/toolbar-layout.ts
+  s_31ef0984ac7109::t_80a3cd18f0c120 1-27
+packages/server/lib/computer-directory.test.ts
+  s_31ef0984ac7109::t_cf8e372c7737f5 1-74
+packages/server/lib/pairing-page.mjs
+  s_31ef0984ac7109::t_6c443c4e138390 6-10,12-21,24,59-69,71-72
+packages/server/lib/pairing-scan.test.ts
+  s_31ef0984ac7109::t_1ad8ad613174bb 1-73
+packages/server/lib/pwa-assets.mjs
+  s_31ef0984ac7109::t_bc42fae2bc5e37 10-11
+packages/server/lib/pwa-assets.test.ts
+  s_31ef0984ac7109::t_edaf8aa1c873d3 26,37-39,48-52
+packages/server/public/pwa/computer-directory.js
+  s_31ef0984ac7109::t_a585ea566e1e70 1-97
+packages/server/public/pwa/offline-computers.js
+  s_31ef0984ac7109::t_b0289637135e60 1-15
+packages/server/public/pwa/offline.html
+  s_31ef0984ac7109::t_f42ce8eac8e223 1
+packages/server/public/pwa/pairing-scan.js
+  s_31ef0984ac7109::t_5ef09cd31de695 1-27,29-63,71,76,82,84-85,88-94
+packages/server/public/pwa/service-worker.js
+  s_31ef0984ac7109::t_b92ba753b5555c 1,3,5,11-15
+scripts/audit-runtime-tarball.mjs
+  s_31ef0984ac7109::t_4b22eb5ecf0cac 53-54
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5413d6f5af6432c22a43a51b18053f043daef9f2",
+  "prompts": {},
+  "sessions": {
+    "s_31ef0984ac7109": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a13042-da7b-74d1-b21f-5f6d471e6ccb",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
