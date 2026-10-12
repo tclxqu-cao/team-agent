@@ -55,4 +55,44 @@ describe("private local service requests", () => {
       await expect(pairingAdmin(f.registry, "approve", {}, { registry: f.registry, request })).rejects.toThrow("核对短语不匹配");
     } finally { await f.close(); }
   });
+
+  it("preserves cancellation during identity lookup and never sends the authorization request", async () => {
+    const f = await fixture();
+    try {
+      await f.write();
+      const controller = new AbortController();
+      const request = vi.fn<typeof fetch>(async (_url, options) => {
+        controller.abort(new Error("skip authorization"));
+        expect(options?.signal?.aborted).toBe(true);
+        throw controller.signal.reason;
+      });
+      await expect(localServiceRequest(f.registry, "/api/remote-authorization", {
+        registry: f.registry, request, signal: controller.signal, method: "POST", body: { action: "enable" },
+      })).rejects.toThrow("skip authorization");
+      expect(request).toHaveBeenCalledOnce();
+    } finally { await f.close(); }
+  });
+
+  it("forwards cancellation to the authorization HTTP request", async () => {
+    const f = await fixture();
+    try {
+      await f.write();
+      const controller = new AbortController();
+      let started!: () => void;
+      const startedRequest = new Promise<void>((resolve) => { started = resolve; });
+      const request = vi.fn<typeof fetch>().mockResolvedValueOnce(Response.json(f.descriptor))
+        .mockImplementationOnce(async (_url, options) => {
+          started();
+          return new Promise((_resolve, reject) => options?.signal?.addEventListener("abort", () => reject(options.signal!.reason), { once: true }));
+        });
+      const pending = localServiceRequest(f.registry, "/api/remote-authorization", {
+        registry: f.registry, request, signal: controller.signal, method: "POST", body: { action: "request-permission", permission: "screen" },
+      });
+      const cancelled = expect(pending).rejects.toThrow("skip authorization");
+      await startedRequest;
+      controller.abort(new Error("skip authorization"));
+      await cancelled;
+      expect(request).toHaveBeenCalledTimes(2);
+    } finally { await f.close(); }
+  });
 });

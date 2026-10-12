@@ -26,10 +26,10 @@ describe("runServiceCommand", () => {
       expect(vi.getTimerCount()).toBe(0);
     } finally { vi.useRealTimers(); }
   });
-  it.each([false, true])("runs native authorization before Desktop setup and pairing, retaining installation after failure=%s", async (fails) => {
+  it.each(["success", "skip", "failure"])("continues Desktop setup and pairing after authorization result=%s", async (result) => {
     const order: string[] = [];
     const log = vi.fn();
-    const desktopAuthorization = vi.fn(async () => { order.push("authorization"); if (fails) throw new Error("cancelled permission"); return true; });
+    const desktopAuthorization = vi.fn(async () => { order.push("authorization"); if (result === "failure") throw new Error("cancelled permission"); return result === "success"; });
     await runServiceCommand({ ...options("install"), desktopSetup: true }, {
       platform: "darwin", nodePath: "/node", nodeVersion: "22.22.0", cliPath: "/agentroam.mjs", version: "test", isTTY: true,
       environment: {}, log, desktopAuthorization,
@@ -38,8 +38,8 @@ describe("runServiceCommand", () => {
       codexResolver: vi.fn(async () => ({ executable: "/managed/codex", version: "test", source: "global" as const })),
     });
     expect(order).toEqual(["authorization", "desktop", "pairing"]);
-    expect(desktopAuthorization).toHaveBeenCalledWith(options("install").dataDir, expect.objectContaining({ isTTY: true, platform: "darwin" }));
-    if (fails) expect(log).toHaveBeenCalledWith(expect.stringContaining("AgentRoam 安装继续"));
+    expect(desktopAuthorization).toHaveBeenCalledWith(options("install").dataDir, expect.objectContaining({ isTTY: true, platform: "darwin", timeoutMs: 60_000 }));
+    if (result === "failure") expect(log).toHaveBeenCalledWith(expect.stringContaining("AgentRoam 安装继续"));
   });
 
   it("allows unattended installs to skip desktop authorization without losing pairing", async () => {

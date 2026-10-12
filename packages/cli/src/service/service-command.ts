@@ -96,7 +96,7 @@ export async function runServiceCommand(options: CliOptions, context: ServiceCom
           log("已跳过安装时远程桌面授权，可稍后执行 agentroam desktop authorize。");
         } else {
           try {
-            await (context.desktopAuthorization ?? authorizeRemoteDesktop)(options.dataDir, { platform, isTTY: stdoutIsTTY, log });
+            await (context.desktopAuthorization ?? authorizeRemoteDesktop)(options.dataDir, { platform, isTTY: stdoutIsTTY, timeoutMs: 60_000, log });
           } catch (error) {
             log(`远程桌面授权未完成：${error instanceof Error ? error.message : error}`);
             log("AgentRoam 安装继续；可稍后执行 agentroam desktop authorize，或在本机浏览器的“远程授权”面板中重试。");

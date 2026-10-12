@@ -1,6 +1,7 @@
 import { createInterface } from "node:readline/promises";
 import { setTimeout as delay } from "node:timers/promises";
-import { createReadStream, openSync } from "node:fs";
+import { openSync } from "node:fs";
+import { ReadStream } from "node:tty";
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
@@ -63,7 +64,9 @@ function openControllingTerminal(): NodeJS.ReadableStream | undefined {
   if (process.platform === "win32") return undefined;
   let fd: number;
   try { fd = openSync("/dev/tty", "r"); } catch { return undefined; }
-  return createReadStream("/dev/tty", { fd, autoClose: true });
+  // Use libuv's cancellable TTY handle. A filesystem read on /dev/tty can keep
+  // the process alive after destroy(), waiting for one more line of input.
+  return new ReadStream(fd);
 }
 
 /**

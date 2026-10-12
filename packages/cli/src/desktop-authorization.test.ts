@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
+import { PassThrough } from "node:stream";
 import { parseArgs } from "./args.js";
-import { authorizeRemoteDesktop, runDesktopCommand, type DesktopAuthorizationContext, type DesktopAuthorizationStatus } from "./desktop-authorization.js";
+import { authorizeRemoteDesktop, resetMacDesktopPermission, runDesktopCommand, type DesktopAuthorizationContext, type DesktopAuthorizationStatus } from "./desktop-authorization.js";
 
 const dataDir = "/tmp/remote-authorization-test";
 function fixture(initial: Partial<DesktopAuthorizationStatus> = {}) {
@@ -8,7 +9,8 @@ function fixture(initial: Partial<DesktopAuthorizationStatus> = {}) {
     enabled: false, screen: false, accessibility: false, online: false, error: null, ...initial };
   const calls: unknown[] = [];
   const context: DesktopAuthorizationContext = {
-    platform: "darwin", isTTY: true, log: vi.fn(), confirm: vi.fn(async () => true), wait: vi.fn(async () => {}), pollAttempts: 2,
+    platform: "darwin", isTTY: true, input: null, resetPermission: vi.fn(async () => {}),
+    log: vi.fn(), confirm: vi.fn(async () => true), wait: vi.fn(async () => {}), pollAttempts: 2,
     request: vi.fn(async (_directory, body) => {
       calls.push(body);
       if (body?.action === "request-permission") status = { ...status, [body.permission!]: true };
@@ -20,7 +22,7 @@ function fixture(initial: Partial<DesktopAuthorizationStatus> = {}) {
   return { context, calls };
 }
 
-describe("native desktop authorization wizard", () => {
+describe("optional desktop authorization wizard", () => {
   it("requests both OS permissions before enabling sharing, without pairing", async () => {
     const f = fixture();
     expect(await authorizeRemoteDesktop(dataDir, f.context)).toBe(true);
@@ -30,11 +32,12 @@ describe("native desktop authorization wizard", () => {
     expect(f.context.log).toHaveBeenCalledWith(expect.stringContaining("授权完成"));
   });
 
-  it("does not change sharing or request permissions when the native dialog is cancelled", async () => {
+  it("does not reset permissions or enable sharing when confirmation is declined", async () => {
     const f = fixture();
     f.context.confirm = vi.fn(async () => false);
     expect(await authorizeRemoteDesktop(dataDir, f.context)).toBe(false);
     expect(f.calls).toEqual([undefined]);
+    expect(f.context.resetPermission).not.toHaveBeenCalled();
     expect(f.context.log).toHaveBeenCalledWith(expect.stringContaining("agentroam desktop authorize"));
   });
 
@@ -43,6 +46,7 @@ describe("native desktop authorization wizard", () => {
     expect(await authorizeRemoteDesktop(dataDir, { ...f.context, isTTY: false })).toBe(false);
     expect(f.calls).toEqual([]);
     expect(f.context.confirm).not.toHaveBeenCalled();
+    expect(f.context.resetPermission).not.toHaveBeenCalled();
   });
 
   it("keeps an already authorized installation without another dialog", async () => {
@@ -50,6 +54,7 @@ describe("native desktop authorization wizard", () => {
     expect(await authorizeRemoteDesktop(dataDir, f.context)).toBe(true);
     expect(f.calls).toEqual([undefined, { action: "recheck" }]);
     expect(f.context.confirm).not.toHaveBeenCalled();
+    expect(f.context.resetPermission).not.toHaveBeenCalled();
   });
 
   it("enables sharing with existing OS permissions after confirmation", async () => {
@@ -57,6 +62,113 @@ describe("native desktop authorization wizard", () => {
     expect(await authorizeRemoteDesktop(dataDir, f.context)).toBe(true);
     expect(f.calls).toEqual([undefined, { action: "recheck" }, { action: "enable" }]);
     expect(f.context.confirm).toHaveBeenCalledOnce();
+    expect(f.context.resetPermission).not.toHaveBeenCalled();
+  });
+
+  it("clears each missing permission after confirmation and before requesting it again", async () => {
+    const f = fixture();
+    f.context.resetPermission = vi.fn(async (permission) => { f.calls.push({ reset: permission }); });
+    expect(await authorizeRemoteDesktop(dataDir, f.context)).toBe(true);
+    expect(f.calls).toEqual([undefined, { action: "recheck" }, { reset: "screen" },
+      { action: "request-permission", permission: "screen" }, { reset: "accessibility" },
+      { action: "request-permission", permission: "accessibility" }, { action: "enable" }]);
+  });
+
+  it("preserves an effective screen permission while repairing accessibility", async () => {
+    const f = fixture({ screen: true });
+    expect(await authorizeRemoteDesktop(dataDir, f.context)).toBe(true);
+    expect(f.context.resetPermission).toHaveBeenCalledOnce();
+    expect(f.context.resetPermission).toHaveBeenCalledWith("accessibility", expect.any(AbortSignal));
+    expect(f.calls).not.toContainEqual({ action: "request-permission", permission: "screen" });
+  });
+
+  it.each(["screen", "accessibility"] as const)("limits the %s reset to the AgentRoam bundle", async (permission) => {
+    const run = vi.fn(async () => {});
+    const signal = new AbortController().signal;
+    await resetMacDesktopPermission(permission, signal, run);
+    expect(run).toHaveBeenCalledOnce();
+    expect(run).toHaveBeenCalledWith("/usr/bin/tccutil", ["reset",
+      permission === "screen" ? "ScreenCapture" : "Accessibility", "com.agentroam.remote-desktop"],
+      { signal, timeout: 5000, maxBuffer: 4096 });
+  });
+
+  it("continues authorization with a recovery hint when clearing an old record fails", async () => {
+    const f = fixture();
+    f.context.resetPermission = vi.fn(async () => { throw new Error("reset denied"); });
+    expect(await authorizeRemoteDesktop(dataDir, f.context)).toBe(true);
+    expect(f.context.log).toHaveBeenCalledWith(expect.stringContaining("未能清理旧屏幕录制授权"));
+  });
+
+  it("accepts Enter to skip in the terminal and releases the input for later pairing", async () => {
+    const f = fixture();
+    const input = new PassThrough();
+    const listeners = process.listenerCount("SIGINT");
+    f.context.log = vi.fn((line) => { if (line.includes("[y/N]")) input.write("\n"); });
+    expect(await authorizeRemoteDesktop(dataDir, { ...f.context, input, confirm: undefined })).toBe(false);
+    expect(f.calls).toEqual([undefined]);
+    expect(f.context.resetPermission).not.toHaveBeenCalled();
+    expect(input.destroyed).toBe(false);
+    expect(input.listenerCount("data")).toBe(0);
+    expect(process.listenerCount("SIGINT")).toBe(listeners);
+    input.destroy();
+  });
+
+  it("accepts terminal confirmation without requiring an application dialog", async () => {
+    const f = fixture({ screen: true, accessibility: true });
+    const input = new PassThrough();
+    f.context.log = vi.fn((line) => { if (line.includes("[y/N]")) input.write("y\n"); });
+    expect(await authorizeRemoteDesktop(dataDir, { ...f.context, input, confirm: undefined })).toBe(true);
+    expect(f.calls).toEqual([undefined, { action: "recheck" }, { action: "enable" }]);
+    input.destroy();
+  });
+
+  it.each(["checking", "confirmation", "permission", "polling"])("applies one deadline even when %s never settles", async (phase) => {
+    vi.useFakeTimers();
+    try {
+      const f = fixture();
+      const request = f.context.request!;
+      const stalled = (): Promise<never> => new Promise(() => {});
+      f.context.request = vi.fn((directory, body, signal) => {
+        if (phase === "checking" || (phase === "permission" && body?.action === "request-permission")) return stalled();
+        if (phase === "polling" && body?.action === "request-permission") return Promise.resolve({ local: true, platform: "darwin", supported: true,
+          installed: true, enabled: false, screen: false, accessibility: false, online: false, error: null });
+        return request(directory, body, signal);
+      });
+      if (phase === "confirmation") f.context.confirm = stalled;
+      if (phase === "polling") f.context.wait = stalled;
+      const pending = authorizeRemoteDesktop(dataDir, { ...f.context, timeoutMs: 60_000 });
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(await pending).toBe(false);
+      expect(f.context.log).toHaveBeenCalledWith(expect.stringContaining("等待超时"));
+      expect(f.calls).not.toContainEqual({ action: "enable" });
+      expect(vi.getTimerCount()).toBe(0);
+    } finally { vi.useRealTimers(); }
+  });
+
+  it("skips a hung permission request immediately and never enables sharing after a late reply", async () => {
+    const f = fixture();
+    const input = new PassThrough();
+    const request = f.context.request!;
+    let reply!: (status: DesktopAuthorizationStatus) => void;
+    let started!: () => void;
+    let activeSignal!: AbortSignal;
+    const permissionStarted = new Promise<void>((resolve) => { started = resolve; });
+    f.context.request = vi.fn((directory, body, signal) => {
+      if (body?.action !== "request-permission") return request(directory, body, signal);
+      activeSignal = signal!;
+      started();
+      return new Promise((resolve) => { reply = resolve; });
+    });
+    const pending = authorizeRemoteDesktop(dataDir, { ...f.context, input });
+    await permissionStarted;
+    input.write("s\n");
+    expect(await pending).toBe(false);
+    expect(activeSignal.aborted).toBe(true);
+    reply({ local: true, platform: "darwin", supported: true, installed: true, enabled: false,
+      screen: true, accessibility: true, online: false, error: null });
+    await Promise.resolve();
+    expect(f.calls).not.toContainEqual({ action: "enable" });
+    input.destroy();
   });
 
   it.each(["screen", "accessibility"] as const)("does not enable sharing when %s is denied or times out", async (permission) => {
@@ -103,6 +215,7 @@ describe("native desktop authorization wizard", () => {
     const f = fixture({ platform: "win32", screen: true, accessibility: true });
     expect(await authorizeRemoteDesktop(dataDir, { ...f.context, platform: "win32" })).toBe(true);
     expect(f.calls).toEqual([undefined, { action: "recheck" }, { action: "enable" }]);
+    expect(f.context.resetPermission).not.toHaveBeenCalled();
   });
 
   it("reports an unavailable Windows desktop without enabling sharing", async () => {
