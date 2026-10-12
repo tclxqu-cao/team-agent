@@ -1,0 +1,33 @@
+packages/cli/src/desktop-authorization-prompt.ts
+  s_3d8cb399d47d29::t_4186cf7855bc9e 1-82
+packages/cli/src/desktop-authorization.test.ts
+  s_3d8cb399d47d29::t_e93be1882b7706 2,4,12-13,25,35,40,49,57,65-171,218
+packages/cli/src/desktop-authorization.ts
+  s_3d8cb399d47d29::t_9c618d7493a67d 7,33,36-39,42,44,55-61,81-127,131-142,145
+packages/cli/src/device-pairing.ts
+  s_3d8cb399d47d29::t_ebb06319ba6324 3-4,67-69
+packages/cli/src/local-service-request.test.ts
+  s_3d8cb399d47d29::t_7bc748e7a955d5 58-97
+packages/cli/src/local-service-request.ts
+  s_3d8cb399d47d29::t_5c9d68f58b2ee1 12,23-25,35-36,40,42,51
+packages/cli/src/service/service-command.test.ts
+  s_3d8cb399d47d29::t_6595519f1f6f22 29,32,41-42
+packages/cli/src/service/service-command.ts
+  s_3d8cb399d47d29::t_0c9bd6067e7b7b 99
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "927bdae73f5f4d0cebff159c90855e2f293915cf",
+  "prompts": {},
+  "sessions": {
+    "s_3d8cb399d47d29": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0e624-4280-7c10-be74-3f8e283b70c2",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
