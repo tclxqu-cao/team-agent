@@ -1,0 +1,19 @@
+packages/cli/package.json
+  s_aa579528b7ec66::t_fedee138d12cfe 3
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "db59afe68cacd399ccd4d90f0ac6cbcb720554ea",
+  "prompts": {},
+  "sessions": {
+    "s_aa579528b7ec66": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12e20-f1c9-78a0-b40f-40e1d2eca90d",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
