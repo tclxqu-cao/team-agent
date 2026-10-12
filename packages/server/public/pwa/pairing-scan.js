@@ -1,33 +1,66 @@
-(() => {
-  const scan = document.getElementById("scan"), cancel = document.getElementById("scan-cancel"), section = document.getElementById("scanner"), video = document.getElementById("camera");
-  if (!scan || !video) return;
-  let stream, running = false, generation = 0, decoder;
-  const stopCamera = () => { generation++; running = false; stream?.getTracks().forEach(track => track.stop()); stream = null; video.srcObject = null; section.hidden = true; scan.disabled = false; };
-  const fail = message => { stopCamera(); showForm(message); };
-  function parse(raw) {
-    if (raw.length > 2048) throw new Error();
-    if (raw.startsWith("{")) {
-      const value = JSON.parse(raw), server = new URL(value.server);
-      if (value.type !== "agentroam-pair" || value.version !== 1 || server.username || server.password || server.search || server.hash || server.pathname !== "/" || !/^[A-Za-z0-9_-]{43}$/.test(value.grant)) throw new Error();
-      raw = server.origin + "/pair#pair=" + value.grant;
-    }
-    const url = new URL(raw);
-    if (!["https:", "http:"].includes(url.protocol) || url.username || url.password || url.pathname !== "/pair" || url.search || !/^#pair=[A-Za-z0-9_-]{43}$/.test(url.hash)) throw new Error();
-    return url;
-  }
-  function loadDecoder() {
-    if (window.jsQR) return Promise.resolve();
-    return decoder ||= new Promise((resolve, reject) => {
-      const script = document.createElement("script"); script.src = "/pwa/qr-decoder.js";
-      const failed = () => { clearTimeout(timer); decoder = null; script.remove(); reject(new Error()); };
-      const timer = setTimeout(failed, 10_000);
-      script.onload = () => { clearTimeout(timer); resolve(); }; script.onerror = failed; document.head.append(script);
+let decoder;
+function loadDecoder() {
+  if (window.jsQR) return Promise.resolve();
+  return decoder ||= new Promise((resolve, reject) => {
+    const script = document.createElement("script"); script.src = "/pwa/qr-decoder.js";
+    const failed = () => { clearTimeout(timer); decoder = null; script.remove(); reject(new Error("二维码识别器加载失败，请重试。")); };
+    const timer = setTimeout(failed, 10_000);
+    script.onload = () => { clearTimeout(timer); resolve(); }; script.onerror = failed; document.head.append(script);
+  });
+}
+
+export function supportsLiveCamera() {
+  return Boolean(window.isSecureContext && navigator.mediaDevices?.getUserMedia);
+}
+
+/** A native photo capture input also works on ordinary HTTP mobile pages. */
+export async function decodePairingImage(file) {
+  if (!file || (file.type && !file.type.startsWith("image/"))) throw new Error("请选择二维码照片。");
+  if (file.size > 20 * 1024 * 1024) throw new Error("照片过大，请重新拍摄二维码。");
+  await loadDecoder();
+  const image = new Image(), source = URL.createObjectURL(file);
+  try {
+    await new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error("照片加载超时，请重新拍摄。")), 10_000);
+      image.onload = () => { clearTimeout(timer); resolve(); };
+      image.onerror = () => { clearTimeout(timer); reject(new Error("无法读取照片，请重新拍摄二维码。")); };
+      image.src = source;
     });
-  }
-  scan.addEventListener("click", async () => {
-    if (running || scan.disabled) return;
-    if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) { showForm("相机扫码需要 HTTPS。也可以用手机系统相机扫描电脑二维码，或手输配对码。"); return; }
-    const attempt = ++generation; scan.disabled = true; section.hidden = false;
+    const canvas = document.createElement("canvas"), context = canvas.getContext("2d", { willReadFrequently: true });
+    for (const limit of [1600, 1024, 640]) {
+      const scale = Math.min(1, limit / Math.max(image.naturalWidth, image.naturalHeight));
+      canvas.width = Math.max(1, Math.round(image.naturalWidth * scale)); canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+      context.drawImage(image, 0, 0, canvas.width, canvas.height);
+      const pixels = context.getImageData(0, 0, canvas.width, canvas.height);
+      const code = window.jsQR(pixels.data, pixels.width, pixels.height);
+      if (code) return code.data;
+    }
+    throw new Error("照片中没有识别到二维码，请靠近电脑屏幕重新拍摄。");
+  } finally { image.onload = null; image.onerror = null; URL.revokeObjectURL(source); }
+}
+
+/** Shared by the pairing landing page and the global computer switcher. */
+export function createPairingScanner(video, onResult, onError) {
+  let stream, generation = 0, timer;
+  const stop = () => {
+    generation++;
+    clearTimeout(timer);
+    stream?.getTracks().forEach(track => track.stop());
+    stream = null;
+    video.srcObject = null;
+  };
+  const fail = (attempt, error) => {
+    if (attempt !== generation) return;
+    stop();
+    onError(error?.name === "NotAllowedError" ? "相机权限未开启，请允许相机或粘贴二维码链接。" : error?.message || "无法启动扫码，请重试。");
+  };
+  const start = async () => {
+    stop();
+    const attempt = generation;
+    if (!supportsLiveCamera()) {
+      onError("实时扫码需要 HTTPS，请使用拍照扫码。");
+      return;
+    }
     try {
       await loadDecoder();
       if (attempt !== generation) return;
@@ -35,36 +68,27 @@
       if (attempt !== generation) { camera.getTracks().forEach(track => track.stop()); return; }
       stream = camera; video.srcObject = camera;
       let playTimer;
-      try { await Promise.race([video.play(), new Promise((_, reject) => { playTimer = setTimeout(() => reject(new Error("Camera produced no frames")), 10_000); })]); }
+      try { await Promise.race([video.play(), new Promise((_, reject) => { playTimer = setTimeout(() => reject(new Error("相机没有返回画面，请重试。")), 10_000); })]); }
       finally { clearTimeout(playTimer); }
       if (attempt !== generation) return;
-      running = true;
       const canvas = document.createElement("canvas"), context = canvas.getContext("2d", { willReadFrequently: true });
       const tick = () => {
-        if (!running || attempt !== generation) return;
+        if (attempt !== generation) return;
         try {
           if (video.videoWidth && video.videoHeight) {
             canvas.width = Math.min(video.videoWidth, 640); canvas.height = Math.round(video.videoHeight * canvas.width / video.videoWidth);
             context.drawImage(video, 0, 0, canvas.width, canvas.height);
             const pixels = context.getImageData(0, 0, canvas.width, canvas.height), code = window.jsQR(pixels.data, pixels.width, pixels.height);
-            if (code) {
-              let target; try { target = parse(code.data); } catch { fail("这不是 AgentRoam 授权二维码，请在电脑上重新生成。"); return; }
-              stopCamera();
-              if (target.origin === location.origin) void exchangeQr(target.hash.slice(6));
-              else location.assign(target.href);
-              return;
-            }
+            if (code) { stop(); onResult(code.data); return; }
           }
-          setTimeout(tick, 250);
-        } catch { fail("二维码识别失败，请重试或手输配对码。"); }
+          timer = setTimeout(tick, 250);
+        } catch (error) { stop(); onError(error?.message || "二维码识别失败，请重试。"); }
       };
       tick();
-    } catch (error) {
-      if (attempt === generation) fail(error?.name === "NotAllowedError" ? "相机权限未开启，请在浏览器设置中允许相机，或手输配对码。" : "无法启动扫码，请检查相机与网络后重试。");
-    }
-  });
-  cancel.addEventListener("click", stopCamera);
-  document.getElementById("pair").addEventListener("submit", stopCamera);
-  window.addEventListener("pagehide", stopCamera);
-  document.addEventListener("visibilitychange", () => { if (document.hidden) stopCamera(); });
-})();
+    } catch (error) { fail(attempt, error); }
+  };
+  const visibility = () => { if (document.hidden) stop(); };
+  window.addEventListener("pagehide", stop);
+  document.addEventListener("visibilitychange", visibility);
+  return { start, stop, dispose() { stop(); window.removeEventListener("pagehide", stop); document.removeEventListener("visibilitychange", visibility); } };
+}

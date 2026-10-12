@@ -7,6 +7,8 @@ const assets = new Map([
   ["/service-worker.js", ["service-worker.js", "text/javascript"]],
   ["/pwa/install.js", ["install.js", "text/javascript"]],
   ["/pwa/pairing-scan.js", ["pairing-scan.js", "text/javascript"]],
+  ["/pwa/computer-directory.js", ["computer-directory.js", "text/javascript"]],
+  ["/pwa/offline-computers.js", ["offline-computers.js", "text/javascript"]],
   ["/pwa/offline.html", ["offline.html", "text/html; charset=utf-8"]],
   ["/pwa/icon-192.png", ["icon-192.png", "image/png"]],
   ["/pwa/icon-512.png", ["icon-512.png", "image/png"]],

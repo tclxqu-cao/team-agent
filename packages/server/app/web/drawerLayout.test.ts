@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 const pageSource = readFileSync(new URL("./page.tsx", import.meta.url), "utf8");
+const computerSwitcherSource = readFileSync(new URL("./ComputerSwitcher.tsx", import.meta.url), "utf8");
 
 describe("web console file drawer layout", () => {
   it("keeps drawer display in CSS so the desktop closed state can hide it", () => {
@@ -22,12 +23,13 @@ describe("web console file drawer layout", () => {
     expect(pageSource).toContain('onClick={() => setDrawerOpen((open) => !open)}');
     expect(pageSource).not.toContain('className="fab-files"');
     expect(pageSource).not.toContain("fileButtonPosition");
-    expect(pageSource).toContain('className="theme-avatar-with-status"');
-    expect(pageSource).toContain('className="theme-avatar-status"');
-    expect(pageSource).toContain('aria-label={state.connected ? "已连接" : "未连接"}');
+    expect(pageSource).toContain('connected={state.connected}');
+    expect(computerSwitcherSource).toContain('className="theme-avatar-with-status"');
+    expect(computerSwitcherSource).toContain('className="theme-avatar-status"');
+    expect(computerSwitcherSource).toContain('aria-label={connected ? "已连接" : "未连接"}');
     expect(pageSource).toContain('.theme-avatar-status[data-connected="true"]');
     expect(pageSource).toMatch(/\.theme-avatar \{[^}]*width:18px; height:18px;/);
-    expect(pageSource).toMatch(/@media \(pointer: coarse\)[\s\S]*\.theme-avatar::after \{ inset:-9px; \}/);
+    expect(pageSource).toMatch(/@media \(pointer: coarse\)[\s\S]*\.theme-avatar::after \{ inset:-13px; \}/);
   });
 
   it("only casts the mobile drawer shadow while the drawer is open", () => {

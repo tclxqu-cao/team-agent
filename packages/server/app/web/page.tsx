@@ -7,6 +7,8 @@ import dynamic from "next/dynamic";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Bot, PanelRight, X, LayoutGrid, MonitorUp, RefreshCw } from "lucide-react";
 import PwaInstallButton from "./PwaInstallButton";
+import ComputerSwitcher from "./ComputerSwitcher";
+import ResponsiveToolbar from "./ResponsiveToolbar";
 import type { FileWorkspaceGateway, PinnedCommand } from "@agent/core";
 import { defaultPinnedCommands } from "../../../core/src/domain/web-console/pinned-commands";
 import {
@@ -543,74 +545,33 @@ function AuthenticatedConsole({
     <div className="web-root" style={rootStyle}>
       <style dangerouslySetInnerHTML={{ __html: GLOBAL_CSS }} />
 
-      <div className="terminal-tabs" ref={tabBarRef}>
-        {tabs.map((tab) => (
-          <div key={tab.id} data-terminal-id={tab.id} draggable className={`terminal-tab ${tab.id === activeTerminalId ? "active" : ""}`} onDragStart={()=>{draggedTab.current=tab.id;}} onDragOver={(event)=>event.preventDefault()} onDrop={(event)=>{event.preventDefault();const source=draggedTab.current;draggedTab.current=null;if(!source||source===tab.id)return;setTabs((current)=>{const from=current.findIndex(item=>item.id===source),to=current.findIndex(item=>item.id===tab.id);if(from<0||to<0)return current;const next=[...current];const [moved]=next.splice(from,1);next.splice(to,0,moved);rpc("term:reorder",{ids:next.filter(item=>!item.kind).map(item=>item.id)}).catch(()=>{});return next;});}} onClick={() => setActiveTerminalId(tab.id)} onDoubleClick={() => {
-            if (tab.kind) return;
-            const title = window.prompt("页签名称", tab.title)?.trim();
-            if (!title) return;
-            rpc("term:rename", { id: tab.id, title }).then(() => setTabs((items) => items.map((item) => item.id === tab.id ? { ...item, title } : item))).catch(() => {});
-          }}>
-            <span>{tab.title}</span>{tab.kind !== "webapp" && <button tabIndex={-1} onClick={(event) => { event.stopPropagation(); closeTerminal(tab.id); }}>×</button>}
+      <div className="terminal-tabs">
+        <div className="terminal-tab-list" ref={tabBarRef}>
+          {tabs.map((tab) => (
+            <div key={tab.id} data-terminal-id={tab.id} draggable className={`terminal-tab ${tab.id === activeTerminalId ? "active" : ""}`} onDragStart={()=>{draggedTab.current=tab.id;}} onDragOver={(event)=>event.preventDefault()} onDrop={(event)=>{event.preventDefault();const source=draggedTab.current;draggedTab.current=null;if(!source||source===tab.id)return;setTabs((current)=>{const from=current.findIndex(item=>item.id===source),to=current.findIndex(item=>item.id===tab.id);if(from<0||to<0)return current;const next=[...current];const [moved]=next.splice(from,1);next.splice(to,0,moved);rpc("term:reorder",{ids:next.filter(item=>!item.kind).map(item=>item.id)}).catch(()=>{});return next;});}} onClick={() => setActiveTerminalId(tab.id)} onDoubleClick={() => {
+              if (tab.kind) return;
+              const title = window.prompt("页签名称", tab.title)?.trim();
+              if (!title) return;
+              rpc("term:rename", { id: tab.id, title }).then(() => setTabs((items) => items.map((item) => item.id === tab.id ? { ...item, title } : item))).catch(() => {});
+            }}>
+              <span>{tab.title}</span>{tab.kind !== "webapp" && <button tabIndex={-1} onClick={(event) => { event.stopPropagation(); closeTerminal(tab.id); }}>×</button>}
           </div>
         ))}
-        <button className="terminal-add" disabled={tabs.length >= 8} onClick={addTerminal}>＋</button>
+        </div>
+        <button className="terminal-add" aria-label="新建终端页签" disabled={tabs.length >= 8} onClick={addTerminal}>＋</button>
         <div className="terminal-connection">
-          <button type="button" className="file-drawer-toggle" aria-label="刷新页面" title="刷新页面" onClick={() => window.location.reload()}>
-            <RefreshCw size={17} aria-hidden="true" />
-          </button>
-          <PwaInstallButton />
-          <button
-            type="button"
-            className="file-drawer-toggle"
-            aria-label="打开远程桌面"
-            title="远程桌面 · 浏览器直播"
-            onClick={openWebappBrowserLive}
-          >
-            <MonitorUp size={17} aria-hidden="true" />
-          </button>
-          <button
-            type="button"
-            className="file-drawer-toggle"
-            aria-label="打开 AI Hub"
-            title="AI Hub · 多模型对比"
-            onClick={openAiHubTab}
-          >
-            <LayoutGrid size={17} aria-hidden="true" />
-          </button>
-          <button
-            type="button"
-            className="file-drawer-toggle"
-            aria-label="打开数字人"
-            title="数字人 · Flow Studio"
-            onClick={openFlowStudioTab}
-          >
-            <Bot size={17} aria-hidden="true" />
-          </button>
-          <button
-            type="button"
-            className="file-drawer-toggle"
-            aria-label={drawerOpen ? "关闭我的文件" : "打开我的文件"}
-            title="我的文件"
-            aria-expanded={drawerOpen}
-            onClick={() => setDrawerOpen((open) => !open)}
-          >
-            <PanelRight size={17} aria-hidden="true" />
-          </button>
-          <div className="theme-avatar-with-status">
-            <ThemePicker
-              username={auth.user?.username ?? "?"}
-              themeId={themeId}
-              onThemeChange={setThemeId}
-              accent={activeTheme.keybar.accent}
-              accentText={activeTheme.keybar.accentText}
-            />
-            <span
-              className="theme-avatar-status"
-              data-connected={state.connected}
-              aria-label={state.connected ? "已连接" : "未连接"}
-            />
-          </div>
+          <ResponsiveToolbar
+            avatar={<ComputerSwitcher username={auth.user?.username ?? "?"} connected={state.connected} accent={activeTheme.keybar.accent} accentText={activeTheme.keybar.accentText} />}
+            items={[
+              { id: "refresh", content: <button type="button" className="file-drawer-toggle" aria-label="刷新页面" title="刷新页面" onClick={() => window.location.reload()}><RefreshCw size={17} aria-hidden="true" /></button> },
+              { id: "install", content: <PwaInstallButton /> },
+              { id: "remote", content: <button type="button" className="file-drawer-toggle" aria-label="打开远程桌面" title="远程桌面 · 浏览器直播" onClick={openWebappBrowserLive}><MonitorUp size={17} aria-hidden="true" /></button> },
+              { id: "ai-hub", content: <button type="button" className="file-drawer-toggle" aria-label="打开 AI Hub" title="AI Hub · 多模型对比" onClick={openAiHubTab}><LayoutGrid size={17} aria-hidden="true" /></button> },
+              { id: "flow", content: <button type="button" className="file-drawer-toggle" aria-label="打开数字人" title="数字人 · Flow Studio" onClick={openFlowStudioTab}><Bot size={17} aria-hidden="true" /></button> },
+              { id: "theme", content: <ThemePicker themeId={themeId} onThemeChange={setThemeId} /> },
+              { id: "files", content: <button type="button" className="file-drawer-toggle" aria-label={drawerOpen ? "关闭我的文件" : "打开我的文件"} title="我的文件" aria-expanded={drawerOpen} onClick={() => setDrawerOpen((open) => !open)}><PanelRight size={17} aria-hidden="true" /></button> },
+            ]}
+          />
         </div>
       </div>
 
@@ -701,20 +662,26 @@ function AuthenticatedConsole({
 const GLOBAL_CSS = `
   html, body { width:100%; height:100%; margin:0; overflow:hidden; background:var(--ui-root-bg, #0b0b10); overscroll-behavior:none; color:var(--ui-text, #e8e8ee); }
   * { -webkit-tap-highlight-color: transparent; }
-  .terminal-tabs { display:flex; align-items:end; gap:4px; min-height:38px; padding:0 8px; overflow-x:auto; overflow-y:hidden; touch-action:pan-x; overscroll-behavior-x:contain; -webkit-overflow-scrolling:touch; scroll-behavior:smooth; background:var(--ui-tabbar-bg, #12141b); border-bottom:0; scrollbar-width:none; flex-shrink:0; }
-  .terminal-tab { display:flex; align-items:center; gap:7px; min-width:74px; max-width:130px; height:32px; padding:0 7px 0 10px; border-radius:7px 7px 0 0; background:var(--ui-tab-bg, #1b1e28); color:var(--ui-tab-text, #8f93a4); font-size:11px; cursor:pointer; box-sizing:border-box; transition:color .2s ease,box-shadow .2s ease; }
+  .terminal-tabs { display:flex; align-items:end; gap:4px; min-height:38px; padding:0 8px; background:var(--ui-tabbar-bg, #12141b); border-bottom:0; flex-shrink:0; }
+  .terminal-tab-list { position:relative; display:flex; align-items:end; gap:4px; flex:0 1 auto; min-width:0; height:100%; overflow-x:auto; overflow-y:hidden; touch-action:pan-x; overscroll-behavior-x:contain; -webkit-overflow-scrolling:touch; scroll-behavior:smooth; scrollbar-width:none; }
+  .terminal-tab { display:flex; align-items:center; flex-shrink:0; gap:7px; min-width:74px; max-width:130px; height:32px; padding:0 7px 0 10px; border-radius:7px 7px 0 0; background:var(--ui-tab-bg, #1b1e28); color:var(--ui-tab-text, #8f93a4); font-size:11px; cursor:pointer; box-sizing:border-box; transition:color .2s ease,box-shadow .2s ease; }
   .terminal-tab.active { color:var(--ui-tab-active-text, #edf0f7); background:var(--ui-active-content-bg, var(--ui-tab-active-bg, #262b38)); box-shadow:inset 0 2px var(--ui-tab-accent, #7aa2f7); }
   .terminal-tab span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1; }
   .terminal-tab button { width:18px; height:18px; border:0; border-radius:4px; background:transparent; color:var(--ui-tab-text, #707586); padding:0; }
-  .terminal-add { min-width:30px; height:28px; margin-bottom:2px; border:1px solid var(--ui-tabbar-border, #303442); border-radius:6px; background:var(--ui-tab-bg, #1b1e28); color:var(--ui-tab-text, #9da2b2); }
-  .terminal-connection { position:sticky; right:-8px; margin-left:auto; align-self:stretch; display:flex; align-items:center; gap:7px; padding:0 9px; background:var(--ui-connection-bg, #12141b); color:var(--ui-connection-text, #777b8c); font-size:10.5px; flex-shrink:0; z-index:5; box-shadow:-8px 0 12px color-mix(in srgb, var(--ui-connection-bg, #12141b) 90%, transparent); }
+  .terminal-add { flex-shrink:0; min-width:30px; height:28px; margin-bottom:2px; border:1px solid var(--ui-tabbar-border, #303442); border-radius:6px; background:var(--ui-tab-bg, #1b1e28); color:var(--ui-tab-text, #9da2b2); }
+  .terminal-connection { align-self:stretch; display:flex; align-items:center; margin-left:auto; padding:0 9px; background:var(--ui-connection-bg, #12141b); color:var(--ui-connection-text, #777b8c); font-size:10.5px; flex-shrink:0; z-index:5; }
   .file-drawer-toggle { display:grid; place-items:center; width:28px; height:28px; padding:0; border:0; border-radius:6px; background:transparent; color:var(--ui-connection-text, #777b8c); cursor:pointer; flex-shrink:0; touch-action:manipulation; }
   .file-drawer-toggle:hover, .file-drawer-toggle[aria-expanded="true"] { background:color-mix(in srgb, var(--ui-tab-accent, #7aa2f7) 12%, transparent); color:var(--ui-tab-active-text, #edf0f7); }
   .file-drawer-toggle:focus-visible { outline:2px solid var(--ui-tab-accent, #7aa2f7); outline-offset:-2px; }
   .theme-avatar-with-status { position:relative; display:flex; flex-shrink:0; }
   .theme-avatar-status { position:absolute; right:-2px; bottom:-2px; z-index:7; width:6px; height:6px; box-sizing:border-box; border:1px solid var(--ui-connection-bg, #12141b); border-radius:50%; background:var(--ui-error); pointer-events:none; }
   .theme-avatar-status[data-connected="true"] { background:var(--ui-success); }
-  .theme-picker { position:relative; flex-shrink:0; z-index:6; }
+  .theme-picker { position:relative; display:flex; align-items:center; flex-shrink:0; }
+  .responsive-toolbar { position:relative; display:flex; align-items:center; flex-shrink:0; gap:0; z-index:6; }
+  .toolbar-avatar, .toolbar-slot { display:flex; align-items:center; flex-shrink:0; }
+  .toolbar-size-measure { position:fixed; top:-1000px; visibility:hidden; pointer-events:none; }
+  .toolbar-tools { display:flex; align-items:center; flex-shrink:0; gap:0; }
+  .toolbar-tools-expanded { flex-wrap:wrap; padding:4px; }
   .theme-avatar { position:relative; display:flex; align-items:center; justify-content:center; width:18px; height:18px; padding:0; border-radius:99px; font-size:9px; font-weight:700; cursor:pointer; flex-shrink:0; touch-action:manipulation; -webkit-tap-highlight-color:transparent; transition:transform .12s ease, filter .12s ease; }
   /* Hit-area padding keeps the compact visual circle easy to target. */
   .theme-avatar::after { content:""; position:absolute; inset:-6px; border-radius:99px; }
@@ -726,7 +693,10 @@ const GLOBAL_CSS = `
      expanded hit area taller than the bar would get cut off. */
   @media (pointer: coarse) {
     .terminal-tabs { min-height:44px; }
-    .theme-avatar::after { inset:-9px; }
+    .theme-avatar-with-status { width:44px; height:44px; align-items:center; justify-content:center; }
+    .theme-avatar::after { inset:-13px; }
+    .theme-avatar-status { right:10px; bottom:10px; }
+    .toolbar-tools .file-drawer-toggle, .responsive-toolbar .file-drawer-toggle { width:40px; height:40px; }
     .theme-popover-item { padding-top:11px; padding-bottom:11px; }
   }
   @media (prefers-reduced-motion: reduce) { .theme-avatar { transition:none; } }

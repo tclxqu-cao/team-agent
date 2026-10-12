@@ -50,6 +50,8 @@ for (const required of [
   "package/runtime/public/pwa/service-worker.js",
   "package/runtime/public/pwa/install.js",
   "package/runtime/public/pwa/pairing-scan.js",
+  "package/runtime/public/pwa/computer-directory.js",
+  "package/runtime/public/pwa/offline-computers.js",
   "package/runtime/public/pwa/offline.html",
   "package/runtime/public/pwa/icon-192.png",
   "package/runtime/public/pwa/icon-512.png",

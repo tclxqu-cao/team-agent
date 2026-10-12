@@ -23,7 +23,7 @@ describe("PWA offline boundary", () => {
     const decoded = jsQR(pixels, size, size);
     expect(decoded?.data).toBe(payload); expect(parsePairingQr(decoded!.data).grant).toBe(grant);
   });
-  it("caches only the public offline page and never intercepts API operations", async () => {
+  it("caches only public offline assets and never intercepts business operations", async () => {
     const listeners: Record<string, (event: any) => void> = {};
     const add = vi.fn(async (_request: Request) => {}); const match = vi.fn(async () => new Response("public offline page"));
     const transport = vi.fn(async (_request: Request) => { throw new Error("offline"); });
@@ -34,8 +34,9 @@ describe("PWA offline boundary", () => {
     runInNewContext(script, { URL, Request: WorkerRequest, Response, caches: { open: async () => ({ add }), match }, fetch: transport, self: { location: { origin: "https://computer.example" }, addEventListener: (type: string, fn: any) => { listeners[type] = fn; }, skipWaiting: async () => {} } });
     let install: Promise<unknown> | undefined;
     listeners.install({ waitUntil: (value: Promise<unknown>) => { install = value; } }); await install;
-    expect(add).toHaveBeenCalledOnce(); expect(add.mock.calls[0][0].url).toBe("https://computer.example/pwa/offline.html");
-    for (const request of [{ mode: "cors", method: "GET", url: "https://computer.example/api/settings" }, { mode: "cors", method: "POST", url: "https://computer.example/api/agent/run" }]) {
+    expect(add.mock.calls.map(([request]) => request.url)).toEqual(["https://computer.example/pwa/offline.html", "https://computer.example/pwa/computer-directory.js", "https://computer.example/pwa/offline-computers.js"]);
+    expect(add.mock.calls.every(([request]) => request.credentials === "omit")).toBe(true);
+    for (const request of [{ mode: "cors", method: "GET", url: "https://computer.example/api/settings" }, { mode: "cors", method: "POST", url: "https://computer.example/api/agent/run" }, { mode: "cors", method: "GET", url: "https://computer.example/app/assets/index.js" }]) {
       const respondWith = vi.fn(); listeners.fetch({ request, respondWith }); expect(respondWith).not.toHaveBeenCalled();
     }
     const navigation = new Request("https://computer.example/web");
@@ -44,6 +45,10 @@ describe("PWA offline boundary", () => {
     listeners.fetch({ request: navigation, respondWith: (value: Promise<Response>) => { response = value; } });
     expect(await (await response!).text()).toBe("public offline page");
     expect(transport.mock.calls[0][0].cache).toBe("no-store");
-    expect(match).toHaveBeenCalledWith("/pwa/offline.html"); expect(add).toHaveBeenCalledOnce();
+    expect(match).toHaveBeenCalledWith("/pwa/offline.html"); expect(add).toHaveBeenCalledTimes(3);
+    const directory = new Request("https://computer.example/pwa/computer-directory.js");
+    listeners.fetch({ request: directory, respondWith: (value: Promise<Response>) => { response = value; } });
+    await response;
+    expect(match).toHaveBeenCalledWith("/pwa/computer-directory.js");
   });
 });
