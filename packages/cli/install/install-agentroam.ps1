@@ -172,7 +172,7 @@ if ($AgentRoamVersionRequest -notmatch '\d$') {
     $AgentRoamVersion = $AgentRoamVersionRequest
 }
 $LauncherRoot = Join-Path $LauncherParent $AgentRoamVersion
-$LauncherLock = Join-Path $LauncherRoot ".lock"
+$LauncherLock = "$LauncherRoot.lock"
 $PackageSpec = "agentroam@$AgentRoamVersion"
 $ExtraPackageSpecs = @()
 if ($env:AGENTROAM_BOOTSTRAP_TEST -eq "1" -and $env:AGENTROAM_PACKAGE_SPEC) {
@@ -181,12 +181,95 @@ if ($env:AGENTROAM_BOOTSTRAP_TEST -eq "1" -and $env:AGENTROAM_PACKAGE_SPEC) {
 }
 $Entry = Join-Path $LauncherRoot "node_modules\agentroam\bin\agentroam.mjs"
 
-function Test-Launcher {
-  if (-not (Test-Path -LiteralPath $Entry -PathType Leaf)) { return $false }
+$LauncherCheckSource = @'
+const { readFileSync, statSync } = require("node:fs");
+const { createHash } = require("node:crypto");
+const { createRequire } = require("node:module");
+const { dirname, resolve, sep } = require("node:path");
+const [prefix, launcherVersion, minimumNodeVersion, target, mode] = process.argv.slice(process.argv[1] === "-" ? 2 : 1);
+try {
+  const packageName = {
+    "darwin-arm64": "agentroam-runtime-darwin-arm64",
+    "windows-amd64": "agentroam-runtime-win32-x64",
+  }[target];
+  if (!packageName) throw new Error("Unsupported runtime target: " + target);
+  const launcherPath = resolve(prefix, "node_modules/agentroam/package.json");
+  const launcher = JSON.parse(readFileSync(launcherPath, "utf8"));
+  if (launcher.version !== launcherVersion) throw new Error("AgentRoam launcher version mismatch");
+  const version = launcher.optionalDependencies?.[packageName];
+  if (typeof version !== "string" || !/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(version)) {
+    throw new Error("Runtime dependency must use an exact version: " + packageName);
+  }
+  if (mode === "spec") {
+    console.log(packageName + "@" + version);
+  } else {
+    if (mode !== "verify") throw new Error("Unknown runtime validation mode: " + mode);
+    const launcherRequire = createRequire(launcherPath);
+    const manifestPath = launcherRequire.resolve(packageName + "/manifest.json");
+    const runtimeRoot = dirname(launcherRequire.resolve(packageName + "/runtime"));
+    const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+    const runtimePackage = JSON.parse(readFileSync(resolve(dirname(manifestPath), "package.json"), "utf8"));
+    if (runtimePackage.name !== packageName || runtimePackage.version !== version ||
+        manifest.packageVersion !== version || manifest.target !== target ||
+        manifest.schemaVersion !== 2 || manifest.minimumNodeVersion !== minimumNodeVersion ||
+        !manifest.nativeFiles || typeof manifest.nativeFiles !== "object" || Array.isArray(manifest.nativeFiles)) {
+      throw new Error("Invalid runtime manifest: " + manifestPath);
+    }
+    const nativeTarget = target === "darwin-arm64" ? "darwin-arm64" : "win32-x64";
+    for (const file of [
+      "node_modules/better-sqlite3/prebuilds/" + nativeTarget + ".node",
+      "node_modules/node-pty/prebuilds/" + nativeTarget + "/pty.node",
+      ...(target === "darwin-arm64"
+        ? ["node_modules/node-pty/prebuilds/darwin-arm64/spawn-helper"]
+        : ["node_modules/node-pty/prebuilds/win32-x64/conpty.node",
+          "node_modules/node-pty/prebuilds/win32-x64/conpty/conpty.dll",
+          "node_modules/node-pty/prebuilds/win32-x64/conpty/OpenConsole.exe"]),
+    ]) {
+      if (!manifest.nativeFiles[file]) throw new Error("Missing runtime native inventory: " + file);
+    }
+    for (const file of ["bin/agentroam.mjs"]) {
+      if (!statSync(resolve(dirname(launcherPath), file)).isFile()) throw new Error("Missing launcher file: " + file);
+    }
+    for (const file of ["ws-server.mjs", ".next/BUILD_ID"]) {
+      if (!statSync(resolve(runtimeRoot, file)).isFile()) throw new Error("Missing runtime file: " + file);
+    }
+    for (const [file, expectedHash] of Object.entries(manifest.nativeFiles)) {
+      const path = resolve(runtimeRoot, file);
+      if (!path.startsWith(runtimeRoot + sep) || !/^[a-f0-9]{64}$/.test(expectedHash)) {
+        throw new Error("Invalid runtime native inventory: " + file);
+      }
+      const actualHash = createHash("sha256").update(readFileSync(path)).digest("hex");
+      if (actualHash !== expectedHash) throw new Error("Runtime native file checksum mismatch: " + file);
+    }
+    const runtimeRequire = createRequire(resolve(runtimeRoot, "package.json"));
+    for (const name of ["better-sqlite3", "node-pty"]) {
+      if (!runtimeRequire.resolve(name).startsWith(runtimeRoot + sep)) throw new Error("Missing runtime module: " + name);
+    }
+    const Database = runtimeRequire("better-sqlite3");
+    const database = new Database(":memory:");
+    try {
+      if (database.prepare("SELECT 1 AS ok").get()?.ok !== 1) throw new Error("SQLite runtime query failed");
+    } finally {
+      database.close();
+    }
+    if (typeof runtimeRequire("node-pty").spawn !== "function") throw new Error("Invalid PTY runtime module");
+  }
+} catch (error) {
+  console.error("AgentRoam runtime validation failed: " + error.message);
+  process.exitCode = 1;
+}
+'@
+
+function Test-LauncherRuntime([string]$Prefix) {
   try {
-    $Output = & $NodeBin $Entry version 2>$null
-    return $LASTEXITCODE -eq 0 -and $Output -match [Regex]::Escape($AgentRoamVersion)
+    # Pipe JavaScript to Node so Windows PowerShell 5 does not strip its quotes.
+    $LauncherCheckSource | & $NodeBin - $Prefix $AgentRoamVersion $MinimumNodeVersion windows-amd64 verify 2>$null
+    return $LASTEXITCODE -eq 0
   } catch { return $false }
+}
+
+function Test-Launcher {
+  return Test-LauncherRuntime $LauncherRoot
 }
 
 if (-not (Test-Launcher)) {
@@ -198,11 +281,30 @@ if (-not (Test-Launcher)) {
         $NpmArgs = @("install", "--no-audit", "--no-fund", "--registry", $NpmRegistry, "--prefix", $TempLauncher) + $ExtraPackageSpecs + @($PackageSpec)
         & $NodeBin $NpmCli @NpmArgs
         if ($LASTEXITCODE -ne 0) { throw "npm install failed with exit code $LASTEXITCODE" }
-        $TempEntry = Join-Path $TempLauncher "node_modules\agentroam\bin\agentroam.mjs"
-        $VersionOutput = & $NodeBin $TempEntry version
-        if ($LASTEXITCODE -ne 0 -or $VersionOutput -notmatch [Regex]::Escape($AgentRoamVersion)) { throw "AgentRoam version validation failed" }
-        Remove-Item -LiteralPath $LauncherRoot -Recurse -Force -ErrorAction SilentlyContinue
-        Move-Item -LiteralPath $TempLauncher -Destination $LauncherRoot
+        $RuntimeSpec = [string]($LauncherCheckSource | & $NodeBin - $TempLauncher $AgentRoamVersion $MinimumNodeVersion windows-amd64 spec)
+        if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($RuntimeSpec)) { throw "AgentRoam runtime dependency validation failed" }
+        if (-not (Test-LauncherRuntime $TempLauncher)) {
+          Remove-Item -LiteralPath (Join-Path $TempLauncher "node_modules\agentroam-runtime-win32-x64") -Recurse -Force -ErrorAction SilentlyContinue
+          $RuntimeArgs = @("install", "--save-exact", "--include=optional", "--no-audit", "--no-fund", "--registry", $NpmRegistry, "--prefix", $TempLauncher, $RuntimeSpec.Trim())
+          & $NodeBin $NpmCli @RuntimeArgs
+          if ($LASTEXITCODE -ne 0) { throw "Required AgentRoam runtime install failed with exit code $LASTEXITCODE" }
+        }
+        $LauncherCheckSource | & $NodeBin - $TempLauncher $AgentRoamVersion $MinimumNodeVersion windows-amd64 verify
+        if ($LASTEXITCODE -ne 0) { throw "AgentRoam runtime validation failed; previous installation preserved" }
+        $PreviousLauncher = $null
+        if (Test-Path -LiteralPath $LauncherRoot) {
+          $PreviousLauncher = Join-Path $LauncherParent ".previous-$AgentRoamVersion-$([Guid]::NewGuid().ToString('N'))"
+          Move-Item -LiteralPath $LauncherRoot -Destination $PreviousLauncher
+        }
+        try {
+          Move-Item -LiteralPath $TempLauncher -Destination $LauncherRoot
+        } catch {
+          if ($PreviousLauncher -and -not (Test-Path -LiteralPath $LauncherRoot)) {
+            Move-Item -LiteralPath $PreviousLauncher -Destination $LauncherRoot
+          }
+          throw
+        }
+        if ($PreviousLauncher) { Remove-Item -LiteralPath $PreviousLauncher -Recurse -Force }
       } finally {
         Remove-Item -LiteralPath $TempLauncher -Recurse -Force -ErrorAction SilentlyContinue
       }
