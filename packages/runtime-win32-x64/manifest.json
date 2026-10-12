@@ -1,11 +1,11 @@
 {
-  "packageVersion": "0.2.0-preview.39",
+  "packageVersion": "0.2.0-preview.41",
   "target": "windows-amd64",
   "schemaVersion": 2,
   "minimumNodeVersion": "22.22.0",
   "nativeFiles": {
-    "native/agentroam-remote-desktop.exe": "4c51918a1db803b50c38236b60956bb098aaa428b2a93a78570f1dd4a20ff12a",
-    "native/agentroam-remote-unlock.exe": "2f4f44b426ff9fc0f8c33133185a0c630883f943261b7acedd729a7039218057",
+    "native/agentroam-remote-desktop.exe": "164d3d6a9e2332742d63b4d8c83f72f5373014f40aa84dfdf0394042d1a0416b",
+    "native/agentroam-remote-unlock.exe": "cac3e1bbc8b83cb1bf6cf33d81bdac1b9adbedcf22fe257ff001c0c68712ccaa",
     "node_modules/better-sqlite3/prebuilds/win32-x64.node": "e21e5efd71fba66578e95b62554d9028064a80dafd7221bf8a8ef155de8d240a",
     "node_modules/node-pty/prebuilds/win32-x64/conpty.node": "ee8f4e6f4dad71939eecfda11de249400e34bfefe4c8b48af13f3b5476f4035b",
     "node_modules/node-pty/prebuilds/win32-x64/conpty_console_list.node": "879dd94cfc79f1e263a00077597ae9448a5394b7d193381aaa50d992a1f91090",

@@ -3,13 +3,13 @@
   "installers": {
     "darwin-arm64": {
       "fileName": "install-agentroam.sh",
-      "sha256": "9fad4cb6528e0b71224c40c4eece94881a67191b165ccb673b980498b8646487",
-      "size": 14575
+      "sha256": "c399354e39001b4717bad7aae81e5f53b1346188befdf308f73e3dcd99580cb0",
+      "size": 19873
     },
     "windows-amd64": {
       "fileName": "install-agentroam.ps1",
-      "sha256": "5df75c9a139997cfee382ef824216b92bf4a68eba679fbc5be01102019ce1652",
-      "size": 13309
+      "sha256": "f331d2269cc66b18e732dd06f7252da56e883b9a344595e5d5977108f9e337e2",
+      "size": 19121
     }
   }
 }
