@@ -1358,7 +1358,7 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
                     if (longPressTimer.current) window.clearTimeout(longPressTimer.current);
                     longPressRef.current = "none";
                     touchStartRef.current = hasControl && !panMode ? { x: event.clientX, y: event.clientY } : null;
-                    touchDownAtRef.current = Date.now();
+                    touchDownAtRef.current = event.timeStamp;
                     if (touchStartRef.current) {
                       longPressTimer.current = window.setTimeout(() => { longPressRef.current = "armed"; }, 550);
                     }
@@ -1449,13 +1449,16 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
                     if (longPressTimer.current) { window.clearTimeout(longPressTimer.current); longPressTimer.current = null; }
                     const point = pointerCoordinates(event);
                     touchGesturePoint.current = null;
+                    const tap = touch.current.up(event.pointerId, { x: event.clientX, y: event.clientY });
                     // Stationary long-press release: a deliberate ≥800ms hold
                     // is a right-click; shorter "slow taps" stay a left click —
                     // otherwise every careful tap would pop a context menu.
                     if (longPressRef.current === "armed") {
                       longPressRef.current = "none";
-                      const holdMs = touchDownAtRef.current ? Date.now() - touchDownAtRef.current : 0;
-                      if (holdMs >= 800 && point && hasControl && !panMode) {
+                      // Event timestamps measure the actual hold even when
+                      // rendering delays delivery of the release callback.
+                      const holdMs = event.timeStamp - touchDownAtRef.current;
+                      if (tap && holdMs >= 800 && point && hasControl && !panMode) {
                         touch.current.reset();
                         sendInput({ kind: "pointer", action: "down", ...point, button: "right" });
                         sendInput({ kind: "pointer", action: "up", ...point, button: "right" });
@@ -1470,7 +1473,6 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
                       if (point && hasControl) sendInput({ kind: "pointer", action: "up", ...point, button: "left" });
                       return;
                     }
-                    const tap = touch.current.up(event.pointerId, { x: event.clientX, y: event.clientY });
                     if (tap && point && hasControl && !panMode) {
                       // Auto-raise only when the finger lands on a learned text
                       // field; every other tap collapses the keyboard.
@@ -1514,9 +1516,15 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
                   panStart.current = null; pointerDown.current = false; touchGesturePoint.current = null;
                   if (longPressTimer.current) { window.clearTimeout(longPressTimer.current); longPressTimer.current = null; }
                   longPressRef.current = "none";
+                  touchStartRef.current = null;
+                  touchDownAtRef.current = 0;
                 }}
                 onLostPointerCapture={(event) => {
                   touch.current.up(event.pointerId, { x: event.clientX, y: event.clientY }, true);
+                  if (longPressTimer.current) { window.clearTimeout(longPressTimer.current); longPressTimer.current = null; }
+                  longPressRef.current = "none";
+                  touchStartRef.current = null;
+                  touchDownAtRef.current = 0;
                 }}
                 onWheel={(event) => {
                   if (!hasControl || panMode) return;
