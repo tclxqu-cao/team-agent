@@ -1,0 +1,39 @@
+packages/cli/install/install-manifest.json
+  s_99789f5f84b30c::t_11fed4b5b2f468 6-7,11-12
+packages/cli/package.json
+  s_99789f5f84b30c::t_d9ea0680e1afd7 3,29-30
+packages/desktop/renderer/components/BrowserLivePanel.tsx
+  s_3d8cb399d47d29::t_616959b997473d 1361,1452,1458-1461,1519-1520,1524-1527
+packages/runtime-darwin-arm64/manifest.json
+  s_3d8cb399d47d29::t_e299858ede5ba9 2
+packages/runtime-darwin-arm64/package.json
+  s_99789f5f84b30c::t_a01a118292b8bc 3
+packages/runtime-win32-x64/manifest.json
+  s_99789f5f84b30c::t_eb777a9436b086 2,7-8
+packages/runtime-win32-x64/package.json
+  s_99789f5f84b30c::t_823777006ce807 3
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c460383522cfc47f39c57e54e0f679fb0617db0c",
+  "prompts": {},
+  "sessions": {
+    "s_3d8cb399d47d29": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0e624-4280-7c10-be74-3f8e283b70c2",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_99789f5f84b30c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12106-2958-7de2-970f-7133a3fa502d",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
