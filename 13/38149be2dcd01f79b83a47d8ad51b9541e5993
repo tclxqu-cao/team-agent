@@ -1,0 +1,261 @@
+bun.lock
+  s_31ef0984ac7109::t_dcee4738d80f47 25,30,120,1814-1815
+packages/cli/package.json
+  s_31ef0984ac7109::t_97ebda8e3a572e 26-27,40
+packages/cli/src/codex-desktop-preflight.test.ts
+  s_31ef0984ac7109::t_6c12a8d24f2dcb 7-10,23-24,52-77
+packages/cli/src/codex-desktop-preflight.ts
+  s_31ef0984ac7109::t_97c547de80ce30 10-15,23
+packages/cli/src/codex-desktop-probe.test.ts
+  s_31ef0984ac7109::t_7a5991133a661a 6,53,56-66,80,97-113
+packages/cli/src/codex-desktop-probe.ts
+  s_31ef0984ac7109::t_eabb2a9b3133e2 1-2,28,34,38,45-50,55-56,61-63,65-67,69,99
+packages/cli/src/opencode-runtime-manager.test.ts
+  s_31ef0984ac7109::t_a13990e673134e 119
+packages/cli/src/opencode-runtime-manager.ts
+  s_31ef0984ac7109::t_8d70362e829ff4 84
+packages/core/src/domain/session/QuestionReply.ts
+  s_31ef0984ac7109::t_87b7caf8863953 1-50
+packages/core/src/domain/session/SessionHistory.test.ts
+  s_31ef0984ac7109::t_bb231c3c996d0f 3,133-157
+packages/core/src/domain/session/SessionHistory.ts
+  s_31ef0984ac7109::t_96a38b16c00881 27,65,146-150,152,155-158,179-181
+packages/core/src/domain/session/index.ts
+  s_31ef0984ac7109::t_93ca4ca2a5490b 28
+packages/core/src/domain/web-console/RemoteDesktopTabBridge.test.ts
+  s_31ef0984ac7109::t_48fb5240f24b90 1-16
+packages/core/src/domain/web-console/RemoteDesktopTabBridge.ts
+  s_31ef0984ac7109::t_0a48f8a2e89713 1-14
+packages/core/src/domain/web-console/WebArtifactBridge.test.ts
+  s_31ef0984ac7109::t_ad0bb30681c30f 31-39
+packages/core/src/domain/web-console/WebArtifactBridge.ts
+  s_31ef0984ac7109::t_ff3317d3022fa3 9-20,34
+packages/core/src/domain/web-console/computer-settings.test.ts
+  s_31ef0984ac7109::t_4ff4e63b9e40de 1-25
+packages/core/src/domain/web-console/computer-settings.ts
+  s_31ef0984ac7109::t_065e9ace3f3b17 1-49
+packages/core/src/domain/web-console/index.ts
+  s_31ef0984ac7109::t_a7a7f6d4574d5f 2
+packages/core/src/infrastructure/SQLiteComputerSettings.test.ts
+  s_31ef0984ac7109::t_92a9ddb8603bbd 1-53
+packages/core/src/infrastructure/SQLiteDatabase.ts
+  s_31ef0984ac7109::t_d4697718168b3a 279-286
+packages/core/src/infrastructure/SQLiteWebConsoleStore.ts
+  s_31ef0984ac7109::t_73f2437af69fe3 3,9-28
+packages/desktop/renderer/App.tsx
+  s_31ef0984ac7109::t_6750c39446fea0 76-77,351,357-362,366,1830
+packages/desktop/renderer/components/AgentBrandIcon.tsx
+  s_31ef0984ac7109::t_fd5161f1c04884 42-45
+packages/desktop/renderer/components/AgentWorkspaceSwitcher.test.tsx
+  s_31ef0984ac7109::t_3beb8635f6ff1d 7,17,20,25
+packages/desktop/renderer/components/AgentWorkspaceSwitcher.tsx
+  s_31ef0984ac7109::t_50b2902b71e8d3 1-2,11,21-36,38-39,59-65
+packages/desktop/renderer/components/ChatView.tsx
+  s_31ef0984ac7109::t_30ebb6209d283d 92,412-414,483,509-513,590-591,598-601,627-631,839-843,845-855,907-908,910-911,1616,1691,1703,1766,1886,1941-1942,1944-1945,2967-2983,3380-3381,3473-3474,3659-3697,4084,4101,4718,5243-5246,5566-5567,5601-5602,5612,5615-5616,5624-5640,5682-5683,5842
+packages/desktop/renderer/components/EmptySessionWelcome.tsx
+  s_31ef0984ac7109::t_ce6985ce218999 25
+packages/desktop/renderer/components/NativeGoalBar.test.tsx
+  s_31ef0984ac7109::t_4ae79f5baa5489 1-21
+packages/desktop/renderer/components/NativeGoalBar.tsx
+  s_31ef0984ac7109::t_3ff3cb9c9017bc 1-54
+packages/desktop/renderer/components/browser-live-viewport.test.ts
+  s_31ef0984ac7109::t_43544fc9fc0181 117-134
+packages/desktop/renderer/components/browser-live-viewport.ts
+  s_31ef0984ac7109::t_a8f36035d87b9c 69,72-74
+packages/desktop/renderer/components/file-workspace/FilePreview.tsx
+  s_31ef0984ac7109::t_9d299b19e11b9c 17,104,108-112,204-205,263,395-399,486-489,734-735,745,760,828
+packages/desktop/renderer/global.d.ts
+  s_31ef0984ac7109::t_e898887f5c680a 2-3,94,231-236,367-369
+packages/desktop/renderer/lib/agent-workspace-cache.ts
+  s_31ef0984ac7109::t_cebdc03f3f0f26 10
+packages/desktop/renderer/lib/artifact-links.test.ts
+  s_31ef0984ac7109::t_d035df3bcd7a02 30-41
+packages/desktop/renderer/lib/artifact-links.ts
+  s_31ef0984ac7109::t_114aadef60cbe1 1,15,18-23
+packages/desktop/renderer/lib/ask-user-answer-display.test.ts
+  s_31ef0984ac7109::t_ec7a5ba5198eeb 21-27,91-164
+packages/desktop/renderer/lib/ask-user-answer-display.ts
+  s_31ef0984ac7109::t_cd9f8aa3a2c8fc 1,11-14,22-63,65
+packages/desktop/renderer/lib/markdown-links.test.ts
+  s_31ef0984ac7109::t_ee04eea38eda40 5-33
+packages/desktop/renderer/lib/markdown-links.ts
+  s_31ef0984ac7109::t_1d05ca14448a4c 1-2,10,12,18,23,26,75-79,90-94,98-108,132-134
+packages/desktop/renderer/lib/native-agent-run-prefs.ts
+  s_31ef0984ac7109::t_1332ca2da095d2 14
+packages/desktop/renderer/lib/native-goal-submission.test.ts
+  s_31ef0984ac7109::t_5c58aa4ed66b26 1-18
+packages/desktop/renderer/lib/native-goal-submission.ts
+  s_31ef0984ac7109::t_adc9daf88d0b18 1-22
+packages/desktop/renderer/lib/native-session-view-state.test.ts
+  s_31ef0984ac7109::t_f119ac60707007 81
+packages/desktop/renderer/lib/native-session-view-state.ts
+  s_31ef0984ac7109::t_d29c4a97378fcd 2
+packages/desktop/renderer/lib/queued-message-order.test.ts
+  s_31ef0984ac7109::t_87e93a4368b3f3 2,146-293
+packages/desktop/renderer/lib/queued-message-order.ts
+  s_31ef0984ac7109::t_9c7013a287b22f 1-2,32,81-107,112,122,124,131,136,145-146,157-167
+packages/desktop/renderer/lib/session-history.ts
+  s_31ef0984ac7109::t_37d21397026da0 8,36-37
+packages/desktop/renderer/lib/use-native-session-goal.ts
+  s_31ef0984ac7109::t_2939f55af9b025 1-63
+packages/desktop/renderer/lib/voice-command.test.ts
+  s_31ef0984ac7109::t_c617a2781fb2c6 55-60
+packages/desktop/renderer/lib/voice-command.ts
+  s_31ef0984ac7109::t_955327fd733689 16,19-20
+packages/desktop/renderer/stores/agentStore.test.ts
+  s_31ef0984ac7109::t_f21cd533e7cdfa 83-110
+packages/desktop/renderer/stores/agentStore.ts
+  s_31ef0984ac7109::t_b391252779462f 223-225
+packages/desktop/renderer/styles/global.css
+  s_31ef0984ac7109::t_cb396c9bbb6f68 772,778-795,4112-4117
+packages/native-runtime/package.json
+  s_31ef0984ac7109::t_f6b8397560553f 18-19
+packages/native-runtime/src/agent-runtime/codex-async-user-input.test.ts
+  s_31ef0984ac7109::t_b6220650941f00 16,44,51-101,147
+packages/native-runtime/src/agent-runtime/codex-runtime-adapter.ts
+  s_31ef0984ac7109::t_ef95f4f600aa39 13-14,486,549,1488-1492,1806-1831
+packages/native-runtime/src/agent-runtime/deepseek-harness-client.test.ts
+  s_31ef0984ac7109::t_ebc66b61745ea8 1-144
+packages/native-runtime/src/agent-runtime/deepseek-harness-client.ts
+  s_31ef0984ac7109::t_e4c0318562b861 1-180
+packages/native-runtime/src/agent-runtime/deepseek-harness-codec.ts
+  s_31ef0984ac7109::t_3a0105b27e4ca0 1-60
+packages/native-runtime/src/agent-runtime/deepseek-harness-endpoint.test.ts
+  s_31ef0984ac7109::t_c5bc0d2c8f7b09 1-81
+packages/native-runtime/src/agent-runtime/deepseek-harness-endpoint.ts
+  s_31ef0984ac7109::t_919c7e2ba0b025 1-113
+packages/native-runtime/src/agent-runtime/deepseek-harness-goal-codec.ts
+  s_31ef0984ac7109::t_889a27eaf688c8 1-30
+packages/native-runtime/src/agent-runtime/deepseek-harness-interaction-codec.ts
+  s_31ef0984ac7109::t_af8edd08e130bb 1-77
+packages/native-runtime/src/agent-runtime/deepseek-harness-interactions.test.ts
+  s_31ef0984ac7109::t_342896672bb099 1-108
+packages/native-runtime/src/agent-runtime/deepseek-harness-interactions.ts
+  s_31ef0984ac7109::t_17c9389cc10c0b 1-174
+packages/native-runtime/src/agent-runtime/deepseek-harness-local-auth.test.ts
+  s_31ef0984ac7109::t_6330c479e6ba98 1-50
+packages/native-runtime/src/agent-runtime/deepseek-harness-local-auth.ts
+  s_31ef0984ac7109::t_0ad5fd354e9495 1-57
+packages/native-runtime/src/agent-runtime/deepseek-harness-runtime-adapter.test.ts
+  s_31ef0984ac7109::t_b4dd2cd0d2945b 1-326
+packages/native-runtime/src/agent-runtime/deepseek-harness-runtime-adapter.ts
+  s_31ef0984ac7109::t_bb211cfa7a4874 1-363
+packages/native-runtime/src/agent-runtime/index.ts
+  s_31ef0984ac7109::t_a740caedaca900 1-2,30
+packages/native-runtime/src/agent-runtime/native-runtime-broker.test.ts
+  s_31ef0984ac7109::t_6809e28a96c694 27,335-353,2117-2187
+packages/native-runtime/src/agent-runtime/native-runtime-broker.ts
+  s_31ef0984ac7109::t_46e05297268c42 2,52-53,1041-1043,1159-1160,1221-1223,1386-1388,1395-1397,1636-1638,1676-1679,1686-1688,1730-1745,1747-1749,2156-2161,2453-2464,2691,3095,3142
+packages/native-runtime/src/agent-runtime/native-session-goal.test.ts
+  s_31ef0984ac7109::t_0019de9705f481 1-16
+packages/native-runtime/src/agent-runtime/native-session-goal.ts
+  s_31ef0984ac7109::t_90072a710144d5 1-57
+packages/native-runtime/src/agent-runtime/opencode-runtime-adapter.test.ts
+  s_31ef0984ac7109::t_2e4c313f62f66c 11,264-287
+packages/native-runtime/src/agent-runtime/opencode-runtime-adapter.ts
+  s_31ef0984ac7109::t_b84efb8f948c3e 39,541-546,942
+packages/native-runtime/src/agent-runtime/opencode-runtime-health.test.ts
+  s_31ef0984ac7109::t_c48d86b970e0b2 23-27
+packages/native-runtime/src/agent-runtime/opencode-server-client.ts
+  s_31ef0984ac7109::t_2d51ba068ecf79 1-3,16-19,23-24,91-95,100,108-109,111,128,136-137,279,288-294
+packages/native-runtime/src/agent-runtime/opencode-v2-codec.ts
+  s_31ef0984ac7109::t_35c8e2c3bb952c 1-163
+packages/native-runtime/src/agent-runtime/opencode-v2-transport.test.ts
+  s_31ef0984ac7109::t_5c6c7609561bbb 1-139
+packages/native-runtime/src/agent-runtime/opencode-v2-transport.ts
+  s_31ef0984ac7109::t_87b1d087567a4f 1-173
+packages/native-runtime/src/agent-runtime/session-id.test.ts
+  s_31ef0984ac7109::t_c101934c7eb92b 5
+packages/native-runtime/src/agent-runtime/session-id.ts
+  s_31ef0984ac7109::t_79092b68f70896 10
+packages/native-runtime/src/agent-runtime/types.ts
+  s_31ef0984ac7109::t_b9ecb68a8d65db 2-3,16,56-61,78-81,241-243,277
+packages/native-runtime/src/agent-runtime/unified-session-service.ts
+  s_31ef0984ac7109::t_fc13cf810d482f 2,183-185,317-340
+packages/runtime-win32-x64/manifest.json
+  s_31ef0984ac7109::t_50ebcde4ad3b48 7-8
+packages/sdk/src/client/types.ts
+  s_31ef0984ac7109::t_7c120fc11028be 7
+packages/sdk/src/components/AgentChat.ts
+  s_31ef0984ac7109::t_b080dd7b42dd32 12,19
+packages/server/app/api/agent-workspaces/agent-workspace-http.ts
+  s_31ef0984ac7109::t_f8a7bc2fa87588 3
+packages/server/app/api/agent/models/route.ts
+  s_31ef0984ac7109::t_d000c76086c4d0 10-11
+packages/server/app/api/native-runtime.test.ts
+  s_31ef0984ac7109::t_74395aa78f397e 49,126-129,197,279,538-552
+packages/server/app/api/sessions/[id]/native-goal/route.test.ts
+  s_31ef0984ac7109::t_efe1792d193127 1-32
+packages/server/app/api/sessions/[id]/native-goal/route.ts
+  s_31ef0984ac7109::t_87713db79ce053 1-26
+packages/server/app/api/sessions/[id]/route.ts
+  s_31ef0984ac7109::t_97402fb8f151e3 123-138
+packages/server/app/api/sessions/route.ts
+  s_31ef0984ac7109::t_e8eb7a9c252904 42
+packages/server/app/api/web-console/computer-settings/route.ts
+  s_31ef0984ac7109::t_5c8ae1fc43d741 1-46
+packages/server/app/web/ComputerPageDialog.tsx
+  s_31ef0984ac7109::t_8df84321610834 1-64
+packages/server/app/web/ComputerPagePane.tsx
+  s_31ef0984ac7109::t_4c242a0cb79e55 1-30
+packages/server/app/web/ComputerSwitcher.tsx
+  s_31ef0984ac7109::t_3a131fff8fdfa0 5-8,14-22,25,30-33,41-42,45,49-53,58-60,66,74-88,93-95,115,131,138-146,151-152,160-181,183,185-189,281-284,288-302,307,309
+packages/server/app/web/FilePreview.test.ts
+  s_31ef0984ac7109::t_5082e3855bedbb 9,23-27,183
+packages/server/app/web/FlowStudioLoading.tsx
+  s_31ef0984ac7109::t_5c6608b46dc63b 4,7-17,24,30-32
+packages/server/app/web/PwaInstallButton.tsx
+  s_31ef0984ac7109::t_8c9e3c17e63f70 13,19,28-30,32,36-37
+packages/server/app/web/ResponsiveToolbar.tsx
+  s_31ef0984ac7109::t_906bca307a3045 73,114
+packages/server/app/web/console-tabs.test.ts
+  s_31ef0984ac7109::t_d5ce1b938191ca 1-18
+packages/server/app/web/console-tabs.ts
+  s_31ef0984ac7109::t_b8f328302d5349 1-15
+packages/server/app/web/page.tsx
+  s_31ef0984ac7109::t_27fba49768ee5c 8,11-12,14,27-28,41-43,68,85-91,93-95,101-110,167,176,210-233,250-261,264-266,273,281,320,323,339-352,446,448,460-464,504-506,614-615,627,630,632,634-636,638-639,647,664-668,729,739-742,768-770,773-776,974
+packages/server/app/web/useComputerSettings.ts
+  s_31ef0984ac7109::t_9a9d2efb0c3ac9 1-117
+packages/server/lib/computer-directory.test.ts
+  s_31ef0984ac7109::t_3c2df1f89a00d7 6,18-48
+packages/server/lib/computer-settings-api.test.ts
+  s_31ef0984ac7109::t_717ea233ed08e3 1-67
+packages/server/lib/native-runtime-service.ts
+  s_31ef0984ac7109::t_eb7d0e9eacee79 31-32,125-127,376-392,635
+packages/server/lib/pwa-install.test.ts
+  s_31ef0984ac7109::t_2e76866ea5f265 1-48
+packages/server/public/pwa/computer-directory.js
+  s_31ef0984ac7109::t_2441f66c973535 1,6-31,49-50,63-68,84,114-121
+packages/server/public/pwa/install.js
+  s_31ef0984ac7109::t_f8e0a04b1a2396 2-3,7,12
+packages/webapp/src/domain/ports/agent-port.ts
+  s_31ef0984ac7109::t_7d97db5b34dd8d 24-26
+packages/webapp/src/infrastructure/http/agent-http-gateway.test.ts
+  s_31ef0984ac7109::t_05e17f9b7e8c47 1104-1115
+packages/webapp/src/infrastructure/http/agent-http-gateway.ts
+  s_31ef0984ac7109::t_70aac0da070130 11-13,500-513
+packages/webapp/src/main.tsx
+  s_31ef0984ac7109::t_43133c4eeb44fb 147-149
+packages/webapp/src/presentation/RemoteDesktopPage.tsx
+  s_31ef0984ac7109::t_64b354efc689ea 1-34
+packages/webapp/src/presentation/web.css
+  s_31ef0984ac7109::t_9933ee6183153f 100-111
+packages/webapp/src/types.d.ts
+  s_31ef0984ac7109::t_7e22995beee3dd 33-38
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1338149be2dcd01f79b83a47d8ad51b9541e5993",
+  "prompts": {},
+  "sessions": {
+    "s_31ef0984ac7109": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a13042-da7b-74d1-b21f-5f6d471e6ccb",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
