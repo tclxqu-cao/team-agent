@@ -1,0 +1,538 @@
+packages/native-runtime/src/agent-runtime/deepseek-harness-endpoint.ts
+  s_4e7b76c15654ae::t_200aa3b3a67066 17
+  s_4e7b76c15654ae::t_eb15a9cc87eb8e 1-9,11-16,20-106,109-113
+  s_4e7b76c15654ae::t_1172f88aa29819 10,18-19,107-108
+packages/desktop/renderer/global.d.ts
+  s_4e7b76c15654ae::t_d67b14312c3f67 2-3
+  s_4e7b76c15654ae::t_7b0b0b6d40fec5 94
+  s_4e7b76c15654ae::t_dd3787f18561fd 368-369
+  s_8bf876ce2c4fd5::t_bd46641150cb51 235-236
+  s_4e7b76c15654ae::t_818db0551b1e63 231-234,367
+packages/desktop/renderer/lib/artifact-links.test.ts
+  s_4e7b76c15654ae::t_68a7387460d20a 30-41
+packages/native-runtime/src/agent-runtime/codex-runtime-adapter.ts
+  s_d2ead08de4e28d::t_5c60fca4093df3 486,549,1488-1492,1806-1830
+  s_d2ead08de4e28d::t_fa186d01bbf0c8 13-14
+  s_d2ead08de4e28d::t_8d40b3dc825caa 1831
+packages/desktop/renderer/stores/agentStore.ts
+  s_d2ead08de4e28d::t_a82c94344e2f6f 223-225
+packages/server/public/pwa/computer-directory.js
+  s_4e7b76c15654ae::t_fd3bd43df2f71d 6,9-32,49,84
+  s_ba0fadb3f41462::t_e0db739ded1114 2-5,8,33-48,51-62,69-83,85-113,122-135
+  s_ba0fadb3f41462::t_0f0c62d1e8fc55 7,50,65-67,116,118
+  s_ba0fadb3f41462::t_642c4b3feeec42 1,114-115,117,119-121
+  s_4e7b76c15654ae::t_1d056524e8fce5 63-64,68
+packages/desktop/renderer/components/EmptySessionWelcome.tsx
+  s_4e7b76c15654ae::t_7b0b0b6d40fec5 25
+packages/desktop/renderer/components/browser-live-viewport.ts
+  s_4e7b76c15654ae::t_ff6c16b665961f 69,72-74
+packages/core/src/domain/web-console/RemoteDesktopTabBridge.test.ts
+  s_4e7b76c15654ae::t_68a7387460d20a 1-16
+packages/native-runtime/src/agent-runtime/deepseek-harness-runtime-adapter.test.ts
+  s_4e7b76c15654ae::t_971c1b451e7b37 178-190,192,274-275
+  s_4e7b76c15654ae::t_03b498c6ff5d66 217-224,226-233,235-249,251-267,272-273
+  s_4e7b76c15654ae::t_4741febf019440 1-3,5-7,10,12-23,276-326
+  s_8bf876ce2c4fd5::t_7da27e19e4830e 8-9,24-31,34-47,49-65,68-108,119-120,122,128-129,148-150,175-176,234,250,268-271
+  s_8bf876ce2c4fd5::t_d785aa28ce7a5a 48,66-67,121,123-127,130-147,151-174
+  s_8bf876ce2c4fd5::t_40440728ec1af4 4,32-33
+  s_8bf876ce2c4fd5::t_11631ad6c7a3b7 11,109-118
+  s_4e7b76c15654ae::t_fd4594a96e1f1f 177,191,193-216,225
+packages/server/public/pwa/install.js
+  s_ba0fadb3f41462::t_5e26a06c888e89 2-3,7,12
+packages/cli/src/codex-desktop-preflight.ts
+  s_8bf876ce2c4fd5::t_04fba6891fa893 10-15,23
+packages/server/public/pwa/offline-computers.js
+  s_ba0fadb3f41462::t_a0356bb7c8ba40 1-15
+packages/webapp/src/main.tsx
+  s_4e7b76c15654ae::t_d7f2e8f88a390c 147-149
+packages/native-runtime/src/agent-runtime/deepseek-harness-goal-codec.ts
+  s_4e7b76c15654ae::t_5b64e2ec2d9b00 1-30
+packages/desktop/renderer/lib/native-goal-submission.test.ts
+  s_4e7b76c15654ae::t_03b498c6ff5d66 1-18
+packages/webapp/src/presentation/web-shell-skin.test.ts
+  s_d2ead08de4e28d::t_8711a591ba369a 85,89-90,93
+packages/server/app/web/console-tabs.test.ts
+  s_4e7b76c15654ae::t_68a7387460d20a 1-18
+packages/native-runtime/src/agent-runtime/opencode-v2-transport.test.ts
+  s_4e7b76c15654ae::t_8b9551822bf5b1 4,92-98
+  s_4e7b76c15654ae::t_355a93544f6869 3,132-137
+  s_4e7b76c15654ae::t_2905d80e765b99 34
+  s_4e7b76c15654ae::t_1221e37021bd2a 54,64,72-87
+  s_4e7b76c15654ae::t_3203bf37e8645c 121-127
+  s_4e7b76c15654ae::t_bfb3855591611d 1-2,5-33,35-53,55-63,65-71,88-91,99-120,128-131,138-139
+packages/server/app/web/ThemePicker.tsx
+  s_ba0fadb3f41462::t_f509c06ed0daf2 58-69,73,76-93,95-114
+  s_8bf876ce2c4fd5::t_dafe26268774db 5,13,19,25-30,32-35,39-40,42-43,45-47,50-57,70,115-117
+packages/server/lib/pairing-scan.test.ts
+  s_ba0fadb3f41462::t_bb266556676d6e 2,49-71
+  s_ba0fadb3f41462::t_5de58b736fd74c 1,3-48,72-73
+packages/cli/package.json
+  s_8bf876ce2c4fd5::t_04fba6891fa893 26-27,40
+packages/desktop/renderer/lib/queued-message-order.ts
+  s_8bf876ce2c4fd5::t_cfbfe61871ba3b 32,81-103,105-107,112,122,124,131,136,145-146,157-167
+  s_8bf876ce2c4fd5::t_f696d7f19cb6c3 104
+  s_8bf876ce2c4fd5::t_1baec8ae458cbe 1-2
+packages/sdk/src/components/AgentChat.ts
+  s_4e7b76c15654ae::t_7b0b0b6d40fec5 12,19
+packages/server/app/web/page.tsx
+  s_8bf876ce2c4fd5::t_6a252a9db2e0bb 761
+  s_4e7b76c15654ae::t_067b942b038961 94,212,224,340,345,347,352,461
+  s_4e7b76c15654ae::t_357a60199ab863 102-109
+  s_4e7b76c15654ae::t_1d056524e8fce5 91
+  s_4e7b76c15654ae::t_eaa025f658422c 27-28,41,43,93,101,110,176,210-211,214-216,221,223,226-233,250-261,264-266,273,281,323,339,341-344,346,348-351,446,448,504-506,664
+  s_8bf876ce2c4fd5::t_a247bc654c18a0 13,629,631,633,637,756-759
+  s_ba0fadb3f41462::t_15775489329de2 613,626,640,738,744,748
+  s_8bf876ce2c4fd5::t_9f59437619b7d6 760
+  s_4e7b76c15654ae::t_9e63a921f392ad 8,11-12,85-90,614-615,627,632,634-636,638,729,739-742
+  s_ba0fadb3f41462::t_5e26a06c888e89 14,167,630
+  s_ba0fadb3f41462::t_f509c06ed0daf2 616-623
+  s_ba0fadb3f41462::t_0f0c62d1e8fc55 639
+  s_d2ead08de4e28d::t_c9582d8ccb8b90 768-770
+  s_4e7b76c15654ae::t_61ae9c48005657 42,95,213,217-220,225,462,665-668
+  s_d2ead08de4e28d::t_3f4a5656184dc5 773-776
+  s_4e7b76c15654ae::t_c2f1c159550279 222,320,460,463-464
+  s_8bf876ce2c4fd5::t_aa5275cf0c561c 743,749
+  s_4e7b76c15654ae::t_d4c638990af32a 647,974
+  s_ba0fadb3f41462::t_0ffdf2e10939f5 10
+  s_d037c53f55f662::t_807c417f16bcc5 68
+packages/native-runtime/src/agent-runtime/native-session-goal.ts
+  s_4e7b76c15654ae::t_5b64e2ec2d9b00 1-57
+packages/server/app/web/ResponsiveToolbar.tsx
+  s_8bf876ce2c4fd5::t_c959c19db5f3b7 1-56,58-72,74-112,115-123
+  s_ba0fadb3f41462::t_5e26a06c888e89 73,114
+  s_8bf876ce2c4fd5::t_9f59437619b7d6 57,113
+packages/desktop/renderer/components/browser-live-viewport.test.ts
+  s_4e7b76c15654ae::t_ff6c16b665961f 117-134
+packages/webapp/src/presentation/RemoteDesktopPage.tsx
+  s_4e7b76c15654ae::t_5d42baefb7c171 12
+  s_4e7b76c15654ae::t_d7f2e8f88a390c 1-3,5-7,10-11,13-21,30-34
+  s_4e7b76c15654ae::t_61ae9c48005657 4,22-29
+  s_4e7b76c15654ae::t_64d8f772b040a3 8-9
+packages/desktop/renderer/components/file-workspace/FilePreview.tsx
+  s_4e7b76c15654ae::t_5d42baefb7c171 17,104,108-112,204-205,263,395-399,486-489,734-735,745,760,828
+packages/server/app/api/agent-workspaces/agent-workspace-http.ts
+  s_4e7b76c15654ae::t_7b0b0b6d40fec5 3
+packages/native-runtime/src/agent-runtime/deepseek-harness-local-auth.ts
+  s_4e7b76c15654ae::t_eb15a9cc87eb8e 1-57
+packages/server/public/pwa/offline.html
+  s_ba0fadb3f41462::t_a0356bb7c8ba40 1
+packages/native-runtime/src/agent-runtime/deepseek-harness-interaction-codec.ts
+  s_4e7b76c15654ae::t_75f330f8acc830 1-77
+packages/cli/src/opencode-runtime-manager.test.ts
+  s_4e7b76c15654ae::t_fa92e812301845 119
+packages/server/app/api/web-console/computer-settings/route.ts
+  s_ba0fadb3f41462::t_a7fa22c9fd9f7b 1-46
+packages/cli/src/codex-desktop-preflight.test.ts
+  s_8bf876ce2c4fd5::t_1d4f7ae65b4468 7-10,23-24,52-76
+  s_8bf876ce2c4fd5::t_f2f98659df6865 77
+packages/desktop/renderer/stores/agentStore.test.ts
+  s_d2ead08de4e28d::t_6dc7b46925217d 83-95
+  s_4e7b76c15654ae::t_be2f728a866313 96-110
+packages/desktop/renderer/lib/markdown-links.test.ts
+  s_4e7b76c15654ae::t_311a4b2b4ef4ee 23-24
+  s_4e7b76c15654ae::t_68a7387460d20a 5-22,25-33
+packages/native-runtime/src/agent-runtime/opencode-v2-codec.ts
+  s_4e7b76c15654ae::t_8b9551822bf5b1 32-34
+  s_4e7b76c15654ae::t_7072bb395bcd4e 142-148
+  s_4e7b76c15654ae::t_a2e393187c4a59 1-31,35-141,149-163
+packages/desktop/renderer/components/ChatView.tsx
+  s_4e7b76c15654ae::t_bdd9c3d9baa7d6 92,627-631
+  s_4e7b76c15654ae::t_7b0b0b6d40fec5 483
+  s_4e7b76c15654ae::t_d67b14312c3f67 412-414,852,2981,3473-3474,3659,3664-3676,3682-3683,3690-3691,3693,3695-3697,5244-5246,5567,5616,5842
+  s_4e7b76c15654ae::t_e2c5afee956be7 600-601,853-855,907-908,2968-2969,2975,2977-2979,3660-3663,3677-3681,3692,3694
+  s_4e7b76c15654ae::t_fd4594a96e1f1f 1691,1703
+  s_d2ead08de4e28d::t_0b44f557f73c1a 152,182,196,4351-4352
+  s_8bf876ce2c4fd5::t_bd46641150cb51 845-851,3380-3381,5243,5601-5602,5682-5683
+  s_4e7b76c15654ae::t_54feb8c5119b69 509-513,839-843,910-911,2967,2970-2974,2976,5612,5615,5624-5640
+  s_4e7b76c15654ae::t_9830a40d82dc60 3684-3689,5566
+  s_4e7b76c15654ae::t_03b498c6ff5d66 1886,1941-1942,1944-1945
+  s_d2ead08de4e28d::t_a82c94344e2f6f 590-591
+  s_4e7b76c15654ae::t_be2f728a866313 598-599,1616,1766,4084,4101,4718
+  s_3d8cb399d47d29::t_940063060a3fbd 2980,2982-2983
+packages/server/app/web/ComputerPagePane.tsx
+  s_4e7b76c15654ae::t_1d056524e8fce5 28
+  s_4e7b76c15654ae::t_de865dcd4600b4 1-27,29-30
+packages/native-runtime/src/agent-runtime/deepseek-harness-interactions.ts
+  s_4e7b76c15654ae::t_7950d7cc404be1 149
+  s_4e7b76c15654ae::t_67004b75b08f2c 1-148,150-174
+packages/server/app/api/sessions/[id]/native-goal/route.ts
+  s_4e7b76c15654ae::t_dd3787f18561fd 1-26
+packages/desktop/renderer/components/NativeGoalBar.test.tsx
+  s_4e7b76c15654ae::t_03b498c6ff5d66 1-21
+packages/server/lib/pwa-assets.mjs
+  s_ba0fadb3f41462::t_a0356bb7c8ba40 10-11
+packages/desktop/renderer/lib/ask-user-answer-display.ts
+  s_d2ead08de4e28d::t_a82c94344e2f6f 11-14,22-63,65
+  s_d2ead08de4e28d::t_5c60fca4093df3 1
+packages/desktop/renderer/lib/agent-workspace-cache.ts
+  s_4e7b76c15654ae::t_7b0b0b6d40fec5 10
+packages/native-runtime/src/agent-runtime/opencode-runtime-adapter.test.ts
+  s_4e7b76c15654ae::t_5d7614fa115cd8 264-287
+  s_4e7b76c15654ae::t_7072bb395bcd4e 11
+packages/native-runtime/src/agent-runtime/deepseek-harness-interactions.test.ts
+  s_4e7b76c15654ae::t_8ff189b4a73731 51
+  s_4e7b76c15654ae::t_650575328fd7f3 47-48
+  s_4e7b76c15654ae::t_911433db0c1d96 1-46,49-50,52-79,81-108
+  s_4e7b76c15654ae::t_7950d7cc404be1 80
+packages/core/src/infrastructure/SQLiteDatabase.ts
+  s_ba0fadb3f41462::t_a7fa22c9fd9f7b 279-286
+packages/server/app/web/computer-availability.ts
+  s_8bf876ce2c4fd5::t_c959c19db5f3b7 1-17
+packages/core/src/domain/web-console/index.ts
+  s_ba0fadb3f41462::t_a7fa22c9fd9f7b 2
+packages/core/src/domain/web-console/WebArtifactBridge.test.ts
+  s_4e7b76c15654ae::t_68a7387460d20a 31-39
+packages/server/app/api/sessions/route.ts
+  s_4e7b76c15654ae::t_7b0b0b6d40fec5 42
+packages/server/lib/pwa-install.test.ts
+  s_ba0fadb3f41462::t_5e2466f3253841 1-48
+packages/desktop/renderer/components/AgentWorkspaceSwitcher.tsx
+  s_4e7b76c15654ae::t_7c236d8bc185df 11,21,23-27,29-36,38,59,61-63
+  s_4e7b76c15654ae::t_b9a18f5438e793 1-2,22,28,39,60,64-65
+packages/core/src/infrastructure/SQLiteWebConsoleStore.ts
+  s_ba0fadb3f41462::t_a7fa22c9fd9f7b 3,9-27
+  s_df6c6710cf7752::t_03ec4b51eb06c7 28
+packages/desktop/renderer/lib/session-history.ts
+  s_4e7b76c15654ae::t_03b498c6ff5d66 8,36
+  s_4e7b76c15654ae::t_7b0b0b6d40fec5 37
+packages/native-runtime/src/agent-runtime/native-runtime-broker.ts
+  s_4e7b76c15654ae::t_7b0b0b6d40fec5 52,2691,3142
+  s_4e7b76c15654ae::t_d6e0e3cd556263 3095
+  s_4e7b76c15654ae::t_9c68e39ebebb8d 1159-1160,1221-1223,1386-1388,1395-1397,1676-1679,1686-1688
+  s_4e7b76c15654ae::t_54feb8c5119b69 1747-1749
+  s_4e7b76c15654ae::t_dd3787f18561fd 2,1731-1732,1734-1738,1741-1745,2160-2161,2455-2463
+  s_4e7b76c15654ae::t_818db0551b1e63 1730,1733,1739-1740,2156-2159,2453-2454
+  s_4e7b76c15654ae::t_9830a40d82dc60 53,1041-1043,1636-1638
+  s_99789f5f84b30c::t_fd19aef48cdd0a 2464
+packages/native-runtime/src/agent-runtime/codex-async-user-input.test.ts
+  s_d2ead08de4e28d::t_fa186d01bbf0c8 16,44,71-72,80-101,147
+  s_d2ead08de4e28d::t_6dc7b46925217d 51-70,73-79
+packages/desktop/renderer/lib/native-goal-submission.ts
+  s_4e7b76c15654ae::t_d67b14312c3f67 1-22
+packages/desktop/renderer/stores/uiStore.ts
+  s_d2ead08de4e28d::t_8711a591ba369a 5,24-26
+packages/native-runtime/src/agent-runtime/types.ts
+  s_4e7b76c15654ae::t_5b64e2ec2d9b00 2-3,242-243
+  s_8bf876ce2c4fd5::t_bd46641150cb51 79-81
+  s_4e7b76c15654ae::t_818db0551b1e63 56-61,78,241
+  s_4e7b76c15654ae::t_d6e0e3cd556263 277
+  s_4e7b76c15654ae::t_7b0b0b6d40fec5 16
+packages/server/lib/pwa-assets.test.ts
+  s_ba0fadb3f41462::t_5de58b736fd74c 26,37-39,48-52
+packages/core/src/domain/session/QuestionReply.ts
+  s_d2ead08de4e28d::t_a82c94344e2f6f 1-50
+packages/desktop/renderer/styles/global.css
+  s_4e7b76c15654ae::t_7b2830f1418ae2 925
+  s_d2ead08de4e28d::t_f2680b0e541fdf 191-199
+  s_4e7b76c15654ae::t_7c236d8bc185df 903,909-924
+  s_d2ead08de4e28d::t_8711a591ba369a 73-84,87-88,90-93,95-96,98-111,114-115,117-120,122-123,125-130,132-136,138,141-142,144-147,149-150,152-156,164-165,189-190,200-203
+  s_4e7b76c15654ae::t_d67b14312c3f67 4243-4244,4246-4248
+  s_d2ead08de4e28d::t_f6e1e7c0bcdd59 85-86,89,94,97,112-113,116,121,124,131,137,139-140,143,148,151,157-163,166-171,173-175,178-188
+  s_d2ead08de4e28d::t_3e006047a7746a 172,176-177
+  s_4e7b76c15654ae::t_680f310f39767b 4245
+  s_3d8cb399d47d29::t_9f007a8583031a 926
+packages/server/app/web/ComputerPageDialog.tsx
+  s_ba0fadb3f41462::t_5e26a06c888e89 10,17-18,23,25,34,36,38,40-41,45,47,50,52,54,60
+  s_4e7b76c15654ae::t_7c236d8bc185df 1-9,11-16,19-22,24,26-33,35,37,39,42-44,46,48-49,51,53,55-59,61-64
+packages/webapp/src/presentation/web.css
+  s_4e7b76c15654ae::t_5d42baefb7c171 100-111
+packages/native-runtime/src/agent-runtime/deepseek-harness-local-auth.test.ts
+  s_4e7b76c15654ae::t_9bf161d87a2b80 1-50
+packages/server/app/web/computer-availability.test.ts
+  s_8bf876ce2c4fd5::t_1afd4d95074979 1-3,5-27,37-38
+  s_8bf876ce2c4fd5::t_0022a9cffa2845 4,28-36
+packages/desktop/renderer/lib/artifact-links.ts
+  s_4e7b76c15654ae::t_4ded2ca9f0c1c1 1,15,18-23
+packages/core/src/infrastructure/SQLiteComputerSettings.test.ts
+  s_ba0fadb3f41462::t_642c4b3feeec42 1-53
+packages/server/lib/computer-settings-api.test.ts
+  s_ba0fadb3f41462::t_ef392a3df76803 1-67
+packages/core/src/domain/web-console/computer-settings.test.ts
+  s_ba0fadb3f41462::t_642c4b3feeec42 1-25
+packages/desktop/renderer/lib/native-session-view-state.ts
+  s_4e7b76c15654ae::t_7b0b0b6d40fec5 2
+packages/desktop/renderer/lib/native-session-view-state.test.ts
+  s_4e7b76c15654ae::t_b64ef305f9b24f 81
+packages/desktop/renderer/components/NativeGoalBar.tsx
+  s_4e7b76c15654ae::t_03b498c6ff5d66 3,16,35-36,47
+  s_4e7b76c15654ae::t_d67b14312c3f67 1-2,4-15,17-34,37-46,48-54
+packages/server/app/web/ComputerSwitcher.tsx
+  s_ba0fadb3f41462::t_8006a9449ccc72 283,288-302
+  s_ba0fadb3f41462::t_28832c63ed98a9 5,7-8,13-22,25,33,41-42,49,52-53,58-60,66,74-82,93-95,131,138-146,150-152,155,160-179,181,183,185,187
+  s_ba0fadb3f41462::t_4bbe7e0273b18d 39,57,184,212,222-233,235,241
+  s_ba0fadb3f41462::t_5e26a06c888e89 281-282,284
+  s_ba0fadb3f41462::t_ef392a3df76803 186
+  s_4e7b76c15654ae::t_de865dcd4600b4 6,30-31,45,115,188-189,307,309
+  s_ba0fadb3f41462::t_9210d100cf4938 11,206-207,209-210,221,237,252-261,263,266,268-269,274
+  s_ba0fadb3f41462::t_01b00bc9edd3cf 240
+  s_ba0fadb3f41462::t_0ffdf2e10939f5 1-4,10,12,23-24,35-38,40,43-44,46,48,50-51,56,61-65,67-73,89-92,113-114,116-125,157-159,182,190-205,208,211,213-220,234,236,238-239,242-251,262,264-265,267,270-273,275-280,285,287,304-306,308,310
+  s_8bf876ce2c4fd5::t_0022a9cffa2845 127-130,132-136,153-154
+  s_ba0fadb3f41462::t_8a445c5e4373ef 286
+  s_4e7b76c15654ae::t_1d056524e8fce5 32,54-55
+  s_8bf876ce2c4fd5::t_721aa7d8118ed6 9,26-29,34,47,96-112,126,137,147-149,156,303
+  s_ba0fadb3f41462::t_0f0c62d1e8fc55 83-88,180
+packages/native-runtime/src/agent-runtime/opencode-server-client.ts
+  s_4e7b76c15654ae::t_6ef6e4fcefa12d 1-3,17-19,23-24,91,94-95,100,108-109,111,128,279,288-294
+  s_4e7b76c15654ae::t_fa92e812301845 92-93
+  s_4e7b76c15654ae::t_355a93544f6869 16,136-137
+packages/native-runtime/package.json
+  s_4e7b76c15654ae::t_be0af39d2edcbf 18-19
+packages/server/app/web/useComputerSettings.ts
+  s_ba0fadb3f41462::t_2fcd39f6d4aef6 1-18,21-49,51-69,71-117
+  s_ba0fadb3f41462::t_0f0c62d1e8fc55 19-20,50,70
+packages/webapp/src/domain/ports/agent-port.ts
+  s_4e7b76c15654ae::t_54feb8c5119b69 26
+  s_4e7b76c15654ae::t_dd3787f18561fd 24-25
+packages/server/app/web/console-tabs.ts
+  s_4e7b76c15654ae::t_d7f2e8f88a390c 1-15
+packages/core/src/domain/web-console/WebArtifactBridge.ts
+  s_4e7b76c15654ae::t_4ded2ca9f0c1c1 9-20,34
+packages/desktop/renderer/lib/ask-user-answer-display.test.ts
+  s_d2ead08de4e28d::t_6dc7b46925217d 21-27,91-164
+packages/cli/src/codex-desktop-probe.ts
+  s_8bf876ce2c4fd5::t_04fba6891fa893 1-2,28,34,38,45-50,55-56,61-63,65-67,69,99
+packages/webapp/src/presentation/web-shell-skin.ts
+  s_d2ead08de4e28d::t_8711a591ba369a 5
+packages/core/src/domain/session/SessionHistory.test.ts
+  s_4e7b76c15654ae::t_6b51a4a2efbeb0 3,133-142,146,148-152,154-157
+  s_4e7b76c15654ae::t_9c68e39ebebb8d 143-145,147,153
+packages/server/app/web/drawerLayout.test.ts
+  s_8bf876ce2c4fd5::t_a247bc654c18a0 5,27-29
+  s_ba0fadb3f41462::t_d1fdb0cb9c0489 26,32
+packages/server/lib/computer-directory.test.ts
+  s_ba0fadb3f41462::t_642c4b3feeec42 28,32-33,44-46
+  s_ba0fadb3f41462::t_5de58b736fd74c 1-5,7-17,49-106
+  s_4e7b76c15654ae::t_4741febf019440 6,29-31,34-43,47-48
+  s_ba0fadb3f41462::t_0f0c62d1e8fc55 18-27
+packages/desktop/renderer/components/AgentBrandIcon.tsx
+  s_4e7b76c15654ae::t_7b0b0b6d40fec5 42-45
+packages/server/app/api/sessions/[id]/native-goal/route.test.ts
+  s_4e7b76c15654ae::t_d6e0e3cd556263 1-32
+packages/server/public/pwa/service-worker.js
+  s_ba0fadb3f41462::t_a0356bb7c8ba40 1,3,5,11-15
+packages/desktop/renderer/lib/use-native-session-goal.ts
+  s_4e7b76c15654ae::t_680f310f39767b 13,19,57
+  s_4e7b76c15654ae::t_d67b14312c3f67 1-12,14-18,20-56,58-63
+packages/desktop/renderer/App.tsx
+  s_4e7b76c15654ae::t_64d8f772b040a3 77,366
+  s_4e7b76c15654ae::t_4ded2ca9f0c1c1 76,351,357-362
+  s_4e7b76c15654ae::t_7b0b0b6d40fec5 1830
+packages/native-runtime/src/agent-runtime/deepseek-harness-client.ts
+  s_4e7b76c15654ae::t_dd6c5fba394a71 5,33,36,40-41,52,54-55,57,59,65,89-91,95-96,98-99,104-105,111-114,116-119,135-136,158-165
+  s_4e7b76c15654ae::t_fd4594a96e1f1f 15-20,125,155
+  s_4e7b76c15654ae::t_200aa3b3a67066 53,177
+  s_4e7b76c15654ae::t_7db0472fe6bcb2 45-48,92,141-144,147,154
+  s_4e7b76c15654ae::t_fe72fdd55ca0b8 1-4,6-14,21-28,30-32,34-35,38-39,42-43,49-51,56,60-64,66-88,93-94,97,100-103,106-110,115,120-124,126-130,137-140,145-146,148-153,156-157,166-168,170-176,178-180
+  s_4e7b76c15654ae::t_75f330f8acc830 29,131-134,169
+  s_4e7b76c15654ae::t_1172f88aa29819 37,44,58
+packages/native-runtime/src/agent-runtime/deepseek-harness-codec.ts
+  s_4e7b76c15654ae::t_cec770f43043af 1-11,13-60
+  s_4e7b76c15654ae::t_9830a40d82dc60 12
+packages/native-runtime/src/agent-runtime/deepseek-harness-runtime-adapter.ts
+  s_8bf876ce2c4fd5::t_f587904aeff958 17-32,55-56,61,123,144,148-152,192-193,239-242,246-247,250,274-280,343-351
+  s_4e7b76c15654ae::t_d6e0e3cd556263 225-228
+  s_4e7b76c15654ae::t_cec770f43043af 3-5,11-12,16,33-35,39-44,46-49,57-59,66-70,76,117-119,121-122,124-138,142-143,155-158,162-164,237-238,248-249,253,255-257,310,337-338,341-342,355-361,363
+  s_4e7b76c15654ae::t_911433db0c1d96 251-252,339-340
+  s_4e7b76c15654ae::t_971c1b451e7b37 1-2,13,15,36,88-116
+  s_8bf876ce2c4fd5::t_bd46641150cb51 54,62,64,204-206,214-216,243-245
+  s_4e7b76c15654ae::t_ca8d44e9bf729d 271-273,281-304,306-309,311-335
+  s_4e7b76c15654ae::t_9830a40d82dc60 7-9,37-38,120,139-141,145-147,153-154,254,258-270,352-354,362
+  s_4e7b76c15654ae::t_5b64e2ec2d9b00 6,10,159-161,187-191,194-203,207-213,217-224,229-235
+  s_4e7b76c15654ae::t_83f22ea0b140fe 60
+  s_4e7b76c15654ae::t_86f54d5b39c91b 14,45,50-53,63,65,71-75,77-87,165-173,175,177-186,236
+  s_4e7b76c15654ae::t_dd3787f18561fd 174,176
+  s_4e7b76c15654ae::t_7db0472fe6bcb2 305,336
+packages/cli/src/opencode-runtime-manager.ts
+  s_4e7b76c15654ae::t_6ef6e4fcefa12d 84
+packages/native-runtime/src/agent-runtime/unified-session-service.ts
+  s_4e7b76c15654ae::t_d67b14312c3f67 2
+  s_4e7b76c15654ae::t_dd3787f18561fd 327-340
+  s_4e7b76c15654ae::t_9c68e39ebebb8d 183-185
+  s_4e7b76c15654ae::t_818db0551b1e63 317-326
+packages/core/src/domain/web-console/RemoteDesktopTabBridge.ts
+  s_4e7b76c15654ae::t_61ae9c48005657 3
+  s_4e7b76c15654ae::t_d7f2e8f88a390c 1-2,4-14
+packages/server/lib/native-runtime-service.ts
+  s_4e7b76c15654ae::t_d6e0e3cd556263 635
+  s_4e7b76c15654ae::t_dd3787f18561fd 31-32,126-127,381-391
+  s_4e7b76c15654ae::t_818db0551b1e63 125,376-380
+  s_4e7b76c15654ae::t_20a67fd8cd477d 392
+packages/server/public/pwa/pairing-scan.js
+  s_ba0fadb3f41462::t_9210d100cf4938 12-27,29-41,60-61
+  s_ba0fadb3f41462::t_5d23d480376542 1-11,42-59,62-63,71,76,82,84-85,88-94
+packages/desktop/renderer/lib/queued-message-order.test.ts
+  s_8bf876ce2c4fd5::t_eb66b748b28d74 2,146-204,217-293
+  s_8bf876ce2c4fd5::t_f696d7f19cb6c3 205-216
+packages/server/app/web/PwaInstallButton.tsx
+  s_ba0fadb3f41462::t_5e26a06c888e89 13,19,28-30,32,36-37
+  s_ba0fadb3f41462::t_6ff6fac45b7011 3,15,18,42
+  s_ba0fadb3f41462::t_01b00bc9edd3cf 33
+packages/desktop/renderer/lib/voice-command.ts
+  s_4e7b76c15654ae::t_be2f728a866313 16,19-20
+packages/native-runtime/src/agent-runtime/native-runtime-broker.test.ts
+  s_4e7b76c15654ae::t_80a45358c0bc1b 335-353
+  s_4e7b76c15654ae::t_d6e0e3cd556263 2151,2157,2164-2185
+  s_4e7b76c15654ae::t_8874c685673e3d 2142,2144-2150,2152-2156,2158-2163,2186-2187
+  s_4e7b76c15654ae::t_650575328fd7f3 27,2117-2138,2141
+  s_4e7b76c15654ae::t_a2347b0cd83648 2139-2140
+  s_d2ead08de4e28d::t_92a833e54b0401 2143
+packages/webapp/src/infrastructure/http/agent-http-gateway.test.ts
+  s_4e7b76c15654ae::t_d6e0e3cd556263 1104-1115
+packages/webapp/src/types.d.ts
+  s_d2ead08de4e28d::t_8711a591ba369a 18
+  s_4e7b76c15654ae::t_64d8f772b040a3 33-38
+packages/core/src/domain/session/index.ts
+  s_d2ead08de4e28d::t_a82c94344e2f6f 28
+packages/server/lib/pairing-page.mjs
+  s_ba0fadb3f41462::t_a0356bb7c8ba40 6,8-9,12-21,24,59-60,68-69,71-72
+  s_ba0fadb3f41462::t_cd6a97d6e858d0 10,61-67
+  s_ba0fadb3f41462::t_71b2d3fdeacd8f 7
+packages/core/src/domain/web-console/computer-settings.ts
+  s_ba0fadb3f41462::t_a7fa22c9fd9f7b 1-49
+packages/native-runtime/src/agent-runtime/opencode-v2-transport.ts
+  s_4e7b76c15654ae::t_a2e393187c4a59 3,35-89,93-111,113-117,121-134,146-173
+  s_4e7b76c15654ae::t_8b9551822bf5b1 1
+  s_4e7b76c15654ae::t_355a93544f6869 2,4-34,112
+  s_4e7b76c15654ae::t_2905d80e765b99 90-92
+  s_4e7b76c15654ae::t_1221e37021bd2a 118-120,135-145
+packages/desktop/renderer/components/AgentWorkspaceSwitcher.test.tsx
+  s_4e7b76c15654ae::t_b9a18f5438e793 7,17,20,25
+packages/native-runtime/src/agent-runtime/deepseek-harness-endpoint.test.ts
+  s_4e7b76c15654ae::t_200aa3b3a67066 75
+  s_4e7b76c15654ae::t_9bf161d87a2b80 1-74,76-81
+packages/desktop/renderer/lib/native-agent-run-prefs.ts
+  s_4e7b76c15654ae::t_7b0b0b6d40fec5 14
+packages/server/app/api/native-runtime.test.ts
+  s_4e7b76c15654ae::t_8874c685673e3d 49,126-129,279
+  s_4e7b76c15654ae::t_3cf30748519833 197
+  s_4e7b76c15654ae::t_b222c37e7e9e42 538-552
+packages/server/app/api/agent/models/route.ts
+  s_4e7b76c15654ae::t_7b0b0b6d40fec5 10-11
+packages/native-runtime/src/agent-runtime/session-id.test.ts
+  s_4e7b76c15654ae::t_b64ef305f9b24f 5
+packages/core/src/domain/session/SessionHistory.ts
+  s_4e7b76c15654ae::t_6b51a4a2efbeb0 146-150,152,155-158,179-181
+  s_4e7b76c15654ae::t_9c68e39ebebb8d 27,65
+packages/native-runtime/src/agent-runtime/opencode-runtime-health.test.ts
+  s_4e7b76c15654ae::t_fa92e812301845 23-27
+packages/server/app/web/FlowStudioLoading.tsx
+  s_4e7b76c15654ae::t_61ae9c48005657 4,7-17,24,30-32
+packages/native-runtime/src/agent-runtime/deepseek-harness-client.test.ts
+  s_4e7b76c15654ae::t_35f18f2bb8f190 2-4,6,9-25,70-142
+  s_4e7b76c15654ae::t_fd4594a96e1f1f 43,56
+  s_4e7b76c15654ae::t_4741febf019440 1,5,7-8,26-42,44-55,57-69,143-144
+packages/native-runtime/src/agent-runtime/session-id.ts
+  s_4e7b76c15654ae::t_7b0b0b6d40fec5 10
+packages/webapp/src/infrastructure/http/agent-http-gateway.ts
+  s_4e7b76c15654ae::t_dd3787f18561fd 11-12,502-512
+  s_4e7b76c15654ae::t_54feb8c5119b69 13,500-501
+  s_4e7b76c15654ae::t_05babfc9d09f6e 513
+packages/server/app/web/FilePreview.test.ts
+  s_4e7b76c15654ae::t_68a7387460d20a 9,23-27
+  s_4e7b76c15654ae::t_357a60199ab863 183
+packages/native-runtime/src/agent-runtime/index.ts
+  s_4e7b76c15654ae::t_5b64e2ec2d9b00 30
+  s_4e7b76c15654ae::t_7b0b0b6d40fec5 1-2
+packages/cli/src/codex-desktop-probe.test.ts
+  s_8bf876ce2c4fd5::t_1d4f7ae65b4468 6,53,56-66,80,97-112
+  s_8bf876ce2c4fd5::t_bdf84dd082ce7f 113
+packages/server/app/api/sessions/[id]/route.ts
+  s_4e7b76c15654ae::t_818db0551b1e63 123-138
+packages/sdk/src/client/types.ts
+  s_4e7b76c15654ae::t_7b0b0b6d40fec5 7
+scripts/audit-runtime-tarball.mjs
+  s_ba0fadb3f41462::t_5421f09a3b990b 53-54
+packages/server/app/web/toolbar-layout.ts
+  s_8bf876ce2c4fd5::t_c959c19db5f3b7 1-27
+packages/desktop/renderer/lib/markdown-links.ts
+  s_4e7b76c15654ae::t_357a60199ab863 1-2
+  s_4e7b76c15654ae::t_62de61ed2fcb73 10,18,23,26,75,79,90-94,98-108,132-134
+  s_4e7b76c15654ae::t_955b9bc2e156e8 12,76-78
+packages/native-runtime/src/agent-runtime/opencode-runtime-adapter.ts
+  s_4e7b76c15654ae::t_6ef6e4fcefa12d 39,541-546,942
+packages/native-runtime/src/agent-runtime/native-session-goal.test.ts
+  s_4e7b76c15654ae::t_03b498c6ff5d66 1-16
+packages/desktop/renderer/lib/voice-command.test.ts
+  s_4e7b76c15654ae::t_be2f728a866313 55-60
+packages/server/app/web/toolbar-layout.test.ts
+  s_8bf876ce2c4fd5::t_1afd4d95074979 1-3,5-7,9-14,16-27
+  s_8bf876ce2c4fd5::t_9f59437619b7d6 4,8,15
+packages/server/app/web/themes.ts
+  s_d2ead08de4e28d::t_7ae2c6b1265bda 224-236,238-240,242-245,247,249-251,253-255,257-264,266-283,285-300,302-304,306-309,311,313-315,317-319,321-328,330-347,349-362,364,366,368,370-373,377-379,381-383,385-392,394-411,413-415,426
+  s_d2ead08de4e28d::t_0e96cd03571266 3,6
+  s_d2ead08de4e28d::t_0b44f557f73c1a 237,241,246,248,252,256,265,284,301,305,310,312,316,320,329,348,363,365,367,369,374-376,380,384,393,412
+bun.lock
+  s_8bf876ce2c4fd5::t_ef7c9225a7e7d3 25,30,120,1814-1815
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "95dad750d5442c5760a502edb8a7069b7498acac",
+  "prompts": {},
+  "sessions": {
+    "s_3d8cb399d47d29": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0e624-4280-7c10-be74-3f8e283b70c2",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_4e7b76c15654ae": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12fa1-6f8f-75d0-b2e5-536f0fd75f27",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_8bf876ce2c4fd5": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a13036-0d44-7f50-87e3-c7fc4881c3c2",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_99789f5f84b30c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12106-2958-7de2-970f-7133a3fa502d",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_ba0fadb3f41462": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a13003-456c-7e52-bc4c-b0d9d5664f13",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_d037c53f55f662": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12f25-ae0d-7451-906f-6b0ed176ea05",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_d2ead08de4e28d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a133ce-eef2-7cd2-8e64-5b7eeec719f1",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_df6c6710cf7752": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a133d2-8470-7f42-962a-6cf30d2a2177",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
