@@ -1,0 +1,91 @@
+packages/core/src/domain/agent/entities.ts
+  s_3d8cb399d47d29::t_c11602eefdf743 53,61-64
+packages/core/src/domain/live-view/live-view-registry.test.ts
+  s_3d8cb399d47d29::t_6d9374ec1d74c9 1,100-145
+packages/core/src/domain/live-view/live-view-registry.ts
+  s_3d8cb399d47d29::t_cfa7a4efa7b0e6 320-321,327-328,336-337,519-521
+packages/core/src/domain/web-console/RemoteDesktopTabBridge.test.ts
+  s_3d8cb399d47d29::t_80910769970b61 2,17-30
+packages/core/src/domain/web-console/RemoteDesktopTabBridge.ts
+  s_3d8cb399d47d29::t_c340b86dad53ac 15-27
+packages/desktop/renderer/components/BrowserLivePanel.tsx
+  s_3d8cb399d47d29::t_53f968c87bfc2b 2,39,199,209-211,1057-1067,1343,1355-1357,1637,1657
+packages/desktop/renderer/components/ChatView.tsx
+  s_3d8cb399d47d29::t_56d86e046ce841 15,196,201-203,207,212,309-310,372-379,399,813-814,825,2499,2507-2510,4719-4722
+packages/desktop/renderer/components/MessageLink.tsx
+  s_3d8cb399d47d29::t_1a7c1fc860cf79 1-64
+packages/desktop/renderer/components/RemoteClipboardPasteButton.tsx
+  s_3d8cb399d47d29::t_a574f6ef3f21af 1-57
+packages/desktop/renderer/components/RuntimeProgressRow.test.tsx
+  s_3d8cb399d47d29::t_4c553e49309ac5 7-26
+packages/desktop/renderer/components/RuntimeProgressRow.tsx
+  s_3d8cb399d47d29::t_021dd80a4bbff2 2,20-21,23-53
+packages/desktop/renderer/lib/clipboard.test.ts
+  s_3d8cb399d47d29::t_e0e23e0d92bcf8 2,31-61
+packages/desktop/renderer/lib/clipboard.ts
+  s_3d8cb399d47d29::t_711da00dc926f9 56-67
+packages/desktop/renderer/lib/memory-citations.test.ts
+  s_3d8cb399d47d29::t_56ebaa6907abb1 1-23
+packages/desktop/renderer/lib/memory-citations.ts
+  s_3d8cb399d47d29::t_3c696f53f5ed89 1-44
+packages/desktop/renderer/lib/runtime-capabilities.test.ts
+  s_3d8cb399d47d29::t_a17390445ff8b1 9-10
+packages/desktop/renderer/lib/runtime-capabilities.ts
+  s_3d8cb399d47d29::t_d4ffc69347aabd 4-5
+packages/desktop/renderer/stores/agentStore.ts
+  s_3d8cb399d47d29::t_30d9a36b086d12 56,62-63
+packages/desktop/renderer/styles/global.css
+  s_3d8cb399d47d29::t_7f24740f985364 2345,2357-2360,2367-2427,4009-4040,4087-4089,4349-4353
+packages/native-runtime/src/agent-runtime/deepseek-harness-job-codec.ts
+  s_3d8cb399d47d29::t_299ced224e8684 1-31
+packages/native-runtime/src/agent-runtime/deepseek-harness-jobs.test.ts
+  s_3d8cb399d47d29::t_a0766cadaee1af 1-96
+packages/native-runtime/src/agent-runtime/deepseek-harness-jobs.ts
+  s_3d8cb399d47d29::t_85480405830e44 1-115
+packages/native-runtime/src/agent-runtime/deepseek-harness-runtime-adapter.test.ts
+  s_3d8cb399d47d29::t_6b9316593055ba 5,24-111
+packages/native-runtime/src/agent-runtime/deepseek-harness-runtime-adapter.ts
+  s_3d8cb399d47d29::t_7f7425b51e510f 10,142-144,263-264,344,348-373
+packages/native-runtime/src/agent-runtime/native-runtime-broker.test.ts
+  s_3d8cb399d47d29::t_b829c50944ec93 28,1221-1238,2136-2154,2168-2187
+packages/native-runtime/src/agent-runtime/native-runtime-broker.ts
+  s_3d8cb399d47d29::t_2d3cb83f669791 54,1042-1051,1396,1405,1648-1650,3105
+packages/native-runtime/src/agent-runtime/opencode-questions.test.ts
+  s_3d8cb399d47d29::t_4a5426fb704191 1-77
+packages/native-runtime/src/agent-runtime/opencode-questions.ts
+  s_3d8cb399d47d29::t_62676d0576ff1b 1-132
+packages/native-runtime/src/agent-runtime/opencode-runtime-adapter.test.ts
+  s_3d8cb399d47d29::t_48504f0ff976f7 12-15,29-32,41,64-244,272,278
+packages/native-runtime/src/agent-runtime/opencode-runtime-adapter.ts
+  s_3d8cb399d47d29::t_00fea5ad44f784 39-44,86-92,109,134-135,289,293,299,340,363-364,481-502,521-557,576-577,616-640,737-738,822-861,921-923
+packages/native-runtime/src/agent-runtime/opencode-server-client.ts
+  s_3d8cb399d47d29::t_6dba49ba6935f6 16,18,25,36,53,92,139-141
+packages/native-runtime/src/agent-runtime/opencode-v2-codec.ts
+  s_3d8cb399d47d29::t_3f52275df34973 1-2,77,107-108,115-121
+packages/native-runtime/src/agent-runtime/opencode-v2-transport.test.ts
+  s_3d8cb399d47d29::t_da7691bb4d5f06 67,74-88,125-139
+packages/native-runtime/src/agent-runtime/opencode-v2-transport.ts
+  s_3d8cb399d47d29::t_82707b35f951d1 3,5-7,14,129
+packages/server/app/web/page.tsx
+  s_3d8cb399d47d29::t_8b691dc4632229 42,95,212-216,218,229,618,744-747,1022
+packages/webapp/src/presentation/RemoteDesktopPage.tsx
+  s_3d8cb399d47d29::t_2d20d900704bbf 1,4,30-33
+packages/webapp/src/presentation/web.css
+  s_3d8cb399d47d29::t_1ff789ee4751f9 624-638,665,668,1103,1115-1118,1131,1159
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "44f0c5864a3bac755f8fc459b0f2f2e4638210fc",
+  "prompts": {},
+  "sessions": {
+    "s_3d8cb399d47d29": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0e624-4280-7c10-be74-3f8e283b70c2",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
