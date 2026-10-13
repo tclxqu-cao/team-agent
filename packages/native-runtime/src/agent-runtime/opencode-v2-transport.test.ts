@@ -64,11 +64,26 @@ describe("OpenCode 2 API transport", () => {
       { path: "/api/session/ses_1", method: "GET", body: undefined },
       { path: "/api/session/ses_1", method: "PATCH", body: { permissions: [{ action: "*", resource: "*", effect: "ask" }] } },
       { path: "/api/session/ses_1/model", method: "POST", body: { model: { id: "m", providerID: "p" } } },
-      { path: "/api/session/ses_1/prompt", method: "POST", body: { id: "msg_1", text: "hello", files: [{ uri: "data:image/png;base64,AAAA", name: "image.png" }] } },
+      { path: "/api/session/ses_1/prompt", method: "POST", body: { id: "msg_1", delivery: "steer", text: "hello", files: [{ uri: "data:image/png;base64,AAAA", name: "image.png" }] } },
       { path: "/api/session/ses_1/interrupt", method: "POST", body: undefined },
       { path: "/api/session/ses_1/fork", method: "POST", body: { before: "msg_2" } },
       { path: "/api/session/ses_1/permission/per_1/reply", method: "POST", body: { decision: "once" } },
     ]);
+  });
+
+  it("propagates native steering admission errors rather than acknowledging a rejected prompt", async () => {
+    const request = vi.fn<typeof fetch>(async (url, init) => {
+      expect(new Headers(init?.headers).get("authorization")).toBe("Basic private");
+      if (String(url).endsWith("/prompt")) {
+        expect(JSON.parse(String(init?.body))).toMatchObject({ text: "change direction", delivery: "steer" });
+        return new Response(JSON.stringify({ message: "prompt conflict" }), { status: 409 });
+      }
+      return init?.method === "GET" ? response({ data: session }) : new Response(null, { status: 204 });
+    });
+    const client = createOpenCodeV2Client(base, "Basic private", request);
+    await expect(client.session.promptAsync({ path: { id: "ses_1" }, body: {
+      messageID: "msg_steer", parts: [{ type: "text", text: "change direction" }],
+    }, throwOnError: true })).rejects.toThrow("OpenCode 2 HTTP 409: prompt conflict");
   });
 
   it("limits the always choice to the current session instead of saving a project permission", async () => {
@@ -105,6 +120,21 @@ describe("OpenCode 2 message and event conversion", () => {
     ] });
     expect(v2Message({ id: "msg_2", type: "user", text: "image", files: [{ uri: "data:image/png;base64,AAAA" }] }, "ses_1"))
       .toMatchObject({ parts: [{ type: "text" }, { type: "file", mime: "image/png" }] });
+  });
+
+  it("uses identical part identities for live reasoning and native history", () => {
+    const codec = new OpenCodeV2EventCodec(new Map([["ses_1", "/repo"]]));
+    const content = [{ type: "reasoning", text: "inspect" }, { type: "text", text: "reply" }, { type: "reasoning", text: "verify" }];
+    const history = v2Message({ id: "msg_1", type: "assistant", content }, "ses_1")!;
+    const parts = history.parts as Array<{ id: string }>;
+    for (const [ordinal, part] of content.entries()) {
+      const live = codec.convert({ type: `session.${part.type}.ended`, data: {
+        sessionID: "ses_1", assistantMessageID: "msg_1", ordinal, text: part.text,
+      } });
+      expect(live[0]).toMatchObject({ payload: { properties: { part: { id: parts[ordinal].id } } } });
+    }
+    const other = v2Message({ id: "msg_1", type: "assistant", content }, "ses_2")!;
+    expect((other.parts as Array<{ id: string }>)[0].id).not.toBe(parts[0].id);
   });
 
   it("accumulates deltas and separates failed/interrupted executions from successful completion", () => {

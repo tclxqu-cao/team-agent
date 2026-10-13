@@ -1,7 +1,7 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import BrowserLivePanel from "@desktop/renderer/components/BrowserLivePanel";
 import { useUIStore } from "@desktop/renderer/stores/uiStore";
-import { readRemoteDesktopVisibility, REMOTE_DESKTOP_CLOSE_TYPE, REMOTE_DESKTOP_CONTENT_READY_TYPE } from "../../../core/src/domain/web-console/RemoteDesktopTabBridge";
+import { readRemoteDesktopVisibility, REMOTE_DESKTOP_CLOSE_TYPE, REMOTE_DESKTOP_FULLSCREEN_TYPE, REMOTE_DESKTOP_CONTENT_READY_TYPE } from "../../../core/src/domain/web-console/RemoteDesktopTabBridge";
 
 export default function RemoteDesktopPage() {
   const [visible, setVisible] = useState(false);
@@ -27,7 +27,10 @@ export default function RemoteDesktopPage() {
     });
     return () => cancelAnimationFrame(frame);
   }, [visible]);
-  return <BrowserLivePanel open={visible} onClose={() => {
+  const onFullscreenChange = useCallback((fullscreen: boolean) => {
+    window.parent.postMessage({ type: REMOTE_DESKTOP_FULLSCREEN_TYPE, fullscreen }, location.origin);
+  }, []);
+  return <BrowserLivePanel onFullscreenChange={onFullscreenChange} open={visible} onClose={() => {
     setVisible(false);
     window.parent.postMessage({ type: REMOTE_DESKTOP_CLOSE_TYPE }, location.origin);
   }} />;

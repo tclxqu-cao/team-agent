@@ -7,6 +7,7 @@ import { decodeHarnessGoal } from "./deepseek-harness-goal-codec.js";
 import { HarnessInteractions } from "./deepseek-harness-interactions.js";
 import { harnessQuestionProjection } from "./deepseek-harness-interaction-codec.js";
 import { AsyncEventQueue } from "./async-event-queue.js";
+import { HarnessJobs } from "./deepseek-harness-jobs.js";
 import { parseNativeGoalMutation, type NativeGoalMutation, type NativeSessionGoal } from "./native-session-goal.js";
 import { parseImageDataUrls } from "./image-input.js";
 import { encodeUnifiedSessionId } from "./session-id.js";
@@ -138,7 +139,9 @@ export class DeepSeekHarnessRuntimeAdapter implements AgentRuntimeAdapter {
     const header = harnessRecord(snapshot.header);
     const history = decodeHarnessHistory(records);
     const questions = this.interactions.events(nativeSessionId, await this.readQuestionProjections(nativeSessionId));
-    return { ...summary, created: new Date(Number(header.createdAt)).toISOString(), ...history, events: [...history.events, ...questions] };
+    const warnings: AgentEvent[] = [];
+    const jobs = await new HarnessJobs(this.client, nativeSessionId, event => warnings.push(event)).snapshot();
+    return { ...summary, created: new Date(Number(header.createdAt)).toISOString(), ...history, events: [...history.events, ...questions, ...jobs, ...warnings] };
   }
 
   private async readSessionRow(nativeSessionId: string): Promise<HarnessRecord> {
@@ -257,6 +260,8 @@ export class DeepSeekHarnessRuntimeAdapter implements AgentRuntimeAdapter {
       if (opening.done || opening.value.type !== "snapshot") throw new RuntimeSessionError("DeepSeek Harness 没有返回执行快照", "NATIVE_PROTOCOL_ERROR");
       const queue = new AsyncEventQueue<{ frame?: HarnessRecord; interaction?: AgentEvent; error?: unknown }>();
       const unsubscribe = this.interactions.subscribe(nativeSessionId, interaction => queue.push({ interaction }));
+      const jobs = new HarnessJobs(this.client, nativeSessionId, interaction => queue.push({ interaction }));
+      const watchingJobs = jobs.watch();
       let stopFrames = false;
       const frames = (async () => {
         try {
@@ -336,8 +341,34 @@ export class DeepSeekHarnessRuntimeAdapter implements AgentRuntimeAdapter {
             }
           }
         }
-      } finally { stopFrames = true; unsubscribe(); queue.close(); closeStream(); await frames; }
+      } finally { stopFrames = true; unsubscribe(); await jobs.close(); await watchingJobs; queue.close(); closeStream(); await frames; }
     } finally { this.running.delete(nativeSessionId); closeStream(); }
+  }
+
+  async steer(nativeSessionId: string, input: string): Promise<boolean> {
+    if (!this.running.has(nativeSessionId) || !input.trim()) return false;
+    const address = harnessSessionAddress(await this.readSessionRow(nativeSessionId));
+    if (address.kind === "subagent" && address.mode === "one-shot") {
+      throw new RuntimeSessionError("DeepSeek Harness 一次性子会话不支持插话", "OPERATION_NOT_SUPPORTED");
+    }
+    if (!this.running.has(nativeSessionId)) return false;
+    const content = [{ type: "text", text: input }];
+    const result = harnessRecord(address.kind === "subagent"
+      ? await this.client.request("subagents/prompt", { request: {
+          requestId: randomUUID(), parentSessionId: address.parentSessionId,
+          childSessionId: address.childSessionId, mode: "continuable", delivery: "steer", content,
+        } })
+      : await this.client.request("session/prompt", { request: {
+          requestId: randomUUID(), sessionId: nativeSessionId, mode: "steer", content,
+        } }));
+    // Child prompts acknowledge the admitted message identity; ordinary prompts
+    // acknowledge acceptance. Neither may consume the queue on an invalid reply.
+    if (address.kind === "subagent"
+      ? typeof result.messageId !== "string" || !result.messageId.trim()
+      : result.accepted !== true) {
+      throw new RuntimeSessionError("DeepSeek Harness 未确认插话接收", "NATIVE_PROTOCOL_ERROR");
+    }
+    return true;
   }
 
   async abort(nativeSessionId: string): Promise<void> {

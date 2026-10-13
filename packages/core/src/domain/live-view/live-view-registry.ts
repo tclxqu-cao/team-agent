@@ -317,15 +317,15 @@ export class LiveViewRegistry {
     return view(session, peer);
   }
 
-  /** Forwards input to the producer. A pointer release additionally waits
-   *  briefly for the producer's dispatch result (the desktop hit-test of the
-   *  tapped element); every other input stays on the fire-and-forget path. */
+  /** Pointer releases return hit tests; committed text waits for dispatch so
+   *  a paste failure can be retried without losing the local text. */
   input(peer: LiveViewPeer, sessionId: unknown, rawInput: unknown): Promise<Record<string, unknown> | null> {
     const session = this.requireVisible(peer, sessionId);
     if (session.controllerId !== peer.id || session.state !== "user-controlled") throw domainError("browser is read-only", "EWRITELOCK");
     const input = { ...normalizeInput(rawInput),
       ...((rawInput as Record<string, unknown>).mobile === true ? { mobile: true } : {}) };
-    if (input.kind !== "pointer" || input.action !== "up") {
+    const committedText = input.kind === "key" && Boolean(input.text) && !input.key && !input.code;
+    if (!committedText && (input.kind !== "pointer" || input.action !== "up")) {
       session.producer.send({ type: "browser:input", sessionId: session.id, input });
       return Promise.resolve(null);
     }
@@ -333,8 +333,8 @@ export class LiveViewRegistry {
     const reply = new Promise<Record<string, unknown> | null>((resolve) => {
       const timer = setTimeout(() => {
         this.pendingInputResults.delete(token);
-        resolve(null);
-      }, this.inputResultTimeoutMs);
+        resolve(committedText ? { error: "电脑未确认文字输入，请检查输入框后再重试" } : null);
+      }, committedText ? Math.max(5_000, this.inputResultTimeoutMs) : this.inputResultTimeoutMs);
       this.pendingInputResults.set(token, { sessionId: session.id, resolve: (value) => {
         clearTimeout(timer);
         resolve(value);
@@ -516,7 +516,9 @@ function normalizeInput(value: unknown): LiveViewInput {
   }
   if (input.kind === "key") {
     const allowedModifiers = new Set(["Alt", "Control", "Meta", "Shift"] as const);
-    return { kind: "key", action: input.action === "up" ? "up" : "down", key: optionalString(input.key, 40) ?? "", code: optionalString(input.code, 40) ?? "", text: optionalString(input.text, 2_000) ?? "", modifiers: Array.isArray(input.modifiers) ? input.modifiers.filter((item): item is "Alt" | "Control" | "Meta" | "Shift" => allowedModifiers.has(item as never)).slice(0, 4) : [] };
+    const text = typeof input.text === "string" ? input.text : "";
+    if (text.length > 2_000) throw domainError("text input is too long", "EINVAL");
+    return { kind: "key", action: input.action === "up" ? "up" : "down", key: optionalString(input.key, 40) ?? "", code: optionalString(input.code, 40) ?? "", text, modifiers: Array.isArray(input.modifiers) ? input.modifiers.filter((item): item is "Alt" | "Control" | "Meta" | "Shift" => allowedModifiers.has(item as never)).slice(0, 4) : [] };
   }
   throw domainError("unsupported browser input", "EINVAL");
 }

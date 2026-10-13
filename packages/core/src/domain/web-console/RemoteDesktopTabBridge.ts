@@ -12,3 +12,16 @@ export function readRemoteDesktopVisibility(
   return data?.type === REMOTE_DESKTOP_VISIBILITY_TYPE && typeof data.visible === "boolean"
     ? data.visible : null;
 }
+
+export const REMOTE_DESKTOP_FULLSCREEN_TYPE = "agent-webapp:remote-desktop-fullscreen:v1";
+
+export function readRemoteDesktopFullscreen(
+  event: Pick<MessageEvent, "data" | "origin" | "source">,
+  expectedOrigin: string,
+  expectedSource: MessageEventSource | null,
+): boolean | null {
+  if (!expectedSource || event.origin !== expectedOrigin || event.source !== expectedSource) return null;
+  const data = event.data as { type?: unknown; fullscreen?: unknown } | null;
+  return data?.type === REMOTE_DESKTOP_FULLSCREEN_TYPE && typeof data.fullscreen === "boolean"
+    ? data.fullscreen : null;
+}

@@ -1,4 +1,5 @@
 import LiveViewSelect from "./LiveViewSelect";
+import RemoteClipboardPasteButton from "./RemoteClipboardPasteButton";
 import { BrowserLiveHeaderContext } from "./browser-live-header-context";
 // Direct source import: the @agent/core package root drags Node-only modules
 // into the browser bundle; this domain policy is dependency-free.
@@ -35,6 +36,7 @@ interface BrowserLivePanelProps {
   open: boolean;
   agentSessionId?: string | null;
   onClose: () => void;
+  onFullscreenChange?: (fullscreen: boolean) => void;
 }
 
 const STATE_LABELS: Record<BrowserLiveSession["state"], string> = {
@@ -194,7 +196,7 @@ export function touchScrollDelta(
   return delta;
 }
 
-export default function BrowserLivePanel({ open, agentSessionId, onClose }: BrowserLivePanelProps) {
+export default function BrowserLivePanel({ open, agentSessionId, onClose, onFullscreenChange }: BrowserLivePanelProps) {
   const headerControl = useContext(BrowserLiveHeaderContext);
   const api = typeof window === "undefined" ? undefined : window.browserLiveApi;
   const backdropRef = useRef<HTMLDivElement>(null);
@@ -204,6 +206,9 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
     return trackBrowserLiveViewport(backdropRef.current);
   }, [open]);
   const [fullscreen, setFullscreen] = useState(false);
+  useEffect(() => {
+    onFullscreenChange?.(fullscreen);
+  }, [fullscreen, onFullscreenChange]);
   const toggleFullscreen = async () => {
     const panel = panelRef.current;
     if (!panel) return;
@@ -1049,6 +1054,17 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
     sendKey(letter, `Key${letter.toUpperCase()}`, ["Control"]);
   }, [sendKey]);
 
+  const pasteText = useCallback(async (text: string) => {
+    if (!api || !selected?.isController || selected.state !== "user-controlled" || pendingDisplayId || pendingQuality) {
+      throw new Error("连接正在切换，请稍后重试");
+    }
+    const result = await api.request<{ input?: { error?: string } }>("browser:input", {
+      sessionId: selected.id,
+      input: { kind: "key", action: "down", text, key: "", code: "", modifiers: [], mobile: window.matchMedia("(pointer: coarse)").matches },
+    });
+    if (result.input?.error) throw new Error(result.input.error);
+  }, [api, selected, pendingDisplayId, pendingQuality]);
+
   /** Sends input and resolves with the desktop hit-test reply (null otherwise). */
   const dispatchInputForResult = useCallback((input: Record<string, unknown>): Promise<Record<string, unknown> | null> => {
     if (!api || pendingDisplayId || pendingQuality || !selected?.isController || selected.state !== "user-controlled") return Promise.resolve(null);
@@ -1324,7 +1340,7 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
               <button type="button" disabled={!frame} onClick={() => sendKey("Escape", "Escape")}>Esc</button>
               <button type="button" disabled={!frame} onClick={() => sendKey("Tab", "Tab")}>Tab</button>
               <button type="button" disabled={!frame} onClick={() => sendCombo("c")}>复制</button>
-              <button type="button" disabled={!frame} onClick={() => sendCombo("v")}>粘贴</button>
+              <RemoteClipboardPasteButton key={selectedId} disabled={!frame || !!pendingDisplayId || !!pendingQuality} onPaste={pasteText} onError={setError} />
               <button type="button" disabled={!frame} onClick={() => sendCombo("a")}>全选</button>
               <button type="button" disabled={!frame} onClick={() => sendCombo("z")}>撤销</button>
               <button type="button" disabled={!frame} onClick={() => sendCombo("s")}>保存</button>
@@ -1336,7 +1352,9 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
               <button type="button" disabled={!frame} onClick={() => sendKey("ArrowRight", "ArrowRight")}>→</button>
             </div>
           )}
-          <div className="browser-live-touch-hint">滑动滚动 · 轻点点击 · 双击打开 · 长按拖动 · 按住1秒右键 · 双指缩放</div>
+          {!(hasControl && !panMode && quickKeysOpen) && (
+            <div className="browser-live-touch-hint">滑动滚动 · 轻点点击 · 双击打开 · 长按拖动 · 按住1秒右键 · 双指缩放</div>
+          )}
           <div ref={viewportRef} className="browser-live-viewport">
             {frame && frameSrc ? (
               <div
@@ -1616,7 +1634,7 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
           )}
         </div>
 
-        <footer className="browser-live-footer">
+        {!fullscreen && <footer className="browser-live-footer">
           <div className="browser-live-location">
             <span className={`browser-live-status-dot is-${selected?.state ?? "idle"}`} aria-hidden="true" />
             <div>
@@ -1636,7 +1654,7 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose }: Brow
               {selected.controlledByAnotherViewer ? "其他设备操作中" : isDesktop ? "开始控制" : "接管浏览器"}
             </button>
           ))}
-        </footer>
+        </footer>}
         {(error ?? videoStallError) && <div className="browser-live-error" role="alert">{error ?? videoStallError}</div>}
       </section>
       {unlockOpen && (

@@ -51,6 +51,7 @@ import { CodexSessionCompatibilityService } from "./codex-session-compatibility.
 import { CodexRuntimeAdapter } from "./codex-runtime-adapter.js";
 import { DeepSeekHarnessRuntimeAdapter } from "./deepseek-harness-runtime-adapter.js";
 import { parseHarnessQuestionId } from "./deepseek-harness-interaction-codec.js";
+import { isOpenCodeQuestionId } from "./opencode-questions.js";
 import { OpenCodeRuntimeAdapter } from "./opencode-runtime-adapter.js";
 import { OpenCodeServerClient } from "./opencode-server-client.js";
 import { decodeUnifiedSessionId, encodeUnifiedSessionId } from "./session-id.js";
@@ -1038,8 +1039,16 @@ class NativeRuntimeBrokerState implements ImportedAgentWorkspaceRepository, Code
       ...detail,
       ...summary,
       messages,
-      events: detail.agentType === "deepseek-harness"
-        ? [...detail.events, ...projection.events.flatMap(({ event }) => event.type === "ask_user" || event.type === "approval_resolved" ? [] : [event])]
+      events: detail.agentType === "opencode"
+        ? [...detail.events, ...projection.events.flatMap(({ event }) => {
+          if ((event.type === "ask_user" || event.type === "approval_resolved") && isOpenCodeQuestionId(event.questionId)) return [];
+          return mergeProjection || (options.includePendingQuestions && event.type === "ask_user") ? [event] : [];
+        })]
+        : detail.agentType === "deepseek-harness"
+        ? [...detail.events.filter(event => event.type !== "runtime_progress"),
+          ...projection.events.flatMap(({ event }) => event.type === "ask_user" || event.type === "approval_resolved" ? [] : [event]),
+          // A native job may outlive a completed turn; its current snapshot is authoritative.
+          ...detail.events.filter(event => event.type === "runtime_progress")]
         : mergeProjection
         ? projection.events.map(({ event }) => event)
         : options.includePendingQuestions
@@ -1384,7 +1393,7 @@ export class NativeRuntimeBrokerHost {
       this.queryIndexCache.getOrCreate(id, projected.messages);
       return query
         ? { ...projected, ...paginateSessionHistory(projected.messages, projected.events, query, {
-            includePendingQuestions: projected.agentType === "deepseek-harness",
+            includePendingQuestions: projected.agentType === "deepseek-harness" || projected.agentType === "opencode",
           }) }
         : projected;
     } catch (error) {
@@ -1393,7 +1402,7 @@ export class NativeRuntimeBrokerHost {
       const projected = this.state.applyDetail({ ...pending, messages: [], events: [] });
       return query
         ? { ...projected, ...paginateSessionHistory(projected.messages, projected.events, query, {
-            includePendingQuestions: projected.agentType === "deepseek-harness",
+            includePendingQuestions: projected.agentType === "deepseek-harness" || projected.agentType === "opencode",
           }) }
         : projected;
     }
@@ -1636,6 +1645,9 @@ export class NativeRuntimeBrokerHost {
     // Harness owns foreground waterfalls and durable continued questions.
     // They may belong to Desktop or a finished turn, with no active Broker run.
     if (parseHarnessQuestionId(questionId)) return this.runtime.answerQuestion(questionId, answer);
+    // OpenCode's authoritative pending Form can be recovered without a Broker
+    // run, and its stable card identity survives browser refreshes.
+    if (isOpenCodeQuestionId(questionId)) return this.runtime.answerQuestion(questionId, answer);
     const run = this.state.claimApproval(questionId);
     if (!run) return false;
     try {
@@ -3090,6 +3102,7 @@ function isRuntimeErrorCode(value: string): value is ConstructorParameters<typeo
     "RUNTIME_UNAVAILABLE",
     "OPERATION_NOT_SUPPORTED",
     "APPROVAL_EXPIRED",
+    "QUESTION_ANSWER_FAILED",
     "CODEX_SESSION_VERSION_INCOMPATIBLE",
     "STALE_SESSION_ANCHOR",
     "NATIVE_GOAL_CONFLICT",

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { LiveViewRegistry } from "./live-view-registry";
 import type { LiveViewEvent, LiveViewPeer } from "./entities";
 
@@ -95,6 +95,52 @@ describe("LiveViewRegistry", () => {
     expect(registry.inputResult(producer, "browser-1", forwarded.token, { editable: true, bounds: { x: 10, y: 20, w: 30, h: 40 } }))
       .toEqual({ delivered: true });
     await expect(reply).resolves.toEqual({ editable: true, bounds: { x: 10, y: 20, w: 30, h: 40 } });
+  });
+
+  it("preserves pasted URLs, whitespace and Unicode until the producer confirms input", async () => {
+    const registry = new LiveViewRegistry();
+    const producer = peer("producer");
+    const controller = peer("controller");
+    publish(registry, producer);
+    registry.takeOver(controller, "browser-1");
+    registry.producerState(producer, "browser-1", "user-controlled");
+    const text = "  http://localhost:3001/中文?q=a%20b\n";
+    const reply = registry.input(controller, "browser-1", { kind: "key", action: "down", text });
+    const event = producer.messages.at(-1)!;
+    expect(event).toMatchObject({ type: "browser:input", input: { text } });
+    expect(event.token).toEqual(expect.any(Number));
+    registry.inputResult(producer, "browser-1", event.token, { accepted: true });
+    await expect(reply).resolves.toEqual({ accepted: true });
+  });
+
+  it("returns native paste failures and rejects oversized text before dispatch", async () => {
+    const registry = new LiveViewRegistry();
+    const producer = peer("producer");
+    const controller = peer("controller");
+    publish(registry, producer);
+    registry.takeOver(controller, "browser-1");
+    registry.producerState(producer, "browser-1", "user-controlled");
+    const reply = registry.input(controller, "browser-1", { kind: "key", text: "http://localhost:3001" });
+    registry.inputResult(producer, "browser-1", producer.messages.at(-1)!.token, { error: "辅助功能未授权" });
+    await expect(reply).resolves.toEqual({ error: "辅助功能未授权" });
+    const count = producer.messages.length;
+    expect(() => registry.input(controller, "browser-1", { kind: "key", text: "x".repeat(2001) })).toThrow("too long");
+    expect(producer.messages).toHaveLength(count);
+  });
+
+  it("reports missing text confirmation instead of accepting a timed out paste", async () => {
+    vi.useFakeTimers();
+    try {
+      const registry = new LiveViewRegistry();
+      const producer = peer("producer");
+      const controller = peer("controller");
+      publish(registry, producer);
+      registry.takeOver(controller, "browser-1");
+      registry.producerState(producer, "browser-1", "user-controlled");
+      const reply = registry.input(controller, "browser-1", { kind: "key", text: "http://localhost:3001" });
+      await vi.advanceTimersByTimeAsync(5000);
+      await expect(reply).resolves.toMatchObject({ error: expect.stringContaining("未确认") });
+    } finally { vi.useRealTimers(); }
   });
 
   it("resolves input with null when the producer never replies", async () => {

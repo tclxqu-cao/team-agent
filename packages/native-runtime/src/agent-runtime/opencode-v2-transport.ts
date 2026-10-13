@@ -1,14 +1,17 @@
 import { array, record, v2Message, v2Session, OpenCodeV2EventCodec } from "./opencode-v2-codec.js";
 import { createOpencodeClient, type GlobalEvent, type OpencodeClient } from "@opencode-ai/sdk";
+import { createOpenCodeQuestionClient, type OpenCodeQuestionClient } from "./opencode-questions.js";
 
-export function createOpenCodeV2Client(baseUrl: string, authorization: string, request: typeof fetch = fetch): OpencodeClient {
+export type OpenCodeRuntimeClient = OpencodeClient & { questions?: OpenCodeQuestionClient };
+
+export function createOpenCodeV2Client(baseUrl: string, authorization: string, request: typeof fetch = fetch): OpenCodeRuntimeClient {
   const transport = createOpenCodeV2Fetch(baseUrl, authorization, request);
   const client = createOpencodeClient({ baseUrl, throwOnError: true, fetch: transport });
   // The legacy SDK's SSE implementation ignores its configured fetch adapter.
   client.global.event = async (options) => ({
     stream: readEvents(await transport(`${baseUrl}/global/event`, { signal: options?.signal })),
   });
-  return client;
+  return Object.assign(client, { questions: createOpenCodeQuestionClient(baseUrl, "form", authorization, request) });
 }
 
 async function* readEvents(response: Response): AsyncGenerator<GlobalEvent> {
@@ -123,7 +126,7 @@ export function createOpenCodeV2Fetch(baseUrl: string, authorization: string, re
           await json(`${path}/model`, "POST", { model: { id: model.modelID, providerID: model.providerID } });
         }
         const parts = array(body.parts).map(record);
-        await json(`${path}/prompt`, "POST", { id: body.messageID,
+        await json(`${path}/prompt`, "POST", { id: body.messageID, delivery: "steer",
           text: parts.filter((part) => part.type === "text").map((part) => String(part.text ?? "")).join("\n"),
           files: parts.filter((part) => part.type === "file").map((part) => ({ uri: part.url, name: part.filename })) });
         return new Response(null, { status: 204 });

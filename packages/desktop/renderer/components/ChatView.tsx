@@ -12,6 +12,7 @@ import {
 import { createTaskCompletionNotification } from "../../../core/src/application/notification/task-completion";
 import { ArrowDownToLine, Check, Copy, CornerUpRight, FileText, GitFork, GripVertical, LoaderCircle, Pencil, Play, RefreshCw, Square, Target, Trash2, Unplug, Volume2 } from "lucide-react";
 import AgentBrandIcon from "./AgentBrandIcon";
+import MessageLink from "./MessageLink";
 import MermaidBlock from "./MermaidBlock";
 import StructuredAgentMessage from "./StructuredAgentMessage";
 import {
@@ -192,23 +193,23 @@ function renderInlineLabel(text: string, keyPrefix: string): React.ReactNode {
 function renderRichInline(text: string, onOpenArtifact?: (path: string) => void): React.ReactNode {
   return parseRichInlineTokens(text).map((token, index) => {
     if (token.type === "code") {
-      return (
+      const code = (
         <code key={index} style={{ fontFamily: 'var(--font-mono)', fontSize: '0.84em', background: 'var(--chat-inline-code-bg, rgba(17,24,39,0.06))', padding: '1px 5px', borderRadius: 4, color: 'var(--accent)', border: '1px solid var(--border-subtle)' }}>
           {token.value}
         </code>
       );
+      return /^https?:\/\/\S+$/i.test(token.value)
+        ? <MessageLink key={index} href={token.value} code>{code}</MessageLink>
+        : code;
     }
     if (token.type === "link") {
       return (
-        <a
+        <MessageLink
           key={index}
-          className="chat-message-link"
           href={token.href}
-          target="_blank"
-          rel="noopener noreferrer"
         >
           {renderInlineLabel(token.label, `${index}-label`)}
-        </a>
+        </MessageLink>
       );
     }
     if (token.type === "artifact") {
@@ -305,7 +306,8 @@ function renderCodeFence(lang: string, code: string, complete: boolean): React.R
 
 /** Render assistant message text: supports Markdown tables, links, fenced code blocks, `code`, **bold**, *italic*, and newlines. */
 export function renderAssistantText(text: string, onOpenArtifact?: (path: string) => void): React.ReactNode {
-  const visibleText = text.replace(
+  const memory = extractMemoryCitations(text);
+  const visibleText = memory.text.replace(
     /(^|\n)(?:[a-z][\w+#.-]{0,20}\n)?(?:复制|copy)\n(?:下载|download)(?:\n|$)/gi,
     "$1",
   );
@@ -367,7 +369,14 @@ export function renderAssistantText(text: string, onOpenArtifact?: (path: string
     }
   }
 
-  return <>{segments}</>;
+  return <>{segments}{memory.citations.length > 0 && (
+    <details className="memory-citations">
+      <summary>历史记忆引用 · {memory.citations.length}</summary>
+      <ul>{memory.citations.map((citation, index) => (
+        <li key={index}><span>{citation.source}</span>{citation.note && <span> — {citation.note}</span>}</li>
+      ))}</ul>
+    </details>
+  )}</>;
 }
 
 import { useSettingsStore } from "../stores/settingsStore";
@@ -387,6 +396,7 @@ import { prepareVoiceCommand, shouldSkipVoiceSessionReload } from "../lib/voice-
 import { prepareChatCommand } from "../lib/chat-command";
 import { waitForNextPaint } from "../lib/browser-paint";
 import { areToolCallsComplete } from "../lib/tool-call-status";
+import { extractMemoryCitations } from "../lib/memory-citations";
 import { parseRichInlineTokens } from "../lib/markdown-links";
 import { coalesceAdjacentToolCallMessages, groupAdjacentToolCallEntries } from "../lib/tool-call-groups";
 import {
@@ -800,7 +810,8 @@ export default function ChatView({
   const isRunning = isLocallyRunning || isObservedNativeRun(sessionSummary);
   const runtimeProgress = viewSessionId ? runtimeProgressBySession[viewSessionId] ?? [] : [];
   const nativeSubagents = viewSessionId ? nativeSubagentsBySession[viewSessionId] ?? {} : {};
-  const globalRuntimeProgress = latestGlobalRuntimeProgress(runtimeProgress);
+  const jobRuntimeProgress = runtimeProgress.filter(progress => progress.kind === "background-job");
+  const globalRuntimeProgress = latestGlobalRuntimeProgress(runtimeProgress.filter(progress => progress.kind !== "background-job"));
   const latestRenderedMessage = renderedMessages[renderedMessages.length - 1];
   const hasStreamingReasoning = Boolean(
     latestRenderedMessage?.role === "assistant"
@@ -811,6 +822,7 @@ export default function ChatView({
     message.toolCalls?.length && !areToolCallsComplete(message.toolCalls)
   ));
   const showThinkingFallback = isRunning
+    && jobRuntimeProgress.length === 0
     && !globalRuntimeProgress
     && !hasStreamingReasoning
     && !hasVisibleRunningTool;
@@ -2484,6 +2496,7 @@ export default function ChatView({
         ) {
           const progress: RuntimeProgress = {
             progressId: event.progressId,
+            ...(event.kind === "background-job" ? { kind: event.kind } : {}),
             phase: event.phase!,
             label: event.label,
             ...(event.detail === undefined ? {} : { detail: event.detail }),
@@ -2491,6 +2504,10 @@ export default function ChatView({
             ...(event.elapsedSeconds === undefined ? {} : { elapsedSeconds: event.elapsedSeconds }),
             ...(event.current === undefined ? {} : { current: event.current }),
             ...(event.total === undefined ? {} : { total: event.total }),
+            ...(event.output === undefined ? {} : { output: event.output }),
+            ...(["running", "stopping", "completed", "killed", "failed"].includes(event.status ?? "")
+              ? { status: event.status as RuntimeProgress["status"] } : {}),
+            ...(event.startedAt === undefined ? {} : { startedAt: event.startedAt }),
           };
           applyRuntimeProgress(progress, eventSid);
           if (isViewed) updateAgentActivity(progress.phase === "tool" ? "tools" : "thinking");
@@ -4698,6 +4715,10 @@ export default function ChatView({
           </div>
           );
         })}
+
+        {jobRuntimeProgress.map(progress => (
+          <RuntimeProgressRow key={progress.progressId} progress={progress} />
+        ))}
 
         {isRunning && globalRuntimeProgress && (
           <RuntimeProgressRow progress={globalRuntimeProgress} startedAt={thinkingStartedAt} />

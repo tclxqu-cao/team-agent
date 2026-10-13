@@ -621,6 +621,21 @@ body[data-remote-desktop="1"] .browser-live-panel {
   font: inherit;
 }
 
+.browser-live-native-paste {
+  width: 88px;
+  flex: 0 0 88px;
+  box-sizing: border-box;
+  padding: 4px 8px;
+  border: 1px solid var(--border-default);
+  border-radius: 6px;
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 16px;
+  -webkit-touch-callout: default;
+  user-select: text;
+}
+
 .browser-live-unlock-dialog p {
   margin: 0;
   color: var(--danger);
@@ -647,11 +662,10 @@ body[data-remote-desktop="1"] .browser-live-panel {
     border-radius: 0;
   }
 
-  /* Fullscreen must own its rows explicitly so the 浏览器直播 header row and
-     the footer stay laid out no matter which declarations cascade here. */
+  /* Fullscreen hides the header and footer, leaving one surface row. */
   .browser-live-panel.is-fullscreen,
   .browser-live-panel:fullscreen {
-    grid-template-rows: 50px minmax(0, 1fr) auto;
+    grid-template-rows: minmax(0, 1fr);
   }
 
   .browser-live-footer {
@@ -1086,6 +1100,7 @@ body[data-web-shell="1"] {
 }
 
 .browser-live-touch-hint {
+  pointer-events: none;
   position: absolute;
   top: 44px;
   left: 0;
@@ -1095,6 +1110,10 @@ body[data-web-shell="1"] {
   color: var(--text-muted);
   text-align: center;
   padding: 4px 8px;
+}
+
+.browser-live-surface.has-quickkeys .browser-live-touch-hint {
+  visibility: hidden;
 }
 
 /* Match phone landscape by input capability as well as width. */
@@ -1109,7 +1128,7 @@ body[data-web-shell="1"] {
   border-radius: 0;
   padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
   box-sizing: border-box;
-  grid-template-rows: minmax(0, 1fr) auto;
+  grid-template-rows: minmax(0, 1fr);
 }
 
 .browser-live-panel.is-fullscreen .browser-live-header,
@@ -1137,7 +1156,7 @@ body[data-web-shell="1"] {
   }
   .browser-live-panel.is-fullscreen,
   .browser-live-panel:fullscreen {
-    grid-template-rows: minmax(0, 1fr) 44px;
+    grid-template-rows: minmax(0, 1fr);
   }
   .browser-live-footer {
     min-height: 0;

@@ -9,6 +9,10 @@ import {
 } from "./opencode-runtime-adapter.js";
 import type { OpenCodeServerEvent } from "./opencode-server-client.js";
 import { OpenCodeV2EventCodec } from "./opencode-v2-codec.js";
+import {
+  openCodeFormQuestion, openCodeQuestionId, OPENCODE_QUESTION_ASKED, OPENCODE_QUESTION_RESOLVED,
+  type OpenCodeQuestionRequest,
+} from "./opencode-questions.js";
 
 const session: Session = {
   id: "ses_1",
@@ -22,6 +26,10 @@ const session: Session = {
 function mockServer() {
   let listener: ((event: OpenCodeServerEvent) => void) | undefined;
   const client = {
+    questions: {
+      list: vi.fn(async (): Promise<OpenCodeQuestionRequest[]> => []),
+      reply: vi.fn(async (): Promise<void> => undefined),
+    },
     project: { list: vi.fn(async () => ({ data: [{ id: "project-1", worktree: "/repo", time: { created: 1 } }] })) },
     session: {
       list: vi.fn(async () => ({ data: [session] })),
@@ -30,7 +38,7 @@ function mockServer() {
       messages: vi.fn(async () => ({ data: [] })),
       create: vi.fn(async () => ({ data: session })),
       fork: vi.fn(async () => ({ data: { ...session, id: "ses_fork", parentID: session.id } })),
-      promptAsync: vi.fn(async () => ({ data: undefined })),
+      promptAsync: vi.fn(async (_options?: Parameters<OpencodeClient["session"]["promptAsync"]>[0]) => ({ data: undefined })),
       abort: vi.fn(async () => ({ data: true })),
     },
     postSessionIdPermissionsPermissionId: vi.fn(async () => ({ data: true })),
@@ -52,6 +60,187 @@ async function drain(iterable: AsyncIterable<unknown>) {
   for await (const value of iterable) values.push(value);
   return values;
 }
+
+const questionRequest = openCodeFormQuestion({
+  id: "frm_1", sessionID: "ses_1", metadata: { kind: "question" }, fields: [
+    { key: "q0", type: "multiselect", description: "需要哪些功能？", options: [{ value: "subtitle", label: "字幕" }, { value: "chart", label: "图表" }] },
+    { key: "q1", type: "string", description: "其他要求？", options: [] },
+  ],
+})!;
+
+describe("OpenCode mid-turn steering", () => {
+  it("admits steering on the existing run and ignores echoed user text in the assistant stream", async () => {
+    const fixture = mockServer();
+    const adapter = new OpenCodeRuntimeAdapter({ server: fixture.server });
+    const result = drain(adapter.run("ses_1", "start"));
+    await vi.waitFor(() => expect(fixture.client.session.promptAsync).toHaveBeenCalledOnce());
+    await expect(adapter.steer("ses_1", "change direction")).resolves.toBe(true);
+    const request = fixture.client.session.promptAsync.mock.calls[1][0]!;
+    const messageID = request.body!.messageID!;
+    expect(request).toEqual({ path: { id: "ses_1" }, query: { directory: "/repo" },
+      body: { messageID: expect.stringMatching(/^msg_/), parts: [{ type: "text", text: "change direction" }] },
+      throwOnError: true });
+    expect(messageID).not.toBe(fixture.client.session.promptAsync.mock.calls[0][0]?.body?.messageID);
+    fixture.emit({ type: "message.part.updated", properties: { part: {
+      id: "steer-text", sessionID: "ses_1", messageID, type: "text", text: "change direction",
+    }, delta: "change direction" } });
+    expect(fixture.client.session.abort).not.toHaveBeenCalled();
+    fixture.emit({ type: "session.idle", properties: { sessionID: "ses_1" } });
+    expect(await result).not.toContainEqual({ type: "text_chunk", text: "change direction" });
+    await expect(adapter.steer("ses_1", "after completion")).resolves.toBe(false);
+  });
+
+  it("refuses idle, other-session, or empty input without submitting another prompt", async () => {
+    const fixture = mockServer();
+    const adapter = new OpenCodeRuntimeAdapter({ server: fixture.server });
+    await expect(adapter.steer("ses_1", "idle")).resolves.toBe(false);
+    expect(fixture.client.session.promptAsync).not.toHaveBeenCalled();
+    const result = drain(adapter.run("ses_1", "start"));
+    await vi.waitFor(() => expect(fixture.client.session.promptAsync).toHaveBeenCalledOnce());
+    await expect(adapter.steer("other", "wrong session")).resolves.toBe(false);
+    await expect(adapter.steer("ses_1", "  ")).resolves.toBe(false);
+    expect(fixture.client.session.promptAsync).toHaveBeenCalledOnce();
+    fixture.emit({ type: "session.idle", properties: { sessionID: "ses_1" } });
+    await result;
+  });
+
+  it("surfaces admission failures without cancelling the run and allows retry", async () => {
+    const fixture = mockServer();
+    const adapter = new OpenCodeRuntimeAdapter({ server: fixture.server });
+    const result = drain(adapter.run("ses_1", "start"));
+    await vi.waitFor(() => expect(fixture.client.session.promptAsync).toHaveBeenCalledOnce());
+    fixture.client.session.promptAsync.mockRejectedValueOnce(new Error("connection failed"));
+    await expect(adapter.steer("ses_1", "retry this")).rejects.toThrow("connection failed");
+    await expect(adapter.steer("ses_1", "retry this")).resolves.toBe(true);
+    expect(fixture.client.session.abort).not.toHaveBeenCalled();
+    fixture.emit({ type: "session.idle", properties: { sessionID: "ses_1" } });
+    await result;
+  });
+
+  it("does not submit steering after the original run finishes while awaiting the client", async () => {
+    const fixture = mockServer();
+    const adapter = new OpenCodeRuntimeAdapter({ server: fixture.server });
+    const result = drain(adapter.run("ses_1", "start"));
+    await vi.waitFor(() => expect(fixture.client.session.promptAsync).toHaveBeenCalledOnce());
+    let release!: (client: OpencodeClient) => void;
+    vi.spyOn(fixture.server, "client").mockImplementationOnce(() => new Promise(resolve => { release = resolve; }));
+    const steering = adapter.steer("ses_1", "too late");
+    fixture.emit({ type: "session.idle", properties: { sessionID: "ses_1" } });
+    await result;
+    release(fixture.client as unknown as OpencodeClient);
+    await expect(steering).resolves.toBe(false);
+    expect(fixture.client.session.promptAsync).toHaveBeenCalledOnce();
+  });
+});
+
+describe("OpenCode interactive questions", () => {
+  it("deduplicates question cards, collects multiple answers, and never auto-approves them", async () => {
+    const fixture = mockServer();
+    const resolved = vi.fn();
+    const adapter = new OpenCodeRuntimeAdapter({ server: fixture.server, onApprovalResolved: resolved });
+    const result = drain(adapter.run("ses_1", "hello", undefined, undefined, undefined, { permissionMode: "full-access", brokerRunId: "run_1" }));
+    await vi.waitFor(() => expect(fixture.client.session.promptAsync).toHaveBeenCalled());
+    for (let i = 0; i < 2; i++) fixture.emit({ type: OPENCODE_QUESTION_ASKED, properties: questionRequest });
+    expect(fixture.client.questions.reply).not.toHaveBeenCalled();
+    await expect(adapter.answerQuestion(openCodeQuestionId(questionRequest, 0), { answer: "图表, 字幕", selectedIndices: [1, 0] })).resolves.toBe(true);
+    expect(fixture.client.questions.reply).not.toHaveBeenCalled();
+    await expect(adapter.answerQuestion(openCodeQuestionId(questionRequest, 1), { answer: "保留留白" })).resolves.toBe(true);
+    expect(fixture.client.questions.reply).toHaveBeenCalledTimes(1);
+    expect(fixture.client.questions.reply).toHaveBeenCalledWith(questionRequest, [["chart", "subtitle"], ["保留留白"]], "/repo");
+    fixture.emit({ type: "session.idle", properties: { sessionID: "ses_1" } });
+    const events = await result;
+    expect(events.filter((event) => (event as { type: string }).type === "ask_user")).toEqual([
+      expect.objectContaining({ questionId: openCodeQuestionId(questionRequest, 0), multiSelect: true }),
+      expect.objectContaining({ questionId: openCodeQuestionId(questionRequest, 1), question: "其他要求？" }),
+    ]);
+    expect(resolved).toHaveBeenCalledWith(openCodeQuestionId(questionRequest, 0));
+    expect(resolved).toHaveBeenCalledWith(openCodeQuestionId(questionRequest, 1));
+    await expect(adapter.answerQuestion(openCodeQuestionId(questionRequest, 1), { answer: "重复" })).resolves.toBe(false);
+  });
+
+  it("recovers pending cards on full/latest history reads and preserves earlier answers when the final reply fails", async () => {
+    const fixture = mockServer();
+    fixture.client.questions.list.mockResolvedValue([questionRequest]);
+    const adapter = new OpenCodeRuntimeAdapter({ server: fixture.server });
+    const initial = await adapter.getSession("ses_1");
+    expect(initial.events).toHaveLength(2);
+    await adapter.answerQuestion(openCodeQuestionId(questionRequest, 0), { answer: "字幕", selectedIndices: [0] });
+    expect((await adapter.getSessionPaged("ses_1", { limit: 50 })).events).toEqual([
+      expect.objectContaining({ questionId: openCodeQuestionId(questionRequest, 1) }),
+    ]);
+    fixture.client.questions.reply.mockRejectedValueOnce(new Error("temporary disconnect"));
+    await expect(adapter.answerQuestion(openCodeQuestionId(questionRequest, 1), { answer: "slow" }))
+      .rejects.toMatchObject({ code: "QUESTION_ANSWER_FAILED" });
+    expect((await adapter.getSession("ses_1")).events).toHaveLength(1);
+    await expect(adapter.answerQuestion(openCodeQuestionId(questionRequest, 1), { answer: "fast" })).resolves.toBe(true);
+    expect(fixture.client.questions.reply).toHaveBeenLastCalledWith(questionRequest, [["subtitle"], ["fast"]], "/repo");
+    // A history list captured before the native reply must not revive a card.
+    expect((await adapter.getSession("ses_1")).events).toEqual([]);
+  });
+
+  it.each(["replied", "cancelled"])("clears cards when another client has %s the native Form, even without an owned run", async (kind) => {
+    const fixture = mockServer();
+    fixture.client.questions.list.mockResolvedValue([questionRequest]);
+    const resolved = vi.fn();
+    const adapter = new OpenCodeRuntimeAdapter({ server: fixture.server, onApprovalResolved: resolved });
+    await adapter.getSession("ses_1");
+    const codec = new OpenCodeV2EventCodec(new Map([["ses_1", "/repo"]]));
+    const [event] = codec.convert({ type: `form.${kind}`, data: { id: "frm_1", sessionID: "ses_1" } });
+    fixture.emit(event.payload as OpenCodeServerEvent["payload"]);
+    expect(resolved).toHaveBeenCalledTimes(2);
+    await expect(adapter.answerQuestion(openCodeQuestionId(questionRequest, 0), { answer: "字幕" })).resolves.toBe(false);
+    expect((await adapter.getSession("ses_1")).events).toEqual([]);
+  });
+
+  it("blocks invalid selections and concurrent submissions without consuming the pending card", async () => {
+    const fixture = mockServer();
+    const single = { ...questionRequest, questions: [{ ...questionRequest.questions[0], multiSelect: false }] };
+    fixture.client.questions.list.mockResolvedValue([single]);
+    const adapter = new OpenCodeRuntimeAdapter({ server: fixture.server });
+    await adapter.getSession("ses_1");
+    const id = openCodeQuestionId(single, 0);
+    for (const selectedIndices of [[9], [-1], [0, 1]]) {
+      await expect(adapter.answerQuestion(id, { answer: "bad", selectedIndices })).rejects.toMatchObject({ code: "QUESTION_ANSWER_FAILED" });
+    }
+    let release!: () => void;
+    fixture.client.questions.reply.mockImplementationOnce(() => new Promise<void>((resolve) => { release = resolve; }));
+    const first = adapter.answerQuestion(id, { answer: "字幕", selectedIndices: [0] });
+    await vi.waitFor(() => expect(fixture.client.questions.reply).toHaveBeenCalledTimes(1));
+    await expect(adapter.answerQuestion(id, { answer: "图表", selectedIndices: [1] })).rejects.toMatchObject({ code: "QUESTION_ANSWER_FAILED" });
+    release();
+    await expect(first).resolves.toBe(true);
+  });
+
+  it("accepts legacy question events and suppresses the ordinary running question tool", async () => {
+    const fixture = mockServer();
+    const adapter = new OpenCodeRuntimeAdapter({ server: fixture.server });
+    const result = drain(adapter.run("ses_1", "hello"));
+    await vi.waitFor(() => expect(fixture.client.session.promptAsync).toHaveBeenCalled());
+    fixture.emit({ type: "question.asked", properties: { id: "que_1", sessionID: "ses_1", questions: [{ question: "选择方案", options: [{ label: "A" }] }] } } as unknown as OpenCodeServerEvent["payload"]);
+    const tool = { id: "part_1", type: "tool" as const, sessionID: "ses_1", messageID: "msg_1", callID: "call_1", tool: "question",
+      state: { status: "running" as const, input: {}, title: "question", metadata: {}, time: { start: 1 } } };
+    fixture.emit({ type: "message.part.updated", properties: { part: tool } });
+    fixture.emit({ type: "session.idle", properties: { sessionID: "ses_1" } });
+    const events = await result;
+    expect(events.some((event) => (event as { type: string }).type === "ask_user")).toBe(true);
+    expect(events.some((event) => (event as { type: string }).type === "tool_call")).toBe(false);
+    const info = { id: "msg_1", sessionID: "ses_1", role: "assistant", time: { created: 1 } };
+    expect(openCodeHistoryToMessages([{ info, parts: [tool] }] as never)).toEqual([]);
+  });
+
+  it("updates question history when a pending tool completes in the same native message", async () => {
+    const fixture = mockServer();
+    const adapter = new OpenCodeRuntimeAdapter({ server: fixture.server });
+    const info = { id: "msg_1", sessionID: "ses_1", role: "assistant", time: { created: 1 } };
+    const tool = { id: "part_1", type: "tool", sessionID: "ses_1", messageID: "msg_1", callID: "call_1", tool: "question",
+      state: { status: "running", input: {}, title: "question", metadata: {}, time: { start: 1 } } };
+    fixture.client.session.messages.mockResolvedValue({ data: [{ info, parts: [tool] }] } as never);
+    expect((await adapter.getSession("ses_1")).messages).toEqual([]);
+    fixture.client.session.messages.mockResolvedValue({ data: [{ info, parts: [{ ...tool, state: { ...tool.state,
+      status: "completed", output: "User has answered: 字幕", metadata: { answers: [["字幕"]] }, time: { start: 1, end: 2 } } }] }] } as never);
+    expect((await adapter.getSession("ses_1")).messages).toContainEqual({ role: "tool", toolCallId: "call_1", content: "User has answered: 字幕" });
+  });
+});
 
 describe("OpenCode runtime mapping", () => {
   it("uses OpenCode's XDG data directory for external history observation", () => {
@@ -80,11 +269,13 @@ describe("OpenCode runtime mapping", () => {
       parts: [
         { id: "text", sessionID: session.id, messageID: "msg_1", type: "text", text: "done" },
         { id: "reason", sessionID: session.id, messageID: "msg_1", type: "reasoning", text: "thinking", time: { start: 1 } },
+        { id: "reason-2", sessionID: session.id, messageID: "msg_1", type: "reasoning", text: "verify", time: { start: 1 } },
         { id: "image", sessionID: session.id, messageID: "msg_1", type: "file", mime: "image/png", filename: "x.png", url: "data:image/png;base64,AAAA" },
         { id: "tool", sessionID: session.id, messageID: "msg_1", type: "tool", callID: "call_1", tool: "read", state: { status: "completed", input: { filePath: "a" }, output: "ok", title: "read", metadata: {}, time: { start: 1, end: 2 } } },
       ],
     }]);
     expect(messages[0]).toMatchObject({ role: "assistant", content: "done", images: ["data:image/png;base64,AAAA"] });
+    expect(messages[0].presentation?.reasoning?.map((section) => section.sectionIndex)).toEqual([0, 0]);
     expect(messages[0].presentation?.reasoning?.[0].text).toBe("thinking");
     expect(messages[0].toolCalls?.[0]).toMatchObject({ id: "call_1", name: "read" });
     expect(messages[1]).toEqual({ role: "tool", toolCallId: "call_1", content: "ok" });

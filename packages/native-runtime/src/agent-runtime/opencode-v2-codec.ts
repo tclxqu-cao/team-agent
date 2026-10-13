@@ -1,3 +1,5 @@
+import { openCodeFormQuestion, OPENCODE_QUESTION_ASKED, OPENCODE_QUESTION_RESOLVED } from "./opencode-questions.js";
+
 // OpenCode 2 wire records are converted here to the existing adapter's SDK port.
 export type OpenCodeRecord = Record<string, unknown>;
 
@@ -72,7 +74,7 @@ export function v2Message(value: unknown, sessionID: string): OpenCodeRecord | n
       if (content.type === "tool") parts.push(v2Tool(content, sessionID, messageID));
       else if (content.type === "text" || content.type === "reasoning") {
         const time = optionalRecord(content.time);
-        parts.push({ ...base, id: `${messageID}:${content.type}:${index}`, type: content.type,
+        parts.push({ ...base, id: `${sessionID}:${messageID}:${content.type}:${index}`, type: content.type,
           text: content.text, time: { start: time.created ?? 0, end: time.completed } });
       }
     });
@@ -102,13 +104,21 @@ export class OpenCodeV2EventCodec {
     const event = record(value);
     const data = optionalRecord(event.data);
     const type = String(event.type ?? "");
-    const sessionID = typeof data.sessionID === "string" ? data.sessionID : undefined;
+    const form = type === "form.created" ? optionalRecord(data.form) : data;
+    const sessionID = typeof form.sessionID === "string" ? form.sessionID : undefined;
     if (!sessionID) return [];
     const location = optionalRecord(event.location);
     const directory = typeof location.directory === "string" ? location.directory : this.directories.get(sessionID);
     if (!directory) return [];
     this.directories.set(sessionID, directory);
     const emit = (type: string, properties: OpenCodeRecord) => [{ directory, payload: { type, properties } }];
+    if (type === "form.created") {
+      const question = openCodeFormQuestion(form);
+      return question ? emit(OPENCODE_QUESTION_ASKED, { ...question }) : [];
+    }
+    if (type === "form.replied" || type === "form.cancelled") {
+      return typeof data.id === "string" ? emit(OPENCODE_QUESTION_RESOLVED, { sessionID, id: data.id }) : [];
+    }
     const messageID = String(data.assistantMessageID ?? "");
     if (type === "session.step.started") {
       return emit("message.updated", { info: { id: messageID, sessionID, role: "assistant", time: { created: data.started } } });

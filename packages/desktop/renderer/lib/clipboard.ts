@@ -53,3 +53,15 @@ export async function copyTextToClipboard(text: string): Promise<boolean> {
 
   return copyTextWithSelection(text);
 }
+
+/** null means the browser requires a native paste gesture; an empty string is an empty clipboard. */
+export async function readTextFromClipboard(): Promise<string | null> {
+  const clipboard = typeof navigator === "undefined" ? undefined : navigator.clipboard;
+  if (typeof clipboard?.readText !== "function"
+    || (typeof isSecureContext !== "undefined" && !isSecureContext)) return null;
+  try {
+    return await clipboard.readText();
+  } catch {
+    return null;
+  }
+}

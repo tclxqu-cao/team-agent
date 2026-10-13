@@ -25,7 +25,6 @@ import type {
   Session,
   SessionStatus,
   ToolPart,
-  OpencodeClient,
 } from "@opencode-ai/sdk";
 import { AsyncEventQueue } from "./async-event-queue.js";
 import { parseImageDataUrls } from "./image-input.js";
@@ -37,6 +36,12 @@ import {
 } from "./native-history-paging.js";
 import { OpenCodeServerClient, type OpenCodeServerEvent } from "./opencode-server-client.js";
 import { OPENCODE_INTERRUPTED_EVENT } from "./opencode-v2-codec.js";
+import type { OpenCodeRuntimeClient } from "./opencode-v2-transport.js";
+import {
+  openCodeLegacyQuestion, openCodeQuestionCard, openCodeQuestionId,
+  OPENCODE_QUESTION_ASKED, OPENCODE_QUESTION_RESOLVED,
+  type OpenCodeQuestionRequest,
+} from "./opencode-questions.js";
 import { encodeUnifiedSessionId } from "./session-id.js";
 import { paginateByOffset } from "./agent-workspace-index.js";
 import type {
@@ -78,6 +83,13 @@ interface PendingPermission {
   permissionId: string;
 }
 
+interface PendingQuestionGroup {
+  request: OpenCodeQuestionRequest;
+  directory: string;
+  answers: Map<number, string[]>;
+  submitting: boolean;
+}
+
 interface OpenCodePermissionRequest {
   id: string;
   sessionID: string;
@@ -94,7 +106,7 @@ interface OpenCodePagerState {
 }
 
 export interface OpenCodeServerPort {
-  client(): Promise<OpencodeClient>;
+  client(): Promise<OpenCodeRuntimeClient>;
   subscribe(
     listener: (event: OpenCodeServerEvent) => void,
     onFailure?: (error: Error) => void,
@@ -119,6 +131,8 @@ export class OpenCodeRuntimeAdapter implements AgentRuntimeAdapter {
   private readonly ownedSessions = new Set<string>();
   private readonly sessionDirectories = new Map<string, string>();
   private readonly pendingPermissions = new Map<string, PendingPermission>();
+  private readonly pendingQuestions = new Map<string, { group: PendingQuestionGroup; index: number }>();
+  private readonly resolvedQuestionRequests = new Set<string>();
   private readonly workspaces = new Map<string, AgentWorkspace>();
   private readonly pagerStates = new Map<string, OpenCodePagerState>();
   private unsubscribe: (() => void) | null = null;
@@ -272,16 +286,17 @@ export class OpenCodeRuntimeAdapter implements AgentRuntimeAdapter {
     const client = await this.getClient();
     const directory = await this.resolveDirectory(nativeSessionId);
     try {
-      const [session, messages, statuses] = await Promise.all([
+      const [session, messages, statuses, questions] = await Promise.all([
         client.session.get({ path: { id: nativeSessionId }, query: { directory }, throwOnError: true }).then((r) => r.data),
         client.session.messages({ path: { id: nativeSessionId }, query: { directory }, throwOnError: true }).then((r) => r.data),
         client.session.status({ query: { directory }, throwOnError: true }).then((r) => r.data),
+        this.getQuestionEvents(client, nativeSessionId, directory),
       ]);
       this.sessionDirectories.set(session.id, session.directory);
       return {
         ...openCodeSessionToSummary(session, statuses[session.id], this.ownedSessions.has(session.id)),
         messages: this.convertHistory(nativeSessionId, messages),
-        events: [],
+        events: questions,
       };
     } catch (error) {
       throw normalizeOpenCodeError(error, nativeSessionId);
@@ -322,7 +337,7 @@ export class OpenCodeRuntimeAdapter implements AgentRuntimeAdapter {
     return {
       ...summary,
       messages: page.messages,
-      events: [],
+      events: end === skeleton.length ? await this.getQuestionEvents(client, nativeSessionId, directory) : [],
       history: nativeHistoryWindow(start, end, skeleton.length, kind, revision, query.view ?? "legacy-full"),
     };
   }
@@ -345,7 +360,8 @@ export class OpenCodeRuntimeAdapter implements AgentRuntimeAdapter {
     nativeSessionId: string,
     history: Array<{ info: OpenCodeMessage; parts: Part[] }>,
   ): Message[] {
-    const fingerprint = `${history.length}:${history.at(-1)?.info.id ?? ""}`;
+    // The last message mutates while tools wait for an answer or finish.
+    const fingerprint = JSON.stringify(history);
     const cached = this.pagerStates.get(nativeSessionId);
     if (cached && cached.fingerprint === fingerprint) return cached.messages;
     const messages = openCodeHistoryToMessages(history);
@@ -462,6 +478,28 @@ export class OpenCodeRuntimeAdapter implements AgentRuntimeAdapter {
       for (const [questionId, pending] of this.pendingPermissions) {
         if (pending.sessionId === nativeSessionId) this.pendingPermissions.delete(questionId);
       }
+      for (const group of this.questionGroups(nativeSessionId)) this.resolveQuestionGroup(group);
+    }
+  }
+
+  async steer(nativeSessionId: string, input: string): Promise<boolean> {
+    const run = this.activeRuns.get(nativeSessionId);
+    if (!run || !input.trim()) return false;
+    const client = await this.getClient();
+    if (this.activeRuns.get(nativeSessionId) !== run) return false;
+    const messageID = `msg_${randomUUID()}`;
+    run.messageRoles.set(messageID, "user");
+    try {
+      await client.session.promptAsync({
+        path: { id: nativeSessionId },
+        query: { directory: run.cwd },
+        body: { messageID, parts: [{ type: "text", text: input }] },
+        throwOnError: true,
+      });
+      return true;
+    } catch (error) {
+      run.messageRoles.delete(messageID);
+      throw error;
     }
   }
 
@@ -480,6 +518,43 @@ export class OpenCodeRuntimeAdapter implements AgentRuntimeAdapter {
   }
 
   async answerQuestion(questionId: string, answer: RuntimeQuestionAnswer): Promise<boolean> {
+    const question = this.pendingQuestions.get(questionId);
+    if (question) {
+      const { group, index } = question;
+      if (group.submitting) throw new RuntimeSessionError("回答正在提交，请稍后重试", "QUESTION_ANSWER_FAILED");
+      if (group.answers.has(index)) return false;
+      const field = group.request.questions[index];
+      const indices = answer.selectedIndices;
+      let values: string[];
+      if (indices?.length) {
+        if (indices.some((i) => !Number.isInteger(i) || i < 0 || i >= field.options.length)
+          || (!field.multiSelect && indices.length !== 1)) {
+          throw new RuntimeSessionError("选项无效，请重新选择", "QUESTION_ANSWER_FAILED");
+        }
+        values = [...new Set(indices)].map((i) => field.options[i].value);
+      } else {
+        if (!answer.answer.trim()) throw new RuntimeSessionError("请输入回答", "QUESTION_ANSWER_FAILED");
+        values = [answer.answer.trim()];
+      }
+      group.answers.set(index, values);
+      if (group.answers.size < group.request.questions.length) {
+        this.onApprovalResolved?.(questionId);
+        return true;
+      }
+      group.submitting = true;
+      try {
+        const client = await this.getClient();
+        if (!client.questions) throw new Error("OpenCode question interface is unavailable");
+        await client.questions.reply(group.request, group.request.questions.map((_, i) => group.answers.get(i)!), group.directory);
+        this.markQuestionResolved(group.request.sessionID, group.request.id);
+        return true;
+      } catch (error) {
+        group.answers.delete(index);
+        throw new RuntimeSessionError(`回答发送失败：${errorMessage(error)}`, "QUESTION_ANSWER_FAILED");
+      } finally {
+        group.submitting = false;
+      }
+    }
     const pending = this.pendingPermissions.get(questionId);
     if (!pending) return false;
     this.pendingPermissions.delete(questionId);
@@ -498,6 +573,8 @@ export class OpenCodeRuntimeAdapter implements AgentRuntimeAdapter {
   async dispose(): Promise<void> {
     this.unsubscribe?.();
     this.unsubscribe = null;
+    this.pendingQuestions.clear();
+    this.resolvedQuestionRequests.clear();
     await this.server.dispose();
   }
 
@@ -536,6 +613,31 @@ export class OpenCodeRuntimeAdapter implements AgentRuntimeAdapter {
     if (!sessionId) return;
     this.sessionDirectories.set(sessionId, directory);
     const run = this.activeRuns.get(sessionId);
+    if (payload.type === OPENCODE_QUESTION_ASKED) {
+      if (this.resolvedQuestionRequests.has(JSON.stringify([sessionId, payload.properties.id]))) return;
+      const isNew = !this.pendingQuestions.has(openCodeQuestionId(payload.properties, 0));
+      this.trackQuestion(payload.properties, directory);
+      if (isNew && run) payload.properties.questions.forEach((_, index) => run.queue.push(openCodeQuestionCard(payload.properties, index)));
+      return;
+    }
+    // Legacy SDK types predate the question events; validate their payload.
+    const raw: unknown = payload;
+    if (isRecord(raw) && raw.type === "question.asked" && isRecord(raw.properties)) {
+      const request = openCodeLegacyQuestion(raw.properties);
+      if (this.resolvedQuestionRequests.has(JSON.stringify([sessionId, request.id]))) return;
+      const isNew = !this.pendingQuestions.has(openCodeQuestionId(request, 0));
+      this.trackQuestion(request, directory);
+      if (isNew && run) request.questions.forEach((_, index) => run.queue.push(openCodeQuestionCard(request, index)));
+      return;
+    }
+    if (payload.type === OPENCODE_QUESTION_RESOLVED) {
+      this.markQuestionResolved(sessionId, payload.properties.id);
+      return;
+    }
+    if (isRecord(raw) && (raw.type === "question.replied" || raw.type === "question.rejected") && isRecord(raw.properties)) {
+      if (typeof raw.properties.requestID === "string") this.markQuestionResolved(sessionId, raw.properties.requestID);
+      return;
+    }
     if (!run) return;
 
     if (payload.type === OPENCODE_INTERRUPTED_EVENT) {
@@ -632,6 +734,8 @@ export class OpenCodeRuntimeAdapter implements AgentRuntimeAdapter {
       return;
     }
     if (part.type !== "tool") return;
+    // The interactive card is emitted by Form/question events.
+    if (part.tool === "question") return;
     const previous = run.toolStates.get(part.callID);
     const status = part.state.status;
     run.toolStates.set(part.callID, status);
@@ -715,6 +819,46 @@ export class OpenCodeRuntimeAdapter implements AgentRuntimeAdapter {
   private handleFailure(error: Error): void {
     for (const sessionId of this.activeRuns.keys()) this.failRun(sessionId, error.message);
   }
+
+  private trackQuestion(request: OpenCodeQuestionRequest, directory: string): PendingQuestionGroup {
+    const existing = this.pendingQuestions.get(openCodeQuestionId(request, 0));
+    if (existing) return existing.group;
+    const group: PendingQuestionGroup = { request, directory, answers: new Map(), submitting: false };
+    request.questions.forEach((_, index) => this.pendingQuestions.set(openCodeQuestionId(request, index), { group, index }));
+    return group;
+  }
+
+  private questionGroups(sessionID: string): PendingQuestionGroup[] {
+    return [...new Set([...this.pendingQuestions.values()].map(({ group }) => group))].filter((group) => group.request.sessionID === sessionID);
+  }
+
+  private resolveQuestionGroup(group: PendingQuestionGroup): void {
+    group.request.questions.forEach((_, index) => {
+      const questionId = openCodeQuestionId(group.request, index);
+      if (this.pendingQuestions.delete(questionId)) this.onApprovalResolved?.(questionId);
+    });
+  }
+
+  private markQuestionResolved(sessionID: string, requestID: string): void {
+    this.resolvedQuestionRequests.add(JSON.stringify([sessionID, requestID]));
+    while (this.resolvedQuestionRequests.size > 512) this.resolvedQuestionRequests.delete(this.resolvedQuestionRequests.values().next().value!);
+    for (const group of this.questionGroups(sessionID)) if (group.request.id === requestID) this.resolveQuestionGroup(group);
+  }
+
+  private async getQuestionEvents(client: OpenCodeRuntimeClient, sessionID: string, directory: string): Promise<AgentEvent[]> {
+    if (!client.questions) return [];
+    const previous = this.questionGroups(sessionID);
+    const requests = await client.questions.list(sessionID, directory);
+    const activeIds = new Set(requests.map((request) => request.id));
+    for (const group of previous) {
+      if (!activeIds.has(group.request.id) && !group.submitting) this.resolveQuestionGroup(group);
+    }
+    return requests.flatMap((request) => {
+      if (this.resolvedQuestionRequests.has(JSON.stringify([sessionID, request.id]))) return [];
+      const group = this.trackQuestion(request, directory);
+      return request.questions.flatMap((_, index) => group.answers.has(index) ? [] : [openCodeQuestionCard(request, index)]);
+    });
+  }
 }
 
 export function openCodeSessionToSummary(
@@ -774,8 +918,9 @@ export function openCodeHistoryToMessages(
     }));
     const reasoning = entry.parts
       .filter((part): part is Extract<Part, { type: "reasoning" }> => part.type === "reasoning")
-      .map((part, index) => ({ itemId: part.id, sectionIndex: index, text: part.text }));
-    const tools = entry.parts.filter((part): part is ToolPart => part.type === "tool");
+      .map((part) => ({ itemId: part.id, sectionIndex: 0, text: part.text }));
+    const tools = entry.parts.filter((part): part is ToolPart => part.type === "tool"
+      && (part.tool !== "question" || part.state.status === "completed" || part.state.status === "error"));
     const message: Message = {
       role: entry.info.role,
       content: text,

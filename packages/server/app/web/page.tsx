@@ -39,7 +39,7 @@ import { readWebappReadyMessage } from "./webappReady";
 
 import FlowStudioLoading from "./FlowStudioLoading";
 import { REMOTE_DESKTOP_TAB, withRemoteDesktopTab, type ConsoleTab } from "./console-tabs";
-import { REMOTE_DESKTOP_CLOSE_TYPE, REMOTE_DESKTOP_VISIBILITY_TYPE, REMOTE_DESKTOP_CONTENT_READY_TYPE } from "../../../core/src/domain/web-console/RemoteDesktopTabBridge";
+import { readRemoteDesktopFullscreen, REMOTE_DESKTOP_CLOSE_TYPE, REMOTE_DESKTOP_VISIBILITY_TYPE, REMOTE_DESKTOP_CONTENT_READY_TYPE } from "../../../core/src/domain/web-console/RemoteDesktopTabBridge";
 import { resolveWebArtifactPath } from "../../../desktop/renderer/lib/artifact-links";
 
 const TerminalPane = dynamic(() => import("./TerminalPane"), { ssr: false });
@@ -92,6 +92,7 @@ function AuthenticatedConsole({
   const webappFrameRef = useRef<HTMLIFrameElement>(null);
   const remoteDesktopFrameRef = useRef<HTMLIFrameElement>(null);
   const [remoteDesktopReadyEpoch, setRemoteDesktopReadyEpoch] = useState(0);
+  const [remoteDesktopFullscreen, setRemoteDesktopFullscreen] = useState(false);
   const [remoteDesktopContentReady, setRemoteDesktopContentReady] = useState(false);
   const browserFrameAck = useRef<(channelId: number, sequence: number) => void>(() => {});
   const forwardBrowserBinary = useCallback((frame: Uint8Array) => {
@@ -208,7 +209,13 @@ function AuthenticatedConsole({
   useEffect(() => {
     const onMessage = (event: MessageEvent) => {
       const remoteSource = remoteDesktopFrameRef.current?.contentWindow ?? null;
+      const fullscreen = readRemoteDesktopFullscreen(event, window.location.origin, remoteSource);
+      if (fullscreen !== null) {
+        setRemoteDesktopFullscreen(fullscreen);
+        return;
+      }
       if (readWebappReadyMessage(event, window.location.origin, remoteSource)) {
+        setRemoteDesktopFullscreen(false);
         setRemoteDesktopReadyEpoch((current) => current + 1);
         setRemoteDesktopContentReady(false);
         postSkinToWebapp(themeId);
@@ -219,6 +226,7 @@ function AuthenticatedConsole({
         return;
       }
       if (event.origin === window.location.origin && event.source === remoteSource && remoteSource && event.data?.type === REMOTE_DESKTOP_CLOSE_TYPE) {
+        setRemoteDesktopFullscreen(false);
         void rpc("browser:unwatch").catch(() => {});
         setTabs((current) => current.filter((tab) => tab.kind !== "remote-desktop"));
         setRemoteDesktopReadyEpoch(0);
@@ -607,7 +615,7 @@ function AuthenticatedConsole({
   }, [scrollActiveTabIntoView]);
 
   return (
-    <div className="web-root" style={rootStyle}>
+    <div className={`web-root ${remoteDesktopFullscreen && activeTerminalId === REMOTE_DESKTOP_TAB.id && !selectedPage ? "is-remote-fullscreen" : ""}`} style={rootStyle}>
       <style dangerouslySetInnerHTML={{ __html: GLOBAL_CSS }} />
 
       <div className="terminal-tabs">
@@ -733,6 +741,10 @@ function AuthenticatedConsole({
 }
 
 const GLOBAL_CSS = `
+  .web-root.is-remote-fullscreen > .terminal-tabs { display: none; }
+  .web-root.is-remote-fullscreen .tree-col,
+  .web-root.is-remote-fullscreen .preview-col { display: none; }
+
   html, body { width:100%; height:100%; margin:0; overflow:hidden; background:var(--ui-root-bg, #0b0b10); overscroll-behavior:none; color:var(--ui-text, #e8e8ee); }
   * { -webkit-tap-highlight-color: transparent; }
   .terminal-tabs { display:flex; align-items:end; gap:4px; min-height:38px; padding:0 8px; background:var(--ui-tabbar-bg, #12141b); border-bottom:0; flex-shrink:0; }
@@ -1007,6 +1019,7 @@ const GLOBAL_CSS = `
     .preview-col { position: relative; inset: auto; width: auto; height: auto; border-left: 1px solid var(--ui-tree-border, #1e1e26); }
     .drawer-mask { display: none; }
   }
+  .web-root.is-remote-fullscreen .workspace { grid-template-columns: minmax(0, 1fr); }
 `;
 
 const S: Record<string, React.CSSProperties> = {

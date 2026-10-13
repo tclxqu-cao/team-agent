@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { DeepSeekHarnessRuntimeAdapter } from "./deepseek-harness-runtime-adapter.js";
 import { decodeHarnessHistory } from "./deepseek-harness-codec.js";
 import { harnessRecord, type HarnessConnection, type HarnessRecord } from "./deepseek-harness-client.js";
+import { AsyncEventQueue } from "./async-event-queue.js";
 
 const event = (type: string, seq: number, data: HarnessRecord) => ({ type: "event", event: { type, seq, data } });
 const assistant = event("assistant/message", 3, { turn: 1, step: 1, message: { role: "assistant", content: [{ type: "reasoning", text: "考虑" }, { type: "text", text: "回答" }] } });
@@ -19,6 +20,94 @@ async function run(frames: HarnessRecord[]) {
   for await (const item of adapter.run("native", "hello")) events.push(item);
   return { events, ...mock };
 }
+
+async function activeHarness(row: HarnessRecord = nativeRow) {
+  const mock = mockConnection([], [row]);
+  const frames = new AsyncEventQueue<HarnessRecord>();
+  frames.push({ type: "snapshot" });
+  mock.close.mockImplementation(() => frames.close());
+  vi.mocked(mock.client.follow).mockResolvedValue({ values: frames, close: mock.close });
+  mock.request.mockImplementation(async method => method === "session/list" ? { items: [row] }
+    : method === "subagents/prompt" ? { messageId: "admitted-child-message" } : { accepted: true });
+  const adapter = new DeepSeekHarnessRuntimeAdapter(mock.client);
+  const execution = adapter.run("native", "start");
+  expect((await execution[Symbol.asyncIterator]().next()).value).toMatchObject({ type: "thinking" });
+  return { ...mock, frames, adapter, execution };
+}
+
+async function finishHarness(fixture: Awaited<ReturnType<typeof activeHarness>>) {
+  fixture.frames.push(event("turn/end", 4, { reason: { kind: "completed" } }));
+  for await (const _item of fixture.execution) { /* Finish the existing run. */ }
+}
+
+describe("DeepSeek Harness mid-turn steering", () => {
+  it("sends active ordinary-session input as steering without starting another follower or cancelling", async () => {
+    const fixture = await activeHarness();
+    try {
+      await expect(fixture.adapter.steer("native", "change direction")).resolves.toBe(true);
+      expect(fixture.request).toHaveBeenLastCalledWith("session/prompt", { request: {
+        requestId: expect.any(String), sessionId: "native", mode: "steer",
+        content: [{ type: "text", text: "change direction" }],
+      } });
+      expect(fixture.client.follow).toHaveBeenCalledOnce();
+      expect(fixture.request.mock.calls.some(([method]) => method === "session/cancel")).toBe(false);
+    } finally { await finishHarness(fixture); }
+    await expect(fixture.adapter.steer("native", "after completion")).resolves.toBe(false);
+  });
+
+  it("addresses child steering to its direct parent and validates the native message receipt", async () => {
+    const fixture = await activeHarness({ ...nativeRow, origin: "subagent", parentSessionId: "parent",
+      projections: { values: { subagent: { mode: "continuable" } } } });
+    try {
+      await expect(fixture.adapter.steer("native", "change child direction")).resolves.toBe(true);
+      expect(fixture.request).toHaveBeenLastCalledWith("subagents/prompt", { request: {
+        requestId: expect.any(String), parentSessionId: "parent", childSessionId: "native",
+        mode: "continuable", delivery: "steer", content: [{ type: "text", text: "change child direction" }],
+      } });
+      fixture.request.mockImplementation(async method => method === "session/list" ? { items: [
+        { ...nativeRow, origin: "subagent", parentSessionId: "parent" },
+      ] } : { accepted: true });
+      await expect(fixture.adapter.steer("native", "missing message receipt"))
+        .rejects.toMatchObject({ code: "NATIVE_PROTOCOL_ERROR" });
+    } finally { await finishHarness(fixture); }
+  });
+
+  it("refuses idle or empty steering without contacting the native host", async () => {
+    const mock = mockConnection([]);
+    await expect(new DeepSeekHarnessRuntimeAdapter(mock.client).steer("native", "idle")).resolves.toBe(false);
+    expect(mock.request).not.toHaveBeenCalled();
+    const fixture = await activeHarness();
+    try {
+      fixture.request.mockClear();
+      await expect(fixture.adapter.steer("native", "  ")).resolves.toBe(false);
+      expect(fixture.request).not.toHaveBeenCalled();
+    } finally { await finishHarness(fixture); }
+  });
+
+  it("keeps failed steering visible and accepts a retry while the same run remains open", async () => {
+    const fixture = await activeHarness();
+    try {
+      let reply: unknown = { accepted: false };
+      fixture.request.mockImplementation(async method => method === "session/list" ? { items: [nativeRow] } : reply);
+      await expect(fixture.adapter.steer("native", "retry this"))
+        .rejects.toMatchObject({ code: "NATIVE_PROTOCOL_ERROR" });
+      reply = { accepted: true };
+      await expect(fixture.adapter.steer("native", "retry this")).resolves.toBe(true);
+      expect(fixture.close).not.toHaveBeenCalled();
+    } finally { await finishHarness(fixture); }
+  });
+
+  it("does not wake another turn if the run finishes during address discovery", async () => {
+    const fixture = await activeHarness();
+    let release!: (value: unknown) => void;
+    fixture.request.mockImplementationOnce(() => new Promise(resolve => { release = resolve; }));
+    const steering = fixture.adapter.steer("native", "too late");
+    await finishHarness(fixture);
+    release({ items: [nativeRow] });
+    await expect(steering).resolves.toBe(false);
+    expect(fixture.request.mock.calls.filter(([method]) => method === "session/prompt")).toHaveLength(1);
+  });
+});
 
 describe("DeepSeek Harness native adapter", () => {
   it("loads subagent history and older pages through its durable direct-parent address", async () => {

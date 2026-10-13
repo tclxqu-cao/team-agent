@@ -50,6 +50,7 @@ export interface ReasoningSummarySection {
 
 export interface RuntimeProgress {
   progressId: string;
+  kind?: "background-job";
   phase: "thinking" | "tool" | "retry" | "status";
   label: string;
   detail?: string;
@@ -57,6 +58,10 @@ export interface RuntimeProgress {
   elapsedSeconds?: number;
   current?: number;
   total?: number;
+  /** Bounded, non-consuming preview of native job output. */
+  output?: string;
+  status?: "running" | "stopping" | "completed" | "killed" | "failed";
+  startedAt?: number;
 }
 
 export type AgentEvent =

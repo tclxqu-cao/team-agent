@@ -13,14 +13,16 @@ import type {
   EventPermissionReplied,
 } from "@opencode-ai/sdk/v2/types";
 import { RuntimeSessionError } from "./types.js";
-import { createOpenCodeV2Client } from "./opencode-v2-transport.js";
+import { createOpenCodeV2Client, type OpenCodeRuntimeClient } from "./opencode-v2-transport.js";
 import { OPENCODE_INTERRUPTED_EVENT } from "./opencode-v2-codec.js";
+import { createOpenCodeQuestionClient, type OpenCodeQuestionEvent } from "./opencode-questions.js";
 
 const execFileAsync = promisify(execFile);
 
 export interface OpenCodeServerEvent {
   directory: string;
   payload: GlobalEvent["payload"] | EventPermissionAsked | EventPermissionReplied
+    | OpenCodeQuestionEvent
     | { type: typeof OPENCODE_INTERRUPTED_EVENT; properties: { sessionID: string } };
 }
 
@@ -31,7 +33,7 @@ export class OpenCodeServerClient {
   private readonly executable: string;
   private readonly unavailableError?: string;
   private readonly environment: NodeJS.ProcessEnv;
-  private startPromise: Promise<OpencodeClient> | null = null;
+  private startPromise: Promise<OpenCodeRuntimeClient> | null = null;
   private process: ChildProcess | null = null;
   private stopEventStream: (() => void) | null = null;
   private readonly listeners = new Set<EventListener>();
@@ -48,7 +50,7 @@ export class OpenCodeServerClient {
     this.environment = options.environment ?? process.env;
   }
 
-  async client(): Promise<OpencodeClient> {
+  async client(): Promise<OpenCodeRuntimeClient> {
     if (this.disposed) {
       throw new RuntimeSessionError("OpenCode runtime has been disposed", "RUNTIME_UNAVAILABLE");
     }
@@ -87,7 +89,7 @@ export class OpenCodeServerClient {
     clearTimeout(force);
   }
 
-  private async start(): Promise<OpencodeClient> {
+  private async start(): Promise<OpenCodeRuntimeClient> {
     const version = await execFileAsync(this.executable, ["--version"], { env: this.environment, timeout: 5_000, windowsHide: true });
     const major = /(?:^|\s)v?(\d+)\./.exec(`${version.stdout}\n${version.stderr}`)?.[1];
     const v2 = Number(major) >= 2;
@@ -134,7 +136,9 @@ export class OpenCodeServerClient {
     }
 
     const client = authorization ? createOpenCodeV2Client(url, authorization)
-      : createOpencodeClient({ baseUrl: url, throwOnError: true });
+      : Object.assign(createOpencodeClient({ baseUrl: url, throwOnError: true }), {
+        questions: createOpenCodeQuestionClient(url, "question"),
+      });
     child.once("exit", (code, signal) => {
       if (this.process !== child || this.disposed) return;
       this.process = null;

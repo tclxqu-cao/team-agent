@@ -25,6 +25,7 @@ import type {
 import { RuntimeSessionError } from "./types";
 import { UnifiedSessionService } from "./unified-session-service";
 import { harnessQuestionId } from "./deepseek-harness-interaction-codec";
+import { openCodeQuestionId, type OpenCodeQuestionRequest } from "./opencode-questions";
 
 const sessionId = encodeUnifiedSessionId("codex", "thread-1");
 
@@ -1217,6 +1218,24 @@ describe("NativeRuntimeBrokerHost", () => {
     }
   });
 
+  it("preserves queued steering on a transport failure and consumes it after retry succeeds", async () => {
+    const runtime = new FakeNativeRuntime();
+    const host = new NativeRuntimeBrokerHost(await directory(), runtime as unknown as UnifiedSessionService);
+    try {
+      await host.startRun(sessionId, "current");
+      await waitFor(() => expect(host.snapshot(sessionId).events).toHaveLength(1));
+      const queued = await host.enqueueMessage(sessionId, { sourceMessageId: "retry-steering", content: "retry this" });
+      const messageId = queued.state.queued[0].id;
+      vi.spyOn(runtime, "steer").mockRejectedValueOnce(new Error("native admission failed"));
+      await expect(host.steerMessage(sessionId, messageId)).rejects.toThrow("native admission failed");
+      expect((await host.getGoals(sessionId)).queued).toEqual([
+        expect.objectContaining({ id: messageId, objective: "retry this" }),
+      ]);
+      await expect(host.steerMessage(sessionId, messageId)).resolves.toMatchObject({ steered: true, state: { queued: [] } });
+      expect(runtime.steeredInputs).toEqual([{ id: sessionId, input: "retry this" }]);
+    } finally { await host.stop(); }
+  });
+
   it("recovers a persisted active goal when a replacement broker starts", async () => {
     const path = await directory();
     const priorRuntime = new FakeNativeRuntime();
@@ -2114,6 +2133,25 @@ describe("NativeRuntimeBrokerHost", () => {
     }
   });
 
+  it("restores OpenCode native cards through the Broker without a retained run and forwards recoverable answers", async () => {
+    const request: OpenCodeQuestionRequest = { id: "frm_1", sessionID: "ses_1", protocol: "form", questions: [] };
+    const questionId = openCodeQuestionId(request, 0);
+    const id = encodeUnifiedSessionId("opencode", "ses_1");
+    const runtime = new FakeNativeRuntime();
+    runtime.get = async () => ({ ...summary(), id, agentType: "opencode", nativeSessionId: "ses_1", messages: [],
+      events: [{ type: "ask_user", questionId, question: "选择方案" }] });
+    const host = new NativeRuntimeBrokerHost(await directory(), runtime as unknown as UnifiedSessionService);
+    await host.start();
+    try {
+      const client = new NativeRuntimeBrokerClient({ directory: host.directory });
+      await expect(client.get(id, { view: "core" })).resolves.toMatchObject({ events: [{ type: "ask_user", questionId }] });
+      runtime.answerError = new RuntimeSessionError("temporary failure", "QUESTION_ANSWER_FAILED");
+      await expect(client.answerQuestion(questionId, { answer: "A", selectedIndices: [0] })).rejects.toMatchObject({ code: "QUESTION_ANSWER_FAILED" });
+      runtime.answerError = null;
+      await expect(client.answerQuestion(questionId, { answer: "A", selectedIndices: [0] })).resolves.toBe(true);
+    } finally { await host.stop(); }
+  });
+
   it("answers Harness questions owned by Desktop or a completed turn without claiming a Broker run", async () => {
     const runtime = new FakeNativeRuntime();
     const host = new NativeRuntimeBrokerHost(await directory(), runtime as unknown as UnifiedSessionService);
@@ -2124,6 +2162,26 @@ describe("NativeRuntimeBrokerHost", () => {
       await expect(client.answerQuestion(questionId, { answer: "手机回答", selectedIndices: [0] })).resolves.toBe(true);
       expect(runtime.answers).toContainEqual({ questionId, answer: { answer: "手机回答", selectedIndices: [0] } });
       await expect(client.answerQuestion("native:expired-run:item", { answer: "x" })).resolves.toBe(false);
+    } finally { await host.stop(); }
+  });
+
+  it("keeps a live native job visible after its owning Harness turn completes", async () => {
+    const id = encodeUnifiedSessionId("deepseek-harness", "job-session");
+    const native = { ...summary(), id, agentType: "deepseek-harness" as const, nativeSessionId: "job-session" };
+    const progress: AgentEvent = { type: "runtime_progress", kind: "background-job", progressId: "job-1",
+      phase: "tool", label: "Studio", status: "running", output: "Server ready" };
+    const runtime = new FakeNativeRuntime();
+    runtime.listResult = [native];
+    runtime.immediateTerminal = true;
+    runtime.get = async () => ({ ...native, messages: [], events: [progress] });
+    const host = new NativeRuntimeBrokerHost(await directory(), runtime as unknown as UnifiedSessionService);
+    try {
+      await host.startRun(id, "start studio");
+      await waitFor(() => expect(host.snapshot(id).events.some(({ event }) => event.type === "done")).toBe(true));
+      const detail = await host.get(id);
+      expect(detail.status).toBe("idle");
+      expect(reduceRuntimeProgress(detail.events)).toEqual([{ kind: "background-job", progressId: "job-1",
+        phase: "tool", label: "Studio", status: "running", output: "Server ready" }]);
     } finally { await host.stop(); }
   });
 

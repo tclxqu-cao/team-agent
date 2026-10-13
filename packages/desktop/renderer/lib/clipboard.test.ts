@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { copyTextToClipboard } from "./clipboard";
+import { copyTextToClipboard, readTextFromClipboard } from "./clipboard";
 
 function stubSelectionCopy(result = true) {
   const textarea = {
@@ -26,6 +26,37 @@ function stubSelectionCopy(result = true) {
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
+});
+
+describe("readTextFromClipboard", () => {
+  it("reads the current clipboard exactly, preserving URL encoding and whitespace", async () => {
+    const text = "  http://localhost:3001/中文?q=a%20b\n";
+    vi.stubGlobal("navigator", { clipboard: { readText: vi.fn().mockResolvedValue(text) } });
+    vi.stubGlobal("isSecureContext", true);
+    await expect(readTextFromClipboard()).resolves.toBe(text);
+  });
+
+  it("requires native paste on an insecure LAN page", async () => {
+    const readText = vi.fn().mockResolvedValue("wrong");
+    vi.stubGlobal("navigator", { clipboard: { readText } });
+    vi.stubGlobal("isSecureContext", false);
+    await expect(readTextFromClipboard()).resolves.toBeNull();
+    expect(readText).not.toHaveBeenCalled();
+  });
+
+  it("requires native paste when clipboard permission is denied", async () => {
+    vi.stubGlobal("navigator", { clipboard: { readText: vi.fn().mockRejectedValue(new Error("denied")) } });
+    vi.stubGlobal("isSecureContext", true);
+    await expect(readTextFromClipboard()).resolves.toBeNull();
+  });
+
+  it("distinguishes an empty clipboard from unsupported access", async () => {
+    vi.stubGlobal("navigator", { clipboard: { readText: vi.fn().mockResolvedValue("") } });
+    vi.stubGlobal("isSecureContext", true);
+    await expect(readTextFromClipboard()).resolves.toBe("");
+    vi.stubGlobal("navigator", {});
+    await expect(readTextFromClipboard()).resolves.toBeNull();
+  });
 });
 
 describe("copyTextToClipboard", () => {

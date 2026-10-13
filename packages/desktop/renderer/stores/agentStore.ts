@@ -53,11 +53,14 @@ export interface StreamEvent {
   delta?: string;
   turnId?: string;
   progressId?: string;
+  kind?: RuntimeProgress["kind"];
   phase?: RuntimeProgress["phase"];
   label?: string;
   detail?: string;
   toolCallId?: string;
   elapsedSeconds?: number;
+  output?: string;
+  startedAt?: number;
   current?: number;
   total?: number;
   /** For ask_user events */
