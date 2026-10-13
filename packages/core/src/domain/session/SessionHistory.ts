@@ -24,6 +24,7 @@ export function paginateSessionHistory(
   messages: Message[],
   events: AgentEvent[],
   query: SessionHistoryQuery = {},
+  options: { includePendingQuestions?: boolean } = {},
 ): SessionHistoryPage {
   const pageSize = normalizePageSize(query.limit);
   const visibleMessages = messages.filter(
@@ -61,7 +62,7 @@ export function paginateSessionHistory(
 
   return {
     messages: pageMessages,
-    events: selectPageEvents(events, selectedToolCallIds),
+    events: selectPageEvents(events, selectedToolCallIds, options.includePendingQuestions === true && end === visibleMessages.length),
     history: {
       nextCursor: start > 0 ? `${CURSOR_PREFIX}${start}` : null,
       hasMore: start > 0,
@@ -142,10 +143,19 @@ function decodeCursor(cursor: string | undefined, fallback: number): number {
   return Math.min(value, fallback);
 }
 
-function selectPageEvents(events: AgentEvent[], toolCallIds: Set<string>): AgentEvent[] {
+function selectPageEvents(
+  events: AgentEvent[],
+  toolCallIds: Set<string>,
+  includePendingQuestions: boolean,
+): AgentEvent[] {
   const selected: AgentEvent[] = [];
+  const pendingQuestions = new Map<string, AgentEvent>();
   let latestContextUsage: AgentEvent | undefined;
   for (const event of events) {
+    if (includePendingQuestions) {
+      if (event.type === "ask_user") pendingQuestions.set(event.questionId, event);
+      if (event.type === "approval_resolved") pendingQuestions.delete(event.questionId);
+    }
     if (event.type === "context_usage") latestContextUsage = event;
     if (
       event.type === "tool_result"
@@ -166,5 +176,8 @@ function selectPageEvents(events: AgentEvent[], toolCallIds: Set<string>): Agent
     }
   }
   if (latestContextUsage) selected.unshift(latestContextUsage);
+  // Questions are live session state, so only pages containing the tail carry
+  // unresolved cards. Older windows must not duplicate them in the timeline.
+  selected.push(...pendingQuestions.values());
   return selected;
 }

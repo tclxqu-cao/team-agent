@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { mergeProgressiveSessionHistoryPage, restoreSessionHistoryPage } from "./session-history";
 import {
   findLatestPendingUserMessageId,
   findLatestUnqueuedUserMessageId,
@@ -142,6 +143,154 @@ describe("markDurableMessageSteered", () => {
 });
 
 describe("reconcileDurableQueuedMessages", () => {
+  const activeMessageState = {
+    active: {
+      id: "queue-active",
+      sourceMessageId: "source-active",
+      objective: "deploy",
+      createdAt: 3,
+      kind: "message" as const,
+    },
+    queued: [],
+    history: [],
+  };
+  const coreHistory = { delivery: "core" as const, revision: "rev-1" };
+  const steeringTurn = () => restoreSessionHistoryPage({
+    history: coreHistory,
+    messages: [
+      {
+        historyId: "history-active",
+        role: "user",
+        content: "deploy",
+        presentation: { executionTrace: { turnId: "turn-active", segmentIndex: 0 } },
+      },
+      ...[1, 2].map((segmentIndex) => ({
+        historyId: `history-steering-${segmentIndex}`,
+        role: "user",
+        content: "also fix ask",
+        presentation: { executionTrace: { turnId: "turn-active", segmentIndex } },
+      })),
+    ],
+  });
+
+  it("reuses the active turn's initial input after repeated steering inputs", () => {
+    const current = steeringTurn();
+    const result = reconcileDurableQueuedMessages(current, activeMessageState);
+
+    expect(result.map((message) => message.id)).toEqual(current.map((message) => message.id));
+    expect(result.filter((message) => message.role === "user").map((message) => message.content))
+      .toEqual(["deploy", "also fix ask", "also fix ask"]);
+    expect(result[0]).not.toHaveProperty("sendState");
+  });
+
+  it("repairs an already appended source copy without dropping steering or attachments", () => {
+    const current = steeringTurn();
+    const source = {
+      id: "source-active",
+      role: "user" as const,
+      content: "deploy",
+      timestamp: 3,
+      images: ["data:image/png;base64,AAAA"],
+      isQueued: false,
+    };
+    const polluted = [...current, source];
+    const result = reconcileDurableQueuedMessages(polluted, activeMessageState);
+
+    expect(result.map((message) => message.id)).toEqual(current.map((message) => message.id));
+    expect(result[0].images).toEqual(source.images);
+    expect(result[0].presentation).toEqual(current[0].presentation);
+    expect(polluted.at(-1)).toBe(source);
+  });
+
+  it("keeps queue agent metadata when the native transcript omits it", () => {
+    const current = steeringTurn();
+    const state = {
+      ...activeMessageState,
+      active: { ...activeMessageState.active, messagePayload: { agentName: "reviewer" } },
+    };
+    const result = reconcileDurableQueuedMessages(current, state);
+
+    expect(result.map((message) => message.id)).toEqual(current.map((message) => message.id));
+    expect(result[0].agentName).toBe("reviewer");
+  });
+
+  it("keeps the repaired order through successive core and queue refreshes", () => {
+    const core = steeringTurn();
+    let current = [...core, {
+      id: "source-active",
+      role: "user" as const,
+      content: "deploy",
+      timestamp: 3,
+      isQueued: false,
+    }];
+    for (let refresh = 0; refresh < 3; refresh += 1) {
+      current = reconcileDurableQueuedMessages(
+        mergeProgressiveSessionHistoryPage(current, core, "core", coreHistory),
+        activeMessageState,
+      );
+      expect(current.map((message) => message.id)).toEqual(core.map((message) => message.id));
+    }
+  });
+
+  it("preserves equal inputs from earlier turns and steering within the active turn", () => {
+    const current = steeringTurn();
+    const repeatedSteering = { ...current[2], content: "deploy" };
+    const earlier = {
+      ...current[0],
+      id: "history-earlier",
+      presentation: { executionTrace: { turnId: "turn-earlier", segmentIndex: 0 } },
+    };
+    const transcript = [earlier, current[0], current[1], repeatedSteering, ...current.slice(3)];
+    const result = reconcileDurableQueuedMessages(transcript, activeMessageState);
+
+    expect(result.map((message) => message.id)).toEqual(transcript.map((message) => message.id));
+    expect(result.filter((message) => message.role === "user" && message.content === "deploy"))
+      .toHaveLength(3);
+  });
+
+  it("does not confuse a completed turn with a new equal active input", () => {
+    const current = steeringTurn();
+    const completed = [...current, {
+      id: "final-answer",
+      role: "assistant" as const,
+      content: "done",
+      timestamp: 2,
+      presentation: { forkPoint: { turnId: "turn-active" } },
+    }];
+    const result = reconcileDurableQueuedMessages(completed, activeMessageState);
+
+    expect(result.slice(0, -1)).toEqual(completed);
+    expect(result.at(-1)).toMatchObject({ id: "source-active", content: "deploy", sendState: "pending" });
+  });
+
+  it("does not replace a steering input that matches a different active objective", () => {
+    const current = steeringTurn();
+    const state = {
+      ...activeMessageState,
+      active: { ...activeMessageState.active, objective: "also fix ask" },
+    };
+    const result = reconcileDurableQueuedMessages(current, state);
+
+    expect(result.slice(0, -1)).toEqual(current);
+    expect(result.at(-1)).toMatchObject({ id: "source-active", content: "also fix ask" });
+  });
+
+  it("keeps a newly promoted queue input separate from an equal transcript input", () => {
+    const current = steeringTurn();
+    const queued = {
+      id: "source-active",
+      role: "user" as const,
+      content: "deploy",
+      timestamp: 3,
+      isQueued: true,
+      queueItemId: "queue-active",
+    };
+    const result = reconcileDurableQueuedMessages([...current, queued], activeMessageState);
+
+    expect(result.slice(0, -1)).toEqual(current);
+    expect(result.at(-1)).toMatchObject({ id: "source-active", isQueued: false });
+  });
+
   it("projects an immediately active durable message exactly once", () => {
     const result = reconcileDurableQueuedMessages([], {
       active: {

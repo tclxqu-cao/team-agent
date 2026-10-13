@@ -46,6 +46,7 @@ const state = {
   steerError: null as Error | null,
   steered: null as { id: string; input: string } | null,
   permissionUpdate: null as { id: string; permissionMode: string } | null,
+  nativePermissionUpdate: null as { id: string; preset: string } | null,
   handoff: null as { id: string; controller: string } | null,
   releasedSessionId: null as string | null,
   refreshCalls: 0,
@@ -122,6 +123,10 @@ vi.mock("../../lib/native-runtime-service", () => ({
       state.permissionUpdate = { id, permissionMode };
       return { ...codexSummary, id, permissionMode };
     },
+    setNativePermissionPreset: async (id: string, preset: string) => {
+      state.nativePermissionUpdate = { id, preset };
+      return { ...codexSummary, id, nativePermissions: { currentValue: preset, options: [] } };
+    },
     handoff: async (id: string, controller: string) => {
       state.handoff = { id, controller };
       return {
@@ -189,7 +194,7 @@ vi.mock("../../lib/native-runtime-service", () => ({
       return state.steerResult;
     },
   }),
-  isNativeSessionId: (id: string) => /^runtime:(codex|claude-code|opencode):/.test(id),
+  isNativeSessionId: (id: string) => /^runtime:(codex|claude-code|opencode|deepseek-harness):/.test(id),
   runtimeErrorStatus: (error: { code?: string; status?: number }) => {
     if (error.code === "INVALID_SESSION_ID") return 400;
     if (error.code === "OPERATION_NOT_SUPPORTED") return 405;
@@ -271,6 +276,7 @@ describe("native runtime routing", () => {
     state.steerError = null;
     state.steered = null;
     state.permissionUpdate = null;
+    state.nativePermissionUpdate = null;
     state.handoff = null;
     state.releasedSessionId = null;
     state.refreshCalls = 0;
@@ -527,6 +533,21 @@ describe("native runtime routing", () => {
       id: "runtime:codex:bW9jaw",
       permissionMode: "request-approval",
     });
+  });
+
+  it("updates native presets separately from broker approval modes and rejects ambiguous payloads", async () => {
+    const id = "runtime:deepseek-harness:bW9jaw";
+    const response = await patchSession(json("PATCH", "http://test/api/sessions/test", { nativePermissionPreset: "read-only" }), { params: { id } });
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({ nativePermissions: { currentValue: "read-only" } });
+    expect(state.nativePermissionUpdate).toEqual({ id, preset: "read-only" });
+    expect(state.permissionUpdate).toBeNull();
+    for (const body of [{ nativePermissionPreset: "" }, { nativePermissionPreset: "read-only", permissionMode: "full-access" }]) {
+      const rejected = await patchSession(json("PATCH", "http://test/api/sessions/test", body), { params: { id } });
+      expect(rejected.status).toBe(400);
+    }
+    const coreSession = await patchSession(json("PATCH", "http://test/api/sessions/test", { nativePermissionPreset: "read-only" }), { params: { id: "core-session" } });
+    expect(coreSession.status).toBe(400);
   });
 
   it("hands off only the requested native session to Desktop", async () => {

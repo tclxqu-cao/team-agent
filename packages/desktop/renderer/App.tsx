@@ -73,7 +73,8 @@ import { getDesktopDirectoryContextMenuPath } from "./lib/sidebar-directory-cont
 import { isWebShell, useNarrowViewport } from "./web/webLayout";
 import { createElectronFileWorkspaceGateway } from "./lib/electron-file-workspace-gateway";
 import { resolveDesktopFlowStudioEntryUrl } from "./lib/desktop-flow-studio-entry";
-import { postWebArtifactOpen } from "./lib/artifact-links";
+import { postWebArtifactOpen, resolveWebArtifactPath } from "./lib/artifact-links";
+import { isWebMediaUrl } from "../../core/src/domain/web-console/WebArtifactBridge";
 import {
   projectSessionActivity,
   visibleWorkspaceIds,
@@ -347,16 +348,22 @@ export default function App() {
       ? createElectronFileWorkspaceGateway(window.agentApi)
       : null
   ), [webShell]);
-  const openArtifact = useCallback((path: string) => {
+  const openArtifact = useCallback(async (path: string) => {
     if (webShell) {
       postWebArtifactOpen(path);
       return;
     }
     if (!fileWorkspaceGateway) return;
+    if (path.startsWith("~/")) {
+      const { home } = await fileWorkspaceGateway.request<{ home: string }>("hello");
+      const resolved = resolveWebArtifactPath(path, null, home);
+      if (!resolved) return;
+      path = resolved;
+    }
     setFileDrawerTab("files");
     setFileDrawerOpen(true);
     setFilePreviewPath(path);
-    setFileRevealRequest((current) => ({
+    setFileRevealRequest((current) => isWebMediaUrl(path) ? null : ({
       path,
       requestId: (current?.requestId ?? 0) + 1,
     }));
@@ -1820,7 +1827,7 @@ export default function App() {
                         }}
                         title={isCreatingSession
                           ? "正在创建会话"
-                          : `新建 ${activeAgent === "customer-agent" ? "Customer Agent" : activeAgent === "claude-code" ? "Claude Code" : activeAgent === "codex" ? "Codex" : "OpenCode"} 会话`}
+                          : `新建 ${activeAgent === "customer-agent" ? "Customer Agent" : activeAgent === "claude-code" ? "Claude Code" : activeAgent === "codex" ? "Codex" : activeAgent === "deepseek-harness" ? "DeepSeek Harness" : "OpenCode"} 会话`}
                         aria-label={isCreatingSession ? "正在创建会话" : `在 ${project.name} 中新建会话`}
                         aria-busy={isCreatingSession}
                         disabled={

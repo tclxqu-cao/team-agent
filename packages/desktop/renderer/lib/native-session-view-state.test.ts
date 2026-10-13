@@ -78,7 +78,7 @@ describe("native session view state", () => {
     expect(shouldQueueMessageForActiveRun(session, true)).toBe(true);
   });
 
-  it.each(["codex", "claude-code", "opencode"] as const)(
+  it.each(["codex", "claude-code", "opencode", "deepseek-harness"] as const)(
     "follows an available idle %s session so later transcript writes appear without a reload",
     (agentType) => {
       expect(shouldFollowNativeHistory({

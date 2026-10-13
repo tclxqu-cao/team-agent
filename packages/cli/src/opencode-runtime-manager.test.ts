@@ -116,6 +116,7 @@ describe("resolveOpenCodeRuntime", () => {
 describe("OpenCode runtime helpers", () => {
   it("parses only semantic versions", () => {
     expect(parseOpenCodeVersion("opencode 1.18.27")).toBe("1.18.27");
+    expect(parseOpenCodeVersion("opencode v2.0.27")).toBe("2.0.27");
     expect(parseOpenCodeVersion("dev")).toBeNull();
   });
 

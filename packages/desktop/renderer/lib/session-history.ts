@@ -5,7 +5,7 @@ import type {
   SessionToolResultRef,
 } from "@agent/core";
 import type { ChatMessage, ContextUsageSnapshot, SessionHistoryWindow } from "../stores/agentStore";
-import type { SessionGoalState } from "../global";
+import type { SessionGoalState, UnifiedSessionSummary } from "../global";
 import {
   applyCodexLiveExecutionEvent,
   groupCodexExecutionTrace,
@@ -33,7 +33,8 @@ export interface PersistedHistoryEvent {
 }
 
 export interface SessionHistoryDetail {
-  agentType?: "customer-agent" | "codex" | "claude-code" | "opencode";
+  nativePermissions?: UnifiedSessionSummary["nativePermissions"];
+  agentType?: "customer-agent" | "codex" | "claude-code" | "opencode" | "deepseek-harness";
   status?: "active" | "idle" | "running" | "completed" | "failed";
   occupancy?: "available" | "owned-by-customer-agent" | "owned-externally";
   messages?: Array<{

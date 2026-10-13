@@ -13,9 +13,11 @@ export function shouldSkipVoiceSessionReload(
   runningSessionId: string | null,
   activeSessionId: string | null,
   targetSessionId: string | null,
+  preserveUnselectedSession = true,
 ): boolean {
   if (!runningSessionId || activeSessionId !== runningSessionId) return false;
-  return targetSessionId === null || targetSessionId === runningSessionId;
+  return targetSessionId === runningSessionId
+    || (targetSessionId === null && preserveUnselectedSession);
 }
 
 export function renewVoiceConversation(

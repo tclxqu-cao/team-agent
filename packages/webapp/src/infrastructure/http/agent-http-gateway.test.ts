@@ -1101,6 +1101,18 @@ describe("AgentHttpGateway", () => {
     });
   });
 
+  it("reads and mutates Harness native goals without using the AgentRoam queue or starting a model prompt", async () => {
+    const goal = { id: "g", revision: 3, objective: "work", phase: "paused", activation: "disarmed" };
+    const http = { get: vi.fn().mockResolvedValue({ goal }), post: vi.fn().mockResolvedValue({ goal }) };
+    const gateway = new AgentHttpGateway(http as never, {} as never);
+    const id = "runtime:deepseek-harness:bmF0aXZl";
+    expect(await gateway.getSessionNativeGoal(id)).toEqual(goal);
+    const mutation = { action: "resume" as const, ref: { id: "g", revision: 3 } };
+    expect(await gateway.mutateSessionNativeGoal(id, mutation)).toEqual(goal);
+    expect(http.get).toHaveBeenCalledWith("/api/sessions/runtime%3Adeepseek-harness%3AbmF0aXZl/native-goal");
+    expect(http.post).toHaveBeenCalledWith("/api/sessions/runtime%3Adeepseek-harness%3AbmF0aXZl/native-goal", mutation);
+  });
+
   it("follows the active run when admission reports a same-client conflict before a stream existed", async () => {
     globalThis.EventSource = ObservableEventSource as unknown as typeof EventSource;
     const conflict = Object.assign(new Error("Session is already running"), {

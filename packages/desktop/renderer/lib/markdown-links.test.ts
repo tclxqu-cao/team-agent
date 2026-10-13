@@ -2,6 +2,35 @@ import { describe, expect, it } from "vitest";
 import { parseMarkdownLinks, parseRichInlineTokens } from "./markdown-links";
 
 describe("parseMarkdownLinks", () => {
+  it("makes OpenCode home paths clickable in inline code and plain text", () => {
+    const path = "~/story-to-handdrawn-video/series/llm-daily/ep01_final.mp4";
+    for (const raw of [path, `\`${path}\``]) {
+      expect(parseRichInlineTokens(`成片：${raw}。`)).toEqual([
+        { type: "text", value: "成片：" },
+        { type: "artifact", label: path, path, raw },
+        { type: "text", value: "。" },
+      ]);
+    }
+    expect(parseRichInlineTokens("[成片](~/videos/demo.mp4)")[0]).toMatchObject({ type: "artifact", path: "~/videos/demo.mp4" });
+  });
+
+  it("previews media URLs with query strings while ordinary URLs stay links", () => {
+    const path = "https://example.com/demo.MP4?token=abc#t=3";
+    for (const raw of [path, `\`${path}\``, `[视频](${path})`]) {
+      expect(parseRichInlineTokens(raw)[0]).toMatchObject({ type: "artifact", path });
+    }
+    expect(parseRichInlineTokens("https://example.com/docs")[0]).toMatchObject({ type: "link" });
+    expect(parseRichInlineTokens("HTTPS://example.com/demo.MP4")[0]).toMatchObject({ type: "artifact" });
+    expect(parseRichInlineTokens("ftp://example.com/demo.mp4")).toEqual([{ type: "text", value: "ftp://example.com/demo.mp4" }]);
+    expect(parseRichInlineTokens("`ffmpeg -i video.mp4`")[0]).toEqual({ type: "code", value: "ffmpeg -i video.mp4" });
+  });
+
+  it("preserves code paths with spaces and adjacent multiple deliverables", () => {
+    expect(parseRichInlineTokens("`/tmp/My Video/demo.mp4` 与 /tmp/demo.pdf").filter((token) => token.type === "artifact")).toEqual([
+      { type: "artifact", label: "/tmp/My Video/demo.mp4", path: "/tmp/My Video/demo.mp4", raw: "`/tmp/My Video/demo.mp4`" },
+      { type: "artifact", label: "/tmp/demo.pdf", path: "/tmp/demo.pdf", raw: "/tmp/demo.pdf" },
+    ]);
+  });
   it("turns Chinese Markdown labels into links and preserves surrounding text", () => {
     const href = "http://git.17usoft.com/refund/merge_requests/new?merge_request%5Bsource_branch%5D=feature_req_326875&merge_request%5Btarget_branch%5D=develop";
 

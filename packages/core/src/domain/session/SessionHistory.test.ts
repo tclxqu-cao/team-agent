@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Message } from "../model/entities.js";
+import type { AgentEvent } from "../agent/entities.js";
 import { paginateSessionHistory } from "./SessionHistory.js";
 
 describe("paginateSessionHistory", () => {
@@ -128,5 +129,30 @@ describe("paginateSessionHistory", () => {
     ]);
 
     expect(page.events).toEqual([{ type: "native_subagent_update", activity }]);
+  });
+
+  it("restores pending questions on tail pages without replaying answered or duplicate cards", () => {
+    const pending: AgentEvent = { type: "ask_user", questionId: "pending", question: "Choose?" };
+    const events: AgentEvent[] = [
+      { type: "ask_user", questionId: "answered", question: "Allow?" },
+      pending,
+      { type: "approval_resolved", questionId: "answered" },
+      pending,
+    ];
+
+    const options = { includePendingQuestions: true };
+    expect(paginateSessionHistory(messages, events, { limit: 1 }, options).events).toEqual([pending]);
+    expect(paginateSessionHistory(messages, events, { after: "history.v1.3", limit: 1 }, options).events)
+      .toEqual([pending]);
+    expect(paginateSessionHistory(messages, events, { limit: 1 }).events).toEqual([]);
+  });
+
+  it("does not inject current questions into an older history window", () => {
+    const events: AgentEvent[] = [{ type: "ask_user", questionId: "pending", question: "Choose?" }];
+
+    const page = paginateSessionHistory(messages, events, { before: "history.v1.3", limit: 2 }, { includePendingQuestions: true });
+
+    expect(page.history.newerCursor).toBe("history.v1.3");
+    expect(page.events).toEqual([]);
   });
 });

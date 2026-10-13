@@ -1,3 +1,5 @@
+export { DeepSeekHarnessRuntimeAdapter } from "./deepseek-harness-runtime-adapter.js";
+export { DeepSeekHarnessClient } from "./deepseek-harness-client.js";
 export { ClaudeRuntimeAdapter } from "./claude-runtime-adapter.js";
 export { CodexRuntimeAdapter } from "./codex-runtime-adapter.js";
 export { OpenCodeRuntimeAdapter } from "./opencode-runtime-adapter.js";
@@ -25,4 +27,5 @@ export {
   workspacePageSize,
 } from "./agent-workspace-index.js";
 export * from "./types.js";
+export { parseNativeGoalMutation } from "./native-session-goal.js";
 export { parseSessionForkPoint, completedForkMessageIndex } from "./session-fork-point.js";

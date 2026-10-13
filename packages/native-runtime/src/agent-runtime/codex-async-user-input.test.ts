@@ -13,7 +13,7 @@ async function start() {
   const started = new Promise<void>((resolve) => { signalStarted = resolve; });
   const thread = {
     id: "async-thread", name: "async", preview: "async", createdAt: 1, updatedAt: 1,
-    status: { type: "idle" }, path: null, cwd: "/tmp", source: "vscode", turns: [],
+    status: { type: "idle" }, path: null, cwd: "/tmp", source: "vscode", turns: [] as any[],
   };
   const request = vi.fn(async (method: string, _params?: unknown): Promise<any> => {
     if (method === "thread/read" || method === "thread/resume") return { thread };
@@ -41,13 +41,64 @@ async function start() {
   const emit = (method: string, params: Record<string, unknown>) => notify({
     method, params: { threadId: thread.id, turnId: "async-turn", ...params },
   });
-  return { adapter, events, request, resolved, emit, finish: async () => {
+  return { adapter, thread, events, request, resolved, emit, finish: async () => {
     emit("turn/completed", { turn: { id: "async-turn", status: "completed", items: [question] } });
     await finished;
   } };
 }
 
 describe("Codex asynchronous questions", () => {
+  it("resolves desktop replies by native question identity before allowing a duplicate phone answer", async () => {
+    const run = await start();
+    const reply = (itemId: string, index = 0) => ({
+      type: "userMessage", id: "desktop-answer",
+      content: [{ type: "text", text: `<send_user_message_question_reply>\n${JSON.stringify([{
+        questionItemId: JSON.stringify(["request_user_input_async", itemId, index]),
+        question: "选择范围？", answer: "全部",
+      }])}\n</send_user_message_question_reply>` }],
+    });
+    try {
+      run.emit("item/completed", { item: question });
+      await vi.waitFor(() => expect(run.events.filter((event) => event.type === "ask_user")).toHaveLength(2));
+      const id = run.events.find((event) => event.type === "ask_user").questionId;
+      run.emit("item/completed", { item: reply("another-question") });
+      run.emit("item/completed", { item: reply(question.id, 1) });
+      run.emit("item/completed", { threadId: "another-thread", item: reply(question.id) });
+      run.emit("item/completed", { turnId: "another-turn", item: reply(question.id) });
+      expect(run.resolved).not.toHaveBeenCalled();
+      run.emit("item/started", { item: reply(question.id) });
+      run.emit("item/completed", { item: reply(question.id) });
+      expect(run.resolved).toHaveBeenCalledTimes(1);
+      expect(run.resolved).toHaveBeenCalledWith(id);
+      await expect(run.adapter.answerQuestion(id, { answer: "推荐" })).resolves.toBe(false);
+      expect(run.request.mock.calls.some(([method]) => method === "turn/steer")).toBe(false);
+      run.emit("item/completed", { item: question });
+      expect(run.events.filter((event) => event.type === "ask_user")).toHaveLength(2);
+    } finally { await run.finish(); }
+  });
+
+  it("reconciles a missed desktop notification when native history is refreshed", async () => {
+    const run = await start();
+    try {
+      run.emit("item/completed", { item: question });
+      await vi.waitFor(() => expect(run.events.filter((event) => event.type === "ask_user")).toHaveLength(2));
+      const id = run.events.find((event) => event.type === "ask_user").questionId;
+      run.thread.turns = [{
+        id: "async-turn", status: "inProgress", items: [question, {
+          type: "userMessage", id: "desktop-answer",
+          content: [{ type: "text", text: `<send_user_message_question_reply>\n${JSON.stringify([{
+            questionItemId: JSON.stringify(["request_user_input_async", question.id, 0]),
+            question: "选择范围？", answer: "全部",
+          }])}\n</send_user_message_question_reply>` }],
+        }],
+      }];
+      await run.adapter.getSession(run.thread.id);
+      expect(run.resolved).toHaveBeenCalledWith(id);
+      await expect(run.adapter.answerQuestion(id, { answer: "推荐" })).resolves.toBe(false);
+      expect(run.request.mock.calls.some(([method]) => method === "turn/steer")).toBe(false);
+    } finally { await run.finish(); }
+  });
+
   it("emits every question once, suppresses final-answer deltas, and steers the current turn", async () => {
     const run = await start();
     try {
@@ -93,7 +144,7 @@ describe("Codex asynchronous questions", () => {
     expect(active).toEqual([]);
     const history = await codexTurnsToMessages([{ id: "turn", status: "completed", items: [question] }]);
     expect(history).toEqual([expect.objectContaining({
-      content: question.text, presentation: { agentMessagePhase: "commentary" },
+      content: question.text, presentation: expect.objectContaining({ agentMessagePhase: "commentary" }),
     })]);
   });
 });

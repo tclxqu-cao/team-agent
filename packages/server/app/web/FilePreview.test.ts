@@ -6,6 +6,7 @@ import {
   decodeTextChunk,
   isBrowserPreviewPath,
   isMarkdownPreviewPath,
+  kindOf,
   mimeTypeForPath,
   nativeFileShareReadiness,
   readFileForClientDownload,
@@ -19,6 +20,11 @@ const filePreviewSource = readFileSync(
 );
 
 describe("FilePreview client download", () => {
+  it("classifies media URLs by pathname while preserving signed query strings", () => {
+    expect(kindOf("https://example.com/demo.MP4?signature=abc#t=2")).toBe("video");
+    expect(mimeTypeForPath("https://example.com/demo.MP4?signature=abc")).toBe("video/mp4");
+    expect(kindOf("/tmp/demo.mp4")).toBe("video");
+  });
   it("reads an allowed file in chunks and assembles one browser blob", async () => {
     const source = Buffer.from("presentation-bytes");
     const progress: number[] = [];
@@ -174,7 +180,7 @@ describe("FilePreview client download", () => {
   });
 
   it("places a native file share action between download and close", () => {
-    const downloadButton = filePreviewSource.indexOf('aria-label={downloadProgress === null ? "下载到当前设备"');
+    const downloadButton = filePreviewSource.indexOf("onClick={downloadToClient}");
     const shareButton = filePreviewSource.indexOf('aria-label="分享文件"');
     const closeButton = filePreviewSource.indexOf('aria-label="关闭预览"');
 

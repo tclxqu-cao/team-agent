@@ -1,9 +1,30 @@
 import { parseStoredPinnedCommands, type CommandHistoryRecord, type DeviceState, type TerminalTabRecord, type TerminalTabStatus, type UserPreferences } from "../domain/web-console/index.js";
 import { getDatabase } from "./SQLiteDatabase.js";
+import type { ComputerSettings } from "../domain/web-console/computer-settings.js";
 
 export class SQLiteWebConsoleStore {
   private readonly db;
   constructor(baseDir: string) { this.db = getDatabase(baseDir).db; }
+
+  getComputerSettings(userId: string): ComputerSettings | null {
+    const row = this.db.prepare("SELECT * FROM computer_settings WHERE user_id=?").get(userId) as {
+      user_id: string; revision: number; visible_tools_json: string; saved_pages_json: string | null; updated_at: string;
+    } | undefined;
+    return row ? {
+      userId: row.user_id, revision: row.revision, visibleTools: JSON.parse(row.visible_tools_json),
+      savedPages: row.saved_pages_json === null ? null : JSON.parse(row.saved_pages_json), updatedAt: row.updated_at,
+    } : null;
+  }
+
+  saveComputerSettings(value: ComputerSettings, expectedRevision: number | null): boolean {
+    const pages = value.savedPages === null ? null : JSON.stringify(value.savedPages);
+    if (expectedRevision === null) {
+      return this.db.prepare("INSERT INTO computer_settings (user_id,revision,visible_tools_json,saved_pages_json,updated_at) VALUES (?,?,?,?,?) ON CONFLICT(user_id) DO NOTHING")
+        .run(value.userId, value.revision, JSON.stringify(value.visibleTools), pages, value.updatedAt).changes === 1;
+    }
+    return this.db.prepare("UPDATE computer_settings SET revision=?,visible_tools_json=?,saved_pages_json=?,updated_at=? WHERE user_id=? AND revision=?")
+      .run(value.revision, JSON.stringify(value.visibleTools), pages, value.updatedAt, value.userId, expectedRevision).changes === 1;
+  }
 
   markStaleTerminalsExited(at: string): number { return this.db.prepare("UPDATE terminal_tabs SET status='exited', exited_at=? WHERE status IN ('active','detached')").run(at).changes; }
   listTabs(userId: string): TerminalTabRecord[] { return (this.db.prepare("SELECT * FROM terminal_tabs WHERE user_id=? AND status<>'closed' ORDER BY sort_order, created_at").all(userId) as any[]).map(rowToTab); }

@@ -28,6 +28,15 @@ describe("web artifact bridge contract", () => {
       .toEqual({ ...request, path: "\\\\server\\share\\report.pdf" });
   });
 
+  it("accepts host-home paths and HTTP media URLs without accepting arbitrary schemes", () => {
+    for (const path of ["~/videos/demo.mp4", "https://cdn.example/demo.mp4?signature=abc"]) {
+      expect(parseWebArtifactOpenRequest({ ...request, path })).toEqual({ ...request, path });
+    }
+    for (const path of ["javascript:demo.mp4", "https://example.com/docs", "https://example.com/demo.mp4\n"]) {
+      expect(parseWebArtifactOpenRequest({ ...request, path })).toBeNull();
+    }
+  });
+
   it("rejects invalid ids and unsafe paths", () => {
     expect(parseWebArtifactOpenRequest({ ...request, requestId: 0 })).toBeNull();
     expect(parseWebArtifactOpenRequest({ ...request, requestId: Number.NaN })).toBeNull();

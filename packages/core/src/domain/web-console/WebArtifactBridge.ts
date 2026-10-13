@@ -6,6 +6,18 @@ export interface WebArtifactOpenRequest {
   path: string;
 }
 
+/** Remote media stays in the browser; it is never fetched by the host file service. */
+export function isWebMediaUrl(value: string): boolean {
+  if (/[\0\r\n]/.test(value)) return false;
+  try {
+    const url = new URL(value);
+    return (url.protocol === "http:" || url.protocol === "https:")
+      && /\.(mp4|webm|mov|m4v|mp3|wav|m4a|aac|ogg|flac|png|jpe?g|gif|webp|pdf)$/i.test(url.pathname);
+  } catch {
+    return false;
+  }
+}
+
 function isAbsoluteHostPath(value: string): boolean {
   return value.startsWith("/")
     || /^[A-Za-z]:[\\/]/.test(value)
@@ -19,7 +31,7 @@ export function parseWebArtifactOpenRequest(data: unknown): WebArtifactOpenReque
   if (!Number.isSafeInteger(candidate.requestId) || Number(candidate.requestId) < 1) return null;
   if (
     typeof candidate.path !== "string"
-    || !isAbsoluteHostPath(candidate.path)
+    || !(isAbsoluteHostPath(candidate.path) || candidate.path.startsWith("~/") || isWebMediaUrl(candidate.path))
     || candidate.path.includes("\0")
     || candidate.path.includes("\n")
     || candidate.path.includes("\r")

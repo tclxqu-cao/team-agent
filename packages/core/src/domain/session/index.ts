@@ -25,3 +25,4 @@ export * from './SessionGoals.js';
 export * from './SessionGoalCoordinator.js';
 export * from './SessionPermission.js';
 export * from './SessionActivity.js';
+export * from './QuestionReply.js';

@@ -1,9 +1,34 @@
-/** Computer labels and addresses only. Authorization always stays on its own origin. */
+/** Browser-local connection directory. pages is only a legacy import; grants stay on their own origin. */
 export const COMPUTER_STORAGE_KEY = "agentroam.computers.v1";
 const MAX_COMPUTERS = 20;
 const GRANT = /^[A-Za-z0-9_-]{43}$/;
 
-/** @typedef {{ origin: string, name: string }} Computer */
+/** @typedef {{ id: string, name: string, url: string, openMode: "current" | "new-tab" }} ComputerPage */
+/** @typedef {{ origin: string, name: string, pages?: ComputerPage[], pagesMigrated?: boolean }} Computer */
+
+export function normalizePageUrl(raw) {
+  try {
+    if (typeof raw !== "string" || raw.length > 8192) throw new Error();
+    const url = new URL(raw.trim().replace(/[，。]+$/, ""));
+    if (!["http:", "https:"].includes(url.protocol) || url.username || url.password) throw new Error();
+    return url.href;
+  } catch { throw new Error("请填写有效的 http(s) 页面地址。"); }
+}
+
+/** @returns {ComputerPage[]} */
+export function normalizeComputerPages(value) {
+  if (!Array.isArray(value) || value.length > 20) return [];
+  const pages = new Map();
+  for (const entry of value) {
+    if (!entry || typeof entry.id !== "string" || !/^[A-Za-z0-9_-]{1,80}$/.test(entry.id) || typeof entry.name !== "string" || !entry.name.trim() || !["current", "new-tab"].includes(entry.openMode)) continue;
+    try { pages.set(entry.id, { id: entry.id, name: entry.name.trim().slice(0, 60), url: normalizePageUrl(entry.url), openMode: entry.openMode }); } catch { /* Ignore invalid saved links. */ }
+  }
+  return [...pages.values()];
+}
+
+export function defaultPageOpenMode(raw) {
+  try { const host = new URL(normalizePageUrl(raw)).hostname; return host === "qoder.com" || host.endsWith(".qoder.com") ? "new-tab" : "current"; } catch { return "current"; }
+}
 
 export function computerOrigin(raw) {
   try {
@@ -21,7 +46,8 @@ export function normalizeComputers(value) {
     const origin = entry && typeof entry.origin === "string" ? computerOrigin(entry.origin) : null;
     if (!origin || typeof entry.name !== "string") continue;
     const name = entry.name.trim().slice(0, 60) || new URL(origin).hostname;
-    computers.set(origin, { origin, name });
+    const pages = normalizeComputerPages(entry.pages);
+    computers.set(origin, { origin, name, ...(entry.pagesMigrated === true ? { pagesMigrated: true } : Array.isArray(entry.pages) ? { pages } : {}) });
   }
   return [...computers.values()];
 }
@@ -34,7 +60,12 @@ export function readComputers(storage = localStorage) {
 
 export function mergeComputers(...lists) {
   const byOrigin = new Map();
-  for (const list of lists) for (const computer of normalizeComputers(list)) byOrigin.set(computer.origin, computer);
+  for (const list of lists) for (const computer of normalizeComputers(list)) {
+    const previous = byOrigin.get(computer.origin);
+    const merged = { ...previous, ...computer };
+    if (merged.pagesMigrated) delete merged.pages;
+    byOrigin.set(computer.origin, merged);
+  }
   if (byOrigin.size > MAX_COMPUTERS) throw new Error("最多可添加 20 台电脑。");
   return [...byOrigin.values()];
 }
@@ -50,7 +81,7 @@ export function rememberComputer(origin, name, computers = readComputers()) {
   const normalized = computerOrigin(origin);
   if (!normalized) throw new Error("电脑地址无效。");
   const existing = computers.find(computer => computer.origin === normalized);
-  return mergeComputers(computers, [{ origin: normalized, name: name?.trim() || existing?.name || new URL(normalized).hostname }]);
+  return mergeComputers(computers, [{ origin: normalized, name: name?.trim() || existing?.name || new URL(normalized).hostname, ...(existing?.pages?.length ? { pages: existing.pages } : {}) }]);
 }
 
 export function readComputerHandoff(fragment) {
@@ -80,7 +111,14 @@ export function parsePairingTarget(raw) {
 
 function attachDirectory(url, computers, name = "") {
   const params = new URLSearchParams(url.hash.slice(1));
-  params.set("computers", JSON.stringify({ version: 1, computers: normalizeComputers(computers), name: name.trim().slice(0, 60) }));
+  const connections = normalizeComputers(computers).map(computer => ({
+    origin: computer.origin, name: computer.name,
+    ...(computer.pagesMigrated ? { pagesMigrated: true } : {}),
+    // Only the destination's not-yet-imported pages need a one-time handoff.
+    ...(computer.origin === url.origin && !computer.pagesMigrated && computer.pages?.length ? { pages: computer.pages } : {}),
+  }));
+  params.set("computers", JSON.stringify({ version: 1, computers: connections, name: name.trim().slice(0, 60) }));
+  if (params.toString().length > 16_383) throw new Error("电脑列表或待导入页面配置过长，请先导入旧页面后再切换电脑。");
   url.hash = params.toString();
   return url.href;
 }

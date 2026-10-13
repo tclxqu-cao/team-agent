@@ -30,3 +30,9 @@ declare module "@desktop/renderer/stores/uiStore" {
 declare module "@desktop/renderer/components/browser-live-header-context" {
   export const BrowserLiveHeaderContext: import("react").Context<import("react").ReactNode>;
 }
+
+declare module "@desktop/renderer/components/BrowserLivePanel" {
+  import type { ComponentType } from "react";
+  const BrowserLivePanel: ComponentType<{ open: boolean; agentSessionId?: string | null; onClose: () => void }>;
+  export default BrowserLivePanel;
+}

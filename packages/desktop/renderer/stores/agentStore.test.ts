@@ -80,6 +80,34 @@ describe("agentStore session message cache", () => {
     ]);
   });
 
+  it("keeps an explicit new session empty when the store identity is also empty", () => {
+    const previous = [{ id: "old", role: "assistant" as const, content: "old history", timestamp: 1 }];
+    const cache = { old: previous };
+    for (const selected of [null, "", "   "]) {
+      for (const storeSession of [null, "", "   ", "old"]) {
+        expect(resolveVisibleSessionMessages(previous, cache, storeSession, selected)).toEqual([]);
+      }
+    }
+    expect(cache.old).toBe(previous);
+    expect(resolveVisibleSessionMessages(previous, cache, "old", undefined)).toBe(previous);
+    expect(resolveVisibleSessionMessages(previous, cache, "old", "old")).toBe(previous);
+  });
+
+  it("preserves a running session and its output while the workspace welcome is visible", () => {
+    const store = useAgentStore.getState();
+    store.setSessionId("running");
+    store.setRunningSession("running");
+    store.appendText("before navigation", "running");
+    store.setSessionId("");
+    store.appendText(" and background output", "running");
+
+    expect(useAgentStore.getState().runningSessionId).toBe("running");
+    expect(useAgentStore.getState().messages).toEqual([]);
+    expect(store.getMessagesForSession("running")[0].content).toBe("before navigation and background output");
+    store.setSessionId("running");
+    expect(useAgentStore.getState().messages).toEqual(store.getMessagesForSession("running"));
+  });
+
   it("does not copy the previous history when a newly selected session receives text", () => {
     const store = useAgentStore.getState();
     store.setSessionId("old");

@@ -24,6 +24,7 @@ import type {
 } from "./types";
 import { RuntimeSessionError } from "./types";
 import { UnifiedSessionService } from "./unified-session-service";
+import { harnessQuestionId } from "./deepseek-harness-interaction-codec";
 
 const sessionId = encodeUnifiedSessionId("codex", "thread-1");
 
@@ -328,6 +329,25 @@ describe("NativeRuntimeBrokerHost", () => {
       await runtime.abort();
       await new Promise((resolve) => setTimeout(resolve, 0));
       await host.stop();
+    }
+  });
+
+  it("cancels the abort fallback before closing the broker database", async () => {
+    const id = encodeUnifiedSessionId("deepseek-harness", "shutdown-test");
+    const runtime = new FakeNativeRuntime();
+    runtime.completeOnAbort = false;
+    const host = new NativeRuntimeBrokerHost(await directory(), runtime as unknown as UnifiedSessionService);
+    await host.startRun(id, "wait for cancellation");
+    await waitFor(() => expect(host.snapshot(id).events).toHaveLength(1));
+    vi.useFakeTimers();
+    try {
+      await host.abort(id);
+      expect(vi.getTimerCount()).toBe(1);
+      await host.stop();
+      expect(vi.getTimerCount()).toBe(0);
+      await vi.advanceTimersByTimeAsync(3_001);
+    } finally {
+      vi.useRealTimers();
     }
   });
 
@@ -2092,6 +2112,77 @@ describe("NativeRuntimeBrokerHost", () => {
     } finally {
       await host.stop();
     }
+  });
+
+  it("answers Harness questions owned by Desktop or a completed turn without claiming a Broker run", async () => {
+    const runtime = new FakeNativeRuntime();
+    const host = new NativeRuntimeBrokerHost(await directory(), runtime as unknown as UnifiedSessionService);
+    await host.start();
+    try {
+      const client = new NativeRuntimeBrokerClient({ directory: host.directory });
+      const questionId = harnessQuestionId({ sessionId: "desktop-native", kind: "question", requestId: "call", itemId: "item" });
+      await expect(client.answerQuestion(questionId, { answer: "手机回答", selectedIndices: [0] })).resolves.toBe(true);
+      expect(runtime.answers).toContainEqual({ questionId, answer: { answer: "手机回答", selectedIndices: [0] } });
+      await expect(client.answerQuestion("native:expired-run:item", { answer: "x" })).resolves.toBe(false);
+    } finally { await host.stop(); }
+  });
+
+  it("keeps native pending Harness questions in history even without a retained Broker run", async () => {
+    const id = encodeUnifiedSessionId("deepseek-harness", "desktop-native");
+    const questionId = harnessQuestionId({ sessionId: "desktop-native", kind: "question", requestId: "call", itemId: "item" });
+    const runtime = new FakeNativeRuntime();
+    runtime.get = async () => ({ ...summary(), id, agentType: "deepseek-harness", nativeSessionId: "desktop-native", messages: [],
+      events: [{ type: "ask_user", questionId, question: "选择方案" }] });
+    const host = new NativeRuntimeBrokerHost(await directory(), runtime as unknown as UnifiedSessionService);
+    try {
+      await expect(host.get(id)).resolves.toMatchObject({ events: [{ type: "ask_user", questionId }] });
+      await expect(host.get(id, { limit: 50 })).resolves.toMatchObject({ events: [{ type: "ask_user", questionId }] });
+      await expect(host.get(id, { limit: 1, view: "core" })).resolves.toMatchObject({ events: [{ type: "ask_user", questionId }] });
+    } finally { await host.stop(); }
+  });
+
+  it("forwards native permission presets over the socket without replacing the native projection with broker policy", async () => {
+    const id = encodeUnifiedSessionId("deepseek-harness", "native-permission");
+    const setNativePermissionPreset = vi.fn(async (_id: string, preset: string) => ({
+      ...summary(), id, agentType: "deepseek-harness" as const, nativeSessionId: "native-permission",
+      nativePermissions: { currentValue: preset, options: [{ value: "read-only", label: "read-only" }] },
+    }));
+    const runtime = Object.assign(new FakeNativeRuntime(), { setNativePermissionPreset });
+    runtime.get = async () => ({ ...summary(), id, agentType: "deepseek-harness", nativeSessionId: "native-permission", messages: [], events: [] });
+    const path = await directory();
+    const host = new NativeRuntimeBrokerHost(path, runtime as unknown as UnifiedSessionService);
+    await host.start();
+    try {
+      const client = new NativeRuntimeBrokerClient({ directory: path });
+      await client.startRun(id, "keep working");
+      await expect(client.setNativePermissionPreset(id, "read-only")).resolves.toMatchObject({ nativePermissions: { currentValue: "read-only" } });
+      expect(setNativePermissionPreset).toHaveBeenCalledWith(id, "read-only");
+      await expect(client.setPermissionMode(id, "full-access")).rejects.toMatchObject({ code: "OPERATION_NOT_SUPPORTED" });
+    } finally {
+      await host.stop();
+    }
+  });
+
+  it("forwards native goal revisions and conflicts without admitting a broker-owned prompt", async () => {
+    const id = encodeUnifiedSessionId("deepseek-harness", "native-goal");
+    const goal = { id: "g", revision: 2, objective: "work", phase: "paused" as const, activation: "disarmed" as const, roundsStarted: 1, maxGoalRounds: 3, createdAt: 1, updatedAt: 2 };
+    const getNativeGoal = vi.fn(async () => goal);
+    const mutateNativeGoal = vi.fn(async (_id: string, mutation: unknown) => {
+      if ((mutation as { ref?: { revision: number } }).ref?.revision === 1) throw new RuntimeSessionError("目标已更新", "NATIVE_GOAL_CONFLICT");
+      return goal;
+    });
+    const runtime = Object.assign(new FakeNativeRuntime(), { getNativeGoal, mutateNativeGoal });
+    const path = await directory();
+    const host = new NativeRuntimeBrokerHost(path, runtime as unknown as UnifiedSessionService);
+    await host.start();
+    try {
+      const client = new NativeRuntimeBrokerClient({ directory: path });
+      expect(await client.getNativeGoal(id)).toEqual(goal);
+      expect(await client.mutateNativeGoal(id, { action: "resume", ref: { id: "g", revision: 2 } })).toEqual(goal);
+      expect(mutateNativeGoal).toHaveBeenCalledWith(id, { action: "resume", ref: { id: "g", revision: 2 } });
+      await expect(client.mutateNativeGoal(id, { action: "pause", ref: { id: "g", revision: 1 } })).rejects.toMatchObject({ code: "NATIVE_GOAL_CONFLICT" });
+      expect(runtime.runInputs).toEqual([]);
+    } finally { await host.stop(); }
   });
 
   it("carries progressive history queries and lazy result locators over the socket", async () => {

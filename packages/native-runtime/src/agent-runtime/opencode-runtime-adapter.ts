@@ -36,6 +36,7 @@ import {
   selectNativeHistoryRange,
 } from "./native-history-paging.js";
 import { OpenCodeServerClient, type OpenCodeServerEvent } from "./opencode-server-client.js";
+import { OPENCODE_INTERRUPTED_EVENT } from "./opencode-v2-codec.js";
 import { encodeUnifiedSessionId } from "./session-id.js";
 import { paginateByOffset } from "./agent-workspace-index.js";
 import type {
@@ -537,6 +538,12 @@ export class OpenCodeRuntimeAdapter implements AgentRuntimeAdapter {
     const run = this.activeRuns.get(sessionId);
     if (!run) return;
 
+    if (payload.type === OPENCODE_INTERRUPTED_EVENT) {
+      run.queue.push({ type: "turn_aborted" });
+      run.queue.close();
+      return;
+    }
+
     if (payload.type === "message.updated") {
       run.messageRoles.set(payload.properties.info.id, payload.properties.info.role);
       if (payload.properties.info.role === "assistant") run.finalMessageId = payload.properties.info.id;
@@ -932,7 +939,7 @@ function errorMessage(error: unknown): string {
 }
 
 function validatedOpenCodeVersion(output: string, executable: string): string {
-  const version = output.match(/(?:^|\s)((?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*))(?:\s|$)/)?.[1];
+  const version = output.match(/(?:^|\s)v?((?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*))(?:\s|$)/)?.[1];
   if (!version) throw new Error(`Unable to parse OpenCode version from ${executable}`);
   if (!meetsOpenCodeMinimum(version)) {
     throw new Error(`OpenCode ${version} at ${executable} is incompatible; AgentRoam requires >=${OPENCODE_MINIMUM_VERSION}`);

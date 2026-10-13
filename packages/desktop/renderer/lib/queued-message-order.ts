@@ -1,3 +1,5 @@
+import type { MessagePresentation } from "@agent/core";
+
 export interface QueuedMessageLike {
   id: string;
   isQueued?: boolean;
@@ -27,6 +29,7 @@ export interface DurableQueuedMessageLike extends UserMessageLike {
   images?: string[];
   queueItemId?: string;
   isSteered?: boolean;
+  presentation?: Pick<MessagePresentation, "executionTrace" | "forkPoint">;
 }
 
 export interface MixedQueueStateLike<T extends DurableQueueItemLike> {
@@ -75,11 +78,38 @@ export function markDurableMessageSteered<T extends DurableQueuedMessageLike>(
   return [...messages.slice(0, index), ...messages.slice(index + 1), steered];
 }
 
+function findActiveNativeInput(
+  history: DurableQueuedMessageLike[],
+  activeItem: DurableQueueItemLike,
+  activeMessageId: string,
+): number {
+  const latestNativeUserIndex = history.findLastIndex((message) => (
+    message.role === "user" && message.presentation?.executionTrace
+  ));
+  const turnId = history[latestNativeUserIndex]?.presentation?.executionTrace?.turnId;
+  if (!turnId) return -1;
+  // A new optimistic input or a completed turn must not consume an older,
+  // equal input. Same-turn steering can only follow the active initial input.
+  if (history.slice(latestNativeUserIndex + 1).some((message) => (
+    message.role === "user" && message.id !== activeMessageId && message.queueItemId !== activeItem.id
+  ))) return -1;
+  if (history.some((message) => (
+    message.role === "assistant" && message.presentation?.forkPoint?.turnId === turnId
+  ))) return -1;
+  return history.findIndex((message) => (
+    message.role === "user"
+    && message.presentation?.executionTrace?.turnId === turnId
+    && (message.presentation.executionTrace.segmentIndex ?? 0) === 0
+    && message.content === activeItem.objective
+    && (message.agentName === undefined || message.agentName === activeItem.messagePayload?.agentName)
+  ));
+}
+
 export function reconcileDurableQueuedMessages<T extends DurableQueuedMessageLike>(
   messages: T[],
   state: MixedQueueStateLike<DurableQueueItemLike>,
 ): T[] {
-  const history = messages.filter((message) => !message.isQueued);
+  let history = messages.filter((message) => !message.isQueued);
   const currentByQueueId = new Map(
     messages
       .filter((message) => message.isQueued && message.queueItemId)
@@ -89,18 +119,21 @@ export function reconcileDurableQueuedMessages<T extends DurableQueuedMessageLik
   if (activeItem) {
     const current = currentByQueueId.get(activeItem.id);
     const activeMessageId = activeItem.sourceMessageId || current?.id || activeItem.id;
+    const nativeInputIndex = current ? -1 : findActiveNativeInput(history, activeItem, activeMessageId);
     const latestUserIndex = history.findLastIndex((message) => message.role === "user");
-    const historyIndex = history.findLastIndex((message, index) => (
+    const historyIndex = nativeInputIndex >= 0 ? nativeInputIndex : history.findLastIndex((message, index) => (
       message.id === activeMessageId
       || message.queueItemId === activeItem.id
       || (
         !current
         && index === latestUserIndex
         && message.role === "user"
+        && !message.presentation?.executionTrace
         && message.content === activeItem.objective
       )
     ));
     const previous = historyIndex >= 0 ? history[historyIndex] : current;
+    const source = current ?? history.find((message) => message.id === activeMessageId);
     const hasSubsequentRuntimeActivity = historyIndex >= 0
       && history.slice(historyIndex + 1).some((message) => message.role === "assistant");
     const activeMessage = {
@@ -109,8 +142,8 @@ export function reconcileDurableQueuedMessages<T extends DurableQueuedMessageLik
       role: "user",
       content: activeItem.objective,
       timestamp: previous?.timestamp ?? activeItem.createdAt,
-      agentName: previous?.agentName ?? activeItem.messagePayload?.agentName,
-      images: previous?.images ?? activeItem.messagePayload?.images,
+      agentName: previous?.agentName ?? source?.agentName ?? activeItem.messagePayload?.agentName,
+      images: previous?.images ?? source?.images ?? activeItem.messagePayload?.images,
       isQueued: false,
       queueItemId: undefined,
       ...(previous && "sendState" in previous
@@ -121,6 +154,17 @@ export function reconcileDurableQueuedMessages<T extends DurableQueuedMessageLik
     } as T;
     if (historyIndex >= 0) history[historyIndex] = activeMessage;
     else history.push(activeMessage);
+    if (nativeInputIndex >= 0) {
+      // Repair the old source-ID projection while retaining every native
+      // steering input, including genuine repeated text with distinct IDs.
+      history = history.filter((message, index) => (
+        index === nativeInputIndex
+        || message.role !== "user"
+        || message.presentation?.executionTrace
+        || message.content !== activeItem.objective
+        || (message.id !== activeMessageId && message.queueItemId !== activeItem.id)
+      ));
+    }
   }
 
   const queued = state.queued

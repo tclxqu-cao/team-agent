@@ -4,7 +4,10 @@ import { describe, expect, it, vi } from "vitest";
 import { preflightCodexDesktop } from "./codex-desktop-preflight.js";
 
 describe("shared backend configuration admission", () => {
-  async function fixture(options: { broken?: boolean; status?: string; gatewayUnsupported?: boolean; gatewayBroken?: boolean; activateOnSecondScan?: boolean } = {}) {
+  async function fixture(options: {
+    broken?: boolean; status?: string; gatewayUnsupported?: boolean; gatewayBroken?: boolean;
+    gatewayError?: { code: number; message: string }; activateOnSecondScan?: boolean;
+  } = {}) {
     const http = createServer();
     const server = new WebSocketServer({ server: http });
     const methods: string[] = [];
@@ -17,6 +20,8 @@ describe("shared backend configuration admission", () => {
       let error: { code: number; message: string } | undefined;
       if (message.method === "config/read" && broken || message.method === "account/gatewayOAuth/read" && options.gatewayBroken) {
         error = { code: -32603, message: "No such file or directory (os error 2)" };
+      } else if (message.method === "account/gatewayOAuth/read" && options.gatewayError) {
+        error = options.gatewayError;
       } else if (message.method === "account/gatewayOAuth/read" && options.gatewayUnsupported) {
         error = { code: -32601, message: "Method not found" };
       } else if (message.method === "thread/loaded/list") {
@@ -41,6 +46,32 @@ describe("shared backend configuration admission", () => {
       await preflightCodexDesktop(f.endpoint, "/unused", { restart: f.restart, log: () => {} });
       expect(f.restart).not.toHaveBeenCalled();
       expect(f.methods).toEqual(["initialize", "initialized", "config/read", "account/gatewayOAuth/read"]);
+    } finally { await f.close(); }
+  });
+
+  it("accepts the unknown-variant response from a legacy Codex backend", async () => {
+    const f = await fixture({ gatewayError: {
+      code: -32600,
+      message: "Invalid request: unknown variant `account/gatewayOAuth/read`, expected one of `initialize`, `config/read`",
+    } });
+    try {
+      await preflightCodexDesktop(f.endpoint, "/unused", { restart: f.restart, log: () => {} });
+      expect(f.restart).not.toHaveBeenCalled();
+      expect(f.methods).toEqual(["initialize", "initialized", "config/read", "account/gatewayOAuth/read"]);
+    } finally { await f.close(); }
+  });
+
+  it.each([
+    { code: -32600, message: "Invalid request: missing field `workspaceId`" },
+    { code: -32600, message: "Invalid request: unknown variant `config/read`, expected one of `initialize`" },
+    { code: -32600, message: "Not authorized to read gateway configuration" },
+    { code: -32603, message: "Permission denied" },
+  ])("rejects a real gateway failure: $message", async (gatewayError) => {
+    const f = await fixture({ gatewayError });
+    try {
+      await expect(preflightCodexDesktop(f.endpoint, "/unused", { restart: f.restart, log: () => {} }))
+        .rejects.toThrow(gatewayError.message);
+      expect(f.restart).not.toHaveBeenCalled();
     } finally { await f.close(); }
   });
 

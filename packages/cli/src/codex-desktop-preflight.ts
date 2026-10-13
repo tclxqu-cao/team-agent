@@ -7,6 +7,12 @@ import { DesktopProbeRpcError, readDesktopActivity, withDesktopRpc } from "./cod
 const execFileAsync = promisify(execFile);
 interface PreflightContext { restart?: () => Promise<void>; log?: (message: string) => void }
 
+function isUnsupportedGatewayMethod(error: unknown): boolean {
+  if (!(error instanceof DesktopProbeRpcError)) return false;
+  return error.code === -32601 || (error.code === -32600
+    && error.message.startsWith("Invalid request: unknown variant `account/gatewayOAuth/read`, expected one of "));
+}
+
 async function inspectBackend(endpoint: string): Promise<boolean> {
   return withDesktopRpc(endpoint, async (request, becameActive) => {
     try {
@@ -14,7 +20,7 @@ async function inspectBackend(endpoint: string): Promise<boolean> {
       try { await request("account/gatewayOAuth/read", {}); }
       catch (error) {
         // Older servers may not have the Desktop gateway RPC.
-        if (!(error instanceof DesktopProbeRpcError && error.code === -32601)) throw error;
+        if (!isUnsupportedGatewayMethod(error)) throw error;
       }
       return true;
     } catch (error) {

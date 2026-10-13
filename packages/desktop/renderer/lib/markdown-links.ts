@@ -1,3 +1,5 @@
+import { isWebMediaUrl } from "../../../core/src/domain/web-console/WebArtifactBridge";
+
 export type MarkdownLinkToken =
   | { type: "text"; value: string }
   | { type: "link"; label: string; href: string }
@@ -5,22 +7,23 @@ export type MarkdownLinkToken =
 
 export type RichInlineToken = MarkdownLinkToken | { type: "code"; value: string };
 
-const MARKDOWN_LINK_PATTERN = /\[([^\]\n]+)\]\((https?:\/\/[^\s)]+|[ \t]*\/[^)\n]+)\)/gi;
+const MARKDOWN_LINK_PATTERN = /\[([^\]\n]+)\]\((https?:\/\/[^\s)]+|[ \t]*(?:~\/|\/)[^)\n]+)\)/gi;
 const INLINE_CODE_PATTERN = /`([^`\n]+)`/g;
+const BARE_ARTIFACT_PATTERN = /https?:\/\/[^\s`<>"'()[\]，。；！？]+|(?:~\/|\/|[A-Za-z]:[\\/])[^\s`<>"'()[\]，。；！？]*\.[A-Za-z0-9]{1,10}(?::[1-9]\d*)?/gi;
 const CODEX_FILE_CITATION_PATTERN = /:codex-file-citation\{([^}\n]*)\}/g;
 const CODEX_FILE_CITATION_ATTRIBUTE_PATTERN = /([A-Za-z][\w-]*)="([^"\n]*)"/g;
 const CODEX_VISUALIZE_PATTERN = /\uE200visualize\uE202([^\uE201\n]+)\uE201/g;
 
 type InlineLinkMatch = {
-  kind: "markdown" | "citation" | "visualize" | "code";
+  kind: "markdown" | "citation" | "visualize" | "code" | "bare";
   match: RegExpMatchArray;
 };
 
 function parseArtifactTarget(target: string): { path: string; line?: number } | null {
-  if (!target.startsWith("/") || target.includes("?") || target.includes("#") || target.includes("\0")) {
+  if (!(target.startsWith("/") || target.startsWith("~/") || /^[A-Za-z]:[\\/]/.test(target)) || target.includes("?") || target.includes("#") || /[\0\r\n]/.test(target)) {
     return null;
   }
-  const lineMatch = target.match(/^(\/.*):([1-9]\d*)$/);
+  const lineMatch = target.match(/^(.*):([1-9]\d*)$/);
   if (!lineMatch) return { path: target };
   return { path: lineMatch[1], line: Number(lineMatch[2]) };
 }
@@ -69,6 +72,11 @@ function parseInlineTokens(text: string, includeCode: boolean): RichInlineToken[
     ...(includeCode
       ? [...text.matchAll(INLINE_CODE_PATTERN)].map((match) => ({ kind: "code" as const, match }))
       : []),
+    ...(includeCode
+      ? [...text.matchAll(BARE_ARTIFACT_PATTERN)]
+        .filter((match) => /^https?:\/\//i.test(match[0]) || !/[\w:/\\]/.test(text[(match.index ?? 0) - 1] ?? ""))
+        .map((match) => ({ kind: "bare" as const, match }))
+      : []),
   ].sort((left, right) => (left.match.index ?? 0) - (right.match.index ?? 0));
 
   for (const candidate of matches) {
@@ -79,8 +87,23 @@ function parseInlineTokens(text: string, includeCode: boolean): RichInlineToken[
       tokens.push({ type: "text", value: text.slice(cursor, index) });
     }
     if (candidate.kind === "code") {
-      tokens.push({ type: "code", value: match[1] });
+      const value = match[1];
+      const artifact = /\.[A-Za-z0-9]{1,10}(?::[1-9]\d*)?$/.test(value) ? parseArtifactTarget(value) : null;
+      tokens.push(artifact || isWebMediaUrl(value)
+        ? { type: "artifact", label: value, path: artifact?.path ?? value, ...(artifact?.line ? { line: artifact.line } : {}), raw: match[0] }
+        : { type: "code", value });
       cursor = index + match[0].length;
+      continue;
+    }
+    if (candidate.kind === "bare") {
+      const value = match[0];
+      const artifact = parseArtifactTarget(value);
+      tokens.push(artifact || isWebMediaUrl(value)
+        ? { type: "artifact", label: value, path: artifact?.path ?? value, ...(artifact?.line ? { line: artifact.line } : {}), raw: value }
+        : /^https?:\/\//i.test(value)
+          ? { type: "link", label: value, href: value }
+          : { type: "text", value });
+      cursor = index + value.length;
       continue;
     }
     if (candidate.kind === "citation") {
@@ -106,7 +129,9 @@ function parseInlineTokens(text: string, includeCode: boolean): RichInlineToken[
       continue;
     }
     const target = match[2];
-    if (/^https?:\/\//i.test(target)) {
+    if (isWebMediaUrl(target)) {
+      tokens.push({ type: "artifact", label: match[1], path: target, raw: match[0] });
+    } else if (/^https?:\/\//i.test(target)) {
       tokens.push({ type: "link", label: match[1], href: target });
     } else {
       const artifact = parseArtifactTarget(target.replace(/^[ \t]+/, ""));

@@ -21,6 +21,9 @@ export type {
   SessionQueryIndex,
   SessionQueryIndexEntry,
   ThreadGoalInfo,
+  NativeGoalMutation,
+  NativeSessionGoal,
+  UnifiedSessionSummary,
   TtsStreamMetadata,
 } from "../../../../desktop/renderer/global";
 

@@ -3,7 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { WebSocketServer } from "ws";
 import { describe, expect, it, vi } from "vitest";
-import { probeDesktopActivity, readDesktopActivity } from "./codex-desktop-probe.js";
+import { probeDesktopActivity, readDesktopActivity, withDesktopRpc } from "./codex-desktop-probe.js";
 
 describe("complete Desktop activity snapshot", () => {
   it("checks all loaded-thread pages and every live status before declaring idle", async () => {
@@ -50,10 +50,20 @@ describe("complete Desktop activity snapshot", () => {
 });
 
 describe("read-only Desktop RPC transport", () => {
-  async function serverFixture(unix = false, ignoreRequests = false) {
+  async function serverFixture(unix = false, ignoreRequests = false, rejectExtensions = false) {
     const root = unix ? await mkdtemp("/tmp/codex-desktop-probe-") : null;
     const http = createServer();
-    const server = new WebSocketServer({ server: http });
+    const server = new WebSocketServer({ noServer: true });
+    const extensionOffers: Array<string | string[] | undefined> = [];
+    http.on("upgrade", (request, socket, head) => {
+      const extensions = request.headers["sec-websocket-extensions"];
+      extensionOffers.push(extensions);
+      if (rejectExtensions && extensions) {
+        socket.end("HTTP/1.1 400 Bad Request\r\nConnection: close\r\nContent-Length: 0\r\n\r\n");
+        return;
+      }
+      server.handleUpgrade(request, socket, head, (connection) => server.emit("connection", connection, request));
+    });
     const methods: string[] = [];
     let closed = false;
     server.on("connection", (socket) => {
@@ -67,7 +77,7 @@ describe("read-only Desktop RPC transport", () => {
     });
     await new Promise<void>((done) => unix ? http.listen(join(root!, "rpc.sock"), done) : http.listen(0, "127.0.0.1", done));
     const endpoint = unix ? `ws+unix://localhost${root}/rpc.sock:/rpc` : `ws://127.0.0.1:${(http.address() as { port: number }).port}`;
-    return { endpoint, methods, isClosed: () => closed, async dispose() {
+    return { endpoint, methods, extensionOffers, isClosed: () => closed, async dispose() {
       for (const client of server.clients) client.terminate();
       await new Promise<void>((done) => server.close(() => done()));
       await new Promise<void>((done) => http.close(() => done()));
@@ -82,6 +92,23 @@ describe("read-only Desktop RPC transport", () => {
       expect(fixture.methods).toEqual(["initialize", "initialized", "thread/loaded/list", "thread/loaded/list"]);
       await vi.waitFor(() => expect(fixture.isClosed()).toBe(true));
     } finally { await fixture.dispose(); }
+  });
+
+  it.each([false, true])("connects to a legacy TCP/Unix (%s) backend that rejects extension offers", async (unix) => {
+    const fixture = await serverFixture(unix, false, true);
+    try {
+      expect(await probeDesktopActivity(fixture.endpoint)).toEqual({ state: "idle" });
+      expect(fixture.extensionOffers).toEqual([undefined]);
+      expect(fixture.methods).toEqual(["initialize", "initialized", "thread/loaded/list", "thread/loaded/list"]);
+    } finally { await fixture.dispose(); }
+  });
+
+  it("preserves the socket error when a Unix endpoint is missing", async () => {
+    const root = await mkdtemp("/tmp/codex-probe-missing-");
+    try {
+      await expect(withDesktopRpc(`ws+unix://localhost${root}/missing.sock:/rpc`, async () => {}))
+        .rejects.toThrow(/Desktop probe connection failed:.*ENOENT/);
+    } finally { await rm(root, { recursive: true, force: true }); }
   });
 
   it("bounds a stuck RPC and disconnects only its own probe", async () => {

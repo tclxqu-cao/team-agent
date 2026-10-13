@@ -144,7 +144,9 @@ async function boot(endpoint: ServerEndpoint | null): Promise<void> {
     // 浏览器（同源、https/localhost）才启用 Web Push：原生壳 WebView 不支持
     // Web Push，且订阅跟随已配对的设备凭证由 http 层自动携带。
     if (!nativePairing && window.parent === window) startPushNotifications(http);
-    const { default: App } = await import("@desktop/renderer/App");
+    const { default: App } = new URLSearchParams(location.search).get("view") === "remote-desktop"
+      ? await import("./presentation/RemoteDesktopPage")
+      : await import("@desktop/renderer/App");
     root.render(
       <StrictMode>
         <BrowserLiveHeaderContext.Provider value={<RemoteAuthorizationControl />}><App /></BrowserLiveHeaderContext.Provider>

@@ -120,7 +120,22 @@ export async function PATCH(
   request: Request,
   { params }: { params: { id: string } },
 ) {
-  const body = await request.json() as { permissionMode?: unknown };
+  const body = await request.json() as { permissionMode?: unknown; nativePermissionPreset?: unknown };
+  if (body.nativePermissionPreset !== undefined) {
+    if (!isNativeSessionId(params.id) || body.permissionMode !== undefined
+      || typeof body.nativePermissionPreset !== "string" || !body.nativePermissionPreset.trim()
+      || body.nativePermissionPreset.length > 128) {
+      return NextResponse.json({ error: "Invalid native permission preset" }, { status: 400 });
+    }
+    try {
+      return NextResponse.json(await getNativeRuntimeService().setNativePermissionPreset(params.id, body.nativePermissionPreset));
+    } catch (error) {
+      return NextResponse.json(
+        { error: error instanceof Error ? error.message : "Unable to update native permissions" },
+        { status: runtimeErrorStatus(error) },
+      );
+    }
+  }
   if (!isToolPermissionMode(body.permissionMode)) {
     return NextResponse.json({ error: "Invalid permission mode" }, { status: 400 });
   }

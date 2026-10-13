@@ -52,6 +52,12 @@ describe("prepareVoiceCommand", () => {
 });
 
 describe("voice session reload guard", () => {
+  it("allows explicit workspace navigation while retaining the pending voice-selection guard", () => {
+    expect(voiceCommand.shouldSkipVoiceSessionReload("running", "running", null, false)).toBe(false);
+    expect(voiceCommand.shouldSkipVoiceSessionReload("running", "running", null)).toBe(true);
+    expect(voiceCommand.shouldSkipVoiceSessionReload("running", "running", "running", false)).toBe(true);
+  });
+
   it("keeps an active voice session from being replaced by an early DB snapshot", () => {
     expect("shouldSkipVoiceSessionReload" in voiceCommand).toBe(true);
     const shouldSkipVoiceSessionReload = (

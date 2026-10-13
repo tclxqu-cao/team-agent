@@ -8,6 +8,9 @@ import type {
   SessionGoalState,
   SessionQueryIndex,
   ThreadGoalInfo,
+  NativeGoalMutation,
+  NativeSessionGoal,
+  UnifiedSessionSummary,
 } from "../../domain/ports/agent-port";
 import { HttpClient, listOf } from "./http-client";
 
@@ -492,6 +495,20 @@ export class AgentHttpGateway {
     mode: "request-approval" | "auto-approval" | "full-access",
   ): Promise<unknown> {
     return this.http.patch(`/api/sessions/${encodeURIComponent(id)}`, { permissionMode: mode });
+  }
+
+  async setSessionNativePermissionPreset(id: string, preset: string): Promise<UnifiedSessionSummary> {
+    return this.http.patch(`/api/sessions/${encodeURIComponent(id)}`, { nativePermissionPreset: preset });
+  }
+
+  async getSessionNativeGoal(id: string): Promise<NativeSessionGoal | null> {
+    const result = await this.http.get<{ goal: NativeSessionGoal | null }>(`/api/sessions/${encodeURIComponent(id)}/native-goal`);
+    return result.goal;
+  }
+
+  async mutateSessionNativeGoal(id: string, mutation: NativeGoalMutation): Promise<NativeSessionGoal | null> {
+    const result = await this.http.post<{ goal: NativeSessionGoal | null }>(`/api/sessions/${encodeURIComponent(id)}/native-goal`, mutation);
+    return result.goal;
   }
 
   async getSessionGoals(id: string): Promise<SessionGoalState> {

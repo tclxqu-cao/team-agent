@@ -1,4 +1,6 @@
-import { spawn, type ChildProcess } from "node:child_process";
+import { execFile, spawn, type ChildProcess } from "node:child_process";
+import { randomBytes } from "node:crypto";
+import { promisify } from "node:util";
 import { logGlobal } from "@agent/core";
 import { createServer } from "node:net";
 import {
@@ -11,10 +13,15 @@ import type {
   EventPermissionReplied,
 } from "@opencode-ai/sdk/v2/types";
 import { RuntimeSessionError } from "./types.js";
+import { createOpenCodeV2Client } from "./opencode-v2-transport.js";
+import { OPENCODE_INTERRUPTED_EVENT } from "./opencode-v2-codec.js";
+
+const execFileAsync = promisify(execFile);
 
 export interface OpenCodeServerEvent {
   directory: string;
-  payload: GlobalEvent["payload"] | EventPermissionAsked | EventPermissionReplied;
+  payload: GlobalEvent["payload"] | EventPermissionAsked | EventPermissionReplied
+    | { type: typeof OPENCODE_INTERRUPTED_EVENT; properties: { sessionID: string } };
 }
 
 type EventListener = (event: OpenCodeServerEvent) => void;
@@ -81,10 +88,16 @@ export class OpenCodeServerClient {
   }
 
   private async start(): Promise<OpencodeClient> {
+    const version = await execFileAsync(this.executable, ["--version"], { env: this.environment, timeout: 5_000, windowsHide: true });
+    const major = /(?:^|\s)v?(\d+)\./.exec(`${version.stdout}\n${version.stderr}`)?.[1];
+    const v2 = Number(major) >= 2;
+    const password = v2 ? randomBytes(32).toString("base64url") : undefined;
+    const authorization = password ? `Basic ${Buffer.from(`opencode:${password}`).toString("base64")}` : undefined;
     const port = await reservePort();
     const url = `http://127.0.0.1:${port}`;
     const child = spawn(this.executable, [
       "serve",
+      ...(v2 ? ["--stdio"] : []),
       "--hostname=127.0.0.1",
       `--port=${port}`,
     ], {
@@ -92,9 +105,10 @@ export class OpenCodeServerClient {
         ...this.environment,
         // Ask for side-effecting operations. AgentRoam applies the selected
         // per-session policy when OpenCode emits the permission request.
-        OPENCODE_CONFIG_CONTENT: openCodeServerConfig(this.environment.OPENCODE_CONFIG_CONTENT),
+        OPENCODE_CONFIG_CONTENT: v2 ? this.environment.OPENCODE_CONFIG_CONTENT : openCodeServerConfig(this.environment.OPENCODE_CONFIG_CONTENT),
+        ...(password ? { OPENCODE_PASSWORD: password, OPENCODE_SERVER_PASSWORD: password } : {}),
       },
-      stdio: ["ignore", "pipe", "pipe"],
+      stdio: [v2 ? "pipe" : "ignore", "pipe", "pipe"],
       windowsHide: true,
     });
     this.process = child;
@@ -111,7 +125,7 @@ export class OpenCodeServerClient {
     });
 
     try {
-      await waitForHealth(url, child, () => output, () => spawnError);
+      await waitForHealth(url, child, () => output, () => spawnError, authorization);
     } catch (error) {
       if (child.exitCode === null) child.kill("SIGTERM");
       this.process = null;
@@ -119,7 +133,8 @@ export class OpenCodeServerClient {
       throw error;
     }
 
-    const client = createOpencodeClient({ baseUrl: url, throwOnError: true });
+    const client = authorization ? createOpenCodeV2Client(url, authorization)
+      : createOpencodeClient({ baseUrl: url, throwOnError: true });
     child.once("exit", (code, signal) => {
       if (this.process !== child || this.disposed) return;
       this.process = null;
@@ -261,6 +276,7 @@ async function waitForHealth(
   child: ChildProcess,
   output: () => string,
   spawnError: () => Error | null,
+  authorization?: string,
 ): Promise<void> {
   const deadline = Date.now() + 10_000;
   while (Date.now() < deadline) {
@@ -269,8 +285,13 @@ async function waitForHealth(
       throw new Error(`OpenCode server exited with code ${child.exitCode}: ${output().trim()}`);
     }
     try {
-      const response = await fetch(`${url}/global/health`, { signal: AbortSignal.timeout(1_000) });
-      if (response.ok) return;
+      const response = await fetch(`${url}${authorization ? "/api/info" : "/global/health"}`, {
+        signal: AbortSignal.timeout(1_000), headers: authorization ? { Authorization: authorization } : {},
+      });
+      if (response.ok && response.headers.get("content-type")?.includes("application/json")) {
+        const identity = await response.json() as { version?: unknown; healthy?: unknown };
+        if (authorization ? typeof identity.version === "string" : identity.healthy === true) return;
+      }
     } catch {
       // The listener may not be bound yet.
     }

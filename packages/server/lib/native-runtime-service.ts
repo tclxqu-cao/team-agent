@@ -28,6 +28,8 @@ import {
   type CreateRuntimeSessionOptions,
   type ImportAgentWorkspaceResult,
   type NativeReasoningEffort,
+  type NativeGoalMutation,
+  type NativeSessionGoal,
   type NativeRuntimeBrokerSnapshot,
   type NativeRuntimeController,
   type RuntimeHealth,
@@ -120,6 +122,9 @@ export interface NativeRuntimePort {
   ): Promise<() => void>;
   snapshot?(id: string, afterSequence?: number): Promise<NativeRuntimeBrokerSnapshot>;
   setPermissionMode?(id: string, mode: ToolPermissionMode): Promise<UnifiedSessionSummary>;
+  setNativePermissionPreset?(id: string, preset: string): Promise<UnifiedSessionSummary>;
+  getNativeGoal?(id: string): Promise<NativeSessionGoal | null>;
+  mutateNativeGoal?(id: string, mutation: NativeGoalMutation): Promise<NativeSessionGoal | null>;
   handoff?(id: string, controller: NativeRuntimeController): Promise<NativeRuntimeBrokerSnapshot>;
   getGoals?(id: string, controller?: NativeRuntimeController): Promise<SessionGoalState>;
   enqueueGoal?(
@@ -368,6 +373,23 @@ export class NativeRuntimeService implements NativeRuntimePort {
     return this.runtime.setPermissionMode(id, mode);
   }
 
+  async setNativePermissionPreset(id: string, preset: string): Promise<UnifiedSessionSummary> {
+    if (!this.runtime.setNativePermissionPreset) {
+      throw new RuntimeSessionError("Native permission presets are unavailable", "OPERATION_NOT_SUPPORTED");
+    }
+    return this.runtime.setNativePermissionPreset(id, preset);
+  }
+
+  async getNativeGoal(id: string): Promise<NativeSessionGoal | null> {
+    if (!this.runtime.getNativeGoal) throw new RuntimeSessionError("此运行时未提供原生目标", "OPERATION_NOT_SUPPORTED");
+    return this.runtime.getNativeGoal(id);
+  }
+
+  async mutateNativeGoal(id: string, mutation: NativeGoalMutation): Promise<NativeSessionGoal | null> {
+    if (!this.runtime.mutateNativeGoal) throw new RuntimeSessionError("此运行时未提供原生目标", "OPERATION_NOT_SUPPORTED");
+    return this.runtime.mutateNativeGoal(id, mutation);
+  }
+
   async handoff(id: string, controller: NativeRuntimeController): Promise<NativeRuntimeBrokerSnapshot> {
     if (!this.runtime.handoff) {
       throw new RuntimeSessionError("Native runtime broker is unavailable", "RUNTIME_UNAVAILABLE");
@@ -610,6 +632,7 @@ export function runtimeErrorStatus(err: unknown): number {
       case "APPROVAL_EXPIRED":
       case "CODEX_SESSION_VERSION_INCOMPATIBLE":
       case "STALE_SESSION_ANCHOR":
+      case "NATIVE_GOAL_CONFLICT":
         return 409;
       default:
         return 400;

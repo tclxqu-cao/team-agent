@@ -10,6 +10,8 @@ import {
   computeSessionHistoryRevision,
   decodeSessionHistoryAnchor,
   normalizeToolPermissionMode,
+  parsePersistedQuestionReplies,
+  questionReplyMatches,
   fileChangeLineStats,
   summarizeFileChanges,
   sessionHistoryMessageId,
@@ -481,6 +483,7 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
       includeTurns: true,
     });
     this.clearUnconfirmedInterruptionIfTerminal(response.thread);
+    this.reconcileAsyncInputs(nativeSessionId, response.thread.turns);
     const openFiles = await listOpenSessionFiles("codex", this.sessionRoot, {
       excludePids: this.ownedClientPids(),
       idleAfterMs: null,
@@ -543,6 +546,7 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
     }
     const reconciliation = this.reconcileFinalizingAnswer(nativeSessionId, ascTurns);
     ascTurns = reconciliation.turns;
+    this.reconcileAsyncInputs(nativeSessionId, ascTurns);
     if (reconciliation.latestTurnFinalizing && summary.status === "running") {
       summary = { ...summary, status: "idle" };
     }
@@ -1481,6 +1485,11 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
       : typeof (params.turn as { id?: unknown } | undefined)?.id === "string"
         ? (params.turn as { id: string }).id
         : undefined;
+    const replyItem = params.item as CodexItem | undefined;
+    if ((message.method === "item/started" || message.method === "item/completed")
+      && replyItem?.type === "userMessage") {
+      this.resolveAsyncInputReply(threadId, notificationTurnId, replyItem);
+    }
     if (message.method === "turn/completed") {
       const completedTurnId = notificationTurnId;
       if (completedTurnId === this.unconfirmedInterruptedTurnIds.get(threadId)) {
@@ -1791,6 +1800,32 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
       || thread.status?.type !== "active"
     ) {
       this.unconfirmedInterruptedTurnIds.delete(thread.id);
+    }
+  }
+
+  private reconcileAsyncInputs(threadId: string, turns: CodexTurn[]): void {
+    if (![...this.pendingAsyncInputs.values()].some((pending) => pending.threadId === threadId)) return;
+    for (const turn of turns) {
+      for (const item of turn.items ?? []) {
+        if (item.type === "userMessage") this.resolveAsyncInputReply(threadId, turn.id, item);
+      }
+    }
+  }
+
+  private resolveAsyncInputReply(threadId: string, turnId: string | undefined, item: CodexItem): void {
+    const entries = Array.isArray(item.content) ? item.content : [];
+    const content = entries.flatMap((entry) => {
+      const value = asRecord(entry);
+      return value.type === "text" && typeof value.text === "string" ? [value.text] : [];
+    }).join("\n");
+    for (const reply of parsePersistedQuestionReplies(content)) {
+      for (const [questionId, pending] of this.pendingAsyncInputs) {
+        if (pending.threadId !== threadId || (turnId && pending.turnId !== turnId)
+          || !questionReplyMatches(reply, questionId, pending.question)) continue;
+        this.pendingAsyncInputs.delete(questionId);
+        this.onApprovalResolved?.(questionId);
+        break;
+      }
     }
   }
 

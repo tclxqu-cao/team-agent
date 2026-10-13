@@ -1,4 +1,5 @@
-import { Agent, WebSocket } from "undici";
+import { createConnection } from "node:net";
+import WebSocket from "ws";
 
 export type DesktopActivity =
   | { state: "idle" }
@@ -24,43 +25,48 @@ export async function probeDesktopActivity(endpoint: string, timeoutMs = 5_000):
 
 export async function withDesktopRpc<T>(endpoint: string,
   operation: (request: Request, becameActive: () => boolean) => Promise<T>, timeoutMs = 5_000): Promise<T> {
-  let dispatcher: Agent | undefined;
-  let socket: InstanceType<typeof WebSocket> | undefined;
+  let socket: WebSocket | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let rejectPending: (() => void) | undefined;
   try {
     const address = new URL(endpoint);
     let url = endpoint;
+    let socketPath: string | undefined;
     if (address.protocol === "ws+unix:") {
       const separator = address.pathname.indexOf(":");
       if (address.hostname !== "localhost" || separator < 1) throw new Error("invalid local socket");
-      dispatcher = new Agent({ connect: { socketPath: decodeURIComponent(address.pathname.slice(0, separator)) } });
+      socketPath = decodeURIComponent(address.pathname.slice(0, separator));
       url = `ws://localhost${address.pathname.slice(separator + 1)}`;
     } else if (!(["ws:", "wss:"].includes(address.protocol)
       && ["127.0.0.1", "localhost", "[::1]"].includes(address.hostname))) {
       throw new Error("not a local Desktop endpoint");
     }
     if (address.username || address.password || address.search || address.hash) throw new Error("invalid endpoint");
-    socket = new WebSocket(url, dispatcher ? { dispatcher } : undefined);
+    socket = new WebSocket(url, {
+      ...(socketPath ? { createConnection: () => createConnection({ path: socketPath }) } : {}),
+      handshakeTimeout: timeoutMs,
+      // Older Codex backends reject a Sec-WebSocket-Extensions offer.
+      perMessageDeflate: false,
+    });
     const connection = socket;
     let nextId = 0;
     let changedToActive = false;
     const pending = new Map<number, { resolve: (value: unknown) => void; reject: (error: Error) => void }>();
-    const fail = () => {
-      for (const item of pending.values()) item.reject(new Error("Desktop probe disconnected"));
+    const fail = (error = new Error("Desktop probe disconnected")) => {
+      for (const item of pending.values()) item.reject(error);
       pending.clear();
     };
     rejectPending = fail;
     const opened = new Promise<void>((resolve, reject) => {
-      connection.addEventListener("open", () => resolve(), { once: true });
-      connection.addEventListener("error", () => reject(new Error("Desktop probe connection failed")), { once: true });
-      connection.addEventListener("close", () => reject(new Error("Desktop probe disconnected")), { once: true });
+      connection.once("open", () => resolve());
+      connection.once("error", (error) => reject(new Error(`Desktop probe connection failed: ${error.message}`, { cause: error })));
+      connection.once("close", () => reject(new Error("Desktop probe disconnected")));
     });
-    connection.addEventListener("error", fail);
-    connection.addEventListener("close", fail);
-    connection.addEventListener("message", (event) => {
+    connection.on("error", fail);
+    connection.on("close", () => fail());
+    connection.on("message", (data) => {
       try {
-        const message = JSON.parse(String(event.data));
+        const message = JSON.parse(String(data));
         if (message.method === "thread/status/changed" && message.params?.status?.type === "active") changedToActive = true;
         const item = pending.get(message.id);
         if (!item) return;
@@ -90,8 +96,7 @@ export async function withDesktopRpc<T>(endpoint: string,
   } finally {
     if (timer) clearTimeout(timer);
     rejectPending?.();
-    socket?.close();
-    await dispatcher?.destroy();
+    socket?.terminate();
   }
 }
 

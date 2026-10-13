@@ -66,9 +66,12 @@ export function trackBrowserLiveViewport(element: HTMLElement, view: Window = wi
   if (view.visualViewport) sources.push(view.visualViewport);
   if (parent) {
     sources.push(parent);
+    sources.push(parent.document);
     if (parent.visualViewport) sources.push(parent.visualViewport);
   }
-  const events = ["resize", "scroll", "orientationchange", "pageshow", "visibilitychange", "fullscreenchange"];
+  // The shell slides tabs with a transform. Recompute once the frame reaches
+  // its final position; measuring mid-transition would leave the view clipped.
+  const events = ["resize", "scroll", "orientationchange", "pageshow", "visibilitychange", "fullscreenchange", "transitionend"];
   for (const source of sources) {
     for (const event of events) source.addEventListener(event, schedule);
   }

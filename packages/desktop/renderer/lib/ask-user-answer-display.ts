@@ -1,3 +1,4 @@
+import { parsePersistedQuestionReplies, questionReplyMatches } from "../../../core/src/domain/session/QuestionReply";
 import type { ChatMessage } from "../stores/agentStore";
 
 /** Present Codex's durable answer message as the same answered question card. */
@@ -7,7 +8,10 @@ export function presentQuestionAnswers(
 ): ChatMessage[] {
   const visible = hideAnsweredQuestionEchoes(messages);
   if (!isCodex) return visible;
-  return visible.map((message) => {
+  const reconciled = [...visible];
+  const replacements = new Map<number, ChatMessage[]>();
+  const matchedCards = new Set<number>();
+  visible.forEach((message, messageIndex) => {
     if (
       message.role !== "user"
       || message.askUser
@@ -15,21 +19,50 @@ export function presentQuestionAnswers(
       || message.isCompactionSummary
       || message.images?.length
       || message.presentation?.attachments?.length
-    ) return message;
-    // This is the complete turn/steer envelope emitted by CodexRuntimeAdapter.
-    // Formatting it never changes the durable text, user boundary or trace.
-    const match = /^关于“([\s\S]+?)”的回答：\r?\n([\s\S]+)$/.exec(message.content);
-    if (!match || !match[1].trim() || !match[2].trim()) return message;
-    return {
-      ...message,
-      askUser: {
-        questionId: `answered-history:${message.id}`,
-        question: match[1],
-        answered: true,
-        answer: match[2],
-      },
-    };
+    ) return;
+    const replies = parsePersistedQuestionReplies(message.content);
+    if (!replies.length) return;
+    const restored: ChatMessage[] = [];
+    replies.forEach((reply, replyIndex) => {
+      // Event-only cards may be restored after the durable answer. Native
+      // identity can match either side; legacy text matches the nearest prior card.
+      const cardIndex = visible.findLastIndex((candidate, index) => {
+        const card = candidate.askUser;
+        return card && !matchedCards.has(index)
+          && (reply.itemId !== undefined || index < messageIndex)
+          && questionReplyMatches(reply, card.questionId, card.question)
+          && (!card.answered || !card.answer || card.answer === "已处理"
+            || card.answer.trim() === reply.answer.trim());
+      });
+      if (cardIndex >= 0) {
+        matchedCards.add(cardIndex);
+        const cardMessage = reconciled[cardIndex];
+        if (!cardMessage.askUser?.answered || cardMessage.askUser.answer !== reply.answer) {
+          reconciled[cardIndex] = {
+            ...cardMessage,
+            askUser: { ...cardMessage.askUser!, answered: true, answer: reply.answer },
+          };
+        }
+        return;
+      }
+      restored.push({
+        ...message,
+        id: replyIndex === 0 ? message.id : `${message.id}:question-reply:${replyIndex}`,
+        askUser: {
+          questionId: `answered-history:${message.id}:${replyIndex}`,
+          question: reply.question,
+          answered: true,
+          answer: reply.answer,
+        },
+      });
+    });
+    // Retain the original one-question history identity for existing clients.
+    if (replies.length === 1 && restored.length === 1) {
+      restored[0].askUser!.questionId = `answered-history:${message.id}`;
+    }
+    replacements.set(messageIndex, restored);
   });
+  return reconciled.flatMap((message, index) => replacements.get(index) ?? [message]);
 }
 
 /** Keep native answer echoes in history, but show an answer once in the chat. */

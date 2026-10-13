@@ -114,4 +114,22 @@ describe("remote desktop visible viewport", () => {
     expect(values.size).toBe(0);
     expect(vi.getTimerCount()).toBe(0);
   });
+
+  it("fills the frame after the shell tab finishes sliding into view", () => {
+    vi.useFakeTimers();
+    const view = browserWindow();
+    const parent = browserWindow(844);
+    let left = 110;
+    view.parent = parent as unknown as Window;
+    view.frameElement = { getBoundingClientRect: () => rect(806, 38, 390, left) } as unknown as Element;
+    const { element, values } = targetElement();
+    const stop = trackBrowserLiveViewport(element, view as unknown as Window);
+    expect(values.get("--browser-live-width")).toBe("280px");
+    left = 0;
+    parent.document.dispatchEvent(new Event("transitionend"));
+    vi.advanceTimersByTime(16);
+    expect(values.get("--browser-live-width")).toBe("390px");
+    stop();
+    expect(vi.getTimerCount()).toBe(0);
+  });
 });

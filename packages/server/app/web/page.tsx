@@ -5,10 +5,13 @@
 
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Bot, PanelRight, X, LayoutGrid, MonitorUp, RefreshCw } from "lucide-react";
+import { ArrowLeft, ExternalLink, Bot, PanelRight, X, LayoutGrid, MonitorUp, RefreshCw } from "lucide-react";
 import PwaInstallButton from "./PwaInstallButton";
 import ComputerSwitcher from "./ComputerSwitcher";
+import ComputerPagePane from "./ComputerPagePane";
+import type { ComputerPage } from "./ComputerPageDialog";
 import ResponsiveToolbar from "./ResponsiveToolbar";
+import { useComputerSettings } from "./useComputerSettings";
 import type { FileWorkspaceGateway, PinnedCommand } from "@agent/core";
 import { defaultPinnedCommands } from "../../../core/src/domain/web-console/pinned-commands";
 import {
@@ -21,8 +24,8 @@ import {
   WEBAPP_BROWSER_RESPONSE_TYPE,
   readWebBrowserRequest,
 } from "../../../core/src/domain/web-console/WebBrowserBridge";
-import { readWebArtifactOpenRequest } from "../../../core/src/domain/web-console/WebArtifactBridge";
-import { WEB_SHELL_OPEN_BROWSER_LIVE_TYPE } from "../../../core/src/domain/web-console/WebShellLiveBridge";
+import { isWebMediaUrl, readWebArtifactOpenRequest } from "../../../core/src/domain/web-console/WebArtifactBridge";
+import { readWebShellOpenBrowserLive } from "../../../core/src/domain/web-console/WebShellLiveBridge";
 import { readLiveFramePacket, LIVE_FRAME_PACKET_TYPE } from "../../../core/src/infrastructure/live-view/frame-packet";
 import type { FileTreeRevealRequest } from "./fileTreeReveal";
 import { useGateway } from "./useGateway";
@@ -35,6 +38,9 @@ import { readWebappTabSwipeMessage } from "./webappTabSwipe";
 import { readWebappReadyMessage } from "./webappReady";
 
 import FlowStudioLoading from "./FlowStudioLoading";
+import { REMOTE_DESKTOP_TAB, withRemoteDesktopTab, type ConsoleTab } from "./console-tabs";
+import { REMOTE_DESKTOP_CLOSE_TYPE, REMOTE_DESKTOP_VISIBILITY_TYPE, REMOTE_DESKTOP_CONTENT_READY_TYPE } from "../../../core/src/domain/web-console/RemoteDesktopTabBridge";
+import { resolveWebArtifactPath } from "../../../desktop/renderer/lib/artifact-links";
 
 const TerminalPane = dynamic(() => import("./TerminalPane"), { ssr: false });
 const FileTree = dynamic(() => import("./FileTree"), { ssr: false });
@@ -59,7 +65,7 @@ const WEBAPP_TAB = { id: "webapp-agent", title: "智能助手", kind: "webapp" }
 // reusable, never duplicated.
 const AI_HUB_TAB = { id: "ai-hub", title: "AI Hub", kind: "aihub" } as const;
 const FLOW_STUDIO_TAB = { id: "flow-studio", title: "Flow Studio", kind: "flowstudio" } as const;
-interface ConsoleTab { id: string; title: string; kind?: "webapp" | "aihub" | "flowstudio"; initialCommand?: string }
+
 
 function readInitialWebThemeId(): WebThemeId {
   if (typeof document === "undefined") return DEFAULT_THEME_ID;
@@ -76,19 +82,32 @@ function AuthenticatedConsole({
   auth: WebAuthController;
   onWorkspaceReady: () => void;
 }) {
+  const [selectedPage, setSelectedPage] = useState<ComputerPage | null>(null);
+  const [pageReloadKey, setPageReloadKey] = useState(0);
+  const selectComputerPage = useCallback((page: ComputerPage | null) => {
+    if (page?.openMode === "new-tab") { window.open(page.url, "_blank", "noopener,noreferrer"); return; }
+    setSelectedPage(page);
+  }, []);
+  const updateComputerPage = useCallback((page: ComputerPage | null) => setSelectedPage(page?.openMode === "current" ? page : null), []);
   const webappFrameRef = useRef<HTMLIFrameElement>(null);
+  const remoteDesktopFrameRef = useRef<HTMLIFrameElement>(null);
+  const [remoteDesktopReadyEpoch, setRemoteDesktopReadyEpoch] = useState(0);
+  const [remoteDesktopContentReady, setRemoteDesktopContentReady] = useState(false);
   const browserFrameAck = useRef<(channelId: number, sequence: number) => void>(() => {});
   const forwardBrowserBinary = useCallback((frame: Uint8Array) => {
     const packet = readLiveFramePacket(frame);
     if (!packet || packet.type !== LIVE_FRAME_PACKET_TYPE.watcherFrame) return;
     browserFrameAck.current(packet.channelId, packet.sequence);
-    const payload = packet.payload.slice().buffer;
-    webappFrameRef.current?.contentWindow?.postMessage({
-      type: WEBAPP_BROWSER_BINARY_FRAME_TYPE,
-      channelId: packet.channelId,
-      sequence: packet.sequence,
-      data: payload,
-    }, window.location.origin, [payload]);
+    for (const ref of [webappFrameRef, remoteDesktopFrameRef]) {
+      if (!ref.current?.contentWindow) continue;
+      const payload = packet.payload.slice().buffer;
+      ref.current.contentWindow.postMessage({
+        type: WEBAPP_BROWSER_BINARY_FRAME_TYPE,
+        channelId: packet.channelId,
+        sequence: packet.sequence,
+        data: payload,
+      }, window.location.origin, [payload]);
+    }
   }, []);
   const { state, epoch, rpc, onEvent, onTerminalData, onTerminalReset, sendTerminalInput } = useGateway(forwardBrowserBinary, auth.getWsNonce, auth.refresh);
   const fileWorkspaceGateway = useMemo<FileWorkspaceGateway>(() => ({
@@ -145,6 +164,7 @@ function AuthenticatedConsole({
   const [pinnedCommands,setPinnedCommands]=useState<PinnedCommand[]>(defaultPinnedCommands());
   const [themeId,setThemeId]=useState<WebThemeId>(readInitialWebThemeId);
   const [preferencesLoaded,setPreferencesLoaded]=useState(false);
+  const computerConfiguration = useComputerSettings(auth.csrfToken);
   const [webappReady, setWebappReady] = useState(false);
   const activeTheme = resolveWebTheme(themeId);
   const swipeStart = useRef<{ x: number; y: number; axis: "pending"|"horizontal"|"vertical"; pointerId: number } | null>(null);
@@ -153,7 +173,7 @@ function AuthenticatedConsole({
   const draggedTab = useRef<string | null>(null);
   const tabBarRef = useRef<HTMLDivElement>(null);
   const postSkinToWebapp = useCallback((skin: WebThemeId) => {
-    webappFrameRef.current?.contentWindow?.postMessage(
+    for (const ref of [webappFrameRef, remoteDesktopFrameRef]) ref.current?.contentWindow?.postMessage(
       { type: WEBAPP_SKIN_MESSAGE_TYPE, skin },
       window.location.origin,
     );
@@ -187,6 +207,30 @@ function AuthenticatedConsole({
   }, [activeTheme]);
   useEffect(() => {
     const onMessage = (event: MessageEvent) => {
+      const remoteSource = remoteDesktopFrameRef.current?.contentWindow ?? null;
+      if (readWebappReadyMessage(event, window.location.origin, remoteSource)) {
+        setRemoteDesktopReadyEpoch((current) => current + 1);
+        setRemoteDesktopContentReady(false);
+        postSkinToWebapp(themeId);
+        return;
+      }
+      if (remoteSource && event.origin === window.location.origin && event.source === remoteSource && event.data?.type === REMOTE_DESKTOP_CONTENT_READY_TYPE) {
+        setRemoteDesktopContentReady(true);
+        return;
+      }
+      if (event.origin === window.location.origin && event.source === remoteSource && remoteSource && event.data?.type === REMOTE_DESKTOP_CLOSE_TYPE) {
+        void rpc("browser:unwatch").catch(() => {});
+        setTabs((current) => current.filter((tab) => tab.kind !== "remote-desktop"));
+        setRemoteDesktopReadyEpoch(0);
+        setRemoteDesktopContentReady(false);
+        setActiveTerminalId(WEBAPP_TAB.id);
+        return;
+      }
+      if (readWebShellOpenBrowserLive(event, window.location.origin, webappFrameRef.current?.contentWindow ?? null)) {
+        setTabs(withRemoteDesktopTab);
+        setActiveTerminalId(REMOTE_DESKTOP_TAB.id);
+        return;
+      }
       const readyMessage = readWebappReadyMessage(
         event,
         window.location.origin,
@@ -203,24 +247,30 @@ function AuthenticatedConsole({
         webappFrameRef.current?.contentWindow ?? null,
       );
       if (artifactRequest) {
-        setDrawerTab("files");
-        setDrawerOpen(true);
-        setPreviewPath(artifactRequest.path);
-        setFileTreeRevealRequest(artifactRequest);
+        const showArtifact = (path: string) => {
+          setDrawerTab("files");
+          setDrawerOpen(!isWebMediaUrl(path));
+          setPreviewPath(path);
+          if (!isWebMediaUrl(path)) setFileTreeRevealRequest({ ...artifactRequest, path });
+        };
+        if (artifactRequest.path.startsWith("~/")) {
+          void rpc<{ home: string }>("hello").then(({ home }) => {
+            const path = resolveWebArtifactPath(artifactRequest.path, null, home);
+            if (path) showArtifact(path);
+          }).catch(() => {});
+        } else showArtifact(artifactRequest.path);
         return;
       }
-      const browserRequest = readWebBrowserRequest(
-        event,
-        window.location.origin,
-        webappFrameRef.current?.contentWindow ?? null,
-      );
+      const browserSource = event.source === remoteSource && remoteSource
+        ? remoteSource : webappFrameRef.current?.contentWindow ?? null;
+      const browserRequest = readWebBrowserRequest(event, window.location.origin, browserSource);
       if (browserRequest) {
         void rpc(browserRequest.method, {
           ...browserRequest.payload,
           ...(browserRequest.method === "browser:watch" ? { frameAck: true } : {}),
         }).then(
           (result) => {
-            webappFrameRef.current?.contentWindow?.postMessage({
+            browserSource?.postMessage({
               type: WEBAPP_BROWSER_RESPONSE_TYPE,
               id: browserRequest.id,
               ok: true,
@@ -228,7 +278,7 @@ function AuthenticatedConsole({
             }, window.location.origin);
           },
           (error: Error & { code?: string }) => {
-            webappFrameRef.current?.contentWindow?.postMessage({
+            browserSource?.postMessage({
               type: WEBAPP_BROWSER_RESPONSE_TYPE,
               id: browserRequest.id,
               ok: false,
@@ -267,10 +317,10 @@ function AuthenticatedConsole({
     };
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
-  }, [onWorkspaceReady, rpc]);
+  }, [onWorkspaceReady, rpc, postSkinToWebapp, themeId]);
   useEffect(() => {
     const forward = (event: Record<string, unknown>) => {
-      webappFrameRef.current?.contentWindow?.postMessage({
+      for (const ref of [webappFrameRef, remoteDesktopFrameRef]) ref.current?.contentWindow?.postMessage({
         type: WEBAPP_BROWSER_EVENT_TYPE,
         event,
       }, window.location.origin);
@@ -286,6 +336,20 @@ function AuthenticatedConsole({
       event: { type: "browser:connection", connected: state.connected, epoch },
     }, window.location.origin);
   }, [state.connected, epoch, webappReady]);
+  useEffect(() => {
+    if (!remoteDesktopReadyEpoch) return;
+    remoteDesktopFrameRef.current?.contentWindow?.postMessage({
+      type: REMOTE_DESKTOP_VISIBILITY_TYPE,
+      visible: activeTerminalId === REMOTE_DESKTOP_TAB.id,
+    }, window.location.origin);
+  }, [activeTerminalId, remoteDesktopReadyEpoch]);
+  useEffect(() => {
+    if (!remoteDesktopReadyEpoch) return;
+    remoteDesktopFrameRef.current?.contentWindow?.postMessage({
+      type: WEBAPP_BROWSER_EVENT_TYPE,
+      event: { type: "browser:connection", connected: state.connected, epoch },
+    }, window.location.origin);
+  }, [state.connected, epoch, remoteDesktopReadyEpoch]);
   const prevTabCount = useRef(0);
   const cwdHint = activeTerminalId ? cwdByTerminal[activeTerminalId] ?? null : null;
 
@@ -379,9 +443,9 @@ function AuthenticatedConsole({
     tabsHydrated.current = true;
     rpc<{ tabs: Array<{ id: string; title: string; status: string }> }>("term:list").then((result) => {
       const restorable = result.tabs.filter((tab) => tab.status === "active" || tab.status === "detached").map(({ id, title }) => ({ id, title }));
-      setTabs((current) => [WEBAPP_TAB, ...restorable, ...current.filter((tab) => tab.kind === "aihub" || tab.kind === "flowstudio")]);
+      setTabs((current) => [WEBAPP_TAB, ...restorable, ...current.filter((tab) => tab.kind && tab.kind !== "webapp")]);
       setActiveTerminalId((value) => {
-        const selectedUtility = tabsRef.current.find((tab) => tab.id === value && (tab.kind === "aihub" || tab.kind === "flowstudio"));
+        const selectedUtility = tabsRef.current.find((tab) => tab.id === value && (tab.kind && tab.kind !== "webapp"));
         if (selectedUtility) return selectedUtility.id;
         const preferred = restoredActiveId.current || value || WEBAPP_TAB.id;
         if (preferred === WEBAPP_TAB.id) return WEBAPP_TAB.id;
@@ -393,6 +457,11 @@ function AuthenticatedConsole({
   const closeTerminal = (id: string) => {
     if (id === WEBAPP_TAB.id) return;
     const closingKind = tabs.find((tab) => tab.id === id)?.kind;
+    if (closingKind === "remote-desktop") {
+      setRemoteDesktopReadyEpoch(0);
+      setRemoteDesktopContentReady(false);
+      void rpc("browser:unwatch").catch(() => {});
+    }
     // Utility tabs have no terminal process behind them.
     if (!closingKind && !window.confirm("关闭页签会终止该终端进程，确认关闭？")) return;
     // Drop the tab immediately — the kill RPC rides in the background because
@@ -432,13 +501,9 @@ function AuthenticatedConsole({
     });
   }, []);
 
-  // 远程桌面（浏览器直播）面板由内嵌 webapp 承载；切回智能助手页签后通知它打开。
-  const openWebappBrowserLive = useCallback(() => {
-    setActiveTerminalId(WEBAPP_TAB.id);
-    webappFrameRef.current?.contentWindow?.postMessage(
-      { type: WEB_SHELL_OPEN_BROWSER_LIVE_TYPE },
-      window.location.origin,
-    );
+  const openRemoteDesktopTab = useCallback(() => {
+    setTabs(withRemoteDesktopTab);
+    setActiveTerminalId(REMOTE_DESKTOP_TAB.id);
   }, []);
 
   useEffect(() => {
@@ -546,7 +611,8 @@ function AuthenticatedConsole({
       <style dangerouslySetInnerHTML={{ __html: GLOBAL_CSS }} />
 
       <div className="terminal-tabs">
-        <div className="terminal-tab-list" ref={tabBarRef}>
+        {selectedPage && <div className="computer-page-heading"><button type="button" className="file-drawer-toggle" aria-label="返回电脑会话" title="返回电脑会话" onClick={() => setSelectedPage(null)}><ArrowLeft size={18} /></button><span>{selectedPage.name}</span><a className="file-drawer-toggle" href={selectedPage.url} target="_blank" rel="noopener noreferrer" aria-label="在新页面打开当前页面" title="打开原页面"><ExternalLink size={16} /></a></div>}
+        <div className="terminal-tab-list" ref={tabBarRef} hidden={Boolean(selectedPage)}>
           {tabs.map((tab) => (
             <div key={tab.id} data-terminal-id={tab.id} draggable className={`terminal-tab ${tab.id === activeTerminalId ? "active" : ""}`} onDragStart={()=>{draggedTab.current=tab.id;}} onDragOver={(event)=>event.preventDefault()} onDrop={(event)=>{event.preventDefault();const source=draggedTab.current;draggedTab.current=null;if(!source||source===tab.id)return;setTabs((current)=>{const from=current.findIndex(item=>item.id===source),to=current.findIndex(item=>item.id===tab.id);if(from<0||to<0)return current;const next=[...current];const [moved]=next.splice(from,1);next.splice(to,0,moved);rpc("term:reorder",{ids:next.filter(item=>!item.kind).map(item=>item.id)}).catch(()=>{});return next;});}} onClick={() => setActiveTerminalId(tab.id)} onDoubleClick={() => {
               if (tab.kind) return;
@@ -558,19 +624,19 @@ function AuthenticatedConsole({
           </div>
         ))}
         </div>
-        <button className="terminal-add" aria-label="新建终端页签" disabled={tabs.length >= 8} onClick={addTerminal}>＋</button>
+        <button className="terminal-add" aria-label="新建终端页签" hidden={Boolean(selectedPage)} disabled={tabs.length >= 8} onClick={addTerminal}>＋</button>
         <div className="terminal-connection">
           <ResponsiveToolbar
-            avatar={<ComputerSwitcher username={auth.user?.username ?? "?"} connected={state.connected} accent={activeTheme.keybar.accent} accentText={activeTheme.keybar.accentText} />}
+            avatar={<ComputerSwitcher username={auth.user?.username ?? "?"} connected={state.connected} accent={activeTheme.keybar.accent} accentText={activeTheme.keybar.accentText} selectedPageId={selectedPage?.id} onSelectPage={selectComputerPage} onUpdatePage={updateComputerPage} configuration={computerConfiguration} />}
             items={[
-              { id: "refresh", content: <button type="button" className="file-drawer-toggle" aria-label="刷新页面" title="刷新页面" onClick={() => window.location.reload()}><RefreshCw size={17} aria-hidden="true" /></button> },
+              { id: "refresh", content: <button type="button" className="file-drawer-toggle" aria-label="刷新页面" title="刷新页面" onClick={() => selectedPage ? setPageReloadKey(key => key + 1) : window.location.reload()}><RefreshCw size={17} aria-hidden="true" /></button> },
               { id: "install", content: <PwaInstallButton /> },
-              { id: "remote", content: <button type="button" className="file-drawer-toggle" aria-label="打开远程桌面" title="远程桌面 · 浏览器直播" onClick={openWebappBrowserLive}><MonitorUp size={17} aria-hidden="true" /></button> },
-              { id: "ai-hub", content: <button type="button" className="file-drawer-toggle" aria-label="打开 AI Hub" title="AI Hub · 多模型对比" onClick={openAiHubTab}><LayoutGrid size={17} aria-hidden="true" /></button> },
-              { id: "flow", content: <button type="button" className="file-drawer-toggle" aria-label="打开数字人" title="数字人 · Flow Studio" onClick={openFlowStudioTab}><Bot size={17} aria-hidden="true" /></button> },
+              { id: "remote", content: <button type="button" className="file-drawer-toggle" aria-label="打开远程桌面" title="远程桌面 · 浏览器直播" onClick={() => { setSelectedPage(null); openRemoteDesktopTab(); }}><MonitorUp size={17} aria-hidden="true" /></button> },
+              { id: "ai-hub", content: <button type="button" className="file-drawer-toggle" aria-label="打开 AI Hub" title="AI Hub · 多模型对比" onClick={() => { setSelectedPage(null); openAiHubTab(); }}><LayoutGrid size={17} aria-hidden="true" /></button> },
+              { id: "flow", content: <button type="button" className="file-drawer-toggle" aria-label="打开数字人" title="数字人 · Flow Studio" onClick={() => { setSelectedPage(null); openFlowStudioTab(); }}><Bot size={17} aria-hidden="true" /></button> },
               { id: "theme", content: <ThemePicker themeId={themeId} onThemeChange={setThemeId} /> },
-              { id: "files", content: <button type="button" className="file-drawer-toggle" aria-label={drawerOpen ? "关闭我的文件" : "打开我的文件"} title="我的文件" aria-expanded={drawerOpen} onClick={() => setDrawerOpen((open) => !open)}><PanelRight size={17} aria-hidden="true" /></button> },
-            ]}
+              { id: "files", content: <button type="button" className="file-drawer-toggle" aria-label={drawerOpen ? "关闭我的文件" : "打开我的文件"} title="我的文件" aria-expanded={drawerOpen} onClick={() => { setSelectedPage(null); setDrawerOpen((open) => !open); }}><PanelRight size={17} aria-hidden="true" /></button> },
+            ].filter(item => computerConfiguration.settings.visibleTools.some(id => id === item.id)).sort((left, right) => computerConfiguration.settings.visibleTools.findIndex(id => id === left.id) - computerConfiguration.settings.visibleTools.findIndex(id => id === right.id))}
           />
         </div>
       </div>
@@ -578,6 +644,7 @@ function AuthenticatedConsole({
       {/* workspace: terminal first in DOM = fullscreen by default */}
       <main
         className={`workspace ${drawerOpen ? "show-tree" : ""} ${previewPath ? "has-preview" : ""}`}
+        hidden={Boolean(selectedPage)}
         style={S.workspace}
       >
         {/* terminal — always mounted, always the base layer */}
@@ -594,6 +661,11 @@ function AuthenticatedConsole({
             <div className="terminal-slide" key={tab.id} style={{ position: "relative" }}>
               {tab.kind === "webapp" ? (
                 <iframe ref={webappFrameRef} className="webapp-frame" src="/app/" title={tab.title} onLoad={() => postSkinToWebapp(themeId)} />
+              ) : tab.kind === "remote-desktop" ? (
+                <div style={{ height: "100%", background: "var(--ui-term-col-bg, #101014)" }} aria-busy={!remoteDesktopContentReady}>
+                  <iframe ref={remoteDesktopFrameRef} className="webapp-frame" style={{ visibility: remoteDesktopContentReady ? "visible" : "hidden" }} src="/app/?view=remote-desktop" title="远程桌面" onLoad={() => postSkinToWebapp(themeId)} />
+                  {!remoteDesktopContentReady && <FlowStudioLoading label="REMOTE DESKTOP" title="正在打开远程桌面" caption="正在准备桌面与连接" icon={<MonitorUp size={36} strokeWidth={1.5} />} />}
+                </div>
               ) : tab.kind === "aihub" ? (
                 <AiHubPane visible={tab.id === activeTerminalId} rpc={rpc} />
               ) : tab.kind === "flowstudio" ? (
@@ -654,6 +726,7 @@ function AuthenticatedConsole({
           </section>
         )}
       </main>
+      {selectedPage && <ComputerPagePane key={selectedPage.id} page={selectedPage} reloadKey={pageReloadKey} />}
 
     </div>
   );
@@ -663,6 +736,10 @@ const GLOBAL_CSS = `
   html, body { width:100%; height:100%; margin:0; overflow:hidden; background:var(--ui-root-bg, #0b0b10); overscroll-behavior:none; color:var(--ui-text, #e8e8ee); }
   * { -webkit-tap-highlight-color: transparent; }
   .terminal-tabs { display:flex; align-items:end; gap:4px; min-height:38px; padding:0 8px; background:var(--ui-tabbar-bg, #12141b); border-bottom:0; flex-shrink:0; }
+  .terminal-tab-list[hidden],.terminal-add[hidden]{display:none}
+  .computer-page-heading{display:flex;align-items:center;gap:4px;flex:1;min-width:0;color:var(--ui-text,#e8e8ee);font-size:13px}.computer-page-heading>span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.computer-page-heading a{text-decoration:none;display:grid;place-items:center;flex-shrink:0}
+  .computer-page-pane{position:relative;flex:1;min-height:0;background:var(--ui-root-bg,#0b0b10)}.computer-page-pane>iframe{width:100%;height:100%;border:0;display:block}.computer-page-fallback{position:absolute;bottom:32px;left:50%;transform:translateX(-50%);color:var(--ui-tab-accent,#7aa2f7);font-size:13px;z-index:2}
+  .computer-page-blocked{flex:1;min-height:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;text-align:center;padding:24px;color:var(--ui-text,#e8e8ee)}.computer-page-blocked h2{font-size:20px;margin:0}.computer-page-blocked p{max-width:420px;line-height:1.7;color:var(--ui-muted-text,#999dab);margin:0}.computer-page-blocked a{display:flex;align-items:center;gap:8px;padding:12px 18px;border-radius:8px;background:var(--ui-tab-accent,#7aa2f7);color:var(--ui-root-bg,#0b0b10);text-decoration:none}
   .terminal-tab-list { position:relative; display:flex; align-items:end; gap:4px; flex:0 1 auto; min-width:0; height:100%; overflow-x:auto; overflow-y:hidden; touch-action:pan-x; overscroll-behavior-x:contain; -webkit-overflow-scrolling:touch; scroll-behavior:smooth; scrollbar-width:none; }
   .terminal-tab { display:flex; align-items:center; flex-shrink:0; gap:7px; min-width:74px; max-width:130px; height:32px; padding:0 7px 0 10px; border-radius:7px 7px 0 0; background:var(--ui-tab-bg, #1b1e28); color:var(--ui-tab-text, #8f93a4); font-size:11px; cursor:pointer; box-sizing:border-box; transition:color .2s ease,box-shadow .2s ease; }
   .terminal-tab.active { color:var(--ui-tab-active-text, #edf0f7); background:var(--ui-active-content-bg, var(--ui-tab-active-bg, #262b38)); box-shadow:inset 0 2px var(--ui-tab-accent, #7aa2f7); }
@@ -688,15 +765,15 @@ const GLOBAL_CSS = `
   .theme-avatar:active { transform:scale(.9); filter:brightness(1.15); }
   .theme-popover-item { display:flex; align-items:center; gap:8px; padding:7px 8px; border:none; border-radius:8px; cursor:pointer; touch-action:manipulation; -webkit-tap-highlight-color:transparent; }
   .theme-popover-item:active { background:color-mix(in srgb, var(--ui-tab-accent, #7aa2f7) 22%, transparent); }
-  /* Touch devices: grow the avatar hit area to ~44px and the popover rows to
-     ~40px tall. The tab bar must grow in step — it clips overflow-y, so an
-     expanded hit area taller than the bar would get cut off. */
+  /* Touch devices: keep hit areas tall while packing icons horizontally.
+     The tab bar must grow in step — it clips overflow-y, so an expanded
+     hit area taller than the bar would get cut off. */
   @media (pointer: coarse) {
     .terminal-tabs { min-height:44px; }
-    .theme-avatar-with-status { width:44px; height:44px; align-items:center; justify-content:center; }
-    .theme-avatar::after { inset:-13px; }
-    .theme-avatar-status { right:10px; bottom:10px; }
-    .toolbar-tools .file-drawer-toggle, .responsive-toolbar .file-drawer-toggle { width:40px; height:40px; }
+    .theme-avatar-with-status { width:36px; height:44px; align-items:center; justify-content:center; }
+    .theme-avatar::after { inset:-13px -9px; }
+    .theme-avatar-status { right:6px; bottom:10px; }
+    .toolbar-tools .file-drawer-toggle, .responsive-toolbar .file-drawer-toggle { width:32px; height:40px; }
     .theme-popover-item { padding-top:11px; padding-bottom:11px; }
   }
   @media (prefers-reduced-motion: reduce) { .theme-avatar { transition:none; } }
@@ -894,6 +971,7 @@ const GLOBAL_CSS = `
 
   /* phone-first: terminal is THE screen */
   .workspace { display: grid !important; grid-template-columns: 1fr; }
+  .workspace[hidden] { display:none !important; }
   .tree-col {
     display: flex;
     position: fixed;

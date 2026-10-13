@@ -22,6 +22,7 @@ const AGENT_LABELS: Record<AgentType, string> = {
   codex: "Codex",
   "claude-code": "Claude Code",
   opencode: "OpenCode",
+  "deepseek-harness": "DeepSeek Harness",
 };
 
 interface EmptySessionWelcomeProps {

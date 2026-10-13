@@ -769,12 +769,29 @@ select:focus {
   min-height: 38px;
   margin: 2px 14px 8px;
   padding: 0;
-  display: grid;
-  grid-template-columns: repeat(4, minmax(38px, 1fr));
+  display: flex;
   gap: 6px;
   border: 0;
   background: transparent;
 }
+
+.agent-workspace-track {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: calc((100% - 18px) / 4);
+  gap: 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  scroll-snap-type: x mandatory;
+  overscroll-behavior-x: contain;
+  touch-action: pan-x;
+}
+.agent-workspace-track::-webkit-scrollbar { display: none; }
+.agent-workspace-track button { scroll-snap-align: start; }
+.agent-workspace-switcher button.agent-workspace-more { flex: 0 0 38px; min-inline-size: 38px; inline-size: 38px; display: flex; align-items: center; justify-content: center; }
 
 .agent-workspace-switcher button {
   position: relative;
@@ -4092,3 +4109,9 @@ input:focus, select:focus, textarea:focus {
 @media (prefers-reduced-motion: reduce) {
   .chat-history-loading-dots i { animation: none; }
 }
+.native-goal-edit { display: flex; align-items: center; gap: 8px; padding: 4px 8px; flex-wrap: wrap; }
+.native-goal-edit > input { flex: 1; min-width: 140px; }
+.native-goal-edit input { color: inherit; background: var(--bg-surface); border: 1px solid var(--border-default); border-radius: 6px; padding: 6px 8px; }
+.native-goal-edit label { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+.native-goal-edit input[type="number"] { width: 76px; }
+.native-goal-error { padding: 4px 8px; color: var(--text-muted); font-size: 12px; }

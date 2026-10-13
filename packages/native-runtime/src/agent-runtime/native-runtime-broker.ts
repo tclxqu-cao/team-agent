@@ -1,4 +1,5 @@
 import { parseSessionForkPoint } from "./session-fork-point.js";
+import { parseNativeGoalMutation, type NativeGoalMutation, type NativeSessionGoal } from "./native-session-goal.js";
 import type { SessionForkPoint } from "@agent/core";
 import { createHash, randomUUID } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync, rmSync } from "node:fs";
@@ -48,6 +49,8 @@ import {
 } from "./codex-session-disk-catalog.js";
 import { CodexSessionCompatibilityService } from "./codex-session-compatibility.js";
 import { CodexRuntimeAdapter } from "./codex-runtime-adapter.js";
+import { DeepSeekHarnessRuntimeAdapter } from "./deepseek-harness-runtime-adapter.js";
+import { parseHarnessQuestionId } from "./deepseek-harness-interaction-codec.js";
 import { OpenCodeRuntimeAdapter } from "./opencode-runtime-adapter.js";
 import { OpenCodeServerClient } from "./opencode-server-client.js";
 import { decodeUnifiedSessionId, encodeUnifiedSessionId } from "./session-id.js";
@@ -1035,7 +1038,9 @@ class NativeRuntimeBrokerState implements ImportedAgentWorkspaceRepository, Code
       ...detail,
       ...summary,
       messages,
-      events: mergeProjection
+      events: detail.agentType === "deepseek-harness"
+        ? [...detail.events, ...projection.events.flatMap(({ event }) => event.type === "ask_user" || event.type === "approval_resolved" ? [] : [event])]
+        : mergeProjection
         ? projection.events.map(({ event }) => event)
         : options.includePendingQuestions
           ? [...detail.events, ...projection.events.flatMap(({ event }) => event.type === "ask_user" ? [event] : [])]
@@ -1151,6 +1156,8 @@ export class NativeRuntimeBrokerHost {
   private readonly queryIndexCache = new SessionQueryIndexCache();
   private server: Server | null = null;
   private ownsSocket = false;
+  private stopped = false;
+  private readonly abortFallbackTimers = new Set<ReturnType<typeof setTimeout>>();
 
   constructor(
     readonly directory: string,
@@ -1211,6 +1218,9 @@ export class NativeRuntimeBrokerHost {
   }
 
   async stop(): Promise<void> {
+    this.stopped = true;
+    for (const timer of this.abortFallbackTimers) clearTimeout(timer);
+    this.abortFallbackTimers.clear();
     const server = this.server;
     this.server = null;
     for (const socket of this.subscribers.keys()) socket.destroy();
@@ -1373,14 +1383,18 @@ export class NativeRuntimeBrokerHost {
       const projected = this.state.applyDetail(detail);
       this.queryIndexCache.getOrCreate(id, projected.messages);
       return query
-        ? { ...projected, ...paginateSessionHistory(projected.messages, projected.events, query) }
+        ? { ...projected, ...paginateSessionHistory(projected.messages, projected.events, query, {
+            includePendingQuestions: projected.agentType === "deepseek-harness",
+          }) }
         : projected;
     } catch (error) {
       const pending = this.pendingCreations.get(id);
       if (!pending) throw error;
       const projected = this.state.applyDetail({ ...pending, messages: [], events: [] });
       return query
-        ? { ...projected, ...paginateSessionHistory(projected.messages, projected.events, query) }
+        ? { ...projected, ...paginateSessionHistory(projected.messages, projected.events, query, {
+            includePendingQuestions: projected.agentType === "deepseek-harness",
+          }) }
         : projected;
     }
   }
@@ -1619,6 +1633,9 @@ export class NativeRuntimeBrokerHost {
   }
 
   async answerQuestion(questionId: string, answer: RuntimeQuestionAnswer): Promise<boolean> {
+    // Harness owns foreground waterfalls and durable continued questions.
+    // They may belong to Desktop or a finished turn, with no active Broker run.
+    if (parseHarnessQuestionId(questionId)) return this.runtime.answerQuestion(questionId, answer);
     const run = this.state.claimApproval(questionId);
     if (!run) return false;
     try {
@@ -1656,15 +1673,19 @@ export class NativeRuntimeBrokerHost {
     // Codex confirms cancellation through its turn lifecycle. Keeping that run
     // authoritative also keeps immediate follow-ups durably queued while the
     // native turn is still stopping instead of exposing a false idle window.
-    if (run && decodeNativeSessionId(sessionId).agentType !== "codex") {
-      setTimeout(() => {
+    if (run && !this.stopped && decodeNativeSessionId(sessionId).agentType !== "codex") {
+      const timer = setTimeout(() => {
+        this.abortFallbackTimers.delete(timer);
+        if (this.stopped) return;
         const terminal = this.state.appendTerminal(run.runId, {
           type: "error",
           code: "NATIVE_PROTOCOL_ERROR",
           message: "Native turn was interrupted before the runtime confirmed completion.",
         });
         if (terminal) this.broadcast(terminal);
-      }, ABORT_FALLBACK_MS).unref?.();
+      }, ABORT_FALLBACK_MS);
+      this.abortFallbackTimers.add(timer);
+      timer.unref?.();
     }
   }
 
@@ -1706,7 +1727,26 @@ export class NativeRuntimeBrokerHost {
     return this.runtime.steer(sessionId, input);
   }
 
+  async setNativePermissionPreset(sessionId: string, preset: string): Promise<UnifiedSessionSummary> {
+    this.state.assertSessionVisible(sessionId);
+    // Native adapters own whether their permission writer may run during a turn.
+    return this.state.applySummary(await this.runtime.setNativePermissionPreset(sessionId, preset));
+  }
+
+  async getNativeGoal(sessionId: string): Promise<NativeSessionGoal | null> {
+    this.state.assertSessionVisible(sessionId);
+    return this.runtime.getNativeGoal(sessionId);
+  }
+
+  async mutateNativeGoal(sessionId: string, mutation: NativeGoalMutation): Promise<NativeSessionGoal | null> {
+    this.state.assertSessionVisible(sessionId);
+    return this.runtime.mutateNativeGoal(sessionId, parseNativeGoalMutation(mutation));
+  }
+
   setPermissionMode(sessionId: string, permissionMode: ToolPermissionMode): UnifiedSessionSummary {
+    if (decodeNativeSessionId(sessionId).agentType === "deepseek-harness") {
+      throw new RuntimeSessionError("DeepSeek Harness uses its native permission presets", "OPERATION_NOT_SUPPORTED");
+    }
     const run = this.state.activeRun(sessionId);
     const mode = this.state.setPermissionMode(sessionId, permissionMode);
     const base: UnifiedSessionSummary = {
@@ -2113,6 +2153,12 @@ export class NativeRuntimeBrokerHost {
         requireSessionId(sessionId),
         normalizeToolPermissionMode(request.params.permissionMode),
       );
+      case "setNativePermissionPreset": return this.setNativePermissionPreset(
+        requireSessionId(sessionId),
+        requiredStringParam(request.params, "preset"),
+      );
+      case "getNativeGoal": return this.getNativeGoal(requireSessionId(sessionId));
+      case "mutateNativeGoal": return this.mutateNativeGoal(requireSessionId(sessionId), parseNativeGoalMutation(request.params.mutation));
       case "handoff": return this.handoff(requireSessionId(sessionId), controllerParam(request.params.controller));
       default: throw new RuntimeSessionError(`Unsupported broker method: ${request.method}`, "OPERATION_NOT_SUPPORTED");
     }
@@ -2404,6 +2450,18 @@ export class NativeRuntimeBrokerClient {
     return this.request("setPermissionMode", { sessionId: id, permissionMode });
   }
 
+  async setNativePermissionPreset(id: string, preset: string): Promise<UnifiedSessionSummary> {
+    return this.request("setNativePermissionPreset", { sessionId: id, preset });
+  }
+
+  async getNativeGoal(id: string): Promise<NativeSessionGoal | null> {
+    return this.request("getNativeGoal", { sessionId: id });
+  }
+
+  async mutateNativeGoal(id: string, mutation: NativeGoalMutation): Promise<NativeSessionGoal | null> {
+    return this.request("mutateNativeGoal", { sessionId: id, mutation });
+  }
+
   async handoff(id: string, controller: NativeRuntimeController): Promise<NativeRuntimeBrokerSnapshot> {
     return this.request("handoff", { sessionId: id, controller });
   }
@@ -2630,6 +2688,7 @@ export function createNativeRuntimeBrokerHostRuntime(
   const service = new UnifiedSessionService([
     codexAdapter,
     new ClaudeRuntimeAdapter(),
+    new DeepSeekHarnessRuntimeAdapter(),
     new OpenCodeRuntimeAdapter({
       server: opencodeServer,
       executable: opencodeExecutable || "opencode",
@@ -3033,6 +3092,7 @@ function isRuntimeErrorCode(value: string): value is ConstructorParameters<typeo
     "APPROVAL_EXPIRED",
     "CODEX_SESSION_VERSION_INCOMPATIBLE",
     "STALE_SESSION_ANCHOR",
+    "NATIVE_GOAL_CONFLICT",
     "NATIVE_PROTOCOL_ERROR",
   ].includes(value);
 }
@@ -3079,7 +3139,7 @@ function messagePayloadParam(value: unknown): SessionMessagePayload | undefined 
 
 function nativeAgentTypeParam(params: Record<string, unknown>, key: string): NativeAgentType {
   const value = stringParam(params, key);
-  if (value === "codex" || value === "claude-code" || value === "opencode") return value;
+  if (value === "codex" || value === "claude-code" || value === "opencode" || value === "deepseek-harness") return value;
   throw new RuntimeSessionError("A native agent type is required", "INVALID_SESSION_ID");
 }
 

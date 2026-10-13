@@ -14,6 +14,7 @@ import { Check, Download, Eye, LoaderCircle, Pencil, RefreshCw, RotateCcw, Save,
 import type { FileWorkspaceGateway } from "../../../../core/src/application/file-workspace/FileWorkspaceGateway";
 import { parseUnifiedDiff, type FileDiffRow } from "./fileDiff";
 import HighlightedCode from "./HighlightedCode";
+import { isWebMediaUrl } from "../../../../core/src/domain/web-console/WebArtifactBridge";
 
 const TEXT_EXTS = new Set([
   "ts", "tsx", "js", "jsx", "mjs", "cjs", "json", "md", "markdown", "mdown", "mkdn", "mdx", "css", "scss",
@@ -100,8 +101,13 @@ export function nativeFileShareReadiness(
 }
 
 export function mimeTypeForPath(path: string): string {
-  const extension = path.split(".").pop()?.toLowerCase() ?? "";
+  const extension = previewExtension(path);
   return MIME_BY_EXTENSION[extension] ?? "application/octet-stream";
+}
+
+function previewExtension(path: string): string {
+  const pathname = isWebMediaUrl(path) ? new URL(path).pathname : path;
+  return pathname.split(".").pop()?.toLowerCase() ?? "";
 }
 
 export async function shareFileWithNativePicker(
@@ -195,8 +201,8 @@ export function isBrowserPreviewPath(path: string): boolean {
   return BROWSER_PREVIEW_EXTS.has(ext);
 }
 
-function kindOf(path: string): Kind {
-  const ext = path.split(".").pop()?.toLowerCase() ?? "";
+export function kindOf(path: string): Kind {
+  const ext = previewExtension(path);
   if (TEXT_EXTS.has(ext) || !path.includes(".")) return "text";
   if (IMG_EXTS.has(ext)) return "image";
   if (VIDEO_EXTS.has(ext)) return "video";
@@ -254,6 +260,7 @@ export default function FilePreview({ path, gateway, onClose }: Props) {
   const previewModeRef = useRef(false);
 
   const kind = path ? kindOf(path) : "unsupported";
+  const remoteMedia = path ? isWebMediaUrl(path) : false;
   const isHtml = path ? isHtmlPreviewPath(path) : false;
   const isMarkdown = path ? isMarkdownPreviewPath(path) : false;
   const isRenderedDocument = isHtml || isMarkdown;
@@ -385,6 +392,11 @@ export default function FilePreview({ path, gateway, onClose }: Props) {
     editingRef.current = false;
     offsetRef.current = 0;
     decoderRef.current = new TextDecoder("utf-8", { fatal: false });
+    if (isWebMediaUrl(target)) {
+      activeMediaUrlRef.current = target;
+      setMediaUrl(target);
+      return;
+    }
     void rpc("fs:watch", { path: parentOf(target) }).catch(() => {});
     if (targetKind === "text") {
       void loadTextStatus(target, generation);
@@ -471,6 +483,10 @@ export default function FilePreview({ path, gateway, onClose }: Props) {
 
   const downloadToClient = useCallback(async () => {
     if (!path || downloadProgress !== null || shareProgress !== null) return;
+    if (isWebMediaUrl(path)) {
+      window.open(path, "_blank", "noopener,noreferrer");
+      return;
+    }
     const target = path;
     setDownloadError(null);
     setShareError(null);
@@ -715,8 +731,8 @@ export default function FilePreview({ path, gateway, onClose }: Props) {
               onClick={downloadToClient}
               disabled={downloadProgress !== null || shareProgress !== null}
               style={{ ...HEADER_BUTTON_STYLES, opacity: downloadProgress !== null || shareProgress !== null ? 0.72 : 1 }}
-              aria-label={downloadProgress === null ? "下载到当前设备" : `正在下载 ${downloadProgress}%`}
-              title={downloadProgress === null ? "下载到当前设备" : `正在下载 ${downloadProgress}%`}
+              aria-label={remoteMedia ? "打开原始地址" : downloadProgress === null ? "下载到当前设备" : `正在下载 ${downloadProgress}%`}
+              title={remoteMedia ? "打开原始地址" : downloadProgress === null ? "下载到当前设备" : `正在下载 ${downloadProgress}%`}
             >
               {downloadProgress !== null ? (
                 <LoaderCircle className="tree-spin" size={15} strokeWidth={1.8} aria-hidden="true" />
@@ -726,7 +742,7 @@ export default function FilePreview({ path, gateway, onClose }: Props) {
                 <Download size={15} strokeWidth={1.8} aria-hidden="true" />
               )}
             </button>
-            <button
+            {!remoteMedia && <button
               type="button"
               onClick={shareToDevice}
               disabled={shareProgress !== null || downloadProgress !== null}
@@ -741,7 +757,7 @@ export default function FilePreview({ path, gateway, onClose }: Props) {
               ) : (
                 <Share2 size={15} strokeWidth={1.8} aria-hidden="true" />
               )}
-            </button>
+            </button>}
             {hasBrowserPreview && (
               <button
                 type="button"
@@ -809,7 +825,7 @@ export default function FilePreview({ path, gateway, onClose }: Props) {
           <img src={mediaUrl} alt={path} onLoad={() => markMediaReady(mediaUrl)} onError={() => markMediaFailed(mediaUrl)} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain", display: "block", margin: "0 auto" }} />
         )}
         {mediaUrl && !err && kind === "video" && (
-          <video src={mediaUrl} controls autoPlay onLoadedMetadata={() => markMediaReady(mediaUrl)} onError={() => markMediaFailed(mediaUrl)} style={{ maxWidth: "100%", maxHeight: "100%", display: "block", margin: "0 auto" }} />
+          <video src={mediaUrl} controls playsInline preload="metadata" onLoadedMetadata={() => markMediaReady(mediaUrl)} onError={() => markMediaFailed(mediaUrl)} style={{ maxWidth: "100%", maxHeight: "100%", display: "block", margin: "0 auto" }} />
         )}
         {mediaUrl && !err && kind === "audio" && (
           <div style={{ display: "grid", placeItems: "center", height: "100%" }}>

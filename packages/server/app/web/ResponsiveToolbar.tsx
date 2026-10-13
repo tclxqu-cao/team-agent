@@ -70,7 +70,7 @@ export default function ResponsiveToolbar({ items, avatar }: Props) {
     if (overflow.current) mutations.observe(overflow.current, { childList: true, subtree: true });
     measure();
     return () => { cancelAnimationFrame(frame); observer.disconnect(); mutations.disconnect(); };
-  }, [expanded, portalNode, items.length, layout.inlineIndices.join(",")]);
+  }, [expanded, portalNode, items.map(item => item.id).join(","), layout.inlineIndices.join(",")]);
 
   useLayoutEffect(() => {
     if (!overflowOpen) return;
@@ -111,7 +111,7 @@ export default function ResponsiveToolbar({ items, avatar }: Props) {
     <span ref={sizeRef} className="file-drawer-toggle toolbar-size-measure" aria-hidden="true" />
     {showOverflow && <button ref={overflowButton} type="button" className="file-drawer-toggle toolbar-overflow-toggle" aria-label="更多工具" title="更多工具" aria-haspopup="dialog" aria-expanded={overflowOpen} onClick={() => setOverflowOpen(value => !value)}><ChevronDown size={17} aria-hidden="true" /></button>}
     {layout.inlineIndices.length > 0 && <div className="toolbar-tools toolbar-tools-inline">{items.filter((_, index) => inline.has(index)).map(renderItem)}</div>}
-    {!layout.fullFits && <button type="button" className="file-drawer-toggle toolbar-more" aria-label={expanded ? "收起顶部工具" : "展开顶部工具"} title={expanded ? "收起工具" : "展开工具"} aria-expanded={expanded} onClick={() => { setExpanded(value => !value); setOverflowOpen(false); }}>
+    {items.length > 0 && !layout.fullFits && <button type="button" className="file-drawer-toggle toolbar-more" aria-label={expanded ? "收起顶部工具" : "展开顶部工具"} title={expanded ? "收起工具" : "展开工具"} aria-expanded={expanded} onClick={() => { setExpanded(value => !value); setOverflowOpen(false); }}>
       {expanded ? <ChevronsRight size={17} aria-hidden="true" /> : <ChevronsLeft size={17} aria-hidden="true" />}
     </button>}
     <div ref={avatarRef} className="toolbar-avatar" onPointerDown={() => setOverflowOpen(false)}>{avatar}</div>

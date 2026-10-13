@@ -1,4 +1,4 @@
-import { WEBAPP_ARTIFACT_OPEN_TYPE } from "../../../core/src/domain/web-console/WebArtifactBridge";
+import { isWebMediaUrl, WEBAPP_ARTIFACT_OPEN_TYPE } from "../../../core/src/domain/web-console/WebArtifactBridge";
 
 export type ArtifactBridgeWindow = Pick<Window, "location"> & {
   parent: Pick<Window, "postMessage">;
@@ -12,9 +12,15 @@ function isAbsoluteHostPath(value: string): boolean {
     || /^\\\\[^\\/]+[\\/][^\\/]+/.test(value);
 }
 
-export function resolveWebArtifactPath(value: string, workspacePath?: string | null): string | null {
+export function resolveWebArtifactPath(value: string, workspacePath?: string | null, homePath?: string | null): string | null {
   const candidate = value.trim();
   if (!candidate || /[\0\r\n]/.test(candidate)) return null;
+  if (isWebMediaUrl(candidate)) return candidate;
+  if (candidate.startsWith("~/")) {
+    const relative = candidate.slice(2);
+    if (!relative || relative.split(/[\\/]/).includes("..")) return null;
+    return homePath ? resolveWebArtifactPath(relative, homePath) : candidate;
+  }
   if (isAbsoluteHostPath(candidate)) return candidate;
   if (!workspacePath || !isAbsoluteHostPath(workspacePath)) return null;
 

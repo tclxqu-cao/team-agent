@@ -20,6 +20,11 @@ beforeEach(() => {
 });
 
 describe("OpenCode executable health", () => {
+  it("accepts the official v2 prefixed version output", async () => {
+    execution.version = "opencode v2.0.27";
+    const adapter = new OpenCodeRuntimeAdapter({ executable: "/opencode" });
+    await expect(adapter.health()).resolves.toMatchObject({ available: true, version: "2.0.27" });
+  });
   it.each(["1.18.27", "1.18.30", "1.18.100", "1.19.0", "2.0.0"])("accepts stable version %s and probes serve", async (version) => {
     execution.version = version;
     const adapter = new OpenCodeRuntimeAdapter({ executable: "/opencode" });

@@ -8,6 +8,7 @@ import {
   type OpenCodeServerPort,
 } from "./opencode-runtime-adapter.js";
 import type { OpenCodeServerEvent } from "./opencode-server-client.js";
+import { OpenCodeV2EventCodec } from "./opencode-v2-codec.js";
 
 const session: Session = {
   id: "ses_1",
@@ -259,6 +260,30 @@ describe("OpenCodeRuntimeAdapter", () => {
       expect(events.some((event) => (event as { type?: string }).type === "ask_user")).toBe(false);
     },
   );
+
+  it.each([false, true])("classifies all v2 edit previews before auto-approval (external file: %s)", async (external) => {
+    const fixture = mockServer();
+    const adapter = new OpenCodeRuntimeAdapter({ server: fixture.server });
+    const result = drain(adapter.run("ses_1", "hello", undefined, undefined, undefined, { permissionMode: "auto-approval" }));
+    await vi.waitFor(() => expect(fixture.client.session.promptAsync).toHaveBeenCalled());
+    const paths = ["src/app.ts", external ? "/outside/private.ts" : "src/other.ts"];
+    const codec = new OpenCodeV2EventCodec(new Map([["ses_1", "/repo"]]));
+    const [event] = codec.convert({ type: "permission.asked", data: {
+      id: "perm_v2", sessionID: "ses_1", action: "edit", resources: paths,
+      metadata: { files: paths.map((file) => ({ file, patch: `--- ${file}\n+++ ${file}\n` })) },
+    } });
+    fixture.emit(event.payload as OpenCodeServerEvent["payload"]);
+    if (external) {
+      await vi.waitFor(async () => expect(await adapter.answerQuestion("opencode:ses_1:perm_v2", { answer: "拒绝" })).toBe(true));
+    } else {
+      await vi.waitFor(() => expect(fixture.client.postSessionIdPermissionsPermissionId).toHaveBeenCalled());
+    }
+    fixture.emit({ type: "session.idle", properties: { sessionID: "ses_1" } });
+    expect((await result).some((event) => (event as { type: string }).type === "ask_user")).toBe(external);
+    expect(fixture.client.postSessionIdPermissionsPermissionId).toHaveBeenCalledWith(expect.objectContaining({
+      body: { response: external ? "reject" : "once" },
+    }));
+  });
 
   it("clears a pending approval when permission.replied uses the requestID field", async () => {
     const fixture = mockServer();

@@ -1,24 +1,35 @@
 "use client";
 
 import { Bot } from "lucide-react";
+import type { ReactNode } from "react";
 
 /** Shared by the module fallback and the embedded page's loading state. */
-export default function FlowStudioLoading() {
+export default function FlowStudioLoading({
+  label = "FLOW STUDIO",
+  title = "正在打开 Flow Studio",
+  caption = "即将进入你的创作空间",
+  icon = <Bot size={36} strokeWidth={1.5} />,
+}: {
+  label?: string;
+  title?: string;
+  caption?: string;
+  icon?: ReactNode;
+} = {}) {
   return (
     <div className="flow-loading" role="status" aria-live="polite">
       <div className="flow-loader-art" aria-hidden="true">
         <div className="flow-loader-halo" />
         <div className="flow-loader-orbit orbit-outer"><i /></div>
         <div className="flow-loader-orbit orbit-inner"><i /></div>
-        <div className="flow-loader-core"><Bot size={36} strokeWidth={1.5} /></div>
+        <div className="flow-loader-core">{icon}</div>
         <span className="flow-loader-node node-one" />
         <span className="flow-loader-node node-two" />
         <span className="flow-loader-node node-three" />
       </div>
       <div className="flow-loader-copy">
-        <span className="flow-loader-label">FLOW STUDIO</span>
-        <strong>正在打开 Flow Studio</strong>
-        <span className="flow-loader-caption">即将进入你的创作空间</span>
+        <span className="flow-loader-label">{label}</span>
+        <strong>{title}</strong>
+        <span className="flow-loader-caption">{caption}</span>
       </div>
       <div className="flow-loader-track" aria-hidden="true"><span /></div>
       <style jsx>{`

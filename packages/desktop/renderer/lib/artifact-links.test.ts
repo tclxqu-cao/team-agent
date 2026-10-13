@@ -27,6 +27,18 @@ describe("postWebArtifactOpen", () => {
 });
 
 describe("resolveWebArtifactPath", () => {
+  it("defers home expansion to the host and never joins tilde onto the workspace", () => {
+    expect(resolveWebArtifactPath("~/videos/demo.mp4", "/work/project")).toBe("~/videos/demo.mp4");
+    expect(resolveWebArtifactPath("~/videos/demo.mp4", "/work/project", "/Users/remote")).toBe("/Users/remote/videos/demo.mp4");
+    expect(resolveWebArtifactPath("~/../secret.mp4", null, "/Users/remote")).toBeNull();
+    expect(resolveWebArtifactPath("~/", null, "/Users/remote")).toBeNull();
+  });
+
+  it("preserves media addresses and rejects unsupported URL protocols", () => {
+    const url = "https://example.com/demo.mp4?signature=123";
+    expect(resolveWebArtifactPath(url)).toBe(url);
+    expect(resolveWebArtifactPath("javascript:demo.mp4")).toBeNull();
+  });
   it("keeps absolute paths and resolves project-relative paths", () => {
     expect(resolveWebArtifactPath("/tmp/report.md", "/work/project")).toBe("/tmp/report.md");
     expect(resolveWebArtifactPath("packages/app.tsx", "/work/project/")).toBe("/work/project/packages/app.tsx");

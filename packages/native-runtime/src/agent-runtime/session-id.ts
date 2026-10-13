@@ -7,6 +7,7 @@ const AGENT_TYPES = new Set<AgentType>([
   "codex",
   "claude-code",
   "opencode",
+  "deepseek-harness",
 ]);
 
 export function encodeUnifiedSessionId(

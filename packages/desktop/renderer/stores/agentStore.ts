@@ -220,6 +220,9 @@ export function resolveVisibleSessionMessages(
   storeSessionId: string | null,
   selectedSessionId: string | null | undefined,
 ): ChatMessage[] {
+  // An explicit empty selection is the welcome page, even when the store's
+  // session identity has already been cleared but old output remains cached.
+  if (selectedSessionId !== undefined && !selectedSessionId?.trim()) return [];
   if (selectedSessionId !== undefined && selectedSessionId !== storeSessionId) {
     return selectedSessionId ? messagesBySession[selectedSessionId] ?? [] : [];
   }

@@ -18,6 +18,13 @@ function user(content: string, id = "echo"): ChatMessage {
   return { id, role: "user", content, timestamp: 2 };
 }
 
+function desktopReply(entries = [{ itemId: "item", index: 0, question, answer }]): string {
+  return `<send_user_message_question_reply>\n${JSON.stringify(entries.map((entry) => ({
+    questionItemId: JSON.stringify(["request_user_input_async", entry.itemId, entry.index]),
+    question: entry.question, answer: entry.answer,
+  })))}\n</send_user_message_question_reply>`;
+}
+
 describe("hideAnsweredQuestionEchoes", () => {
   it("shows the submitted answer only in its card without changing stored history", () => {
     const messages = [user("开始", "start"), card(), user(echoedContent), user("继续", "follow-up")];
@@ -81,6 +88,80 @@ describe("hideAnsweredQuestionEchoes", () => {
 });
 
 describe("presentQuestionAnswers", () => {
+  it("closes a phone card from a desktop answer while hiding the protocol echo", () => {
+    const pending = card(undefined, false);
+    const reply = user(desktopReply());
+    const visible = presentQuestionAnswers([pending, reply], true);
+    expect(visible).toHaveLength(1);
+    expect(visible[0]).toMatchObject({
+      id: pending.id, askUser: { questionId: pending.askUser!.questionId, answered: true, answer },
+    });
+    expect(pending.askUser?.answered).toBe(false);
+    expect(reply.askUser).toBeUndefined();
+  });
+
+  it("matches native identity even when restored event cards follow the answer", () => {
+    const wrongItem = card("native:run:async:other-item:0", false);
+    const wrongIndex = card("native:run:async:item:1", false);
+    const matching = card(undefined, false);
+    const visible = presentQuestionAnswers([user(desktopReply()), wrongItem, wrongIndex, matching], true);
+    expect(visible).toHaveLength(3);
+    expect(visible[0]).toBe(wrongItem);
+    expect(visible[1]).toBe(wrongIndex);
+    expect(visible[2].askUser).toMatchObject({ answered: true, answer });
+  });
+
+  it("restores all desktop answers after a full reload and keeps their history text", () => {
+    const reply = user(desktopReply([
+      { itemId: "item", index: 0, question, answer },
+      { itemId: "item", index: 1, question: "并发数？", answer: "3" },
+    ]), "native-reply");
+    const restored = restoreSessionHistoryPage({ messages: [reply], history: { delivery: "core", revision: "rev" } });
+    const visible = presentQuestionAnswers(restored, true);
+    expect(visible.map((message) => message.askUser)).toMatchObject([
+      { question, answer, answered: true }, { question: "并发数？", answer: "3", answered: true },
+    ]);
+    expect(new Set(visible.map((message) => message.id)).size).toBe(2);
+    expect(visible.every((message) => message.content === reply.content)).toBe(true);
+  });
+
+  it("updates a resolved placeholder with the real answer and retains unmatched batch replies", () => {
+    const resolved = { ...card(), askUser: { ...card().askUser!, answer: "已处理" } };
+    const reply = user(desktopReply([
+      { itemId: "item", index: 0, question, answer },
+      { itemId: "item", index: 1, question: "其他要求？", answer: "没有" },
+    ]));
+    const visible = presentQuestionAnswers([resolved, reply], true);
+    expect(visible).toHaveLength(2);
+    expect(visible[0].askUser?.answer).toBe(answer);
+    expect(visible[1].askUser).toMatchObject({ question: "其他要求？", answer: "没有", answered: true });
+  });
+
+  it("reconciles legacy external answers with only the nearest pending occurrence", () => {
+    const first = card("native:run:async:first:0", false);
+    const latest = card("native:run:async:latest:0", false);
+    const visible = presentQuestionAnswers([first, latest, user(echoedContent)], true);
+    expect(visible).toHaveLength(2);
+    expect(visible[0]).toBe(first);
+    expect(visible[1].askUser).toMatchObject({ answered: true, answer });
+  });
+
+  it("does not interpret malformed, quoted, queued or attached desktop answer messages", () => {
+    const text = desktopReply();
+    const ordinary = [
+      user(text.replace('"answer":', '"missing":')),
+      user(text.replace('request_user_input_async', 'unknown-tool')),
+      user(text.replace(',0]', ',-1]')),
+      user(`<send_user_message_question_reply>invalid</send_user_message_question_reply>`),
+      user(`引用：${text}`), user(`${text}\n继续做其他事`),
+      { ...user(text), isQueued: true },
+      { ...user(text), isCompactionSummary: true },
+      { ...user(text), images: ["data:image/png;base64,test"] },
+    ];
+    expect(presentQuestionAnswers(ordinary, true)).toEqual(ordinary);
+    expect(presentQuestionAnswers([user(text)], false)).toEqual([user(text)]);
+  });
+
   it("restores an answered card after reload while retaining message and trace identity", () => {
     const reply: ChatMessage = {
       ...user(echoedContent, "history-message.v1.answer"),

@@ -7,7 +7,7 @@ import type {
 
 export const AGENT_WORKSPACE_CACHE_KEY = "agentroam.agent-workspaces.v2";
 export const AGENT_WORKSPACE_CACHE_VERSION = 2;
-export const AGENT_TYPES: AgentType[] = ["customer-agent", "codex", "claude-code", "opencode"];
+export const AGENT_TYPES: AgentType[] = ["customer-agent", "codex", "claude-code", "opencode", "deepseek-harness"];
 
 export interface CachedWorkspaceSessions {
   data: UnifiedSessionSummary[];

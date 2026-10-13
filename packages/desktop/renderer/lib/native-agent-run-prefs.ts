@@ -11,7 +11,7 @@ export interface NativeAgentRunPref {
 }
 
 const STORAGE_KEY = "webapp.nativeAgentRunPrefs.v1";
-const NATIVE_AGENT_TYPES: readonly AgentType[] = ["codex", "claude-code", "opencode"];
+const NATIVE_AGENT_TYPES: readonly AgentType[] = ["codex", "claude-code", "opencode", "deepseek-harness"];
 
 type PrefStore = Partial<Record<AgentType, NativeAgentRunPref>>;
 

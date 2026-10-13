@@ -1,6 +1,6 @@
 import type { AgentType, WorkspaceQuery } from "@agent/native-runtime";
 
-const AGENT_TYPES = new Set<AgentType>(["customer-agent", "codex", "claude-code", "opencode"]);
+const AGENT_TYPES = new Set<AgentType>(["customer-agent", "codex", "claude-code", "opencode", "deepseek-harness"]);
 
 export const CUSTOMER_AGENT_RECENT_WORKSPACE_ID = "customer-agent:recent";
 

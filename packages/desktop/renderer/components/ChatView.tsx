@@ -89,6 +89,7 @@ import {
 } from "../lib/queued-message-order";
 import { isWebShell } from "../web/webLayout";
 import { OPEN_BROWSER_LIVE_EVENT } from "../web/shellEvents";
+import { WEB_SHELL_OPEN_BROWSER_LIVE_TYPE } from "../../../core/src/domain/web-console/WebShellLiveBridge";
 import {
   CONTEXT_COMPACTION_PROGRESS_ID,
   latestGlobalRuntimeProgress,
@@ -408,6 +409,9 @@ import {
   type OccupiedSessionRecovery,
 } from "../lib/occupied-session-fork";
 import type { AgentType, NativeReasoningEffort, RuntimeModelInfo, RuntimeModelSelection, SessionGoalState, ThreadGoalInfo, ToolPermissionMode, UnifiedSessionSummary } from "../global";
+import { NativeGoalBar } from "./NativeGoalBar";
+import { useNativeSessionGoal } from "../lib/use-native-session-goal";
+import { nativeGoalSubmission } from "../lib/native-goal-submission";
 
 interface ChatViewProps {
   activeAgentType?: AgentType;
@@ -476,6 +480,7 @@ const NATIVE_AGENT_LABELS: Record<Exclude<AgentType, "customer-agent">, string> 
   codex: "Codex",
   "claude-code": "Claude Code",
   opencode: "OpenCode",
+  "deepseek-harness": "DeepSeek Harness",
 };
 
 /** Settings profiles only transfer to a runtime whose provider they match (opencode understands all providers). */
@@ -499,6 +504,11 @@ function normalizePermissionMode(value: unknown): ToolPermissionMode {
   return PERMISSION_OPTIONS.some((option) => option.value === value)
     ? value as ToolPermissionMode
     : "full-access";
+}
+
+function nativePermissionLabel(value: string, label = value): string {
+  if (label !== value) return label;
+  return ({ "read-only": "只读", "workspace-write": "工作区写入", "danger-full-access": "完全访问权限", auto: "自动审核", custom: "自定义权限" } as Record<string, string>)[value] ?? label;
 }
 
 export default function ChatView({
@@ -558,7 +568,6 @@ export default function ChatView({
     setNativeSubagentActivities,
     applyReasoningSummary,
     applyCodexExecutionEvent,
-    clearMessages,
     sessionId,
     todos,
     setTodos,
@@ -578,15 +587,18 @@ export default function ChatView({
     () => coalesceAdjacentToolCallMessages(presentQuestionAnswers(hideQueuedGoalMessages(
       visibleMessages.filter((message) => !message.isQueued),
       goalState.queued,
-    ), activeAgentType === "codex")),
-    [activeAgentType, goalState.queued, visibleMessages],
+    ), (sessionSummary?.agentType ?? activeAgentType) === "codex")),
+    [activeAgentType, sessionSummary?.agentType, goalState.queued, visibleMessages],
   );
   const latestCodexExecutionTurnId = useMemo(
     () => renderedMessages.findLast((message) => message.executionTrace)?.executionTrace?.turnId,
     [renderedMessages],
   );
   const { revision: settingsRevision, isConfigured, profiles, activeProfileId, switchActiveProfile, loadFromSystem, contextWindow, reasoningEffort, taskNotifications, setField, saveToSystem } = useSettingsStore();
-  const viewSessionId = selectedSessionId || sessionId;
+  const isWorkspaceWelcome = selectedProjectId !== null && selectedSessionId === null;
+  const viewSessionId = isWorkspaceWelcome ? null : selectedSessionId || sessionId;
+  const viewSessionIdRef = useRef(viewSessionId);
+  viewSessionIdRef.current = viewSessionId;
   const [occupiedRecoveries, setOccupiedRecoveries] = useState<OccupiedRecoveryRegistry>({});
   const occupiedRecoveriesRef = useRef<OccupiedRecoveryRegistry>({});
   const commitOccupiedRecovery = useCallback((
@@ -612,7 +624,11 @@ export default function ChatView({
   // 转成 window CustomEvent，这里收到后打开浏览器直播面板。
   useEffect(() => {
     if (!isWebShell() || !window.browserLiveApi) return;
-    const open = () => setBrowserLiveOpen(true);
+    const open = () => {
+      if (window.parent !== window) {
+        window.parent.postMessage({ type: WEB_SHELL_OPEN_BROWSER_LIVE_TYPE }, location.origin);
+      } else setBrowserLiveOpen(true);
+    };
     window.addEventListener(OPEN_BROWSER_LIVE_EVENT, open);
     return () => window.removeEventListener(OPEN_BROWSER_LIVE_EVENT, open);
   }, []);
@@ -820,7 +836,23 @@ export default function ChatView({
   const [effortMenuOpen, setEffortMenuOpen] = useState(false);
   const [permissionMenuOpen, setPermissionMenuOpen] = useState(false);
   const [permissionMode, setPermissionMode] = useState<ToolPermissionMode>("full-access");
+  const [nativePermissions, setNativePermissions] = useState<UnifiedSessionSummary["nativePermissions"]>(sessionSummary?.nativePermissions);
+  const usesNativePermissions = composerAgentType === "deepseek-harness";
+  const permissionLabel = usesNativePermissions
+    ? nativePermissions ? nativePermissionLabel(nativePermissions.currentValue, nativePermissions.options.find(option => option.value === nativePermissions.currentValue)?.label) : "原生权限"
+    : PERMISSION_OPTIONS.find(option => option.value === permissionMode)?.label;
   const [goalMode, setGoalMode] = useState(false);
+  const supportsNativeGoal = composerAgentType === "deepseek-harness" && sessionSummary?.nativeGoalSupported !== false;
+  const supportsNativeModelSelection = sessionSummary?.nativeModelSelectionSupported !== false;
+  const nativeGoal = useNativeSessionGoal(viewSessionId, supportsNativeGoal);
+  const canComposeNativeGoal = supportsNativeGoal && composerRoute.ready && runtimeReady && !isCompatibilityReadOnly;
+  useEffect(() => {
+    if (sessionSummary?.nativeGoalSupported === false) setGoalMode(false);
+  }, [sessionSummary?.nativeGoalSupported]);
+  const canSubmitComposer = canCompose || (canComposeNativeGoal && goalMode);
+  const composerScopeRef = useRef("");
+  composerScopeRef.current = JSON.stringify([composerAgentType, selectedProjectId, viewSessionId]);
+  const nativePermissionPendingRef = useRef(false);
   const [draggedGoalId, setDraggedGoalId] = useState<string | null>(null);
   const [isSavingPermission, setIsSavingPermission] = useState(false);
   const effortMenuRef = useRef<HTMLDivElement>(null);
@@ -872,8 +904,11 @@ export default function ChatView({
 
   useEffect(() => {
     setPermissionMenuOpen(false);
+  }, [composerAgentType, viewSessionId]);
+  useEffect(() => {
     setPermissionMode(normalizePermissionMode(sessionSummary?.permissionMode));
-  }, [isNativeRuntime, selectedSessionId, sessionSummary?.permissionMode]);
+    setNativePermissions(sessionSummary?.nativePermissions);
+  }, [isNativeRuntime, selectedSessionId, sessionSummary?.permissionMode, sessionSummary?.nativePermissions]);
   const [error, setError] = useState<string | null>(null);
   const [cancellationTimeoutSessionId, setCancellationTimeoutSessionId] = useState<string | null>(null);
   const [sessionLoadError, setSessionLoadError] = useState<string | null>(null);
@@ -1578,11 +1613,10 @@ export default function ChatView({
       const agentApi = window.agentApi;
       if (!agentApi) return;
       // Capture at call time — used to detect stale responses from fast session switching.
-      if (shouldSkipVoiceSessionReload(runningSessionRef.current, sessionIdRef.current, targetSid)) return;
+      if (shouldSkipVoiceSessionReload(runningSessionRef.current, sessionIdRef.current, targetSid, !isWorkspaceWelcome)) return;
       if (!targetSid) {
         if (!isCurrentLoad()) return;
         historyPrefetchRef.current?.invalidate();
-        clearMessages();
         setError(null);
         setSessionLoadError(null);
         setDirectCompatibilitySessionId(null);
@@ -1654,6 +1688,7 @@ export default function ChatView({
               if (!isCurrentLoad()) return;
               const permissionDetail = detail as (SessionHistoryDetail & {
                 permissionMode?: unknown;
+                nativePermissions?: UnifiedSessionSummary["nativePermissions"];
                 metadata?: Record<string, unknown>;
               }) | null;
               const restoredContextUsage = findLatestContextUsage(detail?.events ?? []);
@@ -1665,6 +1700,7 @@ export default function ChatView({
               setPermissionMode(normalizePermissionMode(
                 permissionDetail?.permissionMode ?? permissionDetail?.metadata?.permissionMode,
               ));
+              setNativePermissions(permissionDetail?.nativePermissions);
               anchoredNewerCursorRef.current = null;
               const liveMessages = getMessagesForSession(targetSid);
               const restoredWindow = restoreLatestSessionHistoryWindow(
@@ -1727,7 +1763,7 @@ export default function ChatView({
         sessionLoadGenerationRef.current += 1;
       }
     };
-  }, [clearMessages, getMessagesForSession, getSessionHistoryWindow, historyAgentType, prefetchOlderHistory, selectedSessionId, sessionReloadGeneration, setContextUsage, setHistoryMode, setMessages, setSessionId, syncToolResultScope, updateAgentActivity]);
+  }, [getMessagesForSession, getSessionHistoryWindow, historyAgentType, isWorkspaceWelcome, prefetchOlderHistory, selectedSessionId, sessionReloadGeneration, setContextUsage, setHistoryMode, setMessages, setSessionId, syncToolResultScope, updateAgentActivity]);
 
   const loadSessionQueryIndex = useCallback(async (targetSid: string) => {
     const agentApi = window.agentApi;
@@ -1847,6 +1883,7 @@ export default function ChatView({
             nextAutoScrollRef.current = isNearBottom ? null : "skip";
             setMessages(merged, targetSid, restoredWindow.window);
             syncToolResultScope(targetSid, detail?.history?.revision);
+            if (detail?.agentType === "deepseek-harness") setNativePermissions(detail.nativePermissions);
             if (detail?.goalState) setGoalState(projectSessionGoals(detail.goalState) as SessionGoalState);
 
             if (historyCursorRef.current !== restoredWindow.window.olderCursor) {
@@ -1901,9 +1938,11 @@ export default function ChatView({
 
   useEffect(() => {
     const targetSid = selectedSessionId;
-    const shouldFollow = shouldFollowNativeHistory(sessionSummary, targetSid, runningSessionId)
+    const shouldFollow = sessionSummary?.agentType === "deepseek-harness"
+      || shouldFollowNativeHistory(sessionSummary, targetSid, runningSessionId)
       || (sessionSummary?.agentType === "customer-agent" && targetSid !== runningSessionId);
-    const shouldPollFallback = sessionSummary?.agentType === "customer-agent"
+    const shouldPollFallback = sessionSummary?.agentType === "deepseek-harness"
+      || sessionSummary?.agentType === "customer-agent"
       || sessionSummary?.occupancy === "owned-externally"
       || sessionSummary?.status === "running";
     if (!targetSid || !shouldFollow || !window.agentApi) return;
@@ -2925,6 +2964,23 @@ export default function ChatView({
     }
   };
 
+  const handleNativePermissionChange = async (preset: string) => {
+    if (!viewSessionId || !window.agentApi?.setSessionNativePermissionPreset || nativePermissionPendingRef.current) return;
+    nativePermissionPendingRef.current = true;
+    const targetSessionId = viewSessionId;
+    setPermissionMenuOpen(false);
+    setIsSavingPermission(true);
+    try {
+      const updated = await window.agentApi.setSessionNativePermissionPreset(targetSessionId, preset);
+      if (viewSessionIdRef.current === targetSessionId) setNativePermissions(updated.nativePermissions);
+    } catch (error) {
+      if (viewSessionIdRef.current === targetSessionId) setError(error instanceof Error ? error.message : "原生权限更新失败");
+    } finally {
+      nativePermissionPendingRef.current = false;
+      setIsSavingPermission(false);
+    }
+  };
+
   const handleCodexRelease = async () => {
     if (
       !viewSessionId
@@ -3321,8 +3377,8 @@ export default function ChatView({
     try {
       if (window.agentApi) {
         const runNativeOptions = isNativeRuntime && isNativeAgentType(composerAgentType) ? {
-          ...(effectiveNativePref.model?.id ? { model: effectiveNativePref.model } : {}),
-          ...(activeNativeEffort ? { reasoningEffort: activeNativeEffort } : {}),
+          ...(supportsNativeModelSelection && effectiveNativePref.model?.id ? { model: effectiveNativePref.model } : {}),
+          ...(supportsNativeModelSelection && activeNativeEffort ? { reasoningEffort: activeNativeEffort } : {}),
         } : activeProfileId ? { profileId: activeProfileId } : undefined;
         await window.agentApi.run(
           message.content,
@@ -3414,7 +3470,8 @@ export default function ChatView({
   }
 
   const submitChatMessage = async (submission: ChatSubmission) => {
-    if (!submission.text || !canCompose || pendingImageReads > 0) return;
+    const nativeGoalCommand = composerAgentType === "deepseek-harness" && /^\/goal(?:\s|$)/i.test(submission.text);
+    if (!submission.text || !(canSubmitComposer || (canComposeNativeGoal && nativeGoalCommand)) || pendingImageReads > 0) return;
 
     if (historyWindowModeRef.current === "anchored") {
       const restoredLatest = await returnToLatestHistory();
@@ -3599,6 +3656,45 @@ export default function ChatView({
     const goalObjective = explicitGoal
       ? explicitGoal[1]?.trim() ?? ""
       : submission.applyGoalMode && goalMode ? finalMsg : null;
+    if (goalObjective !== null && composerAgentType === "deepseek-harness") {
+      const initialScope = composerScopeRef.current;
+      let targetSessionId = viewSessionId;
+      const isCurrentGoalSubmission = () => composerScopeRef.current === initialScope
+        || (targetSessionId !== null && viewSessionIdRef.current === targetSessionId);
+      try {
+        if (submission.images?.length) throw new Error("Harness 原生目标暂不接收附件，请先发送附件，再设置目标");
+        const mutation = nativeGoalSubmission(finalMsg, nativeGoal.goal);
+        if (mutation === "show") {
+          if (viewSessionId) await nativeGoal.refresh(viewSessionId);
+          return;
+        }
+        if (!targetSessionId) {
+          if (mutation.action !== "create") throw new Error("请先选择已有目标的会话");
+          const created = await window.agentApi.createSession(
+            mutation.objective.slice(0, 60), selectedProjectId || undefined, composerAgentType, workspacePath ?? undefined,
+          );
+          targetSessionId = created.id;
+          if (composerScopeRef.current === initialScope) {
+            sessionIdRef.current = created.id;
+            setSessionId(created.id);
+            if (onSessionCreated) await onSessionCreated(created.id, created);
+          }
+        }
+        await nativeGoal.mutate(targetSessionId, mutation);
+        if (isCurrentGoalSubmission() && inputRef.current?.value.trim() === finalMsg.trim()) {
+          clearSubmittedComposer();
+          if (submission.clearComposer) {
+            clearSessionDraft(targetSessionId);
+            void imageDraftCoordinator.clear(targetSessionId);
+          }
+        }
+        if (onMessageSent) void onMessageSent(targetSessionId, goalObjective);
+        if (viewSessionIdRef.current === targetSessionId) void refreshLatestHistory(targetSessionId);
+      } catch (goalError) {
+        if (isCurrentGoalSubmission()) setError(goalError instanceof Error ? goalError.message : "Harness 目标操作失败");
+      }
+      return;
+    }
     if (goalObjective !== null && !goalObjective) {
       setError("请输入目标内容");
       return;
@@ -3985,7 +4081,7 @@ export default function ChatView({
           </div>
         )}
 
-        {visibleMessages.length === 0 && isInitialHistoryLoading && showInitialHistoryLoading && (
+        {!isWorkspaceWelcome && visibleMessages.length === 0 && isInitialHistoryLoading && showInitialHistoryLoading && (
           <div className="chat-history-initial-loading" role="status" style={{
             height: "100%",
             display: "flex",
@@ -4002,7 +4098,7 @@ export default function ChatView({
           </div>
         )}
 
-        {visibleMessages.length === 0 && !isRunning && !isInitialHistoryLoading && !error && (
+        {(isWorkspaceWelcome || (visibleMessages.length === 0 && !isRunning && !isInitialHistoryLoading && !error)) && (
           <EmptySessionWelcome
             key={viewSessionId ?? "initial-empty-session"}
             agentType={sessionSummary?.agentType ?? activeAgentType}
@@ -4619,7 +4715,7 @@ export default function ChatView({
           </div>
         )}
 
-        {(sessionLoadError || error) && (
+        {!isWorkspaceWelcome && (sessionLoadError || error) && (
           <div style={{
             padding: 12,
             margin: "8px 0",
@@ -5144,6 +5240,10 @@ export default function ChatView({
           );
         })()}
 
+        {supportsNativeGoal && <NativeGoalBar
+          goal={nativeGoal.goal} pending={nativeGoal.pending} error={nativeGoal.error}
+          onMutate={mutation => viewSessionId ? nativeGoal.mutate(viewSessionId, mutation) : Promise.reject(new Error("请先选择会话"))}
+        />}
         {threadGoal && (() => {
           const statusLabel: Record<ThreadGoalInfo["status"], string> = {
             active: "推进中",
@@ -5463,8 +5563,8 @@ export default function ChatView({
             onChange={(event) => handleComposerChange(event.target.value)}
             onBlur={() => setTimeout(() => { setAtQuery(null); setSlashQuery(null); }, 120)}
             onKeyDown={handleComposerKeyDown}
-            placeholder={codexReleaseState === "released" ? "已停止在 AgentRoam 中使用；Codex Desktop 最长约 30 分钟后可用" : isCompatibilityReadOnly ? (compatibilityStatus === "incompatible" ? "Codex 版本不兼容" : "正在验证会话兼容性") : isReadOnly ? "原客户端使用中，当前只读" : runtimeReady ? (goalMode ? "输入要持续推进的目标" : shouldQueueMessage ? "输入下一条排队消息" : "提出后续修改要求") : "请先在设置中配置 API Key"}
-            disabled={!canCompose}
+            placeholder={canComposeNativeGoal && goalMode ? "输入要持续推进的目标" : codexReleaseState === "released" ? "已停止在 AgentRoam 中使用；Codex Desktop 最长约 30 分钟后可用" : isCompatibilityReadOnly ? (compatibilityStatus === "incompatible" ? "Codex 版本不兼容" : "正在验证会话兼容性") : isReadOnly ? "原客户端使用中，当前只读" : runtimeReady ? (goalMode ? "输入要持续推进的目标" : shouldQueueMessage ? "输入下一条排队消息" : "提出后续修改要求") : "请先在设置中配置 API Key"}
+            disabled={!canSubmitComposer}
           />
 
           {/* Shared action toolbar */}
@@ -5498,7 +5598,8 @@ export default function ChatView({
                 className={`web-native-runtime-status goal-mode-toggle${goalMode ? " is-active" : ""}`}
                 aria-pressed={goalMode}
                 aria-label={goalMode ? "关闭目标模式" : "开启目标模式"}
-                title={goalMode ? "目标模式已开启" : "目标模式"}
+                title={sessionSummary?.nativeGoalSupported === false ? "子会话不支持单独设置目标" : goalMode ? "目标模式已开启" : "目标模式"}
+                disabled={sessionSummary?.nativeGoalSupported === false}
                 onClick={() => setGoalMode((enabled) => !enabled)}
               >
                 <Target size={18} strokeWidth={1.9} aria-hidden="true" />
@@ -5508,11 +5609,11 @@ export default function ChatView({
                   <button
                     type="button"
                     className={`web-native-runtime-status web-native-permission-button mode-${permissionMode}`}
-                    aria-label={`会话权限：${PERMISSION_OPTIONS.find((option) => option.value === permissionMode)?.label}`}
+                    aria-label={`会话权限：${permissionLabel}`}
                     aria-haspopup="menu"
                     aria-expanded={permissionMenuOpen}
-                    title={`会话权限：${PERMISSION_OPTIONS.find((option) => option.value === permissionMode)?.label}`}
-                    disabled={!viewSessionId || isSavingPermission}
+                    title={`会话权限：${permissionLabel}`}
+                    disabled={!viewSessionId || isSavingPermission || (usesNativePermissions && (!nativePermissions?.options.length || !window.agentApi?.setSessionNativePermissionPreset))}
                     onClick={() => setPermissionMenuOpen((open) => !open)}
                   >
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -5520,7 +5621,23 @@ export default function ChatView({
                       <path d="M12 8v4" /><path d="M12 16h.01" />
                     </svg>
                   </button>
-                  {permissionMenuOpen && (
+                  {permissionMenuOpen && usesNativePermissions && (
+                    <div className="web-native-permission-menu" role="menu" aria-label="DeepSeek Harness 原生权限">
+                      {nativePermissions?.options.map(option => (
+                        <button key={option.value} type="button" role="menuitemradio"
+                          aria-checked={nativePermissions.currentValue === option.value}
+                          className={nativePermissions.currentValue === option.value ? "is-active" : ""}
+                          onClick={() => { void handleNativePermissionChange(option.value); }}>
+                          <span className="web-native-permission-check" aria-hidden="true">{nativePermissions.currentValue === option.value ? "✓" : ""}</span>
+                          <span className="web-native-permission-copy">
+                            <strong>{nativePermissionLabel(option.value, option.label)}</strong>
+                            {option.description && <small>{option.description}</small>}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  {permissionMenuOpen && !usesNativePermissions && (
                     <div className="web-native-permission-menu" role="menu" aria-label="会话权限模式">
                       {PERMISSION_OPTIONS.map((option) => (
                         <button
@@ -5562,7 +5679,8 @@ export default function ChatView({
                       <AgentBrandIcon agentType={composerAgentType} size={14} />
                       <span className="web-native-model-agent-name">{NATIVE_AGENT_LABELS[composerAgentType]}</span>
                     </span>
-                    {nativeModelPickerReady && (
+                    {!supportsNativeModelSelection && <span title="子会话沿用原生模型设置">原生模型</span>}
+                    {supportsNativeModelSelection && nativeModelPickerReady && (
                       <select
                         aria-label="当前模型"
                         title="切换模型"
@@ -5721,7 +5839,7 @@ export default function ChatView({
               <button
                 type="button"
                 onClick={handleSend}
-                disabled={!canCompose || pendingImageReads > 0 || !input.trim()}
+                disabled={!canSubmitComposer || nativeGoal.pending || pendingImageReads > 0 || !input.trim()}
                 className="web-native-send-button"
                 aria-label={shouldQueueMessage ? "排队发送" : "发送"}
                 title={shouldQueueMessage ? "排队发送" : "发送"}

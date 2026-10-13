@@ -1,4 +1,6 @@
 import type { SessionForkPoint } from "@agent/core";
+import type { NativeGoalMutation, NativeSessionGoal } from "./native-session-goal.js";
+export type { NativeGoalMutation, NativeGoalRef, NativeSessionGoal } from "./native-session-goal.js";
 import type {
   AgentEvent,
   Message,
@@ -11,7 +13,7 @@ import type {
   ToolPermissionMode,
 } from "@agent/core";
 
-export type AgentType = "customer-agent" | "codex" | "claude-code" | "opencode";
+export type AgentType = "customer-agent" | "codex" | "claude-code" | "opencode" | "deepseek-harness";
 
 export type SessionOccupancy =
   | "available"
@@ -51,6 +53,12 @@ export interface RuntimeHealth {
   error?: string;
 }
 
+/** Runtime-owned presets remain distinct from AgentRoam's tool approval policy. */
+export interface NativeSessionPermissions {
+  currentValue: string;
+  options: Array<{ value: string; label: string; description?: string }>;
+}
+
 export interface UnifiedSessionSummary {
   id: string;
   agentType: AgentType;
@@ -67,6 +75,10 @@ export interface UnifiedSessionSummary {
   canResume: boolean;
   canDelete: boolean;
   permissionMode?: ToolPermissionMode;
+  nativePermissions?: NativeSessionPermissions;
+  /** False when native routing cannot configure this individual session. */
+  nativeGoalSupported?: boolean;
+  nativeModelSelectionSupported?: boolean;
   /** Monotonic broker-owned lock revision; raw process scans must not override a newer value. */
   occupancyRevision?: number;
   /** Logical AgentRoam client currently allowed to control a live native turn. */
@@ -226,6 +238,9 @@ export interface AgentRuntimeAdapter {
   restoreDraft?(summary: UnifiedSessionSummary): void;
   fork?(nativeSessionId: string, point?: SessionForkPoint): Promise<UnifiedSessionSummary>;
   renameSession?(nativeSessionId: string, title: string): Promise<void>;
+  setNativePermissionPreset?(nativeSessionId: string, preset: string): Promise<UnifiedSessionSummary>;
+  getNativeGoal?(nativeSessionId: string): Promise<NativeSessionGoal | null>;
+  mutateNativeGoal?(nativeSessionId: string, mutation: NativeGoalMutation): Promise<NativeSessionGoal | null>;
   run(
     nativeSessionId: string,
     input: string,
@@ -259,6 +274,7 @@ export class RuntimeSessionError extends Error {
       | "QUESTION_ANSWER_FAILED"
       | "CODEX_SESSION_VERSION_INCOMPATIBLE"
       | "STALE_SESSION_ANCHOR"
+      | "NATIVE_GOAL_CONFLICT"
       | "NATIVE_PROTOCOL_ERROR",
   ) {
     super(message);

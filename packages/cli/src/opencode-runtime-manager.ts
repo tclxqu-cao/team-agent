@@ -81,7 +81,7 @@ export async function resolveOpenCodeRuntime(
 }
 
 export function parseOpenCodeVersion(output: string): string | null {
-  return output.match(/(?:^|\s)((?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*))(?:\s|$)/)?.[1] ?? null;
+  return output.match(/(?:^|\s)v?((?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*))(?:\s|$)/)?.[1] ?? null;
 }
 
 export function managedOpenCodeBinaryCandidates(root: string, platform: NodeJS.Platform): string[] {

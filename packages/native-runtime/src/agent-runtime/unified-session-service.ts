@@ -1,4 +1,5 @@
 import type { SessionForkPoint } from "@agent/core";
+import type { NativeGoalMutation, NativeSessionGoal } from "./native-session-goal.js";
 import { resolve, sep } from "node:path";
 import {
   SessionQueryIndexCache,
@@ -179,7 +180,9 @@ export class UnifiedSessionService {
     const associated = await this.getUnpaginated(id, shouldReuseSessionDetailCache(query));
     this.queryIndexCache.getOrCreate(id, associated.messages);
     if (!query) return associated;
-    const page = paginateSessionHistory(associated.messages, associated.events, query);
+    const page = paginateSessionHistory(associated.messages, associated.events, query, {
+      includePendingQuestions: associated.agentType === "deepseek-harness",
+    });
     return {
       ...associated,
       ...page,
@@ -309,6 +312,30 @@ export class UnifiedSessionService {
     }
     await adapter.renameSession(nativeSessionId, title);
     this.invalidate(id);
+  }
+
+  async setNativePermissionPreset(id: string, preset: string): Promise<UnifiedSessionSummary> {
+    const { adapter, nativeSessionId } = this.resolveAdapter(id);
+    if (!adapter.setNativePermissionPreset) {
+      throw new RuntimeSessionError("This runtime does not expose native permission presets", "OPERATION_NOT_SUPPORTED");
+    }
+    const summary = await adapter.setNativePermissionPreset(nativeSessionId, preset);
+    this.invalidate(id);
+    return summary;
+  }
+
+  async getNativeGoal(id: string): Promise<NativeSessionGoal | null> {
+    const { adapter, nativeSessionId } = this.resolveAdapter(id);
+    if (!adapter.getNativeGoal) throw new RuntimeSessionError("此运行时未提供原生目标", "OPERATION_NOT_SUPPORTED");
+    return adapter.getNativeGoal(nativeSessionId);
+  }
+
+  async mutateNativeGoal(id: string, mutation: NativeGoalMutation): Promise<NativeSessionGoal | null> {
+    const { adapter, nativeSessionId } = this.resolveAdapter(id);
+    if (!adapter.mutateNativeGoal) throw new RuntimeSessionError("此运行时未提供原生目标", "OPERATION_NOT_SUPPORTED");
+    const goal = await adapter.mutateNativeGoal(nativeSessionId, mutation);
+    this.invalidate(id);
+    return goal;
   }
 
   async *run(

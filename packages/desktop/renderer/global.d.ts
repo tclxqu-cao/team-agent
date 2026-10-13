@@ -1,4 +1,6 @@
 import type { SessionForkPoint } from "@agent/core";
+export type { NativeGoalMutation, NativeGoalRef, NativeSessionGoal } from "../../native-runtime/src/agent-runtime/native-session-goal";
+import type { NativeGoalMutation, NativeSessionGoal } from "../../native-runtime/src/agent-runtime/native-session-goal";
 import type { BrowserLiveSessionView } from "../../core/src/domain/browser-live/index";
 import type {
   FileWorkspaceEventMessage,
@@ -89,7 +91,7 @@ export interface TodoItem {
   status: "pending" | "in-progress" | "completed";
 }
 
-export type AgentType = "customer-agent" | "codex" | "claude-code" | "opencode";
+export type AgentType = "customer-agent" | "codex" | "claude-code" | "opencode" | "deepseek-harness";
 
 export interface UpdateStatus {
   phase: "idle" | "checking" | "up-to-date" | "available" | "unavailable" | "downloading" | "installing" | "reconnecting" | "complete" | "failed";
@@ -226,6 +228,12 @@ export interface UnifiedSessionSummary {
   canResume: boolean;
   canDelete: boolean;
   permissionMode?: ToolPermissionMode;
+  nativePermissions?: {
+    currentValue: string;
+    options: Array<{ value: string; label: string; description?: string }>;
+  };
+  nativeGoalSupported?: boolean;
+  nativeModelSelectionSupported?: boolean;
   occupancyRevision?: number;
   controller?: "web" | "desktop" | null;
   goalState?: SessionGoalState;
@@ -356,6 +364,9 @@ export interface AgentApi {
     onError?: () => void,
   ): () => void;
   setSessionPermissionMode(id: string, mode: ToolPermissionMode): Promise<unknown>;
+  setSessionNativePermissionPreset?(id: string, preset: string): Promise<UnifiedSessionSummary>;
+  getSessionNativeGoal?(id: string): Promise<NativeSessionGoal | null>;
+  mutateSessionNativeGoal?(id: string, mutation: NativeGoalMutation): Promise<NativeSessionGoal | null>;
   getSessionGoals(id: string): Promise<SessionGoalState>;
   enqueueSessionGoal(id: string, objective: string, sourceMessageId?: string): Promise<SessionGoalState>;
   reorderSessionGoals(id: string, orderedIds: string[]): Promise<SessionGoalState>;

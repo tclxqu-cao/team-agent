@@ -276,6 +276,14 @@ export class SQLiteDatabase {
         PRIMARY KEY (user_id, device_id)
       );
 
+      CREATE TABLE IF NOT EXISTS computer_settings (
+        user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+        revision INTEGER NOT NULL,
+        visible_tools_json TEXT NOT NULL,
+        saved_pages_json TEXT DEFAULT NULL,
+        updated_at TEXT NOT NULL
+      );
+
       CREATE TABLE IF NOT EXISTS command_history (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,

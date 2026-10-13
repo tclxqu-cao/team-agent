@@ -39,7 +39,7 @@ export async function POST(request: Request) {
     title?: string;
     projectId?: string;
     cwd?: string;
-    agentType?: "customer-agent" | "codex" | "claude-code" | "opencode";
+    agentType?: "customer-agent" | "codex" | "claude-code" | "opencode" | "deepseek-harness";
   };
   const agentType = body.agentType ?? "customer-agent";
 

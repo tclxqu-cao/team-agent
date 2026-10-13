@@ -3,6 +3,7 @@ import {
   COMPUTER_STORAGE_KEY, computerNavigation, mergeComputers, normalizeComputers,
   pairingNavigation, parsePairingTarget, readComputerHandoff, readComputers,
   rememberComputer, saveComputers,
+  normalizePageUrl, normalizeComputerPages, defaultPageOpenMode,
 } from "../public/pwa/computer-directory.js";
 
 function storage() {
@@ -14,6 +15,37 @@ const b = { origin: "https://b.example", name: "B 电脑" };
 const grant = "g".repeat(43);
 
 describe("browser computer directory", () => {
+  it("propagates completed migration and removes stale pages on a return trip", () => {
+    const page = { id: "old-b", name: "旧页面", url: "https://example.com/", openMode: "current" as const };
+    const localA = [{ ...a, pagesMigrated: true }, { ...b, pages: [page] }];
+    const localB = [{ ...a, pagesMigrated: true }, { ...b, pagesMigrated: true }];
+    const incoming = readComputerHandoff(new URL(computerNavigation(a.origin, localB)).hash);
+    const merged = mergeComputers(localA, incoming.computers);
+    expect(merged).toEqual(localB);
+    expect(readComputerHandoff(new URL(computerNavigation(b.origin, merged)).hash).computers).toEqual(localB);
+    expect(normalizeComputers([{ ...b, pagesMigrated: true, pages: [page] }])).toEqual([{ ...b, pagesMigrated: true }]);
+  });
+  it("keeps legacy pages for local migration and hands off only the destination's legacy pages", () => {
+    const page = { id: "zcode", name: "Zcode", url: "https://zcode.z.ai/remote/v4?sid=example", openMode: "current" as const };
+    const configured = [{ ...a, pages: [page] }, b];
+    expect(rememberComputer(a.origin, "办公电脑", configured)[0]).toEqual({ ...a, name: "办公电脑", pages: [page] });
+    expect(readComputerHandoff(new URL(computerNavigation(b.origin, configured)).hash).computers).toEqual([a, b]);
+    expect(readComputerHandoff(new URL(computerNavigation(a.origin, configured)).hash).computers).toEqual(configured);
+    expect(mergeComputers(configured, [{ ...a, name: "重命名" }])[0].pages).toEqual([page]);
+    expect(mergeComputers(configured, [{ ...a, pages: [] }])[0].pages).toEqual([]);
+  });
+
+  it("validates editable page modes and rejects executable or credential URLs", () => {
+    expect(normalizePageUrl(" https://qoder.com/m/sessions， ")).toBe("https://qoder.com/m/sessions");
+    expect(defaultPageOpenMode("https://qoder.com/m/sessions")).toBe("new-tab");
+    expect(defaultPageOpenMode("https://zcode.z.ai/remote/v4")).toBe("current");
+    for (const url of ["javascript:alert(1)", "file:///tmp/a", "https://user:pass@example.com"]) expect(() => normalizePageUrl(url)).toThrow();
+    expect(normalizeComputerPages([{ id: "safe", name: "页面", url: "https://example.com", openMode: "current" }, { id: "bad", name: "坏地址", url: "javascript:alert(1)", openMode: "current" }])).toHaveLength(1);
+    const longPage = { id: "long", name: "长地址", url: "https://example.com/" + "a".repeat(8000), openMode: "current" as const };
+    expect(readComputerHandoff(new URL(computerNavigation(b.origin, [{ ...a, pages: [longPage] }, b])).hash).computers).toEqual([a, b]);
+    expect(() => computerNavigation(a.origin, [{ ...a, pages: [longPage, { ...longPage, id: "another" }, { ...longPage, id: "third" }] }, b])).toThrow("配置过长");
+  });
+
   it("carries A to B and returns to A across independent origin stores without copying credentials", () => {
     const storeA = storage(), storeB = storage();
     saveComputers([a], storeA);
