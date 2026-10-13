@@ -2,7 +2,7 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { isBrowserRuntime } from "../web/webLayout";
 
-export type SkinId = "pearl" | "scifi" | "noir";
+export type SkinId = "pearl" | "scifi" | "noir" | "mist" | "pine" | "graphite";
 export type LayoutId = "standard" | "focus" | "compact";
 
 export interface SkinMeta {
@@ -21,6 +21,9 @@ export const SKINS: SkinMeta[] = [
   { id: "pearl", label: "珍珠白", preview: ["#f5f6fa", "#4f6ef7"] },
   { id: "scifi", label: "科幻霓虹", preview: ["#050a14", "#22d3ee"] },
   { id: "noir", label: "暗夜黑", preview: ["#0f1115", "#a78bfa"] },
+  { id: "mist", label: "雾白靛蓝", preview: ["#f7f8fb", "#4258c4"] },
+  { id: "pine", label: "暖灰松绿", preview: ["#f6f7f3", "#356c55"] },
+  { id: "graphite", label: "石墨夜色", preview: ["#202630", "#a4bad2"] },
 ];
 
 export const LAYOUTS: LayoutMeta[] = [

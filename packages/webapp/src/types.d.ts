@@ -15,7 +15,7 @@ declare module "@desktop/renderer/App" {
 }
 
 declare module "@desktop/renderer/stores/uiStore" {
-  export type SkinId = "pearl" | "scifi" | "noir";
+  export type SkinId = "pearl" | "scifi" | "noir" | "mist" | "pine" | "graphite";
   interface UIStateSlice {
     skin: SkinId;
     setSkin: (skin: SkinId) => void;

@@ -2,7 +2,7 @@ import { useUIStore, type SkinId } from "@desktop/renderer/stores/uiStore";
 
 export const WEB_SHELL_SKIN_MESSAGE_TYPE = "agent-web-shell:skin:v1";
 
-const SKIN_IDS: SkinId[] = ["pearl", "scifi", "noir"];
+const SKIN_IDS: SkinId[] = ["pearl", "scifi", "noir", "mist", "pine", "graphite"];
 
 /**
  * Applies the parent shell's skin choice (tab-bar avatar popover) to the

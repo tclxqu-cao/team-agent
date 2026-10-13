@@ -149,7 +149,7 @@ function renderInlineCode(text: string): React.ReactNode {
     <>
       {parts.map((part, i) =>
         i % 2 === 1 ? (
-          <code key={i} style={{ fontFamily: 'var(--font-mono)', fontSize: '0.84em', background: 'rgba(17,24,39,0.06)', padding: '1px 5px', borderRadius: 4, color: 'var(--accent)', border: '1px solid var(--border-subtle)' }}>
+          <code key={i} style={{ fontFamily: 'var(--font-mono)', fontSize: '0.84em', background: 'var(--chat-inline-code-bg, rgba(17,24,39,0.06))', padding: '1px 5px', borderRadius: 4, color: 'var(--accent)', border: '1px solid var(--border-subtle)' }}>
             {part.slice(1, -1)}
           </code>
         ) : (
@@ -179,7 +179,7 @@ function renderInlineLabel(text: string, keyPrefix: string): React.ReactNode {
   return codeParts.map((part, index) => {
     if (index % 2 === 1) {
       return (
-        <code key={`${keyPrefix}-${index}`} style={{ fontFamily: 'var(--font-mono)', fontSize: '0.84em', background: 'rgba(17,24,39,0.06)', padding: '1px 5px', borderRadius: 4, color: 'var(--accent)', border: '1px solid var(--border-subtle)' }}>
+        <code key={`${keyPrefix}-${index}`} style={{ fontFamily: 'var(--font-mono)', fontSize: '0.84em', background: 'var(--chat-inline-code-bg, rgba(17,24,39,0.06))', padding: '1px 5px', borderRadius: 4, color: 'var(--accent)', border: '1px solid var(--border-subtle)' }}>
           {part.slice(1, -1)}
         </code>
       );
@@ -193,7 +193,7 @@ function renderRichInline(text: string, onOpenArtifact?: (path: string) => void)
   return parseRichInlineTokens(text).map((token, index) => {
     if (token.type === "code") {
       return (
-        <code key={index} style={{ fontFamily: 'var(--font-mono)', fontSize: '0.84em', background: 'rgba(17,24,39,0.06)', padding: '1px 5px', borderRadius: 4, color: 'var(--accent)', border: '1px solid var(--border-subtle)' }}>
+        <code key={index} style={{ fontFamily: 'var(--font-mono)', fontSize: '0.84em', background: 'var(--chat-inline-code-bg, rgba(17,24,39,0.06))', padding: '1px 5px', borderRadius: 4, color: 'var(--accent)', border: '1px solid var(--border-subtle)' }}>
           {token.value}
         </code>
       );
@@ -4348,8 +4348,8 @@ export default function ChatView({
                 borderRadius: isUser
                   ? "14px 4px 14px 14px"
                   : "4px 14px 14px 14px",
-                background: (msg.content || (isUser && chatMsg.images?.length)) ? (isUser ? "rgba(79, 110, 247, 0.08)" : undefined) : "transparent",
-                border: (msg.content || (isUser && chatMsg.images?.length)) ? (isUser ? "1px solid rgba(79, 110, 247, 0.18)" : undefined) : "none",
+                background: (msg.content || (isUser && chatMsg.images?.length)) ? (isUser ? "var(--chat-user-bg, rgba(79, 110, 247, 0.08))" : undefined) : "transparent",
+                border: (msg.content || (isUser && chatMsg.images?.length)) ? (isUser ? "1px solid var(--chat-user-border, rgba(79, 110, 247, 0.18))" : undefined) : "none",
                 fontSize: "var(--chat-bubble-font-size)",
                 lineHeight: "var(--chat-bubble-line-height)",
                 color: "var(--chat-history-text)",

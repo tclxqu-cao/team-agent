@@ -70,6 +70,137 @@
   --chat-history-text: #0b1220;
 }
 
+/* Additional palettes only override colors; shared layout tokens stay inherited. */
+[data-skin="mist"] {
+  color-scheme: light;
+  --bg-deepest: #f7f8fb;
+  --bg-deep: #e4e9f2;
+  --bg-sidebar: #e9edf5;
+  --bg-surface: #ffffff;
+  --bg-elevated: #ffffff;
+  --bg-glass: rgba(255, 255, 255, 0.82);
+  --bg-workspace: #f7f8fb;
+  --accent: #4258c4;
+  --accent-glow: rgba(66, 88, 196, 0.16);
+  --accent-dim: color-mix(in srgb, var(--accent) 14%, #ffffff);
+  --control-hover: #dfe6f0;
+  --success: #247860;
+  --danger: #be3d50;
+  --status-error: #5b687f;
+  --warning: #956018;
+  --info: #346faa;
+  --text-primary: #252d3d;
+  --text-secondary: #5b687f;
+  --text-muted: #5b687f;
+  --text-inverse: #ffffff;
+  --border-subtle: #dce3ef;
+  --border-default: #dce3ef;
+  --border-glow: rgba(66, 88, 196, 0.3);
+}
+
+[data-skin="pine"] {
+  color-scheme: light;
+  --bg-deepest: #f6f7f3;
+  --bg-deep: #e2e7df;
+  --bg-sidebar: #e8ece5;
+  --bg-surface: #ffffff;
+  --bg-elevated: #ffffff;
+  --bg-glass: rgba(255, 255, 255, 0.82);
+  --bg-workspace: #f6f7f3;
+  --accent: #356c55;
+  --accent-glow: rgba(53, 108, 85, 0.16);
+  --accent-dim: color-mix(in srgb, var(--accent) 14%, #ffffff);
+  --control-hover: #dce5d8;
+  --success: #357450;
+  --danger: #b6454d;
+  --status-error: #5b6e61;
+  --warning: #8c641e;
+  --info: #3d7189;
+  --text-primary: #2d382f;
+  --text-secondary: #5b6e61;
+  --text-muted: #5b6e61;
+  --text-inverse: #ffffff;
+  --border-subtle: #d9e1d6;
+  --border-default: #d9e1d6;
+  --border-glow: rgba(53, 108, 85, 0.3);
+}
+
+[data-skin="graphite"] {
+  color-scheme: dark;
+  --bg-deepest: #202630;
+  --bg-deep: #161c25;
+  --bg-sidebar: #161c25;
+  --bg-surface: #293440;
+  --bg-elevated: #293440;
+  --bg-glass: rgba(41, 52, 64, 0.82);
+  --bg-workspace: #202630;
+  --accent: color-mix(in srgb, #386a9a 40%, #ecf0f8);
+  --accent-glow: rgba(164, 186, 210, 0.16);
+  --accent-dim: color-mix(in srgb, #386a9a 24%, #26303d);
+  --control-hover: #2b3b4b;
+  --success: #89d3af;
+  --danger: #f097a2;
+  --status-error: #b0bfd3;
+  --warning: #e5c58a;
+  --info: #9accf0;
+  --text-primary: #e4ebf4;
+  --text-secondary: #b0bfd3;
+  --text-muted: #b0bfd3;
+  --text-inverse: #14212b;
+  --border-subtle: #384859;
+  --border-default: #384859;
+  --border-glow: rgba(164, 186, 210, 0.3);
+  --shadow-sm: 0 1px 4px rgba(0, 0, 0, 0.22), 0 1px 2px rgba(0, 0, 0, 0.16);
+  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.28), 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+:is([data-skin="mist"], [data-skin="pine"], [data-skin="graphite"]) {
+  --bg-hover: var(--control-hover);
+  --chat-user-bg: var(--control-active);
+  --chat-user-border: var(--border-subtle);
+  --chat-inline-code-bg: var(--control-active);
+}
+
+:is([data-skin="mist"], [data-skin="pine"], [data-skin="graphite"]) .app-sidebar {
+  background: var(--bg-sidebar) !important;
+}
+
+:is([data-skin="mist"], [data-skin="pine"], [data-skin="graphite"]) .sidebar-bottom-action {
+  background: var(--bg-sidebar);
+}
+
+:is([data-skin="mist"], [data-skin="pine"], [data-skin="graphite"]) :is(.sidebar-session-row, .sidebar-project-row).sidebar-row-active :is(.sidebar-session-button, .sidebar-project-button) {
+  color: var(--accent) !important;
+}
+
+:is([data-skin="mist"], [data-skin="pine"], [data-skin="graphite"]) .sidebar-new-session-primary,
+:is([data-skin="mist"], [data-skin="pine"], [data-skin="graphite"]) .sidebar-new-session-primary:disabled {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+:is([data-skin="mist"], [data-skin="pine"], [data-skin="graphite"]) .sidebar-new-session-primary:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 87%, var(--text-primary));
+  filter: none;
+}
+
+:is([data-skin="mist"], [data-skin="pine"], [data-skin="graphite"]) .chat-view--codex-history :is(.tool-call-shell__header, .tool-call-group__summary):hover {
+  background: var(--control-hover) !important;
+}
+
+:is([data-skin="mist"], [data-skin="pine"], [data-skin="graphite"]) .web-native-send-button:not(:disabled) {
+  color: var(--text-inverse);
+}
+
+:is([data-skin="mist"], [data-skin="pine"], [data-skin="graphite"]) .web-native-send-button:not(:disabled)::before {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+html:is([data-skin="mist"], [data-skin="pine"], [data-skin="graphite"]) body {
+  background: var(--bg-deepest);
+}
+
 /* ── Host project picker ── */
 .host-project-picker-backdrop {
   position: fixed;

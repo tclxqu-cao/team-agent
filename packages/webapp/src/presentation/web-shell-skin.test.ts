@@ -82,14 +82,15 @@ describe("installWebShellSkinBridge", () => {
     expect(f.listenerCount()).toBe(0);
   });
 
-  it("forwards all three known skin ids", () => {
+  it("forwards every skin, including the additional palettes", () => {
     const f = makeFakeWindow({ isTopLevel: false });
     (globalThis as { window: unknown }).window = f.window;
     const dispose = installWebShellSkinBridge();
-    for (const skin of ["pearl", "scifi", "noir"] as const) {
+    const skins = ["pearl", "scifi", "noir", "mist", "pine", "graphite"] as const;
+    for (const skin of skins) {
       f.fireMessage({ type: WEB_SHELL_SKIN_MESSAGE_TYPE, skin });
     }
-    expect(mocks.setSkinMock.mock.calls).toEqual([["pearl"], ["scifi"], ["noir"]]);
+    expect(mocks.setSkinMock.mock.calls).toEqual(skins.map((skin) => [skin]));
     dispose();
   });
 
