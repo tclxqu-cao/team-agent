@@ -68,6 +68,7 @@ await cp(resolve(server, "lib/browser-live/viewer-frame-flow.mjs"), resolve(targ
 await cp(resolve(server, "lib/file-preview-service.mjs"), resolve(target, "lib/file-preview-service.mjs"));
 await cp(resolve(server, "lib/markdown-preview.mjs"), resolve(target, "lib/markdown-preview.mjs"));
 await cp(resolve(server, "lib/ai-hub-relay-client.mjs"), resolve(target, "lib/ai-hub-relay-client.mjs"));
+await cp(resolve(server, "lib/project-picker-directory.mjs"), resolve(target, "lib/project-picker-directory.mjs"));
 
 const serverPkg = JSON.parse(await readFile(resolve(server, "package.json"), "utf8"));
 const {

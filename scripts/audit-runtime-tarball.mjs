@@ -59,6 +59,7 @@ for (const required of [
   "package/runtime/lib/file-preview-service.mjs",
   "package/runtime/lib/markdown-preview.mjs",
   "package/runtime/lib/ai-hub-relay-client.mjs",
+  "package/runtime/lib/project-picker-directory.mjs",
   "package/runtime/.next/BUILD_ID",
   "package/runtime/node_modules/node-pty/package.json",
   "package/runtime/node_modules/better-sqlite3/package.json",
