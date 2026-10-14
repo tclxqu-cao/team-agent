@@ -1,0 +1,21 @@
+scripts/audit-runtime-tarball.mjs
+  s_3d8cb399d47d29::t_175e0cb1fae48e 62
+scripts/stage-cli-runtime.mjs
+  s_3d8cb399d47d29::t_175e0cb1fae48e 71
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "59e15a5ab7f78c8274ce1a202b61624275a31cd6",
+  "prompts": {},
+  "sessions": {
+    "s_3d8cb399d47d29": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0e624-4280-7c10-be74-3f8e283b70c2",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
