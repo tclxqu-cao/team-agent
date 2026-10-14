@@ -1,0 +1,52 @@
+.collab-dashboard { height: 100%; overflow: auto; box-sizing: border-box; padding: 28px clamp(16px, 4vw, 52px); color: var(--text-primary); background: var(--bg-deepest); font-family: var(--font-body, inherit); font-size: 14px; }
+.collab-dashboard button, .collab-delete-dialog button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 40px; padding: 8px 12px; border: 1px solid var(--border-subtle); border-radius: 9px; background: var(--bg-elevated); color: var(--text-primary); cursor: pointer; font: inherit; }
+.collab-dashboard button:hover, .collab-delete-dialog button:hover { background: var(--control-hover); }
+.collab-dashboard button:disabled, .collab-delete-dialog button:disabled { opacity: .5; cursor: default; }
+.collab-dashboard :is(button, input):focus-visible, .collab-delete-dialog button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.collab-dashboard-heading { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-bottom: 20px; }
+.collab-dashboard h1 { font-size: 25px; margin: 5px 0; letter-spacing: -.04em; }
+.collab-dashboard h1 small { font-size: 13px; font-weight: 500; color: var(--text-secondary); letter-spacing: 0; margin-left: 5px; }
+.collab-dashboard-heading p { margin: 0; }
+.collab-dashboard-tools { display: flex; gap: 8px; flex-shrink: 0; }
+.collab-dashboard-search { display: flex; align-items: center; gap: 10px; max-width: 480px; background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: 10px; padding: 0 12px; color: var(--text-secondary); margin-bottom: 20px; }
+.collab-dashboard-search:focus-within { border-color: var(--accent); }
+.collab-dashboard-search input { width: 100%; min-width: 0; height: 42px; border: 0; outline: 0; box-shadow: none; background: transparent; color: var(--text-primary); font: inherit; }
+.collab-dashboard-search input:focus-visible { outline: 0; }
+.collab-dashboard-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr)); gap: 14px; align-items: start; }
+.collab-group-card { min-width: 0; border: 1px solid var(--border-subtle); border-radius: 14px; padding: 16px; background: var(--bg-surface); }
+.collab-card-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.collab-dashboard .collab-card-title { border: 0; background: transparent; padding: 0; justify-content: flex-start; min-width: 0; flex: 1; text-align: left; }
+.collab-card-title svg { color: var(--accent); flex-shrink: 0; }
+.collab-card-title h2 { font-size: 17px; margin: 0; line-height: 1.45; overflow-wrap: anywhere; }
+.collab-card-actions { display: flex; gap: 2px; }
+.collab-card-actions button { border: 0; background: transparent; padding: 8px; color: var(--text-secondary); }
+.collab-card-owner { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; font-size: 12px; margin: 9px 0 13px; }
+.collab-card-owner > svg { color: var(--accent); }
+.collab-card-members { display: flex; align-items: center; flex-wrap: wrap; gap: 5px; }
+.collab-card-members > span { display: inline-flex; align-items: center; justify-content: center; width: 29px; height: 29px; border-radius: 50%; background: var(--bg-elevated); border: 1px solid var(--border-subtle); }
+.collab-card-members small { color: var(--text-secondary); font-size: 11px; margin-left: 5px; }
+.collab-card-path { display: flex; align-items: center; gap: 7px; color: var(--text-secondary); font-size: 11px; margin: 14px 0; }
+.collab-card-path svg { flex-shrink: 0; }
+.collab-card-path span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.collab-group-card footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding-top: 12px; border-top: 1px solid var(--border-subtle); }
+.collab-group-card time { color: var(--text-secondary); font-size: 11px; }
+.collab-dashboard .collab-primary { background: var(--accent); border-color: var(--accent); color: var(--text-inverse); }
+.collab-dashboard-empty { min-height: 240px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; color: var(--text-secondary); text-align: center; }
+.collab-dashboard-empty :is(h2, p) { margin: 0; }
+.collab-dashboard-empty h2 { font-size: 18px; color: var(--text-primary); }
+.collab-delete-dialog { width: min(420px, 100%); box-sizing: border-box; border-radius: 14px; border: 1px solid var(--border-subtle); padding: 22px; background: var(--bg-surface, #fff); color: var(--text-primary); box-shadow: 0 24px 80px #0005; }
+.collab-delete-dialog h2 { margin: 0 0 12px; font-size: 18px; overflow-wrap: anywhere; }
+.collab-delete-dialog p { color: var(--text-secondary); line-height: 1.7; font-size: 13px; }
+.collab-delete-dialog footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 22px; }
+.collab-delete-dialog .collab-delete-confirm { background: var(--error, #c7424a); color: #fff; border-color: transparent; }
+@media(max-width: 600px) {
+  .collab-dashboard { padding: 18px 12px; }
+  .collab-dashboard-heading { flex-wrap: wrap; gap: 12px; margin-bottom: 14px; }
+  .collab-dashboard-tools { margin-left: auto; }
+  .collab-dashboard button, .collab-delete-dialog button { min-height: 44px; }
+  .collab-dashboard h1 { font-size: 22px; }
+  .collab-dashboard-search { max-width: none; margin-bottom: 14px; }
+  .collab-dashboard-search input { height: 44px; font-size: 16px; }
+  .collab-dashboard-grid { gap: 10px; }
+  .collab-group-card { padding: 13px; }
+}

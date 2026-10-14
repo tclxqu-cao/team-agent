@@ -77,6 +77,7 @@ export interface UnifiedSessionSummary {
   permissionMode?: ToolPermissionMode;
   nativePermissions?: NativeSessionPermissions;
   /** False when native routing cannot configure this individual session. */
+  nativeMode?: { currentValue: string; canChange: boolean; options: Array<{ value: string; label: string; description?: string }> };
   nativeGoalSupported?: boolean;
   nativeModelSelectionSupported?: boolean;
   /** Monotonic broker-owned lock revision; raw process scans must not override a newer value. */
@@ -238,6 +239,7 @@ export interface AgentRuntimeAdapter {
   restoreDraft?(summary: UnifiedSessionSummary): void;
   fork?(nativeSessionId: string, point?: SessionForkPoint): Promise<UnifiedSessionSummary>;
   renameSession?(nativeSessionId: string, title: string): Promise<void>;
+  setNativeMode?(nativeSessionId: string, preset: string): Promise<UnifiedSessionSummary>;
   setNativePermissionPreset?(nativeSessionId: string, preset: string): Promise<UnifiedSessionSummary>;
   getNativeGoal?(nativeSessionId: string): Promise<NativeSessionGoal | null>;
   mutateNativeGoal?(nativeSessionId: string, mutation: NativeGoalMutation): Promise<NativeSessionGoal | null>;

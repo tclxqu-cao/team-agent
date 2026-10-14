@@ -46,6 +46,7 @@ import {
 } from "./lib/file-preview-service.mjs";
 import { isMarkdownPreviewPath } from "./lib/markdown-preview.mjs";
 import { aiHubRelayBroadcast, aiHubRelayCapture, aiHubRelayStatus } from "./lib/ai-hub-relay-client.mjs";
+import { projectPickerDirectory } from "./lib/project-picker-directory.mjs";
 
 const dev = process.env.NODE_ENV !== "production";
 const port = Number(process.env.PORT || 3000);
@@ -881,7 +882,7 @@ const requestHandlers = {
   }) }),
 
   "project:list": async () => ({
-    projects: (await projectStore.list()).map(toWebProject),
+    projects: (await projectStore.list()).filter(project => !project.id.startsWith("collaboration-")).map(toWebProject),
   }),
 
   "project:get": async (msg) => ({
@@ -923,7 +924,10 @@ const requestHandlers = {
     return { deleted: true, projectId: msg.projectId };
   },
 
-  "project:roots": async () => ({ roots: hostPathPolicy.roots }),
+  "project:roots": async () => ({
+    roots: hostPathPolicy.roots,
+    initialPath: hostPathPolicy.assertDirectory(projectPickerDirectory(dir)),
+  }),
 
   "project:directories": async (msg) => ({
     path: hostPathPolicy.assertDirectory(String(msg.path ?? "")),
@@ -1426,6 +1430,12 @@ server.listen(port, process.env.HOST || "127.0.0.1", async () => {
     globalLogger.error("Customer runtime initialization failed", error);
     console.error("Customer runtime initialization failed", error);
   });
+  // Restore collaboration scheduling and its durable history without a browser visit.
+  void fetch(`http://127.0.0.1:${server.address().port}/api/collaboration`, {
+    method: "POST", headers: { ...desktopDiscovery.headers(), "content-type": "application/json" },
+    body: JSON.stringify({ action: "groups" }), signal: AbortSignal.timeout(60_000),
+  }).then(response => { if (!response.ok) throw new Error(`HTTP ${response.status}`); })
+    .catch(error => globalLogger.error("Collaboration initialization failed", error));
   const urls = [];
   for (const list of Object.values(os.networkInterfaces())) {
     for (const net of list || []) {

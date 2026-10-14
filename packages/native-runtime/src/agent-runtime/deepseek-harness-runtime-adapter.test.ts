@@ -413,3 +413,32 @@ describe("DeepSeek Harness native adapter", () => {
     expect(history.events).toHaveLength(2);
   });
 });
+
+describe("Harness native modes", () => {
+  const presets = ["standard", "ptc", "minimal", "cordis"].map(id => ({ id }));
+  it("loads the native four-mode roster and confirms a blank-session selection", async () => {
+    let selected = "standard";
+    const mock = mockConnection([{ type: "snapshot" }]);
+    mock.request.mockImplementation(async (method, args) => {
+      if (method === "agentPresets/list") return { presets };
+      if (method === "session/list") return { items: [{ ...nativeRow, blank: true, projections: { values: { agentPreset: selected } } }] };
+      if (method === "agentPresets/select") { selected = String(args?.agentPreset); return selected; }
+      return {};
+    });
+    const adapter = new DeepSeekHarnessRuntimeAdapter(mock.client);
+    expect((await adapter.discoverSessions())[0].nativeMode).toMatchObject({ currentValue: "standard", canChange: true, options: [
+      {value:"standard",label:"标准模式"}, {value:"ptc",label:"PTC 模式"}, {value:"minimal",label:"极简模式"}, {value:"cordis",label:"创作模式"},
+    ] });
+    expect((await adapter.setNativeMode("native", "cordis")).nativeMode?.currentValue).toBe("cordis");
+    expect(mock.request).toHaveBeenCalledWith("agentPresets/select", { agentId: "native", agentPreset: "cordis" });
+  });
+  it("rejects started sessions and unsupported modes without calling the native writer", async () => {
+    const mock = mockConnection([]);
+    mock.request.mockImplementation(async method => method === "agentPresets/list" ? { presets } : method === "session/list" ? { items: [{ ...nativeRow, blank: false }] } : {});
+    const adapter = new DeepSeekHarnessRuntimeAdapter(mock.client);
+    await expect(adapter.setNativeMode("native", "ptc")).rejects.toMatchObject({code:"OPERATION_NOT_SUPPORTED"});
+    mock.request.mockImplementation(async method => method === "agentPresets/list" ? { presets } : method === "session/list" ? { items: [{ ...nativeRow, blank: true }] } : {});
+    await expect(adapter.setNativeMode("native", "unknown")).rejects.toMatchObject({code:"OPERATION_NOT_SUPPORTED"});
+    expect(mock.request.mock.calls.some(([method]) => method === "agentPresets/select")).toBe(false);
+  });
+});

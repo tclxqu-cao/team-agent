@@ -1,11 +1,35 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { buildProjectBreadcrumbs, getHostEntryIconKind } from "./HostProjectPicker";
+import { buildProjectBreadcrumbs, getHostEntryIconKind, resolveProjectPickerLocation } from "./HostProjectPicker";
 
 const app = readFileSync(new URL("../App.tsx", import.meta.url), "utf8");
 const picker = readFileSync(new URL("./HostProjectPicker.tsx", import.meta.url), "utf8");
 
 describe("HostProjectPicker", () => {
+  it("starts directly in the selected project without listing its ancestors", () => {
+    expect(resolveProjectPickerLocation(["/Users/caoqu"], ["/Users/caoqu/team-agent/customer-agent", "/Users/caoqu/refund"]))
+      .toEqual({ root: "/Users/caoqu", current: "/Users/caoqu/team-agent/customer-agent" });
+  });
+
+  it("uses the AgentRoam installation directory when the group has no directory yet", () => {
+    expect(resolveProjectPickerLocation(["/Users/caoqu"], [undefined, "/Users/caoqu/.agentroam/"]))
+      .toEqual({ root: "/Users/caoqu", current: "/Users/caoqu/.agentroam" });
+  });
+
+  it("ignores paths outside the allowed roots and chooses the most specific matching root", () => {
+    expect(resolveProjectPickerLocation(["/Users/caoqu", "/Users/caoqu/projects"], ["/etc", "/Users/caoqu/projects/app"]))
+      .toEqual({ root: "/Users/caoqu/projects", current: "/Users/caoqu/projects/app" });
+    expect(resolveProjectPickerLocation(["/Users/caoqu"], ["/Users/caoqu-other", "/Users/caoqu/../other"]))
+      .toEqual({ root: "/Users/caoqu", current: "/Users/caoqu" });
+  });
+
+  it("uses the same configured starting point for an empty project picker", () => {
+    expect(resolveProjectPickerLocation(["/Users/caoqu"], []))
+      .toEqual({ root: "/Users/caoqu", current: "/Users/caoqu" });
+    expect(resolveProjectPickerLocation([], ["/Users/caoqu/project"]))
+      .toEqual({ root: "", current: "" });
+  });
+
   it("builds root-scoped breadcrumbs", () => {
     expect(buildProjectBreadcrumbs("/", "/Users/caoqu/team-agent")).toEqual([
       { label: "/", path: "/" },

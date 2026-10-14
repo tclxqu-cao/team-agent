@@ -1,7 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { REMOTE_DESKTOP_TAB, withRemoteDesktopTab } from "./console-tabs";
+import { COLLABORATION_DASHBOARD_TAB, withCollaborationDashboard, REMOTE_DESKTOP_TAB, withRemoteDesktopTab } from "./console-tabs";
 
 describe("remote desktop utility tab", () => {
+  it("opens a single group dashboard without replacing existing chat tabs", () => {
+    const group = { id: "collaboration-g", groupId: "g", kind: "collaboration" as const, title: "群" };
+    const tabs = withCollaborationDashboard([group]);
+    expect(tabs).toEqual([group, COLLABORATION_DASHBOARD_TAB]);
+    expect(withCollaborationDashboard(tabs)).toBe(tabs);
+  });
+
   it("adds a separate tab and preserves the chat and terminal objects", () => {
     const chat = { id: "webapp-agent", title: "智能助手", kind: "webapp" as const };
     const terminal = { id: "t-1", title: "Terminal" };

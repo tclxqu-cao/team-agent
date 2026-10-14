@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { projectErrorResponse, webProjectService } from "./project-http";
 
 export async function GET() {
-  return NextResponse.json(await webProjectService.list());
+  return NextResponse.json((await webProjectService.list()).filter(project => !project.id.startsWith("collaboration-")));
 }
 
 export async function POST(request: Request) {

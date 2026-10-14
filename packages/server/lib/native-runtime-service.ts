@@ -122,6 +122,7 @@ export interface NativeRuntimePort {
   ): Promise<() => void>;
   snapshot?(id: string, afterSequence?: number): Promise<NativeRuntimeBrokerSnapshot>;
   setPermissionMode?(id: string, mode: ToolPermissionMode): Promise<UnifiedSessionSummary>;
+  setNativeMode?(id: string, preset: string): Promise<UnifiedSessionSummary>;
   setNativePermissionPreset?(id: string, preset: string): Promise<UnifiedSessionSummary>;
   getNativeGoal?(id: string): Promise<NativeSessionGoal | null>;
   mutateNativeGoal?(id: string, mutation: NativeGoalMutation): Promise<NativeSessionGoal | null>;
@@ -371,6 +372,13 @@ export class NativeRuntimeService implements NativeRuntimePort {
       throw new RuntimeSessionError("Native runtime broker is unavailable", "RUNTIME_UNAVAILABLE");
     }
     return this.runtime.setPermissionMode(id, mode);
+  }
+
+  async setNativeMode(id: string, preset: string): Promise<UnifiedSessionSummary> {
+    if (!this.runtime.setNativeMode) {
+      throw new RuntimeSessionError("Native permission presets are unavailable", "OPERATION_NOT_SUPPORTED");
+    }
+    return this.runtime.setNativeMode(id, preset);
   }
 
   async setNativePermissionPreset(id: string, preset: string): Promise<UnifiedSessionSummary> {

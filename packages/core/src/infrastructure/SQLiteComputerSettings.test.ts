@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { defaultComputerSettings } from "../domain/web-console/computer-settings";
+import { defaultComputerSettings, validateComputerTools } from "../domain/web-console/computer-settings";
 import { SQLiteDatabase, getDatabase } from "./SQLiteDatabase";
 import { SQLiteAuthStore } from "./SQLiteAuthStore";
 import { SQLiteWebConsoleStore } from "./SQLiteWebConsoleStore";
@@ -17,6 +17,17 @@ function fixture() {
 afterEach(() => { for (const base of directories.splice(0)) { try { getDatabase(base).close(); } catch {} rmSync(base, { recursive: true, force: true }); } });
 
 describe("SQLite computer settings", () => {
+  it("retains an explicitly enabled group tool after reopening the database", () => {
+    const { base, store } = fixture();
+    const value = { ...defaultComputerSettings("owner"), revision: 1, visibleTools: validateComputerTools(["collaboration", "refresh"]), savedPages: [], updatedAt: now };
+    expect(store.saveComputerSettings(value, null)).toBe(true);
+    getDatabase(base).close();
+    const reopened = new SQLiteDatabase(base);
+    const row = reopened.db.prepare("SELECT visible_tools_json FROM computer_settings WHERE user_id=?").get("owner") as { visible_tools_json: string };
+    expect(validateComputerTools(JSON.parse(row.visible_tools_json))).toEqual(["refresh", "collaboration"]);
+    reopened.close();
+  });
+
   it("persists empty tools and pages through a closed connection and database reopen", () => {
     const { base, store } = fixture();
     const value = { ...defaultComputerSettings("owner"), revision: 1, visibleTools: [], savedPages: [], updatedAt: now };

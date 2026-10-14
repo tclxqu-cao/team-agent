@@ -1739,6 +1739,12 @@ export class NativeRuntimeBrokerHost {
     return this.runtime.steer(sessionId, input);
   }
 
+  async setNativeMode(sessionId: string, preset: string): Promise<UnifiedSessionSummary> {
+    this.state.assertSessionVisible(sessionId);
+    // Native adapters own whether their permission writer may run during a turn.
+    return this.state.applySummary(await this.runtime.setNativeMode(sessionId, preset));
+  }
+
   async setNativePermissionPreset(sessionId: string, preset: string): Promise<UnifiedSessionSummary> {
     this.state.assertSessionVisible(sessionId);
     // Native adapters own whether their permission writer may run during a turn.
@@ -2165,6 +2171,10 @@ export class NativeRuntimeBrokerHost {
         requireSessionId(sessionId),
         normalizeToolPermissionMode(request.params.permissionMode),
       );
+      case "setNativeMode": return this.setNativeMode(
+        requireSessionId(sessionId),
+        requiredStringParam(request.params, "preset"),
+      );
       case "setNativePermissionPreset": return this.setNativePermissionPreset(
         requireSessionId(sessionId),
         requiredStringParam(request.params, "preset"),
@@ -2460,6 +2470,10 @@ export class NativeRuntimeBrokerClient {
 
   async setPermissionMode(id: string, permissionMode: ToolPermissionMode): Promise<UnifiedSessionSummary> {
     return this.request("setPermissionMode", { sessionId: id, permissionMode });
+  }
+
+  async setNativeMode(id: string, preset: string): Promise<UnifiedSessionSummary> {
+    return this.request("setNativeMode", { sessionId: id, preset });
   }
 
   async setNativePermissionPreset(id: string, preset: string): Promise<UnifiedSessionSummary> {

@@ -3,6 +3,12 @@ import { createPortal } from "react-dom";
 import { History, LoaderCircle, Plus, Search } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
 import ChatView from "./components/ChatView";
+import CollaborationLauncher from "./components/collaboration/CollaborationLauncher";
+import CollaborationCreateDialog from "./components/collaboration/CollaborationCreateDialog";
+import CollaborationDashboard from "./components/collaboration/CollaborationDashboard";
+import CollaborationPage from "./components/collaboration/CollaborationPage";
+import type { CollaborationGroup } from "@agent/core/domain/collaboration/types";
+import { COLLABORATION_OPEN_TYPE, readCollaborationCreate } from "../../core/src/domain/web-console/CollaborationTabBridge";
 import AIHubView from "./components/AIHubView";
 import UpdateNotice from "./components/UpdateNotice";
 import DesktopLiveControlBanner from "./components/DesktopLiveControlBanner";
@@ -265,6 +271,20 @@ export default function App() {
   const [showDesktopLive, setShowDesktopLive] = useState(false);
   // AI Hub（多 AI 网页聚合）：打开时内容区切换为 AIHubView，ChatView 保持挂载仅隐藏
   const [hubOpen, setHubOpen] = useState(false);
+  const [collaborationTabs, setCollaborationTabs] = useState<CollaborationGroup[]>([]);
+  const [activeCollaboration, setActiveCollaboration] = useState<string | null>(null);
+  const [collaborationDashboardOpen, setCollaborationDashboardOpen] = useState(false);
+  const [collaborationCreateOpen, setCollaborationCreateOpen] = useState(false);
+  const [collaborationGroupsRevision, setCollaborationGroupsRevision] = useState(0);
+  const openCollaboration = (group: CollaborationGroup) => {
+    if (isWebShell()) {
+      window.parent.postMessage({type: COLLABORATION_OPEN_TYPE, groupId: group.id, title: group.name}, window.location.origin);
+    } else {
+      setCollaborationDashboardOpen(false);
+      setCollaborationTabs(current => current.some(g => g.id === group.id) ? current : [...current, group]);
+      setActiveCollaboration(group.id);
+    }
+  };
   const [settingsTab, setSettingsTab] = useState<SettingsTab>("settings");
 
   const setTodos = useAgentStore((s) => s.setTodos);
@@ -336,6 +356,16 @@ export default function App() {
   // ── Web shell (packages/webapp): drawer sidebar on phone-width screens ──
   // Gated on the web-shell flag so the Electron app keeps its exact layout.
   const webShell = isWebShell();
+  useEffect(() => {
+    if (!webShell || window.parent === window) return;
+    const onMessage = (event: MessageEvent) => {
+      if (readCollaborationCreate(event, window.location.origin, window.parent)) {
+        setCollaborationCreateOpen(true);
+      }
+    };
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, [webShell]);
   const narrowViewport = useNarrowViewport();
   const mobileDrawer = webShell && narrowViewport;
   const [sidebarDrawerOpen, setSidebarDrawerOpen] = useState(false);
@@ -1496,6 +1526,34 @@ export default function App() {
       overflow: "hidden",
     }}>
       <UpdateNotice />
+      {collaborationCreateOpen && createPortal(<CollaborationCreateDialog
+        cwd={selectedWorkspacePath || undefined}
+        health={runtimeHealth}
+        onClose={() => setCollaborationCreateOpen(false)}
+        onCreated={group => {
+          setCollaborationCreateOpen(false);
+          setCollaborationGroupsRevision(revision => revision + 1);
+          openCollaboration(group);
+        }}
+      />, document.body)}
+      {(activeCollaboration || collaborationDashboardOpen) && <div className="collab-desktop-overlay">
+        <nav className="collab-desktop-tabs" aria-label="工作页签">
+          <button onClick={() => { setActiveCollaboration(null); setCollaborationDashboardOpen(false); }}>智能助手</button>
+          <button onClick={() => setCollaborationDashboardOpen(true)}>群聊看板</button>
+          {collaborationTabs.map(group => <div className={`collab-desktop-tab${group.id === activeCollaboration ? " is-active" : ""}`} key={group.id}>
+            <button aria-current={group.id === activeCollaboration ? "page" : undefined} onClick={() => { setCollaborationDashboardOpen(false); setActiveCollaboration(group.id); }}>{group.name}</button>
+            <button aria-label={`关闭${group.name}`} onClick={() => {
+              setCollaborationTabs(current => current.filter(item => item.id !== group.id));
+              if (activeCollaboration === group.id) setActiveCollaboration(null);
+            }}>×</button>
+          </div>)}
+        </nav>
+        <div className="collab-desktop-body">{collaborationDashboardOpen ? <CollaborationDashboard cwd={selectedWorkspacePath || undefined} onOpen={openCollaboration} onClose={() => setCollaborationDashboardOpen(false)} onChanged={(id, group) => {
+          setCollaborationGroupsRevision(revision => revision + 1);
+          setCollaborationTabs(current => group ? current.map(item => item.id === id ? group : item) : current.filter(item => item.id !== id));
+          if (!group && activeCollaboration === id) setActiveCollaboration(null);
+        }}/> : activeCollaboration && <CollaborationPage key={`${activeCollaboration}-${collaborationGroupsRevision}`} groupId={activeCollaboration}/>}</div>
+      </div>}
       <DesktopLiveControlBanner />
       {/* Web mobile: drawer mask + hamburger */}
       {!flowStudioEntryUrl && mobileDrawer && sidebarDrawerOpen && (
@@ -1921,6 +1979,7 @@ export default function App() {
         </div>
 
         <div className="sidebar-bottom-action">
+          <CollaborationLauncher showCreateButton={!webShell} refreshKey={collaborationGroupsRevision} onCreate={() => setCollaborationDashboardOpen(true)} onOpen={openCollaboration}/>
           <button
             type="button"
             className="sidebar-new-session-primary"

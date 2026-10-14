@@ -29,6 +29,7 @@ export class WebProjectService {
   constructor(
     private readonly store: IProjectStore,
     private readonly paths: WebProjectPathPort,
+    private readonly installationDirectory: string = paths.roots[0],
   ) {}
 
   list(): Promise<Project[]> {
@@ -44,6 +45,7 @@ export class WebProjectService {
   async create(path: string, requestedName?: string): Promise<Project> {
     const canonical = this.paths.assertDirectory(path);
     for (const project of await this.store.list()) {
+      if (project.id.startsWith("collaboration-")) continue;
       try {
         if (this.paths.assertDirectory(project.description) === canonical) return project;
       } catch {
@@ -74,6 +76,13 @@ export class WebProjectService {
 
   roots(): string[] {
     return this.paths.roots;
+  }
+
+  pickerLocation(): { roots: string[]; initialPath: string } {
+    return {
+      roots: this.paths.roots,
+      initialPath: this.paths.assertDirectory(this.installationDirectory),
+    };
   }
 
   directories(path: string): HostDirectoryEntry[] {

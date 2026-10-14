@@ -1,4 +1,5 @@
 import type { SessionForkPoint } from "@agent/core";
+import type { CollaborationCommand } from "@agent/core/domain/collaboration/types";
 import type {
   AgentApi,
   AgentDefinition,
@@ -108,6 +109,10 @@ export class AgentHttpGateway {
   }
 
   // ── Agent control ──────────────────────────────────────────────────────
+
+  async collaboration(command: CollaborationCommand): Promise<unknown> {
+    return this.http.post("/api/collaboration", command);
+  }
 
   onEvent(callback: EventListener): Unsubscribe {
     this.listeners.add(callback);
@@ -497,6 +502,10 @@ export class AgentHttpGateway {
     return this.http.patch(`/api/sessions/${encodeURIComponent(id)}`, { permissionMode: mode });
   }
 
+  async setSessionNativeMode(id: string, preset: string): Promise<UnifiedSessionSummary> {
+    return this.http.patch(`/api/sessions/${encodeURIComponent(id)}`, { nativeMode: preset });
+  }
+
   async setSessionNativePermissionPreset(id: string, preset: string): Promise<UnifiedSessionSummary> {
     return this.http.patch(`/api/sessions/${encodeURIComponent(id)}`, { nativePermissionPreset: preset });
   }
@@ -721,6 +730,11 @@ export class AgentHttpGateway {
     if (!this.projectBridge) return this.http.get<string[]>("/api/projects/roots");
     const result = await this.requireProjectBridge().request<{ roots: string[] }>("project:roots");
     return result.roots ?? [];
+  }
+
+  async getProjectPickerLocation(): Promise<{ roots: string[]; initialPath: string }> {
+    if (!this.projectBridge) return this.http.get("/api/projects/roots?picker=1");
+    return this.requireProjectBridge().request("project:roots");
   }
 
   async listProjectDirectories(path: string): Promise<Array<{

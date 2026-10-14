@@ -43,7 +43,7 @@ export class DeepSeekHarnessRuntimeAdapter implements AgentRuntimeAdapter {
     catch (error) { return { agentType: this.agentType, label: "DeepSeek Harness", available: false, error: error instanceof Error ? error.message : "运行时不可用" }; }
   }
 
-  private summary(row: HarnessRecord, permissionOptions: NativeSessionPermissions["options"] = []): UnifiedSessionSummary {
+  private summary(row: HarnessRecord, permissionOptions: NativeSessionPermissions["options"] = [], modes: NonNullable<UnifiedSessionSummary["nativeMode"]>["options"] = []): UnifiedSessionSummary {
     const id = String(row.sessionId);
     const projections = row.projections ? harnessRecord(harnessRecord(row.projections).values) : {};
     const updated = new Date(typeof row.updatedAt === "number" ? row.updatedAt : Date.now()).toISOString();
@@ -60,6 +60,7 @@ export class DeepSeekHarnessRuntimeAdapter implements AgentRuntimeAdapter {
       created: updated, updated, status: active || row.running === true ? "running" : "idle",
       occupancy: active ? "owned-by-customer-agent" : external ? "owned-externally" : "available",
       sourceLabel: "DeepSeek Harness", canResume: !external && !oneShot, canDelete: false,
+      nativeMode: { currentValue: typeof projections.agentPreset === "string" ? projections.agentPreset : "standard", canChange: row.blank === true && !isSubagent && !active && !external, options: modes },
       nativeGoalSupported: !isSubagent, nativeModelSelectionSupported: !isSubagent,
       ...(typeof selection.currentValue === "string" ? {
         nativePermissions: { currentValue: selection.currentValue, options: isSubagent ? [] : permissionOptions },
@@ -69,9 +70,10 @@ export class DeepSeekHarnessRuntimeAdapter implements AgentRuntimeAdapter {
   }
 
   async discoverSessions(): Promise<UnifiedSessionSummary[]> {
-    const [raw, catalog] = await Promise.all([
+    const [raw, catalog, modeCatalog] = await Promise.all([
       this.client.request("session/list", { _request: {} }),
       this.client.request("permissionPresets/catalog", {}).catch(() => null),
+      this.client.request("agentPresets/list", {}).catch(() => null),
     ]);
     const result = harnessRecord(raw);
     if (!Array.isArray(result.items)) throw new RuntimeSessionError("DeepSeek Harness 会话列表格式无效", "NATIVE_PROTOCOL_ERROR");
@@ -85,7 +87,13 @@ export class DeepSeekHarnessRuntimeAdapter implements AgentRuntimeAdapter {
           ...(typeof option.description === "string" ? { description: option.description } : {}) });
       }
     }
-    return result.items.map(item => this.summary(harnessRecord(item), options));
+    const names: Record<string, string> = { standard: "标准模式", ptc: "PTC 模式", minimal: "极简模式", cordis: "创作模式" };
+    const presets = modeCatalog ? harnessRecord(modeCatalog).presets : [];
+    const modes = Array.isArray(presets) ? presets.map(harnessRecord).filter(row => typeof row.id === "string").map(row => ({
+      value: String(row.id), label: typeof row.name === "string" ? row.name : names[String(row.id)] ?? String(row.id),
+      ...(typeof row.description === "string" ? { description: row.description } : {}),
+    })) : [];
+    return result.items.map(item => this.summary(harnessRecord(item), options, modes));
   }
 
   async listWorkspaces(query: WorkspaceQuery = {}): Promise<WorkspacePage<AgentWorkspace>> {
@@ -165,6 +173,17 @@ export class DeepSeekHarnessRuntimeAdapter implements AgentRuntimeAdapter {
   }
 
   async renameSession(nativeSessionId: string, title: string): Promise<void> { await this.client.request("session/rename", { request: { sessionId: nativeSessionId, title } }); }
+
+  async setNativeMode(nativeSessionId: string, preset: string): Promise<UnifiedSessionSummary> {
+    const current = (await this.discoverSessions()).find(row => row.nativeSessionId === nativeSessionId);
+    if (!current) throw new RuntimeSessionError("DeepSeek Harness 会话不存在", "SESSION_NOT_FOUND");
+    if (!current.nativeMode?.canChange) throw new RuntimeSessionError("已有消息的会话不能切换模式，请在新会话中选择", "OPERATION_NOT_SUPPORTED");
+    if (!current.nativeMode.options.some(option => option.value === preset)) throw new RuntimeSessionError("不支持此模式", "OPERATION_NOT_SUPPORTED");
+    await this.withLiveSession(nativeSessionId, () => this.client.request("agentPresets/select", { agentId: nativeSessionId, agentPreset: preset }));
+    const updated = (await this.discoverSessions()).find(row => row.nativeSessionId === nativeSessionId);
+    if (updated?.nativeMode?.currentValue !== preset) throw new RuntimeSessionError("Harness 未确认模式切换", "NATIVE_PROTOCOL_ERROR");
+    return updated;
+  }
 
   async setNativePermissionPreset(nativeSessionId: string, preset: string): Promise<UnifiedSessionSummary> {
     const current = (await this.discoverSessions()).find(row => row.nativeSessionId === nativeSessionId);

@@ -6,6 +6,15 @@ import { HostPathPolicy, SQLiteProjectStore } from "@agent/core";
 import { WebProjectService } from "./web-project-service";
 
 describe("WebProjectService", () => {
+  it("returns the injected installation directory without listing the allowed root", () => {
+    const root = mkdtempSync(join(tmpdir(), "agent-web-picker-"));
+    const installation = join(root, ".agentroam");
+    mkdirSync(installation);
+    const paths = new HostPathPolicy([root]);
+    const service = new WebProjectService({} as never, paths, installation);
+    expect(service.pickerLocation()).toEqual({ roots: [realpathSync(root)], initialPath: realpathSync(installation) });
+  });
+
   it("keeps project lifecycle behind injected ports", async () => {
     const root = mkdtempSync(join(tmpdir(), "agent-web-project-root-"));
     const data = mkdtempSync(join(tmpdir(), "agent-web-project-data-"));
@@ -39,5 +48,15 @@ describe("WebProjectService", () => {
 
     await expect(service.create(outside)).rejects.toMatchObject({ code: "PATH_OUTSIDE_ROOT" });
     expect(service.check(outside)).toBe(false);
+  });
+
+  it("imports a user project separately from a collaboration member's internal project", async () => {
+    const root = mkdtempSync(join(tmpdir(), "agent-web-project-group-"));
+    const data = mkdtempSync(join(tmpdir(), "agent-web-project-data-"));
+    const store = new SQLiteProjectStore(data);
+    await store.create({id: "collaboration-internal", name: "群工作区", description: root, created: "2026-10-14", updated: "2026-10-14"});
+    const project = await new WebProjectService(store, new HostPathPolicy([root])).create(root);
+    expect(project.id).not.toBe("collaboration-internal");
+    expect(project.description).toBe(realpathSync(root));
   });
 });

@@ -314,6 +314,16 @@ export class UnifiedSessionService {
     this.invalidate(id);
   }
 
+  async setNativeMode(id: string, preset: string): Promise<UnifiedSessionSummary> {
+    const { adapter, nativeSessionId } = this.resolveAdapter(id);
+    if (!adapter.setNativeMode) {
+      throw new RuntimeSessionError("This runtime does not expose native modes", "OPERATION_NOT_SUPPORTED");
+    }
+    const summary = await adapter.setNativeMode(nativeSessionId, preset);
+    this.invalidate(id);
+    return summary;
+  }
+
   async setNativePermissionPreset(id: string, preset: string): Promise<UnifiedSessionSummary> {
     const { adapter, nativeSessionId } = this.resolveAdapter(id);
     if (!adapter.setNativePermissionPreset) {

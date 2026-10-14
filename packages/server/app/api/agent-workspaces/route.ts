@@ -26,7 +26,7 @@ export async function GET(request: Request) {
       return NextResponse.json(await getNativeRuntimeService().listWorkspaces(agentType, query));
     }
     const projects = (await agentHost.getProjectStore().list())
-      .filter((project) => project.description.trim().length > 0);
+      .filter((project) => project.description.trim().length > 0 && !project.id.startsWith("collaboration-"));
     const workspaces: AgentWorkspace[] = [{
       agentType,
       workspaceId: CUSTOMER_AGENT_RECENT_WORKSPACE_ID,

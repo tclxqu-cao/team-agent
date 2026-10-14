@@ -12,6 +12,14 @@ describe("computer settings contracts", () => {
     expect(validateComputerTools(["install", "refresh"])).toEqual(["refresh", "install"]);
     for (const value of [null, {}, ["saved-page"], ["refresh", "refresh"]]) expect(() => validateComputerTools(value)).toThrow();
   });
+  it("keeps group creation hidden until enabled and places it immediately after refresh", () => {
+    const defaults = defaultComputerSettings("owner").visibleTools;
+    expect(defaults).not.toContain("collaboration");
+    expect(validateComputerTools([...defaults, "collaboration"])).toEqual([
+      "refresh", "collaboration", "remote", "theme", "files",
+    ]);
+    expect(validateComputerTools(["collaboration"])).toEqual(["collaboration"]);
+  });
   it("normalizes pages and whitelists fields", () => {
     expect(validateSavedComputerPages([{ ...page, token: "secret" }])).toEqual([{ id: "docs", name: "文档", url: "https://example.com/", openMode: "current" }]);
   });

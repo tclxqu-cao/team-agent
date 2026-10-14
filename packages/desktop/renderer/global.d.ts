@@ -1,4 +1,5 @@
 import type { SessionForkPoint } from "@agent/core";
+import type { CollaborationCommand } from "@agent/core/domain/collaboration/types";
 export type { NativeGoalMutation, NativeGoalRef, NativeSessionGoal } from "../../native-runtime/src/agent-runtime/native-session-goal";
 import type { NativeGoalMutation, NativeSessionGoal } from "../../native-runtime/src/agent-runtime/native-session-goal";
 import type { BrowserLiveSessionView } from "../../core/src/domain/browser-live/index";
@@ -232,6 +233,7 @@ export interface UnifiedSessionSummary {
     currentValue: string;
     options: Array<{ value: string; label: string; description?: string }>;
   };
+  nativeMode?: { currentValue: string; canChange: boolean; options: Array<{ value: string; label: string; description?: string }> };
   nativeGoalSupported?: boolean;
   nativeModelSelectionSupported?: boolean;
   occupancyRevision?: number;
@@ -289,6 +291,7 @@ export interface AgentApi {
   onTtsEnd(callback: (payload: { generation: number }) => void): () => void;
   run(input: string, sessionId: string, agentIds?: string[], agentName?: string, images?: string[], nativeOptions?: NativeRunOptions): Promise<unknown[]>;
   listAgentModels(agentType: AgentType): Promise<{ agentType: AgentType; models: RuntimeModelInfo[]; supported?: boolean }>;
+  collaboration(command: CollaborationCommand): Promise<unknown>;
   steer(input: string, sessionId: string, agentName?: string): Promise<boolean>;
   abort(sessionId?: string): Promise<void>;
   answerQuestion(questionId: string, answer: string, selectedIndices?: number[]): Promise<boolean>;
@@ -327,6 +330,7 @@ export interface AgentApi {
   deleteProject(id: string): Promise<void>;
   checkProjectPath(path: string): Promise<boolean>;
   listProjectRoots(): Promise<string[]>;
+  getProjectPickerLocation(): Promise<{ roots: string[]; initialPath: string }>;
   listProjectDirectories(path: string): Promise<Array<{
     name: string;
     path: string;
@@ -364,6 +368,7 @@ export interface AgentApi {
     onError?: () => void,
   ): () => void;
   setSessionPermissionMode(id: string, mode: ToolPermissionMode): Promise<unknown>;
+  setSessionNativeMode?(id: string, preset: string): Promise<UnifiedSessionSummary>;
   setSessionNativePermissionPreset?(id: string, preset: string): Promise<UnifiedSessionSummary>;
   getSessionNativeGoal?(id: string): Promise<NativeSessionGoal | null>;
   mutateSessionNativeGoal?(id: string, mutation: NativeGoalMutation): Promise<NativeSessionGoal | null>;

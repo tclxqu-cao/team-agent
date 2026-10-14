@@ -10,7 +10,7 @@ import {
   type SessionToolResultRef,
 } from "@agent/core";
 import { createTaskCompletionNotification } from "../../../core/src/application/notification/task-completion";
-import { ArrowDownToLine, Check, Copy, CornerUpRight, FileText, GitFork, GripVertical, LoaderCircle, Pencil, Play, RefreshCw, Square, Target, Trash2, Unplug, Volume2 } from "lucide-react";
+import { ArrowDownToLine, AlarmClock, Check, Copy, CornerUpRight, FileText, GitFork, GripVertical, LoaderCircle, Pencil, Play, RefreshCw, Square, Target, Trash2, Unplug, Volume2 } from "lucide-react";
 import AgentBrandIcon from "./AgentBrandIcon";
 import MessageLink from "./MessageLink";
 import MermaidBlock from "./MermaidBlock";
@@ -383,6 +383,7 @@ import { useSettingsStore } from "../stores/settingsStore";
 import ToolCallCard, { ToolCallGroup } from "./ToolCallCard";
 import AskUserCard from "./AskUserCard";
 import ContextUsageBar from "./ContextUsageBar";
+import HarnessModeControl from "./HarnessModeControl";
 import AgentActivityIndicator from "./AgentActivityIndicator";
 import ReasoningSummary from "./ReasoningSummary";
 import CodexExecutionTrace from "./CodexExecutionTrace";
@@ -396,6 +397,7 @@ import { prepareVoiceCommand, shouldSkipVoiceSessionReload } from "../lib/voice-
 import { prepareChatCommand } from "../lib/chat-command";
 import { waitForNextPaint } from "../lib/browser-paint";
 import { areToolCallsComplete } from "../lib/tool-call-status";
+import { scheduledMessageContent } from "../lib/scheduled-message";
 import { extractMemoryCitations } from "../lib/memory-citations";
 import { parseRichInlineTokens } from "../lib/markdown-links";
 import { coalesceAdjacentToolCallMessages, groupAdjacentToolCallEntries } from "../lib/tool-call-groups";
@@ -4257,6 +4259,10 @@ export default function ChatView({
               />
             );
           }
+          const scheduledContent = isUser && sessionSummary?.agentType === "codex"
+            ? scheduledMessageContent(msg.content)
+            : null;
+
           // User avatar label: first char of @mentioned agent, else "你"
           const userAvatarLabel = chatMsg.agentName
             ? chatMsg.agentName.charAt(0).toUpperCase()
@@ -4357,6 +4363,11 @@ export default function ChatView({
 
             {/* Bubble */}
             <div className={`chat-message-content chat-message-content--${isUser ? "user" : "assistant"}`} style={{ maxWidth: "var(--chat-content-max-width)", display: "flex", flexDirection: "column", gap: 4, alignItems: isUser ? "flex-end" : "flex-start", minWidth: 0 }}>
+              {scheduledContent !== null && (
+                <span className="scheduled-message-icon" role="img" aria-label="定时任务" title="定时任务">
+                  <AlarmClock size={15} aria-hidden="true" />
+                </span>
+              )}
               <div className={`chat-message-bubble chat-message-bubble--${isUser ? "user" : "assistant"} ${msg.role === "assistant" && msg.content ? "message-card" : ""}`} style={{
                 // Tool-call-only messages: no bubble wrapper — cards render inline
                 padding: (msg.content || (isUser && chatMsg.images?.length))
@@ -4421,7 +4432,7 @@ export default function ChatView({
                 ) : (
                   msg.content && (
                     <div style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
-                      {isUser ? msg.content : renderMessageContent(msg.content)}
+                      {isUser ? scheduledContent ?? msg.content : renderMessageContent(msg.content)}
                     </div>
                   )
                 )}
@@ -5683,11 +5694,15 @@ export default function ChatView({
               </div>
 
               <div className="web-native-context-control">
-                <ContextUsageBar
-                  usage={viewSessionId ? contextUsageBySession[viewSessionId] : undefined}
-                  contextWindowK={contextWindow}
-                  compact
-                />
+                {composerAgentType === "deepseek-harness" ? (
+                  <HarnessModeControl sessionId={viewSessionId} mode={sessionSummary?.nativeMode} />
+                ) : (
+                  <ContextUsageBar
+                    usage={viewSessionId ? contextUsageBySession[viewSessionId] : undefined}
+                    contextWindowK={contextWindow}
+                    compact
+                  />
+                )}
               </div>
 
               <label className={`web-native-model-control${isNativeRuntime ? " web-native-model-control--native" : ""}`} title="切换模型">

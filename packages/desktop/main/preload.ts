@@ -127,6 +127,7 @@ contextBridge.exposeInMainWorld("desktopDeviceApi", {
   deleteProject: (id: string) => ipcRenderer.invoke("projects:delete", id),
   checkProjectPath: (path: string) => ipcRenderer.invoke("projects:checkPath", path),
   listProjectRoots: async () => [],
+  getProjectPickerLocation: async () => ({ roots: [], initialPath: "" }),
   listProjectDirectories: async (_path: string) => [],
 
   // Sessions

@@ -5,6 +5,7 @@ import {
   SQLiteProjectStore,
 } from "@agent/core";
 import { getServerBaseDir } from "../../../lib/server-data-dir";
+import { projectPickerDirectory } from "../../../lib/project-picker-directory.mjs";
 import {
   WebProjectError,
   WebProjectService,
@@ -14,6 +15,7 @@ import {
 export const webProjectService = new WebProjectService(
   new SQLiteProjectStore(getServerBaseDir()),
   HostPathPolicy.fromEnvironment(process.env.AGENT_WEB_ROOTS, homedir()),
+  projectPickerDirectory(getServerBaseDir()),
 );
 
 export function projectErrorResponse(error: unknown): { status: number; body: { error: string; code: string } } {

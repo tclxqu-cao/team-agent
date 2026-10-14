@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Camera, Check, Globe, Monitor, Pencil, Plus, X, ExternalLink, ChevronLeft, ChevronDown, ChevronRight, SlidersHorizontal, MessagesSquare, RefreshCw, MonitorUp, Palette, PanelRight, LayoutGrid, Bot, Smartphone } from "lucide-react";
+import { Camera, Check, Globe, Monitor, Pencil, Plus, X, ExternalLink, ChevronLeft, ChevronDown, ChevronRight, SlidersHorizontal, MessagesSquare, RefreshCw, MonitorUp, Palette, PanelRight, LayoutGrid, Bot, Smartphone, UsersRound } from "lucide-react";
 import ComputerPageDialog, { type ComputerPage } from "./ComputerPageDialog";
 import type { ComputerSettingsController } from "./useComputerSettings";
 import type { ComputerToolId } from "../../../core/src/domain/web-console/computer-settings";
@@ -13,6 +13,7 @@ import { createPairingScanner, decodePairingImage, supportsLiveCamera } from "..
 type Computer = { origin: string; name: string };
 const TOOL_OPTIONS = [
   { id: "refresh", name: "刷新", Icon: RefreshCw },
+  { id: "collaboration", name: "群聊看板", Icon: UsersRound },
   { id: "remote", name: "远程桌面", Icon: MonitorUp },
   { id: "theme", name: "皮肤", Icon: Palette },
   { id: "files", name: "文件树", Icon: PanelRight },

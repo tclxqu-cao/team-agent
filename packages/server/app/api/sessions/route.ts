@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { normalizeToolPermissionMode } from "@agent/core";
 import { agentHost, ProjectWorkingDirectoryError } from "../agent-host";
+import { collaborationSessionIds } from "../../../lib/collaboration/visibility";
 import {
   getNativeRuntimeService,
   runtimeErrorStatus,
@@ -10,7 +11,8 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const projectId = url.searchParams.get("projectId") || undefined;
   const refresh = url.searchParams.get("refresh") === "1";
-  const sessions = await agentHost.getSessionStore().list(projectId);
+  const hidden = collaborationSessionIds();
+  const sessions = (await agentHost.getSessionStore().list(projectId)).filter(session => !hidden.has(session.id));
 
   const service = getNativeRuntimeService();
   // The renderer treats a missing agentType as a native runtime, so CA
@@ -26,7 +28,7 @@ export async function GET(request: Request) {
     // Native discovery associates cwd with the most specific registered
     // project path, matching the desktop renderer's project tree.
     const native = refresh ? await service.refresh(projectId) : await service.list(projectId);
-    return NextResponse.json([...tagged, ...native]);
+    return NextResponse.json([...tagged, ...native.filter(session => !hidden.has(session.id))]);
   } catch (err) {
     console.error("Native session discovery failed:", err);
     // Discovery failure must not hide the customer-agent session list.

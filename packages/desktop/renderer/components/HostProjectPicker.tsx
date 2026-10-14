@@ -32,6 +32,7 @@ interface HostDirectoryEntry {
 
 interface HostProjectPickerProps {
   open: boolean;
+  initialPath?: string;
   onCancel: () => void;
   onConfirm: (path: string) => Promise<void> | void;
 }
@@ -66,6 +67,21 @@ export function getHostEntryIconKind(name: string, kind: HostDirectoryEntry["kin
 
 const normalize = (value: string) => value.replace(/\\/g, "/").replace(/\/+$/, "") || "/";
 
+export function resolveProjectPickerLocation(roots: string[], preferredPaths: Array<string | undefined>) {
+  for (const path of preferredPaths) {
+    if (!path?.trim()) continue;
+    const current = normalize(path);
+    if (current.split("/").some((segment) => segment === "." || segment === "..")) continue;
+    const root = roots
+      .map(normalize)
+      .filter((candidate) => current === candidate || current.startsWith(candidate === "/" ? "/" : `${candidate}/`))
+      .sort((left, right) => right.length - left.length)[0];
+    if (root) return { root, current };
+  }
+  const root = roots[0] ? normalize(roots[0]) : "";
+  return { root, current: root };
+}
+
 export function buildProjectBreadcrumbs(rootPath: string, currentPath: string): ProjectBreadcrumb[] {
   const root = normalize(rootPath);
   const current = normalize(currentPath);
@@ -81,7 +97,7 @@ export function buildProjectBreadcrumbs(rootPath: string, currentPath: string): 
   return breadcrumbs;
 }
 
-export default function HostProjectPicker({ open, onCancel, onConfirm }: HostProjectPickerProps) {
+export default function HostProjectPicker({ open, initialPath, onCancel, onConfirm }: HostProjectPickerProps) {
   const [roots, setRoots] = useState<string[]>([]);
   const [root, setRoot] = useState("");
   const [current, setCurrent] = useState("");
@@ -89,16 +105,20 @@ export default function HostProjectPicker({ open, onCancel, onConfirm }: HostPro
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [confirming, setConfirming] = useState(false);
-  const breadcrumbs = useMemo(() => buildProjectBreadcrumbs(root || "/", current || root || "/"), [root, current]);
+  const [directoryLoaded, setDirectoryLoaded] = useState(false);
+  const breadcrumbs = useMemo(() => root && current ? buildProjectBreadcrumbs(root, current) : [], [root, current]);
 
   const loadDirectory = async (path: string) => {
     if (!window.agentApi) return;
     setLoading(true);
+    setDirectoryLoaded(false);
     setError("");
+    setCurrent(path);
+    setEntries([]);
     try {
       const list = await window.agentApi.listProjectDirectories(path);
       setEntries(list);
-      setCurrent(path);
+      setDirectoryLoaded(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "无法读取目录");
     } finally {
@@ -111,12 +131,16 @@ export default function HostProjectPicker({ open, onCancel, onConfirm }: HostPro
     let cancelled = false;
     setLoading(true);
     setError("");
-    void window.agentApi.listProjectRoots().then(async (list) => {
+    setRoot("");
+    setCurrent("");
+    setDirectoryLoaded(false);
+    setEntries([]);
+    void window.agentApi.getProjectPickerLocation().then(async ({ roots: list, initialPath: installationDirectory }) => {
       if (cancelled) return;
       setRoots(list);
-      const initial = list[0] ?? "";
-      setRoot(initial);
-      if (initial) await loadDirectory(initial);
+      const initial = resolveProjectPickerLocation(list, [initialPath, installationDirectory]);
+      setRoot(initial.root);
+      if (initial.current) await loadDirectory(initial.current);
       else setError("未配置可用的宿主机目录");
     }).catch((err) => {
       if (!cancelled) setError(err instanceof Error ? err.message : "无法读取宿主机目录");
@@ -124,7 +148,7 @@ export default function HostProjectPicker({ open, onCancel, onConfirm }: HostPro
       if (!cancelled) setLoading(false);
     });
     return () => { cancelled = true; };
-  }, [open]);
+  }, [open, initialPath]);
 
   useEffect(() => {
     if (!open) return;
@@ -146,7 +170,7 @@ export default function HostProjectPicker({ open, onCancel, onConfirm }: HostPro
     void loadDirectory(breadcrumbs[breadcrumbs.length - 2].path);
   };
   const confirm = async () => {
-    if (!current || confirming) return;
+    if (!current || !directoryLoaded || confirming) return;
     setConfirming(true);
     setError("");
     try {
@@ -187,6 +211,7 @@ export default function HostProjectPicker({ open, onCancel, onConfirm }: HostPro
             <ArrowLeft size={16} aria-hidden="true" />
           </button>
           <div className="host-project-picker-breadcrumbs">
+            {!current && <span>{loading ? "正在定位工作目录…" : "未能加载工作目录"}</span>}
             {breadcrumbs.map((item, index) => (
               <span key={item.path}>
                 {index > 0 && <i>/</i>}
@@ -243,7 +268,7 @@ export default function HostProjectPicker({ open, onCancel, onConfirm }: HostPro
           <code title={current}>{current}</code>
           <div>
             <button type="button" className="host-project-picker-cancel" onClick={onCancel}>取消</button>
-            <button type="button" className="host-project-picker-confirm" disabled={!current || loading || confirming} onClick={() => void confirm()}>
+            <button type="button" className="host-project-picker-confirm" disabled={!current || !directoryLoaded || loading || confirming} onClick={() => void confirm()}>
               {confirming ? "正在导入…" : "选择此文件夹"}
             </button>
           </div>

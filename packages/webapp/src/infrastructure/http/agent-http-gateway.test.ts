@@ -43,6 +43,13 @@ describe("AgentHttpGateway", () => {
     ObservableEventSource.instances = [];
   });
 
+  it("sends collaboration commands through the authenticated HTTP port without opening agent streams", async () => {
+    const http = { post: vi.fn().mockResolvedValue([{id: "group"}]) };
+    const gateway = new AgentHttpGateway(http as never, {} as never);
+    expect(await gateway.collaboration({action: "groups"})).toEqual([{id: "group"}]);
+    expect(http.post).toHaveBeenCalledWith("/api/collaboration", {action: "groups"});
+  });
+
   it("frames streamed Codex commentary and flushes it before the next tool event", async () => {
     vi.useFakeTimers();
     globalThis.EventSource = ObservableEventSource as unknown as typeof EventSource;
@@ -1488,6 +1495,14 @@ describe("AgentHttpGateway", () => {
     expect(onError).toHaveBeenCalledOnce();
   });
 
+  it("updates the native Harness mode using the encoded session route", async () => {
+    const updated = { id: "runtime:deepseek-harness:test", nativeMode: { currentValue: "cordis" } };
+    const http = { patch: vi.fn().mockResolvedValue(updated) };
+    const gateway = new AgentHttpGateway(http as never, {} as never);
+    await expect(gateway.setSessionNativeMode(updated.id, "cordis")).resolves.toEqual(updated);
+    expect(http.patch).toHaveBeenCalledWith("/api/sessions/runtime%3Adeepseek-harness%3Atest", { nativeMode: "cordis" });
+  });
+
   it("updates the permission mode for the encoded customer-agent session", async () => {
     const updated = { id: "session/one", permissionMode: "auto-approval" };
     const http = { patch: vi.fn().mockResolvedValue(updated) };
@@ -1535,7 +1550,7 @@ describe("AgentHttpGateway", () => {
     const bridge = {
       request: vi.fn(async (method: string) => {
         if (method === "project:list") return { projects: [project] };
-        if (method === "project:roots") return { roots: ["/Users/caoqu"] };
+        if (method === "project:roots") return { roots: ["/Users/caoqu"], initialPath: "/Users/caoqu/.agentroam" };
         if (method === "project:directories") return { entries: [
           { name: "team-agent", path: "/Users/caoqu/team-agent", kind: "directory", hasChildren: true },
           { name: "README.md", path: "/Users/caoqu/README.md", kind: "file", hasChildren: false },
@@ -1549,6 +1564,7 @@ describe("AgentHttpGateway", () => {
 
     await expect(gateway.listProjects()).resolves.toEqual([project]);
     await expect(gateway.listProjectRoots()).resolves.toEqual(["/Users/caoqu"]);
+    await expect(gateway.getProjectPickerLocation()).resolves.toEqual({ roots: ["/Users/caoqu"], initialPath: "/Users/caoqu/.agentroam" });
     await expect(gateway.listProjectDirectories("/Users/caoqu")).resolves.toEqual([
       { name: "team-agent", path: "/Users/caoqu/team-agent", kind: "directory", hasChildren: true },
       { name: "README.md", path: "/Users/caoqu/README.md", kind: "file", hasChildren: false },

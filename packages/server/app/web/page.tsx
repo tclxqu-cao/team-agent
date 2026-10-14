@@ -5,7 +5,7 @@
 
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, ExternalLink, Bot, PanelRight, X, LayoutGrid, MonitorUp, RefreshCw } from "lucide-react";
+import { ArrowLeft, ExternalLink, Bot, PanelRight, X, LayoutGrid, MonitorUp, RefreshCw, UsersRound } from "lucide-react";
 import PwaInstallButton from "./PwaInstallButton";
 import ComputerSwitcher from "./ComputerSwitcher";
 import ComputerPagePane from "./ComputerPagePane";
@@ -14,10 +14,7 @@ import ResponsiveToolbar from "./ResponsiveToolbar";
 import { useComputerSettings } from "./useComputerSettings";
 import type { FileWorkspaceGateway, PinnedCommand } from "@agent/core";
 import { defaultPinnedCommands } from "../../../core/src/domain/web-console/pinned-commands";
-import {
-  WEBAPP_PROJECT_RESPONSE_TYPE,
-  readWebProjectRequest,
-} from "../../../core/src/domain/web-console/WebProjectBridge";
+import { forwardWebProjectRequest } from "./projectFrameBridge";
 import {
   WEBAPP_BROWSER_EVENT_TYPE,
   WEBAPP_BROWSER_BINARY_FRAME_TYPE,
@@ -36,9 +33,11 @@ import { resetHorizontalScroll, resolveVisualViewport } from "./mobileViewport";
 import { DEFAULT_THEME_ID, resolveWebTheme, type WebThemeId } from "./themes";
 import { readWebappTabSwipeMessage } from "./webappTabSwipe";
 import { readWebappReadyMessage } from "./webappReady";
+import { readCollaborationChanged, readCollaborationOpen } from "../../../core/src/domain/web-console/CollaborationTabBridge";
 
 import FlowStudioLoading from "./FlowStudioLoading";
-import { REMOTE_DESKTOP_TAB, withRemoteDesktopTab, type ConsoleTab } from "./console-tabs";
+import CollaborationPane from "./CollaborationPane";
+import { COLLABORATION_DASHBOARD_TAB, withCollaborationDashboard, REMOTE_DESKTOP_TAB, withRemoteDesktopTab, type ConsoleTab } from "./console-tabs";
 import { readRemoteDesktopFullscreen, REMOTE_DESKTOP_CLOSE_TYPE, REMOTE_DESKTOP_VISIBILITY_TYPE, REMOTE_DESKTOP_CONTENT_READY_TYPE } from "../../../core/src/domain/web-console/RemoteDesktopTabBridge";
 import { resolveWebArtifactPath } from "../../../desktop/renderer/lib/artifact-links";
 
@@ -91,6 +90,9 @@ function AuthenticatedConsole({
   const updateComputerPage = useCallback((page: ComputerPage | null) => setSelectedPage(page?.openMode === "current" ? page : null), []);
   const webappFrameRef = useRef<HTMLIFrameElement>(null);
   const remoteDesktopFrameRef = useRef<HTMLIFrameElement>(null);
+  const collaborationDashboardFrame = useRef<HTMLIFrameElement | null>(null);
+  const [collaborationFrameRevisions, setCollaborationFrameRevisions] = useState<Record<string, number>>({});
+  const collaborationFrames = useRef(new Map<string, HTMLIFrameElement>());
   const [remoteDesktopReadyEpoch, setRemoteDesktopReadyEpoch] = useState(0);
   const [remoteDesktopFullscreen, setRemoteDesktopFullscreen] = useState(false);
   const [remoteDesktopContentReady, setRemoteDesktopContentReady] = useState(false);
@@ -174,7 +176,8 @@ function AuthenticatedConsole({
   const draggedTab = useRef<string | null>(null);
   const tabBarRef = useRef<HTMLDivElement>(null);
   const postSkinToWebapp = useCallback((skin: WebThemeId) => {
-    for (const ref of [webappFrameRef, remoteDesktopFrameRef]) ref.current?.contentWindow?.postMessage(
+    const frames = [webappFrameRef.current, remoteDesktopFrameRef.current, collaborationDashboardFrame.current, ...collaborationFrames.current.values()];
+    for (const frame of frames) frame?.contentWindow?.postMessage(
       { type: WEBAPP_SKIN_MESSAGE_TYPE, skin },
       window.location.origin,
     );
@@ -208,6 +211,24 @@ function AuthenticatedConsole({
   }, [activeTheme]);
   useEffect(() => {
     const onMessage = (event: MessageEvent) => {
+      const dashboardSource = collaborationDashboardFrame.current?.contentWindow ?? null;
+      const changed = readCollaborationChanged(event, window.location.origin, dashboardSource);
+      if (changed) {
+        setTabs(current => changed.deleted
+          ? current.filter(tab => tab.groupId !== changed.groupId)
+          : current.map(tab => tab.groupId === changed.groupId ? { ...tab, title: changed.title! } : tab));
+        if (changed.deleted) setActiveTerminalId(current => current === `collaboration-${changed.groupId}` ? COLLABORATION_DASHBOARD_TAB.id : current);
+        else setCollaborationFrameRevisions(current => ({ ...current, [changed.groupId]: (current[changed.groupId] || 0) + 1 }));
+        return;
+      }
+      const groupRequest = readCollaborationOpen(event, window.location.origin,
+        event.source === dashboardSource ? dashboardSource : webappFrameRef.current?.contentWindow ?? null);
+      if (groupRequest) {
+        const id = `collaboration-${groupRequest.groupId}`;
+        setTabs(current => current.some(tab => tab.id === id) ? current : [...current, {id, title: groupRequest.title, kind: "collaboration", groupId: groupRequest.groupId}]);
+        setActiveTerminalId(id);
+        return;
+      }
       const remoteSource = remoteDesktopFrameRef.current?.contentWindow ?? null;
       const fullscreen = readRemoteDesktopFullscreen(event, window.location.origin, remoteSource);
       if (fullscreen !== null) {
@@ -249,10 +270,11 @@ function AuthenticatedConsole({
         onWorkspaceReady();
         return;
       }
+      const collaborationSource = [...collaborationFrames.current.values()].find(frame => frame.contentWindow === event.source)?.contentWindow;
       const artifactRequest = readWebArtifactOpenRequest(
         event,
         window.location.origin,
-        webappFrameRef.current?.contentWindow ?? null,
+        collaborationSource ?? webappFrameRef.current?.contentWindow ?? null,
       );
       if (artifactRequest) {
         const showArtifact = (path: string) => {
@@ -297,30 +319,12 @@ function AuthenticatedConsole({
         );
         return;
       }
-      const request = readWebProjectRequest(
+      void forwardWebProjectRequest(
         event,
         window.location.origin,
-        webappFrameRef.current?.contentWindow ?? null,
-      );
-      if (!request) return;
-      void rpc(request.method, request.payload).then(
-        (result) => {
-          webappFrameRef.current?.contentWindow?.postMessage({
-            type: WEBAPP_PROJECT_RESPONSE_TYPE,
-            id: request.id,
-            ok: true,
-            result,
-          }, window.location.origin);
-        },
-        (error: Error & { code?: string }) => {
-          webappFrameRef.current?.contentWindow?.postMessage({
-            type: WEBAPP_PROJECT_RESPONSE_TYPE,
-            id: request.id,
-            ok: false,
-            error: error.message || "项目操作失败",
-            code: error.code,
-          }, window.location.origin);
-        },
+        [webappFrameRef.current?.contentWindow ?? null, dashboardSource,
+          ...[...collaborationFrames.current.values()].map(frame => frame.contentWindow)],
+        rpc,
       );
     };
     window.addEventListener("message", onMessage);
@@ -638,6 +642,11 @@ function AuthenticatedConsole({
             avatar={<ComputerSwitcher username={auth.user?.username ?? "?"} connected={state.connected} accent={activeTheme.keybar.accent} accentText={activeTheme.keybar.accentText} selectedPageId={selectedPage?.id} onSelectPage={selectComputerPage} onUpdatePage={updateComputerPage} configuration={computerConfiguration} />}
             items={[
               { id: "refresh", content: <button type="button" className="file-drawer-toggle" aria-label="刷新页面" title="刷新页面" onClick={() => selectedPage ? setPageReloadKey(key => key + 1) : window.location.reload()}><RefreshCw size={17} aria-hidden="true" /></button> },
+              { id: "collaboration", content: <button type="button" className="file-drawer-toggle" aria-label="打开群聊看板" title="群聊看板" onClick={() => {
+                setSelectedPage(null);
+                setTabs(withCollaborationDashboard);
+                setActiveTerminalId(COLLABORATION_DASHBOARD_TAB.id);
+              }}><UsersRound size={17} aria-hidden="true" /></button> },
               { id: "install", content: <PwaInstallButton /> },
               { id: "remote", content: <button type="button" className="file-drawer-toggle" aria-label="打开远程桌面" title="远程桌面 · 浏览器直播" onClick={() => { setSelectedPage(null); openRemoteDesktopTab(); }}><MonitorUp size={17} aria-hidden="true" /></button> },
               { id: "ai-hub", content: <button type="button" className="file-drawer-toggle" aria-label="打开 AI Hub" title="AI Hub · 多模型对比" onClick={() => { setSelectedPage(null); openAiHubTab(); }}><LayoutGrid size={17} aria-hidden="true" /></button> },
@@ -669,6 +678,10 @@ function AuthenticatedConsole({
             <div className="terminal-slide" key={tab.id} style={{ position: "relative" }}>
               {tab.kind === "webapp" ? (
                 <iframe ref={webappFrameRef} className="webapp-frame" src="/app/" title={tab.title} onLoad={() => postSkinToWebapp(themeId)} />
+              ) : tab.kind === "collaboration-dashboard" ? (
+                <CollaborationPane title="群聊看板" onFrame={frame => { collaborationDashboardFrame.current = frame; }} onLoad={() => postSkinToWebapp(themeId)} />
+              ) : tab.kind === "collaboration" ? (
+                <CollaborationPane key={`${tab.id}-${collaborationFrameRevisions[tab.groupId || ""] || 0}`} groupId={tab.groupId || ""} title={tab.title} onFrame={frame => { if (frame) collaborationFrames.current.set(tab.id, frame); else collaborationFrames.current.delete(tab.id); }} onLoad={() => postSkinToWebapp(themeId)} />
               ) : tab.kind === "remote-desktop" ? (
                 <div style={{ height: "100%", background: "var(--ui-term-col-bg, #101014)" }} aria-busy={!remoteDesktopContentReady}>
                   <iframe ref={remoteDesktopFrameRef} className="webapp-frame" style={{ visibility: remoteDesktopContentReady ? "visible" : "hidden" }} src="/app/?view=remote-desktop" title="远程桌面" onLoad={() => postSkinToWebapp(themeId)} />

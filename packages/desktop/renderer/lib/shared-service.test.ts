@@ -64,4 +64,13 @@ describe("desktop SSE transport", () => {
     expect(request).toHaveBeenCalledWith("/api/sessions/runtime%3Acodex%3Asource/fork-at", "POST", JSON.stringify({ point: { turnId: "turn-2" } }));
     expect(localFork).not.toHaveBeenCalled();
   });
+
+  it("routes group commands through the shared server instead of the local device bridge", async () => {
+    const request = vi.fn(async () => ({ status: 200, body: JSON.stringify([{ id: "group" }]) }));
+    const localCollaboration = vi.fn();
+    const agentApi = createSharedAgentApi({ request } as unknown as SharedServiceApi, { collaboration: localCollaboration } as unknown as AgentApi);
+    await expect(agentApi.collaboration({ action: "groups" })).resolves.toEqual([{ id: "group" }]);
+    expect(request).toHaveBeenCalledWith("/api/collaboration", "POST", JSON.stringify({ action: "groups" }));
+    expect(localCollaboration).not.toHaveBeenCalled();
+  });
 });

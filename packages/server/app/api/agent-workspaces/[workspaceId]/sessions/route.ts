@@ -3,6 +3,7 @@ import { normalizeToolPermissionMode } from "@agent/core";
 import { paginateByOffset, type WorkspaceSessionQuery } from "@agent/native-runtime";
 import { agentHost } from "../../../agent-host";
 import { getNativeRuntimeService, runtimeErrorStatus } from "../../../../../lib/native-runtime-service";
+import { collaborationSessionIds } from "../../../../../lib/collaboration/visibility";
 import {
   CUSTOMER_AGENT_RECENT_WORKSPACE_ID,
   readAgentType,
@@ -27,9 +28,9 @@ export async function GET(
   }
   try {
     if (agentType !== "customer-agent") {
-      return NextResponse.json(
-        await getNativeRuntimeService().listWorkspaceSessions(agentType, context.params.workspaceId, query),
-      );
+      const page = await getNativeRuntimeService().listWorkspaceSessions(agentType, context.params.workspaceId, query);
+      const hidden = collaborationSessionIds();
+      return NextResponse.json({...page, data: page.data.filter(session => !hidden.has(session.id))});
     }
     let cwd = "";
     let fallbackWatermark: string | null = null;
@@ -59,6 +60,7 @@ export async function GET(
       sessions = await agentHost.getSessionStore().list(project.id);
     }
     const summaries = sessions
+      .filter(session => !session.metadata.collaborationGroupId)
       .map(({ messages: _messages, events: _events, ...session }) => ({
         ...session,
         projectId: context.params.workspaceId,
