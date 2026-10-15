@@ -46,23 +46,23 @@ jobs:
       - name: Verify native PTY, SQLite, Codex and shell startup
         shell: pwsh
         run: |
-          $profile = "$env:RUNNER_TEMP/desktop-profile"
-          $env:USERPROFILE = $profile
+          $testProfile = "$env:RUNNER_TEMP/desktop-profile"
+          $env:USERPROFILE = $testProfile
           $env:ELECTRON_RUN_AS_NODE = $null
-          $node = "$profile/.agentroam/node-runtime/node-v22.22.0-win-x64/node.exe"
+          $node = "$testProfile/.agentroam/node-runtime/node-v22.22.0-win-x64/node.exe"
           if (!(Test-Path $node)) {
-            $nodes = @(Get-ChildItem "$profile/.agentroam" -Filter node.exe -Recurse)
+            $nodes = @(Get-ChildItem "$testProfile/.agentroam" -Filter node.exe -Recurse)
             if ($nodes.Count -ne 1) { throw 'Managed Node missing or ambiguous' }
             $node = $nodes[0].FullName
           }
           $env:AGENTROAM_MANAGED_NODE = $node
-          $env:AGENTROAM_DATA_DIR = "$profile/.agentroam"
+          $env:AGENTROAM_DATA_DIR = "$testProfile/.agentroam"
           $env:AGENTROAM_INSTALL_REMOTE_DESKTOP = 'skip'
-          $cli = @(Get-ChildItem "$profile/.agentroam/desktop-cli" -Filter agentroam.mjs -Recurse | Where-Object { $_.FullName -match 'node_modules[\\/]agentroam[\\/]bin' })
+          $cli = @(Get-ChildItem "$testProfile/.agentroam/desktop-cli" -Filter agentroam.mjs -Recurse | Where-Object { $_.FullName -match 'node_modules[\\/]agentroam[\\/]bin' })
           if ($cli.Count -ne 1) { throw 'Bundled CLI missing or ambiguous' }
-          & $node $cli[0].FullName doctor --data-dir "$profile/.agentroam"
+          & $node $cli[0].FullName doctor --data-dir "$testProfile/.agentroam"
           if ($LASTEXITCODE -ne 0) { throw 'Installed CLI doctor failed' }
-          $runtime = @(Get-ChildItem "$profile/.agentroam/desktop-cli" -Filter manifest.json -Recurse | Where-Object { $_.FullName -match 'agentroam-runtime-win32-x64[\\/]manifest.json$' })
+          $runtime = @(Get-ChildItem "$testProfile/.agentroam/desktop-cli" -Filter manifest.json -Recurse | Where-Object { $_.FullName -match 'agentroam-runtime-win32-x64[\\/]manifest.json$' })
           if ($runtime.Count -ne 1) { throw 'Windows runtime manifest missing' }
           $manifest = Get-Content $runtime[0].FullName | ConvertFrom-Json
           if ($manifest.capabilities.nativeConsole -ne 1) { throw 'Native console support missing' }
