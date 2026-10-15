@@ -127,7 +127,6 @@ export default function ComputerSwitcher({ username, connected, accent, accentTe
 
   return <>
     <style>{STYLES}</style>
-    <CodexSharingStatus csrfToken={csrfToken} expanded={false} />
     <div className="theme-avatar-with-status">
       <button ref={trigger} type="button" className="theme-avatar" aria-label={`电脑与连接状态（${username}）`} title={username} style={{ border: `1px solid ${accent}`, background: accent, color: accentText }} aria-expanded={open} aria-haspopup="true" onClick={() => {
         const rect = trigger.current!.getBoundingClientRect();
@@ -169,7 +168,7 @@ export default function ComputerSwitcher({ username, connected, accent, accentTe
       {directory.error && <><p className="computer-error" role="alert">{directory.error}</p><button type="button" className="computer-menu-item" onClick={() => { void directory.reload(); }}><RefreshCw size={16} /><span>重新加载电脑列表</span></button></>}
       </>}
       {view === "home" && <>
-        <CodexSharingStatus csrfToken={csrfToken} expanded />
+        <CodexSharingStatus csrfToken={csrfToken} />
         <div className="computer-menu-label computer-pages-heading"><span>保存的页面</span><button type="button" className="computer-page-control" aria-label="添加页面" disabled={!configuration.loaded || configuration.saving} onClick={() => { setOpen(false); setPageDialog({ computer: current ?? { origin, name: "当前电脑" } }); }}><Plus size={17} /></button></div>
         <button type="button" className="computer-menu-item" aria-current={!selectedPageId ? "true" : undefined} onClick={() => { setOpen(false); onSelectPage(null); }}><MessagesSquare size={17} /><span>电脑会话</span>{!selectedPageId && <Check size={16} />}</button>
         {pages.map(page => <div key={page.id} className="computer-menu-row">
