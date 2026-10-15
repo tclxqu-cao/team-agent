@@ -3,6 +3,10 @@ name: desktop-release-verify
 on:
   workflow_dispatch:
     inputs:
+      diagnostic_only:
+        description: Test the Windows scheduler contract only
+        type: boolean
+        default: false
       tag:
         description: Desktop draft release tag
         required: true
@@ -15,6 +19,7 @@ permissions:
 
 jobs:
   windows-install:
+    if: ${{ !inputs.diagnostic_only }}
     runs-on: windows-2022
     timeout-minutes: 30
     steps:
@@ -163,3 +168,31 @@ jobs:
           }
           $task = Get-ScheduledTask -TaskName 'AgentRoam' -ErrorAction SilentlyContinue
           if ($task) { $task | Get-ScheduledTaskInfo | Select-Object LastTaskResult,LastRunTime | ConvertTo-Json -Compress }
+  scheduler-contract:
+    if: ${{ inputs.diagnostic_only }}
+    runs-on: windows-2022
+    timeout-minutes: 5
+    steps:
+      - name: Verify scheduler restart interval bounds
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          foreach ($seconds in @(5, 60)) {
+            $taskName = "AgentRoam-Release-Probe-$env:GITHUB_RUN_ID-$seconds"
+            $user = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
+            $accepted = $false
+            $failure = $null
+            try {
+              $action = New-ScheduledTaskAction -Execute "$env:SystemRoot/System32/cmd.exe" -Argument '/c exit 0'
+              $trigger = New-ScheduledTaskTrigger -AtLogOn -User $user
+              $principal = New-ScheduledTaskPrincipal -UserId $user -LogonType Interactive -RunLevel Limited
+              $settings = New-ScheduledTaskSettingsSet -MultipleInstances IgnoreNew -RestartCount 999 -RestartInterval (New-TimeSpan -Seconds $seconds) -ExecutionTimeLimit ([TimeSpan]::Zero) -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
+              Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Force | Out-Null
+              $accepted = $true
+            } catch { $failure = $_ }
+            finally { Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue }
+            if ($seconds -eq 5 -and $accepted) { throw 'Five-second restart interval was accepted; inspect the original failure separately' }
+            if ($seconds -eq 60 -and !$accepted) { throw $failure }
+            Write-Output "Scheduler restart interval $seconds seconds accepted: $accepted"
+            if ($failure) { Write-Output $failure.Exception.Message }
+          }
