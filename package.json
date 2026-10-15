@@ -20,7 +20,8 @@
     "packages/cloudflared-darwin-arm64",
     "packages/cloudflared-win32-x64",
     "packages/tui-darwin-arm64",
-    "packages/tui-win32-x64"
+    "packages/tui-win32-x64",
+    "packages/website"
   ],
   "scripts": {
     "check:node-runtime-policy": "node scripts/generate-node-runtime-policy.mjs --check",
@@ -66,7 +67,8 @@
     "test:agent-runtime-upgrade": "node --test scripts/agent-runtime-upgrade.test.mjs scripts/check-agent-runtime-diff.test.mjs scripts/publish-agentroam-release.test.mjs scripts/agent-runtime-workflow-contract.test.mjs scripts/agent-runtime-github-setup.test.mjs && bunx vitest run scripts/agent-runtime-live-smoke.test.ts",
     "test": "bunx vitest run",
     "test:watch": "bunx vitest",
-    "lint": "bunx tsc --noEmit"
+    "lint": "bunx tsc --noEmit",
+    "build:website": "node packages/website/src/build.mjs"
   },
   "resolutions": {
     "sherpa-onnx-darwin-arm64": "1.13.4",

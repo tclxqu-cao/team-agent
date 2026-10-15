@@ -1,0 +1,12 @@
+{
+  "capturedAt": "2026-10-15",
+  "source": "Local AgentRoam /web runtime via ego-browser",
+  "assets": {
+    "workspace.webp": "Desktop workspace welcome; private project sidebar blurred.",
+    "mobile.webp": "Actual responsive browser UI at 390x844; no task content altered.",
+    "collaboration.webp": "Existing multi-agent snake-game discussion; local absolute paths redacted before capture.",
+    "terminal.webp": "Real PTY running node --version && npm --version; account and hostname blurred.",
+    "remote.webp": "Live remote desktop viewer; captured desktop content blurred for privacy. No remote input control taken.",
+    "social.webp": "Resized workspace screenshot."
+  }
+}

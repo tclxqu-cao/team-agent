@@ -218,6 +218,10 @@
         "@types/ws": "^8.5.13",
       },
     },
+    "packages/website": {
+      "name": "@agent/website",
+      "version": "0.1.0",
+    },
     "packages/webapp": {
       "name": "@agent/webapp",
       "version": "0.1.0",
