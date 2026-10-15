@@ -1,0 +1,49 @@
+packages/website/src/preview.mjs
+  s_38fc4b655035bb::t_a9694eb785a6b3 1-38
+packages/website/README.md
+  s_38fc4b655035bb::t_5796d3cb7fd880 1-17
+packages/website/src/site.mjs
+  s_38fc4b655035bb::t_99edbbb13dbf98 1-18
+package.json
+  s_38fc4b655035bb::t_fb2c29b5efbd14 23-24,70-71
+packages/website/src/website.test.mjs
+  s_38fc4b655035bb::t_78ac19d803f3b3 1-87
+packages/website/src/build.mjs
+  s_38fc4b655035bb::t_7f0d0047658ba9 1-26
+packages/website/public/assets/sources.json
+  s_38fc4b655035bb::t_6549eb40045a1a 1-12
+packages/website/package.json
+  s_38fc4b655035bb::t_a55be8537a5b23 1-11
+packages/website/src/pages.mjs
+  s_38fc4b655035bb::t_2d81a2bf750ff3 1-32
+.github/workflows/website-pages.yml
+  s_38fc4b655035bb::t_c6be81a1562072 1-39
+bun.lock
+  s_38fc4b655035bb::t_1989e1ff2f0f90 221-224
+packages/website/.gitignore
+  s_38fc4b655035bb::t_a0e2ecf0cd7812 1
+packages/website/public/style.css
+  s_38fc4b655035bb::t_a43577809cac49 1-1798
+packages/website/public/assets/favicon.svg
+  s_38fc4b655035bb::t_e7efa6673e0ecf 1
+packages/website/public/releases.js
+  s_38fc4b655035bb::t_390a90061f83e6 1-47
+packages/website/public/app.js
+  s_38fc4b655035bb::t_1a6e48c9560381 1-111
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "76426c6002b9355480bb1ae319389495508fc7d9",
+  "prompts": {},
+  "sessions": {
+    "s_38fc4b655035bb": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a13fc8-6761-7523-a14b-6680179fc7d5",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
