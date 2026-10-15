@@ -67,6 +67,10 @@ jobs:
           $manifest = Get-Content $runtime[0].FullName | ConvertFrom-Json
           if ($manifest.capabilities.nativeConsole -ne 1) { throw 'Native console support missing' }
           $runtimeRoot = Join-Path $runtime[0].DirectoryName 'runtime'
+          & "$runtimeRoot/native/agentroam-remote-desktop.exe" --self-test
+          if ($LASTEXITCODE -ne 0) { throw 'Windows remote desktop encoder self-test failed' }
+          & "$runtimeRoot/native/agentroam-remote-unlock.exe" --self-test
+          if ($LASTEXITCODE -ne 0) { throw 'Windows unlock helper self-test failed' }
           Push-Location $runtimeRoot
           try {
             & $node --input-type=module -e 'import Database from "better-sqlite3"; import pty from "node-pty"; const db = new Database(":memory:"); if (db.prepare("select 42 as result").get().result !== 42) throw new Error("SQLite failed"); db.close(); const shell=pty.spawn("cmd.exe",["/d","/c","echo AGENTROAM_WINDOWS_PTY_OK"],{cols:80,rows:24,env:process.env}); let output=""; const timer=setTimeout(()=>{shell.kill();process.exit(1)},15000); shell.onData(data=>output+=data); shell.onExit(({exitCode})=>{clearTimeout(timer); if(exitCode || !output.includes("AGENTROAM_WINDOWS_PTY_OK")) process.exitCode=1; else console.log("Windows SQLite and real PTY passed")});'
