@@ -1,5 +1,7 @@
+vi.mock("./codex-sharing.js", async importOriginal => ({ ...await importOriginal<typeof import("./codex-sharing.js")>(), configureCodexSharing: vi.fn(async () => {}) }));
 import { describe, expect, it, vi } from "vitest";
 import { parseArgs } from "./args.js";
+import { configureCodexSharing } from "./codex-sharing.js";
 import { setupCodexDesktop } from "./codex-desktop-setup.js";
 import type { DesktopSnapshot } from "./codex-desktop-status.js";
 
@@ -42,6 +44,7 @@ describe("installation Desktop sharing decisions", () => {
     const value = context([busy], answer);
     await setupCodexDesktop(options, value);
     expect(value.launch).not.toHaveBeenCalled();
+    expect(configureCodexSharing).toHaveBeenCalled();
     expect(value.log).toHaveBeenCalledWith(expect.stringContaining("原桌面会话暂未共享"));
   });
 

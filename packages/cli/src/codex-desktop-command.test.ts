@@ -1,3 +1,4 @@
+vi.mock("./codex-sharing.js", async importOriginal => ({ ...await importOriginal<typeof import("./codex-sharing.js")>(), configureCodexSharing: vi.fn(async () => {}) }));
 import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
 import { createServer } from "node:net";
@@ -17,6 +18,24 @@ afterEach(async () => {
 const service = { dataDir: "/tmp/agentroam", codexPath: "/managed/codex", codexHome: "/custom/codex" } as ServiceConfig;
 
 describe("packaged official Desktop command", () => {
+  it("returns status without runtime installation, persistence, or Desktop launch", async () => {
+    const execute = vi.fn(); const configureSharing = vi.fn(); const codexResolver = vi.fn(); const log = vi.fn();
+    await runCodexDesktopCommand(parseArgs(["codex-desktop", "--status"]), {
+      platform: "darwin", readConfig: async () => null, execute, configureSharing, codexResolver, log,
+      inspectSharing: async () => ({ state: "failed", configured: true, autoStart: true, daemonReachable: false, message: "offline" }),
+    });
+    expect(JSON.parse(log.mock.calls[0][0]).state).toBe("failed");
+    expect(execute).not.toHaveBeenCalled(); expect(configureSharing).not.toHaveBeenCalled(); expect(codexResolver).not.toHaveBeenCalled();
+  });
+  it("repairs persistent defaults without restarting Desktop", async () => {
+    const execute = vi.fn(); const configureSharing = vi.fn(); const log = vi.fn();
+    await runCodexDesktopCommand(parseArgs(["codex-desktop", "--repair"]), {
+      platform: "darwin", readConfig: async () => null, execute, configureSharing, log,
+      inspectSharing: async () => ({ state: "independent", configured: true, autoStart: true, daemonReachable: true, message: "reopen later" }),
+    });
+    expect(configureSharing).toHaveBeenCalledOnce(); expect(execute).not.toHaveBeenCalled();
+    expect(JSON.parse(log.mock.calls[0][0]).state).toBe("independent");
+  });
   it("uses the installed service runtime/home for a read-only dry run", async () => {
     const execute = vi.fn(async () => ({ stdout: "dry run\n", stderr: "" }));
     const codexResolver = vi.fn();

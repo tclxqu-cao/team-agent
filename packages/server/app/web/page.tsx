@@ -639,7 +639,7 @@ function AuthenticatedConsole({
         <button className="terminal-add" aria-label="新建终端页签" hidden={Boolean(selectedPage)} disabled={tabs.length >= 8} onClick={addTerminal}>＋</button>
         <div className="terminal-connection">
           <ResponsiveToolbar
-            avatar={<ComputerSwitcher username={auth.user?.username ?? "?"} connected={state.connected} accent={activeTheme.keybar.accent} accentText={activeTheme.keybar.accentText} selectedPageId={selectedPage?.id} onSelectPage={selectComputerPage} onUpdatePage={updateComputerPage} configuration={computerConfiguration} />}
+            avatar={<ComputerSwitcher username={auth.user?.username ?? "?"} connected={state.connected} accent={activeTheme.keybar.accent} accentText={activeTheme.keybar.accentText} selectedPageId={selectedPage?.id} onSelectPage={selectComputerPage} onUpdatePage={updateComputerPage} configuration={computerConfiguration} csrfToken={auth.csrfToken} />}
             items={[
               { id: "refresh", content: <button type="button" className="file-drawer-toggle" aria-label="刷新页面" title="刷新页面" onClick={() => selectedPage ? setPageReloadKey(key => key + 1) : window.location.reload()}><RefreshCw size={17} aria-hidden="true" /></button> },
               { id: "collaboration", content: <button type="button" className="file-drawer-toggle" aria-label="打开群聊看板" title="群聊看板" onClick={() => {

@@ -110,12 +110,17 @@ export function reconcileDurableQueuedMessages<T extends DurableQueuedMessageLik
   state: MixedQueueStateLike<DurableQueueItemLike>,
 ): T[] {
   let history = messages.filter((message) => !message.isQueued);
+  const steeredMessageIds = new Set(history
+    .filter((message) => message.role === "user" && message.isSteered)
+    .map((message) => message.id));
   const currentByQueueId = new Map(
     messages
       .filter((message) => message.isQueued && message.queueItemId)
       .map((message) => [message.queueItemId!, message]),
   );
-  const activeItem = state.active?.kind === "message" ? state.active : null;
+  const activeItem = state.active?.kind === "message"
+    && !steeredMessageIds.has(state.active.sourceMessageId || state.active.id)
+    ? state.active : null;
   if (activeItem) {
     const current = currentByQueueId.get(activeItem.id);
     const activeMessageId = activeItem.sourceMessageId || current?.id || activeItem.id;
@@ -168,7 +173,8 @@ export function reconcileDurableQueuedMessages<T extends DurableQueuedMessageLik
   }
 
   const queued = state.queued
-    .filter((item) => item.kind === "message")
+    .filter((item) => item.kind === "message"
+      && !steeredMessageIds.has(item.sourceMessageId || item.id))
     .map((item) => {
       const current = currentByQueueId.get(item.id);
       return {

@@ -29,6 +29,8 @@ export interface CliOptions {
   desktopDryRun?: boolean;
   desktopRestart?: boolean;
   desktopSetup?: boolean;
+  desktopSharingStatus?: boolean;
+  desktopRepair?: boolean;
   desktopAction?: DesktopAction;
 }
 
@@ -107,8 +109,8 @@ export function parseArgs(argv: string[]): CliOptions {
     if (command === "desktop" && !["--data-dir", "--help", "-h"].includes(arg!)) {
       throw cliError("desktop accepts only --data-dir");
     }
-    if (command === "codex-desktop" && !["--restart", "--dry-run", "--setup", "--data-dir", "--help", "-h"].includes(arg!)) {
-      throw cliError("codex-desktop accepts only --setup, --restart, --dry-run and --data-dir");
+    if (command === "codex-desktop" && !["--restart", "--dry-run", "--setup", "--status", "--repair", "--data-dir", "--help", "-h"].includes(arg!)) {
+      throw cliError("codex-desktop accepts only --setup, --restart, --dry-run, --status, --repair and --data-dir");
     }
     const next = () => {
       const value = values[++index];
@@ -117,6 +119,8 @@ export function parseArgs(argv: string[]): CliOptions {
     };
     if (arg === "--restart" && command === "codex-desktop") options.desktopRestart = true;
     else if (arg === "--dry-run" && command === "codex-desktop") options.desktopDryRun = true;
+    else if (arg === "--status" && command === "codex-desktop") options.desktopSharingStatus = true;
+    else if (arg === "--repair" && command === "codex-desktop") options.desktopRepair = true;
     else if (arg === "--setup" && command === "codex-desktop") options.desktopSetup = true;
     else if (arg === "--setup-codex-desktop" && command === "service" && serviceAction === "install") options.desktopSetup = true;
     else if (arg === "--url" && command === "pair") options.pairingUrl = next();
@@ -144,6 +148,11 @@ export function parseArgs(argv: string[]): CliOptions {
   if (command === "approve" && !options.approvalPhrase) throw cliError("approve requires --phrase matching the phone");
   if (command === "codex-desktop" && options.desktopSetup && (options.desktopRestart || options.desktopDryRun)) {
     throw cliError("--setup cannot be combined with --restart or --dry-run");
+  }
+
+  if (command === "codex-desktop" && (options.desktopSharingStatus || options.desktopRepair)
+    && [options.desktopSharingStatus, options.desktopRepair, options.desktopSetup, options.desktopRestart, options.desktopDryRun].filter(Boolean).length !== 1) {
+    throw cliError("--status and --repair cannot be combined with other desktop actions");
   }
 
   if (command === "update" && updateVersion && !/^\d+\.\d+\.\d+$/.test(updateVersion)) {

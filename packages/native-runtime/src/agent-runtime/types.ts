@@ -50,6 +50,8 @@ export interface RuntimeHealth {
   available: boolean;
   label: string;
   version?: string;
+  connectionEndpoint?: string | null;
+  connectionMode?: "desktop" | "shared" | "standalone" | null;
   error?: string;
 }
 

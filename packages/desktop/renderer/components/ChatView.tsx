@@ -88,6 +88,7 @@ import {
   projectSessionGoals,
   reconcileDurableQueuedMessages,
 } from "../lib/queued-message-order";
+import { canSteerQueuedMessage, steerQueuedMessage } from "../lib/queued-message-steering";
 import { isWebShell } from "../web/webLayout";
 import { OPEN_BROWSER_LIVE_EVENT } from "../web/shellEvents";
 import { WEB_SHELL_OPEN_BROWSER_LIVE_TYPE } from "../../../core/src/domain/web-console/WebShellLiveBridge";
@@ -3177,35 +3178,16 @@ export default function ChatView({
     if (!targetSessionId || !window.agentApi) return;
     if (steeringQueuedMessageIdsRef.current.has(msgId)) return;
     const msg = getMessagesForSession(targetSessionId).find(m => m.id === msgId);
-    if (!msg || !msg.isQueued) return;
+    if (!msg || !canSteerQueuedMessage(msg, hasDurableMessageQueue)) return;
     steeringQueuedMessageIdsRef.current.add(msgId);
     setSteeringQueuedMessageIds(new Set(steeringQueuedMessageIdsRef.current));
     try {
-      if (msg.queueItemId) {
-        const state = await window.agentApi.steerSessionMessage(targetSessionId, msg.queueItemId);
-        setMessages(
-          markDurableMessageSteered(
-            getMessagesForSession(targetSessionId),
-            msgId,
-            Date.now(),
-          ),
-          targetSessionId,
-        );
-        applySessionQueueState(
-          state,
-          targetSessionId,
-        );
-      } else {
-        await window.agentApi.steer(msg.content, targetSessionId, msg.agentName);
-        setMessages(
-          markDurableMessageSteered(
-            getMessagesForSession(targetSessionId),
-            msgId,
-            Date.now(),
-          ),
-          targetSessionId,
-        );
-      }
+      const state = await steerQueuedMessage(msg, targetSessionId, hasDurableMessageQueue, window.agentApi);
+      setMessages(
+        markDurableMessageSteered(getMessagesForSession(targetSessionId), msgId, Date.now()),
+        targetSessionId,
+      );
+      if (state) applySessionQueueState(state, targetSessionId);
       if (editingQueuedId === msgId) {
         setEditingQueuedId(null);
         setQueuedEditDraft("");
@@ -4690,8 +4672,8 @@ export default function ChatView({
                   </span>
                   {canSteerQueuedMessages && <button
                     onClick={() => void handleSteer(msg.id)}
-                    disabled={steeringQueuedMessageIds.has(msg.id)}
-                    title={steeringQueuedMessageIds.has(msg.id) ? "正在引导" : "将此消息引导到当前对话"}
+                    disabled={steeringQueuedMessageIds.has(msg.id) || !canSteerQueuedMessage(chatMsg, hasDurableMessageQueue)}
+                    title={!canSteerQueuedMessage(chatMsg, hasDurableMessageQueue) ? "正在保存排队消息" : steeringQueuedMessageIds.has(msg.id) ? "正在引导" : "将此消息引导到当前对话"}
                     style={{
                       display: "inline-flex", alignItems: "center", gap: 4,
                       fontSize: 11, fontWeight: 600,
@@ -5389,6 +5371,8 @@ export default function ChatView({
               {queuedMsgs.map((msg) => {
                 const chatMsg = msg as import("../stores/agentStore").ChatMessage;
                 const isEditing = editingQueuedId === msg.id;
+                const isSaving = !canSteerQueuedMessage(chatMsg, hasDurableMessageQueue);
+                const isSteering = steeringQueuedMessageIds.has(msg.id);
                 const preview = chatMsg.content.length > 80
                   ? chatMsg.content.slice(0, 80) + "…"
                   : chatMsg.content;
@@ -5484,11 +5468,11 @@ export default function ChatView({
                           type="button"
                           className="queued-message-action queued-message-action--accent"
                           onClick={() => void handleSteer(msg.id)}
-                          disabled={steeringQueuedMessageIds.has(msg.id)}
-                          title={steeringQueuedMessageIds.has(msg.id) ? "正在引导" : "引导到当前对话"}
-                          aria-label={steeringQueuedMessageIds.has(msg.id) ? "正在引导排队消息" : "引导排队消息到当前对话"}
+                          disabled={isSaving || isSteering}
+                          title={isSaving ? "正在保存排队消息" : isSteering ? "正在引导" : "引导到当前对话"}
+                          aria-label={isSaving ? "正在保存排队消息" : isSteering ? "正在引导排队消息" : "引导排队消息到当前对话"}
                         >
-                          {steeringQueuedMessageIds.has(msg.id)
+                          {isSaving || isSteering
                             ? <LoaderCircle className="spin" size={15} strokeWidth={1.8} aria-hidden="true" />
                             : <CornerUpRight size={15} strokeWidth={1.8} aria-hidden="true" />}
                         </button>

@@ -6,6 +6,8 @@ import { resolveCodexRuntime, type CodexRuntimeResolution, type ResolveCodexRunt
 import { readServiceConfig, resolveServicePaths, type ServiceConfig } from "./service/service-files.js";
 import { detectPlatform } from "./platform.js";
 
+import { configureCodexSharing, inspectCodexSharing } from "./codex-sharing.js";
+
 const execFileAsync = promisify(execFile);
 const scriptPath = fileURLToPath(new URL("../install/start-codex-desktop-shared.sh", import.meta.url));
 
@@ -15,6 +17,8 @@ interface DesktopCommandContext {
   readConfig?: () => Promise<ServiceConfig | null>;
   codexResolver?: (options: ResolveCodexRuntimeOptions) => Promise<CodexRuntimeResolution>;
   execute?: typeof execFileAsync;
+  configureSharing?: typeof configureCodexSharing;
+  inspectSharing?: typeof inspectCodexSharing;
   log?: (message: string) => void;
 }
 
@@ -28,6 +32,11 @@ export async function runCodexDesktopCommand(options: CliOptions, context: Deskt
     if (!environment.AGENT_CODEX_BIN && service.codexPath) environment.AGENT_CODEX_BIN = service.codexPath;
     if (!environment.CODEX_HOME && service.codexHome) environment.CODEX_HOME = service.codexHome;
   }
+  if (options.desktopSharingStatus || options.desktopRepair) {
+    if (options.desktopRepair) await (context.configureSharing ?? configureCodexSharing)(options, { platform, environment });
+    log(JSON.stringify(await (context.inspectSharing ?? inspectCodexSharing)({ platform, environment })));
+    return;
+  }
   // A dry run reads the installed configuration and never installs a runtime.
   if (!options.desktopDryRun) {
     const codex = await (context.codexResolver ?? resolveCodexRuntime)({
@@ -39,6 +48,7 @@ export async function runCodexDesktopCommand(options: CliOptions, context: Deskt
       onProgress: (message) => log(`… ${message}`),
     });
     environment.AGENT_CODEX_BIN = codex.executable;
+    await (context.configureSharing ?? configureCodexSharing)(options, { platform, environment });
   }
   const args = [scriptPath];
   if (!options.desktopDryRun) {

@@ -2327,6 +2327,32 @@ describe("NativeRuntimeBrokerHost", () => {
     }
   });
 
+  it("confirms ownership changes even while the page polls every second", async () => {
+    let now = 1_000;
+    const runtime = new FakeNativeRuntime();
+    runtime.occupancy = "owned-externally";
+    const host = new NativeRuntimeBrokerHost(await directory(), runtime as unknown as UnifiedSessionService, () => now);
+    try {
+      for (let index = 0; index < 5; index++, now += 1_000) expect((await host.list())[0].occupancy).toBe("available");
+      expect((await host.list())[0].occupancy).toBe("owned-externally");
+      runtime.occupancy = "available";
+      now += 1_000;
+      for (let index = 0; index < 5; index++, now += 1_000) expect((await host.list())[0].occupancy).toBe("owned-externally");
+      expect((await host.list())[0]).toMatchObject({ occupancy: "available", canResume: true });
+      runtime.occupancy = "owned-externally";
+      now += 1_000; await host.list();
+      runtime.occupancy = "available";
+      now += 4_000; await host.list();
+      runtime.occupancy = "owned-externally";
+      now += 1_000;
+      expect((await host.list())[0].occupancy).toBe("available");
+      now += 4_000;
+      expect((await host.list())[0].occupancy).toBe("available");
+      now += 1_000;
+      expect((await host.list())[0].occupancy).toBe("owned-externally");
+    } finally { await host.stop(); }
+  });
+
   it("does not flicker an external lock until two debounced observations agree", async () => {
     let now = 1_000;
     const runtime = new FakeNativeRuntime();

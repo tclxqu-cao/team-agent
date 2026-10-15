@@ -111,6 +111,7 @@ describe("Codex asynchronous questions", () => {
       expect(second).toMatchObject({ question: "其他要求？" });
       expect(run.events.some((event) => event.type === "text_chunk")).toBe(false);
       await expect(run.adapter.answerQuestion(first.questionId, { answer: "推荐" })).resolves.toBe(true);
+      expect(run.resolved).toHaveBeenCalledWith(first.questionId);
       expect(run.request).toHaveBeenCalledWith("turn/steer", {
         threadId: "async-thread", expectedTurnId: "async-turn",
         input: [{ type: "text", text: "关于“选择范围？”的回答：\n推荐", text_elements: [] }],
@@ -121,7 +122,7 @@ describe("Codex asynchronous questions", () => {
       expect(run.events.filter((event) => event.type === "ask_user")).toHaveLength(2);
       expect(run.request.mock.calls.filter(([method]) => method === "turn/start")).toHaveLength(1);
     } finally { await run.finish(); }
-    expect(run.resolved).toHaveBeenCalledTimes(1);
+    expect(run.resolved).toHaveBeenCalledTimes(2);
     expect(run.events.at(-1)).toMatchObject({ type: "done", finalText: "" });
   });
 

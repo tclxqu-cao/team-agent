@@ -15,6 +15,7 @@ import {
   resolveCodexHome,
 } from "./codex-runtime-adapter.js";
 import { CodexRolloutCommentaryReader } from "./codex-rollout-activity.js";
+import * as nativeProcesses from "./native-processes.js";
 import { RuntimeSessionError } from "./types.js";
 
 vi.mock("node:fs/promises", async (importOriginal) => {
@@ -132,6 +133,73 @@ describe("Codex home and Windows occupancy", () => {
       sortDirection: "desc",
     }));
   });
+});
+
+describe("Codex shared backend occupancy", () => {
+  it.each([
+    { mode: "shared", nativeStatus: "idle", available: true },
+    { mode: "desktop", nativeStatus: "idle", available: true },
+    { mode: "shared", nativeStatus: "active", available: true },
+    { mode: "shared", nativeStatus: "systemError", available: true },
+    { mode: "shared", nativeStatus: "notLoaded", available: false },
+    { mode: "shared", nativeStatus: "unknown-state", available: false },
+    { mode: "standalone", nativeStatus: "idle", available: false },
+  ].flatMap((scenario) => ["darwin", "win32"].map((platform) => ({ ...scenario, platform }))))(
+    "preserves occupancy for $mode/$nativeStatus on $platform across list and detail reads",
+    async ({ mode, nativeStatus, available, platform }) => {
+      const path = "/tmp/codex-shared-rollout.jsonl";
+      const thread = {
+        id: "shared-thread", parentThreadId: null, preview: "Desktop thread", name: null,
+        createdAt: 1_788_220_800, updatedAt: 1_788_220_800,
+        status: { type: nativeStatus }, path, cwd: "/work", source: "desktop", turns: [],
+      };
+      const openFiles = vi.spyOn(nativeProcesses, "listOpenSessionFiles")
+        .mockResolvedValue(new Set([path]));
+      try {
+        const request = vi.fn(async (method: string) => {
+          if (method === "thread/list") return { data: [thread], nextCursor: null };
+          if (method === "thread/read") return { thread };
+          if (method === "thread/turns/list") return { data: [], nextCursor: null };
+          if (method === "project/list") return {
+            data: [{ id: "project", name: "Work", roots: [{ path: "/work" }], position: 0, updatedAt: 1 }],
+            nextCursor: null,
+          };
+          throw new Error(`unexpected request: ${method}`);
+        });
+        const client = {
+          mode, pid: 321, request,
+          onNotification: () => () => undefined,
+          onExit: () => () => undefined,
+          setServerRequestHandler: () => undefined,
+          restart: async () => undefined,
+        };
+      const discoveryClient = { ...client };
+      const adapter = new CodexRuntimeAdapter({
+        client: client as never, discoveryClient: discoveryClient as never, platform: platform as NodeJS.Platform,
+          rolloutActivityReader: { readMany: async () => new Map([[path, "running" as const]]) },
+        });
+        const expected = {
+          occupancy: available ? "available" : "owned-externally",
+          canResume: available,
+          status: !available || nativeStatus === "active" ? "running" : nativeStatus === "systemError" ? "failed" : "idle",
+        };
+        expect((await adapter.discoverSessions())[0]).toMatchObject(expected);
+        expect((await adapter.listWorkspaceSessions("project")).data[0]).toMatchObject(expected);
+        expect((await adapter.listWorkspaceSessionsByPath("/work")).data[0]).toMatchObject(expected);
+        expect(await adapter.getSession(thread.id)).toMatchObject(expected);
+        expect(await adapter.getSessionPaged(thread.id, { view: "core", limit: 1 })).toMatchObject(expected);
+      if (mode === "shared" && nativeStatus === "idle") {
+        discoveryClient.mode = "standalone";
+        expect((await adapter.listWorkspaceSessionsByPath("/work")).data[0])
+          .toMatchObject({ occupancy: "owned-externally", canResume: false });
+        expect(await adapter.getSession(thread.id)).toMatchObject(expected);
+      }
+        expect(request.mock.calls.every(([method]) => !["thread/resume", "thread/unsubscribe"].includes(method))).toBe(true);
+      } finally {
+        openFiles.mockRestore();
+      }
+    },
+  );
 });
 
 describe("Codex project workspace index", () => {

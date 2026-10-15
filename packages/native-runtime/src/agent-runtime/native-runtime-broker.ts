@@ -987,12 +987,15 @@ class NativeRuntimeBrokerState implements ImportedAgentWorkspaceRepository, Code
       const nextOccupancy: SessionOccupancy = externallyOccupied ? "owned-externally" : "available";
       return this.transitionLock(sessionId, nextOccupancy, nextSample, now);
     }
+    // Keep the first timestamp while the sample agrees. Frequent polling must
+    // not postpone confirmation forever; only a changed sample starts a new window.
+    const sampleAt = lock.sampleState === nextSample && lock.sampleAt !== null ? lock.sampleAt : now;
     this.database.db.prepare(`
       INSERT INTO native_runtime_lock(session_id, occupancy, revision, sample_state, sample_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?)
       ON CONFLICT(session_id) DO UPDATE SET sample_state=excluded.sample_state, sample_at=excluded.sample_at, updated_at=excluded.updated_at
-    `).run(sessionId, lock.occupancy, lock.revision, nextSample, now, now);
-    return { ...lock, sampleState: nextSample, sampleAt: now };
+    `).run(sessionId, lock.occupancy, lock.revision, nextSample, sampleAt, now);
+    return { ...lock, sampleState: nextSample, sampleAt };
   }
 
   applySummary(summary: UnifiedSessionSummary): UnifiedSessionSummary {

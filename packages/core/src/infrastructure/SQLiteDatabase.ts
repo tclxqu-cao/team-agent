@@ -284,6 +284,16 @@ export class SQLiteDatabase {
         updated_at TEXT NOT NULL
       );
 
+      CREATE TABLE IF NOT EXISTS computer_connections (
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        origin TEXT NOT NULL,
+        name TEXT NOT NULL,
+        name_locked INTEGER NOT NULL DEFAULT 0,
+        deleted_at TEXT,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (user_id, origin)
+      );
+
       CREATE TABLE IF NOT EXISTS command_history (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,

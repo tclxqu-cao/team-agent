@@ -140,6 +140,36 @@ describe("markDurableMessageSteered", () => {
     const messages = [{ id: "history", role: "assistant", content: "working", timestamp: 1 }];
     expect(markDurableMessageSteered(messages, "missing", 2)).toBe(messages);
   });
+
+  it("does not restore an accepted steer from a late queue snapshot, preserving equal new input", () => {
+    const accepted = {
+      id: "source-accepted", role: "user", content: "same input", timestamp: 2,
+      isQueued: false, isSteered: true,
+    };
+    const stale = {
+      active: null,
+      queued: [
+        { id: "queue-old", sourceMessageId: accepted.id, objective: accepted.content, createdAt: 1, kind: "message" as const },
+        { id: "queue-new", sourceMessageId: "source-new", objective: accepted.content, createdAt: 3, kind: "message" as const },
+      ],
+      history: [],
+    };
+    const result = reconcileDurableQueuedMessages([accepted], stale);
+    expect(result.filter((message) => message.isQueued).map((message) => message.id)).toEqual(["source-new"]);
+    expect(result[0]).toEqual(accepted);
+    expect(reconcileDurableQueuedMessages(result, stale)).toEqual(result);
+  });
+
+  it("does not regress accepted steering when an older snapshot still has the item active", () => {
+    const accepted = {
+      id: "source-accepted", role: "user", content: "same input", timestamp: 2,
+      isQueued: false, isSteered: true,
+    };
+    expect(reconcileDurableQueuedMessages([accepted], {
+      active: { id: "queue-old", sourceMessageId: accepted.id, objective: accepted.content, createdAt: 1, kind: "message" },
+      queued: [], history: [],
+    })).toEqual([accepted]);
+  });
 });
 
 describe("reconcileDurableQueuedMessages", () => {

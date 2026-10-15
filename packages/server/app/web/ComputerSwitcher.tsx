@@ -2,12 +2,14 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Camera, Check, Globe, Monitor, Pencil, Plus, X, ExternalLink, ChevronLeft, ChevronDown, ChevronRight, SlidersHorizontal, MessagesSquare, RefreshCw, MonitorUp, Palette, PanelRight, LayoutGrid, Bot, Smartphone, UsersRound } from "lucide-react";
+import { Camera, Check, Globe, Monitor, Pencil, Plus, X, Trash2, ExternalLink, ChevronLeft, ChevronDown, ChevronRight, SlidersHorizontal, MessagesSquare, RefreshCw, MonitorUp, Palette, PanelRight, LayoutGrid, Bot, Smartphone, UsersRound } from "lucide-react";
+import CodexSharingStatus from "./CodexSharingStatus";
 import ComputerPageDialog, { type ComputerPage } from "./ComputerPageDialog";
 import type { ComputerSettingsController } from "./useComputerSettings";
 import type { ComputerToolId } from "../../../core/src/domain/web-console/computer-settings";
 import { probeComputerAvailability, type ComputerAvailability } from "./computer-availability";
-import { computerNavigation, readComputers, rememberComputer, saveComputers, pairingNavigation } from "../../public/pwa/computer-directory.js";
+import { computerNavigation, readComputers, mergeComputers, pairingNavigation, parsePairingTarget } from "../../public/pwa/computer-directory.js";
+import { useComputerDirectory } from "./useComputerDirectory";
 import { createPairingScanner, decodePairingImage, supportsLiveCamera } from "../../public/pwa/pairing-scan.js";
 
 type Computer = { origin: string; name: string };
@@ -23,7 +25,7 @@ const TOOL_OPTIONS = [
 ] satisfies { id: ComputerToolId; name: string; Icon: typeof RefreshCw }[];
 
 /** The outer /web shell owns this selector, so every workspace switches together. */
-export default function ComputerSwitcher({ username, connected, accent, accentText, selectedPageId, onSelectPage, onUpdatePage, configuration }: {
+export default function ComputerSwitcher({ username, connected, accent, accentText, selectedPageId, onSelectPage, onUpdatePage, configuration, csrfToken }: {
   username: string;
   connected: boolean;
   accent: string;
@@ -32,10 +34,12 @@ export default function ComputerSwitcher({ username, connected, accent, accentTe
   onSelectPage(page: ComputerPage | null): void;
   onUpdatePage(page: ComputerPage | null): void;
   configuration: ComputerSettingsController;
+  csrfToken: string;
 }) {
   const trigger = useRef<HTMLButtonElement>(null);
   const menu = useRef<HTMLDivElement>(null);
-  const [computers, setComputers] = useState<Computer[]>([]);
+  const directory = useComputerDirectory(csrfToken);
+  const computers = directory.computers;
   const [origin, setOrigin] = useState("");
   const [portalNode, setPortalNode] = useState<HTMLElement | null>(null);
   const [open, setOpen] = useState(false);
@@ -59,12 +63,7 @@ export default function ComputerSwitcher({ username, connected, accent, accentTe
     const media = window.matchMedia("(max-width: 600px)");
     const resizeMenu = () => setMobile(media.matches);
     resizeMenu(); media.addEventListener("change", resizeMenu);
-    try { setComputers(saveComputers(rememberComputer(location.origin, undefined))); }
-    catch (cause) { setError((cause as Error).message); }
-    const refresh = () => setComputers(readComputers());
-    window.addEventListener("storage", refresh);
-    window.addEventListener("pageshow", refresh);
-    return () => { window.removeEventListener("storage", refresh); window.removeEventListener("pageshow", refresh); media.removeEventListener("change", resizeMenu); };
+    return () => { media.removeEventListener("change", resizeMenu); };
   }, []);
 
   useEffect(() => {
@@ -114,22 +113,27 @@ export default function ComputerSwitcher({ username, connected, accent, accentTe
 
   const closeDialog = useCallback(() => { setDialog(null); trigger.current?.focus(); }, []);
   const closePageDialog = useCallback(() => { setPageDialog(null); trigger.current?.focus(); }, []);
-  const navigate = useCallback((raw: string, name: string) => {
-    location.assign(pairingNavigation(raw, readComputers(), name));
-  }, []);
-  const rename = useCallback((name: string) => {
-    setComputers(saveComputers(rememberComputer(location.origin, name)));
+  const navigate = useCallback(async (raw: string, name: string) => {
+    const target = parsePairingTarget(raw);
+    const connection = { origin: target.origin, name: name.trim() || computers.find(computer => computer.origin === target.origin)?.name || target.hostname };
+    const navigation = pairingNavigation(raw, mergeComputers(readComputers(), computers, [connection]), name);
+    await directory.add(connection.origin, connection.name);
+    location.assign(navigation);
+  }, [computers, directory.add]);
+  const rename = useCallback(async (name: string) => {
+    await directory.rename(location.origin, name);
     closeDialog();
-  }, [closeDialog]);
+  }, [closeDialog, directory.rename]);
 
   return <>
     <style>{STYLES}</style>
+    <CodexSharingStatus csrfToken={csrfToken} expanded={false} />
     <div className="theme-avatar-with-status">
       <button ref={trigger} type="button" className="theme-avatar" aria-label={`电脑与连接状态（${username}）`} title={username} style={{ border: `1px solid ${accent}`, background: accent, color: accentText }} aria-expanded={open} aria-haspopup="true" onClick={() => {
         const rect = trigger.current!.getBoundingClientRect();
         const menuWidth = Math.min(292, innerWidth - 24);
         setPosition({ top: rect.bottom + 8, right: Math.max(12, Math.min(innerWidth - menuWidth - 12, innerWidth - rect.right)) });
-        if (!open) { setView("home"); setError(""); void configuration.reload(); }
+        if (!open) { setView("home"); setError(""); void configuration.reload(); void directory.reload(); }
         setOpen(value => !value);
       }}>
         {(username.trim()[0] ?? "?").toUpperCase()}
@@ -145,21 +149,27 @@ export default function ComputerSwitcher({ username, connected, accent, accentTe
         <button type="button" className="computer-close" aria-label="关闭电脑菜单" onClick={() => { setOpen(false); trigger.current?.focus(); }}><X size={20} /></button>
       </div>
       {view === "computers" && <>
+      {!directory.loaded && <p className="computer-save-status" role="status">{directory.error ? "电脑列表尚未加载" : "正在读取电脑列表…"}</p>}
       {computers.map(computer => {
         const status = computer.origin === origin ? connected ? "online" : "offline" : availability[computer.origin] ?? "checking";
         const label = status === "online" ? "在线" : status === "offline" ? "无法连接" : "检测中";
-        return <button key={computer.origin} type="button" className="computer-menu-item" data-computer-origin={computer.origin} aria-label={`${computer.name}，${label}${computer.origin === origin ? "，当前电脑" : ""}`} aria-current={computer.origin === origin ? "true" : undefined} onClick={() => {
+        return <div key={computer.origin} className="computer-menu-row">
+        <button type="button" className="computer-menu-item" data-computer-origin={computer.origin} aria-label={`${computer.name}，${label}${computer.origin === origin ? "，当前电脑" : ""}`} aria-current={computer.origin === origin ? "true" : undefined} onClick={() => {
           if (computer.origin === origin) setView("home");
-          else { try { location.assign(computerNavigation(computer.origin, readComputers())); } catch (cause) { setError((cause as Error).message); } }
+          else { try { location.assign(computerNavigation(computer.origin, mergeComputers(readComputers(), computers))); } catch (cause) { setError((cause as Error).message); } }
         }}>
           <Monitor size={17} aria-hidden="true" /><span><strong>{computer.name}</strong><small>{computer.origin}</small></span><span className="computer-status-dot" data-status={status} role="img" aria-label={label} title={label} />{computer.origin === origin && <Check size={16} aria-label="当前电脑" />}
-        </button>;
+        </button>
+        {computer.origin !== origin && <button type="button" className="computer-page-control computer-delete-control" aria-label={`删除电脑：${computer.name}`} title={`删除电脑：${computer.name}`} disabled={directory.saving} onClick={() => { void directory.remove(computer.origin).catch(() => {}); }}><Trash2 size={15} /></button>}
+        </div>;
       })}
       <div className="computer-menu-divider" />
-      <button type="button" className="computer-menu-item" onClick={() => { setOpen(false); setDialog("add"); }}><Plus size={17} aria-hidden="true" /><span>扫码添加电脑</span></button>
-      <button type="button" className="computer-menu-item" onClick={() => { setOpen(false); setDialog("rename"); }}><Pencil size={16} aria-hidden="true" /><span>修改当前电脑名称</span></button>
+      <button type="button" className="computer-menu-item" disabled={!directory.loaded || directory.saving} onClick={() => { setOpen(false); setDialog("add"); }}><Plus size={17} aria-hidden="true" /><span>扫码添加电脑</span></button>
+      <button type="button" className="computer-menu-item" disabled={!directory.loaded || directory.saving || !current} onClick={() => { setOpen(false); setDialog("rename"); }}><Pencil size={16} aria-hidden="true" /><span>修改当前电脑名称</span></button>
+      {directory.error && <><p className="computer-error" role="alert">{directory.error}</p><button type="button" className="computer-menu-item" onClick={() => { void directory.reload(); }}><RefreshCw size={16} /><span>重新加载电脑列表</span></button></>}
       </>}
       {view === "home" && <>
+        <CodexSharingStatus csrfToken={csrfToken} expanded />
         <div className="computer-menu-label computer-pages-heading"><span>保存的页面</span><button type="button" className="computer-page-control" aria-label="添加页面" disabled={!configuration.loaded || configuration.saving} onClick={() => { setOpen(false); setPageDialog({ computer: current ?? { origin, name: "当前电脑" } }); }}><Plus size={17} /></button></div>
         <button type="button" className="computer-menu-item" aria-current={!selectedPageId ? "true" : undefined} onClick={() => { setOpen(false); onSelectPage(null); }}><MessagesSquare size={17} /><span>电脑会话</span>{!selectedPageId && <Check size={16} />}</button>
         {pages.map(page => <div key={page.id} className="computer-menu-row">
@@ -195,14 +205,15 @@ function ComputerDialog({ mode, currentName, onClose, onNavigate, onRename }: {
   mode: "add" | "rename";
   currentName: string;
   onClose: () => void;
-  onNavigate: (raw: string, name: string) => void;
-  onRename: (name: string) => void;
+  onNavigate: (raw: string, name: string) => Promise<void>;
+  onRename: (name: string) => Promise<void>;
 }) {
   const [name, setName] = useState(mode === "rename" ? currentName : "");
   const nameRef = useRef(name);
   nameRef.current = name;
   const [link, setLink] = useState("");
   const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
   const [scanning, setScanning] = useState(false);
   const [liveCamera, setLiveCamera] = useState(false);
   const [readingPhoto, setReadingPhoto] = useState(false);
@@ -212,10 +223,12 @@ function ComputerDialog({ mode, currentName, onClose, onNavigate, onRename }: {
   const nameInput = useRef<HTMLInputElement>(null);
   const panel = useRef<HTMLElement>(null);
   const scanner = useRef<ReturnType<typeof createPairingScanner> | null>(null);
-  const connect = useCallback((raw: string) => {
+  const connect = useCallback(async (raw: string) => {
+    setSubmitting(true);
     scanner.current?.stop(); setScanning(false); setError("");
-    try { onNavigate(raw, nameRef.current); }
+    try { await onNavigate(raw, nameRef.current); }
     catch (cause) { setError((cause as Error).message); }
+    finally { setSubmitting(false); }
   }, [onNavigate]);
 
   useEffect(() => {
@@ -241,13 +254,19 @@ function ComputerDialog({ mode, currentName, onClose, onNavigate, onRename }: {
   return <div className="computer-dialog-backdrop" data-toolbar-overlay onClick={event => { if (event.target === event.currentTarget) onClose(); }}>
     <section ref={panel} className="computer-dialog" role="dialog" aria-modal="true" aria-labelledby="computer-dialog-title">
       <div className="computer-dialog-heading"><h2 id="computer-dialog-title">{mode === "add" ? "添加电脑" : "修改电脑名称"}</h2><button type="button" className="computer-close" aria-label="关闭" onClick={onClose}><X size={20} /></button></div>
-      <form onSubmit={event => {
+      <form onSubmit={async event => {
         event.preventDefault();
-        if (mode === "add") connect(link);
-        else { try { onRename(name.trim()); } catch (cause) { setError((cause as Error).message); } }
+        if (submitting) return;
+        if (mode === "add") await connect(link);
+        else {
+          setSubmitting(true);
+          try { await onRename(name.trim()); }
+          catch (cause) { setError((cause as Error).message); }
+          finally { setSubmitting(false); }
+        }
       }}>
         <label htmlFor="computer-name">电脑名称{mode === "add" ? "（选填）" : ""}</label>
-        <input ref={nameInput} id="computer-name" maxLength={60} value={name} required={mode === "rename"} onChange={event => setName(event.target.value)} placeholder="例如：A 电脑 / 家里的电脑" autoComplete="off" />
+        <input ref={nameInput} id="computer-name" maxLength={60} value={name} required={mode === "rename"} disabled={submitting} onChange={event => setName(event.target.value)} placeholder="例如：A 电脑 / 家里的电脑" autoComplete="off" />
         {mode === "add" && <>
           <p className="computer-hint">扫描另一台电脑上的 AgentRoam 授权二维码，连接后会保留已有电脑。</p>
           <input ref={photoInput} type="file" accept="image/*" capture="environment" hidden aria-label="拍摄授权二维码" onChange={async event => {
@@ -272,7 +291,7 @@ function ComputerDialog({ mode, currentName, onClose, onNavigate, onRename }: {
           <input id="computer-link" value={link} onChange={event => setLink(event.target.value)} placeholder="http(s)://…/pair#pair=…" autoComplete="off" spellCheck={false} />
         </>}
         {error && <p className="computer-error" role="alert">{error}</p>}
-        <button className="computer-action computer-primary" type="submit" disabled={mode === "add" ? !link.trim() || readingPhoto : !name.trim()}>{mode === "add" ? "连接这台电脑" : "保存名称"}</button>
+        <button className="computer-action computer-primary" type="submit" disabled={submitting || (mode === "add" ? !link.trim() || readingPhoto : !name.trim())}>{mode === "add" ? "连接这台电脑" : submitting ? "正在保存…" : "保存名称"}</button>
       </form>
     </section>
   </div>;
@@ -289,6 +308,7 @@ const STYLES = `
 .computer-menu-row{display:flex;align-items:center;min-width:0;border-radius:8px}
 .computer-page-row{padding-left:20px}
 .computer-page-control{display:grid;place-items:center;flex:0 0 30px;width:30px;height:36px;border:0;border-radius:6px;color:var(--ui-muted-text,#999dab);background:transparent;cursor:pointer}
+.computer-delete-control{margin-inline-end:8px}
 .computer-menu-item{display:flex;align-items:center;gap:10px;width:100%;padding:10px;border:0;border-radius:8px;background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer}
 .computer-menu-item svg{flex-shrink:0}.computer-menu-item span{flex:1;min-width:0;font-size:13px}.computer-menu-item strong{display:block;font-weight:500;overflow-wrap:anywhere}.computer-menu-item small{display:block;color:var(--ui-muted-text,#999dab);font-size:11px;font-weight:400;overflow-wrap:anywhere;margin-top:3px}
 .computer-menu-item[aria-current=true],.computer-menu-row:has(>.computer-menu-item[aria-current=true]){background:color-mix(in srgb,var(--ui-tab-accent,#7aa2f7) 9%,transparent);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--ui-tab-accent,#7aa2f7) 22%,transparent)}

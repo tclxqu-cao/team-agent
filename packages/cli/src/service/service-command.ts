@@ -11,6 +11,7 @@ import type { ServiceController } from "./service-controller.js";
 import { WindowsTaskService } from "./windows-task-service.js";
 import { assertSupportedNodeVersion } from "../../bin/runtime-policy.mjs";
 import { cleanupOldLaunchers } from "./launcher-cleanup.js";
+import { configureCodexSharing } from "../codex-sharing.js";
 import { setupCodexDesktop } from "../codex-desktop-setup.js";
 import { authorizeRemoteDesktop } from "../desktop-authorization.js";
 import { withCliProgress } from "../../bin/cli-progress.mjs";
@@ -32,6 +33,7 @@ interface ServiceCommandContext {
   controller?: ServiceController;
   launchAgent?: MacLaunchAgent;
   desktopSetup?: typeof setupCodexDesktop;
+  configureSharing?: typeof configureCodexSharing;
   desktopAuthorization?: typeof authorizeRemoteDesktop;
 }
 
@@ -87,6 +89,10 @@ export async function runServiceCommand(options: CliOptions, context: ServiceCom
         dataDir: options.dataDir,
         installedAt: now.toISOString(),
       };
+      if (platform === "darwin" && codexPath) {
+        try { await (context.configureSharing ?? configureCodexSharing)(options, { homeDir: context.homeDir, environment: { ...environment, PATH: environmentPath, AGENT_CODEX_BIN: codexPath } }); }
+        catch (error) { log(`Codex 默认共享配置未完成，可在电脑菜单中修复：${error instanceof Error ? error.message : error}`); }
+      }
       const { definition, state } = await withCliProgress("正在安装后台服务，等待服务和手机访问连接就绪", () => controller.install(config));
       log(`✓ AgentRoam service installed: ${definition}`);
       if (state?.localUrl && state.status !== "stopped") printLocalDesktopUrl(state.localUrl, log, platform);

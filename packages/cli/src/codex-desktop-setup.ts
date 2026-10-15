@@ -6,6 +6,7 @@ import type { CliOptions } from "./args.js";
 import { runCodexDesktopCommand } from "./codex-desktop-command.js";
 import { inspectCodexDesktop, type DesktopSnapshot } from "./codex-desktop-status.js";
 import type { ServiceConfig } from "./service/service-files.js";
+import { configureCodexSharing } from "./codex-sharing.js";
 import { withoutCliProgress } from "../bin/cli-progress.mjs";
 
 interface DesktopSetupContext {
@@ -13,6 +14,7 @@ interface DesktopSetupContext {
   environment?: NodeJS.ProcessEnv;
   service?: ServiceConfig;
   inspect?: typeof inspectCodexDesktop;
+  configureSharing?: typeof configureCodexSharing;
   launch?: (options: CliOptions, environment: NodeJS.ProcessEnv) => Promise<void>;
   confirm?: (question: string) => Promise<string | null>;
   log?: (message: string) => void;
@@ -29,6 +31,8 @@ export async function setupCodexDesktop(options: CliOptions, context: DesktopSet
   const inspect = context.inspect ?? inspectCodexDesktop;
   const deferred = () => log("已保留当前 Codex 桌面端。扫码仍可连接 AgentRoam；原桌面会话暂未共享，可稍后执行 agentroam codex-desktop --setup。");
   try {
+    await (context.configureSharing ?? configureCodexSharing)(options, { environment });
+    log("已保存默认共享启动与后台自动恢复配置。");
     let snapshot = await inspect(environment);
     if (snapshot.status === "not-installed") {
       log("未安装官方 Codex 桌面端，继续生成扫码连接入口。");

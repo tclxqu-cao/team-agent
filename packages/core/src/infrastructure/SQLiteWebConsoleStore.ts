@@ -1,10 +1,47 @@
 import { parseStoredPinnedCommands, type CommandHistoryRecord, type DeviceState, type TerminalTabRecord, type TerminalTabStatus, type UserPreferences } from "../domain/web-console/index.js";
 import { getDatabase } from "./SQLiteDatabase.js";
 import type { ComputerSettings } from "../domain/web-console/computer-settings.js";
+import { MAX_SAVED_COMPUTERS, validateComputerConnections, type SavedComputerConnection } from "../domain/web-console/computer-directory.js";
 
 export class SQLiteWebConsoleStore {
   private readonly db;
   constructor(baseDir: string) { this.db = getDatabase(baseDir).db; }
+
+  listComputerConnections(userId: string): SavedComputerConnection[] {
+    return this.db.prepare("SELECT origin,name FROM computer_connections WHERE user_id=? AND deleted_at IS NULL ORDER BY rowid").all(userId) as SavedComputerConnection[];
+  }
+
+  /** Additive import: another browser's old aliases must not overwrite a database rename. */
+  mergeComputerConnections(userId: string, connections: SavedComputerConnection[], restore = false): SavedComputerConnection[] {
+    const validated = validateComputerConnections(connections);
+    return this.db.transaction(() => {
+      const existing = new Set(this.listComputerConnections(userId).map(connection => connection.origin));
+      const known = new Set((this.db.prepare("SELECT origin FROM computer_connections WHERE user_id=?").all(userId) as Array<{ origin: string }>).map(connection => connection.origin));
+      const additions = validated.filter(connection => !existing.has(connection.origin) && (restore || !known.has(connection.origin)));
+      if (existing.size + additions.length > MAX_SAVED_COMPUTERS) throw new Error("最多可添加 20 台电脑。");
+      const insert = this.db.prepare(`INSERT INTO computer_connections (user_id,origin,name,name_locked,updated_at) VALUES (?,?,?,?,?)
+        ON CONFLICT(user_id,origin) DO UPDATE SET name=excluded.name,name_locked=excluded.name_locked,deleted_at=NULL,updated_at=excluded.updated_at
+        WHERE ? OR (computer_connections.deleted_at IS NULL AND computer_connections.name_locked=0 AND excluded.name_locked=1)`);
+      const now = new Date().toISOString();
+      for (const connection of validated) insert.run(userId, connection.origin, connection.name,
+        connection.name === new URL(connection.origin).hostname ? 0 : 1, now, restore ? 1 : 0);
+      return this.listComputerConnections(userId);
+    })();
+  }
+
+  renameComputerConnection(userId: string, connection: SavedComputerConnection): boolean {
+    const [validated] = validateComputerConnections([connection]);
+    return this.db.prepare("UPDATE computer_connections SET name=?,name_locked=1,updated_at=? WHERE user_id=? AND origin=? AND deleted_at IS NULL")
+      .run(validated.name, new Date().toISOString(), userId, validated.origin).changes === 1;
+  }
+
+  removeComputerConnection(userId: string, origin: string): void {
+    const [connection] = validateComputerConnections([{ origin, name: "电脑" }]);
+    const now = new Date().toISOString();
+    this.db.prepare(`INSERT INTO computer_connections (user_id,origin,name,deleted_at,updated_at) VALUES (?,?,?,?,?)
+      ON CONFLICT(user_id,origin) DO UPDATE SET deleted_at=excluded.deleted_at,updated_at=excluded.updated_at`)
+      .run(userId, connection.origin, connection.name, now, now);
+  }
 
   getComputerSettings(userId: string): ComputerSettings | null {
     const row = this.db.prepare("SELECT * FROM computer_settings WHERE user_id=?").get(userId) as {

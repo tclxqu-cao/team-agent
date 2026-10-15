@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   ArrowUp,
   Check,
+  Clock3,
   Crown,
   History,
   LoaderCircle,
@@ -14,10 +15,7 @@ import {
 import type { CollaborationMember, CollaborationMessage } from "@agent/core/domain/collaboration/types";
 import AgentBrandIcon from "../AgentBrandIcon";
 import { useUIStore } from "../../stores/uiStore";
-import {
-  postWebArtifactOpen,
-  resolveWebArtifactPath,
-} from "../../lib/artifact-links";
+import CollaborationMessageText from "./CollaborationMessageText";
 import { AGENT_NAMES, DISCUSSION_STATUS, collaborationRequest } from "./client";
 import { useCollaborationDiscussion } from "./useCollaborationDiscussion";
 import { COLLABORATION_CONTENT_READY_TYPE } from "../../../../core/src/domain/web-console/CollaborationTabBridge";
@@ -37,40 +35,6 @@ function CollaborationAvatar({ member, isUser = false, isOwner = false }: {
   </span>;
 }
 
-function MessageText({ text, cwd }: { text: string; cwd: string }) {
-  return (
-    <div className="collab-message-text">
-      {text.split(/(\[[^\]\n]+\]\([^\n)]+\))/g).map((part, index) => {
-        const link = /^\[([^\]]+)\]\(([^)]+)\)$/.exec(part);
-        if (!link) return part;
-        const target = link[2].replace(/^<|>$/g, ""),
-          local = /^https?:\/\//i.test(target)
-            ? null
-            : resolveWebArtifactPath(target, cwd);
-        if (!local && !/^https?:\/\//i.test(target)) return part;
-        return (
-          <a
-            key={index}
-            href={local ? "#" : target}
-            target={local ? undefined : "_blank"}
-            rel="noreferrer"
-            onClick={
-              local
-                ? (e) => {
-                    e.preventDefault();
-                    if (!postWebArtifactOpen(local))
-                      void window.agentApi.openExternal(`file://${local}`);
-                  }
-                : undefined
-            }
-          >
-            {link[1]}
-          </a>
-        );
-      })}
-    </div>
-  );
-}
 function Question({
   message,
   discussionId,
@@ -199,6 +163,31 @@ export default function CollaborationPage({
   const owner = group.members.find((m) => m.id === group.ownerId)!;
   const activeTasks =
     discussion?.tasks.filter((t) => t.status === "running") || [];
+  const queuedTasks =
+    discussion?.status === "running"
+      ? discussion.tasks.filter((t) => t.status === "queued")
+      : [];
+  const workspaceWaitingTasks = queuedTasks.filter(
+    (t) => t.result === "等待工作目录空闲",
+  );
+  const arranging =
+    discussion?.planning ||
+    (discussion?.status === "running" &&
+      discussion.ownerPending &&
+      activeTasks.length === 0);
+  const isQueued =
+    !arranging && activeTasks.length === 0 && queuedTasks.length > 0;
+  const queuedStatus =
+    workspaceWaitingTasks.length > 0
+      ? `${workspaceWaitingTasks.length} 个任务等待工作目录空闲，空闲后会自动继续。`
+      : "任务排队中，等待前置任务完成。";
+  const discussionStatus = isQueued
+    ? workspaceWaitingTasks.length > 0
+      ? "等待工作目录空闲"
+      : "任务排队中"
+    : discussion
+      ? DISCUSSION_STATUS[discussion.status]
+      : "准备好了";
   const shownMessages =
     discussion?.messages.filter((m) => m.kind !== "progress") || [];
   const switchDiscussion = (id: string) => {
@@ -264,6 +253,7 @@ export default function CollaborationPage({
             (member) => {
               const task = activeTasks.find((t) => t.memberId === member.id),
                 planning = member.id === owner.id && discussion?.planning;
+              const queued = queuedTasks.find((t) => t.memberId === member.id);
               const questions = discussion?.messages.some(
                 (m) =>
                   m.memberId === member.id &&
@@ -276,7 +266,11 @@ export default function CollaborationPage({
                   ? "正在安排"
                   : task
                     ? "正在执行"
-                    : "空闲";
+                    : queued
+                      ? queued.result === "等待工作目录空闲"
+                        ? "等待目录空闲"
+                        : "排队中"
+                      : "空闲";
               return (
                 <div
                   key={member.id}
@@ -353,7 +347,7 @@ export default function CollaborationPage({
                             {t.result && (
                               <details>
                                 <summary>查看结果</summary>
-                                <MessageText
+                                <CollaborationMessageText
                                   text={t.result}
                                   cwd={t.cwd || group.cwd}
                                 />
@@ -439,23 +433,26 @@ export default function CollaborationPage({
             <h1>{discussion?.title || "开始一起做事"}</h1>
             <span
               className="collab-discussion-status"
-              data-status={discussion?.status || "idle"}
+              data-status={isQueued ? "queued" : discussion?.status || "idle"}
               role="status"
-              aria-label={discussion ? DISCUSSION_STATUS[discussion.status] : "准备好了"}
-              title={discussion ? DISCUSSION_STATUS[discussion.status] : "准备好了"}
+              aria-label={discussionStatus}
+              title={discussionStatus}
             />
           </div>
           <div className="collab-heading-actions">
             {discussion &&
               ["running", "waiting"].includes(discussion.status) && (
                 <button
+                  className="collab-heading-stop"
                   disabled={busy}
                   onClick={() => {
                     void act("stop");
                   }}
                 >
-                  <Square size={13} />
-                  停止
+                  <span className="collab-heading-action-content">
+                    <Square size={12} fill="currentColor" strokeWidth={0} />
+                    停止
+                  </span>
                 </button>
               )}
             {discussion &&
@@ -463,22 +460,26 @@ export default function CollaborationPage({
                 discussion.status,
               ) && (
                 <button
+                  className="collab-heading-resume"
                   disabled={busy}
                   onClick={() => {
                     void act("resume");
                   }}
                 >
-                  继续协作
+                  <span className="collab-heading-action-content">继续协作</span>
                 </button>
               )}
             <button
+              className="collab-heading-new"
               disabled={busy}
               onClick={() => {
                 void newDiscussion();
               }}
             >
-              <Plus size={14} />
-              新讨论
+              <span className="collab-heading-action-content">
+                <Plus size={14} />
+                新讨论
+              </span>
             </button>
           </div>
         </header>
@@ -526,7 +527,7 @@ export default function CollaborationPage({
                   isOwner={message.kind !== "user" && member?.id === owner.id}
                 />
                 <div className="collab-message-body">
-                  <MessageText
+                  <CollaborationMessageText
                     text={message.content}
                     cwd={
                       discussion?.tasks.find((task) => task.id === message.taskId)
@@ -550,17 +551,28 @@ export default function CollaborationPage({
               </article>
             );
           })}
-          {(discussion?.planning || activeTasks.length > 0) && (
-            <div className="collab-live-status">
-              <LoaderCircle size={14} className="collab-spin" />
-              {discussion?.planning
-                ? `${owner.name}正在安排下一步`
-                : activeTasks
-                    .map(
-                      (t) =>
-                        `${group.members.find((m) => m.id === t.memberId)?.name}：${t.title}`,
-                    )
-                    .join(" · ")}
+          {(arranging || activeTasks.length > 0 || isQueued) && (
+            <div
+              className={`collab-live-status${isQueued ? " is-queued" : ""}`}
+              role="status"
+            >
+              {isQueued ? (
+                <Clock3 size={14} aria-hidden="true" />
+              ) : (
+                <LoaderCircle size={14} className="collab-spin" aria-hidden="true" />
+              )}
+              <span>
+                {arranging
+                  ? `${owner.name}正在安排下一步`
+                  : isQueued
+                    ? queuedStatus
+                    : activeTasks
+                        .map(
+                          (t) =>
+                            `${group.members.find((m) => m.id === t.memberId)?.name}：${t.title}`,
+                        )
+                        .join(" · ")}
+              </span>
             </div>
           )}
           <div ref={end} />

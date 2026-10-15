@@ -18,6 +18,7 @@ import type { PlatformTarget } from "./platform.js";
 import { resolvePlatformRuntime } from "./platform-packages.js";
 import { findAvailablePort } from "./port.js";
 import { ProcessSupervisor } from "./process-supervisor.js";
+import { configureCodexSharing } from "./codex-sharing.js";
 import { withCliProgress } from "../bin/cli-progress.mjs";
 
 export interface RuntimeHandle {
@@ -55,6 +56,10 @@ export class RuntimeManager {
       this.codexResolver,
       this.report,
     ));
+    if (process.platform === "darwin" && codexEnvironment.AGENT_CODEX_BIN) {
+      try { await configureCodexSharing(options, { environment: codexEnvironment }); }
+      catch (error) { this.report(`Codex 共享启动配置未完成，可在电脑菜单中修复：${error instanceof Error ? error.message : error}`); }
+    }
     const childEnvironment = await withCliProgress("正在准备 OpenCode 组件", () => prepareOpenCodeRuntimeEnvironment(
       codexEnvironment,
       { dataDir, target },

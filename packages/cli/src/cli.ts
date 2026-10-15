@@ -50,6 +50,8 @@ export async function main(argv: string[]): Promise<void> {
   agentroam unlock-service install|uninstall|status  管理 Windows 远程解锁服务（安装时弹出 UAC）
   agentroam codex-desktop [--dry-run]  通过共享后端启动官方 Codex 桌面端（macOS）
   agentroam codex-desktop --restart   退出并重新连接官方桌面端，会中断它的全部运行会话
+  agentroam codex-desktop --status    输出实际共享连接状态（JSON）
+  agentroam codex-desktop --repair    修复默认共享和自动恢复，保留运行中的桌面任务
   agentroam codex-desktop --setup     空闲桌面自动重新连接；有任务或状态未知时询问是否重启
   agentroam service install --setup-codex-desktop  扫码前配置官方桌面共享连接（macOS）
 设备命令支持 --data-dir PATH；配对码有效期 5 分钟，设备授权有效期 30 天。`);

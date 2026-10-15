@@ -1,5 +1,6 @@
 export * from "./entities.js";
 export * from "./computer-settings.js";
+export * from "./computer-directory.js";
 export * from "./pinned-commands.js";
 export * from "./WebArtifactBridge.js";
 export * from "./WebBrowserBridge.js";

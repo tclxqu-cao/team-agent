@@ -114,6 +114,7 @@ interface CodexThread {
 }
 
 interface CodexDiscoveryClient {
+  readonly endpoint?: string | null;
   readonly pid?: number;
   readonly mode?: CodexAppServerLaunchMode | null;
   request<T>(method: string, params: unknown): Promise<T>;
@@ -298,7 +299,11 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
     }
     try {
       const { stdout } = await execFileAsync(this.codexExecutable, ["--version"], { encoding: "utf8", timeout: 5000 });
-      return { agentType: this.agentType, available: true, label: "Codex", version: stdout.trim() };
+      return {
+        agentType: this.agentType, available: true, label: "Codex", version: stdout.trim(),
+        connectionMode: this.client.mode ?? this.discoveryClient.mode ?? null,
+        connectionEndpoint: this.client.mode ? this.client.endpoint : this.discoveryClient.endpoint ?? null,
+      };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       logGlobal("info", "codex-adapter", "Codex availability probe failed", error, { message });
@@ -367,7 +372,7 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
     const rolloutActivities = await this.rolloutActivityReader.readMany(
       this.platform === "win32" ? rolloutPaths(threads, this.platform) : openFiles,
     );
-    return threads.map((thread) => this.toSummary(thread, openFiles, rolloutActivities));
+    return threads.map((thread) => this.toSummary(thread, openFiles, rolloutActivities, this.discoveryClient));
   }
 
   async listWorkspaces(query: WorkspaceQuery = {}): Promise<WorkspacePage<AgentWorkspace>> {
@@ -439,7 +444,7 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
       this.platform === "win32" ? rolloutPaths(response.data, this.platform) : openFiles,
     );
     return {
-      data: response.data.map((thread) => this.toSummary(thread, openFiles, rolloutActivities)),
+      data: response.data.map((thread) => this.toSummary(thread, openFiles, rolloutActivities, this.discoveryClient)),
       nextCursor: response.nextCursor,
       watermark: String(Math.max(0, ...response.data.map((thread) => thread.updatedAt))),
     };
@@ -470,7 +475,7 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
       this.platform === "win32" ? rolloutPaths(response.data, this.platform) : openFiles,
     );
     return {
-      data: response.data.map((thread) => this.toSummary(thread, openFiles, rolloutActivities)),
+      data: response.data.map((thread) => this.toSummary(thread, openFiles, rolloutActivities, this.discoveryClient)),
       nextCursor: response.nextCursor,
       watermark: String(Math.max(0, ...response.data.map((thread) => thread.updatedAt))),
     };
@@ -1337,6 +1342,7 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
         );
       }
       this.pendingAsyncInputs.delete(questionId);
+      this.onApprovalResolved?.(questionId);
       return true;
     }
     const pending = this.pendingApprovals.get(questionId);
@@ -1426,13 +1432,20 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
     thread: CodexThread,
     openFiles: Set<string>,
     rolloutActivities: ReadonlyMap<string, CodexRolloutActivity> = new Map(),
+    sourceClient: CodexDiscoveryClient = this.client,
   ): UnifiedSessionSummary {
     const ownedByUs = this.ownedThreads.has(thread.id);
     const heldOpen = Boolean(thread.path && openFiles.has(thread.path));
+    // Shared transports expose backend-wide loaded state. Their proxy PID is
+    // not the writer PID, so lsof also sees files held by our own backend.
+    // notLoaded/unknown states still need the external-writer guard.
+    const loadedBySharedBackend = (sourceClient.mode === "shared" || sourceClient.mode === "desktop")
+      && ["idle", "active", "systemError"].includes(thread.status?.type);
     const rolloutRunning = Boolean(
       thread.path && rolloutActivities.get(thread.path) === "running",
     );
-    const externallyOccupied = this.platform === "win32" ? rolloutRunning : heldOpen;
+    const externallyOccupied = !loadedBySharedBackend
+      && (this.platform === "win32" ? rolloutRunning : heldOpen);
     const occupancy = ownedByUs
       ? "owned-by-customer-agent" as const
       : externallyOccupied
@@ -1453,7 +1466,7 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
       status: codexThreadStatusToSessionStatus(
         thread.status?.type,
         ownedByUs,
-        this.platform === "win32" ? rolloutRunning : heldOpen && rolloutRunning,
+        !loadedBySharedBackend && (this.platform === "win32" ? rolloutRunning : heldOpen && rolloutRunning),
       ),
       occupancy,
       sourceLabel: codexSourceLabel(thread.source),

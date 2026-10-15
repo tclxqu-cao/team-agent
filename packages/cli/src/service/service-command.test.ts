@@ -1,3 +1,4 @@
+vi.mock("../codex-sharing.js", () => ({ configureCodexSharing: vi.fn(async () => {}) }));
 import { resolve } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import type { CliOptions, ServiceAction } from "../args.js";

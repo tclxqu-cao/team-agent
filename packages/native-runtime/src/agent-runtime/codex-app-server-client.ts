@@ -39,6 +39,7 @@ export class CodexAppServerClient {
   private readonly launcher: CodexAppServerLauncher;
   private process: ChildProcessWithoutNullStreams | null = null;
   private webSocket: WebSocket | null = null;
+  private activeEndpoint: string | null = null;
   private activeMode: CodexAppServerLaunchMode | null = null;
   private processReady = false;
   private startPromise: Promise<void> | null = null;
@@ -71,6 +72,8 @@ export class CodexAppServerClient {
   get pid(): number | undefined {
     return this.process?.pid;
   }
+
+  get endpoint(): string | null { return this.activeEndpoint; }
 
   get mode(): CodexAppServerLaunchMode | null {
     return this.activeMode;
@@ -161,6 +164,7 @@ export class CodexAppServerClient {
         }
         this.processReady = true;
         this.activeMode = attempt.mode;
+        this.activeEndpoint = "webSocketUrl" in connection ? connection.webSocketUrl : null;
         console.log(
           `[codex-app-server-client ${new Date().toISOString().slice(11,23)}] initialize completed (${attempt.mode})`,
         );
@@ -398,6 +402,7 @@ export class CodexAppServerClient {
     const wasReady = this.processReady;
     this.process = null;
     this.activeMode = null;
+    this.activeEndpoint = null;
     this.processReady = false;
     this.buffer = "";
     this.detachWebSocket();
@@ -416,6 +421,7 @@ export class CodexAppServerClient {
     const child = this.process;
     this.process = null;
     this.activeMode = null;
+    this.activeEndpoint = null;
     this.processReady = false;
     this.buffer = "";
     this.detachWebSocket();

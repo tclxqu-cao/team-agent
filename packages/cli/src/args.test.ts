@@ -120,3 +120,11 @@ it("restricts no-pairing test mode to explicit local foreground starts", () => {
   expect(parseArgs([]).testNoPairing).toBeUndefined();
   for (const args of [["--test-no-pairing"], ["service", "install", "--local-only", "--test-no-pairing"], ["start", "--local-only", "--test-no-pairing", "--relay", "pinggy"]]) expect(() => parseArgs(args)).toThrow();
 });
+
+ it("keeps status/repair actions mutually exclusive and read-only status distinct", () => {
+   expect(parseArgs(["codex-desktop", "--status"]).desktopSharingStatus).toBe(true);
+   expect(parseArgs(["codex-desktop", "--repair"]).desktopRepair).toBe(true);
+   for (const other of ["--restart", "--dry-run", "--setup", "--repair"]) {
+     expect(() => parseArgs(["codex-desktop", "--status", other])).toThrow("cannot be combined");
+   }
+ });

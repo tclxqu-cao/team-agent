@@ -7,12 +7,77 @@ import {
 } from "../../../../core/src/domain/collaboration/__tests__/fixtures";
 import CollaborationPage from "./CollaborationPage";
 
+function renderDiscussion(state: ReturnType<typeof stateFixture>) {
+  fixture.value = {
+    group: groupFixture(), discussion: state, selected: state.id,
+    history: [], error: "", busy: false,
+    select: vi.fn(), create: vi.fn(), act: vi.fn(), send: vi.fn(),
+    setError: vi.fn(), updateRole: vi.fn(),
+  };
+  return renderToStaticMarkup(createElement(CollaborationPage, { groupId: "g" }));
+}
+
+function queuedDiscussion() {
+  const state = stateFixture();
+  state.messages = [{
+    id: "user", kind: "user", content: "介绍大模型架构", createdAt: state.createdAt,
+  }];
+  state.tasks = [{
+    id: "task", memberId: "a", title: "梳理架构", instructions: "只读分析",
+    dependsOn: [], isolated: false, readOnly: true, status: "queued",
+    result: "等待工作目录空闲",
+  }];
+  return state;
+}
+
 const fixture = vi.hoisted(() => ({ value: {} as Record<string, unknown> }));
 vi.mock("./useCollaborationDiscussion", () => ({
   useCollaborationDiscussion: () => fixture.value,
 }));
 
 describe("collaboration group history presentation", () => {
+  it("explains workspace contention in the conversation and roster when nothing is executing", () => {
+    const html = renderDiscussion(queuedDiscussion());
+    expect(html).toContain("1 个任务等待工作目录空闲，空闲后会自动继续。");
+    expect(html).toContain('data-status="queued"');
+    expect(html).toContain('aria-label="等待工作目录空闲"');
+    expect(html).toContain('class="collab-member-status">等待目录空闲');
+    const activity = html.match(/<div class="collab-live-status[^>]*>[\s\S]*?<\/div>/)?.[0];
+    expect(activity).toContain('role="status"');
+    expect(activity).not.toContain("collab-spin");
+    expect(html).toContain("介绍大模型架构");
+    expect(fixture.value.send).not.toHaveBeenCalled();
+  });
+
+  it("keeps actual execution visible when other members are queued", () => {
+    const state = queuedDiscussion();
+    state.tasks.push({
+      ...state.tasks[0], id: "active", memberId: "b", status: "running",
+      title: "比较架构", result: undefined,
+    });
+    const html = renderDiscussion(state);
+    expect(html).toContain('data-status="running"');
+    expect(html).toContain("验证：比较架构");
+    expect(html).not.toContain("空闲后会自动继续");
+  });
+
+  it("shows pending owner coordination before treating queued work as blocked", () => {
+    const state = queuedDiscussion();
+    state.ownerPending = true;
+    const html = renderDiscussion(state);
+    expect(html).toContain("总控正在安排下一步");
+    expect(html).not.toContain('data-status="queued"');
+  });
+
+  it("does not promise automatic execution after a discussion is stopped", () => {
+    const state = queuedDiscussion();
+    state.status = "stopped";
+    const html = renderDiscussion(state);
+    expect(html).toContain('data-status="stopped"');
+    expect(html).not.toContain("空闲后会自动继续");
+    expect(html).not.toContain('class="collab-member-status">等待目录空闲');
+  });
+
   it("identifies speakers with avatars and crowns only the owner, including owner questions", () => {
     fixture.value = {
       group: groupFixture(),
