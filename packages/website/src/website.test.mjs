@@ -85,3 +85,13 @@ test("unsupported CPU installers are not offered as supported platform downloads
   assert.equal(result.mac, null);
   assert.equal(result.windows, null);
 });
+
+test("published fallback provides direct downloads for every supported platform", async () => {
+  const { releaseSnapshot } = await import("../public/release-snapshot.js");
+  const assets = selectAssets(releaseSnapshot);
+  for (const platform of ["mac", "windows", "android"]) {
+    assert.equal(assets[platform].tag, "desktop-v0.2.0-preview.22");
+    assert.ok(assets[platform].size > 1000000);
+    assert.ok(assets[platform].browser_download_url.includes("/desktop-v0.2.0-preview.22/"));
+  }
+});

@@ -1,4 +1,5 @@
 import { selectAssets } from "./releases.js";
+import { releaseSnapshot } from "./release-snapshot.js";
 const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 if ("IntersectionObserver" in window) {
   document.documentElement.classList.add("js");
@@ -70,19 +71,29 @@ if (cosmos && matchMedia("(pointer: fine)").matches) {
 const status = document.querySelector("[data-release-status]");
 if (status) {
   try {
-    const response = await fetch(
-      "https://api.github.com/repos/tclxqu-cao/team-agent/releases?per_page=20",
-      {
-        headers: { Accept: "application/vnd.github+json" },
-        signal: AbortSignal.timeout(8000),
-      },
-    );
-    if (!response.ok) throw new Error(`GitHub ${response.status}`);
-    const releases = await response.json();
-    if (!Array.isArray(releases))
-      throw new Error("Unexpected release response");
+    let releases = releaseSnapshot;
+    let live = false;
+    try {
+      const response = await fetch(
+        "https://api.github.com/repos/tclxqu-cao/team-agent/releases?per_page=20",
+        {
+          headers: { Accept: "application/vnd.github+json" },
+          signal: AbortSignal.timeout(8000),
+        },
+      );
+      if (!response.ok) throw new Error(`GitHub ${response.status}`);
+      const fetched = await response.json();
+      if (!Array.isArray(fetched))
+        throw new Error("Unexpected release response");
+      releases = fetched;
+      live = true;
+    } catch {
+      // Keep verified published downloads available when the public API is limited.
+    }
     const assets = selectAssets(releases);
-    status.textContent = releases.length
+    status.textContent = !live
+      ? "已显示最近确认发布的安装包，可直接下载。最新发布也可前往 GitHub Releases 查看。"
+      : releases.length
       ? "安装包直接来自 GitHub Releases，按平台匹配最新可用版本。"
       : "桌面和 Android 安装包尚未公开发布。现在可先用下方 CLI 安装，手机通过浏览器连接。";
     const labels = {
