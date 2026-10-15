@@ -17,6 +17,23 @@ Team Agent is an enterprise-grade multimodal intelligent Agent runtime platform.
 - **Multi-End Adaptation**: Provides three interaction entry points: Web, TUI Terminal, and Electron Desktop, with unified session state synchronization.
 - **Goal Queue**: Supports queuing, sorting, and status tracking of session goals, enabling multi-round iteration for complex tasks.
 
+### Agent Group Chat
+
+Create a group for a project with one coordinator and multiple members. Send a goal to the group, and the coordinator breaks it into tasks, assigns members, manages dependencies and parallel work, and organizes delivery. Mix supported Agent runtimes, or add the same Agent type more than once with different models and roles, such as implementation, review, and testing.
+
+- **Member configuration**: Choose each member's Agent, model, name, and role. Leave roles blank for the coordinator to assign.
+- **Visible progress**: View member replies, task status, and results, including queue reasons when tasks wait for dependencies or an available working directory.
+- **Task controls**: Add requirements during execution, answer Agent questions, stop a discussion, or use **继续协作** (Continue collaboration) to resume it.
+- **Saved discussions**: Start separate discussions within a group and reopen their history below the member list. Group settings, messages, and task records are stored in the local database and remain available after closing a tab or refreshing.
+- **File links and long messages**: Click file paths to view deliverables, and expand or collapse long messages.
+- **Group dashboard**: Search by group name, member, or working directory; open, edit, or delete groups. Stop active discussions before changing group settings or deleting a group. Group setting changes apply to new discussions while existing discussion records are retained.
+
+To get started:
+
+1. In the Web console, open the avatar menu → **配置顶部工具** (Configure top tools), enable **群聊看板** (Group chat dashboard), then click its toolbar icon. On desktop, open **群聊看板** from the left sidebar.
+2. Click **新增群聊** (Add group), choose a working directory, configure the coordinator and members, and set the maximum parallel tasks if needed. Selected Agents must be configured and available.
+3. Send a goal in the group and follow execution and results. Reopen the group from the dashboard or the sidebar group list to continue later.
+
 ### Operations Capabilities
 - **Agent Runtime Hosting**: Automated runtime version management, health checks, and fault recovery.
 - **Cross-Platform Runtime**: Provides local Agent runtime packages for macOS/Windows platforms, supporting runtime hosting for Node.js 22, Codex, etc.
