@@ -1,0 +1,215 @@
+.github/workflows/cli-release-verify.yml
+  s_383c021fd01321::t_00c76edcf78f7b 18
+  s_383c021fd01321::t_95b2e44153bc3a 49,54
+  s_383c021fd01321::t_d39ad144149036 1,5-16,19-20,23-48,50-53,55-83
+.github/workflows/desktop-release-verify.yml
+  s_383c021fd01321::t_17c870ccb85c08 1-5,13-20,22-24,26-35,37-46,62-63,91,135-137,139,141,143-146,148,150,152,154-157,162-163,165-169,170-185
+  s_383c021fd01321::t_680414df81e007 140,142,147,149,151,153
+  s_383c021fd01321::t_6ae493e2fc96a1 21
+  s_383c021fd01321::t_3551882f198244 158-161
+  s_383c021fd01321::t_00216ad650b2af 86
+  s_383c021fd01321::t_605c13e5be325e 65,138
+  s_383c021fd01321::t_43977d9ce6d489 61,64,90,93-134,186-199
+  s_383c021fd01321::t_63b84551c6f1d1 66-75,87-89,92
+  s_383c021fd01321::t_299318e9e81625 9-12,25,200-227
+  s_383c021fd01321::t_1fb01913f5cf46 6-8,36,47-60,76-86
+  s_383c021fd01321::t_21eaef17273fd7 164
+.gitignore
+  s_383c021fd01321::t_03af7a08a3ef4b 67-68
+bun.lock
+  s_383c021fd01321::t_0a97b65845efe8 81,237
+packages/cli/README.md
+  s_383c021fd01321::t_3800c22d4bd28c 43,52,106,114-116
+packages/cli/src/abort.ts
+  s_383c021fd01321::t_962ca71b270d23 1-29
+packages/cli/src/cli.ts
+  s_383c021fd01321::t_ee98dedece76da 14-15,192,203-204,211,288,291,293
+packages/cli/src/codex-runtime-manager.test.ts
+  s_383c021fd01321::t_e61c9441dbc0e0 24-33,217,349-372
+packages/cli/src/codex-runtime-manager.ts
+  s_383c021fd01321::t_2a6e8790ec2a2f 17,26,50,64-65,77,82-83,103-108,112-118,136-137,329,343
+packages/cli/src/codex-sharing.ts
+  s_383c021fd01321::t_6abe8cfc9145f3 17,69
+packages/cli/src/opencode-runtime-manager.test.ts
+  s_383c021fd01321::t_995b04459c759d 28-37
+packages/cli/src/opencode-runtime-manager.ts
+  s_383c021fd01321::t_7ac39524303140 8,25,39-40,45,50-51,68-73,77-83,97-98,181,188
+packages/cli/src/runtime-manager.test.ts
+  s_383c021fd01321::t_67cf2fdfccbf12 2,23-49,62-84,89-95
+packages/cli/src/runtime-manager.ts
+  s_383c021fd01321::t_0b7aae4cb9bfee 23-28,59,64,66-70,84,103-109,122-139,142,147,150-153,156,165,173,180-182,190,197-214
+packages/cli/src/service/macos-launch-agent.ts
+  s_383c021fd01321::t_1f36cc78ee9937 56-57
+packages/cli/src/service/service-command.test.ts
+  s_383c021fd01321::t_8e277f9d6c54a2 10-30,45
+packages/cli/src/service/service-command.ts
+  s_383c021fd01321::t_70355b62f2c114 18,66,72-73,75,78,96-100,103,107,130,133,155,172,175,191-199
+packages/cli/src/service/windows-task-service.ts
+  s_383c021fd01321::t_73380243c38078 51-52
+  s_383c021fd01321::t_1bcfa407f7986b 253
+packages/cli/src/tunnel/public-readiness.test.ts
+  s_383c021fd01321::t_c5143011621774 5-24
+packages/cli/src/tunnel/public-readiness.ts
+  s_383c021fd01321::t_947c0f1dc99129 5,30-38,42-66,68-71,73-77,79-80,83-87,89-90,102,109-118
+packages/cli/src/tunnel/relay-orchestrator.test.ts
+  s_383c021fd01321::t_82935919457464 14,22-24,28,34,37-82,84-91,145
+packages/cli/src/tunnel/relay-orchestrator.ts
+  s_383c021fd01321::t_2204a2715cd676 9-11,32,38,42,48-52,54-66,68-70,74-75
+packages/desktop/electron-builder.yml
+  s_383c021fd01321::t_5f96d0e333f24d 21-24
+packages/desktop/main/index.ts
+  s_383c021fd01321::t_5fc68af9386fb7 31,162,184-191
+packages/desktop/main/mobile-pairing.test.ts
+  s_383c021fd01321::t_e05d86dd3b458e 1-26
+packages/desktop/main/mobile-pairing.ts
+  s_383c021fd01321::t_11caa80dfabb27 1-51
+packages/desktop/main/preload.ts
+  s_383c021fd01321::t_fa38a3db2e7808 314-316
+packages/desktop/main/runtime-bootstrap.test.ts
+  s_383c021fd01321::t_b1d5caab3892c2 1-34
+packages/desktop/main/runtime-bootstrap.ts
+  s_383c021fd01321::t_ce651a8c08b24f 1-46
+packages/desktop/main/shared-service.ts
+  s_383c021fd01321::t_65856740b970b8 4,96-100
+packages/desktop/package.json
+  s_383c021fd01321::t_0b426475795a5f 9-10,29
+packages/desktop/renderer/App.tsx
+  s_383c021fd01321::t_f5c061787e2d69 1654-1659
+packages/desktop/renderer/SharedServiceRoot.tsx
+  s_383c021fd01321::t_a18faa94220a43 10-11,37,44-48,63-65
+packages/desktop/renderer/components/AgentWorkspaceSwitcher.test.tsx
+  s_383c021fd01321::t_ca750a69b09488 12,30,35,38,40-41
+packages/desktop/renderer/components/AgentWorkspaceSwitcher.tsx
+  s_383c021fd01321::t_a4802faef29fcc 18,21,44-48,56-62,65
+packages/desktop/renderer/components/ChatHeaderActions.tsx
+  s_383c021fd01321::t_ac5c7c1ee89a54 5,82
+packages/desktop/renderer/components/EmptySessionWelcome.tsx
+  s_383c021fd01321::t_140f4a580866c8 31,40,61,65
+packages/desktop/renderer/components/MobilePairingButton.tsx
+  s_383c021fd01321::t_ec61e010d1fd6b 1-55
+packages/desktop/renderer/lib/shared-service.ts
+  s_383c021fd01321::t_118fc03c510e20 14-16
+packages/desktop/renderer/styles/global.css
+  s_383c021fd01321::t_3939da7521f14c 957-966,4380-4390
+packages/desktop/scripts/bundled-runtime.mjs
+  s_383c021fd01321::t_bef7663cc51b06 1-29
+packages/desktop/scripts/bundled-runtime.test.mjs
+  s_383c021fd01321::t_6b699184bd302b 1-38
+packages/desktop/scripts/runtime-bootstrap-worker.ts
+  s_383c021fd01321::t_da7874b25bf24d 1-11,13-52,54-64
+  s_383c021fd01321::t_5b443635c458f8 12,53
+packages/desktop/scripts/runtime-inventory.mjs
+  s_383c021fd01321::t_cbcb759cc90334 1-20
+packages/desktop/scripts/runtime-inventory.test.mjs
+  s_383c021fd01321::t_e112c7b61d8932 1-41
+packages/desktop/tsconfig.bootstrap.json
+  s_383c021fd01321::t_c7fa7b2ec0be43 1-9
+packages/mobile/ios/App/CapApp-SPM/Package.swift
+  s_383c021fd01321::t_fbf3bb40a9166a 15,25
+packages/server/app/web/AiHubPane.test.tsx
+  s_383c021fd01321::t_314d4ceaeb538d 8
+packages/server/app/web/AuthGate.test.ts
+  s_383c021fd01321::t_dbd1f30f4877c8 5,12
+packages/server/app/web/AuthGate.tsx
+  s_383c021fd01321::t_f299fef3d8b81f 4-5,18-22
+packages/server/app/web/CollaborationPane.tsx
+  s_383c021fd01321::t_bac59535ada221 7,42
+packages/server/app/web/ComputerSwitcher.tsx
+  s_383c021fd01321::t_a7f138fe6de4cf 14,62,118,126,160-164,172-176
+packages/server/app/web/FlowStudioPane.tsx
+  s_383c021fd01321::t_a32c9b1fc2e03b 6,40
+packages/server/app/web/HistoryPanel.tsx
+  s_383c021fd01321::t_d884f1bd97fc93 3
+packages/server/app/web/PinnedCommandList.tsx
+  s_383c021fd01321::t_7f876719f7bdc6 4
+packages/server/app/web/WorkspaceBoot.tsx
+  s_383c021fd01321::t_b075c446697aca 1-86
+packages/server/app/web/console-environment.ts
+  s_383c021fd01321::t_b7185d99f2924f 1-20
+packages/server/app/web/console-styles.ts
+  s_383c021fd01321::t_67a785565da944 1-281
+packages/server/app/web/drawerLayout.test.ts
+  s_383c021fd01321::t_fa94841e1f00c5 4
+packages/server/app/web/page.tsx
+  s_383c021fd01321::t_d14f53549fee0a 7-8,17-18,626,683,690
+packages/server/app/web/pinnedCommands.ts
+  s_383c021fd01321::t_b0a2e85f444291 1
+packages/server/app/web/terminalStartup.test.ts
+  s_383c021fd01321::t_584c391a1cd1ef 5
+packages/server/app/web/terminalSurfaceStyle.test.ts
+  s_383c021fd01321::t_7d256fd011992e 4
+packages/server/app/web/useComputerDirectory.ts
+  s_383c021fd01321::t_6f73cc08820502 6,48,91
+packages/server/app/web/useGateway.ts
+  s_383c021fd01321::t_05cb5b8365c1f6 3,11,148
+packages/server/app/web/webappLoading.test.ts
+  s_383c021fd01321::t_df7b449e2fc6d3 4-5
+packages/server/lib/device-pairing-gateway.mjs
+  s_383c021fd01321::t_59cfdd767fe3d0 34,83,87-98,218,228-235
+packages/server/lib/device-pairing-store.mjs
+  s_383c021fd01321::t_46f35f129546d1 34,121,123,126,132-141
+packages/server/lib/device-pairing.test.ts
+  s_383c021fd01321::t_f820dfbcd73d1c 76,81,262-306
+packages/server/lib/file-preview-service.mjs
+  s_383c021fd01321::t_262a8b4cab5ddb 264,267,274,289-303
+packages/server/lib/file-preview-service.test.ts
+  s_383c021fd01321::t_8bb2f1e9a5c732 12,182-197,282
+packages/server/ws-server.mjs
+  s_383c021fd01321::t_fa474eeeabe60f 43,1002,1211,1220-1222,1244
+packages/webapp/package.json
+  s_383c021fd01321::t_ca0f5ec4374d9b 19
+packages/webapp/src/main.tsx
+  s_383c021fd01321::t_d74ca8f9f4a6be 29-32,34-35,56-58,83-87,96,103,124-127,130,134-148,157-161,166,189-192
+packages/webapp/src/mobile/infrastructure/console-styles.d.ts
+  s_383c021fd01321::t_6c96ce369844cd 1-6
+packages/webapp/src/mobile/infrastructure/lazy-console-component.tsx
+  s_383c021fd01321::t_1cc569c4544999 1-9
+packages/webapp/src/mobile/infrastructure/native-console-transport.test.ts
+  s_383c021fd01321::t_57e71efd94b434 1-38
+packages/webapp/src/mobile/infrastructure/native-console-transport.ts
+  s_383c021fd01321::t_5fed717a66a83f 1-28
+packages/webapp/src/mobile/infrastructure/native-frame-bridge.test.ts
+  s_383c021fd01321::t_7c6a288e5694a2 1-32
+packages/webapp/src/mobile/infrastructure/native-frame-bridge.ts
+  s_383c021fd01321::t_8a4321c7c62261 1-27
+packages/webapp/src/mobile/presentation/UnpairedHome.tsx
+  s_383c021fd01321::t_e27dc263d9492e 1-63
+packages/webapp/src/mobile/presentation/native-console.tsx
+  s_383c021fd01321::t_078ef4d46b6923 1-45
+packages/webapp/src/mobile/presentation/unpaired-home.css
+  s_383c021fd01321::t_76e3dd89da945b 1-16
+packages/webapp/src/types.d.ts
+  s_383c021fd01321::t_6e275d23497e6c 39-46
+packages/webapp/tsconfig.json
+  s_383c021fd01321::t_6078fe5c424450 5
+packages/webapp/vite.config.ts
+  s_383c021fd01321::t_e32aa412cab604 23
+scripts/stage-cli-runtime.mjs
+  s_383c021fd01321::t_4975313cabf96a 177
+scripts/stage-desktop-runtime.mjs
+  s_383c021fd01321::t_bfbac8bf3fbbdd 1-28
+packages/desktop/scripts/runtime-service-args.mjs
+  s_383c021fd01321::t_569c8b3349df8d 1-4
+packages/desktop/scripts/runtime-service-args.test.mjs
+  s_383c021fd01321::t_e18c4aa7cecb60 1-11
+packages/cli/src/native-runtime.ts
+  s_383c021fd01321::t_cfd4fe08c4ae3c 55
+  s_383c021fd01321::t_5fd50c86c4d37b 3-20,37-44,47,50-54,56-65
+  s_383c021fd01321::t_91f577b98be46e 66
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "25825c8adb10482349401a4b1378b54daa8c7fbd",
+  "prompts": {},
+  "sessions": {
+    "s_383c021fd01321": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a13f9b-7e14-7d72-93be-8065810877bf",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
