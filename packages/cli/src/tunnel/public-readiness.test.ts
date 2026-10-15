@@ -2,6 +2,26 @@ import { describe, expect, it, vi } from "vitest";
 import { waitForPublicReadiness } from "./public-readiness.js";
 
 describe("waitForPublicReadiness", () => {
+  it.each(["proxy", "headers", "body"])("enforces its deadline while %s never responds", async (stage) => {
+    vi.useFakeTimers();
+    try {
+      const fetchImpl = vi.fn<typeof fetch>().mockImplementation(async () => {
+        if (stage === "headers") return new Promise(() => {});
+        return new Response(new ReadableStream({ start() {} }), { status: 200 });
+      });
+      const pending = waitForPublicReadiness("https://slow.example.test", {
+        timeoutMs: 25,
+        ...(stage === "proxy"
+          ? { proxyResolver: () => new Promise<string | null>(() => {}) }
+          : { fetchImpl }),
+      });
+      const failed = expect(pending).rejects.toThrow("request timed out");
+      await vi.advanceTimersByTimeAsync(25);
+      await failed;
+      expect(vi.getTimerCount()).toBe(0);
+    } finally { vi.useRealTimers(); }
+  });
+
   it("retries a transient 530 and accepts the expected auth status", async () => {
     const fetchImpl = vi
       .fn<typeof fetch>()

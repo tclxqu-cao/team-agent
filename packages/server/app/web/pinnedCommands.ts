@@ -1,4 +1,4 @@
-import type { PinnedCommand } from "@agent/core";
+import type { PinnedCommand } from "../../../core/src/domain/web-console/entities";
 
 export function movePinnedCommand(
   commands: readonly PinnedCommand[],

@@ -40,7 +40,7 @@ npx agentroam
 
 On first run:
 
-1. AgentRoam tries a bundled **Cloudflare Quick Tunnel**, then a **Pinggy HTTPS tunnel** over SSH port 443.
+1. AgentRoam tries a bundled **Cloudflare Quick Tunnel** for up to 30 seconds, then uses **LAN access** if that attempt fails or times out.
 2. A **QR code** prints in the terminal — scan it on your phone.
 3. Complete **one-time pairing** (5-minute token) and create the admin account.
 4. Use the web terminal + file tree remotely.
@@ -49,7 +49,7 @@ On first run:
 
 ```bash
 agentroam                 # start (default)
-agentroam doctor          # check native modules + platform
+agentroam doctor          # check native modules and install Codex if missing
 agentroam version
 agent-tui                 # start the bundled terminal Agent UI
 ```
@@ -103,7 +103,7 @@ hibernation, shutdown, and low-battery forced sleep remain controlled by the OS.
 |------|-------------|
 | `--root <path>` | Workspace root (repeatable). Default: cwd |
 | `--local-only` | Skip tunnel; LAN/localhost only |
-| `--relay auto` | Cloudflare, then Pinggy, then LAN (default) |
+| `--relay auto` | Cloudflare, then LAN on failure or timeout (default) |
 | `--relay cloudflare` | Cloudflare only, then LAN |
 | `--relay pinggy` | Pinggy only, then LAN |
 | `--relay custom --tunnel-command "<cmd>"` | Your own tunnel command |
@@ -111,7 +111,9 @@ hibernation, shutdown, and low-battery forced sleep remain controlled by the OS.
 | `--port <n>` | Fixed local port |
 | `--data-dir <path>` | State directory (default: `~/.agentroam`) |
 
-The platform cloudflared binary is installed from npm after size and SHA-256 verification, so startup does not download from GitHub. If Cloudflare cannot connect, automatic mode tries Pinggy over outbound SSH port 443. Pinggy free tunnels last up to 60 minutes and may show a one-time security confirmation in the phone browser. If neither public relay works, the QR code uses a LAN address and the phone must be on the same local network.
+The platform cloudflared binary is installed from npm after size and SHA-256 verification, so startup does not download from GitHub. Automatic mode attempts Cloudflare for at most 30 seconds, including connection and public health checks. Any failure falls back directly to LAN, where the phone must be on the same local network. Pinggy is only used when explicitly selected with `--relay pinggy`; a failed explicit relay also falls back to LAN.
+
+Startup reuses a compatible installed Codex CLI. Only when none is found does it install `@openai/codex@latest`; Codex preparation is limited to 180 seconds. Installed OpenCode is reused, and missing OpenCode is skipped without downloading. If Codex installation fails or times out, the local service still starts with an explicit warning that Codex sessions are unavailable. Run `agentroam doctor` to repair Codex, then restart the service. Remote desktop uses the bundled native runtime and still requires system authorization.
 
 ## What's included
 

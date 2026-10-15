@@ -1,6 +1,6 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
-import type { PinnedCommand } from "@agent/core";
+import type { PinnedCommand } from "../../../core/src/domain/web-console/entities";
 import { Copy, Pin, RefreshCw, TextCursorInput, Trash2 } from "lucide-react";
 import PinnedCommandList from "./PinnedCommandList";
 import { createPinnedCommand } from "./pinnedCommands";

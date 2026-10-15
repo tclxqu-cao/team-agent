@@ -20,6 +20,7 @@ export default defineConfig({
     alias: {
       "@agent/core": resolve(__dirname, "../core/src"),
       "@desktop/renderer": resolve(__dirname, "../desktop/renderer"),
+      "next/dynamic": resolve(__dirname, "src/mobile/infrastructure/lazy-console-component.tsx"),
     },
   },
   server: {

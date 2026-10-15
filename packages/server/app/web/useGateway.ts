@@ -1,5 +1,6 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { consoleResourceUrl, consoleWebSocketUrl } from "./console-environment";
 
 export interface FsEntry { name: string; dir: boolean; symlink: boolean; size: number; mtime: number }
 export interface FsEvent { path: string; [key: string]: unknown }
@@ -7,7 +8,7 @@ type Pending = { resolve: (value: any) => void; reject: (error: Error) => void; 
 
 export interface GatewayState { connected: boolean; error: string | null }
 
-function wsBaseUrl(): string { return `${location.protocol === "https:" ? "wss:" : "ws:"}//${location.host}/ws`; }
+function wsBaseUrl(): string { return consoleWebSocketUrl(); }
 
 export function useGateway(onBinary: (data: Uint8Array) => void, getWsNonce: () => Promise<string>, onAuthLost: () => void) {
   const [state, setState] = useState<GatewayState>({ connected: false, error: null });
@@ -144,6 +145,7 @@ export function useGateway(onBinary: (data: Uint8Array) => void, getWsNonce: () 
       }
       if (message.id != null && typeof message.type === "string" && message.type.endsWith(":result")) {
         const request = pending.current.get(message.id);
+        if (request?.type === "fs:preview-open" && typeof message.url === "string") message.url = consoleResourceUrl(message.url);
         if (request) { pending.current.delete(message.id); clearTimeout(request.timer); request.resolve(message); }
         return;
       }

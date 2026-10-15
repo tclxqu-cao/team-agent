@@ -73,12 +73,12 @@ describe("device pairing storage", () => {
   });
 });
 
-async function serverFixture(sdkToken?: string, testNoPairing = false, runServiceToken?: string) {
+async function serverFixture(sdkToken?: string, testNoPairing = false, runServiceToken?: string, resolveNativePreviewDevice?: (path: string) => string | null) {
   const dir = mkdtempSync(join(tmpdir(), "agentroam-pair-http-"));
   const dataDir = join(dir, "data");
   const registry = join(dir, "services");
   const desktop = createDesktopDiscovery({ dataDir, directory: registry });
-  const auth = createDevicePairingGateway({ dataDir, desktop, owner: { userId: "existing-owner", username: "local" }, consoleStore: { listTabs: () => [{ id: "existing-tab" }], getPreferences: () => ({}), getDeviceState: (_user: string, device: string) => ({ deviceId: device }) }, trustProxy: true, sdkToken, runServiceToken, testNoPairing });
+  const auth = createDevicePairingGateway({ dataDir, desktop, owner: { userId: "existing-owner", username: "local" }, consoleStore: { listTabs: () => [{ id: "existing-tab" }], getPreferences: () => ({}), getDeviceState: (_user: string, device: string) => ({ deviceId: device }) }, trustProxy: true, sdkToken, runServiceToken, testNoPairing, resolveNativePreviewDevice });
   const http = createServer((req, res) => {
     if (desktop.handle(req, res)) return;
     void auth.handle(req, res).then((handled) => {
@@ -258,6 +258,51 @@ describe("local approval and emergency lock", () => {
     }
     await pairingAdmin(f.dir, "lock", {}, { registry: f.registry });
     expect((await f.request("/api/settings", { headers: { origin: native, authorization: `Bearer ${token}` } })).status).toBe(423);
+  });
+  it("authenticates native WebSockets with a one-use native nonce and disconnects on revocation", async () => {
+    const f = await serverFixture();
+    const native = "capacitor://localhost";
+    const grant = await pairingAdmin<{ grant: string }>(f.dir, "qr", {}, { registry: f.registry });
+    const { token, device } = await (await f.request("/api/pairing/qr-exchange", { method: "POST", headers: { origin: native, "content-type": "application/json" }, body: JSON.stringify({ grant: grant.grant, name: "App" }) })).json();
+    const { wsNonce } = await (await f.request("/api/web-console/bootstrap", { headers: { origin: native, authorization: `Bearer ${token}` } })).json();
+    const url = f.origin.replace("http:", "ws:") + "/ws?nonce=" + wsNonce;
+    const ws = new WebSocket(url, { headers: { origin: native } });
+    await once(ws, "open");
+    const replay = new WebSocket(url, { headers: { origin: native } });
+    replay.on("error", () => {});
+    expect((await once(replay, "unexpected-response"))[1].statusCode).toBe(401);
+    replay.terminate();
+    const closed = once(ws, "close");
+    await pairingAdmin(f.dir, "revoke", { id: device.id }, { registry: f.registry });
+    expect((await closed)[0]).toBe(4003);
+  });
+  it("keeps browser and native nonces separate and expires native credentials", () => {
+    const f = fixture(); const { device } = authorize(f.store, "phone");
+    const browser = f.store.issueNonce(device.id);
+    expect(f.store.consumeNativeNonce(browser)).toBeNull();
+    expect(f.store.consumeNonce(device.id, browser)).toBe(true);
+    const native = f.store.issueNonce(device.id, "native");
+    expect(f.store.consumeNonce(device.id, native)).toBe(false);
+    f.advance(60000); expect(f.store.consumeNativeNonce(native)).toBeNull();
+  });
+  it("limits headerless native media to active preview tickets and stops it on lock or revoke", async () => {
+    const tickets = new Map<string, string>();
+    const f = await serverFixture(undefined, false, undefined, path => tickets.get(path) ?? null);
+    const grant = await pairingAdmin<{ grant: string }>(f.dir, "qr", {}, { registry: f.registry });
+    const { device } = await (await f.request("/api/pairing/qr-exchange", { method: "POST", headers: { origin: "capacitor://localhost", "content-type": "application/json" }, body: JSON.stringify({ grant: grant.grant, name: "App" }) })).json();
+    const preview = "/api/web-console/file-preview/native-ticket";
+    expect((await f.request(preview)).status).toBe(401);
+    tickets.set(preview, device.id);
+    expect((await f.request(preview, { headers: { range: "bytes=0-31" } })).status).toBe(200);
+    expect((await f.request(preview, { method: "HEAD" })).status).toBe(200);
+    expect((await f.request(preview, { method: "POST" })).status).toBe(401);
+    tickets.set("/api/settings", device.id);
+    expect((await f.request("/api/settings")).status).toBe(401);
+    await pairingAdmin(f.dir, "lock", {}, { registry: f.registry });
+    expect((await f.request(preview)).status).toBe(423);
+    await pairingAdmin(f.dir, "unlock", {}, { registry: f.registry });
+    await pairingAdmin(f.dir, "revoke", { id: device.id }, { registry: f.registry });
+    expect((await f.request(preview)).status).toBe(401);
   });
   it("terminates an already open SDK event stream on emergency lock", async () => {
     const f = await serverFixture("sdk-stream-secret");

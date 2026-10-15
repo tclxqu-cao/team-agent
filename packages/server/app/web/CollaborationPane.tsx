@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { RefreshCw, UsersRound } from "lucide-react";
 import { readCollaborationContentReady } from "../../../core/src/domain/web-console/CollaborationTabBridge";
 import FlowStudioLoading from "./FlowStudioLoading";
+import { consoleFrameUrl } from "./console-environment";
 
 /** Shell presentation: keep the shared loader visible until collaboration content is ready. */
 export default function CollaborationPane({ groupId, title, onFrame, onLoad }: {
@@ -38,7 +39,7 @@ export default function CollaborationPane({ groupId, title, onFrame, onLoad }: {
       ref={element => { frame.current = element; onFrame(element); }}
       className={`webapp-frame collaboration-frame${state === "ready" ? " is-ready" : ""}`}
       style={{ visibility: state === "ready" ? "visible" : "hidden" }}
-      src={dashboard ? "/app/?view=collaboration-dashboard" : `/app/?view=collaboration&groupId=${encodeURIComponent(groupId)}`}
+      src={consoleFrameUrl(dashboard ? "/app/?view=collaboration-dashboard" : `/app/?view=collaboration&groupId=${encodeURIComponent(groupId)}`)}
       title={title}
       onLoad={onLoad}
       onError={() => setState("error")}

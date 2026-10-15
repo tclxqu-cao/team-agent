@@ -1,8 +1,8 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
-const pageSource = readFileSync(new URL("./page.tsx", import.meta.url), "utf8");
-const authGateSource = readFileSync(new URL("./AuthGate.tsx", import.meta.url), "utf8");
+const pageSource = readFileSync(new URL("./page.tsx", import.meta.url), "utf8") + readFileSync(new URL("./console-styles.ts", import.meta.url), "utf8");
+const authGateSource = readFileSync(new URL("./AuthGate.tsx", import.meta.url), "utf8") + readFileSync(new URL("./WorkspaceBoot.tsx", import.meta.url), "utf8");
 const routeLayoutSource = readFileSync(new URL("./layout.tsx", import.meta.url), "utf8");
 const bootCss = readFileSync(new URL("./neural-boot.css", import.meta.url), "utf8");
 const rootLayoutSource = readFileSync(new URL("../layout.tsx", import.meta.url), "utf8");

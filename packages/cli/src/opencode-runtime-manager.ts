@@ -5,6 +5,7 @@ import { delimiter, isAbsolute, relative, resolve, win32 } from "node:path";
 import { promisify } from "node:util";
 import { resolveNpmExecutor } from "./codex-runtime-manager.js";
 import type { PlatformTarget } from "./platform.js";
+import { withAbortSignal } from "./abort.js";
 
 const execFileAsync = promisify(execFile);
 // Default managed installation; compatibility has an independent minimum.
@@ -21,7 +22,7 @@ export interface OpenCodeRuntimeResolution {
 }
 
 interface Dependencies {
-  run(command: string, args: string[], timeoutMs: number): Promise<{ stdout: string; stderr: string }>;
+  run(command: string, args: string[], timeoutMs: number, signal?: AbortSignal): Promise<{ stdout: string; stderr: string }>;
   sleep(ms: number): Promise<void>;
   now(): number;
 }
@@ -35,15 +36,19 @@ export interface ResolveOpenCodeRuntimeOptions {
   lockWaitMs?: number;
   staleLockMs?: number;
   onProgress?: (message: string) => void;
+  installIfMissing?: boolean;
+  signal?: AbortSignal;
   dependencies?: Partial<Dependencies>;
 }
 
 const defaults: Dependencies = {
-  async run(command, args, timeoutMs) {
+  async run(command, args, timeoutMs, signal) {
     try {
       const { stdout, stderr } = await execFileAsync(command, args, {
         encoding: "utf8",
         timeout: timeoutMs,
+        signal,
+        killSignal: "SIGKILL",
         maxBuffer: 4 * 1024 * 1024,
         windowsHide: true,
       });
@@ -60,9 +65,22 @@ const defaults: Dependencies = {
 export async function resolveOpenCodeRuntime(
   options: ResolveOpenCodeRuntimeOptions,
 ): Promise<OpenCodeRuntimeResolution> {
+  return options.signal
+    ? withAbortSignal(() => resolveRuntime(options), options.signal)
+    : resolveRuntime(options);
+}
+
+async function resolveRuntime(options: ResolveOpenCodeRuntimeOptions): Promise<OpenCodeRuntimeResolution> {
   const environment = options.environment ?? process.env;
   const platform = options.platform ?? process.platform;
   const dependencies = { ...defaults, ...options.dependencies };
+  const signal = options.signal;
+  if (signal) {
+    const run = dependencies.run;
+    const sleep = dependencies.sleep;
+    dependencies.run = (command, args, timeoutMs) => withAbortSignal(() => run(command, args, timeoutMs, signal), signal);
+    dependencies.sleep = (delayMs) => withAbortSignal(() => sleep(delayMs), signal);
+  }
   const explicit = environment.AGENT_OPENCODE_BIN?.trim();
   if (explicit) {
     const absolute = platform === "win32" ? win32.isAbsolute(explicit) : isAbsolute(explicit);
@@ -76,6 +94,8 @@ export async function resolveOpenCodeRuntime(
   const managedRoot = resolve(options.dataDir, "runtimes", "opencode", OPENCODE_RUNTIME_VERSION);
   const managed = await validateManaged(managedRoot, platform, dependencies);
   if (managed) return managed;
+  signal?.throwIfAborted();
+  if (options.installIfMissing === false) throw new Error("OpenCode is not installed; optional OpenCode sessions are unavailable.");
   options.onProgress?.(`Installing managed OpenCode ${OPENCODE_RUNTIME_VERSION}...`);
   return install({ ...options, environment, platform, dependencies, managedRoot });
 }
@@ -158,12 +178,14 @@ async function install(options: ResolveOpenCodeRuntimeOptions & {
     ], 180_000);
     const validated = await validateManaged(temporary, options.platform, options.dependencies);
     if (!validated) throw new Error(`validation failed after installing ${OPENCODE_PACKAGE}`);
+    options.signal?.throwIfAborted();
     await rename(temporary, options.managedRoot);
     temporary = null;
     const activated = await validateManaged(options.managedRoot, options.platform, options.dependencies);
     if (!activated) throw new Error("validation failed after activation");
     return activated;
   } catch (error) {
+    options.signal?.throwIfAborted();
     const concurrent = await validateManaged(options.managedRoot, options.platform, options.dependencies);
     if (concurrent) return concurrent;
     throw new Error(`Unable to install managed OpenCode ${OPENCODE_RUNTIME_VERSION}: ${describe(error)}`, { cause: error });

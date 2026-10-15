@@ -15,9 +15,10 @@ interface AgentWorkspaceSwitcherProps {
   value: AgentType;
   health: RuntimeHealth[];
   onChange(agentType: AgentType): void;
+  onUnavailable(message: string): void;
 }
 
-export default function AgentWorkspaceSwitcher({ value, health, onChange }: AgentWorkspaceSwitcherProps) {
+export default function AgentWorkspaceSwitcher({ value, health, onChange, onUnavailable }: AgentWorkspaceSwitcherProps) {
   const track = useRef<HTMLDivElement>(null);
   const [showPrevious, setShowPrevious] = useState(false);
   useEffect(() => {
@@ -40,6 +41,11 @@ export default function AgentWorkspaceSwitcher({ value, health, onChange }: Agen
       {AGENTS.map((agent) => {
         const runtime = health.find((entry) => entry.agentType === agent.agentType);
         const unavailable = runtime?.available === false;
+        const checking = agent.agentType !== "customer-agent" && !runtime;
+        const blocked = unavailable || checking;
+        const message = checking ? `正在检查远程 ${agent.label}，请稍后重试`
+          : /not installed|not found|ENOENT|未安装|找不到/i.test(runtime?.error ?? "")
+            ? `远程未安装 ${agent.label}` : `远程 ${agent.label} 暂不可用`;
         return (
           <button
             key={agent.agentType}
@@ -47,12 +53,16 @@ export default function AgentWorkspaceSwitcher({ value, health, onChange }: Agen
             role="tab"
             aria-selected={value === agent.agentType}
             aria-label={agent.label}
-            title={unavailable ? `${agent.label} 不可用：${runtime?.error ?? "未检测到运行时"}` : agent.label}
-            className={value === agent.agentType ? "is-active" : ""}
-            onClick={() => onChange(agent.agentType)}
+            aria-disabled={blocked}
+            title={blocked ? message : agent.label}
+            className={[value === agent.agentType ? "is-active" : "", blocked ? "is-unavailable" : ""].filter(Boolean).join(" ")}
+            onClick={() => {
+              if (blocked) { onUnavailable(message); return; }
+              onChange(agent.agentType);
+            }}
           >
             <AgentBrandIcon agentType={agent.agentType} size={22} />
-            <i className={unavailable ? "is-unavailable" : ""} aria-hidden="true" />
+            <i className={blocked ? "is-unavailable" : ""} aria-hidden="true" />
           </button>
         );
       })}

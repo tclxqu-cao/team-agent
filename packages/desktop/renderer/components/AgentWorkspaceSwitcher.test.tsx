@@ -9,6 +9,7 @@ describe("AgentWorkspaceSwitcher", () => {
       value: "codex",
       health: [],
       onChange: () => undefined,
+      onUnavailable: () => undefined,
     }));
 
     expect(html.indexOf("Customer Agent")).toBeLessThan(html.indexOf("Codex"));
@@ -26,15 +27,17 @@ describe("AgentWorkspaceSwitcher", () => {
     expect(html).not.toMatch(/>CA<|>CX<|>CC<|>OC</);
   });
 
-  it("keeps an unavailable Agent selectable while exposing its status", () => {
+  it("marks a missing remote Agent unavailable and exposes the reason", () => {
     const html = renderToStaticMarkup(createElement(AgentWorkspaceSwitcher, {
       value: "customer-agent",
       health: [{ agentType: "codex", available: false, label: "Codex", error: "未安装" }],
       onChange: () => undefined,
+      onUnavailable: () => undefined,
     }));
 
-    expect(html).toContain("Codex 不可用：未安装");
+    expect(html).toContain("远程未安装 Codex");
     expect(html).toContain('class="is-unavailable"');
-    expect(html).not.toContain("disabled");
+    expect(html).toContain('aria-disabled="true"');
+    expect(html).not.toContain(' disabled=""');
   });
 });

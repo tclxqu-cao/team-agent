@@ -21,6 +21,16 @@ afterEach(async () => {
 });
 
 describe("managed Codex runtime", () => {
+  it("does not start npm when only installed components are allowed", async () => {
+    const root = await temporaryRoot();
+    const run = vi.fn();
+    await expect(resolveCodexRuntime({
+      dataDir: root, target: "darwin-arm64", platform: "darwin", environment: { PATH: "" },
+      installIfMissing: false, dependencies: { run },
+    })).rejects.toThrow("run agentroam doctor");
+    expect(run).not.toHaveBeenCalled();
+  });
+
   it("parses the official version output", () => {
     expect(parseCodexVersion("codex-cli 0.153.5")).toBe("0.153.5");
     expect(parseCodexVersion("codex-cli next")).toBeNull();
@@ -204,7 +214,7 @@ describe("managed Codex runtime", () => {
         expect(args).toContain("@openai/codex@latest");
         expect(args).toContain("--prefer-online");
         expect(args).toContain("--registry=https://registry.npmjs.org");
-        expect(timeoutMs).toBe(60 * 60_000);
+        expect(timeoutMs).toBe(180_000);
         return { stdout: "installed", stderr: "" };
       }
       return {
@@ -334,6 +344,30 @@ describe("managed Codex runtime", () => {
     })).rejects.toThrow("network unavailable");
 
     expect(await readdir(resolve(root, "data", "runtimes", "codex"))).toEqual([]);
+  });
+
+  it("cancels a stalled install, releases its lock and does not activate a runtime", async () => {
+    const root = await temporaryRoot();
+    const npmExecPath = await fakeExecutable(resolve(root, "npm-cli.js"));
+    const controller = new AbortController();
+    let started!: () => void;
+    const installing = new Promise<void>(resolve => { started = resolve; });
+    const run = vi.fn(async (_command: string, _args: string[], _timeout: number, signal?: AbortSignal) => {
+      expect(signal).toBe(controller.signal);
+      started();
+      return new Promise<never>(() => {});
+    });
+    const pending = resolveCodexRuntime({
+      dataDir: root, target: "darwin-arm64", platform: "darwin", nodeExecutable: "/test/node",
+      environment: { PATH: "", npm_execpath: npmExecPath }, signal: controller.signal, dependencies: { run },
+    });
+    const rejected = expect(pending).rejects.toThrow("component deadline");
+    await installing;
+    controller.abort(new Error("component deadline"));
+    await rejected;
+    await vi.waitFor(async () => expect(await readdir(resolve(root, "runtimes", "codex"))).toEqual([]));
+    expect(run).toHaveBeenCalledOnce();
+    expect(run.mock.calls[0]![1]).toContain("@openai/codex@latest");
   });
 
   it.each(["0.152.9", "1.2.3-alpha.1"])("rejects unsupported latest output %s without activating it", async (version) => {

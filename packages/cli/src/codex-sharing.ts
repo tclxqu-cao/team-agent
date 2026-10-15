@@ -14,6 +14,7 @@ import { writePrivateText } from "./service/service-files.js";
 const executeFile = promisify(execFile);
 export const CODEX_SHARING_LABEL = "com.agentroam.codex-desktop-shared-env";
 export interface SharingContext {
+  signal?: AbortSignal;
   platform?: NodeJS.Platform;
   homeDir?: string;
   uid?: number;
@@ -65,7 +66,7 @@ export async function configureCodexSharing(options: { dataDir: string }, contex
   };
   const json = `${paths.root}/job.json`;
   const temporary = `${paths.root}/job.plist`;
-  const commandOptions = { encoding: "utf8" as const, timeout: 20_000, maxBuffer: 1024 * 1024 };
+  const commandOptions = { encoding: "utf8" as const, timeout: 20_000, maxBuffer: 1024 * 1024, signal: context.signal, killSignal: "SIGKILL" as const };
   // Identical startup calls must not unload/reload an already healthy job.
   let unchanged = false;
   try {

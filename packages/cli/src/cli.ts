@@ -11,7 +11,8 @@ import { installedDataDir, pairingAdmin, printPairingCode, type PairedDevice, ty
 import { detectPlatform, type PlatformTarget } from "./platform.js";
 import { AGENTROAM_VERSION, resolvePlatformRuntime, resolvePlatformTui } from "./platform-packages.js";
 import { acquireSleepInhibitor } from "./power/sleep-inhibitor.js";
-import { RuntimeManager, type RuntimeHandle } from "./runtime-manager.js";
+import { CODEX_PREPARATION_TIMEOUT_MS, RuntimeManager, type RuntimeHandle } from "./runtime-manager.js";
+import { withTimeout } from "./abort.js";
 import { ServiceRuntimeReporter } from "./service/runtime-state.js";
 import { runServiceCommand } from "./service/service-command.js";
 import { resolveServicePaths } from "./service/service-files.js";
@@ -188,7 +189,7 @@ async function executeCommand(options: ReturnType<typeof parseArgs>, argv: strin
     console.log(`✓ Local server: ${runtime.localUrl}/web`);
     await serviceReporter?.localReady(runtime.localUrl);
     if (!serviceReporter) printLocalDesktopUrl(runtime.localUrl);
-    const lanUrl = options.localOnly ? findLanUrl(runtime.port) ?? runtime.localUrl : runtime.localUrl;
+    const lanUrl = findLanUrl(runtime.port) ?? runtime.localUrl;
     const relayRuntime = runtime;
 
     relay = await withCliProgress("正在建立手机访问连接", () => selectRelay({
@@ -199,15 +200,15 @@ async function executeCommand(options: ReturnType<typeof parseArgs>, argv: strin
       port: relayRuntime.port,
       signal: controller.signal,
       log: (line) => process.stderr.write(`${line}\n`),
-      onAttempt: (provider) => console.log(`▲ Trying ${providerDisplayName(provider)} relay...`),
-      onFailure: (provider, message) => console.error(`⚠ ${providerDisplayName(provider)} unavailable: ${message}`),
-      allowLanFallback: options.localOnly,
+      onAttempt: (provider) => console.log(`▲ 正在连接 ${providerDisplayName(provider)}（最多 30 秒，失败后使用局域网）…`),
+      onFailure: (provider, message) => console.error(`⚠ ${providerDisplayName(provider)} 不可用：${message}；正在切换到局域网。`),
     }));
 
     if (controller.signal.aborted) { await relay.tunnel?.close(); return; }
     if (relay.provider === "lan") {
       if (relay.failures.length > 0) console.error(`  Continuing with local network access: ${relay.publicUrl}/web`);
       else console.log(`✓ Local network: ${relay.publicUrl}/web`);
+      console.log(lanUrl === runtime.localUrl ? "当前没有可用的局域网地址，可先在本机使用；连接 Wi-Fi 或有线网络后重启服务以生成手机访问地址。" : "手机与电脑连接同一局域网后，即可使用以上地址或二维码连接。");
     } else {
       console.log(`✓ ${providerDisplayName(relay.provider)} tunnel ready: ${relay.publicUrl}`);
     }
@@ -284,11 +285,12 @@ async function doctor(target: PlatformTarget, dataDir: string): Promise<void> {
   }
 
   try {
-    const codex = await withCliProgress("正在检查和准备 Codex", () => resolveCodexRuntime({
+    const codex = await withCliProgress("正在检查和准备 Codex（最多 180 秒）", () => withTimeout(signal => resolveCodexRuntime({
       dataDir,
       target,
+      signal,
       onProgress: (message) => console.log(`… ${message}`),
-    }));
+    }), CODEX_PREPARATION_TIMEOUT_MS, "Codex 组件准备超时（180 秒）；请检查网络后重试。"));
     console.log(`✓ Codex ${codex.version} (${codex.source}) ${codex.executable}`);
   } catch (error) {
     reportDoctorFailure(error, "Codex: ");

@@ -1,0 +1,16 @@
+.unpaired-home { display:flex; flex-direction:column; height:100dvh; overflow:hidden; background:var(--ui-root-bg); color:var(--ui-text); }
+.unpaired-home .terminal-tab-list, .unpaired-home .terminal-add, .unpaired-home .toolbar-tools, .unpaired-home .toolbar-more, .unpaired-workspace { filter:grayscale(1); opacity:.55; }
+.unpaired-home .terminal-tab { cursor:default; }
+.unpaired-scan { display:flex; align-items:center; justify-content:center; gap:5px; min-width:58px; min-height:44px; padding:0 4px; border:0; background:transparent; color:var(--ui-tab-accent); font-family:inherit; font-size:12px; font-weight:600; cursor:pointer; }
+.unpaired-scan:focus-visible { outline:2px solid var(--ui-tab-accent); outline-offset:-2px; border-radius:6px; }
+.unpaired-scan:disabled { opacity:.6; }
+.unpaired-workspace { flex:1; min-height:0; display:flex; flex-direction:column; background:var(--bg-workspace); }
+.unpaired-workspace-header { display:flex; align-items:center; gap:10px; min-height:48px; padding:0 10px; border-bottom:1px solid var(--border-subtle); font-size:13px; }
+.unpaired-workspace-header span { flex:1; }
+.unpaired-agent-switcher { padding:8px 12px; }
+.unpaired-welcome { display:grid; place-items:center; flex:1; min-height:0; overflow:auto; }
+.unpaired-composer { margin:8px 14px max(16px, env(safe-area-inset-bottom)); padding:16px 12px 8px; border:1px solid var(--border-default); border-radius:16px; background:var(--bg-surface); color:var(--text-muted); font-size:14px; }
+.unpaired-composer > div { display:flex; justify-content:space-between; margin-top:16px; }
+.unpaired-notice { position:fixed; z-index:1200; left:50%; bottom:calc(env(safe-area-inset-bottom) + 100px); transform:translateX(-50%); max-width:calc(100vw - 48px); width:max-content; padding:12px 18px; border-radius:10px; background:var(--text-primary); color:var(--text-inverse); box-shadow:var(--shadow-md); font-size:13px; text-align:center; pointer-events:none; }
+body[data-native-app="1"] { margin:0; }
+body[data-native-app="1"] #root { min-height:100dvh; }

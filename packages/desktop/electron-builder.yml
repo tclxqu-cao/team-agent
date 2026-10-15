@@ -18,6 +18,10 @@ files:
   - "!node_modules/@agent/native-runtime/dist/**/*.d.ts.map"
   - "!node_modules/@agent/native-runtime/dist/**/*.js.map"
 extraResources:
+  - from: assets/runtime
+    to: runtime
+  - from: assets/bootstrap
+    to: bootstrap
   - from: chrome-extension
     to: chrome-extension
   - from: assets

@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 const paneSource = readFileSync(new URL("./TerminalPane.tsx", import.meta.url), "utf8");
-const pageSource = readFileSync(new URL("./page.tsx", import.meta.url), "utf8");
+const pageSource = readFileSync(new URL("./page.tsx", import.meta.url), "utf8") + readFileSync(new URL("./console-styles.ts", import.meta.url), "utf8");
 
 describe("web terminal startup feedback", () => {
   it("becomes ready from either the start response or the matching event", () => {

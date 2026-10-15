@@ -11,6 +11,7 @@ import { probeComputerAvailability, type ComputerAvailability } from "./computer
 import { computerNavigation, readComputers, mergeComputers, pairingNavigation, parsePairingTarget } from "../../public/pwa/computer-directory.js";
 import { useComputerDirectory } from "./useComputerDirectory";
 import { createPairingScanner, decodePairingImage, supportsLiveCamera } from "../../public/pwa/pairing-scan.js";
+import { consoleOrigin, nativeConsole } from "./console-environment";
 
 type Computer = { origin: string; name: string };
 const TOOL_OPTIONS = [
@@ -58,7 +59,7 @@ export default function ComputerSwitcher({ username, connected, accent, accentTe
   }, [configuration.loaded, configuration.settings.savedPages, selectedPageId, onUpdatePage]);
 
   useEffect(() => {
-    setOrigin(location.origin);
+    setOrigin(consoleOrigin());
     setPortalNode(trigger.current?.closest<HTMLElement>(".web-root") ?? document.body);
     const media = window.matchMedia("(max-width: 600px)");
     const resizeMenu = () => setMobile(media.matches);
@@ -114,6 +115,7 @@ export default function ComputerSwitcher({ username, connected, accent, accentTe
   const closeDialog = useCallback(() => { setDialog(null); trigger.current?.focus(); }, []);
   const closePageDialog = useCallback(() => { setPageDialog(null); trigger.current?.focus(); }, []);
   const navigate = useCallback(async (raw: string, name: string) => {
+    if (nativeConsole()) { await nativeConsole()!.pair(raw); return; }
     const target = parsePairingTarget(raw);
     const connection = { origin: target.origin, name: name.trim() || computers.find(computer => computer.origin === target.origin)?.name || target.hostname };
     const navigation = pairingNavigation(raw, mergeComputers(readComputers(), computers, [connection]), name);
@@ -121,7 +123,7 @@ export default function ComputerSwitcher({ username, connected, accent, accentTe
     location.assign(navigation);
   }, [computers, directory.add]);
   const rename = useCallback(async (name: string) => {
-    await directory.rename(location.origin, name);
+    await directory.rename(consoleOrigin(), name);
     closeDialog();
   }, [closeDialog, directory.rename]);
 
@@ -155,7 +157,11 @@ export default function ComputerSwitcher({ username, connected, accent, accentTe
         return <div key={computer.origin} className="computer-menu-row">
         <button type="button" className="computer-menu-item" data-computer-origin={computer.origin} aria-label={`${computer.name}，${label}${computer.origin === origin ? "，当前电脑" : ""}`} aria-current={computer.origin === origin ? "true" : undefined} onClick={() => {
           if (computer.origin === origin) setView("home");
-          else { try { location.assign(computerNavigation(computer.origin, mergeComputers(readComputers(), computers))); } catch (cause) { setError((cause as Error).message); } }
+          else { try {
+            const native = nativeConsole();
+            if (native) void native.switchComputer(computer.origin).catch(cause => setError((cause as Error).message));
+            else location.assign(computerNavigation(computer.origin, mergeComputers(readComputers(), computers)));
+          } catch (cause) { setError((cause as Error).message); } }
         }}>
           <Monitor size={17} aria-hidden="true" /><span><strong>{computer.name}</strong><small>{computer.origin}</small></span><span className="computer-status-dot" data-status={status} role="img" aria-label={label} title={label} />{computer.origin === origin && <Check size={16} aria-label="当前电脑" />}
         </button>
@@ -163,7 +169,11 @@ export default function ComputerSwitcher({ username, connected, accent, accentTe
         </div>;
       })}
       <div className="computer-menu-divider" />
-      <button type="button" className="computer-menu-item" disabled={!directory.loaded || directory.saving} onClick={() => { setOpen(false); setDialog("add"); }}><Plus size={17} aria-hidden="true" /><span>扫码添加电脑</span></button>
+      <button type="button" className="computer-menu-item" disabled={!directory.loaded || directory.saving} onClick={() => {
+        const native = nativeConsole();
+        if (native) void native.scan().catch(cause => setError((cause as Error).message));
+        else { setOpen(false); setDialog("add"); }
+      }}><Plus size={17} aria-hidden="true" /><span>扫码添加电脑</span></button>
       <button type="button" className="computer-menu-item" disabled={!directory.loaded || directory.saving || !current} onClick={() => { setOpen(false); setDialog("rename"); }}><Pencil size={16} aria-hidden="true" /><span>修改当前电脑名称</span></button>
       {directory.error && <><p className="computer-error" role="alert">{directory.error}</p><button type="button" className="computer-menu-item" onClick={() => { void directory.reload(); }}><RefreshCw size={16} /><span>重新加载电脑列表</span></button></>}
       </>}

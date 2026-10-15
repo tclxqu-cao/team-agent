@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import type { PinnedCommand } from "@agent/core";
+import type { PinnedCommand } from "../../../core/src/domain/web-console/entities";
 import { Check, GripVertical, Pencil, Plus, Trash2, X } from "lucide-react";
 import { createPinnedCommand, movePinnedCommand } from "./pinnedCommands";
 

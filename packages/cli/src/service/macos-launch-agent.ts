@@ -53,7 +53,8 @@ export class MacLaunchAgent implements ServiceController {
     this.runner = options.runner ?? runCommand;
     this.processExists = options.processExists ?? isProcessRunning;
     this.now = options.now ?? (() => new Date());
-    this.readyTimeoutMs = options.readyTimeoutMs ?? 120_000;
+    // Codex preparation (180s), sharing (10s), local server (20s), relay (30s), plus cleanup.
+    this.readyTimeoutMs = options.readyTimeoutMs ?? 270_000;
     this.stopTimeoutMs = options.stopTimeoutMs ?? 15_000;
     this.pollIntervalMs = options.pollIntervalMs ?? 250;
   }

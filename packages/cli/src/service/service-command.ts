@@ -15,6 +15,7 @@ import { configureCodexSharing } from "../codex-sharing.js";
 import { setupCodexDesktop } from "../codex-desktop-setup.js";
 import { authorizeRemoteDesktop } from "../desktop-authorization.js";
 import { withCliProgress } from "../../bin/cli-progress.mjs";
+import { withTimeout } from "../abort.js";
 
 interface ServiceCommandContext {
   platform?: NodeJS.Platform;
@@ -62,17 +63,19 @@ export async function runServiceCommand(options: CliOptions, context: ServiceCom
       );
       let codexPath: string | undefined;
       try {
-        const codex = await withCliProgress("正在检查和安装 Codex 组件", () => (context.codexResolver ?? resolveCodexRuntime)({
+        const codex = await withCliProgress("正在检查已有 Codex；缺失时由后台服务限时安装最新版", () => withTimeout(signal => (context.codexResolver ?? resolveCodexRuntime)({
           dataDir: options.dataDir,
           target: detectPlatform(platform, context.arch ?? process.arch, nodeVersion),
           environment: { ...environment, PATH: environmentPath },
           platform,
           nodeExecutable: context.nodePath,
+          installIfMissing: false,
+          signal,
           onProgress: (message) => log(`… ${message}`),
-        }));
+        }), 60_000, "检查已有 Codex 超时；后台服务将继续检查。"));
         codexPath = codex.executable;
       } catch (error) {
-        log(`⚠ Codex runtime was not pinned during service install: ${error instanceof Error ? error.message : error}`);
+        log(`Codex 将在后台服务启动时检查并限时补齐：${error instanceof Error ? error.message : error}`);
       }
       const config: ServiceConfig = {
         version: context.version,
@@ -90,13 +93,18 @@ export async function runServiceCommand(options: CliOptions, context: ServiceCom
         installedAt: now.toISOString(),
       };
       if (platform === "darwin" && codexPath) {
-        try { await (context.configureSharing ?? configureCodexSharing)(options, { homeDir: context.homeDir, environment: { ...environment, PATH: environmentPath, AGENT_CODEX_BIN: codexPath } }); }
+        try {
+          await withTimeout(signal => (context.configureSharing ?? configureCodexSharing)(options, {
+            homeDir: context.homeDir, environment: { ...environment, PATH: environmentPath, AGENT_CODEX_BIN: codexPath }, signal,
+          }), 10_000, "Codex 默认共享配置超时（10 秒）");
+        }
         catch (error) { log(`Codex 默认共享配置未完成，可在电脑菜单中修复：${error instanceof Error ? error.message : error}`); }
       }
-      const { definition, state } = await withCliProgress("正在安装后台服务，等待服务和手机访问连接就绪", () => controller.install(config));
+      const { definition, state } = await withCliProgress("正在启动后台服务；Codex 准备最多 180 秒，公网连接最多等待 30 秒，失败后使用局域网", () => controller.install(config));
       log(`✓ AgentRoam service installed: ${definition}`);
       if (state?.localUrl && state.status !== "stopped") printLocalDesktopUrl(state.localUrl, log, platform);
       requireReadyService(state);
+      printLanFallback(state, log);
       if (state?.localUrl && state.status !== "stopped" && (platform === "darwin" || platform === "win32")) {
         if (environment.AGENTROAM_INSTALL_REMOTE_DESKTOP === "skip") {
           log("已跳过安装时远程桌面授权，可稍后执行 agentroam desktop authorize。");
@@ -119,9 +127,10 @@ export async function runServiceCommand(options: CliOptions, context: ServiceCom
       return;
     }
     case "start": {
-      const state = await withCliProgress("正在启动后台服务，等待服务和手机访问连接就绪", () => controller.start());
+      const state = await withCliProgress("正在启动后台服务；Codex 准备最多 180 秒，公网连接最多等待 30 秒，失败后使用局域网", () => controller.start());
       if (state?.localUrl && state.status !== "stopped") printLocalDesktopUrl(state.localUrl, log, platform);
       requireReadyService(state);
+      printLanFallback(state, log);
       log("✓ AgentRoam service started");
       await logAccessUrl(state.accessUrl);
       return;
@@ -143,6 +152,7 @@ export async function runServiceCommand(options: CliOptions, context: ServiceCom
       }
       if (status.running && status.state?.localUrl) printLocalDesktopUrl(status.state.localUrl, log, platform);
       if (status.running && status.state?.status === "ready" && status.state.accessUrl) {
+        printLanFallback(status.state, log);
         await logAccessUrl(status.state.accessUrl);
       }
       return;
@@ -159,9 +169,10 @@ export async function runServiceCommand(options: CliOptions, context: ServiceCom
       return;
     }
     case "restart": {
-      const state = await withCliProgress("正在重启后台服务，等待服务和手机访问连接就绪", () => controller.restart());
+      const state = await withCliProgress("正在重启后台服务；Codex 准备最多 180 秒，公网连接最多等待 30 秒，失败后使用局域网", () => controller.restart());
       if (state?.localUrl && state.status !== "stopped") printLocalDesktopUrl(state.localUrl, log, platform);
       requireReadyService(state);
+      printLanFallback(state, log);
       log("✓ AgentRoam service restarted");
       await logAccessUrl(state.accessUrl);
       return;
@@ -175,6 +186,15 @@ export async function runServiceCommand(options: CliOptions, context: ServiceCom
     default:
       throw cliError("service action is required");
   }
+}
+
+function printLanFallback(state: ServiceRuntimeState, log: (line: string) => void): void {
+  if (state.provider !== "lan") return;
+  if (state.accessUrl && ["127.0.0.1", "localhost", "[::1]"].includes(new URL(state.accessUrl).hostname)) {
+    log("✓ 本机服务已启动；当前没有局域网地址，连接 Wi-Fi 或有线网络后重启服务即可生成手机访问地址。");
+    return;
+  }
+  log("✓ 后台服务已通过局域网启动；手机与电脑连接同一局域网后扫码连接。");
 }
 
 function requireReadyService(state: ServiceRuntimeState | null): asserts state is ServiceRuntimeState & { accessUrl: string } {

@@ -48,7 +48,8 @@ export class WindowsTaskService implements ServiceController {
     this.runner = options.runner ?? runCommand;
     this.processExists = options.processExists ?? isProcessRunning;
     this.now = options.now ?? (() => new Date());
-    this.readyTimeoutMs = options.readyTimeoutMs ?? 120_000;
+    // Leave room for bounded component preparation, local readiness and relay fallback.
+    this.readyTimeoutMs = options.readyTimeoutMs ?? 270_000;
     this.stopTimeoutMs = options.stopTimeoutMs ?? 15_000;
     this.pollIntervalMs = options.pollIntervalMs ?? 250;
     this.validate = options.validateConfig ?? validateWindowsConfig;

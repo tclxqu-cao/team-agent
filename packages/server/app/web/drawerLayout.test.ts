@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
-const pageSource = readFileSync(new URL("./page.tsx", import.meta.url), "utf8");
+const pageSource = readFileSync(new URL("./page.tsx", import.meta.url), "utf8") + readFileSync(new URL("./console-styles.ts", import.meta.url), "utf8");
 const computerSwitcherSource = readFileSync(new URL("./ComputerSwitcher.tsx", import.meta.url), "utf8");
 
 describe("web console file drawer layout", () => {

@@ -1,7 +1,10 @@
 {
-  "packageVersion": "0.2.0-preview.48",
+  "packageVersion": "0.2.0-preview.49",
   "target": "darwin-arm64",
   "schemaVersion": 2,
+  "capabilities": {
+    "nativeConsole": 1
+  },
   "minimumNodeVersion": "22.22.0",
   "nativeFiles": {
     "native/AgentRoam Remote Desktop.app/Contents/MacOS/agentroam-remote-desktop": "7760fb7e10ca3fc1ff48374c14e32e0d470fa994685a9c04edf61dfa46fc9c27",

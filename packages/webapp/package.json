@@ -16,6 +16,7 @@
     "@capacitor/status-bar": "7.0.6",
     "core-js": "3.50.0",
     "eventsource": "3.0.7",
+    "lucide-react": "^0.468.0",
     "capacitor-secure-storage-plugin": "0.12.0"
   },
   "devDependencies": {

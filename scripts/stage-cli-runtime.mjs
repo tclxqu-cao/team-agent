@@ -174,6 +174,7 @@ const manifest = {
   packageVersion: packageJson.version,
   target: targetName,
   schemaVersion: 2,
+  capabilities: { nativeConsole: 1 },
   minimumNodeVersion: MINIMUM_NODE_VERSION,
   nativeFiles,
 };

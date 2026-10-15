@@ -36,3 +36,11 @@ declare module "@desktop/renderer/components/BrowserLivePanel" {
   const BrowserLivePanel: ComponentType<{ open: boolean; agentSessionId?: string | null; onClose: () => void }>;
   export default BrowserLivePanel;
 }
+
+declare module "next/dynamic" {
+  import type { ComponentType, ReactNode } from "react";
+  export default function dynamic<P extends object>(
+    load: () => Promise<{ default: ComponentType<P> }>,
+    options?: { ssr?: boolean; loading?: () => ReactNode },
+  ): ComponentType<P>;
+}

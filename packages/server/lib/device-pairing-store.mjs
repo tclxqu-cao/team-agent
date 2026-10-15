@@ -31,6 +31,7 @@ export class DevicePairingStore {
       CREATE TABLE IF NOT EXISTS device_nonces (hash TEXT PRIMARY KEY, device_id TEXT NOT NULL, expires INTEGER NOT NULL);
     `);
     if (!this.db.pragma("table_info(security_audit)").some((column) => column.name === "count")) this.db.exec("ALTER TABLE security_audit ADD COLUMN count INTEGER NOT NULL DEFAULT 1");
+    if (!this.db.pragma("table_info(device_nonces)").some((column) => column.name === "transport")) this.db.exec("ALTER TABLE device_nonces ADD COLUMN transport TEXT NOT NULL DEFAULT 'browser'");
     this.db.exec("CREATE INDEX IF NOT EXISTS audit_action_time ON security_audit(action,at)");
   }
 
@@ -117,17 +118,27 @@ export class DevicePairingStore {
     this.db.prepare("UPDATE devices SET seen=?, expires=? WHERE id=? AND revoked IS NULL AND expires>?").run(now, now + DEVICE_SESSION_MS, id, now);
   }
 
-  issueNonce(id) {
+  issueNonce(id, transport = "browser") {
     if (!this.active(id)) throw failure("设备授权已失效");
+    if (!["browser", "native"].includes(transport)) throw failure("Invalid nonce transport", 400);
     const nonce = secret();
     this.db.prepare("DELETE FROM device_nonces WHERE expires<=?").run(this.now());
-    this.db.prepare("INSERT INTO device_nonces VALUES (?, ?, ?)").run(hash(nonce), id, this.now() + 60_000);
+    this.db.prepare("INSERT INTO device_nonces (hash, device_id, expires, transport) VALUES (?, ?, ?, ?)").run(hash(nonce), id, this.now() + 60_000, transport);
     return nonce;
   }
 
   consumeNonce(id, nonce) {
     if (typeof nonce !== "string" || !this.active(id)) return false;
-    return !!this.db.prepare("DELETE FROM device_nonces WHERE hash=? AND device_id=? AND expires>? RETURNING hash").get(hash(nonce), id, this.now());
+    return !!this.db.prepare("DELETE FROM device_nonces WHERE hash=? AND device_id=? AND expires>? AND transport='browser' RETURNING hash").get(hash(nonce), id, this.now());
+  }
+
+  consumeNativeNonce(nonce) {
+    if (typeof nonce !== "string" || !/^[A-Za-z0-9_-]{43}$/.test(nonce) || this.isLocked()) return null;
+    return this.db.transaction(() => {
+      const row = this.db.prepare("DELETE FROM device_nonces WHERE hash=? AND expires>? AND transport='native' RETURNING device_id").get(hash(nonce), this.now());
+      if (!row || !this.active(row.device_id)) return null;
+      return this.db.prepare("SELECT id, name, created, seen, expires FROM devices WHERE id=?").get(row.device_id);
+    }).immediate();
   }
 
   list() {

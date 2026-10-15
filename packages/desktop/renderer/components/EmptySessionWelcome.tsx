@@ -28,6 +28,7 @@ const AGENT_LABELS: Record<AgentType, string> = {
 interface EmptySessionWelcomeProps {
   agentType: AgentType;
   ready: boolean;
+  connectionRequired?: boolean;
   /** 测试注入用；生产渲染取当前时间。 */
   now?: Date;
   onSelectPrompt(prompt: string): void;
@@ -36,6 +37,7 @@ interface EmptySessionWelcomeProps {
 export default function EmptySessionWelcome({
   agentType,
   ready,
+  connectionRequired = false,
   now,
   onSelectPrompt,
 }: EmptySessionWelcomeProps) {
@@ -56,11 +58,11 @@ export default function EmptySessionWelcome({
 
       <div className="empty-session-welcome__copy">
         <p className="empty-session-welcome__status">
-          {ready ? `${agentLabel} · 已准备好` : `${agentLabel} · 等待配置`}
+          {connectionRequired ? `${agentLabel} · 等待连接` : ready ? `${agentLabel} · 已准备好` : `${agentLabel} · 等待配置`}
         </p>
         <h2 id="empty-session-welcome-title">{greeting.title}</h2>
         <p className="empty-session-welcome__prompt">
-          {ready ? greeting.prompt : "配置好 API Key 后，我就能开始。"}
+          {connectionRequired ? "扫码连接电脑后，就能开始。" : ready ? greeting.prompt : "配置好 API Key 后，我就能开始。"}
         </p>
       </div>
 

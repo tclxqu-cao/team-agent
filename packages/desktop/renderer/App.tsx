@@ -1665,6 +1665,12 @@ export default function App() {
           value={activeAgent}
           health={runtimeHealth}
           onChange={handleAgentChange}
+          onUnavailable={(message) => {
+            setNotice(message);
+            setNoticeType("info");
+            setTimeout(() => setNotice(null), 3000);
+            void window.agentApi.getRuntimeHealth().then(setRuntimeHealth).catch(() => undefined);
+          }}
         />
 
         <button

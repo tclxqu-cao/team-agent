@@ -64,6 +64,8 @@ packages/server/native/*.app/
 outputs/
 .workbuddy/
 packages/desktop/release/
+packages/desktop/assets/bootstrap/
+packages/desktop/assets/runtime/
 packages/server/.agents/
 packages/server/remote-authorization.json
 

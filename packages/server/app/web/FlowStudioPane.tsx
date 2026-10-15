@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import FlowStudioLoading from "./FlowStudioLoading";
 import { RotateCw } from "lucide-react";
+import { consoleOrigin } from "./console-environment";
 
 type PaneState = "loading" | "ready" | "error";
 
@@ -36,7 +37,7 @@ export default function FlowStudioPane({ visible }: { visible: boolean }) {
         if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
           throw new Error("Flow Studio entry URL is invalid");
         }
-        if (!cancelled) setEntryUrl(resolveFlowStudioFrameUrl(parsed.toString(), window.location.href));
+        if (!cancelled) setEntryUrl(resolveFlowStudioFrameUrl(parsed.toString(), consoleOrigin()));
       })
       .catch(() => {
         if (!cancelled) setState("error");

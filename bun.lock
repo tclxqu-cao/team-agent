@@ -14,7 +14,7 @@
     },
     "packages/cli": {
       "name": "agentroam",
-      "version": "0.2.0-preview.34",
+      "version": "0.2.0-preview.49",
       "bin": {
         "agentroam": "./bin/agentroam.mjs",
         "agent-tui": "./bin/agent-tui.mjs",
@@ -35,8 +35,8 @@
         "@caoqu/agentroam-tui-win32-x64": "0.2.0-preview.20",
         "agentroam-cloudflared-darwin-arm64": "0.2.0-preview.20",
         "agentroam-cloudflared-win32-x64": "0.2.0-preview.20",
-        "agentroam-runtime-darwin-arm64": "0.2.0-preview.21",
-        "agentroam-runtime-win32-x64": "0.2.0-preview.21",
+        "agentroam-runtime-darwin-arm64": "0.2.0-preview.49",
+        "agentroam-runtime-win32-x64": "0.2.0-preview.49",
         "agentroam-tui-darwin-arm64": "0.2.0-preview.20",
       },
     },
@@ -67,7 +67,7 @@
     },
     "packages/desktop": {
       "name": "@agent/desktop",
-      "version": "0.2.0-preview.20",
+      "version": "0.2.0-preview.21",
       "dependencies": {
         "@agent/computer-use": "*",
         "@agent/core": "*",
@@ -78,6 +78,7 @@
         "lucide-react": "^0.468.0",
         "marked": "15.0.12",
         "mermaid": "^11.17.2",
+        "qrcode-terminal": "^0.12.0",
         "ws": "^8.18.0",
         "zod": "^4.0.0",
         "zustand": "^4.5.0",
@@ -125,11 +126,11 @@
     },
     "packages/runtime-darwin-arm64": {
       "name": "agentroam-runtime-darwin-arm64",
-      "version": "0.2.0-preview.34",
+      "version": "0.2.0-preview.49",
     },
     "packages/runtime-win32-x64": {
       "name": "agentroam-runtime-win32-x64",
-      "version": "0.2.0-preview.34",
+      "version": "0.2.0-preview.49",
     },
     "packages/sdk": {
       "name": "@agent/sdk",
@@ -233,6 +234,7 @@
         "capacitor-secure-storage-plugin": "0.12.0",
         "core-js": "3.50.0",
         "eventsource": "3.0.7",
+        "lucide-react": "^0.468.0",
         "zustand": "^4.5.0",
       },
       "devDependencies": {

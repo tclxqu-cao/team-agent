@@ -25,6 +25,16 @@ async function executable(name = "opencode") {
 }
 
 describe("resolveOpenCodeRuntime", () => {
+  it("does not start npm when only installed components are allowed", async () => {
+    const binary = await executable();
+    const run = vi.fn();
+    await expect(resolveOpenCodeRuntime({
+      dataDir: binary.root, target: "darwin-arm64", platform: "darwin", environment: { PATH: "" },
+      installIfMissing: false, dependencies: { run },
+    })).rejects.toThrow("optional OpenCode sessions");
+    expect(run).not.toHaveBeenCalled();
+  });
+
   it("prefers a compatible absolute override", async () => {
     const binary = await executable();
     const run = vi.fn(async (_command: string, args: string[]) => ({
