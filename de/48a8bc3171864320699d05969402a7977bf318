@@ -1,0 +1,27 @@
+.github/workflows/cli-release-verify.yml
+  s_383c021fd01321::t_38f98772f5adb8 14
+.github/workflows/desktop-release-verify.yml
+  s_383c021fd01321::t_6ae493e2fc96a1 14
+packages/desktop/scripts/runtime-bootstrap-worker.ts
+  s_383c021fd01321::t_5b443635c458f8 12,53
+packages/desktop/scripts/runtime-service-args.mjs
+  s_383c021fd01321::t_569c8b3349df8d 1-4
+packages/desktop/scripts/runtime-service-args.test.mjs
+  s_383c021fd01321::t_e18c4aa7cecb60 1-11
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "de48a8bc3171864320699d05969402a7977bf318",
+  "prompts": {},
+  "sessions": {
+    "s_383c021fd01321": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a13f9b-7e14-7d72-93be-8065810877bf",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
