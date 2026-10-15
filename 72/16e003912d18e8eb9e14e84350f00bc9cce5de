@@ -1,0 +1,21 @@
+packages/server/app/web/ComputerSwitcher.tsx
+  s_592f21ca3b05d0::t_7948e2ac05ca14 171
+packages/server/app/web/CodexSharingStatus.tsx
+  s_592f21ca3b05d0::t_7948e2ac05ca14 8,17,41-51,54,56,59-74
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7216e003912d18e8eb9e14e84350f00bc9cce5de",
+  "prompts": {},
+  "sessions": {
+    "s_592f21ca3b05d0": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a13e07-2c3b-77c3-b0ad-eb293f1fe614",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
