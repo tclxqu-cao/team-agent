@@ -1,0 +1,21 @@
+README.en.md
+  s_3d8cb399d47d29::t_e6a8f255873663 5,10,20-29,32
+README.md
+  s_3d8cb399d47d29::t_3f6a50fe7692c9 5,11,17-26,29,130,165
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "72aa46e5d613344bd1cf983de8cc458a6ba47c0f",
+  "prompts": {},
+  "sessions": {
+    "s_3d8cb399d47d29": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0e624-4280-7c10-be74-3f8e283b70c2",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
