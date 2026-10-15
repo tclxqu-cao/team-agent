@@ -43,11 +43,7 @@ const RELEASE_TEXT_FILES = [];
 
 const AGENT_TEXT_FILES = {
   codex: [
-    // The manager is updated via the targeted CODEX_RUNTIME_VERSION declaration
-    // replacement in applyAgentUpgrade; do not add it back to this list.
-    // The test file keeps exactly one pin-following literal (the managed install
-    // assertion) so pin bumps still touch it; keep the count in sync when editing.
-    ["packages/cli/src/codex-runtime-manager.test.ts", 1],
+    // Codex installs follow latest; upgrades only move the tested baseline and fixtures.
     ["packages/cli/src/runtime-manager.test.ts", 1],
     ["packages/cli/src/service/service-command.test.ts", 1],
     ["packages/native-runtime/src/agent-runtime/codex-session-compatibility.test.ts", 6],
@@ -183,15 +179,15 @@ export async function checkRuntimeVersionDrift(root, options = {}) {
   }
   if (!manifest) throwDrift(issues);
 
-  await checkTextValue(io, root, "packages/cli/src/codex-runtime-manager.ts", /export const CODEX_RUNTIME_VERSION = "([^"]+)";/, manifest.codex.version, "Codex runtime", issues);
-  // A Codex managed pin below the supported floor would make fresh installs fail their own gate.
+  await checkTextValue(io, root, "packages/cli/src/codex-runtime-manager.ts", /export const CODEX_RUNTIME_TAG = "([^"]+)";/, "latest", "Codex runtime tag", issues);
+  // The tested Codex baseline must satisfy the supported compatibility floor.
   try {
     const codex = await io.readFile(resolve(root, "packages/cli/src/codex-runtime-manager.ts"), "utf8");
     const minimum = codex.match(/export const CODEX_MINIMUM_VERSION = "([^"]+)";/)?.[1];
     if (!minimum) {
       issues.push("packages/cli/src/codex-runtime-manager.ts is missing the Codex minimum constant");
     } else if (compareStableSemver(manifest.codex.version, minimum) < 0) {
-      issues.push(`Codex managed runtime must be >=${minimum}`);
+      issues.push(`Codex tested runtime must be >=${minimum}`);
     }
   } catch (error) {
     issues.push(`Codex minimum runtime: ${error.message}`);
@@ -269,13 +265,6 @@ export async function applyAgentUpgrade(root, candidateValue, options = {}) {
     stage(file, replaceExactOccurrences(await read(file),
       `export const OPENCODE_RUNTIME_VERSION = "${oldAgentVersion}";`,
       `export const OPENCODE_RUNTIME_VERSION = "${newAgentVersion}";`, 1, file));
-  }
-  if (candidateValue.agent === "codex") {
-    // Targeted declaration replacement only: CODEX_MINIMUM_VERSION must never move with a pin bump.
-    const file = "packages/cli/src/codex-runtime-manager.ts";
-    stage(file, replaceExactOccurrences(await read(file),
-      `export const CODEX_RUNTIME_VERSION = "${oldAgentVersion}";`,
-      `export const CODEX_RUNTIME_VERSION = "${newAgentVersion}";`, 1, file));
   }
   for (const [file, expectedCount] of AGENT_TEXT_FILES[candidateValue.agent]) {
     stage(file, replaceExactOccurrences(await read(file), oldAgentVersion, newAgentVersion, expectedCount, file));

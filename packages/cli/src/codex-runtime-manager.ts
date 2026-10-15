@@ -6,6 +6,7 @@ import {
   mkdir,
   mkdtemp,
   open,
+  readdir,
   rename,
   rm,
   stat,
@@ -16,10 +17,10 @@ import type { PlatformTarget } from "./platform.js";
 
 const execFileAsync = promisify(execFile);
 
-export const CODEX_RUNTIME_VERSION = "0.153.0";
-// Managed install pin tracks releases; the compatibility floor for user installs is independent.
+// Fresh installs follow npm's latest stable release; existing installs have an independent floor.
+export const CODEX_RUNTIME_TAG = "latest";
 export const CODEX_MINIMUM_VERSION = "0.153.0";
-const CODEX_PACKAGE = `@openai/codex@${CODEX_RUNTIME_VERSION}`;
+const CODEX_PACKAGE = `@openai/codex@${CODEX_RUNTIME_TAG}`;
 const NPM_REGISTRY = "https://registry.npmjs.org";
 export const CODEX_INSTALL_TIMEOUT_MS = 60 * 60_000;
 const DEFAULT_LOCK_WAIT_MS = 190_000;
@@ -110,17 +111,16 @@ export async function resolveCodexRuntime(
   const global = await findCompatibleGlobalCodex(environment.PATH, platform, dependencies);
   if (global) return global;
 
-  const managedRoot = resolve(options.dataDir, "runtimes", "codex", CODEX_RUNTIME_VERSION);
-  const managed = await validateManagedRuntime(managedRoot, options.target, platform, dependencies);
+  const managedParent = resolve(options.dataDir, "runtimes", "codex");
+  const managed = await findManagedRuntime(managedParent, options.target, platform, dependencies);
   if (managed) return managed;
 
-  options.onProgress?.(`Installing managed Codex ${CODEX_RUNTIME_VERSION}...`);
+  options.onProgress?.(`Installing managed Codex from ${CODEX_PACKAGE}...`);
   return installManagedCodex({
     ...options,
     environment,
     platform,
     dependencies,
-    managedRoot,
   });
 }
 
@@ -249,17 +249,16 @@ async function installManagedCodex(
     environment: NodeJS.ProcessEnv;
     platform: NodeJS.Platform;
     dependencies: CodexRuntimeDependencies;
-    managedRoot: string;
   },
 ): Promise<CodexRuntimeResolution> {
   const parent = resolve(options.dataDir, "runtimes", "codex");
-  const lockPath = `${options.managedRoot}.lock`;
+  const lockPath = resolve(parent, "install.lock");
   const lockWaitMs = options.lockWaitMs ?? DEFAULT_LOCK_WAIT_MS;
   const staleLockMs = options.staleLockMs ?? DEFAULT_STALE_LOCK_MS;
   await mkdir(parent, { recursive: true });
   const lock = await acquireInstallLock(
     lockPath,
-    options.managedRoot,
+    parent,
     options.target,
     options.platform,
     options.dependencies,
@@ -270,15 +269,15 @@ async function installManagedCodex(
 
   let temporaryRoot: string | null = null;
   try {
-    const existing = await validateManagedRuntime(
-      options.managedRoot,
+    const existing = await findManagedRuntime(
+      parent,
       options.target,
       options.platform,
       options.dependencies,
     );
     if (existing) return existing;
 
-    temporaryRoot = await mkdtemp(resolve(parent, `.${CODEX_RUNTIME_VERSION}-${process.pid}-`));
+    temporaryRoot = await mkdtemp(resolve(parent, `.${CODEX_RUNTIME_TAG}-${process.pid}-`));
     const npm = await resolveNpmExecutor({
       environment: options.environment,
       platform: options.platform,
@@ -290,6 +289,7 @@ async function installManagedCodex(
       "--ignore-scripts",
       "--no-audit",
       "--no-fund",
+      "--prefer-online",
       `--registry=${NPM_REGISTRY}`,
       "--prefix",
       temporaryRoot,
@@ -305,10 +305,13 @@ async function installManagedCodex(
     if (!temporary) {
       throw new Error(`Codex runtime validation failed after installing ${CODEX_PACKAGE}`);
     }
-    await rename(temporaryRoot, options.managedRoot);
+    const managedRoot = resolve(parent, temporary.version);
+    // An invalid cache for this version must not block a validated replacement.
+    await rm(managedRoot, { recursive: true, force: true });
+    await rename(temporaryRoot, managedRoot);
     temporaryRoot = null;
     const installed = await validateManagedRuntime(
-      options.managedRoot,
+      managedRoot,
       options.target,
       options.platform,
       options.dependencies,
@@ -316,14 +319,14 @@ async function installManagedCodex(
     if (!installed) throw new Error("Codex runtime validation failed after activation");
     return installed;
   } catch (error) {
-    const concurrent = await validateManagedRuntime(
-      options.managedRoot,
+    const concurrent = await findManagedRuntime(
+      parent,
       options.target,
       options.platform,
       options.dependencies,
     );
     if (concurrent) return concurrent;
-    throw new Error(`Unable to install managed Codex ${CODEX_RUNTIME_VERSION}: ${describeError(error)}`, {
+    throw new Error(`Unable to install managed Codex from ${CODEX_PACKAGE}: ${describeError(error)}`, {
       cause: error,
     });
   } finally {
@@ -335,7 +338,7 @@ async function installManagedCodex(
 
 async function acquireInstallLock(
   lockPath: string,
-  managedRoot: string,
+  managedParent: string,
   target: PlatformTarget,
   platform: NodeJS.Platform,
   dependencies: CodexRuntimeDependencies,
@@ -353,7 +356,7 @@ async function acquireInstallLock(
       return { handle };
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-      const completed = await validateManagedRuntime(managedRoot, target, platform, dependencies);
+      const completed = await findManagedRuntime(managedParent, target, platform, dependencies);
       if (completed) return { completed };
       try {
         const lockStat = await stat(lockPath);
@@ -370,6 +373,28 @@ async function acquireInstallLock(
       await dependencies.sleep(Math.min(250, Math.max(1, deadline - dependencies.now())));
     }
   }
+}
+
+async function findManagedRuntime(
+  parent: string,
+  target: PlatformTarget,
+  platform: NodeJS.Platform,
+  dependencies: CodexRuntimeDependencies,
+): Promise<CodexRuntimeResolution | null> {
+  const entries = await readdir(parent, { withFileTypes: true }).catch((error: NodeJS.ErrnoException) => {
+    if (error.code === "ENOENT") return [];
+    throw error;
+  });
+  const versions = entries
+    .filter((entry) => entry.isDirectory() && parseCodexVersion(entry.name) === entry.name)
+    .map((entry) => entry.name)
+    .filter(meetsCodexMinimum)
+    .sort((left, right) => left === right ? 0 : isCodexVersionAtLeast(left, right) ? -1 : 1);
+  for (const version of versions) {
+    const runtime = await validateManagedRuntime(resolve(parent, version), target, platform, dependencies);
+    if (runtime?.version === version) return runtime;
+  }
+  return null;
 }
 
 async function validateManagedRuntime(

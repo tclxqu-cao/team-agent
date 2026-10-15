@@ -79,7 +79,7 @@ test("drift check reports every disagreement", async () => {
   const fixture = await makeFixture();
   try {
     const codexPath = resolve(fixture, "packages/cli/src/codex-runtime-manager.ts");
-    await writeFile(codexPath, (await readFile(codexPath, "utf8")).replace("0.153.0", "0.152.0"));
+    await writeFile(codexPath, (await readFile(codexPath, "utf8")).replace('CODEX_RUNTIME_TAG = "latest"', 'CODEX_RUNTIME_TAG = "0.153.0"'));
     const serverPath = resolve(fixture, "packages/server/package.json");
     const server = JSON.parse(await readFile(serverPath, "utf8"));
     server.dependencies["@opencode-ai/sdk"] = "1.18.26";
@@ -108,13 +108,13 @@ test("drift check rejects mismatched minimums and a default below the minimum", 
   }
 });
 
-test("drift check rejects a Codex pin below the minimum or a missing minimum constant", async () => {
+test("drift check rejects a Codex tested baseline below the minimum or a missing minimum constant", async () => {
   const fixture = await makeFixture();
   try {
     const managerPath = resolve(fixture, "packages/cli/src/codex-runtime-manager.ts");
     const source = await readFile(managerPath, "utf8");
     await writeFile(managerPath, source.replace('CODEX_MINIMUM_VERSION = "0.153.0"', 'CODEX_MINIMUM_VERSION = "0.154.0"'));
-    await assert.rejects(checkRuntimeVersionDrift(fixture), /Codex managed runtime must be >=0\.154\.0/);
+    await assert.rejects(checkRuntimeVersionDrift(fixture), /Codex tested runtime must be >=0\.154\.0/);
     await writeFile(managerPath, source.replace(/export const CODEX_MINIMUM_VERSION = "0\.153\.0";\n/, ""));
     await assert.rejects(checkRuntimeVersionDrift(fixture), /missing the Codex minimum constant/);
   } finally {
@@ -122,10 +122,11 @@ test("drift check rejects a Codex pin below the minimum or a missing minimum con
   }
 });
 
-test("codex upgrades move only the managed pin and keep the minimum", async () => {
+test("codex baseline upgrades preserve latest installs and the compatibility minimum", async () => {
   const fixture = await makeFixture();
   try {
     const managerPath = resolve(fixture, "packages/cli/src/codex-runtime-manager.ts");
+    const originalManager = await readFile(managerPath, "utf8");
     let pin = "0.153.0";
     for (const target of ["0.153.2", "0.153.3"]) {
       const { nextReleaseVersion } = await fixtureReleaseVersions(fixture);
@@ -141,7 +142,8 @@ test("codex upgrades move only the managed pin and keep the minimum", async () =
       });
       pin = target;
       const source = await readFile(managerPath, "utf8");
-      assert.match(source, new RegExp(`export const CODEX_RUNTIME_VERSION = "${target}";`));
+      assert.equal(source, originalManager);
+      assert.match(source, /export const CODEX_RUNTIME_TAG = "latest";/);
       assert.equal(source.match(/export const CODEX_MINIMUM_VERSION = "([^"]+)";/)?.[1], "0.153.0");
       assert.deepEqual(await checkRuntimeVersionDrift(fixture), {
         codex: target,

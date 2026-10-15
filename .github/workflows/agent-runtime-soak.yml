@@ -142,7 +142,15 @@ jobs:
           if [ "$RUNNER_OS" = "Windows" ]; then TARGET=windows-amd64; fi
           case "$AGENT" in
             codex)
-              TARGET="$TARGET" DATA_DIR="$RUNNER_TEMP/managed" bun --eval 'import { resolveCodexRuntime } from "./packages/cli/src/codex-runtime-manager.ts"; const r = await resolveCodexRuntime({ dataDir: process.env.DATA_DIR, target: process.env.TARGET }); console.log(r.executable)' > "$RUNNER_TEMP/executable.txt"
+              npm install --prefix "$RUNNER_TEMP/managed" --registry=https://registry.npmjs.org --ignore-scripts --no-audit --no-fund "@openai/codex@$VERSION"
+              TARGET="$TARGET" DATA_DIR="$RUNNER_TEMP/managed" bun --eval '
+                import { existsSync } from "node:fs";
+                import { managedCodexBinaryCandidates, resolveCodexRuntime } from "./packages/cli/src/codex-runtime-manager.ts";
+                const executable = managedCodexBinaryCandidates(process.env.DATA_DIR, process.env.TARGET).find(existsSync);
+                if (!executable) throw new Error("Candidate Codex executable not found");
+                const r = await resolveCodexRuntime({ dataDir: process.env.DATA_DIR, target: process.env.TARGET, environment: { ...process.env, AGENT_CODEX_BIN: executable } });
+                console.log(r.executable);
+              ' > "$RUNNER_TEMP/executable.txt"
               ;;
             opencode)
               TARGET="$TARGET" DATA_DIR="$RUNNER_TEMP/managed" bun --eval 'import { resolveOpenCodeRuntime } from "./packages/cli/src/opencode-runtime-manager.ts"; const r = await resolveOpenCodeRuntime({ dataDir: process.env.DATA_DIR, target: process.env.TARGET }); console.log(r.executable)' > "$RUNNER_TEMP/executable.txt"
