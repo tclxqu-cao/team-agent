@@ -2,21 +2,31 @@
 
 AgentRoam 把本机的 AI Agent、终端、文件和桌面放进同一个工作台。你可以组建多 Agent 协作群，在桌面端开始任务，再从浏览器、手机或平板继续；也可以直接接管终端和桌面，不必一直守在电脑前。
 
-它不是一个只负责转发消息的聊天壳。AgentRoam 统一管理会话、运行状态、历史记录、审批和任务队列，并把 Customer Agent、Codex、Claude Code、OpenCode、真实 Shell 与 AIHub 网页模型接到同一套界面中。
+它不是一个只负责转发消息的聊天壳。AgentRoam 统一管理会话、运行状态、历史记录、审批和任务队列，并把 Customer Agent、Codex、Claude Code、OpenCode、DeepSeek Harness、真实 Shell 与 AIHub 网页模型接到同一套界面中。
 
 ## 核心能力
 
 ### 统一会话：换设备，不换上下文
 
-- **统一接入多种 Agent**：Customer Agent、Codex、Claude Code 和 OpenCode 使用同一套会话接口。上层界面不需要关心底层是 ReAct、JSON-RPC、Agent SDK 还是本地 HTTP。
+- **统一接入多种 Agent**：Customer Agent、Codex、Claude Code、OpenCode 和 DeepSeek Harness 使用同一套会话接口。上层界面不需要关心底层是 ReAct、JSON-RPC、Agent SDK 还是本地 HTTP。
 - **自动汇总原生历史**：发现各运行时已有的项目与历史会话，按工作目录归入统一工作区。即使会话最初是在 Codex 或 Claude Code 终端里创建的，也能回到 AgentRoam 中查看和继续。
 - **完整的会话操作**：支持创建、恢复、分叉、重命名、归档、停止、运行中追加消息、权限审批和目标队列。
 - **桌面、Web、手机接续**：多个入口连接同一个本地服务。页面断开不会自动终止正在执行的任务，重新连接后可以从事件快照和历史记录继续查看进度。
 - **统一但不抹平差异**：每种 Agent 仍保留自己的模型、权限模式、工具事件和原生会话能力，AgentRoam 负责把它们整理成一致的操作体验。
 
+### DeepSeek Harness：原生会话、模式与目标
+
+在 Agent 选择器中切换到 **DeepSeek Harness**，可以查看和继续其原生会话，也能在协作群中担任群主或成员。
+
+- **历史与执行**：发现已有工作目录和会话，展示流式回复、工具事件、审批与交互式提问，支持执行中补充要求。
+- **原生模式**：在新会话的第一条消息发送前，选择 Harness 提供的标准、PTC、极简、创作等模式；已开始的会话保留原模式，实际可选项由运行时提供。
+- **权限与目标**：使用 Harness 原生权限预设，查看和管理原生目标，并跟踪后台任务状态与输出。
+
+使用前需安装并配置 DeepSeek Harness。AgentRoam 默认优先复用已运行的本机 Harness 桌面或 Web 服务，未发现可用服务时尝试启动 `dsh web`。也可以用 `AGENT_DSH_EXECUTABLE` 指定 `dsh` 可执行文件，或用 `AGENT_DSH_URL` 指定 `dsh` 输出的完整本机连接地址。
+
 ### Agent 群聊：让多个 Agent 分工协作
 
-为同一个项目选择一位群主和多名成员，把目标发到群里，由群主拆解任务、安排成员、处理依赖与并行，并组织结果交付。你可以混用已接入的 Agent，也可以让同一种 Agent 以不同模型和职责加入多次，例如分别负责实现、评审和测试。
+为同一个项目选择一位群主和多名成员，把目标发到群里，由群主拆解任务、安排成员、处理依赖与并行，并组织结果交付。群聊可混用 Customer Agent、Codex、Claude Code、OpenCode 和 DeepSeek Harness，也可以让同一种 Agent 以不同模型和职责加入多次，例如分别负责实现、评审和测试。
 
 - **按成员配置**：分别选择 Agent、模型、名称和职责；职责留空时由群主分配。
 - **查看协作进度**：群聊展示成员回复、任务状态和结果；等待依赖或工作目录空闲时显示排队原因。
@@ -117,7 +127,7 @@ agentroam service logs     # 查看服务日志
         /        |        \
 统一 Agent 会话  PTY/文件   远程桌面/AIHub
         |
-Customer Agent / Codex / Claude Code / OpenCode
+Customer Agent / Codex / Claude Code / OpenCode / DeepSeek Harness
 ```
 
 `UnifiedSessionService` 和 Native Runtime Broker 负责统一发现、运行和恢复各类 Agent 会话；WebSocket 服务承载 PTY、文件控制、AIHub 中继和远程桌面信令；桌面端保留浏览器登录态、系统权限和其他设备原生能力。
@@ -152,7 +162,7 @@ bun run build
 | 目录 | 职责 |
 | --- | --- |
 | `packages/core` | Agent Loop、模型、工具、Skill、会话与远控领域协议 |
-| `packages/native-runtime` | Codex / Claude Code / OpenCode 适配器、统一会话与 Broker |
+| `packages/native-runtime` | Codex / Claude Code / OpenCode / DeepSeek Harness 适配器、统一会话与 Broker |
 | `packages/server` | Next.js API、SSE、WebSocket PTY、配对、AIHub 中继与远程控制 |
 | `packages/desktop` | Electron 桌面端、AIHub 浏览器、语音和系统原生能力 |
 | `packages/webapp` | 会话 Web/PWA 客户端 |

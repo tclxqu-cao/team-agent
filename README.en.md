@@ -2,12 +2,12 @@
 
 ## Project Introduction
 
-Team Agent is an enterprise-grade multimodal intelligent Agent runtime platform. It supports multiple Agent runtimes (Customer Agent, Codex, Claude Code, etc.), providing unified session management, local/remote runtime support, voice interaction, and terminal/Web/desktop multi-end adaptation capabilities. The platform adopts a modular architecture design, supports cross-platform deployment, and can meet AI Agent application needs in various scenarios.
+Team Agent is an enterprise-grade multimodal intelligent Agent runtime platform. It supports Customer Agent, Codex, Claude Code, OpenCode, and DeepSeek Harness, providing unified session management, local/remote runtime support, voice interaction, and terminal/Web/desktop multi-end adaptation capabilities. The platform adopts a modular architecture design, supports cross-platform deployment, and can meet AI Agent application needs in various scenarios.
 
 ## Main Features
 
 ### Core Capabilities
-- **Multi-Agent Runtime Support**: Integrates various Agent runtimes such as Customer Agent, Codex, and Claude Code, providing a unified access layer and session management.
+- **Multi-Agent Runtime Support**: Integrates Customer Agent, Codex, Claude Code, OpenCode, and DeepSeek Harness, providing a unified access layer and session management.
 - **Smart Context Management**: Supports context compression, token estimation, and pagination retrieval of conversation history to improve model response quality in long conversation scenarios.
 - **Tool System**: Built-in tools for file operations, search, code editing, web scraping, etc., supporting remote MCP tool extensions.
 - **Session Persistence**: SQLite persistent storage, supporting session history recovery and cross-session context inheritance.
@@ -17,9 +17,19 @@ Team Agent is an enterprise-grade multimodal intelligent Agent runtime platform.
 - **Multi-End Adaptation**: Provides three interaction entry points: Web, TUI Terminal, and Electron Desktop, with unified session state synchronization.
 - **Goal Queue**: Supports queuing, sorting, and status tracking of session goals, enabling multi-round iteration for complex tasks.
 
+### DeepSeek Harness
+
+Select **DeepSeek Harness** in the Agent switcher to view and continue its native sessions. It can also act as a coordinator or member in a collaboration group.
+
+- **History and execution**: Discover existing working directories and sessions, follow streaming replies and tool events, handle approvals and interactive questions, and add instructions during execution.
+- **Native modes**: Before sending the first message in a new session, choose a mode offered by Harness, such as Standard, PTC, Minimal, or Cordis (creative). Started sessions retain their mode, and available options come from the runtime.
+- **Permissions and goals**: Use Harness's native permission presets, view and manage native goals, and follow background task status and output.
+
+Install and configure DeepSeek Harness before use. By default, AgentRoam first tries to reuse a running local Harness desktop or Web service, then starts `dsh web` if none is available. Set `AGENT_DSH_EXECUTABLE` to specify the `dsh` executable, or `AGENT_DSH_URL` to use the complete local connection URL printed by `dsh`.
+
 ### Agent Group Chat
 
-Create a group for a project with one coordinator and multiple members. Send a goal to the group, and the coordinator breaks it into tasks, assigns members, manages dependencies and parallel work, and organizes delivery. Mix supported Agent runtimes, or add the same Agent type more than once with different models and roles, such as implementation, review, and testing.
+Create a group for a project with one coordinator and multiple members. Send a goal to the group, and the coordinator breaks it into tasks, assigns members, manages dependencies and parallel work, and organizes delivery. Mix Customer Agent, Codex, Claude Code, OpenCode, and DeepSeek Harness, or add the same Agent type more than once with different models and roles, such as implementation, review, and testing.
 
 - **Member configuration**: Choose each member's Agent, model, name, and role. Leave roles blank for the coordinator to assign.
 - **Visible progress**: View member replies, task status, and results, including queue reasons when tasks wait for dependencies or an available working directory.
