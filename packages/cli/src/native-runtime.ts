@@ -24,6 +24,7 @@ export async function probeTerminalRuntime(runtimeRequire: NodeRequire, platform
     : ["-c", `printf ${marker}`], {
     name: "xterm-256color", cols: 80, rows: 24, cwd: process.cwd(), env: process.env,
   });
+  let exited = false;
   try {
     await new Promise<void>((resolveProbe, rejectProbe) => {
       let output = "";
@@ -34,6 +35,7 @@ export async function probeTerminalRuntime(runtimeRequire: NodeRequire, platform
       }, 5_000);
       const dataListener = terminal.onData((chunk: string) => { output = (output + chunk).slice(-4096); });
       const exitListener = terminal.onExit(({ exitCode }: { exitCode: number }) => {
+        exited = true;
         clearTimeout(timer);
         dataListener.dispose();
         exitListener.dispose();
@@ -44,7 +46,9 @@ export async function probeTerminalRuntime(runtimeRequire: NodeRequire, platform
   } finally {
     // ConPTY's output worker can outlive a shell's natural exit. The probe
     // owns this terminal and must release it before doctor can exit.
-    try { terminal.kill(); } catch {}
+    if (windows || !exited) {
+      try { terminal.kill(); } catch {}
+    }
   }
 }
 
