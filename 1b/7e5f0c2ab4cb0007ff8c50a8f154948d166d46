@@ -1,0 +1,21 @@
+packages/website/public/style.css
+  s_38fc4b655035bb::t_fbe1137be3a067 1799-1802
+packages/website/src/pages.mjs
+  s_38fc4b655035bb::t_8701186925ee6b 30
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1b7e5f0c2ab4cb0007ff8c50a8f154948d166d46",
+  "prompts": {},
+  "sessions": {
+    "s_38fc4b655035bb": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a13fc8-6761-7523-a14b-6680179fc7d5",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
