@@ -9,6 +9,7 @@ import cliPackage from "../../cli/package.json";
 import desktopPackage from "../package.json";
 import { verifyDesktopRuntime } from "./runtime-inventory.mjs";
 import { bundledRuntimePackages } from "./bundled-runtime.mjs";
+import { runtimeServiceArguments } from "./runtime-service-args.mjs";
 
 const execute = promisify(execFile);
 const progress = (message: string) => process.stdout.write(`${JSON.stringify({ message })}\n`);
@@ -49,7 +50,7 @@ async function main() {
   progress("正在启动 AgentRoam 后台服务…");
   let configured = false;
   try { await access(join(homedir(), ".agentroam/service/config.json")); configured = true; } catch {}
-  await execute(node.executable, [cli, "service", configured ? "start" : "install", "--data-dir", dataDir, "--root", homedir(), "--no-qr"], { env: environment, cwd: homedir(), windowsHide: true, timeout: 6 * 60_000, maxBuffer: 2 * 1024 * 1024 });
+  await execute(node.executable, runtimeServiceArguments(cli, dataDir, homedir(), configured), { env: environment, cwd: homedir(), windowsHide: true, timeout: 6 * 60_000, maxBuffer: 2 * 1024 * 1024 });
   progress("运行组件已准备好，正在连接工作区…");
 }
 

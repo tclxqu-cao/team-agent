@@ -11,7 +11,7 @@ on:
         required: true
 
 permissions:
-  contents: read
+  contents: write # Draft release downloads require push access.
 
 jobs:
   windows-install:
