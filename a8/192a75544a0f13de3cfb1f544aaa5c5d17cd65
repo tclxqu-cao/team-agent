@@ -1,0 +1,31 @@
+packages/mobile/android/app/build.gradle
+  s_8ae0ad512d327e::t_5d35177962233e 10-11
+packages/runtime-darwin-arm64/manifest.json
+  s_0052fe3784a5ee::t_2db713ec0080c1 5-7
+packages/runtime-win32-x64/manifest.json
+  s_0052fe3784a5ee::t_bc9f59a8014c11 5-7,10-11
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a8192a75544a0f13de3cfb1f544aaa5c5d17cd65",
+  "prompts": {},
+  "sessions": {
+    "s_0052fe3784a5ee": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1391d-e3bb-7d80-8e7e-4e844899fbed",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_8ae0ad512d327e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1403a-e47d-74b3-a1b2-033fac4390ad",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
