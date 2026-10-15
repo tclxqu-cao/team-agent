@@ -1,0 +1,119 @@
+packages/cli/install/codex-shared-watchdog.sh
+  s_592f21ca3b05d0::t_85ab7be2836bbf 1-16
+packages/cli/package.json
+  s_592f21ca3b05d0::t_0755225dc785e2 3,30-31,34-35
+packages/cli/src/args.test.ts
+  s_592f21ca3b05d0::t_3441e04f57f784 123-130
+packages/cli/src/args.ts
+  s_592f21ca3b05d0::t_824446e650d8d8 32-33,112-113,122-123,153-157
+packages/cli/src/cli.ts
+  s_592f21ca3b05d0::t_fdebd0c00785e9 53-54
+packages/cli/src/codex-desktop-command.test.ts
+  s_592f21ca3b05d0::t_210adc80e067d7 1,21-38
+packages/cli/src/codex-desktop-command.ts
+  s_592f21ca3b05d0::t_8306926dadedd4 9-10,20-21,35-39,51
+packages/cli/src/codex-desktop-setup.test.ts
+  s_592f21ca3b05d0::t_3f85d2a6b4f2b1 1,4,47
+packages/cli/src/codex-desktop-setup.ts
+  s_592f21ca3b05d0::t_cc21ef2dee79cf 9,17,34-35
+packages/cli/src/codex-sharing.test.ts
+  s_592f21ca3b05d0::t_92012f8a0e6975 1-107
+packages/cli/src/codex-sharing.ts
+  s_592f21ca3b05d0::t_1045a0aede6893 1-150
+packages/cli/src/runtime-manager.ts
+  s_592f21ca3b05d0::t_3dcd4b7cac7158 21,59-62
+packages/cli/src/service/service-command.test.ts
+  s_592f21ca3b05d0::t_d09f0468f01bac 1
+packages/cli/src/service/service-command.ts
+  s_592f21ca3b05d0::t_8ced8771a6f4b9 14,36,92-95
+packages/core/src/domain/web-console/computer-directory.ts
+  s_592f21ca3b05d0::t_028007f7d3d8d2 1-24
+packages/core/src/domain/web-console/index.ts
+  s_592f21ca3b05d0::t_99132ebb23d360 3
+packages/core/src/infrastructure/SQLiteDatabase.ts
+  s_592f21ca3b05d0::t_fbeaec9273d7b1 287-296
+packages/core/src/infrastructure/SQLiteWebConsoleStore.ts
+  s_592f21ca3b05d0::t_b03aaa9461e6bc 4,10-45
+packages/desktop/renderer/components/ChatView.tsx
+  s_592f21ca3b05d0::t_b43489ca227e30 91,3181,3185-3190,4675-4676,5374-5375,5471-5473,5475
+packages/desktop/renderer/components/collaboration/CollaborationMessageText.test.tsx
+  s_592f21ca3b05d0::t_c07e4cc1114a4e 1-36
+packages/desktop/renderer/components/collaboration/CollaborationMessageText.tsx
+  s_592f21ca3b05d0::t_13a810181cbb35 1-54
+packages/desktop/renderer/components/collaboration/CollaborationPage.test.tsx
+  s_592f21ca3b05d0::t_586eae0be20904 10-32,39-80
+packages/desktop/renderer/components/collaboration/CollaborationPage.tsx
+  s_592f21ca3b05d0::t_006323d350583b 5,18,166-190,256,269-273,350,436,438-439,446,452-455,463,469,473,479-482,530,554-575
+packages/desktop/renderer/components/collaboration/collaboration.css
+  s_592f21ca3b05d0::t_3041ff9303d7c3 348,357,359,361-400,474-480,485-519,544-554,973-974,976-979
+packages/desktop/renderer/lib/queued-message-order.test.ts
+  s_592f21ca3b05d0::t_fa759efc6de711 143-172
+packages/desktop/renderer/lib/queued-message-order.ts
+  s_592f21ca3b05d0::t_642cbc6969bcf3 113-115,121-123,176-177
+packages/desktop/renderer/lib/queued-message-steering.test.ts
+  s_592f21ca3b05d0::t_c1028e64b33db6 1-54
+packages/desktop/renderer/lib/queued-message-steering.ts
+  s_592f21ca3b05d0::t_05988fdfc4daf8 1-27
+packages/native-runtime/src/agent-runtime/codex-app-server-client.ts
+  s_592f21ca3b05d0::t_e57b163c454313 42,76-77,167,405,424
+packages/native-runtime/src/agent-runtime/codex-async-user-input.test.ts
+  s_592f21ca3b05d0::t_d94b4a02001d86 114,125
+packages/native-runtime/src/agent-runtime/codex-runtime-adapter.test.ts
+  s_592f21ca3b05d0::t_faaf81b497e8bf 18,138-204
+packages/native-runtime/src/agent-runtime/codex-runtime-adapter.ts
+  s_592f21ca3b05d0::t_8e37dfb127d9e3 117,302-306,375,447,478,1345,1435,1439-1443,1447-1448,1469
+packages/native-runtime/src/agent-runtime/native-runtime-broker.test.ts
+  s_592f21ca3b05d0::t_711802c1c52d04 2330-2355
+packages/native-runtime/src/agent-runtime/native-runtime-broker.ts
+  s_592f21ca3b05d0::t_6fbff7a3d207d3 990-992,997-998
+packages/native-runtime/src/agent-runtime/types.ts
+  s_592f21ca3b05d0::t_0e06574c7d0c18 53-54
+packages/runtime-darwin-arm64/manifest.json
+  s_592f21ca3b05d0::t_3624593fbed223 2
+packages/runtime-darwin-arm64/package.json
+  s_592f21ca3b05d0::t_961fd4b8f62444 3
+packages/runtime-win32-x64/manifest.json
+  s_592f21ca3b05d0::t_7de3c7c48e1078 2,7-8
+packages/runtime-win32-x64/package.json
+  s_592f21ca3b05d0::t_c0eaafe7768763 3
+packages/server/app/api/agent/codex-sharing/route.ts
+  s_592f21ca3b05d0::t_33e9a0947fc5a5 1-26
+packages/server/app/api/web-console/computers/route.ts
+  s_592f21ca3b05d0::t_16d8dfa24ad5bd 1-46
+packages/server/app/web/CodexSharingStatus.tsx
+  s_592f21ca3b05d0::t_3d42adb52a8a2e 1-59
+packages/server/app/web/ComputerSwitcher.tsx
+  s_592f21ca3b05d0::t_3f06e2730a8301 5-6,11-12,28,37,41-42,66,116-124,126,130,136,152,156-157,159,162-164,167-169,172,208-209,216,226-227,229,231,257,259-266,269,294,311
+packages/server/app/web/page.tsx
+  s_592f21ca3b05d0::t_5a9380d17ed3ae 642
+packages/server/app/web/useComputerDirectory.ts
+  s_592f21ca3b05d0::t_ca00a074be7636 1-95
+packages/server/lib/codex-sharing-route.test.ts
+  s_592f21ca3b05d0::t_efc6415c6b0bf6 1-37
+packages/server/lib/codex-sharing-service.test.ts
+  s_592f21ca3b05d0::t_c4e8ff81c5f48e 1-24
+packages/server/lib/codex-sharing-service.ts
+  s_592f21ca3b05d0::t_2d378bc4db231b 1-56
+packages/server/lib/computer-connections-api.test.ts
+  s_592f21ca3b05d0::t_fc988d039ddd13 1-134
+packages/tui-darwin-arm64/package.json
+  s_592f21ca3b05d0::t_ff95b954d552ad 3
+packages/tui-win32-x64/package.json
+  s_592f21ca3b05d0::t_7c7c6b7f97290f 3
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "40cd2ca3037b6ac8291083881b49dd5760fa578b",
+  "prompts": {},
+  "sessions": {
+    "s_592f21ca3b05d0": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a13e07-2c3b-77c3-b0ad-eb293f1fe614",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
