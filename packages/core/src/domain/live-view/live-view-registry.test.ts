@@ -97,6 +97,23 @@ describe("LiveViewRegistry", () => {
     await expect(reply).resolves.toEqual({ editable: true, bounds: { x: 10, y: 20, w: 30, h: 40 } });
   });
 
+  it("round trips read-only pointer probes without converting them into clicks", async () => {
+    const registry = new LiveViewRegistry();
+    const producer = peer("producer");
+    const controller = peer("controller");
+    publish(registry, producer);
+    registry.takeOver(controller, "browser-1");
+    registry.producerState(producer, "browser-1", "user-controlled");
+
+    const reply = registry.input(controller, "browser-1", { kind: "pointer", action: "move", probe: true, x: 0.5, y: 0.5 });
+    const forwarded = producer.messages.at(-1) as { token?: number };
+    expect(producer.messages.at(-1)).toMatchObject({ input: { action: "move", probe: true } });
+    expect(typeof forwarded.token).toBe("number");
+    expect(registry.inputResult(producer, "browser-1", forwarded.token, { editable: true, bounds: { x: 10, y: 20, w: 30, h: 40 } }))
+      .toEqual({ delivered: true });
+    await expect(reply).resolves.toEqual({ editable: true, bounds: { x: 10, y: 20, w: 30, h: 40 } });
+  });
+
   it("preserves pasted URLs, whitespace and Unicode until the producer confirms input", async () => {
     const registry = new LiveViewRegistry();
     const producer = peer("producer");

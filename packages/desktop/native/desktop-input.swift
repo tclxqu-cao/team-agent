@@ -260,7 +260,7 @@ func activateAppUnder(x: CGFloat, y: CGFloat) {
 // raise the soft keyboard:
 //   editable:true  — text entry → raise
 //   kind:"control" — buttons/menus/etc → leave the keyboard alone
-//   editable:false — blank/background → raise (tap-to-type)
+//   editable:false — blank/background or unknown → do not raise
 func hitTestEditable(x: CGFloat, y: CGFloat) -> [String: Any] {
     guard AXIsProcessTrusted() else { return ["editable": false] }
     let systemWide = AXUIElementCreateSystemWide()
@@ -584,6 +584,11 @@ func handle(_ line: String) -> String? {
         case "ax_text":
             try setAccessibilityText(command)
             return reply(id, ["ok": true])
+        case "hit-test":
+            guard let x = command["x"] as? NSNumber, let y = command["y"] as? NSNumber else {
+                return replyError(id, "hit-test requires coordinates")
+            }
+            return reply(id, hitTestEditable(x: CGFloat(x.doubleValue), y: CGFloat(y.doubleValue)))
         case "move", "down", "up", "drag":
             try postMouse(command)
             // The click release also reports what the user tapped on so the

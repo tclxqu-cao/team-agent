@@ -257,6 +257,9 @@ export class DesktopScreenScreencast implements LiveScreencastPort {
   async dispatchInput(input: LiveViewInput): Promise<unknown> {
     const display = this.displayInfo();
     if (input.kind === "pointer") {
+      if (input.probe) {
+        return this.#send({ op: "hit-test", x: display.originX + Math.round(input.x * (display.width - 1)), y: display.originY + Math.round(input.y * (display.height - 1)) });
+      }
       if (input.action === "wheel") {
         // Wheel events land on whatever window is under the real cursor, so
         // park the cursor at the finger position first — otherwise a viewer
@@ -297,7 +300,7 @@ export class DesktopScreenScreencast implements LiveScreencastPort {
 
   async #send(command: DesktopInputCommand): Promise<Record<string, unknown> | null> {
     const result = await this.input.dispatch(command) as Record<string, unknown> | undefined;
-    if (this.running && command.op !== "move") {
+    if (this.running && command.op !== "move" && command.op !== "hit-test") {
       this.refreshUntil = this.now() + 700;
       this.wakeCapture?.();
     }

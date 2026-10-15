@@ -421,9 +421,12 @@ body[data-remote-desktop="1"] .browser-live-panel {
 }
 
 .browser-live-mobile-input {
-  position: absolute;
-  left: 50%;
-  bottom: 8px;
+  /* Keep the focus target inside the visible panel, independent of remote
+     zoom/pan. An offscreen target makes mobile browsers scroll the iframe
+     while the keyboard animates. */
+  position: fixed;
+  left: 8px;
+  top: 8px;
   width: 2px;
   height: 2px;
   padding: 0;

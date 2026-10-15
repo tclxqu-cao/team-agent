@@ -593,3 +593,16 @@ it('closes the owned helper before waiting for stalled media teardown', async ()
   await f.close();
   expect(f.helper.stop).toHaveBeenCalledOnce();
 });
+
+describe('read-only input probes', () => {
+  it('uses display coordinates without posting a move, press or release', async () => {
+    const f = await fixture();
+    try {
+      f.service.bounds = { originX: -1000, originY: 0, width: 1000, height: 800 };
+      f.helper.request.mockClear();
+      await f.service.dispatch({ kind: 'pointer', action: 'move', probe: true, x: .5, y: .5 });
+      expect(f.helper.request.mock.calls).toEqual([[{ op: 'hit-test', x: -500, y: 400 }]]);
+      expect(f.service.pointerDown).not.toBe(true);
+    } finally { await f.close(); }
+  });
+});

@@ -512,6 +512,7 @@ export class RemoteAuthorization {
     if (input.kind === 'pointer') {
       const x = this.bounds.originX + Math.round(Math.max(0, Math.min(1, input.x)) * (this.bounds.width - 1));
       const y = this.bounds.originY + Math.round(Math.max(0, Math.min(1, input.y)) * (this.bounds.height - 1));
+      if (input.probe === true) return this.helper.request({ op: 'hit-test', x, y });
       if (input.action === 'wheel') { await this.helper.request({ op: 'move', x, y }); return this.helper.request({ op: 'wheel', deltaX: input.deltaX, deltaY: input.deltaY }); }
       const op = input.action === 'move' && this.pointerDown ? 'drag' : input.action;
       this.lastPointer = { x, y };

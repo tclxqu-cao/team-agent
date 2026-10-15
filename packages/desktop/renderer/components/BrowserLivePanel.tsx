@@ -288,6 +288,7 @@ export default function BrowserLivePanel({ open, active = true, agentSessionId, 
   const textInputRef = useRef<HTMLInputElement>(null);
   const [imeOn, setImeOn] = useState(false);
   const imeOnRef = useRef(false);
+  const imeRequestRef = useRef(0);
   // Last tap the desktop hit-test marked as a text field (logical screen coords).
   const editableField = useRef<RemoteEditableField | null>(null);
   useEffect(() => {
@@ -424,6 +425,7 @@ export default function BrowserLivePanel({ open, active = true, agentSessionId, 
   // Both a touch tap and the toolbar can focus the IME in a user gesture.
   // Hiding the tab releases local typing focus without releasing remote control.
   const toggleIme = useCallback(() => {
+    imeRequestRef.current += 1;
     const input = textInputRef.current;
     if (!input) return;
     if (imeOn) {
@@ -431,11 +433,11 @@ export default function BrowserLivePanel({ open, active = true, agentSessionId, 
       setImeOn(false);
     } else {
       input.focus({ preventScroll: true });
-      setImeOn(true);
     }
   }, [imeOn]);
   useEffect(() => {
-    if ((!active || !hasControl || panMode) && imeOn) {
+    if (!active || !hasControl || panMode) {
+      imeRequestRef.current += 1;
       textInputRef.current?.blur();
       setImeOn(false);
     }
@@ -464,7 +466,7 @@ export default function BrowserLivePanel({ open, active = true, agentSessionId, 
     return () => window.clearTimeout(timer);
   }, [imeOn, surfaceSize.width, surfaceSize.height, scrollRemoteFieldIntoView]);
 
-  const applyHitTest = useCallback((result: Record<string, unknown> | null) => {
+  const applyHitTest = useCallback((result: Record<string, unknown> | null, requestIme = false) => {
     // The relay wraps the helper reply as { input: … }; unwrap when present.
     const payload = result && typeof result.input === "object" && result.input !== null
       ? result.input as Record<string, unknown>
@@ -483,6 +485,11 @@ export default function BrowserLivePanel({ open, active = true, agentSessionId, 
         : null;
       if (field) {
         editableField.current = field;
+      }
+      if (requestIme && !imeOnRef.current) {
+        // Focus only confirmed text fields; a background tap must not flash
+        // the keyboard. Cached bounds also allow focus inside the next gesture.
+        textInputRef.current?.focus({ preventScroll: true });
       }
       if (imeOnRef.current) scrollRemoteFieldIntoView(field ?? editableField.current);
       else setFieldHint(true);
@@ -1055,8 +1062,13 @@ export default function BrowserLivePanel({ open, active = true, agentSessionId, 
       .catch(() => null);
   }, [api, selected, pendingDisplayId, pendingQuality]);
 
-  const sendTapUp = useCallback((point: { x: number; y: number }, click?: number) => {
-    void dispatchInputForResult({ kind: "pointer", action: "up", ...point, button: "left", ...(click && click > 1 ? { click } : {}) }).then(applyHitTest);
+  const sendTapUp = useCallback((point: { x: number; y: number }, click?: number, requestIme = false) => {
+    const request = ++imeRequestRef.current;
+    void dispatchInputForResult({ kind: "pointer", action: "up", ...point, button: "left", ...(click && click > 1 ? { click } : {}) })
+      .then((result) => {
+        if (request !== imeRequestRef.current) return;
+        applyHitTest(result, requestIme);
+      });
   }, [applyHitTest, dispatchInputForResult]);
 
   // Soft-keyboard typing: the hidden input accumulates, so only the delta is
@@ -1286,7 +1298,7 @@ export default function BrowserLivePanel({ open, active = true, agentSessionId, 
               <button type="button" aria-label="放大桌面画面" title="放大" disabled={!frame || zoom >= 5} onClick={() => setZoom((value) => Math.min(5, value + 0.25))}><ZoomIn size={16} /></button>
               <button type="button" disabled={!frame} onClick={() => { setZoom(1); setPanMode(false); viewportRef.current?.scrollTo(0, 0); }}>适应窗口</button>
               <button type="button" aria-label="移动桌面画面" aria-pressed={panMode} title="拖动或滚动画面，不发送远程输入" disabled={!frame} onClick={() => setPanMode((value) => !value)}><Hand size={15} />移动画面</button>
-              <button type="button" aria-label="唤起键盘" aria-pressed={imeOn} title="唤起/收起键盘（轻点画面也会自动弹起）" className={fieldHint && !imeOn ? "is-hint" : undefined} disabled={!frame || !hasControl} onPointerDown={(event) => event.preventDefault()} onClick={() => { setFieldHint(false); toggleIme(); }}><Keyboard size={15} />键盘</button>
+              <button type="button" aria-label="唤起键盘" aria-pressed={imeOn} title="唤起/收起键盘（无法识别输入框时可手动唤起）" className={fieldHint && !imeOn ? "is-hint" : undefined} disabled={!frame || !hasControl} onPointerDown={(event) => event.preventDefault()} onClick={() => { setFieldHint(false); toggleIme(); }}><Keyboard size={15} />键盘</button>
               <button type="button" aria-label="快捷键条" aria-pressed={quickKeysOpen} title="展开/收起快捷键（Esc/Tab/复制/粘贴/方向键）" disabled={!frame || !hasControl} onClick={() => setQuickKeysOpen((open) => !open)}><Keyboard size={15} />{quickKeysOpen ? "收起" : "快捷键"}</button>
               <button type="button" aria-label="窗口控制" title="全屏看不到左上角按钮时用：第 1 次点=退出全屏（ESC + Ctrl+Cmd+F），第 2 次点=关闭窗口（Cmd+W）" disabled={!frame || !hasControl} onClick={() => {
                 const now = Date.now();
@@ -1347,12 +1359,25 @@ export default function BrowserLivePanel({ open, active = true, agentSessionId, 
                   cursor: panMode ? "grab" : undefined,
                 } : undefined}
                 tabIndex={hasControl && !panMode ? 0 : -1}
+                onMouseDown={(event) => {
+                  // Compatibility mouse events must not move IME focus to the canvas.
+                  if (imeOnRef.current) event.preventDefault();
+                }}
                 onContextMenu={(event) => event.preventDefault()}
                 onPointerDown={(event) => {
                   if (event.pointerType === "touch") {
                     event.preventDefault();
                     touch.current.down(event.pointerId, { x: event.clientX, y: event.clientY });
                     touchGesturePoint.current = hasControl && !panMode ? pointerCoordinates(event) : null;
+                    const probePoint = touchGesturePoint.current;
+                    if (probePoint && isDesktop && selected?.platform === "darwin") {
+                      // Resolve AX while the finger is down so iOS can focus
+                      // the confirmed field synchronously on touch release.
+                      void dispatchInputForResult({ kind: "pointer", action: "move", ...probePoint, probe: true })
+                        .then((result) => {
+                          if (touchGesturePoint.current === probePoint) applyHitTest(result);
+                        });
+                    }
                     event.currentTarget.setPointerCapture(event.pointerId);
                     // Arm long-press (drag / right-click) while controlling.
                     if (longPressTimer.current) window.clearTimeout(longPressTimer.current);
@@ -1474,25 +1499,24 @@ export default function BrowserLivePanel({ open, active = true, agentSessionId, 
                       return;
                     }
                     if (tap && point && hasControl && !panMode) {
-                      // iOS requires focus in this gesture, before the async
-                      // AX reply. Do not require a previous tap to learn a field.
-                      if (!imeOnRef.current) {
+                      // WebKit needs focus in a gesture. Only a known text
+                      // region may focus before the asynchronous hit-test.
+                      const vp = frame?.viewport ?? selected?.viewport;
+                      if (!imeOnRef.current && remoteFieldContains(editableField.current, vp, point.x, point.y)) {
                         textInputRef.current?.focus({ preventScroll: true });
-                        setImeOn(true);
                         setFieldHint(false);
                       }
-                      const vp = frame?.viewport ?? selected?.viewport;
                       const last = lastTapRef.current;
                       const isDouble = last !== null && Date.now() - last.at < 400 && vp !== undefined
                         && Math.hypot((point.x - last.x) * vp.width, (point.y - last.y) * vp.height) < vp.width * 0.03;
                       if (isDouble) {
                         // Second tap of a double: replay as a real double-click.
                         sendInput({ kind: "pointer", action: "down", ...point, button: "left", click: 2 });
-                        sendTapUp(point, 2);
+                        sendTapUp(point, 2, true);
                         lastTapRef.current = null;
                       } else {
                         sendInput({ kind: "pointer", action: "down", ...point, button: "left" });
-                        sendTapUp(point);
+                        sendTapUp(point, undefined, true);
                         lastTapRef.current = { at: Date.now(), x: point.x, y: point.y };
                       }
                     }
@@ -1557,12 +1581,14 @@ export default function BrowserLivePanel({ open, active = true, agentSessionId, 
                   autoCorrect="off"
                   autoComplete="off"
                   spellCheck={false}
+                  onFocus={() => { imeOnRef.current = true; setImeOn(true); }}
                   onCompositionStart={() => { composingRef.current = true; }}
                   onCompositionEnd={(event) => {
                     composingRef.current = false;
                     if (!panMode) sendTypedText((event.target as HTMLInputElement).value);
                   }}
                   onBlur={(event) => {
+                    imeOnRef.current = false;
                     composingRef.current = false;
                     lastTypedRef.current = "";
                     event.target.value = "";

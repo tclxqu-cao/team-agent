@@ -2,7 +2,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import type { AccessibilityObservation, AccessibilitySnapshotResult } from "@agent/computer-use";
 
 export type DesktopInputCommand =
-  | { op: "move" | "down" | "up" | "drag"; x: number; y: number; button?: "left" | "right" | "middle"; click?: number }
+  | { op: "move" | "down" | "up" | "drag" | "hit-test"; x: number; y: number; button?: "left" | "right" | "middle"; click?: number }
   | { op: "wheel"; deltaX: number; deltaY: number }
   | { op: "key"; action: "down" | "up"; code: string; modifiers?: string[] }
   | { op: "text" | "unicode_text"; text: string }

@@ -325,7 +325,7 @@ export class LiveViewRegistry {
     const input = { ...normalizeInput(rawInput),
       ...((rawInput as Record<string, unknown>).mobile === true ? { mobile: true } : {}) };
     const committedText = input.kind === "key" && Boolean(input.text) && !input.key && !input.code;
-    if (!committedText && (input.kind !== "pointer" || input.action !== "up")) {
+    if (!committedText && (input.kind !== "pointer" || input.action !== "up" && !input.probe)) {
       session.producer.send({ type: "browser:input", sessionId: session.id, input });
       return Promise.resolve(null);
     }
@@ -512,7 +512,7 @@ function normalizeInput(value: unknown): LiveViewInput {
       : null;
     if (!Number.isFinite(x) || !Number.isFinite(y) || x < 0 || x > 1 || y < 0 || y > 1 || !action) throw domainError("invalid pointer input", "EINVAL");
     const clickCount = Number(input.click);
-    return { kind: "pointer", action, x, y, button: ["left", "right", "middle"].includes(String(input.button)) ? input.button as "left" | "right" | "middle" : "left", deltaX: Math.max(-2_000, Math.min(2_000, Number(input.deltaX) || 0)), deltaY: Math.max(-2_000, Math.min(2_000, Number(input.deltaY) || 0)), ...(Number.isSafeInteger(clickCount) && clickCount >= 2 && clickCount <= 3 ? { click: clickCount } : {}) };
+    return { kind: "pointer", action, x, y, ...(action === "move" && input.probe === true ? { probe: true } : {}), button: ["left", "right", "middle"].includes(String(input.button)) ? input.button as "left" | "right" | "middle" : "left", deltaX: Math.max(-2_000, Math.min(2_000, Number(input.deltaX) || 0)), deltaY: Math.max(-2_000, Math.min(2_000, Number(input.deltaY) || 0)), ...(Number.isSafeInteger(clickCount) && clickCount >= 2 && clickCount <= 3 ? { click: clickCount } : {}) };
   }
   if (input.kind === "key") {
     const allowedModifiers = new Set(["Alt", "Control", "Meta", "Shift"] as const);

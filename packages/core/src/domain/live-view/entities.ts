@@ -58,6 +58,8 @@ export type LiveViewInput =
       button: "left" | "right" | "middle";
       deltaX: number;
       deltaY: number;
+      /** Read-only text-field probe at the pointer position; never moves/clicks. */
+      probe?: boolean;
       /** Mouse click count for double-click semantics (2 = double-click). */
       click?: number;
     }
