@@ -41,8 +41,19 @@ jobs:
           $env:USERPROFILE = "$env:RUNNER_TEMP/desktop-profile"
           New-Item -ItemType Directory -Force $env:USERPROFILE | Out-Null
           $env:ELECTRON_RUN_AS_NODE = '1'
-          $bootstrap = Start-Process "$env:RUNNER_TEMP/AgentRoam/AgentRoam.exe" -ArgumentList "`"$env:RUNNER_TEMP/AgentRoam/resources/bootstrap/runtime-bootstrap.mjs`"" -Wait -PassThru -RedirectStandardOutput "$env:RUNNER_TEMP/bootstrap.stdout.log" -RedirectStandardError "$env:RUNNER_TEMP/bootstrap.stderr.log"
-          Get-Content "$env:RUNNER_TEMP/bootstrap.stdout.log"
+          $bootstrap = Start-Process "$env:RUNNER_TEMP/AgentRoam/AgentRoam.exe" -ArgumentList "`"$env:RUNNER_TEMP/AgentRoam/resources/bootstrap/runtime-bootstrap.mjs`"" -PassThru -RedirectStandardOutput "$env:RUNNER_TEMP/bootstrap.stdout.log" -RedirectStandardError "$env:RUNNER_TEMP/bootstrap.stderr.log"
+          $deadline = [DateTime]::UtcNow.AddMinutes(24)
+          $lineCount = 0
+          do {
+            $exited = $bootstrap.WaitForExit(10000)
+            $lines = @(Get-Content "$env:RUNNER_TEMP/bootstrap.stdout.log")
+            $lines | Select-Object -Skip $lineCount | Write-Output
+            $lineCount = $lines.Count
+            if ([DateTime]::UtcNow -gt $deadline) {
+              Stop-Process -Id $bootstrap.Id -Force
+              throw 'First-launch bootstrap exceeded 24 minutes'
+            }
+          } while (!$exited)
           Get-Content "$env:RUNNER_TEMP/bootstrap.stderr.log"
           if ($bootstrap.ExitCode -ne 0) { throw "Installed first-launch bootstrap failed: $($bootstrap.ExitCode)" }
       - name: Verify native PTY, SQLite, Codex and shell startup
