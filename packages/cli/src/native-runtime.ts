@@ -24,23 +24,28 @@ export async function probeTerminalRuntime(runtimeRequire: NodeRequire, platform
     : ["-c", `printf ${marker}`], {
     name: "xterm-256color", cols: 80, rows: 24, cwd: process.cwd(), env: process.env,
   });
-  await new Promise<void>((resolveProbe, rejectProbe) => {
-    let output = "";
-    const timer = setTimeout(() => {
-      dataListener.dispose();
-      exitListener.dispose();
-      try { terminal.kill(); } catch {}
-      rejectProbe(new Error("PTY runtime probe timed out"));
-    }, 5_000);
-    const dataListener = terminal.onData((chunk: string) => { output = (output + chunk).slice(-4096); });
-    const exitListener = terminal.onExit(({ exitCode }: { exitCode: number }) => {
-      clearTimeout(timer);
-      dataListener.dispose();
-      exitListener.dispose();
-      if (exitCode === 0 && output.includes(marker)) resolveProbe();
-      else rejectProbe(new Error(`PTY runtime probe failed (exit ${exitCode})`));
+  try {
+    await new Promise<void>((resolveProbe, rejectProbe) => {
+      let output = "";
+      const timer = setTimeout(() => {
+        dataListener.dispose();
+        exitListener.dispose();
+        rejectProbe(new Error("PTY runtime probe timed out"));
+      }, 5_000);
+      const dataListener = terminal.onData((chunk: string) => { output = (output + chunk).slice(-4096); });
+      const exitListener = terminal.onExit(({ exitCode }: { exitCode: number }) => {
+        clearTimeout(timer);
+        dataListener.dispose();
+        exitListener.dispose();
+        if (exitCode === 0 && output.includes(marker)) resolveProbe();
+        else rejectProbe(new Error(`PTY runtime probe failed (exit ${exitCode})`));
+      });
     });
-  });
+  } finally {
+    // ConPTY's output worker can outlive a shell's natural exit. The probe
+    // owns this terminal and must release it before doctor can exit.
+    try { terminal.kill(); } catch {}
+  }
 }
 
 export async function repairNativeRuntimePermissions(
