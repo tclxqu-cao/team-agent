@@ -38,8 +38,9 @@ jobs:
       - name: Prepare runtime using the installed Electron executable
         shell: pwsh
         run: |
-          $env:USERPROFILE = "$env:RUNNER_TEMP/desktop-profile"
-          New-Item -ItemType Directory -Force $env:USERPROFILE | Out-Null
+          # This is a disposable runner account. Scheduled tasks inherit its real
+          # Windows profile, so do not redirect USERPROFILE only in this shell.
+          if (Test-Path "$env:USERPROFILE/.agentroam") { throw 'Expected a fresh AgentRoam user profile' }
           $env:ELECTRON_RUN_AS_NODE = '1'
           $bootstrap = Start-Process "$env:RUNNER_TEMP/AgentRoam/AgentRoam.exe" -ArgumentList "`"$env:RUNNER_TEMP/AgentRoam/resources/bootstrap/runtime-bootstrap.mjs`"" -PassThru -RedirectStandardOutput "$env:RUNNER_TEMP/bootstrap.stdout.log" -RedirectStandardError "$env:RUNNER_TEMP/bootstrap.stderr.log"
           $deadline = [DateTime]::UtcNow.AddMinutes(24)
@@ -59,8 +60,7 @@ jobs:
       - name: Verify native PTY, SQLite, Codex and shell startup
         shell: pwsh
         run: |
-          $testProfile = "$env:RUNNER_TEMP/desktop-profile"
-          $env:USERPROFILE = $testProfile
+          $testProfile = $env:USERPROFILE
           $env:ELECTRON_RUN_AS_NODE = $null
           $node = "$testProfile/.agentroam/node-runtime/node-v22.22.0-win-x64/node.exe"
           if (!(Test-Path $node)) {
@@ -92,7 +92,6 @@ jobs:
       - name: Launch installed desktop shell
         shell: pwsh
         run: |
-          $env:USERPROFILE = "$env:RUNNER_TEMP/desktop-profile"
           $env:ELECTRON_RUN_AS_NODE = $null
           $env:AGENTROAM_DESKTOP_USER_DATA = "$env:RUNNER_TEMP/desktop-shell"
           $application = Start-Process "$env:RUNNER_TEMP/AgentRoam/AgentRoam.exe" -ArgumentList '--no-sandbox' -PassThru
