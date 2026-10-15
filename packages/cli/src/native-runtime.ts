@@ -1,5 +1,23 @@
 import { chmod } from "node:fs/promises";
 import { resolve } from "node:path";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+
+const execute = promisify(execFile);
+const WINDOWS_PTY_PROBE = `
+const pty = require(process.argv[1]);
+const marker = "agentroam-runtime-probe";
+const terminal = pty.spawn(process.env.ComSpec || "cmd.exe", ["/d", "/s", "/c", "echo " + marker], {
+  name: "xterm-256color", cols: 80, rows: 24, cwd: process.cwd(), env: process.env,
+});
+let output = "";
+const timer = setTimeout(() => process.exit(1), 5000);
+terminal.onData(chunk => { output = (output + chunk).slice(-4096); });
+terminal.onExit(({ exitCode }) => {
+  clearTimeout(timer);
+  process.exit(exitCode === 0 && output.includes(marker) ? 0 : 1);
+});
+`;
 
 export function probeSQLiteRuntime(runtimeRequire: NodeRequire): void {
   const Database = runtimeRequire("better-sqlite3");
@@ -16,40 +34,36 @@ export function probeSQLiteRuntime(runtimeRequire: NodeRequire): void {
 }
 
 export async function probeTerminalRuntime(runtimeRequire: NodeRequire, platform = process.platform): Promise<void> {
+  if (platform === "win32") {
+    // ConPTY retains an output worker after shell exit. Keep the probe in an
+    // owned child process so terminating it releases all handles together.
+    await execute(process.execPath, ["--input-type=commonjs", "-e", WINDOWS_PTY_PROBE, runtimeRequire.resolve("node-pty")], {
+      timeout: 10_000, windowsHide: true, maxBuffer: 64 * 1024,
+    });
+    return;
+  }
   const pty = runtimeRequire("node-pty");
-  const windows = platform === "win32";
   const marker = "agentroam-runtime-probe";
-  const terminal = pty.spawn(windows ? (process.env.ComSpec || "cmd.exe") : "/bin/sh", windows
-    ? ["/d", "/s", "/c", `echo ${marker}`]
-    : ["-c", `printf ${marker}`], {
+  const terminal = pty.spawn("/bin/sh", ["-c", `printf ${marker}`], {
     name: "xterm-256color", cols: 80, rows: 24, cwd: process.cwd(), env: process.env,
   });
-  let exited = false;
-  try {
-    await new Promise<void>((resolveProbe, rejectProbe) => {
-      let output = "";
-      const timer = setTimeout(() => {
-        dataListener.dispose();
-        exitListener.dispose();
-        rejectProbe(new Error("PTY runtime probe timed out"));
-      }, 5_000);
-      const dataListener = terminal.onData((chunk: string) => { output = (output + chunk).slice(-4096); });
-      const exitListener = terminal.onExit(({ exitCode }: { exitCode: number }) => {
-        exited = true;
-        clearTimeout(timer);
-        dataListener.dispose();
-        exitListener.dispose();
-        if (exitCode === 0 && output.includes(marker)) resolveProbe();
-        else rejectProbe(new Error(`PTY runtime probe failed (exit ${exitCode})`));
-      });
-    });
-  } finally {
-    // ConPTY's output worker can outlive a shell's natural exit. The probe
-    // owns this terminal and must release it before doctor can exit.
-    if (windows || !exited) {
+  await new Promise<void>((resolveProbe, rejectProbe) => {
+    let output = "";
+    const timer = setTimeout(() => {
+      dataListener.dispose();
+      exitListener.dispose();
       try { terminal.kill(); } catch {}
-    }
-  }
+      rejectProbe(new Error("PTY runtime probe timed out"));
+    }, 5_000);
+    const dataListener = terminal.onData((chunk: string) => { output = (output + chunk).slice(-4096); });
+    const exitListener = terminal.onExit(({ exitCode }: { exitCode: number }) => {
+      clearTimeout(timer);
+      dataListener.dispose();
+      exitListener.dispose();
+      if (exitCode === 0 && output.includes(marker)) resolveProbe();
+      else rejectProbe(new Error(`PTY runtime probe failed (exit ${exitCode})`));
+    });
+  });
 }
 
 export async function repairNativeRuntimePermissions(

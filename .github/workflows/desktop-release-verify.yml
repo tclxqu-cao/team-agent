@@ -3,6 +3,9 @@ name: desktop-release-verify
 on:
   workflow_dispatch:
     inputs:
+      candidate_cli_sha:
+        description: Optional candidate CLI SHA256 for integration testing before installer rebuilding
+        default: ''
       diagnostic_only:
         description: Test the Windows scheduler contract only
         type: boolean
@@ -30,6 +33,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ inputs.tag }}
           EXPECTED_SHA256: ${{ inputs.sha256 }}
+          CANDIDATE_CLI_SHA256: ${{ inputs.candidate_cli_sha }}
         run: |
           gh release download $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --pattern 'AgentRoam-Setup-*-x64.exe' --dir "$env:RUNNER_TEMP/installer"
           if ($LASTEXITCODE -ne 0) { throw 'Installer download failed' }
@@ -40,6 +44,20 @@ jobs:
           $process = Start-Process $files[0].FullName -ArgumentList @('/S', "/D=$env:RUNNER_TEMP\AgentRoam") -Wait -PassThru
           if ($process.ExitCode -ne 0) { throw "Installer failed: $($process.ExitCode)" }
           if (!(Test-Path "$env:RUNNER_TEMP/AgentRoam/AgentRoam.exe")) { throw 'Application missing after installation' }
+          if ($env:CANDIDATE_CLI_SHA256) {
+            gh release download $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --pattern 'agentroam-desktop-candidate.tgz' --dir "$env:RUNNER_TEMP/candidate"
+            if ($LASTEXITCODE -ne 0) { throw 'Candidate CLI download failed' }
+            $candidate = "$env:RUNNER_TEMP/candidate/agentroam-desktop-candidate.tgz"
+            if ((Get-FileHash $candidate -Algorithm SHA256).Hash.ToLowerInvariant() -ne $env:CANDIDATE_CLI_SHA256) { throw 'Candidate CLI checksum mismatch' }
+            $manifestPath = "$env:RUNNER_TEMP/AgentRoam/resources/runtime/manifest.json"
+            $manifest = Get-Content $manifestPath | ConvertFrom-Json
+            $entries = @($manifest.packages | Where-Object { $_.name -eq 'agentroam' })
+            if ($entries.Count -ne 1) { throw 'Expected one bundled launcher' }
+            Copy-Item $candidate (Join-Path (Split-Path $manifestPath) $entries[0].file) -Force
+            $entries[0].sha256 = $env:CANDIDATE_CLI_SHA256
+            $manifest | ConvertTo-Json -Depth 10 | Set-Content $manifestPath
+            Write-Output 'Candidate integration test: installed CLI bundle replaced; original installer acceptance still required'
+          }
       - name: Start the installed first-launch worker
         shell: pwsh
         run: |
@@ -54,6 +72,17 @@ jobs:
             if (options.args.includes('doctor') && options.args.some(arg => /agentroam\.mjs$/.test(arg))) {
               this.stdout?.on('data', chunk => process.stdout.write(chunk));
               this.stderr?.on('data', chunk => process.stderr.write(chunk));
+            }
+            if (options.args.includes('service')) {
+              let pending = '';
+              const emit = line => process.stderr.write(line.replace(/(?:https?|wss?):\/\/\S+/g, '[URL]').replace(/[A-Za-z0-9_-]{32,}/g, '[redacted]') + '\n');
+              this.stderr?.on('data', chunk => {
+                pending += chunk;
+                let end;
+                while ((end = pending.indexOf('\n')) >= 0) { emit(pending.slice(0, end)); pending = pending.slice(end + 1); }
+                if (pending.length > 8192) { pending = ''; emit('[service diagnostic line omitted]'); }
+              });
+              this.stderr?.on('end', () => { if (pending) emit(pending); });
             }
             return result;
           };
