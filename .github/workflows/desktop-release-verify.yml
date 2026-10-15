@@ -35,28 +35,55 @@ jobs:
           $process = Start-Process $files[0].FullName -ArgumentList @('/S', "/D=$env:RUNNER_TEMP\AgentRoam") -Wait -PassThru
           if ($process.ExitCode -ne 0) { throw "Installer failed: $($process.ExitCode)" }
           if (!(Test-Path "$env:RUNNER_TEMP/AgentRoam/AgentRoam.exe")) { throw 'Application missing after installation' }
-      - name: Prepare runtime using the installed Electron executable
+      - name: Start the installed first-launch worker
         shell: pwsh
         run: |
-          # This is a disposable runner account. Scheduled tasks inherit its real
-          # Windows profile, so do not redirect USERPROFILE only in this shell.
+          # Scheduled tasks must use this disposable runner's real Windows profile.
           if (Test-Path "$env:USERPROFILE/.agentroam") { throw 'Expected a fresh AgentRoam user profile' }
+          @'
           $env:ELECTRON_RUN_AS_NODE = '1'
-          $bootstrap = Start-Process "$env:RUNNER_TEMP/AgentRoam/AgentRoam.exe" -ArgumentList "`"$env:RUNNER_TEMP/AgentRoam/resources/bootstrap/runtime-bootstrap.mjs`"" -PassThru -RedirectStandardOutput "$env:RUNNER_TEMP/bootstrap.stdout.log" -RedirectStandardError "$env:RUNNER_TEMP/bootstrap.stderr.log"
-          $deadline = [DateTime]::UtcNow.AddMinutes(24)
-          $lineCount = 0
-          do {
-            $exited = $bootstrap.WaitForExit(10000)
-            $lines = @(Get-Content "$env:RUNNER_TEMP/bootstrap.stdout.log")
-            $lines | Select-Object -Skip $lineCount | Write-Output
-            $lineCount = $lines.Count
-            if ([DateTime]::UtcNow -gt $deadline) {
-              Stop-Process -Id $bootstrap.Id -Force
-              throw 'First-launch bootstrap exceeded 24 minutes'
-            }
-          } while (!$exited)
-          Get-Content "$env:RUNNER_TEMP/bootstrap.stderr.log"
-          if ($bootstrap.ExitCode -ne 0) { throw "Installed first-launch bootstrap failed: $($bootstrap.ExitCode)" }
+          $worker = Start-Process "$env:RUNNER_TEMP/AgentRoam/AgentRoam.exe" -ArgumentList "`"$env:RUNNER_TEMP/AgentRoam/resources/bootstrap/runtime-bootstrap.mjs`"" -PassThru -RedirectStandardOutput "$env:RUNNER_TEMP/bootstrap.stdout.log" -RedirectStandardError "$env:RUNNER_TEMP/bootstrap.stderr.log"
+          $worker.WaitForExit()
+          [IO.File]::WriteAllText("$env:RUNNER_TEMP/bootstrap.exit", [string]$worker.ExitCode)
+          '@ | Set-Content "$env:RUNNER_TEMP/bootstrap-supervisor.ps1"
+          @'
+          function Wait-DesktopBootstrapPhase([string] $Pattern, [int] $TimeoutSeconds) {
+            $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
+            do {
+              $progress = Get-Content "$env:RUNNER_TEMP/bootstrap.stdout.log" -Raw -ErrorAction SilentlyContinue
+              if (Test-Path "$env:RUNNER_TEMP/bootstrap.exit") {
+                $exitCode = [int](Get-Content "$env:RUNNER_TEMP/bootstrap.exit")
+                if ($exitCode -ne 0) { throw "Installed first-launch bootstrap failed: $exitCode" }
+                return
+              }
+              if ($Pattern -and $progress -match $Pattern) { return }
+              Start-Sleep -Seconds 2
+            } while ([DateTime]::UtcNow -lt $deadline)
+            throw "Timed out waiting for bootstrap phase: $Pattern"
+          }
+          '@ | Set-Content "$env:RUNNER_TEMP/bootstrap-phase.ps1"
+          $supervisor = Start-Process pwsh -ArgumentList @('-NoLogo', '-NoProfile', '-File', "$env:RUNNER_TEMP/bootstrap-supervisor.ps1") -PassThru
+          $supervisor.Id | Set-Content "$env:RUNNER_TEMP/bootstrap-supervisor.pid"
+      - name: Wait for managed Node preparation
+        shell: pwsh
+        run: |
+          . "$env:RUNNER_TEMP/bootstrap-phase.ps1"
+          Wait-DesktopBootstrapPhase -Pattern '正在安装终端|正在校验终端' -TimeoutSeconds 720
+      - name: Wait for bundled runtime installation
+        shell: pwsh
+        run: |
+          . "$env:RUNNER_TEMP/bootstrap-phase.ps1"
+          Wait-DesktopBootstrapPhase -Pattern '正在检查终端并准备 Codex' -TimeoutSeconds 780
+      - name: Wait for Codex and native component checks
+        shell: pwsh
+        run: |
+          . "$env:RUNNER_TEMP/bootstrap-phase.ps1"
+          Wait-DesktopBootstrapPhase -Pattern '正在启动 AgentRoam' -TimeoutSeconds 360
+      - name: Wait for background service readiness
+        shell: pwsh
+        run: |
+          . "$env:RUNNER_TEMP/bootstrap-phase.ps1"
+          Wait-DesktopBootstrapPhase -Pattern '' -TimeoutSeconds 420
       - name: Verify native PTY, SQLite, Codex and shell startup
         shell: pwsh
         run: |
@@ -108,3 +135,17 @@ jobs:
           } finally {
             if (!$application.HasExited) { Stop-Process -Id $application.Id -Force }
           }
+      - name: First-launch diagnostics
+        if: always()
+        shell: pwsh
+        run: |
+          Get-Content "$env:RUNNER_TEMP/bootstrap.stdout.log" -ErrorAction SilentlyContinue
+          Get-Content "$env:RUNNER_TEMP/bootstrap.stderr.log" -ErrorAction SilentlyContinue
+          Get-ChildItem "$env:USERPROFILE/.agentroam" -Filter node.exe -Recurse -ErrorAction SilentlyContinue | ForEach-Object { Write-Output "Managed Node: $($_.FullName)" }
+          $statePath = "$env:USERPROFILE/.agentroam/service/state.json"
+          if (Test-Path $statePath) {
+            $state = Get-Content $statePath | ConvertFrom-Json
+            [pscustomobject]@{status=$state.status; pid=$state.pid; provider=$state.provider} | ConvertTo-Json -Compress
+          }
+          $task = Get-ScheduledTask -TaskName 'AgentRoam' -ErrorAction SilentlyContinue
+          if ($task) { $task | Get-ScheduledTaskInfo | Select-Object LastTaskResult,LastRunTime | ConvertTo-Json -Compress }
