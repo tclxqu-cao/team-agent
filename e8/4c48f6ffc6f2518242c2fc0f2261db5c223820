@@ -1,0 +1,21 @@
+.github/workflows/cli-release-verify.yml
+  s_383c021fd01321::t_95b2e44153bc3a 6-9,22,171-198
+.github/workflows/desktop-release-verify.yml
+  s_383c021fd01321::t_299318e9e81625 6-9,22,171-198
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e84c48f6ffc6f2518242c2fc0f2261db5c223820",
+  "prompts": {},
+  "sessions": {
+    "s_383c021fd01321": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a13f9b-7e14-7d72-93be-8065810877bf",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
