@@ -40,8 +40,22 @@ jobs:
         run: |
           # Scheduled tasks must use this disposable runner's real Windows profile.
           if (Test-Path "$env:USERPROFILE/.agentroam") { throw 'Expected a fresh AgentRoam user profile' }
+          # Observe only doctor output; the shipped worker and installer stay unchanged.
+          @'
+          const { ChildProcess } = require('node:child_process');
+          const spawn = ChildProcess.prototype.spawn;
+          ChildProcess.prototype.spawn = function(options) {
+            const result = spawn.apply(this, arguments);
+            if (options.args.includes('doctor') && options.args.some(arg => /agentroam\.mjs$/.test(arg))) {
+              this.stdout?.on('data', chunk => process.stdout.write(chunk));
+              this.stderr?.on('data', chunk => process.stderr.write(chunk));
+            }
+            return result;
+          };
+          '@ | Set-Content "$env:RUNNER_TEMP/bootstrap-observer.cjs"
           @'
           $env:ELECTRON_RUN_AS_NODE = '1'
+          $env:NODE_OPTIONS = "--require=$env:RUNNER_TEMP/bootstrap-observer.cjs"
           $worker = Start-Process "$env:RUNNER_TEMP/AgentRoam/AgentRoam.exe" -ArgumentList "`"$env:RUNNER_TEMP/AgentRoam/resources/bootstrap/runtime-bootstrap.mjs`"" -PassThru -RedirectStandardOutput "$env:RUNNER_TEMP/bootstrap.stdout.log" -RedirectStandardError "$env:RUNNER_TEMP/bootstrap.stderr.log"
           $worker.WaitForExit()
           [IO.File]::WriteAllText("$env:RUNNER_TEMP/bootstrap.exit", [string]$worker.ExitCode)
