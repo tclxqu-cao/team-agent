@@ -41,8 +41,10 @@ jobs:
           $env:USERPROFILE = "$env:RUNNER_TEMP/desktop-profile"
           New-Item -ItemType Directory -Force $env:USERPROFILE | Out-Null
           $env:ELECTRON_RUN_AS_NODE = '1'
-          & "$env:RUNNER_TEMP/AgentRoam/AgentRoam.exe" "$env:RUNNER_TEMP/AgentRoam/resources/bootstrap/runtime-bootstrap.mjs"
-          if ($LASTEXITCODE -ne 0) { throw 'Installed first-launch bootstrap failed' }
+          $bootstrap = Start-Process "$env:RUNNER_TEMP/AgentRoam/AgentRoam.exe" -ArgumentList "`"$env:RUNNER_TEMP/AgentRoam/resources/bootstrap/runtime-bootstrap.mjs`"" -Wait -PassThru -RedirectStandardOutput "$env:RUNNER_TEMP/bootstrap.stdout.log" -RedirectStandardError "$env:RUNNER_TEMP/bootstrap.stderr.log"
+          Get-Content "$env:RUNNER_TEMP/bootstrap.stdout.log"
+          Get-Content "$env:RUNNER_TEMP/bootstrap.stderr.log"
+          if ($bootstrap.ExitCode -ne 0) { throw "Installed first-launch bootstrap failed: $($bootstrap.ExitCode)" }
       - name: Verify native PTY, SQLite, Codex and shell startup
         shell: pwsh
         run: |
