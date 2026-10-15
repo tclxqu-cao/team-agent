@@ -1,0 +1,39 @@
+packages/tui-darwin-arm64/package.json
+  s_8ae0ad512d327e::t_fc888db2611e77 3
+packages/runtime-darwin-arm64/package.json
+  s_8ae0ad512d327e::t_5a4b64e56765e8 3
+packages/cloudflared-darwin-arm64/package.json
+  s_8ae0ad512d327e::t_fc3824a08ebcf0 3
+packages/cloudflared-darwin-arm64/manifest.json
+  s_8ae0ad512d327e::t_6c2918e7b7ce9c 2
+packages/cloudflared-win32-x64/manifest.json
+  s_8ae0ad512d327e::t_301632c81ba3ce 2
+packages/runtime-win32-x64/package.json
+  s_8ae0ad512d327e::t_72a907f1f62887 3
+packages/cli/package.json
+  s_8ae0ad512d327e::t_acaf2e69758c86 3,30-35
+packages/runtime-darwin-arm64/manifest.json
+  s_8ae0ad512d327e::t_9c6bc0daf59d9a 2
+packages/cloudflared-win32-x64/package.json
+  s_8ae0ad512d327e::t_79f01cdd60b1b5 3
+packages/runtime-win32-x64/manifest.json
+  s_8ae0ad512d327e::t_d6345382265c96 2
+packages/tui-win32-x64/package.json
+  s_8ae0ad512d327e::t_750e407c8d7f45 3
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a0a359a582fa40a22f9d2cc249a62f93524ee171",
+  "prompts": {},
+  "sessions": {
+    "s_8ae0ad512d327e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1403a-e47d-74b3-a1b2-033fac4390ad",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
