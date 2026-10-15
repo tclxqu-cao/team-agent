@@ -1,6 +1,6 @@
 # Desktop installation and Android QR validation — 2026-10-15
 
-Status: **full phone user journey has not passed**. The public runtime mismatch described below is addressed by desktop preview.21 bundling matching launcher/runtime tarballs. Final Windows installer installation verification passed; both desktop installers are publicly released. Android camera/UI interaction remains pending after native desktop-control failures.
+Status: **full phone user journey has not passed**. The public runtime mismatch described below is addressed by desktop preview.21 bundling matching launcher/runtime tarballs. Final Windows installer installation verification passed; both desktop installers and a signed Android Release APK are publicly released. Android Release installation/reinstallation passed on API30; physical camera/UI interaction remains pending after native desktop-control failures.
 
 ## Actual installation probe
 
@@ -82,3 +82,17 @@ Anonymous GitHub API returns 200; the website's actual asset selector chooses bo
 - macOS arm64 SHA256: 485fe88a5c9de05cb1cd303eb972daeb4934824f096d8991a726fe38e4ad025d.
 
 Android/iOS physical camera, Keystore, avatar/computer menu, real OS desktop control and existing-user service upgrades remain unverified. QMD refreshed: update + embed + targeted get verified.
+
+## Signed Android preview.21 release (2026-10-16)
+
+`AgentRoam-0.2.0-preview.21-android.apk` is published on the same GitHub release. Package `com.agentroam.mobile`, versionName `0.2.0-preview.21`, versionCode `20021`, minSdk26, targetSdk35, debuggable=false. Size: 32,502,528 bytes. SHA256: `65b99f83274737c30eb4d76fc2365c83cc03c2ceef9e3f92cb439aa803eadeed`. APK v2/v3 signatures pass with persistent release certificate SHA256 `0f1664b57453b5d9ab51c44d6f7c3bf888ab724cf0332eee8fe2f7a2c63d3aaa`. Signing material remains outside the repository and is excluded from published artifacts.
+
+Android source snapshot: `10a36c74c70763eef650c16ed9a002cb45992479`; the existing desktop tag is unchanged. Gradle release version properties use explicit assignments after the original command-style expression failed with `Value is null`. WebView compatibility and native pairing regression tests passed (7 tests), then WebApp build, Capacitor Android sync, safe-area patch and `assembleRelease` completed.
+
+All 101 packaged native public assets match the synchronized source. All 98 non-index WebApp assets match dist; index intentionally includes the safe-area patch. Barcode scanner, secure storage and status bar plugin metadata and scanner/storage DEX classes are present. Native logging is disabled, there is no development server URL, private signing files or wake-word model. The barcode library's three `.tflite` assets are barcode recognition models.
+
+A new read-only `phone-agent-smoke` emulator session booted Android 11/API30. An existing Debug package could not be upgraded with the release key, as expected. After verifying this owned session's `-read-only` command line, the old test package was removed only from the overlay. Fresh Release install and same-certificate `adb install -r` passed. Installed package version and non-debuggable flags match the shipped APK. The native UI tool still does not list the emulator; no alternative UI actions were used. This does not prove camera/Keystore/avatar behavior or an end-to-end UI journey.
+
+The APK and updated SHA256SUMS are public. Anonymous complete downloads of all three release files pass the updated checksum file; downloaded APK signing verification passes. The website worktree's actual `selectAssets()` selects the Android APK alongside Windows/macOS, without changing that worktree.
+
+Evidence: `/tmp/agentroam-desktop-release-20261015/android-release-audit.json`, `android-installation-report.json`, `android-signature.txt`, `android-public-signature.txt`, `website-public-selection-with-android.json` and `validation.json`.
