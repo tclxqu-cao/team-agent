@@ -1,0 +1,26 @@
+packages/cli/src/native-runtime.ts
+  s_383c021fd01321::t_5fd50c86c4d37b 3-20,37-44,47,50-54,56-65
+  s_383c021fd01321::t_91f577b98be46e 66
+.github/workflows/cli-release-verify.yml
+  s_383c021fd01321::t_b75b3d156579ed 6-8,36,47-60,76-86
+.github/workflows/desktop-release-verify.yml
+  s_383c021fd01321::t_1fb01913f5cf46 6-8,36,47-60,76-86
+packages/cli/src/service/windows-task-service.ts
+  s_383c021fd01321::t_1bcfa407f7986b 253
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c627fb720ad5c7dfbb46944176fc5598527f562b",
+  "prompts": {},
+  "sessions": {
+    "s_383c021fd01321": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a13f9b-7e14-7d72-93be-8065810877bf",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
