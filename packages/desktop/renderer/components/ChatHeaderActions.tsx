@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Check, LayoutGrid, LoaderCircle, Monitor, PanelRight, Unplug } from "lucide-react";
 import { isDesktopLiveSetupPending } from "../lib/desktop-live-setup";
 import type { DesktopLiveStatus } from "../global";
+import MobilePairingButton from "./MobilePairingButton";
 
 /**
  * Tracks whether remote authorization still needs user action, so the header
@@ -78,6 +79,7 @@ export default function ChatHeaderActions({
       : "停止在 AgentRoam 中使用（Codex Desktop 最长约 30 分钟后可用）";
   return (
     <div className="chat-header-actions" style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}>
+      {typeof window !== "undefined" && window.sharedServiceApi?.mobilePairing && <MobilePairingButton />}
       {onOpenDesktopLive && (
         <button
           type="button"

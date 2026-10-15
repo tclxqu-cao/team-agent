@@ -1,0 +1,227 @@
+name: desktop-release-verify
+
+on:
+  workflow_dispatch:
+    inputs:
+      candidate_cli_sha:
+        description: Optional candidate CLI SHA256 for integration testing before installer rebuilding
+        default: ''
+      diagnostic_only:
+        description: Test the Windows scheduler contract only
+        type: boolean
+        default: false
+      tag:
+        description: Desktop draft release tag
+        required: true
+      sha256:
+        description: Expected Windows installer SHA256
+        required: true
+
+permissions:
+  contents: write # Draft release downloads require push access.
+
+jobs:
+  windows-install:
+    if: ${{ !inputs.diagnostic_only }}
+    runs-on: windows-2022
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download and verify installer
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+          EXPECTED_SHA256: ${{ inputs.sha256 }}
+          CANDIDATE_CLI_SHA256: ${{ inputs.candidate_cli_sha }}
+        run: |
+          gh release download $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --pattern 'AgentRoam-Setup-*-x64.exe' --dir "$env:RUNNER_TEMP/installer"
+          if ($LASTEXITCODE -ne 0) { throw 'Installer download failed' }
+          $files = @(Get-ChildItem "$env:RUNNER_TEMP/installer/*.exe")
+          if ($files.Count -ne 1) { throw 'Expected exactly one installer' }
+          $hash = (Get-FileHash $files[0].FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($hash -ne $env:EXPECTED_SHA256) { throw 'Installer checksum mismatch' }
+          $process = Start-Process $files[0].FullName -ArgumentList @('/S', "/D=$env:RUNNER_TEMP\AgentRoam") -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw "Installer failed: $($process.ExitCode)" }
+          if (!(Test-Path "$env:RUNNER_TEMP/AgentRoam/AgentRoam.exe")) { throw 'Application missing after installation' }
+          if ($env:CANDIDATE_CLI_SHA256) {
+            gh release download $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --pattern 'agentroam-desktop-candidate.tgz' --dir "$env:RUNNER_TEMP/candidate"
+            if ($LASTEXITCODE -ne 0) { throw 'Candidate CLI download failed' }
+            $candidate = "$env:RUNNER_TEMP/candidate/agentroam-desktop-candidate.tgz"
+            if ((Get-FileHash $candidate -Algorithm SHA256).Hash.ToLowerInvariant() -ne $env:CANDIDATE_CLI_SHA256) { throw 'Candidate CLI checksum mismatch' }
+            $manifestPath = "$env:RUNNER_TEMP/AgentRoam/resources/runtime/manifest.json"
+            $manifest = Get-Content $manifestPath | ConvertFrom-Json
+            $entries = @($manifest.packages | Where-Object { $_.name -eq 'agentroam' })
+            if ($entries.Count -ne 1) { throw 'Expected one bundled launcher' }
+            Copy-Item $candidate (Join-Path (Split-Path $manifestPath) $entries[0].file) -Force
+            $entries[0].sha256 = $env:CANDIDATE_CLI_SHA256
+            $manifest | ConvertTo-Json -Depth 10 | Set-Content $manifestPath
+            Write-Output 'Candidate integration test: installed CLI bundle replaced; original installer acceptance still required'
+          }
+      - name: Start the installed first-launch worker
+        shell: pwsh
+        run: |
+          # Scheduled tasks must use this disposable runner's real Windows profile.
+          if (Test-Path "$env:USERPROFILE/.agentroam") { throw 'Expected a fresh AgentRoam user profile' }
+          # Observe only doctor output; the shipped worker and installer stay unchanged.
+          @'
+          const { ChildProcess } = require('node:child_process');
+          const spawn = ChildProcess.prototype.spawn;
+          ChildProcess.prototype.spawn = function(options) {
+            const result = spawn.apply(this, arguments);
+            if (options.args.includes('doctor') && options.args.some(arg => /agentroam\.mjs$/.test(arg))) {
+              this.stdout?.on('data', chunk => process.stdout.write(chunk));
+              this.stderr?.on('data', chunk => process.stderr.write(chunk));
+            }
+            if (options.args.includes('service')) {
+              let pending = '';
+              const emit = line => process.stderr.write(line.replace(/(?:https?|wss?):\/\/\S+/g, '[URL]').replace(/[A-Za-z0-9_-]{32,}/g, '[redacted]') + '\n');
+              this.stderr?.on('data', chunk => {
+                pending += chunk;
+                let end;
+                while ((end = pending.indexOf('\n')) >= 0) { emit(pending.slice(0, end)); pending = pending.slice(end + 1); }
+                if (pending.length > 8192) { pending = ''; emit('[service diagnostic line omitted]'); }
+              });
+              this.stderr?.on('end', () => { if (pending) emit(pending); });
+            }
+            return result;
+          };
+          '@ | Set-Content "$env:RUNNER_TEMP/bootstrap-observer.cjs"
+          @'
+          $env:ELECTRON_RUN_AS_NODE = '1'
+          $env:NODE_OPTIONS = "--require=$env:RUNNER_TEMP/bootstrap-observer.cjs"
+          $worker = Start-Process "$env:RUNNER_TEMP/AgentRoam/AgentRoam.exe" -ArgumentList "`"$env:RUNNER_TEMP/AgentRoam/resources/bootstrap/runtime-bootstrap.mjs`"" -PassThru -RedirectStandardOutput "$env:RUNNER_TEMP/bootstrap.stdout.log" -RedirectStandardError "$env:RUNNER_TEMP/bootstrap.stderr.log"
+          $worker.WaitForExit()
+          [IO.File]::WriteAllText("$env:RUNNER_TEMP/bootstrap.exit", [string]$worker.ExitCode)
+          '@ | Set-Content "$env:RUNNER_TEMP/bootstrap-supervisor.ps1"
+          @'
+          function Wait-DesktopBootstrapPhase([string] $Pattern, [int] $TimeoutSeconds) {
+            $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
+            do {
+              $progress = Get-Content "$env:RUNNER_TEMP/bootstrap.stdout.log" -Raw -ErrorAction SilentlyContinue
+              if (Test-Path "$env:RUNNER_TEMP/bootstrap.exit") {
+                $exitCode = [int](Get-Content "$env:RUNNER_TEMP/bootstrap.exit")
+                if ($exitCode -ne 0) { throw "Installed first-launch bootstrap failed: $exitCode" }
+                return
+              }
+              if ($Pattern -and $progress -match $Pattern) { return }
+              Start-Sleep -Seconds 2
+            } while ([DateTime]::UtcNow -lt $deadline)
+            throw "Timed out waiting for bootstrap phase: $Pattern"
+          }
+          '@ | Set-Content "$env:RUNNER_TEMP/bootstrap-phase.ps1"
+          $supervisor = Start-Process pwsh -ArgumentList @('-NoLogo', '-NoProfile', '-File', "$env:RUNNER_TEMP/bootstrap-supervisor.ps1") -PassThru
+          $supervisor.Id | Set-Content "$env:RUNNER_TEMP/bootstrap-supervisor.pid"
+      - name: Wait for managed Node preparation
+        shell: pwsh
+        run: |
+          . "$env:RUNNER_TEMP/bootstrap-phase.ps1"
+          Wait-DesktopBootstrapPhase -Pattern '正在安装终端|正在校验终端' -TimeoutSeconds 720
+      - name: Wait for bundled runtime installation
+        shell: pwsh
+        run: |
+          . "$env:RUNNER_TEMP/bootstrap-phase.ps1"
+          Wait-DesktopBootstrapPhase -Pattern '正在检查终端并准备 Codex' -TimeoutSeconds 780
+      - name: Wait for Codex and native component checks
+        shell: pwsh
+        run: |
+          . "$env:RUNNER_TEMP/bootstrap-phase.ps1"
+          Wait-DesktopBootstrapPhase -Pattern '正在启动 AgentRoam' -TimeoutSeconds 360
+      - name: Wait for background service readiness
+        shell: pwsh
+        run: |
+          . "$env:RUNNER_TEMP/bootstrap-phase.ps1"
+          Wait-DesktopBootstrapPhase -Pattern '' -TimeoutSeconds 420
+      - name: Verify native PTY, SQLite, Codex and shell startup
+        shell: pwsh
+        run: |
+          $testProfile = $env:USERPROFILE
+          $env:ELECTRON_RUN_AS_NODE = $null
+          $node = "$testProfile/.agentroam/node-runtime/node-v22.22.0-win-x64/node.exe"
+          if (!(Test-Path $node)) {
+            $nodes = @(Get-ChildItem "$testProfile/.agentroam" -Filter node.exe -Recurse)
+            if ($nodes.Count -ne 1) { throw 'Managed Node missing or ambiguous' }
+            $node = $nodes[0].FullName
+          }
+          $env:AGENTROAM_MANAGED_NODE = $node
+          $env:AGENTROAM_DATA_DIR = "$testProfile/.agentroam"
+          $env:AGENTROAM_INSTALL_REMOTE_DESKTOP = 'skip'
+          $cli = @(Get-ChildItem "$testProfile/.agentroam/desktop-cli" -Filter agentroam.mjs -Recurse | Where-Object { $_.FullName -match 'node_modules[\\/]agentroam[\\/]bin' })
+          if ($cli.Count -ne 1) { throw 'Bundled CLI missing or ambiguous' }
+          & $node $cli[0].FullName doctor --data-dir "$testProfile/.agentroam"
+          if ($LASTEXITCODE -ne 0) { throw 'Installed CLI doctor failed' }
+          $runtime = @(Get-ChildItem "$testProfile/.agentroam/desktop-cli" -Filter manifest.json -Recurse | Where-Object { $_.FullName -match 'agentroam-runtime-win32-x64[\\/]manifest.json$' })
+          if ($runtime.Count -ne 1) { throw 'Windows runtime manifest missing' }
+          $manifest = Get-Content $runtime[0].FullName | ConvertFrom-Json
+          if ($manifest.capabilities.nativeConsole -ne 1) { throw 'Native console support missing' }
+          $runtimeRoot = Join-Path $runtime[0].DirectoryName 'runtime'
+          & "$runtimeRoot/native/agentroam-remote-desktop.exe" --self-test
+          if ($LASTEXITCODE -ne 0) { throw 'Windows remote desktop encoder self-test failed' }
+          & "$runtimeRoot/native/agentroam-remote-unlock.exe" --self-test
+          if ($LASTEXITCODE -ne 0) { throw 'Windows unlock helper self-test failed' }
+          Push-Location $runtimeRoot
+          try {
+            & $node --input-type=module -e 'import Database from "better-sqlite3"; import pty from "node-pty"; const db = new Database(":memory:"); if (db.prepare("select 42 as result").get().result !== 42) throw new Error("SQLite failed"); db.close(); const shell=pty.spawn("cmd.exe",["/d","/c","echo AGENTROAM_WINDOWS_PTY_OK"],{cols:80,rows:24,env:process.env}); let output=""; const timer=setTimeout(()=>{shell.kill();process.exit(1)},15000); shell.onData(data=>output+=data); shell.onExit(({exitCode})=>{clearTimeout(timer); if(exitCode || !output.includes("AGENTROAM_WINDOWS_PTY_OK")) process.exit(1); console.log("Windows SQLite and real PTY passed"); process.exit(0)});'
+            if ($LASTEXITCODE -ne 0) { throw 'Native runtime smoke failed' }
+          } finally { Pop-Location }
+      - name: Launch installed desktop shell
+        shell: pwsh
+        run: |
+          $env:ELECTRON_RUN_AS_NODE = $null
+          $env:AGENTROAM_DESKTOP_USER_DATA = "$env:RUNNER_TEMP/desktop-shell"
+          $application = Start-Process "$env:RUNNER_TEMP/AgentRoam/AgentRoam.exe" -ArgumentList '--no-sandbox' -PassThru
+          try {
+            Start-Sleep -Seconds 15
+            $application.Refresh()
+            if ($application.HasExited) { throw "Desktop exited at startup: $($application.ExitCode)" }
+            $logs = @(Get-ChildItem "$env:RUNNER_TEMP/desktop-shell/logs" -Filter '*.log' -ErrorAction Stop)
+            if (!$logs.Count) { throw 'Desktop startup log missing' }
+            $text = ($logs | Get-Content) -join "`n"
+            if ($text -notmatch 'desktop main booting') { throw 'Desktop main did not initialize' }
+            if ($text -match 'uncaughtException|ERR_MODULE_NOT_FOUND|ERR_DLOPEN_FAILED|Cannot find module') { throw 'Desktop startup dependency failure' }
+            Write-Output 'Installed Windows desktop process remained running for 15 seconds'
+          } finally {
+            if (!$application.HasExited) { Stop-Process -Id $application.Id -Force }
+          }
+      - name: First-launch diagnostics
+        if: always()
+        shell: pwsh
+        run: |
+          Get-Content "$env:RUNNER_TEMP/bootstrap.stdout.log" -ErrorAction SilentlyContinue
+          Get-Content "$env:RUNNER_TEMP/bootstrap.stderr.log" -ErrorAction SilentlyContinue
+          Get-ChildItem "$env:USERPROFILE/.agentroam" -Filter node.exe -Recurse -ErrorAction SilentlyContinue | ForEach-Object { Write-Output "Managed Node: $($_.FullName)" }
+          $statePath = "$env:USERPROFILE/.agentroam/service/state.json"
+          if (Test-Path $statePath) {
+            $state = Get-Content $statePath | ConvertFrom-Json
+            [pscustomobject]@{status=$state.status; pid=$state.pid; provider=$state.provider} | ConvertTo-Json -Compress
+          }
+          $task = Get-ScheduledTask -TaskName 'AgentRoam' -ErrorAction SilentlyContinue
+          if ($task) { $task | Get-ScheduledTaskInfo | Select-Object LastTaskResult,LastRunTime | ConvertTo-Json -Compress }
+  scheduler-contract:
+    if: ${{ inputs.diagnostic_only }}
+    runs-on: windows-2022
+    timeout-minutes: 5
+    steps:
+      - name: Verify scheduler restart interval bounds
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          foreach ($seconds in @(5, 60)) {
+            $taskName = "AgentRoam-Release-Probe-$env:GITHUB_RUN_ID-$seconds"
+            $user = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
+            $accepted = $false
+            $failure = $null
+            try {
+              $action = New-ScheduledTaskAction -Execute "$env:SystemRoot/System32/cmd.exe" -Argument '/c exit 0'
+              $trigger = New-ScheduledTaskTrigger -AtLogOn -User $user
+              $principal = New-ScheduledTaskPrincipal -UserId $user -LogonType Interactive -RunLevel Limited
+              $settings = New-ScheduledTaskSettingsSet -MultipleInstances IgnoreNew -RestartCount 999 -RestartInterval (New-TimeSpan -Seconds $seconds) -ExecutionTimeLimit ([TimeSpan]::Zero) -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
+              Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Force | Out-Null
+              $accepted = $true
+            } catch { $failure = $_ }
+            finally { Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue }
+            if ($seconds -eq 5 -and $accepted) { throw 'Five-second restart interval was accepted; inspect the original failure separately' }
+            if ($seconds -eq 60 -and !$accepted) { throw $failure }
+            Write-Output "Scheduler restart interval $seconds seconds accepted: $accepted"
+            if ($failure) { Write-Output $failure.Exception.Message }
+          }

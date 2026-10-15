@@ -31,7 +31,7 @@ async function readJson(req) {
 }
 
 /** The only public operations are readiness, the pairing page, and code exchange. */
-export function createDevicePairingGateway({ dataDir, desktop, owner, consoleStore, store = new DevicePairingStore(dataDir), trustProxy = process.env.AGENT_TRUST_TUNNEL_PROXY === "1", allowedOrigins = process.env.AGENT_WEB_ALLOWED_ORIGINS || "", sdkToken = process.env.AGENT_SDK_TOKEN, runServiceToken = process.env.AGENT_RUN_TOKEN || process.env.PORTFOLIO_SKILL_TOKEN, testNoPairing = false }) {
+export function createDevicePairingGateway({ dataDir, desktop, owner, consoleStore, resolveNativePreviewDevice = () => null, store = new DevicePairingStore(dataDir), trustProxy = process.env.AGENT_TRUST_TUNNEL_PROXY === "1", allowedOrigins = process.env.AGENT_WEB_ALLOWED_ORIGINS || "", sdkToken = process.env.AGENT_SDK_TOKEN, runServiceToken = process.env.AGENT_RUN_TOKEN || process.env.PORTFOLIO_SKILL_TOKEN, testNoPairing = false }) {
   const testId = "test-browser";
   const activeDevice = (id) => id === testId ? testNoPairing && !store.isLocked() : store.active(id);
   const sockets = new Map();
@@ -80,8 +80,20 @@ export function createDevicePairingGateway({ dataDir, desktop, owner, consoleSto
           res.setHeader("access-control-allow-origin", req.headers.origin);
           res.setHeader("vary", "Origin");
           if (req.method === "OPTIONS") {
-            res.writeHead(204, { "access-control-allow-methods": "GET,POST,PATCH,DELETE,OPTIONS", "access-control-allow-headers": "authorization,content-type,last-event-id" });
+            res.writeHead(204, { "access-control-allow-methods": "GET,POST,PUT,PATCH,DELETE,OPTIONS", "access-control-allow-headers": "authorization,content-type,last-event-id,x-csrf-token" });
             res.end(); return true;
+          }
+        }
+        // Native media elements cannot set bearer headers. A random, expiring
+        // preview ticket grants read access only to that preview's resources.
+        if (["GET", "HEAD"].includes(req.method) && path.startsWith("/api/web-console/file-preview/")) {
+          const deviceId = resolveNativePreviewDevice(path);
+          if (deviceId && !store.isLocked() && store.active(deviceId)) {
+            req.headers["x-agentroam-device-id"] = deviceId;
+            streams.set(res, deviceId); res.once("close", () => streams.delete(res));
+            auditOperation({ deviceId }, "http.file_preview", "started");
+            res.once("finish", () => { try { auditOperation({ deviceId }, "http.file_preview", res.statusCode < 400 ? "success" : "failed"); } catch { console.error("Security audit completion could not be recorded"); } });
+            return false;
           }
         }
         const sdkPath = /^(?:\/api\/auth\/verify|\/api\/sessions(?:\/[^/]+)?|\/api\/remote-tools\/register|\/api\/agent\/(?:run|stream|abort|answer))$/.test(path);
@@ -203,7 +215,7 @@ export function createDevicePairingGateway({ dataDir, desktop, owner, consoleSto
             for (const [nonce, expires] of localNonces) if (expires <= Date.now()) localNonces.delete(nonce);
             wsNonce = randomBytes(32).toString("base64url"); localNonces.set(wsNonce, Date.now() + 60_000);
           } else {
-            store.renew(device.id); wsNonce = store.issueNonce(device.id);
+            store.renew(device.id); wsNonce = store.issueNonce(device.id, native && bearer ? "native" : "browser");
             res.setHeader("set-cookie", cookie(req, token));
           }
           const deviceId = local ? "desktop" : test ? testId : device.id;
@@ -213,6 +225,14 @@ export function createDevicePairingGateway({ dataDir, desktop, owner, consoleSto
       } catch (cause) { json(res, cause.status || 500, { error: cause.status ? cause.message : "Authentication service unavailable" }); return true; }
     },
     authenticateUpgrade(req) {
+      // Native WebViews cannot attach bearer headers or third-party cookies to
+      // WebSocket upgrades. Only a nonce minted by authenticated HTTP may connect.
+      if (NATIVE_ORIGINS.has(req.headers.origin)) {
+        if (req.headers["x-agentroam-desktop-token"] || store.isLocked()) return null;
+        const nonce = new URL(req.url, "http://gateway.local").searchParams.get("nonce");
+        const device = store.consumeNativeNonce(nonce);
+        return device ? { ...principal(device), transport: "native" } : null;
+      }
       if (!originAllowed(req)) return null;
       const nonce = new URL(req.url, "http://gateway.local").searchParams.get("nonce");
       if (desktop.authenticate(req)) {

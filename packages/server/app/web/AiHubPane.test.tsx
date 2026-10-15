@@ -5,7 +5,7 @@ import { resolveFlowStudioFrameUrl } from "./FlowStudioPane";
 
 const source = readFileSync(new URL("./AiHubPane.tsx", import.meta.url), "utf8");
 const sitesSource = readFileSync(new URL("./aiHubSites.ts", import.meta.url), "utf8");
-const page = readFileSync(new URL("./page.tsx", import.meta.url), "utf8");
+const page = readFileSync(new URL("./page.tsx", import.meta.url), "utf8") + readFileSync(new URL("./console-styles.ts", import.meta.url), "utf8");
 const fileTree = readFileSync(new URL("./FileTree.tsx", import.meta.url), "utf8");
 const flowStudioPane = readFileSync(new URL("./FlowStudioPane.tsx", import.meta.url), "utf8");
 

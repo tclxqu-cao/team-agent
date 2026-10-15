@@ -14,6 +14,7 @@ import {
 import { delimiter, dirname, isAbsolute, relative, resolve, win32 } from "node:path";
 import { promisify } from "node:util";
 import type { PlatformTarget } from "./platform.js";
+import { withAbortSignal } from "./abort.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -22,7 +23,7 @@ export const CODEX_RUNTIME_TAG = "latest";
 export const CODEX_MINIMUM_VERSION = "0.153.0";
 const CODEX_PACKAGE = `@openai/codex@${CODEX_RUNTIME_TAG}`;
 const NPM_REGISTRY = "https://registry.npmjs.org";
-export const CODEX_INSTALL_TIMEOUT_MS = 60 * 60_000;
+export const CODEX_INSTALL_TIMEOUT_MS = 180_000;
 const DEFAULT_LOCK_WAIT_MS = 190_000;
 export const CODEX_INSTALL_STALE_LOCK_MS = CODEX_INSTALL_TIMEOUT_MS + 5 * 60_000;
 const DEFAULT_STALE_LOCK_MS = CODEX_INSTALL_STALE_LOCK_MS;
@@ -46,7 +47,7 @@ interface CommandResult {
 }
 
 interface CodexRuntimeDependencies {
-  run(command: string, args: string[], timeoutMs: number): Promise<CommandResult>;
+  run(command: string, args: string[], timeoutMs: number, signal?: AbortSignal): Promise<CommandResult>;
   sleep(delayMs: number): Promise<void>;
   now(): number;
 }
@@ -60,6 +61,8 @@ export interface ResolveCodexRuntimeOptions {
   lockWaitMs?: number;
   staleLockMs?: number;
   onProgress?: (message: string) => void;
+  installIfMissing?: boolean;
+  signal?: AbortSignal;
   dependencies?: Partial<CodexRuntimeDependencies>;
 }
 
@@ -71,11 +74,13 @@ export interface ResolveNpmExecutorOptions {
 }
 
 const defaultDependencies: CodexRuntimeDependencies = {
-  async run(command, args, timeoutMs) {
+  async run(command, args, timeoutMs, signal) {
     try {
       const { stdout, stderr } = await execFileAsync(command, args, {
         encoding: "utf8",
         timeout: timeoutMs,
+        signal,
+        killSignal: "SIGKILL",
         maxBuffer: 4 * 1024 * 1024,
         windowsHide: true,
       });
@@ -95,9 +100,22 @@ const defaultDependencies: CodexRuntimeDependencies = {
 export async function resolveCodexRuntime(
   options: ResolveCodexRuntimeOptions,
 ): Promise<CodexRuntimeResolution> {
+  return options.signal
+    ? withAbortSignal(() => resolveRuntime(options), options.signal)
+    : resolveRuntime(options);
+}
+
+async function resolveRuntime(options: ResolveCodexRuntimeOptions): Promise<CodexRuntimeResolution> {
   const environment = options.environment ?? process.env;
   const platform = options.platform ?? process.platform;
   const dependencies = { ...defaultDependencies, ...options.dependencies };
+  const signal = options.signal;
+  if (signal) {
+    const run = dependencies.run;
+    const sleep = dependencies.sleep;
+    dependencies.run = (command, args, timeoutMs) => withAbortSignal(() => run(command, args, timeoutMs, signal), signal);
+    dependencies.sleep = (delayMs) => withAbortSignal(() => sleep(delayMs), signal);
+  }
   const explicit = environment.AGENT_CODEX_BIN?.trim();
 
   if (explicit) {
@@ -115,6 +133,8 @@ export async function resolveCodexRuntime(
   const managed = await findManagedRuntime(managedParent, options.target, platform, dependencies);
   if (managed) return managed;
 
+  signal?.throwIfAborted();
+  if (options.installIfMissing === false) throw new Error("Codex is not installed; run agentroam doctor to install it.");
   options.onProgress?.(`Installing managed Codex from ${CODEX_PACKAGE}...`);
   return installManagedCodex({
     ...options,
@@ -306,6 +326,7 @@ async function installManagedCodex(
       throw new Error(`Codex runtime validation failed after installing ${CODEX_PACKAGE}`);
     }
     const managedRoot = resolve(parent, temporary.version);
+    options.signal?.throwIfAborted();
     // An invalid cache for this version must not block a validated replacement.
     await rm(managedRoot, { recursive: true, force: true });
     await rename(temporaryRoot, managedRoot);
@@ -319,6 +340,7 @@ async function installManagedCodex(
     if (!installed) throw new Error("Codex runtime validation failed after activation");
     return installed;
   } catch (error) {
+    options.signal?.throwIfAborted();
     const concurrent = await findManagedRuntime(
       parent,
       options.target,

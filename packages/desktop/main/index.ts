@@ -28,6 +28,7 @@ import { MacAccessibilityAdapter } from "./computer-use/mac-accessibility-adapte
 import { readDesktopLiveState, writeDesktopLiveState } from "./desktop-live-state.js";
 import { DesktopLiveCliProxy } from "./desktop-live-cli-proxy.js";
 import { SharedServiceConnection } from "./shared-service.js";
+import { DesktopRuntimeBootstrap } from "./runtime-bootstrap.js";
 import { DesktopUpdateService } from "./update-service.js";
 import { DesktopTaskCompletionNotifier } from "./task-completion-notifier.js";
 import { resolveTaskNotificationPreferences, type TaskCompletionNotification } from "@agent/core";
@@ -158,6 +159,7 @@ const appIconPath = [
   join(process.resourcesPath, "app.asar.unpacked", "assets", "app-icon.png"),
 ].find((candidate) => existsSync(candidate));
 const sharedService = new SharedServiceConnection(join(app.getPath("userData"), "shared-service.json"));
+const runtimeBootstrap = new DesktopRuntimeBootstrap(app.isPackaged, process.resourcesPath);
 const desktopLiveProxy = new DesktopLiveCliProxy({
   request: (path, method, body) => sharedService.json(path, method, body),
   onStatus: (status) => {
@@ -179,6 +181,14 @@ const trustedServiceSender = (event: import("electron").IpcMainInvokeEvent) => {
   if (event.sender !== mainWindow?.webContents || event.senderFrame !== event.sender.mainFrame) throw new Error("Untrusted desktop sender");
 };
 ipcMain.handle("service:status", (event) => { trustedServiceSender(event); return sharedService.status(); });
+ipcMain.handle("service:mobile-pairing", (event) => { trustedServiceSender(event); return sharedService.mobilePairing(); });
+ipcMain.handle("service:bootstrap-status", (event) => { trustedServiceSender(event); return runtimeBootstrap.status(); });
+ipcMain.handle("service:bootstrap", async (event) => {
+  trustedServiceSender(event);
+  const status = await sharedService.status();
+  if (status.connected || status.choices.length || status.preferredDataDir) return runtimeBootstrap.status();
+  return runtimeBootstrap.prepare();
+});
 ipcMain.handle("service:select", async (event, id: string) => {
   trustedServiceSender(event);
   const selected = await sharedService.select(id);

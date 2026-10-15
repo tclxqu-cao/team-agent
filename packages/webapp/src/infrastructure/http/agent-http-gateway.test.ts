@@ -1326,6 +1326,15 @@ describe("AgentHttpGateway", () => {
     });
   });
 
+  it("removes only the selected Agent workspace through the authenticated HTTP port", async () => {
+    const http = { delete: vi.fn().mockResolvedValue({ removed: true }) };
+    const gateway = new AgentHttpGateway(http as never, {} as never);
+    await gateway.removeInvalidAgentWorkspace("codex", "native:repo one");
+    expect(http.delete).toHaveBeenCalledWith(
+      "/api/agent-workspaces?agentType=codex&workspaceId=native%3Arepo+one",
+    );
+  });
+
   it("forwards the native workspace cwd when creating a session", async () => {
     const http = { post: vi.fn().mockResolvedValue({ id: "session" }) };
     const gateway = new AgentHttpGateway(http as never, {} as never);

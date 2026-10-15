@@ -347,6 +347,7 @@ export interface AgentApi {
     path: string,
     name?: string,
   ): Promise<ImportAgentWorkspaceResult>;
+  removeInvalidAgentWorkspace(agentType: AgentType, workspaceId: string): Promise<void>;
   listAgentWorkspaceSessions(
     agentType: AgentType,
     workspaceId: string,

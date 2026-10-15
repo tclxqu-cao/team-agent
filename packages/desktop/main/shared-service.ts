@@ -1,6 +1,7 @@
 import { readFile, readdir, mkdir, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
+import { createMobilePairingInvitation } from "./mobile-pairing.js";
 
 export interface ServiceDescriptor {
   protocol: 1; instanceId: string; pid: number; url: string; dataDir: string; token: string;
@@ -90,6 +91,11 @@ export class SharedServiceConnection {
     const d = await this.connection();
     const res = await this.request(serviceApiUrl(d.url, path), { method, ...(body === undefined ? {} : { body }), headers: { "content-type": "application/json", "x-agentroam-desktop-token": d.token }, signal: AbortSignal.timeout(30_000), redirect: "error" });
     return { status: res.status, body: await res.text() };
+  }
+
+  async mobilePairing() {
+    const descriptor = await this.connection();
+    return createMobilePairingInvitation(descriptor.dataDir, () => this.json("/api/pairing/admin/qr", "POST", "{}"));
   }
 
   async stream(id: string, path: string, lastEventId: string, send: (frame: StreamFrame) => void): Promise<void> {

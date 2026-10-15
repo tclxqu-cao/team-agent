@@ -36,6 +36,7 @@
     ".next-release-20260911-184156/types/**/*.ts",
     ".next-full-20260914/types/**/*.ts",
     ".next-8af62fd/types/**/*.ts",
-    ".next-goaltest/types/**/*.ts"
+    ".next-goaltest/types/**/*.ts",
+    ".next-invalid-workspace-check/types/**/*.ts"
   ]
 }

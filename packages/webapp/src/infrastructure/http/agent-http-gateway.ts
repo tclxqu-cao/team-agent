@@ -348,6 +348,11 @@ export class AgentHttpGateway {
     });
   }
 
+  async removeInvalidAgentWorkspace(agentType: string, workspaceId: string): Promise<void> {
+    const params = new URLSearchParams({ agentType, workspaceId });
+    await this.http.delete(`/api/agent-workspaces?${params.toString()}`);
+  }
+
   async listAgentWorkspaceSessions(
     agentType: string,
     workspaceId: string,

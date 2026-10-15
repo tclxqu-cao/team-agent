@@ -250,7 +250,7 @@ describe("AgentRoam reference sidebar", () => {
   });
 
   it("keeps project deletion desktop-only for valid rows and offers invalid-workspace deletion everywhere", () => {
-    const projectDeleteStart = app.indexOf('{activeAgent === "customer-agent" && !webShell && project.canCreateSession !== false ? (');
+    const projectDeleteStart = app.indexOf('{activeAgent === "customer-agent" && !webShell && !isInvalid && project.canCreateSession !== false ? (');
     const projectDeleteEnd = app.indexOf('className="sidebar-runtime-create', projectDeleteStart);
     const projectDeleteButton = app.slice(projectDeleteStart, projectDeleteEnd);
 

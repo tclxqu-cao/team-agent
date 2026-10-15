@@ -1,16 +1,19 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { AgentWorkspace } from "@agent/native-runtime";
 import {
   CUSTOMER_AGENT_RECENT_WORKSPACE_ID,
   readAgentType,
   readWorkspaceQuery,
 } from "./agent-workspace-http";
-import { GET as listWorkspaces, POST as importWorkspace } from "./route";
+import { DELETE as removeWorkspace, GET as listWorkspaces, POST as importWorkspace } from "./route";
 import { GET as listWorkspaceSessions } from "./[workspaceId]/sessions/route";
 
 const state = {
   nativeWorkspaceCalls: [] as unknown[][],
   nativeSessionCalls: [] as unknown[][],
   nativeImportCalls: [] as unknown[][],
+  removedWorkspaceIds: [] as string[],
+  nativeWorkspacePages: [] as Array<{ data: AgentWorkspace[]; nextCursor: string | null; watermark: null }>,
   customerSessions: [] as Array<{
     id: string;
     projectId: string;
@@ -23,6 +26,16 @@ const state = {
     metadata: Record<string, unknown>;
   }>,
 };
+
+vi.mock("../../../lib/removed-workspace-store", () => ({
+  removedWorkspaceStore: () => ({
+    visible: (workspaces: Array<{ workspaceId: string }>) => workspaces.filter(
+      (workspace) => !state.removedWorkspaceIds.includes(workspace.workspaceId),
+    ),
+    remove: (workspace: { workspaceId: string }) => state.removedWorkspaceIds.push(workspace.workspaceId),
+    restore: vi.fn(),
+  }),
+}));
 
 vi.mock("../agent-host", () => ({
   agentHost: {
@@ -51,6 +64,10 @@ vi.mock("../../../lib/native-runtime-service", () => ({
   getNativeRuntimeService: () => ({
     listWorkspaces: async (...args: unknown[]) => {
       state.nativeWorkspaceCalls.push(args);
+      if (state.nativeWorkspacePages.length > 0) {
+        const query = args[1] as { cursor?: string | null };
+        return state.nativeWorkspacePages[query.cursor ? 1 : 0];
+      }
       return { data: [], nextCursor: null, watermark: null };
     },
     listWorkspaceSessions: async (...args: unknown[]) => {
@@ -89,6 +106,8 @@ describe("agent workspace routes", () => {
     state.nativeWorkspaceCalls = [];
     state.nativeSessionCalls = [];
     state.nativeImportCalls = [];
+    state.removedWorkspaceIds = [];
+    state.nativeWorkspacePages = [];
     state.customerSessions = [];
   });
 
@@ -102,6 +121,46 @@ describe("agent workspace routes", () => {
       since: "watermark",
     });
     expect(() => readWorkspaceQuery(new URL("http://test?limit=0"))).toThrow("limit must be an integer");
+  });
+
+  it("removes a discovered directory from subsequent listings without deleting sessions", async () => {
+    const response = await removeWorkspace(new Request(
+      "http://test/api/agent-workspaces?agentType=customer-agent&workspaceId=second",
+      { method: "DELETE" },
+    ));
+    expect(response.status).toBe(200);
+    const page = await (await listWorkspaces(new Request(
+      "http://test/api/agent-workspaces?agentType=customer-agent",
+    ))).json();
+    expect(page.data.map((workspace: { workspaceId: string }) => workspace.workspaceId)).toEqual([
+      CUSTOMER_AGENT_RECENT_WORKSPACE_ID, "first",
+    ]);
+  });
+
+  it("rejects missing parameters and unknown directory IDs", async () => {
+    expect((await removeWorkspace(new Request("http://test/api/agent-workspaces", { method: "DELETE" }))).status).toBe(400);
+    expect((await removeWorkspace(new Request(
+      "http://test/api/agent-workspaces?agentType=codex&workspaceId=unknown", { method: "DELETE" },
+    ))).status).toBe(404);
+    expect(state.removedWorkspaceIds).toEqual([]);
+  });
+
+  it("finds a native directory beyond the first page and preserves the upstream cursor", async () => {
+    state.nativeWorkspacePages = [
+      { data: [], nextCursor: "page-two", watermark: null },
+      { data: [{
+        agentType: "codex", workspaceId: "missing", name: "Missing", roots: ["/missing"], order: 201, source: "native",
+      }], nextCursor: null, watermark: null },
+    ];
+    const response = await removeWorkspace(new Request(
+      "http://test/api/agent-workspaces?agentType=codex&workspaceId=missing", { method: "DELETE" },
+    ));
+    expect(response.status).toBe(200);
+    expect(state.nativeWorkspaceCalls).toEqual([
+      ["codex", { cursor: null, limit: 200, refresh: true }],
+      ["codex", { cursor: "page-two", limit: 200, refresh: true }],
+    ]);
+    expect(state.removedWorkspaceIds).toEqual(["missing"]);
   });
 
   it("preserves Customer Agent project-store order and hides projects without a directory", async () => {

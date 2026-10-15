@@ -26,8 +26,13 @@ import { ServerEndpoint } from "./mobile/domain/server-endpoint";
 import { CapacitorNativeEnvironment } from "./mobile/infrastructure/capacitor-native-environment";
 import { LocalEndpointStorage } from "./mobile/infrastructure/local-endpoint-storage";
 import { HttpConnectivityProbe } from "./mobile/infrastructure/http-connectivity-probe";
-import { ConnectionScreen } from "./mobile/presentation/connection-screen";
+import UnpairedHome from "./mobile/presentation/UnpairedHome";
+import { mountNativeConsole, rememberNativeEndpoint } from "./mobile/presentation/native-console";
+import WorkspaceBoot from "../../server/app/web/WorkspaceBoot";
+import "../../server/app/web/neural-boot.css";
 import { NativePairingClient, NativeCredentialStorage, scanPairingQr } from "./mobile/infrastructure/native-pairing";
+import { nativeFrameBridge, nativeFrameFetch } from "./mobile/infrastructure/native-frame-bridge";
+import { createNativeConsoleFetch } from "./mobile/infrastructure/native-console-transport";
 import { installNativeStatusBarBridge } from "./mobile/infrastructure/native-status-bar";
 import { startPushNotifications } from "./push/push-notifications";
 import { EventSource as AuthenticatedEventSource } from "eventsource";
@@ -48,7 +53,9 @@ const clientErrorReporter = installClientErrorReporter({ baseUrl: () => sseBase,
 document.body.dataset.webShell = "1";
 
 const nativeEnvironment = new CapacitorNativeEnvironment();
-if (nativeEnvironment.isNativeApp()) document.body.dataset.nativeApp = "1";
+const frameBridge = nativeFrameBridge();
+const nativeWorkspace = nativeEnvironment.isNativeApp() || !!frameBridge;
+if (nativeWorkspace) document.body.dataset.nativeApp = "1";
 installNativeStatusBarBridge();
 if (!nativeEnvironment.isNativeApp() && window.parent === window) {
   const manifest = document.createElement("link"); manifest.rel = "manifest"; manifest.href = "/manifest.webmanifest"; document.head.append(manifest);
@@ -73,8 +80,11 @@ if (window.parent === window) {
   syncStandaloneChrome();
   useUIStore.subscribe(syncStandaloneChrome);
 }
-const nativePairing = nativeEnvironment.isNativeApp() ? new NativePairingClient(new NativeCredentialStorage()) : null;
-const http = new HttpClient(nativePairing?.fetch);
+const nativeTransport = globalThis.fetch.bind(globalThis);
+const nativePairing = nativeEnvironment.isNativeApp() && !frameBridge ? new NativePairingClient(new NativeCredentialStorage(), nativeTransport) : null;
+const authorizedFetch = frameBridge ? nativeFrameFetch(frameBridge) : nativePairing?.fetch;
+if (frameBridge && authorizedFetch) globalThis.fetch = createNativeConsoleFetch(frameBridge.origin, location.href, { fetch: authorizedFetch }, nativeTransport);
+const http = new HttpClient(authorizedFetch);
 const projectBridge = window.parent === window ? undefined : new WebShellProjectBridge();
 const browserBridge = window.parent === window ? undefined : new WebShellBrowserBridge();
 // SSE 也要指向远端服务器：基址在 boot() 里按连接方案填充（web 模式保持空）。
@@ -83,13 +93,14 @@ const gateway = new AgentHttpGateway(
   http,
   new LocalSettingsRepository(),
   projectBridge,
-  (url) => nativePairing ? new AuthenticatedEventSource(sseBase + url, { fetch: nativePairing.fetch }) as unknown as EventSource : new EventSource(sseBase + url),
+  (url) => authorizedFetch ? new AuthenticatedEventSource(sseBase + url, { fetch: authorizedFetch }) as unknown as EventSource : new EventSource(sseBase + url),
 );
 window.browserLiveApi = browserBridge;
 
 const container = document.getElementById("root");
 if (!container) throw new Error("#root missing");
 const root = createRoot(container);
+if (nativePairing && window.parent === window) root.render(<WorkspaceBoot />);
 
 function WebappReadySignal() {
   useEffect(() => {
@@ -110,27 +121,31 @@ void (async () => {
       return nativePairing.fetch(input, init);
     } : undefined),
   );
+  if (frameBridge) {
+    await boot(ServerEndpoint.parse(frameBridge.origin));
+    return;
+  }
   const plan = await connection.planStartup();
   if (plan.mode === "setup") {
-    root.render(
-      <ConnectionScreen
-        service={connection}
-        savedEndpoint={plan.endpoint}
-        initialFailure={plan.failure}
-        onScan={nativePairing ? async () => {
-          const raw = await scanPairingQr();
-          if (!raw) return null;
-          const endpoint = await nativePairing.pair(raw);
-          new LocalEndpointStorage().save(endpoint);
-          return endpoint;
-        } : undefined}
-        onConnected={(endpoint) => void boot(endpoint)}
-      />,
-    );
+    showUnpairedHome(plan.failure);
     return;
   }
   await boot(plan.mode === "ready" ? plan.endpoint : null);
-})();
+})().catch(error => {
+  if (nativePairing) showUnpairedHome(error instanceof Error ? error.message : "连接失败，请重新扫码。");
+});
+
+function showUnpairedHome(failure = ""): void {
+  globalThis.fetch = nativeTransport;
+  delete window.__agentroamNativeFrame;
+  root.render(<UnpairedHome initialFailure={failure} onScan={async () => {
+    const raw = await scanPairingQr();
+    if (!raw || !nativePairing) return;
+    const endpoint = await nativePairing.pair(raw);
+    rememberNativeEndpoint(endpoint);
+    await boot(endpoint);
+  }} />);
+}
 
 async function boot(endpoint: ServerEndpoint | null): Promise<void> {
   try {
@@ -139,11 +154,16 @@ async function boot(endpoint: ServerEndpoint | null): Promise<void> {
       http.setBaseUrl(endpoint.url);
       sseBase = endpoint.url;
     }
+    if (nativePairing && endpoint && window.parent === window) {
+      await mountNativeConsole(root, endpoint, nativePairing, nativeTransport);
+      setInterval(() => { void nativePairing.checkAuthorization().catch(() => {}); }, 10_000);
+      return;
+    }
     window.agentApi = gateway as unknown as AgentApi;
     await gateway.refreshServerModel();
     // 浏览器（同源、https/localhost）才启用 Web Push：原生壳 WebView 不支持
     // Web Push，且订阅跟随已配对的设备凭证由 http 层自动携带。
-    if (!nativePairing && window.parent === window) startPushNotifications(http);
+    if (!nativeWorkspace && window.parent === window) startPushNotifications(http);
     const view = new URLSearchParams(location.search).get("view");
     const { default: App } = view === "collaboration"
       ? await import("../../desktop/renderer/components/collaboration/CollaborationPage")
@@ -166,6 +186,10 @@ async function boot(endpoint: ServerEndpoint | null): Promise<void> {
       startBuildWatchdog();
     }
   } catch (error) {
+    if (nativePairing && window.parent === window) {
+      showUnpairedHome(error instanceof Error ? error.message : "连接失败，请重新扫码。");
+      return;
+    }
     // 原生壳里启动失败绝不能静默白屏：把错误直接画到屏幕上，用户才能反馈。
     root.render(
       <div style={{ minHeight: "100dvh", display: "flex", alignItems: "center", justifyContent: "center", padding: 24, background: "#f5f6fa", boxSizing: "border-box" }}>

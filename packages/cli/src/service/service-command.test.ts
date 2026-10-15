@@ -7,6 +7,27 @@ import { buildServiceEnvironmentPath, runServiceCommand } from "./service-comman
 import { withCliProgress } from "../../bin/cli-progress.mjs";
 
 describe("runServiceCommand", () => {
+  it.each(["install", "start", "restart"] as const)("completes %s and exposes pairing after LAN fallback even when Codex is absent", async (action) => {
+    const state = { status: "ready", provider: "lan", accessUrl: "http://192.168.1.20:4317/web", localUrl: "http://127.0.0.1:4317" };
+    const log = vi.fn();
+    const pairingPrinter = vi.fn();
+    const codexResolver = vi.fn(async () => { throw new Error("not installed"); });
+    await runServiceCommand(options(action), {
+      platform: "darwin", nodePath: "/node", nodeVersion: "22.22.0", cliPath: "/cli", version: "test", log,
+      environment: { AGENTROAM_INSTALL_REMOTE_DESKTOP: "skip" }, codexResolver, pairingPrinter,
+      controller: controller({
+        install: vi.fn(async () => ({ definition: "service", state })),
+        start: vi.fn(async () => state), restart: vi.fn(async () => state),
+      }),
+    });
+    expect(log).toHaveBeenCalledWith(expect.stringContaining("局域网启动"));
+    expect(log).toHaveBeenCalledWith(`Open: ${state.accessUrl}`);
+    if (action === "install") {
+      expect(codexResolver).toHaveBeenCalledWith(expect.objectContaining({ installIfMissing: false }));
+      expect(pairingPrinter).toHaveBeenCalledWith(expect.anything(), log, expect.objectContaining({ accessUrl: state.accessUrl }));
+    }
+  });
+
   it("shows progress while start waits for readiness and stops after failure", async () => {
     vi.useFakeTimers();
     try {
@@ -21,7 +42,7 @@ describe("runServiceCommand", () => {
       const failed = expect(pending).rejects.toThrow("后台服务未就绪");
       await vi.advanceTimersByTimeAsync(5800);
       expect(progress).toHaveBeenCalledTimes(2);
-      expect(progress).toHaveBeenLastCalledWith(expect.stringContaining("正在启动后台服务，等待服务和手机访问连接就绪（已等待 5 秒）"));
+      expect(progress).toHaveBeenLastCalledWith(expect.stringContaining("公网连接最多等待 30 秒，失败后使用局域网（已等待 5 秒）"));
       await vi.advanceTimersByTimeAsync(200);
       await failed;
       expect(vi.getTimerCount()).toBe(0);

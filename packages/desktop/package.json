@@ -1,12 +1,13 @@
 {
   "name": "@agent/desktop",
-  "version": "0.2.0-preview.20",
+  "version": "0.2.0-preview.22",
   "private": true,
   "type": "module",
   "main": "./dist/main/index.js",
   "scripts": {
     "dev": "node scripts/configure-dev-app-name.mjs && lsof -ti:5173 | xargs kill -9 2>/dev/null; bun run compile && bunx concurrently --kill-others -n vite,electron 'VITE_PORT=5173 bunx --bun vite --port 5173' 'sleep 2 && VITE_PORT=5173 node scripts/run-dev-app.mjs'",
-    "build": "bun run build:helper && bunx --bun vite build && bun run compile",
+    "build": "bun run build:helper && bun run build:bootstrap && bunx --bun vite build && bun run compile",
+    "build:bootstrap": "tsc -p tsconfig.bootstrap.json && bun build scripts/runtime-bootstrap-worker.ts --target=node --outfile=assets/bootstrap/runtime-bootstrap.mjs",
     "build:helper": "bash scripts/build-desktop-input.sh",
     "smoke:computer-use": "bun ../../scripts/computer-use-smoke.mjs",
     "compile": "bun run --cwd ../voice-service build && bunx tsc && bunx tsc -p tsconfig.preload.json && mv dist/main/preload.js dist/main/preload.cjs",
@@ -25,6 +26,7 @@
     "lucide-react": "^0.468.0",
     "marked": "15.0.12",
     "mermaid": "^11.17.2",
+    "qrcode-terminal": "^0.12.0",
     "ws": "^8.18.0",
     "zod": "^4.0.0",
     "zustand": "^4.5.0"

@@ -34,6 +34,8 @@ interface BrowserFrame {
 
 interface BrowserLivePanelProps {
   open: boolean;
+  /** A hidden shell tab retains its viewer/control and local viewport state. */
+  active?: boolean;
   agentSessionId?: string | null;
   onClose: () => void;
   onFullscreenChange?: (fullscreen: boolean) => void;
@@ -196,7 +198,7 @@ export function touchScrollDelta(
   return delta;
 }
 
-export default function BrowserLivePanel({ open, agentSessionId, onClose, onFullscreenChange }: BrowserLivePanelProps) {
+export default function BrowserLivePanel({ open, active = true, agentSessionId, onClose, onFullscreenChange }: BrowserLivePanelProps) {
   const headerControl = useContext(BrowserLiveHeaderContext);
   const api = typeof window === "undefined" ? undefined : window.browserLiveApi;
   const backdropRef = useRef<HTMLDivElement>(null);
@@ -288,7 +290,6 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose, onFull
   const imeOnRef = useRef(false);
   // Last tap the desktop hit-test marked as a text field (logical screen coords).
   const editableField = useRef<RemoteEditableField | null>(null);
-  const editableAtRef = useRef(0);
   useEffect(() => {
     if (open) return;
     setUnlockOpen(false);
@@ -305,11 +306,6 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose, onFull
   const [pingMs, setPingMs] = useState<number | null>(null);
   const [quickKeysOpen, setQuickKeysOpen] = useState(false);
   const wakeLockRef = useRef<{ release(): Promise<void> } | null>(null);
-  // Last tap the hit-test marked as an interactive control (button, dock…).
-  // Re-tapping a known control skips the optimistic keyboard raise entirely —
-  // no flash. First tap on an unseen control still flashes briefly (iOS only
-  // allows focus() inside the gesture; the hit-test comes back later).
-  const controlFieldRef = useRef<{ rect: RemoteEditableField; at: number } | null>(null);
   // Real-time WebRTC video (desktop source); JPEG frames remain the fallback.
   const [webrtcState, setWebrtcState] = useState<"off" | "connecting" | "live" | "failed">("off");
   const [remoteVideoStats, setRemoteVideoStats] = useState<RemoteVideoStatsSample | null>(null);
@@ -403,7 +399,6 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose, onFull
     touch.current.reset();
     zoomAnchor.current = null;
     editableField.current = null;
-    controlFieldRef.current = null;
     viewportRef.current?.scrollTo(0, 0);
   }, [open, selectedId]);
 
@@ -426,8 +421,8 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose, onFull
     return () => element.removeEventListener("wheel", preventLocalScroll);
   }, [open, hasControl, panMode]);
 
-  // The soft keyboard only summons from a real user gesture (click), so the
-  // toolbar keyboard button owns it; drop the IME when control or pan changes.
+  // Both a touch tap and the toolbar can focus the IME in a user gesture.
+  // Hiding the tab releases local typing focus without releasing remote control.
   const toggleIme = useCallback(() => {
     const input = textInputRef.current;
     if (!input) return;
@@ -440,11 +435,11 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose, onFull
     }
   }, [imeOn]);
   useEffect(() => {
-    if ((!hasControl || panMode) && imeOn) {
+    if ((!active || !hasControl || panMode) && imeOn) {
       textInputRef.current?.blur();
       setImeOn(false);
     }
-  }, [hasControl, panMode, imeOn]);
+  }, [active, hasControl, panMode, imeOn]);
 
   const scrollRemoteFieldIntoView = useCallback((field: RemoteEditableField | null) => {
     const viewport = frame?.viewport ?? selected?.viewport;
@@ -475,39 +470,26 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose, onFull
       ? result.input as Record<string, unknown>
       : result;
     if (typeof payload?.editable !== "boolean") return; // backend without hit-test: keep state
-    // The tap optimistically raised the keyboard inside the gesture (iOS
-    // requirement). When the hit-test says the finger landed on an interactive
-    // control (close button, menu…), lower it again — end state: no keyboard.
+    // AX hit tests are advisory: loginwindow can expose a password field as
+    // a control, and replies may describe the UI before the click activated it.
     if (!payload.editable && payload.kind === "control") {
-      const bounds = payload.bounds as Record<string, unknown> | undefined;
-      if (bounds && ["x", "y", "w", "h"].every((key) => typeof bounds[key] === "number")) {
-        controlFieldRef.current = {
-          rect: { x: bounds.x as number, y: bounds.y as number, w: bounds.w as number, h: bounds.h as number },
-          at: Date.now(),
-        };
-      }
       return;
     }
     if (payload.editable) {
-      // Text field tapped: remember it — the next tap raises the keyboard
-      // inside the gesture (iOS requirement), and a raise scrolls it into view.
+      // Use confirmed field bounds to keep the field above the soft keyboard.
       const bounds = payload.bounds as Record<string, unknown> | undefined;
       const field: RemoteEditableField | null = bounds && ["x", "y", "w", "h"].every((key) => typeof bounds[key] === "number")
         ? { x: bounds.x as number, y: bounds.y as number, w: bounds.w as number, h: bounds.h as number }
         : null;
       if (field) {
         editableField.current = field;
-        editableAtRef.current = Date.now();
       }
       if (imeOnRef.current) scrollRemoteFieldIntoView(field ?? editableField.current);
       else setFieldHint(true);
     } else {
-      // Tapped a control or blank area — collapse an open keyboard.
+      // Loginwindow and inaccessible applications can report a blank hit for
+      // a real password field. An uncertain reply must not dismiss the IME.
       editableField.current = null;
-      if (imeOnRef.current) {
-        textInputRef.current?.blur();
-        setImeOn(false);
-      }
     }
   }, [scrollRemoteFieldIntoView]);
 
@@ -613,9 +595,9 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose, onFull
   }, [api, hasControl, selectedId, stopVoice, supportsFullDuplexAudio]);
 
   useEffect(() => {
-    if (open && hasControl && supportsFullDuplexAudio) return;
+    if (open && active && hasControl && supportsFullDuplexAudio) return;
     if (audioState !== "idle") stopVoice(true);
-  }, [audioState, hasControl, open, stopVoice, supportsFullDuplexAudio]);
+  }, [active, audioState, hasControl, open, stopVoice, supportsFullDuplexAudio]);
 
   useEffect(() => {
     const stopWhenHidden = () => {
@@ -1183,7 +1165,7 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose, onFull
         : null;
 
   return createPortal(
-    <div ref={backdropRef} className="browser-live-backdrop" data-tab-swipe-ignore role="presentation" onMouseDown={(event) => {
+    <div ref={backdropRef} className="browser-live-backdrop" style={{ visibility: active ? undefined : "hidden", pointerEvents: active ? undefined : "none" }} aria-hidden={!active} data-tab-swipe-ignore role="presentation" onMouseDown={(event) => {
       if (event.target === event.currentTarget) onClose();
     }}>
       <section ref={panelRef} className={`browser-live-panel ${fullscreen ? "is-fullscreen" : ""}`} role="dialog" aria-modal="true" aria-label="浏览器直播">
@@ -1304,7 +1286,7 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose, onFull
               <button type="button" aria-label="放大桌面画面" title="放大" disabled={!frame || zoom >= 5} onClick={() => setZoom((value) => Math.min(5, value + 0.25))}><ZoomIn size={16} /></button>
               <button type="button" disabled={!frame} onClick={() => { setZoom(1); setPanMode(false); viewportRef.current?.scrollTo(0, 0); }}>适应窗口</button>
               <button type="button" aria-label="移动桌面画面" aria-pressed={panMode} title="拖动或滚动画面，不发送远程输入" disabled={!frame} onClick={() => setPanMode((value) => !value)}><Hand size={15} />移动画面</button>
-              <button type="button" aria-label="唤起键盘" aria-pressed={imeOn} title="唤起/收起键盘（轻点输入框也会自动弹起）" className={fieldHint && !imeOn ? "is-hint" : undefined} disabled={!frame || !hasControl} onClick={() => { setFieldHint(false); toggleIme(); }}><Keyboard size={15} />键盘</button>
+              <button type="button" aria-label="唤起键盘" aria-pressed={imeOn} title="唤起/收起键盘（轻点画面也会自动弹起）" className={fieldHint && !imeOn ? "is-hint" : undefined} disabled={!frame || !hasControl} onPointerDown={(event) => event.preventDefault()} onClick={() => { setFieldHint(false); toggleIme(); }}><Keyboard size={15} />键盘</button>
               <button type="button" aria-label="快捷键条" aria-pressed={quickKeysOpen} title="展开/收起快捷键（Esc/Tab/复制/粘贴/方向键）" disabled={!frame || !hasControl} onClick={() => setQuickKeysOpen((open) => !open)}><Keyboard size={15} />{quickKeysOpen ? "收起" : "快捷键"}</button>
               <button type="button" aria-label="窗口控制" title="全屏看不到左上角按钮时用：第 1 次点=退出全屏（ESC + Ctrl+Cmd+F），第 2 次点=关闭窗口（Cmd+W）" disabled={!frame || !hasControl} onClick={() => {
                 const now = Date.now();
@@ -1492,19 +1474,12 @@ export default function BrowserLivePanel({ open, agentSessionId, onClose, onFull
                       return;
                     }
                     if (tap && point && hasControl && !panMode) {
-                      // Auto-raise only when the finger lands on a learned text
-                      // field; every other tap collapses the keyboard.
-                      const cachedEditable = editableField.current;
-                      const onKnownField = cachedEditable !== null
-                        && Date.now() - editableAtRef.current < 60_000
-                        && remoteFieldContains(cachedEditable, frame?.viewport ?? selected?.viewport, point.x, point.y, 0.03);
-                      if (onKnownField && !imeOnRef.current) {
+                      // iOS requires focus in this gesture, before the async
+                      // AX reply. Do not require a previous tap to learn a field.
+                      if (!imeOnRef.current) {
                         textInputRef.current?.focus({ preventScroll: true });
                         setImeOn(true);
                         setFieldHint(false);
-                      } else if (!onKnownField && imeOnRef.current) {
-                        textInputRef.current?.blur();
-                        setImeOn(false);
                       }
                       const vp = frame?.viewport ?? selected?.viewport;
                       const last = lastTapRef.current;

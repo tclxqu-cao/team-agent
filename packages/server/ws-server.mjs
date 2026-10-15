@@ -40,6 +40,7 @@ import {
   createPreviewTicketRegistry,
   inspectTextFile,
   inspectTextFileStatus,
+  resolvePreviewResourcePath,
   saveTextFile,
   serveMarkdownPreview,
   servePreviewFile,
@@ -998,7 +999,7 @@ const requestHandlers = {
     const abs = assertAllowed(msg.path, conn.principal.userId);
     const st = await fsp.stat(abs);
     if (!st.isFile()) throw Object.assign(new Error("not a regular file"), { code: "EISDIR" });
-    const ticketId = previewTickets.issue(abs, conn.principal.userId);
+    const ticketId = previewTickets.issue(abs, conn.principal.userId, conn.principal.transport === "native" ? conn.principal.deviceId : undefined);
     return {
       ticketId,
       url: `/api/web-console/file-preview/${ticketId}`,
@@ -1207,6 +1208,7 @@ async function serveTicketedFilePreview(req, res) {
     res.writeHead(404, { "cache-control": "private, no-store" }).end("Not found");
     return true;
   }
+  if (ticket.nativeDeviceId) res.setHeader("referrer-policy", "no-referrer");
   try {
     const primary = assertAllowed(ticket.path, ticket.userId);
     let target = primary;
@@ -1215,7 +1217,9 @@ async function serveTicketedFilePreview(req, res) {
       // Sub-path → a relative resource (css/js/img/…) referenced by the
       // previewed HTML, resolved against the deliverable's own directory.
       const relative = relativeSegments.map(decodeURIComponent).join("/");
-      target = assertAllowed(path.resolve(path.dirname(primary), relative), ticket.userId);
+      target = assertAllowed(resolvePreviewResourcePath({ ...ticket, path: primary }, relative), ticket.userId);
+      // assertAllowed canonicalizes symlinks; recheck the capability boundary.
+      if (ticket.nativeDeviceId) resolvePreviewResourcePath({ ...ticket, path: primary }, target);
     }
     if (relativeSegments.length > 0 && target === primary && isMarkdownPreviewPath(primary)) {
       await serveMarkdownPreview(req, res, primary, { "content-security-policy": MARKDOWN_PREVIEW_CSP });
@@ -1237,7 +1241,7 @@ async function serveTicketedFilePreview(req, res) {
 }
 
 const desktopDiscovery = createDesktopDiscovery({ dataDir: serverBaseDir });
-const pairingGateway = createDevicePairingGateway({ dataDir: serverBaseDir, desktop: desktopDiscovery, owner: anonymousWebStore.getOrCreatePrincipal(), consoleStore, testNoPairing: process.argv.includes("--test-no-pairing") });
+const pairingGateway = createDevicePairingGateway({ dataDir: serverBaseDir, desktop: desktopDiscovery, owner: anonymousWebStore.getOrCreatePrincipal(), consoleStore, testNoPairing: process.argv.includes("--test-no-pairing"), resolveNativePreviewDevice: pathname => previewTickets.resolve(pathname.split("/")[4])?.nativeDeviceId ?? null });
 if (process.argv.includes("--test-no-pairing")) console.warn("[TEST MODE] 配对已跳过：能访问此端口的用户可直接操作。仅用于受控测试，移除 --test-no-pairing 后恢复认证。");
 // Child runtimes may publish live frames only using this process's local credential.
 process.env.AGENTROAM_LOCAL_SERVICE_TOKEN = desktopDiscovery.headers()["x-agentroam-desktop-token"];

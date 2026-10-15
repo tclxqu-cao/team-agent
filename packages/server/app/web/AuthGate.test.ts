@@ -2,14 +2,14 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { connectionElapsedSeconds } from "./AuthGate";
 
-const source = readFileSync(new URL("./AuthGate.tsx", import.meta.url), "utf8");
+const source = readFileSync(new URL("./AuthGate.tsx", import.meta.url), "utf8") + readFileSync(new URL("./WorkspaceBoot.tsx", import.meta.url), "utf8");
 const bootCss = readFileSync(new URL("./neural-boot.css", import.meta.url), "utf8");
 
 describe("remote console auth gate", () => {
   it("keeps one digital-human boot surface across auth and workspace hydration", () => {
     expect(source).toContain('import { Bot, RefreshCw } from "lucide-react"');
     expect(source).toContain("正在唤醒工作区");
-    expect(source).toContain('auth.error || "数字人核心正在就绪"');
+    expect(source).toContain('error || "数字人核心正在就绪"');
     expect(source).toContain("<span>AGENT CORE</span>");
     expect(source).toContain("children(auth, markWorkspaceReady)");
     expect(source).toContain('className={`neural-boot${ready ? " is-ready" : ""}');

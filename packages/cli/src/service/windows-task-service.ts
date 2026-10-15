@@ -48,7 +48,8 @@ export class WindowsTaskService implements ServiceController {
     this.runner = options.runner ?? runCommand;
     this.processExists = options.processExists ?? isProcessRunning;
     this.now = options.now ?? (() => new Date());
-    this.readyTimeoutMs = options.readyTimeoutMs ?? 120_000;
+    // Leave room for bounded component preparation, local readiness and relay fallback.
+    this.readyTimeoutMs = options.readyTimeoutMs ?? 270_000;
     this.stopTimeoutMs = options.stopTimeoutMs ?? 15_000;
     this.pollIntervalMs = options.pollIntervalMs ?? 250;
     this.validate = options.validateConfig ?? validateWindowsConfig;
@@ -249,7 +250,7 @@ $user = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
 $action = New-ScheduledTaskAction -Execute ${powerShellLiteral(config.nodePath)} -Argument ${powerShellLiteral(argumentsValue)} -WorkingDirectory ${powerShellLiteral(config.roots[0])}
 $trigger = New-ScheduledTaskTrigger -AtLogOn -User $user
 $principal = New-ScheduledTaskPrincipal -UserId $user -LogonType Interactive -RunLevel Limited
-$settings = New-ScheduledTaskSettingsSet -MultipleInstances IgnoreNew -RestartCount 999 -RestartInterval (New-TimeSpan -Seconds 5) -ExecutionTimeLimit ([TimeSpan]::Zero) -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
+$settings = New-ScheduledTaskSettingsSet -MultipleInstances IgnoreNew -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1) -ExecutionTimeLimit ([TimeSpan]::Zero) -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
 Register-ScheduledTask -TaskName ${powerShellLiteral(WINDOWS_SERVICE_NAME)} -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Force | Out-Null
 `;
 }

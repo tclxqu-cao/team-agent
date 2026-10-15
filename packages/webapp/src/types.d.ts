@@ -33,6 +33,14 @@ declare module "@desktop/renderer/components/browser-live-header-context" {
 
 declare module "@desktop/renderer/components/BrowserLivePanel" {
   import type { ComponentType } from "react";
-  const BrowserLivePanel: ComponentType<{ open: boolean; agentSessionId?: string | null; onClose: () => void }>;
+  const BrowserLivePanel: ComponentType<{ open: boolean; active?: boolean; agentSessionId?: string | null; onClose: () => void; onFullscreenChange?: (fullscreen: boolean) => void }>;
   export default BrowserLivePanel;
+}
+
+declare module "next/dynamic" {
+  import type { ComponentType, ReactNode } from "react";
+  export default function dynamic<P extends object>(
+    load: () => Promise<{ default: ComponentType<P> }>,
+    options?: { ssr?: boolean; loading?: () => ReactNode },
+  ): ComponentType<P>;
 }

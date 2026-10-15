@@ -978,6 +978,7 @@ body[data-web-shell="1"] {
   }
 
   body[data-web-shell="1"] .app-sidebar .sidebar-row-active .sidebar-row-action,
+  body[data-web-shell="1"] .app-sidebar .sidebar-project-row--invalid .sidebar-project-delete,
   body[data-web-shell="1"] .app-sidebar .sidebar-row-action:focus-visible {
     opacity: 1;
   }

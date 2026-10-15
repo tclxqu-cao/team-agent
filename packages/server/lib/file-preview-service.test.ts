@@ -9,6 +9,7 @@ import {
   inspectTextFile,
   inspectTextFileStatus,
   parsePreviewRange,
+  resolvePreviewResourcePath,
   saveTextFile,
   servePreviewFile,
 } from "./file-preview-service.mjs";
@@ -178,6 +179,22 @@ describe("file preview ticket registry", () => {
     current = 1_100;
     expect(registry.resolve("ticket")).toBeNull();
   });
+  it("bounds native preview access by an absolute expiry even while media is being read", () => {
+    let current = 1000;
+    const registry = createPreviewTicketRegistry({ ttlMs: 100, now: () => current, token: () => "native-ticket" });
+    registry.issue("/tmp/movie.mp4", "owner", "phone");
+    current = 1050;
+    expect(registry.resolve("native-ticket")).toMatchObject({ nativeDeviceId: "phone", expiresAt: 1100 });
+    current = 1100;
+    expect(registry.resolve("native-ticket")).toBeNull();
+  });
+  it("confines native media capabilities to the file and document assets", () => {
+    const ticket = { path: "/tmp/report/index.html", nativeDeviceId: "phone" };
+    expect(resolvePreviewResourcePath(ticket, "assets/style.css")).toBe("/tmp/report/assets/style.css");
+    for (const path of ["../secret.txt", "/etc/passwd", ".env", "assets/../../secret.txt"])
+      expect(() => resolvePreviewResourcePath(ticket, path)).toThrow("outside capability");
+    expect(() => resolvePreviewResourcePath({ ...ticket, path: "/tmp/report/movie.mp4" }, "secret.txt")).toThrow("outside capability");
+  });
 });
 
 describe("html deliverable preview", () => {
@@ -262,7 +279,6 @@ describe("browser preview gateway contract", () => {
 
   it("resolves relative resources against the deliverable directory through authorization", () => {
     expect(serving()).toContain("relativeSegments");
-    expect(serving()).toContain("path.resolve(path.dirname(primary), relative)");
-    expect(serving()).toContain("assertAllowed(path.resolve(path.dirname(primary), relative), ticket.userId)");
+    expect(serving()).toContain("assertAllowed(resolvePreviewResourcePath({ ...ticket, path: primary }, relative), ticket.userId)");
   });
 });

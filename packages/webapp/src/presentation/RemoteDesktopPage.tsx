@@ -5,6 +5,7 @@ import { readRemoteDesktopVisibility, REMOTE_DESKTOP_CLOSE_TYPE, REMOTE_DESKTOP_
 
 export default function RemoteDesktopPage() {
   const [visible, setVisible] = useState(false);
+  const [opened, setOpened] = useState(false);
   const [skin, setSkin] = useState(useUIStore.getState().skin);
   useEffect(() => useUIStore.subscribe((state) => setSkin(state.skin)), []);
   useEffect(() => {
@@ -14,7 +15,10 @@ export default function RemoteDesktopPage() {
   useEffect(() => {
     const receive = (event: MessageEvent) => {
       const next = readRemoteDesktopVisibility(event, location.origin, window.parent);
-      if (next !== null) setVisible(next);
+      if (next !== null) {
+        setVisible(next);
+        if (next) setOpened(true);
+      }
     };
     window.addEventListener("message", receive);
     return () => window.removeEventListener("message", receive);
@@ -30,7 +34,8 @@ export default function RemoteDesktopPage() {
   const onFullscreenChange = useCallback((fullscreen: boolean) => {
     window.parent.postMessage({ type: REMOTE_DESKTOP_FULLSCREEN_TYPE, fullscreen }, location.origin);
   }, []);
-  return <BrowserLivePanel onFullscreenChange={onFullscreenChange} open={visible} onClose={() => {
+  return <BrowserLivePanel onFullscreenChange={onFullscreenChange} open={opened} active={visible} onClose={() => {
+    setOpened(false);
     setVisible(false);
     window.parent.postMessage({ type: REMOTE_DESKTOP_CLOSE_TYPE }, location.origin);
   }} />;

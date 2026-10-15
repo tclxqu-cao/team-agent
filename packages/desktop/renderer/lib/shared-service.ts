@@ -11,6 +11,9 @@ export interface SharedServiceStatus {
 }
 export interface SharedServiceApi {
   status(): Promise<SharedServiceStatus>;
+  mobilePairing(): Promise<{ svg: string; origin: string; expiresAt: number }>;
+  bootstrapStatus(): Promise<{ phase: "idle" | "installing" | "ready" | "error"; message: string }>;
+  prepareRuntime(): Promise<{ phase: "idle" | "installing" | "ready" | "error"; message: string }>;
   select(id: string): Promise<unknown>;
   request(path: string, method: string, body?: string): Promise<{ status: number; body: string }>;
   stream(id: string, path: string, lastEventId: string): Promise<void>;

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { validateComputerConnections, type SavedComputerConnection } from "../../../core/src/domain/web-console/computer-directory";
 import { readComputers, rememberComputer, saveComputers } from "../../public/pwa/computer-directory.js";
+import { consoleOrigin } from "./console-environment";
 
 async function requestDirectory(csrfToken: string, method = "GET", body?: unknown): Promise<SavedComputerConnection[]> {
   const response = await fetch("/api/web-console/computers", {
@@ -44,7 +45,7 @@ export function useComputerDirectory(csrfToken: string) {
     const attempt = ++generation.current;
     try {
       const legacy = !imported.current
-        ? rememberComputer(location.origin, undefined).map(({ origin, name }) => ({ origin, name }))
+        ? rememberComputer(consoleOrigin(), undefined).map(({ origin, name }) => ({ origin, name }))
         : undefined;
       const connections = await requestDirectory(csrfToken, legacy ? "POST" : "GET", legacy ? { computers: legacy } : undefined);
       if (!mounted.current || attempt !== generation.current) return;
@@ -87,7 +88,7 @@ export function useComputerDirectory(csrfToken: string) {
 
   const rename = useCallback((origin: string, name: string) => mutate("PATCH", validateComputerConnections([{ origin, name }])[0]), [mutate]);
   const remove = useCallback(async (origin: string) => {
-    if (new URL(origin).origin === location.origin) throw new Error("不能删除当前连接的电脑。");
+    if (new URL(origin).origin === consoleOrigin()) throw new Error("不能删除当前连接的电脑。");
     await mutate("DELETE", { origin });
   }, [mutate]);
   const add = useCallback((origin: string, name: string) => mutate("POST", { computers: validateComputerConnections([{ origin, name }]), restore: true }), [mutate]);

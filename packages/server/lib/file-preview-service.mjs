@@ -261,17 +261,17 @@ export function createPreviewTicketRegistry({
     while (tickets.size >= maxTickets) tickets.delete(tickets.keys().next().value);
   };
   return {
-    issue(filePath, userId) {
+    issue(filePath, userId, nativeDeviceId) {
       prune();
       const id = token();
-      tickets.set(id, { path: filePath, userId, lastAccessAt: now() });
+      tickets.set(id, { path: filePath, userId, lastAccessAt: now(), ...(nativeDeviceId ? { nativeDeviceId, expiresAt: now() + ttlMs } : {}) });
       return id;
     },
     resolve(id) {
       const ticket = tickets.get(id);
       if (!ticket) return null;
       const current = now();
-      if (current - ticket.lastAccessAt >= ttlMs) {
+      if (current - ticket.lastAccessAt >= ttlMs || (ticket.expiresAt && current >= ticket.expiresAt)) {
         tickets.delete(id);
         return null;
       }
@@ -284,6 +284,21 @@ export function createPreviewTicketRegistry({
       return tickets.delete(id);
     },
   };
+}
+
+/** A native preview capability may only read its file and local document assets. */
+export function resolvePreviewResourcePath(ticket, relative) {
+  const directory = path.dirname(ticket.path);
+  const target = path.resolve(directory, relative);
+  if (ticket.nativeDeviceId) {
+    const inside = path.relative(directory, target);
+    const document = /\.(html?|md|markdown)$/i.test(ticket.path);
+    if (inside === ".." || inside.startsWith(`..${path.sep}`) || path.isAbsolute(inside)
+      || (target !== ticket.path && (!document || inside.split(path.sep).some(part => part.startsWith("."))))) {
+      throw fileError("EACCES", "Preview resource outside capability");
+    }
+  }
+  return target;
 }
 
 export async function inspectTextFile(filePath, maxBytes = MAX_EDITABLE_TEXT_BYTES) {
