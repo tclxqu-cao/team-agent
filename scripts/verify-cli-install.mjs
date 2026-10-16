@@ -233,9 +233,11 @@ function runNodePtySmoke(node, runtimeRoot, cwd) {
         console.error(JSON.stringify({ exitCode, output }));
         process.exit(1);
       }
+      // ConPTY can retain native handles after the shell has exited.
+      process.exit(0);
     });
   `;
-  execFileSync(node, ["-e", script, resolve(runtimeRoot, "package.json")], { cwd, stdio: "inherit" });
+  execFileSync(node, ["-e", script, resolve(runtimeRoot, "package.json")], { cwd, stdio: "inherit", timeout: 30_000 });
 }
 
 function waitFor(pattern, getText, timeoutMs) {
