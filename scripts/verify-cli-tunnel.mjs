@@ -4,10 +4,10 @@
  * Usage: node scripts/verify-cli-tunnel.mjs [--artifacts dist/cli-release] [--node /path/to/node22] [--provider auto|cloudflare|pinggy]
  */
 import { execFileSync, spawn } from "node:child_process";
-import { randomBytes } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
+import { pathToFileURL } from "node:url";
 import { delimiter, dirname, resolve } from "node:path";
 import { releasePackageNames, resolveReleaseArtifacts } from "./cli-release-artifacts.mjs";
 
@@ -59,41 +59,40 @@ try {
 
   const ready = await waitFor(/✓ (Cloudflare|Pinggy) tunnel ready: (https:\/\/[^\s]+)/, () => output, 120000);
   console.log(`✓ selected relay: ${ready[1]}`);
-  const openMatch = await waitFor(/Open: (https:\/\/[^\s]+\/web\?pair=[^\s]+)/, () => output, 10000);
+  const openMatch = await waitFor(/Open: (https:\/\/[^\s]+\/web)/, () => output, 10000);
   const accessUrl = new URL(openMatch[1]);
   const publicBase = accessUrl.origin;
-  const pairingToken = accessUrl.searchParams.get("pair");
-  if (!pairingToken) throw new Error("pairing token missing from public URL");
 
   const initialStatus = await waitForPublicStatus(`${publicBase}/api/web-auth/status`, 60000);
   console.log(`✓ public health: ${initialStatus.response.status}`);
 
-  const setup = await fetchJson(`${publicBase}/api/web-auth/setup`, {
+  const unauthorized = await fetch(`${publicBase}/app/`);
+  if (unauthorized.status !== 401) throw new Error("unpaired public app access must be rejected");
+  const { pairingAdmin } = await import(pathToFileURL(resolve(workdir, "node_modules/agentroam/dist/device-pairing.js")).href);
+  const { grant } = await pairingAdmin(dataDir, "qr");
+  const paired = await fetchJson(`${publicBase}/api/pairing/qr-exchange`, {
     method: "POST",
-    headers: { "content-type": "application/json", "x-device-name": "cli-release-e2e" },
-    body: JSON.stringify({
-      username: "release-e2e",
-      password: `Release-E2E-${randomBytes(12).toString("hex")}`,
-      pairingToken,
-    }),
+    headers: { "content-type": "application/json", origin: publicBase },
+    body: JSON.stringify({ grant, name: "cli-release-e2e" }),
   });
-  if (setup.response.status !== 201) {
-    throw new Error(`pairing setup failed: ${setup.response.status} ${JSON.stringify(setup.body)}`);
+  if (paired.response.status !== 200 || !paired.body.device?.id) {
+    throw new Error(`QR pairing failed: ${paired.response.status} ${JSON.stringify(paired.body)}`);
   }
 
-  const setCookies = getSetCookies(setup.response.headers);
-  const authCookie = setCookies.find((value) => value.startsWith("customer_agent_session="));
-  const deviceCookie = setCookies.find((value) => value.startsWith("customer_agent_device="));
-  if (!authCookie || !deviceCookie) throw new Error("pairing response did not set auth cookies");
-  assertCookieFlags(authCookie, ["secure", "httponly", "samesite=strict"]);
-  assertCookieFlags(deviceCookie, ["secure", "samesite=strict"]);
-  const cookie = [authCookie, deviceCookie].map((value) => value.split(";", 1)[0]).join("; ");
-  console.log("✓ pairing setup + Secure Cookie");
+  const deviceCookie = getSetCookies(paired.response.headers).find((value) => value.startsWith("agentroam_device_session="));
+  if (!deviceCookie) throw new Error("QR pairing did not issue a device session");
+  assertCookieFlags(deviceCookie, ["secure", "httponly", "samesite=strict"]);
+  const cookie = deviceCookie.split(";", 1)[0];
+  console.log("✓ QR pairing + Secure Cookie");
 
   const authenticated = await fetchJson(`${publicBase}/api/web-auth/status`, { headers: { cookie } });
   if (!authenticated.body.authenticated) throw new Error("paired session is not authenticated");
   const bootstrap = await fetchJson(`${publicBase}/api/web-console/bootstrap`, { headers: { cookie } });
   if (!bootstrap.response.ok || !bootstrap.body.wsNonce) throw new Error("WebSocket bootstrap failed");
+  if (bootstrap.body.deviceId !== paired.body.device.id) throw new Error("bootstrap device mismatch");
+  const webapp = await fetch(`${publicBase}/app/`, { headers: { cookie } });
+  if (!webapp.ok || !(await webapp.text()).includes("<script")) throw new Error("paired public webapp failed");
+  console.log("✓ paired public webapp");
 
   const runtimeRequire = createRequire(resolve(workdir, "node_modules", packageSet.runtime, "runtime/package.json"));
   const { WebSocket } = runtimeRequire("ws");
@@ -108,7 +107,7 @@ try {
   } finally {
     wsAgent?.destroy?.();
   }
-  if (hello.type !== "connection:hello" || hello.userId !== setup.body.user.id) {
+  if (hello.type !== "connection:hello" || hello.userId !== bootstrap.body.user?.id || hello.deviceId !== paired.body.device.id) {
     throw new Error(`unexpected WebSocket hello: ${JSON.stringify(hello)}`);
   }
   console.log("✓ authenticated WSS connection");
@@ -137,7 +136,7 @@ async function waitForPublicStatus(url, timeoutMs) {
   while (Date.now() < end) {
     try {
       const result = await fetchJson(url);
-      if (result.response.ok && result.body.needsSetup) return result;
+      if (result.response.ok && result.body.pairingRequired && !result.body.authenticated) return result;
       lastError = new Error(`HTTP ${result.response.status}`);
     } catch (error) {
       lastError = error;
