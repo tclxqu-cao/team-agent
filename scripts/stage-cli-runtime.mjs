@@ -102,6 +102,9 @@ const installEnv = {
 execFileSync("npm", [
   "install",
   "--ignore-scripts",
+  // Peer packages are intentionally omitted from this staged dependency tree.
+  // Without legacy resolution npm still rejects the existing Zod 3/4 peers.
+  "--legacy-peer-deps",
   "--omit=dev",
   "--omit=optional",
   "--omit=peer",

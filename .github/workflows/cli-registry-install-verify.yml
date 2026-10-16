@@ -1,0 +1,42 @@
+name: cli-registry-install-verify
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  public-install:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-14, windows-2022]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.22.0"
+      - name: Download exact published packages from the official registry
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import { mkdir, readFile } from 'node:fs/promises';
+          import { execFileSync } from 'node:child_process';
+          import { resolve } from 'node:path';
+          const launcher = JSON.parse(await readFile('packages/cli/package.json', 'utf8'));
+          const destination = resolve('dist/cli-release');
+          await mkdir(destination, { recursive: true });
+          const specs = [
+            `${launcher.name}@${launcher.version}`,
+            ...Object.entries(launcher.optionalDependencies).map(([name, version]) => `${name}@${version}`),
+          ];
+          const npmCli = resolve(process.execPath, '..', process.platform === 'win32'
+            ? 'node_modules/npm/bin/npm-cli.js' : '../lib/node_modules/npm/bin/npm-cli.js');
+          execFileSync(process.execPath, [npmCli, 'pack', ...specs, '--registry=https://registry.npmjs.org',
+            '--ignore-scripts', '--pack-destination', destination], { stdio: 'inherit' });
+          NODE
+      - name: Verify native components, pairing and private Node installation
+        run: node scripts/verify-cli-install.mjs --artifacts dist/cli-release --bootstrap-script
