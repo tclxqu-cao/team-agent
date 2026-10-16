@@ -25,7 +25,7 @@ async function main() {
   const directory = resolve(process.argv[2] || resolve(root, "dist/cli-release"));
   const packageJson = JSON.parse(await readFile(resolve(root, "packages/desktop/package.json"), "utf8"));
   const files = await auditDesktopArtifacts(directory, packageJson.version);
-  process.stdout.write(`audited Desktop artifacts: ${files.map(basename).join(", ")}\n`);
+  process.stdout.write(`audited Desktop artifacts: ${files.map((file) => basename(file)).join(", ")}\n`);
 }
 
 if (resolve(process.argv[1] || "") === fileURLToPath(import.meta.url)) main().catch((error) => { process.stderr.write(`${error.message}\n`); process.exitCode = 1; });
