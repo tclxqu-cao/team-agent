@@ -1,0 +1,56 @@
+packages/desktop/renderer/App.tsx
+  s_383c021fd01321::t_0301265435a7bc 332,334
+  s_383c021fd01321::t_2c17084c3d2380 47,763-764,1543-1571
+  s_383c021fd01321::t_b2e7cfd1d8f14c 10,281-287,1494,1503-1504,1517-1534,1536,2213-2214,2235
+  s_383c021fd01321::t_7cdfb38f50e1df 2229-2232
+  s_383c021fd01321::t_733dd5f7b72b1a 92,725-729,1495-1496,1625-1627,1630-1631,1654,1997,2064-2073,2075,2227-2228,2233-2234
+packages/desktop/renderer/components/collaboration/DesktopWorkspaceTabs.tsx
+  s_383c021fd01321::t_b2e7cfd1d8f14c 1-25
+packages/desktop/renderer/lib/agent-rail-sessions.ts
+  s_383c021fd01321::t_eb57c2e427b9f9 1-50
+packages/desktop/renderer/components/collaboration/collaboration.css
+  s_383c021fd01321::t_b593d9803e7b2e 898,920
+  s_383c021fd01321::t_733dd5f7b72b1a 915-919,921
+  s_383c021fd01321::t_b2e7cfd1d8f14c 893,901-905,914,1139-1144,1146
+packages/desktop/renderer/styles/global.css
+  s_383c021fd01321::t_b2e7cfd1d8f14c 767-768,771-796,798-799,843-844,854
+  s_383c021fd01321::t_2c17084c3d2380 800-827,855
+  s_383c021fd01321::t_b593d9803e7b2e 797,845-850
+  s_383c021fd01321::t_733dd5f7b72b1a 758-766,769-770,828-842,851-853
+packages/desktop/renderer/components/SidebarReferenceStyle.test.ts
+  s_383c021fd01321::t_7cdfb38f50e1df 46
+packages/desktop/renderer/lib/use-resizable-sidebar.ts
+  s_383c021fd01321::t_868baaaa60d19e 1,12,18,22,32-34,37-38,42-46,51-62
+  s_383c021fd01321::t_733dd5f7b72b1a 2-11,13-17,19-21,23-31,35-36,39-41,64-78,80-83
+  s_383c021fd01321::t_80caef4cd255fd 47-50,63,79
+packages/desktop/renderer/components/ChatView.tsx
+  s_383c021fd01321::t_733dd5f7b72b1a 13,449-451,544-546,3998-4008,4038
+packages/desktop/renderer/components/ChatHeaderActions.tsx
+  s_383c021fd01321::t_733dd5f7b72b1a 2,50,68,85-93
+packages/desktop/renderer/components/AgentSessionRail.tsx
+  s_383c021fd01321::t_3cfefd9d1f20a3 44,78,82
+  s_383c021fd01321::t_eb57c2e427b9f9 1-43,45-77,79-81,83-101
+packages/desktop/renderer/lib/agent-rail-sessions.test.ts
+  s_383c021fd01321::t_3cfefd9d1f20a3 1-46
+packages/desktop/renderer/components/AgentWorkspaceSwitcher.tsx
+  s_383c021fd01321::t_eb57c2e427b9f9 20,23,62-63
+  s_383c021fd01321::t_b2e7cfd1d8f14c 19,27,40,42-43
+packages/desktop/package.json
+  s_383c021fd01321::t_9c0f4b079f34e2 3
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "bccb4cc9a4fe19c85f77811d7b5fb5b60c3b3871",
+  "prompts": {},
+  "sessions": {
+    "s_383c021fd01321": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a13f9b-7e14-7d72-93be-8065810877bf",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
