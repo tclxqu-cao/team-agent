@@ -206,7 +206,10 @@ function runBootstrapSmoke(artifacts, parentWorkdir, archivePath) {
   const launcherVersion = basename(artifacts.launcher).match(/-(\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?)\.tgz$/)?.[1];
   if (!launcherVersion) throw new Error(`cannot derive launcher version from ${artifacts.launcher}`);
   const versionOutput = process.platform === "win32"
-    ? execFileSync("cmd.exe", ["/d", "/s", "/c", `"${wrapper}" version`], { encoding: "utf8", env: bootstrapEnv })
+    ? execFileSync("powershell.exe", ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command",
+      "& $env:AGENTROAM_BOOTSTRAP_WRAPPER version; exit $LASTEXITCODE"], {
+      encoding: "utf8", env: { ...bootstrapEnv, AGENTROAM_BOOTSTRAP_WRAPPER: wrapper },
+    })
     : execFileSync(wrapper, ["version"], { encoding: "utf8", env: bootstrapEnv });
   if (!versionOutput.includes(launcherVersion)) throw new Error(`bootstrap wrapper mismatch: expected ${launcherVersion}, got ${versionOutput}`);
   console.log(`✓ standalone ${scriptName} installed private Node ${installedVersion} and the versioned wrapper (${launcherVersion})`);
