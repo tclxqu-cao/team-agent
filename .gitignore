@@ -17,6 +17,7 @@ __pycache__/
 *.py[cod]
 packages/desktop/dist/
 packages/desktop/renderer-dist/
+packages/desktop/renderer-lite-dist/
 packages/desktop/.agents/
 packages/server/.next/
 packages/server/.next-dev/

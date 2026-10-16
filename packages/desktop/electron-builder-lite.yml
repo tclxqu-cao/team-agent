@@ -1,0 +1,30 @@
+extends: ./electron-builder.yml
+appId: com.agentroam.desktop.lite
+productName: AgentRoam Lite
+npmRebuild: false
+extraMetadata:
+  name: agentroam-lite
+  main: ./dist/main/lite-index.js
+files:
+  - dist/main/lite-index.js
+  - dist/main/lite-preload.cjs
+  - dist/main/lite-pairing.js
+  - dist/main/shared-service.js
+  - dist/main/mobile-pairing.js
+  - dist/main/runtime-bootstrap.js
+  - dist/main/desktop-live-cli-proxy.js
+  - renderer-lite-dist/**/*
+  - package.json
+  - node_modules/**/*
+  - "!node_modules/@agent/*/dist/**/*.map"
+extraResources:
+  - from: assets/runtime
+    to: runtime
+  - from: assets/bootstrap
+    to: bootstrap
+mac:
+  artifactName: AgentRoam-Lite-${version}-arm64.dmg
+win:
+  artifactName: AgentRoam-Lite-Setup-${version}-x64.exe
+nsis:
+  allowToChangeInstallationDirectory: true

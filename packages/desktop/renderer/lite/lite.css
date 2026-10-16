@@ -1,0 +1,33 @@
+:root { color-scheme: dark; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #ecf2f4; background: #0c141a; font-synthesis: none; }
+* { box-sizing: border-box; }
+body { margin: 0; }
+.lite-shell { max-width: 480px; padding: 26px 30px 22px; margin: auto; text-align: center; }
+.lite-brand { display: flex; justify-content: center; align-items: center; gap: 8px; color: #a8bbc4; font-size: 15px; }
+.lite-brand svg, .lite-brand b { color: #70e5c4; }
+.lite-brand b { margin-left: 5px; font-size: 11px; letter-spacing: .1em; text-transform: uppercase; }
+h1 { font-size: 24px; font-weight: 600; letter-spacing: -.03em; margin: 25px 0 12px; }
+.lite-description { color: #9eafb8; font-size: 14px; line-height: 1.7; margin: 0 0 24px; }
+.lite-qr { display: flex; align-items: center; justify-content: center; width: 264px; height: 264px; margin: auto; border-radius: 16px; background: #fff; color: #24343d; overflow: hidden; }
+.lite-qr img { display: block; width: 100%; height: 100%; }
+.lite-qr p { padding: 0 22px; line-height: 1.7; font-size: 14px; }
+.lite-link { color: #b1c3cc; min-height: 50px; margin: 17px 0 0; overflow-wrap: anywhere; font: 11px/1.5 ui-monospace, SFMono-Regular, Consolas, monospace; user-select: text; }
+.lite-expiry { color: #8399a5; font-size: 12px; margin: 12px 0 20px; }
+.lite-actions { display: flex; justify-content: center; gap: 10px; }
+button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 42px; padding: 10px 16px; border-radius: 9px; border: 1px solid #33434c; color: #d8e5eb; background: #16242d; font: inherit; font-size: 13px; cursor: pointer; }
+button:hover { background: #203440; }
+button:focus-visible { outline: 2px solid #70e5c4; outline-offset: 3px; }
+button:disabled { cursor: default; opacity: .45; }
+button.lite-primary { background: #70e5c4; color: #10261f; border-color: #70e5c4; font-weight: 600; }
+button.lite-primary:hover { background: #96f0d7; }
+footer { color: #8299a5; font-size: 11px; margin-top: 24px; }
+.lite-spin { animation: lite-rotate 1.2s linear infinite; }
+@keyframes lite-rotate { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .lite-spin { animation: none; } }
+.lite-permissions { margin: auto; width: min(420px, calc(100vw - 30px)); max-height: calc(100vh - 40px); border: 1px solid #33434c; border-radius: 16px; padding: 24px; background: #101c24; color: #ecf2f4; text-align: left; }
+.lite-permissions::backdrop { background: #040b12c9; }
+.lite-permissions h2 { margin: 0 0 12px; font-size: 21px; }
+.lite-permissions p { color: #b1c3cc; font-size: 13px; line-height: 1.7; }
+.lite-permission-row { padding: 12px 0; border-bottom: 1px solid #263b47; display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 14px; }
+.lite-permission-row small { display: block; color: #92a9b5; font-size: 12px; margin-top: 6px; }
+.lite-permission-note { margin: 18px 0; }
+[role="alert"] { color: #dc736e; }

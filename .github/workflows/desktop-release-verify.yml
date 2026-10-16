@@ -3,6 +3,11 @@ name: desktop-release-verify
 on:
   workflow_dispatch:
     inputs:
+      edition:
+        description: Desktop edition to install
+        type: choice
+        options: [full, lite]
+        default: full
       candidate_cli_sha:
         description: Optional candidate CLI SHA256 for integration testing before installer rebuilding
         default: ''
@@ -25,6 +30,9 @@ jobs:
     if: ${{ !inputs.diagnostic_only }}
     runs-on: windows-2022
     timeout-minutes: 30
+    env:
+      DESKTOP_EXECUTABLE: ${{ inputs.edition == 'lite' && 'AgentRoam Lite.exe' || 'AgentRoam.exe' }}
+      INSTALLER_PATTERN: ${{ inputs.edition == 'lite' && 'AgentRoam-Lite-Setup-*-x64.exe' || 'AgentRoam-Setup-*-x64.exe' }}
     steps:
       - uses: actions/checkout@v4
       - name: Download and verify installer
@@ -35,7 +43,7 @@ jobs:
           EXPECTED_SHA256: ${{ inputs.sha256 }}
           CANDIDATE_CLI_SHA256: ${{ inputs.candidate_cli_sha }}
         run: |
-          gh release download $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --pattern 'AgentRoam-Setup-*-x64.exe' --dir "$env:RUNNER_TEMP/installer"
+          gh release download $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --pattern $env:INSTALLER_PATTERN --dir "$env:RUNNER_TEMP/installer"
           if ($LASTEXITCODE -ne 0) { throw 'Installer download failed' }
           $files = @(Get-ChildItem "$env:RUNNER_TEMP/installer/*.exe")
           if ($files.Count -ne 1) { throw 'Expected exactly one installer' }
@@ -43,7 +51,7 @@ jobs:
           if ($hash -ne $env:EXPECTED_SHA256) { throw 'Installer checksum mismatch' }
           $process = Start-Process $files[0].FullName -ArgumentList @('/S', "/D=$env:RUNNER_TEMP\AgentRoam") -Wait -PassThru
           if ($process.ExitCode -ne 0) { throw "Installer failed: $($process.ExitCode)" }
-          if (!(Test-Path "$env:RUNNER_TEMP/AgentRoam/AgentRoam.exe")) { throw 'Application missing after installation' }
+          if (!(Test-Path "$env:RUNNER_TEMP/AgentRoam/$env:DESKTOP_EXECUTABLE")) { throw 'Application missing after installation' }
           if ($env:CANDIDATE_CLI_SHA256) {
             gh release download $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --pattern 'agentroam-desktop-candidate.tgz' --dir "$env:RUNNER_TEMP/candidate"
             if ($LASTEXITCODE -ne 0) { throw 'Candidate CLI download failed' }
@@ -90,7 +98,7 @@ jobs:
           @'
           $env:ELECTRON_RUN_AS_NODE = '1'
           $env:NODE_OPTIONS = "--require=$env:RUNNER_TEMP/bootstrap-observer.cjs"
-          $worker = Start-Process "$env:RUNNER_TEMP/AgentRoam/AgentRoam.exe" -ArgumentList "`"$env:RUNNER_TEMP/AgentRoam/resources/bootstrap/runtime-bootstrap.mjs`"" -PassThru -RedirectStandardOutput "$env:RUNNER_TEMP/bootstrap.stdout.log" -RedirectStandardError "$env:RUNNER_TEMP/bootstrap.stderr.log"
+          $worker = Start-Process "$env:RUNNER_TEMP/AgentRoam/$env:DESKTOP_EXECUTABLE" -ArgumentList "`"$env:RUNNER_TEMP/AgentRoam/resources/bootstrap/runtime-bootstrap.mjs`"" -PassThru -RedirectStandardOutput "$env:RUNNER_TEMP/bootstrap.stdout.log" -RedirectStandardError "$env:RUNNER_TEMP/bootstrap.stderr.log"
           $worker.WaitForExit()
           [IO.File]::WriteAllText("$env:RUNNER_TEMP/bootstrap.exit", [string]$worker.ExitCode)
           '@ | Set-Content "$env:RUNNER_TEMP/bootstrap-supervisor.ps1"
@@ -169,7 +177,7 @@ jobs:
         run: |
           $env:ELECTRON_RUN_AS_NODE = $null
           $env:AGENTROAM_DESKTOP_USER_DATA = "$env:RUNNER_TEMP/desktop-shell"
-          $application = Start-Process "$env:RUNNER_TEMP/AgentRoam/AgentRoam.exe" -ArgumentList '--no-sandbox' -PassThru
+          $application = Start-Process "$env:RUNNER_TEMP/AgentRoam/$env:DESKTOP_EXECUTABLE" -ArgumentList '--no-sandbox' -PassThru
           try {
             Start-Sleep -Seconds 15
             $application.Refresh()
@@ -177,8 +185,9 @@ jobs:
             $logs = @(Get-ChildItem "$env:RUNNER_TEMP/desktop-shell/logs" -Filter '*.log' -ErrorAction Stop)
             if (!$logs.Count) { throw 'Desktop startup log missing' }
             $text = ($logs | Get-Content) -join "`n"
-            if ($text -notmatch 'desktop main booting') { throw 'Desktop main did not initialize' }
+            if ($text -notmatch 'desktop (lite )?main booting') { throw 'Desktop main did not initialize' }
             if ($text -match 'uncaughtException|ERR_MODULE_NOT_FOUND|ERR_DLOPEN_FAILED|Cannot find module') { throw 'Desktop startup dependency failure' }
+            if ($env:DESKTOP_EXECUTABLE -match 'Lite' -and ($text -notmatch 'lite renderer loaded' -or $text -notmatch 'lite QR invitation ready')) { throw 'Lite renderer or real QR invitation did not initialize' }
             Write-Output 'Installed Windows desktop process remained running for 15 seconds'
           } finally {
             if (!$application.HasExited) { Stop-Process -Id $application.Id -Force }

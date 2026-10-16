@@ -21,11 +21,7 @@ export function pairingOrigin(raw: string): string {
   return url.origin;
 }
 
-/** Invitation generation stays in main; the renderer never receives the local admin token. */
-export async function createMobilePairingInvitation(
-  dataDir: string,
-  request: () => Promise<{ status: number; body: string }>,
-): Promise<MobilePairingInvitation> {
+export async function readMobilePairingOrigin(dataDir: string): Promise<string> {
   // CLI's server uses <data-dir>/data; a standalone server uses dataDir itself.
   let origin: string | undefined;
   for (const path of [join(dataDir, "tunnel.url"), join(dataDir, "..", "tunnel.url")]) {
@@ -33,6 +29,15 @@ export async function createMobilePairingInvitation(
     catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
   }
   if (!origin) throw new Error("尚未建立手机访问连接，请先运行 agentroam，再重新打开二维码。");
+  return origin;
+}
+
+/** Invitation generation stays in main; the renderer never receives the local admin token. */
+export async function createMobilePairingInvitation(
+  dataDir: string,
+  request: () => Promise<{ status: number; body: string }>,
+): Promise<MobilePairingInvitation> {
+  const origin = await readMobilePairingOrigin(dataDir);
   const response = await request();
   if (response.status !== 200) throw new Error(response.status === 423 ? "远程访问已锁定，请先在电脑上解锁。" : "生成二维码失败，请检查 AgentRoam 服务后重试。");
   const { grant, expiresAt } = JSON.parse(response.body);
