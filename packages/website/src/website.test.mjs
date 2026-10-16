@@ -90,7 +90,7 @@ test("unsupported CPU installers are not offered as supported platform downloads
 test("published fallback provides direct downloads for every supported platform", async () => {
   const { releaseSnapshot } = await import("../public/release-snapshot.js");
   const assets = selectAssets(releaseSnapshot);
-  const versions = { mac: "26", windows: "24", android: "24" };
+  const versions = { mac: "27", windows: "27", android: "24" };
   for (const [platform, version] of Object.entries(versions)) {
     const tag = `desktop-v0.2.0-preview.${version}`;
     assert.equal(assets[platform].tag, tag);
