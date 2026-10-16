@@ -1,13 +1,10 @@
-import { execFile } from "node:child_process";
 import { setTimeout as delay } from "node:timers/promises";
-import { promisify } from "node:util";
 import type { CliOptions } from "./args.js";
 import { resolveApprovalInput, terminalText } from "./device-pairing.js";
 import { localServiceRequest } from "./local-service-request.js";
 import { DesktopAuthorizationInterrupted, DesktopAuthorizationPrompt, withAuthorizationSignal } from "./desktop-authorization-prompt.js";
 import { withCliProgress, withoutCliProgress } from "../bin/cli-progress.mjs";
 
-const runFile = promisify(execFile);
 const endpoint = "/api/remote-authorization";
 export interface DesktopAuthorizationStatus {
   local: boolean;
@@ -36,7 +33,6 @@ export interface DesktopAuthorizationContext {
   signal?: AbortSignal;
   timeoutMs?: number;
   input?: NodeJS.ReadableStream | null;
-  resetPermission?: (permission: Permission, signal: AbortSignal) => Promise<void>;
 }
 
 async function requestAuthorization(dataDir: string, body?: AuthorizationBody, signal?: AbortSignal): Promise<DesktopAuthorizationStatus> {
@@ -50,15 +46,6 @@ async function requestAuthorization(dataDir: string, body?: AuthorizationBody, s
     throw new Error("本机远程授权状态无效，请升级 CLI 后重试");
   }
   return status;
-}
-
-/** Clear only this app's stale permission; deleting the old bundle does not clear TCC. */
-export async function resetMacDesktopPermission(permission: Permission, signal: AbortSignal, run: (
-  file: string, args: string[], options: { signal: AbortSignal; timeout: number; maxBuffer: number },
-) => Promise<unknown> = runFile): Promise<void> {
-  await run("/usr/bin/tccutil", ["reset", permission === "screen" ? "ScreenCapture" : "Accessibility", "com.agentroam.remote-desktop"], {
-    signal, timeout: 5000, maxBuffer: 4096,
-  });
 }
 
 function recoveryHint(log: (line: string) => void): void {
@@ -106,12 +93,8 @@ export async function authorizeRemoteDesktop(dataDir: string, context: DesktopAu
       for (const permission of ["screen", "accessibility"] as const) {
         if (status[permission]) continue;
         const name = permission === "screen" ? "屏幕录制" : "辅助功能";
-        log(`正在清理 AgentRoam 的旧${name}授权记录，以便重新请求权限…`);
-        try { await run(() => (context.resetPermission ?? resetMacDesktopPermission)(permission, prompt.signal)); }
-        catch (error) {
-          prompt.signal.throwIfAborted();
-          log(`未能清理旧${name}授权：${terminalText(error instanceof Error ? error.message : String(error))}。可在系统设置中移除 AgentRoam Remote Desktop 后重试。`);
-        }
+        // TCC grants belong to the bundle ID across all installed runtimes.
+        // A false probe here must never revoke another runtime's permission.
         log(`正在请求${name}权限，请在系统设置中允许 AgentRoam Remote Desktop…`);
         status = await withCliProgress(`正在等待${name}权限；输入 s 后回车可跳过`, async () => {
           let current = await check({ action: "request-permission", permission });
