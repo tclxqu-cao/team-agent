@@ -1,0 +1,23 @@
+scripts/audit-desktop-artifacts.mjs
+  s_8ae0ad512d327e::t_2182b9d50b5d07 28
+scripts/audit-desktop-artifacts.test.mjs
+  s_8ae0ad512d327e::t_2ea75e31c1d43c 2-4,22-34
+scripts/collect-desktop-artifacts.mjs
+  s_8ae0ad512d327e::t_0c4409b8b76666 12
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d03bdc7ff55619652782376acacee5835b81a069",
+  "prompts": {},
+  "sessions": {
+    "s_8ae0ad512d327e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1403a-e47d-74b3-a1b2-033fac4390ad",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
