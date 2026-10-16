@@ -1,0 +1,29 @@
+packages/website/src/website.test.mjs
+  s_383c021fd01321::t_993c366d47fd4a 93-96,98
+packages/website/public/release-snapshot.js
+  s_34efa1f2bd7a6b::t_1a0d1d18b9951e 3-13
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "012cb39d8e34370117ed3b05f958c9f8cd543766",
+  "prompts": {},
+  "sessions": {
+    "s_34efa1f2bd7a6b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a14034-abc3-7f71-b807-8769a095a2ac",
+        "model": "unknown"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_383c021fd01321": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a13f9b-7e14-7d72-93be-8065810877bf",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
