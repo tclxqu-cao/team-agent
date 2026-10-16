@@ -1,0 +1,20 @@
+scripts/verify-macos-remote-install.mjs
+  s_8ae0ad512d327e::t_8dffc52de5eb81 1-60,62-73,77-79
+  s_8ae0ad512d327e::t_7d157b66df4082 61,74-76
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6a9a57f9bfbf7407e841d58df74f22e551409633",
+  "prompts": {},
+  "sessions": {
+    "s_8ae0ad512d327e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1403a-e47d-74b3-a1b2-033fac4390ad",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
