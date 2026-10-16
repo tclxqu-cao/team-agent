@@ -180,6 +180,11 @@ function runBootstrapSmoke(artifacts, parentWorkdir, archivePath) {
     ...(archivePath ? { AGENTROAM_NODE_ARCHIVE_FILE: archivePath } : {}),
   };
   if (process.platform === "win32") {
+    // GitHub's pwsh shell exports its own module paths. Windows PowerShell 5
+    // must discover its built-in Utility/Archive modules from its own defaults.
+    for (const key of Object.keys(bootstrapEnv)) {
+      if (key.toUpperCase() === "PSMODULEPATH") delete bootstrapEnv[key];
+    }
     execFileSync("powershell.exe", [
       "-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", scriptPath,
     ], { cwd: parentWorkdir, stdio: "inherit", env: bootstrapEnv });
