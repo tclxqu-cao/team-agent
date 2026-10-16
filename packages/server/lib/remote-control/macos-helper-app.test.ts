@@ -34,9 +34,21 @@ async function fixture(version = '0.2.0-preview.54') {
   const appPath = join(root, 'Application Support/AgentRoamRemoteDesktop/Services.noindex/AgentRoam Remote Desktop.app');
   await bundle(sourcePath, version);
   const paths: string[] = [];
-  const verify = vi.fn(async () => {}), register = vi.fn(async () => {});
-  const options = { sourcePath, appPath, verify, register, pathsInUse: async () => paths, ...(process.platform === 'darwin' ? {} : { acquireLock: testLock }) };
-  return { root, sourcePath, appPath, paths, verify, register, options, app: new MacRemoteHelperApp(options) };
+  const verify = vi.fn(async () => {}), register = vi.fn(async () => {}), unregister = vi.fn(async () => {});
+  const processes = async () => paths.map((path, index) => ({ pid: 1000 + index, path, identity: 'test identity' }));
+  const stopProcesses = vi.fn(async items => {
+    for (const item of items) { const index = paths.indexOf(item.path); if (index >= 0) paths.splice(index, 1); }
+  });
+  const options = { sourcePath, appPath, verify, register, unregister, processes, stopProcesses, ...(process.platform === 'darwin' ? {} : { acquireLock: testLock }) };
+  return { root, sourcePath, appPath, paths, verify, register, unregister, stopProcesses, options, app: new MacRemoteHelperApp(options) };
+}
+
+async function legacyBundle(root: string, version: string | null = '0.2.0-preview.53', indexed = false) {
+  const path = join(root, 'old/runtime/native', indexed ? 'Support.noindex' : '', 'AgentRoam Remote Desktop.app');
+  await bundle(path, version);
+  await writeFile(join(root, 'old/package.json'), JSON.stringify({ name: 'agentroam-runtime-darwin-arm64', version: version ?? '0.2.0-preview.53' }));
+  await writeFile(join(root, 'old/session.json'), 'keep session');
+  return path;
 }
 
 it('installs the bundled payload at one fixed path and reports the installed version', async () => {
@@ -77,41 +89,74 @@ it.each(['0.2.0-preview.54', '0.2.0-preview.55', '0.2.0'])('never downgrades an 
   expect((await f.app.describe()).version).toBe(version);
 });
 
-it('defers an update while another gateway still uses the installed executable', async () => {
+it('stops the running old component, replaces it immediately and removes its backup', async () => {
   const f = await fixture(); await bundle(f.appPath, '0.2.0-preview.53');
   f.paths.push(join(f.appPath, executable));
   await f.app.prepare();
-  expect(await f.app.describe()).toMatchObject({ version: '0.2.0-preview.53', updatePending: true, pendingVersion: '0.2.0-preview.54' });
-  expect(await readFile(join(f.appPath, executable), 'utf8')).toBe('0.2.0-preview.53');
-  f.paths.length = 0;
-  await f.app.prepare();
   expect(await f.app.describe()).toMatchObject({ version: '0.2.0-preview.54', updatePending: false });
+  expect(f.stopProcesses).toHaveBeenCalledWith([expect.objectContaining({ path: join(f.appPath, executable) })]);
+  expect(await installedEntries(f.appPath)).toEqual(['AgentRoam Remote Desktop.app']);
 });
 
-it('does not migrate while an app from an old package location is still running', async () => {
-  const f = await fixture(); f.paths.push(join(f.root, 'old-cli/native/AgentRoam Remote Desktop.app', executable));
-  await expect(f.app.prepare()).rejects.toThrow('旧位置的远控组件仍在使用');
-  expect((await f.app.describe()).installed).toBe(false);
-  expect(f.register).not.toHaveBeenCalled();
+it.each([false, true])('stops and removes a recognized old npm app (noindex=%s), preserving its CLI and sessions', async indexed => {
+  const f = await fixture(); const oldPath = await legacyBundle(f.root, null, indexed);
+  f.paths.push(join(oldPath, executable), join(oldPath, executable));
+  await f.app.prepare();
+  await expect(readFile(join(oldPath, executable))).rejects.toMatchObject({ code: 'ENOENT' });
+  expect(f.unregister).toHaveBeenCalledWith(oldPath);
+  expect(await readFile(join(f.root, 'old/session.json'), 'utf8')).toBe('keep session');
+  expect(JSON.parse(await readFile(join(f.root, 'old/package.json'), 'utf8')).name).toBe('agentroam-runtime-darwin-arm64');
+  expect((await f.app.describe()).installed).toBe(true);
 });
 
-it('refuses a second launch while an old package helper runs even if the fixed app is current', async () => {
+it('cleans a legacy app while keeping an already current fixed app unchanged', async () => {
   const f = await fixture(); await f.app.prepare();
-  f.paths.push(join(f.root, 'old-cli/native/AgentRoam Remote Desktop.app', executable));
-  await expect(f.app.prepare()).rejects.toThrow('旧位置的远控组件仍在使用');
+  const oldPath = await legacyBundle(f.root); f.paths.push(join(oldPath, executable));
+  const before = await stat(join(f.appPath, executable)); await f.app.prepare();
+  await expect(readFile(join(oldPath, executable))).rejects.toMatchObject({ code: 'ENOENT' });
+  expect((await stat(join(f.appPath, executable))).ino).toBe(before.ino);
+});
+
+it('stops a running source payload for migration but retains it as a repair resource', async () => {
+  const f = await fixture(); f.paths.push(join(f.sourcePath, executable));
+  await f.app.prepare();
+  expect(f.paths).toEqual([]);
+  expect(await readFile(join(f.sourcePath, executable), 'utf8')).toBe('0.2.0-preview.54');
+});
+
+it('does not stop an app with unknown ownership or a newer npm component', async () => {
+  const f = await fixture(); f.paths.push(join(f.root, 'unknown/AgentRoam Remote Desktop.app', executable));
+  await expect(f.app.prepare()).rejects.toThrow('无法确认旧远控组件归属');
+  expect(f.stopProcesses).not.toHaveBeenCalled();
+  const newer = await legacyBundle(f.root, '0.2.0-preview.55'); f.paths.splice(0, 1, join(newer, executable));
+  await expect(f.app.prepare()).rejects.toThrow('较新的远控组件');
+  expect(f.stopProcesses).not.toHaveBeenCalled();
+  expect((await f.app.describe()).installed).toBe(false);
+});
+
+it('keeps the old installation if a process cannot be stopped or restarts immediately', async () => {
+  const f = await fixture(); await bundle(f.appPath, '0.2.0-preview.53'); f.paths.push(join(f.appPath, executable));
+  f.stopProcesses.mockRejectedValueOnce(new Error('stop denied'));
+  await expect(f.app.prepare()).rejects.toThrow('stop denied');
+  expect((await f.app.describe()).version).toBe('0.2.0-preview.53');
+  f.stopProcesses.mockImplementationOnce(async () => {});
+  await expect(f.app.prepare()).rejects.toThrow('旧远控组件仍在使用');
+  expect((await f.app.describe()).version).toBe('0.2.0-preview.53');
 });
 
 it('keeps the old installed app if signature verification of its replacement fails', async () => {
   const f = await fixture(); await bundle(f.appPath, '0.2.0-preview.53');
+  f.paths.push(join(f.appPath, executable));
   f.verify.mockRejectedValueOnce(new Error('invalid code signature'));
   await expect(f.app.prepare()).rejects.toThrow('invalid code signature');
   expect(await readFile(join(f.appPath, executable), 'utf8')).toBe('0.2.0-preview.53');
   expect(await installedEntries(f.appPath)).toEqual(['AgentRoam Remote Desktop.app']);
+  expect(f.stopProcesses).not.toHaveBeenCalled();
 });
 
 it('does not replace the component when process inspection fails', async () => {
   const f = await fixture(); await bundle(f.appPath, '0.2.0-preview.53');
-  const app = new MacRemoteHelperApp({ ...f.options, pathsInUse: async () => { throw new Error('process inventory unavailable'); } });
+  const app = new MacRemoteHelperApp({ ...f.options, processes: async () => { throw new Error('process inventory unavailable'); } });
   await expect(app.prepare()).rejects.toThrow('process inventory unavailable');
   expect(await readFile(join(f.appPath, executable), 'utf8')).toBe('0.2.0-preview.53');
 });
@@ -139,7 +184,8 @@ it('holds the update lock until launch finishes so a concurrent installer sees t
   const newer = new MacRemoteHelperApp({ ...f.options, sourcePath: newerSource });
   const updating = newer.prepare();
   finish(); await starting; await updating;
-  expect(await newer.describe()).toMatchObject({ version: '0.2.0-preview.53', updatePending: true });
+  expect(await newer.describe()).toMatchObject({ version: '0.2.0-preview.54', updatePending: false });
+  expect(f.paths).toEqual([]);
 });
 
 it('recovers the newer backup after an installer exits between replacement renames', async () => {
