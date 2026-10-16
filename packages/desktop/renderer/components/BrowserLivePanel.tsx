@@ -475,6 +475,7 @@ export default function BrowserLivePanel({ open, active = true, agentSessionId, 
     // AX hit tests are advisory: loginwindow can expose a password field as
     // a control, and replies may describe the UI before the click activated it.
     if (!payload.editable && payload.kind === "control") {
+      editableField.current = null;
       return;
     }
     if (payload.editable) {
