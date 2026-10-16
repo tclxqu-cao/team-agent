@@ -60,6 +60,15 @@ await until(focused, false, "toolbar dismisses keyboard explicitly");
 await page.evaluate(() => window.regression.setHit({ editable: true, bounds: { x: 400, y: 300, w: 600, h: 80 } }));
 await tap();
 await until(focused, true, "a confirmed field reopens keyboard");
+await page.click('loc=css:button[aria-label="唤起键盘"]');
+await until(focused, false, "dismiss while a confirmed field is cached");
+await page.evaluate(() => window.regression.setHit({ editable: false, kind: "control" }));
+await tap();
+await new Promise(resolve => setTimeout(resolve, 100));
+assert.equal(await focused(), false, "a control replacing a cached field must not reopen the keyboard");
+await page.evaluate(() => window.regression.setHit({ editable: true, bounds: { x: 400, y: 300, w: 600, h: 80 } }));
+await tap();
+await until(focused, true, "a newly confirmed field restores IME");
 await page.click('loc=css:button[aria-label="放大桌面画面"]');
 await page.click('loc=css:button[aria-label="放大桌面画面"]');
 const snapshot = () => page.evaluate(() => {
