@@ -8,6 +8,7 @@ const QRCode = require("qrcode-terminal/vendor/QRCode");
 export interface MobilePairingInvitation {
   svg: string;
   origin: string;
+  pairingUrl: string;
   expiresAt: number;
 }
 
@@ -38,8 +39,9 @@ export async function createMobilePairingInvitation(
   if (typeof grant !== "string" || !/^[A-Za-z0-9_-]{43}$/.test(grant) || !Number.isFinite(expiresAt) || expiresAt <= Date.now()) {
     throw new Error("服务器未返回有效的授权二维码，请重试。");
   }
+  const pairingUrl = `${origin}/pair#pair=${grant}`;
   const qr = new QRCode(-1, 1);
-  qr.addData(`${origin}/pair#pair=${grant}`);
+  qr.addData(pairingUrl);
   qr.make();
   const count = qr.getModuleCount();
   const cells: string[] = [];
@@ -47,5 +49,5 @@ export async function createMobilePairingInvitation(
     if (qr.isDark(row, column)) cells.push(`M${column + 4} ${row + 4}h1v1h-1z`);
   }
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${count + 8} ${count + 8}" shape-rendering="crispEdges"><path fill="white" d="M0 0h${count + 8}v${count + 8}H0z"/><path fill="black" d="${cells.join("")}"/></svg>`;
-  return { svg, origin, expiresAt };
+  return { svg, origin, pairingUrl, expiresAt };
 }

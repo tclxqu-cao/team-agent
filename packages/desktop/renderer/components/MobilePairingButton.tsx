@@ -47,7 +47,7 @@ function MobilePairingDialog({ onClose }: { onClose(): void }) {
       <div className="mobile-pairing-code" aria-busy={!invitation && !error}>
         {invitation && !expired ? <img src={`data:image/svg+xml,${encodeURIComponent(invitation.svg)}`} alt="AgentRoam 手机授权二维码" /> : error ? <p role="alert">{error}</p> : expired ? <p>二维码已过期，请刷新</p> : <LoaderCircle className="spin" size={28} aria-label="正在生成二维码" />}
       </div>
-      {invitation && <small>{invitation.origin}</small>}
+      {invitation && <small aria-label="手机配对链接">{invitation.pairingUrl}</small>}
       <p>二维码仅可使用一次，5 分钟内有效。也可使用手机相机扫码进入网页版。</p>
       <button type="button" className="mobile-pairing-refresh" onClick={() => setAttempt(value => value + 1)}><RefreshCw size={15} />刷新二维码</button>
     </section>

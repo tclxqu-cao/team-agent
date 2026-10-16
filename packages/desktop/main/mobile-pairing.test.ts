@@ -23,4 +23,22 @@ describe("desktop mobile invitation", () => {
     expect(result.svg).not.toContain("g".repeat(43));
     await expect(createMobilePairingInvitation(directory, async () => ({ status: 423, body: "{}" }))).rejects.toThrow("已锁定");
   });
+  it("refreshes the full pairing link together with the QR code", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "mobile-qr-refresh-")); directories.push(directory);
+    await writeFile(join(directory, "tunnel.url"), "https://computer.example/web");
+    const expiresAt = Date.now() + 300000;
+    const request = vi.fn()
+      .mockResolvedValueOnce({ status: 200, body: JSON.stringify({ grant: "a".repeat(43), expiresAt }) })
+      .mockResolvedValueOnce({ status: 200, body: JSON.stringify({ grant: "b".repeat(43), expiresAt }) });
+
+    const first = await createMobilePairingInvitation(directory, request);
+    const refreshed = await createMobilePairingInvitation(directory, request);
+
+    expect(request).toHaveBeenCalledTimes(2);
+    expect(first.pairingUrl).toBe(`https://computer.example/pair#pair=${"a".repeat(43)}`);
+    expect(refreshed.pairingUrl).toBe(`https://computer.example/pair#pair=${"b".repeat(43)}`);
+    expect(refreshed.svg).not.toBe(first.svg);
+    expect(refreshed.origin).toBe(first.origin);
+    expect(refreshed.expiresAt).toBe(expiresAt);
+  });
 });
