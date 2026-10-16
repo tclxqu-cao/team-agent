@@ -33,6 +33,12 @@ jobs:
       - run: npm run check:agent-runtime-versions
       - run: npm run test:agent-runtime-upgrade
       - run: brew install mingw-w64
+      - name: Initialize build database before parallel Next workers
+        run: |
+          export AGENT_DATA_DIR="$RUNNER_TEMP/agentroam-build-data"
+          echo "AGENT_DATA_DIR=$AGENT_DATA_DIR" >> "$GITHUB_ENV"
+          bun run --cwd packages/core build
+          node --input-type=module -e 'import { SQLiteProjectStore } from "./packages/core/dist/index.js"; new SQLiteProjectStore(process.env.AGENT_DATA_DIR);'
       - run: npm run pack:cli:all
       - run: node scripts/verify-cli-install.mjs --artifacts dist/cli-release --bootstrap-script
       - run: node scripts/verify-cli-tunnel.mjs --artifacts dist/cli-release --provider auto
