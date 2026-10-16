@@ -15,9 +15,11 @@ module.exports = async function signMac(options) {
     // osx-sign 1.3.1 turns true into the invalid --strict=true argument.
     strictVerify: options.strictVerify === true ? undefined : options.strictVerify,
     ...(adHoc ? {
-      optionsForFile: async (file) => ({
-        ...await options.optionsForFile?.(file),
+      // osx-sign reads this callback synchronously; a Promise drops overrides.
+      optionsForFile: (file) => ({
+        ...options.optionsForFile?.(file),
         hardenedRuntime: false,
+        signatureFlags: "0x0",
         timestamp: "none",
       }),
     } : {}),

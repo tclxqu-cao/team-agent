@@ -1,6 +1,6 @@
 {
   "name": "@agent/desktop",
-  "version": "0.2.0-preview.25",
+  "version": "0.2.0-preview.26",
   "private": true,
   "type": "module",
   "main": "./dist/main/index.js",
