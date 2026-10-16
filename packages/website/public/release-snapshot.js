@@ -1,34 +1,34 @@
 // Published release fallback for GitHub API outages or rate limits. Refresh on release.
 export const releaseSnapshot = [
   {
-    "tag_name": "desktop-lite-v0.2.0-preview.28",
-    "published_at": "2026-10-16T09:49:16Z",
+    "tag_name": "desktop-lite-v0.2.0-preview.29",
+    "published_at": "2026-10-16T12:13:58Z",
     "assets": [
       {
-        "name": "AgentRoam-Lite-0.2.0-preview.28-arm64.dmg",
-        "size": 290398040,
-        "browser_download_url": "https://github.com/tclxqu-cao/team-agent/releases/download/desktop-lite-v0.2.0-preview.28/AgentRoam-Lite-0.2.0-preview.28-arm64.dmg"
+        "name": "AgentRoam-Lite-0.2.0-preview.29-arm64.dmg",
+        "size": 290330033,
+        "browser_download_url": "https://github.com/tclxqu-cao/team-agent/releases/download/desktop-lite-v0.2.0-preview.29/AgentRoam-Lite-0.2.0-preview.29-arm64.dmg"
       },
       {
-        "name": "AgentRoam-Lite-Setup-0.2.0-preview.28-x64.exe",
-        "size": 246719392,
-        "browser_download_url": "https://github.com/tclxqu-cao/team-agent/releases/download/desktop-lite-v0.2.0-preview.28/AgentRoam-Lite-Setup-0.2.0-preview.28-x64.exe"
+        "name": "AgentRoam-Lite-Setup-0.2.0-preview.29-x64.exe",
+        "size": 246692914,
+        "browser_download_url": "https://github.com/tclxqu-cao/team-agent/releases/download/desktop-lite-v0.2.0-preview.29/AgentRoam-Lite-Setup-0.2.0-preview.29-x64.exe"
       }
     ]
   },
   {
-    "tag_name": "desktop-v0.2.0-preview.27",
-    "published_at": "2026-10-16T07:03:08Z",
+    "tag_name": "desktop-v0.2.0-preview.29",
+    "published_at": "2026-10-16T12:27:13Z",
     "assets": [
       {
-        "name": "AgentRoam-0.2.0-preview.27-arm64.dmg",
-        "size": 292035527,
-        "browser_download_url": "https://github.com/tclxqu-cao/team-agent/releases/download/desktop-v0.2.0-preview.27/AgentRoam-0.2.0-preview.27-arm64.dmg"
+        "name": "AgentRoam-0.2.0-preview.29-arm64.dmg",
+        "size": 291895779,
+        "browser_download_url": "https://github.com/tclxqu-cao/team-agent/releases/download/desktop-v0.2.0-preview.29/AgentRoam-0.2.0-preview.29-arm64.dmg"
       },
       {
-        "name": "AgentRoam-Setup-0.2.0-preview.27-x64.exe",
-        "size": 247969730,
-        "browser_download_url": "https://github.com/tclxqu-cao/team-agent/releases/download/desktop-v0.2.0-preview.27/AgentRoam-Setup-0.2.0-preview.27-x64.exe"
+        "name": "AgentRoam-Setup-0.2.0-preview.29-x64.exe",
+        "size": 247949878,
+        "browser_download_url": "https://github.com/tclxqu-cao/team-agent/releases/download/desktop-v0.2.0-preview.29/AgentRoam-Setup-0.2.0-preview.29-x64.exe"
       }
     ]
   },
