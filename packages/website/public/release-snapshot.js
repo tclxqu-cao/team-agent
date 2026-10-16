@@ -1,6 +1,22 @@
 // Published release fallback for GitHub API outages or rate limits. Refresh on release.
 export const releaseSnapshot = [
   {
+    "tag_name": "desktop-lite-v0.2.0-preview.28",
+    "published_at": "2026-10-16T09:49:16Z",
+    "assets": [
+      {
+        "name": "AgentRoam-Lite-0.2.0-preview.28-arm64.dmg",
+        "size": 290398040,
+        "browser_download_url": "https://github.com/tclxqu-cao/team-agent/releases/download/desktop-lite-v0.2.0-preview.28/AgentRoam-Lite-0.2.0-preview.28-arm64.dmg"
+      },
+      {
+        "name": "AgentRoam-Lite-Setup-0.2.0-preview.28-x64.exe",
+        "size": 246719392,
+        "browser_download_url": "https://github.com/tclxqu-cao/team-agent/releases/download/desktop-lite-v0.2.0-preview.28/AgentRoam-Lite-Setup-0.2.0-preview.28-x64.exe"
+      }
+    ]
+  },
+  {
     "tag_name": "desktop-v0.2.0-preview.27",
     "published_at": "2026-10-16T07:03:08Z",
     "assets": [

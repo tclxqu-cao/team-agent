@@ -1,4 +1,6 @@
-import { selectAssets } from "./releases.js";
+const { selectAssets } = await import(
+  `./releases.js${new URL(import.meta.url).search}`
+);
 const { releaseSnapshot } = await import(
   `./release-snapshot.js${new URL(import.meta.url).search}`
 );
@@ -92,7 +94,7 @@ if (status) {
     } catch {
       // Keep verified published downloads available when the public API is limited.
     }
-    const assets = selectAssets(releases);
+    const assetsByEdition = { lite: selectAssets(releases, "lite"), full: selectAssets(releases, "full") };
     status.textContent = !live
       ? "已显示最近确认发布的安装包，可直接下载。最新发布也可前往 GitHub Releases 查看。"
       : releases.length
@@ -103,15 +105,18 @@ if (status) {
       windows: "下载 Windows",
       android: "下载 Android APK",
     };
-    Object.entries(assets).forEach(([platform, asset]) => {
-      const link = document.querySelector(`[data-platform="${platform}"]`);
-      const caption = document.querySelector(`[data-version="${platform}"]`);
+    document.querySelectorAll("[data-platform]").forEach((link) => {
+      const platform = link.dataset.platform;
+      const edition = link.dataset.edition || "lite";
+      const asset = assetsByEdition[edition]?.[platform];
+      const caption = document.querySelector(`[data-version="${platform}"][data-edition="${edition}"]`);
+      const suffix = platform === "android" ? "" : edition === "lite" ? " 简易版" : " 全量版";
       if (asset) {
         link.href = asset.browser_download_url;
-        link.textContent = `${labels[platform]} ↗`;
-        caption.textContent = `${asset.tag} · ${(asset.size / 1048576).toFixed(1)} MB`;
+        link.textContent = `${labels[platform]}${suffix} ↗`;
+        if (caption) caption.textContent = `${asset.tag} · ${(asset.size / 1048576).toFixed(1)} MB`;
       } else {
-        caption.textContent =
+        if (caption) caption.textContent =
           platform === "android"
             ? "尚无公开 APK · 可先使用浏览器 / PWA"
             : "尚无公开安装包 · 可先使用下方 CLI";

@@ -4,7 +4,7 @@ export const assetPatterns = {
   windows: [/(?:x64|amd64).*\.exe$/i, /\.exe$/i, /\.msi$/i],
   android: [/\.apk$/i],
 };
-export function selectAssets(releases) {
+export function selectAssets(releases, edition = "lite") {
   const published = releases
     .filter((release) => !release.draft)
     .sort(
@@ -15,6 +15,7 @@ export function selectAssets(releases) {
     Object.entries(assetPatterns).map(([platform, patterns]) => {
       for (const release of published) {
         const assets = (release.assets || []).filter((asset) => {
+          if (platform !== "android" && /(?:^|-)lite(?:-|$)/i.test(asset.name) !== (edition === "lite")) return false;
           if (platform === "mac" && /(?:x64|x86_64|intel)/i.test(asset.name))
             return false;
           if (platform === "windows" && /(?:arm64|aarch64)/i.test(asset.name))

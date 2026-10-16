@@ -28,7 +28,7 @@ test("release selection supports preview-only releases and picks newest platform
       published_at: "2026-10-02",
       assets: [asset("Windows-x64.exe")],
     },
-  ]);
+  ], "full");
   assert.equal(result.mac.tag, "preview");
   assert.equal(result.android.tag, "preview");
   assert.equal(result.windows.tag, "old");
@@ -89,12 +89,43 @@ test("unsupported CPU installers are not offered as supported platform downloads
 
 test("published fallback provides direct downloads for every supported platform", async () => {
   const { releaseSnapshot } = await import("../public/release-snapshot.js");
-  const assets = selectAssets(releaseSnapshot);
-  const versions = { mac: "27", windows: "27", android: "24" };
-  for (const [platform, version] of Object.entries(versions)) {
-    const tag = `desktop-v0.2.0-preview.${version}`;
-    assert.equal(assets[platform].tag, tag);
-    assert.ok(assets[platform].size > 1000000);
-    assert.ok(assets[platform].browser_download_url.includes(`/${tag}/`));
+  for (const edition of ["lite", "full"]) {
+    const assets = selectAssets(releaseSnapshot, edition);
+    for (const platform of ["mac", "windows", "android"]) {
+      const tag = platform === "android" ? "desktop-v0.2.0-preview.24"
+        : edition === "lite" ? "desktop-lite-v0.2.0-preview.28" : "desktop-v0.2.0-preview.27";
+      assert.equal(assets[platform].tag, tag);
+      assert.ok(assets[platform].size > 1000000);
+      assert.ok(assets[platform].browser_download_url.includes(`/${tag}/`));
+    }
   }
+});
+
+
+test("Lite stays the default even when a newer full edition is published", () => {
+  const releases = [
+    { tag_name: "lite", published_at: "2026-10-16", assets: [asset("AgentRoam-Lite-0.2.0-preview.28-arm64.dmg"), asset("AgentRoam-Lite-Setup-0.2.0-preview.28-x64.exe")] },
+    { tag_name: "full-newer", published_at: "2026-10-17", assets: [asset("AgentRoam-0.2.0-preview.29-arm64.dmg"), asset("AgentRoam-Setup-0.2.0-preview.29-x64.exe")] },
+  ];
+  assert.equal(selectAssets(releases).mac.tag, "lite");
+  assert.equal(selectAssets(releases).windows.tag, "lite");
+  assert.equal(selectAssets(releases, "full").mac.tag, "full-newer");
+  assert.equal(selectAssets(releases, "full").windows.tag, "full-newer");
+  assert.equal(selectAssets([releases[0]], "full").mac, null);
+  assert.equal(selectAssets([releases[1]], "lite").windows, null);
+});
+
+test("download page offers both editions and explains the shared phone capabilities", async () => {
+  const html = await readFile(root + "download.html", "utf8");
+  const { releaseSnapshot } = await import("../public/release-snapshot.js");
+  for (const platform of ["mac", "windows"]) for (const edition of ["lite", "full"]) {
+    const attributes = `data-platform="${platform}" data-edition="${edition}"`;
+    const href = selectAssets(releaseSnapshot, edition)[platform].browser_download_url;
+    assert.ok(html.includes(`${attributes} href="${href}"`), "published download survives disabled JavaScript");
+  }
+  assert.ok(html.includes(`data-platform="android" data-edition="lite" href="${selectAssets(releaseSnapshot).android.browser_download_url}"`), "Android download survives disabled JavaScript");
+  assert.ok(html.indexOf("桌面端 · 简易版") < html.indexOf('id="full"'));
+  assert.match(html, /简易版和全量版，怎么选/);
+  assert.match(html, /二维码、刷新、重新授权/);
+  assert.match(html, /复用 CLI 安装流程/);
 });

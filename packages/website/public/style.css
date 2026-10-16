@@ -1800,3 +1800,17 @@ footer small {
 @media (max-width: 680px) {
   .guide-hero h1 { font-size: clamp(34px, 9.5vw, 48px); }
 }
+
+/* Desktop edition selection: a primary QR launcher with a separate full-workspace entry. */
+.edition-comparison { margin-top: 48px; }
+.edition-comparison h3 { font-size: 24px; margin-bottom: 24px; }
+.edition-table { overflow-x: auto; }
+.edition-table table { width: 100%; min-width: 560px; border-collapse: collapse; text-align: left; font-size: 14px; }
+.edition-table th, .edition-table td { padding: 18px 16px; border-bottom: 1px solid #28363f; line-height: 1.65; }
+.edition-table thead { color: #68e6c5; }
+.edition-table tbody th { color: #b4c5cf; font-weight: 500; }
+.edition-comparison > p, .full-downloads > p { margin-top: 22px; line-height: 1.9; font-size: 14px; }
+.full-downloads { margin-top: 54px; scroll-margin-top: 100px; }
+.full-download-links { display: flex; flex-wrap: wrap; gap: 28px; margin-top: 24px; }
+.full-download-links small { display: block; color: #8ca0ad; margin-top: 10px; font-size: 11px; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
