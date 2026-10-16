@@ -36,7 +36,7 @@ mac:
   target:
     - target: dmg
       arch: arm64
-  identity: null
+  sign: scripts/sign-macos.cjs
   hardenedRuntime: false
   gatekeeperAssess: false
   artifactName: AgentRoam-${version}-arm64.dmg
