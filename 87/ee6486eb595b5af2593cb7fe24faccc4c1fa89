@@ -1,0 +1,21 @@
+scripts/stage-cli-runtime.mjs
+  s_383c021fd01321::t_afd012f54ab38b 105-107
+.github/workflows/cli-registry-install-verify.yml
+  s_383c021fd01321::t_afd012f54ab38b 1-42
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "87ee6486eb595b5af2593cb7fe24faccc4c1fa89",
+  "prompts": {},
+  "sessions": {
+    "s_383c021fd01321": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a13f9b-7e14-7d72-93be-8065810877bf",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
