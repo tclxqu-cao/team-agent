@@ -1,0 +1,19 @@
+packages/desktop/renderer/components/BrowserLivePanel.tsx
+  s_8ae0ad512d327e::t_4ca1ef823358d6 490,1506-1512
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5f47049b6b8fd21c563893d24f60807942016606",
+  "prompts": {},
+  "sessions": {
+    "s_8ae0ad512d327e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1403a-e47d-74b3-a1b2-033fac4390ad",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
