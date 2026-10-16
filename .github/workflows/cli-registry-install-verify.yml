@@ -23,12 +23,15 @@ jobs:
         shell: bash
         run: |
           node --input-type=module <<'NODE'
-          import { mkdir, readFile } from 'node:fs/promises';
+          import { copyFile, mkdir, readFile } from 'node:fs/promises';
           import { execFileSync } from 'node:child_process';
           import { resolve } from 'node:path';
           const launcher = JSON.parse(await readFile('packages/cli/package.json', 'utf8'));
           const destination = resolve('dist/cli-release');
           await mkdir(destination, { recursive: true });
+          for (const name of ['install-agentroam.sh', 'install-agentroam.ps1']) {
+            await copyFile(resolve('packages/cli/install', name), resolve(destination, name));
+          }
           const specs = [
             `${launcher.name}@${launcher.version}`,
             ...Object.entries(launcher.optionalDependencies).map(([name, version]) => `${name}@${version}`),
