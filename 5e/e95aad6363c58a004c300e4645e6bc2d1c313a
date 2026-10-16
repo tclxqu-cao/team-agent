@@ -1,0 +1,23 @@
+packages/desktop/scripts/runtime-bootstrap-worker.ts
+  s_383c021fd01321::t_3f9d0e94f1adf5 22-29
+packages/desktop/scripts/verify-staged-runtime.mjs
+  s_383c021fd01321::t_3f9d0e94f1adf5 1-12
+packages/desktop/package.json
+  s_383c021fd01321::t_3f9d0e94f1adf5 15-16,19-20
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5ee95aad6363c58a004c300e4645e6bc2d1c313a",
+  "prompts": {},
+  "sessions": {
+    "s_383c021fd01321": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a13f9b-7e14-7d72-93be-8065810877bf",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
