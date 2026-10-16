@@ -1,21 +1,17 @@
 import { spawn } from 'node:child_process';
 import { access } from 'node:fs/promises';
-import { existsSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
+import { WindowsRemoteHelperApp, bundledWindowsHelperPath } from './windows-helper-app.mjs';
 
 const MAX_MESSAGE = 8 * 1024 * 1024;
-function defaultExecutable() {
-  const bundled = fileURLToPath(new URL('../../native/agentroam-remote-desktop.exe', import.meta.url));
-  const development = fileURLToPath(new URL('../../native/.build-remote/windows/agentroam-remote-desktop.exe', import.meta.url));
-  return existsSync(bundled) || !existsSync(development) ? bundled : development;
-}
-// Inherited pipes are private to this process tree; there is no named pipe or TCP listener.
+// Control and media use private inherited pipes, separate from the install lock.
 export class WindowsRemoteHelper {
-  constructor({ executable = defaultExecutable(), launch = spawn } = {}) {
-    this.executable = executable; this.launch = launch; this.sequence = 0;
+  constructor({ executable, launch = spawn, application = executable || launch !== spawn ? null : new WindowsRemoteHelperApp() } = {}) {
+    this.application = application;
+    this.executable = executable ?? application?.executable ?? bundledWindowsHelperPath(); this.launch = launch; this.sequence = 0;
     this.pending = new Map(); this.listeners = new Set(); this.audioListeners = new Set(); this.generation = 0;
   }
-  async available() { try { await access(this.executable); return true; } catch { return false; } }
+  async available() { if (this.application) return this.application.available(); try { await access(this.executable); return true; } catch { return false; } }
+  async describe() { return this.application ? this.application.describe() : { name: 'AgentRoam Remote Desktop', path: this.executable, version: 'unknown' }; }
   onVideo(listener) { this.listeners.add(listener); return () => this.listeners.delete(listener); }
   onAudio(listener) { this.audioListeners.add(listener); return () => this.audioListeners.delete(listener); }
   start() {
@@ -27,8 +23,12 @@ export class WindowsRemoteHelper {
   }
   async open(generation) {
     if (!await this.available()) throw new Error('当前 CLI 未包含 Windows 远程桌面组件，请升级 CLI');
+    if (this.application) return this.application.withPreparedApp(executable => this.openPrepared(generation, executable));
+    return this.openPrepared(generation, this.executable);
+  }
+  async openPrepared(generation, executable) {
     if (generation !== this.generation) throw new Error('远程桌面组件启动已取消');
-    const child = this.launch(this.executable, ['--parent', String(process.pid)], { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
+    const child = this.launch(executable, ['--parent', String(process.pid)], { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
     this.child = child;
     let buffer = '';
     const fail = (error) => {

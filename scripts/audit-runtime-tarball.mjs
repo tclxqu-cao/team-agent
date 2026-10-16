@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { mkdtempSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
@@ -61,6 +62,8 @@ for (const required of [
   "package/runtime/lib/ai-hub-relay-client.mjs",
   "package/runtime/lib/project-picker-directory.mjs",
   "package/runtime/lib/remote-control/macos-helper-app.mjs",
+  "package/runtime/lib/remote-control/windows-helper-app.mjs",
+  "package/runtime/lib/remote-control/component-version.mjs",
   "package/runtime/.next/BUILD_ID",
   "package/runtime/node_modules/node-pty/package.json",
   "package/runtime/node_modules/better-sqlite3/package.json",
@@ -75,8 +78,15 @@ if (manifest.target === 'darwin-arm64') {
 }
 
 if (manifest.target === "windows-amd64") {
-  for (const required of ["agentroam-remote-desktop.exe", "agentroam-remote-unlock.exe", "remote-helper-NOTICES.txt"]) {
+  for (const required of ["agentroam-remote-desktop.exe", "agentroam-remote-unlock.exe", "remote-helper-NOTICES.txt", "agentroam-remote-component.json"]) {
     if (!list.includes(`package/runtime/native/${required}`)) throw new Error(`missing Windows helper artifact: ${required}`);
+  }
+  const entry = 'package/runtime/native/';
+  const component = JSON.parse(execFileSync('tar', ['-xOf', tarball, entry + 'agentroam-remote-component.json'], { encoding: 'utf8' }));
+  if (component.component !== 'agentroam-remote-desktop' || component.version !== packageJson.version) throw new Error('Windows remote helper metadata version mismatch');
+  for (const name of ['agentroam-remote-desktop.exe', 'remote-helper-NOTICES.txt']) {
+    const bytes = execFileSync('tar', ['-xOf', tarball, entry + name], { maxBuffer: 16 * 1024 * 1024 });
+    if (createHash('sha256').update(bytes).digest('hex') !== component.files?.[name]) throw new Error(`Windows remote helper metadata hash mismatch: ${name}`);
   }
 }
 

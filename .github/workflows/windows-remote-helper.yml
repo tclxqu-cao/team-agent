@@ -6,12 +6,20 @@ on:
       - 'packages/server/native/remote-helper-windows/**'
       - 'scripts/build-windows-remote-helper.mjs'
       - 'scripts/verify-windows-remote-helper.mjs'
+      - 'scripts/verify-windows-remote-install.mjs'
+      - 'scripts/windows-helper-install.test.mjs'
+      - 'packages/server/lib/remote-control/windows-helper*.mjs'
+      - 'packages/server/lib/remote-control/component-version.mjs'
       - '.github/workflows/windows-remote-helper.yml'
   pull_request:
     paths:
       - 'packages/server/native/remote-helper-windows/**'
       - 'scripts/build-windows-remote-helper.mjs'
       - 'scripts/verify-windows-remote-helper.mjs'
+      - 'scripts/verify-windows-remote-install.mjs'
+      - 'scripts/windows-helper-install.test.mjs'
+      - 'packages/server/lib/remote-control/windows-helper*.mjs'
+      - 'packages/server/lib/remote-control/component-version.mjs'
       - '.github/workflows/windows-remote-helper.yml'
 jobs:
   native:
@@ -26,10 +34,15 @@ jobs:
           arch: x64
       - run: node scripts/build-windows-remote-helper.mjs
       - run: node scripts/verify-windows-remote-helper.mjs
+      - run: node --test scripts/windows-helper-install.test.mjs
+      - run: node scripts/verify-windows-remote-install.mjs
+        timeout-minutes: 5
       - uses: actions/upload-artifact@v4
         with:
           name: windows-remote-helper-${{ github.sha }}
           path: |
             packages/server/native/.build-remote/windows/agentroam-remote-desktop.exe
+            packages/server/native/.build-remote/windows/agentroam-remote-unlock.exe
+            packages/server/native/.build-remote/windows/agentroam-remote-component.json
             packages/server/native/.build-remote/windows/remote-helper-NOTICES.txt
           if-no-files-found: error

@@ -25,6 +25,15 @@ it('uses inherited pipes, probes status, routes requests and permits restart aft
   await helper.start(); expect(children).toHaveLength(2);
 });
 
+it('holds managed installation through the first status reply and launches its fixed executable', async () => {
+  let held = false;
+  const application = { executable: process.execPath, available: async () => true, describe: async () => ({ path: 'fixed/agentroam-remote-desktop.exe', version: '0.2.0-preview.57' }), withPreparedApp: async use => { held = true; try { return await use(process.execPath); } finally { held = false; } } };
+  const launch = vi.fn((_exe, _args, options) => { expect(held).toBe(true); return spawn(process.execPath, ['-e', echo], options); });
+  const helper = new WindowsRemoteHelper({ application, launch }); helpers.push(helper);
+  await helper.start(); expect(held).toBe(false); expect(launch.mock.calls[0][0]).toBe(process.execPath);
+  expect(await helper.describe()).toMatchObject({ version: '0.2.0-preview.57' });
+});
+
 it('cancels an unresolved startup immediately and can retry', async () => {
   const { helper, launch } = fixture('process.stdin.resume();process.stdin.on("end",()=>process.exit(0));');
   const start = helper.start(); const cancelled = expect(start).rejects.toThrow('取消');

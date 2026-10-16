@@ -6,29 +6,17 @@ import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
+import { componentVersionPattern as versionPattern, compareComponentVersions as compareVersions } from './component-version.mjs';
 
 const run = promisify(execFile);
 const bundleId = 'com.agentroam.remote-desktop';
 const executable = 'Contents/MacOS/agentroam-remote-desktop';
 const metadata = 'Contents/Resources/agentroam-component.json';
-const versionPattern = /^(\d+)\.(\d+)\.(\d+)(?:-preview\.(\d+))?$/;
 
 export function bundledRemoteAppPath() {
   const native = fileURLToPath(new URL('../../native/', import.meta.url));
   const payload = join(native, 'Support.noindex/AgentRoam Remote Desktop.app');
   return existsSync(payload) ? payload : join(native, 'AgentRoam Remote Desktop.app');
-}
-
-function compareVersions(left, right) {
-  const parts = (version) => {
-    const match = versionPattern.exec(version);
-    return match ? [Number(match[1]), Number(match[2]), Number(match[3]), match[4] === undefined ? Infinity : Number(match[4])] : [-1];
-  };
-  const a = parts(left), b = parts(right);
-  for (let i = 0; i < Math.max(a.length, b.length); i++) {
-    if ((a[i] ?? 0) !== (b[i] ?? 0)) return (a[i] ?? 0) > (b[i] ?? 0) ? 1 : -1;
-  }
-  return 0;
 }
 
 async function readBundle(path) {

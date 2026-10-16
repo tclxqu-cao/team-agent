@@ -42,11 +42,12 @@ async function fixture(options: Record<string, unknown> = {}) {
 }
 
 describe('CLI remote desktop', () => {
-  it('shows component identity only in local authorization responses', async () => {
-    const f = await fixture({ platform: 'darwin' });
-    f.helper.describe = vi.fn(async () => ({ name: 'AgentRoam Remote Desktop', path: '/Users/test/Library/Application Support/AgentRoamRemoteDesktop/Services.noindex/AgentRoam Remote Desktop.app', version: '0.2.0-preview.54' }));
+  it.each(['darwin', 'win32'])('shows %s component identity only in local authorization responses', async (platform) => {
+    const f = await fixture({ platform });
+    const path = platform === 'win32' ? 'C:\\Users\\test\\AppData\\Local\\AgentRoam\\RemoteDesktop\\agentroam-remote-desktop.exe' : '/Users/test/Library/Application Support/AgentRoamRemoteDesktop/Services.noindex/AgentRoam Remote Desktop.app';
+    f.helper.describe = vi.fn(async () => ({ name: 'AgentRoam Remote Desktop', path, version: '0.2.0-preview.54' }));
     try {
-      expect(await f.service.status()).toHaveProperty('component.path', expect.stringContaining('Services.noindex'));
+      expect(await f.service.status()).toHaveProperty('component.path', path);
       expect(await f.service.status(false)).not.toHaveProperty('component');
       expect(f.helper.describe).toHaveBeenCalledOnce();
     } finally { await f.close(); }

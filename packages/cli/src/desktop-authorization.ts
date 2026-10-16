@@ -57,7 +57,7 @@ function reportComponent(status: DesktopAuthorizationStatus, log: (line: string)
   if (!status.component) return;
   const component = status.component;
   log(`远控组件：${terminalText(component.version === 'legacy' ? '旧版（未记录版本）' : component.version)}`);
-  log(`授权应用位置：${terminalText(component.path)}`);
+  log(`${status.platform === 'win32' ? '组件位置' : '授权应用位置'}：${terminalText(component.path)}`);
   if (component.updatePending) log('旧版远控组件仍在使用；结束其他 AgentRoam 的桌面共享后，重新授权即可更新。');
 }
 

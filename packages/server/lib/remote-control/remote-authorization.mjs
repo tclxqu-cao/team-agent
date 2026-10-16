@@ -103,7 +103,7 @@ export class RemoteAuthorization {
   }
   async status(local = true) {
     const unlock = this.platform === 'win32' && this.system ? await this.system.probe().then(p => p.available ? 'available' : 'missing').catch(() => 'missing') : 'unsupported';
-    const component = local && this.platform === 'darwin' ? await this.helper.describe?.() : undefined;
+    const component = local && ['darwin', 'win32'].includes(this.platform) ? await this.helper.describe?.() : undefined;
     return { local, platform: this.platform, supported: this.supported, installed: this.supported && await this.helper.available(), enabled: this.enabled, screen: this.screen, accessibility: this.accessibility, online: this.online, error: this.error, locked: this.locked, unlock, viewerCount: this.viewerCount, controlState: this.controlState, ...(component ? { component } : {}) };
   }
   /** Lock / wake / unlock entry point for paired remote viewers (`browser:system`). */

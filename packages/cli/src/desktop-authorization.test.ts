@@ -208,9 +208,11 @@ describe("optional desktop authorization wizard", () => {
   });
 
   it("enables an available Windows desktop without macOS permission requests", async () => {
-    const f = fixture({ platform: "win32", screen: true, accessibility: true });
+    const path = 'C:\\Users\\test\\AppData\\Local\\AgentRoam\\RemoteDesktop\\agentroam-remote-desktop.exe';
+    const f = fixture({ platform: "win32", screen: true, accessibility: true, component: { name: 'AgentRoam Remote Desktop', path, version: '0.2.0-preview.57' } });
     expect(await authorizeRemoteDesktop(dataDir, { ...f.context, platform: "win32" })).toBe(true);
     expect(f.calls).toEqual([undefined, { action: "recheck" }, { action: "enable" }]);
+    expect(f.context.log).toHaveBeenCalledWith(`组件位置：${path}`);
   });
 
   it("reports an unavailable Windows desktop without enabling sharing", async () => {

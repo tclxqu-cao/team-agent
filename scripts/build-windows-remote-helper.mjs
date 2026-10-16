@@ -3,10 +3,13 @@ import { mkdir, readFile, writeFile, copyFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { componentVersionPattern } from '../packages/server/lib/remote-control/component-version.mjs';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
+const { version } = JSON.parse(await readFile(resolve(root, 'packages/runtime-win32-x64/package.json'), 'utf8'));
+if (!componentVersionPattern.test(version)) throw new Error('Invalid Windows remote helper package version');
 const source = resolve(root, 'packages/server/native/remote-helper-windows');
-const build = resolve(root, 'packages/server/native/.build-remote/windows');
+const build = resolve(process.env.AGENT_WINDOWS_REMOTE_HELPER_BUILD_DIR || resolve(root, 'packages/server/native/.build-remote/windows'));
 const desktopOutput = resolve(process.env.AGENT_WINDOWS_REMOTE_HELPER_OUTPUT || resolve(build, 'agentroam-remote-desktop.exe'));
 // The unlock service ships next to the desktop helper and shares the build dir.
 const unlockOutput = resolve(dirname(desktopOutput), 'agentroam-remote-unlock.exe');
@@ -39,5 +42,8 @@ for (const target of targets) {
   if (pe.toString('ascii', 0, 2) !== 'MZ' || pe.readUInt32LE(peOffset) !== 0x4550 || pe.readUInt16LE(peOffset + 4) !== 0x8664) throw new Error(`Expected Windows x64 PE helper: ${target.output}`);
 }
 await copyFile(resolve(source, 'THIRD-PARTY-NOTICES.txt'), resolve(desktopOutput, '../remote-helper-NOTICES.txt'));
+const files = {};
+for (const name of ['agentroam-remote-desktop.exe', 'remote-helper-NOTICES.txt']) files[name] = createHash('sha256').update(await readFile(resolve(dirname(desktopOutput), name))).digest('hex');
+await writeFile(resolve(dirname(desktopOutput), 'agentroam-remote-component.json'), JSON.stringify({ component: 'agentroam-remote-desktop', version, files }) + '\n');
 if (process.platform === 'win32') for (const target of targets) execFileSync(target.output, ['--self-test'], { stdio: 'inherit' });
 console.log(`Windows remote helpers: ${desktopOutput}, ${unlockOutput}`);
