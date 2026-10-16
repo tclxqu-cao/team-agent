@@ -1,6 +1,17 @@
 // Published release fallback for GitHub API outages or rate limits. Refresh on release.
 export const releaseSnapshot = [
   {
+    "tag_name": "desktop-v0.2.0-preview.26",
+    "published_at": "2026-10-16T06:13:43Z",
+    "assets": [
+      {
+        "name": "AgentRoam-0.2.0-preview.26-arm64.dmg",
+        "size": 292007643,
+        "browser_download_url": "https://github.com/tclxqu-cao/team-agent/releases/download/desktop-v0.2.0-preview.26/AgentRoam-0.2.0-preview.26-arm64.dmg"
+      }
+    ]
+  },
+  {
     "tag_name": "desktop-v0.2.0-preview.24",
     "published_at": "2026-10-16T03:47:59Z",
     "assets": [
