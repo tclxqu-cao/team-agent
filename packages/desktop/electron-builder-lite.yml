@@ -1,6 +1,10 @@
-extends: ./electron-builder.yml
 appId: com.agentroam.desktop.lite
 productName: AgentRoam Lite
+asar: true
+asarUnpack:
+  - "**/node_modules/better-sqlite3/prebuilds/**/*"
+directories:
+  output: release
 npmRebuild: false
 extraMetadata:
   name: agentroam-lite
@@ -23,8 +27,23 @@ extraResources:
   - from: assets/bootstrap
     to: bootstrap
 mac:
+  icon: assets/app-icon.icns
+  target:
+    - target: dmg
+      arch: arm64
+  sign: scripts/sign-macos.cjs
+  hardenedRuntime: false
+  gatekeeperAssess: false
   artifactName: AgentRoam-Lite-${version}-arm64.dmg
 win:
+  icon: assets/app-icon.ico
+  target:
+    - target: nsis
+      arch: x64
+  verifyUpdateCodeSignature: false
   artifactName: AgentRoam-Lite-Setup-${version}-x64.exe
 nsis:
+  oneClick: false
+  perMachine: false
+  allowElevation: true
   allowToChangeInstallationDirectory: true
