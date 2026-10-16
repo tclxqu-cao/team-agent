@@ -31,6 +31,22 @@ class FakeHelperProcess implements InputGatewayProcess {
 }
 
 describe("DesktopInputGateway", () => {
+  it("accepts the old hit-test envelope without weakening other command errors", async () => {
+    const child = new FakeHelperProcess();
+    const gateway = new DesktopInputGateway({ helperPath: "/tmp/desktop-input", spawnImpl: () => child });
+    await gateway.start();
+    try {
+      const probe = gateway.dispatch({ op: "hit-test", x: 100, y: 100 });
+      child.emitLine(JSON.stringify({ id: 1, editable: true }));
+      await expect(probe).resolves.toMatchObject({ ok: true, editable: true });
+      const click = gateway.dispatch({ op: "up", x: 100, y: 100 });
+      child.emitLine(JSON.stringify({ id: 2, editable: true }));
+      await expect(click).rejects.toThrow("desktop input helper error");
+      const denied = gateway.dispatch({ op: "hit-test", x: 100, y: 100 });
+      child.emitLine(JSON.stringify({ id: 3, ok: false, editable: false, error: "denied" }));
+      await expect(denied).rejects.toThrow("denied");
+    } finally { await gateway.stop(); }
+  });
   it("writes JSON-lines commands and resolves on helper replies", async () => {
     const child = new FakeHelperProcess();
     const gateway = new DesktopInputGateway({ helperPath: "/tmp/desktop-input", spawnImpl: () => child });

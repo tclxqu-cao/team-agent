@@ -1350,7 +1350,11 @@ export default function BrowserLivePanel({ open, active = true, agentSessionId, 
           {!(hasControl && !panMode && quickKeysOpen) && (
             <div className="browser-live-touch-hint">滑动滚动 · 轻点点击 · 双击打开 · 长按拖动 · 按住1秒右键 · 双指缩放</div>
           )}
-          <div ref={viewportRef} className="browser-live-viewport">
+          <div ref={viewportRef} className="browser-live-viewport" onMouseDown={(event) => {
+            // A keyboard resize can move the picture before compatibility
+            // mouse events arrive. Protect the surrounding viewport as well.
+            if (imeOnRef.current) event.preventDefault();
+          }}>
             {frame && frameSrc ? (
               <div
                 className="browser-live-image-hit-area"
@@ -1360,10 +1364,6 @@ export default function BrowserLivePanel({ open, active = true, agentSessionId, 
                   cursor: panMode ? "grab" : undefined,
                 } : undefined}
                 tabIndex={hasControl && !panMode ? 0 : -1}
-                onMouseDown={(event) => {
-                  // Compatibility mouse events must not move IME focus to the canvas.
-                  if (imeOnRef.current) event.preventDefault();
-                }}
                 onContextMenu={(event) => event.preventDefault()}
                 onPointerDown={(event) => {
                   if (event.pointerType === "touch") {

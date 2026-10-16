@@ -11,6 +11,7 @@ export type DesktopInputCommand =
   | { op: "ax_text"; revision: string; nodeId: string; text: string; replace: boolean };
 
 interface PendingRequest {
+  op: string;
   resolve: (value: Record<string, unknown>) => void;
   reject: (error: Error) => void;
   timer: NodeJS.Timeout;
@@ -148,7 +149,7 @@ export class DesktopInputGateway {
         this.pending.delete(id);
         reject(new Error("desktop input helper timed out"));
       }, this.lineTimeoutMs);
-      this.pending.set(id, { resolve, reject, timer });
+      this.pending.set(id, { resolve, reject, timer, op: String(payload.op) });
       child.stdin.write(`${JSON.stringify({ id, ...payload })}\n`);
     });
   }
@@ -172,6 +173,8 @@ export class DesktopInputGateway {
     if (!request) return;
     this.pending.delete(id);
     clearTimeout(request.timer);
+    // Older bundled helpers omitted ok only for read-only hit-test replies.
+    if (request.op === "hit-test" && message.ok === undefined && message.error === undefined && typeof message.editable === "boolean") message.ok = true;
     if (message.ok === true) request.resolve(message);
     else request.reject(Object.assign(
       new Error(String(message.error || "desktop input helper error")),

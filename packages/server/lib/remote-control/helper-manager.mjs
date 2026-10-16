@@ -122,6 +122,9 @@ export class RemoteHelper {
                 if (result.event === 'video') { for (const listener of this.videoListeners) listener(result); continue; }
                 if (result.event === 'audio') { for (const listener of this.audioListeners) listener(result); continue; }
                 const pending = this.pending.get(result.id);
+                // preview.23's read-only probe omitted the success envelope.
+                // Support installed helpers without changing their macOS identity.
+                if (pending?.op === 'hit-test' && result.ok === undefined && result.error === undefined && typeof result.editable === 'boolean') result.ok = true;
                 if (pending) { clearTimeout(pending.timer); this.pending.delete(result.id); result.ok ? pending.resolve(result) : pending.reject(new Error(result.error || '本机组件请求失败')); }
               } catch { socket.destroy(); return; }
             }
@@ -171,7 +174,7 @@ export class RemoteHelper {
       // helper commands bounded without expiring authorization after 12s.
       const timeoutMs = command.op === 'authorize' ? 120000 : 12000;
       const timer = setTimeout(() => { this.pending.delete(id); reject(new Error('远程授权组件响应超时')); }, timeoutMs);
-      this.pending.set(id, { resolve, reject, timer });
+      this.pending.set(id, { resolve, reject, timer, op: command.op });
       this.socket.write(JSON.stringify({ ...command, id }) + '\n');
     });
   }

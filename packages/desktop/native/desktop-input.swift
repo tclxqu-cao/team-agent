@@ -588,7 +588,9 @@ func handle(_ line: String) -> String? {
             guard let x = command["x"] as? NSNumber, let y = command["y"] as? NSNumber else {
                 return replyError(id, "hit-test requires coordinates")
             }
-            return reply(id, hitTestEditable(x: CGFloat(x.doubleValue), y: CGFloat(y.doubleValue)))
+            var payload = hitTestEditable(x: CGFloat(x.doubleValue), y: CGFloat(y.doubleValue))
+            payload["ok"] = true
+            return reply(id, payload)
         case "move", "down", "up", "drag":
             try postMouse(command)
             // The click release also reports what the user tapped on so the

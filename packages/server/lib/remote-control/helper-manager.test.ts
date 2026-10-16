@@ -6,6 +6,29 @@ function connectHelperSockets(controlPath:string, videoPath:string) {
   return { control: connect(controlPath), video: connect(videoPath) };
 }
 
+it.each([true, false])('accepts legacy hit-test replies with editable=%s and no ok flag', async (editable) => {
+  let clients: ReturnType<typeof connectHelperSockets>;
+  const helper = new RemoteHelper({ launch: async (controlPath: string, videoPath: string) => {
+    clients = connectHelperSockets(controlPath, videoPath);
+    clients.control.setEncoding('utf8');
+    clients.control.on('data', (chunk: string) => {
+      for (const line of chunk.trim().split('\n')) {
+        const command = JSON.parse(line);
+        clients.control.write(JSON.stringify({ id: command.id, editable }) + '\n');
+      }
+    });
+  } });
+  helper.available = async () => true;
+  try {
+    await helper.start();
+    await expect(helper.request({ op: 'hit-test', x: 100, y: 100 })).resolves.toMatchObject({ ok: true, editable });
+    // The compatibility rule must not turn malformed input/status replies into success.
+    await expect(helper.request({ op: 'up', x: 100, y: 100 })).rejects.toThrow('本机组件请求失败');
+  } finally {
+    clients!.control.destroy(); clients!.video.destroy(); await helper.stop();
+  }
+});
+
 it('gives permission dialogs two minutes while ordinary commands still time out after twelve seconds', async () => {
   const helper = new RemoteHelper();
   helper.socket = {destroyed:false,write:vi.fn()};
