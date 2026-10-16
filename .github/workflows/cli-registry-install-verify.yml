@@ -14,6 +14,11 @@ jobs:
         os: [macos-14, windows-2022]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 25
+    env:
+      NPM_CONFIG_REGISTRY: https://registry.npmjs.org
+      NPM_CONFIG_LOGLEVEL: info
+      NPM_CONFIG_FETCH_TIMEOUT: "60000"
+      NPM_CONFIG_FETCH_RETRIES: "2"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -39,7 +44,7 @@ jobs:
           const npmCli = resolve(process.execPath, '..', process.platform === 'win32'
             ? 'node_modules/npm/bin/npm-cli.js' : '../lib/node_modules/npm/bin/npm-cli.js');
           execFileSync(process.execPath, [npmCli, 'pack', ...specs, '--registry=https://registry.npmjs.org',
-            '--ignore-scripts', '--pack-destination', destination], { stdio: 'inherit' });
+            '--ignore-scripts', '--loglevel=error', '--pack-destination', destination], { stdio: 'inherit' });
           NODE
       - name: Verify native components, pairing and private Node installation
         run: node scripts/verify-cli-install.mjs --artifacts dist/cli-release --bootstrap-script
