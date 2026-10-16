@@ -1,0 +1,63 @@
+packages/server/lib/remote-control/component-version.mjs
+  s_8ae0ad512d327e::t_5779a43e546c9f 1-13
+scripts/verify-windows-remote-install.mjs
+  s_8ae0ad512d327e::t_e1cb889549b618 1-64
+packages/server/lib/remote-control/remote-authorization.test.ts
+  s_8ae0ad512d327e::t_fa0bbc67cd7218 47-48,50
+  s_8ae0ad512d327e::t_80c19901886577 45-46
+scripts/build-windows-remote-helper.mjs
+  s_8ae0ad512d327e::t_0359b051cee906 6,9-10,12,45-47
+packages/server/lib/remote-control/windows-helper.mjs
+  s_8ae0ad512d327e::t_34a5441bcd02f5 3,8-10,13-14,26-29,31
+  s_8ae0ad512d327e::t_67a8ae39017697 6
+.github/workflows/windows-remote-helper.yml
+  s_8ae0ad512d327e::t_e1cb889549b618 9-12,19-22,37-39,45-46
+scripts/windows-helper-install.test.mjs
+  s_8ae0ad512d327e::t_59a72ce7838547 1-123
+packages/server/lib/remote-control/macos-helper-app.mjs
+  s_8ae0ad512d327e::t_5779a43e546c9f 9
+packages/cli/src/desktop-authorization.test.ts
+  s_8ae0ad512d327e::t_bec24758c0cc26 211-212,215
+scripts/audit-runtime-tarball.mjs
+  s_8ae0ad512d327e::t_8b69e59c5afcfa 3
+  s_8ae0ad512d327e::t_0359b051cee906 65-66,81,84-89
+  s_383c021fd01321::t_a1fc10738c5b22 90
+packages/webapp/src/presentation/RemoteAuthorizationControl.tsx
+  s_8ae0ad512d327e::t_34a5441bcd02f5 80,82
+packages/server/lib/remote-control/remote-authorization.mjs
+  s_8ae0ad512d327e::t_67a8ae39017697 106
+packages/server/lib/remote-control/windows-helper.test.ts
+  s_8ae0ad512d327e::t_80c19901886577 28-36
+packages/server/lib/remote-control/windows-helper-app.mjs
+  s_8ae0ad512d327e::t_d1f87e6d1a3b95 49,52,54,56-63,65-77,82-86,122-123,129,146-160,162-166,168-174,185,196
+  s_8ae0ad512d327e::t_ebe03cf52e0225 78-81,167
+  s_8ae0ad512d327e::t_5779a43e546c9f 1-48,50-51,53,55,64,87-121,124-128,130-145,161,175-184,186-195,197-201
+packages/cli/src/desktop-authorization.ts
+  s_8ae0ad512d327e::t_34a5441bcd02f5 60
+scripts/stage-cli-runtime.mjs
+  s_8ae0ad512d327e::t_0359b051cee906 58
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9cec204f694944e02f97b04f4b52342bf0e78949",
+  "prompts": {},
+  "sessions": {
+    "s_383c021fd01321": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a13f9b-7e14-7d72-93be-8065810877bf",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_8ae0ad512d327e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1403a-e47d-74b3-a1b2-033fac4390ad",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
