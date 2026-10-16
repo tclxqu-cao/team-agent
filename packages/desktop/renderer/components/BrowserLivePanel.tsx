@@ -1505,11 +1505,10 @@ export default function BrowserLivePanel({ open, active = true, agentSessionId, 
                       const vp = frame?.viewport ?? selected?.viewport;
                       if (remoteFieldContains(editableField.current, vp, point.x, point.y)) {
                         const input = textInputRef.current;
-                        // iOS can retain DOM focus after dismissing its keyboard.
-                        // Renew focus synchronously inside this gesture; an AX
-                        // reply arriving later cannot open the system keyboard.
-                        if (input && document.activeElement === input) input.blur();
-                        input?.focus({ preventScroll: true });
+                        // Never blur to renew focus: WebKit can process the
+                        // keyboard dismissal after the following focus call.
+                        // Keep an existing typing session intact on repeated taps.
+                        if (input && document.activeElement !== input) input.focus({ preventScroll: true });
                         setFieldHint(false);
                       }
                       const last = lastTapRef.current;
