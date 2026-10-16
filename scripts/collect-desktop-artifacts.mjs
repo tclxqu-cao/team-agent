@@ -9,7 +9,7 @@ const output = resolve(root, "dist/cli-release");
 const desktop = JSON.parse(await readFile(resolve(root, "packages/desktop/package.json"), "utf8"));
 const expected = [`AgentRoam-${desktop.version}-arm64.dmg`, `AgentRoam-Setup-${desktop.version}-x64.exe`];
 const sources = process.argv.slice(2);
-if (sources.length !== 2 || JSON.stringify(sources.map(basename).sort()) !== JSON.stringify([...expected].sort())) {
+if (sources.length !== 2 || JSON.stringify(sources.map((source) => basename(source)).sort()) !== JSON.stringify([...expected].sort())) {
   throw new Error(`usage: collect-desktop-artifacts.mjs <${expected[0]}> <${expected[1]}>`);
 }
 for (const source of sources) await cp(resolve(source), resolve(output, basename(source)));
