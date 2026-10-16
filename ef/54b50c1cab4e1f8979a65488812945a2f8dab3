@@ -1,0 +1,32 @@
+scripts/incremental-cli-release.test.mjs
+  s_383c021fd01321::t_ad70a13ae1fbfb 27-31
+.github/workflows/cli-candidate-install-verify.yml
+  s_383c021fd01321::t_ad70a13ae1fbfb 1-38
+packages/server/next.config.js
+  s_383c021fd01321::t_ad70a13ae1fbfb 16,18,29-33
+scripts/verify-cli-install.mjs
+  s_383c021fd01321::t_ad70a13ae1fbfb 131,137-141
+  s_383c021fd01321::t_dca4e3fb4bae7c 132-136
+scripts/incremental-cli-release.mjs
+  s_383c021fd01321::t_ad70a13ae1fbfb 27
+packages/cli/install/install-agentroam.ps1
+  s_383c021fd01321::t_7a4a8a2ef25d75 1
+packages/cli/install/install-manifest.json
+  s_383c021fd01321::t_644f79179b2470 11-12
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ef54b50c1cab4e1f8979a65488812945a2f8dab3",
+  "prompts": {},
+  "sessions": {
+    "s_383c021fd01321": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a13f9b-7e14-7d72-93be-8065810877bf",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
