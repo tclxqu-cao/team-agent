@@ -89,15 +89,15 @@ struct ServiceConfig: Decodable { let endpoint:String;let producerToken:String }
         await publishStatus()
         guard CGPreflightScreenCaptureAccess() else { errorCode="screen-recording-required";await publishStatus();return }
         let next=DesktopCapture();let captureID=captureEpoch
-        next.onFrame={ [weak self] data,bounds,timestamp in Task { @MainActor in
+        next.onFrame={ [weak self] data,bounds,timestamp in Task { @MainActor [weak self] in
             guard let self,self.captureEpoch == captureID,timestamp.isFinite,timestamp >= self.generationStartedAt,lockedScreen() == self.locked else { return }
             await self.frame(data,bounds:bounds)
         } }
-        next.onUnavailable={ [weak self] in Task { @MainActor in
+        next.onUnavailable={ [weak self] in Task { @MainActor [weak self] in
             guard let self,self.captureEpoch == captureID else { return }
             self.lastFrame = .distantPast;self.errorCode="capture-suspended";self.controlled=false;self.input.releaseAll();await self.publishStatus()
         } }
-        next.onFailure={ [weak self] in Task { @MainActor in
+        next.onFailure={ [weak self] in Task { @MainActor [weak self] in
             guard let self,self.captureEpoch == captureID else { return }
             self.errorCode="capture-stopped";self.lastFrame = .distantPast;self.controlled=false;self.input.releaseAll()
             let failed=self.capture;self.capture=nil;await failed?.stop();await self.publishStatus()
