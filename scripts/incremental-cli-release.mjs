@@ -24,7 +24,7 @@ export function affectedPackages(path) {
   if (path.startsWith("packages/server/native/remote-helper-windows/") || path === "scripts/build-windows-remote-helper.mjs") return [names[1]];
   if (path.startsWith("packages/server/native/remote-helper/") || path === "packages/desktop/native/desktop-input.swift") return [names[0]];
   // Publication orchestration and audits do not enter npm runtime contents.
-  if (["scripts/incremental-cli-release.mjs", "scripts/agentroam-release-lib.mjs", "scripts/publish-agentroam-release.mjs", "scripts/agent-runtime-upgrade-lib.mjs", "scripts/collect-cli-artifacts.mjs"].includes(path)
+  if (["scripts/incremental-cli-release.mjs", "scripts/agentroam-release-lib.mjs", "scripts/publish-agentroam-release.mjs", "scripts/agent-runtime-upgrade-lib.mjs", "scripts/collect-cli-artifacts.mjs", "scripts/verify-cli-install.mjs"].includes(path)
     || /^scripts\/audit-/.test(path)) return [];
   const own = directories.findIndex((directory) => path.startsWith(`${directory}/`));
   if (own >= 0) return [names[own]];

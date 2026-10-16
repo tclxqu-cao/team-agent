@@ -128,6 +128,17 @@ try {
   if (!webapp.ok || !html.includes("<script")) throw new Error(`/app/ smoke failed: HTTP ${webapp.status}`);
   console.log(`✓ local server and webapp responded (${html.length} bytes)`);
 
+  // Static WebApp HTML alone does not exercise the bundled workspace runtime.
+  for (const [route, init] of [
+    ["/api/agent/model", {}],
+    ["/api/collaboration", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "groups" }) }],
+  ]) {
+    const response = await fetch(`${localUrl}${route}`, { ...init, headers: { ...init.headers, cookie, origin: localUrl } });
+    if (!response.ok) throw new Error(`${route} runtime initialization failed: HTTP ${response.status}`);
+    await response.json();
+    console.log(`✓ packaged runtime API ${route}`);
+  }
+
   child.kill("SIGTERM");
   await waitExit(child, 10_000);
   child = undefined;

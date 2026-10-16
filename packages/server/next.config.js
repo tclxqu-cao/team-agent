@@ -13,9 +13,9 @@ const nextConfig = {
   ...(allowedDevOrigins.length ? { allowedDevOrigins } : {}),
   experimental: {
     externalDir: true,
-    serverComponentsExternalPackages: ["@anthropic-ai/claude-agent-sdk"],
+    serverComponentsExternalPackages: ["@anthropic-ai/claude-agent-sdk", "@agent/core", "@agent/computer-use", "@agent/native-runtime"],
   },
-  webpack: (config) => {
+  webpack: (config, { isServer }) => {
     config.resolve.extensionAlias = {
       ".js": [".ts", ".tsx", ".js"],
     };
@@ -26,6 +26,11 @@ const nextConfig = {
     config.externals.push({ "better-sqlite3": "commonjs better-sqlite3" });
     config.externals.push({ "web-push": "commonjs web-push" });
     config.externals.push({ "@anthropic-ai/claude-agent-sdk": "commonjs @anthropic-ai/claude-agent-sdk" });
+    // These ESM packages are shipped beside the server. Bundling their
+    // createRequire(import.meta.url) embeds the build host's absolute path.
+    if (isServer) for (const name of ["@agent/core", "@agent/computer-use", "@agent/native-runtime"]) {
+      config.externals.push({ [name]: `commonjs ${name}` });
+    }
     return config;
   },
   async headers() {

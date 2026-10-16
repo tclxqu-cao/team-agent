@@ -8,8 +8,8 @@
     },
     "windows-amd64": {
       "fileName": "install-agentroam.ps1",
-      "sha256": "f331d2269cc66b18e732dd06f7252da56e883b9a344595e5d5977108f9e337e2",
-      "size": 19121
+      "sha256": "766f1c59d436f762ae5b874175a5fe117da1a6dfdc2bc3442a599dff851b73fe",
+      "size": 19124
     }
   }
 }

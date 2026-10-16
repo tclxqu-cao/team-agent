@@ -1,4 +1,4 @@
-$ErrorActionPreference = "Stop"
+﻿$ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
 
 $NodeVersion = "22.22.0"

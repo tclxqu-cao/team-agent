@@ -1,0 +1,38 @@
+name: cli-candidate-install-verify
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Draft release containing exact candidate packages and checksums
+        required: true
+
+permissions:
+  contents: write # Draft release downloads require push access.
+
+jobs:
+  candidate-install:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-14, windows-2022]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    env:
+      NPM_CONFIG_REGISTRY: https://registry.npmjs.org
+      NPM_CONFIG_LOGLEVEL: info
+      NPM_CONFIG_FETCH_TIMEOUT: "60000"
+      NPM_CONFIG_FETCH_RETRIES: "2"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.22.0"
+      - name: Download exact candidate packages
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CANDIDATE_TAG: ${{ inputs.tag }}
+        run: gh release download "$CANDIDATE_TAG" --repo "$GITHUB_REPOSITORY" --dir dist/cli-release
+      - name: Verify runtime APIs, native components, pairing and private Node installation
+        run: node scripts/verify-cli-install.mjs --artifacts dist/cli-release --bootstrap-script

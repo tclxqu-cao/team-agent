@@ -24,6 +24,11 @@ test("shared Web change builds both runtimes and launcher but no TUI or cloudfla
   assert.equal(buildCommands(result).filter(([, args]) => args[0] === "scripts/stage-cli-runtime.mjs").length, 2);
 });
 
+test("installation verification does not invalidate shipped platform packages", () => {
+  assert.equal(plan(["scripts/verify-cli-install.mjs"]).noop, true);
+  assert.deepEqual(changed(plan(["scripts/verify-cli-install.mjs", "packages/server/next.config.js"])), [names[0], names[1], "agentroam"]);
+});
+
 test("Darwin helper change leaves Windows untouched", () => {
   assert.deepEqual(changed(plan(["scripts/build-cli-remote-helper.mjs"])), [names[0], "agentroam"]);
   assert.deepEqual(changed(plan(["packages/server/native/remote-helper-windows/capture.cpp"])), [names[1], "agentroam"]);
