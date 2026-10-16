@@ -1,0 +1,23 @@
+packages/server/lib/remote-control/macos-helper-app.mjs
+  s_8ae0ad512d327e::t_8dffc52de5eb81 192
+  s_8ae0ad512d327e::t_0cf3d44c878aac 9,48-86,100-104,122-123,134,166-180,182-183,185-191,193-197,199,201,211,223,225-226
+  s_8ae0ad512d327e::t_42074a88a11258 184
+packages/server/lib/remote-control/macos-helper-app.test.ts
+  s_8ae0ad512d327e::t_36bb9ff31002e9 37-51,92,97-98,101-109,112,114-144,149,154,159,187-188
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2c5a241a7f809d7806a61d550d5dccba7ce34eaa",
+  "prompts": {},
+  "sessions": {
+    "s_8ae0ad512d327e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1403a-e47d-74b3-a1b2-033fac4390ad",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
