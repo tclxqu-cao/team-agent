@@ -1,0 +1,27 @@
+packages/desktop/package.json
+  s_383c021fd01321::t_8bce1af629d3d6 3,35
+packages/desktop/electron-builder.yml
+  s_383c021fd01321::t_8bce1af629d3d6 39
+packages/website/src/pages.mjs
+  s_383c021fd01321::t_9f6c3e30c31f68 24,30
+packages/desktop/scripts/sign-macos.cjs
+  s_383c021fd01321::t_8bce1af629d3d6 1-26
+bun.lock
+  s_383c021fd01321::t_0f12ac2ed7c442 70,87
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "cff325d6fb3feb23c458851713f9d427bdf80348",
+  "prompts": {},
+  "sessions": {
+    "s_383c021fd01321": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a13f9b-7e14-7d72-93be-8065810877bf",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
