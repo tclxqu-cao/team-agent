@@ -16,6 +16,7 @@ export interface DesktopAuthorizationStatus {
   accessibility: boolean;
   online: boolean;
   error: string | null;
+  component?: { name: string; path: string; version: string; updatePending?: boolean; pendingVersion?: string };
 }
 type Permission = "screen" | "accessibility";
 interface AuthorizationBody {
@@ -52,6 +53,14 @@ function recoveryHint(log: (line: string) => void): void {
   log("稍后重新授权：agentroam desktop authorize；也可在本机浏览器的“远程授权”面板中操作。");
 }
 
+function reportComponent(status: DesktopAuthorizationStatus, log: (line: string) => void): void {
+  if (!status.component) return;
+  const component = status.component;
+  log(`远控组件：${terminalText(component.version === 'legacy' ? '旧版（未记录版本）' : component.version)}`);
+  log(`授权应用位置：${terminalText(component.path)}`);
+  if (component.updatePending) log('旧版远控组件仍在使用；结束其他 AgentRoam 的桌面共享后，重新授权即可更新。');
+}
+
 function complete(status: DesktopAuthorizationStatus): boolean {
   return status.enabled && status.screen && status.accessibility && !status.error;
 }
@@ -69,7 +78,13 @@ export async function authorizeRemoteDesktop(dataDir: string, context: DesktopAu
   const prompt = new DesktopAuthorizationPrompt({ input, ownsInput: context.input === undefined && input !== process.stdin,
     signal: context.signal, timeoutMs: context.timeoutMs ?? 60_000, log });
   const run = <T>(operation: () => Promise<T>): Promise<T> => withAuthorizationSignal(operation, prompt.signal);
-  const check = (body?: AuthorizationBody): Promise<DesktopAuthorizationStatus> => run(() => request(dataDir, body, prompt.signal));
+  let reportedComponent = '';
+  const check = async (body?: AuthorizationBody): Promise<DesktopAuthorizationStatus> => {
+    const status = await run(() => request(dataDir, body, prompt.signal));
+    const identity = JSON.stringify(status.component) ?? '';
+    if (identity !== reportedComponent) { reportComponent(status, log); reportedComponent = identity; }
+    return status;
+  };
   log("远程桌面授权可选；输入 s 后回车或按 Ctrl+C 可跳过，稍后可重新授权。");
   try {
     let status = await withCliProgress("正在检查本机远程桌面权限", () => check());
@@ -148,6 +163,7 @@ export async function runDesktopCommand(options: CliOptions, context: DesktopAut
     return;
   }
   if (status.supported && status.installed) status = await request(options.dataDir, { action: "recheck" });
+  reportComponent(status, log);
   log(`远程桌面：${status.supported ? "支持" : "不支持"}；共享：${status.enabled ? "已开启" : "未开启"}；屏幕录制：${status.screen ? "已授权" : "未授权或桌面不可用"}；辅助功能：${status.accessibility ? "已授权" : "未授权"}`);
   if (status.error) log(`状态提示：${terminalText(status.error)}`);
   recoveryHint(log);

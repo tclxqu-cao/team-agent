@@ -17,7 +17,7 @@ function MobileAuthorizationDialog({ message, showGuidance, windows, onClose }: 
     </div>
   </dialog>, document.body);
 }
-interface Status { platform?: string; local: boolean; supported: boolean; installed: boolean; enabled: boolean; screen: boolean; accessibility: boolean; online: boolean; locked?: boolean | null; unlock?: 'available' | 'missing' | 'unsupported'; error?: string | null }
+interface Status { platform?: string; local: boolean; supported: boolean; installed: boolean; enabled: boolean; screen: boolean; accessibility: boolean; online: boolean; locked?: boolean | null; unlock?: 'available' | 'missing' | 'unsupported'; error?: string | null; component?: { name: string; path: string; version: string; fingerprint?: string; installed?: boolean; updatePending?: boolean; pendingVersion?: string } }
 export default function RemoteAuthorizationControl() {
   const [status, setStatus] = useState<Status | null>(null);
   const [expanded, setExpanded] = useState(false);
@@ -77,6 +77,12 @@ export default function RemoteAuthorizationControl() {
     {expanded && <section aria-label="远程授权设置" style={{ position: 'absolute', top: 40, left: 0, width: 'min(370px, 70vw)', zIndex: 30, padding: 18, borderRadius: 12, background: 'var(--bg-surface, white)', color: 'var(--text-primary)', border: '1px solid var(--border-default)', boxShadow: '0 10px 40px #0003', fontSize: 13 }}>
       <strong>远程授权</strong>
       <p style={{ lineHeight: 1.6, margin: '10px 0' }}>{windows ? '开启后，已配对设备可查看桌面；接管后可使用鼠标和键盘。' : '在系统设置中允许「AgentRoam Remote Desktop」。屏幕录制用于手机查看，辅助功能用于鼠标键盘控制。'}</p>
+      {!windows && status.component && <div aria-label="远控组件信息" style={{ fontSize: 12, lineHeight: 1.6, overflowWrap: 'anywhere' }}>
+        <div>组件版本：{status.component.version === 'legacy' ? `旧版（${status.component.fingerprint ?? '未记录版本'}）` : status.component.version}</div>
+        <div>授权应用位置：<code>{status.component.path}</code></div>
+        {status.component.installed === false && <p>点击“重新检测”后会安装到此位置。</p>}
+        {status.component.updatePending && <p role="status">旧版组件仍在使用。结束其他 AgentRoam 的桌面共享后，点击“重新检测”更新。</p>}
+      </div>}
       {!status.supported ? <p>目前支持 Windows 10/11 x64 和 macOS 14 及以上的 Apple Silicon 电脑。</p> : !status.installed ? <p>当前 CLI 未包含远程授权组件，请升级 CLI。</p> : <>
         {!windows && (['screen', 'accessibility'] as const).map((permission) => <div key={permission} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, margin: '12px 0' }}>
           <span>{permission === 'screen' ? '屏幕录制' : '辅助功能'}：{status[permission] ? '已授权' : '待授权'}</span>

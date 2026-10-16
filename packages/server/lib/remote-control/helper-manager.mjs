@@ -1,9 +1,7 @@
-import { readFileSync } from 'node:fs';
-import { homedir } from 'node:os';
 import { createServer } from 'node:net';
 import { mkdtemp, chmod, rm, access } from 'node:fs/promises';
 import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { MacRemoteHelperApp, bundledRemoteAppPath } from './macos-helper-app.mjs';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 const run = promisify(execFile);
@@ -61,23 +59,17 @@ export function decodeVideoFrames(input) {
   return { frames, remaining: Buffer.from(input.subarray(offset)) };
 }
 
-function defaultAppPath() {
-  const installed = join(homedir(), 'Library/Application Support/AgentRoamRemoteDesktop/Services.noindex/AgentRoam Remote Desktop.app');
-  const bundled = fileURLToPath(new URL('../../native/AgentRoam Remote Desktop.app', import.meta.url));
-  const executable = 'Contents/MacOS/agentroam-remote-desktop';
-  try {
-    if (readFileSync(join(installed, executable)).equals(readFileSync(join(bundled, executable)))) return installed;
-  } catch { /* Use this runtime's bundled version when not installed or outdated. */ }
-  return bundled;
-}
-
 export class RemoteHelper {
-  constructor({ appPath = defaultAppPath(), launch = (socket, videoSocket) => run('/usr/bin/open', ['-n', appPath, '--args', socket, videoSocket, String(process.pid)]), stopTimeoutMs = 1000 } = {}) {
-    this.appPath = appPath; this.launch = launch; this.stopTimeoutMs = stopTimeoutMs; this.pending = new Map(); this.videoListeners = new Set(); this.audioListeners = new Set(); this.sequence = 0; this.generation = 0;
+  constructor({ appPath, launch, application = appPath || launch ? null : new MacRemoteHelperApp(), stopTimeoutMs = 1000 } = {}) {
+    this.application = application;
+    this.appPath = appPath ?? application?.appPath ?? bundledRemoteAppPath();
+    this.launch = launch ?? ((socket, videoSocket) => run('/usr/bin/open', ['-n', this.appPath, '--args', socket, videoSocket, String(process.pid)]));
+    this.stopTimeoutMs = stopTimeoutMs; this.pending = new Map(); this.videoListeners = new Set(); this.audioListeners = new Set(); this.sequence = 0; this.generation = 0;
   }
   onVideo(listener) { this.videoListeners.add(listener); return () => this.videoListeners.delete(listener); }
   onAudio(listener) { this.audioListeners.add(listener); return () => this.audioListeners.delete(listener); }
-  async available() { try { await access(join(this.appPath, 'Contents/MacOS/agentroam-remote-desktop')); return true; } catch { return false; } }
+  async available() { if (this.application) return this.application.available(); try { await access(join(this.appPath, 'Contents/MacOS/agentroam-remote-desktop')); return true; } catch { return false; } }
+  async describe() { return this.application ? this.application.describe() : { name: 'AgentRoam Remote Desktop', path: this.appPath, version: 'unknown' }; }
   start() {
     if (this.socket && !this.socket.destroyed && this.videoSocket && !this.videoSocket.destroyed) return Promise.resolve();
     if (!this.starting) this.starting = this.open().finally(() => { this.starting = null; });
@@ -87,6 +79,11 @@ export class RemoteHelper {
     await this.stop();
     const generation = this.generation;
     if (!await this.available()) throw new Error('当前 CLI 未包含远程授权组件，请升级 CLI');
+    if (this.application) return this.application.withPreparedApp(() => this.openPrepared(generation));
+    return this.openPrepared(generation);
+  }
+  async openPrepared(generation) {
+    if (generation !== this.generation) throw new Error('远程授权组件启动已取消');
     this.directory = await mkdtemp('/tmp/agentroam-remote-');
     await chmod(this.directory, 0o700);
     if (generation !== this.generation) { await this.stop(); throw new Error('远程授权组件启动已取消'); }

@@ -60,11 +60,18 @@ for (const required of [
   "package/runtime/lib/markdown-preview.mjs",
   "package/runtime/lib/ai-hub-relay-client.mjs",
   "package/runtime/lib/project-picker-directory.mjs",
+  "package/runtime/lib/remote-control/macos-helper-app.mjs",
   "package/runtime/.next/BUILD_ID",
   "package/runtime/node_modules/node-pty/package.json",
   "package/runtime/node_modules/better-sqlite3/package.json",
 ]) {
   if (!list.includes(required)) throw new Error(`missing runtime file: ${required}`);
+}
+
+if (manifest.target === 'darwin-arm64') {
+  const payload = 'package/runtime/native/Support.noindex/AgentRoam Remote Desktop.app';
+  if (!list.includes(`${payload}/Contents/Resources/agentroam-component.json`)) throw new Error('missing remote helper version metadata');
+  if (list.some(path => path.startsWith('package/runtime/native/AgentRoam Remote Desktop.app/'))) throw new Error('remote helper payload must be inside Support.noindex');
 }
 
 if (manifest.target === "windows-amd64") {

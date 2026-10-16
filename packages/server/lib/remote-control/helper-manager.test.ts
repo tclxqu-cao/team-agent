@@ -6,6 +6,26 @@ function connectHelperSockets(controlPath:string, videoPath:string) {
   return { control: connect(controlPath), video: connect(videoPath) };
 }
 
+it('launches the installed component while holding its update lock until sockets connect', async () => {
+  const phases: string[] = [];
+  let clients: ReturnType<typeof connectHelperSockets>;
+  const application = { appPath: '/fixed/AgentRoam Remote Desktop.app', available: async () => true,
+    withPreparedApp: async (use: () => Promise<void>) => { phases.push('install'); try { await use(); } finally { phases.push('unlock'); } },
+    describe: async () => ({ path: '/fixed/AgentRoam Remote Desktop.app', version: '0.2.0-preview.54' }),
+  };
+  const helper = new RemoteHelper({ application, launch: async (controlPath: string, videoPath: string) => {
+    phases.push('launch'); clients = connectHelperSockets(controlPath, videoPath);
+  } });
+  try {
+    await helper.start();
+    expect(helper.appPath).toBe(application.appPath);
+    expect(phases).toEqual(['install', 'launch', 'unlock']);
+    expect(helper.socket.destroyed).toBe(false);
+    expect(helper.videoSocket.destroyed).toBe(false);
+    expect(await helper.describe()).toMatchObject({ path: application.appPath });
+  } finally { clients!.control.destroy(); clients!.video.destroy(); await helper.stop(); }
+});
+
 it.each([true, false])('accepts legacy hit-test replies with editable=%s and no ok flag', async (editable) => {
   let clients: ReturnType<typeof connectHelperSockets>;
   const helper = new RemoteHelper({ launch: async (controlPath: string, videoPath: string) => {

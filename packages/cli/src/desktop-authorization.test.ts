@@ -88,6 +88,14 @@ describe("optional desktop authorization wizard", () => {
       { action: "request-permission", permission: "accessibility" }, { action: "enable" }]);
   });
 
+  it("shows the installed application path and pending update before authorization", async () => {
+    const f = fixture({ component: { name: 'AgentRoam Remote Desktop', path: '/Users/test/Library/Application Support/AgentRoamRemoteDesktop/Services.noindex/AgentRoam Remote Desktop.app', version: '0.2.0-preview.53', updatePending: true, pendingVersion: '0.2.0-preview.54' } });
+    expect(await authorizeRemoteDesktop(dataDir, f.context)).toBe(true);
+    expect(f.context.log).toHaveBeenCalledWith('远控组件：0.2.0-preview.53');
+    expect(f.context.log).toHaveBeenCalledWith(expect.stringContaining('Services.noindex/AgentRoam Remote Desktop.app'));
+    expect(f.context.log).toHaveBeenCalledWith(expect.stringContaining('结束其他 AgentRoam 的桌面共享'));
+  });
+
   it("accepts Enter to skip in the terminal and releases the input for later pairing", async () => {
     const f = fixture();
     const input = new PassThrough();

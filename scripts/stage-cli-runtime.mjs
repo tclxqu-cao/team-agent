@@ -45,7 +45,9 @@ if (targetName === "darwin-arm64") {
   if (!process.env.AGENT_REUSE_REMOTE_HELPER) {
     execFileSync(process.execPath, [resolve(root, "scripts/build-cli-remote-helper.mjs")], { stdio: "inherit" });
   }
-  await cp(resolve(server, "native/AgentRoam Remote Desktop.app"), resolve(target, "native/AgentRoam Remote Desktop.app"), { recursive: true });
+  // Payloads in versioned npm directories must not become another installed app.
+  await mkdir(resolve(target, "native/Support.noindex"), { recursive: true });
+  await cp(resolve(server, "native/AgentRoam Remote Desktop.app"), resolve(target, "native/Support.noindex/AgentRoam Remote Desktop.app"), { recursive: true, dereference: true });
 }
 if (targetName === "windows-amd64") {
   execFileSync(process.execPath, [resolve(root, "scripts/build-windows-remote-helper.mjs")], { stdio: "inherit" });
