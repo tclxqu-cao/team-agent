@@ -1,0 +1,38 @@
+packages/server/lib/remote-control/helper-manager.mjs
+  s_8ae0ad512d327e::t_c85d0a75cafd12 125-127,177
+packages/desktop/renderer/components/BrowserLivePanel.tsx
+  s_8ae0ad512d327e::t_f2ba37ec0d8fe7 1353-1357
+packages/desktop/main/desktop-input-gateway.ts
+  s_8ae0ad512d327e::t_998e653e696e7e 152
+  s_8ae0ad512d327e::t_c85d0a75cafd12 14,176-177
+packages/desktop/native/desktop-input.swift
+  s_8ae0ad512d327e::t_c85d0a75cafd12 591-593
+packages/desktop/main/desktop-input-gateway.test.ts
+  s_8ae0ad512d327e::t_b2f8237a1ecc2c 34-49
+packages/webapp/tests/remote-desktop/regression.mjs
+  s_8ae0ad512d327e::t_e9b8620f1ec8c6 26-28,33,37-38
+  s_8ae0ad512d327e::t_4d1cbbacfe2862 40-41
+  s_8ae0ad512d327e::t_0604f180676094 76-81,102
+  s_8ae0ad512d327e::t_7960da66944219 47-58,88,93,103-104,118,139,160
+  s_8ae0ad512d327e::t_3622b801048a61 125-126
+  s_8ae0ad512d327e::t_38533adff017d1 31-32,34-36
+  s_8ae0ad512d327e::t_420643f3b5cc69 142-155
+packages/server/lib/remote-control/helper-manager.test.ts
+  s_8ae0ad512d327e::t_b2f8237a1ecc2c 9-31
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c54da7c63c1204e1462d8e38f76af83e60df763b",
+  "prompts": {},
+  "sessions": {
+    "s_8ae0ad512d327e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1403a-e47d-74b3-a1b2-033fac4390ad",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
