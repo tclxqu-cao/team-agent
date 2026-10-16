@@ -1,0 +1,51 @@
+packages/cli/src/desktop-authorization.test.ts
+  s_383c021fd01321::t_aeba13005a1423 91-98
+packages/cli/src/desktop-authorization.ts
+  s_383c021fd01321::t_eb14b9ef50d3d1 19,56-63,81-87,166
+packages/server/lib/remote-control/helper-manager.mjs
+  s_383c021fd01321::t_02020d39349982 4,63-67,71-72,82-86
+packages/server/lib/remote-control/helper-manager.test.ts
+  s_383c021fd01321::t_10001d4baca3bf 9-28
+packages/server/lib/remote-control/remote-authorization.mjs
+  s_383c021fd01321::t_d49ccbfc8fe248 106-107
+packages/server/lib/remote-control/remote-authorization.test.ts
+  s_383c021fd01321::t_685c21a92d1177 45-53
+packages/webapp/src/presentation/RemoteAuthorizationControl.tsx
+  s_383c021fd01321::t_892619e996047b 20,80-85
+scripts/audit-runtime-tarball.mjs
+  s_383c021fd01321::t_4c525cf82f15ff 63,71-76
+scripts/build-cli-remote-helper.mjs
+  s_383c021fd01321::t_bcd9ef987ce424 7-8,10,66-69
+scripts/runtime-native-files.mjs
+  s_383c021fd01321::t_c1fceec283afc2 8
+scripts/stage-cli-runtime.mjs
+  s_383c021fd01321::t_0a8c0c2247d46d 48-50
+packages/server/lib/remote-control/macos-helper-app.mjs
+  s_8ae0ad512d327e::t_b557ea23788d82 1-181
+packages/server/lib/remote-control/macos-helper-app.test.ts
+  s_8ae0ad512d327e::t_2e516500bc414e 1-179
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c4c60e9332bdd0bc7332b2af7177f1d2532693a7",
+  "prompts": {},
+  "sessions": {
+    "s_383c021fd01321": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a13f9b-7e14-7d72-93be-8065810877bf",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_8ae0ad512d327e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1403a-e47d-74b3-a1b2-033fac4390ad",
+        "model": "unknown"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
