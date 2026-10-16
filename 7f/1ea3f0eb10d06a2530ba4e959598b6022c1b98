@@ -1,0 +1,52 @@
+packages/desktop/renderer/lite.html
+  s_383c021fd01321::t_3a1378bdc25291 1-2
+packages/desktop/main/lite-preload.ts
+  s_383c021fd01321::t_3a1378bdc25291 1-7
+packages/desktop/electron-builder-lite.yml
+  s_383c021fd01321::t_3a1378bdc25291 1-30
+packages/desktop/renderer/lite/main.tsx
+  s_383c021fd01321::t_3a1378bdc25291 1-6
+packages/desktop/renderer/lite/LiteApp.tsx
+  s_383c021fd01321::t_3a1378bdc25291 1-56
+packages/desktop/main/mobile-pairing.ts
+  s_383c021fd01321::t_3a1378bdc25291 24,32-40
+packages/desktop/renderer/lite/PermissionDialog.tsx
+  s_383c021fd01321::t_3a1378bdc25291 1-37
+.github/workflows/desktop-release-verify.yml
+  s_383c021fd01321::t_57efe4ee503d1f 6-10,33-35,46,54,101,180,188,190
+packages/desktop/tsconfig.preload.json
+  s_383c021fd01321::t_3a1378bdc25291 12
+packages/desktop/main/lite-pairing.test.ts
+  s_383c021fd01321::t_b095187cf17efc 1-52
+packages/desktop/main/lite-index.ts
+  s_383c021fd01321::t_3a1378bdc25291 1-26,33-48,50-63
+  s_383c021fd01321::t_57efe4ee503d1f 27-32,49
+packages/desktop/main/lite-pairing.ts
+  s_383c021fd01321::t_3a1378bdc25291 1-40
+packages/desktop/renderer/lite/lite.css
+  s_383c021fd01321::t_3a1378bdc25291 1-33
+packages/desktop/package.json
+  s_383c021fd01321::t_3a1378bdc25291 3,13-16
+packages/desktop/vite.lite.config.ts
+  s_383c021fd01321::t_3a1378bdc25291 1-8
+packages/desktop/renderer/lite/api.ts
+  s_383c021fd01321::t_3a1378bdc25291 1-10
+.gitignore
+  s_383c021fd01321::t_283307622efca4 20
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7f1ea3f0eb10d06a2530ba4e959598b6022c1b98",
+  "prompts": {},
+  "sessions": {
+    "s_383c021fd01321": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a13f9b-7e14-7d72-93be-8065810877bf",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
