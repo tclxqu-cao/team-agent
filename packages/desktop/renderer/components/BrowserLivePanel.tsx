@@ -487,7 +487,7 @@ export default function BrowserLivePanel({ open, active = true, agentSessionId, 
       if (field) {
         editableField.current = field;
       }
-      if (requestIme && !imeOnRef.current) {
+      if (requestIme && !imeOnRef.current && !window.matchMedia("(pointer: coarse)").matches) {
         // Focus only confirmed text fields; a background tap must not flash
         // the keyboard. Cached bounds also allow focus inside the next gesture.
         textInputRef.current?.focus({ preventScroll: true });
@@ -1503,8 +1503,13 @@ export default function BrowserLivePanel({ open, active = true, agentSessionId, 
                       // WebKit needs focus in a gesture. Only a known text
                       // region may focus before the asynchronous hit-test.
                       const vp = frame?.viewport ?? selected?.viewport;
-                      if (!imeOnRef.current && remoteFieldContains(editableField.current, vp, point.x, point.y)) {
-                        textInputRef.current?.focus({ preventScroll: true });
+                      if (remoteFieldContains(editableField.current, vp, point.x, point.y)) {
+                        const input = textInputRef.current;
+                        // iOS can retain DOM focus after dismissing its keyboard.
+                        // Renew focus synchronously inside this gesture; an AX
+                        // reply arriving later cannot open the system keyboard.
+                        if (input && document.activeElement === input) input.blur();
+                        input?.focus({ preventScroll: true });
                         setFieldHint(false);
                       }
                       const last = lastTapRef.current;
