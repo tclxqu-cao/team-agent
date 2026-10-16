@@ -1,5 +1,7 @@
 import { selectAssets } from "./releases.js";
-import { releaseSnapshot } from "./release-snapshot.js";
+const { releaseSnapshot } = await import(
+  `./release-snapshot.js${new URL(import.meta.url).search}`
+);
 const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 if ("IntersectionObserver" in window) {
   document.documentElement.classList.add("js");

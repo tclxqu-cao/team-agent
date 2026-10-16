@@ -65,7 +65,8 @@ test("every local link, image, script and guide anchor resolves under a project 
         !url.startsWith("/"),
         `absolute URL breaks project base: ${url}`,
       );
-      const [path, id] = url.split("#");
+      const [resource, id] = url.split("#");
+      const path = resource.split("?")[0];
       if (path) await access(root + path);
       if (id) {
         const target = path ? await readFile(root + path, "utf8") : html;
