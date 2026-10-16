@@ -90,8 +90,8 @@ test("published fallback provides direct downloads for every supported platform"
   const { releaseSnapshot } = await import("../public/release-snapshot.js");
   const assets = selectAssets(releaseSnapshot);
   for (const platform of ["mac", "windows", "android"]) {
-    assert.equal(assets[platform].tag, "desktop-v0.2.0-preview.22");
+    assert.equal(assets[platform].tag, "desktop-v0.2.0-preview.24");
     assert.ok(assets[platform].size > 1000000);
-    assert.ok(assets[platform].browser_download_url.includes("/desktop-v0.2.0-preview.22/"));
+    assert.ok(assets[platform].browser_download_url.includes("/desktop-v0.2.0-preview.24/"));
   }
 });
