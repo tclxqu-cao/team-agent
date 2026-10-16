@@ -19,15 +19,20 @@ async function main() {
     : process.platform === "win32" && process.arch === "x64" ? "windows-amd64" : null;
   if (!target) throw new Error("当前系统不支持自动准备运行环境。");
   const dataDir = join(homedir(), ".agentroam");
+  const runtimePackage = target === "darwin-arm64" ? "agentroam-runtime-darwin-arm64" : "agentroam-runtime-win32-x64";
+  const runtimeVersion = cliPackage.optionalDependencies[runtimePackage];
+  let bundled: string[];
+  try {
+    bundled = await bundledRuntimePackages(join(dirname(fileURLToPath(import.meta.url)), "../runtime"), target, cliPackage.version, runtimeVersion);
+  } catch {
+    throw Object.assign(new Error("Desktop runtime bundle is incompatible"), { code: "RUNTIME_INCOMPATIBLE" });
+  }
   progress("正在准备 Node.js 运行环境…");
   const node = await ensureManagedNode({ dataDir, target, onProgress: () => {} });
   const bin = dirname(node.executable);
   const npm = process.platform === "win32" ? join(bin, "node_modules/npm/bin/npm-cli.js") : join(bin, "../lib/node_modules/npm/bin/npm-cli.js");
   const installation = join(dataDir, "desktop-cli", `${desktopPackage.version}-${cliPackage.version}`);
   const cli = join(installation, "node_modules/agentroam/bin/agentroam.mjs");
-  const runtimePackage = target === "darwin-arm64" ? "agentroam-runtime-darwin-arm64" : "agentroam-runtime-win32-x64";
-  const runtimeVersion = cliPackage.optionalDependencies[runtimePackage];
-  const bundled = await bundledRuntimePackages(join(dirname(fileURLToPath(import.meta.url)), "../runtime"), target, cliPackage.version, runtimeVersion);
   const environment: NodeJS.ProcessEnv = { ...process.env, PATH: `${bin}${delimiter}${process.env.PATH || ""}`, AGENTROAM_MANAGED_NODE: node.executable, AGENTROAM_DATA_DIR: dataDir, AGENTROAM_INSTALL_REMOTE_DESKTOP: "skip" };
   delete environment.ELECTRON_RUN_AS_NODE;
   await mkdir(installation, { recursive: true });

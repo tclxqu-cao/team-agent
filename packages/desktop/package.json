@@ -12,12 +12,12 @@
     "smoke:computer-use": "bun ../../scripts/computer-use-smoke.mjs",
     "compile": "bun run --cwd ../voice-service build && bunx tsc && bunx tsc -p tsconfig.preload.json && mv dist/main/preload.js dist/main/preload.cjs && mv dist/main/lite-preload.js dist/main/lite-preload.cjs",
     "build:lite": "bun run build:bootstrap && bunx --bun vite build --config vite.lite.config.ts && bun run compile",
-    "package:lite:mac": "bun run build:lite && node ../../scripts/stage-agent-packages-for-packaging.mjs && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --config electron-builder-lite.yml --mac dmg --arm64",
-    "package:lite:win": "bun run build:lite && node ../../scripts/stage-agent-packages-for-packaging.mjs && electron-builder --config electron-builder-lite.yml --win nsis --x64",
+    "package:lite:mac": "node scripts/verify-staged-runtime.mjs --target darwin-arm64 && bun run build:lite && node ../../scripts/stage-agent-packages-for-packaging.mjs && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --config electron-builder-lite.yml --mac dmg --arm64",
+    "package:lite:win": "node scripts/verify-staged-runtime.mjs --target windows-amd64 && bun run build:lite && node ../../scripts/stage-agent-packages-for-packaging.mjs && electron-builder --config electron-builder-lite.yml --win nsis --x64",
     "electron": "node scripts/configure-dev-app-name.mjs && bun run compile && NODE_ENV=production node scripts/run-dev-app.mjs",
     "start": "node scripts/configure-dev-app-name.mjs && bunx --bun vite build && bun run compile && NODE_ENV=production node scripts/run-dev-app.mjs",
-    "package:mac": "bun run build && node ../../scripts/stage-agent-packages-for-packaging.mjs && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --config electron-builder.yml --mac dmg --arm64",
-    "package:win": "bun run build && node ../../scripts/stage-agent-packages-for-packaging.mjs && electron-builder --config electron-builder.yml --win nsis --x64"
+    "package:mac": "node scripts/verify-staged-runtime.mjs --target darwin-arm64 && bun run build && node ../../scripts/stage-agent-packages-for-packaging.mjs && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --config electron-builder.yml --mac dmg --arm64",
+    "package:win": "node scripts/verify-staged-runtime.mjs --target windows-amd64 && bun run build && node ../../scripts/stage-agent-packages-for-packaging.mjs && electron-builder --config electron-builder.yml --win nsis --x64"
   },
   "dependencies": {
     "@agent/computer-use": "*",
