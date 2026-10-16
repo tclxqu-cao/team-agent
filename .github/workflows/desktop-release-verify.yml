@@ -156,6 +156,35 @@ jobs:
           $env:AGENTROAM_INSTALL_REMOTE_DESKTOP = 'skip'
           $cli = @(Get-ChildItem "$testProfile/.agentroam/desktop-cli" -Filter agentroam.mjs -Recurse | Where-Object { $_.FullName -match 'node_modules[\\/]agentroam[\\/]bin' })
           if ($cli.Count -ne 1) { throw 'Bundled CLI missing or ambiguous' }
+          @'
+          const { readFile } = await import('node:fs/promises');
+          const { resolve } = await import('node:path');
+          const { pathToFileURL } = await import('node:url');
+          const cli = process.argv[2];
+          const dataDir = process.env.AGENTROAM_DATA_DIR;
+          const state = JSON.parse(await readFile(resolve(dataDir, 'service/state.json'), 'utf8'));
+          const local = new URL(state.localUrl).origin;
+          const { pairingAdmin } = await import(pathToFileURL(resolve(cli, '../../dist/device-pairing.js')));
+          const { grant } = await pairingAdmin(dataDir, 'qr');
+          const paired = await fetch(`${local}/api/pairing/qr-exchange`, {
+            method: 'POST', headers: { 'content-type': 'application/json', origin: local },
+            body: JSON.stringify({ grant, name: 'Installer acceptance' }),
+          });
+          if (!paired.ok) throw new Error(`Pairing failed: HTTP ${paired.status}`);
+          const cookie = paired.headers.get('set-cookie')?.split(';')[0];
+          if (!cookie) throw new Error('Pairing session missing');
+          for (const [route, init] of [
+            ['/api/agent/model', {}],
+            ['/api/collaboration', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'groups' }) }],
+          ]) {
+            const response = await fetch(`${local}${route}`, { ...init, headers: { ...init.headers, cookie, origin: local } });
+            if (!response.ok) throw new Error(`${route}: HTTP ${response.status}`);
+            await response.json();
+            console.log(`Installed runtime API passed: ${route}`);
+          }
+          '@ | Set-Content "$env:RUNNER_TEMP/verify-installed-api.mjs"
+          & $node "$env:RUNNER_TEMP/verify-installed-api.mjs" $cli[0].FullName
+          if ($LASTEXITCODE -ne 0) { throw 'Installed runtime API verification failed' }
           & $node $cli[0].FullName doctor --data-dir "$testProfile/.agentroam"
           if ($LASTEXITCODE -ne 0) { throw 'Installed CLI doctor failed' }
           $runtime = @(Get-ChildItem "$testProfile/.agentroam/desktop-cli" -Filter manifest.json -Recurse | Where-Object { $_.FullName -match 'agentroam-runtime-win32-x64[\\/]manifest.json$' })
