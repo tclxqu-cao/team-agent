@@ -10,7 +10,7 @@ import {
   type SessionToolResultRef,
 } from "@agent/core";
 import { createTaskCompletionNotification } from "../../../core/src/application/notification/task-completion";
-import { ArrowDownToLine, AlarmClock, Check, Copy, CornerUpRight, FileText, GitFork, GripVertical, LoaderCircle, Pencil, Play, RefreshCw, Square, Target, Trash2, Unplug, Volume2 } from "lucide-react";
+import { ArrowDownToLine, AlarmClock, Check, Copy, CornerUpRight, FileText, GitFork, GripVertical, LoaderCircle, PanelLeftClose, PanelLeftOpen, Pencil, Play, RefreshCw, Square, Target, Trash2, Unplug, Volume2 } from "lucide-react";
 import AgentBrandIcon from "./AgentBrandIcon";
 import MessageLink from "./MessageLink";
 import MermaidBlock from "./MermaidBlock";
@@ -446,6 +446,9 @@ interface ChatViewProps {
   sessionSummary?: UnifiedSessionSummary;
   workspacePath?: string | null;
   onOpenSettings?: () => void;
+  sidebarCollapsed?: boolean;
+  onToggleSidebar?: () => void;
+  onOpenCollaborationDashboard?: () => void;
   settingsOpen?: boolean;
   onHideToBackground?: () => void;
   onOpenHub?: () => void;
@@ -538,6 +541,9 @@ export default function ChatView({
   sessionSummary,
   workspacePath = null,
   onOpenSettings,
+  sidebarCollapsed = false,
+  onToggleSidebar,
+  onOpenCollaborationDashboard,
   settingsOpen = false,
   onHideToBackground,
   onOpenHub,
@@ -3989,6 +3995,17 @@ export default function ChatView({
         borderBottom: "1px solid var(--border-subtle)",
         WebkitAppRegion: "drag",
       } as React.CSSProperties}>
+        {onToggleSidebar && <button
+          type="button"
+          className="ui-icon-button sidebar-visibility-toggle"
+          onClick={onToggleSidebar}
+          aria-label={sidebarCollapsed ? "展开目录与会话列表" : "收起目录与会话列表"}
+          title={sidebarCollapsed ? "展开目录与会话列表" : "收起目录与会话列表"}
+          aria-expanded={!sidebarCollapsed}
+          aria-controls="workspace-sidebar"
+        >
+          {sidebarCollapsed ? <PanelLeftOpen size={17} aria-hidden="true" /> : <PanelLeftClose size={17} aria-hidden="true" />}
+        </button>}
         <span style={{
           flex: 1,
           minWidth: 0,
@@ -4018,6 +4035,7 @@ export default function ChatView({
               ? () => { void handleCodexRelease(); }
               : undefined}
             onOpenHub={onOpenHub}
+            onOpenCollaborationDashboard={onOpenCollaborationDashboard}
             onToggleAppearance={onToggleAppearance}
             onOpenSettings={onOpenSettings}
           />

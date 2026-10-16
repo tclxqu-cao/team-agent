@@ -7,6 +7,7 @@ import CollaborationLauncher from "./components/collaboration/CollaborationLaunc
 import CollaborationCreateDialog from "./components/collaboration/CollaborationCreateDialog";
 import CollaborationDashboard from "./components/collaboration/CollaborationDashboard";
 import CollaborationPage from "./components/collaboration/CollaborationPage";
+import DesktopWorkspaceTabs from "./components/collaboration/DesktopWorkspaceTabs";
 import type { CollaborationGroup } from "@agent/core/domain/collaboration/types";
 import { COLLABORATION_OPEN_TYPE, readCollaborationCreate } from "../../core/src/domain/web-console/CollaborationTabBridge";
 import AIHubView from "./components/AIHubView";
@@ -43,6 +44,7 @@ import AgentManager from "./components/AgentManager";
 import LSPServerList from "./components/LSPServerList";
 import WakeOverlay from "./components/WakeOverlay";
 import AgentWorkspaceSwitcher from "./components/AgentWorkspaceSwitcher";
+import AgentSessionRail from "./components/AgentSessionRail";
 import AgentBrandIcon from "./components/AgentBrandIcon";
 import DesktopAppActions from "./components/DesktopAppActions";
 import DesktopFlowStudioView from "./components/DesktopFlowStudioView";
@@ -87,6 +89,7 @@ import {
   type SessionActivity,
 } from "@agent/core/domain/session/SessionActivity";
 import { refreshableWorkspaceIds } from "./lib/visible-session-refresh";
+import { useResizableSidebar } from "./lib/use-resizable-sidebar";
 
 type SettingsTab = "settings" | "mcp" | "memory" | "skill" | "agent" | "lsp";
 
@@ -275,6 +278,13 @@ export default function App() {
   const [collaborationTabs, setCollaborationTabs] = useState<CollaborationGroup[]>([]);
   const [activeCollaboration, setActiveCollaboration] = useState<string | null>(null);
   const [collaborationDashboardOpen, setCollaborationDashboardOpen] = useState(false);
+  const [collaborationDashboardVisible, setCollaborationDashboardVisible] = useState(false);
+  const hasWorkspaceTabs = collaborationDashboardVisible || collaborationTabs.length > 0;
+  const openCollaborationDashboard = () => {
+    setCollaborationDashboardVisible(true);
+    setCollaborationDashboardOpen(true);
+    setActiveCollaboration(null);
+  };
   const [collaborationCreateOpen, setCollaborationCreateOpen] = useState(false);
   const [collaborationGroupsRevision, setCollaborationGroupsRevision] = useState(0);
   const openCollaboration = (group: CollaborationGroup) => {
@@ -319,9 +329,9 @@ export default function App() {
       authoritativeStatus: session.status,
       locallyRunning: runningSessionId === session.id,
       needsInput: sessionsNeedingInput.includes(session.id),
-      stale: Boolean(projectId && (staleProjectIds.has(projectId) || projectSessionErrors[projectId])),
+      stale: Boolean(session.agentType === activeAgent && projectId && (staleProjectIds.has(projectId) || projectSessionErrors[projectId])),
     })
-  ), [projectSessionErrors, runningSessionId, sessionsNeedingInput, staleProjectIds]);
+  ), [activeAgent, projectSessionErrors, runningSessionId, sessionsNeedingInput, staleProjectIds]);
 
   const isSessionRunning = useCallback(
     (session: Session) => {
@@ -712,33 +722,11 @@ export default function App() {
   const allProjectsCollapsed = collapsibleProjectIds.length > 0
     && collapsibleProjectIds.every((projectId) => !expandedProjects.has(projectId));
 
-  const [sidebarWidth, setSidebarWidth] = useState(300);
-  const [sidebarDragging, setSidebarDragging] = useState(false);
-  const isDragging = useRef(false);
-  const dragStartX = useRef(0);
-  const dragStartWidth = useRef(0);
-
-  const handleDrag = useCallback((e: MouseEvent) => {
-    if (!isDragging.current) return;
-    const w = Math.min(480, Math.max(160, dragStartWidth.current + e.clientX - dragStartX.current));
-    setSidebarWidth(w);
-  }, []);
-
-  const stopDrag = useCallback(() => {
-    isDragging.current = false;
-    setSidebarDragging(false);
-    document.removeEventListener("mousemove", handleDrag);
-    document.removeEventListener("mouseup", stopDrag);
-  }, [handleDrag]);
-
-  const startDrag = useCallback((e: React.MouseEvent) => {
-    isDragging.current = true;
-    setSidebarDragging(true);
-    dragStartX.current = e.clientX;
-    dragStartWidth.current = sidebarWidth;
-    document.addEventListener("mousemove", handleDrag);
-    document.addEventListener("mouseup", stopDrag);
-  }, [sidebarWidth, handleDrag, stopDrag]);
+  const {
+    width: sidebarWidth, collapsed: sidebarCollapsed, dragging: sidebarDragging,
+    toggle: toggleSidebar, resizeProps: sidebarResizeProps,
+  } = useResizableSidebar();
+  const sidebarHidden = !mobileDrawer && (sidebarCollapsed || layout === "focus");
 
   const [notice, setNotice] = useState<string | null>(null);
   const [noticeType, setNoticeType] = useState<"success" | "info" | "error">("success");
@@ -772,8 +760,8 @@ export default function App() {
     if (!selection.sessionId) setTodos([]);
   };
 
-  const handleAgentChange = (agentType: AgentType) => {
-    if (agentType === activeAgentRef.current) return;
+  const handleAgentChange = (agentType: AgentType, restoreCachedSelection = false) => {
+    if (agentType === activeAgentRef.current && !restoreCachedSelection) return;
     const currentAgent = activeAgentRef.current;
     const currentPartition = workspaceCacheRef.current.agents[currentAgent];
     if (currentPartition) {
@@ -1503,13 +1491,17 @@ export default function App() {
   };
 
   return (
-    <div className="app-shell" style={{
+    <div className={`app-shell${sidebarHidden ? " is-sidebar-collapsed" : ""}${sidebarDragging ? " is-sidebar-dragging" : ""}${hasWorkspaceTabs ? " has-workspace-tabs" : ""}`}
+      data-desktop-platform={!webShell && /Mac/.test(navigator.platform) ? "darwin" : undefined}
+      style={{
       display: "flex",
       height: webShell ? "100dvh" : "100vh",
       width: "100vw",
       background: "var(--bg-deepest)",
       position: "relative",
       overflow: "hidden",
+      boxSizing: "border-box",
+      paddingTop: hasWorkspaceTabs ? 52 : 0,
     }}>
       <UpdateNotice />
       {collaborationCreateOpen && createPortal(<CollaborationCreateDialog
@@ -1522,25 +1514,61 @@ export default function App() {
           openCollaboration(group);
         }}
       />, document.body)}
+      {hasWorkspaceTabs && <DesktopWorkspaceTabs
+        groups={collaborationTabs}
+        dashboardVisible={collaborationDashboardVisible}
+        activeId={collaborationDashboardOpen ? "dashboard" : activeCollaboration ?? "assistant"}
+        onSelect={id => {
+          setCollaborationDashboardOpen(id === "dashboard");
+          setActiveCollaboration(id === "assistant" || id === "dashboard" ? null : id);
+        }}
+        onClose={id => {
+          if (id === "dashboard") {
+            setCollaborationDashboardVisible(false);
+            setCollaborationDashboardOpen(false);
+          } else {
+            setCollaborationTabs(current => current.filter(group => group.id !== id));
+            if (activeCollaboration === id) setActiveCollaboration(null);
+          }
+        }}
+      />}
       {(activeCollaboration || collaborationDashboardOpen) && <div className="collab-desktop-overlay">
-        <nav className="collab-desktop-tabs" aria-label="工作页签">
-          <button onClick={() => { setActiveCollaboration(null); setCollaborationDashboardOpen(false); }}>智能助手</button>
-          <button onClick={() => setCollaborationDashboardOpen(true)}>群聊看板</button>
-          {collaborationTabs.map(group => <div className={`collab-desktop-tab${group.id === activeCollaboration ? " is-active" : ""}`} key={group.id}>
-            <button aria-current={group.id === activeCollaboration ? "page" : undefined} onClick={() => { setCollaborationDashboardOpen(false); setActiveCollaboration(group.id); }}>{group.name}</button>
-            <button aria-label={`关闭${group.name}`} onClick={() => {
-              setCollaborationTabs(current => current.filter(item => item.id !== group.id));
-              if (activeCollaboration === group.id) setActiveCollaboration(null);
-            }}>×</button>
-          </div>)}
-        </nav>
-        <div className="collab-desktop-body">{collaborationDashboardOpen ? <CollaborationDashboard cwd={selectedWorkspacePath || undefined} onOpen={openCollaboration} onClose={() => setCollaborationDashboardOpen(false)} onChanged={(id, group) => {
+        <div className="collab-desktop-body">{collaborationDashboardOpen ? <CollaborationDashboard cwd={selectedWorkspacePath || undefined} onOpen={openCollaboration} onClose={() => { setCollaborationDashboardOpen(false); setCollaborationDashboardVisible(false); }} onChanged={(id, group) => {
           setCollaborationGroupsRevision(revision => revision + 1);
           setCollaborationTabs(current => group ? current.map(item => item.id === id ? group : item) : current.filter(item => item.id !== id));
           if (!group && activeCollaboration === id) setActiveCollaboration(null);
         }}/> : activeCollaboration && <CollaborationPage key={`${activeCollaboration}-${collaborationGroupsRevision}`} groupId={activeCollaboration}/>}</div>
       </div>}
       <DesktopLiveControlBanner />
+      {!mobileDrawer && !flowStudioEntryUrl && <AgentSessionRail hidden={!sidebarHidden}
+        value={activeAgent} health={runtimeHealth} selectedSessionId={selectedSessionId}
+        getActivity={sessionActivity} onChange={handleAgentChange}
+        onUnavailable={message => { setNotice(message); setNoticeType("info"); setTimeout(() => setNotice(null), 3000); }}
+        onSelect={(session, snapshot) => {
+          const partition = workspaceCacheRef.current.agents[session.agentType] ?? emptyAgentWorkspacePartition();
+          workspaceCacheRef.current = {
+            ...workspaceCacheRef.current,
+            agents: {
+              ...workspaceCacheRef.current.agents,
+              [session.agentType]: {
+                ...partition,
+                workspaces: snapshot.workspaces,
+                nextCursor: null,
+                selectedWorkspaceId: session.projectId ?? null,
+                selectedSessionId: session.id,
+                sessions: Object.fromEntries(snapshot.workspaces.map(workspace => [workspace.workspaceId, {
+                  data: snapshot.sessions.filter(row => row.projectId === workspace.workspaceId),
+                  loaded: true,
+                  nextCursor: null,
+                }])),
+              },
+            },
+          };
+          handleAgentChange(session.agentType, true);
+          setCollaborationDashboardOpen(false);
+          setActiveCollaboration(null);
+        }}
+      />}
       {/* Web mobile: drawer mask + hamburger */}
       {!flowStudioEntryUrl && mobileDrawer && sidebarDrawerOpen && (
         <div
@@ -1578,17 +1606,6 @@ export default function App() {
           </svg>
         </button>
       )}
-      {/* Invisible drag region across the full top — covers titlebar height */}
-      <div className="app-drag-region" style={{
-        position: "fixed",
-        top: 0,
-        left: 0,
-        right: 0,
-        height: 52,
-        zIndex: 9999,
-        WebkitAppRegion: "drag",
-        pointerEvents: "none",
-      } as React.CSSProperties} />
       <div className="app-accent-glow" style={{
         position: "absolute",
         top: "-120px",
@@ -1605,8 +1622,13 @@ export default function App() {
       <>
       <aside
         className="app-sidebar"
+        id="workspace-sidebar"
+        aria-hidden={sidebarHidden || (mobileDrawer && !sidebarDrawerOpen)}
+        ref={element => { if (element) element.inert = sidebarHidden || (mobileDrawer && !sidebarDrawerOpen); }}
         style={{
           width: sidebarWidth,
+          flexShrink: 0,
+          marginLeft: sidebarHidden ? -sidebarWidth : 0,
           display: "flex",
           flexDirection: "column",
           background: "var(--bg-surface)",
@@ -1629,6 +1651,7 @@ export default function App() {
           } : {}),
         }}
       >
+        {!webShell && <div className="sidebar-window-drag-region" aria-hidden="true" />}
         {/* Logo / brand */}
         <div className="app-sidebar-brand" style={{
           padding: "0 20px 10px",
@@ -1971,7 +1994,7 @@ export default function App() {
         </div>
 
         <div className="sidebar-bottom-action">
-          <CollaborationLauncher showCreateButton={!webShell} refreshKey={collaborationGroupsRevision} onCreate={() => setCollaborationDashboardOpen(true)} onOpen={openCollaboration}/>
+          <CollaborationLauncher refreshKey={collaborationGroupsRevision} onOpen={openCollaboration}/>
           <button
             type="button"
             className="sidebar-new-session-primary"
@@ -2038,9 +2061,18 @@ export default function App() {
       {!mobileDrawer && (
       <div
         className={`app-sidebar-resizer${sidebarDragging ? " is-dragging" : ""}`}
-        onMouseDown={startDrag}
+        {...sidebarResizeProps}
+        role="separator"
+        aria-label="调整目录与会话列表宽度"
+        aria-controls="workspace-sidebar"
+        aria-orientation="vertical"
+        aria-valuemin={220}
+        aria-valuemax={480}
+        aria-valuenow={sidebarWidth}
+        tabIndex={sidebarCollapsed ? -1 : 0}
+        hidden={sidebarCollapsed && !sidebarDragging}
         style={{
-          left: sidebarWidth,
+          left: sidebarCollapsed ? 0 : sidebarWidth,
         }}
       />
       )}
@@ -2178,27 +2210,13 @@ export default function App() {
 
       <main className={`app-main${fileWorkspaceGateway ? " file-workspace-capable" : ""}${fileDrawerOpen && fileWorkspaceGateway ? " file-workspace-open" : ""}${fileDrawerOpen && fileWorkspaceGateway && filePreviewPath ? " file-workspace-preview-open" : ""}`} style={{
         flex: 1,
+        minWidth: 0,
+        marginLeft: sidebarHidden && !flowStudioEntryUrl ? 56 : 0,
         overflow: "hidden",
         background: "var(--bg-workspace)",
         position: "relative",
         zIndex: 5,
       }}>
-        {/* Focus layout: floating restore-sidebar chip */}
-        {layout === "focus" && !flowStudioEntryUrl && (
-          <button
-            onClick={() => setLayout("standard")}
-            title="返回标准布局"
-            style={{
-              position: "absolute", top: 12, left: 12, zIndex: 100,
-              padding: "5px 10px", borderRadius: 8,
-              border: "1px solid var(--border-default)",
-              background: "var(--bg-glass)",
-              color: "var(--text-muted)", fontSize: 11,
-              cursor: "pointer", backdropFilter: "blur(8px)",
-              WebkitAppRegion: "no-drag",
-            } as React.CSSProperties}
-          >← 侧边栏</button>
-        )}
         <div className="app-chat-surface" style={{
           height: "100%",
           paddingTop: 0,
@@ -2206,6 +2224,15 @@ export default function App() {
           background: "var(--chat-history-bg)",
         }}>
           <ChatView
+            sidebarCollapsed={sidebarHidden}
+            onToggleSidebar={!mobileDrawer && !flowStudioEntryUrl ? () => {
+              if (layout === "focus") {
+                setLayout("standard");
+                if (sidebarCollapsed) toggleSidebar();
+              }
+              else toggleSidebar();
+            } : undefined}
+            onOpenCollaborationDashboard={!webShell ? openCollaborationDashboard : undefined}
             activeAgentType={activeAgent}
             selectedProjectId={selectedProjectId}
             selectedSessionId={selectedSessionId}

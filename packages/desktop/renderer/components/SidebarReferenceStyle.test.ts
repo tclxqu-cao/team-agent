@@ -43,7 +43,7 @@ describe("AgentRoam reference sidebar", () => {
     const resizerCss = css.slice(cssStart, cssEnd);
 
     expect(start).toBeGreaterThan(-1);
-    expect(resizer).toContain("left: sidebarWidth");
+    expect(resizer).toContain("left: sidebarCollapsed ? 0 : sidebarWidth");
     expect(resizer).not.toContain("width: 4");
     expect(resizerCss).toContain("width: 8px");
     expect(resizerCss).toContain(".app-sidebar-resizer::after");

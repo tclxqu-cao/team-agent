@@ -4,14 +4,10 @@ import type { CollaborationGroup } from "@agent/core/domain/collaboration/types"
 import { collaborationRequest } from "./client";
 
 export default function CollaborationLauncher({
-  showCreateButton,
   refreshKey,
-  onCreate,
   onOpen,
 }: {
-  showCreateButton: boolean;
   refreshKey: number;
-  onCreate: () => void;
   onOpen: (group: CollaborationGroup) => void;
 }) {
   const [groups, setGroups] = useState<CollaborationGroup[]>([]);
@@ -41,14 +37,6 @@ export default function CollaborationLauncher({
           ))}
         </div>
       )}
-      {showCreateButton && <button
-        type="button"
-        className="collab-launch"
-        onClick={onCreate}
-      >
-        <Users size={17} />
-        <span>群聊看板</span>
-      </button>}
     </>
   );
 }

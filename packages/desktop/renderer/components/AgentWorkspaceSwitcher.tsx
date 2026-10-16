@@ -16,12 +16,15 @@ interface AgentWorkspaceSwitcherProps {
   health: RuntimeHealth[];
   onChange(agentType: AgentType): void;
   onUnavailable(message: string): void;
+  vertical?: boolean;
+  onPreview?(agentType: AgentType, label: string, anchor: DOMRect, unavailableMessage?: string): void;
 }
 
-export default function AgentWorkspaceSwitcher({ value, health, onChange, onUnavailable }: AgentWorkspaceSwitcherProps) {
+export default function AgentWorkspaceSwitcher({ value, health, onChange, onUnavailable, vertical = false, onPreview }: AgentWorkspaceSwitcherProps) {
   const track = useRef<HTMLDivElement>(null);
   const [showPrevious, setShowPrevious] = useState(false);
   useEffect(() => {
+    if (vertical) return;
     const element = track.current;
     const reveal = () => {
       const selected = element?.querySelector<HTMLButtonElement>('[aria-selected="true"]');
@@ -34,10 +37,10 @@ export default function AgentWorkspaceSwitcher({ value, health, onChange, onUnav
     const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(reveal);
     if (element) observer?.observe(element);
     return () => observer?.disconnect();
-  }, [value]);
+  }, [value, vertical]);
   return (
-    <div className="agent-workspace-switcher">
-      <div ref={track} className="agent-workspace-track" role="tablist" aria-label="切换 Agent" onScroll={(event) => setShowPrevious(event.currentTarget.scrollLeft > 1)}>
+    <div className={`agent-workspace-switcher${vertical ? " is-vertical" : ""}`}>
+      <div ref={track} className="agent-workspace-track" role="tablist" aria-label="切换 Agent" aria-orientation={vertical ? "vertical" : "horizontal"} onScroll={(event) => setShowPrevious(event.currentTarget.scrollLeft > 1)}>
       {AGENTS.map((agent) => {
         const runtime = health.find((entry) => entry.agentType === agent.agentType);
         const unavailable = runtime?.available === false;
@@ -56,6 +59,8 @@ export default function AgentWorkspaceSwitcher({ value, health, onChange, onUnav
             aria-disabled={blocked}
             title={blocked ? message : agent.label}
             className={[value === agent.agentType ? "is-active" : "", blocked ? "is-unavailable" : ""].filter(Boolean).join(" ")}
+            onPointerEnter={event => onPreview?.(agent.agentType, agent.label, event.currentTarget.getBoundingClientRect(), blocked ? message : undefined)}
+            onFocus={event => onPreview?.(agent.agentType, agent.label, event.currentTarget.getBoundingClientRect(), blocked ? message : undefined)}
             onClick={() => {
               if (blocked) { onUnavailable(message); return; }
               onChange(agent.agentType);

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Check, LayoutGrid, LoaderCircle, Monitor, PanelRight, Unplug } from "lucide-react";
+import { Check, LayoutGrid, LoaderCircle, Monitor, PanelRight, Unplug, UsersRound } from "lucide-react";
 import { isDesktopLiveSetupPending } from "../lib/desktop-live-setup";
 import type { DesktopLiveStatus } from "../global";
 import MobilePairingButton from "./MobilePairingButton";
@@ -47,6 +47,7 @@ interface ChatHeaderActionsProps {
   onHideToBackground: () => void;
   onReleaseCodex?: () => void;
   onOpenHub?: () => void;
+  onOpenCollaborationDashboard?: () => void;
   onOpenDesktopLive?: () => void;
   desktopLiveOpen?: boolean;
   filesOpen?: boolean;
@@ -64,6 +65,7 @@ export default function ChatHeaderActions({
   onHideToBackground,
   onReleaseCodex,
   onOpenHub,
+  onOpenCollaborationDashboard,
   onOpenDesktopLive,
   desktopLiveOpen = false,
   filesOpen = false,
@@ -80,6 +82,15 @@ export default function ChatHeaderActions({
   return (
     <div className="chat-header-actions" style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}>
       {typeof window !== "undefined" && window.sharedServiceApi?.mobilePairing && <MobilePairingButton />}
+      {onOpenCollaborationDashboard && <button
+        type="button"
+        onClick={onOpenCollaborationDashboard}
+        title="群聊看板"
+        aria-label="打开群聊看板"
+        className="ui-icon-button chat-header-action chat-header-action--collaboration"
+      >
+        <UsersRound size={17} aria-hidden="true" />
+      </button>}
       {onOpenDesktopLive && (
         <button
           type="button"

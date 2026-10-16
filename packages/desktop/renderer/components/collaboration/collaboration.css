@@ -890,19 +890,33 @@
 }
 .collab-desktop-overlay {
   position: fixed;
-  inset: 0;
+  inset: 52px 0 0;
   z-index: 500;
   background: var(--bg-surface, #ffffff);
   display: flex;
   flex-direction: column;
+  -webkit-app-region: no-drag;
 }
 .collab-desktop-tabs {
+  position: absolute;
+  inset: 0 0 auto;
+  height: 52px;
+  box-sizing: border-box;
+  z-index: 600;
   display: flex;
   gap: 5px;
   border-bottom: 1px solid var(--border-subtle);
   padding: 12px 15px 0;
   overflow-x: auto;
   background: var(--bg-deep);
+  -webkit-app-region: no-drag;
+}
+.collab-desktop-tabs-drag-space { flex: 1; min-width: 32px; -webkit-app-region: drag; }
+.app-shell[data-desktop-platform="darwin"] .collab-desktop-tabs {
+  padding-left: 92px;
+}
+.collab-desktop-tabs button,
+.collab-desktop-tab {
   -webkit-app-region: no-drag;
 }
 .collab-desktop-tabs button {
@@ -1122,7 +1136,11 @@
   border-radius: 0;
   background: transparent;
 }
-.collab-desktop-tab button:last-child {
-  padding-left: 5px;
-  padding-right: 10px;
+.collab-desktop-tab button.collab-desktop-tab-close {
+  display: grid;
+  place-items: center;
+  padding: 0 8px;
+  min-width: 28px;
+  cursor: pointer;
 }
+.collab-desktop-tab button { cursor: pointer; }
