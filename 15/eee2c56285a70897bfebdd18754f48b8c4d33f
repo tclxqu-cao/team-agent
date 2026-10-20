@@ -1,0 +1,320 @@
+packages/webapp/vite.config.ts
+  s_55b4d866d8fec0::t_34f9bcaf0aad2a 30
+packages/desktop/renderer/lib/session-search.test.ts
+  s_62422060fca34d::t_9912982561e01f 1-23
+.gitignore
+  s_55b4d866d8fec0::t_1968a88aefd117 39-40
+packages/desktop/renderer/components/BrowserLivePanel.tsx
+  s_b650b9e4be2018::t_0b18213f5eff9c 1639-1642
+packages/voice-service/src/azure-speech.test.ts
+  s_55b4d866d8fec0::t_73ed2e8f95033c 1-59,66-161
+  s_55b4d866d8fec0::t_1968a88aefd117 60-65
+packages/webapp/src/infrastructure/voice/browser-speech-output.ts
+  s_55b4d866d8fec0::t_16f5e2098ac3b7 2
+  s_55b4d866d8fec0::t_a482baf9efe940 8,35,76,91-96,101-104
+  s_55b4d866d8fec0::t_9f70fce327b68b 1,3-7,9-21,23-34,36-42,44-75,77-90,97-100,105-113
+  s_55b4d866d8fec0::t_34f9bcaf0aad2a 22
+  s_55b4d866d8fec0::t_e881b3f7f1b490 43
+packages/server/lib/voice-asr-gateway.test.ts
+  s_05528a56b019b8::t_e598f04be6e434 1-113
+packages/webapp/src/domain/ports/speech-output-port.ts
+  s_55b4d866d8fec0::t_9f70fce327b68b 1-5
+packages/webapp/src/infrastructure/http/agent-http-gateway.ts
+  s_05528a56b019b8::t_c63323e2de7238 61,79-80,102,106-120
+  s_55b4d866d8fec0::t_d2213aafba0ff8 17,103,888-890,894,897-898,901-902,905-906,909-910,913-914,917-918
+  s_62422060fca34d::t_a45cbcff8a5f2d 403,444,1035
+  s_05528a56b019b8::t_f5548ab1db6adb 16
+  s_62422060fca34d::t_88b143997b4309 121
+packages/webapp/src/presentation/web.css
+  s_b650b9e4be2018::t_0b18213f5eff9c 468-469,482-490,674,686-692,696,714-732
+  s_b650b9e4be2018::t_3167696d602804 711-713
+  s_b650b9e4be2018::t_3139143c438e61 733-734
+packages/server/native/remote-helper/main.swift
+  s_b650b9e4be2018::t_fd357398329684 19-20,184,286,299,305
+  s_b650b9e4be2018::t_1d743f6f1f0955 9-18,21-49,182-183,225-227,229-232,239-240,285,287,306,462-467
+packages/desktop/renderer/lib/pcm-buffer-playback.test.ts
+  s_55b4d866d8fec0::t_e484b72efb3067 1-74
+packages/voice-service/src/main.ts
+  s_55b4d866d8fec0::t_28f14c53bc1877 4-7,9-37,41,95
+packages/desktop/renderer/lib/codex-execution-trace.test.ts
+  s_62422060fca34d::t_c0c4a691b4d0b9 30,57-74
+  s_62422060fca34d::t_5693897360a2ec 20,24-25,32-43
+  s_62422060fca34d::t_e9488f3fb4e14b 11,44-56
+  s_62422060fca34d::t_0b269d3b7d943b 19,21-23,26-29,31
+packages/native-runtime/src/agent-runtime/opencode-runtime-adapter.ts
+  s_a98d9a5959c33f::t_fb2de3a1ad0afd 41,922-931,956
+packages/desktop/renderer/lib/codex-execution-trace.ts
+  s_62422060fca34d::t_c0c4a691b4d0b9 13-20,22-39,42,44-46,48-49,222
+  s_62422060fca34d::t_e9488f3fb4e14b 21,41,50
+  s_62422060fca34d::t_ccbfc3723b52b5 9-12,40,43,47,51-52,216-221,223-229
+packages/voice-service/src/server.ts
+  s_55b4d866d8fec0::t_f3a23d918f1c3c 281-284
+  s_55b4d866d8fec0::t_cd410696c8142d 409,413-415,426
+  s_55b4d866d8fec0::t_1968a88aefd117 255,377,490
+  s_55b4d866d8fec0::t_28f14c53bc1877 56,230,276-278,298,306-308,329,331,342-345,347-349,360-370,372-374
+packages/voice-service/src/config.test.ts
+  s_55b4d866d8fec0::t_f3a23d918f1c3c 8-9,45-46,66-72
+  s_55b4d866d8fec0::t_14bcf1b720c163 73-74
+packages/desktop/renderer/components/browser-live-viewport.test.ts
+  s_b650b9e4be2018::t_a36a5d50558b71 118-141
+packages/desktop/renderer/lib/speech.ts
+  s_05528a56b019b8::t_7123125b0eda4d 79,111,155
+  s_05528a56b019b8::t_5c8ef1cda4bd3d 113
+  s_05528a56b019b8::t_c63323e2de7238 66,96,98,107,117-120,161
+packages/desktop/renderer/lib/session-history.test.ts
+  s_62422060fca34d::t_aa0cf2d874047e 46-53,55-60
+  s_62422060fca34d::t_6adf09bb825c92 16-17,25-36
+  s_62422060fca34d::t_4521fe6dc0081a 37-45,61
+  s_62422060fca34d::t_b56805808f21a9 376-391,395,399
+  s_a98d9a5959c33f::t_849beff87b1983 392,421-432
+  s_62422060fca34d::t_9c581808a3a26d 13,18-24,54,62,393-394,396-398,400
+scripts/audit-runtime-tarball.mjs
+  s_55b4d866d8fec0::t_f3a23d918f1c3c 47-48
+packages/desktop/renderer/public/dictation-audio-worklet.js
+  s_05528a56b019b8::t_c63323e2de7238 1-51
+packages/webapp/tests/remote-desktop/main.tsx
+  s_b650b9e4be2018::t_d2cb9052d0f32d 10-13
+packages/desktop/renderer/App.tsx
+  s_62422060fca34d::t_9912982561e01f 93,226-242,702-703,705-708,723,1768-1779,2168-2169,2180,2185
+  s_62422060fca34d::t_3e02a10f452250 3
+packages/voice-service/src/azure-asr-engine.ts
+  s_55b4d866d8fec0::t_1968a88aefd117 92-96,126
+  s_55b4d866d8fec0::t_16f5e2098ac3b7 88-89
+  s_55b4d866d8fec0::t_28f14c53bc1877 28,115
+  s_55b4d866d8fec0::t_4fdc2330d42e16 1-27,29-87,90-91,97-114,116-125,127-132
+packages/desktop/renderer/lib/native-runtime-progress.test.ts
+  s_62422060fca34d::t_9056479eb820b1 19-28
+packages/desktop/renderer/lib/speech.test.ts
+  s_05528a56b019b8::t_92b8af9a6bd6a6 5-30
+packages/server/lib/voice-tts-gateway.mjs
+  s_55b4d866d8fec0::t_c3558f31a875a4 82
+  s_55b4d866d8fec0::t_9f70fce327b68b 1-81,83-96
+packages/webapp/src/infrastructure/voice/browser-dictation.ts
+  s_05528a56b019b8::t_f04d58cf6498da 21,85-86,89-90,92-96,262
+  s_05528a56b019b8::t_c63323e2de7238 3-5,7-14,17-20,28-66,69-84,88,97-98,103-114,174,191-249,254-261,266-270
+  s_05528a56b019b8::t_579f4e59f64663 2,15-16,87,99,101,143-158,160-162,164,171-173,175-181,183-190,253
+  s_05528a56b019b8::t_f5548ab1db6adb 1
+  s_05528a56b019b8::t_252ecf9a24f508 22,91,100,263
+  s_55b4d866d8fec0::t_79c33665a5c779 6,23-27,67,102,115-141,159,163,165-170,182,250-252,264-265
+  s_ad2dbfeda5899b::t_a24bea368b863e 68,142
+packages/server/ws-server.mjs
+  s_55b4d866d8fec0::t_34f9bcaf0aad2a 7,1269,1272,1394
+  s_05528a56b019b8::t_d85acba1dfa6ba 6,1268,1273,1393
+packages/webapp/src/infrastructure/voice/pcm-resampler.ts
+  s_05528a56b019b8::t_579f4e59f64663 1-39
+packages/webapp/tests/remote-desktop/embedded.html
+  s_b650b9e4be2018::t_f6cd03b87c143b 1-23,26-29
+  s_b650b9e4be2018::t_2bd1683e823197 24-25
+packages/server/lib/remote-control/remote-authorization.mjs
+  s_b650b9e4be2018::t_a36a5d50558b71 53,240-243,365-367
+packages/voice-service/src/asr-engine.ts
+  s_55b4d866d8fec0::t_66857a0f0505db 26-31,35,37-38
+packages/desktop/renderer/styles/composer.css
+  s_05528a56b019b8::t_342ba624ba0d4f 482
+  s_05528a56b019b8::t_70588c98547134 78-84,91-92,100-104,107,110-111
+packages/desktop/renderer/components/ChatView.tsx
+  s_62422060fca34d::t_4521fe6dc0081a 1926,1960,2758
+  s_05528a56b019b8::t_08a86b977010cb 1266,1283,1323,1333
+  s_55b4d866d8fec0::t_34f9bcaf0aad2a 1271,1297,1308,1319,1349-1350,1363,4726
+  s_05528a56b019b8::t_23dfa556e06fbc 1324,1345
+  s_05528a56b019b8::t_27f8f6c68bd629 15,313,316,1273-1279,5996
+  s_62422060fca34d::t_9056479eb820b1 2499-2502
+  s_a98d9a5959c33f::t_fb2de3a1ad0afd 4339
+  s_05528a56b019b8::t_70588c98547134 5709-5714,5716,5718,5720-5723,5725-5726
+  s_05528a56b019b8::t_1a8c0cc195f463 5982
+  s_62422060fca34d::t_9912982561e01f 409,639,1702,1852
+  s_62422060fca34d::t_e9488f3fb4e14b 1103
+  s_05528a56b019b8::t_7123125b0eda4d 1264,1281,1326,1337,1574,6007
+  s_05528a56b019b8::t_5c8ef1cda4bd3d 1265,1270,1280,1282,1284-1291,1313,1315,1322,1327,1329,1335,1338,5700
+  s_05528a56b019b8::t_d33f636fe9ab33 311-312
+  s_05528a56b019b8::t_519367ed80e1cb 314-315
+  s_05528a56b019b8::t_ee0dd1780183cb 317-319
+  s_62422060fca34d::t_8429fff24e4ac6 408
+  s_62422060fca34d::t_4bd113bbbd747f 1100-1102
+  s_62422060fca34d::t_5c703cd6fb46a0 1104
+  s_62422060fca34d::t_5e76f9d5cc8e58 1924-1925
+  s_62422060fca34d::t_8c43b7d8d7a5af 1927
+  s_62422060fca34d::t_9ca9e402d531ae 1958-1959
+  s_62422060fca34d::t_2dadad42ccf1a8 1961
+  s_05528a56b019b8::t_de095ccbd19b7a 5997
+  s_62422060fca34d::t_d71a88b9ad3aea 13,54,302,304,320-326,1272,2549-2562,2853-2855,4685-4689
+packages/desktop/renderer/components/CodexExecutionTrace.tsx
+  s_62422060fca34d::t_a45cbcff8a5f2d 88,118-120,145-150
+packages/webapp/src/main.tsx
+  s_05528a56b019b8::t_c63323e2de7238 10
+  s_55b4d866d8fec0::t_34f9bcaf0aad2a 11,94-100,106-107
+packages/desktop/renderer/components/AskUserCard.tsx
+  s_a98d9a5959c33f::t_fbc25055253395 96-97,109,117,124-128,146,356-357
+  s_a98d9a5959c33f::t_fb2de3a1ad0afd 11,22,26,35,53,90,150,152,199-206,304
+packages/voice-service/src/config.ts
+  s_55b4d866d8fec0::t_66857a0f0505db 8-14,31-46,62-63
+packages/voice-service/src/server.test.ts
+  s_55b4d866d8fec0::t_f3a23d918f1c3c 132
+  s_55b4d866d8fec0::t_cd410696c8142d 509,518,541-572
+  s_55b4d866d8fec0::t_1968a88aefd117 116-125
+packages/core/src/domain/model/entities.ts
+  s_a98d9a5959c33f::t_85cdae2ae2dce4 62-70
+packages/webapp/src/infrastructure/voice/browser-dictation.test.ts
+  s_ad2dbfeda5899b::t_1dc0eda7c9d446 2,188-189,191-205,207-208,211-212,217
+  s_ad2dbfeda5899b::t_80669161fde5d1 100-102,109
+  s_05528a56b019b8::t_e598f04be6e434 1,3-25,27-34,36-39,41-44,46,48,50-52,57-64,66-68,130-135,146-147,218-222,228-230,248-289
+  s_05528a56b019b8::t_f04d58cf6498da 26,69-83,85-88,127-128
+  s_55b4d866d8fec0::t_d76d6840531a65 65,91,105-106,108,110-111,115-117,129,137,139-140,142-145,148-149,153,161-165,182-186,190,206,209-210,213-216,223-227,231-247
+  s_05528a56b019b8::t_252ecf9a24f508 40,45,47,84,89-90,92-99,103-104,107,112-114,119-126
+  s_05528a56b019b8::t_92b8af9a6bd6a6 35,53-56
+  s_ad2dbfeda5899b::t_a24bea368b863e 49,118,136,138,141,150-152,154-160,166-181,187
+packages/desktop/renderer/components/MermaidBlock.test.tsx
+  s_62422060fca34d::t_7b56997a79e552 29-35,39
+  s_62422060fca34d::t_50f7a5bf5d1dac 36-38
+packages/server/lib/voice-asr-gateway.mjs
+  s_05528a56b019b8::t_d85acba1dfa6ba 1-82,84-97
+  s_55b4d866d8fec0::t_c3558f31a875a4 83
+packages/server/lib/remote-control/remote-authorization.test.ts
+  s_b650b9e4be2018::t_f6cd03b87c143b 386-410,414-427
+  s_b650b9e4be2018::t_72e1787c29da55 411-413
+packages/native-runtime/src/agent-runtime/agent-workspace-index.ts
+  s_62422060fca34d::t_7b56997a79e552 553-557
+  s_62422060fca34d::t_316d20413ae55a 552,558
+packages/desktop/renderer/lib/native-runtime-progress.ts
+  s_62422060fca34d::t_9056479eb820b1 44-46
+packages/desktop/renderer/components/CodexExecutionTrace.test.tsx
+  s_62422060fca34d::t_874550f4f21ff3 132,136-148
+  s_62422060fca34d::t_44090ff8bedbe0 149
+packages/voice-service/src/azure-tts-engine.ts
+  s_55b4d866d8fec0::t_1968a88aefd117 23-30
+  s_55b4d866d8fec0::t_4fdc2330d42e16 1-22,31-73,76-93
+  s_55b4d866d8fec0::t_f3a23d918f1c3c 74-75
+packages/desktop/renderer/components/AskUserCard.test.tsx
+  s_a98d9a5959c33f::t_849beff87b1983 1-31
+packages/native-runtime/src/agent-runtime/opencode-runtime-adapter.test.ts
+  s_a98d9a5959c33f::t_849beff87b1983 243-276
+packages/webapp/src/domain/ports/dictation-port.ts
+  s_05528a56b019b8::t_f5548ab1db6adb 1-7
+packages/desktop/renderer/lib/session-search.ts
+  s_62422060fca34d::t_9912982561e01f 1-23
+packages/server/lib/voice-tts-gateway.test.ts
+  s_55b4d866d8fec0::t_30aeb2580defb5 74
+  s_55b4d866d8fec0::t_b81786c7b5a8fe 1-73,75-119
+packages/desktop/renderer/lib/pcm-stream-player.test.ts
+  s_55b4d866d8fec0::t_e484b72efb3067 17,31-33,42-43,45,64-98,128,151
+  s_55b4d866d8fec0::t_f3a23d918f1c3c 99-106
+scripts/stage-cli-runtime.mjs
+  s_55b4d866d8fec0::t_f3a23d918f1c3c 62
+packages/webapp/src/infrastructure/voice/dictation-audio-worklet.test.ts
+  s_05528a56b019b8::t_e598f04be6e434 1-3,5-17,19,22-24,28-29,31-34,36-40
+  s_05528a56b019b8::t_252ecf9a24f508 4,20-21,25-27,30,35
+  s_05528a56b019b8::t_92b8af9a6bd6a6 18
+packages/desktop/renderer/components/RuntimeProgressRow.tsx
+  s_62422060fca34d::t_0c2ce9bd9899c9 20,45
+  s_d923192744182f::t_e72f287081b34c 43-44,46
+packages/native-runtime/src/agent-runtime/agent-workspace-index.test.ts
+  s_62422060fca34d::t_7b56997a79e552 88-109
+packages/voice-service/.env.example
+  s_55b4d866d8fec0::t_28f14c53bc1877 1-20
+packages/native-runtime/src/agent-runtime/opencode-questions.ts
+  s_a98d9a5959c33f::t_85cdae2ae2dce4 1-2,94-116
+  s_a98d9a5959c33f::t_434cd322fb637f 117-118
+packages/webapp/src/infrastructure/http/agent-http-gateway.test.ts
+  s_62422060fca34d::t_a45cbcff8a5f2d 741,768,816
+packages/desktop/renderer/components/ChatHistoryStyle.test.ts
+  s_62422060fca34d::t_7b56997a79e552 387-388
+packages/webapp/tests/remote-desktop/regression.mjs
+  s_b650b9e4be2018::t_a88663bf9a321a 197-199,206,217-218
+  s_b650b9e4be2018::t_e8799190b02f6a 64-66
+  s_b650b9e4be2018::t_3167696d602804 73-87
+  s_b650b9e4be2018::t_6b8b05ddf761f3 193-196,200-205,207-216,219-230
+  s_b650b9e4be2018::t_d2cb9052d0f32d 25-37
+packages/desktop/renderer/stores/agentStore.ts
+  s_a98d9a5959c33f::t_fb2de3a1ad0afd 157
+packages/voice-service/package.json
+  s_55b4d866d8fec0::t_9e65cb604ce570 14
+packages/desktop/renderer/lib/pcm-buffer-playback.ts
+  s_55b4d866d8fec0::t_6b206a16248a06 1-88
+packages/desktop/renderer/components/RuntimeProgressRow.test.tsx
+  s_62422060fca34d::t_0c2ce9bd9899c9 1,43-53,55
+  s_62422060fca34d::t_ee6bccae331757 54,56
+packages/desktop/renderer/lib/session-history.ts
+  s_a98d9a5959c33f::t_fb2de3a1ad0afd 746-750
+  s_62422060fca34d::t_4521fe6dc0081a 332-335,337-339,442
+  s_62422060fca34d::t_b56805808f21a9 418,420-421
+  s_62422060fca34d::t_1052f43b70f7af 331,336,419
+packages/desktop/renderer/components/browser-live-viewport.ts
+  s_b650b9e4be2018::t_a36a5d50558b71 50-58
+packages/desktop/renderer/lib/pcm-stream-player.ts
+  s_55b4d866d8fec0::t_6b206a16248a06 2,32-33,52,163-178
+  s_55b4d866d8fec0::t_34f9bcaf0aad2a 79-81,160-162,182
+packages/desktop/renderer/styles/global.css
+  s_d923192744182f::t_e72f287081b34c 4207,4209-4212,4218-4222
+  s_62422060fca34d::t_0c2ce9bd9899c9 4199
+  s_62422060fca34d::t_2090cb5a48dd90 4223-4224
+bun.lock
+  s_55b4d866d8fec0::t_fe8e3b53855e74 216,304-309,720-721,724-725,824-825,862-863,880-881,1308-1309,1416-1417,1926,2027-2028
+packages/desktop/renderer/components/SidebarReferenceStyle.test.ts
+  s_62422060fca34d::t_e2da1dcc49df69 379,392-399
+packages/server/tsconfig.json
+  s_b650b9e4be2018::t_28e6bf2275e2ae 40-41
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "15eee2c56285a70897bfebdd18754f48b8c4d33f",
+  "prompts": {},
+  "sessions": {
+    "s_05528a56b019b8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1523c-8606-7472-9b07-86f9524b63f9",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_55b4d866d8fec0": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a15301-2bd9-78b3-8c0a-8e1729d066d9",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_62422060fca34d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a15780-d0cb-70c1-8163-a2fabc2a5b6c",
+        "model": "ap-southeast-1-v5cjq-gptdy-17usoft-com/gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_a98d9a5959c33f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a14f53-e2d9-75d3-9e47-bb3de5487b41",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_ad2dbfeda5899b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a154c8-3447-7393-8d8b-543949a3f041",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_b650b9e4be2018": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a154b7-f807-7391-b287-ead498a8410d",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_d923192744182f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a14fac-d93a-7fa3-969e-962780d54b3f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
