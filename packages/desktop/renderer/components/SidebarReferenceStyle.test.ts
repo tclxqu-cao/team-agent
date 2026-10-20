@@ -63,6 +63,7 @@ describe("AgentRoam reference sidebar", () => {
     const importProject = toolbar.indexOf('aria-label="导入目录"');
     expect(search).toBeGreaterThan(-1);
     expect(search).toBeLessThan(toolbarStart);
+    expect(toolbar).not.toContain('aria-label="搜索会话"');
     expect(toolbar).not.toContain("会话按 Agent 分组");
     expect(collapse).toBeGreaterThan(-1);
     expect(sorting).toBeGreaterThan(collapse);

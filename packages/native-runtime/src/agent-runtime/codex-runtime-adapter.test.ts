@@ -23,6 +23,30 @@ vi.mock("node:fs/promises", async (importOriginal) => {
   return { ...actual, readFile: vi.fn(actual.readFile) };
 });
 
+describe("Codex compaction feedback", () => {
+  it("restores a compaction marker without hiding the following user message", async () => {
+    const messages = await codexTurnsToMessages([{ id: "turn", status: "completed", items: [
+      { id: "compact", type: "contextCompaction" },
+      { id: "user", type: "userMessage", content: [{ type: "text", text: "啥问题 超时" }] },
+      { id: "answer", type: "agentMessage", text: "是事务超时" },
+    ] }]);
+    expect(messages.map(message => [message.role, message.name, message.content])).toEqual([
+      ["assistant", "__compaction_checkpoint__", JSON.stringify({ summary: "上下文已压缩" })],
+      ["user", undefined, "啥问题 超时"],
+      ["assistant", undefined, "是事务超时"],
+    ]);
+  });
+
+  it("reports actual start and completion notifications", () => {
+    for (const [method, label, status] of [
+      ["item/started", "正在压缩上下文", "running"],
+      ["item/completed", "上下文已压缩，继续处理", "completed"],
+    ]) {
+      expect(codexProgressNotificationToEvent({ method, params: { item: { type: "contextCompaction", id: "compact-1" } } })).toMatchObject({ type: "runtime_progress", progressId: "context-compaction", label, status });
+    }
+  });
+});
+
 describe("Codex explicit skills", () => {
   it("maps slash skills to native names while reserving built-in commands", () => {
     expect(parseExplicitSkillInvocation("/frontend-design build it")).toEqual({

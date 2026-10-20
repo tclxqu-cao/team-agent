@@ -34,6 +34,17 @@ function emit(source: ObservableEventSource, event: Record<string, unknown>): vo
 }
 
 describe("AgentHttpGateway", () => {
+  it("connects message media requests to the shell and rejects unrelated file operations", async () => {
+    const bridge = { request: vi.fn().mockResolvedValue({ ticketId: "preview", url: "/api/preview" }) };
+    const gateway = new AgentHttpGateway({} as never, {} as never, bridge);
+    await expect(gateway.fileWorkspaceRequest("fs:preview-open", { path: "/tmp/clip.mp4" })).resolves.toMatchObject({ ticketId: "preview" });
+    expect(bridge.request).toHaveBeenCalledWith("fs:preview-open", { path: "/tmp/clip.mp4" });
+    await gateway.fileWorkspaceRequest("fs:preview-close", { ticketId: "preview" });
+    expect(bridge.request).toHaveBeenCalledWith("fs:preview-close", { ticketId: "preview" });
+    await expect(gateway.fileWorkspaceRequest("fs:write")).rejects.toThrow("仅支持媒体预览");
+    expect(bridge.request).toHaveBeenCalledTimes(2);
+  });
+
   const originalEventSource = globalThis.EventSource;
 
   afterEach(() => {

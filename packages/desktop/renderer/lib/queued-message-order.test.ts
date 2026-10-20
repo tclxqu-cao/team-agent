@@ -173,6 +173,27 @@ describe("markDurableMessageSteered", () => {
 });
 
 describe("reconcileDurableQueuedMessages", () => {
+  it("retains an optimistic queued input across a snapshot taken before enqueue acknowledgement", () => {
+    const input = { id: "saving", role: "user", content: "next", timestamp: 2, isQueued: true };
+    expect(reconcileDurableQueuedMessages([input], { active: null, queued: [], history: [] })).toEqual([input]);
+  });
+
+  it("does not resurrect a cancelled queue item", () => {
+    const input = { id: "source", role: "user", content: "cancelled", timestamp: 2, isQueued: true, queueItemId: "queue" };
+    expect(reconcileDurableQueuedMessages([input], { active: null, queued: [], history: [{ id: "queue", sourceMessageId: "source", objective: "cancelled", createdAt: 2, kind: "message", status: "cancelled" }] })).toEqual([]);
+  });
+
+  it("keeps the user bubble before its reply when a queued turn finishes between snapshots", () => {
+    const input = { id: "source", role: "user", content: "啥问题 超时", timestamp: 2, isQueued: true, queueItemId: "queue" };
+    const reply = { id: "reply", role: "assistant", content: "是事务超时", timestamp: 3 };
+    const result = reconcileDurableQueuedMessages([input, reply], {
+      active: null, queued: [], history: [{ id: "queue", sourceMessageId: "source", kind: "message", status: "completed", objective: input.content, createdAt: 2 }],
+    });
+    expect(result.map(message => message.id)).toEqual(["source", "reply"]);
+    expect(result[0].isQueued).toBe(false);
+    expect(reconcileDurableQueuedMessages(result, { active: null, queued: [], history: [] })).toEqual(result);
+  });
+
   const activeMessageState = {
     active: {
       id: "queue-active",

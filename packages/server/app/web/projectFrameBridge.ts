@@ -1,7 +1,7 @@
 import {
   WEBAPP_PROJECT_RESPONSE_TYPE,
   readWebProjectRequest,
-  type WebProjectMethod,
+  type WebShellMethod,
 } from "../../../core/src/domain/web-console/WebProjectBridge";
 
 /** Correlate project requests and responses with the originating trusted app frame. */
@@ -9,7 +9,7 @@ export async function forwardWebProjectRequest(
   event: Pick<MessageEvent, "data" | "origin" | "source">,
   origin: string,
   frames: Array<Window | null>,
-  rpc: (method: WebProjectMethod, payload: Record<string, unknown>) => Promise<unknown>,
+  rpc: (method: WebShellMethod, payload: Record<string, unknown>) => Promise<unknown>,
 ): Promise<boolean> {
   const source = frames.find((frame) => frame && frame === event.source);
   if (!source) return false;

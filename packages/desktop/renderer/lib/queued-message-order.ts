@@ -12,6 +12,7 @@ export interface UserMessageLike extends QueuedMessageLike {
 
 export interface DurableQueueItemLike {
   id: string;
+  status?: "queued" | "active" | "completed" | "failed" | "cancelled";
   objective: string;
   sourceMessageId?: string;
   createdAt: number;
@@ -109,7 +110,18 @@ export function reconcileDurableQueuedMessages<T extends DurableQueuedMessageLik
   messages: T[],
   state: MixedQueueStateLike<DurableQueueItemLike>,
 ): T[] {
-  let history = messages.filter((message) => !message.isQueued);
+  const completed = state.history.filter(item => item.kind === "message" && item.status === "completed");
+  const completedBySource = new Map(completed.map(item => [item.sourceMessageId || item.id, item]));
+  let history = messages.flatMap((message): T[] => {
+    if (!message.isQueued) return [message];
+    const item = completedBySource.get(message.id) ?? completed.find(candidate => candidate.id === message.queueItemId);
+    if (!item) return [];
+    const persisted = messages.some(candidate => candidate !== message && !candidate.isQueued
+      && candidate.role === "user" && (candidate.id === item.sourceMessageId
+        || candidate.queueItemId === item.id
+        || (candidate.content === item.objective && candidate.timestamp >= message.timestamp)));
+    return persisted ? [] : [{ ...message, isQueued: false, queueItemId: undefined, sendState: undefined }];
+  });
   const steeredMessageIds = new Set(history
     .filter((message) => message.role === "user" && message.isSteered)
     .map((message) => message.id));
@@ -189,7 +201,11 @@ export function reconcileDurableQueuedMessages<T extends DurableQueuedMessageLik
         queueItemId: item.id,
       } as T;
     });
-  return [...history, ...queued];
+  const confirmedIds = new Set([state.active, ...state.queued, ...state.history]
+    .flatMap(item => item ? [item.id, item.sourceMessageId].filter(Boolean) : []));
+  const unconfirmed = messages.filter(message => message.isQueued && !message.queueItemId
+    && !confirmedIds.has(message.id) && !history.some(candidate => candidate.id === message.id));
+  return [...history, ...queued, ...unconfirmed];
 }
 
 export function queuedSessionMessages<T extends DurableQueueItemLike>(

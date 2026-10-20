@@ -1,11 +1,11 @@
 import {
   WEBAPP_PROJECT_REQUEST_TYPE,
   parseWebProjectResponse,
-  type WebProjectMethod,
+  type WebShellMethod,
 } from "../../../core/src/domain/web-console/WebProjectBridge";
 
 export interface WebProjectBridge {
-  request<T>(method: WebProjectMethod, payload?: Record<string, unknown>): Promise<T>;
+  request<T>(method: WebShellMethod, payload?: Record<string, unknown>): Promise<T>;
 }
 
 type PendingRequest = {
@@ -41,7 +41,7 @@ export class WebShellProjectBridge implements WebProjectBridge {
     this.context.addEventListener("message", this.onMessage as EventListener);
   }
 
-  request<T>(method: WebProjectMethod, payload: Record<string, unknown> = {}): Promise<T> {
+  request<T>(method: WebShellMethod, payload: Record<string, unknown> = {}): Promise<T> {
     if ((this.context.parent as unknown) === this.context) {
       return Promise.reject(Object.assign(
         new Error("请从 AgentRoam Web 控制台打开项目"),

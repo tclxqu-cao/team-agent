@@ -7,6 +7,36 @@ const origin = "http://localhost:3000";
 const request = { type: WEBAPP_PROJECT_REQUEST_TYPE, id: 1, method: "project:roots", payload: {} };
 
 describe("project requests from collaboration frames", () => {
+  it("routes preview tickets back to their originating message frame", async () => {
+    const listeners = new Set<EventListener>();
+    const ticket = { ticketId: "ticket-1", url: "/api/web-console/file-preview/ticket-1" };
+    const rpc = vi.fn(async (method: string) => method === "fs:preview-open" ? ticket : { revoked: true });
+    const shell = { postMessage: (data: unknown) => {
+      void forwardWebProjectRequest({ data, origin, source: frame }, origin, [frame], rpc);
+    } };
+    const frame = { postMessage: (data: unknown) => {
+      listeners.forEach(listener => listener({ data, origin, source: shell } as unknown as Event));
+    } } as unknown as Window;
+    const bridge = new WebShellProjectBridge({
+      location: { origin }, parent: shell,
+      addEventListener: (_type: string, listener: EventListener) => listeners.add(listener),
+      removeEventListener: (_type: string, listener: EventListener) => listeners.delete(listener),
+    } as never, 200);
+    try {
+      await expect(bridge.request("fs:preview-open", { path: "/tmp/cover.jpg" })).resolves.toEqual(ticket);
+      await expect(bridge.request("fs:preview-close", { ticketId: "ticket-1" })).resolves.toEqual({ revoked: true });
+      expect(rpc).toHaveBeenCalledWith("fs:preview-open", { path: "/tmp/cover.jpg" });
+      expect(rpc).toHaveBeenCalledWith("fs:preview-close", { ticketId: "ticket-1" });
+    } finally { bridge.dispose(); }
+  });
+
+  it("does not expose file writes through the preview bridge", async () => {
+    const frame = { postMessage: vi.fn() } as unknown as Window;
+    const rpc = vi.fn();
+    await expect(forwardWebProjectRequest({ data: { ...request, method: "fs:write" }, origin, source: frame }, origin, [frame], rpc)).resolves.toBe(false);
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
   it("completes directory initialization for both dashboard and group frames", async () => {
     const main = { postMessage: vi.fn() } as unknown as Window;
     const frames: Window[] = [main];

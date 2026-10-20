@@ -7,8 +7,16 @@ export type MarkdownLinkToken =
 
 export type RichInlineToken = MarkdownLinkToken | { type: "code"; value: string };
 
-const MARKDOWN_LINK_PATTERN = /\[([^\]\n]+)\]\((https?:\/\/[^\s)]+|[ \t]*(?:~\/|\/)[^)\n]+)\)/gi;
+const MARKDOWN_LINK_PATTERN = /!?\[([^\]\n]+)\]\((https?:\/\/[^\s)]+|[ \t]*(?:~\/|\/)[^)\n]+)\)/gi;
 const INLINE_CODE_PATTERN = /`([^`\n]+)`/g;
+export function normalizeMessageLinks(text: string): string {
+  let fenced = false;
+  return text.split(/(^[ \t]*```[^\n]*(?:\n|$))/m).map((part) => {
+    if (/^[ \t]*```/.test(part)) { fenced = !fenced; return part; }
+    if (fenced) return part;
+    return part.replace(/(!?\[[^\]\n]+\])\(<\s*((?:https?:\/\/|~\/|\/|[A-Za-z]:[\\/])[^<>\r\n]+?)\s*>\)/g, "$1($2)");
+  }).join("");
+}
 const BARE_ARTIFACT_PATTERN = /https?:\/\/[^\s`<>"'()[\]，。；！？]+|(?:~\/|\/|[A-Za-z]:[\\/])[^\s`<>"'()[\]，。；！？]*\.[A-Za-z0-9]{1,10}(?::[1-9]\d*)?/gi;
 const CODEX_FILE_CITATION_PATTERN = /:codex-file-citation\{([^}\n]*)\}/g;
 const CODEX_FILE_CITATION_ATTRIBUTE_PATTERN = /([A-Za-z][\w-]*)="([^"\n]*)"/g;

@@ -2362,6 +2362,10 @@ export async function codexTurnsToMessages(
   for (const turn of turns) {
     let segmentIndex = -1;
     for (const item of turn.items ?? []) {
+      if (item.type === "contextCompaction") {
+        messages.push({ role: "assistant", name: "__compaction_checkpoint__", content: JSON.stringify({ summary: "上下文已压缩" }) });
+        continue;
+      }
       if (item.type === "userMessage") {
         segmentIndex += 1;
         const entries = item.content as Array<Record<string, unknown>> | undefined;
@@ -2618,6 +2622,17 @@ export function codexReasoningNotificationToEvent(
 }
 
 export function codexProgressNotificationToEvent(message: RpcNotification): AgentEvent | null {
+  const item = asRecord(asRecord(message.params).item);
+  if (item.type === "contextCompaction" && (message.method === "item/started" || message.method === "item/completed")) {
+    const completed = message.method === "item/completed";
+    return {
+      type: "runtime_progress",
+      progressId: "context-compaction",
+      phase: "status",
+      label: completed ? "上下文已压缩，继续处理" : "正在压缩上下文",
+      status: completed ? "completed" : "running",
+    };
+  }
   if (message.method === "turn/started") {
     return {
       type: "runtime_progress",
@@ -2627,7 +2642,6 @@ export function codexProgressNotificationToEvent(message: RpcNotification): Agen
     };
   }
   if (message.method !== "item/started") return null;
-  const item = asRecord(asRecord(message.params).item);
   if (item.type !== "reasoning" || typeof item.id !== "string" || !item.id) return null;
   return {
     type: "runtime_progress",

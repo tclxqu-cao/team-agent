@@ -119,6 +119,13 @@ export class AgentHttpGateway {
     return this.dictation?.onDictationError(callback) ?? (() => undefined);
   }
 
+  fileWorkspaceRequest<T>(method: string, params: Record<string, unknown> = {}): Promise<T> {
+    if (method !== "fs:preview-open" && method !== "fs:preview-close") {
+      return Promise.reject(new Error("消息区仅支持媒体预览操作"));
+    }
+    return this.requireProjectBridge().request<T>(method, params);
+  }
+
   private requireProjectBridge(): WebProjectBridge {
     if (this.projectBridge) return this.projectBridge;
     throw Object.assign(

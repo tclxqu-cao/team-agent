@@ -4497,3 +4497,9 @@ input:focus, select:focus, textarea:focus {
 .mobile-pairing-code img { display:block; width:100%; height:100%; }
 .mobile-pairing-code p { padding:18px; }
 .mobile-pairing-refresh { display:inline-flex; align-items:center; justify-content:center; gap:8px; min-height:36px; padding:8px 14px; border:1px solid var(--border-default); border-radius:8px; background:var(--bg-elevated); color:var(--text-primary); cursor:pointer; }
+.chat-message-media { display: block; width: min(100%, 560px); min-height: 48px; margin: 8px 0; white-space: normal; }
+.chat-message-media video,
+.chat-message-media img { display: block; width: auto; max-width: 100%; max-height: 360px; border-radius: 10px; object-fit: contain; }
+.chat-message-media video { width: 100%; background: #111; }
+.chat-message-media__image { display: block; max-width: 100%; padding: 0; border: 0; background: transparent; cursor: zoom-in; }
+.chat-message-media__image:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }

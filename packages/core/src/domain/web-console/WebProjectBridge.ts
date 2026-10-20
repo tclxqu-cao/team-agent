@@ -13,11 +13,12 @@ export const WEB_PROJECT_METHODS = [
 ] as const;
 
 export type WebProjectMethod = typeof WEB_PROJECT_METHODS[number];
+export type WebShellMethod = WebProjectMethod | "fs:preview-open" | "fs:preview-close";
 
 export interface WebProjectRequest {
   type: typeof WEBAPP_PROJECT_REQUEST_TYPE;
   id: number;
-  method: WebProjectMethod;
+  method: WebShellMethod;
   payload: Record<string, unknown>;
 }
 
@@ -30,7 +31,7 @@ export interface WebProjectResponse {
   code?: string;
 }
 
-const methodSet = new Set<string>(WEB_PROJECT_METHODS);
+const methodSet = new Set<string>([...WEB_PROJECT_METHODS, "fs:preview-open", "fs:preview-close"]);
 
 export function parseWebProjectRequest(data: unknown): WebProjectRequest | null {
   if (!data || typeof data !== "object") return null;

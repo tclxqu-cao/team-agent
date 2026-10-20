@@ -988,8 +988,70 @@ body[data-web-shell="1"] {
   }
 
   body[data-web-shell="1"] .app-sidebar-brand {
-    margin-bottom: 8px !important;
-    padding: 0 18px 10px !important;
+    margin-bottom: 0 !important;
+    padding: 0 16px 12px !important;
+  }
+
+  body[data-web-shell="1"] .app-sidebar .agent-workspace-switcher:not(.is-vertical) {
+    margin: 0 12px 10px;
+    padding: 3px;
+    border: 1px solid var(--border-subtle);
+    border-radius: 12px;
+    background: var(--control-hover);
+  }
+
+  body[data-web-shell="1"] .app-sidebar .agent-workspace-switcher:not(.is-vertical) .agent-workspace-track {
+    grid-auto-columns: calc((100% - 16px) / 5);
+    gap: 4px;
+  }
+
+  body[data-web-shell="1"] .app-sidebar .agent-workspace-switcher:not(.is-vertical) button {
+    min-inline-size: 44px;
+    block-size: 44px;
+    border-radius: 9px;
+  }
+
+  body[data-web-shell="1"] .app-sidebar .agent-workspace-switcher:not(.is-vertical) button.is-active {
+    background: var(--bg-elevated);
+    border-color: var(--border-subtle);
+    box-shadow: 0 1px 3px var(--border-subtle);
+  }
+
+  body[data-web-shell="1"] .app-sidebar .agent-workspace-switcher:not(.is-vertical) .agent-workspace-more {
+    display: none;
+  }
+
+  body[data-web-shell="1"] .app-sidebar .sidebar-search-field {
+    width: calc(100% - 24px);
+    min-height: 44px;
+    margin: 0 12px 6px;
+    padding: 0 12px;
+    border-color: var(--border-subtle);
+    border-radius: 10px;
+    background: var(--bg-elevated);
+    font-size: 13px;
+    color: var(--text-secondary);
+  }
+
+  body[data-web-shell="1"] .app-sidebar .sidebar-search-field kbd {
+    display: none;
+  }
+
+  body[data-web-shell="1"] .app-sidebar .sidebar-project-toolbar {
+    margin: 4px 12px 4px;
+    min-height: 40px;
+    padding: 0 4px;
+  }
+
+  body[data-web-shell="1"] .app-sidebar .sidebar-project-actions {
+    gap: 0;
+  }
+
+  body[data-web-shell="1"] .app-sidebar .sidebar-project-actions .ui-icon-button {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    flex: 0 0 32px;
   }
 
   body[data-web-shell="1"] .app-sidebar-scroll {
@@ -999,8 +1061,18 @@ body[data-web-shell="1"] {
 
   body[data-web-shell="1"] .app-sidebar .sidebar-row {
     min-height: 44px;
-    margin: 2px 0;
+    margin: 0;
+    border-width: 0;
     border-radius: 8px;
+  }
+
+  body[data-web-shell="1"] .app-sidebar .sidebar-project-block {
+    margin-bottom: 0;
+  }
+
+  body[data-web-shell="1"] .app-sidebar .sidebar-session-row--child {
+    margin-left: 14px;
+    border-left-width: 1px;
   }
 
   body[data-web-shell="1"] .app-sidebar .sidebar-row > button:first-child {

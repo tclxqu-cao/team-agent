@@ -14,6 +14,9 @@ import { ArrowDownToLine, AlarmClock, Check, CircleAlert, Copy, CornerUpRight, F
 import AgentBrandIcon from "./AgentBrandIcon";
 import AppActionNotice from "./AppActionNotice";
 import MessageLink from "./MessageLink";
+import MessageMedia from "./MessageMedia";
+import { messageMediaKind } from "../lib/message-media";
+import { normalizeMessageLinks } from "../lib/markdown-links";
 import MermaidBlock from "./MermaidBlock";
 import StructuredAgentMessage from "./StructuredAgentMessage";
 import {
@@ -216,6 +219,8 @@ function renderRichInline(text: string, onOpenArtifact?: (path: string) => void)
       );
     }
     if (token.type === "artifact") {
+      const mediaKind = !token.line && messageMediaKind(token.path);
+      if (mediaKind) return <MessageMedia key={index} path={token.path} label={token.label} kind={mediaKind} onOpenArtifact={onOpenArtifact} />;
       if (!onOpenArtifact) return <span key={index}>{token.raw}</span>;
       const locationLabel = token.line ? `${token.path}:${token.line}` : token.path;
       const accessibleLabel = token.label.replace(/^`([^`\n]+)`$/, "$1");
@@ -331,7 +336,7 @@ export function renderAssistantText(text: string, onOpenArtifact?: (path: string
     /(^|\n)(?:[a-z][\w+#.-]{0,20}\n)?(?:复制|copy)\n(?:下载|download)(?:\n|$)/gi,
     "$1",
   );
-  const lines = visibleText.split('\n');
+  const lines = normalizeMessageLinks(visibleText).split('\n');
   const segments: React.ReactNode[] = [];
   let i = 0;
   let segKey = 0;
@@ -5480,7 +5485,7 @@ export default function ChatView({
 
         {/* Queued messages — shown above input when agent is running */}
         {(() => {
-          const queuedMsgs = messages.filter(m => m.isQueued);
+          const queuedMsgs = visibleMessages.filter(m => m.isQueued);
           if (queuedMsgs.length === 0) return null;
           return (
             <div className="queued-message-list">
