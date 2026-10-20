@@ -5,7 +5,7 @@
 
 import dynamic from "next/dynamic";
 import { CONSOLE_CSS } from "./console-styles";
-import { consoleFrameUrl } from "./console-environment";
+import { consoleFrameUrl, consoleOrigin } from "./console-environment";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, ExternalLink, Bot, PanelRight, X, LayoutGrid, MonitorUp, RefreshCw, UsersRound } from "lucide-react";
 import PwaInstallButton from "./PwaInstallButton";
@@ -40,7 +40,7 @@ import { readCollaborationChanged, readCollaborationOpen } from "../../../core/s
 
 import FlowStudioLoading from "./FlowStudioLoading";
 import CollaborationPane from "./CollaborationPane";
-import { COLLABORATION_DASHBOARD_TAB, withCollaborationDashboard, REMOTE_DESKTOP_TAB, withRemoteDesktopTab, type ConsoleTab } from "./console-tabs";
+import { COLLABORATION_DASHBOARD_TAB, withCollaborationDashboard, REMOTE_DESKTOP_TAB, withRemoteDesktopTab, parseWorkspaceSnapshot, restoreWorkspaceTabs, type ConsoleTab } from "./console-tabs";
 import { readRemoteDesktopFullscreen, REMOTE_DESKTOP_CLOSE_TYPE, REMOTE_DESKTOP_VISIBILITY_TYPE, REMOTE_DESKTOP_CONTENT_READY_TYPE } from "../../../core/src/domain/web-console/RemoteDesktopTabBridge";
 import { resolveWebArtifactPath } from "../../../desktop/renderer/lib/artifact-links";
 
@@ -133,6 +133,9 @@ function AuthenticatedConsole({
   const [activeTerminalId, setActiveTerminalId] = useState<string | null>(WEBAPP_TAB.id);
   const [cwdByTerminal, setCwdByTerminal] = useState<Record<string, string>>({});
   const tabsHydrated = useRef(false);
+  const [workspaceRestored, setWorkspaceRestored] = useState(false);
+  const [workspaceRestoreAttempt, setWorkspaceRestoreAttempt] = useState(0);
+  const workspaceStorageKey = `agentroam:workspace:${typeof window === "undefined" ? "" : consoleOrigin()}:${auth.user?.id ?? ""}`;
   const restoredActiveId = useRef<string|null>(null);
   const fillByTerminal = useRef(new Map<string, (command: string, submit?: boolean) => void>());
   const pendingCommandByTerminal = useRef(new Map<string, string>());
@@ -416,9 +419,9 @@ function AuthenticatedConsole({
   useEffect(()=>{fetch("/api/web-console/preferences",{credentials:"same-origin"}).then(r=>r.json()).then(body=>{if(typeof body.preferences?.keybarHidden==="boolean")setKeybarHidden(body.preferences.keybarHidden);if(Array.isArray(body.preferences?.keyOrder))setKeyOrder(body.preferences.keyOrder);if(Array.isArray(body.preferences?.pinnedCommands))setPinnedCommands(body.preferences.pinnedCommands);if(body.preferences?.theme)setThemeId(resolveWebTheme(body.preferences.theme).id);}).catch(()=>{}).finally(()=>setPreferencesLoaded(true));fetch("/api/web-console/device-state",{credentials:"same-origin"}).then(r=>r.json()).then(body=>{const state=body.deviceState;if(state?.drawerTab)setDrawerTab(state.drawerTab);if(state?.activeTerminalId)restoredActiveId.current=state.activeTerminalId;if(typeof state?.drawerOpen==="boolean")setDrawerOpen(state.drawerOpen);if(state?.fileTreeRoot)setFileTreeRoot(state.fileTreeRoot);if(typeof state?.fileTreeFollowMode==="boolean")setFileTreeFollow(state.fileTreeFollowMode);if(state?.selectedFile)setPreviewPath(state.selectedFile);if(state?.terminalScroll&&typeof state.terminalScroll==="object")setTerminalScroll(state.terminalScroll);}).catch(()=>{}).finally(()=>setDeviceStateLoaded(true));},[]);
   const savePreferences=useCallback((update:Record<string,unknown>)=>{fetch("/api/web-console/preferences",{method:"PATCH",credentials:"same-origin",headers:{"content-type":"application/json","x-csrf-token":auth.csrfToken},body:JSON.stringify(update)}).catch(()=>{});},[auth.csrfToken]);
   useEffect(()=>{if(!preferencesLoaded)return;const timer=setTimeout(()=>savePreferences({keybarHidden,keyOrder,pinnedCommands,theme:themeId}),500);return()=>clearTimeout(timer);},[keybarHidden,keyOrder,pinnedCommands,themeId,preferencesLoaded,savePreferences]);
-  const persistDeviceState=useCallback((payload:Record<string,unknown>)=>{if(!auth.csrfToken)return;fetch("/api/web-console/device-state",{method:"PUT",credentials:"same-origin",headers:{"content-type":"application/json","x-csrf-token":auth.csrfToken},body:JSON.stringify(payload)}).catch(()=>{});},[auth.csrfToken]);
-  useEffect(()=>{if(!auth.csrfToken)return;const timer=setTimeout(()=>persistDeviceState({activeTerminalId,drawerOpen,drawerTab,fileTreeRoot,fileTreeFollowMode:fileTreeFollow,selectedFile:previewPath,terminalScroll}),500);return()=>clearTimeout(timer);},[activeTerminalId,drawerOpen,drawerTab,fileTreeRoot,fileTreeFollow,previewPath,terminalScroll,auth.csrfToken,persistDeviceState]);
-  useEffect(()=>{if(!auth.csrfToken)return;const flush=()=>persistDeviceState({activeTerminalId,drawerOpen,drawerTab,fileTreeRoot,fileTreeFollowMode:fileTreeFollow,selectedFile:previewPath,terminalScroll});window.addEventListener("pagehide",flush);return()=>window.removeEventListener("pagehide",flush);},[activeTerminalId,drawerOpen,drawerTab,fileTreeRoot,fileTreeFollow,previewPath,terminalScroll,auth.csrfToken,persistDeviceState]);
+  const persistDeviceState=useCallback((payload:Record<string,unknown>)=>{if(!auth.csrfToken)return;fetch("/api/web-console/device-state",{method:"PUT",credentials:"same-origin",keepalive:true,headers:{"content-type":"application/json","x-csrf-token":auth.csrfToken},body:JSON.stringify(payload)}).catch(()=>{});},[auth.csrfToken]);
+  useEffect(()=>{if(!auth.csrfToken||!workspaceRestored||!deviceStateLoaded)return;const timer=setTimeout(()=>persistDeviceState({activeTerminalId,drawerOpen,drawerTab,fileTreeRoot,fileTreeFollowMode:fileTreeFollow,selectedFile:previewPath,terminalScroll}),500);return()=>clearTimeout(timer);},[activeTerminalId,drawerOpen,drawerTab,fileTreeRoot,fileTreeFollow,previewPath,terminalScroll,auth.csrfToken,persistDeviceState,workspaceRestored,deviceStateLoaded]);
+  useEffect(()=>{if(!auth.csrfToken||!workspaceRestored||!deviceStateLoaded)return;const flush=()=>persistDeviceState({activeTerminalId,drawerOpen,drawerTab,fileTreeRoot,fileTreeFollowMode:fileTreeFollow,selectedFile:previewPath,terminalScroll});window.addEventListener("pagehide",flush);return()=>window.removeEventListener("pagehide",flush);},[activeTerminalId,drawerOpen,drawerTab,fileTreeRoot,fileTreeFollow,previewPath,terminalScroll,auth.csrfToken,persistDeviceState,workspaceRestored,deviceStateLoaded]);
 
   const openFile = useCallback((p: string) => {
     setPreviewPath(p);
@@ -456,18 +459,43 @@ function AuthenticatedConsole({
   useEffect(() => {
     if (!state.connected || !deviceStateLoaded || tabsHydrated.current) return;
     tabsHydrated.current = true;
+    let cancelled = false;
+    let restored = false;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
     rpc<{ tabs: Array<{ id: string; title: string; status: string }> }>("term:list").then((result) => {
-      const restorable = result.tabs.filter((tab) => tab.status === "active" || tab.status === "detached").map(({ id, title }) => ({ id, title }));
-      setTabs((current) => [WEBAPP_TAB, ...restorable, ...current.filter((tab) => tab.kind && tab.kind !== "webapp")]);
+      if (cancelled) return;
+      let saved = null;
+      try { saved = parseWorkspaceSnapshot(localStorage.getItem(workspaceStorageKey)); } catch {}
+      const restorable = restoreWorkspaceTabs(saved, result.tabs, tabsRef.current);
+      setTabs(restorable);
       setActiveTerminalId((value) => {
         const selectedUtility = tabsRef.current.find((tab) => tab.id === value && (tab.kind && tab.kind !== "webapp"));
         if (selectedUtility) return selectedUtility.id;
-        const preferred = restoredActiveId.current || value || WEBAPP_TAB.id;
+        const preferred = saved?.activeTerminalId || restoredActiveId.current || value || WEBAPP_TAB.id;
         if (preferred === WEBAPP_TAB.id) return WEBAPP_TAB.id;
         return restorable.some((tab) => tab.id === preferred) ? preferred : WEBAPP_TAB.id;
       });
-    }).catch(() => {});
-  }, [state.connected, deviceStateLoaded, rpc]);
+      restored = true;
+      setWorkspaceRestored(true);
+    }).catch(() => {
+      if (cancelled) return;
+      tabsHydrated.current = false;
+      retryTimer = setTimeout(() => setWorkspaceRestoreAttempt(value => value + 1), 2000);
+    });
+    return () => {
+      cancelled = true;
+      clearTimeout(retryTimer);
+      if (!restored) tabsHydrated.current = false;
+    };
+  }, [state.connected, deviceStateLoaded, rpc, workspaceStorageKey, workspaceRestoreAttempt]);
+
+  useLayoutEffect(() => {
+    if (!workspaceRestored) return;
+    try {
+      const snapshot = parseWorkspaceSnapshot(JSON.stringify({ tabs, activeTerminalId }));
+      localStorage.setItem(workspaceStorageKey, JSON.stringify(snapshot));
+    } catch {}
+  }, [tabs, activeTerminalId, workspaceRestored, workspaceStorageKey]);
 
   const closeTerminal = (id: string) => {
     if (id === WEBAPP_TAB.id) return;

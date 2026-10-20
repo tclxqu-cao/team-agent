@@ -1,5 +1,24 @@
 import { describe, expect, it } from "vitest";
 import { COLLABORATION_DASHBOARD_TAB, withCollaborationDashboard, REMOTE_DESKTOP_TAB, withRemoteDesktopTab } from "./console-tabs";
+import { parseWorkspaceSnapshot, restoreWorkspaceTabs } from "./console-tabs";
+
+describe("workspace refresh recovery", () => {
+  const chat = { id: "webapp-agent", title: "Assistant", kind: "webapp" as const };
+  it("restores tab order and selection without rerunning a command", () => {
+    const saved = parseWorkspaceSnapshot(JSON.stringify({ tabs: [chat, REMOTE_DESKTOP_TAB, { id: "t-1", title: "shell", initialCommand: "dangerous-command" }], activeTerminalId: "remote-desktop" }));
+    expect(saved?.activeTerminalId).toBe("remote-desktop");
+    expect(saved?.tabs[2]).not.toHaveProperty("initialCommand");
+    expect(restoreWorkspaceTabs(saved, [{ id: "t-1", title: "renamed", status: "detached" }], [chat]).map(tab => tab.id)).toEqual(["webapp-agent", "remote-desktop", "t-1"]);
+  });
+  it("drops closed terminals, preserves utilities and discovers live terminals", () => {
+    const saved = { tabs: [chat, { id: "old", title: "old" }, REMOTE_DESKTOP_TAB], activeTerminalId: "old" };
+    expect(restoreWorkspaceTabs(saved, [{ id: "old", title: "old", status: "closed" }, { id: "new", title: "new", status: "active" }], [chat]).map(tab => tab.id)).toEqual(["webapp-agent", "remote-desktop", "new"]);
+  });
+  it("ignores malformed storage and unsupported or duplicate tabs", () => {
+    expect(parseWorkspaceSnapshot("{" )).toBeNull();
+    expect(parseWorkspaceSnapshot(JSON.stringify({ tabs: [chat, chat, { id: "bad", title: "bad", kind: "unknown" }] }))?.tabs).toEqual([chat]);
+  });
+});
 
 describe("remote desktop utility tab", () => {
   it("opens a single group dashboard without replacing existing chat tabs", () => {

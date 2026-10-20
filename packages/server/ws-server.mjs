@@ -717,7 +717,7 @@ const requestHandlers = {
     const existingTab = existingTabs.find((tab) => tab.id === id);
     const liveCount = existingTabs.filter((tab) => tab.status === "active" || tab.status === "detached").length;
     if (!existingTab && liveCount >= 8) throw Object.assign(new Error("terminal limit reached"), { code: "ELIMIT" });
-    const session = startTerminal(id, { ...msg, userId: conn.principal.userId });
+    const session = startTerminal(id, { ...msg, cwd: existingTab?.currentCwd || existingTab?.startCwd || msg.cwd, initialCommand: existingTab ? undefined : msg.initialCommand, userId: conn.principal.userId });
     detachTerminal(conn, id); // idempotent re-attach
 
     const channelId = assignChannel(conn, id);
