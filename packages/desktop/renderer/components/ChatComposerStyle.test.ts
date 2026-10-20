@@ -11,6 +11,16 @@ const css = readFileSync(new URL("../styles/composer.css", import.meta.url), "ut
 const globalCss = readFileSync(new URL("../styles/global.css", import.meta.url), "utf8");
 
 describe("shared Electron and Web composer", () => {
+  it("allows sending recognized text while recording and cancels late dictation before submission", () => {
+    const send = chatView.slice(chatView.indexOf("  const handleSend = async"), chatView.indexOf("  const handleSuggestionSend"));
+    expect(send).toContain("dictationGenerationRef.current += 1");
+    expect(send).toContain("if (handle?.cancel) handle.cancel()");
+    expect(send.indexOf("dictationGenerationRef.current += 1")).toBeLessThan(send.indexOf("handle.cancel()"));
+    expect(send.indexOf("handle.cancel()")).toBeLessThan(send.indexOf("submitChatMessage"));
+    const button = chatView.slice(chatView.indexOf("onClick={handleSend}"), chatView.indexOf("onClick={handleSend}") + 300);
+    expect(button).not.toContain("disabled={isRecording");
+    expect(button).toContain("!input.trim()");
+  });
   it("renders one multiline structure without a runtime branch", () => {
     expect(chatView).toContain('className="composer-text-input web-native-composer-textarea"');
     expect(chatView).toContain('className="web-native-composer-toolbar"');

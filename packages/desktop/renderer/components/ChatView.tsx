@@ -4013,14 +4013,26 @@ export default function ChatView({
     }
   };
 
-  const handleSend = async () => submitChatMessage(createComposerSubmission({
-    text: input,
-    agentIds: pendingAgents.map((agent) => agent.id),
-    agentName: pendingAgents.length > 0
-      ? pendingAgents.map((agent) => agent.name).join(", ")
-      : undefined,
-    images: pendingImages,
-  }));
+  const handleSend = async () => {
+    if (isRecording || isStartingDictation || isFinalizingDictation) {
+      const handle = dictationRef.current;
+      dictationGenerationRef.current += 1;
+      dictationRef.current = null;
+      setIsRecording(false);
+      setIsStartingDictation(false);
+      setIsFinalizingDictation(false);
+      if (handle?.cancel) handle.cancel();
+      else handle?.stop();
+    }
+    return submitChatMessage(createComposerSubmission({
+      text: input,
+      agentIds: pendingAgents.map((agent) => agent.id),
+      agentName: pendingAgents.length > 0
+        ? pendingAgents.map((agent) => agent.name).join(", ")
+        : undefined,
+      images: pendingImages,
+    }));
+  };
 
   const handleSuggestionSend = (command: string) => {
     void submitChatMessage(createSuggestionSubmission(command));
@@ -5984,7 +5996,7 @@ export default function ChatView({
               <button
                 type="button"
                 onClick={handleSend}
-                disabled={isRecording || !canSubmitComposer || nativeGoal.pending || pendingImageReads > 0 || !input.trim()}
+                disabled={!canSubmitComposer || nativeGoal.pending || pendingImageReads > 0 || !input.trim()}
                 className="web-native-send-button"
                 aria-label={shouldQueueMessage ? "排队发送" : "发送"}
                 title={shouldQueueMessage ? "排队发送" : "发送"}
@@ -6009,7 +6021,7 @@ export default function ChatView({
           letterSpacing: "0.03em",
           opacity: 0.6,
         }}>
-          Enter 发送{goalMode ? "目标" : shouldQueueMessage ? "（排队）" : ""} · @智能体（可多选）· /技能 · Shift+Enter 换行{isFinalizingDictation ? " · 正在完成识别…" : isStartingDictation ? " · 正在连接麦克风…" : isRecording ? " · 🎤 正在聆听，点击 ■ 停止" : ""}
+          Enter 发送{goalMode ? "目标" : shouldQueueMessage ? "（排队）" : ""} · @智能体（可多选）· /技能 · Shift+Enter 换行{isFinalizingDictation ? " · 正在完成识别…" : isStartingDictation ? " · 正在连接麦克风…" : isRecording ? " · 🎤 正在聆听，可直接点发送" : ""}
         </div>
       </div>
 

@@ -377,7 +377,7 @@ describe("AgentRoam reference sidebar", () => {
     const bottomActionEnd = app.indexOf("</button>", bottomActionStart);
     const bottomAction = app.slice(bottomActionStart, bottomActionEnd);
 
-    expect(app).toContain('import { History, LoaderCircle, Plus, RefreshCw, Search } from "lucide-react"');
+    expect(app).toContain('import { History, LoaderCircle, Plus, Search } from "lucide-react"');
     expect(app).toContain("const [sessionCreationPending, setSessionCreationPending]");
     expect(app).toContain("const isCreatingSession = sessionCreationPending?.agentType === activeAgent");
     expect(projectAction).toContain('aria-busy={isCreatingSession}');
@@ -390,12 +390,12 @@ describe("AgentRoam reference sidebar", () => {
     expect(bottomAction).toContain("正在创建...");
   });
 
-  it("offers a session refresh action before importing a directory", () => {
-    const refresh = app.indexOf('aria-label="刷新会话"');
+  it("offers directory refresh feedback before importing a directory", () => {
+    const refresh = app.indexOf('<SidebarRefreshButton');
     expect(refresh).toBeGreaterThan(-1);
     expect(refresh).toBeLessThan(app.indexOf('aria-label="导入目录"'));
-    expect(app).toContain('onClick={() => void loadProjects(activeAgent, { refresh: true })}');
-    expect(app).toContain('disabled={workspaceLoading || loadingProjectIds.size > 0}');
+    expect(app).toContain('onRefresh={() => void loadProjects(activeAgent, { refresh: true })}');
+    expect(app).toContain('loading={workspaceLoading}');
   });
 
   it("guards and cleans up the new-session creation lifecycle", () => {

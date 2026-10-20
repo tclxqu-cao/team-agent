@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { createPortal } from "react-dom";
-import { History, LoaderCircle, Plus, RefreshCw, Search } from "lucide-react";
+import { History, LoaderCircle, Plus, Search } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
 import ChatView from "./components/ChatView";
+import SidebarRefreshButton from "./components/SidebarRefreshButton";
 import CollaborationLauncher from "./components/collaboration/CollaborationLauncher";
 import CollaborationCreateDialog from "./components/collaboration/CollaborationCreateDialog";
 import CollaborationDashboard from "./components/collaboration/CollaborationDashboard";
@@ -1656,7 +1657,7 @@ export default function App() {
           flexDirection: "column",
           background: "var(--bg-surface)",
           borderRight: "1px solid var(--border-subtle)",
-          padding: "56px 0 0",
+          padding: webShell ? "12px 0 0" : "56px 0 0",
           position: "relative",
           zIndex: 10,
           overflow: "hidden",
@@ -1765,18 +1766,11 @@ export default function App() {
                 <path d="m15 9 3-3 3 3M18 6v12" />
               </svg>
             </button>
-            <button
-              type="button"
-              disabled={workspaceLoading || loadingProjectIds.size > 0}
-              onClick={() => void loadProjects(activeAgent, { refresh: true })}
-              title="刷新会话"
-              aria-label="刷新会话"
-              className="ui-icon-button"
-            >
-              {workspaceLoading || loadingProjectIds.size > 0
-                ? <LoaderCircle size={17} className="animate-spin" aria-hidden="true" />
-                : <RefreshCw size={17} aria-hidden="true" />}
-            </button>
+            <SidebarRefreshButton
+              loading={workspaceLoading}
+              error={workspaceError}
+              onRefresh={() => void loadProjects(activeAgent, { refresh: true })}
+            />
             <button
               type="button"
               onClick={() => void handleImportProject()}
@@ -2005,16 +1999,18 @@ export default function App() {
                 </div>
               );
             })}
-            {projects.length === 0 && (
+            {projects.length === 0 && workspaceLoading && (
+              <div className="sidebar-directory-skeleton" aria-hidden="true">
+                {[0, 1, 2].map(row => <div key={row}><span /><span /></div>)}
+              </div>
+            )}
+            {projects.length === 0 && !workspaceLoading && !workspaceError && (
               <div style={{
                 color: "var(--text-muted)", fontSize: 12,
                 padding: "24px 10px", textAlign: "center", opacity: 0.7,
               }}>
-                {workspaceLoading ? "正在加载目录..." : "暂无目录"}
+                暂无目录
               </div>
-            )}
-            {projects.length > 0 && workspaceLoading && (
-              <div className="sidebar-cache-state">正在同步目录...</div>
             )}
             {workspaceStale && !workspaceError && (
               <div className="sidebar-cache-state">当前显示缓存目录</div>
