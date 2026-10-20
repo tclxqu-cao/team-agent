@@ -115,6 +115,30 @@ describe("remote desktop visible viewport", () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
+  it("does not apply Safari's inherited keyboard pan twice inside a shell that already follows it", () => {
+    vi.useFakeTimers();
+    const view = browserWindow(382);
+    const parent = browserWindow(844);
+    parent.visualViewport.height = 420;
+    parent.visualViewport.offsetTop = 210;
+    view.visualViewport.offsetTop = 210;
+    view.visualViewport.height = 172;
+    view.parent = parent as unknown as Window;
+    view.frameElement = { getBoundingClientRect: () => rect(382, 248) } as unknown as Element;
+    const { element, values } = targetElement();
+    const stop = trackBrowserLiveViewport(element, view as unknown as Window);
+    expect(values.get("--browser-live-top")).toBe("0px");
+    expect(values.get("--browser-live-height")).toBe("382px");
+    // Safari's local viewport catches up without moving or shrinking the panel.
+    view.visualViewport.offsetTop = 0;
+    view.visualViewport.height = 382;
+    view.visualViewport.dispatchEvent(new Event("resize"));
+    vi.advanceTimersByTime(250);
+    expect(values.get("--browser-live-top")).toBe("0px");
+    expect(values.get("--browser-live-height")).toBe("382px");
+    stop();
+  });
+
   it("fills the frame after the shell tab finishes sliding into view", () => {
     vi.useFakeTimers();
     const view = browserWindow();

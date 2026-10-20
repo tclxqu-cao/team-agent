@@ -44,6 +44,8 @@ for (const required of [
   "package/runtime/lib/desktop-discovery.mjs",
   "package/runtime/lib/device-pairing-store.mjs",
   "package/runtime/lib/device-pairing-gateway.mjs",
+  "package/runtime/lib/voice-asr-gateway.mjs",
+  "package/runtime/lib/voice-tts-gateway.mjs",
   "package/runtime/lib/pairing-page.mjs",
   "package/runtime/lib/pwa-assets.mjs",
   "package/runtime/node_modules/jsqr/dist/jsQR.js",

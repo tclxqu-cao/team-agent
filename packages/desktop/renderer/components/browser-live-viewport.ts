@@ -47,7 +47,15 @@ export function trackBrowserLiveViewport(element: HTMLElement, view: Window = wi
     let viewport = readViewport(view);
     // Native fullscreen escapes the iframe; in-page fullscreen stays inside it.
     if (parent && frame && !view.document.fullscreenElement) {
-      viewport = intersectBrowserLiveViewport(viewport, readViewport(parent), frame.getBoundingClientRect());
+      // The shell already follows the top-level visual viewport. Safari can
+      // report that keyboard pan again inside the iframe; applying it locally
+      // leaves a blank strip and clips the picture twice. Only the parent
+      // defines keyboard occlusion; the frame contributes its layout bounds.
+      viewport = intersectBrowserLiveViewport(
+        { top: 0, left: 0, width: view.innerWidth, height: view.innerHeight },
+        readViewport(parent),
+        frame.getBoundingClientRect(),
+      );
     }
     for (const [name, value] of Object.entries(viewport)) {
       element.style.setProperty(`--browser-live-${name}`, `${value}px`);

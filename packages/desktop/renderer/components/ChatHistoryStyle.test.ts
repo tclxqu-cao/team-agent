@@ -384,6 +384,8 @@ describe("shared Codex-style message history", () => {
     expect(messageBubble).toContain('chatMsg.sendState === "pending"');
     expect(messageBubble).toContain('? "正在发送"');
     expect(messageBubble).toContain('? "发送失败"');
+    expect(messageBubble).toContain('<CircleAlert size={16}');
+    expect(messageBubble).not.toContain('<span>发送失败</span>');
     expect(messageBubble).toContain(': "已引导"');
     expect(chatView).not.toContain("msg-send-status__spinner");
     expect(chatView).toContain("actionPolicy.showCopy && <button");

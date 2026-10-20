@@ -154,6 +154,7 @@ export interface ChatMessage {
     fields?: AskUserField[];
     multiSelect?: boolean;
     answered?: boolean;
+    cancelled?: boolean;
     answer?: string;
   };
   /** Widget card data (from show_widget events) */

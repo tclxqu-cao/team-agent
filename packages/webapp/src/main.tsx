@@ -7,6 +7,8 @@ import { createRoot } from "react-dom/client";
 import { HttpClient } from "./infrastructure/http/http-client";
 import { installClientErrorReporter } from "./infrastructure/client-error-reporter";
 import { AgentHttpGateway } from "./infrastructure/http/agent-http-gateway";
+import { BrowserDictation } from "./infrastructure/voice/browser-dictation";
+import { BrowserSpeechOutput } from "./infrastructure/voice/browser-speech-output";
 import { LocalSettingsRepository } from "./infrastructure/local/local-settings-repository";
 import { installBrowserCryptoCompatibility } from "./infrastructure/browser-crypto";
 import { installParentTabSwipeBridge } from "./presentation/parent-tab-swipe";
@@ -89,11 +91,20 @@ const projectBridge = window.parent === window ? undefined : new WebShellProject
 const browserBridge = window.parent === window ? undefined : new WebShellBrowserBridge();
 // SSE 也要指向远端服务器：基址在 boot() 里按连接方案填充（web 模式保持空）。
 let sseBase = "";
+async function openVoiceSocket(path: string): Promise<WebSocket> {
+  const { wsNonce } = await http.get<{ wsNonce: string }>("/api/web-console/bootstrap");
+  const url = new URL(path, sseBase || location.href);
+  url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+  url.searchParams.set("nonce", wsNonce);
+  return new WebSocket(url);
+}
 const gateway = new AgentHttpGateway(
   http,
   new LocalSettingsRepository(),
   projectBridge,
   (url) => authorizedFetch ? new AuthenticatedEventSource(sseBase + url, { fetch: authorizedFetch }) as unknown as EventSource : new EventSource(sseBase + url),
+  new BrowserDictation({ openSocket: () => openVoiceSocket("/ws/voice") }),
+  new BrowserSpeechOutput(() => openVoiceSocket("/ws/voice/tts")),
 );
 window.browserLiveApi = browserBridge;
 

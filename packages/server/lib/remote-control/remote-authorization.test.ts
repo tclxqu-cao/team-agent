@@ -383,6 +383,48 @@ it('switches the video source and maps input to the selected display without rep
   } finally {f.service.video.peer=null;await f.close();}
 });
 
+it('restores the selected Mac display across helper restarts and accepts a fallback after disconnection', async () => {
+  const f = await fixture({ platform: 'darwin' });
+  let primary = '1';
+  let selected = primary;
+  let connected = ['1', '2'];
+  const frame = () => ({
+    data: Buffer.alloc(30, 1).toString('base64'), width: 1000, height: 900,
+    originX: selected === '1' ? 0 : 1000, originY: 0, displayId: selected,
+    displays: connected.map(id => ({ id, label: id, primary: id === primary, selected: id === selected })),
+  });
+  f.helper.stop.mockImplementation(async () => { selected = primary; });
+  f.helper.request.mockImplementation(async (cmd: any) => {
+    if (cmd.op === 'status') return { screen: true, accessibility: true };
+    if (cmd.op === 'set-display' || cmd.op === 'capture') {
+      if (connected.includes(cmd.displayId)) selected = cmd.displayId;
+      if (!connected.includes(selected)) selected = connected[0];
+      return frame();
+    }
+    return { ok: true };
+  });
+  try {
+    f.grant(); await f.service.action('enable'); await f.watch();
+    expect(f.service.selectedDisplayId).toBe('1');
+    // The OS changes its primary screen while the helper is restarted.
+    primary = '2';
+    await f.service.updateViewerCount(0);
+    await f.service.stopIdleCapture();
+    await f.service.updateViewerCount(1);
+    expect(f.service.selectedDisplayId).toBe('1');
+    expect(f.helper.request).toHaveBeenCalledWith(expect.objectContaining({ op: 'capture', displayId: '1' }));
+    f.registry.setDisplay(f.viewer, f.service.sessionId, '2'); await f.service.inputQueue;
+    primary = '1';
+    await f.service.action('restart');
+    expect(f.service.selectedDisplayId).toBe('2');
+    expect(f.service.bounds.originX).toBe(1000);
+    connected = ['1'];
+    await f.service.tick();
+    expect(f.service.selectedDisplayId).toBe('1');
+    expect(f.service.bounds.originX).toBe(0);
+  } finally { await f.close(); }
+});
+
 it('discards a capture and input queued for the old screen while switching',async()=>{
   const f=await fixture();let finish:any;let slow=false;
   const displays=[{id:'1',label:'one',selected:true,primary:true},{id:'2',label:'two',selected:false,primary:false}];

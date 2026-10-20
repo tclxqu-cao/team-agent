@@ -1,0 +1,29 @@
+<!doctype html>
+<html>
+<head>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <style>
+    html, body { margin: 0; height: 100%; overflow: hidden; }
+    #shell { position: fixed; display: grid; grid-template-rows: 38px minmax(0, 1fr); }
+    iframe { width: 100%; height: 100%; border: 0; }
+  </style>
+</head>
+<body>
+  <div id="shell"><div>Remote desktop shell fixture</div><iframe src="./" title="嵌入远程桌面"></iframe></div>
+  <script>
+    // Model the shell following Safari's top-level visual viewport, including
+    // the keyboard pan that WebKit can also expose inside the child document.
+    const viewport = Object.assign(new EventTarget(), { offsetTop: 0, offsetLeft: 0, width: 390, height: 844 });
+    Object.defineProperty(window, "visualViewport", { configurable: true, value: viewport });
+    window.setRegressionViewport = (height, top = 0) => {
+      Object.assign(viewport, { height, offsetTop: top });
+      Object.assign(document.querySelector("#shell").style, { top: `${top}px`, left: "0", width: "390px", height: `${height}px` });
+      viewport.dispatchEvent(new Event("resize"));
+    };
+    setRegressionViewport(844);
+    document.querySelector("iframe").addEventListener("load", () => {
+      setTimeout(() => document.querySelector("iframe").contentWindow.postMessage({ type: "agent-web-shell:remote-desktop-visibility:v1", visible: true }, location.origin), 100);
+    });
+  </script>
+</body>
+</html>

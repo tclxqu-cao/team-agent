@@ -240,6 +240,40 @@ describe("OpenCode interactive questions", () => {
       status: "completed", output: "User has answered: 字幕", metadata: { answers: [["字幕"]] }, time: { start: 1, end: 2 } } }] }] } as never);
     expect((await adapter.getSession("ses_1")).messages).toContainEqual({ role: "tool", toolCallId: "call_1", content: "User has answered: 字幕" });
   });
+
+  it("restores interrupted questions as settled cards instead of raw tool JSON", async () => {
+    const fixture = mockServer();
+    const adapter = new OpenCodeRuntimeAdapter({ server: fixture.server });
+    const info = { id: "msg_1", sessionID: "ses_1", role: "assistant", time: { created: 1, completed: 2 } };
+    const input = { questions: [
+      { question: "打开后看到什么？", options: [{ label: "白屏", description: "没有画面" }, { label: "静态画面" }] },
+      { question: "哪些设备？", multiple: true, options: [{ label: "手机" }, { label: "电脑" }] },
+    ] };
+    const tool = { id: "part_1", type: "tool", sessionID: "ses_1", messageID: "msg_1", callID: "call_1", tool: "question",
+      state: { status: "error", input, error: "Tool execution interrupted", metadata: {}, time: { start: 1, end: 2 } } };
+    fixture.client.session.messages.mockResolvedValue({ data: [{ info, parts: [
+      { type: "text", text: "请确认现象" }, tool,
+    ] }] } as never);
+    const detail = await adapter.getSessionPaged("ses_1", { limit: 50 });
+    expect(detail.messages).toHaveLength(3);
+    expect(detail.messages[0]).toMatchObject({ content: "请确认现象" });
+    expect(detail.messages[1]).toMatchObject({ role: "assistant", content: "", presentation: { question: {
+      question: "打开后看到什么？", status: "cancelled", options: [{ label: "白屏", description: "没有画面" }, { label: "静态画面", description: "" }],
+    } } });
+    expect(detail.messages[2]).toMatchObject({ presentation: { question: { question: "哪些设备？", multiSelect: true, status: "cancelled" } } });
+    expect(detail.messages.some((message) => message.toolCalls?.length || message.role === "tool")).toBe(false);
+    expect(detail.events).toEqual([]);
+    await expect(adapter.answerQuestion(detail.messages[1].presentation!.question!.questionId, { answer: "白屏" })).resolves.toBe(false);
+
+    fixture.client.session.messages.mockResolvedValue({ data: [{ info, parts: [{ ...tool, state: { ...tool.state,
+      status: "completed", output: "User has answered your questions", metadata: { answers: [["白屏"], ["手机", "电脑"]] },
+    } }] }] } as never);
+    const completed = await adapter.getSession("ses_1");
+    expect(completed.messages.map((message) => message.presentation?.question)).toEqual([
+      expect.objectContaining({ status: "answered", answer: "白屏" }),
+      expect.objectContaining({ status: "answered", answer: "手机, 电脑" }),
+    ]);
+  });
 });
 
 describe("OpenCode runtime mapping", () => {

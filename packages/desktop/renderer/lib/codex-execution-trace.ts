@@ -6,6 +6,50 @@ export type CodexLiveExecutionEvent = Extract<AgentEvent, {
   type: "text_chunk" | "reasoning_summary_delta" | "tool_call" | "tool_result";
 }>;
 
+export function reconcileCodexUnphasedMessages(
+  current: readonly ChatMessage[],
+  traceMessages: readonly ChatMessage[],
+): ChatMessage[] {
+  const sources = new Map(traceMessages.filter((message) => (
+    message.presentation?.agentMessagePhase === "commentary"
+    && message.presentation.executionTrace?.turnId
+    && message.id.startsWith(`codex-trace:${message.presentation.executionTrace.turnId}:agent:`)
+  )).map((message) => [message.id, message]));
+  const promoted = current.filter((message) => message.role === "assistant" && sources.has(message.id));
+  const promotedIds = new Set(promoted.map((message) => message.id));
+  const retained = current.filter((message) => !promotedIds.has(message.id));
+  return promoted.reduce((messages, message) => {
+    const source = sources.get(message.id)!;
+    const turnId = source.presentation!.executionTrace!.turnId;
+    const itemId = message.id.slice(`codex-trace:${turnId}:agent:`.length);
+    const existing = messages.some((entry) => entry.executionTrace?.liveMessages?.some(
+      (live) => live.id === message.id,
+    ));
+    // These are accumulated snapshots of one item, not additional stream deltas.
+    if (existing) return messages.map((entry) => entry.executionTrace ? {
+      ...entry,
+      executionTrace: {
+        ...entry.executionTrace,
+        liveMessages: entry.executionTrace.liveMessages?.map((live) => (
+          live.id === message.id && message.content.length > live.content.length
+            ? { ...live, content: message.content }
+            : live
+        )),
+      },
+    } : entry);
+    const updated = applyCodexLiveExecutionEvent(messages, turnId, {
+      type: "text_chunk", text: message.content, turnId, itemId, messagePhase: "commentary",
+    }, message.timestamp);
+    return updated.map((entry) => entry.executionTrace?.turnId === turnId ? {
+      ...entry,
+      executionTrace: {
+        ...entry.executionTrace,
+        liveMessages: [...(entry.executionTrace.liveMessages ?? [])].sort((left, right) => left.timestamp - right.timestamp),
+      },
+    } : entry);
+  }, retained);
+}
+
 export function groupCodexExecutionTrace(
   messages: readonly ChatMessage[],
   revision: string,
@@ -169,6 +213,20 @@ export function applyCodexLiveExecutionEvent(
   event: CodexLiveExecutionEvent,
   timestamp = Date.now(),
 ): ChatMessage[] {
+  if (event.type === "tool_call") {
+    const pending = messages.filter((message) => (
+      message.role === "assistant"
+      && !message.executionTrace
+      && !message.presentation?.agentMessagePhase
+      && message.id.startsWith(`codex-trace:${turnId}:agent:`)
+    ));
+    if (pending.length > 0) {
+      messages = reconcileCodexUnphasedMessages(messages, pending.map((message) => ({
+        ...message,
+        presentation: { ...message.presentation, agentMessagePhase: "commentary", executionTrace: { turnId } },
+      })));
+    }
+  }
   const matchingEventTraceIndex = messages.findLastIndex((message) => (
     message.executionTrace?.turnId === turnId
     && traceContainsEvent(message.executionTrace.liveMessages ?? [], event)

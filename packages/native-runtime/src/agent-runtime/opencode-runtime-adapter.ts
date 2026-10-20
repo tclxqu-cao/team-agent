@@ -38,7 +38,7 @@ import { OpenCodeServerClient, type OpenCodeServerEvent } from "./opencode-serve
 import { OPENCODE_INTERRUPTED_EVENT } from "./opencode-v2-codec.js";
 import type { OpenCodeRuntimeClient } from "./opencode-v2-transport.js";
 import {
-  openCodeLegacyQuestion, openCodeQuestionCard, openCodeQuestionId,
+  openCodeLegacyQuestion, openCodeQuestionCard, openCodeQuestionHistory, openCodeQuestionId,
   OPENCODE_QUESTION_ASKED, OPENCODE_QUESTION_RESOLVED,
   type OpenCodeQuestionRequest,
 } from "./opencode-questions.js";
@@ -919,8 +919,16 @@ export function openCodeHistoryToMessages(
     const reasoning = entry.parts
       .filter((part): part is Extract<Part, { type: "reasoning" }> => part.type === "reasoning")
       .map((part) => ({ itemId: part.id, sectionIndex: 0, text: part.text }));
-    const tools = entry.parts.filter((part): part is ToolPart => part.type === "tool"
-      && (part.tool !== "question" || part.state.status === "completed" || part.state.status === "error"));
+    const questionCards = new Map<string, Message[]>();
+    const tools = entry.parts.filter((part): part is ToolPart => {
+      if (part.type !== "tool") return false;
+      if (part.tool !== "question") return true;
+      if (part.state.status !== "completed" && part.state.status !== "error") return false;
+      const cards = openCodeQuestionHistory(part);
+      if (!cards) return true;
+      questionCards.set(part.callID, cards);
+      return false;
+    });
     const message: Message = {
       role: entry.info.role,
       content: text,
@@ -945,6 +953,7 @@ export function openCodeHistoryToMessages(
         content: part.state.status === "completed" ? part.state.output : part.state.error,
       });
     }
+    for (const cards of questionCards.values()) messages.push(...cards);
   }
   return messages;
 }

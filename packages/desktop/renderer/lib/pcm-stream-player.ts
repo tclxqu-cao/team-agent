@@ -1,4 +1,5 @@
 import type { TtsStreamMetadata } from "../global";
+import { createBufferPlaybackNode } from "./pcm-buffer-playback";
 
 interface PlaybackApi {
   ttsStop(): Promise<{ ok: boolean }>;
@@ -28,6 +29,8 @@ interface PlayerDependencies {
   createContext(): AudioContextLike;
   createNode(context: AudioContextLike): WorkletNodeLike;
   workletUrl: string;
+  createFallbackNode?(context: AudioContextLike): WorkletNodeLike;
+  workletTimeoutMs?: number;
 }
 
 interface GenerationState {
@@ -46,6 +49,7 @@ const defaultDependencies: PlayerDependencies = {
     { numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [1] },
   ) as unknown as WorkletNodeLike,
   workletUrl: "./pcm-audio-worklet.js",
+  createFallbackNode: (context) => createBufferPlaybackNode(context as unknown as AudioContext),
 };
 
 export function decodeS16Le(pcm: ArrayBuffer | ArrayBufferView): Float32Array {
@@ -71,6 +75,9 @@ export class PcmStreamPlayer {
     private readonly api: PlaybackApi,
     private readonly dependencies: PlayerDependencies = defaultDependencies,
   ) {}
+
+  /** Call directly from a tap so Safari can unlock audio before network I/O. */
+  prepare(): Promise<void> { return this.ensureReady(); }
 
   start(metadata: TtsStreamMetadata): void {
     if (this.current && !this.current.acknowledged) {
@@ -150,12 +157,29 @@ export class PcmStreamPlayer {
     this.ready = (async () => {
       const context = this.dependencies.createContext();
       this.context = context;
-      await context.audioWorklet.addModule(this.dependencies.workletUrl);
-      const node = this.dependencies.createNode(context);
+      const resumed = context.state !== "running" ? context.resume() : Promise.resolve();
+      // Attach a handler immediately while the worklet loads.
+      void resumed.catch(() => undefined);
+      let node: WorkletNodeLike;
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        await Promise.race([
+          context.audioWorklet.addModule(this.dependencies.workletUrl),
+          new Promise<never>((_resolve, reject) => {
+            timer = setTimeout(() => reject(new Error("TTS AudioWorklet initialization timed out")), this.dependencies.workletTimeoutMs ?? 1_500);
+          }),
+        ]);
+        if (this.context !== context) return;
+        node = this.dependencies.createNode(context);
+      } catch (error) {
+        if (this.context !== context) return;
+        if (!this.dependencies.createFallbackNode) throw error;
+        node = this.dependencies.createFallbackNode(context);
+      } finally { clearTimeout(timer); }
       node.port.onmessage = (event) => this.onWorkletMessage(event.data as Record<string, unknown>);
       node.connect(context.destination);
       this.node = node;
-      if (context.state !== "running") await context.resume();
+      await resumed;
     })();
     return this.ready;
   }

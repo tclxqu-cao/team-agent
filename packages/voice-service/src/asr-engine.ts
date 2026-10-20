@@ -23,12 +23,19 @@ export type AsrResultEvent = {
   generation: number;
   utteranceId: number;
   text: string;
+} | {
+  type: "error";
+  sessionId: string;
+  generation: number;
+  code: string;
+  message: string;
 };
 
 export interface AsrSession {
+  readonly ready?: Promise<void>;
   acceptPcm(samples: Float32Array): void;
-  finish(): void;
-  reset(): void;
+  finish(): void | Promise<void>;
+  reset(): void | Promise<void>;
   close(): void;
 }
 

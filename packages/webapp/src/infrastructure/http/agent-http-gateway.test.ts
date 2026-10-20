@@ -738,7 +738,7 @@ describe("AgentHttpGateway", () => {
     expect(events.filter((event) => event.progressId === "new-run-progress")).toHaveLength(1);
   });
 
-  it("suppresses final-answer chunks already covered by the core snapshot", async () => {
+  it.each([false, true])("does not suppress live answer chunks for lifecycle-only reads: %s", async (lifecycleOnly) => {
     vi.useFakeTimers();
     globalThis.EventSource = ObservableEventSource as unknown as typeof EventSource;
     const sessionId = "runtime:codex:c291cmNl";
@@ -765,7 +765,7 @@ describe("AgentHttpGateway", () => {
     const events: Array<Record<string, unknown>> = [];
     gateway.onEvent((event) => events.push(event as Record<string, unknown>));
 
-    await gateway.getSession(sessionId, { view: "core", limit: 50 });
+    await gateway.getSession(sessionId, { view: "core", limit: 50 }, { lifecycleOnly });
     const source = ObservableEventSource.instances[0];
     emit(source, {
       type: "text_chunk",
@@ -813,6 +813,7 @@ describe("AgentHttpGateway", () => {
 
     expect(events.filter((event) => event.type === "text_chunk").map((event) => event.text)).toEqual([
       "commentary stays visible",
+      ...(lifecycleOnly ? ["persisted answer"] : []),
       "new suffix",
       "next run",
     ]);

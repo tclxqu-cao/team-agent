@@ -59,7 +59,7 @@ if (targetName === "windows-amd64") {
   await cp(resolve(server, "native/remote-helper-windows/THIRD-PARTY-NOTICES.txt"), resolve(target, "native/remote-helper-NOTICES.txt"));
 }
 await cp(resolve(server, "lib/desktop-discovery.mjs"), resolve(target, "lib/desktop-discovery.mjs"));
-for (const name of ["device-pairing-store.mjs", "device-pairing-gateway.mjs", "pairing-page.mjs", "pwa-assets.mjs"]) {
+for (const name of ["device-pairing-store.mjs", "device-pairing-gateway.mjs", "pairing-page.mjs", "pwa-assets.mjs", "voice-asr-gateway.mjs", "voice-tts-gateway.mjs"]) {
   await cp(resolve(server, "lib", name), resolve(target, "lib", name));
 }
 await cp(resolve(server, "public/pwa"), resolve(target, "public/pwa"), { recursive: true });

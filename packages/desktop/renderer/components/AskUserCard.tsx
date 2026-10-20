@@ -8,6 +8,7 @@ interface AskUserCardProps {
   fields?: AskUserField[];
   multiSelect?: boolean;
   answered?: boolean;
+  cancelled?: boolean;
   answer?: string;
   onAnswer: (answer: string, selectedIndices?: number[]) => void | Promise<void>;
 }
@@ -18,9 +19,11 @@ export default function AskUserCard({
   fields,
   multiSelect,
   answered,
+  cancelled,
   answer,
   onAnswer,
 }: AskUserCardProps) {
+  const settled = answered || cancelled;
   const [selectedIndices, setSelectedIndices] = useState<Set<number>>(new Set());
   const [freeText, setFreeText] = useState("");
   const [fieldValues, setFieldValues] = useState<Record<string, string>>({});
@@ -29,7 +32,7 @@ export default function AskUserCard({
   const [submitError, setSubmitError] = useState("");
 
   const submit = async (value: string, indices?: number[]) => {
-    if (answered || submittingRef.current) return;
+    if (settled || submittingRef.current) return;
     submittingRef.current = true;
     setSubmitting(true);
     setSubmitError("");
@@ -47,7 +50,7 @@ export default function AskUserCard({
   const hasFields = Boolean(fields?.length);
 
   const toggleOption = (idx: number) => {
-    if (answered) return;
+    if (settled) return;
     setSelectedIndices((prev) => {
       const next = new Set(prev);
       if (multiSelect) {
@@ -84,14 +87,14 @@ export default function AskUserCard({
 
   return (
     <div style={{ marginBottom: 12 }}>
-      {submitError && !answered && <div role="alert" style={{ color: "var(--danger)", marginBottom: 8 }}>{submitError}</div>}
+      {submitError && !settled && <div role="alert" style={{ color: "var(--danger)", marginBottom: 8 }}>{submitError}</div>}
       {submitting && <div role="status">正在发送回答…</div>}
       <div
         style={{
           borderRadius: 12,
           border: "1px solid",
-          borderColor: answered ? "var(--border-subtle)" : "rgba(79,110,247,0.35)",
-          background: answered ? "var(--bg-deep)" : "linear-gradient(135deg, rgba(79,110,247,0.04) 0%, var(--bg-deep) 100%)",
+          borderColor: settled ? "var(--border-subtle)" : "rgba(79,110,247,0.35)",
+          background: settled ? "var(--bg-deep)" : "linear-gradient(135deg, rgba(79,110,247,0.04) 0%, var(--bg-deep) 100%)",
           overflow: "hidden",
           transition: "border-color 0.2s ease",
         }}
@@ -103,7 +106,7 @@ export default function AskUserCard({
             alignItems: "center",
             gap: 8,
             padding: "10px 14px",
-            borderBottom: answered ? "1px solid var(--border-subtle)" : "1px solid rgba(79,110,247,0.15)",
+            borderBottom: settled ? "1px solid var(--border-subtle)" : "1px solid rgba(79,110,247,0.15)",
           }}
         >
           <div
@@ -111,14 +114,18 @@ export default function AskUserCard({
               width: 24,
               height: 24,
               borderRadius: 6,
-              background: answered ? "var(--bg-surface)" : "rgba(79,110,247,0.1)",
+              background: settled ? "var(--bg-surface)" : "rgba(79,110,247,0.1)",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
               flexShrink: 0,
             }}
           >
-            {answered ? (
+            {cancelled ? (
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2" strokeLinecap="round">
+                <path d="M6 6l12 12M6 18L18 6" />
+              </svg>
+            ) : answered ? (
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2.5" strokeLinecap="round">
                 <polyline points="20 6 9 17 4 12" />
               </svg>
@@ -136,13 +143,13 @@ export default function AskUserCard({
               fontWeight: 600,
               textTransform: "uppercase",
               letterSpacing: "0.06em",
-              color: answered ? "var(--text-muted)" : "var(--accent)",
+              color: settled ? "var(--text-muted)" : "var(--accent)",
               flex: 1,
             }}
           >
-            {answered ? "已回答" : "向你提问"}
+            {cancelled ? "已中断" : answered ? "已回答" : "向你提问"}
           </span>
-          {multiSelect && !answered && (
+          {multiSelect && !settled && (
             <span
               style={{
                 fontSize: 9,
@@ -189,7 +196,14 @@ export default function AskUserCard({
         )}
 
         {/* Options */}
-        {hasOptions && !answered && (
+        {cancelled && (
+          <div style={{ padding: "4px 14px 12px", fontSize: 12, color: "var(--text-muted)", lineHeight: 1.6 }}>
+            {options?.map((option, index) => <div key={index}>{option.label}</div>)}
+            <div style={{ marginTop: 6 }}>提问已中断，请让助手重新提问。</div>
+          </div>
+        )}
+
+        {hasOptions && !settled && (
           <div style={{ padding: "4px 14px 6px", display: "flex", flexDirection: "column", gap: 6 }}>
             {options!.map((opt, idx) => {
               const isSelected = selectedIndices.has(idx);
@@ -287,7 +301,7 @@ export default function AskUserCard({
           </div>
         )}
 
-        {hasFields && !answered && (
+        {hasFields && !settled && (
           <div style={{ padding: "6px 14px 12px", display: "flex", flexDirection: "column", gap: 10 }}>
             {fields!.map((field) => (
               <label key={field.name} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
@@ -339,8 +353,8 @@ export default function AskUserCard({
           </div>
         )}
 
-        {/* Free text input — always shown when not answered */}
-        {!answered && !hasFields && (
+        {/* Free text input remains available while the question is pending. */}
+        {!settled && !hasFields && (
           <div style={{
             padding: hasOptions ? "4px 14px 12px" : "4px 14px 12px",
             display: "flex",

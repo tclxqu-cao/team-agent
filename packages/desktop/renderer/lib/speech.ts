@@ -63,6 +63,7 @@ export function isASRSupported(): boolean {
 
 export interface DictationHandle {
   stop: () => void;
+  cancel?: () => void;
 }
 
 /**
@@ -75,6 +76,7 @@ export function startDictation(opts: {
   onFinal: (text: string) => void;
   onError?: (message: string) => void;
   onEnd?: () => void;
+  onStart?: () => void;
 }): DictationHandle | null {
   const nativeApi = getNativeDictationApi();
   if (nativeApi) {
@@ -90,11 +92,10 @@ export function startDictation(opts: {
     };
     removeResult = nativeApi.onDictation(({ text, isFinal }) => {
       const clean = text.trim();
-      if (!clean) return;
       if (isFinal) {
-        opts.onFinal(clean);
+        if (clean) opts.onFinal(clean);
         finish();
-      } else {
+      } else if (clean) {
         opts.onInterim(clean);
       }
     });
@@ -103,15 +104,20 @@ export function startDictation(opts: {
       finish();
     });
     void nativeApi.dictationStart().then((result) => {
+      if (ended) return;
       if (!result.ok) {
         opts.onError?.(result.reason || "无法启动语音识别");
         finish();
-      }
+      } else opts.onStart?.();
     }).catch(() => {
+      if (ended) return;
       opts.onError?.("无法启动语音识别");
       finish();
     });
-    return { stop: () => { void nativeApi.dictationStop(); } };
+    return {
+      stop: () => { void nativeApi.dictationStop().catch(() => { opts.onError?.("无法停止语音输入"); finish(); }); },
+      cancel: () => { finish(); void nativeApi.dictationStop().catch(() => undefined); },
+    };
   }
 
   const Ctor = getRecognitionCtor();
@@ -146,12 +152,13 @@ export function startDictation(opts: {
 
   try {
     rec.start();
+    opts.onStart?.();
   } catch {
     // start() throws when already started — treat as no-op
     opts.onEnd?.();
     return null;
   }
-  return { stop: () => rec.stop() };
+  return { stop: () => rec.stop(), cancel: () => { rec.onresult = null; rec.onend = null; rec.onerror = null; rec.abort(); opts.onEnd?.(); } };
 }
 
 // ── Continuous listening (wake-word detection while hidden) ──────────────

@@ -13,6 +13,8 @@ import type {
   NativeSessionGoal,
   UnifiedSessionSummary,
 } from "../../domain/ports/agent-port";
+import type { DictationPort } from "../../domain/ports/dictation-port";
+import type { SpeechOutputPort } from "../../domain/ports/speech-output-port";
 import { HttpClient, listOf } from "./http-client";
 
 import type { LocalSettingsRepository } from "../local/local-settings-repository";
@@ -56,7 +58,7 @@ function isTransportFailure(error: unknown): boolean {
 }
 
 /** Subset of the port the web gateway intentionally leaves to browser fallbacks. */
-type BrowserHandled = "wakeStart" | "dictationStart" | "dictationStop" | "onDictation" | "onDictationError";
+type BrowserHandled = "wakeStart";
 
 /**
  * Browser adapter for the AgentApi port (DDD ports & adapters).
@@ -74,9 +76,8 @@ type BrowserHandled = "wakeStart" | "dictationStart" | "dictationStop" | "onDict
  *     replay from their persisted pre-run cursor, avoiding mobile connection
  *     limits without losing early events.
  *
- * Voice wake/dictation are deliberately NOT implemented: the renderer's
- * lib/speech falls back to the Web Speech API when those bridge methods are
- * absent. TTS is reported unavailable ({ok:false}).
+ * Dictation delegates capture to the browser and recognition to the local
+ * voice service through the authenticated gateway. Wake remains browser-handled.
  */
 export class AgentHttpGateway {
   private readonly streams = new Map<string, EventSource>();
@@ -98,7 +99,25 @@ export class AgentHttpGateway {
     private readonly settings: LocalSettingsRepository,
     private readonly projectBridge?: WebProjectBridge,
     private readonly createEventSource: (url: string) => EventSource = (url) => new EventSource(url),
+    private readonly dictation?: DictationPort,
+    private readonly speechOutput?: SpeechOutputPort,
   ) {}
+
+  dictationStart(): Promise<{ ok: boolean; reason?: string }> {
+    return this.dictation?.dictationStart() ?? Promise.resolve({ ok: false, reason: "语音输入尚未初始化" });
+  }
+
+  dictationStop(): Promise<{ ok: boolean }> {
+    return this.dictation?.dictationStop() ?? Promise.resolve({ ok: true });
+  }
+
+  onDictation(callback: (payload: { text: string; isFinal: boolean }) => void): Unsubscribe {
+    return this.dictation?.onDictation(callback) ?? (() => undefined);
+  }
+
+  onDictationError(callback: (message: string) => void): Unsubscribe {
+    return this.dictation?.onDictationError(callback) ?? (() => undefined);
+  }
 
   private requireProjectBridge(): WebProjectBridge {
     if (this.projectBridge) return this.projectBridge;
@@ -381,6 +400,7 @@ export class AgentHttpGateway {
   async getSession(
     id: string,
     query?: { before?: string; after?: string; anchor?: string; limit?: number; view?: "core" | "trace"; revision?: string; turnId?: string },
+    options: { lifecycleOnly?: boolean } = {},
   ): Promise<unknown> {
     const nativeRecovery = this.nativeRunRecoveries.get(id);
     const requestedRunId = nativeRecovery?.runId;
@@ -421,6 +441,7 @@ export class AgentHttpGateway {
         const progressive = history?.delivery === "core" || history?.delivery === "trace";
         if (
           history?.delivery === "core"
+          && !options.lifecycleOnly
           && snapshotRunId
           && this.coreSnapshotContainsTailFinalAnswer(session.messages)
         ) {
@@ -864,36 +885,37 @@ export class AgentHttpGateway {
     return { ok: true, conversation: on };
   }
 
-  async ttsSpeak(): Promise<{ ok: boolean }> {
-    return { ok: false };
+  async ttsSpeak(text: string): Promise<{ ok: boolean }> {
+    if (!this.speechOutput) throw new Error("语音播报尚未初始化");
+    return this.speechOutput.ttsSpeak(text);
   }
 
   async ttsStop(): Promise<{ ok: boolean }> {
-    return { ok: true };
+    return this.speechOutput?.ttsStop() ?? { ok: true };
   }
 
-  async ttsPlaybackEnded(): Promise<{ ok: boolean }> {
-    return { ok: true };
+  async ttsPlaybackEnded(generation: number): Promise<{ ok: boolean }> {
+    return this.speechOutput?.ttsPlaybackEnded(generation) ?? { ok: true };
   }
 
-  onTtsStart(): Unsubscribe {
-    return () => {};
+  onTtsStart(callback: Parameters<SpeechOutputPort["onTtsStart"]>[0]): Unsubscribe {
+    return this.speechOutput?.onTtsStart(callback) ?? (() => {});
   }
 
-  onTtsPcm(): Unsubscribe {
-    return () => {};
+  onTtsPcm(callback: Parameters<SpeechOutputPort["onTtsPcm"]>[0]): Unsubscribe {
+    return this.speechOutput?.onTtsPcm(callback) ?? (() => {});
   }
 
-  onTtsStreamEnd(): Unsubscribe {
-    return () => {};
+  onTtsStreamEnd(callback: Parameters<SpeechOutputPort["onTtsStreamEnd"]>[0]): Unsubscribe {
+    return this.speechOutput?.onTtsStreamEnd(callback) ?? (() => {});
   }
 
-  onTtsFlush(): Unsubscribe {
-    return () => {};
+  onTtsFlush(callback: Parameters<SpeechOutputPort["onTtsFlush"]>[0]): Unsubscribe {
+    return this.speechOutput?.onTtsFlush(callback) ?? (() => {});
   }
 
-  onTtsEnd(): Unsubscribe {
-    return () => {};
+  onTtsEnd(callback: Parameters<SpeechOutputPort["onTtsEnd"]>[0]): Unsubscribe {
+    return this.speechOutput?.onTtsEnd(callback) ?? (() => {});
   }
 
   onWake(): Unsubscribe {
@@ -1010,7 +1032,7 @@ export class AgentHttpGateway {
     try {
       // History remains the source of reply text. Replaying its whole answer
       // as text_chunk here would duplicate text already delivered over SSE.
-      await this.getSession(sessionId, { limit: 1, view: "core" });
+      await this.getSession(sessionId, { limit: 1, view: "core" }, { lifecycleOnly: true });
     } catch {
       // A mobile reconnect can fail several detail requests; keep observing.
     } finally {

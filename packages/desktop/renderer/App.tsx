@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { createPortal } from "react-dom";
-import { History, LoaderCircle, Plus, Search } from "lucide-react";
+import { History, LoaderCircle, Plus, RefreshCw, Search } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
 import ChatView from "./components/ChatView";
 import CollaborationLauncher from "./components/collaboration/CollaborationLauncher";
@@ -90,6 +90,7 @@ import {
 } from "@agent/core/domain/session/SessionActivity";
 import { refreshableWorkspaceIds } from "./lib/visible-session-refresh";
 import { useResizableSidebar } from "./lib/use-resizable-sidebar";
+import { mergeSearchSessions } from "./lib/session-search";
 
 type SettingsTab = "settings" | "mcp" | "memory" | "skill" | "agent" | "lsp";
 
@@ -222,6 +223,23 @@ export default function App() {
   const [sessionsByProject, setSessionsByProject] = useState<Record<string, Session[]>>(initialSessionState.roots);
   const [sessionQuery, setSessionQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
+  const [searchSnapshot, setSearchSnapshot] = useState<{ agentType: AgentType; sessions: Session[] } | null>(null);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  useEffect(() => {
+    if (!searchOpen || !window.agentApi) return;
+    let cancelled = false;
+    setSearchLoading(true);
+    setSearchError(null);
+    void window.agentApi.listSessions().then(sessions => {
+      if (!cancelled) setSearchSnapshot({ agentType: activeAgent, sessions: sessions as Session[] });
+    }).catch(error => {
+      if (!cancelled) setSearchError(error instanceof Error ? error.message : "会话搜索加载失败");
+    }).finally(() => {
+      if (!cancelled) setSearchLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [searchOpen, activeAgent]);
   const [searchListLimit, setSearchListLimit] = useState(10);
   const [sessionDeleteRequest, setSessionDeleteRequest] = useState<{
     session: Session;
@@ -681,8 +699,13 @@ export default function App() {
     ...Object.values(sessionsByProject).flat(),
     ...Object.values(childSessionsByParent).flat(),
   ];
-  const orderedVisibleSessions = sortPinnedSessionsFirst(
+  const searchSessions = mergeSearchSessions(
+    searchSnapshot?.agentType === activeAgent ? searchSnapshot.sessions : [],
     allVisibleSessions,
+    activeAgent,
+  ).map(session => ({ ...session, projectId: session.projectId ?? projects.find(project => project.description === session.cwd)?.id }));
+  const orderedVisibleSessions = sortPinnedSessionsFirst(
+    searchSessions,
     (session) => pinnedSessionIdSet.has(session.id),
   );
   const collectedPinnedRootSessions = Object.entries(sessionsByProject).flatMap(
@@ -697,7 +720,7 @@ export default function App() {
         ({ session }) => isSessionRunning(session),
       )
     : orderedPinnedRootSessions;
-  const allKnownSessions = allVisibleSessions;
+  const allKnownSessions = searchSessions;
   const sessionQueryTrim = sessionQuery.trim().toLowerCase();
   const searchResults = sessionQueryTrim
     ? orderedVisibleSessions.filter((s) =>
@@ -1744,6 +1767,18 @@ export default function App() {
             </button>
             <button
               type="button"
+              disabled={workspaceLoading || loadingProjectIds.size > 0}
+              onClick={() => void loadProjects(activeAgent, { refresh: true })}
+              title="刷新会话"
+              aria-label="刷新会话"
+              className="ui-icon-button"
+            >
+              {workspaceLoading || loadingProjectIds.size > 0
+                ? <LoaderCircle size={17} className="animate-spin" aria-hidden="true" />
+                : <RefreshCw size={17} aria-hidden="true" />}
+            </button>
+            <button
+              type="button"
               onClick={() => void handleImportProject()}
               title="导入目录"
               aria-label="导入目录"
@@ -2130,6 +2165,8 @@ export default function App() {
               />
             </div>
             <div style={{ overflowY: "auto", padding: 8 }}>
+              {searchLoading && <div role="status">正在加载所有会话</div>}
+              {searchError && <div role="alert">{searchError}</div>}
               {sessionQueryTrim && searchResults && searchResults.length > 0 && (
                 <div style={{
                   padding: "4px 10px 3px",
@@ -2140,12 +2177,12 @@ export default function App() {
                   color: "var(--text-muted)",
                 }}>{searchResults.length} 个结果</div>
               )}
-              {sessionQueryTrim && searchResults && searchResults.length === 0 && (
+              {!searchLoading && !searchError && sessionQueryTrim && searchResults && searchResults.length === 0 && (
                 <div style={{ color: "var(--text-muted)", fontSize: 12, padding: "16px 10px", textAlign: "center", opacity: 0.7 }}>
                   无匹配会话
                 </div>
               )}
-              {!sessionQueryTrim && orderedVisibleSessions.length === 0 && (
+              {!searchLoading && !searchError && !sessionQueryTrim && orderedVisibleSessions.length === 0 && (
                 <div style={{ color: "var(--text-muted)", fontSize: 12, padding: "16px 10px", textAlign: "center", opacity: 0.7 }}>
                   暂无会话
                 </div>

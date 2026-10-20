@@ -1636,7 +1636,10 @@ export default function BrowserLivePanel({ open, active = true, agentSessionId, 
             </button>
           )}
           {hasControl && !panMode && (
-            <div className="browser-live-control-cue"><MousePointer2 size={13} aria-hidden="true" /> {isDesktop ? "当前输入会发送到本机" : "当前输入会发送到浏览器"}{isDesktop && desktopStreamLabel ? ` · ${desktopStreamLabel}` : ""}{isDesktop && remoteVideoDecoderLabel ? ` · ${remoteVideoDecoderLabel}` : ""}{pingMs != null ? ` · 控制 ${pingMs}ms` : ""}</div>
+            <div className="browser-live-control-cue">
+              <MousePointer2 size={13} aria-hidden="true" />
+              <span>{isDesktop ? "当前输入会发送到本机" : "当前输入会发送到浏览器"}{isDesktop && desktopStreamLabel ? ` · ${desktopStreamLabel}` : ""}{isDesktop && remoteVideoDecoderLabel ? ` · ${remoteVideoDecoderLabel}` : ""}{pingMs != null ? ` · 控制 ${pingMs}ms` : ""}</span>
+            </div>
           )}
         </div>
 

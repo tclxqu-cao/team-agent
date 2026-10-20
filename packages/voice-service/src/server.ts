@@ -53,6 +53,7 @@ export interface VoiceServer {
 }
 
 interface VoiceServerOptions {
+  provider?: "local" | "azure";
   host: string;
   port: number;
   token: string | null;
@@ -226,6 +227,7 @@ export async function createVoiceServer(options: VoiceServerOptions): Promise<Vo
     if (request.method === "GET" && request.url === "/health") {
       sendJson(response, 200, {
         ready: true,
+        provider: options.provider ?? "local",
         asr: true,
         kws: Boolean(options.kwsEngine),
         tts: Boolean(currentTtsEngine(options)?.stream),
@@ -250,6 +252,7 @@ export async function createVoiceServer(options: VoiceServerOptions): Promise<Vo
   });
 
   httpServer.on("upgrade", (request, socket, head) => {
+    socket.on("error", () => socket.destroy());
     const pathname = new URL(request.url ?? "/", "http://localhost").pathname;
     if (pathname !== "/v1/asr" && pathname !== "/v1/tts/stream") {
       socket.end("HTTP/1.1 404 Not Found\r\nConnection: close\r\n\r\n");
@@ -270,8 +273,15 @@ export async function createVoiceServer(options: VoiceServerOptions): Promise<Vo
     let kwsSession: KwsSession | null = null;
     let sessionId: string | null = null;
     let generation: number | null = null;
+    let pending = Promise.resolve();
+    let pendingBytes = 0;
+    let finished = false;
     const emit = (event: AsrResultEvent | KwsResultEvent) => {
       if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(event));
+      if (event.type === "error") {
+        closeSessions();
+        socket.close(1011, "ASR provider failed");
+      }
     };
     const hasSession = () => asrSession !== null || kwsSession !== null;
     const closeSessions = () => {
@@ -285,7 +295,7 @@ export async function createVoiceServer(options: VoiceServerOptions): Promise<Vo
         socket.send(JSON.stringify({ type: "error", code, message }));
       }
     };
-    socket.on("message", (data, isBinary) => {
+    const handleMessage = async (data: RawData, isBinary: boolean) => {
       try {
         if (isBinary) {
           const session = kwsSession ?? asrSession;
@@ -293,6 +303,9 @@ export async function createVoiceServer(options: VoiceServerOptions): Promise<Vo
             sendError("not-started", "ASR start is required before audio");
             return;
           }
+          if (finished) throw new Error("ASR input is already finished");
+          if (asrSession?.ready) await asrSession.ready;
+          if (socket.readyState !== WebSocket.OPEN) return;
           session.acceptPcm(pcmSamples(data));
           return;
         }
@@ -313,8 +326,9 @@ export async function createVoiceServer(options: VoiceServerOptions): Promise<Vo
             });
           } else {
             asrSession = options.asrEngine.createSession(sessionId, generation, emit);
+            await asrSession.ready;
           }
-          socket.send(JSON.stringify({
+          if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({
             type: "ready",
             sessionId,
             generation,
@@ -325,9 +339,14 @@ export async function createVoiceServer(options: VoiceServerOptions): Promise<Vo
         if (!hasSession() || control.sessionId !== sessionId || control.generation !== generation) {
           throw new Error("control does not match the active ASR generation");
         }
-        if (control.type === "reset") (kwsSession ?? asrSession)?.reset();
+        if (control.type === "reset") {
+          await (kwsSession ?? asrSession)?.reset();
+          finished = false;
+        }
         if (control.type === "finish") {
-          asrSession?.finish();
+          if (finished) throw new Error("ASR input is already finished");
+          finished = true;
+          await asrSession?.finish();
           if (socket.readyState === WebSocket.OPEN) {
             socket.send(JSON.stringify({ type: "finished", sessionId, generation }));
           }
@@ -338,9 +357,24 @@ export async function createVoiceServer(options: VoiceServerOptions): Promise<Vo
         }
       } catch (error) {
         sendError("invalid-message", error instanceof Error ? error.message : "invalid message");
+        closeSessions();
+        socket.close(1008, "ASR request failed");
       }
+    };
+    socket.on("message", (data, isBinary) => {
+      const bytes = Array.isArray(data) ? data.reduce((sum, part) => sum + part.length, 0) : data.byteLength;
+      pendingBytes += bytes;
+      if (pendingBytes > 1024 * 1024) {
+        sendError("asr-buffer-overflow", "ASR pending audio exceeds 1 MiB");
+        socket.close(1009, "ASR buffer overflow");
+        return;
+      }
+      pending = pending.then(async () => {
+        if (socket.readyState === WebSocket.OPEN) await handleMessage(data, isBinary);
+      }).finally(() => { pendingBytes -= bytes; });
     });
     socket.on("close", closeSessions);
+    socket.on("error", () => { closeSessions(); socket.terminate(); });
   });
 
   ttsWebSocketServer.on("connection", (socket) => {
@@ -372,13 +406,13 @@ export async function createVoiceServer(options: VoiceServerOptions): Promise<Vo
           channels: stream.channels,
           sampleFormat: stream.sampleFormat,
         });
-        const playbackClockStartedAt = performance.now();
-        let sentAudioMs = 0;
+        let queuedAudioUntil = 0;
         for await (const chunk of stream.chunks) {
           if (controller.signal.aborted) throw new DOMException("aborted", "AbortError");
           const chunkAudioMs = (chunk.byteLength / (2 * stream.channels * stream.sampleRate)) * 1_000;
-          const projectedLeadMs = sentAudioMs + chunkAudioMs
-            - (performance.now() - playbackClockStartedAt);
+          const now = performance.now();
+          // Model startup and generation stalls must not become playback credit.
+          const projectedLeadMs = Math.max(queuedAudioUntil - now, 0) + chunkAudioMs;
           if (projectedLeadMs > MAX_TTS_PLAYBACK_LEAD_MS) {
             await delay(projectedLeadMs - MAX_TTS_PLAYBACK_LEAD_MS, undefined, {
               signal: controller.signal,
@@ -389,7 +423,7 @@ export async function createVoiceServer(options: VoiceServerOptions): Promise<Vo
             throw new Error("tts-buffer-overflow");
           }
           await sendSocketBinary(socket, chunk);
-          sentAudioMs += chunkAudioMs;
+          queuedAudioUntil = Math.max(queuedAudioUntil, performance.now()) + chunkAudioMs;
         }
         await completion;
         if (completionError) throw completionError;
@@ -453,6 +487,7 @@ export async function createVoiceServer(options: VoiceServerOptions): Promise<Vo
       }
     });
     socket.on("close", () => active?.controller.abort());
+    socket.on("error", () => { active?.controller.abort(); socket.terminate(); });
   });
 
   httpServer.listen(options.port, options.host);

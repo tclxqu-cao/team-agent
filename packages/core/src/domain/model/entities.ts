@@ -59,6 +59,15 @@ export interface MessagePresentation {
   /** Authoritative wall-clock duration for a successfully completed turn. */
   completionDurationMs?: number;
   forkPoint?: SessionForkPoint;
+  /** A settled native question; pending questions come from ask_user events. */
+  question?: {
+    questionId: string;
+    question: string;
+    options: Array<{ label: string; description: string }>;
+    multiSelect: boolean;
+    status: "answered" | "cancelled";
+    answer?: string;
+  };
 }
 
 export interface ToolCall {

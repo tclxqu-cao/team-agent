@@ -26,6 +26,17 @@ describe("Mermaid message blocks", () => {
     expect(html).not.toContain('class="mermaid-block"');
     expect(html).toContain("typescript");
     expect(html).toContain("const diagram");
+    expect(html).toContain('aria-label="复制代码"');
+  });
+
+  it("offers copy for plain text and unfinished code fences", () => {
+    for (const content of ["```\nplain text\n```", "```sql\nselect 1;"]) {
+      const html = renderToStaticMarkup(renderAssistantText(content));
+      expect(html).toContain('aria-label="复制代码"');
+      const button = html.match(/<button\b[^>]*>[\s\S]*?<\/button>/)?.[0];
+      expect(button).toContain('<svg');
+      expect(button?.replace(/<[^>]+>/g, '')).toBe('');
+    }
   });
 
   it("handles empty and multiple diagrams independently", () => {

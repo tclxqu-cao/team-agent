@@ -7,7 +7,10 @@ import "../../src/presentation/web.css";
 const calls: { method: string; params: any }[] = [];
 const listeners = new Set<(event: any) => void>();
 const viewport = { width: 1440, height: 900, deviceScaleFactor: 1 };
-let session = { id: "regression-desktop", backend: "desktop", platform: "darwin", title: "Regression desktop", url: "", viewport, transport: "jpeg-ws", availability: "ready", state: "agent-controlled", online: true, frameSequence: 1, updatedAt: 1, viewerCount: 1, isController: false, controlledByAnotherViewer: false };
+let session = { id: "regression-desktop", backend: "desktop", platform: "darwin", title: "Regression desktop", url: "", viewport, transport: "jpeg-ws", availability: "ready", state: "agent-controlled", online: true, frameSequence: 1, updatedAt: 1, viewerCount: 1, isController: false, controlledByAnotherViewer: false,
+  displays: [{ id: "1", label: "第 1 屏", primary: true, selected: true }, { id: "2", label: "第 2 屏", primary: false, selected: false }],
+  audioCapabilities: { fullDuplex: true, systemAudio: true, microphonePlayback: true, selfPlaybackExclusion: true },
+};
 const canvas = document.createElement("canvas");
 canvas.width = 1440; canvas.height = 900;
 const ctx = canvas.getContext("2d")!;

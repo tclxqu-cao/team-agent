@@ -16,6 +16,16 @@ const progress = (progressId: string, label: string, toolCallId?: string): Runti
 });
 
 describe("native runtime progress", () => {
+  it("shows thinking after a Codex turn is accepted even without reasoning events", () => {
+    const event = { type: "runtime_progress" as const, progressId: "codex:status", phase: "status" as const, label: "正在开始处理" };
+    expect(upsertRuntimeProgress([], event)).toEqual([
+      expect.objectContaining({ progressId: "codex:status", phase: "thinking", label: "正在思考" }),
+    ]);
+    expect(reduceRuntimeProgressEvents([event])).toEqual([
+      expect.objectContaining({ phase: "thinking", label: "正在思考" }),
+    ]);
+  });
+
   it("replaces matching progress without growing the collection", () => {
     const first = upsertRuntimeProgress([], progress("thinking", "Starting"));
     const next = upsertRuntimeProgress(first, progress("thinking", "Reasoning"));

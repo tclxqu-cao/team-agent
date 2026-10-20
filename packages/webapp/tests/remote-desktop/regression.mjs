@@ -22,6 +22,19 @@ await page.goto("http://127.0.0.1:5175/tests/remote-desktop/");
 await until(() => page.evaluate(() => document.body.innerText.includes("开始控制")), true, "panel opens");
 await page.click('loc=role:button[name="开始控制"]');
 await until(() => page.evaluate(() => document.body.innerText.includes("结束控制")), true, "takeover succeeds");
+const controlLayout = await page.evaluate(() => {
+  const cue = document.querySelector(".browser-live-control-cue");
+  cue.querySelector("span").textContent = "当前输入会发送到本机 · P2P 直连 · H264 · 1280×720@17 · 2.6Mbps · 15ms · 控制 19ms";
+  const footer = document.querySelector(".browser-live-footer").getBoundingClientRect();
+  const status = document.querySelector(".browser-live-location").getBoundingClientRect();
+  const button = document.querySelector(".browser-live-footer button").getBoundingClientRect();
+  const picture = document.querySelector(".browser-live-viewport").getBoundingClientRect();
+  const message = cue.getBoundingClientRect();
+  return { footerHeight: footer.height, sameRow: Math.abs(status.y + status.height / 2 - button.y - button.height / 2) < 2, cueHeight: message.height, cueBottom: message.bottom, pictureTop: picture.top };
+});
+assert.ok(controlLayout.footerHeight <= 64, "mobile control footer stays compact");
+assert.equal(controlLayout.sameRow, true, "control status and end button share a row");
+assert.ok(controlLayout.cueHeight <= 20 && controlLayout.cueBottom <= controlLayout.pictureTop, "long connection diagnostics stay above the picture in one line");
 const tap = async () => {
   // Let the 420ms field-scroll adjustment settle before choosing a coordinate;
   // otherwise a zoomed tap can hit the footer instead of the picture.
@@ -48,14 +61,30 @@ const focused = () => page.evaluate(() => document.activeElement?.getAttribute("
 // narrow toolbar. Resolve its visible DOM rect, then dispatch a browser click.
 const clickButton = async (label) => {
   const point = await page.evaluate((label) => {
-    const button = document.querySelector(`button[aria-label="${label}"]`);
-    button.scrollIntoView({ block: "nearest", inline: "nearest" });
+    const button = [...document.querySelectorAll(`button[aria-label="${label}"]`)].find(button => button.getClientRects().length);
+    if (!button) throw new Error(`No visible button: ${label}`);
+    button.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "instant" });
     const rect = button.getBoundingClientRect();
     return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
   }, label);
   await page.cdp("Input.dispatchMouseEvent", { type: "mousePressed", ...point, button: "left", buttons: 1, clickCount: 1 });
   await page.cdp("Input.dispatchMouseEvent", { type: "mouseReleased", ...point, button: "left", buttons: 0, clickCount: 1 });
 };
+// Exercise iPhone's in-page fullscreen path as well as the compact footer.
+await page.evaluate(() => { document.querySelector(".browser-live-panel").requestFullscreen = undefined; });
+await page.click('loc=role:button[name="全屏"]');
+await until(() => page.evaluate(() => !!document.querySelector(".browser-live-panel.is-fullscreen")), true, "in-page fullscreen opens");
+assert.equal(await page.evaluate(() => !!document.querySelector(".browser-live-footer")), false, "fullscreen releases the footer space");
+await clickButton('快捷键条');
+const quickKeysLayout = await page.evaluate(() => {
+  const keys = document.querySelector(".browser-live-quickkeys").getBoundingClientRect();
+  const picture = document.querySelector(".browser-live-viewport").getBoundingClientRect();
+  return { keysBottom: keys.bottom, pictureTop: picture.top, cueHidden: getComputedStyle(document.querySelector(".browser-live-control-cue")).display === "none" };
+});
+assert.ok(quickKeysLayout.keysBottom <= quickKeysLayout.pictureTop && quickKeysLayout.cueHidden, "expanded shortcuts and diagnostics cannot overlap the picture");
+await clickButton('快捷键条');
+await clickButton('退出全屏');
+await until(() => page.evaluate(() => !!document.querySelector(".browser-live-footer")), true, "exiting fullscreen restores compact controls");
 await page.evaluate(() => {
   window.regression.setHit({ editable: false });
   window.focusEvents = [];
@@ -161,4 +190,42 @@ await clickButton('关闭浏览器直播');
 await until(() => page.evaluate(() => !!document.querySelector(".browser-live-backdrop")), false, "explicit close removes panel");
 await until(() => page.evaluate(() => window.regression.calls.filter(call => call.method === "browser:unwatch").length), before.unwatches + 1, "explicit close releases viewer");
 console.log("PASS: no background IME flash, confirmed fields, uncertain AX retention, zoomed keyboard viewport, compatibility mouse focus, hidden-tab focus and control/zoom/pan retention");
+
+await page.cdp("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 3, mobile: true });
+await page.goto("http://127.0.0.1:5175/tests/remote-desktop/embedded.html");
+await until(() => page.evaluate(() => !!document.querySelector("iframe").contentDocument.querySelector(".browser-live-panel")), true, "embedded panel opens");
+await page.click('loc=role:button[name="开始控制"]');
+await until(() => page.evaluate(() => document.querySelector("iframe").contentDocument.body.innerText.includes("结束控制")), true, "embedded takeover succeeds");
+for (let step = 0; step < 7; step++) await page.click('loc=role:button[name="放大桌面画面"]');
+const embeddedBounds = () => page.evaluate(() => {
+  const frame = document.querySelector("iframe");
+  const doc = frame.contentDocument;
+  const panel = doc.querySelector(".browser-live-panel").getBoundingClientRect();
+  const surface = doc.querySelector(".browser-live-viewport").getBoundingClientRect();
+  const footer = doc.querySelector(".browser-live-footer").getBoundingClientRect();
+  return { top: panel.top, height: panel.height, frameHeight: frame.clientHeight, pictureHeight: surface.height, footerBottom: footer.bottom, zoom: doc.querySelector("output").textContent, controlling: doc.body.innerText.includes("结束控制") };
+});
+// Safari's iframe can temporarily repeat the top-level pan/keyboard shrink.
+await page.evaluate(() => {
+  const child = document.querySelector("iframe").contentWindow;
+  Object.defineProperty(child, "visualViewport", { configurable: true, value: Object.assign(new EventTarget(), { offsetTop: 210, offsetLeft: 0, width: 390, height: 172 }) });
+  window.setRegressionViewport(420, 210);
+});
+await until(async () => (await embeddedBounds()).height, 382, "keyboard leaves the whole visible iframe usable");
+let embedded = await embeddedBounds();
+assert.equal(embedded.top, 0, "inherited pan must not leave a blank strip above the panel");
+assert.equal(embedded.zoom, "275%", "keyboard does not reset the zoomed picture");
+assert.equal(embedded.controlling, true, "keyboard retains remote control");
+assert.ok(embedded.pictureHeight > 150, "picture retains space above the keyboard");
+assert.ok(embedded.footerBottom <= embedded.frameHeight, "end-control button stays visible");
+await page.evaluate(() => {
+  const child = document.querySelector("iframe").contentWindow;
+  Object.assign(child.visualViewport, { offsetTop: 0, height: 806 });
+  window.setRegressionViewport(844);
+});
+await until(async () => (await embeddedBounds()).height, 806, "closing the keyboard restores the full frame");
+embedded = await embeddedBounds();
+assert.equal(embedded.top, 0);
+assert.ok(embedded.pictureHeight > 500);
+console.log("PASS: embedded keyboard pan is applied once, picture and end-control stay visible, closing keyboard restores layout");
 })();

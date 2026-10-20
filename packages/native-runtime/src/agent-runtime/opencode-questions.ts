@@ -1,4 +1,5 @@
-import type { AgentEvent } from "@agent/core";
+import type { AgentEvent, Message } from "@agent/core";
+import type { ToolPart } from "@opencode-ai/sdk";
 import { array, record } from "./opencode-v2-codec.js";
 
 export const OPENCODE_QUESTION_ASKED = "agentroam:opencode-question-asked";
@@ -88,6 +89,31 @@ export function openCodeQuestionCard(request: OpenCodeQuestionRequest, index: nu
   const question = request.questions[index];
   return { type: "ask_user", questionId: openCodeQuestionId(request, index), question: question.question,
     options: question.options.map(({ label, description }) => ({ label, description })), multiSelect: question.multiSelect };
+}
+
+/** Preserve settled questions as cards without recreating an answerable request. */
+export function openCodeQuestionHistory(part: ToolPart): Message[] | null {
+  if (part.tool !== "question" || (part.state.status !== "completed" && part.state.status !== "error")) return null;
+  let request: OpenCodeQuestionRequest;
+  try {
+    request = openCodeLegacyQuestion({ ...part.state.input, id: part.callID, sessionID: part.sessionID });
+  } catch {
+    return null;
+  }
+  const state = part.state;
+  const answers: unknown = state.metadata?.answers;
+  return request.questions.map((question, index) => {
+    const answer: unknown = Array.isArray(answers) ? answers[index] : undefined;
+    return { role: "assistant", content: "", presentation: { question: {
+      questionId: `opencode-question-history:${part.sessionID}:${part.callID}:${index}`,
+      question: question.question,
+      options: question.options.map(({ label, description }) => ({ label, description })),
+      multiSelect: question.multiSelect,
+      status: state.status === "completed" ? "answered" : "cancelled",
+      ...(state.status === "completed" ? { answer: Array.isArray(answer) && answer.every((value) => typeof value === "string")
+        ? answer.join(", ") : state.output } : {}),
+    } } };
+  });
 }
 
 export function createOpenCodeQuestionClient(

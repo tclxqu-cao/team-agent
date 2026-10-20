@@ -328,6 +328,15 @@ export function restoreSessionHistoryPage(detail: SessionHistoryDetail | null): 
   );
 }
 
+export function shouldDeferLiveHistoryRefresh(
+  agentType: AgentType | undefined,
+  sessionId: string,
+  runningSessionId: string | null,
+): boolean {
+  return (agentType === "deepseek-harness" || agentType === "codex")
+    && sessionId === runningSessionId;
+}
+
 export function restoreCodexExecutionTrace(detail: SessionHistoryDetail | null): ChatMessage[] {
   return restoreSessionMessages(detail).filter(isCodexExecutionCarrier);
 }
@@ -406,7 +415,10 @@ function restoreSessionMessages(
     })
     .filter((message): message is ChatMessage => message !== null);
 
-  const recovered = recoverEventOnlyAssistant(events, recoverEventTools);
+  const recoveryEvents = detail?.history?.delivery === "core"
+    ? events.filter((event) => event.type === "text_chunk" && event.messagePhase === "final_answer")
+    : events;
+  const recovered = recoverEventOnlyAssistant(recoveryEvents, recoverEventTools);
   if (!restored.some((message) => message.role === "assistant" && !message.isCompactionSummary) && recovered) {
     const insertAfter = restored.findLastIndex(
       (message) => message.role === "user" && !message.isCompactionSummary,
@@ -427,7 +439,7 @@ function restoreSessionMessages(
     ) continue;
     visibleQuestionIds.add(event.questionId);
     restored.push({
-      id: crypto.randomUUID(),
+      id: `question:${event.questionId}`,
       role: "assistant",
       content: "",
       askUser: {
@@ -731,6 +743,11 @@ function toChatMessage(message: NonNullable<SessionHistoryDetail["messages"]>[nu
     toolResultRef: message.toolResultRef,
     name: message.name,
     presentation: message.presentation,
+    ...(message.presentation?.question ? { askUser: {
+      ...message.presentation.question,
+      answered: message.presentation.question.status === "answered",
+      cancelled: message.presentation.question.status === "cancelled",
+    } } : {}),
     timestamp: Date.now(),
   };
 }

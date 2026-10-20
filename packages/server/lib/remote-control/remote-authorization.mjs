@@ -50,6 +50,7 @@ export class RemoteAuthorization {
     this.enabled = false; this.screen = false; this.accessibility = false; this.online = false; this.error = null; this.busy = false; this.sequence = 0; this.generation = 0;
     this.locked = null; this.unavailablePublished = null; this.viewerCount = 0; this.captureActive = false; this.idleTimer = null; this.controlState = null;
     this.microphoneFramesQueued = 0;
+    this.selectedDisplayId = null;
     this.sessionId = 'cli-desktop:primary';
     this.peer = { id: `cli-remote:${randomUUID()}`, userId, producerSessionIds: new Set(), watchedSessionId: null, send: (event) => {
       const microphoneFrame = event.type === 'browser:webrtc' && event.data?.kind === 'audio-microphone';
@@ -236,7 +237,10 @@ export class RemoteAuthorization {
       }
       if (this.video.connected && Date.now() - (this.lastPreview || 0) < 2000) return;
       const interactive = Date.now() - (this.lastInteractionAt || 0) < 4000;
-      const frame = await this.helper.request({ op: 'capture', maxEdge: interactive ? 960 : 1280, maxBytes: interactive ? 64 * 1024 : 128 * 1024 });
+      const frame = await this.helper.request({
+        op: 'capture', maxEdge: interactive ? 960 : 1280, maxBytes: interactive ? 64 * 1024 : 128 * 1024,
+        ...(this.platform === 'darwin' && this.selectedDisplayId ? { displayId: this.selectedDisplayId } : {}),
+      });
       this.lastPreview = Date.now();
       if (!this.enabled || generation !== this.generation) return;
       this.publishFrame(frame);
@@ -358,6 +362,9 @@ export class RemoteAuthorization {
     const previousQuality = this.quality;
     this.quality = frame.quality ?? this.quality ?? 'hd';
     const displays = frame.displays ?? this.displays ?? null;
+    // The helper is stopped when idle. Restore the last actual selection on
+    // its next capture so a new process cannot silently choose another screen.
+    this.selectedDisplayId = frame.displayId ?? displays?.find(display => display.selected)?.id ?? this.selectedDisplayId;
     if (!this.online || JSON.stringify(displays) !== JSON.stringify(this.displays)) {
       this.displays = displays;
       this.registry.publish(this.peer, { sessionId: this.sessionId, backend: 'desktop', title: '本机桌面', url: '', viewport: this.viewport, displays, transport: 'cdp-jpeg-ws', platform: this.platform, audioCapabilities: this.audioCapabilities });

@@ -5,6 +5,8 @@ import { resolveVoiceServiceConfig } from "./config";
 describe("resolveVoiceServiceConfig", () => {
   it("uses loopback, the stable port, and ignored development model paths", () => {
     expect(resolveVoiceServiceConfig({}, "/repo")).toEqual({
+      provider: "local",
+      azure: null,
       host: "127.0.0.1",
       port: 17_863,
       token: null,
@@ -40,6 +42,8 @@ describe("resolveVoiceServiceConfig", () => {
       VOICE_TTS_VOICE: "Vivian",
       VOICE_TTS_STREAMING_INTERVAL: "0.24",
     }, "/repo")).toEqual({
+      provider: "local",
+      azure: null,
       host: "0.0.0.0",
       port: 19_000,
       token: "secret",
@@ -57,6 +61,15 @@ describe("resolveVoiceServiceConfig", () => {
     expect(() => resolveVoiceServiceConfig({
       VOICE_SERVICE_HOST: "0.0.0.0",
     }, "/repo")).toThrow("VOICE_SERVICE_TOKEN");
+  });
+
+  it("requires explicit Azure selection and leaves local independent of credentials", () => {
+    expect(resolveVoiceServiceConfig({ AZURE_SPEECH_KEY: "unused" }, "/repo").azure).toBeNull();
+    expect(() => resolveVoiceServiceConfig({ VOICE_PROVIDER: "other" }, "/repo")).toThrow("VOICE_PROVIDER");
+    expect(() => resolveVoiceServiceConfig({ VOICE_PROVIDER: "azure" }, "/repo")).toThrow("AZURE_SPEECH_KEY");
+    expect(() => resolveVoiceServiceConfig({ VOICE_PROVIDER: "azure", AZURE_SPEECH_KEY: "private", AZURE_SPEECH_REGION: "https://bad/" }, "/repo")).toThrow("region name");
+    const azure = resolveVoiceServiceConfig({ VOICE_PROVIDER: "azure", AZURE_SPEECH_KEY: "private", AZURE_SPEECH_REGION: "eastasia" }, "/repo");
+    expect(azure).toMatchObject({ provider: "azure", azure: { region: "eastasia", language: "zh-CN", voice: "zh-CN-XiaoxiaoNeural" } });
   });
 
   it("rejects invalid ports", () => {

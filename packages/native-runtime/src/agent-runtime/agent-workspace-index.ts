@@ -549,6 +549,13 @@ export class AgentWorkspaceIndexService {
         data: direct.data.map((session) => ({ ...session, projectId: workspaceId })),
       };
       this.rememberCodexDirectSessions(workspaceId, canonicalDirect.data, Boolean(query.cursor));
+      if (!query.cursor && query.refresh && !this.codexSessionCatalog) {
+        try {
+          await this.getCodexSessionCatalog(adapter, false);
+        } catch {
+          return { ...wrapCodexNativePage(canonicalDirect), stale: true };
+        }
+      }
       if (!query.cursor && this.codexSessionCatalog) {
         const sessions = this.codexSessionCatalog.byWorkspace.get(workspaceId) ?? [];
         return paginateCodexCatalog(sessions, query, this.codexSessionCatalog.watermark);

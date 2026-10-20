@@ -85,6 +85,7 @@ export default function CodexExecutionTrace({
     [liveMessages, persistedMessages],
   );
   const hasMessages = messages !== null || liveMessages.length > 0;
+  const needsHistory = autoLoad && messages === null && !trace.revision.startsWith("live:");
 
   const ensureLoaded = useCallback(async (force = false) => {
     if (!force && messages) return messages;
@@ -114,9 +115,9 @@ export default function CodexExecutionTrace({
   }, [liveMessages, loadTrace, messages, scope, trace]);
 
   useEffect(() => {
-    if (!autoLoad || hasMessages) return;
-    void ensureLoaded().catch(() => undefined);
-  }, [autoLoad, ensureLoaded, hasMessages]);
+    if (!needsHistory) return;
+    void ensureLoaded(true).catch(() => undefined);
+  }, [ensureLoaded, needsHistory]);
 
   useEffect(() => {
     if ((!hasMessages && !autoLoad) || refreshSignal === 0) return;
@@ -141,6 +142,12 @@ export default function CodexExecutionTrace({
 
   return (
     <div className="codex-execution-trace" data-turn-id={trace.turnId}>
+      {hasMessages && needsHistory && !error && (
+        <div className="codex-execution-trace__status" role="status" aria-live="polite" aria-busy="true">
+          <LoaderCircle size={14} strokeWidth={2} aria-hidden="true" />
+          <span className="codex-execution-trace__label">正在加载执行过程</span>
+        </div>
+      )}
       {hasMessages ? (
         <CodexExecutionTraceContent
           messages={displayMessages}

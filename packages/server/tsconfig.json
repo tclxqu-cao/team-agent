@@ -37,6 +37,7 @@
     ".next-full-20260914/types/**/*.ts",
     ".next-8af62fd/types/**/*.ts",
     ".next-goaltest/types/**/*.ts",
-    ".next-invalid-workspace-check/types/**/*.ts"
+    ".next-invalid-workspace-check/types/**/*.ts",
+    ".next-remote-desktop-20261019/types/**/*.ts"
   ]
 }

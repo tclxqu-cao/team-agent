@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
@@ -36,6 +37,20 @@ describe("RuntimeProgressRow", () => {
 
     expect(html).toContain("runtime-progress-row__brain");
     expect(html).not.toContain("runtime-progress-row__spinner");
+    expect(html).toContain("持续了 2 秒");
+  });
+
+  it("keeps the label beside its elapsed time instead of growing across the row", () => {
+    const css = readFileSync(new URL("../styles/global.css", import.meta.url), "utf8");
+    expect(css).toMatch(/\.runtime-progress-row__label\s*\{\s*flex: 0 1 auto;/);
+  });
+
+  it("renders only one elapsed timer when both start times are supplied", () => {
+    const html = renderToStaticMarkup(createElement(RuntimeProgressRow, {
+      progress: { progressId: "thinking", phase: "thinking", label: "正在思考", startedAt: Date.now() - 2000 },
+      startedAt: Date.now() - 4000,
+    }));
+    expect(html.match(/activity-elapsed-time/g)).toHaveLength(1);
     expect(html).toContain("持续了 2 秒");
   });
 

@@ -8,6 +8,7 @@ import {
   groupCodexExecutionTrace,
   isCodexExecutionCarrier,
   mergeCodexExecutionMessages,
+  reconcileCodexUnphasedMessages,
 } from "./codex-execution-trace";
 
 function message(value: Partial<ChatMessage> & Pick<ChatMessage, "id" | "role">): ChatMessage {
@@ -15,6 +16,62 @@ function message(value: Partial<ChatMessage> & Pick<ChatMessage, "id" | "role">)
 }
 
 describe("Codex execution trace projection", () => {
+  it("keeps unphased text before the following tool without waiting for history", () => {
+    const id = "codex-trace:turn-1:agent:msg-first";
+    const current = [message({ id: "user", role: "user", timestamp: 1 }),
+      message({ id, role: "assistant", content: "Checking files", timestamp: 2 })];
+    const next = applyCodexLiveExecutionEvent(current, "turn-1", {
+      type: "tool_call", turnId: "turn-1", toolCall: { id: "tool-1", name: "exec", arguments: {} },
+    }, 3);
+    expect(next.map(entry => entry.id)).toEqual(["user", "codex-execution-trace:turn-1"]);
+    const live = next[1].executionTrace!.liveMessages!;
+    expect(live.map(entry => entry.id)).toEqual([id, "codex-live-tool:tool-1"]);
+    expect(mergeCodexExecutionMessages(live, live)).toHaveLength(2);
+  });
+
+  it("places late-classified commentary before tools that arrived later", () => {
+    const id = "codex-trace:turn-1:agent:msg-first";
+    const withTool = applyCodexLiveExecutionEvent([message({ id: "user", role: "user" })], "turn-1", {
+      type: "tool_call", turnId: "turn-1", toolCall: { id: "tool-1", name: "exec", arguments: {} },
+    }, 3);
+    const commentary = message({ id, role: "assistant", content: "Checking files", timestamp: 2 });
+    const result = reconcileCodexUnphasedMessages([...withTool, commentary], [{
+      ...commentary, presentation: { agentMessagePhase: "commentary", executionTrace: { turnId: "turn-1" } },
+    }]);
+    expect(result[1].executionTrace!.liveMessages!.map(entry => entry.id)).toEqual([id, "codex-live-tool:tool-1"]);
+  });
+
+  it("promotes an unphased streamed item into its authoritative commentary trace without duplicating it", () => {
+    const id = "codex-trace:turn-1:agent:msg-real";
+    const current = [message({ id: "user", role: "user" }), message({ id, role: "assistant", content: "Checking files" })];
+    const history = [message({ id, role: "assistant", content: "Checking files", presentation: {
+      agentMessagePhase: "commentary", executionTrace: { turnId: "turn-1", segmentIndex: 0 },
+    } })];
+    const reconciled = reconcileCodexUnphasedMessages(current, history);
+    expect(reconciled.some(entry => entry.id === id)).toBe(false);
+    const live = reconciled.flatMap(entry => entry.executionTrace?.liveMessages ?? []);
+    expect(mergeCodexExecutionMessages(history, live).filter(entry => entry.content === "Checking files")).toHaveLength(1);
+    expect(reconcileCodexUnphasedMessages(reconciled, history)).toEqual(reconciled);
+  });
+
+  it("does not append a promoted snapshot to the same item already in the live trace", () => {
+    const id = "codex-trace:turn-1:agent:msg-real";
+    const history = [message({ id, role: "assistant", content: "Checking files", presentation: {
+      agentMessagePhase: "commentary", executionTrace: { turnId: "turn-1", segmentIndex: 0 },
+    } })];
+    for (const content of ["Checking", "Checking files now"]) {
+      const current = applyCodexLiveExecutionEvent([message({ id: "user", role: "user" })], "turn-1", {
+        type: "text_chunk", text: "Checking files", itemId: "msg-real", messagePhase: "commentary",
+      });
+      const reconciled = reconcileCodexUnphasedMessages([
+        ...current, message({ id, role: "assistant", content }),
+      ], history);
+      const live = reconciled.flatMap(entry => entry.executionTrace?.liveMessages ?? []);
+      expect(live).toHaveLength(1);
+      expect(live[0].content).toBe(content.length > 14 ? content : "Checking files");
+    }
+  });
+
   it("inserts one stable disclosure after a trace-bearing user message", () => {
     const projected = groupCodexExecutionTrace([
       message({

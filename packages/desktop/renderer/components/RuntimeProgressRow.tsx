@@ -16,8 +16,8 @@ export default function RuntimeProgressRow({
   const accessibleText = [progress.label, detail].filter(Boolean).join("，");
   const showThinkingIcon = !compact && progress.phase === "thinking";
   const showStatusIcon = !compact && progress.phase === "status";
-  const showLiveElapsed = showThinkingIcon && startedAt !== undefined && detail === undefined;
   const settled = progress.status && !["running", "stopping"].includes(progress.status);
+  const elapsedStartedAt = progress.startedAt ?? (showThinkingIcon && !detail ? startedAt : undefined);
   const failed = progress.status === "failed" || progress.status === "killed";
   return (
     <div className="runtime-progress" data-status={progress.status}>
@@ -40,11 +40,10 @@ export default function RuntimeProgressRow({
         ) : (
           <span className="runtime-progress-row__spinner" aria-hidden="true" />
         )}
-        <span className="runtime-progress-row__label">{progress.label}</span>
-        {detail && <span className="runtime-progress-row__detail">{detail}</span>}
-        {showLiveElapsed && <ElapsedTime startedAt={startedAt} />}
-        {progress.startedAt !== undefined && !settled && <ElapsedTime startedAt={progress.startedAt} />}
-        {settled && progress.elapsedSeconds !== undefined && <span>{Math.round(progress.elapsedSeconds)} 秒</span>}
+        <span className="runtime-progress-row__label" title={progress.label}>{progress.label}</span>
+        {detail && <span className="runtime-progress-row__detail" title={detail}>{detail}</span>}
+        {elapsedStartedAt !== undefined && !settled && <ElapsedTime startedAt={elapsedStartedAt} />}
+        {settled && progress.elapsedSeconds !== undefined && <span className="runtime-progress-row__elapsed">{Math.round(progress.elapsedSeconds)} 秒</span>}
       </div>
       {progress.output !== undefined && (
         <details className="runtime-progress-output">

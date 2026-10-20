@@ -85,6 +85,28 @@ class MemoryImportedWorkspaceRepository implements ImportedAgentWorkspaceReposit
 }
 
 describe("AgentWorkspaceIndexService", () => {
+  it("waits for supplemental Codex sessions on an explicit first-page refresh", async () => {
+    const codex = adapter("codex", [workspace("codex", "repo", 0)]);
+    codex.discoverSessions = vi.fn(async () => [session("codex", "external")]);
+    const service = new AgentWorkspaceIndexService([codex]);
+
+    const page = await service.listWorkspaceSessions("codex", "repo", { refresh: true });
+
+    expect(page.data.map((item) => item.id)).toEqual(["codex-1", "external"]);
+    expect(page.nextCursor).toBeNull();
+  });
+
+  it("keeps direct Codex results when supplemental discovery fails during refresh", async () => {
+    const codex = adapter("codex", [workspace("codex", "repo", 0)]);
+    codex.discoverSessions = vi.fn(async () => { throw new Error("offline"); });
+    const service = new AgentWorkspaceIndexService([codex]);
+
+    const page = await service.listWorkspaceSessions("codex", "repo", { refresh: true });
+
+    expect(page.data.map((item) => item.id)).toEqual(["codex-1"]);
+    expect(page.stale).toBe(true);
+  });
+
   it("isolates Agent requests and preserves adapter workspace order", async () => {
     const codex = adapter("codex", [workspace("codex", "second", 20), workspace("codex", "first", 10)]);
     const claude = adapter("claude-code", [workspace("claude-code", "claude", 0)]);

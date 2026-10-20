@@ -10,7 +10,55 @@ import {
   restoreCodexExecutionTrace,
   restoreSessionHistoryPage,
   restoreLatestSessionHistoryWindow,
+  shouldDeferLiveHistoryRefresh,
 } from "./session-history";
+
+describe("native live/history ownership", () => {
+  it("defers snapshots only while the same Harness or Codex session owns a live run", () => {
+    expect(shouldDeferLiveHistoryRefresh("deepseek-harness", "one", "one")).toBe(true);
+    expect(shouldDeferLiveHistoryRefresh("deepseek-harness", "one", null)).toBe(false);
+    expect(shouldDeferLiveHistoryRefresh("deepseek-harness", "one", "two")).toBe(false);
+    expect(shouldDeferLiveHistoryRefresh("codex", "one", "one")).toBe(true);
+    expect(shouldDeferLiveHistoryRefresh("codex", "one", null)).toBe(false);
+    expect(shouldDeferLiveHistoryRefresh("codex", "one", "two")).toBe(false);
+    expect(shouldDeferLiveHistoryRefresh("customer-agent", "one", "one")).toBe(false);
+  });
+
+  it("does not append a Codex suffix to a snapshot that already contains it", () => {
+    const live = [message("user", "start"), assistant("live", "answer")];
+    const persistedAheadOfStream = [message("user", "start"), assistant("persisted", "answer complete")];
+    const visible = shouldDeferLiveHistoryRefresh("codex", "session", "session")
+      ? live
+      : mergeProgressiveSessionHistoryPage(live, persistedAheadOfStream, "core", { delivery: "core", revision: "new" });
+    const appended = visible.map(entry => entry.id === "live" ? { ...entry, content: entry.content + " complete" } : entry);
+    expect(appended.filter(entry => entry.role === "assistant").map(entry => entry.content)).toEqual(["answer complete"]);
+    const settled = mergeProgressiveSessionHistoryPage(appended, persistedAheadOfStream, "core", { delivery: "core", revision: "new" });
+    expect(settled.filter(entry => entry.role === "assistant").map(entry => entry.content)).toEqual(["answer complete"]);
+  });
+
+  it("retains pending question identity across repeated snapshots", () => {
+    const detail = { messages: [], events: [{ type: "ask_user", questionId: "harness-question", question: "Choose" }] };
+    const first = restoreSessionHistoryPage(detail);
+    const second = restoreSessionHistoryPage(detail);
+    expect(first[0].id).toBe("question:harness-question");
+    expect(second[0].id).toBe(first[0].id);
+  });
+
+  it("keeps live text and questions instead of replacing them with a delayed snapshot", () => {
+    const current = [
+      message("user", "start"),
+      assistant("live", "partial answer"),
+      { ...assistant("question:pending", ""), askUser: { questionId: "pending", question: "Choose" } },
+    ];
+    const snapshot = [message("user", "start"), assistant("persisted", "partial")];
+    const visible = shouldDeferLiveHistoryRefresh("deepseek-harness", "session", "session")
+      ? current
+      : mergeRefreshedSessionHistory(current, snapshot);
+    expect(visible).toBe(current);
+    expect(visible.filter(entry => entry.askUser)).toHaveLength(1);
+    expect(visible.filter(entry => entry.content === "partial answer")).toHaveLength(1);
+  });
+});
 
 describe("cached session history windows", () => {
   const history = { delivery: "core" as const, revision: "rev-2", nextCursor: "history.v1.4" };
@@ -325,6 +373,31 @@ describe("restoreSessionHistoryPage", () => {
       content: "正在打包前端",
       presentation: { agentMessagePhase: "commentary" },
     })]);
+    expect(restored.filter((message) => message.role === "assistant" && !message.executionTrace)
+      .map((message) => message.content)).toEqual(["发布完成"]);
+  });
+
+  it("restores commentary around a tool exactly once without a synthetic answer", () => {
+    const restored = restoreSessionHistoryPage({
+      history: { delivery: "core", revision: "rev-live" },
+      messages: [{ role: "user", content: "deploy", presentation: { executionTrace: { turnId: "turn-live" } } }],
+      events: [
+        { type: "text_chunk", text: "Deploying without interruption.", turnId: "turn-live", itemId: "intro", messagePhase: "commentary" },
+        { type: "tool_call", turnId: "turn-live", toolCall: { id: "shell", name: "shell", arguments: {} } },
+      ],
+    });
+    expect(restored.filter((entry) => entry.role === "assistant" && !entry.executionTrace)).toEqual([]);
+    expect(restored.flatMap((entry) => entry.executionTrace?.liveMessages ?? [])
+      .filter((entry) => entry.content === "Deploying without interruption.")).toHaveLength(1);
+  });
+
+  it("does not invent a core answer from actual Codex deltas with no phase", () => {
+    const restored = restoreSessionHistoryPage({
+      history: { delivery: "core", revision: "real-unphased" },
+      messages: [{ role: "user", content: "check", presentation: { executionTrace: { turnId: "turn-real" } } }],
+      events: [{ type: "text_chunk", text: "Checking", turnId: "turn-real", itemId: "msg-real" }],
+    });
+    expect(restored.filter(entry => entry.role === "assistant" && !entry.executionTrace)).toEqual([]);
   });
 
   it("restores one unresolved approval card from the persisted native event stream", () => {
@@ -343,6 +416,18 @@ describe("restoreSessionHistoryPage", () => {
     expect(restored.filter((message) => message.askUser)).toEqual([
       expect.objectContaining({ askUser: expect.objectContaining({ questionId: "native:run-1:42" }) }),
     ]);
+  });
+
+  it("restores settled native question presentation as read-only question cards", () => {
+    const question = { questionId: "history-question-1", question: "看到什么？", options: [{ label: "白屏", description: "没有画面" }], multiSelect: false };
+    const restored = restoreSessionHistoryPage({ agentType: "opencode", messages: [
+      { role: "assistant", content: "", presentation: { question: { ...question, status: "cancelled" } } },
+      { role: "assistant", content: "", presentation: { question: { ...question, questionId: "history-question-2", status: "answered", answer: "白屏" } } },
+    ], events: [] });
+    expect(restored).toHaveLength(2);
+    expect(restored[0].askUser).toMatchObject({ ...question, cancelled: true, answered: false });
+    expect(restored[1].askUser).toMatchObject({ answered: true, cancelled: false, answer: "白屏" });
+    expect(restored.every((message) => !message.toolCalls)).toBe(true);
   });
 
   it("replaces a persisted ask_user tool call with a question-only card", () => {

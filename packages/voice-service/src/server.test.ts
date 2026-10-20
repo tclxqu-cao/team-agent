@@ -113,12 +113,23 @@ function openSocket(url: string, token?: string): Promise<WebSocket> {
 }
 
 describe("voice service", () => {
+  it("survives oversized websocket frames", async () => {
+    const service = await createVoiceServer({ host: "127.0.0.1", port: 0, token: null, asrEngine: new EmptyAsrEngine() });
+    const socket = await openSocket(`${service.wsUrl}/v1/asr`);
+    try {
+      const closed = new Promise<number>((resolve) => socket.once("close", resolve));
+      socket.send(Buffer.alloc(256 * 1024 + 1));
+      expect(await closed).toBe(1009);
+      expect((await fetch(`${service.httpUrl}/health`)).status).toBe(200);
+    } finally { socket.terminate(); await service.close(); }
+  });
   it("reports ASR readiness without exposing model paths", async () => {
     const service = await createVoiceServer({ host: "127.0.0.1", port: 0, token: null, asrEngine: new RecordingAsrEngine() });
     try {
       const response = await fetch(`${service.httpUrl}/health`);
       expect(await response.json()).toEqual({
         ready: true,
+        provider: "local",
         asr: true,
         kws: false,
         tts: false,
@@ -495,7 +506,7 @@ describe("voice service", () => {
     }
   });
 
-  it("paces PCM so a faster-than-realtime model cannot overflow playback", async () => {
+  it.each([0, 650])("paces PCM after %i ms of model startup without overflowing playback", async (startupMs) => {
     const chunk = Buffer.alloc(15_360); // 320 ms of 24 kHz mono s16le PCM
     const ttsEngine: TtsEngineLike = {
       async stream() {
@@ -504,6 +515,7 @@ describe("voice service", () => {
           channels: 1,
           sampleFormat: "s16le",
           chunks: (async function* () {
+            if (startupMs) await new Promise((resolve) => setTimeout(resolve, startupMs));
             for (let index = 0; index < 4; index += 1) yield chunk;
           })(),
           completed: Promise.resolve(),
@@ -526,6 +538,38 @@ describe("voice service", () => {
       const firstPcmAt = performance.now();
       await inbox.next();
       expect(performance.now() - firstPcmAt).toBeGreaterThanOrEqual(100);
+    } finally {
+      socket.close();
+      await service.close();
+    }
+  });
+
+  it("does not send a catch-up burst when generation resumes after a stall", async () => {
+    const ttsEngine: TtsEngineLike = {
+      async stream() {
+        return {
+          sampleRate: 24_000, channels: 1, sampleFormat: "s16le",
+          chunks: (async function* () {
+            yield Buffer.alloc(15_360);
+            await new Promise((resolve) => setTimeout(resolve, 650));
+            yield Buffer.alloc(15_360);
+            yield Buffer.alloc(15_360);
+          })(),
+          completed: Promise.resolve(),
+        };
+      },
+    };
+    const service = await createVoiceServer({ host: "127.0.0.1", port: 0, token: null, asrEngine: new RecordingAsrEngine(), ttsEngine });
+    const socket = await openSocket(`${service.wsUrl}/v1/tts/stream`);
+    const inbox = new SocketInbox(socket);
+    try {
+      socket.send(JSON.stringify({ type: "start", sessionId: "voice-stall", generation: 14, text: "停顿测试" }));
+      await inbox.next();
+      await inbox.next();
+      await inbox.next();
+      const resumedAt = performance.now();
+      await inbox.next();
+      expect(performance.now() - resumedAt).toBeGreaterThanOrEqual(100);
     } finally {
       socket.close();
       await service.close();

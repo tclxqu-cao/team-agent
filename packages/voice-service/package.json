@@ -11,6 +11,7 @@
     "test": "vitest run src"
   },
   "dependencies": {
+    "microsoft-cognitiveservices-speech-sdk": "1.52.0",
     "sherpa-onnx-node": "1.13.4",
     "ws": "^8.18.0"
   },

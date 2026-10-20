@@ -14,7 +14,7 @@ class FakePort {
   }
 }
 
-function fixture(blockModule = false) {
+function fixture(blockModule = false, withFallback = false) {
   const port = new FakePort();
   let releaseModule: (() => void) | undefined;
   const addModule = vi.fn(() => blockModule
@@ -28,6 +28,9 @@ function fixture(blockModule = false) {
     close: vi.fn(async () => undefined),
   };
   const node = { port, connect: vi.fn(), disconnect: vi.fn() };
+  const fallbackPort = new FakePort();
+  const fallback = { port: fallbackPort, connect: vi.fn(), disconnect: vi.fn() };
+  const createFallbackNode = withFallback ? vi.fn(() => fallback) : undefined;
   const api = {
     ttsStop: vi.fn(async () => ({ ok: true })),
     ttsPlaybackEnded: vi.fn(async () => ({ ok: true })),
@@ -36,8 +39,10 @@ function fixture(blockModule = false) {
     createContext: () => context,
     createNode: () => node,
     workletUrl: "worklet.js",
+    createFallbackNode,
+    workletTimeoutMs: 100,
   });
-  return { player, port, api, context, releaseModule: () => releaseModule?.() };
+  return { player, port, api, context, fallbackPort, createFallbackNode, releaseModule: () => releaseModule?.() };
 }
 
 const metadata = {
@@ -56,6 +61,49 @@ describe("decodeS16Le", () => {
 });
 
 describe("PcmStreamPlayer", () => {
+  it("falls back when worklet initialization never settles and ignores a late load", async () => {
+    vi.useFakeTimers();
+    try {
+      const { player, fallbackPort, port, createFallbackNode, releaseModule } = fixture(true, true);
+      const ready = player.prepare();
+      await vi.advanceTimersByTimeAsync(100);
+      await ready;
+      player.start(metadata);
+      await player.prepare();
+      releaseModule();
+      await Promise.resolve();
+      expect(createFallbackNode).toHaveBeenCalledOnce();
+      expect(fallbackPort.messages).toContainEqual({ type: "start", generation: 4, sampleRate: 24_000 });
+      expect(port.messages).toEqual([]);
+      player.dispose();
+    } finally { vi.useRealTimers(); }
+  });
+
+  it("falls back when the browser rejects the worklet module", async () => {
+    const { player, context, createFallbackNode } = fixture(false, true);
+    context.audioWorklet.addModule.mockImplementationOnce(() => Promise.reject(new Error("unsupported")));
+    await player.prepare();
+    expect(createFallbackNode).toHaveBeenCalledOnce();
+    player.dispose();
+  });
+
+  it("does not create a playback node after disposal during initialization", async () => {
+    const { player, createFallbackNode, releaseModule } = fixture(true, true);
+    const ready = player.prepare();
+    player.dispose();
+    releaseModule();
+    await ready;
+    expect(createFallbackNode).not.toHaveBeenCalled();
+  });
+
+  it("unlocks audio synchronously in the tap before waiting for the worklet", async () => {
+    const { player, context, releaseModule } = fixture(true);
+    const ready = player.prepare();
+    expect(context.resume).toHaveBeenCalledOnce();
+    releaseModule();
+    await ready;
+    player.dispose();
+  });
   it("queues early PCM, transfers it after start, and acknowledges drain", async () => {
     const { player, port, api, releaseModule } = fixture(true);
     player.start(metadata);
@@ -77,8 +125,7 @@ describe("PcmStreamPlayer", () => {
   it("ignores stale chunks and flushes the active generation immediately", async () => {
     const { player, port, api } = fixture();
     player.start(metadata);
-    await Promise.resolve();
-    await Promise.resolve();
+    await player.prepare();
     player.enqueue(3, Buffer.from([0, 0]));
     player.flush(4);
     expect(port.messages).toContainEqual({ type: "flush", generation: 4 });
@@ -101,8 +148,7 @@ describe("PcmStreamPlayer", () => {
     const log = vi.spyOn(console, "error").mockImplementation(() => undefined);
     const { player, port, api } = fixture();
     player.start(metadata);
-    await Promise.resolve();
-    await Promise.resolve();
+    await player.prepare();
     port.emit({ type: "overflow", generation: 4 });
     expect(api.ttsStop).toHaveBeenCalledOnce();
     expect(api.ttsPlaybackEnded).toHaveBeenCalledWith(4);

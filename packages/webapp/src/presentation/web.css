@@ -465,6 +465,8 @@ body[data-remote-desktop="1"] .browser-live-panel {
   left: 50%;
   transform: translateX(-50%);
   min-height: 28px;
+  max-width: calc(100% - 24px);
+  box-sizing: border-box;
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -475,6 +477,15 @@ body[data-remote-desktop="1"] .browser-live-panel {
   color: #f3f5f8;
   font-size: 11px;
   pointer-events: none;
+}
+
+.browser-live-control-cue svg { flex: none; }
+
+.browser-live-control-cue > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* Quality switch in flight: the helper pauses the stream for a few seconds,
@@ -660,7 +671,7 @@ body[data-remote-desktop="1"] .browser-live-panel {
     width: 100%;
     height: 100%;
     min-height: 0;
-    grid-template-rows: 50px minmax(0, 1fr) auto;
+    grid-template-rows: 50px minmax(0, 1fr) max-content;
     border: 0;
     border-radius: 0;
   }
@@ -672,15 +683,17 @@ body[data-remote-desktop="1"] .browser-live-panel {
   }
 
   .browser-live-footer {
-    min-height: 92px;
-    align-items: stretch;
-    flex-direction: column;
-    gap: 8px;
-    padding: 10px max(12px, env(safe-area-inset-right)) calc(10px + env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    box-sizing: border-box;
+    min-height: 58px;
+    align-items: center;
+    gap: 12px;
+    padding: 8px max(12px, env(safe-area-inset-right)) calc(8px + env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
   }
 
   .browser-live-control-button {
-    width: 100%;
+    width: auto;
     min-height: 38px;
   }
 
@@ -693,6 +706,30 @@ body[data-remote-desktop="1"] .browser-live-panel {
     height: 32px;
     font-size: 14px;
   }
+}
+
+/* Reuse the gesture-hint row in both phone orientations; diagnostics must
+   not cover the remote picture or grow into a multiline floating panel. */
+@media (max-width: 699px), (max-height: 600px) and (pointer: coarse) {
+  .browser-live-surface.has-zoom .browser-live-control-cue {
+    top: 44px;
+    left: 0;
+    transform: none;
+    width: 100%;
+    max-width: 100%;
+    height: 20px;
+    min-height: 0;
+    border: 0;
+    border-radius: 0;
+    padding: 0 8px;
+    font-size: 10px;
+  }
+
+  .browser-live-surface:has(> .browser-live-control-cue) .browser-live-touch-hint {
+    visibility: hidden;
+  }
+
+  .browser-live-surface.has-quickkeys .browser-live-control-cue { display: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {

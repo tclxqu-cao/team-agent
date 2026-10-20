@@ -129,8 +129,22 @@ describe("CodexExecutionTrace", () => {
   it("auto-loads only the active trace and refreshes visible rows", () => {
     expect(source).toContain("refreshSignal = 0");
     expect(source).toContain("autoLoad = false");
-    expect(source).toContain("if (!autoLoad || hasMessages) return");
+    expect(source).toContain("if (!needsHistory) return");
     expect(source).toContain("if ((!hasMessages && !autoLoad) || refreshSignal === 0) return");
     expect(source).toContain("void ensureLoaded(true)");
+  });
+
+  it("keeps history loading visible alongside already recovered live commentary", () => {
+    const html = renderToStaticMarkup(createElement(CodexExecutionTrace, {
+      trace: { turnId: "turn-1", revision: "persisted-revision", liveMessages: [{
+        id: "commentary", role: "assistant", content: "Checking files",
+        presentation: { agentMessagePhase: "commentary" }, timestamp: 1,
+      }] },
+      loadTrace: vi.fn(async () => []), loadToolResult: vi.fn(),
+      renderContent: (text: string) => text, runtimeProgress: [], nativeSubagents: {}, autoLoad: true,
+    }));
+    expect(html).toContain("正在加载执行过程");
+    expect(html).toContain("Checking files");
+    expect(html).toContain('aria-busy="true"');
   });
 });

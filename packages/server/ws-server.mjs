@@ -3,6 +3,8 @@ import { RemoteAuthorization } from "./lib/remote-control/remote-authorization.m
 import { parseProducerRemoteVideoSignal, parseViewerRemoteVideoSignal, shouldDropRemoteAudioEvent } from "./lib/remote-control/remote-video-signal.mjs";
 import { createDevicePairingGateway } from "./lib/device-pairing-gateway.mjs";
 import { createDesktopDiscovery } from "./lib/desktop-discovery.mjs";
+import { createVoiceAsrGateway } from "./lib/voice-asr-gateway.mjs";
+import { createVoiceTtsGateway } from "./lib/voice-tts-gateway.mjs";
 // ws-server.mjs — custom server for @agent/server.
 // Serves the Next.js app (API + /web console) and multiplexes a WebSocket
 // channel on the SAME port for the remote terminal (PTY) and file services.
@@ -1263,8 +1265,12 @@ const server = createServer((req, res) => {
     });
 });
 const wss = new WebSocketServer({ noServer: true, maxPayload: 1024 * 1024 });
+const voiceAsrGateway = createVoiceAsrGateway({ pairing: pairingGateway, serviceUrl: process.env.VOICE_SERVICE_URL || `http://127.0.0.1:${process.env.VOICE_SERVICE_PORT || "17863"}`, token: process.env.VOICE_SERVICE_TOKEN || null });
+const voiceTtsGateway = createVoiceTtsGateway({ pairing: pairingGateway, serviceUrl: process.env.VOICE_SERVICE_URL || `http://127.0.0.1:${process.env.VOICE_SERVICE_PORT || "17863"}`, token: process.env.VOICE_SERVICE_TOKEN || null });
 
 server.on("upgrade", (req, socket, head) => {
+  if (voiceTtsGateway.handleUpgrade(req, socket, head)) return;
+  if (voiceAsrGateway.handleUpgrade(req, socket, head)) return;
   const url = new URL(req.url, `http://${req.headers.host}`);
   const principal = url.pathname === "/ws" ? pairingGateway.authenticateUpgrade(req) : null;
   if (!principal) { socket.write("HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n"); socket.destroy(); return; }
@@ -1384,6 +1390,8 @@ wss.on("connection", (ws, _req, principal) => {
 let ownedServicesClosePromise = null;
 function closeOwnedServices() {
   if (!ownedServicesClosePromise) ownedServicesClosePromise = (async () => {
+    await voiceAsrGateway.close();
+    await voiceTtsGateway.close();
     await remoteAuthorization.close();
     pairingGateway.close();
     await desktopDiscovery.close();

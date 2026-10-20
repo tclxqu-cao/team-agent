@@ -6,6 +6,47 @@ import CoreMedia
 import IOKit.pwr_mgt
 import VideoToolbox
 
+struct RemoteDisplaySelection {
+    private(set) var selectedID: CGDirectDisplayID?
+    private(set) var orderedIDs: [CGDirectDisplayID] = []
+
+    mutating func update(availableIDs: [CGDirectDisplayID], primaryID: CGDirectDisplayID) {
+        orderedIDs.removeAll { !availableIDs.contains($0) }
+        let added = availableIDs.filter { !orderedIDs.contains($0) }.sorted {
+            $0 == primaryID ? $1 != primaryID : ($1 != primaryID && $0 < $1)
+        }
+        orderedIDs.append(contentsOf: added)
+        if let selectedID, orderedIDs.contains(selectedID) { return }
+        selectedID = orderedIDs.first
+    }
+
+    mutating func select(_ id: CGDirectDisplayID) {
+        guard orderedIDs.contains(id) else { return }
+        selectedID = id
+    }
+}
+
+if CommandLine.arguments.contains("--display-self-test") {
+    var selection = RemoteDisplaySelection()
+    selection.update(availableIDs: [2, 1], primaryID: 1)
+    precondition(selection.selectedID == 1 && selection.orderedIDs == [1, 2])
+    selection.update(availableIDs: [1, 2], primaryID: 2)
+    precondition(selection.selectedID == 1 && selection.orderedIDs == [1, 2])
+    selection.select(2)
+    selection.update(availableIDs: [2, 1], primaryID: 1)
+    precondition(selection.selectedID == 2 && selection.orderedIDs == [1, 2])
+    selection.select(99)
+    precondition(selection.selectedID == 2)
+    selection.update(availableIDs: [1], primaryID: 1)
+    precondition(selection.selectedID == 1 && selection.orderedIDs == [1])
+    selection.update(availableIDs: [], primaryID: 1)
+    precondition(selection.selectedID == nil && selection.orderedIDs.isEmpty)
+    selection.update(availableIDs: [3, 2], primaryID: 99)
+    precondition(selection.selectedID == 2 && selection.orderedIDs == [2, 3])
+    print("display selection self-test passed")
+    exit(0)
+}
+
 if CommandLine.arguments.contains("--config") || CommandLine.arguments.contains("--diagnose") || CommandLine.arguments.contains("--request-permissions") {
     runStandaloneService()
     exit(0)
@@ -138,7 +179,9 @@ final class RemoteCaptureStream: NSObject, SCStreamOutput, SCStreamDelegate {
     var waiting: [Int?] = []
     let context = CIContext()
     var latestVideoFrame: CVPixelBuffer?
-    var selectedDisplayID: CGDirectDisplayID?
+    var displaySelection = RemoteDisplaySelection()
+    var selectedDisplayID: CGDirectDisplayID? { displaySelection.selectedID }
+    var captureDisplayID: CGDirectDisplayID?
     var epoch = 0
     var quality = RemoteVideoQuality.hd
     var audioEnabled = false
@@ -179,23 +222,22 @@ final class RemoteCaptureStream: NSObject, SCStreamOutput, SCStreamDelegate {
     }
     func displays() -> [[String: Any]] {
         let primary = CGMainDisplayID()
-        let screens = NSScreen.screens.sorted { a, b in
-            let x = (a.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value ?? 0
-            let y = (b.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value ?? 0
-            return x == primary ? y != primary : (y != primary && x < y)
+        let screens = NSScreen.screens
+        let ids = screens.compactMap {
+            ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value
         }
-        let selected = selectedDisplayID ?? primary
-        return screens.enumerated().map { index, screen in
-            let number = (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as! NSNumber).uint32Value
-            return ["id": String(number), "label": "第 \(index + 1) 屏 · \(screen.localizedName)", "primary": number == primary, "selected": number == selected]
+        displaySelection.update(availableIDs: ids, primaryID: primary)
+        return displaySelection.orderedIDs.enumerated().map { index, number in
+            let screen = screens.first { ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value == number }
+            return ["id": String(number), "label": "第 \(index + 1) 屏 · \(screen?.localizedName ?? "显示器")", "primary": number == primary, "selected": number == selectedDisplayID]
         }
     }
     func select(_ id: Int?, displayID: String?) {
         guard let displayID, let number = UInt32(displayID), displays().contains(where: { $0["id"] as? String == displayID }) else {
             respond(id, ["ok": false, "error": "屏幕已断开，请刷新屏幕列表"]); return
         }
-        if selectedDisplayID == number || (selectedDisplayID == nil && number == CGMainDisplayID()) { frame(id); return }
-        selectedDisplayID = number
+        if selectedDisplayID == number { frame(id); return }
+        displaySelection.select(number)
         restart(id)
     }
     func setQuality(_ id: Int?, value: String?) {
@@ -240,8 +282,9 @@ final class RemoteCaptureStream: NSObject, SCStreamOutput, SCStreamDelegate {
     }
     func frame(_ id: Int?) {
         guard CGPreflightScreenCaptureAccess() else { respond(id, ["ok": false, "error": "请先授予屏幕录制权限"]); return }
-        if let selectedDisplayID, !displays().contains(where: { $0["id"] as? String == String(selectedDisplayID) }) {
-            select(id, displayID: String(CGMainDisplayID())); return
+        _ = displays()
+        if captureDisplayID != selectedDisplayID && (stream != nil || starting) {
+            restart(id); return
         }
         holdRemoteDisplay()
         if let latest { encode(id, latest); return }
@@ -253,13 +296,14 @@ final class RemoteCaptureStream: NSObject, SCStreamOutput, SCStreamDelegate {
         }
         waiting.append(id)
         if starting || stream != nil { return }
+        captureDisplayID = selectedDisplayID
         starting = true
         let currentEpoch = epoch
         SCShareableContent.getExcludingDesktopWindows(false, onScreenWindowsOnly: true) { content, error in
             DispatchQueue.main.async {
                 guard self.epoch == currentEpoch else { return }
-                let target = self.selectedDisplayID ?? CGMainDisplayID()
-                guard let display = content?.displays.first(where: { $0.displayID == target }) else { self.fail(error?.localizedDescription ?? "没有可采集的屏幕"); return }
+                guard let target = self.captureDisplayID,
+                      let display = content?.displays.first(where: { $0.displayID == target }) else { self.fail(error?.localizedDescription ?? "没有可采集的屏幕"); return }
                 self.bounds = CGDisplayBounds(display.displayID)
                 let config = SCStreamConfiguration()
                 let mode = CGDisplayCopyDisplayMode(display.displayID)
@@ -415,7 +459,12 @@ func remoteCommand(_ line: String) {
     case "capture":
         remoteCapture.jpegMaxEdge = min(1280, max(640, (cmd["maxEdge"] as? NSNumber)?.doubleValue ?? 1280))
         remoteCapture.jpegBudget = min(256 * 1024, max(32 * 1024, (cmd["maxBytes"] as? NSNumber)?.intValue ?? 128 * 1024))
-        capture(id)
+        // Restore a live session's selection after the idle helper restarts.
+        // A disconnected saved display falls back to the first available one.
+        if let requested = cmd["displayId"] as? String,
+           remoteCapture.displays().contains(where: { $0["id"] as? String == requested }) {
+            remoteCapture.select(id, displayID: requested)
+        } else { capture(id) }
     case "stop-capture": remoteCapture.stop(id)
     case "quit": remoteAudioPlayback.stop(); remoteCapture.stop(nil); exit(0)
     default:

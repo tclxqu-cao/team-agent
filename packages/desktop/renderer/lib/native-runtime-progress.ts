@@ -41,6 +41,9 @@ export function upsertRuntimeProgress(
   current: readonly RuntimeProgress[],
   progress: RuntimeProgress,
 ): RuntimeProgress[] {
+  if (progress.progressId === "codex:status" && progress.phase === "status" && progress.label === "正在开始处理") {
+    progress = { ...progress, phase: "thinking", label: "正在思考" };
+  }
   const index = current.findIndex((entry) => entry.progressId === progress.progressId);
   if (index < 0) return [...current, progress];
   return current.map((entry, entryIndex) => entryIndex === index ? progress : entry);

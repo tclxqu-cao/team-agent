@@ -10,8 +10,9 @@ import {
   type SessionToolResultRef,
 } from "@agent/core";
 import { createTaskCompletionNotification } from "../../../core/src/application/notification/task-completion";
-import { ArrowDownToLine, AlarmClock, Check, Copy, CornerUpRight, FileText, GitFork, GripVertical, LoaderCircle, PanelLeftClose, PanelLeftOpen, Pencil, Play, RefreshCw, Square, Target, Trash2, Unplug, Volume2 } from "lucide-react";
+import { ArrowDownToLine, AlarmClock, Check, CircleAlert, Copy, CornerUpRight, FileText, GitFork, GripVertical, LoaderCircle, Mic, PanelLeftClose, PanelLeftOpen, Paperclip, Pencil, Play, RefreshCw, Square, Target, Trash2, Unplug, Volume2 } from "lucide-react";
 import AgentBrandIcon from "./AgentBrandIcon";
+import AppActionNotice from "./AppActionNotice";
 import MessageLink from "./MessageLink";
 import MermaidBlock from "./MermaidBlock";
 import StructuredAgentMessage from "./StructuredAgentMessage";
@@ -50,6 +51,7 @@ import {
   restoreCodexExecutionTrace,
   restoreSessionHistoryPage,
   restoreLatestSessionHistoryWindow,
+  shouldDeferLiveHistoryRefresh,
   type SessionHistoryDetail,
 } from "../lib/session-history";
 import { SinglePageHistoryPrefetch } from "../lib/session-history-prefetch";
@@ -297,11 +299,28 @@ function renderCodeFence(lang: string, code: string, complete: boolean): React.R
   }
   return (
     <div style={{ margin: '8px 0', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-subtle)', overflow: 'hidden', background: 'var(--bg-surface)' }}>
-      <div style={{ padding: '4px 10px', background: 'var(--bg-deep)', borderBottom: '1px solid var(--border-subtle)', fontSize: 10, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.07em' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 10px', background: 'var(--bg-deep)', borderBottom: '1px solid var(--border-subtle)', fontSize: 10, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.07em' }}>
         {lang || 'code'}
+        <CodeFenceCopyButton code={code} />
       </div>
       <pre style={{ margin: 0, padding: '10px 12px', fontSize: 12, lineHeight: 1.6, fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)', whiteSpace: 'pre-wrap', wordBreak: 'break-word', overflow: 'auto', maxHeight: 420 }}>{code}</pre>
     </div>
+  );
+}
+
+function CodeFenceCopyButton({ code }: { code: string }) {
+  const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle');
+  useEffect(() => {
+    if (copyState === 'idle') return;
+    const timer = window.setTimeout(() => setCopyState('idle'), 2000);
+    return () => window.clearTimeout(timer);
+  }, [copyState]);
+  const label = copyState === 'copied' ? '已复制' : copyState === 'failed' ? '复制失败，请重试' : '复制代码';
+  return (
+    <button type="button" className="ui-icon-button" aria-label={label} title={label}
+      onClick={async () => setCopyState(await copyTextToClipboard(code) ? 'copied' : 'failed')}>
+      {copyState === 'copied' ? <Check size={14} aria-hidden="true" /> : <Copy size={14} aria-hidden="true" />}
+    </button>
   );
 }
 
@@ -386,6 +405,8 @@ import AskUserCard from "./AskUserCard";
 import ContextUsageBar from "./ContextUsageBar";
 import HarnessModeControl from "./HarnessModeControl";
 import AgentActivityIndicator from "./AgentActivityIndicator";
+import { reconcileCodexUnphasedMessages } from "../lib/codex-execution-trace";
+import { resolveChatSessionId } from "../lib/session-search";
 import ReasoningSummary from "./ReasoningSummary";
 import CodexExecutionTrace from "./CodexExecutionTrace";
 import RuntimeProgressRow from "./RuntimeProgressRow";
@@ -615,7 +636,7 @@ export default function ChatView({
   );
   const { revision: settingsRevision, isConfigured, profiles, activeProfileId, switchActiveProfile, loadFromSystem, contextWindow, reasoningEffort, taskNotifications, setField, saveToSystem } = useSettingsStore();
   const isWorkspaceWelcome = selectedProjectId !== null && selectedSessionId === null;
-  const viewSessionId = isWorkspaceWelcome ? null : selectedSessionId || sessionId;
+  const viewSessionId = resolveChatSessionId(selectedSessionId, sessionId, activeAgentType, isWorkspaceWelcome);
   const viewSessionIdRef = useRef(viewSessionId);
   viewSessionIdRef.current = viewSessionId;
   const [occupiedRecoveries, setOccupiedRecoveries] = useState<OccupiedRecoveryRegistry>({});
@@ -1076,7 +1097,11 @@ export default function ChatView({
         : message), targetSid);
     }
     syncToolResultScope(targetSid, loaded.revision);
-    return restoreCodexExecutionTrace(detail);
+    const restoredTrace = restoreCodexExecutionTrace(detail);
+    const current = getMessagesForSession(targetSid);
+    const reconciled = reconcileCodexUnphasedMessages(current, restoredTrace);
+    if (reconciled.some((message, index) => message !== current[index]) || reconciled.length !== current.length) setMessages(reconciled, targetSid);
+    return restoredTrace;
   }, [getMessagesForSession, setMessages, syncToolResultScope]);
 
   useEffect(() => {
@@ -1236,14 +1261,40 @@ export default function ChatView({
 
   // ── Voice: dictation (input) + per-message TTS (output) ────────────────
   const [isRecording, setIsRecording] = useState(false);
+  const [isStartingDictation, setIsStartingDictation] = useState(false);
+  const [isFinalizingDictation, setIsFinalizingDictation] = useState(false);
+  const [dictationError, setDictationError] = useState<string | null>(null);
   /** ID of the assistant message currently being spoken aloud */
   const [speakingMsgId, setSpeakingMsgId] = useState<string | null>(null);
   const dictationRef = useRef<DictationHandle | null>(null);
+  const dictationGenerationRef = useRef(0);
+  const ttsPlayerRef = useRef<PcmStreamPlayer | null>(null);
+
+  useEffect(() => {
+    if (!dictationError) return;
+    const timer = window.setTimeout(() => setDictationError(null), 4_000);
+    return () => window.clearTimeout(timer);
+  }, [dictationError]);
+
+  useEffect(() => {
+    setIsRecording(false);
+    setIsStartingDictation(false);
+    setIsFinalizingDictation(false);
+    setDictationError(null);
+    return () => {
+      dictationGenerationRef.current += 1;
+      const handle = dictationRef.current;
+      dictationRef.current = null;
+      if (handle?.cancel) handle.cancel();
+      else handle?.stop();
+    };
+  }, [selectedSessionId, selectedProjectId]);
 
   useEffect(() => {
     const api = window.agentApi;
     if (!api?.onTtsStart || !api.onTtsPcm || !api.onTtsStreamEnd || !api.onTtsFlush) return;
     const player = new PcmStreamPlayer(api);
+    ttsPlayerRef.current = player;
     const dispose = [
       api.onTtsStart((metadata) => player.start(metadata)),
       api.onTtsPcm(({ generation, pcm }) => player.enqueue(generation, pcm)),
@@ -1254,37 +1305,49 @@ export default function ChatView({
     return () => {
       for (const removeListener of dispose) removeListener();
       player.dispose();
+      if (ttsPlayerRef.current === player) ttsPlayerRef.current = null;
     };
   }, []);
 
   const handleMicToggle = () => {
+    if (isFinalizingDictation) return;
     if (isRecording) {
+      setIsFinalizingDictation(true);
       dictationRef.current?.stop();
-      dictationRef.current = null;
-      setIsRecording(false);
       return;
     }
+    if (isWebShell()) void ttsPlayerRef.current?.prepare().catch(() => undefined);
     void interruptSpeech(window.agentApi, stopSpeaking);
     const prefix = input ? `${input.trimEnd()} ` : "";
+    const generation = ++dictationGenerationRef.current;
+    setDictationError(null);
+    setIsStartingDictation(true);
     const handle = startDictation({
-      onInterim: (text) => setInput(prefix + text),
+      onStart: () => { if (generation === dictationGenerationRef.current) setIsStartingDictation(false); },
+      onInterim: (text) => { if (generation === dictationGenerationRef.current) setInput(prefix + text); },
       onFinal: (text) => {
+        if (generation !== dictationGenerationRef.current) return;
         setInput(prefix + text);
         inputRef.current?.focus();
       },
-      onError: (message) => setError(message),
+      onError: (message) => { if (generation === dictationGenerationRef.current) setDictationError(message); },
       onEnd: () => {
+        if (generation !== dictationGenerationRef.current) return;
         setIsRecording(false);
+        setIsStartingDictation(false);
+        setIsFinalizingDictation(false);
         dictationRef.current = null;
       },
     });
     if (handle) {
       dictationRef.current = handle;
       setIsRecording(true);
-    }
+    } else setIsStartingDictation(false);
   };
 
   const handleSpeakMessage = async (msgId: string, content: string) => {
+    const playbackReady = ttsPlayerRef.current?.prepare();
+    void playbackReady?.catch(() => undefined);
     if (speakingMsgId === msgId) {
       await interruptSpeech(window.agentApi, stopSpeaking);
       setSpeakingMsgId(null);
@@ -1297,6 +1360,7 @@ export default function ChatView({
     }
     setSpeakingMsgId(msgId);
     try {
+      await playbackReady;
       const result = await window.agentApi.ttsSpeak(content);
       if (!result.ok) {
         setSpeakingMsgId(null);
@@ -1507,6 +1571,7 @@ export default function ChatView({
   };
 
   const handleComposerKeyDown = (event: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    if (isRecording) { event.preventDefault(); return; }
     if (event.key === "Escape" && (atQuery !== null || slashQuery !== null)) {
       event.preventDefault();
       setAtQuery(null);
@@ -1634,7 +1699,7 @@ export default function ChatView({
       const agentApi = window.agentApi;
       if (!agentApi) return;
       // Capture at call time — used to detect stale responses from fast session switching.
-      if (shouldSkipVoiceSessionReload(runningSessionRef.current, sessionIdRef.current, targetSid, !isWorkspaceWelcome)) return;
+      if (shouldSkipVoiceSessionReload(runningSessionRef.current, sessionIdRef.current, targetSid, !isWorkspaceWelcome && viewSessionId !== null)) return;
       if (!targetSid) {
         if (!isCurrentLoad()) return;
         historyPrefetchRef.current?.invalidate();
@@ -1784,7 +1849,7 @@ export default function ChatView({
         sessionLoadGenerationRef.current += 1;
       }
     };
-  }, [getMessagesForSession, getSessionHistoryWindow, historyAgentType, isWorkspaceWelcome, prefetchOlderHistory, selectedSessionId, sessionReloadGeneration, setContextUsage, setHistoryMode, setMessages, setSessionId, syncToolResultScope, updateAgentActivity]);
+  }, [activeAgentType, getMessagesForSession, getSessionHistoryWindow, historyAgentType, isWorkspaceWelcome, prefetchOlderHistory, selectedSessionId, sessionReloadGeneration, setContextUsage, setHistoryMode, setMessages, setSessionId, syncToolResultScope, updateAgentActivity]);
 
   const loadSessionQueryIndex = useCallback(async (targetSid: string) => {
     const agentApi = window.agentApi;
@@ -1856,6 +1921,10 @@ export default function ChatView({
 
   const refreshLatestHistory = useCallback(async (targetSid: string) => {
     if (!window.agentApi || document.visibilityState === "hidden") return;
+    if (shouldDeferLiveHistoryRefresh(historyAgentType(targetSid), targetSid, useAgentStore.getState().runningSessionId)) {
+      if (historyAgentType(targetSid) === "codex") scheduleCodexTraceRefresh(targetSid);
+      return;
+    }
     if (historyWindowModeRef.current === "anchored") {
       setHasLatestHistoryUpdates(true);
       return;
@@ -1886,6 +1955,10 @@ export default function ChatView({
               : SESSION_HISTORY_PAGE_SIZE,
           },
           (detail, phase) => {
+            if (shouldDeferLiveHistoryRefresh(historyAgentType(targetSid), targetSid, useAgentStore.getState().runningSessionId)) {
+              if (historyAgentType(targetSid) === "codex") scheduleCodexTraceRefresh(targetSid);
+              return;
+            }
             const refreshed = restoreSessionHistoryPage(detail);
             const current = getMessagesForSession(targetSid);
             const restoredWindow = restoreLatestSessionHistoryWindow(
@@ -2423,6 +2496,10 @@ export default function ChatView({
     }
     switch (event.type) {
       case "run_admitted":
+        if (isViewed) updateAgentActivity("thinking");
+        if (eventSid && historyAgentType(eventSid) === "codex") {
+          applyRuntimeProgress({ progressId: "codex:status", phase: "thinking", label: "正在思考" }, eventSid);
+        }
         if (eventSid && cancellationTimeoutSessionId === eventSid) {
           setCancellationTimeoutSessionId(null);
           if (isViewed) setError(null);
@@ -2469,7 +2546,20 @@ export default function ChatView({
               messagePhase: "commentary",
             }, eventSid);
           } else {
-            appendText(event.text, eventSid);
+            if (eventSid && event.turnId && event.itemId && !event.messagePhase && historyAgentType(eventSid) === "codex") {
+              const id = `codex-trace:${event.turnId}:agent:${event.itemId}`;
+              const current = getMessagesForSession(eventSid);
+              const inTrace = current.some(message => message.executionTrace?.liveMessages?.some(item => item.id === id));
+              if (inTrace) {
+                applyCodexExecutionEvent(event.turnId, { type: "text_chunk", text: event.text, turnId: event.turnId, itemId: event.itemId, messagePhase: "commentary" }, eventSid);
+              } else if (current.some(message => message.id === id)) {
+                updateMessage(id, message => ({ ...message, content: message.content + event.text }), eventSid);
+              } else {
+                addMessage({ id, role: "assistant", content: event.text, timestamp: Date.now() }, eventSid);
+              }
+            } else {
+              appendText(event.text, eventSid);
+            }
           }
           if (isViewed) {
             updateAgentActivity("thinking");
@@ -2665,7 +2755,7 @@ export default function ChatView({
           if (sessionMessages.some((message) => message.askUser?.questionId === event.questionId)) break;
         }
         addMessage({
-          id: crypto.randomUUID(),
+          id: `question:${event.questionId}`,
           role: "assistant",
           content: "",
           askUser: {
@@ -2760,6 +2850,9 @@ export default function ChatView({
             scheduleQueuedMessageAfterTerminal(eventSid);
           }
           void loadThreadGoal(eventSid);
+          if (["deepseek-harness", "codex"].includes(historyAgentType(eventSid) ?? "")) {
+            void refreshLatestHistory(eventSid);
+          }
         }
         break;
       case "error":
@@ -4243,6 +4336,7 @@ export default function ChatView({
                 fields={chatMsg.askUser.fields}
                 multiSelect={chatMsg.askUser.multiSelect}
                 answered={chatMsg.askUser.answered}
+                cancelled={chatMsg.askUser.cancelled}
                 answer={chatMsg.askUser.answer}
                 onAnswer={async (answer, selectedIndices) => {
                   const resolved = await window.agentApi?.answerQuestion(
@@ -4588,7 +4682,11 @@ export default function ChatView({
                         <span />
                       </span>
                     )}
-                    {chatMsg.sendState === "failed" && <span>发送失败</span>}
+                    {chatMsg.sendState === "failed" && (
+                      <span title="发送失败" style={{ color: "var(--danger)" }}>
+                        <CircleAlert size={16} strokeWidth={2} aria-hidden="true" />
+                      </span>
+                    )}
                     {chatMsg.isSteered && (
                       <span
                         className="msg-steered-status"
@@ -4625,7 +4723,7 @@ export default function ChatView({
                           : <GitFork size={13} strokeWidth={1.8} aria-hidden="true" />}
                       </button>
                     )}
-                    {!isWebShell() && actionPolicy.showSpeak && typeof window.agentApi?.ttsSpeak === "function" && (
+                    {actionPolicy.showSpeak && typeof window.agentApi?.ttsSpeak === "function" && (
                       <button
                         type="button"
                         onClick={() => handleSpeakMessage(msg.id, msg.content)}
@@ -5599,6 +5697,7 @@ export default function ChatView({
             onKeyDown={handleComposerKeyDown}
             placeholder={canComposeNativeGoal && goalMode ? "输入要持续推进的目标" : codexReleaseState === "released" ? "已停止在 AgentRoam 中使用；Codex Desktop 最长约 30 分钟后可用" : isCompatibilityReadOnly ? (compatibilityStatus === "incompatible" ? "Codex 版本不兼容" : "正在验证会话兼容性") : isReadOnly ? "原客户端使用中，当前只读" : runtimeReady ? (goalMode ? "输入要持续推进的目标" : shouldQueueMessage ? "输入下一条排队消息" : "提出后续修改要求") : "请先在设置中配置 API Key"}
             disabled={!canSubmitComposer}
+            readOnly={isRecording}
           />
 
           {/* Shared action toolbar */}
@@ -5607,21 +5706,24 @@ export default function ChatView({
                 <button
                   type="button"
                   className="web-native-add-button"
-                  aria-label="添加附件、图片或语音"
-                  aria-expanded={addMenuOpen}
-                  onClick={() => setAddMenuOpen((open) => !open)}
+                  aria-label={isFinalizingDictation ? "正在完成识别" : isRecording ? "停止语音输入" : "添加附件、图片或语音"}
+                  aria-expanded={isRecording ? undefined : addMenuOpen}
+                  aria-pressed={isRecording || undefined}
+                  title={isFinalizingDictation ? "正在完成识别…" : isStartingDictation ? "正在连接麦克风，点击停止" : isRecording ? "停止语音输入" : "添加附件、图片或语音"}
+                  disabled={isFinalizingDictation}
+                  onClick={() => isRecording ? handleMicToggle() : setAddMenuOpen((open) => !open)}
                 >
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true">
+                  {isFinalizingDictation || isStartingDictation ? <LoaderCircle className="web-native-dictation-spinner" size={20} aria-hidden="true" /> : isRecording ? <Square size={18} fill="currentColor" aria-hidden="true" /> : <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true">
                     <path d="M12 5v14M5 12h14" />
-                  </svg>
+                  </svg>}
                 </button>
-                {addMenuOpen && (
-                  <div className="web-native-add-menu">
-                    <button type="button" onClick={() => { setAddMenuOpen(false); fileInputRef.current?.click(); }}>
-                      附件 / 图片
+                {addMenuOpen && !isRecording && (
+                  <div className="web-native-add-menu" role="group" aria-label="添加附件或语音">
+                    <button type="button" aria-label="附件 / 图片" title="附件 / 图片" onClick={() => { setAddMenuOpen(false); fileInputRef.current?.click(); }}>
+                      <Paperclip size={20} aria-hidden="true" />
                     </button>
-                    <button type="button" onClick={() => { setAddMenuOpen(false); handleMicToggle(); }}>
-                      语音输入
+                    <button type="button" aria-label="语音输入" title="语音输入" disabled={!canSubmitComposer} onClick={() => { setAddMenuOpen(false); handleMicToggle(); }}>
+                      <Mic size={20} aria-hidden="true" />
                     </button>
                   </div>
                 )}
@@ -5877,7 +5979,7 @@ export default function ChatView({
               <button
                 type="button"
                 onClick={handleSend}
-                disabled={!canSubmitComposer || nativeGoal.pending || pendingImageReads > 0 || !input.trim()}
+                disabled={isRecording || !canSubmitComposer || nativeGoal.pending || pendingImageReads > 0 || !input.trim()}
                 className="web-native-send-button"
                 aria-label={shouldQueueMessage ? "排队发送" : "发送"}
                 title={shouldQueueMessage ? "排队发送" : "发送"}
@@ -5891,6 +5993,8 @@ export default function ChatView({
         </div>{/* end input box */}
         </div>{/* end relative wrapper */}
 
+        <AppActionNotice message={dictationError} type="error" />
+
         {/* Hint */}
         <div className="chat-composer-hint" style={{
           textAlign: "center",
@@ -5900,7 +6004,7 @@ export default function ChatView({
           letterSpacing: "0.03em",
           opacity: 0.6,
         }}>
-          Enter 发送{goalMode ? "目标" : shouldQueueMessage ? "（排队）" : ""} · @智能体（可多选）· /技能 · Shift+Enter 换行{isRecording ? " · 🎤 正在聆听…" : ""}
+          Enter 发送{goalMode ? "目标" : shouldQueueMessage ? "（排队）" : ""} · @智能体（可多选）· /技能 · Shift+Enter 换行{isFinalizingDictation ? " · 正在完成识别…" : isStartingDictation ? " · 正在连接麦克风…" : isRecording ? " · 🎤 正在聆听，点击 ■ 停止" : ""}
         </div>
       </div>
 
