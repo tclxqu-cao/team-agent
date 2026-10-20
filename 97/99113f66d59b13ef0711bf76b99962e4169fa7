@@ -1,0 +1,40 @@
+packages/desktop/renderer/components/ChatComposerStyle.test.ts
+  s_99271c1ff745fc::t_6320ae46db2cf4 14-23
+packages/desktop/renderer/styles/global.css
+  s_99271c1ff745fc::t_9e4cb9fec0546b 4513-4621
+  s_90d72b02fa0d98::t_033ef1327e49e0 4506-4512
+packages/desktop/renderer/components/ChatView.tsx
+  s_99271c1ff745fc::t_654976a1df4aad 4016-4027,4034-4035,5999,6024
+  s_99271c1ff745fc::t_6320ae46db2cf4 4028-4033
+packages/desktop/renderer/App.tsx
+  s_99271c1ff745fc::t_2c6dc4ea1339b0 1660
+  s_90d72b02fa0d98::t_19fc451f10b160 3
+  s_90d72b02fa0d98::t_033ef1327e49e0 6,1769-1773,2002-2007,2012
+packages/desktop/renderer/components/SidebarReferenceStyle.test.ts
+  s_90d72b02fa0d98::t_415b774057d3a4 380
+  s_90d72b02fa0d98::t_1652bb3d4cfd21 393-394,397-398
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9799113f66d59b13ef0711bf76b99962e4169fa7",
+  "prompts": {},
+  "sessions": {
+    "s_90d72b02fa0d98": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a158cb-0b76-7ec1-9a50-97a5a894fbfd",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_99271c1ff745fc": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1599c-9358-7c73-b5ef-ecb3aa8353fe",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
