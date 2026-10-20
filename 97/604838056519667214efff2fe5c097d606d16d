@@ -1,0 +1,28 @@
+packages/server/app/web/page.tsx
+  s_99271c1ff745fc::t_67e24561b5f0a9 8,43,136
+  s_99271c1ff745fc::t_d503bef2afe889 137-138,422-424,462,464,466-470,474,479-487,489-498
+  s_99271c1ff745fc::t_b455816a73f92d 463,478,488
+packages/server/app/web/console-tabs.ts
+  s_99271c1ff745fc::t_67e24561b5f0a9 9-32,34-43
+  s_99271c1ff745fc::t_1c01842af12e64 33
+packages/server/app/web/console-tabs.test.ts
+  s_99271c1ff745fc::t_698f60636663aa 3-21
+packages/server/ws-server.mjs
+  s_99271c1ff745fc::t_02dd83fbd0ebe6 720
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "97604838056519667214efff2fe5c097d606d16d",
+  "prompts": {},
+  "sessions": {
+    "s_99271c1ff745fc": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1599c-9358-7c73-b5ef-ecb3aa8353fe",
+        "model": "gpt-6"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
