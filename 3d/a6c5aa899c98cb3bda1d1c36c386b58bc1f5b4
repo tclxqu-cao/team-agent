@@ -1,0 +1,32 @@
+packages/desktop/renderer/components/SidebarRefreshButton.test.tsx
+  s_90d72b02fa0d98::t_19fc451f10b160 1-45
+packages/desktop/renderer/components/WorkspaceResponsiveStyle.test.ts
+  s_99271c1ff745fc::t_9e4cb9fec0546b 1-20,27-33
+  s_99271c1ff745fc::t_2c6dc4ea1339b0 21-26
+packages/desktop/renderer/components/SidebarRefreshButton.tsx
+  s_90d72b02fa0d98::t_033ef1327e49e0 1-21
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3da6c5aa899c98cb3bda1d1c36c386b58bc1f5b4",
+  "prompts": {},
+  "sessions": {
+    "s_90d72b02fa0d98": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a158cb-0b76-7ec1-9a50-97a5a894fbfd",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_99271c1ff745fc": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1599c-9358-7c73-b5ef-ecb3aa8353fe",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
