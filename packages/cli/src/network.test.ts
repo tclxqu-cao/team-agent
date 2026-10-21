@@ -27,4 +27,20 @@ describe("findLanUrl", () => {
       lo0: [{ address: "127.0.0.1", netmask: "255.0.0.0", family: "IPv4", mac: "", internal: true, cidr: null }],
     })).toBeNull();
   });
+
+  it("uses the routed Wi-Fi address instead of the first private virtual adapter", () => {
+    const interfaces = {
+      datacloak: [{ address: "10.184.90.200", netmask: "255.255.255.0", family: "IPv4" as const, mac: "", internal: false, cidr: null }],
+      WLAN: [{ address: "10.22.32.45", netmask: "255.255.255.0", family: "IPv4" as const, mac: "", internal: false, cidr: null }],
+    };
+    expect(findLanUrl(4100, interfaces, "10.22.32.45")).toBe("http://10.22.32.45:4100");
+    expect(findLanUrl(4100, interfaces, "203.0.113.1")).toBe("http://10.184.90.200:4100");
+  });
+
+  it("accepts a routed 172.16/12 LAN address without preferring Docker by default", () => {
+    const interfaces = {
+      WLAN: [{ address: "172.20.1.10", netmask: "255.255.255.0", family: "IPv4" as const, mac: "", internal: false, cidr: null }],
+    };
+    expect(findLanUrl(4100, interfaces, "172.20.1.10")).toBe("http://172.20.1.10:4100");
+  });
 });

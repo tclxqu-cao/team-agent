@@ -6,7 +6,7 @@ import { parseArgs } from "./args.js";
 import { ensureCloudflared } from "./cloudflared/installer.js";
 import { resolveCodexRuntime } from "./codex-runtime-manager.js";
 import { probeSQLiteRuntime, probeTerminalRuntime, repairNativeRuntimePermissions } from "./native-runtime.js";
-import { findLanUrl } from "./network.js";
+import { findRoutedLanUrl } from "./network.js";
 import { installedDataDir, pairingAdmin, printPairingCode, type PairedDevice, type PendingPairing, terminalText } from "./device-pairing.js";
 import { detectPlatform, type PlatformTarget } from "./platform.js";
 import { AGENTROAM_VERSION, resolvePlatformRuntime, resolvePlatformTui } from "./platform-packages.js";
@@ -187,7 +187,7 @@ async function executeCommand(options: ReturnType<typeof parseArgs>, argv: strin
     if (controller.signal.aborted) { await runtime.close(); return; }
     void runtime.exited.then(() => controller.abort());
     await serviceReporter?.localReady(runtime.localUrl);
-    const lanUrl = findLanUrl(runtime.port) ?? runtime.localUrl;
+    const lanUrl = await findRoutedLanUrl(runtime.port) ?? runtime.localUrl;
     const relayRuntime = runtime;
 
     relay = await withCliProgress("Preparing phone access", () => selectRelay({
