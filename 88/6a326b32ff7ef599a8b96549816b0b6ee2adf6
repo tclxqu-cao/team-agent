@@ -1,0 +1,36 @@
+packages/cli/src/instance-takeover.ts
+  s_baa042e5aba9f2::t_3695f8adf4121b 1,4,125
+packages/cli/src/startup-lock.test.ts
+  s_baa042e5aba9f2::t_40f61a35763885 1-52
+packages/cli/src/power/sleep-inhibitor.ts
+  s_baa042e5aba9f2::t_80277b11071a66 22-24,47-52
+packages/cli/src/startup-lock.ts
+  s_baa042e5aba9f2::t_3695f8adf4121b 1-55
+packages/cli/src/power/sleep-inhibitor.test.ts
+  s_baa042e5aba9f2::t_80277b11071a66 123-128
+  s_858db565ac44d5::t_00ef93351127bc 122,129
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "886a326b32ff7ef599a8b96549816b0b6ee2adf6",
+  "prompts": {},
+  "sessions": {
+    "s_858db565ac44d5": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a15945-e288-7662-8b77-399305337ce1",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "daibiao.hu <daibiao.hu@ly.com>"
+    },
+    "s_baa042e5aba9f2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a15c86-641d-7580-98c2-1eff03770f2e",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "daibiao.hu <daibiao.hu@ly.com>"
+    }
+  }
+}
