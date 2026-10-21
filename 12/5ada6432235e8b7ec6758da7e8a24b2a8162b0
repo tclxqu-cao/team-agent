@@ -1,0 +1,23 @@
+packages/cli/package.json
+  s_503cb1cdd4d7f5::t_b61f93987e856b 3
+packages/website/src/pages.mjs
+  s_503cb1cdd4d7f5::t_cdc04a4d60f1fe 27
+packages/website/src/website.test.mjs
+  s_503cb1cdd4d7f5::t_9c1e132f2f7b40 132-140
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "125ada6432235e8b7ec6758da7e8a24b2a8162b0",
+  "prompts": {},
+  "sessions": {
+    "s_503cb1cdd4d7f5": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a15894-607f-7592-8200-e174adb3c36e",
+        "model": "gpt-6"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
