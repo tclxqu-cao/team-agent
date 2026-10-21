@@ -19,7 +19,9 @@ export async function acquireSleepInhibitor(options: SleepInhibitorOptions = {})
   const platform = options.platform ?? process.platform;
   const pid = options.pid ?? process.pid;
   const spawnProcess = options.spawnProcess ?? spawn;
-  const readyTimeoutMs = options.readyTimeoutMs ?? 5_000;
+  // Windows PowerShell compiles the P/Invoke helper on first use. Cold startup
+  // and antivirus scanning can take longer than five seconds.
+  const readyTimeoutMs = options.readyTimeoutMs ?? (platform === "win32" ? 30_000 : 5_000);
   const stopTimeoutMs = options.stopTimeoutMs ?? 2_000;
 
   if (platform === "darwin") {
@@ -42,7 +44,12 @@ export async function acquireSleepInhibitor(options: SleepInhibitorOptions = {})
       stdio: ["ignore", "pipe", "pipe"],
       windowsHide: true,
     });
-    await waitForReadyLine(child, readyTimeoutMs);
+    try { await waitForReadyLine(child, readyTimeoutMs); }
+    catch (error) {
+      // A timed-out child otherwise keeps Node alive after startup has failed.
+      if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
+      throw error;
+    }
     return monitorChild(child, stopTimeoutMs, "Windows idle-sleep inhibitor");
   }
 

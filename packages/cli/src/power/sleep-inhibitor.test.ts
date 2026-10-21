@@ -119,4 +119,12 @@ describe("sleep inhibitor", () => {
     expect(script).toContain("finally");
     expect(script).toContain("SetThreadExecutionState($continuous)");
   });
+
+  it("terminates a Windows helper that never reports readiness", async () => {
+    const child = fakeChild(true);
+    await expect(acquireSleepInhibitor({
+      platform: "win32", spawnProcess: vi.fn(() => child) as never, readyTimeoutMs: 10,
+    })).rejects.toThrow("did not become ready");
+    expect(child.kill).toHaveBeenCalledWith("SIGKILL");
+  });
 });

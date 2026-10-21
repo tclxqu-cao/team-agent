@@ -1,7 +1,7 @@
-import { readdir, readFile, mkdir, writeFile, rm, realpath, rename } from "node:fs/promises";
+import { readdir, readFile, mkdir, realpath, rename } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { homedir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { runCommand } from "./service/service-controller.js";
 import { MacLaunchAgent } from "./service/macos-launch-agent.js";
@@ -122,16 +122,4 @@ export async function stopPreviousInstances(dataDir: string, log: (line: string)
   }
 }
 
-/** Serialize startup within a data directory; never remove a live owner's lock. */
-export async function lockInstanceStartup(dataDir: string): Promise<() => Promise<void>> {
-  await mkdir(dataDir, { recursive: true });
-  const path = resolve(await realpath(dataDir), ".cli-start.lock");
-  try { await mkdir(path, { mode: 0o700 }); } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-    throw new Error("此数据目录已有 CLI 正在启动；请等它完成后重试。若上次异常退出，请确认无启动进程后移除 .cli-start.lock。");
-  }
-  try { await writeFile(join(path, "pid"), String(process.pid), { mode: 0o600 }); }
-  catch (error) { await rm(path, { recursive: true, force: true }); throw error; }
-  let released = false;
-  return async () => { if (!released) { released = true; await rm(path, { recursive: true, force: true }); } };
-}
+export { lockInstanceStartup } from "./startup-lock.js";
