@@ -1,0 +1,70 @@
+packages/cli/src/network.ts
+  s_503cb1cdd4d7f5::t_818cb06136cb14 10,14
+packages/cli/src/codex-desktop-setup.test.ts
+  s_503cb1cdd4d7f5::t_6b8bbeb7027d53 39,48,82-84
+packages/cli/src/progress.test.ts
+  s_503cb1cdd4d7f5::t_738aed4f718cec 12-13,18,36,41
+packages/cli/src/network.test.ts
+  s_503cb1cdd4d7f5::t_818cb06136cb14 7,13,16-22
+packages/cli/src/cli.ts
+  s_503cb1cdd4d7f5::t_b17608175d9a3c 64-70,154,170,181-182,186,193,201-202,209,272,287,292,299
+  s_503cb1cdd4d7f5::t_818cb06136cb14 231
+packages/cli/src/local-desktop-url.ts
+  s_503cb1cdd4d7f5::t_738aed4f718cec 2-5
+packages/cli/install/install-agentroam.sh
+  s_503cb1cdd4d7f5::t_738aed4f718cec 421,426
+  s_503cb1cdd4d7f5::t_b17608175d9a3c 46,59,170,188,198,209,212,261,365,367,375,380,382-383,408,415,443,451,453,456
+packages/cli/src/installer-progress.test.ts
+  s_503cb1cdd4d7f5::t_738aed4f718cec 20,44,48,54-55
+  s_503cb1cdd4d7f5::t_818cb06136cb14 32,37-38
+packages/cli/src/codex-desktop-setup.ts
+  s_503cb1cdd4d7f5::t_6b8bbeb7027d53 32,35,38,46,50-51,53,57,72,74,76-77
+packages/cli/install/install-agentroam.ps1
+  s_503cb1cdd4d7f5::t_738aed4f718cec 337
+  s_503cb1cdd4d7f5::t_b17608175d9a3c 347,354,356,358
+packages/cli/src/service/service-command.ts
+  s_503cb1cdd4d7f5::t_b17608175d9a3c 66,75,78,99,101,103,112,117-118,122,125,131,142,176,200,203
+  s_503cb1cdd4d7f5::t_818cb06136cb14 107-108,134-135,138,160,179-180,183
+  s_503cb1cdd4d7f5::t_738aed4f718cec 208
+  s_503cb1cdd4d7f5::t_78a33b4de1d88d 105,132,156,177
+packages/cli/bin/desktop-download.mjs
+  s_503cb1cdd4d7f5::t_b17608175d9a3c 61-62,66
+packages/cli/bin/cli-progress.mjs
+  s_503cb1cdd4d7f5::t_b17608175d9a3c 34
+packages/cli/src/device-pairing.ts
+  s_503cb1cdd4d7f5::t_738aed4f718cec 26,35,40-42,48,52,54,58-59,105,108-109,112-114,118,120,125,140
+packages/cli/install/install-manifest.json
+  s_503cb1cdd4d7f5::t_8ac87dfd65e2bc 6-7,11-12
+packages/cli/src/desktop-authorization-prompt.ts
+  s_503cb1cdd4d7f5::t_40fd1f8c9b55cc 6,51
+packages/cli/src/desktop-authorization.test.ts
+  s_503cb1cdd4d7f5::t_207a394e86988b 51,94,96,138,180,201,215,235
+packages/cli/src/desktop-authorization.ts
+  s_503cb1cdd4d7f5::t_2f4bea9cc55f60 47,53,59-61,72,88,90-92,95,101,110,113-114,123,130,134-136,140,161-162,167-168
+packages/cli/src/device-pairing.test.ts
+  s_503cb1cdd4d7f5::t_22b8a585f0b5b2 45
+packages/cli/src/install-script-contract.test.ts
+  s_503cb1cdd4d7f5::t_9a8f4ad5363441 16,37,39,72,95
+packages/cli/src/local-service-request.test.ts
+  s_503cb1cdd4d7f5::t_a6e2e42d2a654b 55
+packages/cli/src/service/launcher-cleanup.test.ts
+  s_503cb1cdd4d7f5::t_e4e527e9136daf 88
+packages/cli/src/service/service-command.test.ts
+  s_503cb1cdd4d7f5::t_7941b4ffefa23d 23,25-27,45,48,67,137-138,319-322
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f8751c9126106a238bfe64fb21e468a68a29b5bc",
+  "prompts": {},
+  "sessions": {
+    "s_503cb1cdd4d7f5": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a15894-607f-7592-8200-e174adb3c36e",
+        "model": "gpt-6"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
