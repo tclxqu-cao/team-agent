@@ -171,7 +171,7 @@ describe("occupied Codex session fork recovery", () => {
     const source = readFileSync(resolve(
       process.cwd(),
       "packages/desktop/renderer/components/ChatView.tsx",
-    ), "utf8");
+    ), "utf8").replace(/\r\n/g, "\n");
     const forkHandler = source.slice(
       source.indexOf("const handleForkOccupiedSession = async () =>"),
       source.indexOf("const handleAbort = () =>"),

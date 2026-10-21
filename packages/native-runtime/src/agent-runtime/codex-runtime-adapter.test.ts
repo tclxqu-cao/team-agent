@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import * as filesystem from "node:fs/promises";
 import { appendFile, mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import {
   CodexRuntimeAdapter,
   codexProgressNotificationToEvent,
@@ -17,6 +17,7 @@ import {
 import { CodexRolloutCommentaryReader } from "./codex-rollout-activity.js";
 import * as nativeProcesses from "./native-processes.js";
 import { RuntimeSessionError } from "./types.js";
+import type { CodexDesktopTools } from "./codex-desktop-tools.js";
 
 vi.mock("node:fs/promises", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:fs/promises")>();
@@ -76,8 +77,8 @@ describe("Codex session status mapping", () => {
 describe("Codex home and Windows occupancy", () => {
   it("honors CODEX_HOME and falls back to the user home", () => {
     expect(resolveCodexHome({ CODEX_HOME: " /custom/codex " }, "/users/test"))
-      .toBe("/custom/codex");
-    expect(resolveCodexHome({}, "/users/test")).toBe("/users/test/.codex");
+      .toBe(resolve("/custom/codex"));
+    expect(resolveCodexHome({}, "/users/test")).toBe(resolve("/users/test/.codex"));
   });
 
   it("reports launcher setup failures without falling back to another Codex", async () => {
@@ -2471,10 +2472,11 @@ describe("Codex occupied-session takeover", () => {
 
   function buildAdapter(
     requests: Array<{ method: string; params: any }>,
-    options: { resumeError?: Error; turnCompleted?: boolean } = {},
+    options: { resumeError?: Error; turnCompleted?: boolean; desktopTools?: Pick<CodexDesktopTools, "connect">; platform?: NodeJS.Platform; mode?: "desktop" | "shared" } = {},
   ) {
     let notify: (message: any) => void = () => undefined;
     const client = {
+      mode: options.mode,
       onNotification: (handler: typeof notify) => {
         notify = handler;
         return () => undefined;
@@ -2503,7 +2505,8 @@ describe("Codex occupied-session takeover", () => {
     };
     return new CodexRuntimeAdapter({
       client: client as never,
-      platform: "win32",
+      desktopTools: options.desktopTools ?? null,
+      platform: options.platform ?? "win32",
       sessionRoot: "C:\\Users\\test\\.codex\\sessions",
       rolloutActivityReader: {
         readMany: async (paths: Iterable<string>) => new Map([...paths].map((path) => [path, "running" as const])),
@@ -2552,6 +2555,63 @@ describe("Codex occupied-session takeover", () => {
     const events = await drain(adapter.run(occupiedThread.id, "hello"));
     expect(events).toEqual([expect.objectContaining({ type: "error", code: "SESSION_OCCUPIED" })]);
     expect(requests.some(({ method }) => method === "turn/start")).toBe(false);
+  });
+
+  it("continues the original Desktop-owned thread without forking or starting a competing writer", async () => {
+    const requests: Array<{ method: string; params: any }> = [];
+    const read = vi.fn().mockResolvedValueOnce({ turns: [] }).mockResolvedValue({ thread: { status: { type: "idle" } }, turns: [{
+      id: "desktop-turn", status: "completed", items: [
+        { type: "userMessage", id: "u1", content: [{ type: "text", text: "hello" }] },
+        { type: "agentMessage", id: "a1", text: "original reply" },
+      ],
+    }] });
+    const send = vi.fn(); const close = vi.fn();
+    const connect = vi.fn().mockResolvedValue({ read, send, close });
+    const adapter = buildAdapter(requests, {
+      resumeError: new RuntimeSessionError("active writer", "SESSION_OCCUPIED"), desktopTools: { connect },
+    });
+    const events = await drain(adapter.run(occupiedThread.id, "hello"));
+    expect(connect).toHaveBeenCalledOnce();
+    expect(connect).toHaveBeenCalledWith(occupiedThread.id, occupiedThread.cwd);
+    expect(send).toHaveBeenCalledOnce();
+    expect(events.at(-1)).toMatchObject({ type: "done", finalText: "original reply", forkPoint: { turnId: "desktop-turn" } });
+    expect(requests.some(({ method }) => method === "turn/start" || method === "thread/fork")).toBe(false);
+  });
+
+  it("does not forward non-occupancy failures or weaken a requested approval policy", async () => {
+    const connect = vi.fn().mockResolvedValue({ close: vi.fn(), read: vi.fn(), send: vi.fn() });
+    const adapter = buildAdapter([], { resumeError: new RuntimeSessionError("active writer", "SESSION_OCCUPIED"), desktopTools: { connect } });
+    const events = await drain(adapter.run(occupiedThread.id, "hello", undefined, undefined, undefined, { permissionMode: "request-approval" }));
+    expect(events.at(-1)).toMatchObject({ type: "error", code: "OPERATION_NOT_SUPPORTED" });
+    expect((await connect.mock.results[0].value).send).not.toHaveBeenCalled();
+    connect.mockClear();
+    const failed = buildAdapter([], { resumeError: new RuntimeSessionError("broken", "NATIVE_PROTOCOL_ERROR"), desktopTools: { connect } });
+    expect((await drain(failed.run(occupiedThread.id, "hello"))).at(-1)).toMatchObject({ type: "error", code: "NATIVE_PROTOCOL_ERROR" });
+    expect(connect).not.toHaveBeenCalled();
+  });
+
+  it.each(["desktop", "shared"] as const)("preserves the macOS %s app-server continuation path", async mode => {
+    const requests: Array<{ method: string; params: any }> = [];
+    const connect = vi.fn();
+    const adapter = buildAdapter(requests, { platform: "darwin", mode, turnCompleted: true, desktopTools: { connect } });
+    const events = await drain(adapter.run(occupiedThread.id, "continue on Mac"));
+    expect(requests.map(({ method }) => method)).toEqual([
+      "thread/read", "thread/resume", "turn/start", "thread/unsubscribe",
+    ]);
+    expect(events.at(-1)).toMatchObject({ type: "done" });
+    expect(connect).not.toHaveBeenCalled();
+  });
+
+  it("preserves macOS writer-lock errors without probing the Windows bridge", async () => {
+    const requests: Array<{ method: string; params: any }> = [];
+    const connect = vi.fn();
+    const adapter = buildAdapter(requests, {
+      platform: "darwin", resumeError: new RuntimeSessionError("active writer", "SESSION_OCCUPIED"), desktopTools: { connect },
+    });
+    const events = await drain(adapter.run(occupiedThread.id, "continue on Mac"));
+    expect(events).toEqual([expect.objectContaining({ type: "error", code: "SESSION_OCCUPIED", message: "active writer" })]);
+    expect(connect).not.toHaveBeenCalled();
+    expect(requests.some(({ method }) => method === "turn/start" || method === "thread/fork")).toBe(false);
   });
 });
 

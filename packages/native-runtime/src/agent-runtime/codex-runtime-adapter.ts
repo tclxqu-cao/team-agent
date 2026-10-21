@@ -35,6 +35,8 @@ import {
   type RpcServerRequest,
 } from "./codex-app-server-client.js";
 import type { CodexAppServerLaunchMode } from "./codex-app-server-launcher.js";
+import { CodexDesktopTools } from "./codex-desktop-tools.js";
+import { CodexDesktopContinuation } from "./codex-desktop-continuation.js";
 import {
   CodexRolloutActivityReader,
   CodexRolloutCommentaryReader,
@@ -173,6 +175,8 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
   readonly agentType = "codex" as const;
   private readonly client: CodexAppServerClient;
   private readonly discoveryClient: CodexDiscoveryClient;
+  private readonly desktopTools: Pick<CodexDesktopTools, "connect"> | null;
+  private readonly desktopContinuations = new Map<string, CodexDesktopContinuation>();
   private discoveryRefreshPromise: Promise<void> | null = null;
   private lastStandaloneDiscoveryRestartAt = Number.NEGATIVE_INFINITY;
   private readonly standaloneDiscoveryRestartIntervalMs: number;
@@ -229,6 +233,7 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
   constructor(options: {
     client?: CodexAppServerClient;
     discoveryClient?: CodexDiscoveryClient;
+    desktopTools?: Pick<CodexDesktopTools, "connect"> | null;
     sessionRoot?: string;
     imageStorageRoot?: string;
     rolloutActivityReader?: Pick<CodexRolloutActivityReader, "readMany">;
@@ -264,6 +269,13 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
     this.sessionRoot = options.sessionRoot ?? join(this.codexHome, "sessions");
     this.imageStorageRoot = options.imageStorageRoot ?? join(this.codexHome, "agentroam-images");
     this.platform = options.platform ?? process.platform;
+    // macOS already continues Desktop threads through its app-server endpoint.
+    // The app-tools bridge only compensates for Windows' stdio-only Desktop.
+    this.desktopTools = this.platform === "win32"
+      ? options.desktopTools === undefined
+        ? new CodexDesktopTools({ environment: options.environment, platform: this.platform })
+        : options.desktopTools
+      : null;
     this.rolloutActivityReader = options.rolloutActivityReader ?? new CodexRolloutActivityReader();
     this.rolloutCommentaryReader = options.rolloutCommentaryReader ?? new CodexRolloutCommentaryReader();
     this.rolloutUserMessageReader = options.rolloutUserMessageReader ?? new CodexRolloutUserMessageReader();
@@ -275,7 +287,8 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
     this.client.onNotification((message) => this.handleNotification(message));
     this.client.setServerRequestHandler((message) => this.handleServerRequest(message));
     this.client.onExit((error) => {
-      for (const queue of this.activeQueues.values()) {
+      for (const [id, queue] of this.activeQueues) {
+        if (this.desktopContinuations.has(id)) continue;
         queue.push({ type: "error", code: "NATIVE_PROTOCOL_ERROR", message: error.message });
         queue.close();
       }
@@ -1196,10 +1209,28 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
     this.ownedThreads.add(nativeSessionId);
     if (options?.brokerRunId) this.activeBrokerRunIds.set(nativeSessionId, options.brokerRunId);
     try {
-      await this.client.request("thread/resume", {
-        threadId: nativeSessionId,
-        excludeTurns: true,
-      });
+      try {
+        await this.client.request("thread/resume", {
+          threadId: nativeSessionId,
+          excludeTurns: true,
+        });
+      } catch (error) {
+        if (!(error instanceof RuntimeSessionError) || error.code !== "SESSION_OCCUPIED" || !this.desktopTools) throw error;
+        const connection = await this.desktopTools.connect(nativeSessionId, detail.cwd);
+        if (!connection) throw new RuntimeSessionError(
+          "原客户端仍持有此会话，且当前无法连接 Codex 桌面端。请保持桌面端运行后在原会话重试。", "SESSION_OCCUPIED",
+        );
+        if (parsedImages.length || options?.goal || permissionMode !== "full-access") {
+          connection.close();
+          throw new RuntimeSessionError(
+            "原会话由 Codex 桌面端执行：当前支持文字追问，并沿用原客户端权限。图片、目标任务或单独的审批模式请在原客户端处理。", "OPERATION_NOT_SUPPORTED",
+          );
+        }
+        const continuation = new CodexDesktopContinuation(connection);
+        this.desktopContinuations.set(nativeSessionId, continuation);
+        yield* continuation.run(input, options);
+        return;
+      }
       if (options?.goal) {
         await this.client.request("thread/goal/set", {
           threadId: nativeSessionId,
@@ -1246,6 +1277,8 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
       });
       yield { type: "error", message: normalized.message, code: normalized.code };
     } finally {
+      this.desktopContinuations.get(nativeSessionId)?.close();
+      this.desktopContinuations.delete(nativeSessionId);
       this.clearAsyncInputs(nativeSessionId);
       this.activeTurnIds.delete(nativeSessionId);
       this.clearLocalInterruptionTimer(nativeSessionId);
@@ -1277,6 +1310,9 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
   }
 
   async abort(nativeSessionId: string): Promise<void> {
+    if (this.desktopContinuations.has(nativeSessionId)) {
+      throw new RuntimeSessionError("原会话由 Codex 桌面端执行，请在原客户端停止；手机仍会同步执行结果。", "OPERATION_NOT_SUPPORTED");
+    }
     const activeTurnId = this.activeTurnIds.get(nativeSessionId);
     const turnId = activeTurnId ?? this.unconfirmedInterruptedTurnIds.get(nativeSessionId);
     const requests: Array<{ kind: "interrupt" | "goal"; promise: Promise<unknown> }> = [];
@@ -1365,6 +1401,8 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
   }
 
   async dispose(): Promise<void> {
+    for (const continuation of this.desktopContinuations.values()) continuation.close();
+    this.desktopContinuations.clear();
     const clients = new Set<CodexDiscoveryClient>([this.client, this.discoveryClient]);
     await Promise.all([...clients].map((client) => client.dispose()));
   }
