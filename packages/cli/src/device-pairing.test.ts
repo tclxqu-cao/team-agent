@@ -42,7 +42,7 @@ describe("local approval commands", () => {
     const admin = vi.fn().mockResolvedValueOnce({ requests: [request], locked: false }).mockResolvedValueOnce({ status: approve ? "approved" : "denied" });
     const log = vi.fn(); const confirm = vi.fn(async () => approve);
     await watchPairingApproval("/tmp/unused", now + 300_000, { admin: admin as typeof pairingAdmin, log, confirm });
-    expect(log).toHaveBeenCalledWith(`核对短语：${request.phrase}`);
+    expect(log).toHaveBeenCalledWith(`Verification phrase: ${request.phrase}`);
     expect(confirm).toHaveBeenCalledWith(request, undefined);
     expect(admin).toHaveBeenLastCalledWith("/tmp/unused", approve ? "approve" : "deny", { id, ...(approve ? { phrase: request.phrase } : {}) });
     expect(log.mock.calls.flat().join("\n")).not.toContain("\u001b");

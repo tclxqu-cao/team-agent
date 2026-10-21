@@ -63,7 +63,7 @@ export async function runServiceCommand(options: CliOptions, context: ServiceCom
       );
       let codexPath: string | undefined;
       try {
-        const codex = await withCliProgress("正在检查已有 Codex；缺失时由后台服务限时安装最新版", () => withTimeout(signal => (context.codexResolver ?? resolveCodexRuntime)({
+        const codex = await withCliProgress("Checking Codex; the background service installs it if missing", () => withTimeout(signal => (context.codexResolver ?? resolveCodexRuntime)({
           dataDir: options.dataDir,
           target: detectPlatform(platform, context.arch ?? process.arch, nodeVersion),
           environment: { ...environment, PATH: environmentPath },
@@ -72,10 +72,10 @@ export async function runServiceCommand(options: CliOptions, context: ServiceCom
           installIfMissing: false,
           signal,
           onProgress: (message) => log(`… ${message}`),
-        }), 60_000, "检查已有 Codex 超时；后台服务将继续检查。"));
+        }), 60_000, "Codex check timed out; the background service will continue checking."));
         codexPath = codex.executable;
       } catch (error) {
-        log(`Codex 将在后台服务启动时检查并限时补齐：${error instanceof Error ? error.message : error}`);
+        log(`Codex will be checked and installed during service startup: ${error instanceof Error ? error.message : error}`);
       }
       const config: ServiceConfig = {
         version: context.version,
@@ -96,47 +96,50 @@ export async function runServiceCommand(options: CliOptions, context: ServiceCom
         try {
           await withTimeout(signal => (context.configureSharing ?? configureCodexSharing)(options, {
             homeDir: context.homeDir, environment: { ...environment, PATH: environmentPath, AGENT_CODEX_BIN: codexPath }, signal,
-          }), 10_000, "Codex 默认共享配置超时（10 秒）");
+          }), 10_000, "Codex sharing setup timed out (10 seconds)");
         }
-        catch (error) { log(`Codex 默认共享配置未完成，可在电脑菜单中修复：${error instanceof Error ? error.message : error}`); }
+        catch (error) { log(`Codex sharing setup incomplete; repair it from the computer menu: ${error instanceof Error ? error.message : error}`); }
       }
-      const { definition, state } = await withCliProgress("正在启动后台服务；Codex 准备最多 180 秒，公网连接最多等待 30 秒，失败后使用局域网", () => controller.install(config));
+      const { definition, state } = await withCliProgress("Starting service; Codex: up to 180s, Cloudflare: up to 30s, then LAN fallback", () => controller.install(config));
       log(`✓ AgentRoam service installed: ${definition}`);
-      if (state?.localUrl && state.status !== "stopped") printLocalDesktopUrl(state.localUrl, log, platform);
+      if (state?.status !== "ready" && state?.localUrl) printLocalDesktopUrl(state.localUrl, log, platform);
       requireReadyService(state);
+      log(`Open: ${state.accessUrl}`);
+      if (state.localUrl) printLocalDesktopUrl(state.localUrl, log, platform);
       printLanFallback(state, log);
       if (state?.localUrl && state.status !== "stopped" && (platform === "darwin" || platform === "win32")) {
         if (environment.AGENTROAM_INSTALL_REMOTE_DESKTOP === "skip") {
-          log("已跳过安装时远程桌面授权，可稍后执行 agentroam desktop authorize。");
+          log("Remote desktop authorization skipped. Run agentroam desktop authorize later.");
         } else {
           try {
             await (context.desktopAuthorization ?? authorizeRemoteDesktop)(options.dataDir, { platform, isTTY: stdoutIsTTY, timeoutMs: 60_000, log });
           } catch (error) {
-            log(`远程桌面授权未完成：${error instanceof Error ? error.message : error}`);
-            log("AgentRoam 安装继续；可稍后执行 agentroam desktop authorize，或在本机浏览器的“远程授权”面板中重试。");
+            log(`Remote desktop authorization incomplete: ${error instanceof Error ? error.message : error}`);
+            log("Installation continues. Retry with agentroam desktop authorize or the local browser authorization panel.");
           }
         }
       }
-      if (platform === "darwin" && !options.desktopSetup) log("官方 Codex 桌面共享后端：agentroam codex-desktop --setup；预演：agentroam codex-desktop --dry-run。");
+      if (platform === "darwin" && !options.desktopSetup) log("Codex Desktop sharing: agentroam codex-desktop --setup; preview: agentroam codex-desktop --dry-run.");
       if (state.version === config.version) await cleanupOldLaunchers(config, log);
       if (options.desktopSetup && platform === "darwin") {
-        await withCliProgress("正在配置官方 Codex 桌面共享连接", () => (context.desktopSetup ?? setupCodexDesktop)(options, { platform, environment, service: config, log }));
+        await withCliProgress("Configuring Codex Desktop sharing", () => (context.desktopSetup ?? setupCodexDesktop)(options, { platform, environment, service: config, log }));
       }
-      log(`Open: ${state.accessUrl}`);
       await (context.pairingPrinter ?? printPairingCode)(options.dataDir, log, { accessUrl: state.accessUrl, qr: options.qr, interactive: stdoutIsTTY });
       return;
     }
     case "start": {
-      const state = await withCliProgress("正在启动后台服务；Codex 准备最多 180 秒，公网连接最多等待 30 秒，失败后使用局域网", () => controller.start());
-      if (state?.localUrl && state.status !== "stopped") printLocalDesktopUrl(state.localUrl, log, platform);
+      const state = await withCliProgress("Starting service; Codex: up to 180s, Cloudflare: up to 30s, then LAN fallback", () => controller.start());
+      if (state?.status !== "ready" && state?.localUrl) printLocalDesktopUrl(state.localUrl, log, platform);
       requireReadyService(state);
+      log(`Open: ${state.accessUrl}`);
+      if (state.localUrl) printLocalDesktopUrl(state.localUrl, log, platform);
       printLanFallback(state, log);
       log("✓ AgentRoam service started");
-      await logAccessUrl(state.accessUrl);
+      if (options.qr && stdoutIsTTY) log(await renderQr(state.accessUrl));
       return;
     }
     case "stop":
-      await withCliProgress("正在停止后台服务", () => controller.stop());
+      await withCliProgress("Stopping background service", () => controller.stop());
       log("✓ AgentRoam service stopped");
       return;
     case "status": {
@@ -150,10 +153,11 @@ export async function runServiceCommand(options: CliOptions, context: ServiceCom
         log(`Version: ${status.config.version}`);
         log(`Root: ${status.config.roots.join(", ")}`);
       }
-      if (status.running && status.state?.localUrl) printLocalDesktopUrl(status.state.localUrl, log, platform);
+      if (status.running && status.state?.status !== "ready" && status.state?.localUrl) printLocalDesktopUrl(status.state.localUrl, log, platform);
       if (status.running && status.state?.status === "ready" && status.state.accessUrl) {
         printLanFallback(status.state, log);
         await logAccessUrl(status.state.accessUrl);
+        if (status.state.localUrl) printLocalDesktopUrl(status.state.localUrl, log, platform);
       }
       return;
     }
@@ -169,12 +173,14 @@ export async function runServiceCommand(options: CliOptions, context: ServiceCom
       return;
     }
     case "restart": {
-      const state = await withCliProgress("正在重启后台服务；Codex 准备最多 180 秒，公网连接最多等待 30 秒，失败后使用局域网", () => controller.restart());
-      if (state?.localUrl && state.status !== "stopped") printLocalDesktopUrl(state.localUrl, log, platform);
+      const state = await withCliProgress("Restarting service; Codex: up to 180s, Cloudflare: up to 30s, then LAN fallback", () => controller.restart());
+      if (state?.status !== "ready" && state?.localUrl) printLocalDesktopUrl(state.localUrl, log, platform);
       requireReadyService(state);
+      log(`Open: ${state.accessUrl}`);
+      if (state.localUrl) printLocalDesktopUrl(state.localUrl, log, platform);
       printLanFallback(state, log);
       log("✓ AgentRoam service restarted");
-      await logAccessUrl(state.accessUrl);
+      if (options.qr && stdoutIsTTY) log(await renderQr(state.accessUrl));
       return;
     }
     case "uninstall": {
@@ -191,15 +197,15 @@ export async function runServiceCommand(options: CliOptions, context: ServiceCom
 function printLanFallback(state: ServiceRuntimeState, log: (line: string) => void): void {
   if (state.provider !== "lan") return;
   if (state.accessUrl && ["127.0.0.1", "localhost", "[::1]"].includes(new URL(state.accessUrl).hostname)) {
-    log("✓ 本机服务已启动；当前没有局域网地址，连接 Wi-Fi 或有线网络后重启服务即可生成手机访问地址。");
+    log("✓ Local access only. Connect to Wi-Fi or Ethernet and restart to enable phone access.");
     return;
   }
-  log("✓ 后台服务已通过局域网启动；手机与电脑连接同一局域网后扫码连接。");
+  log("✓ Service ready on LAN. Connect your phone to the same network to pair.");
 }
 
 function requireReadyService(state: ServiceRuntimeState | null): asserts state is ServiceRuntimeState & { accessUrl: string } {
   if (state?.status !== "ready" || !state.accessUrl) {
-    throw Object.assign(new Error(`AgentRoam 后台服务未就绪（${state?.status ?? "未取得状态"}）。请运行 agentroam service logs 查看原因，修复后运行 agentroam service start，再执行 agentroam pair。`), { exitCode: 1 });
+    throw Object.assign(new Error(`AgentRoam service is not ready (${state?.status ?? "no state"}). Run agentroam service logs, fix the error, then run agentroam service start and agentroam pair.`), { exitCode: 1 });
   }
 }
 

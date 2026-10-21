@@ -23,7 +23,7 @@ export async function pairingAdmin<T>(dataDir: string, action: PairingAction, bo
     });
   } catch (error) {
     if (!(error instanceof LocalServiceHttpError)) throw error;
-    const message = error.status === 423 ? "远程访问已锁定，请先执行 agentroam unlock" : error.status === 410 ? "请求已过期或已处理" : error.status === 409 ? "核对短语不匹配" : `设备授权操作失败 (HTTP ${error.status})`;
+    const message = error.status === 423 ? "Remote access is locked. Run agentroam unlock first" : error.status === 410 ? "Request expired or already handled" : error.status === 409 ? "Verification phrase does not match" : `Device authorization failed (HTTP ${error.status})`;
     throw new Error(message);
   }
 }
@@ -32,31 +32,31 @@ export function terminalText(value: string): string { return value.replace(/[\x0
 
 export function pairingQrPayload(accessUrl: string, grant: string): string {
   const url = new URL(accessUrl);
-  if (!["https:", "http:"].includes(url.protocol) || url.username || url.password || url.search || url.hash || !/^[A-Za-z0-9_-]{43}$/.test(grant)) throw new Error("无效的配对地址或授权凭据");
+  if (!["https:", "http:"].includes(url.protocol) || url.username || url.password || url.search || url.hash || !/^[A-Za-z0-9_-]{43}$/.test(grant)) throw new Error("Invalid pairing URL or authorization grant");
   return `${url.origin}/pair#pair=${grant}`;
 }
 
 export async function printPairingCode(dataDir: string, log: (line: string) => void = console.log, options: { interactive?: boolean; signal?: AbortSignal; accessUrl?: string; qr?: boolean } = {}): Promise<void> {
-  const result = await withCliProgress("正在生成设备配对码", () => pairingAdmin<PairingCode>(dataDir, "code"));
-  log(`配对码：${result.code.slice(0, 4)} ${result.code.slice(4)}`);
-  log("5 分钟内有效，仅可使用一次。手机输入后仍需在电脑上确认核对短语。");
+  const result = await withCliProgress("Generating device pairing code", () => pairingAdmin<PairingCode>(dataDir, "code"));
+  log(`Pairing code: ${result.code.slice(0, 4)} ${result.code.slice(4)}`);
+  log("Valid for 5 minutes, single use. After entering it on your phone, confirm the verification phrase on this computer.");
   if ((options.qr ?? true) && (options.interactive ?? process.stdout.isTTY)) {
     const accessUrl = options.accessUrl ?? await readFile(join(dataDir, "tunnel.url"), "utf8").then((value) => value.trim(), () => null);
     if (accessUrl) {
       // Validate the public address before minting an invitation. Never persist the grant.
       pairingQrPayload(accessUrl, "a".repeat(43));
-      const qr = await withCliProgress("正在生成手机连接二维码", async () => {
+      const qr = await withCliProgress("Generating phone connection QR code", async () => {
         const { grant } = await pairingAdmin<{ grant: string }>(dataDir, "qr");
         return renderQr(pairingQrPayload(accessUrl, grant));
       });
-      log("手机扫码直接连接（5 分钟、一次有效，请勿分享截图）：");
+      log("Scan with your phone to connect (valid for 5 minutes, single use; do not share screenshots):");
       log(qr);
-    } else log("生成 App 授权二维码：agentroam pair --url <手机可访问的服务器地址>");
+    } else log("Generate an app authorization QR code: agentroam pair --url <phone-accessible-server-url>");
   }
   const approvalInput = resolveApprovalInput(options);
   if (approvalInput) {
-    await withCliProgress("正在等待手机扫码或输入配对码", () => watchPairingApproval(dataDir, result.expiresAt, { log, signal: options.signal, input: approvalInput }));
-  } else log("查看请求：agentroam approvals；批准：agentroam approve <请求ID> --phrase <手机核对短语>");
+    await withCliProgress("Waiting for your phone to scan or enter the pairing code", () => watchPairingApproval(dataDir, result.expiresAt, { log, signal: options.signal, input: approvalInput }));
+  } else log("View requests: agentroam approvals; approve: agentroam approve <request-id> --phrase <phone-verification-phrase>");
 }
 
 /** Open the controlling terminal (`/dev/tty`) — the same source install-agentroam.sh reads from. */
@@ -102,27 +102,27 @@ export async function watchPairingApproval(dataDir: string, codeExpiresAt: numbe
 } = {}): Promise<void> {
   const admin = options.admin ?? pairingAdmin;
   const log = options.log ?? console.log;
-  log("等待手机发起连接…");
+  log("Waiting for your phone to connect...");
   while (Date.now() < codeExpiresAt && !options.signal?.aborted) {
     const result = await admin<{ requests: PendingPairing[]; locked: boolean; qrClaimed?: boolean }>(dataDir, "requests");
-    if (result.locked) { log("远程访问已锁定"); return; }
-    if (result.qrClaimed) { log("App 已扫码连接。"); return; }
+    if (result.locked) { log("Remote access is locked"); return; }
+    if (result.qrClaimed) { log("App connected via QR code."); return; }
     const request = result.requests.find((r) => r.created >= codeExpiresAt - 300_000);
     if (request) {
-      log(`新设备请求连接：${terminalText(request.name)}`);
-      log(`请求 ID：${request.id}`);
-      log(`核对短语：${request.phrase}`);
+      log(`New device connection request: ${terminalText(request.name)}`);
+      log(`Request ID: ${request.id}`);
+      log(`Verification phrase: ${request.phrase}`);
       const confirm = options.confirm ?? ((request: PendingPairing, signal?: AbortSignal) => confirmOnTerminal(request, signal, options.input));
       const approved = await withoutCliProgress(() => confirm(request, options.signal));
       if (options.signal?.aborted) return;
-      if (Date.now() >= request.expires) { log("授权请求已过期，请重新配对。"); return; }
+      if (Date.now() >= request.expires) { log("Authorization request expired. Please pair again."); return; }
       await admin(dataDir, approved ? "approve" : "deny", { id: request.id, ...(approved ? { phrase: request.phrase } : {}) });
-      log(approved ? "已批准，手机将自动进入。" : "已拒绝此设备。");
+      log(approved ? "Approved. Your phone will connect automatically." : "Device rejected.");
       return;
     }
     try { await delay(800, undefined, { signal: options.signal }); } catch { return; }
   }
-  if (!options.signal?.aborted) log("配对码已过期，执行 agentroam pair 生成新码。");
+  if (!options.signal?.aborted) log("Pairing code expired. Run agentroam pair to generate a new code.");
 }
 
 async function confirmOnTerminal(request: PendingPairing, signal?: AbortSignal, terminal = resolveApprovalInput()): Promise<boolean> {
@@ -137,7 +137,7 @@ async function confirmOnTerminal(request: PendingPairing, signal?: AbortSignal, 
     : { input: terminal, output: process.stdout, terminal: false });
   input.once("SIGINT", () => controller.abort());
   try {
-    const answer = await input.question("确认手机显示相同短语？输入 yes 批准，其他输入拒绝：", { signal: signal ? AbortSignal.any([signal, controller.signal]) : controller.signal });
+    const answer = await input.question("Does your phone show the same phrase? Type yes to approve, anything else to reject: ", { signal: signal ? AbortSignal.any([signal, controller.signal]) : controller.signal });
     return answer.trim().toLowerCase() === "yes";
   } catch { return false; }
   finally { clearTimeout(timer); input.close(); }

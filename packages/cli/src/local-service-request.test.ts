@@ -52,7 +52,7 @@ describe("private local service requests", () => {
     try {
       await f.write();
       const request = vi.fn<typeof fetch>().mockResolvedValueOnce(Response.json(f.descriptor)).mockResolvedValueOnce(new Response("", { status: 409 }));
-      await expect(pairingAdmin(f.registry, "approve", {}, { registry: f.registry, request })).rejects.toThrow("核对短语不匹配");
+      await expect(pairingAdmin(f.registry, "approve", {}, { registry: f.registry, request })).rejects.toThrow("Verification phrase does not match");
     } finally { await f.close(); }
   });
 

@@ -58,12 +58,12 @@ export async function downloadDesktop(version, { platform = process.platform, ar
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try {
-    const destination = await withCliProgress('正在下载并校验桌面端安装包', () => downloadDesktop(process.argv[2]));
-    console.log(`桌面端安装包已下载：${destination}\n请打开安装包完成安装。首次打开 AgentRoam 后，按提示授权远程桌面。`);
+    const destination = await withCliProgress('Downloading and verifying the desktop installer', () => downloadDesktop(process.argv[2]));
+    console.log(`Desktop installer downloaded: ${destination}\nOpen the installer, then follow the remote desktop authorization prompts.`);
     if (process.platform === 'darwin') execFile('/usr/bin/open', ['-R', destination], () => undefined);
     else if (process.platform === 'win32') execFile('explorer.exe', [`/select,${destination}`], () => undefined);
   } catch (error) {
-    console.error(`桌面端下载未完成：${error.message}。CLI 已安装，可继续使用。`);
+    console.error(`Desktop download failed: ${error.message}. CLI is installed and ready to use.`);
     process.exitCode = 1;
   }
 }

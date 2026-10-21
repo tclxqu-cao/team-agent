@@ -48,7 +48,7 @@ describe("optional desktop authorization wizard", () => {
     expect(f.calls).toEqual([undefined, { action: "recheck" },
       { action: "request-permission", permission: "screen" },
       { action: "request-permission", permission: "accessibility" }, { action: "enable" }]);
-    expect(f.context.log).toHaveBeenCalledWith(expect.stringContaining("授权完成"));
+    expect(f.context.log).toHaveBeenCalledWith(expect.stringContaining("authorization complete"));
   });
 
   it("does not reset permissions or enable sharing when confirmation is declined", async () => {
@@ -91,9 +91,9 @@ describe("optional desktop authorization wizard", () => {
   it("shows the installed application path and pending update before authorization", async () => {
     const f = fixture({ component: { name: 'AgentRoam Remote Desktop', path: '/Users/test/Library/Application Support/AgentRoamRemoteDesktop/Services.noindex/AgentRoam Remote Desktop.app', version: '0.2.0-preview.53', updatePending: true, pendingVersion: '0.2.0-preview.54' } });
     expect(await authorizeRemoteDesktop(dataDir, f.context)).toBe(true);
-    expect(f.context.log).toHaveBeenCalledWith('远控组件：0.2.0-preview.53');
+    expect(f.context.log).toHaveBeenCalledWith('Remote desktop component: 0.2.0-preview.53');
     expect(f.context.log).toHaveBeenCalledWith(expect.stringContaining('Services.noindex/AgentRoam Remote Desktop.app'));
-    expect(f.context.log).toHaveBeenCalledWith(expect.stringContaining('结束其他 AgentRoam 的桌面共享'));
+    expect(f.context.log).toHaveBeenCalledWith(expect.stringContaining('Stop desktop sharing in other AgentRoam instances'));
   });
 
   it("accepts Enter to skip in the terminal and releases the input for later pairing", async () => {
@@ -135,7 +135,7 @@ describe("optional desktop authorization wizard", () => {
       const pending = authorizeRemoteDesktop(dataDir, { ...f.context, timeoutMs: 60_000 });
       await vi.advanceTimersByTimeAsync(60_000);
       expect(await pending).toBe(false);
-      expect(f.context.log).toHaveBeenCalledWith(expect.stringContaining("等待超时"));
+      expect(f.context.log).toHaveBeenCalledWith(expect.stringContaining("timed out"));
       expect(f.calls).not.toContainEqual({ action: "enable" });
       expect(vi.getTimerCount()).toBe(0);
     } finally { vi.useRealTimers(); }
@@ -177,7 +177,7 @@ describe("optional desktop authorization wizard", () => {
     expect(await authorizeRemoteDesktop(dataDir, f.context)).toBe(false);
     expect(f.context.wait).toHaveBeenCalledTimes(2);
     expect(f.calls).not.toContainEqual({ action: "enable" });
-    expect(f.context.log).toHaveBeenCalledWith(expect.stringContaining("未开启共享"));
+    expect(f.context.log).toHaveBeenCalledWith(expect.stringContaining("Sharing was not enabled"));
   });
 
   it("rechecks permissions after the user finishes in system settings", async () => {
@@ -198,7 +198,7 @@ describe("optional desktop authorization wizard", () => {
     f.context.request = vi.fn(async () => ({ local: true, platform: "darwin", supported: true, installed: true,
       screen: true, accessibility: true, enabled: false, online: false, error: "helper failed" }));
     await expect(authorizeRemoteDesktop(dataDir, f.context)).rejects.toThrow("helper failed");
-    expect(f.context.log).not.toHaveBeenCalledWith(expect.stringContaining("授权完成"));
+    expect(f.context.log).not.toHaveBeenCalledWith(expect.stringContaining("authorization complete"));
   });
 
   it.each([{ supported: false }, { installed: false }])("rejects unavailable components before confirmation", async (status) => {
@@ -212,7 +212,7 @@ describe("optional desktop authorization wizard", () => {
     const f = fixture({ platform: "win32", screen: true, accessibility: true, component: { name: 'AgentRoam Remote Desktop', path, version: '0.2.0-preview.57' } });
     expect(await authorizeRemoteDesktop(dataDir, { ...f.context, platform: "win32" })).toBe(true);
     expect(f.calls).toEqual([undefined, { action: "recheck" }, { action: "enable" }]);
-    expect(f.context.log).toHaveBeenCalledWith(`组件位置：${path}`);
+    expect(f.context.log).toHaveBeenCalledWith(`Component path: ${path}`);
   });
 
   it("reports an unavailable Windows desktop without enabling sharing", async () => {
@@ -232,6 +232,6 @@ describe("optional desktop authorization wizard", () => {
     const f = fixture({ enabled: true, screen: true, accessibility: true });
     await runDesktopCommand(parseArgs(["desktop", "disable"]), f.context);
     expect(f.calls).toEqual([undefined, { action: "disable" }]);
-    expect(f.context.log).toHaveBeenCalledWith(expect.stringContaining("系统权限保留"));
+    expect(f.context.log).toHaveBeenCalledWith(expect.stringContaining("system permissions retained"));
   });
 });

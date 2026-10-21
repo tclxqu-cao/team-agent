@@ -44,21 +44,21 @@ async function requestAuthorization(dataDir: string, body?: AuthorizationBody, s
     || typeof status.enabled !== "boolean" || typeof status.screen !== "boolean" || typeof status.accessibility !== "boolean"
     || typeof status.online !== "boolean" || typeof status.platform !== "string"
     || (status.error !== null && typeof status.error !== "string")) {
-    throw new Error("本机远程授权状态无效，请升级 CLI 后重试");
+    throw new Error("Invalid local authorization status. Upgrade the CLI and retry");
   }
   return status;
 }
 
 function recoveryHint(log: (line: string) => void): void {
-  log("稍后重新授权：agentroam desktop authorize；也可在本机浏览器的“远程授权”面板中操作。");
+  log("Authorize later: agentroam desktop authorize, or use the Remote Authorization panel in a local browser.");
 }
 
 function reportComponent(status: DesktopAuthorizationStatus, log: (line: string) => void): void {
   if (!status.component) return;
   const component = status.component;
-  log(`远控组件：${terminalText(component.version === 'legacy' ? '旧版（未记录版本）' : component.version)}`);
-  log(`${status.platform === 'win32' ? '组件位置' : '授权应用位置'}：${terminalText(component.path)}`);
-  if (component.updatePending) log('旧版远控组件仍在使用；结束其他 AgentRoam 的桌面共享后，重新授权即可更新。');
+  log(`Remote desktop component: ${terminalText(component.version === 'legacy' ? 'legacy (version unknown)' : component.version)}`);
+  log(`${status.platform === 'win32' ? 'Component path' : 'Authorization app path'}: ${terminalText(component.path)}`);
+  if (component.updatePending) log('An older component is still in use. Stop desktop sharing in other AgentRoam instances, then authorize again to update.');
 }
 
 function complete(status: DesktopAuthorizationStatus): boolean {
@@ -69,7 +69,7 @@ function complete(status: DesktopAuthorizationStatus): boolean {
 export async function authorizeRemoteDesktop(dataDir: string, context: DesktopAuthorizationContext = {}): Promise<boolean> {
   const log = context.log ?? console.log;
   if (!(context.isTTY ?? process.stdout.isTTY === true)) {
-    log("未检测到交互终端，已跳过远程桌面授权。");
+    log("No interactive terminal detected. Remote desktop authorization skipped.");
     recoveryHint(log);
     return false;
   }
@@ -85,20 +85,20 @@ export async function authorizeRemoteDesktop(dataDir: string, context: DesktopAu
     if (identity !== reportedComponent) { reportComponent(status, log); reportedComponent = identity; }
     return status;
   };
-  log("远程桌面授权可选；输入 s 后回车或按 Ctrl+C 可跳过，稍后可重新授权。");
+  log("Remote desktop authorization is optional. Type s and Enter or press Ctrl+C to skip; you can authorize later.");
   try {
-    let status = await withCliProgress("正在检查本机远程桌面权限", () => check());
-    if (!status.supported) throw new Error("远程桌面支持 macOS 14 及以上的 Apple Silicon 电脑和 Windows 10/11 x64");
-    if (!status.installed) throw new Error("当前 CLI 未包含远程授权组件，请升级 CLI");
+    let status = await withCliProgress("Checking local remote desktop permissions", () => check());
+    if (!status.supported) throw new Error("Remote desktop requires Apple Silicon with macOS 14 or later, or Windows 10/11 x64");
+    if (!status.installed) throw new Error("This CLI does not include the authorization component. Upgrade the CLI");
     if (status.enabled) {
       status = await check({ action: "recheck" });
-      if (complete(status)) { log("✓ 远程桌面已授权并开启共享。"); return true; }
+      if (complete(status)) { log("✓ Remote desktop authorized and sharing enabled."); return true; }
     }
     const platform = context.platform ?? process.platform;
     const confirm = context.confirm ?? (() => prompt.confirm());
     const confirmed = await withoutCliProgress(() => run(confirm));
     if (!confirmed) {
-      log("已跳过远程桌面授权。");
+      log("Remote desktop authorization skipped.");
       recoveryHint(log);
       return false;
     }
@@ -107,11 +107,11 @@ export async function authorizeRemoteDesktop(dataDir: string, context: DesktopAu
     if (platform === "darwin") {
       for (const permission of ["screen", "accessibility"] as const) {
         if (status[permission]) continue;
-        const name = permission === "screen" ? "屏幕录制" : "辅助功能";
+        const name = permission === "screen" ? "Screen Recording" : "Accessibility";
         // TCC grants belong to the bundle ID across all installed runtimes.
         // A false probe here must never revoke another runtime's permission.
-        log(`正在请求${name}权限，请在系统设置中允许 AgentRoam Remote Desktop…`);
-        status = await withCliProgress(`正在等待${name}权限；输入 s 后回车可跳过`, async () => {
+        log(`Requesting ${name} permission. Allow AgentRoam Remote Desktop in System Settings...`);
+        status = await withCliProgress(`Waiting for ${name} permission; type s and Enter to skip`, async () => {
           let current = await check({ action: "request-permission", permission });
           for (let attempt = 0; !current[permission] && attempt < (context.pollAttempts ?? 60); attempt++) {
             await run(() => wait(2000));
@@ -120,24 +120,24 @@ export async function authorizeRemoteDesktop(dataDir: string, context: DesktopAu
           return current;
         });
         if (!status[permission]) {
-          log(`${name}权限尚未授予，本次未开启共享。`);
+          log(`${name} permission was not granted. Sharing was not enabled.`);
           recoveryHint(log);
           return false;
         }
       }
     }
     if (!status.screen || !status.accessibility) {
-      log("远程桌面尚不可用，请确认系统权限及当前桌面状态，本次未开启共享。");
+      log("Remote desktop is unavailable. Check system permissions and desktop state. Sharing was not enabled.");
       recoveryHint(log);
       return false;
     }
-    status = await withCliProgress("正在开启并检查远程桌面共享", () => check({ action: "enable" }));
-    if (!complete(status)) throw new Error(status.error ? terminalText(status.error) : "远程桌面共享未就绪，请重新检查系统权限");
-    log("✓ 远程桌面授权完成，已开启共享。手机首次连接仍需设备配对。");
+    status = await withCliProgress("Enabling and checking remote desktop sharing", () => check({ action: "enable" }));
+    if (!complete(status)) throw new Error(status.error ? terminalText(status.error) : "Remote desktop sharing is not ready. Check system permissions");
+    log("✓ Remote desktop authorization complete; sharing enabled. Your phone still needs device pairing on first connection.");
     return true;
   } catch (error) {
     if (!prompt.signal.aborted) throw error;
-    log(prompt.signal.reason instanceof DesktopAuthorizationInterrupted ? prompt.signal.reason.message : "已取消远程桌面授权。");
+    log(prompt.signal.reason instanceof DesktopAuthorizationInterrupted ? prompt.signal.reason.message : "Remote desktop authorization cancelled.");
     recoveryHint(log);
     return false;
   } finally { prompt.close(); }
@@ -158,13 +158,13 @@ export async function runDesktopCommand(options: CliOptions, context: DesktopAut
   let status = await request(options.dataDir);
   if (options.desktopAction === "disable") {
     status = await request(options.dataDir, { action: "disable" });
-    if (status.enabled) throw new Error("远程桌面共享尚未关闭，请重试");
-    log("✓ 已关闭远程桌面共享，系统权限保留。重新开启：agentroam desktop authorize");
+    if (status.enabled) throw new Error("Remote desktop sharing is still enabled. Retry");
+    log("✓ Remote desktop sharing disabled; system permissions retained. Enable again: agentroam desktop authorize");
     return;
   }
   if (status.supported && status.installed) status = await request(options.dataDir, { action: "recheck" });
   reportComponent(status, log);
-  log(`远程桌面：${status.supported ? "支持" : "不支持"}；共享：${status.enabled ? "已开启" : "未开启"}；屏幕录制：${status.screen ? "已授权" : "未授权或桌面不可用"}；辅助功能：${status.accessibility ? "已授权" : "未授权"}`);
-  if (status.error) log(`状态提示：${terminalText(status.error)}`);
+  log(`Remote desktop: ${status.supported ? "supported" : "unsupported"}; sharing: ${status.enabled ? "enabled" : "disabled"}; Screen Recording: ${status.screen ? "granted" : "not granted or desktop unavailable"}; Accessibility: ${status.accessibility ? "granted" : "not granted"}`);
+  if (status.error) log(`Status: ${terminalText(status.error)}`);
   recoveryHint(log);
 }

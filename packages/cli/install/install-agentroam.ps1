@@ -334,7 +334,7 @@ if ($env:AGENTROAM_INSTALL_SKIP_SERVICE -eq "1") {
   Write-Host "AgentRoam service registration skipped for isolated verification."
 } else {
   & $NodeBin $Entry service install --root $ServiceRoot --data-dir $DataDir
-  if ($LASTEXITCODE -ne 0) { throw "CLI 已安装，但后台服务安装或启动失败（exit $LASTEXITCODE），尚不能扫码连接。请运行 agentroam service logs 查看原因，修复后运行 agentroam service start，再执行 agentroam pair。" }
+  if ($LASTEXITCODE -ne 0) { throw "CLI installed, but the background service failed (exit $LASTEXITCODE). Run agentroam service logs, fix the error, then run agentroam service start and agentroam pair." }
 }
 Write-Host "`nAgentRoam $AgentRoamVersion installed: $WrapperPath"
 Write-Host "Open a new terminal, then run: agentroam service status"
@@ -344,15 +344,15 @@ if ($env:AGENTROAM_INSTALL_SKIP_SERVICE -eq "1" -and $DesktopChoice -eq "ask") {
 if ($DesktopChoice -eq "ask") {
   $DesktopChoice = "no"
   if ([Environment]::UserInteractive -and -not [Console]::IsInputRedirected) {
-    try { $DesktopChoice = Read-Host "是否下载桌面端？用于手机查看和控制电脑桌面 [y/N]" } catch { $DesktopChoice = "no" }
+    try { $DesktopChoice = Read-Host "Download the desktop app for remote viewing and control? [y/N]" } catch { $DesktopChoice = "no" }
   }
 }
 if ($DesktopChoice -match '^(y|yes|是)$') {
   $DesktopHelper = Join-Path $LauncherRoot "node_modules\agentroam\bin\desktop-download.mjs"
   if (Test-Path -LiteralPath $DesktopHelper -PathType Leaf) {
     & $NodeBin $DesktopHelper $AgentRoamVersion
-    if ($LASTEXITCODE -ne 0) { Write-Warning "CLI 安装已完成，桌面端可稍后重新下载。" }
+    if ($LASTEXITCODE -ne 0) { Write-Warning "CLI installation completed. You can retry the desktop download later." }
   } else {
-    Write-Warning "当前发布的 CLI 尚未包含桌面下载功能，请在新版发布后重试。CLI 安装已完成。"
+    Write-Warning "This CLI version does not support desktop downloads. CLI installation completed; upgrade to retry."
   }
-} else { Write-Host "已跳过桌面端下载，CLI 可正常使用。" }
+} else { Write-Host "Desktop download skipped. CLI is ready to use." }

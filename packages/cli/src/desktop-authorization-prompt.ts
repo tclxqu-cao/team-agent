@@ -3,7 +3,7 @@ import { Readable } from "node:stream";
 
 export class DesktopAuthorizationInterrupted extends Error {
   constructor(readonly kind: "skip" | "timeout") {
-    super(kind === "skip" ? "已跳过远程桌面授权。" : "远程桌面授权等待超时，已跳过。");
+    super(kind === "skip" ? "Remote desktop authorization skipped." : "Remote desktop authorization timed out and was skipped.");
   }
 }
 
@@ -48,7 +48,7 @@ export class DesktopAuthorizationPrompt {
     if (!this.reader) return Promise.resolve(false);
     return new Promise((resolve) => {
       this.answer = resolve;
-      this.options.log("现在授权远程桌面，允许已配对设备查看和控制这台电脑？[y/N]（回车跳过）：");
+      this.options.log("Authorize remote desktop now, allowing paired devices to view and control this computer? [y/N] (Enter to skip): ");
     });
   }
 

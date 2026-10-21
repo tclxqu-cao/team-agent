@@ -20,8 +20,11 @@ describe("runServiceCommand", () => {
         start: vi.fn(async () => state), restart: vi.fn(async () => state),
       }),
     });
-    expect(log).toHaveBeenCalledWith(expect.stringContaining("局域网启动"));
+    expect(log).toHaveBeenCalledWith(expect.stringContaining("Service ready on LAN"));
     expect(log).toHaveBeenCalledWith(`Open: ${state.accessUrl}`);
+    const lines = log.mock.calls.map(([line]) => line);
+    expect(lines.indexOf(`Open: ${state.accessUrl}`)).toBeLessThan(lines.findIndex((line) => line.startsWith("Local-only desktop authorization")));
+    expect(lines.join("\n")).not.toMatch(/\p{Script=Han}/u);
     if (action === "install") {
       expect(codexResolver).toHaveBeenCalledWith(expect.objectContaining({ installIfMissing: false }));
       expect(pairingPrinter).toHaveBeenCalledWith(expect.anything(), log, expect.objectContaining({ accessUrl: state.accessUrl }));
@@ -39,10 +42,10 @@ describe("runServiceCommand", () => {
           return null;
         }) }),
       }), { log: progress });
-      const failed = expect(pending).rejects.toThrow("后台服务未就绪");
+      const failed = expect(pending).rejects.toThrow("service is not ready");
       await vi.advanceTimersByTimeAsync(5800);
       expect(progress).toHaveBeenCalledTimes(2);
-      expect(progress).toHaveBeenLastCalledWith(expect.stringContaining("公网连接最多等待 30 秒，失败后使用局域网（已等待 5 秒）"));
+      expect(progress).toHaveBeenLastCalledWith(expect.stringContaining("Cloudflare: up to 30s, then LAN fallback (elapsed 5s)"));
       await vi.advanceTimersByTimeAsync(200);
       await failed;
       expect(vi.getTimerCount()).toBe(0);
@@ -61,7 +64,7 @@ describe("runServiceCommand", () => {
     });
     expect(order).toEqual(["authorization", "desktop", "pairing"]);
     expect(desktopAuthorization).toHaveBeenCalledWith(options("install").dataDir, expect.objectContaining({ isTTY: true, platform: "darwin", timeoutMs: 60_000 }));
-    if (result === "failure") expect(log).toHaveBeenCalledWith(expect.stringContaining("AgentRoam 安装继续"));
+    if (result === "failure") expect(log).toHaveBeenCalledWith(expect.stringContaining("Installation continues"));
   });
 
   it("allows unattended installs to skip desktop authorization without losing pairing", async () => {
@@ -131,8 +134,8 @@ describe("runServiceCommand", () => {
       installedAt: "2026-09-03T00:00:00.000Z",
     }));
     expect(log).toHaveBeenCalledWith("Open: https://ready.example/web");
-    expect(log).toHaveBeenCalledWith("远程桌面授权地址：http://127.0.0.1:4317/web");
-    expect(log).toHaveBeenCalledWith(expect.stringContaining("屏幕录制"));
+    expect(log).toHaveBeenCalledWith("Local-only desktop authorization (open on this computer, not your phone): http://127.0.0.1:4317/web");
+    expect(log).toHaveBeenCalledWith(expect.stringContaining("Screen Recording"));
   });
 
   it("prints a scannable QR code after the URL on interactive terminals", async () => {
@@ -313,8 +316,8 @@ it.each(['install', 'start', 'restart', 'status'] as const)('prints the actual W
   const command = runServiceCommand(options(action),{platform:'win32',arch:'x64',nodePath:'C:\\node.exe',cliPath:'C:\\agentroam.mjs',version:'test',nodeVersion:'22.22.0',controller:control,log,
     codexResolver:vi.fn(async()=>({executable:'C:\\codex.exe',version:'test',source:'global' as const}))});
   if (action === 'status') await command;
-  else await expect(command).rejects.toThrow('后台服务未就绪');
-  expect(log).toHaveBeenCalledWith('远程桌面授权地址：http://127.0.0.1:49157/web');
-  expect(log).toHaveBeenCalledWith(expect.stringContaining('保持 Windows 已登录'));
-  expect(log.mock.calls.some(([line])=>line.includes('屏幕录制')||line.includes('辅助功能'))).toBe(false);
+  else await expect(command).rejects.toThrow('service is not ready');
+  expect(log).toHaveBeenCalledWith('Local-only desktop authorization (open on this computer, not your phone): http://127.0.0.1:49157/web');
+  expect(log).toHaveBeenCalledWith(expect.stringContaining('Keep Windows signed in'));
+  expect(log.mock.calls.some(([line])=>line.includes('Screen Recording')||line.includes('Accessibility'))).toBe(false);
 });

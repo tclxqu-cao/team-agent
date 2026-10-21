@@ -61,13 +61,13 @@ export async function main(argv: string[]): Promise<void> {
   const options = parseArgs(argv);
   // Foreground start remains alive after readiness; only its startup stages load.
   if (options.command === "start" || options.command === "update-worker") return executeCommand(options, argv);
-  const label = options.command === "service" ? `正在处理后台服务：${options.serviceAction}`
-    : options.command === "desktop" ? "正在检查远程桌面授权"
-    : options.command === "codex-desktop" ? "正在配置官方 Codex 桌面连接"
-    : options.command === "doctor" ? "正在检查运行组件"
-    : options.command === "update" ? "正在检查并准备更新"
-    : options.command === "unlock-service" ? "正在处理 Windows 解锁服务，请留意管理员授权弹窗"
-    : "正在处理设备授权命令";
+  const label = options.command === "service" ? `Processing background service: ${options.serviceAction}`
+    : options.command === "desktop" ? "Checking remote desktop authorization"
+    : options.command === "codex-desktop" ? "Configuring Codex Desktop connection"
+    : options.command === "doctor" ? "Checking runtime components"
+    : options.command === "update" ? "Checking and preparing updates"
+    : options.command === "unlock-service" ? "Configuring Windows unlock service; watch for the administrator prompt"
+    : "Processing device authorization";
   await withCliProgress(label, () => executeCommand(options, argv));
 }
 
@@ -151,7 +151,7 @@ async function executeCommand(options: ReturnType<typeof parseArgs>, argv: strin
   }
 
   console.log(`AgentRoam ${VERSION}\n✓ Node ${process.versions.node} · ${target}`);
-  const sleepInhibitor = await withCliProgress("正在准备启动环境", () => acquireSleepInhibitor());
+  const sleepInhibitor = await withCliProgress("Preparing startup environment", () => acquireSleepInhibitor());
   const controller = new AbortController();
   let runtime: RuntimeHandle | null = null;
   let relay: RelaySelection | null = null;
@@ -167,7 +167,7 @@ async function executeCommand(options: ReturnType<typeof parseArgs>, argv: strin
     if (closePromise) return closePromise;
     closing = true;
     controller.abort();
-    closePromise = withCliProgress("正在停止本机服务和访问连接", async () => {
+    closePromise = withCliProgress("Stopping local service and connections", async () => {
       await relay?.tunnel?.close().catch(() => {});
       await runtime?.close().catch(() => {});
     });
@@ -178,21 +178,19 @@ async function executeCommand(options: ReturnType<typeof parseArgs>, argv: strin
   process.once("SIGTERM", requestClose);
 
   try {
-    releaseStartup = await withCliProgress("正在等待启动锁", () => lockInstanceStartup(options.dataDir));
-    await withCliProgress("正在接管旧实例", () => stopPreviousInstances(options.dataDir, console.log));
+    releaseStartup = await withCliProgress("Waiting for startup lock", () => lockInstanceStartup(options.dataDir));
+    await withCliProgress("Taking over previous instances", () => stopPreviousInstances(options.dataDir, console.log));
     if (controller.signal.aborted) return;
     await serviceReporter?.starting();
     reportedStarting = Boolean(serviceReporter);
-    runtime = await withCliProgress("正在启动本机服务", () => new RuntimeManager().start(options, target));
+    runtime = await withCliProgress("Starting local service", () => new RuntimeManager().start(options, target));
     if (controller.signal.aborted) { await runtime.close(); return; }
     void runtime.exited.then(() => controller.abort());
-    console.log(`✓ Local server: ${runtime.localUrl}/web`);
     await serviceReporter?.localReady(runtime.localUrl);
-    if (!serviceReporter) printLocalDesktopUrl(runtime.localUrl);
     const lanUrl = findLanUrl(runtime.port) ?? runtime.localUrl;
     const relayRuntime = runtime;
 
-    relay = await withCliProgress("正在建立手机访问连接", () => selectRelay({
+    relay = await withCliProgress("Preparing phone access", () => selectRelay({
       cli: options,
       target,
       localUrl: relayRuntime.localUrl,
@@ -200,15 +198,15 @@ async function executeCommand(options: ReturnType<typeof parseArgs>, argv: strin
       port: relayRuntime.port,
       signal: controller.signal,
       log: (line) => process.stderr.write(`${line}\n`),
-      onAttempt: (provider) => console.log(`▲ 正在连接 ${providerDisplayName(provider)}（最多 30 秒，失败后使用局域网）…`),
-      onFailure: (provider, message) => console.error(`⚠ ${providerDisplayName(provider)} 不可用：${message}；正在切换到局域网。`),
+      onAttempt: (provider) => console.log(`▲ Connecting to ${providerDisplayName(provider)} (up to 30s, then LAN fallback)…`),
+      onFailure: (provider, message) => console.error(`⚠ ${providerDisplayName(provider)} unavailable: ${message}; falling back to LAN.`),
     }));
 
     if (controller.signal.aborted) { await relay.tunnel?.close(); return; }
     if (relay.provider === "lan") {
       if (relay.failures.length > 0) console.error(`  Continuing with local network access: ${relay.publicUrl}/web`);
       else console.log(`✓ Local network: ${relay.publicUrl}/web`);
-      console.log(lanUrl === runtime.localUrl ? "当前没有可用的局域网地址，可先在本机使用；连接 Wi-Fi 或有线网络后重启服务以生成手机访问地址。" : "手机与电脑连接同一局域网后，即可使用以上地址或二维码连接。");
+      console.log(lanUrl === runtime.localUrl ? "Local access only. Connect to Wi-Fi or Ethernet and restart to enable phone access." : "Connect your phone to the same LAN to use this address or QR code.");
     } else {
       console.log(`✓ ${providerDisplayName(relay.provider)} tunnel ready: ${relay.publicUrl}`);
     }
@@ -230,6 +228,7 @@ async function executeCommand(options: ReturnType<typeof parseArgs>, argv: strin
       console.log("✓ Background service URL written to the private state file.");
     } else {
       console.log(`\nOpen: ${accessUrl}`);
+      printLocalDesktopUrl(runtime.localUrl);
       if (!options.testNoPairing) await printPairingCode(options.dataDir, console.log, { signal: controller.signal, accessUrl, qr: options.qr });
       console.log("Ctrl+C stops the tunnel and local server.");
     }
@@ -270,7 +269,7 @@ async function doctor(target: PlatformTarget, dataDir: string): Promise<void> {
     ["better-sqlite3", probeSQLiteRuntime],
   ] as const) {
     try {
-      await withCliProgress(`正在检查 ${module}`, () => probe(runtimeRequire));
+      await withCliProgress(`Checking ${module}`, () => probe(runtimeRequire));
       console.log(`✓ ${module}`);
     } catch (error) {
       reportDoctorFailure(error, `${module}: `);
@@ -285,19 +284,19 @@ async function doctor(target: PlatformTarget, dataDir: string): Promise<void> {
   }
 
   try {
-    const codex = await withCliProgress("正在检查和准备 Codex（最多 180 秒）", () => withTimeout(signal => resolveCodexRuntime({
+    const codex = await withCliProgress("Checking and preparing Codex (up to 180s)", () => withTimeout(signal => resolveCodexRuntime({
       dataDir,
       target,
       signal,
       onProgress: (message) => console.log(`… ${message}`),
-    }), CODEX_PREPARATION_TIMEOUT_MS, "Codex 组件准备超时（180 秒）；请检查网络后重试。"));
+    }), CODEX_PREPARATION_TIMEOUT_MS, "Codex preparation timed out (180s); check your network and retry."));
     console.log(`✓ Codex ${codex.version} (${codex.source}) ${codex.executable}`);
   } catch (error) {
     reportDoctorFailure(error, "Codex: ");
   }
 
   try {
-    const executable = await withCliProgress("正在检查和准备 Cloudflare 组件", () => ensureCloudflared(target, dataDir));
+    const executable = await withCliProgress("Checking and preparing Cloudflare", () => ensureCloudflared(target, dataDir));
     console.log(`✓ cloudflared ${executable}`);
   } catch (error) {
     reportDoctorFailure(error, "cloudflared: ");

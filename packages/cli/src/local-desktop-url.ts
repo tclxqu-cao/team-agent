@@ -1,6 +1,6 @@
 export function printLocalDesktopUrl(localUrl: string, log: (line: string) => void = console.log, platform: NodeJS.Platform = process.platform): void {
-  log(`远程桌面授权地址：${localUrl.replace(/\/$/, '')}/web`);
-  log('重新授权：agentroam desktop authorize；浏览器备用入口：在这台电脑打开上述地址，配对后点击“远程授权”（盾牌图标）。');
-  if (platform === 'win32') log('点击“开启共享”。请保持 Windows 已登录且未锁屏；暂不支持 UAC 安全桌面和管理员窗口控制。');
-  else log('按提示授予“屏幕录制”和“辅助功能”权限，然后点击“开启共享”。');
+  log(`Local-only desktop authorization (open on this computer, not your phone): ${localUrl.replace(/\/$/, '')}/web`);
+  log('Authorize again: agentroam desktop authorize. Browser fallback: open the local URL on this computer, pair, then click Remote Authorization (shield icon).');
+  if (platform === 'win32') log('Click Enable Sharing. Keep Windows signed in and unlocked; UAC secure desktop and administrator windows are not supported.');
+  else log('Grant Screen Recording and Accessibility permissions when prompted, then click Enable Sharing.');
 }

@@ -13,7 +13,7 @@ describe("standalone installer contracts", () => {
     try {
       const script = await readFile(resolve(installRoot, "install-agentroam.sh"), "utf8");
       // Execute the actual post-install flow with a fake CLI, without touching launchd.
-      const start = script.indexOf('if ! run_with_progress "正在检查运行组件"');
+      const start = script.indexOf('if ! run_with_progress "Checking runtime components"');
       expect(start).toBeGreaterThan(0);
       const node = resolve(root, "node");
       const calls = resolve(root, "calls");
@@ -34,9 +34,9 @@ describe("standalone installer contracts", () => {
         if (serviceExit === 0) expect(result.stdout).toContain("installed:");
         else {
           expect(result.stdout).not.toContain("installed:");
-          expect(result.stderr).toContain("CLI 已安装，但后台服务安装或启动失败");
+          expect(result.stderr).toContain("CLI installed, but the background service failed");
           expect(result.stderr).toContain("agentroam service logs");
-          expect(result.stdout).not.toContain("已跳过桌面端下载");
+          expect(result.stdout).not.toContain("Desktop download skipped");
         }
       }
     } finally {
@@ -69,7 +69,7 @@ describe("standalone installer contracts", () => {
     const root = await mkdtemp("/tmp/agentroam-install-desktop-");
     try {
       const script = await readFile(resolve(installRoot, "install-agentroam.sh"), "utf8");
-      const start = script.indexOf('if ! run_with_progress "正在检查运行组件"');
+      const start = script.indexOf('if ! run_with_progress "Checking runtime components"');
       const node = resolve(root, "node");
       const calls = resolve(root, "calls");
       const entry = resolve(root, "bin/agentroam.mjs");
@@ -92,7 +92,7 @@ describe("standalone installer contracts", () => {
           const recorded = await readFile(calls, "utf8");
           expect(recorded.includes("--setup-codex-desktop")).toBe(supported);
           expect(recorded).toContain(`service install --root ${root} --data-dir ${root}`);
-          expect(result.stdout.includes("原桌面会话暂未共享")).toBe(!supported);
+          expect(result.stdout.includes("existing desktop sessions are not shared")).toBe(!supported);
           expect(result.stdout.includes("installed:")).toBe(serviceExit === 0);
           if (serviceExit !== 0) expect(result.stderr).toContain("agentroam service logs");
         }

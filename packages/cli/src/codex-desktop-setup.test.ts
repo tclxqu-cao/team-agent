@@ -36,7 +36,7 @@ describe("installation Desktop sharing decisions", () => {
   it.each([busy, unknown])("asks for busy or unqueryable Desktop and restarts only after y", async (snapshot) => {
     const value = context([snapshot], "y");
     await setupCodexDesktop(options, value);
-    expect(value.confirm).toHaveBeenCalledWith(expect.stringContaining("中断桌面端的所有运行任务"));
+    expect(value.confirm).toHaveBeenCalledWith(expect.stringContaining("interrupt all running desktop tasks"));
     expect(value.launch).toHaveBeenCalledOnce();
   });
 
@@ -45,7 +45,7 @@ describe("installation Desktop sharing decisions", () => {
     await setupCodexDesktop(options, value);
     expect(value.launch).not.toHaveBeenCalled();
     expect(configureCodexSharing).toHaveBeenCalled();
-    expect(value.log).toHaveBeenCalledWith(expect.stringContaining("原桌面会话暂未共享"));
+    expect(value.log).toHaveBeenCalledWith(expect.stringContaining("existing desktop sessions are not shared yet"));
   });
 
   it("asks instead of restarting if a task starts after the first idle snapshot", async () => {
@@ -79,8 +79,8 @@ describe("installation Desktop sharing decisions", () => {
     const value = context([idle]);
     value.launch.mockRejectedValueOnce(new Error("daemon not supported"));
     await setupCodexDesktop(options, value);
-    expect(value.log).toHaveBeenCalledWith(expect.stringContaining("桌面共享连接未完成：daemon not supported"));
-    expect(value.log).toHaveBeenCalledWith(expect.stringContaining("扫码可连接"));
-    expect(value.log).toHaveBeenCalledWith(expect.stringContaining("桌面 → shared → standalone"));
+    expect(value.log).toHaveBeenCalledWith(expect.stringContaining("Desktop sharing connection incomplete: daemon not supported"));
+    expect(value.log).toHaveBeenCalledWith(expect.stringContaining("scan to connect"));
+    expect(value.log).toHaveBeenCalledWith(expect.stringContaining("desktop -> shared -> standalone"));
   });
 });

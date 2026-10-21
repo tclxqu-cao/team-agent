@@ -31,7 +31,7 @@ class ProgressReporter {
     this.timer = setTimeout(() => {
       const step = this.steps.at(-1);
       const seconds = Math.floor((Date.now() - step.started) / 1000);
-      this.log(`… ${step.label}（已等待 ${seconds} 秒）`);
+      this.log(`… ${step.label} (elapsed ${seconds}s)`);
       this.schedule(this.intervalMs);
     }, milliseconds);
     this.timer.unref?.();

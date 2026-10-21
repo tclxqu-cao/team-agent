@@ -85,7 +85,7 @@ it.each(["starting", "failed", "ready"])("cleans only after a replacement servic
     controller: { install } as any,
   });
   if (status === "failed") await expect(action).rejects.toThrow("activation failed");
-  else if (status === "starting") await expect(action).rejects.toThrow("后台服务未就绪");
+  else if (status === "starting") await expect(action).rejects.toThrow("service is not ready");
   else await action;
   const manifest = readFile(resolve(old, "node_modules/agentroam/package.json"), "utf8");
   if (status === "ready") await expect(manifest).rejects.toMatchObject({ code: "ENOENT" });

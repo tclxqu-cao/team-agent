@@ -17,7 +17,7 @@ function runPipedScript(source: string) {
   child.stdout.on("data", (chunk) => { stdout += chunk; });
   child.stderr.on("data", (chunk) => {
     stderr += chunk;
-    if ([...stderr.matchAll(/已等待 (\d+) 秒/g)].some((match) => Number(match[1]) >= 5) && child.exitCode === null) heartbeatBeforeExit = true;
+    if ([...stderr.matchAll(/elapsed (\d+)s/g)].some((match) => Number(match[1]) >= 5) && child.exitCode === null) heartbeatBeforeExit = true;
   });
   child.stdin.end(source);
   return new Promise<{ stdout: string; stderr: string; code: number | null; heartbeatBeforeExit: boolean }>((resolve, reject) => {
@@ -29,29 +29,29 @@ function runPipedScript(source: string) {
 describe.skipIf(process.platform === "win32")("standalone shell installer progress", () => {
   it("reports while a piped installer is waiting without consuming script input or stdout", async () => {
     const result = await runPipedScript(`${await progressHelpers()}
-run_with_progress '下载组件' /bin/sh -c 'sleep 6; printf "component-output\\n"'
+run_with_progress 'Downloading components' /bin/sh -c 'sleep 6; printf "component-output\\n"'
 printf 'remaining-script-ran\\n'
 `);
     expect(result.code).toBe(0);
     expect(result.stdout).toBe("component-output\nremaining-script-ran\n");
-    expect(result.stderr).toContain("下载组件（已等待 0 秒）");
-    expect(result.stderr).toMatch(/下载组件（已等待 [5-9] 秒）/);
+    expect(result.stderr).toContain("Downloading components (elapsed 0s)");
+    expect(result.stderr).toMatch(/Downloading components \(elapsed [5-9]s\)/);
     expect(result.heartbeatBeforeExit).toBe(true);
   }, 10_000);
 
   it("preserves a command failure and removes its heartbeat process", async () => {
     const result = await runPipedScript(`${await progressHelpers()}
-start_progress '校验组件'
+start_progress 'Verifying components'
 heartbeat_pid=$PROGRESS_PID
 stop_progress
 if kill -0 "$heartbeat_pid" 2>/dev/null; then exit 99; fi
-if run_with_progress '启动服务' /bin/sh -c 'exit 37'; then exit 98; else result_code=$?; fi
+if run_with_progress 'Starting service' /bin/sh -c 'exit 37'; then exit 98; else result_code=$?; fi
 [ -z "$PROGRESS_PID" ] || exit 97
 exit "$result_code"
 `);
     expect(result.code).toBe(37);
     expect(result.stdout).toBe("");
-    expect(result.stderr).toContain("校验组件");
-    expect(result.stderr).toContain("启动服务");
+    expect(result.stderr).toContain("Verifying components");
+    expect(result.stderr).toContain("Starting service");
   });
 });

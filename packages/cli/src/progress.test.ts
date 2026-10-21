@@ -9,13 +9,13 @@ describe("CLI progress", () => {
 
   it("keeps fast commands quiet and reports elapsed time for slow commands", async () => {
     const log = vi.fn();
-    await withCliProgress("快速命令", () => undefined, { log });
-    const pending = withCliProgress("启动服务", () => delay(6000), { log });
+    await withCliProgress("Quick command", () => undefined, { log });
+    const pending = withCliProgress("Starting service", () => delay(6000), { log });
     await vi.advanceTimersByTimeAsync(799);
     expect(log).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(5001);
     expect(log.mock.calls.map(([line]) => line)).toEqual([
-      "… 启动服务（已等待 0 秒）", "… 启动服务（已等待 5 秒）",
+      "… Starting service (elapsed 0s)", "… Starting service (elapsed 5s)",
     ]);
     await vi.advanceTimersByTimeAsync(200);
     await pending;
@@ -33,12 +33,12 @@ describe("CLI progress", () => {
       await delay(800);
     }, { log });
     await vi.advanceTimersByTimeAsync(1600);
-    expect(log.mock.calls.map(([line]) => line)).toEqual(["… 等待服务（已等待 0 秒）"]);
+    expect(log.mock.calls.map(([line]) => line)).toEqual(["… 等待服务 (elapsed 0s)"]);
     await vi.advanceTimersByTimeAsync(2000);
     expect(log).toHaveBeenCalledTimes(1);
     await vi.advanceTimersByTimeAsync(800);
     await pending;
-    expect(log).toHaveBeenLastCalledWith("… 安装（已等待 4 秒）");
+    expect(log).toHaveBeenLastCalledWith("… 安装 (elapsed 4s)");
     expect(vi.getTimerCount()).toBe(0);
   });
 

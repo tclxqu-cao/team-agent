@@ -29,13 +29,13 @@ export async function setupCodexDesktop(options: CliOptions, context: DesktopSet
     if (!environment.AGENT_CODEX_BIN && context.service.codexPath) environment.AGENT_CODEX_BIN = context.service.codexPath;
   }
   const inspect = context.inspect ?? inspectCodexDesktop;
-  const deferred = () => log("已保留当前 Codex 桌面端。扫码仍可连接 AgentRoam；原桌面会话暂未共享，可稍后执行 agentroam codex-desktop --setup。");
+  const deferred = () => log("Current Codex Desktop preserved. Scan to connect to AgentRoam; existing desktop sessions are not shared yet. Run agentroam codex-desktop --setup later.");
   try {
     await (context.configureSharing ?? configureCodexSharing)(options, { environment });
-    log("已保存默认共享启动与后台自动恢复配置。");
+    log("Saved default shared startup and background recovery settings.");
     let snapshot = await inspect(environment);
     if (snapshot.status === "not-installed") {
-      log("未安装官方 Codex 桌面端，继续生成扫码连接入口。");
+      log("Codex Desktop is not installed. Continuing with phone pairing.");
       return;
     }
     const original = snapshot;
@@ -43,18 +43,18 @@ export async function setupCodexDesktop(options: CliOptions, context: DesktopSet
     if (snapshot.status === "running" && snapshot.activity.state === "idle") {
       // Read every loaded thread again immediately before choosing automatic restart.
       snapshot = await inspect(environment);
-      if (!sameDesktop(original, snapshot)) { log("桌面进程已变化，本次保留桌面。"); deferred(); return; }
+      if (!sameDesktop(original, snapshot)) { log("Desktop process changed. Preserving Desktop."); deferred(); return; }
     }
     if (snapshot.status === "running" && snapshot.activity.state !== "idle") {
       const reason = snapshot.activity.state === "busy"
-        ? `官方 Codex 桌面端当前有 ${snapshot.activity.activeCount} 个运行中的会话。`
-        : "无法可靠确认官方 Codex 桌面端的全部任务已结束。";
+        ? `Codex Desktop has ${snapshot.activity.activeCount} active sessions.`
+        : "Cannot reliably confirm that all Codex Desktop tasks have finished.";
       log(reason);
-      const answer = await withoutCliProgress(() => (context.confirm ?? confirmDesktopRestart)("现在重启桌面端以共享会话？重启可能中断桌面端的所有运行任务；选择保留则暂不能共享原桌面会话 [y/N]："));
+      const answer = await withoutCliProgress(() => (context.confirm ?? confirmDesktopRestart)("Restart Desktop now to share sessions? This may interrupt all running desktop tasks. Keeping Desktop running leaves existing sessions unshared [y/N]: "));
       if (!answer || !/^(?:y|yes)$/i.test(answer.trim())) { deferred(); return; }
       restartConfirmed = true;
       const checked = await inspect(environment);
-      if (!sameDesktop(snapshot, checked)) { log("确认后桌面进程已变化，本次保留桌面。"); deferred(); return; }
+      if (!sameDesktop(snapshot, checked)) { log("Desktop process changed after confirmation. Preserving Desktop."); deferred(); return; }
       snapshot = checked;
     }
     if (snapshot.status !== "running" && snapshot.status !== "stopped") return;
@@ -69,12 +69,12 @@ export async function setupCodexDesktop(options: CliOptions, context: DesktopSet
     }
     const launchOptions: CliOptions = { ...options, command: "codex-desktop", desktopSetup: false,
       desktopDryRun: false, desktopRestart: snapshot.status === "running" };
-    log(snapshot.status === "stopped" ? "正在启动官方 Codex 桌面端并连接共享后端…" : "正在重新连接官方 Codex 桌面端的共享后端…");
+    log(snapshot.status === "stopped" ? "Starting Codex Desktop and connecting to the shared backend..." : "Reconnecting Codex Desktop to the shared backend...");
     await (context.launch ?? ((args, env) => runCodexDesktopCommand(args, { environment: env, log })))(launchOptions, environment);
-    log("已尝试桌面连接，随后显示扫码入口。AgentRoam 将根据实际连接结果，依次使用桌面、shared、standalone 后端。");
+    log("Desktop connection attempted. Pairing follows. AgentRoam selects the desktop, shared, or standalone backend based on actual connectivity.");
   } catch (error) {
-    log(`桌面共享连接未完成：${error instanceof Error ? error.message : error}`);
-    log("AgentRoam 安装继续，扫码可连接；后端按桌面 → shared → standalone 回退。原桌面会话暂未确认共享，可稍后执行 agentroam codex-desktop --setup 重试。");
+    log(`Desktop sharing connection incomplete: ${error instanceof Error ? error.message : error}`);
+    log("AgentRoam installation continues; scan to connect. Backend fallback: desktop -> shared -> standalone. Existing desktop sharing is unconfirmed. Retry later with agentroam codex-desktop --setup.");
   }
 }
 

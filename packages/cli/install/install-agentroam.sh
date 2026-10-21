@@ -43,7 +43,7 @@ stop_progress() {
 start_progress() {
   stop_progress
   [ "${AGENTROAM_NO_PROGRESS:-}" != "1" ] || return 0
-  printf '… %s（已等待 0 秒）\n' "$1" >&2
+  printf '… %s (elapsed 0s)\n' "$1" >&2
   (
     progress_label=$1
     progress_started=$(date +%s)
@@ -56,7 +56,7 @@ start_progress() {
       wait "$progress_sleep_pid" || exit 0
       progress_sleep_pid=""
       progress_now=$(date +%s)
-      printf '… %s（已等待 %s 秒）\n' "$progress_label" "$((progress_now - progress_started))" >&2
+      printf '… %s (elapsed %ss)\n' "$progress_label" "$((progress_now - progress_started))" >&2
     done
   ) </dev/null &
   PROGRESS_PID=$!
@@ -167,7 +167,7 @@ acquire_directory_lock() {
   done
 }
 
-start_progress "正在检查可用的 Node.js"
+start_progress "Checking available Node.js"
 SYSTEM_NODE=$(command -v node 2>/dev/null || true)
 if [ "${AGENTROAM_BOOTSTRAP_TEST:-}" = "1" ] && [ "${AGENTROAM_FORCE_PRIVATE_NODE:-}" = "1" ]; then
   SYSTEM_NODE=""
@@ -185,7 +185,7 @@ else
     printf 'Using Node.js %s from NVM: %s\n' "$("$NODE_BIN" --version)" "$NODE_BIN"
   else
     if ! runtime_is_valid; then
-      start_progress "正在等待 Node.js 安装锁"
+      start_progress "Waiting for the Node.js installation lock"
       acquire_directory_lock "$NODE_LOCK"
       stop_progress
       OWN_NODE_LOCK=1
@@ -195,7 +195,7 @@ else
         extract_path="$TEMP_ROOT/extract"
         mkdir "$extract_path"
         printf 'Downloading Node.js %s...\n' "$NODE_VERSION"
-        start_progress "正在下载 Node.js $NODE_VERSION"
+        start_progress "Downloading Node.js $NODE_VERSION"
         if [ -n "${AGENTROAM_NODE_ARCHIVE_FILE:-}" ]; then
           cp "$AGENTROAM_NODE_ARCHIVE_FILE" "$archive_path"
         else
@@ -206,10 +206,10 @@ else
             sleep "$download_attempt"
           done
         fi
-        start_progress "正在校验 Node.js 安装包"
+        start_progress "Verifying the Node.js archive"
         actual_sha=$(shasum -a 256 "$archive_path" | awk '{print $1}')
         [ "$actual_sha" = "$NODE_SHA256" ] || fail "Node.js archive checksum mismatch"
-        start_progress "正在解压并验证 Node.js"
+        start_progress "Extracting and verifying Node.js"
         /usr/bin/tar -xJf "$archive_path" -C "$extract_path"
         entry_count=$(find "$extract_path" -mindepth 1 -maxdepth 1 | wc -l | tr -d ' ')
         [ "$entry_count" = "1" ] || fail "unexpected Node.js archive layout"
@@ -258,7 +258,7 @@ case "$AGENTROAM_VERSION_REQUEST" in
   *)
     # A dist-tag (default "preview") — resolve to the newest published version
     # so installs always pick up the latest release without touching this file.
-    start_progress "正在查询 AgentRoam $AGENTROAM_VERSION_REQUEST 最新版本"
+    start_progress "Resolving AgentRoam $AGENTROAM_VERSION_REQUEST version"
     resolved_version="$("$NODE_BIN" "$NPM_CLI" view "agentroam@$AGENTROAM_VERSION_REQUEST" version --registry "$NPM_REGISTRY" 2>/dev/null | tail -1 | tr -d '[:space:]')"
     stop_progress
     [ -n "$resolved_version" ] || fail "could not resolve agentroam@$AGENTROAM_VERSION_REQUEST from $NPM_REGISTRY"
@@ -362,9 +362,9 @@ launcher_is_valid() {
   launcher_check "$LAUNCHER_ROOT" verify >/dev/null 2>&1
 }
 
-start_progress "正在检查已安装的 CLI"
+start_progress "Checking the installed CLI"
 if ! launcher_is_valid; then
-  start_progress "正在等待 CLI 安装锁"
+  start_progress "Waiting for the CLI installation lock"
   acquire_directory_lock "$LAUNCHER_LOCK"
   stop_progress
   OWN_LAUNCHER_LOCK=1
@@ -372,15 +372,15 @@ if ! launcher_is_valid; then
     TEMP_ROOT=$(mktemp -d "$LAUNCHER_PARENT/.launcher-$AGENTROAM_VERSION.XXXXXX")
     # Test-only extra specs are whitespace-delimited artifact paths in isolated CI directories.
     # shellcheck disable=SC2086
-    run_with_progress "正在下载和安装 CLI 及平台组件" "$NODE_BIN" "$NPM_CLI" install --no-audit --no-fund --registry "$NPM_REGISTRY" --prefix "$TEMP_ROOT" $EXTRA_PACKAGE_SPECS "$PACKAGE_SPEC"
+    run_with_progress "Downloading and installing CLI and platform components" "$NODE_BIN" "$NPM_CLI" install --no-audit --no-fund --registry "$NPM_REGISTRY" --prefix "$TEMP_ROOT" $EXTRA_PACKAGE_SPECS "$PACKAGE_SPEC"
     runtime_spec=$(launcher_check "$TEMP_ROOT" spec)
     if ! launcher_check "$TEMP_ROOT" verify; then
       # A matching runtime is required even though npm treats platform packages as optional.
       rm -rf "$TEMP_ROOT/node_modules/agentroam-runtime-darwin-arm64"
-      run_with_progress "正在安装必需的运行组件" "$NODE_BIN" "$NPM_CLI" install --save-exact --include=optional --no-audit --no-fund --registry "$NPM_REGISTRY" --prefix "$TEMP_ROOT" "$runtime_spec"
+      run_with_progress "Installing required runtime components" "$NODE_BIN" "$NPM_CLI" install --save-exact --include=optional --no-audit --no-fund --registry "$NPM_REGISTRY" --prefix "$TEMP_ROOT" "$runtime_spec"
     fi
-    run_with_progress "正在验证运行组件" launcher_check "$TEMP_ROOT" verify
-    start_progress "正在验证并启用 CLI"
+    run_with_progress "Verifying runtime components" launcher_check "$TEMP_ROOT" verify
+    start_progress "Verifying and activating CLI"
     if [ -e "$LAUNCHER_ROOT" ]; then
       PREVIOUS_LAUNCHER_ROOT=$(mktemp -d "$LAUNCHER_PARENT/.previous-$AGENTROAM_VERSION.XXXXXX")
       rmdir "$PREVIOUS_LAUNCHER_ROOT"
@@ -405,25 +405,25 @@ wrapper_temp=$(mktemp "$WRAPPER_DIR/.agentroam.XXXXXX")
 chmod 755 "$wrapper_temp"
 mv "$wrapper_temp" "$WRAPPER_PATH"
 
-if ! run_with_progress "正在检查运行组件" env AGENTROAM_NO_PROGRESS=1 "$NODE_BIN" "$entry" doctor --data-dir "$DATA_DIR"; then
+if ! run_with_progress "Checking runtime components" env AGENTROAM_NO_PROGRESS=1 "$NODE_BIN" "$entry" doctor --data-dir "$DATA_DIR"; then
   printf 'Warning: some component checks failed; continuing background service installation. Affected features may be unavailable. Run agentroam doctor to retry.\n' >&2
 fi
 if [ "${AGENTROAM_INSTALL_SKIP_SERVICE:-}" = "1" ]; then
   printf 'AgentRoam service registration skipped for isolated verification.\n'
 else
   # The CLI owns progress here so it can pause for confirmations and print QR intact.
-  printf '… 正在安装后台服务；随后检查远程桌面授权并生成手机连接二维码\n' >&2
+  printf '… Installing background service; remote desktop authorization and phone pairing follow\n' >&2
   codex_setup_module="$(dirname "$entry")/../dist/codex-desktop-setup.js"
   install_background_service() {
     if [ -f "$codex_setup_module" ]; then
       "$NODE_BIN" "$entry" service install --root "$SERVICE_ROOT" --data-dir "$DATA_DIR" --setup-codex-desktop
     else
-      printf '当前发布的 CLI 尚未包含官方 Codex 桌面共享配置；扫码可连接 AgentRoam，原桌面会话暂未共享，请升级 CLI 后重试。\n'
+      printf 'This CLI does not include Codex Desktop sharing setup yet. You can connect to AgentRoam, but existing desktop sessions are not shared. Upgrade the CLI and retry.\n'
       "$NODE_BIN" "$entry" service install --root "$SERVICE_ROOT" --data-dir "$DATA_DIR"
     fi
   }
   if ! install_background_service; then
-    printf 'CLI 已安装，但后台服务安装或启动失败，尚不能扫码连接。请运行 agentroam service logs 查看原因，修复后运行 agentroam service start，再执行 agentroam pair。\n' >&2
+    printf 'CLI installed, but the background service failed to start. Run agentroam service logs, fix the error, then run agentroam service start and agentroam pair.\n' >&2
     exit 1
   fi
 fi
@@ -440,7 +440,7 @@ if [ "${AGENTROAM_INSTALL_SKIP_SERVICE:-}" = "1" ] && [ "$desktop_choice" = "ask
 if [ "$desktop_choice" = "ask" ]; then
   desktop_choice=no
   if ( : </dev/tty ) 2>/dev/null; then
-    printf '\n是否下载桌面端？用于手机查看和控制电脑桌面 [y/N]：' >/dev/tty
+    printf '\nDownload the desktop app for remote viewing and control? [y/N]: ' >/dev/tty
     IFS= read -r desktop_choice </dev/tty || desktop_choice=no
   fi
 fi
@@ -448,10 +448,10 @@ case "$desktop_choice" in
   y|Y|yes|YES|是)
     desktop_helper="$LAUNCHER_ROOT/node_modules/agentroam/bin/desktop-download.mjs"
     if [ -f "$desktop_helper" ]; then
-      run_with_progress "正在下载并校验桌面端安装包" env AGENTROAM_NO_PROGRESS=1 "$NODE_BIN" "$desktop_helper" "$AGENTROAM_VERSION" || printf 'CLI 安装已完成，桌面端可稍后重新下载。\n'
+      run_with_progress "Downloading and verifying the desktop installer" env AGENTROAM_NO_PROGRESS=1 "$NODE_BIN" "$desktop_helper" "$AGENTROAM_VERSION" || printf 'CLI installation completed. You can retry the desktop download later.\n'
     else
-      printf '当前发布的 CLI 尚未包含桌面下载功能，请在新版发布后重试。CLI 安装已完成。\n'
+      printf 'This CLI version does not support desktop downloads. CLI installation completed; upgrade to retry.\n'
     fi
     ;;
-  *) printf '已跳过桌面端下载，CLI 可正常使用。\n' ;;
+  *) printf 'Desktop download skipped. CLI is ready to use.\n' ;;
 esac
