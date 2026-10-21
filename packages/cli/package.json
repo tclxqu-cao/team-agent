@@ -1,6 +1,6 @@
 {
   "name": "agentroam",
-  "version": "0.2.0-preview.61",
+  "version": "0.2.0-preview.62",
   "description": "Zero-install mobile remote terminal and file console",
   "type": "module",
   "bin": {

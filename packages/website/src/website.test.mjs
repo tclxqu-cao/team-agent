@@ -129,3 +129,12 @@ test("download page offers both editions and explains the shared phone capabilit
   assert.match(html, /二维码、刷新、重新授权/);
   assert.match(html, /复用 CLI 安装流程/);
 });
+
+
+test("CLI installer follows preview without relabeling desktop installers", async () => {
+  const html = await readFile(`${root}/download.html`, "utf8");
+  assert.ok(html.includes("agentroam/v/0.2.0-preview.62"));
+  assert.ok(html.includes("raw/main/packages/cli/install/install-agentroam.ps1"));
+  assert.ok(html.includes("npx agentroam@preview"));
+  assert.ok(html.includes("桌面安装包独立发布"));
+});
