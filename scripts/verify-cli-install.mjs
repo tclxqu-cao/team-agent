@@ -106,7 +106,7 @@ try {
   child.stdout.on("data", append);
   child.stderr.on("data", append);
 
-  const urlMatch = await waitFor(/Local server: (http:\/\/127\.0\.0\.1:\d+\/web)/, () => output, 210_000);
+  const urlMatch = await waitFor(/Local-only desktop authorization \(open on this computer, not your phone\): (http:\/\/127\.0\.0\.1:\d+\/web)/, () => output, 210_000);
   const localUrl = urlMatch[1].replace(/\/web$/, "");
   const openMatch = await waitFor(/Open: (http:\/\/[^\s]+)/, () => output, 10_000);
   console.log(`✓ pairing URL: ${new URL(openMatch[1]).origin}`);
