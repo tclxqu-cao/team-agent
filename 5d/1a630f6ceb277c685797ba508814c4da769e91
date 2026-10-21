@@ -1,0 +1,26 @@
+packages/cli/src/network.ts
+  s_baa042e5aba9f2::t_eba34243fdcbe3 25,30
+  s_baa042e5aba9f2::t_9835a58d320182 2,6,11-12,16-24,26-29,31-38
+  s_baa042e5aba9f2::t_ddf70b568e5fa5 39-40
+packages/cli/src/network.test.ts
+  s_baa042e5aba9f2::t_9835a58d320182 31-44
+  s_baa042e5aba9f2::t_dd557b3dfac6e4 30,45
+packages/cli/src/cli.ts
+  s_baa042e5aba9f2::t_9835a58d320182 9,190
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5d1a630f6ceb277c685797ba508814c4da769e91",
+  "prompts": {},
+  "sessions": {
+    "s_baa042e5aba9f2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a15c86-641d-7580-98c2-1eff03770f2e",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "daibiao.hu <daibiao.hu@ly.com>"
+    }
+  }
+}
