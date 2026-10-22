@@ -1,0 +1,33 @@
+packages/cli/package.json
+  s_503cb1cdd4d7f5::t_9c6b9ea65494c8 3,30-31,34-35
+packages/desktop/package.json
+  s_503cb1cdd4d7f5::t_ff9a8293997ce0 3
+packages/runtime-darwin-arm64/manifest.json
+  s_503cb1cdd4d7f5::t_112e2e7c7ded5d 2,10
+packages/runtime-darwin-arm64/package.json
+  s_503cb1cdd4d7f5::t_9dc795929a9233 3
+packages/runtime-win32-x64/manifest.json
+  s_503cb1cdd4d7f5::t_7dd89c4405536f 2,10-11
+packages/runtime-win32-x64/package.json
+  s_503cb1cdd4d7f5::t_bb79f8b2fa739c 3
+packages/tui-darwin-arm64/package.json
+  s_503cb1cdd4d7f5::t_eea4a9a7f52b3d 3
+packages/tui-win32-x64/package.json
+  s_503cb1cdd4d7f5::t_52e88a43020c06 3
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1bfe9cf97b7812efcc79dbebf85ecd5d557a4ff5",
+  "prompts": {},
+  "sessions": {
+    "s_503cb1cdd4d7f5": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a15894-607f-7592-8200-e174adb3c36e",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
