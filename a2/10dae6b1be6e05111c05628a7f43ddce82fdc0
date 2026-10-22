@@ -1,0 +1,84 @@
+packages/desktop/renderer/components/ChatView.tsx
+  s_90d72b02fa0d98::t_bef7f86e495e75 17,4091,6097
+packages/native-runtime/src/agent-runtime/codex-rollout-activity.test.ts
+  s_90d72b02fa0d98::t_ba9ef29ff3e728 232-273
+packages/desktop/renderer/lib/image-viewport.test.ts
+  s_90d72b02fa0d98::t_b88169fffe86c9 1-19
+packages/desktop/renderer/lib/message-media.test.ts
+  s_90d72b02fa0d98::t_0bcd00009688c5 2,6-17
+packages/desktop/renderer/components/BrowserLivePanel.tsx
+  s_7139bca19720b5::t_8e220cc435e837 1435,1437
+packages/desktop/renderer/components/MessageMedia.tsx
+  s_90d72b02fa0d98::t_bef7f86e495e75 1-2,7-8,17-18,39-40,52,55
+packages/desktop/renderer/lib/image-viewport.ts
+  s_90d72b02fa0d98::t_15c667b479587e 1-24
+packages/native-runtime/src/agent-runtime/codex-rollout-activity.ts
+  s_90d72b02fa0d98::t_9f2b0fb1731d54 51-52,410-430,432-442
+  s_90d72b02fa0d98::t_0a04a3a20ba3fe 319-321,431
+packages/desktop/renderer/components/MessageImageLightbox.tsx
+  s_90d72b02fa0d98::t_15c667b479587e 1-2,17-46,65,71-87,89-91,93-100
+packages/desktop/renderer/lib/message-media.ts
+  s_90d72b02fa0d98::t_bef7f86e495e75 8,15-20
+  s_90d72b02fa0d98::t_dead5623c8b657 21
+packages/desktop/renderer/lib/markdown-links.ts
+  s_90d72b02fa0d98::t_bef7f86e495e75 32
+  s_90d72b02fa0d98::t_0bcd00009688c5 30-31,146
+  s_90d72b02fa0d98::t_99ca0e8f8563f0 10
+  s_90d72b02fa0d98::t_7d64c8d61bef2b 44
+packages/desktop/renderer/styles/global.css
+  s_90d72b02fa0d98::t_15c667b479587e 2783,2792,2796-2818
+  s_90d72b02fa0d98::t_ce2a160ab7ac42 2819
+packages/desktop/renderer/components/BrowserLivePanel.test.ts
+  s_7139bca19720b5::t_8e220cc435e837 4,90-134
+  s_7139bca19720b5::t_dc08e8c12470b2 135-136
+packages/native-runtime/src/agent-runtime/codex-runtime-adapter.test.ts
+  s_90d72b02fa0d98::t_b2d45df965e526 2737-2765
+packages/native-runtime/src/agent-runtime/codex-runtime-adapter.ts
+  s_90d72b02fa0d98::t_ba9ef29ff3e728 671-677
+packages/desktop/renderer/lib/markdown-links.test.ts
+  s_503cb1cdd4d7f5::t_b7a18187ee7212 124-141
+packages/native-runtime/src/agent-runtime/codex-session-disk-catalog.test.ts
+  s_99271c1ff745fc::t_cf5699a226d19f 3,69-97
+packages/native-runtime/src/agent-runtime/codex-session-disk-catalog.ts
+  s_99271c1ff745fc::t_9d831d4c486420 3-4,6,102-103,125-128,162,250-275
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a210dae6b1be6e05111c05628a7f43ddce82fdc0",
+  "prompts": {},
+  "sessions": {
+    "s_503cb1cdd4d7f5": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a15894-607f-7592-8200-e174adb3c36e",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_7139bca19720b5": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a15f22-5af6-7c50-b15c-3e26db9fa347",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_90d72b02fa0d98": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a158cb-0b76-7ec1-9a50-97a5a894fbfd",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_99271c1ff745fc": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1599c-9358-7c73-b5ef-ecb3aa8353fe",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
