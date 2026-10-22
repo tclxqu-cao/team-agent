@@ -333,7 +333,7 @@ if ($LASTEXITCODE -ne 0) { Write-Warning "Some component checks failed; continui
 if ($env:AGENTROAM_INSTALL_SKIP_SERVICE -eq "1") {
   Write-Host "AgentRoam service registration skipped for isolated verification."
 } else {
-  & $NodeBin $Entry service install --root $ServiceRoot --data-dir $DataDir
+  & $NodeBin $Entry service install --root $ServiceRoot --data-dir $DataDir --setup-codex-desktop
   if ($LASTEXITCODE -ne 0) { throw "CLI installed, but the background service failed (exit $LASTEXITCODE). Run agentroam service logs, fix the error, then run agentroam service start and agentroam pair." }
 }
 Write-Host "`nAgentRoam $AgentRoamVersion installed: $WrapperPath"

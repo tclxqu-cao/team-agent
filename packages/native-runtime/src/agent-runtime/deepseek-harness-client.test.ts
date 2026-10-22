@@ -1,5 +1,6 @@
 import { createServer } from "node:http";
-import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { createRequire } from "node:module";
+import { chmod, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { WebSocketServer } from "ws";
@@ -24,6 +25,69 @@ async function nativeHost() {
 }
 
 describe("DeepSeek Harness transport", () => {
+  it.skipIf(process.platform === "win32")("hands an owned Host to a late desktop only after requests, turns and jobs are idle", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "harness-handoff-"));
+    const executable = join(directory, "dsh-fixture");
+    const stateFile = join(directory, "state.json");
+    const pidFile = join(directory, "pid");
+    const callsFile = join(directory, "calls");
+    const setState = async (state: Record<string, unknown>) => {
+      await writeFile(`${stateFile}.next`, JSON.stringify(state));
+      await rename(`${stateFile}.next`, stateFile);
+    };
+    await setState({ running: true });
+    await writeFile(executable, `#!${process.execPath}
+const http=require('node:http'),fs=require('node:fs'),{WebSocketServer}=require(${JSON.stringify(createRequire(import.meta.url).resolve("ws"))});
+fs.writeFileSync(${JSON.stringify(pidFile)},String(process.pid));
+const state=()=>JSON.parse(fs.readFileSync(${JSON.stringify(stateFile)},'utf8'));
+const server=http.createServer(async(req,res)=>{if(req.method==='GET'){res.writeHead(303,{'set-cookie':'dsh=owned',location:'./'});res.end();return;}
+let text='';for await(const chunk of req)text+=chunk;const body=JSON.parse(text);fs.appendFileSync(${JSON.stringify(callsFile)},body.method+'\\n');
+if(body.method==='session/prompt')await new Promise(resolve=>setTimeout(resolve,150));
+res.setHeader('content-type','application/json');res.end(JSON.stringify({type:'server-response',rpcId:body.rpcId,result:{ok:true,value:{items:[{sessionId:'fixture',agentAvailable:true,running:state().running===true}]}}}));});
+const sockets=new WebSocketServer({server,path:'/api/remote.mux'});sockets.on('connection',socket=>socket.on('message',raw=>{const body=JSON.parse(raw.toString());socket.send(JSON.stringify({type:'item',streamId:body.streamId,value:body.endpoint==='job/list'?{type:'rows',jobs:state().busyJob?[{status:'running'}]:[]}:{type:'snapshot',records:[]}}));}));
+server.listen(0,'127.0.0.1',()=>console.log('dsh web: http://127.0.0.1:'+server.address().port+'/?token=fixture'));
+process.on('SIGTERM',()=>setTimeout(()=>process.exit(0),100));
+`);
+    await chmod(executable, 0o700);
+    const desktop = await nativeHost();
+    const discoverDesktopEndpoint = vi.fn<() => Promise<typeof desktop | null>>(async () => null);
+    const client = new DeepSeekHarnessClient({ executable, discoverEndpoint: async () => null,
+      discoverDesktopEndpoint, handoffIntervalMs: 20 });
+    try {
+      await client.request("session/list", {});
+      const pid = Number(await readFile(pidFile, "utf8"));
+      let finishDiscovery!: (endpoint: typeof desktop) => void;
+      discoverDesktopEndpoint.mockImplementation(() => new Promise(resolve => { finishDiscovery = resolve; }));
+      await vi.waitFor(() => expect(finishDiscovery).toBeTypeOf("function"));
+      const waitingRequest = client.request("session/list", {});
+      expect(desktop.calls).toEqual([]);
+      discoverDesktopEndpoint.mockResolvedValue(desktop);
+      finishDiscovery(desktop);
+      await waitingRequest;
+      await new Promise(resolve => setTimeout(resolve, 100));
+      expect(() => process.kill(pid, 0)).not.toThrow();
+      expect(desktop.calls).toEqual([]);
+      await setState({ busyJob: true });
+      await new Promise(resolve => setTimeout(resolve, 100));
+      expect(() => process.kill(pid, 0)).not.toThrow();
+      expect(desktop.calls).toEqual([]);
+      const follow = await client.follow({ address: { kind: "session", sessionId: "fixture" } });
+      await setState({});
+      await new Promise(resolve => setTimeout(resolve, 100));
+      expect(() => process.kill(pid, 0)).not.toThrow();
+      const writing = client.request("session/prompt", { content: "only once" });
+      follow.close();
+      await writing;
+      expect((await readFile(callsFile, "utf8")).split("\n").filter(method => method === "session/prompt")).toHaveLength(1);
+      await vi.waitFor(() => expect(() => process.kill(pid, 0)).toThrow(), { timeout: 5_000 });
+      expect(await client.request("session/list", {})).toEqual({ items: [] });
+      expect(desktop.calls).toContain("session/list");
+      expect(desktop.calls).not.toContain("session/prompt");
+      await client.dispose();
+      await expect(client.request("session/list", {})).rejects.toMatchObject({ code: "RUNTIME_UNAVAILABLE" });
+    } finally { await client.dispose(); await desktop.close(); await rm(directory, { recursive: true, force: true }); }
+  });
+
   it("uses launch-cookie authentication, exact native RPC envelopes and stream errors", async () => {
     const calls: unknown[] = [];
     const server = createServer(async (req, res) => {
@@ -87,10 +151,14 @@ describe("DeepSeek Harness transport", () => {
   it("honors explicit runtime addresses without discovery or silent fallback", async () => {
     const host = await nativeHost();
     const discoverEndpoint = vi.fn(async () => null);
-    const client = new DeepSeekHarnessClient({ env: { AGENT_DSH_URL: `${host.origin}/?token=fixture` }, discoverEndpoint });
+    const discoverDesktopEndpoint = vi.fn(async () => host);
+    const client = new DeepSeekHarnessClient({ env: { AGENT_DSH_URL: `${host.origin}/?token=fixture` }, discoverEndpoint,
+      discoverDesktopEndpoint, handoffIntervalMs: 5 });
     try {
       expect(await client.request("session/list", {})).toEqual({ items: [] });
       expect(discoverEndpoint).not.toHaveBeenCalled();
+      await new Promise(resolve => setTimeout(resolve, 20));
+      expect(discoverDesktopEndpoint).not.toHaveBeenCalled();
     } finally { await client.dispose(); await host.close(); }
   });
 

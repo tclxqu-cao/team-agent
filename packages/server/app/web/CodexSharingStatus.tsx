@@ -10,15 +10,17 @@ export default function CodexSharingStatus({ csrfToken }: { csrfToken: string })
   const [busy, setBusy] = useState(false);
   const inFlight = useRef(false);
   const generation = useRef(0);
-  const refresh = useCallback(async (repair = false) => {
+  const refresh = useCallback(async (repair = false, share = false, restartConfirmed = false) => {
     if (inFlight.current) return;
     inFlight.current = true;
     const attempt = generation.current;
-    if (repair) setBusy(true);
+    setBusy(true);
     try {
       const response = await fetch("/api/agent/codex-sharing", {
-        method: repair ? "POST" : "GET", credentials: "same-origin", cache: "no-store",
-        headers: repair ? { "x-csrf-token": csrfToken } : undefined, signal: AbortSignal.timeout(50_000),
+        method: repair || share ? "POST" : "GET", credentials: "same-origin", cache: "no-store",
+        headers: repair || share ? { "x-csrf-token": csrfToken, ...(share ? { "content-type": "application/json" } : {}) } : undefined,
+        body: share ? JSON.stringify({ action: "share", restartConfirmed }) : undefined,
+        signal: AbortSignal.timeout(180_000),
       });
       const result = await response.json();
       if (!response.ok || !Object.hasOwn(labels, result?.state)) throw new Error(result?.error?.message || "共享状态读取失败，请重试。");
@@ -38,6 +40,11 @@ export default function CodexSharingStatus({ csrfToken }: { csrfToken: string })
     return () => { generation.current++; window.clearInterval(timer); window.removeEventListener("online", check); };
   }, [refresh]);
   const label = status ? labels[status.state] : "检查中";
+  const share = () => {
+    const restart = status?.state !== "stopped";
+    if (restart && !window.confirm("切换将强制重启 Codex 桌面，中断桌面任务并可能丢失未发送内容，不再显示 Codex 退出确认框。共享后端和手机会话不会被结束。是否继续？")) return;
+    void refresh(false, true, restart);
+  };
   const needsAttention = status && status.state !== "unsupported" && (
     status.state !== "shared" || !status.configured || !status.autoStart || !status.daemonReachable
   );
@@ -52,6 +59,7 @@ export default function CodexSharingStatus({ csrfToken }: { csrfToken: string })
       <div className="codex-sharing-actions">
         <button type="button" disabled={busy} onClick={() => { void refresh(); }} aria-label="刷新 Codex 共享状态"><RefreshCw size={12} />刷新</button>
         <button type="button" disabled={busy} onClick={() => { void refresh(true); }}>{busy ? "正在修复…" : "检查并修复"}</button>
+        {!["shared", "not-installed"].includes(status.state) && <button type="button" disabled={busy} onClick={share}>{busy ? "正在处理…" : status.state === "stopped" ? "以共享模式启动 Codex" : "切换到共享后端"}</button>}
       </div>
     </>}
   </div>;

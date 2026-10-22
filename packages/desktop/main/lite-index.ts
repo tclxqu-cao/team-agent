@@ -6,9 +6,10 @@ import { SharedServiceConnection } from "./shared-service.js";
 import { DesktopRuntimeBootstrap } from "./runtime-bootstrap.js";
 import { DesktopLiveCliProxy } from "./desktop-live-cli-proxy.js";
 import { LitePairingService } from "./lite-pairing.js";
+import { DesktopCodexSharingSetup } from "./codex-sharing-setup.js";
 
 const require = createRequire(import.meta.url);
-const { app, BrowserWindow, ipcMain, Menu } = require("electron") as typeof import("electron");
+const { app, BrowserWindow, ipcMain, Menu, dialog } = require("electron") as typeof import("electron");
 app.setName("AgentRoam Lite");
 if (process.env.AGENTROAM_DESKTOP_USER_DATA?.trim()) app.setPath("userData", resolve(process.env.AGENTROAM_DESKTOP_USER_DATA));
 const logger = installGlobalLogging({ dir: join(app.getPath("userData"), "logs"), source: "desktop-lite", minLevel: "info", handlers: { exitOnUncaughtException: false } });
@@ -17,7 +18,13 @@ if (!app.requestSingleInstanceLock()) { app.quit(); process.exit(0); }
 const directory = fileURLToPath(new URL(".", import.meta.url));
 const service = new SharedServiceConnection(join(app.getPath("userData"), "shared-service.json"));
 const bootstrap = new DesktopRuntimeBootstrap(app.isPackaged, process.resourcesPath);
-const pairing = new LitePairingService(service, bootstrap);
+const sharing = new DesktopCodexSharingSetup({
+  request: body => service.json("/api/agent/codex-sharing", "POST", body),
+  confirm: async () => (await dialog.showMessageBox({ type: "warning", title: "切换 Codex 共享后台", buttons: ["暂不切换", "强制重启并共享"], defaultId: 0, cancelId: 0,
+    message: "Codex 尚未共享，且有任务运行或无法确认空闲。", detail: "切换会强制重启 Codex 桌面，中断任务并可能丢失未发送内容，不再显示 Codex 退出确认框。共享后端和手机会话不会被结束。" })).response === 1,
+  report: message => { logger.warn("Codex sharing setup incomplete", { message }); void dialog.showMessageBox({ type: "warning", message: "Codex 共享尚未完成", detail: message, buttons: ["知道了"] }); },
+});
+const pairing = new LitePairingService(service, bootstrap, undefined, () => sharing.prepare());
 const remote = new DesktopLiveCliProxy({ request: (path, method, body) => service.json(path, method, body) });
 let window: import("electron").BrowserWindow | null = null;
 

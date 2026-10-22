@@ -7,6 +7,7 @@ import { readServiceConfig, resolveServicePaths, type ServiceConfig } from "./se
 import { detectPlatform } from "./platform.js";
 
 import { configureCodexSharing, inspectCodexSharing } from "./codex-sharing.js";
+import { runWindowsCodexDesktop } from "./codex-desktop-windows.js";
 
 const execFileAsync = promisify(execFile);
 const scriptPath = fileURLToPath(new URL("../install/start-codex-desktop-shared.sh", import.meta.url));
@@ -24,7 +25,8 @@ interface DesktopCommandContext {
 
 export async function runCodexDesktopCommand(options: CliOptions, context: DesktopCommandContext = {}): Promise<void> {
   const platform = context.platform ?? process.platform;
-  if (platform !== "darwin") throw new Error("官方 Codex 桌面共享后端入口目前仅支持 macOS");
+  if (platform === "win32") { await runWindowsCodexDesktop(options, context); return; }
+  if (platform !== "darwin") throw new Error("当前系统不支持官方 Codex 桌面共享后端入口");
   const log = context.log ?? console.log;
   const environment = { ...(context.environment ?? process.env) };
   const service = await (context.readConfig ?? (() => readServiceConfig(resolveServicePaths())))();
@@ -54,6 +56,7 @@ export async function runCodexDesktopCommand(options: CliOptions, context: Deskt
   if (!options.desktopDryRun) {
     environment.AGENTROAM_CODEX_DESKTOP_PREFLIGHT_NODE = process.execPath;
     environment.AGENTROAM_CODEX_DESKTOP_PREFLIGHT = fileURLToPath(new URL("./codex-desktop-preflight.js", import.meta.url));
+    environment.AGENTROAM_CODEX_DESKTOP_FORCE_STOP = fileURLToPath(new URL("./codex-desktop-force-stop.js", import.meta.url));
   }
   if (options.desktopRestart) args.push("--restart");
   if (options.desktopDryRun) args.push("--dry-run");

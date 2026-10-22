@@ -65,6 +65,7 @@ async function verifyEndpoint(endpoint: HarnessEndpoint, request: typeof fetch):
 
 /** Current-user process discovery stays in infrastructure; no filesystem or OS facts reach domain/UI code. */
 export async function discoverHarnessEndpoint(options: {
+  desktopOnly?: boolean;
   environment?: NodeJS.ProcessEnv;
   platform?: NodeJS.Platform;
   uid?: number;
@@ -85,13 +86,14 @@ export async function discoverHarnessEndpoint(options: {
       if (!Array.isArray(rows)) return null;
       candidates = rows.flatMap(row => {
         const kind = typeof row?.command === "string" ? processKind(row.command) : null;
-        if (!kind || !Number.isSafeInteger(row.pid) || !Array.isArray(row.ports)) return [];
+        if (!kind || (options.desktopOnly && kind !== "desktop") || !Number.isSafeInteger(row.pid) || !Array.isArray(row.ports)) return [];
         const listeners = `p${row.pid}\n` + row.ports.map((port: { LocalAddress: string; LocalPort: number }) => `n${port.LocalAddress === "::1" ? "[::1]" : port.LocalAddress}:${port.LocalPort}`).join("\n");
         return [{ pid: row.pid, kind, origins: selectHarnessListenerOrigins(listeners, row.pid) }];
       }).sort((a, b) => Number(a.kind !== "desktop") - Number(b.kind !== "desktop") || a.pid - b.pid);
     } else {
       const { stdout } = await execute("/bin/ps", ["-axo", "pid=,uid=,args="], COMMAND_OPTIONS);
-      const processes = selectHarnessProcesses(stdout, options.uid ?? process.getuid?.() ?? -1);
+      const processes = selectHarnessProcesses(stdout, options.uid ?? process.getuid?.() ?? -1)
+        .filter(candidate => !options.desktopOnly || candidate.kind === "desktop");
       candidates = [];
       for (const candidate of processes) {
         try {

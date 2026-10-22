@@ -121,7 +121,7 @@ export async function runServiceCommand(options: CliOptions, context: ServiceCom
       }
       if (platform === "darwin" && !options.desktopSetup) log("Codex Desktop sharing: agentroam codex-desktop --setup; preview: agentroam codex-desktop --dry-run.");
       if (state.version === config.version) await cleanupOldLaunchers(config, log);
-      if (options.desktopSetup && platform === "darwin") {
+      if (options.desktopSetup && ["darwin", "win32"].includes(platform)) {
         await withCliProgress("Configuring Codex Desktop sharing", () => (context.desktopSetup ?? setupCodexDesktop)(options, { platform, environment, service: config, log }));
       }
       await (context.pairingPrinter ?? printPairingCode)(options.dataDir, log, { accessUrl: state.accessUrl, qr: options.qr, interactive: stdoutIsTTY });

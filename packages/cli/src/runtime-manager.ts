@@ -18,6 +18,7 @@ import type { PlatformTarget } from "./platform.js";
 import { resolvePlatformRuntime } from "./platform-packages.js";
 import { findAvailablePort } from "./port.js";
 import { ProcessSupervisor } from "./process-supervisor.js";
+import { ensureWindowsBackend } from "./codex-windows-backend.js";
 import { configureCodexSharing } from "./codex-sharing.js";
 import { withCliProgress } from "../bin/cli-progress.mjs";
 import { withAbortSignal, withTimeout } from "./abort.js";
@@ -69,6 +70,13 @@ export class RuntimeManager {
           CODEX_SHARING_TIMEOUT_MS, "Codex 共享后台配置超时（10 秒）");
       }
       catch (error) { this.report(`Codex 共享启动配置未完成，可在电脑菜单中修复：${error instanceof Error ? error.message : error}`); }
+    }
+
+    if (process.platform === "win32" && childEnvironment.AGENT_CODEX_BIN) {
+      try {
+        const backend = await ensureWindowsBackend(dataDir, { environment: childEnvironment });
+        childEnvironment.AGENT_CODEX_DESKTOP_WS_URL = backend.endpoint;
+      } catch (error) { this.report(`Codex 共享后台未就绪，可在头像菜单重试：${error instanceof Error ? error.message : error}`); }
     }
 
     const { runtimeRoot } = resolvePlatformRuntime(target);

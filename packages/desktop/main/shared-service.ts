@@ -89,7 +89,7 @@ export class SharedServiceConnection {
   async json(path: string, method: string, body?: string): Promise<{ status: number; body: string }> {
     if (!["GET", "POST", "PATCH", "DELETE"].includes(method) || (body?.length ?? 0) > 20_000_000) throw new Error("Invalid service request");
     const d = await this.connection();
-    const res = await this.request(serviceApiUrl(d.url, path), { method, ...(body === undefined ? {} : { body }), headers: { "content-type": "application/json", "x-agentroam-desktop-token": d.token }, signal: AbortSignal.timeout(30_000), redirect: "error" });
+    const res = await this.request(serviceApiUrl(d.url, path), { method, ...(body === undefined ? {} : { body }), headers: { "content-type": "application/json", "x-agentroam-desktop-token": d.token }, signal: AbortSignal.timeout(path === "/api/agent/codex-sharing" ? 180_000 : 30_000), redirect: "error" });
     return { status: res.status, body: await res.text() };
   }
 

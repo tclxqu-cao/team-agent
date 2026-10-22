@@ -107,3 +107,19 @@ describe("Codex Desktop endpoint discovery", () => {
     },
   );
 });
+
+it("discovers the Windows managed backend without inherited environment", async () => {
+  const { mkdtemp, mkdir, writeFile, rm } = await import("node:fs/promises");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const home = await mkdtemp(join(tmpdir(), "codex-endpoint-"));
+  try {
+    const root = join(home, ".agentroam", "codex-desktop");
+    await mkdir(root, { recursive: true });
+    const endpoint = `ws://127.0.0.1:45123/${"a".repeat(48)}`;
+    await writeFile(join(root, "windows-backend.json"), JSON.stringify({ version: 1, endpoint }));
+    await expect(discoverCodexDesktopEndpoint({ platform: "win32", environment: {}, homeDir: home })).resolves.toEqual({ webSocketUrl: endpoint });
+    await writeFile(join(root, "windows-backend.json"), JSON.stringify({ version: 1, endpoint: endpoint.replace("127.0.0.1", "external.test") }));
+    await expect(discoverCodexDesktopEndpoint({ platform: "win32", environment: {}, homeDir: home })).resolves.toBeNull();
+  } finally { await rm(home, { recursive: true, force: true }); }
+});

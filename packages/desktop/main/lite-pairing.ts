@@ -9,6 +9,7 @@ export class LitePairingService {
     private readonly service: Pick<SharedServiceConnection, "status" | "select" | "mobilePairing">,
     private readonly bootstrap: { prepare(): Promise<RuntimeBootstrapStatus> },
     private readonly readOrigin = readMobilePairingOrigin,
+    private readonly prepareSharing: () => Promise<void> = async () => {},
   ) {}
 
   refresh(): Promise<MobilePairingInvitation> {
@@ -35,6 +36,8 @@ export class LitePairingService {
       if (!await this.connect()) throw new Error("手机访问连接尚未就绪，请稍后点击刷新重试。");
     }
     // Authorization errors (including emergency lock) must remain visible, never switch services to bypass them.
-    return this.service.mobilePairing();
+    const invitation = await this.service.mobilePairing();
+    await this.prepareSharing();
+    return invitation;
   }
 }

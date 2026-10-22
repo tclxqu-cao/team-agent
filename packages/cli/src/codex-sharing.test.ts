@@ -98,6 +98,13 @@ describe("persistent Codex sharing", () => {
     expect(f.execute.mock.calls.some(([, args]) => args.includes("bootout") || args.includes("bootstrap"))).toBe(false);
     expect(f.execute).toHaveBeenCalledWith("/bin/launchctl", ["enable", expect.any(String)], expect.anything());
   });
+  it("does not promise system-restored Desktop will share just because login defaults exist", async () => {
+    const f = await fixture();
+    f.context.inspect.mockResolvedValue({ status: "stopped", appPath: "/Applications/Codex.app" } as never);
+    const status = await inspectCodexSharing(f.context);
+    expect(status.message).toContain("agentroam codex-desktop");
+    expect(status.message).not.toContain("下次打开时使用共享后台");
+  });
   it("skips unsupported platforms without writes or process calls", async () => {
     const execute = vi.fn();
     await configureCodexSharing({ dataDir: "/unused" }, { platform: "win32", execute });

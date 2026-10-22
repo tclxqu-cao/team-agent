@@ -46,6 +46,12 @@ describe("Harness existing-host discovery", () => {
     expect(await discoverHarnessEndpoint(fixture("3080"))).toMatchObject({ origin: "http://127.0.0.1:3080" });
   });
 
+  it("never returns the owned Web host when probing for a late desktop", async () => {
+    const options = fixture("3080");
+    expect(await discoverHarnessEndpoint({ ...options, desktopOnly: true })).toBeNull();
+    expect(options.execute.mock.calls.some(([, args]) => args.includes("101"))).toBe(false);
+  });
+
   it("does not send requests without local authentication or follow HTTP redirects", async () => {
     const options = fixture();
     options.readCookie.mockResolvedValue(null as unknown as string);

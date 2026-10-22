@@ -125,14 +125,14 @@ export async function inspectCodexSharing(context: SharingContext = {}): Promise
     } catch { /* Keep checking private Desktop evidence. */ }
     const desktop = await (context.inspect ?? inspectCodexDesktop)(paths.environment);
     if (desktop.status !== "running") return { ...result, state: desktop.status, message: desktop.status === "stopped"
-      ? result.configured && result.autoStart && result.daemonReachable ? "Codex 尚未启动；下次打开时使用共享后台。" : "Codex 尚未启动；请先修复共享配置。" : "尚未安装官方 Codex 桌面端。" };
+      ? result.configured && result.autoStart && result.daemonReachable ? "Codex 尚未启动；请使用 头像菜单或 agentroam codex-desktop 启动。普通图标或系统恢复不保证继承共享配置。" : "Codex 尚未启动；请先修复共享配置。" : "尚未安装官方 Codex 桌面端。" };
     const { stdout } = await execute("/bin/ps", ["-axo", "pid=,ppid=,args="], commandOptions);
     const processes = String(stdout).split("\n").flatMap(line => {
       const match = /^\s*(\d+)\s+(\d+)\s+(.+)$/.exec(line);
       return match ? [{ pid: Number(match[1]), parent: Number(match[2]), command: match[3]! }] : [];
     });
     if (processes.some(p => p.parent === desktop.pid && /\bapp-server\b/.test(p.command) && !/\b(?:proxy|daemon)\b/.test(p.command))) {
-      return { ...result, state: "independent", message: "Codex 正在使用独立后台。修复后，请在任务结束时退出并重新打开 Codex。" };
+      return { ...result, state: "independent", message: "Codex 正在使用独立后台。请在任务结束时退出，再用 头像菜单或 agentroam codex-desktop 启动；不会自动中断现有会话。" };
     }
     if (!result.daemonReachable) return result;
     const socket = await realpath(paths.socketPath);
@@ -146,6 +146,6 @@ export async function inspectCodexSharing(context: SharingContext = {}): Promise
     if (rows.some(row => row.pid === desktop.pid && row.name.startsWith("->") && devices.has(row.name.slice(2)))) {
       return { ...result, state: "shared", message: "Codex 已连接共享后台。" };
     }
-    return { ...result, message: "共享后台可用，但尚未确认 Codex 连接。请修复后，在任务结束时重新打开 Codex。" };
+    return { ...result, message: "共享后台可用，但尚未确认 Codex 连接。请在任务结束时退出，再用 头像菜单或 agentroam codex-desktop 启动。" };
   } catch { return result; }
 }

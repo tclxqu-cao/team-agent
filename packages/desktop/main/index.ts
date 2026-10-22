@@ -28,6 +28,7 @@ import { MacAccessibilityAdapter } from "./computer-use/mac-accessibility-adapte
 import { readDesktopLiveState, writeDesktopLiveState } from "./desktop-live-state.js";
 import { DesktopLiveCliProxy } from "./desktop-live-cli-proxy.js";
 import { SharedServiceConnection } from "./shared-service.js";
+import { DesktopCodexSharingSetup } from "./codex-sharing-setup.js";
 import { DesktopRuntimeBootstrap } from "./runtime-bootstrap.js";
 import { DesktopUpdateService } from "./update-service.js";
 import { DesktopTaskCompletionNotifier } from "./task-completion-notifier.js";
@@ -160,6 +161,12 @@ const appIconPath = [
 ].find((candidate) => existsSync(candidate));
 const sharedService = new SharedServiceConnection(join(app.getPath("userData"), "shared-service.json"));
 const runtimeBootstrap = new DesktopRuntimeBootstrap(app.isPackaged, process.resourcesPath);
+const codexSharingSetup = new DesktopCodexSharingSetup({
+  request: body => sharedService.json("/api/agent/codex-sharing", "POST", body),
+  confirm: async () => (await dialog.showMessageBox({ type: "warning", title: "切换 Codex 共享后台", buttons: ["暂不切换", "强制重启并共享"], defaultId: 0, cancelId: 0,
+    message: "Codex 尚未共享，且有任务运行或无法确认空闲。", detail: "切换会强制重启 Codex 桌面，中断任务并可能丢失未发送内容，不再显示 Codex 退出确认框。共享后端和手机会话不会被结束。" })).response === 1,
+  report: message => { void dialog.showMessageBox({ type: "warning", message: "Codex 共享尚未完成", detail: message, buttons: ["知道了"] }); },
+});
 const desktopLiveProxy = new DesktopLiveCliProxy({
   request: (path, method, body) => sharedService.json(path, method, body),
   onStatus: (status) => {
@@ -181,7 +188,12 @@ const trustedServiceSender = (event: import("electron").IpcMainInvokeEvent) => {
   if (event.sender !== mainWindow?.webContents || event.senderFrame !== event.sender.mainFrame) throw new Error("Untrusted desktop sender");
 };
 ipcMain.handle("service:status", (event) => { trustedServiceSender(event); return sharedService.status(); });
-ipcMain.handle("service:mobile-pairing", (event) => { trustedServiceSender(event); return sharedService.mobilePairing(); });
+ipcMain.handle("service:mobile-pairing", async (event) => {
+  trustedServiceSender(event);
+  const invitation = await sharedService.mobilePairing();
+  await codexSharingSetup.prepare();
+  return invitation;
+});
 ipcMain.handle("service:bootstrap-status", (event) => { trustedServiceSender(event); return runtimeBootstrap.status(); });
 ipcMain.handle("service:bootstrap", async (event) => {
   trustedServiceSender(event);

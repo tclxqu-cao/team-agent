@@ -1,4 +1,7 @@
 import { execFile } from "node:child_process";
+import { readFile } from "node:fs/promises";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
@@ -26,9 +29,18 @@ export async function discoverCodexDesktopEndpoint(options: {
   environment?: NodeJS.ProcessEnv;
   platform?: NodeJS.Platform;
   execute?: DiscoveryExecutor;
+  homeDir?: string;
 } = {}): Promise<CodexDesktopEndpoint | null> {
   const override = (options.environment ?? process.env).AGENT_CODEX_DESKTOP_WS_URL?.trim();
   if (override) return { webSocketUrl: normalizeLocalEndpoint(override) };
+  if ((options.platform ?? process.platform) === "win32") {
+    try {
+      const config = JSON.parse(await readFile(join(options.homeDir ?? homedir(), ".agentroam", "codex-desktop", "windows-backend.json"), "utf8"));
+      const url = new URL(config.endpoint);
+      if (config.version !== 1 || url.hostname !== "127.0.0.1" || url.protocol !== "ws:" || !url.port || !/^\/[a-f0-9]{48}$/.test(url.pathname)) return null;
+      return { webSocketUrl: normalizeLocalEndpoint(config.endpoint) };
+    } catch { return null; }
+  }
   if ((options.platform ?? process.platform) !== "darwin") return null;
 
   const execute = options.execute ?? execFileAsync as DiscoveryExecutor;

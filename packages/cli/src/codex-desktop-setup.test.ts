@@ -13,10 +13,25 @@ const unknown = { ...idle, activity: { state: "unknown", reason: "private stdio"
 function context(snapshots: DesktopSnapshot[], answer: string | null = null) {
   let index = 0;
   return { platform: "darwin" as const, environment: {}, inspect: vi.fn(async () => snapshots[Math.min(index++, snapshots.length - 1)]!),
+    inspectSharing: vi.fn(async () => ({ state: "independent" }) as never),
     launch: vi.fn(async () => {}), confirm: vi.fn(async () => answer), log: vi.fn() };
 }
 
 describe("installation Desktop sharing decisions", () => {
+  it("reports CLI-owned confirmation requirements to graphical callers without opening a terminal prompt", async () => {
+    const value = context([busy]);
+    await setupCodexDesktop(options, { ...value, environment: { AGENTROAM_CODEX_DESKTOP_NONINTERACTIVE: "1" } });
+    expect(value.log).toHaveBeenCalledWith(JSON.stringify({ codexSharingAction: "confirmation-required" }));
+    expect(value.confirm).not.toHaveBeenCalled();
+    expect(value.launch).not.toHaveBeenCalled();
+  });
+  it("preserves an already shared Desktop", async () => {
+    const value = context([idle]);
+    value.inspectSharing.mockResolvedValue({ state: "shared" } as never);
+    await setupCodexDesktop(options, value);
+    expect(value.launch).not.toHaveBeenCalled();
+    expect(value.confirm).not.toHaveBeenCalled();
+  });
   it("rechecks idle before automatically restarting without a question", async () => {
     const value = context([idle]);
     await setupCodexDesktop(options, value);
@@ -26,11 +41,11 @@ describe("installation Desktop sharing decisions", () => {
       expect.objectContaining({ AGENTROAM_CODEX_DESKTOP_EXPECTED_PID: "123" }));
   });
 
-  it("starts a stopped Desktop without requesting a restart", async () => {
+  it("configures the backend without opening a stopped Desktop", async () => {
     const value = context([{ status: "stopped", appPath: idle.appPath }]);
     await setupCodexDesktop(options, value);
     expect(value.confirm).not.toHaveBeenCalled();
-    expect(value.launch).toHaveBeenCalledWith(expect.objectContaining({ desktopRestart: false }), expect.objectContaining({ AGENTROAM_CODEX_DESKTOP_EXPECTED_PID: "0" }));
+    expect(value.launch).not.toHaveBeenCalled();
   });
 
   it.each([busy, unknown])("asks for busy or unqueryable Desktop and restarts only after y", async (snapshot) => {
@@ -55,7 +70,7 @@ describe("installation Desktop sharing decisions", () => {
     expect(value.launch).not.toHaveBeenCalled();
   });
 
-  it.each([[idle, { ...idle, pid: 124 }], [busy, { ...busy, pid: 124 }]])("does not restart a replaced process", async (snapshots) => {
+  it.each([{ snapshots: [idle, { ...idle, pid: 124 }] }, { snapshots: [busy, { ...busy, pid: 124 }] }])("does not restart a replaced process", async ({ snapshots }) => {
     const value = context(snapshots, "y");
     await setupCodexDesktop(options, value);
     expect(value.launch).not.toHaveBeenCalled();

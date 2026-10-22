@@ -84,7 +84,7 @@ if [[ "$codex_desktop_dry_run" == true ]]; then
   echo "CLI: $codex_shared_cli"
   if [[ -n "$codex_desktop_running_pid" ]]; then
     if [[ "$codex_desktop_restart" == true ]]; then
-      echo "Desktop PID $codex_desktop_running_pid would be quit and relaunched; all its running sessions would be interrupted."
+      echo "Desktop PID $codex_desktop_running_pid would be force stopped and relaunched; all its running sessions would be interrupted."
     else
       echo "Desktop PID $codex_desktop_running_pid is running; launch will refuse until Desktop has exited."
     fi
@@ -126,17 +126,19 @@ if [[ -n "$codex_desktop_running_pid" ]]; then
     "${AGENTROAM_CODEX_DESKTOP_GUARD_NODE:?}" "$AGENTROAM_CODEX_DESKTOP_IDLE_GUARD"
     check_desktop_pid
   fi
-  echo "Restarting official Desktop; all its running sessions will be interrupted."
-  /usr/bin/osascript \
-    -e 'on run argv' \
-    -e 'tell application (item 1 of argv) to quit' \
-    -e 'end run' "$codex_desktop_app"
+  codex_desktop_force_stop="${AGENTROAM_CODEX_DESKTOP_FORCE_STOP:-$(dirname "$0")/../dist/codex-desktop-force-stop.js}"
+  if [[ ! -f "$codex_desktop_force_stop" ]]; then
+    echo "Desktop force-stop helper unavailable; Desktop was preserved." >&2
+    exit 1
+  fi
+  echo "Force restarting official Desktop; all its running sessions will be interrupted."
+  "$codex_desktop_preflight_node" "$codex_desktop_force_stop" "$codex_desktop_running_pid" "$codex_desktop_binary"
   for ((codex_desktop_wait=0; codex_desktop_wait<40; codex_desktop_wait++)); do
     if ! /bin/kill -0 "$codex_desktop_running_pid" 2>/dev/null; then break; fi
     sleep 0.25
   done
   if /bin/kill -0 "$codex_desktop_running_pid" 2>/dev/null; then
-    echo "Desktop did not exit; no forced kill or second launch was attempted." >&2
+    echo "Desktop did not exit after force stop; no second launch was attempted." >&2
     exit 1
   fi
 fi
@@ -145,5 +147,6 @@ fi
 # environment changes and preserving all Desktop settings and saved windows.
 /usr/bin/open -a "$codex_desktop_app" \
   --env "CODEX_APP_SERVER_WS_URL=$codex_shared_url" \
-  --env "CODEX_APP_SERVER_FORCE_CLI=0"
+  --env "CODEX_APP_SERVER_FORCE_CLI=0" \
+  --env "CODEX_HOME=$codex_shared_root"
 echo "Desktop launch requested against $codex_shared_url."
