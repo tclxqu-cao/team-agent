@@ -1,0 +1,49 @@
+.github/workflows/website-pages.yml
+  s_3a5decd4a7e899::t_95f6f510855d2a 25
+packages/website/public/motion.js
+  s_3a5decd4a7e899::t_2c331832b50390 18
+  s_3a5decd4a7e899::t_a7c4ffaf4642a5 1-17,19-118
+packages/website/public/motion.css
+  s_3a5decd4a7e899::t_725b97319835fa 93-97,99-108,110-115
+  s_3a5decd4a7e899::t_18a0976365968b 16,49-50
+  s_3a5decd4a7e899::t_a7c4ffaf4642a5 1-15,17-48,51-92
+  s_3a5decd4a7e899::t_7078c74e5e3102 98,109
+packages/website/src/motion.test.mjs
+  s_3a5decd4a7e899::t_22665c607024ae 1-61
+packages/website/public/assets/globe-source.txt
+  s_3a5decd4a7e899::t_725b97319835fa 1-4
+packages/website/public/globe.js
+  s_3a5decd4a7e899::t_95f6f510855d2a 32-34
+  s_3a5decd4a7e899::t_c68e833bbea80f 139-140
+  s_3a5decd4a7e899::t_1e23eeac495482 1-31,35-63,65-138,141-152
+  s_3a5decd4a7e899::t_94a74f471b24a8 64
+packages/website/public/style.css
+  s_3a5decd4a7e899::t_a7c4ffaf4642a5 2
+packages/website/src/globe.test.mjs
+  s_3a5decd4a7e899::t_2f2d7cee7c6d96 1-25
+packages/website/public/assets/globe-land.json
+  s_3a5decd4a7e899::t_725b97319835fa 1
+packages/website/public/app.js
+  s_3a5decd4a7e899::t_71cd1a8b504a2a 1-2,5
+  s_3a5decd4a7e899::t_a7c4ffaf4642a5 6-7,53,58,60-63
+  s_3a5decd4a7e899::t_1e23eeac495482 3-4
+packages/website/src/build.mjs
+  s_3a5decd4a7e899::t_71cd1a8b504a2a 1-2,10-14
+  s_3a5decd4a7e899::t_95f6f510855d2a 18-19
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ff189f9098fd616031063d0690015b1915818fb4",
+  "prompts": {},
+  "sessions": {
+    "s_3a5decd4a7e899": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16169-5cf6-7370-bc82-657d40045cf6",
+        "model": "ap-southeast-1-v5cjq-gptdy-17usoft-com/gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
