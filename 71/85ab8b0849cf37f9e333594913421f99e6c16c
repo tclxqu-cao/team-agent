@@ -1,0 +1,21 @@
+packages/desktop/electron-builder-lite.yml
+  s_503cb1cdd4d7f5::t_e94366d20b2d9a 16
+packages/desktop/main/lite-packaging.test.ts
+  s_503cb1cdd4d7f5::t_64a62e5156976f 1-11
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7185ab8b0849cf37f9e333594913421f99e6c16c",
+  "prompts": {},
+  "sessions": {
+    "s_503cb1cdd4d7f5": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a15894-607f-7592-8200-e174adb3c36e",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
