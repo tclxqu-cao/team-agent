@@ -13,6 +13,7 @@ files:
   - dist/main/lite-index.js
   - dist/main/lite-preload.cjs
   - dist/main/lite-pairing.js
+  - dist/main/codex-sharing-setup.js
   - dist/main/shared-service.js
   - dist/main/mobile-pairing.js
   - dist/main/runtime-bootstrap.js
