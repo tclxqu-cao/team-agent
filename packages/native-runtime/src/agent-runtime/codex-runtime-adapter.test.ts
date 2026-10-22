@@ -2734,6 +2734,35 @@ describe("Codex native paged history", () => {
     ))).toBe(false);
   });
 
+  it("shows a native goal before its answer in core and full history", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "codex-native-goal-history-"));
+    temporaryDirectories.push(directory);
+    const path = join(directory, "rollout.jsonl");
+    const goalTurn = turn("goal-turn", 1);
+    goalTurn.items = goalTurn.items.filter((item) => item.type !== "userMessage");
+    await writeFile(path, [
+      JSON.stringify({ type: "event_msg", payload: {
+        type: "thread_goal_updated",
+        goal: { objective: "verify Windows plan", status: "active", createdAt: 10 },
+      } }),
+      JSON.stringify({ type: "event_msg", payload: {
+        type: "task_started", turn_id: "goal-turn", turn_attribution: { turn_trigger: "goal" },
+      } }),
+      "",
+    ].join("\n"));
+    const adapter = new CodexRuntimeAdapter({
+      client: pagingClientFor([], { sourceTurns: [goalTurn], threadPath: path }) as never,
+    });
+    const core = await adapter.getSessionPaged("cx-paged", { limit: 1, view: "core" });
+    expect(core.messages.map((message) => message.content)).toEqual([
+      "verify Windows plan", "s-goal-turn",
+    ]);
+    expect(core.history).toMatchObject({ totalItems: 2, pageSize: 2 });
+    const full = await adapter.getSessionPaged("cx-paged", { limit: 10 });
+    expect(full.messages.filter((message) => message.role === "user").map((message) => message.content))
+      .toEqual(["verify Windows plan"]);
+  });
+
   it("restores every durable user message when Codex steers input into one turn", async () => {
     const directory = await mkdtemp(join(tmpdir(), "codex-steered-core-history-"));
     temporaryDirectories.push(directory);

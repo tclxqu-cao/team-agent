@@ -48,6 +48,8 @@ interface UserMessageCacheEntry {
   trailingOverflow: boolean;
   turns: Map<string, CodexRolloutUserMessage[]>;
   itemIds: Set<string>;
+  goalKey?: string;
+  pendingGoal?: { key: string; objective: string };
 }
 
 interface ActivityCacheEntry {
@@ -314,9 +316,9 @@ export class CodexRolloutCommentaryReader {
 }
 
 /**
- * Incrementally reads only durable user-message items from a rollout. Codex
- * turn summaries expose the first user message per turn, so steered inputs
- * need this lightweight source to remain visible in core history.
+ * Restores durable user inputs missing from turn summaries: steered messages
+ * and native goals. Goal progress updates and automatic continuations are not
+ * new user inputs.
  */
 export class CodexRolloutUserMessageReader {
   private readonly cache = new Map<string, UserMessageCacheEntry>();
@@ -405,6 +407,39 @@ export class CodexRolloutUserMessageReader {
     try {
       const record = JSON.parse(line) as Record<string, unknown>;
       const payload = asRecord(record.payload);
+      if (record.type === "event_msg" && payload.type === "thread_goal_updated") {
+        const goal = asRecord(payload.goal);
+        const objective = asString(goal.objective).trim();
+        const key = JSON.stringify([goal.createdAt, objective]);
+        if (goal.status === "active" && objective && key !== entry.goalKey) {
+          entry.pendingGoal = { key, objective };
+          entry.goalKey = key;
+        } else if (goal.status !== "active") {
+          entry.pendingGoal = undefined;
+        }
+        return;
+      }
+      if (record.type === "event_msg" && payload.type === "thread_goal_cleared") {
+        entry.pendingGoal = undefined;
+        entry.goalKey = undefined;
+        return;
+      }
+      if (record.type === "event_msg" && payload.type === "task_started") {
+        const attribution = asRecord(payload.turn_attribution);
+        const turnId = asString(payload.turn_id) || asString(attribution.turn_id);
+        if (entry.pendingGoal && turnId && attribution.turn_trigger === "goal") {
+          // Attach the objective once, never the internal continuation prompt.
+          const messages = entry.turns.get(turnId) ?? [];
+          messages.push({
+            turnId,
+            itemId: `codex-goal:${turnId}`,
+            content: [{ type: "text", text: entry.pendingGoal.objective }],
+          });
+          entry.turns.set(turnId, messages);
+          entry.pendingGoal = undefined;
+        }
+        return;
+      }
       if (record.type !== "event_msg" || payload.type !== "item_completed") return;
       const item = asRecord(payload.item);
       if (asString(item.type).toLowerCase() !== "usermessage" || !Array.isArray(item.content)) return;

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import type { BrowserLiveSession } from "../global";
+import { BrowserLiveTouch } from "./browser-live-touch";
 import { decodePcm16Base64, encodePcm16Base64, isStaleControlReply, prepareVoiceAudio, remoteFieldContains, selectBrowserLiveSessionId, touchScrollDelta } from "./BrowserLivePanel";
 
 function session(id: string, agentSessionId: string): BrowserLiveSession {
@@ -83,6 +84,53 @@ describe("browser live session selection", () => {
     expect(source).toContain('{isWindowsDesktop && (');
     expect(source).toContain('onClick={() => void sendSystem("wake")}');
     expect(source).toContain('<LockOpen size={14} aria-hidden="true" />远程解锁');
+  });
+});
+
+describe("zoomed touch dragging", () => {
+  const source = readFileSync(new URL("./BrowserLivePanel.tsx", import.meta.url), "utf8");
+  const handler = source.slice(source.indexOf("onPointerMove={(event) => {") + "onPointerMove={(event) => {".length, source.indexOf("onPointerUp={(event) => {")).replace(/\}\}\s*$/, "");
+
+  function move(armed: boolean, zoom: number) {
+    const gesture = new BrowserLiveTouch();
+    gesture.down(1, { x: 80, y: 120 });
+    const viewport = { scrollLeft: 200, scrollTop: 300 };
+    const sendInput = vi.fn();
+    const state = { current: armed ? "armed" : "none" };
+    const bindings = {
+      touch: { current: gesture }, viewportRef: { current: viewport },
+      zoomRef: { current: zoom }, longPressTimer: { current: null },
+      longPressRef: state, touchStartRef: { current: { x: 80, y: 120 } },
+      touchGesturePoint: { current: { x: 0.2, y: 0.4 } },
+      pointerCoordinates: () => ({ x: 0.3, y: 0.4 }),
+      hasControl: true, panMode: false, sendInput, touchScrollDelta,
+    };
+    const onMove = new Function(...Object.keys(bindings), "event", handler);
+    const event = { pointerType: "touch", pointerId: 1, clientX: 120, clientY: 120, preventDefault: vi.fn() };
+    onMove(...Object.values(bindings), event);
+    return { sendInput, viewport, state };
+  }
+
+  it.each([1, 3.76, 5])("presses the original slider position before moving at zoom %s", (zoom) => {
+    const result = move(true, zoom);
+    expect(result.sendInput.mock.calls).toEqual([
+      [{ kind: "pointer", action: "down", x: 0.2, y: 0.4, button: "left" }],
+      [{ kind: "pointer", action: "move", x: 0.3, y: 0.4, button: "left" }],
+    ]);
+    expect(result.viewport).toEqual({ scrollLeft: 200, scrollTop: 300 });
+    expect(result.state.current).toBe("drag");
+  });
+
+  it("preserves ordinary single-finger canvas panning when zoomed", () => {
+    const result = move(false, 3.76);
+    expect(result.sendInput).not.toHaveBeenCalled();
+    expect(result.viewport).toEqual({ scrollLeft: 160, scrollTop: 300 });
+  });
+
+  it("preserves ordinary single-finger remote scrolling at fit zoom", () => {
+    expect(move(false, 1).sendInput).toHaveBeenCalledWith({
+      kind: "pointer", action: "wheel", x: 0.2, y: 0.4, deltaX: -40, deltaY: 0,
+    });
   });
 });
 

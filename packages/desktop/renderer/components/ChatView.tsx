@@ -14,7 +14,7 @@ import { ArrowDownToLine, AlarmClock, Check, CircleAlert, Copy, CornerUpRight, F
 import AgentBrandIcon from "./AgentBrandIcon";
 import AppActionNotice from "./AppActionNotice";
 import MessageLink from "./MessageLink";
-import MessageMedia from "./MessageMedia";
+import MessageMedia, { MessageMediaWorkspace } from "./MessageMedia";
 import { messageMediaKind } from "../lib/message-media";
 import { normalizeMessageLinks } from "../lib/markdown-links";
 import MermaidBlock from "./MermaidBlock";
@@ -4088,6 +4088,7 @@ export default function ChatView({
   }, [voiceCommand?.nonce]);
 
   return (
+    <MessageMediaWorkspace.Provider value={sessionSummary?.cwd ?? workspacePath ?? null}>
     <div className="chat-view chat-view--codex-history" style={{
       display: "flex",
       flexDirection: "column",
@@ -6093,6 +6094,7 @@ export default function ChatView({
         document.body
       )}
     </div>
+    </MessageMediaWorkspace.Provider>
   );
 }
 

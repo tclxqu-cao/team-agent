@@ -121,6 +121,24 @@ describe("parseMarkdownLinks", () => {
     ]);
   });
 
+  it("parses workbook citations with artifact metadata as downloadable artifacts", () => {
+    const path = "/Users/caoqu/refund/outputs/risk-detail-20261021/黄牛风控赔付明细_20260701-20261021.xlsx";
+    const raw = `:codex-file-citation{path="${path}" artifact_kind="workbook" purpose="output"}`;
+    const expected = [{ type: "artifact", label: "黄牛风控赔付明细_20260701-20261021.xlsx", path, raw }];
+
+    expect(parseMarkdownLinks(raw)).toEqual(expected);
+    expect(parseRichInlineTokens(raw)).toEqual(expected);
+  });
+
+  it("rejects unsafe paths and duplicate metadata even with artifact kind", () => {
+    for (const raw of [
+      ':codex-file-citation{path="outputs/report.xlsx" artifact_kind="workbook" purpose="output"}',
+      ':codex-file-citation{path="/tmp/report.xlsx" artifact_kind="workbook" artifact_kind="workbook"}',
+    ]) {
+      expect(parseMarkdownLinks(raw)).toEqual([{ type: "text", value: raw }]);
+    }
+  });
+
   it("keeps unsafe or malformed Codex file citations as plain text", () => {
     const relative = ':codex-file-citation{path="outputs/report.pptx" purpose="output"}';
     const unknownAttribute = ':codex-file-citation{path="/tmp/report.pptx" target="output"}';

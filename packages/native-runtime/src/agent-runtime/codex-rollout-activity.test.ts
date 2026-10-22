@@ -229,6 +229,48 @@ describe("CodexRolloutCommentaryReader", () => {
 });
 
 describe("CodexRolloutUserMessageReader", () => {
+  const goalEvent = (type: string, fields: Record<string, unknown> = {}) => JSON.stringify({
+    type: "event_msg", payload: { type, ...fields },
+  });
+
+  it("restores a native goal once, including across incremental reads and progress updates", async () => {
+    const goal = { objective: "verify Windows plan", status: "active", createdAt: 10 };
+    const path = await temporaryRollout(`${goalEvent("thread_goal_updated", { goal })}\n`);
+    const reader = new CodexRolloutUserMessageReader(31);
+    expect((await reader.read(path)).size).toBe(0);
+    await appendFile(path, `${goalEvent("task_started", {
+      turn_id: "goal-turn", turn_attribution: { turn_trigger: "goal" },
+    })}\n`);
+    expect((await reader.read(path)).get("goal-turn")).toEqual([{
+      turnId: "goal-turn", itemId: "codex-goal:goal-turn",
+      content: [{ type: "text", text: goal.objective }],
+    }]);
+    await appendFile(path, [
+      goalEvent("thread_goal_updated", { goal: { ...goal, tokensUsed: 100 } }),
+      goalEvent("task_started", { turn_id: "continuation", turn_attribution: { turn_trigger: "goal" } }),
+      goalEvent("thread_goal_updated", { goal: { ...goal, objective: "revised plan" } }),
+      goalEvent("task_started", { turn_id: "revised", turn_attribution: { turn_trigger: "goal" } }),
+      "",
+    ].join("\n"));
+    const messages = await reader.read(path);
+    expect(messages.has("continuation")).toBe(false);
+    expect(messages.get("revised")?.[0].content[0].text).toBe("revised plan");
+  });
+
+  it("does not expose cleared or completed goals or internal continuation prompts", async () => {
+    const path = await temporaryRollout([
+      goalEvent("thread_goal_updated", { goal: { objective: "cancelled", status: "active" } }),
+      goalEvent("thread_goal_cleared"),
+      goalEvent("task_started", { turn_id: "cleared", turn_attribution: { turn_trigger: "goal" } }),
+      goalEvent("thread_goal_updated", { goal: { objective: "done", status: "complete" } }),
+      JSON.stringify({ type: "response_item", payload: { role: "user", content: [
+        { type: "input_text", text: '<codex_internal_context source="goal">secret instructions</codex_internal_context>' },
+      ] } }),
+      "",
+    ].join("\n"));
+    expect((await new CodexRolloutUserMessageReader().read(path)).size).toBe(0);
+  });
+
   const userMessage = (turnId: string, itemId: string, text: string) => JSON.stringify({
     type: "event_msg",
     payload: {

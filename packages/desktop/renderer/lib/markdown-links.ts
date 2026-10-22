@@ -7,7 +7,7 @@ export type MarkdownLinkToken =
 
 export type RichInlineToken = MarkdownLinkToken | { type: "code"; value: string };
 
-const MARKDOWN_LINK_PATTERN = /!?\[([^\]\n]+)\]\((https?:\/\/[^\s)]+|[ \t]*(?:~\/|\/)[^)\n]+)\)/gi;
+const MARKDOWN_LINK_PATTERN = /!?\[([^\]\n]+)\]\((https?:\/\/[^\s)]+|[ \t]*(?:~\/|\/|[A-Za-z]:[\\/])[^)\n]+|[^():\n]+\.(?:png|jpe?g|gif|webp|bmp|ico|svg|mp4|webm|mov|m4v))\)/gi;
 const INLINE_CODE_PATTERN = /`([^`\n]+)`/g;
 export function normalizeMessageLinks(text: string): string {
   let fenced = false;
@@ -27,8 +27,9 @@ type InlineLinkMatch = {
   match: RegExpMatchArray;
 };
 
-function parseArtifactTarget(target: string): { path: string; line?: number } | null {
-  if (!(target.startsWith("/") || target.startsWith("~/") || /^[A-Za-z]:[\\/]/.test(target)) || target.includes("?") || target.includes("#") || /[\0\r\n]/.test(target)) {
+function parseArtifactTarget(target: string, allowRelative = false): { path: string; line?: number } | null {
+  const relativeFile = allowRelative && !/^[A-Za-z][\w+.-]*:/.test(target) && /\.(png|jpe?g|gif|webp|bmp|ico|svg|mp4|webm|mov|m4v)$/i.test(target);
+  if (!(target.startsWith("/") || target.startsWith("~/") || /^[A-Za-z]:[\\/]/.test(target) || relativeFile) || target.includes("?") || target.includes("#") || /[\0\r\n]/.test(target)) {
     return null;
   }
   const lineMatch = target.match(/^(.*):([1-9]\d*)$/);
@@ -40,7 +41,7 @@ function parseCodexFileCitation(attributesSource: string): { path: string; label
   const attributes: Record<string, string> = {};
   for (const match of attributesSource.matchAll(CODEX_FILE_CITATION_ATTRIBUTE_PATTERN)) {
     const name = match[1];
-    if ((name !== "path" && name !== "purpose") || attributes[name] !== undefined) return null;
+    if ((name !== "path" && name !== "purpose" && name !== "artifact_kind") || attributes[name] !== undefined) return null;
     attributes[name] = match[2];
   }
   if (attributesSource.replace(CODEX_FILE_CITATION_ATTRIBUTE_PATTERN, "").trim()) return null;
@@ -142,7 +143,7 @@ function parseInlineTokens(text: string, includeCode: boolean): RichInlineToken[
     } else if (/^https?:\/\//i.test(target)) {
       tokens.push({ type: "link", label: match[1], href: target });
     } else {
-      const artifact = parseArtifactTarget(target.replace(/^[ \t]+/, ""));
+      const artifact = parseArtifactTarget(target.trim(), true);
       if (artifact) {
         tokens.push({
           type: "artifact",

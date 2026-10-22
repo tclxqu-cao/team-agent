@@ -1,8 +1,20 @@
 import { describe, expect, it } from "vitest";
-import { messageMediaKind } from "./message-media";
+import { messageMediaKind, resolveMessageMediaPath } from "./message-media";
 import { normalizeMessageLinks, parseRichInlineTokens } from "./markdown-links";
 
 describe("message media", () => {
+  it("resolves screenshot markdown and ordinary image links against the session workspace", () => {
+    const path = "outputs/hotel-coupon-stage-acceptance-20261021/normal-101307484132.png";
+    for (const text of [`![截图](${path})`, `[查看截图](${path})`]) {
+      expect(parseRichInlineTokens(text)).toEqual([{ type: "artifact", label: text.startsWith("!") ? "截图" : "查看截图", path, raw: text }]);
+    }
+    expect(messageMediaKind(path)).toBe("image");
+    expect(resolveMessageMediaPath(path, "/Users/example/refund")).toBe(`/Users/example/refund/${path}`);
+    expect(resolveMessageMediaPath("./clip.mp4", "C:\\repo")).toBe("C:\\repo\\./clip.mp4");
+    expect(resolveMessageMediaPath(path, null)).toBeNull();
+    expect(resolveMessageMediaPath("javascript:alert.png", "/repo")).toBeNull();
+    expect(parseRichInlineTokens("`source.ts`")).toEqual([{ type: "code", value: "source.ts" }]);
+  });
   it("normalizes Harness multiline angle-bracket image and video paths", () => {
     const message = "![科技风封面](<\n/Users/example/cover tech.jpg\n>)\n\n[成片](<\n/Users/example/final.mp4\n>)";
     const normalized = normalizeMessageLinks(message);

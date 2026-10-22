@@ -1,8 +1,9 @@
 import { createHash } from "node:crypto";
 import { open, readdir, realpath, stat } from "node:fs/promises";
-import { watch, type FSWatcher } from "node:fs";
+import { createReadStream, watch, type FSWatcher } from "node:fs";
+import { createInterface } from "node:readline";
 import { availableParallelism } from "node:os";
-import { isAbsolute, join, relative, resolve, sep } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { encodeUnifiedSessionId } from "./session-id.js";
 import type { SessionCompatibility, UnifiedSessionSummary } from "./types.js";
 
@@ -98,6 +99,8 @@ export class CodexSessionDiskCatalog {
   private readonly clearRepeatingTimer: typeof clearInterval;
   private readonly concurrency: number;
   private onCheckingEntry?: (entry: CodexDiskSessionCatalogEntry) => void;
+  private titles = new Map<string, string>();
+  private titleIndexVersion: string | null = null;
 
   constructor(private readonly options: CodexSessionDiskCatalogOptions) {
     this.fileSystem = options.fileSystem ?? nodeCatalogFileSystem;
@@ -119,7 +122,10 @@ export class CodexSessionDiskCatalog {
   }
 
   summaries(): UnifiedSessionSummary[] {
-    return this.entries.map((entry) => catalogEntryToSummary(entry));
+    return this.entries.map((entry) => ({
+      ...catalogEntryToSummary(entry),
+      ...(this.titles.has(entry.nativeSessionId) ? { title: this.titles.get(entry.nativeSessionId)! } : {}),
+    }));
   }
 
   findByNativeSessionId(nativeSessionId: string): CodexDiskSessionCatalogEntry | undefined {
@@ -153,6 +159,7 @@ export class CodexSessionDiskCatalog {
 
   async reconcile(manual = false): Promise<CodexCatalogScanMetrics> {
     const startedAt = this.now();
+    if (!this.disposed) await this.refreshTitles();
     if (this.disposed || (!manual && this.breakerUntil > startedAt)) {
       return emptyMetrics(this.breakerUntil > startedAt);
     }
@@ -238,6 +245,32 @@ export class CodexSessionDiskCatalog {
       cacheHits,
       breakerOpen: this.breakerUntil > this.now(),
     };
+  }
+
+  private async refreshTitles(): Promise<void> {
+    const indexPath = join(dirname(this.options.sessionRoot), "session_index.jsonl");
+    try {
+      const info = await stat(indexPath, { bigint: true });
+      const version = `${info.ino}:${info.size}:${info.mtimeNs}`;
+      if (version === this.titleIndexVersion) return;
+      const titles = new Map<string, { title: string; updated: string }>();
+      const lines = createInterface({ input: createReadStream(indexPath), crlfDelay: Infinity });
+      try {
+        for await (const line of lines) {
+          try {
+            const value = JSON.parse(line);
+            if (typeof value.id !== "string" || typeof value.thread_name !== "string" || !value.thread_name.trim()) continue;
+            const updated = typeof value.updated_at === "string" ? value.updated_at : "";
+            if ((titles.get(value.id)?.updated ?? "") > updated) continue;
+            titles.set(value.id, { title: value.thread_name.trim(), updated });
+          } catch {}
+        }
+      } finally { lines.close(); }
+      this.titles = new Map([...titles].map(([id, value]) => [id, value.title]));
+      this.titleIndexVersion = version;
+    } catch {
+      // Keep the last readable titles during an index rewrite or temporary I/O error.
+    }
   }
 
   updateCompatibility(nativeSessionId: string, compatibility: SessionCompatibility): void {

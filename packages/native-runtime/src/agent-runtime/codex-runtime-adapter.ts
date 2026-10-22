@@ -668,7 +668,13 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
           items: state?.turns.get(turn.id) ?? turn.items ?? [],
         }))
       : [];
-    const messages = await codexTurnsToMessages(windowTurns, query.view === "trace" ? {
+    // Full hydration has no user item for native goal-triggered turns.
+    const turnsWithGoals = windowTurns.map((turn) => {
+      const goals = ascTurns.find((summary) => summary.id === turn.id)?.items
+        ?.filter((item) => item.type === "userMessage" && item.id?.startsWith("codex-goal:")) ?? [];
+      return goals.length ? { ...turn, items: [...goals, ...(turn.items ?? [])] } : turn;
+    });
+    const messages = await codexTurnsToMessages(turnsWithGoals, query.view === "trace" ? {
       toolResultMode: "lazy",
       revision,
       reasoningMaxBytes: 4 * 1024,

@@ -2780,6 +2780,7 @@ input:focus, select:focus, textarea:focus {
 }
 
 .message-image-lightbox {
+  overflow: hidden;
   position: fixed;
   inset: 0;
   z-index: 120000;
@@ -2788,9 +2789,33 @@ input:focus, select:focus, textarea:focus {
   padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
   background: rgba(7, 9, 14, 0.92);
   overscroll-behavior: contain;
-  touch-action: manipulation;
+  touch-action: none;
   -webkit-app-region: no-drag;
 }
+
+.message-image-lightbox__toolbar {
+  position: absolute;
+  bottom: max(20px, env(safe-area-inset-bottom));
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px;
+  border-radius: 12px;
+  background: rgba(18, 21, 28, 0.9);
+  color: white;
+}
+
+.message-image-lightbox__toolbar button {
+  min-width: 44px;
+  min-height: 44px;
+  border: 0;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.12);
+  color: inherit;
+  cursor: pointer;
+}
+
+.message-image-lightbox__toolbar button:disabled { opacity: 0.4; }
 
 .message-image-lightbox__image {
   display: block;

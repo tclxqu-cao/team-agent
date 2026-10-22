@@ -1432,10 +1432,9 @@ export default function BrowserLivePanel({ open, active = true, agentSessionId, 
                       longPressTimer.current = null;
                     }
                     // Armed long-press + movement = remote drag.
-                    if (longPressRef.current === "armed" && touchStartRef.current) {
+                    if (longPressRef.current === "armed" && touchStartRef.current && touchGesturePoint.current) {
                       longPressRef.current = "drag";
-                      const dragPoint = pointerCoordinates(event);
-                      if (dragPoint) sendInput({ kind: "pointer", action: "down", ...dragPoint, button: "left" });
+                      sendInput({ kind: "pointer", action: "down", ...touchGesturePoint.current, button: "left" });
                     }
                     if (longPressRef.current === "drag") {
                       const dragPoint = pointerCoordinates(event);

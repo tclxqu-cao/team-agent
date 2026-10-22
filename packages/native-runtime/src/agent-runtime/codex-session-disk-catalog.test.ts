@@ -1,6 +1,6 @@
 import { mkdtemp, mkdir, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   CODEX_METADATA_LIMIT_BYTES,
@@ -66,6 +66,35 @@ function metadata(id: string, version = "0.140.0"): string {
 }
 
 describe("CodexSessionDiskCatalog", () => {
+  it("uses desktop titles and refreshes renames without rereading rollout contents", async () => {
+    const home = await mkdtemp(join(tmpdir(), "codex-title-index-"));
+    cleanup.push(home);
+    const root = join(home, "sessions");
+    await mkdir(join(root, "2026", "09", "04"), { recursive: true });
+    const id = "019f0000-0000-7000-8000-000000000001";
+    await writeFile(rolloutPath(root, id), metadata(id) + "\n");
+    const index = join(dirname(root), "session_index.jsonl");
+    await writeFile(index, ["broken", JSON.stringify({ id, thread_name: "Desktop title", updated_at: "2026-10-21T01:00:00Z" }), JSON.stringify({ id, thread_name: "Old title", updated_at: "2026-10-20T01:00:00Z" })].join("\n"));
+    const catalog = new CodexSessionDiskCatalog({ sessionRoot: root, readerVersion: "0.153.0", repository: new MemoryCatalogRepository() });
+    await catalog.reconcile();
+    expect(catalog.summaries()[0].title).toBe("Desktop title");
+    await writeFile(index, JSON.stringify({ id, thread_name: "Renamed desktop title", updated_at: "2026-10-21T02:00:00Z" }) + "\n");
+    expect((await catalog.reconcile()).metadataBytesRead).toBe(0);
+    expect(catalog.summaries()[0].title).toBe("Renamed desktop title");
+  });
+
+  it("keeps the date fallback when no desktop title is available", async () => {
+    const home = await mkdtemp(join(tmpdir(), "codex-title-fallback-"));
+    cleanup.push(home);
+    const root = join(home, "sessions");
+    await mkdir(join(root, "2026", "09", "04"), { recursive: true });
+    const id = "019f0000-0000-7000-8000-000000000001";
+    await writeFile(rolloutPath(root, id), metadata(id) + "\n");
+    const catalog = new CodexSessionDiskCatalog({ sessionRoot: root, readerVersion: "0.153.0", repository: new MemoryCatalogRepository() });
+    await catalog.reconcile();
+    expect(catalog.summaries()[0].title).toBe("Codex 会话 2026-09-04");
+  });
+
   it("reads only changed headers and performs zero rollout-content reads on a warm scan", async () => {
     const root = await tempSessionRoot();
     const firstId = "019f0000-0000-7000-8000-000000000001";

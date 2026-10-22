@@ -1,7 +1,10 @@
-import { useEffect, useRef, useState } from "react";
+import { createContext, useContext, useEffect, useRef, useState } from "react";
+import { resolveMessageMediaPath } from "../lib/message-media";
 import type { FileWorkspacePreviewTicket } from "../../../core/src/domain/file-workspace/entities";
 import { isWebMediaUrl } from "../../../core/src/domain/web-console/WebArtifactBridge";
 import MessageImageLightbox from "./MessageImageLightbox";
+
+export const MessageMediaWorkspace = createContext<string | null>(null);
 
 interface MessageMediaProps {
   path: string;
@@ -11,6 +14,8 @@ interface MessageMediaProps {
 }
 
 export default function MessageMedia({ path, label, kind, onOpenArtifact }: MessageMediaProps) {
+  const workspacePath = useContext(MessageMediaWorkspace);
+  const resolvedPath = resolveMessageMediaPath(path, workspacePath);
   const remote = isWebMediaUrl(path);
   const [source, setSource] = useState<{ path: string; url: string } | null>(null);
   const [failedPath, setFailedPath] = useState<string | null>(null);
@@ -31,8 +36,8 @@ export default function MessageMedia({ path, label, kind, onOpenArtifact }: Mess
     const load = () => {
       if (started || disposed) return;
       started = true;
-      if (!api?.fileWorkspaceRequest) { setFailedPath(path); return; }
-      void api.fileWorkspaceRequest<FileWorkspacePreviewTicket>("fs:preview-open", { path }).then((ticket) => {
+      if (!api?.fileWorkspaceRequest || !resolvedPath) { setFailedPath(path); return; }
+      void api.fileWorkspaceRequest<FileWorkspacePreviewTicket>("fs:preview-open", { path: resolvedPath }).then((ticket) => {
         if (disposed) { close(ticket.ticketId); return; }
         ticketId = ticket.ticketId;
         setSource({ path, url: ticket.url });
@@ -44,10 +49,10 @@ export default function MessageMedia({ path, label, kind, onOpenArtifact }: Mess
     if (observer && container.current) observer.observe(container.current);
     else load();
     return () => { disposed = true; observer?.disconnect(); if (ticketId) close(ticketId); };
-  }, [path, remote]);
+  }, [path, remote, resolvedPath]);
 
   return <span ref={container} className="chat-message-media" data-tab-swipe-ignore>
-    {failedPath === path ? <span role="status">媒体加载失败 {onOpenArtifact && <button type="button" className="chat-message-artifact-link" onClick={() => onOpenArtifact(path)}>打开预览</button>}</span>
+    {failedPath === path ? <span role="status">媒体加载失败 {onOpenArtifact && resolvedPath && <button type="button" className="chat-message-artifact-link" onClick={() => onOpenArtifact(resolvedPath)}>打开预览</button>}</span>
       : !src ? <span role="status">正在加载{name}…</span>
         : kind === "video" ? <video src={src} controls playsInline preload="metadata" aria-label={name} onError={() => setFailedPath(path)} />
           : <button type="button" className="chat-message-media__image" aria-label={`放大图片 ${name}`} onClick={() => setExpanded(true)}>
