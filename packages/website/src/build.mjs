@@ -1,4 +1,5 @@
-import { mkdir, rm, cp, writeFile } from "node:fs/promises";
+import { mkdir, rm, cp, writeFile, readFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
 import { pages } from "./pages.mjs";
@@ -6,10 +7,16 @@ import { site, mark, githubIcon } from "./site.mjs";
 import { releaseSnapshot } from "../public/release-snapshot.js";
 const root = fileURLToPath(new URL("../", import.meta.url));
 const dist = resolve(root, "dist");
-const scriptVersion = encodeURIComponent(releaseSnapshot.map((release) => release.tag_name).join(",") || "unreleased");
+const assetHash = createHash("sha256");
+for (const file of ["app.js", "style.css", "motion.js", "motion.css", "globe.js", "assets/globe-land.json"]) {
+  assetHash.update(await readFile(resolve(root, "public", file)));
+}
+const scriptVersion = encodeURIComponent(`${releaseSnapshot.map((release) => release.tag_name).join(",") || "unreleased"}-${assetHash.digest("hex").slice(0, 12)}`);
 await rm(dist, { recursive: true, force: true });
 await mkdir(dist, { recursive: true });
 await cp(resolve(root, "public"), dist, { recursive: true });
+const stylesheet = await readFile(resolve(dist, "style.css"), "utf8");
+await writeFile(resolve(dist, "style.css"), stylesheet.replace('"./motion.css"', `"./motion.css?v=${scriptVersion}"`));
 for (const page of pages) {
   const nav = pages
     .map(

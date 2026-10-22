@@ -1,3 +1,10 @@
+const assetVersion = new URL(import.meta.url).search;
+const { initGlobe } = await import(`./globe.js${assetVersion}`);
+
+initGlobe();
+const { enhanceMotion, openPreview, closePreview } = await import(`./motion.js${assetVersion}`);
+
+enhanceMotion();
 const { selectAssets } = await import(
   `./releases.js${new URL(import.meta.url).search}`
 );
@@ -43,13 +50,17 @@ document.querySelectorAll("[data-lightbox]").forEach((button) =>
     const image = dialog.querySelector("img");
     image.src = `assets/${button.dataset.lightbox}`;
     image.alt = button.querySelector("img").alt;
-    dialog.showModal();
+    openPreview(dialog);
     document.body.style.overflow = "hidden";
   }),
 );
 function closeLightbox() {
-  dialog.close();
+  closePreview(dialog);
 }
+dialog.addEventListener("cancel", (event) => {
+  event.preventDefault();
+  closeLightbox();
+});
 dialog.querySelector("button").addEventListener("click", closeLightbox);
 dialog.addEventListener("click", (event) => {
   if (event.target === dialog) closeLightbox();

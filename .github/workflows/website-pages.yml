@@ -22,7 +22,7 @@ jobs:
         with:
           node-version: '22.22.0'
       - run: node packages/website/src/build.mjs
-      - run: node --test packages/website/src/website.test.mjs
+      - run: node --test packages/website/src/*.test.mjs
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

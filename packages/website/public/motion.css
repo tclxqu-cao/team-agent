@@ -1,0 +1,115 @@
+/* Progressive enhancements: the page remains usable without JavaScript. */
+.header nav {
+  position: relative;
+  isolation: isolate;
+}
+.header nav .nav-marker {
+  position: absolute;
+  inset: 3px auto 3px 0;
+  z-index: -1;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #68e6c51c, #68e6c509);
+  box-shadow: 0 0 0 1px #68e6c524;
+  transition: transform .42s cubic-bezier(.22, 1, .36, 1), width .42s cubic-bezier(.22, 1, .36, 1);
+}
+body .header nav a { padding-inline: 12px; }
+body .header nav:has(.nav-marker) a[aria-current]:after { display: none; }
+body .hero {
+  background: radial-gradient(ellipse at 12% 0%, #7295b00b, transparent 50%);
+}
+.hero-copy > *, .page-hero > * {
+  animation: arrive .9s cubic-bezier(.22, 1, .36, 1) both;
+}
+.hero-copy > :nth-child(2), .page-hero > :nth-child(2) { animation-delay: .08s; }
+.hero-copy > :nth-child(3), .page-hero > :nth-child(3) { animation-delay: .17s; }
+.hero-copy > :nth-child(4) { animation-delay: .26s; }
+.hero-copy > :nth-child(5) { animation-delay: .35s; }
+body .planet {
+  box-shadow: inset 7px 6px 10px #9bffe044, -24px -16px 100px #68e6c512, 0 0 180px #2d826322;
+}
+.orbit { animation: orbit-arrive 1.8s cubic-bezier(.22, 1, .36, 1) both; }
+.orbit-two { animation-delay: .12s; }
+.orbit-three { animation-delay: .24s; }
+.device-stage::before {
+  content: "";
+  position: absolute;
+  inset: 8% -4% 0;
+  pointer-events: none;
+  background: radial-gradient(ellipse, #68e6c519, transparent 65%);
+}
+body .desktop-frame {
+  transform: translateY(var(--depth, 0px)) rotateY(-2deg) rotateX(3deg);
+  border-color: #6b928a;
+  box-shadow: 0 40px 100px #0009, 0 0 0 8px #8ac5b504;
+}
+body .phone-frame {
+  translate: 0 calc(var(--depth, 0px) * -.65);
+}
+body .feature-wide, body .feature-card, body .download-card {
+  transition: border-color .3s, box-shadow .3s, background-color .3s,
+    opacity .8s, transform .8s cubic-bezier(.22, 1, .36, 1);
+}
+body .feature-card, body .download-card {
+  background-image: radial-gradient(ellipse at 0 0, #68e6c508, transparent 60%);
+}
+body .feature-pair > :nth-child(2), body .download-grid > :nth-child(2) {
+  transition-delay: .08s;
+}
+body .faq-section summary > span { transition: transform .3s cubic-bezier(.22, 1, .36, 1); }
+body .faq-section details[data-expanded="false"] summary > span { transform: none; }
+body .faq-section details[data-expanded="true"] summary > span { transform: rotate(45deg); }
+.lightbox[open]::backdrop { animation: veil-in .3s ease-out both; }
+.lightbox[data-closing]::backdrop { animation: veil-out .18s ease-in both; }
+body .toast { transition-timing-function: cubic-bezier(.22, 1, .36, 1); transition-duration: .35s; }
+@media (hover: hover) and (pointer: fine) {
+  body .feature-wide:hover, body .feature-card:hover, body .download-card:hover {
+    border-color: #68e6c56b;
+    box-shadow: 0 22px 60px #0004;
+  }
+  .button > span { transition: translate .25s; }
+  .button:hover > span { translate: 3px -3px; }
+}
+@media (max-width: 680px) {
+  body .header nav { gap: 12px; }
+  body .header nav a { padding-inline: 6px; }
+}
+@keyframes arrive {
+  from { opacity: 0; transform: translateY(24px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes orbit-arrive {
+  from { opacity: 0; translate: 70px 30px; }
+  to { opacity: 1; translate: 0 0; }
+}
+@keyframes veil-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes veil-out { from { opacity: 1; } to { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  body .desktop-frame { transform: none; }
+  body .phone-frame { translate: none; }
+  .hero-copy > *, .page-hero > *, .orbit, .lightbox[open]::backdrop {
+    animation: none;
+  }
+}
+
+/* A geographic globe replaces the decorative CSS planet only after it is ready. */
+.globe-canvas { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.globe-ready .planet, .globe-ready .orbit { display: none; }
+.globe-ready .hero-copy { margin-left: 0; max-width: 56%; }
+body .globe-ready h1 { font-size: clamp(56px, 5.7vw, 92px); }
+.globe-intro .hero-copy > * { animation-delay: 1.9s; }
+.globe-intro .hero-copy > :nth-child(2) { animation-delay: 2s; }
+.globe-intro .hero-copy > :nth-child(3) { animation-delay: 2.1s; }
+.globe-intro .hero-copy > :nth-child(4) { animation-delay: 2.2s; }
+.globe-intro .hero-copy > :nth-child(5) { animation-delay: 2.3s; }
+/* Keyboard focus must never be hidden while the opening sequence plays. */
+.globe-intro .hero-copy:focus-within > * { animation: none; }
+@media (max-width: 759px) {
+  body .globe-ready { min-height: 1050px; height: max(1050px, 100svh); max-height: none; padding-top: 140px; }
+  .globe-ready .hero-copy { max-width: 100%; }
+  body .globe-ready h1 { font-size: clamp(39px, 10vw, 64px); }
+  .globe-ready .hero-sub { margin-top: 20px; }
+  .globe-ready .hero-actions { margin-top: 24px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .globe-intro .hero-copy > * { animation: none; }
+}
