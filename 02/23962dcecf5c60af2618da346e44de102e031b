@@ -1,0 +1,19 @@
+packages/website/public/release-snapshot.js
+  s_bb53bd81235f23::t_d5cee72af8389d 9-10,14-15,25-26,30-31
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0223962dcecf5c60af2618da346e44de102e031b",
+  "prompts": {},
+  "sessions": {
+    "s_bb53bd81235f23": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1640c-9058-7651-a534-c1b8d37da0d9",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
