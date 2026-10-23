@@ -1,6 +1,34 @@
 // Published release fallback for GitHub API outages or rate limits. Refresh on release.
 export const releaseSnapshot = [
   {
+    "tag_name": "desktop-v0.2.0-preview.33",
+    "published_at": "2026-10-23T05:29:07Z",
+    "assets": [
+      {
+        "name": "AgentRoam-Setup-0.2.0-preview.33-x64.exe",
+        "browser_download_url": "https://github.com/tclxqu-cao/team-agent/releases/download/desktop-v0.2.0-preview.33/AgentRoam-Setup-0.2.0-preview.33-x64.exe"
+      },
+      {
+        "name": "AgentRoam-0.2.0-preview.33-arm64.dmg",
+        "browser_download_url": "https://github.com/tclxqu-cao/team-agent/releases/download/desktop-v0.2.0-preview.33/AgentRoam-0.2.0-preview.33-arm64.dmg"
+      }
+    ]
+  },
+  {
+    "tag_name": "desktop-lite-v0.2.0-preview.33",
+    "published_at": "2026-10-23T05:29:10Z",
+    "assets": [
+      {
+        "name": "AgentRoam-Lite-Setup-0.2.0-preview.33-x64.exe",
+        "browser_download_url": "https://github.com/tclxqu-cao/team-agent/releases/download/desktop-lite-v0.2.0-preview.33/AgentRoam-Lite-Setup-0.2.0-preview.33-x64.exe"
+      },
+      {
+        "name": "AgentRoam-Lite-0.2.0-preview.33-arm64.dmg",
+        "browser_download_url": "https://github.com/tclxqu-cao/team-agent/releases/download/desktop-lite-v0.2.0-preview.33/AgentRoam-Lite-0.2.0-preview.33-arm64.dmg"
+      }
+    ]
+  },
+  {
     "tag_name": "desktop-lite-v0.2.0-preview.32",
     "published_at": "2026-10-22T11:59:43.149479Z",
     "assets": [
