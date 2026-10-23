@@ -1,0 +1,114 @@
+:root[data-skin="glass"] {
+  color-scheme: light;
+  --bg-deepest: #edf3f4;
+  --bg-deep: #e0ebee;
+  --bg-sidebar: rgba(246, 250, 251, 0.72);
+  --bg-surface: #f8fafb;
+  --bg-elevated: #ffffff;
+  --bg-glass: rgba(255, 255, 255, 0.68);
+  --bg-workspace: transparent;
+  --accent: #357b88;
+  --accent-glow: rgba(53, 123, 136, 0.16);
+  --accent-dim: #e1eef0;
+  --control-hover: #dcebed;
+  --text-primary: #263e48;
+  --text-secondary: #526c76;
+  --text-muted: #607983;
+  --text-inverse: #ffffff;
+  --border-subtle: #d7e3e7;
+  --border-default: #cadce1;
+  --border-glow: rgba(53, 123, 136, 0.3);
+  --success: #247860;
+  --danger: #be3d50;
+  --status-error: #be3d50;
+  --warning: #956018;
+  --info: #346faa;
+  --chat-history-bg: transparent;
+  --chat-history-text: #263e48;
+  --chat-user-bg: rgba(255, 255, 255, 0.86);
+  --chat-user-border: #ffffff;
+  --glass-surface: rgba(248, 251, 252, 0.66);
+  --glass-blur: blur(22px) saturate(1.2);
+}
+
+:root[data-skin="glass"] .app-shell {
+  background: radial-gradient(ellipse at 0 0, #c3dbee, transparent 65%),
+    radial-gradient(ellipse at 90% 100%, #edd3b9, transparent 65%), #edf3f4 !important;
+}
+
+:root[data-skin="glass"] :is(.app-main, .app-chat-surface, .chat-view, .chat-messages-frame, .chat-messages, .chat-input-area) {
+  background: transparent !important;
+}
+
+:root[data-skin="glass"] :is(.app-sidebar, .sidebar-agent-rail, .chat-top-bar, .composer-shell, .desktop-file-drawer, .desktop-file-drawer-header) {
+  background: var(--glass-surface) !important;
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border-color: rgba(255, 255, 255, 0.84) !important;
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.65), 0 5px 22px rgba(57, 92, 107, 0.04);
+}
+
+:root[data-skin="glass"] :is(.sidebar-row-active, [role="tab"][aria-selected="true"]) {
+  background: rgba(255, 255, 255, 0.86) !important;
+  color: var(--accent);
+}
+
+:root[data-skin="glass"] :is(.sidebar-search-field, .sidebar-bottom-action) {
+  background: var(--bg-glass) !important;
+}
+
+:root[data-skin="glass"] .app-sidebar .agent-workspace-switcher:not(.is-vertical) {
+  background: var(--glass-surface);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border-color: rgba(255, 255, 255, 0.84);
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.65), 0 5px 22px rgba(57, 92, 107, 0.06);
+}
+
+:root[data-skin="glass"] .app-sidebar .agent-workspace-switcher:not(.is-vertical) button {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
+
+:root[data-skin="glass"] .app-sidebar .agent-workspace-switcher:not(.is-vertical) button:hover:not(.is-unavailable) {
+  background: var(--bg-glass);
+  border-color: rgba(255, 255, 255, 0.84);
+}
+
+:root[data-skin="glass"] .app-sidebar .agent-workspace-switcher:not(.is-vertical) button.is-active {
+  background: var(--bg-glass) !important;
+  border-color: rgba(255, 255, 255, 0.95);
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.8), 0 2px 8px rgba(57, 92, 107, 0.1);
+}
+
+:root[data-skin="glass"] .chat-view--codex-history :is(.chat-message-bubble--assistant, .message-card) {
+  background: transparent !important;
+  color: var(--chat-history-text);
+  box-shadow: none !important;
+}
+
+@supports not (backdrop-filter: blur(1px)) {
+  :root[data-skin="glass"] { --glass-surface: #eef4f5; }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  :root[data-skin="glass"] {
+    --glass-surface: #eef4f5;
+    --glass-blur: none;
+    --bg-glass: #f8fafb;
+  }
+}
+
+@media (max-width: 899px) {
+  :root[data-skin="glass"] body[data-web-shell="1"] .chat-top-bar {
+    border-bottom-color: transparent !important;
+    background: transparent !important;
+    box-shadow: none;
+    min-height: 54px;
+  }
+  :root[data-skin="glass"] .chat-header-actions:has(.glass-mobile-actions) > .chat-header-action { display: none !important; }
+  :root[data-skin="glass"] .glass-mobile-actions { display: flex; align-items: center; gap: 4px; }
+  :root[data-skin="glass"] .glass-mobile-actions :is(.ui-icon-button, .file-drawer-toggle) { appearance: none; box-sizing: border-box; padding: 0; width: 36px; height: 36px; color: #66838d; border: 0; border-radius: 12px; background: transparent; display: inline-flex; justify-content: center; align-items: center; }
+  :root[data-skin="glass"] .glass-mobile-actions :is(.ui-icon-button, .file-drawer-toggle) svg { width: 18px; height: 18px; }
+}

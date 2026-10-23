@@ -86,7 +86,7 @@ describe("installWebShellSkinBridge", () => {
     const f = makeFakeWindow({ isTopLevel: false });
     (globalThis as { window: unknown }).window = f.window;
     const dispose = installWebShellSkinBridge();
-    const skins = ["pearl", "scifi", "noir", "mist", "pine", "graphite"] as const;
+    const skins = ["pearl", "scifi", "noir", "mist", "pine", "graphite", "glass"] as const;
     for (const skin of skins) {
       f.fireMessage({ type: WEB_SHELL_SKIN_MESSAGE_TYPE, skin });
     }

@@ -4,6 +4,32 @@
   color: var(--ui-text, #111827);
 }
 
+.web-theme-root[data-web-theme="glass"] {
+  background: radial-gradient(ellipse at 0 0, #c3dbee, transparent 65%),
+    radial-gradient(ellipse at 90% 100%, #edd3b9, transparent 65%), #edf3f4;
+}
+
+[data-web-theme="glass"] :is(.terminal-tabs, .tree-col, .tree-head) {
+  background: rgba(248, 251, 252, 0.72) !important;
+  backdrop-filter: blur(22px) saturate(1.2);
+  -webkit-backdrop-filter: blur(22px) saturate(1.2);
+  border-color: rgba(255, 255, 255, 0.84) !important;
+}
+
+@supports not (backdrop-filter: blur(1px)) {
+  [data-web-theme="glass"] :is(.terminal-tabs, .tree-col, .tree-head) {
+    background: #eef4f5 !important;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  [data-web-theme="glass"] :is(.terminal-tabs, .tree-col, .tree-head) {
+    background: #eef4f5 !important;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}
+
 .neural-boot {
   position: fixed;
   inset: 0;
@@ -330,4 +356,64 @@
   .neural-boot *,
   .neural-boot *::before,
   .neural-boot *::after { animation: none !important; }
+}
+
+@media (max-width: 899px) {
+  [data-web-theme="glass"] .terminal-tabs {
+    margin: 8px 10px 0;
+    padding: 4px;
+    border: 1px solid rgba(255, 255, 255, 0.84);
+    border-radius: 24px;
+    min-height: 46px;
+    align-items: center;
+    gap: 4px;
+  }
+  [data-web-theme="glass"] .terminal-tab-list { min-width: 0; flex: 1; gap: 2px; height: auto; align-items: center; }
+  [data-web-theme="glass"] .terminal-tab {
+    border: 0;
+    border-radius: 20px;
+    height: 36px;
+    padding: 0 12px;
+    background: transparent;
+    box-shadow: none;
+    font-size: 12px;
+  }
+  [data-web-theme="glass"] .terminal-tab.active { background: rgba(255, 255, 255, 0.88); color: #357b88; box-shadow: none; }
+  [data-web-theme="glass"] .terminal-tab::before { display: none; }
+  [data-web-theme="glass"] .terminal-add { border: 0; background: transparent; width: 36px; height: 36px; margin: 0; padding: 0; border-radius: 18px; }
+  [data-web-theme="glass"] .terminal-connection { background: transparent; border: 0; padding: 0; align-self: center; }
+  [data-web-theme="glass"] .glass-mobile-toolbar :is(.toolbar-slot, .glass-mobile-actions) .file-drawer-toggle { appearance: none; box-sizing: border-box; width: 36px; height: 36px; padding: 0; border: 0; border-radius: 18px; background: transparent; color: #66838d; }
+  [data-web-theme="glass"] .glass-tools-backdrop { position: fixed; inset: 0; z-index: 180; background: rgba(27, 62, 73, 0.2); display: flex; align-items: flex-end; }
+  [data-web-theme="glass"] .glass-tools-sheet { width: 100%; max-height: 80dvh; overflow: auto; padding: 18px 18px max(24px, env(safe-area-inset-bottom)); background: #f4f8f5; border: 1px solid white; border-radius: 26px 26px 0 0; box-shadow: 0 -10px 30px #29434e15; }
+  [data-web-theme="glass"] .glass-tools-sheet header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+  [data-web-theme="glass"] .glass-tools-sheet header button { background: transparent; border: 0; font-size: 24px; color: inherit; width: 40px; height: 40px; }
+  [data-web-theme="glass"] .glass-tools-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+  [data-web-theme="glass"] .glass-tool-cell { position: relative; display: flex; flex-direction: column; align-items: center; gap: 6px; background: #ffffffbb; border: 1px solid white; border-radius: 16px; padding: 10px 3px; font-size: 11px; }
+  [data-web-theme="glass"] .glass-tool-cell button { width: 100%; height: 48px; }
+  [data-web-theme="glass"] .glass-tool-cell button svg { width: 20px; height: 20px; }
+}
+
+@media (min-width: 900px) {
+  [data-web-theme="glass"] .terminal-tabs {
+    align-items: center;
+    min-height: 52px;
+    padding: 0 12px;
+    gap: 6px;
+    background: rgba(248, 251, 252, 0.66);
+    backdrop-filter: blur(22px) saturate(1.2);
+    -webkit-backdrop-filter: blur(22px) saturate(1.2);
+    box-shadow: inset 0 -1px rgba(255, 255, 255, 0.8);
+  }
+  [data-web-theme="glass"] .terminal-tab-list { align-items: center; height: auto; max-width: 60%; gap: 4px; }
+  [data-web-theme="glass"] .terminal-tab { height: 36px; padding: 0 12px; border-radius: 12px; background: transparent; }
+  [data-web-theme="glass"] .terminal-tab.active { background: rgba(255, 255, 255, 0.86); color: #357b88; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.95); }
+  [data-web-theme="glass"] .terminal-tab::before { display: none; }
+  [data-web-theme="glass"] .terminal-add { width: 36px; height: 36px; padding: 0; margin: 0; border: 0; border-radius: 12px; background: rgba(255, 255, 255, 0.5); }
+  [data-web-theme="glass"] .terminal-connection { flex: 0 0 auto; min-width: 0; margin-left: auto; padding: 0; background: transparent; }
+  [data-web-theme="glass"] .glass-desktop-toolbar { flex: 0 0 auto; min-width: 0; gap: 8px; }
+  [data-web-theme="glass"] .glass-desktop-actions { display: flex; align-items: center; gap: 4px; padding-left: 8px; border-left: 1px solid rgba(57, 92, 107, 0.14); }
+  [data-web-theme="glass"] .glass-desktop-toolbar > .toolbar-avatar { margin-left: 0; padding: 0 8px; }
+  [data-web-theme="glass"] :is(.glass-desktop-actions, .glass-desktop-menu) .file-drawer-toggle { width: 36px; height: 36px; border-radius: 12px; }
+  [data-web-theme="glass"] .glass-desktop-menu { box-sizing: border-box; width: max-content; display: flex; flex-wrap: wrap; gap: 6px; max-width: min(292px, calc(100vw - 16px)); padding: 10px; border: 1px solid white; border-radius: 18px; background: rgba(244, 248, 245, 0.96); backdrop-filter: blur(22px); box-shadow: 0 8px 28px rgba(41, 67, 78, 0.15); }
+  [data-web-theme="glass"] :is(.glass-desktop-actions, .glass-desktop-menu) button svg { width: 20px; height: 20px; }
 }

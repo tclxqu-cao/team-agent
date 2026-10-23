@@ -2,15 +2,27 @@
 
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { ChevronDown, ChevronsLeft, ChevronsRight } from "lucide-react";
+import { ChevronDown, ChevronsLeft, ChevronsRight, MoreHorizontal } from "lucide-react";
 import { resolveToolbarLayout } from "./toolbar-layout";
 
 interface Props {
   items: { id: string; content: ReactNode }[];
   avatar: ReactNode;
+  glass?: boolean;
 }
 
-export default function ResponsiveToolbar({ items, avatar }: Props) {
+export default function ResponsiveToolbar({ items, avatar, glass = false }: Props) {
+  const [mobile, setMobile] = useState(false);
+  const glassMobile = glass && mobile;
+  const glassDesktop = glass && !mobile;
+  useEffect(() => { setOverflowOpen(false); }, [glassMobile]);
+  useEffect(() => {
+    const query = window.matchMedia("(max-width: 899px)");
+    const update = () => setMobile(query.matches);
+    update();
+    query.addEventListener("change", update);
+    return () => query.removeEventListener("change", update);
+  }, []);
   const root = useRef<HTMLDivElement>(null);
   const avatarRef = useRef<HTMLDivElement>(null);
   const sizeRef = useRef<HTMLSpanElement>(null);
@@ -34,7 +46,7 @@ export default function ResponsiveToolbar({ items, avatar }: Props) {
     const bar = root.current?.closest<HTMLElement>(".terminal-tabs");
     const tabs = bar?.querySelector<HTMLElement>(".terminal-tab-list");
     const connection = root.current?.closest<HTMLElement>(".terminal-connection");
-    if (!bar || !tabs || !connection || !portalNode) return;
+    if (!bar || !tabs || !connection || !portalNode || glass) return;
     let frame = 0;
     const measure = () => {
       const barStyle = getComputedStyle(bar);
@@ -70,22 +82,26 @@ export default function ResponsiveToolbar({ items, avatar }: Props) {
     if (overflow.current) mutations.observe(overflow.current, { childList: true, subtree: true });
     measure();
     return () => { cancelAnimationFrame(frame); observer.disconnect(); mutations.disconnect(); };
-  }, [expanded, portalNode, items.map(item => item.id).join(","), layout.inlineIndices.join(",")]);
+  }, [expanded, portalNode, items.map(item => item.id).join(","), layout.inlineIndices.join(","), glass]);
 
   useLayoutEffect(() => {
     if (!overflowOpen) return;
     const reposition = () => {
       const rect = overflowButton.current?.getBoundingClientRect();
       if (!rect) return;
-      const width = Math.min(292, innerWidth - 16);
+      const width = glassDesktop
+        ? overflow.current?.getBoundingClientRect().width ?? Math.min(292, innerWidth - 16)
+        : Math.min(292, innerWidth - 16);
       const barBottom = root.current?.closest(".terminal-tabs")?.getBoundingClientRect().bottom ?? rect.bottom;
       setPosition({ top: Math.max(rect.bottom, barBottom) + 6, left: Math.max(8, Math.min(innerWidth - width - 8, rect.right - width)) });
     };
     reposition();
+    const observer = new ResizeObserver(reposition);
+    if (glassDesktop && overflow.current) observer.observe(overflow.current);
     window.addEventListener("resize", reposition);
     window.addEventListener("scroll", reposition, true);
-    return () => { window.removeEventListener("resize", reposition); window.removeEventListener("scroll", reposition, true); };
-  }, [overflowOpen, layout.inlineIndices.join(",")]);
+    return () => { observer.disconnect(); window.removeEventListener("resize", reposition); window.removeEventListener("scroll", reposition, true); };
+  }, [overflowOpen, glassDesktop, layout.inlineIndices.join(",")]);
 
   useEffect(() => {
     if (!overflowOpen) return;
@@ -106,6 +122,43 @@ export default function ResponsiveToolbar({ items, avatar }: Props) {
   const renderItem = (item: Props["items"][number]) => <div key={item.id} className="toolbar-slot" data-toolbar-item={item.id} ref={element => {
     if (element) slots.current.set(item.id, element); else slots.current.delete(item.id);
   }}>{item.content}</div>;
+
+  if (glassDesktop) {
+    const primary = ["files", "remote"].flatMap(id => items.filter(item => item.id === id));
+    const secondary = items.filter(item => !["files", "remote"].includes(item.id));
+    return <div ref={root} className="responsive-toolbar glass-desktop-toolbar">
+      <div className="glass-desktop-actions">
+        {primary.map(renderItem)}
+        {secondary.length > 0 && <button ref={overflowButton} type="button" className="file-drawer-toggle" aria-label="更多功能" title="更多功能" aria-haspopup="dialog" aria-expanded={overflowOpen} onClick={() => setOverflowOpen(value => !value)}><MoreHorizontal size={20} /></button>}
+      </div>
+      <div className="toolbar-avatar" onPointerDown={() => setOverflowOpen(false)}>{avatar}</div>
+      {overflowOpen && portalNode && createPortal(<div ref={overflow} className="glass-desktop-menu" role="dialog" aria-label="更多功能" data-toolbar-overlay style={{ position: "fixed", top: position.top, left: position.left, zIndex: 200 }}>
+        {secondary.map(renderItem)}
+      </div>, portalNode)}
+    </div>;
+  }
+
+  if (glassMobile) {
+    const labels: Record<string, string> = { refresh: "刷新页面", collaboration: "群聊看板", install: "安装应用", remote: "远程桌面", "ai-hub": "AI Hub", flow: "数字人", theme: "皮肤", files: "我的文件" };
+    const controls = <div className="glass-mobile-actions" style={{ display: "flex", alignItems: "center", gap: 4 }}>
+      <button type="button" className="file-drawer-toggle ui-icon-button" aria-label="更多功能" aria-expanded={overflowOpen} onClick={() => setOverflowOpen(value => !value)}><MoreHorizontal size={20} /></button>
+    </div>;
+    return <div ref={root} className="responsive-toolbar glass-mobile-toolbar">
+      {items.filter(item => item.id === "files").map(renderItem)}
+      {controls}
+      <div className="toolbar-avatar">{avatar}</div>
+      {overflowOpen && portalNode && createPortal(<div className="glass-tools-backdrop" onClick={() => setOverflowOpen(false)}>
+        <section className="glass-tools-sheet" role="dialog" aria-label="更多功能" data-toolbar-overlay onClick={event => event.stopPropagation()}>
+          <header><strong>更多功能</strong><button type="button" aria-label="关闭更多功能" onClick={() => setOverflowOpen(false)}>×</button></header>
+          <div className="glass-tools-grid">{items.filter(item => item.id !== "files").map(item => <div key={item.id} className="glass-tool-cell" title={labels[item.id] ?? item.id} onClick={event => {
+            if (event.target instanceof Element && event.target.closest("button")) return;
+            event.currentTarget.querySelector<HTMLButtonElement>("button")?.click();
+          }}>{item.content}</div>)}</div>
+
+        </section>
+      </div>, portalNode)}
+    </div>;
+  }
 
   return <div ref={root} className="responsive-toolbar" data-toolbar-expanded={showTools}>
     <span ref={sizeRef} className="file-drawer-toggle toolbar-size-measure" aria-hidden="true" />

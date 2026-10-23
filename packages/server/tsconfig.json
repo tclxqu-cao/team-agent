@@ -38,6 +38,7 @@
     ".next-8af62fd/types/**/*.ts",
     ".next-goaltest/types/**/*.ts",
     ".next-invalid-workspace-check/types/**/*.ts",
-    ".next-remote-desktop-20261019/types/**/*.ts"
+    ".next-remote-desktop-20261019/types/**/*.ts",
+    ".next-slider-20261022/types/**/*.ts"
   ]
 }

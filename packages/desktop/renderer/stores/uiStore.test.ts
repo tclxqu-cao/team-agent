@@ -5,6 +5,7 @@ import {
   migrateUIPreferences,
   normalizePinnedSessionIds,
   useUIStore,
+  SKINS,
 } from "./uiStore";
 
 beforeEach(() => {
@@ -53,5 +54,18 @@ describe("pinned session preferences", () => {
     expect(useUIStore.getState().pinnedSessionIds).toEqual(["session-b", "session-a"]);
     useUIStore.getState().removePinnedSessions(["session-a", "missing"]);
     expect(useUIStore.getState().pinnedSessionIds).toEqual(["session-b"]);
+  });
+});
+
+describe("glass skin", () => {
+  it("registers a selectable skin without changing layout or session preferences", () => {
+    expect(SKINS.find((skin) => skin.id === "glass")?.label).toBe("毛玻璃");
+    useUIStore.setState({ skin: "pearl", layout: "compact", pinnedSessionIds: ["existing"] });
+    useUIStore.getState().setSkin("glass");
+    expect(useUIStore.getState()).toMatchObject({ skin: "glass", layout: "compact", pinnedSessionIds: ["existing"] });
+    expect(JSON.parse(localStorage.getItem("agent-ui-prefs")!).state.skin).toBe("glass");
+    expect(migrateUIPreferences({ skin: "glass", layout: "compact" }, 4)).toMatchObject({ skin: "glass", layout: "compact" });
+    useUIStore.getState().setSkin("pearl");
+    expect(useUIStore.getState().skin).toBe("pearl");
   });
 });
