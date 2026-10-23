@@ -1,0 +1,21 @@
+packages/runtime-win32-x64/manifest.json
+  s_bb53bd81235f23::t_9ae7fe24ef6323 2,10-11
+packages/runtime-darwin-arm64/manifest.json
+  s_bb53bd81235f23::t_172779288877c7 2,10
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "31ec346d114dd3d30e7c68a9dd6b44ed92d94b7e",
+  "prompts": {},
+  "sessions": {
+    "s_bb53bd81235f23": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1640c-9058-7651-a534-c1b8d37da0d9",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
