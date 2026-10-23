@@ -1,6 +1,6 @@
 {
   "name": "@agent/desktop",
-  "version": "0.2.0-preview.32",
+  "version": "0.2.0-preview.33",
   "private": true,
   "type": "module",
   "main": "./dist/main/index.js",
@@ -10,7 +10,7 @@
     "build:bootstrap": "tsc -p tsconfig.bootstrap.json && bun build scripts/runtime-bootstrap-worker.ts --target=node --outfile=assets/bootstrap/runtime-bootstrap.mjs",
     "build:helper": "bash scripts/build-desktop-input.sh",
     "smoke:computer-use": "bun ../../scripts/computer-use-smoke.mjs",
-    "compile": "bun run --cwd ../voice-service build && bunx tsc && bunx tsc -p tsconfig.preload.json && mv dist/main/preload.js dist/main/preload.cjs && mv dist/main/lite-preload.js dist/main/lite-preload.cjs",
+    "compile": "bun run --cwd ../voice-service build && bunx tsc -p tsconfig.build.json && bunx tsc -p tsconfig.preload.json && mv dist/main/preload.js dist/main/preload.cjs && mv dist/main/lite-preload.js dist/main/lite-preload.cjs",
     "build:lite": "bun run build:bootstrap && bunx --bun vite build --config vite.lite.config.ts && bun run compile",
     "package:lite:mac": "node scripts/verify-staged-runtime.mjs --target darwin-arm64 && bun run build:lite && node ../../scripts/stage-agent-packages-for-packaging.mjs && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --config electron-builder-lite.yml --mac dmg --arm64",
     "package:lite:win": "node scripts/verify-staged-runtime.mjs --target windows-amd64 && bun run build:lite && node ../../scripts/stage-agent-packages-for-packaging.mjs && electron-builder --config electron-builder-lite.yml --win nsis --x64",

@@ -1,0 +1,14 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "paths": {
+      "@agent/core": ["../core/dist/index.d.ts"],
+      "@agent/core/*": ["../core/dist/*"],
+      "@agent/computer-use": ["../computer-use/dist/index.d.ts"],
+      "@agent/computer-use/*": ["../computer-use/dist/*"],
+      "@agent/native-runtime": ["../native-runtime/dist/index.d.ts"]
+    }
+  },
+  "include": ["main"],
+  "exclude": ["**/*.test.ts", "**/*.test.tsx"]
+}
