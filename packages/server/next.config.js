@@ -24,7 +24,6 @@ const nextConfig = {
       config.externals = [config.externals];
     }
     config.externals.push({ "better-sqlite3": "commonjs better-sqlite3" });
-    config.externals.push({ "web-push": "commonjs web-push" });
     config.externals.push({ "@anthropic-ai/claude-agent-sdk": "commonjs @anthropic-ai/claude-agent-sdk" });
     // These ESM packages are shipped beside the server. Bundling their
     // createRequire(import.meta.url) embeds the build host's absolute path.

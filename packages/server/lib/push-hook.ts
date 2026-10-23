@@ -1,5 +1,4 @@
 import { agentHost } from "../app/api/agent-host";
-import { getWebPushService } from "./web-push-service.mjs";
 import { serverLogger } from "./global-logger";
 import {
   NotificationDeduper,
@@ -19,8 +18,10 @@ const completionDeduper = new NotificationDeduper();
 export function ensurePushHook(): void {
   if (hooked) return;
   hooked = true;
-  agentHost.setGlobalEventObserver((sessionId, event, context) => {
+  agentHost.setGlobalEventObserver(async (sessionId, event, context) => {
     try {
+      if (!["ask_user", "done", "goal_updated", "error"].includes(event.type)) return;
+      const { getWebPushService } = await import("./web-push-service.mjs");
       if (event.type === "ask_user") {
         getWebPushService().notifySession({
           notificationId: `${sessionId}:${event.questionId}:approval`,

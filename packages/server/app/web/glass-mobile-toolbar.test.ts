@@ -6,6 +6,12 @@ const page = readFileSync(new URL("./page.tsx", import.meta.url), "utf8");
 const css = readFileSync(new URL("./neural-boot.css", import.meta.url), "utf8");
 
 describe("glass mobile toolbar isolation", () => {
+  it("fills mobile tool cells including wrapped theme buttons", () => {
+    const mobile = css.split("@media (max-width: 899px)")[1].split("@media (min-width: 900px)")[0];
+    expect(mobile).toMatch(/\.glass-tool-cell \{[^}]*align-items: stretch;[^}]*padding: 0;/);
+    expect(mobile).toContain('.glass-tool-cell > * { width: 100%; min-width: 0; border-radius: inherit; }');
+    expect(mobile).toMatch(/\.glass-tool-cell button \{[^}]*width: 100%;[^}]*padding: 0; border-radius: inherit;/);
+  });
   it("positions the desktop menu using its actual width and observes size changes", () => {
     expect(toolbar).toContain('overflow.current?.getBoundingClientRect().width');
     expect(toolbar).toContain('if (glassDesktop && overflow.current) observer.observe(overflow.current)');
