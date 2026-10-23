@@ -1,0 +1,23 @@
+packages/desktop/package.json
+  s_bb53bd81235f23::t_e4b8657227f85b 3,13
+packages/desktop/tsconfig.build.json
+  s_bb53bd81235f23::t_d20a46935e8897 1-14
+packages/desktop/tsconfig.json
+  s_bb53bd81235f23::t_242c79237cdc20 16-17
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "55c3e889c867182287c1ee2181f4c5f7d835c01e",
+  "prompts": {},
+  "sessions": {
+    "s_bb53bd81235f23": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1640c-9058-7651-a534-c1b8d37da0d9",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
