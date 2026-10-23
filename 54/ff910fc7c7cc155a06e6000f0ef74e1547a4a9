@@ -1,0 +1,25 @@
+packages/server/app/web/glass-mobile-toolbar.test.ts
+  s_bb53bd81235f23::t_6741eaaae90e34 9-14
+packages/server/app/web/neural-boot.css
+  s_bb53bd81235f23::t_37db05fedd63c6 391-393
+packages/server/lib/push-hook.ts
+  s_bb53bd81235f23::t_8f135394afe7e3 21,23-24
+packages/server/lib/push-hook.test.ts
+  s_bb53bd81235f23::t_e6c721504ba774 1-24
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "54ff910fc7c7cc155a06e6000f0ef74e1547a4a9",
+  "prompts": {},
+  "sessions": {
+    "s_bb53bd81235f23": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1640c-9058-7651-a534-c1b8d37da0d9",
+        "model": "ap-southeast-1-v5cjq-gptdy-17usoft-com/gpt-6-astra"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
