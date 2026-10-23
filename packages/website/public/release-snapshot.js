@@ -6,11 +6,13 @@ export const releaseSnapshot = [
     "assets": [
       {
         "name": "AgentRoam-Setup-0.2.0-preview.33-x64.exe",
-        "browser_download_url": "https://github.com/tclxqu-cao/team-agent/releases/download/desktop-v0.2.0-preview.33/AgentRoam-Setup-0.2.0-preview.33-x64.exe"
+        "browser_download_url": "https://github.com/tclxqu-cao/team-agent/releases/download/desktop-v0.2.0-preview.33/AgentRoam-Setup-0.2.0-preview.33-x64.exe",
+        "size": 247850869
       },
       {
         "name": "AgentRoam-0.2.0-preview.33-arm64.dmg",
-        "browser_download_url": "https://github.com/tclxqu-cao/team-agent/releases/download/desktop-v0.2.0-preview.33/AgentRoam-0.2.0-preview.33-arm64.dmg"
+        "browser_download_url": "https://github.com/tclxqu-cao/team-agent/releases/download/desktop-v0.2.0-preview.33/AgentRoam-0.2.0-preview.33-arm64.dmg",
+        "size": 291918502
       }
     ]
   },
@@ -20,11 +22,13 @@ export const releaseSnapshot = [
     "assets": [
       {
         "name": "AgentRoam-Lite-Setup-0.2.0-preview.33-x64.exe",
-        "browser_download_url": "https://github.com/tclxqu-cao/team-agent/releases/download/desktop-lite-v0.2.0-preview.33/AgentRoam-Lite-Setup-0.2.0-preview.33-x64.exe"
+        "browser_download_url": "https://github.com/tclxqu-cao/team-agent/releases/download/desktop-lite-v0.2.0-preview.33/AgentRoam-Lite-Setup-0.2.0-preview.33-x64.exe",
+        "size": 246602477
       },
       {
         "name": "AgentRoam-Lite-0.2.0-preview.33-arm64.dmg",
-        "browser_download_url": "https://github.com/tclxqu-cao/team-agent/releases/download/desktop-lite-v0.2.0-preview.33/AgentRoam-Lite-0.2.0-preview.33-arm64.dmg"
+        "browser_download_url": "https://github.com/tclxqu-cao/team-agent/releases/download/desktop-lite-v0.2.0-preview.33/AgentRoam-Lite-0.2.0-preview.33-arm64.dmg",
+        "size": 290360037
       }
     ]
   },
