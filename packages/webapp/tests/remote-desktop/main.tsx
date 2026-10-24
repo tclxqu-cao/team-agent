@@ -1,6 +1,7 @@
 import React from "react";
 import { createRoot } from "react-dom/client";
 import RemoteDesktopPage from "../../src/presentation/RemoteDesktopPage";
+import { useUIStore } from "../../../desktop/renderer/stores/uiStore";
 import "../../../desktop/renderer/styles/global.css";
 import "../../src/presentation/web.css";
 
@@ -26,6 +27,7 @@ let hit: any = { editable: true, bounds: { x: 400, y: 300, w: 600, h: 80 } };
   setHitDelay: (value: number) => { hitDelay = value; },
   visible: (visible: boolean) => window.postMessage({ type: "agent-web-shell:remote-desktop-visibility:v1", visible }, location.origin),
   frame,
+  setSkin: (skin: "pearl" | "glass") => useUIStore.getState().setSkin(skin),
 };
 window.browserLiveApi = {
   request: async (method: string, params: any) => {

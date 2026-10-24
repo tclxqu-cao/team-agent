@@ -766,7 +766,7 @@ function AuthenticatedConsole({
             onFill={fillActiveCommand}
             onExecute={executeCommand}
           />}
-          <div style={S.treeFoot}>
+          <div className="tree-foot" style={S.treeFoot}>
             <span style={S.treeFootDot} />
             <span>实时同步</span>
           </div>

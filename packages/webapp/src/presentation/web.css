@@ -420,22 +420,33 @@ body[data-remote-desktop="1"] .browser-live-panel {
   background: var(--control-hover);
 }
 
+.browser-live-keyboard {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  border-radius: 6px;
+  background: var(--bg-elevated);
+}
+
 .browser-live-mobile-input {
-  /* Keep the focus target inside the visible panel, independent of remote
-     zoom/pan. An offscreen target makes mobile browsers scroll the iframe
-     while the keyboard animates. */
-  position: fixed;
-  left: 8px;
-  top: 8px;
-  width: 2px;
-  height: 2px;
+  /* A real input over the keyboard control lets WebKit open its keyboard
+     through native focus, even if a previous programmatic focus was denied.
+     Keep it outside the zoomed/panned picture and at least 16px to avoid iOS
+     zooming or scrolling the whole iframe when typing starts. */
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
   padding: 0;
   border: 0;
+  font-size: 16px;
   opacity: 0.01;
-  /* WebKit expands the hit area of form controls: without this, a tap near
-     the bottom-center of the picture natively focuses the hidden input and
-     pops the soft keyboard without any remote text field being tapped. */
   pointer-events: none;
+}
+
+.browser-live-keyboard:not(.is-typing) .browser-live-mobile-input:not(:disabled) {
+  pointer-events: auto;
 }
 
 .browser-live-empty {
@@ -663,6 +674,7 @@ body[data-remote-desktop="1"] .browser-live-panel {
 }
 
 @media (max-width: 699px) {
+  .browser-live-keyboard { order: -1; }
   .browser-live-backdrop {
     padding: 0;
   }
@@ -706,6 +718,56 @@ body[data-remote-desktop="1"] .browser-live-panel {
     height: 32px;
     font-size: 14px;
   }
+}
+
+/* The remote tab uses the same material as the shell while keeping capture
+   pixels opaque. All geometry stays within the shell's visible iframe. */
+:root[data-skin="glass"] body[data-remote-desktop="1"] {
+  background: radial-gradient(ellipse at 0 0, #c3dbee, transparent 65%),
+    radial-gradient(ellipse at 90% 100%, #edd3b9, transparent 65%), #edf3f4;
+}
+
+:root[data-skin="glass"] body[data-remote-desktop="1"] :is(.browser-live-backdrop, .browser-live-panel) {
+  background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+:root[data-skin="glass"] body[data-remote-desktop="1"] .browser-live-surface {
+  /* Keep the dark letterbox inside the picture, below the glass controls. */
+  background: transparent;
+}
+
+:root[data-skin="glass"] body[data-remote-desktop="1"] .browser-live-viewport {
+  background: #101216;
+}
+
+:root[data-skin="glass"] body[data-remote-desktop="1"] :is(.browser-live-header, .browser-live-footer, .browser-live-zoom, .browser-live-quickkeys) {
+  background: var(--glass-surface);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border-color: rgba(255, 255, 255, 0.84);
+}
+
+:root[data-skin="glass"] body[data-remote-desktop="1"] .browser-live-keyboard {
+  background: transparent;
+}
+
+@media (max-width: 699px) {
+  :root[data-skin="glass"] body[data-remote-desktop="1"] .browser-live-panel {
+    width: calc(100% - 16px);
+    height: calc(100% - 16px);
+    border: 1px solid rgba(255, 255, 255, 0.84);
+    border-radius: 20px;
+  }
+  :root[data-skin="glass"] body[data-remote-desktop="1"] .browser-live-panel.is-fullscreen,
+  :root[data-skin="glass"] body[data-remote-desktop="1"] .browser-live-panel:fullscreen {
+    width: 100%;
+    height: 100%;
+    border: 0;
+    border-radius: 0;
+  }
+  :root[data-skin="glass"] body[data-remote-desktop="1"] .browser-live-zoom :is(button, output) { font-size: 12px; }
 }
 
 /* Reuse the gesture-hint row in both phone orientations; diagnostics must

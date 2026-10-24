@@ -29,7 +29,11 @@ function readViewport(view: Window): ViewportRect {
 }
 
 /** Safari can shrink/pan the top viewport while an iframe keeps its layout size. */
-export function trackBrowserLiveViewport(element: HTMLElement, view: Window = window): () => void {
+export function trackBrowserLiveViewport(
+  element: HTMLElement,
+  view: Window = window,
+  fitFrame = false,
+): () => void {
   let parent: Window | null = null;
   let frame: Element | null = null;
   try {
@@ -51,11 +55,11 @@ export function trackBrowserLiveViewport(element: HTMLElement, view: Window = wi
       // report that keyboard pan again inside the iframe; applying it locally
       // leaves a blank strip and clips the picture twice. Only the parent
       // defines keyboard occlusion; the frame contributes its layout bounds.
-      viewport = intersectBrowserLiveViewport(
-        { top: 0, left: 0, width: view.innerWidth, height: view.innerHeight },
-        readViewport(parent),
-        frame.getBoundingClientRect(),
-      );
+      const local = { top: 0, left: 0, width: view.innerWidth, height: view.innerHeight };
+      // RemoteDesktopPage's shell already sizes and positions this iframe to
+      // the visual viewport. WebKit can report its pan in frame geometry too;
+      // clipping that frame again leaves a blank strip above the panel.
+      viewport = fitFrame ? local : intersectBrowserLiveViewport(local, readViewport(parent), frame.getBoundingClientRect());
     }
     for (const [name, value] of Object.entries(viewport)) {
       element.style.setProperty(`--browser-live-${name}`, `${value}px`);
@@ -83,6 +87,8 @@ export function trackBrowserLiveViewport(element: HTMLElement, view: Window = wi
   for (const source of sources) {
     for (const event of events) source.addEventListener(event, schedule);
   }
+  const observer = frame && typeof ResizeObserver !== "undefined" ? new ResizeObserver(schedule) : null;
+  if (frame) observer?.observe(frame);
   sync();
   return () => {
     for (const source of sources) {
@@ -90,6 +96,7 @@ export function trackBrowserLiveViewport(element: HTMLElement, view: Window = wi
     }
     if (animationFrame !== null) view.cancelAnimationFrame(animationFrame);
     if (settleTimer !== null) view.clearTimeout(settleTimer);
+    observer?.disconnect();
     for (const name of ["top", "left", "width", "height"]) {
       element.style.removeProperty(`--browser-live-${name}`);
     }

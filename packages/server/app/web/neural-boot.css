@@ -16,6 +16,24 @@
   border-color: rgba(255, 255, 255, 0.84) !important;
 }
 
+/* Reading surfaces need enough tint to stay light over a terminal or remote
+   picture. The page scrim must not become the file tree's background. */
+[data-web-theme="glass"] .tree-col {
+  --ui-tree-bg: #f4f8f9;
+  background: rgba(248, 251, 252, 0.96) !important;
+}
+
+[data-web-theme="glass"] .tree-col :is(.tree-head, .tree-foot) {
+  background: transparent !important;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  box-shadow: none !important;
+}
+
+[data-web-theme="glass"] .tree-col :is(.tree-location, .tree-filter) {
+  background: var(--ui-tree-bg);
+}
+
 @supports not (backdrop-filter: blur(1px)) {
   [data-web-theme="glass"] :is(.terminal-tabs, .tree-col, .tree-head) {
     background: #eef4f5 !important;
@@ -359,6 +377,8 @@
 }
 
 @media (max-width: 899px) {
+  [data-web-theme="glass"] .drawer-mask { background: rgba(27, 62, 73, 0.18); }
+  [data-web-theme="glass"] .tree-col-open { box-shadow: -8px 0 28px rgba(57, 92, 107, 0.12); }
   [data-web-theme="glass"] .terminal-tabs {
     margin: 8px 10px 0;
     padding: 4px;

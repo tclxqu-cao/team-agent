@@ -18,8 +18,10 @@ const until = async (read, expected, message) => {
 };
 await page.cdp("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 3, mobile: true });
 await page.cdp("Emulation.setTouchEmulationEnabled", { enabled: true, maxTouchPoints: 5 });
+if (!globalThis.remoteDesktopEmbeddedOnly) {
 await page.goto("http://127.0.0.1:5175/tests/remote-desktop/");
 await until(() => page.evaluate(() => document.body.innerText.includes("开始控制")), true, "panel opens");
+await page.evaluate(() => window.regression.setSkin("pearl"));
 await page.click('loc=role:button[name="开始控制"]');
 await until(() => page.evaluate(() => document.body.innerText.includes("结束控制")), true, "takeover succeeds");
 const controlLayout = await page.evaluate(() => {
@@ -70,6 +72,17 @@ const clickButton = async (label) => {
   await page.cdp("Input.dispatchMouseEvent", { type: "mousePressed", ...point, button: "left", buttons: 1, clickCount: 1 });
   await page.cdp("Input.dispatchMouseEvent", { type: "mouseReleased", ...point, button: "left", buttons: 0, clickCount: 1 });
 };
+await clickButton('移动桌面画面');
+assert.equal(await page.evaluate(() => document.querySelector('button[aria-label="移动桌面画面"]').getAttribute('aria-pressed')), 'true');
+await clickButton('唤起键盘');
+await until(focused, true, "native keyboard target receives focus while panning");
+assert.equal(await page.evaluate(() => document.querySelector('button[aria-label="移动桌面画面"]').getAttribute('aria-pressed')), 'false', "typing exits pan mode without immediately blurring");
+await page.keyboard.insertText('键盘回归');
+await until(() => page.evaluate(() => window.regression.calls.filter(call => call.method === 'browser:input' && call.params.input.text === '键盘回归').length), 1, "native input sends committed text once");
+await page.keyboard.press('Enter');
+assert.equal(await page.evaluate(() => window.regression.calls.filter(call => call.method === 'browser:input' && call.params.input.key === 'Enter' && call.params.input.action === 'down').length), 1, "native input keeps remote special keys");
+await clickButton('唤起键盘');
+await until(focused, false, "keyboard control dismisses the native target");
 // Exercise iPhone's in-page fullscreen path as well as the compact footer.
 await page.evaluate(() => { document.querySelector(".browser-live-panel").requestFullscreen = undefined; });
 await page.click('loc=role:button[name="全屏"]');
@@ -190,13 +203,33 @@ await clickButton('关闭浏览器直播');
 await until(() => page.evaluate(() => !!document.querySelector(".browser-live-backdrop")), false, "explicit close removes panel");
 await until(() => page.evaluate(() => window.regression.calls.filter(call => call.method === "browser:unwatch").length), before.unwatches + 1, "explicit close releases viewer");
 console.log("PASS: no background IME flash, confirmed fields, uncertain AX retention, zoomed keyboard viewport, compatibility mouse focus, hidden-tab focus and control/zoom/pan retention");
+}
 
 await page.cdp("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 3, mobile: true });
 await page.goto("http://127.0.0.1:5175/tests/remote-desktop/embedded.html");
 await until(() => page.evaluate(() => !!document.querySelector("iframe").contentDocument.querySelector(".browser-live-panel")), true, "embedded panel opens");
-await page.click('loc=role:button[name="开始控制"]');
+await page.evaluate(() => document.querySelector("iframe").contentWindow.regression.setSkin("pearl"));
+const clickEmbeddedButton = async (label) => {
+  const point = await page.evaluate(label => {
+    const frame = document.querySelector("iframe");
+    const doc = frame.contentDocument;
+    const button = [...doc.querySelectorAll("button")].find(button => button.getAttribute("aria-label") === label || button.textContent === label);
+    if (!button) throw new Error(`No embedded button: ${label}`);
+    button.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "instant" });
+    const bounds = button.getBoundingClientRect();
+    const host = frame.getBoundingClientRect();
+    return { x: host.left + bounds.left + bounds.width / 2, y: host.top + bounds.top + bounds.height / 2 };
+  }, label);
+  await page.cdp("Input.dispatchMouseEvent", { type: "mousePressed", ...point, button: "left", buttons: 1, clickCount: 1 });
+  await page.cdp("Input.dispatchMouseEvent", { type: "mouseReleased", ...point, button: "left", buttons: 0, clickCount: 1 });
+};
+await clickEmbeddedButton("开始控制");
 await until(() => page.evaluate(() => document.querySelector("iframe").contentDocument.body.innerText.includes("结束控制")), true, "embedded takeover succeeds");
-for (let step = 0; step < 7; step++) await page.click('loc=role:button[name="放大桌面画面"]');
+await until(() => page.evaluate(() => document.querySelector("iframe").contentDocument.querySelector('button[aria-label="放大桌面画面"]').disabled), false, "embedded frame is ready to zoom");
+for (let step = 0; step < 7; step++) {
+  await clickEmbeddedButton("放大桌面画面");
+  await until(() => page.evaluate(() => document.querySelector("iframe").contentDocument.querySelector("output").textContent), `${125 + step * 25}%`, "embedded zoom commits before the next press");
+}
 const embeddedBounds = () => page.evaluate(() => {
   const frame = document.querySelector("iframe");
   const doc = frame.contentDocument;
@@ -228,4 +261,16 @@ embedded = await embeddedBounds();
 assert.equal(embedded.top, 0);
 assert.ok(embedded.pictureHeight > 500);
 console.log("PASS: embedded keyboard pan is applied once, picture and end-control stay visible, closing keyboard restores layout");
+await page.evaluate(() => {
+  document.querySelector("iframe").contentWindow.regression.setSkin("glass");
+  window.setRegressionViewport(420, 210);
+});
+await until(async () => (await embeddedBounds()).height, 366, "glass panel fits the keyboard's reduced frame with its 8px insets");
+embedded = await embeddedBounds();
+assert.equal(embedded.top, 8, "glass material cannot introduce a second keyboard pan");
+assert.ok(embedded.pictureHeight > 150 && embedded.footerBottom <= embedded.frameHeight, "glass preserves space for picture and end-control");
+assert.equal(embedded.zoom, "275%", "theme and keyboard preserve picture zoom");
+await page.evaluate(() => window.setRegressionViewport(844));
+await until(async () => (await embeddedBounds()).height, 790, "closing keyboard restores glass panel");
+console.log("PASS: glass keyboard layout, retained zoom and visible end-control");
 })();

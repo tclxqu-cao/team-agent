@@ -1207,19 +1207,29 @@ export default function App() {
     const handleVisibilityChange = () => {
       if (document.visibilityState === "visible") refresh();
     };
+    // The phone keeps the iframe mounted while its drawer is closed. Read
+    // native recency when opening it instead of waiting for the next poll.
+    if (mobileDrawer && sidebarDrawerOpen) refresh();
     const timer = window.setInterval(refresh, 10_000);
     window.addEventListener("focus", refresh);
+    window.addEventListener("pageshow", refresh);
     document.addEventListener("visibilitychange", handleVisibilityChange);
+    const parent = webShell && window.parent !== window ? window.parent : null;
+    parent?.addEventListener("focus", refresh);
+    parent?.addEventListener("pageshow", refresh);
     return () => {
       cancelled = true;
       window.clearInterval(timer);
       window.removeEventListener("focus", refresh);
+      window.removeEventListener("pageshow", refresh);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
+      parent?.removeEventListener("focus", refresh);
+      parent?.removeEventListener("pageshow", refresh);
     };
     // Visible workspaces are refreshed together so collapsed cached summaries
     // cannot leave a completed native session appearing active indefinitely.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeAgent, expandedProjects, selectedProjectId]);
+  }, [activeAgent, expandedProjects, selectedProjectId, mobileDrawer, sidebarDrawerOpen, webShell]);
 
   // Sync working directory whenever the selected project changes (covers startup,
   // session click, new session, and explicit project click).

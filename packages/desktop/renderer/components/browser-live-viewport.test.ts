@@ -156,4 +156,28 @@ describe("remote desktop visible viewport", () => {
     stop();
     expect(vi.getTimerCount()).toBe(0);
   });
+
+  it("uses the shell-sized frame even when Safari repeats its keyboard pan in frame geometry", () => {
+    vi.useFakeTimers();
+    const view = browserWindow(356);
+    const parent = browserWindow(844);
+    parent.visualViewport.height = 420;
+    parent.visualViewport.offsetTop = 210;
+    view.visualViewport.offsetTop = 210;
+    view.visualViewport.height = 146;
+    view.parent = parent as unknown as Window;
+    view.frameElement = { getBoundingClientRect: () => rect(356, 64) } as unknown as Element;
+    const { element, values } = targetElement();
+    const stop = trackBrowserLiveViewport(element, view as unknown as Window, true);
+    expect(values.get("--browser-live-top")).toBe("0px");
+    expect(values.get("--browser-live-height")).toBe("356px");
+    view.innerHeight = 780;
+    parent.visualViewport.height = 844;
+    parent.visualViewport.offsetTop = 0;
+    view.dispatchEvent(new Event("resize"));
+    vi.advanceTimersByTime(250);
+    expect(values.get("--browser-live-height")).toBe("780px");
+    expect(values.get("--browser-live-top")).toBe("0px");
+    stop();
+  });
 });

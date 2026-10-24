@@ -205,7 +205,7 @@ export default function BrowserLivePanel({ open, active = true, agentSessionId, 
   const panelRef = useRef<HTMLElement>(null);
   useLayoutEffect(() => {
     if (!open || !backdropRef.current) return;
-    return trackBrowserLiveViewport(backdropRef.current);
+    return trackBrowserLiveViewport(backdropRef.current, window, document.body.dataset.remoteDesktop === "1");
   }, [open]);
   const [fullscreen, setFullscreen] = useState(false);
   useEffect(() => {
@@ -432,6 +432,8 @@ export default function BrowserLivePanel({ open, active = true, agentSessionId, 
       input.blur();
       setImeOn(false);
     } else {
+      // Pan mode's cleanup must not dismiss the keyboard as it opens.
+      flushSync(() => setPanMode(false));
       input.focus({ preventScroll: true });
     }
   }, [imeOn]);
@@ -1090,6 +1092,18 @@ export default function BrowserLivePanel({ open, active = true, agentSessionId, 
   }, [sendInput]);
 
   const liveDisplays = selected?.displays ?? null;
+  const handleRemoteKeyDown = (event: React.KeyboardEvent) => {
+    if (!hasControl || panMode) return;
+    if (event.target === textInputRef.current && event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) return;
+    sendInput({ kind: "key", action: "down", key: event.key, code: event.code, text: event.key.length === 1 ? event.key : "", modifiers: modifierNames(event) });
+    if (["Backspace", "Tab", "Enter", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "PageUp", "PageDown", "Home", "End", "Escape"].includes(event.key)) event.preventDefault();
+  };
+  const handleRemoteKeyUp = (event: React.KeyboardEvent) => {
+    if (!hasControl || panMode) return;
+    if (event.target === textInputRef.current && event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) return;
+    sendInput({ kind: "key", action: "up", key: event.key, code: event.code, modifiers: modifierNames(event) });
+  };
+
   useEffect(() => {
     if (!pendingQuality) return;
     const timer = window.setTimeout(() => { setPendingQuality(null); setError("画质切换未完成，请刷新画面后重试"); }, 14000);
@@ -1299,7 +1313,40 @@ export default function BrowserLivePanel({ open, active = true, agentSessionId, 
               <button type="button" aria-label="放大桌面画面" title="放大" disabled={!frame || zoom >= 5} onClick={() => setZoom((value) => Math.min(5, value + 0.25))}><ZoomIn size={16} /></button>
               <button type="button" disabled={!frame} onClick={() => { setZoom(1); setPanMode(false); viewportRef.current?.scrollTo(0, 0); }}>适应窗口</button>
               <button type="button" aria-label="移动桌面画面" aria-pressed={panMode} title="拖动或滚动画面，不发送远程输入" disabled={!frame} onClick={() => setPanMode((value) => !value)}><Hand size={15} />移动画面</button>
-              <button type="button" aria-label="唤起键盘" aria-pressed={imeOn} title="唤起/收起键盘（无法识别输入框时可手动唤起）" className={fieldHint && !imeOn ? "is-hint" : undefined} disabled={!frame || !hasControl} onPointerDown={(event) => event.preventDefault()} onClick={() => { setFieldHint(false); toggleIme(); }}><Keyboard size={15} />键盘</button>
+              <span className={`browser-live-keyboard ${imeOn ? "is-typing" : ""}`}>
+                <button type="button" aria-label="唤起键盘" aria-pressed={imeOn} title="唤起/收起键盘（无法识别输入框时可手动唤起）" className={fieldHint && !imeOn ? "is-hint" : undefined} disabled={!frame || !hasControl} onPointerDown={(event) => event.preventDefault()} onClick={() => { setFieldHint(false); toggleIme(); }}><Keyboard size={15} />键盘</button>
+                <input
+                  ref={textInputRef}
+                  className="browser-live-mobile-input"
+                  aria-label="浏览器键盘输入"
+                  tabIndex={-1}
+                  disabled={!frame || !hasControl}
+                  defaultValue=""
+                  inputMode="text"
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  autoComplete="off"
+                  spellCheck={false}
+                  onFocus={() => { setPanMode(false); imeOnRef.current = true; setImeOn(true); setFieldHint(false); }}
+                  onKeyDown={handleRemoteKeyDown}
+                  onKeyUp={handleRemoteKeyUp}
+                  onCompositionStart={() => { composingRef.current = true; }}
+                  onCompositionEnd={(event) => {
+                    composingRef.current = false;
+                    if (!panMode) sendTypedText((event.target as HTMLInputElement).value);
+                  }}
+                  onBlur={(event) => {
+                    imeOnRef.current = false;
+                    composingRef.current = false;
+                    lastTypedRef.current = "";
+                    event.target.value = "";
+                    setImeOn(false);
+                  }}
+                  onChange={(event) => {
+                    if (!panMode && !composingRef.current) sendTypedText(event.target.value);
+                  }}
+                />
+              </span>
               <button type="button" aria-label="快捷键条" aria-pressed={quickKeysOpen} title="展开/收起快捷键（Esc/Tab/复制/粘贴/方向键）" disabled={!frame || !hasControl} onClick={() => setQuickKeysOpen((open) => !open)}><Keyboard size={15} />{quickKeysOpen ? "收起" : "快捷键"}</button>
               <button type="button" aria-label="窗口控制" title="全屏看不到左上角按钮时用：第 1 次点=退出全屏（ESC + Ctrl+Cmd+F），第 2 次点=关闭窗口（Cmd+W）" disabled={!frame || !hasControl} onClick={() => {
                 const now = Date.now();
@@ -1552,19 +1599,8 @@ export default function BrowserLivePanel({ open, active = true, agentSessionId, 
                   const point = pointerCoordinates(event);
                   if (point) sendInput({ kind: "pointer", action: "wheel", ...point, deltaX: event.deltaX, deltaY: event.deltaY });
                 }}
-                onKeyDown={(event) => {
-                  if (!hasControl || panMode) return;
-                  // Printable chars typed into the hidden IME input bubble up
-                  // here; they are delivered once through onChange instead.
-                  if (event.target === textInputRef.current && event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) return;
-                  sendInput({ kind: "key", action: "down", key: event.key, code: event.code, text: event.key.length === 1 ? event.key : "", modifiers: modifierNames(event) });
-                  if (["Backspace", "Tab", "Enter", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "PageUp", "PageDown", "Home", "End", "Escape"].includes(event.key)) event.preventDefault();
-                }}
-                onKeyUp={(event) => {
-                  if (!hasControl || panMode) return;
-                  if (event.target === textInputRef.current && event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) return;
-                  if (hasControl) sendInput({ kind: "key", action: "up", key: event.key, code: event.code, modifiers: modifierNames(event) });
-                }}
+                onKeyDown={handleRemoteKeyDown}
+                onKeyUp={handleRemoteKeyUp}
               >
                 <img src={frameSrc} alt={selected?.title || "浏览器实时画面"} draggable={false} decoding="async" />
                 <video
@@ -1575,33 +1611,7 @@ export default function BrowserLivePanel({ open, active = true, agentSessionId, 
                   playsInline
                   muted
                 />
-                <input
-                  ref={textInputRef}
-                  className="browser-live-mobile-input"
-                  aria-label="浏览器键盘输入"
-                  defaultValue=""
-                  inputMode="text"
-                  autoCapitalize="none"
-                  autoCorrect="off"
-                  autoComplete="off"
-                  spellCheck={false}
-                  onFocus={() => { imeOnRef.current = true; setImeOn(true); }}
-                  onCompositionStart={() => { composingRef.current = true; }}
-                  onCompositionEnd={(event) => {
-                    composingRef.current = false;
-                    if (!panMode) sendTypedText((event.target as HTMLInputElement).value);
-                  }}
-                  onBlur={(event) => {
-                    imeOnRef.current = false;
-                    composingRef.current = false;
-                    lastTypedRef.current = "";
-                    event.target.value = "";
-                    setImeOn(false);
-                  }}
-                  onChange={(event) => {
-                    if (!panMode && !composingRef.current) sendTypedText(event.target.value);
-                  }}
-                />
+
                 {pendingQuality && (
                   <div className="browser-live-quality-pending" role="status">
                     <LoaderCircle size={13} className="spin" aria-hidden="true" />
