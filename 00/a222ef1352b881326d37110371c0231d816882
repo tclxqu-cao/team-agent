@@ -1,0 +1,43 @@
+packages/desktop/renderer/components/browser-live-viewport.ts
+  s_28ce0c3c4b3311::t_d9a6cfeecd7a58 32-36,58-62,90-91,99
+packages/desktop/renderer/App.tsx
+  s_28ce0c3c4b3311::t_d9a6cfeecd7a58 1210-1212,1215,1217-1219,1224,1226-1227,1232
+packages/webapp/tests/remote-desktop/main.tsx
+  s_28ce0c3c4b3311::t_309797f282ce1b 4,30
+packages/webapp/src/presentation/web.css
+  s_28ce0c3c4b3311::t_bce8fa63f444ab 424
+  s_28ce0c3c4b3311::t_293a05289fc418 736-745,750-753
+  s_28ce0c3c4b3311::t_2eb96778b9d834 423,425-430,432-440,443,448-451,677,723-735,746-749,754-771
+  s_28ce0c3c4b3311::t_7274d3205fa0da 772
+packages/desktop/renderer/components/browser-live-viewport.test.ts
+  s_28ce0c3c4b3311::t_bce8fa63f444ab 159-182
+packages/server/app/web/neural-boot.css
+  s_28ce0c3c4b3311::t_293a05289fc418 19-36,380-381
+packages/server/app/web/page.tsx
+  s_28ce0c3c4b3311::t_293a05289fc418 769
+packages/desktop/renderer/components/BrowserLivePanel.tsx
+  s_28ce0c3c4b3311::t_45ab24bd2da7e8 1095-1103,1105-1106,1316-1349,1602-1603,1614
+  s_28ce0c3c4b3311::t_bce8fa63f444ab 1104
+  s_28ce0c3c4b3311::t_6cafa1910eecbc 208,435-436
+packages/webapp/tests/remote-desktop/regression.mjs
+  s_28ce0c3c4b3311::t_309797f282ce1b 21,206,212-226,264-275
+  s_28ce0c3c4b3311::t_5ea1596ed8c8f0 24,211
+  s_28ce0c3c4b3311::t_c6983c9b56579b 228-232
+  s_28ce0c3c4b3311::t_055e80fb0b95b6 75-85
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "00a222ef1352b881326d37110371c0231d816882",
+  "prompts": {},
+  "sessions": {
+    "s_28ce0c3c4b3311": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16983-25c3-7282-aa66-bf622c8d5299",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
