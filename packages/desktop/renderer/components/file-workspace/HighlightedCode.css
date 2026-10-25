@@ -6,9 +6,34 @@
   --syntax-function: #245cb5;
   --syntax-comment: #6b7280;
   --syntax-meta: #956113;
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  white-space: normal;
   font: inherit;
   color: inherit;
   tab-size: 2;
+}
+
+.file-code-line-number {
+  min-width: 2ch;
+  padding-right: 10px;
+  border-right: 1px solid var(--ui-border, #80808030);
+  color: var(--ui-history-meta, var(--ui-muted-text, #7b8390));
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Generated content keeps line numbers out of copied source text. */
+.file-code-line-number::before { content: attr(data-line-number); }
+
+.file-code-line-content {
+  min-width: 0;
+  min-height: 1.45em;
+  padding-left: 10px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 [data-skin="scifi"] .file-code-preview,

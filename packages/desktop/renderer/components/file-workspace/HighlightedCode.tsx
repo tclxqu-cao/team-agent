@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { codePreviewLanguage, MAX_HIGHLIGHT_CHARACTERS } from "./codePreviewLanguage";
+import { codePreviewLines } from "./codePreviewLines";
 import "./HighlightedCode.css";
 
-type HighlightCode = typeof import("./codeSyntax").highlightCode;
+type HighlightCode = typeof import("./codeSyntax").highlightCodeLines;
 
 export default function HighlightedCode({ path, chunks, fileSize }: { path: string; chunks: string[]; fileSize?: number }) {
   const [highlight, setHighlight] = useState<HighlightCode | null>(null);
@@ -15,22 +16,32 @@ export default function HighlightedCode({ path, chunks, fileSize }: { path: stri
     if (!eligible) return;
     let cancelled = false;
     // Load grammars only when a code file is opened. Text remains visible meanwhile.
-    void import("./codeSyntax").then(({ highlightCode }) => {
-      if (!cancelled) setHighlight(() => highlightCode);
+    void import("./codeSyntax").then(({ highlightCodeLines }) => {
+      if (!cancelled) setHighlight(() => highlightCodeLines);
     }).catch(() => {});
     return () => { cancelled = true; };
   }, [eligible]);
 
-  const markup = useMemo(() => (
+  const sourceLines = useMemo(() => codePreviewLines(chunks), [chunks]);
+  const highlightedLines = useMemo(() => (
     eligible && highlight ? highlight(path, chunks.join("")) : null
   ), [chunks, eligible, highlight, path]);
 
-  if (markup !== null) {
-    return <code className="file-code-preview" data-language={language} dangerouslySetInnerHTML={{ __html: markup }} />;
-  }
   return (
-    <code className="file-code-preview">
-      {chunks.map((chunk, index) => <span key={index}>{chunk}</span>)}
+    <code className="file-code-preview" data-language={language ?? undefined}>
+      {sourceLines.map((line, index) => {
+        const newline = index < sourceLines.length - 1 ? "\n" : "";
+        return (
+          <Fragment key={index}>
+            <span className="file-code-line-number" aria-hidden="true" data-line-number={index + 1} />
+            {highlightedLines ? (
+              <span className="file-code-line-content" dangerouslySetInnerHTML={{ __html: highlightedLines[index] + newline }} />
+            ) : (
+              <span className="file-code-line-content">{line}{newline}</span>
+            )}
+          </Fragment>
+        );
+      })}
     </code>
   );
 }

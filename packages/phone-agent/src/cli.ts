@@ -46,7 +46,7 @@ async function main(): Promise<number> {
       vision: createVisionAnnotator(config),
     });
     // artifacts 目录提前建好，agent 首次截图不因目录缺失失败
-    await mkdir(config.artifactsDir || join(process.cwd(), ".phone-agent"), { recursive: true }).catch(() => undefined);
+    await mkdir(config.artifactsDir, { recursive: true }).catch(() => undefined);
     await serveStdio(tools);
     return 0;
   }

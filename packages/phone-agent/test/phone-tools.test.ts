@@ -4,6 +4,7 @@ import { SnapshotStore } from "../src/perception/snapshot.js";
 import { buildSnapshot } from "../src/perception/ui-tree.js";
 import type { VisionAnnotator } from "../src/perception/vision.js";
 import type { PhoneAgentConfig } from "../src/config.js";
+import { loadConfig } from "../src/config.js";
 import type { PhoneDriver, PressKey, ScreenSize } from "../src/drivers/types.js";
 
 function mockDriver(xml: () => string): PhoneDriver {
@@ -165,5 +166,20 @@ describe("phone-tools", () => {
     ]) {
       expect(names).toContain(expected);
     }
+  });
+
+  it("未设 PHONE_ARTIFACTS_DIR 时截图落到系统临时目录，不再 ENOENT", async () => {
+    const config = loadConfig({}) as unknown as PhoneAgentConfig;
+    expect(config.artifactsDir).not.toBe("");
+    const vision: VisionAnnotator = { enabled: false, annotate: async () => "" };
+    const tools = buildPhoneTools({
+      driver: mockDriver(() => TAOBAO_XML),
+      config,
+      snapshots: new SnapshotStore(config.snapshotTtlMs),
+      vision,
+    });
+    const r = await tools.find((t) => t.name === "phone_screenshot")!.execute({});
+    expect(r.isError).toBeFalsy();
+    expect(r.text).toMatch(/\.png/);
   });
 });

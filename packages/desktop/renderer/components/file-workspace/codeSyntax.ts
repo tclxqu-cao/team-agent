@@ -44,3 +44,19 @@ export function highlightCode(path: string, source: string): string | null {
     return null;
   }
 }
+
+// Highlight the complete source first so comments and strings retain their
+// context, then close/reopen highlight.js spans at each original line boundary.
+export function highlightCodeLines(path: string, source: string): string[] | null {
+  const markup = highlightCode(path, source);
+  if (markup === null) return null;
+  const openSpans: string[] = [];
+  return markup.split("\n").map((line) => {
+    const prefix = openSpans.join("");
+    for (const [tag] of line.matchAll(/<span\b[^>]*>|<\/span>/g)) {
+      if (tag === "</span>") openSpans.pop();
+      else openSpans.push(tag);
+    }
+    return prefix + line + "</span>".repeat(openSpans.length);
+  });
+}

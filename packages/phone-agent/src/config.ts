@@ -1,3 +1,6 @@
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 /** 环境变量配置。所有字段都有默认值，可全部通过 env 覆盖。 */
 
 export interface PhoneAgentConfig {
@@ -54,7 +57,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): PhoneAgentConf
     adbSerial: str(env, "PHONE_ADB_SERIAL", ""),
     wdaUrl: str(env, "PHONE_WDA_URL", "http://127.0.0.1:8100"),
     wdaPrefix: str(env, "PHONE_WDA_PREFIX", ""),
-    artifactsDir: str(env, "PHONE_ARTIFACTS_DIR", ""),
+    artifactsDir: str(env, "PHONE_ARTIFACTS_DIR", join(tmpdir(), "phone-agent")),
     visionBaseUrl: str(env, "PHONE_VISION_BASEURL", ""),
     visionApiKey: str(env, "PHONE_VISION_APIKEY", ""),
     visionModel: str(env, "PHONE_VISION_MODEL", ""),

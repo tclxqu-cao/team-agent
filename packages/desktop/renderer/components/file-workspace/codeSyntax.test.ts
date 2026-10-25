@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { codePreviewLanguage, MAX_HIGHLIGHT_CHARACTERS, MAX_HIGHLIGHT_LINE_LENGTH } from "./codePreviewLanguage";
-import { highlightCode } from "./codeSyntax";
+import { highlightCode, highlightCodeLines } from "./codeSyntax";
 
 describe("file preview syntax highlighting", () => {
   it("distinguishes Java keywords, annotations, strings and comments", () => {
@@ -39,5 +39,42 @@ describe("file preview syntax highlighting", () => {
   it("keeps oversized sources and long generated lines in plain text", () => {
     expect(highlightCode("/large.java", "x".repeat(MAX_HIGHLIGHT_CHARACTERS + 1))).toBeNull();
     expect(highlightCode("/min.js", "x".repeat(MAX_HIGHLIGHT_LINE_LENGTH + 1))).toBeNull();
+  });
+});
+
+describe("line-numbered syntax highlighting", () => {
+  it("preserves multiline comments and blank lines in independently balanced rows", () => {
+    const source = "/* first\n\npublic is still a comment */\npublic class Example {}\n";
+    const lines = highlightCodeLines("/Example.java", source)!;
+    expect(lines).toHaveLength(5);
+    expect(lines[0]).toBe('<span class="hljs-comment">/* first</span>');
+    expect(lines[1]).toBe('<span class="hljs-comment"></span>');
+    expect(lines[2]).toBe('<span class="hljs-comment">public is still a comment */</span>');
+    expect(lines[3]).toContain('<span class="hljs-keyword">public</span>');
+    expect(lines[4]).toBe("");
+    expect(lines.map((line) => line.replace(/<[^>]+>/g, "")).join("\n")).toBe(source);
+  });
+
+  it("balances nested tokens across lines without turning escaped source into elements", () => {
+    const source = '<script>\nconst label = `first\n${1 + 2} <img src=x onerror=alert(1)>`;\n</script>';
+    const lines = highlightCodeLines("/page.html", source)!;
+    expect(lines).toHaveLength(source.split("\n").length);
+    for (const line of lines) {
+      let depth = 0;
+      for (const [tag] of line.matchAll(/<span\b[^>]*>|<\/span>/g)) {
+        depth += tag === "</span>" ? -1 : 1;
+        expect(depth).toBeGreaterThanOrEqual(0);
+      }
+      expect(depth).toBe(0);
+      expect(line).not.toContain("<script>");
+      expect(line).not.toContain("<img");
+    }
+    expect(lines[2]).toContain("&lt;img");
+  });
+
+  it("uses the same safe plain-text fallback for unknown and oversized files", () => {
+    expect(highlightCodeLines("/notes.txt", "first\nsecond")).toBeNull();
+    expect(highlightCodeLines("/large.java", "x".repeat(MAX_HIGHLIGHT_CHARACTERS + 1))).toBeNull();
+    expect(highlightCodeLines("/min.js", "x".repeat(MAX_HIGHLIGHT_LINE_LENGTH + 1))).toBeNull();
   });
 });
