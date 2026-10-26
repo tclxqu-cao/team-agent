@@ -7,6 +7,7 @@ import { loadAgentRailSessions, type AgentRailSessions } from "../lib/agent-rail
 import { sortRunningSessionsFirst } from "../lib/sidebar-session-sort";
 import { getSidebarSessionVisualState, SIDEBAR_SESSION_STATUS_LABELS } from "../lib/sidebar-session-status";
 import AgentWorkspaceSwitcher from "./AgentWorkspaceSwitcher";
+import CloudMigrationDialog from "./CloudMigrationDialog";
 import AgentBrandIcon from "./AgentBrandIcon";
 import SidebarSessionRow from "./SidebarSessionRow";
 
@@ -23,6 +24,7 @@ interface AgentSessionRailProps {
 
 export default function AgentSessionRail({ hidden, value, health, selectedSessionId, getActivity, onChange, onUnavailable, onSelect }: AgentSessionRailProps) {
   const [preview, setPreview] = useState<{ agentType: AgentType; label: string; top: number; unavailableMessage?: string } | null>(null);
+  const [migration, setMigration] = useState<{ id: string; title: string } | null>(null);
   const [snapshot, setSnapshot] = useState<AgentRailSessions | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -90,12 +92,17 @@ export default function AgentSessionRail({ hidden, value, health, selectedSessio
           return <SidebarSessionRow key={session.id} session={{ id: session.id, title: session.title, visualState,
             statusLabel: SIDEBAR_SESSION_STATUS_LABELS[visualState], occupiedExternally: session.occupancy === "owned-externally",
             canDelete: false, active: value === preview.agentType && selectedSessionId === session.id, compatibility: session.compatibility }}
-            onSelect={() => { if (snapshot) onSelect(session, snapshot); close(); }} />;
+            onSelect={() => { if (snapshot) onSelect(session, snapshot); close(); }}
+            onMigrateToCloud={() => setMigration({ id: session.id, title: session.title })} />;
         })}
         {loading && <p className="agent-session-flyout-message" role="status"><LoaderCircle size={15} className="spin" />正在加载会话…</p>}
         {error && <p className="agent-session-flyout-message" role="alert">{error}{!preview.unavailableMessage && <button type="button" onClick={() => setRevision(current => current + 1)}>重试</button>}</p>}
         {!loading && !error && !sessions.length && <p className="agent-session-flyout-message">{query ? "没有匹配的会话" : "暂无会话"}</p>}
       </div>
     </div>, document.body)}
+    {migration && <CloudMigrationDialog sessionId={migration.id} sessionTitle={migration.title} onClose={() => {
+      setMigration(null);
+      setRevision(current => current + 1);
+    }} />}
   </>;
 }

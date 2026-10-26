@@ -1,4 +1,4 @@
-import { CircleAlert, CircleHelp, ChevronRight, LockKeyhole, Pin, Trash2 } from "lucide-react";
+import { CircleAlert, CircleHelp, ChevronRight, CloudUpload, LockKeyhole, Pin, Trash2 } from "lucide-react";
 import type { SidebarSessionVisualState } from "../lib/sidebar-session-status";
 import type { SessionCompatibility } from "../global";
 
@@ -30,6 +30,7 @@ interface SidebarSessionRowProps {
   onSelect(): void;
   onPin?(): void;
   onDelete?(anchor: SidebarDeleteAnchor): void;
+  onMigrateToCloud?(): void;
 }
 
 export default function SidebarSessionRow({
@@ -38,6 +39,7 @@ export default function SidebarSessionRow({
   onSelect,
   onPin,
   onDelete,
+  onMigrateToCloud,
 }: SidebarSessionRowProps) {
   return (
     <div
@@ -105,6 +107,20 @@ export default function SidebarSessionRow({
           className={`sidebar-session-pin sidebar-row-action ui-icon-button ui-icon-button--small${session.pinned ? " sidebar-row-action--accent" : ""}`}
         >
           <Pin size={14} aria-hidden="true" />
+        </button>
+      )}
+      {onMigrateToCloud && (
+        <button
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation();
+            onMigrateToCloud();
+          }}
+          title="转移到云端（打包代码与历史，在云端沙箱继续）"
+          aria-label={`转移到云端：${session.title}`}
+          className="sidebar-session-cloud sidebar-row-action ui-icon-button ui-icon-button--small"
+        >
+          <CloudUpload size={14} aria-hidden="true" />
         </button>
       )}
       {session.canDelete && onDelete && (

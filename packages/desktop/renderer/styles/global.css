@@ -1317,6 +1317,7 @@ select:focus {
 }
 
 .sidebar-session-pin,
+.sidebar-session-cloud,
 .sidebar-session-delete {
   width: 28px;
   height: 28px;
@@ -4646,3 +4647,90 @@ input:focus, select:focus, textarea:focus {
 .app-sidebar .sidebar-row-action:focus-visible {
   opacity: 1;
 }
+
+/* ── 本地会话 → 云端承接会话：迁移对话框 ── */
+.cloud-migration-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 260;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--bg-primary, #0d1117) 62%, transparent);
+  backdrop-filter: blur(3px);
+}
+.cloud-migration-modal {
+  width: min(560px, calc(100vw - 48px));
+  max-height: min(640px, calc(100vh - 64px));
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 22px;
+  border-radius: 14px;
+  background: var(--bg-secondary, #161b22);
+  border: 1px solid var(--border-default, #30363d);
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.5);
+}
+.cloud-migration-modal header {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+.cloud-migration-subtitle {
+  color: var(--text-muted, #8b949e);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cloud-migration-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-muted, #8b949e);
+}
+.cloud-migration-status--error { color: var(--danger, #f85149); }
+.cloud-migration-preview { display: flex; flex-direction: column; gap: 10px; }
+.cloud-migration-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 13px;
+}
+.cloud-migration-facts { margin: 0; display: flex; flex-direction: column; gap: 8px; }
+.cloud-migration-facts > div { display: grid; grid-template-columns: 84px 1fr; gap: 10px; font-size: 12px; }
+.cloud-migration-facts dt { color: var(--text-muted, #8b949e); }
+.cloud-migration-facts dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.cloud-migration-files { display: flex; flex-wrap: wrap; gap: 5px; }
+.cloud-migration-files span {
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  background: color-mix(in srgb, var(--bg-primary, #0d1117) 70%, transparent);
+  border: 1px solid var(--border-default, #30363d);
+  color: var(--text-muted, #8b949e);
+}
+.cloud-migration-files--muted span { border-style: dashed; }
+.cloud-migration-note { margin: 0; font-size: 12px; color: var(--text-muted, #8b949e); }
+.cloud-migration-result p { margin: 0 0 8px; font-size: 13px; }
+.cloud-migration-modal footer { display: flex; justify-content: flex-end; gap: 10px; }
+.cloud-migration-cancel,
+.cloud-migration-confirm {
+  padding: 8px 18px;
+  border-radius: 8px;
+  font-size: 13px;
+  cursor: pointer;
+  border: 1px solid var(--border-default, #30363d);
+  background: transparent;
+  color: inherit;
+}
+.cloud-migration-confirm {
+  background: #238636;
+  border-color: #2ea043;
+  color: #fff;
+}
+.cloud-migration-confirm:disabled,
+.cloud-migration-cancel:disabled { opacity: 0.5; cursor: wait; }
