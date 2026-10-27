@@ -1,0 +1,381 @@
+packages/server/native/remote-helper/main.swift
+  s_28ce0c3c4b3311::t_f6fd2f83f2667b 432
+  s_28ce0c3c4b3311::t_4b2a3075d125b0 9-56,228,302-303,307,336,359,376,379,383,419,424-431,433-434,436
+packages/desktop/renderer/components/ChatView.model-source.test.ts
+  s_bd6aab285ff32e::t_5a01199cdfc825 1-7,11-20,22-24,26,28-30,35-36
+  s_bd6aab285ff32e::t_9c5aa0f37b4677 8-10,21,25,27,31-34
+packages/core/src/domain/agent/agent-type.test.ts
+  s_bd6aab285ff32e::t_d06084926f014c 1-20
+packages/native-runtime/src/agent-runtime/opencode-runtime-adapter.ts
+  s_e7d7d6e4113d4f::t_83c563fe3cc82c 285-299,447
+  s_e7d7d6e4113d4f::t_5ea77638646a7a 314,355-358,920-928
+  s_e7d7d6e4113d4f::t_fe2b5444f840d7 929-930
+packages/native-runtime/src/agent-runtime/qoder-workspace-catalog.test.ts
+  s_bd6aab285ff32e::t_d129c017387fff 1-53
+packages/native-runtime/src/agent-runtime/deepseek-harness-job-control.test.ts
+  s_503cb1cdd4d7f5::t_d651453ac0fb6a 65-66
+  s_503cb1cdd4d7f5::t_fd4c869254439f 1-64,67-81
+packages/native-runtime/src/agent-runtime/native-cli-command.ts
+  s_bd6aab285ff32e::t_bd9008bb5cb57e 1-3,5-103
+  s_bd6aab285ff32e::t_d6147ded745ece 4
+scripts/agent-navigation-architecture.test.ts
+  s_bd6aab285ff32e::t_bdb54442328e21 1-68,70-84
+  s_bd6aab285ff32e::t_c67def147bce2c 69
+packages/desktop/renderer/App.tsx
+  s_bd6aab285ff32e::t_95266714e1a387 48-49,327,1661,1693-1697,1712,1715
+  s_bd6aab285ff32e::t_f21c395862f022 2306
+packages/native-runtime/src/agent-runtime/fixtures/workbuddy-protocol-fixture.cjs
+  s_bd6aab285ff32e::t_78ba49a1f8ba92 43-46
+  s_bd6aab285ff32e::t_4e1d02309b5b86 1-42,47-53
+packages/native-runtime/src/agent-runtime/workbuddy-client.ts
+  s_bd6aab285ff32e::t_4ae319138f3d8c 19-221,227,244,252,256-257
+  s_bd6aab285ff32e::t_2ad80b1fbaabfe 1-18,222-226,228-243,245-251,253-255
+packages/server/app/web/ResponsiveToolbar.tsx
+  s_bd6aab285ff32e::t_b847c768569593 11-12,52,141,146
+  s_bd6aab285ff32e::t_58a53bb6a79e4b 5,23,26,30,62,98,105,114,118,140,142-145,147-149
+  s_bd6aab285ff32e::t_6c00d9524c7443 13,15-18,167,178
+  s_bd6aab285ff32e::t_7c6c3ea9f66b04 3
+  s_bd6aab285ff32e::t_18b502eb17f9c0 8-10,14,20,150
+packages/desktop/renderer/styles/background-jobs.css
+  s_e7d7d6e4113d4f::t_78f6f3c8a5fb02 4-5
+  s_e7d7d6e4113d4f::t_8599167f40a58b 1-3,6-28
+packages/native-runtime/src/agent-runtime/types.ts
+  s_e7d7d6e4113d4f::t_83c563fe3cc82c 229-230
+  s_bd6aab285ff32e::t_bb9fa106ac8c9f 80-81
+  s_bd6aab285ff32e::t_a22f61f5a90033 4-5,7,19,254-256,283
+packages/native-runtime/src/agent-runtime/zcode-model-progress.test.ts
+  s_bd6aab285ff32e::t_f89e46d43df152 1-61,63-67
+  s_bd6aab285ff32e::t_dc4215a7bb83c1 62
+packages/desktop/renderer/components/AgentBrandIcon.tsx
+  s_bd6aab285ff32e::t_95266714e1a387 2,15-18
+packages/native-runtime/src/agent-runtime/qoder-session-history.ts
+  s_bd6aab285ff32e::t_cb5318b6f46db0 51-54
+  s_bd6aab285ff32e::t_a3e15923fac097 1-50,55-106
+packages/native-runtime/src/agent-runtime/native-runtime-broker.ts
+  s_e7d7d6e4113d4f::t_78f6f3c8a5fb02 3161
+  s_bd6aab285ff32e::t_375757d78f65ea 3217
+  s_bd6aab285ff32e::t_bb9fa106ac8c9f 1019
+  s_e7d7d6e4113d4f::t_83c563fe3cc82c 1470
+  s_bd6aab285ff32e::t_4691d622fb0c6a 10,58-60,72-74,1351,1769-1783,2208-2210,2515-2526,2758-2760,3102-3105,3110
+packages/native-runtime/src/agent-runtime/unified-session-service.ts
+  s_e7d7d6e4113d4f::t_83c563fe3cc82c 178-184,353-370,388-390
+  s_e7d7d6e4113d4f::t_d1417df05f3eb3 24-26
+packages/native-runtime/src/agent-runtime/session-id.test.ts
+  s_bd6aab285ff32e::t_d06084926f014c 6
+  s_bd6aab285ff32e::t_90ddcdf20e3ff8 1
+packages/desktop/renderer/lib/native-session-view-state.ts
+  s_bd6aab285ff32e::t_992a1a9d3de41a 52-55,57-58,64
+  s_bd6aab285ff32e::t_de3f418e686081 56,59-63
+  s_bd6aab285ff32e::t_375757d78f65ea 1,3
+packages/server/app/web/navigation-layout-preference.test.ts
+  s_bd6aab285ff32e::t_d06084926f014c 1-34
+packages/native-runtime/src/agent-runtime/native-runtime-registration.test.ts
+  s_bd6aab285ff32e::t_cf5adc69c95da6 2-19
+  s_bd6aab285ff32e::t_1880d887dc7cfd 1,20-35
+packages/native-runtime/src/agent-runtime/native-runtime-broker.test.ts
+  s_e7d7d6e4113d4f::t_4b965d336538e1 266-281
+  s_bd6aab285ff32e::t_bb9fa106ac8c9f 2347-2363
+  s_e7d7d6e4113d4f::t_d145362e613567 158
+  s_bd6aab285ff32e::t_b852bed8cfc5a5 902,907-908,911-912,918,934,939-940,943-944,950
+packages/desktop/renderer/styles/sidebar-navigation.css
+  s_bd6aab285ff32e::t_6c00d9524c7443 19
+  s_bd6aab285ff32e::t_95266714e1a387 1-18,20-53,55,81-83,85
+  s_bd6aab285ff32e::t_375757d78f65ea 56
+  s_bd6aab285ff32e::t_58a53bb6a79e4b 57-80,84
+  s_bd6aab285ff32e::t_078682f609bb9e 54
+packages/native-runtime/src/agent-runtime/opencode-runtime-adapter.test.ts
+  s_e7d7d6e4113d4f::t_d38b6a583e578c 11,71-121,123-132,150
+  s_e7d7d6e4113d4f::t_e016ec1715cadc 122
+  s_e7d7d6e4113d4f::t_4b965d336538e1 133-149
+  s_e7d7d6e4113d4f::t_816271c064ab1b 151
+packages/webapp/src/presentation/web.css
+  s_e7d7d6e4113d4f::t_ffc5d4a3862ecc 124-125,195-196
+packages/webapp/src/main.tsx
+  s_bd6aab285ff32e::t_95266714e1a387 16,52
+packages/desktop/renderer/lib/session-run-error.test.ts
+  s_e7d7d6e4113d4f::t_d38b6a583e578c 1-53,56-75
+  s_e7d7d6e4113d4f::t_4b965d336538e1 54-55
+packages/native-runtime/src/agent-runtime/unified-session-service.test.ts
+  s_e7d7d6e4113d4f::t_4b965d336538e1 97-108,110-123
+  s_e7d7d6e4113d4f::t_d145362e613567 109
+packages/server/app/web/compact-toolbar.test.tsx
+  s_bd6aab285ff32e::t_b847c768569593 33-39
+  s_bd6aab285ff32e::t_d462aff75f8e3c 1-32,40-73
+packages/native-runtime/src/agent-runtime/zcode-client.ts
+  s_bd6aab285ff32e::t_992a1a9d3de41a 41,54,104,111-131,164,189,213,223,231,272
+  s_bd6aab285ff32e::t_f89e46d43df152 6,205-208
+  s_bd6aab285ff32e::t_73f57b25befde0 72-75,77
+  s_bd6aab285ff32e::t_2128ebb88e8544 1-5,7-40,42-53,55-71,76,78-103,105-110,132-163,165-188,190-204,209-212,214-222,224-230,232-271,273-289
+packages/desktop/renderer/lib/native-agent-run-prefs.test.ts
+  s_bd6aab285ff32e::t_5a01199cdfc825 1,4-5,7,11-31,38,51-88
+  s_bd6aab285ff32e::t_8a7d54508f89b1 89
+packages/desktop/renderer/components/RunFailureNotice.tsx
+  s_e7d7d6e4113d4f::t_d38b6a583e578c 13
+  s_e7d7d6e4113d4f::t_5ea77638646a7a 1-12,14-41
+packages/server/app/web/page.tsx
+  s_bd6aab285ff32e::t_58a53bb6a79e4b 706
+  s_bd6aab285ff32e::t_1741c62670d79e 35-37,178-197,214,216-224,279,370,748,750,752,755
+  s_bd6aab285ff32e::t_9a08773e5c7a59 307
+  s_bd6aab285ff32e::t_0b22f1fc517172 10,719-723
+packages/webapp/src/infrastructure/http/agent-http-gateway.test.ts
+  s_bd6aab285ff32e::t_726134ffda52ab 1527-1547
+packages/native-runtime/src/agent-runtime/zcode-runtime-adapter.test.ts
+  s_bd6aab285ff32e::t_5839e899a55fa8 35,70,84,100,108,111-112,118,184,192,200-201,210,217,220,223,226,228,231,240,243,245,248,254-281,284,291,299
+  s_bd6aab285ff32e::t_f89e46d43df152 117,139-173,230,247
+  s_bd6aab285ff32e::t_c01bbe08c20065 20-29,74,95,125-138,177-178,189,197,207,212-216
+  s_bd6aab285ff32e::t_bb9fa106ac8c9f 68
+  s_bd6aab285ff32e::t_eb243f29c28cbd 1-19,30-34,36-67,69,71-73,75-83,85-94,96-99,101-107,109-110,113-116,119-124,174-176,179-183,185-188,190-191,193-196,198-199,202-206,208-209,211,218-219,221-222,224-225,227,229,232-239,241-242,244,246,249-253,282-283,285-290,292-298,300
+packages/desktop/renderer/lib/session-history.ts
+  s_e7d7d6e4113d4f::t_5ea77638646a7a 18-19
+  s_bd6aab285ff32e::t_375757d78f65ea 39
+packages/native-runtime/src/agent-runtime/session-id.ts
+  s_bd6aab285ff32e::t_375757d78f65ea 30
+  s_bd6aab285ff32e::t_a0c55b2bbda7e0 2
+packages/webapp/src/presentation/web-shell-navigation.ts
+  s_bd6aab285ff32e::t_9a08773e5c7a59 9-12
+  s_bd6aab285ff32e::t_375757d78f65ea 13,15-18
+  s_bd6aab285ff32e::t_ad41a80cefa7e5 1-8,14,19
+packages/desktop/renderer/components/HeaderActionMenu.tsx
+  s_bd6aab285ff32e::t_58a53bb6a79e4b 1-74
+packages/server/app/web/navigation-layout-preference.ts
+  s_bd6aab285ff32e::t_1741c62670d79e 4-18
+  s_bd6aab285ff32e::t_4ce80fdd40442a 1-3,19-22
+packages/native-runtime/src/agent-runtime/qoder-runtime-adapter.test.ts
+  s_bd6aab285ff32e::t_cb5318b6f46db0 2-66,71,74,79-234
+  s_bd6aab285ff32e::t_03d94c9c400159 70
+  s_bd6aab285ff32e::t_d4f32e6949df9b 1,67-69,72-73,75-78,235
+packages/native-runtime/src/agent-runtime/opencode-v2-transport.ts
+  s_e7d7d6e4113d4f::t_83c563fe3cc82c 48-49,53-56,58-64,68-73
+  s_e7d7d6e4113d4f::t_4b965d336538e1 50-52
+packages/server/app/api/agent/models/route.ts
+  s_bd6aab285ff32e::t_375757d78f65ea 1,11-12
+packages/native-runtime/src/agent-runtime/background-jobs-broker.test.ts
+  s_bd6aab285ff32e::t_726134ffda52ab 1-8,10-54,56-95,115-120
+  s_e7d7d6e4113d4f::t_78f6f3c8a5fb02 9,96-114
+  s_e7d7d6e4113d4f::t_3344b7f9423cc0 55
+packages/desktop/renderer/components/SessionBackgroundJobs.tsx
+  s_e7d7d6e4113d4f::t_78f6f3c8a5fb02 45-91
+  s_e7d7d6e4113d4f::t_d3f84b52aad30f 1-44,92-93
+packages/server/app/api/sessions/[id]/background-jobs/route.test.ts
+  s_bd6aab285ff32e::t_726134ffda52ab 39
+  s_bd6aab285ff32e::t_1e59f885e9d69d 1-38,40-44
+packages/desktop/renderer/components/AgentWorkspaceHeader.test.tsx
+  s_bd6aab285ff32e::t_d06084926f014c 1-8,14,17-22,24-34
+  s_bd6aab285ff32e::t_f492593a8fb2a1 11
+  s_bd6aab285ff32e::t_05be162ecbd6af 9-10,12-13,15-16,23,35
+packages/desktop/renderer/components/AgentWorkspaceSwitcher.test.tsx
+  s_bd6aab285ff32e::t_d06084926f014c 7,21,27,45
+  s_bd6aab285ff32e::t_316707edcb0aeb 29-44,46-48
+packages/desktop/renderer/components/ChatView.tsx
+  s_bd6aab285ff32e::t_375757d78f65ea 1,529
+  s_e7d7d6e4113d4f::t_5ea77638646a7a 17,695,751-755,770-772,777,934,937-938,1689,1718,1799-1800,1988-1992,2487-2490,2785,3455,3473,4123,4855-4859,4862-4863,4914,5372-5374,5827
+  s_e7d7d6e4113d4f::t_d38b6a583e578c 18,4861
+  s_bd6aab285ff32e::t_992a1a9d3de41a 119,2029
+  s_bd6aab285ff32e::t_de3f418e686081 120,2054
+  s_e7d7d6e4113d4f::t_5efb18330c3ceb 4860
+  s_bd6aab285ff32e::t_8e628b0edb5a77 31,424,488,572,639
+packages/webapp/src/presentation/web-shell-navigation.test.ts
+  s_bd6aab285ff32e::t_d06084926f014c 1-37,39,41-59
+  s_bd6aab285ff32e::t_9a08773e5c7a59 38,40
+packages/desktop/renderer/components/RunFailureNotice.test.tsx
+  s_e7d7d6e4113d4f::t_d38b6a583e578c 1-42,44-47
+  s_e7d7d6e4113d4f::t_5efb18330c3ceb 43
+packages/native-runtime/src/agent-runtime/opencode-v2-transport.test.ts
+  s_e7d7d6e4113d4f::t_4b965d336538e1 49-74
+packages/desktop/renderer/lib/native-session-view-state.test.ts
+  s_bd6aab285ff32e::t_de3f418e686081 8,22-38
+  s_bd6aab285ff32e::t_637d6c23f6c514 7,39
+packages/desktop/renderer/lib/native-agent-run-prefs.ts
+  s_bd6aab285ff32e::t_375757d78f65ea 13-14,39
+  s_bd6aab285ff32e::t_88f0f4e7582bfd 40-45,64
+packages/native-runtime/src/agent-runtime/native-cli-command.test.ts
+  s_bd6aab285ff32e::t_bd9008bb5cb57e 1-65
+packages/native-runtime/src/agent-runtime/stdio-native-runtime-adapter.ts
+  s_bd6aab285ff32e::t_bb9fa106ac8c9f 51
+  s_bd6aab285ff32e::t_6c00d9524c7443 2-6,53,57-63,70-72,81,83,85-86,88,91-122,126-128,133,139,145,152
+  s_bd6aab285ff32e::t_992a1a9d3de41a 15-50,52
+  s_bd6aab285ff32e::t_47b055a4312dce 1,7-14,54-56,64-69,73-80,82,84,87,89-90,123-125,129-132,134-138,140-144,146-151,153-158
+packages/server/app/web/console-styles.ts
+  s_bd6aab285ff32e::t_1741c62670d79e 2
+  s_bd6aab285ff32e::t_b847c768569593 33,40
+  s_bd6aab285ff32e::t_58a53bb6a79e4b 29-32,34-38,41,43-44
+  s_bd6aab285ff32e::t_860284a8787d7d 39,42
+packages/native-runtime/src/agent-runtime/qoder-workspace-catalog.ts
+  s_bd6aab285ff32e::t_992a1a9d3de41a 2-34,36-45,47-73
+  s_bd6aab285ff32e::t_de3f418e686081 1,35,46
+packages/native-runtime/src/agent-runtime/qoder-client.ts
+  s_bd6aab285ff32e::t_992a1a9d3de41a 10,52-56,59,86-103,105,144,178,185,187-191
+  s_bd6aab285ff32e::t_5d9e776ae08e90 1-9,12-51,57-58,60-85,106-142,145-172,177,179-184,186,192-207,210-272
+  s_bd6aab285ff32e::t_03d94c9c400159 104
+  s_bd6aab285ff32e::t_2ddbf72f0e7f86 11,143,173-176,208-209
+packages/native-runtime/src/agent-runtime/qoder-runtime-adapter.ts
+  s_bd6aab285ff32e::t_5d9e776ae08e90 1-6
+packages/desktop/renderer/components/AgentWorkspaceSwitcher.tsx
+  s_bd6aab285ff32e::t_95266714e1a387 5-6,8
+  s_bd6aab285ff32e::t_8e2e42cb13ebc6 66
+packages/desktop/renderer/components/ChatHeaderActions.tsx
+  s_bd6aab285ff32e::t_95266714e1a387 3-4,82-83,196-199
+  s_bd6aab285ff32e::t_58a53bb6a79e4b 8,89,217
+  s_bd6aab285ff32e::t_88d400d0a1aeed 2,45,64,91,149,200-201
+packages/desktop/renderer/lib/agent-workspace-cache.ts
+  s_bd6aab285ff32e::t_375757d78f65ea 11
+  s_bd6aab285ff32e::t_12f195824bdae0 7
+packages/desktop/renderer/components/EmptySessionWelcome.tsx
+  s_bd6aab285ff32e::t_375757d78f65ea 1,21
+packages/native-runtime/src/agent-runtime/workbuddy-runtime-adapter.test.ts
+  s_bd6aab285ff32e::t_78ba49a1f8ba92 52,54
+  s_bd6aab285ff32e::t_7d72f46082f97b 42-51,53,55-58,94
+  s_bd6aab285ff32e::t_d36fa25a109900 31,40,67,79,88,95,98,103,106,108-144,152
+  s_bd6aab285ff32e::t_3daa7a1853455c 1-30,32-39,41,59-66,68-78,80-87,89-93,96-97,99-102,104-105,107,145-151,153
+packages/core/src/domain/web-console/navigation-layout.test.ts
+  s_bd6aab285ff32e::t_d06084926f014c 1-19
+packages/desktop/renderer/stores/uiStore.test.ts
+  s_bd6aab285ff32e::t_ca94e7d463c633 9,75-77,80-82
+  s_bd6aab285ff32e::t_d06084926f014c 73-74,78-79,83-93
+  s_bd6aab285ff32e::t_d026bb68e1eae0 94-95
+packages/server/app/api/sessions/route.ts
+  s_bd6aab285ff32e::t_375757d78f65ea 44
+packages/desktop/renderer/lib/session-run-error.ts
+  s_e7d7d6e4113d4f::t_5ea77638646a7a 1-6,8-16,18-24
+  s_e7d7d6e4113d4f::t_e016ec1715cadc 7
+  s_e7d7d6e4113d4f::t_d38b6a583e578c 25-31
+  s_e7d7d6e4113d4f::t_83c563fe3cc82c 17
+packages/native-runtime/src/agent-runtime/qoder-session-history.test.ts
+  s_bd6aab285ff32e::t_d36fa25a109900 1-50,69-120
+  s_bd6aab285ff32e::t_cb5318b6f46db0 51-68
+packages/server/app/api/agent-workspaces/agent-workspace-http.ts
+  s_bd6aab285ff32e::t_375757d78f65ea 3,8
+packages/native-runtime/src/agent-runtime/zcode-model-progress.ts
+  s_bd6aab285ff32e::t_f89e46d43df152 1-10,12-16,18-31
+  s_bd6aab285ff32e::t_343459ba26810e 11,17
+packages/core/src/domain/agent/agent-type.ts
+  s_bd6aab285ff32e::t_41fbb1b1d58857 1-19
+packages/core/src/domain/agent/index.ts
+  s_bd6aab285ff32e::t_40bad3a7d6ba65 33
+packages/core/src/domain/web-console/index.ts
+  s_bd6aab285ff32e::t_476a9fd7316137 9
+packages/core/src/domain/web-console/navigation-layout.ts
+  s_bd6aab285ff32e::t_d67cbb9ff1a1a3 1-19
+packages/desktop/renderer/components/AgentWorkspaceHeader.tsx
+  s_bd6aab285ff32e::t_2d127f63dab857 1-24
+packages/desktop/renderer/components/ChatHeaderActions.test.tsx
+  s_bd6aab285ff32e::t_cc191db34ad5d9 1-59
+packages/desktop/renderer/components/HeaderActionMenu.test.tsx
+  s_bd6aab285ff32e::t_da4a14c5988414 1-19
+packages/desktop/renderer/global.d.ts
+  s_bd6aab285ff32e::t_ce1742d7dd1004 2-5,377-379
+packages/desktop/renderer/lib/agent-catalog.ts
+  s_bd6aab285ff32e::t_b5af24e6b84e2a 1-7
+packages/desktop/renderer/lib/use-session-background-jobs.ts
+  s_503cb1cdd4d7f5::t_e075cf2d64e8c5 1-75
+packages/desktop/renderer/stores/uiStore.ts
+  s_bd6aab285ff32e::t_0427377ab261f4 4,40,54,75,95,104
+packages/desktop/renderer/styles/global.css
+  s_503cb1cdd4d7f5::t_fe350f0ffe9b10 2
+packages/desktop/tsconfig.build.json
+  s_bd6aab285ff32e::t_7831fb399a53c5 4-5
+packages/desktop/tsconfig.json
+  s_bd6aab285ff32e::t_cbc72a8c1b286b 5
+packages/desktop/tsconfig.test.ts
+  s_bd6aab285ff32e::t_3314a99c27d7b0 1-62
+packages/native-runtime/src/agent-runtime/background-jobs.ts
+  s_503cb1cdd4d7f5::t_cf7a5021412d04 1-22
+packages/native-runtime/src/agent-runtime/deepseek-harness-client.ts
+  s_503cb1cdd4d7f5::t_ccda7847dcb890 17-18
+packages/native-runtime/src/agent-runtime/deepseek-harness-job-control.ts
+  s_503cb1cdd4d7f5::t_304f400e80a464 1-105
+packages/native-runtime/src/agent-runtime/deepseek-harness-runtime-adapter.ts
+  s_503cb1cdd4d7f5::t_c02f98a208cc7e 11,47-58
+packages/native-runtime/src/agent-runtime/index.ts
+  s_bd6aab285ff32e::t_a3ebcf303c8345 7-9
+packages/native-runtime/src/agent-runtime/native-rpc-client.test.ts
+  s_bd6aab285ff32e::t_4cbcb9ba40bd0d 1-53
+packages/native-runtime/src/agent-runtime/native-rpc-client.ts
+  s_bd6aab285ff32e::t_a2dc808f1456c5 1-96
+packages/native-runtime/src/agent-runtime/native-stdio-channel.test.ts
+  s_bd6aab285ff32e::t_be0810465ec802 1-100
+packages/native-runtime/src/agent-runtime/native-stdio-channel.ts
+  s_bd6aab285ff32e::t_0d6d9c7d4acf25 1-189
+packages/native-runtime/src/agent-runtime/stdio-native-runtime-adapter.test.ts
+  s_bd6aab285ff32e::t_462a8cb9d78103 1-125
+packages/native-runtime/src/agent-runtime/workbuddy-runtime-adapter.ts
+  s_bd6aab285ff32e::t_17e4b2f4c89e05 1-6
+packages/native-runtime/src/agent-runtime/workbuddy-session-catalog.ts
+  s_bd6aab285ff32e::t_94ac0222588dfe 1-129
+packages/native-runtime/src/agent-runtime/zcode-runtime-adapter.ts
+  s_bd6aab285ff32e::t_2ea3626f9ed3d4 1-6
+packages/server/app/api/agent-workspaces/route.test.ts
+  s_bd6aab285ff32e::t_98b09019cc1ead 230,232,236,244,246,251
+packages/server/app/web/NavigationLayoutSwitcher.tsx
+  s_bd6aab285ff32e::t_fdbb33f5e24064 1-12
+packages/server/app/web/ThemePicker.tsx
+  s_bd6aab285ff32e::t_856702de7fc11f 7,31-34,37-38,41,61
+packages/server/app/web/glass-mobile-toolbar.test.ts
+  s_bd6aab285ff32e::t_d5c6903bc8cb96 7,10-13
+packages/server/app/web/popover-position.test.ts
+  s_bd6aab285ff32e::t_67ce399d2ac270 1-14
+packages/server/app/web/popover-position.ts
+  s_bd6aab285ff32e::t_bc1e60fd3ac691 1-5
+packages/server/lib/remote-control/helper-manager.test.ts
+  s_28ce0c3c4b3311::t_26719730f810f9 170-194
+packages/server/lib/remote-control/remote-authorization.mjs
+  s_28ce0c3c4b3311::t_7006e57c3e1e4d 13-16,58,190,193-195,215-226,265-269,273-282,286,297,333
+packages/server/lib/remote-control/remote-authorization.test.ts
+  s_28ce0c3c4b3311::t_c806091bf66a84 661-761
+packages/webapp/src/domain/ports/agent-port.ts
+  s_503cb1cdd4d7f5::t_ea469cc1311b1f 26-28
+packages/webapp/src/infrastructure/http/agent-http-gateway.ts
+  s_503cb1cdd4d7f5::t_d60aedaa1d4976 14-16,554-566
+packages/webapp/src/types.d.ts
+  s_bd6aab285ff32e::t_8ecf1a32fd45a5 22-23
+packages/server/app/api/sessions/[id]/background-jobs/[jobId]/route.ts
+  s_503cb1cdd4d7f5::t_c00faba9846170 1-13
+packages/server/app/api/sessions/[id]/background-jobs/[jobId]/stop/route.ts
+  s_503cb1cdd4d7f5::t_89813347f51cf3 1-11
+packages/server/app/api/sessions/[id]/background-jobs/route.ts
+  s_503cb1cdd4d7f5::t_7b8972a73e5b11 1-13
+packages/server/lib/native-runtime-service.ts
+  s_503cb1cdd4d7f5::t_016f77f1800630 2,129-131,400-414,651
+packages/server/lib/remote-control/helper-manager.mjs
+  s_28ce0c3c4b3311::t_c72bb2566733fb 125-131
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "271d398a158757fea47340fa789a90b7b609e9f6",
+  "prompts": {},
+  "sessions": {
+    "s_28ce0c3c4b3311": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16983-25c3-7282-aa66-bf622c8d5299",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_503cb1cdd4d7f5": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a15894-607f-7592-8200-e174adb3c36e",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_bd6aab285ff32e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a170fa-2947-71d0-980e-48dca732b20d",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_e7d7d6e4113d4f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a17622-6ab2-71c2-9957-c6b4df180206",
+        "model": "ap-southeast-1-v5cjq-gptdy-17usoft-com/gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
