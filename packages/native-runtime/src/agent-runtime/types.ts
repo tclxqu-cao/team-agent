@@ -1,7 +1,10 @@
 import type { SessionForkPoint } from "@agent/core";
 import type { NativeGoalMutation, NativeSessionGoal } from "./native-session-goal.js";
 export type { NativeGoalMutation, NativeGoalRef, NativeSessionGoal } from "./native-session-goal.js";
+export type { RuntimeBackgroundJob, RuntimeBackgroundJobOutput, RuntimeBackgroundJobStopResult } from "./background-jobs.js";
+import type { RuntimeBackgroundJob, RuntimeBackgroundJobOutput, RuntimeBackgroundJobStopResult } from "./background-jobs.js";
 import type {
+  AgentType,
   AgentEvent,
   Message,
   SessionGoalState,
@@ -13,7 +16,7 @@ import type {
   ToolPermissionMode,
 } from "@agent/core";
 
-export type AgentType = "customer-agent" | "codex" | "claude-code" | "opencode" | "deepseek-harness";
+export type { AgentType } from "@agent/core";
 
 export type SessionOccupancy =
   | "available"
@@ -74,6 +77,8 @@ export interface UnifiedSessionSummary {
   status: "idle" | "running" | "completed" | "failed";
   occupancy: SessionOccupancy;
   sourceLabel: string;
+  /** Intrinsic native restriction, independent of transient runtime ownership. */
+  readOnly?: boolean;
   canResume: boolean;
   canDelete: boolean;
   permissionMode?: ToolPermissionMode;
@@ -221,6 +226,8 @@ export interface AgentRuntimeAdapter {
     name?: string,
   ): Promise<ImportAgentWorkspaceResult>;
   getSession(nativeSessionId: string): Promise<UnifiedSessionDetail>;
+  /** Fresh admission/occupancy metadata without downloading the transcript. */
+  getSessionSummary?(nativeSessionId: string): Promise<UnifiedSessionSummary>;
   /**
    * Source-paginated history window over the runtime's own protocol. When
    * implemented, it must serve ALL windowed query kinds (limit/before/after/
@@ -244,6 +251,9 @@ export interface AgentRuntimeAdapter {
   setNativeMode?(nativeSessionId: string, preset: string): Promise<UnifiedSessionSummary>;
   setNativePermissionPreset?(nativeSessionId: string, preset: string): Promise<UnifiedSessionSummary>;
   getNativeGoal?(nativeSessionId: string): Promise<NativeSessionGoal | null>;
+  listBackgroundJobs?(nativeSessionId: string): Promise<RuntimeBackgroundJob[]>;
+  getBackgroundJobOutput?(nativeSessionId: string, jobId: string): Promise<RuntimeBackgroundJobOutput>;
+  stopBackgroundJob?(nativeSessionId: string, jobId: string): Promise<RuntimeBackgroundJobStopResult>;
   mutateNativeGoal?(nativeSessionId: string, mutation: NativeGoalMutation): Promise<NativeSessionGoal | null>;
   run(
     nativeSessionId: string,
@@ -270,6 +280,7 @@ export class RuntimeSessionError extends Error {
     readonly code:
       | "INVALID_SESSION_ID"
       | "SESSION_NOT_FOUND"
+      | "BACKGROUND_JOB_NOT_FOUND"
       | "SESSION_OCCUPIED"
       | "SESSION_ALREADY_RUNNING"
       | "RUNTIME_UNAVAILABLE"

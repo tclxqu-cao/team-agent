@@ -121,6 +121,8 @@ body[data-remote-desktop="1"] .browser-live-panel {
 }
 
 .browser-live-header {
+  position: relative;
+  z-index: 1;
   justify-content: space-between;
   border-bottom: 1px solid var(--border-subtle);
 }
@@ -190,6 +192,8 @@ body[data-remote-desktop="1"] .browser-live-panel {
 .browser-live-surface {
   min-height: 0;
   position: relative;
+  /* Scope toolbar/video layers below header popovers, including glass skins. */
+  z-index: 0;
   display: grid;
   place-items: center;
   overflow: hidden;

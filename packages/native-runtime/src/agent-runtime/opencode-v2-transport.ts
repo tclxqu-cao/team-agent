@@ -45,14 +45,32 @@ export function createOpenCodeV2Fetch(baseUrl: string, authorization: string, re
   return async (input, init) => {
     const original = new Request(input, init);
     const url = new URL(original.url);
+    const failure = (error: unknown, path: string, method: string, stage: string): Error => {
+      if (original.signal.aborted) return error instanceof Error ? error : new Error(String(error));
+      const cause = error instanceof Error ? error.cause : undefined;
+      const code = cause && typeof cause === "object" && "code" in cause && typeof cause.code === "string"
+        ? ` (${cause.code})` : "";
+      const message = error instanceof Error ? error.message : String(error);
+      // Exclude query strings (including opaque cursors), auth and prompt bodies.
+      return new Error(`OpenCode 2 ${method} ${new URL(path, baseUrl).pathname} ${stage}: ${message}${code}`, { cause: error });
+    };
     const call = async (path: string, method = "GET", body?: unknown): Promise<Response> => {
-      return request(new URL(path, baseUrl), { method, signal: original.signal,
-        headers: { Authorization: authorization, Accept: "application/json", ...(body === undefined ? {} : { "Content-Type": "application/json" }) },
-        ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
+      try {
+        return await request(new URL(path, baseUrl), { method, signal: original.signal,
+          headers: { Authorization: authorization, Accept: "application/json", ...(body === undefined ? {} : { "Content-Type": "application/json" }) },
+          ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
+      } catch (error) {
+        throw failure(error, path, method, "connection failed");
+      }
     };
     const json = async (path: string, method = "GET", body?: unknown): Promise<unknown> => {
       const response = await call(path, method, body);
-      const value: unknown = response.status === 204 ? undefined : await response.json();
+      let value: unknown;
+      try {
+        value = response.status === 204 ? undefined : await response.json();
+      } catch (error) {
+        throw failure(error, path, method, "response read failed");
+      }
       if (!response.ok) {
         const error = record(value);
         throw new Error(`OpenCode 2 HTTP ${response.status}: ${String(error.message ?? error._tag ?? "request failed")}`);

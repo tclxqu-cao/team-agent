@@ -1,0 +1,85 @@
+.app-sidebar.has-agent-navigation {
+  display: grid !important;
+  grid-template-columns: 56px minmax(0, 1fr);
+  grid-template-rows: 66px auto auto minmax(0, 1fr) auto;
+  grid-template-areas: "agent-header agent-header" "agent-rail search" "agent-rail toolbar" "agent-rail sessions" "footer footer";
+}
+.has-agent-navigation > .sidebar-agent-header { grid-area: agent-header; }
+.has-agent-navigation > .agent-workspace-switcher { grid-area: agent-rail; }
+.has-agent-navigation > .sidebar-search-field { grid-area: search; }
+.has-agent-navigation > .sidebar-project-toolbar { grid-area: toolbar; }
+.has-agent-navigation > .app-sidebar-scroll { grid-area: sessions; min-width: 0; min-height: 0; }
+.has-agent-navigation > .sidebar-bottom-action { grid-area: footer; }
+.sidebar-agent-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 8px 14px 12px;
+  border-bottom: 0;
+  color: var(--text-primary);
+  -webkit-app-region: no-drag;
+}
+.sidebar-agent-header-icon {
+  display: grid;
+  place-items: center;
+  flex: 0 0 34px;
+  height: 34px;
+  border-radius: 11px;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+.sidebar-agent-header-identity { flex: 1; min-width: 0; }
+.sidebar-agent-header-name { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 17px; font-weight: 600; letter-spacing: -.35px; }
+.sidebar-agent-header-status { display: flex; align-items: center; gap: 5px; margin-top: 3px; color: var(--text-muted); font-size: 11px; }
+.sidebar-agent-header-status > i { width: 5px; height: 5px; border-radius: 50%; background: var(--text-muted); }
+.sidebar-agent-header-status.is-ready > i { background: var(--success, #219274); }
+.sidebar-agent-header-status.is-unavailable > i { background: var(--warning, #c89137); }
+.sidebar-agent-header-close { flex-shrink: 0; }
+.has-agent-navigation > .agent-workspace-switcher.is-vertical {
+  min-height: 0;
+  align-self: stretch;
+  margin: 0;
+  padding: 14px 7px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border-right: 1px solid var(--border-subtle);
+  background: color-mix(in srgb, var(--bg-deepest) 65%, transparent);
+  scrollbar-width: none;
+}
+.has-agent-navigation .agent-workspace-switcher.is-vertical .agent-workspace-track { flex-shrink: 0; }
+.has-agent-navigation .agent-workspace-switcher.is-vertical .agent-workspace-more { display: none; }
+.has-agent-navigation .agent-workspace-switcher.is-vertical button { min-width: 40px; max-width: 40px; height: 42px; padding: 8px; border-radius: 12px; }
+.has-agent-navigation .agent-workspace-switcher.is-vertical button.is-active { background: color-mix(in srgb, var(--accent) 9%, var(--bg-surface)); }
+.has-agent-navigation > .sidebar-search-field { min-width: 0; margin-top: 12px; margin-left: 12px; margin-right: 12px; }
+.has-agent-navigation > .sidebar-project-toolbar { min-width: 0; padding-left: 14px; padding-right: 12px; }
+body[data-web-shell-embedded="1"] .chat-header-action--navigation-layout { display: none; }
+.header-action-menu-trigger { flex-shrink: 0; border-radius: 12px; }
+.header-action-menu-trigger[aria-expanded="true"] { background: var(--bg-hover); color: var(--text-primary); }
+.header-action-menu-panel {
+  z-index: 140;
+  box-sizing: border-box;
+  width: max-content;
+  max-width: min(260px, calc(100vw - 16px));
+  max-height: calc(100dvh - 16px);
+  overflow-y: auto;
+  padding: 10px;
+  color: var(--text-primary);
+  border: 1px solid var(--border-subtle);
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--bg-surface) 88%, transparent);
+  backdrop-filter: blur(22px) saturate(1.2);
+  -webkit-backdrop-filter: blur(22px) saturate(1.2);
+  box-shadow: 0 8px 28px #29434e26;
+  -webkit-app-region: no-drag;
+}
+.header-action-menu-panel[hidden] { display: none; }
+.header-action-menu-panel :is(.chat-header-actions, .desktop-app-actions) { display: flex; flex-wrap: wrap; max-width: 238px; gap: 6px; }
+.header-action-menu-panel .desktop-app-actions { margin-left: 0; }
+.header-action-menu-panel .ui-icon-button { width: 44px; height: 44px; border-radius: 12px; }
+.header-action-menu-panel .ui-icon-button svg { width: 20px; height: 20px; }
+@media (pointer: coarse) {
+  .has-agent-navigation .agent-workspace-switcher.is-vertical button { min-height: 44px; }
+  .sidebar-agent-header-close { min-width: 44px; min-height: 44px; }
+  .header-action-menu-trigger { min-width: 44px; min-height: 44px; }
+}

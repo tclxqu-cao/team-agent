@@ -4,6 +4,8 @@ import {
   isNativeRuntimeSelection,
   shouldQueueMessageForActiveRun,
   shouldFollowNativeHistory,
+  shouldPollNativeHistoryFallback,
+  prefersNativeHistoryPolling,
   shouldRestoreCustomerAgentRun,
   shouldRestoreLocalNativeRun,
   shouldDeferAnchoredSessionEvent,
@@ -17,6 +19,24 @@ const externalRunning = (agentType: "codex" | "claude-code"): NativeSessionViewS
 });
 
 describe("native session view state", () => {
+  it.each(["qoder", "zcode", "workbuddy"] as const)(
+    "polls idle %s history when native transcript observation is unsupported",
+    (agentType) => {
+      const session = { agentType, status: "idle", occupancy: "available" } as const;
+      expect(shouldPollNativeHistoryFallback(session)).toBe(true);
+      expect(prefersNativeHistoryPolling(session)).toBe(true);
+    },
+  );
+
+  it("preserves existing polling policy for other runtimes", () => {
+    expect(shouldPollNativeHistoryFallback({ agentType: "codex", status: "idle", occupancy: "available" })).toBe(false);
+    expect(shouldPollNativeHistoryFallback({ agentType: "codex", status: "running" })).toBe(true);
+    expect(shouldPollNativeHistoryFallback({ agentType: "claude-code", occupancy: "owned-externally" })).toBe(true);
+    expect(shouldPollNativeHistoryFallback({ agentType: "customer-agent" })).toBe(true);
+    expect(shouldPollNativeHistoryFallback(undefined)).toBe(false);
+    expect(prefersNativeHistoryPolling({ agentType: "codex" })).toBe(false);
+    expect(prefersNativeHistoryPolling(undefined)).toBe(false);
+  });
   it("settles runs while viewing older history without applying live transcript events", () => {
     const events = ["text_chunk", "tool_call", "thinking", "run_admitted", "done", "error", "turn_aborted"];
     expect(events.filter((type) => !shouldDeferAnchoredSessionEvent(type)))

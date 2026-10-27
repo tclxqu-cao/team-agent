@@ -7,7 +7,7 @@ import dynamic from "next/dynamic";
 import { CONSOLE_CSS } from "./console-styles";
 import { consoleFrameUrl, consoleOrigin } from "./console-environment";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, ExternalLink, Bot, PanelRight, X, LayoutGrid, MonitorUp, RefreshCw, UsersRound } from "lucide-react";
+import { ArrowLeft, ExternalLink, Bot, FolderOpen, PanelRight, X, LayoutGrid, MonitorUp, RefreshCw, UsersRound } from "lucide-react";
 import PwaInstallButton from "./PwaInstallButton";
 import ComputerSwitcher from "./ComputerSwitcher";
 import ComputerPagePane from "./ComputerPagePane";
@@ -32,6 +32,9 @@ import { useGateway } from "./useGateway";
 import AuthGate, { type WebAuthController } from "./AuthGate";
 import HistoryPanel from "./HistoryPanel";
 import ThemePicker from "./ThemePicker";
+import NavigationLayoutSwitcher from "./NavigationLayoutSwitcher";
+import { readNavigationLayoutPreference, writeNavigationLayoutPreference, UI_PREFERENCES_KEY } from "./navigation-layout-preference";
+import { DEFAULT_NAVIGATION_LAYOUT, NAVIGATION_LAYOUT_MESSAGE, type NavigationLayout } from "../../../core/src/domain/web-console/navigation-layout";
 import { resetHorizontalScroll, resolveVisualViewport } from "./mobileViewport";
 import { DEFAULT_THEME_ID, resolveWebTheme, type WebThemeId } from "./themes";
 import { readWebappTabSwipeMessage } from "./webappTabSwipe";
@@ -172,6 +175,26 @@ function AuthenticatedConsole({
   const [keyOrder,setKeyOrder]=useState<string[]>([]);
   const [pinnedCommands,setPinnedCommands]=useState<PinnedCommand[]>(defaultPinnedCommands());
   const [themeId,setThemeId]=useState<WebThemeId>(readInitialWebThemeId);
+  const [navigationLayout, setNavigationLayout] = useState<NavigationLayout>(DEFAULT_NAVIGATION_LAYOUT);
+  const [navigationLayoutLoaded, setNavigationLayoutLoaded] = useState(false);
+  useEffect(() => {
+    const restore = () => {
+      try { setNavigationLayout(readNavigationLayoutPreference(window.localStorage)); }
+      catch { /* Keep the default when browser storage is inaccessible. */ }
+      setNavigationLayoutLoaded(true);
+    };
+    const onStorage = (event: StorageEvent) => {
+      if (event.key === UI_PREFERENCES_KEY || event.key === null) restore();
+    };
+    restore();
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, []);
+  const changeNavigationLayout = useCallback((next: NavigationLayout) => {
+    setNavigationLayout(next);
+    try { writeNavigationLayoutPreference(window.localStorage, next); }
+    catch { /* Layout switching does not depend on persistent storage. */ }
+  }, []);
   const [preferencesLoaded,setPreferencesLoaded]=useState(false);
   const computerConfiguration = useComputerSettings(auth.csrfToken);
   const [webappReady, setWebappReady] = useState(false);
@@ -188,9 +211,17 @@ function AuthenticatedConsole({
       window.location.origin,
     );
   }, []);
-  useEffect(() => {
+  const postAppearanceToWebapp = useCallback(() => {
     postSkinToWebapp(themeId);
-  }, [themeId, postSkinToWebapp]);
+    if (!navigationLayoutLoaded) return;
+    const frames = [webappFrameRef.current, remoteDesktopFrameRef.current, collaborationDashboardFrame.current, ...collaborationFrames.current.values()];
+    for (const frame of frames) frame?.contentWindow?.postMessage(
+      { type: NAVIGATION_LAYOUT_MESSAGE, navigationLayout }, window.location.origin,
+    );
+  }, [themeId, navigationLayout, navigationLayoutLoaded, postSkinToWebapp]);
+  useEffect(() => {
+    postAppearanceToWebapp();
+  }, [postAppearanceToWebapp]);
   // Keep the OS chrome on the active skin: iOS home-screen apps paint the
   // status-bar strip with the page background, Android tints it from the
   // theme-color meta. The tint follows the top tab bar so the strip reads as
@@ -245,7 +276,7 @@ function AuthenticatedConsole({
         setRemoteDesktopFullscreen(false);
         setRemoteDesktopReadyEpoch((current) => current + 1);
         setRemoteDesktopContentReady(false);
-        postSkinToWebapp(themeId);
+        postAppearanceToWebapp();
         return;
       }
       if (remoteSource && event.origin === window.location.origin && event.source === remoteSource && event.data?.type === REMOTE_DESKTOP_CONTENT_READY_TYPE) {
@@ -273,6 +304,7 @@ function AuthenticatedConsole({
       );
       if (readyMessage) {
         setWebappReady(true);
+        postAppearanceToWebapp();
         onWorkspaceReady();
         return;
       }
@@ -335,7 +367,7 @@ function AuthenticatedConsole({
     };
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
-  }, [onWorkspaceReady, rpc, postSkinToWebapp, themeId]);
+  }, [onWorkspaceReady, rpc, postAppearanceToWebapp]);
   useEffect(() => {
     const forward = (event: Record<string, unknown>) => {
       for (const ref of [webappFrameRef, remoteDesktopFrameRef]) ref.current?.contentWindow?.postMessage({
@@ -671,6 +703,7 @@ function AuthenticatedConsole({
         <div className="terminal-connection">
           <ResponsiveToolbar
             glass={themeId === "glass"}
+            compact={navigationLayout === "agent-rail"}
             avatar={<ComputerSwitcher username={auth.user?.username ?? "?"} connected={state.connected} accent={activeTheme.keybar.accent} accentText={activeTheme.keybar.accentText} selectedPageId={selectedPage?.id} onSelectPage={selectComputerPage} onUpdatePage={updateComputerPage} configuration={computerConfiguration} csrfToken={auth.csrfToken} />}
             items={[
               { id: "refresh", content: <button type="button" className="file-drawer-toggle" aria-label="刷新页面" title="刷新页面" onClick={() => selectedPage ? setPageReloadKey(key => key + 1) : window.location.reload()}><RefreshCw size={17} aria-hidden="true" /></button> },
@@ -683,8 +716,11 @@ function AuthenticatedConsole({
               { id: "remote", content: <button type="button" className="file-drawer-toggle" aria-label="打开远程桌面" title="远程桌面 · 浏览器直播" onClick={() => { setSelectedPage(null); openRemoteDesktopTab(); }}><MonitorUp size={17} aria-hidden="true" /></button> },
               { id: "ai-hub", content: <button type="button" className="file-drawer-toggle" aria-label="打开 AI Hub" title="AI Hub · 多模型对比" onClick={() => { setSelectedPage(null); openAiHubTab(); }}><LayoutGrid size={17} aria-hidden="true" /></button> },
               { id: "flow", content: <button type="button" className="file-drawer-toggle" aria-label="打开数字人" title="数字人 · Flow Studio" onClick={() => { setSelectedPage(null); openFlowStudioTab(); }}><Bot size={17} aria-hidden="true" /></button> },
-              { id: "theme", content: <ThemePicker themeId={themeId} onThemeChange={setThemeId} /> },
-              { id: "files", content: <button type="button" className="file-drawer-toggle" aria-label={drawerOpen ? "关闭我的文件" : "打开我的文件"} title="我的文件" aria-expanded={drawerOpen} onClick={() => { setSelectedPage(null); setDrawerOpen((open) => !open); }}><PanelRight size={17} aria-hidden="true" /></button> },
+              { id: "theme", content: <div className="web-appearance-controls"><ThemePicker themeId={themeId} onThemeChange={setThemeId} /><NavigationLayoutSwitcher value={navigationLayout} onChange={changeNavigationLayout} /></div>, compactItems: [
+                { id: "theme", content: <ThemePicker themeId={themeId} onThemeChange={setThemeId} /> },
+                { id: "navigation-layout", content: <NavigationLayoutSwitcher value={navigationLayout} onChange={changeNavigationLayout} /> },
+              ] },
+              { id: "files", content: <button type="button" className="file-drawer-toggle" aria-label={drawerOpen ? "关闭我的文件" : "打开我的文件"} title="我的文件" aria-expanded={drawerOpen} onClick={() => { setSelectedPage(null); setDrawerOpen((open) => !open); }}><FolderOpen size={17} aria-hidden="true" /></button> },
             ].filter(item => computerConfiguration.settings.visibleTools.some(id => id === item.id)).sort((left, right) => computerConfiguration.settings.visibleTools.findIndex(id => id === left.id) - computerConfiguration.settings.visibleTools.findIndex(id => id === right.id))}
           />
         </div>
@@ -709,14 +745,14 @@ function AuthenticatedConsole({
           {tabs.map((tab) => (
             <div className="terminal-slide" key={tab.id} style={{ position: "relative" }}>
               {tab.kind === "webapp" ? (
-                <iframe ref={webappFrameRef} className="webapp-frame" src={consoleFrameUrl("/app/")} title={tab.title} onLoad={() => postSkinToWebapp(themeId)} />
+                <iframe ref={webappFrameRef} className="webapp-frame" src={consoleFrameUrl("/app/")} title={tab.title} onLoad={postAppearanceToWebapp} />
               ) : tab.kind === "collaboration-dashboard" ? (
-                <CollaborationPane title="群聊看板" onFrame={frame => { collaborationDashboardFrame.current = frame; }} onLoad={() => postSkinToWebapp(themeId)} />
+                <CollaborationPane title="群聊看板" onFrame={frame => { collaborationDashboardFrame.current = frame; }} onLoad={postAppearanceToWebapp} />
               ) : tab.kind === "collaboration" ? (
-                <CollaborationPane key={`${tab.id}-${collaborationFrameRevisions[tab.groupId || ""] || 0}`} groupId={tab.groupId || ""} title={tab.title} onFrame={frame => { if (frame) collaborationFrames.current.set(tab.id, frame); else collaborationFrames.current.delete(tab.id); }} onLoad={() => postSkinToWebapp(themeId)} />
+                <CollaborationPane key={`${tab.id}-${collaborationFrameRevisions[tab.groupId || ""] || 0}`} groupId={tab.groupId || ""} title={tab.title} onFrame={frame => { if (frame) collaborationFrames.current.set(tab.id, frame); else collaborationFrames.current.delete(tab.id); }} onLoad={postAppearanceToWebapp} />
               ) : tab.kind === "remote-desktop" ? (
                 <div style={{ height: "100%", background: "var(--ui-term-col-bg, #101014)" }} aria-busy={!remoteDesktopContentReady}>
-                  <iframe ref={remoteDesktopFrameRef} className="webapp-frame" style={{ visibility: remoteDesktopContentReady ? "visible" : "hidden" }} src={consoleFrameUrl("/app/?view=remote-desktop")} title="远程桌面" onLoad={() => postSkinToWebapp(themeId)} />
+                  <iframe ref={remoteDesktopFrameRef} className="webapp-frame" style={{ visibility: remoteDesktopContentReady ? "visible" : "hidden" }} src={consoleFrameUrl("/app/?view=remote-desktop")} title="远程桌面" onLoad={postAppearanceToWebapp} />
                   {!remoteDesktopContentReady && <FlowStudioLoading label="REMOTE DESKTOP" title="正在打开远程桌面" caption="正在准备桌面与连接" icon={<MonitorUp size={36} strokeWidth={1.5} />} />}
                 </div>
               ) : tab.kind === "aihub" ? (

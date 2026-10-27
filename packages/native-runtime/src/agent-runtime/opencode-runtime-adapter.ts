@@ -282,6 +282,21 @@ export class OpenCodeRuntimeAdapter implements AgentRuntimeAdapter {
     return paginateByOffset(summaries, query, summaries[0]?.updated ?? null);
   }
 
+  async getSessionSummary(nativeSessionId: string): Promise<UnifiedSessionSummary> {
+    const client = await this.getClient();
+    const directory = await this.resolveDirectory(nativeSessionId);
+    try {
+      const [session, statuses] = await Promise.all([
+        client.session.get({ path: { id: nativeSessionId }, query: { directory }, throwOnError: true }).then((r) => r.data),
+        client.session.status({ query: { directory }, throwOnError: true }).then((r) => r.data),
+      ]);
+      this.sessionDirectories.set(session.id, session.directory);
+      return openCodeSessionToSummary(session, statuses[nativeSessionId], this.ownedSessions.has(nativeSessionId));
+    } catch (error) {
+      throw normalizeOpenCodeError(error, nativeSessionId);
+    }
+  }
+
   async getSession(nativeSessionId: string): Promise<UnifiedSessionDetail> {
     const client = await this.getClient();
     const directory = await this.resolveDirectory(nativeSessionId);
@@ -296,7 +311,7 @@ export class OpenCodeRuntimeAdapter implements AgentRuntimeAdapter {
       return {
         ...openCodeSessionToSummary(session, statuses[session.id], this.ownedSessions.has(session.id)),
         messages: this.convertHistory(nativeSessionId, messages),
-        events: questions,
+        events: [...openCodeHistoryErrors(messages, statuses[nativeSessionId]), ...questions],
       };
     } catch (error) {
       throw normalizeOpenCodeError(error, nativeSessionId);
@@ -337,7 +352,10 @@ export class OpenCodeRuntimeAdapter implements AgentRuntimeAdapter {
     return {
       ...summary,
       messages: page.messages,
-      events: end === skeleton.length ? await this.getQuestionEvents(client, nativeSessionId, directory) : [],
+      events: end === skeleton.length ? [
+        ...openCodeHistoryErrors(history, statuses[nativeSessionId]),
+        ...await this.getQuestionEvents(client, nativeSessionId, directory),
+      ] : [],
       history: nativeHistoryWindow(start, end, skeleton.length, kind, revision, query.view ?? "legacy-full"),
     };
   }
@@ -426,7 +444,7 @@ export class OpenCodeRuntimeAdapter implements AgentRuntimeAdapter {
     if (this.activeRuns.has(nativeSessionId)) {
       throw new RuntimeSessionError("OpenCode session is already running", "SESSION_ALREADY_RUNNING");
     }
-    const detail = await this.getSession(nativeSessionId);
+    const detail = await this.getSessionSummary(nativeSessionId);
     if (detail.occupancy === "owned-externally") {
       throw new RuntimeSessionError("OpenCode session is open in another client", "SESSION_OCCUPIED");
     }
@@ -897,6 +915,17 @@ export function resolveOpenCodeDataRoot(environment: NodeJS.ProcessEnv = process
     return resolve(environment.LOCALAPPDATA, "opencode");
   }
   return join(homedir(), ".local", "share", "opencode");
+}
+
+function openCodeHistoryErrors(
+  history: Array<{ info: OpenCodeMessage; parts: Part[] }>,
+  status: SessionStatus | undefined,
+): AgentEvent[] {
+  if (status?.type === "busy" || status?.type === "retry") return [];
+  const latest = history.at(-1)?.info;
+  // Failed requests can persist only an error, with no visible assistant parts.
+  if (latest?.role !== "assistant" || !latest.error) return [];
+  return [{ type: "error", code: "NATIVE_PROTOCOL_ERROR", message: errorMessage(latest.error) }];
 }
 
 export function openCodeHistoryToMessages(

@@ -1,3 +1,4 @@
+import { AGENT_LABELS } from "../lib/agent-catalog";
 import { completedTurnForkPoint } from "../lib/completed-turn-fork";
 import { HistoryPullGesture, shouldLoadOlderHistoryFromWheel } from "../lib/history-pull-gesture";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -13,6 +14,8 @@ import { createTaskCompletionNotification } from "../../../core/src/application/
 import { ArrowDownToLine, AlarmClock, Check, CircleAlert, Copy, CornerUpRight, FileText, GitFork, GripVertical, LoaderCircle, Mic, PanelLeftClose, PanelLeftOpen, Paperclip, Pencil, Play, RefreshCw, Square, Target, Trash2, Unplug, Volume2 } from "lucide-react";
 import AgentBrandIcon from "./AgentBrandIcon";
 import AppActionNotice from "./AppActionNotice";
+import RunFailureNotice from "./RunFailureNotice";
+import { latestSessionRunError, openRunErrorModelPicker } from "../lib/session-run-error";
 import MessageLink from "./MessageLink";
 import MessageMedia, { MessageMediaWorkspace } from "./MessageMedia";
 import { messageMediaKind } from "../lib/message-media";
@@ -25,6 +28,7 @@ import {
   loadNativeRunPref,
   nativeModelFromKey,
   nativeModelKey,
+  nativeReasoningEffortOptions,
   resolveNativeRunPref,
   saveNativeRunPref,
   type NativeAgentRunPref,
@@ -112,6 +116,8 @@ import {
   isObservedNativeRun,
   shouldDeferAnchoredSessionEvent,
   shouldFollowNativeHistory,
+  shouldPollNativeHistoryFallback,
+  prefersNativeHistoryPolling,
   shouldQueueMessageForActiveRun,
   shouldRestoreCustomerAgentRun,
   shouldRestoreLocalNativeRun,
@@ -415,6 +421,7 @@ import { resolveChatSessionId } from "../lib/session-search";
 import ReasoningSummary from "./ReasoningSummary";
 import CodexExecutionTrace from "./CodexExecutionTrace";
 import RuntimeProgressRow from "./RuntimeProgressRow";
+import SessionBackgroundJobs from "./SessionBackgroundJobs";
 import ChatHeaderActions from "./ChatHeaderActions";
 import BrowserLivePanel from "./BrowserLivePanel";
 import EmptySessionWelcome from "./EmptySessionWelcome";
@@ -478,6 +485,7 @@ interface ChatViewProps {
   settingsOpen?: boolean;
   onHideToBackground?: () => void;
   onOpenHub?: () => void;
+  headerAppActions?: React.ReactNode;
   onOpenDesktopLive?: () => void;
   desktopLiveOpen?: boolean;
   fileDrawerOpen?: boolean;
@@ -518,19 +526,7 @@ const NATIVE_EFFORT_LABELS: Record<NativeReasoningEffort, string> = {
   max: "最大",
 };
 
-const NATIVE_AGENT_LABELS: Record<Exclude<AgentType, "customer-agent">, string> = {
-  codex: "Codex",
-  "claude-code": "Claude Code",
-  opencode: "OpenCode",
-  "deepseek-harness": "DeepSeek Harness",
-};
-
-/** Settings profiles only transfer to a runtime whose provider they match (opencode understands all providers). */
-function profileProviderMatches(provider: string, agentType: AgentType): boolean {
-  if (agentType === "codex") return provider === "openai";
-  if (agentType === "claude-code") return provider === "anthropic";
-  return false;
-}
+const NATIVE_AGENT_LABELS = AGENT_LABELS;
 
 const PERMISSION_OPTIONS: Array<{
   value: ToolPermissionMode;
@@ -573,6 +569,7 @@ export default function ChatView({
   settingsOpen = false,
   onHideToBackground,
   onOpenHub,
+  headerAppActions,
   onOpenDesktopLive,
   desktopLiveOpen = false,
   fileDrawerOpen = false,
@@ -639,7 +636,7 @@ export default function ChatView({
     () => renderedMessages.findLast((message) => message.executionTrace)?.executionTrace?.turnId,
     [renderedMessages],
   );
-  const { revision: settingsRevision, isConfigured, profiles, activeProfileId, switchActiveProfile, loadFromSystem, contextWindow, reasoningEffort, taskNotifications, setField, saveToSystem } = useSettingsStore();
+  const { isConfigured, profiles, activeProfileId, switchActiveProfile, loadFromSystem, contextWindow, reasoningEffort, taskNotifications, setField, saveToSystem } = useSettingsStore();
   const isWorkspaceWelcome = selectedProjectId !== null && selectedSessionId === null;
   const viewSessionId = resolveChatSessionId(selectedSessionId, sessionId, activeAgentType, isWorkspaceWelcome);
   const viewSessionIdRef = useRef(viewSessionId);
@@ -695,6 +692,7 @@ export default function ChatView({
   const [nativePref, setNativePref] = useState<NativeAgentRunPref>(() => loadNativeRunPref(composerAgentType));
   const [nativeEffortMenuOpen, setNativeEffortMenuOpen] = useState(false);
   const nativeEffortMenuRef = useRef<HTMLDivElement>(null);
+  const modelPickerRef = useRef<HTMLSelectElement>(null);
   useEffect(() => {
     setNativePref(loadNativeRunPref(composerAgentType));
     setNativeEffortMenuOpen(false);
@@ -746,32 +744,15 @@ export default function ChatView({
       reasoningEfforts: model.reasoningEfforts,
     }));
   }, [isNativeRuntime, nativeModels]);
-  const profileModelOptions = useMemo<ComposerModelOption[]>(() => {
-    if (!isNativeRuntime) return [];
-    return (profiles ?? [])
-      .filter((profile) => profile.modelId?.trim())
-      .filter((profile) => composerAgentType === "opencode" || profileProviderMatches(profile.provider, composerAgentType))
-      .map((profile) => ({
-        key: composerAgentType === "opencode"
-          ? nativeModelKey({ id: profile.modelId, providerID: profile.provider })
-          : profile.modelId,
-        label: profile.name || profile.modelId,
-        model: {
-          id: profile.modelId,
-          ...(composerAgentType === "opencode" ? { providerID: profile.provider } : {}),
-        },
-      }));
-  }, [isNativeRuntime, profiles, composerAgentType]);
   const openCodeRuntimeModelGroups = useMemo(
     () => composerAgentType === "opencode" ? groupOpenCodeModels(nativeModels) : [],
     [composerAgentType, nativeModels],
   );
-  const availableNativeModelKeys = useMemo(() => new Set([
-    ...runtimeModelOptions.map((option) => option.key),
-    ...profileModelOptions.map((option) => option.key),
-  ]), [runtimeModelOptions, profileModelOptions]);
-  const nativeModelCatalogReady = nativeModelsLoadedAgent === composerAgentType
-    && settingsRevision !== undefined;
+  const availableNativeModelKeys = useMemo(
+    () => new Set(runtimeModelOptions.map((option) => option.key)),
+    [runtimeModelOptions],
+  );
+  const nativeModelCatalogReady = nativeModelsLoadedAgent === composerAgentType;
   const effectiveNativePref = useMemo(
     () => resolveNativeRunPref(nativePref, availableNativeModelKeys, nativeModelCatalogReady),
     [availableNativeModelKeys, nativeModelCatalogReady, nativePref],
@@ -784,23 +765,16 @@ export default function ChatView({
   const selectedNativeModelKey = effectiveNativePref.model?.id
     ? nativeModelKey(effectiveNativePref.model)
     : "";
-  const selectedModelEfforts = useMemo<NativeReasoningEffort[] | undefined>(() => {
-    const selected = runtimeModelOptions.find((option) => option.key === selectedNativeModelKey);
-    if (selected?.reasoningEfforts?.length) return selected.reasoningEfforts;
-    if (composerAgentType === "claude-code") return ["low", "medium", "high", "xhigh"];
-    return undefined;
-  }, [runtimeModelOptions, selectedNativeModelKey, composerAgentType]);
   const nativeEffortOptions = useMemo<NativeReasoningEffort[]>(() => {
     if (!isNativeRuntime) return [];
-    if (composerAgentType === "codex") return selectedModelEfforts ?? [];
-    if (composerAgentType === "claude-code") return selectedModelEfforts ?? ["low", "medium", "high", "xhigh"];
-    return [];
-  }, [isNativeRuntime, composerAgentType, selectedModelEfforts]);
+    const selected = runtimeModelOptions.find((option) => option.key === selectedNativeModelKey);
+    return nativeReasoningEffortOptions(composerAgentType, selected?.reasoningEfforts);
+  }, [isNativeRuntime, runtimeModelOptions, selectedNativeModelKey, composerAgentType]);
   const activeNativeEffort = effectiveNativePref.reasoningEffort
     && nativeEffortOptions.includes(effectiveNativePref.reasoningEffort)
     ? effectiveNativePref.reasoningEffort
     : undefined;
-  const nativeModelPickerReady = runtimeModelOptions.length > 0 || profileModelOptions.length > 0;
+  const nativeModelPickerReady = runtimeModelOptions.length > 0;
 
   const hasDurableMessageQueue = sessionSummary?.messageQueueVersion === 1;
   const canSteerQueuedMessages = supportsMidTurnSteering(sessionSummary?.agentType);
@@ -957,8 +931,11 @@ export default function ChatView({
     setNativePermissions(sessionSummary?.nativePermissions);
   }, [isNativeRuntime, selectedSessionId, sessionSummary?.permissionMode, sessionSummary?.nativePermissions]);
   const [error, setError] = useState<string | null>(null);
+  const [restoredRunError, setRestoredRunError] = useState<{ sessionId: string; message: string } | null>(null);
   const [cancellationTimeoutSessionId, setCancellationTimeoutSessionId] = useState<string | null>(null);
   const [sessionLoadError, setSessionLoadError] = useState<string | null>(null);
+  const historicalRunError = restoredRunError?.sessionId === viewSessionId ? restoredRunError.message : null;
+  const displayedError = sessionLoadError || error || historicalRunError;
   const [sessionReloadGeneration, setSessionReloadGeneration] = useState(0);
   const [attachedFiles, setAttachedFiles] = useState<File[]>([]);
   /** Base64 data URLs of images to send with the next message */
@@ -1709,6 +1686,7 @@ export default function ChatView({
         if (!isCurrentLoad()) return;
         historyPrefetchRef.current?.invalidate();
         setError(null);
+        setRestoredRunError(null);
         setSessionLoadError(null);
         setDirectCompatibilitySessionId(null);
         setCompatibilityFailure(null);
@@ -1737,6 +1715,7 @@ export default function ChatView({
       // and back, sessionId won't match and we must reload.
 
       setError(null);
+      setRestoredRunError(null);
       setSessionLoadError(null);
       setDirectCompatibilitySessionId(null);
       setCompatibilityFailure(null);
@@ -1817,6 +1796,8 @@ export default function ChatView({
                 runningSessionRef.current = null;
                 setRunningSession(null);
               }
+              const restoredError = latestSessionRunError(detail);
+              setRestoredRunError(restoredError ? { sessionId: targetSid, message: restoredError } : null);
               if (restoredContextUsage) setContextUsage(restoredContextUsage, targetSid);
 
               const lastMsg = nextMessages[nextMessages.length - 1];
@@ -2004,6 +1985,11 @@ export default function ChatView({
             );
             if (restoredContextUsage) setContextUsage(restoredContextUsage, targetSid);
 
+            if (runningSessionRef.current !== targetSid) {
+              const restoredError = latestSessionRunError(detail);
+              setRestoredRunError(restoredError ? { sessionId: targetSid, message: restoredError } : null);
+            }
+
             const lastMessage = merged[merged.length - 1];
             if (lastMessage?.role === "assistant" && lastMessage.toolCalls?.length) {
               updateAgentActivity(areToolCallsComplete(lastMessage.toolCalls) ? "thinking" : "tools");
@@ -2040,10 +2026,7 @@ export default function ChatView({
     const shouldFollow = sessionSummary?.agentType === "deepseek-harness"
       || shouldFollowNativeHistory(sessionSummary, targetSid, runningSessionId)
       || (sessionSummary?.agentType === "customer-agent" && targetSid !== runningSessionId);
-    const shouldPollFallback = sessionSummary?.agentType === "deepseek-harness"
-      || sessionSummary?.agentType === "customer-agent"
-      || sessionSummary?.occupancy === "owned-externally"
-      || sessionSummary?.status === "running";
+    const shouldPollFallback = shouldPollNativeHistoryFallback(sessionSummary);
     if (!targetSid || !shouldFollow || !window.agentApi) return;
 
     let stopObserver: (() => void) | null = null;
@@ -2068,7 +2051,7 @@ export default function ChatView({
     };
     const startTransport = () => {
       if (disposed || document.visibilityState === "hidden") return;
-      if (typeof window.agentApi.observeSession !== "function") {
+      if (prefersNativeHistoryPolling(sessionSummary) || typeof window.agentApi.observeSession !== "function") {
         if (shouldPollFallback) startPolling();
         return;
       }
@@ -2501,7 +2484,10 @@ export default function ChatView({
     }
     switch (event.type) {
       case "run_admitted":
-        if (isViewed) updateAgentActivity("thinking");
+        if (isViewed) {
+          setRestoredRunError(null);
+          updateAgentActivity("thinking");
+        }
         if (eventSid && historyAgentType(eventSid) === "codex") {
           applyRuntimeProgress({ progressId: "codex:status", phase: "thinking", label: "正在思考" }, eventSid);
         }
@@ -2796,6 +2782,7 @@ export default function ChatView({
         }
         break;
       case "done":
+        if (isViewed) setRestoredRunError(null);
         if (eventSid && cancellationTimeoutSessionId === eventSid) {
           setCancellationTimeoutSessionId(null);
           if (isViewed) setError(null);
@@ -3465,6 +3452,7 @@ export default function ChatView({
   ) {
     const notificationRunId = crypto.randomUUID();
     let runCompleted = false;
+    if (viewSessionIdRef.current === targetSessionId) setRestoredRunError(null);
     if (targetSessionId.startsWith("runtime:")) {
       pendingNativeSendPayloadRef.current.set(targetSessionId, {
         content: message.content,
@@ -3482,7 +3470,7 @@ export default function ChatView({
     try {
       if (window.agentApi) {
         const runNativeOptions = isNativeRuntime && isNativeAgentType(composerAgentType) ? {
-          ...(supportsNativeModelSelection && effectiveNativePref.model?.id ? { model: effectiveNativePref.model } : {}),
+          ...(supportsNativeModelSelection && nativeModelCatalogReady && effectiveNativePref.model?.id ? { model: effectiveNativePref.model } : {}),
           ...(supportsNativeModelSelection && activeNativeEffort ? { reasoningEffort: activeNativeEffort } : {}),
         } : activeProfileId ? { profileId: activeProfileId } : undefined;
         await window.agentApi.run(
@@ -4132,6 +4120,7 @@ export default function ChatView({
         </span>
         {onOpenSettings && onHideToBackground && onToggleAppearance && (
           <ChatHeaderActions
+            appActions={headerAppActions}
             appearanceOpen={appearanceOpen}
             settingsOpen={settingsOpen}
             showSettings={composerAgentType === "customer-agent"}
@@ -4863,23 +4852,15 @@ export default function ChatView({
           </div>
         )}
 
-        {!isWorkspaceWelcome && (sessionLoadError || error) && (
-          <div style={{
-            padding: 12,
-            margin: "8px 0",
-            borderRadius: "var(--radius-sm)",
-            background: "rgba(248,113,113,0.08)",
-            border: "1px solid rgba(248,113,113,0.2)",
-            color: "var(--danger)",
-            fontSize: 13,
-            animation: "fadeIn 0.2s var(--ease-out)",
-            fontFamily: "var(--font-mono)",
-            display: "flex",
-            alignItems: "center",
-            flexWrap: "wrap",
-            gap: 10,
-          }}>
-            <span style={{ flex: 1, minWidth: 0 }}>{sessionLoadError || error}</span>
+        {!isWorkspaceWelcome && displayedError && (
+          <RunFailureNotice
+            message={displayedError}
+            historical={!sessionLoadError && !error && Boolean(historicalRunError)}
+            onSwitchModel={!sessionLoadError && canCompose && !isRunning
+              && supportsNativeModelSelection && nativeModelCatalogReady && nativeModelPickerReady ? () => {
+                openRunErrorModelPicker(modelPickerRef.current);
+              } : undefined}
+          >
             {!sessionLoadError && cancellationTimeoutSessionId === viewSessionId && (
               <div style={{ display: "inline-flex", gap: 6, flexShrink: 0 }}>
                 <button
@@ -4930,7 +4911,7 @@ export default function ChatView({
                 重新加载
               </button>
             )}
-          </div>
+          </RunFailureNotice>
         )}
 
         <div ref={messagesEndRef} />
@@ -5388,6 +5369,9 @@ export default function ChatView({
           );
         })()}
 
+        {composerAgentType === "deepseek-harness" && viewSessionId && window.agentApi?.listSessionBackgroundJobs && (
+          <SessionBackgroundJobs key={viewSessionId} sessionId={viewSessionId} />
+        )}
         {supportsNativeGoal && <NativeGoalBar
           goal={nativeGoal.goal} pending={nativeGoal.pending} error={nativeGoal.error}
           onMutate={mutation => viewSessionId ? nativeGoal.mutate(viewSessionId, mutation) : Promise.reject(new Error("请先选择会话"))}
@@ -5840,6 +5824,7 @@ export default function ChatView({
                     {!supportsNativeModelSelection && <span title="子会话沿用原生模型设置">原生模型</span>}
                     {supportsNativeModelSelection && nativeModelPickerReady && (
                       <select
+                        ref={modelPickerRef}
                         aria-label="当前模型"
                         title="切换模型"
                         value={selectedNativeModelKey}
@@ -5860,13 +5845,6 @@ export default function ChatView({
                         )) : runtimeModelOptions.map((option) => (
                           <option key={option.key} value={option.key}>{option.label}</option>
                         ))}
-                        {profileModelOptions.length > 0 && (
-                          <optgroup label="设置里的模型">
-                            {profileModelOptions.map((option) => (
-                              <option key={option.key} value={option.key}>{option.label}</option>
-                            ))}
-                          </optgroup>
-                        )}
                       </select>
                     )}
                   </>

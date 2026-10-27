@@ -1,4 +1,8 @@
 import type { SessionForkPoint } from "@agent/core";
+import type { AgentType } from "../../core/src/domain/agent/agent-type";
+export type { AgentType } from "../../core/src/domain/agent/agent-type";
+import type { RuntimeBackgroundJob, RuntimeBackgroundJobOutput, RuntimeBackgroundJobStopResult } from "../../native-runtime/src/agent-runtime/background-jobs";
+export type { RuntimeBackgroundJob, RuntimeBackgroundJobOutput, RuntimeBackgroundJobStopResult } from "../../native-runtime/src/agent-runtime/background-jobs";
 import type { CollaborationCommand } from "@agent/core/domain/collaboration/types";
 export type { NativeGoalMutation, NativeGoalRef, NativeSessionGoal } from "../../native-runtime/src/agent-runtime/native-session-goal";
 import type { NativeGoalMutation, NativeSessionGoal } from "../../native-runtime/src/agent-runtime/native-session-goal";
@@ -91,8 +95,6 @@ export interface TodoItem {
   agentName?: string;
   status: "pending" | "in-progress" | "completed";
 }
-
-export type AgentType = "customer-agent" | "codex" | "claude-code" | "opencode" | "deepseek-harness";
 
 export interface UpdateStatus {
   phase: "idle" | "checking" | "up-to-date" | "available" | "unavailable" | "downloading" | "installing" | "reconnecting" | "complete" | "failed";
@@ -372,6 +374,9 @@ export interface AgentApi {
   setSessionNativeMode?(id: string, preset: string): Promise<UnifiedSessionSummary>;
   setSessionNativePermissionPreset?(id: string, preset: string): Promise<UnifiedSessionSummary>;
   getSessionNativeGoal?(id: string): Promise<NativeSessionGoal | null>;
+  listSessionBackgroundJobs?(id: string): Promise<RuntimeBackgroundJob[]>;
+  getSessionBackgroundJobOutput?(id: string, jobId: string): Promise<RuntimeBackgroundJobOutput>;
+  stopSessionBackgroundJob?(id: string, jobId: string): Promise<RuntimeBackgroundJobStopResult>;
   mutateSessionNativeGoal?(id: string, mutation: NativeGoalMutation): Promise<NativeSessionGoal | null>;
   getSessionGoals(id: string): Promise<SessionGoalState>;
   enqueueSessionGoal(id: string, objective: string, sourceMessageId?: string): Promise<SessionGoalState>;

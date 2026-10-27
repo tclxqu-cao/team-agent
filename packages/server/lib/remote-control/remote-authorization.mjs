@@ -10,6 +10,10 @@ import { RemoteHelper } from './helper-manager.mjs';
 import { RemoteAudioSession, logGlobal } from '@agent/core';
 import { parseProducerRemoteVideoSignal } from './remote-video-signal.mjs';
 
+const CAPTURE_RETRY_DELAY_MS = 3000;
+const MAX_CAPTURE_FAILURES = 3;
+const CAPTURE_HEALTHY_RESET_MS = 30_000;
+
 const FULL_DUPLEX_AUDIO = Object.freeze({
   fullDuplex: true,
   systemAudio: true,
@@ -51,6 +55,7 @@ export class RemoteAuthorization {
     this.locked = null; this.unavailablePublished = null; this.viewerCount = 0; this.captureActive = false; this.idleTimer = null; this.controlState = null;
     this.microphoneFramesQueued = 0;
     this.selectedDisplayId = null;
+    this.captureFailures = 0; this.captureHealthySince = null;
     this.sessionId = 'cli-desktop:primary';
     this.peer = { id: `cli-remote:${randomUUID()}`, userId, producerSessionIds: new Set(), watchedSessionId: null, send: (event) => {
       const microphoneFrame = event.type === 'browser:webrtc' && event.data?.kind === 'audio-microphone';
@@ -182,12 +187,12 @@ export class RemoteAuthorization {
     this.generation += 1;
     this.lastPermissionCheck = 0;
     if (action === 'disable') {
-      this.enabled = false; this.captureActive = false; this.viewerCount = 0; this.controlState = null; this.clearIdleTimer(); await this.video.stop(); await this.stopAudio(); await this.save();
-      if (this.online) this.registry.close(this.peer, this.sessionId);
-      this.online = false; await this.display?.stop?.(); await this.helper.stop();
+      await this.stopSharing();
       logGlobal('info', 'remote-desktop', 'remote desktop sharing disabled', undefined, { action, sessionId: this.sessionId });
     } else {
-      this.enabled = true; this.retryAt = 0; await this.save();
+      this.enabled = true; this.retryAt = 0;
+      this.captureFailures = 0; this.captureHealthySince = null;
+      await this.save();
       if (action === 'restart') { await this.video.stop(); await this.helper.stop(); }
       await this.helper.start();
       if (action === 'authorize') await this.helper.request({ op: 'authorize', permission });
@@ -206,6 +211,18 @@ export class RemoteAuthorization {
       }
     }
     return this.status();
+  }
+  async stopSharing() {
+    this.enabled = false; this.captureActive = false; this.viewerCount = 0; this.controlState = null; this.bounds = null; this.clearIdleTimer();
+    if (this.online) this.registry.close(this.peer, this.sessionId);
+    this.online = false;
+    const cleanup = Promise.allSettled([
+      this.releaseInput(), this.video.stop(), this.stopAudio(), this.display?.stop?.(),
+      this.helper.request({ op: 'stop-capture' }),
+    ]);
+    // Closing the helper also unblocks pending media requests. Do not await
+    // tickPromise here: a terminal capture failure calls this from that tick.
+    await Promise.all([this.save(), this.helper.stop(), cleanup]);
   }
   tick() {
     if (this.tickPromise) return this.tickPromise;
@@ -245,14 +262,28 @@ export class RemoteAuthorization {
       if (!this.enabled || generation !== this.generation) return;
       this.publishFrame(frame);
       this.error = null;
+      this.captureHealthySince ??= Date.now();
+      // A stream that emits one frame and then dies is still a retry loop.
+      if (Date.now() - this.captureHealthySince >= CAPTURE_HEALTHY_RESET_MS) {
+        this.captureFailures = 0; this.lastCaptureErrorLogged = null;
+      }
     } catch (error) {
       if (generation !== this.generation) return;
       this.bounds = null; await this.releaseInput();
-      this.error = error.message; this.retryAt = Date.now() + 3000;
+      this.captureFailures += 1; this.captureHealthySince = null;
+      const userStopped = error.domain === 'com.apple.ScreenCaptureKit.SCStreamErrorDomain' && error.code === -3817;
+      if (userStopped || this.captureFailures >= MAX_CAPTURE_FAILURES) {
+        this.error = userStopped ? '屏幕共享已由电脑上的用户停止，请手动重新开启共享' : `屏幕采集反复失败，已停止共享，请手动重新开启：${error.message}`;
+        logGlobal('warn', 'remote-desktop', 'desktop capture stopped', error, { sessionId: this.sessionId, userStopped, failures: this.captureFailures });
+        this.generation += 1;
+        await this.stopSharing();
+        return;
+      }
+      this.error = error.message; this.retryAt = Date.now() + CAPTURE_RETRY_DELAY_MS;
       // Log once per distinct failure, not once per retry tick.
       if (this.lastCaptureErrorLogged !== error.message) {
         this.lastCaptureErrorLogged = error.message;
-        logGlobal('warn', 'remote-desktop', 'desktop capture failed', error, { sessionId: this.sessionId, retryInMs: 3000 });
+        logGlobal('warn', 'remote-desktop', 'desktop capture failed', error, { sessionId: this.sessionId, retryInMs: CAPTURE_RETRY_DELAY_MS });
       }
       this.publishUnavailable(this.error, this.locked === true);
     } finally { this.busy = false; }
@@ -263,6 +294,7 @@ export class RemoteAuthorization {
     const signature = JSON.stringify([Boolean(locked), error]);
     if (this.unavailablePublished === signature) return;
     this.unavailablePublished = signature;
+    this.lastFrameBytes = null;
     const capabilityError = locked ? this.lockedCapabilityError() : (error || '桌面暂不可用');
     const capabilityErrorCode = locked ? 'desktop-locked' : 'desktop-unavailable';
     if (!this.online) {
@@ -298,6 +330,7 @@ export class RemoteAuthorization {
     if (!this.enabled) return;
     this.controlState ??= 'agent-controlled';
     this.unavailablePublished = null;
+    this.lastFrameBytes = null;
     const unavailable = Boolean(this.lastPermissionCheck && !this.screen);
     const input = {
       sessionId: this.sessionId, backend: 'desktop', title: '本机桌面', url: '', viewport: this.viewport,

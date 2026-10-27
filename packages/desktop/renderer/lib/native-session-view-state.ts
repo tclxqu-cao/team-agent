@@ -1,5 +1,6 @@
+import type { AgentType } from "../../../core/src/domain/agent/agent-type";
 export interface NativeSessionViewState {
-  agentType?: "customer-agent" | "codex" | "claude-code" | "opencode" | "deepseek-harness";
+  agentType?: AgentType;
   status?: "active" | "idle" | "running" | "completed" | "failed";
   occupancy?: "available" | "owned-by-customer-agent" | "owned-externally";
 }
@@ -47,4 +48,17 @@ export function shouldFollowNativeHistory(
   _runningSessionId: string | null,
 ): boolean {
   return Boolean(targetSessionId && session && session.agentType !== "customer-agent");
+}
+
+export function shouldPollNativeHistoryFallback(session: NativeSessionViewState | null | undefined): boolean {
+  return session?.agentType === "customer-agent"
+    || session?.agentType === "deepseek-harness"
+    || prefersNativeHistoryPolling(session)
+    || session?.occupancy === "owned-externally"
+    || session?.status === "running";
+}
+
+/** These runtimes have no transcript watcher; idle does not mean unchanged. */
+export function prefersNativeHistoryPolling(session: NativeSessionViewState | null | undefined): boolean {
+  return session?.agentType === "qoder" || session?.agentType === "zcode" || session?.agentType === "workbuddy";
 }

@@ -1,8 +1,11 @@
 import { useEffect, useState } from "react";
-import { Check, LayoutGrid, LoaderCircle, Monitor, PanelRight, Unplug, UsersRound } from "lucide-react";
+import { Check, FolderOpen, LayoutGrid, LoaderCircle, Monitor, PanelsTopLeft, Unplug, UsersRound } from "lucide-react";
+import { nextNavigationLayout } from "../../../core/src/domain/web-console/navigation-layout";
+import { useUIStore } from "../stores/uiStore";
 import { isDesktopLiveSetupPending } from "../lib/desktop-live-setup";
 import type { DesktopLiveStatus } from "../global";
 import MobilePairingButton from "./MobilePairingButton";
+import HeaderActionMenu from "./HeaderActionMenu";
 
 /**
  * Tracks whether remote authorization still needs user action, so the header
@@ -39,6 +42,7 @@ function useDesktopLiveSetupPending(active: boolean): boolean {
 }
 
 interface ChatHeaderActionsProps {
+  appActions?: React.ReactNode;
   appearanceOpen: boolean;
   settingsOpen: boolean;
   showSettings?: boolean;
@@ -57,6 +61,7 @@ interface ChatHeaderActionsProps {
 }
 
 export default function ChatHeaderActions({
+  appActions,
   appearanceOpen,
   settingsOpen,
   showSettings = true,
@@ -74,13 +79,16 @@ export default function ChatHeaderActions({
   onOpenSettings,
 }: ChatHeaderActionsProps) {
   const desktopLivePending = useDesktopLiveSetupPending(Boolean(onOpenDesktopLive));
+  const navigationLayout = useUIStore((state) => state.navigationLayout);
+  const setNavigationLayout = useUIStore((state) => state.setNavigationLayout);
   const releaseTitle = codexReleaseState === "releasing"
     ? "正在停止 AgentRoam 使用此会话"
     : codexReleaseState === "released"
       ? "已停止在 AgentRoam 中使用；Codex Desktop 最长约 30 分钟后可用"
       : "停止在 AgentRoam 中使用（Codex Desktop 最长约 30 分钟后可用）";
-  return (
+  const actions = (
     <div className="chat-header-actions" style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}>
+      {appActions}
       {typeof window !== "undefined" && window.sharedServiceApi?.mobilePairing && <MobilePairingButton />}
       {onOpenCollaborationDashboard && <button
         type="button"
@@ -138,7 +146,7 @@ export default function ChatHeaderActions({
           aria-expanded={filesOpen}
           className={`ui-icon-button chat-header-action chat-header-action--files ${filesOpen ? "is-active" : ""}`}
         >
-          <PanelRight size={15} aria-hidden="true" />
+          <FolderOpen size={15} aria-hidden="true" />
         </button>
       )}
       {onReleaseCodex && (
@@ -185,6 +193,12 @@ export default function ChatHeaderActions({
           <path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z" />
         </svg>
       </button>
+      <button type="button" className="ui-icon-button chat-header-action chat-header-action--navigation-layout"
+        aria-label="切换布局" aria-pressed={navigationLayout === "agent-rail"}
+        title={navigationLayout === "agent-rail" ? "单层抬头 · 切换到原布局" : "原布局 · 切换到单层抬头"}
+        onClick={() => setNavigationLayout(nextNavigationLayout(navigationLayout))}>
+        <PanelsTopLeft size={15} aria-hidden="true" />
+      </button>
       {showSettings && <button
         type="button"
         onClick={onOpenSettings}
@@ -200,4 +214,5 @@ export default function ChatHeaderActions({
       </button>}
     </div>
   );
+  return navigationLayout === "agent-rail" ? <HeaderActionMenu>{actions}</HeaderActionMenu> : actions;
 }

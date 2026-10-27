@@ -1524,6 +1524,27 @@ describe("AgentHttpGateway", () => {
     expect(http.patch).toHaveBeenCalledWith("/api/sessions/runtime%3Adeepseek-harness%3Atest", { nativeMode: "cordis" });
   });
 
+  it("reads and stops background tasks using encoded identifiers without opening an agent stream", async () => {
+    globalThis.EventSource = ObservableEventSource as unknown as typeof EventSource;
+    const id = "runtime:deepseek-harness:tasks";
+    const jobId = "bash/task?#one";
+    const job = { id: jobId, status: "running" };
+    const output = { job, output: "", truncated: false };
+    const http = {
+      get: vi.fn().mockResolvedValueOnce({ jobs: [job] }).mockResolvedValueOnce(output),
+      post: vi.fn().mockResolvedValue({ outcome: "requested" }),
+    };
+    const gateway = new AgentHttpGateway(http as never, {} as never);
+    expect(await gateway.listSessionBackgroundJobs(id)).toEqual([job]);
+    expect(await gateway.getSessionBackgroundJobOutput(id, jobId)).toEqual(output);
+    expect(await gateway.stopSessionBackgroundJob(id, jobId)).toEqual({ outcome: "requested" });
+    const base = "/api/sessions/runtime%3Adeepseek-harness%3Atasks/background-jobs";
+    expect(http.get).toHaveBeenNthCalledWith(1, base);
+    expect(http.get).toHaveBeenNthCalledWith(2, `${base}/bash%2Ftask%3F%23one`);
+    expect(http.post).toHaveBeenCalledWith(`${base}/bash%2Ftask%3F%23one/stop`, {});
+    expect(ObservableEventSource.instances).toHaveLength(0);
+  });
+
   it("updates the permission mode for the encoded customer-agent session", async () => {
     const updated = { id: "session/one", permissionMode: "auto-approval" };
     const http = { patch: vi.fn().mockResolvedValue(updated) };

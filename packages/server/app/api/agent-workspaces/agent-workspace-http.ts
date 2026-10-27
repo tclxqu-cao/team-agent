@@ -1,11 +1,11 @@
 import type { AgentType, WorkspaceQuery } from "@agent/native-runtime";
 
-const AGENT_TYPES = new Set<AgentType>(["customer-agent", "codex", "claude-code", "opencode", "deepseek-harness"]);
+import { isAgentType } from "../../../../core/src/domain/agent/agent-type";
 
 export const CUSTOMER_AGENT_RECENT_WORKSPACE_ID = "customer-agent:recent";
 
 export function readAgentType(value: string | null): AgentType | null {
-  return value && AGENT_TYPES.has(value as AgentType) ? value as AgentType : null;
+  return isAgentType(value) ? value : null;
 }
 
 export function readWorkspaceQuery(url: URL): WorkspaceQuery {

@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { isBrowserRuntime } from "../web/webLayout";
+import { DEFAULT_NAVIGATION_LAYOUT, isNavigationLayout, type NavigationLayout } from "../../../core/src/domain/web-console/navigation-layout";
 
 export type SkinId = "pearl" | "scifi" | "noir" | "mist" | "pine" | "graphite" | "glass";
 export type LayoutId = "standard" | "focus" | "compact";
@@ -36,6 +37,7 @@ export const LAYOUTS: LayoutMeta[] = [
 export interface UIState {
   skin: SkinId;
   layout: LayoutId;
+  navigationLayout: NavigationLayout;
   /** 助手回复自动语音播报 */
   autoSpeak: boolean;
   /** 隐藏窗口后持续监听语音唤醒 */
@@ -49,6 +51,7 @@ export interface UIState {
 
   setSkin: (skin: SkinId) => void;
   setLayout: (layout: LayoutId) => void;
+  setNavigationLayout: (layout: NavigationLayout) => void;
   setAutoSpeak: (v: boolean) => void;
   setWakeEnabled: (v: boolean) => void;
   setWakeWord: (w: string) => void;
@@ -69,6 +72,7 @@ export function migrateUIPreferences(persisted: unknown, version: number): Parti
   return {
     ...(preferences.skin !== undefined ? { skin: preferences.skin } : {}),
     ...(preferences.layout !== undefined ? { layout: preferences.layout } : {}),
+    ...(isNavigationLayout(preferences.navigationLayout) ? { navigationLayout: preferences.navigationLayout } : {}),
     ...(preferences.autoSpeak !== undefined ? { autoSpeak: preferences.autoSpeak } : {}),
     ...(preferences.wakeEnabled !== undefined ? { wakeEnabled: preferences.wakeEnabled } : {}),
     ...(preferences.wakeWord !== undefined ? { wakeWord: preferences.wakeWord } : {}),
@@ -88,6 +92,7 @@ export const useUIStore = create<UIState>()(
     (set) => ({
       skin: "pearl",
       layout: "standard",
+      navigationLayout: DEFAULT_NAVIGATION_LAYOUT,
       autoSpeak: false,
       wakeEnabled: getDefaultWakeEnabled(),
       wakeWord: "小智",
@@ -96,6 +101,7 @@ export const useUIStore = create<UIState>()(
 
       setSkin: (skin) => set({ skin }),
       setLayout: (layout) => set({ layout }),
+      setNavigationLayout: (navigationLayout) => set({ navigationLayout }),
       setAutoSpeak: (autoSpeak) => set({ autoSpeak }),
       setWakeEnabled: (wakeEnabled) => set({ wakeEnabled }),
       setWakeWord: (wakeWord) => set({ wakeWord }),

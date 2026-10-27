@@ -41,7 +41,7 @@ export async function POST(request: Request) {
     title?: string;
     projectId?: string;
     cwd?: string;
-    agentType?: "customer-agent" | "codex" | "claude-code" | "opencode" | "deepseek-harness";
+    agentType?: import("../../../../core/src/domain/agent/agent-type").AgentType;
   };
   const agentType = body.agentType ?? "customer-agent";
 

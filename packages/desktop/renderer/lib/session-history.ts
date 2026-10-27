@@ -15,6 +15,8 @@ import {
 
 export interface PersistedHistoryEvent {
   type?: string;
+  message?: string;
+  code?: string;
   text?: string;
   finalText?: string;
   toolCall?: { id: string; name: string; arguments: Record<string, unknown> };
@@ -34,7 +36,7 @@ export interface PersistedHistoryEvent {
 
 export interface SessionHistoryDetail {
   nativePermissions?: UnifiedSessionSummary["nativePermissions"];
-  agentType?: "customer-agent" | "codex" | "claude-code" | "opencode" | "deepseek-harness";
+  agentType?: AgentType;
   status?: "active" | "idle" | "running" | "completed" | "failed";
   occupancy?: "available" | "owned-by-customer-agent" | "owned-externally";
   messages?: Array<{

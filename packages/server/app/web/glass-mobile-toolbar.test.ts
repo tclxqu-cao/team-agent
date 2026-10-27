@@ -4,8 +4,13 @@ import { describe, expect, it } from "vitest";
 const toolbar = readFileSync(new URL("./ResponsiveToolbar.tsx", import.meta.url), "utf8");
 const page = readFileSync(new URL("./page.tsx", import.meta.url), "utf8");
 const css = readFileSync(new URL("./neural-boot.css", import.meta.url), "utf8");
+const themePicker = readFileSync(new URL("./ThemePicker.tsx", import.meta.url), "utf8");
 
 describe("glass mobile toolbar isolation", () => {
+  it("keeps the skin popover in view in both classic and compact mobile sheets", () => {
+    expect(themePicker).toContain('closest(".compact-tools-panel, .glass-tools-sheet")');
+    expect(themePicker).toContain("popoverTop(rect, popoverRef.current?.offsetHeight ?? 0, innerHeight)");
+  });
   it("fills mobile tool cells including wrapped theme buttons", () => {
     const mobile = css.split("@media (max-width: 899px)")[1].split("@media (min-width: 900px)")[0];
     expect(mobile).toMatch(/\.glass-tool-cell \{[^}]*align-items: stretch;[^}]*padding: 0;/);

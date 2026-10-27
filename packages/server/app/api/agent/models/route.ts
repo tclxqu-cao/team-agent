@@ -1,3 +1,4 @@
+import { isNativeAgentType } from "../../../../../core/src/domain/agent/agent-type";
 import { NextResponse } from "next/server";
 import { RuntimeSessionError } from "@agent/native-runtime";
 import { getNativeRuntimeService, runtimeErrorStatus } from "../../../../lib/native-runtime-service";
@@ -7,8 +8,8 @@ export const dynamic = "force-dynamic";
 /** Models a native runtime's own connection offers, for the composer model picker. */
 export async function GET(request: Request) {
   const agentType = new URL(request.url).searchParams.get("agentType");
-  if (agentType !== "codex" && agentType !== "claude-code" && agentType !== "opencode" && agentType !== "deepseek-harness") {
-    return NextResponse.json({ error: "agentType must be codex, claude-code, opencode or deepseek-harness" }, { status: 400 });
+  if (!isNativeAgentType(agentType)) {
+    return NextResponse.json({ error: "agentType must name a native Agent runtime" }, { status: 400 });
   }
   try {
     const models = await getNativeRuntimeService().listModels(agentType);

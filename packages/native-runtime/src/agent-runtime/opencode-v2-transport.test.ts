@@ -46,6 +46,32 @@ describe("OpenCode 2 API transport", () => {
     await expect(cycling(`${base}/session`)).rejects.toThrow("pagination cursor");
   });
 
+  it("identifies a failed connection without leaking auth, cursors, or automatically resending", async () => {
+    const request = vi.fn<typeof fetch>(async () => {
+      throw new TypeError("fetch failed", { cause: Object.assign(new Error("socket closed"), { code: "ECONNRESET" }) });
+    });
+    const transport = createOpenCodeV2Fetch(base, "Basic private", request);
+    const error = await transport(`${base}/session/ses_1/message`).catch((error: Error) => error);
+    expect(error).toMatchObject({ message: "OpenCode 2 GET /api/session/ses_1/message connection failed: fetch failed (ECONNRESET)" });
+    expect(String(error)).not.toContain("Basic private");
+    expect(String(error)).not.toContain("limit=");
+    expect(request).toHaveBeenCalledOnce();
+  });
+
+  it("identifies the history response body that terminated after HTTP headers arrived", async () => {
+    const request = vi.fn<typeof fetch>(async () => new Response(new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('{"data":['));
+        controller.error(new TypeError("terminated", { cause: Object.assign(new Error("closed"), { code: "UND_ERR_SOCKET" }) }));
+      },
+    })));
+    const transport = createOpenCodeV2Fetch(base, "Basic private", request);
+    await expect(transport(`${base}/session/ses_1/message`)).rejects.toThrow(
+      "OpenCode 2 GET /api/session/ses_1/message response read failed: terminated (UND_ERR_SOCKET)",
+    );
+    expect(request).toHaveBeenCalledOnce();
+  });
+
   it("maps prompt images, model selection, permission policy, interruption, fork, and permission reply", async () => {
     const calls: Array<{ path: string; method?: string; body: unknown }> = [];
     const request = vi.fn<typeof fetch>(async (url, init) => {

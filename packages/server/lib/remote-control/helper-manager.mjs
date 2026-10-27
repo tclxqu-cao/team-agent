@@ -122,7 +122,13 @@ export class RemoteHelper {
                 // preview.23's read-only probe omitted the success envelope.
                 // Support installed helpers without changing their macOS identity.
                 if (pending?.op === 'hit-test' && result.ok === undefined && result.error === undefined && typeof result.editable === 'boolean') result.ok = true;
-                if (pending) { clearTimeout(pending.timer); this.pending.delete(result.id); result.ok ? pending.resolve(result) : pending.reject(new Error(result.error || '本机组件请求失败')); }
+                if (pending) {
+                  clearTimeout(pending.timer); this.pending.delete(result.id);
+                  if (result.ok) pending.resolve(result);
+                  else pending.reject(Object.assign(new Error(result.error || '本机组件请求失败'), {
+                    code: result.errorCode, domain: result.errorDomain,
+                  }));
+                }
               } catch { socket.destroy(); return; }
             }
             if (buffer.length > MAX_HELPER_MESSAGE_CHARS) socket.destroy();

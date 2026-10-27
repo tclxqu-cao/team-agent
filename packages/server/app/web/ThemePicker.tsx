@@ -4,6 +4,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Palette } from "lucide-react";
 import { WEB_THEMES, type WebThemeId } from "./themes";
+import { popoverTop } from "./popover-position";
 
 interface Props {
   themeId: WebThemeId;
@@ -27,12 +28,17 @@ export default function ThemePicker({ themeId, onThemeChange }: Props) {
       const rect = buttonRef.current?.getBoundingClientRect();
       if (!rect) return;
       const width = Math.min(176, innerWidth - 16);
-      setPosition({ top: rect.bottom + 6, left: Math.max(8, Math.min(innerWidth - width - 8, rect.right - width)) });
+      const top = rootRef.current?.closest(".compact-tools-panel, .glass-tools-sheet")
+        ? popoverTop(rect, popoverRef.current?.offsetHeight ?? 0, innerHeight)
+        : rect.bottom + 6;
+      setPosition({ top, left: Math.max(8, Math.min(innerWidth - width - 8, rect.right - width)) });
     };
     reposition();
+    const observer = new ResizeObserver(reposition);
+    if (popoverRef.current) observer.observe(popoverRef.current);
     window.addEventListener("resize", reposition);
     window.addEventListener("scroll", reposition, true);
-    return () => { window.removeEventListener("resize", reposition); window.removeEventListener("scroll", reposition, true); };
+    return () => { observer.disconnect(); window.removeEventListener("resize", reposition); window.removeEventListener("scroll", reposition, true); };
   }, [open]);
   useEffect(() => {
     if (!open) return;
@@ -52,7 +58,7 @@ export default function ThemePicker({ themeId, onThemeChange }: Props) {
       <Palette size={17} aria-hidden="true" />
     </button>
     {open && portalNode && createPortal(<div ref={popoverRef} className="theme-popover" role="dialog" aria-label="选择皮肤" data-toolbar-overlay
-      style={{ position: "fixed", ...position, zIndex: 210, width: Math.min(176, innerWidth - 16), boxSizing: "border-box", padding: 8, borderRadius: 10, border: "1px solid var(--ui-tabbar-border, #282b36)", background: "var(--ui-tab-active-bg, #262b38)", boxShadow: "0 10px 28px rgba(0,0,0,.45)" }}>
+      style={{ position: "fixed", ...position, zIndex: 210, width: Math.min(176, innerWidth - 16), maxHeight: "calc(100dvh - 16px)", overflowY: "auto", boxSizing: "border-box", padding: 8, borderRadius: 10, border: "1px solid var(--ui-tabbar-border, #282b36)", background: "var(--ui-tab-active-bg, #262b38)", boxShadow: "0 10px 28px rgba(0,0,0,.45)" }}>
       <div style={{ fontSize: 10, color: "var(--ui-connection-text, #777b8c)", margin: "2px 4px 6px", letterSpacing: 0.5 }}>皮肤</div>
       <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
               {WEB_THEMES.map((theme) => {

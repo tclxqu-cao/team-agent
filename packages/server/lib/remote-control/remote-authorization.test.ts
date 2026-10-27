@@ -658,3 +658,104 @@ describe('read-only input probes', () => {
     } finally { await f.close(); }
   });
 });
+
+
+describe('capture failure recovery', () => {
+  const userStopped = () => Object.assign(new Error('The stream was stopped by the user'), {
+    domain: 'com.apple.ScreenCaptureKit.SCStreamErrorDomain', code: -3817,
+  });
+  const captures = (f: Awaited<ReturnType<typeof fixture>>) => f.helper.request.mock.calls.filter(([cmd]: any[]) => cmd.op === 'capture').length;
+
+  it('persists a user stop, releases capture, and resumes only after an explicit enable', async () => {
+    const display = { start: vi.fn(async () => ({})), stop: vi.fn(async () => {}) };
+    const f = await fixture({ platform: 'darwin', display });
+    try {
+      f.grant(); await f.service.action('enable'); await f.watch();
+      f.helper.stop.mockClear();
+      f.helper.request.mockRejectedValueOnce(userStopped());
+      await f.service.tick();
+      expect(await f.service.status()).toMatchObject({ enabled: false, online: false, viewerCount: 0, screen: true, accessibility: true });
+      expect(f.service.error).toContain('用户停止');
+      expect(f.helper.request).toHaveBeenCalledWith({ op: 'stop-capture' });
+      expect(f.helper.stop).toHaveBeenCalledOnce();
+      expect(display.stop).toHaveBeenCalledOnce();
+      expect(JSON.parse(await readFile(join(f.service.dataDir, 'remote-authorization.json'), 'utf8'))).toEqual({ enabled: false });
+      const count = captures(f);
+      await f.service.action('recheck');
+      await f.service.onEvent({ type: 'browser:state', session: { id: f.service.sessionId, viewerCount: 1 } });
+      f.service.retryAt = 0;
+      await f.service.tick(); await f.service.tick();
+      expect(captures(f)).toBe(count);
+      expect(f.registry.list(f.viewer)).toEqual([]);
+      await f.service.action('enable'); await f.watch();
+      expect(captures(f)).toBe(count + 1);
+      expect(f.registry.list(f.viewer)[0].availability).toBe('ready');
+      expect(f.service.error).toBeNull();
+    } finally { await f.close(); }
+  });
+
+  it('bounds rapid stream failures even when a restart briefly produces a frame', async () => {
+    const f = await fixture();
+    try {
+      f.grant(); await f.service.action('enable'); await f.watch();
+      const request = f.helper.request.getMockImplementation();
+      let failing = true;
+      f.helper.request.mockImplementation(async (cmd: any) => {
+        if (cmd.op === 'capture' && failing) throw new Error('capture connection interrupted');
+        return request(cmd);
+      });
+      for (let attempt = 1; attempt <= 3; attempt += 1) {
+        f.service.retryAt = 0;
+        await f.service.tick();
+        expect(f.service.captureFailures).toBe(attempt);
+        if (attempt < 3) {
+          const count = captures(f);
+          await f.service.tick();
+          expect(captures(f)).toBe(count);
+          failing = false; f.service.retryAt = 0; await f.service.tick(); failing = true;
+          expect(f.service.enabled).toBe(true);
+        }
+      }
+      expect(f.service.enabled).toBe(false);
+      expect(f.service.error).toContain('反复失败');
+      const count = captures(f);
+      f.service.retryAt = 0; await f.service.tick();
+      expect(captures(f)).toBe(count);
+      expect(f.helper.request).toHaveBeenCalledWith({ op: 'stop-capture' });
+    } finally { await f.close(); }
+  });
+
+  it('renews the retry budget after sustained healthy capture and matches the native error domain', async () => {
+    const f = await fixture();
+    try {
+      f.grant(); await f.service.action('enable'); await f.watch();
+      f.helper.request.mockRejectedValueOnce(Object.assign(new Error('unrelated failure'), { code: -3817, domain: 'Other' }));
+      await f.service.tick();
+      expect(f.service.enabled).toBe(true);
+      expect(f.service.captureFailures).toBe(1);
+      f.service.retryAt = 0; await f.service.tick();
+      expect(f.service.captureFailures).toBe(1);
+      f.service.captureHealthySince = Date.now() - 30_001;
+      await f.service.tick();
+      expect(f.service.captureFailures).toBe(0);
+      f.helper.request.mockRejectedValueOnce(new Error('new interruption'));
+      await f.service.tick();
+      expect(f.service.enabled).toBe(true);
+      expect(f.service.captureFailures).toBe(1);
+    } finally { await f.close(); }
+  });
+
+  it('closes the helper to unblock media teardown when capture is stopped by the user', async () => {
+    const f = await fixture();
+    try {
+      f.grant(); await f.service.action('enable'); await f.watch();
+      let finishMedia!: () => void;
+      vi.spyOn(f.service.video, 'stop').mockImplementation(() => new Promise<void>(resolve => { finishMedia = resolve; }));
+      f.helper.stop.mockImplementation(async () => { finishMedia(); });
+      f.helper.request.mockRejectedValueOnce(userStopped());
+      await f.service.tick();
+      expect(f.service.enabled).toBe(false);
+      expect(f.service.tickPromise).toBeNull();
+    } finally { await f.close(); }
+  });
+});

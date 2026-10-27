@@ -30,3 +30,4 @@ export {
   type ExternalCliResolution,
   type ExternalCliSource,
 } from './external-cli.js';
+export * from './agent-type.js';

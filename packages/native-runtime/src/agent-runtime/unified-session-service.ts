@@ -21,6 +21,9 @@ import type {
   ImportAgentWorkspaceResult,
   CreateRuntimeSessionOptions,
   RuntimeHealth,
+  RuntimeBackgroundJob,
+  RuntimeBackgroundJobOutput,
+  RuntimeBackgroundJobStopResult,
   RuntimeModelInfo,
   RuntimeQuestionAnswer,
   RuntimeRunOptions,
@@ -170,6 +173,13 @@ export class UnifiedSessionService {
   async listChildren(parentId: string): Promise<UnifiedSessionSummary[]> {
     const all = await this.list();
     return all.filter((session) => session.parentSessionId === parentId);
+  }
+
+  async getRunSummary(id: string): Promise<UnifiedSessionSummary> {
+    const { adapter, nativeSessionId } = this.resolveAdapter(id);
+    if (!adapter.getSessionSummary) return this.get(id);
+    const summary = await adapter.getSessionSummary(nativeSessionId);
+    return associateProject(summary, await this.listProjects());
   }
 
   async get(id: string, query?: SessionHistoryQuery): Promise<UnifiedSessionDetail> {
@@ -340,6 +350,24 @@ export class UnifiedSessionService {
     return adapter.getNativeGoal(nativeSessionId);
   }
 
+  async listBackgroundJobs(id: string): Promise<RuntimeBackgroundJob[]> {
+    const { adapter, nativeSessionId } = this.resolveAdapter(id);
+    if (!adapter.listBackgroundJobs) throw new RuntimeSessionError("此运行时未提供后台任务管理", "OPERATION_NOT_SUPPORTED");
+    return adapter.listBackgroundJobs(nativeSessionId);
+  }
+
+  async getBackgroundJobOutput(id: string, jobId: string): Promise<RuntimeBackgroundJobOutput> {
+    const { adapter, nativeSessionId } = this.resolveAdapter(id);
+    if (!adapter.getBackgroundJobOutput) throw new RuntimeSessionError("此运行时未提供后台任务输出", "OPERATION_NOT_SUPPORTED");
+    return adapter.getBackgroundJobOutput(nativeSessionId, jobId);
+  }
+
+  async stopBackgroundJob(id: string, jobId: string): Promise<RuntimeBackgroundJobStopResult> {
+    const { adapter, nativeSessionId } = this.resolveAdapter(id);
+    if (!adapter.stopBackgroundJob) throw new RuntimeSessionError("此运行时未提供后台任务停止接口", "OPERATION_NOT_SUPPORTED");
+    return adapter.stopBackgroundJob(nativeSessionId, jobId);
+  }
+
   async mutateNativeGoal(id: string, mutation: NativeGoalMutation): Promise<NativeSessionGoal | null> {
     const { adapter, nativeSessionId } = this.resolveAdapter(id);
     if (!adapter.mutateNativeGoal) throw new RuntimeSessionError("此运行时未提供原生目标", "OPERATION_NOT_SUPPORTED");
@@ -357,7 +385,9 @@ export class UnifiedSessionService {
     options?: RuntimeRunOptions,
   ): AsyncIterable<AgentEvent> {
     const { adapter, nativeSessionId } = this.resolveAdapter(id);
-    const detail = await adapter.getSession(nativeSessionId);
+    const detail = adapter.getSessionSummary
+      ? await adapter.getSessionSummary(nativeSessionId)
+      : await adapter.getSession(nativeSessionId);
     // Codex occupancy is advisory: the app-server writer lock authoritatively
     // rejects a second writer, so a stale "owned-externally" marker must not
     // block an attempted takeover. Other runtimes cannot report a reliable

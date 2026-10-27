@@ -1,6 +1,8 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
+    "rootDir": ".",
+    "noEmit": false,
     "paths": {
       "@agent/core": ["../core/dist/index.d.ts"],
       "@agent/core/*": ["../core/dist/*"],

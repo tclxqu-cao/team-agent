@@ -10,8 +10,9 @@ export interface NativeAgentRunPref {
   reasoningEffort?: NativeReasoningEffort;
 }
 
+import { isNativeAgentType as isNativeType } from "../../../core/src/domain/agent/agent-type";
+
 const STORAGE_KEY = "webapp.nativeAgentRunPrefs.v1";
-const NATIVE_AGENT_TYPES: readonly AgentType[] = ["codex", "claude-code", "opencode", "deepseek-harness"];
 
 type PrefStore = Partial<Record<AgentType, NativeAgentRunPref>>;
 
@@ -35,7 +36,13 @@ function readStore(): PrefStore {
 }
 
 export function isNativeAgentType(agentType: AgentType | undefined | null): agentType is Exclude<AgentType, "customer-agent"> {
-  return NATIVE_AGENT_TYPES.includes(agentType as Exclude<AgentType, "customer-agent">);
+  return isNativeType(agentType);
+}
+
+export function nativeReasoningEffortOptions(agentType: AgentType, advertised?: readonly NativeReasoningEffort[]): NativeReasoningEffort[] {
+  if (!isNativeAgentType(agentType)) return [];
+  if (advertised?.length) return [...advertised];
+  return agentType === "claude-code" ? ["low", "medium", "high", "xhigh"] : [];
 }
 
 export function loadNativeRunPref(agentType: AgentType): NativeAgentRunPref {
@@ -54,7 +61,7 @@ export function saveNativeRunPref(agentType: AgentType, pref: NativeAgentRunPref
   }
 }
 
-/** Drop a persisted model and its model-specific effort once both catalogs prove it unavailable. */
+/** Drop a persisted model and its model-specific effort once the runtime catalog proves it unavailable. */
 export function resolveNativeRunPref(
   pref: NativeAgentRunPref,
   availableModelKeys: ReadonlySet<string>,

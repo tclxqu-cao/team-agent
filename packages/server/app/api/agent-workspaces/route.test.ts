@@ -227,13 +227,13 @@ describe("agent workspace routes", () => {
     });
   });
 
-  it("delegates only the requested native Agent with cursor fields", async () => {
+  it.each(["codex", "qoder", "zcode", "workbuddy"] as const)("delegates only the requested %s Agent with cursor fields", async (agentType) => {
     const response = await listWorkspaces(new Request(
-      "http://test/api/agent-workspaces?agentType=codex&limit=20&cursor=opaque&refresh=1",
+      `http://test/api/agent-workspaces?agentType=${agentType}&limit=20&cursor=opaque&refresh=1`,
     ));
 
     expect(response.status).toBe(200);
-    expect(state.nativeWorkspaceCalls).toEqual([["codex", {
+    expect(state.nativeWorkspaceCalls).toEqual([[agentType, {
       cursor: "opaque",
       limit: 20,
       refresh: true,
@@ -241,14 +241,14 @@ describe("agent workspace routes", () => {
     }]]);
   });
 
-  it("URL-decodes the workspace ID and delegates session paging", async () => {
+  it.each(["claude-code", "qoder", "zcode", "workbuddy"] as const)("URL-decodes the workspace ID and delegates %s session paging", async (agentType) => {
     const response = await listWorkspaceSessions(
-      new Request("http://test/api/agent-workspaces/repo%20one/sessions?agentType=claude-code&limit=10&cursor=next"),
+      new Request(`http://test/api/agent-workspaces/repo%20one/sessions?agentType=${agentType}&limit=10&cursor=next`),
       { params: { workspaceId: "repo one" } },
     );
 
     expect(response.status).toBe(200);
-    expect(state.nativeSessionCalls).toEqual([["claude-code", "repo one", {
+    expect(state.nativeSessionCalls).toEqual([[agentType, "repo one", {
       cursor: "next",
       limit: 10,
       refresh: false,

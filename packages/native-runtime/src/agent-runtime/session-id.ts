@@ -1,14 +1,8 @@
 import type { AgentType } from "./types.js";
+import { isAgentType } from "@agent/core";
 import { RuntimeSessionError } from "./types.js";
 
 const PREFIX = "runtime:";
-const AGENT_TYPES = new Set<AgentType>([
-  "customer-agent",
-  "codex",
-  "claude-code",
-  "opencode",
-  "deepseek-harness",
-]);
 
 export function encodeUnifiedSessionId(
   agentType: AgentType,
@@ -33,7 +27,7 @@ export function decodeUnifiedSessionId(
   }
 
   const match = /^runtime:([^:]+):([A-Za-z0-9_-]+)$/.exec(id);
-  if (!match || !AGENT_TYPES.has(match[1] as AgentType)) {
+  if (!match || !isAgentType(match[1])) {
     throw new RuntimeSessionError(`Invalid unified session ID: ${id}`, "INVALID_SESSION_ID");
   }
 

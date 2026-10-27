@@ -45,6 +45,8 @@ import AgentManager from "./components/AgentManager";
 import LSPServerList from "./components/LSPServerList";
 import WakeOverlay from "./components/WakeOverlay";
 import AgentWorkspaceSwitcher from "./components/AgentWorkspaceSwitcher";
+import AgentWorkspaceHeader from "./components/AgentWorkspaceHeader";
+import "./styles/sidebar-navigation.css";
 import AgentSessionRail from "./components/AgentSessionRail";
 import AgentBrandIcon from "./components/AgentBrandIcon";
 import DesktopAppActions from "./components/DesktopAppActions";
@@ -322,6 +324,7 @@ export default function App() {
   // ── Appearance & voice preferences ─────────────────────────────────────
   const skin = useUIStore((s) => s.skin);
   const layout = useUIStore((s) => s.layout);
+  const navigationLayout = useUIStore((s) => s.navigationLayout);
   const wakeEnabled = useUIStore((s) => s.wakeEnabled);
   const wakeWord = useUIStore((s) => s.wakeWord);
   const setSkin = useUIStore((s) => s.setSkin);
@@ -1655,7 +1658,7 @@ export default function App() {
       {layout !== "focus" && !flowStudioEntryUrl && (
       <>
       <aside
-        className="app-sidebar"
+        className={`app-sidebar${navigationLayout === "agent-rail" ? " has-agent-navigation" : ""}`}
         id="workspace-sidebar"
         aria-hidden={sidebarHidden || (mobileDrawer && !sidebarDrawerOpen)}
         ref={element => { if (element) element.inert = sidebarHidden || (mobileDrawer && !sidebarDrawerOpen); }}
@@ -1687,7 +1690,11 @@ export default function App() {
       >
         {!webShell && <div className="sidebar-window-drag-region" aria-hidden="true" />}
         {/* Logo / brand */}
-        <div className="app-sidebar-brand" style={{
+        {navigationLayout === "agent-rail" ? <AgentWorkspaceHeader
+          value={activeAgent}
+          health={runtimeHealth}
+          onClose={() => { if (mobileDrawer) setSidebarDrawerOpen(false); else toggleSidebar(); }}
+        /> : <div className="app-sidebar-brand" style={{
           padding: "0 20px 10px",
         }}>
           <div className="sidebar-brand-row">
@@ -1702,9 +1709,10 @@ export default function App() {
               />
             )}
           </div>
-        </div>
+        </div>}
 
         <AgentWorkspaceSwitcher
+          vertical={navigationLayout === "agent-rail"}
           value={activeAgent}
           health={runtimeHealth}
           onChange={handleAgentChange}
@@ -2295,6 +2303,7 @@ export default function App() {
             onOpenDesktopLive={!webShell && window.agentApi?.desktopLiveGetStatus ? () => setShowDesktopLive(true) : undefined}
             onHideToBackground={() => void hideToBackground()}
             onOpenHub={window.agentApi?.hubGetConfig ? () => setHubOpen(true) : undefined}
+            headerAppActions={!webShell && navigationLayout === "agent-rail" ? <DesktopAppActions onOpenFlowStudio={handleOpenFlowStudio} openingFlowStudio={flowStudioOpening} /> : undefined}
             onToggleAppearance={toggleAppearance}
             appearanceOpen={showAppearance}
             hideToBackgroundTitle={wakeEnabled ? `隐藏到后台（说“${wakeWord}”唤醒）` : "隐藏到后台"}

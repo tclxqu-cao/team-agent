@@ -7,6 +7,7 @@ import { createConnection, createServer, type Server, type Socket } from "node:n
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import {
+  isNativeAgentType,
   cancelQueuedSessionMessage,
   cancelSessionGoal,
   enqueueSessionGoal,
@@ -54,6 +55,9 @@ import { parseHarnessQuestionId } from "./deepseek-harness-interaction-codec.js"
 import { isOpenCodeQuestionId } from "./opencode-questions.js";
 import { OpenCodeRuntimeAdapter } from "./opencode-runtime-adapter.js";
 import { OpenCodeServerClient } from "./opencode-server-client.js";
+import { QoderRuntimeAdapter } from "./qoder-runtime-adapter.js";
+import { ZCodeRuntimeAdapter } from "./zcode-runtime-adapter.js";
+import { WorkBuddyRuntimeAdapter } from "./workbuddy-runtime-adapter.js";
 import { decodeUnifiedSessionId, encodeUnifiedSessionId } from "./session-id.js";
 import type {
   AgentRuntimeAdapter,
@@ -65,6 +69,9 @@ import type {
   ImportAgentWorkspaceResult,
   NativeReasoningEffort,
   RuntimeHealth,
+  RuntimeBackgroundJob,
+  RuntimeBackgroundJobOutput,
+  RuntimeBackgroundJobStopResult,
   RuntimeModelInfo,
   RuntimeModelSelection,
   RuntimeQuestionAnswer,
@@ -1009,7 +1016,7 @@ class NativeRuntimeBrokerState implements ImportedAgentWorkspaceRepository, Code
       title: this.getDisplayTitle(summary.id) ?? summary.title,
       occupancy,
       status: active ? "running" : summary.status,
-      canResume: occupancy !== "owned-externally"
+      canResume: !summary.readOnly && occupancy !== "owned-externally"
         && (summary.compatibility === undefined || summary.compatibility.status === "direct"),
       canDelete: !active,
       permissionMode: policy,
@@ -1341,7 +1348,7 @@ export class NativeRuntimeBrokerHost {
       const created = await this.runtime.create(options);
       console.log(`[broker-host ${new Date().toISOString().slice(11,23)}] create exit: ${created.id}`);
       this.pendingCreations.set(created.id, created);
-      if (created.agentType === "claude-code") this.state.savePendingSession(created);
+      if (supportsPersistedDraft(created.agentType)) this.state.savePendingSession(created);
       this.state.trackPendingAutoTitle(created.id, options.title);
       return this.state.applySummary(created);
     } catch (error) {
@@ -1460,7 +1467,7 @@ export class NativeRuntimeBrokerHost {
     }
     const decoded = decodeNativeSessionId(sessionId);
     try {
-      const detail = await this.runtime.get(sessionId);
+      const detail = await this.runtime.getRunSummary(sessionId);
       if (this.cancellationConfirmationTimeouts.has(sessionId)) {
         if (detail.status === "running") {
           throw new RuntimeSessionError("Codex session is still stopping", "SESSION_ALREADY_RUNNING");
@@ -1757,6 +1764,21 @@ export class NativeRuntimeBrokerHost {
   async getNativeGoal(sessionId: string): Promise<NativeSessionGoal | null> {
     this.state.assertSessionVisible(sessionId);
     return this.runtime.getNativeGoal(sessionId);
+  }
+
+  async listBackgroundJobs(sessionId: string): Promise<RuntimeBackgroundJob[]> {
+    this.state.assertSessionVisible(sessionId);
+    return this.runtime.listBackgroundJobs(sessionId);
+  }
+
+  async getBackgroundJobOutput(sessionId: string, jobId: string): Promise<RuntimeBackgroundJobOutput> {
+    this.state.assertSessionVisible(sessionId);
+    return this.runtime.getBackgroundJobOutput(sessionId, jobId);
+  }
+
+  async stopBackgroundJob(sessionId: string, jobId: string): Promise<RuntimeBackgroundJobStopResult> {
+    this.state.assertSessionVisible(sessionId);
+    return this.runtime.stopBackgroundJob(sessionId, jobId);
   }
 
   async mutateNativeGoal(sessionId: string, mutation: NativeGoalMutation): Promise<NativeSessionGoal | null> {
@@ -2183,6 +2205,9 @@ export class NativeRuntimeBrokerHost {
         requiredStringParam(request.params, "preset"),
       );
       case "getNativeGoal": return this.getNativeGoal(requireSessionId(sessionId));
+      case "listBackgroundJobs": return this.listBackgroundJobs(requireSessionId(sessionId));
+      case "getBackgroundJobOutput": return this.getBackgroundJobOutput(requireSessionId(sessionId), requiredStringParam(request.params, "jobId"));
+      case "stopBackgroundJob": return this.stopBackgroundJob(requireSessionId(sessionId), requiredStringParam(request.params, "jobId"));
       case "mutateNativeGoal": return this.mutateNativeGoal(requireSessionId(sessionId), parseNativeGoalMutation(request.params.mutation));
       case "handoff": return this.handoff(requireSessionId(sessionId), controllerParam(request.params.controller));
       default: throw new RuntimeSessionError(`Unsupported broker method: ${request.method}`, "OPERATION_NOT_SUPPORTED");
@@ -2487,6 +2512,18 @@ export class NativeRuntimeBrokerClient {
     return this.request("getNativeGoal", { sessionId: id });
   }
 
+  async listBackgroundJobs(id: string): Promise<RuntimeBackgroundJob[]> {
+    return this.request("listBackgroundJobs", { sessionId: id });
+  }
+
+  async getBackgroundJobOutput(id: string, jobId: string): Promise<RuntimeBackgroundJobOutput> {
+    return this.request("getBackgroundJobOutput", { sessionId: id, jobId });
+  }
+
+  async stopBackgroundJob(id: string, jobId: string): Promise<RuntimeBackgroundJobStopResult> {
+    return this.request("stopBackgroundJob", { sessionId: id, jobId });
+  }
+
   async mutateNativeGoal(id: string, mutation: NativeGoalMutation): Promise<NativeSessionGoal | null> {
     return this.request("mutateNativeGoal", { sessionId: id, mutation });
   }
@@ -2718,6 +2755,9 @@ export function createNativeRuntimeBrokerHostRuntime(
     codexAdapter,
     new ClaudeRuntimeAdapter(),
     new DeepSeekHarnessRuntimeAdapter(),
+    new QoderRuntimeAdapter(),
+    new ZCodeRuntimeAdapter(),
+    new WorkBuddyRuntimeAdapter(),
     new OpenCodeRuntimeAdapter({
       server: opencodeServer,
       executable: opencodeExecutable || "opencode",
@@ -3059,11 +3099,15 @@ function isMaterializedPendingSession(session: UnifiedSessionSummary): boolean {
   return session.agentType !== "claude-code" || session.sourceLabel !== "Claude Code SDK";
 }
 
+function supportsPersistedDraft(agentType: unknown): boolean {
+  return agentType === "claude-code" || agentType === "qoder" || agentType === "zcode" || agentType === "workbuddy";
+}
+
 function parsePendingSession(value: string): UnifiedSessionSummary | null {
   try {
     const parsed = JSON.parse(value) as Partial<UnifiedSessionSummary>;
     if (
-      parsed.agentType !== "claude-code"
+      !supportsPersistedDraft(parsed.agentType)
       || typeof parsed.id !== "string"
       || typeof parsed.nativeSessionId !== "string"
       || typeof parsed.title !== "string"
@@ -3114,6 +3158,7 @@ function isRuntimeErrorCode(value: string): value is ConstructorParameters<typeo
   return [
     "INVALID_SESSION_ID",
     "SESSION_NOT_FOUND",
+    "BACKGROUND_JOB_NOT_FOUND",
     "SESSION_OCCUPIED",
     "SESSION_ALREADY_RUNNING",
     "RUNTIME_UNAVAILABLE",
@@ -3169,7 +3214,7 @@ function messagePayloadParam(value: unknown): SessionMessagePayload | undefined 
 
 function nativeAgentTypeParam(params: Record<string, unknown>, key: string): NativeAgentType {
   const value = stringParam(params, key);
-  if (value === "codex" || value === "claude-code" || value === "opencode" || value === "deepseek-harness") return value;
+  if (isNativeAgentType(value)) return value;
   throw new RuntimeSessionError("A native agent type is required", "INVALID_SESSION_ID");
 }
 

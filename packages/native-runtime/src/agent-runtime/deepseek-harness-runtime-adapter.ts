@@ -8,6 +8,7 @@ import { HarnessInteractions } from "./deepseek-harness-interactions.js";
 import { harnessQuestionProjection } from "./deepseek-harness-interaction-codec.js";
 import { AsyncEventQueue } from "./async-event-queue.js";
 import { HarnessJobs } from "./deepseek-harness-jobs.js";
+import { HarnessJobControl } from "./deepseek-harness-job-control.js";
 import { parseNativeGoalMutation, type NativeGoalMutation, type NativeSessionGoal } from "./native-session-goal.js";
 import { parseImageDataUrls } from "./image-input.js";
 import { encodeUnifiedSessionId } from "./session-id.js";
@@ -41,6 +42,18 @@ export class DeepSeekHarnessRuntimeAdapter implements AgentRuntimeAdapter {
   async health(): Promise<RuntimeHealth> {
     try { await this.client.request("session/list", { _request: {} }); return { agentType: this.agentType, label: "DeepSeek Harness", available: true }; }
     catch (error) { return { agentType: this.agentType, label: "DeepSeek Harness", available: false, error: error instanceof Error ? error.message : "运行时不可用" }; }
+  }
+
+  listBackgroundJobs(nativeSessionId: string) {
+    return new HarnessJobControl(this.client, nativeSessionId).list();
+  }
+
+  getBackgroundJobOutput(nativeSessionId: string, jobId: string) {
+    return new HarnessJobControl(this.client, nativeSessionId).output(jobId);
+  }
+
+  stopBackgroundJob(nativeSessionId: string, jobId: string) {
+    return new HarnessJobControl(this.client, nativeSessionId).stop(jobId);
   }
 
   private summary(row: HarnessRecord, permissionOptions: NativeSessionPermissions["options"] = [], modes: NonNullable<UnifiedSessionSummary["nativeMode"]>["options"] = []): UnifiedSessionSummary {

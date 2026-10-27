@@ -11,6 +11,9 @@ import type {
   ThreadGoalInfo,
   NativeGoalMutation,
   NativeSessionGoal,
+  RuntimeBackgroundJob,
+  RuntimeBackgroundJobOutput,
+  RuntimeBackgroundJobStopResult,
   UnifiedSessionSummary,
 } from "../../domain/ports/agent-port";
 import type { DictationPort } from "../../domain/ports/dictation-port";
@@ -546,6 +549,19 @@ export class AgentHttpGateway {
   async getSessionNativeGoal(id: string): Promise<NativeSessionGoal | null> {
     const result = await this.http.get<{ goal: NativeSessionGoal | null }>(`/api/sessions/${encodeURIComponent(id)}/native-goal`);
     return result.goal;
+  }
+
+  async listSessionBackgroundJobs(id: string): Promise<RuntimeBackgroundJob[]> {
+    const result = await this.http.get<{ jobs: RuntimeBackgroundJob[] }>(`/api/sessions/${encodeURIComponent(id)}/background-jobs`);
+    return result.jobs;
+  }
+
+  async getSessionBackgroundJobOutput(id: string, jobId: string): Promise<RuntimeBackgroundJobOutput> {
+    return this.http.get(`/api/sessions/${encodeURIComponent(id)}/background-jobs/${encodeURIComponent(jobId)}`);
+  }
+
+  async stopSessionBackgroundJob(id: string, jobId: string): Promise<RuntimeBackgroundJobStopResult> {
+    return this.http.post(`/api/sessions/${encodeURIComponent(id)}/background-jobs/${encodeURIComponent(jobId)}/stop`, {});
   }
 
   async mutateSessionNativeGoal(id: string, mutation: NativeGoalMutation): Promise<NativeSessionGoal | null> {

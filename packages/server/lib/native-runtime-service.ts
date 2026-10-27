@@ -1,4 +1,5 @@
 import type { SessionForkPoint } from "@agent/core";
+import type { RuntimeBackgroundJob, RuntimeBackgroundJobOutput, RuntimeBackgroundJobStopResult } from "@agent/native-runtime";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { delimiter, join, resolve, sep, win32 } from "node:path";
@@ -125,6 +126,9 @@ export interface NativeRuntimePort {
   setNativeMode?(id: string, preset: string): Promise<UnifiedSessionSummary>;
   setNativePermissionPreset?(id: string, preset: string): Promise<UnifiedSessionSummary>;
   getNativeGoal?(id: string): Promise<NativeSessionGoal | null>;
+  listBackgroundJobs?(id: string): Promise<RuntimeBackgroundJob[]>;
+  getBackgroundJobOutput?(id: string, jobId: string): Promise<RuntimeBackgroundJobOutput>;
+  stopBackgroundJob?(id: string, jobId: string): Promise<RuntimeBackgroundJobStopResult>;
   mutateNativeGoal?(id: string, mutation: NativeGoalMutation): Promise<NativeSessionGoal | null>;
   handoff?(id: string, controller: NativeRuntimeController): Promise<NativeRuntimeBrokerSnapshot>;
   getGoals?(id: string, controller?: NativeRuntimeController): Promise<SessionGoalState>;
@@ -393,6 +397,21 @@ export class NativeRuntimeService implements NativeRuntimePort {
     return this.runtime.getNativeGoal(id);
   }
 
+  async listBackgroundJobs(id: string): Promise<RuntimeBackgroundJob[]> {
+    if (!this.runtime.listBackgroundJobs) throw new RuntimeSessionError("此运行时未提供后台任务管理", "OPERATION_NOT_SUPPORTED");
+    return this.runtime.listBackgroundJobs(id);
+  }
+
+  async getBackgroundJobOutput(id: string, jobId: string): Promise<RuntimeBackgroundJobOutput> {
+    if (!this.runtime.getBackgroundJobOutput) throw new RuntimeSessionError("此运行时未提供后台任务输出", "OPERATION_NOT_SUPPORTED");
+    return this.runtime.getBackgroundJobOutput(id, jobId);
+  }
+
+  async stopBackgroundJob(id: string, jobId: string): Promise<RuntimeBackgroundJobStopResult> {
+    if (!this.runtime.stopBackgroundJob) throw new RuntimeSessionError("此运行时未提供后台任务停止接口", "OPERATION_NOT_SUPPORTED");
+    return this.runtime.stopBackgroundJob(id, jobId);
+  }
+
   async mutateNativeGoal(id: string, mutation: NativeGoalMutation): Promise<NativeSessionGoal | null> {
     if (!this.runtime.mutateNativeGoal) throw new RuntimeSessionError("此运行时未提供原生目标", "OPERATION_NOT_SUPPORTED");
     return this.runtime.mutateNativeGoal(id, mutation);
@@ -629,6 +648,7 @@ export function runtimeErrorStatus(err: unknown): number {
   if (err instanceof RuntimeSessionError) {
     switch (err.code) {
       case "SESSION_NOT_FOUND":
+      case "BACKGROUND_JOB_NOT_FOUND":
         return 404;
       case "SESSION_OCCUPIED":
       case "SESSION_ALREADY_RUNNING":

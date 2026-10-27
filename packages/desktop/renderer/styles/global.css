@@ -1,4 +1,5 @@
 @import "./glass.css";
+@import "./background-jobs.css";
 
 /* ── Pearl Light Design System (default skin) ── */
 :root, [data-skin="pearl"] {

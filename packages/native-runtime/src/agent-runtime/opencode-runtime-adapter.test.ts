@@ -8,7 +8,7 @@ import {
   type OpenCodeServerPort,
 } from "./opencode-runtime-adapter.js";
 import type { OpenCodeServerEvent } from "./opencode-server-client.js";
-import { OpenCodeV2EventCodec } from "./opencode-v2-codec.js";
+import { OpenCodeV2EventCodec, v2Message } from "./opencode-v2-codec.js";
 import {
   openCodeFormQuestion, openCodeQuestionId, OPENCODE_QUESTION_ASKED, OPENCODE_QUESTION_RESOLVED,
   type OpenCodeQuestionRequest,
@@ -67,6 +67,87 @@ const questionRequest = openCodeFormQuestion({
     { key: "q1", type: "string", description: "其他要求？", options: [] },
   ],
 })!;
+
+describe("OpenCode persisted execution failures", () => {
+  const providerError = { type: "provider.internal", status: 200,
+    message: "WorkBuddy AI: usage exceeds frequency limit (429: you can retry your request)" };
+  const failedAssistant = v2Message({ id: "msg_failed", type: "assistant", time: { created: 2, completed: 3 },
+    content: [], finish: "error", error: providerError }, "ses_1");
+  const user = v2Message({ id: "msg_user", type: "user", time: { created: 1 }, text: "render" }, "ses_1");
+  const failureEvent = { type: "error", code: "NATIVE_PROTOCOL_ERROR", message: providerError.message };
+
+  function failedServer(history = [user, failedAssistant]) {
+    const fixture = mockServer();
+    Object.assign(fixture.client.session, { messages: vi.fn(async () => ({ data: history })) });
+    return fixture;
+  }
+
+  it("restores an error-only assistant as an error event without fabricating assistant text", async () => {
+    const adapter = new OpenCodeRuntimeAdapter({ server: failedServer().server });
+    const detail = await adapter.getSession("ses_1");
+    expect(detail.events).toEqual([failureEvent]);
+    expect(detail.messages).toEqual([{ role: "user", content: "render" }]);
+    expect((await adapter.getSessionPaged("ses_1", { limit: 50 })).events).toEqual([failureEvent]);
+  });
+
+  it("keeps the terminal error on the latest page but not on an older history window", async () => {
+    const history = [
+      v2Message({ id: "msg_older", type: "user", text: "older" }, "ses_1"),
+      v2Message({ id: "msg_answer", type: "assistant", time: { created: 1 }, content: [{ type: "text", text: "answer" }] }, "ses_1"),
+      user, failedAssistant,
+    ];
+    const adapter = new OpenCodeRuntimeAdapter({ server: failedServer(history).server });
+    const latest = await adapter.getSessionPaged("ses_1", { limit: 1 });
+    expect(latest.events).toEqual([failureEvent]);
+    expect((await adapter.getSessionPaged("ses_1", { before: latest.history!.nextCursor! })).events).toEqual([]);
+  });
+
+  it("does not resurrect an old failure after a newer input, success, or during a running retry", async () => {
+    const nextUser = v2Message({ id: "msg_next", type: "user", text: "continue" }, "ses_1");
+    const success = v2Message({ id: "msg_ok", type: "assistant", time: { created: 4, completed: 5 }, content: [{ type: "text", text: "done" }] }, "ses_1");
+    for (const next of [nextUser, success]) {
+      const adapter = new OpenCodeRuntimeAdapter({ server: failedServer([user, failedAssistant, next]).server });
+      expect((await adapter.getSession("ses_1")).events).toEqual([]);
+    }
+    const fixture = failedServer();
+    Object.assign(fixture.client.session, { status: vi.fn(async () => ({ data: { ses_1: { type: "busy" } } })) });
+    expect((await new OpenCodeRuntimeAdapter({ server: fixture.server }).getSession("ses_1")).events).toEqual([]);
+  });
+
+  it("settles a live provider error and allows the next run to select another model", async () => {
+    const fixture = mockServer();
+    const adapter = new OpenCodeRuntimeAdapter({ server: fixture.server });
+    const first = drain(adapter.run("ses_1", "render"));
+    await vi.waitFor(() => expect(fixture.client.session.promptAsync).toHaveBeenCalledOnce());
+    fixture.emit({ type: "session.error", properties: { sessionID: "ses_1", error: { name: "APIError", data: { message: providerError.message, isRetryable: false } } } });
+    expect(await first).toEqual([failureEvent]);
+    const retry = drain(adapter.run("ses_1", "continue", undefined, undefined, undefined, {
+      model: { id: "zcode/GLM-5.3", providerID: "magpie" },
+    }));
+    await vi.waitFor(() => expect(fixture.client.session.promptAsync).toHaveBeenCalledTimes(2));
+    expect(fixture.client.session.promptAsync.mock.calls[1][0]?.body?.model)
+      .toEqual({ modelID: "zcode/GLM-5.3", providerID: "magpie" });
+    fixture.emit({ type: "session.idle", properties: { sessionID: "ses_1" } });
+    expect(await retry).toContainEqual(expect.objectContaining({ type: "done" }));
+  });
+
+  it("checks live occupancy and starts a run without reading large or unavailable history", async () => {
+    const fixture = mockServer();
+    fixture.client.session.messages.mockImplementation(async () => { throw new Error("terminated"); });
+    const adapter = new OpenCodeRuntimeAdapter({ server: fixture.server });
+    await expect(adapter.getSessionSummary("ses_1")).resolves.toMatchObject({ cwd: "/repo", occupancy: "available" });
+    const result = drain(adapter.run("ses_1", "continue"));
+    await vi.waitFor(() => expect(fixture.client.session.promptAsync).toHaveBeenCalledOnce());
+    expect(fixture.client.session.messages).not.toHaveBeenCalled();
+    expect(fixture.client.questions.list).not.toHaveBeenCalled();
+    fixture.emit({ type: "session.idle", properties: { sessionID: "ses_1" } });
+    await result;
+
+    Object.assign(fixture.client.session, { status: vi.fn(async () => ({ data: { ses_1: { type: "busy" } } })) });
+    await expect(drain(adapter.run("ses_1", "continue"))).rejects.toMatchObject({ code: "SESSION_OCCUPIED" });
+    expect(fixture.client.session.promptAsync).toHaveBeenCalledOnce();
+  });
+});
 
 describe("OpenCode mid-turn steering", () => {
   it("admits steering on the existing run and ignores echoed user text in the assistant stream", async () => {

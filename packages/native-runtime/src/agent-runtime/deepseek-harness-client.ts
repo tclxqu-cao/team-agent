@@ -14,7 +14,8 @@ export function harnessRecord(value: unknown): HarnessRecord {
 
 function harnessError(error: HarnessRecord, fallback: string): RuntimeSessionError {
   const code = error.code === "session/writer-held" || error.code === "session/agent-busy" ? "SESSION_OCCUPIED"
-    : error.code === "session/not-found" ? "SESSION_NOT_FOUND" : "NATIVE_PROTOCOL_ERROR";
+    : error.code === "session/not-found" ? "SESSION_NOT_FOUND"
+    : error.code === "job/not-found" ? "BACKGROUND_JOB_NOT_FOUND" : "NATIVE_PROTOCOL_ERROR";
   return new RuntimeSessionError(typeof error.message === "string" ? error.message : fallback, code);
 }
 

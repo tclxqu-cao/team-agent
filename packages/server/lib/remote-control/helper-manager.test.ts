@@ -167,3 +167,28 @@ it('routes native audio frames independently from command replies',async()=>{
   expect(helper.pending.size).toBe(0);
  }finally{clients?.control.destroy();clients?.video.destroy();await helper.stop();}
 });
+
+
+it('preserves native capture error codes and domains across the helper socket', async () => {
+  let clients: ReturnType<typeof connectHelperSockets>;
+  const helper = new RemoteHelper({ launch: async (controlPath: string, videoPath: string) => {
+    clients = connectHelperSockets(controlPath, videoPath);
+    clients.control.setEncoding('utf8');
+    let buffer = '';
+    clients.control.on('data', (chunk: string) => {
+      buffer += chunk;
+      let newline;
+      while ((newline = buffer.indexOf('\n')) >= 0) {
+        const command = JSON.parse(buffer.slice(0, newline)); buffer = buffer.slice(newline + 1);
+        clients.control.write(JSON.stringify({ id: command.id, ok: false, error: 'User stopped capture', errorCode: -3817, errorDomain: 'com.apple.ScreenCaptureKit.SCStreamErrorDomain' }) + '\n');
+      }
+    });
+  } });
+  helper.available = async () => true;
+  try {
+    await helper.start();
+    await expect(helper.request({ op: 'capture' })).rejects.toMatchObject({
+      message: 'User stopped capture', code: -3817, domain: 'com.apple.ScreenCaptureKit.SCStreamErrorDomain',
+    });
+  } finally { clients!.control.destroy(); clients!.video.destroy(); await helper.stop(); }
+});

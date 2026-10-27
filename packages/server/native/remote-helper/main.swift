@@ -6,6 +6,54 @@ import CoreMedia
 import IOKit.pwr_mgt
 import VideoToolbox
 
+// Keep an unsolicited stop until the next request observes it. A user stop is
+// terminal for this helper process, including display/quality/audio restarts.
+struct RemoteCaptureFailure {
+    let error: NSError
+    var userStopped: Bool { error.domain == SCStreamErrorDomain && error.code == -3817 }
+    var payload: [String: Any] {
+        ["ok": false, "error": error.localizedDescription, "errorCode": error.code, "errorDomain": error.domain]
+    }
+}
+
+struct RemoteCaptureFailureState {
+    private var failure: RemoteCaptureFailure?
+    mutating func record(_ error: Error, hasWaitingRequests: Bool) -> RemoteCaptureFailure {
+        if let failure, failure.userStopped { return failure }
+        let next = RemoteCaptureFailure(error: error as NSError)
+        failure = next.userStopped || !hasWaitingRequests ? next : nil
+        return next
+    }
+    mutating func take() -> RemoteCaptureFailure? {
+        let next = failure
+        if next?.userStopped != true { failure = nil }
+        return next
+    }
+}
+
+if CommandLine.arguments.contains("--capture-recovery-self-test") {
+    let stopped = NSError(domain: SCStreamErrorDomain, code: -3817)
+    let transient = NSError(domain: SCStreamErrorDomain, code: -3805)
+    for hasWaitingRequests in [false, true] {
+        var state = RemoteCaptureFailureState()
+        precondition(state.record(stopped, hasWaitingRequests: hasWaitingRequests).userStopped)
+        for _ in 0..<5 { precondition(state.take()?.userStopped == true) }
+        precondition(state.record(transient, hasWaitingRequests: false).userStopped)
+        precondition(state.take()?.userStopped == true)
+    }
+    var state = RemoteCaptureFailureState()
+    precondition(!state.record(transient, hasWaitingRequests: false).userStopped)
+    precondition(state.take()?.error.code == -3805)
+    precondition(state.take() == nil)
+    _ = state.record(transient, hasWaitingRequests: true)
+    precondition(state.take() == nil)
+    _ = state.record(NSError(domain: "Other", code: -3817), hasWaitingRequests: false)
+    precondition(state.take()?.userStopped == false)
+    precondition(state.take() == nil)
+    print("capture recovery self-test passed")
+    exit(0)
+}
+
 struct RemoteDisplaySelection {
     private(set) var selectedID: CGDirectDisplayID?
     private(set) var orderedIDs: [CGDirectDisplayID] = []
@@ -177,6 +225,7 @@ final class RemoteCaptureStream: NSObject, SCStreamOutput, SCStreamDelegate {
     var bounds = CGRect.zero
     var starting = false
     var waiting: [Int?] = []
+    var captureFailures = RemoteCaptureFailureState()
     let context = CIContext()
     var latestVideoFrame: CVPixelBuffer?
     var displaySelection = RemoteDisplaySelection()
@@ -250,9 +299,12 @@ final class RemoteCaptureStream: NSObject, SCStreamOutput, SCStreamDelegate {
     func setAudioEnabled(_ id: Int?, enabled: Bool) {
         if audioEnabled == enabled { respond(id, ["ok": true]); return }
         audioEnabled = enabled
+        // Cleanup must never start a new stream after capture has failed/stopped.
+        if !enabled && stream == nil && !starting { respond(id, ["ok": true]); return }
         restart(id)
     }
     func restart(_ id: Int?) {
+        if let failure = captureFailures.take() { respond(id, failure.payload); return }
         epoch += 1
         let currentEpoch = epoch
         let old = stream; stream = nil; latest = nil; latestVideoFrame = nil; starting = true
@@ -281,6 +333,7 @@ final class RemoteCaptureStream: NSObject, SCStreamOutput, SCStreamDelegate {
         else { finish() }
     }
     func frame(_ id: Int?) {
+        if let failure = captureFailures.take() { respond(id, failure.payload); return }
         guard CGPreflightScreenCaptureAccess() else { respond(id, ["ok": false, "error": "请先授予屏幕录制权限"]); return }
         _ = displays()
         if captureDisplayID != selectedDisplayID && (stream != nil || starting) {
@@ -303,7 +356,7 @@ final class RemoteCaptureStream: NSObject, SCStreamOutput, SCStreamDelegate {
             DispatchQueue.main.async {
                 guard self.epoch == currentEpoch else { return }
                 guard let target = self.captureDisplayID,
-                      let display = content?.displays.first(where: { $0.displayID == target }) else { self.fail(error?.localizedDescription ?? "没有可采集的屏幕"); return }
+                      let display = content?.displays.first(where: { $0.displayID == target }) else { self.fail(error ?? NSError(domain: "AgentRoamCapture", code: 1, userInfo: [NSLocalizedDescriptionKey: "没有可采集的屏幕"])); return }
                 self.bounds = CGDisplayBounds(display.displayID)
                 let config = SCStreamConfiguration()
                 let mode = CGDisplayCopyDisplayMode(display.displayID)
@@ -320,14 +373,14 @@ final class RemoteCaptureStream: NSObject, SCStreamOutput, SCStreamDelegate {
                 config.channelCount = 2
                 let stream = SCStream(filter: SCContentFilter(display: display, excludingWindows: []), configuration: config, delegate: self)
                 do { try stream.addStreamOutput(self, type: .screen, sampleHandlerQueue: .main) }
-                catch { self.fail(error.localizedDescription); return }
+                catch { self.fail(error); return }
                 if self.audioEnabled {
                     do { try stream.addStreamOutput(self, type: .audio, sampleHandlerQueue: .main) }
-                    catch { self.fail(error.localizedDescription); return }
+                    catch { self.fail(error); return }
                 }
                 self.stream = stream
                 self.configuration = config
-                stream.startCapture { error in DispatchQueue.main.async { guard self.stream === stream else { return }; self.starting = false; if let error { self.fail(error.localizedDescription) } } }
+                stream.startCapture { error in DispatchQueue.main.async { guard self.stream === stream else { return }; self.starting = false; if let error { self.fail(error) } } }
             }
         }
     }
@@ -363,15 +416,24 @@ final class RemoteCaptureStream: NSObject, SCStreamOutput, SCStreamDelegate {
         let requests = waiting; waiting.removeAll()
         for id in requests { encode(id, cg) }
     }
-    func stream(_ stream: SCStream, didStopWithError error: Error) { DispatchQueue.main.async { if self.stream === stream { self.fail(error.localizedDescription) } } }
+    func stream(_ stream: SCStream, didStopWithError error: Error) { DispatchQueue.main.async { if self.stream === stream { self.fail(error) } } }
     func encodeLatestVideoFrame() {
         guard let latestVideoFrame else { return }
         remoteVideoEncoder.encode(latestVideoFrame, timestamp: CMClockGetTime(CMClockGetHostTimeClock()))
     }
-    func fail(_ message: String) {
-        stream = nil; latest = nil; latestVideoFrame = nil; starting = false
+    func fail(_ error: Error) {
+        let failure = captureFailures.record(error, hasWaitingRequests: !waiting.isEmpty)
+        epoch += 1
+        let old = stream; stream = nil; latest = nil; latestVideoFrame = nil; starting = false
+        configuration = nil
+        idleResolutionWork?.cancel()
+        interactiveUntil = .distantPast
+        resolutionUpdating = false
+        remoteVideoEncoder.reset()
+        releaseRemoteDisplay()
+        old?.stopCapture { _ in }
         let requests = waiting; waiting.removeAll()
-        for id in requests { respond(id, ["ok": false, "error": message]) }
+        for id in requests { respond(id, failure.payload) }
     }
     func encode(_ id: Int?, _ image: CGImage) {
             // JPEG is the lightweight viewing fallback; H264 keeps the selected resolution.

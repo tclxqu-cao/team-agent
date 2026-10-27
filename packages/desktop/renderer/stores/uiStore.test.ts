@@ -6,6 +6,7 @@ import {
   normalizePinnedSessionIds,
   useUIStore,
   SKINS,
+  LAYOUTS,
 } from "./uiStore";
 
 beforeEach(() => {
@@ -67,5 +68,28 @@ describe("glass skin", () => {
     expect(migrateUIPreferences({ skin: "glass", layout: "compact" }, 4)).toMatchObject({ skin: "glass", layout: "compact" });
     useUIStore.getState().setSkin("pearl");
     expect(useUIStore.getState().skin).toBe("pearl");
+  });
+});
+
+describe("navigation layout preferences", () => {
+  it.each(SKINS.flatMap(({ id: skin }) => LAYOUTS.map(({ id: layout }) => ({ skin, layout }))))(
+    "switches classic and rail without changing $skin / $layout or sessions",
+    ({ skin, layout }) => {
+      useUIStore.setState({ skin, layout, pinnedSessionIds: ["existing"], wakeEnabled: false });
+      for (const navigationLayout of ["classic", "agent-rail"] as const) {
+        useUIStore.getState().setNavigationLayout(navigationLayout);
+        const expected = { skin, layout, pinnedSessionIds: ["existing"], wakeEnabled: false, navigationLayout };
+        expect(useUIStore.getState()).toMatchObject(expected);
+        expect(JSON.parse(localStorage.getItem("agent-ui-prefs")!).state).toMatchObject(expected);
+      }
+      useUIStore.getState().setSkin("pearl");
+      expect(useUIStore.getState().navigationLayout).toBe("agent-rail");
+    },
+  );
+
+  it("migrates a valid preference without accepting skin or chat layout IDs as navigation", () => {
+    expect(migrateUIPreferences({ navigationLayout: "classic", skin: "glass" }, 4)).toMatchObject({ navigationLayout: "classic", skin: "glass" });
+    expect(migrateUIPreferences({ navigationLayout: "compact" }, 4)).not.toHaveProperty("navigationLayout");
+    expect(migrateUIPreferences({}, 4)).not.toHaveProperty("navigationLayout");
   });
 });

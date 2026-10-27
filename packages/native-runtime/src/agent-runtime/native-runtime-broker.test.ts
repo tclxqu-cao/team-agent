@@ -155,6 +155,7 @@ class FakeNativeRuntime {
       events: [],
     };
   };
+  getRunSummary = (): Promise<UnifiedSessionSummary> => this.get();
   getUnpaginated = async (_id: string, preferCache = false): Promise<UnifiedSessionDetail> => {
     this.getUnpaginatedCachePreferences.push(preferCache);
     return this.get();
@@ -262,6 +263,22 @@ describe("resolveNativeRuntimeSocketPath", () => {
 });
 
 describe("NativeRuntimeBrokerHost", () => {
+  it("admits a run from fresh summary metadata without downloading its transcript", async () => {
+    const runtime = new FakeNativeRuntime();
+    const getRunSummary = vi.fn(async () => summary());
+    runtime.getRunSummary = getRunSummary;
+    runtime.get = async () => { throw new Error("terminated while reading large history"); };
+    const host = new NativeRuntimeBrokerHost(await directory(), runtime as unknown as UnifiedSessionService);
+    try {
+      const admitted = await host.startRun(sessionId, "continue");
+      expect(admitted.runId).toBeTruthy();
+      expect(getRunSummary).toHaveBeenCalledWith(sessionId);
+      await waitFor(() => expect(runtime.runInputs).toContainEqual(expect.objectContaining({ input: "continue" })));
+    } finally {
+      await host.stop();
+    }
+  });
+
   it("keeps an interrupted Codex run active until the adapter confirms its terminal event", async () => {
     const runtime = new FakeNativeRuntime();
     runtime.completeOnAbort = false;
@@ -882,23 +899,23 @@ describe("NativeRuntimeBrokerHost", () => {
     }
   });
 
-  it("restores a persisted empty Claude draft in a replacement broker", async () => {
+  it.each(["claude-code", "qoder", "zcode", "workbuddy"] as const)("restores a persisted empty %s draft in a replacement broker", async (agentType) => {
     const path = await directory();
     const nativeSessionId = "123e4567-e89b-42d3-a456-426614174020";
     const draft: UnifiedSessionSummary = {
       ...summary(),
-      id: encodeUnifiedSessionId("claude-code", nativeSessionId),
-      agentType: "claude-code",
+      id: encodeUnifiedSessionId(agentType, nativeSessionId),
+      agentType,
       nativeSessionId,
       title: "Persistent draft",
-      cwd: "/repo/claude",
-      sourceLabel: "Claude Code SDK",
+      cwd: `/repo/${agentType}`,
+      sourceLabel: agentType,
     };
     const priorRuntime = new FakeNativeRuntime();
     priorRuntime.listResult = [];
     priorRuntime.createResult = draft;
     const priorHost = new NativeRuntimeBrokerHost(path, priorRuntime as unknown as UnifiedSessionService);
-    await priorHost.create({ agentType: "claude-code", title: draft.title, cwd: draft.cwd });
+    await priorHost.create({ agentType, title: draft.title, cwd: draft.cwd });
     await priorHost.stop();
 
     const replacementRuntime = new FakeNativeRuntime();
@@ -914,23 +931,23 @@ describe("NativeRuntimeBrokerHost", () => {
     }
   });
 
-  it("clears a persisted Claude draft after its first run completes", async () => {
+  it.each(["claude-code", "qoder", "zcode", "workbuddy"] as const)("clears a persisted %s draft after its first run completes", async (agentType) => {
     const path = await directory();
     const nativeSessionId = "123e4567-e89b-42d3-a456-426614174021";
     const draft: UnifiedSessionSummary = {
       ...summary(),
-      id: encodeUnifiedSessionId("claude-code", nativeSessionId),
-      agentType: "claude-code",
+      id: encodeUnifiedSessionId(agentType, nativeSessionId),
+      agentType,
       nativeSessionId,
       title: "Materialized draft",
-      cwd: "/repo/claude",
-      sourceLabel: "Claude Code SDK",
+      cwd: `/repo/${agentType}`,
+      sourceLabel: agentType,
     };
     const runtime = new FakeNativeRuntime();
     runtime.listResult = [];
     runtime.createResult = draft;
     const host = new NativeRuntimeBrokerHost(path, runtime as unknown as UnifiedSessionService);
-    await host.create({ agentType: "claude-code", title: draft.title, cwd: draft.cwd });
+    await host.create({ agentType, title: draft.title, cwd: draft.cwd });
     await host.startRun(draft.id, "materialize");
     await waitFor(() => expect(host.snapshot(draft.id).events).toHaveLength(1));
     await host.abort(draft.id);
@@ -2325,6 +2342,23 @@ describe("NativeRuntimeBrokerHost", () => {
     } finally {
       await host.stop();
     }
+  });
+
+  it("preserves native read-only sessions through list, workspace, detail and admission", async () => {
+    const child: UnifiedSessionSummary = { ...summary(), id: encodeUnifiedSessionId("zcode", "child"), agentType: "zcode",
+      nativeSessionId: "child", parentSessionId: encodeUnifiedSessionId("zcode", "parent"), readOnly: true, canResume: false };
+    const runtime = new FakeNativeRuntime();
+    runtime.listResult = [child];
+    runtime.workspaceSessions = [child];
+    runtime.get = async () => ({ ...child, messages: [], events: [] });
+    const host = new NativeRuntimeBrokerHost(await directory(), runtime as unknown as UnifiedSessionService);
+    try {
+      expect((await host.list())[0]).toMatchObject({ id: child.id, readOnly: true, canResume: false });
+      expect((await host.listWorkspaceSessions("zcode", "workspace")).data[0]).toMatchObject({ readOnly: true, canResume: false });
+      await expect(host.get(child.id)).resolves.toMatchObject({ readOnly: true, canResume: false });
+      await expect(host.startRun(child.id, "must not run")).rejects.toMatchObject({ code: "SESSION_OCCUPIED" });
+      expect(runtime.runInputs).toEqual([]);
+    } finally { await host.stop(); }
   });
 
   it("confirms ownership changes even while the page polls every second", async () => {

@@ -23,6 +23,9 @@ export type {
   ThreadGoalInfo,
   NativeGoalMutation,
   NativeSessionGoal,
+  RuntimeBackgroundJob,
+  RuntimeBackgroundJobOutput,
+  RuntimeBackgroundJobStopResult,
   UnifiedSessionSummary,
   TtsStreamMetadata,
 } from "../../../../desktop/renderer/global";

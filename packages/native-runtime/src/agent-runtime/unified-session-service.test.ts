@@ -94,6 +94,33 @@ function adapter(agentType: AgentType, discovered: UnifiedSessionSummary[], over
 }
 
 describe("UnifiedSessionService", () => {
+  it("uses fresh summary-only admission metadata when the adapter supports it", async () => {
+    const session = summary("opencode", "ses_1", "/repo", "2026-01-02T00:00:00.000Z");
+    const opencode = adapter("opencode", [session]);
+    opencode.getSessionSummary = vi.fn(async () => session);
+    opencode.getSession = vi.fn(async () => { throw new Error("terminated reading history"); });
+    const service = new UnifiedSessionService([opencode], async () => [{ id: "root", description: "/repo" }]);
+
+    await expect(service.getRunSummary(session.id)).resolves.toMatchObject({ ...session, projectId: "root" });
+    await expect(drain(service.run(session.id, "continue"))).resolves.toEqual([{ type: "done", finalText: "ok" }]);
+    expect(opencode.getSession).not.toHaveBeenCalled();
+    expect(opencode.getSessionSummary).toHaveBeenCalledTimes(2);
+
+    opencode.getSessionSummary = vi.fn(async () => ({ ...session, canResume: false, occupancy: "owned-externally" as const }));
+    await expect(drain(service.run(session.id, "continue"))).rejects.toMatchObject({ code: "SESSION_OCCUPIED" });
+    expect(opencode.getSession).not.toHaveBeenCalled();
+  });
+
+  it("does not fall back to a stale transcript when summary admission fails", async () => {
+    const session = summary("opencode", "ses_1", "/repo", "2026-01-02T00:00:00.000Z");
+    const opencode = adapter("opencode", [session]);
+    opencode.getSessionSummary = vi.fn(async () => { throw new Error("fetch failed"); });
+    const service = new UnifiedSessionService([opencode], async () => []);
+    await expect(service.getRunSummary(session.id)).rejects.toThrow("fetch failed");
+    await expect(drain(service.run(session.id, "continue"))).rejects.toThrow("fetch failed");
+    expect(opencode.getSession).not.toHaveBeenCalled();
+  });
+
   it("resolves transcript watch paths through the owning adapter", async () => {
     const codex = adapter("codex", [summary("codex", "cx-1", "/repo", "2026-01-02T00:00:00.000Z")]);
     const service = new UnifiedSessionService([codex], async () => []);

@@ -13,6 +13,7 @@ import { LocalSettingsRepository } from "./infrastructure/local/local-settings-r
 import { installBrowserCryptoCompatibility } from "./infrastructure/browser-crypto";
 import { installParentTabSwipeBridge } from "./presentation/parent-tab-swipe";
 import { installWebShellSkinBridge } from "./presentation/web-shell-skin";
+import { installWebShellNavigationBridge } from "./presentation/web-shell-navigation";
 import { installWebShellLiveBridge } from "./presentation/web-shell-live";
 import { announceWebappReady } from "./presentation/webapp-ready";
 // The desktop renderer's design-token sheet — the Electron entry imports it
@@ -48,6 +49,7 @@ installBrowserCompatibility();
 installBrowserCryptoCompatibility();
 installParentTabSwipeBridge();
 installWebShellSkinBridge();
+installWebShellNavigationBridge();
 installWebShellLiveBridge();
 // 全局错误采集：浏览器侧报错批量上报 /api/client-logs（server 落盘到按天日志）。
 // sseBase 在移动端 boot() 后才指向远端服务器，这里用 getter 延迟解析。

@@ -2,14 +2,10 @@ import { useEffect, useRef, useState } from "react";
 import { ChevronsLeft, ChevronsRight } from "lucide-react";
 import type { AgentType, RuntimeHealth } from "../global";
 import AgentBrandIcon from "./AgentBrandIcon";
+import { AGENT_TYPES } from "../../../core/src/domain/agent/agent-type";
+import { AGENT_LABELS } from "../lib/agent-catalog";
 
-const AGENTS: Array<{ agentType: AgentType; label: string }> = [
-  { agentType: "customer-agent", label: "Customer Agent" },
-  { agentType: "codex", label: "Codex" },
-  { agentType: "claude-code", label: "Claude Code" },
-  { agentType: "opencode", label: "OpenCode" },
-  { agentType: "deepseek-harness", label: "DeepSeek Harness" },
-];
+const AGENTS = AGENT_TYPES.map((agentType) => ({ agentType, label: AGENT_LABELS[agentType] }));
 
 interface AgentWorkspaceSwitcherProps {
   value: AgentType;
@@ -67,7 +63,7 @@ export default function AgentWorkspaceSwitcher({ value, health, onChange, onUnav
             }}
           >
             <AgentBrandIcon agentType={agent.agentType} size={22} />
-            <i className={blocked ? "is-unavailable" : ""} aria-hidden="true" />
+            {!vertical && <i className={blocked ? "is-unavailable" : ""} aria-hidden="true" />}
           </button>
         );
       })}

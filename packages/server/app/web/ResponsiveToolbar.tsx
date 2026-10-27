@@ -1,21 +1,33 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import React, { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { ChevronDown, ChevronsLeft, ChevronsRight, MoreHorizontal } from "lucide-react";
+import { ChevronDown, ChevronsLeft, ChevronsRight, MoreHorizontal, X } from "lucide-react";
 import { resolveToolbarLayout } from "./toolbar-layout";
 
-interface Props {
-  items: { id: string; content: ReactNode }[];
-  avatar: ReactNode;
-  glass?: boolean;
+interface ToolbarAction { id: string; content: ReactNode }
+interface ToolbarItem extends ToolbarAction { compactItems?: ToolbarAction[] }
+
+export function compactToolbarGroups(items: ToolbarItem[]): ToolbarAction[][] {
+  return items.map(item => item.compactItems ?? [item]).filter(group => group.length > 0);
 }
 
-export default function ResponsiveToolbar({ items, avatar, glass = false }: Props) {
+export function glassMobileToolbarActions(items: ToolbarItem[]): ToolbarAction[] {
+  return compactToolbarGroups(items).flat().filter(item => item.id !== "files");
+}
+
+interface Props {
+  items: ToolbarItem[];
+  avatar: ReactNode;
+  glass?: boolean;
+  compact?: boolean;
+}
+
+export default function ResponsiveToolbar({ items, avatar, glass = false, compact = false }: Props) {
   const [mobile, setMobile] = useState(false);
   const glassMobile = glass && mobile;
   const glassDesktop = glass && !mobile;
-  useEffect(() => { setOverflowOpen(false); }, [glassMobile]);
+  useEffect(() => { setOverflowOpen(false); }, [glassMobile, compact, mobile]);
   useEffect(() => {
     const query = window.matchMedia("(max-width: 899px)");
     const update = () => setMobile(query.matches);
@@ -37,6 +49,7 @@ export default function ResponsiveToolbar({ items, avatar, glass = false }: Prop
   const inline = new Set(layout.inlineIndices);
   const showTools = layout.fullFits || expanded;
   const showOverflow = showTools && layout.overflowIndices.length > 0;
+  const compactGroups = compactToolbarGroups(items);
 
   useEffect(() => {
     setPortalNode(root.current?.closest<HTMLElement>(".web-root") ?? document.body);
@@ -46,7 +59,7 @@ export default function ResponsiveToolbar({ items, avatar, glass = false }: Prop
     const bar = root.current?.closest<HTMLElement>(".terminal-tabs");
     const tabs = bar?.querySelector<HTMLElement>(".terminal-tab-list");
     const connection = root.current?.closest<HTMLElement>(".terminal-connection");
-    if (!bar || !tabs || !connection || !portalNode || glass) return;
+    if (!bar || !tabs || !connection || !portalNode || glass || compact) return;
     let frame = 0;
     const measure = () => {
       const barStyle = getComputedStyle(bar);
@@ -82,14 +95,14 @@ export default function ResponsiveToolbar({ items, avatar, glass = false }: Prop
     if (overflow.current) mutations.observe(overflow.current, { childList: true, subtree: true });
     measure();
     return () => { cancelAnimationFrame(frame); observer.disconnect(); mutations.disconnect(); };
-  }, [expanded, portalNode, items.map(item => item.id).join(","), layout.inlineIndices.join(","), glass]);
+  }, [expanded, portalNode, items.map(item => item.id).join(","), layout.inlineIndices.join(","), glass, compact]);
 
   useLayoutEffect(() => {
     if (!overflowOpen) return;
     const reposition = () => {
       const rect = overflowButton.current?.getBoundingClientRect();
       if (!rect) return;
-      const width = glassDesktop
+      const width = glassDesktop || compact
         ? overflow.current?.getBoundingClientRect().width ?? Math.min(292, innerWidth - 16)
         : Math.min(292, innerWidth - 16);
       const barBottom = root.current?.closest(".terminal-tabs")?.getBoundingClientRect().bottom ?? rect.bottom;
@@ -98,10 +111,11 @@ export default function ResponsiveToolbar({ items, avatar, glass = false }: Prop
     reposition();
     const observer = new ResizeObserver(reposition);
     if (glassDesktop && overflow.current) observer.observe(overflow.current);
+    if (compact && overflow.current) observer.observe(overflow.current);
     window.addEventListener("resize", reposition);
     window.addEventListener("scroll", reposition, true);
     return () => { observer.disconnect(); window.removeEventListener("resize", reposition); window.removeEventListener("scroll", reposition, true); };
-  }, [overflowOpen, glassDesktop, layout.inlineIndices.join(",")]);
+  }, [overflowOpen, glassDesktop, compact, layout.inlineIndices.join(",")]);
 
   useEffect(() => {
     if (!overflowOpen) return;
@@ -123,6 +137,17 @@ export default function ResponsiveToolbar({ items, avatar, glass = false }: Prop
     if (element) slots.current.set(item.id, element); else slots.current.delete(item.id);
   }}>{item.content}</div>;
 
+  if (compact) return <div ref={root} className="responsive-toolbar compact-toolbar">
+    {compactGroups.length > 0 && <button ref={overflowButton} type="button" className="file-drawer-toggle compact-toolbar-trigger" aria-label="更多功能" title="更多功能" aria-haspopup="dialog" aria-expanded={overflowOpen} onClick={() => setOverflowOpen(value => !value)}><MoreHorizontal size={20} aria-hidden="true" /></button>}
+    <div className="toolbar-avatar" onPointerDown={() => setOverflowOpen(false)}>{avatar}</div>
+    {portalNode && createPortal(<div className={mobile ? "compact-tools-backdrop" : "compact-tools-overlay"} hidden={!overflowOpen} onClick={event => { if (event.target === event.currentTarget) setOverflowOpen(false); }}>
+      <div ref={overflow} className={`compact-tools-panel${mobile ? " is-mobile" : ""}`} role="dialog" aria-label="更多功能" data-toolbar-overlay style={mobile ? undefined : { position: "fixed", ...position }}>
+        {mobile && <header><button type="button" className="file-drawer-toggle" aria-label="关闭更多功能" title="关闭更多功能" onClick={() => { setOverflowOpen(false); overflowButton.current?.focus(); }}><X size={20} aria-hidden="true" /></button></header>}
+        <div className="compact-tools-grid">{compactGroups.map(group => group.length === 1 ? renderItem(group[0]) : <div key={group[0].id} className="compact-tools-group">{group.map(renderItem)}</div>)}</div>
+      </div>
+    </div>, portalNode)}
+  </div>;
+
   if (glassDesktop) {
     const primary = ["files", "remote"].flatMap(id => items.filter(item => item.id === id));
     const secondary = items.filter(item => !["files", "remote"].includes(item.id));
@@ -139,7 +164,7 @@ export default function ResponsiveToolbar({ items, avatar, glass = false }: Prop
   }
 
   if (glassMobile) {
-    const labels: Record<string, string> = { refresh: "刷新页面", collaboration: "群聊看板", install: "安装应用", remote: "远程桌面", "ai-hub": "AI Hub", flow: "数字人", theme: "皮肤", files: "我的文件" };
+    const labels: Record<string, string> = { refresh: "刷新页面", collaboration: "群聊看板", install: "安装应用", remote: "远程桌面", "ai-hub": "AI Hub", flow: "数字人", theme: "皮肤", "navigation-layout": "切换布局", files: "我的文件" };
     const controls = <div className="glass-mobile-actions" style={{ display: "flex", alignItems: "center", gap: 4 }}>
       <button type="button" className="file-drawer-toggle ui-icon-button" aria-label="更多功能" aria-expanded={overflowOpen} onClick={() => setOverflowOpen(value => !value)}><MoreHorizontal size={20} /></button>
     </div>;
@@ -150,7 +175,7 @@ export default function ResponsiveToolbar({ items, avatar, glass = false }: Prop
       {overflowOpen && portalNode && createPortal(<div className="glass-tools-backdrop" onClick={() => setOverflowOpen(false)}>
         <section className="glass-tools-sheet" role="dialog" aria-label="更多功能" data-toolbar-overlay onClick={event => event.stopPropagation()}>
           <header><strong>更多功能</strong><button type="button" aria-label="关闭更多功能" onClick={() => setOverflowOpen(false)}>×</button></header>
-          <div className="glass-tools-grid">{items.filter(item => item.id !== "files").map(item => <div key={item.id} className="glass-tool-cell" title={labels[item.id] ?? item.id} onClick={event => {
+          <div className="glass-tools-grid">{glassMobileToolbarActions(items).map(item => <div key={item.id} className="glass-tool-cell" title={labels[item.id] ?? item.id} onClick={event => {
             if (event.target instanceof Element && event.target.closest("button")) return;
             event.currentTarget.querySelector<HTMLButtonElement>("button")?.click();
           }}>{item.content}</div>)}</div>

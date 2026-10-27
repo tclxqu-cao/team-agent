@@ -19,6 +19,8 @@ declare module "@desktop/renderer/stores/uiStore" {
   interface UIStateSlice {
     skin: SkinId;
     setSkin: (skin: SkinId) => void;
+    navigationLayout: import("@agent/core/domain/web-console/navigation-layout").NavigationLayout;
+    setNavigationLayout: (layout: import("@agent/core/domain/web-console/navigation-layout").NavigationLayout) => void;
   }
   export const SKINS: Array<{ id: SkinId; label: string; preview: [string, string] }>;
   export const useUIStore: {

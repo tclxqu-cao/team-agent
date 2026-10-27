@@ -1,3 +1,4 @@
+import { AGENT_LABELS } from "../lib/agent-catalog";
 import { BookOpen, Lightbulb, Wrench } from "lucide-react";
 import type { AgentType } from "../global";
 
@@ -17,13 +18,7 @@ export function welcomeGreetingForHour(hour: number): { title: string; prompt: s
   return { title: "夜深了。", prompt: "注意休息，重要的事可以先留给我。" };
 }
 
-const AGENT_LABELS: Record<AgentType, string> = {
-  "customer-agent": "Customer Agent",
-  codex: "Codex",
-  "claude-code": "Claude Code",
-  opencode: "OpenCode",
-  "deepseek-harness": "DeepSeek Harness",
-};
+
 
 interface EmptySessionWelcomeProps {
   agentType: AgentType;
