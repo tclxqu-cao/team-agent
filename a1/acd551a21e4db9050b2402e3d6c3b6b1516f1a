@@ -1,0 +1,167 @@
+packages/core/src/application/collaboration/CollaborationService.test.ts
+  s_94155e50e1f976::t_b766e2d7902e3d 34,40-51,404-652
+packages/core/src/application/collaboration/CollaborationService.ts
+  s_94155e50e1f976::t_07693d1d6ccc0c 8,12,16,18,78-81,101,190-194,201-212,225-230,232,286-303,434,438-441,486,499-504,613-626,628-631
+packages/core/src/application/collaboration/ports.ts
+  s_94155e50e1f976::t_af425cd4040522 6,68-74
+packages/core/src/application/collaboration/prompts.ts
+  s_94155e50e1f976::t_1c8946d3d5a4c2 14,19,36-37
+packages/core/src/application/supervision/SupervisionService.test.ts
+  s_94155e50e1f976::t_88cf6592a2d51f 1-173
+packages/core/src/application/supervision/SupervisionService.ts
+  s_94155e50e1f976::t_cbb829025e8adb 1-278
+packages/core/src/application/supervision/ports.ts
+  s_94155e50e1f976::t_9e2eb06eed16c0 1-18
+packages/core/src/application/supervision/prompts.ts
+  s_94155e50e1f976::t_cabb73ad499b83 1-21
+packages/core/src/domain/collaboration/CollaborationDiscussion.test.ts
+  s_94155e50e1f976::t_f7c452d6fae252 7,12,178-339
+packages/core/src/domain/collaboration/CollaborationDiscussion.ts
+  s_94155e50e1f976::t_24dca89aab6acf 4,9,21-29,35,42-57,63-88,228-240,263,271-277,298-306
+packages/core/src/domain/collaboration/CollaborationGroup.ts
+  s_94155e50e1f976::t_8d9f1500b321fc 17-23,100
+packages/core/src/domain/collaboration/coordinator-protocol.ts
+  s_94155e50e1f976::t_c457c1dcdcb812 31-34
+packages/core/src/domain/collaboration/mention-routing.ts
+  s_94155e50e1f976::t_e89efb7821c4c8 1-51
+packages/core/src/domain/collaboration/types.ts
+  s_94155e50e1f976::t_f8d6590a656022 9-15,34-35,70-73,85-93,113-120,138,150-155,163-168,171
+packages/core/src/domain/supervision/types.ts
+  s_94155e50e1f976::t_73159a9d3ae785 1-106
+packages/core/src/domain/web-console/SessionDashboardBridge.test.ts
+  s_94155e50e1f976::t_08ab1147d1d228 1-12
+packages/core/src/domain/web-console/SessionDashboardBridge.ts
+  s_94155e50e1f976::t_d0162a7cf7486c 1-43
+packages/core/src/domain/web-console/computer-settings.ts
+  s_94155e50e1f976::t_4180d330a8cb9e 1
+packages/core/src/index.ts
+  s_94155e50e1f976::t_39f0a97a341796 76-79
+packages/core/src/infrastructure/SQLiteCollaborationRepository.ts
+  s_94155e50e1f976::t_689fd61fe40b76 116-132
+packages/core/src/infrastructure/SQLiteSupervisionRepository.test.ts
+  s_94155e50e1f976::t_444c6c5991fab6 1-29
+packages/core/src/infrastructure/SQLiteSupervisionRepository.ts
+  s_94155e50e1f976::t_0eecd78e874a44 1-46
+packages/desktop/renderer/App.tsx
+  s_94155e50e1f976::t_82e5393b003f2d 10-16,74,311-324,329,334,337,872-936,1632,1646-1647,1649,1651,1654-1656,1665-1666,1670,1677,2357
+packages/desktop/renderer/components/ChatHeaderActions.test.tsx
+  s_94155e50e1f976::t_c3851f43eb030b 15,31
+packages/desktop/renderer/components/ChatHeaderActions.tsx
+  s_94155e50e1f976::t_b4edf318caef09 2,55,75,95,99-100
+packages/desktop/renderer/components/ChatView.tsx
+  s_94155e50e1f976::t_ecbc0e6cc62b45 485,570,755-756,4137,5832
+packages/desktop/renderer/components/collaboration/CollaborationCreateDialog.test.tsx
+  s_94155e50e1f976::t_33e23cbf11d6a3 28-36
+packages/desktop/renderer/components/collaboration/CollaborationCreateDialog.tsx
+  s_94155e50e1f976::t_1810190f4c76c1 12-13,37,45,90,202,220-222,228,258-259,333,403,412-413,417,460-467
+packages/desktop/renderer/components/collaboration/CollaborationDashboard.tsx
+  s_94155e50e1f976::t_d0444acf4192be 27,108,113
+packages/desktop/renderer/components/collaboration/CollaborationPage.test.tsx
+  s_94155e50e1f976::t_0d8c9b463b235c 171-205
+packages/desktop/renderer/components/collaboration/CollaborationPage.tsx
+  s_94155e50e1f976::t_3943459e9a2d8b 19,106,109,123,127,131-136,174-200,261,481-508,569-581,663-697,699,702-704,706-713,715-737,750-756
+packages/desktop/renderer/components/collaboration/DashboardDecision.tsx
+  s_94155e50e1f976::t_6673ce3452c68d 1-39
+packages/desktop/renderer/components/collaboration/DesktopWorkspaceTabs.tsx
+  s_94155e50e1f976::t_1d7b6eb02b6312 7,13,16-17
+packages/desktop/renderer/components/collaboration/GroupSupervisionSummary.tsx
+  s_94155e50e1f976::t_10ed37d991bd19 1-9
+packages/desktop/renderer/components/collaboration/MonitoredSessionPicker.tsx
+  s_94155e50e1f976::t_7a2a8a2d4f6bb7 1-76
+packages/desktop/renderer/components/collaboration/SessionDashboard.test.tsx
+  s_94155e50e1f976::t_174845c79ecdd7 1-25
+packages/desktop/renderer/components/collaboration/SessionDashboard.tsx
+  s_94155e50e1f976::t_4c2d32623a25e3 1-93
+packages/desktop/renderer/components/collaboration/SupervisionNotifier.tsx
+  s_94155e50e1f976::t_27746cbafaaa2c 1-51
+packages/desktop/renderer/components/collaboration/client.ts
+  s_94155e50e1f976::t_57bf2ee570bf4e 17-19
+packages/desktop/renderer/components/collaboration/collaboration.css
+  s_94155e50e1f976::t_b09a36a96bce72 1147-1248
+packages/desktop/renderer/components/collaboration/session-dashboard.css
+  s_94155e50e1f976::t_4f2fe19ebe941e 1-83
+packages/desktop/renderer/components/collaboration/useCollaborationDiscussion.ts
+  s_94155e50e1f976::t_2975a30644c51e 3,10,75,84,166-187,236
+packages/desktop/renderer/components/collaboration/useSessionDashboard.ts
+  s_94155e50e1f976::t_1a5ba3afcf269f 1-29
+packages/desktop/renderer/lib/dashboard-session-navigation.test.ts
+  s_94155e50e1f976::t_5b6ea3d331cfce 1-17
+packages/desktop/renderer/lib/dashboard-session-navigation.ts
+  s_94155e50e1f976::t_f8cde2fd726563 1-20
+packages/desktop/renderer/lib/native-agent-run-prefs.test.ts
+  s_94155e50e1f976::t_e71e2da901fc48 5-6,41,46,50,54,62,81,92-109
+packages/desktop/renderer/lib/native-agent-run-prefs.ts
+  s_94155e50e1f976::t_d488f9ff549284 64,67,70-75,83-86
+packages/desktop/renderer/styles/sidebar-navigation.css
+  s_94155e50e1f976::t_5effa46b7f45d0 57-61
+packages/native-runtime/src/agent-runtime/deepseek-harness-endpoint.test.ts
+  s_94155e50e1f976::t_dc43e57be65707 33-37
+packages/native-runtime/src/agent-runtime/deepseek-harness-endpoint.ts
+  s_94155e50e1f976::t_e297fd368c2219 18-19
+packages/native-runtime/src/agent-runtime/native-runtime-broker.test.ts
+  s_94155e50e1f976::t_046c4241566a48 266-281
+packages/native-runtime/src/agent-runtime/native-runtime-broker.ts
+  s_94155e50e1f976::t_a81ffe1d4ba691 136-137,309-311,900,904-910,1520,1707
+packages/native-runtime/src/agent-runtime/qoder-client.ts
+  s_94155e50e1f976::t_baa961101a68b3 45,60,123,136-150,164,281
+packages/native-runtime/src/agent-runtime/qoder-runtime-adapter.test.ts
+  s_94155e50e1f976::t_80cfb9f7ae206d 7,87-125,151,271
+packages/server/app/api/agent-host.ts
+  s_94155e50e1f976::t_5dec756845d282 149,333-342,590,592,960-966
+packages/server/app/api/collaboration/route.ts
+  s_94155e50e1f976::t_f8c7516a6b3059 5,14-16,25-31,51,53-59,75-81,111-123
+packages/server/app/api/sessions/route.ts
+  s_94155e50e1f976::t_5b259973069357 5,15
+packages/server/app/web/CollaborationPane.test.tsx
+  s_94155e50e1f976::t_1fe87808ce01e8 18,24-31
+packages/server/app/web/CollaborationPane.tsx
+  s_94155e50e1f976::t_6d443b4e3a63f9 6,11,13-14,26-29,35,49,56-57,61
+packages/server/app/web/ComputerSwitcher.tsx
+  s_94155e50e1f976::t_767a2b813fd5ae 5,19-20
+packages/server/app/web/console-tabs.test.ts
+  s_94155e50e1f976::t_0b83783da8ce43 2,5-10
+packages/server/app/web/console-tabs.ts
+  s_94155e50e1f976::t_7677be636b56ef 4,6,20,27,54,59-63
+packages/server/app/web/page.tsx
+  s_94155e50e1f976::t_282c3e832b39ae 10,43,47,101-103,212,221,256-273,328,332-335,390,737-738,777-778,780,782
+packages/server/lib/collaboration/collaboration-e2e.test.ts
+  s_94155e50e1f976::t_186d56068b1c65 1-239
+packages/server/lib/collaboration/collaboration-runtime-verify.test.ts
+  s_94155e50e1f976::t_33d37008334d56 1-69
+packages/server/lib/collaboration/dashboard.test.ts
+  s_94155e50e1f976::t_4d99ae248dca58 1-33
+packages/server/lib/collaboration/dashboard.ts
+  s_94155e50e1f976::t_480c38fb24482a 1-42
+packages/server/lib/collaboration/runtime.ts
+  s_94155e50e1f976::t_582f68f309e5bd 1,14,115,120,127-131,149-150,218-253
+packages/server/lib/collaboration/visibility.ts
+  s_94155e50e1f976::t_7538b06817d667 1,6,9-10
+packages/server/lib/session-catalog.test.ts
+  s_94155e50e1f976::t_e2b71325c1cee8 1-69
+packages/server/lib/session-catalog.ts
+  s_94155e50e1f976::t_9c8b490d06e096 1-98
+packages/server/lib/supervision/runtime.test.ts
+  s_94155e50e1f976::t_0610fb71feeabd 1-50
+packages/server/lib/supervision/runtime.ts
+  s_94155e50e1f976::t_213625af85b34f 1-154
+packages/server/lib/supervision/service.ts
+  s_94155e50e1f976::t_0615e69c01c50a 1-17
+packages/webapp/src/main.tsx
+  s_94155e50e1f976::t_0ee374e7eaeb6f 185-186
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a1acd551a21e4db9050b2402e3d6c3b6b1516f1a",
+  "prompts": {},
+  "sessions": {
+    "s_94155e50e1f976": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a17d62-6e3b-7a91-a2d9-240186cd77c3",
+        "model": "ap-southeast-1-v5cjq-gptdy-17usoft-com/gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
