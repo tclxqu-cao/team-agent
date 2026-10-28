@@ -1,0 +1,21 @@
+packages/website/src/website.test.mjs
+  s_94155e50e1f976::t_294f61886271af 136
+packages/website/src/pages.mjs
+  s_94155e50e1f976::t_36893a10d120b6 27
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "eb61dc6c4c872a1676046fcccbe9310cd228f49f",
+  "prompts": {},
+  "sessions": {
+    "s_94155e50e1f976": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a17d62-6e3b-7a91-a2d9-240186cd77c3",
+        "model": "ap-southeast-1-v5cjq-gptdy-17usoft-com/gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
