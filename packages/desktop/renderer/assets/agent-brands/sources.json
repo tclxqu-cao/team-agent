@@ -1,0 +1,29 @@
+{
+  "capturedOn": "2026-10-28",
+  "icons": {
+    "qoder": {
+      "file": "qoder.png",
+      "product": "Qoder",
+      "bundleId": "com.qoder.app",
+      "version": "0.4.8",
+      "source": "Official macOS application bundle: Contents/Resources/icon.icns, original ic07 PNG representation",
+      "sha256": "0321f5f0b48ad56416ca40ccf9c4b9508ac370f190356a1ce9993705616f3474"
+    },
+    "zcode": {
+      "file": "zcode.png",
+      "product": "ZCode",
+      "bundleId": "dev.zcode.app",
+      "version": "3.16.3",
+      "source": "Official macOS application bundle: Contents/Resources/icon.icns, original ic07 PNG representation",
+      "sha256": "c7f37d8cb99a16e7d14f8a1477865870ba3f2c51a2156922e70923a775f0aa74"
+    },
+    "workbuddy": {
+      "file": "workbuddy.png",
+      "product": "WorkBuddy",
+      "bundleId": "com.tencent.workbuddy.mac",
+      "version": "5.9.3",
+      "source": "Official macOS application bundle: Contents/Resources/icon.icns, original ic07 PNG representation",
+      "sha256": "ee452140ce4dae5740c5dff0361765d272583e4da5dea5e0c359899df8cdbdbd"
+    }
+  }
+}

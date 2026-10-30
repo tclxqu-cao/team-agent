@@ -133,6 +133,8 @@ export interface NativeRuntimeBrokerSnapshot {
   snapshotRevision: number;
   events: BrokerRunEvent[];
   controller: NativeRuntimeController | null;
+  /** Durable explicit cancellation intent; cleared only by a new admitted run. */
+  manuallyStopped?: boolean;
 }
 
 export interface NativeRuntimeBrokerCallbacks {
@@ -303,6 +305,9 @@ class NativeRuntimeBrokerState implements ImportedAgentWorkspaceRepository, Code
         created_at INTEGER NOT NULL,
         terminal_at INTEGER,
         goal_id TEXT
+      );
+      CREATE TABLE IF NOT EXISTS native_runtime_stop_intent (
+        session_id TEXT PRIMARY KEY, stopped_at INTEGER NOT NULL
       );
       CREATE UNIQUE INDEX IF NOT EXISTS native_runtime_active_run_per_session
         ON native_runtime_run(session_id) WHERE status = 'active';
@@ -892,7 +897,15 @@ class NativeRuntimeBrokerState implements ImportedAgentWorkspaceRepository, Code
       snapshotRevision: projection.run?.nextSequence ?? 0,
       events: projection.events,
       controller: projection.run?.status === "active" ? projection.run.controller : null,
+      manuallyStopped: !!this.database.db.prepare("SELECT 1 FROM native_runtime_stop_intent WHERE session_id=?").get(sessionId),
     };
+  }
+
+  recordStopIntent(sessionId: string): void {
+    this.database.db.prepare("INSERT INTO native_runtime_stop_intent(session_id,stopped_at) VALUES(?,?) ON CONFLICT(session_id) DO UPDATE SET stopped_at=excluded.stopped_at").run(sessionId, this.now());
+  }
+  clearStopIntent(sessionId: string): void {
+    this.database.db.prepare("DELETE FROM native_runtime_stop_intent WHERE session_id=?").run(sessionId);
   }
 
   projection(sessionId: string, afterSequence = 0): SnapshotProjection {
@@ -1504,6 +1517,7 @@ export class NativeRuntimeBrokerHost {
       controller,
       goalId,
     });
+    this.state.clearStopIntent(sessionId);
     if (decoded.agentType === "codex" && admission.autoTitle) {
       await this.runtime.rename(sessionId, admission.autoTitle).catch(() => undefined);
     }
@@ -1690,6 +1704,7 @@ export class NativeRuntimeBrokerHost {
 
   async abort(sessionId?: string): Promise<void> {
     if (!sessionId) return;
+    this.state.recordStopIntent(sessionId);
     const run = this.state.activeRun(sessionId);
     await this.runtime.abort(sessionId);
     // Codex confirms cancellation through its turn lifecycle. Keeping that run
@@ -2843,7 +2858,7 @@ function toImportedWorkspace(row: StoredImportedWorkspaceRow): ImportedAgentWork
   };
 }
 
-function mergeProjectionMessages(
+export function mergeProjectionMessages(
   messages: Message[],
   run: BrokerRunRecord | null,
   events: BrokerRunEvent[],
@@ -2860,6 +2875,7 @@ function mergeProjectionMessages(
   ) {
     return messages;
   }
+  const preserveNativeOrder = run.agentType === "qoder" || run.agentType === "zcode" || run.agentType === "workbuddy";
   const projected = [...messages];
   let runUserIndex = -1;
   for (let index = projected.length - 1; index >= 0; index -= 1) {
@@ -2882,9 +2898,17 @@ function mergeProjectionMessages(
       .map((message) => message.content)
       .join("")
     : null;
+  const nativeTurn = preserveNativeOrder && hasPersistedRunInput ? projected.slice(runUserIndex + 1, nextUserIndex) : [];
+  const nativeReasoning = nativeTurn.flatMap((message) => (
+    (message.presentation?.reasoning ?? []).map((section) => ({ message, section }))
+  ));
+  const persistedReasoningText = nativeReasoning.map(({ section }) => section.text).join("");
+  let consumedReasoningText = 0;
+  let insertionIndex = hasPersistedRunInput ? runUserIndex + 1 : projected.length;
   let consumedAssistantText = 0;
   if (!hasPersistedRunInput) {
     projected.push({ role: "user", content: run.input, name: `__native_run:${run.runId}` });
+    insertionIndex = projected.length;
   }
   const eventMessages: Message[] = [];
   let activeAssistantIndex: number | null = null;
@@ -2920,11 +2944,49 @@ function mergeProjectionMessages(
   for (const message of eventMessages) {
     const reasoning = message.presentation?.reasoning;
     if (reasoning?.length) {
-      const historyIndex = projected.findIndex((entry) => entry.presentation?.reasoning?.some(
-        (section) => reasoning.some((candidate) => candidate.itemId === section.itemId),
+      const text = reasoning.map((section) => section.text).join("");
+      const remaining = persistedReasoningText.slice(consumedReasoningText);
+      // Some native protocols give live reasoning a different ID from JSONL.
+      // Reconcile ordered text only inside this run's persisted user turn.
+      if (text && remaining.startsWith(text)) {
+        consumedReasoningText += text.length;
+        let offset = 0;
+        for (const entry of nativeReasoning) {
+          if (offset < consumedReasoningText) {
+            insertionIndex = Math.max(insertionIndex, projected.indexOf(entry.message) + 1);
+          }
+          offset += entry.section.text.length;
+        }
+        continue;
+      }
+      const last = nativeReasoning.at(-1);
+      const index = last ? projected.indexOf(last.message) : -1;
+      if (remaining && text.startsWith(remaining) && last && index >= 0) {
+        const suffix = text.slice(remaining.length);
+        projected[index] = {
+          ...last.message,
+          presentation: {
+            ...last.message.presentation,
+            reasoning: (last.message.presentation?.reasoning ?? []).map((section) => section === last.section
+              ? { ...section, text: section.text + suffix }
+              : section),
+          },
+        };
+        consumedReasoningText = persistedReasoningText.length;
+        insertionIndex = Math.max(insertionIndex, index + 1);
+        continue;
+      }
+      const historyIndex = projected.findIndex((entry) => (
+        (!preserveNativeOrder || !hasPersistedRunInput || nativeTurn.includes(entry))
+        && entry.presentation?.reasoning?.some(
+          (section) => reasoning.some((candidate) => candidate.itemId === section.itemId),
+        )
       ));
       if (historyIndex < 0) {
-        projected.push(message);
+        if (preserveNativeOrder) {
+          projected.splice(insertionIndex, 0, message);
+          insertionIndex += 1;
+        } else projected.push(message);
       } else {
         const historyMessage = projected[historyIndex];
         const historyReasoning = historyMessage.presentation?.reasoning ?? [];
@@ -2943,6 +3005,7 @@ function mergeProjectionMessages(
             reasoning: merged.sort((left, right) => left.sectionIndex - right.sectionIndex),
           },
         };
+        if (hasPersistedRunInput) insertionIndex = Math.max(insertionIndex, historyIndex + 1);
       }
       continue;
     }
@@ -2952,7 +3015,23 @@ function mergeProjectionMessages(
       persistedAssistantText?.slice(consumedAssistantText) ?? null,
     );
     consumedAssistantText += missing.consumedAssistantText;
-    if (missing.message) projected.push(missing.message);
+    let textOffset = 0;
+    const toolIds = new Set(message.toolCalls?.map((tool) => tool.id));
+    for (const entry of nativeTurn) {
+      const consumedText = entry.role === "assistant" && entry.content
+        && textOffset < consumedAssistantText;
+      if (entry.role === "assistant") textOffset += entry.content.length;
+      if (consumedText || entry.toolCalls?.some((tool) => toolIds.has(tool.id))
+        || (entry.toolCallId && toolIds.has(entry.toolCallId))) {
+        insertionIndex = Math.max(insertionIndex, projected.indexOf(entry) + 1);
+      }
+    }
+    if (missing.message) {
+      if (preserveNativeOrder) {
+        projected.splice(insertionIndex, 0, missing.message);
+        insertionIndex += 1;
+      } else projected.push(missing.message);
+    }
   }
   return projected;
 }

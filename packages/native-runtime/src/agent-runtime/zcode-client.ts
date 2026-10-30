@@ -2,18 +2,20 @@ import { randomUUID } from "node:crypto";
 import type { AgentEvent, Message } from "@agent/core";
 import { AsyncEventQueue } from "./async-event-queue.js";
 import { resolveNativeCliCommand } from "./native-cli-command.js";
-import { NativeRpcClient, nativeRecord, type NativeRpcConnection } from "./native-rpc-client.js";
+import { NativeRpcClient, NativeRpcError, nativeRecord, type NativeRpcConnection } from "./native-rpc-client.js";
 import { zcodeModelProgress } from "./zcode-model-progress.js";
+import { ZCodeDesktopActivityReader, type ZCodeActivityReader } from "./zcode-desktop-activity.js";
 import type { NativeJsonPacket } from "./native-stdio-channel.js";
 import type { NativeProtocolSession, NativeSessionProtocol } from "./stdio-native-runtime-adapter.js";
 import { RuntimeSessionError, type CreateRuntimeSessionOptions, type NativeReasoningEffort, type RuntimeModelInfo, type RuntimeQuestionAnswer, type RuntimeRunOptions } from "./types.js";
 
-interface Run { queue: AsyncEventQueue<AgentEvent>; text: string; aborted: boolean; finished: boolean; lastSeq: number; toolIds: Set<string> }
+interface Run { queue: AsyncEventQueue<AgentEvent>; text: string; aborted: boolean; finished: boolean; lastSeq: number; toolIds: Set<string>; reasoningId: string }
 interface Question { sessionId: string; options: NativeJsonPacket[]; resolve(result: NativeJsonPacket): void; cancelled: NativeJsonPacket; inputQuestion?: string }
 const rows = (value: unknown): NativeJsonPacket[] => Array.isArray(value) ? value.map(nativeRecord) : [];
 const reasoningEfforts: readonly NativeReasoningEffort[] = ["low", "medium", "high", "xhigh", "max"];
 const nativeEffort = (value: unknown) => reasoningEfforts.find(effort => effort === value);
 const modelRefKey = (providerId: string | undefined, modelId: string) => JSON.stringify([providerId, modelId]);
+const desktopActivity = new ZCodeDesktopActivityReader();
 const nativeDate = (value: unknown): string => {
   const date = new Date(typeof value === "string" || typeof value === "number" ? value : Date.now());
   return Number.isFinite(date.getTime()) ? date.toISOString() : new Date().toISOString();
@@ -47,6 +49,7 @@ export function decodeZCodeHistory(value: unknown): Message[] {
 export class ZCodeClient implements NativeSessionProtocol {
   private readonly sessions = new Map<string, NativeProtocolSession>();
   private readonly loaded = new Set<string>();
+  private readonly resumes = new Map<string, Promise<NativeProtocolSession>>();
   private readonly runs = new Map<string, Run>();
   private readonly questions = new Map<string, Question>();
   private models: RuntimeModelInfo[] = [];
@@ -54,10 +57,11 @@ export class ZCodeClient implements NativeSessionProtocol {
   private readonly childCatalog = new Map<string, { updated: string; ids: string[] }>();
   private readonly unsubscribe: Array<() => void>;
 
-  constructor(private readonly rpc: NativeRpcConnection = new NativeRpcClient(() => resolveNativeCliCommand("zcode"), false)) {
+  constructor(private readonly rpc: NativeRpcConnection = new NativeRpcClient(() => resolveNativeCliCommand("zcode"), false),
+    private readonly activity: ZCodeActivityReader = desktopActivity) {
     rpc.onRequest((method, params) => this.callback(method, params));
     this.unsubscribe = [rpc.onNotification((method, params) => this.notification(method, params)), rpc.onFailure(error => {
-      this.loaded.clear(); this.models = []; this.modelDefaults.clear();
+      this.loaded.clear(); this.resumes.clear(); this.models = []; this.modelDefaults.clear();
       for (const [id, run] of this.runs) this.finish(id, run.aborted ? { type: "turn_aborted" } : { type: "error", message: error.message, code: error.code });
     })];
   }
@@ -128,21 +132,49 @@ export class ZCodeClient implements NativeSessionProtocol {
         sessions.set(session.id, session);
       }
     }
-    return [...sessions.values()];
+    return this.withDesktopActivity([...sessions.values()]);
+  }
+
+  private async withDesktopActivity(sessions: NativeProtocolSession[]): Promise<NativeProtocolSession[]> {
+    const activity = await this.activity.readMany(sessions);
+    return sessions.map(session => ({ ...session,
+      running: session.running || this.runs.has(session.id) || activity.get(session.id) === true,
+    }));
   }
 
   private async resume(id: string, refresh = false): Promise<NativeProtocolSession> {
+    const pending = this.resumes.get(id);
+    if (pending) return pending;
     if (this.loaded.has(id) && !refresh) return this.sessions.get(id)!;
-    const result = await this.rpc.request("session/resume", { sessionId: id }, 60_000);
-    const session = this.snapshot(result); this.loaded.add(id);
-    return session;
+    const loading = this.rpc.request("session/resume", { sessionId: id }, 60_000).then(result => {
+      const session = this.snapshot(result); this.loaded.add(id);
+      return session;
+    }).finally(() => {
+      if (this.resumes.get(id) === loading) this.resumes.delete(id);
+    });
+    this.resumes.set(id, loading);
+    return loading;
+  }
+
+  /** ZCode evicts idle residents without closing its RPC connection. Retry only before a send. */
+  private async withActiveSession<T>(id: string, operation: (session: NativeProtocolSession) => Promise<T>): Promise<T> {
+    const session = await this.resume(id);
+    try { return await operation(session); }
+    catch (error) {
+      if (!(error instanceof NativeRpcError) || error.nativeCode !== -32004
+        || error.message !== `Session is not active: ${id}` || this.runs.has(id)) throw error;
+      this.loaded.delete(id);
+      return operation(await this.resume(id));
+    }
   }
 
   async read(id: string) {
-    await this.resume(id);
-    const snapshot = await this.rpc.request("session/read", { sessionId: id });
-    const history = await this.rpc.request("session/messages", { sessionId: id });
-    return { session: this.snapshot(snapshot, false), messages: decodeZCodeHistory(history.messages) };
+    return this.withActiveSession(id, async () => {
+      const snapshot = await this.rpc.request("session/read", { sessionId: id });
+      const history = await this.rpc.request("session/messages", { sessionId: id });
+      const [session] = await this.withDesktopActivity([this.snapshot(snapshot, false)]);
+      return { session: session!, messages: decodeZCodeHistory(history.messages) };
+    });
   }
 
   async create(options: CreateRuntimeSessionOptions): Promise<NativeProtocolSession> {
@@ -167,14 +199,21 @@ export class ZCodeClient implements NativeSessionProtocol {
 
   async *run(id: string, input: string, images?: string[], options?: RuntimeRunOptions): AsyncIterable<AgentEvent> {
     if (images?.length) throw new RuntimeSessionError("ZCode image attachment transport is not yet supported", "OPERATION_NOT_SUPPORTED");
-    const session = await this.resume(id);
-    if (session.running && !this.runs.has(id)) throw new RuntimeSessionError("ZCode session is owned by another process", "SESSION_OCCUPIED");
-    if (this.runs.has(id)) throw new RuntimeSessionError("ZCode session is already running", "SESSION_ALREADY_RUNNING");
     if (options?.model && !options.model.providerID) throw new RuntimeSessionError("ZCode model selection requires a native provider ID", "NATIVE_PROTOCOL_ERROR");
     if (options?.reasoningEffort && !options.model) throw new RuntimeSessionError("ZCode reasoning effort requires an explicit native model", "OPERATION_NOT_SUPPORTED");
+    // Reject external desktop ownership before resume can materialize a second resident.
+    const current = this.sessions.get(id) ?? (await this.list()).find(session => session.id === id)
+      ?? { id, title: "ZCode", cwd: "", created: "", updated: "" };
+    const [observed] = await this.withDesktopActivity([current]);
+    if (observed!.running && !this.runs.has(id)) throw new RuntimeSessionError("ZCode session is owned by another process", "SESSION_OCCUPIED");
+    const subscribed = await this.withActiveSession(id, async session => {
+      const [observed] = await this.withDesktopActivity([session]);
+      if (observed!.running && !this.runs.has(id)) throw new RuntimeSessionError("ZCode session is owned by another process", "SESSION_OCCUPIED");
+      if (this.runs.has(id)) throw new RuntimeSessionError("ZCode session is already running", "SESSION_ALREADY_RUNNING");
+      return this.rpc.request("session/subscribe", { sessionId: id, deliveryKind: "web-remote-replayable", includeSnapshot: false });
+    });
     const effort = options?.reasoningEffort ?? (options?.model ? this.modelDefaults.get(modelRefKey(options.model.providerID, options.model.id)) : undefined);
-    const subscribed = await this.rpc.request("session/subscribe", { sessionId: id, deliveryKind: "web-remote-replayable", includeSnapshot: false });
-    const run: Run = { queue: new AsyncEventQueue(), text: "", aborted: false, finished: false, lastSeq: typeof subscribed.eventSeq === "number" ? subscribed.eventSeq : 0, toolIds: new Set() };
+    const run: Run = { queue: new AsyncEventQueue(), text: "", aborted: false, finished: false, lastSeq: typeof subscribed.eventSeq === "number" ? subscribed.eventSeq : 0, toolIds: new Set(), reasoningId: randomUUID() };
     this.runs.set(id, run);
     try {
       const accepted = await this.rpc.request("session/send", { sessionId: id, inputId: randomUUID(), content: input,
@@ -207,7 +246,7 @@ export class ZCodeClient implements NativeSessionProtocol {
       if (progress) run.queue.push(progress);
     } else if (params.type === "model.streaming") {
       if (payload.kind === "text_delta" && typeof payload.delta === "string") { run.text += payload.delta; run.queue.push({ type: "text_chunk", text: payload.delta, turnId: typeof params.turnId === "string" ? params.turnId : undefined }); }
-      else if (payload.kind === "reasoning_delta" && typeof payload.delta === "string") run.queue.push({ type: "reasoning_summary_delta", itemId: String(payload.partId ?? params.turnId ?? "zcode-reasoning"), sectionIndex: 0, delta: payload.delta });
+      else if (payload.kind === "reasoning_delta" && typeof payload.delta === "string") run.queue.push({ type: "reasoning_summary_delta", itemId: String(payload.partId ?? params.turnId ?? run.reasoningId), sectionIndex: 0, delta: payload.delta });
       else if (payload.kind === "tool_call" && typeof payload.toolCallId === "string" && !run.toolIds.has(payload.toolCallId)) {
         run.toolIds.add(payload.toolCallId); run.queue.push({ type: "tool_call", toolCall: { id: payload.toolCallId, name: String(payload.toolName ?? "ZCode tool"), arguments: nativeRecord(payload.input) } });
       }

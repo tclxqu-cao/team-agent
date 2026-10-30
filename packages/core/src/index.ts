@@ -73,6 +73,10 @@ export * from './domain/collaboration/CollaborationDiscussion.js';
 export * from './application/collaboration/ports.js';
 export * from './application/collaboration/CollaborationService.js';
 export { SQLiteCollaborationRepository } from './infrastructure/SQLiteCollaborationRepository.js';
+export * from './domain/supervision/types.js';
+export * from './application/supervision/ports.js';
+export * from './application/supervision/SupervisionService.js';
+export { SQLiteSupervisionRepository } from './infrastructure/SQLiteSupervisionRepository.js';
 
 
 // Infrastructure

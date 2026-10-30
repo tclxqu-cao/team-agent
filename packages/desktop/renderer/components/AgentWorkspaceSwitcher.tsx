@@ -4,6 +4,7 @@ import type { AgentType, RuntimeHealth } from "../global";
 import AgentBrandIcon from "./AgentBrandIcon";
 import { AGENT_TYPES } from "../../../core/src/domain/agent/agent-type";
 import { AGENT_LABELS } from "../lib/agent-catalog";
+import { agentUnavailableMessage } from "../lib/agent-availability";
 
 const AGENTS = AGENT_TYPES.map((agentType) => ({ agentType, label: AGENT_LABELS[agentType] }));
 
@@ -38,13 +39,8 @@ export default function AgentWorkspaceSwitcher({ value, health, onChange, onUnav
     <div className={`agent-workspace-switcher${vertical ? " is-vertical" : ""}`}>
       <div ref={track} className="agent-workspace-track" role="tablist" aria-label="切换 Agent" aria-orientation={vertical ? "vertical" : "horizontal"} onScroll={(event) => setShowPrevious(event.currentTarget.scrollLeft > 1)}>
       {AGENTS.map((agent) => {
-        const runtime = health.find((entry) => entry.agentType === agent.agentType);
-        const unavailable = runtime?.available === false;
-        const checking = agent.agentType !== "customer-agent" && !runtime;
-        const blocked = unavailable || checking;
-        const message = checking ? `正在检查远程 ${agent.label}，请稍后重试`
-          : /not installed|not found|ENOENT|未安装|找不到/i.test(runtime?.error ?? "")
-            ? `远程未安装 ${agent.label}` : `远程 ${agent.label} 暂不可用`;
+        const message = agentUnavailableMessage(agent.agentType, health);
+        const blocked = message !== undefined;
         return (
           <button
             key={agent.agentType}
@@ -63,7 +59,6 @@ export default function AgentWorkspaceSwitcher({ value, health, onChange, onUnav
             }}
           >
             <AgentBrandIcon agentType={agent.agentType} size={22} />
-            {!vertical && <i className={blocked ? "is-unavailable" : ""} aria-hidden="true" />}
           </button>
         );
       })}

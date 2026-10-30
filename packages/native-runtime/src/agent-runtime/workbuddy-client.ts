@@ -14,6 +14,8 @@ interface Run {
   queue: AsyncEventQueue<AgentEvent>;
   text: string;
   messageText: string;
+  reasoningScope: string;
+  messageOrdinal: number;
   aborted: boolean;
   finished: boolean;
   nativeFailure?: Extract<AgentEvent, { type: "error" }>;
@@ -131,7 +133,7 @@ export class WorkBuddyClient implements NativeSessionProtocol {
     command.cwd = session.cwd;
     command.args = [...command.args ?? [], native ? "--resume" : "--session-id", id, ...(options?.model ? ["--model", options.model.id] : [])];
     const channel = this.channel(command, id);
-    const run: Run = { channel, queue: new AsyncEventQueue(), text: "", messageText: "", aborted: false, finished: false, toolIds: new Set(), blocks: new Map() };
+    const run: Run = { channel, queue: new AsyncEventQueue(), text: "", messageText: "", reasoningScope: randomUUID(), messageOrdinal: 0, aborted: false, finished: false, toolIds: new Set(), blocks: new Map() };
     this.runs.set(id, run);
     try {
       await this.control(channel, "initialize");
@@ -191,6 +193,7 @@ export class WorkBuddyClient implements NativeSessionProtocol {
       const delta = nativeRecord(event.delta);
       const block = nativeRecord(event.content_block);
       const index = typeof event.index === "number" ? event.index : 0;
+      if (event.type === "message_start") run.messageOrdinal += 1;
       if (event.type === "content_block_start" && block.type === "tool_use" && typeof block.id === "string") run.blocks.set(index, { id: block.id, name: String(block.name), input: "" });
       if (delta.type === "input_json_delta" && typeof delta.partial_json === "string") { const tool = run.blocks.get(index); if (tool) tool.input += delta.partial_json; }
       if (event.type === "content_block_stop") {
@@ -201,7 +204,7 @@ export class WorkBuddyClient implements NativeSessionProtocol {
         }
       }
       if (delta.type === "text_delta" && typeof delta.text === "string") { run.text += delta.text; run.messageText += delta.text; run.queue.push({ type: "text_chunk", text: delta.text }); }
-      if (delta.type === "thinking_delta" && typeof delta.thinking === "string") run.queue.push({ type: "reasoning_summary_delta", itemId: `${id}:thinking:${index}`, sectionIndex: 0, delta: delta.thinking });
+      if (delta.type === "thinking_delta" && typeof delta.thinking === "string") run.queue.push({ type: "reasoning_summary_delta", itemId: `${run.reasoningScope}:${run.messageOrdinal}:thinking:${index}`, sectionIndex: 0, delta: delta.thinking });
     } else if (packet.type === "assistant") {
       const message = nativeRecord(packet.message);
       const text = workBuddyText(message.content);
@@ -209,6 +212,7 @@ export class WorkBuddyClient implements NativeSessionProtocol {
       const suffix = text.startsWith(run.messageText) ? text.slice(run.messageText.length) : run.messageText ? "" : text;
       if (suffix) { run.text += suffix; run.queue.push({ type: "text_chunk", text: suffix }); }
       run.messageText = "";
+      run.messageOrdinal += 1;
       if (Array.isArray(message.content)) for (const part of message.content.map(nativeRecord)) if (part.type === "tool_use") this.tool(run, part);
     } else if (packet.type === "user") {
       const content = nativeRecord(packet.message).content;

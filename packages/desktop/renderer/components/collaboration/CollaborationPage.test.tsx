@@ -168,4 +168,39 @@ describe("collaboration group history presentation", () => {
     expect(html).toContain('aria-current="page"');
     expect(fixture.value.send).not.toHaveBeenCalled();
   });
+
+  it("exposes the mode toggle and chat-mode silent hint in the composer", () => {
+    fixture.value = {
+      group: groupFixture(),
+      discussion: stateFixture(),
+      selected: "d",
+      history: [],
+      error: "",
+      busy: false,
+      select: vi.fn(),
+      create: vi.fn(),
+      act: vi.fn(),
+      setMode: vi.fn(),
+      send: vi.fn(),
+      setError: vi.fn(),
+      updateRole: vi.fn(),
+    };
+    const graph = renderToStaticMarkup(
+      createElement(CollaborationPage, { groupId: "g" }),
+    );
+    expect(graph).toContain('aria-label="讨论模式"');
+    expect(graph).toContain('aria-pressed="true"');
+    expect(graph).toContain("补充要求会交给群主继续安排");
+
+    fixture.value = {
+      ...fixture.value,
+      discussion: { ...stateFixture(), mode: "chat" },
+    };
+    const chat = renderToStaticMarkup(
+      createElement(CollaborationPage, { groupId: "g" }),
+    );
+    expect(chat).toContain("@直聊");
+    expect(chat).toContain("@成员 或 @群主，说说要做什么…");
+    expect(chat).toContain("无 @ 不会回应");
+  });
 });

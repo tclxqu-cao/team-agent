@@ -39,7 +39,7 @@ describe("native RPC envelopes", () => {
   });
   it("preserves native errors and closes idempotently", async () => {
     const client = connection();
-    await expect(client.request("error", {})).rejects.toMatchObject({ code: "NATIVE_PROTOCOL_ERROR", message: "native failure" });
+    await expect(client.request("error", {})).rejects.toMatchObject({ code: "NATIVE_PROTOCOL_ERROR", nativeCode: -32000, message: "native failure" });
     await Promise.all([client.dispose(), client.dispose()]);
     await expect(client.request("error", {})).rejects.toMatchObject({ code: "RUNTIME_UNAVAILABLE" });
   });

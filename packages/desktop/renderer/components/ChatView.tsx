@@ -482,6 +482,7 @@ interface ChatViewProps {
   sidebarCollapsed?: boolean;
   onToggleSidebar?: () => void;
   onOpenCollaborationDashboard?: () => void;
+  onOpenSessionDashboard?: () => void;
   settingsOpen?: boolean;
   onHideToBackground?: () => void;
   onOpenHub?: () => void;
@@ -566,6 +567,7 @@ export default function ChatView({
   sidebarCollapsed = false,
   onToggleSidebar,
   onOpenCollaborationDashboard,
+  onOpenSessionDashboard,
   settingsOpen = false,
   onHideToBackground,
   onOpenHub,
@@ -748,14 +750,10 @@ export default function ChatView({
     () => composerAgentType === "opencode" ? groupOpenCodeModels(nativeModels) : [],
     [composerAgentType, nativeModels],
   );
-  const availableNativeModelKeys = useMemo(
-    () => new Set(runtimeModelOptions.map((option) => option.key)),
-    [runtimeModelOptions],
-  );
   const nativeModelCatalogReady = nativeModelsLoadedAgent === composerAgentType;
   const effectiveNativePref = useMemo(
-    () => resolveNativeRunPref(nativePref, availableNativeModelKeys, nativeModelCatalogReady),
-    [availableNativeModelKeys, nativeModelCatalogReady, nativePref],
+    () => resolveNativeRunPref(nativePref, nativeModels, nativeModelCatalogReady),
+    [nativeModels, nativeModelCatalogReady, nativePref],
   );
   useEffect(() => {
     if (effectiveNativePref === nativePref) return;
@@ -4136,6 +4134,7 @@ export default function ChatView({
               : undefined}
             onOpenHub={onOpenHub}
             onOpenCollaborationDashboard={onOpenCollaborationDashboard}
+            onOpenSessionDashboard={onOpenSessionDashboard}
             onToggleAppearance={onToggleAppearance}
             onOpenSettings={onOpenSettings}
           />
@@ -5830,7 +5829,7 @@ export default function ChatView({
                         value={selectedNativeModelKey}
                         onChange={(event) => {
                           updateNativePref({
-                            model: event.target.value ? nativeModelFromKey(event.target.value) : undefined,
+                            model: event.target.value ? nativeModelFromKey(event.target.value, nativeModels) : undefined,
                           });
                         }}
                       >

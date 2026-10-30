@@ -16,6 +16,7 @@ import type { CollaborationMember, CollaborationMessage } from "@agent/core/doma
 import AgentBrandIcon from "../AgentBrandIcon";
 import { useUIStore } from "../../stores/uiStore";
 import CollaborationMessageText from "./CollaborationMessageText";
+import GroupSupervisionSummary from "./GroupSupervisionSummary";
 import { AGENT_NAMES, DISCUSSION_STATUS, collaborationRequest } from "./client";
 import { useCollaborationDiscussion } from "./useCollaborationDiscussion";
 import { COLLABORATION_CONTENT_READY_TYPE } from "../../../../core/src/domain/web-console/CollaborationTabBridge";
@@ -102,8 +103,10 @@ function Question({
 
 export default function CollaborationPage({
   groupId: provided,
+  initialDiscussionId,
 }: {
   groupId?: string;
+  initialDiscussionId?: string;
 }) {
   const groupId =
     provided || new URLSearchParams(location.search).get("groupId") || "";
@@ -117,13 +120,20 @@ export default function CollaborationPage({
     select,
     create,
     act,
+    setMode,
     send,
     setError,
     updateRole,
-  } = useCollaborationDiscussion(groupId);
+  } = useCollaborationDiscussion(groupId, initialDiscussionId);
   const [draft, setDraft] = useState(""),
     [drawer, setDrawer] = useState(false),
     [detailMember, setDetailMember] = useState<string | null>(null);
+  const textarea = useRef<HTMLTextAreaElement | null>(null);
+  const [mention, setMention] = useState<{
+    query: string;
+    start: number;
+  } | null>(null);
+  const [mentionIndex, setMentionIndex] = useState(0);
   const skin = useUIStore((s) => s.skin);
   useEffect(() => {
     document.documentElement.setAttribute("data-skin", skin);
@@ -161,6 +171,33 @@ export default function CollaborationPage({
       </div>
     );
   const owner = group.members.find((m) => m.id === group.ownerId)!;
+  const mode = discussion?.mode ?? "task-graph";
+  const isChat = mode === "chat";
+  const mentionMembers = mention
+    ? group.members.filter((m) =>
+        `${m.name} ${m.id}`.toLowerCase().includes(mention.query.toLowerCase()),
+      )
+    : [];
+  const detectMention = (text: string, caret: number) => {
+    const match = /(?:^|\s)@([^\s@]{0,30})$/.exec(text.slice(0, caret));
+    setMention(
+      match ? { query: match[1], start: caret - match[1].length - 1 } : null,
+    );
+    setMentionIndex(0);
+  };
+  const applyMention = (member: CollaborationMember) => {
+    const el = textarea.current;
+    if (!mention || !el) return;
+    const caret = el.selectionStart ?? draft.length;
+    const inserted = `@${member.name} `;
+    setDraft(draft.slice(0, mention.start) + inserted + draft.slice(caret));
+    setMention(null);
+    requestAnimationFrame(() => {
+      el.focus();
+      const pos = mention.start + inserted.length;
+      el.setSelectionRange(pos, pos);
+    });
+  };
   const activeTasks =
     discussion?.tasks.filter((t) => t.status === "running") || [];
   const queuedTasks =
@@ -221,6 +258,7 @@ export default function CollaborationPage({
   };
   return (
     <div className="collab-page">
+      <GroupSupervisionSummary group={group}/>
       {drawer && (
         <button
           className="collab-drawer-mask"
@@ -440,6 +478,34 @@ export default function CollaborationPage({
             />
           </div>
           <div className="collab-heading-actions">
+            {discussion && (
+              <div
+                className="collab-mode-toggle"
+                role="group"
+                aria-label="讨论模式"
+              >
+                <button
+                  aria-pressed={!isChat}
+                  disabled={busy || !isChat}
+                  title="每条消息交给群主安排；@成员 仍直接指派"
+                  onClick={() => {
+                    void setMode("task-graph");
+                  }}
+                >
+                  编排
+                </button>
+                <button
+                  aria-pressed={isChat}
+                  disabled={busy || isChat}
+                  title="@成员直接指派 · @群主安排分工 · 无 @ 静默"
+                  onClick={() => {
+                    void setMode("chat");
+                  }}
+                >
+                  @直聊
+                </button>
+              </div>
+            )}
             {discussion &&
               ["running", "waiting"].includes(discussion.status) && (
                 <button
@@ -500,9 +566,19 @@ export default function CollaborationPage({
               </span>
               <h2>把目标交给这个群。</h2>
               <p>
-                {owner.name}会安排分工，成员会在这里汇报进展。
-                <br />
-                你可以随时补充要求。
+                {isChat ? (
+                  <>
+                    在群里 @ 成员直接做事，或 @群主 让它拆解安排。
+                    <br />
+                    没有 @ 的消息不会触发回应。
+                  </>
+                ) : (
+                  <>
+                    {owner.name}会安排分工，成员会在这里汇报进展。
+                    <br />
+                    @某位成员可直接指派；不 @ 则由{owner.name}安排。
+                  </>
+                )}
               </p>
               <div className="collab-empty-members">
                 {group.members.map((m) => (
@@ -584,13 +660,81 @@ export default function CollaborationPage({
             </p>
           )}
           <div className="collab-composer">
+            {mention && mentionMembers.length > 0 && (
+              <ul
+                className="collab-mention-list"
+                role="listbox"
+                aria-label="选择要提及的成员"
+              >
+                {mentionMembers.map((m, i) => (
+                  <li key={m.id}>
+                    <button
+                      type="button"
+                      role="option"
+                      aria-selected={i === mentionIndex}
+                      className={i === mentionIndex ? "is-active" : ""}
+                      title={
+                        m.id === owner.id
+                          ? "提及群主：触发一轮安排"
+                          : `指派给 ${m.name}`
+                      }
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        applyMention(m);
+                      }}
+                    >
+                      <AgentBrandIcon agentType={m.agentType} size={15} />
+                      <span>{m.name}</span>
+                      <small>
+                        {m.id === owner.id
+                          ? "群主 · 安排分工"
+                          : AGENT_NAMES[m.agentType]}
+                      </small>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
             <textarea
+              ref={textarea}
               aria-label="发送群消息"
               value={draft}
-              placeholder="告诉群主，你想完成什么…"
+              placeholder={
+                isChat ? "@成员 或 @群主，说说要做什么…" : "告诉群主，你想完成什么…"
+              }
               rows={3}
-              onChange={(e) => setDraft(e.target.value)}
+              onChange={(e) => {
+                setDraft(e.target.value);
+                detectMention(
+                  e.target.value,
+                  e.target.selectionStart ?? e.target.value.length,
+                );
+              }}
+              onBlur={() => setMention(null)}
               onKeyDown={(e) => {
+                const picked = mentionMembers[mentionIndex];
+                if (mention && mentionMembers.length > 0 && picked) {
+                  if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+                    e.preventDefault();
+                    setMentionIndex((i) =>
+                      e.key === "ArrowDown"
+                        ? (i + 1) % mentionMembers.length
+                        : (i - 1 + mentionMembers.length) %
+                            mentionMembers.length,
+                    );
+                    return;
+                  }
+                  if (e.key === "Enter" || e.key === "Tab") {
+                    e.preventDefault();
+                    applyMention(picked);
+                    return;
+                  }
+                  if (e.key === "Escape") {
+                    e.preventDefault();
+                    setMention(null);
+                    return;
+                  }
+                }
                 if (
                   e.key === "Enter" &&
                   !e.shiftKey &&
@@ -603,9 +747,13 @@ export default function CollaborationPage({
             />
             <footer>
               <span>
-                {discussion?.status === "running"
-                  ? "补充要求会交给群主继续安排"
-                  : "由群主安排分工与并行"}
+                {draft.includes("@")
+                  ? "@成员 直接指派，不打扰群主；@群主 触发一轮安排"
+                  : isChat
+                    ? "chat 模式：@成员 直接指派 · @群主 安排分工 · 无 @ 不会回应"
+                    : discussion?.status === "running"
+                      ? "补充要求会交给群主继续安排"
+                      : "由群主安排分工与并行"}
               </span>
               <button
                 aria-label="发送群消息"

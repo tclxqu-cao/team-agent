@@ -25,4 +25,13 @@ describe("collaboration working directory selection", () => {
     expect(html).toContain("保存修改");
     expect(html).not.toContain('disabled="" type="submit"');
   });
+
+  it("preserves an existing group's choice to link sessions without enabling a supervisor", () => {
+    const group = groupFixture();
+    group.monitoring = { targets: [{ id: "source", agentType: "codex", title: "原始会话", cwd: "/project" }] };
+    const render = () => renderToStaticMarkup(createElement(CollaborationCreateDialog, { ...callbacks, initialGroup: group }));
+    expect(render()).toContain('<option value="" selected="">仅关联，不启用监工</option>');
+    group.monitoring.supervisorId = group.ownerId;
+    expect(render()).toContain(`<option value="${group.ownerId}" selected="">`);
+  });
 });

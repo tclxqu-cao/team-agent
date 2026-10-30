@@ -1,0 +1,33 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+import { afterEach, expect, it, vi } from "vitest";
+import { SQLiteCollaborationRepository, getDatabase, type CatalogSession } from "@agent/core";
+import { groupFixture, stateFixture } from "../../../core/src/domain/collaboration/__tests__/fixtures";
+const mocks = vi.hoisted(() => ({ dir: "", sessions: [] as unknown[] }));
+vi.mock("../server-data-dir", () => ({ getServerBaseDir: () => mocks.dir }));
+vi.mock("../session-catalog", () => ({ catalogSessions: async () => ({ sessions: mocks.sessions }) }));
+vi.mock("../supervision/service", () => ({ supervisionService: () => ({ repository: { get: () => null } }) }));
+vi.mock("./visibility", () => ({ collaborationSessionIds: () => new Set(["internal"]) }));
+import { sessionDashboard } from "./dashboard";
+afterEach(() => { if (mocks.dir) { getDatabase(mocks.dir).close(); rmSync(mocks.dir, { recursive: true, force: true }); } });
+
+it("aggregates every discussion, prioritizes older active work over newer idle history, and applies only display filters", async () => {
+  mocks.dir = mkdtempSync(join(tmpdir(), "session-dashboard-"));
+  const repo = new SQLiteCollaborationRepository(mocks.dir);
+  for (let index = 0; index < 12; index++) repo.saveGroup({ ...groupFixture(), id: `g${index}`, name: `群 ${index}`, createdAt: `2026-10-${String(index + 1).padStart(2, "0")}` });
+  repo.createDiscussion({ ...stateFixture(), groupId: "g0", id: "active-old", updatedAt: "2026-10-01", sessions: { a: "internal" }, tasks: [{ id: "t", memberId: "a", title: "进行中", instructions: "继续", dependsOn: [], isolated: false, status: "running" }] });
+  repo.createDiscussion({ ...stateFixture(), groupId: "g0", id: "recent-idle", status: "idle", updatedAt: "2026-10-28" });
+  repo.createDiscussion({ ...stateFixture(), groupId: "g1", id: "decision-old", status: "waiting", updatedAt: "2026-10-01", messages: [{ id: "q1", kind: "question", content: "业务决策", createdAt: "2026-10-01", question: { id: "original-q", options: [{ label: "A", description: "取舍" }] } }] });
+  repo.createDiscussion({ ...stateFixture(), groupId: "g2", id: "stopped", status: "stopped", messages: [{ id: "old", kind: "question", content: "已经停止的问题", createdAt: "2026-10-01", question: { id: "stale-q" } }] });
+  const original: CatalogSession = { id: "original", agentType: "codex", title: "原始会话", cwd: "/project", status: "running", updated: "2026-10-28", canResume: true };
+  mocks.sessions = [original, { ...original, id: "idle", status: "idle" }, { ...original, id: "internal", title: "群内工作" }];
+  const snapshot = await sessionDashboard();
+  expect(snapshot.groupTotal).toBe(12); expect(snapshot.groups).toHaveLength(10);
+  expect(new Set(snapshot.groups.slice(0, 2).map(group => group.group.id))).toEqual(new Set(["g0", "g1"]));
+  const active = snapshot.groups.find(group => group.group.id === "g0")!;
+  expect(active.discussionId).toBe("active-old"); expect(active.runningCount).toBe(1); expect(active.sessions[0].id).toBe("internal");
+  expect(snapshot.groups.find(group => group.group.id === "g1")?.questions[0]).toMatchObject({ questionId: "original-q", discussionId: "decision-old" });
+  expect(snapshot.agents.find(agent => agent.agentType === "codex")?.sessions.map(session => session.id)).toEqual(["original"]);
+  expect(snapshot.decisionTotal).toBe(1);
+});

@@ -43,6 +43,13 @@ createInterface({ input: process.stdin }).on("line", line => {
     else if (text === "NATIVE_AUTH_REQUIRED" || text === "NATIVE_AUTH_FAILED" || text === "QUOTE_AUTH_NOTICE" || text === "UNKNOWN_MODEL_QUOTE") {
       const notice = `Authentication ${text === "NATIVE_AUTH_FAILED" ? "failed" : "required"}. Please use /login command to sign in to your account`;
       finish(notice, { model: text === "QUOTE_AUTH_NOTICE" ? "native-workbuddy" : "unknown", stop_reason: null, usage: { input_tokens: text === "UNKNOWN_MODEL_QUOTE" ? 10 : 0, output_tokens: text === "UNKNOWN_MODEL_QUOTE" ? 12 : 0 } });
+    } else if (text === "THINKING") {
+      const think = thinking => send({ type: "stream_event", session_id: active, event: { type: "content_block_delta", index: 0, delta: { type: "thinking_delta", thinking } } });
+      think("Inspect "); think("files");
+      append("assistant", "Checking");
+      send({ type: "assistant", session_id: active, message: { role: "assistant", content: [{ type: "text", text: "Checking" }] } });
+      think("Verify");
+      finish("Answer");
     } else if (text === "CANCEL") send({ type: "stream_event", session_id: active, event: { type: "content_block_delta", delta: { type: "text_delta", text: "partial" } } });
     else if (text === "PERMISSION") {
       pending = packet;

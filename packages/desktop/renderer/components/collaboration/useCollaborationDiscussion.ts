@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type {
+  CollaborationDiscussionMode,
   CollaborationDiscussionState,
   CollaborationDiscussionSummary,
   CollaborationGroup,
 } from "@agent/core/domain/collaboration/types";
 import { collaborationRequest } from "./client";
 
-export function useCollaborationDiscussion(groupId: string) {
+export function useCollaborationDiscussion(groupId: string, initialDiscussionId?: string) {
   const [group, setGroup] = useState<CollaborationGroup | null>(null);
   const [history, setHistory] = useState<CollaborationDiscussionSummary[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
@@ -71,6 +72,7 @@ export function useCollaborationDiscussion(groupId: string) {
         } catch {
           /* optional */
         }
+        saved = initialDiscussionId || new URLSearchParams(window.location.search).get("discussionId") || saved;
         select(list.find((d) => d.id === saved)?.id || list[0]?.id || null);
       })
       .catch((err) => {
@@ -79,7 +81,7 @@ export function useCollaborationDiscussion(groupId: string) {
     return () => {
       live = false;
     };
-  }, [groupId, refreshHistory, select]);
+  }, [groupId, refreshHistory, select, initialDiscussionId]);
   useEffect(() => {
     if (!selected) return;
     let live = true;
@@ -161,6 +163,28 @@ export function useCollaborationDiscussion(groupId: string) {
       end();
     }
   };
+  const setMode = async (mode: CollaborationDiscussionMode) => {
+    if (!selected || discussion?.mode === mode) return;
+    begin();
+    try {
+      const snapshot = await collaborationRequest<CollaborationDiscussionState>({
+        action: "setMode",
+        discussionId: selected,
+        mode,
+      });
+      if (
+        current.current.selected === selected &&
+        snapshot.revision >= current.current.revision
+      ) {
+        current.current.revision = snapshot.revision;
+        setDiscussion(snapshot);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      end();
+    }
+  };
   const send = async (text: string, messageId: string) => {
     if (sending.current) return false;
     sending.current = true;
@@ -209,6 +233,7 @@ export function useCollaborationDiscussion(groupId: string) {
     select,
     create,
     act,
+    setMode,
     send,
     setError,
     updateRole,

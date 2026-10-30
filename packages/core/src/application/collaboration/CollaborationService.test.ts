@@ -31,11 +31,24 @@ const runtimeBase = (): CollaborationRuntime => ({
   }),
   createSession: async (_g, m, cwd) => `${m.id}:${cwd}`,
   execute: async () => ({ text: "" }),
+  verify: async () => ({ ok: true, output: "" }),
   abort: async () => {},
   answer: async () => true,
 });
 
 describe("CollaborationService orchestration", () => {
+  it("answers a planner decision once and rejects a stale Dashboard decision revision", async () => {
+    const runtime = runtimeBase(); runtime.execute = async () => ({ text: JSON.stringify({ action: "finish", message: "决定已落实" }) });
+    const { service, repo, id } = setup(runtime);
+    repo.updateDiscussion(id, state => { state.status = "waiting"; state.messages.push({ id: "decision", kind: "owner", content: "请选择交付方案", createdAt: "2026-10-28" }); });
+    const revision = service.discussion(id).revision;
+    const command = { action: "answerDecision" as const, discussionId: id, expectedRevision: revision, answer: "选择方案 A", messageId: "decision-answer" };
+    await service.command(command);
+    await vi.waitFor(() => expect(service.discussion(id).status).toBe("completed"));
+    await service.command(command);
+    expect(service.discussion(id).messages.filter(message => message.id === command.messageId)).toHaveLength(1);
+    await expect(service.command({ ...command, messageId: "stale-answer" })).rejects.toThrow("已处理");
+  });
   it.each(["收到", ""])(
     "publishes each member's reply once when the owner finishes with %j",
     async (finalMessage) => {
@@ -386,5 +399,254 @@ describe("CollaborationService orchestration", () => {
           message.content.includes("成员运行时不可用"),
         ),
     ).toBe(true);
+  });
+});
+
+describe("chat mode mention routing", () => {
+  it("routes @mentions to members in the default task-graph discussion too", async () => {
+    const runtime = runtimeBase();
+    const executed: string[] = [];
+    let ownerRounds = 0;
+    runtime.prepareWorkspace = async (group) => ({
+      cwd: group.cwd,
+      isolated: false,
+    });
+    runtime.execute = async (input) => {
+      if (input.member.id === "owner") {
+        ownerRounds += 1;
+        return { text: JSON.stringify({ action: "finish", message: "完成" }) };
+      }
+      executed.push(input.member.id);
+      return { text: "已处理" };
+    };
+    const { service } = setup(runtime);
+    const id = service.createDiscussion("g").id; // 默认 task-graph
+    expect(service.discussion(id).mode ?? "task-graph").toBe("task-graph");
+    await service.command({
+      action: "send",
+      discussionId: id,
+      text: "@开发 修一下登录超时",
+      messageId: "m1",
+    });
+    await vi.waitFor(() => expect(service.discussion(id).status).toBe("idle"));
+    expect(executed).toEqual(["a"]);
+    expect(ownerRounds).toBe(0);
+  });
+
+  it("routes @mentions straight to members without an owner planning round", async () => {
+    const runtime = runtimeBase();
+    const executed: string[] = [];
+    let ownerRounds = 0;
+    runtime.execute = async (input) => {
+      if (input.member.id === "owner") {
+        ownerRounds += 1;
+        return { text: JSON.stringify({ action: "finish", message: "完成" }) };
+      }
+      executed.push(input.member.id);
+      return { text: "已处理" };
+    };
+    const { service } = setup(runtime);
+    const id = service.createDiscussion("g", "chat").id;
+    await service.command({
+      action: "send",
+      discussionId: id,
+      text: "@开发 修一下登录超时",
+      messageId: "m1",
+    });
+    await vi.waitFor(() =>
+      expect(service.discussion(id).status).toBe("idle"),
+    );
+    expect(executed).toEqual(["a"]);
+    expect(ownerRounds).toBe(0);
+    expect(service.discussion(id).tasks[0]).toMatchObject({
+      memberId: "a",
+      implicit: true,
+      status: "completed",
+    });
+    await service.command({
+      action: "send",
+      discussionId: id,
+      text: "谢谢",
+      messageId: "m2",
+    });
+    expect(service.discussion(id).status).toBe("idle");
+    expect(
+      service.discussion(id).messages.some((message) => message.content === "谢谢"),
+    ).toBe(true);
+  });
+
+  it("keeps owner planning sessions separate from owner task sessions", async () => {
+    const runtime = runtimeBase();
+    runtime.prepareWorkspace = async (group) => ({
+      cwd: group.cwd,
+      isolated: false,
+    });
+    const created: string[] = [];
+    runtime.createSession = async (_group, member, cwd) => {
+      created.push(member.id);
+      return `${member.id}:${cwd}:${created.length}`;
+    };
+    const { repo, service, id } = setup(runtime);
+    runtime.execute = async (input) => {
+      const state = repo.getDiscussion(id)!;
+      if (input.member.id === "owner" && state.planning) {
+        return {
+          text: JSON.stringify(
+            state.tasks.length === 0
+              ? {
+                  action: "dispatch",
+                  message: "自己来",
+                  tasks: [
+                    {
+                      id: "own",
+                      memberId: "owner",
+                      title: "自查",
+                      instructions: "自己完成并汇报",
+                      isolated: false,
+                      readOnly: true,
+                    },
+                  ],
+                }
+              : state.tasks.some((task) =>
+                  ["queued", "running"].includes(task.status),
+                )
+                ? { action: "wait", message: "等待" }
+                : { action: "finish", message: "完成" },
+          ),
+        };
+      }
+      return { text: "自做完成" };
+    };
+    await service.command({
+      action: "send",
+      discussionId: id,
+      text: "安排自查",
+      messageId: "m1",
+    });
+    await vi.waitFor(() =>
+      expect(repo.getDiscussion(id)?.status).toBe("completed"),
+    );
+    expect(created.filter((member) => member === "owner")).toHaveLength(2);
+    expect(Object.keys(repo.getDiscussion(id)!.sessions).sort()).toEqual([
+      "owner:/project",
+      "planning:owner:/project",
+    ]);
+  });
+});
+
+describe("task verification and usage metering", () => {
+  it("runs the verification command and fails the task when it exits nonzero", async () => {
+    const runtime = runtimeBase();
+    runtime.prepareWorkspace = async (group) => ({
+      cwd: group.cwd,
+      isolated: false,
+    });
+    const verifications: Array<{ cwd: string; command: string }> = [];
+    runtime.verify = async (cwd, command) => {
+      verifications.push({ cwd, command });
+      return { ok: false, output: "1 item mismatched" };
+    };
+    const { repo, service, id } = setup(runtime);
+    runtime.execute = async (input) => {
+      const state = repo.getDiscussion(id)!;
+      if (input.member.id === "owner" && state.planning) {
+        return {
+          text: JSON.stringify(
+            state.tasks.length === 0
+              ? {
+                  action: "dispatch",
+                  message: "改完就验",
+                  tasks: [
+                    {
+                      id: "work",
+                      memberId: "a",
+                      title: "实现",
+                      instructions: "执行",
+                      verification: { command: "npm test" },
+                    },
+                  ],
+                }
+              : state.tasks.some((task) =>
+                  ["queued", "running"].includes(task.status),
+                )
+                ? { action: "wait", message: "等待" }
+                : { action: "finish", message: "返工安排完毕" },
+          ),
+        };
+      }
+      return { text: "做完了" };
+    };
+    await service.command({
+      action: "send",
+      discussionId: id,
+      text: "开始",
+      messageId: "v1",
+    });
+    await vi.waitFor(() =>
+      expect(repo.getDiscussion(id)?.tasks[0]?.status).toBe("failed"),
+    );
+    expect(verifications).toEqual([{ cwd: "/project", command: "npm test" }]);
+    const failed = repo.getDiscussion(id)!.tasks[0]!;
+    expect(failed.result).toContain("验收命令失败");
+    expect(failed.result).toContain("1 item mismatched");
+    await vi.waitFor(() =>
+      expect(repo.getDiscussion(id)?.status).toBe("completed"),
+    );
+  });
+
+  it("accumulates reported token usage across owner planning and worker execution", async () => {
+    const runtime = runtimeBase();
+    runtime.prepareWorkspace = async (group) => ({
+      cwd: group.cwd,
+      isolated: false,
+    });
+    const { repo, service, id } = setup(runtime);
+    runtime.execute = async (input) => {
+      const state = repo.getDiscussion(id)!;
+      if (input.member.id === "owner" && state.planning) {
+        return {
+          usage: { inputTokens: 100, outputTokens: 10, totalTokens: 110 },
+          text: JSON.stringify(
+            state.tasks.length === 0
+              ? {
+                  action: "dispatch",
+                  message: "开工",
+                  tasks: [
+                    {
+                      id: "w",
+                      memberId: "a",
+                      title: "做",
+                      instructions: "做",
+                      isolated: false,
+                      readOnly: true,
+                    },
+                  ],
+                }
+              : state.tasks.some((task) =>
+                  ["queued", "running"].includes(task.status),
+                )
+                ? { action: "wait", message: "等" }
+                : { action: "finish", message: "完成" },
+          ),
+        };
+      }
+      return {
+        usage: { inputTokens: 50, outputTokens: 5, totalTokens: 55 },
+        text: "做完",
+      };
+    };
+    await service.command({
+      action: "send",
+      discussionId: id,
+      text: "开始",
+      messageId: "u1",
+    });
+    await vi.waitFor(() =>
+      expect(repo.getDiscussion(id)?.status).toBe("completed"),
+    );
+    expect(repo.getDiscussion(id)!.usage).toEqual({
+      inputTokens: 250,
+      outputTokens: 25,
+    });
   });
 });

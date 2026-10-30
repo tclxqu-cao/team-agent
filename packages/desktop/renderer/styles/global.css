@@ -1070,24 +1070,9 @@ select:focus {
   outline-offset: -2px;
 }
 
-.agent-workspace-switcher i {
-  position: absolute;
-  top: 4px;
-  right: 4px;
-  width: 4px;
-  height: 4px;
-  border-radius: 50%;
-  background: var(--success);
-}
-
-.agent-workspace-switcher svg {
+.agent-workspace-switcher :is(svg,img) {
   display: block;
   flex: 0 0 auto;
-}
-
-.agent-workspace-switcher i.is-unavailable {
-  background: var(--text-muted);
-  opacity: 0.55;
 }
 
 .sidebar-search-field {

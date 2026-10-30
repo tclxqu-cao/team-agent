@@ -104,6 +104,19 @@ export function reconcileWorkspacePage(
   });
 }
 
+/** Keep the pagination boundary when a refresh retains already loaded later rows. */
+export function reconcileSessionNextCursor<T extends UnifiedSessionSummary>(
+  current: readonly T[],
+  page: WorkspacePage<T>,
+  replace: boolean,
+  previousCursor: string | null | undefined,
+): string | null {
+  if (page.stale && previousCursor !== undefined) return previousCursor;
+  if (!replace || !page.nextCursor || previousCursor === undefined) return page.nextCursor;
+  const freshIds = new Set(page.data.map((session) => session.id));
+  return current.some((session) => !freshIds.has(session.id)) ? previousCursor : page.nextCursor;
+}
+
 export function reconcileSessionPage<T extends UnifiedSessionSummary>(
   current: readonly T[],
   page: WorkspacePage<T>,

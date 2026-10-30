@@ -15,10 +15,18 @@ describe("group entry loading surface", () => {
   it("uses the same entry animation for the dashboard while its saved groups load", () => {
     const html = renderToStaticMarkup(createElement(CollaborationPane, { title: "群聊看板", onFrame: vi.fn(), onLoad: vi.fn() }));
     expect(html).toContain('aria-busy="true"');
-    expect(html).toContain("正在打开群聊看板");
+    expect(html).toContain("正在打开群聊列表");
     expect(html).toContain("正在加载已保存的群聊");
     expect(html).toContain('visibility:hidden');
     expect(html).toContain('/app/?view=collaboration-dashboard');
+  });
+
+  it("loads the independent session Dashboard and carries an explicit source discussion", () => {
+    const dashboard = renderToStaticMarkup(createElement(CollaborationPane, { view: "sessions", title: "Dashboard", onFrame: vi.fn(), onLoad: vi.fn() }));
+    expect(dashboard).toContain("/app/?view=session-dashboard");
+    expect(dashboard).toContain("正在打开会话 Dashboard");
+    const group = renderToStaticMarkup(createElement(CollaborationPane, { groupId: "g", discussionId: "older-active", title: "群聊", onFrame: vi.fn(), onLoad: vi.fn() }));
+    expect(group).toContain("discussionId=older-active");
   });
 
   it("immediately shows the shared loader and conceals the iframe until its content is ready", () => {

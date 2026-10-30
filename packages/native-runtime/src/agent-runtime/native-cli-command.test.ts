@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { resolveNativeCliCommand } from "./native-cli-command.js";
 
 const home = "/home/test";
@@ -39,11 +39,32 @@ describe("native CLI command discovery", () => {
 
   it("repairs only the WorkBuddy child bundle/config context", async () => {
     const script = "/Applications/WorkBuddy.app/Contents/Resources/app.asar.unpacked/cli/bin/codebuddy";
-    const command = await resolveNativeCliCommand("workbuddy", fixture([script]));
+    const env = { ACC_PRODUCT_CONFIG_V3: "stale inherited catalog" };
+    const workBuddyDesktopConfig = vi.fn(async () => "/home/test/.workbuddy/cache/desktop.json");
+    const command = await resolveNativeCliCommand("workbuddy", { ...fixture([script], env), workBuddyDesktopConfig });
     expect(command.command).toBe(nodeExecutable);
     expect(command.args?.[0]).toBe(script);
     expect(command.args).toContain("stream-json");
-    expect(command.env).toEqual({ CODEBUDDY_FORCE_LITE_WB_BUNDLE: "1", CODEBUDDY_CONFIG_DIR: "/home/test/.workbuddy", WORKBUDDY_CONFIG_DIR: "/home/test/.workbuddy" });
+    expect(workBuddyDesktopConfig).toHaveBeenCalledWith({ configDir: "/home/test/.workbuddy", platform: "darwin" });
+    expect(command.env).toEqual({ CODEBUDDY_FORCE_LITE_WB_BUNDLE: "1", CODEBUDDY_CONFIG_DIR: "/home/test/.workbuddy", WORKBUDDY_CONFIG_DIR: "/home/test/.workbuddy", ACC_PRODUCT_CONFIG_PATH: "/home/test/.workbuddy/cache/desktop.json", ACC_PRODUCT_CONFIG_V3: "", ACC_PRODUCT_CONFIG_V2: "", ACC_PRODUCT_CONFIG: "" });
+    expect(env.ACC_PRODUCT_CONFIG_V3).toBe("stale inherited catalog");
+  });
+
+  it("does not advertise the bundled WorkBuddy bootstrap models when desktop configuration is unavailable", async () => {
+    const script = "/Applications/WorkBuddy.app/Contents/Resources/app.asar.unpacked/cli/bin/codebuddy";
+    await expect(resolveNativeCliCommand("workbuddy", { ...fixture([script]), workBuddyDesktopConfig: async () => null }))
+      .rejects.toMatchObject({ code: "RUNTIME_UNAVAILABLE", message: expect.stringContaining("WorkBuddy desktop") });
+  });
+
+  it("uses the same explicit WorkBuddy directory for desktop configuration and native sessions", async () => {
+    const script = "/custom/codebuddy";
+    const workBuddyDesktopConfig = vi.fn(async () => "/chosen/workbuddy/cache/desktop.json");
+    const command = await resolveNativeCliCommand("workbuddy", {
+      ...fixture([script], { AGENT_WORKBUDDY_BIN: script, WORKBUDDY_CONFIG_DIR: "/chosen/workbuddy", CODEBUDDY_CONFIG_DIR: "/unrelated/codebuddy" }),
+      workBuddyDesktopConfig,
+    });
+    expect(workBuddyDesktopConfig).toHaveBeenCalledWith({ configDir: "/chosen/workbuddy", platform: "darwin" });
+    expect(command.env).toMatchObject({ CODEBUDDY_CONFIG_DIR: "/chosen/workbuddy", WORKBUDDY_CONFIG_DIR: "/chosen/workbuddy" });
   });
 
   it("supports Windows packaged scripts through Node, not a shell command string", async () => {

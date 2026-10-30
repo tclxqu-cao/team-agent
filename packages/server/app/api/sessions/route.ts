@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { normalizeToolPermissionMode } from "@agent/core";
 import { agentHost, ProjectWorkingDirectoryError } from "../agent-host";
 import { collaborationSessionIds } from "../../../lib/collaboration/visibility";
+import { discoverSessions } from "../../../lib/session-catalog";
 import {
   getNativeRuntimeService,
   runtimeErrorStatus,
@@ -11,29 +12,7 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const projectId = url.searchParams.get("projectId") || undefined;
   const refresh = url.searchParams.get("refresh") === "1";
-  const hidden = collaborationSessionIds();
-  const sessions = (await agentHost.getSessionStore().list(projectId)).filter(session => !hidden.has(session.id));
-
-  const service = getNativeRuntimeService();
-  // The renderer treats a missing agentType as a native runtime, so CA
-  // sessions must be tagged explicitly; canDelete drives the sidebar × button.
-  const tagged = sessions.map(({ messages: _messages, events: _events, ...session }) => ({
-    ...session,
-    agentType: "customer-agent" as const,
-    messageQueueVersion: 1 as const,
-    canDelete: !agentHost.isSessionRunning(session.id),
-    permissionMode: normalizeToolPermissionMode(session.metadata.permissionMode),
-  }));
-  try {
-    // Native discovery associates cwd with the most specific registered
-    // project path, matching the desktop renderer's project tree.
-    const native = refresh ? await service.refresh(projectId) : await service.list(projectId);
-    return NextResponse.json([...tagged, ...native.filter(session => !hidden.has(session.id))]);
-  } catch (err) {
-    console.error("Native session discovery failed:", err);
-    // Discovery failure must not hide the customer-agent session list.
-    return NextResponse.json(tagged);
-  }
+  return NextResponse.json((await discoverSessions(projectId, refresh)).sessions);
 }
 
 export async function POST(request: Request) {

@@ -146,6 +146,7 @@ class AgentHost {
   /** events of the current run per session — replayed to late/reconnecting subscribers */
   private recentEvents = new Map<string, { id: number; event: AgentEvent }[]>();
   private eventCounters = new Map<string, number>();
+  private manuallyStopped = new Set<string>();
   private pendingQuestions = new Map<
     string,
     {
@@ -327,6 +328,16 @@ class AgentHost {
 
   getLatestEventId(sessionId: string): number {
     return this.eventCounters.get(sessionId) ?? 0;
+  }
+
+  isManuallyStopped(session: Session): boolean {
+    return this.manuallyStopped.has(session.id) || typeof session.metadata.supervisionStoppedAt === "string";
+  }
+  pendingQuestionIds(sessionId: string): Set<string> {
+    return new Set([...this.pendingQuestions].filter(([, pending]) => pending.sessionId === sessionId).map(([id]) => id));
+  }
+  recentSessionEvents(sessionId: string): AgentEvent[] {
+    return (this.recentEvents.get(sessionId) ?? []).slice(-100).map(entry => entry.event);
   }
 
   subscribe(sessionId: string, fn: (event: AgentEvent, id: number) => void, lastEventId = -1): () => void {
@@ -576,8 +587,9 @@ class AgentHost {
       ...(presentation ? { presentation } : {}),
     }], {
       status: "active",
-      metadata: { ...session.metadata, [ACTIVE_RUN_METADATA_KEY]: marker },
+      metadata: { ...session.metadata, supervisionStoppedAt: undefined, [ACTIVE_RUN_METADATA_KEY]: marker },
     });
+    this.manuallyStopped.delete(sessionId);
     // Replace the replay window for this run, but keep SSE ids monotonic so a
     // subscriber opened before admission does not reject the new run as stale.
     this.recentEvents.set(sessionId, []);
@@ -945,6 +957,13 @@ class AgentHost {
   }
 
   abort(sessionId?: string): void {
+    const stoppedIds = sessionId ? [sessionId] : [...this.activeRuns.keys()];
+    for (const id of stoppedIds) {
+      this.manuallyStopped.add(id);
+      void this.sessionStore.get(id).then(session => {
+        if (session && this.manuallyStopped.has(id)) return this.sessionStore.update(id, { metadata: { ...session.metadata, supervisionStoppedAt: new Date().toISOString() } });
+      }).catch(error => console.error("Persist session stop intent:", error));
+    }
     const runs = sessionId ? [this.activeRuns.get(sessionId)] : [...this.activeRuns.values()];
     for (const run of runs) if (run) { run.aborted = true; run.agent?.abort(); run.abortChildren?.(); }
     for (const [questionId, pending] of this.pendingQuestions) {

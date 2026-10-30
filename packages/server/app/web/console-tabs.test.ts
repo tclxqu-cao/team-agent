@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { COLLABORATION_DASHBOARD_TAB, withCollaborationDashboard, REMOTE_DESKTOP_TAB, withRemoteDesktopTab } from "./console-tabs";
+import { COLLABORATION_DASHBOARD_TAB, withCollaborationDashboard, SESSION_DASHBOARD_TAB, withSessionDashboard, REMOTE_DESKTOP_TAB, withRemoteDesktopTab } from "./console-tabs";
 import { parseWorkspaceSnapshot, restoreWorkspaceTabs } from "./console-tabs";
+
+it("retains separate Dashboard and group-list tabs without replacing existing conversations", () => {
+  const tabs = withSessionDashboard(withCollaborationDashboard([]));
+  expect(tabs).toEqual([COLLABORATION_DASHBOARD_TAB, SESSION_DASHBOARD_TAB]);
+  expect(withSessionDashboard(tabs)).toBe(tabs);
+});
 
 describe("workspace refresh recovery", () => {
   const chat = { id: "webapp-agent", title: "Assistant", kind: "webapp" as const };

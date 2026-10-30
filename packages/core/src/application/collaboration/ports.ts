@@ -3,6 +3,7 @@ import type {
   CollaborationDiscussionSummary,
   CollaborationGroup,
   CollaborationMember,
+  CollabExecutionUsage,
 } from "../../domain/collaboration/types.js";
 
 export interface CollaborationRepository {
@@ -64,7 +65,13 @@ export interface CollaborationRuntime {
   execute(
     input: CollaborationExecution,
     onProgress: (progress: CollaborationProgress) => void,
-  ): Promise<{ text: string }>;
+  ): Promise<{ text: string; usage?: CollabExecutionUsage }>;
+  /** 验收命令：在任务目录执行，非零退出视为失败；输出截尾返回。 */
+  verify(
+    cwd: string,
+    command: string,
+    signal: AbortSignal,
+  ): Promise<{ ok: boolean; output: string }>;
   abort(sessionId: string): Promise<void>;
   answer(
     sessionId: string,

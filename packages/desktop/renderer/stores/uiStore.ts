@@ -46,6 +46,8 @@ export interface UIState {
   wakeWord: string;
   /** 侧边栏将进行中的会话排在最前 */
   runningFirst: boolean;
+  /** 会话看板合并群聊与各 Agent 的运行会话 */
+  dashboardSessionsMerged: boolean;
   /** 侧边栏置顶的根会话 ID */
   pinnedSessionIds: string[];
 
@@ -56,6 +58,7 @@ export interface UIState {
   setWakeEnabled: (v: boolean) => void;
   setWakeWord: (w: string) => void;
   setRunningFirst: (v: boolean) => void;
+  setDashboardSessionsMerged: (v: boolean) => void;
   togglePinnedSession: (id: string) => void;
   removePinnedSessions: (ids: readonly string[]) => void;
 }
@@ -77,6 +80,7 @@ export function migrateUIPreferences(persisted: unknown, version: number): Parti
     ...(preferences.wakeEnabled !== undefined ? { wakeEnabled: preferences.wakeEnabled } : {}),
     ...(preferences.wakeWord !== undefined ? { wakeWord: preferences.wakeWord } : {}),
     ...(preferences.runningFirst !== undefined ? { runningFirst: preferences.runningFirst } : {}),
+    ...(typeof preferences.dashboardSessionsMerged === "boolean" ? { dashboardSessionsMerged: preferences.dashboardSessionsMerged } : {}),
     pinnedSessionIds: normalizePinnedSessionIds(preferences.pinnedSessionIds),
     ...(version < UI_PREFERENCES_VERSION && isBrowserRuntime() ? { wakeEnabled: false } : {}),
   };
@@ -97,6 +101,7 @@ export const useUIStore = create<UIState>()(
       wakeEnabled: getDefaultWakeEnabled(),
       wakeWord: "小智",
       runningFirst: false,
+      dashboardSessionsMerged: false,
       pinnedSessionIds: [],
 
       setSkin: (skin) => set({ skin }),
@@ -106,6 +111,7 @@ export const useUIStore = create<UIState>()(
       setWakeEnabled: (wakeEnabled) => set({ wakeEnabled }),
       setWakeWord: (wakeWord) => set({ wakeWord }),
       setRunningFirst: (runningFirst) => set({ runningFirst }),
+      setDashboardSessionsMerged: (dashboardSessionsMerged) => set({ dashboardSessionsMerged }),
       togglePinnedSession: (id) => set((state) => ({
         pinnedSessionIds: state.pinnedSessionIds.includes(id)
           ? state.pinnedSessionIds.filter((sessionId) => sessionId !== id)

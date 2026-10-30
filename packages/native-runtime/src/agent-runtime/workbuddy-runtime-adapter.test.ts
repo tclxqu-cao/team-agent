@@ -39,6 +39,19 @@ describe("WorkBuddy native stream-json adapter", () => {
     expect((await adapter.getSession(created.nativeSessionId)).messages.map(message => message.content)).toEqual(["hello", "native answer"]);
   });
 
+  it("does not merge reused thinking block indexes across native messages or turns", async () => {
+    const { client, root } = await fixture(); const session = await client.create({ title: "Thinking", cwd: root });
+    const first = await collect(client.run(session.id, "THINKING"));
+    const second = await collect(client.run(session.id, "THINKING"));
+    const thoughts = first.filter(event => event.type === "reasoning_summary_delta");
+    const nextThoughts = second.filter(event => event.type === "reasoning_summary_delta");
+    expect(thoughts).toHaveLength(3);
+    expect(thoughts[0].itemId).toBe(thoughts[1].itemId);
+    expect(thoughts[2].itemId).not.toBe(thoughts[0].itemId);
+    expect(nextThoughts.every(event => !thoughts.some(previous => previous.itemId === event.itemId))).toBe(true);
+    expect(second.at(-1)).toEqual({ type: "done", finalText: "CheckingAnswer" });
+  });
+
   it.each([
     ["NATIVE_AUTH_REQUIRED", "AUTHENTICATION_REQUIRED", "required"],
     ["NATIVE_AUTH_FAILED", "AUTHENTICATION_FAILED", "failed"],

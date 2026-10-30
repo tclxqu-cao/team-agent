@@ -5,13 +5,17 @@ import {
 } from "../../domain/collaboration/CollaborationDiscussion.js";
 import { CollaborationGroupAggregate } from "../../domain/collaboration/CollaborationGroup.js";
 import { parseCollaborationDecision } from "../../domain/collaboration/coordinator-protocol.js";
+import { parseMentions, stripMentions } from "../../domain/collaboration/mention-routing.js";
 import {
   CollaborationError,
   type CollaborationCommand,
+  type CollaborationDiscussionMode,
   type CollaborationDiscussionState,
   type CollaborationGroup,
   type CollaborationMessage,
+  type CollaborationTask,
   type CreateCollaborationGroup,
+  type MentionRoute,
 } from "../../domain/collaboration/types.js";
 import type {
   CollaborationProgress,
@@ -71,7 +75,10 @@ export class CollaborationService {
     this.repository.saveGroup(group);
     return group;
   }
-  createDiscussion(groupId: string): CollaborationDiscussionState {
+  createDiscussion(
+    groupId: string,
+    mode: CollaborationDiscussionMode = "task-graph",
+  ): CollaborationDiscussionState {
     const group = this.group(groupId);
     const now = new Date().toISOString();
     const state: CollaborationDiscussionState = {
@@ -91,6 +98,7 @@ export class CollaborationService {
       ownerPending: false,
       planning: false,
       protocolFailures: 0,
+      mode,
     };
     this.repository.createDiscussion(state);
     return state;
@@ -179,12 +187,28 @@ export class CollaborationService {
         this.group(command.groupId);
         return this.repository.listDiscussions(command.groupId);
       case "createDiscussion":
-        return this.createDiscussion(command.groupId);
+        return this.createDiscussion(command.groupId, command.mode);
+      case "setMode":
+        return this.change(command.discussionId, (domain) =>
+          domain.setMode(command.mode),
+        );
       case "discussion": {
         const state = this.discussion(command.discussionId);
         return state.revision === command.afterRevision
           ? { unchanged: true, revision: state.revision }
           : state;
+      }
+      case "answerDecision": {
+        if (!command.answer.trim() || command.answer.length > 10000 || !command.messageId || command.messageId.length > 200)
+          throw new CollaborationError("决策答复不能为空或过长");
+        const state = this.change(command.discussionId, domain => {
+          if (domain.state.messages.some(message => message.id === command.messageId)) return;
+          if (domain.state.status !== "waiting" || domain.state.revision !== command.expectedRevision || domain.state.messages.some(message => message.question && !message.question.resolved))
+            throw new CollaborationError("该决策已变化或已处理，请刷新群聊");
+          domain.send({ ...this.message(command.answer, "user"), id: command.messageId }, { planning: true });
+        });
+        this.wake();
+        return state;
       }
       case "send": {
         if (
@@ -198,8 +222,14 @@ export class CollaborationService {
           ...this.message(command.text, "user"),
           id: command.messageId,
         };
+        const current = this.discussion(command.discussionId);
+        // @ 提及恒生效；模式只决定无 @ 时的行为（chat 静默 / task-graph 交给群主）。
+        const route = this.mentionRoute(
+          command.text,
+          this.discussionGroup(current),
+        );
         const state = this.change(command.discussionId, (domain) =>
-          domain.send(message),
+          domain.send(message, route),
         );
         this.wake();
         return state;
@@ -253,6 +283,24 @@ export class CollaborationService {
     }
   }
 
+  /** chat 模式的确定性路由：@群主=规划轮，@成员=隐式单成员任务，无 @=静默。 */
+  private mentionRoute(text: string, group: CollaborationGroup): MentionRoute {
+    const mentioned = parseMentions(text, group.members);
+    if (mentioned.some((member) => member.id === group.ownerId))
+      return { planning: true };
+    const content = stripMentions(text, group.members).slice(0, 30000);
+    const build = (member: (typeof mentioned)[number]): CollaborationTask => ({
+      id: this.id(),
+      memberId: member.id,
+      title: content.slice(0, 80) || `处理 @${member.name}`,
+      instructions: content || `处理 @${member.name}`,
+      dependsOn: [],
+      isolated: false,
+      status: "queued",
+      implicit: true,
+    });
+    return { tasks: mentioned.map(build) };
+  }
   private wake(): void {
     void this.tick().catch(this.reportError);
   }
@@ -383,10 +431,14 @@ export class CollaborationService {
     id: string,
     memberId: string,
     cwd: string,
+    purpose: "planning" | "task" = "task",
   ): Promise<string> {
     const state = this.discussion(id),
       group = this.discussionGroup(state),
-      key = `${memberId}:${cwd}`;
+      key =
+        purpose === "planning"
+          ? `planning:${memberId}:${cwd}`
+          : `${memberId}:${cwd}`;
     if (state.sessions[key]) return state.sessions[key];
     const sessionId = await this.runtime.createSession(
       group,
@@ -431,7 +483,7 @@ export class CollaborationService {
     const start = this.change(id, (domain) => domain.beginPlanning());
     const signal = this.active.get(id)!.jobs.get("owner")!.signal;
     try {
-      const sessionId = await this.session(id, owner.id, group.cwd);
+      const sessionId = await this.session(id, owner.id, group.cwd, "planning");
       if (signal.aborted) return;
       this.change(id, (domain) => domain.planningSession(sessionId));
       const result = await this.runtime.execute(
@@ -444,6 +496,12 @@ export class CollaborationService {
         },
         this.progress(id, start.generation, owner.id),
       );
+      const usage = result.usage;
+      if (usage)
+        this.change(id, (domain) => {
+          if (domain.state.generation === start.generation)
+            domain.recordUsage(usage);
+        });
       this.change(id, (domain) => {
         if (
           domain.state.generation !== start.generation ||
@@ -552,12 +610,25 @@ export class CollaborationService {
         },
         this.progress(id, start.generation, member.id, taskId),
       );
+      let text = result.text;
+      let success = true;
+      if (task.verification) {
+        const check = await this.runtime.verify(
+          workspace.cwd,
+          task.verification.command,
+          signal,
+        );
+        if (!check.ok) {
+          text = `验收命令失败：${task.verification.command}\n${check.output.slice(-4000)}`;
+          success = false;
+        }
+      }
+      const usage = result.usage;
       this.change(id, (domain) => {
-        if (
-          domain.state.generation === start.generation &&
-          domain.settleTask(taskId, result.text, true)
-        )
-          domain.append(this.message(result.text, "member", member.id, taskId));
+        if (domain.state.generation !== start.generation) return;
+        if (usage) domain.recordUsage(usage);
+        if (domain.settleTask(taskId, text, success))
+          domain.append(this.message(text, "member", member.id, taskId));
       });
     } catch (error) {
       const text = `步骤失败：${error instanceof Error ? error.message : String(error)}`;

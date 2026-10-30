@@ -24,6 +24,7 @@ import { useUIStore } from "../../stores/uiStore";
 import CollaborationCreateDialog from "./CollaborationCreateDialog";
 import { useCollaborationGroups } from "./useCollaborationGroups";
 import { AGENT_NAMES, collaborationRequest } from "./client";
+import { postDashboardIntent } from "../../../../core/src/domain/web-console/SessionDashboardBridge";
 import "./collaboration.css";
 import "./dashboard.css";
 
@@ -104,11 +105,12 @@ export default function CollaborationDashboard({
         <div>
           <span className="collab-eyebrow">协作空间</span>
           <h1>
-            群聊看板 <small>{groups.length}</small>
+            群聊列表 <small>{groups.length}</small>
           </h1>
           <p className="collab-muted">找到你的群，继续上次的协作。</p>
         </div>
         <div className="collab-dashboard-tools">
+          <button onClick={() => postDashboardIntent({ kind: "dashboard" })}>Dashboard</button>
           <button
             aria-label="刷新群列表"
             title="刷新群列表"

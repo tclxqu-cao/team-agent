@@ -15,7 +15,8 @@ interface HarnessProcess { pid: number; kind: "desktop" | "web" }
 function processKind(command: string): HarnessProcess["kind"] | null {
   const normalized = command.replaceAll("\\", "/");
   const nodeLauncher = /^(?:"[^"\n]*\/(?:node|bun|dsh)(?:\.exe)?"|(?:\S*\/)?(?:node|bun|dsh)(?:\.exe)?)(?:\s|$)/.test(normalized);
-  const desktopLauncher = /^(?:"?\/.*\/DeepSeek Harness\.app\/Contents\/MacOS\/DeepSeek Harness|"?[A-Za-z]:\/.*\/DeepSeek Harness\.exe)["']?(?:\s|$)/.test(normalized);
+  // Bundled dsh invokes Resources/../MacOS; recognize it before borrowing a Host.
+  const desktopLauncher = /^(?:"?\/.*\/DeepSeek Harness\.app\/Contents\/(?:Resources\/\.\.\/)?MacOS\/DeepSeek Harness|"?[A-Za-z]:\/.*\/DeepSeek Harness\.exe)["']?(?:\s|$)/.test(normalized);
   if (!nodeLauncher && !desktopLauncher) return null;
   if (/@deepseek-ai\/dsh-desktop-host\/(?:lib|src)\/index\.(?:js|ts)(?:["']?\s|$)/.test(normalized)) return "desktop";
   const cli = /(?:@deepseek-ai\/dsh\/(?:lib\/bin\.js|src\/bin\.ts)|@deepseek-ai\/dsh-desktop-host\/lib\/cli\.js|(?:^|\s)(?:\S*\/)?dsh)(?:["']?\s+)(.*)$/.exec(normalized);

@@ -7,6 +7,7 @@ import {
   readAgentWorkspaceCache,
   refreshCachedRunningSessionPages,
   reconcileSessionPage,
+  reconcileSessionNextCursor,
   reconcileWorkspacePage,
   writeAgentWorkspaceCache,
 } from "./agent-workspace-cache";
@@ -138,6 +139,49 @@ describe("agent workspace cache", () => {
       ["one", "Renamed"],
       ["later", "later"],
     ]);
+  });
+
+  it("keeps the later-page cursor when polling refreshes only the first page", () => {
+    const current = [session("first"), session("later")];
+    const page = { data: [session("new"), session("first")], nextCursor: "page-two", watermark: "2" };
+
+    expect(reconcileSessionNextCursor(current, page, true, "page-four")).toBe("page-four");
+    expect(reconcileSessionPage(current, page, true).map(({ id }) => id)).toEqual(["new", "first", "later"]);
+  });
+
+  it("does not reopen exhausted history during a first-page refresh", () => {
+    expect(reconcileSessionNextCursor([session("first"), session("last")], {
+      data: [session("first")], nextCursor: "page-two", watermark: "2",
+    }, true, null)).toBeNull();
+  });
+
+  it("advances through a duplicate-only cached page without dropping cached rows", () => {
+    const current = [session("first"), session("middle"), session("last")];
+    const page = { data: [session("middle")], nextCursor: "page-three", watermark: "2" };
+
+    expect(reconcileSessionNextCursor(current, page, false, "page-two")).toBe("page-three");
+    expect(reconcileSessionPage(current, page, false).map(({ id }) => id)).toEqual(["first", "middle", "last"]);
+  });
+
+  it("uses the returned boundary when a refresh covers the entire loaded window", () => {
+    expect(reconcileSessionNextCursor([session("first")], {
+      data: [session("first"), session("second")], nextCursor: "page-three", watermark: "2",
+    }, true, "page-two")).toBe("page-three");
+  });
+
+  it("accepts first-load and authoritative exhausted cursors", () => {
+    expect(reconcileSessionNextCursor([], {
+      data: [session("first")], nextCursor: "page-two", watermark: "1",
+    }, true, undefined)).toBe("page-two");
+    expect(reconcileSessionNextCursor([session("removed")], {
+      data: [session("first")], nextCursor: null, watermark: "2",
+    }, true, "page-four")).toBeNull();
+  });
+
+  it("keeps the retry cursor when a page is stale", () => {
+    expect(reconcileSessionNextCursor([session("first")], {
+      data: [], nextCursor: null, watermark: null, stale: true,
+    }, false, "page-two")).toBe("page-two");
   });
 
   it("appends every session page without duplicates or a total-row cap", () => {

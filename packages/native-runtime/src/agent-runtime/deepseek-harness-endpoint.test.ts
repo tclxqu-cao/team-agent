@@ -30,6 +30,11 @@ describe("Harness existing-host discovery", () => {
     expect(selectHarnessProcesses("7 501 /opt/homebrew/bin/dsh --profile desktop --no-open", 501)).toEqual([{ pid: 7, kind: "desktop" }]);
   });
 
+  it("recognizes the bundled launcher's Resources/../MacOS executable path", () => {
+    const command = "301 501 /Applications/DeepSeek Harness.app/Contents/Resources/../MacOS/DeepSeek Harness --expose-internals /Applications/DeepSeek Harness.app/Contents/Resources/app.asar/dsh/node_modules/@deepseek-ai/dsh-desktop-host/lib/cli.js web --host 127.0.0.1 --port 0 --no-open";
+    expect(selectHarnessProcesses(command, 501)).toEqual([{ pid: 301, kind: "web" }]);
+  });
+
   it("requires a loopback listener belonging to the selected process", () => {
     expect(selectHarnessListenerOrigins("p99\nn127.0.0.1:8888\np202\nn*:9000\nn10.0.0.1:9000\nn[::1]:9020\nn127.0.0.1:9021\nn127.0.0.1:70000", 202))
       .toEqual(["http://[::1]:9020", "http://127.0.0.1:9021"]);

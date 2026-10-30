@@ -4,10 +4,12 @@ import {
   validateCollaborationGroup,
 } from "./CollaborationDiscussion.js";
 import { parseCollaborationDecision } from "./coordinator-protocol.js";
+import { parseMentions, stripMentions } from "./mention-routing.js";
 import type {
   CollaborationDecision,
   CollaborationDiscussionState,
   CollaborationGroup,
+  CollaborationMessage,
   CollaborationTask,
 } from "./types.js";
 
@@ -171,5 +173,167 @@ describe("CollaborationDiscussion domain", () => {
         '```json\n{"action":"finish","message":"ok"}\n```',
       ).action,
     ).toBe("finish");
+  });
+});
+
+describe("chat mode @ routing", () => {
+  const chatState = () => ({ ...stateFixture(), mode: "chat" as const });
+  const userMessage = (content: string, id = "m1"): CollaborationMessage => ({
+    id,
+    kind: "user",
+    content,
+    createdAt: "2026-10-27",
+  });
+  const mentionTask = (id: string, memberId: string): CollaborationTask => ({
+    id,
+    memberId,
+    title: id,
+    instructions: id,
+    dependsOn: [],
+    isolated: false,
+    status: "queued",
+  });
+
+  it("routes an @mention to an implicit single-member task without waking the owner", () => {
+    const s = chatState(),
+      d = new CollaborationDiscussion(s, groupFixture());
+    d.send(userMessage("@开发 修一下登录超时"), {
+      tasks: [mentionTask("t1", "a")],
+    });
+    expect(s.tasks).toHaveLength(1);
+    expect(s.tasks[0]).toMatchObject({
+      memberId: "a",
+      implicit: true,
+      dependsOn: [],
+      status: "queued",
+    });
+    expect(s.ownerPending).toBe(false);
+    expect(s.status).toBe("running");
+  });
+
+  it("stays silent on messages without a mention", () => {
+    const s = { ...chatState(), status: "idle" as const };
+    const d = new CollaborationDiscussion(s, groupFixture());
+    d.send(userMessage("大家好"));
+    expect(s.status).toBe("idle");
+    expect(s.ownerPending).toBe(false);
+    expect(s.messages).toHaveLength(1);
+    expect(s.tasks).toEqual([]);
+  });
+
+  it("wakes the owner only when the owner is mentioned and refuses @-assigning the owner", () => {
+    const s = chatState(),
+      d = new CollaborationDiscussion(s, groupFixture());
+    d.send(userMessage("@总控 安排一下"), { planning: true });
+    expect(s.ownerPending).toBe(true);
+    expect(s.tasks).toEqual([]);
+    expect(() =>
+      d.send(userMessage("@总控 @开发 一起看看", "m2"), {
+        planning: true,
+        tasks: [mentionTask("t2", "owner")],
+      }),
+    ).toThrow("群主不能被 @ 指派");
+  });
+
+  it("settles implicit tasks silently and returns to idle when the group quiets down", () => {
+    const s = chatState(),
+      d = new CollaborationDiscussion(s, groupFixture());
+    d.send(userMessage("@开发 @验证 各自看下", "m1"), {
+      tasks: [
+        { ...mentionTask("t1", "a"), isolated: true },
+        { ...mentionTask("t2", "b"), isolated: true },
+      ],
+    });
+    d.startTask("t1");
+    d.startTask("t2");
+    d.settleTask("t1", "A 完成", true);
+    expect(s.ownerPending).toBe(false);
+    expect(s.status).toBe("running");
+    d.settleTask("t2", "B 完成", true);
+    expect(s.status).toBe("idle");
+  });
+
+  it("still wakes the owner when a decision-dispatched task settles in chat mode", () => {
+    const s = chatState(),
+      d = new CollaborationDiscussion(s, groupFixture());
+    s.tasks.push({ ...task("dt", "a"), status: "running" });
+    d.settleTask("dt", "结果", true);
+    expect(s.ownerPending).toBe(true);
+  });
+
+  it("re-queues interrupted mention tasks on resume instead of asking the owner", () => {
+    const s = chatState(),
+      d = new CollaborationDiscussion(s, groupFixture());
+    d.send(userMessage("@开发 做A", "m1"), { tasks: [mentionTask("t1", "a")] });
+    d.startTask("t1");
+    d.interrupt();
+    expect(s.tasks[0].status).toBe("interrupted");
+    d.resume(userMessage("继续", "m2"));
+    expect(s.ownerPending).toBe(false);
+    expect(s.tasks[0].status).toBe("queued");
+  });
+
+  it("keeps role updates from waking the owner in chat mode", () => {
+    const s = chatState(),
+      d = new CollaborationDiscussion(s, groupFixture());
+    d.requestReplan(userMessage("开发职责已更新", "m1"));
+    expect(s.ownerPending).toBe(false);
+    expect(s.messages).toHaveLength(1);
+  });
+
+  it("defaults to task-graph semantics when mode is absent", () => {
+    const s = stateFixture(),
+      d = new CollaborationDiscussion(s, groupFixture());
+    expect(d.mode).toBe("task-graph");
+    d.send(userMessage("@开发 你好"));
+    expect(s.ownerPending).toBe(true);
+    d.setMode("chat");
+    expect(d.mode).toBe("chat");
+  });
+
+  it("routes @mentions to members even in task-graph mode", () => {
+    const s = stateFixture(),
+      d = new CollaborationDiscussion(s, groupFixture());
+    expect(d.mode).toBe("task-graph");
+    d.send(userMessage("@开发 修登录超时", "m1"), {
+      tasks: [mentionTask("t1", "a")],
+    });
+    expect(s.tasks).toHaveLength(1);
+    expect(s.tasks[0]).toMatchObject({ memberId: "a", implicit: true });
+    expect(s.ownerPending).toBe(false);
+    d.startTask("t1");
+    d.settleTask("t1", "完成", true);
+    // 隐式任务完成后不唤醒群主，群里无活动任务即回到待命。
+    expect(s.ownerPending).toBe(false);
+    expect(s.status).toBe("idle");
+  });
+
+  it("parses mentions with boundaries and strips them from instructions", () => {
+    const members = groupFixture().members;
+    expect(parseMentions("@开发 看下", members).map((m) => m.id)).toEqual(["a"]);
+    expect(parseMentions("邮箱 a@b.com 不要匹配", members)).toEqual([]);
+    expect(parseMentions("@总控 @开发", members).map((m) => m.id)).toEqual([
+      "owner",
+      "a",
+    ]);
+    expect(stripMentions("@开发 看下这个", members)).toBe("看下这个");
+    expect(stripMentions("前缀 @验证 后缀", members)).toBe("前缀 后缀");
+  });
+});
+
+describe("usage metering and verification schema", () => {
+  it("accumulates runtime-reported usage into the discussion state", () => {
+    const s = stateFixture(),
+      d = new CollaborationDiscussion(s, groupFixture());
+    d.recordUsage({ inputTokens: 10, outputTokens: 2 });
+    d.recordUsage({ inputTokens: 5 });
+    expect(s.usage).toEqual({ inputTokens: 15, outputTokens: 2 });
+  });
+
+  it("accepts a verification command on dispatched tasks", () => {
+    const decision = parseCollaborationDecision(
+      '{"action":"dispatch","message":"开工","tasks":[{"id":"w","memberId":"a","title":"做","instructions":"做","verification":{"command":"npm test"}}]}',
+    );
+    expect(decision.tasks[0]?.verification?.command).toBe("npm test");
   });
 });

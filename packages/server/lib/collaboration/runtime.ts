@@ -1,4 +1,4 @@
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { promisify } from "node:util";
 import { mkdir, realpath } from "node:fs/promises";
@@ -11,6 +11,7 @@ import {
   type CollaborationMember,
   type CollaborationProgress,
   type CollaborationRuntime,
+  type TokenUsage,
 } from "@agent/core";
 import { agentHost } from "../../app/api/agent-host";
 import {
@@ -111,19 +112,23 @@ export class ServerCollaborationRuntime implements CollaborationRuntime {
   async execute(
     input: CollaborationExecution,
     onProgress: (progress: CollaborationProgress) => void,
-  ): Promise<{ text: string }> {
+  ): Promise<{ text: string; usage?: TokenUsage }> {
     if (input.signal.aborted) throw new Error("协作已停止");
     return new Promise((resolve, reject) => {
       let unsubscribe: (() => void) | undefined;
       let settled = false;
-      const finish = (error?: Error, text?: string) => {
+      const finish = (error?: Error, text?: string, usage?: TokenUsage) => {
         if (settled) return;
         settled = true;
         clearTimeout(timer);
         unsubscribe?.();
         input.signal.removeEventListener("abort", aborted);
         if (error) reject(error);
-        else resolve({ text: text || "成员完成执行，但未返回文字成果。" });
+        else
+          resolve({
+            text: text || "成员完成执行，但未返回文字成果。",
+            ...(usage ? { usage } : {}),
+          });
       };
       const aborted = () => {
         void this.abort(input.sessionId).catch(() => undefined);
@@ -141,7 +146,8 @@ export class ServerCollaborationRuntime implements CollaborationRuntime {
       input.signal.addEventListener("abort", aborted, { once: true });
       const consume = (event: AgentEvent) => {
         if (settled) return;
-        if (event.type === "done") finish(undefined, event.finalText);
+        if (event.type === "done")
+          finish(undefined, event.finalText, event.usage);
         else if (event.type === "error") finish(new Error(event.message));
         else if (event.type === "turn_aborted")
           finish(new Error("成员执行被中断"));
@@ -207,6 +213,42 @@ export class ServerCollaborationRuntime implements CollaborationRuntime {
           finish(error instanceof Error ? error : new Error(String(error)));
         }
       })();
+    });
+  }
+  /** 验收命令在任务目录以 sh -c 执行；超时或协作中止按失败处理，输出截尾返回。 */
+  async verify(
+    cwd: string,
+    command: string,
+    signal: AbortSignal,
+  ): Promise<{ ok: boolean; output: string }> {
+    return new Promise((resolve) => {
+      const child = spawn("/bin/sh", ["-c", command], {
+        cwd,
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+      let output = "";
+      let settled = false;
+      const collect = (chunk: Buffer) => {
+        output += chunk;
+        if (output.length > 60000) output = output.slice(-60000);
+      };
+      const finish = (ok: boolean) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        signal.removeEventListener("abort", onAbort);
+        resolve({ ok, output: output.slice(-60000) });
+      };
+      const timer = setTimeout(() => child.kill("SIGKILL"), 10 * 60 * 1000);
+      const onAbort = () => child.kill("SIGKILL");
+      signal.addEventListener("abort", onAbort, { once: true });
+      child.stdout?.on("data", collect);
+      child.stderr?.on("data", collect);
+      child.on("error", (error) => {
+        output += `\n${error.message}`;
+        finish(false);
+      });
+      child.on("close", (code) => finish(code === 0));
     });
   }
   async abort(sessionId: string): Promise<void> {

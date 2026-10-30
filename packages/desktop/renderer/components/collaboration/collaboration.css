@@ -1144,3 +1144,105 @@
   cursor: pointer;
 }
 .collab-desktop-tab button { cursor: pointer; }
+
+/* 讨论模式开关（编排 / @直聊） */
+.collab-mode-toggle {
+  display: inline-flex;
+  border: 1px solid var(--border-default);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.collab-mode-toggle button {
+  min-height: 30px;
+  padding: 0 11px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--text-secondary);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+.collab-mode-toggle button + button {
+  border-left: 1px solid var(--border-default);
+}
+.collab-mode-toggle button:hover:not(:disabled) {
+  background: var(--control-hover);
+  color: var(--text-primary);
+}
+.collab-mode-toggle button[aria-pressed="true"] {
+  background: var(--accent);
+  color: #fff;
+}
+.collab-mode-toggle button:disabled {
+  cursor: default;
+  opacity: 0.85;
+}
+
+/* @ 提及自动补全 */
+.collab-composer {
+  position: relative;
+}
+.collab-mention-list {
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: calc(100% - 6px);
+  z-index: 6;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-default);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--text-primary) 12%, transparent);
+  max-height: 220px;
+  overflow: auto;
+}
+.collab-mention-list button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 9px;
+  font: inherit;
+  font-size: 13px;
+  color: inherit;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  border-radius: 7px;
+  cursor: pointer;
+}
+.collab-mention-list button.is-active,
+.collab-mention-list button:hover {
+  background: var(--control-hover);
+}
+.collab-mention-list small {
+  margin-left: auto;
+  color: var(--text-secondary);
+}
+.collab-monitor-picker { margin-top:20px; padding-top:18px; border-top:1px solid var(--border-subtle); }
+.collab-monitor-heading strong { font-size:14px; }
+.collab-monitor-heading small { margin-left:7px; font-weight:400; color:var(--text-secondary); }
+.collab-monitor-picker p { font-size:12px; line-height:1.6; }
+.collab-monitor-selected { display:flex; gap:6px; flex-wrap:wrap; margin:10px 0; }
+.collab-monitor-selected > span { display:inline-flex; align-items:center; gap:5px; max-width:100%; border:1px solid var(--border-subtle); background:var(--bg-elevated); padding:3px 6px; border-radius:7px; font-size:12px; }
+.collab-monitor-selected > span > span { max-width:280px; text-overflow:ellipsis; white-space:nowrap; overflow:hidden; }
+.collab-monitor-selected button { border:0; background:transparent; color:inherit; display:flex; padding:5px; cursor:pointer; }
+.collab-create .collab-monitor-search { display:flex; flex-direction:row; align-items:center; gap:8px; border:1px solid var(--border-subtle); padding:0 10px; border-radius:8px; }
+.collab-monitor-search input { width:100%; border:0!important; background:transparent!important; outline:none; }
+.collab-monitor-results { max-height:265px; overflow:auto; margin-top:8px; overscroll-behavior:contain; }
+.collab-create .collab-monitor-row { display:flex; flex-direction:row; align-items:center; gap:9px; padding:9px 7px; cursor:pointer; border-bottom:1px solid var(--border-subtle); }
+.collab-monitor-row input[type=checkbox] { width:16px; height:16px; min-height:16px; padding:0; flex-shrink:0; accent-color:var(--accent); }
+.collab-monitor-row > span { flex:1; min-width:0; }
+.collab-monitor-row strong, .collab-monitor-row small { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.collab-monitor-row strong { font-size:12px; font-weight:500; }
+.collab-monitor-row small { font-size:10px; color:var(--text-secondary); margin-top:3px; }
+.collab-monitor-row em { font-style:normal; color:var(--text-secondary); font-size:10px; flex-shrink:0; }
+.collab-monitor-row .is-running { color:var(--success,#328568); }
+.collab-monitor-more { width:100%; padding:9px; color:var(--accent); background:transparent; border:0; cursor:pointer; }
+.collab-create .collab-supervisor-select { display:flex; flex-direction:row; align-items:center; flex-wrap:wrap; gap:8px; margin:14px 0 2px; font-size:13px; }
+.collab-supervisor-select small { flex-basis:100%; }
+.collab-role-options > p { font-size:11px; margin:7px 0; line-height:1.6; }
+.collab-supervision-summary { position:absolute; bottom:0; right:20px; z-index:2; display:flex; align-items:center; gap:6px; font-size:10px; color:var(--text-secondary); padding:5px 8px; background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:7px; }
+.collab-supervision-summary button { border:0; background:transparent; color:var(--accent); cursor:pointer; font:inherit; padding:4px; }

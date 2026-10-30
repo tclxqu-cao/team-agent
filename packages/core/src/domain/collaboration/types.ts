@@ -6,6 +6,13 @@ export const COLLABORATION_AGENTS = [
   "deepseek-harness",
 ] as const;
 export type CollaborationAgent = (typeof COLLABORATION_AGENTS)[number];
+export interface MonitoredSession {
+  id: string;
+  agentType: CollaborationAgent | "qoder" | "zcode" | "workbuddy";
+  title: string;
+  cwd: string;
+  projectId?: string;
+}
 export interface CollaborationMember {
   id: string;
   name: string;
@@ -24,6 +31,8 @@ export interface CollaborationGroup {
   maxParallel: number;
   createdAt: string;
   deletedAt?: string;
+  /** References only: original sessions are never member execution sessions. */
+  monitoring?: { supervisorId?: string; targets: MonitoredSession[] };
 }
 export type CreateCollaborationGroup = Omit<
   CollaborationGroup,
@@ -58,6 +67,10 @@ export interface CollaborationTask {
   dependsOn: string[];
   isolated: boolean;
   readOnly?: boolean;
+  /** 由代码确定性路由（chat 模式 @提及）生成，而非群主决策派发；完成时不唤醒群主。 */
+  implicit?: boolean;
+  /** 验收命令：任务成功后在任务目录执行，非零退出视为步骤失败。 */
+  verification?: { command: string };
   status:
     | "queued"
     | "running"
@@ -68,6 +81,15 @@ export interface CollaborationTask {
   sessionId?: string;
   cwd?: string;
   result?: string;
+}
+/** task-graph=群主规划编排；chat=@提及确定性路由，无 @ 静默。缺省视为 task-graph（存量讨论零迁移）。 */
+export type CollaborationDiscussionMode = "task-graph" | "chat";
+/** chat 模式 send 的路由结果，由服务层解析提及后传入，域内二次校验。 */
+export interface MentionRoute {
+  /** @群主：触发一轮群主规划。 */
+  planning?: boolean;
+  /** @其他成员：每个被提及成员一个隐式单成员任务。 */
+  tasks?: CollaborationTask[];
 }
 export interface CollaborationDiscussionState {
   id: string;
@@ -88,6 +110,14 @@ export interface CollaborationDiscussionState {
   planning: boolean;
   planningSessionId?: string;
   protocolFailures: number;
+  mode?: CollaborationDiscussionMode;
+  /** 累计 token 用量（由运行时回报，缺失时不计入）。 */
+  usage?: { inputTokens: number; outputTokens: number };
+}
+/** 运行时单次执行的用量回报；字段与各运行时的 TokenUsage 结构化兼容。 */
+export interface CollabExecutionUsage {
+  inputTokens: number;
+  outputTokens: number;
 }
 export type CollaborationDecision = {
   action: "dispatch" | "wait" | "ask" | "finish";
@@ -105,6 +135,7 @@ export type CollaborationDecision = {
       | "dependsOn"
       | "isolated"
       | "readOnly"
+      | "verification"
     >
   >;
 };
@@ -116,6 +147,12 @@ export interface CollaborationDiscussionSummary {
   updatedAt: string;
 }
 export type CollaborationCommand =
+  | { action: "sessionCatalog"; query?: string; cursor?: string; limit?: number }
+  | { action: "dashboard" }
+  | { action: "supervisionAlerts" }
+  | { action: "supervision" | "applySupervision"; groupId: string }
+  | { action: "pauseSupervision"; groupId: string; paused: boolean }
+  | { action: "answerSupervision"; groupId: string; incidentId: string; answer: string; selectedIndices?: number[] }
   | { action: "groups" }
   | { action: "createGroup"; group: CreateCollaborationGroup }
   | { action: "group"; groupId: string }
@@ -123,9 +160,15 @@ export type CollaborationCommand =
   | { action: "deleteGroup"; groupId: string }
   | { action: "updateRole"; groupId: string; memberId: string; role: string }
   | { action: "discussions"; groupId: string }
-  | { action: "createDiscussion"; groupId: string }
+  | {
+      action: "createDiscussion";
+      groupId: string;
+      mode?: CollaborationDiscussionMode;
+    }
+  | { action: "setMode"; discussionId: string; mode: CollaborationDiscussionMode }
   | { action: "discussion"; discussionId: string; afterRevision?: number }
   | { action: "send"; discussionId: string; text: string; messageId: string }
+  | { action: "answerDecision"; discussionId: string; expectedRevision: number; answer: string; messageId: string }
   | { action: "stop" | "resume"; discussionId: string }
   | {
       action: "answer";

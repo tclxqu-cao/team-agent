@@ -4,7 +4,7 @@ import { QoderClient } from "./qoder-client.js";
 import { QoderRuntimeAdapter } from "./qoder-runtime-adapter.js";
 import type { NativeRpcConnection } from "./native-rpc-client.js";
 import type { NativeJsonPacket } from "./native-stdio-channel.js";
-import type { RuntimeSessionError } from "./types.js";
+import { RuntimeSessionError } from "./types.js";
 import { encodeUnifiedSessionId } from "./session-id.js";
 
 class RpcFixture implements NativeRpcConnection {
@@ -84,6 +84,45 @@ describe("Qoder cwd-scoped discovery", () => {
 });
 
 describe("Qoder native ACP adapter", () => {
+  it("reads a newly created blank session and sends its first prompt without resuming a nonexistent transcript", async () => {
+    const rpc = new RpcFixture();
+    const request = rpc.request.bind(rpc);
+    let persisted = false;
+    rpc.request = async (method, params) => {
+      if (method === "session/resume") throw new RuntimeSessionError(persisted ? "Session is already open (state=active)" : "Invalid session identifier", "NATIVE_PROTOCOL_ERROR");
+      return request(method, params);
+    };
+    const client = new QoderClient(rpc, { list: async () => [] }, { read: async () => {
+      if (!persisted) throw new RuntimeSessionError("Qoder session not found", "SESSION_NOT_FOUND");
+      return [{ role: "user", content: "First prompt", historyId: "first-user" }, { role: "assistant", content: "First answer", historyId: "first-answer" }];
+    } });
+    const adapter = new QoderRuntimeAdapter(client);
+    await adapter.create({ title: "Blank draft", cwd: "/native/workspace" });
+    expect((await adapter.getSession("native-1")).messages).toEqual([]);
+    expect((await adapter.getSession("native-1")).messages).toEqual([]);
+    expect(rpc.calls.some(call => call.method === "session/resume")).toBe(false);
+    rpc.prompt = async () => {
+      persisted = true;
+      rpc.update({ sessionUpdate: "agent_message_chunk", messageId: "first-answer", content: { text: "First answer" } });
+      return { stopReason: "end_turn" };
+    };
+    expect((await collect(adapter.run("native-1", "First prompt"))).at(-1)).toEqual({ type: "done", finalText: "First answer" });
+    expect((await adapter.getSession("native-1")).messages.map(message => message.historyId)).toEqual(["first-user", "first-answer"]);
+    await adapter.getSession("native-1");
+    expect(rpc.calls.filter(call => call.method === "session/resume")).toHaveLength(0);
+    expect(rpc.calls.filter(call => call.method === "session/new")).toHaveLength(1);
+  });
+
+  it("does not treat corrupt fresh-session history as an empty transcript", async () => {
+    const rpc = new RpcFixture();
+    const client = new QoderClient(rpc, { list: async () => [] }, { read: async () => { throw new Error("Corrupt draft history"); } });
+    await client.create({ title: "Blank draft", cwd: "/native/workspace" });
+    await expect(client.read("native-1")).rejects.toThrow("Corrupt draft history");
+    await expect(collect(client.run("native-1", "Do not send"))).rejects.toThrow("Corrupt draft history");
+    expect(rpc.calls.some(call => call.method === "session/resume")).toBe(false);
+    expect(rpc.calls.some(call => call.method === "session/prompt")).toBe(false);
+  });
+
   it("coalesces overlapping native resumes but still reads fresh history on the next refresh", async () => {
     const rpc = new RpcFixture();
     const original = rpc.request.bind(rpc);
@@ -109,7 +148,7 @@ describe("Qoder native ACP adapter", () => {
     const results = await Promise.all([first, second]);
     for (const result of results) expect(result.messages).toHaveLength(2);
     await client.read("native-1");
-    expect(loads).toBe(2);
+    expect(loads).toBe(1);
     expect(rpc.historyReads).toBe(2);
   });
 
@@ -139,6 +178,25 @@ describe("Qoder native ACP adapter", () => {
     expect(second.at(-1)).toEqual({ type: "done", finalText: "answer" });
     expect(rpc.calls.filter(call => call.method === "session/new")).toHaveLength(1);
     expect(rpc.calls.filter(call => call.method === "session/prompt").map(call => call.params.sessionId)).toEqual(["native-1", "native-1"]);
+  });
+
+  it("keeps reasoning segments separate across text and tool boundaries", async () => {
+    const rpc = new RpcFixture(); const client = rpc.client();
+    rpc.prompt = async () => {
+      rpc.update({ sessionUpdate: "agent_thought_chunk", content: { text: "Inspect " } });
+      rpc.update({ sessionUpdate: "agent_thought_chunk", content: { text: "files" } });
+      rpc.update({ sessionUpdate: "agent_message_chunk", content: { text: "Checking" } });
+      rpc.update({ sessionUpdate: "tool_call", toolCallId: "read", title: "Read", rawInput: {} });
+      rpc.update({ sessionUpdate: "agent_thought_chunk", content: { text: "Verify" } });
+      rpc.update({ sessionUpdate: "agent_message_chunk", content: { text: "Done" } });
+      return { stopReason: "end_turn" };
+    };
+    const events = await collect(client.run("native-1", "Question"));
+    const thoughts = events.filter(event => event.type === "reasoning_summary_delta");
+    expect(thoughts).toHaveLength(3);
+    expect(thoughts[0].itemId).toBe(thoughts[1].itemId);
+    expect(thoughts[2].itemId).not.toBe(thoughts[0].itemId);
+    expect(events.at(-1)).toEqual({ type: "done", finalText: "CheckingDone" });
   });
 
   it("does not auto-approve reverse permissions and keeps invalid answers pending", async () => {
@@ -229,7 +287,7 @@ describe("Qoder native ACP adapter", () => {
     const client = new QoderClient(rpc, { list: async () => [] }, { read: async () => { throw new Error("Corrupt native history"); } });
     await expect(client.read("native-1")).rejects.toThrow("Corrupt native history");
     await expect(collect(client.run("native-1", "Do not send"))).rejects.toThrow("Corrupt native history");
-    expect(rpc.calls.filter(call => call.method === "session/resume")).toHaveLength(2);
+    expect(rpc.calls.filter(call => call.method === "session/resume")).toHaveLength(1);
     expect(rpc.calls.some(call => call.method === "session/load" || call.method === "session/prompt")).toBe(false);
   });
 });

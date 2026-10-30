@@ -113,6 +113,23 @@ export class SQLiteCollaborationRepository implements CollaborationRepository {
       return { id, groupId, title, status, updatedAt };
     });
   }
+  /** Compact projection: dashboard reads must not hydrate complete chat histories. */
+  dashboardDiscussions(): Array<CollaborationDiscussionSummary & {
+    progress: string; runningCount: number; revision: number; sessions: Record<string, string>;
+    questions: Array<{ id: string; text: string; options?: Array<{ label: string; description: string }> }>;
+  }> {
+    const rows = this.db.prepare(`SELECT d.id, d.group_id AS groupId, d.updated_at AS updatedAt,
+      json_extract(d.payload,'$.title') AS title, json_extract(d.payload,'$.status') AS status,
+      json_extract(d.payload,'$.revision') AS revision,
+      substr(coalesce(json_extract(d.payload,'$.messages[#-1].content'),''),1,600) AS progress,
+      (SELECT count(*) FROM json_each(d.payload,'$.tasks') t WHERE json_extract(t.value,'$.status')='running') AS runningCount,
+      coalesce(json_extract(d.payload,'$.sessions'),'{}') AS sessions,
+      (SELECT json_group_array(json_object('id',json_extract(m.value,'$.question.id'),'text',substr(json_extract(m.value,'$.content'),1,8000),'options',json_extract(m.value,'$.question.options')))
+        FROM json_each(d.payload,'$.messages') m WHERE json_extract(d.payload,'$.status') IN ('running','waiting') AND json_extract(m.value,'$.question.id') IS NOT NULL AND coalesce(json_extract(m.value,'$.question.resolved'),0)=0) AS questions
+      FROM collaboration_discussions d JOIN collaboration_groups g ON g.id=d.group_id
+      WHERE json_extract(g.payload,'$.deletedAt') IS NULL ORDER BY d.updated_at DESC,d.id DESC`).all() as Array<CollaborationDiscussionSummary & { progress: string; runningCount: number; revision: number; sessions: string; questions: string }>;
+    return rows.map(row => ({ ...row, sessions: JSON.parse(row.sessions), questions: JSON.parse(row.questions) }));
+  }
   updateDiscussion(
     id: string,
     mutate: (state: CollaborationDiscussionState) => void,

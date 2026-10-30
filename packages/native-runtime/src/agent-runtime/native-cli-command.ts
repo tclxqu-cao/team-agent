@@ -4,6 +4,7 @@ import { posix, win32 } from "node:path";
 import type { NativeAgentType } from "@agent/core";
 import type { NativeStdioCommand } from "./native-stdio-channel.js";
 import { RuntimeSessionError } from "./types.js";
+import { discoverWorkBuddyDesktopProductConfig } from "./workbuddy-desktop-config.js";
 
 export type BridgedNativeAgentType = Extract<NativeAgentType, "qoder" | "zcode" | "workbuddy">;
 
@@ -13,6 +14,7 @@ interface Options {
   home?: string;
   nodeExecutable?: string;
   fileExists?(path: string): Promise<boolean>;
+  workBuddyDesktopConfig?(options: { configDir: string; platform: NodeJS.Platform }): Promise<string | null>;
 }
 
 const OVERRIDES = { qoder: "AGENT_QODER_BIN", zcode: "AGENT_ZCODE_BIN", workbuddy: "AGENT_WORKBUDDY_BIN" } as const;
@@ -83,8 +85,19 @@ export async function resolveNativeCliCommand(agent: BridgedNativeAgentType, opt
   }
   if (agent === "workbuddy") {
     childEnv.CODEBUDDY_FORCE_LITE_WB_BUNDLE = "1";
-    childEnv.CODEBUDDY_CONFIG_DIR = env.CODEBUDDY_CONFIG_DIR || paths.join(home, ".workbuddy");
-    childEnv.WORKBUDDY_CONFIG_DIR = env.WORKBUDDY_CONFIG_DIR || paths.join(home, ".workbuddy");
+    const configDir = env.WORKBUDDY_CONFIG_DIR || env.CODEBUDDY_CONFIG_DIR || paths.join(home, ".workbuddy");
+    childEnv.CODEBUDDY_CONFIG_DIR = configDir;
+    childEnv.WORKBUDDY_CONFIG_DIR = configDir;
+    const desktopConfig = await (options.workBuddyDesktopConfig ?? discoverWorkBuddyDesktopProductConfig)({ configDir, platform });
+    if (desktopConfig) {
+      childEnv.ACC_PRODUCT_CONFIG_PATH = desktopConfig;
+      // Inline overlays take precedence over the desktop path inside the native CLI.
+      childEnv.ACC_PRODUCT_CONFIG_V3 = "";
+      childEnv.ACC_PRODUCT_CONFIG_V2 = "";
+      childEnv.ACC_PRODUCT_CONFIG = "";
+    } else if (platform === "darwin" && /[\\/]WorkBuddy(?: AI)?\.app[\\/]/.test(executable)) {
+      throw new RuntimeSessionError("Open WorkBuddy desktop and wait for its model configuration to load", "RUNTIME_UNAVAILABLE");
+    }
   }
   const args = agent === "qoder" ? ["--acp"] : agent === "zcode" ? ["app-server"]
     : ["--print", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose", "--include-partial-messages"];

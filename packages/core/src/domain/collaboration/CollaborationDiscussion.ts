@@ -1,10 +1,12 @@
 import {
   CollaborationError,
   type CollaborationDecision,
+  type CollaborationDiscussionMode,
   type CollaborationDiscussionState,
   type CollaborationGroup,
   type CollaborationMessage,
   type CollaborationTask,
+  type MentionRoute,
 } from "./types.js";
 
 export { validateCollaborationGroup, updateCollaborationRole } from "./CollaborationGroup.js";
@@ -16,21 +18,72 @@ export class CollaborationDiscussion {
     readonly group: CollaborationGroup,
   ) {}
 
+  /** chat 模式下缺省视为 task-graph：存量讨论零迁移。 */
+  get mode(): CollaborationDiscussionMode {
+    return this.state.mode ?? "task-graph";
+  }
+
+  setMode(mode: CollaborationDiscussionMode): void {
+    this.state.mode = mode;
+  }
+
   append(message: CollaborationMessage): void {
     if (!this.state.messages.some((m) => m.id === message.id))
       this.state.messages.push(message);
   }
 
-  send(message: CollaborationMessage): void {
+  send(message: CollaborationMessage, route?: MentionRoute): void {
     if (this.state.messages.some((m) => m.id === message.id)) return;
     if (this.state.status === "stopping")
       throw new CollaborationError("正在停止，请稍后再发消息");
     this.append(message);
     if (this.state.title === "新讨论")
       this.state.title = message.content.slice(0, 50);
+    if (route?.planning && route.tasks?.length)
+      throw new CollaborationError("群主不能被 @ 指派，请直接提问以触发群主规划");
+    // @成员恒为确定性路由，与讨论模式无关：被指派的成员直接执行，不打扰群主。
+    if (route?.planning) {
+      this.state.status = "running";
+      this.state.ownerPending = true;
+      this.state.protocolFailures = 0;
+      return;
+    }
+    if (route?.tasks?.length) {
+      this.appendMentionTasks(route.tasks);
+      this.state.status = "running";
+      return;
+    }
+    // 没有 @ 时模式才起作用：task-graph 交给群主，chat 静默记录。
+    if (this.mode === "chat") return;
     this.state.status = "running";
     this.state.ownerPending = true;
     this.state.protocolFailures = 0;
+  }
+
+  /** chat 模式 @指派的隐式任务：群主不可被指派，成员与任务 ID 必须有效，验证后整批入队。 */
+  private appendMentionTasks(tasks: CollaborationTask[]): void {
+    for (const task of tasks) {
+      if (task.memberId === this.group.ownerId)
+        throw new CollaborationError("群主不能被 @ 指派，请直接提问以触发群主规划");
+      if (
+        !this.group.members.some((m) => m.id === task.memberId) ||
+        this.state.tasks.some((t) => t.id === task.id)
+      )
+        throw new CollaborationError("任务成员不存在或任务 ID 重复");
+    }
+    const batch = new Set<string>();
+    for (const task of tasks) {
+      if (batch.has(task.id))
+        throw new CollaborationError("任务成员不存在或任务 ID 重复");
+      batch.add(task.id);
+    }
+    for (const task of tasks)
+      this.state.tasks.push({
+        ...task,
+        dependsOn: [],
+        status: "queued",
+        implicit: true,
+      });
   }
 
   applyDecision(
@@ -172,7 +225,19 @@ export class CollaborationDiscussion {
     if (!task || task.status !== "running") return false;
     task.result = result;
     task.status = success ? "completed" : "failed";
-    if (this.state.status === "running") this.state.ownerPending = true;
+    if (this.state.status !== "running") return true;
+    if (task.implicit) {
+      // @指派任务由成员直接对用户负责；群里再无活动任务时回到静默待命。
+      if (
+        !this.state.tasks.some(
+          (t) => t.status === "queued" || t.status === "running",
+        ) &&
+        !this.state.ownerPending
+      )
+        this.state.status = "idle";
+      return true;
+    }
+    this.state.ownerPending = true;
     return true;
   }
 
@@ -195,7 +260,7 @@ export class CollaborationDiscussion {
 
   requestReplan(message: CollaborationMessage): void {
     if (this.state.status !== "running") return;
-    this.state.ownerPending = true;
+    if (this.mode === "task-graph") this.state.ownerPending = true;
     this.append(message);
   }
 
@@ -203,7 +268,13 @@ export class CollaborationDiscussion {
     if (!["waiting", "interrupted", "stopped"].includes(this.state.status))
       throw new CollaborationError("此讨论无需继续");
     this.state.status = "running";
-    this.state.ownerPending = true;
+    if (this.mode === "chat") {
+      // chat 模式没有群主重排：把被中断的 @指派任务重新排队即可。
+      for (const task of this.state.tasks)
+        if (task.status === "interrupted") task.status = "queued";
+    } else {
+      this.state.ownerPending = true;
+    }
     this.state.protocolFailures = 0;
     this.append(message);
   }
@@ -223,6 +294,15 @@ export class CollaborationDiscussion {
 
   rememberSession(key: string, sessionId: string): void {
     this.state.sessions[key] = sessionId;
+  }
+  /** 累计运行时回报的 token 用量；运行时未回报时调用方不调用本方法。 */
+  recordUsage(usage: {
+    inputTokens?: number;
+    outputTokens?: number;
+  }): void {
+    const total = (this.state.usage ??= { inputTokens: 0, outputTokens: 0 });
+    total.inputTokens += usage.inputTokens ?? 0;
+    total.outputTokens += usage.outputTokens ?? 0;
   }
   beginPlanning(): void {
     this.state.planning = true;

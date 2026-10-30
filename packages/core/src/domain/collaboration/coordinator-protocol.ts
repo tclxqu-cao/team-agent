@@ -28,6 +28,10 @@ const decisionSchema = z
             dependsOn: z.array(z.string()).max(100).default([]),
             isolated: z.boolean().default(false),
             readOnly: z.boolean().default(false),
+            verification: z
+              .object({ command: z.string().min(1).max(2000) })
+              .strict()
+              .optional(),
           })
           .strict(),
       )

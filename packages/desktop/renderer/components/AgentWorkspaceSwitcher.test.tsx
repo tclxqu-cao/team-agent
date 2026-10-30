@@ -2,6 +2,8 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import AgentWorkspaceSwitcher from "./AgentWorkspaceSwitcher";
+import { AGENT_TYPES } from "../../../core/src/domain/agent/agent-type";
+import { AGENT_LABELS } from "../lib/agent-catalog";
 
 describe("AgentWorkspaceSwitcher", () => {
   it("renders all eight independent Agent choices in stable order", () => {
@@ -26,7 +28,7 @@ describe("AgentWorkspaceSwitcher", () => {
     expect(html).toContain('data-agent-icon="deepseek-harness"');
     for (const id of ["qoder", "zcode", "workbuddy"]) expect(html).toContain(`data-agent-icon="${id}"`);
     expect(html).not.toMatch(/>CA<|>CX<|>CC<|>OC</);
-    expect(html.match(/<i\b/g)).toHaveLength(8);
+    expect(html).not.toMatch(/<i\b/);
   });
 
   it("omits per-Agent status dots from the vertical rail without removing availability hints", () => {
@@ -60,5 +62,18 @@ describe("AgentWorkspaceSwitcher", () => {
     expect(html).toContain('class="is-unavailable"');
     expect(html).toContain('aria-disabled="true"');
     expect(html).not.toContain(' disabled=""');
+  });
+
+  it("keeps every missing native Agent visible with a blocking hint in both layouts", () => {
+    const nativeAgents = AGENT_TYPES.filter(agentType => agentType !== "customer-agent");
+    const health = nativeAgents.map(agentType => ({ agentType, available: false, label: AGENT_LABELS[agentType], error: "not installed" }));
+    for (const vertical of [false, true]) {
+      const html = renderToStaticMarkup(createElement(AgentWorkspaceSwitcher, { value: "customer-agent", health, vertical, onChange: () => undefined, onUnavailable: () => undefined }));
+      expect(html.match(/aria-disabled="true"/g)).toHaveLength(nativeAgents.length);
+      for (const agentType of nativeAgents) expect(html).toContain(`远程未安装 ${AGENT_LABELS[agentType]}`);
+      expect(html.match(/data-agent-icon=/g)).toHaveLength(AGENT_TYPES.length);
+      expect(html).not.toMatch(/<i\b/);
+      expect(html).not.toContain(' disabled=""');
+    }
   });
 });

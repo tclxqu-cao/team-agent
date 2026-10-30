@@ -3,6 +3,7 @@ import type { AgentEvent } from "@agent/core";
 import { ZCodeClient, decodeZCodeHistory } from "./zcode-client.js";
 import { ZCodeRuntimeAdapter } from "./zcode-runtime-adapter.js";
 import type { NativeRpcConnection } from "./native-rpc-client.js";
+import { NativeRpcError } from "./native-rpc-client.js";
 import type { NativeJsonPacket } from "./native-stdio-channel.js";
 import type { RuntimeSessionError } from "./types.js";
 import { encodeUnifiedSessionId } from "./session-id.js";
@@ -41,6 +42,185 @@ class ZCodeFixture implements NativeRpcConnection {
   async dispose() {}
 }
 async function collect(source: AsyncIterable<AgentEvent>) { const events: AgentEvent[] = []; for await (const event of source) events.push(event); return events; }
+
+describe("ZCode desktop running-state projection", () => {
+  it("uses the same external ownership for discovery and details, and clears it on completion", async () => {
+    const rpc = new ZCodeFixture();
+    let running = true;
+    const client = new ZCodeClient(rpc, { readMany: async () => new Map([["sess_native", running]]) });
+    const adapter = new ZCodeRuntimeAdapter(client);
+    expect((await adapter.discoverSessions())[0]).toMatchObject({ status: "running", occupancy: "owned-externally", canResume: false });
+    expect(await adapter.getSession("sess_native")).toMatchObject({ status: "running", occupancy: "owned-externally", canResume: false });
+    running = false;
+    expect(await adapter.getSession("sess_native")).toMatchObject({ status: "idle", occupancy: "available", canResume: true });
+    expect((await adapter.discoverSessions())[0]).toMatchObject({ status: "idle", occupancy: "available", canResume: true });
+  });
+
+  it("blocks a desktop-owned turn before resume, subscription or send", async () => {
+    const rpc = new ZCodeFixture();
+    const client = new ZCodeClient(rpc, { readMany: async () => new Map([["sess_native", true]]) });
+    await expect(collect(client.run("sess_native", "do not duplicate"))).rejects.toMatchObject({ code: "SESSION_OCCUPIED" });
+    expect(rpc.calls.some(call => ["session/resume", "session/subscribe", "session/send"].includes(call.method))).toBe(false);
+  });
+
+  it("rechecks desktop ownership after an asynchronous resume", async () => {
+    const rpc = new ZCodeFixture();
+    let checks = 0;
+    const client = new ZCodeClient(rpc, { readMany: async () => new Map([["sess_native", ++checks >= 3]]) });
+    await expect(collect(client.run("sess_native", "do not race"))).rejects.toMatchObject({ code: "SESSION_OCCUPIED" });
+    expect(rpc.calls.some(call => call.method === "session/resume")).toBe(true);
+    expect(rpc.calls.some(call => ["session/subscribe", "session/send"].includes(call.method))).toBe(false);
+  });
+
+  it("allows continuation once the external turn ends without retaining a cached running flag", async () => {
+    const rpc = new ZCodeFixture();
+    let running = true;
+    const client = new ZCodeClient(rpc, { readMany: async () => new Map([["sess_native", running]]) });
+    await client.list();
+    running = false;
+    expect((await collect(client.run("sess_native", "continue after completion"))).at(-1)).toMatchObject({ type: "done" });
+    expect(rpc.calls.filter(call => call.method === "session/send")).toHaveLength(1);
+  });
+
+  it("keeps an owned local run visible when native list and desktop logs both report idle", async () => {
+    const rpc = new ZCodeFixture();
+    let started!: () => void; const ready = new Promise<void>(resolve => { started = resolve; });
+    rpc.prompt = async () => { started(); };
+    const client = new ZCodeClient(rpc, { readMany: async () => new Map([["sess_native", false]]) });
+    const adapter = new ZCodeRuntimeAdapter(client);
+    const pending = collect(adapter.run("sess_native", "local turn"));
+    await ready;
+    expect((await adapter.discoverSessions())[0]).toMatchObject({ status: "running", occupancy: "owned-by-customer-agent", canResume: true });
+    rpc.emit("turn.completed", {}); await pending;
+    expect((await adapter.discoverSessions())[0]).toMatchObject({ status: "idle", occupancy: "available" });
+  });
+});
+
+/** Native resident runtimes expire independently of the RPC process. */
+class ResidentZCodeFixture extends ZCodeFixture {
+  resident = false;
+  override async request(method: string, params: NativeJsonPacket): Promise<NativeJsonPacket> {
+    if (["session/read", "session/messages", "session/subscribe"].includes(method) && !this.resident) {
+      this.calls.push({ method, params });
+      throw new NativeRpcError(`Session is not active: ${params.sessionId}`, -32004);
+    }
+    const result = await super.request(method, params);
+    if (method === "session/resume" || method === "session/create") this.resident = true;
+    return result;
+  }
+}
+
+describe("ZCode resident runtime recovery", () => {
+  it("shares the initial resume across concurrent history requests", async () => {
+    const rpc = new ResidentZCodeFixture(); const client = new ZCodeClient(rpc);
+    await Promise.all([client.read("sess_native"), client.read("sess_native")]);
+    expect(rpc.calls.filter(call => call.method === "session/resume")).toHaveLength(1);
+  });
+
+  it("reloads persisted history after an idle resident is evicted", async () => {
+    const rpc = new ResidentZCodeFixture(); const client = new ZCodeClient(rpc);
+    await client.read("sess_native");
+    rpc.resident = false;
+    expect((await client.read("sess_native")).messages).toMatchObject([{ content: "native history" }]);
+    expect(rpc.calls.filter(call => call.method === "session/resume")).toHaveLength(2);
+    expect(rpc.calls.some(call => call.method === "session/send")).toBe(false);
+  });
+
+  it("shares concurrent restores instead of materializing a session multiple times", async () => {
+    const rpc = new ResidentZCodeFixture(); const client = new ZCodeClient(rpc);
+    await client.read("sess_native");
+    rpc.resident = false;
+    const details = await Promise.all([client.read("sess_native"), client.read("sess_native"), client.read("sess_native")]);
+    expect(details.every(detail => detail.messages[0]?.content === "native history")).toBe(true);
+    expect(rpc.calls.filter(call => call.method === "session/resume")).toHaveLength(2);
+  });
+
+  it("restores before continuing an evicted session and sends the turn once", async () => {
+    const rpc = new ResidentZCodeFixture(); const client = new ZCodeClient(rpc);
+    await client.read("sess_native");
+    rpc.resident = false;
+    expect((await collect(client.run("sess_native", "continue"))).at(-1)).toEqual({ type: "done", finalText: "native answer" });
+    expect(rpc.calls.filter(call => call.method === "session/resume")).toHaveLength(2);
+    expect(rpc.calls.filter(call => call.method === "session/send")).toHaveLength(1);
+  });
+
+  it("retries the history read when eviction occurs between snapshot and messages", async () => {
+    const rpc = new ResidentZCodeFixture(); const client = new ZCodeClient(rpc);
+    const request = rpc.request.bind(rpc);
+    let evict = true;
+    rpc.request = async (method, params) => {
+      const result = await request(method, params);
+      if (method === "session/read" && evict) { evict = false; rpc.resident = false; }
+      return result;
+    };
+    expect((await client.read("sess_native")).messages[0]?.content).toBe("native history");
+    expect(rpc.calls.filter(call => call.method === "session/resume")).toHaveLength(2);
+  });
+
+  it("does not reactivate an unexpectedly missing resident while a local turn is live", async () => {
+    const rpc = new ResidentZCodeFixture(); const client = new ZCodeClient(rpc);
+    rpc.prompt = async () => { rpc.emit("model.streaming", { kind: "text_delta", delta: "running" }); };
+    const run = client.run("sess_native", "work")[Symbol.asyncIterator]();
+    await run.next();
+    rpc.resident = false;
+    try {
+      await expect(client.read("sess_native")).rejects.toMatchObject({ message: "Session is not active: sess_native" });
+      expect(rpc.calls.filter(call => call.method === "session/resume")).toHaveLength(1);
+    } finally {
+      rpc.resident = true;
+      rpc.emit("turn.completed", {});
+      while (!(await run.next()).done) {}
+    }
+  });
+
+  it("rechecks ownership after restoring an evicted session", async () => {
+    const rpc = new ResidentZCodeFixture(); const client = new ZCodeClient(rpc);
+    await client.read("sess_native");
+    rpc.resident = false; rpc.session.status = "running";
+    await expect(collect(client.run("sess_native", "continue"))).rejects.toMatchObject({ code: "SESSION_OCCUPIED" });
+    expect(rpc.calls.some(call => call.method === "session/send")).toBe(false);
+  });
+
+  it.each([
+    new NativeRpcError("Native configuration failed", -32004),
+    new NativeRpcError("Session is not active: sess_native", -32603),
+  ])("preserves unrelated native failures without retrying", async error => {
+    const rpc = new ZCodeFixture(); const client = new ZCodeClient(rpc);
+    const request = rpc.request.bind(rpc);
+    rpc.request = async (method, params) => {
+      if (method === "session/read") throw error;
+      return request(method, params);
+    };
+    await expect(client.read("sess_native")).rejects.toBe(error);
+    expect(rpc.calls.filter(call => call.method === "session/resume")).toHaveLength(1);
+  });
+
+  it("bounds recovery to one retry when native reactivation cannot repair the session", async () => {
+    const rpc = new ZCodeFixture(); const client = new ZCodeClient(rpc);
+    const request = rpc.request.bind(rpc);
+    rpc.request = async (method, params) => {
+      if (method === "session/read") throw new NativeRpcError("Session is not active: sess_native", -32004);
+      return request(method, params);
+    };
+    await expect(client.read("sess_native")).rejects.toMatchObject({ message: "Session is not active: sess_native" });
+    expect(rpc.calls.filter(call => call.method === "session/resume")).toHaveLength(2);
+  });
+
+  it("does not retry a send whose acceptance is unknown", async () => {
+    const rpc = new ResidentZCodeFixture(); const client = new ZCodeClient(rpc);
+    const request = rpc.request.bind(rpc);
+    rpc.request = async (method, params) => {
+      if (method === "session/send") {
+        rpc.calls.push({ method, params });
+        throw new NativeRpcError("Session is not active: sess_native", -32004);
+      }
+      return request(method, params);
+    };
+    await expect(collect(client.run("sess_native", "continue"))).rejects.toMatchObject({ message: "Session is not active: sess_native" });
+    expect(rpc.calls.filter(call => call.method === "session/resume")).toHaveLength(1);
+    expect(rpc.calls.filter(call => call.method === "session/send")).toHaveLength(1);
+  });
+});
 
 describe("ZCode native-visible child discovery", () => {
   class ChildFixture extends ZCodeFixture {
@@ -288,6 +468,22 @@ describe("ZCode native NDJSON adapter", () => {
     expect((await iterator.next()).value).toEqual({ type: "turn_aborted" });
     expect((await iterator.next()).done).toBe(true);
     expect(rpc.calls.at(-1)).toMatchObject({ method: "session/stop", params: { sessionId: "sess_native" } });
+  });
+
+  it("does not reuse fallback reasoning IDs across turns without native part or turn IDs", async () => {
+    const rpc = new ZCodeFixture(); const client = new ZCodeClient(rpc);
+    rpc.prompt = async () => {
+      rpc.listener("session/event", { sessionId: "sess_native", seq: ++rpc.sequence, type: "model.streaming", payload: { kind: "reasoning_delta", delta: "Check first" } });
+      rpc.emit("model.streaming", { kind: "text_delta", delta: "Answer" });
+      rpc.emit("turn.completed", {});
+    };
+    const first = await collect(client.run("sess_native", "First"));
+    const second = await collect(client.run("sess_native", "Second"));
+    const firstThought = first.find(event => event.type === "reasoning_summary_delta");
+    const secondThought = second.find(event => event.type === "reasoning_summary_delta");
+    expect(firstThought?.itemId).toBeTruthy();
+    expect(secondThought?.itemId).not.toBe(firstThought?.itemId);
+    expect(second.at(-1)).toEqual({ type: "done", finalText: "Answer" });
   });
 
   it("reads native message/tool/reasoning parts and rejects unsupported images explicitly", async () => {

@@ -15,6 +15,13 @@ export function nativeRecord(value: unknown): NativeJsonPacket {
   return value !== null && typeof value === "object" && !Array.isArray(value) ? value as NativeJsonPacket : {};
 }
 
+/** Preserve native error identity so clients can recover specific protocol failures. */
+export class NativeRpcError extends RuntimeSessionError {
+  constructor(message: string, readonly nativeCode?: string | number) {
+    super(message, "NATIVE_PROTOCOL_ERROR");
+  }
+}
+
 /** JSON-RPC envelopes only; session, permission and model semantics belong to each client. */
 export class NativeRpcClient implements NativeRpcConnection {
   private channel: Promise<NativeStdioChannel> | null = null;
@@ -73,7 +80,8 @@ export class NativeRpcClient implements NativeRpcConnection {
     const packet = await channel.request(id, this.envelope({ id, method, params }), timeoutMs);
     if (packet.error !== undefined) {
       const error = nativeRecord(packet.error);
-      throw new RuntimeSessionError(typeof error.message === "string" ? error.message : "Native RPC request failed", "NATIVE_PROTOCOL_ERROR");
+      throw new NativeRpcError(typeof error.message === "string" ? error.message : "Native RPC request failed",
+        typeof error.code === "number" || typeof error.code === "string" ? error.code : undefined);
     }
     return nativeRecord(packet.result);
   }

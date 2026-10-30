@@ -61,16 +61,18 @@ export function saveNativeRunPref(agentType: AgentType, pref: NativeAgentRunPref
   }
 }
 
-/** Drop a persisted model and its model-specific effort once the runtime catalog proves it unavailable. */
+/** Validate saved choices and restore the exact model identity from the runtime catalog. */
 export function resolveNativeRunPref(
   pref: NativeAgentRunPref,
-  availableModelKeys: ReadonlySet<string>,
+  availableModels: readonly RuntimeModelInfo[],
   catalogReady: boolean,
 ): NativeAgentRunPref {
-  if (!catalogReady || !pref.model?.id || availableModelKeys.has(nativeModelKey(pref.model))) {
-    return pref;
-  }
-  return {};
+  if (!catalogReady || !pref.model?.id) return pref;
+  const key = nativeModelKey(pref.model);
+  const model = availableModels.find(model => nativeModelKey(model) === key);
+  if (!model) return {};
+  if (model.id === pref.model.id && model.providerID === pref.model.providerID) return pref;
+  return { ...pref, model: { id: model.id, ...(model.providerID ? { providerID: model.providerID } : {}) } };
 }
 
 /** Select option value encoding for a model that may be provider-scoped (opencode). */
@@ -78,11 +80,10 @@ export function nativeModelKey(model: RuntimeModelSelection): string {
   return model.providerID ? `${model.providerID}/${model.id}` : model.id;
 }
 
-export function nativeModelFromKey(key: string): RuntimeModelSelection {
-  const separator = key.indexOf("/");
-  return separator > 0
-    ? { providerID: key.slice(0, separator), id: key.slice(separator + 1) }
-    : { id: key };
+export function nativeModelFromKey(key: string, models: readonly RuntimeModelInfo[]): RuntimeModelSelection {
+  // Native IDs can contain slashes; only the catalog defines provider scope.
+  const model = models.find(model => nativeModelKey(model) === key);
+  return model?.providerID ? { id: model.id, providerID: model.providerID } : { id: model?.id ?? key };
 }
 
 /** Group provider-scoped OpenCode models for the native model picker. */

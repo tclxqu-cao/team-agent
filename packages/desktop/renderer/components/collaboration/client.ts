@@ -14,6 +14,9 @@ export const AGENT_NAMES = {
   "claude-code": "Claude Code",
   opencode: "OpenCode",
   "deepseek-harness": "DeepSeek Harness",
+  qoder: "Qoder",
+  zcode: "ZCode",
+  workbuddy: "WorkBuddy",
 } as const;
 export const DISCUSSION_STATUS = {
   idle: "未开始",

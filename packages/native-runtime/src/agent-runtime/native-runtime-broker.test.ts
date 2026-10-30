@@ -263,6 +263,22 @@ describe("resolveNativeRuntimeSocketPath", () => {
 });
 
 describe("NativeRuntimeBrokerHost", () => {
+  it("retains explicit user-stop intent across restart and clears it on a new admitted run", async () => {
+    const path = await directory();
+    const runtime = new FakeNativeRuntime();
+    const host = new NativeRuntimeBrokerHost(path, runtime as unknown as UnifiedSessionService);
+    await host.startRun(sessionId, "task");
+    await waitFor(() => expect(host.snapshot(sessionId).events.length).toBeGreaterThan(0));
+    await host.abort(sessionId);
+    expect(host.snapshot(sessionId).manuallyStopped).toBe(true);
+    await host.stop();
+    const replacement = new NativeRuntimeBrokerHost(path, new FakeNativeRuntime() as unknown as UnifiedSessionService);
+    try {
+      expect(replacement.snapshot(sessionId).manuallyStopped).toBe(true);
+      await replacement.startRun(sessionId, "用户明确继续");
+      expect(replacement.snapshot(sessionId).manuallyStopped).toBe(false);
+    } finally { await replacement.stop(); }
+  });
   it("admits a run from fresh summary metadata without downloading its transcript", async () => {
     const runtime = new FakeNativeRuntime();
     const getRunSummary = vi.fn(async () => summary());

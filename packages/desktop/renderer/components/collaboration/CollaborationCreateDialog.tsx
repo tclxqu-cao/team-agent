@@ -9,6 +9,8 @@ import type { RuntimeHealth, RuntimeModelInfo } from "../../global";
 import { isWebShell } from "../../web/webLayout";
 import HostProjectPicker from "../HostProjectPicker";
 import { AGENT_NAMES, collaborationRequest } from "./client";
+import type { MonitoredSession } from "../../../../core/src/domain/supervision/types";
+import MonitoredSessionPicker from "./MonitoredSessionPicker";
 import "./collaboration.css";
 
 function CollaborationSelect({ children, ...props }: ComponentProps<"select">) {
@@ -32,6 +34,7 @@ function MemberEditor({
   member,
   index,
   owner,
+  supervisor,
   health,
   onChange,
   onRemove,
@@ -39,6 +42,7 @@ function MemberEditor({
   member: CollaborationMember;
   index: number;
   owner: boolean;
+  supervisor?: boolean;
   health: RuntimeHealth[];
   onChange: (m: CollaborationMember) => void;
   onRemove?: () => void;
@@ -83,7 +87,7 @@ function MemberEditor({
     <fieldset className="collab-member-editor">
       <legend>
         {owner ? <Crown size={14} /> : <Users size={14} />}
-        {owner ? "群主" : `成员 ${index}`}
+        {owner ? "群主" : `成员 ${index}`}{supervisor ? " · 监工" : ""}
       </legend>
       {onRemove && (
         <button
@@ -195,7 +199,7 @@ function MemberEditor({
           )}
         </label>
       </div>
-      <details className="collab-role-options">
+      <details className="collab-role-options" open={supervisor || undefined}>
         <summary>
           <span>定位与职责</span>
           <span className="collab-muted">
@@ -213,12 +217,15 @@ function MemberEditor({
           maxLength={8000}
           value={member.role}
           placeholder={
-            owner
+            supervisor
+              ? "重点看什么：异常暂停、任务交接和交付。允许怎么处理：原任务内自动恢复、继续、协调交接；业务取舍或无法恢复时提醒我决策。"
+              : owner
               ? "负责拆解目标、分配任务、验收和汇总成果"
               : "例如：负责实现接口；留空由群主自动分配"
           }
           onChange={(e) => onChange({ ...member, role: e.target.value })}
         />
+        {supervisor && <p className="collab-muted">在职责中写明关注内容、判断标准、允许的恢复与交接，以及何时提醒你或等待决策。</p>}
       </details>
     </fieldset>
   );
@@ -248,6 +255,8 @@ export default function CollaborationCreateDialog({
     initialGroup?.ownerId || members[0].id,
   );
   const [parallel, setParallel] = useState(initialGroup?.maxParallel || 3);
+  const [targets, setTargets] = useState<MonitoredSession[]>(() => structuredClone(initialGroup?.monitoring?.targets ?? []));
+  const [supervisorId, setSupervisorId] = useState(initialGroup ? initialGroup.monitoring?.supervisorId ?? "" : members[0].id);
   const [busy, setBusy] = useState(false),
     [error, setError] = useState("");
   const [directoryPickerOpen, setDirectoryPickerOpen] = useState(false);
@@ -321,6 +330,7 @@ export default function CollaborationCreateDialog({
                 ownerId,
                 members,
                 maxParallel: Math.min(parallel, members.length),
+                ...(targets.length ? { monitoring: { targets, ...(supervisorId ? { supervisorId } : {}) } } : {}),
               },
             });
             onCreated(group);
@@ -390,6 +400,7 @@ export default function CollaborationCreateDialog({
               member={member}
               index={index}
               owner={member.id === ownerId}
+              supervisor={targets.length > 0 && member.id === supervisorId}
               health={health}
               onChange={(next) =>
                 setMembers((current) =>
@@ -398,10 +409,12 @@ export default function CollaborationCreateDialog({
               }
               onRemove={
                 member.id !== ownerId && members.length > 2
-                  ? () =>
+                  ? () => {
+                      if (member.id === supervisorId) setSupervisorId("");
                       setMembers((current) =>
                         current.filter((m) => m.id !== member.id),
                       )
+                    }
                   : undefined
               }
             />
@@ -444,6 +457,14 @@ export default function CollaborationCreateDialog({
               </CollaborationSelect>
             </label>
           </div>
+          <MonitoredSessionPicker value={targets} onChange={setTargets}/>
+          {targets.length > 0 && <label className="collab-supervisor-select">监工
+            <CollaborationSelect aria-label="选择监工成员" value={supervisorId} onChange={event => setSupervisorId(event.target.value)}>
+              <option value="">仅关联，不启用监工</option>
+              {members.map(member => <option value={member.id} key={member.id}>{member.name} · {AGENT_NAMES[member.agentType]}</option>)}
+            </CollaborationSelect>
+            <small className="collab-muted">复用该成员的 Agent、模型和职责，关闭看板后继续监管。</small>
+          </label>}
         </div>
         {error && (
           <p className="collab-error" role="alert">

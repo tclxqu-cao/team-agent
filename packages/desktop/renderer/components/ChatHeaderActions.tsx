@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Check, FolderOpen, LayoutGrid, LoaderCircle, Monitor, PanelsTopLeft, Unplug, UsersRound } from "lucide-react";
+import { Check, FolderOpen, LayoutDashboard, LayoutGrid, LoaderCircle, Monitor, PanelsTopLeft, Unplug, UsersRound } from "lucide-react";
 import { nextNavigationLayout } from "../../../core/src/domain/web-console/navigation-layout";
 import { useUIStore } from "../stores/uiStore";
 import { isDesktopLiveSetupPending } from "../lib/desktop-live-setup";
@@ -52,6 +52,7 @@ interface ChatHeaderActionsProps {
   onReleaseCodex?: () => void;
   onOpenHub?: () => void;
   onOpenCollaborationDashboard?: () => void;
+  onOpenSessionDashboard?: () => void;
   onOpenDesktopLive?: () => void;
   desktopLiveOpen?: boolean;
   filesOpen?: boolean;
@@ -71,6 +72,7 @@ export default function ChatHeaderActions({
   onReleaseCodex,
   onOpenHub,
   onOpenCollaborationDashboard,
+  onOpenSessionDashboard,
   onOpenDesktopLive,
   desktopLiveOpen = false,
   filesOpen = false,
@@ -90,11 +92,12 @@ export default function ChatHeaderActions({
     <div className="chat-header-actions" style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}>
       {appActions}
       {typeof window !== "undefined" && window.sharedServiceApi?.mobilePairing && <MobilePairingButton />}
+      {onOpenSessionDashboard && <button type="button" onClick={onOpenSessionDashboard} title="Dashboard · 会话总览" aria-label="打开会话 Dashboard" className="ui-icon-button chat-header-action"><LayoutDashboard size={17} aria-hidden="true"/></button>}
       {onOpenCollaborationDashboard && <button
         type="button"
         onClick={onOpenCollaborationDashboard}
-        title="群聊看板"
-        aria-label="打开群聊看板"
+        title="群聊列表"
+        aria-label="打开群聊列表"
         className="ui-icon-button chat-header-action chat-header-action--collaboration"
       >
         <UsersRound size={17} aria-hidden="true" />

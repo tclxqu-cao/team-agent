@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 import {
   groupOpenCodeModels,
   loadNativeRunPref,
+  nativeModelFromKey,
+  nativeModelKey,
   nativeReasoningEffortOptions,
   resolveNativeRunPref,
   saveNativeRunPref,
@@ -36,20 +38,20 @@ describe("native agent run preferences", () => {
   };
 
   it("keeps a preference until the runtime model catalog is ready", () => {
-    expect(resolveNativeRunPref(stalePref, new Set(["gpt-5.6-sol"]), false)).toBe(stalePref);
+    expect(resolveNativeRunPref(stalePref, [{ id: "gpt-5.6-sol" }], false)).toBe(stalePref);
   });
 
   it("keeps an available provider-scoped model", () => {
     const pref: NativeAgentRunPref = { model: { providerID: "openai", id: "gpt-5.6-sol" } };
-    expect(resolveNativeRunPref(pref, new Set(["openai/gpt-5.6-sol"]), true)).toBe(pref);
+    expect(resolveNativeRunPref(pref, [{ providerID: "openai", id: "gpt-5.6-sol" }], true)).toBe(pref);
   });
 
   it("clears an unavailable model and its model-specific effort", () => {
-    expect(resolveNativeRunPref(stalePref, new Set(["gpt-5.6-sol"]), true)).toEqual({});
+    expect(resolveNativeRunPref(stalePref, [{ id: "gpt-5.6-sol" }], true)).toEqual({});
   });
 
   it("clears a saved model when the loaded runtime catalog is empty", () => {
-    expect(resolveNativeRunPref(stalePref, new Set(), true)).toEqual({});
+    expect(resolveNativeRunPref(stalePref, [], true)).toEqual({});
   });
 
   it("does not treat a CA provider as the runtime provider for the same model id", () => {
@@ -57,7 +59,7 @@ describe("native agent run preferences", () => {
       model: { providerID: "openai", id: "gpt-6-astra" },
       reasoningEffort: "high",
     };
-    expect(resolveNativeRunPref(pref, new Set(["magpie/gpt-6-astra"]), true)).toEqual({});
+    expect(resolveNativeRunPref(pref, [{ providerID: "magpie", id: "gpt-6-astra" }], true)).toEqual({});
   });
 
   it("persists removal of a settings-only model without changing another Agent's preference", () => {
@@ -76,7 +78,7 @@ describe("native agent run preferences", () => {
     try {
       const pref = resolveNativeRunPref(
         loadNativeRunPref("opencode"),
-        new Set(["magpie/zcode/GLM-5.3"]),
+        [{ providerID: "magpie", id: "zcode/GLM-5.3" }],
         true,
       );
       saveNativeRunPref("opencode", pref);
@@ -85,6 +87,24 @@ describe("native agent run preferences", () => {
     } finally {
       vi.unstubAllGlobals();
     }
+  });
+
+  it.each([
+    { id: "magpie/group/free-model" },
+    { id: "group/free-model", providerID: "magpie" },
+  ])("round-trips native model IDs using the advertised provider scope: %j", model => {
+    expect(nativeModelFromKey(nativeModelKey(model), [model])).toEqual(model);
+  });
+
+  it("repairs a saved opaque model ID that was previously split at a slash", () => {
+    const pref: NativeAgentRunPref = { model: { providerID: "magpie", id: "group/free-model" }, reasoningEffort: "high" };
+    const repaired = resolveNativeRunPref(pref, [{ id: "magpie/group/free-model" }], true);
+    expect(repaired).toEqual({ model: { id: "magpie/group/free-model" }, reasoningEffort: "high" });
+    expect(resolveNativeRunPref(repaired, [{ id: "magpie/group/free-model" }], true)).toBe(repaired);
+  });
+
+  it("keeps an unknown native key intact instead of guessing a provider", () => {
+    expect(nativeModelFromKey("custom/provider/model", [])).toEqual({ id: "custom/provider/model" });
   });
 
   it("groups duplicate OpenCode model names by provider without repeating provider names", () => {

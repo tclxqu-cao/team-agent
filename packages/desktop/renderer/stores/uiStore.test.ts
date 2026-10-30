@@ -21,7 +21,7 @@ beforeEach(() => {
   };
   vi.stubGlobal("localStorage", localStorageMock);
   useUIStore.persist.setOptions({ storage: createJSONStorage(() => localStorageMock) });
-  useUIStore.setState({ pinnedSessionIds: [] });
+  useUIStore.setState({ pinnedSessionIds: [], dashboardSessionsMerged: false });
 });
 
 describe("wake listening defaults", () => {
@@ -31,6 +31,25 @@ describe("wake listening defaults", () => {
 
   it("starts the web shell with wake listening disabled", () => {
     expect(getDefaultWakeEnabled(true)).toBe(false);
+  });
+});
+
+describe("dashboard session display preference", () => {
+  it("persists the merged view and restores it when preferences are rehydrated", async () => {
+    useUIStore.getState().setDashboardSessionsMerged(true);
+    const saved = localStorage.getItem("agent-ui-prefs")!;
+    expect(JSON.parse(saved).state.dashboardSessionsMerged).toBe(true);
+    useUIStore.getState().setDashboardSessionsMerged(false);
+    localStorage.setItem("agent-ui-prefs", saved);
+    await useUIStore.persist.rehydrate();
+    expect(useUIStore.getState().dashboardSessionsMerged).toBe(true);
+  });
+
+  it("migrates boolean display preferences while older or invalid preferences keep the default", () => {
+    expect(migrateUIPreferences({ dashboardSessionsMerged: true }, 3)).toMatchObject({ dashboardSessionsMerged: true });
+    expect(migrateUIPreferences({ dashboardSessionsMerged: false }, 3)).toMatchObject({ dashboardSessionsMerged: false });
+    expect(migrateUIPreferences({ dashboardSessionsMerged: "true" }, 3)).not.toHaveProperty("dashboardSessionsMerged");
+    expect(migrateUIPreferences({}, 3)).not.toHaveProperty("dashboardSessionsMerged");
   });
 });
 

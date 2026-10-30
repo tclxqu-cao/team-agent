@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Camera, Check, Globe, Monitor, Pencil, Plus, X, Trash2, ExternalLink, ChevronLeft, ChevronDown, ChevronRight, SlidersHorizontal, MessagesSquare, RefreshCw, MonitorUp, Palette, PanelRight, LayoutGrid, Bot, Smartphone, UsersRound } from "lucide-react";
+import { Camera, Check, Globe, Monitor, Pencil, Plus, X, Trash2, ExternalLink, ChevronLeft, ChevronDown, ChevronRight, SlidersHorizontal, MessagesSquare, RefreshCw, MonitorUp, Palette, PanelRight, LayoutGrid, LayoutDashboard, Bot, Smartphone, UsersRound } from "lucide-react";
 import CodexSharingStatus from "./CodexSharingStatus";
 import ComputerPageDialog, { type ComputerPage } from "./ComputerPageDialog";
 import type { ComputerSettingsController } from "./useComputerSettings";
@@ -16,7 +16,8 @@ import { consoleOrigin, nativeConsole } from "./console-environment";
 type Computer = { origin: string; name: string };
 const TOOL_OPTIONS = [
   { id: "refresh", name: "刷新", Icon: RefreshCw },
-  { id: "collaboration", name: "群聊看板", Icon: UsersRound },
+  { id: "dashboard", name: "Dashboard", Icon: LayoutDashboard },
+  { id: "collaboration", name: "群聊列表", Icon: UsersRound },
   { id: "remote", name: "远程桌面", Icon: MonitorUp },
   { id: "theme", name: "皮肤", Icon: Palette },
   { id: "files", name: "文件树", Icon: PanelRight },

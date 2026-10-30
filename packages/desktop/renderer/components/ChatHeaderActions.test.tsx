@@ -12,7 +12,7 @@ const render = (showSettings: boolean) => renderToStaticMarkup(createElement(Cha
   appearanceOpen: false, settingsOpen: false, showSettings,
   onHideToBackground: noop, onToggleAppearance: noop, onOpenSettings: noop,
   onToggleFiles: noop, onOpenHub: noop, onOpenDesktopLive: noop,
-  onOpenCollaborationDashboard: noop, onReleaseCodex: noop,
+  onOpenCollaborationDashboard: noop, onOpenSessionDashboard: noop, onReleaseCodex: noop,
 }));
 
 describe("chat header action layout", () => {
@@ -28,7 +28,7 @@ describe("chat header action layout", () => {
     state.navigationLayout = "agent-rail";
     const html = render(true);
     expect(html).toContain("header-action-menu-trigger");
-    for (const label of ["我的文件", "打开 AI Hub", "桌面直播与远程控制", "打开群聊看板", "隐藏后台", "皮肤与布局", "切换布局", "设置"]) {
+    for (const label of ["我的文件", "打开 AI Hub", "桌面直播与远程控制", "打开群聊列表", "打开会话 Dashboard", "隐藏后台", "皮肤与布局", "切换布局", "设置"]) {
       expect(html).toContain(`aria-label="${label}"`);
     }
     expect(html).toContain("chat-header-action--codex-release");
