@@ -47,6 +47,23 @@ describe("private local service requests", () => {
     } finally { await f.close(); }
   });
 
+  it("surfaces the local service error detail without exposing a generic status only", async () => {
+    const f = await fixture();
+    try {
+      await f.write();
+      const request = vi.fn<typeof fetch>()
+        .mockResolvedValueOnce(Response.json(f.descriptor))
+        .mockResolvedValueOnce(Response.json({ error: "另一实例正在更新远控组件，请稍后重试" }, { status: 400 }));
+      await expect(localServiceRequest(f.registry, "/api/remote-authorization", {
+        registry: f.registry, request, method: "POST", body: { action: "recheck" },
+      })).rejects.toMatchObject({
+        status: 400,
+        detail: "另一实例正在更新远控组件，请稍后重试",
+        message: "本机服务请求失败 (HTTP 400): 另一实例正在更新远控组件，请稍后重试",
+      });
+    } finally { await f.close(); }
+  });
+
   it("retains pairing conflict errors through the shared client", async () => {
     const f = await fixture();
     try {

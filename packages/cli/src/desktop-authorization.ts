@@ -53,6 +53,12 @@ function recoveryHint(log: (line: string) => void): void {
   log("Authorize later: agentroam desktop authorize, or use the Remote Authorization panel in a local browser.");
 }
 
+function stalePermissionHint(permission: Permission, log: (line: string) => void): void {
+  const service = permission === "screen" ? "ScreenCapture" : "Accessibility";
+  log("If System Settings already shows AgentRoam Remote Desktop as enabled, macOS may still be using a grant for an older component signature.");
+  log(`Manual repair only after closing other AgentRoam instances: /usr/bin/tccutil reset ${service} com.agentroam.remote-desktop; then rerun agentroam desktop authorize.`);
+}
+
 function reportComponent(status: DesktopAuthorizationStatus, log: (line: string) => void): void {
   if (!status.component) return;
   const component = status.component;
@@ -121,6 +127,7 @@ export async function authorizeRemoteDesktop(dataDir: string, context: DesktopAu
         });
         if (!status[permission]) {
           log(`${name} permission was not granted. Sharing was not enabled.`);
+          stalePermissionHint(permission, log);
           recoveryHint(log);
           return false;
         }

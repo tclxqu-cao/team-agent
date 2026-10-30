@@ -178,6 +178,10 @@ describe("optional desktop authorization wizard", () => {
     expect(f.context.wait).toHaveBeenCalledTimes(2);
     expect(f.calls).not.toContainEqual({ action: "enable" });
     expect(f.context.log).toHaveBeenCalledWith(expect.stringContaining("Sharing was not enabled"));
+    expect(f.context.log).toHaveBeenCalledWith(expect.stringContaining("older component signature"));
+    expect(f.context.log).toHaveBeenCalledWith(expect.stringContaining(
+      `/usr/bin/tccutil reset ${permission === "screen" ? "ScreenCapture" : "Accessibility"} com.agentroam.remote-desktop`,
+    ));
   });
 
   it("rechecks permissions after the user finishes in system settings", async () => {

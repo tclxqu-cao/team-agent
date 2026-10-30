@@ -13,7 +13,9 @@ export interface LocalRequestOptions {
 }
 
 export class LocalServiceHttpError extends Error {
-  constructor(readonly status: number) { super(`本机服务请求失败 (HTTP ${status})`); }
+  constructor(readonly status: number, readonly detail?: string) {
+    super(detail ? `本机服务请求失败 (HTTP ${status}): ${detail}` : `本机服务请求失败 (HTTP ${status})`);
+  }
 }
 
 /** Resolve an identity-checked loopback service; never send its token to a tunnel. */
@@ -50,6 +52,13 @@ export async function localServiceRequest<T>(dataDir: string, path: string, opti
     ...(options.body === undefined ? {} : { body: JSON.stringify(options.body) }),
     redirect: "error", signal: requestSignal(options.timeoutMs ?? 5000),
   });
-  if (!response.ok) throw new LocalServiceHttpError(response.status);
+  if (!response.ok) {
+    let detail: string | undefined;
+    try {
+      const body = await response.json() as { error?: unknown };
+      if (typeof body.error === "string" && body.error.trim()) detail = body.error.trim().slice(0, 500);
+    } catch { /* Preserve the status when the service did not return JSON. */ }
+    throw new LocalServiceHttpError(response.status, detail);
+  }
   return response.json() as Promise<T>;
 }

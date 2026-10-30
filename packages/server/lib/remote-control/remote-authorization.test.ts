@@ -77,6 +77,20 @@ describe('CLI remote desktop', () => {
       expect((await f.service.status()).enabled).toBe(false);
     } finally { await f.close(); }
   });
+  it('returns the native helper failure through the local authorization route', async () => {
+    const f = await fixture();
+    try {
+      f.helper.start.mockRejectedValueOnce(new Error('helper bootstrap failed'));
+      const req = Object.assign(Readable.from([JSON.stringify({ action: 'recheck' })]), request('127.0.0.1', {
+        'content-type': 'application/json',
+        'x-agentroam-device-id': 'paired',
+      }), { url: '/api/remote-authorization', method: 'POST' });
+      const res = { writeHead: vi.fn(), end: vi.fn() };
+      await f.service.handle(req, res);
+      expect(res.writeHead).toHaveBeenCalledWith(400, expect.objectContaining({ 'content-type': 'application/json' }));
+      expect(JSON.parse(res.end.mock.calls[0][0])).toEqual({ error: 'helper bootstrap failed' });
+    } finally { await f.close(); }
+  });
   it('deduplicates identical JPEGs and forwards mobile interaction without a capture restart', async () => {
     const f = await fixture();
     try {

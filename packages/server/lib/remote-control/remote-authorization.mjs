@@ -27,6 +27,10 @@ const NO_REMOTE_AUDIO = Object.freeze({
   selfPlaybackExclusion: false,
 });
 
+function errorMessage(error) {
+  return error instanceof Error ? error.message : String(error);
+}
+
 export function remoteAudioCapabilities(platform = process.platform, release = os.release()) {
   if (platform === 'darwin') return Number(release.split('.')[0]) >= 23 ? FULL_DUPLEX_AUDIO : undefined;
   if (platform === 'win32') {
@@ -588,7 +592,13 @@ export class RemoteAuthorization {
         this.lastPermissionCheck = 0;
         send(200, await this.action(action, permission));
       } else send(405, { error: 'Method not allowed' });
-    } catch (error) { send(400, { error: error.message }); }
+    } catch (error) {
+      const message = errorMessage(error);
+      logGlobal('warn', 'remote-desktop', 'remote authorization request failed', error, {
+        method: req.method, path: pathname, message,
+      });
+      send(400, { error: message });
+    }
     return true;
   }
   async close() {
