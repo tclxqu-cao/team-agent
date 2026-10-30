@@ -1,0 +1,29 @@
+packages/cli/src/local-service-request.ts
+  s_800486ec91ad46::t_ecb476d6cd5362 16-18,55-62
+packages/cli/src/desktop-authorization.ts
+  s_800486ec91ad46::t_049a5a03dac01f 56-61,130
+packages/cli/src/local-service-request.test.ts
+  s_800486ec91ad46::t_ecb476d6cd5362 50-66
+packages/server/lib/remote-control/remote-authorization.mjs
+  s_800486ec91ad46::t_a41c834c947420 30-33,595-601
+packages/server/lib/remote-control/remote-authorization.test.ts
+  s_800486ec91ad46::t_a41c834c947420 80-93
+packages/cli/src/desktop-authorization.test.ts
+  s_800486ec91ad46::t_049a5a03dac01f 181-184
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "217871ce06dcee0beb3c1121ef3c4b876aaefa9a",
+  "prompts": {},
+  "sessions": {
+    "s_800486ec91ad46": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a18c60-9215-7e53-a05c-0910aae42739",
+        "model": "group/free-model"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
