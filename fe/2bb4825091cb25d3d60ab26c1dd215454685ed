@@ -1,0 +1,32 @@
+packages/runtime-win32-x64/manifest.json
+  s_333b16d5f4bea7::t_3888f2bb63de46 10-11
+  s_333b16d5f4bea7::t_8829a0173783a0 2
+packages/cli/package.json
+  s_333b16d5f4bea7::t_e42706e4f43cb6 3,30-31,34-35
+packages/runtime-darwin-arm64/manifest.json
+  s_333b16d5f4bea7::t_fdf0a4b84c001b 2,10
+packages/runtime-darwin-arm64/package.json
+  s_333b16d5f4bea7::t_a8a43f76d6c9aa 3
+packages/runtime-win32-x64/package.json
+  s_333b16d5f4bea7::t_d3292425c736fd 3
+packages/tui-darwin-arm64/package.json
+  s_333b16d5f4bea7::t_8da5a746b3b90b 3
+packages/tui-win32-x64/package.json
+  s_333b16d5f4bea7::t_4f1f783d067b7b 3
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "fe2bb4825091cb25d3d60ab26c1dd215454685ed",
+  "prompts": {},
+  "sessions": {
+    "s_333b16d5f4bea7": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a18c5b-ea69-7c42-b1d8-0f5f0deb6739",
+        "model": "group/free-model"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
