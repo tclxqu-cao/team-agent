@@ -93,7 +93,7 @@ test("published fallback provides direct downloads for every supported platform"
     const assets = selectAssets(releaseSnapshot, edition);
     for (const platform of ["mac", "windows", "android"]) {
       const tag = platform === "android" ? "desktop-v0.2.0-preview.34"
-        : edition === "lite" ? "desktop-lite-v0.2.0-preview.34" : "desktop-v0.2.0-preview.34";
+        : edition === "lite" ? "desktop-lite-v0.2.0-preview.35" : "desktop-v0.2.0-preview.35";
       assert.equal(assets[platform].tag, tag);
       assert.ok(assets[platform].size > 1000000);
       assert.ok(assets[platform].browser_download_url.includes(`/${tag}/`));
@@ -133,7 +133,7 @@ test("download page offers both editions and explains the shared phone capabilit
 
 test("CLI installer follows preview without relabeling desktop installers", async () => {
   const html = await readFile(`${root}/download.html`, "utf8");
-  assert.match(html, /href="https:\/\/www\.npmjs\.com\/package\/agentroam\/v\/(0\.2\.0-preview\.68)"[^>]*>\1<\/a>/);
+  assert.match(html, /href="https:\/\/www\.npmjs\.com\/package\/agentroam\/v\/(0\.2\.0-preview\.71)"[^>]*>\1<\/a>/);
   assert.ok(html.includes("raw/main/packages/cli/install/install-agentroam.ps1"));
   assert.ok(html.includes("npx agentroam@preview"));
   assert.ok(html.includes("桌面安装包独立发布"));
