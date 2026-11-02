@@ -1,0 +1,37 @@
+packages/runtime-darwin-arm64/package.json
+  s_1ee35f0d7d1f1c::t_9a930b80cdf99e 3
+packages/tui-win32-x64/package.json
+  s_1ee35f0d7d1f1c::t_9a930b80cdf99e 3
+scripts/incremental-cli-release.mjs
+  s_1ee35f0d7d1f1c::t_d48d4ddca7a954 38
+scripts/incremental-cli-release.test.mjs
+  s_1ee35f0d7d1f1c::t_d48d4ddca7a954 32-37
+packages/cli/package.json
+  s_1ee35f0d7d1f1c::t_9a930b80cdf99e 3,30-31,34-35
+packages/runtime-darwin-arm64/manifest.json
+  s_1ee35f0d7d1f1c::t_9a930b80cdf99e 2
+packages/desktop/package.json
+  s_1ee35f0d7d1f1c::t_9a930b80cdf99e 3
+packages/runtime-win32-x64/manifest.json
+  s_1ee35f0d7d1f1c::t_9a930b80cdf99e 2
+packages/runtime-win32-x64/package.json
+  s_1ee35f0d7d1f1c::t_9a930b80cdf99e 3
+packages/tui-darwin-arm64/package.json
+  s_1ee35f0d7d1f1c::t_9a930b80cdf99e 3
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "bbbf1e328ca296ff6ecd00e456ec3452d750646c",
+  "prompts": {},
+  "sessions": {
+    "s_1ee35f0d7d1f1c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a19c5f-95d8-7f12-89bd-9b30d43d1751",
+        "model": "ap-southeast-1-v5cjq-gptdy-17usoft-com/gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
