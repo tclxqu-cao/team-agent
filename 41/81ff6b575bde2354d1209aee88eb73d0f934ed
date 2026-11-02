@@ -1,0 +1,25 @@
+packages/website/public/release-snapshot.js
+  s_1ee35f0d7d1f1c::t_2747610fd9450e 4-5,8-10,13-15,20-21,24-26,29-42
+packages/website/src/pages.mjs
+  s_1ee35f0d7d1f1c::t_2747610fd9450e 27
+  s_1ee35f0d7d1f1c::t_aa8e9243ae6c32 33
+packages/website/src/website.test.mjs
+  s_1ee35f0d7d1f1c::t_a365ae12da6a72 136
+  s_1ee35f0d7d1f1c::t_2747610fd9450e 96
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4181ff6b575bde2354d1209aee88eb73d0f934ed",
+  "prompts": {},
+  "sessions": {
+    "s_1ee35f0d7d1f1c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a19c5f-95d8-7f12-89bd-9b30d43d1751",
+        "model": "ap-southeast-1-v5cjq-gptdy-17usoft-com/gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
