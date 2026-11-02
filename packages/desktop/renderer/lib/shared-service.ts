@@ -3,6 +3,7 @@ import { HttpClient } from "../../../webapp/src/infrastructure/http/http-client"
 import { LocalSettingsRepository } from "../../../webapp/src/infrastructure/local/local-settings-repository";
 import type { AgentApi } from "../global";
 import type { MobilePairingInvitation } from "../../main/mobile-pairing";
+import type { TunnelStatus } from "../../../server/lib/tunnel-control.mjs";
 
 export interface SharedServiceStatus {
   connected: boolean;
@@ -13,6 +14,8 @@ export interface SharedServiceStatus {
 export interface SharedServiceApi {
   status(): Promise<SharedServiceStatus>;
   mobilePairing(): Promise<MobilePairingInvitation>;
+  tunnelStatus(): Promise<TunnelStatus>;
+  connectTunnel(): Promise<TunnelStatus>;
   bootstrapStatus(): Promise<{ phase: "idle" | "installing" | "ready" | "error"; message: string }>;
   prepareRuntime(): Promise<{ phase: "idle" | "installing" | "ready" | "error"; message: string }>;
   select(id: string): Promise<unknown>;

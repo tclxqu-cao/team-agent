@@ -41,4 +41,13 @@ describe("desktop mobile invitation", () => {
     expect(refreshed.origin).toBe(first.origin);
     expect(refreshed.expiresAt).toBe(expiresAt);
   });
+  it("uses the controller's explicit current address and refuses a local-only QR before issuing a grant", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "mobile-qr-current-")); directories.push(directory);
+    await writeFile(join(directory, "tunnel.url"), "https://stale.example/web");
+    const request = vi.fn(async () => ({ status: 200, body: JSON.stringify({ grant: "g".repeat(43), expiresAt: Date.now() + 300000 }) }));
+    expect((await createMobilePairingInvitation(directory, request, "https://current.example/web")).origin).toBe("https://current.example");
+    request.mockClear();
+    await expect(createMobilePairingInvitation(directory, request, "http://127.0.0.1:3000/web")).rejects.toThrow("手机访问地址无效");
+    expect(request).not.toHaveBeenCalled();
+  });
 });

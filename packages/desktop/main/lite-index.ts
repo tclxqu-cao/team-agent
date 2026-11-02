@@ -38,6 +38,8 @@ ipcMain.handle("lite:refresh", async event => {
   return invitation;
 });
 ipcMain.handle("lite:progress", event => { trusted(event); return bootstrap.status(); });
+ipcMain.handle("lite:tunnel-status", event => { trusted(event); return service.tunnelStatus(); });
+ipcMain.handle("lite:tunnel-connect", event => { trusted(event); return service.connectTunnel(); });
 ipcMain.handle("lite:authorization", (event, action: unknown, permission: unknown) => {
   trusted(event);
   if (action === "status") return remote.refresh();

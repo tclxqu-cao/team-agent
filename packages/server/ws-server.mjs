@@ -3,6 +3,7 @@ import { RemoteAuthorization } from "./lib/remote-control/remote-authorization.m
 import { parseProducerRemoteVideoSignal, parseViewerRemoteVideoSignal, shouldDropRemoteAudioEvent } from "./lib/remote-control/remote-video-signal.mjs";
 import { createDevicePairingGateway } from "./lib/device-pairing-gateway.mjs";
 import { createDesktopDiscovery } from "./lib/desktop-discovery.mjs";
+import { createTunnelControlGateway } from "./lib/tunnel-control.mjs";
 import { createVoiceAsrGateway } from "./lib/voice-asr-gateway.mjs";
 import { createVoiceTtsGateway } from "./lib/voice-tts-gateway.mjs";
 // ws-server.mjs — custom server for @agent/server.
@@ -1243,6 +1244,7 @@ async function serveTicketedFilePreview(req, res) {
 }
 
 const desktopDiscovery = createDesktopDiscovery({ dataDir: serverBaseDir });
+const tunnelControl = createTunnelControlGateway({ desktop: desktopDiscovery });
 const pairingGateway = createDevicePairingGateway({ dataDir: serverBaseDir, desktop: desktopDiscovery, owner: anonymousWebStore.getOrCreatePrincipal(), consoleStore, testNoPairing: process.argv.includes("--test-no-pairing"), resolveNativePreviewDevice: pathname => previewTickets.resolve(pathname.split("/")[4])?.nativeDeviceId ?? null });
 if (process.argv.includes("--test-no-pairing")) console.warn("[TEST MODE] 配对已跳过：能访问此端口的用户可直接操作。仅用于受控测试，移除 --test-no-pairing 后恢复认证。");
 // Child runtimes may publish live frames only using this process's local credential.
@@ -1253,6 +1255,7 @@ let serviceReady = false;
 const server = createServer((req, res) => {
   if (!serviceReady) { res.writeHead(503, { "content-type": "application/json" }).end(JSON.stringify({ error: "Service starting" })); return; }
   if (desktopDiscovery.handle(req, res)) return;
+  if (tunnelControl.handle(req, res)) return;
   void pairingGateway.handle(req, res)
     .then((handled) => handled || remoteAuthorization.handle(req, res))
     .then((handled) => handled || serveTicketedFilePreview(req, res))
@@ -1264,6 +1267,7 @@ const server = createServer((req, res) => {
       else res.destroy(error);
     });
 });
+server.once("close", () => tunnelControl.close());
 const wss = new WebSocketServer({ noServer: true, maxPayload: 1024 * 1024 });
 const voiceAsrGateway = createVoiceAsrGateway({ pairing: pairingGateway, serviceUrl: process.env.VOICE_SERVICE_URL || `http://127.0.0.1:${process.env.VOICE_SERVICE_PORT || "17863"}`, token: process.env.VOICE_SERVICE_TOKEN || null });
 const voiceTtsGateway = createVoiceTtsGateway({ pairing: pairingGateway, serviceUrl: process.env.VOICE_SERVICE_URL || `http://127.0.0.1:${process.env.VOICE_SERVICE_PORT || "17863"}`, token: process.env.VOICE_SERVICE_TOKEN || null });

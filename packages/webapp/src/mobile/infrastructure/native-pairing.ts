@@ -50,13 +50,32 @@ export class NativePairingClient {
 
   async pair(raw: string): Promise<ServerEndpoint> {
     const { endpoint, grant } = parsePairingQr(raw);
-    const response = await this.transport(endpoint.api("/api/pairing/qr-exchange"), {
-      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ grant, name: "我的 App" }),
-      credentials: "omit", redirect: "error", signal: AbortSignal.timeout(10_000),
-    });
-    if (!response.ok) throw new Error(response.status === 423 ? "电脑已锁定远程访问，请先在电脑上解锁。" : response.status === 410 ? "二维码已使用或已过期，请在电脑上重新生成。" : "扫码连接失败，请检查服务器地址和网络后重试。");
-    const value = await response.json();
-    if (typeof value.token !== "string" || !/^[A-Za-z0-9_-]{43}$/.test(value.token)) throw new Error("服务器返回了无效的设备凭证。");
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 30_000);
+    let value: { token?: unknown } | null = null;
+    try {
+      let response: Response;
+      try {
+        response = await this.transport(endpoint.api("/api/pairing/qr-exchange"), {
+          method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ grant, name: "我的 App" }),
+          credentials: "omit", redirect: "error", signal: controller.signal,
+        });
+        // Keep the deadline active until the credential body has arrived.
+        if (response.ok) value = await response.json();
+      } catch (error) {
+        if (error instanceof SyntaxError) throw new Error("服务器返回了无效的设备凭证。");
+        const timedOut = controller.signal.aborted || (error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError"));
+        const hint = endpoint.url.startsWith("http://")
+          ? "请确认手机与电脑在同一网络，并检查电脑防火墙是否允许 AgentRoam 连接。"
+          : "请检查手机网络和电脑的远程连接是否可用。";
+        // A one-use grant may already have been consumed; never retry it automatically.
+        throw new Error(`${timedOut ? "连接电脑超时" : "无法连接电脑"}（${endpoint.url}）。${hint}请在电脑上刷新二维码后重新扫码。`);
+      }
+      if (!response.ok) throw new Error(response.status === 423 ? "电脑已锁定远程访问，请先在电脑上解锁。" : response.status === 410 ? "二维码已使用或已过期，请在电脑上重新生成。" : "扫码连接失败，请检查服务器地址和网络后重试。");
+    } finally {
+      clearTimeout(timer);
+    }
+    if (!value || typeof value.token !== "string" || !/^[A-Za-z0-9_-]{43}$/.test(value.token)) throw new Error("服务器返回了无效的设备凭证。");
     try { await this.storage.set(endpoint.url, value.token); }
     catch {
       // A credential that cannot be saved must not silently leave an enrolled App.

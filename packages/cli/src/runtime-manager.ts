@@ -83,6 +83,7 @@ export class RuntimeManager {
     await repairNativeRuntimePermissions(runtimeRoot);
     const gateway = resolve(runtimeRoot, "ws-server.mjs");
     const child = this.supervisor.spawn(process.execPath, [gateway, ...(options.testNoPairing ? ["--test-no-pairing"] : [])], {
+      stdio: ["ignore", "pipe", "pipe", "ipc"],
       cwd: runtimeRoot,
       env: {
         ...childEnvironment,

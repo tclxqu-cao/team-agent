@@ -42,6 +42,7 @@ for (const required of [
   "package/runtime/package.json",
   "package/runtime/ws-server.mjs",
   "package/runtime/lib/desktop-discovery.mjs",
+  "package/runtime/lib/tunnel-control.mjs",
   "package/runtime/lib/device-pairing-store.mjs",
   "package/runtime/lib/device-pairing-gateway.mjs",
   "package/runtime/lib/voice-asr-gateway.mjs",

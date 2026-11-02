@@ -1,0 +1,11 @@
+.tunnel-connection { margin:16px 0; padding:12px; border:1px solid var(--border-default, #30434d); border-radius:10px; text-align:left; font-size:13px; }
+.tunnel-connection-heading { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px; }
+.tunnel-connection-heading span { display:inline-flex; align-items:center; gap:6px; }
+.tunnel-connection-heading button { padding:6px 10px; border:1px solid var(--border-default, #405662); border-radius:7px; background:var(--bg-elevated, #1b2d37); color:inherit; cursor:pointer; font:inherit; }
+.tunnel-connection-heading button:disabled { opacity:.55; cursor:default; }
+.tunnel-connection .tunnel-connected { color:var(--text-success, #29a985); }
+.tunnel-connection p { margin:8px 0 0; font-size:12px; line-height:1.6; color:var(--text-secondary, #9eafb8); }
+.tunnel-connection p[role="alert"] { color:var(--text-warning, #c9923d); }
+.tunnel-spin { animation:tunnel-spin 1s linear infinite; }
+@keyframes tunnel-spin { to { transform:rotate(360deg); } }
+@media (prefers-reduced-motion:reduce) { .tunnel-spin { animation:none; } }

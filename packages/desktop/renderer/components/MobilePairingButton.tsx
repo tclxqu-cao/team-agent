@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { LoaderCircle, RefreshCw, Smartphone, X } from "lucide-react";
 import type { MobilePairingInvitation } from "../../main/mobile-pairing";
+import { useTunnelConnection } from "../lib/use-tunnel-connection";
+import { TunnelConnectionControl } from "./TunnelConnectionControl";
 
 export default function MobilePairingButton() {
   const [open, setOpen] = useState(false);
@@ -17,6 +19,10 @@ function MobilePairingDialog({ onClose }: { onClose(): void }) {
   const [attempt, setAttempt] = useState(0);
   const [now, setNow] = useState(Date.now);
   const panel = useRef<HTMLElement>(null);
+  const tunnel = useTunnelConnection(window.sharedServiceApi, {
+    origin: invitation?.origin, busy: !invitation && !error,
+    onAddressChanged: () => { setInvitation(null); setAttempt(value => value + 1); },
+  });
   useEffect(() => {
     let active = true;
     setInvitation(null); setError("");
@@ -44,6 +50,7 @@ function MobilePairingDialog({ onClose }: { onClose(): void }) {
     <section ref={panel} className="mobile-pairing-dialog" role="dialog" aria-modal="true" aria-labelledby="mobile-pairing-title">
       <header><h2 id="mobile-pairing-title">手机扫码连接</h2><button type="button" className="ui-icon-button" aria-label="关闭二维码" onClick={onClose}><X size={18} /></button></header>
       <p>打开 AgentRoam App，点击右上角扫码按钮，扫描下方二维码。</p>
+      <TunnelConnectionControl connection={tunnel} />
       <div className="mobile-pairing-code" aria-busy={!invitation && !error}>
         {invitation && !expired ? <img src={`data:image/svg+xml,${encodeURIComponent(invitation.svg)}`} alt="AgentRoam 手机授权二维码" /> : error ? <p role="alert">{error}</p> : expired ? <p>二维码已过期，请刷新</p> : <LoaderCircle className="spin" size={28} aria-label="正在生成二维码" />}
       </div>

@@ -2,6 +2,7 @@ import { readFile, readdir, mkdir, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { createMobilePairingInvitation } from "./mobile-pairing.js";
+import type { TunnelStatus } from "../../server/lib/tunnel-control.mjs";
 
 export interface ServiceDescriptor {
   protocol: 1; instanceId: string; pid: number; url: string; dataDir: string; token: string;
@@ -95,7 +96,22 @@ export class SharedServiceConnection {
 
   async mobilePairing() {
     const descriptor = await this.connection();
-    return createMobilePairingInvitation(descriptor.dataDir, () => this.json("/api/pairing/admin/qr", "POST", "{}"));
+    const tunnel = await this.tunnelStatus();
+    return createMobilePairingInvitation(descriptor.dataDir, () => this.json("/api/pairing/admin/qr", "POST", "{}"), tunnel.phase === "unsupported" ? undefined : tunnel.accessUrl);
+  }
+
+  tunnelStatus(): Promise<TunnelStatus> { return this.tunnelRequest("/api/desktop/tunnel", "GET"); }
+  connectTunnel(): Promise<TunnelStatus> { return this.tunnelRequest("/api/desktop/tunnel/connect", "POST"); }
+  private async tunnelRequest(path: string, method: string): Promise<TunnelStatus> {
+    const response = await this.json(path, method, method === "POST" ? "{}" : undefined);
+    const unsupported: TunnelStatus = { phase: "unsupported", mode: "local", provider: "lan", error: "当前后台不支持公网连接控制，请升级后台服务。" };
+    if ([404, 405, 501].includes(response.status)) return unsupported;
+    if (![200, 202, 503].includes(response.status)) throw new Error("无法读取公网连接状态，请检查后台服务。");
+    let value: TunnelStatus;
+    try { value = JSON.parse(response.body); } catch { return unsupported; }
+    if (!value || !["idle", "connecting", "ready", "error", "unsupported"].includes(value.phase)
+      || !["local", "lan", "public"].includes(value.mode) || !["lan", "cloudflare", "pinggy", "custom"].includes(value.provider)) return unsupported;
+    return value;
   }
 
   async stream(id: string, path: string, lastEventId: string, send: (frame: StreamFrame) => void): Promise<void> {

@@ -194,6 +194,8 @@ ipcMain.handle("service:mobile-pairing", async (event) => {
   await codexSharingSetup.prepare();
   return invitation;
 });
+ipcMain.handle("service:tunnel-status", (event) => { trustedServiceSender(event); return sharedService.tunnelStatus(); });
+ipcMain.handle("service:tunnel-connect", (event) => { trustedServiceSender(event); return sharedService.connectTunnel(); });
 ipcMain.handle("service:bootstrap-status", (event) => { trustedServiceSender(event); return runtimeBootstrap.status(); });
 ipcMain.handle("service:bootstrap", async (event) => {
   trustedServiceSender(event);

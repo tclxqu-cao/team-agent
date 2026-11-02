@@ -312,6 +312,8 @@ contextBridge.exposeInMainWorld("desktopDeviceApi", {
 contextBridge.exposeInMainWorld("sharedServiceApi", {
   status: () => ipcRenderer.invoke("service:status"),
   mobilePairing: () => ipcRenderer.invoke("service:mobile-pairing"),
+  tunnelStatus: () => ipcRenderer.invoke("service:tunnel-status"),
+  connectTunnel: () => ipcRenderer.invoke("service:tunnel-connect"),
   bootstrapStatus: () => ipcRenderer.invoke("service:bootstrap-status"),
   prepareRuntime: () => ipcRenderer.invoke("service:bootstrap"),
   select: (id: string) => ipcRenderer.invoke("service:select", id),

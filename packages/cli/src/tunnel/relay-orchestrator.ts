@@ -19,7 +19,7 @@ export interface RelaySelection {
   failures: Array<{ provider: PublicProviderName; message: string }>;
 }
 
-interface RelayOrchestratorOptions {
+export interface RelayOrchestratorOptions {
   cli: CliOptions;
   target: PlatformTarget;
   localUrl: string;
@@ -29,6 +29,7 @@ interface RelayOrchestratorOptions {
   log: (line: string) => void;
   onAttempt?: (provider: PublicProviderName) => void;
   onFailure?: (provider: PublicProviderName, message: string) => void;
+  onStage?: (stage: "connecting" | "checking") => void;
   timeoutMs?: number;
   providerFactories?: Partial<Record<PublicProviderName, () => Promise<TunnelProvider>>>;
   readiness?: typeof waitForPublicReadiness;
@@ -44,6 +45,7 @@ export async function selectRelay(options: RelayOrchestratorOptions): Promise<Re
   const readiness = options.readiness ?? waitForPublicReadiness;
 
   for (const providerName of providers) {
+    options.onStage?.("connecting");
     options.onAttempt?.(providerName);
     const attempt: { tunnel: TunnelHandle | null } = { tunnel: null };
     const deadline = new AbortController();
@@ -60,6 +62,7 @@ export async function selectRelay(options: RelayOrchestratorOptions): Promise<Re
           signal.throwIfAborted();
         }
         attempt.tunnel = handle;
+        options.onStage?.("checking");
         await readiness(handle.publicUrl, { signal });
         signal.throwIfAborted();
         return { tunnel: handle, publicUrl: handle.publicUrl, provider: providerName, failures };

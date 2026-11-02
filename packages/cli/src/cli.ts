@@ -2,6 +2,7 @@ import { printLocalDesktopUrl } from './local-desktop-url.js';
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
+import { readFile, rm } from "node:fs/promises";
 import { parseArgs } from "./args.js";
 import { ensureCloudflared } from "./cloudflared/installer.js";
 import { resolveCodexRuntime } from "./codex-runtime-manager.js";
@@ -15,8 +16,9 @@ import { CODEX_PREPARATION_TIMEOUT_MS, RuntimeManager, type RuntimeHandle } from
 import { withTimeout } from "./abort.js";
 import { ServiceRuntimeReporter } from "./service/runtime-state.js";
 import { runServiceCommand } from "./service/service-command.js";
-import { resolveServicePaths } from "./service/service-files.js";
-import { selectRelay, type RelaySelection } from "./tunnel/relay-orchestrator.js";
+import { resolveServicePaths, writePrivateText } from "./service/service-files.js";
+import { TunnelController, attachTunnelControl } from "./tunnel/tunnel-controller.js";
+import type { RelaySelection } from "./tunnel/relay-orchestrator.js";
 import { currentCliPath, startUpdate } from "./update/update-command.js";
 import { runUpdateWorker } from "./update/update-worker.js";
 import { lockInstanceStartup, stopPreviousInstances } from "./instance-takeover.js";
@@ -154,7 +156,8 @@ async function executeCommand(options: ReturnType<typeof parseArgs>, argv: strin
   const sleepInhibitor = await withCliProgress("Preparing startup environment", () => acquireSleepInhibitor());
   const controller = new AbortController();
   let runtime: RuntimeHandle | null = null;
-  let relay: RelaySelection | null = null;
+  let tunnel: TunnelController | null = null;
+  let detachTunnel: (() => void) | undefined;
   let closing = false;
   let releaseStartup: (() => Promise<void>) | undefined;
   let closePromise: Promise<void> | undefined;
@@ -168,7 +171,8 @@ async function executeCommand(options: ReturnType<typeof parseArgs>, argv: strin
     closing = true;
     controller.abort();
     closePromise = withCliProgress("Stopping local service and connections", async () => {
-      await relay?.tunnel?.close().catch(() => {});
+      detachTunnel?.();
+      await tunnel?.close().catch(() => {});
       await runtime?.close().catch(() => {});
     });
     return closePromise;
@@ -187,28 +191,32 @@ async function executeCommand(options: ReturnType<typeof parseArgs>, argv: strin
     if (controller.signal.aborted) { await runtime.close(); return; }
     void runtime.exited.then(() => controller.abort());
     await serviceReporter?.localReady(runtime.localUrl);
-    const lanUrl = await findRoutedLanUrl(runtime.port) ?? runtime.localUrl;
     const relayRuntime = runtime;
+    tunnel = new TunnelController({
+      relay: {
+        cli: options, target, localUrl: relayRuntime.localUrl, port: relayRuntime.port,
+        log: line => process.stderr.write(`${line}\n`),
+        onAttempt: provider => console.log(`▲ Connecting to ${providerDisplayName(provider)} (up to 30s, then LAN fallback)…`),
+        onFailure: (provider, message) => console.error(`⚠ ${providerDisplayName(provider)} unavailable: ${message}; falling back to LAN.`),
+      },
+      lanUrl: async () => await findRoutedLanUrl(relayRuntime.port) ?? relayRuntime.localUrl,
+      publish: async status => {
+        const accessUrl = status.accessUrl!;
+        if (serviceReporter && status.phase !== "connecting") {
+          await serviceReporter.ready({ localUrl: relayRuntime.localUrl, publicUrl: new URL(accessUrl).origin, accessUrl, provider: status.provider });
+        } else await writePrivateText(resolveServicePaths(undefined, options.dataDir).urlPath, `${accessUrl}\n`);
+      },
+      onError: error => console.error("Tunnel status update failed:", error),
+    });
+    detachTunnel = attachTunnelControl(runtime.process, tunnel);
+    const relay = await withCliProgress("Preparing phone access", () => tunnel!.connect(false));
 
-    relay = await withCliProgress("Preparing phone access", () => selectRelay({
-      cli: options,
-      target,
-      localUrl: relayRuntime.localUrl,
-      lanUrl,
-      port: relayRuntime.port,
-      signal: controller.signal,
-      log: (line) => process.stderr.write(`${line}\n`),
-      onAttempt: (provider) => console.log(`▲ Connecting to ${providerDisplayName(provider)} (up to 30s, then LAN fallback)…`),
-      onFailure: (provider, message) => console.error(`⚠ ${providerDisplayName(provider)} unavailable: ${message}; falling back to LAN.`),
-    }));
-
-    if (controller.signal.aborted) { await relay.tunnel?.close(); return; }
-    if (relay.provider === "lan") {
-      if (relay.failures.length > 0) console.error(`  Continuing with local network access: ${relay.publicUrl}/web`);
-      else console.log(`✓ Local network: ${relay.publicUrl}/web`);
-      console.log(lanUrl === runtime.localUrl ? "Local access only. Connect to Wi-Fi or Ethernet and restart to enable phone access." : "Connect your phone to the same LAN to use this address or QR code.");
+    if (controller.signal.aborted) return;
+    if (relay.mode !== "public") {
+      console.log(`✓ Local network: ${relay.accessUrl}`);
+      console.log(relay.mode === "local" ? "Local access only. Connect to Wi-Fi or Ethernet to enable phone access." : "Connect your phone to the same LAN to use this address or QR code.");
     } else {
-      console.log(`✓ ${providerDisplayName(relay.provider)} tunnel ready: ${relay.publicUrl}`);
+      console.log(`✓ ${providerDisplayName(relay.provider)} tunnel ready: ${new URL(relay.accessUrl!).origin}`);
     }
 
     if (relay.provider === "pinggy") {
@@ -216,13 +224,7 @@ async function executeCommand(options: ReturnType<typeof parseArgs>, argv: strin
       console.log("  The phone browser may show a one-time Pinggy security confirmation before pairing.");
     }
 
-    const accessUrl = `${relay.publicUrl}/web`;
-    await serviceReporter?.ready({
-      localUrl: runtime.localUrl,
-      publicUrl: relay.publicUrl,
-      accessUrl,
-      provider: relay.provider,
-    });
+    const accessUrl = relay.accessUrl!;
     await releaseStartup();
     if (serviceReporter) {
       console.log("✓ Background service URL written to the private state file.");
@@ -235,7 +237,6 @@ async function executeCommand(options: ReturnType<typeof parseArgs>, argv: strin
 
     await Promise.race([
       runtime.exited,
-      relay.tunnel?.exited ?? new Promise(() => {}),
       sleepInhibitor.lost.then(async (error) => {
         await new Promise<void>((resolveTurn) => setImmediate(resolveTurn));
         if (!closing) throw error;
@@ -245,6 +246,10 @@ async function executeCommand(options: ReturnType<typeof parseArgs>, argv: strin
     process.removeListener("SIGINT", requestClose);
     process.removeListener("SIGTERM", requestClose);
     await close();
+    if (!serviceReporter && tunnel) {
+      const urlPath = resolveServicePaths(undefined, options.dataDir).urlPath;
+      if (await readFile(urlPath, "utf8").then(value => value.trim() === tunnel!.status().accessUrl, () => false)) await rm(urlPath, { force: true });
+    }
     await releaseStartup?.();
     if (reportedStarting) await serviceReporter?.stopped().catch(() => {});
     await sleepInhibitor.release();
@@ -309,7 +314,7 @@ function reportDoctorFailure(error: unknown, prefix = ""): void {
   process.exitCode = 1;
 }
 
-function providerDisplayName(provider: Exclude<RelaySelection["provider"], "lan">): string {
+function providerDisplayName(provider: RelaySelection["provider"]): string {
   if (provider === "cloudflare") return "Cloudflare";
   if (provider === "pinggy") return "Pinggy";
   return "Custom";

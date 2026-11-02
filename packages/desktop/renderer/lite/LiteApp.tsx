@@ -3,6 +3,8 @@ import { LoaderCircle, RefreshCw, ShieldCheck, Smartphone } from "lucide-react";
 import type { MobilePairingInvitation } from "../../main/mobile-pairing";
 import type { LiteApi } from "./api";
 import { PermissionDialog } from "./PermissionDialog";
+import { useTunnelConnection } from "../lib/use-tunnel-connection";
+import { TunnelConnectionControl } from "../components/TunnelConnectionControl";
 
 export function LiteApp({ api = window.liteApi }: { api?: LiteApi }) {
   const [invitation, setInvitation] = useState<MobilePairingInvitation | null>(null);
@@ -38,10 +40,12 @@ export function LiteApp({ api = window.liteApi }: { api?: LiteApi }) {
     return () => { mounted.current = false; request.current++; clearInterval(timer); };
   }, [api]);
   const expired = invitation !== null && invitation.expiresAt <= now;
+  const tunnel = useTunnelConnection(api, { origin: invitation?.origin, busy: busy || (!invitation && !error), onAddressChanged: () => void refresh() });
   return <main className="lite-shell">
     <header className="lite-brand"><Smartphone size={20} aria-hidden="true" /><span>AgentRoam <b>Lite</b></span></header>
     <h1>扫码，连接这台电脑。</h1>
     <p className="lite-description">打开手机 App 的扫码按钮，<br />或用手机相机扫描二维码。</p>
+    <TunnelConnectionControl connection={tunnel} />
     <div className="lite-qr" aria-busy={busy}>
       {invitation && !expired ? <img src={`data:image/svg+xml,${encodeURIComponent(invitation.svg)}`} alt="AgentRoam 手机授权二维码" />
         : busy ? <div role="status"><LoaderCircle className="lite-spin" size={28} /><p>{message}</p></div>

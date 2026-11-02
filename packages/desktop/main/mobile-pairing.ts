@@ -36,8 +36,9 @@ export async function readMobilePairingOrigin(dataDir: string): Promise<string> 
 export async function createMobilePairingInvitation(
   dataDir: string,
   request: () => Promise<{ status: number; body: string }>,
+  accessUrl?: string,
 ): Promise<MobilePairingInvitation> {
-  const origin = await readMobilePairingOrigin(dataDir);
+  const origin = accessUrl === undefined ? await readMobilePairingOrigin(dataDir) : pairingOrigin(accessUrl);
   const response = await request();
   if (response.status !== 200) throw new Error(response.status === 423 ? "远程访问已锁定，请先在电脑上解锁。" : "生成二维码失败，请检查 AgentRoam 服务后重试。");
   const { grant, expiresAt } = JSON.parse(response.body);
