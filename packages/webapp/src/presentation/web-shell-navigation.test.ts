@@ -39,7 +39,8 @@ describe("web shell navigation bridge", () => {
     page.send({ type: NAVIGATION_LAYOUT_MESSAGE, navigationLayout: "classic" });
     expect(page.dataset.webShellEmbedded).toBe("1");
     page.send({ type: NAVIGATION_LAYOUT_MESSAGE, navigationLayout: "agent-rail" });
-    expect(mocks.setNavigationLayout.mock.calls).toEqual([["classic"], ["agent-rail"]]);
+    page.send({ type: NAVIGATION_LAYOUT_MESSAGE, navigationLayout: "all-sessions" });
+    expect(mocks.setNavigationLayout.mock.calls).toEqual([["classic"], ["agent-rail"], ["all-sessions"]]);
     cleanup();
     expect(page.callbacks.size).toBe(0);
     expect(page.dataset.webShellEmbedded).toBeUndefined();

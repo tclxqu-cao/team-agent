@@ -15,6 +15,9 @@ describe("navigation layout persistence", () => {
     expect(readNavigationLayoutPreference(store)).toBe("classic");
     writeNavigationLayoutPreference(store, "agent-rail");
     expect(JSON.parse(store.getItem()!).state).toEqual({ ...state, navigationLayout: "agent-rail" });
+    writeNavigationLayoutPreference(store, "all-sessions");
+    expect(readNavigationLayoutPreference(store)).toBe("all-sessions");
+    expect(JSON.parse(store.getItem()!).state).toEqual({ ...state, navigationLayout: "all-sessions" });
   });
 
   it.each([null, "{bad", "[]", '{"state":{"navigationLayout":"glass"}}'])("recovers invalid or absent preferences %j", initial => {

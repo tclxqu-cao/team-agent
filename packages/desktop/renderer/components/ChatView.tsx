@@ -13,6 +13,8 @@ import {
 import { createTaskCompletionNotification } from "../../../core/src/application/notification/task-completion";
 import { ArrowDownToLine, AlarmClock, Check, CircleAlert, Copy, CornerUpRight, FileText, GitFork, GripVertical, LoaderCircle, Mic, PanelLeftClose, PanelLeftOpen, Paperclip, Pencil, Play, RefreshCw, Square, Target, Trash2, Unplug, Volume2 } from "lucide-react";
 import AgentBrandIcon from "./AgentBrandIcon";
+import ComposerAgentPicker from "./ComposerAgentPicker";
+import ComposerWorkspacePicker from "./ComposerWorkspacePicker";
 import AppActionNotice from "./AppActionNotice";
 import RunFailureNotice from "./RunFailureNotice";
 import { latestSessionRunError, openRunErrorModelPicker } from "../lib/session-run-error";
@@ -39,6 +41,7 @@ import {
   resolveVisibleSessionMessages,
   useAgentStore,
   type StreamEvent,
+  type ChatMessage,
   type CronTask,
 } from "../stores/agentStore";
 import { useUIStore } from "../stores/uiStore";
@@ -60,6 +63,7 @@ import {
   restoreLatestSessionHistoryWindow,
   shouldDeferLiveHistoryRefresh,
   type SessionHistoryDetail,
+  type SessionHistorySeed,
 } from "../lib/session-history";
 import { SinglePageHistoryPrefetch } from "../lib/session-history-prefetch";
 import { presentQuestionAnswers } from "../lib/ask-user-answer-display";
@@ -108,7 +112,7 @@ import {
   toolRuntimeProgress,
 } from "../lib/native-runtime-progress";
 import { createChatAutoFollowController } from "../lib/chat-auto-follow";
-import { resolveSessionComposerRoute } from "../lib/session-composer-routing";
+import { createSessionForWorkspace, resolveSessionComposerRoute } from "../lib/session-composer-routing";
 import { resolveSessionEventTarget } from "../lib/session-event-routing";
 import {
   isActiveNativeSession,
@@ -454,7 +458,7 @@ import {
   type OccupiedSendPayload,
   type OccupiedSessionRecovery,
 } from "../lib/occupied-session-fork";
-import type { AgentType, NativeReasoningEffort, RuntimeModelInfo, RuntimeModelSelection, SessionGoalState, ThreadGoalInfo, ToolPermissionMode, UnifiedSessionSummary } from "../global";
+import type { AgentType, AgentWorkspace, NativeReasoningEffort, RuntimeHealth, RuntimeModelInfo, RuntimeModelSelection, SessionGoalState, ThreadGoalInfo, ToolPermissionMode, UnifiedSessionSummary } from "../global";
 import { NativeGoalBar } from "./NativeGoalBar";
 import { useNativeSessionGoal } from "../lib/use-native-session-goal";
 import { nativeGoalSubmission } from "../lib/native-goal-submission";
@@ -477,7 +481,9 @@ interface ChatViewProps {
   onRunComplete?: (projectId: string | null, sessionId: string) => void | Promise<void>;
   sessionTitle?: string;
   sessionSummary?: UnifiedSessionSummary;
+  initialSessionHistory?: SessionHistorySeed;
   workspacePath?: string | null;
+  workspaceSource?: AgentWorkspace["source"];
   onOpenSettings?: () => void;
   sidebarCollapsed?: boolean;
   onToggleSidebar?: () => void;
@@ -500,6 +506,16 @@ interface ChatViewProps {
    *  sessionId is set, the command continues that voice-conversation
    *  session instead of creating a new one. */
   voiceCommand?: { text: string; projectId: string | null; sessionId?: string | null; nonce: number } | null;
+  /** Runtime availability used to gray out unavailable agents in the new-session composer. */
+  runtimeHealth?: RuntimeHealth[];
+  /** Switches the agent for the not-yet-created session (first message creates it). */
+  onSelectAgent?: (agentType: AgentType) => void;
+  /** Directories the current agent can open; only shown for the new-session composer. */
+  workspaces?: Array<{ id: string; name: string; path: string; canCreateSession?: boolean }>;
+  onSelectWorkspace?: (projectId: string) => void;
+  onPickWorkspaceFolder?: () => void;
+  /** Increment to focus the composer (e.g. entering the new-session state from Dashboard). */
+  focusComposerNonce?: number;
 }
 
 const EFFORT_OPTIONS: Array<{ value: "off" | "low" | "medium" | "high"; label: string }> = [
@@ -562,7 +578,9 @@ export default function ChatView({
   onRunComplete,
   sessionTitle,
   sessionSummary,
+  initialSessionHistory,
   workspacePath = null,
+  workspaceSource,
   onOpenSettings,
   sidebarCollapsed = false,
   onToggleSidebar,
@@ -581,6 +599,12 @@ export default function ChatView({
   appearanceOpen = false,
   hideToBackgroundTitle,
   voiceCommand = null,
+  runtimeHealth,
+  onSelectAgent,
+  workspaces,
+  onSelectWorkspace,
+  onPickWorkspaceFolder,
+  focusComposerNonce,
 }: ChatViewProps) {
   const renderMessageContent = useCallback(
     (text: string) => renderAssistantText(text, onOpenArtifact),
@@ -643,6 +667,8 @@ export default function ChatView({
   const viewSessionId = resolveChatSessionId(selectedSessionId, sessionId, activeAgentType, isWorkspaceWelcome);
   const viewSessionIdRef = useRef(viewSessionId);
   viewSessionIdRef.current = viewSessionId;
+  /** No session is open yet: the first message creates one with the composer's agent + workspace. */
+  const isNewSessionComposer = !selectedSessionId && !viewSessionId;
   const [occupiedRecoveries, setOccupiedRecoveries] = useState<OccupiedRecoveryRegistry>({});
   const occupiedRecoveriesRef = useRef<OccupiedRecoveryRegistry>({});
   const commitOccupiedRecovery = useCallback((
@@ -844,6 +870,8 @@ export default function ChatView({
   }, []);
 
   const [input, setInput] = useState("");
+  const [creatingSession, setCreatingSession] = useState(false);
+  const creatingSessionRef = useRef(false);
   const [editingQueuedId, setEditingQueuedId] = useState<string | null>(null);
   const [queuedEditDraft, setQueuedEditDraft] = useState("");
   const [copiedQueuedId, setCopiedQueuedId] = useState<string | null>(null);
@@ -999,6 +1027,12 @@ export default function ChatView({
   const [showInitialHistoryLoading, setShowInitialHistoryLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const inputRef = useRef<HTMLInputElement | HTMLTextAreaElement>(null);
+  const lastComposerFocusNonceRef = useRef(0);
+  useEffect(() => {
+    if (!focusComposerNonce || focusComposerNonce === lastComposerFocusNonceRef.current) return;
+    lastComposerFocusNonceRef.current = focusComposerNonce;
+    inputRef.current?.focus();
+  }, [focusComposerNonce]);
   const pickerAnchorRef = useRef<HTMLDivElement>(null);
   const [pickerRect, setPickerRect] = useState<DOMRect | null>(null);
   const [agents, setAgents] = useState<Array<{id: string; name: string; description: string; isActive?: boolean}>>([]);
@@ -1049,62 +1083,77 @@ export default function ChatView({
     updateToolResult(ref.itemId, body.content, body.isError, targetSid);
   }, [fetchToolResult, updateToolResult]);
 
+  const prefetchOlderHistory = useCallback((targetSid: string, cursor: string | null) => {
+    const agentApi = window.agentApi;
+    if (!cursor || !agentApi) return;
+    const start = () => {
+      if (selectedSessionIdRef.current !== targetSid) return;
+      void historyPrefetchRef.current!
+        .prefetch(targetSid, cursor, () => agentApi.getSession(targetSid, {
+          before: cursor,
+          limit: historyAgentType(targetSid) === "codex" ? CODEX_NAVIGATION_HISTORY_PAGE_SIZE : SESSION_HISTORY_PAGE_SIZE,
+          ...(historyAgentType(targetSid) === "codex" ? { view: "core" as const } : {}),
+        }) as Promise<SessionHistoryDetail | null>)
+        .catch((prefetchError) => {
+          console.warn("[chat] failed to prefetch older history", { sessionId: targetSid, error: prefetchError });
+        });
+    };
+    const pendingTraces = [...codexTraceLoadsRef.current.values()];
+    if (pendingTraces.length) void Promise.allSettled(pendingTraces).then(start);
+    else start();
+  }, [historyAgentType]);
+
   const loadCodexExecutionTrace = useCallback(async (
     trace: NonNullable<import("../stores/agentStore").ChatMessage["executionTrace"]>,
   ) => {
     const agentApi = window.agentApi;
     const targetSid = selectedSessionIdRef.current;
     if (!agentApi || !targetSid) throw new Error("当前会话不可用");
-    const loaded = await loadCodexExecutionTracePage(
-      agentApi,
-      targetSid,
-      trace,
-      SESSION_HISTORY_PAGE_SIZE,
-    );
-    const detail = loaded.detail;
-    if (selectedSessionIdRef.current !== targetSid) {
-      throw new DOMException("Session selection changed", "AbortError");
-    }
-    if (detail?.history?.revision !== loaded.revision) {
-      throw new Error("会话内容已更新，请重新展开执行过程");
-    }
-    if (loaded.recovered) {
-      setMessages(getMessagesForSession(targetSid).map((message) => message.executionTrace
-        ? {
-            ...message,
-            executionTrace: { ...message.executionTrace, revision: loaded.revision },
-          }
-        : message), targetSid);
-    }
-    syncToolResultScope(targetSid, loaded.revision);
-    const restoredTrace = restoreCodexExecutionTrace(detail);
-    const current = getMessagesForSession(targetSid);
-    const reconciled = reconcileCodexUnphasedMessages(current, restoredTrace);
-    if (reconciled.some((message, index) => message !== current[index]) || reconciled.length !== current.length) setMessages(reconciled, targetSid);
-    return restoredTrace;
-  }, [getMessagesForSession, setMessages, syncToolResultScope]);
+    // Multiple visible segments can share one native turn. Read that turn once.
+    const key = JSON.stringify([targetSid, trace.turnId, trace.revision]);
+    const existing = codexTraceLoadsRef.current.get(key);
+    if (existing) return existing;
+    const pending = (async () => {
+      const loaded = await loadCodexExecutionTracePage(
+        agentApi,
+        targetSid,
+        trace,
+        SESSION_HISTORY_PAGE_SIZE,
+      );
+      const detail = loaded.detail;
+      if (selectedSessionIdRef.current !== targetSid) {
+        throw new DOMException("Session selection changed", "AbortError");
+      }
+      if (detail?.history?.revision !== loaded.revision) {
+        throw new Error("会话内容已更新，请重新展开执行过程");
+      }
+      if (loaded.recovered) {
+        setMessages(getMessagesForSession(targetSid).map((message) => message.executionTrace
+          ? {
+              ...message,
+              executionTrace: { ...message.executionTrace, revision: loaded.revision },
+            }
+          : message), targetSid);
+      }
+      syncToolResultScope(targetSid, loaded.revision);
+      const restoredTrace = restoreCodexExecutionTrace(detail);
+      const current = getMessagesForSession(targetSid);
+      const reconciled = reconcileCodexUnphasedMessages(current, restoredTrace);
+      if (reconciled.some((message, index) => message !== current[index]) || reconciled.length !== current.length) setMessages(reconciled, targetSid);
+      void prefetchOlderHistory(targetSid, historyCursorRef.current);
+      return restoredTrace;
+    })();
+    codexTraceLoadsRef.current.set(key, pending);
+    void pending.finally(() => {
+      if (codexTraceLoadsRef.current.get(key) === pending) codexTraceLoadsRef.current.delete(key);
+    }).catch(() => undefined);
+    return pending;
+  }, [getMessagesForSession, prefetchOlderHistory, setMessages, syncToolResultScope]);
 
   useEffect(() => {
     toolResultScopeRef.current = null;
     toolResultLoadsRef.current.clear();
   }, [selectedSessionId]);
-
-  const prefetchOlderHistory = useCallback((targetSid: string, cursor: string | null) => {
-    const agentApi = window.agentApi;
-    if (!cursor || !agentApi) return;
-    void historyPrefetchRef.current!
-      .prefetch(targetSid, cursor, () => agentApi.getSession(targetSid, {
-        before: cursor,
-        limit: historyAgentType(targetSid) === "codex" ? CODEX_NAVIGATION_HISTORY_PAGE_SIZE : SESSION_HISTORY_PAGE_SIZE,
-        ...(historyAgentType(targetSid) === "codex" ? { view: "core" as const } : {}),
-      }) as Promise<SessionHistoryDetail | null>)
-      .catch((prefetchError) => {
-        console.warn("[chat] failed to prefetch older history", {
-          sessionId: targetSid,
-          error: prefetchError,
-        });
-      });
-  }, [historyAgentType]);
 
   const setHistoryMode = useCallback((mode: "latest" | "anchored") => {
     historyWindowModeRef.current = mode;
@@ -1370,6 +1419,8 @@ export default function ChatView({
   const runCompleteContextRef = useRef({ onRunComplete, selectedProjectId });
   const sessionIdRef = useRef<string | null>(null);
   const sessionLoadGenerationRef = useRef(0);
+  const consumedNavigationHistoryRef = useRef<SessionHistorySeed | undefined>();
+  const codexTraceLoadsRef = useRef(new Map<string, Promise<ChatMessage[]>>());
   useEffect(() => { selectedSessionIdRef.current = selectedSessionId ?? null; }, [selectedSessionId]);
   useEffect(() => {
     runCompleteContextRef.current = { onRunComplete, selectedProjectId };
@@ -1743,6 +1794,9 @@ export default function ChatView({
       try {
         await loadSessionWithRetry(async () => {
           if (!isCurrentLoad()) throw new DOMException("Session selection changed", "AbortError");
+          const seed = initialSessionHistory?.sessionId === targetSid
+            && consumedNavigationHistoryRef.current !== initialSessionHistory
+            ? initialSessionHistory : undefined;
           await loadProgressiveSessionHistoryPage(
             agentApi,
             targetSid,
@@ -1784,7 +1838,12 @@ export default function ChatView({
               historyCursorRef.current = restoredWindow.window.olderCursor;
               nextAutoScrollRef.current = "instant";
               setMessages(nextMessages, targetSid, restoredWindow.window);
-              prefetchOlderHistory(targetSid, restoredWindow.window.olderCursor);
+              // The current turn's trace owns the first native read after core.
+              // Older history remains available on scroll and is prefetched once
+              // that trace has loaded.
+              if (historyAgentType(targetSid) !== "codex" || !nextMessages.some(message => message.executionTrace)) {
+                prefetchOlderHistory(targetSid, restoredWindow.window.olderCursor);
+              }
               setRuntimeProgress(restoredRuntimeProgress, targetSid);
               setNativeSubagentActivities(restoredNativeSubagents, targetSid);
               if (shouldRestoreLocalNativeRun(detail) || shouldRestoreCustomerAgentRun(detail)) {
@@ -1810,6 +1869,10 @@ export default function ChatView({
               setShowInitialHistoryLoading(false);
             },
             isCurrentLoad,
+            seed ? async () => {
+              consumedNavigationHistoryRef.current = seed;
+              return seed.detail;
+            } : undefined,
           );
           return true;
         });
@@ -1833,7 +1896,7 @@ export default function ChatView({
         sessionLoadGenerationRef.current += 1;
       }
     };
-  }, [activeAgentType, getMessagesForSession, getSessionHistoryWindow, historyAgentType, isWorkspaceWelcome, prefetchOlderHistory, selectedSessionId, sessionReloadGeneration, setContextUsage, setHistoryMode, setMessages, setSessionId, syncToolResultScope, updateAgentActivity]);
+  }, [activeAgentType, getMessagesForSession, getSessionHistoryWindow, historyAgentType, initialSessionHistory, isWorkspaceWelcome, prefetchOlderHistory, selectedSessionId, sessionReloadGeneration, setContextUsage, setHistoryMode, setMessages, setSessionId, syncToolResultScope, updateAgentActivity]);
 
   const loadSessionQueryIndex = useCallback(async (targetSid: string) => {
     const agentApi = window.agentApi;
@@ -3560,9 +3623,26 @@ export default function ChatView({
     }
   }
 
+  const createComposerSession = async (title: string, projectId?: string): Promise<UnifiedSessionSummary> => {
+    if (!window.agentApi) throw new Error("agentApi 未就绪");
+    creatingSessionRef.current = true;
+    setCreatingSession(true);
+    try {
+      return await createSessionForWorkspace(window.agentApi, title, {
+        projectId,
+        agentType: composerAgentType,
+        workspaceSource,
+        workspacePath,
+      });
+    } finally {
+      creatingSessionRef.current = false;
+      setCreatingSession(false);
+    }
+  };
+
   const submitChatMessage = async (submission: ChatSubmission) => {
     const nativeGoalCommand = composerAgentType === "deepseek-harness" && /^\/goal(?:\s|$)/i.test(submission.text);
-    if (!submission.text || !(canSubmitComposer || (canComposeNativeGoal && nativeGoalCommand)) || pendingImageReads > 0) return;
+    if (creatingSessionRef.current || !submission.text || !(canSubmitComposer || (canComposeNativeGoal && nativeGoalCommand)) || pendingImageReads > 0) return;
 
     if (historyWindowModeRef.current === "anchored") {
       const restoredLatest = await returnToLatestHistory();
@@ -3571,7 +3651,7 @@ export default function ChatView({
 
     void interruptSpeech(window.agentApi, stopSpeaking);
 
-    if (cancellationTimeoutSessionId !== viewSessionId) setError(null);
+    if (!cancellationTimeoutSessionId || cancellationTimeoutSessionId !== viewSessionId) setError(null);
 
     const userMsg = submission.text;
     const clearSubmittedComposer = () => {
@@ -3761,9 +3841,7 @@ export default function ChatView({
         }
         if (!targetSessionId) {
           if (mutation.action !== "create") throw new Error("请先选择已有目标的会话");
-          const created = await window.agentApi.createSession(
-            mutation.objective.slice(0, 60), selectedProjectId || undefined, composerAgentType, workspacePath ?? undefined,
-          );
+          const created = await createComposerSession(mutation.objective.slice(0, 60), selectedProjectId || undefined);
           targetSessionId = created.id;
           if (composerScopeRef.current === initialScope) {
             sessionIdRef.current = created.id;
@@ -3810,16 +3888,8 @@ export default function ChatView({
         const targetSessionId = await prepareChatCommand({
           text: goalObjective,
           projectId: selectedProjectId ?? null,
-          sessionId: selectedSessionId || sessionId,
-          createSession: async (title, projectId) => {
-            if (!window.agentApi) throw new Error("agentApi 未就绪");
-            return await window.agentApi.createSession(
-              title,
-              projectId,
-              composerAgentType,
-              composerAgentType !== "customer-agent" ? (workspacePath ?? undefined) : undefined,
-            ) as { id: string };
-          },
+          sessionId: viewSessionId,
+          createSession: createComposerSession,
           activateSession: (id) => {
             sessionIdRef.current = id;
             setSessionId(id);
@@ -3932,7 +4002,7 @@ export default function ChatView({
     }
 
     // ── Normal send flow ───────────────────────────────────────────────────
-    const submittedSessionId = selectedSessionId || sessionId;
+    const submittedSessionId = viewSessionId;
     if (submission.clearComposer && isNativeRuntime && submittedSessionId) {
       preserveNativeDraftRef.current = true;
       preserveNativeImageDraftSessionRef.current = submittedSessionId;
@@ -3945,18 +4015,8 @@ export default function ChatView({
       const targetSessionId = await prepareChatCommand({
         text: finalMsg,
         projectId: selectedProjectId ?? null,
-        sessionId: selectedSessionId || sessionId,
-        createSession: async (title, projectId) => {
-          if (!window.agentApi) throw new Error("agentApi 未就绪");
-          // 空白会话直接发送也必须带上当前选中的运行时（codex/claude-code/…），
-          // 否则会落回 customer-agent 并因未配模型报错。原生运行时还需要 cwd。
-          return await window.agentApi.createSession(
-            title,
-            projectId,
-            composerAgentType,
-            composerAgentType !== "customer-agent" ? (workspacePath ?? undefined) : undefined,
-          ) as { id: string };
-        },
+        sessionId: viewSessionId,
+        createSession: createComposerSession,
         activateSession: (id) => {
           sessionIdRef.current = id;
           setSessionId(id);
@@ -3993,8 +4053,13 @@ export default function ChatView({
         agentIdsToSend.length > 0 ? agentIdsToSend : undefined,
       );
     } catch (err) {
-      const targetSessionId = selectedSessionId || sessionId;
+      const targetSessionId = viewSessionId ?? sessionIdRef.current;
       if (targetSessionId) updatePendingSendState(targetSessionId, "failed");
+      if (submission.restoreDraftOnFailure) {
+        setInput(finalMsg);
+        setPendingImages(imagesToSend ?? []);
+      }
+      if (runningSessionRef.current === targetSessionId) runningSessionRef.current = null;
       setError(err instanceof Error ? err.message : "Agent run failed");
     }
   };
@@ -4851,7 +4916,7 @@ export default function ChatView({
           </div>
         )}
 
-        {!isWorkspaceWelcome && displayedError && (
+        {displayedError && (
           <RunFailureNotice
             message={displayedError}
             historical={!sessionLoadError && !error && Boolean(historicalRunError)}
@@ -4860,7 +4925,7 @@ export default function ChatView({
                 openRunErrorModelPicker(modelPickerRef.current);
               } : undefined}
           >
-            {!sessionLoadError && cancellationTimeoutSessionId === viewSessionId && (
+            {!sessionLoadError && cancellationTimeoutSessionId && cancellationTimeoutSessionId === viewSessionId && (
               <div style={{ display: "inline-flex", gap: 6, flexShrink: 0 }}>
                 <button
                   type="button"
@@ -5637,7 +5702,7 @@ export default function ChatView({
         {/* Input box */}
         <div ref={pickerAnchorRef} className="composer-anchor" style={{ position: "relative" }}>
 
-        <div className="composer-shell" style={{
+        <div className={`composer-shell${isNewSessionComposer ? " composer-shell--new-session" : ""}`} style={{
           display: "flex",
           flexDirection: "column",
           gap: 0,
@@ -5645,6 +5710,21 @@ export default function ChatView({
           borderRadius: 14,
           overflow: "visible",
         }}>
+          {isNewSessionComposer && (onSelectAgent || workspaces !== undefined || onSelectWorkspace !== undefined) && (
+            <div className="composer-context-row" role="group" aria-label="新会话的 Agent 和目录">
+              {onSelectAgent && (
+                <ComposerAgentPicker value={composerAgentType} health={runtimeHealth} onChange={onSelectAgent} />
+              )}
+              {(workspaces !== undefined || onSelectWorkspace !== undefined) && (
+                <ComposerWorkspacePicker
+                  value={selectedProjectId ?? null}
+                  workspaces={workspaces ?? []}
+                  onChange={(projectId) => onSelectWorkspace?.(projectId)}
+                  onPickFolder={onPickWorkspaceFolder}
+                />
+              )}
+            </div>
+          )}
           {/* Inner input row */}
           <div className="composer-input-row" style={{
             display: "flex",
@@ -5696,8 +5776,8 @@ export default function ChatView({
             onChange={(event) => handleComposerChange(event.target.value)}
             onBlur={() => setTimeout(() => { setAtQuery(null); setSlashQuery(null); }, 120)}
             onKeyDown={handleComposerKeyDown}
-            placeholder={canComposeNativeGoal && goalMode ? "输入要持续推进的目标" : codexReleaseState === "released" ? "已停止在 AgentRoam 中使用；Codex Desktop 最长约 30 分钟后可用" : isCompatibilityReadOnly ? (compatibilityStatus === "incompatible" ? "Codex 版本不兼容" : "正在验证会话兼容性") : isReadOnly ? "原客户端使用中，当前只读" : runtimeReady ? (goalMode ? "输入要持续推进的目标" : shouldQueueMessage ? "输入下一条排队消息" : "提出后续修改要求") : "请先在设置中配置 API Key"}
-            disabled={!canSubmitComposer}
+            placeholder={canComposeNativeGoal && goalMode ? "输入要持续推进的目标" : codexReleaseState === "released" ? "已停止在 AgentRoam 中使用；Codex Desktop 最长约 30 分钟后可用" : isCompatibilityReadOnly ? (compatibilityStatus === "incompatible" ? "Codex 版本不兼容" : "正在验证会话兼容性") : isReadOnly ? "原客户端使用中，当前只读" : runtimeReady ? (goalMode ? "输入要持续推进的目标" : shouldQueueMessage ? "输入下一条排队消息" : isNewSessionComposer ? "描述你想做的事，第一条消息会创建会话" : "提出后续修改要求") : "请先在设置中配置 API Key"}
+            disabled={!canSubmitComposer || creatingSession}
             readOnly={isRecording}
           />
 
@@ -5723,7 +5803,7 @@ export default function ChatView({
                     <button type="button" aria-label="附件 / 图片" title="附件 / 图片" onClick={() => { setAddMenuOpen(false); fileInputRef.current?.click(); }}>
                       <Paperclip size={20} aria-hidden="true" />
                     </button>
-                    <button type="button" aria-label="语音输入" title="语音输入" disabled={!canSubmitComposer} onClick={() => { setAddMenuOpen(false); handleMicToggle(); }}>
+                    <button type="button" aria-label="语音输入" title="语音输入" disabled={!canSubmitComposer || creatingSession} onClick={() => { setAddMenuOpen(false); handleMicToggle(); }}>
                       <Mic size={20} aria-hidden="true" />
                     </button>
                   </div>
@@ -5974,9 +6054,10 @@ export default function ChatView({
               <button
                 type="button"
                 onClick={handleSend}
-                disabled={!canSubmitComposer || nativeGoal.pending || pendingImageReads > 0 || !input.trim()}
+                disabled={creatingSession || !canSubmitComposer || nativeGoal.pending || pendingImageReads > 0 || !input.trim()}
                 className="web-native-send-button"
-                aria-label={shouldQueueMessage ? "排队发送" : "发送"}
+                aria-busy={creatingSession}
+                aria-label={creatingSession ? "正在创建会话" : shouldQueueMessage ? "排队发送" : "发送"}
                 title={shouldQueueMessage ? "排队发送" : "发送"}
               >
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
@@ -5988,6 +6069,7 @@ export default function ChatView({
         </div>{/* end input box */}
         </div>{/* end relative wrapper */}
 
+        {creatingSession && <div role="status" className="composer-creating-session"><LoaderCircle size={14} className="animate-spin" />正在创建会话并发送…</div>}
         <AppActionNotice message={dictationError} type="error" />
 
         {/* Hint */}

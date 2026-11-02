@@ -1,4 +1,23 @@
-import type { AgentType, UnifiedSessionSummary } from "../global";
+import type { AgentApi, AgentType, AgentWorkspace, UnifiedSessionSummary } from "../global";
+
+/** Imported workspace IDs identify sidebar entries, not native runtime projects. */
+export function createSessionForWorkspace(
+  api: Pick<AgentApi, "createSession">,
+  title: string,
+  context: {
+    projectId?: string;
+    agentType: AgentType;
+    workspaceSource?: AgentWorkspace["source"];
+    workspacePath?: string | null;
+  },
+): Promise<UnifiedSessionSummary> {
+  return api.createSession(
+    title,
+    context.workspaceSource === "imported" ? undefined : context.projectId,
+    context.agentType,
+    context.agentType !== "customer-agent" ? context.workspacePath ?? undefined : undefined,
+  );
+}
 
 export interface SessionComposerRoute {
   agentType: AgentType;

@@ -95,14 +95,14 @@ describe("navigation layout preferences", () => {
     "switches classic and rail without changing $skin / $layout or sessions",
     ({ skin, layout }) => {
       useUIStore.setState({ skin, layout, pinnedSessionIds: ["existing"], wakeEnabled: false });
-      for (const navigationLayout of ["classic", "agent-rail"] as const) {
+      for (const navigationLayout of ["classic", "agent-rail", "all-sessions"] as const) {
         useUIStore.getState().setNavigationLayout(navigationLayout);
         const expected = { skin, layout, pinnedSessionIds: ["existing"], wakeEnabled: false, navigationLayout };
         expect(useUIStore.getState()).toMatchObject(expected);
         expect(JSON.parse(localStorage.getItem("agent-ui-prefs")!).state).toMatchObject(expected);
       }
       useUIStore.getState().setSkin("pearl");
-      expect(useUIStore.getState().navigationLayout).toBe("agent-rail");
+      expect(useUIStore.getState().navigationLayout).toBe("all-sessions");
     },
   );
 

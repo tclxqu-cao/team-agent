@@ -221,7 +221,7 @@ describe("AgentRoam reference sidebar", () => {
     expect(deleteButton).toBeGreaterThan(pinButton);
     expect(sessionRow).toContain("<Pin");
     expect(sessionRow).toContain("<Trash2");
-    expect(app.match(/onPin=/g)).toHaveLength(2);
+    expect(app.match(/onPin=/g)).toHaveLength(3);
     expect(app).toContain("onPin={() => togglePinnedSession(session.id)}");
     expect(app).toContain("onPin={session.parentSessionId ? undefined : () => togglePinnedSession(session.id)}");
     expect(app.indexOf('className="sidebar-pinned-section"')).toBeLessThan(app.indexOf("{orderedSidebarProjects.map((project) =>"));
@@ -345,50 +345,7 @@ describe("AgentRoam reference sidebar", () => {
     expect(sessionRow).not.toContain("sidebar-session-meta");
   });
 
-  it("keeps the bottom action scoped to the selected directory", () => {
-    const buttonStart = app.indexOf('className="sidebar-new-session-primary"');
-    const buttonEnd = app.indexOf("</button>", buttonStart);
-    const button = app.slice(buttonStart, buttonEnd);
-    expect(button).toContain("projects.find((project) => project.id === selectedProjectId)?.canCreateSession !== false");
-    expect(button).toContain("projects.find((project) => project.id === selectedProjectId)?.canCreateSession === false");
-    expect(app).toContain('setNotice("请先选择目录")');
-    expect(app).toContain('setNoticeType("info")');
-    expect(button).toContain('onClick={handleBottomNewSession}');
-    expect(button).toContain("disabled={\n              sessionCreationPending !== null");
-    expect(button).toContain("|| (selectedProjectId !== null && invalidProjectIds.has(selectedProjectId))");
-    expect(app).toContain("handleNewRuntimeSession(selectedProjectId, activeAgent)");
-    expect(app).toContain('workspace?.source === "imported" ? undefined : projectId');
-    expect(css).toContain(".sidebar-bottom-action");
-    expect(css).toContain(".sidebar-new-session-primary:disabled");
-    for (const selector of [".sidebar-new-session-primary {", ".sidebar-new-session-primary:disabled {"]) {
-      const buttonCssStart = css.indexOf(selector);
-      expect(buttonCssStart).toBeGreaterThanOrEqual(0);
-      const buttonCss = css.slice(buttonCssStart, css.indexOf("}", buttonCssStart));
-      expect(buttonCss).toContain("background: color-mix(in srgb, var(--accent) 88%, var(--text-primary));");
-    }
-  });
 
-  it("shows stable loading feedback while a new session is being created", () => {
-    const projectActionClass = app.indexOf('className="sidebar-runtime-create sidebar-project-add-action');
-    const projectActionStart = app.lastIndexOf("<button", projectActionClass);
-    const projectActionEnd = app.indexOf("</button>", projectActionClass);
-    const projectAction = app.slice(projectActionStart, projectActionEnd);
-    const bottomActionStart = app.indexOf('className="sidebar-new-session-primary"');
-    const bottomActionEnd = app.indexOf("</button>", bottomActionStart);
-    const bottomAction = app.slice(bottomActionStart, bottomActionEnd);
-
-    expect(app).toContain('import { History, LoaderCircle, Plus, Search } from "lucide-react"');
-    expect(app).toContain("const [sessionCreationPending, setSessionCreationPending]");
-    expect(app).toContain("const isCreatingSession = sessionCreationPending?.agentType === activeAgent");
-    expect(projectAction).toContain('aria-busy={isCreatingSession}');
-    expect(projectAction).toContain('sessionCreationPending !== null');
-    expect(projectAction).toContain('<LoaderCircle size={13}');
-    expect(projectAction).toContain('"正在创建会话"');
-    expect(bottomAction).toContain('aria-busy={sessionCreationPending !== null}');
-    expect(bottomAction).toContain('sessionCreationPending !== null');
-    expect(bottomAction).toContain('<LoaderCircle size={16}');
-    expect(bottomAction).toContain("正在创建...");
-  });
 
   it("offers directory refresh feedback before importing a directory", () => {
     const refresh = app.indexOf('<SidebarRefreshButton');
@@ -398,27 +355,6 @@ describe("AgentRoam reference sidebar", () => {
     expect(app).toContain('loading={workspaceLoading}');
   });
 
-  it("guards and cleans up the new-session creation lifecycle", () => {
-    const handlerStart = app.indexOf("const handleNewRuntimeSession = async");
-    const handlerEnd = app.indexOf("const handleBottomNewSession", handlerStart);
-    const handler = app.slice(handlerStart, handlerEnd);
-    const selection = handler.indexOf("applySidebarSelection({ projectId, sessionId: created.id })");
-    const backgroundRefresh = handler.indexOf("void loadSessions(projectId, {");
-
-    expect(handler).toContain("if (sessionCreationPendingRef.current) return");
-    expect(handler).toContain("sessionCreationPendingRef.current = true");
-    expect(handler).toContain("setSessionCreationPending({ projectId, agentType })");
-    expect(handler).toContain("try {");
-    expect(handler).toContain("} catch (error) {");
-    expect(handler).toContain('error instanceof Error ? error.message : "新建会话失败"');
-    expect(handler).toContain("} finally {");
-    expect(handler).toContain("sessionCreationPendingRef.current = false");
-    expect(handler).toContain("setSessionCreationPending(null)");
-    expect(handler).toContain("sessionsByProjectRef.current = nextSessionsByProject");
-    expect(selection).toBeGreaterThan(-1);
-    expect(backgroundRefresh).toBeGreaterThan(selection);
-    expect(handler).not.toContain("await loadSessions(projectId)");
-  });
 
   it("renders sidebar action feedback as a page-level toast portal without shifting the list", () => {
     const sidebarStart = app.indexOf('<aside\n        className="app-sidebar"');

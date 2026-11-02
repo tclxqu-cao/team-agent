@@ -114,3 +114,13 @@ it("keeps inline desktop Dashboard navigation local", () => {
   expect(parent.postMessage).not.toHaveBeenCalled();
   expect(listeners.size).toBe(0);
 });
+
+
+it("new-session supersedes an older session click instead of replaying it after chat readiness", () => {
+  postDashboardIntent(target);
+  postDashboardIntent({ kind: "new-session" });
+  ready("new-mount");
+  expect(parent.postMessage).toHaveBeenCalledTimes(2);
+  expect(parent.postMessage).toHaveBeenLastCalledWith(expect.objectContaining({ intent: { kind: "new-session" } }), origin);
+  expect(listeners.size).toBe(0);
+});

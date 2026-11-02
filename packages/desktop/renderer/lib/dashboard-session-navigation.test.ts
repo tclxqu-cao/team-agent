@@ -1,6 +1,7 @@
 import { expect, it, vi } from "vitest";
 import type { AgentApi } from "../global";
 import { resolveDashboardSession } from "./dashboard-session-navigation";
+import { loadProgressiveSessionHistoryPage } from "./session-history";
 
 it("uses the existing workspace catalog IDs when opening an original or hidden member session", async () => {
   const api = {
@@ -11,10 +12,10 @@ it("uses the existing workspace catalog IDs when opening an original or hidden m
   const target = { id: "codex:original", title: "原始会话", cwd: "/project", agentType: "codex" as const };
   const original = await resolveDashboardSession(api, target, new AbortController().signal);
   expect(original.session.projectId).toBe("native-workspace");
-  expect(api.getSession).toHaveBeenCalledWith("codex:original", { limit: 1 });
+  expect(api.getSession).toHaveBeenCalledWith("codex:original", { limit: 1, view: "core" });
   const internal = await resolveDashboardSession(api, { ...target, id: "codex:internal" }, new AbortController().signal);
   expect(internal.session.projectId).toBe("native-workspace");
-  expect(api.getSession).toHaveBeenCalledWith("codex:internal", { limit: 1 });
+  expect(api.getSession).toHaveBeenCalledWith("codex:internal", { limit: 1, view: "core" });
   expect(api.listAgentWorkspaceSessions).not.toHaveBeenCalled();
 });
 
@@ -35,7 +36,7 @@ it("opens a cached workspace with one exact detail request and preserves cached 
   const before = JSON.stringify(cached);
   const result = await resolveDashboardSession(api, target, new AbortController().signal, cached);
   expect(getSession).toHaveBeenCalledTimes(1);
-  expect(getSession).toHaveBeenCalledWith(target.id, { limit: 1 });
+  expect(getSession).toHaveBeenCalledWith(target.id, { limit: 1, view: "core" });
   expect(listAgentWorkspaces).not.toHaveBeenCalled();
   expect(listAgentWorkspaceSessions).not.toHaveBeenCalled();
   expect(result.snapshot.sessions.map(session => session.id)).toEqual(["sibling", target.id]);
@@ -83,4 +84,27 @@ it("terminates repeated workspace cursors instead of waiting indefinitely", asyn
   listAgentWorkspaces.mockResolvedValue({ data: [], nextCursor: "repeat", watermark: null });
   await expect(resolveDashboardSession(api, target, new AbortController().signal)).rejects.toThrow("加载中断");
   expect(listAgentWorkspaces).toHaveBeenCalledTimes(2);
+});
+
+
+it("reuses the navigation core page for the first paint instead of reading the same history twice", async () => {
+  const { api, getSession } = fixture();
+  const detail = { ...target, projectId: "project", messages: [{ role: "user", content: "latest input" }], events: [], history: { delivery: "core", revision: "r1" } };
+  getSession.mockResolvedValue(detail as unknown as Awaited<ReturnType<typeof getSession>>);
+  const result = await resolveDashboardSession(api, target, new AbortController().signal);
+  const paint = vi.fn();
+  await loadProgressiveSessionHistoryPage(api, target.id, target.agentType, { limit: 1 }, paint, () => true,
+    async () => result.initialHistory!.detail);
+  expect(getSession).toHaveBeenCalledTimes(1);
+  expect(paint).toHaveBeenCalledWith(detail, "core");
+  expect(result.session).not.toHaveProperty("messages");
+});
+
+it("keeps the ordinary history contract for other Agents", async () => {
+  const { api, getSession } = fixture();
+  const other = { ...target, id: "harness-session", agentType: "deepseek-harness" as const };
+  getSession.mockResolvedValue({ ...other, projectId: "project" } as unknown as Awaited<ReturnType<typeof getSession>>);
+  const result = await resolveDashboardSession(api, other, new AbortController().signal);
+  expect(getSession).toHaveBeenCalledWith(other.id, { limit: 1 });
+  expect(result.initialHistory).toBeUndefined();
 });

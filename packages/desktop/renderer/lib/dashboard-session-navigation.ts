@@ -1,11 +1,14 @@
 import type { MonitoredSession } from "../../../core/src/domain/supervision/types";
 import type { AgentApi, UnifiedSessionSummary } from "../global";
 import type { AgentRailSessions } from "./agent-rail-sessions";
+import type { SessionHistoryDetail, SessionHistorySeed } from "./session-history";
 
 /** Open the exact target without scanning every workspace's session history. */
-export async function resolveDashboardSession(api: AgentApi, target: MonitoredSession, signal: AbortSignal, cached?: AgentRailSessions): Promise<{ session: UnifiedSessionSummary; snapshot: AgentRailSessions }> {
+export async function resolveDashboardSession(api: AgentApi, target: MonitoredSession, signal: AbortSignal, cached?: AgentRailSessions): Promise<{ session: UnifiedSessionSummary; snapshot: AgentRailSessions; initialHistory?: SessionHistorySeed }> {
   signal.throwIfAborted();
-  const detail = await api.getSession(target.id, { limit: 1 }) as UnifiedSessionSummary & { messages?: unknown; events?: unknown; history?: unknown };
+  // A Codex query without view=core reads and converts the full transcript,
+  // even when limit=1. Reuse the bounded first page when the chat opens.
+  const detail = await api.getSession(target.id, { limit: 1, ...(target.agentType === "codex" ? { view: "core" as const } : {}) }) as UnifiedSessionSummary & SessionHistoryDetail;
   signal.throwIfAborted();
   if (!detail?.id || detail.id !== target.id || detail.agentType !== target.agentType) throw new Error("原会话身份不匹配，请刷新看板后重试");
   const snapshot: AgentRailSessions = {
@@ -35,5 +38,5 @@ export async function resolveDashboardSession(api: AgentApi, target: MonitoredSe
   const { messages: _messages, events: _events, history: _history, ...summary } = detail;
   const session = { ...summary, cwd: detail.cwd || target.cwd, projectId: workspaceId };
   snapshot.sessions.push(session);
-  return { session, snapshot };
+  return { session, snapshot, ...(target.agentType === "codex" ? { initialHistory: { sessionId: session.id, detail } } : {}) };
 }

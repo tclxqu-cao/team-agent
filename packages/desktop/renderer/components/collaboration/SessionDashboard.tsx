@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Activity, ArrowRight, ChevronDown, Layers, List, Pause, Play, RefreshCw, ShieldCheck, Users, X } from "lucide-react";
+import { Activity, ArrowRight, ChevronDown, Layers, List, Pause, Play, Plus, RefreshCw, ShieldCheck, Users, X } from "lucide-react";
 import type { AgentType } from "../../../../core/src/domain/agent/agent-type";
 import type { DashboardGroup, MonitoredSession, SessionDashboardSnapshot, SupervisionIncident } from "../../../../core/src/domain/supervision/types";
 import { SESSION_DASHBOARD_READY } from "../../../../core/src/domain/web-console/SessionDashboardBridge";
@@ -17,6 +17,7 @@ interface DashboardProps {
   onOpenSession?: (session: MonitoredSession) => void;
   onViewAgent?: (agentType: AgentType) => void;
   onViewGroups?: () => void;
+  onNewSession?: () => void;
   onClose?: () => void;
 }
 
@@ -100,11 +101,12 @@ export default function SessionDashboard(props: DashboardProps) {
   const openGroup = props.onOpenGroup ?? ((item: DashboardGroup) => postDashboardIntent({ kind: "group", groupId: item.group.id, title: item.group.name, discussionId: item.discussionId }));
   const openSession = props.onOpenSession ?? ((session: MonitoredSession) => postDashboardIntent({ kind: "session", session }));
   const viewGroups = props.onViewGroups ?? (() => postDashboardIntent({ kind: "groups" }));
+  const newSession = props.onNewSession ?? (() => postDashboardIntent({ kind: "new-session" }));
   const running = snapshot?.agents.reduce((count, agent) => count + agent.sessions.length, 0) ?? 0;
   const mergedEntries = snapshot && sessionsMerged ? mergedDashboardEntries(snapshot) : [];
   const decisions = snapshot?.decisionTotal ?? snapshot?.groups.reduce((count, group) => count + group.decisionCount, 0) ?? 0;
   return <main className="session-dashboard">
-    <header className="session-dashboard-heading"><div><span className="collab-eyebrow">会话总览</span><h1>Dashboard <span className="session-dashboard-live"><i/>实时</span></h1><p>在一个地方查看运行、交接与需要你决定的事。</p></div><div className="session-dashboard-toolbar"><button onClick={() => setSessionsMerged(!sessionsMerged)} aria-pressed={sessionsMerged} title={sessionsMerged ? "恢复按 Agent 分组" : "合并显示群聊和所有 Agent 的运行会话"}>{sessionsMerged ? <Layers size={16}/> : <List size={16}/>}<span>{sessionsMerged ? "按 Agent 分组" : "合并会话"}</span></button><button onClick={() => void refresh()} aria-label="刷新会话看板"><RefreshCw size={16}/></button><button onClick={viewGroups}><Users size={16}/>群聊列表</button>{props.onClose && <button onClick={props.onClose} aria-label="关闭会话看板"><X size={17}/></button>}</div></header>
+    <header className="session-dashboard-heading"><div><span className="collab-eyebrow">会话总览</span><h1>Dashboard <span className="session-dashboard-live"><i/>实时</span></h1><p>在一个地方查看运行、交接与需要你决定的事。</p></div><div className="session-dashboard-toolbar"><button onClick={() => setSessionsMerged(!sessionsMerged)} aria-pressed={sessionsMerged} title={sessionsMerged ? "恢复按 Agent 分组" : "合并显示群聊和所有 Agent 的运行会话"}>{sessionsMerged ? <Layers size={16}/> : <List size={16}/>}<span>{sessionsMerged ? "按 Agent 分组" : "合并会话"}</span></button><button onClick={() => void refresh()} aria-label="刷新会话看板"><RefreshCw size={16}/></button><button onClick={viewGroups}><Users size={16}/>群聊列表</button><button className="session-dashboard-new-session" onClick={newSession}><Plus size={16}/>创建会话</button>{props.onClose && <button onClick={props.onClose} aria-label="关闭会话看板"><X size={17}/></button>}</div></header>
     <div className="session-dashboard-stats"><span><Activity size={16}/><strong>{running}</strong>运行中的原始会话</span><span className={decisions ? "needs-attention" : ""}><strong>{decisions}</strong>待你决策</span><span><strong>{snapshot?.groupTotal ?? 0}</strong>协作群</span><small>无变化时监工保持安静</small></div>
     {error && <p role="alert" className="collab-error">{error}<button onClick={() => void refresh()}>重试</button></p>}
     {snapshot?.discoveryError && <p role="alert" className="collab-error">原生会话状态暂时不可用：{snapshot.discoveryError}</p>}

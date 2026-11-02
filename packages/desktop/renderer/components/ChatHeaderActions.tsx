@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Check, FolderOpen, LayoutDashboard, LayoutGrid, LoaderCircle, Monitor, PanelsTopLeft, Unplug, UsersRound } from "lucide-react";
-import { nextNavigationLayout } from "../../../core/src/domain/web-console/navigation-layout";
+import { navigationLayoutSwitchTitle, nextNavigationLayout } from "../../../core/src/domain/web-console/navigation-layout";
 import { useUIStore } from "../stores/uiStore";
 import { isDesktopLiveSetupPending } from "../lib/desktop-live-setup";
 import type { DesktopLiveStatus } from "../global";
@@ -197,8 +197,8 @@ export default function ChatHeaderActions({
         </svg>
       </button>
       <button type="button" className="ui-icon-button chat-header-action chat-header-action--navigation-layout"
-        aria-label="切换布局" aria-pressed={navigationLayout === "agent-rail"}
-        title={navigationLayout === "agent-rail" ? "单层抬头 · 切换到原布局" : "原布局 · 切换到单层抬头"}
+        aria-label="切换布局" data-navigation-layout={navigationLayout}
+        title={navigationLayoutSwitchTitle(navigationLayout)}
         onClick={() => setNavigationLayout(nextNavigationLayout(navigationLayout))}>
         <PanelsTopLeft size={15} aria-hidden="true" />
       </button>
@@ -217,5 +217,5 @@ export default function ChatHeaderActions({
       </button>}
     </div>
   );
-  return navigationLayout === "agent-rail" ? <HeaderActionMenu>{actions}</HeaderActionMenu> : actions;
+  return navigationLayout !== "classic" ? <HeaderActionMenu>{actions}</HeaderActionMenu> : actions;
 }

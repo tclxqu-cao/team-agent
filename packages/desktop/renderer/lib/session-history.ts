@@ -66,6 +66,12 @@ export interface SessionHistoryDetail {
 
 export type ProgressiveHistoryPhase = "full" | "core" | "trace";
 
+/** The navigation request can also provide the first page shown by ChatView. */
+export interface SessionHistorySeed {
+  sessionId: string;
+  detail: SessionHistoryDetail;
+}
+
 interface SessionHistoryApi {
   getSession(id: string, query?: SessionHistoryQuery): Promise<unknown>;
 }

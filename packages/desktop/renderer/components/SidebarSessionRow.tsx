@@ -1,6 +1,8 @@
 import { CircleAlert, CircleHelp, ChevronRight, LockKeyhole, Pin, Trash2 } from "lucide-react";
 import type { SidebarSessionVisualState } from "../lib/sidebar-session-status";
-import type { SessionCompatibility } from "../global";
+import type { AgentType, SessionCompatibility } from "../global";
+import AgentBrandIcon from "./AgentBrandIcon";
+import { AGENT_LABELS } from "../lib/agent-catalog";
 
 export interface SidebarSessionRowModel {
   id: string;
@@ -15,6 +17,8 @@ export interface SidebarSessionRowModel {
   expanded?: boolean;
   compatibility?: SessionCompatibility;
   pinned?: boolean;
+  agentType?: AgentType;
+  workspacePath?: string;
 }
 
 export interface SidebarDeleteAnchor {
@@ -49,7 +53,7 @@ export default function SidebarSessionRow({
         onClick={onSelect}
         aria-pressed={session.active}
         aria-expanded={session.hasChildren ? Boolean(session.expanded) : undefined}
-        title={session.title}
+        title={[session.title, session.workspacePath].filter(Boolean).join("\n")}
       >
         <span
           className={`sidebar-status-dot is-${session.visualState}`}
@@ -57,6 +61,9 @@ export default function SidebarSessionRow({
           aria-label={session.statusLabel}
         />
         <span className="sidebar-session-title">{session.title}</span>
+        {session.agentType && <span className="sidebar-session-agent" role="img" aria-label={AGENT_LABELS[session.agentType]} title={AGENT_LABELS[session.agentType]}>
+          <AgentBrandIcon agentType={session.agentType} size={18} />
+        </span>}
         {session.compatibility?.status === "checking" && (
           <span
             className="sidebar-session-compatibility"

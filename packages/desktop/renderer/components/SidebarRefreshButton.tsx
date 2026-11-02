@@ -1,11 +1,12 @@
 import { CircleAlert, RefreshCw } from "lucide-react";
 
-export default function SidebarRefreshButton({ loading, error, onRefresh }: {
+export default function SidebarRefreshButton({ loading, error, onRefresh, subject = "目录" }: {
   loading: boolean;
   error: string | null;
   onRefresh(): void;
+  subject?: string;
 }) {
-  const label = loading ? "正在加载目录" : error ? "目录加载失败，点击重试" : "刷新目录";
+  const label = loading ? `正在加载${subject}` : error ? `${subject}加载失败，点击重试` : `刷新${subject}`;
   return <button
     type="button"
     disabled={loading}

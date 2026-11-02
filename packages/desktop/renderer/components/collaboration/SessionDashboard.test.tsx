@@ -19,6 +19,8 @@ it("keeps Dashboard, group management, Agent navigation and source-linked group 
   expect(html).toContain("群内会话"); expect(html).toContain("原始任务"); expect(html).toContain("查看来源会话");
   expect(html).toContain("是否选择方案 A"); expect(html).toContain("查看全部");
   expect(html).toContain("合并会话"); expect(html).toContain('aria-pressed="false"');
+  const toolbar = html.slice(html.indexOf('class="session-dashboard-toolbar"'), html.indexOf("</header>"));
+  expect(toolbar).toContain("创建会话"); expect(toolbar).toContain("session-dashboard-new-session");
 });
 
 it("merges group chats and running sessions, prioritizing decisions and preserving group actions", () => {

@@ -1,0 +1,12 @@
+.all-sessions-search input {
+  width: 100%; min-width: 0; border: 0; outline: none; background: transparent;
+  color: var(--text-primary); font: inherit;
+}
+.all-sessions-search input::placeholder { color: var(--text-muted); }
+.all-sessions-sort-label { color: var(--text-muted); font-size: 11px; white-space: nowrap; }
+.all-sessions-list { min-height: 0; flex: 1; overflow: auto; padding: 0 10px 12px; }
+.sidebar-session-agent { display: inline-flex; flex-shrink: 0; margin-left: auto; color: var(--text-secondary); }
+.all-sessions-list .sidebar-session-button { min-width: 0; }
+.all-sessions-list .sidebar-session-row { min-height: 40px; }
+.all-sessions-empty { padding: 20px 10px; color: var(--text-muted); font-size: 12px; text-align: center; }
+.all-sessions-more { width: 100%; padding: 12px; border: 0; background: transparent; color: var(--text-muted); cursor: pointer; }

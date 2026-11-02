@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { History, LoaderCircle, Plus, Search } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
 import ChatView from "./components/ChatView";
+import AllSessionsSidebar from "./components/AllSessionsSidebar";
 import SidebarRefreshButton from "./components/SidebarRefreshButton";
 import SidebarSessionPagination from "./components/SidebarSessionPagination";
 import CollaborationLauncher from "./components/collaboration/CollaborationLauncher";
@@ -12,6 +13,8 @@ import SessionDashboard from "./components/collaboration/SessionDashboard";
 import SupervisionNotifier from "./components/collaboration/SupervisionNotifier";
 import { collaborationRequest } from "./components/collaboration/client";
 import { resolveDashboardSession } from "./lib/dashboard-session-navigation";
+import { postDashboardIntent } from "./lib/dashboard-navigation-delivery";
+import type { SessionHistorySeed } from "./lib/session-history";
 import type { AgentRailSessions } from "./lib/agent-rail-sessions";
 import { isAgentType } from "../../core/src/domain/agent/agent-type";
 import { readSessionDashboardIntent, SESSION_DASHBOARD_NAVIGATE, SESSION_DASHBOARD_CHAT_READY, SESSION_DASHBOARD_APPLIED, type SessionDashboardIntent } from "../../core/src/domain/web-console/SessionDashboardBridge";
@@ -266,11 +269,7 @@ export default function App() {
     anchor: SidebarDeleteAnchor;
   } | null>(null);
   const [invalidWorkspaceDeletePending, setInvalidWorkspaceDeletePending] = useState(false);
-  const [sessionCreationPending, setSessionCreationPending] = useState<{
-    projectId: string;
-    agentType: AgentType;
-  } | null>(null);
-  const sessionCreationPendingRef = useRef(false);
+  const [allSessionsRevision, setAllSessionsRevision] = useState(0);
   const [runtimeHealth, setRuntimeHealth] = useState<RuntimeHealth[]>([]);
   /** Child sessions keyed by parentSessionId */
   const [childSessionsByParent, setChildSessionsByParent] = useState<Record<string, Session[]>>(initialSessionState.children);
@@ -313,6 +312,11 @@ export default function App() {
   const [collaborationDashboardVisible, setCollaborationDashboardVisible] = useState(false);
   const [sessionDashboardOpen, setSessionDashboardOpen] = useState(false);
   const [sessionDashboardVisible, setSessionDashboardVisible] = useState(false);
+  /** 新建会话输入框聚焦序号：从 Dashboard 等入口进入时递增，触发 composer focus。 */
+  const [newSessionFocusNonce, setNewSessionFocusNonce] = useState(0);
+  const [initialSessionHistory, setInitialSessionHistory] = useState<SessionHistorySeed>();
+  /** 进入新建会话态后，等待目标 Agent 的目录列表就绪再落定目录。 */
+  const newSessionEntryRef = useRef<{ agentType: AgentType; preferredPath: string | null } | null>(null);
   const [initialDiscussions, setInitialDiscussions] = useState<Record<string, string | undefined>>({});
   const dashboardNavigation = useRef<(intent: SessionDashboardIntent) => void>(() => {});
   const navigationRequest = useRef<AbortController | null>(null);
@@ -352,6 +356,7 @@ export default function App() {
   const skin = useUIStore((s) => s.skin);
   const layout = useUIStore((s) => s.layout);
   const navigationLayout = useUIStore((s) => s.navigationLayout);
+  const allSessionsLayout = navigationLayout === "all-sessions";
   const wakeEnabled = useUIStore((s) => s.wakeEnabled);
   const wakeWord = useUIStore((s) => s.wakeWord);
   const setSkin = useUIStore((s) => s.setSkin);
@@ -867,11 +872,70 @@ export default function App() {
     window.requestAnimationFrame(() => {
       if (sidebarScrollRef.current) sidebarScrollRef.current.scrollTop = partition.sidebarScrollTop;
     });
-    void loadProjects(agentType, {
-      refresh: partition.workspaces.length > 0,
-      since: partition.watermark,
-    });
+    if (!allSessionsLayout || currentAgent !== agentType) {
+      void loadProjects(agentType, {
+        refresh: partition.workspaces.length > 0,
+        since: partition.watermark,
+        refreshLoadedSessions: !allSessionsLayout,
+      });
+    }
   };
+
+  /**
+   * 进入「新建会话」输入框：清空当前会话、选定目录并聚焦输入框。
+   * 此时还没有真正 createSession —— 第一条消息发出时才按输入框里选中的
+   * Agent / 目录建会话，所以可以从 Dashboard 等任意入口直接进入。
+   */
+  const enterNewSessionComposer = (agentType?: AgentType, workspaceId?: string) => {
+    navigationRequest.current?.abort();
+    navigationRequest.current = null;
+    setInitialSessionHistory(undefined);
+    const targetAgent = agentType ?? activeAgentRef.current;
+    const preferredPath = selectedWorkspacePath;
+    if (targetAgent !== activeAgentRef.current) handleAgentChange(targetAgent);
+    const partition = workspaceCacheRef.current.agents[targetAgent];
+    const workspaces = partition?.workspaces ?? [];
+    const matched = preferredPath
+      ? workspaces.find(workspace => workspace.canCreateSession !== false && workspace.roots?.includes(preferredPath))
+      : undefined;
+    const remembered = partition?.selectedWorkspaceId
+      && workspaces.some(workspace => workspace.canCreateSession !== false && workspace.workspaceId === partition.selectedWorkspaceId)
+      ? partition.selectedWorkspaceId
+      : undefined;
+    const projectId = workspaceId ?? matched?.workspaceId
+      ?? remembered
+      ?? workspaces.find(workspace => workspace.canCreateSession !== false)?.workspaceId
+      ?? null;
+    // 已经按同一路径匹配上就不用再等目录刷新；否则留个待办，等 Agent 的目录列表刷新后
+    // 优先切回同一个文件夹（换 Agent 时目录不该乱跳）。
+    newSessionEntryRef.current = workspaceId || matched || !preferredPath ? null : { agentType: targetAgent, preferredPath };
+    applySidebarSelection({ projectId, sessionId: null });
+    // 清掉 store 里上一个会话的 id，避免「没选目录」时兜底回旧会话。
+    useAgentStore.setState({ sessionId: null, messages: [] });
+    setSessionDashboardOpen(false);
+    setSessionDashboardVisible(false);
+    setCollaborationDashboardOpen(false);
+    setActiveCollaboration(null);
+    setHubOpen(false);
+    if (layout === "focus") setLayout("standard");
+    setNewSessionFocusNonce(nonce => nonce + 1);
+    if (mobileDrawer) setSidebarDrawerOpen(false);
+  };
+
+  // Agent 切换后目录列表是异步刷新的：等同一个文件夹出现后再把新会话目录切过去。
+  // 期间先沿用该 Agent 上次的目录，用户也可以随时手动改。
+  useEffect(() => {
+    const entry = newSessionEntryRef.current;
+    if (!entry) return;
+    if (selectedSessionId !== null) { newSessionEntryRef.current = null; return; }
+    if (activeAgent !== entry.agentType) return;
+    const pathMatch = entry.preferredPath
+      ? projects.find(project => project.canCreateSession !== false && project.description === entry.preferredPath)
+      : undefined;
+    if (!pathMatch) return;
+    newSessionEntryRef.current = null;
+    if (pathMatch.id !== selectedProjectId) applySidebarSelection(selectProject(pathMatch.id));
+  }, [activeAgent, projects, selectedProjectId, selectedSessionId]);
 
   const openAgentSession = (session: UnifiedSessionSummary, snapshot: AgentRailSessions, preservePagination = false) => {
     const partition = workspaceCacheRef.current.agents[session.agentType] ?? emptyAgentWorkspacePartition();
@@ -900,6 +964,7 @@ export default function App() {
     void (async () => {
       if (intent.kind === "dashboard") { openSessionDashboard(); return; }
       if (intent.kind === "groups") { openCollaborationDashboard(); return; }
+      if (intent.kind === "new-session") { enterNewSessionComposer(); return; }
       if (intent.kind === "group") {
         const group = await collaborationRequest<CollaborationGroup>({ action: "group", groupId: intent.groupId });
         setInitialDiscussions(current => ({ ...current, [group.id]: intent.discussionId }));
@@ -926,6 +991,7 @@ export default function App() {
       const snapshot = cached ? { workspaces: cached.workspaces, sessions: Object.values(cached.sessions).flatMap(entry => entry.data) } : undefined;
       const result = await resolveDashboardSession(window.agentApi, intent.session, controller.signal, snapshot);
       if (!controller.signal.aborted) {
+        setInitialSessionHistory(result.initialHistory);
         openAgentSession(result.session, result.snapshot, true);
         if (window.parent !== window) window.parent.postMessage({ type: SESSION_DASHBOARD_APPLIED, sessionId: result.session.id }, window.location.origin);
       }
@@ -953,6 +1019,7 @@ export default function App() {
       const session = value as UnifiedSessionSummary;
       if (session.id && isAgentType(session.agentType)) dashboardNavigation.current({ kind: "session", session });
     }).catch(error => { setNotice(error instanceof Error ? error.message : "原会话不可访问"); setNoticeType("error"); });
+    else if (query.get("newSession") === "1") enterNewSessionComposer();
     else if (isAgentType(agent)) dashboardNavigation.current({ kind: "agent", agentType: agent });
     return () => { delete document.body.dataset.agentroamChatNavigation; navigationRequest.current?.abort(); window.removeEventListener(SESSION_DASHBOARD_NAVIGATE, local); window.removeEventListener("message", remote); };
   }, []);
@@ -1052,7 +1119,7 @@ export default function App() {
       setInvalidProjectIds(invalid);
 
       // Cached rows render immediately; page one then refreshes in place.
-      if (options.refreshLoadedSessions !== false) {
+      if (options.refreshLoadedSessions !== false && !allSessionsLayout) {
         for (const projectId of cachedProjectIds) {
           if (invalid.has(projectId) || loadingProjectIdsRef.current.has(projectId)) continue;
           void loadSessions(projectId, { refresh: true, background: true });
@@ -1213,69 +1280,13 @@ export default function App() {
     }));
   };
 
-  const handleNewRuntimeSession = async (projectId: string, agentType: AgentType) => {
-    if (!window.agentApi) return;
-    const workspace = projectsRef.current.find((project) => project.id === projectId);
-    if (!workspace || workspace.canCreateSession === false) {
-      setNotice("请先选择目录");
-      setNoticeType("info");
-      setTimeout(() => setNotice(null), 3000);
-      return;
-    }
-    if (sessionCreationPendingRef.current) return;
-    sessionCreationPendingRef.current = true;
-    setSessionCreationPending({ projectId, agentType });
-    try {
-      const nativeProjectId = workspace?.source === "imported" ? undefined : projectId;
-      const created = await window.agentApi.createSession(
-        "新会话",
-        nativeProjectId,
-        agentType,
-        workspace?.description,
-      ) as Session;
-      if (activeAgentRef.current !== agentType) return;
-
-      // Native runtimes may hide a fresh empty session from discovery. Insert
-      // every successful creation immediately and reconcile CA in the background.
-      const projectSession = created.projectId === projectId ? created : { ...created, projectId };
-      const nextSessionsByProject = {
-        ...sessionsByProjectRef.current,
-        [projectId]: [
-          projectSession,
-          ...(sessionsByProjectRef.current[projectId] ?? []).filter((session) => session.id !== created.id),
-        ],
-      };
-      sessionsByProjectRef.current = nextSessionsByProject;
-      setSessionsByProject(nextSessionsByProject);
-      applySidebarSelection({ projectId, sessionId: created.id });
-      if (mobileDrawer) setSidebarDrawerOpen(false);
-      if (agentType === "customer-agent") {
-        void loadSessions(projectId, {
-          refresh: true,
-          background: true,
-          pendingSession: projectSession,
-        });
-      }
-    } catch (error) {
-      setNotice(error instanceof Error ? error.message : "新建会话失败");
-      setNoticeType("error");
-      setTimeout(() => setNotice(null), 3000);
-    } finally {
-      sessionCreationPendingRef.current = false;
-      setSessionCreationPending(null);
-    }
+  const handleNewRuntimeSession = (projectId: string, agentType: AgentType) => {
+    const workspace = projectsRef.current.find(project => project.id === projectId);
+    if (!workspace || workspace.canCreateSession === false) return;
+    enterNewSessionComposer(agentType, projectId);
   };
 
-  const handleBottomNewSession = () => {
-    const selectedWorkspace = projectsRef.current.find((project) => project.id === selectedProjectId);
-    if (!selectedProjectId || selectedWorkspace?.canCreateSession === false) {
-      setNotice("请先选择目录");
-      setNoticeType("info");
-      setTimeout(() => setNotice(null), 3000);
-      return;
-    }
-    void handleNewRuntimeSession(selectedProjectId, activeAgent);
-  };
+  const handleBottomNewSession = () => postDashboardIntent({ kind: "new-session" });
 
   useEffect(() => {
     if (!window.agentApi) return;
@@ -1291,6 +1302,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    if (allSessionsLayout) return;
     const timer = window.setInterval(() => {
       if (document.visibilityState !== "visible" || workspaceLoading) return;
       void loadProjects(activeAgent, {
@@ -1302,10 +1314,10 @@ export default function App() {
     return () => window.clearInterval(timer);
     // Active Agent and its watermark define the incremental workspace poll.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeAgent, workspaceLoading, workspaceWatermark]);
+  }, [activeAgent, allSessionsLayout, workspaceLoading, workspaceWatermark]);
 
   useEffect(() => {
-    if (!window.agentApi) return;
+    if (!window.agentApi || allSessionsLayout) return;
     let cancelled = false;
     const refresh = () => {
       if (cancelled || document.visibilityState !== "visible") return;
@@ -1347,7 +1359,7 @@ export default function App() {
     // Visible workspaces are refreshed together so collapsed cached summaries
     // cannot leave a completed native session appearing active indefinitely.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeAgent, expandedProjects, selectedProjectId, mobileDrawer, sidebarDrawerOpen, webShell]);
+  }, [activeAgent, allSessionsLayout, expandedProjects, selectedProjectId, mobileDrawer, sidebarDrawerOpen, webShell]);
 
   // Sync working directory whenever the selected project changes (covers startup,
   // session click, new session, and explicit project click).
@@ -1548,7 +1560,8 @@ export default function App() {
       setNoticeType("success");
       setTimeout(() => setNotice(null), 2500);
       setSessionDeleteRequest(null);
-      if (ownerProjectId) void loadSessions(ownerProjectId, { refresh: true, background: true });
+      setAllSessionsRevision(revision => revision + 1);
+      if (ownerProjectId && agentType === activeAgentRef.current) void loadSessions(ownerProjectId, { refresh: true, background: true });
     } catch (err) {
       setNotice(err instanceof Error ? err.message : "会话删除失败");
       setNoticeType("error");
@@ -1690,14 +1703,14 @@ export default function App() {
         }}
       />}
       {(activeCollaboration || collaborationDashboardOpen || sessionDashboardOpen) && <div className="collab-desktop-overlay">
-        <div className="collab-desktop-body">{sessionDashboardOpen ? <SessionDashboard onOpenGroup={item => dashboardNavigation.current({ kind: "group", groupId: item.group.id, title: item.group.name, discussionId: item.discussionId })} onOpenSession={session => dashboardNavigation.current({ kind: "session", session })} onViewAgent={agentType => dashboardNavigation.current({ kind: "agent", agentType })} onViewGroups={openCollaborationDashboard} onClose={() => { setSessionDashboardOpen(false); setSessionDashboardVisible(false); }}/> : collaborationDashboardOpen ? <CollaborationDashboard cwd={selectedWorkspacePath || undefined} onOpen={openCollaboration} onClose={() => { setCollaborationDashboardOpen(false); setCollaborationDashboardVisible(false); }} onChanged={(id, group) => {
+        <div className="collab-desktop-body">{sessionDashboardOpen ? <SessionDashboard onNewSession={handleBottomNewSession} onOpenGroup={item => dashboardNavigation.current({ kind: "group", groupId: item.group.id, title: item.group.name, discussionId: item.discussionId })} onOpenSession={session => dashboardNavigation.current({ kind: "session", session })} onViewAgent={agentType => dashboardNavigation.current({ kind: "agent", agentType })} onViewGroups={openCollaborationDashboard} onClose={() => { setSessionDashboardOpen(false); setSessionDashboardVisible(false); }}/> : collaborationDashboardOpen ? <CollaborationDashboard cwd={selectedWorkspacePath || undefined} onOpen={openCollaboration} onClose={() => { setCollaborationDashboardOpen(false); setCollaborationDashboardVisible(false); }} onChanged={(id, group) => {
           setCollaborationGroupsRevision(revision => revision + 1);
           setCollaborationTabs(current => group ? current.map(item => item.id === id ? group : item) : current.filter(item => item.id !== id));
           if (!group && activeCollaboration === id) setActiveCollaboration(null);
         }}/> : activeCollaboration && <CollaborationPage key={`${activeCollaboration}-${collaborationGroupsRevision}`} groupId={activeCollaboration} initialDiscussionId={initialDiscussions[activeCollaboration]}/>}</div>
       </div>}
       <DesktopLiveControlBanner />
-      {!mobileDrawer && !flowStudioEntryUrl && <AgentSessionRail hidden={!sidebarHidden}
+      {!allSessionsLayout && !mobileDrawer && !flowStudioEntryUrl && <AgentSessionRail hidden={!sidebarHidden}
         value={activeAgent} health={runtimeHealth} selectedSessionId={selectedSessionId}
         getActivity={sessionActivity} onChange={handleAgentChange}
         onUnavailable={message => { setNotice(message); setNoticeType("info"); setTimeout(() => setNotice(null), 3000); }}
@@ -1755,7 +1768,7 @@ export default function App() {
       {layout !== "focus" && !flowStudioEntryUrl && (
       <>
       <aside
-        className={`app-sidebar${navigationLayout === "agent-rail" ? " has-agent-navigation" : ""}`}
+        className={`app-sidebar${navigationLayout === "agent-rail" ? " has-agent-navigation" : ""}${allSessionsLayout ? " has-all-sessions" : ""}`}
         id="workspace-sidebar"
         aria-hidden={sidebarHidden || (mobileDrawer && !sidebarDrawerOpen)}
         ref={element => { if (element) element.inert = sidebarHidden || (mobileDrawer && !sidebarDrawerOpen); }}
@@ -1799,7 +1812,7 @@ export default function App() {
               <AgentBrandIcon agentType="customer-agent" size={24} />
             </div>
             <span className="sidebar-brand-name">AgentRoam</span>
-            {!webShell && (
+            {!webShell && navigationLayout === "classic" && (
               <DesktopAppActions
                 onOpenFlowStudio={handleOpenFlowStudio}
                 openingFlowStudio={flowStudioOpening}
@@ -1808,6 +1821,23 @@ export default function App() {
           </div>
         </div>}
 
+        {allSessionsLayout ? <AllSessionsSidebar
+          selectedSessionId={selectedSessionId}
+          runningSessionId={runningSessionId}
+          needsInput={sessionsNeedingInput}
+          pinnedIds={pinnedSessionIds}
+          revision={allSessionsRevision}
+          onSelect={session => dashboardNavigation.current({ kind: "session", session })}
+          onPin={togglePinnedSession}
+          onDelete={(session, anchor) => {
+            void window.agentApi.getSession(session.id, { limit: 1 }).then(value => {
+              const detail = value as UnifiedSessionSummary;
+              if (detail.id !== session.id || detail.agentType !== session.agentType) throw new Error("会话身份已变化，请刷新重试");
+              if (!detail.canDelete) throw new Error("当前会话暂不可删除");
+              requestDeleteSession(detail, anchor);
+            }).catch(error => { setNotice(error instanceof Error ? error.message : "无法读取会话"); setNoticeType("error"); });
+          }}
+        /> : <>
         <AgentWorkspaceSwitcher
           vertical={navigationLayout === "agent-rail"}
           value={activeAgent}
@@ -1951,8 +1981,6 @@ export default function App() {
               const projSessions = orderedProjectSessions;
               const manySession = projSessions.length > 10;
               const isInvalid = invalidProjectIds.has(project.id);
-              const isCreatingSession = sessionCreationPending?.agentType === activeAgent
-                && sessionCreationPending.projectId === project.id;
               return (
                 <div
                   key={project.id}
@@ -2042,21 +2070,12 @@ export default function App() {
                           event.stopPropagation();
                           void handleNewRuntimeSession(project.id, activeAgent);
                         }}
-                        title={isCreatingSession
-                          ? "正在创建会话"
-                          : `新建 ${activeAgent === "customer-agent" ? "Customer Agent" : activeAgent === "claude-code" ? "Claude Code" : activeAgent === "codex" ? "Codex" : activeAgent === "deepseek-harness" ? "DeepSeek Harness" : "OpenCode"} 会话`}
-                        aria-label={isCreatingSession ? "正在创建会话" : `在 ${project.name} 中新建会话`}
-                        aria-busy={isCreatingSession}
-                        disabled={
-                          sessionCreationPending !== null
-                          || isInvalid
-                          || runtimeHealth.find((runtime) => runtime.agentType === activeAgent)?.available === false
-                        }
+                        title={`在 ${project.name} 中新建会话`}
+                        aria-label={`在 ${project.name} 中新建会话`}
+                        disabled={isInvalid || runtimeHealth.find(runtime => runtime.agentType === activeAgent)?.available === false}
                         className="sidebar-runtime-create sidebar-project-add-action ui-icon-button ui-icon-button--small"
                       >
-                        {isCreatingSession
-                          ? <LoaderCircle size={13} style={{ animation: "spin 0.8s linear infinite" }} aria-hidden="true" />
-                          : <Plus size={13} aria-hidden="true" />}
+                        <Plus size={13} aria-hidden="true" />
                       </button>
                     )}
                   </div>
@@ -2151,43 +2170,17 @@ export default function App() {
           </div>
         </div>
 
+        </>}
         <div className="sidebar-bottom-action">
-          <CollaborationLauncher refreshKey={collaborationGroupsRevision} onOpen={openCollaboration}/>
+          {!allSessionsLayout && <CollaborationLauncher refreshKey={collaborationGroupsRevision} onOpen={openCollaboration}/>}
           <button
             type="button"
             className="sidebar-new-session-primary"
-            disabled={
-              sessionCreationPending !== null
-              || (selectedProjectId !== null && invalidProjectIds.has(selectedProjectId))
-              || runtimeHealth.find((runtime) => runtime.agentType === activeAgent)?.available === false
-            }
-            aria-busy={sessionCreationPending !== null}
-            aria-disabled={
-              sessionCreationPending !== null
-              || !selectedProjectId
-              || projects.find((project) => project.id === selectedProjectId)?.canCreateSession === false
-            }
-            title={
-              sessionCreationPending
-                ? "正在创建会话"
-                : selectedProjectId
-              && projects.find((project) => project.id === selectedProjectId)?.canCreateSession !== false
-                ? "新建会话"
-                : "请先选择目录"
-            }
+            title="新建会话"
             onClick={handleBottomNewSession}
           >
-            {sessionCreationPending ? (
-              <>
-                <LoaderCircle size={16} style={{ animation: "spin 0.8s linear infinite" }} aria-hidden="true" />
-                <span>正在创建...</span>
-              </>
-            ) : (
-              <>
-                <Plus size={16} aria-hidden="true" />
-                <span>新建会话</span>
-              </>
-            )}
+            <Plus size={16} aria-hidden="true" />
+            <span>新建会话</span>
           </button>
         </div>
 
@@ -2399,7 +2392,25 @@ export default function App() {
             selectedSessionId={selectedSessionId}
             sessionTitle={selectedSessionTitle}
             sessionSummary={selectedSession}
+            initialSessionHistory={initialSessionHistory}
             workspacePath={selectedWorkspacePath}
+            workspaceSource={projects.find(project => project.id === selectedProjectId)?.source}
+            runtimeHealth={runtimeHealth}
+            onSelectAgent={enterNewSessionComposer}
+            workspaces={projects.map(project => ({
+              id: project.id,
+              name: project.name,
+              path: project.description,
+              canCreateSession: project.canCreateSession,
+            }))}
+            onSelectWorkspace={projectId => {
+              // 用户手动选目录即视为最终选择，不再等「同一文件夹」自动回填。
+              newSessionEntryRef.current = null;
+              applySidebarSelection(selectProject(projectId));
+              setExpandedProjects(prev => new Set(prev).add(projectId));
+            }}
+            onPickWorkspaceFolder={() => void handleImportProject()}
+            focusComposerNonce={newSessionFocusNonce}
             voiceCommand={voiceCommand}
             onOpenSettings={toggleSettings}
             settingsOpen={showSettings}
@@ -2413,20 +2424,37 @@ export default function App() {
             onOpenDesktopLive={!webShell && window.agentApi?.desktopLiveGetStatus ? () => setShowDesktopLive(true) : undefined}
             onHideToBackground={() => void hideToBackground()}
             onOpenHub={window.agentApi?.hubGetConfig ? () => setHubOpen(true) : undefined}
-            headerAppActions={!webShell && navigationLayout === "agent-rail" ? <DesktopAppActions onOpenFlowStudio={handleOpenFlowStudio} openingFlowStudio={flowStudioOpening} /> : undefined}
+            headerAppActions={!webShell && navigationLayout !== "classic" ? <DesktopAppActions onOpenFlowStudio={handleOpenFlowStudio} openingFlowStudio={flowStudioOpening} /> : undefined}
             onToggleAppearance={toggleAppearance}
             appearanceOpen={showAppearance}
             hideToBackgroundTitle={wakeEnabled ? `隐藏到后台（说“${wakeWord}”唤醒）` : "隐藏到后台"}
-            onSessionCreated={async (sessionId, pendingSession) => {
+            onSessionCreated={(sessionId, pendingSession) => {
               const projectId = selectedProjectIdRef.current;
+              if (projectId && pendingSession) {
+                const key = `${pendingSession.agentType}:${projectId}`;
+                projectSessionRequestIds.current.set(key, (projectSessionRequestIds.current.get(key) ?? 0) + 1);
+                loadingProjectIdsRef.current.delete(projectId);
+                setLoadingProjectIds(new Set(loadingProjectIdsRef.current));
+                const next = { ...sessionsByProjectRef.current, [projectId]: [
+                  { ...pendingSession, projectId },
+                  ...(sessionsByProjectRef.current[projectId] ?? []).filter(session => session.id !== sessionId),
+                ] };
+                sessionsByProjectRef.current = next;
+                setSessionsByProject(next);
+              }
               applySidebarSelection({ projectId, sessionId });
+              setAllSessionsRevision(revision => revision + 1);
               // Arm two-way voice conversation for voice-originated sessions
               if (pendingVoiceConvo.current) {
                 pendingVoiceConvo.current = false;
                 convoRef.current = { sessionId, until: Date.now() + 90000 };
                 void window.agentApi?.wakeConversation(true);
               }
-              if (projectId) await loadSessions(projectId, { pendingSession });
+              // Native discovery can omit a newly created empty thread. Sending
+              // must proceed with the create receipt, without waiting for history.
+              if (projectId && activeAgentRef.current === "customer-agent") {
+                void loadSessions(projectId, { pendingSession, background: true });
+              }
             }}
             onSubSessionCreated={async (parentSessionId) => {
               await loadChildSessions(parentSessionId);

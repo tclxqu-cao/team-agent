@@ -2,6 +2,17 @@ import { describe, expect, it, vi } from "vitest";
 import { prepareChatCommand } from "./chat-command";
 
 describe("prepareChatCommand", () => {
+  it("hands the create receipt to selection even before native discovery can find it", async () => {
+    const created = { id: "runtime:codex:new", agentType: "codex", cwd: "/work", projectId: "work" };
+    const selected = vi.fn();
+    await prepareChatCommand({
+      text: "first message", projectId: "work", sessionId: null,
+      createSession: async () => created,
+      activateSession: vi.fn(), showUserMessage: vi.fn(), onSessionCreated: selected,
+    });
+    expect(selected).toHaveBeenCalledWith(created.id, created);
+  });
+
   it("creates and activates a new session before selecting it", async () => {
     const calls: string[] = [];
 
