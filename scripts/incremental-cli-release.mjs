@@ -35,6 +35,7 @@ export function affectedPackages(path) {
   if (path.startsWith("packages/native-runtime/")) return [names[0], names[1]];
   if (["packages/server/", "packages/webapp/"].some((prefix) => path.startsWith(prefix))) return names.slice(0, 2);
   if (path === "scripts/build-cli-remote-helper.mjs") return [names[0]];
+  if (path === "scripts/stage-cli-runtime.mjs") return names.slice(0, 2);
   if (path === "scripts/build-tui-package.mjs") return names.slice(4, 6);
   if (path === "scripts/fetch-cloudflared-package.mjs") return names.slice(2, 4);
   if (path.startsWith("scripts/") && !/\.(?:test|spec)\./.test(path)) return names.slice();
