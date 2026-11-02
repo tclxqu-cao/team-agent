@@ -1,0 +1,122 @@
+packages/server/app/web/page.tsx
+  s_bbea2dc3135fac::t_ff125e4020d718 733
+packages/desktop/renderer/components/ComposerWorkspacePicker.tsx
+  s_5f1228882df889::t_ab2c4fc3ca19b3 1-126
+packages/desktop/renderer/lib/all-sessions.ts
+  s_bbea2dc3135fac::t_ff125e4020d718 1-35
+packages/desktop/renderer/lib/all-sessions.test.ts
+  s_bbea2dc3135fac::t_14c80ead6d5222 1-42
+packages/desktop/renderer/styles/composer.css
+  s_5f1228882df889::t_5f0995dcf33ee0 672,696,699,703,729-730,733,736-742
+  s_5f1228882df889::t_13a820ac74860c 517
+  s_5f1228882df889::t_d79e6ea7e58d79 624,628,635,641,648,657,662,667,673,678,688,692-693,702,709,743
+  s_5f1228882df889::t_ce7c2beb5020dd 499-516,518-609,614,620,637,695,697-698,700-701,704-708,710-728,732,734-735
+  s_5f1228882df889::t_f150cb3ccdc648 498
+  s_5f1228882df889::t_54a00ac944c563 610-613
+  s_5f1228882df889::t_7affbdbd0fb690 615-619
+  s_5f1228882df889::t_5f084b25564097 621-623
+  s_5f1228882df889::t_91a48524e57e20 625-627
+  s_5f1228882df889::t_55bbe2647cc9f5 629-634
+  s_5f1228882df889::t_eb282126318c52 636
+  s_5f1228882df889::t_608b4c7fd6e04e 638-640
+  s_5f1228882df889::t_0ba5895f2050f4 642-647
+  s_5f1228882df889::t_5f0cb4351623bd 649-651,654-656
+  s_5f1228882df889::t_c14e150fe0e6f6 658-661
+  s_5f1228882df889::t_ef38d44f01bb28 663-666
+  s_5f1228882df889::t_02337753253746 668-671
+  s_5f1228882df889::t_ac76bbfaaa43a1 674-677
+  s_5f1228882df889::t_440138486f8bb8 679-681,685-687
+  s_5f1228882df889::t_5e67e59aa0717a 689-691
+  s_5f1228882df889::t_f1452610a388dd 694
+  s_5f1228882df889::t_dfbc7880562a72 731
+  s_5f1228882df889::t_2977fe54ada548 744-745
+  s_5f1228882df889::t_437090f12e947c 652-653,682-684
+packages/desktop/renderer/lib/dashboard-session-navigation.test.ts
+  s_bbea2dc3135fac::t_db9b2d13748a23 4,15,18,39,88-110
+packages/desktop/renderer/lib/use-composer-picker-height.ts
+  s_5f1228882df889::t_ab2c4fc3ca19b3 1-29
+packages/desktop/renderer/lib/session-composer-routing.ts
+  s_5f1228882df889::t_633f50c78ad027 1-20
+packages/desktop/renderer/styles/all-sessions.css
+  s_bbea2dc3135fac::t_ff125e4020d718 1-12
+packages/desktop/renderer/lib/session-history.ts
+  s_bbea2dc3135fac::t_2bacd53b2b3486 69-74
+packages/desktop/renderer/App.tsx
+  s_bbea2dc3135fac::t_2bacd53b2b3486 16-17,317,875-881,890-892,919,994,1022,1122,1289,1305,1317,1320,1362,2395
+  s_bbea2dc3135fac::t_2bd985b7c7a124 6,272,359,889,905-911,922,1283-1286,1563-1564,1713,1771,1824-1840,2073-2075,2078,2173,2175,2179,2182-2183,2427,2431,2433,2438-2444,2446,2453-2457
+  s_bbea2dc3135fac::t_a72a9cd49b063b 899-902,933
+  s_bbea2dc3135fac::t_c27b8cad48e2ec 1815
+  s_bbea2dc3135fac::t_db9b2d13748a23 1706
+  s_5f1228882df889::t_633f50c78ad027 2397
+  s_bbea2dc3135fac::t_23be9d0d57f32c 315-316,318-319,882-888,893-898,903-904,912-918,920-921,925-932,934-939,967,2398-2413,2434-2437
+packages/server/app/web/navigation-layout-preference.test.ts
+  s_bbea2dc3135fac::t_14c80ead6d5222 18-20
+packages/desktop/renderer/lib/chat-command.test.ts
+  s_bbea2dc3135fac::t_14c80ead6d5222 5-15
+packages/desktop/renderer/lib/chat-command.ts
+  s_bbea2dc3135fac::t_79edb946a415f4 1,5,9,12,15-16,19-20,29
+packages/desktop/renderer/lib/dashboard-navigation-delivery.test.ts
+  s_bbea2dc3135fac::t_fd48676f462498 124
+  s_bbea2dc3135fac::t_b1904a8860688f 117-123,125-126
+packages/desktop/renderer/components/ChatHeaderActions.tsx
+  s_bbea2dc3135fac::t_ff125e4020d718 3,200-201,220
+packages/desktop/renderer/components/ChatView.tsx
+  s_5f1228882df889::t_ce7c2beb5020dd 5705,5713-5725
+  s_bbea2dc3135fac::t_2bacd53b2b3486 66,484,581,1422-1423,1797-1799,1841-1846,1872-1875,1899
+  s_bbea2dc3135fac::t_96dec8abfcd7ae 3654,4928
+  s_bbea2dc3135fac::t_14c80ead6d5222 3891
+  s_5f1228882df889::t_633f50c78ad027 115,461,486,583,3631-3636
+  s_bbea2dc3135fac::t_324c6cc5e3a8cd 16-17,44,509-518,602-607,670-671,873-874,1030-1035,1086-1105,1112-1151,3626-3630,3637-3642,3645,3844,3892,4005,4018-4019,4056,4058-4062,4919,5726-5727,5779-5780,5806,6057,6059-6060,6072
+packages/desktop/renderer/stores/uiStore.test.ts
+  s_bbea2dc3135fac::t_b91da91083c11c 98,105
+packages/desktop/renderer/components/ComposerAgentPicker.tsx
+  s_5f1228882df889::t_ab2c4fc3ca19b3 1-114
+packages/core/src/domain/web-console/navigation-layout.ts
+  s_bbea2dc3135fac::t_ff125e4020d718 1-7,13,17-21
+packages/core/src/domain/web-console/navigation-layout.test.ts
+  s_bbea2dc3135fac::t_14c80ead6d5222 5,7-8,12
+packages/desktop/renderer/components/SidebarRefreshButton.tsx
+  s_bbea2dc3135fac::t_79edb946a415f4 3,7,9
+packages/server/app/web/NavigationLayoutSwitcher.tsx
+  s_bbea2dc3135fac::t_ff125e4020d718 4,7-8
+packages/desktop/renderer/lib/dashboard-session-navigation.ts
+  s_bbea2dc3135fac::t_2bacd53b2b3486 4,7,9-11,41
+packages/desktop/renderer/lib/session-composer-routing.test.ts
+  s_5f1228882df889::t_eed7dadd73e9ca 1,3-4,8-62
+  s_5f1228882df889::t_3cdc220177e222 63
+packages/desktop/renderer/components/AllSessionsSidebar.tsx
+  s_bbea2dc3135fac::t_ff125e4020d718 1-30,32-37,40-43,48,51-71,73-89,91-102,104-117
+  s_bbea2dc3135fac::t_25eba5dae83491 72
+  s_bbea2dc3135fac::t_6d28f119587c07 31,38-39,44-47,49-50
+  s_bbea2dc3135fac::t_79edb946a415f4 90,103
+packages/desktop/renderer/components/SidebarSessionRow.tsx
+  s_bbea2dc3135fac::t_ff125e4020d718 3-5,20-21,56,64-66
+packages/desktop/renderer/components/SidebarReferenceStyle.test.ts
+  s_bbea2dc3135fac::t_201e5ce1a4f42e 224
+packages/webapp/src/presentation/web-shell-navigation.test.ts
+  s_bbea2dc3135fac::t_948bd794099ad5 42-43
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4d5466e7f120139a9e8f814a0d51bf4797997507",
+  "prompts": {},
+  "sessions": {
+    "s_5f1228882df889": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a19a65-9a13-7453-8cff-9e85a8511867",
+        "model": "ap-southeast-1-v5cjq-gptdy-17usoft-com/gpt-6-astra"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_bbea2dc3135fac": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a19a7f-19b0-7852-bf53-c980237bc7c4",
+        "model": "ap-southeast-1-v5cjq-gptdy-17usoft-com/gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
