@@ -377,6 +377,12 @@ class NativeRuntimeBrokerState implements ImportedAgentWorkspaceRepository, Code
       );
       CREATE INDEX IF NOT EXISTS native_runtime_imported_workspace_order
         ON native_runtime_imported_workspace(agent_type, created_at ASC, workspace_id ASC);
+      CREATE TABLE IF NOT EXISTS native_runtime_workspace_root_alias (
+        agent_type TEXT NOT NULL,
+        workspace_id TEXT NOT NULL,
+        normalized_path TEXT NOT NULL,
+        PRIMARY KEY(agent_type, workspace_id, normalized_path)
+      );
       CREATE TABLE IF NOT EXISTS codex_session_catalog (
         canonical_path TEXT PRIMARY KEY,
         size INTEGER NOT NULL,
@@ -537,6 +543,21 @@ class NativeRuntimeBrokerState implements ImportedAgentWorkspaceRepository, Code
       workspace: this.findByPath(workspace.agentType, workspace.normalizedPath) ?? workspace,
       existing: result.changes === 0,
     };
+  }
+
+  listWorkspaceRootAliases(agentType: NativeAgentType, workspaceId: string): string[] {
+    const rows = this.database.db.prepare(`
+      SELECT normalized_path FROM native_runtime_workspace_root_alias
+      WHERE agent_type = ? AND workspace_id = ? ORDER BY normalized_path ASC
+    `).all(agentType, workspaceId) as Array<{ normalized_path: string }>;
+    return rows.map((row) => row.normalized_path);
+  }
+
+  saveWorkspaceRootAlias(agentType: NativeAgentType, workspaceId: string, normalizedPath: string): void {
+    this.database.db.prepare(`
+      INSERT OR IGNORE INTO native_runtime_workspace_root_alias(agent_type, workspace_id, normalized_path)
+      VALUES (?, ?, ?)
+    `).run(agentType, workspaceId, normalizedPath);
   }
 
   recoverInterruptedRuns(): void {

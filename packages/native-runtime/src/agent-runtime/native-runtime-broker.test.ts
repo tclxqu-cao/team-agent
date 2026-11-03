@@ -656,7 +656,11 @@ describe("NativeRuntimeBrokerHost", () => {
 
   it("persists imported workspaces and exposes same-Agent duplicates through the broker", async () => {
     const path = await directory();
+    const aliasesOnRestart: string[][] = [];
     const runtimeFactory = (callbacks: import("./native-runtime-broker").NativeRuntimeBrokerCallbacks) => {
+      aliasesOnRestart.push(
+        callbacks.importedWorkspaceRepository.listWorkspaceRootAliases?.("codex", "native-project") ?? [],
+      );
       const adapter: AgentRuntimeAdapter = {
         agentType: "codex",
         health: async () => ({ agentType: "codex", available: true, label: "Codex" }),
@@ -688,6 +692,7 @@ describe("NativeRuntimeBrokerHost", () => {
     const firstClient = new NativeRuntimeBrokerClient({ directory: path });
     const created = await firstClient.importWorkspace("codex", "/manual/repo", "Manual");
     expect(created).toMatchObject({ existing: false, workspace: { source: "imported", name: "Manual" } });
+    await firstClient.listWorkspaces("codex");
     await firstHost.stop();
 
     const replacementHost = new NativeRuntimeBrokerHost(path, runtimeFactory);
@@ -701,6 +706,7 @@ describe("NativeRuntimeBrokerHost", () => {
           expect.objectContaining({ workspaceId: created.workspace.workspaceId, source: "imported" }),
         ],
       });
+      expect(aliasesOnRestart[1]).toContain("/native/repo");
       await expect(replacementClient.importWorkspace("codex", "/manual/repo/.", "Ignored"))
         .resolves.toMatchObject({ existing: true, workspace: { workspaceId: created.workspace.workspaceId } });
       await expect(replacementClient.importWorkspace("codex", "/native/repo"))

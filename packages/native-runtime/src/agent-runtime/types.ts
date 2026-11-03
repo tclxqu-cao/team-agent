@@ -140,6 +140,12 @@ export interface ImportedAgentWorkspaceRepository {
     normalizedPath: string,
   ): ImportedAgentWorkspace | null;
   save(workspace: ImportedAgentWorkspace): { workspace: ImportedAgentWorkspace; existing: boolean };
+  listWorkspaceRootAliases?(agentType: Exclude<AgentType, "customer-agent">, workspaceId: string): string[];
+  saveWorkspaceRootAlias?(
+    agentType: Exclude<AgentType, "customer-agent">,
+    workspaceId: string,
+    normalizedPath: string,
+  ): void;
 }
 
 export interface WorkspacePage<T> {

@@ -264,7 +264,9 @@ export class AgentWorkspaceIndexService {
   private codexSessionCatalog: SessionCatalog | null = null;
   private codexSessionCatalogRequest: Promise<SessionCatalog> | null = null;
   private readonly codexDirectSessions = new Map<string, UnifiedSessionSummary[]>();
+  private readonly codexWorkspaceRootAliases = new Map<string, Set<string>>();
   private codexSessionCatalogGeneration = 0;
+  private codexWorkspaceClassification: string | null = null;
 
   constructor(
     adapters: readonly AgentRuntimeAdapter[],
@@ -297,13 +299,17 @@ export class AgentWorkspaceIndexService {
       const previous = this.workspaceCache.get(agentType);
       const catalog = await request;
       this.workspaceCache.set(agentType, catalog);
-      if (
-        query.refresh
-        && agentType === "codex"
-        && previous
-        && codexWorkspaceClassificationKey(previous.data, this.platform)
-          !== codexWorkspaceClassificationKey(catalog.data, this.platform)
-      ) this.clearSessionCache(agentType);
+      if (agentType === "codex") {
+        const classification = codexWorkspaceClassificationKey(catalog.data, this.platform);
+        const previousClassification = previous
+          ? codexWorkspaceClassificationKey(previous.data, this.platform)
+          : this.codexWorkspaceClassification;
+        if (previousClassification !== null && previousClassification !== classification) {
+          this.clearSessionCache(agentType);
+        }
+        this.codexWorkspaceClassification = classification;
+        this.rememberCodexWorkspaceRoots(catalog.data);
+      }
       return { ...paginateByOffset(catalog.data, query, catalog.watermark), stale: catalog.stale };
     } catch (error) {
       const cached = this.workspaceCache.get(agentType);
@@ -348,6 +354,7 @@ export class AgentWorkspaceIndexService {
 
     try {
       const catalog = await this.loadWorkspaceCatalog(adapter, { refresh: true });
+      if (agentType === "codex") this.rememberCodexWorkspaceRoots(catalog.data);
       const native = catalog.data.find((workspace) => workspace.source !== "imported" && workspace.roots.some(
         (root) => normalizeAgentWorkspacePath(root, this.platform) === normalizedPath,
       ));
@@ -447,6 +454,41 @@ export class AgentWorkspaceIndexService {
     this.codexSessionCatalog = null;
     this.codexSessionCatalogRequest = null;
     this.codexDirectSessions.clear();
+  }
+
+  private rememberCodexWorkspaceRoots(workspaces: readonly AgentWorkspace[]): void {
+    for (const workspace of workspaces) {
+      if (workspace.agentType !== "codex" || workspace.source !== "native") continue;
+      const roots = this.codexWorkspaceRootAliases.get(workspace.workspaceId) ?? new Set<string>();
+      for (const root of this.importedWorkspaces?.listWorkspaceRootAliases?.("codex", workspace.workspaceId) ?? []) {
+        try {
+          roots.add(normalizeAgentWorkspacePath(root, this.platform));
+        } catch {
+          // Ignore invalid persisted roots; they cannot classify sessions safely.
+        }
+      }
+      for (const root of workspace.roots) {
+        try {
+          const normalized = normalizeAgentWorkspacePath(root, this.platform);
+          roots.add(normalized);
+          this.importedWorkspaces?.saveWorkspaceRootAlias?.("codex", workspace.workspaceId, normalized);
+        } catch {
+          // Ignore invalid native roots; they cannot classify sessions safely.
+        }
+      }
+      this.codexWorkspaceRootAliases.set(workspace.workspaceId, roots);
+    }
+  }
+
+  private codexSessionClassificationWorkspaces(
+    workspaces: readonly AgentWorkspace[],
+  ): AgentWorkspace[] {
+    return workspaces.map((workspace) => {
+      if (workspace.agentType !== "codex" || workspace.source !== "native") return workspace;
+      const roots = this.codexWorkspaceRootAliases.get(workspace.workspaceId);
+      if (!roots?.size) return workspace;
+      return { ...workspace, roots: [...new Set([...workspace.roots, ...roots])] };
+    });
   }
 
   private requireWorkspaceAdapter(agentType: AgentType): AgentRuntimeAdapter {
@@ -628,7 +670,12 @@ export class AgentWorkspaceIndexService {
     const primary = await adapter.discoverSessions();
     const discovered = this.supplementCodexSessions?.(primary) ?? primary;
     const aliases = this.workspaceCache.get("codex")?.aliases;
-    const catalog = classifyCodexSessions(discovered, workspaces, this.platform, aliases);
+    const catalog = classifyCodexSessions(
+      discovered,
+      this.codexSessionClassificationWorkspaces(workspaces),
+      this.platform,
+      aliases,
+    );
     for (const [workspaceId, direct] of this.codexDirectSessions) {
       const existing = catalog.byWorkspace.get(workspaceId);
       if (!existing) continue;

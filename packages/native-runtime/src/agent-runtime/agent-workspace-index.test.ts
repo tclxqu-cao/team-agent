@@ -64,6 +64,7 @@ function adapter(agentType: AgentType, items: AgentWorkspace[]): AgentRuntimeAda
 
 class MemoryImportedWorkspaceRepository implements ImportedAgentWorkspaceRepository {
   readonly rows: ImportedAgentWorkspace[] = [];
+  readonly rootAliases = new Map<string, Set<string>>();
 
   list(agentType: Exclude<AgentType, "customer-agent">): ImportedAgentWorkspace[] {
     return this.rows.filter((row) => row.agentType === agentType);
@@ -81,6 +82,20 @@ class MemoryImportedWorkspaceRepository implements ImportedAgentWorkspaceReposit
     if (existing) return { workspace: existing, existing: true };
     this.rows.push(workspace);
     return { workspace, existing: false };
+  }
+
+  listWorkspaceRootAliases(_agentType: Exclude<AgentType, "customer-agent">, workspaceId: string): string[] {
+    return [...(this.rootAliases.get(workspaceId) ?? [])];
+  }
+
+  saveWorkspaceRootAlias(
+    _agentType: Exclude<AgentType, "customer-agent">,
+    workspaceId: string,
+    normalizedPath: string,
+  ): void {
+    const aliases = this.rootAliases.get(workspaceId) ?? new Set<string>();
+    aliases.add(normalizedPath);
+    this.rootAliases.set(workspaceId, aliases);
   }
 }
 
@@ -181,6 +196,71 @@ describe("AgentWorkspaceIndexService", () => {
     await service.listWorkspaces("codex", { refresh: true });
     await service.listWorkspaceSessions("codex", CODEX_RECENT_WORKSPACE_ID);
 
+    expect(codex.discoverSessions).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps Codex sessions with their project when a project root moves", async () => {
+    const original = workspace("codex", "repo", 0);
+    const moved = { ...original, roots: ["/repo-renamed"] };
+    const codex = adapter("codex", [original]);
+    codex.discoverSessions = vi.fn(async () => [{
+      ...session("codex", "historical"),
+      cwd: "/repo/subdir",
+    }]);
+    const service = new AgentWorkspaceIndexService([codex]);
+
+    await service.listWorkspaceSessions("codex", CODEX_RECENT_WORKSPACE_ID);
+    codex.listWorkspaces = vi.fn(async () => ({ data: [moved], nextCursor: null, watermark: "2" }));
+    await service.listWorkspaces("codex", { refresh: true });
+
+    const recent = await service.listWorkspaceSessions("codex", CODEX_RECENT_WORKSPACE_ID, { refresh: true });
+    const project = await service.listWorkspaceSessions("codex", "repo", { refresh: true });
+
+    expect(recent.data).toEqual([]);
+    expect(project.data).toContainEqual(expect.objectContaining({ id: "historical", projectId: "repo" }));
+    expect(codex.discoverSessions).toHaveBeenCalledTimes(2);
+  });
+
+  it("classifies sessions with a moved project root after the index service restarts", async () => {
+    const repository = new MemoryImportedWorkspaceRepository();
+    const original = workspace("codex", "repo", 0);
+    const firstService = new AgentWorkspaceIndexService([adapter("codex", [original])], repository, "darwin");
+    await firstService.listWorkspaces("codex");
+
+    const moved = { ...original, roots: ["/repo-renamed"] };
+    const codex = adapter("codex", [moved]);
+    codex.discoverSessions = vi.fn(async () => [{
+      ...session("codex", "historical"),
+      cwd: "/repo/subdir",
+    }]);
+    const restartedService = new AgentWorkspaceIndexService([codex], repository, "darwin");
+
+    await restartedService.listWorkspaces("codex");
+    const project = await restartedService.listWorkspaceSessions("codex", "repo", { refresh: true });
+
+    expect(project.data).toContainEqual(expect.objectContaining({ id: "historical", projectId: "repo" }));
+    expect(repository.listWorkspaceRootAliases("codex", "repo")).toEqual(["/repo", "/repo-renamed"]);
+  });
+
+  it("invalidates the Codex session catalog when refreshed after an explicit invalidation", async () => {
+    const original = workspace("codex", "repo", 0);
+    const changed = { ...original, roots: ["/repo-renamed"] };
+    const codex = adapter("codex", [original]);
+    codex.discoverSessions = vi.fn(async () => [{
+      ...session("codex", "recent"),
+      cwd: "/repo/subdir",
+    }]);
+    const service = new AgentWorkspaceIndexService([codex]);
+
+    await service.listWorkspaceSessions("codex", CODEX_RECENT_WORKSPACE_ID);
+    codex.listWorkspaces = vi.fn(async () => ({ data: [changed], nextCursor: null, watermark: "2" }));
+    service.invalidate("codex");
+    await service.listWorkspaces("codex");
+    const recent = await service.listWorkspaceSessions("codex", CODEX_RECENT_WORKSPACE_ID);
+    const moved = await service.listWorkspaceSessions("codex", "repo");
+
+    expect(recent.data).toEqual([]);
+    expect(moved.data).toContainEqual(expect.objectContaining({ id: "recent", projectId: "repo" }));
     expect(codex.discoverSessions).toHaveBeenCalledTimes(2);
   });
 
