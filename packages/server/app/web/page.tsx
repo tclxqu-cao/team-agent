@@ -7,7 +7,7 @@ import dynamic from "next/dynamic";
 import { CONSOLE_CSS } from "./console-styles";
 import { consoleFrameUrl, consoleOrigin } from "./console-environment";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, ExternalLink, Bot, FolderOpen, PanelRight, X, LayoutGrid, LayoutDashboard, MonitorUp, RefreshCw, UsersRound } from "lucide-react";
+import { ArrowLeft, ExternalLink, Bot, FolderOpen, PanelRight, X, Inbox, LayoutGrid, LayoutDashboard, MonitorUp, RefreshCw, UsersRound } from "lucide-react";
 import PwaInstallButton from "./PwaInstallButton";
 import ComputerSwitcher from "./ComputerSwitcher";
 import ComputerPagePane from "./ComputerPagePane";
@@ -41,10 +41,11 @@ import { readWebappTabSwipeMessage } from "./webappTabSwipe";
 import { readWebappReadyMessage } from "./webappReady";
 import { readCollaborationChanged, readCollaborationOpen } from "../../../core/src/domain/web-console/CollaborationTabBridge";
 import { readSessionDashboardIntent, SESSION_DASHBOARD_NAVIGATE, type SessionDashboardIntent } from "../../../core/src/domain/web-console/SessionDashboardBridge";
+import { readMessagingOpen } from "../../../core/src/domain/web-console/MessagingBridge";
 
 import FlowStudioLoading from "./FlowStudioLoading";
 import CollaborationPane from "./CollaborationPane";
-import { COLLABORATION_DASHBOARD_TAB, withCollaborationDashboard, SESSION_DASHBOARD_TAB, withSessionDashboard, REMOTE_DESKTOP_TAB, withRemoteDesktopTab, parseWorkspaceSnapshot, restoreWorkspaceTabs, type ConsoleTab } from "./console-tabs";
+import { COLLABORATION_DASHBOARD_TAB, withCollaborationDashboard, SESSION_DASHBOARD_TAB, withSessionDashboard, MESSAGING_TAB, withMessaging, REMOTE_DESKTOP_TAB, withRemoteDesktopTab, parseWorkspaceSnapshot, restoreWorkspaceTabs, type ConsoleTab } from "./console-tabs";
 import { readRemoteDesktopFullscreen, REMOTE_DESKTOP_CLOSE_TYPE, REMOTE_DESKTOP_VISIBILITY_TYPE, REMOTE_DESKTOP_CONTENT_READY_TYPE } from "../../../core/src/domain/web-console/RemoteDesktopTabBridge";
 import { resolveWebArtifactPath } from "../../../desktop/renderer/lib/artifact-links";
 
@@ -99,6 +100,7 @@ function AuthenticatedConsole({
   const remoteDesktopFrameRef = useRef<HTMLIFrameElement>(null);
   const collaborationDashboardFrame = useRef<HTMLIFrameElement | null>(null);
   const sessionDashboardFrame = useRef<HTMLIFrameElement | null>(null);
+  const messagingFrame = useRef<HTMLIFrameElement | null>(null);
   const pendingSessionNavigation = useRef<SessionDashboardIntent | null>(null);
   const mainFrameReady = useRef(false);
   const [collaborationFrameRevisions, setCollaborationFrameRevisions] = useState<Record<string, number>>({});
@@ -209,7 +211,7 @@ function AuthenticatedConsole({
   const draggedTab = useRef<string | null>(null);
   const tabBarRef = useRef<HTMLDivElement>(null);
   const postSkinToWebapp = useCallback((skin: WebThemeId) => {
-    const frames = [webappFrameRef.current, remoteDesktopFrameRef.current, collaborationDashboardFrame.current, sessionDashboardFrame.current, ...collaborationFrames.current.values()];
+    const frames = [webappFrameRef.current, remoteDesktopFrameRef.current, collaborationDashboardFrame.current, sessionDashboardFrame.current, messagingFrame.current, ...collaborationFrames.current.values()];
     for (const frame of frames) frame?.contentWindow?.postMessage(
       { type: WEBAPP_SKIN_MESSAGE_TYPE, skin },
       window.location.origin,
@@ -218,7 +220,7 @@ function AuthenticatedConsole({
   const postAppearanceToWebapp = useCallback(() => {
     postSkinToWebapp(themeId);
     if (!navigationLayoutLoaded) return;
-    const frames = [webappFrameRef.current, remoteDesktopFrameRef.current, collaborationDashboardFrame.current, sessionDashboardFrame.current, ...collaborationFrames.current.values()];
+    const frames = [webappFrameRef.current, remoteDesktopFrameRef.current, collaborationDashboardFrame.current, sessionDashboardFrame.current, messagingFrame.current, ...collaborationFrames.current.values()];
     for (const frame of frames) frame?.contentWindow?.postMessage(
       { type: NAVIGATION_LAYOUT_MESSAGE, navigationLayout }, window.location.origin,
     );
@@ -252,8 +254,14 @@ function AuthenticatedConsole({
   }, [activeTheme]);
   useEffect(() => {
     const onMessage = (event: MessageEvent) => {
+      if (readMessagingOpen(event, window.location.origin, webappFrameRef.current?.contentWindow ?? null)) {
+        setSelectedPage(null);
+        setTabs(withMessaging);
+        setActiveTerminalId(MESSAGING_TAB.id);
+        return;
+      }
       const dashboardSource = collaborationDashboardFrame.current?.contentWindow ?? null;
-      const trustedSource = [webappFrameRef.current?.contentWindow, dashboardSource, sessionDashboardFrame.current?.contentWindow, ...[...collaborationFrames.current.values()].map(frame => frame.contentWindow)].find(source => source && source === event.source) ?? null;
+      const trustedSource = [webappFrameRef.current?.contentWindow, dashboardSource, sessionDashboardFrame.current?.contentWindow, messagingFrame.current?.contentWindow, ...[...collaborationFrames.current.values()].map(frame => frame.contentWindow)].find(source => source && source === event.source) ?? null;
       const navigation = readSessionDashboardIntent(event, window.location.origin, trustedSource);
       if (navigation) {
         setSelectedPage(null);
@@ -387,7 +395,7 @@ function AuthenticatedConsole({
       void forwardWebProjectRequest(
         event,
         window.location.origin,
-        [webappFrameRef.current?.contentWindow ?? null, dashboardSource, sessionDashboardFrame.current?.contentWindow ?? null,
+        [webappFrameRef.current?.contentWindow ?? null, dashboardSource, sessionDashboardFrame.current?.contentWindow ?? null, messagingFrame.current?.contentWindow ?? null,
           ...[...collaborationFrames.current.values()].map(frame => frame.contentWindow)],
         rpc,
       );
@@ -735,6 +743,7 @@ function AuthenticatedConsole({
             items={[
               { id: "refresh", content: <button type="button" className="file-drawer-toggle" aria-label="刷新页面" title="刷新页面" onClick={() => selectedPage ? setPageReloadKey(key => key + 1) : window.location.reload()}><RefreshCw size={17} aria-hidden="true" /></button> },
               { id: "dashboard", content: <button type="button" className="file-drawer-toggle" aria-label="打开会话 Dashboard" title="Dashboard · 会话总览" onClick={() => { setSelectedPage(null); setTabs(withSessionDashboard); setActiveTerminalId(SESSION_DASHBOARD_TAB.id); }}><LayoutDashboard size={17} aria-hidden="true"/></button> },
+              { id: "messaging", content: <button type="button" className="file-drawer-toggle" aria-label="打开消息接入" title="消息接入 · 监听与路由" onClick={() => { setSelectedPage(null); setTabs(withMessaging); setActiveTerminalId(MESSAGING_TAB.id); }}><Inbox size={17} aria-hidden="true"/></button> },
               { id: "collaboration", content: <button type="button" className="file-drawer-toggle" aria-label="打开群聊列表" title="群聊列表" onClick={() => {
                 setSelectedPage(null);
                 setTabs(withCollaborationDashboard);
@@ -774,6 +783,8 @@ function AuthenticatedConsole({
             <div className="terminal-slide" key={tab.id} style={{ position: "relative" }}>
               {tab.kind === "webapp" ? (
                 <iframe ref={webappFrameRef} className="webapp-frame" src={consoleFrameUrl("/app/")} title={tab.title} onLoad={postAppearanceToWebapp} />
+              ) : tab.kind === "messaging" ? (
+                <CollaborationPane view="messaging" title="消息接入" onFrame={frame => { messagingFrame.current = frame; }} onLoad={postAppearanceToWebapp}/>
               ) : tab.kind === "session-dashboard" ? (
                 <CollaborationPane view="sessions" title="会话 Dashboard" onFrame={frame => { sessionDashboardFrame.current = frame; }} onLoad={postAppearanceToWebapp}/>
               ) : tab.kind === "collaboration-dashboard" ? (

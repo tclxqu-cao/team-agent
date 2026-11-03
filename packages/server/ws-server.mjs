@@ -1447,6 +1447,10 @@ server.listen(port, process.env.HOST || "127.0.0.1", async () => {
     console.error("Customer runtime initialization failed", error);
   });
   // Restore collaboration scheduling and its durable history without a browser visit.
+  void fetch(`http://127.0.0.1:${server.address().port}/api/messaging`, {
+    headers: desktopDiscovery.headers(), signal: AbortSignal.timeout(60_000),
+  }).then(response => { if (!response.ok) throw new Error(`HTTP ${response.status}`); })
+    .catch(error => globalLogger.error("Messaging initialization failed", error));
   void fetch(`http://127.0.0.1:${server.address().port}/api/collaboration`, {
     method: "POST", headers: { ...desktopDiscovery.headers(), "content-type": "application/json" },
     body: JSON.stringify({ action: "groups" }), signal: AbortSignal.timeout(60_000),

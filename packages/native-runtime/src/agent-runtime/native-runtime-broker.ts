@@ -287,6 +287,11 @@ class NativeRuntimeBrokerState implements ImportedAgentWorkspaceRepository, Code
     try { chmodSync(directory, 0o700); } catch { /* Best effort on filesystems without POSIX modes. */ }
     this.database = new SQLiteDatabase(directory);
     this.database.db.exec(`
+      CREATE TABLE IF NOT EXISTS native_runtime_message_receipt (
+        session_id TEXT NOT NULL, source_message_id TEXT NOT NULL, queue_item_id TEXT NOT NULL,
+        item TEXT NOT NULL, status TEXT NOT NULL, run_id TEXT, terminal_sequence INTEGER, terminal_event TEXT,
+        PRIMARY KEY(session_id, source_message_id), UNIQUE(session_id, queue_item_id)
+      );
       CREATE TABLE IF NOT EXISTS native_runtime_policy (
         session_id TEXT PRIMARY KEY,
         permission_mode TEXT NOT NULL,
@@ -707,16 +712,33 @@ class NativeRuntimeBrokerState implements ImportedAgentWorkspaceRepository, Code
   }
 
   enqueueMessage(sessionId: string, input: BrokerQueuedMessageInput): SessionGoalState {
-    const activate = !this.activeRun(sessionId);
-    return this.updateGoalState(sessionId, (state) => enqueueSessionMessage(state, {
-      id: randomUUID(),
-      sessionId,
-      objective: input.content,
-      sourceMessageId: input.sourceMessageId,
-      messagePayload: input.messagePayload,
-      now: this.now(),
-      activate,
-    }));
+    return this.database.db.transaction(() => {
+      const state = this.getGoalState(sessionId);
+      const receipt = this.database.db.prepare(
+        "SELECT item,status FROM native_runtime_message_receipt WHERE session_id=? AND source_message_id=?"
+      ).get(sessionId, input.sourceMessageId) as { item: string; status: import("@agent/core").SessionGoal["status"] } | undefined;
+      if (receipt) {
+        if ([state.active, ...state.queued, ...state.history].some(item => item?.sourceMessageId === input.sourceMessageId)) return state;
+        const item = { ...JSON.parse(receipt.item), status: receipt.status === "queued" ? "failed" : receipt.status };
+        return { ...state, history: [...state.history, item] };
+      }
+      const next = this.updateGoalState(sessionId, current => enqueueSessionMessage(current, {
+        id: randomUUID(), sessionId, objective: input.content, sourceMessageId: input.sourceMessageId,
+        messagePayload: input.messagePayload, now: this.now(), activate: !this.activeRun(sessionId),
+      }));
+      const item = [next.active, ...next.queued, ...next.history].find(item => item?.sourceMessageId === input.sourceMessageId);
+      if (!item) throw new RuntimeSessionError("Message receipt was not persisted", "NATIVE_PROTOCOL_ERROR");
+      this.database.db.prepare(
+        "INSERT INTO native_runtime_message_receipt(session_id,source_message_id,queue_item_id,item,status) VALUES(?,?,?,?,?)"
+      ).run(sessionId, input.sourceMessageId, item.id, JSON.stringify(item), item.status);
+      return next;
+    })();
+  }
+
+  startedMessage(sessionId: string, sourceMessageId: string): boolean {
+    return !!this.database.db.prepare(
+      "SELECT 1 FROM native_runtime_message_receipt WHERE session_id=? AND source_message_id=? AND run_id IS NOT NULL"
+    ).get(sessionId, sourceMessageId);
   }
 
   reorderGoals(sessionId: string, orderedIds: readonly string[]): SessionGoalState {
@@ -806,6 +828,9 @@ class NativeRuntimeBrokerState implements ImportedAgentWorkspaceRepository, Code
     goalId?: string;
   }): BrokerRunAdmission {
     const create = this.database.db.transaction(() => {
+      if (input.goalId && this.database.db.prepare(
+        "SELECT 1 FROM native_runtime_message_receipt WHERE session_id=? AND queue_item_id=? AND run_id IS NOT NULL"
+      ).get(input.sessionId, input.goalId)) throw new RuntimeSessionError("This message has already been admitted", "SESSION_ALREADY_RUNNING");
       const active = this.database.db.prepare(
         "SELECT run_id FROM native_runtime_run WHERE session_id = ? AND status = 'active'",
       ).get(input.sessionId) as { run_id?: string } | undefined;
@@ -857,6 +882,9 @@ class NativeRuntimeBrokerState implements ImportedAgentWorkspaceRepository, Code
         run.goalId,
       );
       this.transitionLock(input.sessionId, "owned-by-customer-agent", null, null);
+      if (run.goalId) this.database.db.prepare(
+        "UPDATE native_runtime_message_receipt SET status='active',run_id=? WHERE session_id=? AND queue_item_id=?"
+      ).run(run.runId, run.sessionId, run.goalId);
       return { run, autoTitle };
     });
     return create();
@@ -898,7 +926,13 @@ class NativeRuntimeBrokerState implements ImportedAgentWorkspaceRepository, Code
           eventAt,
         );
       }
-      if (isTerminalEvent(recordedEvent)) this.finalizeRun(run, eventAt);
+      if (isTerminalEvent(recordedEvent)) {
+        if (run.goalId) this.database.db.prepare(
+          "UPDATE native_runtime_message_receipt SET status=?,run_id=?,terminal_sequence=?,terminal_event=? WHERE session_id=? AND queue_item_id=?"
+        ).run(recordedEvent.type === "done" ? "completed" : recordedEvent.type === "error" && ["NATIVE_ABORTED", "USER_ABORTED", "RUN_CANCELLED"].includes(recordedEvent.code ?? "") ? "cancelled" : "failed",
+          run.runId, sequence, JSON.stringify(recordedEvent), run.sessionId, run.goalId);
+        this.finalizeRun(run, eventAt);
+      }
       return { runId, sequence, event: recordedEvent } satisfies BrokerRunEvent;
     });
     return append();
@@ -920,6 +954,35 @@ class NativeRuntimeBrokerState implements ImportedAgentWorkspaceRepository, Code
       controller: projection.run?.status === "active" ? projection.run.controller : null,
       manuallyStopped: !!this.database.db.prepare("SELECT 1 FROM native_runtime_stop_intent WHERE session_id=?").get(sessionId),
     };
+  }
+
+  /** Source-correlated history; a later turn must not hide this message's result. */
+  messageSnapshot(sessionId: string, sourceMessageId: string, afterSequence = 0, queueItemId?: string) {
+    const state = this.getGoalState(sessionId);
+    const receipt = this.database.db.prepare(
+      "SELECT * FROM native_runtime_message_receipt WHERE session_id=? AND source_message_id=?"
+    ).get(sessionId, sourceMessageId) as { item: string; status: import("@agent/core").SessionGoal["status"]; queue_item_id: string;
+      run_id: string | null; terminal_sequence: number | null; terminal_event: string | null } | undefined;
+    const item = [state.active, ...state.queued, ...state.history].find(entry => entry?.sourceMessageId === sourceMessageId)
+      ?? (receipt ? { ...JSON.parse(receipt.item), status: receipt.status } as import("@agent/core").SessionGoal : null);
+    const itemId = item?.id ?? queueItemId;
+    const row = itemId ? this.database.db.prepare(
+      "SELECT run_id, status FROM native_runtime_run WHERE session_id=? AND goal_id=? ORDER BY created_at DESC LIMIT 1"
+    ).get(sessionId, itemId) as { run_id: string; status: string } | undefined : undefined;
+    const rows = row ? this.database.db.prepare(
+      "SELECT run_id, sequence, payload FROM native_runtime_event WHERE run_id=? AND sequence>? ORDER BY sequence ASC"
+    ).all(row.run_id, afterSequence) as StoredEventRow[] : [];
+    const events = rows.flatMap((entry): BrokerRunEvent[] => {
+      const event = parseAgentEvent(entry.payload);
+      if (!event || event.type === "ask_user" && !this.isApprovalVisible(event.questionId)) return [];
+      return [{ runId: entry.run_id, sequence: entry.sequence, event }];
+    });
+    if (receipt?.terminal_event && receipt.run_id && receipt.terminal_sequence && receipt.terminal_sequence > afterSequence
+      && !events.some(event => event.sequence === receipt.terminal_sequence)) {
+      const terminal = parseAgentEvent(receipt.terminal_event);
+      if (terminal) events.push({ runId: receipt.run_id, sequence: receipt.terminal_sequence, event: terminal });
+    }
+    return { item, runId: row?.run_id ?? receipt?.run_id ?? null, runStatus: row?.status ?? (receipt?.terminal_event ? "terminal" : null), events };
   }
 
   recordStopIntent(sessionId: string): void {
@@ -1607,8 +1670,10 @@ export class NativeRuntimeBrokerHost {
   ): Promise<BrokerGoalEnqueueResult> {
     decodeNativeSessionId(sessionId);
     const state = this.state.enqueueMessage(sessionId, input);
+    if (this.state.startedMessage(sessionId, input.sourceMessageId)) return { state };
     if (!state.active || this.state.activeRun(sessionId)) return { state };
     if (!await this.canResumeTimedOutQueue(sessionId)) return { state };
+    if (this.state.startedMessage(sessionId, input.sourceMessageId)) return { state: this.state.enqueueMessage(sessionId, input) };
     const started = await this.startQueueItemAfterSettling(state.active, controller);
     return {
       state: this.state.getGoalState(sessionId),
@@ -2175,6 +2240,9 @@ export class NativeRuntimeBrokerHost {
       );
       case "listModels": return this.listModels(nativeAgentTypeParam(request.params, "agentType"));
       case "snapshot": return this.snapshot(requireSessionId(sessionId), numberParam(request.params, "afterSequence") ?? 0);
+      case "messageSnapshot": return this.state.messageSnapshot(requireSessionId(sessionId),
+        requiredStringParam(request.params, "sourceMessageId"), numberParam(request.params, "afterSequence") ?? 0,
+        stringParam(request.params, "queueItemId") || undefined);
       case "getGoals": return this.getGoals(
         requireSessionId(sessionId),
         controllerParam(request.params.controller),
@@ -2460,6 +2528,12 @@ export class NativeRuntimeBrokerClient {
 
   async snapshot(id: string, afterSequence = 0): Promise<NativeRuntimeBrokerSnapshot> {
     return this.request("snapshot", { sessionId: id, afterSequence });
+  }
+
+  async messageSnapshot(id: string, sourceMessageId: string, afterSequence = 0, queueItemId?: string): Promise<{
+    item: import("@agent/core").SessionGoal | null; runId: string | null; runStatus: string | null; events: BrokerRunEvent[];
+  }> {
+    return this.request("messageSnapshot", { sessionId: id, sourceMessageId, afterSequence, queueItemId });
   }
 
   async getGoals(id: string, controller: NativeRuntimeController = "web"): Promise<SessionGoalState> {

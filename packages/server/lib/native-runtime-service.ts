@@ -122,6 +122,9 @@ export interface NativeRuntimePort {
     listener: (event: BrokerRunEvent) => void,
   ): Promise<() => void>;
   snapshot?(id: string, afterSequence?: number): Promise<NativeRuntimeBrokerSnapshot>;
+  messageSnapshot?(id: string, sourceMessageId: string, afterSequence?: number, queueItemId?: string): Promise<{
+    item: import("@agent/core").SessionGoal | null; runId: string | null; runStatus: string | null; events: BrokerRunEvent[];
+  }>;
   setPermissionMode?(id: string, mode: ToolPermissionMode): Promise<UnifiedSessionSummary>;
   setNativeMode?(id: string, preset: string): Promise<UnifiedSessionSummary>;
   setNativePermissionPreset?(id: string, preset: string): Promise<UnifiedSessionSummary>;
@@ -369,6 +372,11 @@ export class NativeRuntimeService implements NativeRuntimePort {
       throw new RuntimeSessionError("Native runtime broker is unavailable", "RUNTIME_UNAVAILABLE");
     }
     return this.runtime.snapshot(id, afterSequence);
+  }
+
+  async messageSnapshot(id: string, sourceMessageId: string, afterSequence = 0, queueItemId?: string) {
+    if (!this.runtime.messageSnapshot) throw new RuntimeSessionError("运行服务不支持消息结果对账，请更新服务", "OPERATION_NOT_SUPPORTED");
+    return this.runtime.messageSnapshot(id, sourceMessageId, afterSequence, queueItemId);
   }
 
   async setPermissionMode(id: string, mode: ToolPermissionMode): Promise<UnifiedSessionSummary> {

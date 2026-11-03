@@ -184,6 +184,8 @@ async function boot(endpoint: ServerEndpoint | null): Promise<void> {
       ? await import("../../desktop/renderer/components/collaboration/CollaborationDashboard")
       : view === "session-dashboard"
       ? await import("../../desktop/renderer/components/collaboration/SessionDashboard")
+      : view === "messaging"
+      ? await import("../../desktop/renderer/components/messaging/MessagingPage")
       : view === "remote-desktop"
       ? await import("./presentation/RemoteDesktopPage")
       : await import("@desktop/renderer/App");

@@ -104,6 +104,8 @@ function enqueueSessionQueueItem(
     activate?: boolean;
   },
 ): SessionGoalState {
+  if (input.sourceMessageId && [state.active, ...state.queued, ...state.history]
+    .some(item => item && item.sourceMessageId === input.sourceMessageId && sessionQueueItemKind(item) === input.kind)) return state;
   const objective = input.objective.trim();
   if (!objective) throw new Error(input.kind === "goal" ? "Goal objective is required" : "Message is required");
   if (input.kind === "goal" && objective.length > 4_000) {

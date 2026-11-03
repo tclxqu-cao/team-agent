@@ -29,6 +29,15 @@ describe("group entry loading surface", () => {
     expect(group).toContain("discussionId=older-active");
   });
 
+  it("loads messaging in its own frame while waiting for content readiness", () => {
+    const html = renderToStaticMarkup(createElement(CollaborationPane, { view: "messaging", title: "消息接入", onFrame: vi.fn(), onLoad: vi.fn() }));
+    expect(html).toContain("/app/?view=messaging");
+    expect(html).toContain("正在打开消息接入");
+    expect(html).toContain("正在读取监听消息与处理记录");
+    expect(html).toContain('visibility:hidden');
+    expect(html).toContain('aria-busy="true"');
+  });
+
   it("immediately shows the shared loader and conceals the iframe until its content is ready", () => {
     const html = renderToStaticMarkup(createElement(CollaborationPane, { groupId: "g", title: "协作群", onFrame: vi.fn(), onLoad: vi.fn() }));
     expect(html).toContain('aria-busy="true"');

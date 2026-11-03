@@ -263,6 +263,49 @@ describe("resolveNativeRuntimeSocketPath", () => {
 });
 
 describe("NativeRuntimeBrokerHost", () => {
+  it("does not redispatch the same source while terminal cleanup is still settling", async () => {
+    const runtime = new FakeNativeRuntime(); runtime.immediateTerminal = true;
+    let release!: () => void;
+    runtime.cleanupAfterTerminal = new Promise<void>(resolve => { release = resolve; });
+    const host = new NativeRuntimeBrokerHost(await directory(), runtime as unknown as UnifiedSessionService);
+    try {
+      await host.enqueueMessage(sessionId, { sourceMessageId: "messaging:cleanup", content: "task" });
+      await waitFor(() => expect(host.snapshot(sessionId).events.some(item => item.event.type === "done")).toBe(true));
+      await host.enqueueMessage(sessionId, { sourceMessageId: "messaging:cleanup", content: "retry same task" });
+      expect(runtime.runInputs).toHaveLength(1);
+    } finally { release(); await host.stop(); }
+  });
+  it("retains a message receipt and final result across later turns and event retention cleanup", async () => {
+    let now = Date.now();
+    const path = await directory();
+    const runtime = new FakeNativeRuntime(); runtime.immediateTerminal = true;
+    const host = new NativeRuntimeBrokerHost(path, runtime as unknown as UnifiedSessionService, () => now);
+    await host.start();
+    const client = new NativeRuntimeBrokerClient({ directory: path });
+    try {
+      await host.enqueueMessage(sessionId, { sourceMessageId: "messaging:first", content: "first task" });
+      await waitFor(() => expect(host.snapshot(sessionId).controller).toBeNull());
+      const first = await client.messageSnapshot(sessionId, "messaging:first");
+      expect(first.item?.status).toBe("completed");
+      expect(first.events.some(entry => entry.event.type === "done")).toBe(true);
+      const count = runtime.runInputs.length;
+      await host.enqueueMessage(sessionId, { sourceMessageId: "messaging:first", content: "same source" });
+      expect(runtime.runInputs).toHaveLength(count);
+      await host.enqueueMessage(sessionId, { sourceMessageId: "messaging:second", content: "next task" });
+      await waitFor(() => expect(host.snapshot(sessionId).controller).toBeNull());
+      expect((await client.messageSnapshot(sessionId, "messaging:first")).runId).toBe(first.runId);
+      now += 11 * 60_000;
+    } finally { await host.stop(); }
+    const replacement = new NativeRuntimeBrokerHost(path, new FakeNativeRuntime() as unknown as UnifiedSessionService, () => now);
+    await replacement.start();
+    try {
+      const old = await client.messageSnapshot(sessionId, "messaging:first");
+      expect(old.runId).toBeTruthy();
+      expect(old.events).toContainEqual(expect.objectContaining({ event: expect.objectContaining({ type: "done", finalText: "completed" }) }));
+      const again = await replacement.enqueueMessage(sessionId, { sourceMessageId: "messaging:first", content: "retry" });
+      expect(again.started).toBeUndefined();
+    } finally { await replacement.stop(); }
+  });
   it("retains explicit user-stop intent across restart and clears it on a new admitted run", async () => {
     const path = await directory();
     const runtime = new FakeNativeRuntime();

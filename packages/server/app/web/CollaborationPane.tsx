@@ -4,13 +4,14 @@ import { useEffect, useRef, useState } from "react";
 import { RefreshCw, UsersRound } from "lucide-react";
 import { readCollaborationContentReady } from "../../../core/src/domain/web-console/CollaborationTabBridge";
 import { SESSION_DASHBOARD_READY } from "../../../core/src/domain/web-console/SessionDashboardBridge";
+import { MESSAGING_READY } from "../../../core/src/domain/web-console/MessagingBridge";
 import FlowStudioLoading from "./FlowStudioLoading";
 import { consoleFrameUrl } from "./console-environment";
 
 /** Shell presentation: keep the shared loader visible until collaboration content is ready. */
 export default function CollaborationPane({ groupId, title, onFrame, onLoad, view, discussionId }: {
   groupId?: string;
-  view?: "sessions";
+  view?: "sessions" | "messaging";
   discussionId?: string;
   title: string;
   onFrame: (frame: HTMLIFrameElement | null) => void;
@@ -23,8 +24,8 @@ export default function CollaborationPane({ groupId, title, onFrame, onLoad, vie
 
   useEffect(() => {
     const receive = (event: MessageEvent) => {
-      if (view === "sessions") {
-        if (event.origin === window.location.origin && event.source === frame.current?.contentWindow && event.data?.type === SESSION_DASHBOARD_READY) setState("ready");
+      if (view === "sessions" || view === "messaging") {
+        if (event.origin === window.location.origin && event.source === frame.current?.contentWindow && event.data?.type === (view === "messaging" ? MESSAGING_READY : SESSION_DASHBOARD_READY)) setState("ready");
         return;
       }
       if (readCollaborationContentReady(event, window.location.origin, frame.current?.contentWindow ?? null, groupId ?? null))
@@ -46,19 +47,19 @@ export default function CollaborationPane({ groupId, title, onFrame, onLoad, vie
       ref={element => { frame.current = element; onFrame(element); }}
       className={`webapp-frame collaboration-frame${state === "ready" ? " is-ready" : ""}`}
       style={{ visibility: state === "ready" ? "visible" : "hidden" }}
-      src={consoleFrameUrl(view === "sessions" ? "/app/?view=session-dashboard" : dashboard ? "/app/?view=collaboration-dashboard" : `/app/?view=collaboration&groupId=${encodeURIComponent(groupId)}${discussionId ? `&discussionId=${encodeURIComponent(discussionId)}` : ""}`)}
+      src={consoleFrameUrl(view === "messaging" ? "/app/?view=messaging" : view === "sessions" ? "/app/?view=session-dashboard" : dashboard ? "/app/?view=collaboration-dashboard" : `/app/?view=collaboration&groupId=${encodeURIComponent(groupId)}${discussionId ? `&discussionId=${encodeURIComponent(discussionId)}` : ""}`)}
       title={title}
       onLoad={onLoad}
       onError={() => setState("error")}
     />
     {state === "loading" && <FlowStudioLoading
       label="AGENT COLLABORATION"
-      title={view === "sessions" ? "正在打开会话 Dashboard" : dashboard ? "正在打开群聊列表" : "正在进入群聊"}
-      caption={view === "sessions" ? "正在核对运行会话与待决策事项" : dashboard ? "正在加载已保存的群聊" : "正在加载群成员与聊天记录"}
+      title={view === "messaging" ? "正在打开消息接入" : view === "sessions" ? "正在打开会话 Dashboard" : dashboard ? "正在打开群聊列表" : "正在进入群聊"}
+      caption={view === "messaging" ? "正在读取监听消息与处理记录" : view === "sessions" ? "正在核对运行会话与待决策事项" : dashboard ? "正在加载已保存的群聊" : "正在加载群成员与聊天记录"}
       icon={<UsersRound size={36} strokeWidth={1.5} />}
     />}
     {state === "error" && <div className="collaboration-load-error" role="alert">
-      <strong>{view === "sessions" ? "暂时无法打开会话 Dashboard" : dashboard ? "暂时无法打开群聊列表" : "暂时无法打开群聊"}</strong>
+      <strong>{view === "messaging" ? "暂时无法打开消息接入" : view === "sessions" ? "暂时无法打开会话 Dashboard" : dashboard ? "暂时无法打开群聊列表" : "暂时无法打开群聊"}</strong>
       <span>请检查连接后重试。</span>
       <button onClick={() => { setState("loading"); setAttempt(value => value + 1); }}><RefreshCw size={15}/>重新加载</button>
     </div>}

@@ -34,6 +34,10 @@ await cp(standaloneBuild, resolve(target, ".next"), { recursive: true });
 await cp(resolve(standaloneServer, "server.js"), resolve(target, "server.js"));
 await cp(resolve(buildRoot, "static"), resolve(target, ".next/static"), { recursive: true });
 await cp(resolve(server, "ws-server.mjs"), resolve(target, "ws-server.mjs"));
+await mkdir(resolve(target, "lib/messaging/wecom"), { recursive: true });
+for (const file of ["reader.py", "codec.py"]) {
+  await cp(resolve(server, "lib/messaging/wecom", file), resolve(target, "lib/messaging/wecom", file));
+}
 await mkdir(resolve(target, "lib"), { recursive: true });
 await mkdir(resolve(target, "lib/browser-live"), { recursive: true });
 await cp(resolve(server, "lib/browser-live/viewer-frame-flow.mjs"), resolve(target, "lib/browser-live/viewer-frame-flow.mjs"));

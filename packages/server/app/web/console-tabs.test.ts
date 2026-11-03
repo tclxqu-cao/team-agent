@@ -1,11 +1,21 @@
 import { describe, expect, it } from "vitest";
-import { COLLABORATION_DASHBOARD_TAB, withCollaborationDashboard, SESSION_DASHBOARD_TAB, withSessionDashboard, REMOTE_DESKTOP_TAB, withRemoteDesktopTab } from "./console-tabs";
+import { COLLABORATION_DASHBOARD_TAB, withCollaborationDashboard, SESSION_DASHBOARD_TAB, withSessionDashboard, REMOTE_DESKTOP_TAB, withRemoteDesktopTab, MESSAGING_TAB, withMessaging } from "./console-tabs";
 import { parseWorkspaceSnapshot, restoreWorkspaceTabs } from "./console-tabs";
 
 it("retains separate Dashboard and group-list tabs without replacing existing conversations", () => {
   const tabs = withSessionDashboard(withCollaborationDashboard([]));
   expect(tabs).toEqual([COLLABORATION_DASHBOARD_TAB, SESSION_DASHBOARD_TAB]);
   expect(withSessionDashboard(tabs)).toBe(tabs);
+});
+
+it("retains a single messaging tab and restores its selection beside the chat", () => {
+  const chat = { id: "webapp-agent", title: "Assistant", kind: "webapp" as const };
+  const tabs = withMessaging([chat]);
+  expect(tabs).toEqual([chat, MESSAGING_TAB]);
+  expect(withMessaging(tabs)).toBe(tabs);
+  const saved = parseWorkspaceSnapshot(JSON.stringify({ tabs, activeTerminalId: MESSAGING_TAB.id }));
+  expect(saved?.activeTerminalId).toBe(MESSAGING_TAB.id);
+  expect(restoreWorkspaceTabs(saved, [], [chat])).toEqual(tabs);
 });
 
 describe("workspace refresh recovery", () => {

@@ -5,16 +5,18 @@ interface DesktopWorkspaceTabsProps {
   groups: CollaborationGroup[];
   dashboardVisible: boolean;
   sessionDashboardVisible?: boolean;
+  messagingVisible?: boolean;
   activeId: string;
   onSelect: (id: string) => void;
   onClose: (id: string) => void;
 }
 
-export default function DesktopWorkspaceTabs({ groups, dashboardVisible, sessionDashboardVisible, activeId, onSelect, onClose }: DesktopWorkspaceTabsProps) {
+export default function DesktopWorkspaceTabs({ groups, dashboardVisible, sessionDashboardVisible, messagingVisible, activeId, onSelect, onClose }: DesktopWorkspaceTabsProps) {
   const tabs = [
     { id: "assistant", name: "智能助手", closable: false },
     ...(sessionDashboardVisible ? [{ id: "sessions", name: "Dashboard", closable: true }] : []),
     ...(dashboardVisible ? [{ id: "dashboard", name: "群聊列表", closable: true }] : []),
+    ...(messagingVisible ? [{ id: "messaging", name: "消息接入", closable: true }] : []),
     ...groups.map(group => ({ id: group.id, name: group.name, closable: true })),
   ];
   return <nav className="collab-desktop-tabs" aria-label="工作页签">

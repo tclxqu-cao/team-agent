@@ -3,6 +3,14 @@ import type { AgentApi } from "../global";
 import { createSharedAgentApi, ServiceEventSource, type SharedServiceApi } from "./shared-service";
 afterEach(() => vi.useRealTimers());
 describe("desktop SSE transport", () => {
+  it("routes message intake to the selected server rather than a device-only API", async () => {
+    const request = vi.fn(async () => ({ status: 200, body: JSON.stringify({ messages: [] }) }));
+    const local = vi.fn();
+    const api = createSharedAgentApi({ request } as unknown as SharedServiceApi, { messaging: local } as unknown as AgentApi);
+    await expect(api.messaging({ action: "list" })).resolves.toEqual({ messages: [] });
+    expect(request).toHaveBeenCalledWith("/api/messaging", "POST", JSON.stringify({ action: "list" }));
+    expect(local).not.toHaveBeenCalled();
+  });
   it("handles split multiline frames and resumes with the last event id", async () => {
     vi.useFakeTimers();
     let frame: (value: { id: string; type: string; data?: string }) => void = () => {};

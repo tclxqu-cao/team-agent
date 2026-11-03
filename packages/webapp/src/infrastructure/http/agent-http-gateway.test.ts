@@ -34,6 +34,12 @@ function emit(source: ObservableEventSource, event: Record<string, unknown>): vo
 }
 
 describe("AgentHttpGateway", () => {
+  it("sends message intake commands through the authenticated shared HTTP transport", async () => {
+    const http = { post: vi.fn().mockResolvedValue({ messages: [] }) };
+    const gateway = new AgentHttpGateway(http as never, {} as never);
+    await expect(gateway.messaging({ action: "list", filter: "review" })).resolves.toEqual({ messages: [] });
+    expect(http.post).toHaveBeenCalledWith("/api/messaging", { action: "list", filter: "review" });
+  });
   it("connects message media requests to the shell and rejects unrelated file operations", async () => {
     const bridge = { request: vi.fn().mockResolvedValue({ ticketId: "preview", url: "/api/preview" }) };
     const gateway = new AgentHttpGateway({} as never, {} as never, bridge);

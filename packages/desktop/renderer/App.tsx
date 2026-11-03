@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { createPortal } from "react-dom";
-import { History, LoaderCircle, Plus, Search } from "lucide-react";
+import { History, Inbox, LoaderCircle, Plus, Search } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
 import ChatView from "./components/ChatView";
 import AllSessionsSidebar from "./components/AllSessionsSidebar";
@@ -10,6 +10,8 @@ import CollaborationLauncher from "./components/collaboration/CollaborationLaunc
 import CollaborationCreateDialog from "./components/collaboration/CollaborationCreateDialog";
 import CollaborationDashboard from "./components/collaboration/CollaborationDashboard";
 import SessionDashboard from "./components/collaboration/SessionDashboard";
+import MessagingPage from "./components/messaging/MessagingPage";
+import { MESSAGING_OPEN } from "../../core/src/domain/web-console/MessagingBridge";
 import SupervisionNotifier from "./components/collaboration/SupervisionNotifier";
 import { collaborationRequest } from "./components/collaboration/client";
 import { resolveDashboardSession } from "./lib/dashboard-session-navigation";
@@ -312,6 +314,8 @@ export default function App() {
   const [collaborationDashboardVisible, setCollaborationDashboardVisible] = useState(false);
   const [sessionDashboardOpen, setSessionDashboardOpen] = useState(false);
   const [sessionDashboardVisible, setSessionDashboardVisible] = useState(false);
+  const [messagingOpen, setMessagingOpen] = useState(false);
+  const [messagingVisible, setMessagingVisible] = useState(false);
   /** 新建会话输入框聚焦序号：从 Dashboard 等入口进入时递增，触发 composer focus。 */
   const [newSessionFocusNonce, setNewSessionFocusNonce] = useState(0);
   const [initialSessionHistory, setInitialSessionHistory] = useState<SessionHistorySeed>();
@@ -321,8 +325,18 @@ export default function App() {
   const dashboardNavigation = useRef<(intent: SessionDashboardIntent) => void>(() => {});
   const navigationRequest = useRef<AbortController | null>(null);
   const chatNavigationInstance = useRef(`${Date.now()}-${Math.random().toString(36).slice(2)}`);
-  const hasWorkspaceTabs = sessionDashboardVisible || collaborationDashboardVisible || collaborationTabs.length > 0;
+  const hasWorkspaceTabs = messagingVisible || sessionDashboardVisible || collaborationDashboardVisible || collaborationTabs.length > 0;
+  const openMessaging = () => {
+    setSidebarDrawerOpen(false);
+    if (isWebShell() && window.parent !== window) {
+      window.parent.postMessage({ type: MESSAGING_OPEN }, window.location.origin);
+      return;
+    }
+    setMessagingVisible(true); setMessagingOpen(true);
+    setSessionDashboardOpen(false); setCollaborationDashboardOpen(false); setActiveCollaboration(null);
+  };
   const openSessionDashboard = () => {
+    setMessagingOpen(false);
     if (isWebShell() && window.parent !== window) {
       window.parent.postMessage({ type: SESSION_DASHBOARD_NAVIGATE, intent: { kind: "dashboard" } }, window.location.origin);
       return;
@@ -331,6 +345,7 @@ export default function App() {
     setCollaborationDashboardOpen(false); setActiveCollaboration(null);
   };
   const openCollaborationDashboard = () => {
+    setMessagingOpen(false);
     setCollaborationDashboardVisible(true);
     setCollaborationDashboardOpen(true);
     setActiveCollaboration(null);
@@ -339,6 +354,7 @@ export default function App() {
   const [collaborationCreateOpen, setCollaborationCreateOpen] = useState(false);
   const [collaborationGroupsRevision, setCollaborationGroupsRevision] = useState(0);
   const openCollaboration = (group: CollaborationGroup) => {
+    setMessagingOpen(false);
     if (isWebShell() && window.parent !== window) {
       window.parent.postMessage({type: COLLABORATION_OPEN_TYPE, groupId: group.id, title: group.name}, window.location.origin);
     } else {
@@ -914,6 +930,7 @@ export default function App() {
     useAgentStore.setState({ sessionId: null, messages: [] });
     setSessionDashboardOpen(false);
     setSessionDashboardVisible(false);
+    setMessagingOpen(false);
     setCollaborationDashboardOpen(false);
     setActiveCollaboration(null);
     setHubOpen(false);
@@ -938,6 +955,7 @@ export default function App() {
   }, [activeAgent, projects, selectedProjectId, selectedSessionId]);
 
   const openAgentSession = (session: UnifiedSessionSummary, snapshot: AgentRailSessions, preservePagination = false) => {
+    setMessagingOpen(false);
     const partition = workspaceCacheRef.current.agents[session.agentType] ?? emptyAgentWorkspacePartition();
     workspaceCacheRef.current = { ...workspaceCacheRef.current, agents: { ...workspaceCacheRef.current.agents,
       [session.agentType]: { ...partition, workspaces: snapshot.workspaces, nextCursor: preservePagination ? partition.nextCursor : null,
@@ -955,6 +973,7 @@ export default function App() {
     if (mobileDrawer) setSidebarDrawerOpen(false);
   };
   dashboardNavigation.current = intent => {
+    setMessagingOpen(false);
     if (webShell && window.parent !== window && ["dashboard", "groups", "group"].includes(intent.kind)) {
       window.parent.postMessage({ type: SESSION_DASHBOARD_NAVIGATE, intent }, window.location.origin);
       return;
@@ -1605,6 +1624,7 @@ export default function App() {
           }}
           onSelect={() => {
             if (mobileDrawer) setSidebarDrawerOpen(false);
+            setMessagingOpen(false);
             applySidebarSelection(selectSession(projectId, session.id));
             if (children.length > 0) {
               setCollapsedParents((prev) => {
@@ -1644,6 +1664,7 @@ export default function App() {
                 deleteLabel="删除子会话"
                 onSelect={() => {
                   if (mobileDrawer) setSidebarDrawerOpen(false);
+                  setMessagingOpen(false);
                   applySidebarSelection(selectSession(projectId, child.id));
                 }}
                 onDelete={(anchor) => requestDeleteSession(child, anchor)}
@@ -1684,14 +1705,18 @@ export default function App() {
         groups={collaborationTabs}
         dashboardVisible={collaborationDashboardVisible}
         sessionDashboardVisible={sessionDashboardVisible}
-        activeId={sessionDashboardOpen ? "sessions" : collaborationDashboardOpen ? "dashboard" : activeCollaboration ?? "assistant"}
+        messagingVisible={messagingVisible}
+        activeId={messagingOpen ? "messaging" : sessionDashboardOpen ? "sessions" : collaborationDashboardOpen ? "dashboard" : activeCollaboration ?? "assistant"}
         onSelect={id => {
+          setMessagingOpen(id === "messaging");
           setSessionDashboardOpen(id === "sessions");
           setCollaborationDashboardOpen(id === "dashboard");
-          setActiveCollaboration(["assistant", "dashboard", "sessions"].includes(id) ? null : id);
+          setActiveCollaboration(["assistant", "dashboard", "sessions", "messaging"].includes(id) ? null : id);
         }}
         onClose={id => {
-          if (id === "sessions") {
+          if (id === "messaging") {
+            setMessagingOpen(false); setMessagingVisible(false);
+          } else if (id === "sessions") {
             setSessionDashboardVisible(false); setSessionDashboardOpen(false);
           } else if (id === "dashboard") {
             setCollaborationDashboardVisible(false);
@@ -1702,8 +1727,15 @@ export default function App() {
           }
         }}
       />}
-      {(activeCollaboration || collaborationDashboardOpen || sessionDashboardOpen) && <div className="collab-desktop-overlay">
-        <div className="collab-desktop-body">{sessionDashboardOpen ? <SessionDashboard onNewSession={handleBottomNewSession} onOpenGroup={item => dashboardNavigation.current({ kind: "group", groupId: item.group.id, title: item.group.name, discussionId: item.discussionId })} onOpenSession={session => dashboardNavigation.current({ kind: "session", session })} onViewAgent={agentType => dashboardNavigation.current({ kind: "agent", agentType })} onViewGroups={openCollaborationDashboard} onClose={() => { setSessionDashboardOpen(false); setSessionDashboardVisible(false); }}/> : collaborationDashboardOpen ? <CollaborationDashboard cwd={selectedWorkspacePath || undefined} onOpen={openCollaboration} onClose={() => { setCollaborationDashboardOpen(false); setCollaborationDashboardVisible(false); }} onChanged={(id, group) => {
+      {(messagingOpen || activeCollaboration || collaborationDashboardOpen || sessionDashboardOpen) && <div className="collab-desktop-overlay">
+        <div className="collab-desktop-body">{messagingOpen ? <MessagingPage onClose={() => { setMessagingOpen(false); setMessagingVisible(false); }} onOpenSession={message => {
+          const decision = message.routing.decision;
+          const project = message.routing.candidates?.find(item => item.projectId === decision?.projectId);
+          if (message.execution.sessionId && decision?.agentType && project) {
+            setMessagingOpen(false);
+            dashboardNavigation.current({ kind: "session", session: { id: message.execution.sessionId, agentType: decision.agentType, title: message.source.conversationName, cwd: project.description, projectId: decision.projectId } });
+          }
+        }}/> : sessionDashboardOpen ? <SessionDashboard onNewSession={handleBottomNewSession} onOpenGroup={item => dashboardNavigation.current({ kind: "group", groupId: item.group.id, title: item.group.name, discussionId: item.discussionId })} onOpenSession={session => dashboardNavigation.current({ kind: "session", session })} onViewAgent={agentType => dashboardNavigation.current({ kind: "agent", agentType })} onViewGroups={openCollaborationDashboard} onClose={() => { setSessionDashboardOpen(false); setSessionDashboardVisible(false); }}/> : collaborationDashboardOpen ? <CollaborationDashboard cwd={selectedWorkspacePath || undefined} onOpen={openCollaboration} onClose={() => { setCollaborationDashboardOpen(false); setCollaborationDashboardVisible(false); }} onChanged={(id, group) => {
           setCollaborationGroupsRevision(revision => revision + 1);
           setCollaborationTabs(current => group ? current.map(item => item.id === id ? group : item) : current.filter(item => item.id !== id));
           if (!group && activeCollaboration === id) setActiveCollaboration(null);
@@ -2172,6 +2204,7 @@ export default function App() {
 
         </>}
         <div className="sidebar-bottom-action">
+          <button type="button" className="messaging-sidebar-entry" onClick={openMessaging} title="查看监听消息、路由与回传"><Inbox size={16} aria-hidden="true"/><span>消息接入</span></button>
           {!allSessionsLayout && <CollaborationLauncher refreshKey={collaborationGroupsRevision} onOpen={openCollaboration}/>}
           <button
             type="button"
@@ -2326,6 +2359,7 @@ export default function App() {
                       const projectId = session.projectId && projects.some((p) => p.id === session.projectId)
                         ? session.projectId
                         : null;
+                      setMessagingOpen(false);
                       applySidebarSelection(selectSession(projectId, session.id));
                       setSearchOpen(false);
                       if (mobileDrawer) setSidebarDrawerOpen(false);
