@@ -1,0 +1,195 @@
+packages/native-runtime/src/agent-runtime/copilot-events.ts
+  s_9ed0db3f39d1f3::t_0770fd3552f0e6 1-62,66-107
+  s_9ed0db3f39d1f3::t_9f9fbb61ee1d0d 63-65
+packages/native-runtime/src/agent-runtime/copilot-approvals.ts
+  s_9ed0db3f39d1f3::t_53b9c66281956a 1-121
+packages/native-runtime/src/agent-runtime/copilot-events.test.ts
+  s_9ed0db3f39d1f3::t_9f9fbb61ee1d0d 53-54
+  s_9ed0db3f39d1f3::t_f60474984d3a4b 1-52,55-63
+packages/native-runtime/src/agent-runtime/copilot-runtime-adapter.ts
+  s_9ed0db3f39d1f3::t_d6b0ef4e5212dc 1-29
+packages/native-runtime/src/agent-runtime/types.ts
+  s_9ed0db3f39d1f3::t_d6b0ef4e5212dc 272
+packages/native-runtime/src/agent-runtime/copilot-client.ts
+  s_9ed0db3f39d1f3::t_d6b0ef4e5212dc 1-309
+packages/native-runtime/src/agent-runtime/unified-session-service.test.ts
+  s_9ed0db3f39d1f3::t_efcc1c9b85fa19 97-108
+packages/core/src/domain/model/entities.ts
+  s_9ed0db3f39d1f3::t_9f9fbb61ee1d0d 3,52-53,63,126-127
+packages/native-runtime/src/agent-runtime/unified-session-service.ts
+  s_9ed0db3f39d1f3::t_d6b0ef4e5212dc 194,438,446-449
+packages/native-runtime/src/agent-runtime/native-runtime-broker.test.ts
+  s_9ed0db3f39d1f3::t_7ec006c0e729ae 2480-2491,2493-2499
+  s_9ed0db3f39d1f3::t_efcc1c9b85fa19 1874,2443-2454,2457,2461-2468,2500-2530,2532-2534
+  s_9ed0db3f39d1f3::t_9f9fbb61ee1d0d 2455-2456,2458-2460,2531
+  s_9ed0db3f39d1f3::t_53b9c66281956a 2469-2479
+  s_aaa628f19933db::t_9bd64e88ac1350 5,75,399-400,499-636,1857-1873
+  s_b4afdef366801b::t_fb815188e18786 1875,2492
+packages/native-runtime/src/agent-runtime/copilot-runtime-adapter.test.ts
+  s_9ed0db3f39d1f3::t_f60474984d3a4b 1-252
+packages/core/src/index.ts
+  s_aaa628f19933db::t_9bd64e88ac1350 72
+packages/native-runtime/src/agent-runtime/native-runtime-broker.ts
+  s_aaa628f19933db::t_9bd64e88ac1350 17-19,48,139-140,243,336-337,425-428,832,837,973-984,999-1002,1005-1006,1011,1014,1018,1027,1038,1214,1226,1244-1260,1612,1756,1759,2092-2095,2389,2680-2681,3012,3115,3278,3282-3288,3294,3315,3320-3330,3335-3345,3371-3372,3374-3375,3381-3382,3476-3477
+  s_9ed0db3f39d1f3::t_7ec006c0e729ae 99,594,1225,1231-1243,1271-1272
+  s_9ed0db3f39d1f3::t_e1839d89cda8a7 793-803,807,810-817,820-827,833,838-849,1261-1264,1269-1270,1273,1628,1637,1832,1837-1841,1845-1847
+  s_9ed0db3f39d1f3::t_53b9c66281956a 49,1894-1898
+  s_9ed0db3f39d1f3::t_efcc1c9b85fa19 301,429-432,804-806,808-809,818-819
+  s_b4afdef366801b::t_882ef172d0881e 828-831,834-836
+packages/server/lib/native-runtime-service.ts
+  s_aaa628f19933db::t_9bd64e88ac1350 137,435,437
+bun.lock
+  s_b5ecb9f37b31b6::t_47e734ea71d830 17,45,49,70,120,131,135,201,208,249-252,281-282,487-488,1321,1929
+packages/core/src/domain/agent/AgentLoop.ts
+  s_b5ecb9f37b31b6::t_ac5e441d1d5964 20-21,190-199,202,366-367,432,455,521,529-530,542-544,572,577,585,592,595-599,604,610-611,615-619,628-633,648-649,738-739,790,824-825
+packages/core/src/domain/agent/__tests__/AgentLoop.test.ts
+  s_b5ecb9f37b31b6::t_3c19727da0777a 97-189
+packages/core/src/domain/agent/agent-type.test.ts
+  s_b5ecb9f37b31b6::t_f4458eab12a638 5-7
+packages/core/src/domain/agent/entities.ts
+  s_1238034a29f521::t_325e2db5909ed1 81-83,140,144-147
+packages/core/src/domain/agent/index.ts
+  s_1238034a29f521::t_b015a2ea492e94 34
+packages/core/src/domain/agent/run-result.test.ts
+  s_b5ecb9f37b31b6::t_2c0e6ad9a3f097 1-103
+packages/core/src/domain/agent/run-result.ts
+  s_b5ecb9f37b31b6::t_4dcc7e4a26f331 1-125
+packages/core/src/domain/model/providers/AnthropicProvider.ts
+  s_1238034a29f521::t_579530d804d6d7 3,86,97-98,127,129,132-133,139-143,200-201,209,211-212,219-220
+packages/core/src/domain/model/providers/DeepSeekProvider.ts
+  s_b5ecb9f37b31b6::t_8c941c0a3ed102 4,47,68,75,86,97,116,118,121-122,128-134,184,186-187,201-202
+packages/core/src/domain/model/providers/OpenAIProvider.ts
+  s_b5ecb9f37b31b6::t_547484af36ea33 6,43,67,74,85,96,155,157,160-161,167-175,236,238-239,253-254
+packages/core/src/domain/model/providers/__tests__/AnthropicProvider.test.ts
+  s_e5ecdbe762e554::t_8a4cc33549f178 3,15-168
+packages/core/src/domain/model/providers/__tests__/OpenAIProvider.test.ts
+  s_e5ecdbe762e554::t_140df7d320450b 5,20-236
+packages/core/src/domain/model/providers/usage.ts
+  s_b5ecb9f37b31b6::t_197924dcbe344a 1-110
+packages/native-runtime/package.json
+  s_b5ecb9f37b31b6::t_53974617156e47 17
+packages/native-runtime/src/agent-runtime/claude-runtime-adapter.test.ts
+  s_b5ecb9f37b31b6::t_76562380d99800 740-836
+packages/native-runtime/src/agent-runtime/claude-runtime-adapter.ts
+  s_e5ecdbe762e554::t_a443a4b488cd4c 43,721,725,730,734,739-749,788,1627-1628,1664-1706,1711,1713,1720
+packages/native-runtime/src/agent-runtime/codex-runtime-adapter.test.ts
+  s_2911aca65abb96::t_4502f3f5c8ea0d 1,980-1094,1096-1100,2407-2408
+packages/native-runtime/src/agent-runtime/codex-runtime-adapter.ts
+  s_b5ecb9f37b31b6::t_d373728a6c52ba 29,158-166,218,303,1272-1278,1293-1302,1311,1317,1573-1588,1636-1639,1725-1726,1733,1739,1746,1757,1763,1769,1775-1776,1779,1787,1799,1805-1844,1871,1925-1926,1928,1930,2022,2024,2030,2855-2879,2882-2885
+packages/native-runtime/src/agent-runtime/copilot-ahp-connection.ts
+  s_e5ecdbe762e554::t_3084ca41e01553 1-124
+packages/native-runtime/src/agent-runtime/copilot-vscode-discovery.test.ts
+  s_b5ecb9f37b31b6::t_67ea10c9e453ad 1-64
+packages/native-runtime/src/agent-runtime/copilot-vscode-discovery.ts
+  s_b5ecb9f37b31b6::t_c15894018cf510 1-61
+packages/native-runtime/src/agent-runtime/index.ts
+  s_e5ecdbe762e554::t_0eec1a9f23c8c2 4
+packages/native-runtime/src/agent-runtime/native-run-message-projection.test.ts
+  s_bdf9f0732d5ca4::t_c4afa365909d53 12,27
+packages/native-runtime/src/agent-runtime/native-runtime-registration.test.ts
+  s_bdf9f0732d5ca4::t_68e52b5ffa3583 5,15,27,30
+packages/native-runtime/src/agent-runtime/stdio-native-runtime-adapter.ts
+  s_b5ecb9f37b31b6::t_cb502369eb4eab 5,23,38,45,47,50-51,133
+packages/sdk/src/client/types.ts
+  s_e5ecdbe762e554::t_bdfac7006d38c6 7
+packages/server/app/api/agent-host.test.ts
+  s_2911aca65abb96::t_62b56a9243d051 2,157-308,391,634,702,704,738,1034,1125
+packages/server/app/api/agent-host.ts
+  s_b5ecb9f37b31b6::t_93ec9357d2af38 37-40,84-87,139-144,437,499-502,530-534,538-552,565-580,582,622-631,642,656,727-737,767,770-772,790,804,808-815,836,848-860,863,869,874,877-879,894-895,904-906,908,910,950-996,1003,1029-1041,1046-1048
+packages/server/app/api/agent/run/route.ts
+  s_b5ecb9f37b31b6::t_d35ab4d1adad47 71-73
+packages/server/app/api/agent/stream/route.test.ts
+  s_b5ecb9f37b31b6::t_c9b9b30c4b7b3f 93-112
+packages/server/app/api/agent/stream/route.ts
+  s_e5ecdbe762e554::t_1c8572dd91aa6c 69,144
+packages/core/src/domain/agent/agent-type.ts
+  s_b5ecb9f37b31b6::t_033186324e31ac 4
+packages/native-runtime/src/agent-runtime/copilot-ahp-transport.ts
+  s_b5ecb9f37b31b6::t_d37912f9c93a2d 1-46
+packages/native-runtime/src/agent-runtime/deepseek-harness-schedules.test.ts
+  s_1dc5bc88e0d2f8::t_7785a8a75448e4 1-64
+packages/native-runtime/src/agent-runtime/deepseek-harness-schedules.ts
+  s_1dc5bc88e0d2f8::t_d5875b7744daaa 1-28
+packages/native-runtime/src/index.ts
+  s_1dc5bc88e0d2f8::t_9772581c8b4838 11
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e7d1e7c0af5c9ffcf4a2ae25568b34beb202d0c4",
+  "prompts": {},
+  "sessions": {
+    "s_1238034a29f521": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a18ba1-df71-70e3-8c84-fa9ad86cd8ef",
+        "model": "ap-southeast-1-v5cjq-gptdy-17usoft-com/gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_1dc5bc88e0d2f8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a19ebc-e76d-7da1-b279-80330e5e449d",
+        "model": "unknown"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_2911aca65abb96": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a17d71-f537-7bc0-bdf2-3f59811b32b3",
+        "model": "ap-southeast-1-v5cjq-gptdy-17usoft-com/gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_9ed0db3f39d1f3": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1a3cf-50ef-7513-bc74-df36872f06c8",
+        "model": "ap-southeast-1-v5cjq-gptdy-17usoft-com/gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_aaa628f19933db": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1a1c0-0a71-77d3-8fc7-490ba85dd728",
+        "model": "ap-southeast-1-v5cjq-gptdy-17usoft-com/gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_b4afdef366801b": {
+      "agent_id": {
+        "tool": "github-copilot-cli",
+        "id": "fd68e7be-7ed7-42dc-8c00-f0170bed63f2",
+        "model": "unknown"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_b5ecb9f37b31b6": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1a094-2425-7d91-a4af-cf33962b0804",
+        "model": "ap-southeast-1-v5cjq-gptdy-17usoft-com/gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_bdf9f0732d5ca4": {
+      "agent_id": {
+        "tool": "github-copilot-cli",
+        "id": "490491f2-d1a3-4565-a4a9-130537146d29",
+        "model": "unknown"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_e5ecdbe762e554": {
+      "agent_id": {
+        "tool": "github-copilot-cli",
+        "id": "b1fcc3ad-91d4-4ba5-a1ec-d801ddea34a1",
+        "model": "unknown"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
