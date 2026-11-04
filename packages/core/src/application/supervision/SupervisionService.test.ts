@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { groupFixture } from "../../domain/collaboration/__tests__/fixtures.js";
 import type { CollaborationGroup } from "../../domain/collaboration/types.js";
-import type { MonitoredSession, SessionObservation, SupervisionState } from "../../domain/supervision/types.js";
+import type { MonitoredSession, SessionObservation, SupervisionMessage, SupervisionState } from "../../domain/supervision/types.js";
 import { SupervisionService } from "./SupervisionService.js";
 import type { SupervisionRepository, SupervisionRuntime } from "./ports.js";
 import { supervisionPrompt } from "./prompts.js";
@@ -9,12 +9,16 @@ import { supervisionPrompt } from "./prompts.js";
 class MemoryRepository implements SupervisionRepository {
   states = new Map<string, SupervisionState>();
   leases = new Map<string, { owner: string; until: number }>();
+  messages = new Map<string, SupervisionMessage>();
   get(id: string) { return structuredClone(this.states.get(id) ?? null); }
   initialize(state: SupervisionState) { if (!this.states.has(state.groupId)) this.save(state); return this.get(state.groupId)!; }
-  save(state: SupervisionState, expectedGeneration?: number) {
+  save(state: SupervisionState, expectedGeneration?: number, messages: SupervisionMessage[] = []) {
     if (expectedGeneration !== undefined && this.states.get(state.groupId)?.generation !== expectedGeneration) return false;
-    this.states.set(state.groupId, structuredClone(state)); return true;
+    this.states.set(state.groupId, structuredClone(state));
+    messages.forEach(message => this.appendMessage(message)); return true;
   }
+  appendMessage(message: SupervisionMessage) { if (!this.messages.has(message.id)) this.messages.set(message.id, structuredClone(message)); }
+  listMessages(groupId: string) { return { messages: [...this.messages.values()].filter(message => message.groupId === groupId), nextBefore: null, latestSequence: this.messages.size }; }
   claim(id: string, owner: string, now: number, ttl: number) { return this.lease(`group:${id}`, owner, now, ttl); }
   claimTarget(id: string, owner: string, now: number, ttl: number) { return this.lease(`target:${id}`, owner, now, ttl); }
   private lease(id: string, owner: string, now: number, ttl: number) {
@@ -53,6 +57,83 @@ function setup() {
 }
 
 describe("background group supervision", () => {
+  it("does not send remaining notices after deletion interrupts an admitted notification", async () => {
+    const s = setup();
+    const second = { ...target, id: "codex:second" };
+    s.group.monitoring!.targets.push(second);
+    s.observations.set(target.id, observation({ questions: [{ id: "first", text: "first decision" }] }));
+    s.observations.set(second.id, observation({ session: { ...observation().session, ...second }, questions: [{ id: "second", text: "second decision" }] }));
+    let finish!: () => void;
+    s.runtime.notify.mockImplementationOnce(async () => new Promise<void>(resolve => { finish = resolve; }));
+    await s.service.tick();
+    await vi.waitFor(() => expect(s.runtime.notify).toHaveBeenCalledOnce());
+    s.service.stop("g");
+    s.groups.length = 0;
+    finish();
+    await vi.waitFor(() => expect(s.service.runningChecks).toBe(0));
+    expect(s.runtime.notify).toHaveBeenCalledOnce();
+    expect(s.errors).toEqual([]);
+  });
+  it("aborts a deleted group's pending diagnostic without continuing original sessions", async () => {
+    const s = setup();
+    let signal!: AbortSignal;
+    let finish!: (decision: { action: "continue"; reason: string; message: string }) => void;
+    s.runtime.evaluate.mockImplementation(async (_state, _observation, abort) => {
+      signal = abort;
+      return new Promise<{ action: "continue"; reason: string; message: string }>(resolve => { finish = resolve; });
+    });
+    await s.service.tick();
+    await vi.waitFor(() => expect(s.runtime.evaluate).toHaveBeenCalledOnce());
+    s.groups.length = 0;
+    s.service.stop("g");
+    const generation = s.repo.get("g")!.generation;
+    s.service.stop("g");
+    expect(signal.aborted).toBe(true);
+    expect(s.repo.get("g")).toMatchObject({ paused: true, generation });
+    finish({ action: "continue", reason: "late diagnosis", message: "must not send" });
+    await vi.waitFor(() => expect(s.service.runningChecks).toBe(0));
+    await s.service.tick();
+    expect(s.runtime.continue).not.toHaveBeenCalled();
+    expect(s.runtime.handoff).not.toHaveBeenCalled();
+    expect(s.runtime.notify).not.toHaveBeenCalled();
+  });
+  it("shows repeated user replies while retaining the already queued intervention", async () => {
+    const s = setup(); s.runtime.continue.mockResolvedValue({ id: "receipt", accepted: true, status: "queued" });
+    await s.check();
+    const incident = s.repo.get("g")!.incidents[0];
+    await s.service.answer("g", incident.id, "继续");
+    expect(s.runtime.continue).toHaveBeenCalledTimes(1);
+    expect(s.repo.listMessages("g").messages).toContainEqual(expect.objectContaining({ title: "收到答复，沿用已提交的指令", sender: "你", content: "继续", status: "queued" }));
+  });
+  it("records changed source context and incident transitions without duplicating quiet polls", async () => {
+    const s = setup(); s.group.members[1].agentType = "opencode"; await s.check();
+    const first = s.repo.listMessages("g").messages;
+    expect(first.filter(message => message.direction === "received")).toEqual([expect.objectContaining({ sender: target.title, senderAgentType: target.agentType, recipient: "开发", recipientAgentType: "opencode", content: "网络中断，尚未交付" })]);
+    expect(first.filter(message => message.direction === "activity").every(message => message.senderAgentType === "opencode")).toBe(true);
+    expect(s.runtime.continue).toHaveBeenCalledWith(expect.anything(), expect.any(String), expect.any(String), expect.objectContaining({ senderAgentType: "opencode" }));
+    expect(first.filter(message => message.status).map(message => message.status)).toEqual(["evaluating", "executing", "verifying"]);
+    await s.check(); expect(s.repo.listMessages("g").messages).toHaveLength(first.length);
+    s.observations.set(target.id, observation({ revision: "new-progress", runId: "run2", context: "已收到监工指令，正在核对已有成果", hasProgress: true, terminal: undefined, session: { ...observation().session, status: "running" } }));
+    await s.check();
+    expect(s.repo.listMessages("g").messages).toEqual(expect.arrayContaining([
+      expect.objectContaining({ direction: "received", content: "已收到监工指令，正在核对已有成果" }),
+      expect.objectContaining({ status: "resolved", content: expect.stringContaining("出现新进度") }),
+    ]));
+    expect(s.repo.listMessages("other").messages).toEqual([]);
+  });
+  it("retains user decision content, answer receipt and configuration actions in the journal", async () => {
+    const s = setup();
+    s.observations.set(target.id, observation({ questions: [{ id: "q", text: "请选择方案" }] }));
+    await s.check();
+    await s.service.answer("g", s.repo.get("g")!.incidents[0].id, "采用方案 A");
+    s.service.pause("g", true); s.service.apply("g");
+    expect(s.repo.listMessages("g").messages).toEqual(expect.arrayContaining([
+      expect.objectContaining({ direction: "sent", sender: "你", content: "采用方案 A" }),
+      expect.objectContaining({ title: "决策答复已接收", sender: target.title }),
+      expect.objectContaining({ title: "已暂停监管" }),
+      expect.objectContaining({ title: "已应用监管配置" }),
+    ]));
+  });
   it("leaves old groups and normal tool/build waits quiet regardless of time without text", async () => {
     const s = setup(); delete s.group.monitoring;
     await s.check(); expect(s.runtime.observe).not.toHaveBeenCalled();
@@ -112,7 +193,9 @@ describe("background group supervision", () => {
     expect(s.repo.get("g")?.incidents[0].status).toBe("resolved");
   });
   it("does not count immediately failed runs as recovery success and retries only up to the bound", async () => {
-    const s = setup(); await s.check();
+    const s = setup();
+    s.runtime.continue.mockResolvedValueOnce({ id: "receipt-2", accepted: true, runId: "run2" }).mockResolvedValueOnce({ id: "receipt-3", accepted: true, runId: "run3" });
+    await s.check();
     s.observations.set(target.id, observation({ revision: "run2:2", runId: "run2" }));
     await s.check(); expect(s.repo.get("g")?.incidents[0].status).toBe("dismissed");
     expect(s.runtime.continue).toHaveBeenCalledTimes(2); expect(s.runtime.notify).not.toHaveBeenCalled();
@@ -133,7 +216,7 @@ describe("background group supervision", () => {
     const s = setup();
     for (let i = 0; i < 2; i++) {
       s.observations.set(target.id, observation({ revision: `failure:${i}` })); await s.check();
-      s.observations.set(target.id, observation({ revision: `progress:${i}`, terminal: undefined, hasProgress: true, session: { ...observation().session, status: "running" } })); await s.check();
+      s.observations.set(target.id, observation({ revision: `progress:${i}`, runId: "run2", terminal: undefined, hasProgress: true, session: { ...observation().session, status: "running" } })); await s.check();
     }
     s.observations.set(target.id, observation({ revision: "third-failure" })); await s.check();
     expect(s.runtime.continue).toHaveBeenCalledTimes(2);

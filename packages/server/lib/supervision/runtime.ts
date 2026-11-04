@@ -1,8 +1,9 @@
 import { z } from "zod";
+import { createHash, randomUUID } from "node:crypto";
 import {
   type AgentEvent, type CollaborationGroup, type CollaborationMember, type InterventionReceipt,
-  type MonitoredSession, type SessionObservation, type SupervisionDecision, type SupervisionIncident,
-  type SupervisionRuntime, type SupervisionState, SQLiteSupervisionRepository,
+  type MonitoredSession, type SessionGoalState, type SessionObservation, type SupervisionDecision, type SupervisionIncident,
+  type SupervisionRuntime, type SupervisionState, type SupervisionMessage, type SupervisionMessageContext, SQLiteSupervisionRepository,
 } from "@agent/core";
 import { supervisionPrompt } from "../../../core/src/application/supervision/prompts";
 import { agentHost } from "../../app/api/agent-host";
@@ -45,9 +46,23 @@ function terminal(events: AgentEvent[]): SessionObservation["terminal"] {
   return last?.type === "done" ? "done" : last?.type === "error" ? "error" : last?.type === "turn_aborted" ? "interrupted" : undefined;
 }
 
+function queueReceipt(state: SessionGoalState, actionId: string, run?: { runId?: string | null; queueItemId?: string }): InterventionReceipt | null {
+  const item = [state.active, ...state.queued, ...state.history].find(item => item?.sourceMessageId === `supervision:${actionId}`);
+  if (!item) return null;
+  const runId = run?.queueItemId === item.id ? run.runId ?? undefined : undefined;
+  return {
+    id: actionId, accepted: true, messageId: item.id, runId,
+    status: item.status === "active" ? runId ? "running" : "queued" : item.status,
+    ...(item.lastReason ? { reason: item.lastReason } : {}),
+  };
+}
+
 export class ServerSupervisionRuntime implements SupervisionRuntime {
   private readonly collaboration = new ServerCollaborationRuntime();
   constructor(private readonly repository: SQLiteSupervisionRepository) {}
+  private record(context: SupervisionMessageContext, message: Omit<SupervisionMessage, "id" | "groupId" | "createdAt" | "sender"> & { sender?: string }): void {
+    this.repository.appendMessage({ id: randomUUID(), groupId: context.groupId, createdAt: new Date().toISOString(), sender: context.sender, senderAgentType: context.senderAgentType, incidentId: context.incidentId, ...message });
+  }
 
   async observe(target: MonitoredSession): Promise<SessionObservation> {
     if (isNativeSessionId(target.id)) {
@@ -60,11 +75,12 @@ export class ServerSupervisionRuntime implements SupervisionRuntime {
       ]);
       const events = [...tail.events.map(entry => entry.event), ...detail.events];
       const questions = [...new Map(questionProjection(events).map(question => [question.id, question])).values()];
+      const context = contextText(detail.messages, events);
       return {
         session: { id: detail.id, agentType: detail.agentType, title: detail.title, cwd: detail.cwd, projectId: detail.projectId, status: detail.status, updated: detail.updated, canResume: detail.canResume, readOnly: detail.readOnly, occupancy: detail.occupancy },
         revision: `${head.runId ?? "native"}:${head.snapshotRevision}:${detail.updated}:${detail.status}`,
         runId: head.runId ?? undefined, manuallyStopped: head.manuallyStopped === true,
-        questions, context: contextText(detail.messages, events), terminal: terminal(tail.events.map(entry => entry.event)) ?? (detail.status === "failed" ? "error" : undefined),
+        questions, context, contextRevision: createHash("sha256").update(context).digest("hex"), terminal: terminal(tail.events.map(entry => entry.event)) ?? (detail.status === "failed" ? "error" : undefined),
         hasProgress: tail.events.some(entry => ["text_chunk", "tool_call", "tool_result", "reasoning_summary_delta", "runtime_progress"].includes(entry.event.type)),
         autoControlAvailable: typeof head.manuallyStopped === "boolean",
       };
@@ -75,14 +91,29 @@ export class ServerSupervisionRuntime implements SupervisionRuntime {
     const recoverable = agentHost.getRecoverableRun(stored);
     const events = running ? agentHost.recentSessionEvents(target.id) : stored.events.slice(-100);
     const revision = `${stored.updated}:${agentHost.getLatestEventId(target.id)}:${running}:${events.length}`;
+    const context = contextText(stored.messages, events);
     return {
       session: { ...target, title: stored.title, status: running ? "running" : recoverable || stored.status === "failed" ? "failed" : stored.status === "completed" ? "completed" : "idle", updated: stored.updated, canResume: true },
       revision, runId: recoverable?.runId, manuallyStopped: agentHost.isManuallyStopped(stored) || stored.status === "aborted",
-      questions: questionProjection(events, agentHost.pendingQuestionIds(target.id)), context: contextText(stored.messages, events), terminal: terminal(events) ?? (recoverable && !running ? "interrupted" : undefined),
+      questions: questionProjection(events, agentHost.pendingQuestionIds(target.id)), context, contextRevision: createHash("sha256").update(context).digest("hex"), terminal: terminal(events) ?? (recoverable && !running ? "interrupted" : undefined),
       hasProgress: events.some(event => ["text_chunk", "tool_call", "tool_result", "reasoning_summary_delta", "runtime_progress"].includes(event.type)),
     };
   }
   private async reason(state: SupervisionState, member: CollaborationMember, kind: string, prompt: string, signal: AbortSignal): Promise<string> {
+    signal.throwIfAborted();
+    const context = { groupId: state.groupId, sender: member.name, senderAgentType: member.agentType };
+    const supervisor = state.group.members.find(member => member.id === state.group.monitoring?.supervisorId);
+    this.record(context, { direction: "received", title: kind === "supervisor" ? "监工收到巡检任务" : "群主收到交接请求", sender: kind === "supervisor" ? "监管巡检" : "监工", senderAgentType: kind === "supervisor" ? undefined : supervisor?.agentType, recipient: member.name, recipientAgentType: member.agentType, content: prompt, cwd: state.group.cwd });
+    try {
+      const output = await this.runDiagnostic(state, member, kind, prompt, signal);
+      this.record(context, { direction: "sent", title: kind === "supervisor" ? "监工回复" : "群主交接回复", recipient: state.group.name, content: output, cwd: state.group.cwd });
+      return output;
+    } catch (error) {
+      this.record(context, { direction: "activity", title: "诊断未完成", content: error instanceof Error ? error.message : String(error), cwd: state.group.cwd });
+      throw error;
+    }
+  }
+  private async runDiagnostic(state: SupervisionState, member: CollaborationMember, kind: string, prompt: string, signal: AbortSignal): Promise<string> {
     signal.throwIfAborted();
     const key = JSON.stringify([kind, member.id, member.agentType, state.group.cwd, member.model ?? null, member.profileId ?? null]);
     let sessionId = state.sessions[key];
@@ -105,7 +136,10 @@ export class ServerSupervisionRuntime implements SupervisionRuntime {
       const result = await this.collaboration.execute({ group: state.group, member, sessionId, prompt, signal: controller.signal }, progress => {
         // Diagnostic agents must return candidate JSON. Runtime approval requests
         // are surfaced instead of leaving an invisible background turn blocked.
-        if (progress.question) controller.abort();
+        this.record({ groupId: state.groupId, sender: member.name, senderAgentType: member.agentType }, { direction: progress.question ? "sent" : "activity", title: progress.question ? "诊断请求确认" : "诊断执行动态", ...(progress.question ? { recipient: "你" } : {}), content: progress.text });
+        if (progress.question) {
+          controller.abort();
+        }
       });
       return result.text;
     } finally { clearTimeout(timer); signal.removeEventListener("abort", abort); }
@@ -115,17 +149,47 @@ export class ServerSupervisionRuntime implements SupervisionRuntime {
     if (!member) throw new Error("监工成员不存在");
     return decisionSchema.parse(jsonObject(await this.reason(state, member, "supervisor", supervisionPrompt(state, observation), signal)));
   }
-  async continue(target: MonitoredSession, text: string, actionId: string): Promise<InterventionReceipt> {
-    const current = await this.observe(target);
-    if (current.autoControlAvailable === false || current.manuallyStopped || current.questions.length || current.session.status === "running" || !current.session.canResume || current.session.readOnly || current.session.occupancy === "owned-externally") throw new Error("会话状态或共享后端能力已变化，未发送监工指令");
+  async continue(target: MonitoredSession, text: string, actionId: string, context?: SupervisionMessageContext): Promise<InterventionReceipt> {
     const prompt = `监工介入（记录 ${actionId}）：先核对已有成果及当前运行状态；仅在原任务授权范围内继续，尊重用户已有约束，遇到业务选择仍询问用户。\n${text}`;
-    if (isNativeSessionId(target.id)) {
-      const result = await getNativeRuntimeService().enqueueMessage(target.id, { sourceMessageId: `supervision:${actionId}`, content: prompt }, "web");
-      return { id: actionId, accepted: true, runId: result.started?.runId };
+    const source = { sessionId: target.id, sessionTitle: target.title, cwd: target.cwd };
+    if (context) this.record(context, { ...source, direction: "sent", title: "准备发送接续指令", recipient: target.title, recipientAgentType: target.agentType, content: prompt, status: "executing" });
+    try {
+      const current = await this.observe(target);
+      if (current.autoControlAvailable === false || current.manuallyStopped || current.questions.length || current.session.status === "running" || !current.session.canResume || current.session.readOnly || current.session.occupancy === "owned-externally") throw new Error("会话状态或共享后端能力已变化，未发送监工指令");
+      let receipt: InterventionReceipt;
+      if (isNativeSessionId(target.id)) {
+        const result = await getNativeRuntimeService().enqueueMessage(target.id, { sourceMessageId: `supervision:${actionId}`, content: prompt }, "web");
+        const queued = queueReceipt(result.state, actionId, { runId: result.started?.runId, queueItemId: result.started ? result.state.active?.id : undefined });
+        if (!queued) throw new Error("接续指令未出现在原会话队列中，请核对原会话");
+        receipt = queued;
+      } else {
+        const admission = agentHost.startRun(prompt, target.id);
+        void admission.completion.catch(error => console.error("Supervised Customer Agent run:", error));
+        receipt = { id: actionId, accepted: true, status: "running", runId: admission.runId };
+      }
+      if (context) {
+        const status = receipt.status === "queued" ? "queued" : receipt.status === "completed" ? "resolved" : receipt.status === "failed" ? "waiting" : receipt.status === "cancelled" ? "dismissed" : "verifying";
+        const outcome = receipt.status === "queued" ? { title: "接续指令已排队", content: "指令已进入原会话队列，尚未开始执行，无需重复答复。" }
+          : receipt.status === "completed" ? { title: "接续指令已执行完成", content: "原会话已确认该接续指令执行完成。" }
+          : receipt.status === "cancelled" ? { title: "接续指令已取消", content: "原会话中的这条接续指令已取消。" }
+          : receipt.status === "failed" ? { title: "接续指令执行失败", content: `指令执行失败：${receipt.reason ?? "请核对原会话。"}` }
+          : { title: "原会话已接收指令", content: "指令已被原会话接收，正在等待核对实际新进度。" };
+        this.record(context, { ...source, ...outcome, direction: "received", sender: target.title, senderAgentType: target.agentType, recipient: context.sender, recipientAgentType: context.senderAgentType, status });
+      }
+      return receipt;
+    } catch (error) {
+      if (context) this.record(context, { ...source, direction: "activity", title: "接续指令未完成发送", content: error instanceof Error ? error.message : String(error), status: "waiting" });
+      throw error;
     }
-    const admission = agentHost.startRun(prompt, target.id);
-    void admission.completion.catch(error => console.error("Supervised Customer Agent run:", error));
-    return { id: actionId, accepted: true, runId: admission.runId };
+  }
+  async interventionStatus(target: MonitoredSession, actionId: string): Promise<InterventionReceipt | null> {
+    if (!isNativeSessionId(target.id)) return null;
+    const service = getNativeRuntimeService();
+    const [state, snapshot] = await Promise.all([
+      service.getGoals(target.id, "web", false),
+      service.snapshot(target.id, Number.MAX_SAFE_INTEGER),
+    ]);
+    return queueReceipt(state, actionId, snapshot);
   }
   async handoff(state: SupervisionState, source: MonitoredSession, target: MonitoredSession, text: string, actionId: string, signal: AbortSignal): Promise<InterventionReceipt> {
     const owner = state.group.members.find(member => member.id === state.group.ownerId)!;
@@ -136,7 +200,7 @@ export class ServerSupervisionRuntime implements SupervisionRuntime {
     if (signal.aborted) throw new Error("监工已暂停");
     const current = this.repository.get(state.groupId);
     if (!current || current.paused || current.generation !== state.generation) throw new Error("监管已暂停或配置已改变");
-    return this.continue(target, `群主 ${owner.name} 衔接来自「${source.title}」的交付：\n${result.message}\n请先确认收到并核对已有成果，再推进既定下一步。`, actionId);
+    return this.continue(target, `群主 ${owner.name} 衔接来自「${source.title}」的交付：\n${result.message}\n请先确认收到并核对已有成果，再推进既定下一步。`, actionId, { groupId: state.groupId, sender: owner.name, senderAgentType: owner.agentType });
   }
   async answer(target: MonitoredSession, questionId: string, answer: string, indices?: number[]): Promise<boolean> {
     return this.collaboration.answer(target.id, questionId, answer, indices);
@@ -150,5 +214,7 @@ export class ServerSupervisionRuntime implements SupervisionRuntime {
       title: `${group.name} · ${incident.status === "waiting" ? "需要你决策" : incident.kind === "handoff" ? "交接已衔接" : incident.kind === "delivery" ? "交付已确认" : "会话已恢复"}`,
       body: incident.message.slice(0, 160), url: `/app/?view=session-dashboard&groupId=${encodeURIComponent(group.id)}`,
     });
+    const supervisor = group.members.find(member => member.id === group.monitoring?.supervisorId);
+    this.record({ groupId: group.id, sender: supervisor?.name ?? "监工", senderAgentType: supervisor?.agentType, incidentId: incident.id }, { direction: "sent", title: "发送监工提醒", recipient: "你", content: incident.message, sessionId: incident.sessionId, sessionTitle: incident.sessionTitle, status: incident.status });
   }
 }

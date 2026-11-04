@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it } from "vitest";
 import { groupFixture } from "../domain/collaboration/__tests__/fixtures.js";
-import type { SupervisionState } from "../domain/supervision/types.js";
+import type { SupervisionMessage, SupervisionState } from "../domain/supervision/types.js";
 import { SQLiteSupervisionRepository } from "./SQLiteSupervisionRepository.js";
 import { getDatabase } from "./SQLiteDatabase.js";
 
@@ -18,6 +18,8 @@ it("persists action receipts and isolates monitored targets from diagnostic sess
   const reopened = new SQLiteSupervisionRepository(dir);
   expect(reopened.get("g")?.incidents[0].receipt?.runId).toBe("resumed");
   expect(reopened.internalSessionIds()).toEqual(new Set(["internal"]));
+  expect(reopened.listMessages("g").messages).toEqual([expect.objectContaining({ historical: true, senderAgentType: "codex", content: "核对中", incidentId: "action" })]);
+  expect(new SQLiteSupervisionRepository(dir).listMessages("g").messages).toHaveLength(1);
   expect(repo.save({ ...state, generation: 1, paused: true }, 0)).toBe(true);
   expect(reopened.save(state, 0)).toBe(false);
   expect(reopened.initialize(state).paused).toBe(true);
@@ -26,4 +28,28 @@ it("persists action receipts and isolates monitored targets from diagnostic sess
   expect(repo.claimTarget("original", "group1", 100, 100)).toBe(true);
   expect(reopened.claimTarget("original", "group2", 101, 100)).toBe(false);
   expect(reopened.claimTarget("original", "group2", 201, 100)).toBe(true);
+});
+
+it("keeps journal history durable, deduplicated, paginated and isolated, with atomic generation checks", () => {
+  const dir = mkdtempSync(join(tmpdir(), "supervision-messages-")); dirs.push(dir);
+  const repo = new SQLiteSupervisionRepository(dir);
+  const message = (id: string, groupId = "g"): SupervisionMessage => ({ id, groupId, direction: "received", title: "原会话消息", sender: "原会话", senderAgentType: "zcode", recipient: "监工", recipientAgentType: "workbuddy", content: `内容 ${id}`, createdAt: "2026-11-02T12:00:00Z" });
+  for (let i = 0; i < 5; i++) repo.appendMessage(message(`message-${i}`));
+  repo.appendMessage(message("message-4"));
+  repo.appendMessage(message("other-message", "other"));
+  const latest = repo.listMessages("g", { limit: 2 });
+  expect(latest.messages.map(message => message.id)).toEqual(["message-3", "message-4"]);
+  const older = repo.listMessages("g", { beforeSequence: latest.nextBefore!, limit: 2 });
+  expect(older.messages.map(message => message.id)).toEqual(["message-1", "message-2"]);
+  expect(repo.listMessages("g", { beforeSequence: older.nextBefore!, limit: 2 }).messages.map(message => message.id)).toEqual(["message-0"]);
+  repo.appendMessage(message("message-5"));
+  expect(repo.listMessages("g", { afterSequence: latest.latestSequence }).messages.map(message => message.id)).toEqual(["message-5"]);
+  const state: SupervisionState = { groupId: "g", group: groupFixture(), generation: 0, paused: false, updatedAt: "2026-11-02", cursors: {}, incidents: [], sessions: {} };
+  repo.save(state);
+  expect(repo.save({ ...state, generation: 1 }, 0, [message("saved-with-state")])).toBe(true);
+  expect(repo.save(state, 0, [message("stale-write")])).toBe(false);
+  const reopened = new SQLiteSupervisionRepository(dir);
+  expect(reopened.listMessages("g").messages.every(message => message.senderAgentType === "zcode" && message.recipientAgentType === "workbuddy")).toBe(true);
+  expect(reopened.listMessages("g").messages.map(message => message.id)).toEqual(["message-0", "message-1", "message-2", "message-3", "message-4", "message-5", "saved-with-state"]);
+  expect(reopened.listMessages("other").messages.map(message => message.id)).toEqual(["other-message"]);
 });

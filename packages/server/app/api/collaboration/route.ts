@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import {
   COLLABORATION_AGENTS,
+  COLLABORATION_IMAGE_LIMIT,
+  COLLABORATION_IMAGE_MAX_BYTES,
   AGENT_TYPES,
   CollaborationError,
   HostPathError,
@@ -22,6 +24,10 @@ const groupSchema = z.object({
   projectId: id.optional(),
   ownerId: id,
   maxParallel: z.number().int().min(1).max(20),
+  scheduledTasks: z.array(z.discriminatedUnion("agentType", [
+    z.object({ agentType: z.literal("customer-agent"), taskId: id }),
+    z.object({ agentType: z.literal("deepseek-harness"), taskId: id, sessionId: id }),
+  ])).max(50).optional(),
   monitoring: z.object({
     supervisorId: id.optional(),
     targets: z.array(z.object({
@@ -54,6 +60,7 @@ const schema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("dashboard") }),
   z.object({ action: z.literal("supervisionAlerts") }),
   z.object({ action: z.literal("supervision"), groupId: id }),
+  z.object({ action: z.literal("supervisionMessages"), groupId: id, afterSequence: z.number().int().nonnegative().optional(), beforeSequence: z.number().int().positive().optional(), limit: z.number().int().min(1).max(100).optional() }),
   z.object({ action: z.literal("applySupervision"), groupId: id }),
   z.object({ action: z.literal("pauseSupervision"), groupId: id, paused: z.boolean() }),
   z.object({ action: z.literal("answerSupervision"), groupId: id, incidentId: id, answer: z.string().min(1).max(10000), selectedIndices: z.array(z.number().int().nonnegative()).max(50).optional() }),
@@ -87,8 +94,9 @@ const schema = z.discriminatedUnion("action", [
   z.object({
     action: z.literal("send"),
     discussionId: id,
-    text: z.string().min(1).max(100000),
+    text: z.string().max(100000),
     messageId: id,
+    images: z.array(z.string().max(COLLABORATION_IMAGE_MAX_BYTES)).max(COLLABORATION_IMAGE_LIMIT).optional(),
   }),
   z.object({ action: z.literal("stop"), discussionId: id }),
   z.object({ action: z.literal("resume"), discussionId: id }),
@@ -117,6 +125,12 @@ export async function POST(request: Request) {
         return (scope?.incidents ?? []).filter(incident => incident.status === "waiting" || incident.status === "resolved" && incident.notifiedAt && ["recovery", "handoff", "delivery"].includes(incident.kind)).slice(-30).map(incident => ({ groupName: group.name, incident, target: scope?.group.monitoring?.targets.find(target => target.id === incident.sessionId) }));
       }));
       case "supervision": return NextResponse.json(supervision.repository.get(body.groupId));
+      case "supervisionMessages": {
+        if (body.afterSequence !== undefined && body.beforeSequence !== undefined) throw new CollaborationError("不能同时请求更新与更早消息");
+        const group = collaborationService().repository.getGroup(body.groupId);
+        if (!group || group.deletedAt) throw new CollaborationError("协作群不存在", "NOT_FOUND");
+        return NextResponse.json(supervision.repository.listMessages(body.groupId, body));
+      }
       case "applySupervision": return NextResponse.json(supervision.apply(body.groupId));
       case "pauseSupervision": return NextResponse.json(supervision.pause(body.groupId, body.paused));
       case "answerSupervision": return NextResponse.json(await supervision.answer(body.groupId, body.incidentId, body.answer, body.selectedIndices));

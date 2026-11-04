@@ -25,6 +25,8 @@ export interface SessionObservation {
   questions: SupervisionQuestion[];
   /** Bounded current-turn context. Observed text is data, not policy. */
   context: string;
+  /** Content identity, independent of polling/status revisions. */
+  contextRevision?: string;
   terminal?: "done" | "error" | "interrupted";
   hasProgress?: boolean;
   /** Older shared brokers cannot distinguish a user stop from a failure. */
@@ -36,7 +38,36 @@ export type SupervisionDecision =
   | { action: "continue"; reason: string; message: string }
   | { action: "handoff"; reason: string; message: string; targetSessionId: string }
   | { action: "decision"; reason: string; options?: Array<{ label: string; description: string }>; recommendation?: string };
-export interface InterventionReceipt { id: string; runId?: string; accepted: boolean }
+export interface InterventionReceipt {
+  id: string;
+  accepted: boolean;
+  runId?: string;
+  messageId?: string;
+  status?: "queued" | "running" | "completed" | "failed" | "cancelled";
+  reason?: string;
+}
+export interface SupervisionMessage {
+  id: string;
+  groupId: string;
+  sequence?: number;
+  direction: "received" | "sent" | "activity";
+  title: string;
+  sender: string;
+  senderAgentType?: AgentType;
+  recipient?: string;
+  recipientAgentType?: AgentType;
+  content: string;
+  createdAt: string;
+  sessionId?: string;
+  sessionTitle?: string;
+  cwd?: string;
+  incidentId?: string;
+  status?: SupervisionIncident["status"];
+  historical?: boolean;
+}
+export interface SupervisionMessageQuery { afterSequence?: number; beforeSequence?: number; limit?: number }
+export interface SupervisionMessagePage { messages: SupervisionMessage[]; nextBefore: number | null; latestSequence: number }
+export interface SupervisionMessageContext { groupId: string; sender: string; senderAgentType?: AgentType; incidentId?: string }
 export interface SupervisionIncident {
   id: string;
   groupId: string;
@@ -44,7 +75,7 @@ export interface SupervisionIncident {
   sessionTitle: string;
   fingerprint: string;
   kind: "question" | "recovery" | "handoff" | "delivery" | "blocker" | "observation";
-  status: "evaluating" | "executing" | "verifying" | "resolved" | "waiting" | "dismissed";
+  status: "evaluating" | "queued" | "executing" | "verifying" | "resolved" | "waiting" | "dismissed";
   message: string;
   createdAt: string;
   updatedAt: string;
@@ -66,6 +97,7 @@ export interface SupervisionCursor {
   recoveryAttempts: number;
   lastRecoveryAt?: number;
   lastEvaluatedAt?: number;
+  lastContextRevision?: string;
 }
 export interface SupervisionState {
   groupId: string;

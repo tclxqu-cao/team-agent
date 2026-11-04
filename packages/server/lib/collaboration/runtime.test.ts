@@ -39,6 +39,19 @@ function input(sessionId = "codex:member"): CollaborationExecution {
 }
 beforeEach(() => vi.resetAllMocks());
 describe("collaboration runtime adapters", () => {
+  it.each(["codex:member", "builtin"])("forwards group image attachments to %s as vision input", async sessionId => {
+    const execution = { ...input(sessionId), images: ["data:image/png;base64,YQ=="] };
+    mocks.native.startRun.mockResolvedValue({ runId: "image-run" });
+    mocks.native.subscribe.mockImplementation(async (_id, _sequence, listener) => {
+      listener({ event: { type: "done", finalText: "看图完成" } }); return vi.fn();
+    });
+    mocks.host.startRun.mockReturnValue({ completion: Promise.resolve() });
+    mocks.host.subscribe.mockImplementation((_id, listener) => {
+      listener({ type: "done", finalText: "看图完成" }); return vi.fn();
+    });
+    await new ServerCollaborationRuntime().execute(execution, () => {});
+    expect(sessionId === "builtin" ? mocks.host.startRun.mock.calls[0][2] : mocks.native.startRun.mock.calls[0][2]).toEqual(execution.images);
+  });
   it("uses the selected native model, delivers approvals and cleans up a synchronous terminal replay", async () => {
     const stop = vi.fn(),
       events: unknown[] = [];

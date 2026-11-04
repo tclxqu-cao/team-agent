@@ -14,6 +14,12 @@ export function validateCollaborationGroup(group: CollaborationGroup): void {
   const ids = new Set(group.members.map((m) => m.id));
   if (ids.size !== group.members.length || !ids.has(group.ownerId))
     throw new CollaborationError("群主和成员身份必须唯一");
+  const schedules = group.scheduledTasks ?? [];
+  if (schedules.length > 50 || new Set(schedules.map(task => `${task.agentType}:${task.taskId}`)).size !== schedules.length || schedules.some(task =>
+    typeof task.taskId !== "string" || !task.taskId.trim() || task.taskId.length > 200 ||
+    !["customer-agent", "deepseek-harness"].includes(task.agentType) ||
+    task.agentType === "deepseek-harness" && (typeof task.sessionId !== "string" || !task.sessionId.trim() || task.sessionId.length > 200)))
+    throw new CollaborationError("关联定时任务无效或重复（最多 50 条）");
   if (group.monitoring) {
     const { supervisorId, targets } = group.monitoring;
     if (supervisorId && !ids.has(supervisorId))
@@ -104,7 +110,11 @@ export class CollaborationGroupAggregate {
     discussions: readonly CollaborationDiscussionState[],
     at: string,
   ): void {
-    this.assertInactive(discussions);
+    this.assertCanDelete(discussions);
     this.state.deletedAt = at;
+  }
+
+  assertCanDelete(discussions: readonly CollaborationDiscussionState[]): void {
+    this.assertInactive(discussions);
   }
 }

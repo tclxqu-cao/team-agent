@@ -4,6 +4,7 @@ export const COLLABORATION_AGENTS = [
   "claude-code",
   "opencode",
   "deepseek-harness",
+  "copilot",
 ] as const;
 export type CollaborationAgent = (typeof COLLABORATION_AGENTS)[number];
 export interface MonitoredSession {
@@ -21,6 +22,9 @@ export interface CollaborationMember {
   model?: { id: string; providerID?: string };
   profileId?: string;
 }
+export type CollaborationScheduledTask =
+  | { agentType: "customer-agent"; taskId: string }
+  | { agentType: "deepseek-harness"; taskId: string; sessionId: string };
 export interface CollaborationGroup {
   id: string;
   name: string;
@@ -31,6 +35,8 @@ export interface CollaborationGroup {
   maxParallel: number;
   createdAt: string;
   deletedAt?: string;
+  /** Exact scheduler-owned identities; cancelled before group deletion succeeds. */
+  scheduledTasks?: CollaborationScheduledTask[];
   /** References only: original sessions are never member execution sessions. */
   monitoring?: { supervisorId?: string; targets: MonitoredSession[] };
 }
@@ -51,6 +57,8 @@ export interface CollaborationMessage {
   memberId?: string;
   kind: "user" | "owner" | "member" | "system" | "progress" | "question";
   content: string;
+  /** Image data URLs, stored separately from the text and passed as vision input. */
+  images?: string[];
   createdAt: string;
   taskId?: string;
   question?: {
@@ -151,6 +159,7 @@ export type CollaborationCommand =
   | { action: "dashboard" }
   | { action: "supervisionAlerts" }
   | { action: "supervision" | "applySupervision"; groupId: string }
+  | { action: "supervisionMessages"; groupId: string; afterSequence?: number; beforeSequence?: number; limit?: number }
   | { action: "pauseSupervision"; groupId: string; paused: boolean }
   | { action: "answerSupervision"; groupId: string; incidentId: string; answer: string; selectedIndices?: number[] }
   | { action: "groups" }
@@ -167,7 +176,7 @@ export type CollaborationCommand =
     }
   | { action: "setMode"; discussionId: string; mode: CollaborationDiscussionMode }
   | { action: "discussion"; discussionId: string; afterRevision?: number }
-  | { action: "send"; discussionId: string; text: string; messageId: string }
+  | { action: "send"; discussionId: string; text: string; messageId: string; images?: string[] }
   | { action: "answerDecision"; discussionId: string; expectedRevision: number; answer: string; messageId: string }
   | { action: "stop" | "resume"; discussionId: string }
   | {

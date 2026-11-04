@@ -97,6 +97,20 @@ async function waitForDiscussion(
 }
 
 describe("协作群路由层端到端（真实 route → zod → service → SQLite，替身 agent 运行时）", () => {
+  it("accepts an image-only first message and retains its images after reopening the discussion", async () => {
+    const group = await (await post({ action: "createGroup", group: groupPayload })).json() as CollaborationGroup;
+    const discussion = await (await post({ action: "createDiscussion", groupId: group.id, mode: "chat" })).json() as CollaborationDiscussionState;
+    const images = ["data:image/png;base64,YQ=="];
+    const command = { action: "send", discussionId: discussion.id, text: "", images, messageId: "image-only-first" };
+    expect((await post(command)).status).toBe(200);
+    expect((await post(command)).status).toBe(200);
+    const reopened = await (await post({ action: "discussion", discussionId: discussion.id })).json() as CollaborationDiscussionState;
+    expect(reopened.title).toBe("图片消息");
+    expect(reopened.messages).toHaveLength(1);
+    expect(reopened.messages[0]).toMatchObject({ content: "", images, id: "image-only-first" });
+    expect((await post({ ...command, images: [], messageId: "empty" })).status).toBe(409);
+    expect((await post({ ...command, images: ["file:///tmp/image.png"], messageId: "invalid" })).status).toBe(409);
+  });
   it("chat 模式 @提及经路由直达成员，群主不被唤醒，完成回到待命并累计用量", async () => {
     runtimeState.calls.length = 0;
     runtimeState.executeImpl = async (input) =>

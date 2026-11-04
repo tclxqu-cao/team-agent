@@ -38,7 +38,7 @@ export class CollaborationDiscussion {
       throw new CollaborationError("正在停止，请稍后再发消息");
     this.append(message);
     if (this.state.title === "新讨论")
-      this.state.title = message.content.slice(0, 50);
+      this.state.title = message.content.trim().slice(0, 50) || "图片消息";
     if (route?.planning && route.tasks?.length)
       throw new CollaborationError("群主不能被 @ 指派，请直接提问以触发群主规划");
     // @成员恒为确定性路由，与讨论模式无关：被指派的成员直接执行，不打扰群主。

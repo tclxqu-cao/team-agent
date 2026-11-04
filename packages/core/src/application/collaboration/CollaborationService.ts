@@ -6,6 +6,7 @@ import {
 import { CollaborationGroupAggregate } from "../../domain/collaboration/CollaborationGroup.js";
 import { parseCollaborationDecision } from "../../domain/collaboration/coordinator-protocol.js";
 import { parseMentions, stripMentions } from "../../domain/collaboration/mention-routing.js";
+import { collaborationImages, validateCollaborationImages } from "../../domain/collaboration/images.js";
 import {
   CollaborationError,
   type CollaborationCommand,
@@ -127,6 +128,26 @@ export class CollaborationService {
       mutate(new CollaborationDiscussion(state, group)),
     );
   }
+  private async deleteGroup(groupId: string): Promise<{ deleted: true; groupId: string }> {
+    const group = this.repository.getGroup(groupId);
+    if (!group) throw new CollaborationError("协作群不存在", "NOT_FOUND");
+    if (!group.deletedAt) {
+      const discussions = this.repository.listDiscussions(groupId)
+        .map(item => this.repository.getDiscussion(item.id))
+        .filter((item): item is CollaborationDiscussionState => item !== null);
+      new CollaborationGroupAggregate(group).assertCanDelete(discussions);
+    }
+    if (group.scheduledTasks?.length && !this.runtime.beforeDeleteGroup)
+      throw new CollaborationError("当前运行时无法取消关联定时任务，未删除群聊", "SCHEDULE_CANCEL_FAILED");
+    await this.runtime.beforeDeleteGroup?.(group);
+    if (!group.deletedAt) this.repository.updateGroup(groupId, (current, discussions) => {
+      if (current.deletedAt) return;
+      if (JSON.stringify(current.scheduledTasks ?? []) !== JSON.stringify(group.scheduledTasks ?? []))
+        throw new CollaborationError("关联定时任务已改变，请重试删除群聊");
+      new CollaborationGroupAggregate(current).delete(discussions, new Date().toISOString());
+    });
+    return { deleted: true, groupId };
+  }
   async command(command: CollaborationCommand): Promise<unknown> {
     switch (command.action) {
       case "groups":
@@ -143,13 +164,7 @@ export class CollaborationService {
             ),
         );
       case "deleteGroup":
-        this.repository.updateGroup(command.groupId, (group, discussions) =>
-          new CollaborationGroupAggregate(group).delete(
-            discussions,
-            new Date().toISOString(),
-          ),
-        );
-        return { deleted: true, groupId: command.groupId };
+        return this.deleteGroup(command.groupId);
       case "updateRole": {
         const group = updateCollaborationRole(
           this.group(command.groupId),
@@ -211,8 +226,9 @@ export class CollaborationService {
         return state;
       }
       case "send": {
+        validateCollaborationImages(command.images);
         if (
-          !command.text.trim() ||
+          (!command.text.trim() && !command.images?.length) ||
           command.text.length > 100000 ||
           !command.messageId ||
           command.messageId.length > 200
@@ -221,6 +237,7 @@ export class CollaborationService {
         const message = {
           ...this.message(command.text, "user"),
           id: command.messageId,
+          ...(command.images?.length ? { images: [...command.images] } : {}),
         };
         const current = this.discussion(command.discussionId);
         // @ 提及恒生效；模式只决定无 @ 时的行为（chat 静默 / task-graph 交给群主）。
@@ -492,6 +509,7 @@ export class CollaborationService {
           member: owner,
           sessionId,
           prompt: collaborationOwnerPrompt(group, this.discussion(id)),
+          images: collaborationImages(this.discussion(id)),
           signal,
         },
         this.progress(id, start.generation, owner.id),
@@ -606,6 +624,7 @@ export class CollaborationService {
           member,
           sessionId,
           prompt: collaborationWorkerPrompt(group, current, currentTask),
+          images: collaborationImages(current),
           signal,
         },
         this.progress(id, start.generation, member.id, taskId),

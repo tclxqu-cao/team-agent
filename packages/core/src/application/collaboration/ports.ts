@@ -49,9 +49,12 @@ export interface CollaborationExecution {
   member: CollaborationMember;
   sessionId: string;
   prompt: string;
+  images?: string[];
   signal: AbortSignal;
 }
 export interface CollaborationRuntime {
+  /** Stop this group's supervision and cancel its schedules before deletion. */
+  beforeDeleteGroup?(group: CollaborationGroup): Promise<void>;
   prepareWorkspace(
     group: CollaborationGroup,
     discussionId: string,

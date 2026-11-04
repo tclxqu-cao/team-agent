@@ -19,10 +19,19 @@ import {
   isNativeSessionId,
 } from "../native-runtime-service";
 import { getServerBaseDir } from "../server-data-dir";
+import { cancelGroupSchedules } from "./schedules";
 
 const runFile = promisify(execFile);
 
 export class ServerCollaborationRuntime implements CollaborationRuntime {
+  async beforeDeleteGroup(group: CollaborationGroup): Promise<void> {
+    const { supervisionService } = await import("../supervision/service");
+    const supervision = supervisionService();
+    supervision.stop(group.id);
+    await cancelGroupSchedules(group);
+    // A concurrent configuration apply must not restart checks while cancellation awaited its Host.
+    supervision.stop(group.id);
+  }
   async prepareWorkspace(
     group: CollaborationGroup,
     discussionId: string,
@@ -177,7 +186,7 @@ export class ServerCollaborationRuntime implements CollaborationRuntime {
             await service.startRun(
               input.sessionId,
               input.prompt,
-              undefined,
+              input.images,
               "web",
               input.member.model ? { model: input.member.model } : undefined,
             );
@@ -195,7 +204,7 @@ export class ServerCollaborationRuntime implements CollaborationRuntime {
             const admission = agentHost.startRun(
               input.prompt,
               input.sessionId,
-              undefined,
+              input.images,
               input.member.profileId
                 ? { profileId: input.member.profileId }
                 : {},

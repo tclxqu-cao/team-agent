@@ -3,6 +3,14 @@ import { CollaborationGroupAggregate } from "./CollaborationGroup.js";
 import { groupFixture, stateFixture } from "./__tests__/fixtures.js";
 
 describe("collaboration group lifecycle", () => {
+  it("accepts a Copilot member and a Copilot native supervision target", () => {
+    const group = groupFixture();
+    const members = group.members.map((member, index) => index === 0 ? { ...member, agentType: "copilot" as const } : member);
+    expect(() => new CollaborationGroupAggregate(group).update({ ...group, members,
+      monitoring: { targets: [{ id: "runtime:copilot:c2Vzc2lvbg", agentType: "copilot", title: "Copilot task", cwd: "/workspace" }] },
+    }, [])).not.toThrow();
+    expect(group.members[0].agentType).toBe("copilot");
+  });
   it("preserves legacy discussion configuration before editing members and workspace", () => {
     const group = groupFixture(),
       before = structuredClone(group);

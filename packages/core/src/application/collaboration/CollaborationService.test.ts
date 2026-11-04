@@ -37,6 +37,106 @@ const runtimeBase = (): CollaborationRuntime => ({
 });
 
 describe("CollaborationService orchestration", () => {
+  it("waits for schedule cancellation before deleting and safely retries completed deletion", async () => {
+    const runtime = runtimeBase();
+    const { repo, service } = setup(runtime);
+    repo.updateGroup("g", group => { group.scheduledTasks = [{ agentType: "deepseek-harness", sessionId: "native-owner", taskId: "reminder" }]; });
+    let finish!: () => void;
+    runtime.beforeDeleteGroup = vi.fn(async group => {
+      expect(group.scheduledTasks?.[0].taskId).toBe("reminder");
+      await new Promise<void>(resolve => { finish = resolve; });
+    });
+    const pending = service.command({ action: "deleteGroup", groupId: "g" });
+    expect(service.group("g").deletedAt).toBeUndefined();
+    finish();
+    await expect(pending).resolves.toEqual({ deleted: true, groupId: "g" });
+    expect(repo.getGroup("g")?.deletedAt).toBeTruthy();
+    runtime.beforeDeleteGroup = vi.fn(async () => {});
+    await expect(service.command({ action: "deleteGroup", groupId: "g" })).resolves.toEqual({ deleted: true, groupId: "g" });
+    expect(runtime.beforeDeleteGroup).toHaveBeenCalledOnce();
+  });
+  it("keeps a group discoverable when cancellation fails and retries its schedules", async () => {
+    const runtime = runtimeBase();
+    const { repo, service } = setup(runtime);
+    repo.updateGroup("g", group => { group.scheduledTasks = [{ agentType: "customer-agent", taskId: "scheduled" }]; });
+    runtime.beforeDeleteGroup = vi.fn().mockRejectedValueOnce(new Error("scheduler offline")).mockResolvedValue(undefined);
+    await expect(service.command({ action: "deleteGroup", groupId: "g" })).rejects.toThrow("scheduler offline");
+    expect(repo.listGroups().map(group => group.id)).toEqual(["g"]);
+    await service.command({ action: "deleteGroup", groupId: "g" });
+    expect(repo.listGroups()).toEqual([]);
+    expect(runtime.beforeDeleteGroup).toHaveBeenCalledTimes(2);
+  });
+  it("does not cancel schedules for a busy group or delete a group without cancellation support", async () => {
+    const runtime = runtimeBase();
+    const { repo, service, id } = setup(runtime);
+    runtime.beforeDeleteGroup = vi.fn(async () => {});
+    repo.updateDiscussion(id, state => { state.status = "running"; });
+    await expect(service.command({ action: "deleteGroup", groupId: "g" })).rejects.toThrow("请先停止");
+    expect(runtime.beforeDeleteGroup).not.toHaveBeenCalled();
+    repo.updateDiscussion(id, state => { state.status = "completed"; });
+    repo.updateGroup("g", group => { group.scheduledTasks = [{ agentType: "customer-agent", taskId: "scheduled" }]; });
+    delete runtime.beforeDeleteGroup;
+    await expect(service.command({ action: "deleteGroup", groupId: "g" })).rejects.toThrow("无法取消");
+    expect(repo.getGroup("g")?.deletedAt).toBeUndefined();
+  });
+  it("requires a retry if schedule bindings change while cancellation is in flight", async () => {
+    const runtime = runtimeBase();
+    const { repo, service } = setup(runtime);
+    runtime.beforeDeleteGroup = async () => {
+      repo.updateGroup("g", group => { group.scheduledTasks = [{ agentType: "customer-agent", taskId: "new-reminder" }]; });
+    };
+    await expect(service.command({ action: "deleteGroup", groupId: "g" })).rejects.toThrow("定时任务已改变");
+    expect(repo.getGroup("g")?.deletedAt).toBeUndefined();
+  });
+  it("preserves schedule ownership when editing a group and rejects duplicate bindings", async () => {
+    const { service, repo } = setup(runtimeBase());
+    const binding = { agentType: "deepseek-harness" as const, taskId: "reminder", sessionId: "native-owner" };
+    repo.updateGroup("g", group => { group.scheduledTasks = [binding]; });
+    const { id: _id, createdAt: _at, scheduledTasks: _schedules, ...input } = service.group("g");
+    await service.command({ action: "updateGroup", groupId: "g", group: { ...input, name: "edited" } });
+    expect(service.group("g").scheduledTasks).toEqual([binding]);
+    await expect(service.command({ action: "updateGroup", groupId: "g", group: { ...input, scheduledTasks: [binding, binding] } })).rejects.toThrow("定时任务无效或重复");
+    expect(service.group("g").scheduledTasks).toEqual([binding]);
+  });
+  it("persists image-only first messages, deduplicates retries and provides visual input to the owner and worker", async () => {
+    const images = ["data:image/png;base64,aGVsbG8="];
+    const calls: Array<{ member: string; images?: string[]; prompt: string }> = [];
+    const runtime = runtimeBase();
+    const { service, repo, id } = setup(runtime);
+    runtime.prepareWorkspace = async group => ({ cwd: group.cwd, isolated: false });
+    runtime.execute = async input => {
+      calls.push({ member: input.member.id, images: input.images, prompt: input.prompt });
+      return { text: input.member.id !== "owner" ? "看过图片" : JSON.stringify(
+        service.discussion(id).tasks.length
+          ? { action: "finish", message: "" }
+          : { action: "dispatch", message: "请查看图片", tasks: [{ id: "vision", memberId: "a", title: "读图", instructions: "描述用户图片", readOnly: true }] },
+      ) };
+    };
+    const command = { action: "send" as const, discussionId: id, text: "", images, messageId: "image-first" };
+    await service.command(command);
+    await vi.waitFor(() => expect(service.discussion(id).status).toBe("completed"));
+    await service.command(command);
+    const stored = repo.getDiscussion(id)!;
+    expect(stored.title).toBe("图片消息");
+    expect(stored.messages.filter(message => message.kind === "user")).toEqual([
+      expect.objectContaining({ id: "image-first", content: "", images }),
+    ]);
+    expect(calls.map(call => call.member)).toContain("a");
+    for (const call of calls) {
+      expect(call.images).toEqual(images);
+      expect(call.prompt).not.toContain(images[0]);
+    }
+  });
+  it("rejects empty messages and invalid image input before storing or starting work", async () => {
+    const runtime = runtimeBase(); runtime.execute = vi.fn();
+    const { service, id } = setup(runtime);
+    const command = { action: "send" as const, discussionId: id, text: "", messageId: "invalid" };
+    await expect(service.command(command)).rejects.toThrow("不能为空");
+    await expect(service.command({ ...command, images: ["https://example.com/image.png"] })).rejects.toThrow("图片格式无效");
+    await expect(service.command({ ...command, images: Array(11).fill("data:image/png;base64,YQ==") })).rejects.toThrow("最多");
+    expect(service.discussion(id).messages).toEqual([]);
+    expect(runtime.execute).not.toHaveBeenCalled();
+  });
   it("answers a planner decision once and rejects a stale Dashboard decision revision", async () => {
     const runtime = runtimeBase(); runtime.execute = async () => ({ text: JSON.stringify({ action: "finish", message: "决定已落实" }) });
     const { service, repo, id } = setup(runtime);
