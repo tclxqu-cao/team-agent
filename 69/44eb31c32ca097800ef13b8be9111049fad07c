@@ -1,0 +1,21 @@
+packages/desktop/renderer/components/ChatHistoryStyle.test.ts
+  s_9ed0db3f39d1f3::t_6952372d737cca 235-236,250-254
+  s_9ed0db3f39d1f3::t_f5628e66ea02b0 2-3,5,119,242-244,268,273-274,322,324-325,327-331,369-370,375-376
+  s_9ed0db3f39d1f3::t_6e5993ed70d5be 323
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6944eb31c32ca097800ef13b8be9111049fad07c",
+  "prompts": {},
+  "sessions": {
+    "s_9ed0db3f39d1f3": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1a3cf-50ef-7513-bc74-df36872f06c8",
+        "model": "ap-southeast-1-v5cjq-gptdy-17usoft-com/gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
